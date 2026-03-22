@@ -21,7 +21,7 @@ fn main() {
     let dt = 10.0; // seconds
     let period = 2.0 * std::f64::consts::PI * (r0.powi(3) / mu_earth).sqrt();
     let n_orbits = 10;
-    let steps = (n_orbits as f64 * period / dt) as usize;
+    let steps = (n_orbits as f64 * period / dt).ceil() as usize;
 
     let initial_energy =
         0.5 * state.velocity.length_squared() - mu_earth / state.position.length();
