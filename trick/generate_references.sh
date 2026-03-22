@@ -52,12 +52,17 @@ run_sim() {
         return 1
     fi
 
-    # Copy any ASCII CSV output directly
+    # Copy ASCII CSV output, canonicalizing key filenames so downstream
+    # tests can find them at predictable paths.
     echo "--- Collecting output for ${label} ---"
     while IFS= read -r -d '' csv_file; do
         local base
         base=$(basename "$csv_file" .csv)
-        local dest="${OUTPUT_DIR}/${label}_${base}.csv"
+        # Canonicalize: strip "log_" prefix and "_ASCII" suffix for cleaner names.
+        # e.g. "log_state_ASCII" -> "state", "log_Earth_RNP_ascii" -> "Earth_RNP"
+        local canonical
+        canonical=$(echo "$base" | sed -e 's/^log_//' -e 's/_[Aa][Ss][Cc][Ii][Ii]$//')
+        local dest="${OUTPUT_DIR}/${label}_${canonical}.csv"
         cp "$csv_file" "$dest"
         echo "  -> ${dest}"
     done < <(find "${run_dir}" -name "*.csv" ! -name "_init_log.csv" -print0 2>/dev/null)

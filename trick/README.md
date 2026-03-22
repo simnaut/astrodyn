@@ -46,13 +46,14 @@ CSV files appear in `test_data/`:
 
 ```
 test_data/
-  dyncomp_run2_state.csv         # ISS 8-hour trajectory (from log_state_ASCII.csv)
-  dyncomp_run2_rnp.csv           # Earth RNP data (from log_Earth_RNP_ascii.csv)
+  dyncomp_run2_state.csv         # ISS 8-hour trajectory
+  dyncomp_run2_Earth_RNP.csv     # Earth RNP data
   ...
 ```
 
-The Tier 3 test (`tier3_jeod_trajectory.rs`) expects `dyncomp_run2_state.csv`. The
-generate script copies JEOD's `log_state_ASCII.csv` to this name.
+The generate script canonicalizes JEOD output filenames by stripping the `log_` prefix
+and `_ASCII` suffix (e.g., `log_state_ASCII.csv` becomes `state.csv`, prepended with
+the sim label). The Tier 3 test expects `dyncomp_run2_state.csv`.
 
 These are consumed by `cargo test` when the `test_data/` directory is present.
 

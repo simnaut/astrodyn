@@ -34,10 +34,12 @@ struct JeodStateRecord {
 }
 
 fn load_jeod_trajectory(path: &Path) -> Vec<JeodStateRecord> {
-    let content = match std::fs::read_to_string(path) {
-        Ok(c) => c,
-        Err(_) => return Vec::new(),
-    };
+    let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
+        panic!(
+            "Failed to read JEOD trajectory CSV from {}: {e}",
+            path.display()
+        )
+    });
 
     let mut records = Vec::new();
     for (i, line) in content.lines().enumerate() {
