@@ -5,9 +5,13 @@
 #   docker run --rm -v $(pwd)/test_data:/output jeod-trick
 #
 # The build context is the parent directory (..) so that both trick/ and jeod/
-# are accessible via COPY.
+# are accessible via COPY. BEVY_JEOD_DIR defaults to "bevy_jeod" but can be
+# overridden if the repo was cloned under a different name:
+#   docker build -f trick/Dockerfile --build-arg BEVY_JEOD_DIR=my_clone -t jeod-trick ..
 
 FROM rockylinux/rockylinux:9
+
+ARG BEVY_JEOD_DIR=bevy_jeod
 
 # ── System dependencies (from Trick's test_linux.yml Rocky 9 config) ──
 RUN dnf -y install epel-release && \
@@ -43,7 +47,7 @@ RUN rm -rf build build_unit_test lib_jeod_unit_test && \
     make -j$(nproc)
 
 # ── Copy the reference data generation script ──
-COPY bevy_jeod/trick/generate_references.sh /generate_references.sh
+COPY ${BEVY_JEOD_DIR}/trick/generate_references.sh /generate_references.sh
 RUN chmod +x /generate_references.sh
 
 # ── Output volume ──

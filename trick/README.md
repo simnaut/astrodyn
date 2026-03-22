@@ -64,8 +64,7 @@ To get a shell inside the container for interactive sim runs:
 docker run --rm -it -v $(pwd)/test_data:/output jeod-trick bash
 cd /jeod/verif/SIM_dyncomp
 trick-CP                                    # compile
-cd SET_test/RUN_2
-../../S_main*.exe input.py                   # run
+./S_main*.exe SET_test/RUN_2/input.py        # run from SIM root
 ```
 
 ## Rocky 9 Package List

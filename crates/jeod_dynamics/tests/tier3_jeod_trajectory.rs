@@ -86,7 +86,7 @@ fn tier3_cross_validate_against_jeod_dyncomp() {
     let jeod_trajectory = load_jeod_trajectory(&csv_path);
     assert!(
         jeod_trajectory.len() > 100,
-        "Expected 400+ records, got {}",
+        "Expected more than 100 records, got {}",
         jeod_trajectory.len()
     );
 

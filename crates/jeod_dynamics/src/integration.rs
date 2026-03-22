@@ -81,7 +81,8 @@ mod tests {
         let pos_error = (state.position.x - exact_pos).abs();
         let vel_error = (state.velocity.x - exact_vel).abs();
 
-        // RK4 with dt=0.01 over ~628 steps: global error is O(dt^4 * N) ~ 1e-6.
+        // RK4 with dt=0.01 over ~628 steps. The O(h^4) local truncation error
+        // accumulates to well below 1e-8 for this smooth oscillator.
         assert!(
             pos_error < 1e-8,
             "Position error {pos_error} exceeds 1e-8"
