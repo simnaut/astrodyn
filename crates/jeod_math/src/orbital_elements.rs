@@ -264,8 +264,8 @@ impl OrbitalElements {
         let ci = self.inclination.cos();
         let si = self.inclination.sin();
 
-        // Rotation matrix columns (PQW -> IJK)
-        // This is R3(-Omega) * R1(-i) * R3(-omega), transposed to column form
+        // Rotation matrix rows (PQW -> IJK)
+        // This is R3(-Omega) * R1(-i) * R3(-omega) built row-wise
         let row0 = DVec3::new(
             co * cw - so * sw * ci,
             -co * sw - so * cw * ci,
@@ -736,16 +736,38 @@ mod tests {
 
     #[test]
     fn true_parabolic_mean_motion_formula() {
-        // Directly test the true-parabolic branch formula (energy.abs() < 1e-30).
-        // Construct a state where energy is exactly zero by crafting position/velocity
-        // with compensating floating-point arithmetic, then verify via the formula.
+        // Exercise the true-parabolic branch (energy.abs() < 1e-30) in from_cartesian.
+        // A parabolic orbit has v = sqrt(2*mu/r), giving energy = v^2/2 - mu/r = 0.
         //
-        // The JEOD formula for parabolic mean motion is: n = 2*sqrt(mu/p^3)
-        let p = 14000.0; // km
-        let expected_n = 2.0 * (MU_EARTH / (p * p * p)).sqrt();
+        // With f64 arithmetic, v^2/2 - mu/r may not be exactly zero. We choose r
+        // and mu such that the floating-point energy lands below the 1e-30 threshold.
+        // Using a small mu and large r keeps the energy magnitude tiny.
+        let mu: f64 = 1.0; // unit gravitational parameter
+        let r: f64 = 1.0e6; // large radius to keep energy small
+        let v = (2.0 * mu / r).sqrt(); // parabolic escape speed
+        let pos = DVec3::new(r, 0.0, 0.0);
+        let vel = DVec3::new(0.0, v, 0.0);
+
+        // Verify energy is within the true-parabolic threshold
+        let energy = v * v / 2.0 - mu / r;
         assert!(
-            expected_n > 0.0 && expected_n.is_finite(),
-            "Expected parabolic n = {:.6e}",
+            energy.abs() < 1e-30,
+            "Test setup: energy {:.6e} must be < 1e-30 to hit the parabolic branch",
+            energy,
+        );
+
+        let oe = OrbitalElements::from_cartesian(mu, pos, vel).unwrap();
+
+        // Verify we hit the parabolic branch
+        assert_eq!(oe.semi_major_axis, f64::INFINITY, "Parabolic a should be INFINITY");
+
+        // The JEOD formula: n = 2*sqrt(mu/p^3)
+        let p = oe.semiparam;
+        let expected_n = 2.0 * (mu / (p * p * p)).sqrt();
+        assert!(
+            (oe.mean_motion - expected_n).abs() / expected_n < 1e-12,
+            "mean_motion mismatch: got {:.6e}, expected {:.6e}",
+            oe.mean_motion,
             expected_n,
         );
     }

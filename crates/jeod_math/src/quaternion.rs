@@ -83,6 +83,7 @@ impl JeodQuat {
     /// close to unit length.  Always forces scalar >= 0.
     pub fn normalize(&mut self) {
         let qmagsq = self.norm_sq();
+        debug_assert!(qmagsq > 0.0, "cannot normalize a zero quaternion");
 
         let fact = if (1.0 - qmagsq).abs() < NORM_LIMIT {
             // Near-unit: first-order Padé approximant  2 / (1 + ||q||²)
