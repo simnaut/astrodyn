@@ -126,14 +126,48 @@ plus optional interaction components (AerodynamicForce, RadiationForce, GravityT
 
 ```bash
 cargo build --workspace
-cargo test --workspace                  # all tests (needs JEOD_PATH for Tier 2)
+cargo test --workspace                  # all tests (needs JEOD_PATH for Tier 2+)
 JEOD_PATH=../jeod cargo test            # explicit path
 cargo test -p jeod_math                 # single crate
 cargo test -p jeod_gravity -- verif     # gravity verification tests only
+cargo test -p jeod_dynamics --test tier3_jeod_trajectory  # Tier 3 (needs test_data/)
 ```
+
+## Generating Tier 3 Reference Data (Docker)
+
+JEOD verification sims run inside a Rocky 9 container with Trick 25 + JEOD 5.4.
+Trick is cloned at `../trick`, JEOD at `../jeod`.
+
+```bash
+# Build container (context is parent dir so trick/ and jeod/ are accessible)
+docker build -f trick/Dockerfile -t jeod-trick ..
+
+# Generate reference CSVs into test_data/
+mkdir -p test_data
+docker run --rm -v $(pwd)/test_data:/output jeod-trick
+```
+
+The container runs sims from the SIM root directory (not from SET_test/RUN_*/) because
+JEOD's `input.py` files use paths relative to the SIM root. Output CSVs land in
+`test_data/` and are consumed by `tier3_jeod_trajectory.rs`.
+
+**Current results (Phase 1):** 0.4 m position error over 8 hours vs JEOD SIM_dyncomp
+RUN_2 (ISS orbit, spherical gravity, 28800s, 481 data points at 60s intervals).
+
+CSV column layout for `log_state_ASCII.csv`:
+- Column 0: `sys.exec.out.time {s}`
+- Columns 1,8,15: `composite_body.state.trans.position[0,1,2] {m}`
+- Columns 2,9,16: `composite_body.state.trans.velocity[0,1,2] {m/s}`
+- (interleaved with rotation matrix, quaternion, and angular velocity columns)
+
+Test data files are gitignored. Tests skip gracefully when `test_data/` is absent.
 
 ## Common Pitfalls
 
+- **Trick sim working directory**: JEOD sims must be run from the SIM root directory
+  (e.g., `verif/SIM_dyncomp/`), not from `SET_test/RUN_*/`. The `input.py` files use
+  paths like `SET_test/common_input.py` and `Log_data/log_suite.py` relative to the SIM
+  root. Running from the wrong directory produces no data output.
 - JEOD's `RefFrameState` stores position/velocity **relative to parent frame**, not global.
   Don't confuse with absolute/inertial coordinates.
 - JEOD uses **left-transformation** quaternions (`r' = q r q*`). Many references use
