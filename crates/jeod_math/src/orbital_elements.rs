@@ -66,7 +66,7 @@ impl OrbitalElements {
     /// in an inertial frame.
     ///
     /// # Arguments
-    /// * `mu`  - gravitational parameter  (km^3/s^2 or compatible units)
+    /// * `mu`  - gravitational parameter (units consistent with pos/vel, e.g. m^3/s^2)
     /// * `pos` - position vector
     /// * `vel` - velocity vector
     pub fn from_cartesian(

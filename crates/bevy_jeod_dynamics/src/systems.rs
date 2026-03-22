@@ -63,7 +63,7 @@ pub fn integration_system(
                 for ctrl in &controls.0.controls {
                     if let Ok(source) = sources.get(ctrl.source_id) {
                         accel +=
-                            jeod_gravity::compute_point_mass_gravity(source.0.mu, s.position).accel;
+                            jeod_gravity::compute_gravity(&source.0, s.position).accel;
                     }
                 }
                 accel

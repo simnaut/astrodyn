@@ -60,16 +60,10 @@ fn validate_iss_orbital_elements_to_cartesian() {
     let a = init.semi_major_axis;
     let n = (MU_EARTH / (a * a * a)).sqrt();
 
-    // time_periapsis is the time of periapsis passage (seconds).
-    // In JEOD's convention for SmaEccIncAscnodeArgperTimeperi, this is the
-    // time from epoch to periapsis. The mean anomaly at epoch is M = -n * t_peri
-    // (negative because periapsis is in the future, or M = n * t if t_peri
-    // represents time since last periapsis).
-    // Actually, JEOD treats time_periapsis as the time from epoch to periapsis,
-    // so M = 2*pi - n * t_peri (mod 2*pi), i.e., the spacecraft has already
-    // passed periapsis by (period - t_peri).
+    // time_periapsis is the elapsed time since periapsis passage (seconds).
+    // Mean anomaly is simply M = n * t_peri (radians).
     let t_peri = init.time_periapsis.expect("ISS set01 should have time_periapsis");
-    let mean_anomaly = (std::f64::consts::TAU - n * t_peri) % std::f64::consts::TAU;
+    let mean_anomaly = n * t_peri;
 
     let mut oe = OrbitalElements::default();
     oe.semi_major_axis = init.semi_major_axis;

@@ -342,39 +342,61 @@ fn tier3_cross_validate_gravity_at_jeod_positions() {
 
     let mu_earth = 3.986004418e14;
 
+    let mut full_count = 0;
+    let mut perturb_count = 0;
+
     for case in &cases {
-        // Compute our point-mass gravity at the same position
         let our_result = jeod_gravity::compute_point_mass_gravity(mu_earth, case.position);
+        let point_mass_mag = our_result.accel.length();
 
-        // The JEOD data uses degree-20 spherical harmonics, so our point-mass
-        // won't match exactly. But they should be the same order of magnitude
-        // and the dominant term should agree.
-        let jeod_accel_mag = case.acceleration.length();
-        let our_accel_mag = our_result.accel.length();
+        if case.perturb_only {
+            // perturbOnly=1: JEOD acceleration is harmonics perturbation only
+            // (total minus point-mass). Perturbation should be small relative
+            // to point-mass (J2 ≈ 0.1% for LEO).
+            let perturbation_mag = case.acceleration.length();
+            let ratio = perturbation_mag / point_mass_mag;
+            assert!(
+                ratio < 0.01,
+                "Case {}: perturbation {:.6e} is > 1% of point-mass {:.6e}",
+                case.case_num, perturbation_mag, point_mass_mag
+            );
+            perturb_count += 1;
+        } else {
+            // perturbOnly=0: JEOD acceleration is TOTAL gravity (point-mass +
+            // harmonics). Our point-mass should be close — within ~1% for LEO,
+            // larger for high-altitude cases where harmonics contribute more
+            // relative error.
+            let jeod_mag = case.acceleration.length();
+            let relative_diff = ((point_mass_mag - jeod_mag) / jeod_mag).abs();
+            assert!(
+                relative_diff < 0.01,
+                "Case {}: point-mass {:.6e} vs JEOD total {:.6e}, diff {:.2e}",
+                case.case_num, point_mass_mag, jeod_mag, relative_diff
+            );
 
-        // Point-mass should be within ~0.2% of spherical harmonics for LEO
-        // (J2 perturbation is ~1e-3 of total gravity)
-        let relative_diff = ((our_accel_mag - jeod_accel_mag) / jeod_accel_mag).abs();
+            // Direction should agree (both point roughly toward center).
+            let our_dir = our_result.accel.normalize();
+            let jeod_dir = case.acceleration.normalize();
+            let cos_angle = our_dir.dot(jeod_dir);
+            assert!(
+                cos_angle > 0.999,
+                "Case {}: direction mismatch, cos(angle) = {:.6}",
+                case.case_num, cos_angle
+            );
+            full_count += 1;
+        }
 
+        // In all cases, point-mass should be anti-radial.
+        let cos_radial = case.position.normalize().dot(our_result.accel.normalize());
         assert!(
-            relative_diff < 0.01, // 1% tolerance (J2 is ~0.1%)
-            "Case {}: point-mass accel {:.6e} vs JEOD {:.6e}, relative diff {:.2e}",
-            case.case_num, our_accel_mag, jeod_accel_mag, relative_diff
-        );
-
-        // Direction should agree closely (point-mass and harmonics point roughly
-        // the same way — toward center of Earth)
-        let our_dir = our_result.accel.normalize();
-        let jeod_dir = case.acceleration.normalize();
-        let cos_angle = our_dir.dot(jeod_dir);
-
-        assert!(
-            cos_angle > 0.999,
-            "Case {}: gravity direction mismatch, cos(angle) = {:.6}",
-            case.case_num, cos_angle
+            cos_radial < -0.999,
+            "Case {}: point-mass not anti-radial, cos = {:.6}",
+            case.case_num, cos_radial
         );
     }
 
-    println!("Cross-validated point-mass against {} JEOD spherical harmonics cases", cases.len());
-    println!("All within 1% magnitude and 0.1 deg direction");
+    println!(
+        "Cross-validated point-mass against {} JEOD positions ({} full, {} perturbation-only)",
+        cases.len(), full_count, perturb_count
+    );
 }
