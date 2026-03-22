@@ -1,8 +1,8 @@
 //! Validate gravity computations against JEOD's grav_geospherical test data.
 //!
-//! Requires the JEOD source tree (via JEOD_PATH env var or at `../jeod` as
-//! sibling of the workspace root). Gated behind the `jeod-validation` feature
-//! (default ON). Disable with `--no-default-features` if JEOD is unavailable.
+//! Requires the JEOD source tree (via `JEOD_HOME` or `JEOD_PATH` env var).
+//! Gated behind the `jeod-validation` feature (default ON).
+//! Disable with `--no-default-features` if JEOD is unavailable.
 //!
 //! The 40 cases in verif_out.txt use degree=20, order=20 spherical harmonics.
 //! 33 cases have perturbOnly=0 (total gravity), 7 have perturbOnly=1

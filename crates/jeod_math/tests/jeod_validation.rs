@@ -1,8 +1,8 @@
 //! Validate orbital elements and quaternion math against JEOD verification data.
 //!
-//! Requires the JEOD source tree (via JEOD_PATH env var or at `../jeod` as
-//! sibling of the workspace root). Gated behind the `jeod-validation` feature
-//! (default ON). Disable with `--no-default-features` if JEOD is unavailable.
+//! Requires the JEOD source tree (via `JEOD_HOME` or `JEOD_PATH` env var).
+//! Gated behind the `jeod-validation` feature (default ON).
+//! Disable with `--no-default-features` if JEOD is unavailable.
 #![cfg(feature = "jeod-validation")]
 
 use jeod_test_data::{euler_test, orbital_data, orbital_init, reference_state, jeod_path};
