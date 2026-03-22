@@ -1,0 +1,1193 @@
+# bevy_jeod: Reimplementation Strategy
+
+Reimplementing [NASA JEOD](https://github.com/nasa/jeod) (JSC Engineering Orbital Dynamics)
+in Rust, using the [Bevy](https://bevyengine.org/) game engine's Entity Component System
+as the simulation framework — replacing NASA's Trick.
+
+## Table of Contents
+
+- [1. Project Overview](#1-project-overview)
+- [2. ECS Architecture Mapping](#2-ecs-architecture-mapping)
+- [3. Component Design](#3-component-design)
+- [4. System Pipeline](#4-system-pipeline)
+- [5. Plugin Architecture](#5-plugin-architecture)
+- [6. Verification Strategy](#6-verification-strategy)
+- [7. JEOD Data Ingestion](#7-jeod-data-ingestion)
+- [8. Implementation Phases](#8-implementation-phases)
+- [9. Key Architectural Decisions](#9-key-architectural-decisions)
+- [10. Risks and Mitigations](#10-risks-and-mitigations)
+
+---
+
+## 1. Project Overview
+
+### What is JEOD?
+
+JEOD 5.4 is a C++ orbital dynamics library developed at NASA JSC. It models:
+
+- **Dynamics**: 6-DOF rigid body propagation, multi-body attachment/detachment, mass trees
+- **Environment**: Spherical harmonics gravity (GGM05C, GRAIL150, MRO110B2), JPL DE4xx
+  ephemerides, MET atmosphere, time scales (TAI/UTC/UT1/TDB/TT/GMST/MET)
+- **Interactions**: Aerodynamic drag, solar radiation pressure, gravity gradient torque,
+  contact mechanics
+- **Utilities**: Reference frame trees, integration methods (RK4, RKF45, Gauss-Jackson,
+  LSODE), quaternion/orbital-element math
+
+JEOD runs inside NASA's **Trick** simulation framework, which provides job scheduling, data
+recording, checkpoint/restart, and Python-based configuration.
+
+### What are we building?
+
+A Rust reimplementation where **Bevy's ECS replaces Trick** as the simulation framework.
+Bevy provides:
+
+- **Entities** in place of Trick simulation objects
+- **Components** in place of C++ class member data
+- **Systems** in place of Trick scheduled jobs
+- **Resources** in place of global manager state
+- **Schedules** in place of Trick's job ordering
+- **Plugins** in place of Trick's S_modules
+
+### Portability Goal
+
+While Bevy is the primary executor, **the physics and math must not depend on Bevy**.
+The codebase is split into two layers:
+
+- **`jeod_*` crates** — Pure Rust libraries containing all physics, math, algorithms,
+  data models, and domain types. Zero Bevy dependency. These crates define plain structs,
+  pure functions, and traits. They are usable from any Rust ECS (hecs, legion, shipyard,
+  flecs), a custom simulation loop, a WASM module, or no ECS at all.
+
+- **`bevy_jeod_*` crates** — Thin Bevy integration layers. These add `#[derive(Component)]`
+  and `#[derive(Resource)]` to core types (via newtype wrappers or feature-gated derives),
+  define Bevy systems that call into `jeod_*` functions, and register plugins.
+
+This separation means:
+
+1. **Portability**: Swap Bevy for another ECS by writing a new thin glue layer. The
+   physics code doesn't change.
+2. **Testability**: Core algorithms are tested as pure functions — no need to spin up a
+   Bevy `App` for unit tests.
+3. **Embeddability**: `jeod_*` crates can be used in non-ECS contexts (batch trajectory
+   computation, optimization loops, Monte Carlo analysis) without pulling in Bevy.
+4. **Stability**: Physics crates are insulated from Bevy's rapid release cycle and
+   breaking API changes.
+
+### Why Bevy?
+
+| Concern | Trick | Bevy |
+|---------|-------|------|
+| Language | C++/Python | Rust (memory safety, no UB) |
+| Architecture | OOP with manager objects | Data-oriented ECS |
+| Parallelism | Manual thread management | Automatic system parallelism |
+| Ecosystem | NASA-internal | Open source, active community |
+| Visualization | External tools | Built-in rendering, egui integration |
+| Distribution | Complex build chain | `cargo build` |
+
+---
+
+## 2. ECS Architecture Mapping
+
+### The Core Translation
+
+JEOD is built on deep OOP hierarchies with manager god-objects. The translation is not
+mechanical — it requires rethinking how state flows through the simulation.
+
+```
+JEOD (OOP)                          Bevy (ECS)
+─────────────────────────────────   ─────────────────────────────────
+DynBody class (1200 lines)      →   ~10 focused Components on an Entity
+DynManager.gravitation()         →   gravity_computation_system
+GravityManager (singleton)       →   Resource + System
+TimeManager (singleton)          →   Resource + System
+RefFrame tree (pointer graph)    →   Entity hierarchy (Parent/Children)
+BodyAction subclasses            →   Events or Commands
+Virtual dispatch (GravitySource) →   Trait objects or enum dispatch
+Method call ordering             →   System ordering constraints
+```
+
+### Pattern-by-Pattern Mapping
+
+**Manager Pattern → Resource + Systems**
+
+JEOD's `DynManager`, `GravityManager`, `TimeManager`, and `EphemerisManager` are
+singletons that coordinate subsystems. In ECS:
+
+- Manager **state** becomes a `Resource` (e.g., `SimulationTime`, `EphemerisData`)
+- Manager **behavior** becomes one or more `System`s
+- Manager **coordination** becomes system ordering via `configure_sets()`
+
+**Class Hierarchy → Component Composition**
+
+JEOD: `DynBody : RefFrameOwner, IntegrableObject` — deep inheritance tree.
+ECS: An entity gets the components it needs. No inheritance. A "DynBody" is just an entity
+that has `TranslationalState` + `RotationalState` + `MassProperties` + etc.
+
+**Tree Structures → Bevy's Entity Hierarchy**
+
+JEOD's `RefFrame` tree and `MassBody` tree use raw pointers. Bevy has built-in
+`Parent`/`Children` components that give us the same tree structure with safe entity
+references.
+
+**Virtual Dispatch → Enum or Trait Objects**
+
+JEOD uses virtual base classes (`GravitySource`, `Atmosphere`, etc.) for extensibility.
+In Rust: use an enum for the closed set of known models, or `Box<dyn Trait>` for
+user-extensible models. Prefer enums where the model set is fixed (gravity, atmosphere).
+
+**Core vs. Glue Separation**
+
+All of the above mappings happen in two layers:
+
+```
+jeod_dynamics        (plain Rust structs, pure functions)
+    ↕ used by
+bevy_jeod_dynamics   (derives Component/Resource, defines systems, registers plugin)
+```
+
+The `jeod_*` crate defines the data types and algorithms. The `bevy_jeod_*` crate wraps
+them for Bevy. Switching to another ECS means writing new `{ecs}_jeod_*` glue crates —
+the physics code is untouched.
+
+---
+
+## 3. Component Design
+
+### 3.1 Core vs. Bevy Split
+
+Every data type exists first as a **plain Rust struct** in a `jeod_*` crate, then gets
+wrapped or re-derived as a Bevy component in the `bevy_jeod_*` crate.
+
+```rust
+// ── jeod_dynamics/src/state.rs (pure Rust, no Bevy) ─────────────
+/// Translational state in the integration frame.
+pub struct TranslationalState {
+    pub position: DVec3,    // m
+    pub velocity: DVec3,    // m/s
+}
+
+// ── bevy_jeod_dynamics/src/components.rs (Bevy glue) ────────────
+use bevy::prelude::*;
+use jeod_dynamics::TranslationalState;
+
+// Option A: newtype wrapper
+#[derive(Component, Deref, DerefMut)]
+pub struct TranslationalStateComponent(pub TranslationalState);
+
+// Option B: feature-gated derive (if we control the core crate)
+//   #[derive(Component)]  // behind #[cfg(feature = "bevy")]
+//   pub struct TranslationalState { ... }
+```
+
+Option B (feature-gated derive) is preferred when practical — it avoids wrapper
+boilerplate. Option A is the fallback when the core type can't carry Bevy derives
+(e.g., when it contains non-`Reflect` fields).
+
+### 3.2 Core State Types
+
+These are the ECS equivalent of `DynBody`'s member data, decomposed by access pattern —
+components that are read/written together by the same systems stay together.
+
+The structs below live in `jeod_dynamics` (pure Rust). In the Bevy layer they gain
+`#[derive(Component)]`.
+
+```rust
+// ── jeod_dynamics/src/state.rs ──────────────────────────────────
+// All types are plain Rust. In the Bevy layer they gain #[derive(Component)].
+
+/// Translational state in the integration frame.
+pub struct TranslationalState {
+    pub position: DVec3,    // m
+    pub velocity: DVec3,    // m/s
+}
+
+/// Rotational state (body orientation and angular velocity).
+pub struct RotationalState {
+    pub quaternion: DQuat,       // left transformation, parent-to-body
+    pub ang_vel_body: DVec3,     // rad/s, expressed in body frame
+}
+
+/// Rigid body mass properties.
+pub struct MassProperties {
+    pub mass: f64,                // kg
+    pub inertia: DMat3,           // kg*m^2, in body frame
+    pub inertia_inverse: DMat3,   // precomputed I^-1
+    pub center_of_mass: DVec3,    // m, in structural frame
+}
+
+/// Dynamics configuration flags.
+pub struct DynamicsConfig {
+    pub translational: bool,      // integrate translation?
+    pub rotational: bool,         // integrate rotation?
+    pub three_dof: bool,          // translation-only mode?
+}
+```
+
+Note: `IntegrationFrameRef(Entity)` only exists in the Bevy layer since `Entity` is a
+Bevy type. In a non-ECS context, the integration frame is identified by name or index.
+
+### 3.3 Force/Torque Types
+
+Each interaction system writes its own force output. The force collection system reads all
+of them and produces `TotalForce`. All types live in `jeod_dynamics` (pure Rust).
+
+```rust
+// ── jeod_dynamics/src/forces.rs ─────────────────────────────────
+
+/// Gravitational acceleration and gradient at the body's position.
+pub struct GravityAcceleration {
+    pub accel: DVec3,       // m/s^2, in integration frame
+    pub gradient: DMat3,    // 1/s^2, tidal gradient tensor
+    pub potential: f64,     // m^2/s^2
+}
+
+/// Aerodynamic drag force and torque.
+pub struct AerodynamicForce {
+    pub force: DVec3,       // N, in body frame
+    pub torque: DVec3,      // N*m, in body frame
+}
+
+/// Solar radiation pressure force and torque.
+pub struct RadiationForce {
+    pub force: DVec3,       // N, in body frame
+    pub torque: DVec3,      // N*m, in body frame
+}
+
+/// Gravity gradient torque on an extended body.
+pub struct GravityTorque {
+    pub torque: DVec3,      // N*m, in body frame
+}
+
+/// Sum of all forces and torques acting on the body.
+pub struct TotalForce {
+    pub force: DVec3,       // N, in integration frame
+    pub torque: DVec3,      // N*m, in body frame
+}
+
+/// Computed accelerations (output of F=ma).
+pub struct FrameDerivatives {
+    pub trans_accel: DVec3,  // m/s^2
+    pub rot_accel: DVec3,    // rad/s^2
+}
+```
+
+### 3.4 Reference Frame Types
+
+JEOD's `RefFrame` tree is the backbone of all coordinate transformations. The state
+types live in `jeod_frames` (pure Rust). The tree structure is ECS-specific.
+
+```rust
+// ── jeod_frames/src/state.rs (pure Rust) ────────────────────────
+
+/// State of a reference frame relative to its parent frame.
+/// Mirrors JEOD's RefFrameState = RefFrameTrans + RefFrameRot.
+pub struct RefFrameState {
+    pub trans: RefFrameTrans,
+    pub rot: RefFrameRot,
+}
+
+pub struct RefFrameTrans {
+    pub position: DVec3,    // m, in parent frame
+    pub velocity: DVec3,    // m/s, in parent frame
+}
+
+pub struct RefFrameRot {
+    pub q_parent_this: DQuat,       // left transformation quaternion
+    pub t_parent_this: DMat3,       // transformation matrix (redundant with quat)
+    pub ang_vel_this: DVec3,        // rad/s, in this frame
+}
+
+/// Frame identity and classification.
+pub struct RefFrameInfo {
+    pub name: String,               // "Earth.inertial", "ISS.structure", etc.
+    pub kind: RefFrameKind,
+}
+
+pub enum RefFrameKind {
+    Inertial,       // non-rotating, valid as integration frame
+    PlanetFixed,    // rotating with planet
+    Body,           // attached to a dynamic body
+}
+```
+
+```rust
+// ── bevy_jeod_frames/src/components.rs (Bevy glue) ──────────────
+
+// The frame tree uses Bevy's built-in Parent/Children hierarchy.
+// Marker components identify frame types for queries.
+
+// Frame tree example:
+//
+// Sun.inertial (root)
+//   +-- Earth.inertial [EphemerisFrame]
+//   |     +-- Earth.pfix [PlanetFixedFrame]
+//   |     +-- ISS.composite_body [BodyFrame(iss_entity)]
+//   |     +-- ISS.structure [BodyFrame(iss_entity)]
+//   |     +-- ISS.core_body [BodyFrame(iss_entity)]
+//   +-- Moon.inertial [EphemerisFrame]
+//   +-- Mars.inertial [EphemerisFrame]
+```
+
+In a non-Bevy ECS, the tree would use that ECS's hierarchy mechanism (e.g., `hecs`
+parent/child relations, or a standalone arena-based tree from `jeod_frames`).
+
+### 3.5 Planet Types
+
+Planets and vehicles share the same state types (TranslationalState, RotationalState) —
+differentiated by marker components in the ECS layer.
+
+```rust
+// ── jeod_planet/src/lib.rs (pure Rust) ──────────────────────────
+
+/// Planetary shape parameters (reference ellipsoid).
+pub struct PlanetShape {
+    pub r_eq: f64,          // equatorial radius, m
+    pub r_pol: f64,         // polar radius, m
+    pub flattening: f64,    // flattening coefficient (1/298.257 for Earth)
+}
+
+// ── jeod_gravity/src/source.rs (pure Rust) ──────────────────────
+
+/// Gravity source definition.
+pub struct GravitySource {
+    pub mu: f64,            // gravitational parameter, m^3/s^2
+    pub model: GravityModel,
+}
+
+pub enum GravityModel {
+    PointMass,
+    SphericalHarmonics {
+        degree: usize,
+        order: usize,
+        radius: f64,                   // reference radius, m
+        cnm: Vec<Vec<f64>>,            // cosine coefficients [n][m]
+        snm: Vec<Vec<f64>>,            // sine coefficients [n][m]
+    },
+}
+
+// ── jeod_gravity/src/compute.rs (pure Rust) ─────────────────────
+
+/// Pure function: compute gravity acceleration at a position.
+/// No ECS dependency — callable from any context.
+pub fn compute_gravity(
+    source: &GravitySource,
+    position: DVec3,         // in source-centered frame
+) -> GravityAcceleration { ... }
+```
+
+### 3.6 Gravity Controls (Vehicle-to-Planet Link)
+
+Each vehicle specifies which planets affect it and how. The core type lives in
+`jeod_gravity` and uses a generic identifier for the source (string name or index).
+The Bevy layer maps this to `Entity`.
+
+```rust
+// ── jeod_gravity/src/controls.rs (pure Rust) ────────────────────
+
+/// Per-vehicle specification of gravitational interactions.
+pub struct GravityControls<SourceId = String> {
+    pub controls: Vec<GravityControl<SourceId>>,
+}
+
+pub struct GravityControl<SourceId = String> {
+    pub source_id: SourceId,       // planet identifier (generic)
+    pub spherical_only: bool,      // point-mass vs full harmonics
+    pub max_degree: Option<usize>, // truncation override
+    pub max_order: Option<usize>,
+    pub compute_gradient: bool,    // tidal gradient needed?
+}
+
+// ── bevy_jeod_gravity/src/components.rs (Bevy glue) ─────────────
+
+/// In Bevy, SourceId = Entity for efficient queries.
+pub type BevyGravityControls = GravityControls<Entity>;
+```
+
+### 3.7 Derived State Types
+
+Optional data that computes secondary state representations. The **computation functions**
+live in `jeod_math` (pure Rust). The ECS layer attaches these as components and runs
+systems that call the pure functions.
+
+```rust
+// ── jeod_math/src/orbital_elements.rs (pure Rust) ───────────────
+
+pub struct OrbitalElements {
+    pub semi_major_axis: f64,      // m
+    pub eccentricity: f64,
+    pub inclination: f64,          // rad
+    pub raan: f64,                 // rad, right ascension of ascending node
+    pub arg_periapsis: f64,        // rad
+    pub true_anomaly: f64,         // rad
+    pub mean_anomaly: f64,         // rad
+    pub mean_motion: f64,          // rad/s
+    pub orbital_energy: f64,       // m^2/s^2
+    pub ang_momentum: f64,         // m^2/s
+}
+
+/// Pure function — no ECS dependency.
+pub fn cartesian_to_elements(pos: DVec3, vel: DVec3, mu: f64) -> OrbitalElements { ... }
+pub fn elements_to_cartesian(elems: &OrbitalElements, mu: f64) -> (DVec3, DVec3) { ... }
+
+// ── jeod_math/src/orientation.rs (pure Rust) ────────────────────
+
+pub struct EulerAngles {
+    pub sequence: EulerSequence,
+    pub ref_body_angles: DVec3,        // rad
+    pub body_ref_angles: DVec3,        // rad
+}
+
+pub fn decompose_euler(matrix: &DMat3, seq: EulerSequence) -> EulerAngles { ... }
+
+// ── jeod_math/src/planet_fixed.rs (pure Rust) ───────────────────
+
+pub struct PlanetFixedPosition {
+    pub latitude: f64,       // rad, geodetic
+    pub longitude: f64,      // rad
+    pub altitude: f64,       // m, above ellipsoid
+}
+
+pub fn cartesian_to_geodetic(pos: DVec3, shape: &PlanetShape) -> PlanetFixedPosition { ... }
+```
+
+### 3.8 Bevy Bundles
+
+Bundles group components for convenient entity spawning. These exist only in the
+`bevy_jeod_*` layer.
+
+```rust
+// ── bevy_jeod_dynamics/src/bundles.rs (Bevy-only) ───────────────
+
+#[derive(Bundle)]
+pub struct DynBodyBundle {
+    pub name: Name,
+    pub trans_state: TranslationalStateComponent,
+    pub rot_state: RotationalStateComponent,
+    pub mass: MassPropertiesComponent,
+    pub dynamics_config: DynamicsConfigComponent,
+    pub integ_frame: IntegrationFrameRef,   // Bevy Entity reference
+    pub gravity_accel: GravityAccelerationComponent,
+    pub gravity_controls: BevyGravityControls,
+    pub total_force: TotalForceComponent,
+    pub derivs: FrameDerivativesComponent,
+}
+```
+
+---
+
+## 4. System Pipeline
+
+### Execution Schedule
+
+JEOD's integration loop translates to Bevy's `FixedUpdate` schedule with ordered system
+sets. The ordering matches JEOD's `DynManager` sequencing exactly.
+
+```
+FixedUpdate
+ |
+ |-- TimeUpdateSet
+ |     '-- time_advance_system            // advance TAI, compute UTC/UT1/TDB/GMST
+ |
+ |-- EphemerisUpdateSet                   // .after(TimeUpdateSet)
+ |     |-- ephemeris_update_system        // update planet positions from DE4xx
+ |     '-- planet_rotation_system         // update planet-fixed frame rotations (RNP)
+ |
+ |-- EnvironmentSet                       // .after(EphemerisUpdateSet)
+ |     |-- gravity_computation_system     // for each body: spherical harmonics accel
+ |     '-- atmosphere_update_system       // compute density at body positions
+ |
+ |-- InteractionSet                       // .after(EnvironmentSet)
+ |     |-- aerodynamic_force_system       // F_drag = 0.5 * rho * v^2 * Cd * A
+ |     |-- radiation_pressure_system      // solar radiation pressure
+ |     '-- gravity_torque_system          // gravity gradient torque
+ |
+ |-- ForceCollectionSet                   // .after(InteractionSet)
+ |     '-- force_collection_system        // sum all force components -> TotalForce
+ |
+ |-- IntegrationSet                       // .after(ForceCollectionSet)
+ |     |-- integration_system             // propagate state via RK4/GJ/etc.
+ |     '-- frame_propagation_system       // update attached body & child frames
+ |
+ '-- DerivedStateSet                      // .after(IntegrationSet)
+       |-- orbital_elements_system        // Cartesian -> Keplerian
+       |-- euler_angles_system            // quaternion -> Euler angles
+       |-- planet_fixed_system            // inertial -> geodetic coords
+       '-- lvlh_system                    // compute LVLH frame state
+```
+
+### System Ordering in Code
+
+```rust
+app.configure_sets(FixedUpdate, (
+    TimeUpdateSet,
+    EphemerisUpdateSet.after(TimeUpdateSet),
+    EnvironmentSet.after(EphemerisUpdateSet),
+    InteractionSet.after(EnvironmentSet),
+    ForceCollectionSet.after(InteractionSet),
+    IntegrationSet.after(ForceCollectionSet),
+    DerivedStateSet.after(IntegrationSet),
+));
+```
+
+### Multi-Stage Integration
+
+JEOD uses multi-stage integrators (e.g., RK4 has 4 stages per timestep, each requiring a
+fresh force evaluation). This is handled with a resource tracking stage state:
+
+```rust
+#[derive(Resource)]
+pub struct IntegrationState {
+    pub method: IntegrationMethod,
+    pub current_stage: usize,
+    pub total_stages: usize,
+    pub dt: f64,
+}
+
+pub enum IntegrationMethod {
+    Rk4,                    // 4 stages, fixed step
+    Rkf45 { tol: f64 },    // adaptive step
+    GaussJackson { order: usize },  // multi-step
+}
+```
+
+The `integration_system` runs the full multi-stage loop internally: for each stage it
+re-evaluates forces, computes derivatives, and advances the stage. This keeps the
+multi-stage logic contained rather than spreading it across the schedule.
+
+### Key System Signatures
+
+Bevy systems are thin wrappers that query components and delegate to `jeod_*` pure
+functions. This keeps the physics testable without Bevy.
+
+```rust
+// ── bevy_jeod_gravity/src/systems.rs ────────────────────────────
+
+fn gravity_computation_system(
+    mut bodies: Query<(&TranslationalState, &BevyGravityControls, &mut GravityAcceleration)>,
+    sources: Query<(&GravitySource, &RefFrameState), With<Planet>>,
+) {
+    for (state, controls, mut accel) in &mut bodies {
+        // Delegate to pure function from jeod_gravity
+        *accel = jeod_gravity::compute_all_gravity(
+            state.position, controls, |entity| sources.get(entity),
+        );
+    }
+}
+
+// ── bevy_jeod_dynamics/src/systems.rs ───────────────────────────
+
+fn integration_system(
+    mut bodies: Query<(
+        &TotalForce, &MassProperties, &DynamicsConfig,
+        &mut TranslationalState, &mut RotationalState,
+        &mut FrameDerivatives,
+    )>,
+    integ_state: Res<IntegrationState>,
+) {
+    for (force, mass, config, mut trans, mut rot, mut derivs) in &mut bodies {
+        // Delegate to pure function from jeod_dynamics
+        jeod_dynamics::integrate_step(
+            &force, mass, config, &mut trans, &mut rot, &mut derivs,
+            integ_state.method, integ_state.dt,
+        );
+    }
+}
+```
+
+---
+
+## 5. Plugin Architecture
+
+### Crate Organization
+
+The workspace has two layers: **core crates** (`jeod_*`) with zero Bevy dependency, and
+**Bevy glue crates** (`bevy_jeod_*`) that add ECS integration. This separation is the
+key to portability — see [Section 1: Portability Goal](#portability-goal).
+
+```
+bevy_jeod/                               # workspace root
+|
++-- crates/
+|   |
+|   | ── CORE LAYER (pure Rust, no Bevy dependency) ───────────────
+|   |
+|   +-- jeod_math/                       # f64 math, quaternions, orbital elements
+|   |   +-- src/
+|   |       +-- lib.rs
+|   |       +-- quaternion.rs            # JEOD quaternion conventions (scalar-first)
+|   |       +-- orbital_elements.rs      # Cartesian <-> Keplerian, Kepler equation
+|   |       +-- orientation.rs           # Euler angle decomposition, rotation matrices
+|   |       +-- planet_fixed.rs          # geodetic coordinate conversions
+|   |       +-- lvlh.rs                  # LVLH frame computation
+|   |
+|   +-- jeod_time/                       # Time scales and conversions
+|   |   +-- src/
+|   |       +-- lib.rs
+|   |       +-- scales.rs               # TAI, UTC, UT1, TDB, TT, GMST, MET types
+|   |       +-- converters.rs           # time scale conversions (leap seconds, UT1-TAI)
+|   |       +-- sim_time.rs             # SimulationTime state struct
+|   |
+|   +-- jeod_frames/                     # Reference frame state and transformations
+|   |   +-- src/
+|   |       +-- lib.rs
+|   |       +-- state.rs                # RefFrameState, RefFrameTrans, RefFrameRot
+|   |       +-- transform.rs           # relative state computation, frame composition
+|   |       +-- tree.rs                 # arena-based frame tree (for non-ECS use)
+|   |
+|   +-- jeod_gravity/                    # Gravity models and computation
+|   |   +-- src/
+|   |       +-- lib.rs
+|   |       +-- source.rs              # GravitySource, GravityModel
+|   |       +-- controls.rs            # GravityControls<SourceId>
+|   |       +-- compute.rs             # compute_gravity() pure function
+|   |       +-- spherical_harmonics.rs  # Legendre polynomials, coefficient evaluation
+|   |   +-- data/                       # coefficient files (binary or RON)
+|   |       +-- earth_ggm05c.bin
+|   |       +-- moon_grail150.bin
+|   |       +-- mars_mro110b2.bin
+|   |
+|   +-- jeod_ephemeris/                  # Ephemeris readers
+|   |   +-- src/
+|   |       +-- lib.rs
+|   |       +-- de4xx.rs               # JPL DE4xx binary reader (Chebyshev interpolation)
+|   |
+|   +-- jeod_atmosphere/                 # Atmosphere models
+|   |   +-- src/
+|   |       +-- lib.rs
+|   |       +-- model.rs              # Atmosphere trait
+|   |       +-- met.rs                # Marshall Engineering Thermosphere tables
+|   |
+|   +-- jeod_dynamics/                   # State types, integration methods, force collection
+|   |   +-- src/
+|   |       +-- lib.rs
+|   |       +-- state.rs              # TranslationalState, RotationalState
+|   |       +-- mass.rs               # MassProperties, composite mass computation
+|   |       +-- forces.rs             # GravityAcceleration, AeroForce, TotalForce, etc.
+|   |       +-- integration.rs        # RK4, RKF45, Gauss-Jackson, LSODE (pure functions)
+|   |       +-- body_action.rs        # initialization from orbital elements, LVLH, NED
+|   |
+|   +-- jeod_interactions/               # Force/torque computation
+|   |   +-- src/
+|   |       +-- lib.rs
+|   |       +-- aerodynamics.rs       # drag computation (pure function)
+|   |       +-- radiation.rs          # SRP computation (pure function)
+|   |       +-- gravity_torque.rs     # gradient torque (pure function)
+|   |
+|   +-- jeod_planet/                     # Planet data and presets
+|   |   +-- src/
+|   |       +-- lib.rs
+|   |       +-- shape.rs             # PlanetShape
+|   |       +-- presets.rs           # Earth, Moon, Mars, Sun constants
+|   |       +-- rnp.rs              # precession, nutation, polar motion
+|   |
+|   | ── BEVY GLUE LAYER (thin, only ECS wiring) ─────────────────
+|   |
+|   +-- bevy_jeod_time/                  # Bevy plugin: time resource + system
+|   +-- bevy_jeod_frames/                # Bevy plugin: frame components + propagation system
+|   +-- bevy_jeod_gravity/               # Bevy plugin: gravity components + system
+|   +-- bevy_jeod_ephemeris/             # Bevy plugin: ephemeris resource + update system
+|   +-- bevy_jeod_atmosphere/            # Bevy plugin: atmosphere components + system
+|   +-- bevy_jeod_dynamics/              # Bevy plugin: state components + integration system
+|   +-- bevy_jeod_interactions/          # Bevy plugin: force components + systems
+|   +-- bevy_jeod_derived/               # Bevy plugin: derived state components + systems
+|   +-- bevy_jeod_planet/                # Bevy plugin: planet components + presets
+|   |
+|   | ── TEST INFRASTRUCTURE ──────────────────────────────────────
+|   |
+|   +-- jeod_test_data/                  # JEOD file parsers (no Bevy dependency)
+|       +-- src/
+|           +-- lib.rs
+|           +-- py_data.rs              # Python data file parser (trick.attach_units)
+|           +-- dat_parser.rs           # whitespace-delimited numeric tables
+|           +-- gravity_verif.rs        # parses verif_out.txt -> GravityTestCase
+|           +-- reference_state.rs      # parses reference_*_trans_state.py
+|           +-- leap_seconds.rs         # parses Leap_Second.dat
+|
++-- src/
+|   +-- lib.rs                           # top-level JeodPlugin composing all Bevy plugins
+|
++-- examples/
+|   +-- kepler_orbit.rs                  # simple two-body orbit (Bevy)
+|   +-- leo_j2.rs                        # LEO with J2 perturbation (Bevy)
+|   +-- iss_orbit.rs                     # ISS full-fidelity (Bevy)
+|   +-- apollo.rs                        # Apollo mission (Bevy)
+|   +-- batch_propagation.rs             # no-ECS batch trajectory (jeod_* only)
+|
++-- data/                                # runtime data assets
+    +-- gravity/                         # spherical harmonics coefficient files
+    +-- time/                            # leap seconds, UT1 corrections
+    +-- ephemeris/                        # DE421.bsp binary files
+```
+
+**Dependency graph:**
+```
+jeod_math  <── jeod_dynamics  <── jeod_interactions
+   ^              ^                      |
+   |              |                      v
+jeod_time    jeod_gravity          jeod_atmosphere
+   ^              ^
+   |              |
+jeod_frames  jeod_ephemeris    jeod_planet
+                                     |
+     All jeod_* are pure Rust        |
+     ────────────────────────────────┘
+              |
+              v
+     bevy_jeod_* crates (thin Bevy glue)
+              |
+              v
+     bevy_jeod (top-level plugin)
+```
+
+Each `bevy_jeod_*` crate depends on its corresponding `jeod_*` crate and on `bevy`.
+The `jeod_*` crates have **no** Bevy dependency and can be used standalone.
+
+### Top-Level Plugin Composition
+
+```rust
+pub struct JeodPlugin;
+
+impl Plugin for JeodPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_plugins((
+            JeodTimePlugin,
+            JeodFramesPlugin,
+            JeodGravityPlugin,
+            JeodEphemerisPlugin,
+            JeodAtmospherePlugin,
+            JeodDynamicsPlugin,
+            JeodInteractionsPlugin,
+            JeodDerivedStatePlugin,
+            JeodPlanetPlugin,
+        ));
+    }
+}
+```
+
+Users can also add individual plugins for a minimal setup:
+
+```rust
+// Minimal: just gravity and dynamics, no atmosphere or interactions
+app.add_plugins((
+    JeodTimePlugin,
+    JeodFramesPlugin,
+    JeodGravityPlugin,
+    JeodDynamicsPlugin,
+));
+```
+
+---
+
+## 6. Verification Strategy
+
+### Four-Tier Verification Plan
+
+### Tier 1: Analytical Unit Tests
+
+Test pure math with known exact solutions. No JEOD data needed. Implement these alongside
+each module.
+
+```rust
+#[test]
+fn kepler_equation_circular() {
+    // For circular orbit (e=0), mean anomaly = eccentric anomaly
+    assert_f64_eq!(solve_kepler(0.0, PI / 4.0), PI / 4.0);
+}
+
+#[test]
+fn orbital_elements_roundtrip() {
+    let state = CartesianState { r: dvec3(...), v: dvec3(...) };
+    let elems = OrbitalElements::from_cartesian(&state, MU_EARTH);
+    let back = elems.to_cartesian(MU_EARTH);
+    assert_dvec3_near!(state.r, back.r, 1e-10);
+}
+
+#[test]
+fn quaternion_rotation_matrix_consistency() { ... }
+#[test]
+fn frame_composition_is_identity_for_self() { ... }
+#[test]
+fn kepler_orbit_conserves_energy() { ... }
+#[test]
+fn kepler_orbit_period_matches_analytical() {
+    // T = 2*pi*sqrt(a^3/mu) — must match to integrator precision
+}
+```
+
+### Tier 2: Component Tests Against JEOD Reference Values
+
+Use JEOD's own test data files (read unmodified from `../jeod`) via the `jeod_test_data`
+crate. See [Section 7](#7-jeod-data-ingestion) for parser details.
+
+```rust
+use jeod_test_data::{reference_states, gravity_test_cases, orbital_init_data};
+
+#[test]
+fn iss_reference_inertial_state() {
+    // Source: jeod/models/dynamics/body_action/verif/SIM_orbinit/
+    //         Modified_data/ISS/reference_inertial_trans_state.py
+    let expected = reference_states("../jeod", "ISS", "inertial");
+    // expected.position = [1244540.53, 5655938.85, 3425643.22]
+    // expected.velocity = [-6003.833051, -1469.496044, 4590.511776]
+
+    let init = orbital_init_data("../jeod", "ISS", "trans_Orbit_inertial_body_set01");
+    let state = propagate_from_elements(&init);
+    assert_dvec3_near!(state.position, expected.position, 1.0);  // 1m tolerance
+}
+
+#[test]
+fn earth_gravity_at_known_positions() {
+    // Source: jeod/models/environment/gravity/verif/unit_tests/
+    //         grav_geospherical/data/verif_out.txt
+    for case in gravity_test_cases("../jeod") {
+        let result = gravity_source.compute(case.position, case.degree, case.order);
+        assert_dvec3_near!(result.accel, case.expected_accel, 1e-12);
+        assert_near!(result.potential, case.expected_potential, 1e-6);
+    }
+}
+
+#[test]
+fn euler_angle_decomposition() {
+    // Source: jeod/models/dynamics/derived_state/verif/unit_tests/
+    //         euler_derived_state_ut.cc
+    // 6 test cases with rotation matrix -> expected Euler angles
+    for case in euler_test_cases("../jeod") {
+        let result = euler_decompose(case.matrix, case.sequence);
+        assert_dvec3_near!(result, case.expected_angles, 1e-14);
+    }
+}
+```
+
+### Tier 3: Trajectory Cross-Validation
+
+Generate reference trajectories from JEOD, then compare. This requires running JEOD's
+verification sims (needs Trick installed) and exporting to CSV.
+
+```rust
+#[test]
+#[ignore]  // requires generated reference data
+fn cross_validate_leo_j2_24h() {
+    let jeod_trajectory = load_csv("test_data/jeod_leo_j2_24h.csv");
+    let mut app = create_test_app(/* LEO + J2 config */);
+
+    for expected in &jeod_trajectory {
+        app.run_until(expected.time);
+        let state = app.query_vehicle_state();
+        let pos_error = (state.position - expected.position).length();
+        assert!(
+            pos_error < 1.0,
+            "Position drift at t={:.0}s: {:.3} m",
+            expected.time, pos_error
+        );
+    }
+}
+```
+
+**Generating reference data:**
+
+1. Add `DRAscii` logging to JEOD verification sims (or use existing `DRBinary` + convert)
+2. Run: `cd verif/SIM_dyncomp && ./S_main_* SET_test/RUN_1A/input.py`
+3. Convert `.trk` → `.csv` via Trick utilities
+4. Store CSVs in `test_data/` (gitignored, downloaded separately)
+
+### Tier 4: Regression Suite
+
+Automated CI that tracks error budgets across all scenarios:
+
+```
+Scenario                    | Quantity      | Tolerance    | Status
+----------------------------|---------------|--------------|--------
+Kepler 2-body (1 orbit)     | position      | 1e-6 m       | [ ]
+LEO + J2 (24h)              | position      | 1.0 m        | [ ]
+ISS full gravity (24h)      | position      | 10.0 m       | [ ]
+Earth-Moon 3-body (7 days)  | position      | 100.0 m      | [ ]
+Euler angle decomposition   | angles        | 1e-12 rad    | [ ]
+Gravity acceleration        | accel         | 1e-12 m/s^2  | [ ]
+Orbital elements roundtrip  | all elements  | 1e-10        | [ ]
+```
+
+---
+
+## 7. JEOD Data Ingestion
+
+### The `jeod_test_data` Crate
+
+A standalone crate (no Bevy dependency) that reads JEOD's original files unmodified from
+a local JEOD checkout. It provides parsed, typed Rust structs for use in tests.
+
+### File Parsability Assessment
+
+JEOD's data files fall into three categories:
+
+#### Directly parseable (no modification needed)
+
+| File | Location | Format | Parser |
+|------|----------|--------|--------|
+| `Leap_Second.dat` | `models/environment/time/data/` | `# comments` + whitespace columns | Line parser, skip `#` |
+| `verif_out.txt` | `models/environment/gravity/verif/unit_tests/grav_geospherical/data/` | 18 space-separated numeric fields, 40 rows | `sscanf`-equivalent |
+| `reference_*_trans_state.py` | `models/dynamics/body_action/verif/SIM_orbinit/Modified_data/ISS/` | `vehicle.expected_state.trans.position = [x, y, z]` | Regex on RHS arrays |
+| `iss_rate_def.py` | same ISS directory | `return [0.002, 0.006, -0.003]` | Regex on `return` literal |
+| `lvlh_rate_def.py` | same ISS directory | `return -0.06556131568278` | Regex on `return` literal |
+| `earth_discrep.txt` | `models/environment/spice/verif/compare/` | `Angle = 1.26e-07Axis = -0.92 0.38 0.07` | Regex |
+
+#### Parseable with `trick.attach_units()` stripping
+
+Orbital element, mass property, and attitude files wrap numeric data in Trick calls.
+A single regex handles all of them:
+
+```python
+# What the files look like:
+vehicle_reference.orb_init.inclination = trick.attach_units("degree", 51.670450765)
+vehicle_reference.orb_init.semi_major_axis = trick.attach_units("km", 6732.90120152)
+vehicle_reference.orb_init.eccentricity = 0.00129073350
+vehicle_reference.mass_init.properties.mass = 100000.0
+vehicle_reference.mass_init.properties.inertia[0] = [7e12, 0.0, 0.0]
+vehicle_reference.att_init.orientation.euler_angles = trick.attach_units("degree", [77.59, -30.60, -46.10])
+```
+
+The parser extracts (dotted_key, unit_or_none, value) tuples:
+
+```rust
+pub struct JeodPyValue {
+    pub key: String,              // "orb_init.inclination"
+    pub unit: Option<String>,     // Some("degree")
+    pub value: JeodValue,         // Scalar(51.670450765) or Vec([...])
+}
+
+pub enum JeodValue {
+    Scalar(f64),
+    Vec(Vec<f64>),
+    Str(String),
+    Bool(bool),
+}
+```
+
+**Files covered by this parser:**
+
+| Pattern | Count | Content |
+|---------|-------|---------|
+| `trans_Orbit_*_body_set*.py` | ~20 | Orbital elements (a, e, i, RAAN, omega, tp) |
+| `mass.py` | per vehicle | Mass, inertia tensor, center of mass, attach points |
+| `att_RotState_*.py` | ~10 | Euler angles, quaternions |
+| `rate_RotState_*.py` (some) | ~5 | Angular velocity |
+
+**Unit conversions** are trivial — the parser applies them automatically:
+
+| JEOD Unit | Conversion |
+|-----------|------------|
+| `"degree"` | multiply by `PI/180` |
+| `"km"` | multiply by `1000` |
+| `"s"` | no conversion |
+
+#### Not parseable (orchestration logic)
+
+~30% of files contain `exec()` chains, `eval()`, or complex control flow. These are
+**orchestration files** that wire together the data files above — they don't contain
+unique data.
+
+| File | Why unparseable |
+|------|-----------------|
+| `single_vehicle_run.py` | `exec()` chains, `eval("set_" + name + "_mass(...)")` |
+| `earth.py` | Method calls: `set_date_and_time(2005, 7, 28, 10, 9, 59.0)` |
+| `system.py` | Pure Trick API calls |
+| `run_files.py` | Dynamic file loading with `exec()` |
+
+**These don't need to be parsed.** The data they reference lives in the parseable files.
+The scenario configuration (start date, integration method, stop time) can be hardcoded
+in Rust test functions since there are a finite number of scenarios.
+
+### C++ Unit Test Extraction
+
+Of JEOD's 262 C++ unit test files, only 2 contain extractable numerical test vectors:
+
+| Source | Test Cases | Content |
+|--------|------------|---------|
+| `euler_derived_state_ut.cc` | 6 | Rotation matrix → expected Euler angles |
+| `verif_out.txt` | 40 | Position → expected gravity acceleration, gradient, potential |
+
+The rest are structural tests (empty bodies, mock verification, boolean checks) with no
+hardcoded numerical assertions. Not worth parsing.
+
+For `euler_derived_state_ut.cc`, values can be extracted with:
+```
+regex: double\s+(\w+)\[3\]\s*=\s*\{([^}]+)\}
+```
+
+### Complete Parser Inventory
+
+```rust
+// jeod_test_data/src/lib.rs
+
+/// Parse JEOD Python data files with optional trick.attach_units() stripping.
+/// Works for orbital elements, mass properties, attitude, rate definitions.
+pub fn parse_py_data(path: &Path) -> Vec<JeodPyValue>;
+
+/// Parse reference state vectors from reference_*_trans_state.py files.
+/// Returns position[3] and velocity[3].
+pub fn reference_states(jeod_root: &str, vehicle: &str, frame: &str)
+    -> TranslationalState;
+
+/// Parse orbital initialization data from trans_Orbit_*.py files.
+/// Returns orbital elements with units already converted (deg->rad, km->m).
+pub fn orbital_init_data(jeod_root: &str, vehicle: &str, init_name: &str)
+    -> OrbitalInitData;
+
+/// Parse gravity verification test cases from verif_out.txt.
+/// Returns 40 test cases with (position, degree, order, expected accel/grad/pot).
+pub fn gravity_test_cases(jeod_root: &str) -> Vec<GravityTestCase>;
+
+/// Parse Leap_Second.dat into a leap second table.
+/// Returns Vec<(mjd, tai_minus_utc)>.
+pub fn leap_second_table(jeod_root: &str) -> Vec<LeapSecondEntry>;
+
+/// Parse Euler angle test vectors from euler_derived_state_ut.cc.
+/// Returns 6 test cases with (matrix, expected angles, sequence).
+pub fn euler_test_cases(jeod_root: &str) -> Vec<EulerTestCase>;
+```
+
+---
+
+## 8. Implementation Phases
+
+### Phase 1: Foundation
+
+**Goal:** A dot orbiting a point mass in Bevy's `FixedUpdate`.
+
+**Core crates:** `jeod_math`, `jeod_dynamics` (minimal), `jeod_gravity` (point mass only),
+`jeod_frames` (minimal)
+
+**Bevy crates:** `bevy_jeod_dynamics`, `bevy_jeod_gravity`, `bevy_jeod_frames`
+
+**Deliver:**
+- `DVec3`/`DQuat`/`DMat3` math operations (using `glam` f64 types)
+- Orbital element ↔ Cartesian conversions with Kepler equation solver
+- `TranslationalState`, `MassProperties`, `TotalForce` types (core) + components (Bevy)
+- RK4 integrator as pure function + Bevy integration system
+- Point-mass gravity computation + Bevy gravity system
+- Minimal reference frame hierarchy (inertial root + one body frame)
+- `OrbitalElements` derived state
+- `batch_propagation.rs` example using `jeod_*` crates with no Bevy
+
+**Verify with:**
+- Kepler orbit conserves energy and angular momentum to machine precision
+- Orbital period matches analytical `T = 2*pi*sqrt(a^3/mu)`
+- Orbital elements round-trip test
+
+### Phase 2: Realistic Environment
+
+**Goal:** J2+ spherical harmonics gravity, time system, basic ephemeris.
+
+**Core crates:** `jeod_gravity` (spherical harmonics), `jeod_time`, `jeod_ephemeris`,
+`jeod_planet`, `jeod_test_data`
+
+**Bevy crates:** `bevy_jeod_gravity`, `bevy_jeod_time`, `bevy_jeod_ephemeris`,
+`bevy_jeod_planet`
+
+**Deliver:**
+- Full spherical harmonics gravity engine (port of `spherical_harmonics_calc_nonspherical.cc`)
+- Earth GGM05C, Moon GRAIL150 coefficient data
+- TAI, UTC, UT1, TDB, TT time scales with converters
+- Leap second table (from JEOD data)
+- DE421 binary ephemeris reader
+- Planet position updates from ephemeris
+- Earth, Moon, Sun planet presets with shapes and gravity
+
+**Verify with:**
+- Tier 2 gravity tests: 40 test vectors from `verif_out.txt`
+- LEO + J2 nodal regression rate matches analytical prediction
+- Time conversion tests against known epochs
+
+### Phase 3: Full Dynamics
+
+**Goal:** 6-DOF dynamics with rotational state and multi-body attachment.
+
+**Core crates:** `jeod_dynamics` (full), `jeod_frames` (full), `jeod_math` (derived states)
+
+**Bevy crates:** `bevy_jeod_dynamics`, `bevy_jeod_frames`, `bevy_jeod_derived`
+
+**Deliver:**
+- Rotational integration (Lie group technique for quaternion propagation)
+- Force and torque collection system
+- Mass tree with composite property updates on attach/detach
+- Full reference frame propagation (structure → composite → core body)
+- Body initialization actions (orbital elements, LVLH, NED)
+- Euler angles, LVLH, NED, planet-fixed derived states
+
+**Verify with:**
+- Tier 2 ISS reference state tests
+- Tier 2 Euler angle decomposition tests (6 vectors from `euler_derived_state_ut.cc`)
+- Tier 3 cross-validation against JEOD's `SIM_dyncomp` (if Trick available)
+
+### Phase 4: Interactions
+
+**Goal:** Aerodynamic drag, radiation pressure, gravity gradient torque.
+
+**Core crates:** `jeod_atmosphere`, `jeod_interactions`
+
+**Bevy crates:** `bevy_jeod_atmosphere`, `bevy_jeod_interactions`
+
+**Deliver:**
+- MET atmosphere model (density/temperature/pressure tables)
+- Aerodynamic drag system (ballistic coefficient and flat-plate models)
+- Solar radiation pressure system
+- Gravity gradient torque system
+- Solar beta angle derived state
+
+**Verify with:**
+- LEO with drag: orbital decay rate matches expected behavior
+- SRP magnitude matches analytical `P = L_sun / (4*pi*r^2*c)`
+- Gravity torque on known inertia tensor matches analytical gradient torque
+
+### Phase 5: High-Fidelity Parity
+
+**Goal:** Feature parity with JEOD's verified capabilities.
+
+**Crates:** All — advanced features added to existing crates
+
+**Deliver:**
+- Advanced integrators: Gauss-Jackson, LSODE, RKF45 (adaptive step)
+- Solid body tides in gravity model
+- Full RNP model for Earth rotation (precession, nutation, polar motion)
+- SPICE integration (via FFI to cspice, or native Rust reader)
+- Contact dynamics
+- Full regression suite against JEOD (Tier 4)
+- Multi-body scenarios: Apollo trans-lunar, Earth-Moon, Mars
+
+**Verify with:**
+- Tier 3 cross-validation across all JEOD verification scenarios
+- Tier 4 automated regression suite with error budget tracking
+
+---
+
+## 9. Key Architectural Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| **ECS portability** | Two-layer crate split: `jeod_*` (pure Rust) + `bevy_jeod_*` (thin Bevy glue) | Physics code is reusable from any ECS, a custom loop, or WASM. Bevy API churn doesn't force physics rewrites. Core crates are testable as pure functions. |
+| **Floating-point precision** | `f64` everywhere via custom components (not Bevy's `Transform`) | Orbital mechanics requires ~15 significant digits. `f32` loses km-scale accuracy at Earth-orbit distances. |
+| **Math library** | `glam` with f64 features (`DVec3`, `DQuat`, `DMat3`) + `nalgebra` for NxN matrices | `glam` provides f64 types with no Bevy dependency (it's a standalone crate). `nalgebra` is better for variable-size matrices needed by spherical harmonics coefficient arrays. Both work in `jeod_*` crates. |
+| **Reference frame tree** | `jeod_frames` provides an arena-based tree; `bevy_jeod_frames` maps it to Bevy's `Parent`/`Children` | Core tree is portable. Bevy layer adds ECS hierarchy for efficient queries. Other ECS layers can use their own hierarchy mechanism. |
+| **Integration loop** | Custom inner loop within `FixedUpdate` with stage-tracking resource | Multi-stage integrators (RK4 = 4 stages) need multiple force evaluations per timestep. An inner loop keeps this self-contained. |
+| **Gravity coefficient data** | Binary asset files loaded at runtime via Bevy's `AssetServer` (or direct file I/O in non-Bevy contexts) | Keeps multi-MB coefficient arrays out of the compiled binary. Enables runtime model swapping (e.g., switch from GGM05C to GEMT1). `jeod_gravity` provides a `load_from_file()` function independent of Bevy's asset system. |
+| **Ephemeris data** | Standard JPL DE421 binary files | Well-documented format. Existing parsers available. Same files JEOD uses. `jeod_ephemeris` reads them directly; `bevy_jeod_ephemeris` wraps via `AssetServer`. |
+| **Plugin granularity** | One core + one glue crate per model category | Users opt into only what they need. A simple Kepler simulation doesn't pull in atmosphere code. Parallel compilation. Non-Bevy users depend only on `jeod_*` crates. |
+| **Quaternion convention** | JEOD's left-quaternion, scalar-first `[q0, q1, q2, q3]` | Must match JEOD exactly for verification. Document any conversions needed at the `glam` boundary (`glam` uses `[x, y, z, w]` ordering). |
+| **Testing approach** | `#[cfg(test)]` unit tests + integration test binaries + `criterion` benchmarks | Core physics tested as pure functions (no Bevy `App` needed). Bevy integration tested separately. Matches JEOD's tiered verification. |
+| **JEOD data access** | Read from `../jeod` at test time via `jeod_test_data` crate; `JEOD_PATH` env var override | Avoids duplicating or modifying JEOD files. Tests skip gracefully if JEOD checkout is absent. |
+
+---
+
+## 10. Risks and Mitigations
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| **Numerical precision drift vs. JEOD** | Tests fail despite correct implementation | Use relative tolerances scaled by magnitude. Document known precision differences between GCC and Rust's LLVM backend. Start with generous tolerances, tighten as confidence grows. |
+| **Spherical harmonics performance** | Degree-2190 GGM05C is computationally expensive | Implement with cache-friendly memory layout. Benchmark early. Provide degree/order truncation as a runtime option. Consider SIMD for inner loops. |
+| **JEOD verification data requires Trick** | Cannot produce Tier 3 baseline trajectories without Trick installed | Start with Tier 1 (analytical) and Tier 2 (reference values) — these need no Trick. Generate Tier 3 baselines once, store as CSV. |
+| **Bevy's `FixedUpdate` assumes fixed timestep** | Adaptive integrators (RKF45, LSODE) need variable dt | Use inner sub-stepping loop within `FixedUpdate`. The outer schedule provides a maximum dt; the integrator may take smaller steps internally. |
+| **Quaternion convention mismatch** | Subtle rotation bugs that pass simple tests but fail complex scenarios | Document JEOD's convention (scalar-first, left-transform) explicitly. Write conversion functions at the `glam` boundary. Test with non-trivial rotations (not just identity or 90-degree). |
+| **Mass tree / attachment complexity** | Rigid body attachment/detachment is intricate and error-prone | Implement incrementally: single body first (Phase 1-2), then parent-child attachment (Phase 3), then multi-level trees (Phase 5). Test each level before proceeding. |
+| **Scope creep** | JEOD has 714 source files; reimplementing everything is years of work | Strict phasing. Each phase is independently useful and verifiable. Phase 1 alone enables two-body mission analysis. Resist adding features ahead of schedule. |
+| **`glam` vs `nalgebra` friction** | Two math libraries with different conventions, conversion overhead | Standardize on `glam` for 3-vectors and quaternions (hot path). Use `nalgebra` only for NxN matrices in gravity coefficients and similar. Define clear boundary types. |
+| **Two-layer crate overhead** | More crates to maintain, potential API duplication | Each `bevy_jeod_*` crate is intentionally thin (~100-200 lines): component derives, system functions that delegate to `jeod_*`, and a plugin registration. The physics code only exists once. The overhead pays for itself in testability and portability. |
+| **Bevy breaking changes** | Bevy's rapid release cycle breaks the glue layer | Only `bevy_jeod_*` crates need updating. Physics code in `jeod_*` is untouched. Pin Bevy version in workspace; upgrade glue crates as a batch when a new Bevy release lands. |
