@@ -6,3 +6,6 @@ edition = "2021"
 [dependencies]
 jeod_math = { path = "../jeod_math" }
 glam = { workspace = true }
+
+[dev-dependencies]
+jeod_math = { path = "../jeod_math", features = ["test-utils"] }

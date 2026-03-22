@@ -1,6 +1,7 @@
 pub mod error;
 pub mod orbital_elements;
 pub mod quaternion;
+#[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
 pub mod types;
 

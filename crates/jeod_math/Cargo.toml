@@ -9,6 +9,7 @@ thiserror = { workspace = true }
 
 [features]
 jeod-validation = []
+test-utils = []
 
 [dev-dependencies]
 jeod_test_data = { path = "../jeod_test_data" }
