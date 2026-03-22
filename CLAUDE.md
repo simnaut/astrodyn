@@ -162,6 +162,21 @@ CSV column layout for `log_state_ASCII.csv`:
 
 Test data files are gitignored. Tests skip gracefully when `test_data/` is absent.
 
+## JEOD Convention Rule
+
+When JEOD uses a field name whose meaning could be ambiguous (e.g., `time_periapsis`
+— is it time *to* periapsis or time *since* periapsis?), **always read the JEOD C++
+source** to determine the convention. Do not guess or reason by analogy. A wrong guess
+about a sign or direction convention produces code that compiles, passes trivial tests,
+and silently gives wrong answers at scale.
+
+This rule was established after an agent guessed the `time_periapsis` → mean anomaly
+formula as `M = 2π - n·t` instead of the correct `M = n·t`, producing 11,668 km error
+against NASA flight data. The bug was hidden for multiple commits because a broken
+`jeod_path()` caused the validation test to silently skip. Reading
+`models/dynamics/body_action/src/dyn_body_init_orbit.cc` would have given the correct
+formula immediately.
+
 ## Common Pitfalls
 
 - **Trick sim working directory**: JEOD sims must be run from the SIM root directory
