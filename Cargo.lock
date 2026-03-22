@@ -1751,6 +1751,7 @@ dependencies = [
  "glam",
  "jeod_dynamics",
  "jeod_math",
+ "jeod_test_data",
 ]
 
 [[package]]
@@ -1758,6 +1759,7 @@ name = "jeod_math"
 version = "0.1.0"
 dependencies = [
  "glam",
+ "jeod_test_data",
  "thiserror 2.0.18",
 ]
 
@@ -1765,6 +1767,7 @@ dependencies = [
 name = "jeod_test_data"
 version = "0.1.0"
 dependencies = [
+ "glam",
  "jeod_math",
  "regex",
 ]

@@ -6,3 +6,6 @@ edition = "2021"
 [dependencies]
 glam = { workspace = true }
 thiserror = { workspace = true }
+
+[dev-dependencies]
+jeod_test_data = { path = "../jeod_test_data" }
