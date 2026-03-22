@@ -6,7 +6,9 @@ Rust reimplementation of [NASA JEOD](https://github.com/nasa/jeod) (JSC Engineer
 Orbital Dynamics, v5.4, 714 C++ source files) using Bevy ECS instead of NASA's Trick.
 See [STRATEGY.md](STRATEGY.md) for architecture and [PLAN.md](PLAN.md) for tasking.
 
-JEOD source is at `../jeod`. Set `JEOD_PATH` env var to override.
+Copy `.cargo/config.toml.example` to `.cargo/config.toml` and set `JEOD_HOME`
+and `TRICK_HOME` to your local checkouts. Cargo resolves `relative = true`
+paths from the workspace root.
 
 ## Two-Layer Architecture (non-negotiable)
 
@@ -126,17 +128,18 @@ plus optional interaction components (AerodynamicForce, RadiationForce, GravityT
 
 ```bash
 cargo build --workspace
-cargo test --workspace                          # all tests (needs JEOD_PATH or ../jeod)
+cargo test --workspace                          # all tests (needs JEOD_HOME or JEOD_PATH)
 cargo test --workspace --no-default-features    # skip JEOD validation tests
-JEOD_PATH=../jeod cargo test                    # explicit path
+JEOD_HOME=../jeod cargo test                    # explicit path
 cargo test -p jeod_math                         # single crate
 cargo test -p jeod_gravity -- verif             # gravity verification tests only
 cargo test -p jeod_dynamics --test tier3_jeod_trajectory  # Tier 3 (needs test_data/)
 ```
 
 JEOD validation tests are gated behind the `jeod-validation` feature (default ON).
-If the JEOD source tree is unavailable, either set `JEOD_PATH` or pass
-`--no-default-features` to skip them.
+Set `JEOD_HOME` (or `JEOD_PATH`) to the JEOD source checkout, or pass
+`--no-default-features` to skip them. `JEOD_HOME` and `TRICK_HOME` follow the
+standard JEOD/Trick environment variable conventions.
 
 ## Generating Tier 3 Reference Data (Docker)
 
