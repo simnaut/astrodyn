@@ -89,6 +89,10 @@ impl OrbitalElements {
         let h_vec = pos.cross(vel);
         let h_mag = h_vec.length();
 
+        if h_mag < 1e-30 {
+            return Err(OrbitalError::DegenerateOrbit);
+        }
+
         // Eccentricity vector: e = ((v^2 - mu/r)*r - (r.v)*v) / mu
         let v2 = vel_mag * vel_mag;
         let rdotv = pos.dot(vel);
@@ -230,13 +234,20 @@ impl OrbitalElements {
         }
 
         let p = self.semiparam;
+        if p <= 0.0 || !p.is_finite() {
+            return Err(OrbitalError::DegenerateOrbit);
+        }
         let e = self.eccentricity;
         let nu = self.true_anomaly;
 
         let sin_nu = nu.sin();
         let cos_nu = nu.cos();
 
-        let r = p / (1.0 + e * cos_nu);
+        let denom = 1.0 + e * cos_nu;
+        if denom.abs() < 1e-30 {
+            return Err(OrbitalError::DegenerateOrbit);
+        }
+        let r = p / denom;
 
         // Position and velocity in perifocal (PQW) frame
         let r_pqw = DVec3::new(r * cos_nu, r * sin_nu, 0.0);

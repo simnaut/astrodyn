@@ -7,6 +7,10 @@ use crate::source::{GravityModel, GravitySource};
 /// Position is the body's position relative to the gravity source center.
 pub fn compute_point_mass_gravity(mu: f64, position: DVec3) -> GravityAcceleration {
     let r_sq = position.length_squared();
+    debug_assert!(
+        r_sq > 0.0,
+        "position must be non-zero (body is at gravity source center)"
+    );
     let r_mag = r_sq.sqrt();
     let r_3rd = r_sq * r_mag;
 

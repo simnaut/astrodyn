@@ -10,7 +10,7 @@ pub struct MassProperties {
 
 impl MassProperties {
     pub fn new(mass: f64) -> Self {
-        // Simple point mass: identity-scaled inertia (placeholder for Phase 1)
+        debug_assert!(mass > 0.0, "mass must be positive, got {mass}");
         Self {
             mass,
             inertia: DMat3::IDENTITY * mass,

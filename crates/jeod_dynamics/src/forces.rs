@@ -1,10 +1,20 @@
 use glam::{DMat3, DVec3};
 
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GravityAcceleration {
     pub accel: DVec3,    // m/s^2, in integration frame
     pub gradient: DMat3, // 1/s^2, tidal gradient tensor
     pub potential: f64,  // m^2/s^2
+}
+
+impl Default for GravityAcceleration {
+    fn default() -> Self {
+        Self {
+            accel: DVec3::ZERO,
+            gradient: DMat3::ZERO,
+            potential: 0.0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -48,7 +58,7 @@ mod tests {
     fn default_gravity_acceleration() {
         let ga = GravityAcceleration::default();
         assert_eq!(ga.accel, DVec3::ZERO);
-        assert_eq!(ga.gradient, DMat3::IDENTITY);
+        assert_eq!(ga.gradient, DMat3::ZERO);
         assert_eq!(ga.potential, 0.0);
     }
 

@@ -31,6 +31,12 @@ pub fn force_collection_system(
 /// The system reads `GravityControlsC` on each body to determine which gravity
 /// sources affect it, then queries `GravitySourceC` on those source entities for
 /// the gravitational parameter (mu).
+///
+/// **Phase 1 assumption**: gravity sources are at the origin of the integration
+/// frame (body position is relative to the source center). In Phase 2, source
+/// positions will be obtained from `TranslationalStateC` on the source entity,
+/// not from `GlobalTransform` (which is f32 and insufficient for orbital
+/// precision).
 pub fn integration_system(
     mut bodies: Query<(
         &DynamicsConfigC,
@@ -50,21 +56,15 @@ pub fn integration_system(
             continue;
         }
 
-        // Collect mu values from referenced gravity sources.
-        let source_mus: Vec<f64> = controls
-            .0
-            .controls
-            .iter()
-            .filter_map(|ctrl| sources.get(ctrl.source_id).ok())
-            .map(|s| s.0.mu)
-            .collect();
-
         let new_state = jeod_dynamics::rk4_translational_step(
             &state.0,
             |s| {
                 let mut accel = DVec3::ZERO;
-                for mu in &source_mus {
-                    accel += jeod_gravity::compute_point_mass_gravity(*mu, s.position).accel;
+                for ctrl in &controls.0.controls {
+                    if let Ok(source) = sources.get(ctrl.source_id) {
+                        accel +=
+                            jeod_gravity::compute_point_mass_gravity(source.0.mu, s.position).accel;
+                    }
                 }
                 accel
             },

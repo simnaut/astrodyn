@@ -8,6 +8,11 @@ use jeod_dynamics::GravityAcceleration;
 /// For each body that has `GravityControlsC`, the system iterates over its
 /// control entries, looks up the corresponding `GravitySourceC` entity, and
 /// accumulates the acceleration, gradient, and potential.
+///
+/// **Phase 1 assumption**: gravity sources are at the origin of the integration
+/// frame (body position is relative to the source center). In Phase 2, source
+/// positions will be obtained from `TranslationalStateC` on the source entity
+/// and subtracted to get relative position.
 pub fn gravity_computation_system(
     mut bodies: Query<(
         &TranslationalStateC,
