@@ -2,8 +2,10 @@ use bevy::prelude::*;
 use bevy_jeod_dynamics::{GravityAccelerationC, GravityControlsC, GravitySourceC, TranslationalStateC};
 use jeod_dynamics::GravityAcceleration;
 
-/// Computes gravitational acceleration on each body from all its referenced
-/// gravity sources.
+/// Phase 2 scaffolding: stores pre-computed gravity for use by
+/// `force_collection_system`. The `integration_system` independently recomputes
+/// gravity at each RK4 stage for 4th-order accuracy; this stored value is not
+/// used for integration.
 ///
 /// For each body that has `GravityControlsC`, the system iterates over its
 /// control entries, looks up the corresponding `GravitySourceC` entity, and
@@ -34,11 +36,7 @@ pub fn gravity_computation_system(
             let result = jeod_gravity::compute_gravity(&source.0, state.position);
             total.accel += result.accel;
             if ctrl.compute_gradient {
-                total.gradient = glam::DMat3::from_cols(
-                    total.gradient.col(0) + result.gradient.col(0),
-                    total.gradient.col(1) + result.gradient.col(1),
-                    total.gradient.col(2) + result.gradient.col(2),
-                );
+                total.gradient += result.gradient;
             }
             total.potential += result.potential;
         }

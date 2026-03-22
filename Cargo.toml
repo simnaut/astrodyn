@@ -7,11 +7,19 @@ edition = "2021"
 bevy_jeod_dynamics = { path = "crates/bevy_jeod_dynamics" }
 bevy_jeod_gravity = { path = "crates/bevy_jeod_gravity" }
 bevy_jeod_frames = { path = "crates/bevy_jeod_frames" }
-jeod_math = { path = "crates/jeod_math" }
-jeod_dynamics = { path = "crates/jeod_dynamics" }
-jeod_gravity = { path = "crates/jeod_gravity" }
+jeod_math = { path = "crates/jeod_math", default-features = false }
+jeod_dynamics = { path = "crates/jeod_dynamics", default-features = false }
+jeod_gravity = { path = "crates/jeod_gravity", default-features = false }
 jeod_frames = { path = "crates/jeod_frames" }
 bevy = { workspace = true }
+
+[features]
+default = ["jeod-validation"]
+jeod-validation = [
+    "jeod_math/jeod-validation",
+    "jeod_gravity/jeod-validation",
+    "jeod_dynamics/jeod-validation",
+]
 
 [dev-dependencies]
 jeod_test_data = { path = "crates/jeod_test_data" }

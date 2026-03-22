@@ -111,29 +111,11 @@ impl RefFrameState {
 mod tests {
     use super::*;
     use glam::{DMat3, DVec3};
+    use jeod_math::test_utils::{approx_eq_f64, approx_eq_mat3, approx_eq_vec3};
     use jeod_math::JeodQuat;
     use std::f64::consts::FRAC_PI_2;
 
     const TOL: f64 = 1e-12;
-
-    fn approx_eq_f64(a: f64, b: f64, tol: f64) -> bool {
-        (a - b).abs() < tol
-    }
-
-    fn approx_eq_vec3(a: DVec3, b: DVec3, tol: f64) -> bool {
-        (a - b).length() < tol
-    }
-
-    fn approx_eq_mat3(a: &DMat3, b: &DMat3, tol: f64) -> bool {
-        for c in 0..3 {
-            for r in 0..3 {
-                if (a.col(c)[r] - b.col(c)[r]).abs() > tol {
-                    return false;
-                }
-            }
-        }
-        true
-    }
 
     /// Helper: create a RefFrameState with a rotation about Z axis and a position offset.
     fn make_state(angle_z: f64, pos: DVec3, vel: DVec3, ang_vel: DVec3) -> RefFrameState {

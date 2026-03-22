@@ -4,9 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-jeod_math = { path = "../jeod_math" }
-jeod_dynamics = { path = "../jeod_dynamics" }
+jeod_math = { path = "../jeod_math", default-features = false }
+jeod_dynamics = { path = "../jeod_dynamics", default-features = false }
 glam = { workspace = true }
+
+[features]
+jeod-validation = []
 
 [dev-dependencies]
 jeod_test_data = { path = "../jeod_test_data" }

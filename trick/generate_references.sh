@@ -92,6 +92,19 @@ run_sim() {
 # ════════════════════════════════════════════════════════════════════
 run_sim "verif/SIM_dyncomp" "SET_test/RUN_2" "dyncomp_run2" || exit 1
 
+# Validate critical output
+EXPECTED_CSV="${OUTPUT_DIR}/dyncomp_run2_state.csv"
+if [ ! -f "$EXPECTED_CSV" ]; then
+    echo "FATAL: Expected output file not found: $EXPECTED_CSV"
+    exit 1
+fi
+LINE_COUNT=$(wc -l < "$EXPECTED_CSV")
+if [ "$LINE_COUNT" -lt 100 ]; then
+    echo "FATAL: $EXPECTED_CSV has only $LINE_COUNT lines (expected 400+)"
+    exit 1
+fi
+echo "Validated: $EXPECTED_CSV ($LINE_COUNT lines)"
+
 # ════════════════════════════════════════════════════════════════════
 # Sim 2: SIM_orbinit RUN_0001 — Orbital initialization verification
 # Best for: Phase 1 orbital elements validation

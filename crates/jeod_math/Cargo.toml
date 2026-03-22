@@ -7,5 +7,8 @@ edition = "2021"
 glam = { workspace = true }
 thiserror = { workspace = true }
 
+[features]
+jeod-validation = []
+
 [dev-dependencies]
 jeod_test_data = { path = "../jeod_test_data" }

@@ -6,12 +6,14 @@ use crate::components::{
     TotalForceC, TranslationalStateC,
 };
 
-/// Copies gravity acceleration into TotalForce.
+/// Phase 2 scaffolding: collects gravity into TotalForce for future use by
+/// non-gravity forces (aero, SRP, gravity torque). Currently `TotalForceC` is
+/// not read by `integration_system`, which recomputes gravity directly at each
+/// RK4 stage for 4th-order accuracy. In Phase 2, the integrator will sum
+/// per-stage gravity with constant non-gravity forces from `TotalForceC`.
 ///
-/// In Phase 1, gravity is the only external force. The gravity system computes
-/// acceleration directly; this system converts it to a force for bookkeeping
-/// (F = m * a). Torque is zeroed since gravity acts through the center of mass
-/// for a point-mass model.
+/// Torque is zeroed since gravity acts through the center of mass for a
+/// point-mass model.
 pub fn force_collection_system(
     mut query: Query<(&GravityAccelerationC, &MassPropertiesC, &mut TotalForceC)>,
 ) {

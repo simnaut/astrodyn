@@ -9,8 +9,12 @@ pub struct MassProperties {
 }
 
 impl MassProperties {
+    /// Create mass properties for a point mass (unit sphere inertia: I = m * I_{3x3}).
+    ///
+    /// Phase 1 placeholder. When rotational dynamics are added in Phase 2,
+    /// callers must specify the actual inertia tensor for their geometry.
     pub fn new(mass: f64) -> Self {
-        debug_assert!(mass > 0.0, "mass must be positive, got {mass}");
+        assert!(mass > 0.0, "mass must be positive, got {mass}");
         Self {
             mass,
             inertia: DMat3::IDENTITY * mass,

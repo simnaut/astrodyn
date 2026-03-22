@@ -1,21 +1,20 @@
 //! Validate gravity computations against JEOD's grav_geospherical test data.
 //!
-//! Only runs when the JEOD source tree is available (via JEOD_PATH env var
-//! or at `../jeod` as sibling of the workspace root).
+//! Requires the JEOD source tree (via JEOD_PATH env var or at `../jeod` as
+//! sibling of the workspace root). Gated behind the `jeod-validation` feature
+//! (default ON). Disable with `--no-default-features` if JEOD is unavailable.
 //!
 //! The 40 cases in verif_out.txt use degree=20, order=20 spherical harmonics.
 //! 33 cases have perturbOnly=0 (total gravity), 7 have perturbOnly=1
 //! (harmonics perturbation only, i.e. total minus point-mass).
+#![cfg(feature = "jeod-validation")]
 
 use jeod_test_data::{gravity_verif::load_gravity_test_cases, jeod_path};
 
 #[test]
 fn load_gravity_test_data() {
     let root = jeod_path();
-    if !root.exists() {
-        eprintln!("JEOD source tree not found, skipping gravity validation tests");
-        return;
-    }
+    assert!(root.exists(), "JEOD source not found at {}. Run with --no-default-features to skip.", root.display());
 
     let cases = load_gravity_test_cases(&root);
     assert!(!cases.is_empty(), "Expected at least one gravity test case");
@@ -42,9 +41,7 @@ fn load_gravity_test_data() {
 #[test]
 fn jeod_gravity_data_laplace_equation() {
     let root = jeod_path();
-    if !root.exists() {
-        return;
-    }
+    assert!(root.exists(), "JEOD source not found at {}. Run with --no-default-features to skip.", root.display());
 
     let cases = load_gravity_test_cases(&root);
 
@@ -69,9 +66,7 @@ fn jeod_gravity_data_laplace_equation() {
 #[test]
 fn point_mass_reasonable_at_jeod_positions() {
     let root = jeod_path();
-    if !root.exists() {
-        return;
-    }
+    assert!(root.exists(), "JEOD source not found at {}. Run with --no-default-features to skip.", root.display());
 
     let cases = load_gravity_test_cases(&root);
     let mu_earth = 3.986004418e14;
@@ -115,9 +110,7 @@ fn point_mass_reasonable_at_jeod_positions() {
 #[test]
 fn gradient_symmetry_in_jeod_data() {
     let root = jeod_path();
-    if !root.exists() {
-        return;
-    }
+    assert!(root.exists(), "JEOD source not found at {}. Run with --no-default-features to skip.", root.display());
 
     let cases = load_gravity_test_cases(&root);
 

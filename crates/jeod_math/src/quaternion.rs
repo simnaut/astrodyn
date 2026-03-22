@@ -310,28 +310,10 @@ impl JeodQuat {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::{approx_eq_f64, approx_eq_mat3, approx_eq_vec3};
     use std::f64::consts::{FRAC_PI_2, FRAC_PI_4, PI, TAU};
 
     const TOL: f64 = 1e-12;
-
-    fn approx_eq_f64(a: f64, b: f64, tol: f64) -> bool {
-        (a - b).abs() < tol
-    }
-
-    fn approx_eq_vec3(a: DVec3, b: DVec3, tol: f64) -> bool {
-        (a - b).length() < tol
-    }
-
-    fn approx_eq_mat3(a: &DMat3, b: &DMat3, tol: f64) -> bool {
-        for c in 0..3 {
-            for r in 0..3 {
-                if (a.col(c)[r] - b.col(c)[r]).abs() > tol {
-                    return false;
-                }
-            }
-        }
-        true
-    }
 
     fn approx_eq_quat(a: &JeodQuat, b: &JeodQuat, tol: f64) -> bool {
         // Quaternions q and -q represent the same rotation.

@@ -126,12 +126,17 @@ plus optional interaction components (AerodynamicForce, RadiationForce, GravityT
 
 ```bash
 cargo build --workspace
-cargo test --workspace                  # all tests (needs JEOD_PATH for Tier 2+)
-JEOD_PATH=../jeod cargo test            # explicit path
-cargo test -p jeod_math                 # single crate
-cargo test -p jeod_gravity -- verif     # gravity verification tests only
+cargo test --workspace                          # all tests (needs JEOD_PATH or ../jeod)
+cargo test --workspace --no-default-features    # skip JEOD validation tests
+JEOD_PATH=../jeod cargo test                    # explicit path
+cargo test -p jeod_math                         # single crate
+cargo test -p jeod_gravity -- verif             # gravity verification tests only
 cargo test -p jeod_dynamics --test tier3_jeod_trajectory  # Tier 3 (needs test_data/)
 ```
+
+JEOD validation tests are gated behind the `jeod-validation` feature (default ON).
+If the JEOD source tree is unavailable, either set `JEOD_PATH` or pass
+`--no-default-features` to skip them.
 
 ## Generating Tier 3 Reference Data (Docker)
 
