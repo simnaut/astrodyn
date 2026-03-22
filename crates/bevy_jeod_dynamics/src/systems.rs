@@ -44,7 +44,7 @@ pub fn integration_system(
         &GravityControlsC,
     )>,
     sources: Query<&GravitySourceC>,
-    time: Res<Time>,
+    time: Res<Time<Fixed>>,
 ) {
     let dt = time.delta_secs_f64();
     if dt == 0.0 {

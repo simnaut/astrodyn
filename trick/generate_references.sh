@@ -28,38 +28,45 @@ run_sim() {
     cd "${JEOD_HOME}/${sim_dir}"
 
     # Build the sim (trick-CP compiles S_define)
-    if [ ! -f S_main*.exe ]; then
+    if ! ls S_main*.exe >/dev/null 2>&1; then
         trick-CP 2>&1 | tail -5
     fi
 
     echo "--- Running ${label} ---"
-    cd "${JEOD_HOME}/${sim_dir}/${run_dir}"
 
-    # Run the simulation
-    local exe=$(ls ../../S_main*.exe 2>/dev/null | head -1)
+    # Run from the SIM root directory (JEOD input.py paths are relative to SIM root)
+    local exe
+    exe=$(ls S_main*.exe 2>/dev/null | head -1)
     if [ -z "$exe" ]; then
         echo "ERROR: No S_main executable found for ${label}"
         return 1
     fi
 
-    "$exe" input.py 2>&1 | tail -3
+    "./${exe}" "${run_dir}/input.py" 2>&1 | tail -3
+
+    # Copy any ASCII CSV output directly
+    echo "--- Collecting output for ${label} ---"
+    for csv_file in $(find "${run_dir}" -name "*.csv" ! -name "_init_log.csv" 2>/dev/null); do
+        local base=$(basename "$csv_file" .csv)
+        local dest="${OUTPUT_DIR}/${label}_${base}.csv"
+        cp "$csv_file" "$dest"
+        echo "  -> ${dest}"
+    done
 
     # Convert any .trk files to CSV using Trick's data product tools
-    echo "--- Converting output for ${label} ---"
-    for trk_file in $(find . -name "*.trk" 2>/dev/null); do
+    for trk_file in $(find "${run_dir}" -name "*.trk" 2>/dev/null); do
         local base=$(basename "$trk_file" .trk)
-        local csv_file="${OUTPUT_DIR}/${label}_${base}.csv"
-        # trick-trk2csv converts Trick binary data to CSV
+        local dest="${OUTPUT_DIR}/${label}_${base}.csv"
         if command -v trick-trk2csv &>/dev/null; then
-            trick-trk2csv "$trk_file" > "$csv_file"
+            trick-trk2csv "$trk_file" > "$dest"
+            echo "  -> ${dest}"
         elif command -v trk2csv &>/dev/null; then
-            trk2csv "$trk_file" > "$csv_file"
+            trk2csv "$trk_file" > "$dest"
+            echo "  -> ${dest}"
         else
-            # Fallback: copy .trk as-is and note it needs conversion
             cp "$trk_file" "${OUTPUT_DIR}/${label}_${base}.trk"
-            echo "  WARN: No trk2csv found, copied binary .trk file"
+            echo "  -> ${OUTPUT_DIR}/${label}_${base}.trk (binary, no trk2csv available)"
         fi
-        echo "  -> ${csv_file}"
     done
     echo ""
 }

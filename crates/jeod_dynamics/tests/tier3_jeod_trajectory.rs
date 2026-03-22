@@ -53,12 +53,17 @@ fn load_jeod_trajectory(path: &Path) -> Vec<JeodStateRecord> {
         // 2: composite_body velocity[0]
         // 9: composite_body velocity[1]
         // 16: composite_body velocity[2]
-        let parse = |s: &str| -> f64 { s.trim().parse().unwrap_or(0.0) };
+        let line_no = i + 1;
+        let parse = |s: &str, col: usize| -> f64 {
+            s.trim().parse::<f64>().unwrap_or_else(|e| {
+                panic!("Failed to parse JEOD CSV at line {line_no}, col {col}: {s:?} ({e})")
+            })
+        };
 
         records.push(JeodStateRecord {
-            time: parse(fields[0]),
-            position: DVec3::new(parse(fields[1]), parse(fields[8]), parse(fields[15])),
-            velocity: DVec3::new(parse(fields[2]), parse(fields[9]), parse(fields[16])),
+            time: parse(fields[0], 0),
+            position: DVec3::new(parse(fields[1], 1), parse(fields[8], 8), parse(fields[15], 15)),
+            velocity: DVec3::new(parse(fields[2], 2), parse(fields[9], 9), parse(fields[16], 16)),
         });
     }
     records

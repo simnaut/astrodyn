@@ -53,11 +53,12 @@ mod tests {
 
     /// Harmonic oscillator: x'' = -x
     /// Analytical solution: x(t) = cos(t), v(t) = -sin(t) with x(0) = 1, v(0) = 0.
-    /// Propagate for one full period (2*pi seconds), verify error < 1e-8 with dt=0.01.
+    /// Propagate for 628 steps at dt=0.01 (t_final = 6.28, slightly less than 2*pi).
+    /// Compare against analytical solution at t_final. Error < 1e-8.
     #[test]
     fn harmonic_oscillator() {
         let dt = 0.01;
-        let steps = 628; // ~2*pi seconds
+        let steps = 628; // t_final = 6.28 (close to but not exactly 2*pi = 6.2832...)
         let t_final = dt * steps as f64;
 
         let mut state = TranslationalState {

@@ -22,6 +22,13 @@ void compute_point_mass(const double pos[3], double mu,
                         double accel[3], double *potential,
                         double grad[3][3]) {
     double r_sq = pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2];
+    if (r_sq < 1e-30) {
+        for (int i = 0; i < 3; i++) accel[i] = 0.0;
+        *potential = 0.0;
+        for (int i = 0; i < 3; i++)
+            for (int j = 0; j < 3; j++) grad[i][j] = 0.0;
+        return;
+    }
     double r_mag = sqrt(r_sq);
     double r_3rd = r_sq * r_mag;
     double r_5th = r_3rd * r_sq;
