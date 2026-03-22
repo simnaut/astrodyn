@@ -85,7 +85,7 @@ run_sim() {
 # Sim 1: SIM_dyncomp RUN_2 — Spherical gravity, RK4, 8-hour ISS orbit
 # Best for: Phase 1/2 translational dynamics validation
 # ════════════════════════════════════════════════════════════════════
-run_sim "verif/SIM_dyncomp" "SET_test/RUN_2" "dyncomp_run2"
+run_sim "verif/SIM_dyncomp" "SET_test/RUN_2" "dyncomp_run2" || exit 1
 
 # ════════════════════════════════════════════════════════════════════
 # Sim 2: SIM_orbinit RUN_0001 — Orbital initialization verification
