@@ -2,7 +2,9 @@
 # Generate reference trajectory data from JEOD verification sims.
 # Runs inside the Docker container with Trick and JEOD built.
 # Outputs CSV files to /output/ for bevy_jeod Tier 3 cross-validation.
-set -euo pipefail
+set -uo pipefail
+# Note: -e is intentionally omitted so that individual sim failures don't
+# kill the entire script. Each run_sim invocation handles its own errors.
 
 OUTPUT_DIR="${1:-/output}"
 mkdir -p "$OUTPUT_DIR"
@@ -25,11 +27,14 @@ run_sim() {
     local label="$3"
 
     echo "--- Building ${label} ---"
-    cd "${JEOD_HOME}/${sim_dir}"
+    cd "${JEOD_HOME}/${sim_dir}" || return 1
 
     # Build the sim (trick-CP compiles S_define)
     if ! ls S_main*.exe >/dev/null 2>&1; then
-        trick-CP 2>&1 | tail -5
+        if ! trick-CP 2>&1 | tail -5; then
+            echo "ERROR: trick-CP failed for ${label}"
+            return 1
+        fi
     fi
 
     echo "--- Running ${label} ---"
@@ -42,20 +47,25 @@ run_sim() {
         return 1
     fi
 
-    "./${exe}" "${run_dir}/input.py" 2>&1 | tail -3
+    if ! "./${exe}" "${run_dir}/input.py" 2>&1 | tail -3; then
+        echo "ERROR: Sim execution failed for ${label}"
+        return 1
+    fi
 
     # Copy any ASCII CSV output directly
     echo "--- Collecting output for ${label} ---"
-    for csv_file in $(find "${run_dir}" -name "*.csv" ! -name "_init_log.csv" 2>/dev/null); do
-        local base=$(basename "$csv_file" .csv)
+    while IFS= read -r -d '' csv_file; do
+        local base
+        base=$(basename "$csv_file" .csv)
         local dest="${OUTPUT_DIR}/${label}_${base}.csv"
         cp "$csv_file" "$dest"
         echo "  -> ${dest}"
-    done
+    done < <(find "${run_dir}" -name "*.csv" ! -name "_init_log.csv" -print0 2>/dev/null)
 
     # Convert any .trk files to CSV using Trick's data product tools
-    for trk_file in $(find "${run_dir}" -name "*.trk" 2>/dev/null); do
-        local base=$(basename "$trk_file" .trk)
+    while IFS= read -r -d '' trk_file; do
+        local base
+        base=$(basename "$trk_file" .trk)
         local dest="${OUTPUT_DIR}/${label}_${base}.csv"
         if command -v trick-trk2csv &>/dev/null; then
             trick-trk2csv "$trk_file" > "$dest"
@@ -67,7 +77,7 @@ run_sim() {
             cp "$trk_file" "${OUTPUT_DIR}/${label}_${base}.trk"
             echo "  -> ${OUTPUT_DIR}/${label}_${base}.trk (binary, no trk2csv available)"
         fi
-    done
+    done < <(find "${run_dir}" -name "*.trk" -print0 2>/dev/null)
     echo ""
 }
 
@@ -81,13 +91,13 @@ run_sim "verif/SIM_dyncomp" "SET_test/RUN_2" "dyncomp_run2"
 # Sim 2: SIM_orbinit RUN_0001 — Orbital initialization verification
 # Best for: Phase 1 orbital elements validation
 # ════════════════════════════════════════════════════════════════════
-run_sim "models/dynamics/body_action/verif/SIM_orbinit" "SET_test/RUN_0001" "orbinit_0001"
+run_sim "models/dynamics/body_action/verif/SIM_orbinit" "SET_test/RUN_0001" "orbinit_0001" || true
 
 # ════════════════════════════════════════════════════════════════════
 # Sim 3: SIM_Euler RUN_inc — Euler angle derived state
 # Best for: Phase 3 Euler angle validation
 # ════════════════════════════════════════════════════════════════════
-run_sim "models/dynamics/derived_state/verif/SIM_Euler" "SET_test/RUN_inc" "euler_inc"
+run_sim "models/dynamics/derived_state/verif/SIM_Euler" "SET_test/RUN_inc" "euler_inc" || true
 
 # ════════════════════════════════════════════════════════════════════
 # Sim 4: SIM_OrbElem — Orbital element computation
