@@ -16,13 +16,8 @@ bevy_jeod's Tier 3 cross-validation tests.
 From the `bevy_jeod` project root:
 
 ```bash
-# Build the container (copies trick/ and jeod/ into the image)
-docker build \
-    -f trick/Dockerfile \
-    -t jeod-trick \
-    --build-context trick=../trick \
-    --build-context jeod=../jeod \
-    .
+# Build the container (context is parent dir so trick/ and jeod/ are accessible)
+docker build -f trick/Dockerfile -t jeod-trick ..
 ```
 
 This takes 15-30 minutes (compiling Trick + JEOD from source).

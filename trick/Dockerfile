@@ -1,11 +1,11 @@
 # Build Trick + JEOD on Rocky Linux 9 for generating reference trajectories.
 #
-# Usage:
-#   docker build -t jeod-trick trick/
+# Usage (from bevy_jeod project root, with trick and jeod as siblings):
+#   docker build -f trick/Dockerfile -t jeod-trick ..
 #   docker run --rm -v $(pwd)/test_data:/output jeod-trick
 #
-# This produces CSV reference trajectories in test_data/ that bevy_jeod
-# integration tests compare against (Tier 3 cross-validation).
+# The build context is the parent directory (..) so that both trick/ and jeod/
+# are accessible via COPY.
 
 FROM rockylinux/rockylinux:9
 
@@ -26,24 +26,24 @@ RUN dnf -y install epel-release && \
 COPY trick /trick
 WORKDIR /trick
 RUN ./configure && \
-    make -j$(nproc) && \
-    make install
+    make -j$(nproc)
 
 ENV TRICK_HOME=/trick
 ENV PATH="${TRICK_HOME}/bin:${PATH}"
 
-# ── Build JEOD ──
+# ── Copy JEOD ──
 COPY jeod /jeod
 ENV JEOD_HOME=/jeod
 
-# Build the JEOD static library (used by verification sims)
+# Build the JEOD static library (clean any host build artifacts first)
 WORKDIR /jeod
-RUN mkdir -p build && cd build && \
-    cmake .. -DCMAKE_BUILD_TYPE=Release && \
+RUN rm -rf build build_unit_test lib_jeod_unit_test && \
+    mkdir -p build && cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release -DTRICK_HOME=/trick && \
     make -j$(nproc)
 
 # ── Copy the reference data generation script ──
-COPY trick/generate_references.sh /generate_references.sh
+COPY bevy_jeod/trick/generate_references.sh /generate_references.sh
 RUN chmod +x /generate_references.sh
 
 # ── Output volume ──
