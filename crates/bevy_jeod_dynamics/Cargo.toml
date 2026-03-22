@@ -1,0 +1,10 @@
+[package]
+name = "bevy_jeod_dynamics"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+jeod_dynamics = { path = "../jeod_dynamics" }
+jeod_gravity = { path = "../jeod_gravity" }
+glam = { workspace = true }
+bevy = { workspace = true }

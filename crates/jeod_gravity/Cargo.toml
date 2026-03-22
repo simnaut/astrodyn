@@ -1,0 +1,9 @@
+[package]
+name = "jeod_gravity"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+jeod_math = { path = "../jeod_math" }
+jeod_dynamics = { path = "../jeod_dynamics" }
+glam = { workspace = true }

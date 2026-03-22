@@ -1,0 +1,48 @@
+[package]
+name = "bevy_jeod"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy_jeod_dynamics = { path = "crates/bevy_jeod_dynamics" }
+bevy_jeod_gravity = { path = "crates/bevy_jeod_gravity" }
+bevy_jeod_frames = { path = "crates/bevy_jeod_frames" }
+jeod_math = { path = "crates/jeod_math" }
+jeod_dynamics = { path = "crates/jeod_dynamics" }
+jeod_gravity = { path = "crates/jeod_gravity" }
+jeod_frames = { path = "crates/jeod_frames" }
+bevy = { workspace = true }
+
+[dev-dependencies]
+jeod_test_data = { path = "crates/jeod_test_data" }
+
+[workspace]
+resolver = "2"
+members = [
+    "crates/jeod_math",
+    "crates/jeod_dynamics",
+    "crates/jeod_gravity",
+    "crates/jeod_frames",
+    "crates/bevy_jeod_dynamics",
+    "crates/bevy_jeod_gravity",
+    "crates/bevy_jeod_frames",
+    "crates/jeod_test_data",
+]
+
+[workspace.dependencies]
+glam = { version = "0.30", features = ["std"] }
+bevy = { version = "0.18", default-features = false, features = [
+    "bevy_log",
+    "bevy_state",
+    "std",
+    "multi_threaded",
+] }
+thiserror = "2"
+
+[[example]]
+name = "kepler_orbit"
+path = "examples/kepler_orbit.rs"
+
+[[example]]
+name = "batch_propagation"
+path = "examples/batch_propagation.rs"
