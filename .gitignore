@@ -1,0 +1,5 @@
+/target
+*.swp
+.env
+.cargo/config.toml
+test_data/

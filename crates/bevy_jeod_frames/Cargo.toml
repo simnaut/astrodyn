@@ -1,0 +1,8 @@
+[package]
+name = "bevy_jeod_frames"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+jeod_frames = { path = "../jeod_frames" }
+bevy = { workspace = true }

@@ -6,7 +6,9 @@ Rust reimplementation of [NASA JEOD](https://github.com/nasa/jeod) (JSC Engineer
 Orbital Dynamics, v5.4, 714 C++ source files) using Bevy ECS instead of NASA's Trick.
 See [STRATEGY.md](STRATEGY.md) for architecture and [PLAN.md](PLAN.md) for tasking.
 
-JEOD source is at `../jeod`. Set `JEOD_PATH` env var to override.
+Copy `.cargo/config.toml.example` to `.cargo/config.toml` and set `JEOD_HOME`
+and `TRICK_HOME` to your local checkouts. Cargo resolves `relative = true`
+paths from the workspace root.
 
 ## Two-Layer Architecture (non-negotiable)
 
@@ -126,14 +128,69 @@ plus optional interaction components (AerodynamicForce, RadiationForce, GravityT
 
 ```bash
 cargo build --workspace
-cargo test --workspace                  # all tests (needs JEOD_PATH for Tier 2)
-JEOD_PATH=../jeod cargo test            # explicit path
-cargo test -p jeod_math                 # single crate
-cargo test -p jeod_gravity -- verif     # gravity verification tests only
+cargo test --workspace                          # all tests (needs JEOD_HOME or JEOD_PATH)
+cargo test --workspace --no-default-features    # skip JEOD validation tests
+JEOD_HOME=../jeod cargo test                    # explicit path
+cargo test -p jeod_math                         # single crate
+cargo test -p jeod_gravity -- verif             # gravity verification tests only
+cargo test -p jeod_dynamics --test tier3_jeod_trajectory  # Tier 3 (needs test_data/)
 ```
+
+JEOD validation tests are gated behind the `jeod-validation` feature (default ON).
+Set `JEOD_HOME` (or `JEOD_PATH`) to the JEOD source checkout, or pass
+`--no-default-features` to skip them. `JEOD_HOME` and `TRICK_HOME` follow the
+standard JEOD/Trick environment variable conventions.
+
+## Generating Tier 3 Reference Data (Docker)
+
+JEOD verification sims run inside a Rocky 9 container with Trick 25 + JEOD 5.4.
+Trick is cloned at `../trick`, JEOD at `../jeod`.
+
+```bash
+# Build container (context is parent dir so trick/ and jeod/ are accessible)
+docker build -f trick/Dockerfile -t jeod-trick ..
+
+# Generate reference CSVs into test_data/
+mkdir -p test_data
+docker run --rm -v $(pwd)/test_data:/output jeod-trick
+```
+
+The container runs sims from the SIM root directory (not from SET_test/RUN_*/) because
+JEOD's `input.py` files use paths relative to the SIM root. Output CSVs land in
+`test_data/` and are consumed by `tier3_jeod_trajectory.rs`.
+
+**Current results (Phase 1):** 0.4 m position error over 8 hours vs JEOD SIM_dyncomp
+RUN_2 (ISS orbit, spherical gravity, 28800s, 481 data points at 60s intervals).
+
+CSV column layout for `log_state_ASCII.csv`:
+- Column 0: `sys.exec.out.time {s}`
+- Columns 1,8,15: `composite_body.state.trans.position[0,1,2] {m}`
+- Columns 2,9,16: `composite_body.state.trans.velocity[0,1,2] {m/s}`
+- (interleaved with rotation matrix, quaternion, and angular velocity columns)
+
+Test data files are gitignored. Tests skip gracefully when `test_data/` is absent.
+
+## JEOD Convention Rule
+
+When JEOD uses a field name whose meaning could be ambiguous (e.g., `time_periapsis`
+— is it time *to* periapsis or time *since* periapsis?), **always read the JEOD C++
+source** to determine the convention. Do not guess or reason by analogy. A wrong guess
+about a sign or direction convention produces code that compiles, passes trivial tests,
+and silently gives wrong answers at scale.
+
+This rule was established after an agent guessed the `time_periapsis` → mean anomaly
+formula as `M = 2π - n·t` instead of the correct `M = n·t`, producing 11,668 km error
+against NASA flight data. The bug was hidden for multiple commits because a broken
+`jeod_path()` caused the validation test to silently skip. Reading
+`models/dynamics/body_action/src/dyn_body_init_orbit.cc` would have given the correct
+formula immediately.
 
 ## Common Pitfalls
 
+- **Trick sim working directory**: JEOD sims must be run from the SIM root directory
+  (e.g., `verif/SIM_dyncomp/`), not from `SET_test/RUN_*/`. The `input.py` files use
+  paths like `SET_test/common_input.py` and `Log_data/log_suite.py` relative to the SIM
+  root. Running from the wrong directory produces no data output.
 - JEOD's `RefFrameState` stores position/velocity **relative to parent frame**, not global.
   Don't confuse with absolute/inertial coordinates.
 - JEOD uses **left-transformation** quaternions (`r' = q r q*`). Many references use

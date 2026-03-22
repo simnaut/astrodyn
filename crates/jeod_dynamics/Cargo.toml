@@ -1,0 +1,15 @@
+[package]
+name = "jeod_dynamics"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+jeod_math = { path = "../jeod_math" }
+glam = { workspace = true }
+
+[features]
+jeod-validation = []
+
+[dev-dependencies]
+jeod_test_data = { path = "../jeod_test_data" }
+jeod_gravity = { path = "../jeod_gravity", default-features = false }

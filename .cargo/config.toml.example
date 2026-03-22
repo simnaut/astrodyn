@@ -1,0 +1,5 @@
+# Copy to .cargo/config.toml and adjust paths for your setup.
+# Cargo resolves relative paths from the workspace root.
+[env]
+JEOD_HOME = { value = "../jeod", relative = true }
+TRICK_HOME = { value = "../trick", relative = true }

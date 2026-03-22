@@ -1,0 +1,157 @@
+use regex::Regex;
+use std::f64::consts::PI;
+
+/// Orbital element initialization data from a JEOD Trick input file.
+///
+/// Parsed from files like:
+/// `models/dynamics/body_action/verif/SIM_orbinit/Modified_data/{vehicle}/trans_Orbit_{frame}_body_{init_name}.py`
+///
+/// These files contain Python assignments in two forms:
+/// - `key = trick.attach_units("unit", value)` (with unit conversion)
+/// - `key = value` (bare numeric)
+///
+/// Unit conversions applied automatically:
+/// - `"degree"` -> radians (multiply by PI/180)
+/// - `"km"` -> meters (multiply by 1000)
+/// - `"s"` -> seconds (no conversion)
+#[derive(Debug, Clone)]
+pub struct OrbitalInitData {
+    pub semi_major_axis: f64, // meters (converted from km)
+    pub eccentricity: f64,
+    pub inclination: f64,     // radians (converted from degrees)
+    pub ascending_node: f64,  // radians
+    pub arg_periapsis: f64,   // radians
+    pub time_periapsis: Option<f64>, // seconds
+    pub mean_anomaly: Option<f64>, // radians
+    pub planet_name: String,
+    pub reference_frame: String,
+}
+
+/// Load orbital element initialization data from a JEOD Trick input file.
+///
+/// # Arguments
+/// * `jeod_root` - Path to the JEOD source tree root.
+/// * `vehicle` - Vehicle directory name (e.g. `"ISS"`).
+/// * `init_name` - Init file identifier (e.g. `"trans_Orbit_inertial_body_set01"`).
+///
+/// # Panics
+/// Panics if the file cannot be read, or required fields (semi_major_axis, eccentricity,
+/// inclination, ascending_node, arg_periapsis) are missing.
+pub fn load_orbital_init(
+    jeod_root: &std::path::Path,
+    vehicle: &str,
+    init_name: &str,
+) -> OrbitalInitData {
+    let path = jeod_root.join(format!(
+        "models/dynamics/body_action/verif/SIM_orbinit/Modified_data/{}/{}.py",
+        vehicle, init_name
+    ));
+    let content = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
+
+    // Match: key = trick.attach_units( "unit", value)
+    let units_re = Regex::new(
+        r#"\.(\w+)\s*=\s*trick\.attach_units\(\s*"(\w+)"\s*,\s*([-\d.eE+]+)\s*\)"#,
+    )
+    .unwrap();
+
+    // Match: key = bare_value (no trick.attach_units)
+    let bare_re = Regex::new(r"\.(\w+)\s*=\s+([-\d.eE+]+)\s*$").unwrap();
+
+    // Match planet_name
+    let planet_re = Regex::new(r#"\.planet_name\s*=\s*"(\w+)""#).unwrap();
+
+    // Match orbit_frame_name
+    let frame_re = Regex::new(r#"\.orbit_frame_name\s*=\s*"([^"]+)""#).unwrap();
+
+    let mut semi_major_axis: Option<f64> = None;
+    let mut eccentricity: Option<f64> = None;
+    let mut inclination: Option<f64> = None;
+    let mut ascending_node: Option<f64> = None;
+    let mut arg_periapsis: Option<f64> = None;
+    let mut time_periapsis: Option<f64> = None;
+    let mut mean_anomaly: Option<f64> = None;
+    let mut planet_name = String::new();
+    let mut reference_frame = String::new();
+
+    for line in content.lines() {
+        // Try trick.attach_units pattern
+        if let Some(cap) = units_re.captures(line) {
+            let key = &cap[1];
+            let unit = &cap[2];
+            let raw_val: f64 = cap[3].parse().unwrap();
+
+            let val = convert_units(raw_val, unit);
+
+            match key {
+                "semi_major_axis" => semi_major_axis = Some(val),
+                "eccentricity" => eccentricity = Some(val),
+                "inclination" => inclination = Some(val),
+                "ascending_node" => ascending_node = Some(val),
+                "arg_periapsis" => arg_periapsis = Some(val),
+                "time_periapsis" => time_periapsis = Some(val),
+                "mean_anomaly" => mean_anomaly = Some(val),
+                _ => {}
+            }
+            continue;
+        }
+
+        // Try bare value pattern
+        if let Some(cap) = bare_re.captures(line) {
+            let key = &cap[1];
+            let val: f64 = cap[2].parse().unwrap();
+
+            match key {
+                "semi_major_axis" => semi_major_axis = Some(val * 1000.0), // assume km
+                "eccentricity" => eccentricity = Some(val),
+                "inclination" => inclination = Some(val * PI / 180.0), // assume degrees
+                "ascending_node" => ascending_node = Some(val * PI / 180.0),
+                "arg_periapsis" => arg_periapsis = Some(val * PI / 180.0),
+                "time_periapsis" => time_periapsis = Some(val),
+                "mean_anomaly" => mean_anomaly = Some(val * PI / 180.0),
+                _ => {}
+            }
+            continue;
+        }
+
+        // Try planet_name
+        if let Some(cap) = planet_re.captures(line) {
+            planet_name = cap[1].to_string();
+            continue;
+        }
+
+        // Try orbit_frame_name
+        if let Some(cap) = frame_re.captures(line) {
+            reference_frame = cap[1].to_string();
+        }
+    }
+
+    OrbitalInitData {
+        semi_major_axis: semi_major_axis
+            .unwrap_or_else(|| panic!("Missing semi_major_axis in {}", path.display())),
+        eccentricity: eccentricity
+            .unwrap_or_else(|| panic!("Missing eccentricity in {}", path.display())),
+        inclination: inclination
+            .unwrap_or_else(|| panic!("Missing inclination in {}", path.display())),
+        ascending_node: ascending_node
+            .unwrap_or_else(|| panic!("Missing ascending_node in {}", path.display())),
+        arg_periapsis: arg_periapsis
+            .unwrap_or_else(|| panic!("Missing arg_periapsis in {}", path.display())),
+        time_periapsis,
+        mean_anomaly,
+        planet_name,
+        reference_frame,
+    }
+}
+
+/// Convert a raw value from the given unit string to SI (meters, radians, seconds).
+fn convert_units(val: f64, unit: &str) -> f64 {
+    match unit {
+        "degree" => val * PI / 180.0,
+        "km" => val * 1000.0,
+        "s" => val,
+        "m" => val,
+        "rad" => val,
+        other => panic!("Unknown unit: {}", other),
+    }
+}
