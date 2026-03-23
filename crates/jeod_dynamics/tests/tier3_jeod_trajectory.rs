@@ -76,14 +76,12 @@ fn tier3_cross_validate_against_jeod_dyncomp() {
     let csv_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../test_data/dyncomp_run2_state.csv");
 
-    if !csv_path.exists() {
-        eprintln!(
-            "JEOD reference trajectory not found at {}. \
-             Generate with: docker run --rm -v $(pwd)/test_data:/output jeod-trick",
-            csv_path.display()
-        );
-        return;
-    }
+    assert!(
+        csv_path.exists(),
+        "JEOD reference trajectory not found at {}. \
+         Generate with: docker run --rm -v $(pwd)/test_data:/output jeod-trick",
+        csv_path.display()
+    );
 
     let jeod_trajectory = load_jeod_trajectory(&csv_path);
     assert!(

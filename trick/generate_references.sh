@@ -106,7 +106,19 @@ fi
 echo "Validated: $EXPECTED_CSV ($LINE_COUNT lines)"
 
 # ════════════════════════════════════════════════════════════════════
-# Sim 2: SIM_orbinit RUN_0001 — Orbital initialization verification
+# Sim 2: SIM_dyncomp RUN_3A — 4x4 spherical harmonics gravity, 8-hour orbit
+# Best for: Phase 2 spherical harmonics validation
+# ════════════════════════════════════════════════════════════════════
+run_sim "verif/SIM_dyncomp" "SET_test/RUN_3A" "dyncomp_run3a" || true
+
+# ════════════════════════════════════════════════════════════════════
+# Sim 3: SIM_dyncomp RUN_3B — 8x8 spherical harmonics gravity, 8-hour orbit
+# Best for: Phase 2 spherical harmonics validation (higher fidelity)
+# ════════════════════════════════════════════════════════════════════
+run_sim "verif/SIM_dyncomp" "SET_test/RUN_3B" "dyncomp_run3b" || true
+
+# ════════════════════════════════════════════════════════════════════
+# Sim 4: SIM_orbinit RUN_0001 — Orbital initialization verification
 # Best for: Phase 1 orbital elements validation
 # ════════════════════════════════════════════════════════════════════
 run_sim "models/dynamics/body_action/verif/SIM_orbinit" "SET_test/RUN_0001" "orbinit_0001" || true

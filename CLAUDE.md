@@ -162,6 +162,11 @@ JEOD's `input.py` files use paths relative to the SIM root. Output CSVs land in
 **Current results (Phase 1):** 0.4 m position error over 8 hours vs JEOD SIM_dyncomp
 RUN_2 (ISS orbit, spherical gravity, 28800s, 481 data points at 60s intervals).
 
+**Phase 2 Tier 3 tests** (require reference CSVs from Docker):
+- RUN_3A: 4x4 spherical harmonics gravity, 8-hour ISS orbit
+- RUN_3B: 8x8 spherical harmonics gravity, 8-hour ISS orbit
+- Test: `crates/jeod_gravity/tests/tier3_spherical_harmonics.rs`
+
 CSV column layout for `log_state_ASCII.csv`:
 - Column 0: `sys.exec.out.time {s}`
 - Columns 1,8,15: `composite_body.state.trans.position[0,1,2] {m}`
