@@ -51,6 +51,9 @@ pub fn compute_point_mass_gravity(mu: f64, position: DVec3) -> GravityAccelerati
 
 /// Dispatch gravity computation based on model type.
 ///
+/// Returns the **total** gravitational acceleration (point-mass + nonspherical
+/// perturbation for spherical harmonics models).
+///
 /// For `PointMass`, position is relative to the source center (any frame).
 /// For `SphericalHarmonics`, position must be in planet-fixed coordinates.
 /// The returned acceleration is in the same frame as the input position.
@@ -58,7 +61,8 @@ pub fn compute_gravity(source: &GravitySource, position: DVec3) -> GravityAccele
     match &source.model {
         GravityModel::PointMass => compute_point_mass_gravity(source.mu, position),
         GravityModel::SphericalHarmonics(data) => {
-            crate::gottlieb::compute_nonspherical_gravity(
+            let pm = compute_point_mass_gravity(data.mu, position);
+            let sh = crate::gottlieb::compute_nonspherical_gravity(
                 data,
                 position,
                 data.degree,
@@ -66,7 +70,12 @@ pub fn compute_gravity(source: &GravitySource, position: DVec3) -> GravityAccele
                 false,
                 0,
                 0,
-            )
+            );
+            GravityAcceleration {
+                accel: pm.accel + sh.accel,
+                gradient: pm.gradient + sh.gradient,
+                potential: pm.potential + sh.potential,
+            }
         }
     }
 }
