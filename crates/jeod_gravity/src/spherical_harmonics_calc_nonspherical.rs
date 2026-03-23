@@ -114,6 +114,7 @@ pub fn compute_nonspherical_gravity(
 /// Same algorithm as [`compute_nonspherical_gravity`] but avoids heap
 /// allocation by reusing pre-allocated buffers. The scratch workspace must
 /// have been created with `degree >= ` the requested degree.
+#[allow(clippy::too_many_arguments)]
 pub fn compute_nonspherical_gravity_with_scratch(
     data: &SphericalHarmonicsData,
     posn_pf: DVec3,
