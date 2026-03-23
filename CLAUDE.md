@@ -20,6 +20,30 @@ Never put physics algorithms directly in a Bevy system function. The system quer
 components, then calls a `jeod_*` function. This keeps physics portable to other ECS
 frameworks, WASM, or standalone batch computation.
 
+## Computational Independence (non-negotiable)
+
+Every computation in our pipeline must be our own ported Rust code. Never use JEOD's
+output data (CSV files, logged matrices, precomputed values) as input to our
+computation. JEOD reference data is used **only** for comparison in tests — never in
+the production code path.
+
+When a test reveals missing physics (e.g., Earth rotation needed for gravity
+evaluation), the answer is to **port the JEOD code**, not to approximate it or read
+JEOD's output. The purpose of this project is an independent reimplementation.
+
+## Tier 3 Cross-Validation (non-negotiable)
+
+Tier 3 tests (trajectory cross-validation against JEOD Trick simulations via Docker)
+are part of the **definition of done** for every phase. They are not optional extras
+or afterthoughts. When a phase delivers new physics, a Tier 3 test exercising that
+physics must be included.
+
+The three verification tiers:
+- **Tier 1**: Unit tests — pure function correctness, round-trips, convergence
+- **Tier 2**: JEOD reference data — static test vectors from JEOD source files
+- **Tier 3**: Trajectory cross-validation — propagate from same initial conditions,
+  compare against JEOD Trick simulation output over hours/days
+
 ## Precision
 
 Use `f64` everywhere. Do NOT use Bevy's `Transform`/`GlobalTransform` (f32).
@@ -173,7 +197,8 @@ CSV column layout for `log_state_ASCII.csv`:
 - Columns 2,9,16: `composite_body.state.trans.velocity[0,1,2] {m/s}`
 - (interleaved with rotation matrix, quaternion, and angular velocity columns)
 
-Test data files are gitignored. Tests skip gracefully when `test_data/` is absent.
+Test data files are gitignored. Tests assert (panic) when required data is absent — they
+never skip gracefully. The assert message includes the exact command to obtain the data.
 
 ## JEOD Convention Rule
 
