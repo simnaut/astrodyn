@@ -12,6 +12,65 @@ use crate::spherical_harmonics_gravity_source::SphericalHarmonicsData;
 /// sqrt(f64::MIN_POSITIVE) — underflow guard matching JEOD's SQRT_DBL_MIN.
 const SQRT_DBL_MIN: f64 = 1.4916681462400413e-154;
 
+/// Pre-allocated scratch buffers for `compute_nonspherical_gravity`.
+///
+/// Avoids per-call heap allocations in the RK4 inner loop. Create once
+/// per degree/order and reuse across calls.
+pub struct GottliebScratch {
+    cos_mlambda: Vec<f64>,
+    sin_mlambda: Vec<f64>,
+    c_tilde: Vec<f64>,
+    s_tilde: Vec<f64>,
+    /// Pnm[ii] has ii+3 elements; stored as a flat Vec with offsets.
+    pnm_flat: Vec<f64>,
+    /// pnm_offsets[ii] = start index of row ii in pnm_flat.
+    pnm_offsets: Vec<usize>,
+    degree: usize,
+}
+
+impl GottliebScratch {
+    /// Allocate scratch buffers for a given maximum degree.
+    pub fn new(degree: usize) -> Self {
+        let n = degree + 1;
+        // Compute total Pnm storage: sum of (ii+3) for ii=0..=degree
+        let mut pnm_offsets = Vec::with_capacity(n);
+        let mut total = 0usize;
+        for ii in 0..n {
+            pnm_offsets.push(total);
+            total += ii + 3;
+        }
+        Self {
+            cos_mlambda: vec![0.0; n],
+            sin_mlambda: vec![0.0; n],
+            c_tilde: vec![0.0; n],
+            s_tilde: vec![0.0; n],
+            pnm_flat: vec![0.0; total],
+            pnm_offsets,
+            degree,
+        }
+    }
+
+    /// Reset all scratch buffers to zero for reuse.
+    fn reset(&mut self) {
+        self.cos_mlambda.fill(0.0);
+        self.sin_mlambda.fill(0.0);
+        self.c_tilde.fill(0.0);
+        self.s_tilde.fill(0.0);
+        self.pnm_flat.fill(0.0);
+    }
+
+    #[inline]
+    fn pnm(&self, ii: usize, jj: usize) -> f64 {
+        self.pnm_flat[self.pnm_offsets[ii] + jj]
+    }
+
+    #[inline]
+    fn pnm_mut(&mut self, ii: usize, jj: usize) -> &mut f64 {
+        let idx = self.pnm_offsets[ii] + jj;
+        &mut self.pnm_flat[idx]
+    }
+}
+
 /// Compute nonspherical gravity using the Gottlieb (1993) algorithm.
 ///
 /// Direct port of JEOD `SphericalHarmonicsGravityControls::calc_nonspherical()`.
@@ -37,7 +96,35 @@ pub fn compute_nonspherical_gravity(
     gradient_degree: usize,
     gradient_order: usize,
 ) -> GravityAcceleration {
-    let degree = degree.min(data.degree);
+    let mut scratch = GottliebScratch::new(degree.min(data.degree));
+    compute_nonspherical_gravity_with_scratch(
+        data,
+        posn_pf,
+        degree,
+        order,
+        compute_gradient,
+        gradient_degree,
+        gradient_order,
+        &mut scratch,
+    )
+}
+
+/// Compute nonspherical gravity with a reusable scratch workspace.
+///
+/// Same algorithm as [`compute_nonspherical_gravity`] but avoids heap
+/// allocation by reusing pre-allocated buffers. The scratch workspace must
+/// have been created with `degree >= ` the requested degree.
+pub fn compute_nonspherical_gravity_with_scratch(
+    data: &SphericalHarmonicsData,
+    posn_pf: DVec3,
+    degree: usize,
+    order: usize,
+    compute_gradient: bool,
+    gradient_degree: usize,
+    gradient_order: usize,
+    scratch: &mut GottliebScratch,
+) -> GravityAcceleration {
+    let degree = degree.min(data.degree).min(scratch.degree);
     let order = order.min(data.order).min(degree);
 
     // If degree < 2, there are no harmonics to compute (only point-mass).
@@ -59,6 +146,9 @@ pub fn compute_nonspherical_gravity(
     } else {
         0
     };
+
+    // Reset scratch buffers
+    scratch.reset();
 
     // Compute position vector magnitude
     let r_mag = posn_pf.length();
@@ -90,16 +180,14 @@ pub fn compute_nonspherical_gravity(
     let mut cos_phi_nth = cos_phi;
 
     // Recursive cos(m*lambda), sin(m*lambda)
-    let mut cos_mlambda = vec![0.0; degree + 1];
-    let mut sin_mlambda = vec![0.0; degree + 1];
-    cos_mlambda[0] = 1.0;
-    sin_mlambda[0] = 0.0;
+    scratch.cos_mlambda[0] = 1.0;
+    scratch.sin_mlambda[0] = 0.0;
     if rho_sq > 0.0 {
-        cos_mlambda[1] = posn_pf.x / rho;
-        sin_mlambda[1] = posn_pf.y / rho;
+        scratch.cos_mlambda[1] = posn_pf.x / rho;
+        scratch.sin_mlambda[1] = posn_pf.y / rho;
     } else {
-        cos_mlambda[1] = 1.0;
-        sin_mlambda[1] = 0.0;
+        scratch.cos_mlambda[1] = 1.0;
+        scratch.sin_mlambda[1] = 0.0;
     }
 
     // Initialize sums (perturbing gravity only: zeros)
@@ -121,42 +209,33 @@ pub fn compute_nonspherical_gravity(
     let mut sum_t = 0.0;
 
     // C_tilde, S_tilde (equation 3-18, modified for underflow)
-    let mut c_tilde = vec![0.0; degree + 1];
-    let mut s_tilde = vec![0.0; degree + 1];
-    c_tilde[0] = 1.0;
-    c_tilde[1] = x_div_r;
-    s_tilde[0] = 0.0;
-    s_tilde[1] = y_div_r;
+    scratch.c_tilde[0] = 1.0;
+    scratch.c_tilde[1] = x_div_r;
+    scratch.s_tilde[0] = 0.0;
+    scratch.s_tilde[1] = y_div_r;
 
-    // Pnm: working array for Legendre polynomials (per-call scratch)
-    // Pnm[ii] has ii+3 elements
-    // The diagonal elements Pnm[ii][ii] are constant (independent of position)
-    // and are precomputed during initialize_control in JEOD. We compute them here.
-    let mut pnm: Vec<Vec<f64>> = Vec::with_capacity(degree + 1);
-    for ii in 0..=degree {
-        pnm.push(vec![0.0; ii + 3]);
-    }
     // Initialize Pnm[0] and Pnm[1] (from JEOD initialize_control, lines 118-123)
-    pnm[0][0] = 1.0;
-    // pnm[0][1] = 0.0; pnm[0][2] = 0.0; (already zero)
+    *scratch.pnm_mut(0, 0) = 1.0;
     if degree >= 1 {
-        pnm[1][1] = 3.0_f64.sqrt();
-        // pnm[1][2] = 0.0; pnm[1][3] = 0.0; (already zero)
+        *scratch.pnm_mut(1, 1) = 3.0_f64.sqrt();
     }
     // Precompute diagonal elements Pnm[ii][ii] (equation 7-8)
     // These are position-independent and used in the inner loop.
     for ii in 2..=degree {
         let ii_f = data.int_to_double[ii];
-        pnm[ii][ii] = ((2.0 * ii_f + 1.0) / (2.0 * ii_f)).sqrt() * pnm[ii - 1][ii - 1];
-        // pnm[ii][ii+1] = 0.0; pnm[ii][ii+2] = 0.0; (already zero)
+        let prev = scratch.pnm(ii - 1, ii - 1);
+        *scratch.pnm_mut(ii, ii) = ((2.0 * ii_f + 1.0) / (2.0 * ii_f)).sqrt() * prev;
     }
     // Set position-dependent P(1,0)
-    pnm[1][0] = 3.0_f64.sqrt() * epilson;
+    *scratch.pnm_mut(1, 0) = 3.0_f64.sqrt() * epilson;
 
     let i2d = &data.int_to_double;
 
-    // Store local copy of Cnm[2] to avoid modifying source data
-    // (JEOD protects against writes to harmonics body Cnm array)
+    // Store local copy of Cnm[2] to avoid modifying source data.
+    // JEOD's calc_nonspherical does this because variational tidal effects
+    // (delta C20) are added to local_Cnm[0] per-call. We preserve the
+    // pattern for when tidal corrections are ported. The copy is small
+    // (degree-2 row has only 3 elements regardless of model degree).
     let local_cnm2: Vec<f64> = if degree >= 2 {
         data.cnm[2].clone()
     } else {
@@ -180,24 +259,24 @@ pub fn compute_nonspherical_gravity(
         let dbl_iip1 = i2d[ii + 1];
 
         // P(n,0) term, equation (7-14)
-        pnm[ii][0] = data.alpha[ii] * epilson * pnm[ii - 1][0]
-            - data.beta[ii] * pnm[ii - 2][0];
+        *scratch.pnm_mut(ii, 0) = data.alpha[ii] * epilson * scratch.pnm(ii - 1, 0)
+            - data.beta[ii] * scratch.pnm(ii - 2, 0);
 
         // P(n,n-1) term, equation (7-16)
-        pnm[ii][ii - 1] = epilson * data.nrdiag[ii];
+        *scratch.pnm_mut(ii, ii - 1) = epilson * data.nrdiag[ii];
 
         // P(n,1) term, equation (7-12)
-        pnm[ii][1] = data.xi[ii][1] * epilson * pnm[ii - 1][1]
-            - data.eta[ii][1] * pnm[ii - 2][1];
+        *scratch.pnm_mut(ii, 1) = data.xi[ii][1] * epilson * scratch.pnm(ii - 1, 1)
+            - data.eta[ii][1] * scratch.pnm(ii - 2, 1);
 
-        let mut sum_v_n = pnm[ii][0] * c_ii[0];
-        let mut sum_h_n = pnm[ii][1] * c_ii[0] * data.zeta[ii][0];
+        let mut sum_v_n = scratch.pnm(ii, 0) * c_ii[0];
+        let mut sum_h_n = scratch.pnm(ii, 1) * c_ii[0] * data.zeta[ii][0];
         let mut sum_gam_n = sum_v_n * dbl_iip1;
 
         // Equation (7-12) for jj=2..ii-2
         for jj in 2..=(ii.saturating_sub(2)) {
-            pnm[ii][jj] = data.xi[ii][jj] * epilson * pnm[ii - 1][jj]
-                - data.eta[ii][jj] * pnm[ii - 2][jj];
+            *scratch.pnm_mut(ii, jj) = data.xi[ii][jj] * epilson * scratch.pnm(ii - 1, jj)
+                - data.eta[ii][jj] * scratch.pnm(ii - 2, jj);
         }
 
         let mut sum_h_grad_n = 0.0;
@@ -207,9 +286,9 @@ pub fn compute_nonspherical_gravity(
         let mut sum_l_n = 0.0;
 
         if ii_grad_deg_nonzero {
-            sum_h_grad_n = pnm[ii][1] * c_ii[0] * data.zeta[ii][0];
+            sum_h_grad_n = scratch.pnm(ii, 1) * c_ii[0] * data.zeta[ii][0];
             sum_gam_grad_n = sum_v_n * dbl_iip1;
-            sum_m_n = pnm[ii][2] * c_ii[0] * data.upsilon[ii][0];
+            sum_m_n = scratch.pnm(ii, 2) * c_ii[0] * data.upsilon[ii][0];
             sum_p_n = sum_h_grad_n * dbl_iip1;
             sum_l_n = sum_gam_grad_n * (dbl_iip1 + 1.0);
         }
@@ -231,14 +310,14 @@ pub fn compute_nonspherical_gravity(
             } else {
                 cos_phi_nth = 0.0;
             }
-            cos_mlambda[ii] =
-                cos_mlambda[1] * cos_mlambda[ii - 1] - sin_mlambda[1] * sin_mlambda[ii - 1];
-            sin_mlambda[ii] =
-                sin_mlambda[1] * cos_mlambda[ii - 1] + cos_mlambda[1] * sin_mlambda[ii - 1];
+            scratch.cos_mlambda[ii] =
+                scratch.cos_mlambda[1] * scratch.cos_mlambda[ii - 1] - scratch.sin_mlambda[1] * scratch.sin_mlambda[ii - 1];
+            scratch.sin_mlambda[ii] =
+                scratch.sin_mlambda[1] * scratch.cos_mlambda[ii - 1] + scratch.cos_mlambda[1] * scratch.sin_mlambda[ii - 1];
 
             // Equation (3-18), modified for underflow
-            c_tilde[ii] = cos_phi_nth * cos_mlambda[ii];
-            s_tilde[ii] = cos_phi_nth * sin_mlambda[ii];
+            scratch.c_tilde[ii] = cos_phi_nth * scratch.cos_mlambda[ii];
+            scratch.s_tilde[ii] = cos_phi_nth * scratch.sin_mlambda[ii];
 
             let jj_max = order.min(ii);
             for jj in 1..=jj_max {
@@ -251,20 +330,20 @@ pub fn compute_nonspherical_gravity(
                 let c_iijj = c_ii[jj];
                 let s_iijj = s_ii[jj];
 
-                let jj_x_piijj = dbl_jj * pnm[ii][jj];
-                let b_tilde = c_iijj * c_tilde[jj] + s_iijj * s_tilde[jj];
+                let jj_x_piijj = dbl_jj * scratch.pnm(ii, jj);
+                let b_tilde = c_iijj * scratch.c_tilde[jj] + s_iijj * scratch.s_tilde[jj];
 
                 // Equation (3-9)
                 let b_tilde_m1 =
-                    c_iijj * c_tilde[jj - 1] + s_iijj * s_tilde[jj - 1];
+                    c_iijj * scratch.c_tilde[jj - 1] + s_iijj * scratch.s_tilde[jj - 1];
                 let a_tilde_m1 =
-                    c_iijj * s_tilde[jj - 1] - s_iijj * c_tilde[jj - 1];
-                let piijj_x_btilde = pnm[ii][jj] * b_tilde;
+                    c_iijj * scratch.s_tilde[jj - 1] - s_iijj * scratch.c_tilde[jj - 1];
+                let piijj_x_btilde = scratch.pnm(ii, jj) * b_tilde;
                 sum_v_n += piijj_x_btilde;
 
                 if jj < ii {
                     let zetaiijj_x_piijjp1 =
-                        data.zeta[ii][jj] * pnm[ii][jj + 1];
+                        data.zeta[ii][jj] * scratch.pnm(ii, jj + 1);
                     sum_h_n += zetaiijj_x_piijjp1 * b_tilde;
                     if ii_grad_deg_nonzero && grad_order_nonzero && jj_lt_grad_order {
                         sum_h_grad_n += zetaiijj_x_piijjp1 * b_tilde;
@@ -282,7 +361,7 @@ pub fn compute_nonspherical_gravity(
                     sum_gam_grad_n += (dbl_jj + dbl_iip1) * piijj_x_btilde;
                     sum_l_n +=
                         (dbl_jj + dbl_iip1) * (dbl_jjp1 + dbl_iip1) * piijj_x_btilde;
-                    sum_m_n += pnm[ii][jj + 2] * b_tilde * data.upsilon[ii][jj];
+                    sum_m_n += scratch.pnm(ii, jj + 2) * b_tilde * data.upsilon[ii][jj];
                     sum_s_n += (dbl_jj + dbl_iip1) * jj_x_piijj * b_tilde_m1;
                     sum_t_n -= (dbl_jj + dbl_iip1) * jj_x_piijj * a_tilde_m1;
                 }
@@ -290,10 +369,10 @@ pub fn compute_nonspherical_gravity(
                 if jj >= 2 && ii_grad_deg_nonzero && grad_order_nonzero && jj_lt_grad_order {
                     sum_n_n += dbl_jjm1
                         * jj_x_piijj
-                        * (c_iijj * c_tilde[jj - 2] + s_iijj * s_tilde[jj - 2]);
+                        * (c_iijj * scratch.c_tilde[jj - 2] + s_iijj * scratch.s_tilde[jj - 2]);
                     sum_o_n += dbl_jjm1
                         * jj_x_piijj
-                        * (c_iijj * s_tilde[jj - 2] - s_iijj * c_tilde[jj - 2]);
+                        * (c_iijj * scratch.s_tilde[jj - 2] - s_iijj * scratch.c_tilde[jj - 2]);
                 }
             } // next m
 

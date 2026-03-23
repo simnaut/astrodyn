@@ -123,14 +123,14 @@ impl SimulationTime {
         let utc_tjt_at_epoch = self.leap_second_table.tai_to_utc_tjt(self.tai_tjt_at_epoch);
         self.utc_seconds = (utc_tjt - utc_tjt_at_epoch) * SECONDS_PER_DAY;
 
-        // UT1 ticks at the same rate as TAI; offset is constant over Phase 2.
-        // UT1 seconds since epoch = TAI seconds since epoch (initial UT1 seconds = 0).
-        self.ut1_seconds = self.tai_seconds;
+        // UT1 = TAI + ut1_tai_offset (offset is approximately constant over
+        // short spans; updated from IERS bulletins via set_ut1_tai_offset).
+        self.ut1_seconds = self.tai_seconds + self.ut1_tai_offset;
 
         // GMST from UT1 days since J2000
-        // UT1 TJT = TAI TJT + ut1_tai_offset/86400, and J2000 TAI TJT has the
-        // same offset, so they cancel: ut1_days_since_j2000 ≈ tai_tjt - J2000_TAI_TJT
-        let ut1_days_since_j2000 = self.tai_tjt - J2000_TAI_TJT;
+        // UT1 TJT = TAI TJT + ut1_tai_offset / 86400
+        let ut1_tjt = self.tai_tjt + self.ut1_tai_offset / SECONDS_PER_DAY;
+        let ut1_days_since_j2000 = ut1_tjt - J2000_TAI_TJT;
         self.gmst_seconds = time_converter_ut1_gmst::ut1_to_gmst_seconds(ut1_days_since_j2000);
         self.gmst_radians = time_converter_ut1_gmst::ut1_to_gmst_radians(ut1_days_since_j2000);
     }

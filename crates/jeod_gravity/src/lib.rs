@@ -10,5 +10,7 @@ pub use compute::*;
 pub use gravity_controls::*;
 pub use spherical_harmonics_gravity_controls::*;
 pub use gravity_source::*;
-pub use spherical_harmonics_calc_nonspherical::compute_nonspherical_gravity;
+pub use spherical_harmonics_calc_nonspherical::{
+    compute_nonspherical_gravity, compute_nonspherical_gravity_with_scratch, GottliebScratch,
+};
 pub use spherical_harmonics_gravity_source::SphericalHarmonicsData;
