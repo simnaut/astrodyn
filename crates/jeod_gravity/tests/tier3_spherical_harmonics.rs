@@ -17,10 +17,10 @@
 
 use glam::{DMat3, DVec3};
 use jeod_dynamics::{rk4_translational_step, TranslationalState};
-use jeod_frames::rnp;
+use jeod_frames::rotation_j2000;
 use jeod_gravity::coefficients;
 use jeod_test_data::jeod_path;
-use jeod_time::conversions::ut1_to_gmst_days;
+use jeod_time::time_converter_ut1_gmst::ut1_to_gmst_days;
 use jeod_time::epoch::{J2000_TAI_TJT, SECONDS_PER_DAY};
 use std::path::Path;
 
@@ -54,11 +54,11 @@ fn rotation_at_sim_time(sim_time_s: f64) -> DMat3 {
     // UT1 days since J2000 (for GMST formula)
     let ut1_days = ut1_tjt - J2000_TAI_TJT;
 
-    // GMST in fractional sidereal days → seconds
+    // GMST in accumulated sidereal days → seconds (matches JEOD TimeGMST::seconds)
     let gmst_days = ut1_to_gmst_days(ut1_days);
     let gmst_seconds = gmst_days * SECONDS_PER_DAY;
 
-    rnp::compute_t_parent_this(gmst_seconds, tt_centuries)
+    rotation_j2000::compute_t_parent_this(gmst_seconds, tt_centuries)
 }
 
 #[derive(Debug)]
@@ -107,12 +107,11 @@ fn run_sh_trajectory_test(csv_name: &str, degree: usize, order: usize, label: &s
     let trajectory = load_jeod_trajectory(&csv_path);
     assert!(trajectory.len() > 100);
 
-    // Gravity acceleration using our own RNP:
-    // 1. Compute T_parent_this from our precession + nutation + GAST
-    // 2. Rotate position to planet-fixed
-    // 3. Evaluate harmonics perturbation
-    // 4. Rotate acceleration back to inertial
-    // 5. Add point-mass
+    // Gravity acceleration using our own RNP with truncated degree/order.
+    // Uses compute_nonspherical_gravity directly (not compute_gravity) because
+    // the test exercises specific degree/order truncation. compute_gravity
+    // handles full inertial→planet-fixed→inertial transforms per JEOD's
+    // calc_nonspherical when using the full model.
     let accel_fn = |s: &TranslationalState, sim_time: f64| -> DVec3 {
         let t_i2pf = rotation_at_sim_time(sim_time);
         let t_pf2i = t_i2pf.transpose();

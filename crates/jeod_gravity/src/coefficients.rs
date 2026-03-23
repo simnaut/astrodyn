@@ -1,6 +1,6 @@
 //! Gravity coefficient loading from JEOD C++ data files.
 
-use crate::spherical_harmonics::SphericalHarmonicsData;
+use crate::spherical_harmonics_gravity_source::SphericalHarmonicsData;
 
 /// Load spherical harmonics coefficients from a JEOD C++ data file.
 ///

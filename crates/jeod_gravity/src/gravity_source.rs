@@ -1,4 +1,4 @@
-use crate::spherical_harmonics::SphericalHarmonicsData;
+use crate::spherical_harmonics_gravity_source::SphericalHarmonicsData;
 
 #[derive(Debug, Clone)]
 pub struct GravitySource {

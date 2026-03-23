@@ -1,7 +1,7 @@
 use glam::{DMat3, DVec3};
 use jeod_dynamics::GravityAcceleration;
 
-use crate::source::{GravityModel, GravitySource};
+use crate::gravity_source::{GravityModel, GravitySource};
 
 /// Compute point-mass gravitational acceleration, gradient, and potential.
 /// Position is the body's position relative to the gravity source center.
@@ -54,27 +54,49 @@ pub fn compute_point_mass_gravity(mu: f64, position: DVec3) -> GravityAccelerati
 /// Returns the **total** gravitational acceleration (point-mass + nonspherical
 /// perturbation for spherical harmonics models).
 ///
-/// For `PointMass`, position is relative to the source center (any frame).
-/// For `SphericalHarmonics`, position must be in planet-fixed coordinates.
-/// The returned acceleration is in the same frame as the input position.
-pub fn compute_gravity(source: &GravitySource, position: DVec3) -> GravityAcceleration {
+/// For `PointMass`, `position` is relative to the source center in any frame;
+/// `t_parent_this` is ignored. Result is in the same frame as the input.
+///
+/// For `SphericalHarmonics`, `position` is in inertial coordinates and
+/// `t_parent_this` is the inertial-to-planet-fixed rotation matrix.
+/// Matching JEOD's `calc_nonspherical`, this function internally transforms
+/// position to planet-fixed, computes gravity, and transforms the result
+/// back to inertial. Result is in the inertial frame.
+pub fn compute_gravity(
+    source: &GravitySource,
+    position: DVec3,
+    t_parent_this: &DMat3,
+) -> GravityAcceleration {
     match &source.model {
         GravityModel::PointMass => compute_point_mass_gravity(source.mu, position),
         GravityModel::SphericalHarmonics(data) => {
+            // Transform position from inertial to planet-fixed
+            // (JEOD: Vector3::transform(T_parent_this, posn, posn_pf))
+            let posn_pf = *t_parent_this * position;
+
+            // Compute point-mass in inertial (frame-independent)
             let pm = compute_point_mass_gravity(data.mu, position);
-            let sh = crate::gottlieb::compute_nonspherical_gravity(
+
+            // Compute nonspherical perturbation in planet-fixed
+            let sh_pf = crate::spherical_harmonics_calc_nonspherical::compute_nonspherical_gravity(
                 data,
-                position,
+                posn_pf,
                 data.degree,
                 data.order,
                 false,
                 0,
                 0,
             );
+
+            // Transform nonspherical acceleration back to inertial
+            // (JEOD: Vector3::transform_transpose(T_parent_this, body_grav_accel))
+            let t_transpose = t_parent_this.transpose();
+            let sh_accel_inertial = t_transpose * sh_pf.accel;
+
             GravityAcceleration {
-                accel: pm.accel + sh.accel,
-                gradient: pm.gradient + sh.gradient,
-                potential: pm.potential + sh.potential,
+                accel: pm.accel + sh_accel_inertial,
+                gradient: pm.gradient + sh_pf.gradient,
+                potential: pm.potential + sh_pf.potential,
             }
         }
     }
@@ -213,7 +235,7 @@ mod tests {
             model: GravityModel::PointMass,
         };
         let pos = DVec3::new(EARTH_RADIUS, 0.0, 0.0);
-        let result = compute_gravity(&source, pos);
+        let result = compute_gravity(&source, pos, &DMat3::IDENTITY);
         let direct = compute_point_mass_gravity(EARTH_MU, pos);
 
         assert_eq!(result.accel, direct.accel);

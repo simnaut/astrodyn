@@ -1,5 +1,7 @@
-use crate::conversions;
 use crate::epoch::{J2000_TAI_TJT, SECONDS_PER_DAY, TAI_TT_OFFSET};
+use crate::time_converter_tai_tdb;
+use crate::time_converter_tai_tt;
+use crate::time_converter_ut1_gmst;
 use crate::leap_second::LeapSecondTable;
 
 /// Complete simulation time state across all time scales.
@@ -27,6 +29,9 @@ pub struct SimulationTime {
     pub tdb_seconds: f64,
     /// Greenwich Mean Sidereal Time (radians, 0 to 2π).
     pub gmst_radians: f64,
+    /// GMST in accumulated sidereal seconds since J2000.
+    /// Matches JEOD's `TimeGMST::seconds`.
+    pub gmst_seconds: f64,
     /// Elapsed simulation time (same as tai_seconds for forward sim).
     pub simulation_seconds: f64,
     /// Leap second table for TAI↔UTC conversion.
@@ -59,6 +64,7 @@ impl SimulationTime {
             tt_seconds: 0.0,
             tdb_seconds: 0.0,
             gmst_radians: 0.0,
+            gmst_seconds: 0.0,
             simulation_seconds: 0.0,
             leap_second_table: leap_table,
             ut1_tai_offset,
@@ -107,10 +113,10 @@ impl SimulationTime {
     /// Recompute all derived time scales from TAI.
     fn recompute_derived(&mut self) {
         // TT = TAI + 32.184
-        self.tt_seconds = conversions::tai_to_tt(self.tai_seconds);
+        self.tt_seconds = time_converter_tai_tt::tai_to_tt(self.tai_seconds);
 
         // TDB = TT + periodic offset
-        self.tdb_seconds = conversions::tai_to_tdb(self.tai_seconds, self.tai_tjt);
+        self.tdb_seconds = time_converter_tai_tdb::tai_to_tdb(self.tai_seconds, self.tai_tjt);
 
         // UTC via leap second table
         let utc_tjt = self.leap_second_table.tai_to_utc_tjt(self.tai_tjt);
@@ -125,7 +131,8 @@ impl SimulationTime {
         // UT1 TJT = TAI TJT + ut1_tai_offset/86400, and J2000 TAI TJT has the
         // same offset, so they cancel: ut1_days_since_j2000 ≈ tai_tjt - J2000_TAI_TJT
         let ut1_days_since_j2000 = self.tai_tjt - J2000_TAI_TJT;
-        self.gmst_radians = conversions::ut1_to_gmst_radians(ut1_days_since_j2000);
+        self.gmst_seconds = time_converter_ut1_gmst::ut1_to_gmst_seconds(ut1_days_since_j2000);
+        self.gmst_radians = time_converter_ut1_gmst::ut1_to_gmst_radians(ut1_days_since_j2000);
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::shape::PlanetShape;
+use crate::planet::PlanetShape;
 
 /// Earth (WGS84 ellipsoid).
 ///

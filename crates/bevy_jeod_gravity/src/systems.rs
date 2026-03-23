@@ -33,7 +33,8 @@ pub fn gravity_computation_system(
                 );
                 continue;
             };
-            let result = jeod_gravity::compute_gravity(&source.0, state.position);
+            // TODO(Phase 3): obtain T_parent_this from planet-fixed frame entity
+            let result = jeod_gravity::compute_gravity(&source.0, state.position, &glam::DMat3::IDENTITY);
             total.accel += result.accel;
             if ctrl.compute_gradient {
                 total.gradient += result.gradient;

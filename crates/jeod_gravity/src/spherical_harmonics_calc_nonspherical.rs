@@ -7,7 +7,7 @@
 use glam::{DMat3, DVec3};
 use jeod_dynamics::GravityAcceleration;
 
-use crate::spherical_harmonics::SphericalHarmonicsData;
+use crate::spherical_harmonics_gravity_source::SphericalHarmonicsData;
 
 /// sqrt(f64::MIN_POSITIVE) — underflow guard matching JEOD's SQRT_DBL_MIN.
 const SQRT_DBL_MIN: f64 = 1.4916681462400413e-154;

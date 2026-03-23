@@ -64,8 +64,9 @@ pub fn integration_system(
                 let mut accel = DVec3::ZERO;
                 for ctrl in &controls.0.controls {
                     if let Ok(source) = sources.get(ctrl.source_id) {
+                        // TODO(Phase 3): obtain T_parent_this from planet-fixed frame entity
                         accel +=
-                            jeod_gravity::compute_gravity(&source.0, s.position).accel;
+                            jeod_gravity::compute_gravity(&source.0, s.position, &glam::DMat3::IDENTITY).accel;
                     }
                 }
                 accel
