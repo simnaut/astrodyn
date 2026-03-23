@@ -1,0 +1,9 @@
+[package]
+name = "jeod_ephemeris"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anise = "0.9"
+glam = { workspace = true }
+thiserror = { workspace = true }

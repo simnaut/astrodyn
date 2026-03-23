@@ -50,9 +50,24 @@ pub fn compute_point_mass_gravity(mu: f64, position: DVec3) -> GravityAccelerati
 }
 
 /// Dispatch gravity computation based on model type.
+///
+/// For `PointMass`, position is relative to the source center (any frame).
+/// For `SphericalHarmonics`, position must be in planet-fixed coordinates.
+/// The returned acceleration is in the same frame as the input position.
 pub fn compute_gravity(source: &GravitySource, position: DVec3) -> GravityAcceleration {
     match &source.model {
         GravityModel::PointMass => compute_point_mass_gravity(source.mu, position),
+        GravityModel::SphericalHarmonics(data) => {
+            crate::gottlieb::compute_nonspherical_gravity(
+                data,
+                position,
+                data.degree,
+                data.order,
+                false,
+                0,
+                0,
+            )
+        }
     }
 }
 

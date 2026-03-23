@@ -53,10 +53,7 @@ fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
 
     // Spawn satellite with all required dynamics components.
     let controls = GravityControls {
-        controls: vec![GravityControl {
-            source_id: earth,
-            compute_gradient: false,
-        }],
+        controls: vec![GravityControl::new(earth, false)],
     };
 
     commands.spawn((

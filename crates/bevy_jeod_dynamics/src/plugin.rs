@@ -10,7 +10,9 @@ impl Plugin for JeodDynamicsPlugin {
         app.configure_sets(
             FixedUpdate,
             (
-                JeodSet::Environment,
+                JeodSet::TimeUpdate,
+                JeodSet::EphemerisUpdate.after(JeodSet::TimeUpdate),
+                JeodSet::Environment.after(JeodSet::EphemerisUpdate),
                 JeodSet::ForceCollection.after(JeodSet::Environment),
                 JeodSet::Integration.after(JeodSet::ForceCollection),
                 JeodSet::DerivedState.after(JeodSet::Integration),

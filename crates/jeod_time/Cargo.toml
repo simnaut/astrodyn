@@ -1,0 +1,14 @@
+[package]
+name = "jeod_time"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+thiserror = { workspace = true }
+
+[dev-dependencies]
+jeod_test_data = { path = "../jeod_test_data" }
+
+[features]
+default = ["jeod-validation"]
+jeod-validation = []
