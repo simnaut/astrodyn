@@ -2437,8 +2437,10 @@ version = "0.1.0"
 dependencies = [
  "glam 0.30.10",
  "jeod_dynamics",
+ "jeod_frames",
  "jeod_math",
  "jeod_test_data",
+ "jeod_time",
 ]
 
 [[package]]
