@@ -233,8 +233,8 @@ batch computation without Bevy.
 - [x] **Test data parsers**: Leap second (28 entries, spot-checked), mass data (ISS, spot-checked), gravity (40 cases), orbital elements (5001 vectors), reference states, Euler angles — all verified
 - [x] **Portability**: All `jeod_*` Phase 2 crates compile without Bevy (anise is pure Rust)
 - [x] `cargo test --workspace` — 115 tests pass, 0 failures, 0 clippy warnings
-- [x] **JEOD Tier 3 (4x4)**: 3.5 km position error over 8 hours vs JEOD SIM_dyncomp RUN_3A (4x4 spherical harmonics + Earth rotation via GMST, Docker: Trick 25 + JEOD 5.4)
-- [x] **JEOD Tier 3 (8x8)**: 2.3 km position error over 8 hours vs JEOD SIM_dyncomp RUN_3B (8x8 spherical harmonics + Earth rotation via GMST, Docker: Trick 25 + JEOD 5.4)
+- [x] **JEOD Tier 3 (4x4)**: 15.6 m position error over 8 hours vs JEOD SIM_dyncomp RUN_3A (4x4 + our RNP: precession + nutation + GAST)
+- [x] **JEOD Tier 3 (8x8)**: 28.8 m position error over 8 hours vs JEOD SIM_dyncomp RUN_3B (8x8 + our RNP: precession + nutation + GAST)
 
 ---
 

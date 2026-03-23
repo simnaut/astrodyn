@@ -14,3 +14,4 @@ jeod-validation = []
 [dev-dependencies]
 jeod_test_data = { path = "../jeod_test_data" }
 jeod_time = { path = "../jeod_time", default-features = false }
+jeod_frames = { path = "../jeod_frames" }
