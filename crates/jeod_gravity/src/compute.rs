@@ -70,12 +70,18 @@ pub fn compute_gravity(
     match &source.model {
         GravityModel::PointMass => compute_point_mass_gravity(source.mu, position),
         GravityModel::SphericalHarmonics(data) => {
+            debug_assert!(
+                (source.mu - data.mu).abs() < 1e-10,
+                "GravitySource.mu ({}) must match SphericalHarmonicsData.mu ({})",
+                source.mu, data.mu
+            );
+
             // Transform position from inertial to planet-fixed
             // (JEOD: Vector3::transform(T_parent_this, posn, posn_pf))
             let posn_pf = *t_parent_this * position;
 
             // Compute point-mass in inertial (frame-independent)
-            let pm = compute_point_mass_gravity(data.mu, position);
+            let pm = compute_point_mass_gravity(source.mu, position);
 
             // Compute nonspherical perturbation in planet-fixed
             let sh_pf = crate::spherical_harmonics_calc_nonspherical::compute_nonspherical_gravity(
@@ -93,9 +99,14 @@ pub fn compute_gravity(
             let t_transpose = t_parent_this.transpose();
             let sh_accel_inertial = t_transpose * sh_pf.accel;
 
+            // Transform gradient from planet-fixed to inertial
+            // (JEOD: Matrix3x3::transpose_transform_matrix(T_parent_this, dgdx_pf, dgdx))
+            // G_inertial = T^T * G_pf * T
+            let sh_gradient_inertial = t_transpose * sh_pf.gradient * *t_parent_this;
+
             GravityAcceleration {
                 accel: pm.accel + sh_accel_inertial,
-                gradient: pm.gradient + sh_pf.gradient,
+                gradient: pm.gradient + sh_gradient_inertial,
                 potential: pm.potential + sh_pf.potential,
             }
         }
@@ -132,11 +143,17 @@ pub fn compute_gravity_with_scratch(
     match &source.model {
         GravityModel::PointMass => compute_point_mass_gravity(source.mu, position),
         GravityModel::SphericalHarmonics(data) => {
+            debug_assert!(
+                (source.mu - data.mu).abs() < 1e-10,
+                "GravitySource.mu ({}) must match SphericalHarmonicsData.mu ({})",
+                source.mu, data.mu
+            );
+
             // Transform position from inertial to planet-fixed
             let posn_pf = *t_parent_this * position;
 
             // Compute point-mass in inertial (frame-independent)
-            let pm = compute_point_mass_gravity(data.mu, position);
+            let pm = compute_point_mass_gravity(source.mu, position);
 
             // Compute nonspherical perturbation in planet-fixed
             let sh_pf = crate::spherical_harmonics_calc_nonspherical::compute_nonspherical_gravity_with_scratch(
@@ -154,9 +171,14 @@ pub fn compute_gravity_with_scratch(
             let t_transpose = t_parent_this.transpose();
             let sh_accel_inertial = t_transpose * sh_pf.accel;
 
+            // Transform gradient from planet-fixed to inertial
+            // (JEOD: Matrix3x3::transpose_transform_matrix(T_parent_this, dgdx_pf, dgdx))
+            // G_inertial = T^T * G_pf * T
+            let sh_gradient_inertial = t_transpose * sh_pf.gradient * *t_parent_this;
+
             GravityAcceleration {
                 accel: pm.accel + sh_accel_inertial,
-                gradient: pm.gradient + sh_pf.gradient,
+                gradient: pm.gradient + sh_gradient_inertial,
                 potential: pm.potential + sh_pf.potential,
             }
         }

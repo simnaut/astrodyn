@@ -42,6 +42,7 @@ pub fn load_mass_data(jeod_root: &std::path::Path, vehicle: &str) -> MassInitDat
     let mut position = [0.0; 3];
     let mut inertia = [[0.0; 3]; 3];
     let mut has_position = false;
+    let mut inertia_rows_seen = [false; 3];
 
     for line in content.lines() {
         if let Some(cap) = mass_re.captures(line) {
@@ -59,16 +60,31 @@ pub fn load_mass_data(jeod_root: &std::path::Path, vehicle: &str) -> MassInitDat
         }
         if let Some(cap) = inertia_re.captures(line) {
             let row: usize = cap[1].parse().unwrap();
+            assert!(
+                row < 3,
+                "Inertia row index {} out of bounds in {}",
+                row,
+                path.display()
+            );
             inertia[row] = [
                 cap[2].parse().unwrap(),
                 cap[3].parse().unwrap(),
                 cap[4].parse().unwrap(),
             ];
+            inertia_rows_seen[row] = true;
         }
     }
 
     assert!(mass.is_some(), "Missing mass in {}", path.display());
     assert!(has_position, "Missing position in {}", path.display());
+    for (i, seen) in inertia_rows_seen.iter().enumerate() {
+        assert!(
+            seen,
+            "Missing inertia row {} in {}",
+            i,
+            path.display()
+        );
+    }
 
     MassInitData {
         mass: mass.unwrap(),

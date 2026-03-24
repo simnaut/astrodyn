@@ -125,8 +125,15 @@ pub fn compute_nonspherical_gravity_with_scratch(
     gradient_order: usize,
     scratch: &mut GottliebScratch,
 ) -> GravityAcceleration {
-    let degree = degree.min(data.degree).min(scratch.degree);
+    debug_assert!(
+        scratch.degree >= degree.min(data.degree),
+        "GottliebScratch degree ({}) must be >= requested degree ({})",
+        scratch.degree, degree.min(data.degree)
+    );
+    let degree = degree.min(data.degree);
     let order = order.min(data.order).min(degree);
+
+    debug_assert!(posn_pf.length_squared() > 0.0, "position must be non-zero");
 
     // If degree < 2, there are no harmonics to compute (only point-mass).
     // Return zero perturbation.

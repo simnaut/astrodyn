@@ -24,14 +24,20 @@ pub fn load_leap_second_table(jeod_root: &std::path::Path) -> Vec<LeapSecondEntr
         .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
 
     let mut entries = Vec::new();
-    for line in content.lines() {
+    for (line_num, line) in content.lines().enumerate() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
         let fields: Vec<&str> = line.split_whitespace().collect();
         if fields.len() < 5 {
-            continue;
+            panic!(
+                "{}:{}: expected at least 5 fields, got {}: {:?}",
+                path.display(),
+                line_num + 1,
+                fields.len(),
+                line
+            );
         }
         entries.push(LeapSecondEntry {
             mjd: fields[0].parse().unwrap(),
