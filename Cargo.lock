@@ -2467,10 +2467,6 @@ dependencies = [
 [[package]]
 name = "jeod_time"
 version = "0.1.0"
-dependencies = [
- "jeod_test_data",
- "thiserror 2.0.18",
-]
 
 [[package]]
 name = "jni"

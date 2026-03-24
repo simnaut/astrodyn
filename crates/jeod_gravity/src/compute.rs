@@ -102,6 +102,67 @@ pub fn compute_gravity(
     }
 }
 
+/// Dispatch gravity computation with a reusable scratch workspace.
+///
+/// Same as [`compute_gravity`] but avoids heap allocation by reusing
+/// pre-allocated buffers, and exposes gradient control parameters.
+///
+/// For `PointMass`, the scratch buffer is unused (point-mass has no
+/// harmonics). For `SphericalHarmonics`, `scratch` must have been
+/// created with `degree >=` the source data's degree.
+///
+/// # Arguments
+/// * `source` — gravity source (point-mass or spherical harmonics)
+/// * `position` — body position in inertial coordinates (m)
+/// * `t_parent_this` — inertial-to-planet-fixed rotation matrix
+/// * `compute_gradient` — whether to compute the gravity gradient tensor
+/// * `gradient_degree` — max degree for gradient computation
+/// * `gradient_order` — max order for gradient computation
+/// * `scratch` — reusable scratch workspace for the Gottlieb algorithm
+#[allow(clippy::too_many_arguments)]
+pub fn compute_gravity_with_scratch(
+    source: &GravitySource,
+    position: DVec3,
+    t_parent_this: &DMat3,
+    compute_gradient: bool,
+    gradient_degree: usize,
+    gradient_order: usize,
+    scratch: &mut crate::spherical_harmonics_calc_nonspherical::GottliebScratch,
+) -> GravityAcceleration {
+    match &source.model {
+        GravityModel::PointMass => compute_point_mass_gravity(source.mu, position),
+        GravityModel::SphericalHarmonics(data) => {
+            // Transform position from inertial to planet-fixed
+            let posn_pf = *t_parent_this * position;
+
+            // Compute point-mass in inertial (frame-independent)
+            let pm = compute_point_mass_gravity(data.mu, position);
+
+            // Compute nonspherical perturbation in planet-fixed
+            let sh_pf = crate::spherical_harmonics_calc_nonspherical::compute_nonspherical_gravity_with_scratch(
+                data,
+                posn_pf,
+                data.degree,
+                data.order,
+                compute_gradient,
+                gradient_degree,
+                gradient_order,
+                scratch,
+            );
+
+            // Transform nonspherical acceleration back to inertial
+            let t_transpose = t_parent_this.transpose();
+            let sh_accel_inertial = t_transpose * sh_pf.accel;
+
+            GravityAcceleration {
+                accel: pm.accel + sh_accel_inertial,
+                gradient: pm.gradient + sh_pf.gradient,
+                potential: pm.potential + sh_pf.potential,
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

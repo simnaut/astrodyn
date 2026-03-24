@@ -197,8 +197,10 @@ CSV column layout for `log_state_ASCII.csv`:
 - Columns 2,9,16: `composite_body.state.trans.velocity[0,1,2] {m/s}`
 - (interleaved with rotation matrix, quaternion, and angular velocity columns)
 
-Test data files are gitignored. Tests assert (panic) when required data is absent — they
-never skip gracefully. The assert message includes the exact command to obtain the data.
+CSV and `.bsp` test data files are committed to the repository. Only binary `.trk` files
+(Trick's native log format) are gitignored. Tests assert (panic) when required data is
+absent — they never skip gracefully. The assert message includes the exact command to
+obtain the data.
 
 ## JEOD Convention Rule
 

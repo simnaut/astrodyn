@@ -14,7 +14,7 @@ data is used **only** for comparison — never as input to our computation.
 **How obtained:**
 
 ```bash
-curl -Lo test_data/de421.bsp http://public-data.nyxspace.com/anise/de421.bsp
+curl -Lo test_data/de421.bsp https://public-data.nyxspace.com/anise/de421.bsp
 ```
 
 This is the same DE421 kernel used by JEOD for planetary ephemerides.  It is a
@@ -45,7 +45,7 @@ Additional files generated but not currently consumed by tests:
 | `dyncomp_run*_Earth_RNP.csv` | Earth rotation/nutation/precession state (archived for future RNP validation) |
 | `dyncomp_run*_rnp.csv` | Same as above (alternate naming from older generation runs) |
 
-**CSV column layout** (space-separated, 1 header line):
+**CSV column layout** (comma-separated, 1 header line):
 
 ```
 Column  0: sys.exec.out.time {s}

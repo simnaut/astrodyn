@@ -159,7 +159,7 @@ pub fn compute_nonspherical_gravity_with_scratch(
     let x_div_r = posn_pf.x * r_mag_inv;
     let y_div_r = posn_pf.y * r_mag_inv;
     let z_div_r = posn_pf.z * r_mag_inv;
-    let epilson = z_div_r;
+    let epsilon = z_div_r;
 
     let rad_div_r = data.radius * r_mag_inv;
     let mut rad_div_r_nth = rad_div_r;
@@ -228,7 +228,7 @@ pub fn compute_nonspherical_gravity_with_scratch(
         *scratch.pnm_mut(ii, ii) = ((2.0 * ii_f + 1.0) / (2.0 * ii_f)).sqrt() * prev;
     }
     // Set position-dependent P(1,0)
-    *scratch.pnm_mut(1, 0) = 3.0_f64.sqrt() * epilson;
+    *scratch.pnm_mut(1, 0) = 3.0_f64.sqrt() * epsilon;
 
     let i2d = &data.int_to_double;
 
@@ -260,14 +260,14 @@ pub fn compute_nonspherical_gravity_with_scratch(
         let dbl_iip1 = i2d[ii + 1];
 
         // P(n,0) term, equation (7-14)
-        *scratch.pnm_mut(ii, 0) = data.alpha[ii] * epilson * scratch.pnm(ii - 1, 0)
+        *scratch.pnm_mut(ii, 0) = data.alpha[ii] * epsilon * scratch.pnm(ii - 1, 0)
             - data.beta[ii] * scratch.pnm(ii - 2, 0);
 
         // P(n,n-1) term, equation (7-16)
-        *scratch.pnm_mut(ii, ii - 1) = epilson * data.nrdiag[ii];
+        *scratch.pnm_mut(ii, ii - 1) = epsilon * data.nrdiag[ii];
 
         // P(n,1) term, equation (7-12)
-        *scratch.pnm_mut(ii, 1) = data.xi[ii][1] * epilson * scratch.pnm(ii - 1, 1)
+        *scratch.pnm_mut(ii, 1) = data.xi[ii][1] * epsilon * scratch.pnm(ii - 1, 1)
             - data.eta[ii][1] * scratch.pnm(ii - 2, 1);
 
         let mut sum_v_n = scratch.pnm(ii, 0) * c_ii[0];
@@ -276,7 +276,7 @@ pub fn compute_nonspherical_gravity_with_scratch(
 
         // Equation (7-12) for jj=2..ii-2
         for jj in 2..=(ii.saturating_sub(2)) {
-            *scratch.pnm_mut(ii, jj) = data.xi[ii][jj] * epilson * scratch.pnm(ii - 1, jj)
+            *scratch.pnm_mut(ii, jj) = data.xi[ii][jj] * epsilon * scratch.pnm(ii - 1, jj)
                 - data.eta[ii][jj] * scratch.pnm(ii - 2, jj);
         }
 
@@ -405,7 +405,7 @@ pub fn compute_nonspherical_gravity_with_scratch(
 
     // Gravitational potential
     let pot = mu_div_r * sum_v;
-    let lambda = sum_gam + epilson * sum_h;
+    let lambda = sum_gam + epsilon * sum_h;
 
     // Equation (4-13): acceleration in planet-fixed coordinates
     let accel = DVec3::new(
@@ -416,11 +416,11 @@ pub fn compute_nonspherical_gravity_with_scratch(
 
     // Compute gravity gradient if requested
     let gradient = if compute_gradient && gradient_degree > 0 {
-        let lambda_grad = sum_gam_grad + epilson * sum_h_grad;
-        let gg = -(sum_m * epilson + sum_p + sum_h_grad);
-        let ff = sum_l + lambda_grad + epilson * (sum_p + sum_h_grad - gg);
-        let d1 = epilson * sum_q + sum_s;
-        let d2 = epilson * sum_r + sum_t;
+        let lambda_grad = sum_gam_grad + epsilon * sum_h_grad;
+        let gg = -(sum_m * epsilon + sum_p + sum_h_grad);
+        let ff = sum_l + lambda_grad + epsilon * (sum_p + sum_h_grad - gg);
+        let d1 = epsilon * sum_q + sum_s;
+        let d2 = epsilon * sum_r + sum_t;
 
         let mu_div_r3 = mu_div_rsq * r_mag_inv;
         let g00 = mu_div_r3 * ((ff * x_div_r - 2.0 * d1) * x_div_r - lambda_grad + sum_n);

@@ -1,7 +1,7 @@
 //! Ephemeris validation tests using DE421.bsp (same kernel as JEOD).
 //!
 //! Requires `test_data/de421.bsp` to be present. Download with:
-//!   curl -Lo test_data/de421.bsp http://public-data.nyxspace.com/anise/de421.bsp
+//!   curl -Lo test_data/de421.bsp https://public-data.nyxspace.com/anise/de421.bsp
 
 use jeod_ephemeris::{Ephemeris, EphemerisBody};
 use std::path::Path;
@@ -15,7 +15,7 @@ fn load_de421() -> Ephemeris {
         .join("test_data/de421.bsp");
     assert!(
         path.exists(),
-        "DE421.bsp not found at {}. Download with: curl -Lo test_data/de421.bsp http://public-data.nyxspace.com/anise/de421.bsp",
+        "DE421.bsp not found at {}. Download with: curl -Lo test_data/de421.bsp https://public-data.nyxspace.com/anise/de421.bsp",
         path.display()
     );
     Ephemeris::from_bsp(&path).expect("Failed to load DE421.bsp")

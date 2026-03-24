@@ -26,11 +26,11 @@ use std::path::Path;
 
 // JEOD SIM_dyncomp epoch: 2007-11-20 00:00:00 UTC
 // TAI-UTC = 32s (overridden in time.py)
-// TAI-UT1 = -32.469s (overridden in time.py)
+// tai_to_ut1 = -32.469s (JEOD: time.tai_ut1.tai_to_ut1_override_val)
 // UTC MJD = 54424.0, TJT = 14424.0
 const EPOCH_UTC_TJT: f64 = 14424.0;
 const TAI_UTC_S: f64 = 32.0;
-const TAI_UT1_S: f64 = -32.469;
+const TAI_TO_UT1_S: f64 = -32.469;
 
 /// Compute the inertial-to-planet-fixed rotation matrix at a given sim time.
 ///
@@ -48,8 +48,8 @@ fn rotation_at_sim_time(sim_time_s: f64) -> DMat3 {
     // TT centuries since J2000: (tt_tjt - 11544.5) / 36525.0
     let tt_centuries = (tt_tjt - 11544.5) / 36525.0;
 
-    // UT1 TJT = TAI TJT + tai_ut1_offset / 86400
-    let ut1_tjt = tai_tjt + TAI_UT1_S / SECONDS_PER_DAY;
+    // UT1 TJT = TAI TJT + ut1_tai_offset / 86400
+    let ut1_tjt = tai_tjt + TAI_TO_UT1_S / SECONDS_PER_DAY;
 
     // UT1 days since J2000 (for GMST formula)
     let ut1_days = ut1_tjt - J2000_TAI_TJT;

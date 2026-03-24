@@ -263,7 +263,7 @@ fn spherical_harmonics_40_test_vectors() {
     eprintln!("  Max gradient error: {:.6e} 1/s^2", max_grad_err);
 }
 
-/// Surface gravity sanity check with GGM05C (if available).
+/// Surface gravity sanity check with GGM02C (if available).
 #[test]
 fn surface_gravity_ggm02c() {
     let root = jeod_path();
