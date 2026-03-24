@@ -66,12 +66,12 @@ fn validate_iss_orbital_elements_to_cartesian() {
 
     let mut oe = OrbitalElements::default();
     oe.semi_major_axis = init.semi_major_axis;
-    oe.eccentricity = init.eccentricity;
+    oe.e_mag = init.eccentricity;
     oe.inclination = init.inclination;
     oe.long_asc_node = init.ascending_node;
     oe.arg_periapsis = init.arg_periapsis;
     oe.semiparam = a * (1.0 - init.eccentricity * init.eccentricity);
-    oe.mean_anomaly = mean_anomaly;
+    oe.mean_anom = mean_anomaly;
     oe.mean_motion = n;
     oe.mean_anom_to_nu().unwrap();
 
@@ -183,7 +183,7 @@ fn validate_orbital_roundtrip_5000_vectors() {
     let mut max_vel_err = 0.0_f64;
     let mut pass_count = 0;
 
-    for (i, sv) in vectors.iter().enumerate().take(100) {
+    for (i, sv) in vectors.iter().enumerate() {
         let elems = match OrbitalElements::from_cartesian(MU_EARTH, sv.position, sv.velocity) {
             Ok(e) => e,
             Err(e) => {
@@ -224,13 +224,13 @@ fn validate_orbital_roundtrip_5000_vectors() {
     println!(
         "Orbital roundtrip: {}/{} vectors passed",
         pass_count,
-        vectors.len().min(100)
+        vectors.len()
     );
     println!("Max position error: {:.2e} m", max_pos_err);
     println!("Max velocity error: {:.2e} m/s", max_vel_err);
 
     assert!(
-        pass_count == vectors.len().min(100),
+        pass_count == vectors.len(),
         "Not all vectors passed roundtrip"
     );
 }

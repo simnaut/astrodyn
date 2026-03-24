@@ -5,7 +5,7 @@
 //! conservation is within expected bounds.
 
 use jeod_dynamics::{rk4_translational_step, TranslationalState};
-use jeod_gravity::compute_point_mass_gravity;
+use jeod_gravity::calc_spherical;
 use jeod_math::{DVec3, OrbitalElements};
 
 fn main() {
@@ -43,7 +43,7 @@ fn main() {
         if step > 0 {
             state = rk4_translational_step(
                 &state,
-                |s| compute_point_mass_gravity(mu_earth, s.position).accel,
+                |s| calc_spherical(mu_earth, s.position).grav_accel,
                 dt,
             );
         }
@@ -60,7 +60,7 @@ fn main() {
                         "t={:8.0}s  alt={:7.1}km  e={:.2e}  energy_drift={:.2e} J/kg",
                         step as f64 * dt,
                         alt_km,
-                        elems.eccentricity,
+                        elems.e_mag,
                         energy_drift
                     );
                 }

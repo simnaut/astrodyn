@@ -26,19 +26,26 @@ pub fn gravity_computation_system(
     for (state, controls, mut accel) in &mut bodies {
         let mut total = GravityAcceleration::default();
         for ctrl in &controls.0.controls {
-            let Ok(source) = sources.get(ctrl.source_id) else {
+            let Ok(source) = sources.get(ctrl.source_name) else {
                 warn!(
                     "GravityControl references entity {:?} which has no GravitySourceC",
-                    ctrl.source_id
+                    ctrl.source_name
                 );
                 continue;
             };
-            let result = jeod_gravity::compute_gravity(&source.0, state.position);
-            total.accel += result.accel;
-            if ctrl.compute_gradient {
-                total.gradient += result.gradient;
+            // TODO(Phase 3): obtain T_parent_this from planet-fixed frame entity
+            let result = jeod_gravity::gravitation(
+                &source.0, state.position, &glam::DMat3::IDENTITY,
+                ctrl.degree, ctrl.order, ctrl.perturbing_only,
+                ctrl.gradient,
+                ctrl.gradient_degree,
+                ctrl.gradient_order,
+            );
+            total.grav_accel += result.grav_accel;
+            if ctrl.gradient {
+                total.grav_grad += result.grav_grad;
             }
-            total.potential += result.potential;
+            total.grav_pot += result.grav_pot;
         }
         accel.0 = total;
     }

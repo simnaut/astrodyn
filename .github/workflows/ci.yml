@@ -7,6 +7,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - name: Sparse checkout JEOD reference data
+        run: |
+          git clone --no-checkout --depth 1 --branch jeod_v5.4.0 https://github.com/nasa/jeod.git ../jeod
+          cd ../jeod
+          git sparse-checkout set \
+            models/environment/gravity/data \
+            models/environment/gravity/verif/unit_tests/grav_geospherical/data \
+            models/environment/time/data \
+            models/dynamics/body_action/verif/SIM_orbinit/Modified_data \
+            models/dynamics/derived_state/verif/unit_tests \
+            models/utils/orbital_elements/verif/SIM_orb_elem/Modified_data
+          git checkout
       - run: cargo build --workspace
-      - run: cargo test --workspace --no-default-features
+      - name: Run all tests (with JEOD validation)
+        env:
+          JEOD_HOME: ${{ github.workspace }}/../jeod
+        run: cargo test --workspace
       - run: cargo clippy --workspace -- -D warnings

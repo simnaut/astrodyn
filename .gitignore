@@ -2,4 +2,4 @@
 *.swp
 .env
 .cargo/config.toml
-test_data/
+test_data/*.trk

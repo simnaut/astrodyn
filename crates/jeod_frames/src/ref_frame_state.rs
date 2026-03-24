@@ -1,4 +1,56 @@
-use crate::state::{RefFrameRot, RefFrameState, RefFrameTrans};
+use glam::{DMat3, DVec3};
+use jeod_math::JeodQuat;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RefFrameTrans {
+    pub position: DVec3, // m, in parent frame
+    pub velocity: DVec3, // m/s, in parent frame
+}
+
+impl Default for RefFrameTrans {
+    fn default() -> Self {
+        Self {
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RefFrameRot {
+    pub q_parent_this: JeodQuat, // left transformation quaternion
+    pub t_parent_this: DMat3,    // transformation matrix
+    pub ang_vel_this: DVec3,     // rad/s, in this frame
+}
+
+impl Default for RefFrameRot {
+    fn default() -> Self {
+        Self {
+            q_parent_this: JeodQuat::identity(),
+            t_parent_this: DMat3::IDENTITY,
+            ang_vel_this: DVec3::ZERO,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct RefFrameState {
+    pub trans: RefFrameTrans,
+    pub rot: RefFrameRot,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RefFrameInfo {
+    pub name: String,
+    pub kind: RefFrameKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RefFrameKind {
+    Inertial,
+    PlanetFixed,
+    Body,
+}
 
 impl RefFrameState {
     /// Negate (invert) a frame state.
@@ -119,7 +171,7 @@ mod tests {
 
     /// Helper: create a RefFrameState with a rotation about Z axis and a position offset.
     fn make_state(angle_z: f64, pos: DVec3, vel: DVec3, ang_vel: DVec3) -> RefFrameState {
-        let q = JeodQuat::from_axis_angle(angle_z, DVec3::Z);
+        let q = JeodQuat::left_quat_from_eigen_rotation(angle_z, DVec3::Z);
         let t = q.left_quat_to_transformation();
         RefFrameState {
             trans: RefFrameTrans {
@@ -142,7 +194,7 @@ mod tests {
         vel: DVec3,
         ang_vel: DVec3,
     ) -> RefFrameState {
-        let q = JeodQuat::from_axis_angle(angle, axis);
+        let q = JeodQuat::left_quat_from_eigen_rotation(angle, axis);
         let t = q.left_quat_to_transformation();
         RefFrameState {
             trans: RefFrameTrans {
@@ -403,7 +455,7 @@ mod tests {
                 velocity: DVec3::new(10.0, 0.0, 0.0),
             },
             rot: {
-                let q = JeodQuat::from_axis_angle(FRAC_PI_2, DVec3::Z);
+                let q = JeodQuat::left_quat_from_eigen_rotation(FRAC_PI_2, DVec3::Z);
                 let t = q.left_quat_to_transformation();
                 RefFrameRot {
                     q_parent_this: q,
@@ -557,7 +609,7 @@ mod tests {
     #[test]
     fn negate_pure_rotation() {
         // No translation, just a rotation
-        let q = JeodQuat::from_axis_angle(1.0, DVec3::new(1.0, 1.0, 1.0).normalize());
+        let q = JeodQuat::left_quat_from_eigen_rotation(1.0, DVec3::new(1.0, 1.0, 1.0).normalize());
         let t = q.left_quat_to_transformation();
         let s = RefFrameState {
             trans: RefFrameTrans::default(),

@@ -1,18 +1,33 @@
 use glam::{DMat3, DVec3};
 
+/// Gravitational acceleration, gradient tensor, and potential for a body.
+///
+/// Computed by the gravity subsystem and consumed by the dynamics integrator.
+/// All quantities are expressed in the integration frame (typically J2000 ECI).
+///
+/// # Sign conventions
+/// - `grav_accel`: gravitational acceleration in m/s^2. Points toward the
+///   attracting body (negative radial direction for a single point mass).
+/// - `grav_grad`: gravity gradient tensor in 1/s^2. Symmetric 3x3 matrix;
+///   trace is zero outside the attracting body (Laplace's equation).
+/// - `grav_pot`: gravitational potential in m^2/s^2. Convention: **+mu/r**
+///   for point mass (positive, matching JEOD `gravity_controls.cc`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GravityAcceleration {
-    pub accel: DVec3,    // m/s^2, in integration frame
-    pub gradient: DMat3, // 1/s^2, tidal gradient tensor
-    pub potential: f64,  // m^2/s^2
+    /// Gravitational acceleration in m/s^2, in integration frame.
+    pub grav_accel: DVec3,
+    /// Gravity gradient tensor in 1/s^2. Symmetric; trace = 0 outside body.
+    pub grav_grad: DMat3,
+    /// Gravitational potential in m^2/s^2. Convention: +mu/r for point mass (JEOD).
+    pub grav_pot: f64,
 }
 
 impl Default for GravityAcceleration {
     fn default() -> Self {
         Self {
-            accel: DVec3::ZERO,
-            gradient: DMat3::ZERO,
-            potential: 0.0,
+            grav_accel: DVec3::ZERO,
+            grav_grad: DMat3::ZERO,
+            grav_pot: 0.0,
         }
     }
 }
@@ -31,22 +46,23 @@ pub struct FrameDerivatives {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DynamicsConfig {
-    pub translational: bool,
-    pub rotational: bool,
+    pub translational_dynamics: bool,
+    pub rotational_dynamics: bool,
     pub three_dof: bool,
 }
 
 impl Default for DynamicsConfig {
     fn default() -> Self {
         Self {
-            translational: true,
-            rotational: false,
+            translational_dynamics: true,
+            rotational_dynamics: false,
             three_dof: true,
         }
     }
 }
 
 pub fn compute_translational_acceleration(force: DVec3, mass: f64) -> DVec3 {
+    debug_assert!(mass > 0.0, "mass must be positive for F=ma, got {}", mass);
     force / mass
 }
 
@@ -57,9 +73,9 @@ mod tests {
     #[test]
     fn default_gravity_acceleration() {
         let ga = GravityAcceleration::default();
-        assert_eq!(ga.accel, DVec3::ZERO);
-        assert_eq!(ga.gradient, DMat3::ZERO);
-        assert_eq!(ga.potential, 0.0);
+        assert_eq!(ga.grav_accel, DVec3::ZERO);
+        assert_eq!(ga.grav_grad, DMat3::ZERO);
+        assert_eq!(ga.grav_pot, 0.0);
     }
 
     #[test]
@@ -79,8 +95,8 @@ mod tests {
     #[test]
     fn default_dynamics_config() {
         let dc = DynamicsConfig::default();
-        assert!(dc.translational);
-        assert!(!dc.rotational);
+        assert!(dc.translational_dynamics);
+        assert!(!dc.rotational_dynamics);
         assert!(dc.three_dof);
     }
 

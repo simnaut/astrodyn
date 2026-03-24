@@ -886,7 +886,7 @@ locally and consumed by `cargo test`.
 #[test]
 fn tier3_cross_validate_against_jeod_dyncomp() {
     let csv_path = Path::new("../../test_data/dyncomp_run2_state.csv");
-    if !csv_path.exists() { return; } // skip if not generated
+    assert!(csv_path.exists(), "Generate with: docker run ...");
 
     let jeod_trajectory = load_jeod_trajectory(&csv_path);
     let mut state = TranslationalState {
@@ -895,16 +895,27 @@ fn tier3_cross_validate_against_jeod_dyncomp() {
     };
 
     for record in &jeod_trajectory[1..] {
-        // Propagate to this timestamp with RK4 + point-mass gravity
+        // Propagate using OUR ported code — never JEOD outputs
         state = propagate_to(state, record.time, dt);
         let pos_error = (state.position - record.position).length();
-        assert!(pos_error < 5000.0); // 5 km budget for 8 hours
+        assert!(pos_error < tolerance);
     }
 }
 ```
 
-**Phase 1 result:** 0.4 m position error over 8 hours (28,800s, ~5 ISS orbits) against
-JEOD's SIM_dyncomp RUN_2 with spherical gravity.
+**Key rules:**
+- Tests assert on missing data — never skip gracefully.
+- All computation (gravity, Earth rotation, time conversion) is our own ported code.
+  JEOD CSV data is used **only** for comparison, never as input to our computation.
+- Tier 3 tests are part of the **definition of done** for every phase, not optional.
+
+**Results:**
+
+| Phase | Run | Gravity | Error (8h) |
+|-------|-----|---------|------------|
+| 1 | RUN_2 | Point-mass | 0.4 m |
+| 2 | RUN_3A | 4×4 harmonics + our RNP | 15.6 m |
+| 2 | RUN_3B | 8×8 harmonics + our RNP | 28.8 m |
 
 **Available JEOD sims for cross-validation:**
 
