@@ -183,7 +183,7 @@ fn validate_orbital_roundtrip_5000_vectors() {
     let mut max_vel_err = 0.0_f64;
     let mut pass_count = 0;
 
-    for (i, sv) in vectors.iter().enumerate().take(100) {
+    for (i, sv) in vectors.iter().enumerate() {
         let elems = match OrbitalElements::from_cartesian(MU_EARTH, sv.position, sv.velocity) {
             Ok(e) => e,
             Err(e) => {
@@ -224,13 +224,13 @@ fn validate_orbital_roundtrip_5000_vectors() {
     println!(
         "Orbital roundtrip: {}/{} vectors passed",
         pass_count,
-        vectors.len().min(100)
+        vectors.len()
     );
     println!("Max position error: {:.2e} m", max_pos_err);
     println!("Max velocity error: {:.2e} m/s", max_vel_err);
 
     assert!(
-        pass_count == vectors.len().min(100),
+        pass_count == vectors.len(),
         "Not all vectors passed roundtrip"
     );
 }

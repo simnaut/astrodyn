@@ -269,9 +269,7 @@ fn surface_gravity_ggm02c() {
     let root = jeod_path();
     assert!(root.exists());
     let ggm02c_path = root.join("models/environment/gravity/data/src/earth_GGM02C.cc");
-    if !ggm02c_path.exists() {
-        return;
-    }
+    assert!(ggm02c_path.exists(), "GGM02C not found at {}. Requires JEOD source.", ggm02c_path.display());
     let data = coefficients::load_from_jeod_cc(&ggm02c_path);
 
     // Equatorial surface

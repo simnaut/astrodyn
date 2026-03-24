@@ -52,17 +52,22 @@ pub fn calc_spherical(mu: f64, position: DVec3) -> GravityAcceleration {
 
 /// Dispatch gravity computation based on model type.
 ///
-/// Returns the **total** gravitational acceleration (point-mass + nonspherical
-/// perturbation for spherical harmonics models).
+/// Returns the gravitational acceleration, gradient, and potential.
 ///
 /// For `PointMass`, `position` is relative to the source center in any frame;
-/// `t_parent_this` and gradient parameters are ignored.
+/// `t_parent_this`, truncation, and gradient parameters are ignored.
 ///
 /// For `SphericalHarmonics`, `position` is in inertial coordinates and
 /// `t_parent_this` is the inertial-to-planet-fixed rotation matrix.
 /// Matching JEOD's `GravityControls::gravitation`, this function internally
 /// transforms position to planet-fixed, computes gravity, and transforms the
 /// result back to inertial. Result is in the inertial frame.
+///
+/// When `perturbing_only` is false, the result includes point-mass + nonspherical.
+/// When true, only the nonspherical perturbation is returned (matching JEOD's
+/// `perturbation_only` mode for third-body differential acceleration).
+///
+/// `degree`/`order` truncate the harmonics evaluation (`None` = use model max).
 ///
 /// This is a convenience wrapper that allocates scratch internally.
 /// For the RK4 inner loop, prefer [`gravitation_with_scratch`].
@@ -71,12 +76,21 @@ pub fn gravitation(
     source: &GravitySource,
     position: DVec3,
     t_parent_this: &DMat3,
+    degree: Option<usize>,
+    order: Option<usize>,
+    perturbing_only: bool,
     compute_gradient: bool,
     gradient_degree: usize,
     gradient_order: usize,
 ) -> GravityAcceleration {
     match &source.model {
-        GravityModel::PointMass => calc_spherical(source.mu, position),
+        GravityModel::PointMass => {
+            if perturbing_only {
+                GravityAcceleration::default()
+            } else {
+                calc_spherical(source.mu, position)
+            }
+        }
         GravityModel::SphericalHarmonics(data) => {
             debug_assert!(
                 (source.mu - data.mu).abs() < 1e-10,
@@ -84,16 +98,17 @@ pub fn gravitation(
                 source.mu, data.mu
             );
 
+            let eval_degree = degree.unwrap_or(data.degree);
+            let eval_order = order.unwrap_or(data.order);
+
             // Vector3::transform(T_parent_this, posn, posn_pf)
             let posn_pf = vector3_transform(t_parent_this, position);
-
-            let pm = calc_spherical(source.mu, position);
 
             let sh_pf = crate::spherical_harmonics_calc_nonspherical::calc_nonspherical(
                 data,
                 posn_pf,
-                data.degree,
-                data.order,
+                eval_degree,
+                eval_order,
                 compute_gradient,
                 gradient_degree,
                 gradient_order,
@@ -105,10 +120,19 @@ pub fn gravitation(
             // Matrix3x3::transpose_transform_matrix(T_parent_this, dgdx_pf, dgdx)
             let sh_gradient_inertial = matrix3x3_transpose_transform_matrix(t_parent_this, &sh_pf.grav_grad);
 
-            GravityAcceleration {
-                grav_accel: pm.grav_accel + sh_accel_inertial,
-                grav_grad: pm.grav_grad + sh_gradient_inertial,
-                grav_pot: pm.grav_pot + sh_pf.grav_pot,
+            if perturbing_only {
+                GravityAcceleration {
+                    grav_accel: sh_accel_inertial,
+                    grav_grad: sh_gradient_inertial,
+                    grav_pot: sh_pf.grav_pot,
+                }
+            } else {
+                let pm = calc_spherical(source.mu, position);
+                GravityAcceleration {
+                    grav_accel: pm.grav_accel + sh_accel_inertial,
+                    grav_grad: pm.grav_grad + sh_gradient_inertial,
+                    grav_pot: pm.grav_pot + sh_pf.grav_pot,
+                }
             }
         }
     }
@@ -117,32 +141,31 @@ pub fn gravitation(
 /// Dispatch gravity computation with a reusable scratch workspace.
 ///
 /// Same as [`gravitation`] but avoids heap allocation by reusing
-/// pre-allocated buffers, and exposes gradient control parameters.
+/// pre-allocated buffers.
 ///
-/// For `PointMass`, the scratch buffer is unused (point-mass has no
-/// harmonics). For `SphericalHarmonics`, `scratch` must have been
-/// created with `degree >=` the source data's degree.
-///
-/// # Arguments
-/// * `source` — gravity source (point-mass or spherical harmonics)
-/// * `position` — body position in inertial coordinates (m)
-/// * `t_parent_this` — inertial-to-planet-fixed rotation matrix
-/// * `compute_gradient` — whether to compute the gravity gradient tensor
-/// * `gradient_degree` — max degree for gradient computation
-/// * `gradient_order` — max order for gradient computation
-/// * `scratch` — reusable scratch workspace for the Gottlieb algorithm
+/// For `PointMass`, the scratch buffer is unused. For `SphericalHarmonics`,
+/// `scratch` must have been created with `degree >=` the requested degree.
 #[allow(clippy::too_many_arguments)]
 pub fn gravitation_with_scratch(
     source: &GravitySource,
     position: DVec3,
     t_parent_this: &DMat3,
+    degree: Option<usize>,
+    order: Option<usize>,
+    perturbing_only: bool,
     compute_gradient: bool,
     gradient_degree: usize,
     gradient_order: usize,
     scratch: &mut crate::spherical_harmonics_calc_nonspherical::GottliebScratch,
 ) -> GravityAcceleration {
     match &source.model {
-        GravityModel::PointMass => calc_spherical(source.mu, position),
+        GravityModel::PointMass => {
+            if perturbing_only {
+                GravityAcceleration::default()
+            } else {
+                calc_spherical(source.mu, position)
+            }
+        }
         GravityModel::SphericalHarmonics(data) => {
             debug_assert!(
                 (source.mu - data.mu).abs() < 1e-10,
@@ -150,16 +173,17 @@ pub fn gravitation_with_scratch(
                 source.mu, data.mu
             );
 
+            let eval_degree = degree.unwrap_or(data.degree);
+            let eval_order = order.unwrap_or(data.order);
+
             // Vector3::transform(T_parent_this, posn, posn_pf)
             let posn_pf = vector3_transform(t_parent_this, position);
-
-            let pm = calc_spherical(source.mu, position);
 
             let sh_pf = crate::spherical_harmonics_calc_nonspherical::calc_nonspherical_with_scratch(
                 data,
                 posn_pf,
-                data.degree,
-                data.order,
+                eval_degree,
+                eval_order,
                 compute_gradient,
                 gradient_degree,
                 gradient_order,
@@ -172,10 +196,19 @@ pub fn gravitation_with_scratch(
             // Matrix3x3::transpose_transform_matrix(T_parent_this, dgdx_pf, dgdx)
             let sh_gradient_inertial = matrix3x3_transpose_transform_matrix(t_parent_this, &sh_pf.grav_grad);
 
-            GravityAcceleration {
-                grav_accel: pm.grav_accel + sh_accel_inertial,
-                grav_grad: pm.grav_grad + sh_gradient_inertial,
-                grav_pot: pm.grav_pot + sh_pf.grav_pot,
+            if perturbing_only {
+                GravityAcceleration {
+                    grav_accel: sh_accel_inertial,
+                    grav_grad: sh_gradient_inertial,
+                    grav_pot: sh_pf.grav_pot,
+                }
+            } else {
+                let pm = calc_spherical(source.mu, position);
+                GravityAcceleration {
+                    grav_accel: pm.grav_accel + sh_accel_inertial,
+                    grav_grad: pm.grav_grad + sh_gradient_inertial,
+                    grav_pot: pm.grav_pot + sh_pf.grav_pot,
+                }
             }
         }
     }
@@ -314,7 +347,7 @@ mod tests {
             model: GravityModel::PointMass,
         };
         let pos = DVec3::new(EARTH_RADIUS, 0.0, 0.0);
-        let result = gravitation(&source, pos, &DMat3::IDENTITY, false, 0, 0);
+        let result = gravitation(&source, pos, &DMat3::IDENTITY, None, None, false, false, 0, 0);
         let direct = calc_spherical(EARTH_MU, pos);
 
         assert_eq!(result.grav_accel, direct.grav_accel);

@@ -1,34 +1,34 @@
 use std::f64::consts::PI;
 
-/// Convert UT1 days-since-J2000 to Greenwich Mean Sidereal Time (GMST).
+/// Convert UT1 days since noon 2000-01-01 to Greenwich Mean Sidereal Time.
 ///
 /// Returns GMST in sidereal days since J2000, matching JEOD's
 /// `TimeGMST::set_time_by_days()` output (accumulated, not wrapped).
 ///
-/// Ported from JEOD `time_converter_ut1_gmst.cc`:
-/// ```text
-/// dd = ut1_days - 0.000738762
-/// gmst = 0.7790572733 + 1.002737909350795*dd + 8.0775E-16*dd^2 - 1.5E-24*dd^3
-/// ```
-pub fn ut1_to_gmst_days(ut1_days_since_j2000: f64) -> f64 {
-    let dd = ut1_days_since_j2000 - 0.000738762;
-    let dd2 = dd * dd;
-    let dd3 = dd2 * dd;
-    0.7790572733 + 1.002737909350795 * dd + 8.0775e-16 * dd2 - 1.5e-24 * dd3
+/// The argument is `d_u = JD(UT1) - 2451545.0 = ut1_tjt - 11544.5`, i.e.
+/// the number of UT1 days since noon on 2000-01-01. This is the independent
+/// variable in the Astronomical Almanac GMST polynomial (Aoki et al. 1982).
+///
+/// Matches JEOD `time_converter_ut1_gmst.cc` when called with the equivalent
+/// of `ut1_ptr->trunc_julian_time - 11544.5`.
+pub fn ut1_to_gmst_days(du: f64) -> f64 {
+    let du2 = du * du;
+    let du3 = du2 * du;
+    0.7790572733 + 1.002737909350795 * du + 8.0775e-16 * du2 - 1.5e-24 * du3
 }
 
-/// Convert UT1 days-since-J2000 to GMST in sidereal seconds since J2000.
+/// Convert UT1 days since noon 2000-01-01 to GMST in sidereal seconds.
 ///
 /// Matches JEOD's `TimeGMST::seconds` field.
-pub fn ut1_to_gmst_seconds(ut1_days_since_j2000: f64) -> f64 {
-    ut1_to_gmst_days(ut1_days_since_j2000) * 86400.0
+pub fn ut1_to_gmst_seconds(du: f64) -> f64 {
+    ut1_to_gmst_days(du) * 86400.0
 }
 
-/// Convert UT1 days-since-J2000 to GMST in radians (0 to 2π).
+/// Convert UT1 days since noon 2000-01-01 to GMST in radians (0 to 2π).
 ///
 /// Takes the fractional-day part of GMST and converts to radians.
-pub fn ut1_to_gmst_radians(ut1_days_since_j2000: f64) -> f64 {
-    let gmst_days = ut1_to_gmst_days(ut1_days_since_j2000);
+pub fn ut1_to_gmst_radians(du: f64) -> f64 {
+    let gmst_days = ut1_to_gmst_days(du);
     let fractional = gmst_days - gmst_days.floor();
     fractional * 2.0 * PI
 }
@@ -39,14 +39,13 @@ mod tests {
 
     #[test]
     fn gmst_at_j2000() {
-        // At ut1_days=0, dd = -0.000738762
-        // gmst_days ≈ 0.7783165
-        // = 280.19° (GMST at J2000 TT, not J2000 UT1)
+        // At du=0 (noon 2000-01-01), GMST = 0.7790572733 sidereal days
+        // = 280.46° — the standard Astronomical Almanac value.
         let gmst_days = ut1_to_gmst_days(0.0);
         let gmst_deg = (gmst_days - gmst_days.floor()) * 360.0;
         assert!(
-            (gmst_deg - 280.19).abs() < 0.1,
-            "GMST at UT1 days=0: {} degrees",
+            (gmst_deg - 280.46).abs() < 0.01,
+            "GMST at noon J2000: {:.4} degrees, expected ~280.46",
             gmst_deg
         );
     }

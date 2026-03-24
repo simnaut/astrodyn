@@ -16,6 +16,14 @@ pub const J2000_TT_TJT: f64 = 11_544.5;
 /// TAI TJT = 11544.5 - 0.000372500 = 11544.499627500
 pub const J2000_TAI_TJT: f64 = 11_544.499_627_5;
 
+/// Noon 2000-01-01 as TJT (= J2000_TT_TJT = 11544.5).
+///
+/// The Astronomical Almanac GMST formula uses UT1 days since this epoch
+/// as its independent variable: `d_u = JD(UT1) - 2451545.0 = ut1_tjt - 11544.5`.
+/// Matches JEOD's documented alternative: `ut1_ptr->trunc_julian_time - 11544.5`
+/// (see `time_converter_ut1_gmst.cc:112`).
+pub const J2000_NOON_TJT: f64 = 11_544.5;
+
 /// TT - TAI offset in seconds (exact by definition).
 pub const TAI_TT_OFFSET: f64 = 32.184;
 

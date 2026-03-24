@@ -1,4 +1,4 @@
-use crate::epoch::{J2000_TAI_TJT, SECONDS_PER_DAY, TAI_TT_OFFSET};
+use crate::epoch::{J2000_NOON_TJT, J2000_TAI_TJT, SECONDS_PER_DAY, TAI_TT_OFFSET};
 use crate::time_converter_tai_tdb;
 use crate::time_converter_tai_tt;
 use crate::time_converter_ut1_gmst;
@@ -13,19 +13,23 @@ use crate::leap_second::LeapSecondTable;
 /// Mirrors JEOD's `TimeManager` + individual time type state.
 #[derive(Debug, Clone)]
 pub struct SimulationTime {
-    /// Seconds since simulation start (TAI-based).
+    /// TAI seconds elapsed since simulation start (0.0 at construction).
     pub tai_seconds: f64,
-    /// TAI truncated Julian time (absolute calendar reference).
+    /// TAI truncated Julian time (absolute calendar reference, advances with tai_seconds).
     pub tai_tjt: f64,
-    /// TAI TJT at simulation start (set once at construction).
+    /// TAI TJT at simulation start (set once at construction, never changes).
     pub tai_tjt_at_epoch: f64,
-    /// UTC seconds since simulation start.
+    /// UTC seconds elapsed since simulation start. Differs from tai_seconds by
+    /// accumulated leap seconds over the span.
     pub utc_seconds: f64,
-    /// UT1 seconds since simulation start.
+    /// UT1 seconds: `tai_seconds + ut1_tai_offset`. At construction with the
+    /// default offset (−TAI_UTC), this equals approximately 0; with a custom
+    /// IERS offset it may be nonzero at t=0.
     pub ut1_seconds: f64,
-    /// TT seconds since simulation start.
+    /// TT seconds: `tai_seconds + 32.184`. Nonzero at t=0 (starts at 32.184).
     pub tt_seconds: f64,
-    /// TDB seconds since simulation start.
+    /// TDB seconds: `tai_seconds + 32.184 + periodic`. Differs from TT by a
+    /// periodic correction with amplitude ~1.7 ms.
     pub tdb_seconds: f64,
     /// Greenwich Mean Sidereal Time (radians, 0 to 2π).
     pub gmst_radians: f64,
@@ -127,12 +131,14 @@ impl SimulationTime {
         // short spans; updated from IERS bulletins via set_ut1_tai_offset).
         self.ut1_seconds = self.tai_seconds + self.ut1_tai_offset;
 
-        // GMST from UT1 days since J2000
+        // GMST from UT1 days since noon 2000-01-01 (Astronomical Almanac convention).
         // UT1 TJT = TAI TJT + ut1_tai_offset / 86400
         let ut1_tjt = self.tai_tjt + self.ut1_tai_offset / SECONDS_PER_DAY;
-        let ut1_days_since_j2000 = ut1_tjt - J2000_TAI_TJT;
-        self.gmst_seconds = time_converter_ut1_gmst::ut1_to_gmst_seconds(ut1_days_since_j2000);
-        self.gmst_radians = time_converter_ut1_gmst::ut1_to_gmst_radians(ut1_days_since_j2000);
+        // d_u = JD(UT1) - 2451545.0 = ut1_tjt - 11544.5
+        // Matches JEOD: ut1_ptr->trunc_julian_time - 11544.5
+        let du = ut1_tjt - J2000_NOON_TJT;
+        self.gmst_seconds = time_converter_ut1_gmst::ut1_to_gmst_seconds(du);
+        self.gmst_radians = time_converter_ut1_gmst::ut1_to_gmst_radians(du);
     }
 }
 
@@ -149,11 +155,13 @@ mod tests {
         assert_eq!(sim.simtime, 0.0);
         // TT = TAI + 32.184
         assert!((sim.tt_seconds - 32.184).abs() < 1e-10);
-        // GMST at J2000 ≈ 280.19° (because TAI epoch != UT1 epoch)
+        // GMST at TAI J2000 epoch. The TAI epoch is ~64s before noon UT1
+        // (32.184s TAI-TT offset + 32s TAI-UTC with default UT1-UTC≈0),
+        // so du ≈ −0.000743 days, giving GMST ≈ 280.46° − 0.27° ≈ 280.19°.
         let gmst_deg = sim.gmst_radians * 180.0 / PI;
         assert!(
-            (gmst_deg - 280.19).abs() < 0.2,
-            "GMST at J2000: {} degrees",
+            (gmst_deg - 280.19).abs() < 0.05,
+            "GMST at J2000: {:.4} degrees, expected ~280.19",
             gmst_deg
         );
     }

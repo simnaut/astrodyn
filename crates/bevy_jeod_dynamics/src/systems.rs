@@ -66,8 +66,11 @@ pub fn integration_system(
                     if let Ok(source) = sources.get(ctrl.source_name) {
                         // TODO(Phase 3): obtain T_parent_this from planet-fixed frame entity;
                         // switch to gravitation_with_scratch to avoid per-stage allocation
-                        accel +=
-                            jeod_gravity::gravitation(&source.0, s.position, &glam::DMat3::IDENTITY, false, 0, 0).grav_accel;
+                        accel += jeod_gravity::gravitation(
+                            &source.0, s.position, &glam::DMat3::IDENTITY,
+                            ctrl.degree, ctrl.order, ctrl.perturbing_only,
+                            false, 0, 0,
+                        ).grav_accel;
                     }
                 }
                 accel

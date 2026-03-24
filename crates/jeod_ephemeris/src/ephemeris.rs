@@ -78,6 +78,7 @@ impl Ephemeris {
 /// Map `EphemerisBody` to anise `Frame` constants.
 fn body_to_frame(body: EphemerisBody) -> Frame {
     match body {
+        EphemerisBody::SolarSystemBarycenter => SSB_J2000,
         EphemerisBody::Mercury => MERCURY_J2000,
         EphemerisBody::Venus => VENUS_J2000,
         EphemerisBody::EarthMoonBarycenter => EARTH_MOON_BARYCENTER_J2000,

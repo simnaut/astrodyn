@@ -11,7 +11,11 @@ pub struct MassProperties {
 impl MassProperties {
     /// Create mass properties for a point mass (unit sphere inertia: I = m * I_{3x3}).
     ///
-    /// Phase 1 placeholder. When rotational dynamics are added in Phase 2,
+    /// **Warning:** The placeholder inertia `I = m * I_{3x3}` is only valid for
+    /// translational dynamics. It will produce **wrong results** for rotational
+    /// dynamics because real spacecraft have non-spherical inertia tensors with
+    /// distinct principal moments (I_xx != I_yy != I_zz) and potentially
+    /// non-zero products of inertia. When rotational dynamics are enabled,
     /// callers must specify the actual inertia tensor for their geometry.
     pub fn new(mass: f64) -> Self {
         assert!(mass > 0.0, "mass must be positive, got {mass}");

@@ -249,6 +249,10 @@ pub fn calc_nonspherical_with_scratch(
     } else {
         vec![]
     };
+    // TODO(Phase 4): Apply variational tidal correction to local_cnm[0].
+    // JEOD adds delta_coeffs->delta_Cnm to local_Cnm[0] here, accounting
+    // for solid Earth tides. The tide_free_delta field in
+    // SphericalHarmonicsData is loaded but not yet applied.
 
     for ii in 2..=degree {
         let ii_grad_deg_nonzero = ii <= gradient_degree && gradient_degree > 0;

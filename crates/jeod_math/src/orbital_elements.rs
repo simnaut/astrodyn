@@ -428,9 +428,13 @@ pub fn kep_eqtn_h(m: f64, e: f64) -> Result<f64, OrbitalError> {
     const TOL: f64 = 1e-8;
     const MAX_ITER: usize = 1000;
 
-    // Simplified initial guess. JEOD uses a 4-case heuristic based on
-    // eccentricity and M magnitude for faster convergence at extreme
-    // eccentricities; this simpler guess converges within the 1000-iteration
+    // Simplified initial guess. JEOD uses a 4-case heuristic for faster
+    // convergence at extreme eccentricities:
+    //   1. e < 1.6, M > 0:  H0 = M + e
+    //   2. e < 1.6, M < 0:  H0 = M - e
+    //   3. e < 3.6 && |M| > pi:  H0 = M - sign(M)*e
+    //   4. otherwise:  H0 = M / (e - 1)
+    // This simpler guess (H0 = M) converges within the 1000-iteration
     // budget for all tested cases.
     let mut ha = m;
 
@@ -625,10 +629,10 @@ mod tests {
         );
         let row2 = DVec3::new(sw * si, cw * si, ci);
 
-        // to_cartesian() uses mat3_from_rows to build PQW->IJK directly.
-        // Here we manually build the same rows but apply to PQW vectors
-        // differently, so we need .transpose() to get the correct rotation.
-        let rot = mat3_from_rows(row0, row1, row2).transpose();
+        // mat3_from_rows builds PQW->IJK directly: (M * v)[i] = row_i . v.
+        // This is the same construction used in to_cartesian(), so no
+        // transpose is needed.
+        let rot = mat3_from_rows(row0, row1, row2);
 
         let pos = rot * r_pqw;
         let vel = rot * v_pqw;
@@ -900,5 +904,89 @@ mod tests {
         let zero = DVec3::ZERO;
         let vel = DVec3::new(0.0, 7.0, 0.0);
         assert!(OrbitalElements::from_cartesian(MU_EARTH, zero, vel).is_err());
+    }
+
+    /// Verify from_cartesian recovers known orbital elements from a state
+    /// constructed via the same PQW->IJK rotation used in to_cartesian.
+    #[test]
+    fn from_cartesian_known_elements() {
+        let a = 12000.0;
+        let e = 0.4;
+        let i = 45.0_f64.to_radians();
+        let omega_big = 30.0_f64.to_radians();   // RAAN
+        let omega_small = 60.0_f64.to_radians();  // arg periapsis
+        let nu = 120.0_f64.to_radians();           // true anomaly
+
+        let p = a * (1.0 - e * e);
+        let r = p / (1.0 + e * nu.cos());
+
+        // Position and velocity in perifocal (PQW) frame
+        let r_pqw = DVec3::new(r * nu.cos(), r * nu.sin(), 0.0);
+        let coeff = (MU_EARTH / p).sqrt();
+        let v_pqw = DVec3::new(-coeff * nu.sin(), coeff * (e + nu.cos()), 0.0);
+
+        // Build PQW->IJK rotation matrix using the same approach as to_cartesian:
+        // mat3_from_rows builds M such that (M * v)[i] = row_i . v, no transpose needed.
+        let co = omega_big.cos();
+        let so = omega_big.sin();
+        let cw = omega_small.cos();
+        let sw = omega_small.sin();
+        let ci = i.cos();
+        let si = i.sin();
+
+        let row0 = DVec3::new(
+            co * cw - so * sw * ci,
+            -co * sw - so * cw * ci,
+            so * si,
+        );
+        let row1 = DVec3::new(
+            so * cw + co * sw * ci,
+            -so * sw + co * cw * ci,
+            -co * si,
+        );
+        let row2 = DVec3::new(sw * si, cw * si, ci);
+        let rot = mat3_from_rows(row0, row1, row2);
+
+        let pos = rot * r_pqw;
+        let vel = rot * v_pqw;
+
+        // Recover elements via from_cartesian
+        let oe = OrbitalElements::from_cartesian(MU_EARTH, pos, vel).unwrap();
+
+        // Verify recovered elements match the input
+        assert!(
+            (oe.semi_major_axis - a).abs() < 1e-8,
+            "semi_major_axis: expected {}, got {}",
+            a, oe.semi_major_axis
+        );
+        assert!(
+            (oe.e_mag - e).abs() < 1e-10,
+            "eccentricity: expected {}, got {}",
+            e, oe.e_mag
+        );
+        assert!(
+            (oe.inclination - i).abs() < 1e-10,
+            "inclination: expected {}, got {}",
+            i, oe.inclination
+        );
+        assert!(
+            (oe.long_asc_node - omega_big).abs() < 1e-10,
+            "RAAN: expected {}, got {}",
+            omega_big, oe.long_asc_node
+        );
+        assert!(
+            (oe.arg_periapsis - omega_small).abs() < 1e-10,
+            "arg_periapsis: expected {}, got {}",
+            omega_small, oe.arg_periapsis
+        );
+
+        // True anomaly wraps to [0, 2pi), so compare modulo 2pi
+        let nu_diff = (oe.true_anom - nu).abs();
+        let nu_diff = nu_diff.min(TAU - nu_diff);
+        assert!(
+            nu_diff < 1e-10,
+            "true_anom: expected {}, got {} (diff {})",
+            nu, oe.true_anom, nu_diff
+        );
     }
 }

@@ -50,6 +50,10 @@ pub fn gast_rotation_matrix(gmst_seconds: f64, equa_of_equi: f64) -> DMat3 {
 /// Composition: T_parent_this = rotation^T × nutation^T × precession^T
 /// (No polar motion — disabled in JEOD SIM_dyncomp.)
 ///
+/// Returns the rotation matrix only (DMat3). Does not return the associated
+/// quaternion or the angular velocity of the planet-fixed frame. Callers
+/// needing these should derive them separately.
+///
 /// # Arguments
 /// * `gmst_seconds` — GMST seconds since J2000.0
 /// * `tt_centuries` — TT Julian centuries since J2000.0
@@ -83,6 +87,46 @@ pub fn compute_t_parent_this_from_tjt(gmst_seconds: f64, tt_tjt: f64) -> DMat3 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compute_t_parent_this_at_nonzero_epoch() {
+        // TT centuries = 0.1 (~3.65 years from J2000)
+        let tt_centuries = 0.1;
+        // GMST at some time: ~1e6 sidereal seconds
+        let gmst_seconds = 1_000_000.0;
+        let t = compute_t_parent_this(gmst_seconds, tt_centuries);
+
+        // Matrix should be orthogonal: T * T^T = I
+        let product = t * t.transpose();
+        for i in 0..3 {
+            for j in 0..3 {
+                let expected = if i == j { 1.0 } else { 0.0 };
+                assert!(
+                    (product.col(j)[i] - expected).abs() < 1e-12,
+                    "T * T^T [{},{}] = {}, expected {}",
+                    i, j, product.col(j)[i], expected
+                );
+            }
+        }
+
+        // Should differ significantly from identity (not at J2000)
+        let diff_from_identity = (t - glam::DMat3::IDENTITY).col(0).length()
+            + (t - glam::DMat3::IDENTITY).col(1).length()
+            + (t - glam::DMat3::IDENTITY).col(2).length();
+        assert!(
+            diff_from_identity > 0.01,
+            "RNP at non-J2000 should differ from identity, diff = {}",
+            diff_from_identity
+        );
+
+        // Determinant should be +1 (proper rotation)
+        let det = t.determinant();
+        assert!(
+            (det - 1.0).abs() < 1e-12,
+            "determinant should be 1.0, got {}",
+            det
+        );
+    }
 
     #[test]
     fn gast_rotation_is_orthogonal() {

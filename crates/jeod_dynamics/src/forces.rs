@@ -1,10 +1,26 @@
 use glam::{DMat3, DVec3};
 
+/// Gravitational acceleration, gradient tensor, and potential for a body.
+///
+/// Computed by the gravity subsystem and consumed by the dynamics integrator.
+/// All quantities are expressed in the integration frame (typically J2000 ECI).
+///
+/// # Sign conventions
+/// - `grav_accel`: gravitational acceleration in m/s^2. Points toward the
+///   attracting body (negative radial direction for a single point mass).
+/// - `grav_grad`: gravity gradient tensor in 1/s^2. Symmetric 3x3 matrix;
+///   trace is zero outside the attracting body (Laplace's equation).
+/// - `grav_pot`: gravitational potential in m^2/s^2. JEOD uses the
+///   **positive** convention (+mu/r for a point mass), which is the opposite
+///   of the physics convention (-mu/r). Our implementation follows JEOD.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GravityAcceleration {
-    pub grav_accel: DVec3, // m/s^2, in integration frame
-    pub grav_grad: DMat3,  // 1/s^2, tidal gradient tensor
-    pub grav_pot: f64,     // m^2/s^2
+    /// Gravitational acceleration in m/s^2, in integration frame.
+    pub grav_accel: DVec3,
+    /// Gravity gradient tensor in 1/s^2. Symmetric; trace = 0 outside body.
+    pub grav_grad: DMat3,
+    /// Gravitational potential in m^2/s^2. Convention: +mu/r for point mass (JEOD convention).
+    pub grav_pot: f64,
 }
 
 impl Default for GravityAcceleration {
@@ -47,6 +63,7 @@ impl Default for DynamicsConfig {
 }
 
 pub fn compute_translational_acceleration(force: DVec3, mass: f64) -> DVec3 {
+    debug_assert!(mass > 0.0, "mass must be positive for F=ma, got {}", mass);
     force / mass
 }
 

@@ -21,7 +21,7 @@ use jeod_frames::rotation_j2000;
 use jeod_gravity::coefficients;
 use jeod_test_data::jeod_path;
 use jeod_time::time_converter_ut1_gmst::ut1_to_gmst_days;
-use jeod_time::epoch::{J2000_TAI_TJT, SECONDS_PER_DAY};
+use jeod_time::epoch::{J2000_NOON_TJT, SECONDS_PER_DAY};
 use std::path::Path;
 
 // JEOD SIM_dyncomp epoch: 2007-11-20 00:00:00 UTC
@@ -51,8 +51,9 @@ fn rotation_at_sim_time(sim_time_s: f64) -> DMat3 {
     // UT1 TJT = TAI TJT + ut1_tai_offset / 86400
     let ut1_tjt = tai_tjt + TAI_TO_UT1_S / SECONDS_PER_DAY;
 
-    // UT1 days since J2000 (for GMST formula)
-    let ut1_days = ut1_tjt - J2000_TAI_TJT;
+    // UT1 days since noon 2000-01-01 (Astronomical Almanac convention).
+    // d_u = JD(UT1) - 2451545.0 = ut1_tjt - 11544.5
+    let ut1_days = ut1_tjt - J2000_NOON_TJT;
 
     // GMST in accumulated sidereal days → seconds (matches JEOD TimeGMST::seconds)
     let gmst_days = ut1_to_gmst_days(ut1_days);

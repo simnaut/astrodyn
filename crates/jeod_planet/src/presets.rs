@@ -7,6 +7,10 @@ use crate::planet::PlanetShape;
 ///
 /// Gravitational parameter from JEOD `earth_GGM05C.cc`:
 /// - mu = 398600.44150e9 m^3/s^2
+///
+/// Note: The mu value (3.986004415e14) comes from GGM05C and differs from the
+/// IERS 2010 value (3.986004418e14) by 3e6 m^3/s^2, which is within
+/// measurement uncertainty.
 pub const EARTH: PlanetShape = PlanetShape {
     name: "Earth",
     mu: 3.986_004_415e14,

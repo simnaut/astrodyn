@@ -97,6 +97,8 @@ pub fn load_from_jeod_cc(path: &std::path::Path) -> SphericalHarmonicsData {
 pub fn save_binary(data: &SphericalHarmonicsData, path: &std::path::Path) {
     use std::io::Write;
     let mut buf = Vec::new();
+    buf.extend_from_slice(b"JEOD");              // 4-byte magic
+    buf.extend_from_slice(&1u32.to_le_bytes());  // 4-byte version
     buf.extend_from_slice(&(data.degree as u32).to_le_bytes());
     buf.extend_from_slice(&(data.order as u32).to_le_bytes());
     buf.extend_from_slice(&data.radius.to_le_bytes());
@@ -127,6 +129,13 @@ pub fn load_binary(path: &std::path::Path) -> SphericalHarmonicsData {
 /// Load coefficients from binary bytes (for embedded data).
 pub fn load_binary_from_bytes(buf: &[u8]) -> SphericalHarmonicsData {
     let mut pos = 0;
+
+    assert!(buf.len() >= 8, "Binary coefficient file too short");
+    assert_eq!(&buf[0..4], b"JEOD", "Invalid magic in binary coefficient file");
+    pos += 4;
+    let version = u32::from_le_bytes(buf[4..8].try_into().unwrap());
+    assert_eq!(version, 1, "Unsupported binary coefficient version {}", version);
+    pos += 4;
 
     let read_u32 = |pos: &mut usize| -> u32 {
         let val = u32::from_le_bytes(buf[*pos..*pos + 4].try_into().unwrap());
@@ -172,7 +181,7 @@ pub fn load_binary_from_bytes(buf: &[u8]) -> SphericalHarmonicsData {
 
 fn extract_assign_usize(line: &str, key: &str) -> Option<usize> {
     // Match: ->key = value; or ptr->key = value;
-    let pattern = format!("{} = ", key);
+    let pattern = format!("->{} = ", key);
     if let Some(idx) = line.find(&pattern) {
         let rest = &line[idx + pattern.len()..];
         let val_str: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
@@ -184,7 +193,7 @@ fn extract_assign_usize(line: &str, key: &str) -> Option<usize> {
 
 fn extract_assign_f64(line: &str, key: &str) -> Option<f64> {
     // Match: ->key = value; with possible scientific notation
-    let pattern = format!("{} = ", key);
+    let pattern = format!("->{} = ", key);
     if let Some(idx) = line.find(&pattern) {
         let rest = &line[idx + pattern.len()..];
         let val_str: String = rest

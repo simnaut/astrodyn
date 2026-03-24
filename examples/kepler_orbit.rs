@@ -13,6 +13,8 @@ use bevy::prelude::*;
 use bevy_jeod::*;
 use std::time::Duration;
 
+const MU_EARTH: f64 = 3.986004418e14;
+
 fn main() {
     App::new()
         .add_plugins(
@@ -30,7 +32,7 @@ fn main() {
 struct StepCounter(usize);
 
 fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
-    let mu_earth = 3.986004418e14_f64;
+    let mu_earth = MU_EARTH;
     let r0 = 6_778_137.0_f64;
     let v0 = (mu_earth / r0).sqrt();
 
@@ -86,7 +88,7 @@ fn print_state(
     }
 
     counter.0 += 1;
-    let mu_earth = 3.986004418e14_f64;
+    let mu_earth = MU_EARTH;
 
     for (name, state) in &query {
         if name.as_str() != "Satellite" {

@@ -95,9 +95,65 @@ fn sun_earth_distance_at_j2000() {
     let distance_au = pos_m.length() / 1.496e11;
     eprintln!("  Sun-Earth distance at J2000: {:.4} AU", distance_au);
 
+    // At J2000.0 (Jan 1.5, 2000) Earth is near perihelion, so the actual
+    // distance is ~0.9833 AU, not 1.0 AU. Use the physical value.
     assert!(
-        (distance_au - 1.0).abs() < 0.02,
-        "Sun-Earth distance: {:.4} AU (expected ~1.0 AU)",
+        (distance_au - 0.9833).abs() < 0.005,
+        "Sun-Earth distance: {:.4} AU (expected ~0.9833 AU at perihelion, tolerance < 0.005 AU)",
         distance_au,
+    );
+}
+
+/// Moon orbital velocity at J2000 should be ~1.02 km/s relative to Earth.
+#[test]
+fn moon_velocity_at_j2000() {
+    let ephem = load_de421();
+    let (_pos, vel) = ephem
+        .get_earth_centered_state(EphemerisBody::Moon, J2000_TDB_JD)
+        .expect("Failed to query Moon state");
+
+    let speed_km_s = vel.length() / 1000.0;
+    eprintln!("  Moon velocity at J2000: {:.4} km/s", speed_km_s);
+
+    assert!(
+        (speed_km_s - 1.02).abs() < 0.1,
+        "Moon velocity at J2000: {:.4} km/s, expected ~1.02 km/s (tolerance 0.1 km/s)",
+        speed_km_s,
+    );
+}
+
+/// Mars distance from Earth at J2000 should be ~1.4-2.7 AU.
+#[test]
+fn mars_distance_at_j2000() {
+    let ephem = load_de421();
+    let (pos_m, _vel) = ephem
+        .get_earth_centered_state(EphemerisBody::Mars, J2000_TDB_JD)
+        .expect("Failed to query Mars state");
+
+    let distance_au = pos_m.length() / 1.496e11;
+    eprintln!("  Earth-Mars distance at J2000: {:.4} AU", distance_au);
+
+    assert!(
+        distance_au > 1.4 && distance_au < 2.7,
+        "Earth-Mars distance at J2000: {:.4} AU, expected 1.4-2.7 AU",
+        distance_au,
+    );
+}
+
+/// Sun velocity relative to Earth at J2000 should be ~30 km/s.
+#[test]
+fn sun_velocity_at_j2000() {
+    let ephem = load_de421();
+    let (_pos, vel) = ephem
+        .get_earth_centered_state(EphemerisBody::Sun, J2000_TDB_JD)
+        .expect("Failed to query Sun state");
+
+    let speed_km_s = vel.length() / 1000.0;
+    eprintln!("  Sun velocity at J2000: {:.4} km/s", speed_km_s);
+
+    assert!(
+        (speed_km_s - 30.0).abs() < 5.0,
+        "Sun velocity at J2000: {:.4} km/s, expected ~30 km/s (tolerance 5 km/s)",
+        speed_km_s,
     );
 }
