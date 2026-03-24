@@ -69,7 +69,7 @@ pub fn integration_system(
                         accel += jeod_gravity::gravitation(
                             &source.0, s.position, &glam::DMat3::IDENTITY,
                             ctrl.degree, ctrl.order, ctrl.perturbing_only,
-                            false, 0, 0,
+                            false, None, None,
                         ).grav_accel;
                     }
                 }

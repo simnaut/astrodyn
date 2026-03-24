@@ -38,8 +38,8 @@ pub fn gravity_computation_system(
                 &source.0, state.position, &glam::DMat3::IDENTITY,
                 ctrl.degree, ctrl.order, ctrl.perturbing_only,
                 ctrl.gradient,
-                ctrl.gradient_degree.unwrap_or(0),
-                ctrl.gradient_order.unwrap_or(0),
+                ctrl.gradient_degree,
+                ctrl.gradient_order,
             );
             total.grav_accel += result.grav_accel;
             if ctrl.gradient {

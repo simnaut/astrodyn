@@ -18,8 +18,8 @@ pub fn calc_spherical(mu: f64, position: DVec3) -> GravityAcceleration {
     // Acceleration: a = -mu/r^3 * r
     let grav_accel = position * (-mu / r_3rd);
 
-    // Potential: V = -mu/r
-    let grav_pot = -mu / r_mag;
+    // Potential: V = +mu/r (JEOD convention, positive for bound orbits)
+    let grav_pot = mu / r_mag;
 
     // Gradient tensor: G[i][j] = mu/r^5 * (3*r[i]*r[j] - delta_ij*r^2)
     let r_5th = r_3rd * r_sq;
@@ -80,8 +80,8 @@ pub fn gravitation(
     order: Option<usize>,
     perturbing_only: bool,
     compute_gradient: bool,
-    gradient_degree: usize,
-    gradient_order: usize,
+    gradient_degree: Option<usize>,
+    gradient_order: Option<usize>,
 ) -> GravityAcceleration {
     match &source.model {
         GravityModel::PointMass => {
@@ -100,6 +100,8 @@ pub fn gravitation(
 
             let eval_degree = degree.unwrap_or(data.degree);
             let eval_order = order.unwrap_or(data.order);
+            let grad_degree = gradient_degree.unwrap_or(eval_degree);
+            let grad_order = gradient_order.unwrap_or(eval_order);
 
             // Vector3::transform(T_parent_this, posn, posn_pf)
             let posn_pf = vector3_transform(t_parent_this, position);
@@ -110,8 +112,8 @@ pub fn gravitation(
                 eval_degree,
                 eval_order,
                 compute_gradient,
-                gradient_degree,
-                gradient_order,
+                grad_degree,
+                grad_order,
             );
 
             // Vector3::transform_transpose(T_parent_this, body_grav_accel)
@@ -154,8 +156,8 @@ pub fn gravitation_with_scratch(
     order: Option<usize>,
     perturbing_only: bool,
     compute_gradient: bool,
-    gradient_degree: usize,
-    gradient_order: usize,
+    gradient_degree: Option<usize>,
+    gradient_order: Option<usize>,
     scratch: &mut crate::spherical_harmonics_calc_nonspherical::GottliebScratch,
 ) -> GravityAcceleration {
     match &source.model {
@@ -175,6 +177,8 @@ pub fn gravitation_with_scratch(
 
             let eval_degree = degree.unwrap_or(data.degree);
             let eval_order = order.unwrap_or(data.order);
+            let grad_degree = gradient_degree.unwrap_or(eval_degree);
+            let grad_order = gradient_order.unwrap_or(eval_order);
 
             // Vector3::transform(T_parent_this, posn, posn_pf)
             let posn_pf = vector3_transform(t_parent_this, position);
@@ -185,8 +189,8 @@ pub fn gravitation_with_scratch(
                 eval_degree,
                 eval_order,
                 compute_gradient,
-                gradient_degree,
-                gradient_order,
+                grad_degree,
+                grad_order,
                 scratch,
             );
 
@@ -311,7 +315,7 @@ mod tests {
         let pos = DVec3::new(r, 0.0, 0.0);
         let result = calc_spherical(mu, pos);
 
-        let expected_potential = -mu / r;
+        let expected_potential = mu / r;
         assert!(
             (result.grav_pot - expected_potential).abs() < 1e-6,
             "Potential: expected {}, got {}",
@@ -347,7 +351,7 @@ mod tests {
             model: GravityModel::PointMass,
         };
         let pos = DVec3::new(EARTH_RADIUS, 0.0, 0.0);
-        let result = gravitation(&source, pos, &DMat3::IDENTITY, None, None, false, false, 0, 0);
+        let result = gravitation(&source, pos, &DMat3::IDENTITY, None, None, false, false, None, None);
         let direct = calc_spherical(EARTH_MU, pos);
 
         assert_eq!(result.grav_accel, direct.grav_accel);

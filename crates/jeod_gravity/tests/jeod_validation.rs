@@ -193,18 +193,15 @@ fn spherical_harmonics_40_test_vectors() {
         );
 
         // For full gravity (perturb_only=false), add point-mass contribution.
-        // JEOD convention: potential is +mu/r (positive specific gravitational
-        // potential energy), while our calc_spherical returns -mu/r.
-        // Also, JEOD's calc_spherical acceleration uses posn (inertial pos relative
-        // to planet center), so we use the same.
+        // Both calc_spherical and calc_nonspherical use JEOD's +mu/r potential
+        // convention, so we sum directly.
         let (accel, potential, gradient) = if perturb_only {
             (sh_result.grav_accel, sh_result.grav_pot, sh_result.grav_grad)
         } else {
             let pm = jeod_gravity::calc_spherical(data.mu, case.position);
-            let r_mag = case.position.length();
             (
                 sh_result.grav_accel + pm.grav_accel,
-                sh_result.grav_pot + data.mu / r_mag, // +mu/r (JEOD convention)
+                sh_result.grav_pot + pm.grav_pot,
                 if grad_active {
                     sh_result.grav_grad + pm.grav_grad
                 } else {
