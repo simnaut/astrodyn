@@ -1,5 +1,6 @@
 use glam::{DMat3, DVec3};
 use jeod_dynamics::GravityAcceleration;
+use jeod_math::{matrix3x3_transpose_transform_matrix, vector3_transform, vector3_transform_transpose};
 
 use crate::gravity_source::{GravityModel, GravitySource};
 
@@ -76,14 +77,11 @@ pub fn compute_gravity(
                 source.mu, data.mu
             );
 
-            // Transform position from inertial to planet-fixed
-            // (JEOD: Vector3::transform(T_parent_this, posn, posn_pf))
-            let posn_pf = *t_parent_this * position;
+            // Vector3::transform(T_parent_this, posn, posn_pf)
+            let posn_pf = vector3_transform(t_parent_this, position);
 
-            // Compute point-mass in inertial (frame-independent)
             let pm = compute_point_mass_gravity(source.mu, position);
 
-            // Compute nonspherical perturbation in planet-fixed
             let sh_pf = crate::spherical_harmonics_calc_nonspherical::compute_nonspherical_gravity(
                 data,
                 posn_pf,
@@ -94,15 +92,11 @@ pub fn compute_gravity(
                 0,
             );
 
-            // Transform nonspherical acceleration back to inertial
-            // (JEOD: Vector3::transform_transpose(T_parent_this, body_grav_accel))
-            let t_transpose = t_parent_this.transpose();
-            let sh_accel_inertial = t_transpose * sh_pf.accel;
+            // Vector3::transform_transpose(T_parent_this, body_grav_accel)
+            let sh_accel_inertial = vector3_transform_transpose(t_parent_this, sh_pf.accel);
 
-            // Transform gradient from planet-fixed to inertial
-            // (JEOD: Matrix3x3::transpose_transform_matrix(T_parent_this, dgdx_pf, dgdx))
-            // G_inertial = T^T * G_pf * T
-            let sh_gradient_inertial = t_transpose * sh_pf.gradient * *t_parent_this;
+            // Matrix3x3::transpose_transform_matrix(T_parent_this, dgdx_pf, dgdx)
+            let sh_gradient_inertial = matrix3x3_transpose_transform_matrix(t_parent_this, &sh_pf.gradient);
 
             GravityAcceleration {
                 accel: pm.accel + sh_accel_inertial,
@@ -149,13 +143,11 @@ pub fn compute_gravity_with_scratch(
                 source.mu, data.mu
             );
 
-            // Transform position from inertial to planet-fixed
-            let posn_pf = *t_parent_this * position;
+            // Vector3::transform(T_parent_this, posn, posn_pf)
+            let posn_pf = vector3_transform(t_parent_this, position);
 
-            // Compute point-mass in inertial (frame-independent)
             let pm = compute_point_mass_gravity(source.mu, position);
 
-            // Compute nonspherical perturbation in planet-fixed
             let sh_pf = crate::spherical_harmonics_calc_nonspherical::compute_nonspherical_gravity_with_scratch(
                 data,
                 posn_pf,
@@ -167,14 +159,11 @@ pub fn compute_gravity_with_scratch(
                 scratch,
             );
 
-            // Transform nonspherical acceleration back to inertial
-            let t_transpose = t_parent_this.transpose();
-            let sh_accel_inertial = t_transpose * sh_pf.accel;
+            // Vector3::transform_transpose(T_parent_this, body_grav_accel)
+            let sh_accel_inertial = vector3_transform_transpose(t_parent_this, sh_pf.accel);
 
-            // Transform gradient from planet-fixed to inertial
-            // (JEOD: Matrix3x3::transpose_transform_matrix(T_parent_this, dgdx_pf, dgdx))
-            // G_inertial = T^T * G_pf * T
-            let sh_gradient_inertial = t_transpose * sh_pf.gradient * *t_parent_this;
+            // Matrix3x3::transpose_transform_matrix(T_parent_this, dgdx_pf, dgdx)
+            let sh_gradient_inertial = matrix3x3_transpose_transform_matrix(t_parent_this, &sh_pf.gradient);
 
             GravityAcceleration {
                 accel: pm.accel + sh_accel_inertial,

@@ -12,6 +12,7 @@
 use crate::nutation_j2000::nutation;
 use crate::precession_j2000::precession_matrix;
 use glam::{DMat3, DVec3};
+use jeod_math::matrix3x3_product_transpose_transpose;
 use std::f64::consts::PI;
 
 const DEG_TO_RAD: f64 = PI / 180.0;
@@ -57,10 +58,11 @@ pub fn compute_t_parent_this(gmst_seconds: f64, tt_centuries: f64) -> DMat3 {
     let nut = nutation(tt_centuries);
     let rot = gast_rotation_matrix(gmst_seconds, nut.equa_of_equi);
 
-    // NP = nutation^T × precession^T
-    let np = nut.matrix.transpose() * prec.transpose();
+    // Matrix3x3::product_transpose_transpose(nutation, precession, NP_matrix)
+    let np = matrix3x3_product_transpose_transpose(&nut.matrix, &prec);
 
-    // T_parent_this = rotation^T × NP
+    // scratch_matrix = rotation^T (no polar motion)
+    // T_parent_this = scratch_matrix × NP
     rot.transpose() * np
 }
 

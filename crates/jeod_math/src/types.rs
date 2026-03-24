@@ -13,6 +13,54 @@ pub fn mat3_from_rows(r0: DVec3, r1: DVec3, r2: DVec3) -> DMat3 {
     )
 }
 
+// ── JEOD Vector3 operations ─────────────────────────────────────────────
+// Port of `models/utils/math/include/vector3_inline.hh`
+
+/// `prod = tmat * vec`
+///
+/// Port of JEOD `Vector3::transform(tmat, vec, prod)`.
+#[inline]
+pub fn vector3_transform(tmat: &DMat3, vec: DVec3) -> DVec3 {
+    *tmat * vec
+}
+
+/// `prod = tmat^T * vec`
+///
+/// Port of JEOD `Vector3::transform_transpose(tmat, vec, prod)`.
+#[inline]
+pub fn vector3_transform_transpose(tmat: &DMat3, vec: DVec3) -> DVec3 {
+    tmat.transpose() * vec
+}
+
+// ── JEOD Matrix3x3 operations ───────────────────────────────────────────
+// Port of `models/utils/math/include/matrix3x3_inline.hh`
+
+/// `prod = trans * mat * trans^T`
+///
+/// Port of JEOD `Matrix3x3::transform_matrix(trans, mat, prod)`.
+/// Similarity transformation: transforms `mat` from the "trans" frame.
+#[inline]
+pub fn matrix3x3_transform_matrix(trans: &DMat3, mat: &DMat3) -> DMat3 {
+    *trans * *mat * trans.transpose()
+}
+
+/// `prod = trans^T * mat * trans`
+///
+/// Port of JEOD `Matrix3x3::transpose_transform_matrix(trans, mat, prod)`.
+/// Inverse similarity transformation: transforms `mat` out of the "trans" frame.
+#[inline]
+pub fn matrix3x3_transpose_transform_matrix(trans: &DMat3, mat: &DMat3) -> DMat3 {
+    trans.transpose() * *mat * *trans
+}
+
+/// `prod = mat_left^T * mat_right^T`
+///
+/// Port of JEOD `Matrix3x3::product_transpose_transpose(mat_left, mat_right, prod)`.
+#[inline]
+pub fn matrix3x3_product_transpose_transpose(mat_left: &DMat3, mat_right: &DMat3) -> DMat3 {
+    mat_left.transpose() * mat_right.transpose()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
