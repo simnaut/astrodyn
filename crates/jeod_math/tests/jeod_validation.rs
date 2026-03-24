@@ -66,12 +66,12 @@ fn validate_iss_orbital_elements_to_cartesian() {
 
     let mut oe = OrbitalElements::default();
     oe.semi_major_axis = init.semi_major_axis;
-    oe.eccentricity = init.eccentricity;
+    oe.e_mag = init.eccentricity;
     oe.inclination = init.inclination;
     oe.long_asc_node = init.ascending_node;
     oe.arg_periapsis = init.arg_periapsis;
     oe.semiparam = a * (1.0 - init.eccentricity * init.eccentricity);
-    oe.mean_anomaly = mean_anomaly;
+    oe.mean_anom = mean_anomaly;
     oe.mean_motion = n;
     oe.mean_anom_to_nu().unwrap();
 

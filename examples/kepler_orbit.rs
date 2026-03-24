@@ -105,7 +105,7 @@ fn print_state(
                         counter.0 as f64 * 10.0,
                         alt_km,
                         v,
-                        elems.eccentricity
+                        elems.e_mag
                     );
                 }
                 Err(e) => println!("Error: {}", e),

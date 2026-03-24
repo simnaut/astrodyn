@@ -86,7 +86,7 @@ fn j2_nodal_regression_rate() {
     let c20 = sh_data.cnm[2][0];
     let j2 = -(5.0_f64).sqrt() * c20;
     let a = elems_start.semi_major_axis;
-    let e = elems_start.eccentricity;
+    let e = elems_start.e_mag;
     let p = a * (1.0 - e * e);
     let n = (mu / (a * a * a)).sqrt(); // mean motion, rad/s
     let d_raan_analytical = -1.5 * n * j2 * r_eq * r_eq * inclination.cos() / (p * p);

@@ -13,7 +13,7 @@ pub struct OrbitalElements {
     /// Semi-latus rectum p = a(1 - e^2).
     pub semiparam: f64,
     /// Eccentricity.
-    pub eccentricity: f64,
+    pub e_mag: f64,
     /// Inclination [rad].
     pub inclination: f64,
     /// Argument of periapsis [rad].
@@ -21,11 +21,11 @@ pub struct OrbitalElements {
     /// Longitude of ascending node [rad].
     pub long_asc_node: f64,
     /// True anomaly [rad].
-    pub true_anomaly: f64,
+    pub true_anom: f64,
     /// Mean anomaly [rad].
-    pub mean_anomaly: f64,
+    pub mean_anom: f64,
     /// Orbital (eccentric / hyperbolic / parabolic) anomaly [rad].
-    pub orbital_anomaly: f64,
+    pub orbital_anom: f64,
     /// Mean motion [rad/s].
     pub mean_motion: f64,
     /// Position magnitude.
@@ -33,9 +33,9 @@ pub struct OrbitalElements {
     /// Velocity magnitude.
     pub vel_mag: f64,
     /// Specific orbital energy.
-    pub orbital_energy: f64,
+    pub orb_energy: f64,
     /// Specific orbital angular momentum magnitude.
-    pub orbital_ang_momentum: f64,
+    pub orb_ang_momentum: f64,
 
     /// Cached sin(true_anomaly).
     sin_v: f64,
@@ -86,8 +86,8 @@ impl OrbitalElements {
         }
 
         // Angular momentum
-        let h_vec = pos.cross(vel);
-        let h_mag = h_vec.length();
+        let ang_momntm = pos.cross(vel);
+        let h_mag = ang_momntm.length();
 
         if h_mag < 1e-30 {
             return Err(OrbitalError::DegenerateOrbit);
@@ -95,8 +95,8 @@ impl OrbitalElements {
 
         // Eccentricity vector: e = ((v^2 - mu/r)*r - (r.v)*v) / mu
         let v2 = vel_mag * vel_mag;
-        let rdotv = pos.dot(vel);
-        let e_vec = ((v2 - mu / r_mag) * pos - rdotv * vel) / mu;
+        let pos_dot_vel = pos.dot(vel);
+        let e_vec = ((v2 - mu / r_mag) * pos - pos_dot_vel * vel) / mu;
         let ecc = e_vec.length();
 
         // Specific energy
@@ -138,14 +138,14 @@ impl OrbitalElements {
 
         // ---- Inclination ----
         let k_hat = DVec3::Z; // inertial Z
-        let k_cross_h = k_hat.cross(h_vec);
+        let k_cross_h = k_hat.cross(ang_momntm);
         let k_cross_h_mag = k_cross_h.length();
-        let k_dot_h = k_hat.dot(h_vec);
+        let k_dot_h = k_hat.dot(ang_momntm);
         let incl = k_cross_h_mag.atan2(k_dot_h); // always in [0, pi]
 
         // ---- Node vector ----
-        let n_vec = k_cross_h; // points toward ascending node
-        let n_mag = k_cross_h_mag;
+        let line_of_nodes = k_cross_h; // points toward ascending node
+        let line_of_nodes_mag = k_cross_h_mag;
 
         let is_equatorial = incl.abs() < 1e-13 || (PI - incl).abs() < 1e-13;
         let is_circular = ecc < CIRC_TOL;
@@ -168,31 +168,31 @@ impl OrbitalElements {
             let cos_nu = e_vec.dot(pos) / (ecc * r_mag);
             // sin(nu) = h_hat . (e x r) / (|e|*|r|)
             // For equatorial, h_hat ~ +/-K depending on prograde/retrograde
-            let sin_nu = e_vec.cross(pos).dot(h_vec) / (h_mag * ecc * r_mag);
+            let sin_nu = e_vec.cross(pos).dot(ang_momntm) / (h_mag * ecc * r_mag);
             nu = wrap_to_tau(sin_nu.atan2(cos_nu));
         } else if is_circular {
             // ---- Case 3: non-equatorial + circular ----
             // Argument of latitude = angle from node to position
-            lan = wrap_to_tau(n_vec.y.atan2(n_vec.x));
+            lan = wrap_to_tau(line_of_nodes.y.atan2(line_of_nodes.x));
             aop = 0.0;
-            let cos_u = n_vec.dot(pos) / (n_mag * r_mag);
+            let cos_u = line_of_nodes.dot(pos) / (line_of_nodes_mag * r_mag);
             // sin(u) = h_hat . (N x r) / (|N|*|r|) = r . (h x N) / (h_mag * |N| * |r|)
-            let sin_u = pos.dot(h_vec.cross(n_vec)) / (h_mag * n_mag * r_mag);
+            let sin_u = pos.dot(ang_momntm.cross(line_of_nodes)) / (h_mag * line_of_nodes_mag * r_mag);
             nu = wrap_to_tau(sin_u.atan2(cos_u));
         } else {
             // ---- Case 4: general ----
-            lan = wrap_to_tau(n_vec.y.atan2(n_vec.x));
+            lan = wrap_to_tau(line_of_nodes.y.atan2(line_of_nodes.x));
 
             // Argument of periapsis = angle from node to eccentricity vector
             // measured in the orbital plane.
-            let cos_aop = n_vec.dot(e_vec) / (n_mag * ecc);
-            // sin(aop) = h_hat . (N x e) / (|N|*|e|) = e . (h x N) / (h_mag * n_mag * ecc)
-            let sin_aop = e_vec.dot(h_vec.cross(n_vec)) / (h_mag * n_mag * ecc);
+            let cos_aop = line_of_nodes.dot(e_vec) / (line_of_nodes_mag * ecc);
+            // sin(aop) = h_hat . (N x e) / (|N|*|e|) = e . (h x N) / (h_mag * line_of_nodes_mag * ecc)
+            let sin_aop = e_vec.dot(ang_momntm.cross(line_of_nodes)) / (h_mag * line_of_nodes_mag * ecc);
             aop = wrap_to_tau(sin_aop.atan2(cos_aop));
 
             // True anomaly = angle from eccentricity vector to position
             let cos_nu = e_vec.dot(pos) / (ecc * r_mag);
-            let sin_nu_val = e_vec.cross(pos).dot(h_vec) / (ecc * r_mag * h_mag);
+            let sin_nu_val = e_vec.cross(pos).dot(ang_momntm) / (ecc * r_mag * h_mag);
             nu = wrap_to_tau(sin_nu_val.atan2(cos_nu));
         }
 
@@ -202,18 +202,18 @@ impl OrbitalElements {
         let mut oe = OrbitalElements {
             semi_major_axis: a,
             semiparam: p,
-            eccentricity: ecc,
+            e_mag: ecc,
             inclination: incl,
             arg_periapsis: aop,
             long_asc_node: lan,
-            true_anomaly: nu,
-            mean_anomaly: 0.0,
-            orbital_anomaly: 0.0,
+            true_anom: nu,
+            mean_anom: 0.0,
+            orbital_anom: 0.0,
             mean_motion: n,
             r_mag,
             vel_mag,
-            orbital_energy: energy,
-            orbital_ang_momentum: h_mag,
+            orb_energy: energy,
+            orb_ang_momentum: h_mag,
             sin_v,
             cos_v,
         };
@@ -238,8 +238,8 @@ impl OrbitalElements {
         if p <= 0.0 || !p.is_finite() {
             return Err(OrbitalError::DegenerateOrbit);
         }
-        let e = self.eccentricity;
-        let nu = self.true_anomaly;
+        let e = self.e_mag;
+        let nu = self.true_anom;
 
         let sin_nu = nu.sin();
         let cos_nu = nu.cos();
@@ -295,8 +295,8 @@ impl OrbitalElements {
     /// Convert true anomaly to eccentric (or hyperbolic/parabolic) anomaly
     /// and mean anomaly, storing results in `self`.
     pub fn nu_to_anomalies(&mut self) {
-        let e = self.eccentricity;
-        let nu = self.true_anomaly;
+        let e = self.e_mag;
+        let nu = self.true_anom;
         let sin_nu = nu.sin();
         let cos_nu = nu.cos();
 
@@ -310,8 +310,8 @@ impl OrbitalElements {
             // Mean anomaly:  M = E - e*sin(E)
             let ma = wrap_to_tau(ea - e * ea.sin());
 
-            self.orbital_anomaly = ea;
-            self.mean_anomaly = ma;
+            self.orbital_anom = ea;
+            self.mean_anom = ma;
         } else if e > HYPERBOLIC_LOWER {
             // Hyperbolic
             // Hyperbolic anomaly H:  tanh(H/2) = sqrt((e-1)/(e+1)) * tan(nu/2)
@@ -323,8 +323,8 @@ impl OrbitalElements {
             // Mean anomaly:  M = e*sinh(H) - H
             let ma = e * ha.sinh() - ha;
 
-            self.orbital_anomaly = ha;
-            self.mean_anomaly = ma;
+            self.orbital_anom = ha;
+            self.mean_anom = ma;
         } else {
             // Parabolic / near-parabolic
             // Parabolic anomaly D = tan(nu/2)
@@ -332,8 +332,8 @@ impl OrbitalElements {
             // Barker's equation:  M = D + D^3/3
             let ma = d + d * d * d / 3.0;
 
-            self.orbital_anomaly = d;
-            self.mean_anomaly = ma;
+            self.orbital_anom = d;
+            self.mean_anom = ma;
         }
     }
 
@@ -341,16 +341,16 @@ impl OrbitalElements {
     // Mean anomaly -> true anomaly
     // ----------------------------------------------------------------
 
-    /// Convert mean anomaly to true anomaly, updating `self.true_anomaly`,
-    /// `self.orbital_anomaly`, `self.sin_v`, and `self.cos_v`.
+    /// Convert mean anomaly to true anomaly, updating `self.true_anom`,
+    /// `self.orbital_anom`, `self.sin_v`, and `self.cos_v`.
     pub fn mean_anom_to_nu(&mut self) -> Result<(), OrbitalError> {
-        let e = self.eccentricity;
-        let m = self.mean_anomaly;
+        let e = self.e_mag;
+        let m = self.mean_anom;
 
         if e < ELLIPTIC_UPPER {
             // Elliptic
             let ea = solve_kepler_elliptic(m, e)?;
-            self.orbital_anomaly = ea;
+            self.orbital_anom = ea;
 
             // E -> nu
             let sin_ea = ea.sin();
@@ -359,13 +359,13 @@ impl OrbitalElements {
             let cos_nu = (cos_ea - e) / (1.0 - e * cos_ea);
             let nu = wrap_to_tau(sin_nu.atan2(cos_nu));
 
-            self.true_anomaly = nu;
+            self.true_anom = nu;
             self.sin_v = nu.sin();
             self.cos_v = nu.cos();
         } else if e > HYPERBOLIC_LOWER {
             // Hyperbolic
             let ha = solve_kepler_hyperbolic(m, e)?;
-            self.orbital_anomaly = ha;
+            self.orbital_anom = ha;
 
             // H -> nu
             let sinh_ha = ha.sinh();
@@ -374,18 +374,18 @@ impl OrbitalElements {
             let cos_nu = (e - cosh_ha) / (e * cosh_ha - 1.0);
             let nu = wrap_to_tau(sin_nu.atan2(cos_nu));
 
-            self.true_anomaly = nu;
+            self.true_anom = nu;
             self.sin_v = nu.sin();
             self.cos_v = nu.cos();
         } else {
             // Parabolic
             let d = solve_kepler_parabolic(m);
-            self.orbital_anomaly = d;
+            self.orbital_anom = d;
 
             let nu = 2.0 * d.atan();
             let nu = wrap_to_tau(nu);
 
-            self.true_anomaly = nu;
+            self.true_anom = nu;
             self.sin_v = nu.sin();
             self.cos_v = nu.cos();
         }
@@ -728,9 +728,9 @@ mod tests {
         );
         // e should be ~1 (within the near-parabolic band)
         assert!(
-            (oe.eccentricity - 1.0).abs() < 0.02,
+            (oe.e_mag - 1.0).abs() < 0.02,
             "Expected e ~ 1, got {}",
-            oe.eccentricity,
+            oe.e_mag,
         );
     }
 
@@ -785,9 +785,9 @@ mod tests {
         let oe = OrbitalElements::from_cartesian(MU_EARTH, pos, vel).unwrap();
         let expected_energy = v * v / 2.0 - MU_EARTH / r;
         assert!(
-            (oe.orbital_energy - expected_energy).abs() < 1e-10,
+            (oe.orb_energy - expected_energy).abs() < 1e-10,
             "Energy mismatch: {} vs {}",
-            oe.orbital_energy,
+            oe.orb_energy,
             expected_energy
         );
     }
@@ -820,9 +820,9 @@ mod tests {
             oe.semi_major_axis
         );
         assert!(
-            oe.eccentricity < 1e-10,
+            oe.e_mag < 1e-10,
             "eccentricity should be ~0, got {}",
-            oe.eccentricity
+            oe.e_mag
         );
     }
 
@@ -845,14 +845,14 @@ mod tests {
         let mut oe2 = oe.clone();
         oe2.mean_anom_to_nu().unwrap();
 
-        let nu_diff = (oe.true_anomaly - oe2.true_anomaly).abs();
+        let nu_diff = (oe.true_anom - oe2.true_anom).abs();
         let nu_diff = nu_diff.min(TAU - nu_diff);
         assert!(
             nu_diff < 1e-8,
             "True anomaly round-trip error: {} (original {} vs reconstructed {})",
             nu_diff,
-            oe.true_anomaly,
-            oe2.true_anomaly,
+            oe.true_anom,
+            oe2.true_anom,
         );
     }
 

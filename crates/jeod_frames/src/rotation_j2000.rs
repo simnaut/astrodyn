@@ -30,17 +30,17 @@ pub fn gast_rotation_matrix(gmst_seconds: f64, equa_of_equi: f64) -> DMat3 {
     let theta_gast = ((gmst_seconds + equa_of_equi) / 240.0) * DEG_TO_RAD;
 
     // Normalize to [0, 2π]
-    let frac = theta_gast / (2.0 * PI);
-    let mut theta = (frac - frac.floor()) * 2.0 * PI;
+    let temp = theta_gast / (2.0 * PI);
+    let mut theta = (temp - temp.floor()) * 2.0 * PI;
     if theta < 0.0 {
         theta += 2.0 * PI;
     }
 
-    let (s, c) = theta.sin_cos();
+    let (sin_ang, cos_ang) = theta.sin_cos();
 
     DMat3::from_cols(
-        DVec3::new(c, s, 0.0),
-        DVec3::new(-s, c, 0.0),
+        DVec3::new(cos_ang, sin_ang, 0.0),
+        DVec3::new(-sin_ang, cos_ang, 0.0),
         DVec3::new(0.0, 0.0, 1.0),
     )
 }
@@ -59,7 +59,7 @@ pub fn compute_t_parent_this(gmst_seconds: f64, tt_centuries: f64) -> DMat3 {
     let rot = gast_rotation_matrix(gmst_seconds, nut.equa_of_equi);
 
     // Matrix3x3::product_transpose_transpose(nutation, precession, NP_matrix)
-    let np = matrix3x3_product_transpose_transpose(&nut.matrix, &prec);
+    let np = matrix3x3_product_transpose_transpose(&nut.rotation, &prec);
 
     // scratch_matrix = rotation^T (no polar motion)
     // T_parent_this = scratch_matrix × NP

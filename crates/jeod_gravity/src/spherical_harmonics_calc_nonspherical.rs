@@ -244,7 +244,7 @@ pub fn compute_nonspherical_gravity_with_scratch(
     // (delta C20) are added to local_Cnm[0] per-call. We preserve the
     // pattern for when tidal corrections are ported. The copy is small
     // (degree-2 row has only 3 elements regardless of model degree).
-    let local_cnm2: Vec<f64> = if degree >= 2 {
+    let local_cnm: Vec<f64> = if degree >= 2 {
         data.cnm[2].clone()
     } else {
         vec![]
@@ -254,7 +254,7 @@ pub fn compute_nonspherical_gravity_with_scratch(
         let ii_grad_deg_nonzero = ii <= gradient_degree && gradient_degree > 0;
 
         // Get coefficient pointers for this degree
-        let c_ii: &[f64] = if ii == 2 { &local_cnm2 } else { &data.cnm[ii] };
+        let c_ii: &[f64] = if ii == 2 { &local_cnm } else { &data.cnm[ii] };
         let s_ii: &[f64] = &data.snm[ii];
 
         rad_div_r_nth *= rad_div_r;

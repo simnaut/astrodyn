@@ -60,7 +60,7 @@ fn main() {
                         "t={:8.0}s  alt={:7.1}km  e={:.2e}  energy_drift={:.2e} J/kg",
                         step as f64 * dt,
                         alt_km,
-                        elems.eccentricity,
+                        elems.e_mag,
                         energy_drift
                     );
                 }

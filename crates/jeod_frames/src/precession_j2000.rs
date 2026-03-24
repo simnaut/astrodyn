@@ -19,24 +19,25 @@ const ARCSEC_TO_RAD: f64 = DEG_TO_RAD / 3600.0;
 /// Port of JEOD `precession_j2000.cc`.
 ///
 /// # Arguments
-/// * `t` — Julian centuries since J2000.0 TT
+/// * `time` — Julian centuries since J2000.0 TT
 ///
 /// # Returns
 /// 3x3 precession rotation matrix (stored as JEOD convention: row-major in the
 /// `rotation` array, representing the transformation from J2000 mean equator
 /// to mean equator of date).
-pub fn precession_matrix(t: f64) -> DMat3 {
-    let t2 = t * t;
-    let t3 = t2 * t;
+pub fn precession_matrix(time: f64) -> DMat3 {
+    let time2 = time * time;
+    let time3 = time2 * time;
 
-    // Precession parameters in arcseconds (Mulcihy & Bond, JSC-24574)
-    let zeta_as = 2306.2181 * t + 0.30188 * t2 + 0.017998 * t3;
-    let theta_as = 2004.3109 * t - 0.42665 * t2 - 0.041833 * t3;
-    let z_as = 2306.2181 * t + 1.09468 * t2 + 0.018203 * t3;
+    // Precession parameters in arcseconds (Mulcihy & Bond, JSC-24574),
+    // then converted to radians in place (matching JEOD convention).
+    let mut zeta = 2306.2181 * time + 0.30188 * time2 + 0.017998 * time3;
+    let mut theta = 2004.3109 * time - 0.42665 * time2 - 0.041833 * time3;
+    let mut z = 2306.2181 * time + 1.09468 * time2 + 0.018203 * time3;
 
-    let zeta = zeta_as * ARCSEC_TO_RAD;
-    let theta = theta_as * ARCSEC_TO_RAD;
-    let z = z_as * ARCSEC_TO_RAD;
+    zeta *= ARCSEC_TO_RAD;
+    theta *= ARCSEC_TO_RAD;
+    z *= ARCSEC_TO_RAD;
 
     let (s_zeta, c_zeta) = zeta.sin_cos();
     let (s_theta, c_theta) = theta.sin_cos();

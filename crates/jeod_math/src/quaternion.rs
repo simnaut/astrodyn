@@ -194,10 +194,10 @@ impl JeodQuat {
         // Convenience macro: T[i][j] = mat.col(j)[i]
         let t = |r: usize, c: usize| -> f64 { mat.col(c)[r] };
 
-        let trace = t(0, 0) + t(1, 1) + t(2, 2);
+        let tr = t(0, 0) + t(1, 1) + t(2, 2);
 
-        // Find maximum of (trace, T00, T11, T22)
-        let vals = [trace, t(0, 0), t(1, 1), t(2, 2)];
+        // Find maximum of (tr, T00, T11, T22)
+        let vals = [tr, t(0, 0), t(1, 1), t(2, 2)];
         let max_idx = vals
             .iter()
             .enumerate()
@@ -218,8 +218,8 @@ impl JeodQuat {
         //   T[1][2] + T[2][1] =  4*qv[1]*qv[2]
         match max_idx {
             0 => {
-                // trace dominates -> solve for qs first
-                q[0] = 0.5 * (1.0 + trace).sqrt();
+                // tr dominates -> solve for qs first
+                q[0] = 0.5 * (1.0 + tr).sqrt();
                 let inv4qs = 0.25 / q[0];
                 q[1] = (t(2, 1) - t(1, 2)) * inv4qs;
                 q[2] = (t(0, 2) - t(2, 0)) * inv4qs;
@@ -227,7 +227,7 @@ impl JeodQuat {
             }
             1 => {
                 // T[0][0] dominates -> solve for qv[0] first
-                q[1] = 0.5 * (1.0 + 2.0 * t(0, 0) - trace).sqrt();
+                q[1] = 0.5 * (1.0 + 2.0 * t(0, 0) - tr).sqrt();
                 let inv4qv0 = 0.25 / q[1];
                 q[0] = (t(2, 1) - t(1, 2)) * inv4qv0;
                 q[2] = (t(0, 1) + t(1, 0)) * inv4qv0;
@@ -235,7 +235,7 @@ impl JeodQuat {
             }
             2 => {
                 // T[1][1] dominates -> solve for qv[1] first
-                q[2] = 0.5 * (1.0 + 2.0 * t(1, 1) - trace).sqrt();
+                q[2] = 0.5 * (1.0 + 2.0 * t(1, 1) - tr).sqrt();
                 let inv4qv1 = 0.25 / q[2];
                 q[0] = (t(0, 2) - t(2, 0)) * inv4qv1;
                 q[1] = (t(0, 1) + t(1, 0)) * inv4qv1;
@@ -243,7 +243,7 @@ impl JeodQuat {
             }
             3 => {
                 // T[2][2] dominates -> solve for qv[2] first
-                q[3] = 0.5 * (1.0 + 2.0 * t(2, 2) - trace).sqrt();
+                q[3] = 0.5 * (1.0 + 2.0 * t(2, 2) - tr).sqrt();
                 let inv4qv2 = 0.25 / q[3];
                 q[0] = (t(1, 0) - t(0, 1)) * inv4qv2;
                 q[1] = (t(0, 2) + t(2, 0)) * inv4qv2;

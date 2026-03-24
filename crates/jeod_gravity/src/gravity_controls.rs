@@ -1,7 +1,7 @@
 #[derive(Debug, Clone)]
 pub struct GravityControl<SourceId = String> {
     pub source_id: SourceId,
-    pub compute_gradient: bool,
+    pub gradient: bool,
     /// Max degree for this evaluation (None = use source max).
     pub degree: Option<usize>,
     /// Max order for this evaluation (None = use source max).
@@ -16,10 +16,10 @@ pub struct GravityControl<SourceId = String> {
 
 impl<SourceId> GravityControl<SourceId> {
     /// Create a gravity control with default truncation settings.
-    pub fn new(source_id: SourceId, compute_gradient: bool) -> Self {
+    pub fn new(source_id: SourceId, gradient: bool) -> Self {
         Self {
             source_id,
-            compute_gradient,
+            gradient,
             degree: None,
             order: None,
             perturbing_only: false,
