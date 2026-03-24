@@ -56,17 +56,24 @@ pub fn calc_spherical(mu: f64, position: DVec3) -> GravityAcceleration {
 /// perturbation for spherical harmonics models).
 ///
 /// For `PointMass`, `position` is relative to the source center in any frame;
-/// `t_parent_this` is ignored. Result is in the same frame as the input.
+/// `t_parent_this` and gradient parameters are ignored.
 ///
 /// For `SphericalHarmonics`, `position` is in inertial coordinates and
 /// `t_parent_this` is the inertial-to-planet-fixed rotation matrix.
-/// Matching JEOD's `calc_nonspherical`, this function internally transforms
-/// position to planet-fixed, computes gravity, and transforms the result
-/// back to inertial. Result is in the inertial frame.
+/// Matching JEOD's `GravityControls::gravitation`, this function internally
+/// transforms position to planet-fixed, computes gravity, and transforms the
+/// result back to inertial. Result is in the inertial frame.
+///
+/// This is a convenience wrapper that allocates scratch internally.
+/// For the RK4 inner loop, prefer [`gravitation_with_scratch`].
+#[allow(clippy::too_many_arguments)]
 pub fn gravitation(
     source: &GravitySource,
     position: DVec3,
     t_parent_this: &DMat3,
+    compute_gradient: bool,
+    gradient_degree: usize,
+    gradient_order: usize,
 ) -> GravityAcceleration {
     match &source.model {
         GravityModel::PointMass => calc_spherical(source.mu, position),
@@ -87,9 +94,9 @@ pub fn gravitation(
                 posn_pf,
                 data.degree,
                 data.order,
-                false,
-                0,
-                0,
+                compute_gradient,
+                gradient_degree,
+                gradient_order,
             );
 
             // Vector3::transform_transpose(T_parent_this, body_grav_accel)
@@ -307,7 +314,7 @@ mod tests {
             model: GravityModel::PointMass,
         };
         let pos = DVec3::new(EARTH_RADIUS, 0.0, 0.0);
-        let result = gravitation(&source, pos, &DMat3::IDENTITY);
+        let result = gravitation(&source, pos, &DMat3::IDENTITY, false, 0, 0);
         let direct = calc_spherical(EARTH_MU, pos);
 
         assert_eq!(result.grav_accel, direct.grav_accel);

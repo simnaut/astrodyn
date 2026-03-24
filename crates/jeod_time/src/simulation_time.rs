@@ -201,7 +201,13 @@ mod tests {
             (sim.tai_tjt - sim.tai_tjt_at_epoch - 1.0).abs() < 1e-12,
             "TAI TJT should advance by 1 day"
         );
-        // GMST should have advanced by about 1 sidereal day rotation
-        // (GMST rate ≈ 1.00274 per solar day)
+        // GMST should have advanced by about 1 sidereal day (~1.00274 solar days)
+        let gmst_advance_days = sim.gmst_seconds / 86400.0
+            - SimulationTime::at_j2000(default_leap_second_table()).gmst_seconds / 86400.0;
+        assert!(
+            (gmst_advance_days - 1.00274).abs() < 0.001,
+            "GMST advance over 1 solar day: {} sidereal days (expected ~1.00274)",
+            gmst_advance_days
+        );
     }
 }

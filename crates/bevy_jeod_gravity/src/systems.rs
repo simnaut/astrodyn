@@ -34,7 +34,7 @@ pub fn gravity_computation_system(
                 continue;
             };
             // TODO(Phase 3): obtain T_parent_this from planet-fixed frame entity
-            let result = jeod_gravity::gravitation(&source.0, state.position, &glam::DMat3::IDENTITY);
+            let result = jeod_gravity::gravitation(&source.0, state.position, &glam::DMat3::IDENTITY, ctrl.gradient, 0, 0);
             total.grav_accel += result.grav_accel;
             if ctrl.gradient {
                 total.grav_grad += result.grav_grad;
