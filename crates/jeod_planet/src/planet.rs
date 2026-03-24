@@ -13,25 +13,25 @@ pub struct PlanetShape {
     pub r_eq: f64,
     /// Mean polar radius (m).
     pub r_pol: f64,
-    /// Geometric flattening: f = (r_eq - r_pol) / r_eq.
-    pub flattening: f64,
+    /// Flattening coefficient: f = (r_eq - r_pol) / r_eq.
+    pub flat_coeff: f64,
 }
 
 impl PlanetShape {
     /// Inverse flattening (e.g., 298.257223563 for Earth).
-    pub fn flattening_inverse(&self) -> f64 {
-        1.0 / self.flattening
+    pub fn flat_inv(&self) -> f64 {
+        1.0 / self.flat_coeff
     }
 
     /// Ellipsoid eccentricity: e = sqrt(2f - f^2).
-    pub fn eccentricity(&self) -> f64 {
-        let f = self.flattening;
+    pub fn e_ellipsoid(&self) -> f64 {
+        let f = self.flat_coeff;
         (2.0 * f - f * f).sqrt()
     }
 
     /// Square of ellipsoid eccentricity.
-    pub fn eccentricity_squared(&self) -> f64 {
-        let f = self.flattening;
+    pub fn e_ellip_sq(&self) -> f64 {
+        let f = self.flat_coeff;
         2.0 * f - f * f
     }
 }
@@ -43,7 +43,7 @@ mod tests {
     #[test]
     fn polar_radius_consistent_with_flattening() {
         for planet in [EARTH, MOON, SUN, MARS] {
-            let expected_r_pol = planet.r_eq * (1.0 - planet.flattening);
+            let expected_r_pol = planet.r_eq * (1.0 - planet.flat_coeff);
             let err = (planet.r_pol - expected_r_pol).abs();
             assert!(
                 err < 1.0, // < 1 m tolerance for rounding
@@ -63,12 +63,12 @@ mod tests {
             assert!(planet.r_eq > 0.0, "{}: r_eq must be positive", planet.name);
             assert!(planet.r_pol > 0.0, "{}: r_pol must be positive", planet.name);
             assert!(
-                planet.flattening > 0.0,
+                planet.flat_coeff > 0.0,
                 "{}: flattening must be positive",
                 planet.name
             );
             assert!(
-                planet.flattening < 1.0,
+                planet.flat_coeff < 1.0,
                 "{}: flattening must be < 1",
                 planet.name
             );
@@ -82,7 +82,7 @@ mod tests {
 
     #[test]
     fn earth_inverse_flattening() {
-        let inv_f = EARTH.flattening_inverse();
+        let inv_f = EARTH.flat_inv();
         assert!(
             (inv_f - 298.257223563).abs() < 1e-6,
             "Earth 1/f: expected 298.257223563, got {}",
@@ -93,7 +93,7 @@ mod tests {
     #[test]
     fn eccentricity_positive() {
         for planet in [EARTH, MOON, SUN, MARS] {
-            let e = planet.eccentricity();
+            let e = planet.e_ellipsoid();
             assert!(e > 0.0 && e < 1.0, "{}: e={}", planet.name, e);
         }
     }

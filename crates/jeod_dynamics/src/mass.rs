@@ -4,8 +4,8 @@ use glam::{DMat3, DVec3};
 pub struct MassProperties {
     pub mass: f64,              // kg
     pub inertia: DMat3,         // kg*m^2, in body frame
-    pub inertia_inverse: DMat3, // precomputed I^-1
-    pub center_of_mass: DVec3,  // m, in structural frame
+    pub inverse_inertia: DMat3, // precomputed I^-1
+    pub position: DVec3,  // m, in structural frame
 }
 
 impl MassProperties {
@@ -18,8 +18,8 @@ impl MassProperties {
         Self {
             mass,
             inertia: DMat3::IDENTITY * mass,
-            inertia_inverse: DMat3::IDENTITY / mass,
-            center_of_mass: DVec3::ZERO,
+            inverse_inertia: DMat3::IDENTITY / mass,
+            position: DVec3::ZERO,
         }
     }
 }
@@ -33,14 +33,14 @@ mod tests {
         let mp = MassProperties::new(10.0);
         assert_eq!(mp.mass, 10.0);
         assert_eq!(mp.inertia, DMat3::IDENTITY * 10.0);
-        assert_eq!(mp.inertia_inverse, DMat3::IDENTITY / 10.0);
-        assert_eq!(mp.center_of_mass, DVec3::ZERO);
+        assert_eq!(mp.inverse_inertia, DMat3::IDENTITY / 10.0);
+        assert_eq!(mp.position, DVec3::ZERO);
     }
 
     #[test]
     fn inertia_times_inverse_is_identity() {
         let mp = MassProperties::new(42.0);
-        let product = mp.inertia * mp.inertia_inverse;
+        let product = mp.inertia * mp.inverse_inertia;
         let diff = product - DMat3::IDENTITY;
         // Check all 9 elements are near zero
         assert!(diff.x_axis.length() < 1e-12);

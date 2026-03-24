@@ -6,7 +6,7 @@ use crate::gravity_source::{GravityModel, GravitySource};
 
 /// Compute point-mass gravitational acceleration, gradient, and potential.
 /// Position is the body's position relative to the gravity source center.
-pub fn compute_point_mass_gravity(mu: f64, position: DVec3) -> GravityAcceleration {
+pub fn calc_spherical(mu: f64, position: DVec3) -> GravityAcceleration {
     let r_sq = position.length_squared();
     debug_assert!(
         r_sq > 0.0,
@@ -16,16 +16,16 @@ pub fn compute_point_mass_gravity(mu: f64, position: DVec3) -> GravityAccelerati
     let r_3rd = r_sq * r_mag;
 
     // Acceleration: a = -mu/r^3 * r
-    let accel = position * (-mu / r_3rd);
+    let grav_accel = position * (-mu / r_3rd);
 
     // Potential: V = -mu/r
-    let potential = -mu / r_mag;
+    let grav_pot = -mu / r_mag;
 
     // Gradient tensor: G[i][j] = mu/r^5 * (3*r[i]*r[j] - delta_ij*r^2)
     let r_5th = r_3rd * r_sq;
     let mu_r5 = mu / r_5th;
     // Build as columns for glam's column-major DMat3
-    let gradient = DMat3::from_cols(
+    let grav_grad = DMat3::from_cols(
         DVec3::new(
             mu_r5 * (3.0 * position.x * position.x - r_sq),
             mu_r5 * 3.0 * position.y * position.x,
@@ -44,9 +44,9 @@ pub fn compute_point_mass_gravity(mu: f64, position: DVec3) -> GravityAccelerati
     );
 
     GravityAcceleration {
-        accel,
-        gradient,
-        potential,
+        grav_accel,
+        grav_grad,
+        grav_pot,
     }
 }
 
@@ -63,13 +63,13 @@ pub fn compute_point_mass_gravity(mu: f64, position: DVec3) -> GravityAccelerati
 /// Matching JEOD's `calc_nonspherical`, this function internally transforms
 /// position to planet-fixed, computes gravity, and transforms the result
 /// back to inertial. Result is in the inertial frame.
-pub fn compute_gravity(
+pub fn gravitation(
     source: &GravitySource,
     position: DVec3,
     t_parent_this: &DMat3,
 ) -> GravityAcceleration {
     match &source.model {
-        GravityModel::PointMass => compute_point_mass_gravity(source.mu, position),
+        GravityModel::PointMass => calc_spherical(source.mu, position),
         GravityModel::SphericalHarmonics(data) => {
             debug_assert!(
                 (source.mu - data.mu).abs() < 1e-10,
@@ -80,9 +80,9 @@ pub fn compute_gravity(
             // Vector3::transform(T_parent_this, posn, posn_pf)
             let posn_pf = vector3_transform(t_parent_this, position);
 
-            let pm = compute_point_mass_gravity(source.mu, position);
+            let pm = calc_spherical(source.mu, position);
 
-            let sh_pf = crate::spherical_harmonics_calc_nonspherical::compute_nonspherical_gravity(
+            let sh_pf = crate::spherical_harmonics_calc_nonspherical::calc_nonspherical(
                 data,
                 posn_pf,
                 data.degree,
@@ -93,15 +93,15 @@ pub fn compute_gravity(
             );
 
             // Vector3::transform_transpose(T_parent_this, body_grav_accel)
-            let sh_accel_inertial = vector3_transform_transpose(t_parent_this, sh_pf.accel);
+            let sh_accel_inertial = vector3_transform_transpose(t_parent_this, sh_pf.grav_accel);
 
             // Matrix3x3::transpose_transform_matrix(T_parent_this, dgdx_pf, dgdx)
-            let sh_gradient_inertial = matrix3x3_transpose_transform_matrix(t_parent_this, &sh_pf.gradient);
+            let sh_gradient_inertial = matrix3x3_transpose_transform_matrix(t_parent_this, &sh_pf.grav_grad);
 
             GravityAcceleration {
-                accel: pm.accel + sh_accel_inertial,
-                gradient: pm.gradient + sh_gradient_inertial,
-                potential: pm.potential + sh_pf.potential,
+                grav_accel: pm.grav_accel + sh_accel_inertial,
+                grav_grad: pm.grav_grad + sh_gradient_inertial,
+                grav_pot: pm.grav_pot + sh_pf.grav_pot,
             }
         }
     }
@@ -109,7 +109,7 @@ pub fn compute_gravity(
 
 /// Dispatch gravity computation with a reusable scratch workspace.
 ///
-/// Same as [`compute_gravity`] but avoids heap allocation by reusing
+/// Same as [`gravitation`] but avoids heap allocation by reusing
 /// pre-allocated buffers, and exposes gradient control parameters.
 ///
 /// For `PointMass`, the scratch buffer is unused (point-mass has no
@@ -125,7 +125,7 @@ pub fn compute_gravity(
 /// * `gradient_order` — max order for gradient computation
 /// * `scratch` — reusable scratch workspace for the Gottlieb algorithm
 #[allow(clippy::too_many_arguments)]
-pub fn compute_gravity_with_scratch(
+pub fn gravitation_with_scratch(
     source: &GravitySource,
     position: DVec3,
     t_parent_this: &DMat3,
@@ -135,7 +135,7 @@ pub fn compute_gravity_with_scratch(
     scratch: &mut crate::spherical_harmonics_calc_nonspherical::GottliebScratch,
 ) -> GravityAcceleration {
     match &source.model {
-        GravityModel::PointMass => compute_point_mass_gravity(source.mu, position),
+        GravityModel::PointMass => calc_spherical(source.mu, position),
         GravityModel::SphericalHarmonics(data) => {
             debug_assert!(
                 (source.mu - data.mu).abs() < 1e-10,
@@ -146,9 +146,9 @@ pub fn compute_gravity_with_scratch(
             // Vector3::transform(T_parent_this, posn, posn_pf)
             let posn_pf = vector3_transform(t_parent_this, position);
 
-            let pm = compute_point_mass_gravity(source.mu, position);
+            let pm = calc_spherical(source.mu, position);
 
-            let sh_pf = crate::spherical_harmonics_calc_nonspherical::compute_nonspherical_gravity_with_scratch(
+            let sh_pf = crate::spherical_harmonics_calc_nonspherical::calc_nonspherical_with_scratch(
                 data,
                 posn_pf,
                 data.degree,
@@ -160,15 +160,15 @@ pub fn compute_gravity_with_scratch(
             );
 
             // Vector3::transform_transpose(T_parent_this, body_grav_accel)
-            let sh_accel_inertial = vector3_transform_transpose(t_parent_this, sh_pf.accel);
+            let sh_accel_inertial = vector3_transform_transpose(t_parent_this, sh_pf.grav_accel);
 
             // Matrix3x3::transpose_transform_matrix(T_parent_this, dgdx_pf, dgdx)
-            let sh_gradient_inertial = matrix3x3_transpose_transform_matrix(t_parent_this, &sh_pf.gradient);
+            let sh_gradient_inertial = matrix3x3_transpose_transform_matrix(t_parent_this, &sh_pf.grav_grad);
 
             GravityAcceleration {
-                accel: pm.accel + sh_accel_inertial,
-                gradient: pm.gradient + sh_gradient_inertial,
-                potential: pm.potential + sh_pf.potential,
+                grav_accel: pm.grav_accel + sh_accel_inertial,
+                grav_grad: pm.grav_grad + sh_gradient_inertial,
+                grav_pot: pm.grav_pot + sh_pf.grav_pot,
             }
         }
     }
@@ -185,8 +185,8 @@ mod tests {
     fn earth_surface_gravity_magnitude() {
         // At Earth's surface along x-axis
         let pos = DVec3::new(EARTH_RADIUS, 0.0, 0.0);
-        let result = compute_point_mass_gravity(EARTH_MU, pos);
-        let accel_mag = result.accel.length();
+        let result = calc_spherical(EARTH_MU, pos);
+        let accel_mag = result.grav_accel.length();
         // Should be approximately 9.80 m/s^2
         assert!(
             (accel_mag - 9.80).abs() < 0.1,
@@ -201,11 +201,11 @@ mod tests {
         let pos1 = DVec3::new(1e7, 0.0, 0.0);
         let pos2 = DVec3::new(2e7, 0.0, 0.0); // double distance
 
-        let result1 = compute_point_mass_gravity(mu, pos1);
-        let result2 = compute_point_mass_gravity(mu, pos2);
+        let result1 = calc_spherical(mu, pos1);
+        let result2 = calc_spherical(mu, pos2);
 
-        let a1 = result1.accel.length();
-        let a2 = result2.accel.length();
+        let a1 = result1.grav_accel.length();
+        let a2 = result2.grav_accel.length();
 
         // Double distance -> accel reduces by factor 4
         let ratio = a1 / a2;
@@ -221,8 +221,8 @@ mod tests {
         // Test with an off-axis position so all gradient components are non-zero
         let mu = 3.986e14;
         let pos = DVec3::new(4e6, 3e6, 5e6);
-        let result = compute_point_mass_gravity(mu, pos);
-        let g = result.gradient;
+        let result = calc_spherical(mu, pos);
+        let g = result.grav_grad;
 
         // G[i][j] == G[j][i]
         // glam: col(j)[i] is element (i,j) in row-col notation
@@ -252,8 +252,8 @@ mod tests {
         // Laplace's equation: trace of gravity gradient = 0 outside the body
         let mu = 3.986e14;
         let pos = DVec3::new(4e6, 3e6, 5e6);
-        let result = compute_point_mass_gravity(mu, pos);
-        let g = result.gradient;
+        let result = calc_spherical(mu, pos);
+        let g = result.grav_grad;
 
         // trace = G[0][0] + G[1][1] + G[2][2]
         let trace = g.col(0)[0] + g.col(1)[1] + g.col(2)[2];
@@ -269,14 +269,14 @@ mod tests {
         let mu = 3.986e14;
         let r = 7e6;
         let pos = DVec3::new(r, 0.0, 0.0);
-        let result = compute_point_mass_gravity(mu, pos);
+        let result = calc_spherical(mu, pos);
 
         let expected_potential = -mu / r;
         assert!(
-            (result.potential - expected_potential).abs() < 1e-6,
+            (result.grav_pot - expected_potential).abs() < 1e-6,
             "Potential: expected {}, got {}",
             expected_potential,
-            result.potential
+            result.grav_pot
         );
     }
 
@@ -284,10 +284,10 @@ mod tests {
     fn acceleration_direction_opposite_to_position() {
         let mu = 1e14;
         let pos = DVec3::new(3e6, 4e6, 5e6);
-        let result = compute_point_mass_gravity(mu, pos);
+        let result = calc_spherical(mu, pos);
 
         // Acceleration should point opposite to position (toward the source)
-        let accel_dir = result.accel.normalize();
+        let accel_dir = result.grav_accel.normalize();
         let pos_dir = pos.normalize();
 
         // accel_dir should be -pos_dir
@@ -301,18 +301,18 @@ mod tests {
     }
 
     #[test]
-    fn compute_gravity_dispatches_point_mass() {
+    fn gravitation_dispatches_point_mass() {
         let source = GravitySource {
             mu: EARTH_MU,
             model: GravityModel::PointMass,
         };
         let pos = DVec3::new(EARTH_RADIUS, 0.0, 0.0);
-        let result = compute_gravity(&source, pos, &DMat3::IDENTITY);
-        let direct = compute_point_mass_gravity(EARTH_MU, pos);
+        let result = gravitation(&source, pos, &DMat3::IDENTITY);
+        let direct = calc_spherical(EARTH_MU, pos);
 
-        assert_eq!(result.accel, direct.accel);
-        assert_eq!(result.potential, direct.potential);
-        assert_eq!(result.gradient, direct.gradient);
+        assert_eq!(result.grav_accel, direct.grav_accel);
+        assert_eq!(result.grav_pot, direct.grav_pot);
+        assert_eq!(result.grav_grad, direct.grav_grad);
     }
 
     #[test]
@@ -321,8 +321,8 @@ mod tests {
         let r = EARTH_RADIUS;
         let component = r / 3.0_f64.sqrt();
         let pos = DVec3::new(component, component, component);
-        let result = compute_point_mass_gravity(EARTH_MU, pos);
-        let accel_mag = result.accel.length();
+        let result = calc_spherical(EARTH_MU, pos);
+        let accel_mag = result.grav_accel.length();
         assert!(
             (accel_mag - 9.80).abs() < 0.1,
             "Off-axis Earth surface gravity: expected ~9.80, got {}",
@@ -335,8 +335,8 @@ mod tests {
         // The gradient magnitude at Earth surface should be on the order of
         // mu/r^3 ~ 3.986e14 / (6.378e6)^3 ~ 1.5e-6 /s^2
         let pos = DVec3::new(EARTH_RADIUS, 0.0, 0.0);
-        let result = compute_point_mass_gravity(EARTH_MU, pos);
-        let g = result.gradient;
+        let result = calc_spherical(EARTH_MU, pos);
+        let g = result.grav_grad;
 
         // For position along x-axis: G[0][0] = mu/r^5 * (3*x^2 - r^2) = mu/r^5 * 2*r^2 = 2*mu/r^3
         let expected_g00 = 2.0 * EARTH_MU / (EARTH_RADIUS * EARTH_RADIUS * EARTH_RADIUS);

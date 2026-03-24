@@ -349,7 +349,7 @@ impl OrbitalElements {
 
         if e < ELLIPTIC_UPPER {
             // Elliptic
-            let ea = solve_kepler_elliptic(m, e)?;
+            let ea = kep_eqtn_e(m, e)?;
             self.orbital_anom = ea;
 
             // E -> nu
@@ -364,7 +364,7 @@ impl OrbitalElements {
             self.cos_v = nu.cos();
         } else if e > HYPERBOLIC_LOWER {
             // Hyperbolic
-            let ha = solve_kepler_hyperbolic(m, e)?;
+            let ha = kep_eqtn_h(m, e)?;
             self.orbital_anom = ha;
 
             // H -> nu
@@ -379,7 +379,7 @@ impl OrbitalElements {
             self.cos_v = nu.cos();
         } else {
             // Parabolic
-            let d = solve_kepler_parabolic(m);
+            let d = kep_eqtn_b(m);
             self.orbital_anom = d;
 
             let nu = 2.0 * d.atan();
@@ -401,7 +401,7 @@ impl OrbitalElements {
 /// Solve Kepler's equation for elliptic orbits:  M = E - e sin(E).
 ///
 /// Newton-Raphson iteration with tolerance 1e-8 and maximum 1000 iterations.
-pub fn solve_kepler_elliptic(m: f64, e: f64) -> Result<f64, OrbitalError> {
+pub fn kep_eqtn_e(m: f64, e: f64) -> Result<f64, OrbitalError> {
     const TOL: f64 = 1e-8;
     const MAX_ITER: usize = 1000;
 
@@ -424,7 +424,7 @@ pub fn solve_kepler_elliptic(m: f64, e: f64) -> Result<f64, OrbitalError> {
 /// Solve Kepler's equation for hyperbolic orbits:  M = e sinh(H) - H.
 ///
 /// Newton-Raphson iteration.
-pub fn solve_kepler_hyperbolic(m: f64, e: f64) -> Result<f64, OrbitalError> {
+pub fn kep_eqtn_h(m: f64, e: f64) -> Result<f64, OrbitalError> {
     const TOL: f64 = 1e-8;
     const MAX_ITER: usize = 1000;
 
@@ -450,7 +450,7 @@ pub fn solve_kepler_hyperbolic(m: f64, e: f64) -> Result<f64, OrbitalError> {
 /// Solve Kepler's equation for parabolic orbits:  M = D + D^3/3.
 ///
 /// Closed-form via the cubic root (Barker's equation).
-pub fn solve_kepler_parabolic(m: f64) -> f64 {
+pub fn kep_eqtn_b(m: f64) -> f64 {
     // Barker's equation: M = D + D^3/3
     // Re-arrange: D^3 + 3*D - 3*M = 0
     // Using the real root of the depressed cubic x^3 + px + q = 0
@@ -641,13 +641,13 @@ mod tests {
     // ---------------------------------------------------------------
     #[test]
     fn kepler_elliptic_m_zero() {
-        let ea = solve_kepler_elliptic(0.0, 0.5).unwrap();
+        let ea = kep_eqtn_e(0.0, 0.5).unwrap();
         assert!((ea).abs() < 1e-8 || (ea - TAU).abs() < 1e-8, "E(M=0) should be 0 (or 2pi), got {}", ea);
     }
 
     #[test]
     fn kepler_elliptic_m_pi() {
-        let ea = solve_kepler_elliptic(PI, 0.5).unwrap();
+        let ea = kep_eqtn_e(PI, 0.5).unwrap();
         assert!(
             (ea - PI).abs() < 1e-8,
             "E(M=pi, e=0.5) should be ~pi, got {}",
@@ -659,7 +659,7 @@ mod tests {
     fn kepler_elliptic_high_ecc() {
         let e = 0.98;
         for m in [0.01, 0.5, PI, 5.0] {
-            let ea = solve_kepler_elliptic(m, e).unwrap();
+            let ea = kep_eqtn_e(m, e).unwrap();
             // Verify M = E - e*sin(E)
             let m_check = ea - e * ea.sin();
             let m_wrapped = wrap_to_tau(m);
@@ -681,7 +681,7 @@ mod tests {
     fn kepler_hyperbolic_convergence() {
         let e = 2.0;
         let m = 5.0;
-        let ha = solve_kepler_hyperbolic(m, e).unwrap();
+        let ha = kep_eqtn_h(m, e).unwrap();
         let m_check = e * ha.sinh() - ha;
         assert!(
             (m - m_check).abs() < 1e-7,
@@ -696,7 +696,7 @@ mod tests {
     fn kepler_parabolic() {
         // M = D + D^3/3.  For D = 1: M = 1 + 1/3 = 4/3
         let m = 4.0 / 3.0;
-        let d = solve_kepler_parabolic(m);
+        let d = kep_eqtn_b(m);
         let m_check = d + d * d * d / 3.0;
         assert!(
             (m - m_check).abs() < 1e-10,

@@ -74,8 +74,8 @@ fn point_mass_reasonable_at_jeod_positions() {
     let mu_earth = 3.986004418e14;
 
     for case in &cases {
-        let result = jeod_gravity::compute_point_mass_gravity(mu_earth, case.position);
-        let pm_mag = result.accel.length();
+        let result = jeod_gravity::calc_spherical(mu_earth, case.position);
+        let pm_mag = result.grav_accel.length();
 
         if case.perturb_only {
             // JEOD acceleration is perturbation only (total minus point-mass).
@@ -100,7 +100,7 @@ fn point_mass_reasonable_at_jeod_positions() {
         }
 
         // Point-mass acceleration should always point toward center.
-        let cos_radial = case.position.normalize().dot(result.accel.normalize());
+        let cos_radial = case.position.normalize().dot(result.grav_accel.normalize());
         assert!(
             cos_radial < -0.999,
             "Case {}: not anti-radial, cos = {:.6}",
@@ -182,7 +182,7 @@ fn spherical_harmonics_40_test_vectors() {
 
         // The Gottlieb algorithm computes harmonics from n=2..degree.
         // The sums are initialized to zero (perturbing-only mode).
-        let sh_result = jeod_gravity::compute_nonspherical_gravity(
+        let sh_result = jeod_gravity::calc_nonspherical(
             &data,
             case.position,
             degree,
@@ -194,21 +194,21 @@ fn spherical_harmonics_40_test_vectors() {
 
         // For full gravity (perturb_only=false), add point-mass contribution.
         // JEOD convention: potential is +mu/r (positive specific gravitational
-        // potential energy), while our compute_point_mass_gravity returns -mu/r.
+        // potential energy), while our calc_spherical returns -mu/r.
         // Also, JEOD's calc_spherical acceleration uses posn (inertial pos relative
         // to planet center), so we use the same.
         let (accel, potential, gradient) = if perturb_only {
-            (sh_result.accel, sh_result.potential, sh_result.gradient)
+            (sh_result.grav_accel, sh_result.grav_pot, sh_result.grav_grad)
         } else {
-            let pm = jeod_gravity::compute_point_mass_gravity(data.mu, case.position);
+            let pm = jeod_gravity::calc_spherical(data.mu, case.position);
             let r_mag = case.position.length();
             (
-                sh_result.accel + pm.accel,
-                sh_result.potential + data.mu / r_mag, // +mu/r (JEOD convention)
+                sh_result.grav_accel + pm.grav_accel,
+                sh_result.grav_pot + data.mu / r_mag, // +mu/r (JEOD convention)
                 if grad_active {
-                    sh_result.gradient + pm.gradient
+                    sh_result.grav_grad + pm.grav_grad
                 } else {
-                    sh_result.gradient
+                    sh_result.grav_grad
                 },
             )
         };
@@ -276,11 +276,11 @@ fn surface_gravity_ggm02c() {
 
     // Equatorial surface
     let pos_eq = DVec3::new(data.radius, 0.0, 0.0);
-    let result_eq = jeod_gravity::compute_nonspherical_gravity(
+    let result_eq = jeod_gravity::calc_nonspherical(
         &data, pos_eq, data.degree, data.order, false, 0, 0,
     );
-    let pm_eq = jeod_gravity::compute_point_mass_gravity(data.mu, pos_eq);
-    let g_eq = (result_eq.accel + pm_eq.accel).length();
+    let pm_eq = jeod_gravity::calc_spherical(data.mu, pos_eq);
+    let g_eq = (result_eq.grav_accel + pm_eq.grav_accel).length();
     assert!(
         (g_eq - 9.78).abs() < 0.1,
         "Equatorial surface gravity: {:.4} m/s^2 (expected ~9.78)",
@@ -290,11 +290,11 @@ fn surface_gravity_ggm02c() {
     // Polar surface
     let r_pol = data.radius * (1.0 - 1.0 / 298.257223563);
     let pos_pol = DVec3::new(0.0, 0.0, r_pol);
-    let result_pol = jeod_gravity::compute_nonspherical_gravity(
+    let result_pol = jeod_gravity::calc_nonspherical(
         &data, pos_pol, data.degree, data.order, false, 0, 0,
     );
-    let pm_pol = jeod_gravity::compute_point_mass_gravity(data.mu, pos_pol);
-    let g_pol = (result_pol.accel + pm_pol.accel).length();
+    let pm_pol = jeod_gravity::calc_spherical(data.mu, pos_pol);
+    let g_pol = (result_pol.grav_accel + pm_pol.grav_accel).length();
     assert!(
         (g_pol - 9.83).abs() < 0.1,
         "Polar surface gravity: {:.4} m/s^2 (expected ~9.83)",

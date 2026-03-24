@@ -344,8 +344,8 @@ fn tier3_cross_validate_gravity_at_jeod_positions() {
     let mut perturb_count = 0;
 
     for case in &cases {
-        let our_result = jeod_gravity::compute_point_mass_gravity(mu_earth, case.position);
-        let point_mass_mag = our_result.accel.length();
+        let our_result = jeod_gravity::calc_spherical(mu_earth, case.position);
+        let point_mass_mag = our_result.grav_accel.length();
 
         if case.perturb_only {
             // perturbOnly=1: JEOD acceleration is harmonics perturbation only
@@ -373,7 +373,7 @@ fn tier3_cross_validate_gravity_at_jeod_positions() {
             );
 
             // Direction should agree (both point roughly toward center).
-            let our_dir = our_result.accel.normalize();
+            let our_dir = our_result.grav_accel.normalize();
             let jeod_dir = case.acceleration.normalize();
             let cos_angle = our_dir.dot(jeod_dir);
             assert!(
@@ -385,7 +385,7 @@ fn tier3_cross_validate_gravity_at_jeod_positions() {
         }
 
         // In all cases, point-mass should be anti-radial.
-        let cos_radial = case.position.normalize().dot(our_result.accel.normalize());
+        let cos_radial = case.position.normalize().dot(our_result.grav_accel.normalize());
         assert!(
             cos_radial < -0.999,
             "Case {}: point-mass not anti-radial, cos = {:.6}",

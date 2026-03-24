@@ -12,7 +12,7 @@ use crate::spherical_harmonics_gravity_source::SphericalHarmonicsData;
 /// sqrt(f64::MIN_POSITIVE) — underflow guard matching JEOD's SQRT_DBL_MIN.
 const SQRT_DBL_MIN: f64 = 1.4916681462400413e-154;
 
-/// Pre-allocated scratch buffers for `compute_nonspherical_gravity`.
+/// Pre-allocated scratch buffers for `calc_nonspherical`.
 ///
 /// Avoids per-call heap allocations in the RK4 inner loop. Create once
 /// per degree/order and reuse across calls.
@@ -87,7 +87,7 @@ impl GottliebScratch {
 /// # Returns
 /// `GravityAcceleration` with acceleration, gradient, and potential in
 /// planet-fixed coordinates.
-pub fn compute_nonspherical_gravity(
+pub fn calc_nonspherical(
     data: &SphericalHarmonicsData,
     posn_pf: DVec3,
     degree: usize,
@@ -97,7 +97,7 @@ pub fn compute_nonspherical_gravity(
     gradient_order: usize,
 ) -> GravityAcceleration {
     let mut scratch = GottliebScratch::new(degree.min(data.degree));
-    compute_nonspherical_gravity_with_scratch(
+    calc_nonspherical_with_scratch(
         data,
         posn_pf,
         degree,
@@ -111,11 +111,11 @@ pub fn compute_nonspherical_gravity(
 
 /// Compute nonspherical gravity with a reusable scratch workspace.
 ///
-/// Same algorithm as [`compute_nonspherical_gravity`] but avoids heap
+/// Same algorithm as [`calc_nonspherical`] but avoids heap
 /// allocation by reusing pre-allocated buffers. The scratch workspace must
 /// have been created with `degree >= ` the requested degree.
 #[allow(clippy::too_many_arguments)]
-pub fn compute_nonspherical_gravity_with_scratch(
+pub fn calc_nonspherical_with_scratch(
     data: &SphericalHarmonicsData,
     posn_pf: DVec3,
     degree: usize,
@@ -139,9 +139,9 @@ pub fn compute_nonspherical_gravity_with_scratch(
     // Return zero perturbation.
     if degree < 2 {
         return GravityAcceleration {
-            accel: DVec3::ZERO,
-            gradient: DMat3::ZERO,
-            potential: 0.0,
+            grav_accel: DVec3::ZERO,
+            grav_grad: DMat3::ZERO,
+            grav_pot: 0.0,
         };
     }
     let gradient_degree = if compute_gradient {
@@ -448,8 +448,8 @@ pub fn compute_nonspherical_gravity_with_scratch(
     };
 
     GravityAcceleration {
-        accel,
-        gradient,
-        potential: pot,
+        grav_accel: accel,
+        grav_grad: gradient,
+        grav_pot: pot,
     }
 }

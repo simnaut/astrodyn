@@ -18,7 +18,7 @@ pub fn force_collection_system(
     mut query: Query<(&GravityAccelerationC, &MassPropertiesC, &mut TotalForceC)>,
 ) {
     for (grav, mass, mut total) in &mut query {
-        total.force = grav.accel * mass.mass;
+        total.force = grav.grav_accel * mass.mass;
         total.torque = DVec3::ZERO;
     }
 }
@@ -54,7 +54,7 @@ pub fn integration_system(
     }
 
     for (config, mut state, controls) in &mut bodies {
-        if !config.translational {
+        if !config.translational_dynamics {
             continue;
         }
 
@@ -63,11 +63,11 @@ pub fn integration_system(
             |s| {
                 let mut accel = DVec3::ZERO;
                 for ctrl in &controls.0.controls {
-                    if let Ok(source) = sources.get(ctrl.source_id) {
+                    if let Ok(source) = sources.get(ctrl.source_name) {
                         // TODO(Phase 3): obtain T_parent_this from planet-fixed frame entity;
-                        // switch to compute_gravity_with_scratch to avoid per-stage allocation
+                        // switch to gravitation_with_scratch to avoid per-stage allocation
                         accel +=
-                            jeod_gravity::compute_gravity(&source.0, s.position, &glam::DMat3::IDENTITY).accel;
+                            jeod_gravity::gravitation(&source.0, s.position, &glam::DMat3::IDENTITY).grav_accel;
                     }
                 }
                 accel

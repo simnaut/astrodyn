@@ -2,17 +2,17 @@ use glam::{DMat3, DVec3};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GravityAcceleration {
-    pub accel: DVec3,    // m/s^2, in integration frame
-    pub gradient: DMat3, // 1/s^2, tidal gradient tensor
-    pub potential: f64,  // m^2/s^2
+    pub grav_accel: DVec3, // m/s^2, in integration frame
+    pub grav_grad: DMat3,  // 1/s^2, tidal gradient tensor
+    pub grav_pot: f64,     // m^2/s^2
 }
 
 impl Default for GravityAcceleration {
     fn default() -> Self {
         Self {
-            accel: DVec3::ZERO,
-            gradient: DMat3::ZERO,
-            potential: 0.0,
+            grav_accel: DVec3::ZERO,
+            grav_grad: DMat3::ZERO,
+            grav_pot: 0.0,
         }
     }
 }
@@ -31,16 +31,16 @@ pub struct FrameDerivatives {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DynamicsConfig {
-    pub translational: bool,
-    pub rotational: bool,
+    pub translational_dynamics: bool,
+    pub rotational_dynamics: bool,
     pub three_dof: bool,
 }
 
 impl Default for DynamicsConfig {
     fn default() -> Self {
         Self {
-            translational: true,
-            rotational: false,
+            translational_dynamics: true,
+            rotational_dynamics: false,
             three_dof: true,
         }
     }
@@ -57,9 +57,9 @@ mod tests {
     #[test]
     fn default_gravity_acceleration() {
         let ga = GravityAcceleration::default();
-        assert_eq!(ga.accel, DVec3::ZERO);
-        assert_eq!(ga.gradient, DMat3::ZERO);
-        assert_eq!(ga.potential, 0.0);
+        assert_eq!(ga.grav_accel, DVec3::ZERO);
+        assert_eq!(ga.grav_grad, DMat3::ZERO);
+        assert_eq!(ga.grav_pot, 0.0);
     }
 
     #[test]
@@ -79,8 +79,8 @@ mod tests {
     #[test]
     fn default_dynamics_config() {
         let dc = DynamicsConfig::default();
-        assert!(dc.translational);
-        assert!(!dc.rotational);
+        assert!(dc.translational_dynamics);
+        assert!(!dc.rotational_dynamics);
         assert!(dc.three_dof);
     }
 

@@ -108,8 +108,8 @@ fn run_sh_trajectory_test(csv_name: &str, degree: usize, order: usize, label: &s
     assert!(trajectory.len() > 100);
 
     // Gravity acceleration using our own RNP with truncated degree/order.
-    // Uses compute_nonspherical_gravity directly (not compute_gravity) because
-    // the test exercises specific degree/order truncation. compute_gravity
+    // Uses calc_nonspherical directly (not gravitation) because
+    // the test exercises specific degree/order truncation. gravitation
     // handles full inertial→planet-fixed→inertial transforms per JEOD's
     // calc_nonspherical when using the full model.
     let accel_fn = |s: &TranslationalState, sim_time: f64| -> DVec3 {
@@ -117,11 +117,11 @@ fn run_sh_trajectory_test(csv_name: &str, degree: usize, order: usize, label: &s
         let t_pf2i = t_i2pf.transpose();
 
         let pos_pfix = t_i2pf * s.position;
-        let pm = jeod_gravity::compute_point_mass_gravity(sh_data.mu, s.position);
-        let sh_pfix = jeod_gravity::compute_nonspherical_gravity(
+        let pm = jeod_gravity::calc_spherical(sh_data.mu, s.position);
+        let sh_pfix = jeod_gravity::calc_nonspherical(
             &sh_data, pos_pfix, degree, order, false, 0, 0,
         );
-        pm.accel + t_pf2i * sh_pfix.accel
+        pm.grav_accel + t_pf2i * sh_pfix.grav_accel
     };
 
     let initial = &trajectory[0];

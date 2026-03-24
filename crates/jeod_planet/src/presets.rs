@@ -12,7 +12,7 @@ pub const EARTH: PlanetShape = PlanetShape {
     mu: 3.986_004_415e14,
     r_eq: 6_378_137.0,
     r_pol: 6_356_752.314_245_179, // r_eq * (1 - 1/298.257223563)
-    flattening: 1.0 / 298.257_223_563,
+    flat_coeff: 1.0 / 298.257_223_563,
 };
 
 /// Moon.
@@ -27,7 +27,7 @@ pub const MOON: PlanetShape = PlanetShape {
     mu: 4.902_799_806_931_69e12,
     r_eq: 1_738_140.0,
     r_pol: 1_735_967.325, // 1738140.0 * (1 - 0.00125)
-    flattening: 0.00125,
+    flat_coeff: 0.00125,
 };
 
 /// Sun.
@@ -42,7 +42,7 @@ pub const SUN: PlanetShape = PlanetShape {
     mu: 1.327_124_400_18e20,
     r_eq: 696_000_000.0,
     r_pol: 695_965_200.0, // 696000000.0 * (1 - 5e-5)
-    flattening: 5.0e-5,
+    flat_coeff: 5.0e-5,
 };
 
 /// Mars.
@@ -57,5 +57,5 @@ pub const MARS: PlanetShape = PlanetShape {
     mu: 4.282_837_2e13,
     r_eq: 3_396_000.0,
     r_pol: 3_378_388.584, // 3396000.0 * (1 - 0.005186)
-    flattening: 0.005186,
+    flat_coeff: 0.005186,
 };

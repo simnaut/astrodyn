@@ -44,11 +44,11 @@ fn j2_nodal_regression_rate() {
 
     // Gravity acceleration function: J2 + point-mass
     let accel_fn = |s: &TranslationalState| -> DVec3 {
-        let pm = jeod_gravity::compute_point_mass_gravity(mu, s.position);
-        let sh = jeod_gravity::compute_nonspherical_gravity(
+        let pm = jeod_gravity::calc_spherical(mu, s.position);
+        let sh = jeod_gravity::calc_nonspherical(
             &sh_data, s.position, degree, order, false, 0, 0,
         );
-        pm.accel + sh.accel
+        pm.grav_accel + sh.grav_accel
     };
 
     // Propagate for 1 day

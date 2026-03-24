@@ -292,7 +292,7 @@ impl JeodQuat {
     /// JEOD convention: scalar = cos(theta/2),  vector = -sin(theta/2) * axis
     ///
     /// `axis` must be a unit vector.
-    pub fn from_axis_angle(angle: f64, axis: DVec3) -> Self {
+    pub fn left_quat_from_eigen_rotation(angle: f64, axis: DVec3) -> Self {
         let half = angle * 0.5;
         let s = half.cos();
         let v = -half.sin() * axis;
@@ -343,7 +343,7 @@ mod tests {
     // ---------------------------------------------------------------
     #[test]
     fn rotation_90_z() {
-        let q = JeodQuat::from_axis_angle(FRAC_PI_2, DVec3::Z);
+        let q = JeodQuat::left_quat_from_eigen_rotation(FRAC_PI_2, DVec3::Z);
         let m = q.left_quat_to_transformation();
 
         // JEOD left-transformation matrix for 90-deg about Z:
@@ -385,7 +385,7 @@ mod tests {
         ];
 
         for (angle, axis) in &cases {
-            let q = JeodQuat::from_axis_angle(*angle, *axis);
+            let q = JeodQuat::left_quat_from_eigen_rotation(*angle, *axis);
             let m = q.left_quat_to_transformation();
             let q2 = JeodQuat::left_quat_from_transformation(&m);
             let m2 = q2.left_quat_to_transformation();
@@ -440,7 +440,7 @@ mod tests {
     // ---------------------------------------------------------------
     #[test]
     fn multiply_with_conjugate_is_identity() {
-        let q = JeodQuat::from_axis_angle(1.23, DVec3::new(1.0, 2.0, 3.0).normalize());
+        let q = JeodQuat::left_quat_from_eigen_rotation(1.23, DVec3::new(1.0, 2.0, 3.0).normalize());
         let qc = q.conjugate();
         let prod = q.multiply(&qc);
 
@@ -464,7 +464,7 @@ mod tests {
             DVec3::new(-4.5, 0.1, 7.8),
         ];
 
-        let q = JeodQuat::from_axis_angle(0.9, DVec3::new(0.3, -0.7, 0.5).normalize());
+        let q = JeodQuat::left_quat_from_eigen_rotation(0.9, DVec3::new(0.3, -0.7, 0.5).normalize());
         let m = q.left_quat_to_transformation();
 
         for v in &test_vecs {
@@ -485,7 +485,7 @@ mod tests {
     // ---------------------------------------------------------------
     #[test]
     fn glam_conversion_roundtrip() {
-        let q = JeodQuat::from_axis_angle(1.5, DVec3::new(0.0, 1.0, 0.0));
+        let q = JeodQuat::left_quat_from_eigen_rotation(1.5, DVec3::new(0.0, 1.0, 0.0));
         let g = q.to_glam();
         let q2 = JeodQuat::from_glam(g);
         assert!(
@@ -502,7 +502,7 @@ mod tests {
     #[test]
     fn rotation_180_all_axes() {
         for axis in &[DVec3::X, DVec3::Y, DVec3::Z] {
-            let q = JeodQuat::from_axis_angle(PI, *axis);
+            let q = JeodQuat::left_quat_from_eigen_rotation(PI, *axis);
             let m = q.left_quat_to_transformation();
             let q2 = JeodQuat::left_quat_from_transformation(&m);
             let m2 = q2.left_quat_to_transformation();
@@ -520,7 +520,7 @@ mod tests {
     #[test]
     fn small_angle_rotation() {
         let angle = 1e-10;
-        let q = JeodQuat::from_axis_angle(angle, DVec3::Z);
+        let q = JeodQuat::left_quat_from_eigen_rotation(angle, DVec3::Z);
         let m = q.left_quat_to_transformation();
         // For tiny angle about Z, matrix should be very close to identity
         assert!(approx_eq_mat3(&m, &DMat3::IDENTITY, 1e-8));
@@ -532,9 +532,9 @@ mod tests {
     #[test]
     fn composition() {
         // Two 90-degree rotations about Z should give a 180-degree rotation about Z
-        let q90 = JeodQuat::from_axis_angle(FRAC_PI_2, DVec3::Z);
+        let q90 = JeodQuat::left_quat_from_eigen_rotation(FRAC_PI_2, DVec3::Z);
         let q180_composed = q90.multiply(&q90);
-        let q180_direct = JeodQuat::from_axis_angle(PI, DVec3::Z);
+        let q180_direct = JeodQuat::left_quat_from_eigen_rotation(PI, DVec3::Z);
 
         assert!(
             approx_eq_quat(&q180_composed, &q180_direct, 1e-12),

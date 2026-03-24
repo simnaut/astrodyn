@@ -33,7 +33,7 @@ pub struct SimulationTime {
     /// Matches JEOD's `TimeGMST::seconds`.
     pub gmst_seconds: f64,
     /// Elapsed simulation time (same as tai_seconds for forward sim).
-    pub simulation_seconds: f64,
+    pub simtime: f64,
     /// Leap second table for TAI↔UTC conversion.
     pub leap_second_table: LeapSecondTable,
     /// UT1-TAI offset in seconds (from IERS data; approximately constant
@@ -65,7 +65,7 @@ impl SimulationTime {
             tdb_seconds: 0.0,
             gmst_radians: 0.0,
             gmst_seconds: 0.0,
-            simulation_seconds: 0.0,
+            simtime: 0.0,
             leap_second_table: leap_table,
             ut1_tai_offset,
         };
@@ -91,7 +91,7 @@ impl SimulationTime {
     pub fn advance(&mut self, dt: f64) {
         self.tai_seconds += dt;
         self.tai_tjt = self.tai_tjt_at_epoch + self.tai_seconds / SECONDS_PER_DAY;
-        self.simulation_seconds += dt;
+        self.simtime += dt;
         self.recompute_derived();
     }
 
@@ -146,7 +146,7 @@ mod tests {
     fn initial_state_at_j2000() {
         let sim = SimulationTime::at_j2000(default_leap_second_table());
         assert_eq!(sim.tai_seconds, 0.0);
-        assert_eq!(sim.simulation_seconds, 0.0);
+        assert_eq!(sim.simtime, 0.0);
         // TT = TAI + 32.184
         assert!((sim.tt_seconds - 32.184).abs() < 1e-10);
         // GMST at J2000 ≈ 280.19° (because TAI epoch != UT1 epoch)
@@ -165,7 +165,7 @@ mod tests {
         sim.advance(dt);
         assert!((sim.tai_seconds - dt).abs() < 1e-15);
         assert!((sim.tt_seconds - (dt + 32.184)).abs() < 1e-10);
-        assert!((sim.simulation_seconds - dt).abs() < 1e-15);
+        assert!((sim.simtime - dt).abs() < 1e-15);
     }
 
     #[test]
