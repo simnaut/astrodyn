@@ -16,7 +16,7 @@ impl LeapSecondTable {
     /// Create a leap second table from (TJT, TAI-UTC seconds) pairs.
     /// Entries must be sorted by TJT.
     pub fn from_entries(entries: Vec<(f64, f64)>) -> Self {
-        debug_assert!(
+        assert!(
             entries.windows(2).all(|w| w[0].0 <= w[1].0),
             "Leap second entries must be sorted by TJT"
         );

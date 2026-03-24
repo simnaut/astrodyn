@@ -75,9 +75,15 @@ fn load_jeod_trajectory(path: &Path) -> Vec<JeodStateRecord> {
     });
     let mut records = Vec::new();
     for (i, line) in content.lines().enumerate() {
-        if i == 0 { continue; }
+        if i == 0 { continue; } // skip header
+        let line = line.trim();
+        if line.is_empty() { continue; }
         let f: Vec<&str> = line.split(',').collect();
-        if f.len() < 17 { continue; }
+        assert!(
+            f.len() >= 17,
+            "{}:{}: expected >= 17 CSV columns, got {} — file may be truncated",
+            path.display(), i + 1, f.len()
+        );
         let p = |s: &str| -> f64 { s.trim().parse().unwrap() };
         records.push(JeodStateRecord {
             time: p(f[0]),
