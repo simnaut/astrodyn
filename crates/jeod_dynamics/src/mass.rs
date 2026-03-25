@@ -26,6 +26,21 @@ impl MassProperties {
             position: DVec3::ZERO,
         }
     }
+
+    /// Create mass properties with explicit inertia tensor and center-of-mass position.
+    ///
+    /// The inertia tensor is about the body frame axes through the center of mass.
+    /// The position is the center of mass in the structural frame.
+    pub fn with_inertia(mass: f64, inertia: DMat3, position: DVec3) -> Self {
+        assert!(mass > 0.0, "mass must be positive, got {mass}");
+        let inverse_inertia = inertia.inverse();
+        Self {
+            mass,
+            inertia,
+            inverse_inertia,
+            position,
+        }
+    }
 }
 
 #[cfg(test)]

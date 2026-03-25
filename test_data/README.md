@@ -102,6 +102,7 @@ The container runs `trick/generate_references.sh`, which:
 | `dyncomp_run2` | `verif/SIM_dyncomp` | `SET_test/RUN_2` | Point-mass gravity baseline |
 | `dyncomp_run3a` | `verif/SIM_dyncomp` | `SET_test/RUN_3A` | 4x4 harmonics gravity |
 | `dyncomp_run3b` | `verif/SIM_dyncomp` | `SET_test/RUN_3B` | 8x8 harmonics gravity |
+| `dyncomp_run8b` | `verif/SIM_dyncomp` | `SET_test/RUN_8B` | Phase 3: 6-DOF rotational dynamics (spherical mass, orbital rate) |
 | `orbinit_0001` | `body_action/verif/SIM_orbinit` | `SET_test/RUN_0001` | Orbital initialization (future) |
 | `euler_inc` | `derived_state/verif/SIM_Euler` | `SET_test/RUN_inc` | Euler angles (future) |
 | `integ_rk4` | `integration/verif/SIM_integ_test` | `SET_test/RUN_rk4` | RK4 integrator accuracy (future) |

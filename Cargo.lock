@@ -2409,6 +2409,7 @@ name = "jeod_dynamics"
 version = "0.1.0"
 dependencies = [
  "glam 0.30.10",
+ "jeod_frames",
  "jeod_gravity",
  "jeod_math",
  "jeod_test_data",

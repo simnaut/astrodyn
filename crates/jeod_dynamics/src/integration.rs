@@ -1,5 +1,8 @@
+use crate::mass::MassProperties;
+use crate::rotational::*;
 use crate::state::TranslationalState;
 use glam::DVec3;
+use jeod_math::JeodQuat;
 
 /// Advance translational state by one RK4 step.
 ///
@@ -47,9 +50,137 @@ pub fn rk4_translational_step(
     }
 }
 
+/// Advance a 6-DOF state by one RK4 step, integrating 13 variables simultaneously:
+/// position[3], velocity[3], quaternion[4], angular velocity[3].
+///
+/// The `accel_fn` computes translational acceleration from the current 6-DOF state.
+/// The `torque_fn` computes body-frame external torque from the current 6-DOF state.
+///
+/// At each RK4 stage the rotational acceleration is computed via Euler's equation
+/// (`compute_rotational_acceleration`) using the mass properties inertia tensor.
+/// The quaternion derivative is computed via `compute_left_quat_deriv`.
+///
+/// After the final RK4 combination, the quaternion is renormalized using
+/// `normalize_integ` (without forcing scalar non-negative).
+pub fn rk4_sixdof_step(
+    state: &SixDofState,
+    accel_fn: impl Fn(&SixDofState) -> DVec3,
+    torque_fn: impl Fn(&SixDofState) -> DVec3,
+    mass_props: &MassProperties,
+    dt: f64,
+) -> SixDofState {
+    // Extract initial flat state: [pos(3), vel(3), quat(4), omega(3)]
+    let pos0 = state.trans.position;
+    let vel0 = state.trans.velocity;
+    let q0 = state.rot.quaternion.data;
+    let omega0 = state.rot.ang_vel_body;
+
+    // Helper: reconstruct SixDofState from flat components
+    let make_state = |pos: DVec3, vel: DVec3, q: [f64; 4], omega: DVec3| -> SixDofState {
+        SixDofState {
+            trans: TranslationalState {
+                position: pos,
+                velocity: vel,
+            },
+            rot: RotationalState {
+                quaternion: JeodQuat::new(q[0], q[1], q[2], q[3]),
+                ang_vel_body: omega,
+            },
+        }
+    };
+
+    // Helper: evaluate derivatives at a given state
+    let eval_derivs = |s: &SixDofState| -> (DVec3, DVec3, [f64; 4], DVec3) {
+        let k_v = s.trans.velocity;
+        let k_a = accel_fn(s);
+        let k_qdot = compute_left_quat_deriv(&s.rot.quaternion, s.rot.ang_vel_body);
+        let k_alpha = compute_rotational_acceleration(
+            &mass_props.inertia,
+            &mass_props.inverse_inertia,
+            s.rot.ang_vel_body,
+            torque_fn(s),
+        );
+        (k_v, k_a, k_qdot, k_alpha)
+    };
+
+    // Helper: step quaternion 4-vector
+    let step_q = |q_base: [f64; 4], k_qdot: [f64; 4], h: f64| -> [f64; 4] {
+        [
+            q_base[0] + k_qdot[0] * h,
+            q_base[1] + k_qdot[1] * h,
+            q_base[2] + k_qdot[2] * h,
+            q_base[3] + k_qdot[3] * h,
+        ]
+    };
+
+    // Stage 1: evaluate at current state
+    let (k1_v, k1_a, k1_qdot, k1_alpha) = eval_derivs(state);
+
+    // Stage 2: evaluate at t + dt/2, using k1
+    let half_dt = dt * 0.5;
+    let s2 = make_state(
+        pos0 + k1_v * half_dt,
+        vel0 + k1_a * half_dt,
+        step_q(q0, k1_qdot, half_dt),
+        omega0 + k1_alpha * half_dt,
+    );
+    let (k2_v, k2_a, k2_qdot, k2_alpha) = eval_derivs(&s2);
+
+    // Stage 3: evaluate at t + dt/2, using k2
+    let s3 = make_state(
+        pos0 + k2_v * half_dt,
+        vel0 + k2_a * half_dt,
+        step_q(q0, k2_qdot, half_dt),
+        omega0 + k2_alpha * half_dt,
+    );
+    let (k3_v, k3_a, k3_qdot, k3_alpha) = eval_derivs(&s3);
+
+    // Stage 4: evaluate at t + dt, using k3
+    let s4 = make_state(
+        pos0 + k3_v * dt,
+        vel0 + k3_a * dt,
+        step_q(q0, k3_qdot, dt),
+        omega0 + k3_alpha * dt,
+    );
+    let (k4_v, k4_a, k4_qdot, k4_alpha) = eval_derivs(&s4);
+
+    // Combine: weighted average (1/6)(k1 + 2*k2 + 2*k3 + k4) * dt
+    let sixth_dt = dt / 6.0;
+
+    let final_pos = pos0 + (k1_v + k2_v * 2.0 + k3_v * 2.0 + k4_v) * sixth_dt;
+    let final_vel = vel0 + (k1_a + k2_a * 2.0 + k3_a * 2.0 + k4_a) * sixth_dt;
+    let final_omega = omega0 + (k1_alpha + k2_alpha * 2.0 + k3_alpha * 2.0 + k4_alpha) * sixth_dt;
+
+    let final_q = [
+        q0[0] + (k1_qdot[0] + 2.0 * k2_qdot[0] + 2.0 * k3_qdot[0] + k4_qdot[0]) * sixth_dt,
+        q0[1] + (k1_qdot[1] + 2.0 * k2_qdot[1] + 2.0 * k3_qdot[1] + k4_qdot[1]) * sixth_dt,
+        q0[2] + (k1_qdot[2] + 2.0 * k2_qdot[2] + 2.0 * k3_qdot[2] + k4_qdot[2]) * sixth_dt,
+        q0[3] + (k1_qdot[3] + 2.0 * k2_qdot[3] + 2.0 * k3_qdot[3] + k4_qdot[3]) * sixth_dt,
+    ];
+
+    // Normalize the final quaternion (without forcing scalar non-negative)
+    let mut final_quat = JeodQuat::new(final_q[0], final_q[1], final_q[2], final_q[3]);
+    normalize_integ(&mut final_quat);
+
+    SixDofState {
+        trans: TranslationalState {
+            position: final_pos,
+            velocity: final_vel,
+        },
+        rot: RotationalState {
+            quaternion: final_quat,
+            ang_vel_body: final_omega,
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mass::MassProperties;
+    use crate::rotational::{RotationalState, SixDofState};
+    use glam::DMat3;
+    use jeod_math::JeodQuat;
 
     /// Harmonic oscillator: x'' = -x
     /// Analytical solution: x(t) = cos(t), v(t) = -sin(t) with x(0) = 1, v(0) = 0.
@@ -181,6 +312,217 @@ mod tests {
         assert!(
             vel_error < 1e-12,
             "Free particle velocity error {vel_error} exceeds 1e-12"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // 6-DOF integration tests
+    // ---------------------------------------------------------------
+
+    /// Helper: create MassProperties with a diagonal inertia tensor.
+    fn mass_with_inertia(mass: f64, ix: f64, iy: f64, iz: f64) -> MassProperties {
+        let inertia = DMat3::from_diagonal(DVec3::new(ix, iy, iz));
+        let inverse_inertia = DMat3::from_diagonal(DVec3::new(1.0 / ix, 1.0 / iy, 1.0 / iz));
+        MassProperties {
+            mass,
+            inertia,
+            inverse_inertia,
+            position: DVec3::ZERO,
+        }
+    }
+
+    /// Torque-free symmetric body: I = diag(10, 10, 20), omega_0 = [0.01, 0, 0.1].
+    ///
+    /// For a torque-free axisymmetric body (I1 = I2), the spin about the
+    /// symmetry axis (omega_z) is constant and the transverse components
+    /// precess at rate omega_p = (I3 - I1) / I1 * omega_z.
+    ///
+    /// With I1=I2=10, I3=20, omega_z=0.1:
+    ///   omega_p = (20-10)/10 * 0.1 = 0.1 rad/s
+    ///   Period = 2*pi / 0.1 = 62.83... seconds
+    ///
+    /// After one full precession period, omega should return to its initial value.
+    #[test]
+    fn torque_free_symmetric_body() {
+        let mass_props = mass_with_inertia(100.0, 10.0, 10.0, 20.0);
+        let omega_z = 0.1;
+        let omega_x0 = 0.01;
+
+        // Precession rate and period
+        let omega_p = (20.0 - 10.0) / 10.0 * omega_z; // = 0.1 rad/s
+        let period = std::f64::consts::TAU / omega_p;   // = 2*pi/0.1 s
+
+        let initial = SixDofState {
+            trans: TranslationalState {
+                position: DVec3::ZERO,
+                velocity: DVec3::ZERO,
+            },
+            rot: RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::new(omega_x0, 0.0, omega_z),
+            },
+        };
+
+        let dt = 0.001;
+        let steps = (period / dt).round() as usize;
+
+        let zero_accel = |_: &SixDofState| -> DVec3 { DVec3::ZERO };
+        let zero_torque = |_: &SixDofState| -> DVec3 { DVec3::ZERO };
+
+        let mut state = initial;
+        for _ in 0..steps {
+            state = rk4_sixdof_step(&state, &zero_accel, &zero_torque, &mass_props, dt);
+        }
+
+        // omega_z should remain constant (axisymmetric body)
+        let omega_z_err = (state.rot.ang_vel_body.z - omega_z).abs();
+        assert!(
+            omega_z_err < 1e-10,
+            "omega_z should be constant, error = {}",
+            omega_z_err,
+        );
+
+        // Transverse omega should return to initial after one precession period.
+        // omega_x(t) = omega_x0 * cos(omega_p * t)
+        // omega_y(t) = -omega_x0 * sin(omega_p * t)   (sign depends on convention)
+        // At t = period: omega_x = omega_x0, omega_y = 0
+        let omega_x_err = (state.rot.ang_vel_body.x - omega_x0).abs();
+        let omega_y_err = state.rot.ang_vel_body.y.abs();
+        let rel_err_x = omega_x_err / omega_x0;
+        let rel_err_y = omega_y_err / omega_x0;
+
+        assert!(
+            rel_err_x < 1e-3,
+            "omega_x relative error {} exceeds 0.1% after one precession period",
+            rel_err_x,
+        );
+        assert!(
+            rel_err_y < 1e-3,
+            "omega_y relative error {} exceeds 0.1% after one precession period",
+            rel_err_y,
+        );
+    }
+
+    /// Quaternion norm preservation over a long propagation (86400s at dt=1s).
+    /// The norm should stay within 1e-14 of unity thanks to normalize_integ.
+    #[test]
+    fn quaternion_norm_preservation() {
+        let mass_props = mass_with_inertia(100.0, 10.0, 20.0, 30.0);
+
+        let initial = SixDofState {
+            trans: TranslationalState {
+                position: DVec3::ZERO,
+                velocity: DVec3::ZERO,
+            },
+            rot: RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::new(0.01, 0.02, 0.05),
+            },
+        };
+
+        let dt = 1.0;
+        let total_seconds = 86400;
+
+        let zero_accel = |_: &SixDofState| -> DVec3 { DVec3::ZERO };
+        let zero_torque = |_: &SixDofState| -> DVec3 { DVec3::ZERO };
+
+        let mut state = initial;
+        let mut max_norm_err = 0.0_f64;
+
+        for _ in 0..total_seconds {
+            state = rk4_sixdof_step(&state, &zero_accel, &zero_torque, &mass_props, dt);
+            let norm_err = (state.rot.quaternion.norm_sq() - 1.0).abs();
+            max_norm_err = max_norm_err.max(norm_err);
+        }
+
+        assert!(
+            max_norm_err < 1e-14,
+            "Max quaternion norm error over 86400s: {} (exceeds 1e-14)",
+            max_norm_err,
+        );
+    }
+
+    /// Pure translation (zero torque, zero angular velocity): the 6-DOF
+    /// integrator should produce the same translational result as the
+    /// 3-DOF integrator, and the quaternion should remain identity.
+    #[test]
+    fn sixdof_pure_translation_matches_translational() {
+        let mass_props = MassProperties::new(100.0);
+
+        let initial_pos = DVec3::new(7_000_000.0, 0.0, 0.0);
+        let initial_vel = DVec3::new(0.0, 7_500.0, 0.0);
+
+        // Simple 1/r^2 gravity for testing
+        let mu = 3.986004418e14;
+
+        // 3-DOF reference
+        let mut state_3dof = TranslationalState {
+            position: initial_pos,
+            velocity: initial_vel,
+        };
+
+        // 6-DOF
+        let mut state_6dof = SixDofState {
+            trans: TranslationalState {
+                position: initial_pos,
+                velocity: initial_vel,
+            },
+            rot: RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::ZERO,
+            },
+        };
+
+        let dt = 10.0;
+        let steps = 100;
+
+        for _ in 0..steps {
+            state_3dof = rk4_translational_step(
+                &state_3dof,
+                |s| {
+                    let r = s.position.length();
+                    -mu / (r * r * r) * s.position
+                },
+                dt,
+            );
+
+            state_6dof = rk4_sixdof_step(
+                &state_6dof,
+                |s| {
+                    let r = s.trans.position.length();
+                    -mu / (r * r * r) * s.trans.position
+                },
+                |_| DVec3::ZERO,
+                &mass_props,
+                dt,
+            );
+        }
+
+        // Translational states should match exactly (within floating-point)
+        let pos_diff = (state_6dof.trans.position - state_3dof.position).length();
+        let vel_diff = (state_6dof.trans.velocity - state_3dof.velocity).length();
+        assert!(
+            pos_diff < 1e-6,
+            "Position difference between 3DOF and 6DOF: {} m",
+            pos_diff,
+        );
+        assert!(
+            vel_diff < 1e-9,
+            "Velocity difference between 3DOF and 6DOF: {} m/s",
+            vel_diff,
+        );
+
+        // Quaternion should remain identity (no rotation)
+        let q = state_6dof.rot.quaternion;
+        assert!(
+            (q.scalar() - 1.0).abs() < 1e-14,
+            "Quaternion scalar should be 1.0, got {}",
+            q.scalar(),
+        );
+        assert!(
+            q.vector().length() < 1e-14,
+            "Quaternion vector should be zero, got {:?}",
+            q.vector(),
         );
     }
 }
