@@ -109,6 +109,10 @@ pub fn compute_left_quat_deriv(q: &JeodQuat, ang_vel: DVec3) -> [f64; 4] {
 /// would introduce discontinuities.
 pub fn normalize_integ(q: &mut JeodQuat) {
     let qmagsq = q.norm_sq();
+    debug_assert!(
+        qmagsq > 0.0,
+        "normalize_integ called with zero-magnitude quaternion (norm_sq == 0.0)"
+    );
     let diff1 = 1.0 - qmagsq;
 
     let fact = if diff1 > -2.107342e-08 && diff1 < 2.107342e-08 {

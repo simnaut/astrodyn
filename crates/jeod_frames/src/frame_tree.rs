@@ -111,7 +111,8 @@ impl FrameTree {
     /// Find the common ancestor of two frames.
     ///
     /// Walks parent pointers from both frames, collecting ancestors of `a`
-    /// into a set, then walking from `b` until a match is found.
+    /// into a linear list, then walking from `b` until a match is found via
+    /// a membership check on that list.
     ///
     /// Panics if the frames do not share a common root.
     pub fn find_common_ancestor(&self, a: FrameId, b: FrameId) -> FrameId {
