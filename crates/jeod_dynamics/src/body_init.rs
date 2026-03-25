@@ -130,20 +130,32 @@ pub fn init_from_lvlh(
 /// Initialize translational state from NED (North-East-Down) position and velocity.
 ///
 /// Converts geodetic coordinates to PCPF Cartesian, applies NED-to-PCPF rotation
-/// for velocity, then rotates from PCPF to ECI.
+/// for velocity, rotates from PCPF to ECI, and adds the ω×r frame-rotation term
+/// to account for the planet's rotation.
+///
+/// The `ned_velocity` is a **planet-fixed** velocity (the natural NED meaning):
+/// the velocity as measured by an observer rotating with the planet. The returned
+/// ECI velocity includes the contribution from the planet's rotation via
+/// `v_eci = T_pcpf→eci * v_pcpf + ω_planet × r_eci`.
+///
+/// This matches JEOD's `DynBodyInitNedState`, which applies the frame-rotation
+/// term through `RefFrameState::incr_left()` when composing the rotating PCPF
+/// frame with the inertial integration frame.
 ///
 /// # Arguments
 /// * `geodetic` - Geodetic position (latitude rad, longitude rad, altitude m)
-/// * `ned_velocity` - Velocity in NED frame (m/s)
+/// * `ned_velocity` - Planet-fixed velocity in NED frame (m/s)
 /// * `r_eq` - Equatorial radius (m)
 /// * `r_pol` - Polar radius (m)
 /// * `t_eci_pcpf` - Rotation matrix from ECI to PCPF (planet-fixed) frame
+/// * `omega_planet` - Planet angular velocity in ECI frame (rad/s)
 pub fn init_from_ned(
     geodetic: &GeodeticState,
     ned_velocity: DVec3,
     r_eq: f64,
     r_pol: f64,
     t_eci_pcpf: &DMat3,
+    omega_planet: DVec3,
 ) -> TranslationalState {
     // Convert geodetic to PCPF cartesian
     let pcpf_pos = geodetic_to_cartesian(geodetic, r_eq, r_pol);
@@ -158,7 +170,11 @@ pub fn init_from_ned(
     // t_eci_pcpf transforms from ECI to PCPF, so its transpose goes PCPF to ECI.
     let t_pcpf_to_eci = t_eci_pcpf.transpose();
     let position = t_pcpf_to_eci * pcpf_pos;
-    let velocity = t_pcpf_to_eci * pcpf_vel;
+
+    // ECI velocity = rotated PCPF velocity + ω_planet × r_eci
+    // The cross product accounts for the rotating frame contribution:
+    // a point fixed in PCPF still has inertial velocity due to planet rotation.
+    let velocity = t_pcpf_to_eci * pcpf_vel + omega_planet.cross(position);
 
     TranslationalState { position, velocity }
 }
@@ -405,6 +421,7 @@ mod tests {
             EARTH_R_EQ,
             EARTH_R_POL,
             &t_eci_pcpf,
+            DVec3::ZERO, // no planet rotation
         );
 
         // At lat=0, lon=0, alt=0, the PCPF position should be [r_eq, 0, 0]
@@ -577,7 +594,7 @@ mod tests {
         let t_eci_pcpf = DMat3::IDENTITY;
 
         let ned_vel = DVec3::new(1000.0, 0.0, 0.0); // 1 km/s North
-        let state = init_from_ned(&geodetic, ned_vel, EARTH_R_EQ, EARTH_R_POL, &t_eci_pcpf);
+        let state = init_from_ned(&geodetic, ned_vel, EARTH_R_EQ, EARTH_R_POL, &t_eci_pcpf, DVec3::ZERO);
 
         // North at (lat=0, lon=0) in PCPF is [-sin(0)*cos(0), -sin(0)*sin(0), cos(0)] = [0, 0, 1]
         // NED-to-PCPF = T_pcpf_ned^T, where row0 of T_pcpf_ned is North = [0,0,1].
@@ -595,6 +612,44 @@ mod tests {
         assert!(
             (state.velocity.z - 1000.0).abs() < 1e-6,
             "Vel Z: expected 1000, got {}",
+            state.velocity.z
+        );
+    }
+
+    #[test]
+    fn ned_omega_cross_r_contribution() {
+        // Verify that planet rotation adds ω×r to ECI velocity.
+        // At equator (lat=0, lon=0), position is [r_eq, 0, 0] in PCPF.
+        // With identity T_eci_pcpf, ECI position is the same.
+        // ω = [0, 0, ω_earth], so ω × r = [0, 0, ω] × [r, 0, 0] = [0, ω*r, 0].
+        let geodetic = GeodeticState {
+            latitude: 0.0,
+            longitude: 0.0,
+            altitude: 0.0,
+        };
+        let t_eci_pcpf = DMat3::IDENTITY;
+        let omega_earth = 7.292_115_0e-5; // rad/s
+        let omega = DVec3::new(0.0, 0.0, omega_earth);
+
+        // Zero NED velocity: the only ECI velocity comes from planet rotation.
+        let state = init_from_ned(&geodetic, DVec3::ZERO, EARTH_R_EQ, EARTH_R_POL, &t_eci_pcpf, omega);
+
+        // Expected: ω × r = [0, ω*r_eq, 0] ≈ [0, 465.1, 0] m/s
+        let expected_vy = omega_earth * EARTH_R_EQ;
+        assert!(
+            state.velocity.x.abs() < 1e-6,
+            "Vel X: expected 0, got {}",
+            state.velocity.x
+        );
+        assert!(
+            (state.velocity.y - expected_vy).abs() < 1e-3,
+            "Vel Y: expected {:.1}, got {:.1}",
+            expected_vy,
+            state.velocity.y
+        );
+        assert!(
+            state.velocity.z.abs() < 1e-6,
+            "Vel Z: expected 0, got {}",
             state.velocity.z
         );
     }

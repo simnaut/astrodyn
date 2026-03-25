@@ -190,8 +190,11 @@ impl MassTree {
 
     /// Detach `child_id` from its parent.
     ///
-    /// The former parent's composite properties are recomputed. The child
-    /// retains its own composite properties unchanged.
+    /// The former parent's composite properties are recomputed. The child's
+    /// parent-relative fields (`structure_point`, `composite_wrt_pstr`) are
+    /// reset to defaults, matching JEOD's `detach_update_properties()`
+    /// (mass_detach.cc:322-324) which calls `initialize_mass_point()` on
+    /// all three parent-relative mass points.
     ///
     /// Panics if the child has no parent.
     pub fn detach(&mut self, child_id: MassBodyId) {
@@ -200,6 +203,10 @@ impl MassTree {
 
         self.children[parent_id].retain(|&c| c != child_id);
         self.parent[child_id] = None;
+
+        // Reset parent-relative fields on the detached child (JEOD mass_detach.cc:322-324).
+        self.nodes[child_id].structure_point = MassPointState::default();
+        self.nodes[child_id].composite_wrt_pstr = MassPointState::default();
 
         // Recompute composites for the tree the parent still belongs to.
         self.recompute_composites();
