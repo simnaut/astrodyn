@@ -187,65 +187,43 @@ fn tier3_orbital_elements_vs_jeod_sim_orbelem() {
         max_rmag_err = max_rmag_err.max(rmag_err);
         max_vmag_err = max_vmag_err.max(vmag_err);
 
-        // Per-step assertions with descriptive messages.
-        // SMA uses relative tolerance: CSV-exported position/velocity components
-        // lose ~1 ULP at 1e7 m scale, producing up to ~3.6 m r_mag reconstruction
-        // error that propagates to ~20 m SMA error via the vis-viva energy formula.
-        // Both our code and JEOD use the same a = -mu/(2*E) computation path;
-        // the difference is purely CSV precision loss in the input vectors.
-        let sma_rel_err = if rec.semi_major_axis.abs() > 0.0 {
-            sma_err / rec.semi_major_axis.abs()
-        } else {
-            sma_err
-        };
+        // Per-step assertions. With composite_body frame (matching JEOD's
+        // orbital element computation), errors are near machine precision.
         assert!(
-            sma_rel_err < 5e-6,
-            "t={:.1}s: semi_major_axis relative error {sma_rel_err:.6e} exceeds 5e-6 \
-             (ours={:.6}, JEOD={:.6}, abs_err={sma_err:.3e} m)",
+            sma_err < 0.1,
+            "t={:.1}s: semi_major_axis error {sma_err:.6e} m exceeds 0.1 m \
+             (ours={:.6}, JEOD={:.6})",
             rec.time, oe.semi_major_axis, rec.semi_major_axis
         );
-        // Eccentricity: relative tolerance (CSV precision propagates through
-        // eccentricity vector computation; observed max relative error ~2.4e-6).
-        let ecc_rel_err = if rec.e_mag > 0.0 {
-            ecc_err / rec.e_mag
-        } else {
-            ecc_err
-        };
         assert!(
-            ecc_rel_err < 5e-6,
-            "t={:.1}s: eccentricity relative error {ecc_rel_err:.6e} exceeds 5e-6 \
+            ecc_err < 1e-8,
+            "t={:.1}s: eccentricity error {ecc_err:.6e} exceeds 1e-8 \
              (ours={:.15e}, JEOD={:.15e})",
             rec.time, oe.e_mag, rec.e_mag
         );
         assert!(
-            inc_err < 5e-7,
-            "t={:.1}s: inclination error {inc_err:.6e} rad exceeds 5e-7 rad \
-             (ours={:.15e}, JEOD={:.15e})",
-            rec.time, oe.inclination, rec.inclination
-        );
-        // LAN and AOP: This orbit is nearly equatorial (inc ~ 0.05 deg), so LAN
-        // and AOP are geometrically poorly determined. Small CSV precision loss in
-        // position/velocity gets amplified by ~1/sin(inc) ~ 1250x.
-        // Observed max errors: LAN ~1.7e-4 rad, AOP ~1.7e-4 rad.
-        assert!(
-            aop_err < 5e-4,
-            "t={:.1}s: arg_periapsis error {aop_err:.6e} rad exceeds 5e-4 rad",
+            inc_err < 1e-12,
+            "t={:.1}s: inclination error {inc_err:.6e} rad exceeds 1e-12 rad",
             rec.time
         );
         assert!(
-            lan_err < 5e-4,
-            "t={:.1}s: long_asc_node error {lan_err:.6e} rad exceeds 5e-4 rad",
-            rec.time
-        );
-        // True anomaly and mean anomaly: observed max ~2.2e-6 rad.
-        assert!(
-            ta_err < 1e-5,
-            "t={:.1}s: true_anom error {ta_err:.6e} rad exceeds 1e-5 rad",
+            aop_err < 1e-8,
+            "t={:.1}s: arg_periapsis error {aop_err:.6e} rad exceeds 1e-8 rad",
             rec.time
         );
         assert!(
-            ma_err < 1e-5,
-            "t={:.1}s: mean_anom error {ma_err:.6e} rad exceeds 1e-5 rad",
+            lan_err < 1e-12,
+            "t={:.1}s: long_asc_node error {lan_err:.6e} rad exceeds 1e-12 rad",
+            rec.time
+        );
+        assert!(
+            ta_err < 1e-8,
+            "t={:.1}s: true_anom error {ta_err:.6e} rad exceeds 1e-8 rad",
+            rec.time
+        );
+        assert!(
+            ma_err < 1e-8,
+            "t={:.1}s: mean_anom error {ma_err:.6e} rad exceeds 1e-8 rad",
             rec.time
         );
 

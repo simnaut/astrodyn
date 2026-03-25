@@ -213,12 +213,12 @@ for v in [
     "veh.orb_elem.elements.orbital_anom",
     "veh.orb_elem.elements.orb_energy",
     "veh.orb_elem.elements.orb_ang_momentum",
-    "veh.dyn_body.structure.state.trans.position[0]",
-    "veh.dyn_body.structure.state.trans.position[1]",
-    "veh.dyn_body.structure.state.trans.position[2]",
-    "veh.dyn_body.structure.state.trans.velocity[0]",
-    "veh.dyn_body.structure.state.trans.velocity[1]",
-    "veh.dyn_body.structure.state.trans.velocity[2]",
+    "veh.dyn_body.composite_body.state.trans.position[0]",
+    "veh.dyn_body.composite_body.state.trans.position[1]",
+    "veh.dyn_body.composite_body.state.trans.position[2]",
+    "veh.dyn_body.composite_body.state.trans.velocity[0]",
+    "veh.dyn_body.composite_body.state.trans.velocity[1]",
+    "veh.dyn_body.composite_body.state.trans.velocity[2]",
 ]:
     dr.add_variable(v)
 trick.add_data_record_group(dr)
