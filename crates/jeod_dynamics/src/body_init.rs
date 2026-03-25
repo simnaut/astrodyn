@@ -254,17 +254,15 @@ mod tests {
     }
 
     // =======================================================================
-    // Test 2: ISS reference state (Tier 2, jeod-validation)
+    // Test 2: ISS reference state (Tier 2)
     // =======================================================================
 
-    #[cfg(feature = "jeod-validation")]
     #[test]
     fn iss_reference_state_from_elements() {
         let root = jeod_test_data::jeod_path();
         assert!(
             root.exists(),
-            "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH, \
-             or run with --no-default-features to skip.",
+            "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
             root.display()
         );
 

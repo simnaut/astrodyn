@@ -8,7 +8,6 @@ glam = { workspace = true }
 thiserror = { workspace = true }
 
 [features]
-jeod-validation = []
 test-utils = []
 
 [dev-dependencies]

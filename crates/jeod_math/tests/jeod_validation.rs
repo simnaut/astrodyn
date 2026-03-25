@@ -1,9 +1,6 @@
 //! Validate orbital elements and quaternion math against JEOD verification data.
 //!
 //! Requires the JEOD source tree (via `JEOD_HOME` or `JEOD_PATH` env var).
-//! Gated behind the `jeod-validation` feature (default ON).
-//! Disable with `--no-default-features` if JEOD is unavailable.
-#![cfg(feature = "jeod-validation")]
 
 use jeod_test_data::{euler_test, orbital_data, orbital_init, reference_state, jeod_path};
 use jeod_math::OrbitalElements;
@@ -19,7 +16,7 @@ const MU_EARTH: f64 = 3.986004418e14;
 #[test]
 fn validate_iss_orbital_elements_to_cartesian() {
     let root = jeod_path();
-    assert!(root.exists(), "JEOD source not found at {}. Run with --no-default-features to skip.", root.display());
+    assert!(root.exists(), "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.", root.display());
 
     let init = orbital_init::load_orbital_init(
         &root,
@@ -116,7 +113,7 @@ fn validate_iss_orbital_elements_to_cartesian() {
 #[test]
 fn validate_iss_reference_state_parsing() {
     let root = jeod_path();
-    assert!(root.exists(), "JEOD source not found at {}. Run with --no-default-features to skip.", root.display());
+    assert!(root.exists(), "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.", root.display());
 
     let state = reference_state::load_reference_state(&root, "ISS", "inertial");
 
@@ -170,7 +167,7 @@ fn validate_iss_reference_state_parsing() {
 #[test]
 fn validate_orbital_roundtrip_5000_vectors() {
     let root = jeod_path();
-    assert!(root.exists(), "JEOD source not found at {}. Run with --no-default-features to skip.", root.display());
+    assert!(root.exists(), "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.", root.display());
 
     let vectors = orbital_data::load_orbital_test_vectors(&root);
     assert!(
@@ -238,7 +235,7 @@ fn validate_orbital_roundtrip_5000_vectors() {
 #[test]
 fn validate_orbital_data_parser() {
     let root = jeod_path();
-    assert!(root.exists(), "JEOD source not found at {}. Run with --no-default-features to skip.", root.display());
+    assert!(root.exists(), "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.", root.display());
 
     let vectors = orbital_data::load_orbital_test_vectors(&root);
 
@@ -287,7 +284,7 @@ fn validate_orbital_data_parser() {
 #[test]
 fn validate_euler_matrix_from_jeod() {
     let root = jeod_path();
-    assert!(root.exists(), "JEOD source not found at {}. Run with --no-default-features to skip.", root.display());
+    assert!(root.exists(), "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.", root.display());
 
     let cases = euler_test::load_euler_test_cases(&root);
     assert!(
@@ -381,7 +378,7 @@ fn validate_euler_matrix_from_jeod() {
 #[test]
 fn validate_orbital_init_parser() {
     let root = jeod_path();
-    assert!(root.exists(), "JEOD source not found at {}. Run with --no-default-features to skip.", root.display());
+    assert!(root.exists(), "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.", root.display());
 
     let init = orbital_init::load_orbital_init(
         &root,
@@ -448,7 +445,7 @@ fn validate_euler_angle_extraction_from_jeod_vectors() {
     let root = jeod_path();
     assert!(
         root.exists(),
-        "JEOD source not found at {}. Run with --no-default-features to skip.",
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
         root.display()
     );
 

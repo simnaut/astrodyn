@@ -330,11 +330,10 @@ fn tier3_iss_24h_propagation() {
 // ========================================================================
 // Test 6: Cross-validate Rust vs C point-mass at JEOD test positions
 // ========================================================================
-#[cfg(feature = "jeod-validation")]
 #[test]
 fn tier3_cross_validate_gravity_at_jeod_positions() {
     let jeod_root = jeod_test_data::jeod_path();
-    assert!(jeod_root.exists(), "JEOD source not found at {}. Run with --no-default-features to skip.", jeod_root.display());
+    assert!(jeod_root.exists(), "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.", jeod_root.display());
 
     let cases = jeod_test_data::gravity_verif::load_gravity_test_cases(&jeod_root);
 

@@ -13,8 +13,6 @@
 //! - `test_data/dyncomp_run3a_state.csv` and `test_data/dyncomp_run3b_state.csv`
 //! - JEOD_HOME set (for GGM02C coefficients)
 
-#![cfg(feature = "jeod-validation")]
-
 use glam::{DMat3, DVec3};
 use jeod_dynamics::{rk4_translational_step, TranslationalState};
 use jeod_frames::rotation_j2000;

@@ -8,10 +8,7 @@ jeod_frames = { path = "../jeod_frames" }
 jeod_math = { path = "../jeod_math" }
 glam = { workspace = true }
 
-[features]
-jeod-validation = []
-
 [dev-dependencies]
 jeod_math = { path = "../jeod_math", features = ["test-utils"] }
 jeod_test_data = { path = "../jeod_test_data" }
-jeod_gravity = { path = "../jeod_gravity", default-features = false }
+jeod_gravity = { path = "../jeod_gravity" }
