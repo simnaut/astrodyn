@@ -36,7 +36,19 @@ pub fn gravity_computation_system(
                 );
                 continue;
             };
-            let t_parent_this = rot.map_or(glam::DMat3::IDENTITY, |r| r.0);
+            let t_parent_this = match rot {
+                Some(r) => r.0,
+                None => {
+                    if ctrl.degree.is_some_and(|d| d > 0) || ctrl.order.is_some_and(|o| o > 0) {
+                        warn!(
+                            "GravityControl on {:?} requests degree={:?}/order={:?} but source has no \
+                             PlanetFixedRotationC — using identity (results will be incorrect)",
+                            ctrl.source_name, ctrl.degree, ctrl.order
+                        );
+                    }
+                    glam::DMat3::IDENTITY
+                }
+            };
             let result = jeod_gravity::gravitation(
                 &source.0, state.position, &t_parent_this,
                 ctrl.degree, ctrl.order, ctrl.perturbing_only,

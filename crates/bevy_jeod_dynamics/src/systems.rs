@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy::log::warn_once;
 use glam::DVec3;
 use jeod_dynamics::SixDofState;
 
@@ -67,6 +68,22 @@ pub fn integration_system(
     for (config, mut state, mut rot_state, mass, controls) in &mut bodies {
         if !config.translational_dynamics {
             continue;
+        }
+
+        // Warn once per body per timestep if non-spherical gravity is requested
+        // but the source lacks a PlanetFixedRotationC component.
+        for ctrl in &controls.0.controls {
+            if ctrl.degree.is_some_and(|d| d > 0) || ctrl.order.is_some_and(|o| o > 0) {
+                if let Ok((_source, rot)) = sources.get(ctrl.source_name) {
+                    if rot.is_none() {
+                        warn_once!(
+                            "GravityControl on {:?} requests degree={:?}/order={:?} but source has no \
+                             PlanetFixedRotationC — using identity (results will be incorrect)",
+                            ctrl.source_name, ctrl.degree, ctrl.order
+                        );
+                    }
+                }
+            }
         }
 
         // Closure: compute gravitational acceleration at a given position.

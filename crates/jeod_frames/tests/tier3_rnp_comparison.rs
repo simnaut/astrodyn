@@ -13,7 +13,7 @@ use glam::{DMat3, DVec3};
 use jeod_frames::nutation_j2000::nutation;
 use jeod_frames::precession_j2000::precession_matrix;
 use jeod_frames::rotation_j2000::{compute_t_parent_this, gast_rotation_matrix};
-use jeod_time::epoch::{J2000_NOON_TJT, SECONDS_PER_DAY};
+use jeod_time::epoch::{J2000_NOON_TJT, SECONDS_PER_DAY, TAI_TT_OFFSET};
 use jeod_time::time_converter_ut1_gmst::ut1_to_gmst_days;
 use std::path::Path;
 
@@ -28,8 +28,8 @@ const TAI_TO_UT1_S: f64 = -32.469;
 fn time_params_at(sim_time_s: f64) -> (f64, f64) {
     let epoch_tai_tjt = EPOCH_UTC_TJT + TAI_UTC_S / SECONDS_PER_DAY;
     let tai_tjt = epoch_tai_tjt + sim_time_s / SECONDS_PER_DAY;
-    let tt_tjt = tai_tjt + 32.184 / SECONDS_PER_DAY;
-    let tt_centuries = (tt_tjt - 11544.5) / 36525.0;
+    let tt_tjt = tai_tjt + TAI_TT_OFFSET / SECONDS_PER_DAY;
+    let tt_centuries = (tt_tjt - J2000_NOON_TJT) / 36525.0;
 
     let ut1_tjt = tai_tjt + TAI_TO_UT1_S / SECONDS_PER_DAY;
     let ut1_days = ut1_tjt - J2000_NOON_TJT;
@@ -47,7 +47,15 @@ fn time_params_at(sim_time_s: f64) -> (f64, f64) {
 /// JEOD stores matrices in row-major order. glam DMat3 is column-major,
 /// so we transpose when constructing.
 fn parse_matrix(fields: &[&str], cols: [usize; 9]) -> DMat3 {
-    let p = |i: usize| -> f64 { fields[cols[i]].trim().parse().unwrap() };
+    let p = |i: usize| -> f64 {
+        let raw = fields[cols[i]].trim();
+        raw.parse().unwrap_or_else(|e| {
+            panic!(
+                "parse_matrix: failed to parse field index {}  (col {}) value {:?}: {e}",
+                i, cols[i], raw
+            )
+        })
+    };
     // cols[0..9] are row-major: [0][0], [0][1], [0][2], [1][0], ...
     DMat3::from_cols(
         DVec3::new(p(0), p(3), p(6)), // column 0: T[0][0], T[1][0], T[2][0]
@@ -104,7 +112,18 @@ fn load_rnp_csv(path: &Path) -> Vec<RnpRecord> {
             f.len()
         );
 
-        let pf = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
+        let pf = |idx: usize| -> f64 {
+            let raw = f[idx].trim();
+            raw.parse().unwrap_or_else(|e| {
+                panic!(
+                    "{}:{}: failed to parse column {} value {:?}: {e}",
+                    path.display(),
+                    i + 1,
+                    idx,
+                    raw
+                )
+            })
+        };
 
         // T_parent_this: cols 5, 9, 13, 17, 21, 25, 29, 33, 37
         let t_cols = [5, 9, 13, 17, 21, 25, 29, 33, 37];
@@ -200,7 +219,10 @@ fn tier3_rnp_component_comparison() {
             / 180.0;
         let temp = theta_gast_ours / (2.0 * std::f64::consts::PI);
         let theta_normalized = (temp - temp.floor()) * 2.0 * std::f64::consts::PI;
-        let theta_gast_err = (theta_normalized - rec.theta_gast).abs();
+        let delta = (theta_normalized - rec.theta_gast + std::f64::consts::PI)
+            .rem_euclid(2.0 * std::f64::consts::PI)
+            - std::f64::consts::PI;
+        let theta_gast_err = delta.abs();
         max_theta_gast_err = max_theta_gast_err.max(theta_gast_err);
 
         // 4. Composed T_parent_this
