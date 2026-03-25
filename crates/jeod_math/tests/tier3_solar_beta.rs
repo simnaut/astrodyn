@@ -89,7 +89,6 @@ fn sim_time_to_tdb_jd(elapsed_s: f64) -> f64 {
 }
 
 #[test]
-#[ignore = "requires Docker-generated CSV — see test_data/README.md"]
 fn tier3_solar_beta_vs_jeod_sim_solarbeta() {
     let csv_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../test_data/solarbeta_incl_51_6_solarbeta.csv");

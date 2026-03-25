@@ -16,7 +16,6 @@ use std::path::Path;
 const MU_EARTH: f64 = 3.986_004_418e14;
 
 #[test]
-#[ignore = "requires Docker-generated CSV — see test_data/README.md"]
 fn tier3_body_init_round_trip_over_trajectory() {
     let csv_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../test_data/orbelem_ecc_orbelem.csv");

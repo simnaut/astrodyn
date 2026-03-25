@@ -94,7 +94,6 @@ fn load_ned_csv(path: &Path) -> Vec<NedRecord> {
 }
 
 #[test]
-#[ignore = "requires Docker-generated CSV — see test_data/README.md"]
 fn tier3_geodetic_vs_jeod_sim_ned() {
     let csv_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../test_data/ned_ell_inc_ned.csv");

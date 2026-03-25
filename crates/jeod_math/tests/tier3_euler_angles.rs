@@ -131,7 +131,6 @@ fn near_gimbal_lock_xyz(t: &DMat3) -> bool {
 }
 
 #[test]
-#[ignore = "requires Docker-generated CSV — see test_data/README.md"]
 fn tier3_euler_angles_vs_jeod_sim_euler() {
     let csv_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../test_data/euler_inc_euler.csv");

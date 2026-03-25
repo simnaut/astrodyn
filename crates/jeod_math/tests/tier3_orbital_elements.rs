@@ -108,7 +108,6 @@ fn angle_diff(a: f64, b: f64) -> f64 {
 }
 
 #[test]
-#[ignore = "requires Docker-generated CSV — see test_data/README.md"]
 fn tier3_orbital_elements_vs_jeod_sim_orbelem() {
     let csv_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../test_data/orbelem_ecc_orbelem.csv");

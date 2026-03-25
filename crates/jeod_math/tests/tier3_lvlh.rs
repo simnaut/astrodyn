@@ -95,7 +95,6 @@ fn max_mat_diff(a: &DMat3, b: &DMat3) -> f64 {
 }
 
 #[test]
-#[ignore = "requires Docker-generated CSV — see test_data/README.md"]
 fn tier3_lvlh_frame_vs_jeod_sim_lvlh() {
     let csv_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../test_data/lvlh_inc_lvlh.csv");
