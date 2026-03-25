@@ -1,5 +1,8 @@
 use bevy::prelude::*;
-use bevy_jeod_dynamics::{GravityAccelerationC, GravityControlsC, GravitySourceC, TranslationalStateC};
+use bevy_jeod_dynamics::{
+    GravityAccelerationC, GravityControlsC, GravitySourceC, PlanetFixedRotationC,
+    TranslationalStateC,
+};
 use jeod_dynamics::GravityAcceleration;
 
 /// Phase 2 scaffolding: stores pre-computed gravity for use by
@@ -21,21 +24,21 @@ pub fn gravity_computation_system(
         &GravityControlsC,
         &mut GravityAccelerationC,
     )>,
-    sources: Query<&GravitySourceC>,
+    sources: Query<(&GravitySourceC, Option<&PlanetFixedRotationC>)>,
 ) {
     for (state, controls, mut accel) in &mut bodies {
         let mut total = GravityAcceleration::default();
         for ctrl in &controls.0.controls {
-            let Ok(source) = sources.get(ctrl.source_name) else {
+            let Ok((source, rot)) = sources.get(ctrl.source_name) else {
                 warn!(
                     "GravityControl references entity {:?} which has no GravitySourceC",
                     ctrl.source_name
                 );
                 continue;
             };
-            // TODO(Phase 3): obtain T_parent_this from planet-fixed frame entity
+            let t_parent_this = rot.map_or(glam::DMat3::IDENTITY, |r| r.0);
             let result = jeod_gravity::gravitation(
-                &source.0, state.position, &glam::DMat3::IDENTITY,
+                &source.0, state.position, &t_parent_this,
                 ctrl.degree, ctrl.order, ctrl.perturbing_only,
                 ctrl.gradient,
                 ctrl.gradient_degree,

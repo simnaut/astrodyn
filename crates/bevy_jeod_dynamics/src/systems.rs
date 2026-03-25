@@ -4,7 +4,7 @@ use jeod_dynamics::SixDofState;
 
 use crate::components::{
     DynamicsConfigC, GravityAccelerationC, GravityControlsC, GravitySourceC, MassPropertiesC,
-    RotationalStateC, TotalForceC, TranslationalStateC,
+    PlanetFixedRotationC, RotationalStateC, TotalForceC, TranslationalStateC,
 };
 
 /// Phase 2 scaffolding: collects gravity into TotalForce for future use by
@@ -56,7 +56,7 @@ pub fn integration_system(
         Option<&MassPropertiesC>,
         &GravityControlsC,
     )>,
-    sources: Query<&GravitySourceC>,
+    sources: Query<(&GravitySourceC, Option<&PlanetFixedRotationC>)>,
     time: Res<Time<Fixed>>,
 ) {
     let dt = time.delta_secs_f64();
@@ -75,11 +75,10 @@ pub fn integration_system(
         let compute_grav_accel = |position: DVec3| -> DVec3 {
             let mut accel = DVec3::ZERO;
             for ctrl in &controls.0.controls {
-                if let Ok(source) = sources.get(ctrl.source_name) {
-                    // TODO(Phase 4): obtain T_parent_this from planet-fixed frame entity;
-                    // switch to gravitation_with_scratch to avoid per-stage allocation
+                if let Ok((source, rot)) = sources.get(ctrl.source_name) {
+                    let t_parent_this = rot.map_or(glam::DMat3::IDENTITY, |r| r.0);
                     accel += jeod_gravity::gravitation(
-                        &source.0, position, &glam::DMat3::IDENTITY,
+                        &source.0, position, &t_parent_this,
                         ctrl.degree, ctrl.order, ctrl.perturbing_only,
                         false, None, None,
                     ).grav_accel;

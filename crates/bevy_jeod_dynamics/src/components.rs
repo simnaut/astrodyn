@@ -34,3 +34,12 @@ pub struct GravityControlsC(pub GravityControls<Entity>);
 
 #[derive(Component, Debug, Clone, Deref, DerefMut)]
 pub struct GravitySourceC(pub GravitySource);
+
+/// Inertial-to-planet-fixed rotation matrix for a gravity source entity.
+///
+/// When present on a gravity source entity, `gravity_computation_system` and
+/// `integration_system` use this matrix instead of `DMat3::IDENTITY` to rotate
+/// the spacecraft position into the body-fixed frame before evaluating
+/// spherical-harmonic gravity.
+#[derive(Component, Debug, Clone, Copy, Deref, DerefMut)]
+pub struct PlanetFixedRotationC(pub glam::DMat3);

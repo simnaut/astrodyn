@@ -104,7 +104,7 @@ fn tier3_cross_validate_against_jeod_dyncomp() {
         jeod_trajectory.len(), jeod_trajectory.last().unwrap().time);
     println!();
 
-    let dt = 10.0; // our integration timestep
+    let dt = 0.03125; // match JEOD's SIM_dyncomp integration rate (32 Hz)
     let mut max_pos_error = 0.0_f64;
     let mut max_vel_error = 0.0_f64;
     let mut current_time = 0.0_f64;
@@ -145,22 +145,17 @@ fn tier3_cross_validate_against_jeod_dyncomp() {
     println!("  Max position error: {:.1} m", max_pos_error);
     println!("  Max velocity error: {:.4} m/s", max_vel_error);
 
-    // With spherical gravity (point-mass), our trajectory should track JEOD
-    // closely since RUN_2 also uses spherical gravity. The main differences
-    // are: JEOD has atmosphere model active (contributing to state even without
-    // drag), and numerical differences from integrator implementation.
-    //
-    // For an 8-hour propagation with point-mass gravity and RK4:
-    // - Position should agree within ~1 km (dominated by integration differences)
-    // - Velocity should agree within ~1 m/s
+    // dt=0.03125s matches JEOD's SIM_dyncomp integration rate (32 Hz).
+    // With point-mass gravity and matching timestep, the only residual comes
+    // from floating-point differences in the RK4 implementation.
     assert!(
-        max_pos_error < 5000.0,
-        "Position error {:.1}m exceeds 5km over 8 hours",
+        max_pos_error < 0.5,
+        "Position error {:.2}m exceeds 0.5m over 8 hours",
         max_pos_error
     );
     assert!(
-        max_vel_error < 5.0,
-        "Velocity error {:.4}m/s exceeds 5 m/s over 8 hours",
+        max_vel_error < 0.001,
+        "Velocity error {:.6}m/s exceeds 0.001 m/s over 8 hours",
         max_vel_error
     );
 }

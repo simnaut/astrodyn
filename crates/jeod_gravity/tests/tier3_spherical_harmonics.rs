@@ -139,7 +139,7 @@ fn run_sh_trajectory_test(csv_name: &str, degree: usize, order: usize, label: &s
     eprintln!("  Gravity: {}x{} + our RNP (precession + nutation + GAST)", degree, order);
     eprintln!("  Trajectory: {} points over {:.0}s", trajectory.len(), trajectory.last().unwrap().time);
 
-    let dt = 10.0;
+    let dt = 0.03125;
     let mut max_pos_error = 0.0_f64;
     let mut max_vel_error = 0.0_f64;
     let mut current_time = 0.0_f64;
@@ -174,18 +174,18 @@ fn run_sh_trajectory_test(csv_name: &str, degree: usize, order: usize, label: &s
     eprintln!("  Max position error: {:.2} m", max_pos_error);
     eprintln!("  Max velocity error: {:.6} m/s", max_vel_error);
 
-    // With our own RNP computation, differences come from:
-    // - Floating-point differences in RNP between our code and JEOD
-    // - RK4 integration numerical differences
-    // - JEOD atmosphere model coupling (active but no drag force)
+    // dt=0.03125s matches JEOD's SIM_dyncomp integration rate (32 Hz).
+    // Residual comes from floating-point differences in RNP and gravity
+    // between our code and JEOD (aero drag is OFF so atmosphere has no effect).
+    // Observed: RUN_3A ≈ 0.12 m, RUN_3B ≈ 0.20 m.
     assert!(
-        max_pos_error < 50.0,
-        "{}: Position error {:.2}m exceeds 50m over 8 hours",
+        max_pos_error < 0.5,
+        "{}: Position error {:.2}m exceeds 0.5m over 8 hours",
         label, max_pos_error,
     );
     assert!(
-        max_vel_error < 0.05,
-        "{}: Velocity error {:.6}m/s exceeds 0.05 m/s over 8 hours",
+        max_vel_error < 0.001,
+        "{}: Velocity error {:.6}m/s exceeds 0.001 m/s over 8 hours",
         label, max_vel_error,
     );
 }

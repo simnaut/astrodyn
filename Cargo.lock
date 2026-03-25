@@ -675,9 +675,12 @@ name = "bevy_jeod_dynamics"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bevy_jeod_gravity",
+ "bevy_jeod_time",
  "glam 0.30.10",
  "jeod_dynamics",
  "jeod_gravity",
+ "jeod_math",
 ]
 
 [[package]]
@@ -694,7 +697,10 @@ name = "bevy_jeod_frames"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bevy_jeod_dynamics",
+ "bevy_jeod_time",
  "jeod_frames",
+ "jeod_time",
 ]
 
 [[package]]
@@ -2430,6 +2436,7 @@ version = "0.1.0"
 dependencies = [
  "glam 0.30.10",
  "jeod_math",
+ "jeod_time",
 ]
 
 [[package]]
