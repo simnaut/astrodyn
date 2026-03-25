@@ -118,7 +118,15 @@ run_sim "verif/SIM_dyncomp" "SET_test/RUN_3A" "dyncomp_run3a" || true
 run_sim "verif/SIM_dyncomp" "SET_test/RUN_3B" "dyncomp_run3b" || true
 
 # ════════════════════════════════════════════════════════════════════
-# Sim 4: SIM_orbinit RUN_0001 — Orbital initialization verification
+# Sim 4: SIM_dyncomp RUN_8B — Rotational dynamics, spherical mass
+# Best for: Phase 3 6-DOF rotational dynamics validation
+# Spherical mass body with LVLH orbital-rate init, spherical gravity,
+# no torques, 8 hours. Cleanest rotational dynamics test case.
+# ════════════════════════════════════════════════════════════════════
+run_sim "verif/SIM_dyncomp" "SET_test/RUN_8B" "dyncomp_run8b" || true
+
+# ════════════════════════════════════════════════════════════════════
+# Sim 5: SIM_orbinit RUN_0001 — Orbital initialization verification
 # Best for: Phase 1 orbital elements validation
 # ════════════════════════════════════════════════════════════════════
 run_sim "models/dynamics/body_action/verif/SIM_orbinit" "SET_test/RUN_0001" "orbinit_0001" || true

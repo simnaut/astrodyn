@@ -7,8 +7,6 @@
 //!
 //! Requires JEOD_HOME for GGM02C coefficients.
 
-#![cfg(feature = "jeod-validation")]
-
 use glam::DVec3;
 use jeod_dynamics::{rk4_translational_step, TranslationalState};
 use jeod_gravity::coefficients;

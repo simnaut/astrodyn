@@ -1,9 +1,6 @@
 //! Validate orbital elements and quaternion math against JEOD verification data.
 //!
 //! Requires the JEOD source tree (via `JEOD_HOME` or `JEOD_PATH` env var).
-//! Gated behind the `jeod-validation` feature (default ON).
-//! Disable with `--no-default-features` if JEOD is unavailable.
-#![cfg(feature = "jeod-validation")]
 
 use jeod_test_data::{euler_test, orbital_data, orbital_init, reference_state, jeod_path};
 use jeod_math::OrbitalElements;
@@ -19,7 +16,7 @@ const MU_EARTH: f64 = 3.986004418e14;
 #[test]
 fn validate_iss_orbital_elements_to_cartesian() {
     let root = jeod_path();
-    assert!(root.exists(), "JEOD source not found at {}. Run with --no-default-features to skip.", root.display());
+    assert!(root.exists(), "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.", root.display());
 
     let init = orbital_init::load_orbital_init(
         &root,
@@ -116,7 +113,7 @@ fn validate_iss_orbital_elements_to_cartesian() {
 #[test]
 fn validate_iss_reference_state_parsing() {
     let root = jeod_path();
-    assert!(root.exists(), "JEOD source not found at {}. Run with --no-default-features to skip.", root.display());
+    assert!(root.exists(), "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.", root.display());
 
     let state = reference_state::load_reference_state(&root, "ISS", "inertial");
 
@@ -170,7 +167,7 @@ fn validate_iss_reference_state_parsing() {
 #[test]
 fn validate_orbital_roundtrip_5000_vectors() {
     let root = jeod_path();
-    assert!(root.exists(), "JEOD source not found at {}. Run with --no-default-features to skip.", root.display());
+    assert!(root.exists(), "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.", root.display());
 
     let vectors = orbital_data::load_orbital_test_vectors(&root);
     assert!(
@@ -238,7 +235,7 @@ fn validate_orbital_roundtrip_5000_vectors() {
 #[test]
 fn validate_orbital_data_parser() {
     let root = jeod_path();
-    assert!(root.exists(), "JEOD source not found at {}. Run with --no-default-features to skip.", root.display());
+    assert!(root.exists(), "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.", root.display());
 
     let vectors = orbital_data::load_orbital_test_vectors(&root);
 
@@ -287,7 +284,7 @@ fn validate_orbital_data_parser() {
 #[test]
 fn validate_euler_matrix_from_jeod() {
     let root = jeod_path();
-    assert!(root.exists(), "JEOD source not found at {}. Run with --no-default-features to skip.", root.display());
+    assert!(root.exists(), "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.", root.display());
 
     let cases = euler_test::load_euler_test_cases(&root);
     assert!(
@@ -381,7 +378,7 @@ fn validate_euler_matrix_from_jeod() {
 #[test]
 fn validate_orbital_init_parser() {
     let root = jeod_path();
-    assert!(root.exists(), "JEOD source not found at {}. Run with --no-default-features to skip.", root.display());
+    assert!(root.exists(), "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.", root.display());
 
     let init = orbital_init::load_orbital_init(
         &root,
@@ -427,5 +424,103 @@ fn validate_orbital_init_parser() {
         (init.time_periapsis.unwrap() - 4581.96167293).abs() < 1e-8,
         "time_periapsis: expected 4581.96167293, got {}",
         init.time_periapsis.unwrap()
+    );
+}
+
+// =========================================================================
+// Euler angles: JEOD test vector extraction validation (Phase 3)
+// =========================================================================
+
+/// Validate Euler angle decomposition against JEOD's 6 test vectors.
+///
+/// The test cases come from `euler_derived_state_ut.cc` and specify rotation
+/// matrices with expected Roll-Pitch-Yaw (XYZ) angles for both ref-to-body
+/// and body-to-ref directions.
+///
+/// Exit criterion: 6/6 test vectors within 1e-12 rad.
+#[test]
+fn validate_euler_angle_extraction_from_jeod_vectors() {
+    use jeod_math::{compute_euler_angles_from_matrix, EulerSequence};
+
+    let root = jeod_path();
+    assert!(
+        root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        root.display()
+    );
+
+    let cases = euler_test::load_euler_test_cases(&root);
+    assert!(
+        !cases.is_empty(),
+        "Expected at least one Euler test case from euler_derived_state_ut.cc"
+    );
+
+    let deg2rad = std::f64::consts::PI / 180.0;
+    let tolerance = 1e-12; // Exit criterion: 1e-12 rad
+
+    for (i, case) in cases.iter().enumerate() {
+        let m = case.matrix;
+        let mat = jeod_math::mat3_from_rows(
+            glam::DVec3::new(m[0][0], m[0][1], m[0][2]),
+            glam::DVec3::new(m[1][0], m[1][1], m[1][2]),
+            glam::DVec3::new(m[2][0], m[2][1], m[2][2]),
+        );
+
+        // JEOD test uses Roll-Pitch-Yaw = XYZ sequence
+        // ref_body_angles: Euler angles of T_parent_this
+        let ref_body = compute_euler_angles_from_matrix(&mat, EulerSequence::XYZ);
+        let expected_ref_body = [
+            case.ref_body_angles_deg[0] * deg2rad,
+            case.ref_body_angles_deg[1] * deg2rad,
+            case.ref_body_angles_deg[2] * deg2rad,
+        ];
+
+        for j in 0..3 {
+            let err = (ref_body[j] - expected_ref_body[j]).abs();
+            assert!(
+                err < tolerance,
+                "Case {}: ref_body angle[{}] error = {:.2e} rad (got {:.4} deg, expected {:.4} deg)",
+                i,
+                j,
+                err,
+                ref_body[j].to_degrees(),
+                case.ref_body_angles_deg[j]
+            );
+        }
+
+        // body_ref_angles: Euler angles of T_parent_this^T (transposed matrix)
+        let mat_t = mat.transpose();
+        let body_ref = compute_euler_angles_from_matrix(&mat_t, EulerSequence::XYZ);
+        let expected_body_ref = [
+            case.body_ref_angles_deg[0] * deg2rad,
+            case.body_ref_angles_deg[1] * deg2rad,
+            case.body_ref_angles_deg[2] * deg2rad,
+        ];
+
+        for j in 0..3 {
+            let err = (body_ref[j] - expected_body_ref[j]).abs();
+            assert!(
+                err < tolerance,
+                "Case {}: body_ref angle[{}] error = {:.2e} rad (got {:.4} deg, expected {:.4} deg)",
+                i,
+                j,
+                err,
+                body_ref[j].to_degrees(),
+                case.body_ref_angles_deg[j]
+            );
+        }
+
+        println!(
+            "Euler extraction case {}: ref_body OK ({:.1}°, {:.1}°, {:.1}°), body_ref OK ({:.1}°, {:.1}°, {:.1}°)",
+            i,
+            ref_body[0].to_degrees(), ref_body[1].to_degrees(), ref_body[2].to_degrees(),
+            body_ref[0].to_degrees(), body_ref[1].to_degrees(), body_ref[2].to_degrees(),
+        );
+    }
+
+    println!(
+        "Validated {} Euler angle extraction test cases from JEOD (tolerance: {:.0e} rad)",
+        cases.len(),
+        tolerance
     );
 }
