@@ -342,7 +342,7 @@ mod tests {
             (0.0, 0.0, 0.0, "equator prime meridian"),
             (PI / 2.0, 0.0, 0.0, "north pole"),
             (-PI / 2.0, 0.0, 0.0, "south pole"),
-            (0.4836, -1.7627, 8_848.0, "Mount Everest ~27.7N 101W"),
+            (0.4838, 1.5175, 8_848.0, "Mount Everest ~27.99N 86.93E"),
             (0.9, 0.5, 408_000.0, "ISS altitude"),
             (-0.6, 2.5, 200_000.0, "southern hemisphere LEO"),
             (0.0, PI, 35_786_000.0, "GEO at 180 longitude"),

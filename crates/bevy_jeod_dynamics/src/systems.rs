@@ -52,7 +52,7 @@ pub fn integration_system(
         &DynamicsConfigC,
         &mut TranslationalStateC,
         Option<&mut RotationalStateC>,
-        &MassPropertiesC,
+        Option<&MassPropertiesC>,
         &GravityControlsC,
     )>,
     sources: Query<&GravitySourceC>,
@@ -87,9 +87,9 @@ pub fn integration_system(
             accel
         };
 
-        // 6-DOF path: rotational dynamics enabled AND entity has RotationalStateC
+        // 6-DOF path: rotational dynamics enabled AND entity has RotationalStateC + MassPropertiesC
         if config.rotational_dynamics {
-            if let Some(ref mut rot) = rot_state {
+            if let (Some(ref mut rot), Some(mass_props)) = (&mut rot_state, &mass) {
                 let six_state = SixDofState {
                     trans: state.0,
                     rot: rot.0,
@@ -98,7 +98,7 @@ pub fn integration_system(
                     &six_state,
                     |s| compute_grav_accel(s.trans.position),
                     |_s| DVec3::ZERO, // No external torque in Phase 3 (gravity torque is Phase 4)
-                    &mass.0,
+                    &mass_props.0,
                     dt,
                 );
                 state.0 = new_state.trans;
