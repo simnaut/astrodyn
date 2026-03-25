@@ -1,5 +1,6 @@
 use crate::state::TranslationalState;
 use glam::{DMat3, DVec3};
+use jeod_math::quaternion::NORM_LIMIT;
 use jeod_math::JeodQuat;
 
 /// Rotational state of a rigid body.
@@ -115,7 +116,7 @@ pub fn normalize_integ(q: &mut JeodQuat) {
     );
     let diff1 = 1.0 - qmagsq;
 
-    let fact = if diff1 > -2.107342e-08 && diff1 < 2.107342e-08 {
+    let fact = if diff1 > -NORM_LIMIT && diff1 < NORM_LIMIT {
         // Near-unit: Pade approximant
         2.0 / (1.0 + qmagsq)
     } else {

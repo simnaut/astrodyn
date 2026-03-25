@@ -16,9 +16,9 @@ pub struct JeodQuat {
     pub data: [f64; 4], // [scalar, vx, vy, vz]
 }
 
-/// Threshold below which the fast renormalization path is used.
+/// Threshold below which the fast renormalization (Padé approximant) path is used.
 /// From JEOD `models/utils/quaternion/src/quaternion_normalize.cc`.
-const NORM_LIMIT: f64 = 2.107_342e-8;
+pub const NORM_LIMIT: f64 = 2.107_342e-8;
 
 impl JeodQuat {
     /// Identity quaternion: no rotation.

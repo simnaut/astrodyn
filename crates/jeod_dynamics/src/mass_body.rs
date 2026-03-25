@@ -322,7 +322,7 @@ impl MassTree {
         let mut total_mass = core.mass;
         let mut weighted_pos = core.position * core.mass;
 
-        for &cid in &self.children[id].clone() {
+        for &cid in &self.children[id] {
             let child = &self.nodes[cid];
             total_mass += child.composite_properties.mass;
             weighted_pos +=
@@ -355,7 +355,7 @@ impl MassTree {
             core.inertia + point_mass_inertia(core.mass, core_offset);
 
         // Child contributions (lines 67-84).
-        for &cid in &self.children[id].clone() {
+        for &cid in &self.children[id] {
             let child = &self.nodes[cid];
             let child_offset = child.composite_wrt_pstr.position - cm;
 
