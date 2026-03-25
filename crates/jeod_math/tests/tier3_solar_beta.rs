@@ -52,16 +52,17 @@ fn load_solarbeta_csv(path: &Path) -> Vec<SolarBetaRecord> {
             })
         };
 
-        // CSV columns:
+        // CSV columns (interleaved position/velocity):
         // 0: time
         // 1: solar_beta
-        // 2: position[0], 3: position[1], 4: position[2]
-        // 5: velocity[0], 6: velocity[1], 7: velocity[2]
+        // 2: position[0], 3: velocity[0]
+        // 4: position[1], 5: velocity[1]
+        // 6: position[2], 7: velocity[2]
         records.push(SolarBetaRecord {
             time: parse(0),
             solar_beta: parse(1),
-            position: DVec3::new(parse(2), parse(3), parse(4)),
-            velocity: DVec3::new(parse(5), parse(6), parse(7)),
+            position: DVec3::new(parse(2), parse(4), parse(6)),
+            velocity: DVec3::new(parse(3), parse(5), parse(7)),
         });
     }
     records
@@ -91,7 +92,7 @@ fn sim_time_to_tdb_jd(elapsed_s: f64) -> f64 {
 #[ignore = "requires Docker-generated CSV — see test_data/README.md"]
 fn tier3_solar_beta_vs_jeod_sim_solarbeta() {
     let csv_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../test_data/solarbeta_incl_51_6_solarbeta_ASCII.csv");
+        .join("../../test_data/solarbeta_incl_51_6_solarbeta.csv");
 
     assert!(
         csv_path.exists(),

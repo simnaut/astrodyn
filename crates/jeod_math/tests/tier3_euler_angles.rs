@@ -71,10 +71,10 @@ fn load_euler_csv(path: &Path) -> Vec<EulerRecord> {
         // CSV columns:
         // 0: time
         // 1..36: For each of 6 sequences: ref_body_angles[0..2], body_ref_angles[0..2]
-        // 37: position[0], 38: position[1], 39: position[2]
-        // 40: velocity[0], 41: velocity[1], 42: velocity[2]
-        // 43..51: T_parent_this[0][0..2], T_parent_this[1][0..2], T_parent_this[2][0..2]
-        // 52..55: Q_parent_this[0..3] (scalar, vector)
+        // 37-42: position[0], velocity[0], position[1], velocity[1], position[2], velocity[2]
+        // 43-51: T_parent_this (9 elements, row-major)
+        // 52-54: Q_parent_this.vector[0,1,2]
+        // 55: Q_parent_this.scalar
 
         let mut ref_body_angles = [[0.0_f64; 3]; NUM_SEQUENCES];
         let mut body_ref_angles = [[0.0_f64; 3]; NUM_SEQUENCES];
@@ -85,9 +85,9 @@ fn load_euler_csv(path: &Path) -> Vec<EulerRecord> {
             body_ref_angles[seq] = [parse(base + 3), parse(base + 4), parse(base + 5)];
         }
 
-        let pos_base = 1 + TOTAL_ANGLE_FIELDS;
-        let vel_base = pos_base + 3;
-        let t_base = vel_base + 3;
+        // Position/velocity are interleaved: pos[0], vel[0], pos[1], vel[1], pos[2], vel[2]
+        let pv_base = 37;
+        let t_base = 43;
 
         // JEOD stores T in row-major: T[row][col].
         // glam DMat3 column-major: column j = (T[0][j], T[1][j], T[2][j]).
@@ -101,8 +101,8 @@ fn load_euler_csv(path: &Path) -> Vec<EulerRecord> {
             time: parse(0),
             ref_body_angles,
             body_ref_angles,
-            position: DVec3::new(parse(pos_base), parse(pos_base + 1), parse(pos_base + 2)),
-            velocity: DVec3::new(parse(vel_base), parse(vel_base + 1), parse(vel_base + 2)),
+            position: DVec3::new(parse(pv_base), parse(pv_base + 2), parse(pv_base + 4)),
+            velocity: DVec3::new(parse(pv_base + 1), parse(pv_base + 3), parse(pv_base + 5)),
             t_parent_this,
         });
     }
@@ -134,7 +134,7 @@ fn near_gimbal_lock_xyz(t: &DMat3) -> bool {
 #[ignore = "requires Docker-generated CSV — see test_data/README.md"]
 fn tier3_euler_angles_vs_jeod_sim_euler() {
     let csv_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../test_data/euler_inc_euler_ASCII.csv");
+        .join("../../test_data/euler_inc_euler.csv");
 
     assert!(
         csv_path.exists(),

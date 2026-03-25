@@ -52,14 +52,13 @@ fn load_lvlh_csv(path: &Path) -> Vec<LvlhRecord> {
             })
         };
 
-        // CSV columns for vehA (vehB follows after):
+        // CSV columns for vehA (vehB follows at cols 17-32):
         // 0: time
-        // 1: T_parent_this[0][0], 2: T_parent_this[0][1], 3: T_parent_this[0][2]
-        // 4: T_parent_this[1][0], 5: T_parent_this[1][1], 6: T_parent_this[1][2]
-        // 7: T_parent_this[2][0], 8: T_parent_this[2][1], 9: T_parent_this[2][2]
+        // 1-9: T_parent_this[0][0..2], T[1][0..2], T[2][0..2] (row-major, contiguous)
         // 10: ang_vel_mag
-        // 11: position[0], 12: position[1], 13: position[2]
-        // 14: velocity[0], 15: velocity[1], 16: velocity[2]
+        // 11: position[0], 12: velocity[0]
+        // 13: position[1], 14: velocity[1]
+        // 15: position[2], 16: velocity[2]
 
         // JEOD stores T in row-major: T[row][col].
         // glam DMat3 is column-major, so DMat3::from_cols takes columns.
@@ -74,8 +73,8 @@ fn load_lvlh_csv(path: &Path) -> Vec<LvlhRecord> {
             time: parse(0),
             t_parent_this,
             ang_vel_mag: parse(10),
-            position: DVec3::new(parse(11), parse(12), parse(13)),
-            velocity: DVec3::new(parse(14), parse(15), parse(16)),
+            position: DVec3::new(parse(11), parse(13), parse(15)),
+            velocity: DVec3::new(parse(12), parse(14), parse(16)),
         });
     }
     records
@@ -99,7 +98,7 @@ fn max_mat_diff(a: &DMat3, b: &DMat3) -> f64 {
 #[ignore = "requires Docker-generated CSV — see test_data/README.md"]
 fn tier3_lvlh_frame_vs_jeod_sim_lvlh() {
     let csv_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../test_data/lvlh_inc_lvlh_ASCII.csv");
+        .join("../../test_data/lvlh_inc_lvlh.csv");
 
     assert!(
         csv_path.exists(),
