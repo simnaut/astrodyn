@@ -911,11 +911,12 @@ fn tier3_cross_validate_against_jeod_dyncomp() {
 
 **Results:**
 
-| Phase | Run | Gravity | Error (8h) |
-|-------|-----|---------|------------|
-| 1 | RUN_2 | Point-mass | 0.4 m |
-| 2 | RUN_3A | 4×4 harmonics + our RNP | 15.6 m |
-| 2 | RUN_3B | 8×8 harmonics + our RNP | 28.8 m |
+| Phase | Run | Gravity | Pos Error (8h) | Attitude |
+|-------|-----|---------|----------------|----------|
+| 1 | RUN_2 | Point-mass | 0.4 m | — |
+| 2 | RUN_3A | 4×4 harmonics + our RNP | 15.6 m | — |
+| 2 | RUN_3B | 8×8 harmonics + our RNP | 28.8 m | — |
+| 3 | RUN_2 | Point-mass, 6-DOF | 0.32 m | 4.21e-8 rad |
 
 **Available JEOD sims for cross-validation:**
 
@@ -1158,7 +1159,24 @@ pub fn euler_test_cases(jeod_root: &str) -> Vec<EulerTestCase>;
 **Verify with:**
 - Tier 2 ISS reference state tests
 - Tier 2 Euler angle decomposition tests (6 vectors from `euler_derived_state_ut.cc`)
-- Tier 3 cross-validation against JEOD's `SIM_dyncomp` (if Trick available)
+- Tier 3 cross-validation against JEOD's `SIM_dyncomp` (6-DOF attitude: 4.21e-8 rad/8h)
+
+### Phase 3a: Cross-Validation Closure
+
+**Goal:** Tier 2/3 cross-validation for every Phase 3 capability. No new physics.
+
+**Deliver:**
+- Wire planet-fixed frame into gravity pipeline (fix 15–29 m RNP residual)
+- Cross-validate structure/core_body frame propagation against existing CSV data
+- Docker sims: SIM_OrbElem, SIM_LVLH, SIM_NED, SIM_SolarBeta, SIM_Euler, SIM_orbinit
+- Trajectory-level validation of orbital elements, LVLH, geodetic, NED, solar beta, Euler angles
+- Bevy system integration test (wiring parity)
+
+**Verify with:**
+- Tier 3 spherical harmonics with correct RNP (target < 5 m, down from 15.6 m)
+- Tier 3 frame propagation (structure/core match JEOD CSV)
+- Tier 3 derived states (each validated against its own JEOD sim)
+- Tier 2 body initialization (ISS reference state < 1 m)
 
 ### Phase 4: Interactions
 
@@ -1176,9 +1194,14 @@ pub fn euler_test_cases(jeod_root: &str) -> Vec<EulerTestCase>;
 - Solar beta angle derived state
 
 **Verify with:**
-- LEO with drag: orbital decay rate matches expected behavior
-- SRP magnitude matches analytical `P = L_sun / (4*pi*r^2*c)`
-- Gravity torque on known inertia tensor matches analytical gradient torque
+- Tier 1: LEO with drag orbital decay rate matches expected behavior
+- Tier 1: SRP magnitude matches analytical `P = L_sun / (4*pi*r^2*c)`
+- Tier 1: Gravity torque on known inertia tensor matches analytical gradient torque
+- Tier 2: MET atmosphere density at 400 km matches JEOD tables to < 5%
+- Tier 3: Gravity torque trajectory (RUN_9A/9B) attitude < 0.01 rad/8h
+- Tier 3: Drag trajectory (SIM_dyncomp with drag) position < 100 m/24h
+- Tier 3: SRP trajectory position < 10 m/24h
+- Tier 3: Eclipse entry/exit times match JEOD to < 10 s
 
 ### Phase 5: High-Fidelity Parity
 
@@ -1195,8 +1218,15 @@ pub fn euler_test_cases(jeod_root: &str) -> Vec<EulerTestCase>;
 - Full regression suite against JEOD (Tier 4)
 - Multi-body scenarios: Apollo trans-lunar, Earth-Moon, Mars
 
-**Verify with:**
-- Tier 3 cross-validation across all JEOD verification scenarios
+**Verify with (Tier 3 required for each new physics):**
+- Tier 3 LEO 24h high-fidelity gravity (GGM05C deg 20 + polar motion) < 10 m
+- Tier 3 LEO with drag (MET + ballistic drag) < 100 m/24h
+- Tier 3 Earth-Moon multi-body (Sun/Moon differential accel) < 100 m/7d
+- Tier 3 Mars orbit (MRO110B2 gravity) < 100 m/7d
+- Tier 3 Gauss-Jackson trajectory < 1 m/24h
+- Tier 3 RKF45 trajectory < 10 m/24h with adaptive stepping
+- Tier 3 polar motion: Earth-fixed frame < 0.1 arcsecond/24h
+- Tier 3 solid tides: ON vs OFF position delta matches JEOD delta to < 10%
 - Tier 4 automated regression suite with error budget tracking
 
 ---
