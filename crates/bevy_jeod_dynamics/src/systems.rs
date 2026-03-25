@@ -47,6 +47,7 @@ pub fn force_collection_system(
 /// positions will be obtained from `TranslationalStateC` on the source entity,
 /// not from `GlobalTransform` (which is f32 and insufficient for orbital
 /// precision).
+#[allow(clippy::type_complexity)]
 pub fn integration_system(
     mut bodies: Query<(
         &DynamicsConfigC,
