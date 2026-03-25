@@ -70,7 +70,7 @@ pub fn integration_system(
             continue;
         }
 
-        // Warn once per body per timestep if non-spherical gravity is requested
+        // Emit a warning (once per process lifetime) if non-spherical gravity is requested
         // but the source lacks a PlanetFixedRotationC component.
         for ctrl in &controls.0.controls {
             if ctrl.degree.is_some_and(|d| d > 0) || ctrl.order.is_some_and(|o| o > 0) {
