@@ -42,7 +42,15 @@ fn tier3_body_init_round_trip_over_trajectory() {
         if fields.len() < 21 {
             continue;
         }
-        let p = |col: usize| -> f64 { fields[col].trim().parse().unwrap() };
+        let p = |col: usize| -> f64 {
+            let raw = fields[col].trim();
+            raw.parse().unwrap_or_else(|e| {
+                panic!(
+                    "Failed to parse CSV field at {}:{}:{} (raw='{}'): {}",
+                    csv_path.display(), i + 1, col + 1, raw, e
+                )
+            })
+        };
 
         // Columns: 0=time, 15-17=position, 18-20=velocity
         let time = p(0);

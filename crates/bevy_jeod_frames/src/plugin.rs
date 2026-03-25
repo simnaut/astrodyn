@@ -16,7 +16,7 @@ impl Plugin for JeodFramesPlugin {
         );
         app.add_systems(
             FixedUpdate,
-            planet_fixed_rotation_system.in_set(JeodSet::Environment),
+            planet_fixed_rotation_system.in_set(JeodSet::EphemerisUpdate),
         );
     }
 }

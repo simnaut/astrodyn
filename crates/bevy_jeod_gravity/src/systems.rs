@@ -40,7 +40,7 @@ pub fn gravity_computation_system(
                 Some(r) => r.0,
                 None => {
                     if ctrl.degree.is_some_and(|d| d > 0) || ctrl.order.is_some_and(|o| o > 0) {
-                        warn!(
+                        warn_once!(
                             "GravityControl on {:?} requests degree={:?}/order={:?} but source has no \
                              PlanetFixedRotationC — using identity (results will be incorrect)",
                             ctrl.source_name, ctrl.degree, ctrl.order
