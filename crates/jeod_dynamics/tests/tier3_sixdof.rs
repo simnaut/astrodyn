@@ -63,10 +63,16 @@ fn load_sixdof_trajectory(path: &Path) -> Vec<JeodSixDofRecord> {
         if i == 0 {
             continue;
         } // skip header
-        let fields: Vec<&str> = line.split(',').collect();
-        if fields.len() < 23 {
+        if line.trim().is_empty() {
             continue;
         }
+        let fields: Vec<&str> = line.split(',').collect();
+        assert!(
+            fields.len() >= 23,
+            "Malformed JEOD CSV at line {}: expected at least 23 fields, found {}",
+            i + 1,
+            fields.len(),
+        );
 
         let parse = |s: &str, col: usize| -> f64 {
             let line_no = i + 1;
