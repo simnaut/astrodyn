@@ -482,7 +482,7 @@ fn validate_euler_angle_extraction_from_jeod_vectors() {
             let err = (ref_body[j] - expected_ref_body[j]).abs();
             assert!(
                 err < tolerance,
-                "Case {}: ref_body angle[{}] error = {:.2e} rad (got {}, expected {})",
+                "Case {}: ref_body angle[{}] error = {:.2e} rad (got {:.4} deg, expected {:.4} deg)",
                 i,
                 j,
                 err,
@@ -504,7 +504,7 @@ fn validate_euler_angle_extraction_from_jeod_vectors() {
             let err = (body_ref[j] - expected_body_ref[j]).abs();
             assert!(
                 err < tolerance,
-                "Case {}: body_ref angle[{}] error = {:.2e} rad (got {}, expected {})",
+                "Case {}: body_ref angle[{}] error = {:.2e} rad (got {:.4} deg, expected {:.4} deg)",
                 i,
                 j,
                 err,
