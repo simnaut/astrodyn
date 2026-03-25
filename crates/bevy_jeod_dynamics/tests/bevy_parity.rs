@@ -170,10 +170,11 @@ fn bevy_integration_matches_pure_rk4_sixdof() {
 
     // Position parity: should be identical to machine precision since both
     // paths call the same rk4_sixdof_step with the same gravity formula.
+    // Observed: ~5e-10 m (consistent with f64 ULP at ~7e6 m scale over 100 steps).
     let pos_diff = (bevy_state.trans.position - pure_state.trans.position).length();
     assert!(
-        pos_diff < 1e-6,
-        "Position difference between Bevy and pure RK4: {} m (exceeds 1e-6 m)\n\
+        pos_diff < 1e-8,
+        "Position difference between Bevy and pure RK4: {} m (exceeds 1e-8 m)\n\
          Bevy:  {:?}\n\
          Pure:  {:?}",
         pos_diff,
@@ -182,10 +183,11 @@ fn bevy_integration_matches_pure_rk4_sixdof() {
     );
 
     // Velocity parity.
+    // Observed: ~9e-13 m/s.
     let vel_diff = (bevy_state.trans.velocity - pure_state.trans.velocity).length();
     assert!(
-        vel_diff < 1e-9,
-        "Velocity difference between Bevy and pure RK4: {} m/s (exceeds 1e-9 m/s)\n\
+        vel_diff < 1e-11,
+        "Velocity difference between Bevy and pure RK4: {} m/s (exceeds 1e-11 m/s)\n\
          Bevy:  {:?}\n\
          Pure:  {:?}",
         vel_diff,

@@ -394,7 +394,7 @@ without adding new physics.
 - [ ] **Solar beta trajectory**: Our `solar_beta_angle()` matches JEOD `SIM_SolarBeta` logged beta to < 1e-4 rad over 24h (ISS-like orbit with Sun/Moon)
 - [ ] **Euler angle trajectory**: Our `compute_euler_angles_from_matrix()` matches JEOD `SIM_Euler` logged angles to < 1e-6 rad over 24h
 - [ ] **Body init from elements**: `init_from_orbital_elements()` for ISS produces position < 1 m, velocity < 0.001 m/s vs JEOD reference state
-- [ ] **Bevy system parity**: Bevy App propagation matches pure `rk4_sixdof_step()` to < 1e-14 m over 100 steps
+- [ ] **Bevy system parity**: Bevy App propagation matches pure `rk4_sixdof_step()` to < 1e-8 m position, < 1e-11 m/s velocity, < 1e-14 quaternion/ω over 100 steps
 - [ ] `cargo test --workspace` — all tests pass, no regressions
 
 ---
