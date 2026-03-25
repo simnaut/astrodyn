@@ -1,8 +1,13 @@
 //! Tier 3: Cross-validate orbital elements computation against JEOD SIM_OrbElem RUN_ecc.
 //!
 //! At each timestep, reads position and velocity from the JEOD CSV, computes
-//! `OrbitalElements::from_cartesian()`, and compares every element field against
-//! the JEOD-logged values.
+//! `OrbitalElements::from_cartesian()`, and compares the primary orbital element
+//! fields (semi-major axis, eccentricity, inclination, argument of periapsis,
+//! longitude of ascending node, true anomaly, mean anomaly) against the
+//! JEOD-logged values. Additional derived quantities (e.g., semiparameter, mean
+//! motion, orbital anomaly, orbital energy, angular momentum, |r|, |v|) are
+//! computed and tracked for diagnostics but are not currently used as
+//! per-timestep assertion gates.
 //!
 //! Requires Docker-generated CSV (see test_data/README.md).
 

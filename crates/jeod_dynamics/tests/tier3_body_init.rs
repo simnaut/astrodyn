@@ -74,6 +74,11 @@ fn tier3_body_init_round_trip_over_trajectory() {
             pos_err < 1e-6,
             "t={time:.0}s: position round-trip error {pos_err:.2e} m exceeds 1e-6 m"
         );
+        assert!(
+            vel_err < 1e-6,
+            "t={time:.0}s: velocity round-trip error {vel_err:.2e} m/s exceeds 1e-6 m/s \
+             (position error {pos_err:.2e} m)"
+        );
     }
 
     eprintln!("Tier 3: body init round-trip over {count} JEOD trajectory points");

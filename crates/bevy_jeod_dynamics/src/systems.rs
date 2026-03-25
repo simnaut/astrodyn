@@ -76,6 +76,8 @@ pub fn integration_system(
             if ctrl.degree.is_some_and(|d| d > 0) || ctrl.order.is_some_and(|o| o > 0) {
                 if let Ok((_source, rot)) = sources.get(ctrl.source_name) {
                     if rot.is_none() {
+                        // warn_once! is per-callsite for the process lifetime,
+                        // so only the first missing-rotation case is reported.
                         warn_once!(
                             "GravityControl on {:?} requests degree={:?}/order={:?} but source has no \
                              PlanetFixedRotationC — using identity (results will be incorrect)",

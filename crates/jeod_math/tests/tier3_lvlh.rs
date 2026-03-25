@@ -38,7 +38,7 @@ fn load_lvlh_csv(path: &Path) -> Vec<LvlhRecord> {
             continue; // skip header
         }
         let fields: Vec<&str> = line.split(',').collect();
-        if fields.len() < 16 {
+        if fields.len() < 17 {
             continue;
         }
 

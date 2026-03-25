@@ -38,7 +38,7 @@ fn load_solarbeta_csv(path: &Path) -> Vec<SolarBetaRecord> {
             continue; // skip header
         }
         let fields: Vec<&str> = line.split(',').collect();
-        if fields.len() < 7 {
+        if fields.len() < 8 {
             continue;
         }
 
