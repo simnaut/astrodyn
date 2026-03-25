@@ -221,7 +221,7 @@ pub fn compute_euler_angles_from_matrix(
     let mut sin_phi = t(trans, info.indices[2], info.indices[1]);
     let mut cos_phi = t(trans, info.indices[2], info.alternate_z);
     let mut sin_psi = t(trans, info.indices[1], info.indices[0]);
-    let cos_psi = t(trans, info.alternate_x, info.indices[0]);
+    let mut cos_psi = t(trans, info.alternate_x, info.indices[0]);
 
     // Compute alternative theta values for near-singular detection.
     let alt_theta_val1 = (sin_phi * sin_phi + cos_phi * cos_phi).sqrt();
@@ -268,23 +268,19 @@ pub fn compute_euler_angles_from_matrix(
                 sin_psi = -sin_psi;
             }
         } else {
-            // A cosine term has wrong sign for astro sequences.
+            // A cosine term has the wrong sign in the case of astro sequences.
+            // The term with the wrong sign is cos_phi for even permutations but
+            // cos_psi for odd permutations.
             if info.is_even_permutation {
                 cos_phi = -cos_phi;
             } else {
-                // cos_psi needs negation, but cos_psi is immutable above.
-                // We handle this by negating in the atan2 call below.
-                // Actually, let's use a mutable shadow for cos_psi.
+                cos_psi = -cos_psi;
             }
         }
 
-        if !info.is_aerodynamics_sequence && !info.is_even_permutation {
-            phi = sin_phi.atan2(cos_phi);
-            psi = sin_psi.atan2(-cos_psi);
-        } else {
-            phi = sin_phi.atan2(cos_phi);
-            psi = sin_psi.atan2(cos_psi);
-        }
+        // Compute phi and psi.
+        phi = sin_phi.atan2(cos_phi);
+        psi = sin_psi.atan2(cos_psi);
     } else {
         // Gimbal lock: use alternative matrix elements.
         let gl_sin_phi = t(trans, info.indices[1], info.alternate_z);

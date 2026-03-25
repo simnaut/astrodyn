@@ -223,13 +223,14 @@ fn tier3_sixdof_attitude_from_run2() {
     );
 
     // Attitude thresholds
-    // With spherical mass and no torques, the body maintains constant angular
-    // velocity in body frame. Quaternion integration should track JEOD closely.
-    // The main error source is that JEOD uses the actual ISS inertia while we
-    // approximate as spherical. With no torques, this only matters through
-    // gyroscopic coupling (ω × Iω term), which is small for near-orbital-rate ω.
+    // This test uses the full ISS inertia tensor (including off-diagonal terms)
+    // matching JEOD's SIM_dyncomp Modified_data/mass.py set_mass_iss(). With no
+    // external torques, attitude evolution differences arise from gyroscopic
+    // coupling (ω × Iω) numerical differences and CSV interpolation between
+    // the two implementations. The 0.1 rad tolerance is generous to allow for
+    // those differences while still catching regressions.
     assert!(
-        max_quat_error < 0.1, // ~5.7 degrees over 8 hours — generous for mass mismatch
+        max_quat_error < 0.1, // ~5.7 degrees over 8 hours
         "Quaternion angular error {:.2e} rad exceeds 0.1 rad threshold",
         max_quat_error
     );

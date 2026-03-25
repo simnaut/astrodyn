@@ -161,6 +161,22 @@ impl MassTree {
         );
         assert_ne!(child_id, parent_id, "cannot attach a body to itself");
 
+        // Prevent creation of cycles: walk up from parent_id to the root
+        // and ensure we never encounter child_id. This matches JEOD's
+        // attach_validate_parent() (mass_attach.cc:370-388): "the only invalid
+        // attachment is one that would make a cyclic graph."
+        {
+            let mut current = Some(parent_id);
+            while let Some(pid) = current {
+                assert_ne!(
+                    pid, child_id,
+                    "cannot attach body {} under its own descendant {} (would create cycle)",
+                    child_id, parent_id
+                );
+                current = self.parent[pid];
+            }
+        }
+
         self.parent[child_id] = Some(parent_id);
         self.children[parent_id].push(child_id);
 
