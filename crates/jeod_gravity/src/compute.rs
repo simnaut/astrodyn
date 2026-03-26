@@ -67,7 +67,10 @@ pub fn calc_spherical(mu: f64, position: DVec3) -> GravityAcceleration {
 /// When true, only the nonspherical perturbation is returned (matching JEOD's
 /// `perturbation_only` mode for third-body differential acceleration).
 ///
-/// `degree`/`order` truncate the harmonics evaluation (`None` = use model max).
+/// `degree`/`order` truncate the harmonics evaluation.
+///
+/// Matching JEOD's `check_validity()`, callers must ensure:
+/// - `degree <= data.degree`, `order <= data.order`, `order <= degree`
 ///
 /// This is a convenience wrapper that allocates scratch internally.
 /// For the RK4 inner loop, prefer [`gravitation_with_scratch`].
@@ -76,12 +79,12 @@ pub fn gravitation(
     source: &GravitySource,
     position: DVec3,
     t_parent_this: &DMat3,
-    degree: Option<usize>,
-    order: Option<usize>,
+    degree: usize,
+    order: usize,
     perturbing_only: bool,
     compute_gradient: bool,
-    gradient_degree: Option<usize>,
-    gradient_order: Option<usize>,
+    gradient_degree: usize,
+    gradient_order: usize,
 ) -> GravityAcceleration {
     match &source.model {
         GravityModel::PointMass => {
@@ -98,22 +101,17 @@ pub fn gravitation(
                 source.mu, data.mu
             );
 
-            let eval_degree = degree.unwrap_or(data.degree);
-            let eval_order = order.unwrap_or(data.order);
-            let grad_degree = gradient_degree.unwrap_or(eval_degree);
-            let grad_order = gradient_order.unwrap_or(eval_order);
-
             // Vector3::transform(T_parent_this, posn, posn_pf)
             let posn_pf = vector3_transform(t_parent_this, position);
 
             let sh_pf = crate::spherical_harmonics_calc_nonspherical::calc_nonspherical(
                 data,
                 posn_pf,
-                eval_degree,
-                eval_order,
+                degree,
+                order,
                 compute_gradient,
-                grad_degree,
-                grad_order,
+                gradient_degree,
+                gradient_order,
             );
 
             // Vector3::transform_transpose(T_parent_this, body_grav_accel)
@@ -152,12 +150,12 @@ pub fn gravitation_with_scratch(
     source: &GravitySource,
     position: DVec3,
     t_parent_this: &DMat3,
-    degree: Option<usize>,
-    order: Option<usize>,
+    degree: usize,
+    order: usize,
     perturbing_only: bool,
     compute_gradient: bool,
-    gradient_degree: Option<usize>,
-    gradient_order: Option<usize>,
+    gradient_degree: usize,
+    gradient_order: usize,
     scratch: &mut crate::spherical_harmonics_calc_nonspherical::GottliebScratch,
 ) -> GravityAcceleration {
     match &source.model {
@@ -175,22 +173,17 @@ pub fn gravitation_with_scratch(
                 source.mu, data.mu
             );
 
-            let eval_degree = degree.unwrap_or(data.degree);
-            let eval_order = order.unwrap_or(data.order);
-            let grad_degree = gradient_degree.unwrap_or(eval_degree);
-            let grad_order = gradient_order.unwrap_or(eval_order);
-
             // Vector3::transform(T_parent_this, posn, posn_pf)
             let posn_pf = vector3_transform(t_parent_this, position);
 
             let sh_pf = crate::spherical_harmonics_calc_nonspherical::calc_nonspherical_with_scratch(
                 data,
                 posn_pf,
-                eval_degree,
-                eval_order,
+                degree,
+                order,
                 compute_gradient,
-                grad_degree,
-                grad_order,
+                gradient_degree,
+                gradient_order,
                 scratch,
             );
 
@@ -351,7 +344,7 @@ mod tests {
             model: GravityModel::PointMass,
         };
         let pos = DVec3::new(EARTH_RADIUS, 0.0, 0.0);
-        let result = gravitation(&source, pos, &DMat3::IDENTITY, None, None, false, false, None, None);
+        let result = gravitation(&source, pos, &DMat3::IDENTITY, 0, 0, false, false, 0, 0);
         let direct = calc_spherical(EARTH_MU, pos);
 
         assert_eq!(result.grav_accel, direct.grav_accel);
