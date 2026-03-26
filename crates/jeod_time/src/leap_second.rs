@@ -100,10 +100,22 @@ impl LeapSecondTable {
     /// Find the index for a UTC TJT value using binary-style search.
     fn find_index_for_utc(&self, utc_tjt: f64) -> usize {
         let last = self.entries.len() - 1;
+        // JEOD time_converter_tai_utc.cc:158-233: log INFORM when time is
+        // outside the leap second table range.
         if utc_tjt < self.entries[0].0 {
+            eprintln!(
+                "WARNING: Time precedes first leap second table entry; \
+                 using first value ({} s)",
+                self.entries[0].1
+            );
             return 0;
         }
         if utc_tjt >= self.entries[last].0 {
+            eprintln!(
+                "WARNING: Time follows last leap second table entry; \
+                 using last value ({} s)",
+                self.entries[last].1
+            );
             return last;
         }
         // Linear search (28 entries, fast enough; matches JEOD's loop)

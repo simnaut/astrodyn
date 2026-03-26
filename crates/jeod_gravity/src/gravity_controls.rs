@@ -61,7 +61,7 @@ impl<SourceId> GravityControl<SourceId> {
     /// - gradient_degree > degree
     /// - gradient_order > gradient_degree
     /// - gradient_order > order
-    pub fn check_validity(&self, source: &GravitySource) {
+    pub fn check_validity(&mut self, source: &GravitySource) {
         if self.spherical {
             return;
         }
@@ -91,28 +91,35 @@ impl<SourceId> GravityControl<SourceId> {
             self.order, self.degree
         );
 
+        // Gradient validation: JEOD spherical_harmonics_gravity_controls.cc:395-454
+        // uses MessageHandler::error (non-fatal) and auto-corrects invalid values.
         if self.gradient {
             if self.gradient_degree > self.degree {
-                panic!(
-                    "Gravity gradient degree ({}) is greater than gravity degree ({}).",
+                eprintln!(
+                    "WARNING: Gravity gradient degree ({}) > gravity degree ({}); clamping.",
                     self.gradient_degree, self.degree
                 );
+                self.gradient_degree = self.degree;
             }
-            assert!(
-                self.gradient_degree != 1,
-                "Gravity gradient degree must not equal 1."
-            );
+            if self.gradient_degree == 1 {
+                eprintln!(
+                    "WARNING: Gravity gradient degree must not equal 1; resetting to 0."
+                );
+                self.gradient_degree = 0;
+            }
             if self.gradient_order > self.gradient_degree {
-                panic!(
-                    "Gravity gradient order ({}) is greater than gravity gradient degree ({}).",
+                eprintln!(
+                    "WARNING: Gravity gradient order ({}) > gradient degree ({}); clamping.",
                     self.gradient_order, self.gradient_degree
                 );
+                self.gradient_order = self.gradient_degree;
             }
             if self.gradient_order > self.order {
-                panic!(
-                    "Gravity gradient order ({}) is greater than gravity order ({}).",
+                eprintln!(
+                    "WARNING: Gravity gradient order ({}) > gravity order ({}); clamping.",
                     self.gradient_order, self.order
                 );
+                self.gradient_order = self.order;
             }
         }
     }

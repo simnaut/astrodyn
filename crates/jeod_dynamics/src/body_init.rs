@@ -34,6 +34,13 @@ pub fn init_from_orbital_elements(
     true_anomaly: f64,
     mu: f64,
 ) -> TranslationalState {
+    // JEOD dyn_body_init_orbit.cc:101-111: validate mu before use.
+    assert!(mu > 0.0, "init_from_orbital_elements: mu must be positive, got {mu}");
+    assert!(
+        semi_major_axis.is_finite(),
+        "init_from_orbital_elements: semi_major_axis must be finite, got {semi_major_axis}"
+    );
+
     // Build OrbitalElements with the provided Keplerian elements.
     // Following JEOD dyn_body_init_orbit.cc: populate semiparam, angles, true_anom,
     // then call nu_to_anomalies() and to_cartesian().
@@ -78,6 +85,13 @@ pub fn init_from_mean_anomaly(
     mean_anomaly: f64,
     mu: f64,
 ) -> TranslationalState {
+    // JEOD dyn_body_init_orbit.cc:101-111: validate mu before use.
+    assert!(mu > 0.0, "init_from_mean_anomaly: mu must be positive, got {mu}");
+    assert!(
+        semi_major_axis.is_finite(),
+        "init_from_mean_anomaly: semi_major_axis must be finite, got {semi_major_axis}"
+    );
+
     // Following JEOD dyn_body_init_orbit.cc lines 302-318:
     // Populate elem with semiparam, e_mag, inclination, arg_periapsis, long_asc_node,
     // set mean_anom, then call mean_anom_to_nu() to solve Kepler's equation.

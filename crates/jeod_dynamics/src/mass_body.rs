@@ -208,6 +208,21 @@ impl MassTree {
         self.nodes[child_id].structure_point = MassPointState::default();
         self.nodes[child_id].composite_wrt_pstr = MassPointState::default();
 
+        // Recompute inverse inertia on detached child (JEOD mass_detach.cc:328-335).
+        let child = &mut self.nodes[child_id];
+        if child.composite_properties.mass > 0.0 {
+            let det = child.composite_properties.inertia.determinant();
+            assert!(
+                det.abs() > 1e-30,
+                "Detached child '{}' has singular composite inertia (det={det:.2e})",
+                child.name
+            );
+            child.composite_properties.inverse_inertia =
+                child.composite_properties.inertia.inverse();
+        } else {
+            child.composite_properties.inverse_inertia = DMat3::ZERO;
+        }
+
         // Recompute composites for the tree the parent still belongs to.
         self.recompute_composites();
     }
@@ -301,9 +316,17 @@ impl MassTree {
         }
 
         // For root bodies, compute inverse inertia (JEOD mass_update.cc lines 116-125).
+        // JEOD's Matrix3x3::invert_symmetric (dm_invert_symm.cc:86-94) checks
+        // for singular matrices via fpclassify(determinant) == FP_ZERO.
         if self.parent[id].is_none() {
             let node = &mut self.nodes[id];
             if node.composite_properties.mass > 0.0 {
+                let det = node.composite_properties.inertia.determinant();
+                assert!(
+                    det.abs() > 1e-30,
+                    "Root body '{}' has singular composite inertia (det={det:.2e})",
+                    node.name
+                );
                 node.composite_properties.inverse_inertia =
                     node.composite_properties.inertia.inverse();
             } else {
@@ -371,7 +394,15 @@ impl MassTree {
         }
 
         self.nodes[id].composite_properties.inertia = composite_inertia;
+        // JEOD's Matrix3x3::invert_symmetric (dm_invert_symm.cc:86-94) checks
+        // for singular matrices via fpclassify(determinant) == FP_ZERO.
         if self.nodes[id].composite_properties.mass > 0.0 {
+            let det = composite_inertia.determinant();
+            assert!(
+                det.abs() > 1e-30,
+                "Body '{}' has singular composite inertia (det={det:.2e})",
+                self.nodes[id].name
+            );
             self.nodes[id].composite_properties.inverse_inertia =
                 composite_inertia.inverse();
         } else {
