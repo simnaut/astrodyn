@@ -225,7 +225,24 @@ error propagates silently through all frame transformations.
 
 ---
 
-### H8. Geodetic iteration can diverge
+### H8. `TotalForce` mixes reference frames
+
+**File:** `jeod_dynamics/src/forces.rs:35-39`
+
+```rust
+pub struct TotalForce {
+    pub force: DVec3,  // N, in integration frame
+    pub torque: DVec3, // N*m, in body frame
+}
+```
+
+Force is in integration frame, torque is in body frame. This mixed-frame struct is
+a bug waiting to happen when Phase 4 adds non-gravity torques. Any code that accumulates
+both must remember to transform between frames, with no type-level enforcement.
+
+---
+
+### H9. Geodetic iteration can diverge
 
 **File:** `jeod_math/src/geodetic.rs:129`
 
