@@ -1,10 +1,11 @@
 use bevy::prelude::*;
+use bevy::log::warn_once;
 use glam::DVec3;
 use jeod_dynamics::SixDofState;
 
 use crate::components::{
     DynamicsConfigC, GravityAccelerationC, GravityControlsC, GravitySourceC, MassPropertiesC,
-    RotationalStateC, TotalForceC, TranslationalStateC,
+    PlanetFixedRotationC, RotationalStateC, TotalForceC, TranslationalStateC,
 };
 
 /// Phase 2 scaffolding: collects gravity into TotalForce for future use by
@@ -56,7 +57,7 @@ pub fn integration_system(
         Option<&MassPropertiesC>,
         &GravityControlsC,
     )>,
-    sources: Query<&GravitySourceC>,
+    sources: Query<(&GravitySourceC, Option<&PlanetFixedRotationC>)>,
     time: Res<Time<Fixed>>,
 ) {
     let dt = time.delta_secs_f64();
@@ -69,17 +70,35 @@ pub fn integration_system(
             continue;
         }
 
+        // Emit a warning (once per process lifetime) if non-spherical gravity is requested
+        // but the source lacks a PlanetFixedRotationC component.
+        for ctrl in &controls.0.controls {
+            if ctrl.degree.is_some_and(|d| d > 0) || ctrl.order.is_some_and(|o| o > 0) {
+                if let Ok((_source, rot)) = sources.get(ctrl.source_name) {
+                    if rot.is_none() {
+                        // warn_once! is per-callsite for the process lifetime,
+                        // so only the first missing-rotation case is reported.
+                        warn_once!(
+                            "GravityControl referencing source {:?} requests degree={:?}/order={:?} but \
+                             source has no PlanetFixedRotationC — using identity (results will be \
+                             incorrect)",
+                            ctrl.source_name, ctrl.degree, ctrl.order
+                        );
+                    }
+                }
+            }
+        }
+
         // Closure: compute gravitational acceleration at a given position.
         // Used by both 3-DOF and 6-DOF paths so gravity is re-evaluated at
         // each RK4 stage for 4th-order accuracy.
         let compute_grav_accel = |position: DVec3| -> DVec3 {
             let mut accel = DVec3::ZERO;
             for ctrl in &controls.0.controls {
-                if let Ok(source) = sources.get(ctrl.source_name) {
-                    // TODO(Phase 4): obtain T_parent_this from planet-fixed frame entity;
-                    // switch to gravitation_with_scratch to avoid per-stage allocation
+                if let Ok((source, rot)) = sources.get(ctrl.source_name) {
+                    let t_parent_this = rot.map_or(glam::DMat3::IDENTITY, |r| r.0);
                     accel += jeod_gravity::gravitation(
-                        &source.0, position, &glam::DMat3::IDENTITY,
+                        &source.0, position, &t_parent_this,
                         ctrl.degree, ctrl.order, ctrl.perturbing_only,
                         false, None, None,
                     ).grav_accel;

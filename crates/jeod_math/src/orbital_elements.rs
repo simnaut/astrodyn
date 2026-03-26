@@ -106,34 +106,25 @@ impl OrbitalElements {
         let (a, p, n);
 
         if ecc < CIRC_TOL {
-            // Circular (or near-circular)
-            // a = r, p = r  (approximately)
-            a = -mu / (2.0 * energy);
-            p = a; // e~0 => p ~ a
-            n = (mu / (a * a * a).abs()).sqrt();
+            // Circular (or near-circular) — JEOD uses a = r_mag, not energy formula
+            a = r_mag;
+            p = r_mag;
+            n = (mu / a).sqrt() / a;
         } else if ecc < ELLIPTIC_UPPER {
             // Elliptic
             a = -mu / (2.0 * energy);
             p = a * (1.0 - ecc * ecc);
-            n = (mu / (a * a * a).abs()).sqrt();
+            n = (mu / a).sqrt() / a;
         } else if ecc > HYPERBOLIC_LOWER {
-            // Hyperbolic
-            a = -mu / (2.0 * energy); // negative
-            p = a * (1.0 - ecc * ecc); // positive since a<0 and e>1
-            n = (mu / (-a * a * a)).sqrt();
+            // Hyperbolic (a is negative)
+            a = -mu / (2.0 * energy);
+            p = a * (1.0 - ecc * ecc);
+            n = (mu / -a).sqrt() / -a;
         } else {
-            // Near-parabolic / parabolic
-            if energy.abs() < 1e-30 {
-                // True parabolic
-                a = f64::INFINITY;
-                p = h_mag * h_mag / mu;
-                // JEOD: mean_motion = 2 * sqrt(mu / p) / p = 2 * sqrt(mu / p^3)
-                n = 2.0 * (mu / (p * p * p)).sqrt();
-            } else {
-                a = -mu / (2.0 * energy);
-                p = a * (1.0 - ecc * ecc);
-                n = (mu / a.abs().powi(3)).sqrt();
-            }
+            // Parabolic — JEOD nulls out semi_major_axis (it is infinity)
+            a = 0.0;
+            p = h_mag * h_mag / mu;
+            n = 2.0 * (mu / p).sqrt() / p;
         }
 
         // ---- Inclination ----
@@ -740,34 +731,27 @@ mod tests {
 
     #[test]
     fn true_parabolic_mean_motion_formula() {
-        // Exercise the true-parabolic branch (energy.abs() < 1e-30) in from_cartesian.
-        // A parabolic orbit has v = sqrt(2*mu/r), giving energy = v^2/2 - mu/r = 0.
-        //
-        // With f64 arithmetic, v^2/2 - mu/r may not be exactly zero. We choose r
-        // and mu such that the floating-point energy lands below the 1e-30 threshold.
-        // Using a small mu and large r keeps the energy magnitude tiny.
+        // Exercise the parabolic branch in from_cartesian.
+        // A parabolic orbit has v = sqrt(2*mu/r), giving e ~ 1.
+        // JEOD nulls out semi_major_axis to 0.0 for parabolic orbits (it is
+        // actually infinity) and uses p = h^2/mu, n = 2*sqrt(mu/p)/p.
         let mu: f64 = 1.0; // unit gravitational parameter
-        let r: f64 = 1.0e6; // large radius to keep energy small
+        let r: f64 = 1.0e6; // large radius
         let v = (2.0 * mu / r).sqrt(); // parabolic escape speed
         let pos = DVec3::new(r, 0.0, 0.0);
         let vel = DVec3::new(0.0, v, 0.0);
 
-        // Verify energy is within the true-parabolic threshold
-        let energy = v * v / 2.0 - mu / r;
-        assert!(
-            energy.abs() < 1e-30,
-            "Test setup: energy {:.6e} must be < 1e-30 to hit the parabolic branch",
-            energy,
-        );
-
         let oe = OrbitalElements::from_cartesian(mu, pos, vel).unwrap();
 
-        // Verify we hit the parabolic branch
-        assert_eq!(oe.semi_major_axis, f64::INFINITY, "Parabolic a should be INFINITY");
+        // Verify we hit the parabolic branch: JEOD sets a = 0 for parabolic orbits
+        assert_eq!(
+            oe.semi_major_axis, 0.0,
+            "Parabolic a should be 0.0 (JEOD convention: nulled out)"
+        );
 
-        // The JEOD formula: n = 2*sqrt(mu/p^3)
+        // The JEOD formula: n = 2*sqrt(mu/p)/p
         let p = oe.semiparam;
-        let expected_n = 2.0 * (mu / (p * p * p)).sqrt();
+        let expected_n = 2.0 * (mu / p).sqrt() / p;
         assert!(
             (oe.mean_motion - expected_n).abs() / expected_n < 1e-12,
             "mean_motion mismatch: got {:.6e}, expected {:.6e}",

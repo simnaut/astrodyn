@@ -86,6 +86,65 @@ run_sim() {
     echo ""
 }
 
+# ── Helper: run a sim with an injected DRAscii logger for CSV output. ──
+# Creates a temporary wrapper input that exec's the original and adds ASCII logging.
+run_sim_with_ascii() {
+    local sim_dir="$1"
+    local run_dir="$2"
+    local label="$3"
+    local ascii_snippet="$4"  # Python code to create DRAscii logger
+
+    echo "--- Building ${label} ---"
+    cd "${JEOD_HOME}/${sim_dir}" || return 1
+
+    if ! ls S_main*.exe >/dev/null 2>&1; then
+        if ! trick-CP 2>&1 | tail -5; then
+            echo "ERROR: trick-CP failed for ${label}"
+            return 1
+        fi
+    fi
+
+    echo "--- Running ${label} (with ASCII logging) ---"
+
+    # Create wrapper that sources original input then adds ASCII logger
+    local wrapper="${run_dir}/input_ascii_wrapper.py"
+    cat > "$wrapper" << PYEOF
+import sys, os
+# Execute original input.py first
+exec(compile(open("${run_dir}/input.py", "rb").read(), "${run_dir}/input.py", "exec"))
+# Add ASCII data recorder
+${ascii_snippet}
+PYEOF
+
+    local exe
+    exe=$(ls S_main*.exe 2>/dev/null | head -1)
+    if [ -z "$exe" ]; then
+        echo "ERROR: No S_main executable found for ${label}"
+        rm -f "$wrapper"
+        return 1
+    fi
+
+    if ! "./${exe}" "${wrapper}" 2>&1 | tail -3; then
+        echo "ERROR: Sim execution failed for ${label}"
+        rm -f "$wrapper"
+        return 1
+    fi
+    rm -f "$wrapper"
+
+    # Collect CSV output (ASCII logger produces CSV directly, no .trk conversion needed)
+    echo "--- Collecting output for ${label} ---"
+    while IFS= read -r -d '' csv_file; do
+        local base
+        base=$(basename "$csv_file" .csv)
+        local canonical
+        canonical=$(echo "$base" | sed -e 's/^log_//' -e 's/_[Aa][Ss][Cc][Ii][Ii]$//')
+        local dest="${OUTPUT_DIR}/${label}_${canonical}.csv"
+        cp "$csv_file" "$dest"
+        echo "  -> ${dest}"
+    done < <(find "${run_dir}" -name "*.csv" ! -name "_init_log.csv" -print0 2>/dev/null)
+    echo ""
+}
+
 # ════════════════════════════════════════════════════════════════════
 # Sim 1: SIM_dyncomp RUN_2 — Spherical gravity, RK4, 8-hour ISS orbit
 # Best for: Phase 1/2 translational dynamics validation
@@ -132,16 +191,121 @@ run_sim "verif/SIM_dyncomp" "SET_test/RUN_8B" "dyncomp_run8b" || true
 run_sim "models/dynamics/body_action/verif/SIM_orbinit" "SET_test/RUN_0001" "orbinit_0001" || true
 
 # ════════════════════════════════════════════════════════════════════
-# Sim 3: SIM_Euler RUN_inc — Euler angle derived state
-# Best for: Phase 3 Euler angle validation
+# Sim: SIM_OrbElem RUN_ecc — Orbital element computation
+# Best for: Phase 3a orbital elements cross-validation
 # ════════════════════════════════════════════════════════════════════
-run_sim "models/dynamics/derived_state/verif/SIM_Euler" "SET_test/RUN_inc" "euler_inc" || true
+ORBELEM_SNIPPET='
+dr = trick.sim_services.DRAscii("orbelem_ASCII")
+dr.set_cycle(12)
+dr.freq = trick.sim_services.DR_Always
+for v in [
+    "veh.orb_elem.elements.semi_major_axis",
+    "veh.orb_elem.elements.semiparam",
+    "veh.orb_elem.elements.e_mag",
+    "veh.orb_elem.elements.inclination",
+    "veh.orb_elem.elements.arg_periapsis",
+    "veh.orb_elem.elements.long_asc_node",
+    "veh.orb_elem.elements.r_mag",
+    "veh.orb_elem.elements.vel_mag",
+    "veh.orb_elem.elements.true_anom",
+    "veh.orb_elem.elements.mean_anom",
+    "veh.orb_elem.elements.mean_motion",
+    "veh.orb_elem.elements.orbital_anom",
+    "veh.orb_elem.elements.orb_energy",
+    "veh.orb_elem.elements.orb_ang_momentum",
+    "veh.dyn_body.composite_body.state.trans.position[0]",
+    "veh.dyn_body.composite_body.state.trans.position[1]",
+    "veh.dyn_body.composite_body.state.trans.position[2]",
+    "veh.dyn_body.composite_body.state.trans.velocity[0]",
+    "veh.dyn_body.composite_body.state.trans.velocity[1]",
+    "veh.dyn_body.composite_body.state.trans.velocity[2]",
+]:
+    dr.add_variable(v)
+trick.add_data_record_group(dr)
+'
+run_sim_with_ascii "models/dynamics/derived_state/verif/SIM_OrbElem" "SET_test/RUN_ecc" "orbelem_ecc" "$ORBELEM_SNIPPET" || true
 
 # ════════════════════════════════════════════════════════════════════
-# Sim 4: SIM_OrbElem — Orbital element computation
-# Best for: Phase 1 orbital elements validation
+# Sim: SIM_LVLH RUN_inc — LVLH frame computation
+# Best for: Phase 3a LVLH frame cross-validation
 # ════════════════════════════════════════════════════════════════════
-run_sim "models/dynamics/derived_state/verif/SIM_OrbElem" "SET_test/RUN_circular" "orbelem_circular" || true
+LVLH_SNIPPET='
+dr = trick.sim_services.DRAscii("lvlh_ASCII")
+dr.set_cycle(12)
+dr.freq = trick.sim_services.DR_Always
+for prefix in ["vehA", "vehB"]:
+    for i in range(3):
+        for j in range(3):
+            dr.add_variable(f"{prefix}.lvlh.lvlh_frame.state.rot.T_parent_this[{i}][{j}]")
+    dr.add_variable(f"{prefix}.lvlh.lvlh_frame.state.rot.ang_vel_mag")
+    for i in range(3):
+        dr.add_variable(f"{prefix}.dyn_body.composite_body.state.trans.position[{i}]")
+        dr.add_variable(f"{prefix}.dyn_body.composite_body.state.trans.velocity[{i}]")
+trick.add_data_record_group(dr)
+'
+run_sim_with_ascii "models/dynamics/derived_state/verif/SIM_LVLH" "SET_test/RUN_inc" "lvlh_inc" "$LVLH_SNIPPET" || true
+
+# ════════════════════════════════════════════════════════════════════
+# Sim: SIM_NED RUN_ell_inc — NED / geodetic coordinate computation
+# Best for: Phase 3a geodetic cross-validation
+# ════════════════════════════════════════════════════════════════════
+NED_SNIPPET='
+dr = trick.sim_services.DRAscii("ned_ASCII")
+dr.set_cycle(12)
+dr.freq = trick.sim_services.DR_Always
+for prefix in ["vehA"]:
+    for i in range(3):
+        dr.add_variable(f"{prefix}.ned.ned_state.cart_coords[{i}]")
+    for coord in ["altitude", "latitude", "longitude"]:
+        dr.add_variable(f"{prefix}.ned.ned_state.ellip_coords.{coord}")
+        dr.add_variable(f"{prefix}.ned.ned_state.sphere_coords.{coord}")
+    for i in range(3):
+        dr.add_variable(f"{prefix}.dyn_body.structure.state.trans.position[{i}]")
+        dr.add_variable(f"{prefix}.dyn_body.structure.state.trans.velocity[{i}]")
+trick.add_data_record_group(dr)
+'
+run_sim_with_ascii "models/dynamics/derived_state/verif/SIM_NED" "SET_test/RUN_ell_inc" "ned_ell_inc" "$NED_SNIPPET" || true
+
+# ════════════════════════════════════════════════════════════════════
+# Sim: SIM_SolarBeta RUN_incl_51_6 — Solar beta angle
+# Best for: Phase 3a solar beta cross-validation
+# ════════════════════════════════════════════════════════════════════
+SOLARBETA_SNIPPET='
+dr = trick.sim_services.DRAscii("solarbeta_ASCII")
+dr.set_cycle(5400)
+dr.freq = trick.sim_services.DR_Always
+dr.add_variable("veh.solar_beta.solar_beta")
+for i in range(3):
+    dr.add_variable(f"veh.dyn_body.structure.state.trans.position[{i}]")
+    dr.add_variable(f"veh.dyn_body.structure.state.trans.velocity[{i}]")
+trick.add_data_record_group(dr)
+'
+run_sim_with_ascii "models/dynamics/derived_state/verif/SIM_SolarBeta" "SET_test/RUN_incl_51_6" "solarbeta_incl_51_6" "$SOLARBETA_SNIPPET" || true
+
+# ════════════════════════════════════════════════════════════════════
+# Sim: SIM_Euler RUN_inc — Euler angle derived state
+# Best for: Phase 3a Euler angle cross-validation
+# ════════════════════════════════════════════════════════════════════
+EULER_SNIPPET='
+dr = trick.sim_services.DRAscii("euler_ASCII")
+dr.set_cycle(12)
+dr.freq = trick.sim_services.DR_Always
+for seq in ["euler_rpy", "euler_pyr_lvlh", "euler_rpy_lvlh", "euler_ypr_lvlh", "euler_ryp_lvlh", "euler_yrp_lvlh"]:
+    for form in ["ref_body_angles", "body_ref_angles"]:
+        for i in range(3):
+            dr.add_variable(f"veh.{seq}.{form}[{i}]")
+for i in range(3):
+    dr.add_variable(f"veh.dyn_body.structure.state.trans.position[{i}]")
+    dr.add_variable(f"veh.dyn_body.structure.state.trans.velocity[{i}]")
+for i in range(3):
+    for j in range(3):
+        dr.add_variable(f"veh.dyn_body.composite_body.state.rot.T_parent_this[{i}][{j}]")
+for i in range(3):
+    dr.add_variable(f"veh.dyn_body.composite_body.state.rot.Q_parent_this.vector[{i}]")
+dr.add_variable("veh.dyn_body.composite_body.state.rot.Q_parent_this.scalar")
+trick.add_data_record_group(dr)
+'
+run_sim_with_ascii "models/dynamics/derived_state/verif/SIM_Euler" "SET_test/RUN_inc" "euler_inc" "$EULER_SNIPPET" || true
 
 # ════════════════════════════════════════════════════════════════════
 # Sim 5: Integration test — RK4 verification

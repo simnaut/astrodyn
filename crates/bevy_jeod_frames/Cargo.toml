@@ -5,4 +5,7 @@ edition = "2021"
 
 [dependencies]
 jeod_frames = { path = "../jeod_frames" }
+jeod_time = { path = "../jeod_time" }
+bevy_jeod_dynamics = { path = "../bevy_jeod_dynamics" }
+bevy_jeod_time = { path = "../bevy_jeod_time" }
 bevy = { workspace = true }

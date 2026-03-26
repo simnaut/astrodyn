@@ -23,6 +23,7 @@ pub struct OrbitalInitData {
     pub arg_periapsis: f64,   // radians
     pub time_periapsis: Option<f64>, // seconds
     pub mean_anomaly: Option<f64>, // radians
+    pub true_anomaly: Option<f64>, // radians
     pub planet_name: String,
     pub reference_frame: String,
 }
@@ -71,6 +72,7 @@ pub fn load_orbital_init(
     let mut arg_periapsis: Option<f64> = None;
     let mut time_periapsis: Option<f64> = None;
     let mut mean_anomaly: Option<f64> = None;
+    let mut true_anomaly: Option<f64> = None;
     let mut planet_name = String::new();
     let mut reference_frame = String::new();
 
@@ -91,6 +93,7 @@ pub fn load_orbital_init(
                 "arg_periapsis" => arg_periapsis = Some(val),
                 "time_periapsis" => time_periapsis = Some(val),
                 "mean_anomaly" => mean_anomaly = Some(val),
+                "true_anomaly" => true_anomaly = Some(val),
                 _ => {}
             }
             continue;
@@ -109,6 +112,7 @@ pub fn load_orbital_init(
                 "arg_periapsis" => arg_periapsis = Some(val * PI / 180.0),
                 "time_periapsis" => time_periapsis = Some(val),
                 "mean_anomaly" => mean_anomaly = Some(val * PI / 180.0),
+                "true_anomaly" => true_anomaly = Some(val * PI / 180.0),
                 _ => {}
             }
             continue;
@@ -139,6 +143,7 @@ pub fn load_orbital_init(
             .unwrap_or_else(|| panic!("Missing arg_periapsis in {}", path.display())),
         time_periapsis,
         mean_anomaly,
+        true_anomaly,
         planet_name,
         reference_frame,
     }

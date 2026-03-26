@@ -24,10 +24,10 @@ pub struct JeodPlugin;
 impl Plugin for JeodPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((
+            JeodTimePlugin, // Must precede JeodFramesPlugin (provides SimulationTimeR)
             JeodDynamicsPlugin,
             JeodGravityPlugin,
             JeodFramesPlugin,
-            JeodTimePlugin,
             JeodEphemerisPlugin,
             JeodPlanetPlugin,
         ));

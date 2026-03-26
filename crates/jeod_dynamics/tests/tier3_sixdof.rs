@@ -170,7 +170,7 @@ fn tier3_sixdof_attitude_from_run2() {
         },
     };
 
-    let dt = 1.0; // 1-second timestep for integration (JEOD logs every 60s)
+    let dt = 0.03125; // match JEOD's SIM_dyncomp integration rate (32 Hz)
     let mut current_time = init.time;
 
     let mut max_pos_error = 0.0_f64;
@@ -180,8 +180,7 @@ fn tier3_sixdof_attitude_from_run2() {
 
     for record in trajectory.iter().skip(1) {
         // Integrate forward to this record's time
-        let tolerance = 0.5; // half a timestep for time matching
-        while current_time + dt <= record.time + tolerance {
+        while current_time + dt <= record.time + 0.001 {
             state = rk4_sixdof_step(
                 &state,
                 |s| {
@@ -194,6 +193,21 @@ fn tier3_sixdof_attitude_from_run2() {
                 dt,
             );
             current_time += dt;
+        }
+        let remainder = record.time - current_time;
+        if remainder > 0.001 {
+            state = rk4_sixdof_step(
+                &state,
+                |s| {
+                    let r_sq = s.trans.position.length_squared();
+                    let r_mag = r_sq.sqrt();
+                    s.trans.position * (-MU_EARTH / (r_sq * r_mag))
+                },
+                |_s| DVec3::ZERO,
+                &mass_props,
+                remainder,
+            );
+            current_time += remainder;
         }
 
         // Compare translational state
@@ -216,33 +230,27 @@ fn tier3_sixdof_attitude_from_run2() {
     println!("Max quaternion error: {:.2e} rad ({:.4} deg)", max_quat_error, max_quat_error.to_degrees());
     println!("Max ang_vel error:    {:.2e} rad/s", max_angvel_error);
 
-    // Position/velocity thresholds (consistent with Phase 1 Tier 3)
+    // dt=0.03125s matches JEOD's SIM_dyncomp integration rate (32 Hz).
+    // Residual comes from FP differences between our Rust/LLVM implementation
+    // and JEOD's C++/GCC implementation accumulated over ~921,600 RK4 steps.
     assert!(
-        max_pos_error < 5.0,
-        "Position error {:.2} m exceeds 5 m threshold",
+        max_pos_error < 0.5,
+        "Position error {:.2} m exceeds 0.5 m threshold",
         max_pos_error
     );
     assert!(
-        max_vel_error < 0.01,
-        "Velocity error {:.4} m/s exceeds 0.01 m/s threshold",
+        max_vel_error < 0.001,
+        "Velocity error {:.4} m/s exceeds 0.001 m/s threshold",
         max_vel_error
     );
-
-    // Attitude thresholds
-    // This test uses the full ISS inertia tensor (including off-diagonal terms)
-    // matching JEOD's SIM_dyncomp Modified_data/mass.py set_mass_iss(). With no
-    // external torques, attitude evolution differences arise from gyroscopic
-    // coupling (ω × Iω) numerical differences and CSV interpolation between
-    // the two implementations. The 0.1 rad tolerance is generous to allow for
-    // those differences while still catching regressions.
     assert!(
-        max_quat_error < 0.1, // ~5.7 degrees over 8 hours
-        "Quaternion angular error {:.2e} rad exceeds 0.1 rad threshold",
+        max_quat_error < 0.01,
+        "Quaternion angular error {:.2e} rad exceeds 0.01 rad threshold",
         max_quat_error
     );
     assert!(
-        max_angvel_error < 1e-3,
-        "Angular velocity error {:.2e} rad/s exceeds 1e-3 rad/s threshold",
+        max_angvel_error < 1e-5,
+        "Angular velocity error {:.2e} rad/s exceeds 1e-5 rad/s threshold",
         max_angvel_error
     );
 }
