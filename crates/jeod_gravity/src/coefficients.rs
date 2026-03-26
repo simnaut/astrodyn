@@ -77,7 +77,7 @@ pub fn load_from_jeod_cc(path: &std::path::Path) -> Result<SphericalHarmonicsDat
         field: "mu",
         path: path_str.clone(),
     })?;
-    let radius = radius.ok_or_else(|| CoeffLoadError::MissingField {
+    let radius = radius.ok_or(CoeffLoadError::MissingField {
         field: "radius",
         path: path_str,
     })?;
