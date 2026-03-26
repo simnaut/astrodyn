@@ -131,7 +131,7 @@ PYEOF
     fi
     rm -f "$wrapper"
 
-    # Collect CSV output (same as run_sim)
+    # Collect CSV output (ASCII logger produces CSV directly, no .trk conversion needed)
     echo "--- Collecting output for ${label} ---"
     while IFS= read -r -d '' csv_file; do
         local base
