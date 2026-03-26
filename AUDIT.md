@@ -252,6 +252,35 @@ but doesn't guarantee convergence. No error is reported on non-convergence.
 
 ---
 
+### H10. Silent degree/order clamping in spherical harmonics
+
+**File:** `jeod_gravity/src/spherical_harmonics_calc_nonspherical.rs:133-134`
+
+```rust
+let degree = degree.min(data.degree);
+let order = order.min(data.order).min(degree);
+```
+
+When a user requests degree=360 but the loaded model only has degree=40, the code
+silently clamps to 40 with no warning. The same applies to gradient degree/order
+(lines 147-156). A user may believe they're running a high-fidelity gravity model
+when they're actually running at much lower fidelity.
+
+**Recommendation:** Log a warning when clamping occurs, or return an error.
+
+---
+
+### H11. Coefficient loading panics on I/O errors
+
+**File:** `jeod_gravity/src/coefficients.rs:21, 57-60, 118-119, 125, 136, 141, 146`
+
+Multiple `unwrap()` and `panic!()` calls in the coefficient loading path. File not
+found, parse errors, and I/O failures all produce unrecoverable panics rather than
+`Result` errors. While this is startup-only code, it makes the library hostile to
+embed in applications that need graceful error handling.
+
+---
+
 ## Medium-Severity Issues
 
 ### M1. Test tolerances 2–5× looser than observed values
