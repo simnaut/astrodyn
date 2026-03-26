@@ -153,7 +153,7 @@ fn spherical_harmonics_40_test_vectors() {
         "GGM02C not found at {}",
         ggm02c_path.display()
     );
-    let mut data = coefficients::load_from_jeod_cc(&ggm02c_path);
+    let mut data = coefficients::load_from_jeod_cc(&ggm02c_path).expect("load GGM02C coefficients");
     // JEOD test overrides tide_free = true (main.cc line 95)
     data.tide_free = true;
 
@@ -264,7 +264,7 @@ fn surface_gravity_ggm02c() {
     assert!(root.exists());
     let ggm02c_path = root.join("models/environment/gravity/data/src/earth_GGM02C.cc");
     assert!(ggm02c_path.exists(), "GGM02C not found at {}. Requires JEOD source.", ggm02c_path.display());
-    let data = coefficients::load_from_jeod_cc(&ggm02c_path);
+    let data = coefficients::load_from_jeod_cc(&ggm02c_path).expect("load GGM02C coefficients");
 
     // Equatorial surface
     let pos_eq = DVec3::new(data.radius, 0.0, 0.0);

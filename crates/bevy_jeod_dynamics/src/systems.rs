@@ -70,36 +70,33 @@ pub fn integration_system(
             continue;
         }
 
-        // Emit a warning (once per process lifetime) if non-spherical gravity is requested
-        // but the source lacks a PlanetFixedRotationC component.
-        for ctrl in &controls.0.controls {
-            if ctrl.degree.is_some_and(|d| d > 0) || ctrl.order.is_some_and(|o| o > 0) {
-                if let Ok((_source, rot)) = sources.get(ctrl.source_name) {
-                    if rot.is_none() {
-                        // warn_once! is per-callsite for the process lifetime,
-                        // so only the first missing-rotation case is reported.
-                        warn_once!(
-                            "GravityControl referencing source {:?} requests degree={:?}/order={:?} but \
-                             source has no PlanetFixedRotationC — using identity (results will be \
-                             incorrect)",
-                            ctrl.source_name, ctrl.degree, ctrl.order
-                        );
-                    }
-                }
-            }
-        }
-
         // Closure: compute gravitational acceleration at a given position.
         // Used by both 3-DOF and 6-DOF paths so gravity is re-evaluated at
         // each RK4 stage for 4th-order accuracy.
+        //
+        // When non-spherical gravity is requested but the source lacks
+        // PlanetFixedRotationC, fall back to point-mass (degree=0/order=0)
+        // rather than computing non-spherical with an incorrect identity rotation.
         let compute_grav_accel = |position: DVec3| -> DVec3 {
             let mut accel = DVec3::ZERO;
             for ctrl in &controls.0.controls {
                 if let Ok((source, rot)) = sources.get(ctrl.source_name) {
-                    let t_parent_this = rot.map_or(glam::DMat3::IDENTITY, |r| r.0);
+                    let (t_parent_this, eff_degree, eff_order) = match rot {
+                        Some(r) => (r.0, ctrl.degree, ctrl.order),
+                        None => {
+                            if ctrl.degree.is_some_and(|d| d > 0) || ctrl.order.is_some_and(|o| o > 0) {
+                                warn_once!(
+                                    "GravityControl referencing source {:?} requests degree={:?}/order={:?} \
+                                     but source has no PlanetFixedRotationC — falling back to point-mass gravity",
+                                    ctrl.source_name, ctrl.degree, ctrl.order
+                                );
+                            }
+                            (glam::DMat3::IDENTITY, Some(0), Some(0))
+                        }
+                    };
                     accel += jeod_gravity::gravitation(
                         &source.0, position, &t_parent_this,
-                        ctrl.degree, ctrl.order, ctrl.perturbing_only,
+                        eff_degree, eff_order, ctrl.perturbing_only,
                         false, None, None,
                     ).grav_accel;
                 }
@@ -125,6 +122,10 @@ pub fn integration_system(
                 rot.0 = new_state.rot;
                 continue;
             }
+            warn_once!(
+                "Entity has rotational_dynamics=true but is missing RotationalStateC \
+                 and/or MassPropertiesC — falling back to 3-DOF"
+            );
         }
 
         // 3-DOF path: translational only

@@ -8,7 +8,7 @@ use crate::gravity_source::{GravityModel, GravitySource};
 /// Position is the body's position relative to the gravity source center.
 pub fn calc_spherical(mu: f64, position: DVec3) -> GravityAcceleration {
     let r_sq = position.length_squared();
-    debug_assert!(
+    assert!(
         r_sq > 0.0,
         "position must be non-zero (body is at gravity source center)"
     );
@@ -92,7 +92,7 @@ pub fn gravitation(
             }
         }
         GravityModel::SphericalHarmonics(data) => {
-            debug_assert!(
+            assert!(
                 (source.mu - data.mu).abs() < 1e-10,
                 "GravitySource.mu ({}) must match SphericalHarmonicsData.mu ({})",
                 source.mu, data.mu
@@ -169,7 +169,7 @@ pub fn gravitation_with_scratch(
             }
         }
         GravityModel::SphericalHarmonics(data) => {
-            debug_assert!(
+            assert!(
                 (source.mu - data.mu).abs() < 1e-10,
                 "GravitySource.mu ({}) must match SphericalHarmonicsData.mu ({})",
                 source.mu, data.mu

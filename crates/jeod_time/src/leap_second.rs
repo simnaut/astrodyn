@@ -16,6 +16,7 @@ impl LeapSecondTable {
     /// Create a leap second table from (TJT, TAI-UTC seconds) pairs.
     /// Entries must be sorted by TJT.
     pub fn from_entries(entries: Vec<(f64, f64)>) -> Self {
+        assert!(!entries.is_empty(), "Leap second table must not be empty");
         assert!(
             entries.windows(2).all(|w| w[0].0 <= w[1].0),
             "Leap second entries must be sorted by TJT"
@@ -157,6 +158,12 @@ pub fn default_leap_second_table() -> LeapSecondTable {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[should_panic(expected = "must not be empty")]
+    fn empty_table_panics() {
+        LeapSecondTable::from_entries(vec![]);
+    }
 
     #[test]
     fn default_table_has_28_entries() {

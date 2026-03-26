@@ -20,7 +20,7 @@ fn j2_nodal_regression_rate() {
     assert!(root.exists(), "JEOD source not found");
 
     let ggm02c_path = root.join("models/environment/gravity/data/src/earth_GGM02C.cc");
-    let sh_data = coefficients::load_from_jeod_cc(&ggm02c_path);
+    let sh_data = coefficients::load_from_jeod_cc(&ggm02c_path).expect("load GGM02C coefficients");
     let mu = sh_data.mu;
     let r_eq = sh_data.radius;
 

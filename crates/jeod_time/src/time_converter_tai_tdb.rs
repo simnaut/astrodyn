@@ -40,7 +40,7 @@ pub fn tdb_to_tai(tdb_seconds: f64, tai_tjt_initial: f64) -> f64 {
         let dtai = new_tai - tai;
         tai = new_tai;
         tai_tjt = tai_tjt_initial + dtai / 86400.0;
-        if tai.abs() > 0.0 && (dtai / tai).abs() < 1.0e-15 {
+        if dtai.abs() < 1e-15 || (tai.abs() > 0.0 && (dtai / tai).abs() < 1.0e-15) {
             break;
         }
     }
@@ -76,6 +76,20 @@ mod tests {
             tdb,
             back,
             (back - tai).abs()
+        );
+    }
+
+    #[test]
+    fn tai_tdb_round_trip_near_zero() {
+        // C4: convergence must work when tai ≈ 0 (near simulation start)
+        let tai = 0.0;
+        let tai_tjt = J2000_TAI_TJT;
+        let tdb = tai_to_tdb(tai, tai_tjt);
+        let back = tdb_to_tai(tdb, tai_tjt);
+        assert!(
+            (back - tai).abs() < 1e-10,
+            "TAI-TDB round trip near zero: {} -> {} -> {}, err={}",
+            tai, tdb, back, (back - tai).abs()
         );
     }
 }

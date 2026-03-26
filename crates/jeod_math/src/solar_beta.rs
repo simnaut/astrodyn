@@ -22,11 +22,11 @@ use glam::DVec3;
 /// Solar beta angle in radians, in range [-π/2, π/2].
 /// Positive when the Sun is on the same side as the angular momentum vector.
 pub fn solar_beta_angle(orbit_ang_momentum: DVec3, sun_direction: DVec3) -> f64 {
-    debug_assert!(
+    assert!(
         orbit_ang_momentum.length_squared() > 0.0,
         "orbit_ang_momentum must be non-zero"
     );
-    debug_assert!(
+    assert!(
         sun_direction.length_squared() > 0.0,
         "sun_direction must be non-zero"
     );

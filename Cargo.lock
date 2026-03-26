@@ -2449,6 +2449,8 @@ dependencies = [
  "jeod_math",
  "jeod_test_data",
  "jeod_time",
+ "log",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

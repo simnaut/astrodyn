@@ -2,6 +2,17 @@
 
 use crate::spherical_harmonics_gravity_source::SphericalHarmonicsData;
 
+/// Errors from loading gravity coefficient files.
+#[derive(Debug, thiserror::Error)]
+pub enum CoeffLoadError {
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("missing field '{field}' in {path}")]
+    MissingField { field: &'static str, path: String },
+    #[error("invalid binary format: {0}")]
+    InvalidFormat(String),
+}
+
 /// Load spherical harmonics coefficients from a JEOD C++ data file.
 ///
 /// Parses files like `earth_GGM05C.cc` that contain lines of the form:
@@ -16,9 +27,9 @@ use crate::spherical_harmonics_gravity_source::SphericalHarmonicsData;
 /// ...->Cnm[2][0] = -4.8416945732000E-04;
 /// ...->Snm[2][0] = 0.0;
 /// ```
-pub fn load_from_jeod_cc(path: &std::path::Path) -> SphericalHarmonicsData {
-    let content = std::fs::read_to_string(path)
-        .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
+pub fn load_from_jeod_cc(path: &std::path::Path) -> Result<SphericalHarmonicsData, CoeffLoadError> {
+    let content = std::fs::read_to_string(path)?;
+    let path_str = path.display().to_string();
 
     let mut degree: Option<usize> = None;
     let mut order: Option<usize> = None;
@@ -54,10 +65,22 @@ pub fn load_from_jeod_cc(path: &std::path::Path) -> SphericalHarmonicsData {
         }
     }
 
-    let degree = degree.unwrap_or_else(|| panic!("Missing degree in {}", path.display()));
-    let order = order.unwrap_or_else(|| panic!("Missing order in {}", path.display()));
-    let mu = mu.unwrap_or_else(|| panic!("Missing mu in {}", path.display()));
-    let radius = radius.unwrap_or_else(|| panic!("Missing radius in {}", path.display()));
+    let degree = degree.ok_or_else(|| CoeffLoadError::MissingField {
+        field: "degree",
+        path: path_str.clone(),
+    })?;
+    let order = order.ok_or_else(|| CoeffLoadError::MissingField {
+        field: "order",
+        path: path_str.clone(),
+    })?;
+    let mu = mu.ok_or_else(|| CoeffLoadError::MissingField {
+        field: "mu",
+        path: path_str.clone(),
+    })?;
+    let radius = radius.ok_or_else(|| CoeffLoadError::MissingField {
+        field: "radius",
+        path: path_str,
+    })?;
     let tide_free = tide_free.unwrap_or(true);
     let tide_free_delta = tide_free_delta.unwrap_or(0.0);
 
@@ -85,7 +108,7 @@ pub fn load_from_jeod_cc(path: &std::path::Path) -> SphericalHarmonicsData {
         }
     }
 
-    SphericalHarmonicsData::new(degree, order, radius, mu, cnm, snm, tide_free, tide_free_delta)
+    Ok(SphericalHarmonicsData::new(degree, order, radius, mu, cnm, snm, tide_free, tide_free_delta))
 }
 
 /// Save coefficients to a compact binary format.
@@ -94,7 +117,7 @@ pub fn load_from_jeod_cc(path: &std::path::Path) -> SphericalHarmonicsData {
 ///         tide_free(u8), tide_free_delta(f64),
 ///         then for each n=0..degree: cnm[n][0..n] as f64,
 ///         then for each n=0..degree: snm[n][0..n] as f64.
-pub fn save_binary(data: &SphericalHarmonicsData, path: &std::path::Path) {
+pub fn save_binary(data: &SphericalHarmonicsData, path: &std::path::Path) -> Result<(), std::io::Error> {
     use std::io::Write;
     let mut buf = Vec::new();
     buf.extend_from_slice(b"JEOD");              // 4-byte magic
@@ -115,26 +138,32 @@ pub fn save_binary(data: &SphericalHarmonicsData, path: &std::path::Path) {
             buf.extend_from_slice(&data.snm[n][m].to_le_bytes());
         }
     }
-    let mut file = std::fs::File::create(path).unwrap();
-    file.write_all(&buf).unwrap();
+    let mut file = std::fs::File::create(path)?;
+    file.write_all(&buf)?;
+    Ok(())
 }
 
 /// Load coefficients from the compact binary format.
-pub fn load_binary(path: &std::path::Path) -> SphericalHarmonicsData {
-    let buf = std::fs::read(path)
-        .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
+pub fn load_binary(path: &std::path::Path) -> Result<SphericalHarmonicsData, CoeffLoadError> {
+    let buf = std::fs::read(path)?;
     load_binary_from_bytes(&buf)
 }
 
 /// Load coefficients from binary bytes (for embedded data).
-pub fn load_binary_from_bytes(buf: &[u8]) -> SphericalHarmonicsData {
+pub fn load_binary_from_bytes(buf: &[u8]) -> Result<SphericalHarmonicsData, CoeffLoadError> {
     let mut pos = 0;
 
-    assert!(buf.len() >= 8, "Binary coefficient file too short");
-    assert_eq!(&buf[0..4], b"JEOD", "Invalid magic in binary coefficient file");
+    if buf.len() < 8 {
+        return Err(CoeffLoadError::InvalidFormat("binary coefficient file too short".into()));
+    }
+    if &buf[0..4] != b"JEOD" {
+        return Err(CoeffLoadError::InvalidFormat("invalid magic in binary coefficient file".into()));
+    }
     pos += 4;
     let version = u32::from_le_bytes(buf[4..8].try_into().unwrap());
-    assert_eq!(version, 1, "Unsupported binary coefficient version {}", version);
+    if version != 1 {
+        return Err(CoeffLoadError::InvalidFormat(format!("unsupported binary coefficient version {version}")));
+    }
     pos += 4;
 
     let read_u32 = |pos: &mut usize| -> u32 {
@@ -174,7 +203,7 @@ pub fn load_binary_from_bytes(buf: &[u8]) -> SphericalHarmonicsData {
         snm.push(row);
     }
 
-    SphericalHarmonicsData::new(degree, order, radius, mu, cnm, snm, tide_free, tide_free_delta)
+    Ok(SphericalHarmonicsData::new(degree, order, radius, mu, cnm, snm, tide_free, tide_free_delta))
 }
 
 // --- Helper functions ---

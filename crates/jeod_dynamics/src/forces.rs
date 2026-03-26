@@ -62,7 +62,7 @@ impl Default for DynamicsConfig {
 }
 
 pub fn compute_translational_acceleration(force: DVec3, mass: f64) -> DVec3 {
-    debug_assert!(mass > 0.0, "mass must be positive for F=ma, got {}", mass);
+    assert!(mass > 0.0, "mass must be positive for F=ma, got {}", mass);
     force / mass
 }
 
