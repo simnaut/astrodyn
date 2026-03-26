@@ -5,7 +5,7 @@ use bevy_jeod_time::SimulationTimeR;
 /// Plugin that computes inertial-to-planet-fixed rotation (RNP) each timestep.
 ///
 /// **Requires** `JeodTimePlugin` (or manual insertion of [`SimulationTimeR`]) —
-/// will panic at runtime if the resource is missing.
+/// will panic during app construction if the resource is missing.
 pub struct JeodFramesPlugin;
 
 impl Plugin for JeodFramesPlugin {

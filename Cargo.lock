@@ -2458,7 +2458,6 @@ dependencies = [
  "glam 0.30.10",
  "jeod_ephemeris",
  "jeod_test_data",
- "jeod_time",
  "thiserror 2.0.18",
 ]
 
