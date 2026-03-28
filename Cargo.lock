@@ -654,20 +654,35 @@ name = "bevy_jeod"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bevy_jeod_atmosphere",
  "bevy_jeod_dynamics",
  "bevy_jeod_ephemeris",
  "bevy_jeod_frames",
  "bevy_jeod_gravity",
+ "bevy_jeod_interactions",
  "bevy_jeod_planet",
  "bevy_jeod_time",
+ "jeod_atmosphere",
  "jeod_dynamics",
  "jeod_ephemeris",
  "jeod_frames",
  "jeod_gravity",
+ "jeod_interactions",
  "jeod_math",
  "jeod_planet",
  "jeod_test_data",
  "jeod_time",
+]
+
+[[package]]
+name = "bevy_jeod_atmosphere"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy_jeod_dynamics",
+ "glam 0.30.10",
+ "jeod_atmosphere",
+ "jeod_math",
 ]
 
 [[package]]
@@ -712,6 +727,19 @@ dependencies = [
  "glam 0.30.10",
  "jeod_dynamics",
  "jeod_gravity",
+]
+
+[[package]]
+name = "bevy_jeod_interactions"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy_jeod_dynamics",
+ "glam 0.30.10",
+ "jeod_atmosphere",
+ "jeod_dynamics",
+ "jeod_interactions",
+ "jeod_math",
 ]
 
 [[package]]
@@ -2411,6 +2439,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
+name = "jeod_atmosphere"
+version = "0.1.0"
+dependencies = [
+ "glam 0.30.10",
+]
+
+[[package]]
 name = "jeod_dynamics"
 version = "0.1.0"
 dependencies = [
@@ -2451,6 +2486,16 @@ dependencies = [
  "jeod_time",
  "log",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "jeod_interactions"
+version = "0.1.0"
+dependencies = [
+ "glam 0.30.10",
+ "jeod_atmosphere",
+ "jeod_dynamics",
+ "jeod_math",
 ]
 
 [[package]]

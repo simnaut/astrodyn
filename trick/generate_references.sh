@@ -313,6 +313,23 @@ run_sim_with_ascii "models/dynamics/derived_state/verif/SIM_Euler" "SET_test/RUN
 # ════════════════════════════════════════════════════════════════════
 run_sim "models/utils/integration/verif/SIM_integ_test" "SET_test/RUN_rk4" "integ_rk4" || true
 
+# ════════════════════════════════════════════════════════════════════
+# Phase 4 Sims: Interactions (gravity torque, drag, SRP)
+# ════════════════════════════════════════════════════════════════════
+
+# ── Sim: SIM_dyncomp RUN_9A — Gravity gradient torque (ISS inertia) ──
+# Best for: Phase 4 gravity torque validation
+# ISS-like body with gravity gradient torque enabled, 8-hour propagation.
+run_sim "verif/SIM_dyncomp" "SET_test/RUN_9A" "dyncomp_run9a" || true
+
+# ── Sim: SIM_dyncomp RUN_9B — Gravity gradient torque (asymmetric body) ──
+# Best for: Phase 4 gravity torque validation (different inertia)
+run_sim "verif/SIM_dyncomp" "SET_test/RUN_9B" "dyncomp_run9b" || true
+
+# ── Sim: SIM_dyncomp RUN_5A — Drag enabled (if available) ──
+# Best for: Phase 4 aerodynamic drag trajectory validation
+run_sim "verif/SIM_dyncomp" "SET_test/RUN_5A" "dyncomp_run5a" || true
+
 echo "=== Reference data generation complete ==="
 echo "Files in ${OUTPUT_DIR}:"
 ls -la "${OUTPUT_DIR}/"

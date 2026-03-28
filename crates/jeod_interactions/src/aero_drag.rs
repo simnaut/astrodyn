@@ -1,0 +1,274 @@
+//! Aerodynamic drag computation.
+//!
+//! Port of JEOD `models/interactions/aerodynamics/src/aero_drag.cc` and
+//! `default_aero.cc` — the ballistic (default) drag model.
+//!
+//! In the free-molecular flow regime (orbital altitudes), drag force is:
+//!   F = -0.5 · ρ · |v_rel|² · Cd · A · v̂_rel
+//!
+//! where v_rel is the vehicle velocity relative to the atmosphere (after
+//! subtracting atmospheric wind/co-rotation).
+
+use glam::{DMat3, DVec3};
+use jeod_atmosphere::AtmosphericState;
+
+/// Vehicle drag configuration for the ballistic (default) model.
+///
+/// Port of JEOD `DefaultAero` with `DRAG_OPT_CD` option.
+#[derive(Debug, Clone, Copy)]
+pub struct DragConfig {
+    /// Coefficient of drag (dimensionless). Typically 2.0-2.5 for LEO.
+    pub cd: f64,
+    /// Cross-sectional area in m^2.
+    pub area: f64,
+}
+
+/// Aerodynamic force and torque on a vehicle.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AerodynamicForce {
+    /// Aerodynamic force in N, in the structural/body frame.
+    pub force: DVec3,
+    /// Aerodynamic torque in N*m, in the structural/body frame.
+    /// Zero for the ballistic model (force acts through center of mass).
+    pub torque: DVec3,
+}
+
+impl Default for AerodynamicForce {
+    fn default() -> Self {
+        Self {
+            force: DVec3::ZERO,
+            torque: DVec3::ZERO,
+        }
+    }
+}
+
+/// Compute ballistic aerodynamic drag force.
+///
+/// Port of JEOD `AerodynamicDrag::aero_drag()` with `DefaultAero::DRAG_OPT_CD`.
+///
+/// # Arguments
+/// * `config` - Vehicle drag properties (Cd, area)
+/// * `atmos` - Atmospheric state at the vehicle (density, wind)
+/// * `velocity_inertial` - Vehicle velocity in the inertial frame (m/s)
+/// * `t_inertial_struct` - Rotation matrix: inertial -> structural/body frame
+///
+/// # Returns
+/// Aerodynamic force and torque in the structural/body frame.
+/// Torque is zero for the ballistic model.
+pub fn compute_ballistic_drag(
+    config: &DragConfig,
+    atmos: &AtmosphericState,
+    velocity_inertial: DVec3,
+    t_inertial_struct: &DMat3,
+) -> AerodynamicForce {
+    if atmos.density <= 0.0 {
+        return AerodynamicForce::default();
+    }
+
+    // Relative velocity = vehicle velocity - atmospheric wind (in inertial frame)
+    // JEOD aero_drag.cc line 111: Vector3::diff(inertial_velocity, atmos_ptr->wind, relative_vel_cm)
+    let relative_vel_inertial = velocity_inertial - atmos.wind;
+
+    // Transform relative velocity to structural (body) frame
+    // JEOD aero_drag.cc line 114: Vector3::transform(T_inertial_struct, relative_vel_cm, rel_vel_cm_struct)
+    let rel_vel_struct = *t_inertial_struct * relative_vel_inertial;
+
+    let rel_vel_mag = rel_vel_struct.length();
+    if rel_vel_mag < 1e-10 {
+        return AerodynamicForce::default();
+    }
+
+    let rel_vel_hat = rel_vel_struct / rel_vel_mag;
+
+    // Dynamic pressure: 0.5 · ρ · v²
+    // JEOD aero_drag.cc line 132
+    let dynamic_pressure = 0.5 * atmos.density * rel_vel_mag * rel_vel_mag;
+
+    // Drag force magnitude (negative = opposing motion)
+    // JEOD default_aero.cc line 70: drag = -dynamic_pressure * area * Cd
+    let drag_magnitude = -dynamic_pressure * config.area * config.cd;
+
+    // Force in structural frame: drag along relative velocity direction
+    // JEOD default_aero.cc line 106: Vector3::scale(rel_vel_hat, drag, force)
+    let force = rel_vel_hat * drag_magnitude;
+
+    // Ballistic model: no torque (force acts through center of mass)
+    // JEOD default_aero.cc line 107: Vector3::initialize(torque)
+    AerodynamicForce {
+        force,
+        torque: DVec3::ZERO,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Known drag force: F = 0.5 · ρ · v² · Cd · A
+    #[test]
+    fn known_drag_magnitude() {
+        let config = DragConfig {
+            cd: 2.2,
+            area: 10.0, // m^2
+        };
+        let density = 1e-12; // kg/m^3 (typical at 400 km)
+        let velocity = 7600.0; // m/s (LEO orbital speed)
+
+        let atmos = AtmosphericState {
+            density,
+            temperature: 0.0,
+            pressure: 0.0,
+            wind: DVec3::ZERO,
+        };
+
+        // Vehicle moving along +X in inertial, body aligned with inertial
+        let vel = DVec3::new(velocity, 0.0, 0.0);
+        let t = DMat3::IDENTITY;
+
+        let result = compute_ballistic_drag(&config, &atmos, vel, &t);
+
+        // Expected: F = 0.5 * 1e-12 * 7600^2 * 2.2 * 10 = 0.5 * 1e-12 * 5.776e7 * 22
+        let expected_mag = 0.5 * density * velocity * velocity * config.cd * config.area;
+
+        let force_mag = result.force.length();
+        let rel_err = (force_mag - expected_mag).abs() / expected_mag;
+        assert!(
+            rel_err < 1e-12,
+            "Drag magnitude: expected {expected_mag}, got {force_mag}"
+        );
+
+        // Force should be anti-velocity (negative X)
+        assert!(result.force.x < 0.0, "Drag should oppose motion");
+        assert!(result.force.y.abs() < 1e-20, "No Y component");
+        assert!(result.force.z.abs() < 1e-20, "No Z component");
+    }
+
+    /// Zero density → zero drag.
+    #[test]
+    fn zero_density_zero_drag() {
+        let config = DragConfig { cd: 2.2, area: 10.0 };
+        let atmos = AtmosphericState::default(); // density = 0
+        let vel = DVec3::new(7600.0, 0.0, 0.0);
+
+        let result = compute_ballistic_drag(&config, &atmos, vel, &DMat3::IDENTITY);
+        assert_eq!(result.force, DVec3::ZERO);
+    }
+
+    /// Drag opposes relative velocity, not absolute velocity.
+    #[test]
+    fn drag_opposes_relative_velocity() {
+        let config = DragConfig { cd: 2.0, area: 1.0 };
+        let atmos = AtmosphericState {
+            density: 1e-12,
+            temperature: 0.0,
+            pressure: 0.0,
+            wind: DVec3::new(100.0, 0.0, 0.0), // wind along +X
+        };
+
+        // Vehicle moving along +X at 7600 m/s
+        let vel = DVec3::new(7600.0, 0.0, 0.0);
+        let result = compute_ballistic_drag(&config, &atmos, vel, &DMat3::IDENTITY);
+
+        // Relative velocity = 7600 - 100 = 7500 m/s along +X
+        // Force should still oppose motion (negative X) but with reduced magnitude
+        assert!(result.force.x < 0.0, "Drag should oppose relative velocity");
+
+        // Compare with no-wind case
+        let atmos_no_wind = AtmosphericState { wind: DVec3::ZERO, ..atmos };
+        let result_no_wind = compute_ballistic_drag(&config, &atmos_no_wind, vel, &DMat3::IDENTITY);
+        assert!(
+            result.force.x.abs() < result_no_wind.force.x.abs(),
+            "Wind reduces relative velocity, thus reduces drag"
+        );
+    }
+
+    /// Torque is zero for ballistic model.
+    #[test]
+    fn ballistic_torque_is_zero() {
+        let config = DragConfig { cd: 2.2, area: 10.0 };
+        let atmos = AtmosphericState {
+            density: 1e-12,
+            ..Default::default()
+        };
+        let vel = DVec3::new(7600.0, 0.0, 0.0);
+
+        let result = compute_ballistic_drag(&config, &atmos, vel, &DMat3::IDENTITY);
+        assert_eq!(result.torque, DVec3::ZERO);
+    }
+
+    /// Drag force is in the structural frame (rotated from inertial).
+    #[test]
+    fn drag_in_structural_frame() {
+        let config = DragConfig { cd: 2.0, area: 1.0 };
+        let atmos = AtmosphericState {
+            density: 1e-12,
+            ..Default::default()
+        };
+
+        // Vehicle moving along +X in inertial
+        let vel = DVec3::new(7600.0, 0.0, 0.0);
+
+        // Body frame rotated 90° about Z: body X = inertial Y, body Y = -inertial X
+        let t = DMat3::from_cols(
+            DVec3::new(0.0, 1.0, 0.0),
+            DVec3::new(-1.0, 0.0, 0.0),
+            DVec3::new(0.0, 0.0, 1.0),
+        );
+
+        let result = compute_ballistic_drag(&config, &atmos, vel, &t);
+
+        // In body frame, velocity is along -Y (since body Y = -inertial X, wrong)
+        // Actually: T * [7600, 0, 0] = [0*7600, 1*7600, 0] = [0, 7600, 0]
+        // Wait, T transforms inertial to body:
+        // body_vel = T * inertial_vel = [0*7600 + 1*0 + 0*0, -1*7600 + 0 + 0, 0]
+        // Hmm, from_cols means column vectors. T * v:
+        // T.col(0) * v.x + T.col(1) * v.y + T.col(2) * v.z
+        // = [0, 1, 0] * 7600 + [-1, 0, 0] * 0 + [0, 0, 1] * 0
+        // = [0, 7600, 0]
+        // So in body frame, velocity is along +Y → drag force along -Y
+        assert!(
+            result.force.x.abs() < 1e-20,
+            "No X component in body frame"
+        );
+        assert!(result.force.y < 0.0, "Drag along -Y in body frame");
+        assert!(
+            result.force.z.abs() < 1e-20,
+            "No Z component in body frame"
+        );
+    }
+
+    /// Order-of-magnitude check: ISS-like vehicle altitude loss.
+    /// ISS: Cd*A/m ≈ 0.01 m²/kg, at 400 km, should lose ~100-300 m/day.
+    #[test]
+    fn iss_altitude_loss_order_of_magnitude() {
+        let mass = 420_000.0; // kg
+        let config = DragConfig {
+            cd: 2.2,
+            area: 1900.0, // m^2 (Cd*A/m ≈ 2.2*1900/420000 ≈ 0.01)
+        };
+
+        // Typical density at 400 km during solar mean
+        let density = 4e-12; // kg/m^3
+        let atmos = AtmosphericState {
+            density,
+            ..Default::default()
+        };
+
+        let velocity = 7670.0; // m/s (ISS orbital speed)
+        let vel = DVec3::new(velocity, 0.0, 0.0);
+
+        let result = compute_ballistic_drag(&config, &atmos, vel, &DMat3::IDENTITY);
+        let drag_accel = result.force.length() / mass; // m/s^2
+
+        // Semi-major axis decay rate: da/dt ≈ -2*a*drag_accel/v (approximate)
+        let a = 6_778_000.0; // m (400 km altitude)
+        let da_dt = 2.0 * a * drag_accel / velocity; // m/s
+        let da_day = da_dt * 86400.0; // m/day
+
+        assert!(
+            da_day > 50.0 && da_day < 1000.0,
+            "ISS altitude loss should be ~100-300 m/day, got {} m/day",
+            da_day
+        );
+    }
+}

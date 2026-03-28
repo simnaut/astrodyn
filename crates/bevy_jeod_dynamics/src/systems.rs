@@ -4,50 +4,77 @@ use glam::DVec3;
 use jeod_dynamics::SixDofState;
 
 use crate::components::{
-    DynamicsConfigC, GravityAccelerationC, GravityControlsC, GravitySourceC, MassPropertiesC,
-    PlanetFixedRotationC, RotationalStateC, TotalForceC, TranslationalStateC,
+    AerodynamicForceC, DynamicsConfigC, GravityControlsC, GravitySourceC,
+    GravityTorqueC, MassPropertiesC, PlanetFixedRotationC, RadiationForceC,
+    RotationalStateC, TotalForceC, TranslationalStateC,
 };
 
-/// Phase 2 scaffolding: collects gravity into TotalForce for future use by
-/// non-gravity forces (aero, SRP, gravity torque). Currently `TotalForceC` is
-/// not read by `integration_system`, which recomputes gravity directly at each
-/// RK4 stage for 4th-order accuracy. In Phase 2, the integrator will sum
-/// per-stage gravity with constant non-gravity forces from `TotalForceC`.
+/// Collects non-gravity forces and all torques into `TotalForceC`.
 ///
-/// Torque is zeroed since gravity acts through the center of mass for a
-/// point-mass model.
+/// Gravity is intentionally **excluded** because the integration system
+/// recomputes it at each RK4 stage for 4th-order accuracy. Non-gravity
+/// forces (aero, SRP) are approximately constant over one timestep and
+/// are added to the per-stage gravity inside the integrator.
+///
+/// **Force** (in inertial frame):
+///   aero (body→inertial) + SRP (already inertial)
+///
+/// **Torque** (in body frame):
+///   gravity gradient + aero torque + SRP torque
+///
+/// All interaction components are optional — entities without them
+/// contribute zero from those terms.
+#[allow(clippy::type_complexity)]
 pub fn force_collection_system(
-    mut query: Query<(&GravityAccelerationC, &MassPropertiesC, &mut TotalForceC)>,
+    mut query: Query<(
+        &mut TotalForceC,
+        Option<&RotationalStateC>,
+        Option<&MassPropertiesC>,
+        Option<&AerodynamicForceC>,
+        Option<&RadiationForceC>,
+        Option<&GravityTorqueC>,
+    )>,
 ) {
-    for (grav, mass, mut total) in &mut query {
-        total.force = grav.grav_accel * mass.mass;
-        total.torque = DVec3::ZERO;
+    for (mut total, rot_state, _mass, aero, srp, grav_torque) in &mut query {
+        let mut force = DVec3::ZERO;
+        let mut torque = DVec3::ZERO;
+
+        // Aerodynamic force (body frame → rotate to inertial) and torque
+        if let Some(aero) = aero {
+            if let Some(rot) = rot_state {
+                // left_quat_to_transformation() gives T_parent_this (inertial→body).
+                // Transpose gives body→inertial for rotating body-frame forces.
+                let t_inertial_body = rot.quaternion.left_quat_to_transformation();
+                force += t_inertial_body.transpose() * aero.force;
+            }
+            torque += aero.torque;
+        }
+
+        // SRP force (already in inertial frame)
+        if let Some(srp) = srp {
+            force += srp.force;
+            torque += srp.torque;
+        }
+
+        // Gravity gradient torque (body frame)
+        if let Some(gt) = grav_torque {
+            torque += gt.0;
+        }
+
+        total.force = force;
+        total.torque = torque;
     }
 }
 
 /// Advances translational (and optionally rotational) state via RK4 integration
-/// with gravity re-evaluation.
+/// with gravity re-evaluation at each stage.
 ///
-/// At each of the four RK4 stages, point-mass gravity is recomputed at the
-/// intermediate position. This gives true 4th-order accuracy for Keplerian
-/// orbits, unlike a simpler approach that holds acceleration constant over the
-/// timestep.
+/// Gravity is recomputed at each of the four RK4 intermediate positions for
+/// 4th-order accuracy. Non-gravity accelerations from `TotalForceC` (aero, SRP)
+/// are held constant over the timestep and added to the per-stage gravity.
 ///
-/// The system reads `GravityControlsC` on each body to determine which gravity
-/// sources affect it, then queries `GravitySourceC` on those source entities for
-/// the gravitational parameter (mu).
-///
-/// When `DynamicsConfig::rotational_dynamics` is enabled and the entity has a
-/// `RotationalStateC` component, the system uses `rk4_sixdof_step` to integrate
-/// all 13 state variables (position[3], velocity[3], quaternion[4], angular
-/// velocity[3]) simultaneously. Otherwise it falls back to the 3-DOF
-/// `rk4_translational_step`.
-///
-/// **Phase 1 assumption**: gravity sources are at the origin of the integration
-/// frame (body position is relative to the source center). In Phase 2, source
-/// positions will be obtained from `TranslationalStateC` on the source entity,
-/// not from `GlobalTransform` (which is f32 and insufficient for orbital
-/// precision).
+/// Torques from `TotalForceC` (gravity gradient, aero torque) are similarly
+/// held constant and passed to the 6-DOF integrator.
 #[allow(clippy::type_complexity)]
 pub fn integration_system(
     mut bodies: Query<(
@@ -57,6 +84,7 @@ pub fn integration_system(
         Option<&mut RotationalStateC>,
         Option<&MassPropertiesC>,
         &GravityControlsC,
+        &TotalForceC,
     )>,
     sources: Query<(&GravitySourceC, Option<&PlanetFixedRotationC>)>,
     time: Res<Time<Fixed>>,
@@ -66,18 +94,26 @@ pub fn integration_system(
         return;
     }
 
-    for (entity, config, mut state, mut rot_state, mass, controls) in &mut bodies {
+    for (entity, config, mut state, mut rot_state, mass, controls, total_force) in &mut bodies {
         if !config.translational_dynamics {
             continue;
         }
 
+        // Non-gravity translational acceleration (constant over one RK4 step).
+        // TotalForceC.force holds only non-gravity forces (aero + SRP), already
+        // in inertial frame. Divide by mass to get acceleration.
+        let non_grav_accel = if let Some(m) = mass {
+            if m.mass > 0.0 {
+                total_force.force / m.mass
+            } else {
+                DVec3::ZERO
+            }
+        } else {
+            // No mass component: treat non-gravity force as direct acceleration
+            total_force.force
+        };
+
         // Closure: compute gravitational acceleration at a given position.
-        // Used by both 3-DOF and 6-DOF paths so gravity is re-evaluated at
-        // each RK4 stage for 4th-order accuracy.
-        //
-        // Matching JEOD: non-spherical gravity requires PlanetFixedRotationC
-        // (the planet-fixed frame). Missing rotation is a fatal configuration
-        // error, not a silent fallback.
         let compute_grav_accel = |position: DVec3| -> DVec3 {
             let mut accel = DVec3::ZERO;
             for ctrl in &controls.0.controls {
@@ -116,17 +152,21 @@ pub fn integration_system(
             accel
         };
 
-        // 6-DOF path: rotational dynamics enabled AND entity has RotationalStateC + MassPropertiesC
+        // 6-DOF path: rotational dynamics enabled AND entity has components
         if config.rotational_dynamics {
             if let (Some(ref mut rot), Some(mass_props)) = (&mut rot_state, &mass) {
                 let six_state = SixDofState {
                     trans: state.0,
                     rot: rot.0,
                 };
+
+                // Torque: constant over one RK4 step (gravity gradient + aero torque)
+                let constant_torque = total_force.torque;
+
                 let new_state = jeod_dynamics::rk4_sixdof_step(
                     &six_state,
-                    |s| compute_grav_accel(s.trans.position),
-                    |_s| DVec3::ZERO, // No external torque in Phase 3 (gravity torque is Phase 4)
+                    |s| compute_grav_accel(s.trans.position) + non_grav_accel,
+                    |_s| constant_torque,
                     &mass_props.0,
                     dt,
                 );
@@ -143,7 +183,7 @@ pub fn integration_system(
         // 3-DOF path: translational only
         let new_state = jeod_dynamics::rk4_translational_step(
             &state.0,
-            |s| compute_grav_accel(s.position),
+            |s| compute_grav_accel(s.position) + non_grav_accel,
             dt,
         );
         state.0 = new_state;

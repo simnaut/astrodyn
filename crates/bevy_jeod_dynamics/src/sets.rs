@@ -8,6 +8,8 @@ pub enum JeodSet {
     EphemerisUpdate,
     /// Environment computation (gravity, atmosphere).
     Environment,
+    /// Interaction computation (aero drag, SRP, gravity torque).
+    Interaction,
     /// Force and torque collection.
     ForceCollection,
     /// State integration (RK4, etc.).

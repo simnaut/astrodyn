@@ -1,0 +1,63 @@
+use bevy::prelude::*;
+use jeod_atmosphere::exponential::ExponentialAtmosphere;
+use jeod_math::geodetic::cartesian_to_geodetic;
+
+use bevy_jeod_dynamics::{
+    AtmosphericStateC, PlanetFixedRotationC, TranslationalStateC,
+};
+
+/// Resource holding the atmosphere model configuration.
+///
+/// Currently supports exponential atmosphere. MET model will be added in Phase 4
+/// (MET atmosphere task).
+#[derive(Resource, Debug, Clone)]
+pub struct AtmosphereModelR {
+    pub model: ExponentialAtmosphere,
+    /// Equatorial radius of the planet (m). Used for geodetic conversion.
+    pub r_eq: f64,
+    /// Polar radius of the planet (m). Used for geodetic conversion.
+    pub r_pol: f64,
+    /// Entity of the planet whose atmosphere this is (for finding PlanetFixedRotationC).
+    pub planet_entity: Option<Entity>,
+}
+
+/// Update atmospheric state for entities that have AtmosphericStateC.
+///
+/// Converts the vehicle's inertial position to planet-fixed coordinates,
+/// computes geodetic altitude, then evaluates the atmosphere model.
+///
+/// Placed in `JeodSet::Environment`.
+pub fn atmosphere_update_system(
+    atmos_model: Option<Res<AtmosphereModelR>>,
+    planet_query: Query<&PlanetFixedRotationC>,
+    mut query: Query<(&TranslationalStateC, &mut AtmosphericStateC)>,
+) {
+    let Some(model) = atmos_model else {
+        return; // No atmosphere model configured
+    };
+
+    // Get planet-fixed rotation (inertial → planet-fixed)
+    let t_inertial_pfix = model.planet_entity
+        .and_then(|e| planet_query.get(e).ok())
+        .map(|r| r.0);
+
+    for (state, mut atmos) in &mut query {
+        // Convert inertial position to planet-fixed
+        let pos_pfix = if let Some(rot) = t_inertial_pfix {
+            rot * state.position
+        } else {
+            state.position // No rotation available → assume already in PCPF
+        };
+
+        // Compute geodetic altitude
+        let geodetic = cartesian_to_geodetic(pos_pfix, model.r_eq, model.r_pol);
+
+        // Evaluate atmosphere model
+        let result = model.model.density(geodetic.altitude);
+
+        atmos.density = result.density;
+        atmos.temperature = result.temperature;
+        atmos.pressure = result.pressure;
+        atmos.wind = result.wind;
+    }
+}
