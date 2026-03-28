@@ -662,6 +662,7 @@ dependencies = [
  "bevy_jeod_interactions",
  "bevy_jeod_planet",
  "bevy_jeod_time",
+ "glam 0.30.10",
  "jeod_atmosphere",
  "jeod_dynamics",
  "jeod_ephemeris",

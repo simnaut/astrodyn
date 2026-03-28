@@ -482,7 +482,7 @@ without adding new physics.
 - [ ] **Tier 3 shadow transitions**: Eclipse entry/exit times match JEOD logged shadow state to < 10 s over multiple orbits.
 
 #### Other
-- [x] **Portability**: All `jeod_*` Phase 4 additions compile without Bevy (leo_drag.rs example uses no Bevy)
+- [x] **Portability**: All `jeod_*` Phase 4 additions compile without Bevy; `leo_drag.rs` example uses only `jeod_*`/`glam` crates
 - [x] `cargo test --workspace` — 271 tests pass, 0 failures, 0 clippy warnings
 
 ---

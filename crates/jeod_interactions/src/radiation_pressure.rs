@@ -4,11 +4,11 @@
 //! `radiation_pressure__default_surface.cc` (spherical model).
 //!
 //! For a spherical body, the SRP force is:
-//!   F = -(L / (4πr²c)) · A · Cr · r̂
+//!   F = (L / (4πr²c)) · A · Cr · r̂
 //!
 //! where L is solar luminosity, r is distance to the Sun, c is speed of light,
 //! A is cross-sectional area, Cr is radiation coefficient, and r̂ is the
-//! unit vector from Sun to vehicle.
+//! unit vector from Sun to vehicle (so the force pushes away from the Sun).
 
 use glam::DVec3;
 

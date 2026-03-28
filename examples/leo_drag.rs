@@ -10,10 +10,11 @@
 //! cargo run --example leo_drag
 //! ```
 
-use bevy_jeod::*;
+use glam::{DMat3, DVec3};
 use jeod_atmosphere::exponential::ExponentialAtmosphere;
 use jeod_dynamics::{rk4_translational_step, TranslationalState};
 use jeod_interactions::{compute_ballistic_drag, DragConfig};
+use jeod_math::OrbitalElements;
 
 const MU_EARTH: f64 = 3.986004418e14;
 const R_EARTH: f64 = 6_378_137.0;

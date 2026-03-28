@@ -21,6 +21,7 @@ jeod_time = { path = "crates/jeod_time" }
 jeod_ephemeris = { path = "crates/jeod_ephemeris" }
 jeod_atmosphere = { path = "crates/jeod_atmosphere" }
 jeod_interactions = { path = "crates/jeod_interactions" }
+glam = { workspace = true }
 bevy = { workspace = true }
 
 [dev-dependencies]

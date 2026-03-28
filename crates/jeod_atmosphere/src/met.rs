@@ -235,7 +235,8 @@ impl MetAtmosphere {
     /// * `altitude_km` - Geodetic altitude in kilometres.
     /// * `latitude_rad` - Geodetic latitude in radians, range [-pi/2, pi/2].
     /// * `longitude_rad` - Geodetic longitude in radians.
-    /// * `truncated_julian_day` - Truncated Julian Date (days since 1957-05-24 00:00:00 UTC).
+    /// * `truncated_julian_day` - Truncated Julian Time (TJT), defined as
+    ///   `MJD - 40000` (Modified Julian Date minus 40000).
     ///
     /// # Returns
     /// An [`AtmosphericState`] with density (kg/m^3), temperature (K), pressure (Pa),
@@ -378,9 +379,9 @@ impl ComputeContext {
         let fraction_of_day = trunc_julian_time - tjt_prev_midnight;
 
         // Compute year, day-of-year from TJT.
-        // TJT epoch: 1957-05-24. Default start: 2000-01-01 has TJT = 15544.
+        // TJT = MJD - 40000; 2000-01-01 00:00 has TJT = 11544.0.
         // We replicate JEOD's iterative year-tracking logic.
-        let tjt_year_start: f64 = 11544.0; // TJT of 2000-01-01
+        let tjt_year_start: f64 = 11544.0; // TJT of 2000-01-01 00:00
         let mut year: i32 = 2000;
         let mut max_days_this_year: i32 = 366; // 2000 is a leap year
 

@@ -109,8 +109,15 @@ pub fn integration_system(
                 DVec3::ZERO
             }
         } else {
-            // No mass component: treat non-gravity force as direct acceleration
-            total_force.force
+            // No mass component: cannot convert force (N) to acceleration (m/s^2).
+            // Ignore non-gravity forces to avoid unit inconsistency.
+            if total_force.force != DVec3::ZERO {
+                warn_once!(
+                    "Entity {entity:?} has non-zero TotalForceC but no MassPropertiesC; \
+                     ignoring non-gravity forces for translational dynamics."
+                );
+            }
+            DVec3::ZERO
         };
 
         // Closure: compute gravitational acceleration at a given position.

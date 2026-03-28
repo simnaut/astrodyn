@@ -66,8 +66,10 @@ pub fn gravity_torque_system(
 
 /// Compute solar radiation pressure for entities with SrpConfigC.
 ///
-/// Requires a Sun entity with `TranslationalStateC` to query the Sun position.
-/// Shadow detection uses Earth radius from `jeod_interactions::SOLAR_RADIUS`.
+/// Requires a Sun entity with `TranslationalStateC` and `SunMarker` to query
+/// the Sun position. Shadow detection is not yet wired in — `shadow_fraction`
+/// is hard-coded to 1.0 (full sun). To add eclipse support, the system would
+/// need Earth entity position and radius to call `compute_shadow_fraction`.
 ///
 /// Placed in `JeodSet::Interaction`.
 pub fn radiation_pressure_system(

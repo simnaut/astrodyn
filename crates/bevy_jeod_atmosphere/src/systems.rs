@@ -8,8 +8,8 @@ use bevy_jeod_dynamics::{
 
 /// Resource holding the atmosphere model configuration.
 ///
-/// Currently supports exponential atmosphere. MET model will be added in Phase 4
-/// (MET atmosphere task).
+/// Currently supports only the exponential atmosphere model. The MET model is
+/// implemented in `jeod_atmosphere` but is not yet wired into `AtmosphereModelR`.
 #[derive(Resource, Debug, Clone)]
 pub struct AtmosphereModelR {
     pub model: ExponentialAtmosphere,
