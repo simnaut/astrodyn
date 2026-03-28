@@ -102,22 +102,22 @@ pub fn integration_system(
         // Non-gravity translational acceleration (constant over one RK4 step).
         // TotalForceC.force holds only non-gravity forces (aero + SRP), already
         // in inertial frame. Divide by mass to get acceleration.
-        let non_grav_accel = if let Some(m) = mass {
-            if m.mass > 0.0 {
-                total_force.force / m.mass
-            } else {
-                DVec3::ZERO
-            }
-        } else {
-            // No mass component: cannot convert force (N) to acceleration (m/s^2).
-            // Ignore non-gravity forces to avoid unit inconsistency.
-            if total_force.force != DVec3::ZERO {
-                warn_once!(
-                    "Entity {entity:?} has non-zero TotalForceC but no MassPropertiesC; \
-                     ignoring non-gravity forces for translational dynamics."
-                );
-            }
+        let non_grav_accel = if total_force.force == DVec3::ZERO {
             DVec3::ZERO
+        } else if let Some(m) = mass {
+            assert!(
+                m.mass > 0.0,
+                "Entity {entity:?}: MassPropertiesC.mass must be positive for F=ma, got {}",
+                m.mass
+            );
+            total_force.force / m.mass
+        } else {
+            panic!(
+                "Entity {entity:?}: non-zero TotalForceC ({:?}) but no MassPropertiesC. \
+                 In JEOD, DynBody always has mass. Add MassPropertiesC to any entity \
+                 with interaction forces (drag, SRP).",
+                total_force.force
+            );
         };
 
         // Closure: compute gravitational acceleration at a given position.
