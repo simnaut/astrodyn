@@ -224,6 +224,130 @@ pub fn compute_flat_plate_srp(
     }
 }
 
+// ── Flat-plate with thermal emission ─────────────────────────────────────────
+// Port of JEOD `ThermalFacetRider` + `ThermalIntegrableObject::compute_temp_dot()`
+// from `thermal_facet_rider.cc` and `thermal_integrable_object.cc`.
+
+/// Stefan-Boltzmann constant (W m⁻² K⁻⁴).
+/// Matches JEOD `thermal_facet_rider.hh` line 163.
+pub const STEFAN_BOLTZMANN: f64 = 5.6704004e-8;
+
+/// Thermal properties for a flat plate facet.
+///
+/// Port of JEOD `ThermalFacetRider` initialization parameters.
+#[derive(Debug, Clone, Copy)]
+pub struct FlatPlateThermal {
+    /// Fraction of blackbody radiation actually emitted (0 to 1).
+    pub emissivity: f64,
+    /// Thermal mass per unit area in J/(m²·K).
+    pub heat_capacity_per_area: f64,
+}
+
+/// Compute SRP force and torque from flat plates with thermal emission.
+///
+/// Extends `compute_flat_plate_srp` with Stefan-Boltzmann thermal emission force.
+/// Each plate's temperature evolves via `dT/dt = (P_absorb - P_emit) / C_p` and
+/// the emission produces a recoil force `F = -(2/3) * P_emit / c * normal`.
+///
+/// Port of JEOD `FlatPlateRadiationFacet::radiation_pressure()` lines 135-166
+/// and `ThermalIntegrableObject::compute_temp_dot()`.
+///
+/// # Arguments
+/// * `plates` - Flat plates with optical and thermal properties
+/// * `temperatures` - Per-plate temperature state in K (mutated: updated by forward Euler)
+/// * `flux_struct_hat` - Unit vector from vehicle toward Sun, in structural frame
+/// * `flux_mag` - Solar flux at the vehicle (W/m²)
+/// * `center_grav` - Center of gravity in structural frame (m)
+/// * `shadow_fraction` - Illumination factor: 0.0 = full shadow, 1.0 = full sun
+/// * `dt` - Timestep for temperature integration (s)
+pub fn compute_flat_plate_srp_thermal(
+    plates: &[(FlatPlate, FlatPlateParams, FlatPlateThermal)],
+    temperatures: &mut [f64],
+    flux_struct_hat: DVec3,
+    flux_mag: f64,
+    center_grav: DVec3,
+    shadow_fraction: f64,
+    dt: f64,
+) -> RadiationForce {
+    assert_eq!(plates.len(), temperatures.len());
+
+    let effective_flux = if shadow_fraction > 0.0 && flux_mag > 0.0 {
+        flux_mag * shadow_fraction
+    } else {
+        0.0
+    };
+
+    let mut total_force = DVec3::ZERO;
+    let mut total_torque = DVec3::ZERO;
+
+    for (i, (plate, params, thermal)) in plates.iter().enumerate() {
+        // Determine illumination of this plate
+        let sin_theta = -plate.normal.dot(flux_struct_hat);
+        let illuminated = sin_theta > 0.0 && effective_flux > 0.0;
+
+        // ── Absorption / reflection forces (only for illuminated plates) ──
+        let mut plate_force = DVec3::ZERO;
+
+        if illuminated {
+            let cx_area = plate.area * sin_theta;
+            let areaxflux = cx_area * effective_flux / SPEED_OF_LIGHT;
+
+            let f_absorption = flux_struct_hat * (areaxflux * (1.0 - params.albedo));
+
+            let ref_flux = areaxflux * params.albedo;
+            let f_diffuse = (flux_struct_hat - TWO_THIRDS * plate.normal)
+                * (params.diffuse * ref_flux);
+            let f_specular = plate.normal
+                * (2.0 * (params.diffuse - 1.0) * ref_flux * sin_theta);
+
+            plate_force = f_absorption + f_diffuse + f_specular;
+        }
+
+        // ── Thermal emission (ALL plates, illuminated or not) ──
+        // JEOD thermal_integrable_object.cc compute_temp_dot():
+        //   power_emit = rad_constant * T^4
+        //   temp_dot = (power_absorb - power_emit) / heat_capacity
+        let rad_constant = plate.area * thermal.emissivity * STEFAN_BOLTZMANN;
+        let t = temperatures[i];
+        let power_emit = rad_constant * t * t * t * t; // T⁴
+
+        // Power absorbed: only by illuminated plates
+        let power_absorb = if illuminated {
+            (1.0 - params.albedo) * plate.area * sin_theta * effective_flux
+        } else {
+            0.0
+        };
+
+        // Temperature evolution (forward Euler)
+        let heat_capacity = thermal.heat_capacity_per_area * plate.area;
+        if heat_capacity > 0.0 && dt > 0.0 {
+            let temp_dot = (power_absorb - power_emit) / heat_capacity;
+            temperatures[i] += temp_dot * dt;
+            // Clamp to prevent negative temperatures from numerical instability
+            if temperatures[i] < 0.0 {
+                temperatures[i] = 0.0;
+            }
+        }
+
+        // Emission force: -(2/3) * power_emit / c * normal
+        // JEOD flat_plate_radiation_facet.cc line 157
+        let f_emission = -(TWO_THIRDS * power_emit / SPEED_OF_LIGHT) * plate.normal;
+        plate_force += f_emission;
+
+        // Torque
+        let arm = plate.position - center_grav;
+        let plate_torque = arm.cross(plate_force);
+
+        total_force += plate_force;
+        total_torque += plate_torque;
+    }
+
+    RadiationForce {
+        force: total_force,
+        torque: total_torque,
+    }
+}
+
 /// Compute solar flux at a given distance from the Sun.
 ///
 /// Returns flux in W/m². Port of JEOD `RadiationSource::calculate_flux()`.
@@ -502,6 +626,140 @@ mod tests {
         assert!(
             (ratio - 0.5).abs() < 1e-12,
             "Half shadow should give half force, ratio = {ratio}"
+        );
+    }
+
+    // ── Thermal emission tests ────────────────────────────────────────
+
+    /// Thermal emission force direction: opposes normal (recoil).
+    #[test]
+    fn thermal_emission_opposes_normal() {
+        let plate = FlatPlate {
+            area: 60.0,
+            normal: DVec3::X,
+            position: DVec3::ZERO,
+        };
+        let params = FlatPlateParams { albedo: 0.5, diffuse: 0.5 };
+        let thermal = FlatPlateThermal {
+            emissivity: 0.5,
+            heat_capacity_per_area: 50.0,
+        };
+        let mut temps = [270.0];
+
+        // No flux — only thermal emission
+        let result = compute_flat_plate_srp_thermal(
+            &[(plate, params, thermal)],
+            &mut temps,
+            DVec3::X, 0.0, // zero flux
+            DVec3::ZERO, 1.0, 1.0,
+        );
+
+        // Emission force should be in -X direction (opposing normal)
+        assert!(result.force.x < 0.0, "Emission should push in -normal direction");
+        assert!(result.force.y.abs() < 1e-30);
+        assert!(result.force.z.abs() < 1e-30);
+    }
+
+    /// Thermal emission magnitude matches Stefan-Boltzmann.
+    #[test]
+    fn thermal_emission_magnitude() {
+        let plate = FlatPlate {
+            area: 60.0,
+            normal: DVec3::X,
+            position: DVec3::ZERO,
+        };
+        let params = FlatPlateParams { albedo: 0.5, diffuse: 0.5 };
+        let thermal = FlatPlateThermal {
+            emissivity: 0.5,
+            heat_capacity_per_area: 50.0,
+        };
+        let mut temps = [270.0];
+
+        let result = compute_flat_plate_srp_thermal(
+            &[(plate, params, thermal)],
+            &mut temps,
+            DVec3::X, 0.0,
+            DVec3::ZERO, 1.0, 0.0, // dt=0 so temperature doesn't change
+        );
+
+        // Expected: F = 2/3 * (ε σ A T⁴) / c
+        let power_emit = 0.5 * STEFAN_BOLTZMANN * 60.0 * 270.0_f64.powi(4);
+        let expected = TWO_THIRDS * power_emit / SPEED_OF_LIGHT;
+        let actual = result.force.length();
+        let rel_err = (actual - expected).abs() / expected;
+        assert!(
+            rel_err < 1e-10,
+            "Emission force: expected {expected:.6e}, got {actual:.6e}, rel_err={rel_err:.2e}"
+        );
+    }
+
+    /// Temperature cools when not illuminated.
+    #[test]
+    fn thermal_temperature_cools_in_shadow() {
+        let plate = FlatPlate {
+            area: 60.0,
+            normal: DVec3::X,
+            position: DVec3::ZERO,
+        };
+        let params = FlatPlateParams { albedo: 0.5, diffuse: 0.5 };
+        let thermal = FlatPlateThermal {
+            emissivity: 0.5,
+            heat_capacity_per_area: 50.0,
+        };
+        let mut temps = [270.0];
+
+        // Run 100 steps at dt=1.0 with no flux
+        for _ in 0..100 {
+            compute_flat_plate_srp_thermal(
+                &[(plate, params, thermal)],
+                &mut temps,
+                DVec3::X, 0.0,
+                DVec3::ZERO, 0.0, 1.0,
+            );
+        }
+
+        assert!(
+            temps[0] < 270.0,
+            "Temperature should decrease when not illuminated, got {}",
+            temps[0]
+        );
+    }
+
+    /// With thermal, total force is larger than without (emission adds to SRP).
+    #[test]
+    fn thermal_increases_total_force() {
+        let plate = FlatPlate {
+            area: 60.0,
+            normal: -DVec3::X,
+            position: DVec3::ZERO,
+        };
+        let params = FlatPlateParams { albedo: 0.5, diffuse: 0.5 };
+        let thermal = FlatPlateThermal {
+            emissivity: 0.5,
+            heat_capacity_per_area: 50.0,
+        };
+        let flux_hat = DVec3::X;
+        let flux_mag = 1400.0;
+
+        // Without thermal
+        let no_thermal = compute_flat_plate_srp(
+            &[(plate, params)],
+            flux_hat, flux_mag, DVec3::ZERO, 1.0,
+        );
+
+        // With thermal (dt=0 so temperature stays at 270K)
+        let mut temps = [270.0];
+        let with_thermal = compute_flat_plate_srp_thermal(
+            &[(plate, params, thermal)],
+            &mut temps,
+            flux_hat, flux_mag, DVec3::ZERO, 1.0, 0.0,
+        );
+
+        assert!(
+            with_thermal.force.length() > no_thermal.force.length(),
+            "Thermal emission should increase total force: with={:.6e} vs without={:.6e}",
+            with_thermal.force.length(),
+            no_thermal.force.length()
         );
     }
 
