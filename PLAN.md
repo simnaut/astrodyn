@@ -544,7 +544,14 @@ without adding new physics.
 | 5.18 | Contact force model | Spring-damper contact forces. Normal and friction forces. | `interactions/contact/` |
 | 5.19 | Contact unit tests | Two spheres approaching: detect contact at expected distance. Contact force magnitude matches spring constant × penetration. | — |
 
-#### 5F. Cross-Validation Infrastructure
+#### 5F. Dynamics Manager ODE Scheduling
+
+| ID | Task | Description | JEOD Reference |
+|----|------|-------------|----------------|
+| 5.33 | Multi-integrable-object scheduling | Port JEOD's DynManager integration loop that drives multiple integrable objects (orbital state + thermal state) through RK4 stages in the correct order. Required to close the 27.6 m / 23-day SRP thermal coupling residual (simnaut/bevy_jeod#13). | `dynamics_integration_group.cc`, `er7_utils` integration loop |
+| 5.34 | Thermal ODE as integrable object | Move plate temperature integration into the Bevy dynamics pipeline so it's driven by the same integration loop as the orbital state, matching JEOD's `ThermalIntegrableObject` scheduling. | `thermal_integrable_object.cc` |
+
+#### 5G. Cross-Validation Infrastructure
 
 | ID | Task | Description |
 |----|------|-------------|
@@ -559,7 +566,7 @@ without adding new physics.
 | 5.28 | Tier 3: Mars orbit test | Mars orbit with MRO110B2 gravity, compare to JEOD. |
 | 5.29 | Tier 4 regression harness | CI script that runs all Tier 1-3 tests and produces pass/fail summary with error budgets. |
 
-#### 5G. Examples
+#### 5H. Examples
 
 | ID | Task | Description |
 |----|------|-------------|
@@ -588,6 +595,7 @@ without adding new physics.
 - [ ] **Tier 3 polar motion**: Earth-fixed frame with polar motion enabled matches JEOD to < 0.1 arcsecond over 24h
 - [ ] **Tier 3 solid tides**: Trajectory with tidal ΔCnm/ΔSnm corrections. Position difference (tides ON vs OFF) matches JEOD's difference to < 10% over 24h
 - [ ] **Tier 3 SRP trajectory**: Trajectory with solar radiation pressure enabled. Requires ephemeris-driven Sun position. Compare against JEOD sim with SRP. Position error < 10 m over 24h
+- [ ] **Tier 3 SRP thermal parity**: SIM_3_ORBIT RUN_radiation (23 days, flat-plate + thermal emission + shadow). Position error < 5 m over 23 days. Requires matching JEOD's DynManager multi-integrable-object RK4 scheduling so the coupled orbital + thermal ODE produces the same sub-step sequencing (see simnaut/bevy_jeod#13)
 
 #### Other
 - [ ] **Tier 4 regression**: CI runs all scenarios automatically; all pass within budgets
