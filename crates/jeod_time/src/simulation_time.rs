@@ -55,7 +55,7 @@ pub struct SimulationTime {
 }
 
 impl SimulationTime {
-    // JEOD_INV: TM.07 — simtime initialized with explicit epoch (forces first update via recompute_derived)
+    // JEOD_INV: TM.07 — JEOD uses -1.0 sentinel; we call recompute_derived() at construction instead
     /// Create a new SimulationTime starting at the given TAI TJT.
     ///
     /// # Arguments

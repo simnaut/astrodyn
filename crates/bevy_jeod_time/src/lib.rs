@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use bevy_jeod_dynamics::JeodSet;
 use jeod_time::{leap_second::default_leap_second_table, SimulationTime};
 
-// JEOD_INV: TM.07 — simtime initialized with explicit epoch (J2000 default)
+// JEOD_INV: TM.07 — JEOD uses -1.0 sentinel; we call recompute_derived() at construction instead
 /// Bevy resource wrapping `SimulationTime`.
 #[derive(Resource, Debug, Deref, DerefMut)]
 pub struct SimulationTimeR(pub SimulationTime);

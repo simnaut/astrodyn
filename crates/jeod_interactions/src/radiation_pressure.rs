@@ -87,7 +87,8 @@ pub fn compute_srp_force(
     let sun_to_vehicle = vehicle_position - sun_position;
     let distance = sun_to_vehicle.length();
 
-    // JEOD_INV: IN.10 — RadiationSource.luminosity > 0 for flux (returns zero for distance < 1)
+    // JEOD_INV: IN.10 — distance guard prevents division by near-zero in flux calculation
+    // (JEOD checks luminosity < 1e-6; ours uses a compile-time constant, so luminosity is always valid)
     if distance < 1.0 {
         return RadiationForce::default();
     }

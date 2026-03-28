@@ -61,7 +61,7 @@ impl Default for DynamicsConfig {
     }
 }
 
-// JEOD_INV: DB.18 — inverse_mass used for F=ma (precomputed)
+// JEOD_INV: DB.18 — F=ma (JEOD precomputes inverse_mass; we divide by mass at runtime)
 pub fn compute_translational_acceleration(force: DVec3, mass: f64) -> DVec3 {
     assert!(mass > 0.0, "mass must be positive for F=ma, got {}", mass);
     force / mass

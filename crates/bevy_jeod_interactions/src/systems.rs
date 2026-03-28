@@ -85,9 +85,9 @@ pub fn radiation_pressure_system(
     ), Without<SunMarker>>,
     sun_query: Query<&TranslationalStateC, With<SunMarker>>,
 ) {
-    // JEOD_INV: IN.09 — RadiationSource planet must exist (exactly one)
+    // JEOD_INV: IN.09 — RadiationSource planet must be found by DynManager
     // JEOD's RadiationSource::initialize() fatally fails if the source planet
-    // is not found. Having exactly one source is structural (value member).
+    // is not found. Zero suns = SRP not configured (silent return); multiple = panic.
     let sun_state = match sun_query.single() {
         Ok(s) => s,
         Err(bevy::ecs::query::QuerySingleError::NoEntities(_)) => return,
