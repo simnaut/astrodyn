@@ -4,9 +4,10 @@ use glam::DVec3;
 use jeod_dynamics::SixDofState;
 
 use crate::components::{
-    AerodynamicForceC, DynamicsConfigC, GravityControlsC, GravitySourceC,
-    GravityTorqueC, MassPropertiesC, PlanetFixedRotationC, RadiationForceC,
-    RotationalStateC, TotalForceC, TranslationalStateC,
+    AerodynamicForceC, DynamicsConfigC, FrameDerivativesC, GravityAccelerationC,
+    GravityControlsC, GravitySourceC, GravityTorqueC, MassPropertiesC,
+    PlanetFixedRotationC, RadiationForceC, RotationalStateC, TotalForceC,
+    TranslationalStateC,
 };
 
 /// Collects non-gravity forces and all torques into `TotalForceC`.
@@ -28,6 +29,8 @@ use crate::components::{
 pub fn force_collection_system(
     mut query: Query<(
         &mut TotalForceC,
+        Option<&mut FrameDerivativesC>,
+        Option<&GravityAccelerationC>,
         Option<&RotationalStateC>,
         Option<&MassPropertiesC>,
         Option<&AerodynamicForceC>,
@@ -35,7 +38,7 @@ pub fn force_collection_system(
         Option<&GravityTorqueC>,
     )>,
 ) {
-    for (mut total, rot_state, _mass, aero, srp, grav_torque) in &mut query {
+    for (mut total, derivs, grav, rot_state, mass, aero, srp, grav_torque) in &mut query {
         let mut force = DVec3::ZERO;
         let mut torque = DVec3::ZERO;
 
@@ -63,6 +66,35 @@ pub fn force_collection_system(
 
         total.force = force;
         total.torque = torque;
+
+        // Write FrameDerivativesC (Invariant I: must not be dead).
+        // Matches JEOD dyn_body_collect.cc lines 224-264:
+        //   non_grav_accel = F_non_grav / m
+        //   trans_accel = non_grav_accel + grav_accel
+        //   rot_accel = I^-1 * (tau - omega x I*omega)
+        if let Some(mut derivs) = derivs {
+            let non_grav_accel = if let Some(m) = mass {
+                if m.mass > 0.0 { force / m.mass } else { DVec3::ZERO }
+            } else {
+                DVec3::ZERO
+            };
+
+            let grav_accel = grav.map_or(DVec3::ZERO, |g| g.grav_accel);
+            derivs.trans_accel = non_grav_accel + grav_accel;
+
+            // Rotational acceleration from Euler's equation:
+            // alpha = I^-1 * (tau - omega x (I * omega))
+            derivs.rot_accel = if let (Some(rot), Some(m)) = (rot_state, mass) {
+                jeod_dynamics::rotational::compute_rotational_acceleration(
+                    &m.inertia,
+                    &m.inverse_inertia,
+                    rot.ang_vel_body,
+                    torque,
+                )
+            } else {
+                DVec3::ZERO
+            };
+        }
     }
 }
 
@@ -125,12 +157,13 @@ pub fn integration_system(
             let mut accel = DVec3::ZERO;
             for ctrl in &controls.0.controls {
                 let Ok((source, rot)) = sources.get(ctrl.source_name) else {
-                    warn_once!(
+                    panic!(
                         "Entity {entity:?}: GravityControl references entity {:?} which has no \
-                         GravitySourceC — skipping this source",
+                         GravitySourceC. In JEOD, gravity source resolution is fatal. \
+                         Ensure the source entity exists and has GravitySourceC before \
+                         the first FixedUpdate tick.",
                         ctrl.source_name
                     );
-                    continue;
                 };
 
                 if ctrl.is_nonspherical() {
