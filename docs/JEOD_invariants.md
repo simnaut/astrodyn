@@ -181,7 +181,7 @@ with `// JEOD_INV: DB.03` comments.
 | IN.06 | RadiationPressure.active gates computation | `radiation_pressure/src/radiation_pressure.cc` | 99-102 | flag-gate | runtime | structural (no SrpConfigC → no SRP) |
 | IN.07 | RadiationThirdBody name required | `radiation_pressure/src/radiation_third_body.cc` | 59-68 | fatal | initialization | n/a (shadow bodies by Entity) |
 | IN.08 | RadiationThirdBody belongs to one model only | `radiation_pressure/src/radiation_pressure.cc` | 203-224 | fatal | structural | n/a (function-based, no ownership) |
-| IN.09 | RadiationSource planet must exist (exactly one) | `radiation_pressure/src/radiation_source.cc` | 119-133 | fatal | initialization | enforced (`bevy_jeod_interactions/systems.rs` — panics on zero or multiple SunMarker entities) |
+| IN.09 | RadiationSource planet must exist (exactly one) | `radiation_pressure/src/radiation_source.cc` | 119-133 | fatal | initialization | enforced (`bevy_jeod_interactions/systems.rs` — panics on multiple SunMarker; zero SunMarker = SRP not configured, early return like JEOD `active=false`) |
 | IN.10 | RadiationSource.luminosity > 0 for flux | `radiation_pressure/src/radiation_source.cc` | 74-78 | structural | runtime | enforced (`radiation_pressure.rs` returns zero for distance < 1) |
 | IN.11 | RadiationThirdBody.radius > 0 | `radiation_pressure/src/radiation_third_body.cc` | 163-177 | fatal | initialization | enforced (`shadow.rs` handles degenerate cases) |
 | IN.12 | RadiationSource.radius > 0 | `radiation_pressure/src/radiation_third_body.cc` | 102-114 | fatal | initialization | enforced (`shadow.rs` handles degenerate cases) |

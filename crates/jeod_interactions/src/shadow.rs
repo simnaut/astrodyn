@@ -102,8 +102,22 @@ pub fn compute_shadow_fraction(
         r_perp2.sqrt()
     };
 
-    // JEOD_INV: IN.11 — RadiationThirdBody.radius > 0 (degenerate cases handled above)
-    // JEOD_INV: IN.12 — RadiationSource.radius > 0 (degenerate cases handled above)
+    // JEOD_INV: IN.12 — RadiationSource.radius > 0
+    // JEOD validates in RadiationThirdBody::initialize() (radiation_third_body.cc:102-114)
+    // before r_ratio is ever computed. Our stateless function must validate here.
+    assert!(
+        source_radius > 0.0,
+        "compute_shadow_fraction: source_radius must be positive, got {source_radius}. \
+         In JEOD, this is validated during RadiationThirdBody::initialize()."
+    );
+    // JEOD_INV: IN.11 — RadiationThirdBody.radius > 0
+    // JEOD validates in RadiationThirdBody::initialize() (radiation_third_body.cc:163-177).
+    assert!(
+        body_radius > 0.0,
+        "compute_shadow_fraction: body_radius must be positive, got {body_radius}. \
+         In JEOD, this is validated during RadiationThirdBody::initialize()."
+    );
+
     // --- Precomputed constants (normally set in RadiationThirdBody::initialize) ---
     let r_plus = body_radius + source_radius;
     let r_minus = body_radius - source_radius;
