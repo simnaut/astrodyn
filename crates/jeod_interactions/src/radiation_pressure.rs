@@ -154,7 +154,7 @@ pub struct FlatPlateParams {
 ///
 /// # Arguments
 /// * `plates` - Flat plates with their optical properties, in the structural frame
-/// * `flux_struct_hat` - Unit vector from vehicle toward Sun, in the structural frame
+/// * `flux_struct_hat` - Incoming flux direction (Sun → vehicle) in the structural frame
 /// * `flux_mag` - Solar flux at the vehicle (W/m²)
 /// * `center_grav` - Center of gravity in the structural frame (m), for torque arm
 /// * `illum_factor` - Illumination factor: 0.0 = full shadow, 1.0 = full sun
@@ -274,7 +274,7 @@ pub struct FlatPlateSrpResult {
 /// # Arguments
 /// * `plates` - Flat plates with optical and thermal properties
 /// * `t_pow4_cached` - Per-plate cached T⁴ values from previous step (JEOD convention)
-/// * `flux_struct_hat` - Unit vector from vehicle toward Sun, in structural frame
+/// * `flux_struct_hat` - Incoming flux direction (Sun → vehicle) in structural frame
 /// * `flux_mag` - Solar flux at the vehicle (W/m²)
 /// * `center_grav` - Center of gravity in structural frame (m)
 /// * `illum_factor` - Illumination factor: 0.0 = full shadow, 1.0 = full sun
@@ -713,11 +713,11 @@ mod tests {
             emissivity: 0.5,
             heat_capacity_per_area: 50.0,
         };
-        let temps = [270.0];
+        let t_pow4 = [270.0_f64.powi(4)];
 
         let result = compute_flat_plate_srp_thermal(
             &[(plate, params, thermal)],
-            &temps,
+            &t_pow4,
             DVec3::X, 0.0,
             DVec3::ZERO, 0.0,
         );

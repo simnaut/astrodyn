@@ -29,11 +29,11 @@ use std::path::Path;
 const MU_EARTH: f64 = 3.986004418e14;
 const R_EARTH: f64 = 6_378_137.0; // WGS84 equatorial radius (m)
 
-/// SIM_3_ORBIT epoch: 1998-12-01 00:00:31 TAI.
+/// SIM_3_ORBIT epoch: 1998-12-01 00:00:00 UTC (= 00:00:31 TAI).
 ///
-/// UTC = 1998-12-01 00:00:00, TAI-UTC = 31s at this date.
 /// JD(UTC) = 2451148.5, MJD = 51148.0, TJT = MJD - 40000 = 11148.0
-/// TAI offset: 31s / 86400 = 0.0003588 days
+/// TAI-UTC = 31s at this date. We use UTC-based TJT here because JEOD's
+/// MET atmosphere internally works with UTC-based truncated Julian time.
 const EPOCH_TJT: f64 = 11148.0;
 
 /// Vehicle mass (kg) from Modified_data/vehicle_baseline.py.
@@ -428,8 +428,8 @@ fn tier3_srp_trajectory_sim3_orbit() {
         }
 
         // With thermal emission ported, the force model should closely match JEOD.
-        // Remaining error sources: forward Euler vs JEOD's integrable-object RK4 for
-        // temperature, and ephemeris precision.
+        // Remaining error sources: temperature integration timing differences
+        // (our RK4 vs JEOD's integrable-object ODE) and ephemeris precision.
         if target.time <= 86400.0 {
             assert!(
                 pos_err < 50.0,
@@ -462,7 +462,7 @@ fn tier3_srp_trajectory_sim3_orbit() {
     );
 
     // Force magnitude: at full illumination, matches within a few percent. Near shadow
-    // transitions, temperature history diverges (forward Euler vs JEOD's ODE integrator)
+    // transitions, temperature history diverges (our RK4 vs JEOD's integrable-object ODE)
     // causing larger relative errors at low-flux points. The position error (24.7 m / 23d)
     // confirms the integrated force is accurate.
     assert!(
