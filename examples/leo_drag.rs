@@ -14,16 +14,31 @@ use glam::{DMat3, DVec3};
 use jeod_atmosphere::met;
 use jeod_dynamics::{rk4_translational_step, TranslationalState};
 use jeod_interactions::{compute_ballistic_drag, DragConfig};
-use jeod_math::geodetic::cartesian_to_spherical;
+use jeod_math::geodetic::{cartesian_to_geodetic, cartesian_to_spherical};
 use jeod_math::OrbitalElements;
 
 const MU_EARTH: f64 = 3.986004418e14;
-const R_EARTH: f64 = 6_378_137.0;
+const R_EARTH_EQ: f64 = 6_378_137.0;
+const R_EARTH_POL: f64 = 6_356_752.3142;
+
+/// Compute GMST in radians (same formula as MET model / JEOD atmos_MET_TME.cc).
+fn compute_gmst(tjt: f64) -> f64 {
+    let tjt_prev_midnight = tjt.floor();
+    let fraction_of_day = tjt - tjt_prev_midnight;
+    let century_days = tjt_prev_midnight + 24980.0;
+    let century_frac = (century_days + 0.5) / 36525.0;
+    let minutes_of_day = fraction_of_day * 1440.0;
+    let greenwich_mean_position =
+        (99.6909833 + 36000.76892 * century_frac + 0.00038708 * century_frac * century_frac
+            + 0.250684477 * minutes_of_day)
+            .rem_euclid(360.0);
+    greenwich_mean_position * 0.017453293
+}
 
 fn main() {
     // ISS-like orbit: 400 km circular, 51.6° inclination
     let altitude = 400_000.0; // m
-    let r0 = R_EARTH + altitude;
+    let r0 = R_EARTH_EQ + altitude;
     let v0 = (MU_EARTH / r0).sqrt();
     let inc = 51.6_f64.to_radians();
 
@@ -72,12 +87,17 @@ fn main() {
             let r = s.position.length();
             let grav = -MU_EARTH / (r * r * r) * s.position;
 
-            // Spherical coordinates for atmosphere (no RNP in this example)
-            let sph = cartesian_to_spherical(s.position, R_EARTH);
-            let alt_km = sph.altitude / 1000.0;
-
-            // MET atmosphere density
-            let atmos_state = atmos.density(alt_km, sph.latitude, sph.longitude, tjt);
+            // Rotate inertial → planet-fixed via GMST, then geodetic coords.
+            // Matches JEOD's PlanetFixedPosition → MET pipeline.
+            let gmst = compute_gmst(tjt);
+            let (cos_g, sin_g) = (gmst.cos(), gmst.sin());
+            let pfix = DVec3::new(
+                cos_g * s.position.x + sin_g * s.position.y,
+                -sin_g * s.position.x + cos_g * s.position.y,
+                s.position.z,
+            );
+            let geo = cartesian_to_geodetic(pfix, R_EARTH_EQ, R_EARTH_POL);
+            let atmos_state = atmos.density(geo.altitude / 1000.0, geo.latitude, geo.longitude, tjt);
             let drag = compute_ballistic_drag(
                 &drag_config,
                 &atmos_state,
@@ -91,11 +111,19 @@ fn main() {
 
         if (step + 1) % print_interval == 0 {
             let time_h = sim_time / 3600.0;
-            let sph = cartesian_to_spherical(state.position, R_EARTH);
+            let sph = cartesian_to_spherical(state.position, R_EARTH_EQ);
             let alt_km = sph.altitude / 1000.0;
             let elements = OrbitalElements::from_cartesian(MU_EARTH, state.position, state.velocity).unwrap();
 
-            let atmos_state = atmos.density(alt_km, sph.latitude, sph.longitude, tjt);
+            let gmst_p = compute_gmst(tjt);
+            let (cg, sg) = (gmst_p.cos(), gmst_p.sin());
+            let pfix_p = DVec3::new(
+                cg * state.position.x + sg * state.position.y,
+                -sg * state.position.x + cg * state.position.y,
+                state.position.z,
+            );
+            let geo_p = cartesian_to_geodetic(pfix_p, R_EARTH_EQ, R_EARTH_POL);
+            let atmos_state = atmos.density(geo_p.altitude / 1000.0, geo_p.latitude, geo_p.longitude, tjt);
             let drag = compute_ballistic_drag(
                 &drag_config,
                 &atmos_state,

@@ -163,15 +163,18 @@ run_dyncomp_group() {
         trick-CP 2>&1 | tail -5 || return 1
     fi
 
-    # Run all dyncomp sims sequentially (share working directory)
-    run_sim "verif/SIM_dyncomp" "SET_test/RUN_2"  "dyncomp_run2"  || true
-    run_sim "verif/SIM_dyncomp" "SET_test/RUN_3A" "dyncomp_run3a" || true
-    run_sim "verif/SIM_dyncomp" "SET_test/RUN_3B" "dyncomp_run3b" || true
-    run_sim "verif/SIM_dyncomp" "SET_test/RUN_8B" "dyncomp_run8b" || true
-    run_sim "verif/SIM_dyncomp" "SET_test/RUN_9A" "dyncomp_run9a" || true
-    run_sim "verif/SIM_dyncomp" "SET_test/RUN_9B" "dyncomp_run9b" || true
-    run_sim "verif/SIM_dyncomp" "SET_test/RUN_5A" "dyncomp_run5a" || true
-    run_sim "verif/SIM_dyncomp" "SET_test/RUN_6B" "dyncomp_run6b" || true
+    # Run all dyncomp sims sequentially (share working directory).
+    # Continue past individual failures so later sims still run,
+    # but track failures so the caller can detect partial generation.
+    local fail=0
+    run_sim "verif/SIM_dyncomp" "SET_test/RUN_2"  "dyncomp_run2"  || fail=1
+    run_sim "verif/SIM_dyncomp" "SET_test/RUN_3A" "dyncomp_run3a" || fail=1
+    run_sim "verif/SIM_dyncomp" "SET_test/RUN_3B" "dyncomp_run3b" || fail=1
+    run_sim "verif/SIM_dyncomp" "SET_test/RUN_8B" "dyncomp_run8b" || fail=1
+    run_sim "verif/SIM_dyncomp" "SET_test/RUN_9A" "dyncomp_run9a" || fail=1
+    run_sim "verif/SIM_dyncomp" "SET_test/RUN_9B" "dyncomp_run9b" || fail=1
+    run_sim "verif/SIM_dyncomp" "SET_test/RUN_5A" "dyncomp_run5a" || fail=1
+    run_sim "verif/SIM_dyncomp" "SET_test/RUN_6B" "dyncomp_run6b" || fail=1
 
     # Validate critical first output
     local expected="${OUTPUT_DIR}/dyncomp_run2_state.csv"
@@ -186,6 +189,7 @@ run_dyncomp_group() {
         return 1
     fi
     echo "Validated: $expected ($lines lines)"
+    return $fail
 }
 
 # ════════════════════════════════════════════════════════════════════

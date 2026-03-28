@@ -13,12 +13,27 @@ use jeod_interactions::{
     compute_ballistic_drag, compute_gravity_torque, compute_shadow_fraction, compute_srp_force,
     DragConfig, SrpConfig,
 };
-use jeod_math::geodetic::cartesian_to_spherical;
+use jeod_math::geodetic::cartesian_to_geodetic;
 use jeod_math::JeodQuat;
 
 const MU_EARTH: f64 = 3.986004418e14; // m^3/s^2
 const R_EARTH: f64 = 6_378_137.0; // m
+const R_EARTH_POL: f64 = 6_356_752.3142; // m
 const R_SUN: f64 = 6.98e8; // m
+
+/// Compute GMST in radians (same formula as MET model / JEOD atmos_MET_TME.cc).
+fn compute_gmst(tjt: f64) -> f64 {
+    let tjt_prev_midnight = tjt.floor();
+    let fraction_of_day = tjt - tjt_prev_midnight;
+    let century_days = tjt_prev_midnight + 24980.0;
+    let century_frac = (century_days + 0.5) / 36525.0;
+    let minutes_of_day = fraction_of_day * 1440.0;
+    let greenwich_mean_position =
+        (99.6909833 + 36000.76892 * century_frac + 0.00038708 * century_frac * century_frac
+            + 0.250684477 * minutes_of_day)
+            .rem_euclid(360.0);
+    greenwich_mean_position * 0.017453293
+}
 
 /// Compute point-mass gravity acceleration.
 fn gravity_accel(pos: DVec3) -> DVec3 {
@@ -90,10 +105,18 @@ fn drag_causes_altitude_decay() {
         let new_state = rk4_translational_step(&state, |s| {
             let grav = gravity_accel(s.position);
 
-            // Spherical coordinates for MET atmosphere
-            let sph = cartesian_to_spherical(s.position, R_EARTH);
+            // Rotate inertial → planet-fixed via GMST, then geodetic coords.
+            // Matches JEOD's PlanetFixedPosition → MET pipeline.
+            let gmst = compute_gmst(tjt);
+            let (cos_g, sin_g) = (gmst.cos(), gmst.sin());
+            let pfix = DVec3::new(
+                cos_g * s.position.x + sin_g * s.position.y,
+                -sin_g * s.position.x + cos_g * s.position.y,
+                s.position.z,
+            );
+            let geo = cartesian_to_geodetic(pfix, R_EARTH, R_EARTH_POL);
             let atmos_state = atmos.density(
-                sph.altitude / 1000.0, sph.latitude, sph.longitude, tjt,
+                geo.altitude / 1000.0, geo.latitude, geo.longitude, tjt,
             );
 
             let drag = compute_ballistic_drag(
