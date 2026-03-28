@@ -326,9 +326,13 @@ run_sim "verif/SIM_dyncomp" "SET_test/RUN_9A" "dyncomp_run9a" || true
 # Best for: Phase 4 gravity torque validation (different inertia)
 run_sim "verif/SIM_dyncomp" "SET_test/RUN_9B" "dyncomp_run9b" || true
 
-# ── Sim: SIM_dyncomp RUN_5A — Drag enabled (if available) ──
-# Best for: Phase 4 aerodynamic drag trajectory validation
+# ── Sim: SIM_dyncomp RUN_5A — Atmosphere active, drag OFF ──
 run_sim "verif/SIM_dyncomp" "SET_test/RUN_5A" "dyncomp_run5a" || true
+
+# ── Sim: SIM_dyncomp RUN_6B — Ballistic drag with MET atmosphere ──
+# Best for: Phase 4 aerodynamic drag trajectory validation
+# Spherical gravity, MET solar mean, Cd=0.02, Area=1 m², mass=1 kg (unit sphere)
+run_sim "verif/SIM_dyncomp" "SET_test/RUN_6B" "dyncomp_run6b" || true
 
 echo "=== Reference data generation complete ==="
 echo "Files in ${OUTPUT_DIR}:"
