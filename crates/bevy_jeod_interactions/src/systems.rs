@@ -7,7 +7,9 @@ use bevy_jeod_dynamics::{
 };
 use crate::components::{DragConfigC, SrpConfigC};
 
-/// Compute aerodynamic drag for entities with DragConfigC + AtmosphericStateC.
+/// Compute aerodynamic drag for entities with all required components:
+/// `DragConfigC`, `AtmosphericStateC`, `TranslationalStateC`, `RotationalStateC`,
+/// and `AerodynamicForceC`.
 ///
 /// Placed in `JeodSet::Interaction` (after Environment, before ForceCollection).
 // JEOD_INV: IN.03 — AerodynamicDrag.active gates computation (structural: no DragConfigC -> no drag)

@@ -331,13 +331,13 @@ echo "=== Waiting for all sim groups to complete ==="
 FAIL=0
 
 wait $PID_DYNCOMP   || { echo "WARN: SIM_dyncomp group had failures"; FAIL=1; }
-wait $PID_ORBINIT   || { echo "WARN: SIM_orbinit failed"; }
-wait $PID_ORBELEM   || { echo "WARN: SIM_OrbElem failed"; }
-wait $PID_LVLH      || { echo "WARN: SIM_LVLH failed"; }
-wait $PID_NED       || { echo "WARN: SIM_NED failed"; }
-wait $PID_SOLARBETA  || { echo "WARN: SIM_SolarBeta failed"; }
-wait $PID_EULER     || { echo "WARN: SIM_Euler failed"; }
-wait $PID_INTEG     || { echo "WARN: SIM_integ_test failed"; }
+wait $PID_ORBINIT   || { echo "WARN: SIM_orbinit failed"; FAIL=1; }
+wait $PID_ORBELEM   || { echo "WARN: SIM_OrbElem failed"; FAIL=1; }
+wait $PID_LVLH      || { echo "WARN: SIM_LVLH failed"; FAIL=1; }
+wait $PID_NED       || { echo "WARN: SIM_NED failed"; FAIL=1; }
+wait $PID_SOLARBETA  || { echo "WARN: SIM_SolarBeta failed"; FAIL=1; }
+wait $PID_EULER     || { echo "WARN: SIM_Euler failed"; FAIL=1; }
+wait $PID_INTEG     || { echo "WARN: SIM_integ_test failed"; FAIL=1; }
 
 echo ""
 echo "=== Reference data generation complete ==="
