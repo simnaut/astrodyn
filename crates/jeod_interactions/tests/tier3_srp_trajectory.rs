@@ -22,7 +22,7 @@ use jeod_dynamics::TranslationalState;
 use jeod_ephemeris::{Ephemeris, EphemerisBody};
 use jeod_interactions::{
     compute_flat_plate_srp_thermal, compute_shadow_fraction, solar_flux_at_distance,
-    FlatPlate, FlatPlateParams, FlatPlateThermal, SOLAR_RADIUS,
+    FlatPlate, FlatPlateParams, FlatPlateThermal, SOLAR_RADIUS, STEFAN_BOLTZMANN,
 };
 use std::path::Path;
 
@@ -166,21 +166,23 @@ fn sun_position_at(sim_time: f64, ephemeris: Option<&Ephemeris>) -> DVec3 {
     }
 }
 
-/// Compute total acceleration (gravity + SRP with thermal) at a given position.
-fn compute_accel(
+/// Evaluate SRP force + temperature derivatives at a given state.
+///
+/// Uses `t_pow4_cached` for emission (JEOD convention: T⁴ is cached from
+/// the previous integration step, not recomputed from current temperature).
+fn evaluate_srp(
     position: DVec3,
     plates: &[(FlatPlate, FlatPlateParams, FlatPlateThermal)],
-    temperatures: &mut [f64],
+    t_pow4_cached: &[f64],
     sun_pos: DVec3,
     mass: f64,
-    dt: f64,
-) -> DVec3 {
+) -> (DVec3, Vec<f64>) {
     let g = gravity_accel(position);
 
     let sun_to_vehicle = position - sun_pos;
     let dist = sun_to_vehicle.length();
     if dist < 1.0 {
-        return g;
+        return (g, vec![0.0; t_pow4_cached.len()]);
     }
 
     let flux_hat = sun_to_vehicle / dist;
@@ -191,33 +193,37 @@ fn compute_accel(
     );
 
     let srp = compute_flat_plate_srp_thermal(
-        plates, temperatures, flux_hat, flux_mag, DVec3::ZERO, shadow, dt,
+        plates, t_pow4_cached, flux_hat, flux_mag, DVec3::ZERO, shadow,
     );
 
-    g + srp.force / mass
+    (g + srp.force / mass, srp.temp_dots)
 }
 
-/// RK4 translational integration step with gravity + SRP (thermal).
+/// RK4 integration of position, velocity, AND temperature.
 ///
-/// Temperature state is updated once per full step (not per RK4 stage) to avoid
-/// quadruple-counting the temperature evolution. We snapshot temperatures, use them
-/// for all 4 RK4 force evaluations, then apply the temperature change once.
+/// Matches JEOD's integration convention:
+/// - `t_pow4_cached` is used for force evaluation (not updated during RK4 stages)
+/// - Temperature is integrated via RK4 alongside orbital state
+/// - After the step, `t_pow4_cached` is updated from the new temperatures
+///   (JEOD `thermal_integrable_object.cc:103-104`)
+/// - Overshoot detection clamps temperature to equilibrium if it crosses
+///   (JEOD `thermal_integrable_object.cc:106-121`)
 fn rk4_step(
     state: &TranslationalState,
     plates: &[(FlatPlate, FlatPlateParams, FlatPlateThermal)],
     temperatures: &mut [f64],
+    t_pow4_cached: &mut [f64],
     sun_pos: DVec3,
     dt: f64,
     mass: f64,
 ) -> TranslationalState {
-    // Snapshot temperatures — RK4 stages should not accumulate 4x temperature change.
-    // We compute the thermal force using the start-of-step temperature, then update
-    // temperature once at the end using the full dt.
-    let temp_snapshot: Vec<f64> = temperatures.to_vec();
+    let n = temperatures.len();
+
+    // All 4 RK4 stages use the SAME t_pow4_cached (JEOD convention: emission
+    // power uses T⁴ from the start of the step, not intermediate values).
 
     // Stage 1
-    let mut t1 = temp_snapshot.clone();
-    let k1v = compute_accel(state.position, plates, &mut t1, sun_pos, mass, 0.0);
+    let (k1v, k1t) = evaluate_srp(state.position, plates, t_pow4_cached, sun_pos, mass);
     let k1x = state.velocity;
 
     // Stage 2
@@ -225,8 +231,7 @@ fn rk4_step(
         position: state.position + k1x * (dt / 2.0),
         velocity: state.velocity + k1v * (dt / 2.0),
     };
-    let mut t2 = temp_snapshot.clone();
-    let k2v = compute_accel(s2.position, plates, &mut t2, sun_pos, mass, 0.0);
+    let (k2v, k2t) = evaluate_srp(s2.position, plates, t_pow4_cached, sun_pos, mass);
     let k2x = s2.velocity;
 
     // Stage 3
@@ -234,8 +239,7 @@ fn rk4_step(
         position: state.position + k2x * (dt / 2.0),
         velocity: state.velocity + k2v * (dt / 2.0),
     };
-    let mut t3 = temp_snapshot.clone();
-    let k3v = compute_accel(s3.position, plates, &mut t3, sun_pos, mass, 0.0);
+    let (k3v, k3t) = evaluate_srp(s3.position, plates, t_pow4_cached, sun_pos, mass);
     let k3x = s3.velocity;
 
     // Stage 4
@@ -243,12 +247,39 @@ fn rk4_step(
         position: state.position + k3x * dt,
         velocity: state.velocity + k3v * dt,
     };
-    let mut t4 = temp_snapshot.clone();
-    let k4v = compute_accel(s4.position, plates, &mut t4, sun_pos, mass, 0.0);
+    let (k4v, k4t) = evaluate_srp(s4.position, plates, t_pow4_cached, sun_pos, mass);
     let k4x = s4.velocity;
 
-    // Now apply the temperature update once for the full step using stage-1 position
-    compute_accel(state.position, plates, temperatures, sun_pos, mass, dt);
+    // RK4 temperature update
+    for i in 0..n {
+        let old_temp = temperatures[i];
+        temperatures[i] = old_temp
+            + (k1t[i] + 2.0 * k2t[i] + 2.0 * k3t[i] + k4t[i]) * (dt / 6.0);
+        temperatures[i] = temperatures[i].max(0.0);
+
+        // Update cached T⁴ from new temperature
+        // JEOD thermal_integrable_object.cc:103-104
+        let t = temperatures[i];
+        t_pow4_cached[i] = t * t * t * t;
+
+        // Overshoot detection (JEOD thermal_integrable_object.cc:106-121)
+        let (plate, _params, thermal) = &plates[i];
+        let rad_constant = plate.area * thermal.emissivity * STEFAN_BOLTZMANN;
+        if rad_constant > 0.0 {
+            // Recover power_absorb from k1: temp_dot = (P_absorb - P_emit) / C_p
+            // P_absorb = temp_dot * C_p + P_emit = k1t * C_p + rad_constant * old_t_pow4
+            let heat_cap = thermal.heat_capacity_per_area * plate.area;
+            let old_t_pow4 = old_temp * old_temp * old_temp * old_temp;
+            let power_absorb = k1t[i] * heat_cap + rad_constant * old_t_pow4;
+            let t_eq_pow4 = power_absorb / rad_constant;
+
+            // If temp_dot and (T_eq^4 - T^4) have opposite signs, we overshot
+            if k1t[i] * (t_eq_pow4 - t_pow4_cached[i]) < 0.0 {
+                t_pow4_cached[i] = t_eq_pow4.max(0.0);
+                temperatures[i] = t_pow4_cached[i].sqrt().sqrt();
+            }
+        }
+    }
 
     TranslationalState {
         position: state.position + (k1x + 2.0 * k2x + 2.0 * k3x + k4x) * (dt / 6.0),
@@ -279,7 +310,9 @@ fn tier3_srp_trajectory_sim3_orbit() {
 
     let plates = sim3_orbit_plates();
     let dt = 1.0; // RK4 step size matching JEOD's DYNAMICS interval
-    let mut temperatures = [INITIAL_TEMPERATURE; NUM_PLATES];
+    // JEOD ThermalIntegrableObject state: temp and cached t_pow4
+    let mut temp = [INITIAL_TEMPERATURE; NUM_PLATES];
+    let mut t_pow4: Vec<f64> = temp.iter().map(|t| t * t * t * t).collect();
 
     // Load ephemeris if available
     let bsp_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data/de421.bsp");
@@ -310,13 +343,24 @@ fn tier3_srp_trajectory_sim3_orbit() {
         for step_i in 0..steps {
             let sim_time = start_time + (step_i as f64) * dt;
             let sun_pos = sun_position_at(sim_time, ephemeris.as_ref());
-            state = rk4_step(&state, &plates, &mut temperatures, sun_pos, dt, MASS);
+            state = rk4_step(&state, &plates, &mut temp, &mut t_pow4, sun_pos, dt, MASS);
         }
 
         let pos_err = (state.position - target.position).length();
         let vel_err = (state.velocity - target.velocity).length();
         max_pos_err = max_pos_err.max(pos_err);
         max_vel_err = max_vel_err.max(vel_err);
+
+        // Print diagnostics at key intervals
+        let t = target.time;
+        if (t % 100_000.0) < 1000.5 || (t > 2000.0 && t < 7000.0 && target.flux_mag > 100.0) {
+            eprintln!(
+                "  t={:9.0}s ({:5.1}d)  pos_err={:8.3}m  vel_err={:.6}m/s  temps=[{:.1},{:.1},{:.1},{:.1},{:.1},{:.1}]",
+                t, t / 86400.0, pos_err, vel_err,
+                temp[0], temp[1], temp[2],
+                temp[3], temp[4], temp[5],
+            );
+        }
 
         // Compare SRP force (only when well-illuminated).
         if target.flux_mag > 100.0 && target.srp_force.length() > 1e-6 {
@@ -326,11 +370,22 @@ fn tier3_srp_trajectory_sim3_orbit() {
             let flux_hat = sun_to_vehicle / dist;
             let flux_mag = solar_flux_at_distance(dist);
 
-            // Use a throwaway temperature array for point-in-time force comparison
-            let mut temp_compare = temperatures;
+            // Point-in-time force comparison using current cached t_pow4
             let our_srp = compute_flat_plate_srp_thermal(
-                &plates, &mut temp_compare, flux_hat, flux_mag, DVec3::ZERO, 1.0, 0.0,
+                &plates, &t_pow4, flux_hat, flux_mag, DVec3::ZERO, 1.0,
             );
+
+            // Print force comparison at first few illuminated points
+            if t < 7000.0 {
+                eprintln!(
+                    "    JEOD |F|={:.6e}  OUR |F|={:.6e}  ratio={:.4}  dir_err={:.6}rad",
+                    target.srp_force.length(), our_srp.force.length(),
+                    target.srp_force.length() / our_srp.force.length(),
+                    if our_srp.force.length() > 1e-15 {
+                        our_srp.force.normalize().dot(target.srp_force.normalize()).clamp(-1.0, 1.0).acos()
+                    } else { 0.0 },
+                )
+            }
 
             // Direction comparison
             if our_srp.force.length() > 1e-15 {
@@ -371,22 +426,6 @@ fn tier3_srp_trajectory_sim3_orbit() {
             );
         }
     }
-
-    // Find position error at 8h (28800s) for a meaningful checkpoint
-    let pos_err_8h = trajectory.iter()
-        .filter(|r| r.time >= 28000.0 && r.time <= 29000.0)
-        .next()
-        .map(|_| max_pos_err) // use running max up to ~8h
-        .unwrap_or(max_pos_err);
-    // Approximate: find the record closest to 28800s and compute error there
-    let err_at_8h = {
-        let target_8h = trajectory.iter().find(|r| r.time >= 28800.0);
-        target_8h.map(|_| {
-            // We tracked max across all points; for 8h specifically, the error
-            // should be ~4-5 km based on the 17% force bias.
-            max_pos_err
-        }).unwrap_or(0.0)
-    };
 
     eprintln!("=== Tier 3 SRP Trajectory (SIM_3_ORBIT RUN_radiation) ===");
     eprintln!("  Data points: {}", trajectory.len());

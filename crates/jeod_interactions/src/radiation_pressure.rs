@@ -243,33 +243,50 @@ pub struct FlatPlateThermal {
     pub heat_capacity_per_area: f64,
 }
 
-/// Compute SRP force and torque from flat plates with thermal emission.
+/// Result of flat-plate SRP computation with thermal emission.
 ///
-/// Extends `compute_flat_plate_srp` with Stefan-Boltzmann thermal emission force.
-/// Each plate's temperature evolves via `dT/dt = (P_absorb - P_emit) / C_p` and
-/// the emission produces a recoil force `F = -(2/3) * P_emit / c * normal`.
+/// Includes the force/torque and per-plate temperature derivatives so the
+/// caller can integrate temperature with the same method as the orbital state
+/// (e.g., RK4).
+pub struct FlatPlateSrpResult {
+    /// Total radiation force (structural frame, N).
+    pub force: DVec3,
+    /// Total radiation torque about CG (structural frame, N·m).
+    pub torque: DVec3,
+    /// Per-plate temperature derivative (K/s). Same length as `plates`.
+    pub temp_dots: Vec<f64>,
+}
+
+/// Compute SRP force, torque, and temperature derivatives from flat plates
+/// with thermal emission.
 ///
-/// Port of JEOD `FlatPlateRadiationFacet::radiation_pressure()` lines 135-166
-/// and `ThermalIntegrableObject::compute_temp_dot()`.
+/// This is a **pure function** — it does not mutate state. Returns `temp_dots`
+/// so the caller can integrate temperature alongside the orbital state.
+///
+/// Matches JEOD's convention: `power_emit` uses the **cached** `t_pow4` from the
+/// previous integration step (JEOD `thermal_integrable_object.cc:144`), not the
+/// current temperature. The caller provides `t_pow4_cached` which is updated
+/// after each integration step (not during force evaluation).
+///
+/// Port of JEOD `FlatPlateRadiationFacet::incident_radiation()` +
+/// `radiation_pressure()` + `ThermalIntegrableObject::compute_temp_dot()`.
 ///
 /// # Arguments
 /// * `plates` - Flat plates with optical and thermal properties
-/// * `temperatures` - Per-plate temperature state in K (mutated: updated by forward Euler)
+/// * `t_pow4_cached` - Per-plate cached T⁴ values from previous step (JEOD convention)
 /// * `flux_struct_hat` - Unit vector from vehicle toward Sun, in structural frame
 /// * `flux_mag` - Solar flux at the vehicle (W/m²)
 /// * `center_grav` - Center of gravity in structural frame (m)
 /// * `shadow_fraction` - Illumination factor: 0.0 = full shadow, 1.0 = full sun
-/// * `dt` - Timestep for temperature integration (s)
 pub fn compute_flat_plate_srp_thermal(
     plates: &[(FlatPlate, FlatPlateParams, FlatPlateThermal)],
-    temperatures: &mut [f64],
+    t_pow4_cached: &[f64],
     flux_struct_hat: DVec3,
     flux_mag: f64,
     center_grav: DVec3,
     shadow_fraction: f64,
-    dt: f64,
-) -> RadiationForce {
-    assert_eq!(plates.len(), temperatures.len());
+) -> FlatPlateSrpResult {
+    assert_eq!(plates.len(), t_pow4_cached.len());
 
     let effective_flux = if shadow_fraction > 0.0 && flux_mag > 0.0 {
         flux_mag * shadow_fraction
@@ -279,9 +296,9 @@ pub fn compute_flat_plate_srp_thermal(
 
     let mut total_force = DVec3::ZERO;
     let mut total_torque = DVec3::ZERO;
+    let mut temp_dots = vec![0.0; plates.len()];
 
     for (i, (plate, params, thermal)) in plates.iter().enumerate() {
-        // Determine illumination of this plate
         let sin_theta = -plate.normal.dot(flux_struct_hat);
         let illuminated = sin_theta > 0.0 && effective_flux > 0.0;
 
@@ -304,37 +321,28 @@ pub fn compute_flat_plate_srp_thermal(
         }
 
         // ── Thermal emission (ALL plates, illuminated or not) ──
-        // JEOD thermal_integrable_object.cc compute_temp_dot():
-        //   power_emit = rad_constant * T^4
-        //   temp_dot = (power_absorb - power_emit) / heat_capacity
+        // JEOD thermal_integrable_object.cc:144:
+        //   power_emit = rad_constant * t_pow4;   // uses CACHED T^4
+        //   temp_dot = (power_absorb - power_emit) / heat_capacity;
         let rad_constant = plate.area * thermal.emissivity * STEFAN_BOLTZMANN;
-        let t = temperatures[i];
-        let power_emit = rad_constant * t * t * t * t; // T⁴
+        let power_emit = rad_constant * t_pow4_cached[i];
 
-        // Power absorbed: only by illuminated plates
         let power_absorb = if illuminated {
             (1.0 - params.albedo) * plate.area * sin_theta * effective_flux
         } else {
             0.0
         };
 
-        // Temperature evolution (forward Euler)
         let heat_capacity = thermal.heat_capacity_per_area * plate.area;
-        if heat_capacity > 0.0 && dt > 0.0 {
-            let temp_dot = (power_absorb - power_emit) / heat_capacity;
-            temperatures[i] += temp_dot * dt;
-            // Clamp to prevent negative temperatures from numerical instability
-            if temperatures[i] < 0.0 {
-                temperatures[i] = 0.0;
-            }
+        if heat_capacity > 0.0 {
+            temp_dots[i] = (power_absorb - power_emit) / heat_capacity;
         }
 
         // Emission force: -(2/3) * power_emit / c * normal
-        // JEOD flat_plate_radiation_facet.cc line 157
+        // JEOD flat_plate_radiation_facet.cc:157
         let f_emission = -(TWO_THIRDS * power_emit / SPEED_OF_LIGHT) * plate.normal;
         plate_force += f_emission;
 
-        // Torque
         let arm = plate.position - center_grav;
         let plate_torque = arm.cross(plate_force);
 
@@ -342,9 +350,10 @@ pub fn compute_flat_plate_srp_thermal(
         total_torque += plate_torque;
     }
 
-    RadiationForce {
+    FlatPlateSrpResult {
         force: total_force,
         torque: total_torque,
+        temp_dots,
     }
 }
 
@@ -644,17 +653,16 @@ mod tests {
             emissivity: 0.5,
             heat_capacity_per_area: 50.0,
         };
-        let mut temps = [270.0];
+        let t_pow4 = [270.0_f64.powi(4)];
 
         // No flux — only thermal emission
         let result = compute_flat_plate_srp_thermal(
             &[(plate, params, thermal)],
-            &mut temps,
+            &t_pow4,
             DVec3::X, 0.0, // zero flux
-            DVec3::ZERO, 1.0, 1.0,
+            DVec3::ZERO, 1.0,
         );
 
-        // Emission force should be in -X direction (opposing normal)
         assert!(result.force.x < 0.0, "Emission should push in -normal direction");
         assert!(result.force.y.abs() < 1e-30);
         assert!(result.force.z.abs() < 1e-30);
@@ -673,16 +681,15 @@ mod tests {
             emissivity: 0.5,
             heat_capacity_per_area: 50.0,
         };
-        let mut temps = [270.0];
+        let t_pow4 = [270.0_f64.powi(4)];
 
         let result = compute_flat_plate_srp_thermal(
             &[(plate, params, thermal)],
-            &mut temps,
+            &t_pow4,
             DVec3::X, 0.0,
-            DVec3::ZERO, 1.0, 0.0, // dt=0 so temperature doesn't change
+            DVec3::ZERO, 1.0,
         );
 
-        // Expected: F = 2/3 * (ε σ A T⁴) / c
         let power_emit = 0.5 * STEFAN_BOLTZMANN * 60.0 * 270.0_f64.powi(4);
         let expected = TWO_THIRDS * power_emit / SPEED_OF_LIGHT;
         let actual = result.force.length();
@@ -693,7 +700,7 @@ mod tests {
         );
     }
 
-    /// Temperature cools when not illuminated.
+    /// Temperature derivative is negative when not illuminated (plate cools).
     #[test]
     fn thermal_temperature_cools_in_shadow() {
         let plate = FlatPlate {
@@ -706,22 +713,19 @@ mod tests {
             emissivity: 0.5,
             heat_capacity_per_area: 50.0,
         };
-        let mut temps = [270.0];
+        let temps = [270.0];
 
-        // Run 100 steps at dt=1.0 with no flux
-        for _ in 0..100 {
-            compute_flat_plate_srp_thermal(
-                &[(plate, params, thermal)],
-                &mut temps,
-                DVec3::X, 0.0,
-                DVec3::ZERO, 0.0, 1.0,
-            );
-        }
+        let result = compute_flat_plate_srp_thermal(
+            &[(plate, params, thermal)],
+            &temps,
+            DVec3::X, 0.0,
+            DVec3::ZERO, 0.0,
+        );
 
         assert!(
-            temps[0] < 270.0,
-            "Temperature should decrease when not illuminated, got {}",
-            temps[0]
+            result.temp_dots[0] < 0.0,
+            "temp_dot should be negative when not illuminated, got {}",
+            result.temp_dots[0]
         );
     }
 
@@ -747,12 +751,12 @@ mod tests {
             flux_hat, flux_mag, DVec3::ZERO, 1.0,
         );
 
-        // With thermal (dt=0 so temperature stays at 270K)
-        let mut temps = [270.0];
+        // With thermal
+        let t_pow4 = [270.0_f64.powi(4)];
         let with_thermal = compute_flat_plate_srp_thermal(
             &[(plate, params, thermal)],
-            &mut temps,
-            flux_hat, flux_mag, DVec3::ZERO, 1.0, 0.0,
+            &t_pow4,
+            flux_hat, flux_mag, DVec3::ZERO, 1.0,
         );
 
         assert!(
