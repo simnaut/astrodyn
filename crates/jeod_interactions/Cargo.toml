@@ -10,3 +10,4 @@ jeod_atmosphere = { path = "../jeod_atmosphere" }
 [dev-dependencies]
 jeod_dynamics = { path = "../jeod_dynamics" }
 jeod_math = { path = "../jeod_math" }
+jeod_time = { path = "../jeod_time" }

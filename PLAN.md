@@ -462,7 +462,7 @@ without adding new physics.
 ### Exit Criteria
 
 #### Tier 1 (unit tests)
-- [x] **Drag order-of-magnitude**: ISS-like vehicle at 400 km, 24h propagation shows SMA decay (26.6 m/day with exponential atmosphere; integration test verifies energy decreases)
+- [x] **Drag order-of-magnitude**: ISS-like vehicle at 400 km, 24h with MET solar mean: ~166 m/day SMA decay (integration test asserts 50-1000 m range)
 - [x] **SRP magnitude**: Radiation pressure at 1 AU = 4.54e-6 N/m² (within 0.05e-6 of 4.56e-6; exact value depends on L_sun constant)
 - [x] **SRP direction**: Force vector is anti-Sun (unit test verifies sign)
 - [x] **Shadow detection**: Body behind Earth → shadow fraction = 0; body 90° away → 1.0; penumbra transitions correct; monotonic; symmetric

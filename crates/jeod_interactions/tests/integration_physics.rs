@@ -4,7 +4,7 @@
 //! and verify that interaction forces produce physically correct behavior.
 
 use glam::{DMat3, DVec3};
-use jeod_atmosphere::exponential::ExponentialAtmosphere;
+use jeod_atmosphere::met;
 use jeod_dynamics::{
     rk4_sixdof_step, rk4_translational_step, MassProperties, RotationalState, SixDofState,
     TranslationalState,
@@ -13,6 +13,7 @@ use jeod_interactions::{
     compute_ballistic_drag, compute_gravity_torque, compute_shadow_fraction, compute_srp_force,
     DragConfig, SrpConfig,
 };
+use jeod_math::geodetic::cartesian_to_spherical;
 use jeod_math::JeodQuat;
 
 const MU_EARTH: f64 = 3.986004418e14; // m^3/s^2
@@ -55,8 +56,9 @@ fn gravity_gradient(pos: DVec3) -> DMat3 {
 
 /// LEO orbit with drag: altitude should decrease over time.
 ///
-/// Propagate an ISS-like orbit (400 km, circular) with ballistic drag for
-/// 24 hours. Verify that the semi-major axis decreases.
+/// Propagate an ISS-like orbit (400 km, circular) with MET atmosphere
+/// (solar mean) and ballistic drag for 24 hours. Verify that the
+/// semi-major axis decreases by a physically realistic amount.
 #[test]
 fn drag_causes_altitude_decay() {
     let altitude = 400_000.0; // m
@@ -73,8 +75,9 @@ fn drag_causes_altitude_decay() {
         area: 1900.0, // ISS-like
     };
 
-    let atmos = ExponentialAtmosphere::default();
+    let atmos = met::SOLAR_MEAN;
     let mass = 420_000.0; // kg (ISS mass)
+    let tjt_start = jeod_time::epoch::J2000_TAI_TJT;
 
     let dt = 60.0; // 1-minute steps
     let total_time = 86400.0; // 24 hours
@@ -82,15 +85,17 @@ fn drag_causes_altitude_decay() {
 
     let initial_energy = 0.5 * v0 * v0 - MU_EARTH / r0;
 
-    for _ in 0..steps {
+    for step in 0..steps {
+        let tjt = tjt_start + (step as f64 * dt) / 86400.0;
         let new_state = rk4_translational_step(&state, |s| {
             let grav = gravity_accel(s.position);
 
-            // Simple altitude estimate for atmosphere
-            let alt = s.position.length() - R_EARTH;
-            let atmos_state = atmos.density(alt);
+            // Spherical coordinates for MET atmosphere
+            let sph = cartesian_to_spherical(s.position, R_EARTH);
+            let atmos_state = atmos.density(
+                sph.altitude / 1000.0, sph.latitude, sph.longitude, tjt,
+            );
 
-            // Drag (using identity rotation — assumes velocity ≈ body frame for ballistic)
             let drag = compute_ballistic_drag(
                 &drag_config,
                 &atmos_state,
@@ -123,12 +128,11 @@ fn drag_causes_altitude_decay() {
         "Semi-major axis should decrease with drag"
     );
 
-    // ISS loses ~100-300 m/day in altitude. SMA decay should be similar order.
-    // With exponential atmosphere (which overpredicts density at 400 km),
-    // the decay may be larger. Check > 10 m (definitely decaying).
+    // ISS loses ~50-300 m/day depending on solar activity.
+    // MET solar mean at 400 km should produce realistic decay.
     assert!(
-        sma_decay > 10.0,
-        "SMA should decay by at least 10 m over 24h, got {} m",
+        sma_decay > 50.0 && sma_decay < 1000.0,
+        "SMA should decay ~100-300 m over 24h with MET solar mean, got {} m",
         sma_decay
     );
 }

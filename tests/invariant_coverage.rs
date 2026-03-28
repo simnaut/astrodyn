@@ -38,12 +38,13 @@ fn parse_catalog() -> BTreeMap<String, String> {
             continue;
         }
         let cols: Vec<&str> = line.split('|').map(str::trim).collect();
-        // cols[0] = "" (before first |), cols[1] = tag, ... cols[last-1] = status
-        if cols.len() < 8 {
+        // cols[0] = "" (before first |), cols[1] = tag, ... cols[N-1] = "" (after last |)
+        // "Our Status" is always the last non-empty data column (cols[N-2]).
+        if cols.len() < 4 {
             continue;
         }
         let tag = cols[1];
-        let status = cols[7]; // "Our Status" is the last data column
+        let status = cols[cols.len() - 2]; // last data column before trailing ""
 
         // Skip header rows
         if tag == "Tag" || tag.starts_with("---") {

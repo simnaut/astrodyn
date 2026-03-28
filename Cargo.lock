@@ -2498,6 +2498,7 @@ dependencies = [
  "jeod_atmosphere",
  "jeod_dynamics",
  "jeod_math",
+ "jeod_time",
 ]
 
 [[package]]
