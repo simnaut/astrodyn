@@ -7,7 +7,5 @@ edition = "2021"
 bevy = { workspace = true }
 glam = { workspace = true }
 jeod_interactions = { path = "../jeod_interactions" }
-jeod_dynamics = { path = "../jeod_dynamics" }
-jeod_math = { path = "../jeod_math" }
 jeod_atmosphere = { path = "../jeod_atmosphere" }
 bevy_jeod_dynamics = { path = "../bevy_jeod_dynamics" }

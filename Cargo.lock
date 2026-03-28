@@ -739,9 +739,7 @@ dependencies = [
  "bevy_jeod_dynamics",
  "glam 0.30.10",
  "jeod_atmosphere",
- "jeod_dynamics",
  "jeod_interactions",
- "jeod_math",
 ]
 
 [[package]]
