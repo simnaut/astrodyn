@@ -202,8 +202,10 @@ fn no_duplicate_catalog_ids() {
     );
 }
 
-/// Print a coverage summary (not an assertion, just informational).
+/// Print a coverage summary (informational, not an assertion).
+/// Run with: `cargo test --test invariant_coverage coverage_summary -- --ignored --nocapture`
 #[test]
+#[ignore]
 fn coverage_summary() {
     let catalog = parse_catalog();
     let source_tags = find_source_tags();
