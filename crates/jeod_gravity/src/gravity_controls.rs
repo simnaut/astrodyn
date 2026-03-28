@@ -61,18 +61,27 @@ impl<SourceId> GravityControl<SourceId> {
     /// - order > source order
     /// - order > degree
     ///
-    /// Invalid `gradient_degree` and `gradient_order` values do not panic;
-    /// they are clamped to valid ranges and a warning is logged.
+    /// # Notes
+    /// - If `spherical` is false and `degree` is 0, `spherical` is auto-corrected
+    ///   to true with a warning (matches JEOD's non-fatal auto-correction).
+    /// - Invalid `gradient_degree` and `gradient_order` values do not panic;
+    ///   they are clamped to valid ranges and a warning is logged.
     pub fn check_validity(&mut self, source: &GravitySource) {
         if self.spherical {
             return;
         }
 
-        assert!(
-            self.degree > 0,
-            "Non-spherical gravity (spherical=false) requires degree > 0. \
-             Set spherical=true for point-mass gravity."
-        );
+        // JEOD spherical_harmonics_gravity_controls.cc:334-346:
+        // degree=0 with spherical=false is auto-corrected to spherical=true
+        // via MessageHandler::error (non-fatal).
+        if self.degree == 0 {
+            warn!(
+                "Non-spherical gravity requested but degree is 0; \
+                 setting spherical=true (matches JEOD auto-correction)."
+            );
+            self.spherical = true;
+            return;
+        }
 
         match &source.model {
             GravityModel::SphericalHarmonics(ref data) => {
