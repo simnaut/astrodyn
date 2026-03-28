@@ -40,13 +40,11 @@ impl ExponentialAtmosphere {
     /// # Arguments
     /// * `altitude` - Geodetic altitude above the reference ellipsoid (m)
     pub fn density(&self, altitude: f64) -> AtmosphericState {
-        let density = if altitude < -self.scale_height {
-            // Below the reference surface by more than one scale height —
-            // cap to avoid numerical overflow in exp().
-            self.rho_0 * ((self.h_0 + self.scale_height) / self.scale_height).exp()
-        } else {
-            self.rho_0 * (-(altitude - self.h_0) / self.scale_height).exp()
-        };
+        // Cap altitude to avoid numerical overflow in exp() for deeply
+        // sub-surface altitudes. Threshold accounts for h_0.
+        let min_altitude = self.h_0 - self.scale_height;
+        let effective_altitude = altitude.max(min_altitude);
+        let density = self.rho_0 * (-(effective_altitude - self.h_0) / self.scale_height).exp();
 
         AtmosphericState {
             density,

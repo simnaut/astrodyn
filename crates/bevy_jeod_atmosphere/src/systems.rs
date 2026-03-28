@@ -39,10 +39,22 @@ pub fn atmosphere_update_system(
         return; // No atmosphere model configured
     };
 
-    // Get planet-fixed rotation (inertial → planet-fixed)
-    let t_inertial_pfix = model.planet_entity
-        .and_then(|e| planet_query.get(e).ok())
-        .map(|r| r.0);
+    // JEOD_INV: AT.03 — planet-fixed position required for geodetic altitude
+    // JEOD's AtmosphereState::update_state() requires a PlanetFixedPosition pointer
+    // that is always set during initialization. Missing it is a configuration error.
+    let t_inertial_pfix = if let Some(entity) = model.planet_entity {
+        let Ok(r) = planet_query.get(entity) else {
+            panic!(
+                "AtmosphereModelR.planet_entity is set ({entity:?}) but entity has no \
+                 PlanetFixedRotationC. In JEOD, the planet-fixed frame is always \
+                 available for atmosphere computation. Add PlanetFixedRotationC to \
+                 the planet entity or set planet_entity to None for spherical fallback."
+            );
+        };
+        Some(r.0)
+    } else {
+        None
+    };
 
     for (state, mut atmos) in &mut query {
         // Convert inertial position to planet-fixed

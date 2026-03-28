@@ -167,6 +167,7 @@ with `// JEOD_INV: DB.03` comments.
 |-----|-----------|-------------|---------|-------------|----------|------------|
 | AT.01 | `active` flag gates computation | `base_atmos/include/atmosphere.hh` | 86 | flag-gate | runtime | structural (no atmosphere → no AtmosphericStateC) |
 | AT.02 | Atmosphere model pointer non-null for update | `base_atmos/src/atmosphere_state.cc` | 92-96 | structural | runtime | structural (AtmosphereModelR resource checked) |
+| AT.03 | Planet-fixed position required for geodetic altitude | `base_atmos/src/atmosphere_state.cc` | 110-113 | structural | runtime | enforced (`bevy_jeod_atmosphere/systems.rs` — panics if planet_entity set but PlanetFixedRotationC missing) |
 
 ## Section IN: Interactions
 
@@ -180,12 +181,13 @@ with `// JEOD_INV: DB.03` comments.
 | IN.06 | RadiationPressure.active gates computation | `radiation_pressure/src/radiation_pressure.cc` | 99-102 | flag-gate | runtime | structural (no SrpConfigC → no SRP) |
 | IN.07 | RadiationThirdBody name required | `radiation_pressure/src/radiation_third_body.cc` | 59-68 | fatal | initialization | n/a (shadow bodies by Entity) |
 | IN.08 | RadiationThirdBody belongs to one model only | `radiation_pressure/src/radiation_pressure.cc` | 203-224 | fatal | structural | n/a (function-based, no ownership) |
-| IN.09 | RadiationSource planet must exist | `radiation_pressure/src/radiation_source.cc` | 119-133 | fatal | initialization | partial (SunMarker required for SRP system) |
+| IN.09 | RadiationSource planet must exist (exactly one) | `radiation_pressure/src/radiation_source.cc` | 119-133 | fatal | initialization | enforced (`bevy_jeod_interactions/systems.rs` — panics on zero or multiple SunMarker entities) |
 | IN.10 | RadiationSource.luminosity > 0 for flux | `radiation_pressure/src/radiation_source.cc` | 74-78 | structural | runtime | enforced (`radiation_pressure.rs` returns zero for distance < 1) |
 | IN.11 | RadiationThirdBody.radius > 0 | `radiation_pressure/src/radiation_third_body.cc` | 163-177 | fatal | initialization | enforced (`shadow.rs` handles degenerate cases) |
 | IN.12 | RadiationSource.radius > 0 | `radiation_pressure/src/radiation_third_body.cc` | 102-114 | fatal | initialization | enforced (`shadow.rs` handles degenerate cases) |
 | IN.13 | Shadow model: vehicle distance > 0 | `radiation_pressure/src/radiation_third_body.cc` | 213-227 | error | runtime | enforced (`shadow.rs` returns 0.0 if r_mag2 <= 0) |
 | IN.14 | `d_source_to_third` > 0 | `radiation_pressure/src/radiation_third_body.cc` | 446-460 | error | runtime | enforced (`shadow.rs` returns 1.0 if d <= 0) |
+| IN.15 | Aero drag requires body orientation (T_inertial_struct) | `aerodynamics/src/aero_drag.cc` | 83-87 | structural (mandatory fn parameter) | runtime | enforced (`bevy_jeod_dynamics/systems.rs` — panics if AerodynamicForceC present without RotationalStateC) |
 
 ## Section FD: FrameDerivatives
 

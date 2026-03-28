@@ -44,13 +44,21 @@ pub fn force_collection_system(
         let mut force = DVec3::ZERO;
         let mut torque = DVec3::ZERO;
 
-        // Aerodynamic force (body frame → rotate to inertial) and torque
+        // JEOD_INV: IN.15 — aero drag requires body orientation (T_inertial_struct)
+        // JEOD's aero_drag() takes T_inertial_struct as a mandatory function parameter.
+        // The rotation matrix is always available because DynBody always has three frames.
         if let Some(aero) = aero {
             if let Some(rot) = rot_state {
                 // left_quat_to_transformation() gives T_parent_this (inertial→body).
                 // Transpose gives body→inertial for rotating body-frame forces.
                 let t_inertial_body = rot.quaternion.left_quat_to_transformation();
                 force += t_inertial_body.transpose() * aero.force;
+            } else if aero.force != DVec3::ZERO {
+                panic!(
+                    "AerodynamicForceC has non-zero force but RotationalStateC is missing. \
+                     In JEOD, T_inertial_struct is a mandatory parameter of aero_drag(). \
+                     Add RotationalStateC to any entity with aerodynamic forces."
+                );
             }
             torque += aero.torque;
         }

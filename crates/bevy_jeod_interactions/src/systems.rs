@@ -85,8 +85,19 @@ pub fn radiation_pressure_system(
     ), Without<SunMarker>>,
     sun_query: Query<&TranslationalStateC, With<SunMarker>>,
 ) {
-    let Ok(sun_state) = sun_query.single() else {
-        return; // No Sun entity → no SRP
+    // JEOD_INV: IN.09 — RadiationSource planet must exist (exactly one)
+    // JEOD's RadiationSource::initialize() fatally fails if the source planet
+    // is not found. Having exactly one source is structural (value member).
+    let sun_state = match sun_query.single() {
+        Ok(s) => s,
+        Err(bevy::ecs::query::QuerySingleError::NoEntities(_)) => return,
+        Err(bevy::ecs::query::QuerySingleError::MultipleEntities(_)) => {
+            panic!(
+                "Multiple entities with SunMarker found. In JEOD, RadiationPressure \
+                 has exactly one RadiationSource (value member). Ensure exactly one \
+                 Sun entity exists."
+            );
+        }
     };
 
     for (srp_config, state, mut srp_force) in &mut query {

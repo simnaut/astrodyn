@@ -98,9 +98,7 @@ pub fn compute_srp_force(
     // JEOD radiation_source.cc line 103: flux_mag = luminosity / (d² * 4π)
     let flux = SOLAR_LUMINOSITY / (4.0 * std::f64::consts::PI * distance * distance);
 
-    // Radiation pressure (N/m²): flux / c
-    // Force = -(flux / c) * A * Cr * r̂
-    // Negative because force pushes vehicle away from Sun (along r̂ direction)
+    // Force magnitude: |F| = (flux / c) * A * Cr, directed from Sun to vehicle (r̂)
     let force_magnitude = flux * config.area * config.cr / SPEED_OF_LIGHT;
 
     // Force pushes away from Sun (along sun-to-vehicle direction)
