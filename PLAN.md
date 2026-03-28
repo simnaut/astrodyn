@@ -587,6 +587,7 @@ without adding new physics.
 - [ ] **Tier 3 RKF45 trajectory**: RKF45 on same scenario, position error vs. JEOD < 10 m over 24h with adaptive stepping
 - [ ] **Tier 3 polar motion**: Earth-fixed frame with polar motion enabled matches JEOD to < 0.1 arcsecond over 24h
 - [ ] **Tier 3 solid tides**: Trajectory with tidal ΔCnm/ΔSnm corrections. Position difference (tides ON vs OFF) matches JEOD's difference to < 10% over 24h
+- [ ] **Tier 3 SRP trajectory**: Trajectory with solar radiation pressure enabled. Requires ephemeris-driven Sun position. Compare against JEOD sim with SRP. Position error < 10 m over 24h
 
 #### Other
 - [ ] **Tier 4 regression**: CI runs all scenarios automatically; all pass within budgets
