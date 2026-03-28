@@ -96,6 +96,11 @@ pub fn calc_nonspherical(
     gradient_degree: usize,
     gradient_order: usize,
 ) -> GravityAcceleration {
+    assert!(
+        degree <= data.degree,
+        "Requested degree ({degree}) exceeds source max degree ({})",
+        data.degree
+    );
     let mut scratch = GottliebScratch::new(degree);
     calc_nonspherical_with_scratch(
         data,
