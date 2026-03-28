@@ -1,4 +1,5 @@
-use crate::gravity_source::GravitySource;
+use crate::gravity_source::{GravityModel, GravitySource};
+use log::warn;
 
 #[derive(Debug, Clone)]
 pub struct GravityControl<SourceId = String> {
@@ -72,17 +73,26 @@ impl<SourceId> GravityControl<SourceId> {
              Set spherical=true for point-mass gravity."
         );
 
-        if let crate::gravity_source::GravityModel::SphericalHarmonics(ref data) = source.model {
-            assert!(
-                self.degree <= data.degree,
-                "Gravity field degree requested ({}) is greater than max gravity field degree ({}).",
-                self.degree, data.degree
-            );
-            assert!(
-                self.order <= data.order,
-                "Gravity field order requested ({}) is greater than max gravity field order ({}).",
-                self.order, data.order
-            );
+        match &source.model {
+            GravityModel::SphericalHarmonics(ref data) => {
+                assert!(
+                    self.degree <= data.degree,
+                    "Gravity field degree requested ({}) is greater than max gravity field degree ({}).",
+                    self.degree, data.degree
+                );
+                assert!(
+                    self.order <= data.order,
+                    "Gravity field order requested ({}) is greater than max gravity field order ({}).",
+                    self.order, data.order
+                );
+            }
+            GravityModel::PointMass => {
+                panic!(
+                    "Non-spherical gravity (spherical=false) is only supported for \
+                     SphericalHarmonics gravity models. Set spherical=true for \
+                     point-mass gravity sources."
+                );
+            }
         }
 
         assert!(
@@ -95,28 +105,28 @@ impl<SourceId> GravityControl<SourceId> {
         // uses MessageHandler::error (non-fatal) and auto-corrects invalid values.
         if self.gradient {
             if self.gradient_degree > self.degree {
-                eprintln!(
-                    "WARNING: Gravity gradient degree ({}) > gravity degree ({}); clamping.",
+                warn!(
+                    "Gravity gradient degree ({}) > gravity degree ({}); clamping.",
                     self.gradient_degree, self.degree
                 );
                 self.gradient_degree = self.degree;
             }
             if self.gradient_degree == 1 {
-                eprintln!(
-                    "WARNING: Gravity gradient degree must not equal 1; resetting to 0."
+                warn!(
+                    "Gravity gradient degree must not equal 1; resetting to 0."
                 );
                 self.gradient_degree = 0;
             }
             if self.gradient_order > self.gradient_degree {
-                eprintln!(
-                    "WARNING: Gravity gradient order ({}) > gradient degree ({}); clamping.",
+                warn!(
+                    "Gravity gradient order ({}) > gradient degree ({}); clamping.",
                     self.gradient_order, self.gradient_degree
                 );
                 self.gradient_order = self.gradient_degree;
             }
             if self.gradient_order > self.order {
-                eprintln!(
-                    "WARNING: Gravity gradient order ({}) > gravity order ({}); clamping.",
+                warn!(
+                    "Gravity gradient order ({}) > gravity order ({}); clamping.",
                     self.gradient_order, self.order
                 );
                 self.gradient_order = self.order;

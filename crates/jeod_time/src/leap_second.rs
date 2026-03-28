@@ -1,4 +1,5 @@
 use crate::epoch::{mjd_to_tjt, SECONDS_PER_DAY};
+use log::warn;
 
 /// Leap second lookup table for TAI↔UTC conversion.
 ///
@@ -103,16 +104,16 @@ impl LeapSecondTable {
         // JEOD time_converter_tai_utc.cc:158-233: log INFORM when time is
         // outside the leap second table range.
         if utc_tjt < self.entries[0].0 {
-            eprintln!(
-                "WARNING: Time precedes first leap second table entry; \
+            warn!(
+                "Time precedes first leap second table entry; \
                  using first value ({} s)",
                 self.entries[0].1
             );
             return 0;
         }
         if utc_tjt >= self.entries[last].0 {
-            eprintln!(
-                "WARNING: Time follows last leap second table entry; \
+            warn!(
+                "Time follows last leap second table entry; \
                  using last value ({} s)",
                 self.entries[last].1
             );
