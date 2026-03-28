@@ -77,6 +77,26 @@ pub struct AtmosphericStateC {
     pub wind: DVec3,
 }
 
+/// Rotation matrix from structural frame to body (composite_body) frame.
+///
+/// Matches JEOD `mass.composite_properties.T_parent_this` where parent=structure.
+/// Default is identity (structural frame = body frame), which is correct for
+/// single-body vehicles with `eigen_angle=0`.
+///
+/// Used by `force_collection_system` to:
+/// - Compute `T_inertial_struct = T_struct_body^T * T_inertial_body`
+/// - Rotate structural-frame torques to body frame
+// JEOD_INV: DB.28 — forces collected in structural frame, rotated to inertial at root
+// JEOD_INV: DB.29 — torques collected in structural frame, rotated to body at root
+#[derive(Component, Debug, Clone, Copy)]
+pub struct StructuralTransformC(pub glam::DMat3);
+
+impl Default for StructuralTransformC {
+    fn default() -> Self {
+        Self(glam::DMat3::IDENTITY)
+    }
+}
+
 /// Inertial-to-planet-fixed rotation matrix for a gravity source entity.
 ///
 /// When present on a gravity source entity, `gravity_computation_system` and

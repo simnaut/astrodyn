@@ -11,7 +11,7 @@
 //! ```
 
 use glam::{DMat3, DVec3};
-use jeod_atmosphere::met;
+use jeod_atmosphere::{met, compute_corotation_wind};
 use jeod_dynamics::{rk4_translational_step, TranslationalState};
 use jeod_interactions::{compute_ballistic_drag, DragConfig};
 use jeod_math::geodetic::{cartesian_to_geodetic, cartesian_to_spherical};
@@ -20,6 +20,8 @@ use jeod_math::OrbitalElements;
 const MU_EARTH: f64 = 3.986004418e14;
 const R_EARTH_EQ: f64 = 6_378_137.0;
 const R_EARTH_POL: f64 = 6_356_752.3142;
+/// Earth angular velocity (rad/s), from JEOD RNPJ2000 data.
+const OMEGA_EARTH: f64 = 7.292_115_146_706_388e-5;
 
 /// Compute GMST in radians (same formula as MET model / JEOD atmos_MET_TME.cc).
 fn compute_gmst(tjt: f64) -> f64 {
@@ -97,7 +99,8 @@ fn main() {
                 s.position.z,
             );
             let geo = cartesian_to_geodetic(pfix, R_EARTH_EQ, R_EARTH_POL);
-            let atmos_state = atmos.density(geo.altitude / 1000.0, geo.latitude, geo.longitude, tjt);
+            let mut atmos_state = atmos.density(geo.altitude / 1000.0, geo.latitude, geo.longitude, tjt);
+            atmos_state.wind = compute_corotation_wind(OMEGA_EARTH, s.position);
             let drag = compute_ballistic_drag(
                 &drag_config,
                 &atmos_state,
@@ -123,7 +126,8 @@ fn main() {
                 state.position.z,
             );
             let geo_p = cartesian_to_geodetic(pfix_p, R_EARTH_EQ, R_EARTH_POL);
-            let atmos_state = atmos.density(geo_p.altitude / 1000.0, geo_p.latitude, geo_p.longitude, tjt);
+            let mut atmos_state = atmos.density(geo_p.altitude / 1000.0, geo_p.latitude, geo_p.longitude, tjt);
+            atmos_state.wind = compute_corotation_wind(OMEGA_EARTH, state.position);
             let drag = compute_ballistic_drag(
                 &drag_config,
                 &atmos_state,

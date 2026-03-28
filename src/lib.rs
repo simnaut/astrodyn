@@ -4,7 +4,7 @@ pub use bevy_jeod_dynamics::{
     AerodynamicForceC, AtmosphericStateC as AtmosphericStateDynC, DynamicsConfigC,
     FrameDerivativesC, GravityAccelerationC, GravityControlsC, GravitySourceC, GravityTorqueC,
     IntegrationFrameRef, JeodDynamicsPlugin, JeodSet, MassPropertiesC, RadiationForceC,
-    RotationalStateC, TotalForceC, TranslationalStateC,
+    RotationalStateC, StructuralTransformC, TotalForceC, TranslationalStateC,
 };
 pub use bevy_jeod_ephemeris::{EphemerisR, JeodEphemerisPlugin};
 pub use bevy_jeod_frames::{JeodFramesPlugin, RefFrameNameC, RefFrameStateC};
@@ -23,7 +23,7 @@ pub use jeod_math::{DQuat, DMat3, DVec3, JeodQuat, OrbitalElements};
 pub use jeod_planet::{PlanetShape, presets as planet_presets};
 pub use jeod_ephemeris::{Ephemeris, EphemerisBody};
 pub use jeod_time::SimulationTime;
-pub use jeod_atmosphere::{AtmosphereState, exponential::ExponentialAtmosphere};
+pub use jeod_atmosphere::{AtmosphereState, compute_corotation_wind, exponential::ExponentialAtmosphere};
 pub use jeod_interactions::{
     AerodynamicForce, DragConfig, RadiationForce, SrpConfig, compute_gravity_torque,
 };

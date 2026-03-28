@@ -3,7 +3,8 @@ use jeod_interactions::{compute_ballistic_drag, compute_gravity_torque, compute_
 
 use bevy_jeod_dynamics::{
     AerodynamicForceC, AtmosphericStateC, GravityAccelerationC, GravityTorqueC,
-    MassPropertiesC, RadiationForceC, RotationalStateC, TranslationalStateC,
+    MassPropertiesC, RadiationForceC, RotationalStateC, StructuralTransformC,
+    TranslationalStateC,
 };
 use crate::components::{DragConfigC, SrpConfigC};
 
@@ -13,16 +14,18 @@ use crate::components::{DragConfigC, SrpConfigC};
 ///
 /// Placed in `JeodSet::Interaction` (after Environment, before ForceCollection).
 // JEOD_INV: IN.03 — AerodynamicDrag.active gates computation (structural: no DragConfigC -> no drag)
+#[allow(clippy::type_complexity)]
 pub fn aero_drag_system(
     mut query: Query<(
         &DragConfigC,
         &AtmosphericStateC,
         &TranslationalStateC,
         &RotationalStateC,
+        Option<&StructuralTransformC>,
         &mut AerodynamicForceC,
     )>,
 ) {
-    for (drag_config, atmos, state, rot, mut aero_force) in &mut query {
+    for (drag_config, atmos, state, rot, struct_xform, mut aero_force) in &mut query {
         let atmos_state = jeod_atmosphere::AtmosphereState {
             density: atmos.density,
             temperature: atmos.temperature,
@@ -30,13 +33,17 @@ pub fn aero_drag_system(
             wind: atmos.wind,
         };
 
-        let t_parent_this = rot.quaternion.left_quat_to_transformation();
+        // JEOD passes T_inertial_struct (inertial→structural), not T_inertial_body.
+        // T_inertial_struct = T_struct_body^T * T_inertial_body
+        let t_inertial_body = rot.quaternion.left_quat_to_transformation();
+        let t_struct_body = struct_xform.map_or(glam::DMat3::IDENTITY, |s| s.0);
+        let t_inertial_struct = t_struct_body.transpose() * t_inertial_body;
 
         let result = compute_ballistic_drag(
             &drag_config.0,
             &atmos_state,
             state.velocity,
-            &t_parent_this,
+            &t_inertial_struct,
         );
 
         aero_force.force = result.force;

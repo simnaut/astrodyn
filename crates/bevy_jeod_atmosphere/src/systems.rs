@@ -30,6 +30,11 @@ pub struct AtmosphereModelR {
     pub r_pol: f64,
     /// Entity of the planet whose atmosphere this is (for finding PlanetFixedRotationC).
     pub planet_entity: Option<Entity>,
+    /// Planet angular velocity in rad/s for atmospheric co-rotation wind.
+    /// Set to 0.0 to disable wind computation.
+    /// Earth: 7.292115146706388e-5 rad/s (from JEOD RNPJ2000 data).
+    /// Port of JEOD `WindVelocity::omega`.
+    pub planet_omega: f64,
 }
 
 // JEOD_INV: AT.01 — active flag gates computation (no AtmosphericStateC component = no computation)
@@ -107,6 +112,15 @@ pub fn atmosphere_update_system(
         atmos.density = result.density;
         atmos.temperature = result.temperature;
         atmos.pressure = result.pressure;
-        atmos.wind = result.wind;
+
+        // JEOD_INV: AT.04 — wind velocity computed as omega × position (co-rotation)
+        // Port of JEOD WindVelocity::update_wind() with uniform omega scale.
+        // Wind uses the vehicle's inertial position (matching JEOD's
+        // dyn_body.composite_body.state.trans.position input).
+        atmos.wind = if model.planet_omega != 0.0 {
+            jeod_atmosphere::compute_corotation_wind(model.planet_omega, state.position)
+        } else {
+            result.wind
+        };
     }
 }

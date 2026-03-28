@@ -3,11 +3,12 @@ use bevy::log::warn_once;
 use glam::DVec3;
 use jeod_dynamics::SixDofState;
 
+use glam::DMat3;
 use crate::components::{
     AerodynamicForceC, DynamicsConfigC, FrameDerivativesC, GravityAccelerationC,
     GravityControlsC, GravitySourceC, GravityTorqueC, MassPropertiesC,
-    PlanetFixedRotationC, RadiationForceC, RotationalStateC, TotalForceC,
-    TranslationalStateC,
+    PlanetFixedRotationC, RadiationForceC, RotationalStateC, StructuralTransformC,
+    TotalForceC, TranslationalStateC,
 };
 
 /// Collects non-gravity forces and all torques into `TotalForceC`.
@@ -17,14 +18,22 @@ use crate::components::{
 /// forces (aero, SRP) are approximately constant over one timestep and
 /// are added to the per-stage gravity inside the integrator.
 ///
-/// **Force** (in inertial frame):
-///   aero (body→inertial) + SRP (already inertial)
+/// Frame pipeline (matching JEOD `dyn_body_collect.cc`):
 ///
-/// **Torque** (in body frame):
-///   gravity gradient + aero torque + SRP torque
+/// **Force** (collected in structural frame, rotated to inertial):
+///   `T_inertial_struct^T * (aero_force_struct + ...)` + SRP (spherical, already inertial)
+///
+/// **Torque** (collected in body frame):
+///   `T_struct_body * aero_torque_struct` + gravity_torque (already body) +
+///   `T_struct_body * srp_torque_struct`
+///
+/// `T_inertial_struct = T_struct_body^T * T_inertial_body` where
+/// `T_struct_body` is from `StructuralTransformC` (defaults to identity).
 ///
 /// All interaction components are optional — entities without them
 /// contribute zero from those terms.
+// JEOD_INV: DB.28 — forces collected in structural frame, rotated to inertial at root
+// JEOD_INV: DB.29 — torques collected in structural frame, rotated to body at root
 #[allow(clippy::type_complexity)]
 pub fn force_collection_system(
     mut query: Query<(
@@ -36,23 +45,32 @@ pub fn force_collection_system(
         Option<&AerodynamicForceC>,
         Option<&RadiationForceC>,
         Option<&GravityTorqueC>,
+        Option<&StructuralTransformC>,
     )>,
 ) {
     // Note: JEOD gates force/torque collection on translational/rotational_dynamics flags (DB.07/DB.08).
     // We collect unconditionally here; gating is enforced in integration_system.
-    for (mut total, derivs, grav, rot_state, mass, aero, srp, grav_torque) in &mut query {
+    for (mut total, derivs, grav, rot_state, mass, aero, srp, grav_torque, struct_xform) in &mut query {
         let mut force = DVec3::ZERO;
         let mut torque = DVec3::ZERO;
+
+        // Structural-to-body transform. Identity when absent (structure = body).
+        // JEOD: mass.composite_properties.T_parent_this
+        let t_struct_body = struct_xform.map_or(DMat3::IDENTITY, |s| s.0);
 
         // JEOD_INV: IN.15 — aero drag requires body orientation (T_inertial_struct)
         // JEOD's aero_drag() takes T_inertial_struct as a mandatory function parameter.
         // The rotation matrix is always available because DynBody always has three frames.
+        //
+        // Aero force is in structural frame (from compute_ballistic_drag).
+        // JEOD dyn_body_collect.cc lines 219-221: structural→inertial via
+        //   T_inertial_struct^T = (T_struct_body^T * T_inertial_body)^T
+        //                       = T_inertial_body^T * T_struct_body
         if let Some(aero) = aero {
             if let Some(rot) = rot_state {
-                // left_quat_to_transformation() gives T_parent_this (inertial→body).
-                // Transpose gives body→inertial for rotating body-frame forces.
-                let t_parent_this = rot.quaternion.left_quat_to_transformation();
-                force += t_parent_this.transpose() * aero.force;
+                let t_inertial_body = rot.quaternion.left_quat_to_transformation();
+                let t_inertial_struct = t_struct_body.transpose() * t_inertial_body;
+                force += t_inertial_struct.transpose() * aero.force;
             } else if aero.force != DVec3::ZERO {
                 panic!(
                     "AerodynamicForceC has non-zero force but RotationalStateC is missing. \
@@ -60,16 +78,21 @@ pub fn force_collection_system(
                      Add RotationalStateC to any entity with aerodynamic forces."
                 );
             }
-            torque += aero.torque;
+            // Aero torque is structural frame; convert to body.
+            // JEOD dyn_body_collect.cc line 250: T_struct_body * torq_struct → torq_body
+            torque += t_struct_body * aero.torque;
         }
 
-        // SRP force (already in inertial frame)
+        // SRP force: spherical model is already inertial (no rotation needed).
+        // When flat-plate SRP is wired, force will be in structural frame and
+        // must be rotated like aero above.
         if let Some(srp) = srp {
             force += srp.force;
-            torque += srp.torque;
+            // SRP torque is structural frame; convert to body.
+            torque += t_struct_body * srp.torque;
         }
 
-        // Gravity gradient torque (body frame)
+        // Gravity gradient torque (already in body frame from compute_gravity_torque)
         if let Some(gt) = grav_torque {
             torque += gt.0;
         }

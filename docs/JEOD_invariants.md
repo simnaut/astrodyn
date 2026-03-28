@@ -61,6 +61,8 @@ grep the JEOD tree for the distinctive identifier in the invariant description
 | DB.25 | DynBody name is reference to MassBody name | structural | structural | n/a (ECS entities, no name reference) |
 | DB.26 | DynBody mass constructed with `this` as owner | structural | structural | n/a (ECS entities, no ownership reference) |
 | DB.27 | State initialization order: attitude → rate → position → velocity | structural | ordering | deferred (Phase 5) |
+| DB.28 | Forces collected in structural frame, rotated to inertial at root | structural | consistency | enforced (`systems.rs` force_collection_system: T_inertial_struct^T * struct_force) |
+| DB.29 | Torques collected in structural frame, rotated to body at root | structural | consistency | enforced (`systems.rs` force_collection_system: T_struct_body * struct_torque) |
 
 ## Section MA: Mass / MassBody / MassProperties
 
@@ -170,6 +172,7 @@ grep the JEOD tree for the distinctive identifier in the invariant description
 | AT.01 | `active` flag gates computation | flag-gate | runtime | structural (no atmosphere → no AtmosphericStateC) |
 | AT.02 | Atmosphere model pointer non-null for update | structural | runtime | structural (AtmosphereModelR resource checked) |
 | AT.03 | Planet-fixed position required for geodetic altitude | structural | runtime | enforced (`bevy_jeod_atmosphere/systems.rs` — panics if planet_entity set but PlanetFixedRotationC missing) |
+| AT.04 | Wind velocity computed as omega × position (co-rotation) | structural | runtime | enforced (`jeod_atmosphere/lib.rs` compute_corotation_wind, `bevy_jeod_atmosphere/systems.rs` atmosphere_update_system) |
 
 ## Section IN: Interactions
 
