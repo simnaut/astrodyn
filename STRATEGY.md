@@ -12,6 +12,7 @@ as the simulation framework — replacing NASA's Trick.
 - [4. System Pipeline](#4-system-pipeline)
 - [5. Plugin Architecture](#5-plugin-architecture)
 - [6. Verification Strategy](#6-verification-strategy)
+- [6b. JEOD Invariant Tracking](#6b-jeod-invariant-tracking)
 - [7. JEOD Data Ingestion](#7-jeod-data-ingestion)
 - [8. Implementation Phases](#8-implementation-phases)
 - [9. Key Architectural Decisions](#9-key-architectural-decisions)
@@ -948,6 +949,82 @@ LEO + J2 (24h)                   | position | 1.0 m     |   2   | [ ]
 ISS full gravity (24h)           | position | 10.0 m    |   2   | [ ]
 Earth-Moon 3-body (7 days)       | position | 100.0 m   |   5   | [ ]
 ```
+
+---
+
+## 6b. JEOD Invariant Tracking
+
+JEOD's C++ architecture enforces ~120 invariants through `MessageHandler::fail()` (fatal),
+`MessageHandler::error()` (non-fatal auto-correction), structural guarantees (value members,
+deleted copy constructors), and flag-gated code paths. In ECS, components are optional and
+can be added/removed freely, so these invariants must be tracked and enforced explicitly.
+
+### Three-part system
+
+**1. Catalog** — `docs/JEOD_invariants.md`
+
+A table of every known JEOD invariant, organized by section (DB=DynBody, MA=Mass,
+GV=Gravity, etc.). Each row has:
+
+| Field | Purpose |
+|-------|---------|
+| Tag | Unique ID like `GV.04` for cross-referencing |
+| Invariant | What the invariant requires |
+| Enforcement | How JEOD enforces it (fatal, error, structural, flag-gate) |
+| Category | When it applies (initialization, runtime, structural, consistency, ordering) |
+| Our Status | How we enforce it (`enforced`, `partial`, `deferred`, `n/a`, `structural`) |
+
+**2. Source tags** — `// JEOD_INV: XX.YY` comments
+
+Every enforcement site in our Rust source is tagged:
+
+```rust
+// JEOD_INV: GV.04 — degree <= source degree
+assert!(
+    self.degree <= data.degree,
+    "Gravity field degree requested ({}) exceeds source ({})",
+    self.degree, data.degree
+);
+```
+
+Tag text must describe what **our code** does. When we diverge from JEOD's approach,
+note the divergence:
+
+```rust
+// JEOD_INV: DB.18 — F=ma (JEOD precomputes inverse_mass; we divide by mass at runtime)
+```
+
+**3. CI coverage** — `tests/invariant_coverage.rs`
+
+Bidirectional consistency test:
+- Every catalog entry marked `enforced`, `partial`, or `structural` (with a file reference)
+  must have at least one `// JEOD_INV:` tag in source.
+- Every source tag must reference a valid catalog entry.
+- No duplicate IDs in the catalog.
+
+### Workflow: adding a new invariant
+
+When reading JEOD source and encountering a `MessageHandler::fail()`, `error()`, assert,
+or structural guarantee not already in the catalog:
+
+1. Add a row to `docs/JEOD_invariants.md` with the next tag in the section (e.g., `DB.28`).
+2. Add `// JEOD_INV: DB.28 — description` at the enforcement site in our code, or mark
+   the catalog entry `deferred`/`n/a` if we don't enforce it yet.
+3. Run `cargo test --test invariant_coverage` to verify consistency.
+
+### Workflow: tagging an untagged enforcement site
+
+If our code already enforces a JEOD invariant but lacks a `// JEOD_INV` tag:
+
+1. Find or create the catalog entry.
+2. Add the tag at the enforcement site.
+3. Run the coverage test.
+
+### Current state
+
+The catalog has 118 invariants across 10 sections (DB, MA, DM, GV, TM, RF, EP, AT, IN, FD).
+62 are tagged and enforced in source across 86 tag sites, 29 are deferred to Phase 5,
+and 25 are n/a for ECS architecture. The remaining 2 are not yet enforced.
 
 ---
 
