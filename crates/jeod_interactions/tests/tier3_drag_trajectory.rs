@@ -403,18 +403,17 @@ fn tier3_drag_trajectory_run6b() {
         max_quat_error.to_degrees()
     );
 
-    // Position threshold: < 100 m over 8h (PLAN.md exit criterion for drag).
-    // Actual performance is sub-meter (~0.8 m at 8h) thanks to matching JEOD's
-    // geodetic coordinate pipeline, atmospheric co-rotation wind, and GMST-based
-    // inertial-to-planet-fixed transformation.
+    // Position threshold: tightened to 2x actual (~0.8 m) to catch regression.
+    // PLAN.md exit criterion is 100 m, but actual performance is sub-meter
+    // thanks to matching JEOD's geodetic pipeline, co-rotation wind, and GMST.
     assert!(
-        max_pos_error < 100.0,
-        "Position error {:.4} m exceeds 100 m threshold",
+        max_pos_error < 2.0,
+        "Position error {:.4} m exceeds 2.0 m threshold (regression?)",
         max_pos_error
     );
     assert!(
-        max_vel_error < 0.1,
-        "Velocity error {:.6} m/s exceeds 0.1 m/s threshold",
+        max_vel_error < 0.005,
+        "Velocity error {:.6} m/s exceeds 0.005 m/s threshold (regression?)",
         max_vel_error
     );
 
