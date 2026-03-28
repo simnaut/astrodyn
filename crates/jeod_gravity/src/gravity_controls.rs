@@ -56,12 +56,13 @@ impl<SourceId> GravityControl<SourceId> {
     /// `SphericalHarmonicsGravityControls::check_validity()`.
     ///
     /// # Panics
+    /// - `spherical` is false but source is `PointMass`
     /// - degree > source degree
     /// - order > source order
     /// - order > degree
-    /// - gradient_degree > degree
-    /// - gradient_order > gradient_degree
-    /// - gradient_order > order
+    ///
+    /// Invalid `gradient_degree` and `gradient_order` values do not panic;
+    /// they are clamped to valid ranges and a warning is logged.
     pub fn check_validity(&mut self, source: &GravitySource) {
         if self.spherical {
             return;

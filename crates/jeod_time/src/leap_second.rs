@@ -1,5 +1,6 @@
 use crate::epoch::{mjd_to_tjt, SECONDS_PER_DAY};
 use log::warn;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Leap second lookup table for TAI↔UTC conversion.
 ///
@@ -104,19 +105,25 @@ impl LeapSecondTable {
         // JEOD time_converter_tai_utc.cc:158-233: log INFORM when time is
         // outside the leap second table range.
         if utc_tjt < self.entries[0].0 {
-            warn!(
-                "Time precedes first leap second table entry; \
-                 using first value ({} s)",
-                self.entries[0].1
-            );
+            static WARNED_BEFORE: AtomicBool = AtomicBool::new(false);
+            if !WARNED_BEFORE.swap(true, Ordering::Relaxed) {
+                warn!(
+                    "Time precedes first leap second table entry; \
+                     using first value ({} s)",
+                    self.entries[0].1
+                );
+            }
             return 0;
         }
         if utc_tjt >= self.entries[last].0 {
-            warn!(
-                "Time follows last leap second table entry; \
-                 using last value ({} s)",
-                self.entries[last].1
-            );
+            static WARNED_AFTER: AtomicBool = AtomicBool::new(false);
+            if !WARNED_AFTER.swap(true, Ordering::Relaxed) {
+                warn!(
+                    "Time follows last leap second table entry; \
+                     using last value ({} s)",
+                    self.entries[last].1
+                );
+            }
             return last;
         }
         // Linear search (28 entries, fast enough; matches JEOD's loop)

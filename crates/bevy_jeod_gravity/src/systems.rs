@@ -31,7 +31,7 @@ pub fn gravity_computation_system(
         let mut total = GravityAcceleration::default();
         for ctrl in &controls.0.controls {
             let Ok((source, rot)) = sources.get(ctrl.source_name) else {
-                warn!(
+                warn_once!(
                     "Entity {entity:?}: GravityControl references entity {:?} which has no GravitySourceC",
                     ctrl.source_name
                 );
