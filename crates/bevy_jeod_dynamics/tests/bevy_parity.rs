@@ -80,7 +80,7 @@ fn build_app() -> (App, Entity, Entity) {
 
     // Spawn vehicle entity with all required components for 6-DOF integration.
     let controls = GravityControls {
-        controls: vec![GravityControl::new(planet, false)],
+        controls: vec![GravityControl::new_spherical(planet, false)],
     };
 
     let vehicle = app

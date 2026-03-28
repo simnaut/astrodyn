@@ -7,6 +7,8 @@ edition = "2021"
 jeod_math = { path = "../jeod_math" }
 jeod_dynamics = { path = "../jeod_dynamics" }
 glam = { workspace = true }
+log = { workspace = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 jeod_test_data = { path = "../jeod_test_data" }

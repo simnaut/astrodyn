@@ -2449,6 +2449,8 @@ dependencies = [
  "jeod_math",
  "jeod_test_data",
  "jeod_time",
+ "log",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -2476,6 +2478,9 @@ dependencies = [
 [[package]]
 name = "jeod_time"
 version = "0.1.0"
+dependencies = [
+ "log",
+]
 
 [[package]]
 name = "jni"

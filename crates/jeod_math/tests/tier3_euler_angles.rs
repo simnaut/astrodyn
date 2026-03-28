@@ -19,9 +19,6 @@ use std::path::Path;
 const FIELDS_PER_SEQ: usize = 6;
 /// Number of sequences logged.
 const NUM_SEQUENCES: usize = 6;
-/// Total angle fields: 6 sequences * 6 fields = 36.
-const TOTAL_ANGLE_FIELDS: usize = NUM_SEQUENCES * FIELDS_PER_SEQ;
-
 /// Parsed record from the SIM_Euler CSV.
 #[derive(Debug)]
 #[allow(dead_code)]

@@ -107,7 +107,7 @@ fn run_sh_trajectory_test(csv_name: &str, degree: usize, order: usize, label: &s
     );
 
     let ggm02c_path = root.join("models/environment/gravity/data/src/earth_GGM02C.cc");
-    let sh_data = coefficients::load_from_jeod_cc(&ggm02c_path);
+    let sh_data = coefficients::load_from_jeod_cc(&ggm02c_path).expect("load GGM02C coefficients");
 
     let trajectory = load_jeod_trajectory(&csv_path);
     assert!(trajectory.len() > 100);

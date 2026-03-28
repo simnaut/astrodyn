@@ -235,6 +235,13 @@ impl OrbitalElements {
         let sin_nu = nu.sin();
         let cos_nu = nu.cos();
 
+        // JEOD orbital_elements.cc:414-424: verify sin/cos consistency.
+        let rss = (sin_nu * sin_nu + cos_nu * cos_nu).sqrt();
+        assert!(
+            (rss - 1.0).abs() < 1e-6,
+            "sin/cos of true anomaly are inconsistent: sin_v={sin_nu}, cos_v={cos_nu}, rss={rss}"
+        );
+
         let denom = 1.0 + e * cos_nu;
         if denom.abs() < 1e-30 {
             return Err(OrbitalError::DegenerateOrbit);

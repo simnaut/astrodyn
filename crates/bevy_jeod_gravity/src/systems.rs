@@ -21,48 +21,63 @@ use jeod_dynamics::GravityAcceleration;
 /// and subtracted to get relative position.
 pub fn gravity_computation_system(
     mut bodies: Query<(
+        Entity,
         &TranslationalStateC,
         &GravityControlsC,
         &mut GravityAccelerationC,
     )>,
     sources: Query<(&GravitySourceC, Option<&PlanetFixedRotationC>)>,
 ) {
-    for (state, controls, mut accel) in &mut bodies {
+    for (entity, state, controls, mut accel) in &mut bodies {
         let mut total = GravityAcceleration::default();
         for ctrl in &controls.0.controls {
             let Ok((source, rot)) = sources.get(ctrl.source_name) else {
-                warn!(
-                    "GravityControl references entity {:?} which has no GravitySourceC",
+                warn_once!(
+                    "Entity {entity:?}: GravityControl references entity {:?} which has no GravitySourceC",
                     ctrl.source_name
                 );
                 continue;
             };
-            let t_parent_this = match rot {
-                Some(r) => r.0,
-                None => {
-                    if ctrl.degree.is_some_and(|d| d > 0) || ctrl.order.is_some_and(|o| o > 0) {
-                        warn_once!(
-                            "GravityControl referencing source {:?} requests degree={:?}/order={:?} but \
-                             source has no PlanetFixedRotationC — using identity (results will be \
-                             incorrect)",
-                            ctrl.source_name, ctrl.degree, ctrl.order
-                        );
-                    }
-                    glam::DMat3::IDENTITY
+
+            // Non-spherical gravity requires the planet-fixed rotation matrix.
+            // Matching JEOD: the pfix frame is always available when non-spherical
+            // gravity is active (guaranteed by frame subscription at init time).
+            if ctrl.is_nonspherical() {
+                let Some(r) = rot else {
+                    panic!(
+                        "Entity {entity:?}: GravityControl for source {:?} requests non-spherical \
+                         gravity (degree={}/order={}) but source has no PlanetFixedRotationC. \
+                         In JEOD, the planet-fixed frame is always subscribed for non-spherical gravity.",
+                        ctrl.source_name, ctrl.degree, ctrl.order
+                    );
+                };
+                let result = jeod_gravity::gravitation(
+                    &source.0, state.position, &r.0,
+                    ctrl.degree, ctrl.order, ctrl.perturbing_only,
+                    ctrl.gradient,
+                    ctrl.gradient_degree,
+                    ctrl.gradient_order,
+                );
+                total.grav_accel += result.grav_accel;
+                if ctrl.gradient {
+                    total.grav_grad += result.grav_grad;
                 }
-            };
-            let result = jeod_gravity::gravitation(
-                &source.0, state.position, &t_parent_this,
-                ctrl.degree, ctrl.order, ctrl.perturbing_only,
-                ctrl.gradient,
-                ctrl.gradient_degree,
-                ctrl.gradient_order,
-            );
-            total.grav_accel += result.grav_accel;
-            if ctrl.gradient {
-                total.grav_grad += result.grav_grad;
+                total.grav_pot += result.grav_pot;
+            } else {
+                // Spherical (point-mass) path — rotation matrix not needed.
+                let result = jeod_gravity::gravitation(
+                    &source.0, state.position, &glam::DMat3::IDENTITY,
+                    0, 0, ctrl.perturbing_only,
+                    ctrl.gradient,
+                    ctrl.gradient_degree,
+                    ctrl.gradient_order,
+                );
+                total.grav_accel += result.grav_accel;
+                if ctrl.gradient {
+                    total.grav_grad += result.grav_grad;
+                }
+                total.grav_pot += result.grav_pot;
             }
-            total.grav_pot += result.grav_pot;
         }
         accel.0 = total;
     }

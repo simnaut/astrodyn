@@ -51,6 +51,7 @@ pub fn force_collection_system(
 #[allow(clippy::type_complexity)]
 pub fn integration_system(
     mut bodies: Query<(
+        Entity,
         &DynamicsConfigC,
         &mut TranslationalStateC,
         Option<&mut RotationalStateC>,
@@ -65,42 +66,50 @@ pub fn integration_system(
         return;
     }
 
-    for (config, mut state, mut rot_state, mass, controls) in &mut bodies {
+    for (entity, config, mut state, mut rot_state, mass, controls) in &mut bodies {
         if !config.translational_dynamics {
             continue;
-        }
-
-        // Emit a warning (once per process lifetime) if non-spherical gravity is requested
-        // but the source lacks a PlanetFixedRotationC component.
-        for ctrl in &controls.0.controls {
-            if ctrl.degree.is_some_and(|d| d > 0) || ctrl.order.is_some_and(|o| o > 0) {
-                if let Ok((_source, rot)) = sources.get(ctrl.source_name) {
-                    if rot.is_none() {
-                        // warn_once! is per-callsite for the process lifetime,
-                        // so only the first missing-rotation case is reported.
-                        warn_once!(
-                            "GravityControl referencing source {:?} requests degree={:?}/order={:?} but \
-                             source has no PlanetFixedRotationC — using identity (results will be \
-                             incorrect)",
-                            ctrl.source_name, ctrl.degree, ctrl.order
-                        );
-                    }
-                }
-            }
         }
 
         // Closure: compute gravitational acceleration at a given position.
         // Used by both 3-DOF and 6-DOF paths so gravity is re-evaluated at
         // each RK4 stage for 4th-order accuracy.
+        //
+        // Matching JEOD: non-spherical gravity requires PlanetFixedRotationC
+        // (the planet-fixed frame). Missing rotation is a fatal configuration
+        // error, not a silent fallback.
         let compute_grav_accel = |position: DVec3| -> DVec3 {
             let mut accel = DVec3::ZERO;
             for ctrl in &controls.0.controls {
-                if let Ok((source, rot)) = sources.get(ctrl.source_name) {
-                    let t_parent_this = rot.map_or(glam::DMat3::IDENTITY, |r| r.0);
+                let Ok((source, rot)) = sources.get(ctrl.source_name) else {
+                    warn_once!(
+                        "Entity {entity:?}: GravityControl references entity {:?} which has no \
+                         GravitySourceC — skipping this source",
+                        ctrl.source_name
+                    );
+                    continue;
+                };
+
+                if ctrl.is_nonspherical() {
+                    let Some(r) = rot else {
+                        panic!(
+                            "Entity {entity:?}: GravityControl for source {:?} requests \
+                             non-spherical gravity (degree={}/order={}) but source has no \
+                             PlanetFixedRotationC. In JEOD, the planet-fixed frame is always \
+                             subscribed for non-spherical gravity.",
+                            ctrl.source_name, ctrl.degree, ctrl.order
+                        );
+                    };
                     accel += jeod_gravity::gravitation(
-                        &source.0, position, &t_parent_this,
+                        &source.0, position, &r.0,
                         ctrl.degree, ctrl.order, ctrl.perturbing_only,
-                        false, None, None,
+                        false, 0, 0,
+                    ).grav_accel;
+                } else {
+                    accel += jeod_gravity::gravitation(
+                        &source.0, position, &glam::DMat3::IDENTITY,
+                        0, 0, ctrl.perturbing_only,
+                        false, 0, 0,
                     ).grav_accel;
                 }
             }
@@ -125,6 +134,10 @@ pub fn integration_system(
                 rot.0 = new_state.rot;
                 continue;
             }
+            warn_once!(
+                "Entity {entity:?} has rotational_dynamics=true but is missing RotationalStateC \
+                 and/or MassPropertiesC — falling back to 3-DOF"
+            );
         }
 
         // 3-DOF path: translational only

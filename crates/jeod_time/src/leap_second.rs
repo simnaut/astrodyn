@@ -1,4 +1,6 @@
 use crate::epoch::{mjd_to_tjt, SECONDS_PER_DAY};
+use log::warn;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Leap second lookup table for TAI↔UTC conversion.
 ///
@@ -16,6 +18,7 @@ impl LeapSecondTable {
     /// Create a leap second table from (TJT, TAI-UTC seconds) pairs.
     /// Entries must be sorted by TJT.
     pub fn from_entries(entries: Vec<(f64, f64)>) -> Self {
+        assert!(!entries.is_empty(), "Leap second table must not be empty");
         assert!(
             entries.windows(2).all(|w| w[0].0 <= w[1].0),
             "Leap second entries must be sorted by TJT"
@@ -99,10 +102,28 @@ impl LeapSecondTable {
     /// Find the index for a UTC TJT value using binary-style search.
     fn find_index_for_utc(&self, utc_tjt: f64) -> usize {
         let last = self.entries.len() - 1;
+        // JEOD time_converter_tai_utc.cc:158-233: log INFORM when time is
+        // outside the leap second table range.
         if utc_tjt < self.entries[0].0 {
+            static WARNED_BEFORE: AtomicBool = AtomicBool::new(false);
+            if !WARNED_BEFORE.swap(true, Ordering::Relaxed) {
+                warn!(
+                    "Time precedes first leap second table entry; \
+                     using first value ({} s)",
+                    self.entries[0].1
+                );
+            }
             return 0;
         }
         if utc_tjt >= self.entries[last].0 {
+            static WARNED_AFTER: AtomicBool = AtomicBool::new(false);
+            if !WARNED_AFTER.swap(true, Ordering::Relaxed) {
+                warn!(
+                    "Time follows last leap second table entry; \
+                     using last value ({} s)",
+                    self.entries[last].1
+                );
+            }
             return last;
         }
         // Linear search (28 entries, fast enough; matches JEOD's loop)
@@ -157,6 +178,12 @@ pub fn default_leap_second_table() -> LeapSecondTable {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[should_panic(expected = "must not be empty")]
+    fn empty_table_panics() {
+        LeapSecondTable::from_entries(vec![]);
+    }
 
     #[test]
     fn default_table_has_28_entries() {

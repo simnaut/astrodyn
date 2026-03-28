@@ -96,7 +96,12 @@ pub fn calc_nonspherical(
     gradient_degree: usize,
     gradient_order: usize,
 ) -> GravityAcceleration {
-    let mut scratch = GottliebScratch::new(degree.min(data.degree));
+    assert!(
+        degree <= data.degree,
+        "Requested degree ({degree}) exceeds source max degree ({})",
+        data.degree
+    );
+    let mut scratch = GottliebScratch::new(degree);
     calc_nonspherical_with_scratch(
         data,
         posn_pf,
@@ -125,15 +130,28 @@ pub fn calc_nonspherical_with_scratch(
     gradient_order: usize,
     scratch: &mut GottliebScratch,
 ) -> GravityAcceleration {
-    debug_assert!(
-        scratch.degree >= degree.min(data.degree),
-        "GottliebScratch degree ({}) must be >= requested degree ({})",
-        scratch.degree, degree.min(data.degree)
+    // Matching JEOD's check_validity(): these are fatal errors, not silent clamps.
+    assert!(
+        degree <= data.degree,
+        "Requested degree ({degree}) exceeds source max degree ({})",
+        data.degree
     );
-    let degree = degree.min(data.degree);
-    let order = order.min(data.order).min(degree);
+    assert!(
+        order <= data.order,
+        "Requested order ({order}) exceeds source max order ({})",
+        data.order
+    );
+    assert!(
+        order <= degree,
+        "Requested order ({order}) exceeds requested degree ({degree})"
+    );
+    assert!(
+        scratch.degree >= degree,
+        "GottliebScratch degree ({}) must be >= requested degree ({degree})",
+        scratch.degree
+    );
 
-    debug_assert!(posn_pf.length_squared() > 0.0, "position must be non-zero");
+    assert!(posn_pf.length_squared() > 0.0, "position must be non-zero");
 
     // If degree < 2, there are no harmonics to compute (only point-mass).
     // Return zero perturbation.

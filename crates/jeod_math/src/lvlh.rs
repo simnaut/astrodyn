@@ -89,7 +89,6 @@ pub fn compute_lvlh_frame(position: DVec3, velocity: DVec3) -> LvlhFrame {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::f64::consts::PI;
 
     const EARTH_MU: f64 = 3.986_004_418e14; // m^3/s^2
 

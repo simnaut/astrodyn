@@ -41,8 +41,13 @@ pub struct SimulationTime {
     /// Leap second table for TAI↔UTC conversion.
     pub leap_second_table: LeapSecondTable,
     /// UT1-TAI offset in seconds (from IERS data; approximately constant
-    /// over short simulation spans). Default: use UT1-UTC ≈ 0, so
-    /// ut1_tai_offset ≈ -tai_utc_offset.
+    /// over short simulation spans). Default: computed assuming UT1-UTC ≈ 0,
+    /// so `ut1_tai_offset ≈ -(TAI-UTC)`.
+    ///
+    /// For historical or far-future epochs, UT1-UTC can reach ±0.9 s, which
+    /// affects GMST and Earth rotation calculations. Call
+    /// [`set_ut1_tai_offset`](Self::set_ut1_tai_offset) with a value from
+    /// IERS Bulletin A/B when sub-second accuracy in Earth orientation is needed.
     pub ut1_tai_offset: f64,
 }
 
@@ -92,7 +97,14 @@ impl SimulationTime {
     }
 
     /// Advance the simulation by `dt` seconds.
+    ///
+    /// # Panics
+    /// Panics if `dt` is NaN, infinite, or negative.
     pub fn advance(&mut self, dt: f64) {
+        assert!(
+            dt.is_finite() && dt >= 0.0,
+            "dt must be finite and non-negative, got {dt}"
+        );
         self.tai_seconds += dt;
         self.tai_tjt = self.tai_tjt_at_epoch + self.tai_seconds / SECONDS_PER_DAY;
         self.simtime += dt;
@@ -217,5 +229,26 @@ mod tests {
             "GMST advance over 1 solar day: {} sidereal days (expected ~1.00274)",
             gmst_advance_days
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "must be finite and non-negative")]
+    fn advance_nan_panics() {
+        let mut sim = SimulationTime::at_j2000(default_leap_second_table());
+        sim.advance(f64::NAN);
+    }
+
+    #[test]
+    #[should_panic(expected = "must be finite and non-negative")]
+    fn advance_inf_panics() {
+        let mut sim = SimulationTime::at_j2000(default_leap_second_table());
+        sim.advance(f64::INFINITY);
+    }
+
+    #[test]
+    #[should_panic(expected = "must be finite and non-negative")]
+    fn advance_negative_panics() {
+        let mut sim = SimulationTime::at_j2000(default_leap_second_table());
+        sim.advance(-1.0);
     }
 }

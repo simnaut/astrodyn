@@ -59,6 +59,9 @@ impl FrameTree {
     }
 
     /// Add a child frame with the given state relative to its parent.
+    ///
+    /// # Panics
+    /// Panics if `parent_id` does not refer to an existing frame.
     pub fn add_child(
         &mut self,
         parent_id: FrameId,
@@ -66,6 +69,11 @@ impl FrameTree {
         kind: RefFrameKind,
         state: RefFrameState,
     ) -> FrameId {
+        assert!(
+            parent_id < self.nodes.len(),
+            "parent_id {parent_id} out of range (have {} frames)",
+            self.nodes.len()
+        );
         let id = self.nodes.len();
         self.nodes.push(FrameNode { name, kind, state });
         self.parent.push(Some(parent_id));

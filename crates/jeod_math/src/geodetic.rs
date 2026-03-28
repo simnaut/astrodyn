@@ -74,6 +74,12 @@ pub fn spherical_to_cartesian(sph: &SphericalState, r_eq: f64) -> DVec3 {
 /// * `r_eq` - Equatorial radius (m)
 /// * `r_pol` - Polar radius (m)
 pub fn cartesian_to_geodetic(cart: DVec3, r_eq: f64, r_pol: f64) -> GeodeticState {
+    // JEOD planet_fixed_posn.cc:155-162: check for NaN/Inf before proceeding.
+    assert!(
+        cart.x.is_finite() && cart.y.is_finite() && cart.z.is_finite(),
+        "cartesian_to_geodetic: input contains NaN or Inf ({cart:?})"
+    );
+
     let x_ellipse_sq = cart.x * cart.x + cart.y * cart.y;
     let x_ellipse = x_ellipse_sq.sqrt();
     let z_ellipse = cart.z;
