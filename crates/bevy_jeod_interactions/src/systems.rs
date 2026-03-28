@@ -10,6 +10,7 @@ use crate::components::{DragConfigC, SrpConfigC};
 /// Compute aerodynamic drag for entities with DragConfigC + AtmosphericStateC.
 ///
 /// Placed in `JeodSet::Interaction` (after Environment, before ForceCollection).
+// JEOD_INV: IN.03 — AerodynamicDrag.active gates computation (structural: no DragConfigC -> no drag)
 pub fn aero_drag_system(
     mut query: Query<(
         &DragConfigC,
@@ -45,6 +46,8 @@ pub fn aero_drag_system(
 /// RotationalStateC + MassPropertiesC.
 ///
 /// Placed in `JeodSet::Interaction`.
+// JEOD_INV: IN.01 — GravityTorque.subject_body required (structural: query requires all components)
+// JEOD_INV: IN.02 — GravityTorque.active gates computation (structural: no GravityTorqueC -> no torque)
 pub fn gravity_torque_system(
     mut query: Query<(
         &GravityAccelerationC,
@@ -72,6 +75,8 @@ pub fn gravity_torque_system(
 /// need Earth entity position and radius to call `compute_shadow_fraction`.
 ///
 /// Placed in `JeodSet::Interaction`.
+// JEOD_INV: IN.06 — RadiationPressure.active gates computation (structural: no SrpConfigC -> no SRP)
+// JEOD_INV: IN.09 — RadiationSource planet must exist (partial: SunMarker required)
 pub fn radiation_pressure_system(
     mut query: Query<(
         &SrpConfigC,

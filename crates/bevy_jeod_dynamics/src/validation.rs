@@ -41,6 +41,8 @@ use crate::components::{
 /// # Panics
 /// Panics with a descriptive message for any violated invariant, matching
 /// JEOD's `MessageHandler::fail()` behavior.
+// JEOD_INV: DM.03 — initialized flag set last in init sequence (Local<bool> one-shot gate)
+// JEOD_INV: DM.05 — all required states initialized before first integration (zero-state warning below)
 #[allow(clippy::type_complexity)]
 pub fn validate_jeod_invariants(
     bodies: Query<(
@@ -61,6 +63,8 @@ pub fn validate_jeod_invariants(
 
     for (entity, config, controls, mass, rot_state, trans_state) in &bodies {
         // ── Invariant H: three_dof consistency ──
+        // JEOD_INV: DB.05 — three_dof=true prevents rotational integrator creation
+        // JEOD_INV: DB.06 — three_dof=true AND rotational_dynamics=true is invalid
         // JEOD: three_dof=true prevents rotational integrator creation.
         // rotational_dynamics=true with three_dof=true would attempt to
         // integrate rotation without an integrator (undefined behavior).
@@ -74,6 +78,7 @@ pub fn validate_jeod_invariants(
         }
 
         // ── Invariant E (partial): rotational dynamics requires mass ──
+        // JEOD_INV: MA.01 — MassBody always present on DynBody (rotational dynamics path)
         // JEOD: DynBody always has MassBody. Without mass, Euler's equation
         // (I^-1 * (tau - omega x I*omega)) cannot be evaluated.
         if config.rotational_dynamics {
@@ -93,6 +98,8 @@ pub fn validate_jeod_invariants(
         }
 
         // ── Invariant C: inertia/inverse_inertia consistency ──
+        // JEOD_INV: DB.19 — inverse_inertia used for Euler equation (validated I*I^-1 ≈ identity)
+        // JEOD_INV: MA.04 — inverse_inertia consistent with inertia
         // JEOD: inverse_inertia is always recomputed from inertia.
         // Verify they are consistent (I * I^-1 ≈ identity).
         if let Some(m) = mass {
@@ -109,10 +116,13 @@ pub fn validate_jeod_invariants(
         }
 
         // ── Invariant B: gravity control validation ──
+        // JEOD_INV: GV.03 — check_validity() called at startup
         // JEOD: check_validity() is called during initialize_gravity_controls().
         // degree > source degree is fatal. order > source order is fatal.
         for ctrl in &controls.0.controls {
             // ── Invariant G: gravity source must exist ──
+            // JEOD_INV: DM.08 — gravitation requires gravity source (init-time check)
+            // JEOD_INV: GV.12 — gravity source must exist for control
             // JEOD: find_grav_source() fatally fails if source not found.
             let Ok((source_entity, source)) = sources.get(ctrl.source_name) else {
                 panic!(
@@ -135,6 +145,8 @@ pub fn validate_jeod_invariants(
         }
 
         // ── Invariant F (informational): uninitialized state detection ──
+        // JEOD_INV: DM.05 — all required states initialized before first integration
+        // JEOD_INV: DB.11 — initialized_states tracking (partial: warns on zero state)
         // JEOD: check_for_uninitialized_states() fatally fails if required
         // state is not set. We check for exact-zero state, which is almost
         // certainly unintentional for orbital mechanics.

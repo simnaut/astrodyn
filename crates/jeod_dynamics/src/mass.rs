@@ -17,6 +17,8 @@ impl MassProperties {
     /// distinct principal moments (I_xx != I_yy != I_zz) and potentially
     /// non-zero products of inertia. When rotational dynamics are enabled,
     /// callers must specify the actual inertia tensor for their geometry.
+    // JEOD_INV: MA.02 — mass > 0 for meaningful dynamics
+    // JEOD_INV: MA.03 — inverse_mass consistent with mass (computed at construction)
     pub fn new(mass: f64) -> Self {
         assert!(mass > 0.0, "mass must be positive, got {mass}");
         Self {
@@ -31,6 +33,10 @@ impl MassProperties {
     ///
     /// The inertia tensor is about the body frame axes through the center of mass.
     /// The position is the center of mass in the structural frame.
+    // JEOD_INV: MA.02 — mass > 0 for meaningful dynamics
+    // JEOD_INV: MA.05 — inverse inertia computed for all bodies (structural in our architecture)
+    // JEOD_INV: DB.23 — compute_inverse_inertia enabled (always computed here)
+    // JEOD_INV: MA.04 — inverse_inertia consistent with inertia (computed from inertia)
     pub fn with_inertia(mass: f64, inertia: DMat3, position: DVec3) -> Self {
         assert!(mass > 0.0, "mass must be positive, got {mass}");
         let det = inertia.determinant();

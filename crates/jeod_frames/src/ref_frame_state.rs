@@ -1,6 +1,7 @@
 use glam::{DMat3, DVec3};
 use jeod_math::JeodQuat;
 
+// JEOD_INV: RF.06 — position/velocity in parent coordinates (structural convention)
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RefFrameTrans {
     pub position: DVec3, // m, in parent frame
@@ -16,6 +17,7 @@ impl Default for RefFrameTrans {
     }
 }
 
+// JEOD_INV: RF.07 — Q_parent_this is left-transformation quaternion (JEOD convention)
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RefFrameRot {
     pub q_parent_this: JeodQuat, // left transformation quaternion
@@ -102,6 +104,8 @@ impl RefFrameState {
         }
     }
 
+    // JEOD_INV: RF.03 — quaternion normalized after every composition (line 117)
+    // JEOD_INV: RF.04 — T_parent_this recomputed from matrix multiplication (line 113)
     /// Compose self (A->B) with s_bc (B->C) to produce A->C.
     ///
     /// "Increment right": given self = S_{A:B} and s_bc = S_{B:C},

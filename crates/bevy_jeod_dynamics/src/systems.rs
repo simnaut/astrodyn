@@ -38,6 +38,8 @@ pub fn force_collection_system(
         Option<&GravityTorqueC>,
     )>,
 ) {
+    // JEOD_INV: DB.07 — translational_dynamics gates force collection (handled in integration_system)
+    // JEOD_INV: DB.08 — rotational_dynamics gates torque collection (handled in integration_system)
     for (mut total, derivs, grav, rot_state, mass, aero, srp, grav_torque) in &mut query {
         let mut force = DVec3::ZERO;
         let mut torque = DVec3::ZERO;
@@ -67,7 +69,8 @@ pub fn force_collection_system(
         total.force = force;
         total.torque = torque;
 
-        // Write FrameDerivativesC (Invariant I: must not be dead).
+        // JEOD_INV: FD.01 — trans_accel = non_grav_accel + grav_accel
+        // JEOD_INV: FD.02 — rot_accel = I^-1 * (tau - omega x I*omega)
         // Matches JEOD dyn_body_collect.cc lines 224-264:
         //   non_grav_accel = F_non_grav / m
         //   trans_accel = non_grav_accel + grav_accel
@@ -127,10 +130,14 @@ pub fn integration_system(
     }
 
     for (entity, config, mut state, mut rot_state, mass, controls, total_force) in &mut bodies {
+        // JEOD_INV: DB.07 — translational_dynamics gates force collection and integration
         if !config.translational_dynamics {
             continue;
         }
 
+        // JEOD_INV: DB.18 — inverse_mass used for F=ma (division by mass with assert > 0)
+        // JEOD_INV: MA.01 — MassBody always present on DynBody (panics if non-zero force without mass)
+        // JEOD_INV: MA.02 — mass > 0 for meaningful dynamics (asserted before division)
         // Non-gravity translational acceleration (constant over one RK4 step).
         // TotalForceC.force holds only non-gravity forces (aero + SRP), already
         // in inertial frame. Divide by mass to get acceleration.
@@ -156,6 +163,8 @@ pub fn integration_system(
         let compute_grav_accel = |position: DVec3| -> DVec3 {
             let mut accel = DVec3::ZERO;
             for ctrl in &controls.0.controls {
+                // JEOD_INV: DM.08 — gravitation requires gravity source (runtime panic)
+                // JEOD_INV: GV.12 — gravity source must exist for control (runtime panic)
                 let Ok((source, rot)) = sources.get(ctrl.source_name) else {
                     panic!(
                         "Entity {entity:?}: GravityControl references entity {:?} which has no \
@@ -167,6 +176,8 @@ pub fn integration_system(
                 };
 
                 if ctrl.is_nonspherical() {
+                    // JEOD_INV: GV.13 — gravity source must have inertial frame (planet-fixed rotation)
+                    // JEOD_INV: GV.17 — active nonspherical controls subscribe to planet-fixed frame
                     let Some(r) = rot else {
                         panic!(
                             "Entity {entity:?}: GravityControl for source {:?} requests \
@@ -192,6 +203,7 @@ pub fn integration_system(
             accel
         };
 
+        // JEOD_INV: DB.08 — rotational_dynamics gates torque collection and integration
         // 6-DOF path: rotational dynamics enabled AND entity has components
         if config.rotational_dynamics {
             if let (Some(ref mut rot), Some(mass_props)) = (&mut rot_state, &mass) {

@@ -21,6 +21,8 @@ pub struct AtmosphereModelR {
     pub planet_entity: Option<Entity>,
 }
 
+// JEOD_INV: AT.01 — active flag gates computation (no AtmosphericStateC component = no computation)
+// JEOD_INV: AT.02 — atmosphere model pointer non-null for update (AtmosphereModelR resource checked)
 /// Update atmospheric state for entities that have AtmosphericStateC.
 ///
 /// Converts the vehicle's inertial position to planet-fixed coordinates,
@@ -32,6 +34,7 @@ pub fn atmosphere_update_system(
     planet_query: Query<&PlanetFixedRotationC>,
     mut query: Query<(&TranslationalStateC, &mut AtmosphericStateC)>,
 ) {
+    // JEOD_INV: AT.02 — early return if no atmosphere model resource (non-null check)
     let Some(model) = atmos_model else {
         return; // No atmosphere model configured
     };

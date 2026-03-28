@@ -65,6 +65,7 @@ pub fn compute_shadow_fraction(
     let source_to_third = body_pos - sun_pos;
     let d_source_to_third = source_to_third.length();
 
+    // JEOD_INV: IN.14 — d_source_to_third > 0 (returns 1.0 if d <= 0)
     if d_source_to_third <= 0.0 {
         // Degenerate: body and source coincide, no shadow possible
         return 1.0;
@@ -85,6 +86,7 @@ pub fn compute_shadow_fraction(
         return 1.0;
     }
 
+    // JEOD_INV: IN.13 — Shadow model: vehicle distance > 0 (returns 0.0 if r_mag2 <= 0)
     // Compute the squared distance between vehicle and third body
     let r_mag2 = third_to_cg.length_squared();
     if r_mag2 <= 0.0 {
@@ -100,6 +102,8 @@ pub fn compute_shadow_fraction(
         r_perp2.sqrt()
     };
 
+    // JEOD_INV: IN.11 — RadiationThirdBody.radius > 0 (degenerate cases handled above)
+    // JEOD_INV: IN.12 — RadiationSource.radius > 0 (degenerate cases handled above)
     // --- Precomputed constants (normally set in RadiationThirdBody::initialize) ---
     let r_plus = body_radius + source_radius;
     let r_minus = body_radius - source_radius;

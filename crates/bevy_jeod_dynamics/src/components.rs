@@ -6,6 +6,7 @@ use jeod_dynamics::{
 };
 use jeod_gravity::{GravityControls, GravitySource};
 
+// JEOD_INV: DB.24 — default integrated_frame is composite_body (we integrate composite_body state)
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Default)]
 pub struct TranslationalStateC(pub TranslationalState);
 
@@ -63,6 +64,7 @@ pub struct RadiationForceC {
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct GravityTorqueC(pub DVec3);
 
+// JEOD_INV: AT.01 — active flag gates computation (presence of AtmosphericStateC = active)
 /// Atmospheric state at the vehicle's position.
 ///
 /// Written by the atmosphere system (`bevy_jeod_atmosphere`).

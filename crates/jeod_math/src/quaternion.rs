@@ -139,6 +139,7 @@ impl JeodQuat {
     // Matrix <-> quaternion (left-transformation convention)
     // ----------------------------------------------------------------
 
+    // JEOD_INV: RF.09 — assumes quaternion is normalized (caller must normalize after integration)
     /// Build the 3x3 rotation (transformation) matrix from a left quaternion.
     ///
     /// Uses the half-angle formula from JEOD

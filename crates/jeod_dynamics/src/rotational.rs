@@ -42,6 +42,8 @@ pub struct SixDofState {
 /// rot_accel = inverse_inertia * torque_body
 /// ```
 /// Components with magnitude below 1e-20 are zeroed (JEOD `zero_small`).
+// JEOD_INV: FD.02 — rot_accel = I^-1 * (tau - omega x I*omega)
+// JEOD_INV: DB.19 — inverse_inertia used for Euler equation
 pub fn compute_rotational_acceleration(
     inertia: &DMat3,
     inverse_inertia: &DMat3,
@@ -108,6 +110,8 @@ pub fn compute_left_quat_deriv(q: &JeodQuat, ang_vel: DVec3) -> [f64; 4] {
 /// scalar >= 0. This is intentional: during integration the quaternion
 /// may pass through the scalar-negative hemisphere, and forcing it back
 /// would introduce discontinuities.
+// JEOD_INV: DB.09 — quaternion normalized after every integration step
+// JEOD_INV: RF.09 — quaternion assumed normalized for left_quat_to_transformation
 pub fn normalize_integ(q: &mut JeodQuat) {
     let qmagsq = q.norm_sq();
     assert!(

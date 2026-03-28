@@ -8,6 +8,8 @@ pub struct JeodDynamicsPlugin;
 
 impl Plugin for JeodDynamicsPlugin {
     fn build(&self, app: &mut App) {
+        // JEOD_INV: DM.04 — init order: time -> ephemeris -> environment -> interaction -> forces -> integration -> derived
+        // JEOD_INV: DM.13 — ephemeris updated before gravity (EphemerisUpdate before Environment)
         app.configure_sets(
             FixedUpdate,
             (

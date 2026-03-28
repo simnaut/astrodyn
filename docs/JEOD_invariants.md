@@ -36,26 +36,26 @@ with `// JEOD_INV: DB.03` comments.
 | DB.02 | `integ_frame_name` must be non-empty | `dyn_body/src/dyn_body_initialize_model.cc` | 71-81 | fatal | initialization | deferred (Phase 5) |
 | DB.03 | `integ_frame` must resolve to valid integration frame | `dyn_body/src/dyn_body_integration.cc` | 125-136 | fatal | runtime | deferred (Phase 5) |
 | DB.04 | Three frames (structure, composite_body, core_body) always exist | `dyn_body/src/dyn_body_initialize_model.cc` | 96-111 | structural | structural | deferred (Phase 5) |
-| DB.05 | `three_dof=true` prevents rotational integrator creation | `dyn_body/src/dyn_body_integration.cc` | 223 | flag-gate | structural | enforced (`validation.rs`) |
-| DB.06 | `three_dof=true` AND `rotational_dynamics=true` is invalid | `dyn_body/include/dyn_body.hh` | 697 | implicit | consistency | enforced (`validation.rs`) |
-| DB.07 | `translational_dynamics` gates force collection and integration | `dyn_body/src/dyn_body_collect.cc` | 95-108 | flag-gate | runtime | enforced (`systems.rs`) |
-| DB.08 | `rotational_dynamics` gates torque collection and integration | `dyn_body/src/dyn_body_collect.cc` | 110-124 | flag-gate | runtime | enforced (`systems.rs`) |
-| DB.09 | Quaternion normalized after every integration step | `dyn_body/src/dyn_body_integration.cc` | 380 | structural | consistency | enforced (`integration.rs`) |
+| DB.05 | `three_dof=true` prevents rotational integrator creation | `dyn_body/src/dyn_body_integration.cc` | 223 | flag-gate | structural | enforced (`validation.rs:66`) |
+| DB.06 | `three_dof=true` AND `rotational_dynamics=true` is invalid | `dyn_body/include/dyn_body.hh` | 697 | implicit | consistency | enforced (`validation.rs:67`) |
+| DB.07 | `translational_dynamics` gates force collection and integration | `dyn_body/src/dyn_body_collect.cc` | 95-108 | flag-gate | runtime | enforced (`systems.rs:41,133`) |
+| DB.08 | `rotational_dynamics` gates torque collection and integration | `dyn_body/src/dyn_body_collect.cc` | 110-124 | flag-gate | runtime | enforced (`systems.rs:42,206`) |
+| DB.09 | Quaternion normalized after every integration step | `dyn_body/src/dyn_body_integration.cc` | 380 | structural | consistency | enforced (`integration.rs:161`, `rotational.rs:113`) |
 | DB.10 | T_parent_this recomputed from quaternion after normalization | `dyn_body/src/dyn_body_integration.cc` | 383 | structural | consistency | n/a (computed on demand) |
-| DB.11 | `initialized_states` tracks which state components are set | `dyn_body/include/dyn_body.hh` | 1128 | structural | initialization | partial (`validation.rs` warns on zero state) |
+| DB.11 | `initialized_states` tracks which state components are set | `dyn_body/include/dyn_body.hh` | 1128 | structural | initialization | partial (`validation.rs:149` warns on zero state) |
 | DB.12 | `integrated_frame` must be structure or composite_body | `dyn_body/src/dyn_body_propagate_state.cc` | 147-154 | fatal | structural | deferred (Phase 5) |
 | DB.13 | State propagation delegates to root body | `dyn_body/src/dyn_body_propagate_state.cc` | 529-533 | structural | consistency | deferred (Phase 5) |
 | DB.14 | Integration frame switch delegates to root body | `dyn_body/src/dyn_body_integration.cc` | 148-152 | structural | consistency | deferred (Phase 5) |
 | DB.15 | `grav_interaction` always synchronized with integration frame | `dyn_body/src/dyn_body_integration.cc` | 113 | structural | consistency | deferred (Phase 5) |
 | DB.16 | Child forces propagated to parent recursively | `dyn_body/src/dyn_body_collect.cc` | 128-131 | structural | ordering | deferred (Phase 5) |
 | DB.17 | Only root body computes total acceleration | `dyn_body/src/dyn_body_collect.cc` | 205-279 | structural | structural | deferred (Phase 5) |
-| DB.18 | `inverse_mass` used for F=ma (precomputed) | `dyn_body/src/dyn_body_collect.cc` | 224 | structural | consistency | enforced (`systems.rs` — division by mass with assert > 0) |
-| DB.19 | `inverse_inertia` used for Euler equation | `dyn_body/src/dyn_body_collect.cc` | 264 | structural | consistency | enforced (`validation.rs` checks I*I^-1 ≈ identity) |
+| DB.18 | `inverse_mass` used for F=ma (precomputed) | `dyn_body/src/dyn_body_collect.cc` | 224 | structural | consistency | enforced (`systems.rs:138`, `forces.rs:64`) |
+| DB.19 | `inverse_inertia` used for Euler equation | `dyn_body/src/dyn_body_collect.cc` | 264 | structural | consistency | enforced (`validation.rs:101`, `rotational.rs:46`) |
 | DB.20 | Small rot_accel truncated to zero (< 1e-20) | `dyn_body/src/dyn_body_collect.cc` | 267 | structural | runtime | not enforced |
 | DB.21 | Only unattached bodies integrate | `dyn_body/src/dyn_body_integration.cc` | 309 | flag-gate | runtime | deferred (Phase 5, no frame attachment yet) |
 | DB.22 | DynBody not copyable | `dyn_body/include/dyn_body.hh` | 131-132 | structural | structural | n/a (ECS components are Copy where needed) |
-| DB.23 | `compute_inverse_inertia` enabled for DynBody | `dyn_body/src/dyn_body.cc` | 76 | structural | structural | structural (always computed in `MassProperties::with_inertia`) |
-| DB.24 | Default `integrated_frame` is composite_body | `dyn_body/src/dyn_body.cc` | 73 | structural | structural | structural (we integrate composite_body state) |
+| DB.23 | `compute_inverse_inertia` enabled for DynBody | `dyn_body/src/dyn_body.cc` | 76 | structural | structural | structural (`mass.rs:38`, always computed in `MassProperties::with_inertia`) |
+| DB.24 | Default `integrated_frame` is composite_body | `dyn_body/src/dyn_body.cc` | 73 | structural | structural | structural (`components.rs:9`, we integrate composite_body state) |
 | DB.25 | DynBody name is reference to MassBody name | `dyn_body/src/dyn_body.cc` | 63 | structural | structural | n/a (ECS entities, no name reference) |
 | DB.26 | DynBody mass constructed with `this` as owner | `dyn_body/src/dyn_body.cc` | 62 | structural | structural | n/a (ECS entities, no ownership reference) |
 | DB.27 | State initialization order: attitude → rate → position → velocity | `dyn_body/src/dyn_body_propagate_state.cc` | 388-516 | structural | ordering | deferred (Phase 5) |
@@ -64,25 +64,25 @@ with `// JEOD_INV: DB.03` comments.
 
 | Tag | Invariant | JEOD Source | Line(s) | Enforcement | Category | Our Status |
 |-----|-----------|-------------|---------|-------------|----------|------------|
-| MA.01 | MassBody always present on DynBody (value member) | `dyn_body/include/dyn_body.hh` | 617 | structural | structural | enforced (`validation.rs` checks mass for rotational dynamics; `systems.rs` panics for non-zero force without mass) |
-| MA.02 | mass > 0 for meaningful dynamics | `mass/src/mass_update.cc` | 63-69 | conditional | consistency | enforced (`mass.rs` asserts mass > 0 at construction; `systems.rs` asserts before division) |
-| MA.03 | `inverse_mass` consistent with mass | `mass/src/mass_update.cc` | 63-69 | structural | consistency | partial (computed at construction, not re-synced on mutation) |
-| MA.04 | `inverse_inertia` consistent with inertia | `mass/src/mass_update.cc` | 117-125 | structural | consistency | enforced (`validation.rs` checks I*I^-1 ≈ identity at startup) |
-| MA.05 | Inverse inertia computed only for root bodies with positive mass | `mass/src/mass_update.cc` | 117-125 | conditional | consistency | structural (all bodies compute inverse in our architecture) |
-| MA.06 | Bottom-up mass property update (children first) | `mass/src/mass_update.cc` | 81-88 | structural | ordering | enforced (`mass_body.rs` `recompute_composites`) |
-| MA.07 | `needs_update` flag cleared after recomputation | `mass/src/mass_update.cc` | 146 | structural | consistency | structural (`MassTree::recompute_composites` always recomputes) |
-| MA.08 | No cycle in mass tree | `mass/src/mass_attach.cc` | 373-389 | error | consistency | enforced (`mass_body.rs` arena-based, cycles impossible) |
+| MA.01 | MassBody always present on DynBody (value member) | `dyn_body/include/dyn_body.hh` | 617 | structural | structural | enforced (`validation.rs:81`, `systems.rs:139`) |
+| MA.02 | mass > 0 for meaningful dynamics | `mass/src/mass_update.cc` | 63-69 | conditional | consistency | enforced (`mass.rs:20,36`, `systems.rs:140`) |
+| MA.03 | `inverse_mass` consistent with mass | `mass/src/mass_update.cc` | 63-69 | structural | consistency | partial (`mass.rs:21`, computed at construction, not re-synced on mutation) |
+| MA.04 | `inverse_inertia` consistent with inertia | `mass/src/mass_update.cc` | 117-125 | structural | consistency | enforced (`mass.rs:39`, `validation.rs:102`) |
+| MA.05 | Inverse inertia computed only for root bodies with positive mass | `mass/src/mass_update.cc` | 117-125 | conditional | consistency | structural (`mass.rs:37`, all bodies compute inverse in our architecture) |
+| MA.06 | Bottom-up mass property update (children first) | `mass/src/mass_update.cc` | 81-88 | structural | ordering | enforced (`mass_body.rs:240`) |
+| MA.07 | `needs_update` flag cleared after recomputation | `mass/src/mass_update.cc` | 146 | structural | consistency | structural (`mass_body.rs:241`, always recomputes) |
+| MA.08 | No cycle in mass tree | `mass/src/mass_attach.cc` | 373-389 | error | consistency | enforced (`mass_body.rs:164`) |
 | MA.09 | MassPoint names unique within body | `mass/src/mass.cc` | 360-372 | fatal | initialization | deferred (no mass points in ECS yet) |
 | MA.10 | MassPoint names non-empty | `mass/src/mass.cc` | 346-357 | fatal | initialization | deferred |
 | MA.11 | core/composite attached to structure (internal tree) | `mass/src/mass.cc` | 86-87 | structural | structural | deferred (Phase 5, three-frame model) |
 | MA.12 | core_wrt_composite has identity orientation | `mass/src/mass.cc` | 101 | structural | structural | deferred (Phase 5) |
 | MA.13 | MassBody not copyable | `mass/include/mass.hh` | 128-129 | structural | structural | n/a |
 | MA.14 | MassProperties not copyable | `mass/include/mass_properties.hh` | 123-124 | structural | structural | n/a (our MassProperties is Copy) |
-| MA.15 | Detach recomputes inverse inertia for new root | `mass/src/mass_detach.cc` | 327-335 | structural | consistency | enforced (`mass_body.rs` detach calls recompute) |
+| MA.15 | Detach recomputes inverse inertia for new root | `mass/src/mass_detach.cc` | 327-335 | structural | consistency | enforced (`mass_body.rs:213`) |
 | MA.16 | 180° yaw convention for attach-by-point | `dyn_body/src/dyn_body_attach.cc` | 469-472 | structural | structural | deferred (no attach-by-point yet) |
 | MA.17 | Dynamic attachment conserves momentum | `dyn_body/src/dyn_body_attach.cc` | 876-1117 | structural | consistency | deferred (Phase 5) |
 | MA.18 | Partially initialized child state blocks attachment | `dyn_body/src/dyn_body_attach.cc` | 121-136 | warn | consistency | deferred (Phase 5) |
-| MA.19 | No same-tree attachment (cycle prevention) | `dyn_body/src/dyn_body_attach.cc` | 72-87 | error | consistency | enforced (`mass_body.rs` arena prevents this) |
+| MA.19 | No same-tree attachment (cycle prevention) | `dyn_body/src/dyn_body_attach.cc` | 72-87 | error | consistency | enforced (`mass_body.rs:165`) |
 | MA.20 | Child integration frame synced to parent on attach | `dyn_body/src/dyn_body_attach.cc` | 791-795 | structural | consistency | deferred (Phase 5) |
 
 ## Section DM: DynManager
