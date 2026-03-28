@@ -48,7 +48,7 @@ pub struct SrpConfig {
 /// The reference frame of `force` depends on the model:
 /// - Spherical (`compute_srp_force`): force is in the integration (inertial) frame.
 /// - Flat-plate (`compute_flat_plate_srp`/`_thermal`): force is in the structural frame.
-/// The caller is responsible for rotating to inertial before integration.
+///   The caller is responsible for rotating to inertial before integration.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RadiationForce {
     /// Radiation force in N. Frame depends on the producing function (see struct docs).
