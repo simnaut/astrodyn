@@ -10,7 +10,7 @@
 //! subtracting atmospheric wind/co-rotation).
 
 use glam::{DMat3, DVec3};
-use jeod_atmosphere::AtmosphericState;
+use jeod_atmosphere::AtmosphereState;
 
 /// Vehicle drag configuration for the ballistic (default) model.
 ///
@@ -49,7 +49,7 @@ impl Default for AerodynamicForce {
 /// # Arguments
 /// * `config` - Vehicle drag properties (Cd, area)
 /// * `atmos` - Atmospheric state at the vehicle (density, wind)
-/// * `velocity_inertial` - Vehicle velocity in the inertial frame (m/s)
+/// * `inertial_velocity` - Vehicle velocity in the inertial frame (m/s)
 /// * `t_inertial_struct` - Rotation matrix: inertial -> structural/body frame
 ///
 /// # Returns
@@ -57,8 +57,8 @@ impl Default for AerodynamicForce {
 /// Torque is zero for the ballistic model.
 pub fn compute_ballistic_drag(
     config: &DragConfig,
-    atmos: &AtmosphericState,
-    velocity_inertial: DVec3,
+    atmos: &AtmosphereState,
+    inertial_velocity: DVec3,
     t_inertial_struct: &DMat3,
 ) -> AerodynamicForce {
     if atmos.density <= 0.0 {
@@ -67,18 +67,18 @@ pub fn compute_ballistic_drag(
 
     // Relative velocity = vehicle velocity - atmospheric wind (in inertial frame)
     // JEOD aero_drag.cc line 111: Vector3::diff(inertial_velocity, atmos_ptr->wind, relative_vel_cm)
-    let relative_vel_inertial = velocity_inertial - atmos.wind;
+    let relative_vel_cm = inertial_velocity - atmos.wind;
 
     // Transform relative velocity to structural (body) frame
     // JEOD aero_drag.cc line 114: Vector3::transform(T_inertial_struct, relative_vel_cm, rel_vel_cm_struct)
-    let rel_vel_struct = *t_inertial_struct * relative_vel_inertial;
+    let rel_vel_cm_struct = *t_inertial_struct * relative_vel_cm;
 
-    let rel_vel_mag = rel_vel_struct.length();
+    let rel_vel_mag = rel_vel_cm_struct.length();
     if rel_vel_mag < 1e-10 {
         return AerodynamicForce::default();
     }
 
-    let rel_vel_hat = rel_vel_struct / rel_vel_mag;
+    let rel_vel_struct_hat = rel_vel_cm_struct / rel_vel_mag;
 
     // Dynamic pressure: 0.5 · ρ · v²
     // JEOD aero_drag.cc line 132
@@ -86,11 +86,11 @@ pub fn compute_ballistic_drag(
 
     // Drag force magnitude (negative = opposing motion)
     // JEOD default_aero.cc line 70: drag = -dynamic_pressure * area * Cd
-    let drag_magnitude = -dynamic_pressure * config.area * config.cd;
+    let drag = -dynamic_pressure * config.area * config.cd;
 
     // Force in structural frame: drag along relative velocity direction
     // JEOD default_aero.cc line 106: Vector3::scale(rel_vel_hat, drag, force)
-    let force = rel_vel_hat * drag_magnitude;
+    let force = rel_vel_struct_hat * drag;
 
     // Ballistic model: no torque (force acts through center of mass)
     // JEOD default_aero.cc line 107: Vector3::initialize(torque)
@@ -114,7 +114,7 @@ mod tests {
         let density = 1e-12; // kg/m^3 (typical at 400 km)
         let velocity = 7600.0; // m/s (LEO orbital speed)
 
-        let atmos = AtmosphericState {
+        let atmos = AtmosphereState {
             density,
             temperature: 0.0,
             pressure: 0.0,
@@ -147,7 +147,7 @@ mod tests {
     #[test]
     fn zero_density_zero_drag() {
         let config = DragConfig { cd: 2.2, area: 10.0 };
-        let atmos = AtmosphericState::default(); // density = 0
+        let atmos = AtmosphereState::default(); // density = 0
         let vel = DVec3::new(7600.0, 0.0, 0.0);
 
         let result = compute_ballistic_drag(&config, &atmos, vel, &DMat3::IDENTITY);
@@ -158,7 +158,7 @@ mod tests {
     #[test]
     fn drag_opposes_relative_velocity() {
         let config = DragConfig { cd: 2.0, area: 1.0 };
-        let atmos = AtmosphericState {
+        let atmos = AtmosphereState {
             density: 1e-12,
             temperature: 0.0,
             pressure: 0.0,
@@ -174,7 +174,7 @@ mod tests {
         assert!(result.force.x < 0.0, "Drag should oppose relative velocity");
 
         // Compare with no-wind case
-        let atmos_no_wind = AtmosphericState { wind: DVec3::ZERO, ..atmos };
+        let atmos_no_wind = AtmosphereState { wind: DVec3::ZERO, ..atmos };
         let result_no_wind = compute_ballistic_drag(&config, &atmos_no_wind, vel, &DMat3::IDENTITY);
         assert!(
             result.force.x.abs() < result_no_wind.force.x.abs(),
@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn ballistic_torque_is_zero() {
         let config = DragConfig { cd: 2.2, area: 10.0 };
-        let atmos = AtmosphericState {
+        let atmos = AtmosphereState {
             density: 1e-12,
             ..Default::default()
         };
@@ -200,7 +200,7 @@ mod tests {
     #[test]
     fn drag_in_structural_frame() {
         let config = DragConfig { cd: 2.0, area: 1.0 };
-        let atmos = AtmosphericState {
+        let atmos = AtmosphereState {
             density: 1e-12,
             ..Default::default()
         };
@@ -249,7 +249,7 @@ mod tests {
 
         // Typical density at 400 km during solar mean
         let density = 4e-12; // kg/m^3
-        let atmos = AtmosphericState {
+        let atmos = AtmosphereState {
             density,
             ..Default::default()
         };

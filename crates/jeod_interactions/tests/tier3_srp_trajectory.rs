@@ -188,12 +188,12 @@ fn evaluate_srp(
     let flux_hat = sun_to_vehicle / dist;
     let flux_mag = solar_flux_at_distance(dist);
 
-    let shadow = compute_shadow_fraction(
+    let illum_factor = compute_shadow_fraction(
         position, sun_pos, DVec3::ZERO, R_EARTH, SOLAR_RADIUS,
     );
 
     let srp = compute_flat_plate_srp_thermal(
-        plates, t_pow4_cached, flux_hat, flux_mag, DVec3::ZERO, shadow,
+        plates, t_pow4_cached, flux_hat, flux_mag, DVec3::ZERO, illum_factor,
     );
 
     (g + srp.force / mass, srp.temp_dots)
@@ -353,12 +353,24 @@ fn tier3_srp_trajectory_sim3_orbit() {
 
         // Print diagnostics at key intervals
         let t = target.time;
-        if (t % 100_000.0) < 1000.5 || (t > 2000.0 && t < 7000.0 && target.flux_mag > 100.0) {
+        if (t % 200_000.0) < 1000.5 || (t > 2000.0 && t < 8000.0 && target.flux_mag > 100.0) {
+            // Force comparison at this point
+            let (force_rel_err, force_dir_err) = if target.flux_mag > 100.0 && target.srp_force.length() > 1e-6 {
+                let sun_pos = sun_position_at(target.time, ephemeris.as_ref());
+                let stv = target.position - sun_pos;
+                let d = stv.length();
+                let fh = stv / d;
+                let fm = solar_flux_at_distance(d);
+                let our = compute_flat_plate_srp_thermal(&plates, &t_pow4, fh, fm, DVec3::ZERO, 1.0);
+                let rel = (our.force.length() - target.srp_force.length()).abs() / target.srp_force.length();
+                let dir = if our.force.length() > 1e-15 {
+                    our.force.normalize().dot(target.srp_force.normalize()).clamp(-1.0, 1.0).acos()
+                } else { 0.0 };
+                (rel, dir)
+            } else { (-1.0, -1.0) };
             eprintln!(
-                "  t={:9.0}s ({:5.1}d)  pos_err={:8.3}m  vel_err={:.6}m/s  temps=[{:.1},{:.1},{:.1},{:.1},{:.1},{:.1}]",
-                t, t / 86400.0, pos_err, vel_err,
-                temp[0], temp[1], temp[2],
-                temp[3], temp[4], temp[5],
+                "  t={:9.0}s ({:5.1}d)  pos_err={:8.3}m  vel_err={:.6}m/s  F_rel={:.2e}  F_dir={:.4}rad",
+                t, t / 86400.0, pos_err, vel_err, force_rel_err, force_dir_err,
             );
         }
 
@@ -406,11 +418,11 @@ fn tier3_srp_trajectory_sim3_orbit() {
 
         // Shadow comparison: check if our shadow agrees with JEOD flux
         let sun_pos = sun_position_at(target.time, ephemeris.as_ref());
-        let our_shadow = compute_shadow_fraction(
+        let our_illum = compute_shadow_fraction(
             target.position, sun_pos, DVec3::ZERO, R_EARTH, SOLAR_RADIUS,
         );
         let jeod_in_shadow = target.flux_mag < 1e-10;
-        let our_in_shadow = our_shadow < 1e-10;
+        let our_in_shadow = our_illum < 1e-10;
         if jeod_in_shadow != our_in_shadow {
             shadow_mismatches += 1;
         }

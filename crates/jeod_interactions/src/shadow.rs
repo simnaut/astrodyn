@@ -62,8 +62,8 @@ pub fn compute_shadow_fraction(
     //   third_to_cg_inrtl     = source_to_cg - source_to_third_inrtl
     //                         = vehicle_pos - body_pos (third body -> vehicle)
 
-    let source_to_third = body_pos - sun_pos;
-    let d_source_to_third = source_to_third.length();
+    let source_to_third_inrtl = body_pos - sun_pos;
+    let d_source_to_third = source_to_third_inrtl.length();
 
     // JEOD_INV: IN.14 — d_source_to_third > 0 (returns 1.0 if d <= 0)
     if d_source_to_third <= 0.0 {
@@ -71,13 +71,13 @@ pub fn compute_shadow_fraction(
         return 1.0;
     }
 
-    let source_to_third_hat = source_to_third / d_source_to_third;
+    let source_to_third_hat_inrtl = source_to_third_inrtl / d_source_to_third;
 
     // Vector from third body to vehicle
-    let third_to_cg = vehicle_pos - body_pos;
+    let third_to_cg_inrtl = vehicle_pos - body_pos;
 
     // r_par: component of third_to_cg along the source-to-third-body direction
-    let r_par = third_to_cg.dot(source_to_third_hat);
+    let r_par = third_to_cg_inrtl.dot(source_to_third_hat_inrtl);
 
     // Region A: If r_par < 0, the vehicle is between the source and the third
     // body (or on the source side). The third body cannot cast a shadow on the
@@ -88,7 +88,7 @@ pub fn compute_shadow_fraction(
 
     // JEOD_INV: IN.13 — Shadow model: vehicle distance > 0 (returns 0.0 if r_mag2 <= 0)
     // Compute the squared distance between vehicle and third body
-    let r_mag2 = third_to_cg.length_squared();
+    let r_mag2 = third_to_cg_inrtl.length_squared();
     if r_mag2 <= 0.0 {
         // Vehicle coincides with the third body center
         return 0.0;

@@ -18,11 +18,12 @@ use glam::{DMat3, DVec3};
 /// Faithfully ports JEOD `gravity_torque.cc` lines 81-100.
 ///
 /// # Arguments
-/// * `grav_grad_inertial` - Gravity gradient tensor (∂²Φ/∂x_i∂x_j) in the
+/// * `grav_grad` - Gravity gradient tensor (∂²Φ/∂x_i∂x_j) in the
 ///   inertial frame. Symmetric 3x3, trace ≈ 0 outside attracting body.
-///   From `GravityAcceleration::grav_grad`.
-/// * `t_inertial_body` - Rotation matrix from inertial frame to body
+///   From `GravityInteraction::grav_grad` (JEOD name).
+/// * `t_parent_this` - Rotation matrix from inertial (parent) frame to body
 ///   (composite_body) frame. From `RotationalState` quaternion → matrix.
+///   Matches JEOD `RefFrameRot::T_parent_this`.
 /// * `inertia` - Inertia tensor in the body frame (kg·m²). From
 ///   `MassProperties::inertia`.
 ///
@@ -38,13 +39,13 @@ use glam::{DMat3, DVec3};
 ///   the dominant torque component matches the analytical formula:
 ///   τ = 3μ/(2r³) · sin(2θ) · ΔI
 pub fn compute_gravity_torque(
-    grav_grad_inertial: &DMat3,
-    t_inertial_body: &DMat3,
+    grav_grad: &DMat3,
+    t_parent_this: &DMat3,
     inertia: &DMat3,
 ) -> DVec3 {
     // Transform gradient from inertial to body frame:
     //   g = T * grad * T^T  (similarity transform)
-    let g = *t_inertial_body * *grav_grad_inertial * t_inertial_body.transpose();
+    let g = *t_parent_this * *grav_grad * t_parent_this.transpose();
 
     // Extract matrix elements: g.col(j)[i] = g[row=i][col=j]
     let g00 = g.col(0)[0];

@@ -154,8 +154,8 @@ fn srp_changes_eccentricity() {
     };
 
     let srp_config = SrpConfig {
-        area: 100.0,
-        cr: 1.5,
+        cx_area: 100.0,
+        rad_coeff: 1.5,
     };
 
     let sun_pos = DVec3::new(1.496e11, 0.0, 0.0);
@@ -236,8 +236,8 @@ fn gravity_torque_causes_libration() {
 
     for _ in 0..steps {
         let grad = gravity_gradient(state.trans.position);
-        let t_inertial_body = state.rot.quaternion.left_quat_to_transformation();
-        let grav_torque = compute_gravity_torque(&grad, &t_inertial_body, &inertia);
+        let t_parent_this = state.rot.quaternion.left_quat_to_transformation();
+        let grav_torque = compute_gravity_torque(&grad, &t_parent_this, &inertia);
 
         let new_state = rk4_sixdof_step(
             &state,

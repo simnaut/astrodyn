@@ -9,7 +9,7 @@
 //! JEOD uses primarily the 1970 paper's constants/formulations, with selective
 //! use of the 1971 paper for seasonal-latitude density variations.
 
-use crate::AtmosphericState;
+use crate::AtmosphereState;
 
 // ---------------------------------------------------------------------------
 // Gauss quadrature tables (from JEOD utils/math/gauss_quadrature.cc)
@@ -58,7 +58,8 @@ const GAUSS_XVALUES: [[f64; 8]; 9] = [
 // ---------------------------------------------------------------------------
 
 /// Gas constant used by Jacchia. See Jacchia(1971) p9 eq 5.
-const R_GAS: f64 = 8.31432;
+/// Matches JEOD `METAtmosphere::R_gas_constant`.
+const R_GAS_CONSTANT: f64 = 8.31432;
 /// Days per year (Jacchia's value).
 const DAYS_PER_YEAR: f64 = 365.2422;
 /// Avogadro's number as used by Jacchia. See Jacchia(1971) p7 eq 4.
@@ -205,9 +206,9 @@ pub struct MetAtmosphere {
 
 /// Extended MET atmosphere output, including species number densities.
 #[derive(Debug, Clone, Copy)]
-pub struct MetAtmosphericState {
+pub struct MetAtmosphereStateVars {
     /// Base atmospheric state (density, temperature, pressure, wind).
-    pub base: AtmosphericState,
+    pub base: AtmosphereState,
     /// Exospheric temperature in K.
     pub exo_temp: f64,
     /// Log10 of total density.
@@ -217,15 +218,19 @@ pub struct MetAtmosphericState {
     /// N2 number density in 1/m^3.
     pub n2: f64,
     /// O2 number density in 1/m^3.
-    pub o2: f64,
+    /// Matches JEOD `METAtmosphereStateVars::Ox2`.
+    pub ox2: f64,
     /// Atomic oxygen number density in 1/m^3.
-    pub o: f64,
+    /// Matches JEOD `METAtmosphereStateVars::Ox`.
+    pub ox: f64,
     /// Argon number density in 1/m^3.
-    pub ar: f64,
+    /// Matches JEOD `METAtmosphereStateVars::A`.
+    pub a: f64,
     /// Helium number density in 1/m^3.
     pub he: f64,
     /// Atomic hydrogen number density in 1/m^3.
-    pub h: f64,
+    /// Matches JEOD `METAtmosphereStateVars::Hyd`.
+    pub hyd: f64,
 }
 
 impl MetAtmosphere {
@@ -239,7 +244,7 @@ impl MetAtmosphere {
     ///   `MJD - 40000` (Modified Julian Date minus 40000).
     ///
     /// # Returns
-    /// An [`AtmosphericState`] with density (kg/m^3), temperature (K), pressure (Pa),
+    /// An [`AtmosphereState`] with density (kg/m^3), temperature (K), pressure (Pa),
     /// and zero wind.
     pub fn density(
         &self,
@@ -247,7 +252,7 @@ impl MetAtmosphere {
         latitude_rad: f64,
         longitude_rad: f64,
         truncated_julian_day: f64,
-    ) -> AtmosphericState {
+    ) -> AtmosphereState {
         self.density_full(altitude_km, latitude_rad, longitude_rad, truncated_julian_day)
             .base
     }
@@ -259,7 +264,7 @@ impl MetAtmosphere {
         latitude_rad: f64,
         longitude_rad: f64,
         truncated_julian_day: f64,
-    ) -> MetAtmosphericState {
+    ) -> MetAtmosphereStateVars {
         let mut ctx = ComputeContext::new(self, altitude_km, latitude_rad, longitude_rad);
         ctx.compute_solar_angles(truncated_julian_day);
         ctx.compute_exospheric_temperature(self);
@@ -271,10 +276,10 @@ impl MetAtmosphere {
         // Pressure: p = (rho * 1000 / M) * R * T
         // The 1000 converts g/mol to kg/mol to cancel with density in kg/m^3.
         let pressure =
-            (ctx.density * 1000.0 / ctx.mol_weight) * R_GAS * ctx.temperature;
+            (ctx.density * 1000.0 / ctx.mol_weight) * R_GAS_CONSTANT * ctx.temperature;
 
-        MetAtmosphericState {
-            base: AtmosphericState {
+        MetAtmosphereStateVars {
+            base: AtmosphereState {
                 density: ctx.density,
                 temperature: ctx.temperature,
                 pressure,
@@ -284,11 +289,11 @@ impl MetAtmosphere {
             log10_dens,
             mol_weight: ctx.mol_weight,
             n2: ctx.num_density[0],
-            o2: ctx.num_density[1],
-            o: ctx.num_density[2],
-            ar: ctx.num_density[3],
+            ox2: ctx.num_density[1],
+            ox: ctx.num_density[2],
+            a: ctx.num_density[3],
             he: ctx.num_density[4],
-            h: ctx.num_density[5],
+            hyd: ctx.num_density[5],
         }
     }
 }
@@ -558,7 +563,7 @@ impl ComputeContext {
         }
 
         let integral_mg_rt =
-            self.apply_gauss_quadrature(0, integration_ceiling_a, t_125) / R_GAS;
+            self.apply_gauss_quadrature(0, integration_ceiling_a, t_125) / R_GAS_CONSTANT;
 
         // Magic number 2.1926E-5: (rho_0 * T_0 / M_0) at 90 km, converted to kg/m^3.
         self.density =
@@ -587,7 +592,7 @@ impl ComputeContext {
         // ---- PART B: Diffusion equation (above barometric ceiling) ----
         if self.altitude_km > BAROMETRIC_EQUATION_CEILING {
             let integral_g_rt =
-                self.apply_gauss_quadrature(1, self.altitude_km, t_125) / R_GAS;
+                self.apply_gauss_quadrature(1, self.altitude_km, t_125) / R_GAS_CONSTANT;
             let temp_ratio = temperature_ceiling_a / self.temperature;
 
             // Adjust non-Hydrogen species
@@ -605,7 +610,7 @@ impl ComputeContext {
             let log_temperature_500 = temperature_500.log10();
 
             let integral_g_rt =
-                self.apply_gauss_quadrature(6, self.altitude_km, t_125) / R_GAS;
+                self.apply_gauss_quadrature(6, self.altitude_km, t_125) / R_GAS_CONSTANT;
 
             // Magic numbers from Kockarts and Nicolet (1962, 1963).
             // 79.13 = 73.13 + 6 to go from cm^-3 to m^-3.
@@ -918,9 +923,9 @@ mod tests {
     fn species_densities_are_positive() {
         let state = SOLAR_MEAN.density_full(400.0, ISS_LAT, ISS_LON, TJT_2020_JUN_15_NOON);
         assert!(state.n2 >= 1.0);
-        assert!(state.o2 >= 1.0);
-        assert!(state.o >= 1.0);
-        assert!(state.ar >= 1.0);
+        assert!(state.ox2 >= 1.0);
+        assert!(state.ox >= 1.0);
+        assert!(state.a >= 1.0);
         assert!(state.he >= 1.0);
     }
 
@@ -928,9 +933,9 @@ mod tests {
     fn hydrogen_above_500km() {
         let state = SOLAR_MEAN.density_full(600.0, ISS_LAT, ISS_LON, TJT_2020_JUN_15_NOON);
         assert!(
-            state.h > 1.0,
+            state.hyd > 1.0,
             "Hydrogen number density above 500 km should be computed, got {}",
-            state.h
+            state.hyd
         );
     }
 
@@ -938,9 +943,9 @@ mod tests {
     fn hydrogen_below_500km_is_placeholder() {
         let state = SOLAR_MEAN.density_full(400.0, ISS_LAT, ISS_LON, TJT_2020_JUN_15_NOON);
         assert!(
-            (state.h - 1.0).abs() < 1e-10,
+            (state.hyd - 1.0).abs() < 1e-10,
             "Hydrogen below 500 km should be 1.0, got {}",
-            state.h
+            state.hyd
         );
     }
 

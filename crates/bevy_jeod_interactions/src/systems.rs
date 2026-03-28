@@ -23,20 +23,20 @@ pub fn aero_drag_system(
     )>,
 ) {
     for (drag_config, atmos, state, rot, mut aero_force) in &mut query {
-        let atmos_state = jeod_atmosphere::AtmosphericState {
+        let atmos_state = jeod_atmosphere::AtmosphereState {
             density: atmos.density,
             temperature: atmos.temperature,
             pressure: atmos.pressure,
             wind: atmos.wind,
         };
 
-        let t_inertial_body = rot.quaternion.left_quat_to_transformation();
+        let t_parent_this = rot.quaternion.left_quat_to_transformation();
 
         let result = compute_ballistic_drag(
             &drag_config.0,
             &atmos_state,
             state.velocity,
-            &t_inertial_body,
+            &t_parent_this,
         );
 
         aero_force.force = result.force;
@@ -59,11 +59,11 @@ pub fn gravity_torque_system(
     )>,
 ) {
     for (grav, rot, mass, mut torque) in &mut query {
-        let t_inertial_body = rot.quaternion.left_quat_to_transformation();
+        let t_parent_this = rot.quaternion.left_quat_to_transformation();
 
         torque.0 = compute_gravity_torque(
             &grav.grav_grad,
-            &t_inertial_body,
+            &t_parent_this,
             &mass.inertia,
         );
     }
@@ -72,7 +72,7 @@ pub fn gravity_torque_system(
 /// Compute solar radiation pressure for entities with SrpConfigC.
 ///
 /// Requires a Sun entity with `TranslationalStateC` and `SunMarker` to query
-/// the Sun position. Shadow detection is not yet wired in — `shadow_fraction`
+/// the Sun position. Shadow detection is not yet wired in — `illum_factor`
 /// is hard-coded to 1.0 (full sun). To add eclipse support, the system would
 /// need Earth entity position and radius to call `compute_shadow_fraction`.
 ///
@@ -104,13 +104,13 @@ pub fn radiation_pressure_system(
 
     for (srp_config, state, mut srp_force) in &mut query {
         // For now, no shadow detection (Phase 4 Tier 3 will add it)
-        let shadow_fraction = 1.0;
+        let illum_factor = 1.0;
 
         let result = compute_srp_force(
             &srp_config.0,
             sun_state.position,
             state.position,
-            shadow_fraction,
+            illum_factor,
         );
 
         srp_force.force = result.force;

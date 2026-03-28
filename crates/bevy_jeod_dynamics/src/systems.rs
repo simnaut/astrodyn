@@ -51,8 +51,8 @@ pub fn force_collection_system(
             if let Some(rot) = rot_state {
                 // left_quat_to_transformation() gives T_parent_this (inertial→body).
                 // Transpose gives body→inertial for rotating body-frame forces.
-                let t_inertial_body = rot.quaternion.left_quat_to_transformation();
-                force += t_inertial_body.transpose() * aero.force;
+                let t_parent_this = rot.quaternion.left_quat_to_transformation();
+                force += t_parent_this.transpose() * aero.force;
             } else if aero.force != DVec3::ZERO {
                 panic!(
                     "AerodynamicForceC has non-zero force but RotationalStateC is missing. \

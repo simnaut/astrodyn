@@ -28,19 +28,19 @@ pub const SPEED_OF_LIGHT: f64 = 299_792_458.0;
 /// Port of JEOD `RadiationDefaultSurface`.
 #[derive(Debug, Clone, Copy)]
 pub struct SrpConfig {
-    /// Cross-sectional area in m^2.
-    pub area: f64,
+    /// Cross-sectional area in m² (JEOD `RadiationBaseFacet::cx_area`).
+    pub cx_area: f64,
     /// Radiation coefficient (dimensionless).
     ///
-    /// For the spherical (default) model, Cr ranges from 1.0 to 13/9 ≈ 1.4444:
+    /// For the spherical (default) model, rad_coeff ranges from 1.0 to 13/9 ≈ 1.4444:
     /// - 1.0 = perfect absorber (albedo=0)
     /// - 13/9 ≈ 1.4444 = all diffuse reflection (albedo=1, diffuse=1)
     ///
-    /// For flat-plate models (not yet implemented), Cr can reach 2.0 for
+    /// For flat-plate models (not yet implemented), rad_coeff can reach 2.0 for
     /// perfect specular reflection off a plate normal to the beam.
     ///
     /// Matches JEOD `RadiationDefaultSurface::rad_coeff`.
-    pub cr: f64,
+    pub rad_coeff: f64,
 }
 
 /// Radiation pressure force and torque on a vehicle.
@@ -67,10 +67,10 @@ impl Default for RadiationForce {
 /// Port of JEOD `RadiationSource::calculate_flux()` + default surface force.
 ///
 /// # Arguments
-/// * `config` - Vehicle SRP properties (area, Cr)
+/// * `config` - Vehicle SRP properties (cx_area, rad_coeff)
 /// * `sun_position` - Sun position in the integration frame (m)
 /// * `vehicle_position` - Vehicle position in the integration frame (m)
-/// * `shadow_fraction` - Illumination factor: 0.0 = full shadow, 1.0 = full sun
+/// * `illum_factor` - Illumination factor: 0.0 = full shadow, 1.0 = full sun
 ///
 /// # Returns
 /// Radiation force and torque. Force is in the integration (inertial) frame.
@@ -79,34 +79,34 @@ pub fn compute_srp_force(
     config: &SrpConfig,
     sun_position: DVec3,
     vehicle_position: DVec3,
-    shadow_fraction: f64,
+    illum_factor: f64,
 ) -> RadiationForce {
-    if shadow_fraction <= 0.0 {
+    if illum_factor <= 0.0 {
         return RadiationForce::default();
     }
 
-    // Vector from Sun to vehicle
-    let sun_to_vehicle = vehicle_position - sun_position;
-    let distance = sun_to_vehicle.length();
+    // Vector from Sun to vehicle (JEOD: source_to_cg)
+    let source_to_cg = vehicle_position - sun_position;
+    let d_source_to_cg = source_to_cg.length();
 
     // JEOD_INV: IN.10 — distance guard prevents division by near-zero in flux calculation
     // (JEOD checks luminosity < 1e-6; ours uses a compile-time constant, so luminosity is always valid)
-    if distance < 1.0 {
+    if d_source_to_cg < 1.0 {
         return RadiationForce::default();
     }
 
-    let direction = sun_to_vehicle / distance;
+    let flux_hat = source_to_cg / d_source_to_cg;
 
     // Solar flux at the vehicle (W/m²)
     // JEOD radiation_source.cc line 103: flux_mag = luminosity / (d² * 4π)
-    let flux = SOLAR_LUMINOSITY / (4.0 * std::f64::consts::PI * distance * distance);
+    let flux_mag = SOLAR_LUMINOSITY / (4.0 * std::f64::consts::PI * d_source_to_cg * d_source_to_cg);
 
-    // Force magnitude: |F| = (flux / c) * A * Cr, directed from Sun to vehicle (r̂)
-    let force_magnitude = flux * config.area * config.cr / SPEED_OF_LIGHT;
+    // Force magnitude: |F| = (flux / c) * cx_area * rad_coeff, directed from Sun to vehicle (r̂)
+    let force_magnitude = flux_mag * config.cx_area * config.rad_coeff / SPEED_OF_LIGHT;
 
-    // Force pushes away from Sun (along sun-to-vehicle direction)
-    // Apply shadow fraction
-    let force = direction * force_magnitude * shadow_fraction;
+    // Force pushes away from Sun (along source-to-cg direction)
+    // Apply illumination factor
+    let force = flux_hat * force_magnitude * illum_factor;
 
     RadiationForce {
         force,
@@ -157,7 +157,7 @@ pub struct FlatPlateParams {
 /// * `flux_struct_hat` - Unit vector from vehicle toward Sun, in the structural frame
 /// * `flux_mag` - Solar flux at the vehicle (W/m²)
 /// * `center_grav` - Center of gravity in the structural frame (m), for torque arm
-/// * `shadow_fraction` - Illumination factor: 0.0 = full shadow, 1.0 = full sun
+/// * `illum_factor` - Illumination factor: 0.0 = full shadow, 1.0 = full sun
 ///
 /// # Returns
 /// Total radiation force (structural frame, N) and torque (about CG, structural frame, N·m).
@@ -166,13 +166,13 @@ pub fn compute_flat_plate_srp(
     flux_struct_hat: DVec3,
     flux_mag: f64,
     center_grav: DVec3,
-    shadow_fraction: f64,
+    illum_factor: f64,
 ) -> RadiationForce {
-    if shadow_fraction <= 0.0 || flux_mag <= 0.0 {
+    if illum_factor <= 0.0 || flux_mag <= 0.0 {
         return RadiationForce::default();
     }
 
-    let effective_flux = flux_mag * shadow_fraction;
+    let effective_flux = flux_mag * illum_factor;
     let mut total_force = DVec3::ZERO;
     let mut total_torque = DVec3::ZERO;
 
@@ -210,9 +210,9 @@ pub fn compute_flat_plate_srp(
         let plate_force = f_absorption + f_diffuse + f_specular;
 
         // Torque = (plate_position - center_grav) × force
-        // JEOD line 165
-        let arm = plate.position - center_grav;
-        let plate_torque = arm.cross(plate_force);
+        // JEOD line 165: crot_to_cp = position - center_grav
+        let crot_to_cp = plate.position - center_grav;
+        let plate_torque = crot_to_cp.cross(plate_force);
 
         total_force += plate_force;
         total_torque += plate_torque;
@@ -277,19 +277,19 @@ pub struct FlatPlateSrpResult {
 /// * `flux_struct_hat` - Unit vector from vehicle toward Sun, in structural frame
 /// * `flux_mag` - Solar flux at the vehicle (W/m²)
 /// * `center_grav` - Center of gravity in structural frame (m)
-/// * `shadow_fraction` - Illumination factor: 0.0 = full shadow, 1.0 = full sun
+/// * `illum_factor` - Illumination factor: 0.0 = full shadow, 1.0 = full sun
 pub fn compute_flat_plate_srp_thermal(
     plates: &[(FlatPlate, FlatPlateParams, FlatPlateThermal)],
     t_pow4_cached: &[f64],
     flux_struct_hat: DVec3,
     flux_mag: f64,
     center_grav: DVec3,
-    shadow_fraction: f64,
+    illum_factor: f64,
 ) -> FlatPlateSrpResult {
     assert_eq!(plates.len(), t_pow4_cached.len());
 
-    let effective_flux = if shadow_fraction > 0.0 && flux_mag > 0.0 {
-        flux_mag * shadow_fraction
+    let effective_flux = if illum_factor > 0.0 && flux_mag > 0.0 {
+        flux_mag * illum_factor
     } else {
         0.0
     };
@@ -343,8 +343,8 @@ pub fn compute_flat_plate_srp_thermal(
         let f_emission = -(TWO_THIRDS * power_emit / SPEED_OF_LIGHT) * plate.normal;
         plate_force += f_emission;
 
-        let arm = plate.position - center_grav;
-        let plate_torque = arm.cross(plate_force);
+        let crot_to_cp = plate.position - center_grav;
+        let plate_torque = crot_to_cp.cross(plate_force);
 
         total_force += plate_force;
         total_torque += plate_torque;
@@ -391,7 +391,7 @@ mod tests {
     /// Force direction is anti-Sun (pushes away from Sun).
     #[test]
     fn force_direction_anti_sun() {
-        let config = SrpConfig { area: 10.0, cr: 1.5 };
+        let config = SrpConfig { cx_area: 10.0, rad_coeff: 1.5 };
         let sun = DVec3::new(1.496e11, 0.0, 0.0); // Sun at +X
         let vehicle = DVec3::ZERO; // Vehicle at origin
 
@@ -413,7 +413,7 @@ mod tests {
     fn force_magnitude_at_1au() {
         let area = 100.0; // m²
         let cr = 1.0; // perfect absorber
-        let config = SrpConfig { area, cr };
+        let config = SrpConfig { cx_area: area, rad_coeff: cr };
 
         let au = 1.496e11;
         let sun = DVec3::ZERO;
@@ -435,7 +435,7 @@ mod tests {
     /// Full shadow → zero force.
     #[test]
     fn full_shadow_zero_force() {
-        let config = SrpConfig { area: 10.0, cr: 1.5 };
+        let config = SrpConfig { cx_area: 10.0, rad_coeff: 1.5 };
         let result = compute_srp_force(
             &config,
             DVec3::new(1.496e11, 0.0, 0.0),
@@ -448,7 +448,7 @@ mod tests {
     /// Partial shadow scales force linearly.
     #[test]
     fn partial_shadow_scales_linearly() {
-        let config = SrpConfig { area: 10.0, cr: 1.5 };
+        let config = SrpConfig { cx_area: 10.0, rad_coeff: 1.5 };
         let sun = DVec3::new(1.496e11, 0.0, 0.0);
         let vehicle = DVec3::ZERO;
 
@@ -469,11 +469,11 @@ mod tests {
         let vehicle = DVec3::ZERO;
 
         let absorber = compute_srp_force(
-            &SrpConfig { area: 10.0, cr: 1.0 },
+            &SrpConfig { cx_area: 10.0, rad_coeff: 1.0 },
             sun, vehicle, 1.0,
         );
         let reflector = compute_srp_force(
-            &SrpConfig { area: 10.0, cr: 2.0 },
+            &SrpConfig { cx_area: 10.0, rad_coeff: 2.0 },
             sun, vehicle, 1.0,
         );
 
@@ -487,7 +487,7 @@ mod tests {
     /// Torque is zero for spherical model.
     #[test]
     fn spherical_model_zero_torque() {
-        let config = SrpConfig { area: 10.0, cr: 1.5 };
+        let config = SrpConfig { cx_area: 10.0, rad_coeff: 1.5 };
         let result = compute_srp_force(
             &config,
             DVec3::new(1.496e11, 0.0, 0.0),

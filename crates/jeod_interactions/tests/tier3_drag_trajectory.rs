@@ -19,7 +19,7 @@
 
 use glam::{DMat3, DVec3};
 use jeod_atmosphere::met;
-use jeod_atmosphere::AtmosphericState;
+use jeod_atmosphere::AtmosphereState;
 use jeod_dynamics::{
     rk4_sixdof_step, MassProperties, RotationalState, SixDofState, TranslationalState,
 };
@@ -272,7 +272,7 @@ fn tier3_drag_trajectory_run6b() {
             0.0,
         );
 
-        let atmos = AtmosphericState {
+        let atmos = AtmosphereState {
             density: met_state.density,
             temperature: met_state.temperature,
             pressure: met_state.pressure,
@@ -357,7 +357,7 @@ fn tier3_drag_trajectory_run6b() {
                 OMEGA_EARTH * state.trans.position.x,
                 0.0,
             );
-            let atmos = AtmosphericState {
+            let atmos = AtmosphereState {
                 density: met_state.density,
                 temperature: met_state.temperature,
                 pressure: met_state.pressure,

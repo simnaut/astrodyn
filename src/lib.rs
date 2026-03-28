@@ -23,7 +23,7 @@ pub use jeod_math::{DQuat, DMat3, DVec3, JeodQuat, OrbitalElements};
 pub use jeod_planet::{PlanetShape, presets as planet_presets};
 pub use jeod_ephemeris::{Ephemeris, EphemerisBody};
 pub use jeod_time::SimulationTime;
-pub use jeod_atmosphere::{AtmosphericState, exponential::ExponentialAtmosphere};
+pub use jeod_atmosphere::{AtmosphereState, exponential::ExponentialAtmosphere};
 pub use jeod_interactions::{
     AerodynamicForce, DragConfig, RadiationForce, SrpConfig, compute_gravity_torque,
 };

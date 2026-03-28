@@ -7,7 +7,7 @@
 
 use glam::DVec3;
 
-use crate::AtmosphericState;
+use crate::AtmosphereState;
 
 /// Exponential atmosphere model parameters.
 #[derive(Debug, Clone, Copy)]
@@ -39,14 +39,14 @@ impl ExponentialAtmosphere {
     ///
     /// # Arguments
     /// * `altitude` - Geodetic altitude above the reference ellipsoid (m)
-    pub fn density(&self, altitude: f64) -> AtmosphericState {
+    pub fn density(&self, altitude: f64) -> AtmosphereState {
         // Cap altitude to avoid numerical overflow in exp() for deeply
         // sub-surface altitudes. Threshold accounts for h_0.
         let min_altitude = self.h_0 - self.scale_height;
         let effective_altitude = altitude.max(min_altitude);
         let density = self.rho_0 * (-(effective_altitude - self.h_0) / self.scale_height).exp();
 
-        AtmosphericState {
+        AtmosphereState {
             density,
             temperature: 0.0,
             pressure: 0.0,

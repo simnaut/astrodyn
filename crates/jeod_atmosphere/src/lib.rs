@@ -7,7 +7,7 @@ use glam::DVec3;
 ///
 /// Output of an atmosphere model evaluation. All quantities are in SI units.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct AtmosphericState {
+pub struct AtmosphereState {
     /// Atmospheric density in kg/m^3.
     pub density: f64,
     /// Temperature in K.
@@ -18,7 +18,7 @@ pub struct AtmosphericState {
     pub wind: DVec3,
 }
 
-impl Default for AtmosphericState {
+impl Default for AtmosphereState {
     fn default() -> Self {
         Self {
             density: 0.0,

@@ -416,7 +416,7 @@ without adding new physics.
 
 | ID | Task | Description | JEOD Reference |
 |----|------|-------------|----------------|
-| 4.1 | Atmosphere trait | `fn density(&self, alt: f64, lat: f64, lon: f64, time: &SimulationTime) → AtmosphericState`. Where `AtmosphericState = { density, temperature, pressure, wind: DVec3 }`. | `atmosphere/base_atmos/` |
+| 4.1 | Atmosphere trait | `fn density(&self, alt: f64, lat: f64, lon: f64, time: &SimulationTime) → AtmosphereState`. Where `AtmosphereState = { density, temperature, pressure, wind: DVec3 }`. | `atmosphere/base_atmos/` |
 | 4.2 | Exponential atmosphere | Simple `ρ = ρ₀ · exp(-(h-h₀)/H)` model. For initial testing and fallback. | — |
 | 4.3 | MET atmosphere | Port Marshall Engineering Thermosphere lookup tables. Inputs: altitude, latitude, local solar time, F10.7 solar flux. Outputs: density, temperature. | `atmosphere/MET/` |
 | 4.4 | Atmosphere unit tests | Exponential: density at sea level ≈ 1.225 kg/m³, at 100km ≈ 5e-7. MET: spot-check against JEOD table values at 400km (solar min/mean/max). | — |
@@ -451,7 +451,7 @@ without adding new physics.
 
 | ID | Task | Description |
 |----|------|-------------|
-| 4.16 | `bevy_jeod_atmosphere` plugin | `AtmosphericState` component. `atmosphere_update_system` in `EnvironmentSet`: query body position, compute geodetic coords, call `Atmosphere::density()`. |
+| 4.16 | `bevy_jeod_atmosphere` plugin | `AtmosphereState` component. `atmosphere_update_system` in `EnvironmentSet`: query body position, compute geodetic coords, call `Atmosphere::density()`. |
 | 4.17 | Aerodynamic force system | `AerodynamicForce` component. `aero_drag_system` in `InteractionSet`. |
 | 4.18 | Radiation pressure system | `RadiationForce` component. `radiation_pressure_system` in `InteractionSet`. Reads Sun entity position. |
 | 4.19 | Gravity torque system | `GravityTorque` component. `gravity_torque_system` in `InteractionSet`. |
