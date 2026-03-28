@@ -380,8 +380,7 @@ impl ComputeContext {
         // Compute year, day-of-year from TJT.
         // TJT epoch: 1957-05-24. Default start: 2000-01-01 has TJT = 15544.
         // We replicate JEOD's iterative year-tracking logic.
-        #[allow(unused_assignments)] // mirrors JEOD's iterative tracking; value used only within loop
-        let mut tjt_year_start: f64 = 11544.0; // TJT of 2000-01-01
+        let tjt_year_start: f64 = 11544.0; // TJT of 2000-01-01
         let mut year: i32 = 2000;
         let mut max_days_this_year: i32 = 366; // 2000 is a leap year
 
@@ -389,7 +388,6 @@ impl ComputeContext {
 
         while day_of_year > max_days_this_year {
             day_of_year -= max_days_this_year;
-            tjt_year_start += max_days_this_year as f64;
             year += 1;
             max_days_this_year = if year % 4 == 0 { 366 } else { 365 };
         }
@@ -397,7 +395,6 @@ impl ComputeContext {
             year -= 1;
             max_days_this_year = if year % 4 == 0 { 366 } else { 365 };
             day_of_year += max_days_this_year;
-            tjt_year_start -= max_days_this_year as f64;
         }
 
         self.fraction_of_year = day_of_year as f64 / DAYS_PER_YEAR;
