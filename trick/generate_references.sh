@@ -287,6 +287,27 @@ dr.add_variable("veh.dyn_body.composite_body.state.rot.Q_parent_this.scalar")
 trick.add_data_record_group(dr)
 '
 
+# ── ASCII logging snippet for SIM_3_ORBIT (radiation pressure) ──
+# SIM_3_ORBIT uses DRBinary by default. We inject a DRAscii logger to get CSV
+# output with position, velocity, gravity accel, SRP force, and flux.
+SRP_ORBIT_SNIPPET='
+dr = trick.sim_services.DRAscii("srp_orbit_ASCII")
+dr.set_cycle(1000.0)
+dr.freq = trick.sim_services.DR_Always
+for ii in range(3):
+    dr.add_variable("vehicle.dyn_body.structure.state.trans.position[" + str(ii) + "]")
+for ii in range(3):
+    dr.add_variable("vehicle.dyn_body.structure.state.trans.velocity[" + str(ii) + "]")
+for ii in range(3):
+    dr.add_variable("vehicle.dyn_body.grav_interaction.grav_accel[" + str(ii) + "]")
+for ii in range(3):
+    dr.add_variable("radiation.rad_pressure.force[" + str(ii) + "]")
+for ii in range(3):
+    dr.add_variable("radiation.rad_pressure.torque[" + str(ii) + "]")
+dr.add_variable("radiation.rad_pressure.source.flux_mag")
+trick.add_data_record_group(dr)
+'
+
 # ════════════════════════════════════════════════════════════════════
 # LAUNCH ALL GROUPS IN PARALLEL
 # ════════════════════════════════════════════════════════════════════
@@ -324,6 +345,10 @@ PID_EULER=$!
 run_sim "models/utils/integration/verif/SIM_integ_test" "SET_test/RUN_rk4" "integ_rk4" &
 PID_INTEG=$!
 
+# Group 9: SIM_3_ORBIT (radiation pressure SRP verification)
+run_sim_with_ascii "models/interactions/radiation_pressure/verif/SIM_3_ORBIT" "SET_test/RUN_radiation" "srp_orbit_radiation" "$SRP_ORBIT_SNIPPET" &
+PID_SRP_ORBIT=$!
+
 # ════════════════════════════════════════════════════════════════════
 # WAIT FOR ALL GROUPS
 # ════════════════════════════════════════════════════════════════════
@@ -338,6 +363,7 @@ wait $PID_NED       || { echo "WARN: SIM_NED failed"; FAIL=1; }
 wait $PID_SOLARBETA  || { echo "WARN: SIM_SolarBeta failed"; FAIL=1; }
 wait $PID_EULER     || { echo "WARN: SIM_Euler failed"; FAIL=1; }
 wait $PID_INTEG     || { echo "WARN: SIM_integ_test failed"; FAIL=1; }
+wait $PID_SRP_ORBIT || { echo "WARN: SIM_3_ORBIT SRP failed"; FAIL=1; }
 
 echo ""
 echo "=== Reference data generation complete ==="

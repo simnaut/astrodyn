@@ -1,14 +1,16 @@
 //! Solar radiation pressure computation.
 //!
-//! Port of JEOD `radiation_source.cc` (flux calculation) and
-//! `radiation_pressure__default_surface.cc` (spherical model).
+//! Two surface models:
 //!
-//! For a spherical body, the SRP force is:
+//! **Spherical (default)** — port of JEOD `RadiationDefaultSurface`:
 //!   F = (L / (4πr²c)) · A · Cr · r̂
 //!
-//! where L is solar luminosity, r is distance to the Sun, c is speed of light,
-//! A is cross-sectional area, Cr is radiation coefficient, and r̂ is the
-//! unit vector from Sun to vehicle (so the force pushes away from the Sun).
+//! **Flat-plate** — port of JEOD `FlatPlateRadiationFacet`:
+//!   Per plate: decompose into absorption, diffuse reflection, specular reflection.
+//!   Sum over all illuminated plates for total force and torque.
+//!
+//! Common to both: L is solar luminosity, r is distance to the Sun, c is speed
+//! of light, r̂ is the Sun-to-vehicle unit vector.
 
 use glam::DVec3;
 
@@ -110,6 +112,126 @@ pub fn compute_srp_force(
         force,
         torque: DVec3::ZERO,
     }
+}
+
+// ── Flat-plate surface model ─────────────────────────────────────────────────
+// Port of JEOD `FlatPlateRadiationFacet::incident_radiation()` and
+// `FlatPlateRadiationFacet::radiation_pressure()` from
+// `flat_plate_radiation_facet.cc`.
+
+const TWO_THIRDS: f64 = 2.0 / 3.0;
+
+/// A single flat plate on a vehicle surface.
+///
+/// Position and normal are in the structural (body) frame.
+#[derive(Debug, Clone, Copy)]
+pub struct FlatPlate {
+    /// Plate area in m².
+    pub area: f64,
+    /// Outward-facing normal unit vector (structural frame).
+    pub normal: DVec3,
+    /// Center of pressure position (structural frame, m).
+    pub position: DVec3,
+}
+
+/// Optical properties shared by one or more flat plates.
+///
+/// Matches JEOD `RadiationParams` fields.
+#[derive(Debug, Clone, Copy)]
+pub struct FlatPlateParams {
+    /// Fraction of incident light reflected (0 = perfect absorber, 1 = no absorption).
+    pub albedo: f64,
+    /// Fraction of reflected light that is diffuse (0 = all specular, 1 = all diffuse).
+    pub diffuse: f64,
+}
+
+/// Compute SRP force and torque from a set of flat plates.
+///
+/// Port of JEOD `FlatPlateRadiationFacet::incident_radiation()` +
+/// `radiation_pressure()`, summed over all plates. Thermal emission is not
+/// included (it requires temperature integration state); for most cases the
+/// emission force is small compared to direct SRP.
+///
+/// # Arguments
+/// * `plates` - Flat plates with their optical properties, in the structural frame
+/// * `flux_struct_hat` - Unit vector from vehicle toward Sun, in the structural frame
+/// * `flux_mag` - Solar flux at the vehicle (W/m²)
+/// * `center_grav` - Center of gravity in the structural frame (m), for torque arm
+/// * `shadow_fraction` - Illumination factor: 0.0 = full shadow, 1.0 = full sun
+///
+/// # Returns
+/// Total radiation force (structural frame, N) and torque (about CG, structural frame, N·m).
+pub fn compute_flat_plate_srp(
+    plates: &[(FlatPlate, FlatPlateParams)],
+    flux_struct_hat: DVec3,
+    flux_mag: f64,
+    center_grav: DVec3,
+    shadow_fraction: f64,
+) -> RadiationForce {
+    if shadow_fraction <= 0.0 || flux_mag <= 0.0 {
+        return RadiationForce::default();
+    }
+
+    let effective_flux = flux_mag * shadow_fraction;
+    let mut total_force = DVec3::ZERO;
+    let mut total_torque = DVec3::ZERO;
+
+    for (plate, params) in plates {
+        // sin_theta = -(normal · flux_hat): cosine of angle between plate normal
+        // and the incoming flux direction. Positive when plate faces the source.
+        // JEOD flat_plate_radiation_facet.cc line 89
+        let sin_theta = -plate.normal.dot(flux_struct_hat);
+        if sin_theta <= 0.0 {
+            continue; // plate faces away from source
+        }
+
+        // Projected area normal to the flux
+        let cx_area = plate.area * sin_theta;
+
+        // Momentum flux on this plate (N)
+        let areaxflux = cx_area * effective_flux / SPEED_OF_LIGHT;
+
+        // Absorption force: along flux direction
+        // JEOD line 110: F_absorption = flux_hat * areaxflux * (1 - albedo)
+        let f_absorption = flux_struct_hat * (areaxflux * (1.0 - params.albedo));
+
+        let ref_flux = areaxflux * params.albedo;
+
+        // Diffuse reflection: (flux_hat - 2/3 * normal) * diffuse * ref_flux
+        // JEOD lines 117-121
+        let f_diffuse = (flux_struct_hat - TWO_THIRDS * plate.normal)
+            * (params.diffuse * ref_flux);
+
+        // Specular reflection: normal * 2 * (diffuse - 1) * ref_flux * sin_theta
+        // JEOD lines 124-128. (diffuse - 1) < 0, so force is opposite to normal.
+        let f_specular = plate.normal
+            * (2.0 * (params.diffuse - 1.0) * ref_flux * sin_theta);
+
+        let plate_force = f_absorption + f_diffuse + f_specular;
+
+        // Torque = (plate_position - center_grav) × force
+        // JEOD line 165
+        let arm = plate.position - center_grav;
+        let plate_torque = arm.cross(plate_force);
+
+        total_force += plate_force;
+        total_torque += plate_torque;
+    }
+
+    RadiationForce {
+        force: total_force,
+        torque: total_torque,
+    }
+}
+
+/// Compute solar flux at a given distance from the Sun.
+///
+/// Returns flux in W/m². Port of JEOD `RadiationSource::calculate_flux()`.
+pub fn solar_flux_at_distance(distance: f64) -> f64 {
+    if distance < 1.0 {
+        return 0.0;
+    }
+    SOLAR_LUMINOSITY / (4.0 * std::f64::consts::PI * distance * distance)
 }
 
 #[cfg(test)]
@@ -240,5 +362,178 @@ mod tests {
             1.0,
         );
         assert_eq!(result.torque, DVec3::ZERO);
+    }
+
+    // ── Flat-plate model tests ──────────────────────────────────────────
+
+    /// Single plate facing the Sun: all flux intercepted.
+    #[test]
+    fn flat_plate_normal_to_flux() {
+        let plate = FlatPlate {
+            area: 10.0,
+            normal: DVec3::new(-1.0, 0.0, 0.0), // faces -X
+            position: DVec3::ZERO,
+        };
+        let params = FlatPlateParams { albedo: 0.0, diffuse: 0.0 }; // pure absorber
+        let flux_hat = DVec3::new(1.0, 0.0, 0.0); // flux from -X toward +X
+        let flux_mag = 1000.0; // W/m²
+
+        let result = compute_flat_plate_srp(
+            &[(plate, params)],
+            flux_hat, flux_mag, DVec3::ZERO, 1.0,
+        );
+
+        // sin_theta = -(normal · flux_hat) = -(-1*1) = 1.0
+        // cx_area = 10 * 1.0 = 10
+        // areaxflux = 10 * 1000 / c
+        // F = flux_hat * areaxflux (pure absorption)
+        let expected_force = 10.0 * 1000.0 / SPEED_OF_LIGHT;
+        assert!(
+            (result.force.x - expected_force).abs() < 1e-20,
+            "Force X: expected {expected_force}, got {}",
+            result.force.x
+        );
+        assert!(result.force.y.abs() < 1e-30);
+        assert!(result.force.z.abs() < 1e-30);
+    }
+
+    /// Plate facing away from Sun: no force.
+    #[test]
+    fn flat_plate_facing_away() {
+        let plate = FlatPlate {
+            area: 10.0,
+            normal: DVec3::new(1.0, 0.0, 0.0), // faces +X (same as flux)
+            position: DVec3::ZERO,
+        };
+        let params = FlatPlateParams { albedo: 0.5, diffuse: 0.5 };
+        let flux_hat = DVec3::new(1.0, 0.0, 0.0);
+
+        let result = compute_flat_plate_srp(
+            &[(plate, params)],
+            flux_hat, 1000.0, DVec3::ZERO, 1.0,
+        );
+
+        assert_eq!(result.force, DVec3::ZERO, "Back-facing plate should produce no force");
+    }
+
+    /// Pure specular reflection: force is along plate normal (opposite to incoming).
+    #[test]
+    fn flat_plate_specular_reflection() {
+        let plate = FlatPlate {
+            area: 10.0,
+            normal: DVec3::new(-1.0, 0.0, 0.0),
+            position: DVec3::ZERO,
+        };
+        // albedo=1, diffuse=0 → pure specular
+        let params = FlatPlateParams { albedo: 1.0, diffuse: 0.0 };
+        let flux_hat = DVec3::new(1.0, 0.0, 0.0);
+        let flux_mag = 1000.0;
+
+        let result = compute_flat_plate_srp(
+            &[(plate, params)],
+            flux_hat, flux_mag, DVec3::ZERO, 1.0,
+        );
+
+        // Absorption: 0 (albedo=1)
+        // Diffuse: 0 (diffuse=0)
+        // Specular: normal * 2*(0-1) * albedo*areaxflux * sin_theta
+        //         = [-1,0,0] * 2*(-1) * 1.0 * (10*1000/c) * 1.0
+        //         = [+2 * 10*1000/c, 0, 0]
+        // Total force in +X direction (reflected back toward source) — wait, that's
+        // the momentum transfer. For specular reflection the force is 2x absorption
+        // and pushes the plate away from the source (same direction as flux_hat).
+        let areaxflux = 10.0 * 1000.0 / SPEED_OF_LIGHT;
+        // F_specular = normal * 2*(diffuse-1)*ref_flux*sin_theta
+        //            = [-1,0,0] * 2*(-1)*(1.0*areaxflux)*1.0 = [+2*areaxflux, 0, 0]
+        // F_absorption = 0
+        // F_diffuse = 0
+        // Total = [+2*areaxflux, 0, 0]
+        assert!(
+            (result.force.x - 2.0 * areaxflux).abs() < 1e-20,
+            "Specular: expected {}, got {}",
+            2.0 * areaxflux,
+            result.force.x
+        );
+    }
+
+    /// Torque from offset plate.
+    #[test]
+    fn flat_plate_torque_from_offset() {
+        let plate = FlatPlate {
+            area: 10.0,
+            normal: DVec3::new(-1.0, 0.0, 0.0),
+            position: DVec3::new(0.0, 2.0, 0.0), // offset in +Y
+        };
+        let params = FlatPlateParams { albedo: 0.0, diffuse: 0.0 };
+        let flux_hat = DVec3::new(1.0, 0.0, 0.0);
+        let cg = DVec3::ZERO;
+
+        let result = compute_flat_plate_srp(
+            &[(plate, params)],
+            flux_hat, 1000.0, cg, 1.0,
+        );
+
+        // Force is in +X, arm is [0,2,0]
+        // Torque = [0,2,0] × [Fx,0,0] = [0,0,-2*Fx]
+        assert!(result.torque.z < 0.0, "Torque Z should be negative");
+        assert!(result.torque.x.abs() < 1e-30);
+        assert!(result.torque.y.abs() < 1e-30);
+    }
+
+    /// Shadow fraction scales flat-plate force.
+    #[test]
+    fn flat_plate_shadow_scaling() {
+        let plate = FlatPlate {
+            area: 10.0,
+            normal: DVec3::new(-1.0, 0.0, 0.0),
+            position: DVec3::ZERO,
+        };
+        let params = FlatPlateParams { albedo: 0.5, diffuse: 0.5 };
+        let flux_hat = DVec3::new(1.0, 0.0, 0.0);
+
+        let full = compute_flat_plate_srp(
+            &[(plate, params)], flux_hat, 1000.0, DVec3::ZERO, 1.0,
+        );
+        let half = compute_flat_plate_srp(
+            &[(plate, params)], flux_hat, 1000.0, DVec3::ZERO, 0.5,
+        );
+
+        let ratio = half.force.length() / full.force.length();
+        assert!(
+            (ratio - 0.5).abs() < 1e-12,
+            "Half shadow should give half force, ratio = {ratio}"
+        );
+    }
+
+    /// SIM_3_ORBIT 6-plate configuration: symmetric plates with identity attitude.
+    #[test]
+    fn sim3_orbit_six_plate_identity_attitude() {
+        // SIM_3_ORBIT plates: 4×60m² at ±X/±Y, 2×16m² at ±Z
+        let params = FlatPlateParams { albedo: 0.5, diffuse: 0.5 };
+        let plates: Vec<(FlatPlate, FlatPlateParams)> = vec![
+            (FlatPlate { area: 60.0, normal: DVec3::X,  position: DVec3::new(2.0, 0.0, 0.0) }, params),
+            (FlatPlate { area: 60.0, normal: -DVec3::Y, position: DVec3::new(0.0, -2.0, 0.0) }, params),
+            (FlatPlate { area: 60.0, normal: -DVec3::X, position: DVec3::new(-2.0, 0.0, 0.0) }, params),
+            (FlatPlate { area: 60.0, normal: DVec3::Y,  position: DVec3::new(0.0, 2.0, 0.0) }, params),
+            (FlatPlate { area: 16.0, normal: DVec3::Z,  position: DVec3::new(0.0, 0.0, 7.5) }, params),
+            (FlatPlate { area: 16.0, normal: -DVec3::Z, position: DVec3::new(0.0, 0.0, -7.5) }, params),
+        ];
+
+        // Flux from +X direction
+        let flux_hat = DVec3::X;
+        let flux_mag = 1000.0;
+
+        let result = compute_flat_plate_srp(&plates, flux_hat, flux_mag, DVec3::ZERO, 1.0);
+
+        // Only plates facing -X intercept flux:
+        // Plate at -X with normal [-1,0,0]: sin_theta = -((-1)*1) = 1.0, cx_area = 60
+        // Plate at +X with normal [+1,0,0]: sin_theta = -(1*1) = -1.0, skip
+        // ±Y plates: sin_theta = 0, skip
+        // ±Z plates: sin_theta = 0, skip
+        // So only one plate contributes, with cx_area = 60
+        assert!(result.force.length() > 0.0, "Should have non-zero force");
+        assert!(result.force.x > 0.0, "Force should push in +X (away from source)");
+        // Y and Z components should be non-zero due to diffuse reflection off the -X plate
+        // (diffuse component has -2/3*normal contribution)
     }
 }
