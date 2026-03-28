@@ -109,7 +109,7 @@ with `// JEOD_INV: DB.03` comments.
 |-----|-----------|-------------|---------|-------------|----------|------------|
 | GV.01 | Gravity source name non-empty | `gravity/src/gravity_manager.cc` | 113-119 | fatal | initialization | n/a (sources referenced by Entity) |
 | GV.02 | Gravity source name unique | `gravity/src/gravity_manager.cc` | 122-130 | fatal | structural | n/a (Entity IDs unique) |
-| GV.03 | `check_validity()` called on every degree/order mutation | `gravity/src/spherical_harmonics_gravity_controls.cc` | 248-317 | structural | runtime | enforced (`validation.rs` at startup; not on mutation) |
+| GV.03 | `check_validity()` called on every degree/order mutation | `gravity/src/spherical_harmonics_gravity_controls.cc` | 248-317 | structural | runtime | partial (`validation.rs` at startup; JEOD also validates on every setter — our fields are public with no setter guards) |
 | GV.04 | degree ≤ source degree | `gravity/src/spherical_harmonics_gravity_controls.cc` | 350-361 | fatal | runtime | enforced (`gravity_controls.rs check_validity`) |
 | GV.05 | order ≤ source order | `gravity/src/spherical_harmonics_gravity_controls.cc` | 365-376 | fatal | runtime | enforced (`gravity_controls.rs check_validity`) |
 | GV.06 | order ≤ degree | `gravity/src/spherical_harmonics_gravity_controls.cc` | 380-391 | fatal | runtime | enforced (`gravity_controls.rs check_validity`) |

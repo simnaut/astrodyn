@@ -172,7 +172,7 @@ pub fn compute_shadow_fraction(
     // The numerator is the same for both branches.
     let delta_numer = radius_x_d - r_perp_x_d + (body_radius + source_radius) * r_par;
 
-    if ang_ratio_2 >= 1.0 {
+    let result = if ang_ratio_2 >= 1.0 {
         // Third body has a larger angular size than the source.
         // The source disk is being covered by the larger third body disk.
         let delta = delta_numer / (2.0 * source_radius * r_par);
@@ -182,7 +182,14 @@ pub fn compute_shadow_fraction(
         // The third body disk transits across the larger source disk.
         let delta = delta_numer / (2.0 * body_radius * (d_source_to_third + r_par));
         1.0 - ang_ratio_2 * generate_alpha(ang_ratio, delta)
-    }
+    };
+
+    // Clamp to [0, 1]: the generate_alpha polynomial can produce small
+    // negative values near first contact (a0 < 0 for some rho_adj),
+    // causing illumination slightly > 1.0. JEOD does not clamp, but the
+    // polynomial fit is empirically accurate to ~1e-3; clamping prevents
+    // SRP amplification above full sunlight.
+    result.clamp(0.0, 1.0)
 }
 
 #[cfg(test)]

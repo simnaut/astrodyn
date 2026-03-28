@@ -483,7 +483,7 @@ without adding new physics.
 
 #### Other
 - [x] **Portability**: All `jeod_*` Phase 4 additions compile without Bevy; `leo_drag.rs` example uses only `jeod_*`/`glam` crates
-- [x] `cargo test --workspace` — 275 tests pass, 0 failures, 0 clippy warnings
+- [x] `cargo test --workspace` — all tests pass, 0 clippy warnings
 
 ---
 
