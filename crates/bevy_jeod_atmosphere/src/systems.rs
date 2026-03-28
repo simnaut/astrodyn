@@ -1,18 +1,29 @@
 use bevy::prelude::*;
 use jeod_atmosphere::exponential::ExponentialAtmosphere;
+use jeod_atmosphere::met::MetAtmosphere;
 use jeod_math::geodetic::cartesian_to_geodetic;
 
 use bevy_jeod_dynamics::{
     AtmosphericStateC, PlanetFixedRotationC, TranslationalStateC,
 };
+use bevy_jeod_time::SimulationTimeR;
+
+/// Selectable atmosphere model.
+#[derive(Debug, Clone)]
+pub enum AtmosphereModel {
+    /// Simple exponential: `rho = rho_0 * exp(-(h - h_0) / H)`.
+    /// No time, latitude, or longitude dependence.
+    Exponential(ExponentialAtmosphere),
+    /// Marshall Engineering Thermosphere (Jacchia 1970/1971).
+    /// Full altitude/latitude/longitude/time/solar-activity dependence.
+    Met(MetAtmosphere),
+}
 
 /// Resource holding the atmosphere model configuration.
-///
-/// Currently supports only the exponential atmosphere model. The MET model is
-/// implemented in `jeod_atmosphere` but is not yet wired into `AtmosphereModelR`.
 #[derive(Resource, Debug, Clone)]
 pub struct AtmosphereModelR {
-    pub model: ExponentialAtmosphere,
+    /// The atmosphere model to evaluate.
+    pub model: AtmosphereModel,
     /// Equatorial radius of the planet (m). Used for geodetic conversion.
     pub r_eq: f64,
     /// Polar radius of the planet (m). Used for geodetic conversion.
@@ -26,11 +37,16 @@ pub struct AtmosphereModelR {
 /// Update atmospheric state for entities that have AtmosphericStateC.
 ///
 /// Converts the vehicle's inertial position to planet-fixed coordinates,
-/// computes geodetic altitude, then evaluates the atmosphere model.
+/// computes geodetic altitude/latitude/longitude, then evaluates the
+/// atmosphere model.
+///
+/// For the MET model, also reads `SimulationTimeR` to get TAI TJT (truncated
+/// Julian time) for solar angle and seasonal variation computation.
 ///
 /// Placed in `JeodSet::Environment`.
 pub fn atmosphere_update_system(
     atmos_model: Option<Res<AtmosphereModelR>>,
+    sim_time: Option<Res<SimulationTimeR>>,
     planet_query: Query<&PlanetFixedRotationC>,
     mut query: Query<(&TranslationalStateC, &mut AtmosphericStateC)>,
 ) {
@@ -64,11 +80,29 @@ pub fn atmosphere_update_system(
             state.position // No rotation available → assume already in PCPF
         };
 
-        // Compute geodetic altitude
+        // Compute geodetic coordinates
         let geodetic = cartesian_to_geodetic(pos_pfix, model.r_eq, model.r_pol);
 
         // Evaluate atmosphere model
-        let result = model.model.density(geodetic.altitude);
+        let result = match &model.model {
+            AtmosphereModel::Exponential(exp) => exp.density(geodetic.altitude),
+            AtmosphereModel::Met(met) => {
+                let tjt = sim_time
+                    .as_ref()
+                    .expect(
+                        "MET atmosphere requires SimulationTimeR resource for TJT. \
+                         Add JeodTimePlugin before JeodAtmospherePlugin."
+                    )
+                    .tai_tjt;
+
+                met.density(
+                    geodetic.altitude / 1000.0, // MET expects altitude in km
+                    geodetic.latitude,
+                    geodetic.longitude,
+                    tjt,
+                )
+            }
+        };
 
         atmos.density = result.density;
         atmos.temperature = result.temperature;

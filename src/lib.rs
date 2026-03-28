@@ -11,7 +11,7 @@ pub use bevy_jeod_frames::{JeodFramesPlugin, RefFrameNameC, RefFrameStateC};
 pub use bevy_jeod_gravity::JeodGravityPlugin;
 pub use bevy_jeod_planet::{JeodPlanetPlugin, PlanetC};
 pub use bevy_jeod_time::{JeodTimePlugin, SimulationTimeR};
-pub use bevy_jeod_atmosphere::{AtmosphereModelR, JeodAtmospherePlugin};
+pub use bevy_jeod_atmosphere::{AtmosphereModel, AtmosphereModelR, JeodAtmospherePlugin};
 pub use bevy_jeod_interactions::{
     DragConfigC, JeodInteractionsPlugin, SrpConfigC, SunMarker,
 };

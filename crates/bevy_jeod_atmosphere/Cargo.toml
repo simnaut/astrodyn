@@ -9,3 +9,4 @@ glam = { workspace = true }
 jeod_atmosphere = { path = "../jeod_atmosphere" }
 jeod_math = { path = "../jeod_math" }
 bevy_jeod_dynamics = { path = "../bevy_jeod_dynamics" }
+bevy_jeod_time = { path = "../bevy_jeod_time" }
