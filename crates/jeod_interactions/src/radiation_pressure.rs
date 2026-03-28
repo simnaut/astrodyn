@@ -44,11 +44,16 @@ pub struct SrpConfig {
 }
 
 /// Radiation pressure force and torque on a vehicle.
+///
+/// The reference frame of `force` depends on the model:
+/// - Spherical (`compute_srp_force`): force is in the integration (inertial) frame.
+/// - Flat-plate (`compute_flat_plate_srp`/`_thermal`): force is in the structural frame.
+/// The caller is responsible for rotating to inertial before integration.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RadiationForce {
-    /// Radiation force in N, in the integration (inertial) frame.
+    /// Radiation force in N. Frame depends on the producing function (see struct docs).
     pub force: DVec3,
-    /// Radiation torque in N*m, in the body frame.
+    /// Radiation torque in N*m, in the structural/body frame.
     /// Zero for the spherical (default) model.
     pub torque: DVec3,
 }
