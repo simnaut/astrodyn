@@ -207,6 +207,40 @@ impl<SourceId> GravityControl<SourceId> {
             )
         }
     }
+
+    /// Like [`evaluate`](Self::evaluate), but skips gradient and potential
+    /// computation regardless of this control's `gradient` flag.
+    ///
+    /// Use this in hot loops (e.g., RK4 inner stages) where only the
+    /// gravitational acceleration vector is needed.
+    pub fn evaluate_accel_only(
+        &self,
+        source: &GravitySource,
+        position: DVec3,
+        t_inertial_pfix: Option<&DMat3>,
+    ) -> GravityAcceleration {
+        if self.is_nonspherical() {
+            let rot = t_inertial_pfix.unwrap_or_else(|| {
+                panic!(
+                    "Non-spherical gravity (degree={}/order={}) requires planet-fixed \
+                     rotation matrix. In JEOD, the planet-fixed frame is always \
+                     subscribed for non-spherical gravity.",
+                    self.degree, self.order
+                )
+            });
+            crate::gravitation(
+                source, position, rot,
+                self.degree, self.order, self.perturbing_only,
+                false, 0, 0,
+            )
+        } else {
+            crate::gravitation(
+                source, position, &DMat3::IDENTITY,
+                0, 0, self.perturbing_only,
+                false, 0, 0,
+            )
+        }
+    }
 }
 
 impl<SourceId: Default> Default for GravityControl<SourceId> {

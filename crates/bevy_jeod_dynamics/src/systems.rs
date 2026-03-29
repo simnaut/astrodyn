@@ -104,12 +104,18 @@ pub fn force_collection_system(
             } else {
                 // No rotational state or mass: translational-only derivatives.
                 // Delegate to jeod_dynamics (FD.01).
-                let mass_val = mass.map_or(0.0, |m| m.mass);
-                **derivs = jeod_dynamics::compute_translational_derivatives(
-                    collected.force,
-                    mass_val,
-                    grav_accel,
-                );
+                // When mass is absent, non-grav force must be zero (the stricter
+                // entity-context check is in integration_system).
+                if let Some(m) = mass {
+                    **derivs = jeod_dynamics::compute_translational_derivatives(
+                        collected.force,
+                        m.mass,
+                        grav_accel,
+                    );
+                } else {
+                    derivs.trans_accel = grav_accel;
+                    derivs.rot_accel = DVec3::ZERO;
+                }
             }
         }
     }
@@ -191,7 +197,9 @@ pub fn integration_system(
                         ctrl.source_name
                     );
                 }
-                accel += ctrl.evaluate(&source.0, position, rot.map(|r| &r.0)).grav_accel;
+                // Use accel-only path: RK4 inner loop only needs grav_accel,
+                // not the gradient tensor or potential.
+                accel += ctrl.evaluate_accel_only(&source.0, position, rot.map(|r| &r.0)).grav_accel;
             }
             accel
         };
