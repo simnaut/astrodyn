@@ -13,3 +13,6 @@ jeod_atmosphere = { path = "../jeod_atmosphere" }
 jeod_interactions = { path = "../jeod_interactions" }
 glam = { workspace = true }
 log = { workspace = true }
+
+[dev-dependencies]
+jeod_test_data = { path = "../jeod_test_data" }

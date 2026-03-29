@@ -305,13 +305,25 @@ impl Simulation {
         }
 
         // ── 8. Integration ──
+        // Gravity is recomputed at each RK4 intermediate state for 4th-order
+        // accuracy, matching JEOD's DynamicsIntegrationGroup where the
+        // derivative function calls gravity at every stage.
+        let sources = &self.sources;
         for body in &mut self.bodies {
+            let controls = &body.gravity_controls;
             integrate_body(
                 &body.config,
                 &mut body.trans,
                 body.rot.as_mut(),
                 body.mass.as_ref(),
-                body.gravity_accel.grav_accel,
+                |pos| {
+                    accumulate_gravity(pos, controls, |source_id| {
+                        sources
+                            .get(source_id)
+                            .map(|s| (&s.source, s.t_inertial_pfix.as_ref()))
+                    })
+                    .grav_accel
+                },
                 body.total_force.force,
                 body.total_force.torque,
                 dt,

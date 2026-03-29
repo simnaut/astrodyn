@@ -2,9 +2,9 @@ use bevy::prelude::*;
 use glam::DVec3;
 
 use crate::components::{
-    AerodynamicForceC, DynamicsConfigC, FrameDerivativesC, GravityAccelerationC, GravityTorqueC,
-    MassPropertiesC, RadiationForceC, RotationalStateC, StructuralTransformC, TotalForceC,
-    TranslationalStateC,
+    AerodynamicForceC, DynamicsConfigC, FrameDerivativesC, GravityAccelerationC, GravityControlsC,
+    GravitySourceC, GravityTorqueC, MassPropertiesC, PlanetFixedRotationC, RadiationForceC,
+    RotationalStateC, StructuralTransformC, TotalForceC, TranslationalStateC,
 };
 
 /// Recompute derived mass quantities (`inverse_mass`, `inverse_inertia`) each step.
@@ -86,8 +86,9 @@ pub fn force_collection_system(
 /// Advances translational (and optionally rotational) state via RK4 integration.
 ///
 /// Delegates to [`jeod_sim::integrate_body`] for 6-DOF/3-DOF routing and
-/// RK4 stepping. Gravity is held constant across all RK4 stages (matching
-/// JEOD's `DynamicsIntegrationGroup`).
+/// RK4 stepping. Gravity is recomputed at each RK4 intermediate state
+/// for proper 4th-order accuracy, matching JEOD's `DynamicsIntegrationGroup`
+/// where the derivative function recomputes gravity at every stage.
 #[allow(clippy::type_complexity)]
 pub fn integration_system(
     mut bodies: Query<(
@@ -96,9 +97,10 @@ pub fn integration_system(
         &mut TranslationalStateC,
         Option<&mut RotationalStateC>,
         Option<&MassPropertiesC>,
-        &GravityAccelerationC,
+        &GravityControlsC,
         &TotalForceC,
     )>,
+    sources: Query<(&GravitySourceC, Option<&PlanetFixedRotationC>)>,
     time: Res<Time<Fixed>>,
 ) {
     let dt = time.delta_secs_f64();
@@ -106,13 +108,21 @@ pub fn integration_system(
         return;
     }
 
-    for (_entity, config, mut state, mut rot_state, mass, grav, total_force) in &mut bodies {
+    for (_entity, config, mut state, mut rot_state, mass, controls, total_force) in &mut bodies {
         jeod_sim::integrate_body(
             config,
             &mut state.0,
             rot_state.as_mut().map(|r| &mut r.0),
             mass.map(|m| &m.0),
-            grav.grav_accel,
+            |pos| {
+                jeod_sim::accumulate_gravity(pos, &controls.0, |source_entity| {
+                    sources
+                        .get(source_entity)
+                        .ok()
+                        .map(|(s, r)| (&s.0, r.map(|r| &r.0)))
+                })
+                .grav_accel
+            },
             total_force.force,
             total_force.torque,
             dt,
