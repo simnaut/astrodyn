@@ -15,7 +15,7 @@
 //! 1. Flat-plate SRP force decomposition (absorption, diffuse, specular)
 //! 2. Solar flux computation at vehicle distance
 //! 3. Conical Earth shadow detection and illumination fraction
-//! 4. Coupled gravity + SRP trajectory over 24 hours
+//! 4. Coupled gravity + SRP trajectory over ~23 days (< 50 m position error)
 
 use glam::DVec3;
 use jeod_dynamics::TranslationalState;
@@ -430,13 +430,11 @@ fn tier3_srp_trajectory_sim3_orbit() {
         // With thermal emission ported, the force model should closely match JEOD.
         // Remaining error sources: temperature integration timing differences
         // (our RK4 vs JEOD's integrable-object ODE) and ephemeris precision.
-        if target.time <= 86400.0 {
-            assert!(
-                pos_err < 50.0,
-                "Position error {pos_err:.2} m at t={:.0}s exceeds 50 m / 24h threshold",
-                target.time
-            );
-        }
+        assert!(
+            pos_err < 50.0,
+            "Position error {pos_err:.2} m at t={:.0}s exceeds 50 m threshold",
+            target.time
+        );
     }
 
     eprintln!("=== Tier 3 SRP Trajectory (SIM_3_ORBIT RUN_radiation) ===");
@@ -463,8 +461,7 @@ fn tier3_srp_trajectory_sim3_orbit() {
 
     // Force magnitude: at full illumination, matches within a few percent. Near shadow
     // transitions, temperature history diverges (our RK4 vs JEOD's integrable-object ODE)
-    // causing larger relative errors at low-flux points. The position error (24.7 m / 23d)
-    // confirms the integrated force is accurate.
+    // causing larger relative errors at low-flux points.
     assert!(
         max_force_mag_rel_err < 5.0,
         "SRP force magnitude relative error {max_force_mag_rel_err:.4} exceeds 500%"
