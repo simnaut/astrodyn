@@ -23,8 +23,8 @@ use bevy_jeod::{
     GravityControls, GravityControlsC, GravityModel, GravitySourceC, GravityTorqueC,
     JeodAtmospherePlugin, JeodDynamicsPlugin, JeodFramesPlugin, JeodGravityPlugin,
     JeodInteractionsPlugin, JeodTimePlugin, MassProperties, MassPropertiesC, PlanetFixedRotationC,
-    RadiationForceC, RotationalStateC, SrpConfig, SrpConfigC, SunMarker,
-    TotalForceC, TranslationalStateC,
+    RadiationForceC, RotationalStateC, SrpConfig, SrpConfigC, SunMarker, TotalForceC,
+    TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
 use jeod_atmosphere::exponential::ExponentialAtmosphere;
