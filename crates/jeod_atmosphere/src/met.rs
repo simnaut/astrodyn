@@ -257,6 +257,21 @@ impl MetAtmosphere {
             .base
     }
 
+    /// Convenience wrapper that accepts altitude in **metres** (SI).
+    ///
+    /// Internally the MET model works in kilometres (the 1970s-era
+    /// Jacchia convention). This method performs the m→km conversion
+    /// so callers that use SI throughout do not need to.
+    pub fn density_si(
+        &self,
+        altitude_m: f64,
+        latitude_rad: f64,
+        longitude_rad: f64,
+        truncated_julian_day: f64,
+    ) -> AtmosphereState {
+        self.density(altitude_m / 1000.0, latitude_rad, longitude_rad, truncated_julian_day)
+    }
+
     /// Compute extended atmospheric state including species number densities.
     pub fn density_full(
         &self,

@@ -1,8 +1,7 @@
 use bevy::prelude::*;
-use glam::DVec3;
-use jeod_dynamics::SixDofState;
+use glam::{DMat3, DVec3};
+use jeod_dynamics::{ForceContributions, SixDofState};
 
-use glam::DMat3;
 use crate::components::{
     AerodynamicForceC, DynamicsConfigC, FrameDerivativesC, GravityAccelerationC,
     GravityControlsC, GravitySourceC, GravityTorqueC, MassPropertiesC,
@@ -31,8 +30,8 @@ use crate::components::{
 ///
 /// All interaction components are optional — entities without them
 /// contribute zero from those terms.
-// JEOD_INV: DB.28 — forces collected in structural frame, rotated to inertial at root
-// JEOD_INV: DB.29 — torques collected in structural frame, rotated to body at root
+// Force collection and frame derivative physics delegated to jeod_dynamics::collect_forces
+// and jeod_dynamics::compute_frame_derivatives (DB.28, DB.29, FD.01, FD.02).
 #[allow(clippy::type_complexity)]
 pub fn force_collection_system(
     mut query: Query<(
@@ -50,83 +49,68 @@ pub fn force_collection_system(
     // Note: JEOD gates force/torque collection on translational/rotational_dynamics flags (DB.07/DB.08).
     // We collect unconditionally here; gating is enforced in integration_system.
     for (mut total, derivs, grav, rot_state, mass, aero, srp, grav_torque, struct_xform) in &mut query {
-        let mut force = DVec3::ZERO;
-        let mut torque = DVec3::ZERO;
-
         // Structural-to-body transform. Identity when absent (structure = body).
         // JEOD: mass.composite_properties.T_parent_this
         let t_struct_body = struct_xform.map_or(DMat3::IDENTITY, |s| s.0);
 
-        // JEOD_INV: IN.15 — aero drag requires body orientation (T_inertial_struct)
-        // JEOD's aero_drag() takes T_inertial_struct as a mandatory function parameter.
-        // The rotation matrix is always available because DynBody always has three frames.
-        //
-        // Aero force is in structural frame (from compute_ballistic_drag).
-        // JEOD dyn_body_collect.cc lines 219-221: structural→inertial via
-        //   T_inertial_struct^T = (T_struct_body^T * T_inertial_body)^T
-        //                       = T_inertial_body^T * T_struct_body
+        // Build force contributions from optional interaction components.
+        let mut contributions = ForceContributions::default();
+
         if let Some(aero) = aero {
-            if let Some(rot) = rot_state {
-                let t_inertial_body = rot.quaternion.left_quat_to_transformation();
-                let t_inertial_struct = t_struct_body.transpose() * t_inertial_body;
-                force += t_inertial_struct.transpose() * aero.force;
-            } else if aero.force != DVec3::ZERO {
+            // JEOD_INV: IN.15 — aero drag requires body orientation (T_inertial_struct)
+            if aero.force != DVec3::ZERO && rot_state.is_none() {
                 panic!(
                     "AerodynamicForceC has non-zero force but RotationalStateC is missing. \
                      In JEOD, T_inertial_struct is a mandatory parameter of aero_drag(). \
                      Add RotationalStateC to any entity with aerodynamic forces."
                 );
             }
-            // Aero torque is structural frame; convert to body.
-            // JEOD dyn_body_collect.cc line 250: T_struct_body * torq_struct → torq_body
-            torque += t_struct_body * aero.torque;
+            contributions.aero_force_struct = aero.force;
+            contributions.aero_torque_struct = aero.torque;
         }
 
-        // SRP force: spherical model is already inertial (no rotation needed).
-        // When flat-plate SRP is wired, force will be in structural frame and
-        // must be rotated like aero above.
         if let Some(srp) = srp {
-            force += srp.force;
-            // SRP torque is structural frame; convert to body.
-            torque += t_struct_body * srp.torque;
+            contributions.srp_force_inertial = srp.force;
+            contributions.srp_torque_struct = srp.torque;
         }
 
-        // Gravity gradient torque (already in body frame from compute_gravity_torque)
         if let Some(gt) = grav_torque {
-            torque += gt.0;
+            contributions.gravity_torque_body = gt.0;
         }
 
-        total.force = force;
-        total.torque = torque;
+        // Rotation matrix from attitude quaternion (identity if no rotational state).
+        let t_inertial_body = rot_state
+            .as_ref()
+            .map_or(DMat3::IDENTITY, |r| r.quaternion.left_quat_to_transformation());
 
-        // JEOD_INV: FD.01 — trans_accel = non_grav_accel + grav_accel
-        // JEOD_INV: FD.02 — rot_accel = I^-1 * (tau - omega x I*omega)
-        // Matches JEOD dyn_body_collect.cc lines 224-264:
-        //   non_grav_accel = F_non_grav / m
-        //   trans_accel = non_grav_accel + grav_accel
-        //   rot_accel = I^-1 * (tau - omega x I*omega)
+        // Delegate frame-aware force/torque collection to jeod_dynamics (DB.28, DB.29).
+        let collected = jeod_dynamics::collect_forces(&contributions, &t_struct_body, &t_inertial_body);
+        total.force = collected.force;
+        total.torque = collected.torque;
+
+        // Delegate frame derivative computation to jeod_dynamics (FD.01, FD.02).
         if let Some(mut derivs) = derivs {
-            let non_grav_accel = if let Some(m) = mass {
-                if m.mass > 0.0 { force / m.mass } else { DVec3::ZERO }
-            } else {
-                DVec3::ZERO
-            };
-
             let grav_accel = grav.map_or(DVec3::ZERO, |g| g.grav_accel);
-            derivs.trans_accel = non_grav_accel + grav_accel;
 
-            // Rotational acceleration from Euler's equation:
-            // alpha = I^-1 * (tau - omega x (I * omega))
-            derivs.rot_accel = if let (Some(rot), Some(m)) = (rot_state, mass) {
-                jeod_dynamics::rotational::compute_rotational_acceleration(
+            if let (Some(rot), Some(m)) = (rot_state, mass) {
+                **derivs = jeod_dynamics::compute_frame_derivatives(
+                    &collected,
+                    m.mass,
+                    grav_accel,
                     &m.inertia,
                     &m.inverse_inertia,
                     rot.ang_vel_body,
-                    torque,
-                )
+                );
             } else {
-                DVec3::ZERO
-            };
+                // No rotational state or mass: translational-only derivatives.
+                // Delegate to jeod_dynamics (FD.01).
+                let mass_val = mass.map_or(0.0, |m| m.mass);
+                **derivs = jeod_dynamics::compute_translational_derivatives(
+                    collected.force,
+                    mass_val,
+                    grav_accel,
+                );
+            }
         }
     }
 }
@@ -165,21 +149,14 @@ pub fn integration_system(
             continue;
         }
 
-        // JEOD_INV: DB.18 — F=ma (JEOD precomputes inverse_mass; we divide by mass at runtime)
-        // JEOD_INV: MA.01 — MassBody always present on DynBody (partial: only checked when force != 0)
-        // JEOD_INV: MA.02 — mass > 0 for meaningful dynamics (asserted before division)
         // Non-gravity translational acceleration (constant over one RK4 step).
         // TotalForceC.force holds only non-gravity forces (aero + SRP), already
-        // in inertial frame. Divide by mass to get acceleration.
+        // in inertial frame. Delegate F=ma to jeod_dynamics (DB.18, MA.02).
         let non_grav_accel = if total_force.force == DVec3::ZERO {
             DVec3::ZERO
         } else if let Some(m) = mass {
-            assert!(
-                m.mass > 0.0,
-                "Entity {entity:?}: MassPropertiesC.mass must be positive for F=ma, got {}",
-                m.mass
-            );
-            total_force.force / m.mass
+            // JEOD_INV: MA.01 — MassBody always present on DynBody (partial: only checked when force != 0)
+            jeod_dynamics::compute_translational_acceleration(total_force.force, m.mass)
         } else {
             panic!(
                 "Entity {entity:?}: non-zero TotalForceC ({:?}) but no MassPropertiesC. \
@@ -205,30 +182,9 @@ pub fn integration_system(
                     );
                 };
 
-                if ctrl.is_nonspherical() {
-                    // JEOD_INV: GV.13 — gravity source must have inertial frame (PlanetFixedRotationC as proxy)
-                    // JEOD_INV: GV.17 — active nonspherical controls subscribe to planet-fixed frame
-                    let Some(r) = rot else {
-                        panic!(
-                            "Entity {entity:?}: GravityControl for source {:?} requests \
-                             non-spherical gravity (degree={}/order={}) but source has no \
-                             PlanetFixedRotationC. In JEOD, the planet-fixed frame is always \
-                             subscribed for non-spherical gravity.",
-                            ctrl.source_name, ctrl.degree, ctrl.order
-                        );
-                    };
-                    accel += jeod_gravity::gravitation(
-                        &source.0, position, &r.0,
-                        ctrl.degree, ctrl.order, ctrl.perturbing_only,
-                        false, 0, 0,
-                    ).grav_accel;
-                } else {
-                    accel += jeod_gravity::gravitation(
-                        &source.0, position, &glam::DMat3::IDENTITY,
-                        0, 0, ctrl.perturbing_only,
-                        false, 0, 0,
-                    ).grav_accel;
-                }
+                // Delegate dispatch (spherical vs nonspherical) to GravityControl::evaluate()
+                // (GV.13, GV.17 enforced inside evaluate())
+                accel += ctrl.evaluate(&source.0, position, rot.map(|r| &r.0)).grav_accel;
             }
             accel
         };

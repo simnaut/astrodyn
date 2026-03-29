@@ -1,3 +1,7 @@
+use glam::DMat3;
+use glam::DVec3;
+use jeod_dynamics::GravityAcceleration;
+
 use crate::gravity_source::{GravityModel, GravitySource};
 use log::warn;
 
@@ -157,6 +161,51 @@ impl<SourceId> GravityControl<SourceId> {
     /// computation, i.e. `spherical` is false and degree > 0.
     pub fn is_nonspherical(&self) -> bool {
         !self.spherical && self.degree > 0
+    }
+
+    /// Evaluate this gravity control for a single source at the given position.
+    ///
+    /// Dispatches to spherical (point-mass) or non-spherical (spherical harmonics)
+    /// gravity computation based on this control's configuration. For non-spherical
+    /// gravity, `t_inertial_pfix` must be `Some` (matching JEOD's requirement that
+    /// the planet-fixed frame is subscribed for non-spherical gravity).
+    ///
+    /// # Arguments
+    /// - `source`: the gravity source (mu + model data)
+    /// - `position`: body position relative to source center, in inertial frame
+    /// - `t_inertial_pfix`: inertial-to-planet-fixed rotation (required for non-spherical)
+    ///
+    /// # Panics
+    /// Panics if non-spherical gravity is requested but `t_inertial_pfix` is `None`.
+    // JEOD_INV: GV.13 — gravity source must have inertial frame (planet-fixed rotation required for non-spherical)
+    // JEOD_INV: GV.17 — active nonspherical controls subscribe to planet-fixed frame
+    pub fn evaluate(
+        &self,
+        source: &GravitySource,
+        position: DVec3,
+        t_inertial_pfix: Option<&DMat3>,
+    ) -> GravityAcceleration {
+        if self.is_nonspherical() {
+            let rot = t_inertial_pfix.unwrap_or_else(|| {
+                panic!(
+                    "Non-spherical gravity (degree={}/order={}) requires planet-fixed \
+                     rotation matrix. In JEOD, the planet-fixed frame is always \
+                     subscribed for non-spherical gravity.",
+                    self.degree, self.order
+                )
+            });
+            crate::gravitation(
+                source, position, rot,
+                self.degree, self.order, self.perturbing_only,
+                self.gradient, self.gradient_degree, self.gradient_order,
+            )
+        } else {
+            crate::gravitation(
+                source, position, &DMat3::IDENTITY,
+                0, 0, self.perturbing_only,
+                self.gradient, self.gradient_degree, self.gradient_order,
+            )
+        }
     }
 }
 

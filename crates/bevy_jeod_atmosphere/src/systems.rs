@@ -100,8 +100,8 @@ pub fn atmosphere_update_system(
                     )
                     .tai_tjt;
 
-                met.density(
-                    geodetic.altitude / 1000.0, // MET expects altitude in km
+                met.density_si(
+                    geodetic.altitude,
                     geodetic.latitude,
                     geodetic.longitude,
                     tjt,
@@ -109,18 +109,19 @@ pub fn atmosphere_update_system(
             }
         };
 
-        atmos.density = result.density;
-        atmos.temperature = result.temperature;
-        atmos.pressure = result.pressure;
-
+        // Write atmosphere result into the component.
+        // Wind override: use co-rotation wind when planet_omega is set.
         // JEOD_INV: AT.04 — wind velocity computed as omega × position (co-rotation)
-        // Port of JEOD WindVelocity::update_wind() with uniform omega scale.
-        // Wind uses the vehicle's inertial position (matching JEOD's
-        // dyn_body.composite_body.state.trans.position input).
-        atmos.wind = if model.planet_omega != 0.0 {
+        let wind = if model.planet_omega != 0.0 {
             jeod_atmosphere::compute_corotation_wind(model.planet_omega, state.position)
         } else {
             result.wind
+        };
+        **atmos = jeod_atmosphere::AtmosphereState {
+            density: result.density,
+            temperature: result.temperature,
+            pressure: result.pressure,
+            wind,
         };
     }
 }

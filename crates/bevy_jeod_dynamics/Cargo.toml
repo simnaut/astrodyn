@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+jeod_atmosphere = { path = "../jeod_atmosphere" }
 jeod_dynamics = { path = "../jeod_dynamics" }
 jeod_gravity = { path = "../jeod_gravity" }
 glam = { workspace = true }

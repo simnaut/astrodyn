@@ -39,45 +39,13 @@ pub fn gravity_computation_system(
                 continue;
             };
 
-            // Non-spherical gravity requires the planet-fixed rotation matrix.
-            // Matching JEOD: the pfix frame is always available when non-spherical
-            // gravity is active (guaranteed by frame subscription at init time).
-            if ctrl.is_nonspherical() {
-                let Some(r) = rot else {
-                    panic!(
-                        "Entity {entity:?}: GravityControl for source {:?} requests non-spherical \
-                         gravity (degree={}/order={}) but source has no PlanetFixedRotationC. \
-                         In JEOD, the planet-fixed frame is always subscribed for non-spherical gravity.",
-                        ctrl.source_name, ctrl.degree, ctrl.order
-                    );
-                };
-                let result = jeod_gravity::gravitation(
-                    &source.0, state.position, &r.0,
-                    ctrl.degree, ctrl.order, ctrl.perturbing_only,
-                    ctrl.gradient,
-                    ctrl.gradient_degree,
-                    ctrl.gradient_order,
-                );
-                total.grav_accel += result.grav_accel;
-                if ctrl.gradient {
-                    total.grav_grad += result.grav_grad;
-                }
-                total.grav_pot += result.grav_pot;
-            } else {
-                // Spherical (point-mass) path — rotation matrix not needed.
-                let result = jeod_gravity::gravitation(
-                    &source.0, state.position, &glam::DMat3::IDENTITY,
-                    0, 0, ctrl.perturbing_only,
-                    ctrl.gradient,
-                    ctrl.gradient_degree,
-                    ctrl.gradient_order,
-                );
-                total.grav_accel += result.grav_accel;
-                if ctrl.gradient {
-                    total.grav_grad += result.grav_grad;
-                }
-                total.grav_pot += result.grav_pot;
+            // Delegate dispatch (spherical vs nonspherical) to GravityControl::evaluate()
+            let result = ctrl.evaluate(&source.0, state.position, rot.map(|r| &r.0));
+            total.grav_accel += result.grav_accel;
+            if ctrl.gradient {
+                total.grav_grad += result.grav_grad;
             }
+            total.grav_pot += result.grav_pot;
         }
         accel.0 = total;
     }
