@@ -6,10 +6,10 @@ use bevy_jeod_dynamics::{
 };
 use jeod_dynamics::GravityAcceleration;
 
-/// Phase 2 scaffolding: stores pre-computed gravity for use by
-/// `force_collection_system`. The `integration_system` independently recomputes
-/// gravity at each RK4 stage for 4th-order accuracy; this stored value is not
-/// used for integration.
+/// Pre-computes gravity for each dynamic body. The result in
+/// `GravityAccelerationC` is used by both `force_collection_system` (for
+/// frame derivatives) and `integration_system` (held constant across RK4
+/// stages, matching JEOD's `DynamicsIntegrationGroup::gravitation`).
 ///
 /// For each body that has `GravityControlsC`, the system iterates over its
 /// control entries, looks up the corresponding `GravitySourceC` entity, and
@@ -42,9 +42,9 @@ pub fn gravity_computation_system(
             // Pre-check: provide entity context before delegating to evaluate()
             if ctrl.is_nonspherical() && rot.is_none() {
                 panic!(
-                    "Entity {entity:?}: non-spherical GravityControl references source {:?} \
-                     which is missing PlanetFixedRotationC",
-                    ctrl.source_name
+                    "Entity {entity:?}: non-spherical GravityControl (degree={}, order={}) \
+                     references source {:?} which is missing PlanetFixedRotationC",
+                    ctrl.degree, ctrl.order, ctrl.source_name
                 );
             }
             let result = ctrl.evaluate(&source.0, state.position, rot.map(|r| &r.0));

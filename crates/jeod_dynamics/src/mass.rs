@@ -109,7 +109,8 @@ impl MassProperties {
             "MassProperties: inertia and inverse_inertia are inconsistent \
              (I * I^-1 != identity to {tol:.0e}). In JEOD, inverse_inertia \
              is always recomputed from inertia. Use MassProperties::with_inertia() \
-             which computes the inverse automatically."
+             when constructing, or call MassProperties::recompute_derived() after \
+             mutating mass/inertia."
         );
     }
 }

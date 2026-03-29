@@ -10,8 +10,8 @@
 use bevy::prelude::*;
 
 use crate::components::{
-    DynamicsConfigC, GravityControlsC, GravitySourceC, MassPropertiesC,
-    RotationalStateC, TranslationalStateC,
+    DynamicsConfigC, GravityAccelerationC, GravityControlsC, GravitySourceC,
+    MassPropertiesC, RotationalStateC, TranslationalStateC,
 };
 
 /// Validates JEOD invariants on all dynamic body entities.
@@ -48,6 +48,7 @@ pub fn validate_jeod_invariants(
         Entity,
         &DynamicsConfigC,
         &mut GravityControlsC,
+        Option<&GravityAccelerationC>,
         Option<&MassPropertiesC>,
         Option<&RotationalStateC>,
         Option<&TranslationalStateC>,
@@ -60,7 +61,18 @@ pub fn validate_jeod_invariants(
     }
     *has_run = true;
 
-    for (entity, config, mut controls, mass, rot_state, trans_state) in &mut bodies {
+    for (entity, config, mut controls, grav_accel, mass, rot_state, trans_state) in &mut bodies {
+        // ── Invariant: GravityAccelerationC required for integration ──
+        // In JEOD, grav_interaction is a value member of DynBody — always present.
+        // In ECS, the component could be missing, causing silent integration skip.
+        if grav_accel.is_none() {
+            panic!(
+                "Entity {entity:?}: has GravityControlsC but no GravityAccelerationC. \
+                 In JEOD, grav_interaction is a value member of DynBody. \
+                 Add GravityAccelerationC::default() to any entity with gravity controls."
+            );
+        }
+
         // ── Invariant H: three_dof consistency ──
         // Delegates to DynamicsConfig::validate() in jeod_dynamics (DB.05, DB.06)
         if config.three_dof && config.rotational_dynamics {
