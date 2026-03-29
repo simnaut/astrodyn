@@ -933,3 +933,219 @@ fn tier3_bevy_external_torque_per_body() {
     };
     assert_sixdof_eq("Path A vs Path B (ext torque)", &state_a, &state_b);
 }
+
+// ── Scenario H: Flat-plate SRP with shadow detection ──
+// Mirrors: tier3_srp_trajectory (SIM_3_ORBIT)
+// Exercises: flat-plate force, thermal emission, conical Earth shadow
+
+#[test]
+fn tier3_bevy_flat_plate_srp_with_shadow() {
+    println!("Scenario H: Flat-plate SRP with shadow detection");
+
+    use bevy_jeod::{FlatPlateConfigC, ShadowBodyC};
+    use jeod_sim::{FlatPlate, FlatPlateParams, FlatPlateThermal};
+
+    let params = FlatPlateParams {
+        albedo: 0.5,
+        diffuse: 0.5,
+    };
+    let thermal = FlatPlateThermal {
+        emissivity: 0.5,
+        heat_capacity_per_area: 50.0,
+    };
+    let plates_data = vec![
+        (
+            FlatPlate {
+                area: 60.0,
+                normal: DVec3::X,
+                position: DVec3::new(2.0, 0.0, 0.0),
+            },
+            params,
+            thermal,
+        ),
+        (
+            FlatPlate {
+                area: 60.0,
+                normal: -DVec3::Y,
+                position: DVec3::new(0.0, -2.0, 0.0),
+            },
+            params,
+            thermal,
+        ),
+        (
+            FlatPlate {
+                area: 60.0,
+                normal: -DVec3::X,
+                position: DVec3::new(-2.0, 0.0, 0.0),
+            },
+            params,
+            thermal,
+        ),
+        (
+            FlatPlate {
+                area: 60.0,
+                normal: DVec3::Y,
+                position: DVec3::new(0.0, 2.0, 0.0),
+            },
+            params,
+            thermal,
+        ),
+        (
+            FlatPlate {
+                area: 16.0,
+                normal: DVec3::Z,
+                position: DVec3::new(0.0, 0.0, 7.5),
+            },
+            params,
+            thermal,
+        ),
+        (
+            FlatPlate {
+                area: 16.0,
+                normal: -DVec3::Z,
+                position: DVec3::new(0.0, 0.0, -7.5),
+            },
+            params,
+            thermal,
+        ),
+    ];
+    let num_plates = plates_data.len();
+    let init_temp = 270.0_f64;
+
+    // Sun at ~1 AU along +X, vehicle in GEO-like orbit at ~42000 km
+    let sun_pos = DVec3::new(1.496e11, 0.0, 0.0);
+    let vehicle_pos = DVec3::new(4.2e7, 0.0, 0.0);
+    let vehicle_vel = DVec3::new(0.0, 3074.0, 0.0);
+
+    let mass =
+        MassProperties::with_inertia(300.0, DMat3::from_diagonal(DVec3::splat(1.0)), DVec3::ZERO);
+
+    // ── Bevy ──
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.add_plugins((
+        JeodTimePlugin,
+        JeodDynamicsPlugin,
+        JeodGravityPlugin,
+        JeodInteractionsPlugin,
+    ));
+
+    let planet = app
+        .world_mut()
+        .spawn((
+            Name::new("Earth"),
+            GravitySourceC(earth_source()),
+            TranslationalStateC::default(),
+            ShadowBodyC {
+                radius: 6_378_137.0,
+            },
+        ))
+        .id();
+
+    let _sun = app
+        .world_mut()
+        .spawn((
+            Name::new("Sun"),
+            SunMarker,
+            TranslationalStateC(TranslationalState {
+                position: sun_pos,
+                velocity: DVec3::ZERO,
+            }),
+        ))
+        .id();
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(TranslationalState {
+                position: vehicle_pos,
+                velocity: vehicle_vel,
+            }),
+            MassPropertiesC(mass),
+            DynamicsConfigC(DynamicsConfig {
+                translational_dynamics: true,
+                rotational_dynamics: false,
+                three_dof: true,
+            }),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+            FlatPlateConfigC {
+                plates: plates_data.clone(),
+                temperatures: vec![init_temp; num_plates],
+                t_pow4_cached: vec![init_temp.powi(4); num_plates],
+            },
+            RadiationForceC::default(),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+    let bevy_state = read_trans(app.world(), vehicle);
+
+    // ── Simulation ──
+    let time =
+        jeod_time::SimulationTime::at_j2000(jeod_time::leap_second::default_leap_second_table());
+    let mut sim = Simulation::new(time, DT);
+
+    let earth_idx = sim.add_source(GravitySourceEntry {
+        source: earth_source(),
+        position: DVec3::ZERO,
+        t_inertial_pfix: None,
+    });
+
+    let sun_idx = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: 0.0,
+            model: GravityModel::PointMass,
+        },
+        position: sun_pos,
+        t_inertial_pfix: None,
+    });
+    sim.sun_source = Some(sun_idx);
+
+    sim.add_body(SimBody {
+        trans: TranslationalState {
+            position: vehicle_pos,
+            velocity: vehicle_vel,
+        },
+        rot: None,
+        mass: Some(mass),
+        config: DynamicsConfig {
+            translational_dynamics: true,
+            rotational_dynamics: false,
+            three_dof: true,
+        },
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+        },
+        drag: None,
+        srp: None,
+        flat_plates: Some(plates_data),
+        plate_temperatures: vec![init_temp; num_plates],
+        plate_t_pow4_cached: vec![init_temp.powi(4); num_plates],
+        shadow_body: Some((earth_idx, 6_378_137.0)),
+        t_struct_body: DMat3::IDENTITY,
+        compute_gravity_torque: false,
+        atmospheric_state: None,
+        gravity_accel: GravityAcceleration::default(),
+        total_force: Default::default(),
+        frame_derivs: Default::default(),
+        aero_force: None,
+        radiation_force: None,
+        gravity_torque: None,
+    });
+
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    let sim_state = sim.body(0).trans;
+
+    assert_trans_eq(
+        "Bevy vs Sim (flat-plate SRP + shadow)",
+        &bevy_state,
+        &sim_state,
+    );
+}

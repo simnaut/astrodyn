@@ -1,7 +1,9 @@
 use bevy::prelude::*;
 use bevy_jeod_dynamics::JeodSet;
 
-use crate::systems::{aero_drag_system, gravity_torque_system, radiation_pressure_system};
+use crate::systems::{
+    aero_drag_system, flat_plate_srp_system, gravity_torque_system, radiation_pressure_system,
+};
 
 pub struct JeodInteractionsPlugin;
 
@@ -13,6 +15,7 @@ impl Plugin for JeodInteractionsPlugin {
                 aero_drag_system,
                 gravity_torque_system,
                 radiation_pressure_system,
+                flat_plate_srp_system,
             )
                 .in_set(JeodSet::Interaction),
         );
