@@ -377,12 +377,12 @@ mod tests {
             (PI, DVec3::Z),                                        // 180 Z
             (FRAC_PI_4, DVec3::X),                                 // 45 X
             (1.234, DVec3::Y),                                     // arbitrary Y
-            (2.5, DVec3::new(1.0, 1.0, 0.0).normalize()),         // 2.5 rad about (1,1,0)
-            (0.01, DVec3::new(0.0, 0.0, 1.0)),                    // small angle Z
-            (3.0, DVec3::new(1.0, 2.0, 3.0).normalize()),         // large angle
+            (2.5, DVec3::new(1.0, 1.0, 0.0).normalize()),          // 2.5 rad about (1,1,0)
+            (0.01, DVec3::new(0.0, 0.0, 1.0)),                     // small angle Z
+            (3.0, DVec3::new(1.0, 2.0, 3.0).normalize()),          // large angle
             (TAU - 0.001, DVec3::new(-1.0, 0.5, 0.3).normalize()), // near full turn
-            (0.7, DVec3::new(0.577, 0.577, 0.577).normalize()),   // ~(1,1,1) axis
-            (FRAC_PI_2, DVec3::new(0.0, 1.0, 1.0).normalize()),   // 90 about (0,1,1)
+            (0.7, DVec3::new(0.577, 0.577, 0.577).normalize()),    // ~(1,1,1) axis
+            (FRAC_PI_2, DVec3::new(0.0, 1.0, 1.0).normalize()),    // 90 about (0,1,1)
         ];
 
         for (angle, axis) in &cases {
@@ -441,7 +441,8 @@ mod tests {
     // ---------------------------------------------------------------
     #[test]
     fn multiply_with_conjugate_is_identity() {
-        let q = JeodQuat::left_quat_from_eigen_rotation(1.23, DVec3::new(1.0, 2.0, 3.0).normalize());
+        let q =
+            JeodQuat::left_quat_from_eigen_rotation(1.23, DVec3::new(1.0, 2.0, 3.0).normalize());
         let qc = q.conjugate();
         let prod = q.multiply(&qc);
 
@@ -465,7 +466,8 @@ mod tests {
             DVec3::new(-4.5, 0.1, 7.8),
         ];
 
-        let q = JeodQuat::left_quat_from_eigen_rotation(0.9, DVec3::new(0.3, -0.7, 0.5).normalize());
+        let q =
+            JeodQuat::left_quat_from_eigen_rotation(0.9, DVec3::new(0.3, -0.7, 0.5).normalize());
         let m = q.left_quat_to_transformation();
 
         for v in &test_vecs {

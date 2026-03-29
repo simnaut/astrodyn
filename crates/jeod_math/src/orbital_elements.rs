@@ -168,7 +168,8 @@ impl OrbitalElements {
             aop = 0.0;
             let cos_u = line_of_nodes.dot(pos) / (line_of_nodes_mag * r_mag);
             // sin(u) = h_hat . (N x r) / (|N|*|r|) = r . (h x N) / (h_mag * |N| * |r|)
-            let sin_u = pos.dot(ang_momntm.cross(line_of_nodes)) / (h_mag * line_of_nodes_mag * r_mag);
+            let sin_u =
+                pos.dot(ang_momntm.cross(line_of_nodes)) / (h_mag * line_of_nodes_mag * r_mag);
             nu = wrap_to_tau(sin_u.atan2(cos_u));
         } else {
             // ---- Case 4: general ----
@@ -178,7 +179,8 @@ impl OrbitalElements {
             // measured in the orbital plane.
             let cos_aop = line_of_nodes.dot(e_vec) / (line_of_nodes_mag * ecc);
             // sin(aop) = h_hat . (N x e) / (|N|*|e|) = e . (h x N) / (h_mag * line_of_nodes_mag * ecc)
-            let sin_aop = e_vec.dot(ang_momntm.cross(line_of_nodes)) / (h_mag * line_of_nodes_mag * ecc);
+            let sin_aop =
+                e_vec.dot(ang_momntm.cross(line_of_nodes)) / (h_mag * line_of_nodes_mag * ecc);
             aop = wrap_to_tau(sin_aop.atan2(cos_aop));
 
             // True anomaly = angle from eccentricity vector to position
@@ -264,16 +266,8 @@ impl OrbitalElements {
 
         // Rotation matrix rows (PQW -> IJK)
         // This is R3(-Omega) * R1(-i) * R3(-omega) built row-wise
-        let row0 = DVec3::new(
-            co * cw - so * sw * ci,
-            -co * sw - so * cw * ci,
-            so * si,
-        );
-        let row1 = DVec3::new(
-            so * cw + co * sw * ci,
-            -so * sw + co * cw * ci,
-            -co * si,
-        );
+        let row0 = DVec3::new(co * cw - so * sw * ci, -co * sw - so * cw * ci, so * si);
+        let row1 = DVec3::new(so * cw + co * sw * ci, -so * sw + co * cw * ci, -co * si);
         let row2 = DVec3::new(sw * si, cw * si, ci);
 
         // mat3_from_rows builds a glam DMat3 such that (M * v)[i] = row_i . v
@@ -615,16 +609,8 @@ mod tests {
         let ci = i.cos();
         let si = i.sin();
 
-        let row0 = DVec3::new(
-            co * cw - so * sw * ci,
-            -co * sw - so * cw * ci,
-            so * si,
-        );
-        let row1 = DVec3::new(
-            so * cw + co * sw * ci,
-            -so * sw + co * cw * ci,
-            -co * si,
-        );
+        let row0 = DVec3::new(co * cw - so * sw * ci, -co * sw - so * cw * ci, so * si);
+        let row1 = DVec3::new(so * cw + co * sw * ci, -so * sw + co * cw * ci, -co * si);
         let row2 = DVec3::new(sw * si, cw * si, ci);
 
         // mat3_from_rows builds PQW->IJK directly: (M * v)[i] = row_i . v.
@@ -644,7 +630,11 @@ mod tests {
     #[test]
     fn kepler_elliptic_m_zero() {
         let ea = kep_eqtn_e(0.0, 0.5).unwrap();
-        assert!((ea).abs() < 1e-8 || (ea - TAU).abs() < 1e-8, "E(M=0) should be 0 (or 2pi), got {}", ea);
+        assert!(
+            (ea).abs() < 1e-8 || (ea - TAU).abs() < 1e-8,
+            "E(M=0) should be 0 (or 2pi), got {}",
+            ea
+        );
     }
 
     #[test]
@@ -904,9 +894,9 @@ mod tests {
         let a = 12000.0;
         let e = 0.4;
         let i = 45.0_f64.to_radians();
-        let omega_big = 30.0_f64.to_radians();   // RAAN
-        let omega_small = 60.0_f64.to_radians();  // arg periapsis
-        let nu = 120.0_f64.to_radians();           // true anomaly
+        let omega_big = 30.0_f64.to_radians(); // RAAN
+        let omega_small = 60.0_f64.to_radians(); // arg periapsis
+        let nu = 120.0_f64.to_radians(); // true anomaly
 
         let p = a * (1.0 - e * e);
         let r = p / (1.0 + e * nu.cos());
@@ -925,16 +915,8 @@ mod tests {
         let ci = i.cos();
         let si = i.sin();
 
-        let row0 = DVec3::new(
-            co * cw - so * sw * ci,
-            -co * sw - so * cw * ci,
-            so * si,
-        );
-        let row1 = DVec3::new(
-            so * cw + co * sw * ci,
-            -so * sw + co * cw * ci,
-            -co * si,
-        );
+        let row0 = DVec3::new(co * cw - so * sw * ci, -co * sw - so * cw * ci, so * si);
+        let row1 = DVec3::new(so * cw + co * sw * ci, -so * sw + co * cw * ci, -co * si);
         let row2 = DVec3::new(sw * si, cw * si, ci);
         let rot = mat3_from_rows(row0, row1, row2);
 
@@ -948,27 +930,32 @@ mod tests {
         assert!(
             (oe.semi_major_axis - a).abs() < 1e-8,
             "semi_major_axis: expected {}, got {}",
-            a, oe.semi_major_axis
+            a,
+            oe.semi_major_axis
         );
         assert!(
             (oe.e_mag - e).abs() < 1e-10,
             "eccentricity: expected {}, got {}",
-            e, oe.e_mag
+            e,
+            oe.e_mag
         );
         assert!(
             (oe.inclination - i).abs() < 1e-10,
             "inclination: expected {}, got {}",
-            i, oe.inclination
+            i,
+            oe.inclination
         );
         assert!(
             (oe.long_asc_node - omega_big).abs() < 1e-10,
             "RAAN: expected {}, got {}",
-            omega_big, oe.long_asc_node
+            omega_big,
+            oe.long_asc_node
         );
         assert!(
             (oe.arg_periapsis - omega_small).abs() < 1e-10,
             "arg_periapsis: expected {}, got {}",
-            omega_small, oe.arg_periapsis
+            omega_small,
+            oe.arg_periapsis
         );
 
         // True anomaly wraps to [0, 2pi), so compare modulo 2pi
@@ -977,7 +964,9 @@ mod tests {
         assert!(
             nu_diff < 1e-10,
             "true_anom: expected {}, got {} (diff {})",
-            nu, oe.true_anom, nu_diff
+            nu,
+            oe.true_anom,
+            nu_diff
         );
     }
 }

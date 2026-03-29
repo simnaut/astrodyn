@@ -34,15 +34,19 @@ pub fn nutation(time: f64) -> NutationResult {
     let time3 = time2 * time;
 
     // Fundamental arguments in degrees (Mulcihy & Bond, JSC-24574)
-    let l = 134.9629813888889 + 477198.8673980555 * time + 0.008697222222222223 * time2
+    let l = 134.9629813888889
+        + 477198.8673980555 * time
+        + 0.008697222222222223 * time2
         + 0.00001777777777777778 * time3;
-    let m = 357.5277233333333 + 35999.05034 * time - 0.00016027777777777778 * time2
+    let m = 357.5277233333333 + 35999.05034 * time
+        - 0.00016027777777777778 * time2
         - 0.000003333333333333333 * time3;
     let f = 93.27191027777778 + 483202.0175380555 * time - 0.0036825 * time2
         + 0.000003055555555555555 * time3;
     let d = 297.8503630555556 + 445267.11148 * time - 0.001914166666666667 * time2
         + 0.0000052777777777777778 * time3;
-    let omega = 125.0445222222222 - 1934.136260833333 * time + 0.00207083333333333 * time2
+    let omega = 125.0445222222222 - 1934.136260833333 * time
+        + 0.00207083333333333 * time2
         + 0.000002222222222222222 * time3;
 
     // Sum nutation series (106 terms)
@@ -50,8 +54,11 @@ pub fn nutation(time: f64) -> NutationResult {
     let mut nutation_in_obliquity = 0.0_f64; // units: 1e-4 arcseconds
 
     for i in 0..NUM_NUTATION_COEFFS {
-        let api = (L_COEFFS[i] * l + M_COEFFS[i] * m + F_COEFFS[i] * f
-            + D_COEFFS[i] * d + OMEGA_COEFFS[i] * omega)
+        let api = (L_COEFFS[i] * l
+            + M_COEFFS[i] * m
+            + F_COEFFS[i] * f
+            + D_COEFFS[i] * d
+            + OMEGA_COEFFS[i] * omega)
             * DEG_TO_RAD;
 
         nutation_in_longitude += (LONG_COEFFS[i] + LONG_T_COEFFS[i] * time) * api.sin();
@@ -59,9 +66,10 @@ pub fn nutation(time: f64) -> NutationResult {
     }
 
     // Mean obliquity of the ecliptic (degrees -> radians)
-    let epsilon_bar = (23.43929111111111 - 0.01300416666666667 * time
-        - 0.00000016388888889 * time2 + 0.00000050361111111 * time3)
-        * DEG_TO_RAD;
+    let epsilon_bar =
+        (23.43929111111111 - 0.01300416666666667 * time - 0.00000016388888889 * time2
+            + 0.00000050361111111 * time3)
+            * DEG_TO_RAD;
 
     // Convert nutation in obliquity: 1e-4 arcsec -> arcsec -> degrees -> radians
     let nutation_in_obliquity_rad = (nutation_in_obliquity / 10000.0) * ARCSEC_TO_RAD;
@@ -85,11 +93,7 @@ pub fn nutation(time: f64) -> NutationResult {
     let s_eps_bar = epsilon_bar.sin();
 
     let rotation = DMat3::from_cols(
-        DVec3::new(
-            c_long,
-            -c_eps_bar * s_long,
-            -s_eps_bar * s_long,
-        ),
+        DVec3::new(c_long, -c_eps_bar * s_long, -s_eps_bar * s_long),
         DVec3::new(
             c_eps * s_long,
             c_eps * c_long * c_eps_bar + s_eps * s_eps_bar,
@@ -102,7 +106,10 @@ pub fn nutation(time: f64) -> NutationResult {
         ),
     );
 
-    NutationResult { rotation, equa_of_equi }
+    NutationResult {
+        rotation,
+        equa_of_equi,
+    }
 }
 
 #[cfg(test)]
@@ -118,7 +125,8 @@ mod tests {
             assert!(
                 (diag - 1.0).abs() < 1e-4,
                 "nutation diagonal [{}] = {}",
-                i, diag
+                i,
+                diag
             );
         }
     }

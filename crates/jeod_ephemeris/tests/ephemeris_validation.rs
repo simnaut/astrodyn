@@ -72,10 +72,7 @@ fn sun_direction_at_vernal_equinox_2000() {
         ra_deg
     };
 
-    eprintln!(
-        "  Sun RA at vernal equinox 2000: {:.4}°",
-        ra_deg_wrapped
-    );
+    eprintln!("  Sun RA at vernal equinox 2000: {:.4}°", ra_deg_wrapped);
 
     assert!(
         ra_deg_wrapped.abs() < 0.01,

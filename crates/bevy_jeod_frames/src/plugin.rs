@@ -30,8 +30,10 @@ fn planet_fixed_rotation_system(
     sim_time: Res<SimulationTimeR>,
     mut query: Query<&mut PlanetFixedRotationC>,
 ) {
-    let rotation =
-        jeod_frames::rotation_j2000::compute_t_parent_this_from_tjt(sim_time.gmst_seconds, sim_time.tt_tjt());
+    let rotation = jeod_frames::rotation_j2000::compute_t_parent_this_from_tjt(
+        sim_time.gmst_seconds,
+        sim_time.tt_tjt(),
+    );
     for mut rot in &mut query {
         rot.0 = rotation;
     }

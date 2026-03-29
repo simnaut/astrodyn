@@ -151,8 +151,8 @@ fn load_rnp_csv(path: &Path) -> Vec<RnpRecord> {
 
 #[test]
 fn tier3_rnp_component_comparison() {
-    let csv_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../test_data/dyncomp_run3a_Earth_RNP.csv");
+    let csv_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data/dyncomp_run3a_Earth_RNP.csv");
     assert!(
         csv_path.exists(),
         "JEOD RNP data not found at {}. \
@@ -214,9 +214,8 @@ fn tier3_rnp_component_comparison() {
         }
 
         // Compute theta_gast for comparison (GAST in radians)
-        let theta_gast_ours = ((gmst_seconds + nut.equa_of_equi) / 240.0)
-            * std::f64::consts::PI
-            / 180.0;
+        let theta_gast_ours =
+            ((gmst_seconds + nut.equa_of_equi) / 240.0) * std::f64::consts::PI / 180.0;
         let temp = theta_gast_ours / (2.0 * std::f64::consts::PI);
         let theta_normalized = (temp - temp.floor()) * 2.0 * std::f64::consts::PI;
         let delta = (theta_normalized - rec.theta_gast + std::f64::consts::PI)
@@ -250,7 +249,10 @@ fn tier3_rnp_component_comparison() {
     }
 
     eprintln!();
-    eprintln!("  === Max errors across all {} timesteps ===", records.len());
+    eprintln!(
+        "  === Max errors across all {} timesteps ===",
+        records.len()
+    );
     eprintln!(
         "  Precession (P):        {:.4e}  (worst at t={:.0}s)",
         max_p_err, worst_p_time

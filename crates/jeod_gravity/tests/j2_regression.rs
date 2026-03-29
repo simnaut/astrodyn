@@ -43,9 +43,7 @@ fn j2_nodal_regression_rate() {
     // Gravity acceleration function: J2 + point-mass
     let accel_fn = |s: &TranslationalState| -> DVec3 {
         let pm = jeod_gravity::calc_spherical(mu, s.position);
-        let sh = jeod_gravity::calc_nonspherical(
-            &sh_data, s.position, degree, order, false, 0, 0,
-        );
+        let sh = jeod_gravity::calc_nonspherical(&sh_data, s.position, degree, order, false, 0, 0);
         pm.grav_accel + sh.grav_accel
     };
 
@@ -56,7 +54,7 @@ fn j2_nodal_regression_rate() {
 
     let mut state = state_initial;
     for _ in 0..steps {
-        state = rk4_translational_step(&state, &accel_fn, dt);
+        state = rk4_translational_step(&state, accel_fn, dt);
     }
 
     // Compute RAAN at start and end
@@ -90,10 +88,17 @@ fn j2_nodal_regression_rate() {
     let d_raan_analytical = -1.5 * n * j2 * r_eq * r_eq * inclination.cos() / (p * p);
     let d_raan_analytical_per_day = d_raan_analytical * 86400.0;
 
-    let relative_error = ((d_raan_per_day - d_raan_analytical_per_day) / d_raan_analytical_per_day).abs();
+    let relative_error =
+        ((d_raan_per_day - d_raan_analytical_per_day) / d_raan_analytical_per_day).abs();
 
-    eprintln!("  RAAN change (numerical):   {:.6} deg/day", d_raan_per_day * 180.0 / PI);
-    eprintln!("  RAAN change (analytical):  {:.6} deg/day", d_raan_analytical_per_day * 180.0 / PI);
+    eprintln!(
+        "  RAAN change (numerical):   {:.6} deg/day",
+        d_raan_per_day * 180.0 / PI
+    );
+    eprintln!(
+        "  RAAN change (analytical):  {:.6} deg/day",
+        d_raan_analytical_per_day * 180.0 / PI
+    );
     eprintln!("  Relative error: {:.4e}", relative_error);
 
     assert!(

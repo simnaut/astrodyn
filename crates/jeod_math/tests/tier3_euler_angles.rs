@@ -37,12 +37,8 @@ struct EulerRecord {
 }
 
 fn load_euler_csv(path: &Path) -> Vec<EulerRecord> {
-    let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
-        panic!(
-            "Failed to read SIM_Euler CSV from {}: {e}",
-            path.display()
-        )
-    });
+    let content = std::fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("Failed to read SIM_Euler CSV from {}: {e}", path.display()));
 
     let mut records = Vec::new();
     for (i, line) in content.lines().enumerate() {
@@ -129,8 +125,8 @@ fn near_gimbal_lock_xyz(t: &DMat3) -> bool {
 
 #[test]
 fn tier3_euler_angles_vs_jeod_sim_euler() {
-    let csv_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../test_data/euler_inc_euler.csv");
+    let csv_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data/euler_inc_euler.csv");
 
     assert!(
         csv_path.exists(),
@@ -189,7 +185,9 @@ fn tier3_euler_angles_vs_jeod_sim_euler() {
                 err < 1e-6,
                 "t={:.1}s: RPY angle[{k}] error {err:.6e} rad exceeds 1e-6 rad \
                  (ours={:.10}, JEOD={:.10})",
-                rec.time, angles[k], jeod_angles[k]
+                rec.time,
+                angles[k],
+                jeod_angles[k]
             );
         }
 
@@ -212,7 +210,10 @@ fn tier3_euler_angles_vs_jeod_sim_euler() {
         }
     }
 
-    eprintln!("\n  === Max errors across {} timesteps (RPY/XYZ inertial) ===", records.len());
+    eprintln!(
+        "\n  === Max errors across {} timesteps (RPY/XYZ inertial) ===",
+        records.len()
+    );
     eprintln!("  angle[0] (roll):  {:.6e} rad", max_angle_err[0]);
     eprintln!("  angle[1] (pitch): {:.6e} rad", max_angle_err[1]);
     eprintln!("  angle[2] (yaw):   {:.6e} rad", max_angle_err[2]);

@@ -1,6 +1,8 @@
 use glam::{DMat3, DVec3};
 use jeod_dynamics::GravityAcceleration;
-use jeod_math::{matrix3x3_transpose_transform_matrix, vector3_transform, vector3_transform_transpose};
+use jeod_math::{
+    matrix3x3_transpose_transform_matrix, vector3_transform, vector3_transform_transpose,
+};
 
 use crate::gravity_source::{GravityModel, GravitySource};
 
@@ -98,7 +100,8 @@ pub fn gravitation(
             assert!(
                 (source.mu - data.mu).abs() < 1e-10,
                 "GravitySource.mu ({}) must match SphericalHarmonicsData.mu ({})",
-                source.mu, data.mu
+                source.mu,
+                data.mu
             );
 
             // Vector3::transform(T_parent_this, posn, posn_pf)
@@ -118,7 +121,8 @@ pub fn gravitation(
             let sh_accel_inertial = vector3_transform_transpose(t_parent_this, sh_pf.grav_accel);
 
             // Matrix3x3::transpose_transform_matrix(T_parent_this, dgdx_pf, dgdx)
-            let sh_gradient_inertial = matrix3x3_transpose_transform_matrix(t_parent_this, &sh_pf.grav_grad);
+            let sh_gradient_inertial =
+                matrix3x3_transpose_transform_matrix(t_parent_this, &sh_pf.grav_grad);
 
             if perturbing_only {
                 GravityAcceleration {
@@ -170,28 +174,31 @@ pub fn gravitation_with_scratch(
             assert!(
                 (source.mu - data.mu).abs() < 1e-10,
                 "GravitySource.mu ({}) must match SphericalHarmonicsData.mu ({})",
-                source.mu, data.mu
+                source.mu,
+                data.mu
             );
 
             // Vector3::transform(T_parent_this, posn, posn_pf)
             let posn_pf = vector3_transform(t_parent_this, position);
 
-            let sh_pf = crate::spherical_harmonics_calc_nonspherical::calc_nonspherical_with_scratch(
-                data,
-                posn_pf,
-                degree,
-                order,
-                compute_gradient,
-                gradient_degree,
-                gradient_order,
-                scratch,
-            );
+            let sh_pf =
+                crate::spherical_harmonics_calc_nonspherical::calc_nonspherical_with_scratch(
+                    data,
+                    posn_pf,
+                    degree,
+                    order,
+                    compute_gradient,
+                    gradient_degree,
+                    gradient_order,
+                    scratch,
+                );
 
             // Vector3::transform_transpose(T_parent_this, body_grav_accel)
             let sh_accel_inertial = vector3_transform_transpose(t_parent_this, sh_pf.grav_accel);
 
             // Matrix3x3::transpose_transform_matrix(T_parent_this, dgdx_pf, dgdx)
-            let sh_gradient_inertial = matrix3x3_transpose_transform_matrix(t_parent_this, &sh_pf.grav_grad);
+            let sh_gradient_inertial =
+                matrix3x3_transpose_transform_matrix(t_parent_this, &sh_pf.grav_grad);
 
             if perturbing_only {
                 GravityAcceleration {

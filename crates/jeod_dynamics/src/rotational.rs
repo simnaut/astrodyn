@@ -152,12 +152,8 @@ mod tests {
         let inertia = DMat3::from_diagonal(DVec3::new(10.0, 20.0, 30.0));
         let inv_inertia = DMat3::from_diagonal(DVec3::new(0.1, 0.05, 1.0 / 30.0));
 
-        let alpha = compute_rotational_acceleration(
-            &inertia,
-            &inv_inertia,
-            DVec3::ZERO,
-            DVec3::ZERO,
-        );
+        let alpha =
+            compute_rotational_acceleration(&inertia, &inv_inertia, DVec3::ZERO, DVec3::ZERO);
         assert!(
             alpha.length() < TOL,
             "Expected zero rot_accel, got {:?}",
@@ -174,12 +170,7 @@ mod tests {
         let inv_inertia = DMat3::from_diagonal(DVec3::new(0.1, 0.05, 1.0 / 30.0));
         let omega = DVec3::new(0.0, 0.0, 5.0); // spin about z principal axis
 
-        let alpha = compute_rotational_acceleration(
-            &inertia,
-            &inv_inertia,
-            omega,
-            DVec3::ZERO,
-        );
+        let alpha = compute_rotational_acceleration(&inertia, &inv_inertia, omega, DVec3::ZERO);
         assert!(
             alpha.length() < TOL,
             "Expected zero rot_accel for principal-axis spin, got {:?}",
@@ -195,12 +186,7 @@ mod tests {
         let inv_inertia = DMat3::from_diagonal(DVec3::new(0.1, 0.05, 1.0 / 30.0));
         let omega = DVec3::new(1.0, 2.0, 3.0);
 
-        let alpha = compute_rotational_acceleration(
-            &inertia,
-            &inv_inertia,
-            omega,
-            DVec3::ZERO,
-        );
+        let alpha = compute_rotational_acceleration(&inertia, &inv_inertia, omega, DVec3::ZERO);
 
         // Manual calculation:
         // ang_mom = [10, 40, 90]
@@ -257,16 +243,8 @@ mod tests {
             "qdot scalar should be ~0, got {}",
             qdot[0],
         );
-        assert!(
-            qdot[1].abs() < TOL,
-            "qdot vx should be ~0, got {}",
-            qdot[1],
-        );
-        assert!(
-            qdot[2].abs() < TOL,
-            "qdot vy should be ~0, got {}",
-            qdot[2],
-        );
+        assert!(qdot[1].abs() < TOL, "qdot vx should be ~0, got {}", qdot[1],);
+        assert!(qdot[2].abs() < TOL, "qdot vy should be ~0, got {}", qdot[2],);
         let expected_vz = -omega_z * 0.5;
         assert!(
             (qdot[3] - expected_vz).abs() < TOL,

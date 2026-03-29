@@ -30,8 +30,8 @@ pub struct EulerTestCase {
 /// # Panics
 /// Panics if the file cannot be read or parsed.
 pub fn load_euler_test_cases(jeod_root: &std::path::Path) -> Vec<EulerTestCase> {
-    let path = jeod_root
-        .join("models/dynamics/derived_state/verif/unit_tests/euler_derived_state_ut.cc");
+    let path =
+        jeod_root.join("models/dynamics/derived_state/verif/unit_tests/euler_derived_state_ut.cc");
     let content = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
 
@@ -40,22 +40,13 @@ pub fn load_euler_test_cases(jeod_root: &std::path::Path) -> Vec<EulerTestCase> 
         Regex::new(r"\{\s*([-\d.eE+]+)\s*,\s*([-\d.eE+]+)\s*,\s*([-\d.eE+]+)\s*\}").unwrap();
 
     // Parse matrix rows: look for the double matrix[3][3] = { ... } pattern
-    let matrix_re = Regex::new(
-        r"double\s+matrix\[3\]\[3\]\s*=\s*\{([^;]+)\};",
-    )
-    .unwrap();
+    let matrix_re = Regex::new(r"double\s+matrix\[3\]\[3\]\s*=\s*\{([^;]+)\};").unwrap();
 
     // Parse expected ref_body angles
-    let ref_body_re = Regex::new(
-        r"double\s+exp_ref_body_angles\[3\]\s*=\s*\{([^}]+)\}",
-    )
-    .unwrap();
+    let ref_body_re = Regex::new(r"double\s+exp_ref_body_angles\[3\]\s*=\s*\{([^}]+)\}").unwrap();
 
     // Parse expected body_ref angles
-    let body_ref_re = Regex::new(
-        r"double\s+exp_body_ref_angles\[3\]\s*=\s*\{([^}]+)\}",
-    )
-    .unwrap();
+    let body_ref_re = Regex::new(r"double\s+exp_body_ref_angles\[3\]\s*=\s*\{([^}]+)\}").unwrap();
 
     let mut cases = Vec::new();
 

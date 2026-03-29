@@ -61,7 +61,11 @@ mod tests {
         for planet in [EARTH, MOON, SUN, MARS] {
             assert!(planet.mu > 0.0, "{}: mu must be positive", planet.name);
             assert!(planet.r_eq > 0.0, "{}: r_eq must be positive", planet.name);
-            assert!(planet.r_pol > 0.0, "{}: r_pol must be positive", planet.name);
+            assert!(
+                planet.r_pol > 0.0,
+                "{}: r_pol must be positive",
+                planet.name
+            );
             assert!(
                 planet.flat_coeff > 0.0,
                 "{}: flattening must be positive",

@@ -200,8 +200,7 @@ impl MassTree {
     ///
     /// Panics if the child has no parent.
     pub fn detach(&mut self, child_id: MassBodyId) {
-        let parent_id = self.parent[child_id]
-            .expect("detach called on a body with no parent");
+        let parent_id = self.parent[child_id].expect("detach called on a body with no parent");
 
         self.children[parent_id].retain(|&c| c != child_id);
         self.parent[child_id] = None;
@@ -259,12 +258,7 @@ impl MassTree {
         result
     }
 
-    fn post_order_walk(
-        &self,
-        id: MassBodyId,
-        visited: &mut [bool],
-        result: &mut Vec<MassBodyId>,
-    ) {
+    fn post_order_walk(&self, id: MassBodyId, visited: &mut [bool], result: &mut Vec<MassBodyId>) {
         if visited[id] {
             return;
         }
@@ -353,8 +347,7 @@ impl MassTree {
         for &cid in &self.children[id] {
             let child = &self.nodes[cid];
             total_mass += child.composite_properties.mass;
-            weighted_pos +=
-                child.composite_wrt_pstr.position * child.composite_properties.mass;
+            weighted_pos += child.composite_wrt_pstr.position * child.composite_properties.mass;
         }
 
         let node = &mut self.nodes[id];
@@ -385,8 +378,7 @@ impl MassTree {
         // composite CoM (JEOD mass_calc_composite_inertia.cc lines 61-64).
         let core = &self.nodes[id].core_properties;
         let core_offset = core.position - cm;
-        let mut composite_inertia =
-            core.inertia + point_mass_inertia(core.mass, core_offset);
+        let mut composite_inertia = core.inertia + point_mass_inertia(core.mass, core_offset);
 
         // Child contributions (lines 67-84).
         for &cid in &self.children[id] {
@@ -397,8 +389,7 @@ impl MassTree {
             // parent struct frame: T^T * I_child * T
             // This is JEOD's transpose_transform_matrix.
             let t = child.structure_point.t_parent_this;
-            let rotated_inertia =
-                t.transpose() * child.composite_properties.inertia * t;
+            let rotated_inertia = t.transpose() * child.composite_properties.inertia * t;
 
             composite_inertia +=
                 rotated_inertia + point_mass_inertia(child.composite_properties.mass, child_offset);
@@ -414,8 +405,7 @@ impl MassTree {
                 "Body '{}' has singular composite inertia (det={det:.2e})",
                 self.nodes[id].name
             );
-            self.nodes[id].composite_properties.inverse_inertia =
-                composite_inertia.inverse();
+            self.nodes[id].composite_properties.inverse_inertia = composite_inertia.inverse();
         } else {
             self.nodes[id].composite_properties.inverse_inertia = DMat3::ZERO;
         }
@@ -444,11 +434,7 @@ impl Default for MassTree {
 pub fn point_mass_inertia(mass: f64, offset: DVec3) -> DMat3 {
     let r_sq = offset.length_squared();
     // mass * (r^2 * I - outer(offset, offset))
-    let outer = DMat3::from_cols(
-        offset * offset.x,
-        offset * offset.y,
-        offset * offset.z,
-    );
+    let outer = DMat3::from_cols(offset * offset.x, offset * offset.y, offset * offset.z);
     DMat3::from_diagonal(DVec3::splat(r_sq)) * mass - outer * mass
 }
 
@@ -755,9 +741,9 @@ mod tests {
 
         // 90 degrees about Z: T_parent_child
         let t = DMat3::from_cols(
-            DVec3::new(0.0, 1.0, 0.0),   // parent X -> child: [0, 1, 0]
-            DVec3::new(-1.0, 0.0, 0.0),  // parent Y -> child: [-1, 0, 0]
-            DVec3::new(0.0, 0.0, 1.0),   // parent Z -> child: [0, 0, 1]
+            DVec3::new(0.0, 1.0, 0.0),  // parent X -> child: [0, 1, 0]
+            DVec3::new(-1.0, 0.0, 0.0), // parent Y -> child: [-1, 0, 0]
+            DVec3::new(0.0, 0.0, 1.0),  // parent Z -> child: [0, 0, 1]
         );
 
         // Attach child at [3, 0, 0] with 90-deg rotation
@@ -840,11 +826,6 @@ mod tests {
 
         // Verify inverse is also consistent
         let product = inertia * tree.get(pid).composite_properties.inverse_inertia;
-        assert_mat3_close(
-            product,
-            DMat3::IDENTITY,
-            1e-8,
-            "I * I^-1 = identity",
-        );
+        assert_mat3_close(product, DMat3::IDENTITY, 1e-8, "I * I^-1 = identity");
     }
 }

@@ -78,12 +78,7 @@ pub fn load_mass_data(jeod_root: &std::path::Path, vehicle: &str) -> MassInitDat
     assert!(mass.is_some(), "Missing mass in {}", path.display());
     assert!(has_position, "Missing position in {}", path.display());
     for (i, seen) in inertia_rows_seen.iter().enumerate() {
-        assert!(
-            seen,
-            "Missing inertia row {} in {}",
-            i,
-            path.display()
-        );
+        assert!(seen, "Missing inertia row {} in {}", i, path.display());
     }
 
     MassInitData {

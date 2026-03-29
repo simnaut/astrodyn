@@ -1,8 +1,8 @@
 use crate::epoch::{J2000_NOON_TJT, J2000_TAI_TJT, SECONDS_PER_DAY, TAI_TT_OFFSET};
+use crate::leap_second::LeapSecondTable;
 use crate::time_converter_tai_tdb;
 use crate::time_converter_tai_tt;
 use crate::time_converter_ut1_gmst;
-use crate::leap_second::LeapSecondTable;
 
 // JEOD_INV: TM.04 — all time types reachable from initializer (all scales hardcoded in single struct)
 // JEOD_INV: TM.05 — all time types reachable from TimeDyn (all scales updated in recompute_derived)
@@ -207,11 +207,7 @@ mod tests {
         let sim = SimulationTime::at_j2000(default_leap_second_table());
         let jd = sim.tdb_julian_date();
         // Should be close to 2451545.0 (J2000 TT JD)
-        assert!(
-            (jd - 2_451_545.0).abs() < 0.001,
-            "TDB JD at J2000: {}",
-            jd
-        );
+        assert!((jd - 2_451_545.0).abs() < 0.001, "TDB JD at J2000: {}", jd);
     }
 
     #[test]

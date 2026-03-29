@@ -17,8 +17,8 @@ const MU_EARTH: f64 = 3.986_004_418e14;
 
 #[test]
 fn tier3_body_init_round_trip_over_trajectory() {
-    let csv_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../test_data/orbelem_ecc_orbelem.csv");
+    let csv_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data/orbelem_ecc_orbelem.csv");
 
     assert!(
         csv_path.exists(),
@@ -47,7 +47,11 @@ fn tier3_body_init_round_trip_over_trajectory() {
             raw.parse().unwrap_or_else(|e| {
                 panic!(
                     "Failed to parse CSV field at {}:{}:{} (raw='{}'): {}",
-                    csv_path.display(), i + 1, col + 1, raw, e
+                    csv_path.display(),
+                    i + 1,
+                    col + 1,
+                    raw,
+                    e
                 )
             })
         };

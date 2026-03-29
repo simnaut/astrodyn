@@ -11,7 +11,7 @@
 //! ```
 
 use glam::{DMat3, DVec3};
-use jeod_atmosphere::{met, compute_corotation_wind};
+use jeod_atmosphere::{compute_corotation_wind, met};
 use jeod_dynamics::{rk4_translational_step, TranslationalState};
 use jeod_interactions::{compute_ballistic_drag, DragConfig};
 use jeod_math::geodetic::{cartesian_to_geodetic, cartesian_to_spherical};
@@ -30,10 +30,11 @@ fn compute_gmst(tjt: f64) -> f64 {
     let century_days = tjt_prev_midnight + 24980.0;
     let century_frac = (century_days + 0.5) / 36525.0;
     let minutes_of_day = fraction_of_day * 1440.0;
-    let greenwich_mean_position =
-        (99.6909833 + 36000.76892 * century_frac + 0.00038708 * century_frac * century_frac
-            + 0.250684477 * minutes_of_day)
-            .rem_euclid(360.0);
+    let greenwich_mean_position = (99.6909833
+        + 36000.76892 * century_frac
+        + 0.00038708 * century_frac * century_frac
+        + 0.250684477 * minutes_of_day)
+        .rem_euclid(360.0);
     greenwich_mean_position * 0.017453293
 }
 
@@ -67,56 +68,69 @@ fn main() {
     let steps = (total_time / dt) as usize;
     let print_interval = steps / 24; // Print once per hour
 
-    let initial_elements = OrbitalElements::from_cartesian(MU_EARTH, state.position, state.velocity).unwrap();
+    let initial_elements =
+        OrbitalElements::from_cartesian(MU_EARTH, state.position, state.velocity).unwrap();
     println!("=== LEO Orbit with Atmospheric Drag (MET Jacchia 1971) ===");
-    println!("Initial: alt={:.1} km, e={:.6}, a={:.1} km",
+    println!(
+        "Initial: alt={:.1} km, e={:.6}, a={:.1} km",
         altitude / 1000.0,
         initial_elements.e_mag,
         initial_elements.semi_major_axis / 1000.0,
     );
-    println!("Atmosphere: MET solar mean (F10.7={}, F10B={})", atmos.f10, atmos.f10b);
+    println!(
+        "Atmosphere: MET solar mean (F10.7={}, F10B={})",
+        atmos.f10, atmos.f10b
+    );
     println!();
-    println!("{:>8}  {:>10}  {:>12}  {:>10}  {:>14}  {:>12}",
-        "Time(h)", "Alt(km)", "a(km)", "e", "Density(kg/m3)", "DragF(mN)");
+    println!(
+        "{:>8}  {:>10}  {:>12}  {:>10}  {:>14}  {:>12}",
+        "Time(h)", "Alt(km)", "a(km)", "e", "Density(kg/m3)", "DragF(mN)"
+    );
     println!("{}", "-".repeat(78));
 
     for step in 0..steps {
         let sim_time = (step + 1) as f64 * dt;
         let tjt = tjt_start + sim_time / 86400.0;
 
-        let new_state = rk4_translational_step(&state, |s| {
-            // Point-mass gravity
-            let r = s.position.length();
-            let grav = -MU_EARTH / (r * r * r) * s.position;
+        let new_state = rk4_translational_step(
+            &state,
+            |s| {
+                // Point-mass gravity
+                let r = s.position.length();
+                let grav = -MU_EARTH / (r * r * r) * s.position;
 
-            // Rotate inertial → planet-fixed via GMST, then geodetic coords.
-            // Matches JEOD's PlanetFixedPosition → MET pipeline.
-            let gmst = compute_gmst(tjt);
-            let (cos_g, sin_g) = (gmst.cos(), gmst.sin());
-            let pfix = DVec3::new(
-                cos_g * s.position.x + sin_g * s.position.y,
-                -sin_g * s.position.x + cos_g * s.position.y,
-                s.position.z,
-            );
-            let geo = cartesian_to_geodetic(pfix, R_EARTH_EQ, R_EARTH_POL);
-            let mut atmos_state = atmos.density(geo.altitude / 1000.0, geo.latitude, geo.longitude, tjt);
-            atmos_state.wind = compute_corotation_wind(OMEGA_EARTH, s.position);
-            let drag = compute_ballistic_drag(
-                &drag_config,
-                &atmos_state,
-                s.velocity,
-                &DMat3::IDENTITY,
-            );
+                // Rotate inertial → planet-fixed via GMST, then geodetic coords.
+                // Matches JEOD's PlanetFixedPosition → MET pipeline.
+                let gmst = compute_gmst(tjt);
+                let (cos_g, sin_g) = (gmst.cos(), gmst.sin());
+                let pfix = DVec3::new(
+                    cos_g * s.position.x + sin_g * s.position.y,
+                    -sin_g * s.position.x + cos_g * s.position.y,
+                    s.position.z,
+                );
+                let geo = cartesian_to_geodetic(pfix, R_EARTH_EQ, R_EARTH_POL);
+                let mut atmos_state =
+                    atmos.density(geo.altitude / 1000.0, geo.latitude, geo.longitude, tjt);
+                atmos_state.wind = compute_corotation_wind(OMEGA_EARTH, s.position);
+                let drag = compute_ballistic_drag(
+                    &drag_config,
+                    &atmos_state,
+                    s.velocity,
+                    &DMat3::IDENTITY,
+                );
 
-            grav + drag.force / mass
-        }, dt);
+                grav + drag.force / mass
+            },
+            dt,
+        );
         state = new_state;
 
         if (step + 1) % print_interval == 0 {
             let time_h = sim_time / 3600.0;
             let sph = cartesian_to_spherical(state.position, R_EARTH_EQ);
             let alt_km = sph.altitude / 1000.0;
-            let elements = OrbitalElements::from_cartesian(MU_EARTH, state.position, state.velocity).unwrap();
+            let elements =
+                OrbitalElements::from_cartesian(MU_EARTH, state.position, state.velocity).unwrap();
 
             let gmst_p = compute_gmst(tjt);
             let (cg, sg) = (gmst_p.cos(), gmst_p.sin());
@@ -126,7 +140,12 @@ fn main() {
                 state.position.z,
             );
             let geo_p = cartesian_to_geodetic(pfix_p, R_EARTH_EQ, R_EARTH_POL);
-            let mut atmos_state = atmos.density(geo_p.altitude / 1000.0, geo_p.latitude, geo_p.longitude, tjt);
+            let mut atmos_state = atmos.density(
+                geo_p.altitude / 1000.0,
+                geo_p.latitude,
+                geo_p.longitude,
+                tjt,
+            );
             atmos_state.wind = compute_corotation_wind(OMEGA_EARTH, state.position);
             let drag = compute_ballistic_drag(
                 &drag_config,
@@ -135,7 +154,8 @@ fn main() {
                 &DMat3::IDENTITY,
             );
 
-            println!("{:>8.1}  {:>10.3}  {:>12.3}  {:>10.6}  {:>14.6e}  {:>12.6}",
+            println!(
+                "{:>8.1}  {:>10.3}  {:>12.3}  {:>10.6}  {:>14.6e}  {:>12.6}",
                 time_h,
                 alt_km,
                 elements.semi_major_axis / 1000.0,
@@ -146,10 +166,15 @@ fn main() {
         }
     }
 
-    let final_elements = OrbitalElements::from_cartesian(MU_EARTH, state.position, state.velocity).unwrap();
+    let final_elements =
+        OrbitalElements::from_cartesian(MU_EARTH, state.position, state.velocity).unwrap();
     let sma_decay = initial_elements.semi_major_axis - final_elements.semi_major_axis;
 
     println!();
-    println!("Final: a={:.3} km, e={:.6}", final_elements.semi_major_axis / 1000.0, final_elements.e_mag);
+    println!(
+        "Final: a={:.3} km, e={:.6}",
+        final_elements.semi_major_axis / 1000.0,
+        final_elements.e_mag
+    );
     println!("SMA decay: {:.1} m over 24h", sma_decay);
 }

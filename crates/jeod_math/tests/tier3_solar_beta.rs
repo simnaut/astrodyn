@@ -102,8 +102,7 @@ fn tier3_solar_beta_vs_jeod_sim_solarbeta() {
         csv_path.display()
     );
 
-    let bsp_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../test_data/de421.bsp");
+    let bsp_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data/de421.bsp");
     assert!(
         bsp_path.exists(),
         "DE421 ephemeris not found at {}.\n\
@@ -118,8 +117,7 @@ fn tier3_solar_beta_vs_jeod_sim_solarbeta() {
         records.len()
     );
 
-    let ephem = Ephemeris::from_bsp(&bsp_path)
-        .expect("Failed to load DE421 ephemeris");
+    let ephem = Ephemeris::from_bsp(&bsp_path).expect("Failed to load DE421 ephemeris");
 
     eprintln!(
         "Tier 3: SIM_SolarBeta RUN_incl_51_6 cross-validation ({} timesteps over {:.1} days)",
@@ -129,7 +127,7 @@ fn tier3_solar_beta_vs_jeod_sim_solarbeta() {
 
     let mut max_beta_err = 0.0_f64;
 
-    for (_idx, rec) in records.iter().enumerate() {
+    for rec in &records {
         // Compute angular momentum from position and velocity
         let h = rec.position.cross(rec.velocity);
 

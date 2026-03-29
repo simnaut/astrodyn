@@ -51,21 +51,9 @@ fn parse_frame_record(fields: &[&str], base: usize, line_no: usize) -> FrameReco
         })
     };
 
-    let position = DVec3::new(
-        parse(base),
-        parse(base + 7),
-        parse(base + 14),
-    );
-    let velocity = DVec3::new(
-        parse(base + 1),
-        parse(base + 8),
-        parse(base + 15),
-    );
-    let ang_vel = DVec3::new(
-        parse(base + 2),
-        parse(base + 9),
-        parse(base + 16),
-    );
+    let position = DVec3::new(parse(base), parse(base + 7), parse(base + 14));
+    let velocity = DVec3::new(parse(base + 1), parse(base + 8), parse(base + 15));
+    let ang_vel = DVec3::new(parse(base + 2), parse(base + 9), parse(base + 16));
 
     // Transformation matrix: T[row][col] where row index = axis i
     // Row 0: cols base+3, base+4, base+5
@@ -81,11 +69,7 @@ fn parse_frame_record(fields: &[&str], base: usize, line_no: usize) -> FrameReco
         DVec3::new(parse(base + 5), parse(base + 12), parse(base + 19)),
     );
 
-    let q_vec = DVec3::new(
-        parse(base + 6),
-        parse(base + 13),
-        parse(base + 20),
-    );
+    let q_vec = DVec3::new(parse(base + 6), parse(base + 13), parse(base + 20));
     let q_scalar = parse(base + 21);
     let q_parent_this = JeodQuat::new(q_scalar, q_vec.x, q_vec.y, q_vec.z);
 
@@ -136,7 +120,10 @@ fn load_three_frame_trajectory(path: &Path) -> Vec<ThreeFrameRecord> {
 
         let line_no = i + 1;
         let time: f64 = fields[0].trim().parse().unwrap_or_else(|e| {
-            panic!("Failed to parse time at line {line_no}: {:?} ({e})", fields[0])
+            panic!(
+                "Failed to parse time at line {line_no}: {:?} ({e})",
+                fields[0]
+            )
         });
 
         // Composite body: columns 1..22 (base=1)
@@ -158,8 +145,8 @@ fn load_three_frame_trajectory(path: &Path) -> Vec<ThreeFrameRecord> {
 
 #[test]
 fn tier3_frame_propagation_composite_to_structure() {
-    let csv_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../test_data/dyncomp_run2_state.csv");
+    let csv_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data/dyncomp_run2_state.csv");
 
     assert!(
         csv_path.exists(),
@@ -219,8 +206,7 @@ fn tier3_frame_propagation_composite_to_structure() {
 
         let pos_err = (computed_structure.trans.position - record.structure.position).length();
         let vel_err = (computed_structure.trans.velocity - record.structure.velocity).length();
-        let angvel_err =
-            (computed_structure.rot.ang_vel_this - record.structure.ang_vel).length();
+        let angvel_err = (computed_structure.rot.ang_vel_this - record.structure.ang_vel).length();
 
         // Max element-wise error in the transformation matrix
         let t_diff = computed_structure.rot.t_parent_this - record.structure.t_parent_this;
@@ -278,13 +264,19 @@ fn tier3_frame_propagation_composite_to_structure() {
     println!("Max position error:      {:.2e} m", max_pos_error_rev);
     println!("Max velocity error:      {:.2e} m/s", max_vel_error_rev);
     println!("Max T matrix error:      {:.2e}", max_t_error_rev);
-    println!("Max angular vel error:   {:.2e} rad/s", max_angvel_error_rev);
+    println!(
+        "Max angular vel error:   {:.2e} rad/s",
+        max_angvel_error_rev
+    );
     println!();
     println!("--- Forward: structure -> composite ---");
     println!("Max position error:      {:.2e} m", max_pos_error_fwd);
     println!("Max velocity error:      {:.2e} m/s", max_vel_error_fwd);
     println!("Max T matrix error:      {:.2e}", max_t_error_fwd);
-    println!("Max angular vel error:   {:.2e} rad/s", max_angvel_error_fwd);
+    println!(
+        "Max angular vel error:   {:.2e} rad/s",
+        max_angvel_error_fwd
+    );
 
     // These are pure coordinate transforms, no integration involved.
     // Differences should be near machine precision.
@@ -336,8 +328,8 @@ fn tier3_frame_propagation_composite_to_structure() {
 
 #[test]
 fn tier3_frame_propagation_core_equals_composite() {
-    let csv_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../test_data/dyncomp_run2_state.csv");
+    let csv_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data/dyncomp_run2_state.csv");
 
     assert!(
         csv_path.exists(),
@@ -415,8 +407,8 @@ fn tier3_frame_propagation_core_equals_composite() {
 
 #[test]
 fn tier3_frame_propagation_round_trip() {
-    let csv_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../test_data/dyncomp_run2_state.csv");
+    let csv_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data/dyncomp_run2_state.csv");
 
     assert!(
         csv_path.exists(),
@@ -464,8 +456,7 @@ fn tier3_frame_propagation_round_trip() {
 
         let pos_err = (recovered.trans.position - composite_state.trans.position).length();
         let vel_err = (recovered.trans.velocity - composite_state.trans.velocity).length();
-        let angvel_err =
-            (recovered.rot.ang_vel_this - composite_state.rot.ang_vel_this).length();
+        let angvel_err = (recovered.rot.ang_vel_this - composite_state.rot.ang_vel_this).length();
 
         let t_diff = recovered.rot.t_parent_this - composite_state.rot.t_parent_this;
         let t_err = [t_diff.x_axis, t_diff.y_axis, t_diff.z_axis]

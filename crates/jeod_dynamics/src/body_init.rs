@@ -9,8 +9,8 @@
 
 use crate::state::TranslationalState;
 use glam::{DMat3, DVec3};
-use jeod_math::{compute_lvlh_frame, geodetic_to_cartesian, mat3_from_rows, GeodeticState};
 use jeod_math::OrbitalElements;
+use jeod_math::{compute_lvlh_frame, geodetic_to_cartesian, mat3_from_rows, GeodeticState};
 
 /// Initialize translational state from Keplerian orbital elements (true anomaly).
 ///
@@ -35,7 +35,10 @@ pub fn init_from_orbital_elements(
     mu: f64,
 ) -> TranslationalState {
     // JEOD dyn_body_init_orbit.cc:101-111: validate mu before use.
-    assert!(mu > 0.0, "init_from_orbital_elements: mu must be positive, got {mu}");
+    assert!(
+        mu > 0.0,
+        "init_from_orbital_elements: mu must be positive, got {mu}"
+    );
     assert!(
         semi_major_axis.is_finite(),
         "init_from_orbital_elements: semi_major_axis must be finite, got {semi_major_axis}"
@@ -86,7 +89,10 @@ pub fn init_from_mean_anomaly(
     mu: f64,
 ) -> TranslationalState {
     // JEOD dyn_body_init_orbit.cc:101-111: validate mu before use.
-    assert!(mu > 0.0, "init_from_mean_anomaly: mu must be positive, got {mu}");
+    assert!(
+        mu > 0.0,
+        "init_from_mean_anomaly: mu must be positive, got {mu}"
+    );
     assert!(
         semi_major_axis.is_finite(),
         "init_from_mean_anomaly: semi_major_axis must be finite, got {semi_major_axis}"
@@ -285,9 +291,8 @@ mod tests {
             "ISS",
             "trans_Orbit_inertial_body_set01",
         );
-        let expected = jeod_test_data::reference_state::load_reference_state(
-            &root, "ISS", "inertial",
-        );
+        let expected =
+            jeod_test_data::reference_state::load_reference_state(&root, "ISS", "inertial");
 
         // ISS set01 uses SmaEccIncAscnodeArgperTimeperi.
         // Compute mean anomaly from time_periapsis: M = n * t_peri
@@ -474,12 +479,8 @@ mod tests {
         let state = init_from_orbital_elements(a, e, inc, raan, argp, nu, EARTH_MU);
 
         // Convert back to orbital elements
-        let oe = OrbitalElements::from_cartesian(
-            EARTH_MU,
-            state.position,
-            state.velocity,
-        )
-        .expect("from_cartesian failed");
+        let oe = OrbitalElements::from_cartesian(EARTH_MU, state.position, state.velocity)
+            .expect("from_cartesian failed");
 
         // Compare recovered elements against originals
         assert!(
@@ -562,10 +563,10 @@ mod tests {
     fn ned_rotation_orthonormal() {
         // Verify NED rotation matrix is orthonormal at several locations
         let test_cases = [
-            (0.0, 0.0),              // equator, prime meridian
-            (PI / 4.0, PI / 3.0),    // 45N, 60E
-            (-PI / 6.0, -PI / 2.0),  // 30S, 90W
-            (PI / 2.0 - 0.01, 1.0),  // near north pole
+            (0.0, 0.0),             // equator, prime meridian
+            (PI / 4.0, PI / 3.0),   // 45N, 60E
+            (-PI / 6.0, -PI / 2.0), // 30S, 90W
+            (PI / 2.0 - 0.01, 1.0), // near north pole
         ];
 
         for (lat, lon) in test_cases {
@@ -606,7 +607,14 @@ mod tests {
         let t_eci_pcpf = DMat3::IDENTITY;
 
         let ned_vel = DVec3::new(1000.0, 0.0, 0.0); // 1 km/s North
-        let state = init_from_ned(&geodetic, ned_vel, EARTH_R_EQ, EARTH_R_POL, &t_eci_pcpf, DVec3::ZERO);
+        let state = init_from_ned(
+            &geodetic,
+            ned_vel,
+            EARTH_R_EQ,
+            EARTH_R_POL,
+            &t_eci_pcpf,
+            DVec3::ZERO,
+        );
 
         // North at (lat=0, lon=0) in PCPF is [-sin(0)*cos(0), -sin(0)*sin(0), cos(0)] = [0, 0, 1]
         // NED-to-PCPF = T_pcpf_ned^T, where row0 of T_pcpf_ned is North = [0,0,1].
@@ -644,7 +652,14 @@ mod tests {
         let omega = DVec3::new(0.0, 0.0, omega_earth);
 
         // Zero NED velocity: the only ECI velocity comes from planet rotation.
-        let state = init_from_ned(&geodetic, DVec3::ZERO, EARTH_R_EQ, EARTH_R_POL, &t_eci_pcpf, omega);
+        let state = init_from_ned(
+            &geodetic,
+            DVec3::ZERO,
+            EARTH_R_EQ,
+            EARTH_R_POL,
+            &t_eci_pcpf,
+            omega,
+        );
 
         // Expected: ω × r = [0, ω*r_eq, 0] ≈ [0, 465.1, 0] m/s
         let expected_vy = omega_earth * EARTH_R_EQ;

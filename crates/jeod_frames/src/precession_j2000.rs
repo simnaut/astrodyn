@@ -56,11 +56,7 @@ pub fn precession_matrix(time: f64) -> DMat3 {
             -s_z * s_zeta * c_theta + c_z * c_zeta,
             -s_theta * s_z,
         ),
-        DVec3::new(
-            c_zeta * s_theta,
-            -s_zeta * s_theta,
-            c_theta,
-        ),
+        DVec3::new(c_zeta * s_theta, -s_zeta * s_theta, c_theta),
     )
 }
 
@@ -77,7 +73,10 @@ mod tests {
                 assert!(
                     (p.col(j)[i] - expected).abs() < 1e-15,
                     "precession[{}][{}] = {}, expected {}",
-                    i, j, p.col(j)[i], expected
+                    i,
+                    j,
+                    p.col(j)[i],
+                    expected
                 );
             }
         }

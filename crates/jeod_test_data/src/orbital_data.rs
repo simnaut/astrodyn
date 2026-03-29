@@ -21,9 +21,8 @@ pub struct CartesianStateVector {
 /// # Panics
 /// Panics if the file cannot be read.
 pub fn load_orbital_test_vectors(jeod_root: &std::path::Path) -> Vec<CartesianStateVector> {
-    let path = jeod_root.join(
-        "models/utils/orbital_elements/verif/SIM_orb_elem/Modified_data/orb_ell_in.py",
-    );
+    let path = jeod_root
+        .join("models/utils/orbital_elements/verif/SIM_orb_elem/Modified_data/orb_ell_in.py");
     let content = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
 

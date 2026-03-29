@@ -199,7 +199,7 @@ mod tests {
     #[test]
     fn spherical_round_trip() {
         let original = SphericalState {
-            latitude: 0.7,  // ~40 degrees
+            latitude: 0.7, // ~40 degrees
             longitude: -1.2,
             altitude: 400_000.0, // 400 km
         };
@@ -374,18 +374,9 @@ mod tests {
             };
             let alt_err = (recovered.altitude - original.altitude).abs();
 
-            assert!(
-                lat_err < 1e-10,
-                "{label}: latitude error = {lat_err}"
-            );
-            assert!(
-                lon_err < 1e-10,
-                "{label}: longitude error = {lon_err}"
-            );
-            assert!(
-                alt_err < 1e-6,
-                "{label}: altitude error = {alt_err} m"
-            );
+            assert!(lat_err < 1e-10, "{label}: latitude error = {lat_err}");
+            assert!(lon_err < 1e-10, "{label}: longitude error = {lon_err}");
+            assert!(alt_err < 1e-6, "{label}: altitude error = {alt_err} m");
         }
     }
 }

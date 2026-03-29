@@ -13,7 +13,7 @@ pub struct MassProperties {
     pub inverse_mass: f64,      // 1/kg, precomputed (matches JEOD MassPointState.inverse_mass)
     pub inertia: DMat3,         // kg*m^2, in body frame
     pub inverse_inertia: DMat3, // precomputed I^-1
-    pub position: DVec3,  // m, in structural frame
+    pub position: DVec3,        // m, in structural frame
 }
 
 impl MassProperties {

@@ -131,8 +131,7 @@ impl RefFrameState {
 
         // Position: x_{A:C} (in A coords) = x_{A:B} + T_{A:B}^T * x_{B:C}
         // T_{A:B} transforms from A to B, so T_{A:B}^T transforms from B to A
-        let pos_ac =
-            self.trans.position + self.rot.t_parent_this.transpose() * s_bc.trans.position;
+        let pos_ac = self.trans.position + self.rot.t_parent_this.transpose() * s_bc.trans.position;
 
         // Velocity: v_{A:C} = v_{A:B} + T_{A:B}^T * (v_{B:C} + omega_{A:B} x x_{B:C})
         // omega_{A:B} is in B coords, x_{B:C} is in B coords, so cross product is in B coords
@@ -389,11 +388,7 @@ mod tests {
             s.trans.velocity
         );
         assert!(
-            approx_eq_mat3(
-                &s_double_neg.rot.t_parent_this,
-                &s.rot.t_parent_this,
-                1e-10
-            ),
+            approx_eq_mat3(&s_double_neg.rot.t_parent_this, &s.rot.t_parent_this, 1e-10),
             "Double negate T"
         );
         assert!(
@@ -417,12 +412,7 @@ mod tests {
         );
 
         // Frame B -> C: no rotation, offset [500, 0, 0] in B coords
-        let s_bc = make_state(
-            0.0,
-            DVec3::new(500.0, 0.0, 0.0),
-            DVec3::ZERO,
-            DVec3::ZERO,
-        );
+        let s_bc = make_state(0.0, DVec3::new(500.0, 0.0, 0.0), DVec3::ZERO, DVec3::ZERO);
 
         // Compose: A -> C
         let s_ac = s_ab.incr_right(&s_bc);
@@ -601,11 +591,7 @@ mod tests {
 
         // Velocity with identity: ang_vel x pos_new - I * vel = 0 x pos_new - vel = -vel
         assert!(
-            approx_eq_vec3(
-                neg.trans.velocity,
-                DVec3::new(-10.0, -20.0, -30.0),
-                TOL
-            ),
+            approx_eq_vec3(neg.trans.velocity, DVec3::new(-10.0, -20.0, -30.0), TOL),
             "Negate pure translation velocity"
         );
     }

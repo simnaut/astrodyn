@@ -146,7 +146,10 @@ mod tests {
     /// Zero density → zero drag.
     #[test]
     fn zero_density_zero_drag() {
-        let config = DragConfig { cd: 2.2, area: 10.0 };
+        let config = DragConfig {
+            cd: 2.2,
+            area: 10.0,
+        };
         let atmos = AtmosphereState::default(); // density = 0
         let vel = DVec3::new(7600.0, 0.0, 0.0);
 
@@ -174,7 +177,10 @@ mod tests {
         assert!(result.force.x < 0.0, "Drag should oppose relative velocity");
 
         // Compare with no-wind case
-        let atmos_no_wind = AtmosphereState { wind: DVec3::ZERO, ..atmos };
+        let atmos_no_wind = AtmosphereState {
+            wind: DVec3::ZERO,
+            ..atmos
+        };
         let result_no_wind = compute_ballistic_drag(&config, &atmos_no_wind, vel, &DMat3::IDENTITY);
         assert!(
             result.force.x.abs() < result_no_wind.force.x.abs(),
@@ -185,7 +191,10 @@ mod tests {
     /// Torque is zero for ballistic model.
     #[test]
     fn ballistic_torque_is_zero() {
-        let config = DragConfig { cd: 2.2, area: 10.0 };
+        let config = DragConfig {
+            cd: 2.2,
+            area: 10.0,
+        };
         let atmos = AtmosphereState {
             density: 1e-12,
             ..Default::default()
@@ -226,15 +235,9 @@ mod tests {
         // = [0, 1, 0] * 7600 + [-1, 0, 0] * 0 + [0, 0, 1] * 0
         // = [0, 7600, 0]
         // So in body frame, velocity is along +Y → drag force along -Y
-        assert!(
-            result.force.x.abs() < 1e-20,
-            "No X component in body frame"
-        );
+        assert!(result.force.x.abs() < 1e-20, "No X component in body frame");
         assert!(result.force.y < 0.0, "Drag along -Y in body frame");
-        assert!(
-            result.force.z.abs() < 1e-20,
-            "No Z component in body frame"
-        );
+        assert!(result.force.z.abs() < 1e-20, "No Z component in body frame");
     }
 
     /// Order-of-magnitude check: ISS-like vehicle altitude loss.

@@ -148,8 +148,7 @@ impl SphericalHarmonicsData {
                         (ii_f * (ii_f - 1.0) * (ii_f + 1.0) * (ii_f + 2.0) / 2.0).sqrt();
                 } else {
                     // Equation (7-19)
-                    self.zeta[ii][jj] =
-                        ((ii_f - jj_f) * (ii_f + jj_f + 1.0)).sqrt();
+                    self.zeta[ii][jj] = ((ii_f - jj_f) * (ii_f + jj_f + 1.0)).sqrt();
                     // Equation (7-22)
                     self.upsilon[ii][jj] = ((ii_f - jj_f)
                         * (ii_f + jj_f + 1.0)
@@ -160,8 +159,7 @@ impl SphericalHarmonicsData {
             }
 
             // P(n,n) term, equation (7-8)
-            pnm[ii][ii] =
-                ((2.0 * ii_f + 1.0) / (2.0 * ii_f)).sqrt() * pnm[ii - 1][ii - 1];
+            pnm[ii][ii] = ((2.0 * ii_f + 1.0) / (2.0 * ii_f)).sqrt() * pnm[ii - 1][ii - 1];
 
             // P(n,n+1) and P(n,n+2) terms, table 1 (p. 14)
             pnm[ii][ii + 1] = 0.0;
@@ -171,10 +169,8 @@ impl SphericalHarmonicsData {
             self.nrdiag[ii] = (2.0 * ii_f + 1.0).sqrt() * pnm[ii - 1][ii - 1];
 
             // Equation (7-13)
-            self.alpha[ii] =
-                ((2.0 * ii_f + 1.0) * (2.0 * ii_f - 1.0)).sqrt() / ii_f;
-            self.beta[ii] =
-                ((2.0 * ii_f + 1.0) / (2.0 * ii_f - 3.0)).sqrt() * (ii_f - 1.0) / ii_f;
+            self.alpha[ii] = ((2.0 * ii_f + 1.0) * (2.0 * ii_f - 1.0)).sqrt() / ii_f;
+            self.beta[ii] = ((2.0 * ii_f + 1.0) / (2.0 * ii_f - 3.0)).sqrt() * (ii_f - 1.0) / ii_f;
         }
     }
 }

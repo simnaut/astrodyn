@@ -32,8 +32,7 @@ fn jeod_root() -> std::path::PathBuf {
 
 /// Load the ISS inertial reference state (position + velocity in ECI).
 fn load_iss_reference(root: &std::path::Path) -> TranslationalState {
-    let ref_state =
-        jeod_test_data::reference_state::load_reference_state(root, "ISS", "inertial");
+    let ref_state = jeod_test_data::reference_state::load_reference_state(root, "ISS", "inertial");
     TranslationalState {
         position: ref_state.position,
         velocity: ref_state.velocity,
@@ -122,7 +121,13 @@ fn iss_set01_time_periapsis() {
     let pos_err = (computed.position - expected.position).length();
     let vel_err = (computed.velocity - expected.velocity).length();
 
-    print_comparison("set01 (time_periapsis)", &computed, &expected, pos_err, vel_err);
+    print_comparison(
+        "set01 (time_periapsis)",
+        &computed,
+        &expected,
+        pos_err,
+        vel_err,
+    );
 
     assert!(
         pos_err < 1.0,
@@ -152,9 +157,7 @@ fn iss_set02_mean_anomaly() {
     );
     let expected = load_iss_reference(&root);
 
-    let mean_anomaly = init
-        .mean_anomaly
-        .expect("ISS set02 must have mean_anomaly");
+    let mean_anomaly = init.mean_anomaly.expect("ISS set02 must have mean_anomaly");
 
     let computed = init_from_mean_anomaly(
         init.semi_major_axis,
@@ -169,7 +172,13 @@ fn iss_set02_mean_anomaly() {
     let pos_err = (computed.position - expected.position).length();
     let vel_err = (computed.velocity - expected.velocity).length();
 
-    print_comparison("set02 (mean_anomaly)", &computed, &expected, pos_err, vel_err);
+    print_comparison(
+        "set02 (mean_anomaly)",
+        &computed,
+        &expected,
+        pos_err,
+        vel_err,
+    );
 
     assert!(
         pos_err < 1.0,
@@ -199,9 +208,7 @@ fn iss_set10_true_anomaly() {
     );
     let expected = load_iss_reference(&root);
 
-    let true_anomaly = init
-        .true_anomaly
-        .expect("ISS set10 must have true_anomaly");
+    let true_anomaly = init.true_anomaly.expect("ISS set10 must have true_anomaly");
 
     let computed = init_from_orbital_elements(
         init.semi_major_axis,
@@ -216,7 +223,13 @@ fn iss_set10_true_anomaly() {
     let pos_err = (computed.position - expected.position).length();
     let vel_err = (computed.velocity - expected.velocity).length();
 
-    print_comparison("set10 (true_anomaly)", &computed, &expected, pos_err, vel_err);
+    print_comparison(
+        "set10 (true_anomaly)",
+        &computed,
+        &expected,
+        pos_err,
+        vel_err,
+    );
 
     assert!(
         pos_err < 1.0,

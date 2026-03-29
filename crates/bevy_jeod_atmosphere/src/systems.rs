@@ -3,9 +3,7 @@ use jeod_atmosphere::exponential::ExponentialAtmosphere;
 use jeod_atmosphere::met::MetAtmosphere;
 use jeod_math::geodetic::cartesian_to_geodetic;
 
-use bevy_jeod_dynamics::{
-    AtmosphericStateC, PlanetFixedRotationC, TranslationalStateC,
-};
+use bevy_jeod_dynamics::{AtmosphericStateC, PlanetFixedRotationC, TranslationalStateC};
 use bevy_jeod_time::SimulationTimeR;
 
 /// Selectable atmosphere model.
@@ -96,7 +94,7 @@ pub fn atmosphere_update_system(
                     .as_ref()
                     .expect(
                         "MET atmosphere requires SimulationTimeR resource for TJT. \
-                         Add JeodTimePlugin before JeodAtmospherePlugin."
+                         Add JeodTimePlugin before JeodAtmospherePlugin.",
                     )
                     .tai_tjt;
 

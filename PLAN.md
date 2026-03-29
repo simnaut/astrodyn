@@ -487,16 +487,162 @@ without adding new physics.
 
 ---
 
+## Phase 4a: Interaction Cross-Validation Closure
+
+**Goal:** Tier 3 cross-validation for every interaction force delivered in Phase 4.
+Phase 4 delivered correct implementations (Tier 1/2 all passing), but the Tier 3
+trajectory-level exit criteria remain open. This phase closes those gaps and adds
+finer-grained validation using dedicated JEOD interaction sims.
+
+### Entrance Criteria
+
+- [ ] Phase 4 Tier 1 and Tier 2 exit criteria met
+- [ ] Docker pipeline functional (established in Phase 1)
+- [ ] Existing SIM_dyncomp executable built (shared with Phase 1–3a runs)
+
+### Tasks
+
+#### 4a-A. SIM_dyncomp Additional Runs
+
+These share the existing SIM_dyncomp executable — zero additional build cost.
+
+| ID | Task | Description |
+|----|------|-------------|
+| 4a.1 | Generate gravity gradient libration references | Add RUN_10A (circular orbit, zero initial rate, 8h — analytical: 5° in-plane period 3257.94s, 1° out-of-plane period 2821.46s), RUN_10B (circular, initial rate), RUN_10C (elliptical, zero rate), RUN_10D (elliptical, initial rate). |
+| 4a.2 | Generate additional torque+force references | Add RUN_9C (torque + force, zero rate, 8h) and RUN_9D (torque + force, initial rate, 8h). Completes the RUN_9A/9B torque coverage. |
+| 4a.3 | Generate atmosphere variation references | Add RUN_5B (MET solar mean F10.7=128.8, 8h) and RUN_5C (MET solar max F10.7=200, 8h). Validates MET across the solar cycle. |
+| 4a.4 | Generate constant-density drag reference | Add RUN_6A (constant atmospheric density, 8h). Isolates drag computation from atmosphere model — if this passes but RUN_5A/6B fail, the bug is in MET. |
+
+#### 4a-B. Dedicated Interaction Sims
+
+These require separate `trick-CP` builds but exercise interactions in isolation.
+
+| ID | Task | Description |
+|----|------|-------------|
+| 4a.5 | Generate high-resolution torque references | Add `gravity_torque/verif/SIM_torque_compare_simple` RUN_01 through RUN_06 (progressive complexity, 3h each, **1-second logging** — 60x finer than SIM_dyncomp's 60s intervals). |
+| 4a.6 | Generate multi-mass torque reference | Add `gravity_torque/verif/SIM_grav_torque_verif` RUN_01 (ISS-like vehicle with 3 point masses at multiple Earth locations). |
+| 4a.7 | Generate isolated drag references | Add `aerodynamics/verif/SIM_VER_DRAG` RUN_orbiter (orbiter vehicle drag) and RUN_one_plate_torque (single plate with off-center drag producing torque). |
+| 4a.8 | Generate eclipse geometry references | Add `radiation_pressure/verif/SIM_2_SHADOW_CALC` RUN_annular_eclipse and RUN_transverse_shadow. |
+
+#### 4a-C. Cross-Validation Tests
+
+| ID | Task | Description |
+|----|------|-------------|
+| 4a.9 | Tier 3: gravity gradient libration | RUN_10A: compare attitude oscillation against analytical solution (in-plane period 3257.94s at 5° amplitude, out-of-plane 2821.46s at 1°). Gold-standard gravity torque test. |
+| 4a.10 | Tier 3: gravity gradient elliptical | RUN_10C/10D: gravity gradient torque in elliptical orbit where altitude varies. |
+| 4a.11 | Tier 3: torque+force combined | RUN_9C/9D: coupled translation + rotation with applied force and gravity gradient torque. |
+| 4a.12 | Tier 3: MET solar cycle | RUN_5B/5C: drag trajectories at solar mean and solar max conditions. |
+| 4a.13 | Tier 3: constant-density drag | RUN_6A: drag with fixed density, isolates force computation from atmosphere. |
+| 4a.14 | Tier 3: high-resolution torque | SIM_torque_compare_simple RUN_01–06: 1-second resolution over 3h. Detects oscillation/drift that 60s sampling aliases. |
+| 4a.15 | Tier 3: eclipse geometry | SIM_2_SHADOW_CALC: annular eclipse and transverse shadow crossing geometry. |
+
+### Exit Criteria
+
+- [ ] **Gravity gradient libration (RUN_10A)**: In-plane oscillation period within 0.1% of analytical 3257.94s. Attitude amplitude error < 0.01 rad over 8h.
+- [ ] **Gravity gradient elliptical (RUN_10C)**: Attitude matches JEOD to < 0.01 rad over 8h.
+- [ ] **Torque+force combined (RUN_9C/9D)**: Quaternion error < 0.01 rad over 8h.
+- [ ] **Drag solar mean (RUN_5B)**: Position error < 100 m over 8h.
+- [ ] **Drag solar max (RUN_5C)**: Position error < 100 m over 8h.
+- [ ] **Constant-density drag (RUN_6A)**: Position error < 50 m over 8h (tighter — eliminates atmosphere as error source).
+- [ ] **High-resolution torque**: Torque magnitude error < 1e-6 N·m at 1-second resolution over 3h (SIM_torque_compare_simple).
+- [ ] **Eclipse timing**: Eclipse entry/exit times match JEOD to < 10 s (SIM_2_SHADOW_CALC).
+- [ ] **All Phase 4 Tier 3 exit criteria** now checked (gravity torque RUN_9A/9B, drag trajectory, SRP trajectory, shadow transitions).
+- [ ] `cargo test --workspace` — all tests pass, no regressions.
+
+---
+
+## Phase 4b: Broad Interaction and Derived-State Coverage
+
+**Goal:** Broader Tier 3 coverage across Phase 3/4 physics using JEOD's dedicated
+verification sims, plus early reference data generation for Phase 5. Phase 4a closed
+the minimum Tier 3 gaps; this phase extends to additional orbit types, drag models,
+SRP configurations, derived state edge cases, and body initialization methods.
+
+### Entrance Criteria
+
+- [ ] Phase 4a exit criteria met
+- [ ] Docker pipeline functional
+- [ ] All Phase 3/4 physics (derived states, interactions) passing Tier 1/2 tests
+
+### Tasks
+
+#### 4b-A. SIM_dyncomp Full-Force Reference Data (Priority 1)
+
+Generate reference data for combined-force scenarios. These share the SIM_dyncomp
+executable (zero build cost) but the cross-validation **tests** require 3rd-body
+gravity from Phase 5 — reference data is generated here for early availability.
+
+| ID | Task | Description |
+|----|------|-------------|
+| 4b.1 | Generate 3rd-body reference | Add SIM_dyncomp RUN_4 (spherical gravity + Sun/Moon 3rd-body, 8h). Data consumed by Phase 5 test 5.40. |
+| 4b.2 | Generate full translational references | Add SIM_dyncomp RUN_7A (4x4 + 3rd-body, no drag, 8h), RUN_7B (8x8 + 3rd-body, no drag, 8h), RUN_7C (4x4 + 3rd-body + drag, 8h), RUN_7D (8x8 + 3rd-body + drag, 8h). Data consumed by Phase 5 tests 5.25/5.26. |
+
+#### 4b-B. Derived State Edge Cases (Priority 3)
+
+Additional runs from sims already in the Docker pipeline, covering orbit types
+that exercise coordinate singularities and edge cases.
+
+| ID | Task | Description |
+|----|------|-------------|
+| 4b.3 | Generate Euler angle edge cases | Add SIM_Euler RUN_ecc (eccentric orbit) and RUN_equ (equatorial orbit — exercises gimbal-lock-adjacent sequences). |
+| 4b.4 | Generate LVLH edge cases | Add SIM_LVLH RUN_ecc (eccentric orbit — varying orbital rate) and RUN_equ (equatorial — near-singular LVLH at zero inclination). |
+| 4b.5 | Generate NED edge cases | Add SIM_NED RUN_ell_polar (ellipsoidal polar orbit — geodetic singularity at poles), RUN_sph_inc (spherical Earth model), RUN_sph_polar (spherical + polar). |
+| 4b.6 | Generate SolarBeta edge cases | Add SIM_SolarBeta RUN_incl_0 (equatorial — beta approaches ±23.4°), RUN_incl_23_4 (obliquity-matched inclination), RUN_comp_ISS (ISS comparison). |
+| 4b.7 | Generate body initialization references | Add SIM_orbinit RUN_0101 (orbital elements in rotating frame), RUN_0201 (LVLH-relative init), RUN_0301 (NED init), RUN_0401 (Cartesian in non-inertial frame). Tests 4 distinct initialization methods beyond the current RUN_0001. |
+
+#### 4b-C. Interaction-Specific Sims (Priority 4)
+
+Dedicated sims that test individual interactions in isolation, beyond the combined
+scenarios in Phase 4a.
+
+| ID | Task | Description |
+|----|------|-------------|
+| 4b.8 | Generate drag model comparison references | Add `aerodynamics/verif/SIM_VER_DRAG` RUN_aero_drag_const (constant Cd), RUN_aero_drag_CD (variable Cd model), RUN_aero_drag_BC (ballistic coefficient approach). Validates all three drag API modes. |
+| 4b.9 | Generate basic SRP references | Add `radiation_pressure/verif/SIM_1_BASIC` RUN_basic (standard flat-plate SRP) and RUN_basic_cr (varied reflection coefficients). Validates SRP force in isolation without orbital dynamics. |
+| 4b.10 | Generate advanced shadow references | Add `radiation_pressure/verif/SIM_2A_SHADOW_CALC` RUN_annular_eclipse and RUN_shadow_cooling (advanced shadow with surface flux variations and thermal effects). |
+| 4b.11 | Generate first-order SRP reference | Add `radiation_pressure/verif/SIM_3_ORBIT_1st_ORDER` RUN_radiation. Compares first-order SRP model against full model — validates model type selection. |
+
+#### 4b-D. Cross-Validation Tests
+
+Tests below exercise Phase 3/4 physics only — no Phase 5 dependencies.
+
+| ID | Task | Description |
+|----|------|-------------|
+| 4b.12 | Tier 3: Euler angle edge cases | SIM_Euler RUN_ecc/RUN_equ: Euler angles in eccentric and equatorial orbits. Catches gimbal-lock-adjacent numerical issues. |
+| 4b.13 | Tier 3: LVLH edge cases | SIM_LVLH RUN_ecc/RUN_equ: LVLH frame in eccentric and equatorial orbits. |
+| 4b.14 | Tier 3: NED polar singularity | SIM_NED RUN_ell_polar: geodetic conversion at polar latitudes where longitude is ill-defined. |
+| 4b.15 | Tier 3: SolarBeta orbit types | SIM_SolarBeta RUN_incl_0/RUN_comp_ISS: solar beta at equatorial inclination and ISS comparison. |
+| 4b.16 | Tier 3: body initialization methods | SIM_orbinit: validate initialization from orbital elements (rotating frame), LVLH state, NED state, and non-inertial Cartesian. |
+| 4b.17 | Tier 3: drag model variants | SIM_VER_DRAG: constant Cd, variable Cd, and ballistic coefficient modes all match JEOD. |
+| 4b.18 | Tier 3: SRP in isolation | SIM_1_BASIC: SRP force magnitude and direction match JEOD for varied reflection coefficients. |
+| 4b.19 | Tier 3: advanced shadow | SIM_2A_SHADOW_CALC: shadow geometry with surface flux effects matches JEOD. |
+| 4b.20 | Tier 3: first-order SRP model | SIM_3_ORBIT_1st_ORDER vs SIM_3_ORBIT: both match their respective JEOD runs. |
+
+### Exit Criteria
+
+- [ ] **Euler edge cases**: Angles match JEOD to < 1e-6 rad in eccentric and equatorial orbits over 24h (SIM_Euler RUN_ecc/RUN_equ).
+- [ ] **LVLH edge cases**: Frame rotation matches JEOD to < 1e-6 rad in eccentric and equatorial orbits over 24h (SIM_LVLH RUN_ecc/RUN_equ).
+- [ ] **NED polar**: Geodetic lat/lon/alt match JEOD to < 1e-6 m altitude, < 1e-10 rad lat/lon in polar orbit (SIM_NED RUN_ell_polar).
+- [ ] **Solar beta variants**: Beta angle matches JEOD to < 1e-4 rad at equatorial inclination and ISS comparison orbit (SIM_SolarBeta).
+- [ ] **Body init methods**: All 4 initialization methods produce position error < 1 m, velocity < 0.001 m/s vs JEOD (SIM_orbinit).
+- [ ] **Drag model variants**: All three Cd modes (constant, variable, ballistic coefficient) match JEOD to < 1e-3 N force magnitude (SIM_VER_DRAG).
+- [ ] **SRP isolation**: SRP force matches JEOD to < 1e-9 N for standard and varied reflection coefficients (SIM_1_BASIC).
+- [ ] **Advanced shadow**: Shadow geometry with thermal effects matches JEOD (SIM_2A_SHADOW_CALC).
+- [ ] **SIM_dyncomp full-force data**: Reference CSVs for RUN_4, RUN_7A–7D generated and committed to `test_data/`.
+- [ ] `cargo test --workspace` — all tests pass, no regressions.
+
+---
+
 ## Phase 5: High-Fidelity Parity
 
 **Goal:** Feature parity with JEOD's verified capabilities. Full cross-validation.
 
 ### Entrance Criteria
 
-- [ ] Phase 4 exit criteria met
-- [ ] All basic forces (gravity, drag, SRP, gravity torque) producing correct results
+- [ ] Phase 4b exit criteria met
+- [ ] All interaction forces and derived states Tier 3 validated
 - [ ] Docker available for running Trick container (established in Phase 1)
-- [ ] Additional JEOD reference trajectories generated for Phase 5 scenarios
+- [ ] SIM_dyncomp full-force reference data available (generated in Phase 4b)
 
 ### Tasks
 
@@ -553,17 +699,41 @@ without adding new physics.
 
 #### 5G. Cross-Validation Infrastructure
 
+The JEOD repo contains ~60 verification SIMs with ~380 RUN directories. An audit
+identified the following as highest-value additions for Phase 5. All are added to
+`trick/generate_references.sh` (Docker workflow from Phase 1: Rocky 9 + Trick 25 +
+JEOD 5.4).
+
+##### Reference Data Generation
+
 | ID | Task | Description |
 |----|------|-------------|
-| 5.20 | Generate JEOD reference trajectories | Add new sims to `trick/generate_references.sh`. Docker workflow established in Phase 1 (Rocky 9 + Trick 25 + JEOD 5.4). Key runs: RUN_7A (4x4 harmonics), RUN_1A (full gravity). |
-| 5.21 | Generate Earth-Moon reference | Add `SIM_Earth_Moon` (Clementine/Rosetta) to generate script. Export to CSV. |
-| 5.22 | Generate Mars reference | Add `SIM_Mars` (Dawn/Phobos) to generate script. Export to CSV. |
-| 5.23 | Extend CSV trajectory loader | Extend the loader in `tier3_jeod_trajectory.rs` for new column layouts. |
+| 5.20 | SIM_dyncomp full-force data | Reference CSVs for RUN_4, RUN_7A–7D generated in Phase 4b (tasks 4b.1–4b.2). Verify data is available in `test_data/` before running Phase 5 tests. |
+| 5.21 | Generate Earth-Moon reference | Add `Integrated_Validation/SIM_Earth_Moon` RUN_clem (Clementine lunar orbit: Moon 60x60 gravity + solid tides + Earth 3rd-body, 24h) and RUN_rosetta (Rosetta Earth flyby). |
+| 5.22 | Generate Mars reference | Add `Integrated_Validation/SIM_Mars` RUN_dawn (Dawn at Mars: MRO110B2 gravity + Sun 3rd-body, 3h) and RUN_phobos (Phobos orbit). |
+| 5.35 | Generate tides reference | Add `gravity/verif/SIM_tide_verif` RUN_01 (8x8 GEM-T1 + solid body tides + Sun/Moon 3rd-body, 8h ISS orbit) and RUN_02. Only JEOD sim that exercises tidal delta-Cnm/delta-Snm trajectory effects. |
+| 5.36 | Generate polar motion reference | Add `RNP/RNPJ2000/verif/SIM_RNP_J2000_prop` RUN_J2000_RNP_prop (full RNP + polar motion, 24h) and RUN_J2000_RNP_Polar_off (RNP without polar motion). Differential comparison isolates polar motion contribution. |
+| 5.37 | Generate advanced integrator references | Add `integration/verif/SIM_integ_test` RUN_gauss_jackson and RUN_lsode. Add `integration/verif/SIM_GJ_test` RUN_GJ_step1_order8_noeval_nobs and RUN_GJ_step1_order12_noeval_nobs. Validates integrator accuracy independently of force model. |
+| 5.38 | Generate ephemeris propagation reference | Add `ephemerides/verif/SIM_prop_planet` RUN_ephem (DE430 ephemeris mode) and RUN_prop (numerically propagated). Duration ~150 years — long-term ephemeris fidelity baseline. |
+| 5.39 | Generate Mercury relativistic reference | Add `gravity/verif/SIM_mercury` RUN_newtonian and RUN_relativistic_sun (Mercury orbit with all 9 planets, Gauss-Jackson integrator). Differential comparison isolates GR perihelion precession (~43 arcsec/century). Depends on Gauss-Jackson (5.2). |
+
+##### Cross-Validation Tests
+
+| ID | Task | Description |
+|----|------|-------------|
+| 5.23 | Extend CSV trajectory loader | Extend the loader for new column layouts (SIM_Earth_Moon, SIM_Mars, SIM_tide_verif, SIM_RNP_J2000_prop, SIM_prop_planet). |
 | 5.24 | Trajectory comparison harness | Generalize comparison: report max error, RMS error, drift rate per scenario. |
-| 5.25 | Tier 3: LEO 24h test | RK4, GGM05C degree 20, compare position to JEOD at each timestep. |
-| 5.26 | Tier 3: LEO with drag test | 24h with MET atmosphere, compare trajectory. |
-| 5.27 | Tier 3: Earth-Moon test | 7-day multi-body trajectory, compare to JEOD. |
-| 5.28 | Tier 3: Mars orbit test | Mars orbit with MRO110B2 gravity, compare to JEOD. |
+| 5.25 | Tier 3: LEO 24h (high-fidelity gravity) | SIM_dyncomp RUN_7A/7B: 4x4 or 8x8 gravity + Sun/Moon 3rd-body, no drag, 8h. Isolates gravity + ephemeris fidelity from atmosphere/drag. |
+| 5.26 | Tier 3: LEO with drag | SIM_dyncomp RUN_7C/7D: gravity + 3rd-body + MET atmosphere + drag, 8h. Full combined translational dynamics. |
+| 5.27 | Tier 3: Earth-Moon test | SIM_Earth_Moon RUN_clem: 24h lunar orbit. Validates multi-body gravity, Moon 60x60 harmonics, Earth 3rd-body differential acceleration. |
+| 5.28 | Tier 3: Mars orbit test | SIM_Mars RUN_dawn: 3h Mars orbit. Validates MRO110B2 gravity model and Sun 3rd-body perturbations. |
+| 5.40 | Tier 3: 3rd-body isolation | SIM_dyncomp RUN_4: spherical gravity + Sun/Moon 3rd-body only, 8h. Isolates differential acceleration computation from non-spherical gravity — catches sign/direction errors without harmonics masking them. |
+| 5.41 | Tier 3: solid tides | SIM_tide_verif RUN_01 vs RUN_02: trajectory with/without tides. Position delta (tides ON vs OFF) must match JEOD's delta. |
+| 5.42 | Tier 3: polar motion | SIM_RNP_J2000_prop RUN_J2000_RNP_prop vs RUN_J2000_RNP_Polar_off: Earth-fixed frame with/without polar motion. Differential comparison isolates polar motion contribution. |
+| 5.43 | Tier 3: Gauss-Jackson | SIM_integ_test RUN_gauss_jackson or SIM_GJ_test: same LEO scenario as RK4, verify GJ matches JEOD trajectory. |
+| 5.44 | Tier 3: LSODE | SIM_integ_test RUN_lsode: variable-order variable-step integration on LEO scenario, compare trajectory to JEOD. |
+| 5.45 | Tier 3: long-term ephemeris | SIM_prop_planet: compare Anise-based DE421/430 queries against JEOD's DE430 propagation over multi-year spans. Validates interpolation drift over decades. |
+| 5.46 | Tier 3: Mercury relativistic (stretch) | SIM_mercury: perihelion advance delta from GR corrections. Requires Gauss-Jackson + multi-planet gravity. |
 | 5.29 | Tier 4 regression harness | CI script that runs all Tier 1-3 tests and produces pass/fail summary with error budgets. |
 
 #### 5H. Examples
@@ -596,10 +766,80 @@ without adding new physics.
 - [ ] **Tier 3 solid tides**: Trajectory with tidal ΔCnm/ΔSnm corrections. Position difference (tides ON vs OFF) matches JEOD's difference to < 10% over 24h
 - [ ] **Tier 3 SRP trajectory**: Trajectory with solar radiation pressure enabled. Requires ephemeris-driven Sun position. Compare against JEOD sim with SRP. Position error < 10 m over 24h
 - [ ] **Tier 3 SRP thermal parity**: SIM_3_ORBIT RUN_radiation (23 days, flat-plate + thermal emission + shadow). Position error < 5 m over 23 days. Requires matching JEOD's DynManager multi-integrable-object RK4 scheduling so the coupled orbital + thermal ODE produces the same sub-step sequencing (see simnaut/bevy_jeod#13)
+- [ ] **Tier 3 3rd-body isolation**: SIM_dyncomp RUN_4 (spherical gravity + Sun/Moon). Position error vs. JEOD < 5 m over 8h. Validates differential acceleration separately from non-spherical gravity.
+- [ ] **Tier 3 LSODE trajectory**: SIM_integ_test RUN_lsode on LEO scenario. Position error vs. JEOD < 10 m over 24h with variable-order, variable-step integration.
+- [ ] **Tier 3 long-term ephemeris**: SIM_prop_planet. Planet positions from Anise-based DE421/430 match JEOD's DE430 propagation to < 1 km over multi-decade spans.
+- [ ] **Tier 3 Mercury relativistic** (stretch): SIM_mercury. GR-induced perihelion advance rate within 1% of JEOD's computed delta (~43 arcsec/century). Requires Gauss-Jackson (5.2) + multi-planet gravity.
 
 #### Other
 - [ ] **Tier 4 regression**: CI runs all scenarios automatically; all pass within budgets
 - [ ] **Portability**: All `jeod_*` crates compile without Bevy; `batch_propagation.rs` runs full-fidelity scenario without Bevy
+
+---
+
+## Phase 6: Comprehensive JEOD Parity Validation
+
+**Goal:** Full-breadth cross-validation against every major JEOD verification sim
+category. This phase validates existing physics across broader parameter spaces,
+edge cases, and specialized scenarios to ensure no JEOD capability goes unverified.
+
+### Entrance Criteria
+
+- [ ] Phase 5 exit criteria met
+- [ ] All Phase 5 physics (advanced integrators, tides, polar motion, multi-body) functional
+- [ ] Docker pipeline capable of building dedicated JEOD sims beyond SIM_dyncomp
+
+### Tasks
+
+#### 6A. Reference Data Generation
+
+| ID | Task | Description |
+|----|------|-------------|
+| 6.1 | Generate relative dynamics references | Add `derived_state/verif/SIM_Relative` RUN_AB_rot_AB_trans (both vehicles rotating + translating), RUN_no_rot_AB_trans (translation only), RUN_A_rot_no_trans (single-vehicle rotation). 7 total runs testing relative state computation. |
+| 6.2 | Generate planetary derived state references | Add `derived_state/verif/SIM_Planetary` RUN_LEO_inc (45° LEO, 24h), RUN_LEO_polar (polar orbit), RUN_GEO (geostationary). Orbital elements + LVLH in distinct regimes. |
+| 6.3 | Generate Earth lighting references | Add `earth_lighting/verif/SIM_LIGHT_CIR` RUN_T01 through RUN_T10 (10 lighting geometry scenarios: penumbra, umbra, antumbra, varied Sun-Earth-Moon configurations). |
+| 6.4 | Generate full time scale references | Add `time/verif/SIM_5_all_inclusive` RUN_UTC_initialized (all 8 scales: UTC, TAI, UT1, TDB, TT, GPS, GMST, MET over 24h) and RUN_UTC_initialized_tdb (TDB-initialized variant). |
+| 6.5 | Generate MET deep validation references | Add `atmosphere/MET/verif/SIM_MET` RUN_T01_MET_VER, RUN_T02_MET_VER, RUN_T03_GRAM_MET (MET vs GRAM comparison across conditions). |
+| 6.6 | Generate time reversal references | Add `time/verif/SIM_7_time_reversal` RUN_1 (point-mass, reverse), RUN_3A (4x4 gravity, reverse), RUN_8B (6-DOF rotational, reverse). |
+| 6.7 | Generate comprehensive orbital element references | Add `orbital_elements/verif/SIM_orb_elem` — representative subset of 56 runs: RUN_T01 (circular), RUN_T10 (eccentric), RUN_T20 (hyperbolic), RUN_T30 (near-parabolic), RUN_T40 (retrograde), RUN_T50 (equatorial), RUN_T55 (polar). Covers all orbit families. |
+| 6.8 | Derived state edge-case data | Completed in Phase 4b (tasks 4b.3–4b.6). Reference data available in `test_data/`. |
+| 6.9 | Generate Mercury relativistic reference | SIM_mercury RUN_newtonian and RUN_relativistic_sun. Mandatory in this phase (stretch in Phase 5). |
+| 6.10 | Generate LVLH-relative references | Add `derived_state/verif/SIM_LvlhRelative` RUN_test0 and RUN_test1. LVLH-relative dynamics for proximity operations. |
+
+#### 6B. Cross-Validation Tests
+
+| ID | Task | Description |
+|----|------|-------------|
+| 6.11 | Tier 3: relative dynamics | SIM_Relative: relative translational + rotational state between two vehicles matches JEOD over 100s kinematic scenarios. |
+| 6.12 | Tier 3: planetary derived states | SIM_Planetary: orbital elements + LVLH frames in LEO/GEO/polar match JEOD over 24h. Catches coordinate singularities at equator and poles. |
+| 6.13 | Tier 3: Earth lighting | SIM_LIGHT_CIR: shadow fraction and penumbra/umbra/antumbra transitions match JEOD across all 10 geometries. |
+| 6.14 | Tier 3: full time scale parity | SIM_5_all_inclusive: every time scale matches JEOD over 24h. |
+| 6.15 | Tier 3: MET atmosphere parity | SIM_MET: density and temperature profiles match JEOD across altitudes and solar conditions. |
+| 6.16 | Tier 3: time reversal | SIM_7_time_reversal: propagate forward then backward, verify round-trip. Compare against JEOD's reversed sim output. |
+| 6.17 | Tier 3: comprehensive orbital elements | SIM_orb_elem: 7 orbit families (circular, eccentric, hyperbolic, near-parabolic, retrograde, equatorial, polar). |
+| 6.18 | Tier 3: derived state edge cases | Completed in Phase 4b (tests 4b.12–4b.15). Verified by Phase 4b exit criteria. |
+| 6.19 | Tier 3: Mercury relativistic | SIM_mercury: GR perihelion advance ~43 arcsec/century. Mandatory. |
+| 6.20 | Tier 3: LVLH-relative dynamics | SIM_LvlhRelative: relative state in LVLH frame for proximity operations. |
+
+### Exit Criteria
+
+#### Tier 3 (trajectory cross-validation)
+- [ ] **All prior phase exit criteria** still pass (no regressions)
+- [ ] **Relative dynamics**: Relative state between two vehicles matches JEOD to < 1e-6 m over 100s (SIM_Relative)
+- [ ] **Planetary derived states**: Orbital elements in LEO/GEO/polar match JEOD to < 1e-6 per element over 24h (SIM_Planetary)
+- [ ] **Earth lighting**: Shadow fraction matches JEOD to < 0.01 across all 10 geometries (SIM_LIGHT_CIR)
+- [ ] **Time scale parity**: All 8 time scales match JEOD to < 1e-6 s over 24h (SIM_5_all_inclusive)
+- [ ] **MET atmosphere parity**: Density matches JEOD MET tables to < 1% at all tested altitudes and solar conditions (SIM_MET)
+- [ ] **Time reversal**: Forward-backward round-trip recovers initial state to < 1e-6 m. Reversed trajectory matches JEOD's SIM_7_time_reversal to same tolerance as forward propagation.
+- [ ] **Comprehensive orbital elements**: All 7 orbit families pass — `from_cartesian()` matches JEOD to < 1e-6 per element at every timestep (SIM_orb_elem)
+- [ ] **Derived state edge cases**: Completed in Phase 4b — Euler (eccentric/equatorial), LVLH (equatorial), NED (polar), solar beta (0° inclination) all validated to < 1e-6 rad
+- [ ] **Mercury relativistic**: GR perihelion advance rate within 1% of JEOD's delta (~43 arcsec/century) (SIM_mercury)
+- [ ] **LVLH-relative**: Relative state in LVLH frame matches JEOD to < 1e-6 m (SIM_LvlhRelative)
+
+#### Other
+- [ ] **Full JEOD parity**: Every major JEOD verification sim category (dynamics, gravity, time, ephemerides, RNP, atmosphere, aerodynamics, radiation pressure, gravity torque, derived states, orbital elements, earth lighting) has at least one Tier 3 cross-validation test
+- [ ] **Portability**: All `jeod_*` crates compile without Bevy
+- [ ] `cargo test --workspace` — all tests pass, no regressions
 
 ---
 

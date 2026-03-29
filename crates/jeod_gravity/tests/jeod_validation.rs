@@ -13,11 +13,20 @@ use jeod_test_data::{gravity_verif::load_gravity_test_cases, jeod_path};
 #[test]
 fn load_gravity_test_data() {
     let root = jeod_path();
-    assert!(root.exists(), "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.", root.display());
+    assert!(
+        root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        root.display()
+    );
 
     let cases = load_gravity_test_cases(&root);
     assert!(!cases.is_empty(), "Expected at least one gravity test case");
-    assert_eq!(cases.len(), 40, "Expected 40 gravity test cases, got {}", cases.len());
+    assert_eq!(
+        cases.len(),
+        40,
+        "Expected 40 gravity test cases, got {}",
+        cases.len()
+    );
 
     // Cases use various degree/order combinations (up to 20x20).
     // Verify all have valid degree >= order >= 0.
@@ -25,7 +34,9 @@ fn load_gravity_test_data() {
         assert!(
             case.degree >= case.order,
             "Case {}: degree {} < order {}",
-            case.case_num, case.degree, case.order
+            case.case_num,
+            case.degree,
+            case.order
         );
     }
 
@@ -40,7 +51,11 @@ fn load_gravity_test_data() {
 #[test]
 fn jeod_gravity_data_laplace_equation() {
     let root = jeod_path();
-    assert!(root.exists(), "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.", root.display());
+    assert!(
+        root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        root.display()
+    );
 
     let cases = load_gravity_test_cases(&root);
 
@@ -57,7 +72,8 @@ fn jeod_gravity_data_laplace_equation() {
         assert!(
             trace.abs() < 1e-15,
             "Case {}: Laplace violated, trace = {:.6e}",
-            case.case_num, trace,
+            case.case_num,
+            trace,
         );
     }
 }
@@ -65,7 +81,11 @@ fn jeod_gravity_data_laplace_equation() {
 #[test]
 fn point_mass_reasonable_at_jeod_positions() {
     let root = jeod_path();
-    assert!(root.exists(), "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.", root.display());
+    assert!(
+        root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        root.display()
+    );
 
     let cases = load_gravity_test_cases(&root);
     let mu_earth = 3.986004418e14;
@@ -82,7 +102,9 @@ fn point_mass_reasonable_at_jeod_positions() {
             assert!(
                 ratio < 0.01,
                 "Case {}: perturbation {:.6e} > 1% of point-mass {:.6e}",
-                case.case_num, pert_mag, pm_mag,
+                case.case_num,
+                pert_mag,
+                pm_mag,
             );
         } else {
             // JEOD acceleration is total gravity. Point-mass should match
@@ -92,7 +114,10 @@ fn point_mass_reasonable_at_jeod_positions() {
             assert!(
                 relative_diff < 0.01,
                 "Case {}: point-mass {:.6e} vs JEOD total {:.6e}, diff {:.2e}",
-                case.case_num, pm_mag, jeod_mag, relative_diff,
+                case.case_num,
+                pm_mag,
+                jeod_mag,
+                relative_diff,
             );
         }
 
@@ -101,7 +126,8 @@ fn point_mass_reasonable_at_jeod_positions() {
         assert!(
             cos_radial < -0.999,
             "Case {}: not anti-radial, cos = {:.6}",
-            case.case_num, cos_radial,
+            case.case_num,
+            cos_radial,
         );
     }
 }
@@ -109,7 +135,11 @@ fn point_mass_reasonable_at_jeod_positions() {
 #[test]
 fn gradient_symmetry_in_jeod_data() {
     let root = jeod_path();
-    assert!(root.exists(), "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.", root.display());
+    assert!(
+        root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        root.display()
+    );
 
     let cases = load_gravity_test_cases(&root);
 
@@ -121,9 +151,21 @@ fn gradient_symmetry_in_jeod_data() {
         let g = case.gradient;
         let tol = 1e-30;
 
-        assert!((g.col(0)[1] - g.col(1)[0]).abs() < tol, "Case {}: G[0][1] != G[1][0]", case.case_num);
-        assert!((g.col(0)[2] - g.col(2)[0]).abs() < tol, "Case {}: G[0][2] != G[2][0]", case.case_num);
-        assert!((g.col(1)[2] - g.col(2)[1]).abs() < tol, "Case {}: G[1][2] != G[2][1]", case.case_num);
+        assert!(
+            (g.col(0)[1] - g.col(1)[0]).abs() < tol,
+            "Case {}: G[0][1] != G[1][0]",
+            case.case_num
+        );
+        assert!(
+            (g.col(0)[2] - g.col(2)[0]).abs() < tol,
+            "Case {}: G[0][2] != G[2][0]",
+            case.case_num
+        );
+        assert!(
+            (g.col(1)[2] - g.col(2)[1]).abs() < tol,
+            "Case {}: G[1][2] != G[2][1]",
+            case.case_num
+        );
     }
 }
 
@@ -140,11 +182,7 @@ fn gradient_symmetry_in_jeod_data() {
 #[test]
 fn spherical_harmonics_40_test_vectors() {
     let root = jeod_path();
-    assert!(
-        root.exists(),
-        "JEOD source not found at {}",
-        root.display()
-    );
+    assert!(root.exists(), "JEOD source not found at {}", root.display());
 
     // Load GGM02C (the test was built against GGM02C, not GGM05C)
     let ggm02c_path = root.join("models/environment/gravity/data/src/earth_GGM02C.cc");
@@ -162,9 +200,9 @@ fn spherical_harmonics_40_test_vectors() {
 
     // JEOD's own regression tolerances: accel 1e-14, potential 100000, gradient 1e-20.
     // Potential has inherently lower precision in the Gottlieb algorithm.
-    let accel_tol = 1e-10;     // m/s^2 per component
-    let pot_tol = 100_000.0;   // m^2/s^2 (matches JEOD's own tolerance)
-    let grad_tol = 1e-16;      // 1/s^2 per component
+    let accel_tol = 1e-10; // m/s^2 per component
+    let pot_tol = 100_000.0; // m^2/s^2 (matches JEOD's own tolerance)
+    let grad_tol = 1e-16; // 1/s^2 per component
 
     let mut max_accel_err = 0.0_f64;
     let mut max_pot_err = 0.0_f64;
@@ -193,7 +231,11 @@ fn spherical_harmonics_40_test_vectors() {
         // Both calc_spherical and calc_nonspherical use JEOD's +mu/r potential
         // convention, so we sum directly.
         let (accel, potential, gradient) = if perturb_only {
-            (sh_result.grav_accel, sh_result.grav_pot, sh_result.grav_grad)
+            (
+                sh_result.grav_accel,
+                sh_result.grav_pot,
+                sh_result.grav_grad,
+            )
         } else {
             let pm = jeod_gravity::calc_spherical(data.mu, case.position);
             (
@@ -229,7 +271,9 @@ fn spherical_harmonics_40_test_vectors() {
         assert!(
             pot_err < pot_tol,
             "Case {}: potential error {:.6e} > tol {:.6e}",
-            case.case_num, pot_err, pot_tol,
+            case.case_num,
+            pot_err,
+            pot_tol,
         );
 
         // Check gradient if active
@@ -242,7 +286,11 @@ fn spherical_harmonics_40_test_vectors() {
                     assert!(
                         err < grad_tol,
                         "Case {}: gradient[{}][{}] error {:.6e} > tol {:.6e}",
-                        case.case_num, i, j, err, grad_tol,
+                        case.case_num,
+                        i,
+                        j,
+                        err,
+                        grad_tol,
                     );
                 }
             }
@@ -263,14 +311,17 @@ fn surface_gravity_ggm02c() {
     let root = jeod_path();
     assert!(root.exists());
     let ggm02c_path = root.join("models/environment/gravity/data/src/earth_GGM02C.cc");
-    assert!(ggm02c_path.exists(), "GGM02C not found at {}. Requires JEOD source.", ggm02c_path.display());
+    assert!(
+        ggm02c_path.exists(),
+        "GGM02C not found at {}. Requires JEOD source.",
+        ggm02c_path.display()
+    );
     let data = coefficients::load_from_jeod_cc(&ggm02c_path).expect("load GGM02C coefficients");
 
     // Equatorial surface
     let pos_eq = DVec3::new(data.radius, 0.0, 0.0);
-    let result_eq = jeod_gravity::calc_nonspherical(
-        &data, pos_eq, data.degree, data.order, false, 0, 0,
-    );
+    let result_eq =
+        jeod_gravity::calc_nonspherical(&data, pos_eq, data.degree, data.order, false, 0, 0);
     let pm_eq = jeod_gravity::calc_spherical(data.mu, pos_eq);
     let g_eq = (result_eq.grav_accel + pm_eq.grav_accel).length();
     assert!(
@@ -282,9 +333,8 @@ fn surface_gravity_ggm02c() {
     // Polar surface
     let r_pol = data.radius * (1.0 - 1.0 / 298.257223563);
     let pos_pol = DVec3::new(0.0, 0.0, r_pol);
-    let result_pol = jeod_gravity::calc_nonspherical(
-        &data, pos_pol, data.degree, data.order, false, 0, 0,
-    );
+    let result_pol =
+        jeod_gravity::calc_nonspherical(&data, pos_pol, data.degree, data.order, false, 0, 0);
     let pm_pol = jeod_gravity::calc_spherical(data.mu, pos_pol);
     let g_pol = (result_pol.grav_accel + pm_pol.grav_accel).length();
     assert!(

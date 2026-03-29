@@ -1,4 +1,4 @@
-use crate::epoch::{TAI_TT_OFFSET, J2000_TAI_TJT};
+use crate::epoch::{J2000_TAI_TJT, TAI_TT_OFFSET};
 use crate::time_converter_tai_tt::tai_to_tt;
 use std::f64::consts::PI;
 
@@ -89,7 +89,10 @@ mod tests {
         assert!(
             (back - tai).abs() < 1e-10,
             "TAI-TDB round trip near zero: {} -> {} -> {}, err={}",
-            tai, tdb, back, (back - tai).abs()
+            tai,
+            tdb,
+            back,
+            (back - tai).abs()
         );
     }
 }

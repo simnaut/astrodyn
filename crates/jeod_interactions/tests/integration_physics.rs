@@ -18,7 +18,7 @@ use jeod_math::JeodQuat;
 
 const MU_EARTH: f64 = 3.986004418e14; // m^3/s^2
 const R_EARTH: f64 = 6_378_137.0; // m
-const R_EARTH_POL: f64 = 6_356_752.3142; // m
+const R_EARTH_POL: f64 = 6_356_752.314_2; // m
 const R_SUN: f64 = 6.98e8; // m
 
 /// Compute GMST in radians (same formula as MET model / JEOD atmos_MET_TME.cc).
@@ -28,10 +28,11 @@ fn compute_gmst(tjt: f64) -> f64 {
     let century_days = tjt_prev_midnight + 24980.0;
     let century_frac = (century_days + 0.5) / 36525.0;
     let minutes_of_day = fraction_of_day * 1440.0;
-    let greenwich_mean_position =
-        (99.6909833 + 36000.76892 * century_frac + 0.00038708 * century_frac * century_frac
-            + 0.250684477 * minutes_of_day)
-            .rem_euclid(360.0);
+    let greenwich_mean_position = (99.6909833
+        + 36000.76892 * century_frac
+        + 0.00038708 * century_frac * century_frac
+        + 0.250684477 * minutes_of_day)
+        .rem_euclid(360.0);
     greenwich_mean_position * 0.017453293
 }
 
@@ -102,32 +103,35 @@ fn drag_causes_altitude_decay() {
 
     for step in 0..steps {
         let tjt = tjt_start + (step as f64 * dt) / 86400.0;
-        let new_state = rk4_translational_step(&state, |s| {
-            let grav = gravity_accel(s.position);
+        let new_state = rk4_translational_step(
+            &state,
+            |s| {
+                let grav = gravity_accel(s.position);
 
-            // Rotate inertial → planet-fixed via GMST, then geodetic coords.
-            // Matches JEOD's PlanetFixedPosition → MET pipeline.
-            let gmst = compute_gmst(tjt);
-            let (cos_g, sin_g) = (gmst.cos(), gmst.sin());
-            let pfix = DVec3::new(
-                cos_g * s.position.x + sin_g * s.position.y,
-                -sin_g * s.position.x + cos_g * s.position.y,
-                s.position.z,
-            );
-            let geo = cartesian_to_geodetic(pfix, R_EARTH, R_EARTH_POL);
-            let atmos_state = atmos.density(
-                geo.altitude / 1000.0, geo.latitude, geo.longitude, tjt,
-            );
+                // Rotate inertial → planet-fixed via GMST, then geodetic coords.
+                // Matches JEOD's PlanetFixedPosition → MET pipeline.
+                let gmst = compute_gmst(tjt);
+                let (cos_g, sin_g) = (gmst.cos(), gmst.sin());
+                let pfix = DVec3::new(
+                    cos_g * s.position.x + sin_g * s.position.y,
+                    -sin_g * s.position.x + cos_g * s.position.y,
+                    s.position.z,
+                );
+                let geo = cartesian_to_geodetic(pfix, R_EARTH, R_EARTH_POL);
+                let atmos_state =
+                    atmos.density(geo.altitude / 1000.0, geo.latitude, geo.longitude, tjt);
 
-            let drag = compute_ballistic_drag(
-                &drag_config,
-                &atmos_state,
-                s.velocity,
-                &DMat3::IDENTITY,
-            );
+                let drag = compute_ballistic_drag(
+                    &drag_config,
+                    &atmos_state,
+                    s.velocity,
+                    &DMat3::IDENTITY,
+                );
 
-            grav + drag.force / mass
-        }, dt);
+                grav + drag.force / mass
+            },
+            dt,
+        );
         state = new_state;
     }
 
@@ -146,10 +150,7 @@ fn drag_causes_altitude_decay() {
     let final_sma = -MU_EARTH / (2.0 * final_energy);
     let sma_decay = initial_sma - final_sma;
 
-    assert!(
-        sma_decay > 0.0,
-        "Semi-major axis should decrease with drag"
-    );
+    assert!(sma_decay > 0.0, "Semi-major axis should decrease with drag");
 
     // ISS loses ~50-300 m/day depending on solar activity.
     // MET solar mean at 400 km should produce realistic decay.
@@ -189,11 +190,15 @@ fn srp_changes_eccentricity() {
     let steps = (total_time / dt) as usize;
 
     for _ in 0..steps {
-        let new_state = rk4_translational_step(&state, |s| {
-            let grav = gravity_accel(s.position);
-            let srp = compute_srp_force(&srp_config, sun_pos, s.position, 1.0);
-            grav + srp.force / mass
-        }, dt);
+        let new_state = rk4_translational_step(
+            &state,
+            |s| {
+                let grav = gravity_accel(s.position);
+                let srp = compute_srp_force(&srp_config, sun_pos, s.position, 1.0);
+                grav + srp.force / mass
+            },
+            dt,
+        );
         state = new_state;
     }
 

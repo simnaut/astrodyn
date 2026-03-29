@@ -15,6 +15,29 @@ set -uo pipefail
 OUTPUT_DIR="${1:-/output}"
 mkdir -p "$OUTPUT_DIR"
 
+# Skip generation for labels that already have CSV output in OUTPUT_DIR.
+# Set FORCE=1 to regenerate everything: FORCE=1 ./generate_references.sh
+FORCE="${FORCE:-0}"
+
+has_output() {
+    local label="$1"
+    local required="${2:-}"  # optional: specific file that must exist
+    # When FORCE=1, always report "no valid output" so data is regenerated.
+    if [ "$FORCE" = "1" ]; then
+        return 1
+    fi
+    if [ -n "$required" ]; then
+        # Check for a specific required file (non-empty).
+        # Use this for sims that produce multiple CSVs where only one
+        # is critical (e.g. dyncomp _state.csv).
+        [ -s "${OUTPUT_DIR}/${required}" ]
+    else
+        # Fallback: any non-empty CSV for this label.
+        # Safe for sims that produce exactly one CSV (derived-state sims).
+        find "$OUTPUT_DIR" -maxdepth 1 -type f -name "${label}_*.csv" ! -size 0c 2>/dev/null | grep -q .
+    fi
+}
+
 export TRICK_HOME=/trick
 export JEOD_HOME=/jeod
 export PATH="${TRICK_HOME}/bin:${PATH}"
@@ -24,6 +47,11 @@ echo "=== JEOD Reference Data Generator ==="
 echo "Trick: $(trick-version 2>/dev/null || echo 'installed')"
 echo "JEOD:  ${JEOD_HOME}"
 echo "Output: ${OUTPUT_DIR}"
+if [ "$FORCE" = "1" ]; then
+    echo "Mode:   FORCE (regenerating all)"
+else
+    echo "Mode:   incremental (skipping existing outputs)"
+fi
 echo ""
 
 # ── Helper: build and run a JEOD verification sim ──
@@ -31,6 +59,12 @@ run_sim() {
     local sim_dir="$1"
     local run_dir="$2"
     local label="$3"
+    local required="${4:-}"  # optional: specific file to check (e.g. dyncomp_run2_state.csv)
+
+    if has_output "$label" "$required"; then
+        echo "--- Skipping ${label} (output exists in ${OUTPUT_DIR}) ---"
+        return 0
+    fi
 
     echo "--- Building ${label} ---"
     cd "${JEOD_HOME}/${sim_dir}" || return 1
@@ -100,6 +134,11 @@ run_sim_with_ascii() {
     local label="$3"
     local ascii_snippet="$4"  # Python code to create DRAscii logger
 
+    if has_output "$label"; then
+        echo "--- Skipping ${label} (output exists in ${OUTPUT_DIR}) ---"
+        return 0
+    fi
+
     echo "--- Building ${label} ---"
     cd "${JEOD_HOME}/${sim_dir}" || return 1
 
@@ -156,6 +195,36 @@ PYEOF
 # All share the same S_define and working directory.
 # ════════════════════════════════════════════════════════════════════
 run_dyncomp_group() {
+    # Single source of truth: RUN_DIR:label:primary_file mapping.
+    # Used for both the pre-scan (skip if all present) and execution.
+    # Primary file is the CSV that Tier 3 tests actually load — checking
+    # only this file prevents skipping when a partial run left behind
+    # supplementary files (e.g. _Earth_RNP.csv) but not the critical one.
+    local -a DYNCOMP_RUNS=(
+        "SET_test/RUN_2:dyncomp_run2:dyncomp_run2_state.csv"
+        "SET_test/RUN_3A:dyncomp_run3a:dyncomp_run3a_state.csv"
+        "SET_test/RUN_3B:dyncomp_run3b:dyncomp_run3b_state.csv"
+        "SET_test/RUN_8B:dyncomp_run8b:dyncomp_run8b_state.csv"
+        "SET_test/RUN_9A:dyncomp_run9a:dyncomp_run9a_state.csv"
+        "SET_test/RUN_9B:dyncomp_run9b:dyncomp_run9b_state.csv"
+        "SET_test/RUN_5A:dyncomp_run5a:dyncomp_run5a_state.csv"
+        "SET_test/RUN_6B:dyncomp_run6b:dyncomp_run6b_state.csv"
+    )
+
+    # Skip entire group (including build) if all primary outputs exist
+    local needs_build=0
+    for entry in "${DYNCOMP_RUNS[@]}"; do
+        IFS=: read -r _run_dir label primary <<< "$entry"
+        if ! has_output "$label" "$primary"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_dyncomp group (all outputs exist) ==="
+        return 0
+    fi
+
     # Build once
     echo "=== Building SIM_dyncomp ==="
     cd "${JEOD_HOME}/verif/SIM_dyncomp" || return 1
@@ -167,14 +236,10 @@ run_dyncomp_group() {
     # Continue past individual failures so later sims still run,
     # but track failures so the caller can detect partial generation.
     local fail=0
-    run_sim "verif/SIM_dyncomp" "SET_test/RUN_2"  "dyncomp_run2"  || fail=1
-    run_sim "verif/SIM_dyncomp" "SET_test/RUN_3A" "dyncomp_run3a" || fail=1
-    run_sim "verif/SIM_dyncomp" "SET_test/RUN_3B" "dyncomp_run3b" || fail=1
-    run_sim "verif/SIM_dyncomp" "SET_test/RUN_8B" "dyncomp_run8b" || fail=1
-    run_sim "verif/SIM_dyncomp" "SET_test/RUN_9A" "dyncomp_run9a" || fail=1
-    run_sim "verif/SIM_dyncomp" "SET_test/RUN_9B" "dyncomp_run9b" || fail=1
-    run_sim "verif/SIM_dyncomp" "SET_test/RUN_5A" "dyncomp_run5a" || fail=1
-    run_sim "verif/SIM_dyncomp" "SET_test/RUN_6B" "dyncomp_run6b" || fail=1
+    for entry in "${DYNCOMP_RUNS[@]}"; do
+        IFS=: read -r run_dir label primary <<< "$entry"
+        run_sim "verif/SIM_dyncomp" "$run_dir" "$label" "$primary" || fail=1
+    done
 
     # Validate critical first output
     local expected="${OUTPUT_DIR}/dyncomp_run2_state.csv"

@@ -37,13 +37,11 @@ pub fn propagate_forward(source: &RefFrameState, rel: &MassPointState) -> RefFra
 
     // Position: r_derived = r_source + T_source^T * rel.position
     // T_source transforms from parent to source, so T^T goes source to parent.
-    let pos_derived =
-        source.trans.position + source.rot.t_parent_this.transpose() * rel.position;
+    let pos_derived = source.trans.position + source.rot.t_parent_this.transpose() * rel.position;
 
     // Velocity: v_derived = v_source + T_source^T * (omega_source x rel.position)
     let omega_cross_r = source.rot.ang_vel_this.cross(rel.position);
-    let vel_derived =
-        source.trans.velocity + source.rot.t_parent_this.transpose() * omega_cross_r;
+    let vel_derived = source.trans.velocity + source.rot.t_parent_this.transpose() * omega_cross_r;
 
     RefFrameState {
         trans: RefFrameTrans {
@@ -78,13 +76,11 @@ pub fn propagate_reverse(derived: &RefFrameState, rel: &MassPointState) -> RefFr
     let ang_vel_source = rel.t_parent_this.transpose() * derived.rot.ang_vel_this;
 
     // r_source = r_derived - T_source^T * rel.position
-    let pos_source =
-        derived.trans.position - t_source.transpose() * rel.position;
+    let pos_source = derived.trans.position - t_source.transpose() * rel.position;
 
     // v_source = v_derived - T_source^T * (omega_source x rel.position)
     let omega_cross_r = ang_vel_source.cross(rel.position);
-    let vel_source =
-        derived.trans.velocity - t_source.transpose() * omega_cross_r;
+    let vel_source = derived.trans.velocity - t_source.transpose() * omega_cross_r;
 
     RefFrameState {
         trans: RefFrameTrans {

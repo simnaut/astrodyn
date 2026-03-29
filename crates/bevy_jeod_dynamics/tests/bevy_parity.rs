@@ -6,11 +6,11 @@
 use std::time::Duration;
 
 use bevy::prelude::*;
+use bevy_jeod_dynamics::JeodDynamicsPlugin;
 use bevy_jeod_dynamics::{
     DynamicsConfigC, GravityAccelerationC, GravityControlsC, GravitySourceC, MassPropertiesC,
     RotationalStateC, TotalForceC, TranslationalStateC,
 };
-use bevy_jeod_dynamics::JeodDynamicsPlugin;
 use bevy_jeod_gravity::JeodGravityPlugin;
 use bevy_jeod_time::JeodTimePlugin;
 use glam::{DMat3, DVec3};
@@ -199,7 +199,10 @@ fn bevy_integration_matches_pure_rk4_sixdof() {
     // Quaternion parity.
     let q_bevy = bevy_state.rot.quaternion.data;
     let q_pure = pure_state.rot.quaternion.data;
-    let q_diff: f64 = (0..4).map(|i| (q_bevy[i] - q_pure[i]).powi(2)).sum::<f64>().sqrt();
+    let q_diff: f64 = (0..4)
+        .map(|i| (q_bevy[i] - q_pure[i]).powi(2))
+        .sum::<f64>()
+        .sqrt();
     assert!(
         q_diff < 1e-14,
         "Quaternion difference between Bevy and pure RK4: {} (exceeds 1e-14)\n\

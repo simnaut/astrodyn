@@ -13,7 +13,8 @@ impl Plugin for JeodInteractionsPlugin {
                 aero_drag_system,
                 gravity_torque_system,
                 radiation_pressure_system,
-            ).in_set(JeodSet::Interaction),
+            )
+                .in_set(JeodSet::Interaction),
         );
     }
 }

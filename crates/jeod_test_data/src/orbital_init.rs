@@ -18,12 +18,12 @@ use std::f64::consts::PI;
 pub struct OrbitalInitData {
     pub semi_major_axis: f64, // meters (converted from km)
     pub eccentricity: f64,
-    pub inclination: f64,     // radians (converted from degrees)
-    pub ascending_node: f64,  // radians
-    pub arg_periapsis: f64,   // radians
+    pub inclination: f64,            // radians (converted from degrees)
+    pub ascending_node: f64,         // radians
+    pub arg_periapsis: f64,          // radians
     pub time_periapsis: Option<f64>, // seconds
-    pub mean_anomaly: Option<f64>, // radians
-    pub true_anomaly: Option<f64>, // radians
+    pub mean_anomaly: Option<f64>,   // radians
+    pub true_anomaly: Option<f64>,   // radians
     pub planet_name: String,
     pub reference_frame: String,
 }
@@ -51,10 +51,9 @@ pub fn load_orbital_init(
         .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
 
     // Match: key = trick.attach_units( "unit", value)
-    let units_re = Regex::new(
-        r#"\.(\w+)\s*=\s*trick\.attach_units\(\s*"(\w+)"\s*,\s*([-\d.eE+]+)\s*\)"#,
-    )
-    .unwrap();
+    let units_re =
+        Regex::new(r#"\.(\w+)\s*=\s*trick\.attach_units\(\s*"(\w+)"\s*,\s*([-\d.eE+]+)\s*\)"#)
+            .unwrap();
 
     // Match: key = bare_value (no trick.attach_units)
     let bare_re = Regex::new(r"\.(\w+)\s*=\s+([-\d.eE+]+)\s*$").unwrap();

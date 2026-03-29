@@ -19,9 +19,9 @@ pub struct Ephemeris {
 impl Ephemeris {
     /// Load an ephemeris from a .bsp file.
     pub fn from_bsp(path: &Path) -> Result<Self, EphemerisError> {
-        let path_str = path.to_str().ok_or_else(|| {
-            EphemerisError::LoadError("Path contains invalid UTF-8".to_string())
-        })?;
+        let path_str = path
+            .to_str()
+            .ok_or_else(|| EphemerisError::LoadError("Path contains invalid UTF-8".to_string()))?;
         let spk = SPK::load(path_str).map_err(|e| EphemerisError::LoadError(e.to_string()))?;
         Ok(Self {
             almanac: Almanac::from_spk(spk),

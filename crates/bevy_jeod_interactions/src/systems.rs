@@ -1,12 +1,11 @@
 use bevy::prelude::*;
 use jeod_interactions::{compute_ballistic_drag, compute_gravity_torque, compute_srp_force};
 
-use bevy_jeod_dynamics::{
-    AerodynamicForceC, AtmosphericStateC, GravityAccelerationC, GravityTorqueC,
-    MassPropertiesC, RadiationForceC, RotationalStateC, StructuralTransformC,
-    TranslationalStateC,
-};
 use crate::components::{DragConfigC, SrpConfigC};
+use bevy_jeod_dynamics::{
+    AerodynamicForceC, AtmosphericStateC, GravityAccelerationC, GravityTorqueC, MassPropertiesC,
+    RadiationForceC, RotationalStateC, StructuralTransformC, TranslationalStateC,
+};
 
 /// Compute aerodynamic drag for entities with all required components:
 /// `DragConfigC`, `AtmosphericStateC`, `TranslationalStateC`, `RotationalStateC`,
@@ -29,11 +28,12 @@ pub fn aero_drag_system(
         // JEOD passes T_inertial_struct (inertial→structural), not T_inertial_body.
         let t_inertial_body = rot.quaternion.left_quat_to_transformation();
         let t_struct_body = struct_xform.map_or(glam::DMat3::IDENTITY, |s| s.0);
-        let t_inertial_struct = jeod_dynamics::compute_t_inertial_struct(&t_struct_body, &t_inertial_body);
+        let t_inertial_struct =
+            jeod_dynamics::compute_t_inertial_struct(&t_struct_body, &t_inertial_body);
 
         let result = compute_ballistic_drag(
             &drag_config.0,
-            atmos,  // AtmosphericStateC derefs to AtmosphereState
+            atmos, // AtmosphericStateC derefs to AtmosphereState
             state.velocity,
             &t_inertial_struct,
         );
@@ -60,11 +60,7 @@ pub fn gravity_torque_system(
     for (grav, rot, mass, mut torque) in &mut query {
         let t_parent_this = rot.quaternion.left_quat_to_transformation();
 
-        torque.0 = compute_gravity_torque(
-            &grav.grav_grad,
-            &t_parent_this,
-            &mass.inertia,
-        );
+        torque.0 = compute_gravity_torque(&grav.grav_grad, &t_parent_this, &mass.inertia);
     }
 }
 
@@ -79,11 +75,7 @@ pub fn gravity_torque_system(
 // JEOD_INV: IN.06 — RadiationPressure.active gates computation (structural: no SrpConfigC -> no SRP)
 // JEOD_INV: IN.09 — RadiationSource planet must exist (partial: SunMarker required)
 pub fn radiation_pressure_system(
-    mut query: Query<(
-        &SrpConfigC,
-        &TranslationalStateC,
-        &mut RadiationForceC,
-    ), Without<SunMarker>>,
+    mut query: Query<(&SrpConfigC, &TranslationalStateC, &mut RadiationForceC), Without<SunMarker>>,
     sun_query: Query<&TranslationalStateC, With<SunMarker>>,
 ) {
     // JEOD_INV: IN.09 — RadiationSource planet must be found by DynManager

@@ -3,9 +3,9 @@ use glam::{DMat3, DVec3};
 use jeod_dynamics::{ForceContributions, SixDofState};
 
 use crate::components::{
-    AerodynamicForceC, DynamicsConfigC, FrameDerivativesC, GravityAccelerationC,
-    GravityTorqueC, MassPropertiesC, RadiationForceC, RotationalStateC,
-    StructuralTransformC, TotalForceC, TranslationalStateC,
+    AerodynamicForceC, DynamicsConfigC, FrameDerivativesC, GravityAccelerationC, GravityTorqueC,
+    MassPropertiesC, RadiationForceC, RotationalStateC, StructuralTransformC, TotalForceC,
+    TranslationalStateC,
 };
 
 /// Recompute derived mass quantities (`inverse_mass`, `inverse_inertia`) each step.
@@ -62,7 +62,9 @@ pub fn force_collection_system(
 ) {
     // Note: JEOD gates force/torque collection on translational/rotational_dynamics flags (DB.07/DB.08).
     // We collect unconditionally here; gating is enforced in integration_system.
-    for (mut total, derivs, grav, rot_state, mass, aero, srp, grav_torque, struct_xform) in &mut query {
+    for (mut total, derivs, grav, rot_state, mass, aero, srp, grav_torque, struct_xform) in
+        &mut query
+    {
         // Structural-to-body transform. Identity when absent (structure = body).
         // JEOD: mass.composite_properties.T_parent_this
         let t_struct_body = struct_xform.map_or(DMat3::IDENTITY, |s| s.0);
@@ -93,12 +95,13 @@ pub fn force_collection_system(
         }
 
         // Rotation matrix from attitude quaternion (identity if no rotational state).
-        let t_inertial_body = rot_state
-            .as_ref()
-            .map_or(DMat3::IDENTITY, |r| r.quaternion.left_quat_to_transformation());
+        let t_inertial_body = rot_state.as_ref().map_or(DMat3::IDENTITY, |r| {
+            r.quaternion.left_quat_to_transformation()
+        });
 
         // Delegate frame-aware force/torque collection to jeod_dynamics (DB.28, DB.29).
-        let collected = jeod_dynamics::collect_forces(&contributions, &t_struct_body, &t_inertial_body);
+        let collected =
+            jeod_dynamics::collect_forces(&contributions, &t_struct_body, &t_inertial_body);
         total.force = collected.force;
         total.torque = collected.torque;
 
@@ -224,11 +227,7 @@ pub fn integration_system(
         }
 
         // 3-DOF path: translational only
-        let new_state = jeod_dynamics::rk4_translational_step(
-            &state.0,
-            |_s| total_accel,
-            dt,
-        );
+        let new_state = jeod_dynamics::rk4_translational_step(&state.0, |_s| total_accel, dt);
         state.0 = new_state;
     }
 }

@@ -43,7 +43,12 @@ impl<SourceId> GravityControl<SourceId> {
     }
 
     /// Create a non-spherical (spherical harmonics) gravity control.
-    pub fn new_nonspherical(source_name: SourceId, degree: usize, order: usize, gradient: bool) -> Self {
+    pub fn new_nonspherical(
+        source_name: SourceId,
+        degree: usize,
+        order: usize,
+        gradient: bool,
+    ) -> Self {
         Self {
             source_name,
             gradient,
@@ -117,7 +122,8 @@ impl<SourceId> GravityControl<SourceId> {
         assert!(
             self.order <= self.degree,
             "Gravity field order ({}) is greater than gravity field degree ({}).",
-            self.order, self.degree
+            self.order,
+            self.degree
         );
 
         // Gradient validation: JEOD spherical_harmonics_gravity_controls.cc:395-454
@@ -133,9 +139,7 @@ impl<SourceId> GravityControl<SourceId> {
             }
             // JEOD_INV: GV.09 — gradient_degree != 1 (reset to 0)
             if self.gradient_degree == 1 {
-                warn!(
-                    "Gravity gradient degree must not equal 1; resetting to 0."
-                );
+                warn!("Gravity gradient degree must not equal 1; resetting to 0.");
                 self.gradient_degree = 0;
             }
             // JEOD_INV: GV.10 — gradient_order <= gradient_degree (clamped)
@@ -186,8 +190,12 @@ impl<SourceId> GravityControl<SourceId> {
         t_inertial_pfix: Option<&DMat3>,
     ) -> GravityAcceleration {
         self.evaluate_inner(
-            source, position, t_inertial_pfix,
-            self.gradient, self.gradient_degree, self.gradient_order,
+            source,
+            position,
+            t_inertial_pfix,
+            self.gradient,
+            self.gradient_degree,
+            self.gradient_order,
         )
     }
 
@@ -232,15 +240,27 @@ impl<SourceId> GravityControl<SourceId> {
                 )
             });
             crate::gravitation(
-                source, position, rot,
-                self.degree, self.order, self.perturbing_only,
-                compute_gradient, gradient_degree, gradient_order,
+                source,
+                position,
+                rot,
+                self.degree,
+                self.order,
+                self.perturbing_only,
+                compute_gradient,
+                gradient_degree,
+                gradient_order,
             )
         } else {
             crate::gravitation(
-                source, position, &DMat3::IDENTITY,
-                0, 0, self.perturbing_only,
-                compute_gradient, gradient_degree, gradient_order,
+                source,
+                position,
+                &DMat3::IDENTITY,
+                0,
+                0,
+                self.perturbing_only,
+                compute_gradient,
+                gradient_degree,
+                gradient_order,
             )
         }
     }

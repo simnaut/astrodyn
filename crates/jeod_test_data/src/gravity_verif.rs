@@ -26,9 +26,8 @@ pub struct GravityTestCase {
 /// # Panics
 /// Panics if the file cannot be read or contains malformed data.
 pub fn load_gravity_test_cases(jeod_root: &std::path::Path) -> Vec<GravityTestCase> {
-    let path = jeod_root.join(
-        "models/environment/gravity/verif/unit_tests/grav_geospherical/data/verif_out.txt",
-    );
+    let path = jeod_root
+        .join("models/environment/gravity/verif/unit_tests/grav_geospherical/data/verif_out.txt");
     let content = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
 
@@ -60,7 +59,11 @@ pub fn load_gravity_test_cases(jeod_root: &std::path::Path) -> Vec<GravityTestCa
             order: parse_usize(fields[2]),
             perturb_only: fields[3] == "1",
             grad_active: fields[4] == "1",
-            position: DVec3::new(parse_f64(fields[5]), parse_f64(fields[6]), parse_f64(fields[7])),
+            position: DVec3::new(
+                parse_f64(fields[5]),
+                parse_f64(fields[6]),
+                parse_f64(fields[7]),
+            ),
             potential: parse_f64(fields[8]),
             acceleration: DVec3::new(
                 parse_f64(fields[9]),

@@ -1,16 +1,41 @@
 name: CI
-on: [push, pull_request]
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
-  test:
+  check:
+    name: Lint & Format
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo clippy --workspace --tests -- -D warnings
+
+  test:
+    name: Test (unit + tier 2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - name: Sparse checkout JEOD reference data
         run: |
-          git clone --no-checkout --depth 1 --branch jeod_v5.4.0 https://github.com/nasa/jeod.git ../jeod
+          JEOD_TAG=jeod_v5.4.0
+          JEOD_SHA=27893108bbde8bb162b3213a30d57af89acd1c76
+          git clone --no-checkout --depth 1 --branch "$JEOD_TAG" \
+            https://github.com/nasa/jeod.git ../jeod
           cd ../jeod
+          # Verify immutable tag hasn't moved
+          [ "$(git rev-parse HEAD)" = "$JEOD_SHA" ] || \
+            { echo "FATAL: $JEOD_TAG resolved to $(git rev-parse HEAD), expected $JEOD_SHA"; exit 1; }
           git sparse-checkout set \
             models/environment/gravity/data \
             models/environment/gravity/verif/unit_tests/grav_geospherical/data \
@@ -19,9 +44,39 @@ jobs:
             models/dynamics/derived_state/verif/unit_tests \
             models/utils/orbital_elements/verif/SIM_orb_elem/Modified_data
           git checkout
-      - run: cargo build --workspace
-      - name: Run all tests (with JEOD validation)
+      - name: Run tests (skip Tier 3 trajectory validation)
         env:
           JEOD_HOME: ${{ github.workspace }}/../jeod
-        run: cargo test --workspace
-      - run: cargo clippy --workspace -- -D warnings
+        run: cargo test --workspace -- --skip tier3_
+
+  test-tier3:
+    name: Test (Tier 3 trajectory)
+    if: github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Sparse checkout JEOD reference data
+        run: |
+          JEOD_TAG=jeod_v5.4.0
+          JEOD_SHA=27893108bbde8bb162b3213a30d57af89acd1c76
+          git clone --no-checkout --depth 1 --branch "$JEOD_TAG" \
+            https://github.com/nasa/jeod.git ../jeod
+          cd ../jeod
+          # Verify immutable tag hasn't moved
+          [ "$(git rev-parse HEAD)" = "$JEOD_SHA" ] || \
+            { echo "FATAL: $JEOD_TAG resolved to $(git rev-parse HEAD), expected $JEOD_SHA"; exit 1; }
+          git sparse-checkout set \
+            models/environment/gravity/data \
+            models/environment/gravity/verif/unit_tests/grav_geospherical/data \
+            models/environment/time/data \
+            models/dynamics/body_action/verif/SIM_orbinit/Modified_data \
+            models/dynamics/derived_state/verif/unit_tests \
+            models/utils/orbital_elements/verif/SIM_orb_elem/Modified_data
+          git checkout
+      - name: Run Tier 3 trajectory tests
+        env:
+          JEOD_HOME: ${{ github.workspace }}/../jeod
+        run: cargo test --workspace -- tier3_
