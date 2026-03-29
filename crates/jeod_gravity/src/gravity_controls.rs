@@ -66,11 +66,13 @@ impl<SourceId> GravityControl<SourceId> {
     ///   to true with a warning (matches JEOD's non-fatal auto-correction).
     /// - Invalid `gradient_degree` and `gradient_order` values do not panic;
     ///   they are clamped to valid ranges and a warning is logged.
+    // JEOD_INV: GV.03 — check_validity() called on degree/order mutation
     pub fn check_validity(&mut self, source: &GravitySource) {
         if self.spherical {
             return;
         }
 
+        // JEOD_INV: GV.07 — degree=0 with spherical=false auto-corrects to spherical
         // JEOD spherical_harmonics_gravity_controls.cc:334-346:
         // degree=0 with spherical=false is auto-corrected to spherical=true
         // via MessageHandler::error (non-fatal).
@@ -85,11 +87,13 @@ impl<SourceId> GravityControl<SourceId> {
 
         match &source.model {
             GravityModel::SphericalHarmonics(ref data) => {
+                // JEOD_INV: GV.04 — degree <= source degree
                 assert!(
                     self.degree <= data.degree,
                     "Gravity field degree requested ({}) is greater than max gravity field degree ({}).",
                     self.degree, data.degree
                 );
+                // JEOD_INV: GV.05 — order <= source order
                 assert!(
                     self.order <= data.order,
                     "Gravity field order requested ({}) is greater than max gravity field order ({}).",
@@ -105,6 +109,7 @@ impl<SourceId> GravityControl<SourceId> {
             }
         }
 
+        // JEOD_INV: GV.06 — order <= degree
         assert!(
             self.order <= self.degree,
             "Gravity field order ({}) is greater than gravity field degree ({}).",
@@ -114,6 +119,7 @@ impl<SourceId> GravityControl<SourceId> {
         // Gradient validation: JEOD spherical_harmonics_gravity_controls.cc:395-454
         // uses MessageHandler::error (non-fatal) and auto-corrects invalid values.
         if self.gradient {
+            // JEOD_INV: GV.08 — gradient_degree <= degree (clamped)
             if self.gradient_degree > self.degree {
                 warn!(
                     "Gravity gradient degree ({}) > gravity degree ({}); clamping.",
@@ -121,12 +127,14 @@ impl<SourceId> GravityControl<SourceId> {
                 );
                 self.gradient_degree = self.degree;
             }
+            // JEOD_INV: GV.09 — gradient_degree != 1 (reset to 0)
             if self.gradient_degree == 1 {
                 warn!(
                     "Gravity gradient degree must not equal 1; resetting to 0."
                 );
                 self.gradient_degree = 0;
             }
+            // JEOD_INV: GV.10 — gradient_order <= gradient_degree (clamped)
             if self.gradient_order > self.gradient_degree {
                 warn!(
                     "Gravity gradient order ({}) > gradient degree ({}); clamping.",
@@ -134,6 +142,7 @@ impl<SourceId> GravityControl<SourceId> {
                 );
                 self.gradient_order = self.gradient_degree;
             }
+            // JEOD_INV: GV.11 — gradient_order <= order (clamped)
             if self.gradient_order > self.order {
                 warn!(
                     "Gravity gradient order ({}) > gravity order ({}); clamping.",

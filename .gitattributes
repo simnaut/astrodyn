@@ -1,0 +1,3 @@
+# Machine-generated test reference data — no line-by-line diffs or merge conflicts.
+test_data/*.csv binary
+test_data/*.bsp binary

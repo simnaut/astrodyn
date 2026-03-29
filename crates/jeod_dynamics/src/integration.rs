@@ -158,6 +158,8 @@ pub fn rk4_sixdof_step(
         q0[3] + (k1_qdot[3] + 2.0 * k2_qdot[3] + 2.0 * k3_qdot[3] + k4_qdot[3]) * sixth_dt,
     ];
 
+    // JEOD_INV: DB.09 — quaternion normalized after every integration step
+    // JEOD_INV: RF.09 — quaternion assumed normalized for left_quat_to_transformation
     // Normalize the final quaternion (without forcing scalar non-negative)
     let mut final_quat = JeodQuat::new(final_q[0], final_q[1], final_q[2], final_q[3]);
     normalize_integ(&mut final_quat);

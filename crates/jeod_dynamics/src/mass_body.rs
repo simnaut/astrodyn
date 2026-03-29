@@ -161,6 +161,8 @@ impl MassTree {
         );
         assert_ne!(child_id, parent_id, "cannot attach a body to itself");
 
+        // JEOD_INV: MA.08 — no cycle in mass tree (arena-based, cycles impossible)
+        // JEOD_INV: MA.19 — no same-tree attachment (cycle prevention)
         // Prevent creation of cycles: walk up from parent_id to the root
         // and ensure we never encounter child_id. This matches JEOD's
         // attach_validate_parent() (mass_attach.cc:370-388): "the only invalid
@@ -208,6 +210,7 @@ impl MassTree {
         self.nodes[child_id].structure_point = MassPointState::default();
         self.nodes[child_id].composite_wrt_pstr = MassPointState::default();
 
+        // JEOD_INV: MA.15 — detach recomputes inverse inertia for new root
         // Recompute inverse inertia on detached child (JEOD mass_detach.cc:328-335).
         let child = &mut self.nodes[child_id];
         if child.composite_properties.mass > 0.0 {
@@ -234,6 +237,8 @@ impl MassTree {
     /// JEOD requires computing from leaves to root so that each parent sees
     /// up-to-date child composites. We collect a post-order traversal and
     /// process each node.
+    // JEOD_INV: MA.06 — bottom-up mass property update (children first)
+    // JEOD_INV: MA.07 — needs_update flag cleared after recomputation (always recomputes)
     pub fn recompute_composites(&mut self) {
         let order = self.post_order();
         for id in order {

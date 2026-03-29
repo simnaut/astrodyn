@@ -1,6 +1,7 @@
 use glam::{DMat3, DVec3};
 use jeod_math::JeodQuat;
 
+// JEOD_INV: RF.06 — position/velocity in parent coordinates (structural convention)
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RefFrameTrans {
     pub position: DVec3, // m, in parent frame
@@ -16,6 +17,7 @@ impl Default for RefFrameTrans {
     }
 }
 
+// JEOD_INV: RF.07 — Q_parent_this is left-transformation quaternion (JEOD convention)
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RefFrameRot {
     pub q_parent_this: JeodQuat, // left transformation quaternion
@@ -66,9 +68,12 @@ impl RefFrameState {
     /// - `rot.t_parent_this`: transforms vectors FROM parent TO this frame
     /// - `rot.ang_vel_this`: angular velocity of this frame relative to parent, in this frame coords
     pub fn negate(source: &RefFrameState) -> RefFrameState {
-        // Rotation: transpose/conjugate
-        let t_new = source.rot.t_parent_this.transpose();
-        let q_new = source.rot.q_parent_this.conjugate();
+        // JEOD_INV: RF.03 — quaternion normalized after every composition
+        // JEOD_INV: RF.04 — T_parent_this recomputed from quaternion (canonical source of truth)
+        // Rotation: conjugate + normalize, then derive T from Q
+        let mut q_new = source.rot.q_parent_this.conjugate();
+        q_new.normalize();
+        let t_new = q_new.left_quat_to_transformation();
 
         // Angular velocity: -(T_new * source.ang_vel)
         // source.ang_vel is in source's "this" frame.
@@ -102,6 +107,8 @@ impl RefFrameState {
         }
     }
 
+    // JEOD_INV: RF.03 — quaternion normalized after every composition
+    // JEOD_INV: RF.04 — T_parent_this recomputed from quaternion (canonical source of truth)
     /// Compose self (A->B) with s_bc (B->C) to produce A->C.
     ///
     /// "Increment right": given self = S_{A:B} and s_bc = S_{B:C},
@@ -109,12 +116,12 @@ impl RefFrameState {
     ///
     /// Ported from JEOD `ref_frame_state.cc` incr_right / compose_state.
     pub fn incr_right(&self, s_bc: &RefFrameState) -> RefFrameState {
-        // Rotation: T_{A:C} = T_{B:C} * T_{A:B}
-        let t_ac = s_bc.rot.t_parent_this * self.rot.t_parent_this;
-
         // Quaternion: Q_{A:C} = Q_{B:C} * Q_{A:B}, then normalize
         let mut q_ac = s_bc.rot.q_parent_this.multiply(&self.rot.q_parent_this);
         q_ac.normalize();
+
+        // Derive T from the freshly-normalized quaternion (JEOD pattern: Q is canonical)
+        let t_ac = q_ac.left_quat_to_transformation();
 
         // Angular velocity: omega_{A:C} (in C frame) = T_{B:C} * omega_{A:B} + omega_{B:C}
         // self.ang_vel_this = omega of B relative to A, in B coords

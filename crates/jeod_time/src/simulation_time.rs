@@ -4,6 +4,9 @@ use crate::time_converter_tai_tt;
 use crate::time_converter_ut1_gmst;
 use crate::leap_second::LeapSecondTable;
 
+// JEOD_INV: TM.04 — all time types reachable from initializer (all scales hardcoded in single struct)
+// JEOD_INV: TM.05 — all time types reachable from TimeDyn (all scales updated in recompute_derived)
+// JEOD_INV: TM.06 — no duplicate converters (each scale has exactly one conversion path)
 /// Complete simulation time state across all time scales.
 ///
 /// All seconds fields are measured from the TAI epoch (which coincides with
@@ -52,6 +55,7 @@ pub struct SimulationTime {
 }
 
 impl SimulationTime {
+    // JEOD_INV: TM.07 — JEOD uses -1.0 sentinel; we call recompute_derived() at construction instead
     /// Create a new SimulationTime starting at the given TAI TJT.
     ///
     /// # Arguments
@@ -96,6 +100,7 @@ impl SimulationTime {
         self.recompute_derived();
     }
 
+    // JEOD_INV: TM.03 — time types updated in dependency order via recompute_derived()
     /// Advance the simulation by `dt` seconds.
     ///
     /// # Panics
@@ -126,6 +131,7 @@ impl SimulationTime {
         tt_tjt + 40_000.0 + 2_400_000.5
     }
 
+    // JEOD_INV: TM.03 — time types updated in dependency order (TAI -> TT -> TDB -> UTC -> UT1 -> GMST)
     /// Recompute all derived time scales from TAI.
     fn recompute_derived(&mut self) {
         // TT = TAI + 32.184

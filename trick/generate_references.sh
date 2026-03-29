@@ -2,6 +2,12 @@
 # Generate reference trajectory data from JEOD verification sims.
 # Runs inside the Docker container with Trick and JEOD built.
 # Outputs CSV files to /output/ for bevy_jeod Tier 3 cross-validation.
+#
+# Parallelization strategy:
+#   - SIM_dyncomp runs share one executable → run sequentially after one build
+#   - Derived-state sims (SIM_OrbElem, SIM_LVLH, etc.) each have their own
+#     S_define → build and run in parallel with each other
+#   - SIM_integ_test is independent → runs in parallel
 set -uo pipefail
 # Note: -e is intentionally omitted so that individual sim failures don't
 # kill the entire script. Each run_sim invocation handles its own errors.
@@ -146,54 +152,53 @@ PYEOF
 }
 
 # ════════════════════════════════════════════════════════════════════
-# Sim 1: SIM_dyncomp RUN_2 — Spherical gravity, RK4, 8-hour ISS orbit
-# Best for: Phase 1/2 translational dynamics validation
+# GROUP 1: SIM_dyncomp — one build, many runs (sequential within group)
+# All share the same S_define and working directory.
 # ════════════════════════════════════════════════════════════════════
-run_sim "verif/SIM_dyncomp" "SET_test/RUN_2" "dyncomp_run2" || exit 1
+run_dyncomp_group() {
+    # Build once
+    echo "=== Building SIM_dyncomp ==="
+    cd "${JEOD_HOME}/verif/SIM_dyncomp" || return 1
+    if ! ls S_main*.exe >/dev/null 2>&1; then
+        trick-CP 2>&1 | tail -5 || return 1
+    fi
 
-# Validate critical output
-EXPECTED_CSV="${OUTPUT_DIR}/dyncomp_run2_state.csv"
-if [ ! -f "$EXPECTED_CSV" ]; then
-    echo "FATAL: Expected output file not found: $EXPECTED_CSV"
-    exit 1
-fi
-LINE_COUNT=$(wc -l < "$EXPECTED_CSV")
-if [ "$LINE_COUNT" -lt 100 ]; then
-    echo "FATAL: $EXPECTED_CSV has only $LINE_COUNT lines (expected 400+)"
-    exit 1
-fi
-echo "Validated: $EXPECTED_CSV ($LINE_COUNT lines)"
+    # Run all dyncomp sims sequentially (share working directory).
+    # Continue past individual failures so later sims still run,
+    # but track failures so the caller can detect partial generation.
+    local fail=0
+    run_sim "verif/SIM_dyncomp" "SET_test/RUN_2"  "dyncomp_run2"  || fail=1
+    run_sim "verif/SIM_dyncomp" "SET_test/RUN_3A" "dyncomp_run3a" || fail=1
+    run_sim "verif/SIM_dyncomp" "SET_test/RUN_3B" "dyncomp_run3b" || fail=1
+    run_sim "verif/SIM_dyncomp" "SET_test/RUN_8B" "dyncomp_run8b" || fail=1
+    run_sim "verif/SIM_dyncomp" "SET_test/RUN_9A" "dyncomp_run9a" || fail=1
+    run_sim "verif/SIM_dyncomp" "SET_test/RUN_9B" "dyncomp_run9b" || fail=1
+    run_sim "verif/SIM_dyncomp" "SET_test/RUN_5A" "dyncomp_run5a" || fail=1
+    run_sim "verif/SIM_dyncomp" "SET_test/RUN_6B" "dyncomp_run6b" || fail=1
 
-# ════════════════════════════════════════════════════════════════════
-# Sim 2: SIM_dyncomp RUN_3A — 4x4 spherical harmonics gravity, 8-hour orbit
-# Best for: Phase 2 spherical harmonics validation
-# ════════════════════════════════════════════════════════════════════
-run_sim "verif/SIM_dyncomp" "SET_test/RUN_3A" "dyncomp_run3a" || true
-
-# ════════════════════════════════════════════════════════════════════
-# Sim 3: SIM_dyncomp RUN_3B — 8x8 spherical harmonics gravity, 8-hour orbit
-# Best for: Phase 2 spherical harmonics validation (higher fidelity)
-# ════════════════════════════════════════════════════════════════════
-run_sim "verif/SIM_dyncomp" "SET_test/RUN_3B" "dyncomp_run3b" || true
-
-# ════════════════════════════════════════════════════════════════════
-# Sim 4: SIM_dyncomp RUN_8B — Rotational dynamics, spherical mass
-# Best for: Phase 3 6-DOF rotational dynamics validation
-# Spherical mass body with LVLH orbital-rate init, spherical gravity,
-# no torques, 8 hours. Cleanest rotational dynamics test case.
-# ════════════════════════════════════════════════════════════════════
-run_sim "verif/SIM_dyncomp" "SET_test/RUN_8B" "dyncomp_run8b" || true
-
-# ════════════════════════════════════════════════════════════════════
-# Sim 5: SIM_orbinit RUN_0001 — Orbital initialization verification
-# Best for: Phase 1 orbital elements validation
-# ════════════════════════════════════════════════════════════════════
-run_sim "models/dynamics/body_action/verif/SIM_orbinit" "SET_test/RUN_0001" "orbinit_0001" || true
+    # Validate critical first output
+    local expected="${OUTPUT_DIR}/dyncomp_run2_state.csv"
+    if [ ! -f "$expected" ]; then
+        echo "FATAL: Expected output file not found: $expected"
+        return 1
+    fi
+    local lines
+    lines=$(wc -l < "$expected")
+    if [ "$lines" -lt 100 ]; then
+        echo "FATAL: $expected has only $lines lines (expected 400+)"
+        return 1
+    fi
+    echo "Validated: $expected ($lines lines)"
+    return $fail
+}
 
 # ════════════════════════════════════════════════════════════════════
-# Sim: SIM_OrbElem RUN_ecc — Orbital element computation
-# Best for: Phase 3a orbital elements cross-validation
+# GROUP 2: Derived-state sims — each has its own S_define.
+# These can run in parallel with each other and with GROUP 1.
 # ════════════════════════════════════════════════════════════════════
+
+# --- Snippets for ASCII logging (defined upfront) ---
+
 ORBELEM_SNIPPET='
 dr = trick.sim_services.DRAscii("orbelem_ASCII")
 dr.set_cycle(12)
@@ -223,12 +228,7 @@ for v in [
     dr.add_variable(v)
 trick.add_data_record_group(dr)
 '
-run_sim_with_ascii "models/dynamics/derived_state/verif/SIM_OrbElem" "SET_test/RUN_ecc" "orbelem_ecc" "$ORBELEM_SNIPPET" || true
 
-# ════════════════════════════════════════════════════════════════════
-# Sim: SIM_LVLH RUN_inc — LVLH frame computation
-# Best for: Phase 3a LVLH frame cross-validation
-# ════════════════════════════════════════════════════════════════════
 LVLH_SNIPPET='
 dr = trick.sim_services.DRAscii("lvlh_ASCII")
 dr.set_cycle(12)
@@ -243,12 +243,7 @@ for prefix in ["vehA", "vehB"]:
         dr.add_variable(f"{prefix}.dyn_body.composite_body.state.trans.velocity[{i}]")
 trick.add_data_record_group(dr)
 '
-run_sim_with_ascii "models/dynamics/derived_state/verif/SIM_LVLH" "SET_test/RUN_inc" "lvlh_inc" "$LVLH_SNIPPET" || true
 
-# ════════════════════════════════════════════════════════════════════
-# Sim: SIM_NED RUN_ell_inc — NED / geodetic coordinate computation
-# Best for: Phase 3a geodetic cross-validation
-# ════════════════════════════════════════════════════════════════════
 NED_SNIPPET='
 dr = trick.sim_services.DRAscii("ned_ASCII")
 dr.set_cycle(12)
@@ -264,12 +259,7 @@ for prefix in ["vehA"]:
         dr.add_variable(f"{prefix}.dyn_body.structure.state.trans.velocity[{i}]")
 trick.add_data_record_group(dr)
 '
-run_sim_with_ascii "models/dynamics/derived_state/verif/SIM_NED" "SET_test/RUN_ell_inc" "ned_ell_inc" "$NED_SNIPPET" || true
 
-# ════════════════════════════════════════════════════════════════════
-# Sim: SIM_SolarBeta RUN_incl_51_6 — Solar beta angle
-# Best for: Phase 3a solar beta cross-validation
-# ════════════════════════════════════════════════════════════════════
 SOLARBETA_SNIPPET='
 dr = trick.sim_services.DRAscii("solarbeta_ASCII")
 dr.set_cycle(5400)
@@ -280,12 +270,7 @@ for i in range(3):
     dr.add_variable(f"veh.dyn_body.structure.state.trans.velocity[{i}]")
 trick.add_data_record_group(dr)
 '
-run_sim_with_ascii "models/dynamics/derived_state/verif/SIM_SolarBeta" "SET_test/RUN_incl_51_6" "solarbeta_incl_51_6" "$SOLARBETA_SNIPPET" || true
 
-# ════════════════════════════════════════════════════════════════════
-# Sim: SIM_Euler RUN_inc — Euler angle derived state
-# Best for: Phase 3a Euler angle cross-validation
-# ════════════════════════════════════════════════════════════════════
 EULER_SNIPPET='
 dr = trick.sim_services.DRAscii("euler_ASCII")
 dr.set_cycle(12)
@@ -305,14 +290,88 @@ for i in range(3):
 dr.add_variable("veh.dyn_body.composite_body.state.rot.Q_parent_this.scalar")
 trick.add_data_record_group(dr)
 '
-run_sim_with_ascii "models/dynamics/derived_state/verif/SIM_Euler" "SET_test/RUN_inc" "euler_inc" "$EULER_SNIPPET" || true
+
+# ── ASCII logging snippet for SIM_3_ORBIT (radiation pressure) ──
+# SIM_3_ORBIT uses DRBinary by default. We inject a DRAscii logger to get CSV
+# output with position, velocity, gravity accel, SRP force, and flux.
+SRP_ORBIT_SNIPPET='
+dr = trick.sim_services.DRAscii("srp_orbit_ASCII")
+dr.set_cycle(1000.0)
+dr.freq = trick.sim_services.DR_Always
+for ii in range(3):
+    dr.add_variable("vehicle.dyn_body.structure.state.trans.position[" + str(ii) + "]")
+for ii in range(3):
+    dr.add_variable("vehicle.dyn_body.structure.state.trans.velocity[" + str(ii) + "]")
+for ii in range(3):
+    dr.add_variable("vehicle.dyn_body.grav_interaction.grav_accel[" + str(ii) + "]")
+for ii in range(3):
+    dr.add_variable("radiation.rad_pressure.force[" + str(ii) + "]")
+for ii in range(3):
+    dr.add_variable("radiation.rad_pressure.torque[" + str(ii) + "]")
+dr.add_variable("radiation.rad_pressure.source.flux_mag")
+trick.add_data_record_group(dr)
+'
 
 # ════════════════════════════════════════════════════════════════════
-# Sim 5: Integration test — RK4 verification
-# Best for: Phase 1 integrator accuracy
+# LAUNCH ALL GROUPS IN PARALLEL
 # ════════════════════════════════════════════════════════════════════
-run_sim "models/utils/integration/verif/SIM_integ_test" "SET_test/RUN_rk4" "integ_rk4" || true
+echo "=== Launching sim groups in parallel ==="
 
+# Group 1: SIM_dyncomp (sequential internally)
+run_dyncomp_group &
+PID_DYNCOMP=$!
+
+# Group 2: SIM_orbinit
+run_sim "models/dynamics/body_action/verif/SIM_orbinit" "SET_test/RUN_0001" "orbinit_0001" &
+PID_ORBINIT=$!
+
+# Group 3: SIM_OrbElem
+run_sim_with_ascii "models/dynamics/derived_state/verif/SIM_OrbElem" "SET_test/RUN_ecc" "orbelem_ecc" "$ORBELEM_SNIPPET" &
+PID_ORBELEM=$!
+
+# Group 4: SIM_LVLH
+run_sim_with_ascii "models/dynamics/derived_state/verif/SIM_LVLH" "SET_test/RUN_inc" "lvlh_inc" "$LVLH_SNIPPET" &
+PID_LVLH=$!
+
+# Group 5: SIM_NED
+run_sim_with_ascii "models/dynamics/derived_state/verif/SIM_NED" "SET_test/RUN_ell_inc" "ned_ell_inc" "$NED_SNIPPET" &
+PID_NED=$!
+
+# Group 6: SIM_SolarBeta
+run_sim_with_ascii "models/dynamics/derived_state/verif/SIM_SolarBeta" "SET_test/RUN_incl_51_6" "solarbeta_incl_51_6" "$SOLARBETA_SNIPPET" &
+PID_SOLARBETA=$!
+
+# Group 7: SIM_Euler
+run_sim_with_ascii "models/dynamics/derived_state/verif/SIM_Euler" "SET_test/RUN_inc" "euler_inc" "$EULER_SNIPPET" &
+PID_EULER=$!
+
+# Group 8: SIM_integ_test
+run_sim "models/utils/integration/verif/SIM_integ_test" "SET_test/RUN_rk4" "integ_rk4" &
+PID_INTEG=$!
+
+# Group 9: SIM_3_ORBIT (radiation pressure SRP verification)
+run_sim_with_ascii "models/interactions/radiation_pressure/verif/SIM_3_ORBIT" "SET_test/RUN_radiation" "srp_orbit_radiation" "$SRP_ORBIT_SNIPPET" &
+PID_SRP_ORBIT=$!
+
+# ════════════════════════════════════════════════════════════════════
+# WAIT FOR ALL GROUPS
+# ════════════════════════════════════════════════════════════════════
+echo "=== Waiting for all sim groups to complete ==="
+FAIL=0
+
+wait $PID_DYNCOMP   || { echo "WARN: SIM_dyncomp group had failures"; FAIL=1; }
+wait $PID_ORBINIT   || { echo "WARN: SIM_orbinit failed"; FAIL=1; }
+wait $PID_ORBELEM   || { echo "WARN: SIM_OrbElem failed"; FAIL=1; }
+wait $PID_LVLH      || { echo "WARN: SIM_LVLH failed"; FAIL=1; }
+wait $PID_NED       || { echo "WARN: SIM_NED failed"; FAIL=1; }
+wait $PID_SOLARBETA  || { echo "WARN: SIM_SolarBeta failed"; FAIL=1; }
+wait $PID_EULER     || { echo "WARN: SIM_Euler failed"; FAIL=1; }
+wait $PID_INTEG     || { echo "WARN: SIM_integ_test failed"; FAIL=1; }
+wait $PID_SRP_ORBIT || { echo "WARN: SIM_3_ORBIT SRP failed"; FAIL=1; }
+
+echo ""
 echo "=== Reference data generation complete ==="
 echo "Files in ${OUTPUT_DIR}:"
 ls -la "${OUTPUT_DIR}/"
+
+exit $FAIL

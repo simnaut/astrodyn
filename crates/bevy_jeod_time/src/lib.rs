@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use bevy_jeod_dynamics::JeodSet;
 use jeod_time::{leap_second::default_leap_second_table, SimulationTime};
 
+// JEOD_INV: TM.07 — JEOD uses -1.0 sentinel; we call recompute_derived() at construction instead
 /// Bevy resource wrapping `SimulationTime`.
 #[derive(Resource, Debug, Deref, DerefMut)]
 pub struct SimulationTimeR(pub SimulationTime);
@@ -25,6 +26,7 @@ impl Plugin for JeodTimePlugin {
     }
 }
 
+// JEOD_INV: TM.03 — time types updated in dependency order (delegates to SimulationTime::advance)
 fn time_advance_system(mut sim_time: ResMut<SimulationTimeR>, time: Res<Time<Fixed>>) {
     let dt = time.delta_secs_f64();
     sim_time.advance(dt);

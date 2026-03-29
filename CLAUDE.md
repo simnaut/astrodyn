@@ -200,6 +200,53 @@ CSV and `.bsp` test data files are committed to the repository. Only binary `.tr
 absent — they never skip gracefully. The assert message includes the exact command to
 obtain the data.
 
+## JEOD Invariant Tracking (non-negotiable)
+
+JEOD's C++ architecture enforces many invariants via `MessageHandler::fail()`,
+`error()`, constructor logic, and structural guarantees (value members, deleted
+copy ctors). We catalog every invariant we encounter in
+`docs/JEOD_invariants.md` and trace enforcement sites in source with
+`// JEOD_INV: XX.YY` comments.
+
+### How it works
+
+1. **Catalog** (`docs/JEOD_invariants.md`): one row per invariant with a
+   `Section.Tag` ID (e.g., `GV.04`), description, JEOD enforcement mechanism,
+   and our status (`enforced`, `partial`, `deferred`, `n/a`, `structural`).
+
+2. **Source tags**: every enforcement site in our Rust code has a comment like
+   `// JEOD_INV: GV.04 — degree <= source degree`. The tag text should
+   accurately describe what the code does and note any divergence from JEOD.
+
+3. **CI coverage** (`tests/invariant_coverage.rs`): bidirectional test —
+   every `enforced`/`partial`/`structural` invariant in the catalog must have
+   at least one source tag, and every source tag must reference a catalog entry.
+
+### When you encounter an unrecorded invariant
+
+When reading JEOD source and you find a `MessageHandler::fail()`,
+`MessageHandler::error()`, assert, or structural guarantee that is not
+already in the catalog:
+
+1. **Add a row** to `docs/JEOD_invariants.md` with the next available tag in
+   the appropriate section (e.g., `DB.28`, `GV.19`).
+2. **Add `// JEOD_INV: XX.YY`** at our enforcement site (or note `deferred`/
+   `n/a` in the catalog if we don't enforce it yet).
+3. **Run** `cargo test --test invariant_coverage` to verify consistency.
+
+### When you encounter an untagged enforcement site
+
+If our code enforces a JEOD invariant but the enforcement site lacks a
+`// JEOD_INV` tag, add the tag. If the invariant isn't in the catalog yet,
+add it there too.
+
+### Tag accuracy
+
+Tags must describe what the code **actually does**, not what JEOD does. When
+our implementation diverges from JEOD (e.g., we divide by mass at runtime
+instead of precomputing `inverse_mass`), the tag should note the divergence.
+Never copy JEOD's description verbatim if our code works differently.
+
 ## JEOD Convention Rule
 
 When JEOD uses a field name whose meaning could be ambiguous (e.g., `time_periapsis`
