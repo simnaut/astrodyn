@@ -1,8 +1,12 @@
-//! Bevy App 6-DOF parity test.
+//! Bevy App vs jeod_sim::Simulation parity test.
 //!
-//! Validates three-way parity: the Bevy integration_system, manual
-//! rk4_sixdof_step(), and jeod_sim::Simulation all produce bit-identical
-//! state from the same initial conditions.
+//! Validates that the Bevy ECS pipeline and the standalone Simulation runner
+//! produce bit-identical state from the same initial conditions. Both go
+//! through the same `jeod_sim` per-body functions, so any difference means
+//! the Bevy glue layer is wiring something incorrectly.
+//!
+//! Combined with Tier 3 tests (Simulation vs JEOD CSV), this establishes:
+//!   Bevy App ≡ Simulation ≈ JEOD
 
 use std::time::Duration;
 
@@ -110,16 +114,9 @@ fn build_app() -> (App, Entity, Entity) {
 /// translational and rotational state from the vehicle entity.
 fn run_bevy_steps(app: &mut App, vehicle: Entity) -> SixDofState {
     for _ in 0..NUM_STEPS {
-        // Manually advance Time<Fixed> by one timestep so that
-        // integration_system sees a non-zero delta_secs_f64().
-        // This bypasses the virtual-time accumulation path and gives
-        // deterministic control over exactly how many fixed steps execute.
         app.world_mut()
             .resource_mut::<Time<Fixed>>()
             .advance_by(Duration::from_secs_f64(DT));
-
-        // Run the FixedUpdate schedule directly (contains gravity computation,
-        // force collection, integration, time advance, etc.).
         app.world_mut().run_schedule(FixedUpdate);
     }
 
@@ -130,101 +127,6 @@ fn run_bevy_steps(app: &mut App, vehicle: Entity) -> SixDofState {
         trans: trans.0,
         rot: rot.0,
     }
-}
-
-/// Run 100 integration steps using the pure rk4_sixdof_step function with
-/// identical gravity computation, returning the final state.
-///
-/// Matching JEOD (and integration_system): gravity is recomputed at each
-/// RK4 intermediate state for proper 4th-order accuracy.
-fn run_pure_steps() -> SixDofState {
-    let mp = mass_props();
-    let mu = MU_EARTH;
-
-    let mut state = SixDofState {
-        trans: initial_trans(),
-        rot: initial_rot(),
-    };
-
-    for _ in 0..NUM_STEPS {
-        state = jeod_dynamics::rk4_sixdof_step(
-            &state,
-            |s| {
-                let pos = s.trans.position;
-                let r = pos.length();
-                -mu / (r * r * r) * pos
-            },
-            |_| DVec3::ZERO,
-            &mp,
-            DT,
-        );
-    }
-
-    state
-}
-
-#[test]
-fn bevy_integration_matches_pure_rk4_sixdof() {
-    let (mut app, _planet, vehicle) = build_app();
-
-    let bevy_state = run_bevy_steps(&mut app, vehicle);
-    let pure_state = run_pure_steps();
-
-    // Position parity: should be identical to machine precision since both
-    // paths call the same rk4_sixdof_step with the same gravity formula.
-    // Observed: ~5e-10 m (consistent with f64 ULP at ~7e6 m scale over 100 steps).
-    let pos_diff = (bevy_state.trans.position - pure_state.trans.position).length();
-    assert!(
-        pos_diff < 1e-8,
-        "Position difference between Bevy and pure RK4: {} m (exceeds 1e-8 m)\n\
-         Bevy:  {:?}\n\
-         Pure:  {:?}",
-        pos_diff,
-        bevy_state.trans.position,
-        pure_state.trans.position,
-    );
-
-    // Velocity parity.
-    // Observed: ~9e-13 m/s.
-    let vel_diff = (bevy_state.trans.velocity - pure_state.trans.velocity).length();
-    assert!(
-        vel_diff < 1e-11,
-        "Velocity difference between Bevy and pure RK4: {} m/s (exceeds 1e-11 m/s)\n\
-         Bevy:  {:?}\n\
-         Pure:  {:?}",
-        vel_diff,
-        bevy_state.trans.velocity,
-        pure_state.trans.velocity,
-    );
-
-    // Quaternion parity.
-    let q_bevy = bevy_state.rot.quaternion.data;
-    let q_pure = pure_state.rot.quaternion.data;
-    let q_diff: f64 = (0..4)
-        .map(|i| (q_bevy[i] - q_pure[i]).powi(2))
-        .sum::<f64>()
-        .sqrt();
-    assert!(
-        q_diff < 1e-14,
-        "Quaternion difference between Bevy and pure RK4: {} (exceeds 1e-14)\n\
-         Bevy:  {:?}\n\
-         Pure:  {:?}",
-        q_diff,
-        q_bevy,
-        q_pure,
-    );
-
-    // Angular velocity parity.
-    let omega_diff = (bevy_state.rot.ang_vel_body - pure_state.rot.ang_vel_body).length();
-    assert!(
-        omega_diff < 1e-14,
-        "Angular velocity difference between Bevy and pure RK4: {} rad/s (exceeds 1e-14)\n\
-         Bevy:  {:?}\n\
-         Pure:  {:?}",
-        omega_diff,
-        bevy_state.rot.ang_vel_body,
-        pure_state.rot.ang_vel_body,
-    );
 }
 
 /// Run 100 integration steps via jeod_sim::Simulation with identical
@@ -321,32 +223,17 @@ fn assert_sixdof_bit_identical(label: &str, a: &SixDofState, b: &SixDofState) {
     }
 }
 
-/// Three-way parity: Bevy App == jeod_sim::Simulation == manual RK4.
+/// Bevy App vs jeod_sim::Simulation — bit-identical output required.
 ///
-/// Runs all three paths from identical initial conditions and asserts
-/// bit-identical output. Any difference — even a single ULP — means the
-/// orchestration layers are not equivalent.
+/// Both paths go through `accumulate_gravity` → `collect_and_resolve_forces`
+/// → `integrate_body` with the same `jeod_*` functions underneath. Any
+/// difference — even a single ULP — means the Bevy wiring is wrong.
 #[test]
-fn three_way_parity_bevy_simulation_pure() {
+fn bevy_matches_simulation_bit_identical() {
     let (mut app, _planet, vehicle) = build_app();
 
     let bevy_state = run_bevy_steps(&mut app, vehicle);
     let sim_state = run_simulation_steps();
-    let pure_state = run_pure_steps();
 
-    // Bevy and Simulation both use accumulate_gravity() — must be bit-identical.
     assert_sixdof_bit_identical("Bevy vs Sim", &bevy_state, &sim_state);
-
-    // Manual RK4 computes gravity inline (different code path than accumulate_gravity),
-    // so up to 1 ULP difference is acceptable due to floating-point operation ordering.
-    let pos_diff = (sim_state.trans.position - pure_state.trans.position).length();
-    let vel_diff = (sim_state.trans.velocity - pure_state.trans.velocity).length();
-    assert!(
-        pos_diff < 1e-8,
-        "Sim vs Pure pos diff {pos_diff} exceeds 1e-8 m"
-    );
-    assert!(
-        vel_diff < 1e-11,
-        "Sim vs Pure vel diff {vel_diff} exceeds 1e-11 m/s"
-    );
 }
