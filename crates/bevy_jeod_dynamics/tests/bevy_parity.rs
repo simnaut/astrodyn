@@ -168,6 +168,10 @@ fn run_simulation_steps() -> SixDofState {
         aero_force: None,
         radiation_force: None,
         gravity_torque: None,
+        flat_plates: None,
+        plate_temperatures: vec![],
+        plate_t_pow4_cached: vec![],
+        shadow_body: None,
     });
 
     sim.validate().unwrap();

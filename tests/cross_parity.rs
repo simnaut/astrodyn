@@ -176,6 +176,10 @@ fn new_sim_body_sixdof(earth_idx: usize, gradient: bool) -> SimBody {
         aero_force: None,
         radiation_force: None,
         gravity_torque: None,
+        flat_plates: None,
+        plate_temperatures: vec![],
+        plate_t_pow4_cached: vec![],
+        shadow_body: None,
     }
 }
 
@@ -458,6 +462,10 @@ fn cross_parity_srp_3dof() {
         aero_force: None,
         radiation_force: None,
         gravity_torque: None,
+        flat_plates: None,
+        plate_temperatures: vec![],
+        plate_t_pow4_cached: vec![],
+        shadow_body: None,
     });
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS);
@@ -783,6 +791,10 @@ fn cross_parity_sh4x4_rnp() {
         aero_force: None,
         radiation_force: None,
         gravity_torque: None,
+        flat_plates: None,
+        plate_temperatures: vec![],
+        plate_t_pow4_cached: vec![],
+        shadow_body: None,
     });
 
     sim.validate().unwrap();

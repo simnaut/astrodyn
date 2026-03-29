@@ -5,7 +5,10 @@ use jeod_dynamics::{
     TotalForce, TranslationalState,
 };
 use jeod_gravity::{GravityControls, GravitySource};
-use jeod_interactions::{AerodynamicForce, DragConfig, RadiationForce, SrpConfig};
+use jeod_interactions::{
+    AerodynamicForce, DragConfig, FlatPlate, FlatPlateParams, FlatPlateThermal, RadiationForce,
+    SrpConfig,
+};
 use jeod_time::SimulationTime;
 
 use crate::atmosphere::{evaluate_atmosphere, AtmosphereConfig};
@@ -48,8 +51,22 @@ pub struct SimBody {
     pub gravity_controls: GravityControls<usize>,
     /// Drag configuration. `None` disables drag.
     pub drag: Option<DragConfig>,
-    /// Solar radiation pressure configuration. `None` disables SRP.
+    /// Spherical SRP configuration. `None` disables spherical SRP.
+    /// Ignored if `flat_plates` is `Some` (flat-plate model takes priority).
     pub srp: Option<SrpConfig>,
+    /// Flat-plate SRP configuration (plate geometry, optical, thermal properties).
+    /// When `Some`, replaces the spherical SRP model. Requires `plate_temperatures`
+    /// and `plate_t_pow4_cached` to be initialized with matching lengths.
+    pub flat_plates: Option<Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)>>,
+    /// Per-plate temperatures (K). Same length as `flat_plates`.
+    pub plate_temperatures: Vec<f64>,
+    /// Cached T⁴ per plate (K⁴) from previous step. Same length as `flat_plates`.
+    /// Used for thermal emission force computation (JEOD convention: emission uses
+    /// previous-step temperature, not current).
+    pub plate_t_pow4_cached: Vec<f64>,
+    /// Shadow-casting body: `(source_index, body_radius_m)`.
+    /// Used by both spherical and flat-plate SRP for eclipse computation.
+    pub shadow_body: Option<(usize, f64)>,
     /// Structural-to-body rotation matrix. `DMat3::IDENTITY` when structure = body.
     pub t_struct_body: DMat3,
     /// Whether to compute gravity gradient torque for this body.
@@ -245,17 +262,20 @@ impl Simulation {
 
         // ── 6. Interactions — drag, SRP, gravity torque ──
         let sun_pos = self.sun_source.map(|idx| self.sources[idx].position);
+        let sources = &self.sources;
 
         for body in &mut self.bodies {
+            // Compute structural transform once (shared by drag and flat-plate SRP)
+            let t_inertial_body = body.rot.as_ref().map_or(DMat3::IDENTITY, |r| {
+                r.quaternion.left_quat_to_transformation()
+            });
+            let t_inertial_struct =
+                jeod_dynamics::compute_t_inertial_struct(&body.t_struct_body, &t_inertial_body);
+
             // Aerodynamic drag
             body.aero_force = None;
             if let (Some(ref drag_config), Some(ref atmos)) = (&body.drag, &body.atmospheric_state)
             {
-                let t_inertial_body = body.rot.as_ref().map_or(DMat3::IDENTITY, |r| {
-                    r.quaternion.left_quat_to_transformation()
-                });
-                let t_inertial_struct =
-                    jeod_dynamics::compute_t_inertial_struct(&body.t_struct_body, &t_inertial_body);
                 body.aero_force = Some(jeod_interactions::compute_ballistic_drag(
                     drag_config,
                     atmos,
@@ -264,15 +284,81 @@ impl Simulation {
                 ));
             }
 
-            // Solar radiation pressure
+            // Solar radiation pressure (flat-plate or spherical)
             body.radiation_force = None;
-            if let (Some(ref srp_config), Some(sun_position)) = (&body.srp, sun_pos) {
-                body.radiation_force = Some(jeod_interactions::compute_srp_force(
-                    srp_config,
-                    sun_position,
-                    body.trans.position,
-                    1.0, // illum_factor placeholder (shadow detection is Phase 4+)
-                ));
+            if let Some(sun_position) = sun_pos {
+                if let Some(ref flat_plates) = body.flat_plates {
+                    // Flat-plate SRP with thermal emission
+                    let sun_to_vehicle = body.trans.position - sun_position;
+                    let distance = sun_to_vehicle.length();
+                    let flux_inertial_hat = sun_to_vehicle / distance;
+                    let flux_mag = jeod_interactions::solar_flux_at_distance(distance);
+
+                    // Shadow fraction
+                    let illum_factor = body
+                        .shadow_body
+                        .map(|(idx, radius)| {
+                            jeod_interactions::compute_shadow_fraction(
+                                body.trans.position,
+                                sun_position,
+                                sources[idx].position,
+                                radius,
+                                jeod_interactions::SOLAR_RADIUS,
+                            )
+                        })
+                        .unwrap_or(1.0);
+
+                    // Rotate flux direction to structural frame
+                    let flux_struct_hat = t_inertial_struct * flux_inertial_hat;
+
+                    let center_grav = body.mass.as_ref().map_or(DVec3::ZERO, |m| m.position);
+
+                    let srp_result = jeod_interactions::compute_flat_plate_srp_thermal(
+                        flat_plates,
+                        &body.plate_t_pow4_cached,
+                        flux_struct_hat,
+                        flux_mag,
+                        center_grav,
+                        illum_factor,
+                    );
+
+                    // Force: rotate from structural to inertial. Torque: stays structural.
+                    let force_inertial = t_inertial_struct.transpose() * srp_result.force;
+                    body.radiation_force = Some(RadiationForce {
+                        force: force_inertial,
+                        torque: srp_result.torque,
+                    });
+
+                    // Integrate plate temperatures (forward Euler)
+                    for (i, temp) in body.plate_temperatures.iter_mut().enumerate() {
+                        *temp += srp_result.temp_dots[i] * dt;
+                        if *temp < 0.0 {
+                            *temp = 0.0;
+                        }
+                    }
+                    body.plate_t_pow4_cached =
+                        body.plate_temperatures.iter().map(|t| t.powi(4)).collect();
+                } else if let Some(ref srp_config) = body.srp {
+                    // Spherical SRP fallback
+                    let illum_factor = body
+                        .shadow_body
+                        .map(|(idx, radius)| {
+                            jeod_interactions::compute_shadow_fraction(
+                                body.trans.position,
+                                sun_position,
+                                sources[idx].position,
+                                radius,
+                                jeod_interactions::SOLAR_RADIUS,
+                            )
+                        })
+                        .unwrap_or(1.0);
+                    body.radiation_force = Some(jeod_interactions::compute_srp_force(
+                        srp_config,
+                        sun_position,
+                        body.trans.position,
+                        illum_factor,
+                    ));
+                }
             }
 
             // Gravity gradient torque

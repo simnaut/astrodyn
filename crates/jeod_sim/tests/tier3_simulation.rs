@@ -179,6 +179,10 @@ fn tier3_simulation_run2_3dof() {
         aero_force: None,
         radiation_force: None,
         gravity_torque: None,
+        flat_plates: None,
+        plate_temperatures: vec![],
+        plate_t_pow4_cached: vec![],
+        shadow_body: None,
     });
 
     sim.validate().unwrap();
@@ -286,6 +290,10 @@ fn tier3_simulation_run2_6dof() {
         aero_force: None,
         radiation_force: None,
         gravity_torque: None,
+        flat_plates: None,
+        plate_temperatures: vec![],
+        plate_t_pow4_cached: vec![],
+        shadow_body: None,
     });
 
     sim.validate().unwrap();
@@ -452,6 +460,10 @@ fn tier3_simulation_run6b_drag() {
         aero_force: None,
         radiation_force: None,
         gravity_torque: None,
+        flat_plates: None,
+        plate_temperatures: vec![],
+        plate_t_pow4_cached: vec![],
+        shadow_body: None,
     });
 
     sim.validate().unwrap();
@@ -592,6 +604,10 @@ fn run_sh_simulation_test(csv_name: &str, degree: usize, order: usize, label: &s
         aero_force: None,
         radiation_force: None,
         gravity_torque: None,
+        flat_plates: None,
+        plate_temperatures: vec![],
+        plate_t_pow4_cached: vec![],
+        shadow_body: None,
     });
 
     sim.validate().unwrap();
@@ -901,6 +917,10 @@ fn tier3_simulation_run10a_gravity_torque() {
         aero_force: None,
         radiation_force: None,
         gravity_torque: None,
+        flat_plates: None,
+        plate_temperatures: vec![],
+        plate_t_pow4_cached: vec![],
+        shadow_body: None,
     });
 
     sim.validate().unwrap();
@@ -959,5 +979,257 @@ fn tier3_simulation_run10a_gravity_torque() {
     assert!(
         max_omega_error < 1e-5,
         "Omega error {max_omega_error:.2e} rad/s exceeds 1e-5 rad/s"
+    );
+}
+
+// ── Scenario 8: Flat-plate SRP + shadow, 3-DOF (SIM_3_ORBIT RUN_radiation) ──
+//
+// GEO orbit, 6 flat plates, conical Earth shadow, identity attitude,
+// 2,000,000s (~23 days), dt=1.0s, logged every 1000s.
+// Sun position from DE421 ephemeris (updated each logging interval).
+
+const SRP_MU_EARTH: f64 = 3.986004418e14;
+const SRP_R_EARTH: f64 = 6_378_137.0;
+const SRP_MASS: f64 = 300.0;
+const SRP_DT: f64 = 1.0;
+const SRP_EPOCH_TJT: f64 = 11148.0; // 1998-12-01 UTC
+
+fn srp_plates() -> Vec<(
+    jeod_interactions::FlatPlate,
+    jeod_interactions::FlatPlateParams,
+    jeod_interactions::FlatPlateThermal,
+)> {
+    use jeod_interactions::{FlatPlate, FlatPlateParams, FlatPlateThermal};
+    let params = FlatPlateParams {
+        albedo: 0.5,
+        diffuse: 0.5,
+    };
+    let thermal = FlatPlateThermal {
+        emissivity: 0.5,
+        heat_capacity_per_area: 50.0,
+    };
+    vec![
+        (
+            FlatPlate {
+                area: 60.0,
+                normal: DVec3::X,
+                position: DVec3::new(2.0, 0.0, 0.0),
+            },
+            params,
+            thermal,
+        ),
+        (
+            FlatPlate {
+                area: 60.0,
+                normal: -DVec3::Y,
+                position: DVec3::new(0.0, -2.0, 0.0),
+            },
+            params,
+            thermal,
+        ),
+        (
+            FlatPlate {
+                area: 60.0,
+                normal: -DVec3::X,
+                position: DVec3::new(-2.0, 0.0, 0.0),
+            },
+            params,
+            thermal,
+        ),
+        (
+            FlatPlate {
+                area: 60.0,
+                normal: DVec3::Y,
+                position: DVec3::new(0.0, 2.0, 0.0),
+            },
+            params,
+            thermal,
+        ),
+        (
+            FlatPlate {
+                area: 16.0,
+                normal: DVec3::Z,
+                position: DVec3::new(0.0, 0.0, 7.5),
+            },
+            params,
+            thermal,
+        ),
+        (
+            FlatPlate {
+                area: 16.0,
+                normal: -DVec3::Z,
+                position: DVec3::new(0.0, 0.0, -7.5),
+            },
+            params,
+            thermal,
+        ),
+    ]
+}
+
+#[derive(Debug)]
+struct SrpRecord {
+    time: f64,
+    position: DVec3,
+    velocity: DVec3,
+}
+
+fn load_srp_trajectory(path: &std::path::Path) -> Vec<SrpRecord> {
+    let content = std::fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("Failed to read SRP CSV: {e}\nGenerate with Docker."));
+    let mut records = Vec::new();
+    for (i, line) in content.lines().enumerate() {
+        if i == 0 || line.trim().is_empty() {
+            continue;
+        }
+        let f: Vec<&str> = line.split(',').collect();
+        if f.len() < 7 {
+            continue;
+        }
+        let p = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
+        records.push(SrpRecord {
+            time: p(0),
+            position: DVec3::new(p(1), p(2), p(3)),
+            velocity: DVec3::new(p(4), p(5), p(6)),
+        });
+    }
+    records
+}
+
+fn srp_sun_position(sim_time: f64, ephemeris: &jeod_ephemeris::Ephemeris) -> DVec3 {
+    let sim_days = sim_time / 86400.0;
+    let tdb_jd = (SRP_EPOCH_TJT + sim_days) + 40000.0 + 2_400_000.5;
+    let (sun_pos, _) = ephemeris
+        .get_earth_centered_state(jeod_ephemeris::EphemerisBody::Sun, tdb_jd)
+        .expect("Sun position query failed");
+    sun_pos
+}
+
+#[test]
+fn tier3_simulation_srp_flat_plate() {
+    let csv_path = test_data_path("srp_orbit_radiation_srp_orbit.csv");
+    assert!(
+        csv_path.exists(),
+        "SRP reference not found at {}",
+        csv_path.display()
+    );
+
+    let bsp_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data/de421.bsp");
+    assert!(
+        bsp_path.exists(),
+        "DE421 ephemeris not found at {}",
+        bsp_path.display()
+    );
+    let ephemeris = jeod_ephemeris::Ephemeris::from_bsp(&bsp_path).expect("load DE421");
+
+    let trajectory = load_srp_trajectory(&csv_path);
+    assert!(trajectory.len() > 100);
+    let init = &trajectory[0];
+
+    let plates = srp_plates();
+    let num_plates = plates.len();
+    let init_temp = 270.0_f64;
+
+    // Epoch: 1998-12-01 UTC. TAI-UTC=31s at this date.
+    let epoch_tai_tjt = SRP_EPOCH_TJT + 31.0 / 86400.0;
+    let time = SimulationTime::new(
+        epoch_tai_tjt,
+        jeod_time::leap_second::default_leap_second_table(),
+    );
+    let mut sim = Simulation::new(time, SRP_DT);
+
+    // Earth at origin (gravity source + shadow body)
+    let earth = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: SRP_MU_EARTH,
+            model: GravityModel::PointMass,
+        },
+        position: DVec3::ZERO,
+        t_inertial_pfix: None,
+    });
+
+    // Sun (position updated each logging interval from ephemeris)
+    let initial_sun = srp_sun_position(0.0, &ephemeris);
+    let sun = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: 0.0,
+            model: GravityModel::PointMass,
+        },
+        position: initial_sun,
+        t_inertial_pfix: None,
+    });
+    sim.sun_source = Some(sun);
+
+    sim.add_body(SimBody {
+        trans: TranslationalState {
+            position: init.position,
+            velocity: init.velocity,
+        },
+        rot: None, // identity attitude (structural = inertial)
+        mass: Some(MassProperties::with_inertia(
+            SRP_MASS,
+            DMat3::from_diagonal(DVec3::splat(1.0)),
+            DVec3::ZERO,
+        )),
+        config: DynamicsConfig {
+            translational_dynamics: true,
+            rotational_dynamics: false,
+            three_dof: true,
+        },
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth, false)],
+        },
+        drag: None,
+        srp: None, // flat-plate model used instead
+        flat_plates: Some(plates),
+        plate_temperatures: vec![init_temp; num_plates],
+        plate_t_pow4_cached: vec![init_temp.powi(4); num_plates],
+        shadow_body: Some((earth, SRP_R_EARTH)),
+        t_struct_body: DMat3::IDENTITY,
+        compute_gravity_torque: false,
+        atmospheric_state: None,
+        gravity_accel: GravityAcceleration::default(),
+        total_force: Default::default(),
+        frame_derivs: Default::default(),
+        aero_force: None,
+        radiation_force: None,
+        gravity_torque: None,
+    });
+
+    sim.validate().unwrap();
+
+    println!(
+        "Tier 3 (Simulation): SRP flat-plate + shadow, {} points over {:.0} days",
+        trajectory.len(),
+        trajectory.last().unwrap().time / 86400.0
+    );
+
+    let mut max_pos_error = 0.0_f64;
+
+    for record in &trajectory[1..] {
+        // Update Sun position from ephemeris before stepping
+        sim.sources[sun].position = srp_sun_position(record.time, &ephemeris);
+
+        sim.step_until(record.time);
+
+        let body = sim.body(0);
+        let pos_error = (body.trans.position - record.position).length();
+        max_pos_error = max_pos_error.max(pos_error);
+
+        if (record.time % 86400.0).abs() < 500.1 {
+            println!(
+                "  t={:8.0}s ({:5.1}d): pos_err={:10.2} m",
+                record.time,
+                record.time / 86400.0,
+                pos_error
+            );
+        }
+    }
+
+    println!("  Max position error: {:.2} m", max_pos_error);
+
+    // Tolerance matches existing tier3_srp_trajectory test
+    assert!(
+        max_pos_error < 50.0,
+        "Position error {max_pos_error:.2} m exceeds 50 m over ~23 days"
     );
 }
