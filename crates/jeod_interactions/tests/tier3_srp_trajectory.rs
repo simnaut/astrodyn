@@ -140,30 +140,18 @@ fn gravity_accel(position: DVec3) -> DVec3 {
 }
 
 /// Compute Sun position from DE421 ephemeris at the SIM_3_ORBIT epoch.
-///
-/// Falls back to a fixed Sun position if ephemeris is not available.
-fn sun_position_at(sim_time: f64, ephemeris: Option<&Ephemeris>) -> DVec3 {
+fn sun_position_at(sim_time: f64, ephemeris: &Ephemeris) -> DVec3 {
     // TJT to TDB JD: JD = TJT + 40000 + 2400000.5
     // (TAI ≈ TDB to ~1.7ms; good enough for Sun position at 1 AU)
     let sim_days = sim_time / 86400.0;
     let tdb_jd = (EPOCH_TJT + sim_days) + 40000.0 + 2_400_000.5;
 
-    if let Some(eph) = ephemeris {
-        let (sun_pos, _sun_vel) = eph
-            .get_earth_centered_state(EphemerisBody::Sun, tdb_jd)
-            .expect("Sun position query failed");
-        sun_pos
-    } else {
-        // Fallback: approximate Sun position for 1998-12-01
-        // At winter solstice, Sun is roughly at ecliptic longitude ~249°
-        let au = 1.496e11;
-        let lon_rad = 249.0_f64.to_radians();
-        let obliquity = 23.44_f64.to_radians();
-        let x = au * lon_rad.cos();
-        let y = au * lon_rad.sin() * obliquity.cos();
-        let z = au * lon_rad.sin() * obliquity.sin();
-        DVec3::new(x, y, z)
-    }
+    let (sun_pos, _sun_vel) = ephemeris
+        .get_earth_centered_state(EphemerisBody::Sun, tdb_jd)
+        .unwrap_or_else(|e| {
+            panic!("Sun position query failed for tdb_jd={tdb_jd}: {e}");
+        });
+    sun_pos
 }
 
 /// Evaluate SRP force + temperature derivatives at a given state.
@@ -314,12 +302,17 @@ fn tier3_srp_trajectory_sim3_orbit() {
     let mut temp = [INITIAL_TEMPERATURE; NUM_PLATES];
     let mut t_pow4: Vec<f64> = temp.iter().map(|t| t * t * t * t).collect();
 
-    // Load ephemeris if available
+    // Load ephemeris (required — de421.bsp is committed to the repo).
     let bsp_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data/de421.bsp");
-    let ephemeris = Ephemeris::from_bsp(&bsp_path).ok();
-    if ephemeris.is_none() {
-        eprintln!("WARNING: de421.bsp not found, using approximate Sun position");
-    }
+    let ephemeris = Ephemeris::from_bsp(&bsp_path).unwrap_or_else(|err| {
+        panic!(
+            "de421.bsp required for SRP trajectory test.\n\
+             Attempted to load from: {}\n\
+             Ephemeris load error: {}",
+            bsp_path.display(),
+            err
+        )
+    });
 
     // Initialize from first JEOD data point
     let mut state = TranslationalState {
@@ -342,7 +335,7 @@ fn tier3_srp_trajectory_sim3_orbit() {
         // Propagate from current state to next logged time
         for step_i in 0..steps {
             let sim_time = start_time + (step_i as f64) * dt;
-            let sun_pos = sun_position_at(sim_time, ephemeris.as_ref());
+            let sun_pos = sun_position_at(sim_time, &ephemeris);
             state = rk4_step(&state, &plates, &mut temp, &mut t_pow4, sun_pos, dt, MASS);
         }
 
@@ -356,7 +349,7 @@ fn tier3_srp_trajectory_sim3_orbit() {
         if (t % 200_000.0) < 1000.5 || (t > 2000.0 && t < 8000.0 && target.flux_mag > 100.0) {
             // Force comparison at this point
             let (force_rel_err, force_dir_err) = if target.flux_mag > 100.0 && target.srp_force.length() > 1e-6 {
-                let sun_pos = sun_position_at(target.time, ephemeris.as_ref());
+                let sun_pos = sun_position_at(target.time, &ephemeris);
                 let stv = target.position - sun_pos;
                 let d = stv.length();
                 let fh = stv / d;
@@ -376,7 +369,7 @@ fn tier3_srp_trajectory_sim3_orbit() {
 
         // Compare SRP force (only when well-illuminated).
         if target.flux_mag > 100.0 && target.srp_force.length() > 1e-6 {
-            let sun_pos = sun_position_at(target.time, ephemeris.as_ref());
+            let sun_pos = sun_position_at(target.time, &ephemeris);
             let sun_to_vehicle = target.position - sun_pos;
             let dist = sun_to_vehicle.length();
             let flux_hat = sun_to_vehicle / dist;
@@ -417,7 +410,7 @@ fn tier3_srp_trajectory_sim3_orbit() {
         }
 
         // Shadow comparison: check if our shadow agrees with JEOD flux
-        let sun_pos = sun_position_at(target.time, ephemeris.as_ref());
+        let sun_pos = sun_position_at(target.time, &ephemeris);
         let our_illum = compute_shadow_fraction(
             target.position, sun_pos, DVec3::ZERO, R_EARTH, SOLAR_RADIUS,
         );
