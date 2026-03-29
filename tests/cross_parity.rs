@@ -606,7 +606,17 @@ fn tier3_bevy_sh4x4_rnp() {
     println!("Scenario F: Spherical harmonics 4x4 + RNP");
 
     let jeod_root = jeod_test_data::jeod_path();
+    assert!(
+        jeod_root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        jeod_root.display()
+    );
     let ggm02c_path = jeod_root.join("models/environment/gravity/data/src/earth_GGM02C.cc");
+    assert!(
+        ggm02c_path.exists(),
+        "GGM02C coefficients not found at {}",
+        ggm02c_path.display()
+    );
     let sh_data = jeod_gravity::coefficients::load_from_jeod_cc(&ggm02c_path).expect("load GGM02C");
     let mu = sh_data.mu;
 

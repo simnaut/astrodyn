@@ -14,10 +14,7 @@
 //!   - RUN_6B:  MET atmosphere + ballistic drag, 6-DOF (28800s)
 //!   - RUN_9A:  External torque, 6-DOF (28800s)
 //!   - RUN_10A: Gravity gradient torque, cylinder mass, 6-DOF (28800s)
-//!
-//! Not covered (model not yet supported by Simulation runner):
-//!   - SRP (flat-plate model with 6 plates + thermal + shadow — Simulation
-//!     only supports spherical SRP, not flat-plate)
+//!   - SIM_3_ORBIT: Flat-plate SRP + shadow (~23 days)
 
 use glam::{DMat3, DVec3};
 use jeod_atmosphere::met::{self, MetAtmosphere};
