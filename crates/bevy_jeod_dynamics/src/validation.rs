@@ -28,7 +28,8 @@ use crate::components::{
 ///
 /// **G: Gravity source existence** (JEOD: `GravityManager::find_grav_source()`
 /// during init). Every gravity control must reference an existing entity
-/// with `GravitySourceC`. Fatal in JEOD.
+/// with `GravitySourceC`. Non-fatal in JEOD (`MessageHandler::error`), but
+/// we escalate to a panic to prevent silently skipping gravity.
 ///
 /// **H: three_dof consistency** (JEOD: `create_body_integrators()` skips
 /// rotational integrator when `three_dof=true`). If `three_dof` is true,

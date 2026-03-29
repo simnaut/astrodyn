@@ -148,7 +148,9 @@ fn sun_position_at(sim_time: f64, ephemeris: &Ephemeris) -> DVec3 {
 
     let (sun_pos, _sun_vel) = ephemeris
         .get_earth_centered_state(EphemerisBody::Sun, tdb_jd)
-        .expect("Sun position query failed");
+        .unwrap_or_else(|e| {
+            panic!("Sun position query failed for tdb_jd={tdb_jd}: {e}");
+        });
     sun_pos
 }
 
@@ -302,10 +304,15 @@ fn tier3_srp_trajectory_sim3_orbit() {
 
     // Load ephemeris (required — de421.bsp is committed to the repo).
     let bsp_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data/de421.bsp");
-    let ephemeris = Ephemeris::from_bsp(&bsp_path).expect(
-        "de421.bsp required for SRP trajectory test. \
-         File should be at test_data/de421.bsp",
-    );
+    let ephemeris = Ephemeris::from_bsp(&bsp_path).unwrap_or_else(|err| {
+        panic!(
+            "de421.bsp required for SRP trajectory test.\n\
+             Attempted to load from: {}\n\
+             Ephemeris load error: {}",
+            bsp_path.display(),
+            err
+        )
+    });
 
     // Initialize from first JEOD data point
     let mut state = TranslationalState {
