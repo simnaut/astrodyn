@@ -10,6 +10,7 @@ pub const INERTIA_CONSISTENCY_TOL: f64 = 1e-6;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MassProperties {
     pub mass: f64,              // kg
+    pub inverse_mass: f64,      // 1/kg, precomputed (matches JEOD MassPointState.inverse_mass)
     pub inertia: DMat3,         // kg*m^2, in body frame
     pub inverse_inertia: DMat3, // precomputed I^-1
     pub position: DVec3,  // m, in structural frame
@@ -29,6 +30,7 @@ impl MassProperties {
         assert!(mass > 0.0, "mass must be positive, got {mass}");
         Self {
             mass,
+            inverse_mass: 1.0 / mass,
             inertia: DMat3::IDENTITY * mass,
             inverse_inertia: DMat3::IDENTITY / mass,
             position: DVec3::ZERO,
@@ -54,6 +56,7 @@ impl MassProperties {
         let inverse_inertia = inertia.inverse();
         Self {
             mass,
+            inverse_mass: 1.0 / mass,
             inertia,
             inverse_inertia,
             position,
@@ -91,6 +94,7 @@ mod tests {
     fn point_mass_inertia() {
         let mp = MassProperties::new(10.0);
         assert_eq!(mp.mass, 10.0);
+        assert_eq!(mp.inverse_mass, 0.1);
         assert_eq!(mp.inertia, DMat3::IDENTITY * 10.0);
         assert_eq!(mp.inverse_inertia, DMat3::IDENTITY / 10.0);
         assert_eq!(mp.position, DVec3::ZERO);

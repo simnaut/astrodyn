@@ -4,9 +4,8 @@ use jeod_dynamics::{ForceContributions, SixDofState};
 
 use crate::components::{
     AerodynamicForceC, DynamicsConfigC, FrameDerivativesC, GravityAccelerationC,
-    GravityControlsC, GravitySourceC, GravityTorqueC, MassPropertiesC,
-    PlanetFixedRotationC, RadiationForceC, RotationalStateC, StructuralTransformC,
-    TotalForceC, TranslationalStateC,
+    GravityTorqueC, MassPropertiesC, RadiationForceC, RotationalStateC,
+    StructuralTransformC, TotalForceC, TranslationalStateC,
 };
 
 /// Collects non-gravity forces and all torques into `TotalForceC`.
@@ -95,7 +94,7 @@ pub fn force_collection_system(
             if let (Some(rot), Some(m)) = (rot_state, mass) {
                 **derivs = jeod_dynamics::compute_frame_derivatives(
                     &collected,
-                    m.mass,
+                    m.inverse_mass,
                     grav_accel,
                     &m.inertia,
                     &m.inverse_inertia,
@@ -109,7 +108,7 @@ pub fn force_collection_system(
                 if let Some(m) = mass {
                     **derivs = jeod_dynamics::compute_translational_derivatives(
                         collected.force,
-                        m.mass,
+                        m.inverse_mass,
                         grav_accel,
                     );
                 } else {
@@ -121,15 +120,15 @@ pub fn force_collection_system(
     }
 }
 
-/// Advances translational (and optionally rotational) state via RK4 integration
-/// with gravity re-evaluation at each stage.
+/// Advances translational (and optionally rotational) state via RK4 integration.
 ///
-/// Gravity is recomputed at each of the four RK4 intermediate positions for
-/// 4th-order accuracy. Non-gravity accelerations from `TotalForceC` (aero, SRP)
-/// are held constant over the timestep and added to the per-stage gravity.
+/// Matching JEOD's `DynamicsIntegrationGroup`: gravity is computed once per
+/// step by `gravity_computation_system` (in `JeodSet::Environment`) and held
+/// constant across all RK4 stages. Non-gravity accelerations from
+/// `TotalForceC` (aero, SRP) are similarly constant over the timestep.
 ///
-/// Torques from `TotalForceC` (gravity gradient, aero torque) are similarly
-/// held constant and passed to the 6-DOF integrator.
+/// Torques from `TotalForceC` (gravity gradient, aero torque) are held
+/// constant and passed to the 6-DOF integrator.
 #[allow(clippy::type_complexity)]
 pub fn integration_system(
     mut bodies: Query<(
@@ -138,10 +137,9 @@ pub fn integration_system(
         &mut TranslationalStateC,
         Option<&mut RotationalStateC>,
         Option<&MassPropertiesC>,
-        &GravityControlsC,
+        &GravityAccelerationC,
         &TotalForceC,
     )>,
-    sources: Query<(&GravitySourceC, Option<&PlanetFixedRotationC>)>,
     time: Res<Time<Fixed>>,
 ) {
     let dt = time.delta_secs_f64();
@@ -149,7 +147,7 @@ pub fn integration_system(
         return;
     }
 
-    for (entity, config, mut state, mut rot_state, mass, controls, total_force) in &mut bodies {
+    for (entity, config, mut state, mut rot_state, mass, grav, total_force) in &mut bodies {
         // JEOD_INV: DB.07 — translational_dynamics gates integration (collection is unconditional; see force_collection_system)
         if !config.translational_dynamics {
             continue;
@@ -157,12 +155,12 @@ pub fn integration_system(
 
         // Non-gravity translational acceleration (constant over one RK4 step).
         // TotalForceC.force holds only non-gravity forces (aero + SRP), already
-        // in inertial frame. Delegate F=ma to jeod_dynamics (DB.18, MA.02).
+        // in inertial frame. Delegate F=ma to jeod_dynamics (DB.18).
         let non_grav_accel = if total_force.force == DVec3::ZERO {
             DVec3::ZERO
         } else if let Some(m) = mass {
             // JEOD_INV: MA.01 — MassBody always present on DynBody (partial: only checked when force != 0)
-            jeod_dynamics::compute_translational_acceleration(total_force.force, m.mass)
+            jeod_dynamics::compute_translational_acceleration(total_force.force, m.inverse_mass)
         } else {
             panic!(
                 "Entity {entity:?}: non-zero TotalForceC ({:?}) but no MassPropertiesC. \
@@ -172,37 +170,10 @@ pub fn integration_system(
             );
         };
 
-        // Closure: compute gravitational acceleration at a given position.
-        let compute_grav_accel = |position: DVec3| -> DVec3 {
-            let mut accel = DVec3::ZERO;
-            for ctrl in &controls.0.controls {
-                // JEOD_INV: DM.08 — gravitation requires gravity source (source existence checked; "initialized" gate not enforced)
-                // JEOD_INV: GV.12 — gravity source must exist for control (runtime panic)
-                let Ok((source, rot)) = sources.get(ctrl.source_name) else {
-                    panic!(
-                        "Entity {entity:?}: GravityControl references entity {:?} which has no \
-                         GravitySourceC. In JEOD, gravity source resolution is fatal. \
-                         Ensure the source entity exists and has GravitySourceC before \
-                         the first FixedUpdate tick.",
-                        ctrl.source_name
-                    );
-                };
-
-                // Pre-check: provide entity context before delegating to evaluate()
-                // (GV.13, GV.17 enforced inside evaluate())
-                if ctrl.is_nonspherical() && rot.is_none() {
-                    panic!(
-                        "Entity {entity:?}: non-spherical GravityControl references source {:?} \
-                         which is missing PlanetFixedRotationC",
-                        ctrl.source_name
-                    );
-                }
-                // Use accel-only path: RK4 inner loop only needs grav_accel,
-                // not the gradient tensor or potential.
-                accel += ctrl.evaluate_accel_only(&source.0, position, rot.map(|r| &r.0)).grav_accel;
-            }
-            accel
-        };
+        // Gravitational acceleration: pre-computed by gravity_computation_system,
+        // held constant across all RK4 stages (matching JEOD DynamicsIntegrationGroup).
+        let grav_accel = grav.grav_accel;
+        let total_accel = grav_accel + non_grav_accel;
 
         // JEOD_INV: DB.08 — rotational_dynamics gates integration (collection is unconditional; see force_collection_system)
         // 6-DOF path: rotational dynamics enabled AND entity has components
@@ -218,7 +189,7 @@ pub fn integration_system(
 
                 let new_state = jeod_dynamics::rk4_sixdof_step(
                     &six_state,
-                    |s| compute_grav_accel(s.trans.position) + non_grav_accel,
+                    |_s| total_accel,
                     |_s| constant_torque,
                     &mass_props.0,
                     dt,
@@ -240,7 +211,7 @@ pub fn integration_system(
         // 3-DOF path: translational only
         let new_state = jeod_dynamics::rk4_translational_step(
             &state.0,
-            |s| compute_grav_accel(s.position) + non_grav_accel,
+            |_s| total_accel,
             dt,
         );
         state.0 = new_state;

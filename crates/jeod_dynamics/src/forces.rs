@@ -82,10 +82,9 @@ impl DynamicsConfig {
     }
 }
 
-// JEOD_INV: DB.18 — F=ma (JEOD precomputes inverse_mass; we divide by mass at runtime)
-pub fn compute_translational_acceleration(force: DVec3, mass: f64) -> DVec3 {
-    assert!(mass > 0.0, "mass must be positive for F=ma, got {}", mass);
-    force / mass
+// JEOD_INV: DB.18 — F=ma via precomputed inverse_mass (matches JEOD MassPointState.inverse_mass)
+pub fn compute_translational_acceleration(force: DVec3, inverse_mass: f64) -> DVec3 {
+    force * inverse_mass
 }
 
 /// Compute the inertial-to-structural rotation matrix from component transforms.
@@ -174,18 +173,18 @@ pub fn collect_forces(
 ///
 /// # Arguments
 /// - `non_grav_force`: accumulated non-gravity force in inertial frame (N)
-/// - `mass`: vehicle mass in kg (must be > 0 when force is non-zero)
+/// - `inverse_mass`: precomputed 1/mass (1/kg)
 /// - `grav_accel`: gravitational acceleration in m/s^2 (inertial frame)
 // JEOD_INV: FD.01 — trans_accel = non_grav_accel + grav_accel
 pub fn compute_translational_derivatives(
     non_grav_force: DVec3,
-    mass: f64,
+    inverse_mass: f64,
     grav_accel: DVec3,
 ) -> FrameDerivatives {
     let non_grav_accel = if non_grav_force == DVec3::ZERO {
         DVec3::ZERO
     } else {
-        compute_translational_acceleration(non_grav_force, mass)
+        compute_translational_acceleration(non_grav_force, inverse_mass)
     };
     FrameDerivatives {
         trans_accel: non_grav_accel + grav_accel,
@@ -204,7 +203,7 @@ pub fn compute_translational_derivatives(
 ///
 /// # Arguments
 /// - `total_force`: accumulated non-gravity force (inertial) and torque (body)
-/// - `mass`: vehicle mass in kg (must be > 0 when force is non-zero)
+/// - `inverse_mass`: precomputed 1/mass (1/kg, from MassProperties)
 /// - `grav_accel`: gravitational acceleration in m/s^2 (inertial frame)
 /// - `inertia`: inertia tensor in body frame (kg*m^2)
 /// - `inverse_inertia`: precomputed inverse of inertia tensor
@@ -213,18 +212,17 @@ pub fn compute_translational_derivatives(
 // JEOD_INV: FD.02 — rot_accel = I^-1 * (tau - omega x I*omega)
 pub fn compute_frame_derivatives(
     total_force: &TotalForce,
-    mass: f64,
+    inverse_mass: f64,
     grav_accel: DVec3,
     inertia: &DMat3,
     inverse_inertia: &DMat3,
     ang_vel_body: DVec3,
 ) -> FrameDerivatives {
-    // JEOD_INV: DB.18 — F=ma (JEOD precomputes inverse_mass; we divide by mass at runtime)
+    // JEOD_INV: DB.18 — F=ma via precomputed inverse_mass (matches JEOD Vector3::scale with inverse_mass)
     let non_grav_accel = if total_force.force == DVec3::ZERO {
         DVec3::ZERO
     } else {
-        assert!(mass > 0.0, "mass must be positive for F=ma, got {mass}");
-        total_force.force / mass
+        total_force.force * inverse_mass
     };
 
     FrameDerivatives {
@@ -275,9 +273,9 @@ mod tests {
     #[test]
     fn translational_acceleration_basic() {
         let force = DVec3::new(10.0, 20.0, 30.0);
-        let mass = 5.0;
-        let accel = compute_translational_acceleration(force, mass);
-        assert_eq!(accel, DVec3::new(2.0, 4.0, 6.0));
+        let inverse_mass = 1.0 / 5.0;
+        let accel = compute_translational_acceleration(force, inverse_mass);
+        assert!((accel - DVec3::new(2.0, 4.0, 6.0)).length() < 1e-15);
     }
 
     #[test]
@@ -370,7 +368,7 @@ mod tests {
         let inv_inertia = DMat3::from_diagonal(DVec3::new(0.1, 0.05, 1.0 / 30.0));
 
         let fd = compute_frame_derivatives(
-            &total_force, 100.0, grav, &inertia, &inv_inertia, DVec3::ZERO,
+            &total_force, 1.0 / 100.0, grav, &inertia, &inv_inertia, DVec3::ZERO,
         );
         assert_eq!(fd.trans_accel, grav);
         assert!(fd.rot_accel.length() < 1e-20);
@@ -387,22 +385,9 @@ mod tests {
         let inv_inertia = DMat3::from_diagonal(DVec3::splat(0.1));
 
         let fd = compute_frame_derivatives(
-            &total_force, 50.0, grav, &inertia, &inv_inertia, DVec3::ZERO,
+            &total_force, 1.0 / 50.0, grav, &inertia, &inv_inertia, DVec3::ZERO,
         );
-        // non_grav_accel = 100/50 = 2.0 in x
+        // non_grav_accel = 100 * (1/50) = 2.0 in x
         assert!((fd.trans_accel - DVec3::new(2.0, 0.0, -9.81)).length() < 1e-12);
-    }
-
-    #[test]
-    #[should_panic(expected = "mass must be positive")]
-    fn frame_derivatives_zero_mass_with_force_panics() {
-        let total_force = TotalForce {
-            force: DVec3::X,
-            torque: DVec3::ZERO,
-        };
-        let inertia = DMat3::from_diagonal(DVec3::splat(1.0));
-        compute_frame_derivatives(
-            &total_force, 0.0, DVec3::ZERO, &inertia, &inertia, DVec3::ZERO,
-        );
     }
 }

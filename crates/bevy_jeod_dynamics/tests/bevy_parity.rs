@@ -132,6 +132,9 @@ fn run_bevy_steps(app: &mut App, vehicle: Entity) -> SixDofState {
 
 /// Run 100 integration steps using the pure rk4_sixdof_step function with
 /// identical gravity computation, returning the final state.
+///
+/// Matching JEOD (and integration_system): gravity is computed once per step
+/// at the current position and held constant across all RK4 stages.
 fn run_pure_steps() -> SixDofState {
     let mp = mass_props();
     let mu = MU_EARTH;
@@ -142,16 +145,14 @@ fn run_pure_steps() -> SixDofState {
     };
 
     for _ in 0..NUM_STEPS {
+        // Compute gravity once at the start of the step (matching JEOD).
+        let pos = state.trans.position;
+        let r = pos.length();
+        let grav_accel = -mu / (r * r * r) * pos;
+
         state = jeod_dynamics::rk4_sixdof_step(
             &state,
-            |s| {
-                // Replicate exactly what integration_system computes:
-                // jeod_gravity::gravitation with PointMass, DMat3::IDENTITY,
-                // None degree/order, perturbing_only=false.
-                // This reduces to: -mu/r^3 * r
-                let r = s.trans.position.length();
-                -mu / (r * r * r) * s.trans.position
-            },
+            |_s| grav_accel, // constant across RK4 stages
             |_| DVec3::ZERO, // No external torque
             &mp,
             DT,
