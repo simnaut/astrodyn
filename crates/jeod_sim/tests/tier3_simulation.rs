@@ -350,8 +350,10 @@ fn tier3_simulation_run2_6dof() {
 
 /// Epoch for SIM_dyncomp: midnight 2007-11-20 UTC.
 /// MJD = 54424.0, TJT = MJD - 40000 = 14424.0.
-/// TAI-UTC = 33s at this date, so TAI TJT = 14424.0 + 33/86400.
-const EPOCH_TAI_TJT: f64 = 14424.0 + 33.0 / 86400.0;
+/// From JEOD time.py: TAI-UTC = 32s override, tai_to_ut1 = -32.469s.
+const DRAG_EPOCH_UTC_TJT: f64 = 14424.0;
+const DRAG_TAI_UTC_S: f64 = 32.0;
+const DRAG_TAI_TO_UT1_S: f64 = -32.469;
 
 /// Earth rotation rate (JEOD RNPJ2000 default).
 const OMEGA_EARTH: f64 = 7.292_115_146_706_388e-5;
@@ -389,32 +391,36 @@ fn tier3_simulation_run6b_drag() {
         area: 1.0,
     };
 
-    // Initialize Simulation at the SIM_dyncomp epoch
-    let time = SimulationTime::new(
-        EPOCH_TAI_TJT,
+    // Initialize Simulation at the SIM_dyncomp epoch with correct time offsets.
+    let epoch_tai_tjt = DRAG_EPOCH_UTC_TJT + DRAG_TAI_UTC_S / 86400.0;
+    let mut time = SimulationTime::new(
+        epoch_tai_tjt,
         jeod_time::leap_second::default_leap_second_table(),
     );
+    time.set_ut1_tai_offset(DRAG_TAI_TO_UT1_S);
+
     let mut sim = Simulation::new(time, DT);
 
+    // Earth source with planet-fixed rotation — the Simulation's ephemeris stage
+    // updates it each step via RNP, so the atmosphere system sees correct geodetic
+    // coordinates. Without this, MET density is evaluated at wrong lat/lon.
     let earth = sim.add_source(GravitySourceEntry {
         source: GravitySource {
             mu: MU_EARTH,
             model: GravityModel::PointMass,
         },
         position: DVec3::ZERO,
-        t_inertial_pfix: None, // no SH gravity, but atmosphere needs planet-fixed
+        t_inertial_pfix: Some(DMat3::IDENTITY), // triggers ephemeris update each step
     });
 
-    // Configure atmosphere
+    // Configure atmosphere with planet rotation lookup
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Met(met_model),
         r_eq: 6_378_137.0,
         r_pol: 6_356_752.314_245,
         planet_omega: OMEGA_EARTH,
     });
-    // No planet rotation entity for atmosphere (geodetic conversion uses identity).
-    // The MET model's seasonal variation depends on TJT, not on precise geodetic
-    // longitude, so the identity approximation is adequate for LEO.
+    sim.atmosphere_planet_source = Some(earth);
 
     sim.add_body(SimBody {
         trans: TranslationalState {
@@ -484,17 +490,14 @@ fn tier3_simulation_run6b_drag() {
     println!("  Max velocity error:  {:.6} m/s", max_vel_error);
     println!("  Max quaternion error: {:.2e} rad", max_quat_error);
 
-    // Wider tolerance than the manual tier3_drag_trajectory test (~1.6 m) because
-    // the Simulation has no planet-fixed rotation entity, so the MET atmosphere
-    // sees approximate geodetic coordinates (identity instead of GMST rotation).
-    // When a PlanetFixedRotation source is configured, this should tighten to <2 m.
+    // Tolerances match existing tier3_drag_trajectory test
     assert!(
-        max_pos_error < 1500.0,
-        "Position error {max_pos_error:.2} m exceeds 1500 m"
+        max_pos_error < 2.0,
+        "Position error {max_pos_error:.2} m exceeds 2.0 m"
     );
     assert!(
-        max_vel_error < 2.0,
-        "Velocity error {max_vel_error:.6} m/s exceeds 2.0 m/s"
+        max_vel_error < 0.005,
+        "Velocity error {max_vel_error:.6} m/s exceeds 0.005 m/s"
     );
     assert!(
         max_quat_error < 0.01,
