@@ -74,7 +74,8 @@ pub fn validate_jeod_invariants(
         }
 
         // ── Invariant H: three_dof consistency ──
-        // Delegates to DynamicsConfig::validate() in jeod_dynamics (DB.05, DB.06)
+        // ECS-context equivalent of DynamicsConfig::validate() in jeod_dynamics (DB.05, DB.06),
+        // preserving entity-specific panic context.
         if config.three_dof && config.rotational_dynamics {
             panic!(
                 "Entity {entity:?}: DynamicsConfig has three_dof=true AND \
