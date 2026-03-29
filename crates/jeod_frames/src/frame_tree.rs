@@ -139,8 +139,7 @@ impl FrameTree {
             if ancestors_a.contains(&current) {
                 return current;
             }
-            current = self.parent[current]
-                .expect("frames do not share a common ancestor");
+            current = self.parent[current].expect("frames do not share a common ancestor");
         }
     }
 
@@ -254,7 +253,10 @@ mod tests {
         let root = tree.add_root("root".into(), RefFrameKind::Inertial);
 
         assert!(tree.parent(root).is_none(), "root should have no parent");
-        assert!(tree.children(root).is_empty(), "root should have no children");
+        assert!(
+            tree.children(root).is_empty(),
+            "root should have no children"
+        );
 
         let node = tree.get(root);
         assert_eq!(node.name, "root");
@@ -367,7 +369,11 @@ mod tests {
             rel.trans.velocity
         );
         assert!(
-            approx_eq_mat3(&rel.rot.t_parent_this, &child_state.rot.t_parent_this, 1e-10),
+            approx_eq_mat3(
+                &rel.rot.t_parent_this,
+                &child_state.rot.t_parent_this,
+                1e-10
+            ),
             "parent->child T"
         );
         assert!(

@@ -13,7 +13,7 @@ use std::path::Path;
 /// WGS84 equatorial radius (m).
 const EARTH_R_EQ: f64 = 6_378_137.0;
 /// WGS84 polar radius (m).
-const EARTH_R_POL: f64 = 6_356_752.3142;
+const EARTH_R_POL: f64 = 6_356_752.314_2;
 
 /// Parsed record from the SIM_NED CSV.
 #[derive(Debug)]
@@ -41,12 +41,8 @@ struct NedRecord {
 }
 
 fn load_ned_csv(path: &Path) -> Vec<NedRecord> {
-    let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
-        panic!(
-            "Failed to read SIM_NED CSV from {}: {e}",
-            path.display()
-        )
-    });
+    let content = std::fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("Failed to read SIM_NED CSV from {}: {e}", path.display()));
 
     let mut records = Vec::new();
     for (i, line) in content.lines().enumerate() {
@@ -95,8 +91,8 @@ fn load_ned_csv(path: &Path) -> Vec<NedRecord> {
 
 #[test]
 fn tier3_geodetic_vs_jeod_sim_ned() {
-    let csv_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../test_data/ned_ell_inc_ned.csv");
+    let csv_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data/ned_ell_inc_ned.csv");
 
     assert!(
         csv_path.exists(),
@@ -140,19 +136,25 @@ fn tier3_geodetic_vs_jeod_sim_ned() {
             alt_err < 1e-4,
             "t={:.1}s: altitude error {alt_err:.6e} m exceeds 1e-4 m \
              (ours={:.6}, JEOD={:.6})",
-            rec.time, geo.altitude, rec.ellip_altitude
+            rec.time,
+            geo.altitude,
+            rec.ellip_altitude
         );
         assert!(
             lat_err < 1e-10,
             "t={:.1}s: latitude error {lat_err:.6e} rad exceeds 1e-10 rad \
              (ours={:.15e}, JEOD={:.15e})",
-            rec.time, geo.latitude, rec.ellip_latitude
+            rec.time,
+            geo.latitude,
+            rec.ellip_latitude
         );
         assert!(
             lon_err < 1e-10,
             "t={:.1}s: longitude error {lon_err:.6e} rad exceeds 1e-10 rad \
              (ours={:.15e}, JEOD={:.15e})",
-            rec.time, geo.longitude, rec.ellip_longitude
+            rec.time,
+            geo.longitude,
+            rec.ellip_longitude
         );
 
         // Log every 10th record

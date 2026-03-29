@@ -72,18 +72,90 @@ struct EulerInfo {
 /// Table from `euler_angles.cc:96-110`, indexed by `EulerSequence as usize`.
 static EULER_INFO: [EulerInfo; 12] = [
     //  seq       indices      alt_x alt_z  even   aero
-    EulerInfo { indices: [0, 1, 2], alternate_x: 0, alternate_z: 2, is_even_permutation: true,  is_aerodynamics_sequence: true  }, // XYZ
-    EulerInfo { indices: [0, 2, 1], alternate_x: 0, alternate_z: 1, is_even_permutation: false, is_aerodynamics_sequence: true  }, // XZY
-    EulerInfo { indices: [1, 2, 0], alternate_x: 1, alternate_z: 0, is_even_permutation: true,  is_aerodynamics_sequence: true  }, // YZX
-    EulerInfo { indices: [1, 0, 2], alternate_x: 1, alternate_z: 2, is_even_permutation: false, is_aerodynamics_sequence: true  }, // YXZ
-    EulerInfo { indices: [2, 0, 1], alternate_x: 2, alternate_z: 1, is_even_permutation: true,  is_aerodynamics_sequence: true  }, // ZXY
-    EulerInfo { indices: [2, 1, 0], alternate_x: 2, alternate_z: 0, is_even_permutation: false, is_aerodynamics_sequence: true  }, // ZYX
-    EulerInfo { indices: [0, 1, 0], alternate_x: 2, alternate_z: 2, is_even_permutation: true,  is_aerodynamics_sequence: false }, // XYX
-    EulerInfo { indices: [0, 2, 0], alternate_x: 1, alternate_z: 1, is_even_permutation: false, is_aerodynamics_sequence: false }, // XZX
-    EulerInfo { indices: [1, 2, 1], alternate_x: 0, alternate_z: 0, is_even_permutation: true,  is_aerodynamics_sequence: false }, // YZY
-    EulerInfo { indices: [1, 0, 1], alternate_x: 2, alternate_z: 2, is_even_permutation: false, is_aerodynamics_sequence: false }, // YXY
-    EulerInfo { indices: [2, 0, 2], alternate_x: 1, alternate_z: 1, is_even_permutation: true,  is_aerodynamics_sequence: false }, // ZXZ
-    EulerInfo { indices: [2, 1, 2], alternate_x: 0, alternate_z: 0, is_even_permutation: false, is_aerodynamics_sequence: false }, // ZYZ
+    EulerInfo {
+        indices: [0, 1, 2],
+        alternate_x: 0,
+        alternate_z: 2,
+        is_even_permutation: true,
+        is_aerodynamics_sequence: true,
+    }, // XYZ
+    EulerInfo {
+        indices: [0, 2, 1],
+        alternate_x: 0,
+        alternate_z: 1,
+        is_even_permutation: false,
+        is_aerodynamics_sequence: true,
+    }, // XZY
+    EulerInfo {
+        indices: [1, 2, 0],
+        alternate_x: 1,
+        alternate_z: 0,
+        is_even_permutation: true,
+        is_aerodynamics_sequence: true,
+    }, // YZX
+    EulerInfo {
+        indices: [1, 0, 2],
+        alternate_x: 1,
+        alternate_z: 2,
+        is_even_permutation: false,
+        is_aerodynamics_sequence: true,
+    }, // YXZ
+    EulerInfo {
+        indices: [2, 0, 1],
+        alternate_x: 2,
+        alternate_z: 1,
+        is_even_permutation: true,
+        is_aerodynamics_sequence: true,
+    }, // ZXY
+    EulerInfo {
+        indices: [2, 1, 0],
+        alternate_x: 2,
+        alternate_z: 0,
+        is_even_permutation: false,
+        is_aerodynamics_sequence: true,
+    }, // ZYX
+    EulerInfo {
+        indices: [0, 1, 0],
+        alternate_x: 2,
+        alternate_z: 2,
+        is_even_permutation: true,
+        is_aerodynamics_sequence: false,
+    }, // XYX
+    EulerInfo {
+        indices: [0, 2, 0],
+        alternate_x: 1,
+        alternate_z: 1,
+        is_even_permutation: false,
+        is_aerodynamics_sequence: false,
+    }, // XZX
+    EulerInfo {
+        indices: [1, 2, 1],
+        alternate_x: 0,
+        alternate_z: 0,
+        is_even_permutation: true,
+        is_aerodynamics_sequence: false,
+    }, // YZY
+    EulerInfo {
+        indices: [1, 0, 1],
+        alternate_x: 2,
+        alternate_z: 2,
+        is_even_permutation: false,
+        is_aerodynamics_sequence: false,
+    }, // YXY
+    EulerInfo {
+        indices: [2, 0, 2],
+        alternate_x: 1,
+        alternate_z: 1,
+        is_even_permutation: true,
+        is_aerodynamics_sequence: false,
+    }, // ZXZ
+    EulerInfo {
+        indices: [2, 1, 2],
+        alternate_x: 0,
+        alternate_z: 0,
+        is_even_permutation: false,
+        is_aerodynamics_sequence: false,
+    }, // ZYZ
 ];
 
 /// Threshold for gimbal lock detection.
@@ -110,10 +182,7 @@ fn t(trans: &DMat3, row: usize, col: usize) -> f64 {
 /// Port of `euler_angles.cc:121-153`.
 /// Constructs three simple quaternions (one per rotation axis) and multiplies
 /// in reverse order: `result = q[2] * q[1] * q[0]`, then normalizes.
-pub fn compute_quaternion_from_euler_angles(
-    angles: [f64; 3],
-    sequence: EulerSequence,
-) -> JeodQuat {
+pub fn compute_quaternion_from_euler_angles(angles: [f64; 3], sequence: EulerSequence) -> JeodQuat {
     let info = &EULER_INFO[sequence as usize];
     let axes = &info.indices;
 
@@ -144,10 +213,7 @@ pub fn compute_quaternion_from_euler_angles(
 /// Port of `euler_angles.cc:164-218`.
 /// Constructs three elementary rotation matrices and multiplies in reverse
 /// order: `result = m[2] * m[1] * m[0]`.
-pub fn compute_matrix_from_euler_angles(
-    angles: [f64; 3],
-    sequence: EulerSequence,
-) -> DMat3 {
+pub fn compute_matrix_from_euler_angles(angles: [f64; 3], sequence: EulerSequence) -> DMat3 {
     let info = &EULER_INFO[sequence as usize];
     let axes = &info.indices;
 
@@ -208,10 +274,7 @@ pub fn compute_matrix_from_euler_angles(
 ///
 /// Port of `euler_angles.cc:297-464`.
 /// Returns `[phi, theta, psi]` in radians.
-pub fn compute_euler_angles_from_matrix(
-    trans: &DMat3,
-    sequence: EulerSequence,
-) -> [f64; 3] {
+pub fn compute_euler_angles_from_matrix(trans: &DMat3, sequence: EulerSequence) -> [f64; 3] {
     let info = &EULER_INFO[sequence as usize];
 
     // Extract theta_val: trans[info.indices[2]][info.indices[0]]
@@ -497,8 +560,8 @@ mod tests {
             [0.1, 0.2, 0.3],
             [-0.5, 0.8, -1.2],
             [1.0, -0.3, 2.5],
-            [0.01, 0.01, 0.01],   // small angles
-            [2.0, -1.0, 3.0],     // large angles
+            [0.01, 0.01, 0.01], // small angles
+            [2.0, -1.0, 3.0],   // large angles
         ];
 
         for &seq in &ALL_SEQUENCES {

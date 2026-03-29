@@ -104,7 +104,8 @@ pub fn compute_srp_force(
 
     // Solar flux at the vehicle (W/m²)
     // JEOD radiation_source.cc line 103: flux_mag = luminosity / (d² * 4π)
-    let flux_mag = SOLAR_LUMINOSITY / (4.0 * std::f64::consts::PI * d_source_to_cg * d_source_to_cg);
+    let flux_mag =
+        SOLAR_LUMINOSITY / (4.0 * std::f64::consts::PI * d_source_to_cg * d_source_to_cg);
 
     // Force magnitude: |F| = (flux / c) * cx_area * rad_coeff, directed from Sun to vehicle (r̂)
     let force_magnitude = flux_mag * config.cx_area * config.rad_coeff / SPEED_OF_LIGHT;
@@ -204,13 +205,11 @@ pub fn compute_flat_plate_srp(
 
         // Diffuse reflection: (flux_hat - 2/3 * normal) * diffuse * ref_flux
         // JEOD lines 117-121
-        let f_diffuse = (flux_struct_hat - TWO_THIRDS * plate.normal)
-            * (params.diffuse * ref_flux);
+        let f_diffuse = (flux_struct_hat - TWO_THIRDS * plate.normal) * (params.diffuse * ref_flux);
 
         // Specular reflection: normal * 2 * (diffuse - 1) * ref_flux * sin_theta
         // JEOD lines 124-128. (diffuse - 1) < 0, so force is opposite to normal.
-        let f_specular = plate.normal
-            * (2.0 * (params.diffuse - 1.0) * ref_flux * sin_theta);
+        let f_specular = plate.normal * (2.0 * (params.diffuse - 1.0) * ref_flux * sin_theta);
 
         let plate_force = f_absorption + f_diffuse + f_specular;
 
@@ -317,10 +316,9 @@ pub fn compute_flat_plate_srp_thermal(
             let f_absorption = flux_struct_hat * (areaxflux * (1.0 - params.albedo));
 
             let ref_flux = areaxflux * params.albedo;
-            let f_diffuse = (flux_struct_hat - TWO_THIRDS * plate.normal)
-                * (params.diffuse * ref_flux);
-            let f_specular = plate.normal
-                * (2.0 * (params.diffuse - 1.0) * ref_flux * sin_theta);
+            let f_diffuse =
+                (flux_struct_hat - TWO_THIRDS * plate.normal) * (params.diffuse * ref_flux);
+            let f_specular = plate.normal * (2.0 * (params.diffuse - 1.0) * ref_flux * sin_theta);
 
             plate_force = f_absorption + f_diffuse + f_specular;
         }
@@ -396,7 +394,10 @@ mod tests {
     /// Force direction is anti-Sun (pushes away from Sun).
     #[test]
     fn force_direction_anti_sun() {
-        let config = SrpConfig { cx_area: 10.0, rad_coeff: 1.5 };
+        let config = SrpConfig {
+            cx_area: 10.0,
+            rad_coeff: 1.5,
+        };
         let sun = DVec3::new(1.496e11, 0.0, 0.0); // Sun at +X
         let vehicle = DVec3::ZERO; // Vehicle at origin
 
@@ -418,7 +419,10 @@ mod tests {
     fn force_magnitude_at_1au() {
         let area = 100.0; // m²
         let cr = 1.0; // perfect absorber
-        let config = SrpConfig { cx_area: area, rad_coeff: cr };
+        let config = SrpConfig {
+            cx_area: area,
+            rad_coeff: cr,
+        };
 
         let au = 1.496e11;
         let sun = DVec3::ZERO;
@@ -440,7 +444,10 @@ mod tests {
     /// Full shadow → zero force.
     #[test]
     fn full_shadow_zero_force() {
-        let config = SrpConfig { cx_area: 10.0, rad_coeff: 1.5 };
+        let config = SrpConfig {
+            cx_area: 10.0,
+            rad_coeff: 1.5,
+        };
         let result = compute_srp_force(
             &config,
             DVec3::new(1.496e11, 0.0, 0.0),
@@ -453,7 +460,10 @@ mod tests {
     /// Partial shadow scales force linearly.
     #[test]
     fn partial_shadow_scales_linearly() {
-        let config = SrpConfig { cx_area: 10.0, rad_coeff: 1.5 };
+        let config = SrpConfig {
+            cx_area: 10.0,
+            rad_coeff: 1.5,
+        };
         let sun = DVec3::new(1.496e11, 0.0, 0.0);
         let vehicle = DVec3::ZERO;
 
@@ -474,12 +484,22 @@ mod tests {
         let vehicle = DVec3::ZERO;
 
         let absorber = compute_srp_force(
-            &SrpConfig { cx_area: 10.0, rad_coeff: 1.0 },
-            sun, vehicle, 1.0,
+            &SrpConfig {
+                cx_area: 10.0,
+                rad_coeff: 1.0,
+            },
+            sun,
+            vehicle,
+            1.0,
         );
         let reflector = compute_srp_force(
-            &SrpConfig { cx_area: 10.0, rad_coeff: 2.0 },
-            sun, vehicle, 1.0,
+            &SrpConfig {
+                cx_area: 10.0,
+                rad_coeff: 2.0,
+            },
+            sun,
+            vehicle,
+            1.0,
         );
 
         let ratio = reflector.force.length() / absorber.force.length();
@@ -492,13 +512,11 @@ mod tests {
     /// Torque is zero for spherical model.
     #[test]
     fn spherical_model_zero_torque() {
-        let config = SrpConfig { cx_area: 10.0, rad_coeff: 1.5 };
-        let result = compute_srp_force(
-            &config,
-            DVec3::new(1.496e11, 0.0, 0.0),
-            DVec3::ZERO,
-            1.0,
-        );
+        let config = SrpConfig {
+            cx_area: 10.0,
+            rad_coeff: 1.5,
+        };
+        let result = compute_srp_force(&config, DVec3::new(1.496e11, 0.0, 0.0), DVec3::ZERO, 1.0);
         assert_eq!(result.torque, DVec3::ZERO);
     }
 
@@ -512,14 +530,15 @@ mod tests {
             normal: DVec3::new(-1.0, 0.0, 0.0), // faces -X
             position: DVec3::ZERO,
         };
-        let params = FlatPlateParams { albedo: 0.0, diffuse: 0.0 }; // pure absorber
+        let params = FlatPlateParams {
+            albedo: 0.0,
+            diffuse: 0.0,
+        }; // pure absorber
         let flux_hat = DVec3::new(1.0, 0.0, 0.0); // flux from -X toward +X
         let flux_mag = 1000.0; // W/m²
 
-        let result = compute_flat_plate_srp(
-            &[(plate, params)],
-            flux_hat, flux_mag, DVec3::ZERO, 1.0,
-        );
+        let result =
+            compute_flat_plate_srp(&[(plate, params)], flux_hat, flux_mag, DVec3::ZERO, 1.0);
 
         // sin_theta = -(normal · flux_hat) = -(-1*1) = 1.0
         // cx_area = 10 * 1.0 = 10
@@ -543,15 +562,19 @@ mod tests {
             normal: DVec3::new(1.0, 0.0, 0.0), // faces +X (same as flux)
             position: DVec3::ZERO,
         };
-        let params = FlatPlateParams { albedo: 0.5, diffuse: 0.5 };
+        let params = FlatPlateParams {
+            albedo: 0.5,
+            diffuse: 0.5,
+        };
         let flux_hat = DVec3::new(1.0, 0.0, 0.0);
 
-        let result = compute_flat_plate_srp(
-            &[(plate, params)],
-            flux_hat, 1000.0, DVec3::ZERO, 1.0,
-        );
+        let result = compute_flat_plate_srp(&[(plate, params)], flux_hat, 1000.0, DVec3::ZERO, 1.0);
 
-        assert_eq!(result.force, DVec3::ZERO, "Back-facing plate should produce no force");
+        assert_eq!(
+            result.force,
+            DVec3::ZERO,
+            "Back-facing plate should produce no force"
+        );
     }
 
     /// Pure specular reflection: force is along plate normal (opposite to incoming).
@@ -563,14 +586,15 @@ mod tests {
             position: DVec3::ZERO,
         };
         // albedo=1, diffuse=0 → pure specular
-        let params = FlatPlateParams { albedo: 1.0, diffuse: 0.0 };
+        let params = FlatPlateParams {
+            albedo: 1.0,
+            diffuse: 0.0,
+        };
         let flux_hat = DVec3::new(1.0, 0.0, 0.0);
         let flux_mag = 1000.0;
 
-        let result = compute_flat_plate_srp(
-            &[(plate, params)],
-            flux_hat, flux_mag, DVec3::ZERO, 1.0,
-        );
+        let result =
+            compute_flat_plate_srp(&[(plate, params)], flux_hat, flux_mag, DVec3::ZERO, 1.0);
 
         // Absorption: 0 (albedo=1)
         // Diffuse: 0 (diffuse=0)
@@ -602,14 +626,14 @@ mod tests {
             normal: DVec3::new(-1.0, 0.0, 0.0),
             position: DVec3::new(0.0, 2.0, 0.0), // offset in +Y
         };
-        let params = FlatPlateParams { albedo: 0.0, diffuse: 0.0 };
+        let params = FlatPlateParams {
+            albedo: 0.0,
+            diffuse: 0.0,
+        };
         let flux_hat = DVec3::new(1.0, 0.0, 0.0);
         let cg = DVec3::ZERO;
 
-        let result = compute_flat_plate_srp(
-            &[(plate, params)],
-            flux_hat, 1000.0, cg, 1.0,
-        );
+        let result = compute_flat_plate_srp(&[(plate, params)], flux_hat, 1000.0, cg, 1.0);
 
         // Force is in +X, arm is [0,2,0]
         // Torque = [0,2,0] × [Fx,0,0] = [0,0,-2*Fx]
@@ -626,15 +650,14 @@ mod tests {
             normal: DVec3::new(-1.0, 0.0, 0.0),
             position: DVec3::ZERO,
         };
-        let params = FlatPlateParams { albedo: 0.5, diffuse: 0.5 };
+        let params = FlatPlateParams {
+            albedo: 0.5,
+            diffuse: 0.5,
+        };
         let flux_hat = DVec3::new(1.0, 0.0, 0.0);
 
-        let full = compute_flat_plate_srp(
-            &[(plate, params)], flux_hat, 1000.0, DVec3::ZERO, 1.0,
-        );
-        let half = compute_flat_plate_srp(
-            &[(plate, params)], flux_hat, 1000.0, DVec3::ZERO, 0.5,
-        );
+        let full = compute_flat_plate_srp(&[(plate, params)], flux_hat, 1000.0, DVec3::ZERO, 1.0);
+        let half = compute_flat_plate_srp(&[(plate, params)], flux_hat, 1000.0, DVec3::ZERO, 0.5);
 
         let ratio = half.force.length() / full.force.length();
         assert!(
@@ -653,7 +676,10 @@ mod tests {
             normal: DVec3::X,
             position: DVec3::ZERO,
         };
-        let params = FlatPlateParams { albedo: 0.5, diffuse: 0.5 };
+        let params = FlatPlateParams {
+            albedo: 0.5,
+            diffuse: 0.5,
+        };
         let thermal = FlatPlateThermal {
             emissivity: 0.5,
             heat_capacity_per_area: 50.0,
@@ -664,11 +690,16 @@ mod tests {
         let result = compute_flat_plate_srp_thermal(
             &[(plate, params, thermal)],
             &t_pow4,
-            DVec3::X, 0.0, // zero flux
-            DVec3::ZERO, 1.0,
+            DVec3::X,
+            0.0, // zero flux
+            DVec3::ZERO,
+            1.0,
         );
 
-        assert!(result.force.x < 0.0, "Emission should push in -normal direction");
+        assert!(
+            result.force.x < 0.0,
+            "Emission should push in -normal direction"
+        );
         assert!(result.force.y.abs() < 1e-30);
         assert!(result.force.z.abs() < 1e-30);
     }
@@ -681,7 +712,10 @@ mod tests {
             normal: DVec3::X,
             position: DVec3::ZERO,
         };
-        let params = FlatPlateParams { albedo: 0.5, diffuse: 0.5 };
+        let params = FlatPlateParams {
+            albedo: 0.5,
+            diffuse: 0.5,
+        };
         let thermal = FlatPlateThermal {
             emissivity: 0.5,
             heat_capacity_per_area: 50.0,
@@ -691,8 +725,10 @@ mod tests {
         let result = compute_flat_plate_srp_thermal(
             &[(plate, params, thermal)],
             &t_pow4,
-            DVec3::X, 0.0,
-            DVec3::ZERO, 1.0,
+            DVec3::X,
+            0.0,
+            DVec3::ZERO,
+            1.0,
         );
 
         let power_emit = 0.5 * STEFAN_BOLTZMANN * 60.0 * 270.0_f64.powi(4);
@@ -713,7 +749,10 @@ mod tests {
             normal: DVec3::X,
             position: DVec3::ZERO,
         };
-        let params = FlatPlateParams { albedo: 0.5, diffuse: 0.5 };
+        let params = FlatPlateParams {
+            albedo: 0.5,
+            diffuse: 0.5,
+        };
         let thermal = FlatPlateThermal {
             emissivity: 0.5,
             heat_capacity_per_area: 50.0,
@@ -723,8 +762,10 @@ mod tests {
         let result = compute_flat_plate_srp_thermal(
             &[(plate, params, thermal)],
             &t_pow4,
-            DVec3::X, 0.0,
-            DVec3::ZERO, 0.0,
+            DVec3::X,
+            0.0,
+            DVec3::ZERO,
+            0.0,
         );
 
         assert!(
@@ -742,7 +783,10 @@ mod tests {
             normal: -DVec3::X,
             position: DVec3::ZERO,
         };
-        let params = FlatPlateParams { albedo: 0.5, diffuse: 0.5 };
+        let params = FlatPlateParams {
+            albedo: 0.5,
+            diffuse: 0.5,
+        };
         let thermal = FlatPlateThermal {
             emissivity: 0.5,
             heat_capacity_per_area: 50.0,
@@ -751,17 +795,18 @@ mod tests {
         let flux_mag = 1400.0;
 
         // Without thermal
-        let no_thermal = compute_flat_plate_srp(
-            &[(plate, params)],
-            flux_hat, flux_mag, DVec3::ZERO, 1.0,
-        );
+        let no_thermal =
+            compute_flat_plate_srp(&[(plate, params)], flux_hat, flux_mag, DVec3::ZERO, 1.0);
 
         // With thermal
         let t_pow4 = [270.0_f64.powi(4)];
         let with_thermal = compute_flat_plate_srp_thermal(
             &[(plate, params, thermal)],
             &t_pow4,
-            flux_hat, flux_mag, DVec3::ZERO, 1.0,
+            flux_hat,
+            flux_mag,
+            DVec3::ZERO,
+            1.0,
         );
 
         assert!(
@@ -776,14 +821,59 @@ mod tests {
     #[test]
     fn sim3_orbit_six_plate_identity_attitude() {
         // SIM_3_ORBIT plates: 4×60m² at ±X/±Y, 2×16m² at ±Z
-        let params = FlatPlateParams { albedo: 0.5, diffuse: 0.5 };
+        let params = FlatPlateParams {
+            albedo: 0.5,
+            diffuse: 0.5,
+        };
         let plates: Vec<(FlatPlate, FlatPlateParams)> = vec![
-            (FlatPlate { area: 60.0, normal: DVec3::X,  position: DVec3::new(2.0, 0.0, 0.0) }, params),
-            (FlatPlate { area: 60.0, normal: -DVec3::Y, position: DVec3::new(0.0, -2.0, 0.0) }, params),
-            (FlatPlate { area: 60.0, normal: -DVec3::X, position: DVec3::new(-2.0, 0.0, 0.0) }, params),
-            (FlatPlate { area: 60.0, normal: DVec3::Y,  position: DVec3::new(0.0, 2.0, 0.0) }, params),
-            (FlatPlate { area: 16.0, normal: DVec3::Z,  position: DVec3::new(0.0, 0.0, 7.5) }, params),
-            (FlatPlate { area: 16.0, normal: -DVec3::Z, position: DVec3::new(0.0, 0.0, -7.5) }, params),
+            (
+                FlatPlate {
+                    area: 60.0,
+                    normal: DVec3::X,
+                    position: DVec3::new(2.0, 0.0, 0.0),
+                },
+                params,
+            ),
+            (
+                FlatPlate {
+                    area: 60.0,
+                    normal: -DVec3::Y,
+                    position: DVec3::new(0.0, -2.0, 0.0),
+                },
+                params,
+            ),
+            (
+                FlatPlate {
+                    area: 60.0,
+                    normal: -DVec3::X,
+                    position: DVec3::new(-2.0, 0.0, 0.0),
+                },
+                params,
+            ),
+            (
+                FlatPlate {
+                    area: 60.0,
+                    normal: DVec3::Y,
+                    position: DVec3::new(0.0, 2.0, 0.0),
+                },
+                params,
+            ),
+            (
+                FlatPlate {
+                    area: 16.0,
+                    normal: DVec3::Z,
+                    position: DVec3::new(0.0, 0.0, 7.5),
+                },
+                params,
+            ),
+            (
+                FlatPlate {
+                    area: 16.0,
+                    normal: -DVec3::Z,
+                    position: DVec3::new(0.0, 0.0, -7.5),
+                },
+                params,
+            ),
         ];
 
         // Flux from +X direction
@@ -799,7 +889,10 @@ mod tests {
         // ±Z plates: sin_theta = 0, skip
         // So only one plate contributes, with cx_area = 60
         assert!(result.force.length() > 0.0, "Should have non-zero force");
-        assert!(result.force.x > 0.0, "Force should push in +X (away from source)");
+        assert!(
+            result.force.x > 0.0,
+            "Force should push in +X (away from source)"
+        );
         // Y and Z components should be non-zero due to diffuse reflection off the -X plate
         // (diffuse component has -2/3*normal contribution)
     }

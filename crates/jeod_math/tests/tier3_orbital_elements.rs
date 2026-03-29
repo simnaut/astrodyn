@@ -114,8 +114,8 @@ fn angle_diff(a: f64, b: f64) -> f64 {
 
 #[test]
 fn tier3_orbital_elements_vs_jeod_sim_orbelem() {
-    let csv_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../test_data/orbelem_ecc_orbelem.csv");
+    let csv_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data/orbelem_ecc_orbelem.csv");
 
     assert!(
         csv_path.exists(),
@@ -198,13 +198,17 @@ fn tier3_orbital_elements_vs_jeod_sim_orbelem() {
             sma_err < 0.1,
             "t={:.1}s: semi_major_axis error {sma_err:.6e} m exceeds 0.1 m \
              (ours={:.6}, JEOD={:.6})",
-            rec.time, oe.semi_major_axis, rec.semi_major_axis
+            rec.time,
+            oe.semi_major_axis,
+            rec.semi_major_axis
         );
         assert!(
             ecc_err < 1e-8,
             "t={:.1}s: eccentricity error {ecc_err:.6e} exceeds 1e-8 \
              (ours={:.15e}, JEOD={:.15e})",
-            rec.time, oe.e_mag, rec.e_mag
+            rec.time,
+            oe.e_mag,
+            rec.e_mag
         );
         assert!(
             inc_err < 1e-12,

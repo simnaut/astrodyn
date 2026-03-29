@@ -43,9 +43,13 @@ fn load_jeod_trajectory(path: &Path) -> Vec<JeodStateRecord> {
 
     let mut records = Vec::new();
     for (i, line) in content.lines().enumerate() {
-        if i == 0 { continue; } // skip header
+        if i == 0 {
+            continue;
+        } // skip header
         let fields: Vec<&str> = line.split(',').collect();
-        if fields.len() < 17 { continue; }
+        if fields.len() < 17 {
+            continue;
+        }
 
         // CSV columns (from log_state_ASCII.csv header):
         // 0: time
@@ -64,8 +68,16 @@ fn load_jeod_trajectory(path: &Path) -> Vec<JeodStateRecord> {
 
         records.push(JeodStateRecord {
             time: parse(fields[0], 0),
-            position: DVec3::new(parse(fields[1], 1), parse(fields[8], 8), parse(fields[15], 15)),
-            velocity: DVec3::new(parse(fields[2], 2), parse(fields[9], 9), parse(fields[16], 16)),
+            position: DVec3::new(
+                parse(fields[1], 1),
+                parse(fields[8], 8),
+                parse(fields[15], 15),
+            ),
+            velocity: DVec3::new(
+                parse(fields[2], 2),
+                parse(fields[9], 9),
+                parse(fields[16], 16),
+            ),
         });
     }
     records
@@ -73,8 +85,8 @@ fn load_jeod_trajectory(path: &Path) -> Vec<JeodStateRecord> {
 
 #[test]
 fn tier3_cross_validate_against_jeod_dyncomp() {
-    let csv_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../test_data/dyncomp_run2_state.csv");
+    let csv_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data/dyncomp_run2_state.csv");
 
     assert!(
         csv_path.exists(),
@@ -98,10 +110,15 @@ fn tier3_cross_validate_against_jeod_dyncomp() {
     };
 
     println!("Tier 3: JEOD SIM_dyncomp RUN_2 cross-validation");
-    println!("  Initial position: [{:.2}, {:.2}, {:.2}] m",
-        initial.position.x, initial.position.y, initial.position.z);
-    println!("  JEOD trajectory: {} points over {:.0}s",
-        jeod_trajectory.len(), jeod_trajectory.last().unwrap().time);
+    println!(
+        "  Initial position: [{:.2}, {:.2}, {:.2}] m",
+        initial.position.x, initial.position.y, initial.position.z
+    );
+    println!(
+        "  JEOD trajectory: {} points over {:.0}s",
+        jeod_trajectory.len(),
+        jeod_trajectory.last().unwrap().time
+    );
     println!();
 
     let dt = 0.03125; // match JEOD's SIM_dyncomp integration rate (32 Hz)

@@ -17,9 +17,7 @@ const MU_EARTH: f64 = 3.986004418e14;
 
 fn main() {
     App::new()
-        .add_plugins(
-            MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(Duration::from_millis(0))),
-        )
+        .add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(Duration::from_millis(0))))
         .insert_resource(Time::<Fixed>::from_seconds(10.0))
         .add_plugins(JeodPlugin)
         .add_systems(Startup, setup)

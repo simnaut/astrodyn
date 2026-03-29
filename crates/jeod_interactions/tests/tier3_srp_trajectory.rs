@@ -21,8 +21,8 @@ use glam::DVec3;
 use jeod_dynamics::TranslationalState;
 use jeod_ephemeris::{Ephemeris, EphemerisBody};
 use jeod_interactions::{
-    compute_flat_plate_srp_thermal, compute_shadow_fraction, solar_flux_at_distance,
-    FlatPlate, FlatPlateParams, FlatPlateThermal, SOLAR_RADIUS, STEFAN_BOLTZMANN,
+    compute_flat_plate_srp_thermal, compute_shadow_fraction, solar_flux_at_distance, FlatPlate,
+    FlatPlateParams, FlatPlateThermal, SOLAR_RADIUS, STEFAN_BOLTZMANN,
 };
 use std::path::Path;
 
@@ -50,12 +50,60 @@ fn sim3_orbit_plates() -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
         heat_capacity_per_area: 50.0,
     };
     vec![
-        (FlatPlate { area: 60.0, normal: DVec3::X,  position: DVec3::new(2.0, 0.0, 0.0) }, params, thermal),
-        (FlatPlate { area: 60.0, normal: -DVec3::Y, position: DVec3::new(0.0, -2.0, 0.0) }, params, thermal),
-        (FlatPlate { area: 60.0, normal: -DVec3::X, position: DVec3::new(-2.0, 0.0, 0.0) }, params, thermal),
-        (FlatPlate { area: 60.0, normal: DVec3::Y,  position: DVec3::new(0.0, 2.0, 0.0) }, params, thermal),
-        (FlatPlate { area: 16.0, normal: DVec3::Z,  position: DVec3::new(0.0, 0.0, 7.5) }, params, thermal),
-        (FlatPlate { area: 16.0, normal: -DVec3::Z, position: DVec3::new(0.0, 0.0, -7.5) }, params, thermal),
+        (
+            FlatPlate {
+                area: 60.0,
+                normal: DVec3::X,
+                position: DVec3::new(2.0, 0.0, 0.0),
+            },
+            params,
+            thermal,
+        ),
+        (
+            FlatPlate {
+                area: 60.0,
+                normal: -DVec3::Y,
+                position: DVec3::new(0.0, -2.0, 0.0),
+            },
+            params,
+            thermal,
+        ),
+        (
+            FlatPlate {
+                area: 60.0,
+                normal: -DVec3::X,
+                position: DVec3::new(-2.0, 0.0, 0.0),
+            },
+            params,
+            thermal,
+        ),
+        (
+            FlatPlate {
+                area: 60.0,
+                normal: DVec3::Y,
+                position: DVec3::new(0.0, 2.0, 0.0),
+            },
+            params,
+            thermal,
+        ),
+        (
+            FlatPlate {
+                area: 16.0,
+                normal: DVec3::Z,
+                position: DVec3::new(0.0, 0.0, 7.5),
+            },
+            params,
+            thermal,
+        ),
+        (
+            FlatPlate {
+                area: 16.0,
+                normal: -DVec3::Z,
+                position: DVec3::new(0.0, 0.0, -7.5),
+            },
+            params,
+            thermal,
+        ),
     ]
 }
 
@@ -66,6 +114,7 @@ const NUM_PLATES: usize = 6;
 
 /// Parsed SRP trajectory record from JEOD CSV.
 #[derive(Debug)]
+#[allow(dead_code)]
 struct SrpRecord {
     time: f64,
     position: DVec3,
@@ -116,7 +165,11 @@ fn load_srp_trajectory(path: &Path) -> Vec<SrpRecord> {
 
         let p = |col: usize| -> f64 {
             fields[col].trim().parse::<f64>().unwrap_or_else(|e| {
-                panic!("Parse error at line {}, col {col}: {:?} ({e})", i + 1, fields[col])
+                panic!(
+                    "Parse error at line {}, col {col}: {:?} ({e})",
+                    i + 1,
+                    fields[col]
+                )
             })
         };
 
@@ -176,12 +229,16 @@ fn evaluate_srp(
     let flux_hat = sun_to_vehicle / dist;
     let flux_mag = solar_flux_at_distance(dist);
 
-    let illum_factor = compute_shadow_fraction(
-        position, sun_pos, DVec3::ZERO, R_EARTH, SOLAR_RADIUS,
-    );
+    let illum_factor =
+        compute_shadow_fraction(position, sun_pos, DVec3::ZERO, R_EARTH, SOLAR_RADIUS);
 
     let srp = compute_flat_plate_srp_thermal(
-        plates, t_pow4_cached, flux_hat, flux_mag, DVec3::ZERO, illum_factor,
+        plates,
+        t_pow4_cached,
+        flux_hat,
+        flux_mag,
+        DVec3::ZERO,
+        illum_factor,
     );
 
     (g + srp.force / mass, srp.temp_dots)
@@ -241,8 +298,7 @@ fn rk4_step(
     // RK4 temperature update
     for i in 0..n {
         let old_temp = temperatures[i];
-        temperatures[i] = old_temp
-            + (k1t[i] + 2.0 * k2t[i] + 2.0 * k3t[i] + k4t[i]) * (dt / 6.0);
+        temperatures[i] = old_temp + (k1t[i] + 2.0 * k2t[i] + 2.0 * k3t[i] + k4t[i]) * (dt / 6.0);
         temperatures[i] = temperatures[i].max(0.0);
 
         // Update cached T⁴ from new temperature
@@ -298,7 +354,7 @@ fn tier3_srp_trajectory_sim3_orbit() {
 
     let plates = sim3_orbit_plates();
     let dt = 1.0; // RK4 step size matching JEOD's DYNAMICS interval
-    // JEOD ThermalIntegrableObject state: temp and cached t_pow4
+                  // JEOD ThermalIntegrableObject state: temp and cached t_pow4
     let mut temp = [INITIAL_TEMPERATURE; NUM_PLATES];
     let mut t_pow4: Vec<f64> = temp.iter().map(|t| t * t * t * t).collect();
 
@@ -348,19 +404,30 @@ fn tier3_srp_trajectory_sim3_orbit() {
         let t = target.time;
         if (t % 200_000.0) < 1000.5 || (t > 2000.0 && t < 8000.0 && target.flux_mag > 100.0) {
             // Force comparison at this point
-            let (force_rel_err, force_dir_err) = if target.flux_mag > 100.0 && target.srp_force.length() > 1e-6 {
-                let sun_pos = sun_position_at(target.time, &ephemeris);
-                let stv = target.position - sun_pos;
-                let d = stv.length();
-                let fh = stv / d;
-                let fm = solar_flux_at_distance(d);
-                let our = compute_flat_plate_srp_thermal(&plates, &t_pow4, fh, fm, DVec3::ZERO, 1.0);
-                let rel = (our.force.length() - target.srp_force.length()).abs() / target.srp_force.length();
-                let dir = if our.force.length() > 1e-15 {
-                    our.force.normalize().dot(target.srp_force.normalize()).clamp(-1.0, 1.0).acos()
-                } else { 0.0 };
-                (rel, dir)
-            } else { (-1.0, -1.0) };
+            let (force_rel_err, force_dir_err) =
+                if target.flux_mag > 100.0 && target.srp_force.length() > 1e-6 {
+                    let sun_pos = sun_position_at(target.time, &ephemeris);
+                    let stv = target.position - sun_pos;
+                    let d = stv.length();
+                    let fh = stv / d;
+                    let fm = solar_flux_at_distance(d);
+                    let our =
+                        compute_flat_plate_srp_thermal(&plates, &t_pow4, fh, fm, DVec3::ZERO, 1.0);
+                    let rel = (our.force.length() - target.srp_force.length()).abs()
+                        / target.srp_force.length();
+                    let dir = if our.force.length() > 1e-15 {
+                        our.force
+                            .normalize()
+                            .dot(target.srp_force.normalize())
+                            .clamp(-1.0, 1.0)
+                            .acos()
+                    } else {
+                        0.0
+                    };
+                    (rel, dir)
+                } else {
+                    (-1.0, -1.0)
+                };
             eprintln!(
                 "  t={:9.0}s ({:5.1}d)  pos_err={:8.3}m  vel_err={:.6}m/s  F_rel={:.2e}  F_dir={:.4}rad",
                 t, t / 86400.0, pos_err, vel_err, force_rel_err, force_dir_err,
@@ -377,18 +444,31 @@ fn tier3_srp_trajectory_sim3_orbit() {
 
             // Point-in-time force comparison using current cached t_pow4
             let our_srp = compute_flat_plate_srp_thermal(
-                &plates, &t_pow4, flux_hat, flux_mag, DVec3::ZERO, 1.0,
+                &plates,
+                &t_pow4,
+                flux_hat,
+                flux_mag,
+                DVec3::ZERO,
+                1.0,
             );
 
             // Print force comparison at first few illuminated points
             if t < 7000.0 {
                 eprintln!(
                     "    JEOD |F|={:.6e}  OUR |F|={:.6e}  ratio={:.4}  dir_err={:.6}rad",
-                    target.srp_force.length(), our_srp.force.length(),
+                    target.srp_force.length(),
+                    our_srp.force.length(),
                     target.srp_force.length() / our_srp.force.length(),
                     if our_srp.force.length() > 1e-15 {
-                        our_srp.force.normalize().dot(target.srp_force.normalize()).clamp(-1.0, 1.0).acos()
-                    } else { 0.0 },
+                        our_srp
+                            .force
+                            .normalize()
+                            .dot(target.srp_force.normalize())
+                            .clamp(-1.0, 1.0)
+                            .acos()
+                    } else {
+                        0.0
+                    },
                 )
             }
 
@@ -411,9 +491,8 @@ fn tier3_srp_trajectory_sim3_orbit() {
 
         // Shadow comparison: check if our shadow agrees with JEOD flux
         let sun_pos = sun_position_at(target.time, &ephemeris);
-        let our_illum = compute_shadow_fraction(
-            target.position, sun_pos, DVec3::ZERO, R_EARTH, SOLAR_RADIUS,
-        );
+        let our_illum =
+            compute_shadow_fraction(target.position, sun_pos, DVec3::ZERO, R_EARTH, SOLAR_RADIUS);
         let jeod_in_shadow = target.flux_mag < 1e-10;
         let our_in_shadow = our_illum < 1e-10;
         if jeod_in_shadow != our_in_shadow {
@@ -432,8 +511,11 @@ fn tier3_srp_trajectory_sim3_orbit() {
 
     eprintln!("=== Tier 3 SRP Trajectory (SIM_3_ORBIT RUN_radiation) ===");
     eprintln!("  Data points: {}", trajectory.len());
-    eprintln!("  Duration: {:.0}s ({:.1} days)", trajectory.last().unwrap().time,
-              trajectory.last().unwrap().time / 86400.0);
+    eprintln!(
+        "  Duration: {:.0}s ({:.1} days)",
+        trajectory.last().unwrap().time,
+        trajectory.last().unwrap().time / 86400.0
+    );
     eprintln!("  Max position error (full): {max_pos_err:.1} m");
     eprintln!("  Max velocity error: {max_vel_err:.6} m/s");
     eprintln!("  Max SRP force direction error: {max_force_dir_err:.6} rad");

@@ -25,12 +25,8 @@ struct LvlhRecord {
 }
 
 fn load_lvlh_csv(path: &Path) -> Vec<LvlhRecord> {
-    let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
-        panic!(
-            "Failed to read SIM_LVLH CSV from {}: {e}",
-            path.display()
-        )
-    });
+    let content = std::fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("Failed to read SIM_LVLH CSV from {}: {e}", path.display()));
 
     let mut records = Vec::new();
     for (i, line) in content.lines().enumerate() {
@@ -96,8 +92,7 @@ fn max_mat_diff(a: &DMat3, b: &DMat3) -> f64 {
 
 #[test]
 fn tier3_lvlh_frame_vs_jeod_sim_lvlh() {
-    let csv_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../test_data/lvlh_inc_lvlh.csv");
+    let csv_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data/lvlh_inc_lvlh.csv");
 
     assert!(
         csv_path.exists(),

@@ -38,11 +38,7 @@ use glam::{DMat3, DVec3};
 /// - For a diagonal inertia with the body tilted by angle θ from nadir,
 ///   the dominant torque component matches the analytical formula:
 ///   τ = 3μ/(2r³) · sin(2θ) · ΔI
-pub fn compute_gravity_torque(
-    grav_grad: &DMat3,
-    t_parent_this: &DMat3,
-    inertia: &DMat3,
-) -> DVec3 {
+pub fn compute_gravity_torque(grav_grad: &DMat3, t_parent_this: &DMat3, inertia: &DMat3) -> DVec3 {
     // Transform gradient from inertial to body frame:
     //   g = T * grad * T^T  (similarity transform)
     let g = *t_parent_this * *grav_grad * t_parent_this.transpose();
@@ -199,7 +195,7 @@ mod tests {
 
         let scale = mu / r3;
         let expected_tx = -(-7.0) * (scale - scale); // g22-g11 = 0
-        let expected_ty = -3.0 * (-2.0 * scale - scale);  // i02*(g00-g22) = 3*(-3*scale)
+        let expected_ty = -3.0 * (-2.0 * scale - scale); // i02*(g00-g22) = 3*(-3*scale)
         let expected_tz = -(-5.0) * (scale - (-2.0 * scale)); // i01*(g11-g00) = -(-5)*(3*scale)
 
         assert!(

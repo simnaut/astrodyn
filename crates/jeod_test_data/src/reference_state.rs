@@ -39,10 +39,8 @@ pub fn load_reference_state(
     let content = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
 
-    let array_re = Regex::new(
-        r"\[\s*([-\d.eE+]+)\s*,\s*([-\d.eE+]+)\s*,\s*([-\d.eE+]+)\s*\]",
-    )
-    .unwrap();
+    let array_re =
+        Regex::new(r"\[\s*([-\d.eE+]+)\s*,\s*([-\d.eE+]+)\s*,\s*([-\d.eE+]+)\s*\]").unwrap();
 
     let mut arrays: Vec<DVec3> = Vec::new();
     for cap in array_re.captures_iter(&content) {

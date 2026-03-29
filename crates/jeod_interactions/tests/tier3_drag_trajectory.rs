@@ -130,8 +130,16 @@ fn load_sixdof_trajectory(path: &Path) -> Vec<JeodSixDofRecord> {
         };
 
         // Composite body state columns
-        let position = DVec3::new(parse(fields[1], 1), parse(fields[8], 8), parse(fields[15], 15));
-        let velocity = DVec3::new(parse(fields[2], 2), parse(fields[9], 9), parse(fields[16], 16));
+        let position = DVec3::new(
+            parse(fields[1], 1),
+            parse(fields[8], 8),
+            parse(fields[15], 15),
+        );
+        let velocity = DVec3::new(
+            parse(fields[2], 2),
+            parse(fields[9], 9),
+            parse(fields[16], 16),
+        );
         let ang_vel = DVec3::new(
             parse(fields[3], 3),
             parse(fields[10], 10),
@@ -171,8 +179,8 @@ fn quaternion_angle_error(q1: &JeodQuat, q2: &JeodQuat) -> f64 {
 
 #[test]
 fn tier3_drag_trajectory_run6b() {
-    let csv_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../test_data/dyncomp_run6b_state.csv");
+    let csv_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data/dyncomp_run6b_state.csv");
 
     assert!(
         csv_path.exists(),
@@ -282,12 +290,8 @@ fn tier3_drag_trajectory_run6b() {
         // Compute drag force in the body/structural frame
         // T_inertial_struct: rotation matrix from inertial to body frame
         let t_inertial_struct = s.rot.quaternion.left_quat_to_transformation();
-        let aero = compute_ballistic_drag(
-            &drag_config,
-            &atmos,
-            s.trans.velocity,
-            &t_inertial_struct,
-        );
+        let aero =
+            compute_ballistic_drag(&drag_config, &atmos, s.trans.velocity, &t_inertial_struct);
 
         // Transform drag force from body frame back to inertial frame
         // T_inertial_struct transforms inertial->body, so transpose goes body->inertial
@@ -346,12 +350,8 @@ fn tier3_drag_trajectory_run6b() {
                 state.trans.position.z,
             );
             let geo = cartesian_to_geodetic(pfix_pos, R_EARTH_EQ, R_EARTH_POL);
-            let met_state = met_model.density(
-                geo.altitude / 1000.0,
-                geo.latitude,
-                geo.longitude,
-                tjt,
-            );
+            let met_state =
+                met_model.density(geo.altitude / 1000.0, geo.latitude, geo.longitude, tjt);
             let wind = DVec3::new(
                 -OMEGA_EARTH * state.trans.position.y,
                 OMEGA_EARTH * state.trans.position.x,

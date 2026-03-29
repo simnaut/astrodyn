@@ -82,8 +82,16 @@ fn load_sixdof_trajectory(path: &Path) -> Vec<JeodSixDofRecord> {
         };
 
         // Composite body state columns
-        let position = DVec3::new(parse(fields[1], 1), parse(fields[8], 8), parse(fields[15], 15));
-        let velocity = DVec3::new(parse(fields[2], 2), parse(fields[9], 9), parse(fields[16], 16));
+        let position = DVec3::new(
+            parse(fields[1], 1),
+            parse(fields[8], 8),
+            parse(fields[15], 15),
+        );
+        let velocity = DVec3::new(
+            parse(fields[2], 2),
+            parse(fields[9], 9),
+            parse(fields[16], 16),
+        );
         let ang_vel = DVec3::new(
             parse(fields[3], 3),
             parse(fields[10], 10),
@@ -125,8 +133,8 @@ fn quaternion_angle_error(q1: &JeodQuat, q2: &JeodQuat) -> f64 {
 
 #[test]
 fn tier3_sixdof_attitude_from_run2() {
-    let csv_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../test_data/dyncomp_run2_state.csv");
+    let csv_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data/dyncomp_run2_state.csv");
 
     assert!(
         csv_path.exists(),
@@ -224,10 +232,18 @@ fn tier3_sixdof_attitude_from_run2() {
     }
 
     println!("=== Tier 3 6-DOF Cross-Validation (RUN_2) ===");
-    println!("Duration: {} s ({} data points)", trajectory.last().unwrap().time, trajectory.len());
+    println!(
+        "Duration: {} s ({} data points)",
+        trajectory.last().unwrap().time,
+        trajectory.len()
+    );
     println!("Max position error:   {:.2} m", max_pos_error);
     println!("Max velocity error:   {:.4} m/s", max_vel_error);
-    println!("Max quaternion error: {:.2e} rad ({:.4} deg)", max_quat_error, max_quat_error.to_degrees());
+    println!(
+        "Max quaternion error: {:.2e} rad ({:.4} deg)",
+        max_quat_error,
+        max_quat_error.to_degrees()
+    );
     println!("Max ang_vel error:    {:.2e} rad/s", max_angvel_error);
 
     // dt=0.03125s matches JEOD's SIM_dyncomp integration rate (32 Hz).

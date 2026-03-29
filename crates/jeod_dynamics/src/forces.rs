@@ -368,7 +368,12 @@ mod tests {
         let inv_inertia = DMat3::from_diagonal(DVec3::new(0.1, 0.05, 1.0 / 30.0));
 
         let fd = compute_frame_derivatives(
-            &total_force, 1.0 / 100.0, grav, &inertia, &inv_inertia, DVec3::ZERO,
+            &total_force,
+            1.0 / 100.0,
+            grav,
+            &inertia,
+            &inv_inertia,
+            DVec3::ZERO,
         );
         assert_eq!(fd.trans_accel, grav);
         assert!(fd.rot_accel.length() < 1e-20);
@@ -385,7 +390,12 @@ mod tests {
         let inv_inertia = DMat3::from_diagonal(DVec3::splat(0.1));
 
         let fd = compute_frame_derivatives(
-            &total_force, 1.0 / 50.0, grav, &inertia, &inv_inertia, DVec3::ZERO,
+            &total_force,
+            1.0 / 50.0,
+            grav,
+            &inertia,
+            &inv_inertia,
+            DVec3::ZERO,
         );
         // non_grav_accel = 100 * (1/50) = 2.0 in x
         assert!((fd.trans_accel - DVec3::new(2.0, 0.0, -9.81)).length() < 1e-12);

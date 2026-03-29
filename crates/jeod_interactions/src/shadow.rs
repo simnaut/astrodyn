@@ -96,11 +96,7 @@ pub fn compute_shadow_fraction(
 
     // Perpendicular distance from the vehicle to the source-third-body line
     let r_perp2 = r_mag2 - r_par * r_par;
-    let r_perp = if r_perp2 <= 0.0 {
-        0.0
-    } else {
-        r_perp2.sqrt()
-    };
+    let r_perp = if r_perp2 <= 0.0 { 0.0 } else { r_perp2.sqrt() };
 
     // JEOD_INV: IN.12 — RadiationSource.radius > 0
     // JEOD validates in RadiationThirdBody::initialize() (radiation_third_body.cc:102-114)
@@ -205,11 +201,14 @@ mod tests {
     fn vehicle_in_umbra() {
         let sun = DVec3::new(AU, 0.0, 0.0);
         let body = DVec3::ZERO; // Earth at origin
-        // Vehicle behind Earth, on the -X side (opposite Sun)
+                                // Vehicle behind Earth, on the -X side (opposite Sun)
         let vehicle = DVec3::new(-7_000_000.0, 0.0, 0.0); // ~622 km alt, anti-Sun
 
         let frac = compute_shadow_fraction(vehicle, sun, body, EARTH_RADIUS, SUN_RADIUS);
-        assert_eq!(frac, 0.0, "Vehicle directly behind Earth should be in full shadow");
+        assert_eq!(
+            frac, 0.0,
+            "Vehicle directly behind Earth should be in full shadow"
+        );
     }
 
     /// Vehicle at 90 degrees from Sun-Earth line: full sun.
@@ -221,7 +220,10 @@ mod tests {
         let vehicle = DVec3::new(0.0, 0.0, 7_000_000.0);
 
         let frac = compute_shadow_fraction(vehicle, sun, body, EARTH_RADIUS, SUN_RADIUS);
-        assert_eq!(frac, 1.0, "Vehicle perpendicular to Sun-Earth line should be in full sun");
+        assert_eq!(
+            frac, 1.0,
+            "Vehicle perpendicular to Sun-Earth line should be in full sun"
+        );
     }
 
     /// Vehicle on the Sun side of Earth: full sun.
@@ -244,7 +246,10 @@ mod tests {
         let vehicle = DVec3::new(-10_000.0, 100_000_000.0, 0.0);
 
         let frac = compute_shadow_fraction(vehicle, sun, body, EARTH_RADIUS, SUN_RADIUS);
-        assert_eq!(frac, 1.0, "Vehicle far from shadow axis should be in full sun");
+        assert_eq!(
+            frac, 1.0,
+            "Vehicle far from shadow axis should be in full sun"
+        );
     }
 
     /// Penumbra: vehicle near the edge of the shadow.
@@ -291,13 +296,25 @@ mod tests {
         let x = -500_000.0;
 
         let frac_y = compute_shadow_fraction(
-            DVec3::new(x, 5_000_000.0, 0.0), sun, body, EARTH_RADIUS, SUN_RADIUS,
+            DVec3::new(x, 5_000_000.0, 0.0),
+            sun,
+            body,
+            EARTH_RADIUS,
+            SUN_RADIUS,
         );
         let frac_neg_y = compute_shadow_fraction(
-            DVec3::new(x, -5_000_000.0, 0.0), sun, body, EARTH_RADIUS, SUN_RADIUS,
+            DVec3::new(x, -5_000_000.0, 0.0),
+            sun,
+            body,
+            EARTH_RADIUS,
+            SUN_RADIUS,
         );
         let frac_z = compute_shadow_fraction(
-            DVec3::new(x, 0.0, 5_000_000.0), sun, body, EARTH_RADIUS, SUN_RADIUS,
+            DVec3::new(x, 0.0, 5_000_000.0),
+            sun,
+            body,
+            EARTH_RADIUS,
+            SUN_RADIUS,
         );
 
         assert!(
@@ -360,6 +377,9 @@ mod tests {
         let vehicle = DVec3::new(AU / 2.0, 0.0, 0.0);
 
         let frac = compute_shadow_fraction(vehicle, sun, body, EARTH_RADIUS, SUN_RADIUS);
-        assert_eq!(frac, 1.0, "Vehicle between source and body should be full sun");
+        assert_eq!(
+            frac, 1.0,
+            "Vehicle between source and body should be full sun"
+        );
     }
 }

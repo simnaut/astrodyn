@@ -43,11 +43,7 @@ impl Default for AtmosphereState {
 /// * `inertial_pos` - Vehicle position in the inertial frame (m)
 // JEOD_INV: AT.04 — wind velocity computed as omega × position (co-rotation)
 pub fn compute_corotation_wind(omega: f64, inertial_pos: DVec3) -> DVec3 {
-    DVec3::new(
-        -omega * inertial_pos.y,
-        omega * inertial_pos.x,
-        0.0,
-    )
+    DVec3::new(-omega * inertial_pos.y, omega * inertial_pos.x, 0.0)
 }
 
 #[cfg(test)]

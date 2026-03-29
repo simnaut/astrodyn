@@ -21,10 +21,18 @@ const GAUSS_WEIGHTS: [[f64; 8]; 9] = [
     [2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
     [1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
     [0.5555556, 0.8888889, 0.5555556, 0.0, 0.0, 0.0, 0.0, 0.0],
-    [0.3478548, 0.6521452, 0.6521452, 0.3478548, 0.0, 0.0, 0.0, 0.0],
-    [0.2369269, 0.4786287, 0.5688889, 0.4786287, 0.2369269, 0.0, 0.0, 0.0],
-    [0.1713245, 0.3607616, 0.4679139, 0.4679139, 0.3607616, 0.1713245, 0.0, 0.0],
-    [0.1294850, 0.2797054, 0.3818301, 0.4179592, 0.3818301, 0.2797054, 0.1294850, 0.0],
+    [
+        0.3478548, 0.6521452, 0.6521452, 0.3478548, 0.0, 0.0, 0.0, 0.0,
+    ],
+    [
+        0.2369269, 0.4786287, 0.5688889, 0.4786287, 0.2369269, 0.0, 0.0, 0.0,
+    ],
+    [
+        0.1713245, 0.3607616, 0.4679139, 0.4679139, 0.3607616, 0.1713245, 0.0, 0.0,
+    ],
+    [
+        0.1294850, 0.2797054, 0.3818301, 0.4179592, 0.3818301, 0.2797054, 0.1294850, 0.0,
+    ],
     [
         0.1012285, 0.2223810, 0.3137067, 0.3626838, 0.3626838, 0.3137067, 0.2223810, 0.1012285,
     ],
@@ -48,8 +56,7 @@ const GAUSS_XVALUES: [[f64; 8]; 9] = [
         -0.9491079, -0.7415312, -0.4058452, 0.0, 0.4058452, 0.7415312, 0.9491079, 0.0,
     ],
     [
-        -0.9602899, -0.7966665, -0.5255324, -0.1834346, 0.1834346, 0.5255324, 0.7966665,
-        0.9602899,
+        -0.9602899, -0.7966665, -0.5255324, -0.1834346, 0.1834346, 0.5255324, 0.7966665, 0.9602899,
     ],
 ];
 
@@ -108,12 +115,12 @@ const NUM_SPECIES: usize = 6;
 /// Volume fractions at sea level. From Jacchia(1971) p5.
 /// Order: N2, O2, O, Ar, He, H
 const SPECIES_FRAC: [f64; NUM_SPECIES] = [
-    0.78110,    // N2
-    0.20955,    // O2
-    0.0,        // O (atomic oxygen)
-    0.0093432,  // Ar
-    1.289e-05,  // He (1970 value)
-    0.0,        // H
+    0.78110,   // N2
+    0.20955,   // O2
+    0.0,       // O (atomic oxygen)
+    0.0093432, // Ar
+    1.289e-05, // He (1970 value)
+    0.0,       // H
 ];
 
 /// Molecular weights (molar masses) in g/mol for each species.
@@ -253,8 +260,13 @@ impl MetAtmosphere {
         longitude_rad: f64,
         truncated_julian_day: f64,
     ) -> AtmosphereState {
-        self.density_full(altitude_km, latitude_rad, longitude_rad, truncated_julian_day)
-            .base
+        self.density_full(
+            altitude_km,
+            latitude_rad,
+            longitude_rad,
+            truncated_julian_day,
+        )
+        .base
     }
 
     /// Convenience wrapper that accepts altitude in **metres** (SI).
@@ -269,7 +281,12 @@ impl MetAtmosphere {
         longitude_rad: f64,
         truncated_julian_day: f64,
     ) -> AtmosphereState {
-        self.density(altitude_m / 1000.0, latitude_rad, longitude_rad, truncated_julian_day)
+        self.density(
+            altitude_m / 1000.0,
+            latitude_rad,
+            longitude_rad,
+            truncated_julian_day,
+        )
     }
 
     /// Compute extended atmospheric state including species number densities.
@@ -290,8 +307,7 @@ impl MetAtmosphere {
         let log10_dens = ctx.density.log10();
         // Pressure: p = (rho * 1000 / M) * R * T
         // The 1000 converts g/mol to kg/mol to cancel with density in kg/m^3.
-        let pressure =
-            (ctx.density * 1000.0 / ctx.mol_weight) * R_GAS_CONSTANT * ctx.temperature;
+        let pressure = (ctx.density * 1000.0 / ctx.mol_weight) * R_GAS_CONSTANT * ctx.temperature;
 
         MetAtmosphereStateVars {
             base: AtmosphereState {
@@ -338,12 +354,7 @@ struct ComputeContext {
 }
 
 impl ComputeContext {
-    fn new(
-        _atmos: &MetAtmosphere,
-        altitude_km: f64,
-        latitude: f64,
-        longitude: f64,
-    ) -> Self {
+    fn new(_atmos: &MetAtmosphere, altitude_km: f64, latitude: f64, longitude: f64) -> Self {
         Self {
             altitude_km,
             latitude,
@@ -436,8 +447,7 @@ impl ComputeContext {
             (b1 * fmjd + b2 * (0.017202 * (fmjd - 3.0)).sin() - b3).rem_euclid(TWO_PI);
 
         let dec_angle_const = (23.4523 - 0.013 * century_frac) * DEG_TO_RAD;
-        self.solar_declination_angle =
-            (celestial_longitude.sin() * dec_angle_const.sin()).asin();
+        self.solar_declination_angle = (celestial_longitude.sin() * dec_angle_const.sin()).asin();
 
         // ---- PART C: solar hour angle ----
         // C-1: right ascension of sun
@@ -465,13 +475,11 @@ impl ComputeContext {
         let a3: f64 = 0.00038708;
         let a4: f64 = 0.250684477;
 
-        let greenwich_mean_position = (a1 + a2 * century_frac
-            + a3 * century_frac * century_frac
-            + a4 * minutes_of_day)
-            .rem_euclid(360.0);
+        let greenwich_mean_position =
+            (a1 + a2 * century_frac + a3 * century_frac * century_frac + a4 * minutes_of_day)
+                .rem_euclid(360.0);
 
-        let right_ascension_point =
-            greenwich_mean_position * DEG_TO_RAD + self.longitude;
+        let right_ascension_point = greenwich_mean_position * DEG_TO_RAD + self.longitude;
         self.solar_hour_angle = right_ascension_point - solar_right_ascension;
 
         while self.solar_hour_angle > std::f64::consts::PI {
@@ -501,8 +509,7 @@ impl ComputeContext {
 
         let theta = 0.5 * (self.latitude + self.solar_declination_angle).abs();
         let eta = 0.5 * (self.latitude - self.solar_declination_angle).abs();
-        let mut tau =
-            self.solar_hour_angle + beta + p * (self.solar_hour_angle + gamma).sin();
+        let mut tau = self.solar_hour_angle + beta + p * (self.solar_hour_angle + gamma).sin();
 
         if tau > std::f64::consts::PI {
             tau -= TWO_PI;
@@ -523,9 +530,7 @@ impl ComputeContext {
 
         // PART C: geomagnetic variation (1970 formulation)
         let geomagnetic_variation = match atmos.geo_index_type {
-            GeoIndexType::Kp => {
-                28.0 * atmos.geo_index + 0.03 * atmos.geo_index.exp()
-            }
+            GeoIndexType::Kp => 28.0 * atmos.geo_index + 0.03 * atmos.geo_index.exp(),
             GeoIndexType::Ap => {
                 1.0 * atmos.geo_index + 100.0 * (1.0 - (-0.08 * atmos.geo_index).exp())
             }
@@ -541,9 +546,7 @@ impl ComputeContext {
         let e7: f64 = 5.974262; // 342.3 degrees in radians
         let e8: f64 = 2.16;
 
-        let tau0 = ((1.0
-            + (std::f64::consts::PI * 2.0 * self.fraction_of_year + e7).sin())
-            / 2.0)
+        let tau0 = ((1.0 + (std::f64::consts::PI * 2.0 * self.fraction_of_year + e7).sin()) / 2.0)
             .powf(e8);
         let tau1 = self.fraction_of_year + e6 * (tau0 - 0.5);
 
@@ -612,8 +615,7 @@ impl ComputeContext {
 
             // Adjust non-Hydrogen species
             for (ii, &mol_wt) in SPECIES_MOL_WEIGHT.iter().enumerate().take(5) {
-                self.num_density[ii] *=
-                    temp_ratio * (-mol_wt * integral_g_rt).exp();
+                self.num_density[ii] *= temp_ratio * (-mol_wt * integral_g_rt).exp();
             }
             // He gets an extra alpha = -0.38 term
             self.num_density[4] *= temp_ratio.powf(-0.38);
@@ -917,7 +919,10 @@ mod tests {
             "Solar max temperature ({t_max} K) should exceed solar min ({t_min} K)"
         );
         // Exospheric temperature should be in hundreds to low-thousands of K
-        assert!(t_min > 500.0, "Solar min temp at 400 km = {t_min} K, too low");
+        assert!(
+            t_min > 500.0,
+            "Solar min temp at 400 km = {t_min} K, too low"
+        );
         assert!(
             t_max < 3000.0,
             "Solar max temp at 400 km = {t_max} K, too high"
@@ -967,10 +972,8 @@ mod tests {
     #[test]
     fn exospheric_temperature_range() {
         // Exospheric temperature should be in a physically reasonable range
-        let state_min =
-            SOLAR_MIN.density_full(400.0, ISS_LAT, ISS_LON, TJT_2020_JUN_15_NOON);
-        let state_max =
-            SOLAR_MAX.density_full(400.0, ISS_LAT, ISS_LON, TJT_2020_JUN_15_NOON);
+        let state_min = SOLAR_MIN.density_full(400.0, ISS_LAT, ISS_LON, TJT_2020_JUN_15_NOON);
+        let state_max = SOLAR_MAX.density_full(400.0, ISS_LAT, ISS_LON, TJT_2020_JUN_15_NOON);
 
         assert!(
             state_min.exo_temp > 500.0 && state_min.exo_temp < 1500.0,
@@ -1082,12 +1085,8 @@ mod tests {
     fn equatorial_vs_polar_density() {
         // At low altitudes, density should vary with latitude due to seasonal effects
         let atmos = SOLAR_MEAN;
-        let d_equator = atmos
-            .density(120.0, 0.0, 0.0, TJT_2020_JUN_15_NOON)
-            .density;
-        let d_polar = atmos
-            .density(120.0, 1.2, 0.0, TJT_2020_JUN_15_NOON)
-            .density;
+        let d_equator = atmos.density(120.0, 0.0, 0.0, TJT_2020_JUN_15_NOON).density;
+        let d_polar = atmos.density(120.0, 1.2, 0.0, TJT_2020_JUN_15_NOON).density;
 
         // They should differ (seasonal-latitude variation)
         assert!(

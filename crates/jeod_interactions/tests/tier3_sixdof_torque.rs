@@ -88,8 +88,16 @@ fn load_sixdof_trajectory(path: &Path) -> Vec<JeodSixDofRecord> {
         };
 
         // Composite body state columns
-        let position = DVec3::new(parse(fields[1], 1), parse(fields[8], 8), parse(fields[15], 15));
-        let velocity = DVec3::new(parse(fields[2], 2), parse(fields[9], 9), parse(fields[16], 16));
+        let position = DVec3::new(
+            parse(fields[1], 1),
+            parse(fields[8], 8),
+            parse(fields[15], 15),
+        );
+        let velocity = DVec3::new(
+            parse(fields[2], 2),
+            parse(fields[9], 9),
+            parse(fields[16], 16),
+        );
         let ang_vel = DVec3::new(
             parse(fields[3], 3),
             parse(fields[10], 10),
@@ -129,8 +137,8 @@ fn quaternion_angle_error(q1: &JeodQuat, q2: &JeodQuat) -> f64 {
 
 #[test]
 fn tier3_external_torque_sixdof_run9a() {
-    let csv_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../test_data/dyncomp_run9a_state.csv");
+    let csv_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data/dyncomp_run9a_state.csv");
 
     assert!(
         csv_path.exists(),
@@ -208,26 +216,26 @@ fn tier3_external_torque_sixdof_run9a() {
             // Active from t=1000 to t=2000 (trick.add_read is evaluated at the
             // *start* of the given timestep, so torque is first applied at
             // t=1000 and first removed at t=2000).
-            let torque_active = current_time >= 1000.0 - 0.001 && current_time < 2000.0 - 0.001;
+            let torque_active = (999.999..1999.999).contains(&current_time);
             let torque = if torque_active {
                 external_torque
             } else {
                 DVec3::ZERO
             };
 
-            state = rk4_sixdof_step(&state, &gravity_accel, |_s| torque, &mass_props, dt);
+            state = rk4_sixdof_step(&state, gravity_accel, |_s| torque, &mass_props, dt);
             current_time += dt;
         }
         let remainder = record.time - current_time;
         if remainder > 0.001 {
-            let torque_active = current_time >= 1000.0 - 0.001 && current_time < 2000.0 - 0.001;
+            let torque_active = (999.999..1999.999).contains(&current_time);
             let torque = if torque_active {
                 external_torque
             } else {
                 DVec3::ZERO
             };
 
-            state = rk4_sixdof_step(&state, &gravity_accel, |_s| torque, &mass_props, remainder);
+            state = rk4_sixdof_step(&state, gravity_accel, |_s| torque, &mass_props, remainder);
             current_time += remainder;
         }
 
@@ -245,8 +253,7 @@ fn tier3_external_torque_sixdof_run9a() {
 
         // Log progress at key points: every hour and at torque boundaries
         let log_hourly = (record.time % 3600.0).abs() < 30.1;
-        let log_torque = (record.time - 1020.0).abs() < 0.1
-            || (record.time - 2040.0).abs() < 0.1;
+        let log_torque = (record.time - 1020.0).abs() < 0.1 || (record.time - 2040.0).abs() < 0.1;
         if log_hourly || log_torque {
             println!(
                 "  t={:6.0}s ({:.1}h): pos_err={:10.2}m  vel_err={:.6}m/s  \

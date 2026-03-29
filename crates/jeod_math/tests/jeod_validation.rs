@@ -2,9 +2,9 @@
 //!
 //! Requires the JEOD source tree (via `JEOD_HOME` or `JEOD_PATH` env var).
 
-use jeod_test_data::{euler_test, orbital_data, orbital_init, reference_state, jeod_path};
-use jeod_math::OrbitalElements;
 use jeod_math::JeodQuat;
+use jeod_math::OrbitalElements;
+use jeod_test_data::{euler_test, jeod_path, orbital_data, orbital_init, reference_state};
 
 /// Earth's gravitational parameter in m^3/s^2 (matches JEOD's value).
 const MU_EARTH: f64 = 3.986004418e14;
@@ -16,13 +16,13 @@ const MU_EARTH: f64 = 3.986004418e14;
 #[test]
 fn validate_iss_orbital_elements_to_cartesian() {
     let root = jeod_path();
-    assert!(root.exists(), "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.", root.display());
-
-    let init = orbital_init::load_orbital_init(
-        &root,
-        "ISS",
-        "trans_Orbit_inertial_body_set01",
+    assert!(
+        root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        root.display()
     );
+
+    let init = orbital_init::load_orbital_init(&root, "ISS", "trans_Orbit_inertial_body_set01");
     let expected = reference_state::load_reference_state(&root, "ISS", "inertial");
 
     // Verify parsed values are sensible
@@ -58,7 +58,9 @@ fn validate_iss_orbital_elements_to_cartesian() {
 
     // time_periapsis is the elapsed time since periapsis passage (seconds).
     // Mean anomaly is simply M = n * t_peri (radians).
-    let t_peri = init.time_periapsis.expect("ISS set01 should have time_periapsis");
+    let t_peri = init
+        .time_periapsis
+        .expect("ISS set01 should have time_periapsis");
     let mean_anomaly = n * t_peri;
 
     let mut oe = OrbitalElements::default();
@@ -113,7 +115,11 @@ fn validate_iss_orbital_elements_to_cartesian() {
 #[test]
 fn validate_iss_reference_state_parsing() {
     let root = jeod_path();
-    assert!(root.exists(), "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.", root.display());
+    assert!(
+        root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        root.display()
+    );
 
     let state = reference_state::load_reference_state(&root, "ISS", "inertial");
 
@@ -167,7 +173,11 @@ fn validate_iss_reference_state_parsing() {
 #[test]
 fn validate_orbital_roundtrip_5000_vectors() {
     let root = jeod_path();
-    assert!(root.exists(), "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.", root.display());
+    assert!(
+        root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        root.display()
+    );
 
     let vectors = orbital_data::load_orbital_test_vectors(&root);
     assert!(
@@ -235,7 +245,11 @@ fn validate_orbital_roundtrip_5000_vectors() {
 #[test]
 fn validate_orbital_data_parser() {
     let root = jeod_path();
-    assert!(root.exists(), "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.", root.display());
+    assert!(
+        root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        root.display()
+    );
 
     let vectors = orbital_data::load_orbital_test_vectors(&root);
 
@@ -250,11 +264,11 @@ fn validate_orbital_data_parser() {
     // Spot-check first vector against known values from the file
     let v0 = &vectors[0];
     assert!(
-        (v0.position.x - 4.0875178010833091e+06).abs() < 1.0,
+        (v0.position.x - 4.087_517_801_083_309e+06).abs() < 1.0,
         "First vector position X mismatch"
     );
     assert!(
-        (v0.velocity.x - (-5.8041508067101140e+03)).abs() < 0.001,
+        (v0.velocity.x - (-5.804_150_806_710_114e+03)).abs() < 0.001,
         "First vector velocity X mismatch"
     );
 
@@ -284,13 +298,14 @@ fn validate_orbital_data_parser() {
 #[test]
 fn validate_euler_matrix_from_jeod() {
     let root = jeod_path();
-    assert!(root.exists(), "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.", root.display());
+    assert!(
+        root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        root.display()
+    );
 
     let cases = euler_test::load_euler_test_cases(&root);
-    assert!(
-        !cases.is_empty(),
-        "Expected at least one Euler test case"
-    );
+    assert!(!cases.is_empty(), "Expected at least one Euler test case");
 
     for (i, case) in cases.iter().enumerate() {
         // Build a glam DMat3 from the row-major test matrix
@@ -378,19 +393,19 @@ fn validate_euler_matrix_from_jeod() {
 #[test]
 fn validate_orbital_init_parser() {
     let root = jeod_path();
-    assert!(root.exists(), "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.", root.display());
-
-    let init = orbital_init::load_orbital_init(
-        &root,
-        "ISS",
-        "trans_Orbit_inertial_body_set01",
+    assert!(
+        root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        root.display()
     );
+
+    let init = orbital_init::load_orbital_init(&root, "ISS", "trans_Orbit_inertial_body_set01");
 
     // Cross-check parsed values against known file contents
     let deg2rad = std::f64::consts::PI / 180.0;
 
     assert!(
-        (init.semi_major_axis - 6_732_901.20152).abs() < 0.01,
+        (init.semi_major_axis - 6_732_901.201_52).abs() < 0.01,
         "semi_major_axis: expected 6732901.20152 m, got {}",
         init.semi_major_axis
     );

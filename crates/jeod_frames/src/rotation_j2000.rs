@@ -104,7 +104,10 @@ mod tests {
                 assert!(
                     (product.col(j)[i] - expected).abs() < 1e-12,
                     "T * T^T [{},{}] = {}, expected {}",
-                    i, j, product.col(j)[i], expected
+                    i,
+                    j,
+                    product.col(j)[i],
+                    expected
                 );
             }
         }
@@ -138,7 +141,9 @@ mod tests {
                 assert!(
                     (rrt.col(j)[i] - expected).abs() < 1e-14,
                     "R*R^T [{}][{}] = {}",
-                    i, j, rrt.col(j)[i]
+                    i,
+                    j,
+                    rrt.col(j)[i]
                 );
             }
         }

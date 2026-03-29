@@ -203,7 +203,7 @@ mod tests {
         let accel_fn = |s: &TranslationalState| -> DVec3 { -s.position };
 
         for _ in 0..steps {
-            state = rk4_translational_step(&state, &accel_fn, dt);
+            state = rk4_translational_step(&state, accel_fn, dt);
         }
 
         // Compare against analytical solution at the actual final time:
@@ -216,14 +216,8 @@ mod tests {
 
         // RK4 with dt=0.01 over ~628 steps. The O(h^4) local truncation error
         // accumulates to well below 1e-8 for this smooth oscillator.
-        assert!(
-            pos_error < 1e-8,
-            "Position error {pos_error} exceeds 1e-8"
-        );
-        assert!(
-            vel_error < 1e-8,
-            "Velocity error {vel_error} exceeds 1e-8"
-        );
+        assert!(pos_error < 1e-8, "Position error {pos_error} exceeds 1e-8");
+        assert!(vel_error < 1e-8, "Velocity error {vel_error} exceeds 1e-8");
     }
 
     /// Convergence order test: RK4 is 4th-order, so halving dt should reduce
@@ -250,7 +244,7 @@ mod tests {
         let steps_coarse = (total_time / dt_coarse).round() as usize;
         let mut state_coarse = initial;
         for _ in 0..steps_coarse {
-            state_coarse = rk4_translational_step(&state_coarse, &accel_fn, dt_coarse);
+            state_coarse = rk4_translational_step(&state_coarse, accel_fn, dt_coarse);
         }
         let error_coarse = (state_coarse.position.x - exact_pos).abs();
 
@@ -258,7 +252,7 @@ mod tests {
         let steps_fine = (total_time / dt_fine).round() as usize;
         let mut state_fine = initial;
         for _ in 0..steps_fine {
-            state_fine = rk4_translational_step(&state_fine, &accel_fn, dt_fine);
+            state_fine = rk4_translational_step(&state_fine, accel_fn, dt_fine);
         }
         let error_fine = (state_fine.position.x - exact_pos).abs();
 
@@ -296,7 +290,7 @@ mod tests {
 
         let num_steps = 10;
         for _ in 0..num_steps {
-            state = rk4_translational_step(&state, &zero_accel, dt);
+            state = rk4_translational_step(&state, zero_accel, dt);
         }
 
         let total_time = dt * num_steps as f64;
@@ -353,7 +347,7 @@ mod tests {
 
         // Precession rate and period
         let omega_p = (20.0 - 10.0) / 10.0 * omega_z; // = 0.1 rad/s
-        let period = std::f64::consts::TAU / omega_p;   // = 2*pi/0.1 s
+        let period = std::f64::consts::TAU / omega_p; // = 2*pi/0.1 s
 
         let initial = SixDofState {
             trans: TranslationalState {
@@ -374,7 +368,7 @@ mod tests {
 
         let mut state = initial;
         for _ in 0..steps {
-            state = rk4_sixdof_step(&state, &zero_accel, &zero_torque, &mass_props, dt);
+            state = rk4_sixdof_step(&state, zero_accel, zero_torque, &mass_props, dt);
         }
 
         // omega_z should remain constant (axisymmetric body)
@@ -433,7 +427,7 @@ mod tests {
         let mut max_norm_err = 0.0_f64;
 
         for _ in 0..total_seconds {
-            state = rk4_sixdof_step(&state, &zero_accel, &zero_torque, &mass_props, dt);
+            state = rk4_sixdof_step(&state, zero_accel, zero_torque, &mass_props, dt);
             let norm_err = (state.rot.quaternion.norm_sq() - 1.0).abs();
             max_norm_err = max_norm_err.max(norm_err);
         }

@@ -108,7 +108,16 @@ pub fn load_from_jeod_cc(path: &std::path::Path) -> Result<SphericalHarmonicsDat
         }
     }
 
-    Ok(SphericalHarmonicsData::new(degree, order, radius, mu, cnm, snm, tide_free, tide_free_delta))
+    Ok(SphericalHarmonicsData::new(
+        degree,
+        order,
+        radius,
+        mu,
+        cnm,
+        snm,
+        tide_free,
+        tide_free_delta,
+    ))
 }
 
 /// Save coefficients to a compact binary format.
@@ -117,11 +126,14 @@ pub fn load_from_jeod_cc(path: &std::path::Path) -> Result<SphericalHarmonicsDat
 ///         tide_free(u8), tide_free_delta(f64),
 ///         then for each n=0..degree: cnm[n][0..n] as f64,
 ///         then for each n=0..degree: snm[n][0..n] as f64.
-pub fn save_binary(data: &SphericalHarmonicsData, path: &std::path::Path) -> Result<(), std::io::Error> {
+pub fn save_binary(
+    data: &SphericalHarmonicsData,
+    path: &std::path::Path,
+) -> Result<(), std::io::Error> {
     use std::io::Write;
     let mut buf = Vec::new();
-    buf.extend_from_slice(b"JEOD");              // 4-byte magic
-    buf.extend_from_slice(&1u32.to_le_bytes());  // 4-byte version
+    buf.extend_from_slice(b"JEOD"); // 4-byte magic
+    buf.extend_from_slice(&1u32.to_le_bytes()); // 4-byte version
     buf.extend_from_slice(&(data.degree as u32).to_le_bytes());
     buf.extend_from_slice(&(data.order as u32).to_le_bytes());
     buf.extend_from_slice(&data.radius.to_le_bytes());
@@ -154,15 +166,21 @@ pub fn load_binary_from_bytes(buf: &[u8]) -> Result<SphericalHarmonicsData, Coef
     let mut pos = 0;
 
     if buf.len() < 8 {
-        return Err(CoeffLoadError::InvalidFormat("binary coefficient file too short".into()));
+        return Err(CoeffLoadError::InvalidFormat(
+            "binary coefficient file too short".into(),
+        ));
     }
     if &buf[0..4] != b"JEOD" {
-        return Err(CoeffLoadError::InvalidFormat("invalid magic in binary coefficient file".into()));
+        return Err(CoeffLoadError::InvalidFormat(
+            "invalid magic in binary coefficient file".into(),
+        ));
     }
     pos += 4;
     let version = u32::from_le_bytes(buf[4..8].try_into().unwrap());
     if version != 1 {
-        return Err(CoeffLoadError::InvalidFormat(format!("unsupported binary coefficient version {version}")));
+        return Err(CoeffLoadError::InvalidFormat(format!(
+            "unsupported binary coefficient version {version}"
+        )));
     }
     pos += 4;
 
@@ -203,7 +221,16 @@ pub fn load_binary_from_bytes(buf: &[u8]) -> Result<SphericalHarmonicsData, Coef
         snm.push(row);
     }
 
-    Ok(SphericalHarmonicsData::new(degree, order, radius, mu, cnm, snm, tide_free, tide_free_delta))
+    Ok(SphericalHarmonicsData::new(
+        degree,
+        order,
+        radius,
+        mu,
+        cnm,
+        snm,
+        tide_free,
+        tide_free_delta,
+    ))
 }
 
 // --- Helper functions ---
@@ -227,7 +254,9 @@ fn extract_assign_f64(line: &str, key: &str) -> Option<f64> {
         let rest = &line[idx + pattern.len()..];
         let val_str: String = rest
             .chars()
-            .take_while(|c| *c == '-' || *c == '+' || *c == '.' || *c == 'E' || *c == 'e' || c.is_ascii_digit())
+            .take_while(|c| {
+                *c == '-' || *c == '+' || *c == '.' || *c == 'E' || *c == 'e' || c.is_ascii_digit()
+            })
             .collect();
         val_str.parse().ok()
     } else {
@@ -259,7 +288,9 @@ fn extract_coeff(line: &str, name: &str) -> Option<(usize, usize, f64)> {
     let val_rest = after_bracket[eq_pos + 1..].trim();
     let val_str: String = val_rest
         .chars()
-        .take_while(|c| *c == '-' || *c == '+' || *c == '.' || *c == 'E' || *c == 'e' || c.is_ascii_digit())
+        .take_while(|c| {
+            *c == '-' || *c == '+' || *c == '.' || *c == 'E' || *c == 'e' || c.is_ascii_digit()
+        })
         .collect();
     let val: f64 = val_str.parse().ok()?;
 

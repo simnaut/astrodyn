@@ -340,10 +340,10 @@ pub fn calc_nonspherical_with_scratch(
             } else {
                 cos_phi_nth = 0.0;
             }
-            scratch.cos_mlambda[ii] =
-                scratch.cos_mlambda[1] * scratch.cos_mlambda[ii - 1] - scratch.sin_mlambda[1] * scratch.sin_mlambda[ii - 1];
-            scratch.sin_mlambda[ii] =
-                scratch.sin_mlambda[1] * scratch.cos_mlambda[ii - 1] + scratch.cos_mlambda[1] * scratch.sin_mlambda[ii - 1];
+            scratch.cos_mlambda[ii] = scratch.cos_mlambda[1] * scratch.cos_mlambda[ii - 1]
+                - scratch.sin_mlambda[1] * scratch.sin_mlambda[ii - 1];
+            scratch.sin_mlambda[ii] = scratch.sin_mlambda[1] * scratch.cos_mlambda[ii - 1]
+                + scratch.cos_mlambda[1] * scratch.sin_mlambda[ii - 1];
 
             // Equation (3-18), modified for underflow
             scratch.c_tilde[ii] = cos_phi_nth * scratch.cos_mlambda[ii];
@@ -372,8 +372,7 @@ pub fn calc_nonspherical_with_scratch(
                 sum_v_n += piijj_x_btilde;
 
                 if jj < ii {
-                    let zetaiijj_x_piijjp1 =
-                        data.zeta[ii][jj] * scratch.pnm(ii, jj + 1);
+                    let zetaiijj_x_piijjp1 = data.zeta[ii][jj] * scratch.pnm(ii, jj + 1);
                     sum_h_n += zetaiijj_x_piijjp1 * b_tilde;
                     if ii_grad_deg_nonzero && grad_order_nonzero && jj_lt_grad_order {
                         sum_h_grad_n += zetaiijj_x_piijjp1 * b_tilde;
@@ -389,8 +388,7 @@ pub fn calc_nonspherical_with_scratch(
 
                 if ii_grad_deg_nonzero && grad_order_nonzero && jj_lt_grad_order {
                     sum_gam_grad_n += (dbl_jj + dbl_iip1) * piijj_x_btilde;
-                    sum_l_n +=
-                        (dbl_jj + dbl_iip1) * (dbl_jjp1 + dbl_iip1) * piijj_x_btilde;
+                    sum_l_n += (dbl_jj + dbl_iip1) * (dbl_jjp1 + dbl_iip1) * piijj_x_btilde;
                     sum_m_n += scratch.pnm(ii, jj + 2) * b_tilde * data.upsilon[ii][jj];
                     sum_s_n += (dbl_jj + dbl_iip1) * jj_x_piijj * b_tilde_m1;
                     sum_t_n -= (dbl_jj + dbl_iip1) * jj_x_piijj * a_tilde_m1;

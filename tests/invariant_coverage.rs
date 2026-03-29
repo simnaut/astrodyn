@@ -102,7 +102,7 @@ fn extract_inv_tags(line: &str) -> Vec<String> {
     let mut search = line;
     while let Some(idx) = search.find("JEOD_INV: ") {
         let after = &search[idx + 10..]; // skip "JEOD_INV: "
-        // Extract tag: letters, then dot, then digits
+                                         // Extract tag: letters, then dot, then digits
         let tag_end = after
             .find(|c: char| !c.is_ascii_alphanumeric() && c != '.')
             .unwrap_or(after.len());
@@ -130,7 +130,9 @@ fn catalog_to_source_coverage() {
             || (status.starts_with("structural") && status.contains(".rs"));
 
         if needs_tag && !source_tags.contains_key(tag) {
-            missing.push(format!("  {tag}: marked as `{status}` but no // JEOD_INV: {tag} found in source"));
+            missing.push(format!(
+                "  {tag}: marked as `{status}` but no // JEOD_INV: {tag} found in source"
+            ));
         }
     }
 
@@ -211,15 +213,27 @@ fn coverage_summary() {
     let source_tags = find_source_tags();
 
     let total = catalog.len();
-    let enforced = catalog.values().filter(|s| s.starts_with("enforced")).count();
-    let partial = catalog.values().filter(|s| s.starts_with("partial")).count();
+    let enforced = catalog
+        .values()
+        .filter(|s| s.starts_with("enforced"))
+        .count();
+    let partial = catalog
+        .values()
+        .filter(|s| s.starts_with("partial"))
+        .count();
     let structural = catalog
         .values()
         .filter(|s| s.starts_with("structural"))
         .count();
-    let deferred = catalog.values().filter(|s| s.starts_with("deferred")).count();
+    let deferred = catalog
+        .values()
+        .filter(|s| s.starts_with("deferred"))
+        .count();
     let na = catalog.values().filter(|s| s.starts_with("n/a")).count();
-    let not_enforced = catalog.values().filter(|s| s.starts_with("not enforced")).count();
+    let not_enforced = catalog
+        .values()
+        .filter(|s| s.starts_with("not enforced"))
+        .count();
     let tagged_count = source_tags.len();
     let tag_sites: usize = source_tags.values().map(|v| v.len()).sum();
 

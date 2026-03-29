@@ -19,10 +19,7 @@ pub struct JeodTimePlugin;
 impl Plugin for JeodTimePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<SimulationTimeR>();
-        app.add_systems(
-            FixedUpdate,
-            time_advance_system.in_set(JeodSet::TimeUpdate),
-        );
+        app.add_systems(FixedUpdate, time_advance_system.in_set(JeodSet::TimeUpdate));
     }
 }
 

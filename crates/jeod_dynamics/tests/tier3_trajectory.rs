@@ -26,7 +26,12 @@ fn angular_momentum(pos: DVec3, vel: DVec3) -> DVec3 {
 }
 
 /// Propagate a state for the given duration at the given timestep.
-fn propagate(state: &TranslationalState, mu: f64, dt: f64, duration: f64) -> Vec<(f64, TranslationalState)> {
+fn propagate(
+    state: &TranslationalState,
+    mu: f64,
+    dt: f64,
+    duration: f64,
+) -> Vec<(f64, TranslationalState)> {
     let steps = (duration / dt).ceil() as usize;
     let mut trajectory = Vec::with_capacity(steps + 1);
     let mut current = *state;
@@ -78,12 +83,14 @@ fn tier3_energy_conservation_10_orbits() {
         assert!(
             energy_drift < 1e-7,
             "Energy drift {:.2e} at t={:.0}s exceeds 1e-7",
-            energy_drift, t
+            energy_drift,
+            t
         );
         assert!(
             h_drift < 1e-7,
             "Angular momentum drift {:.2e} at t={:.0}s exceeds 1e-7",
-            h_drift, t
+            h_drift,
+            t
         );
     }
 
@@ -180,13 +187,20 @@ fn tier3_position_return_after_one_orbit() {
         state = rk4_translational_step(&state, |s| point_mass_accel(MU_EARTH, s.position), dt);
     }
     if remainder > 1e-12 {
-        state = rk4_translational_step(&state, |s| point_mass_accel(MU_EARTH, s.position), remainder);
+        state = rk4_translational_step(
+            &state,
+            |s| point_mass_accel(MU_EARTH, s.position),
+            remainder,
+        );
     }
 
     let pos_error = (state.position - initial.position).length();
     let vel_error = (state.velocity - initial.velocity).length();
 
-    println!("One-orbit return test (dt={}s, {} full steps + {:.3}s remainder):", dt, full_steps, remainder);
+    println!(
+        "One-orbit return test (dt={}s, {} full steps + {:.3}s remainder):",
+        dt, full_steps, remainder
+    );
     println!("  Position error: {:.3} m", pos_error);
     println!("  Velocity error: {:.6} m/s", vel_error);
 
@@ -239,8 +253,14 @@ fn tier3_eccentric_orbit_apse_distances() {
     let apoapsis_error = ((max_r - r_apoapsis) / r_apoapsis).abs();
 
     println!("Eccentric orbit apse test (e={}, dt={}s):", e, dt);
-    println!("  Analytical periapsis: {:.1} m, measured: {:.1} m, error: {:.2e}", r_periapsis, min_r, periapsis_error);
-    println!("  Analytical apoapsis:  {:.1} m, measured: {:.1} m, error: {:.2e}", r_apoapsis, max_r, apoapsis_error);
+    println!(
+        "  Analytical periapsis: {:.1} m, measured: {:.1} m, error: {:.2e}",
+        r_periapsis, min_r, periapsis_error
+    );
+    println!(
+        "  Analytical apoapsis:  {:.1} m, measured: {:.1} m, error: {:.2e}",
+        r_apoapsis, max_r, apoapsis_error
+    );
 
     assert!(
         periapsis_error < 1e-6,
@@ -261,7 +281,7 @@ fn tier3_eccentric_orbit_apse_distances() {
 fn tier3_iss_24h_propagation() {
     // ISS orbital elements from JEOD: trans_Orbit_inertial_body_set01.py
     // a = 6732.90120152 km, e = 0.00129073350, i = 51.670450765 deg
-    let a = 6_732_901.20152; // m
+    let a = 6_732_901.201_52; // m
     let e = 0.00129073350;
     let r_peri = a * (1.0 - e);
 
@@ -299,12 +319,21 @@ fn tier3_iss_24h_propagation() {
         max_alt = max_alt.max(alt);
     }
 
-    println!("ISS 24-hour propagation (dt={}s, {:.1} orbits):", dt, n_orbits);
+    println!(
+        "ISS 24-hour propagation (dt={}s, {:.1} orbits):",
+        dt, n_orbits
+    );
     println!("  Relative energy drift:     {:.2e}", relative_energy_drift);
-    println!("  Expected altitude range:   {:.1} - {:.1} km",
-        expected_min_alt / 1000.0, expected_max_alt / 1000.0);
-    println!("  Measured altitude range:   {:.1} - {:.1} km",
-        min_alt / 1000.0, max_alt / 1000.0);
+    println!(
+        "  Expected altitude range:   {:.1} - {:.1} km",
+        expected_min_alt / 1000.0,
+        expected_max_alt / 1000.0
+    );
+    println!(
+        "  Measured altitude range:   {:.1} - {:.1} km",
+        min_alt / 1000.0,
+        max_alt / 1000.0
+    );
     println!("  Total steps:               {}", trajectory.len());
 
     assert!(
@@ -318,12 +347,14 @@ fn tier3_iss_24h_propagation() {
     assert!(
         min_alt > expected_min_alt - alt_tolerance,
         "Min altitude {:.1} km below expected {:.1} km",
-        min_alt / 1000.0, (expected_min_alt - alt_tolerance) / 1000.0
+        min_alt / 1000.0,
+        (expected_min_alt - alt_tolerance) / 1000.0
     );
     assert!(
         max_alt < expected_max_alt + alt_tolerance,
         "Max altitude {:.1} km above expected {:.1} km",
-        max_alt / 1000.0, (expected_max_alt + alt_tolerance) / 1000.0
+        max_alt / 1000.0,
+        (expected_max_alt + alt_tolerance) / 1000.0
     );
 }
 
@@ -333,7 +364,11 @@ fn tier3_iss_24h_propagation() {
 #[test]
 fn tier3_cross_validate_gravity_at_jeod_positions() {
     let jeod_root = jeod_test_data::jeod_path();
-    assert!(jeod_root.exists(), "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.", jeod_root.display());
+    assert!(
+        jeod_root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        jeod_root.display()
+    );
 
     let cases = jeod_test_data::gravity_verif::load_gravity_test_cases(&jeod_root);
 
@@ -355,7 +390,9 @@ fn tier3_cross_validate_gravity_at_jeod_positions() {
             assert!(
                 ratio < 0.01,
                 "Case {}: perturbation {:.6e} is > 1% of point-mass {:.6e}",
-                case.case_num, perturbation_mag, point_mass_mag
+                case.case_num,
+                perturbation_mag,
+                point_mass_mag
             );
             perturb_count += 1;
         } else {
@@ -368,7 +405,10 @@ fn tier3_cross_validate_gravity_at_jeod_positions() {
             assert!(
                 relative_diff < 0.01,
                 "Case {}: point-mass {:.6e} vs JEOD total {:.6e}, diff {:.2e}",
-                case.case_num, point_mass_mag, jeod_mag, relative_diff
+                case.case_num,
+                point_mass_mag,
+                jeod_mag,
+                relative_diff
             );
 
             // Direction should agree (both point roughly toward center).
@@ -378,22 +418,29 @@ fn tier3_cross_validate_gravity_at_jeod_positions() {
             assert!(
                 cos_angle > 0.999,
                 "Case {}: direction mismatch, cos(angle) = {:.6}",
-                case.case_num, cos_angle
+                case.case_num,
+                cos_angle
             );
             full_count += 1;
         }
 
         // In all cases, point-mass should be anti-radial.
-        let cos_radial = case.position.normalize().dot(our_result.grav_accel.normalize());
+        let cos_radial = case
+            .position
+            .normalize()
+            .dot(our_result.grav_accel.normalize());
         assert!(
             cos_radial < -0.999,
             "Case {}: point-mass not anti-radial, cos = {:.6}",
-            case.case_num, cos_radial
+            case.case_num,
+            cos_radial
         );
     }
 
     println!(
         "Cross-validated point-mass against {} JEOD positions ({} full, {} perturbation-only)",
-        cases.len(), full_count, perturb_count
+        cases.len(),
+        full_count,
+        perturb_count
     );
 }

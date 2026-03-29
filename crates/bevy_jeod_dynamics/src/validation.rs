@@ -10,8 +10,8 @@
 use bevy::prelude::*;
 
 use crate::components::{
-    DynamicsConfigC, GravityAccelerationC, GravityControlsC, GravitySourceC,
-    MassPropertiesC, RotationalStateC, TranslationalStateC,
+    DynamicsConfigC, GravityAccelerationC, GravityControlsC, GravitySourceC, MassPropertiesC,
+    RotationalStateC, TranslationalStateC,
 };
 
 /// Validates JEOD invariants on all dynamic body entities.

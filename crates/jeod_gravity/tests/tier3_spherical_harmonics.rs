@@ -18,8 +18,8 @@ use jeod_dynamics::{rk4_translational_step, TranslationalState};
 use jeod_frames::rotation_j2000;
 use jeod_gravity::coefficients;
 use jeod_test_data::jeod_path;
-use jeod_time::time_converter_ut1_gmst::ut1_to_gmst_days;
 use jeod_time::epoch::{J2000_NOON_TJT, SECONDS_PER_DAY};
+use jeod_time::time_converter_ut1_gmst::ut1_to_gmst_days;
 use std::path::Path;
 
 // JEOD SIM_dyncomp epoch: 2007-11-20 00:00:00 UTC
@@ -68,19 +68,24 @@ struct JeodStateRecord {
 }
 
 fn load_jeod_trajectory(path: &Path) -> Vec<JeodStateRecord> {
-    let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
-        panic!("Failed to read {}: {e}", path.display())
-    });
+    let content = std::fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {e}", path.display()));
     let mut records = Vec::new();
     for (i, line) in content.lines().enumerate() {
-        if i == 0 { continue; } // skip header
+        if i == 0 {
+            continue;
+        } // skip header
         let line = line.trim();
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
         let f: Vec<&str> = line.split(',').collect();
         assert!(
             f.len() >= 17,
             "{}:{}: expected >= 17 CSV columns, got {} — file may be truncated",
-            path.display(), i + 1, f.len()
+            path.display(),
+            i + 1,
+            f.len()
         );
         let p = |s: &str| -> f64 { s.trim().parse().unwrap() };
         records.push(JeodStateRecord {
@@ -123,9 +128,8 @@ fn run_sh_trajectory_test(csv_name: &str, degree: usize, order: usize, label: &s
 
         let pos_pfix = t_i2pf * s.position;
         let pm = jeod_gravity::calc_spherical(sh_data.mu, s.position);
-        let sh_pfix = jeod_gravity::calc_nonspherical(
-            &sh_data, pos_pfix, degree, order, false, 0, 0,
-        );
+        let sh_pfix =
+            jeod_gravity::calc_nonspherical(&sh_data, pos_pfix, degree, order, false, 0, 0);
         pm.grav_accel + t_pf2i * sh_pfix.grav_accel
     };
 
@@ -136,8 +140,15 @@ fn run_sh_trajectory_test(csv_name: &str, degree: usize, order: usize, label: &s
     };
 
     eprintln!("Tier 3: JEOD SIM_dyncomp {} cross-validation", label);
-    eprintln!("  Gravity: {}x{} + our RNP (precession + nutation + GAST)", degree, order);
-    eprintln!("  Trajectory: {} points over {:.0}s", trajectory.len(), trajectory.last().unwrap().time);
+    eprintln!(
+        "  Gravity: {}x{} + our RNP (precession + nutation + GAST)",
+        degree, order
+    );
+    eprintln!(
+        "  Trajectory: {} points over {:.0}s",
+        trajectory.len(),
+        trajectory.last().unwrap().time
+    );
 
     let dt = 0.03125;
     let mut max_pos_error = 0.0_f64;
@@ -165,7 +176,10 @@ fn run_sh_trajectory_test(csv_name: &str, degree: usize, order: usize, label: &s
         if (jeod_record.time % 3600.0).abs() < 30.1 {
             eprintln!(
                 "  t={:6.0}s ({:.1}h): pos_err={:10.2}m  vel_err={:.6}m/s",
-                jeod_record.time, jeod_record.time / 3600.0, pos_error, vel_error,
+                jeod_record.time,
+                jeod_record.time / 3600.0,
+                pos_error,
+                vel_error,
             );
         }
     }
@@ -181,12 +195,14 @@ fn run_sh_trajectory_test(csv_name: &str, degree: usize, order: usize, label: &s
     assert!(
         max_pos_error < 0.5,
         "{}: Position error {:.2}m exceeds 0.5m over 8 hours",
-        label, max_pos_error,
+        label,
+        max_pos_error,
     );
     assert!(
         max_vel_error < 0.001,
         "{}: Velocity error {:.6}m/s exceeds 0.001 m/s over 8 hours",
-        label, max_vel_error,
+        label,
+        max_vel_error,
     );
 }
 

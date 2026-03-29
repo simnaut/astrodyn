@@ -42,10 +42,7 @@ pub fn compute_lvlh_frame(position: DVec3, velocity: DVec3) -> LvlhFrame {
     let rmagsq = position.length_squared();
     let rmag = rmagsq.sqrt();
 
-    assert!(
-        rmag > 0.0,
-        "compute_lvlh_frame: position magnitude is zero"
-    );
+    assert!(rmag > 0.0, "compute_lvlh_frame: position magnitude is zero");
     assert!(
         hmag > 0.0,
         "compute_lvlh_frame: angular momentum is zero (radial trajectory)"

@@ -23,18 +23,14 @@ fn main() {
     let n_orbits = 10;
     let steps = (n_orbits as f64 * period / dt).ceil() as usize;
 
-    let initial_energy =
-        0.5 * state.velocity.length_squared() - mu_earth / state.position.length();
+    let initial_energy = 0.5 * state.velocity.length_squared() - mu_earth / state.position.length();
 
     println!("Batch Kepler Orbit Propagation (no Bevy)");
     println!("=========================================");
     println!("Initial altitude: {:.1} km", (r0 - 6_378_137.0) / 1000.0);
     println!("Orbital period:   {:.1} s", period);
     println!("Timestep:         {:.1} s", dt);
-    println!(
-        "Propagating for:  {} orbits ({} steps)",
-        n_orbits, steps
-    );
+    println!("Propagating for:  {} orbits ({} steps)", n_orbits, steps);
     println!();
 
     let report_interval = (steps / 10).max(1);
@@ -49,8 +45,7 @@ fn main() {
         }
 
         if step % report_interval == 0 || step == steps {
-            let energy =
-                0.5 * state.velocity.length_squared() - mu_earth / state.position.length();
+            let energy = 0.5 * state.velocity.length_squared() - mu_earth / state.position.length();
             let energy_drift = energy - initial_energy;
             let alt_km = (state.position.length() - 6_378_137.0) / 1000.0;
 
@@ -69,8 +64,7 @@ fn main() {
         }
     }
 
-    let final_energy =
-        0.5 * state.velocity.length_squared() - mu_earth / state.position.length();
+    let final_energy = 0.5 * state.velocity.length_squared() - mu_earth / state.position.length();
     let drift = (final_energy - initial_energy).abs();
     println!();
     println!("Final energy drift: {:.2e} J/kg", drift);
