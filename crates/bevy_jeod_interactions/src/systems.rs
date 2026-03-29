@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-use jeod_interactions::{compute_gravity_torque, compute_srp_force};
 
 use crate::components::{DragConfigC, SrpConfigC};
 use bevy_jeod_dynamics::{
@@ -55,9 +54,7 @@ pub fn gravity_torque_system(
     )>,
 ) {
     for (grav, rot, mass, mut torque) in &mut query {
-        let t_parent_this = rot.quaternion.left_quat_to_transformation();
-
-        torque.0 = compute_gravity_torque(&grav.grav_grad, &t_parent_this, &mass.inertia);
+        torque.0 = jeod_sim::compute_gravity_torque(&grav.grav_grad, &rot.0, &mass.inertia);
     }
 }
 
@@ -94,7 +91,7 @@ pub fn radiation_pressure_system(
         // For now, no shadow detection (Phase 4 Tier 3 will add it)
         let illum_factor = 1.0;
 
-        let result = compute_srp_force(
+        let result = jeod_sim::compute_spherical_srp(
             &srp_config.0,
             sun_state.position,
             state.position,

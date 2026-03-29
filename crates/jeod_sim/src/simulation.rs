@@ -353,7 +353,7 @@ impl Simulation {
                             )
                         })
                         .unwrap_or(1.0);
-                    body.radiation_force = Some(jeod_interactions::compute_srp_force(
+                    body.radiation_force = Some(crate::compute_spherical_srp(
                         srp_config,
                         sun_position,
                         body.trans.position,
@@ -366,10 +366,9 @@ impl Simulation {
             body.gravity_torque = None;
             if body.compute_gravity_torque {
                 if let (Some(ref rot), Some(ref mass)) = (&body.rot, &body.mass) {
-                    let t_parent_this = rot.quaternion.left_quat_to_transformation();
-                    body.gravity_torque = Some(jeod_interactions::compute_gravity_torque(
+                    body.gravity_torque = Some(crate::compute_gravity_torque(
                         &body.gravity_accel.grav_grad,
-                        &t_parent_this,
+                        rot,
                         &mass.inertia,
                     ));
                 }

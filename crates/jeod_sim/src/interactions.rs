@@ -1,14 +1,11 @@
 use glam::{DMat3, DVec3};
 use jeod_dynamics::RotationalState;
-use jeod_interactions::{AerodynamicForce, DragConfig};
+use jeod_interactions::{AerodynamicForce, DragConfig, RadiationForce, SrpConfig};
 
 /// Compute aerodynamic drag for a body, handling the frame transform.
 ///
 /// Computes `T_inertial_struct` from the body's quaternion and structural
 /// transform, then delegates to `jeod_interactions::compute_ballistic_drag`.
-///
-/// This encapsulates the frame composition that would otherwise be inline
-/// in every ECS adapter's drag system.
 ///
 /// # Arguments
 /// - `drag_config`: Cd and area
@@ -30,4 +27,37 @@ pub fn compute_drag(
         jeod_dynamics::compute_t_inertial_struct(&t_struct_body, &t_inertial_body);
 
     jeod_interactions::compute_ballistic_drag(drag_config, atmos, velocity, &t_inertial_struct)
+}
+
+/// Compute gravity gradient torque for a body, handling the quaternion-to-matrix conversion.
+///
+/// Converts the body's quaternion to a rotation matrix, then delegates to
+/// `jeod_interactions::compute_gravity_torque`.
+///
+/// # Arguments
+/// - `grav_grad`: gravity gradient tensor from `GravityAcceleration`
+/// - `rot`: rotational state (for body attitude matrix)
+/// - `inertia`: body inertia tensor
+pub fn compute_gravity_torque(grav_grad: &DMat3, rot: &RotationalState, inertia: &DMat3) -> DVec3 {
+    let t_parent_this = rot.quaternion.left_quat_to_transformation();
+    jeod_interactions::compute_gravity_torque(grav_grad, &t_parent_this, inertia)
+}
+
+/// Compute spherical solar radiation pressure.
+///
+/// Thin wrapper over `jeod_interactions::compute_srp_force` — included for
+/// consistency so all interaction computations are available from `jeod_sim`.
+///
+/// # Arguments
+/// - `config`: Cr and area
+/// - `sun_position`: Sun position in inertial frame
+/// - `body_position`: body position in inertial frame
+/// - `illum_factor`: illumination fraction (0 = full shadow, 1 = full sun)
+pub fn compute_spherical_srp(
+    config: &SrpConfig,
+    sun_position: DVec3,
+    body_position: DVec3,
+    illum_factor: f64,
+) -> RadiationForce {
+    jeod_interactions::compute_srp_force(config, sun_position, body_position, illum_factor)
 }
