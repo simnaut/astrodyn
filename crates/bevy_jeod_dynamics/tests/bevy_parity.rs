@@ -279,11 +279,54 @@ fn run_simulation_steps() -> SixDofState {
     }
 }
 
+/// Assert two f64 values are bit-identical.
+fn assert_bits_eq(label: &str, component: &str, a: f64, b: f64) {
+    assert!(
+        a.to_bits() == b.to_bits(),
+        "{label} {component} not bit-identical:\n  \
+         A: {a} (bits={:#018x})\n  \
+         B: {b} (bits={:#018x})",
+        a.to_bits(),
+        b.to_bits(),
+    );
+}
+
+fn assert_sixdof_bit_identical(label: &str, a: &SixDofState, b: &SixDofState) {
+    for i in 0..3 {
+        assert_bits_eq(
+            label,
+            &format!("pos[{i}]"),
+            a.trans.position[i],
+            b.trans.position[i],
+        );
+        assert_bits_eq(
+            label,
+            &format!("vel[{i}]"),
+            a.trans.velocity[i],
+            b.trans.velocity[i],
+        );
+        assert_bits_eq(
+            label,
+            &format!("omega[{i}]"),
+            a.rot.ang_vel_body[i],
+            b.rot.ang_vel_body[i],
+        );
+    }
+    for i in 0..4 {
+        assert_bits_eq(
+            label,
+            &format!("quat[{i}]"),
+            a.rot.quaternion.data[i],
+            b.rot.quaternion.data[i],
+        );
+    }
+}
+
 /// Three-way parity: Bevy App == jeod_sim::Simulation == manual RK4.
 ///
-/// Runs all three paths from identical initial conditions and compares
-/// the final state directly. Any difference means the orchestration
-/// layers are not equivalent.
+/// Runs all three paths from identical initial conditions and asserts
+/// bit-identical output. Any difference — even a single ULP — means the
+/// orchestration layers are not equivalent.
 #[test]
 fn three_way_parity_bevy_simulation_pure() {
     let (mut app, _planet, vehicle) = build_app();
@@ -292,73 +335,7 @@ fn three_way_parity_bevy_simulation_pure() {
     let sim_state = run_simulation_steps();
     let pure_state = run_pure_steps();
 
-    // ── Bevy vs Simulation (the key new comparison) ──
-
-    let pos_diff = (bevy_state.trans.position - sim_state.trans.position).length();
-    assert!(
-        pos_diff < 1e-8,
-        "Position difference between Bevy and Simulation: {} m (exceeds 1e-8 m)\n\
-         Bevy:  {:?}\n\
-         Sim:   {:?}",
-        pos_diff,
-        bevy_state.trans.position,
-        sim_state.trans.position,
-    );
-
-    let vel_diff = (bevy_state.trans.velocity - sim_state.trans.velocity).length();
-    assert!(
-        vel_diff < 1e-11,
-        "Velocity difference between Bevy and Simulation: {} m/s (exceeds 1e-11 m/s)\n\
-         Bevy:  {:?}\n\
-         Sim:   {:?}",
-        vel_diff,
-        bevy_state.trans.velocity,
-        sim_state.trans.velocity,
-    );
-
-    let q_bevy = bevy_state.rot.quaternion.data;
-    let q_sim = sim_state.rot.quaternion.data;
-    let q_diff: f64 = (0..4)
-        .map(|i| (q_bevy[i] - q_sim[i]).powi(2))
-        .sum::<f64>()
-        .sqrt();
-    assert!(
-        q_diff < 1e-14,
-        "Quaternion difference between Bevy and Simulation: {} (exceeds 1e-14)\n\
-         Bevy:  {:?}\n\
-         Sim:   {:?}",
-        q_diff,
-        q_bevy,
-        q_sim,
-    );
-
-    let omega_diff = (bevy_state.rot.ang_vel_body - sim_state.rot.ang_vel_body).length();
-    assert!(
-        omega_diff < 1e-14,
-        "Angular velocity difference between Bevy and Simulation: {} rad/s (exceeds 1e-14)\n\
-         Bevy:  {:?}\n\
-         Sim:   {:?}",
-        omega_diff,
-        bevy_state.rot.ang_vel_body,
-        sim_state.rot.ang_vel_body,
-    );
-
-    // ── Simulation vs Pure (redundant with jeod_sim parity test, but confirms transitivity) ──
-
-    let pos_diff = (sim_state.trans.position - pure_state.trans.position).length();
-    assert!(
-        pos_diff < 1e-8,
-        "Position difference between Simulation and pure RK4: {} m",
-        pos_diff,
-    );
-
-    println!(
-        "Three-way parity confirmed:\n  \
-         Bevy vs Sim  pos: {:.2e} m\n  \
-         Bevy vs Pure pos: {:.2e} m\n  \
-         Sim  vs Pure pos: {:.2e} m",
-        (bevy_state.trans.position - sim_state.trans.position).length(),
-        (bevy_state.trans.position - pure_state.trans.position).length(),
-        (sim_state.trans.position - pure_state.trans.position).length(),
-    );
+    assert_sixdof_bit_identical("Bevy vs Sim", &bevy_state, &sim_state);
+    assert_sixdof_bit_identical("Sim vs Pure", &sim_state, &pure_state);
+    assert_sixdof_bit_identical("Bevy vs Pure", &bevy_state, &pure_state);
 }

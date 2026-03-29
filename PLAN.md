@@ -873,8 +873,10 @@ jeod_dynamics::tests::rk4_energy_conservation
 | Quaternion | **0.0 (exact)** | 1e-14 | 1e-14 | 1e-12 |
 | Time | — | — | exact (integer s) | — |
 
-Tier 0 tolerances are exact zero because the Bevy pipeline and `jeod_sim::Simulation`
-call the same functions in the same order — the floating-point operations are identical.
+Tier 0 requires bit-identical output (`f64::to_bits()` equality, not tolerance-based)
+because the Bevy pipeline and `jeod_sim::Simulation` call the same functions in the
+same order — the floating-point operations are identical. Tests enforce this with
+`to_bits()` assertions, not epsilon comparisons.
 
 ### Cross-Parity Testing (Tier 0)
 

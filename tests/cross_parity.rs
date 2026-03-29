@@ -87,54 +87,66 @@ fn read_trans(world: &World, entity: Entity) -> TranslationalState {
     world.get::<TranslationalStateC>(entity).unwrap().0
 }
 
-fn assert_sixdof_eq(label: &str, a: &SixDofState, b: &SixDofState) {
-    let pos_diff = (a.trans.position - b.trans.position).length();
-    let vel_diff = (a.trans.velocity - b.trans.velocity).length();
-    let q_a = a.rot.quaternion.data;
-    let q_b = b.rot.quaternion.data;
-    let q_diff: f64 = (0..4)
-        .map(|i| (q_a[i] - q_b[i]).powi(2))
-        .sum::<f64>()
-        .sqrt();
-    let omega_diff = (a.rot.ang_vel_body - b.rot.ang_vel_body).length();
-
-    println!(
-        "  {label}: pos={pos_diff:.2e} m  vel={vel_diff:.2e} m/s  \
-         quat={q_diff:.2e}  omega={omega_diff:.2e} rad/s"
-    );
-
+/// Assert two f64 values are bit-identical.
+fn assert_bits_eq(label: &str, component: &str, a: f64, b: f64) {
     assert!(
-        pos_diff < 1e-8,
-        "{label}: position diff {pos_diff} m exceeds 1e-8 m"
-    );
-    assert!(
-        vel_diff < 1e-11,
-        "{label}: velocity diff {vel_diff} m/s exceeds 1e-11 m/s"
-    );
-    assert!(
-        q_diff < 1e-14,
-        "{label}: quaternion diff {q_diff} exceeds 1e-14"
-    );
-    assert!(
-        omega_diff < 1e-14,
-        "{label}: omega diff {omega_diff} rad/s exceeds 1e-14"
+        a.to_bits() == b.to_bits(),
+        "{label} {component} not bit-identical:\n  \
+         A: {a} (bits={:#018x})\n  \
+         B: {b} (bits={:#018x})",
+        a.to_bits(),
+        b.to_bits(),
     );
 }
 
+fn assert_sixdof_eq(label: &str, a: &SixDofState, b: &SixDofState) {
+    for i in 0..3 {
+        assert_bits_eq(
+            label,
+            &format!("position[{i}]"),
+            a.trans.position[i],
+            b.trans.position[i],
+        );
+        assert_bits_eq(
+            label,
+            &format!("velocity[{i}]"),
+            a.trans.velocity[i],
+            b.trans.velocity[i],
+        );
+        assert_bits_eq(
+            label,
+            &format!("ang_vel[{i}]"),
+            a.rot.ang_vel_body[i],
+            b.rot.ang_vel_body[i],
+        );
+    }
+    for i in 0..4 {
+        assert_bits_eq(
+            label,
+            &format!("quat[{i}]"),
+            a.rot.quaternion.data[i],
+            b.rot.quaternion.data[i],
+        );
+    }
+    println!("  {label}: bit-identical (all 13 components)");
+}
+
 fn assert_trans_eq(label: &str, a: &TranslationalState, b: &TranslationalState) {
-    let pos_diff = (a.position - b.position).length();
-    let vel_diff = (a.velocity - b.velocity).length();
-
-    println!("  {label}: pos={pos_diff:.2e} m  vel={vel_diff:.2e} m/s");
-
-    assert!(
-        pos_diff < 1e-8,
-        "{label}: position diff {pos_diff} m exceeds 1e-8 m"
-    );
-    assert!(
-        vel_diff < 1e-11,
-        "{label}: velocity diff {vel_diff} m/s exceeds 1e-11 m/s"
-    );
+    for i in 0..3 {
+        assert_bits_eq(
+            label,
+            &format!("position[{i}]"),
+            a.position[i],
+            b.position[i],
+        );
+        assert_bits_eq(
+            label,
+            &format!("velocity[{i}]"),
+            a.velocity[i],
+            b.velocity[i],
+        );
+    }
+    println!("  {label}: bit-identical (all 6 components)");
 }
 
 fn new_sim_body_sixdof(earth_idx: usize, gradient: bool) -> SimBody {

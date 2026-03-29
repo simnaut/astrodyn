@@ -134,13 +134,18 @@ impl Simulation {
         idx
     }
 
-    /// Validate all bodies against JEOD invariants.
+    /// Validate all bodies against JEOD invariants and apply auto-corrections.
     ///
     /// Call once before the first `step()`. Returns `Ok(())` if all bodies are
     /// valid, or `Err(errors)` with all validation errors found.
-    pub fn validate(&self) -> Result<(), Vec<ValidationError>> {
+    ///
+    /// Also runs `GravityControl::check_validity()` on each control to
+    /// auto-correct degree/order (matching JEOD's `initialize_gravity_controls()`
+    /// and the Bevy adapter's startup validation).
+    // JEOD_INV: GV.03 — check_validity() called at startup (auto-corrections applied in-place)
+    pub fn validate(&mut self) -> Result<(), Vec<ValidationError>> {
         let mut all_errors = Vec::new();
-        for body in &self.bodies {
+        for body in &mut self.bodies {
             let errors = crate::validate_body(
                 &body.config,
                 &body.gravity_controls,
@@ -151,6 +156,14 @@ impl Simulation {
                 |source_id: usize| self.sources.get(source_id).map(|s| &s.source),
             );
             all_errors.extend(errors);
+
+            // Apply gravity control auto-corrections (degree/order clamping).
+            // JEOD_INV: GV.03 — check_validity() auto-corrects out-of-range settings
+            for ctrl in &mut body.gravity_controls.controls {
+                if let Some(source_entry) = self.sources.get(ctrl.source_name) {
+                    ctrl.check_validity(&source_entry.source);
+                }
+            }
         }
         if all_errors.is_empty() {
             Ok(())

@@ -116,63 +116,72 @@ fn run_pure_steps() -> SixDofState {
     state
 }
 
+/// Assert two f64 values are bit-identical.
+fn assert_bits_eq(label: &str, component: &str, a: f64, b: f64) {
+    assert!(
+        a.to_bits() == b.to_bits(),
+        "{label} {component} not bit-identical:\n  \
+         A: {a} (bits={:#018x})\n  \
+         B: {b} (bits={:#018x})",
+        a.to_bits(),
+        b.to_bits(),
+    );
+}
+
+fn assert_sixdof_bit_identical(label: &str, a: &SixDofState, b: &SixDofState) {
+    for i in 0..3 {
+        assert_bits_eq(
+            label,
+            &format!("position[{i}]"),
+            a.trans.position[i],
+            b.trans.position[i],
+        );
+        assert_bits_eq(
+            label,
+            &format!("velocity[{i}]"),
+            a.trans.velocity[i],
+            b.trans.velocity[i],
+        );
+        assert_bits_eq(
+            label,
+            &format!("ang_vel[{i}]"),
+            a.rot.ang_vel_body[i],
+            b.rot.ang_vel_body[i],
+        );
+    }
+    for i in 0..4 {
+        assert_bits_eq(
+            label,
+            &format!("quat[{i}]"),
+            a.rot.quaternion.data[i],
+            b.rot.quaternion.data[i],
+        );
+    }
+}
+
+fn assert_trans_bit_identical(label: &str, a: &TranslationalState, b: &TranslationalState) {
+    for i in 0..3 {
+        assert_bits_eq(
+            label,
+            &format!("position[{i}]"),
+            a.position[i],
+            b.position[i],
+        );
+        assert_bits_eq(
+            label,
+            &format!("velocity[{i}]"),
+            a.velocity[i],
+            b.velocity[i],
+        );
+    }
+}
+
 #[test]
 fn simulation_matches_pure_rk4_sixdof() {
     let sim_state = run_simulation_steps();
     let pure_state = run_pure_steps();
 
-    // Position parity: should be identical to machine precision.
-    let pos_diff = (sim_state.trans.position - pure_state.trans.position).length();
-    assert!(
-        pos_diff < 1e-8,
-        "Position difference between Simulation and pure RK4: {} m (exceeds 1e-8 m)\n\
-         Sim:   {:?}\n\
-         Pure:  {:?}",
-        pos_diff,
-        sim_state.trans.position,
-        pure_state.trans.position,
-    );
-
-    // Velocity parity.
-    let vel_diff = (sim_state.trans.velocity - pure_state.trans.velocity).length();
-    assert!(
-        vel_diff < 1e-11,
-        "Velocity difference between Simulation and pure RK4: {} m/s (exceeds 1e-11 m/s)\n\
-         Sim:   {:?}\n\
-         Pure:  {:?}",
-        vel_diff,
-        sim_state.trans.velocity,
-        pure_state.trans.velocity,
-    );
-
-    // Quaternion parity.
-    let q_sim = sim_state.rot.quaternion.data;
-    let q_pure = pure_state.rot.quaternion.data;
-    let q_diff: f64 = (0..4)
-        .map(|i| (q_sim[i] - q_pure[i]).powi(2))
-        .sum::<f64>()
-        .sqrt();
-    assert!(
-        q_diff < 1e-14,
-        "Quaternion difference: {} (exceeds 1e-14)\n\
-         Sim:   {:?}\n\
-         Pure:  {:?}",
-        q_diff,
-        q_sim,
-        q_pure,
-    );
-
-    // Angular velocity parity.
-    let omega_diff = (sim_state.rot.ang_vel_body - pure_state.rot.ang_vel_body).length();
-    assert!(
-        omega_diff < 1e-14,
-        "Angular velocity difference: {} rad/s (exceeds 1e-14)\n\
-         Sim:   {:?}\n\
-         Pure:  {:?}",
-        omega_diff,
-        sim_state.rot.ang_vel_body,
-        pure_state.rot.ang_vel_body,
-    );
+    assert_sixdof_bit_identical("Sim vs Pure (6-DOF)", &sim_state, &pure_state);
 }
 
 #[test]
@@ -228,17 +237,5 @@ fn simulation_3dof_matches_pure_translational() {
         state = jeod_dynamics::rk4_translational_step(&state, |_s| grav_accel, DT);
     }
 
-    let pos_diff = (sim.body(0).trans.position - state.position).length();
-    assert!(
-        pos_diff < 1e-8,
-        "3-DOF position difference: {} m (exceeds 1e-8 m)",
-        pos_diff,
-    );
-
-    let vel_diff = (sim.body(0).trans.velocity - state.velocity).length();
-    assert!(
-        vel_diff < 1e-11,
-        "3-DOF velocity difference: {} m/s (exceeds 1e-11 m/s)",
-        vel_diff,
-    );
+    assert_trans_bit_identical("Sim vs Pure (3-DOF)", &sim.body(0).trans, &state);
 }
