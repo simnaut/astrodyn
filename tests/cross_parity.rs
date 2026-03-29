@@ -23,7 +23,7 @@ use bevy_jeod::{
     GravityControls, GravityControlsC, GravityModel, GravitySourceC, GravityTorqueC,
     JeodAtmospherePlugin, JeodDynamicsPlugin, JeodFramesPlugin, JeodGravityPlugin,
     JeodInteractionsPlugin, JeodTimePlugin, MassProperties, MassPropertiesC, PlanetFixedRotationC,
-    RadiationForceC, RotationalStateC, SimulationTimeR, SrpConfig, SrpConfigC, SunMarker,
+    RadiationForceC, RotationalStateC, SrpConfig, SrpConfigC, SunMarker,
     TotalForceC, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
