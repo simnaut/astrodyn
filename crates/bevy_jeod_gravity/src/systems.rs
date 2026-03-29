@@ -39,7 +39,14 @@ pub fn gravity_computation_system(
                 continue;
             };
 
-            // Delegate dispatch (spherical vs nonspherical) to GravityControl::evaluate()
+            // Pre-check: provide entity context before delegating to evaluate()
+            if ctrl.is_nonspherical() && rot.is_none() {
+                panic!(
+                    "Entity {entity:?}: non-spherical GravityControl references source {:?} \
+                     which is missing PlanetFixedRotationC",
+                    ctrl.source_name
+                );
+            }
             let result = ctrl.evaluate(&source.0, state.position, rot.map(|r| &r.0));
             total.grav_accel += result.grav_accel;
             if ctrl.gradient {

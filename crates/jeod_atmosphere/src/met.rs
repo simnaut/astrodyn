@@ -1095,4 +1095,15 @@ mod tests {
             "Equatorial ({d_equator:e}) and polar ({d_polar:e}) densities should differ"
         );
     }
+
+    #[test]
+    fn density_si_matches_density_with_conversion() {
+        let atmos = SOLAR_MEAN;
+        let alt_m = 400_000.0; // 400 km in metres
+        let result_si = atmos.density_si(alt_m, ISS_LAT, ISS_LON, TJT_2020_JUN_15_NOON);
+        let result_km = atmos.density(alt_m / 1000.0, ISS_LAT, ISS_LON, TJT_2020_JUN_15_NOON);
+        assert_eq!(result_si.density, result_km.density);
+        assert_eq!(result_si.temperature, result_km.temperature);
+        assert_eq!(result_si.pressure, result_km.pressure);
+    }
 }
