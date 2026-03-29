@@ -33,7 +33,7 @@ pub fn aero_drag_system(
 
         let result = compute_ballistic_drag(
             &drag_config.0,
-            &atmos,  // AtmosphericStateC derefs to AtmosphereState
+            atmos,  // AtmosphericStateC derefs to AtmosphereState
             state.velocity,
             &t_inertial_struct,
         );
