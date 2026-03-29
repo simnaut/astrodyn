@@ -231,20 +231,16 @@ impl Simulation {
         }
 
         // ── 6. Interactions — drag, SRP, gravity torque ──
-        let sun_pos = self
-            .sun_source
-            .map(|idx| self.sources[idx].position);
+        let sun_pos = self.sun_source.map(|idx| self.sources[idx].position);
 
         for body in &mut self.bodies {
             // Aerodynamic drag
             body.aero_force = None;
-            if let (Some(ref drag_config), Some(ref atmos)) =
-                (&body.drag, &body.atmospheric_state)
+            if let (Some(ref drag_config), Some(ref atmos)) = (&body.drag, &body.atmospheric_state)
             {
-                let t_inertial_body = body
-                    .rot
-                    .as_ref()
-                    .map_or(DMat3::IDENTITY, |r| r.quaternion.left_quat_to_transformation());
+                let t_inertial_body = body.rot.as_ref().map_or(DMat3::IDENTITY, |r| {
+                    r.quaternion.left_quat_to_transformation()
+                });
                 let t_inertial_struct =
                     jeod_dynamics::compute_t_inertial_struct(&body.t_struct_body, &t_inertial_body);
                 body.aero_force = Some(jeod_interactions::compute_ballistic_drag(

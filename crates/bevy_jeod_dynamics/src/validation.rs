@@ -52,12 +52,7 @@ pub fn validate_jeod_invariants(
             mass.map(|m| &m.0),
             rot_state.is_some(),
             trans_state.map(|t| &t.0),
-            |source_entity| {
-                sources
-                    .get(source_entity)
-                    .ok()
-                    .map(|(_, source)| &source.0)
-            },
+            |source_entity| sources.get(source_entity).ok().map(|(_, source)| &source.0),
         );
 
         for error in &errors {

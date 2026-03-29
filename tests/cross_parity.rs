@@ -16,19 +16,16 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 use bevy_jeod::{
-    AerodynamicForceC, AtmosphereConfig, AtmosphereModel, AtmosphereModelR,
-    DragConfig, DragConfigC, DynamicsConfig, DynamicsConfigC, GravityAccelerationC,
-    GravityControl, GravityControls, GravityControlsC, GravityModel, GravitySourceC,
-    GravityTorqueC, JeodAtmospherePlugin, JeodDynamicsPlugin, JeodFramesPlugin,
-    JeodGravityPlugin, JeodInteractionsPlugin, JeodTimePlugin, MassProperties,
-    MassPropertiesC, RadiationForceC, RotationalStateC, SrpConfig,
-    SrpConfigC, SunMarker, TotalForceC, TranslationalStateC,
+    AerodynamicForceC, AtmosphereConfig, AtmosphereModel, AtmosphereModelR, DragConfig,
+    DragConfigC, DynamicsConfig, DynamicsConfigC, GravityAccelerationC, GravityControl,
+    GravityControls, GravityControlsC, GravityModel, GravitySourceC, GravityTorqueC,
+    JeodAtmospherePlugin, JeodDynamicsPlugin, JeodFramesPlugin, JeodGravityPlugin,
+    JeodInteractionsPlugin, JeodTimePlugin, MassProperties, MassPropertiesC, RadiationForceC,
+    RotationalStateC, SrpConfig, SrpConfigC, SunMarker, TotalForceC, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
 use jeod_atmosphere::exponential::ExponentialAtmosphere;
-use jeod_dynamics::{
-    GravityAcceleration, RotationalState, SixDofState, TranslationalState,
-};
+use jeod_dynamics::{GravityAcceleration, RotationalState, SixDofState, TranslationalState};
 use jeod_gravity::GravitySource;
 use jeod_math::JeodQuat;
 use jeod_sim::{GravitySourceEntry, SimBody, Simulation};
@@ -95,7 +92,10 @@ fn assert_sixdof_eq(label: &str, a: &SixDofState, b: &SixDofState) {
     let vel_diff = (a.trans.velocity - b.trans.velocity).length();
     let q_a = a.rot.quaternion.data;
     let q_b = b.rot.quaternion.data;
-    let q_diff: f64 = (0..4).map(|i| (q_a[i] - q_b[i]).powi(2)).sum::<f64>().sqrt();
+    let q_diff: f64 = (0..4)
+        .map(|i| (q_a[i] - q_b[i]).powi(2))
+        .sum::<f64>()
+        .sqrt();
     let omega_diff = (a.rot.ang_vel_body - b.rot.ang_vel_body).length();
 
     println!(
@@ -103,10 +103,22 @@ fn assert_sixdof_eq(label: &str, a: &SixDofState, b: &SixDofState) {
          quat={q_diff:.2e}  omega={omega_diff:.2e} rad/s"
     );
 
-    assert!(pos_diff < 1e-8, "{label}: position diff {pos_diff} m exceeds 1e-8 m");
-    assert!(vel_diff < 1e-11, "{label}: velocity diff {vel_diff} m/s exceeds 1e-11 m/s");
-    assert!(q_diff < 1e-14, "{label}: quaternion diff {q_diff} exceeds 1e-14");
-    assert!(omega_diff < 1e-14, "{label}: omega diff {omega_diff} rad/s exceeds 1e-14");
+    assert!(
+        pos_diff < 1e-8,
+        "{label}: position diff {pos_diff} m exceeds 1e-8 m"
+    );
+    assert!(
+        vel_diff < 1e-11,
+        "{label}: velocity diff {vel_diff} m/s exceeds 1e-11 m/s"
+    );
+    assert!(
+        q_diff < 1e-14,
+        "{label}: quaternion diff {q_diff} exceeds 1e-14"
+    );
+    assert!(
+        omega_diff < 1e-14,
+        "{label}: omega diff {omega_diff} rad/s exceeds 1e-14"
+    );
 }
 
 fn assert_trans_eq(label: &str, a: &TranslationalState, b: &TranslationalState) {
@@ -115,8 +127,14 @@ fn assert_trans_eq(label: &str, a: &TranslationalState, b: &TranslationalState) 
 
     println!("  {label}: pos={pos_diff:.2e} m  vel={vel_diff:.2e} m/s");
 
-    assert!(pos_diff < 1e-8, "{label}: position diff {pos_diff} m exceeds 1e-8 m");
-    assert!(vel_diff < 1e-11, "{label}: velocity diff {vel_diff} m/s exceeds 1e-11 m/s");
+    assert!(
+        pos_diff < 1e-8,
+        "{label}: position diff {pos_diff} m exceeds 1e-8 m"
+    );
+    assert!(
+        vel_diff < 1e-11,
+        "{label}: velocity diff {vel_diff} m/s exceeds 1e-11 m/s"
+    );
 }
 
 fn new_sim_body_sixdof(earth_idx: usize, gradient: bool) -> SimBody {
@@ -159,35 +177,40 @@ fn cross_parity_point_mass_sixdof() {
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
     app.add_plugins((JeodTimePlugin, JeodDynamicsPlugin, JeodGravityPlugin));
 
-    let planet = app.world_mut().spawn((
-        Name::new("Earth"),
-        GravitySourceC(earth_source()),
-        TranslationalStateC::default(),
-    )).id();
+    let planet = app
+        .world_mut()
+        .spawn((
+            Name::new("Earth"),
+            GravitySourceC(earth_source()),
+            TranslationalStateC::default(),
+        ))
+        .id();
 
-    let vehicle = app.world_mut().spawn((
-        TranslationalStateC(iss_trans()),
-        RotationalStateC(tumble_rot()),
-        MassPropertiesC(iss_mass()),
-        DynamicsConfigC(DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: true,
-            three_dof: false,
-        }),
-        GravityControlsC(GravityControls {
-            controls: vec![GravityControl::new_spherical(planet, false)],
-        }),
-        GravityAccelerationC::default(),
-        TotalForceC::default(),
-    )).id();
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(iss_trans()),
+            RotationalStateC(tumble_rot()),
+            MassPropertiesC(iss_mass()),
+            DynamicsConfigC(DynamicsConfig {
+                translational_dynamics: true,
+                rotational_dynamics: true,
+                three_dof: false,
+            }),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+        ))
+        .id();
 
     step_bevy(&mut app, NUM_STEPS);
     let bevy_state = read_sixdof(app.world(), vehicle);
 
     // ── Simulation ──
-    let time = jeod_time::SimulationTime::at_j2000(
-        jeod_time::leap_second::default_leap_second_table(),
-    );
+    let time =
+        jeod_time::SimulationTime::at_j2000(jeod_time::leap_second::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
@@ -199,7 +222,10 @@ fn cross_parity_point_mass_sixdof() {
     sim.step_n(NUM_STEPS);
 
     let body = sim.body(0);
-    let sim_state = SixDofState { trans: body.trans, rot: body.rot.unwrap() };
+    let sim_state = SixDofState {
+        trans: body.trans,
+        rot: body.rot.unwrap(),
+    };
 
     assert_sixdof_eq("Bevy vs Sim", &bevy_state, &sim_state);
 }
@@ -211,7 +237,10 @@ fn cross_parity_point_mass_sixdof() {
 fn cross_parity_drag_atmosphere_sixdof() {
     println!("Scenario B: Exponential atmosphere + drag, 6-DOF");
 
-    let drag_config = DragConfig { cd: 2.2, area: 1000.0 };
+    let drag_config = DragConfig {
+        cd: 2.2,
+        area: 1000.0,
+    };
     let exp_atmos = ExponentialAtmosphere::default();
 
     // ── Bevy ──
@@ -237,38 +266,43 @@ fn cross_parity_drag_atmosphere_sixdof() {
         planet_entity: None, // no rotation for exponential
     });
 
-    let planet = app.world_mut().spawn((
-        Name::new("Earth"),
-        GravitySourceC(earth_source()),
-        TranslationalStateC::default(),
-    )).id();
+    let planet = app
+        .world_mut()
+        .spawn((
+            Name::new("Earth"),
+            GravitySourceC(earth_source()),
+            TranslationalStateC::default(),
+        ))
+        .id();
 
-    let vehicle = app.world_mut().spawn((
-        TranslationalStateC(iss_trans()),
-        RotationalStateC(tumble_rot()),
-        MassPropertiesC(iss_mass()),
-        DynamicsConfigC(DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: true,
-            three_dof: false,
-        }),
-        GravityControlsC(GravityControls {
-            controls: vec![GravityControl::new_spherical(planet, false)],
-        }),
-        GravityAccelerationC::default(),
-        TotalForceC::default(),
-        DragConfigC(drag_config),
-        bevy_jeod::AtmosphericStateDynC::default(),
-        AerodynamicForceC::default(),
-    )).id();
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(iss_trans()),
+            RotationalStateC(tumble_rot()),
+            MassPropertiesC(iss_mass()),
+            DynamicsConfigC(DynamicsConfig {
+                translational_dynamics: true,
+                rotational_dynamics: true,
+                three_dof: false,
+            }),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+            DragConfigC(drag_config),
+            bevy_jeod::AtmosphericStateDynC::default(),
+            AerodynamicForceC::default(),
+        ))
+        .id();
 
     step_bevy(&mut app, NUM_STEPS);
     let bevy_state = read_sixdof(app.world(), vehicle);
 
     // ── Simulation ──
-    let time = jeod_time::SimulationTime::at_j2000(
-        jeod_time::leap_second::default_leap_second_table(),
-    );
+    let time =
+        jeod_time::SimulationTime::at_j2000(jeod_time::leap_second::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
@@ -290,7 +324,10 @@ fn cross_parity_drag_atmosphere_sixdof() {
     sim.step_n(NUM_STEPS);
 
     let body = sim.body(0);
-    let sim_state = SixDofState { trans: body.trans, rot: body.rot.unwrap() };
+    let sim_state = SixDofState {
+        trans: body.trans,
+        rot: body.rot.unwrap(),
+    };
 
     assert_sixdof_eq("Bevy vs Sim (drag)", &bevy_state, &sim_state);
 }
@@ -302,7 +339,10 @@ fn cross_parity_drag_atmosphere_sixdof() {
 fn cross_parity_srp_3dof() {
     println!("Scenario C: Solar radiation pressure, 3-DOF");
 
-    let srp_config = SrpConfig { cx_area: 100.0, rad_coeff: 1.5 };
+    let srp_config = SrpConfig {
+        cx_area: 100.0,
+        rad_coeff: 1.5,
+    };
     // Sun at ~1 AU along +X
     let sun_pos = DVec3::new(1.496e11, 0.0, 0.0);
 
@@ -317,45 +357,53 @@ fn cross_parity_srp_3dof() {
         JeodInteractionsPlugin,
     ));
 
-    let planet = app.world_mut().spawn((
-        Name::new("Earth"),
-        GravitySourceC(earth_source()),
-        TranslationalStateC::default(),
-    )).id();
+    let planet = app
+        .world_mut()
+        .spawn((
+            Name::new("Earth"),
+            GravitySourceC(earth_source()),
+            TranslationalStateC::default(),
+        ))
+        .id();
 
-    let _sun = app.world_mut().spawn((
-        Name::new("Sun"),
-        SunMarker,
-        TranslationalStateC(TranslationalState {
-            position: sun_pos,
-            velocity: DVec3::ZERO,
-        }),
-    )).id();
+    let _sun = app
+        .world_mut()
+        .spawn((
+            Name::new("Sun"),
+            SunMarker,
+            TranslationalStateC(TranslationalState {
+                position: sun_pos,
+                velocity: DVec3::ZERO,
+            }),
+        ))
+        .id();
 
-    let vehicle = app.world_mut().spawn((
-        TranslationalStateC(iss_trans()),
-        MassPropertiesC(iss_mass()),
-        DynamicsConfigC(DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: false,
-            three_dof: true,
-        }),
-        GravityControlsC(GravityControls {
-            controls: vec![GravityControl::new_spherical(planet, false)],
-        }),
-        GravityAccelerationC::default(),
-        TotalForceC::default(),
-        SrpConfigC(srp_config),
-        RadiationForceC::default(),
-    )).id();
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(iss_trans()),
+            MassPropertiesC(iss_mass()),
+            DynamicsConfigC(DynamicsConfig {
+                translational_dynamics: true,
+                rotational_dynamics: false,
+                three_dof: true,
+            }),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+            SrpConfigC(srp_config),
+            RadiationForceC::default(),
+        ))
+        .id();
 
     step_bevy(&mut app, NUM_STEPS);
     let bevy_state = read_trans(app.world(), vehicle);
 
     // ── Simulation ──
-    let time = jeod_time::SimulationTime::at_j2000(
-        jeod_time::leap_second::default_leap_second_table(),
-    );
+    let time =
+        jeod_time::SimulationTime::at_j2000(jeod_time::leap_second::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
@@ -363,7 +411,10 @@ fn cross_parity_srp_3dof() {
         t_inertial_pfix: None,
     });
     let sun_idx = sim.add_source(GravitySourceEntry {
-        source: GravitySource { mu: 0.0, model: GravityModel::PointMass },
+        source: GravitySource {
+            mu: 0.0,
+            model: GravityModel::PointMass,
+        },
         position: sun_pos,
         t_inertial_pfix: None,
     });
@@ -419,36 +470,41 @@ fn cross_parity_gravity_torque_sixdof() {
         JeodInteractionsPlugin,
     ));
 
-    let planet = app.world_mut().spawn((
-        Name::new("Earth"),
-        GravitySourceC(earth_source()),
-        TranslationalStateC::default(),
-    )).id();
+    let planet = app
+        .world_mut()
+        .spawn((
+            Name::new("Earth"),
+            GravitySourceC(earth_source()),
+            TranslationalStateC::default(),
+        ))
+        .id();
 
-    let vehicle = app.world_mut().spawn((
-        TranslationalStateC(iss_trans()),
-        RotationalStateC(tumble_rot()),
-        MassPropertiesC(iss_mass()),
-        DynamicsConfigC(DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: true,
-            three_dof: false,
-        }),
-        GravityControlsC(GravityControls {
-            controls: vec![GravityControl::new_spherical(planet, true)], // gradient=true
-        }),
-        GravityAccelerationC::default(),
-        TotalForceC::default(),
-        GravityTorqueC::default(),
-    )).id();
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(iss_trans()),
+            RotationalStateC(tumble_rot()),
+            MassPropertiesC(iss_mass()),
+            DynamicsConfigC(DynamicsConfig {
+                translational_dynamics: true,
+                rotational_dynamics: true,
+                three_dof: false,
+            }),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, true)], // gradient=true
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+            GravityTorqueC::default(),
+        ))
+        .id();
 
     step_bevy(&mut app, NUM_STEPS);
     let bevy_state = read_sixdof(app.world(), vehicle);
 
     // ── Simulation ──
-    let time = jeod_time::SimulationTime::at_j2000(
-        jeod_time::leap_second::default_leap_second_table(),
-    );
+    let time =
+        jeod_time::SimulationTime::at_j2000(jeod_time::leap_second::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
@@ -463,7 +519,10 @@ fn cross_parity_gravity_torque_sixdof() {
     sim.step_n(NUM_STEPS);
 
     let body = sim.body(0);
-    let sim_state = SixDofState { trans: body.trans, rot: body.rot.unwrap() };
+    let sim_state = SixDofState {
+        trans: body.trans,
+        rot: body.rot.unwrap(),
+    };
 
     assert_sixdof_eq("Bevy vs Sim (grav torque)", &bevy_state, &sim_state);
 }
@@ -475,8 +534,14 @@ fn cross_parity_gravity_torque_sixdof() {
 fn cross_parity_full_stack_sixdof() {
     println!("Scenario E: Full stack — drag + SRP + gravity torque, 6-DOF");
 
-    let drag_config = DragConfig { cd: 2.2, area: 1000.0 };
-    let srp_config = SrpConfig { cx_area: 100.0, rad_coeff: 1.5 };
+    let drag_config = DragConfig {
+        cd: 2.2,
+        area: 1000.0,
+    };
+    let srp_config = SrpConfig {
+        cx_area: 100.0,
+        rad_coeff: 1.5,
+    };
     let exp_atmos = ExponentialAtmosphere::default();
     let sun_pos = DVec3::new(1.496e11, 0.0, 0.0);
 
@@ -503,53 +568,61 @@ fn cross_parity_full_stack_sixdof() {
         planet_entity: None,
     });
 
-    let planet = app.world_mut().spawn((
-        Name::new("Earth"),
-        GravitySourceC(earth_source()),
-        TranslationalStateC::default(),
-    )).id();
+    let planet = app
+        .world_mut()
+        .spawn((
+            Name::new("Earth"),
+            GravitySourceC(earth_source()),
+            TranslationalStateC::default(),
+        ))
+        .id();
 
-    let _sun = app.world_mut().spawn((
-        Name::new("Sun"),
-        SunMarker,
-        TranslationalStateC(TranslationalState {
-            position: sun_pos,
-            velocity: DVec3::ZERO,
-        }),
-    )).id();
+    let _sun = app
+        .world_mut()
+        .spawn((
+            Name::new("Sun"),
+            SunMarker,
+            TranslationalStateC(TranslationalState {
+                position: sun_pos,
+                velocity: DVec3::ZERO,
+            }),
+        ))
+        .id();
 
-    let vehicle = app.world_mut().spawn((
-        TranslationalStateC(iss_trans()),
-        RotationalStateC(tumble_rot()),
-        MassPropertiesC(iss_mass()),
-        DynamicsConfigC(DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: true,
-            three_dof: false,
-        }),
-        GravityControlsC(GravityControls {
-            controls: vec![GravityControl::new_spherical(planet, true)], // gradient for torque
-        }),
-        GravityAccelerationC::default(),
-        TotalForceC::default(),
-        // Drag
-        DragConfigC(drag_config),
-        bevy_jeod::AtmosphericStateDynC::default(),
-        AerodynamicForceC::default(),
-        // SRP
-        SrpConfigC(srp_config),
-        RadiationForceC::default(),
-        // Gravity torque
-        GravityTorqueC::default(),
-    )).id();
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(iss_trans()),
+            RotationalStateC(tumble_rot()),
+            MassPropertiesC(iss_mass()),
+            DynamicsConfigC(DynamicsConfig {
+                translational_dynamics: true,
+                rotational_dynamics: true,
+                three_dof: false,
+            }),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, true)], // gradient for torque
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+            // Drag
+            DragConfigC(drag_config),
+            bevy_jeod::AtmosphericStateDynC::default(),
+            AerodynamicForceC::default(),
+            // SRP
+            SrpConfigC(srp_config),
+            RadiationForceC::default(),
+            // Gravity torque
+            GravityTorqueC::default(),
+        ))
+        .id();
 
     step_bevy(&mut app, NUM_STEPS);
     let bevy_state = read_sixdof(app.world(), vehicle);
 
     // ── Simulation ──
-    let time = jeod_time::SimulationTime::at_j2000(
-        jeod_time::leap_second::default_leap_second_table(),
-    );
+    let time =
+        jeod_time::SimulationTime::at_j2000(jeod_time::leap_second::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
@@ -557,7 +630,10 @@ fn cross_parity_full_stack_sixdof() {
         t_inertial_pfix: None,
     });
     let sun_idx = sim.add_source(GravitySourceEntry {
-        source: GravitySource { mu: 0.0, model: GravityModel::PointMass },
+        source: GravitySource {
+            mu: 0.0,
+            model: GravityModel::PointMass,
+        },
         position: sun_pos,
         t_inertial_pfix: None,
     });
@@ -579,7 +655,10 @@ fn cross_parity_full_stack_sixdof() {
     sim.step_n(NUM_STEPS);
 
     let body = sim.body(0);
-    let sim_state = SixDofState { trans: body.trans, rot: body.rot.unwrap() };
+    let sim_state = SixDofState {
+        trans: body.trans,
+        rot: body.rot.unwrap(),
+    };
 
     assert_sixdof_eq("Bevy vs Sim (full stack)", &bevy_state, &sim_state);
 

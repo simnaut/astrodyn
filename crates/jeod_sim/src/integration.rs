@@ -1,5 +1,7 @@
 use glam::DVec3;
-use jeod_dynamics::{DynamicsConfig, MassProperties, RotationalState, SixDofState, TranslationalState};
+use jeod_dynamics::{
+    DynamicsConfig, MassProperties, RotationalState, SixDofState, TranslationalState,
+};
 
 /// Integrate a single body's state forward by one timestep.
 ///

@@ -1,5 +1,7 @@
 use glam::{DMat3, DVec3};
-use jeod_dynamics::{ForceContributions, FrameDerivatives, MassProperties, RotationalState, TotalForce};
+use jeod_dynamics::{
+    ForceContributions, FrameDerivatives, MassProperties, RotationalState, TotalForce,
+};
 use jeod_interactions::{AerodynamicForce, RadiationForce};
 
 /// Collect all interaction forces and torques, resolve frame transforms,
@@ -77,8 +79,7 @@ pub fn collect_and_resolve_forces(
     });
 
     // Delegate frame-aware force/torque collection to jeod_dynamics (DB.28, DB.29)
-    let collected =
-        jeod_dynamics::collect_forces(&contributions, &t_struct_body, &t_inertial_body);
+    let collected = jeod_dynamics::collect_forces(&contributions, &t_struct_body, &t_inertial_body);
 
     // Compute frame derivatives (FD.01, FD.02)
     let derivs = if let (Some(rot), Some(m)) = (rot_state, mass) {
@@ -91,7 +92,11 @@ pub fn collect_and_resolve_forces(
             rot.ang_vel_body,
         )
     } else if let Some(m) = mass {
-        jeod_dynamics::compute_translational_derivatives(collected.force, m.inverse_mass, gravity_accel)
+        jeod_dynamics::compute_translational_derivatives(
+            collected.force,
+            m.inverse_mass,
+            gravity_accel,
+        )
     } else {
         FrameDerivatives {
             trans_accel: gravity_accel,

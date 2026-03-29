@@ -231,9 +231,8 @@ fn bevy_integration_matches_pure_rk4_sixdof() {
 /// Run 100 integration steps via jeod_sim::Simulation with identical
 /// initial conditions and gravity setup.
 fn run_simulation_steps() -> SixDofState {
-    let time = jeod_time::SimulationTime::at_j2000(
-        jeod_time::leap_second::default_leap_second_table(),
-    );
+    let time =
+        jeod_time::SimulationTime::at_j2000(jeod_time::leap_second::default_leap_second_table());
     let mut sim = jeod_sim::Simulation::new(time, DT);
 
     let earth = sim.add_source(jeod_sim::GravitySourceEntry {

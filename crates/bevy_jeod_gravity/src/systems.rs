@@ -25,19 +25,15 @@ pub fn gravity_computation_system(
     sources: Query<(&GravitySourceC, Option<&PlanetFixedRotationC>)>,
 ) {
     for (entity, state, controls, mut accel) in &mut bodies {
-        accel.0 = jeod_sim::accumulate_gravity(
-            state.position,
-            &controls.0,
-            |source_entity| {
-                match sources.get(source_entity) {
-                    Ok((source, rot)) => Some((&source.0, rot.map(|r| &r.0))),
-                    Err(_) => {
-                        // Let accumulate_gravity handle the panic with a descriptive message
-                        None
-                    }
+        accel.0 = jeod_sim::accumulate_gravity(state.position, &controls.0, |source_entity| {
+            match sources.get(source_entity) {
+                Ok((source, rot)) => Some((&source.0, rot.map(|r| &r.0))),
+                Err(_) => {
+                    // Let accumulate_gravity handle the panic with a descriptive message
+                    None
                 }
-            },
-        );
+            }
+        });
         let _ = entity; // Entity available for future per-entity diagnostics
     }
 }
