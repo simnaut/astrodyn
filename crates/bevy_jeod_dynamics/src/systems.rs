@@ -8,6 +8,21 @@ use crate::components::{
     StructuralTransformC, TotalForceC, TranslationalStateC,
 };
 
+/// Recompute derived mass quantities (`inverse_mass`, `inverse_inertia`) each step.
+///
+/// Port of JEOD's `(DYNAMICS, "scheduled") dyn_body.mass.update_mass_properties()`.
+/// JEOD runs this every timestep so that runtime mass changes (fuel burn,
+/// staging, attach/detach) are reflected in the dynamics before the next
+/// derivative computation.
+///
+/// Placed before `JeodSet::EphemerisUpdate` so gravity and force collection
+/// see current mass properties.
+pub fn mass_update_system(mut query: Query<&mut MassPropertiesC>) {
+    for mut mass in &mut query {
+        mass.recompute_derived();
+    }
+}
+
 /// Collects non-gravity forces and all torques into `TotalForceC`.
 ///
 /// Gravity is intentionally **excluded** because the integration system

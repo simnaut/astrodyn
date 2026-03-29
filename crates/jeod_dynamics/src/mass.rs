@@ -63,6 +63,33 @@ impl MassProperties {
         }
     }
 
+    /// Recompute `inverse_mass` and `inverse_inertia` from `mass` and `inertia`.
+    ///
+    /// Port of the recomputation logic in JEOD's `MassBody::update_mass_properties()`
+    /// (`mass_update.cc` lines 62-68, 118-124). JEOD runs this every timestep
+    /// at the dynamics rate to pick up runtime mass changes (fuel burn, staging,
+    /// attach/detach).
+    ///
+    /// Call this after modifying `mass` or `inertia` directly on the struct.
+    /// Constructors (`new`, `with_inertia`) call this implicitly.
+    ///
+    /// # Panics
+    /// Panics if `mass <= 0` or `inertia` is singular.
+    // JEOD_INV: MA.04 — inverse_inertia consistent with inertia (recomputed from inertia)
+    // JEOD_INV: MA.07 — derived quantities recomputed after mutation
+    pub fn recompute_derived(&mut self) {
+        assert!(self.mass > 0.0, "mass must be positive, got {}", self.mass);
+        self.inverse_mass = 1.0 / self.mass;
+
+        let det = self.inertia.determinant();
+        assert!(
+            det.abs() > 1e-30,
+            "inertia tensor is singular or near-singular (det={det:.2e}); \
+             inverse will produce inf/NaN"
+        );
+        self.inverse_inertia = self.inertia.inverse();
+    }
+
     /// Validate that `inertia` and `inverse_inertia` are consistent.
     ///
     /// In JEOD, `inverse_inertia` is always recomputed from `inertia` (via
@@ -132,5 +159,38 @@ mod tests {
         // Corrupt the inverse
         mp.inverse_inertia = DMat3::IDENTITY;
         mp.validate_consistency(1e-6);
+    }
+
+    #[test]
+    fn recompute_derived_after_mass_change() {
+        let mut mp = MassProperties::new(10.0);
+        assert_eq!(mp.inverse_mass, 0.1);
+
+        // Simulate fuel burn: mass decreases
+        mp.mass = 8.0;
+        // inverse_mass is now stale (still 0.1)
+        assert_eq!(mp.inverse_mass, 0.1);
+
+        mp.recompute_derived();
+        assert!((mp.inverse_mass - 0.125).abs() < 1e-15);
+        assert!((mp.mass * mp.inverse_mass - 1.0).abs() < 1e-15);
+    }
+
+    #[test]
+    fn recompute_derived_after_inertia_change() {
+        let mut mp = MassProperties::with_inertia(
+            10.0,
+            DMat3::from_diagonal(DVec3::new(100.0, 200.0, 300.0)),
+            DVec3::ZERO,
+        );
+
+        // Change inertia (e.g., fuel redistribution)
+        mp.inertia = DMat3::from_diagonal(DVec3::new(50.0, 100.0, 150.0));
+        // inverse_inertia is now stale
+        mp.recompute_derived();
+
+        // Verify consistency
+        mp.validate_consistency(1e-6);
+        assert!((mp.inverse_mass - 0.1).abs() < 1e-15);
     }
 }

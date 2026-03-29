@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use crate::sets::JeodSet;
-use crate::systems::{force_collection_system, integration_system};
+use crate::systems::{force_collection_system, integration_system, mass_update_system};
 use crate::validation::validate_jeod_invariants;
 
 pub struct JeodDynamicsPlugin;
@@ -30,6 +30,11 @@ impl Plugin for JeodDynamicsPlugin {
                 // which validates all bodies before the first integration step.
                 // Uses Local<bool> to run only once.
                 validate_jeod_invariants.before(JeodSet::TimeUpdate),
+                // Mass update: recompute inverse_mass/inverse_inertia each step.
+                // Matches JEOD's (DYNAMICS, "scheduled") dyn_body.mass.update_mass_properties().
+                mass_update_system
+                    .after(JeodSet::TimeUpdate)
+                    .before(JeodSet::EphemerisUpdate),
                 force_collection_system.in_set(JeodSet::ForceCollection),
                 integration_system.in_set(JeodSet::Integration),
             ),
