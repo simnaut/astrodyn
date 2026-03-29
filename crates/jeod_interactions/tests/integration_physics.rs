@@ -233,6 +233,7 @@ fn gravity_torque_causes_libration() {
     let inverse_inertia = DMat3::from_diagonal(DVec3::new(1e-7, 2e-8, 2e-8));
     let mass_props = MassProperties {
         mass: 420_000.0,
+        inverse_mass: 1.0 / 420_000.0,
         inertia,
         inverse_inertia,
         position: DVec3::ZERO,

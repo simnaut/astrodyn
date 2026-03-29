@@ -359,6 +359,12 @@ impl MassTree {
 
         let node = &mut self.nodes[id];
         node.composite_properties.mass = total_mass;
+        // JEOD mass_calc_composite_cm.cc:72 / mass_update.cc:64
+        node.composite_properties.inverse_mass = if total_mass > 0.0 {
+            1.0 / total_mass
+        } else {
+            0.0
+        };
         if total_mass > 0.0 {
             node.composite_properties.position = weighted_pos / total_mass;
         } else {

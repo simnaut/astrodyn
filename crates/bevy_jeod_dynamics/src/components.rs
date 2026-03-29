@@ -72,13 +72,8 @@ pub struct GravityTorqueC(pub DVec3);
 ///
 /// Written by the atmosphere system (`bevy_jeod_atmosphere`).
 /// Read by the aerodynamic drag system.
-#[derive(Component, Debug, Clone, Copy, Default)]
-pub struct AtmosphericStateC {
-    pub density: f64,
-    pub temperature: f64,
-    pub pressure: f64,
-    pub wind: DVec3,
-}
+#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
+pub struct AtmosphericStateC(pub jeod_atmosphere::AtmosphereState);
 
 /// Rotation matrix from structural frame to body (composite_body) frame.
 ///

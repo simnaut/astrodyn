@@ -61,10 +61,179 @@ impl Default for DynamicsConfig {
     }
 }
 
-// JEOD_INV: DB.18 — F=ma (JEOD precomputes inverse_mass; we divide by mass at runtime)
-pub fn compute_translational_acceleration(force: DVec3, mass: f64) -> DVec3 {
-    assert!(mass > 0.0, "mass must be positive for F=ma, got {}", mass);
-    force / mass
+impl DynamicsConfig {
+    /// Validate consistency of dynamics configuration flags.
+    ///
+    /// In JEOD, `three_dof=true` prevents creation of the rotational integrator.
+    /// Having `rotational_dynamics=true` with `three_dof=true` would attempt to
+    /// integrate rotation without an integrator (undefined behavior in JEOD).
+    ///
+    /// # Panics
+    /// Panics if `three_dof` and `rotational_dynamics` are both true.
+    // JEOD_INV: DB.05 — three_dof=true prevents rotational integrator creation
+    // JEOD_INV: DB.06 — three_dof=true AND rotational_dynamics=true is invalid
+    pub fn validate(&self) {
+        assert!(
+            !(self.three_dof && self.rotational_dynamics),
+            "DynamicsConfig has three_dof=true AND rotational_dynamics=true. \
+             In JEOD, three_dof=true prevents creation of the rotational integrator. \
+             Set rotational_dynamics=false when three_dof=true."
+        );
+    }
+}
+
+// JEOD_INV: DB.18 — F=ma via precomputed inverse_mass (matches JEOD MassPointState.inverse_mass)
+pub fn compute_translational_acceleration(force: DVec3, inverse_mass: f64) -> DVec3 {
+    force * inverse_mass
+}
+
+/// Compute the inertial-to-structural rotation matrix from component transforms.
+///
+/// `T_inertial_struct = T_struct_body^T * T_inertial_body`
+///
+/// This composite transform is needed by aerodynamic drag (to express
+/// velocity in the structural frame) and force collection (to rotate
+/// structural-frame forces to inertial). Matches JEOD
+/// `dyn_body_collect.cc` lines 219-221.
+///
+/// # Arguments
+/// - `t_struct_body`: structural-to-body rotation (from mass tree; identity when structure = body)
+/// - `t_inertial_body`: inertial-to-body rotation (from attitude quaternion)
+pub fn compute_t_inertial_struct(t_struct_body: &DMat3, t_inertial_body: &DMat3) -> DMat3 {
+    t_struct_body.transpose() * *t_inertial_body
+}
+
+/// Force and torque contributions from interaction models, each in its native frame.
+///
+/// Used by [`collect_forces`] to accumulate forces/torques with the correct
+/// frame rotations. Fields default to zero — set only the contributions that
+/// are active for a given entity.
+///
+/// Frame conventions (matching JEOD `dyn_body_collect.cc`):
+/// - Aerodynamic force/torque: **structural** frame
+/// - SRP force: **inertial** frame (spherical model); torque: **structural** frame
+/// - Gravity gradient torque: **body** frame
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct ForceContributions {
+    /// Aerodynamic force in structural frame (N).
+    pub aero_force_struct: DVec3,
+    /// Aerodynamic torque in structural frame (N*m).
+    pub aero_torque_struct: DVec3,
+    /// SRP force in inertial frame (N) — spherical model.
+    pub srp_force_inertial: DVec3,
+    /// SRP torque in structural frame (N*m).
+    pub srp_torque_struct: DVec3,
+    /// Gravity gradient torque in body frame (N*m).
+    pub gravity_torque_body: DVec3,
+}
+
+/// Collect forces and torques from multiple sources into a single [`TotalForce`].
+///
+/// Faithfully ports the frame pipeline from JEOD `dyn_body_collect.cc`:
+///
+/// **Forces** (collected in structural frame, rotated to inertial):
+///   `T_inertial_struct^T * aero_force_struct` + `srp_force_inertial`
+///
+/// **Torques** (collected in structural frame, rotated to body):
+///   `T_struct_body * aero_torque_struct` + `T_struct_body * srp_torque_struct` +
+///   `gravity_torque_body`
+///
+/// Where `T_inertial_struct = T_struct_body^T * T_inertial_body`.
+///
+/// # Arguments
+/// - `contributions`: force/torque values from each interaction model
+/// - `t_struct_body`: rotation from structural to body frame (from mass tree)
+/// - `t_inertial_body`: rotation from inertial to body frame (from attitude quaternion)
+// JEOD_INV: DB.28 — forces collected in structural frame, rotated to inertial at root
+// JEOD_INV: DB.29 — torques collected in structural frame, rotated to body at root
+pub fn collect_forces(
+    contributions: &ForceContributions,
+    t_struct_body: &DMat3,
+    t_inertial_body: &DMat3,
+) -> TotalForce {
+    let t_inertial_struct = compute_t_inertial_struct(t_struct_body, t_inertial_body);
+
+    // Forces: structural → inertial via T_inertial_struct^T, plus inertial-frame SRP
+    let force = t_inertial_struct.transpose() * contributions.aero_force_struct
+        + contributions.srp_force_inertial;
+
+    // Torques: structural → body via T_struct_body, plus body-frame gravity torque
+    // JEOD dyn_body_collect.cc line 250: T_struct_body * torq_struct → torq_body
+    let torque = *t_struct_body * contributions.aero_torque_struct
+        + *t_struct_body * contributions.srp_torque_struct
+        + contributions.gravity_torque_body;
+
+    TotalForce { force, torque }
+}
+
+/// Compute translational-only frame derivatives (no rotational dynamics).
+///
+/// For vehicles without rotational state or mass properties, only the
+/// translational acceleration is meaningful. Rotational acceleration is zero.
+///
+/// # Arguments
+/// - `non_grav_force`: accumulated non-gravity force in inertial frame (N)
+/// - `inverse_mass`: precomputed 1/mass (1/kg)
+/// - `grav_accel`: gravitational acceleration in m/s^2 (inertial frame)
+// JEOD_INV: FD.01 — trans_accel = non_grav_accel + grav_accel
+pub fn compute_translational_derivatives(
+    non_grav_force: DVec3,
+    inverse_mass: f64,
+    grav_accel: DVec3,
+) -> FrameDerivatives {
+    let non_grav_accel = if non_grav_force == DVec3::ZERO {
+        DVec3::ZERO
+    } else {
+        compute_translational_acceleration(non_grav_force, inverse_mass)
+    };
+    FrameDerivatives {
+        trans_accel: non_grav_accel + grav_accel,
+        rot_accel: DVec3::ZERO,
+    }
+}
+
+/// Compute translational and rotational frame derivatives from collected forces.
+///
+/// Faithfully ports JEOD `dyn_body_collect.cc` lines 224-264:
+/// ```text
+/// non_grav_accel = F_non_grav / m
+/// trans_accel = non_grav_accel + grav_accel
+/// rot_accel = I^-1 * (tau - omega x I*omega)
+/// ```
+///
+/// # Arguments
+/// - `total_force`: accumulated non-gravity force (inertial) and torque (body)
+/// - `inverse_mass`: precomputed 1/mass (1/kg, from MassProperties)
+/// - `grav_accel`: gravitational acceleration in m/s^2 (inertial frame)
+/// - `inertia`: inertia tensor in body frame (kg*m^2)
+/// - `inverse_inertia`: precomputed inverse of inertia tensor
+/// - `ang_vel_body`: angular velocity in body frame (rad/s)
+// JEOD_INV: FD.01 — trans_accel = non_grav_accel + grav_accel
+// JEOD_INV: FD.02 — rot_accel = I^-1 * (tau - omega x I*omega)
+pub fn compute_frame_derivatives(
+    total_force: &TotalForce,
+    inverse_mass: f64,
+    grav_accel: DVec3,
+    inertia: &DMat3,
+    inverse_inertia: &DMat3,
+    ang_vel_body: DVec3,
+) -> FrameDerivatives {
+    // JEOD_INV: DB.18 — F=ma via precomputed inverse_mass (matches JEOD Vector3::scale with inverse_mass)
+    let non_grav_accel = if total_force.force == DVec3::ZERO {
+        DVec3::ZERO
+    } else {
+        total_force.force * inverse_mass
+    };
+
+    FrameDerivatives {
+        trans_accel: non_grav_accel + grav_accel,
+        rot_accel: crate::rotational::compute_rotational_acceleration(
+            inertia,
+            inverse_inertia,
+            ang_vel_body,
+            total_force.torque,
+        ),
+    }
 }
 
 #[cfg(test)]
@@ -104,9 +273,9 @@ mod tests {
     #[test]
     fn translational_acceleration_basic() {
         let force = DVec3::new(10.0, 20.0, 30.0);
-        let mass = 5.0;
-        let accel = compute_translational_acceleration(force, mass);
-        assert_eq!(accel, DVec3::new(2.0, 4.0, 6.0));
+        let inverse_mass = 1.0 / 5.0;
+        let accel = compute_translational_acceleration(force, inverse_mass);
+        assert!((accel - DVec3::new(2.0, 4.0, 6.0)).length() < 1e-15);
     }
 
     #[test]
@@ -114,5 +283,111 @@ mod tests {
         let force = DVec3::new(3.0, -1.0, 7.0);
         let accel = compute_translational_acceleration(force, 1.0);
         assert_eq!(accel, force);
+    }
+
+    // ── DynamicsConfig::validate() ──
+
+    #[test]
+    fn validate_default_config() {
+        DynamicsConfig::default().validate(); // three_dof=true, rotational=false → ok
+    }
+
+    #[test]
+    fn validate_six_dof_config() {
+        let dc = DynamicsConfig {
+            translational_dynamics: true,
+            rotational_dynamics: true,
+            three_dof: false,
+        };
+        dc.validate(); // should not panic
+    }
+
+    #[test]
+    #[should_panic(expected = "three_dof=true AND rotational_dynamics=true")]
+    fn validate_rejects_three_dof_with_rotational() {
+        let dc = DynamicsConfig {
+            translational_dynamics: true,
+            rotational_dynamics: true,
+            three_dof: true,
+        };
+        dc.validate();
+    }
+
+    // ── collect_forces() ──
+
+    #[test]
+    fn collect_forces_identity_frames() {
+        // With identity frames, structural = body = inertial
+        let c = ForceContributions {
+            aero_force_struct: DVec3::new(1.0, 0.0, 0.0),
+            aero_torque_struct: DVec3::new(0.0, 0.0, 5.0),
+            srp_force_inertial: DVec3::new(0.0, 2.0, 0.0),
+            srp_torque_struct: DVec3::new(0.0, 3.0, 0.0),
+            gravity_torque_body: DVec3::new(0.0, 0.0, 1.0),
+        };
+        let result = collect_forces(&c, &DMat3::IDENTITY, &DMat3::IDENTITY);
+        assert_eq!(result.force, DVec3::new(1.0, 2.0, 0.0));
+        assert_eq!(result.torque, DVec3::new(0.0, 3.0, 6.0));
+    }
+
+    #[test]
+    fn collect_forces_zero_contributions() {
+        let c = ForceContributions::default();
+        let result = collect_forces(&c, &DMat3::IDENTITY, &DMat3::IDENTITY);
+        assert_eq!(result.force, DVec3::ZERO);
+        assert_eq!(result.torque, DVec3::ZERO);
+    }
+
+    #[test]
+    fn collect_forces_rotated_frame() {
+        // 90° rotation about z: structural x-axis maps to inertial y-axis
+        let rot_z90 = DMat3::from_cols(
+            DVec3::new(0.0, 1.0, 0.0),
+            DVec3::new(-1.0, 0.0, 0.0),
+            DVec3::new(0.0, 0.0, 1.0),
+        );
+        let c = ForceContributions {
+            aero_force_struct: DVec3::new(10.0, 0.0, 0.0),
+            ..Default::default()
+        };
+        // t_struct_body = identity, t_inertial_body = rot_z90
+        // T_inertial_struct = I^T * rot_z90 = rot_z90
+        // force_inertial = rot_z90^T * [10,0,0]
+        let result = collect_forces(&c, &DMat3::IDENTITY, &rot_z90);
+        let expected_force = rot_z90.transpose() * DVec3::new(10.0, 0.0, 0.0);
+        assert!((result.force - expected_force).length() < 1e-12);
+    }
+
+    // ── compute_frame_derivatives() ──
+
+    #[test]
+    fn frame_derivatives_gravity_only() {
+        let total_force = TotalForce::default(); // zero non-grav force
+        let grav = DVec3::new(0.0, 0.0, -9.81);
+        let inertia = DMat3::from_diagonal(DVec3::new(10.0, 20.0, 30.0));
+        let inv_inertia = DMat3::from_diagonal(DVec3::new(0.1, 0.05, 1.0 / 30.0));
+
+        let fd = compute_frame_derivatives(
+            &total_force, 1.0 / 100.0, grav, &inertia, &inv_inertia, DVec3::ZERO,
+        );
+        assert_eq!(fd.trans_accel, grav);
+        assert!(fd.rot_accel.length() < 1e-20);
+    }
+
+    #[test]
+    fn frame_derivatives_with_force() {
+        let total_force = TotalForce {
+            force: DVec3::new(100.0, 0.0, 0.0),
+            torque: DVec3::ZERO,
+        };
+        let grav = DVec3::new(0.0, 0.0, -9.81);
+        let inertia = DMat3::from_diagonal(DVec3::splat(10.0));
+        let inv_inertia = DMat3::from_diagonal(DVec3::splat(0.1));
+
+        let fd = compute_frame_derivatives(
+            &total_force, 1.0 / 50.0, grav, &inertia, &inv_inertia, DVec3::ZERO,
+        );
+        // non_grav_accel = 100 * (1/50) = 2.0 in x
+        assert!((fd.trans_accel - DVec3::new(2.0, 0.0, -9.81)).length() < 1e-12);
     }
 }

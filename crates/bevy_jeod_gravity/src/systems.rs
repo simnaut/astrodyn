@@ -6,10 +6,10 @@ use bevy_jeod_dynamics::{
 };
 use jeod_dynamics::GravityAcceleration;
 
-/// Phase 2 scaffolding: stores pre-computed gravity for use by
-/// `force_collection_system`. The `integration_system` independently recomputes
-/// gravity at each RK4 stage for 4th-order accuracy; this stored value is not
-/// used for integration.
+/// Pre-computes gravity for each dynamic body. The result in
+/// `GravityAccelerationC` is used by both `force_collection_system` (for
+/// frame derivatives) and `integration_system` (held constant across RK4
+/// stages, matching JEOD's `DynamicsIntegrationGroup::gravitation`).
 ///
 /// For each body that has `GravityControlsC`, the system iterates over its
 /// control entries, looks up the corresponding `GravitySourceC` entity, and
@@ -39,45 +39,20 @@ pub fn gravity_computation_system(
                 continue;
             };
 
-            // Non-spherical gravity requires the planet-fixed rotation matrix.
-            // Matching JEOD: the pfix frame is always available when non-spherical
-            // gravity is active (guaranteed by frame subscription at init time).
-            if ctrl.is_nonspherical() {
-                let Some(r) = rot else {
-                    panic!(
-                        "Entity {entity:?}: GravityControl for source {:?} requests non-spherical \
-                         gravity (degree={}/order={}) but source has no PlanetFixedRotationC. \
-                         In JEOD, the planet-fixed frame is always subscribed for non-spherical gravity.",
-                        ctrl.source_name, ctrl.degree, ctrl.order
-                    );
-                };
-                let result = jeod_gravity::gravitation(
-                    &source.0, state.position, &r.0,
-                    ctrl.degree, ctrl.order, ctrl.perturbing_only,
-                    ctrl.gradient,
-                    ctrl.gradient_degree,
-                    ctrl.gradient_order,
+            // Pre-check: provide entity context before delegating to evaluate()
+            if ctrl.is_nonspherical() && rot.is_none() {
+                panic!(
+                    "Entity {entity:?}: non-spherical GravityControl (degree={}, order={}) \
+                     references source {:?} which is missing PlanetFixedRotationC",
+                    ctrl.degree, ctrl.order, ctrl.source_name
                 );
-                total.grav_accel += result.grav_accel;
-                if ctrl.gradient {
-                    total.grav_grad += result.grav_grad;
-                }
-                total.grav_pot += result.grav_pot;
-            } else {
-                // Spherical (point-mass) path — rotation matrix not needed.
-                let result = jeod_gravity::gravitation(
-                    &source.0, state.position, &glam::DMat3::IDENTITY,
-                    0, 0, ctrl.perturbing_only,
-                    ctrl.gradient,
-                    ctrl.gradient_degree,
-                    ctrl.gradient_order,
-                );
-                total.grav_accel += result.grav_accel;
-                if ctrl.gradient {
-                    total.grav_grad += result.grav_grad;
-                }
-                total.grav_pot += result.grav_pot;
             }
+            let result = ctrl.evaluate(&source.0, state.position, rot.map(|r| &r.0));
+            total.grav_accel += result.grav_accel;
+            if ctrl.gradient {
+                total.grav_grad += result.grav_grad;
+            }
+            total.grav_pot += result.grav_pot;
         }
         accel.0 = total;
     }

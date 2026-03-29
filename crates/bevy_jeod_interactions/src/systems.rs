@@ -26,22 +26,14 @@ pub fn aero_drag_system(
     )>,
 ) {
     for (drag_config, atmos, state, rot, struct_xform, mut aero_force) in &mut query {
-        let atmos_state = jeod_atmosphere::AtmosphereState {
-            density: atmos.density,
-            temperature: atmos.temperature,
-            pressure: atmos.pressure,
-            wind: atmos.wind,
-        };
-
         // JEOD passes T_inertial_struct (inertial→structural), not T_inertial_body.
-        // T_inertial_struct = T_struct_body^T * T_inertial_body
         let t_inertial_body = rot.quaternion.left_quat_to_transformation();
         let t_struct_body = struct_xform.map_or(glam::DMat3::IDENTITY, |s| s.0);
-        let t_inertial_struct = t_struct_body.transpose() * t_inertial_body;
+        let t_inertial_struct = jeod_dynamics::compute_t_inertial_struct(&t_struct_body, &t_inertial_body);
 
         let result = compute_ballistic_drag(
             &drag_config.0,
-            &atmos_state,
+            atmos,  // AtmosphericStateC derefs to AtmosphereState
             state.velocity,
             &t_inertial_struct,
         );

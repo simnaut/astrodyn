@@ -10,8 +10,8 @@
 use bevy::prelude::*;
 
 use crate::components::{
-    DynamicsConfigC, GravityControlsC, GravitySourceC, MassPropertiesC,
-    RotationalStateC, TranslationalStateC,
+    DynamicsConfigC, GravityAccelerationC, GravityControlsC, GravitySourceC,
+    MassPropertiesC, RotationalStateC, TranslationalStateC,
 };
 
 /// Validates JEOD invariants on all dynamic body entities.
@@ -42,13 +42,13 @@ use crate::components::{
 /// Panics with a descriptive message for any violated invariant, matching
 /// JEOD's `MessageHandler::fail()` behavior.
 // JEOD_INV: DM.03 — one-shot validation gate (Local<bool>); does not block integration like JEOD's initialized flag
-// JEOD_INV: DM.05 — partial: warns on zero translational state only (JEOD fatally checks all states)
 #[allow(clippy::type_complexity)]
 pub fn validate_jeod_invariants(
     mut bodies: Query<(
         Entity,
         &DynamicsConfigC,
         &mut GravityControlsC,
+        Option<&GravityAccelerationC>,
         Option<&MassPropertiesC>,
         Option<&RotationalStateC>,
         Option<&TranslationalStateC>,
@@ -61,19 +61,26 @@ pub fn validate_jeod_invariants(
     }
     *has_run = true;
 
-    for (entity, config, mut controls, mass, rot_state, trans_state) in &mut bodies {
+    for (entity, config, mut controls, grav_accel, mass, rot_state, trans_state) in &mut bodies {
+        // ── Invariant: GravityAccelerationC required for integration ──
+        // In JEOD, grav_interaction is a value member of DynBody — always present.
+        // In ECS, the component could be missing, causing silent integration skip.
+        if grav_accel.is_none() {
+            panic!(
+                "Entity {entity:?}: has GravityControlsC but no GravityAccelerationC. \
+                 In JEOD, grav_interaction is a value member of DynBody. \
+                 Add GravityAccelerationC::default() to any entity with gravity controls."
+            );
+        }
+
         // ── Invariant H: three_dof consistency ──
-        // JEOD_INV: DB.05 — three_dof=true prevents rotational integrator creation
-        // JEOD_INV: DB.06 — three_dof=true AND rotational_dynamics=true is invalid
-        // JEOD: three_dof=true prevents rotational integrator creation.
-        // rotational_dynamics=true with three_dof=true would attempt to
-        // integrate rotation without an integrator (undefined behavior).
+        // ECS-context equivalent of DynamicsConfig::validate() in jeod_dynamics (DB.05, DB.06),
+        // preserving entity-specific panic context.
         if config.three_dof && config.rotational_dynamics {
             panic!(
                 "Entity {entity:?}: DynamicsConfig has three_dof=true AND \
                  rotational_dynamics=true. In JEOD, three_dof=true prevents \
-                 creation of the rotational integrator. Set rotational_dynamics=false \
-                 when three_dof=true."
+                 creation of the rotational integrator."
             );
         }
 
@@ -98,21 +105,9 @@ pub fn validate_jeod_invariants(
         }
 
         // ── Invariant C: inertia/inverse_inertia consistency ──
-        // JEOD_INV: DB.19 — inverse_inertia used for Euler equation (validated I*I^-1 ≈ identity)
-        // JEOD_INV: MA.04 — inverse_inertia consistent with inertia
-        // JEOD: inverse_inertia is always recomputed from inertia.
-        // Verify they are consistent (I * I^-1 ≈ identity).
+        // Delegates to MassProperties::validate_consistency() in jeod_dynamics (DB.19, MA.04)
         if let Some(m) = mass {
-            let product = m.inertia * m.inverse_inertia;
-            let identity_err = (product - glam::DMat3::IDENTITY).abs_diff_eq(glam::DMat3::ZERO, 1e-6);
-            if !identity_err {
-                panic!(
-                    "Entity {entity:?}: MassPropertiesC.inertia and .inverse_inertia are \
-                     inconsistent (I * I^-1 != identity to 1e-6). In JEOD, inverse_inertia \
-                     is always recomputed from inertia. Use MassProperties::with_inertia() \
-                     which computes the inverse automatically."
-                );
-            }
+            m.validate_consistency(jeod_dynamics::INERTIA_CONSISTENCY_TOL);
         }
 
         // ── Invariant B: gravity control validation ──
@@ -139,14 +134,10 @@ pub fn validate_jeod_invariants(
         }
 
         // ── Invariant F (informational): uninitialized state detection ──
-        // JEOD_INV: DM.05 — partial: warns on zero translational state (JEOD fatally checks all states)
-        // JEOD_INV: DB.11 — partial: zero-state heuristic only (no initialized_states bitfield)
-        // JEOD: check_for_uninitialized_states() fatally fails if required
-        // state is not set. We check for exact-zero state, which is almost
-        // certainly unintentional for orbital mechanics.
+        // Delegates to TranslationalState::is_likely_uninitialized() in jeod_dynamics (DM.05, DB.11)
         if config.translational_dynamics {
             if let Some(trans) = trans_state {
-                if trans.position == glam::DVec3::ZERO && trans.velocity == glam::DVec3::ZERO {
+                if trans.is_likely_uninitialized() {
                     bevy::log::warn!(
                         "Entity {entity:?}: TranslationalStateC is all zeros (position and \
                          velocity). In JEOD, uninitialized state is a fatal error. If this \

@@ -991,7 +991,7 @@ Tag text must describe what **our code** does. When we diverge from JEOD's appro
 note the divergence:
 
 ```rust
-// JEOD_INV: DB.18 — F=ma (JEOD precomputes inverse_mass; we divide by mass at runtime)
+// JEOD_INV: DB.18 — F=ma via precomputed inverse_mass (matches JEOD MassPointState.inverse_mass)
 ```
 
 **3. CI coverage** — `tests/invariant_coverage.rs`

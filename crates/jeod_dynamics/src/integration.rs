@@ -327,6 +327,7 @@ mod tests {
         let inverse_inertia = DMat3::from_diagonal(DVec3::new(1.0 / ix, 1.0 / iy, 1.0 / iz));
         MassProperties {
             mass,
+            inverse_mass: 1.0 / mass,
             inertia,
             inverse_inertia,
             position: DVec3::ZERO,

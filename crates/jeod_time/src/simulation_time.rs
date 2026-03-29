@@ -125,10 +125,18 @@ impl SimulationTime {
         tdb_tjt + 40_000.0 + 2_400_000.5
     }
 
+    /// TT truncated Julian time.
+    ///
+    /// `TT TJT = TAI TJT + TAI_TT_OFFSET / SECONDS_PER_DAY`
+    ///
+    /// Used by Earth rotation (RNP) computations that need the TT epoch.
+    pub fn tt_tjt(&self) -> f64 {
+        self.tai_tjt + TAI_TT_OFFSET / SECONDS_PER_DAY
+    }
+
     /// TT Julian Date.
     pub fn tt_julian_date(&self) -> f64 {
-        let tt_tjt = self.tai_tjt + TAI_TT_OFFSET / SECONDS_PER_DAY;
-        tt_tjt + 40_000.0 + 2_400_000.5
+        self.tt_tjt() + 40_000.0 + 2_400_000.5
     }
 
     // JEOD_INV: TM.03 — time types updated in dependency order (TAI -> TT -> TDB -> UTC -> UT1 -> GMST)
