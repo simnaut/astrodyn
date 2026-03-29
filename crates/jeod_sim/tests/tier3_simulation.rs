@@ -64,9 +64,12 @@ fn load_trans_trajectory(path: &Path) -> Vec<TransRecord> {
             continue;
         }
         let f: Vec<&str> = line.split(',').collect();
-        if f.len() < 17 {
-            continue;
-        }
+        assert!(
+            f.len() >= 17,
+            "line {}: expected >=17 columns, got {}",
+            i + 1,
+            f.len()
+        );
         let p = |s: &str| -> f64 { s.trim().parse().unwrap() };
         records.push(TransRecord {
             time: p(f[0]),

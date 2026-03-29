@@ -49,8 +49,9 @@ pub struct AerodynamicForceC {
 
 /// Solar radiation pressure force and torque.
 ///
-/// Force frame depends on the model: spherical = inertial, flat-plate = structural.
-/// Torque is in the **structural** frame.
+/// Force is always in the **inertial** frame (`flat_plate_srp_system` rotates
+/// from structural to inertial before writing).
+/// Torque is always in the **structural** frame.
 /// Written by `flat_plate_srp_system` (`bevy_jeod_interactions`).
 /// `force_collection_system` rotates torque to body via `StructuralTransformC`.
 #[derive(Component, Debug, Clone, Copy, Default)]

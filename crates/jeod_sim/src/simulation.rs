@@ -166,6 +166,18 @@ impl Simulation {
             );
             all_errors.extend(errors);
 
+            // Validate plate_temperatures / plate_t_pow4_cached lengths match flat_plates
+            if let Some(ref plates) = body.flat_plates {
+                let n = plates.len();
+                if body.plate_temperatures.len() != n || body.plate_t_pow4_cached.len() != n {
+                    all_errors.push(ValidationError::PlateTemperatureLengthMismatch {
+                        num_plates: n,
+                        num_temperatures: body.plate_temperatures.len(),
+                        num_t_pow4: body.plate_t_pow4_cached.len(),
+                    });
+                }
+            }
+
             // Apply gravity control auto-corrections (degree/order clamping).
             // JEOD_INV: GV.03 — check_validity() auto-corrects out-of-range settings
             for ctrl in &mut body.gravity_controls.controls {
@@ -282,6 +294,9 @@ impl Simulation {
                     // Flat-plate SRP with thermal emission
                     let sun_to_vehicle = body.trans.position - sun_position;
                     let distance = sun_to_vehicle.length();
+                    if distance < 1.0 {
+                        continue;
+                    }
                     let flux_inertial_hat = sun_to_vehicle / distance;
                     let flux_mag = crate::solar_flux_at_distance(distance);
 

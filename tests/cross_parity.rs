@@ -13,11 +13,11 @@
 //! Scenarios:
 //!   A. Point-mass gravity, 6-DOF
 //!   B. Exponential atmosphere + ballistic drag, 6-DOF
-//!   C. Solar radiation pressure, 3-DOF
 //!   D. Gravity gradient torque, 6-DOF
 //!   E. Full stack: drag + SRP + gravity torque
 //!   F. Spherical harmonics 4x4 + RNP
 //!   G. External torque via per-body functions
+//!   H. Flat-plate SRP with shadow detection
 
 use std::time::Duration;
 

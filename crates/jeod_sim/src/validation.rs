@@ -22,6 +22,12 @@ pub enum ValidationError {
     GravitySourceMissing { source_id: String },
     /// Translational state appears uninitialized (all zeros).
     UninitializedState,
+    /// `plate_temperatures` or `plate_t_pow4_cached` length doesn't match `flat_plates`.
+    PlateTemperatureLengthMismatch {
+        num_plates: usize,
+        num_temperatures: usize,
+        num_t_pow4: usize,
+    },
 }
 
 impl std::fmt::Display for ValidationError {
@@ -72,6 +78,18 @@ impl std::fmt::Display for ValidationError {
                     f,
                     "Translational state appears uninitialized (position and velocity \
                      both zero). In JEOD, uninitialized state is a fatal error."
+                )
+            }
+            Self::PlateTemperatureLengthMismatch {
+                num_plates,
+                num_temperatures,
+                num_t_pow4,
+            } => {
+                write!(
+                    f,
+                    "plate_temperatures (len={num_temperatures}) or plate_t_pow4_cached \
+                     (len={num_t_pow4}) does not match flat_plates (len={num_plates}). \
+                     All three must have the same length."
                 )
             }
         }

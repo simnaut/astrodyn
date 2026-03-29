@@ -9,7 +9,7 @@
 /// - **Ephemeris** (planet rotations) must be current before spherical-harmonic gravity.
 /// - **Gravity gradient** must be available before gravity torque.
 /// - **All forces** must be collected before integration.
-/// - **Gravity** is computed once per step and held constant across RK4 stages.
+/// - **Gravity** is precomputed in Environment but recomputed per RK4 stage during Integration.
 // JEOD_INV: DM.04 — system ordering mirrors JEOD init/update pipeline
 // JEOD_INV: DM.13 — ephemeris updated before gravity
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

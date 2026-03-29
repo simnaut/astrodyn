@@ -85,7 +85,7 @@ fn compute_illum_factor(
 /// - Conical shadow from `ShadowBodyC` entities
 /// - Per-plate absorption, diffuse/specular reflection, thermal emission
 /// - Temperature integration (forward Euler)
-/// - Force in structural frame → rotated to inertial by force_collection_system
+/// - Force is rotated from structural to inertial by this system before writing `RadiationForceC`
 ///
 /// Placed in `JeodSet::Interaction`.
 #[allow(clippy::type_complexity)]
@@ -118,6 +118,9 @@ pub fn flat_plate_srp_system(
     for (mut flat_config, state, rot, mass, struct_xform, mut srp_force) in &mut query {
         let sun_to_vehicle = state.position - sun_state.position;
         let distance = sun_to_vehicle.length();
+        if distance < 1.0 {
+            continue;
+        }
         let flux_inertial_hat = sun_to_vehicle / distance;
         let flux_mag = jeod_sim::solar_flux_at_distance(distance);
 

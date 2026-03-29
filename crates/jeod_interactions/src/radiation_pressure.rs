@@ -1,15 +1,10 @@
 //! Solar radiation pressure computation.
 //!
-//! Two surface models:
-//!
-//! **Spherical (default)** — port of JEOD `RadiationDefaultSurface`:
-//!   F = (L / (4πr²c)) · A · Cr · r̂
-//!
 //! **Flat-plate** — port of JEOD `FlatPlateRadiationFacet`:
 //!   Per plate: decompose into absorption, diffuse reflection, specular reflection.
 //!   Sum over all illuminated plates for total force and torque.
 //!
-//! Common to both: L is solar luminosity, r is distance to the Sun, c is speed
+//! L is solar luminosity, r is distance to the Sun, c is speed
 //! of light, r̂ is the Sun-to-vehicle unit vector.
 
 use glam::DVec3;
@@ -23,8 +18,6 @@ pub const SOLAR_RADIUS: f64 = 6.98e8;
 /// Speed of light in m/s.
 pub const SPEED_OF_LIGHT: f64 = 299_792_458.0;
 
-/// Vehicle SRP configuration for the spherical (default) model.
-///
 /// Radiation pressure force and torque on a vehicle.
 ///
 /// Force and torque are in the **structural frame** as returned by the flat-plate

@@ -210,6 +210,9 @@ fn srp_changes_eccentricity() {
                 let grav = gravity_accel(s.position);
                 let sun_to_vehicle = s.position - sun_pos;
                 let dist = sun_to_vehicle.length();
+                if dist < 1.0 {
+                    return grav;
+                }
                 let flux_hat = sun_to_vehicle / dist;
                 let flux_mag = solar_flux_at_distance(dist);
                 let srp = compute_flat_plate_srp_thermal(
