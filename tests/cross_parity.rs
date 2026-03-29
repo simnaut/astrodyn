@@ -1,18 +1,23 @@
-//! Cross-parity: Bevy App vs jeod_sim::Simulation for every tier 3 physics scenario.
+//! Tier 3: Bevy App vs jeod_sim::Simulation bit-identical cross-validation.
 //!
-//! Each test sets up identical initial conditions in both execution paths,
-//! runs the same number of steps at the same dt, and asserts bit-level
-//! agreement on all state variables. This proves that a non-Bevy ECS using
-//! `jeod_sim` produces the same output as the Bevy pipeline.
+//! Each test sets up identical initial conditions in both a Bevy App (with
+//! full plugin pipeline) and a jeod_sim::Simulation runner, steps both the
+//! same number of times at the same dt, and asserts `f64::to_bits()` equality
+//! on all state variables. This proves that:
+//!   1. The Bevy ECS wiring produces the same output as the standalone runner.
+//!   2. A non-Bevy ECS using `jeod_sim` gets bit-identical results.
 //!
-//! Scenarios mirror the physics exercised by tier 3 tests:
-//!   A. Point-mass gravity, 6-DOF (tier3_jeod_trajectory / tier3_sixdof)
-//!   B. Exponential atmosphere + ballistic drag, 6-DOF (tier3_drag_trajectory)
-//!   C. Solar radiation pressure, 3-DOF (tier3_srp_trajectory)
-//!   D. Gravity gradient torque, 6-DOF (tier3_sixdof_torque)
-//!   E. Full stack: drag + SRP + gravity torque (combined)
-//!   F. Spherical harmonics 4x4 + RNP (tier3_spherical_harmonics)
-//!   G. External torque via per-body functions (tier3_sixdof_torque)
+//! Combined with the Simulation-vs-JEOD tier 3 tests in `jeod_sim/tests/
+//! tier3_simulation.rs`, this establishes: Bevy ≡ Simulation ≈ JEOD.
+//!
+//! Scenarios:
+//!   A. Point-mass gravity, 6-DOF
+//!   B. Exponential atmosphere + ballistic drag, 6-DOF
+//!   C. Solar radiation pressure, 3-DOF
+//!   D. Gravity gradient torque, 6-DOF
+//!   E. Full stack: drag + SRP + gravity torque
+//!   F. Spherical harmonics 4x4 + RNP
+//!   G. External torque via per-body functions
 
 use std::time::Duration;
 
@@ -187,7 +192,7 @@ fn new_sim_body_sixdof(earth_idx: usize, gradient: bool) -> SimBody {
 // Mirrors: tier3_jeod_trajectory, tier3_sixdof
 
 #[test]
-fn cross_parity_point_mass_sixdof() {
+fn tier3_bevy_point_mass_sixdof() {
     println!("Scenario A: Point-mass gravity, 6-DOF");
 
     // ── Bevy ──
@@ -253,7 +258,7 @@ fn cross_parity_point_mass_sixdof() {
 // Mirrors: tier3_drag_trajectory
 
 #[test]
-fn cross_parity_drag_atmosphere_sixdof() {
+fn tier3_bevy_drag_atmosphere_sixdof() {
     println!("Scenario B: Exponential atmosphere + drag, 6-DOF");
 
     let drag_config = DragConfig {
@@ -355,7 +360,7 @@ fn cross_parity_drag_atmosphere_sixdof() {
 // Mirrors: tier3_srp_trajectory
 
 #[test]
-fn cross_parity_srp_3dof() {
+fn tier3_bevy_srp_3dof() {
     println!("Scenario C: Solar radiation pressure, 3-DOF");
 
     let srp_config = SrpConfig {
@@ -479,7 +484,7 @@ fn cross_parity_srp_3dof() {
 // Mirrors: tier3_sixdof_torque
 
 #[test]
-fn cross_parity_gravity_torque_sixdof() {
+fn tier3_bevy_gravity_torque_sixdof() {
     println!("Scenario D: Gravity gradient torque, 6-DOF");
 
     // ── Bevy ──
@@ -554,7 +559,7 @@ fn cross_parity_gravity_torque_sixdof() {
 // Mirrors: combined tier 3 physics
 
 #[test]
-fn cross_parity_full_stack_sixdof() {
+fn tier3_bevy_full_stack_sixdof() {
     println!("Scenario E: Full stack — drag + SRP + gravity torque, 6-DOF");
 
     let drag_config = DragConfig {
@@ -704,7 +709,7 @@ fn cross_parity_full_stack_sixdof() {
 // Mirrors: tier3_spherical_harmonics RUN_3A
 
 #[test]
-fn cross_parity_sh4x4_rnp() {
+fn tier3_bevy_sh4x4_rnp() {
     println!("Scenario F: Spherical harmonics 4x4 + RNP");
 
     let jeod_root = jeod_test_data::jeod_path();
@@ -815,7 +820,7 @@ fn cross_parity_sh4x4_rnp() {
 // per-body code path is bit-identical regardless of calling context.
 
 #[test]
-fn cross_parity_external_torque_per_body() {
+fn tier3_bevy_external_torque_per_body() {
     println!("Scenario G: External torque via per-body functions");
 
     let mass_props = MassProperties::with_inertia(

@@ -233,7 +233,7 @@ fn assert_sixdof_bit_identical(label: &str, a: &SixDofState, b: &SixDofState) {
 /// → `integrate_body` with the same `jeod_*` functions underneath. Any
 /// difference — even a single ULP — means the Bevy wiring is wrong.
 #[test]
-fn bevy_matches_simulation_bit_identical() {
+fn tier3_bevy_matches_simulation_bit_identical() {
     let (mut app, _planet, vehicle) = build_app();
 
     let bevy_state = run_bevy_steps(&mut app, vehicle);
