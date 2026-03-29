@@ -1,8 +1,8 @@
 //! Tier 3: jeod_sim::Simulation vs JEOD Trick reference trajectories.
 //!
 //! These tests validate the actual production code path (Simulation::step)
-//! against NASA JEOD's Trick simulation output. Combined with the Tier 0
-//! cross-parity proof (Bevy == Simulation, bit-identical), this establishes:
+//! against NASA JEOD's Trick simulation output. Combined with the Tier 3
+//! Bevy-vs-Simulation cross-parity proof (bit-identical), this establishes:
 //!
 //!   Bevy App ≡ Simulation ≈ JEOD (within Tier 3 tolerances)
 //!

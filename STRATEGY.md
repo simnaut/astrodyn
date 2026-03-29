@@ -52,16 +52,18 @@ Bevy provides:
 ### Portability Goal
 
 While Bevy is the primary executor, **the physics and math must not depend on Bevy**.
-The codebase is split into two layers:
+The codebase is split into three layers:
 
 - **`jeod_*` crates** — Pure Rust libraries containing all physics, math, algorithms,
-  data models, and domain types. Zero Bevy dependency. These crates define plain structs,
-  pure functions, and traits. They are usable from any Rust ECS (hecs, legion, shipyard,
-  flecs), a custom simulation loop, a WASM module, or no ECS at all.
+  data models, and domain types. Zero Bevy dependency.
 
-- **`bevy_jeod_*` crates** — Thin Bevy integration layers. These add `#[derive(Component)]`
-  and `#[derive(Resource)]` to core types (via newtype wrappers or feature-gated derives),
-  define Bevy systems that call into `jeod_*` functions, and register plugins.
+- **`jeod_sim` crate** — ECS-agnostic orchestration layer. Composes `jeod_*` functions
+  into pipeline stages, provides a standalone `Simulation` runner, and re-exports all
+  types that ECS adapters need. Zero Bevy dependency.
+
+- **`bevy_jeod_*` crates** — Thin Bevy integration layers that depend **only** on
+  `jeod_sim` + `bevy`. Define component wrappers, systems that delegate to `jeod_sim`
+  functions (zero math), and register plugins.
 
 This separation means:
 
@@ -136,19 +138,21 @@ JEOD uses virtual base classes (`GravitySource`, `Atmosphere`, etc.) for extensi
 In Rust: use an enum for the closed set of known models, or `Box<dyn Trait>` for
 user-extensible models. Prefer enums where the model set is fixed (gravity, atmosphere).
 
-**Core vs. Glue Separation**
+**Core → Orchestration → Glue Separation**
 
-All of the above mappings happen in two layers:
+All of the above mappings happen in three layers:
 
 ```
 jeod_dynamics        (plain Rust structs, pure functions)
     ↕ used by
-bevy_jeod_dynamics   (derives Component/Resource, defines systems, registers plugin)
+jeod_sim             (orchestration: composes jeod_* functions, re-exports types)
+    ↕ used by
+bevy_jeod_dynamics   (derives Component/Resource, defines systems that delegate to jeod_sim)
 ```
 
-The `jeod_*` crate defines the data types and algorithms. The `bevy_jeod_*` crate wraps
-them for Bevy. Switching to another ECS means writing new `{ecs}_jeod_*` glue crates —
-the physics code is untouched.
+The `jeod_*` crates define algorithms. `jeod_sim` composes them into pipeline stages
+and re-exports all types. `bevy_jeod_*` crates depend only on `jeod_sim` — switching
+to another ECS means writing new glue crates that call the same `jeod_sim` functions.
 
 ---
 
@@ -601,9 +605,9 @@ fn integration_system(
 
 ### Crate Organization
 
-The workspace has two layers: **core crates** (`jeod_*`) with zero Bevy dependency, and
-**Bevy glue crates** (`bevy_jeod_*`) that add ECS integration. This separation is the
-key to portability — see [Section 1: Portability Goal](#portability-goal).
+The workspace has three layers: **core physics crates** (`jeod_*`), the **orchestration
+crate** (`jeod_sim`), and **Bevy glue crates** (`bevy_jeod_*`). `bevy_jeod_*` depends
+only on `jeod_sim` — see [Section 1: Portability Goal](#portability-goal).
 
 ```
 bevy_jeod/                               # workspace root
@@ -785,9 +789,10 @@ had to reverse-engineer ~10 systems across 8 Bevy crates to build a working simu
 loop. The `jeod_sim` layer extracts this orchestration into a single, Bevy-free crate
 that any ECS (or no ECS) can use directly.
 
-Each `bevy_jeod_*` crate depends on its corresponding `jeod_*` crate, on `jeod_sim`,
-and on `bevy`. The `jeod_*` and `jeod_sim` crates have **no** Bevy dependency and can
-be used standalone.
+Each `bevy_jeod_*` crate depends **only** on `jeod_sim` and `bevy` — never on
+`jeod_*` crates directly. `jeod_sim` re-exports all types that ECS adapters need,
+making it the single API surface. The `jeod_*` and `jeod_sim` crates have **no**
+Bevy dependency and can be used standalone.
 
 ### Top-Level Plugin Composition
 
