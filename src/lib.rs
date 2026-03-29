@@ -6,8 +6,8 @@ pub use bevy_jeod_atmosphere::{
 pub use bevy_jeod_dynamics::{
     AerodynamicForceC, AtmosphericStateC as AtmosphericStateDynC, DynamicsConfigC,
     FrameDerivativesC, GravityAccelerationC, GravityControlsC, GravitySourceC, GravityTorqueC,
-    IntegrationFrameRef, JeodDynamicsPlugin, JeodSet, MassPropertiesC, RadiationForceC,
-    RotationalStateC, StructuralTransformC, TotalForceC, TranslationalStateC,
+    IntegrationFrameRef, JeodDynamicsPlugin, JeodSet, MassPropertiesC, PlanetFixedRotationC,
+    RadiationForceC, RotationalStateC, StructuralTransformC, TotalForceC, TranslationalStateC,
 };
 pub use bevy_jeod_ephemeris::{EphemerisR, JeodEphemerisPlugin};
 pub use bevy_jeod_frames::{JeodFramesPlugin, RefFrameNameC, RefFrameStateC};
