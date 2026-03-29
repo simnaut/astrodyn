@@ -25,30 +25,11 @@ pub const SPEED_OF_LIGHT: f64 = 299_792_458.0;
 
 /// Vehicle SRP configuration for the spherical (default) model.
 ///
-/// Port of JEOD `RadiationDefaultSurface`.
-#[derive(Debug, Clone, Copy)]
-pub struct SrpConfig {
-    /// Cross-sectional area in m² (JEOD `RadiationBaseFacet::cx_area`).
-    pub cx_area: f64,
-    /// Radiation coefficient (dimensionless).
-    ///
-    /// For the spherical (default) model, rad_coeff ranges from 1.0 to 13/9 ≈ 1.4444:
-    /// - 1.0 = perfect absorber (albedo=0)
-    /// - 13/9 ≈ 1.4444 = all diffuse reflection (albedo=1, diffuse=1)
-    ///
-    /// For flat-plate models (not yet implemented), rad_coeff can reach 2.0 for
-    /// perfect specular reflection off a plate normal to the beam.
-    ///
-    /// Matches JEOD `RadiationDefaultSurface::rad_coeff`.
-    pub rad_coeff: f64,
-}
-
 /// Radiation pressure force and torque on a vehicle.
 ///
-/// The reference frame of `force` depends on the model:
-/// - Spherical (`compute_srp_force`): force is in the integration (inertial) frame.
-/// - Flat-plate (`compute_flat_plate_srp`/`_thermal`): force is in the structural frame.
-///   The caller is responsible for rotating to inertial before integration.
+/// Force and torque are in the **structural frame** as returned by the flat-plate
+/// model. The caller (ECS system or Simulation runner) is responsible for rotating
+/// force to inertial before integration.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RadiationForce {
     /// Radiation force in N. Frame depends on the producing function (see struct docs).
@@ -64,59 +45,6 @@ impl Default for RadiationForce {
             force: DVec3::ZERO,
             torque: DVec3::ZERO,
         }
-    }
-}
-
-/// Compute solar radiation pressure force using the spherical (default) model.
-///
-/// Port of JEOD `RadiationSource::calculate_flux()` + default surface force.
-///
-/// # Arguments
-/// * `config` - Vehicle SRP properties (cx_area, rad_coeff)
-/// * `sun_position` - Sun position in the integration frame (m)
-/// * `vehicle_position` - Vehicle position in the integration frame (m)
-/// * `illum_factor` - Illumination factor: 0.0 = full shadow, 1.0 = full sun
-///
-/// # Returns
-/// Radiation force and torque. Force is in the integration (inertial) frame.
-/// Torque is zero for the spherical model.
-pub fn compute_srp_force(
-    config: &SrpConfig,
-    sun_position: DVec3,
-    vehicle_position: DVec3,
-    illum_factor: f64,
-) -> RadiationForce {
-    if illum_factor <= 0.0 {
-        return RadiationForce::default();
-    }
-
-    // Vector from Sun to vehicle (JEOD: source_to_cg)
-    let source_to_cg = vehicle_position - sun_position;
-    let d_source_to_cg = source_to_cg.length();
-
-    // JEOD_INV: IN.10 — distance guard prevents division by near-zero in flux calculation
-    // (JEOD checks luminosity < 1e-6; ours uses a compile-time constant, so luminosity is always valid)
-    if d_source_to_cg < 1.0 {
-        return RadiationForce::default();
-    }
-
-    let flux_hat = source_to_cg / d_source_to_cg;
-
-    // Solar flux at the vehicle (W/m²)
-    // JEOD radiation_source.cc line 103: flux_mag = luminosity / (d² * 4π)
-    let flux_mag =
-        SOLAR_LUMINOSITY / (4.0 * std::f64::consts::PI * d_source_to_cg * d_source_to_cg);
-
-    // Force magnitude: |F| = (flux / c) * cx_area * rad_coeff, directed from Sun to vehicle (r̂)
-    let force_magnitude = flux_mag * config.cx_area * config.rad_coeff / SPEED_OF_LIGHT;
-
-    // Force pushes away from Sun (along source-to-cg direction)
-    // Apply illumination factor
-    let force = flux_hat * force_magnitude * illum_factor;
-
-    RadiationForce {
-        force,
-        torque: DVec3::ZERO,
     }
 }
 
@@ -390,137 +318,6 @@ mod tests {
             "SRP at 1 AU should be ~4.56e-6 N/m², got {pressure}"
         );
     }
-
-    /// Force direction is anti-Sun (pushes away from Sun).
-    #[test]
-    fn force_direction_anti_sun() {
-        let config = SrpConfig {
-            cx_area: 10.0,
-            rad_coeff: 1.5,
-        };
-        let sun = DVec3::new(1.496e11, 0.0, 0.0); // Sun at +X
-        let vehicle = DVec3::ZERO; // Vehicle at origin
-
-        let result = compute_srp_force(&config, sun, vehicle, 1.0);
-
-        // Vehicle is between origin and nowhere near Sun.
-        // sun_to_vehicle = vehicle - sun = -1.496e11 in X
-        // Force pushes vehicle away from Sun = in -X direction
-        assert!(
-            result.force.x < 0.0,
-            "Force should push away from Sun (negative X)"
-        );
-        assert!(result.force.y.abs() < 1e-30);
-        assert!(result.force.z.abs() < 1e-30);
-    }
-
-    /// Force magnitude at 1 AU for a known area.
-    #[test]
-    fn force_magnitude_at_1au() {
-        let area = 100.0; // m²
-        let cr = 1.0; // perfect absorber
-        let config = SrpConfig {
-            cx_area: area,
-            rad_coeff: cr,
-        };
-
-        let au = 1.496e11;
-        let sun = DVec3::ZERO;
-        let vehicle = DVec3::new(au, 0.0, 0.0);
-
-        let result = compute_srp_force(&config, sun, vehicle, 1.0);
-
-        // Expected: pressure * area * cr
-        let expected = SOLAR_LUMINOSITY / (4.0 * PI * au * au * SPEED_OF_LIGHT) * area * cr;
-        let rel_err = (result.force.length() - expected).abs() / expected;
-
-        assert!(
-            rel_err < 1e-10,
-            "Force magnitude: expected {expected}, got {}",
-            result.force.length()
-        );
-    }
-
-    /// Full shadow → zero force.
-    #[test]
-    fn full_shadow_zero_force() {
-        let config = SrpConfig {
-            cx_area: 10.0,
-            rad_coeff: 1.5,
-        };
-        let result = compute_srp_force(
-            &config,
-            DVec3::new(1.496e11, 0.0, 0.0),
-            DVec3::ZERO,
-            0.0, // full shadow
-        );
-        assert_eq!(result.force, DVec3::ZERO);
-    }
-
-    /// Partial shadow scales force linearly.
-    #[test]
-    fn partial_shadow_scales_linearly() {
-        let config = SrpConfig {
-            cx_area: 10.0,
-            rad_coeff: 1.5,
-        };
-        let sun = DVec3::new(1.496e11, 0.0, 0.0);
-        let vehicle = DVec3::ZERO;
-
-        let full = compute_srp_force(&config, sun, vehicle, 1.0);
-        let half = compute_srp_force(&config, sun, vehicle, 0.5);
-
-        let ratio = half.force.length() / full.force.length();
-        assert!(
-            (ratio - 0.5).abs() < 1e-12,
-            "Half shadow should give half force, ratio = {ratio}"
-        );
-    }
-
-    /// Cr = 2.0 (perfect reflector) gives double the force of Cr = 1.0 (absorber).
-    #[test]
-    fn reflector_doubles_force() {
-        let sun = DVec3::new(1.496e11, 0.0, 0.0);
-        let vehicle = DVec3::ZERO;
-
-        let absorber = compute_srp_force(
-            &SrpConfig {
-                cx_area: 10.0,
-                rad_coeff: 1.0,
-            },
-            sun,
-            vehicle,
-            1.0,
-        );
-        let reflector = compute_srp_force(
-            &SrpConfig {
-                cx_area: 10.0,
-                rad_coeff: 2.0,
-            },
-            sun,
-            vehicle,
-            1.0,
-        );
-
-        let ratio = reflector.force.length() / absorber.force.length();
-        assert!(
-            (ratio - 2.0).abs() < 1e-12,
-            "Cr=2 should give 2x force of Cr=1, ratio = {ratio}"
-        );
-    }
-
-    /// Torque is zero for spherical model.
-    #[test]
-    fn spherical_model_zero_torque() {
-        let config = SrpConfig {
-            cx_area: 10.0,
-            rad_coeff: 1.5,
-        };
-        let result = compute_srp_force(&config, DVec3::new(1.496e11, 0.0, 0.0), DVec3::ZERO, 1.0);
-        assert_eq!(result.torque, DVec3::ZERO);
-    }
-
-    // ── Flat-plate model tests ──────────────────────────────────────────
 
     /// Single plate facing the Sun: all flux intercepted.
     #[test]

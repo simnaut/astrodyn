@@ -1,6 +1,6 @@
 use glam::{DMat3, DVec3};
 use jeod_dynamics::RotationalState;
-use jeod_interactions::{AerodynamicForce, DragConfig, RadiationForce, SrpConfig};
+use jeod_interactions::{AerodynamicForce, DragConfig};
 
 /// Compute aerodynamic drag for a body, handling the frame transform.
 ///
@@ -41,23 +41,4 @@ pub fn compute_drag(
 pub fn compute_gravity_torque(grav_grad: &DMat3, rot: &RotationalState, inertia: &DMat3) -> DVec3 {
     let t_parent_this = rot.quaternion.left_quat_to_transformation();
     jeod_interactions::compute_gravity_torque(grav_grad, &t_parent_this, inertia)
-}
-
-/// Compute spherical solar radiation pressure.
-///
-/// Thin wrapper over `jeod_interactions::compute_srp_force` — included for
-/// consistency so all interaction computations are available from `jeod_sim`.
-///
-/// # Arguments
-/// - `config`: Cr and area
-/// - `sun_position`: Sun position in inertial frame
-/// - `body_position`: body position in inertial frame
-/// - `illum_factor`: illumination fraction (0 = full shadow, 1 = full sun)
-pub fn compute_spherical_srp(
-    config: &SrpConfig,
-    sun_position: DVec3,
-    body_position: DVec3,
-    illum_factor: f64,
-) -> RadiationForce {
-    jeod_interactions::compute_srp_force(config, sun_position, body_position, illum_factor)
 }

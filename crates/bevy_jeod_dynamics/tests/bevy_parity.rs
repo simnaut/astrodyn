@@ -155,7 +155,6 @@ fn run_simulation_steps() -> SixDofState {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
         drag: None,
-        srp: None,
         t_struct_body: DMat3::IDENTITY,
         compute_gravity_torque: false,
         atmospheric_state: None,

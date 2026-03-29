@@ -183,7 +183,7 @@ grep the JEOD tree for the distinctive identifier in the invariant description
 | IN.03 | AerodynamicDrag.active gates computation | flag-gate | runtime | structural (no DragConfigC → no drag) |
 | IN.04 | `aero_surface_ptr` required when `use_default_behavior=false` | fatal | runtime | n/a (only ballistic model implemented) |
 | IN.05 | Ballistic coefficient non-zero for DRAG_OPT_BC | fatal | runtime | n/a (only DRAG_OPT_CD implemented) |
-| IN.06 | RadiationPressure.active gates computation | flag-gate | runtime | structural (no SrpConfigC → no SRP) |
+| IN.06 | RadiationPressure.active gates computation | flag-gate | runtime | structural (no FlatPlateConfigC → no SRP) |
 | IN.07 | RadiationThirdBody name required | fatal | initialization | n/a (shadow bodies by Entity) |
 | IN.08 | RadiationThirdBody belongs to one model only | fatal | structural | n/a (function-based, no ownership) |
 | IN.09 | RadiationSource planet must be found by DynManager | fatal | initialization | enforced (`bevy_jeod_interactions/systems.rs` — panics on multiple SunMarker; zero SunMarker = SRP not configured, early return like JEOD `active=false`) |

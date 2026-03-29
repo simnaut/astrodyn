@@ -10,8 +10,9 @@ use jeod_dynamics::{
     TranslationalState,
 };
 use jeod_interactions::{
-    compute_ballistic_drag, compute_gravity_torque, compute_shadow_fraction, compute_srp_force,
-    DragConfig, SrpConfig,
+    compute_ballistic_drag, compute_flat_plate_srp_thermal, compute_gravity_torque,
+    compute_shadow_fraction, solar_flux_at_distance, DragConfig, FlatPlate, FlatPlateParams,
+    FlatPlateThermal,
 };
 use jeod_math::geodetic::cartesian_to_geodetic;
 use jeod_math::JeodQuat;
@@ -177,10 +178,23 @@ fn srp_changes_eccentricity() {
         velocity: DVec3::new(0.0, v0, 0.0),
     };
 
-    let srp_config = SrpConfig {
-        cx_area: 100.0,
-        rad_coeff: 1.5,
-    };
+    // Single flat plate facing +X (toward Sun) as a simple absorber
+    let plates = vec![(
+        FlatPlate {
+            area: 100.0,
+            normal: DVec3::X,
+            position: DVec3::ZERO,
+        },
+        FlatPlateParams {
+            albedo: 0.0,
+            diffuse: 0.0,
+        },
+        FlatPlateThermal {
+            emissivity: 0.0,
+            heat_capacity_per_area: 50.0,
+        },
+    )];
+    let t_pow4_cached = vec![270.0_f64.powi(4)];
 
     let sun_pos = DVec3::new(1.496e11, 0.0, 0.0);
     let mass = 1000.0; // kg
@@ -194,7 +208,18 @@ fn srp_changes_eccentricity() {
             &state,
             |s| {
                 let grav = gravity_accel(s.position);
-                let srp = compute_srp_force(&srp_config, sun_pos, s.position, 1.0);
+                let sun_to_vehicle = s.position - sun_pos;
+                let dist = sun_to_vehicle.length();
+                let flux_hat = sun_to_vehicle / dist;
+                let flux_mag = solar_flux_at_distance(dist);
+                let srp = compute_flat_plate_srp_thermal(
+                    &plates,
+                    &t_pow4_cached,
+                    flux_hat,
+                    flux_mag,
+                    DVec3::ZERO,
+                    1.0,
+                );
                 grav + srp.force / mass
             },
             dt,

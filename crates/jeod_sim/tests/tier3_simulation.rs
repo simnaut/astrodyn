@@ -169,7 +169,6 @@ fn tier3_simulation_run2_3dof() {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
         drag: None,
-        srp: None,
         t_struct_body: DMat3::IDENTITY,
         compute_gravity_torque: false,
         atmospheric_state: None,
@@ -280,7 +279,6 @@ fn tier3_simulation_run2_6dof() {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
         drag: None,
-        srp: None,
         t_struct_body: DMat3::IDENTITY,
         compute_gravity_torque: false,
         atmospheric_state: None,
@@ -450,7 +448,6 @@ fn tier3_simulation_run6b_drag() {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
         drag: Some(drag_config),
-        srp: None,
         t_struct_body: DMat3::IDENTITY,
         compute_gravity_torque: false,
         atmospheric_state: Some(Default::default()), // presence enables atmosphere
@@ -594,7 +591,6 @@ fn run_sh_simulation_test(csv_name: &str, degree: usize, order: usize, label: &s
             )],
         },
         drag: None,
-        srp: None,
         t_struct_body: DMat3::IDENTITY,
         compute_gravity_torque: false,
         atmospheric_state: None,
@@ -907,7 +903,6 @@ fn tier3_simulation_run10a_gravity_torque() {
             controls: vec![GravityControl::new_spherical(earth, true)], // gradient=true
         },
         drag: None,
-        srp: None,
         t_struct_body: DMat3::IDENTITY,
         compute_gravity_torque: true,
         atmospheric_state: None,
@@ -1179,7 +1174,6 @@ fn tier3_simulation_srp_flat_plate() {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
         drag: None,
-        srp: None, // flat-plate model used instead
         flat_plates: Some(plates),
         plate_temperatures: vec![init_temp; num_plates],
         plate_t_pow4_cached: vec![init_temp.powi(4); num_plates],

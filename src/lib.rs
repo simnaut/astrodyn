@@ -13,7 +13,7 @@ pub use bevy_jeod_ephemeris::{EphemerisR, JeodEphemerisPlugin};
 pub use bevy_jeod_frames::{JeodFramesPlugin, RefFrameNameC, RefFrameStateC};
 pub use bevy_jeod_gravity::JeodGravityPlugin;
 pub use bevy_jeod_interactions::{
-    DragConfigC, FlatPlateConfigC, JeodInteractionsPlugin, ShadowBodyC, SrpConfigC, SunMarker,
+    DragConfigC, FlatPlateConfigC, JeodInteractionsPlugin, ShadowBodyC, SunMarker,
 };
 pub use bevy_jeod_planet::{JeodPlanetPlugin, PlanetC};
 pub use bevy_jeod_time::{JeodTimePlugin, SimulationTimeR};
@@ -27,9 +27,7 @@ pub use jeod_ephemeris::{Ephemeris, EphemerisBody};
 pub use jeod_gravity::{
     GravityControl, GravityControls, GravityModel, GravitySource, SphericalHarmonicsData,
 };
-pub use jeod_interactions::{
-    compute_gravity_torque, AerodynamicForce, DragConfig, RadiationForce, SrpConfig,
-};
+pub use jeod_interactions::{compute_gravity_torque, AerodynamicForce, DragConfig, RadiationForce};
 pub use jeod_math::{DMat3, DQuat, DVec3, JeodQuat, OrbitalElements};
 pub use jeod_planet::{presets as planet_presets, PlanetShape};
 pub use jeod_time::SimulationTime;

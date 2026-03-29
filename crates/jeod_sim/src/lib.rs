@@ -13,7 +13,6 @@
 //! - [`evaluate_atmosphere`] — atmosphere evaluation pipeline
 //! - [`compute_drag`] — aerodynamic drag with frame transform
 //! - [`compute_gravity_torque`] — gravity gradient torque with quaternion conversion
-//! - [`compute_spherical_srp`] — spherical solar radiation pressure
 //! - [`collect_and_resolve_forces`] — force/torque collection with frame transforms
 //! - [`integrate_body`] — RK4 integration with 6-DOF/3-DOF routing
 //! - [`validate_body`] — JEOD invariant checking
@@ -43,7 +42,7 @@ pub use atmosphere::{evaluate_atmosphere, AtmosphereConfig, AtmosphereModel};
 pub use forces::collect_and_resolve_forces;
 pub use gravity::accumulate_gravity;
 pub use integration::integrate_body;
-pub use interactions::{compute_drag, compute_gravity_torque, compute_spherical_srp};
+pub use interactions::{compute_drag, compute_gravity_torque};
 pub use pipeline::{PipelineStage, PIPELINE_ORDER};
 pub use simulation::{GravitySourceEntry, SimBody, Simulation};
 pub use validation::{validate_body, ValidationError};
@@ -69,7 +68,7 @@ pub use jeod_atmosphere::AtmosphereState;
 pub use jeod_interactions::{
     compute_flat_plate_srp_thermal, compute_shadow_fraction, solar_flux_at_distance,
     AerodynamicForce, DragConfig, FlatPlate, FlatPlateParams, FlatPlateSrpResult, FlatPlateThermal,
-    RadiationForce, SrpConfig, SOLAR_RADIUS,
+    RadiationForce, SOLAR_RADIUS,
 };
 
 // jeod_frames: reference frame state

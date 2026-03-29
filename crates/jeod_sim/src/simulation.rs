@@ -8,7 +8,7 @@ use crate::validation::ValidationError;
 use crate::{
     AerodynamicForce, AtmosphereState, DragConfig, DynamicsConfig, FlatPlate, FlatPlateParams,
     FlatPlateThermal, FrameDerivatives, GravityAcceleration, GravityControls, GravitySource,
-    MassProperties, RadiationForce, RotationalState, SimulationTime, SrpConfig, TotalForce,
+    MassProperties, RadiationForce, RotationalState, SimulationTime, TotalForce,
     TranslationalState,
 };
 
@@ -46,11 +46,8 @@ pub struct SimBody {
     pub gravity_controls: GravityControls<usize>,
     /// Drag configuration. `None` disables drag.
     pub drag: Option<DragConfig>,
-    /// Spherical SRP configuration. `None` disables spherical SRP.
-    /// Ignored if `flat_plates` is `Some` (flat-plate model takes priority).
-    pub srp: Option<SrpConfig>,
-    /// Flat-plate SRP configuration (plate geometry, optical, thermal properties).
-    /// When `Some`, replaces the spherical SRP model. Requires `plate_temperatures`
+    /// Flat-plate SRP configuration (plate geometry, optical, thermal properties). `None` disables SRP.
+    /// Requires `plate_temperatures`
     /// and `plate_t_pow4_cached` to be initialized with matching lengths.
     pub flat_plates: Option<Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)>>,
     /// Per-plate temperatures (K). Same length as `flat_plates`.
@@ -60,7 +57,7 @@ pub struct SimBody {
     /// previous-step temperature, not current).
     pub plate_t_pow4_cached: Vec<f64>,
     /// Shadow-casting body: `(source_index, body_radius_m)`.
-    /// Used by both spherical and flat-plate SRP for eclipse computation.
+    /// Used by flat-plate SRP for eclipse computation.
     pub shadow_body: Option<(usize, f64)>,
     /// Structural-to-body rotation matrix. `DMat3::IDENTITY` when structure = body.
     pub t_struct_body: DMat3,
@@ -332,26 +329,6 @@ impl Simulation {
                     }
                     body.plate_t_pow4_cached =
                         body.plate_temperatures.iter().map(|t| t.powi(4)).collect();
-                } else if let Some(ref srp_config) = body.srp {
-                    // Spherical SRP fallback
-                    let illum_factor = body
-                        .shadow_body
-                        .map(|(idx, radius)| {
-                            crate::compute_shadow_fraction(
-                                body.trans.position,
-                                sun_position,
-                                sources[idx].position,
-                                radius,
-                                crate::SOLAR_RADIUS,
-                            )
-                        })
-                        .unwrap_or(1.0);
-                    body.radiation_force = Some(crate::compute_spherical_srp(
-                        srp_config,
-                        sun_position,
-                        body.trans.position,
-                        illum_factor,
-                    ));
                 }
             }
 

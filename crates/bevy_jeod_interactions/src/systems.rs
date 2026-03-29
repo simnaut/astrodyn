@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use glam::DVec3;
 
-use crate::components::{DragConfigC, FlatPlateConfigC, ShadowBodyC, SrpConfigC};
+use crate::components::{DragConfigC, FlatPlateConfigC, ShadowBodyC};
 use bevy_jeod_dynamics::{
     AerodynamicForceC, AtmosphericStateC, GravityAccelerationC, GravityTorqueC, MassPropertiesC,
     RadiationForceC, RotationalStateC, StructuralTransformC, TranslationalStateC,
@@ -76,51 +76,11 @@ fn compute_illum_factor(
     illum
 }
 
-/// Compute spherical solar radiation pressure with shadow detection.
-///
-/// Placed in `JeodSet::Interaction`.
-// JEOD_INV: IN.06 — RadiationPressure.active gates computation (structural: no SrpConfigC -> no SRP)
-// JEOD_INV: IN.09 — RadiationSource planet must exist (partial: SunMarker required)
-#[allow(clippy::type_complexity)]
-pub fn radiation_pressure_system(
-    mut query: Query<
-        (&SrpConfigC, &TranslationalStateC, &mut RadiationForceC),
-        (Without<SunMarker>, Without<FlatPlateConfigC>),
-    >,
-    sun_query: Query<&TranslationalStateC, With<SunMarker>>,
-    shadow_bodies: Query<(&TranslationalStateC, &ShadowBodyC), Without<SunMarker>>,
-) {
-    // JEOD_INV: IN.09 — RadiationSource planet must be found by DynManager
-    let sun_state = match sun_query.single() {
-        Ok(s) => s,
-        Err(bevy::ecs::query::QuerySingleError::NoEntities(_)) => return,
-        Err(bevy::ecs::query::QuerySingleError::MultipleEntities(_)) => {
-            panic!(
-                "Multiple entities with SunMarker found. In JEOD, RadiationPressure \
-                 has exactly one RadiationSource (value member). Ensure exactly one \
-                 Sun entity exists."
-            );
-        }
-    };
-
-    for (srp_config, state, mut srp_force) in &mut query {
-        let illum_factor = compute_illum_factor(state.position, sun_state.position, &shadow_bodies);
-
-        let result = jeod_sim::compute_spherical_srp(
-            &srp_config.0,
-            sun_state.position,
-            state.position,
-            illum_factor,
-        );
-
-        srp_force.force = result.force;
-        srp_force.torque = result.torque;
-    }
-}
-
 /// Compute flat-plate SRP with thermal emission and shadow detection.
 ///
-/// For entities with `FlatPlateConfigC` instead of `SrpConfigC`. Handles:
+// JEOD_INV: IN.06 — RadiationPressure.active gates computation (structural: no FlatPlateConfigC → no SRP)
+// JEOD_INV: IN.09 — RadiationSource planet must exist (SunMarker required; panics on multiple)
+/// For entities with `FlatPlateConfigC`. Handles:
 /// - Solar flux at vehicle distance
 /// - Conical shadow from `ShadowBodyC` entities
 /// - Per-plate absorption, diffuse/specular reflection, thermal emission
@@ -139,7 +99,7 @@ pub fn flat_plate_srp_system(
             Option<&StructuralTransformC>,
             &mut RadiationForceC,
         ),
-        (Without<SunMarker>, Without<SrpConfigC>),
+        Without<SunMarker>,
     >,
     sun_query: Query<&TranslationalStateC, With<SunMarker>>,
     shadow_bodies: Query<(&TranslationalStateC, &ShadowBodyC), Without<SunMarker>>,

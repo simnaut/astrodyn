@@ -499,7 +499,7 @@ FixedUpdate
  |
  |-- InteractionSet                       // .after(EnvironmentSet)
  |     |-- aerodynamic_force_system       // F_drag = 0.5 * rho * v^2 * Cd * A
- |     |-- radiation_pressure_system      // solar radiation pressure
+ |     |-- flat_plate_srp_system      // solar radiation pressure
  |     '-- gravity_torque_system          // gravity gradient torque
  |
  |-- ForceCollectionSet                   // .after(InteractionSet)

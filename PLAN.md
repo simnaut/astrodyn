@@ -453,7 +453,7 @@ without adding new physics.
 |----|------|-------------|
 | 4.16 | `bevy_jeod_atmosphere` plugin | `AtmosphereState` component. `atmosphere_update_system` in `EnvironmentSet`: query body position, compute geodetic coords, call `Atmosphere::density()`. |
 | 4.17 | Aerodynamic force system | `AerodynamicForce` component. `aero_drag_system` in `InteractionSet`. |
-| 4.18 | Radiation pressure system | `RadiationForce` component. `radiation_pressure_system` in `InteractionSet`. Reads Sun entity position. |
+| 4.18 | Radiation pressure system | `RadiationForce` component. `flat_plate_srp_system` in `InteractionSet`. Reads Sun entity position. |
 | 4.19 | Gravity torque system | `GravityTorque` component. `gravity_torque_system` in `InteractionSet`. |
 | 4.20 | Update force collection | Add `Option<&AerodynamicForce>`, `Option<&RadiationForce>`, `Option<&GravityTorque>` to `force_collection_system` query. |
 | 4.21 | SolarBeta system | `SolarBeta` component + `solar_beta_system` in `DerivedStateSet`. |

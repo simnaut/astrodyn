@@ -1,17 +1,12 @@
 use bevy::prelude::*;
-use jeod_sim::{DragConfig, FlatPlate, FlatPlateParams, FlatPlateThermal, SrpConfig};
+use jeod_sim::{DragConfig, FlatPlate, FlatPlateParams, FlatPlateThermal};
 
 /// Vehicle drag configuration (Cd, area).
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut)]
 pub struct DragConfigC(pub DragConfig);
 
-/// Vehicle SRP configuration (area, Cr) for spherical model.
-#[derive(Component, Debug, Clone, Copy, Deref, DerefMut)]
-pub struct SrpConfigC(pub SrpConfig);
-
 /// Flat-plate SRP configuration with thermal state.
 ///
-/// When present, the flat-plate SRP system uses this instead of `SrpConfigC`.
 /// Contains per-plate geometry, optical/thermal properties, and temperature state.
 /// Temperatures are integrated via forward Euler each step (matching the
 /// Simulation runner's approach).

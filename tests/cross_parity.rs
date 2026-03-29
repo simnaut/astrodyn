@@ -24,12 +24,11 @@ use std::time::Duration;
 use bevy::prelude::*;
 use bevy_jeod::{
     AerodynamicForceC, AtmosphereConfig, AtmosphereModel, AtmosphereModelR, DragConfig,
-    DragConfigC, DynamicsConfig, DynamicsConfigC, GravityAccelerationC, GravityControl,
-    GravityControls, GravityControlsC, GravityModel, GravitySourceC, GravityTorqueC,
-    JeodAtmospherePlugin, JeodDynamicsPlugin, JeodFramesPlugin, JeodGravityPlugin,
+    DragConfigC, DynamicsConfig, DynamicsConfigC, FlatPlateConfigC, GravityAccelerationC,
+    GravityControl, GravityControls, GravityControlsC, GravityModel, GravitySourceC,
+    GravityTorqueC, JeodAtmospherePlugin, JeodDynamicsPlugin, JeodFramesPlugin, JeodGravityPlugin,
     JeodInteractionsPlugin, JeodTimePlugin, MassProperties, MassPropertiesC, PlanetFixedRotationC,
-    RadiationForceC, RotationalStateC, SrpConfig, SrpConfigC, SunMarker, TotalForceC,
-    TranslationalStateC,
+    RadiationForceC, RotationalStateC, SunMarker, TotalForceC, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
 use jeod_atmosphere::exponential::ExponentialAtmosphere;
@@ -171,7 +170,6 @@ fn new_sim_body_sixdof(earth_idx: usize, gradient: bool) -> SimBody {
             controls: vec![GravityControl::new_spherical(earth_idx, gradient)],
         },
         drag: None,
-        srp: None,
         t_struct_body: DMat3::IDENTITY,
         compute_gravity_torque: false,
         atmospheric_state: None,
@@ -356,130 +354,6 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
     assert_sixdof_eq("Bevy vs Sim (drag)", &bevy_state, &sim_state);
 }
 
-// ── Scenario C: Solar radiation pressure, 3-DOF ──
-// Mirrors: tier3_srp_trajectory
-
-#[test]
-fn tier3_bevy_srp_3dof() {
-    println!("Scenario C: Solar radiation pressure, 3-DOF");
-
-    let srp_config = SrpConfig {
-        cx_area: 100.0,
-        rad_coeff: 1.5,
-    };
-    // Sun at ~1 AU along +X
-    let sun_pos = DVec3::new(1.496e11, 0.0, 0.0);
-
-    // ── Bevy ──
-    let mut app = App::new();
-    app.add_plugins(MinimalPlugins);
-    app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins((
-        JeodTimePlugin,
-        JeodDynamicsPlugin,
-        JeodGravityPlugin,
-        JeodInteractionsPlugin,
-    ));
-
-    let planet = app
-        .world_mut()
-        .spawn((
-            Name::new("Earth"),
-            GravitySourceC(earth_source()),
-            TranslationalStateC::default(),
-        ))
-        .id();
-
-    let _sun = app
-        .world_mut()
-        .spawn((
-            Name::new("Sun"),
-            SunMarker,
-            TranslationalStateC(TranslationalState {
-                position: sun_pos,
-                velocity: DVec3::ZERO,
-            }),
-        ))
-        .id();
-
-    let vehicle = app
-        .world_mut()
-        .spawn((
-            TranslationalStateC(iss_trans()),
-            MassPropertiesC(iss_mass()),
-            DynamicsConfigC(DynamicsConfig {
-                translational_dynamics: true,
-                rotational_dynamics: false,
-                three_dof: true,
-            }),
-            GravityControlsC(GravityControls {
-                controls: vec![GravityControl::new_spherical(planet, false)],
-            }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
-            SrpConfigC(srp_config),
-            RadiationForceC::default(),
-        ))
-        .id();
-
-    step_bevy(&mut app, NUM_STEPS);
-    let bevy_state = read_trans(app.world(), vehicle);
-
-    // ── Simulation ──
-    let time =
-        jeod_time::SimulationTime::at_j2000(jeod_time::leap_second::default_leap_second_table());
-    let mut sim = Simulation::new(time, DT);
-    let earth_idx = sim.add_source(GravitySourceEntry {
-        source: earth_source(),
-        position: DVec3::ZERO,
-        t_inertial_pfix: None,
-    });
-    let sun_idx = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: 0.0,
-            model: GravityModel::PointMass,
-        },
-        position: sun_pos,
-        t_inertial_pfix: None,
-    });
-    sim.sun_source = Some(sun_idx);
-
-    sim.add_body(SimBody {
-        trans: iss_trans(),
-        rot: None,
-        mass: Some(iss_mass()),
-        config: DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: false,
-            three_dof: true,
-        },
-        gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth_idx, false)],
-        },
-        drag: None,
-        srp: Some(srp_config),
-        t_struct_body: DMat3::IDENTITY,
-        compute_gravity_torque: false,
-        atmospheric_state: None,
-        gravity_accel: GravityAcceleration::default(),
-        total_force: Default::default(),
-        frame_derivs: Default::default(),
-        aero_force: None,
-        radiation_force: None,
-        gravity_torque: None,
-        flat_plates: None,
-        plate_temperatures: vec![],
-        plate_t_pow4_cached: vec![],
-        shadow_body: None,
-    });
-    sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
-
-    let sim_state = sim.body(0).trans;
-
-    assert_trans_eq("Bevy vs Sim (SRP)", &bevy_state, &sim_state);
-}
-
 // ── Scenario D: Gravity gradient torque, 6-DOF ──
 // Mirrors: tier3_sixdof_torque
 
@@ -566,10 +440,23 @@ fn tier3_bevy_full_stack_sixdof() {
         cd: 2.2,
         area: 1000.0,
     };
-    let srp_config = SrpConfig {
-        cx_area: 100.0,
-        rad_coeff: 1.5,
-    };
+    // Single flat plate approximating a spherical absorber (100 m² facing Sun)
+    use jeod_sim::{FlatPlate, FlatPlateParams, FlatPlateThermal};
+    let srp_plates = vec![(
+        FlatPlate {
+            area: 100.0,
+            normal: DVec3::X,
+            position: DVec3::ZERO,
+        },
+        FlatPlateParams {
+            albedo: 0.0,
+            diffuse: 0.0,
+        },
+        FlatPlateThermal {
+            emissivity: 0.0,
+            heat_capacity_per_area: 50.0,
+        },
+    )];
     let exp_atmos = ExponentialAtmosphere::default();
     let sun_pos = DVec3::new(1.496e11, 0.0, 0.0);
 
@@ -637,8 +524,12 @@ fn tier3_bevy_full_stack_sixdof() {
             DragConfigC(drag_config),
             bevy_jeod::AtmosphericStateDynC::default(),
             AerodynamicForceC::default(),
-            // SRP
-            SrpConfigC(srp_config),
+            // SRP (flat-plate)
+            FlatPlateConfigC {
+                plates: srp_plates.clone(),
+                temperatures: vec![270.0],
+                t_pow4_cached: vec![270.0_f64.powi(4)],
+            },
             RadiationForceC::default(),
             // Gravity torque
             GravityTorqueC::default(),
@@ -675,7 +566,9 @@ fn tier3_bevy_full_stack_sixdof() {
 
     let mut body = new_sim_body_sixdof(earth_idx, true); // gradient=true
     body.drag = Some(drag_config);
-    body.srp = Some(srp_config);
+    body.flat_plates = Some(srp_plates);
+    body.plate_temperatures = vec![270.0];
+    body.plate_t_pow4_cached = vec![270.0_f64.powi(4)];
     body.compute_gravity_torque = true;
     body.atmospheric_state = Some(Default::default());
     sim.add_body(body);
@@ -786,7 +679,6 @@ fn tier3_bevy_sh4x4_rnp() {
             controls: vec![GravityControl::new_nonspherical(earth_idx, 4, 4, false)],
         },
         drag: None,
-        srp: None,
         t_struct_body: DMat3::IDENTITY,
         compute_gravity_torque: false,
         atmospheric_state: None,
@@ -1122,7 +1014,6 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
         drag: None,
-        srp: None,
         flat_plates: Some(plates_data),
         plate_temperatures: vec![init_temp; num_plates],
         plate_t_pow4_cached: vec![init_temp.powi(4); num_plates],

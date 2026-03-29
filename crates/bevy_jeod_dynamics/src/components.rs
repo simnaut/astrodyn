@@ -51,7 +51,7 @@ pub struct AerodynamicForceC {
 ///
 /// Force frame depends on the model: spherical = inertial, flat-plate = structural.
 /// Torque is in the **structural** frame.
-/// Written by `radiation_pressure_system` (`bevy_jeod_interactions`).
+/// Written by `flat_plate_srp_system` (`bevy_jeod_interactions`).
 /// `force_collection_system` rotates torque to body via `StructuralTransformC`.
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct RadiationForceC {
