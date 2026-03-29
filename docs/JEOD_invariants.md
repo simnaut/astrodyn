@@ -51,7 +51,7 @@ grep the JEOD tree for the distinctive identifier in the invariant description
 | DB.15 | `grav_interaction` always synchronized with integration frame | structural | consistency | deferred (Phase 5) |
 | DB.16 | Child forces propagated to parent recursively | structural | ordering | deferred (Phase 5) |
 | DB.17 | Only root body computes total acceleration | structural | structural | deferred (Phase 5) |
-| DB.18 | `inverse_mass` used for F=ma (precomputed) | structural | consistency | enforced (`systems.rs:138`, `forces.rs:64`; we divide by mass at runtime instead of precomputing inverse) |
+| DB.18 | `inverse_mass` used for F=ma (precomputed) | structural | consistency | enforced (`forces.rs:85,221`, `mass.rs:79`; `inverse_mass` precomputed, F=ma via multiplication matching JEOD `Vector3::scale`) |
 | DB.19 | `inverse_inertia` used for Euler equation | structural | consistency | enforced (`validation.rs:101`, `rotational.rs:46`) |
 | DB.20 | Small rot_accel truncated to zero (< 1e-20) | structural | runtime | not enforced |
 | DB.21 | Only unattached bodies integrate | flag-gate | runtime | deferred (Phase 5, no frame attachment yet) |
@@ -70,11 +70,11 @@ grep the JEOD tree for the distinctive identifier in the invariant description
 |-----|-----------|-------------|----------|------------|
 | MA.01 | MassBody always present on DynBody (value member) | structural | structural | enforced (`validation.rs:81`, `systems.rs:139`) |
 | MA.02 | mass > 0 for meaningful dynamics | conditional | consistency | enforced (`mass.rs:20,36`, `systems.rs:140`) |
-| MA.03 | `inverse_mass` consistent with mass | conditional | consistency | n/a (no `inverse_mass` field; we divide by `mass` at runtime) |
+| MA.03 | `inverse_mass` consistent with mass | conditional | consistency | enforced (`mass.rs:79`; `recompute_derived()` recomputes `inverse_mass = 1/mass`, called by `mass_update_system` each step) |
 | MA.04 | `inverse_inertia` consistent with inertia | structural | consistency | enforced (`mass.rs:39`, `validation.rs:102`) |
 | MA.05 | Inverse inertia computed only for root bodies with positive mass | conditional | consistency | structural (`mass.rs:37`, all bodies compute inverse — intentional divergence) |
 | MA.06 | Bottom-up mass property update (children first) | structural | ordering | enforced (`mass_body.rs:240`) |
-| MA.07 | `needs_update` flag cleared after recomputation | structural | consistency | structural (`mass_body.rs:241`, always recomputes) |
+| MA.07 | Derived quantities recomputed after mutation | structural | consistency | enforced (`mass_body.rs:241`, `mass.rs:79`; `recompute_derived()` updates `inverse_mass`/`inverse_inertia`, `mass_update_system` calls it each step) |
 | MA.08 | No cycle in mass tree | error | consistency | enforced (`mass_body.rs:164`) |
 | MA.09 | MassPoint names unique within body | fatal | initialization | deferred (no mass points in ECS yet) |
 | MA.10 | MassPoint names non-empty | fatal | initialization | deferred |

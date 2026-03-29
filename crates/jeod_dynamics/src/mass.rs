@@ -75,6 +75,7 @@ impl MassProperties {
     ///
     /// # Panics
     /// Panics if `mass <= 0` or `inertia` is singular.
+    // JEOD_INV: MA.03 — inverse_mass consistent with mass (recomputed as 1/mass)
     // JEOD_INV: MA.04 — inverse_inertia consistent with inertia (recomputed from inertia)
     // JEOD_INV: MA.07 — derived quantities recomputed after mutation
     pub fn recompute_derived(&mut self) {
