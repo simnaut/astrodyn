@@ -37,20 +37,23 @@ pub struct GravityControlsC(pub GravityControls<Entity>);
 #[derive(Component, Debug, Clone, Deref, DerefMut)]
 pub struct GravitySourceC(pub GravitySource);
 
-/// Aerodynamic force and torque in the body frame (N, N*m).
+/// Aerodynamic force and torque in the **structural** frame (N, N*m).
 ///
-/// Written by the aerodynamic drag system (`bevy_jeod_interactions`).
-/// Read by `force_collection_system` as `Option<&AerodynamicForceC>`.
+/// Written by `aero_drag_system` (`bevy_jeod_interactions`).
+/// `force_collection_system` rotates force to inertial and torque to body
+/// via `StructuralTransformC`.
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct AerodynamicForceC {
     pub force: DVec3,
     pub torque: DVec3,
 }
 
-/// Solar radiation pressure force in the inertial frame and torque in body frame.
+/// Solar radiation pressure force and torque.
 ///
-/// Written by the radiation pressure system (`bevy_jeod_interactions`).
-/// Read by `force_collection_system` as `Option<&RadiationForceC>`.
+/// Force frame depends on the model: spherical = inertial, flat-plate = structural.
+/// Torque is in the **structural** frame.
+/// Written by `radiation_pressure_system` (`bevy_jeod_interactions`).
+/// `force_collection_system` rotates torque to body via `StructuralTransformC`.
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct RadiationForceC {
     pub force: DVec3,

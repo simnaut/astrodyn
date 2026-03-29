@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-use bevy::log::warn_once;
 use glam::DVec3;
 use jeod_dynamics::SixDofState;
 
@@ -257,9 +256,13 @@ pub fn integration_system(
                 rot.0 = new_state.rot;
                 continue;
             }
-            warn_once!(
+            // JEOD_INV: DB.04 — DynBody always has three frames (structure, composite_body, core_body)
+            // and mass properties. Missing rotational state or mass with rotational_dynamics=true
+            // is a configuration error, not a graceful fallback scenario.
+            panic!(
                 "Entity {entity:?} has rotational_dynamics=true but is missing RotationalStateC \
-                 and/or MassPropertiesC — falling back to 3-DOF"
+                 and/or MassPropertiesC. In JEOD, DynBody always has all three reference frames \
+                 and mass properties. Add these components or set rotational_dynamics=false."
             );
         }
 
