@@ -1,4 +1,3 @@
-use bevy::log::warn_once;
 use bevy::prelude::*;
 use bevy_jeod_dynamics::{
     GravityAccelerationC, GravityControlsC, GravitySourceC, PlanetFixedRotationC,
@@ -31,12 +30,18 @@ pub fn gravity_computation_system(
     for (entity, state, controls, mut accel) in &mut bodies {
         let mut total = GravityAcceleration::default();
         for ctrl in &controls.0.controls {
+            // JEOD_INV: GV.12 — gravity source must exist for control.
+            // JEOD: GravityControls::initialize_control() calls MessageHandler::error()
+            // (fatal) when find_grav_source() returns nullptr. Our validation system
+            // already panics for this at startup; if we reach here, an entity was
+            // despawned after validation — that's a lifecycle bug, not recoverable.
             let Ok((source, rot)) = sources.get(ctrl.source_name) else {
-                warn_once!(
-                    "Entity {entity:?}: GravityControl references entity {:?} which has no GravitySourceC",
+                panic!(
+                    "Entity {entity:?}: GravityControl references entity {:?} which \
+                     does not exist or has no GravitySourceC. In JEOD, gravity source \
+                     resolution is fatal (MessageHandler::error).",
                     ctrl.source_name
                 );
-                continue;
             };
 
             // Pre-check: provide entity context before delegating to evaluate()
