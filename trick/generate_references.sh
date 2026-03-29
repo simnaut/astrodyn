@@ -21,7 +21,14 @@ FORCE="${FORCE:-0}"
 
 has_output() {
     local label="$1"
-    [ "$FORCE" != "1" ] && ls "${OUTPUT_DIR}/${label}_"*.csv &>/dev/null
+    # When FORCE=1, always report "no valid output" so data is regenerated.
+    if [ "$FORCE" = "1" ]; then
+        return 1
+    fi
+    # Consider output present only if there is at least one non-empty CSV
+    # for this label. This avoids skipping regeneration when a previous run
+    # left behind zero-byte or truncated files.
+    find "$OUTPUT_DIR" -maxdepth 1 -type f -name "${label}_*.csv" ! -size 0c 2>/dev/null | grep -q .
 }
 
 export TRICK_HOME=/trick
@@ -180,9 +187,23 @@ PYEOF
 # All share the same S_define and working directory.
 # ════════════════════════════════════════════════════════════════════
 run_dyncomp_group() {
+    # Single source of truth: RUN_DIR → label mapping.
+    # Used for both the pre-scan (skip if all present) and execution.
+    local -a DYNCOMP_RUNS=(
+        "SET_test/RUN_2:dyncomp_run2"
+        "SET_test/RUN_3A:dyncomp_run3a"
+        "SET_test/RUN_3B:dyncomp_run3b"
+        "SET_test/RUN_8B:dyncomp_run8b"
+        "SET_test/RUN_9A:dyncomp_run9a"
+        "SET_test/RUN_9B:dyncomp_run9b"
+        "SET_test/RUN_5A:dyncomp_run5a"
+        "SET_test/RUN_6B:dyncomp_run6b"
+    )
+
     # Skip entire group (including build) if all outputs already exist
     local needs_build=0
-    for label in dyncomp_run2 dyncomp_run3a dyncomp_run3b dyncomp_run8b dyncomp_run9a dyncomp_run9b dyncomp_run5a dyncomp_run6b; do
+    for entry in "${DYNCOMP_RUNS[@]}"; do
+        local label="${entry#*:}"
         if ! has_output "$label"; then
             needs_build=1
             break
@@ -204,14 +225,11 @@ run_dyncomp_group() {
     # Continue past individual failures so later sims still run,
     # but track failures so the caller can detect partial generation.
     local fail=0
-    run_sim "verif/SIM_dyncomp" "SET_test/RUN_2"  "dyncomp_run2"  || fail=1
-    run_sim "verif/SIM_dyncomp" "SET_test/RUN_3A" "dyncomp_run3a" || fail=1
-    run_sim "verif/SIM_dyncomp" "SET_test/RUN_3B" "dyncomp_run3b" || fail=1
-    run_sim "verif/SIM_dyncomp" "SET_test/RUN_8B" "dyncomp_run8b" || fail=1
-    run_sim "verif/SIM_dyncomp" "SET_test/RUN_9A" "dyncomp_run9a" || fail=1
-    run_sim "verif/SIM_dyncomp" "SET_test/RUN_9B" "dyncomp_run9b" || fail=1
-    run_sim "verif/SIM_dyncomp" "SET_test/RUN_5A" "dyncomp_run5a" || fail=1
-    run_sim "verif/SIM_dyncomp" "SET_test/RUN_6B" "dyncomp_run6b" || fail=1
+    for entry in "${DYNCOMP_RUNS[@]}"; do
+        local run_dir="${entry%%:*}"
+        local label="${entry#*:}"
+        run_sim "verif/SIM_dyncomp" "$run_dir" "$label" || fail=1
+    done
 
     # Validate critical first output
     local expected="${OUTPUT_DIR}/dyncomp_run2_state.csv"

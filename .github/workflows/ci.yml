@@ -28,8 +28,14 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Sparse checkout JEOD reference data
         run: |
-          git clone --no-checkout --depth 1 --branch jeod_v5.4.0 https://github.com/nasa/jeod.git ../jeod
+          JEOD_TAG=jeod_v5.4.0
+          JEOD_SHA=27893108bbde8bb162b3213a30d57af89acd1c76
+          git clone --no-checkout --depth 1 --branch "$JEOD_TAG" \
+            https://github.com/nasa/jeod.git ../jeod
           cd ../jeod
+          # Verify immutable tag hasn't moved
+          [ "$(git rev-parse HEAD)" = "$JEOD_SHA" ] || \
+            { echo "FATAL: $JEOD_TAG resolved to $(git rev-parse HEAD), expected $JEOD_SHA"; exit 1; }
           git sparse-checkout set \
             models/environment/gravity/data \
             models/environment/gravity/verif/unit_tests/grav_geospherical/data \
@@ -54,8 +60,14 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Sparse checkout JEOD reference data
         run: |
-          git clone --no-checkout --depth 1 --branch jeod_v5.4.0 https://github.com/nasa/jeod.git ../jeod
+          JEOD_TAG=jeod_v5.4.0
+          JEOD_SHA=27893108bbde8bb162b3213a30d57af89acd1c76
+          git clone --no-checkout --depth 1 --branch "$JEOD_TAG" \
+            https://github.com/nasa/jeod.git ../jeod
           cd ../jeod
+          # Verify immutable tag hasn't moved
+          [ "$(git rev-parse HEAD)" = "$JEOD_SHA" ] || \
+            { echo "FATAL: $JEOD_TAG resolved to $(git rev-parse HEAD), expected $JEOD_SHA"; exit 1; }
           git sparse-checkout set \
             models/environment/gravity/data \
             models/environment/gravity/verif/unit_tests/grav_geospherical/data \
