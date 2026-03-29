@@ -15,6 +15,15 @@ set -uo pipefail
 OUTPUT_DIR="${1:-/output}"
 mkdir -p "$OUTPUT_DIR"
 
+# Skip generation for labels that already have CSV output in OUTPUT_DIR.
+# Set FORCE=1 to regenerate everything: FORCE=1 ./generate_references.sh
+FORCE="${FORCE:-0}"
+
+has_output() {
+    local label="$1"
+    [ "$FORCE" != "1" ] && ls "${OUTPUT_DIR}/${label}_"*.csv &>/dev/null
+}
+
 export TRICK_HOME=/trick
 export JEOD_HOME=/jeod
 export PATH="${TRICK_HOME}/bin:${PATH}"
@@ -24,6 +33,11 @@ echo "=== JEOD Reference Data Generator ==="
 echo "Trick: $(trick-version 2>/dev/null || echo 'installed')"
 echo "JEOD:  ${JEOD_HOME}"
 echo "Output: ${OUTPUT_DIR}"
+if [ "$FORCE" = "1" ]; then
+    echo "Mode:   FORCE (regenerating all)"
+else
+    echo "Mode:   incremental (skipping existing outputs)"
+fi
 echo ""
 
 # ── Helper: build and run a JEOD verification sim ──
@@ -31,6 +45,11 @@ run_sim() {
     local sim_dir="$1"
     local run_dir="$2"
     local label="$3"
+
+    if has_output "$label"; then
+        echo "--- Skipping ${label} (output exists in ${OUTPUT_DIR}) ---"
+        return 0
+    fi
 
     echo "--- Building ${label} ---"
     cd "${JEOD_HOME}/${sim_dir}" || return 1
@@ -100,6 +119,11 @@ run_sim_with_ascii() {
     local label="$3"
     local ascii_snippet="$4"  # Python code to create DRAscii logger
 
+    if has_output "$label"; then
+        echo "--- Skipping ${label} (output exists in ${OUTPUT_DIR}) ---"
+        return 0
+    fi
+
     echo "--- Building ${label} ---"
     cd "${JEOD_HOME}/${sim_dir}" || return 1
 
@@ -156,6 +180,19 @@ PYEOF
 # All share the same S_define and working directory.
 # ════════════════════════════════════════════════════════════════════
 run_dyncomp_group() {
+    # Skip entire group (including build) if all outputs already exist
+    local needs_build=0
+    for label in dyncomp_run2 dyncomp_run3a dyncomp_run3b dyncomp_run8b dyncomp_run9a dyncomp_run9b dyncomp_run5a dyncomp_run6b; do
+        if ! has_output "$label"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_dyncomp group (all outputs exist) ==="
+        return 0
+    fi
+
     # Build once
     echo "=== Building SIM_dyncomp ==="
     cd "${JEOD_HOME}/verif/SIM_dyncomp" || return 1

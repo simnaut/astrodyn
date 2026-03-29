@@ -172,10 +172,18 @@ Trick is cloned at `../trick`, JEOD at `../jeod`.
 # Build container (context is parent dir so trick/ and jeod/ are accessible)
 docker build -f trick/Dockerfile -t jeod-trick ..
 
-# Generate reference CSVs into test_data/
+# Generate reference CSVs into test_data/ (incremental — skips existing outputs)
 mkdir -p test_data
 docker run --rm -v $(pwd)/test_data:/output jeod-trick
+
+# Force regenerate all data (ignores existing outputs)
+docker run --rm -e FORCE=1 -v $(pwd)/test_data:/output jeod-trick
 ```
+
+The generation script is **incremental by default**: it checks for existing
+`${label}_*.csv` files in the output directory and skips any sim whose data is
+already present. This avoids expensive `trick-CP` builds and sim runs when adding
+new sims to `generate_references.sh`. Set `FORCE=1` to regenerate everything.
 
 The container runs sims from the SIM root directory (not from SET_test/RUN_*/) because
 JEOD's `input.py` files use paths relative to the SIM root. Output CSVs land in
