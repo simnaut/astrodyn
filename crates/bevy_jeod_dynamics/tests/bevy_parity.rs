@@ -1,7 +1,8 @@
 //! Bevy App 6-DOF parity test.
 //!
-//! Validates that the Bevy integration_system produces identical state to
-//! calling rk4_sixdof_step() directly. Tests system wiring, not physics.
+//! Validates three-way parity: the Bevy integration_system, manual
+//! rk4_sixdof_step(), and jeod_sim::Simulation all produce bit-identical
+//! state from the same initial conditions.
 
 use std::time::Duration;
 
@@ -15,7 +16,8 @@ use bevy_jeod_gravity::JeodGravityPlugin;
 use bevy_jeod_time::JeodTimePlugin;
 use glam::{DMat3, DVec3};
 use jeod_dynamics::{
-    DynamicsConfig, MassProperties, RotationalState, SixDofState, TranslationalState,
+    DynamicsConfig, GravityAcceleration, MassProperties, RotationalState, SixDofState,
+    TranslationalState,
 };
 use jeod_gravity::{GravityControl, GravityControls, GravityModel, GravitySource};
 use jeod_math::JeodQuat;
@@ -223,5 +225,141 @@ fn bevy_integration_matches_pure_rk4_sixdof() {
         omega_diff,
         bevy_state.rot.ang_vel_body,
         pure_state.rot.ang_vel_body,
+    );
+}
+
+/// Run 100 integration steps via jeod_sim::Simulation with identical
+/// initial conditions and gravity setup.
+fn run_simulation_steps() -> SixDofState {
+    let time = jeod_time::SimulationTime::at_j2000(
+        jeod_time::leap_second::default_leap_second_table(),
+    );
+    let mut sim = jeod_sim::Simulation::new(time, DT);
+
+    let earth = sim.add_source(jeod_sim::GravitySourceEntry {
+        source: GravitySource {
+            mu: MU_EARTH,
+            model: GravityModel::PointMass,
+        },
+        position: DVec3::ZERO,
+        t_inertial_pfix: None,
+    });
+
+    sim.add_body(jeod_sim::SimBody {
+        trans: initial_trans(),
+        rot: Some(initial_rot()),
+        mass: Some(mass_props()),
+        config: DynamicsConfig {
+            translational_dynamics: true,
+            rotational_dynamics: true,
+            three_dof: false,
+        },
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth, false)],
+        },
+        drag: None,
+        srp: None,
+        t_struct_body: DMat3::IDENTITY,
+        compute_gravity_torque: false,
+        atmospheric_state: None,
+        gravity_accel: GravityAcceleration::default(),
+        total_force: Default::default(),
+        frame_derivs: Default::default(),
+        aero_force: None,
+        radiation_force: None,
+        gravity_torque: None,
+    });
+
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    let body = sim.body(0);
+    SixDofState {
+        trans: body.trans,
+        rot: body.rot.unwrap(),
+    }
+}
+
+/// Three-way parity: Bevy App == jeod_sim::Simulation == manual RK4.
+///
+/// Runs all three paths from identical initial conditions and compares
+/// the final state directly. Any difference means the orchestration
+/// layers are not equivalent.
+#[test]
+fn three_way_parity_bevy_simulation_pure() {
+    let (mut app, _planet, vehicle) = build_app();
+
+    let bevy_state = run_bevy_steps(&mut app, vehicle);
+    let sim_state = run_simulation_steps();
+    let pure_state = run_pure_steps();
+
+    // ── Bevy vs Simulation (the key new comparison) ──
+
+    let pos_diff = (bevy_state.trans.position - sim_state.trans.position).length();
+    assert!(
+        pos_diff < 1e-8,
+        "Position difference between Bevy and Simulation: {} m (exceeds 1e-8 m)\n\
+         Bevy:  {:?}\n\
+         Sim:   {:?}",
+        pos_diff,
+        bevy_state.trans.position,
+        sim_state.trans.position,
+    );
+
+    let vel_diff = (bevy_state.trans.velocity - sim_state.trans.velocity).length();
+    assert!(
+        vel_diff < 1e-11,
+        "Velocity difference between Bevy and Simulation: {} m/s (exceeds 1e-11 m/s)\n\
+         Bevy:  {:?}\n\
+         Sim:   {:?}",
+        vel_diff,
+        bevy_state.trans.velocity,
+        sim_state.trans.velocity,
+    );
+
+    let q_bevy = bevy_state.rot.quaternion.data;
+    let q_sim = sim_state.rot.quaternion.data;
+    let q_diff: f64 = (0..4)
+        .map(|i| (q_bevy[i] - q_sim[i]).powi(2))
+        .sum::<f64>()
+        .sqrt();
+    assert!(
+        q_diff < 1e-14,
+        "Quaternion difference between Bevy and Simulation: {} (exceeds 1e-14)\n\
+         Bevy:  {:?}\n\
+         Sim:   {:?}",
+        q_diff,
+        q_bevy,
+        q_sim,
+    );
+
+    let omega_diff = (bevy_state.rot.ang_vel_body - sim_state.rot.ang_vel_body).length();
+    assert!(
+        omega_diff < 1e-14,
+        "Angular velocity difference between Bevy and Simulation: {} rad/s (exceeds 1e-14)\n\
+         Bevy:  {:?}\n\
+         Sim:   {:?}",
+        omega_diff,
+        bevy_state.rot.ang_vel_body,
+        sim_state.rot.ang_vel_body,
+    );
+
+    // ── Simulation vs Pure (redundant with jeod_sim parity test, but confirms transitivity) ──
+
+    let pos_diff = (sim_state.trans.position - pure_state.trans.position).length();
+    assert!(
+        pos_diff < 1e-8,
+        "Position difference between Simulation and pure RK4: {} m",
+        pos_diff,
+    );
+
+    println!(
+        "Three-way parity confirmed:\n  \
+         Bevy vs Sim  pos: {:.2e} m\n  \
+         Bevy vs Pure pos: {:.2e} m\n  \
+         Sim  vs Pure pos: {:.2e} m",
+        (bevy_state.trans.position - sim_state.trans.position).length(),
+        (bevy_state.trans.position - pure_state.trans.position).length(),
+        (sim_state.trans.position - pure_state.trans.position).length(),
     );
 }

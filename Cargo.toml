@@ -26,6 +26,7 @@ bevy = { workspace = true }
 
 [dev-dependencies]
 jeod_test_data = { path = "crates/jeod_test_data" }
+jeod_sim = { path = "crates/jeod_sim" }
 
 [workspace]
 resolver = "2"
@@ -48,6 +49,7 @@ members = [
     "crates/jeod_atmosphere",
     "crates/jeod_interactions",
     "crates/jeod_test_data",
+    "crates/jeod_sim",
 ]
 
 [workspace.dependencies]

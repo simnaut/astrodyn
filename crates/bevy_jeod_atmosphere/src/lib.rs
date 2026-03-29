@@ -4,4 +4,4 @@ pub mod systems;
 
 pub use components::*;
 pub use plugin::JeodAtmospherePlugin;
-pub use systems::{AtmosphereModel, AtmosphereModelR};
+pub use systems::{AtmosphereConfig, AtmosphereModel, AtmosphereModelR};

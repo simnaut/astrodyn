@@ -7,6 +7,8 @@ edition = "2021"
 jeod_atmosphere = { path = "../jeod_atmosphere" }
 jeod_dynamics = { path = "../jeod_dynamics" }
 jeod_gravity = { path = "../jeod_gravity" }
+jeod_interactions = { path = "../jeod_interactions" }
+jeod_sim = { path = "../jeod_sim" }
 glam = { workspace = true }
 bevy = { workspace = true }
 
@@ -14,5 +16,7 @@ bevy = { workspace = true }
 jeod_dynamics = { path = "../jeod_dynamics" }
 jeod_gravity = { path = "../jeod_gravity" }
 jeod_math = { path = "../jeod_math" }
+jeod_sim = { path = "../jeod_sim" }
+jeod_time = { path = "../jeod_time" }
 bevy_jeod_time = { path = "../bevy_jeod_time" }
 bevy_jeod_gravity = { path = "../bevy_jeod_gravity" }

@@ -863,15 +863,42 @@ jeod_dynamics::tests::rk4_energy_conservation
 
 ### Tolerance Standards
 
-| Quantity | Tier 1 (analytical) | Tier 2 (JEOD reference) | Tier 3 (trajectory) |
-|----------|--------------------|-----------------------|-------------------|
-| Position | 1e-6 m | 1.0 m | 10-100 m |
-| Velocity | 1e-9 m/s | 0.001 m/s | 0.01-0.1 m/s |
-| Acceleration | 1e-12 m/s² | 1e-10 m/s² | — |
-| Angles | 1e-14 rad | 1e-12 rad | 1e-6 rad |
-| Energy | 1e-10 J/kg | — | — |
-| Quaternion norm | 1e-14 | 1e-14 | 1e-12 |
-| Time | — | exact (integer s) | — |
+| Quantity | Tier 0 (cross-parity) | Tier 1 (analytical) | Tier 2 (JEOD reference) | Tier 3 (trajectory) |
+|----------|-----------------------|--------------------|-----------------------|-------------------|
+| Position | **0.0 m (exact)** | 1e-6 m | 1.0 m | 10-100 m |
+| Velocity | **0.0 m/s (exact)** | 1e-9 m/s | 0.001 m/s | 0.01-0.1 m/s |
+| Acceleration | — | 1e-12 m/s² | 1e-10 m/s² | — |
+| Angles | **0.0 rad (exact)** | 1e-14 rad | 1e-12 rad | 1e-6 rad |
+| Energy | — | 1e-10 J/kg | — | — |
+| Quaternion | **0.0 (exact)** | 1e-14 | 1e-14 | 1e-12 |
+| Time | — | — | exact (integer s) | — |
+
+Tier 0 tolerances are exact zero because the Bevy pipeline and `jeod_sim::Simulation`
+call the same functions in the same order — the floating-point operations are identical.
+
+### Cross-Parity Testing (Tier 0)
+
+Every phase that delivers new physics must include a cross-parity scenario in
+`tests/cross_parity.rs` proving Bevy and Simulation produce bit-identical output
+for that physics. Current scenarios:
+
+| Scenario | Physics | Added in |
+|----------|---------|----------|
+| A | Point-mass gravity, 6-DOF | Phase 1 |
+| B | Exponential atmosphere + drag, 6-DOF | Phase 4 |
+| C | Solar radiation pressure, 3-DOF | Phase 4 |
+| D | Gravity gradient torque, 6-DOF | Phase 4 |
+| E | Full stack (all interactions), 6-DOF | Phase 4 |
+
+Future phases must add:
+- Phase 5: Spherical harmonics with RNP rotation
+- Phase 5: MET atmosphere (time-dependent)
+- Phase 5: Multi-body gravity (Sun + Moon differential)
+- Phase 6: Advanced integrators (Gauss-Jackson, RKF45)
+
+The cross-parity test exists alongside — not instead of — Tier 3 JEOD trajectory
+validation. Tier 3 proves correctness against NASA's reference implementation.
+Tier 0 proves that the non-Bevy execution path is numerically equivalent to Bevy.
 
 ### Definition of Done (per task)
 
@@ -879,7 +906,9 @@ jeod_dynamics::tests::rk4_energy_conservation
 2. Unit tests pass (`cargo test`)
 3. No clippy warnings (`cargo clippy`)
 4. Core logic is in `jeod_*` crate (no Bevy dependency in physics code)
-5. Bevy system (if applicable) delegates to core function
+5. Orchestration logic delegates to `jeod_sim` per-body functions
+6. Bevy system (if applicable) delegates to `jeod_sim`, not directly to `jeod_*`
+7. If new physics: cross-parity scenario added to `tests/cross_parity.rs`
 
 ### Phase Transition Protocol
 
@@ -887,5 +916,6 @@ Before starting Phase N+1:
 
 1. All Phase N exit criteria checkboxes are checked
 2. `cargo test --workspace` passes with zero failures
-3. All examples from Phase N run successfully
-4. No known regressions from earlier phases
+3. All cross-parity scenarios pass with exact-zero difference
+4. All examples from Phase N run successfully
+5. No known regressions from earlier phases

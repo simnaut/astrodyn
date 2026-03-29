@@ -671,6 +671,7 @@ dependencies = [
  "jeod_interactions",
  "jeod_math",
  "jeod_planet",
+ "jeod_sim",
  "jeod_test_data",
  "jeod_time",
 ]
@@ -685,6 +686,7 @@ dependencies = [
  "glam 0.30.10",
  "jeod_atmosphere",
  "jeod_math",
+ "jeod_sim",
 ]
 
 [[package]]
@@ -698,7 +700,10 @@ dependencies = [
  "jeod_atmosphere",
  "jeod_dynamics",
  "jeod_gravity",
+ "jeod_interactions",
  "jeod_math",
+ "jeod_sim",
+ "jeod_time",
 ]
 
 [[package]]
@@ -730,6 +735,7 @@ dependencies = [
  "glam 0.30.10",
  "jeod_dynamics",
  "jeod_gravity",
+ "jeod_sim",
 ]
 
 [[package]]
@@ -2515,6 +2521,21 @@ dependencies = [
 [[package]]
 name = "jeod_planet"
 version = "0.1.0"
+
+[[package]]
+name = "jeod_sim"
+version = "0.1.0"
+dependencies = [
+ "glam 0.30.10",
+ "jeod_atmosphere",
+ "jeod_dynamics",
+ "jeod_frames",
+ "jeod_gravity",
+ "jeod_interactions",
+ "jeod_math",
+ "jeod_time",
+ "log",
+]
 
 [[package]]
 name = "jeod_test_data"

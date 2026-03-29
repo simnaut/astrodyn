@@ -681,7 +681,20 @@ bevy_jeod/                               # workspace root
 |   |       +-- presets.rs           # Earth, Moon, Mars, Sun constants
 |   |       +-- rnp.rs              # precession, nutation, polar motion
 |   |
-|   | ── BEVY GLUE LAYER (thin, only ECS wiring) ─────────────────
+|   | ── ORCHESTRATION LAYER (ECS-agnostic pipeline) ──────────────
+|   |
+|   +-- jeod_sim/                        # Pipeline orchestration, Simulation runner
+|   |   +-- src/
+|   |       +-- lib.rs
+|   |       +-- atmosphere.rs            # AtmosphereModel, AtmosphereConfig, evaluate_atmosphere()
+|   |       +-- gravity.rs              # accumulate_gravity()
+|   |       +-- forces.rs              # collect_and_resolve_forces()
+|   |       +-- integration.rs         # integrate_body()
+|   |       +-- validation.rs          # validate_body() -> Result<(), Vec<ValidationError>>
+|   |       +-- pipeline.rs            # PipelineStage enum, PIPELINE_ORDER
+|   |       +-- simulation.rs          # Simulation, SimBody, GravitySourceEntry
+|   |
+|   | ── BEVY GLUE LAYER (thin, delegates to jeod_sim) ───────────
 |   |
 |   +-- bevy_jeod_time/                  # Bevy plugin: time resource + system
 |   +-- bevy_jeod_frames/                # Bevy plugin: frame components + propagation system
@@ -734,14 +747,47 @@ jeod_frames  jeod_ephemeris    jeod_planet
      ────────────────────────────────┘
               |
               v
-     bevy_jeod_* crates (thin Bevy glue)
+     jeod_sim (orchestration: composes jeod_* functions, zero Bevy dep)
+              |
+              v
+     bevy_jeod_* crates (thin Bevy glue, delegates to jeod_sim)
               |
               v
      bevy_jeod (top-level plugin)
 ```
 
-Each `bevy_jeod_*` crate depends on its corresponding `jeod_*` crate and on `bevy`.
-The `jeod_*` crates have **no** Bevy dependency and can be used standalone.
+### Three-Layer Architecture
+
+The codebase has three layers:
+
+1. **`jeod_*` crates** — Pure physics algorithms and data types. Zero Bevy dependency.
+   Define per-function operations (gravity evaluation, RK4 step, drag computation, etc.).
+
+2. **`jeod_sim` crate** — ECS-agnostic orchestration. Zero Bevy dependency. Composes
+   `jeod_*` functions into pipeline stages and provides:
+   - **Per-body functions** (primary API for ECS adapters): `accumulate_gravity()`,
+     `evaluate_atmosphere()`, `collect_and_resolve_forces()`, `integrate_body()`,
+     `validate_body()`. All borrow-based — the ECS world remains the source of truth.
+   - **`Simulation` runner** (for non-ECS use): standalone struct for batch propagation,
+     scripting, and tests. Owns state internally.
+   - **`PipelineStage` enum** and `PIPELINE_ORDER`: canonical stage ordering that any
+     adapter must respect.
+
+3. **`bevy_jeod_*` crates** — Thin Bevy glue. Each system function queries components
+   and delegates to `jeod_sim` per-body functions. Component definitions, plugin
+   registration, and system scheduling live here.
+
+**Why three layers?** The original two-layer design (`jeod_*` + `bevy_jeod_*`) kept
+physics portable, but the orchestration logic — pipeline ordering, gravity accumulation,
+frame transform composition, force contribution assembly, integration routing, and
+validation — lived exclusively in `bevy_jeod_*` code. A non-Bevy ECS user would have
+had to reverse-engineer ~10 systems across 8 Bevy crates to build a working simulation
+loop. The `jeod_sim` layer extracts this orchestration into a single, Bevy-free crate
+that any ECS (or no ECS) can use directly.
+
+Each `bevy_jeod_*` crate depends on its corresponding `jeod_*` crate, on `jeod_sim`,
+and on `bevy`. The `jeod_*` and `jeod_sim` crates have **no** Bevy dependency and can
+be used standalone.
 
 ### Top-Level Plugin Composition
 
@@ -781,7 +827,33 @@ app.add_plugins((
 
 ## 6. Verification Strategy
 
-### Four-Tier Verification Plan
+### Five-Tier Verification Plan
+
+### Tier 0: Cross-Parity (Bevy vs Simulation Runner)
+
+Verify that the Bevy ECS pipeline and `jeod_sim::Simulation` produce **bit-identical**
+output from the same initial conditions. This guarantees that a non-Bevy ECS user gets
+exactly the same numerical results as the Bevy pipeline.
+
+Cross-parity tests set up identical scenarios in both execution paths, run the same
+number of steps at the same dt, and assert exact equality on all state variables
+(position, velocity, quaternion, angular velocity). The test file
+`tests/cross_parity.rs` covers five physics scenarios:
+
+| Scenario | Physics | DOF |
+|----------|---------|-----|
+| A | Point-mass gravity | 6-DOF |
+| B | Exponential atmosphere + ballistic drag | 6-DOF |
+| C | Solar radiation pressure | 3-DOF |
+| D | Gravity gradient torque | 6-DOF |
+| E | Full stack (drag + SRP + gravity torque + wind) | 6-DOF |
+
+All five produce `0.00e0` difference — not just within tolerance, but **exactly zero**.
+This is possible because both paths call the same `jeod_sim` per-body functions,
+which call the same `jeod_*` pure functions, in the same order, with the same inputs.
+
+**Rule:** Every phase that delivers new physics must add a corresponding cross-parity
+scenario. The cross-parity test is part of the definition of done alongside Tier 3.
 
 ### Tier 1: Analytical Unit Tests
 
@@ -909,6 +981,10 @@ fn tier3_cross_validate_against_jeod_dyncomp() {
 - All computation (gravity, Earth rotation, time conversion) is our own ported code.
   JEOD CSV data is used **only** for comparison, never as input to our computation.
 - Tier 3 tests are part of the **definition of done** for every phase, not optional.
+- Tier 3 tests call `jeod_*` pure functions directly (no Bevy, no `jeod_sim`).
+  Tier 0 cross-parity tests separately prove that the Bevy pipeline and `jeod_sim`
+  Simulation produce identical output. Together, they guarantee: any ECS adapter
+  using `jeod_sim` will match both Bevy and JEOD to the same tolerances.
 
 **Results:**
 
@@ -1312,7 +1388,7 @@ pub fn euler_test_cases(jeod_root: &str) -> Vec<EulerTestCase>;
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| **ECS portability** | Two-layer crate split: `jeod_*` (pure Rust) + `bevy_jeod_*` (thin Bevy glue) | Physics code is reusable from any ECS, a custom loop, or WASM. Bevy API churn doesn't force physics rewrites. Core crates are testable as pure functions. |
+| **ECS portability** | Three-layer crate split: `jeod_*` (pure physics) + `jeod_sim` (orchestration) + `bevy_jeod_*` (thin Bevy glue) | Physics algorithms in `jeod_*` are reusable anywhere. Pipeline orchestration in `jeod_sim` codifies stage ordering, gravity accumulation, force collection, and integration routing without ECS dependency. `bevy_jeod_*` systems delegate to `jeod_sim` per-body functions. A non-Bevy ECS writes its own thin glue calling the same `jeod_sim` functions, guaranteed bit-identical by cross-parity tests. |
 | **Floating-point precision** | `f64` everywhere via custom components (not Bevy's `Transform`) | Orbital mechanics requires ~15 significant digits. `f32` loses km-scale accuracy at Earth-orbit distances. |
 | **Math library** | `glam` with f64 features (`DVec3`, `DQuat`, `DMat3`) + `nalgebra` for NxN matrices | `glam` provides f64 types with no Bevy dependency (it's a standalone crate). `nalgebra` is better for variable-size matrices needed by spherical harmonics coefficient arrays. Both work in `jeod_*` crates. |
 | **Reference frame tree** | `jeod_frames` provides an arena-based tree; `bevy_jeod_frames` maps it to Bevy's `Parent`/`Children` | Core tree is portable. Bevy layer adds ECS hierarchy for efficient queries. Other ECS layers can use their own hierarchy mechanism. |

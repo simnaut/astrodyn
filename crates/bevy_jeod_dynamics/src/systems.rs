@@ -1,6 +1,5 @@
 use bevy::prelude::*;
-use glam::{DMat3, DVec3};
-use jeod_dynamics::{ForceContributions, SixDofState};
+use glam::DVec3;
 
 use crate::components::{
     AerodynamicForceC, DynamicsConfigC, FrameDerivativesC, GravityAccelerationC, GravityTorqueC,
@@ -25,27 +24,15 @@ pub fn mass_update_system(mut query: Query<&mut MassPropertiesC>) {
 
 /// Collects non-gravity forces and all torques into `TotalForceC`.
 ///
+/// Delegates to [`jeod_sim::collect_and_resolve_forces`] for frame-aware
+/// force/torque aggregation and frame derivative computation.
+///
 /// Gravity is intentionally **excluded** because the integration system
 /// recomputes it at each RK4 stage for 4th-order accuracy. Non-gravity
 /// forces (aero, SRP) are approximately constant over one timestep and
 /// are added to the per-stage gravity inside the integrator.
-///
-/// Frame pipeline (matching JEOD `dyn_body_collect.cc`):
-///
-/// **Force** (collected in structural frame, rotated to inertial):
-///   `T_inertial_struct^T * (aero_force_struct + ...)` + SRP (spherical, already inertial)
-///
-/// **Torque** (collected in body frame):
-///   `T_struct_body * aero_torque_struct` + gravity_torque (already body) +
-///   `T_struct_body * srp_torque_struct`
-///
-/// `T_inertial_struct = T_struct_body^T * T_inertial_body` where
-/// `T_struct_body` is from `StructuralTransformC` (defaults to identity).
-///
-/// All interaction components are optional — entities without them
-/// contribute zero from those terms.
-// Force collection and frame derivative physics delegated to jeod_dynamics::collect_forces
-// and jeod_dynamics::compute_frame_derivatives (DB.28, DB.29, FD.01, FD.02).
+// JEOD_INV: DB.28 — forces collected in structural frame, rotated to inertial at root
+// JEOD_INV: DB.29 — torques collected in structural frame, rotated to body at root
 #[allow(clippy::type_complexity)]
 pub fn force_collection_system(
     mut query: Query<(
@@ -60,93 +47,47 @@ pub fn force_collection_system(
         Option<&StructuralTransformC>,
     )>,
 ) {
-    // Note: JEOD gates force/torque collection on translational/rotational_dynamics flags (DB.07/DB.08).
-    // We collect unconditionally here; gating is enforced in integration_system.
     for (mut total, derivs, grav, rot_state, mass, aero, srp, grav_torque, struct_xform) in
         &mut query
     {
-        // Structural-to-body transform. Identity when absent (structure = body).
-        // JEOD: mass.composite_properties.T_parent_this
-        let t_struct_body = struct_xform.map_or(DMat3::IDENTITY, |s| s.0);
+        let t_struct_body = struct_xform.map_or(glam::DMat3::IDENTITY, |s| s.0);
+        let grav_accel = grav.map_or(DVec3::ZERO, |g| g.grav_accel);
 
-        // Build force contributions from optional interaction components.
-        let mut contributions = ForceContributions::default();
-
-        if let Some(aero) = aero {
-            // JEOD_INV: IN.15 — aero drag requires body orientation (T_inertial_struct)
-            if aero.force != DVec3::ZERO && rot_state.is_none() {
-                panic!(
-                    "AerodynamicForceC has non-zero force but RotationalStateC is missing. \
-                     In JEOD, T_inertial_struct is a mandatory parameter of aero_drag(). \
-                     Add RotationalStateC to any entity with aerodynamic forces."
-                );
-            }
-            contributions.aero_force_struct = aero.force;
-            contributions.aero_torque_struct = aero.torque;
-        }
-
-        if let Some(srp) = srp {
-            contributions.srp_force_inertial = srp.force;
-            contributions.srp_torque_struct = srp.torque;
-        }
-
-        if let Some(gt) = grav_torque {
-            contributions.gravity_torque_body = gt.0;
-        }
-
-        // Rotation matrix from attitude quaternion (identity if no rotational state).
-        let t_inertial_body = rot_state.as_ref().map_or(DMat3::IDENTITY, |r| {
-            r.quaternion.left_quat_to_transformation()
+        // Map Bevy component references to jeod_interactions types for jeod_sim.
+        let aero_ref = aero.map(|a| jeod_interactions::AerodynamicForce {
+            force: a.force,
+            torque: a.torque,
         });
+        let srp_ref = srp.map(|s| jeod_interactions::RadiationForce {
+            force: s.force,
+            torque: s.torque,
+        });
+        let gravity_torque_val = grav_torque.map(|gt| gt.0);
 
-        // Delegate frame-aware force/torque collection to jeod_dynamics (DB.28, DB.29).
-        let collected =
-            jeod_dynamics::collect_forces(&contributions, &t_struct_body, &t_inertial_body);
+        let (collected, frame_derivs) = jeod_sim::collect_and_resolve_forces(
+            aero_ref.as_ref(),
+            srp_ref.as_ref(),
+            gravity_torque_val,
+            rot_state.map(|r| &r.0),
+            t_struct_body,
+            mass.map(|m| &m.0),
+            grav_accel,
+        );
+
         total.force = collected.force;
         total.torque = collected.torque;
 
-        // Delegate frame derivative computation to jeod_dynamics (FD.01, FD.02).
         if let Some(mut derivs) = derivs {
-            let grav_accel = grav.map_or(DVec3::ZERO, |g| g.grav_accel);
-
-            if let (Some(rot), Some(m)) = (rot_state, mass) {
-                **derivs = jeod_dynamics::compute_frame_derivatives(
-                    &collected,
-                    m.inverse_mass,
-                    grav_accel,
-                    &m.inertia,
-                    &m.inverse_inertia,
-                    rot.ang_vel_body,
-                );
-            } else {
-                // No rotational state or mass: translational-only derivatives.
-                // Delegate to jeod_dynamics (FD.01).
-                // When mass is absent, non-grav force must be zero (the stricter
-                // entity-context check is in integration_system).
-                if let Some(m) = mass {
-                    **derivs = jeod_dynamics::compute_translational_derivatives(
-                        collected.force,
-                        m.inverse_mass,
-                        grav_accel,
-                    );
-                } else {
-                    derivs.trans_accel = grav_accel;
-                    derivs.rot_accel = DVec3::ZERO;
-                }
-            }
+            **derivs = frame_derivs;
         }
     }
 }
 
 /// Advances translational (and optionally rotational) state via RK4 integration.
 ///
-/// Matching JEOD's `DynamicsIntegrationGroup`: gravity is computed once per
-/// step by `gravity_computation_system` (in `JeodSet::Environment`) and held
-/// constant across all RK4 stages. Non-gravity accelerations from
-/// `TotalForceC` (aero, SRP) are similarly constant over the timestep.
-///
-/// Torques from `TotalForceC` (gravity gradient, aero torque) are held
-/// constant and passed to the 6-DOF integrator.
+/// Delegates to [`jeod_sim::integrate_body`] for 6-DOF/3-DOF routing and
+/// RK4 stepping. Gravity is held constant across all RK4 stages (matching
+/// JEOD's `DynamicsIntegrationGroup`).
 #[allow(clippy::type_complexity)]
 pub fn integration_system(
     mut bodies: Query<(
@@ -165,69 +106,16 @@ pub fn integration_system(
         return;
     }
 
-    for (entity, config, mut state, mut rot_state, mass, grav, total_force) in &mut bodies {
-        // JEOD_INV: DB.07 — translational_dynamics gates integration (collection is unconditional; see force_collection_system)
-        if !config.translational_dynamics {
-            continue;
-        }
-
-        // Non-gravity translational acceleration (constant over one RK4 step).
-        // TotalForceC.force holds only non-gravity forces (aero + SRP), already
-        // in inertial frame. Delegate F=ma to jeod_dynamics (DB.18).
-        let non_grav_accel = if total_force.force == DVec3::ZERO {
-            DVec3::ZERO
-        } else if let Some(m) = mass {
-            // JEOD_INV: MA.01 — MassBody always present on DynBody (partial: only checked when force != 0)
-            jeod_dynamics::compute_translational_acceleration(total_force.force, m.inverse_mass)
-        } else {
-            panic!(
-                "Entity {entity:?}: non-zero TotalForceC ({:?}) but no MassPropertiesC. \
-                 In JEOD, DynBody always has mass. Add MassPropertiesC to any entity \
-                 with interaction forces (drag, SRP).",
-                total_force.force
-            );
-        };
-
-        // Gravitational acceleration: pre-computed by gravity_computation_system,
-        // held constant across all RK4 stages (matching JEOD DynamicsIntegrationGroup).
-        let grav_accel = grav.grav_accel;
-        let total_accel = grav_accel + non_grav_accel;
-
-        // JEOD_INV: DB.08 — rotational_dynamics gates integration (collection is unconditional; see force_collection_system)
-        // 6-DOF path: rotational dynamics enabled AND entity has components
-        if config.rotational_dynamics {
-            if let (Some(ref mut rot), Some(mass_props)) = (&mut rot_state, &mass) {
-                let six_state = SixDofState {
-                    trans: state.0,
-                    rot: rot.0,
-                };
-
-                // Torque: constant over one RK4 step (gravity gradient + aero torque)
-                let constant_torque = total_force.torque;
-
-                let new_state = jeod_dynamics::rk4_sixdof_step(
-                    &six_state,
-                    |_s| total_accel,
-                    |_s| constant_torque,
-                    &mass_props.0,
-                    dt,
-                );
-                state.0 = new_state.trans;
-                rot.0 = new_state.rot;
-                continue;
-            }
-            // JEOD_INV: DB.04 — DynBody always has three frames (structure, composite_body, core_body)
-            // and mass properties. Missing rotational state or mass with rotational_dynamics=true
-            // is a configuration error, not a graceful fallback scenario.
-            panic!(
-                "Entity {entity:?} has rotational_dynamics=true but is missing RotationalStateC \
-                 and/or MassPropertiesC. In JEOD, DynBody always has all three reference frames \
-                 and mass properties. Add these components or set rotational_dynamics=false."
-            );
-        }
-
-        // 3-DOF path: translational only
-        let new_state = jeod_dynamics::rk4_translational_step(&state.0, |_s| total_accel, dt);
-        state.0 = new_state;
+    for (_entity, config, mut state, mut rot_state, mass, grav, total_force) in &mut bodies {
+        jeod_sim::integrate_body(
+            config,
+            &mut state.0,
+            rot_state.as_mut().map(|r| &mut r.0),
+            mass.map(|m| &m.0),
+            grav.grav_accel,
+            total_force.force,
+            total_force.torque,
+            dt,
+        );
     }
 }

@@ -1,6 +1,8 @@
 use bevy::prelude::*;
 
-pub use bevy_jeod_atmosphere::{AtmosphereModel, AtmosphereModelR, JeodAtmospherePlugin};
+pub use bevy_jeod_atmosphere::{
+    AtmosphereConfig, AtmosphereModel, AtmosphereModelR, JeodAtmospherePlugin,
+};
 pub use bevy_jeod_dynamics::{
     AerodynamicForceC, AtmosphericStateC as AtmosphericStateDynC, DynamicsConfigC,
     FrameDerivativesC, GravityAccelerationC, GravityControlsC, GravitySourceC, GravityTorqueC,
