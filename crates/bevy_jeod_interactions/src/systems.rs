@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use jeod_interactions::{compute_ballistic_drag, compute_gravity_torque, compute_srp_force};
+use jeod_interactions::{compute_gravity_torque, compute_srp_force};
 
 use crate::components::{DragConfigC, SrpConfigC};
 use bevy_jeod_dynamics::{
@@ -25,17 +25,14 @@ pub fn aero_drag_system(
     )>,
 ) {
     for (drag_config, atmos, state, rot, struct_xform, mut aero_force) in &mut query {
-        // JEOD passes T_inertial_struct (inertial→structural), not T_inertial_body.
-        let t_inertial_body = rot.quaternion.left_quat_to_transformation();
         let t_struct_body = struct_xform.map_or(glam::DMat3::IDENTITY, |s| s.0);
-        let t_inertial_struct =
-            jeod_dynamics::compute_t_inertial_struct(&t_struct_body, &t_inertial_body);
 
-        let result = compute_ballistic_drag(
+        let result = jeod_sim::compute_drag(
             &drag_config.0,
             atmos, // AtmosphericStateC derefs to AtmosphereState
             state.velocity,
-            &t_inertial_struct,
+            Some(&rot.0),
+            t_struct_body,
         );
 
         aero_force.force = result.force;

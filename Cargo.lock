@@ -748,6 +748,7 @@ dependencies = [
  "jeod_atmosphere",
  "jeod_dynamics",
  "jeod_interactions",
+ "jeod_sim",
 ]
 
 [[package]]

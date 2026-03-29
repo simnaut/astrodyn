@@ -276,11 +276,12 @@ impl Simulation {
             body.aero_force = None;
             if let (Some(ref drag_config), Some(ref atmos)) = (&body.drag, &body.atmospheric_state)
             {
-                body.aero_force = Some(jeod_interactions::compute_ballistic_drag(
+                body.aero_force = Some(crate::compute_drag(
                     drag_config,
                     atmos,
                     body.trans.velocity,
-                    &t_inertial_struct,
+                    body.rot.as_ref(),
+                    body.t_struct_body,
                 ));
             }
 
