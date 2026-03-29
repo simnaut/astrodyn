@@ -119,12 +119,15 @@ pub fn validate_jeod_invariants(
             // ── Invariant G: gravity source must exist ──
             // JEOD_INV: DM.08 — gravitation requires gravity source (init-time check; "initialized" gate not enforced)
             // JEOD_INV: GV.12 — gravity source must exist for control
-            // JEOD: find_grav_source() fatally fails if source not found.
+            // JEOD: initialize_control() calls MessageHandler::error() (non-fatal,
+            // severity 0) and returns, leaving the control uninitialized. We escalate
+            // to a panic because silently skipping a gravity source would produce
+            // incorrect physics.
             let Ok((_source_entity, source)) = sources.get(ctrl.source_name) else {
                 panic!(
                     "Entity {entity:?}: GravityControl references entity {:?} which \
-                     does not exist or has no GravitySourceC. In JEOD, gravity source \
-                     resolution is fatal during initialization.",
+                     does not exist or has no GravitySourceC. JEOD logs a non-fatal \
+                     error and skips; we panic to prevent silently wrong physics.",
                     ctrl.source_name
                 );
             };

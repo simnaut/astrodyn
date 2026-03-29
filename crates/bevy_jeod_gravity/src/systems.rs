@@ -32,14 +32,17 @@ pub fn gravity_computation_system(
         for ctrl in &controls.0.controls {
             // JEOD_INV: GV.12 — gravity source must exist for control.
             // JEOD: GravityControls::initialize_control() calls MessageHandler::error()
-            // (fatal) when find_grav_source() returns nullptr. Our validation system
+            // (non-fatal, severity 0) when find_grav_source() returns nullptr, then
+            // returns — leaving the control uninitialized so gravity from that source
+            // is silently skipped. We escalate to a panic because silently omitting a
+            // gravity source would produce incorrect physics. Our validation system
             // already panics for this at startup; if we reach here, an entity was
             // despawned after validation — that's a lifecycle bug, not recoverable.
             let Ok((source, rot)) = sources.get(ctrl.source_name) else {
                 panic!(
                     "Entity {entity:?}: GravityControl references entity {:?} which \
-                     does not exist or has no GravitySourceC. In JEOD, gravity source \
-                     resolution is fatal (MessageHandler::error).",
+                     does not exist or has no GravitySourceC. JEOD logs a non-fatal \
+                     error and skips; we panic to prevent silently wrong physics.",
                     ctrl.source_name
                 );
             };
