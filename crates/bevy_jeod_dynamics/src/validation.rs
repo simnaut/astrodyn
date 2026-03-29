@@ -63,7 +63,13 @@ pub fn validate_jeod_invariants(
     for (entity, config, mut controls, mass, rot_state, trans_state) in &mut bodies {
         // ── Invariant H: three_dof consistency ──
         // Delegates to DynamicsConfig::validate() in jeod_dynamics (DB.05, DB.06)
-        config.validate();
+        if config.three_dof && config.rotational_dynamics {
+            panic!(
+                "Entity {entity:?}: DynamicsConfig has three_dof=true AND \
+                 rotational_dynamics=true. In JEOD, three_dof=true prevents \
+                 creation of the rotational integrator."
+            );
+        }
 
         // ── Invariant E (partial): rotational dynamics requires mass ──
         // JEOD_INV: MA.01 — MassBody always present on DynBody (partial: only checked for rotational path)
