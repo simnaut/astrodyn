@@ -684,8 +684,6 @@ dependencies = [
  "bevy_jeod_dynamics",
  "bevy_jeod_time",
  "glam 0.30.10",
- "jeod_atmosphere",
- "jeod_math",
  "jeod_sim",
 ]
 
@@ -697,10 +695,8 @@ dependencies = [
  "bevy_jeod_gravity",
  "bevy_jeod_time",
  "glam 0.30.10",
- "jeod_atmosphere",
  "jeod_dynamics",
  "jeod_gravity",
- "jeod_interactions",
  "jeod_math",
  "jeod_sim",
  "jeod_time",
@@ -712,7 +708,7 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "bevy_jeod_dynamics",
- "jeod_ephemeris",
+ "jeod_sim",
 ]
 
 [[package]]
@@ -722,8 +718,7 @@ dependencies = [
  "bevy",
  "bevy_jeod_dynamics",
  "bevy_jeod_time",
- "jeod_frames",
- "jeod_time",
+ "jeod_sim",
 ]
 
 [[package]]
@@ -733,8 +728,6 @@ dependencies = [
  "bevy",
  "bevy_jeod_dynamics",
  "glam 0.30.10",
- "jeod_dynamics",
- "jeod_gravity",
  "jeod_sim",
 ]
 
@@ -745,9 +738,6 @@ dependencies = [
  "bevy",
  "bevy_jeod_dynamics",
  "glam 0.30.10",
- "jeod_atmosphere",
- "jeod_dynamics",
- "jeod_interactions",
  "jeod_sim",
 ]
 
@@ -756,7 +746,7 @@ name = "bevy_jeod_planet"
 version = "0.1.0"
 dependencies = [
  "bevy",
- "jeod_planet",
+ "jeod_sim",
 ]
 
 [[package]]
@@ -765,7 +755,7 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "bevy_jeod_dynamics",
- "jeod_time",
+ "jeod_sim",
 ]
 
 [[package]]
@@ -2535,6 +2525,7 @@ dependencies = [
  "jeod_gravity",
  "jeod_interactions",
  "jeod_math",
+ "jeod_planet",
  "jeod_test_data",
  "jeod_time",
  "log",

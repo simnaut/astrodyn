@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use jeod_interactions::{DragConfig, SrpConfig};
+use jeod_sim::{DragConfig, SrpConfig};
 
 /// Vehicle drag configuration (Cd, area).
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut)]

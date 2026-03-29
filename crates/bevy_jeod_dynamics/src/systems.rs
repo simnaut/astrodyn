@@ -54,11 +54,11 @@ pub fn force_collection_system(
         let grav_accel = grav.map_or(DVec3::ZERO, |g| g.grav_accel);
 
         // Map Bevy component references to jeod_interactions types for jeod_sim.
-        let aero_ref = aero.map(|a| jeod_interactions::AerodynamicForce {
+        let aero_ref = aero.map(|a| jeod_sim::AerodynamicForce {
             force: a.force,
             torque: a.torque,
         });
-        let srp_ref = srp.map(|s| jeod_interactions::RadiationForce {
+        let srp_ref = srp.map(|s| jeod_sim::RadiationForce {
             force: s.force,
             torque: s.torque,
         });

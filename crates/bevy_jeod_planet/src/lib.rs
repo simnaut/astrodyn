@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use jeod_planet::PlanetShape;
+use jeod_sim::PlanetShape;
 
 /// Bevy component wrapping `PlanetShape`.
 #[derive(Component, Debug, Clone, Deref, DerefMut)]

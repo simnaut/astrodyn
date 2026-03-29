@@ -1,10 +1,9 @@
 use bevy::prelude::*;
 use glam::DVec3;
-use jeod_dynamics::{
-    DynamicsConfig, FrameDerivatives, GravityAcceleration, MassProperties, RotationalState,
-    TotalForce, TranslationalState,
+use jeod_sim::{
+    DynamicsConfig, FrameDerivatives, GravityAcceleration, GravityControls, GravitySource,
+    MassProperties, RotationalState, TotalForce, TranslationalState,
 };
-use jeod_gravity::{GravityControls, GravitySource};
 
 // JEOD_INV: DB.24 — default integrated_frame is composite_body (we integrate composite_body state)
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Default)]
@@ -73,7 +72,7 @@ pub struct GravityTorqueC(pub DVec3);
 /// Written by the atmosphere system (`bevy_jeod_atmosphere`).
 /// Read by the aerodynamic drag system.
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
-pub struct AtmosphericStateC(pub jeod_atmosphere::AtmosphereState);
+pub struct AtmosphericStateC(pub jeod_sim::AtmosphereState);
 
 /// Rotation matrix from structural frame to body (composite_body) frame.
 ///

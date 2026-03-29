@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use jeod_ephemeris::Ephemeris;
+use jeod_sim::Ephemeris;
 
 /// Bevy resource wrapping the planetary ephemeris.
 #[derive(Resource)]

@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use jeod_frames::RefFrameState;
+use jeod_sim::RefFrameState;
 
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Default)]
 pub struct RefFrameStateC(pub RefFrameState);

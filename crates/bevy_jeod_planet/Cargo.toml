@@ -4,5 +4,5 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-jeod_planet = { path = "../jeod_planet" }
+jeod_sim = { path = "../jeod_sim" }
 bevy = { workspace = true }

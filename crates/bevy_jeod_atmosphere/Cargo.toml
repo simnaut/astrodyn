@@ -6,8 +6,6 @@ edition = "2021"
 [dependencies]
 bevy = { workspace = true }
 glam = { workspace = true }
-jeod_atmosphere = { path = "../jeod_atmosphere" }
-jeod_math = { path = "../jeod_math" }
 jeod_sim = { path = "../jeod_sim" }
 bevy_jeod_dynamics = { path = "../bevy_jeod_dynamics" }
 bevy_jeod_time = { path = "../bevy_jeod_time" }

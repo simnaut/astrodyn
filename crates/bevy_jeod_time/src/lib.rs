@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy_jeod_dynamics::JeodSet;
-use jeod_time::{leap_second::default_leap_second_table, SimulationTime};
+use jeod_sim::{default_leap_second_table, SimulationTime};
 
 // JEOD_INV: TM.07 — JEOD uses -1.0 sentinel; we call recompute_derived() at construction instead
 /// Bevy resource wrapping `SimulationTime`.
