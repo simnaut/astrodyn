@@ -153,15 +153,30 @@ plus optional interaction components (AerodynamicForce, RadiationForce, GravityT
 ```bash
 cargo build --workspace
 cargo test --workspace                          # all tests (needs JEOD_HOME or JEOD_PATH)
+cargo test --workspace -- --skip tier3_         # fast subset: unit + tier 2 (skip trajectory)
+cargo test --workspace -- tier3_               # tier 3 only: trajectory cross-validation
 JEOD_HOME=../jeod cargo test                    # explicit path
 cargo test -p jeod_math                         # single crate
 cargo test -p jeod_gravity -- verif             # gravity verification tests only
-cargo test -p jeod_dynamics --test tier3_jeod_trajectory  # Tier 3 (needs test_data/)
+cargo test -p jeod_dynamics --test tier3_jeod_trajectory  # single Tier 3 test
 ```
 
 Set `JEOD_HOME` (or `JEOD_PATH`) to the JEOD source checkout.
 `JEOD_HOME` and `TRICK_HOME` follow the standard JEOD/Trick environment
 variable conventions.
+
+### Test tiers and CI
+
+All Tier 3 test functions use the `tier3_` prefix, enabling cargo's name-based
+filtering. CI (`.github/workflows/ci.yml`) uses this:
+
+- **PRs**: `check` (fmt + clippy) and `test` (unit + tier 2, `--skip tier3_`)
+  run in parallel for fast feedback.
+- **Main push**: same jobs, plus `test-tier3` which runs only `tier3_` tests.
+- **Push to non-main branches**: no CI (only PRs and main trigger workflows).
+
+When adding new Tier 3 tests, always prefix the function name with `tier3_` so
+CI filtering picks it up automatically.
 
 ## Generating Tier 3 Reference Data (Docker)
 
