@@ -7,12 +7,13 @@
 //!   Bevy App ≡ Simulation ≈ JEOD (within Tier 3 tolerances)
 //!
 //! Scenarios covered:
-//!   - RUN_2:  Point-mass gravity, 3-DOF (28800s ISS orbit)
-//!   - RUN_2:  Point-mass gravity, 6-DOF with ISS mass (28800s)
-//!   - RUN_3A: Spherical harmonics 4x4 + RNP (28800s) [requires JEOD_HOME]
-//!   - RUN_3B: Spherical harmonics 8x8 + RNP (28800s) [requires JEOD_HOME]
-//!   - RUN_6B: MET atmosphere + ballistic drag, 6-DOF (28800s)
-//!   - RUN_9A: External torque, 6-DOF (28800s)
+//!   - RUN_2:   Point-mass gravity, 3-DOF (28800s ISS orbit)
+//!   - RUN_2:   Point-mass gravity, 6-DOF with ISS mass (28800s)
+//!   - RUN_3A:  Spherical harmonics 4x4 + RNP (28800s)
+//!   - RUN_3B:  Spherical harmonics 8x8 + RNP (28800s)
+//!   - RUN_6B:  MET atmosphere + ballistic drag, 6-DOF (28800s)
+//!   - RUN_9A:  External torque, 6-DOF (28800s)
+//!   - RUN_10A: Gravity gradient torque, cylinder mass, 6-DOF (28800s)
 //!
 //! Not covered (model not yet supported by Simulation runner):
 //!   - SRP (flat-plate model with 6 plates + thermal + shadow — Simulation
@@ -807,6 +808,133 @@ fn tier3_simulation_run9a_torque() {
             println!(
                 "  t={:6.0}s: pos_err={:10.4} m  quat_err={:.2e} rad  omega_err={:.2e}",
                 record.time, pos_error, quat_error, omega_error
+            );
+        }
+    }
+
+    println!("  Max position error:  {:.4} m", max_pos_error);
+    println!("  Max velocity error:  {:.6} m/s", max_vel_error);
+    println!("  Max quaternion error: {:.2e} rad", max_quat_error);
+    println!("  Max omega error:     {:.2e} rad/s", max_omega_error);
+
+    assert!(
+        max_pos_error < 0.5,
+        "Position error {max_pos_error:.2} m exceeds 0.5 m"
+    );
+    assert!(
+        max_vel_error < 0.001,
+        "Velocity error {max_vel_error:.6} m/s exceeds 0.001 m/s"
+    );
+    assert!(
+        max_quat_error < 0.01,
+        "Quaternion error {max_quat_error:.2e} rad exceeds 0.01 rad"
+    );
+    assert!(
+        max_omega_error < 1e-5,
+        "Omega error {max_omega_error:.2e} rad/s exceeds 1e-5 rad/s"
+    );
+}
+
+// ── Scenario 7: Gravity gradient torque, cylinder mass, 6-DOF (RUN_10A) ──
+//
+// RUN_10A: 1000 kg cylinder (Ixx=500, Iyy=Izz=12250), CoM at [6,0,0],
+// spherical gravity with gradient ON, gravity gradient torque ON,
+// initial attitude 85 deg pitch + 1 deg yaw from LVLH.
+// No drag, no external torques. Tests gravity gradient libration.
+
+#[test]
+fn tier3_simulation_run10a_gravity_torque() {
+    let csv_path = test_data_path("dyncomp_run10a_state.csv");
+    assert!(
+        csv_path.exists(),
+        "JEOD reference not found at {}.\n\
+         Generate with: docker run --rm -v $(pwd)/test_data:/output jeod-trick",
+        csv_path.display()
+    );
+
+    let trajectory = load_sixdof_trajectory(&csv_path);
+    assert!(trajectory.len() >= 100);
+    let init = &trajectory[0];
+
+    // Cylinder mass properties (from Modified_data/mass.py set_mass_cylinder)
+    let inertia = DMat3::from_diagonal(DVec3::new(500.0, 12250.0, 12250.0));
+    let mass_props = MassProperties::with_inertia(1000.0, inertia, DVec3::new(6.0, 0.0, 0.0));
+
+    let time = SimulationTime::at_j2000(jeod_time::leap_second::default_leap_second_table());
+    let mut sim = Simulation::new(time, DT);
+
+    let earth = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: MU_EARTH,
+            model: GravityModel::PointMass,
+        },
+        position: DVec3::ZERO,
+        t_inertial_pfix: None,
+    });
+
+    sim.add_body(SimBody {
+        trans: TranslationalState {
+            position: init.position,
+            velocity: init.velocity,
+        },
+        rot: Some(RotationalState {
+            quaternion: init.quaternion,
+            ang_vel_body: init.ang_vel,
+        }),
+        mass: Some(mass_props),
+        config: DynamicsConfig {
+            translational_dynamics: true,
+            rotational_dynamics: true,
+            three_dof: false,
+        },
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth, true)], // gradient=true
+        },
+        drag: None,
+        srp: None,
+        t_struct_body: DMat3::IDENTITY,
+        compute_gravity_torque: true,
+        atmospheric_state: None,
+        gravity_accel: GravityAcceleration::default(),
+        total_force: Default::default(),
+        frame_derivs: Default::default(),
+        aero_force: None,
+        radiation_force: None,
+        gravity_torque: None,
+    });
+
+    sim.validate().unwrap();
+
+    println!(
+        "Tier 3 (Simulation): RUN_10A gravity torque 6-DOF, {} points",
+        trajectory.len()
+    );
+
+    let mut max_pos_error = 0.0_f64;
+    let mut max_vel_error = 0.0_f64;
+    let mut max_quat_error = 0.0_f64;
+    let mut max_omega_error = 0.0_f64;
+
+    for record in &trajectory[1..] {
+        sim.step_until(record.time);
+
+        let body = sim.body(0);
+        let pos_error = (body.trans.position - record.position).length();
+        let vel_error = (body.trans.velocity - record.velocity).length();
+        max_pos_error = max_pos_error.max(pos_error);
+        max_vel_error = max_vel_error.max(vel_error);
+
+        if let Some(ref rot) = body.rot {
+            let quat_error = quaternion_angle_error(&rot.quaternion, &record.quaternion);
+            let omega_error = (rot.ang_vel_body - record.ang_vel).length();
+            max_quat_error = max_quat_error.max(quat_error);
+            max_omega_error = max_omega_error.max(omega_error);
+        }
+
+        if (record.time % 3600.0).abs() < 30.1 {
+            println!(
+                "  t={:6.0}s: pos_err={:10.4} m  quat_err={:.2e} rad  omega_err={:.2e}",
+                record.time, pos_error, max_quat_error, max_omega_error
             );
         }
     }
