@@ -108,7 +108,8 @@ pub fn integration_system(
         return;
     }
 
-    for (_entity, config, mut state, mut rot_state, mass, controls, total_force) in &mut bodies {
+    for (entity, config, mut state, mut rot_state, mass, controls, total_force) in &mut bodies {
+        let _ = entity; // available for panic context if integrate_body fails
         jeod_sim::integrate_body(
             config,
             &mut state.0,

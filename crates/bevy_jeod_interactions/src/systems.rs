@@ -109,7 +109,11 @@ pub fn flat_plate_srp_system(
         Ok(s) => s,
         Err(bevy::ecs::query::QuerySingleError::NoEntities(_)) => return,
         Err(bevy::ecs::query::QuerySingleError::MultipleEntities(_)) => {
-            panic!("Multiple SunMarker entities found.");
+            panic!(
+                "Multiple entities with SunMarker found. In JEOD, RadiationPressure \
+                 has exactly one RadiationSource (value member). Ensure exactly one \
+                 Sun entity exists."
+            );
         }
     };
 

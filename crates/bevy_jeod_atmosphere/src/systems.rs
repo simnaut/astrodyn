@@ -52,18 +52,18 @@ pub fn atmosphere_update_system(
     };
 
     let tai_tjt = sim_time.as_ref().map(|t| t.tai_tjt);
-    // MET atmosphere requires time for seasonal variation. If SimulationTimeR
-    // is missing, evaluate_atmosphere will panic — provide a clear hint.
-    if tai_tjt.is_none() {
-        if let jeod_sim::AtmosphereModel::Met(_) = &model.config.model {
-            panic!(
-                "MET atmosphere requires SimulationTimeR resource for TJT. \
-                 Add JeodTimePlugin before JeodAtmospherePlugin."
-            );
-        }
-    }
-
     for (state, mut atmos) in &mut query {
+        // MET atmosphere requires time for seasonal variation. Check only when
+        // entities with AtmosphericStateC actually exist (avoids panic when MET
+        // is configured but no bodies need atmosphere yet).
+        if tai_tjt.is_none() {
+            if let jeod_sim::AtmosphereModel::Met(_) = &model.config.model {
+                panic!(
+                    "MET atmosphere requires SimulationTimeR resource for TJT. \
+                     Add JeodTimePlugin before JeodAtmospherePlugin."
+                );
+            }
+        }
         **atmos = jeod_sim::evaluate_atmosphere(
             &model.config,
             state.position,

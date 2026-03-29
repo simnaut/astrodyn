@@ -287,63 +287,63 @@ impl Simulation {
                 ));
             }
 
-            // Solar radiation pressure (flat-plate or spherical)
+            // Solar radiation pressure (flat-plate)
             body.radiation_force = None;
             if let Some(sun_position) = sun_pos {
                 if let Some(ref flat_plates) = body.flat_plates {
                     // Flat-plate SRP with thermal emission
                     let sun_to_vehicle = body.trans.position - sun_position;
                     let distance = sun_to_vehicle.length();
-                    if distance < 1.0 {
-                        continue;
-                    }
-                    let flux_inertial_hat = sun_to_vehicle / distance;
-                    let flux_mag = crate::solar_flux_at_distance(distance);
+                    // Skip SRP (not the whole body) if too close to Sun
+                    if distance >= 1.0 {
+                        let flux_inertial_hat = sun_to_vehicle / distance;
+                        let flux_mag = crate::solar_flux_at_distance(distance);
 
-                    // Shadow fraction
-                    let illum_factor = body
-                        .shadow_body
-                        .map(|(idx, radius)| {
-                            crate::compute_shadow_fraction(
-                                body.trans.position,
-                                sun_position,
-                                sources[idx].position,
-                                radius,
-                                crate::SOLAR_RADIUS,
-                            )
-                        })
-                        .unwrap_or(1.0);
+                        // Shadow fraction
+                        let illum_factor = body
+                            .shadow_body
+                            .map(|(idx, radius)| {
+                                crate::compute_shadow_fraction(
+                                    body.trans.position,
+                                    sun_position,
+                                    sources[idx].position,
+                                    radius,
+                                    crate::SOLAR_RADIUS,
+                                )
+                            })
+                            .unwrap_or(1.0);
 
-                    // Rotate flux direction to structural frame
-                    let flux_struct_hat = t_inertial_struct * flux_inertial_hat;
+                        // Rotate flux direction to structural frame
+                        let flux_struct_hat = t_inertial_struct * flux_inertial_hat;
 
-                    let center_grav = body.mass.as_ref().map_or(DVec3::ZERO, |m| m.position);
+                        let center_grav = body.mass.as_ref().map_or(DVec3::ZERO, |m| m.position);
 
-                    let srp_result = crate::compute_flat_plate_srp_thermal(
-                        flat_plates,
-                        &body.plate_t_pow4_cached,
-                        flux_struct_hat,
-                        flux_mag,
-                        center_grav,
-                        illum_factor,
-                    );
+                        let srp_result = crate::compute_flat_plate_srp_thermal(
+                            flat_plates,
+                            &body.plate_t_pow4_cached,
+                            flux_struct_hat,
+                            flux_mag,
+                            center_grav,
+                            illum_factor,
+                        );
 
-                    // Force: rotate from structural to inertial. Torque: stays structural.
-                    let force_inertial = t_inertial_struct.transpose() * srp_result.force;
-                    body.radiation_force = Some(RadiationForce {
-                        force: force_inertial,
-                        torque: srp_result.torque,
-                    });
+                        // Force: rotate from structural to inertial. Torque: stays structural.
+                        let force_inertial = t_inertial_struct.transpose() * srp_result.force;
+                        body.radiation_force = Some(RadiationForce {
+                            force: force_inertial,
+                            torque: srp_result.torque,
+                        });
 
-                    // Integrate plate temperatures (forward Euler)
-                    for (i, temp) in body.plate_temperatures.iter_mut().enumerate() {
-                        *temp += srp_result.temp_dots[i] * dt;
-                        if *temp < 0.0 {
-                            *temp = 0.0;
+                        // Integrate plate temperatures (forward Euler)
+                        for (i, temp) in body.plate_temperatures.iter_mut().enumerate() {
+                            *temp += srp_result.temp_dots[i] * dt;
+                            if *temp < 0.0 {
+                                *temp = 0.0;
+                            }
                         }
+                        body.plate_t_pow4_cached =
+                            body.plate_temperatures.iter().map(|t| t.powi(4)).collect();
                     }
-                    body.plate_t_pow4_cached =
-                        body.plate_temperatures.iter().map(|t| t.powi(4)).collect();
                 }
             }
 
