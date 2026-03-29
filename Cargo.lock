@@ -695,11 +695,7 @@ dependencies = [
  "bevy_jeod_gravity",
  "bevy_jeod_time",
  "glam 0.30.10",
- "jeod_dynamics",
- "jeod_gravity",
- "jeod_math",
  "jeod_sim",
- "jeod_time",
 ]
 
 [[package]]

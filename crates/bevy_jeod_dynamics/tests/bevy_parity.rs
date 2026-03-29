@@ -19,12 +19,10 @@ use bevy_jeod_dynamics::{
 use bevy_jeod_gravity::JeodGravityPlugin;
 use bevy_jeod_time::JeodTimePlugin;
 use glam::{DMat3, DVec3};
-use jeod_dynamics::{
-    DynamicsConfig, GravityAcceleration, MassProperties, RotationalState, SixDofState,
-    TranslationalState,
+use jeod_sim::{
+    DynamicsConfig, GravityAcceleration, GravityControl, GravityControls, GravityModel,
+    GravitySource, JeodQuat, MassProperties, RotationalState, SixDofState, TranslationalState,
 };
-use jeod_gravity::{GravityControl, GravityControls, GravityModel, GravitySource};
-use jeod_math::JeodQuat;
 
 const MU_EARTH: f64 = 3.986004418e14;
 const DT: f64 = 10.0;
@@ -132,8 +130,7 @@ fn run_bevy_steps(app: &mut App, vehicle: Entity) -> SixDofState {
 /// Run 100 integration steps via jeod_sim::Simulation with identical
 /// initial conditions and gravity setup.
 fn run_simulation_steps() -> SixDofState {
-    let time =
-        jeod_time::SimulationTime::at_j2000(jeod_time::leap_second::default_leap_second_table());
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_sim::Simulation::new(time, DT);
 
     let earth = sim.add_source(jeod_sim::GravitySourceEntry {

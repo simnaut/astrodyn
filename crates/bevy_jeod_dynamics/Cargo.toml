@@ -9,10 +9,6 @@ glam = { workspace = true }
 bevy = { workspace = true }
 
 [dev-dependencies]
-jeod_dynamics = { path = "../jeod_dynamics" }
-jeod_gravity = { path = "../jeod_gravity" }
-jeod_math = { path = "../jeod_math" }
 jeod_sim = { path = "../jeod_sim" }
-jeod_time = { path = "../jeod_time" }
 bevy_jeod_time = { path = "../bevy_jeod_time" }
 bevy_jeod_gravity = { path = "../bevy_jeod_gravity" }
