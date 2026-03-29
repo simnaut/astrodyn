@@ -52,10 +52,11 @@ pub use validation::{validate_body, ValidationError};
 // ECS adapters depend only on jeod_sim — these re-exports provide all the
 // types needed for component definitions, system parameters, and resources.
 
-// jeod_dynamics: state types, force types, mass, config
+// jeod_dynamics: state types, force types, mass, config, frame utilities
 pub use jeod_dynamics::{
-    DynamicsConfig, ForceContributions, FrameDerivatives, GravityAcceleration, MassProperties,
-    RotationalState, SixDofState, TotalForce, TranslationalState, INERTIA_CONSISTENCY_TOL,
+    compute_t_inertial_struct, DynamicsConfig, ForceContributions, FrameDerivatives,
+    GravityAcceleration, MassProperties, RotationalState, SixDofState, TotalForce,
+    TranslationalState, INERTIA_CONSISTENCY_TOL,
 };
 
 // jeod_gravity: source definitions and controls
@@ -64,10 +65,11 @@ pub use jeod_gravity::{GravityControl, GravityControls, GravityModel, GravitySou
 // jeod_atmosphere: state output
 pub use jeod_atmosphere::AtmosphereState;
 
-// jeod_interactions: config and result types
+// jeod_interactions: config, result types, and computation functions
 pub use jeod_interactions::{
-    AerodynamicForce, DragConfig, FlatPlate, FlatPlateParams, FlatPlateThermal, RadiationForce,
-    SrpConfig, SOLAR_RADIUS,
+    compute_flat_plate_srp_thermal, compute_shadow_fraction, solar_flux_at_distance,
+    AerodynamicForce, DragConfig, FlatPlate, FlatPlateParams, FlatPlateSrpResult, FlatPlateThermal,
+    RadiationForce, SrpConfig, SOLAR_RADIUS,
 };
 
 // jeod_frames: reference frame state
