@@ -21,14 +21,21 @@ FORCE="${FORCE:-0}"
 
 has_output() {
     local label="$1"
+    local required="${2:-}"  # optional: specific file that must exist
     # When FORCE=1, always report "no valid output" so data is regenerated.
     if [ "$FORCE" = "1" ]; then
         return 1
     fi
-    # Consider output present only if there is at least one non-empty CSV
-    # for this label. This avoids skipping regeneration when a previous run
-    # left behind zero-byte or truncated files.
-    find "$OUTPUT_DIR" -maxdepth 1 -type f -name "${label}_*.csv" ! -size 0c 2>/dev/null | grep -q .
+    if [ -n "$required" ]; then
+        # Check for a specific required file (non-empty).
+        # Use this for sims that produce multiple CSVs where only one
+        # is critical (e.g. dyncomp _state.csv).
+        [ -s "${OUTPUT_DIR}/${required}" ]
+    else
+        # Fallback: any non-empty CSV for this label.
+        # Safe for sims that produce exactly one CSV (derived-state sims).
+        find "$OUTPUT_DIR" -maxdepth 1 -type f -name "${label}_*.csv" ! -size 0c 2>/dev/null | grep -q .
+    fi
 }
 
 export TRICK_HOME=/trick
@@ -52,8 +59,9 @@ run_sim() {
     local sim_dir="$1"
     local run_dir="$2"
     local label="$3"
+    local required="${4:-}"  # optional: specific file to check (e.g. dyncomp_run2_state.csv)
 
-    if has_output "$label"; then
+    if has_output "$label" "$required"; then
         echo "--- Skipping ${label} (output exists in ${OUTPUT_DIR}) ---"
         return 0
     fi
@@ -187,24 +195,27 @@ PYEOF
 # All share the same S_define and working directory.
 # ════════════════════════════════════════════════════════════════════
 run_dyncomp_group() {
-    # Single source of truth: RUN_DIR → label mapping.
+    # Single source of truth: RUN_DIR:label:primary_file mapping.
     # Used for both the pre-scan (skip if all present) and execution.
+    # Primary file is the CSV that Tier 3 tests actually load — checking
+    # only this file prevents skipping when a partial run left behind
+    # supplementary files (e.g. _Earth_RNP.csv) but not the critical one.
     local -a DYNCOMP_RUNS=(
-        "SET_test/RUN_2:dyncomp_run2"
-        "SET_test/RUN_3A:dyncomp_run3a"
-        "SET_test/RUN_3B:dyncomp_run3b"
-        "SET_test/RUN_8B:dyncomp_run8b"
-        "SET_test/RUN_9A:dyncomp_run9a"
-        "SET_test/RUN_9B:dyncomp_run9b"
-        "SET_test/RUN_5A:dyncomp_run5a"
-        "SET_test/RUN_6B:dyncomp_run6b"
+        "SET_test/RUN_2:dyncomp_run2:dyncomp_run2_state.csv"
+        "SET_test/RUN_3A:dyncomp_run3a:dyncomp_run3a_state.csv"
+        "SET_test/RUN_3B:dyncomp_run3b:dyncomp_run3b_state.csv"
+        "SET_test/RUN_8B:dyncomp_run8b:dyncomp_run8b_state.csv"
+        "SET_test/RUN_9A:dyncomp_run9a:dyncomp_run9a_state.csv"
+        "SET_test/RUN_9B:dyncomp_run9b:dyncomp_run9b_state.csv"
+        "SET_test/RUN_5A:dyncomp_run5a:dyncomp_run5a_state.csv"
+        "SET_test/RUN_6B:dyncomp_run6b:dyncomp_run6b_state.csv"
     )
 
-    # Skip entire group (including build) if all outputs already exist
+    # Skip entire group (including build) if all primary outputs exist
     local needs_build=0
     for entry in "${DYNCOMP_RUNS[@]}"; do
-        local label="${entry#*:}"
-        if ! has_output "$label"; then
+        IFS=: read -r _run_dir label primary <<< "$entry"
+        if ! has_output "$label" "$primary"; then
             needs_build=1
             break
         fi
@@ -226,9 +237,8 @@ run_dyncomp_group() {
     # but track failures so the caller can detect partial generation.
     local fail=0
     for entry in "${DYNCOMP_RUNS[@]}"; do
-        local run_dir="${entry%%:*}"
-        local label="${entry#*:}"
-        run_sim "verif/SIM_dyncomp" "$run_dir" "$label" || fail=1
+        IFS=: read -r run_dir label primary <<< "$entry"
+        run_sim "verif/SIM_dyncomp" "$run_dir" "$label" "$primary" || fail=1
     done
 
     # Validate critical first output
