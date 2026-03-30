@@ -177,6 +177,15 @@ fn tier3_simulation_run2_3dof() {
         gravity_torque: None,
         flat_plate_state: None,
         shadow_body: None,
+        orbital_elements_mu: None,
+        euler_sequence: None,
+        compute_lvlh: false,
+        geodetic_planet: None,
+        orbital_elements: None,
+        euler_angles: None,
+        lvlh_frame: None,
+        geodetic_state: None,
+        solar_beta: None,
     });
 
     sim.validate().unwrap();
@@ -285,6 +294,15 @@ fn tier3_simulation_run2_6dof() {
         gravity_torque: None,
         flat_plate_state: None,
         shadow_body: None,
+        orbital_elements_mu: None,
+        euler_sequence: None,
+        compute_lvlh: false,
+        geodetic_planet: None,
+        orbital_elements: None,
+        euler_angles: None,
+        lvlh_frame: None,
+        geodetic_state: None,
+        solar_beta: None,
     });
 
     sim.validate().unwrap();
@@ -449,6 +467,15 @@ fn tier3_simulation_run6b_drag() {
         gravity_torque: None,
         flat_plate_state: None,
         shadow_body: None,
+        orbital_elements_mu: None,
+        euler_sequence: None,
+        compute_lvlh: false,
+        geodetic_planet: None,
+        orbital_elements: None,
+        euler_angles: None,
+        lvlh_frame: None,
+        geodetic_state: None,
+        solar_beta: None,
     });
 
     sim.validate().unwrap();
@@ -587,6 +614,15 @@ fn run_sh_simulation_test(csv_name: &str, degree: usize, order: usize, label: &s
         gravity_torque: None,
         flat_plate_state: None,
         shadow_body: None,
+        orbital_elements_mu: None,
+        euler_sequence: None,
+        compute_lvlh: false,
+        geodetic_planet: None,
+        orbital_elements: None,
+        euler_angles: None,
+        lvlh_frame: None,
+        geodetic_state: None,
+        solar_beta: None,
     });
 
     sim.validate().unwrap();
@@ -897,6 +933,15 @@ fn tier3_simulation_run10a_gravity_torque() {
         gravity_torque: None,
         flat_plate_state: None,
         shadow_body: None,
+        orbital_elements_mu: None,
+        euler_sequence: None,
+        compute_lvlh: false,
+        geodetic_planet: None,
+        orbital_elements: None,
+        euler_angles: None,
+        lvlh_frame: None,
+        geodetic_state: None,
+        solar_beta: None,
     });
 
     sim.validate().unwrap();
@@ -1167,6 +1212,15 @@ fn tier3_simulation_srp_flat_plate() {
         aero_force: None,
         radiation_force: None,
         gravity_torque: None,
+        orbital_elements_mu: None,
+        euler_sequence: None,
+        compute_lvlh: false,
+        geodetic_planet: None,
+        orbital_elements: None,
+        euler_angles: None,
+        lvlh_frame: None,
+        geodetic_state: None,
+        solar_beta: None,
     });
 
     sim.validate().unwrap();

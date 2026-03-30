@@ -320,6 +320,90 @@ fn compute_illum_factor(
     illum
 }
 
+// ── Derived States ──
+
+/// Compute orbital elements for entities with `OrbitalElementsConfigC`.
+///
+/// Placed in `JeodSet::DerivedState`.
+pub fn orbital_elements_system(
+    mut query: Query<(
+        &TranslationalStateC,
+        &OrbitalElementsConfigC,
+        &mut OrbitalElementsC,
+    )>,
+    sources: Query<&GravitySourceC>,
+) {
+    for (state, config, mut elements) in &mut query {
+        let Ok(source) = sources.get(config.gravity_source) else {
+            continue;
+        };
+        if let Ok(oe) =
+            jeod_sim::compute_orbital_elements(source.mu, state.position, state.velocity)
+        {
+            elements.0 = oe;
+        }
+    }
+}
+
+/// Compute Euler angles for entities with `EulerAnglesConfigC`.
+///
+/// Placed in `JeodSet::DerivedState`.
+pub fn euler_angles_system(
+    mut query: Query<(&RotationalStateC, &EulerAnglesConfigC, &mut EulerAnglesC)>,
+) {
+    for (rot, config, mut angles) in &mut query {
+        angles.0 = jeod_sim::compute_body_euler_angles(&rot.0, config.sequence);
+    }
+}
+
+/// Compute LVLH frame for entities with `LvlhFrameC`.
+///
+/// Presence of `LvlhFrameC` alone enables computation (no separate config needed).
+///
+/// Placed in `JeodSet::DerivedState`.
+pub fn lvlh_system(mut query: Query<(&TranslationalStateC, &mut LvlhFrameC)>) {
+    for (state, mut lvlh) in &mut query {
+        lvlh.0 = jeod_sim::compute_body_lvlh_frame(state.position, state.velocity);
+    }
+}
+
+/// Compute geodetic state for entities with `GeodeticConfigC`.
+///
+/// Placed in `JeodSet::DerivedState`.
+pub fn geodetic_system(
+    mut query: Query<(&TranslationalStateC, &GeodeticConfigC, &mut GeodeticStateC)>,
+    planets: Query<(&PlanetFixedRotationC, &PlanetC)>,
+) {
+    for (state, config, mut geodetic) in &mut query {
+        let Ok((rot, planet)) = planets.get(config.planet) else {
+            continue;
+        };
+        geodetic.0 =
+            jeod_sim::compute_body_geodetic(state.position, &rot.0, planet.r_eq, planet.r_pol);
+    }
+}
+
+/// Compute solar beta angle for entities with `SolarBetaC`.
+///
+/// Requires a `SunMarker` entity to exist in the world.
+///
+/// Placed in `JeodSet::DerivedState`.
+pub fn solar_beta_system(
+    mut query: Query<(&TranslationalStateC, &mut SolarBetaC), Without<SunMarker>>,
+    sun_query: Query<&TranslationalStateC, With<SunMarker>>,
+) {
+    let Ok(sun_state) = sun_query.single() else {
+        return;
+    };
+    for (state, mut beta) in &mut query {
+        beta.0 = jeod_sim::compute_body_solar_beta(
+            state.position,
+            state.velocity,
+            sun_state.position,
+        );
+    }
+}
+
 /// Compute flat-plate SRP with thermal emission and shadow detection.
 ///
 // JEOD_INV: IN.06 — RadiationPressure.active gates computation (structural: no FlatPlateConfigC → no SRP)

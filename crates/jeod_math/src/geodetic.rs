@@ -9,7 +9,7 @@
 use glam::DVec3;
 
 /// Geodetic coordinates on a reference ellipsoid.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct GeodeticState {
     pub latitude: f64,  // rad, geodetic latitude
     pub longitude: f64, // rad, geodetic longitude

@@ -828,4 +828,85 @@ mod tests {
         let product = inertia * tree.get(pid).composite_properties.inverse_inertia;
         assert_mat3_close(product, DMat3::IDENTITY, 1e-8, "I * I^-1 = identity");
     }
+
+    // -----------------------------------------------------------------------
+    // 8. Angular momentum conservation across attach/detach
+    // -----------------------------------------------------------------------
+
+    /// Verifies that total angular momentum is conserved through the
+    /// attach/detach cycle when the composite angular velocity is
+    /// adjusted to conserve L = I * omega.
+    ///
+    /// This validates the formula, not an automated momentum transfer —
+    /// MassTree doesn't track angular velocity.
+    #[test]
+    fn attach_detach_angular_momentum_conservation() {
+        let mut tree = MassTree::new();
+
+        // Parent: diagonal inertia, spinning about z
+        let parent_inertia = DMat3::from_diagonal(DVec3::new(100.0, 200.0, 300.0));
+        let parent_core = MassProperties::with_inertia(10.0, parent_inertia, DVec3::ZERO);
+        let pid = tree.add_root("parent".into(), parent_core);
+
+        let omega_parent = DVec3::new(0.01, 0.02, 0.1);
+        let l_parent = parent_inertia * omega_parent;
+
+        // Child: smaller body at offset, with its own spin
+        let child_inertia = DMat3::from_diagonal(DVec3::new(10.0, 20.0, 30.0));
+        let child_core = MassProperties::with_inertia(5.0, child_inertia, DVec3::ZERO);
+        let cid = tree.add_body("child".into(), child_core);
+
+        let omega_child = DVec3::new(0.05, -0.03, 0.02);
+        let l_child = child_inertia * omega_child;
+
+        // Total angular momentum before attach (both in same frame, simplified:
+        // ignoring orbital angular momentum from offset for this unit test —
+        // we test pure spin contribution)
+        let l_total_before = l_parent + l_child;
+
+        // Attach child at offset (identity rotation for simplicity)
+        let offset = DVec3::new(2.0, 0.0, 0.0);
+        tree.attach(cid, pid, offset, DMat3::IDENTITY);
+
+        // After attach, composite inertia includes parallel axis contribution
+        let i_composite = tree.get(pid).composite_properties.inertia;
+        let i_composite_inv = tree.get(pid).composite_properties.inverse_inertia;
+
+        // Compute the composite omega that conserves angular momentum
+        let omega_composite = i_composite_inv * l_total_before;
+
+        // Verify: I_composite * omega_composite == L_total_before
+        let l_composite = i_composite * omega_composite;
+        assert_vec3_close(
+            l_composite,
+            l_total_before,
+            1e-10,
+            "L = I_composite * omega_composite should equal L_total_before",
+        );
+
+        // Detach and verify parent's original properties are restored
+        tree.detach(cid);
+        let i_parent_after = tree.get(pid).composite_properties.inertia;
+
+        // Recompute omega_parent from L_parent using restored inertia
+        let i_parent_after_inv = tree.get(pid).composite_properties.inverse_inertia;
+        let omega_parent_after = i_parent_after_inv * l_parent;
+
+        // Angular momentum should be preserved through the formula
+        let l_parent_after = i_parent_after * omega_parent_after;
+        assert_vec3_close(
+            l_parent_after,
+            l_parent,
+            1e-10,
+            "parent angular momentum preserved after detach",
+        );
+
+        // Inertia should be back to original
+        assert_mat3_close(
+            i_parent_after,
+            parent_inertia,
+            1e-12,
+            "parent inertia restored after detach",
+        );
+    }
 }

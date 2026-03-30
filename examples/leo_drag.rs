@@ -102,6 +102,15 @@ fn main() {
         aero_force: None,
         radiation_force: None,
         gravity_torque: None,
+        orbital_elements_mu: None,
+        euler_sequence: None,
+        compute_lvlh: false,
+        geodetic_planet: None,
+        orbital_elements: None,
+        euler_angles: None,
+        lvlh_frame: None,
+        geodetic_state: None,
+        solar_beta: None,
     });
     sim.validate().expect("valid LEO drag setup");
 

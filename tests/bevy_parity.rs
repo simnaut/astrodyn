@@ -161,6 +161,15 @@ fn run_simulation_steps() -> SixDofState {
         gravity_torque: None,
         flat_plate_state: None,
         shadow_body: None,
+        orbital_elements_mu: None,
+        euler_sequence: None,
+        compute_lvlh: false,
+        geodetic_planet: None,
+        orbital_elements: None,
+        euler_angles: None,
+        lvlh_frame: None,
+        geodetic_state: None,
+        solar_beta: None,
     });
 
     sim.validate().unwrap();

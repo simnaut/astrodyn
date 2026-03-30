@@ -6,9 +6,10 @@ use crate::gravity::accumulate_gravity;
 use crate::integration::integrate_body;
 use crate::validation::ValidationError;
 use crate::{
-    AerodynamicForce, AtmosphereState, DragConfig, DynamicsConfig, FrameDerivatives,
-    GravityAcceleration, GravityControls, GravitySource, MassProperties, RadiationForce,
-    RotationalState, SimulationTime, TotalForce, TranslationalState,
+    AerodynamicForce, AtmosphereState, DragConfig, DynamicsConfig, EulerSequence,
+    FrameDerivatives, GeodeticState, GravityAcceleration, GravityControls, GravitySource,
+    LvlhFrame, MassProperties, OrbitalElements, RadiationForce, RotationalState, SimulationTime,
+    TotalForce, TranslationalState,
 };
 
 /// Entry in the gravity source table.
@@ -71,6 +72,29 @@ pub struct SimBody {
     pub radiation_force: Option<RadiationForce>,
     /// Gravity gradient torque in body frame.
     pub gravity_torque: Option<DVec3>,
+
+    // ── Derived state configuration (optional per-body) ──
+    /// Gravitational parameter for orbital elements computation. `None` = skip.
+    pub orbital_elements_mu: Option<f64>,
+    /// Euler angle decomposition sequence. `None` = skip.
+    pub euler_sequence: Option<EulerSequence>,
+    /// Whether to compute LVLH frame each step.
+    pub compute_lvlh: bool,
+    /// Planet source for geodetic: `(source_idx, r_eq, r_pol)`. `None` = skip.
+    pub geodetic_planet: Option<(usize, f64, f64)>,
+    // Solar beta uses sim-level `sun_source` — computed for all bodies when set.
+
+    // ── Derived state outputs (written each step if configured) ──
+    /// Orbital elements from latest translational state.
+    pub orbital_elements: Option<OrbitalElements>,
+    /// Euler angles `[phi, theta, psi]` from latest rotational state.
+    pub euler_angles: Option<[f64; 3]>,
+    /// LVLH frame from latest translational state.
+    pub lvlh_frame: Option<LvlhFrame>,
+    /// Geodetic state (latitude, longitude, altitude).
+    pub geodetic_state: Option<GeodeticState>,
+    /// Solar beta angle (radians).
+    pub solar_beta: Option<f64>,
 }
 
 /// ECS-agnostic simulation runner.
@@ -221,6 +245,7 @@ impl Simulation {
     /// 6. Interaction computation (drag, SRP, gravity torque)
     /// 7. Force collection and frame derivative computation
     /// 8. State integration (RK4)
+    /// 9. Derived state computation
     pub fn step(&mut self) {
         let dt = self.dt;
 
@@ -408,6 +433,58 @@ impl Simulation {
                 body.total_force.torque,
                 dt,
             );
+        }
+
+        // ── 9. Derived states ──
+        let sources = &self.sources;
+        let sun_pos = self.sun_source.map(|idx| self.sources[idx].position);
+
+        for body in &mut self.bodies {
+            // Orbital elements
+            if let Some(mu) = body.orbital_elements_mu {
+                body.orbital_elements = crate::compute_orbital_elements(
+                    mu,
+                    body.trans.position,
+                    body.trans.velocity,
+                )
+                .ok();
+            }
+
+            // Euler angles
+            if let Some(seq) = body.euler_sequence {
+                if let Some(ref rot) = body.rot {
+                    body.euler_angles = Some(crate::compute_body_euler_angles(rot, seq));
+                }
+            }
+
+            // LVLH frame
+            if body.compute_lvlh {
+                body.lvlh_frame = Some(crate::compute_body_lvlh_frame(
+                    body.trans.position,
+                    body.trans.velocity,
+                ));
+            }
+
+            // Geodetic state
+            if let Some((src_idx, r_eq, r_pol)) = body.geodetic_planet {
+                if let Some(t_pfix) = sources[src_idx].t_inertial_pfix.as_ref() {
+                    body.geodetic_state = Some(crate::compute_body_geodetic(
+                        body.trans.position,
+                        t_pfix,
+                        r_eq,
+                        r_pol,
+                    ));
+                }
+            }
+
+            // Solar beta
+            if let Some(sp) = sun_pos {
+                body.solar_beta = Some(crate::compute_body_solar_beta(
+                    body.trans.position,
+                    body.trans.velocity,
+                    sp,
+                ));
+            }
         }
     }
 
