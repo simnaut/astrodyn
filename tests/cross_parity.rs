@@ -31,11 +31,11 @@ use bevy_jeod::{
     RadiationForceC, RotationalStateC, SunMarker, TotalForceC, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
-use jeod_atmosphere::exponential::ExponentialAtmosphere;
-use jeod_dynamics::{GravityAcceleration, RotationalState, SixDofState, TranslationalState};
-use jeod_gravity::GravitySource;
-use jeod_math::JeodQuat;
-use jeod_sim::{GravitySourceEntry, SimBody, Simulation};
+use jeod_sim::GravitySource;
+use jeod_sim::{
+    ExponentialAtmosphere, GravityAcceleration, GravitySourceEntry, JeodQuat, RotationalState,
+    SimBody, Simulation, SixDofState, TranslationalState,
+};
 
 const MU_EARTH: f64 = 3.986004418e14;
 const DT: f64 = 10.0;
@@ -231,8 +231,7 @@ fn tier3_bevy_point_mass_sixdof() {
     let bevy_state = read_sixdof(app.world(), vehicle);
 
     // ── Simulation ──
-    let time =
-        jeod_time::SimulationTime::at_j2000(jeod_time::leap_second::default_leap_second_table());
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
@@ -323,8 +322,7 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
     let bevy_state = read_sixdof(app.world(), vehicle);
 
     // ── Simulation ──
-    let time =
-        jeod_time::SimulationTime::at_j2000(jeod_time::leap_second::default_leap_second_table());
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
@@ -405,8 +403,7 @@ fn tier3_bevy_gravity_torque_sixdof() {
     let bevy_state = read_sixdof(app.world(), vehicle);
 
     // ── Simulation ──
-    let time =
-        jeod_time::SimulationTime::at_j2000(jeod_time::leap_second::default_leap_second_table());
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
@@ -540,8 +537,7 @@ fn tier3_bevy_full_stack_sixdof() {
     let bevy_state = read_sixdof(app.world(), vehicle);
 
     // ── Simulation ──
-    let time =
-        jeod_time::SimulationTime::at_j2000(jeod_time::leap_second::default_leap_second_table());
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
@@ -617,7 +613,7 @@ fn tier3_bevy_sh4x4_rnp() {
         "GGM02C coefficients not found at {}",
         ggm02c_path.display()
     );
-    let sh_data = jeod_gravity::coefficients::load_from_jeod_cc(&ggm02c_path).expect("load GGM02C");
+    let sh_data = jeod_sim::coefficients::load_from_jeod_cc(&ggm02c_path).expect("load GGM02C");
     let mu = sh_data.mu;
 
     let sh_source = GravitySource {
@@ -667,8 +663,7 @@ fn tier3_bevy_sh4x4_rnp() {
     let bevy_state = read_trans(app.world(), vehicle);
 
     // ── Simulation ──
-    let time =
-        jeod_time::SimulationTime::at_j2000(jeod_time::leap_second::default_leap_second_table());
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: sh_source,
@@ -988,8 +983,7 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
     let bevy_state = read_trans(app.world(), vehicle);
 
     // ── Simulation ──
-    let time =
-        jeod_time::SimulationTime::at_j2000(jeod_time::leap_second::default_leap_second_table());
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
 
     let earth_idx = sim.add_source(GravitySourceEntry {

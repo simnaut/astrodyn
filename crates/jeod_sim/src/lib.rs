@@ -61,7 +61,9 @@ pub use jeod_dynamics::{
 // jeod_gravity: source definitions and controls
 pub use jeod_gravity::{GravityControl, GravityControls, GravityModel, GravitySource};
 
-// jeod_atmosphere: state output
+// jeod_atmosphere: state output and model types
+pub use jeod_atmosphere::exponential::ExponentialAtmosphere;
+pub use jeod_atmosphere::met::{self as met_atmosphere, GeoIndexType, MetAtmosphere};
 pub use jeod_atmosphere::AtmosphereState;
 
 // jeod_interactions: config, result types, and computation functions
@@ -81,7 +83,10 @@ pub use jeod_time::{leap_second::default_leap_second_table, SimulationTime};
 pub use jeod_frames::rotation_j2000::compute_t_parent_this_from_tjt;
 
 // jeod_ephemeris: ephemeris data
-pub use jeod_ephemeris::Ephemeris;
+pub use jeod_ephemeris::{Ephemeris, EphemerisBody};
+
+// jeod_gravity: coefficient loading (for test/data infrastructure)
+pub use jeod_gravity::coefficients;
 
 // jeod_planet: planet shape
 pub use jeod_planet::PlanetShape;

@@ -17,15 +17,12 @@
 //!   - SIM_3_ORBIT: Flat-plate SRP + shadow (~23 days)
 
 use glam::{DMat3, DVec3};
-use jeod_atmosphere::met::{self, MetAtmosphere};
-use jeod_dynamics::{
-    DynamicsConfig, GravityAcceleration, MassProperties, RotationalState, TranslationalState,
+use jeod_sim::{
+    met_atmosphere, AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig,
+    GravityAcceleration, GravityControl, GravityControls, GravityModel, GravitySource,
+    GravitySourceEntry, JeodQuat, MassProperties, MetAtmosphere, RotationalState, SimBody,
+    Simulation, SimulationTime, TranslationalState,
 };
-use jeod_gravity::{GravityControl, GravityControls, GravityModel, GravitySource};
-use jeod_interactions::DragConfig;
-use jeod_math::JeodQuat;
-use jeod_sim::{AtmosphereConfig, AtmosphereModel, GravitySourceEntry, SimBody, Simulation};
-use jeod_time::SimulationTime;
 use std::path::Path;
 
 const MU_EARTH: f64 = 3.986004418e14;
@@ -141,7 +138,7 @@ fn tier3_simulation_run2_3dof() {
     let init = &trajectory[0];
 
     // Set up Simulation — point-mass gravity, no atmosphere, no interactions
-    let time = SimulationTime::at_j2000(jeod_time::leap_second::default_leap_second_table());
+    let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
 
     let earth = sim.add_source(GravitySourceEntry {
@@ -248,7 +245,7 @@ fn tier3_simulation_run2_6dof() {
     );
     let mass_props = MassProperties::with_inertia(400_000.0, inertia, DVec3::new(-3.0, -1.5, 4.0));
 
-    let time = SimulationTime::at_j2000(jeod_time::leap_second::default_leap_second_table());
+    let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
 
     let earth = sim.add_source(GravitySourceEntry {
@@ -389,7 +386,7 @@ fn tier3_simulation_run6b_drag() {
         f10: 128.8,
         f10b: 128.8,
         geo_index: 15.7,
-        geo_index_type: met::GeoIndexType::Ap,
+        geo_index_type: met_atmosphere::GeoIndexType::Ap,
     };
 
     // Drag config (from Modified_data/aero_drag.py)
@@ -400,10 +397,7 @@ fn tier3_simulation_run6b_drag() {
 
     // Initialize Simulation at the SIM_dyncomp epoch with correct time offsets.
     let epoch_tai_tjt = DRAG_EPOCH_UTC_TJT + DRAG_TAI_UTC_S / 86400.0;
-    let mut time = SimulationTime::new(
-        epoch_tai_tjt,
-        jeod_time::leap_second::default_leap_second_table(),
-    );
+    let mut time = SimulationTime::new(epoch_tai_tjt, jeod_sim::default_leap_second_table());
     time.set_ut1_tai_offset(DRAG_TAI_TO_UT1_S);
 
     let mut sim = Simulation::new(time, DT);
@@ -540,7 +534,7 @@ fn run_sh_simulation_test(csv_name: &str, degree: usize, order: usize, label: &s
 
     // Load GGM02C spherical harmonics coefficients
     let ggm02c_path = jeod_root.join("models/environment/gravity/data/src/earth_GGM02C.cc");
-    let sh_data = jeod_gravity::coefficients::load_from_jeod_cc(&ggm02c_path).expect("load GGM02C");
+    let sh_data = jeod_sim::coefficients::load_from_jeod_cc(&ggm02c_path).expect("load GGM02C");
 
     let trajectory = load_trans_trajectory(&csv_path);
     assert!(trajectory.len() > 100);
@@ -556,10 +550,7 @@ fn run_sh_simulation_test(csv_name: &str, degree: usize, order: usize, label: &s
     // Initialize Simulation at the SIM_dyncomp epoch.
     // TAI TJT = UTC TJT + TAI-UTC/86400
     let epoch_tai_tjt = SH_EPOCH_UTC_TJT + SH_TAI_UTC_S / 86400.0;
-    let mut time = SimulationTime::new(
-        epoch_tai_tjt,
-        jeod_time::leap_second::default_leap_second_table(),
-    );
+    let mut time = SimulationTime::new(epoch_tai_tjt, jeod_sim::default_leap_second_table());
     // Set UT1-TAI offset so GMST computation matches JEOD's time.py configuration
     time.set_ut1_tai_offset(SH_TAI_TO_UT1_S);
 
@@ -872,7 +863,7 @@ fn tier3_simulation_run10a_gravity_torque() {
     let inertia = DMat3::from_diagonal(DVec3::new(500.0, 12250.0, 12250.0));
     let mass_props = MassProperties::with_inertia(1000.0, inertia, DVec3::new(6.0, 0.0, 0.0));
 
-    let time = SimulationTime::at_j2000(jeod_time::leap_second::default_leap_second_table());
+    let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
 
     let earth = sim.add_source(GravitySourceEntry {
@@ -990,11 +981,11 @@ const SRP_DT: f64 = 1.0;
 const SRP_EPOCH_TJT: f64 = 11148.0; // 1998-12-01 UTC
 
 fn srp_plates() -> Vec<(
-    jeod_interactions::FlatPlate,
-    jeod_interactions::FlatPlateParams,
-    jeod_interactions::FlatPlateThermal,
+    jeod_sim::FlatPlate,
+    jeod_sim::FlatPlateParams,
+    jeod_sim::FlatPlateThermal,
 )> {
-    use jeod_interactions::{FlatPlate, FlatPlateParams, FlatPlateThermal};
+    use jeod_sim::{FlatPlate, FlatPlateParams, FlatPlateThermal};
     let params = FlatPlateParams {
         albedo: 0.5,
         diffuse: 0.5,
@@ -1090,11 +1081,11 @@ fn load_srp_trajectory(path: &std::path::Path) -> Vec<SrpRecord> {
     records
 }
 
-fn srp_sun_position(sim_time: f64, ephemeris: &jeod_ephemeris::Ephemeris) -> DVec3 {
+fn srp_sun_position(sim_time: f64, ephemeris: &jeod_sim::Ephemeris) -> DVec3 {
     let sim_days = sim_time / 86400.0;
     let tdb_jd = (SRP_EPOCH_TJT + sim_days) + 40000.0 + 2_400_000.5;
     let (sun_pos, _) = ephemeris
-        .get_earth_centered_state(jeod_ephemeris::EphemerisBody::Sun, tdb_jd)
+        .get_earth_centered_state(jeod_sim::EphemerisBody::Sun, tdb_jd)
         .expect("Sun position query failed");
     sun_pos
 }
@@ -1114,7 +1105,7 @@ fn tier3_simulation_srp_flat_plate() {
         "DE421 ephemeris not found at {}",
         bsp_path.display()
     );
-    let ephemeris = jeod_ephemeris::Ephemeris::from_bsp(&bsp_path).expect("load DE421");
+    let ephemeris = jeod_sim::Ephemeris::from_bsp(&bsp_path).expect("load DE421");
 
     let trajectory = load_srp_trajectory(&csv_path);
     assert!(trajectory.len() > 100);
@@ -1126,10 +1117,7 @@ fn tier3_simulation_srp_flat_plate() {
 
     // Epoch: 1998-12-01 UTC. TAI-UTC=31s at this date.
     let epoch_tai_tjt = SRP_EPOCH_TJT + 31.0 / 86400.0;
-    let time = SimulationTime::new(
-        epoch_tai_tjt,
-        jeod_time::leap_second::default_leap_second_table(),
-    );
+    let time = SimulationTime::new(epoch_tai_tjt, jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, SRP_DT);
 
     // Earth at origin (gravity source + shadow body)
