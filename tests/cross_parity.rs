@@ -32,10 +32,9 @@ use bevy_jeod::{
 use glam::{DMat3, DVec3};
 use jeod_sim::{
     AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig, EulerSequence,
-    ExponentialAtmosphere, GravityAcceleration, GravityControl, GravityControls,
-    GravityModel, GravitySource, GravitySourceEntry, JeodQuat, LvlhFrame, MassProperties,
-    OrbitalElements, PlanetShape, RotationalState, SimBody, Simulation, SixDofState,
-    TranslationalState,
+    ExponentialAtmosphere, GravityAcceleration, GravityControl, GravityControls, GravityModel,
+    GravitySource, GravitySourceEntry, JeodQuat, LvlhFrame, MassProperties, OrbitalElements,
+    PlanetShape, RotationalState, SimBody, Simulation, SixDofState, TranslationalState,
 };
 
 const MU_EARTH: f64 = 3.986004418e14;
