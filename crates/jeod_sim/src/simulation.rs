@@ -194,10 +194,19 @@ impl Simulation {
             }
         }
 
-        if all_errors.is_empty() {
+        // Separate warnings from fatal errors — warnings are logged, not returned.
+        let mut fatal = Vec::new();
+        for error in all_errors {
+            if error.is_warning() {
+                log::warn!("{error}");
+            } else {
+                fatal.push(error);
+            }
+        }
+        if fatal.is_empty() {
             Ok(())
         } else {
-            Err(all_errors)
+            Err(fatal)
         }
     }
 

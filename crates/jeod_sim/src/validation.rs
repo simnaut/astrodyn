@@ -116,6 +116,17 @@ impl std::fmt::Display for ValidationError {
 
 impl std::error::Error for ValidationError {}
 
+impl ValidationError {
+    /// Whether this is a warning rather than a fatal error.
+    ///
+    /// Warnings indicate suspicious-but-valid state (e.g., a body at the origin
+    /// might be intentional). Both the Bevy adapter and `Simulation::validate()`
+    /// should use this to decide severity.
+    pub fn is_warning(&self) -> bool {
+        matches!(self, Self::UninitializedState)
+    }
+}
+
 /// Validate a body's configuration against JEOD invariants.
 ///
 /// Returns a list of errors (empty = valid). The caller decides how to handle

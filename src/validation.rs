@@ -69,18 +69,10 @@ pub fn validate_jeod_invariants(
         );
 
         for error in &errors {
-            match error {
-                // Uninitialized state is a warning, not fatal
-                jeod_sim::ValidationError::UninitializedState => {
-                    bevy::log::warn!(
-                        "Entity {entity:?}: {error}. If this entity is intentionally \
-                         at the origin with zero velocity, ignore this warning."
-                    );
-                }
-                // All other errors are fatal
-                _ => {
-                    panic!("Entity {entity:?}: {error}");
-                }
+            if error.is_warning() {
+                bevy::log::warn!("Entity {entity:?}: {error}");
+            } else {
+                panic!("Entity {entity:?}: {error}");
             }
         }
 
