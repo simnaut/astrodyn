@@ -34,7 +34,7 @@ Phases are defined in [STRATEGY.md](STRATEGY.md) Section 8.
 - [ ] `cargo test --workspace` runs (0 tests, 0 failures)
 - [ ] `cargo clippy --workspace` produces no warnings
 - [ ] Each `jeod_*` crate compiles with **zero** Bevy dependency
-- [ ] Each `bevy_jeod_*` crate depends on its corresponding `jeod_*` crate and on `bevy`
+- [ ] Each `bevy_jeod_*` crate depends only on `jeod_sim` and `bevy` (never on `jeod_*` directly)
 - [ ] CI pipeline runs successfully (if configured)
 
 ---
@@ -328,6 +328,8 @@ batch computation without Bevy.
 - [ ] **Geodetic conversion**: Round-trip (cartesian → geodetic → cartesian) error < 1e-6 m for 10+ test points
 - [ ] **Frame tree**: Relative state between any two frames matches direct computation to < 1e-14
 - [ ] **Portability**: All `jeod_*` Phase 3 additions compile without Bevy
+- [ ] **Bevy≡Simulation parity**: Every new Bevy system has a `jeod_sim` counterpart. `tier3_bevy_*` scenario added for each new physics capability, passing with `to_bits()` equality.
+- [ ] **Simulation≈JEOD**: `tier3_simulation_*` test added for each new capability, validated against JEOD Trick CSV.
 - [ ] `cargo test --workspace` — all tests pass
 
 ---
@@ -394,7 +396,8 @@ without adding new physics.
 - [ ] **Solar beta trajectory**: Our `solar_beta_angle()` matches JEOD `SIM_SolarBeta` logged beta to < 1e-4 rad over 24h (ISS-like orbit with Sun/Moon)
 - [ ] **Euler angle trajectory**: Our `compute_euler_angles_from_matrix()` matches JEOD `SIM_Euler` logged angles to < 1e-6 rad over 24h
 - [ ] **Body init from elements**: `init_from_orbital_elements()` for ISS produces position < 1 m, velocity < 0.001 m/s vs JEOD reference state
-- [ ] **Bevy system parity**: Bevy App propagation matches pure `rk4_sixdof_step()` to < 1e-8 m position, < 1e-11 m/s velocity, < 1e-14 quaternion/ω over 100 steps
+- [ ] **Bevy≡Simulation parity**: `tier3_bevy_*` scenario for each new derived state (orbital elements, LVLH, Euler, geodetic, solar beta), passing with `to_bits()` equality vs `jeod_sim::Simulation`.
+- [ ] **Simulation≈JEOD**: Each derived state has a `tier3_simulation_*` test validated against JEOD Trick CSV.
 - [ ] `cargo test --workspace` — all tests pass, no regressions
 
 ---
@@ -453,7 +456,7 @@ without adding new physics.
 |----|------|-------------|
 | 4.16 | `bevy_jeod_atmosphere` plugin | `AtmosphereState` component. `atmosphere_update_system` in `EnvironmentSet`: query body position, compute geodetic coords, call `Atmosphere::density()`. |
 | 4.17 | Aerodynamic force system | `AerodynamicForce` component. `aero_drag_system` in `InteractionSet`. |
-| 4.18 | Radiation pressure system | `RadiationForce` component. `radiation_pressure_system` in `InteractionSet`. Reads Sun entity position. |
+| 4.18 | Radiation pressure system | `RadiationForce` component. `flat_plate_srp_system` in `InteractionSet`. Reads Sun entity position. |
 | 4.19 | Gravity torque system | `GravityTorque` component. `gravity_torque_system` in `InteractionSet`. |
 | 4.20 | Update force collection | Add `Option<&AerodynamicForce>`, `Option<&RadiationForce>`, `Option<&GravityTorque>` to `force_collection_system` query. |
 | 4.21 | SolarBeta system | `SolarBeta` component + `solar_beta_system` in `DerivedStateSet`. |
@@ -547,6 +550,8 @@ These require separate `trick-CP` builds but exercise interactions in isolation.
 - [ ] **High-resolution torque**: Torque magnitude error < 1e-6 N·m at 1-second resolution over 3h (SIM_torque_compare_simple).
 - [ ] **Eclipse timing**: Eclipse entry/exit times match JEOD to < 10 s (SIM_2_SHADOW_CALC).
 - [ ] **All Phase 4 Tier 3 exit criteria** now checked (gravity torque RUN_9A/9B, drag trajectory, SRP trajectory, shadow transitions).
+- [ ] **Bevy≡Simulation parity**: `tier3_bevy_*` scenario added for each new interaction variant (drag solar variants, torque+force combined, eclipse timing), passing with `to_bits()` equality.
+- [ ] **Simulation≈JEOD**: Each new scenario has a `tier3_simulation_*` test validated against JEOD Trick CSV.
 - [ ] `cargo test --workspace` — all tests pass, no regressions.
 
 ---
@@ -629,6 +634,9 @@ Tests below exercise Phase 3/4 physics only — no Phase 5 dependencies.
 - [ ] **SRP isolation**: SRP force matches JEOD to < 1e-9 N for standard and varied reflection coefficients (SIM_1_BASIC).
 - [ ] **Advanced shadow**: Shadow geometry with thermal effects matches JEOD (SIM_2A_SHADOW_CALC).
 - [ ] **SIM_dyncomp full-force data**: Reference CSVs for RUN_4, RUN_7A–7D generated and committed to `test_data/`.
+- [ ] **Bevy≡Simulation parity**: `tier3_bevy_*` scenario for each new drag/SRP/shadow variant, passing with `to_bits()` equality.
+- [ ] **Simulation≈JEOD**: Each new variant has a `tier3_simulation_*` test validated against JEOD Trick CSV.
+- [ ] **Feature parity**: Every `jeod_sim` function used by the Simulation runner has a corresponding Bevy system calling the same function.
 - [ ] `cargo test --workspace` — all tests pass, no regressions.
 
 ---
@@ -771,6 +779,11 @@ JEOD 5.4).
 - [ ] **Tier 3 long-term ephemeris**: SIM_prop_planet. Planet positions from Anise-based DE421/430 match JEOD's DE430 propagation to < 1 km over multi-decade spans.
 - [ ] **Tier 3 Mercury relativistic** (stretch): SIM_mercury. GR-induced perihelion advance rate within 1% of JEOD's computed delta (~43 arcsec/century). Requires Gauss-Jackson (5.2) + multi-planet gravity.
 
+#### Bevy≡Simulation parity
+- [ ] **Cross-parity for each new integrator**: `tier3_bevy_*` scenario for Gauss-Jackson, RKF45, LSODE — `to_bits()` equality vs Simulation runner.
+- [ ] **Cross-parity for new physics**: `tier3_bevy_*` scenario for polar motion, solid tides, multi-body gravity, Mars gravity — `to_bits()` equality.
+- [ ] **Feature parity**: Every `jeod_sim` function used by the Simulation runner has a corresponding Bevy system. No Simulation-only capabilities.
+
 #### Other
 - [ ] **Tier 4 regression**: CI runs all scenarios automatically; all pass within budgets
 - [ ] **Portability**: All `jeod_*` crates compile without Bevy; `batch_propagation.rs` runs full-fidelity scenario without Bevy
@@ -836,8 +849,12 @@ edge cases, and specialized scenarios to ensure no JEOD capability goes unverifi
 - [ ] **Mercury relativistic**: GR perihelion advance rate within 1% of JEOD's delta (~43 arcsec/century) (SIM_mercury)
 - [ ] **LVLH-relative**: Relative state in LVLH frame matches JEOD to < 1e-6 m (SIM_LvlhRelative)
 
+#### Bevy≡Simulation parity
+- [ ] **Full cross-parity**: Every `tier3_simulation_*` test has a matching `tier3_bevy_*` test exercising the same physics — `to_bits()` equality.
+- [ ] **Feature parity audit**: No `jeod_sim` capability exists that lacks a Bevy system counterpart. No Bevy system exists that bypasses `jeod_sim`.
+
 #### Other
-- [ ] **Full JEOD parity**: Every major JEOD verification sim category (dynamics, gravity, time, ephemerides, RNP, atmosphere, aerodynamics, radiation pressure, gravity torque, derived states, orbital elements, earth lighting) has at least one Tier 3 cross-validation test
+- [ ] **Full JEOD parity**: Every major JEOD verification sim category (dynamics, gravity, time, ephemerides, RNP, atmosphere, aerodynamics, radiation pressure, gravity torque, derived states, orbital elements, earth lighting) has at least one `tier3_simulation_*` test AND a matching `tier3_bevy_*` cross-parity test.
 - [ ] **Portability**: All `jeod_*` crates compile without Bevy
 - [ ] `cargo test --workspace` — all tests pass, no regressions
 
@@ -863,15 +880,43 @@ jeod_dynamics::tests::rk4_energy_conservation
 
 ### Tolerance Standards
 
-| Quantity | Tier 1 (analytical) | Tier 2 (JEOD reference) | Tier 3 (trajectory) |
-|----------|--------------------|-----------------------|-------------------|
-| Position | 1e-6 m | 1.0 m | 10-100 m |
-| Velocity | 1e-9 m/s | 0.001 m/s | 0.01-0.1 m/s |
-| Acceleration | 1e-12 m/s² | 1e-10 m/s² | — |
-| Angles | 1e-14 rad | 1e-12 rad | 1e-6 rad |
-| Energy | 1e-10 J/kg | — | — |
-| Quaternion norm | 1e-14 | 1e-14 | 1e-12 |
-| Time | — | exact (integer s) | — |
+| Quantity | Tier 1 (analytical) | Tier 2 (JEOD reference) | Tier 3 (trajectory) | Tier 3 (Bevy≡Sim) |
+|----------|--------------------|-----------------------|-------------------|--------------------|
+| Position | 1e-6 m | 1.0 m | 10-100 m | **0.0 m (exact)** |
+| Velocity | 1e-9 m/s | 0.001 m/s | 0.01-0.1 m/s | **0.0 m/s (exact)** |
+| Acceleration | 1e-12 m/s² | 1e-10 m/s² | — | — |
+| Angles | 1e-14 rad | 1e-12 rad | 1e-6 rad | **0.0 rad (exact)** |
+| Energy | 1e-10 J/kg | — | — | — |
+| Quaternion | 1e-14 | 1e-14 | 1e-12 | **0.0 (exact)** |
+| Time | — | exact (integer s) | — | — |
+
+Tier 3 Bevy-vs-Simulation tests require bit-identical output (`f64::to_bits()`
+equality, not tolerance-based) because the Bevy pipeline and `jeod_sim::Simulation`
+call the same functions in the same order.
+
+### Tier 3 Sub-Categories
+
+Tier 3 has two complementary test paths:
+
+**Simulation-vs-JEOD** (`jeod_sim/tests/tier3_simulation.rs`): validates the
+`Simulation::step()` production code path against JEOD Trick CSV data.
+
+**Bevy-vs-Simulation** (`tests/cross_parity.rs`): validates that the Bevy ECS
+pipeline produces bit-identical output to the Simulation runner. Every phase that
+delivers new physics must add a scenario here. Current scenarios:
+
+| Scenario | Physics | Added in |
+|----------|---------|----------|
+| A | Point-mass gravity, 6-DOF | Phase 1 |
+| B | Exponential atmosphere + drag, 6-DOF | Phase 4 |
+| C | Solar radiation pressure, 3-DOF | Phase 4 |
+| D | Gravity gradient torque, 6-DOF | Phase 4 |
+| E | Full stack (all interactions), 6-DOF | Phase 4 |
+| F | Spherical harmonics 4x4 + RNP | Phase 4 |
+| G | External torque via per-body functions | Phase 4 |
+
+Future phases must add: MET atmosphere (time-dependent), multi-body gravity,
+advanced integrators (Gauss-Jackson, RKF45).
 
 ### Definition of Done (per task)
 
@@ -879,7 +924,10 @@ jeod_dynamics::tests::rk4_energy_conservation
 2. Unit tests pass (`cargo test`)
 3. No clippy warnings (`cargo clippy`)
 4. Core logic is in `jeod_*` crate (no Bevy dependency in physics code)
-5. Bevy system (if applicable) delegates to core function
+5. Orchestration logic delegates to `jeod_sim` per-body functions
+6. Bevy system (if applicable) delegates to `jeod_sim`, not directly to `jeod_*`
+7. If new physics: Bevy-vs-Simulation scenario added to `tests/cross_parity.rs`
+8. If new physics: Simulation-vs-JEOD test added to `tier3_simulation.rs`
 
 ### Phase Transition Protocol
 
@@ -887,5 +935,6 @@ Before starting Phase N+1:
 
 1. All Phase N exit criteria checkboxes are checked
 2. `cargo test --workspace` passes with zero failures
-3. All examples from Phase N run successfully
-4. No known regressions from earlier phases
+3. All Bevy-vs-Simulation scenarios pass with exact-zero difference
+4. All examples from Phase N run successfully
+5. No known regressions from earlier phases

@@ -654,111 +654,9 @@ name = "bevy_jeod"
 version = "0.1.0"
 dependencies = [
  "bevy",
- "bevy_jeod_atmosphere",
- "bevy_jeod_dynamics",
- "bevy_jeod_ephemeris",
- "bevy_jeod_frames",
- "bevy_jeod_gravity",
- "bevy_jeod_interactions",
- "bevy_jeod_planet",
- "bevy_jeod_time",
  "glam 0.30.10",
- "jeod_atmosphere",
- "jeod_dynamics",
- "jeod_ephemeris",
- "jeod_frames",
- "jeod_gravity",
- "jeod_interactions",
- "jeod_math",
- "jeod_planet",
+ "jeod_sim",
  "jeod_test_data",
- "jeod_time",
-]
-
-[[package]]
-name = "bevy_jeod_atmosphere"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "bevy_jeod_dynamics",
- "bevy_jeod_time",
- "glam 0.30.10",
- "jeod_atmosphere",
- "jeod_math",
-]
-
-[[package]]
-name = "bevy_jeod_dynamics"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "bevy_jeod_gravity",
- "bevy_jeod_time",
- "glam 0.30.10",
- "jeod_atmosphere",
- "jeod_dynamics",
- "jeod_gravity",
- "jeod_math",
-]
-
-[[package]]
-name = "bevy_jeod_ephemeris"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "bevy_jeod_dynamics",
- "jeod_ephemeris",
-]
-
-[[package]]
-name = "bevy_jeod_frames"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "bevy_jeod_dynamics",
- "bevy_jeod_time",
- "jeod_frames",
- "jeod_time",
-]
-
-[[package]]
-name = "bevy_jeod_gravity"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "bevy_jeod_dynamics",
- "glam 0.30.10",
- "jeod_dynamics",
- "jeod_gravity",
-]
-
-[[package]]
-name = "bevy_jeod_interactions"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "bevy_jeod_dynamics",
- "glam 0.30.10",
- "jeod_atmosphere",
- "jeod_dynamics",
- "jeod_interactions",
-]
-
-[[package]]
-name = "bevy_jeod_planet"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "jeod_planet",
-]
-
-[[package]]
-name = "bevy_jeod_time"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "bevy_jeod_dynamics",
- "jeod_time",
 ]
 
 [[package]]
@@ -2515,6 +2413,24 @@ dependencies = [
 [[package]]
 name = "jeod_planet"
 version = "0.1.0"
+
+[[package]]
+name = "jeod_sim"
+version = "0.1.0"
+dependencies = [
+ "glam 0.30.10",
+ "jeod_atmosphere",
+ "jeod_dynamics",
+ "jeod_ephemeris",
+ "jeod_frames",
+ "jeod_gravity",
+ "jeod_interactions",
+ "jeod_math",
+ "jeod_planet",
+ "jeod_test_data",
+ "jeod_time",
+ "log",
+]
 
 [[package]]
 name = "jeod_test_data"

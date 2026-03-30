@@ -209,6 +209,8 @@ run_dyncomp_group() {
         "SET_test/RUN_9B:dyncomp_run9b:dyncomp_run9b_state.csv"
         "SET_test/RUN_5A:dyncomp_run5a:dyncomp_run5a_state.csv"
         "SET_test/RUN_6B:dyncomp_run6b:dyncomp_run6b_state.csv"
+        "SET_test/RUN_10A:dyncomp_run10a:dyncomp_run10a_state.csv"
+        "SET_test/RUN_10B:dyncomp_run10b:dyncomp_run10b_state.csv"
     )
 
     # Skip entire group (including build) if all primary outputs exist

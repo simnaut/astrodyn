@@ -1,21 +1,19 @@
-//! LEO orbit with atmospheric drag — Phase 4 example.
+//! LEO orbit with atmospheric drag using `jeod_sim` (no Bevy).
 //!
-//! Propagates an ISS-like orbit (400 km, i=51.6°) with the MET (Jacchia 1971)
-//! atmosphere model and shows altitude decay over 24 hours.
-//!
-//! Uses only `jeod_*` crates (no Bevy dependency) to demonstrate portability
-//! of the new Phase 4 interaction physics.
+//! Propagates an ISS-like orbit (400 km, i=51.6 deg) with the MET atmosphere
+//! model and shows altitude decay over 24 hours.
 //!
 //! ```bash
 //! cargo run --example leo_drag
 //! ```
 
 use glam::{DMat3, DVec3};
-use jeod_atmosphere::{compute_corotation_wind, met};
-use jeod_dynamics::{rk4_translational_step, TranslationalState};
-use jeod_interactions::{compute_ballistic_drag, DragConfig};
-use jeod_math::geodetic::{cartesian_to_geodetic, cartesian_to_spherical};
-use jeod_math::OrbitalElements;
+use jeod_sim::{
+    default_leap_second_table, met_atmosphere, AtmosphereConfig, AtmosphereModel, DragConfig,
+    DynamicsConfig, GravityAcceleration, GravityControl, GravityControls, GravityModel,
+    GravitySource, GravitySourceEntry, MassProperties, SimBody, Simulation, SimulationTime,
+    TranslationalState,
+};
 
 const MU_EARTH: f64 = 3.986004418e14;
 const R_EARTH_EQ: f64 = 6_378_137.0;
@@ -23,19 +21,18 @@ const R_EARTH_POL: f64 = 6_356_752.3142;
 /// Earth angular velocity (rad/s), from JEOD RNPJ2000 data.
 const OMEGA_EARTH: f64 = 7.292_115_146_706_388e-5;
 
-/// Compute GMST in radians (same formula as MET model / JEOD atmos_MET_TME.cc).
-fn compute_gmst(tjt: f64) -> f64 {
-    let tjt_prev_midnight = tjt.floor();
-    let fraction_of_day = tjt - tjt_prev_midnight;
-    let century_days = tjt_prev_midnight + 24980.0;
-    let century_frac = (century_days + 0.5) / 36525.0;
-    let minutes_of_day = fraction_of_day * 1440.0;
-    let greenwich_mean_position = (99.6909833
-        + 36000.76892 * century_frac
-        + 0.00038708 * century_frac * century_frac
-        + 0.250684477 * minutes_of_day)
-        .rem_euclid(360.0);
-    greenwich_mean_position * 0.017453293
+fn specific_energy(mu: f64, position: DVec3, velocity: DVec3) -> f64 {
+    0.5 * velocity.length_squared() - mu / position.length()
+}
+
+fn semi_major_axis(mu: f64, position: DVec3, velocity: DVec3) -> f64 {
+    -mu / (2.0 * specific_energy(mu, position, velocity))
+}
+
+fn eccentricity(mu: f64, position: DVec3, velocity: DVec3) -> f64 {
+    let h = position.cross(velocity);
+    let e_vec = velocity.cross(h) / mu - position.normalize();
+    e_vec.length()
 }
 
 fn main() {
@@ -45,7 +42,7 @@ fn main() {
     let v0 = (MU_EARTH / r0).sqrt();
     let inc = 51.6_f64.to_radians();
 
-    let mut state = TranslationalState {
+    let state0 = TranslationalState {
         position: DVec3::new(r0, 0.0, 0.0),
         velocity: DVec3::new(0.0, v0 * inc.cos(), v0 * inc.sin()),
     };
@@ -57,30 +54,73 @@ fn main() {
     };
     let mass = 420_000.0; // kg
 
-    // MET atmosphere (Jacchia 1971) at solar mean conditions
-    let atmos = met::SOLAR_MEAN;
+    // MET atmosphere (Jacchia 1971) at solar mean conditions.
+    let met_model = met_atmosphere::SOLAR_MEAN;
+    let f10 = met_model.f10;
+    let f10b = met_model.f10b;
 
-    // TJT for J2000 epoch (2000-01-01 12:00 TAI)
-    let tjt_start = jeod_time::epoch::J2000_TAI_TJT;
+    let time = SimulationTime::at_j2000(default_leap_second_table());
+    let mut sim = Simulation::new(time, 60.0);
+    let earth_idx = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: MU_EARTH,
+            model: GravityModel::PointMass,
+        },
+        position: DVec3::ZERO,
+        // Set to Some so Simulation updates this with GMST each step.
+        t_inertial_pfix: Some(DMat3::IDENTITY),
+    });
+    sim.atmosphere = Some(AtmosphereConfig {
+        model: AtmosphereModel::Met(met_model),
+        r_eq: R_EARTH_EQ,
+        r_pol: R_EARTH_POL,
+        planet_omega: OMEGA_EARTH,
+    });
+    sim.atmosphere_planet_source = Some(earth_idx);
+
+    let body_idx = sim.add_body(SimBody {
+        trans: state0,
+        rot: None,
+        mass: Some(MassProperties::new(mass)),
+        config: DynamicsConfig {
+            translational_dynamics: true,
+            rotational_dynamics: false,
+            three_dof: true,
+        },
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+        },
+        drag: Some(drag_config),
+        flat_plate_state: None,
+        shadow_body: None,
+        t_struct_body: DMat3::IDENTITY,
+        compute_gravity_torque: false,
+        atmospheric_state: Some(Default::default()),
+        gravity_accel: GravityAcceleration::default(),
+        total_force: Default::default(),
+        frame_derivs: Default::default(),
+        aero_force: None,
+        radiation_force: None,
+        gravity_torque: None,
+    });
+    sim.validate().expect("valid LEO drag setup");
 
     let dt = 60.0; // 1-minute steps
     let total_time = 86400.0; // 24 hours
     let steps = (total_time / dt) as usize;
     let print_interval = steps / 24; // Print once per hour
 
-    let initial_elements =
-        OrbitalElements::from_cartesian(MU_EARTH, state.position, state.velocity).unwrap();
+    let initial = sim.body(body_idx).trans;
+    let initial_e = eccentricity(MU_EARTH, initial.position, initial.velocity);
+    let initial_a = semi_major_axis(MU_EARTH, initial.position, initial.velocity);
     println!("=== LEO Orbit with Atmospheric Drag (MET Jacchia 1971) ===");
     println!(
         "Initial: alt={:.1} km, e={:.6}, a={:.1} km",
         altitude / 1000.0,
-        initial_elements.e_mag,
-        initial_elements.semi_major_axis / 1000.0,
+        initial_e,
+        initial_a / 1000.0,
     );
-    println!(
-        "Atmosphere: MET solar mean (F10.7={}, F10B={})",
-        atmos.f10, atmos.f10b
-    );
+    println!("Atmosphere: MET solar mean (F10.7={}, F10B={})", f10, f10b);
     println!();
     println!(
         "{:>8}  {:>10}  {:>12}  {:>10}  {:>14}  {:>12}",
@@ -89,92 +129,40 @@ fn main() {
     println!("{}", "-".repeat(78));
 
     for step in 0..steps {
+        sim.step();
         let sim_time = (step + 1) as f64 * dt;
-        let tjt = tjt_start + sim_time / 86400.0;
-
-        let new_state = rk4_translational_step(
-            &state,
-            |s| {
-                // Point-mass gravity
-                let r = s.position.length();
-                let grav = -MU_EARTH / (r * r * r) * s.position;
-
-                // Rotate inertial → planet-fixed via GMST, then geodetic coords.
-                // Matches JEOD's PlanetFixedPosition → MET pipeline.
-                let gmst = compute_gmst(tjt);
-                let (cos_g, sin_g) = (gmst.cos(), gmst.sin());
-                let pfix = DVec3::new(
-                    cos_g * s.position.x + sin_g * s.position.y,
-                    -sin_g * s.position.x + cos_g * s.position.y,
-                    s.position.z,
-                );
-                let geo = cartesian_to_geodetic(pfix, R_EARTH_EQ, R_EARTH_POL);
-                let mut atmos_state =
-                    atmos.density(geo.altitude / 1000.0, geo.latitude, geo.longitude, tjt);
-                atmos_state.wind = compute_corotation_wind(OMEGA_EARTH, s.position);
-                let drag = compute_ballistic_drag(
-                    &drag_config,
-                    &atmos_state,
-                    s.velocity,
-                    &DMat3::IDENTITY,
-                );
-
-                grav + drag.force / mass
-            },
-            dt,
-        );
-        state = new_state;
 
         if (step + 1) % print_interval == 0 {
             let time_h = sim_time / 3600.0;
-            let sph = cartesian_to_spherical(state.position, R_EARTH_EQ);
-            let alt_km = sph.altitude / 1000.0;
-            let elements =
-                OrbitalElements::from_cartesian(MU_EARTH, state.position, state.velocity).unwrap();
-
-            let gmst_p = compute_gmst(tjt);
-            let (cg, sg) = (gmst_p.cos(), gmst_p.sin());
-            let pfix_p = DVec3::new(
-                cg * state.position.x + sg * state.position.y,
-                -sg * state.position.x + cg * state.position.y,
-                state.position.z,
-            );
-            let geo_p = cartesian_to_geodetic(pfix_p, R_EARTH_EQ, R_EARTH_POL);
-            let mut atmos_state = atmos.density(
-                geo_p.altitude / 1000.0,
-                geo_p.latitude,
-                geo_p.longitude,
-                tjt,
-            );
-            atmos_state.wind = compute_corotation_wind(OMEGA_EARTH, state.position);
-            let drag = compute_ballistic_drag(
-                &drag_config,
-                &atmos_state,
-                state.velocity,
-                &DMat3::IDENTITY,
-            );
+            let body = sim.body(body_idx);
+            let state = body.trans;
+            let alt_km = (state.position.length() - R_EARTH_EQ) / 1000.0;
+            let e_mag = eccentricity(MU_EARTH, state.position, state.velocity);
+            let a_km = semi_major_axis(MU_EARTH, state.position, state.velocity) / 1000.0;
+            let atmos_state = body
+                .atmospheric_state
+                .as_ref()
+                .expect("atmospheric state enabled");
+            let drag = body.aero_force.expect("drag force should be computed");
 
             println!(
                 "{:>8.1}  {:>10.3}  {:>12.3}  {:>10.6}  {:>14.6e}  {:>12.6}",
                 time_h,
                 alt_km,
-                elements.semi_major_axis / 1000.0,
-                elements.e_mag,
+                a_km,
+                e_mag,
                 atmos_state.density,
                 drag.force.length() * 1000.0, // mN
             );
         }
     }
 
-    let final_elements =
-        OrbitalElements::from_cartesian(MU_EARTH, state.position, state.velocity).unwrap();
-    let sma_decay = initial_elements.semi_major_axis - final_elements.semi_major_axis;
+    let final_state = sim.body(body_idx).trans;
+    let final_a = semi_major_axis(MU_EARTH, final_state.position, final_state.velocity);
+    let final_e = eccentricity(MU_EARTH, final_state.position, final_state.velocity);
+    let sma_decay = initial_a - final_a;
 
     println!();
-    println!(
-        "Final: a={:.3} km, e={:.6}",
-        final_elements.semi_major_axis / 1000.0,
-        final_elements.e_mag
-    );
+    println!("Final: a={:.3} km, e={:.6}", final_a / 1000.0, final_e);
     println!("SMA decay: {:.1} m over 24h", sma_decay);
 }

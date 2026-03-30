@@ -10,15 +10,20 @@ Copy `.cargo/config.toml.example` to `.cargo/config.toml` and set `JEOD_HOME`
 and `TRICK_HOME` to your local checkouts. Cargo resolves `relative = true`
 paths from the workspace root.
 
-## Two-Layer Architecture (non-negotiable)
+## Three-Layer Architecture (non-negotiable)
 
 All physics lives in **`jeod_*`** crates (pure Rust, zero Bevy dependency).
-Bevy wiring lives in **`bevy_jeod_*`** crates (thin glue: component derives, systems
-that delegate to `jeod_*` pure functions, plugin registration).
+Orchestration lives in **`jeod_sim`** (composes `jeod_*` functions into pipeline
+stages, re-exports all types; zero Bevy dependency). Bevy wiring lives in
+**`bevy_jeod_*`** crates (thin glue: component derives, systems that delegate to
+`jeod_sim` functions, plugin registration).
+
+`bevy_jeod_*` crates depend **only** on `jeod_sim` + `bevy` — never on `jeod_*`
+crates directly. This makes `jeod_sim` the single API surface for any ECS adapter.
 
 Never put physics algorithms directly in a Bevy system function. The system queries
-components, then calls a `jeod_*` function. This keeps physics portable to other ECS
-frameworks, WASM, or standalone batch computation.
+components, then calls a `jeod_sim` function. This keeps physics portable to other
+ECS frameworks, WASM, or standalone batch computation.
 
 ## Computational Independence (non-negotiable)
 
