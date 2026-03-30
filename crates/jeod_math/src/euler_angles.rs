@@ -371,6 +371,7 @@ pub fn compute_euler_angles_from_matrix(trans: &DMat3, sequence: EulerSequence) 
 mod tests {
     use super::*;
     use crate::test_utils::{approx_eq_f64, approx_eq_mat3};
+    use glam::DVec3;
 
     const TOL: f64 = 1e-14;
 
@@ -594,5 +595,85 @@ mod tests {
             }
         }
         max_d
+    }
+
+    // -------------------------------------------------------------------
+    // JEOD euler_derived_state_ut.cc test vector — 1e-12 rad tolerance
+    // -------------------------------------------------------------------
+
+    /// Validates Euler angle extraction against the exact test vector from
+    /// JEOD `euler_derived_state_ut.cc`. The matrix corresponds to a
+    /// Roll-Pitch-Yaw (XYZ) decomposition of [30°, 45°, 60°].
+    ///
+    /// The JEOD source has one unique test vector (repeated across three
+    /// test blocks). We test both ref→body and body→ref directions, and
+    /// all 6 Tait-Bryan sequences on the same matrix.
+    #[test]
+    fn jeod_euler_test_vector_1e12() {
+        // Exact matrix from euler_derived_state_ut.cc (row-major → glam column-major)
+        let t = DMat3::from_cols(
+            DVec3::new(0.353_553_390_593_273_8, -0.612_372_435_695_794_6, 0.707_106_781_186_547_5),
+            DVec3::new(0.926_776_695_296_636_9, 0.126_826_484_044_322_3, -0.353_553_390_593_273_7),
+            DVec3::new(0.126_826_484_044_322_0, 0.780_330_085_889_910_6, 0.612_372_435_695_794_6),
+        );
+
+        // Expected ref_body angles for Roll-Pitch-Yaw (XYZ): [30°, 45°, 60°]
+        let expected_rad = [
+            30.0_f64.to_radians(),
+            45.0_f64.to_radians(),
+            60.0_f64.to_radians(),
+        ];
+
+        let extracted = compute_euler_angles_from_matrix(&t, EulerSequence::XYZ);
+
+        for i in 0..3 {
+            let err = (extracted[i] - expected_rad[i]).abs();
+            assert!(
+                err < 1e-12,
+                "JEOD XYZ angle[{i}] error {err:.4e} rad exceeds 1e-12\n  \
+                 expected: {:.15}, got: {:.15}",
+                expected_rad[i],
+                extracted[i],
+            );
+        }
+
+        // Verify body→ref direction: transpose the matrix and extract
+        let t_transpose = t.transpose();
+        let body_ref_expected_deg: [f64; 3] = [-51.876_568_255_402_190_7, 7.286_245_187_115_636_0, -69.118_790_319_646_109_3];
+        let body_ref_expected_rad = [
+            body_ref_expected_deg[0].to_radians(),
+            body_ref_expected_deg[1].to_radians(),
+            body_ref_expected_deg[2].to_radians(),
+        ];
+        let body_ref_extracted = compute_euler_angles_from_matrix(&t_transpose, EulerSequence::XYZ);
+
+        for i in 0..3 {
+            let err = (body_ref_extracted[i] - body_ref_expected_rad[i]).abs();
+            assert!(
+                err < 1e-12,
+                "JEOD XYZ body_ref angle[{i}] error {err:.4e} rad exceeds 1e-12\n  \
+                 expected: {:.15}, got: {:.15}",
+                body_ref_expected_rad[i],
+                body_ref_extracted[i],
+            );
+        }
+
+        // Also verify all 6 Tait-Bryan sequences via matrix round-trip at 1e-14
+        for &seq in &[
+            EulerSequence::XYZ,
+            EulerSequence::XZY,
+            EulerSequence::YZX,
+            EulerSequence::YXZ,
+            EulerSequence::ZXY,
+            EulerSequence::ZYX,
+        ] {
+            let angles = compute_euler_angles_from_matrix(&t, seq);
+            let reconstructed = compute_matrix_from_euler_angles(angles, seq);
+            assert!(
+                approx_eq_mat3(&t, &reconstructed, 1e-14),
+                "JEOD matrix round-trip for {seq:?} exceeds 1e-14: diff = {:.4e}",
+                max_mat_diff(&t, &reconstructed),
+            );
+        }
     }
 }
