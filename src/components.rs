@@ -2,8 +2,8 @@ use bevy::prelude::*;
 use glam::DVec3;
 use jeod_sim::{
     DragConfig, DynamicsConfig, FlatPlate, FlatPlateParams, FlatPlateThermal, FrameDerivatives,
-    GravityAcceleration, GravityControls, GravitySource, MassProperties, PlanetShape, RefFrameState,
-    RotationalState, TotalForce, TranslationalState,
+    GravityAcceleration, GravityControls, GravitySource, MassProperties, PlanetShape,
+    RefFrameState, RotationalState, TotalForce, TranslationalState,
 };
 
 // ── Dynamics ──
