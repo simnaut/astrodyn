@@ -11,13 +11,10 @@
 use std::time::Duration;
 
 use bevy::prelude::*;
-use bevy_jeod_dynamics::JeodDynamicsPlugin;
-use bevy_jeod_dynamics::{
-    DynamicsConfigC, GravityAccelerationC, GravityControlsC, GravitySourceC, MassPropertiesC,
-    RotationalStateC, TotalForceC, TranslationalStateC,
+use bevy_jeod::{
+    DynamicsConfigC, GravityAccelerationC, GravityControlsC, GravitySourceC, JeodPlugin,
+    MassPropertiesC, RotationalStateC, TotalForceC, TranslationalStateC,
 };
-use bevy_jeod_gravity::JeodGravityPlugin;
-use bevy_jeod_time::JeodTimePlugin;
 use glam::{DMat3, DVec3};
 use jeod_sim::{
     DynamicsConfig, GravityAcceleration, GravityControl, GravityControls, GravityModel,
@@ -53,7 +50,7 @@ fn mass_props() -> MassProperties {
     )
 }
 
-/// Build a minimal Bevy App with the JEOD dynamics, gravity, and time plugins.
+/// Build a minimal Bevy App with the JEOD plugin.
 /// Returns the App and the Entity ID of the spawned vehicle.
 fn build_app() -> (App, Entity, Entity) {
     let mut app = App::new();
@@ -64,10 +61,8 @@ fn build_app() -> (App, Entity, Entity) {
     // Set fixed timestep before adding JEOD plugins.
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
 
-    // JEOD plugins: sets up system ordering, gravity computation, integration, and time.
-    app.add_plugins(JeodDynamicsPlugin);
-    app.add_plugins(JeodGravityPlugin);
-    app.add_plugins(JeodTimePlugin);
+    // Unified JEOD plugin: sets up system ordering, gravity, integration, time, etc.
+    app.add_plugins(JeodPlugin);
 
     // Spawn planet entity (gravity source at origin).
     let planet = app

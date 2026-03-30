@@ -8,8 +8,8 @@
 use bevy::prelude::*;
 
 use crate::components::{
-    DynamicsConfigC, GravityAccelerationC, GravityControlsC, GravitySourceC, MassPropertiesC,
-    RotationalStateC, TranslationalStateC,
+    DynamicsConfigC, FlatPlateConfigC, GravityAccelerationC, GravityControlsC, GravitySourceC,
+    MassPropertiesC, RotationalStateC, TranslationalStateC,
 };
 
 /// Validates JEOD invariants on all dynamic body entities.
@@ -34,6 +34,7 @@ pub fn validate_jeod_invariants(
         Option<&MassPropertiesC>,
         Option<&RotationalStateC>,
         Option<&TranslationalStateC>,
+        Option<&FlatPlateConfigC>,
     )>,
     sources: Query<(Entity, &GravitySourceC)>,
     mut has_run: Local<bool>,
@@ -43,7 +44,18 @@ pub fn validate_jeod_invariants(
     }
     *has_run = true;
 
-    for (entity, config, mut controls, grav_accel, mass, rot_state, trans_state) in &mut bodies {
+    for (entity, config, mut controls, grav_accel, mass, rot_state, trans_state, flat_plates) in
+        &mut bodies
+    {
+        // Compute plate counts for validation
+        let plate_counts = flat_plates.map(|fp| {
+            (
+                fp.plates.len(),
+                fp.temperatures.len(),
+                fp.t_pow4_cached.len(),
+            )
+        });
+
         // Delegate structural validation to jeod_sim
         let errors = jeod_sim::validate_body(
             config,
@@ -53,6 +65,7 @@ pub fn validate_jeod_invariants(
             rot_state.is_some(),
             trans_state.map(|t| &t.0),
             |source_entity| sources.get(source_entity).ok().map(|(_, source)| &source.0),
+            plate_counts,
         );
 
         for error in &errors {

@@ -4,14 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bevy_jeod_dynamics = { path = "crates/bevy_jeod_dynamics" }
-bevy_jeod_gravity = { path = "crates/bevy_jeod_gravity" }
-bevy_jeod_frames = { path = "crates/bevy_jeod_frames" }
-bevy_jeod_time = { path = "crates/bevy_jeod_time" }
-bevy_jeod_ephemeris = { path = "crates/bevy_jeod_ephemeris" }
-bevy_jeod_planet = { path = "crates/bevy_jeod_planet" }
-bevy_jeod_atmosphere = { path = "crates/bevy_jeod_atmosphere" }
-bevy_jeod_interactions = { path = "crates/bevy_jeod_interactions" }
+jeod_sim = { path = "crates/jeod_sim" }
+glam = { workspace = true }
 bevy = { workspace = true }
 
 [dev-dependencies]
@@ -29,14 +23,6 @@ members = [
     "crates/jeod_planet",
     "crates/jeod_time",
     "crates/jeod_ephemeris",
-    "crates/bevy_jeod_dynamics",
-    "crates/bevy_jeod_gravity",
-    "crates/bevy_jeod_frames",
-    "crates/bevy_jeod_time",
-    "crates/bevy_jeod_ephemeris",
-    "crates/bevy_jeod_planet",
-    "crates/bevy_jeod_atmosphere",
-    "crates/bevy_jeod_interactions",
     "crates/jeod_atmosphere",
     "crates/jeod_interactions",
     "crates/jeod_test_data",

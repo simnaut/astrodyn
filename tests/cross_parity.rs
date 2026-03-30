@@ -23,11 +23,10 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 use bevy_jeod::{
-    AerodynamicForceC, AtmosphereModelR, AtmosphericStateDynC, DragConfigC, DynamicsConfigC,
+    AerodynamicForceC, AtmosphereModelR, AtmosphericStateC, DragConfigC, DynamicsConfigC,
     FlatPlateConfigC, GravityAccelerationC, GravityControlsC, GravitySourceC, GravityTorqueC,
-    JeodAtmospherePlugin, JeodDynamicsPlugin, JeodFramesPlugin, JeodGravityPlugin,
-    JeodInteractionsPlugin, JeodTimePlugin, MassPropertiesC, PlanetFixedRotationC, RadiationForceC,
-    RotationalStateC, SunMarker, TotalForceC, TranslationalStateC,
+    JeodPlugin, MassPropertiesC, PlanetFixedRotationC, RadiationForceC, RotationalStateC,
+    SunMarker, TotalForceC, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
 use jeod_sim::{
@@ -197,7 +196,7 @@ fn tier3_bevy_point_mass_sixdof() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins((JeodTimePlugin, JeodDynamicsPlugin, JeodGravityPlugin));
+    app.add_plugins(JeodPlugin);
 
     let planet = app
         .world_mut()
@@ -268,14 +267,7 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins((
-        JeodTimePlugin,
-        JeodDynamicsPlugin,
-        JeodGravityPlugin,
-        JeodFramesPlugin,
-        JeodAtmospherePlugin,
-        JeodInteractionsPlugin,
-    ));
+    app.add_plugins(JeodPlugin);
 
     app.insert_resource(AtmosphereModelR {
         config: AtmosphereConfig {
@@ -313,7 +305,7 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
             GravityAccelerationC::default(),
             TotalForceC::default(),
             DragConfigC(drag_config),
-            AtmosphericStateDynC::default(),
+            AtmosphericStateC::default(),
             AerodynamicForceC::default(),
         ))
         .id();
@@ -363,12 +355,7 @@ fn tier3_bevy_gravity_torque_sixdof() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins((
-        JeodTimePlugin,
-        JeodDynamicsPlugin,
-        JeodGravityPlugin,
-        JeodInteractionsPlugin,
-    ));
+    app.add_plugins(JeodPlugin);
 
     let planet = app
         .world_mut()
@@ -461,14 +448,7 @@ fn tier3_bevy_full_stack_sixdof() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins((
-        JeodTimePlugin,
-        JeodDynamicsPlugin,
-        JeodGravityPlugin,
-        JeodFramesPlugin,
-        JeodAtmospherePlugin,
-        JeodInteractionsPlugin,
-    ));
+    app.add_plugins(JeodPlugin);
 
     app.insert_resource(AtmosphereModelR {
         config: AtmosphereConfig {
@@ -519,7 +499,7 @@ fn tier3_bevy_full_stack_sixdof() {
             TotalForceC::default(),
             // Drag
             DragConfigC(drag_config),
-            AtmosphericStateDynC::default(),
+            AtmosphericStateC::default(),
             AerodynamicForceC::default(),
             // SRP (flat-plate)
             FlatPlateConfigC {
@@ -625,12 +605,7 @@ fn tier3_bevy_sh4x4_rnp() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins((
-        JeodTimePlugin,
-        JeodDynamicsPlugin,
-        JeodGravityPlugin,
-        JeodFramesPlugin,
-    ));
+    app.add_plugins(JeodPlugin);
 
     let planet = app
         .world_mut()
@@ -921,12 +896,7 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins((
-        JeodTimePlugin,
-        JeodDynamicsPlugin,
-        JeodGravityPlugin,
-        JeodInteractionsPlugin,
-    ));
+    app.add_plugins(JeodPlugin);
 
     let planet = app
         .world_mut()

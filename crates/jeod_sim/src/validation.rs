@@ -112,7 +112,9 @@ impl std::error::Error for ValidationError {}
 /// - `has_rot_state`: whether rotational state exists
 /// - `trans_state`: optional translational state (for uninitialized check)
 /// - `source_lookup`: resolves source IDs to `GravitySource` (returns `None` if missing)
+/// - `plate_counts`: if flat plates are present, `Some((num_plates, num_temperatures, num_t_pow4))`
 // JEOD_INV: DM.03 — validation runs once before first integration step
+#[allow(clippy::too_many_arguments)]
 pub fn validate_body<'a, S: Copy + std::fmt::Debug>(
     config: &DynamicsConfig,
     gravity_controls: &GravityControls<S>,
@@ -121,6 +123,7 @@ pub fn validate_body<'a, S: Copy + std::fmt::Debug>(
     has_rot_state: bool,
     trans_state: Option<&TranslationalState>,
     source_lookup: impl Fn(S) -> Option<&'a GravitySource>,
+    plate_counts: Option<(usize, usize, usize)>,
 ) -> Vec<ValidationError> {
     let mut errors = Vec::new();
 
@@ -172,6 +175,17 @@ pub fn validate_body<'a, S: Copy + std::fmt::Debug>(
             if trans.is_likely_uninitialized() {
                 errors.push(ValidationError::UninitializedState);
             }
+        }
+    }
+
+    // Plate temperature / t_pow4_cached length must match flat_plates
+    if let Some((num_plates, num_temperatures, num_t_pow4)) = plate_counts {
+        if num_temperatures != num_plates || num_t_pow4 != num_plates {
+            errors.push(ValidationError::PlateTemperatureLengthMismatch {
+                num_plates,
+                num_temperatures,
+                num_t_pow4,
+            });
         }
     }
 

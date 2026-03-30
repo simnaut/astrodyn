@@ -654,95 +654,9 @@ name = "bevy_jeod"
 version = "0.1.0"
 dependencies = [
  "bevy",
- "bevy_jeod_atmosphere",
- "bevy_jeod_dynamics",
- "bevy_jeod_ephemeris",
- "bevy_jeod_frames",
- "bevy_jeod_gravity",
- "bevy_jeod_interactions",
- "bevy_jeod_planet",
- "bevy_jeod_time",
  "glam 0.30.10",
  "jeod_sim",
  "jeod_test_data",
-]
-
-[[package]]
-name = "bevy_jeod_atmosphere"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "bevy_jeod_dynamics",
- "bevy_jeod_time",
- "glam 0.30.10",
- "jeod_sim",
-]
-
-[[package]]
-name = "bevy_jeod_dynamics"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "bevy_jeod_gravity",
- "bevy_jeod_time",
- "glam 0.30.10",
- "jeod_sim",
-]
-
-[[package]]
-name = "bevy_jeod_ephemeris"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "bevy_jeod_dynamics",
- "jeod_sim",
-]
-
-[[package]]
-name = "bevy_jeod_frames"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "bevy_jeod_dynamics",
- "bevy_jeod_time",
- "jeod_sim",
-]
-
-[[package]]
-name = "bevy_jeod_gravity"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "bevy_jeod_dynamics",
- "glam 0.30.10",
- "jeod_sim",
-]
-
-[[package]]
-name = "bevy_jeod_interactions"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "bevy_jeod_dynamics",
- "glam 0.30.10",
- "jeod_sim",
-]
-
-[[package]]
-name = "bevy_jeod_planet"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "jeod_sim",
-]
-
-[[package]]
-name = "bevy_jeod_time"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "bevy_jeod_dynamics",
- "jeod_sim",
 ]
 
 [[package]]

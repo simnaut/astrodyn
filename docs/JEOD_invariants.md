@@ -57,7 +57,7 @@ grep the JEOD tree for the distinctive identifier in the invariant description
 | DB.21 | Only unattached bodies integrate | flag-gate | runtime | deferred (Phase 5, no frame attachment yet) |
 | DB.22 | DynBody not copyable | structural | structural | n/a (ECS components are Copy where needed) |
 | DB.23 | `compute_inverse_inertia` enabled for DynBody | structural | structural | structural (`mass.rs:38`, always computed in `MassProperties::with_inertia`) |
-| DB.24 | Default `integrated_frame` is composite_body | structural | structural | structural (`components.rs:9`, we integrate composite_body state) |
+| DB.24 | Default `integrated_frame` is composite_body | structural | structural | structural (`src/components.rs`, we integrate composite_body state) |
 | DB.25 | DynBody name is reference to MassBody name | structural | structural | n/a (ECS entities, no name reference) |
 | DB.26 | DynBody mass constructed with `this` as owner | structural | structural | n/a (ECS entities, no ownership reference) |
 | DB.27 | State initialization order: attitude → rate → position → velocity | structural | ordering | deferred (Phase 5) |
@@ -171,8 +171,8 @@ grep the JEOD tree for the distinctive identifier in the invariant description
 |-----|-----------|-------------|----------|------------|
 | AT.01 | `active` flag gates computation | flag-gate | runtime | structural (no atmosphere → no AtmosphericStateC) |
 | AT.02 | Atmosphere model pointer non-null for update | structural | runtime | structural (AtmosphereModelR resource checked) |
-| AT.03 | Planet-fixed position required for geodetic altitude | structural | runtime | enforced (`bevy_jeod_atmosphere/systems.rs` — panics if planet_entity set but PlanetFixedRotationC missing) |
-| AT.04 | Wind velocity computed as omega × position (co-rotation) | structural | runtime | enforced (`jeod_atmosphere/lib.rs` compute_corotation_wind, `bevy_jeod_atmosphere/systems.rs` atmosphere_update_system) |
+| AT.03 | Planet-fixed position required for geodetic altitude | structural | runtime | enforced (`src/systems.rs` — panics if planet_entity set but PlanetFixedRotationC missing) |
+| AT.04 | Wind velocity computed as omega × position (co-rotation) | structural | runtime | enforced (`jeod_atmosphere/lib.rs` compute_corotation_wind, `src/systems.rs` atmosphere_update_system) |
 
 ## Section IN: Interactions
 
@@ -186,13 +186,13 @@ grep the JEOD tree for the distinctive identifier in the invariant description
 | IN.06 | RadiationPressure.active gates computation | flag-gate | runtime | structural (no FlatPlateConfigC → no SRP) |
 | IN.07 | RadiationThirdBody name required | fatal | initialization | n/a (shadow bodies by Entity) |
 | IN.08 | RadiationThirdBody belongs to one model only | fatal | structural | n/a (function-based, no ownership) |
-| IN.09 | RadiationSource planet must be found by DynManager | fatal | initialization | enforced (`bevy_jeod_interactions/systems.rs` — panics on multiple SunMarker; zero SunMarker = SRP not configured, early return like JEOD `active=false`) |
+| IN.09 | RadiationSource planet must be found by DynManager | fatal | initialization | enforced (`src/systems.rs` — panics on multiple SunMarker; zero SunMarker = SRP not configured, early return like JEOD `active=false`) |
 | IN.10 | RadiationSource.luminosity ≥ 1e-6 for flux computation | flag-gate | runtime | n/a (luminosity is a compile-time constant; `distance < 1.0` guard prevents division by near-zero) |
 | IN.11 | RadiationThirdBody.radius > 0 | fatal | initialization | enforced (`shadow.rs` handles degenerate cases) |
 | IN.12 | RadiationSource.radius > 0 | fatal | initialization | enforced (`shadow.rs` handles degenerate cases) |
 | IN.13 | Shadow model: vehicle distance > 0 | error | runtime | enforced (`shadow.rs` returns 0.0 if r_mag2 <= 0) |
 | IN.14 | `d_source_to_third` > 0 | error | runtime | enforced (`shadow.rs` returns 1.0 if d <= 0) |
-| IN.15 | Aero drag requires body orientation (T_inertial_struct) | structural (mandatory fn parameter) | runtime | enforced (`bevy_jeod_dynamics/systems.rs` — panics if AerodynamicForceC present without RotationalStateC) |
+| IN.15 | Aero drag requires body orientation (T_inertial_struct) | structural (mandatory fn parameter) | runtime | enforced (`src/systems.rs` — panics if AerodynamicForceC present without RotationalStateC) |
 | IN.16 | RadiationThirdBody requires inertial frame pointer | fatal | initialization | n/a (stateless function takes positions directly) |
 | IN.17 | RadiationSurface requires at least one facet (`num_facets > 0`) | fatal | initialization | deferred (caller passes plate slice; empty slice produces zero force) |
 | IN.18 | `power_emit` must be non-negative (thermal radiation) | fatal | runtime | structural (`power_emit = rad_constant * t_pow4`; both factors non-negative by construction) |

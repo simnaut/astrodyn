@@ -1,9 +1,0 @@
-[package]
-name = "bevy_jeod_ephemeris"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-jeod_sim = { path = "../jeod_sim" }
-bevy_jeod_dynamics = { path = "../bevy_jeod_dynamics" }
-bevy = { workspace = true }

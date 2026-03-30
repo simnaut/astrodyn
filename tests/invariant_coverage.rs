@@ -62,12 +62,13 @@ fn parse_catalog() -> BTreeMap<String, String> {
     invariants
 }
 
-/// Recursively find all `// JEOD_INV: XX.YY` tags in Rust source files under crates/.
+/// Recursively find all `// JEOD_INV: XX.YY` tags in Rust source files under crates/ and src/.
 fn find_source_tags() -> BTreeMap<String, Vec<String>> {
-    let crates_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("crates");
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut tags: BTreeMap<String, Vec<String>> = BTreeMap::new();
 
-    collect_tags_recursive(&crates_dir, &mut tags);
+    collect_tags_recursive(&manifest_dir.join("crates"), &mut tags);
+    collect_tags_recursive(&manifest_dir.join("src"), &mut tags);
     tags
 }
 
@@ -83,8 +84,8 @@ fn collect_tags_recursive(dir: &Path, tags: &mut BTreeMap<String, Vec<String>>) 
             let Ok(content) = fs::read_to_string(&path) else {
                 continue;
             };
-            let crates_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("crates");
-            let rel_path = path.strip_prefix(&crates_dir).unwrap_or(&path);
+            let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+            let rel_path = path.strip_prefix(manifest_dir).unwrap_or(&path);
 
             for (line_num, line) in content.lines().enumerate() {
                 // Find all JEOD_INV: XX.YY patterns on this line

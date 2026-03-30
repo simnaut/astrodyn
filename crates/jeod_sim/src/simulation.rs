@@ -155,6 +155,13 @@ impl Simulation {
     pub fn validate(&mut self) -> Result<(), Vec<ValidationError>> {
         let mut all_errors = Vec::new();
         for body in &mut self.bodies {
+            let plate_counts = body.flat_plates.as_ref().map(|plates| {
+                (
+                    plates.len(),
+                    body.plate_temperatures.len(),
+                    body.plate_t_pow4_cached.len(),
+                )
+            });
             let errors = crate::validate_body(
                 &body.config,
                 &body.gravity_controls,
@@ -163,20 +170,9 @@ impl Simulation {
                 body.rot.is_some(),
                 Some(&body.trans),
                 |source_id: usize| self.sources.get(source_id).map(|s| &s.source),
+                plate_counts,
             );
             all_errors.extend(errors);
-
-            // Validate plate_temperatures / plate_t_pow4_cached lengths match flat_plates
-            if let Some(ref plates) = body.flat_plates {
-                let n = plates.len();
-                if body.plate_temperatures.len() != n || body.plate_t_pow4_cached.len() != n {
-                    all_errors.push(ValidationError::PlateTemperatureLengthMismatch {
-                        num_plates: n,
-                        num_temperatures: body.plate_temperatures.len(),
-                        num_t_pow4: body.plate_t_pow4_cached.len(),
-                    });
-                }
-            }
 
             // Apply gravity control auto-corrections (degree/order clamping).
             // JEOD_INV: GV.03 — check_validity() auto-corrects out-of-range settings
