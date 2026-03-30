@@ -185,6 +185,7 @@ fn tier3_simulation_run2_3dof() {
         euler_angles: None,
         lvlh_frame: None,
         geodetic_state: None,
+        compute_solar_beta: false,
         solar_beta: None,
     });
 
@@ -302,6 +303,7 @@ fn tier3_simulation_run2_6dof() {
         euler_angles: None,
         lvlh_frame: None,
         geodetic_state: None,
+        compute_solar_beta: false,
         solar_beta: None,
     });
 
@@ -475,6 +477,7 @@ fn tier3_simulation_run6b_drag() {
         euler_angles: None,
         lvlh_frame: None,
         geodetic_state: None,
+        compute_solar_beta: false,
         solar_beta: None,
     });
 
@@ -622,6 +625,7 @@ fn run_sh_simulation_test(csv_name: &str, degree: usize, order: usize, label: &s
         euler_angles: None,
         lvlh_frame: None,
         geodetic_state: None,
+        compute_solar_beta: false,
         solar_beta: None,
     });
 
@@ -941,6 +945,7 @@ fn tier3_simulation_run10a_gravity_torque() {
         euler_angles: None,
         lvlh_frame: None,
         geodetic_state: None,
+        compute_solar_beta: false,
         solar_beta: None,
     });
 
@@ -1220,6 +1225,7 @@ fn tier3_simulation_srp_flat_plate() {
         euler_angles: None,
         lvlh_frame: None,
         geodetic_state: None,
+        compute_solar_beta: false,
         solar_beta: None,
     });
 

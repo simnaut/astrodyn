@@ -82,7 +82,8 @@ pub struct SimBody {
     pub compute_lvlh: bool,
     /// Planet source for geodetic: `(source_idx, r_eq, r_pol)`. `None` = skip.
     pub geodetic_planet: Option<(usize, f64, f64)>,
-    // Solar beta uses sim-level `sun_source` — computed for all bodies when set.
+    /// Whether to compute solar beta angle each step. Requires `sun_source` on Simulation.
+    pub compute_solar_beta: bool,
 
     // ── Derived state outputs (written each step if configured) ──
     /// Orbital elements from latest translational state.
@@ -493,12 +494,16 @@ impl Simulation {
             }
 
             // Solar beta
-            if let Some(sp) = sun_pos {
-                body.solar_beta = Some(crate::compute_body_solar_beta(
-                    body.trans.position,
-                    body.trans.velocity,
-                    sp,
-                ));
+            if body.compute_solar_beta {
+                if let Some(sp) = sun_pos {
+                    body.solar_beta = Some(crate::compute_body_solar_beta(
+                        body.trans.position,
+                        body.trans.velocity,
+                        sp,
+                    ));
+                } else {
+                    body.solar_beta = None;
+                }
             }
         }
     }

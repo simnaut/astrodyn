@@ -200,7 +200,7 @@ pub struct EulerAnglesC(pub [f64; 3]);
 ///
 /// Presence of this component alone enables computation — no separate
 /// config component needed (only requires translational state).
-#[derive(Component, Debug, Clone, Copy)]
+#[derive(Component, Debug, Clone, Copy, Default)]
 pub struct LvlhFrameC(pub jeod_sim::LvlhFrame);
 
 /// Geodetic state (latitude, longitude, altitude) computed each step.

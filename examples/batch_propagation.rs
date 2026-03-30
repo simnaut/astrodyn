@@ -79,6 +79,7 @@ fn main() {
         euler_angles: None,
         lvlh_frame: None,
         geodetic_state: None,
+        compute_solar_beta: false,
         solar_beta: None,
     });
     sim.validate().expect("valid batch propagation setup");

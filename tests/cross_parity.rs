@@ -189,6 +189,7 @@ fn new_sim_body_sixdof(earth_idx: usize, gradient: bool) -> SimBody {
         euler_angles: None,
         lvlh_frame: None,
         geodetic_state: None,
+        compute_solar_beta: false,
         solar_beta: None,
     }
 }
@@ -688,6 +689,7 @@ fn tier3_bevy_sh4x4_rnp() {
         euler_angles: None,
         lvlh_frame: None,
         geodetic_state: None,
+        compute_solar_beta: false,
         solar_beta: None,
     });
 
@@ -1028,6 +1030,7 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
         euler_angles: None,
         lvlh_frame: None,
         geodetic_state: None,
+        compute_solar_beta: false,
         solar_beta: None,
     });
 
@@ -1148,10 +1151,7 @@ fn tier3_bevy_derived_states() {
                 sequence: EulerSequence::ZYX,
             },
             EulerAnglesC::default(),
-            LvlhFrameC(jeod_sim::compute_body_lvlh_frame(
-                iss_trans().position,
-                iss_trans().velocity,
-            )),
+            LvlhFrameC::default(),
             SolarBetaC::default(),
         ))
         .id();
@@ -1191,6 +1191,7 @@ fn tier3_bevy_derived_states() {
     body.orbital_elements_mu = Some(MU_EARTH);
     body.euler_sequence = Some(EulerSequence::ZYX);
     body.compute_lvlh = true;
+    body.compute_solar_beta = true;
     sim.add_body(body);
 
     sim.validate().unwrap();
@@ -1327,6 +1328,7 @@ fn tier3_bevy_geodetic_derived_state() {
         euler_angles: None,
         lvlh_frame: None,
         geodetic_state: None,
+        compute_solar_beta: false,
         solar_beta: None,
     };
     sim.add_body(body);

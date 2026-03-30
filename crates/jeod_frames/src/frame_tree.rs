@@ -539,7 +539,7 @@ mod tests {
     // for multiple frame pairs including cross-branch.
     // -----------------------------------------------------------------------
     #[test]
-    fn four_level_tree_relative_state_1e14() {
+    fn four_level_tree_relative_state_precision() {
         let mut tree = FrameTree::new();
         let root = tree.add_root("root".into(), RefFrameKind::Inertial);
 
@@ -587,9 +587,9 @@ mod tests {
         let e = tree.add_child(root, "E".into(), RefFrameKind::Body, state_e);
 
         // 4-level composition accumulates ~6e-14 position error from
-        // floating-point arithmetic. Use 1e-13 which still demonstrates
-        // sub-1e-13 precision — well within the 1e-14 *class*.
-        // Rotation matrices and angular velocities stay within 1e-14.
+        // floating-point arithmetic. We therefore use a 1e-13 tolerance for
+        // position, which still demonstrates sub-1e-13 precision, while
+        // rotation matrices and angular velocities are checked at 1e-14.
         let tol_rot = 1e-14;
         let tol_pos = 1e-13;
 
