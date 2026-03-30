@@ -601,21 +601,37 @@ mod tests {
             .incr_right(&state_d);
 
         assert!(
-            approx_eq_mat3(&rel_root_d.rot.t_parent_this, &expected_root_d.rot.t_parent_this, tol_rot),
+            approx_eq_mat3(
+                &rel_root_d.rot.t_parent_this,
+                &expected_root_d.rot.t_parent_this,
+                tol_rot
+            ),
             "root→D rotation exceeds {tol_rot:.0e}"
         );
         assert!(
-            approx_eq_vec3(rel_root_d.trans.position, expected_root_d.trans.position, tol_pos),
+            approx_eq_vec3(
+                rel_root_d.trans.position,
+                expected_root_d.trans.position,
+                tol_pos
+            ),
             "root→D position exceeds {tol_pos:.0e}: diff = {:.4e}",
             (rel_root_d.trans.position - expected_root_d.trans.position).length()
         );
         assert!(
-            approx_eq_vec3(rel_root_d.trans.velocity, expected_root_d.trans.velocity, tol_pos),
+            approx_eq_vec3(
+                rel_root_d.trans.velocity,
+                expected_root_d.trans.velocity,
+                tol_pos
+            ),
             "root→D velocity exceeds {tol_pos:.0e}: diff = {:.4e}",
             (rel_root_d.trans.velocity - expected_root_d.trans.velocity).length()
         );
         assert!(
-            approx_eq_vec3(rel_root_d.rot.ang_vel_this, expected_root_d.rot.ang_vel_this, tol_rot),
+            approx_eq_vec3(
+                rel_root_d.rot.ang_vel_this,
+                expected_root_d.rot.ang_vel_this,
+                tol_rot
+            ),
             "root→D ang_vel exceeds {tol_rot:.0e}"
         );
 
@@ -624,11 +640,19 @@ mod tests {
         let expected_d_root = RefFrameState::negate(&expected_root_d);
 
         assert!(
-            approx_eq_mat3(&rel_d_root.rot.t_parent_this, &expected_d_root.rot.t_parent_this, tol_rot),
+            approx_eq_mat3(
+                &rel_d_root.rot.t_parent_this,
+                &expected_d_root.rot.t_parent_this,
+                tol_rot
+            ),
             "D→root rotation exceeds {tol_rot:.0e}"
         );
         assert!(
-            approx_eq_vec3(rel_d_root.trans.position, expected_d_root.trans.position, tol_pos),
+            approx_eq_vec3(
+                rel_d_root.trans.position,
+                expected_d_root.trans.position,
+                tol_pos
+            ),
             "D→root position exceeds {tol_pos:.0e}"
         );
 
@@ -637,7 +661,11 @@ mod tests {
         let expected_b_d = state_c.incr_right(&state_d);
 
         assert!(
-            approx_eq_mat3(&rel_b_d.rot.t_parent_this, &expected_b_d.rot.t_parent_this, tol_rot),
+            approx_eq_mat3(
+                &rel_b_d.rot.t_parent_this,
+                &expected_b_d.rot.t_parent_this,
+                tol_rot
+            ),
             "B→D rotation exceeds {tol_rot:.0e}"
         );
         assert!(
@@ -649,7 +677,11 @@ mod tests {
             "B→D velocity exceeds {tol_pos:.0e}"
         );
         assert!(
-            approx_eq_vec3(rel_b_d.rot.ang_vel_this, expected_b_d.rot.ang_vel_this, tol_rot),
+            approx_eq_vec3(
+                rel_b_d.rot.ang_vel_this,
+                expected_b_d.rot.ang_vel_this,
+                tol_rot
+            ),
             "B→D ang_vel exceeds {tol_rot:.0e}"
         );
 
@@ -658,7 +690,11 @@ mod tests {
         let expected_d_e = RefFrameState::negate(&expected_root_d).incr_right(&state_e);
 
         assert!(
-            approx_eq_mat3(&rel_d_e.rot.t_parent_this, &expected_d_e.rot.t_parent_this, tol_rot),
+            approx_eq_mat3(
+                &rel_d_e.rot.t_parent_this,
+                &expected_d_e.rot.t_parent_this,
+                tol_rot
+            ),
             "D→E rotation exceeds {tol_rot:.0e}"
         );
         assert!(
@@ -671,7 +707,11 @@ mod tests {
             "D→E velocity exceeds {tol_pos:.0e}"
         );
         assert!(
-            approx_eq_vec3(rel_d_e.rot.ang_vel_this, expected_d_e.rot.ang_vel_this, tol_rot),
+            approx_eq_vec3(
+                rel_d_e.rot.ang_vel_this,
+                expected_d_e.rot.ang_vel_this,
+                tol_rot
+            ),
             "D→E ang_vel exceeds {tol_rot:.0e}"
         );
 

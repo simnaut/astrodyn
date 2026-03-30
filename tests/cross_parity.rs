@@ -25,10 +25,9 @@ use bevy::prelude::*;
 use bevy_jeod::{
     AerodynamicForceC, AtmosphereModelR, AtmosphericStateC, DragConfigC, DynamicsConfigC,
     EulerAnglesC, EulerAnglesConfigC, FlatPlateConfigC, GeodeticConfigC, GeodeticStateC,
-    GravityAccelerationC, GravityControlsC, GravitySourceC, GravityTorqueC, JeodPlugin,
-    LvlhFrameC, MassPropertiesC, OrbitalElementsC, OrbitalElementsConfigC, PlanetC,
-    PlanetFixedRotationC, RadiationForceC, RotationalStateC, SolarBetaC, SunMarker, TotalForceC,
-    TranslationalStateC,
+    GravityAccelerationC, GravityControlsC, GravitySourceC, GravityTorqueC, JeodPlugin, LvlhFrameC,
+    MassPropertiesC, OrbitalElementsC, OrbitalElementsConfigC, PlanetC, PlanetFixedRotationC,
+    RadiationForceC, RotationalStateC, SolarBetaC, SunMarker, TotalForceC, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
 use jeod_sim::{
@@ -1048,7 +1047,12 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
 // ── Derived state assertion helpers ──
 
 fn assert_orbital_elements_eq(label: &str, a: &OrbitalElements, b: &OrbitalElements) {
-    assert_bits_eq(label, "semi_major_axis", a.semi_major_axis, b.semi_major_axis);
+    assert_bits_eq(
+        label,
+        "semi_major_axis",
+        a.semi_major_axis,
+        b.semi_major_axis,
+    );
     assert_bits_eq(label, "semiparam", a.semiparam, b.semiparam);
     assert_bits_eq(label, "e_mag", a.e_mag, b.e_mag);
     assert_bits_eq(label, "inclination", a.inclination, b.inclination);
@@ -1058,7 +1062,12 @@ fn assert_orbital_elements_eq(label: &str, a: &OrbitalElements, b: &OrbitalEleme
     assert_bits_eq(label, "mean_anom", a.mean_anom, b.mean_anom);
     assert_bits_eq(label, "mean_motion", a.mean_motion, b.mean_motion);
     assert_bits_eq(label, "orb_energy", a.orb_energy, b.orb_energy);
-    assert_bits_eq(label, "orb_ang_momentum", a.orb_ang_momentum, b.orb_ang_momentum);
+    assert_bits_eq(
+        label,
+        "orb_ang_momentum",
+        a.orb_ang_momentum,
+        b.orb_ang_momentum,
+    );
     println!("  {label}: bit-identical (11 orbital element fields)");
 }
 
@@ -1072,7 +1081,12 @@ fn assert_lvlh_eq(label: &str, a: &LvlhFrame, b: &LvlhFrame) {
                 b.t_parent_this.col(j)[i],
             );
         }
-        assert_bits_eq(label, &format!("ang_vel[{i}]"), a.ang_vel_this[i], b.ang_vel_this[i]);
+        assert_bits_eq(
+            label,
+            &format!("ang_vel[{i}]"),
+            a.ang_vel_this[i],
+            b.ang_vel_this[i],
+        );
     }
     println!("  {label}: bit-identical (12 LVLH frame components)");
 }
@@ -1127,9 +1141,13 @@ fn tier3_bevy_derived_states() {
             GravityAccelerationC::default(),
             TotalForceC::default(),
             // Derived state config + output components
-            OrbitalElementsConfigC { gravity_source: planet },
+            OrbitalElementsConfigC {
+                gravity_source: planet,
+            },
             OrbitalElementsC::default(),
-            EulerAnglesConfigC { sequence: EulerSequence::ZYX },
+            EulerAnglesConfigC {
+                sequence: EulerSequence::ZYX,
+            },
             EulerAnglesC::default(),
             LvlhFrameC(jeod_sim::compute_body_lvlh_frame(
                 iss_trans().position,
@@ -1142,7 +1160,12 @@ fn tier3_bevy_derived_states() {
     step_bevy(&mut app, NUM_STEPS);
 
     let bevy_state = read_sixdof(app.world(), vehicle);
-    let bevy_oe = app.world().get::<OrbitalElementsC>(vehicle).unwrap().0.clone();
+    let bevy_oe = app
+        .world()
+        .get::<OrbitalElementsC>(vehicle)
+        .unwrap()
+        .0
+        .clone();
     let bevy_euler = app.world().get::<EulerAnglesC>(vehicle).unwrap().0;
     let bevy_lvlh = app.world().get::<LvlhFrameC>(vehicle).unwrap().0;
     let bevy_beta = app.world().get::<SolarBetaC>(vehicle).unwrap().0;
@@ -1184,7 +1207,10 @@ fn tier3_bevy_derived_states() {
     assert_sixdof_eq("Bevy vs Sim (derived states)", &bevy_state, &sim_state);
 
     // Assert derived states are bit-identical
-    let sim_oe = sim_body.orbital_elements.as_ref().expect("orbital elements computed");
+    let sim_oe = sim_body
+        .orbital_elements
+        .as_ref()
+        .expect("orbital elements computed");
     assert_orbital_elements_eq("Bevy vs Sim OE", &bevy_oe, sim_oe);
 
     let sim_euler = sim_body.euler_angles.expect("euler angles computed");
@@ -1316,8 +1342,23 @@ fn tier3_bevy_geodetic_derived_state() {
 
     // Assert geodetic state is bit-identical
     let sim_geodetic = sim_body.geodetic_state.expect("geodetic state computed");
-    assert_bits_eq("Bevy vs Sim", "latitude", bevy_geodetic.latitude, sim_geodetic.latitude);
-    assert_bits_eq("Bevy vs Sim", "longitude", bevy_geodetic.longitude, sim_geodetic.longitude);
-    assert_bits_eq("Bevy vs Sim", "altitude", bevy_geodetic.altitude, sim_geodetic.altitude);
+    assert_bits_eq(
+        "Bevy vs Sim",
+        "latitude",
+        bevy_geodetic.latitude,
+        sim_geodetic.latitude,
+    );
+    assert_bits_eq(
+        "Bevy vs Sim",
+        "longitude",
+        bevy_geodetic.longitude,
+        sim_geodetic.longitude,
+    );
+    assert_bits_eq(
+        "Bevy vs Sim",
+        "altitude",
+        bevy_geodetic.altitude,
+        sim_geodetic.altitude,
+    );
     println!("  Bevy vs Sim geodetic: bit-identical (lat, lon, alt)");
 }

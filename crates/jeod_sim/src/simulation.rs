@@ -6,10 +6,10 @@ use crate::gravity::accumulate_gravity;
 use crate::integration::integrate_body;
 use crate::validation::ValidationError;
 use crate::{
-    AerodynamicForce, AtmosphereState, DragConfig, DynamicsConfig, EulerSequence,
-    FrameDerivatives, GeodeticState, GravityAcceleration, GravityControls, GravitySource,
-    LvlhFrame, MassProperties, OrbitalElements, RadiationForce, RotationalState, SimulationTime,
-    TotalForce, TranslationalState,
+    AerodynamicForce, AtmosphereState, DragConfig, DynamicsConfig, EulerSequence, FrameDerivatives,
+    GeodeticState, GravityAcceleration, GravityControls, GravitySource, LvlhFrame, MassProperties,
+    OrbitalElements, RadiationForce, RotationalState, SimulationTime, TotalForce,
+    TranslationalState,
 };
 
 /// Entry in the gravity source table.
@@ -452,12 +452,9 @@ impl Simulation {
         for body in &mut self.bodies {
             // Orbital elements
             if let Some(mu) = body.orbital_elements_mu {
-                body.orbital_elements = crate::compute_orbital_elements(
-                    mu,
-                    body.trans.position,
-                    body.trans.velocity,
-                )
-                .ok();
+                body.orbital_elements =
+                    crate::compute_orbital_elements(mu, body.trans.position, body.trans.velocity)
+                        .ok();
             }
 
             // Euler angles

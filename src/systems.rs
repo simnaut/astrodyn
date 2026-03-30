@@ -404,11 +404,8 @@ pub fn solar_beta_system(
         }
     };
     for (state, mut beta) in &mut query {
-        beta.0 = jeod_sim::compute_body_solar_beta(
-            state.position,
-            state.velocity,
-            sun_state.position,
-        );
+        beta.0 =
+            jeod_sim::compute_body_solar_beta(state.position, state.velocity, sun_state.position);
     }
 }
 

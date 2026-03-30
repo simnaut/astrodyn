@@ -612,9 +612,21 @@ mod tests {
     fn jeod_euler_test_vector_1e12() {
         // Exact matrix from euler_derived_state_ut.cc (row-major → glam column-major)
         let t = DMat3::from_cols(
-            DVec3::new(0.353_553_390_593_273_8, -0.612_372_435_695_794_6, 0.707_106_781_186_547_5),
-            DVec3::new(0.926_776_695_296_636_9, 0.126_826_484_044_322_3, -0.353_553_390_593_273_7),
-            DVec3::new(0.126_826_484_044_322_0, 0.780_330_085_889_910_6, 0.612_372_435_695_794_6),
+            DVec3::new(
+                0.353_553_390_593_273_8,
+                -0.612_372_435_695_794_6,
+                0.707_106_781_186_547_5,
+            ),
+            DVec3::new(
+                0.926_776_695_296_636_9,
+                0.126_826_484_044_322_3,
+                -0.353_553_390_593_273_7,
+            ),
+            DVec3::new(
+                0.126_826_484_044_322_0,
+                0.780_330_085_889_910_6,
+                0.612_372_435_695_794_6,
+            ),
         );
 
         // Expected ref_body angles for Roll-Pitch-Yaw (XYZ): [30°, 45°, 60°]
@@ -639,7 +651,11 @@ mod tests {
 
         // Verify body→ref direction: transpose the matrix and extract
         let t_transpose = t.transpose();
-        let body_ref_expected_deg: [f64; 3] = [-51.876_568_255_402_190_7, 7.286_245_187_115_636_0, -69.118_790_319_646_109_3];
+        let body_ref_expected_deg: [f64; 3] = [
+            -51.876_568_255_402_190_7,
+            7.286_245_187_115_636_0,
+            -69.118_790_319_646_109_3,
+        ];
         let body_ref_expected_rad = [
             body_ref_expected_deg[0].to_radians(),
             body_ref_expected_deg[1].to_radians(),
