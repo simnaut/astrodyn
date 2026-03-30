@@ -56,8 +56,26 @@ pub fn compute_body_geodetic(
 ///
 /// Computes the orbital angular momentum vector `h = r × v`, then delegates
 /// to [`jeod_math::solar_beta_angle`].
+///
+/// # Panics
+///
+/// Panics if the orbital angular momentum `h = r × v` is zero (degenerate
+/// orbit) or if the Sun position coincides with the body position.
 pub fn compute_body_solar_beta(position: DVec3, velocity: DVec3, sun_position: DVec3) -> f64 {
     let h = position.cross(velocity);
-    let sun_dir = (sun_position - position).normalize_or_zero();
+    let rel_sun = sun_position - position;
+
+    assert!(
+        h.length_squared() > 0.0,
+        "compute_body_solar_beta: orbital angular momentum is zero; \
+         solar beta angle is undefined"
+    );
+    assert!(
+        rel_sun.length_squared() > 0.0,
+        "compute_body_solar_beta: sun_position coincides with position; \
+         solar beta angle is undefined"
+    );
+
+    let sun_dir = rel_sun.normalize();
     jeod_math::solar_beta_angle(h, sun_dir)
 }

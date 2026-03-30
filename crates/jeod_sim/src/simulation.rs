@@ -199,6 +199,16 @@ impl Simulation {
                 }
             }
 
+            // Validate geodetic_planet index
+            if let Some((idx, _, _)) = body.geodetic_planet {
+                if idx >= self.sources.len() {
+                    all_errors.push(ValidationError::GeodeticPlanetOutOfRange {
+                        index: idx,
+                        num_sources: self.sources.len(),
+                    });
+                }
+            }
+
             // Apply gravity control auto-corrections (degree/order clamping).
             // JEOD_INV: GV.03 — check_validity() auto-corrects out-of-range settings
             for ctrl in &mut body.gravity_controls.controls {
@@ -454,6 +464,8 @@ impl Simulation {
             if let Some(seq) = body.euler_sequence {
                 if let Some(ref rot) = body.rot {
                     body.euler_angles = Some(crate::compute_body_euler_angles(rot, seq));
+                } else {
+                    body.euler_angles = None;
                 }
             }
 
@@ -467,13 +479,19 @@ impl Simulation {
 
             // Geodetic state
             if let Some((src_idx, r_eq, r_pol)) = body.geodetic_planet {
-                if let Some(t_pfix) = sources[src_idx].t_inertial_pfix.as_ref() {
-                    body.geodetic_state = Some(crate::compute_body_geodetic(
-                        body.trans.position,
-                        t_pfix,
-                        r_eq,
-                        r_pol,
-                    ));
+                if let Some(src) = sources.get(src_idx) {
+                    if let Some(t_pfix) = src.t_inertial_pfix.as_ref() {
+                        body.geodetic_state = Some(crate::compute_body_geodetic(
+                            body.trans.position,
+                            t_pfix,
+                            r_eq,
+                            r_pol,
+                        ));
+                    } else {
+                        body.geodetic_state = None;
+                    }
+                } else {
+                    body.geodetic_state = None;
                 }
             }
 

@@ -335,12 +335,12 @@ pub fn orbital_elements_system(
 ) {
     for (state, config, mut elements) in &mut query {
         let Ok(source) = sources.get(config.gravity_source) else {
+            elements.0 = Default::default();
             continue;
         };
-        if let Ok(oe) =
-            jeod_sim::compute_orbital_elements(source.mu, state.position, state.velocity)
-        {
-            elements.0 = oe;
+        match jeod_sim::compute_orbital_elements(source.mu, state.position, state.velocity) {
+            Ok(oe) => elements.0 = oe,
+            Err(_) => elements.0 = Default::default(),
         }
     }
 }
@@ -376,6 +376,7 @@ pub fn geodetic_system(
 ) {
     for (state, config, mut geodetic) in &mut query {
         let Ok((rot, planet)) = planets.get(config.planet) else {
+            geodetic.0 = Default::default();
             continue;
         };
         geodetic.0 =
@@ -392,8 +393,15 @@ pub fn solar_beta_system(
     mut query: Query<(&TranslationalStateC, &mut SolarBetaC), Without<SunMarker>>,
     sun_query: Query<&TranslationalStateC, With<SunMarker>>,
 ) {
-    let Ok(sun_state) = sun_query.single() else {
-        return;
+    let sun_state = match sun_query.single() {
+        Ok(s) => s,
+        Err(bevy::ecs::query::QuerySingleError::NoEntities(_)) => return,
+        Err(bevy::ecs::query::QuerySingleError::MultipleEntities(_)) => {
+            panic!(
+                "Multiple entities with SunMarker found. In JEOD, RadiationPressure \
+                 has exactly one RadiationSource. Ensure exactly one Sun entity exists."
+            );
+        }
     };
     for (state, mut beta) in &mut query {
         beta.0 = jeod_sim::compute_body_solar_beta(
