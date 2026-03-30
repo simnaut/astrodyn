@@ -174,6 +174,16 @@ impl Simulation {
             );
             all_errors.extend(errors);
 
+            // Validate shadow_body index
+            if let Some((idx, _radius)) = body.shadow_body {
+                if idx >= self.sources.len() {
+                    all_errors.push(ValidationError::ShadowBodyOutOfRange {
+                        index: idx,
+                        num_sources: self.sources.len(),
+                    });
+                }
+            }
+
             // Apply gravity control auto-corrections (degree/order clamping).
             // JEOD_INV: GV.03 — check_validity() auto-corrects out-of-range settings
             for ctrl in &mut body.gravity_controls.controls {
@@ -182,6 +192,17 @@ impl Simulation {
                 }
             }
         }
+
+        // Validate sun_source index (simulation-level, outside body loop)
+        if let Some(idx) = self.sun_source {
+            if idx >= self.sources.len() {
+                all_errors.push(ValidationError::SunSourceOutOfRange {
+                    index: idx,
+                    num_sources: self.sources.len(),
+                });
+            }
+        }
+
         if all_errors.is_empty() {
             Ok(())
         } else {
@@ -337,8 +358,13 @@ impl Simulation {
                                 *temp = 0.0;
                             }
                         }
-                        body.plate_t_pow4_cached =
-                            body.plate_temperatures.iter().map(|t| t.powi(4)).collect();
+                        for (temp, cached) in body
+                            .plate_temperatures
+                            .iter()
+                            .zip(body.plate_t_pow4_cached.iter_mut())
+                        {
+                            *cached = temp.powi(4);
+                        }
                     }
                 }
             }

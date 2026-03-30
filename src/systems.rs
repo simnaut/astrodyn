@@ -408,8 +408,9 @@ pub fn flat_plate_srp_system(
                     *temp = 0.0;
                 }
             }
-            flat_config.t_pow4_cached =
-                flat_config.temperatures.iter().map(|t| t.powi(4)).collect();
+            for i in 0..flat_config.temperatures.len() {
+                flat_config.t_pow4_cached[i] = flat_config.temperatures[i].powi(4);
+            }
         }
     }
 }

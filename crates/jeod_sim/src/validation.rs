@@ -28,6 +28,10 @@ pub enum ValidationError {
         num_temperatures: usize,
         num_t_pow4: usize,
     },
+    /// `sun_source` index is out of range for the sources table.
+    SunSourceOutOfRange { index: usize, num_sources: usize },
+    /// `shadow_body` index is out of range for the sources table.
+    ShadowBodyOutOfRange { index: usize, num_sources: usize },
 }
 
 impl std::fmt::Display for ValidationError {
@@ -90,6 +94,20 @@ impl std::fmt::Display for ValidationError {
                     "plate_temperatures (len={num_temperatures}) or plate_t_pow4_cached \
                      (len={num_t_pow4}) does not match flat_plates (len={num_plates}). \
                      All three must have the same length."
+                )
+            }
+            Self::SunSourceOutOfRange { index, num_sources } => {
+                write!(
+                    f,
+                    "sun_source index {index} is out of range (only {num_sources} sources). \
+                     Ensure sun_source refers to a valid source index."
+                )
+            }
+            Self::ShadowBodyOutOfRange { index, num_sources } => {
+                write!(
+                    f,
+                    "shadow_body index {index} is out of range (only {num_sources} sources). \
+                     Ensure shadow_body refers to a valid source index."
                 )
             }
         }
