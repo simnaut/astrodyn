@@ -623,7 +623,7 @@ mod tests {
                 -0.353_553_390_593_273_7,
             ),
             DVec3::new(
-                0.126_826_484_044_322_0,
+                0.126_826_484_044_322,
                 0.780_330_085_889_910_6,
                 0.612_372_435_695_794_6,
             ),
@@ -652,9 +652,9 @@ mod tests {
         // Verify body→ref direction: transpose the matrix and extract
         let t_transpose = t.transpose();
         let body_ref_expected_deg: [f64; 3] = [
-            -51.876_568_255_402_190_7,
-            7.286_245_187_115_636_0,
-            -69.118_790_319_646_109_3,
+            -51.876_568_255_402_19,
+            7.286_245_187_115_636,
+            -69.118_790_319_646_11,
         ];
         let body_ref_expected_rad = [
             body_ref_expected_deg[0].to_radians(),

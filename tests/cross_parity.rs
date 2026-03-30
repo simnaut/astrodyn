@@ -32,7 +32,7 @@ use bevy_jeod::{
 use glam::{DMat3, DVec3};
 use jeod_sim::{
     AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig, EulerSequence,
-    ExponentialAtmosphere, GeodeticState, GravityAcceleration, GravityControl, GravityControls,
+    ExponentialAtmosphere, GravityAcceleration, GravityControl, GravityControls,
     GravityModel, GravitySource, GravitySourceEntry, JeodQuat, LvlhFrame, MassProperties,
     OrbitalElements, PlanetShape, RotationalState, SimBody, Simulation, SixDofState,
     TranslationalState,
@@ -1258,7 +1258,7 @@ fn tier3_bevy_geodetic_derived_state() {
             GravitySourceC(earth_source()),
             TranslationalStateC::default(),
             PlanetFixedRotationC(DMat3::IDENTITY),
-            PlanetC(earth_shape.clone()),
+            PlanetC(earth_shape),
         ))
         .id();
 
@@ -1296,7 +1296,7 @@ fn tier3_bevy_geodetic_derived_state() {
         t_inertial_pfix: Some(DMat3::IDENTITY), // triggers RNP update
     });
 
-    let mut body = SimBody {
+    let body = SimBody {
         trans: iss_trans(),
         rot: None,
         mass: None,
