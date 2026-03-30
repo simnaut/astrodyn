@@ -23,18 +23,18 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 use bevy_jeod::{
-    AerodynamicForceC, AtmosphereConfig, AtmosphereModel, AtmosphereModelR, DragConfig,
-    DragConfigC, DynamicsConfig, DynamicsConfigC, FlatPlateConfigC, GravityAccelerationC,
-    GravityControl, GravityControls, GravityControlsC, GravityModel, GravitySourceC,
-    GravityTorqueC, JeodAtmospherePlugin, JeodDynamicsPlugin, JeodFramesPlugin, JeodGravityPlugin,
-    JeodInteractionsPlugin, JeodTimePlugin, MassProperties, MassPropertiesC, PlanetFixedRotationC,
-    RadiationForceC, RotationalStateC, SunMarker, TotalForceC, TranslationalStateC,
+    AerodynamicForceC, AtmosphericStateDynC, AtmosphereModelR, DragConfigC, DynamicsConfigC,
+    FlatPlateConfigC, GravityAccelerationC, GravityControlsC, GravitySourceC, GravityTorqueC,
+    JeodAtmospherePlugin, JeodDynamicsPlugin, JeodFramesPlugin, JeodGravityPlugin,
+    JeodInteractionsPlugin, JeodTimePlugin, MassPropertiesC, PlanetFixedRotationC, RadiationForceC,
+    RotationalStateC, SunMarker, TotalForceC, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
-use jeod_sim::GravitySource;
 use jeod_sim::{
-    ExponentialAtmosphere, GravityAcceleration, GravitySourceEntry, JeodQuat, RotationalState,
-    SimBody, Simulation, SixDofState, TranslationalState,
+    AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig, ExponentialAtmosphere,
+    GravityAcceleration, GravityControl, GravityControls, GravityModel, GravitySource,
+    GravitySourceEntry, JeodQuat, MassProperties, RotationalState, SimBody, Simulation,
+    SixDofState, TranslationalState,
 };
 
 const MU_EARTH: f64 = 3.986004418e14;
@@ -313,7 +313,7 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
             GravityAccelerationC::default(),
             TotalForceC::default(),
             DragConfigC(drag_config),
-            bevy_jeod::AtmosphericStateDynC::default(),
+            AtmosphericStateDynC::default(),
             AerodynamicForceC::default(),
         ))
         .id();
@@ -519,7 +519,7 @@ fn tier3_bevy_full_stack_sixdof() {
             TotalForceC::default(),
             // Drag
             DragConfigC(drag_config),
-            bevy_jeod::AtmosphericStateDynC::default(),
+            AtmosphericStateDynC::default(),
             AerodynamicForceC::default(),
             // SRP (flat-plate)
             FlatPlateConfigC {

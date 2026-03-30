@@ -12,19 +12,10 @@ bevy_jeod_ephemeris = { path = "crates/bevy_jeod_ephemeris" }
 bevy_jeod_planet = { path = "crates/bevy_jeod_planet" }
 bevy_jeod_atmosphere = { path = "crates/bevy_jeod_atmosphere" }
 bevy_jeod_interactions = { path = "crates/bevy_jeod_interactions" }
-jeod_math = { path = "crates/jeod_math" }
-jeod_dynamics = { path = "crates/jeod_dynamics" }
-jeod_gravity = { path = "crates/jeod_gravity" }
-jeod_frames = { path = "crates/jeod_frames" }
-jeod_planet = { path = "crates/jeod_planet" }
-jeod_time = { path = "crates/jeod_time" }
-jeod_ephemeris = { path = "crates/jeod_ephemeris" }
-jeod_atmosphere = { path = "crates/jeod_atmosphere" }
-jeod_interactions = { path = "crates/jeod_interactions" }
-glam = { workspace = true }
 bevy = { workspace = true }
 
 [dev-dependencies]
+glam = { workspace = true }
 jeod_test_data = { path = "crates/jeod_test_data" }
 jeod_sim = { path = "crates/jeod_sim" }
 

@@ -10,10 +10,24 @@
 
 use bevy::app::ScheduleRunnerPlugin;
 use bevy::prelude::*;
-use bevy_jeod::*;
+use bevy_jeod::{
+    DynamicsConfigC, FrameDerivativesC, GravityAccelerationC, GravityControlsC, GravitySourceC,
+    JeodPlugin, JeodSet, MassPropertiesC, TotalForceC, TranslationalStateC,
+};
+use glam::DVec3;
+use jeod_sim::{
+    GravityControl, GravityControls, GravityModel, GravitySource, MassProperties,
+    TranslationalState,
+};
 use std::time::Duration;
 
 const MU_EARTH: f64 = 3.986004418e14;
+
+fn eccentricity(mu: f64, position: DVec3, velocity: DVec3) -> f64 {
+    let h = position.cross(velocity);
+    let e_vec = velocity.cross(h) / mu - position.normalize();
+    e_vec.length()
+}
 
 fn main() {
     App::new()
@@ -97,19 +111,15 @@ fn print_state(
             let v = state.velocity.length();
             let alt_km = (state.position.length() - 6_378_137.0) / 1000.0;
 
-            match OrbitalElements::from_cartesian(mu_earth, state.position, state.velocity) {
-                Ok(elems) => {
-                    println!(
-                        "step={:5}  t={:8.0}s  alt={:7.1}km  v={:.1}m/s  e={:.2e}",
-                        counter.0,
-                        counter.0 as f64 * 10.0,
-                        alt_km,
-                        v,
-                        elems.e_mag
-                    );
-                }
-                Err(e) => println!("Error: {}", e),
-            }
+            let e_mag = eccentricity(mu_earth, state.position, state.velocity);
+            println!(
+                "step={:5}  t={:8.0}s  alt={:7.1}km  v={:.1}m/s  e={:.2e}",
+                counter.0,
+                counter.0 as f64 * 10.0,
+                alt_km,
+                v,
+                e_mag
+            );
         }
 
         // Run for ~1 orbit (~560 steps at dt=10s for 400 km altitude).

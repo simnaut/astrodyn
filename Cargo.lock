@@ -663,17 +663,8 @@ dependencies = [
  "bevy_jeod_planet",
  "bevy_jeod_time",
  "glam 0.30.10",
- "jeod_atmosphere",
- "jeod_dynamics",
- "jeod_ephemeris",
- "jeod_frames",
- "jeod_gravity",
- "jeod_interactions",
- "jeod_math",
- "jeod_planet",
  "jeod_sim",
  "jeod_test_data",
- "jeod_time",
 ]
 
 [[package]]

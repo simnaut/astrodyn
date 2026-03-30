@@ -1,19 +1,31 @@
-//! Standalone batch Kepler orbit propagation using jeod_* crates (no Bevy).
+//! Standalone batch Kepler propagation using `jeod_sim` (no Bevy).
 //!
-//! Propagates a circular LEO orbit for 10 periods using RK4, printing orbital
-//! elements and energy drift at regular intervals. Validates that RK4 energy
-//! conservation is within expected bounds.
+//! Propagates a circular LEO orbit for 10 periods with the `Simulation`
+//! runner, printing eccentricity and energy drift at regular intervals.
 
-use jeod_dynamics::{rk4_translational_step, TranslationalState};
-use jeod_gravity::calc_spherical;
-use jeod_math::{DVec3, OrbitalElements};
+use glam::{DMat3, DVec3};
+use jeod_sim::{
+    default_leap_second_table, DynamicsConfig, GravityAcceleration, GravityControl,
+    GravityControls, GravityModel, GravitySource, GravitySourceEntry, SimBody, Simulation,
+    SimulationTime, TranslationalState,
+};
+
+fn specific_energy(mu: f64, position: DVec3, velocity: DVec3) -> f64 {
+    0.5 * velocity.length_squared() - mu / position.length()
+}
+
+fn eccentricity(mu: f64, position: DVec3, velocity: DVec3) -> f64 {
+    let h = position.cross(velocity);
+    let e_vec = velocity.cross(h) / mu - position.normalize();
+    e_vec.length()
+}
 
 fn main() {
     let mu_earth: f64 = 3.986004418e14; // m^3/s^2
     let r0: f64 = 6_778_137.0; // m (400 km altitude)
     let v0 = (mu_earth / r0).sqrt(); // circular velocity
 
-    let mut state = TranslationalState {
+    let state0 = TranslationalState {
         position: DVec3::new(r0, 0.0, 0.0),
         velocity: DVec3::new(0.0, v0, 0.0),
     };
@@ -23,7 +35,46 @@ fn main() {
     let n_orbits = 10;
     let steps = (n_orbits as f64 * period / dt).ceil() as usize;
 
-    let initial_energy = 0.5 * state.velocity.length_squared() - mu_earth / state.position.length();
+    let initial_energy = specific_energy(mu_earth, state0.position, state0.velocity);
+
+    let time = SimulationTime::at_j2000(default_leap_second_table());
+    let mut sim = Simulation::new(time, dt);
+    let earth_idx = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: mu_earth,
+            model: GravityModel::PointMass,
+        },
+        position: DVec3::ZERO,
+        t_inertial_pfix: None,
+    });
+    let body_idx = sim.add_body(SimBody {
+        trans: state0,
+        rot: None,
+        mass: None,
+        config: DynamicsConfig {
+            translational_dynamics: true,
+            rotational_dynamics: false,
+            three_dof: true,
+        },
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+        },
+        drag: None,
+        flat_plates: None,
+        plate_temperatures: vec![],
+        plate_t_pow4_cached: vec![],
+        shadow_body: None,
+        t_struct_body: DMat3::IDENTITY,
+        compute_gravity_torque: false,
+        atmospheric_state: None,
+        gravity_accel: GravityAcceleration::default(),
+        total_force: Default::default(),
+        frame_derivs: Default::default(),
+        aero_force: None,
+        radiation_force: None,
+        gravity_torque: None,
+    });
+    sim.validate().expect("valid batch propagation setup");
 
     println!("Batch Kepler Orbit Propagation (no Bevy)");
     println!("=========================================");
@@ -37,34 +88,28 @@ fn main() {
 
     for step in 0..=steps {
         if step > 0 {
-            state = rk4_translational_step(
-                &state,
-                |s| calc_spherical(mu_earth, s.position).grav_accel,
-                dt,
-            );
+            sim.step();
         }
 
         if step % report_interval == 0 || step == steps {
-            let energy = 0.5 * state.velocity.length_squared() - mu_earth / state.position.length();
+            let state = sim.body(body_idx).trans;
+            let energy = specific_energy(mu_earth, state.position, state.velocity);
             let energy_drift = energy - initial_energy;
             let alt_km = (state.position.length() - 6_378_137.0) / 1000.0;
+            let e_mag = eccentricity(mu_earth, state.position, state.velocity);
 
-            match OrbitalElements::from_cartesian(mu_earth, state.position, state.velocity) {
-                Ok(elems) => {
-                    println!(
-                        "t={:8.0}s  alt={:7.1}km  e={:.2e}  energy_drift={:.2e} J/kg",
-                        step as f64 * dt,
-                        alt_km,
-                        elems.e_mag,
-                        energy_drift
-                    );
-                }
-                Err(e) => println!("Error computing elements: {}", e),
-            }
+            println!(
+                "t={:8.0}s  alt={:7.1}km  e={:.2e}  energy_drift={:.2e} J/kg",
+                step as f64 * dt,
+                alt_km,
+                e_mag,
+                energy_drift
+            );
         }
     }
 
-    let final_energy = 0.5 * state.velocity.length_squared() - mu_earth / state.position.length();
+    let final_state = sim.body(body_idx).trans;
+    let final_energy = specific_energy(mu_earth, final_state.position, final_state.velocity);
     let drift = (final_energy - initial_energy).abs();
     println!();
     println!("Final energy drift: {:.2e} J/kg", drift);
