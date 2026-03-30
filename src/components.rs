@@ -1,9 +1,9 @@
 use bevy::prelude::*;
 use glam::DVec3;
 use jeod_sim::{
-    DragConfig, DynamicsConfig, FlatPlate, FlatPlateParams, FlatPlateThermal, FrameDerivatives,
-    GravityAcceleration, GravityControls, GravitySource, MassProperties, PlanetShape,
-    RefFrameState, RotationalState, TotalForce, TranslationalState,
+    DragConfig, DynamicsConfig, FrameDerivatives, GravityAcceleration, GravityControls,
+    GravitySource, MassProperties, PlanetShape, RefFrameState, RotationalState, TotalForce,
+    TranslationalState,
 };
 
 // ── Dynamics ──
@@ -114,18 +114,10 @@ pub struct DragConfigC(pub DragConfig);
 
 /// Flat-plate SRP configuration with thermal state.
 ///
-/// Contains per-plate geometry, optical/thermal properties, and temperature state.
-/// Temperatures are integrated via forward Euler each step (matching the
-/// Simulation runner's approach).
-#[derive(Component, Debug, Clone)]
-pub struct FlatPlateConfigC {
-    /// Per-plate geometry, optical, and thermal properties.
-    pub plates: Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)>,
-    /// Per-plate temperatures (K). Same length as `plates`.
-    pub temperatures: Vec<f64>,
-    /// Cached T^4 per plate from previous step (for thermal emission).
-    pub t_pow4_cached: Vec<f64>,
-}
+/// Wraps [`jeod_sim::FlatPlateState`] so the same type (and its
+/// `integrate_temperatures` method) is shared with the `Simulation` runner.
+#[derive(Component, Debug, Clone, Deref, DerefMut)]
+pub struct FlatPlateConfigC(pub jeod_sim::FlatPlateState);
 
 /// Marker for an entity that casts shadows (e.g., Earth).
 ///

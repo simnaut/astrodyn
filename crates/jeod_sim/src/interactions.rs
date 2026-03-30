@@ -1,6 +1,42 @@
 use glam::{DMat3, DVec3};
 use jeod_dynamics::RotationalState;
-use jeod_interactions::{AerodynamicForce, DragConfig};
+use jeod_interactions::{
+    AerodynamicForce, DragConfig, FlatPlate, FlatPlateParams, FlatPlateThermal,
+};
+
+/// Flat-plate SRP configuration with mutable thermal state.
+///
+/// Bundles plate geometry/optical/thermal properties with per-plate temperature
+/// state. Used by both the `Simulation` runner and Bevy adapter so that
+/// temperature integration logic is shared.
+#[derive(Debug, Clone)]
+pub struct FlatPlateState {
+    /// Per-plate geometry, optical, and thermal properties.
+    pub plates: Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)>,
+    /// Per-plate temperatures (K). Same length as `plates`.
+    pub temperatures: Vec<f64>,
+    /// Cached T^4 per plate from previous step (for thermal emission).
+    /// Same length as `plates`.
+    pub t_pow4_cached: Vec<f64>,
+}
+
+impl FlatPlateState {
+    /// Integrate plate temperatures (forward Euler) and update the T^4 cache.
+    ///
+    /// Called after `compute_flat_plate_srp_thermal` returns `temp_dots`.
+    /// Clamps temperatures to non-negative.
+    pub fn integrate_temperatures(&mut self, temp_dots: &[f64], dt: f64) {
+        for (i, temp) in self.temperatures.iter_mut().enumerate() {
+            *temp += temp_dots[i] * dt;
+            if *temp < 0.0 {
+                *temp = 0.0;
+            }
+        }
+        for (i, cached) in self.t_pow4_cached.iter_mut().enumerate() {
+            *cached = self.temperatures[i].powi(4);
+        }
+    }
+}
 
 /// Compute aerodynamic drag for a body, handling the frame transform.
 ///

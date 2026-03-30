@@ -6,10 +6,9 @@ use crate::gravity::accumulate_gravity;
 use crate::integration::integrate_body;
 use crate::validation::ValidationError;
 use crate::{
-    AerodynamicForce, AtmosphereState, DragConfig, DynamicsConfig, FlatPlate, FlatPlateParams,
-    FlatPlateThermal, FrameDerivatives, GravityAcceleration, GravityControls, GravitySource,
-    MassProperties, RadiationForce, RotationalState, SimulationTime, TotalForce,
-    TranslationalState,
+    AerodynamicForce, AtmosphereState, DragConfig, DynamicsConfig, FrameDerivatives,
+    GravityAcceleration, GravityControls, GravitySource, MassProperties, RadiationForce,
+    RotationalState, SimulationTime, TotalForce, TranslationalState,
 };
 
 /// Entry in the gravity source table.
@@ -46,16 +45,8 @@ pub struct SimBody {
     pub gravity_controls: GravityControls<usize>,
     /// Drag configuration. `None` disables drag.
     pub drag: Option<DragConfig>,
-    /// Flat-plate SRP configuration (plate geometry, optical, thermal properties). `None` disables SRP.
-    /// Requires `plate_temperatures`
-    /// and `plate_t_pow4_cached` to be initialized with matching lengths.
-    pub flat_plates: Option<Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)>>,
-    /// Per-plate temperatures (K). Same length as `flat_plates`.
-    pub plate_temperatures: Vec<f64>,
-    /// Cached T⁴ per plate (K⁴) from previous step. Same length as `flat_plates`.
-    /// Used for thermal emission force computation (JEOD convention: emission uses
-    /// previous-step temperature, not current).
-    pub plate_t_pow4_cached: Vec<f64>,
+    /// Flat-plate SRP configuration with thermal state. `None` disables SRP.
+    pub flat_plate_state: Option<crate::FlatPlateState>,
     /// Shadow-casting body: `(source_index, body_radius_m)`.
     /// Used by flat-plate SRP for eclipse computation.
     pub shadow_body: Option<(usize, f64)>,
@@ -155,11 +146,11 @@ impl Simulation {
     pub fn validate(&mut self) -> Result<(), Vec<ValidationError>> {
         let mut all_errors = Vec::new();
         for body in &mut self.bodies {
-            let plate_counts = body.flat_plates.as_ref().map(|plates| {
+            let plate_counts = body.flat_plate_state.as_ref().map(|fps| {
                 (
-                    plates.len(),
-                    body.plate_temperatures.len(),
-                    body.plate_t_pow4_cached.len(),
+                    fps.plates.len(),
+                    fps.temperatures.len(),
+                    fps.t_pow4_cached.len(),
                 )
             });
             let errors = crate::validate_body(
@@ -307,7 +298,7 @@ impl Simulation {
             // Solar radiation pressure (flat-plate)
             body.radiation_force = None;
             if let Some(sun_position) = sun_pos {
-                if let Some(ref flat_plates) = body.flat_plates {
+                if let Some(ref mut fps) = body.flat_plate_state {
                     // Flat-plate SRP with thermal emission
                     let sun_to_vehicle = body.trans.position - sun_position;
                     let distance = sun_to_vehicle.length();
@@ -336,8 +327,8 @@ impl Simulation {
                         let center_grav = body.mass.as_ref().map_or(DVec3::ZERO, |m| m.position);
 
                         let srp_result = crate::compute_flat_plate_srp_thermal(
-                            flat_plates,
-                            &body.plate_t_pow4_cached,
+                            &fps.plates,
+                            &fps.t_pow4_cached,
                             flux_struct_hat,
                             flux_mag,
                             center_grav,
@@ -351,20 +342,7 @@ impl Simulation {
                             torque: srp_result.torque,
                         });
 
-                        // Integrate plate temperatures (forward Euler)
-                        for (i, temp) in body.plate_temperatures.iter_mut().enumerate() {
-                            *temp += srp_result.temp_dots[i] * dt;
-                            if *temp < 0.0 {
-                                *temp = 0.0;
-                            }
-                        }
-                        for (temp, cached) in body
-                            .plate_temperatures
-                            .iter()
-                            .zip(body.plate_t_pow4_cached.iter_mut())
-                        {
-                            *cached = temp.powi(4);
-                        }
+                        fps.integrate_temperatures(&srp_result.temp_dots, dt);
                     }
                 }
             }

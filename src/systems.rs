@@ -400,17 +400,9 @@ pub fn flat_plate_srp_system(
         srp_force.force = force_inertial;
         srp_force.torque = srp_result.torque;
 
-        // Integrate plate temperatures (forward Euler, matching Simulation runner)
+        // Integrate plate temperatures (forward Euler) — shared with Simulation runner
         if dt > 0.0 {
-            for (i, temp) in flat_config.temperatures.iter_mut().enumerate() {
-                *temp += srp_result.temp_dots[i] * dt;
-                if *temp < 0.0 {
-                    *temp = 0.0;
-                }
-            }
-            for i in 0..flat_config.temperatures.len() {
-                flat_config.t_pow4_cached[i] = flat_config.temperatures[i].powi(4);
-            }
+            flat_config.integrate_temperatures(&srp_result.temp_dots, dt);
         }
     }
 }

@@ -178,9 +178,7 @@ fn new_sim_body_sixdof(earth_idx: usize, gradient: bool) -> SimBody {
         aero_force: None,
         radiation_force: None,
         gravity_torque: None,
-        flat_plates: None,
-        plate_temperatures: vec![],
-        plate_t_pow4_cached: vec![],
+        flat_plate_state: None,
         shadow_body: None,
     }
 }
@@ -502,11 +500,11 @@ fn tier3_bevy_full_stack_sixdof() {
             AtmosphericStateC::default(),
             AerodynamicForceC::default(),
             // SRP (flat-plate)
-            FlatPlateConfigC {
+            FlatPlateConfigC(jeod_sim::FlatPlateState {
                 plates: srp_plates.clone(),
                 temperatures: vec![270.0],
                 t_pow4_cached: vec![270.0_f64.powi(4)],
-            },
+            }),
             RadiationForceC::default(),
             // Gravity torque
             GravityTorqueC::default(),
@@ -542,9 +540,11 @@ fn tier3_bevy_full_stack_sixdof() {
 
     let mut body = new_sim_body_sixdof(earth_idx, true); // gradient=true
     body.drag = Some(drag_config);
-    body.flat_plates = Some(srp_plates);
-    body.plate_temperatures = vec![270.0];
-    body.plate_t_pow4_cached = vec![270.0_f64.powi(4)];
+    body.flat_plate_state = Some(jeod_sim::FlatPlateState {
+        plates: srp_plates,
+        temperatures: vec![270.0],
+        t_pow4_cached: vec![270.0_f64.powi(4)],
+    });
     body.compute_gravity_torque = true;
     body.atmospheric_state = Some(Default::default());
     sim.add_body(body);
@@ -668,9 +668,7 @@ fn tier3_bevy_sh4x4_rnp() {
         aero_force: None,
         radiation_force: None,
         gravity_torque: None,
-        flat_plates: None,
-        plate_temperatures: vec![],
-        plate_t_pow4_cached: vec![],
+        flat_plate_state: None,
         shadow_body: None,
     });
 
@@ -940,11 +938,11 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
             }),
             GravityAccelerationC::default(),
             TotalForceC::default(),
-            FlatPlateConfigC {
+            FlatPlateConfigC(jeod_sim::FlatPlateState {
                 plates: plates_data.clone(),
                 temperatures: vec![init_temp; num_plates],
                 t_pow4_cached: vec![init_temp.powi(4); num_plates],
-            },
+            }),
             RadiationForceC::default(),
         ))
         .id();
@@ -988,9 +986,11 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
         drag: None,
-        flat_plates: Some(plates_data),
-        plate_temperatures: vec![init_temp; num_plates],
-        plate_t_pow4_cached: vec![init_temp.powi(4); num_plates],
+        flat_plate_state: Some(jeod_sim::FlatPlateState {
+            plates: plates_data,
+            temperatures: vec![init_temp; num_plates],
+            t_pow4_cached: vec![init_temp.powi(4); num_plates],
+        }),
         shadow_body: Some((earth_idx, 6_378_137.0)),
         t_struct_body: DMat3::IDENTITY,
         compute_gravity_torque: false,

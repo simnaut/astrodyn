@@ -18,7 +18,7 @@
 
 use glam::{DMat3, DVec3};
 use jeod_sim::{
-    met_atmosphere, AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig,
+    met_atmosphere, AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig, FlatPlateState,
     GravityAcceleration, GravityControl, GravityControls, GravityModel, GravitySource,
     GravitySourceEntry, JeodQuat, MassProperties, MetAtmosphere, RotationalState, SimBody,
     Simulation, SimulationTime, TranslationalState,
@@ -175,9 +175,7 @@ fn tier3_simulation_run2_3dof() {
         aero_force: None,
         radiation_force: None,
         gravity_torque: None,
-        flat_plates: None,
-        plate_temperatures: vec![],
-        plate_t_pow4_cached: vec![],
+        flat_plate_state: None,
         shadow_body: None,
     });
 
@@ -285,9 +283,7 @@ fn tier3_simulation_run2_6dof() {
         aero_force: None,
         radiation_force: None,
         gravity_torque: None,
-        flat_plates: None,
-        plate_temperatures: vec![],
-        plate_t_pow4_cached: vec![],
+        flat_plate_state: None,
         shadow_body: None,
     });
 
@@ -451,9 +447,7 @@ fn tier3_simulation_run6b_drag() {
         aero_force: None,
         radiation_force: None,
         gravity_torque: None,
-        flat_plates: None,
-        plate_temperatures: vec![],
-        plate_t_pow4_cached: vec![],
+        flat_plate_state: None,
         shadow_body: None,
     });
 
@@ -591,9 +585,7 @@ fn run_sh_simulation_test(csv_name: &str, degree: usize, order: usize, label: &s
         aero_force: None,
         radiation_force: None,
         gravity_torque: None,
-        flat_plates: None,
-        plate_temperatures: vec![],
-        plate_t_pow4_cached: vec![],
+        flat_plate_state: None,
         shadow_body: None,
     });
 
@@ -903,9 +895,7 @@ fn tier3_simulation_run10a_gravity_torque() {
         aero_force: None,
         radiation_force: None,
         gravity_torque: None,
-        flat_plates: None,
-        plate_temperatures: vec![],
-        plate_t_pow4_cached: vec![],
+        flat_plate_state: None,
         shadow_body: None,
     });
 
@@ -1162,9 +1152,11 @@ fn tier3_simulation_srp_flat_plate() {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
         drag: None,
-        flat_plates: Some(plates),
-        plate_temperatures: vec![init_temp; num_plates],
-        plate_t_pow4_cached: vec![init_temp.powi(4); num_plates],
+        flat_plate_state: Some(FlatPlateState {
+            plates,
+            temperatures: vec![init_temp; num_plates],
+            t_pow4_cached: vec![init_temp.powi(4); num_plates],
+        }),
         shadow_body: Some((earth, SRP_R_EARTH)),
         t_struct_body: DMat3::IDENTITY,
         compute_gravity_torque: false,
