@@ -122,10 +122,7 @@ fn main() {
         initial_e,
         initial_a / 1000.0,
     );
-    println!(
-        "Atmosphere: MET solar mean (F10.7={}, F10B={})",
-        f10, f10b
-    );
+    println!("Atmosphere: MET solar mean (F10.7={}, F10B={})", f10, f10b);
     println!();
     println!(
         "{:>8}  {:>10}  {:>12}  {:>10}  {:>14}  {:>12}",
@@ -168,10 +165,6 @@ fn main() {
     let sma_decay = initial_a - final_a;
 
     println!();
-    println!(
-        "Final: a={:.3} km, e={:.6}",
-        final_a / 1000.0,
-        final_e
-    );
+    println!("Final: a={:.3} km, e={:.6}", final_a / 1000.0, final_e);
     println!("SMA decay: {:.1} m over 24h", sma_decay);
 }

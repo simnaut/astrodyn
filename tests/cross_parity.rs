@@ -23,7 +23,7 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 use bevy_jeod::{
-    AerodynamicForceC, AtmosphericStateDynC, AtmosphereModelR, DragConfigC, DynamicsConfigC,
+    AerodynamicForceC, AtmosphereModelR, AtmosphericStateDynC, DragConfigC, DynamicsConfigC,
     FlatPlateConfigC, GravityAccelerationC, GravityControlsC, GravitySourceC, GravityTorqueC,
     JeodAtmospherePlugin, JeodDynamicsPlugin, JeodFramesPlugin, JeodGravityPlugin,
     JeodInteractionsPlugin, JeodTimePlugin, MassPropertiesC, PlanetFixedRotationC, RadiationForceC,
