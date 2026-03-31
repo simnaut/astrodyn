@@ -532,14 +532,10 @@ impl Simulation {
         }
     }
 
-    /// Access a body by index.
+    // JEOD_INV: DS.01 — derived state config immutable after init; read-only access only
+    /// Access a body by index (read-only).
     pub fn body(&self, idx: usize) -> &SimBody {
         &self.bodies[idx]
-    }
-
-    /// Mutably access a body by index.
-    pub fn body_mut(&mut self, idx: usize) -> &mut SimBody {
-        &mut self.bodies[idx]
     }
 
     /// Current simulation elapsed time in seconds.
