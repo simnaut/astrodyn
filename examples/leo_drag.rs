@@ -10,9 +10,8 @@
 use glam::{DMat3, DVec3};
 use jeod_sim::{
     default_leap_second_table, met_atmosphere, AtmosphereConfig, AtmosphereModel, DragConfig,
-    GravityControl, GravityControls, GravityModel,
-    GravitySource, GravitySourceEntry, MassProperties, SimBody, Simulation, SimulationTime,
-    TranslationalState,
+    GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry,
+    MassProperties, SimBody, Simulation, SimulationTime, TranslationalState,
 };
 
 const MU_EARTH: f64 = 3.986004418e14;

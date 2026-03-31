@@ -5,9 +5,8 @@
 
 use glam::DVec3;
 use jeod_sim::{
-    default_leap_second_table, GravityControl,
-    GravityControls, GravityModel, GravitySource, GravitySourceEntry, SimBody, Simulation,
-    SimulationTime, TranslationalState,
+    default_leap_second_table, GravityControl, GravityControls, GravityModel, GravitySource,
+    GravitySourceEntry, SimBody, Simulation, SimulationTime, TranslationalState,
 };
 
 fn specific_energy(mu: f64, position: DVec3, velocity: DVec3) -> f64 {

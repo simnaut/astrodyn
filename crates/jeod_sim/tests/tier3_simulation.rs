@@ -19,9 +19,9 @@
 use glam::{DMat3, DVec3};
 use jeod_sim::{
     met_atmosphere, AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig, FlatPlateState,
-    GravityControl, GravityControls, GravityModel, GravitySource,
-    GravitySourceEntry, JeodQuat, MassProperties, MetAtmosphere, RotationalState, SimBody,
-    Simulation, SimulationTime, TranslationalState,
+    GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry, JeodQuat,
+    MassProperties, MetAtmosphere, RotationalState, SimBody, Simulation, SimulationTime,
+    TranslationalState,
 };
 use std::path::Path;
 

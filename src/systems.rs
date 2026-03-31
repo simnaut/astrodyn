@@ -349,7 +349,11 @@ pub fn orbital_elements_system(
 ///
 /// Placed in `JeodSet::DerivedState`.
 pub fn euler_angles_system(
-    mut query: Query<(Option<&RotationalStateC>, &EulerAnglesConfigC, &mut EulerAnglesC)>,
+    mut query: Query<(
+        Option<&RotationalStateC>,
+        &EulerAnglesConfigC,
+        &mut EulerAnglesC,
+    )>,
 ) {
     for (rot_opt, config, mut angles) in &mut query {
         if let Some(rot) = rot_opt {

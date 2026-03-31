@@ -17,8 +17,8 @@ use bevy_jeod::{
 };
 use glam::{DMat3, DVec3};
 use jeod_sim::{
-    DynamicsConfig, GravityControl, GravityControls, GravityModel,
-    GravitySource, JeodQuat, MassProperties, RotationalState, SixDofState, TranslationalState,
+    DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource, JeodQuat,
+    MassProperties, RotationalState, SixDofState, TranslationalState,
 };
 
 const MU_EARTH: f64 = 3.986004418e14;
