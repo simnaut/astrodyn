@@ -61,6 +61,25 @@ pub fn compute_body_geodetic(
 ///
 /// Panics if the orbital angular momentum `h = r × v` is zero (degenerate
 /// orbit) or if the Sun position coincides with the body position.
+pub fn compute_body_solar_beta(position: DVec3, velocity: DVec3, sun_position: DVec3) -> f64 {
+    let h = position.cross(velocity);
+    let rel_sun = sun_position - position;
+
+    assert!(
+        h.length_squared() > 0.0,
+        "compute_body_solar_beta: orbital angular momentum is zero; \
+         solar beta angle is undefined"
+    );
+    assert!(
+        rel_sun.length_squared() > 0.0,
+        "compute_body_solar_beta: sun_position coincides with position; \
+         solar beta angle is undefined"
+    );
+
+    let sun_dir = rel_sun.normalize();
+    jeod_math::solar_beta_angle(h, sun_dir)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -121,23 +140,4 @@ mod tests {
         let expected = jeod_math::cartesian_to_geodetic(pos_pfix, R_EQ, R_POL);
         assert_eq!(geo, expected);
     }
-}
-
-pub fn compute_body_solar_beta(position: DVec3, velocity: DVec3, sun_position: DVec3) -> f64 {
-    let h = position.cross(velocity);
-    let rel_sun = sun_position - position;
-
-    assert!(
-        h.length_squared() > 0.0,
-        "compute_body_solar_beta: orbital angular momentum is zero; \
-         solar beta angle is undefined"
-    );
-    assert!(
-        rel_sun.length_squared() > 0.0,
-        "compute_body_solar_beta: sun_position coincides with position; \
-         solar beta angle is undefined"
-    );
-
-    let sun_dir = rel_sun.normalize();
-    jeod_math::solar_beta_angle(h, sun_dir)
 }
