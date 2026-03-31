@@ -201,7 +201,7 @@ grep the JEOD tree for the distinctive identifier in the invariant description
 
 | Tag | Invariant | Enforcement | Category | Our Status |
 |-----|-----------|-------------|----------|------------|
-| DS.01 | Derived state configuration immutable after initialization (objects created at setup, not toggled at runtime) | structural | structural | structural (`SimBody` fields are private to `Simulation`; no `body_mut()` exposed) |
+| DS.01 | Derived state configuration immutable after initialization (objects created at setup, not toggled at runtime) | structural | structural | structural (`bodies` field is private, no `body_mut()`; `body()` returns `&SimBody`) |
 
 ## Section FD: FrameDerivatives
 

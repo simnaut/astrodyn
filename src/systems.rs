@@ -395,7 +395,13 @@ pub fn solar_beta_system(
 ) {
     let sun_state = match sun_query.single() {
         Ok(s) => s,
-        Err(bevy::ecs::query::QuerySingleError::NoEntities(_)) => return,
+        Err(bevy::ecs::query::QuerySingleError::NoEntities(_)) => {
+            // No SunMarker present: clear stale solar beta values
+            for (_, mut beta) in &mut query {
+                beta.0 = Default::default();
+            }
+            return;
+        }
         Err(bevy::ecs::query::QuerySingleError::MultipleEntities(_)) => {
             panic!(
                 "Multiple entities with SunMarker found. In JEOD, RadiationPressure \

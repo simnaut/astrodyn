@@ -118,7 +118,8 @@ pub struct Simulation {
     /// Simulation time (TAI, UTC, TDB, GMST, etc.).
     pub time: SimulationTime,
     /// Dynamic bodies.
-    pub bodies: Vec<SimBody>,
+    // JEOD_INV: DS.01 — private to prevent runtime mutation of derived-state config
+    bodies: Vec<SimBody>,
     /// Gravity sources.
     pub sources: Vec<GravitySourceEntry>,
     /// Atmosphere configuration. `None` disables atmosphere for all bodies.
