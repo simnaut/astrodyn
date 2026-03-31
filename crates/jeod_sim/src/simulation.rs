@@ -596,6 +596,16 @@ impl Simulation {
         &self.bodies[idx]
     }
 
+    /// Read-only slice of all bodies.
+    pub fn bodies(&self) -> &[SimBody] {
+        &self.bodies
+    }
+
+    /// Number of bodies in the simulation.
+    pub fn num_bodies(&self) -> usize {
+        self.bodies.len()
+    }
+
     /// Current simulation elapsed time in seconds.
     pub fn elapsed(&self) -> f64 {
         self.time.simtime
