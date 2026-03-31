@@ -25,6 +25,17 @@ pub struct LvlhFrame {
     pub velocity: DVec3,
 }
 
+impl Default for LvlhFrame {
+    fn default() -> Self {
+        Self {
+            t_parent_this: DMat3::IDENTITY,
+            ang_vel_this: DVec3::ZERO,
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+        }
+    }
+}
+
 /// Compute the LVLH frame from position and velocity in a planet-centered inertial frame.
 ///
 /// Port of JEOD `LvlhFrame::compute_lvlh_frame()` (lvlh_frame.cc:247-285).

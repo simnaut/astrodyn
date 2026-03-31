@@ -147,3 +147,71 @@ pub struct RefFrameNameC(pub String);
 /// Bevy component wrapping `PlanetShape`.
 #[derive(Component, Debug, Clone, Deref, DerefMut)]
 pub struct PlanetC(pub PlanetShape);
+
+// ── Derived State Configuration ──
+
+/// Configuration for orbital elements computation.
+///
+/// The `gravity_source` entity is queried for `GravitySourceC` to obtain `mu`.
+/// Presence of this component + `OrbitalElementsC` on an entity enables
+/// per-step orbital elements computation in `JeodSet::DerivedState`.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct OrbitalElementsConfigC {
+    pub gravity_source: Entity,
+}
+
+/// Configuration for Euler angle decomposition.
+///
+/// Presence of this component + `EulerAnglesC` on an entity enables
+/// per-step Euler angle computation in `JeodSet::DerivedState`.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct EulerAnglesConfigC {
+    pub sequence: jeod_sim::EulerSequence,
+}
+
+/// Configuration for geodetic state computation.
+///
+/// The `planet` entity is queried for `PlanetFixedRotationC` and `PlanetC`
+/// to obtain the rotation matrix and ellipsoid radii.
+/// Presence of this component + `GeodeticStateC` on an entity enables
+/// per-step geodetic computation in `JeodSet::DerivedState`.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct GeodeticConfigC {
+    pub planet: Entity,
+}
+
+// ── Derived State Outputs ──
+
+/// Orbital elements computed each step.
+///
+/// Written by `orbital_elements_system` for entities that also have
+/// `OrbitalElementsConfigC`.
+#[derive(Component, Debug, Clone, Default)]
+pub struct OrbitalElementsC(pub jeod_sim::OrbitalElements);
+
+/// Euler angles `[phi, theta, psi]` computed each step.
+///
+/// Written by `euler_angles_system` for entities that also have
+/// `EulerAnglesConfigC`.
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub struct EulerAnglesC(pub [f64; 3]);
+
+/// LVLH (Local Vertical Local Horizontal) frame computed each step.
+///
+/// Presence of this component alone enables computation — no separate
+/// config component needed (only requires translational state).
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub struct LvlhFrameC(pub jeod_sim::LvlhFrame);
+
+/// Geodetic state (latitude, longitude, altitude) computed each step.
+///
+/// Written by `geodetic_system` for entities that also have `GeodeticConfigC`.
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub struct GeodeticStateC(pub jeod_sim::GeodeticState);
+
+/// Solar beta angle (radians) computed each step.
+///
+/// Presence of this component alone enables computation — requires a
+/// `SunMarker` entity to exist in the world.
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub struct SolarBetaC(pub f64);

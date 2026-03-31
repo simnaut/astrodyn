@@ -91,6 +91,12 @@ impl Plugin for JeodPlugin {
                 // Force collection and integration
                 systems::force_collection_system.in_set(JeodSet::ForceCollection),
                 systems::integration_system.in_set(JeodSet::Integration),
+                // Derived states
+                systems::orbital_elements_system.in_set(JeodSet::DerivedState),
+                systems::euler_angles_system.in_set(JeodSet::DerivedState),
+                systems::lvlh_system.in_set(JeodSet::DerivedState),
+                systems::geodetic_system.in_set(JeodSet::DerivedState),
+                systems::solar_beta_system.in_set(JeodSet::DerivedState),
             ),
         );
     }

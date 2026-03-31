@@ -6,9 +6,10 @@ use crate::gravity::accumulate_gravity;
 use crate::integration::integrate_body;
 use crate::validation::ValidationError;
 use crate::{
-    AerodynamicForce, AtmosphereState, DragConfig, DynamicsConfig, FrameDerivatives,
-    GravityAcceleration, GravityControls, GravitySource, MassProperties, RadiationForce,
-    RotationalState, SimulationTime, TotalForce, TranslationalState,
+    AerodynamicForce, AtmosphereState, DragConfig, DynamicsConfig, EulerSequence, FrameDerivatives,
+    GeodeticState, GravityAcceleration, GravityControls, GravitySource, LvlhFrame, MassProperties,
+    OrbitalElements, RadiationForce, RotationalState, SimulationTime, TotalForce,
+    TranslationalState,
 };
 
 /// Entry in the gravity source table.
@@ -71,6 +72,66 @@ pub struct SimBody {
     pub radiation_force: Option<RadiationForce>,
     /// Gravity gradient torque in body frame.
     pub gravity_torque: Option<DVec3>,
+
+    // ── Derived state configuration (optional per-body) ──
+    /// Gravity source index for orbital elements computation. `None` = skip.
+    /// `mu` is read from the corresponding `GravitySourceEntry` at runtime,
+    /// ensuring consistency with the dynamics gravity model.
+    pub orbital_elements_source: Option<usize>,
+    /// Euler angle decomposition sequence. `None` = skip.
+    pub euler_sequence: Option<EulerSequence>,
+    /// Whether to compute LVLH frame each step.
+    pub compute_lvlh: bool,
+    /// Planet source for geodetic: `(source_idx, r_eq, r_pol)`. `None` = skip.
+    pub geodetic_planet: Option<(usize, f64, f64)>,
+    /// Whether to compute solar beta angle each step. Requires `sun_source` on Simulation.
+    pub compute_solar_beta: bool,
+
+    // ── Derived state outputs (written each step if configured) ──
+    /// Orbital elements from latest translational state.
+    pub orbital_elements: Option<OrbitalElements>,
+    /// Euler angles `[phi, theta, psi]` from latest rotational state.
+    pub euler_angles: Option<[f64; 3]>,
+    /// LVLH frame from latest translational state.
+    pub lvlh_frame: Option<LvlhFrame>,
+    /// Geodetic state (latitude, longitude, altitude).
+    pub geodetic_state: Option<GeodeticState>,
+    /// Solar beta angle (radians).
+    pub solar_beta: Option<f64>,
+}
+
+impl Default for SimBody {
+    fn default() -> Self {
+        Self {
+            trans: TranslationalState::default(),
+            rot: None,
+            mass: None,
+            config: DynamicsConfig::default(),
+            gravity_controls: GravityControls::default(),
+            drag: None,
+            flat_plate_state: None,
+            shadow_body: None,
+            t_struct_body: DMat3::IDENTITY,
+            compute_gravity_torque: false,
+            atmospheric_state: None,
+            gravity_accel: GravityAcceleration::default(),
+            total_force: TotalForce::default(),
+            frame_derivs: FrameDerivatives::default(),
+            aero_force: None,
+            radiation_force: None,
+            gravity_torque: None,
+            orbital_elements_source: None,
+            euler_sequence: None,
+            compute_lvlh: false,
+            geodetic_planet: None,
+            compute_solar_beta: false,
+            orbital_elements: None,
+            euler_angles: None,
+            lvlh_frame: None,
+            geodetic_state: None,
+            solar_beta: None,
+        }
+    }
 }
 
 /// ECS-agnostic simulation runner.
@@ -93,7 +154,8 @@ pub struct Simulation {
     /// Simulation time (TAI, UTC, TDB, GMST, etc.).
     pub time: SimulationTime,
     /// Dynamic bodies.
-    pub bodies: Vec<SimBody>,
+    // JEOD_INV: DS.01 — private to prevent runtime mutation of derived-state config
+    bodies: Vec<SimBody>,
     /// Gravity sources.
     pub sources: Vec<GravitySourceEntry>,
     /// Atmosphere configuration. `None` disables atmosphere for all bodies.
@@ -175,6 +237,26 @@ impl Simulation {
                 }
             }
 
+            // Validate geodetic_planet index
+            if let Some((idx, _, _)) = body.geodetic_planet {
+                if idx >= self.sources.len() {
+                    all_errors.push(ValidationError::GeodeticPlanetOutOfRange {
+                        index: idx,
+                        num_sources: self.sources.len(),
+                    });
+                }
+            }
+
+            // Validate orbital_elements_source index
+            if let Some(idx) = body.orbital_elements_source {
+                if idx >= self.sources.len() {
+                    all_errors.push(ValidationError::OrbitalElementsSourceOutOfRange {
+                        index: idx,
+                        num_sources: self.sources.len(),
+                    });
+                }
+            }
+
             // Apply gravity control auto-corrections (degree/order clamping).
             // JEOD_INV: GV.03 — check_validity() auto-corrects out-of-range settings
             for ctrl in &mut body.gravity_controls.controls {
@@ -221,6 +303,7 @@ impl Simulation {
     /// 6. Interaction computation (drag, SRP, gravity torque)
     /// 7. Force collection and frame derivative computation
     /// 8. State integration (RK4)
+    /// 9. Derived state computation
     pub fn step(&mut self) {
         let dt = self.dt;
 
@@ -280,7 +363,10 @@ impl Simulation {
         }
 
         // ── 6. Interactions — drag, SRP, gravity torque ──
-        let sun_pos = self.sun_source.map(|idx| self.sources[idx].position);
+        // sun_pos is also used in stage 9 (solar beta); compute once here.
+        let sun_pos = self
+            .sun_source
+            .and_then(|idx| self.sources.get(idx).map(|s| s.position));
         let sources = &self.sources;
 
         for body in &mut self.bodies {
@@ -409,6 +495,73 @@ impl Simulation {
                 dt,
             );
         }
+
+        // ── 9. Derived states ──
+        let sources = &self.sources;
+
+        for body in &mut self.bodies {
+            // Orbital elements
+            if let Some(src_idx) = body.orbital_elements_source {
+                if let Some(mu) = sources.get(src_idx).map(|s| s.source.mu) {
+                    body.orbital_elements = crate::compute_orbital_elements(
+                        mu,
+                        body.trans.position,
+                        body.trans.velocity,
+                    )
+                    .ok();
+                } else {
+                    body.orbital_elements = None;
+                }
+            }
+
+            // Euler angles
+            if let Some(seq) = body.euler_sequence {
+                if let Some(ref rot) = body.rot {
+                    body.euler_angles = Some(crate::compute_body_euler_angles(rot, seq));
+                } else {
+                    body.euler_angles = None;
+                }
+            }
+
+            // LVLH frame
+            if body.compute_lvlh {
+                body.lvlh_frame = Some(crate::compute_body_lvlh_frame(
+                    body.trans.position,
+                    body.trans.velocity,
+                ));
+            }
+
+            // Geodetic state
+            if let Some((src_idx, r_eq, r_pol)) = body.geodetic_planet {
+                if let Some(src) = sources.get(src_idx) {
+                    if let Some(t_pfix) = src.t_inertial_pfix.as_ref() {
+                        body.geodetic_state = Some(crate::compute_body_geodetic(
+                            body.trans.position,
+                            t_pfix,
+                            r_eq,
+                            r_pol,
+                        ));
+                    } else {
+                        body.geodetic_state = None;
+                    }
+                } else {
+                    body.geodetic_state = None;
+                }
+            }
+
+            // Solar beta
+            if body.compute_solar_beta {
+                if let Some(sp) = sun_pos {
+                    body.solar_beta = Some(crate::compute_body_solar_beta(
+                        body.trans.position,
+                        body.trans.velocity,
+                        sp,
+                    ));
+                } else {
+                    body.solar_beta = None;
+                }
+            }
+        }
     }
 
     /// Advance the simulation by `n` timesteps.
@@ -435,14 +588,20 @@ impl Simulation {
         }
     }
 
-    /// Access a body by index.
+    // JEOD_INV: DS.01 — derived state config immutable after init; read-only access only
+    /// Access a body by index (read-only).
     pub fn body(&self, idx: usize) -> &SimBody {
         &self.bodies[idx]
     }
 
-    /// Mutably access a body by index.
-    pub fn body_mut(&mut self, idx: usize) -> &mut SimBody {
-        &mut self.bodies[idx]
+    /// Read-only slice of all bodies.
+    pub fn bodies(&self) -> &[SimBody] {
+        &self.bodies
+    }
+
+    /// Number of bodies in the simulation.
+    pub fn num_bodies(&self) -> usize {
+        self.bodies.len()
     }
 
     /// Current simulation elapsed time in seconds.

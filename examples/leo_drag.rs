@@ -10,9 +10,8 @@
 use glam::{DMat3, DVec3};
 use jeod_sim::{
     default_leap_second_table, met_atmosphere, AtmosphereConfig, AtmosphereModel, DragConfig,
-    DynamicsConfig, GravityAcceleration, GravityControl, GravityControls, GravityModel,
-    GravitySource, GravitySourceEntry, MassProperties, SimBody, Simulation, SimulationTime,
-    TranslationalState,
+    GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry,
+    MassProperties, SimBody, Simulation, SimulationTime, TranslationalState,
 };
 
 const MU_EARTH: f64 = 3.986004418e14;
@@ -80,28 +79,13 @@ fn main() {
 
     let body_idx = sim.add_body(SimBody {
         trans: state0,
-        rot: None,
         mass: Some(MassProperties::new(mass)),
-        config: DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: false,
-            three_dof: true,
-        },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
         drag: Some(drag_config),
-        flat_plate_state: None,
-        shadow_body: None,
-        t_struct_body: DMat3::IDENTITY,
-        compute_gravity_torque: false,
         atmospheric_state: Some(Default::default()),
-        gravity_accel: GravityAcceleration::default(),
-        total_force: Default::default(),
-        frame_derivs: Default::default(),
-        aero_force: None,
-        radiation_force: None,
-        gravity_torque: None,
+        ..Default::default()
     });
     sim.validate().expect("valid LEO drag setup");
 

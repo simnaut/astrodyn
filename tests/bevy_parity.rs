@@ -17,8 +17,8 @@ use bevy_jeod::{
 };
 use glam::{DMat3, DVec3};
 use jeod_sim::{
-    DynamicsConfig, GravityAcceleration, GravityControl, GravityControls, GravityModel,
-    GravitySource, JeodQuat, MassProperties, RotationalState, SixDofState, TranslationalState,
+    DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource, JeodQuat,
+    MassProperties, RotationalState, SixDofState, TranslationalState,
 };
 
 const MU_EARTH: f64 = 3.986004418e14;
@@ -149,18 +149,7 @@ fn run_simulation_steps() -> SixDofState {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
-        drag: None,
-        t_struct_body: DMat3::IDENTITY,
-        compute_gravity_torque: false,
-        atmospheric_state: None,
-        gravity_accel: GravityAcceleration::default(),
-        total_force: Default::default(),
-        frame_derivs: Default::default(),
-        aero_force: None,
-        radiation_force: None,
-        gravity_torque: None,
-        flat_plate_state: None,
-        shadow_body: None,
+        ..Default::default()
     });
 
     sim.validate().unwrap();

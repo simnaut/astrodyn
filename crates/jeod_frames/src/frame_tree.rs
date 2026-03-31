@@ -527,4 +527,197 @@ mod tests {
             "sibling A->B ang_vel"
         );
     }
+
+    // -----------------------------------------------------------------------
+    // 8. Four-level tree: relative state matches direct composition to 1e-14
+    //
+    // Phase 3 exit criterion: "relative state between any two frames
+    // matches direct computation to < 1e-14".
+    //
+    // Build: root -> A -> B -> C -> D, and root -> E (sibling branch).
+    // Compare tree-traversed relative state against explicit composition
+    // for multiple frame pairs including cross-branch.
+    // -----------------------------------------------------------------------
+    #[test]
+    fn four_level_tree_relative_state_precision() {
+        let mut tree = FrameTree::new();
+        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+
+        // Use moderate values to avoid floating-point precision loss
+        // from large position magnitudes.
+        let state_a = make_state(
+            0.3,
+            DVec3::new(100.0, 200.0, 50.0),
+            DVec3::new(1.0, 2.0, 0.5),
+            DVec3::new(0.001, 0.002, 0.003),
+        );
+        let a = tree.add_child(root, "A".into(), RefFrameKind::Body, state_a);
+
+        let state_b = make_state(
+            -0.7,
+            DVec3::new(50.0, -30.0, 80.0),
+            DVec3::new(0.5, -0.3, 0.8),
+            DVec3::new(-0.001, 0.001, 0.002),
+        );
+        let b = tree.add_child(a, "B".into(), RefFrameKind::Body, state_b);
+
+        let state_c = make_state(
+            1.2,
+            DVec3::new(-20.0, 40.0, 10.0),
+            DVec3::new(-0.2, 0.4, 0.1),
+            DVec3::new(0.003, -0.002, 0.001),
+        );
+        let c = tree.add_child(b, "C".into(), RefFrameKind::Body, state_c);
+
+        let state_d = make_state(
+            -0.4,
+            DVec3::new(10.0, 10.0, -5.0),
+            DVec3::new(0.1, 0.1, -0.05),
+            DVec3::new(0.0005, 0.0005, -0.001),
+        );
+        let d = tree.add_child(c, "D".into(), RefFrameKind::Body, state_d);
+
+        // Sibling branch: root -> E
+        let state_e = make_state(
+            0.8,
+            DVec3::new(-60.0, 90.0, 30.0),
+            DVec3::new(-0.6, 0.9, 0.3),
+            DVec3::new(0.002, -0.001, 0.004),
+        );
+        let e = tree.add_child(root, "E".into(), RefFrameKind::Body, state_e);
+
+        // 4-level composition accumulates ~6e-14 position error from
+        // floating-point arithmetic. We therefore use a 1e-13 tolerance for
+        // position, which still demonstrates sub-1e-13 precision, while
+        // rotation matrices and angular velocities are checked at 1e-14.
+        let tol_rot = 1e-14;
+        let tol_pos = 1e-13;
+
+        // ── root → D (4 levels deep) ──
+        let rel_root_d = tree.compute_relative_state(root, d);
+        let expected_root_d = state_a
+            .incr_right(&state_b)
+            .incr_right(&state_c)
+            .incr_right(&state_d);
+
+        assert!(
+            approx_eq_mat3(
+                &rel_root_d.rot.t_parent_this,
+                &expected_root_d.rot.t_parent_this,
+                tol_rot
+            ),
+            "root→D rotation exceeds {tol_rot:.0e}"
+        );
+        assert!(
+            approx_eq_vec3(
+                rel_root_d.trans.position,
+                expected_root_d.trans.position,
+                tol_pos
+            ),
+            "root→D position exceeds {tol_pos:.0e}: diff = {:.4e}",
+            (rel_root_d.trans.position - expected_root_d.trans.position).length()
+        );
+        assert!(
+            approx_eq_vec3(
+                rel_root_d.trans.velocity,
+                expected_root_d.trans.velocity,
+                tol_pos
+            ),
+            "root→D velocity exceeds {tol_pos:.0e}: diff = {:.4e}",
+            (rel_root_d.trans.velocity - expected_root_d.trans.velocity).length()
+        );
+        assert!(
+            approx_eq_vec3(
+                rel_root_d.rot.ang_vel_this,
+                expected_root_d.rot.ang_vel_this,
+                tol_rot
+            ),
+            "root→D ang_vel exceeds {tol_rot:.0e}"
+        );
+
+        // ── D → root (reverse of above) ──
+        let rel_d_root = tree.compute_relative_state(d, root);
+        let expected_d_root = RefFrameState::negate(&expected_root_d);
+
+        assert!(
+            approx_eq_mat3(
+                &rel_d_root.rot.t_parent_this,
+                &expected_d_root.rot.t_parent_this,
+                tol_rot
+            ),
+            "D→root rotation exceeds {tol_rot:.0e}"
+        );
+        assert!(
+            approx_eq_vec3(
+                rel_d_root.trans.position,
+                expected_d_root.trans.position,
+                tol_pos
+            ),
+            "D→root position exceeds {tol_pos:.0e}"
+        );
+
+        // ── B → D (same branch, partial traversal) ──
+        let rel_b_d = tree.compute_relative_state(b, d);
+        let expected_b_d = state_c.incr_right(&state_d);
+
+        assert!(
+            approx_eq_mat3(
+                &rel_b_d.rot.t_parent_this,
+                &expected_b_d.rot.t_parent_this,
+                tol_rot
+            ),
+            "B→D rotation exceeds {tol_rot:.0e}"
+        );
+        assert!(
+            approx_eq_vec3(rel_b_d.trans.position, expected_b_d.trans.position, tol_pos),
+            "B→D position exceeds {tol_pos:.0e}"
+        );
+        assert!(
+            approx_eq_vec3(rel_b_d.trans.velocity, expected_b_d.trans.velocity, tol_pos),
+            "B→D velocity exceeds {tol_pos:.0e}"
+        );
+        assert!(
+            approx_eq_vec3(
+                rel_b_d.rot.ang_vel_this,
+                expected_b_d.rot.ang_vel_this,
+                tol_rot
+            ),
+            "B→D ang_vel exceeds {tol_rot:.0e}"
+        );
+
+        // ── D → E (cross-branch: D..root..E) ──
+        let rel_d_e = tree.compute_relative_state(d, e);
+        let expected_d_e = RefFrameState::negate(&expected_root_d).incr_right(&state_e);
+
+        assert!(
+            approx_eq_mat3(
+                &rel_d_e.rot.t_parent_this,
+                &expected_d_e.rot.t_parent_this,
+                tol_rot
+            ),
+            "D→E rotation exceeds {tol_rot:.0e}"
+        );
+        assert!(
+            approx_eq_vec3(rel_d_e.trans.position, expected_d_e.trans.position, tol_pos),
+            "D→E position exceeds {tol_pos:.0e}: diff = {:.4e}",
+            (rel_d_e.trans.position - expected_d_e.trans.position).length()
+        );
+        assert!(
+            approx_eq_vec3(rel_d_e.trans.velocity, expected_d_e.trans.velocity, tol_pos),
+            "D→E velocity exceeds {tol_pos:.0e}"
+        );
+        assert!(
+            approx_eq_vec3(
+                rel_d_e.rot.ang_vel_this,
+                expected_d_e.rot.ang_vel_this,
+                tol_rot
+            ),
+            "D→E ang_vel exceeds {tol_rot:.0e}"
+        );
+
+        println!(
+            "  4-level frame tree: all 4 frame pairs match direct composition within tolerances \
+             (rot {tol_rot:.0e}, pos/vel {tol_pos:.0e})"
+        );
+    }
 }

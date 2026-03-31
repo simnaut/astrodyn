@@ -197,6 +197,12 @@ grep the JEOD tree for the distinctive identifier in the invariant description
 | IN.17 | RadiationSurface requires at least one facet (`num_facets > 0`) | fatal | initialization | deferred (caller passes plate slice; empty slice produces zero force) |
 | IN.18 | `power_emit` must be non-negative (thermal radiation) | fatal | runtime | structural (`power_emit = rad_constant * t_pow4`; both factors non-negative by construction) |
 
+## Section DS: Derived States
+
+| Tag | Invariant | Enforcement | Category | Our Status |
+|-----|-----------|-------------|----------|------------|
+| DS.01 | Derived state configuration immutable after initialization (objects created at setup, not toggled at runtime) | structural | structural | structural (`bodies` field is private, no `body_mut()`; `body()` returns `&SimBody`) |
+
 ## Section FD: FrameDerivatives
 
 | Tag | Invariant | Enforcement | Category | Our Status |

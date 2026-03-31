@@ -24,16 +24,17 @@ use std::time::Duration;
 use bevy::prelude::*;
 use bevy_jeod::{
     AerodynamicForceC, AtmosphereModelR, AtmosphericStateC, DragConfigC, DynamicsConfigC,
-    FlatPlateConfigC, GravityAccelerationC, GravityControlsC, GravitySourceC, GravityTorqueC,
-    JeodPlugin, MassPropertiesC, PlanetFixedRotationC, RadiationForceC, RotationalStateC,
-    SunMarker, TotalForceC, TranslationalStateC,
+    EulerAnglesC, EulerAnglesConfigC, FlatPlateConfigC, GeodeticConfigC, GeodeticStateC,
+    GravityAccelerationC, GravityControlsC, GravitySourceC, GravityTorqueC, JeodPlugin, LvlhFrameC,
+    MassPropertiesC, OrbitalElementsC, OrbitalElementsConfigC, PlanetC, PlanetFixedRotationC,
+    RadiationForceC, RotationalStateC, SolarBetaC, SunMarker, TotalForceC, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
 use jeod_sim::{
-    AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig, ExponentialAtmosphere,
-    GravityAcceleration, GravityControl, GravityControls, GravityModel, GravitySource,
-    GravitySourceEntry, JeodQuat, MassProperties, RotationalState, SimBody, Simulation,
-    SixDofState, TranslationalState,
+    AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig, EulerSequence,
+    ExponentialAtmosphere, GravityControl, GravityControls, GravityModel, GravitySource,
+    GravitySourceEntry, JeodQuat, LvlhFrame, MassProperties, OrbitalElements, PlanetShape,
+    RotationalState, SimBody, Simulation, SixDofState, TranslationalState,
 };
 
 const MU_EARTH: f64 = 3.986004418e14;
@@ -168,18 +169,7 @@ fn new_sim_body_sixdof(earth_idx: usize, gradient: bool) -> SimBody {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, gradient)],
         },
-        drag: None,
-        t_struct_body: DMat3::IDENTITY,
-        compute_gravity_torque: false,
-        atmospheric_state: None,
-        gravity_accel: GravityAcceleration::default(),
-        total_force: Default::default(),
-        frame_derivs: Default::default(),
-        aero_force: None,
-        radiation_force: None,
-        gravity_torque: None,
-        flat_plate_state: None,
-        shadow_body: None,
+        ..Default::default()
     }
 }
 
@@ -648,28 +638,10 @@ fn tier3_bevy_sh4x4_rnp() {
 
     sim.add_body(SimBody {
         trans: iss_trans(),
-        rot: None,
-        mass: None,
-        config: DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: false,
-            three_dof: true,
-        },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_nonspherical(earth_idx, 4, 4, false)],
         },
-        drag: None,
-        t_struct_body: DMat3::IDENTITY,
-        compute_gravity_torque: false,
-        atmospheric_state: None,
-        gravity_accel: GravityAcceleration::default(),
-        total_force: Default::default(),
-        frame_derivs: Default::default(),
-        aero_force: None,
-        radiation_force: None,
-        gravity_torque: None,
-        flat_plate_state: None,
-        shadow_body: None,
+        ..Default::default()
     });
 
     sim.validate().unwrap();
@@ -975,32 +947,17 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
             position: vehicle_pos,
             velocity: vehicle_vel,
         },
-        rot: None,
         mass: Some(mass),
-        config: DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: false,
-            three_dof: true,
-        },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
-        drag: None,
         flat_plate_state: Some(jeod_sim::FlatPlateState {
             plates: plates_data,
             temperatures: vec![init_temp; num_plates],
             t_pow4_cached: vec![init_temp.powi(4); num_plates],
         }),
         shadow_body: Some((earth_idx, 6_378_137.0)),
-        t_struct_body: DMat3::IDENTITY,
-        compute_gravity_torque: false,
-        atmospheric_state: None,
-        gravity_accel: GravityAcceleration::default(),
-        total_force: Default::default(),
-        frame_derivs: Default::default(),
-        aero_force: None,
-        radiation_force: None,
-        gravity_torque: None,
+        ..Default::default()
     });
 
     sim.validate().unwrap();
@@ -1013,4 +970,314 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
         &bevy_state,
         &sim_state,
     );
+}
+
+// ── Derived state assertion helpers ──
+
+fn assert_orbital_elements_eq(label: &str, a: &OrbitalElements, b: &OrbitalElements) {
+    assert_bits_eq(
+        label,
+        "semi_major_axis",
+        a.semi_major_axis,
+        b.semi_major_axis,
+    );
+    assert_bits_eq(label, "semiparam", a.semiparam, b.semiparam);
+    assert_bits_eq(label, "e_mag", a.e_mag, b.e_mag);
+    assert_bits_eq(label, "inclination", a.inclination, b.inclination);
+    assert_bits_eq(label, "arg_periapsis", a.arg_periapsis, b.arg_periapsis);
+    assert_bits_eq(label, "long_asc_node", a.long_asc_node, b.long_asc_node);
+    assert_bits_eq(label, "true_anom", a.true_anom, b.true_anom);
+    assert_bits_eq(label, "mean_anom", a.mean_anom, b.mean_anom);
+    assert_bits_eq(label, "mean_motion", a.mean_motion, b.mean_motion);
+    assert_bits_eq(label, "orb_energy", a.orb_energy, b.orb_energy);
+    assert_bits_eq(
+        label,
+        "orb_ang_momentum",
+        a.orb_ang_momentum,
+        b.orb_ang_momentum,
+    );
+    assert_bits_eq(label, "orbital_anom", a.orbital_anom, b.orbital_anom);
+    assert_bits_eq(label, "r_mag", a.r_mag, b.r_mag);
+    assert_bits_eq(label, "vel_mag", a.vel_mag, b.vel_mag);
+    println!("  {label}: bit-identical (14 orbital element fields)");
+}
+
+fn assert_lvlh_eq(label: &str, a: &LvlhFrame, b: &LvlhFrame) {
+    for i in 0..3 {
+        for j in 0..3 {
+            assert_bits_eq(
+                label,
+                &format!("t_parent_this[{i}][{j}]"),
+                a.t_parent_this.col(j)[i],
+                b.t_parent_this.col(j)[i],
+            );
+        }
+        assert_bits_eq(
+            label,
+            &format!("ang_vel[{i}]"),
+            a.ang_vel_this[i],
+            b.ang_vel_this[i],
+        );
+    }
+    for i in 0..3 {
+        assert_bits_eq(
+            label,
+            &format!("position[{i}]"),
+            a.position[i],
+            b.position[i],
+        );
+    }
+    for i in 0..3 {
+        assert_bits_eq(
+            label,
+            &format!("velocity[{i}]"),
+            a.velocity[i],
+            b.velocity[i],
+        );
+    }
+    println!("  {label}: bit-identical (18 LVLH frame components)");
+}
+
+// ── Scenario I: Derived states (orbital elements, Euler, LVLH, solar beta) ──
+
+#[test]
+fn tier3_bevy_derived_states() {
+    let sun_pos = DVec3::new(1.496e11, 0.0, 0.0);
+
+    // ── Bevy App ──
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.add_plugins(JeodPlugin);
+
+    let planet = app
+        .world_mut()
+        .spawn((
+            Name::new("Earth"),
+            GravitySourceC(earth_source()),
+            TranslationalStateC::default(),
+        ))
+        .id();
+
+    let sun = app
+        .world_mut()
+        .spawn((
+            Name::new("Sun"),
+            SunMarker,
+            TranslationalStateC(TranslationalState {
+                position: sun_pos,
+                velocity: DVec3::ZERO,
+            }),
+        ))
+        .id();
+    let _ = sun;
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(iss_trans()),
+            RotationalStateC(tumble_rot()),
+            MassPropertiesC(iss_mass()),
+            DynamicsConfigC(DynamicsConfig {
+                translational_dynamics: true,
+                rotational_dynamics: true,
+                three_dof: false,
+            }),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+            // Derived state config + output components
+            OrbitalElementsConfigC {
+                gravity_source: planet,
+            },
+            OrbitalElementsC::default(),
+            EulerAnglesConfigC {
+                sequence: EulerSequence::ZYX,
+            },
+            EulerAnglesC::default(),
+            LvlhFrameC::default(),
+            SolarBetaC::default(),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+
+    let bevy_state = read_sixdof(app.world(), vehicle);
+    let bevy_oe = app
+        .world()
+        .get::<OrbitalElementsC>(vehicle)
+        .unwrap()
+        .0
+        .clone();
+    let bevy_euler = app.world().get::<EulerAnglesC>(vehicle).unwrap().0;
+    let bevy_lvlh = app.world().get::<LvlhFrameC>(vehicle).unwrap().0;
+    let bevy_beta = app.world().get::<SolarBetaC>(vehicle).unwrap().0;
+
+    // ── Simulation ──
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sim = Simulation::new(time, DT);
+    let earth_idx = sim.add_source(GravitySourceEntry {
+        source: earth_source(),
+        position: DVec3::ZERO,
+        t_inertial_pfix: None,
+    });
+    let sun_idx = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: 0.0,
+            model: GravityModel::PointMass,
+        },
+        position: sun_pos,
+        t_inertial_pfix: None,
+    });
+    sim.sun_source = Some(sun_idx);
+
+    let mut body = new_sim_body_sixdof(earth_idx, false);
+    body.orbital_elements_source = Some(earth_idx);
+    body.euler_sequence = Some(EulerSequence::ZYX);
+    body.compute_lvlh = true;
+    body.compute_solar_beta = true;
+    sim.add_body(body);
+
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    let sim_body = sim.body(0);
+    let sim_state = SixDofState {
+        trans: sim_body.trans,
+        rot: sim_body.rot.unwrap(),
+    };
+
+    // Assert dynamics are bit-identical
+    assert_sixdof_eq("Bevy vs Sim (derived states)", &bevy_state, &sim_state);
+
+    // Assert derived states are bit-identical
+    let sim_oe = sim_body
+        .orbital_elements
+        .as_ref()
+        .expect("orbital elements computed");
+    assert_orbital_elements_eq("Bevy vs Sim OE", &bevy_oe, sim_oe);
+
+    let sim_euler = sim_body.euler_angles.expect("euler angles computed");
+    for i in 0..3 {
+        assert_bits_eq(
+            "Bevy vs Sim Euler",
+            &format!("angle[{i}]"),
+            bevy_euler[i],
+            sim_euler[i],
+        );
+    }
+    println!("  Bevy vs Sim Euler: bit-identical (3 angles)");
+
+    let sim_lvlh = sim_body.lvlh_frame.as_ref().expect("LVLH frame computed");
+    assert_lvlh_eq("Bevy vs Sim LVLH", &bevy_lvlh, sim_lvlh);
+
+    let sim_beta = sim_body.solar_beta.expect("solar beta computed");
+    assert_bits_eq("Bevy vs Sim", "solar_beta", bevy_beta, sim_beta);
+    println!("  Bevy vs Sim solar beta: bit-identical");
+}
+
+// ── Scenario J: Geodetic derived state (requires RNP) ──
+
+#[test]
+fn tier3_bevy_geodetic_derived_state() {
+    println!("Scenario J: Geodetic derived state with RNP");
+
+    let earth_shape = PlanetShape {
+        name: "Earth",
+        mu: MU_EARTH,
+        r_eq: 6_378_137.0,
+        r_pol: 6_356_752.314_245,
+        flat_coeff: 1.0 / 298.257_223_563,
+    };
+
+    // ── Bevy ──
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.add_plugins(JeodPlugin);
+
+    let planet = app
+        .world_mut()
+        .spawn((
+            Name::new("Earth"),
+            GravitySourceC(earth_source()),
+            TranslationalStateC::default(),
+            PlanetFixedRotationC(DMat3::IDENTITY),
+            PlanetC(earth_shape),
+        ))
+        .id();
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(iss_trans()),
+            DynamicsConfigC(DynamicsConfig {
+                translational_dynamics: true,
+                rotational_dynamics: false,
+                three_dof: true,
+            }),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+            // Geodetic config + output
+            GeodeticConfigC { planet },
+            GeodeticStateC::default(),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+
+    let bevy_trans = read_trans(app.world(), vehicle);
+    let bevy_geodetic = app.world().get::<GeodeticStateC>(vehicle).unwrap().0;
+
+    // ── Simulation ──
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sim = Simulation::new(time, DT);
+    let earth_idx = sim.add_source(GravitySourceEntry {
+        source: earth_source(),
+        position: DVec3::ZERO,
+        t_inertial_pfix: Some(DMat3::IDENTITY), // triggers RNP update
+    });
+
+    let body = SimBody {
+        trans: iss_trans(),
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+        },
+        geodetic_planet: Some((earth_idx, earth_shape.r_eq, earth_shape.r_pol)),
+        ..Default::default()
+    };
+    sim.add_body(body);
+
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    let sim_body = sim.body(0);
+
+    // Assert translational state is bit-identical
+    assert_trans_eq("Bevy vs Sim (geodetic)", &bevy_trans, &sim_body.trans);
+
+    // Assert geodetic state is bit-identical
+    let sim_geodetic = sim_body.geodetic_state.expect("geodetic state computed");
+    assert_bits_eq(
+        "Bevy vs Sim",
+        "latitude",
+        bevy_geodetic.latitude,
+        sim_geodetic.latitude,
+    );
+    assert_bits_eq(
+        "Bevy vs Sim",
+        "longitude",
+        bevy_geodetic.longitude,
+        sim_geodetic.longitude,
+    );
+    assert_bits_eq(
+        "Bevy vs Sim",
+        "altitude",
+        bevy_geodetic.altitude,
+        sim_geodetic.altitude,
+    );
+    println!("  Bevy vs Sim geodetic: bit-identical (lat, lon, alt)");
 }

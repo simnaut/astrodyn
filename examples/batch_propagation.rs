@@ -3,11 +3,10 @@
 //! Propagates a circular LEO orbit for 10 periods with the `Simulation`
 //! runner, printing eccentricity and energy drift at regular intervals.
 
-use glam::{DMat3, DVec3};
+use glam::DVec3;
 use jeod_sim::{
-    default_leap_second_table, DynamicsConfig, GravityAcceleration, GravityControl,
-    GravityControls, GravityModel, GravitySource, GravitySourceEntry, SimBody, Simulation,
-    SimulationTime, TranslationalState,
+    default_leap_second_table, GravityControl, GravityControls, GravityModel, GravitySource,
+    GravitySourceEntry, SimBody, Simulation, SimulationTime, TranslationalState,
 };
 
 fn specific_energy(mu: f64, position: DVec3, velocity: DVec3) -> f64 {
@@ -49,28 +48,10 @@ fn main() {
     });
     let body_idx = sim.add_body(SimBody {
         trans: state0,
-        rot: None,
-        mass: None,
-        config: DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: false,
-            three_dof: true,
-        },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
-        drag: None,
-        flat_plate_state: None,
-        shadow_body: None,
-        t_struct_body: DMat3::IDENTITY,
-        compute_gravity_torque: false,
-        atmospheric_state: None,
-        gravity_accel: GravityAcceleration::default(),
-        total_force: Default::default(),
-        frame_derivs: Default::default(),
-        aero_force: None,
-        radiation_force: None,
-        gravity_torque: None,
+        ..Default::default()
     });
     sim.validate().expect("valid batch propagation setup");
 

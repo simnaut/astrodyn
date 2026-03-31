@@ -16,6 +16,11 @@
 //! - [`collect_and_resolve_forces`] — force/torque collection with frame transforms
 //! - [`integrate_body`] — RK4 integration with 6-DOF/3-DOF routing
 //! - [`validate_body`] — JEOD invariant checking
+//! - [`compute_orbital_elements`] — orbital elements from translational state
+//! - [`compute_body_euler_angles`] — Euler angles from body attitude
+//! - [`compute_body_lvlh_frame`] — LVLH frame from translational state
+//! - [`compute_body_geodetic`] — geodetic coordinates from inertial position
+//! - [`compute_body_solar_beta`] — solar beta angle
 //!
 //! ## Simulation runner (for non-ECS use)
 //!
@@ -29,6 +34,7 @@
 //! execution order that any adapter must respect.
 
 pub mod atmosphere;
+pub mod derived;
 pub mod forces;
 pub mod gravity;
 pub mod integration;
@@ -39,6 +45,10 @@ pub mod validation;
 
 // ── Orchestration functions ──
 pub use atmosphere::{evaluate_atmosphere, AtmosphereConfig, AtmosphereModel};
+pub use derived::{
+    compute_body_euler_angles, compute_body_geodetic, compute_body_lvlh_frame,
+    compute_body_solar_beta, compute_orbital_elements,
+};
 pub use forces::collect_and_resolve_forces;
 pub use gravity::accumulate_gravity;
 pub use integration::integrate_body;
@@ -93,3 +103,10 @@ pub use jeod_planet::PlanetShape;
 
 // jeod_math: quaternion type (used in RotationalState)
 pub use jeod_math::JeodQuat;
+
+// jeod_math: derived state types
+pub use jeod_math::{
+    cartesian_to_geodetic, compute_euler_angles_from_matrix, compute_lvlh_frame,
+    geodetic_to_cartesian, solar_beta_angle, EulerSequence, GeodeticState, LvlhFrame,
+    OrbitalElements, OrbitalError,
+};
