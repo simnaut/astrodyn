@@ -43,10 +43,9 @@ pub struct OrbitalElements {
     cos_v: f64,
 }
 
-// Tolerance thresholds (matching JEOD source)
-const CIRC_TOL: f64 = 1e-13;
-const ELLIPTIC_UPPER: f64 = 1.0 - 0.01;
-const HYPERBOLIC_LOWER: f64 = 1.0 + 0.01;
+// Tolerance thresholds (matching JEOD source: orbital_elements.cc:138-139)
+const TOLERANCE: f64 = 1e-13;
+const ORBIT_SWITCH_TOL: f64 = 1e-2;
 
 /// Normalize an angle into [0, 2pi).
 fn wrap_to_tau(mut angle: f64) -> f64 {
@@ -105,17 +104,17 @@ impl OrbitalElements {
         // ---- Orbit type branching ----
         let (a, p, n);
 
-        if ecc < CIRC_TOL {
+        if ecc < TOLERANCE {
             // Circular (or near-circular) — JEOD uses a = r_mag, not energy formula
             a = r_mag;
             p = r_mag;
             n = (mu / a).sqrt() / a;
-        } else if ecc < ELLIPTIC_UPPER {
+        } else if ecc < (1.0 - ORBIT_SWITCH_TOL) {
             // Elliptic
             a = -mu / (2.0 * energy);
             p = a * (1.0 - ecc * ecc);
             n = (mu / a).sqrt() / a;
-        } else if ecc > HYPERBOLIC_LOWER {
+        } else if ecc > (1.0 + ORBIT_SWITCH_TOL) {
             // Hyperbolic (a is negative)
             a = -mu / (2.0 * energy);
             p = a * (1.0 - ecc * ecc);
@@ -136,57 +135,118 @@ impl OrbitalElements {
 
         // ---- Node vector ----
         let line_of_nodes = k_cross_h; // points toward ascending node
-        let line_of_nodes_mag = k_cross_h_mag;
+        let _line_of_nodes_mag = k_cross_h_mag;
 
-        let is_equatorial = incl.abs() < 1e-13 || (PI - incl).abs() < 1e-13;
-        let is_circular = ecc < CIRC_TOL;
+        // JEOD: (inclination < tolerance) || ((M_PI - tolerance) < inclination)
+        #[allow(clippy::manual_range_contains)]
+        let is_equatorial = incl < TOLERANCE || (PI - TOLERANCE) < incl;
+        let is_circular = ecc < TOLERANCE;
 
-        let (lan, aop, nu);
+        // JEOD SWP 2005: all angles computed via atan2(|A × B|, A · B) ∈ [0, π],
+        // then flipped to [π, 2π] based on a component sign. This avoids acos
+        // robustness issues and matches JEOD's exact floating-point behavior.
+        let i_hat = DVec3::X; // inertial I
+
+        let (lan, mut aop, mut nu);
 
         if is_equatorial && is_circular {
             // ---- Case 1: equatorial + circular ----
-            // Use true longitude: lambda = atan2(pos.y, pos.x)
+            // SWP 2005: true longitude from I × pos
             lan = 0.0;
             aop = 0.0;
-            nu = wrap_to_tau(pos.y.atan2(pos.x));
+            let cross_vec = i_hat.cross(pos);
+            let sin_in = cross_vec.length();
+            let cos_in = i_hat.dot(pos);
+            nu = sin_in.atan2(cos_in);
+            // Quadrant adjustment based on orbit direction (prograde vs retrograde)
+            if incl < TOLERANCE {
+                if pos.y < 0.0 {
+                    nu = TAU - nu;
+                }
+            } else if pos.y > 0.0 {
+                nu = TAU - nu;
+            }
         } else if is_equatorial {
             // ---- Case 2: equatorial + non-circular ----
-            // Longitude of periapsis = atan2(e_vec.y, e_vec.x)
+            // SWP 2005: arg_periapsis from I × e
             lan = 0.0;
-            let lop = wrap_to_tau(e_vec.y.atan2(e_vec.x));
-            aop = lop;
-            // True anomaly from eccentricity vector
-            let cos_nu = e_vec.dot(pos) / (ecc * r_mag);
-            // sin(nu) = h_hat . (e x r) / (|e|*|r|)
-            // For equatorial, h_hat ~ +/-K depending on prograde/retrograde
-            let sin_nu = e_vec.cross(pos).dot(ang_momntm) / (h_mag * ecc * r_mag);
-            nu = wrap_to_tau(sin_nu.atan2(cos_nu));
+            let cross_vec = i_hat.cross(e_vec);
+            let sin_in = cross_vec.length();
+            let cos_in = i_hat.dot(e_vec);
+            aop = sin_in.atan2(cos_in);
+            if incl < TOLERANCE {
+                if e_vec.y < 0.0 {
+                    aop = TAU - aop;
+                }
+            } else if e_vec.y > 0.0 {
+                aop = TAU - aop;
+            }
+
+            // SWP 2005: true anomaly from e × pos
+            let cross_vec2 = e_vec.cross(pos);
+            let sin_in2 = cross_vec2.length();
+            let cos_in2 = e_vec.dot(pos);
+            nu = sin_in2.atan2(cos_in2);
+            if pos_dot_vel < 0.0 {
+                nu = TAU - nu;
+            }
         } else if is_circular {
             // ---- Case 3: non-equatorial + circular ----
-            // Argument of latitude = angle from node to position
-            lan = wrap_to_tau(line_of_nodes.y.atan2(line_of_nodes.x));
+            // SWP 2005: LAN from I × N
+            let cross_vec = i_hat.cross(line_of_nodes);
+            let sin_in = cross_vec.length();
+            let cos_in = i_hat.dot(line_of_nodes);
+            lan = {
+                let mut v = sin_in.atan2(cos_in);
+                if line_of_nodes.y < 0.0 {
+                    v = TAU - v;
+                }
+                v
+            };
             aop = 0.0;
-            let cos_u = line_of_nodes.dot(pos) / (line_of_nodes_mag * r_mag);
-            // sin(u) = h_hat . (N x r) / (|N|*|r|) = r . (h x N) / (h_mag * |N| * |r|)
-            let sin_u =
-                pos.dot(ang_momntm.cross(line_of_nodes)) / (h_mag * line_of_nodes_mag * r_mag);
-            nu = wrap_to_tau(sin_u.atan2(cos_u));
+
+            // SWP 2005: true anomaly (argument of latitude) from N × pos
+            let cross_vec2 = line_of_nodes.cross(pos);
+            let sin_in2 = cross_vec2.length();
+            let cos_in2 = line_of_nodes.dot(pos);
+            nu = sin_in2.atan2(cos_in2);
+            if pos.z < 0.0 {
+                nu = TAU - nu;
+            }
         } else {
-            // ---- Case 4: general ----
-            lan = wrap_to_tau(line_of_nodes.y.atan2(line_of_nodes.x));
+            // ---- Case 4: general (non-equatorial, non-circular) ----
+            // SWP 2005: LAN from I × N
+            let cross_vec = i_hat.cross(line_of_nodes);
+            let sin_in = cross_vec.length();
+            let cos_in = i_hat.dot(line_of_nodes);
+            lan = {
+                let mut v = sin_in.atan2(cos_in);
+                if line_of_nodes.y < 0.0 {
+                    v = TAU - v;
+                }
+                v
+            };
 
-            // Argument of periapsis = angle from node to eccentricity vector
-            // measured in the orbital plane.
-            let cos_aop = line_of_nodes.dot(e_vec) / (line_of_nodes_mag * ecc);
-            // sin(aop) = h_hat . (N x e) / (|N|*|e|) = e . (h x N) / (h_mag * line_of_nodes_mag * ecc)
-            let sin_aop =
-                e_vec.dot(ang_momntm.cross(line_of_nodes)) / (h_mag * line_of_nodes_mag * ecc);
-            aop = wrap_to_tau(sin_aop.atan2(cos_aop));
+            // SWP 2005: arg_periapsis from N × e
+            let cross_vec2 = line_of_nodes.cross(e_vec);
+            let sin_in2 = cross_vec2.length();
+            let cos_in2 = line_of_nodes.dot(e_vec);
+            aop = {
+                let mut v = sin_in2.atan2(cos_in2);
+                if e_vec.z < 0.0 {
+                    v = TAU - v;
+                }
+                v
+            };
 
-            // True anomaly = angle from eccentricity vector to position
-            let cos_nu = e_vec.dot(pos) / (ecc * r_mag);
-            let sin_nu_val = e_vec.cross(pos).dot(ang_momntm) / (ecc * r_mag * h_mag);
-            nu = wrap_to_tau(sin_nu_val.atan2(cos_nu));
+            // SWP 2005: true anomaly from e × pos
+            let cross_vec3 = e_vec.cross(pos);
+            let sin_in3 = cross_vec3.length();
+            let cos_in3 = e_vec.dot(pos);
+            nu = sin_in3.atan2(cos_in3);
+            if pos_dot_vel < 0.0 {
+                nu = TAU - nu;
+            }
         }
 
         let sin_v = nu.sin();
@@ -292,7 +352,7 @@ impl OrbitalElements {
         let sin_nu = nu.sin();
         let cos_nu = nu.cos();
 
-        if e < ELLIPTIC_UPPER {
+        if e < (1.0 - ORBIT_SWITCH_TOL) {
             // Elliptic (includes circular)
             // Eccentric anomaly E:  tan(E/2) = sqrt((1-e)/(1+e)) * tan(nu/2)
             let sin_ea = ((1.0 - e * e).sqrt() * sin_nu) / (1.0 + e * cos_nu);
@@ -304,7 +364,7 @@ impl OrbitalElements {
 
             self.orbital_anom = ea;
             self.mean_anom = ma;
-        } else if e > HYPERBOLIC_LOWER {
+        } else if e > (1.0 + ORBIT_SWITCH_TOL) {
             // Hyperbolic
             // Hyperbolic anomaly H:  tanh(H/2) = sqrt((e-1)/(e+1)) * tan(nu/2)
             let sinh_ha = ((e * e - 1.0).sqrt() * sin_nu) / (1.0 + e * cos_nu);
@@ -339,7 +399,7 @@ impl OrbitalElements {
         let e = self.e_mag;
         let m = self.mean_anom;
 
-        if e < ELLIPTIC_UPPER {
+        if e < (1.0 - ORBIT_SWITCH_TOL) {
             // Elliptic
             let ea = kep_eqtn_e(m, e)?;
             self.orbital_anom = ea;
@@ -354,7 +414,7 @@ impl OrbitalElements {
             self.true_anom = nu;
             self.sin_v = nu.sin();
             self.cos_v = nu.cos();
-        } else if e > HYPERBOLIC_LOWER {
+        } else if e > (1.0 + ORBIT_SWITCH_TOL) {
             // Hyperbolic
             let ha = kep_eqtn_h(m, e)?;
             self.orbital_anom = ha;

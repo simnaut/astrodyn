@@ -19,7 +19,7 @@ use jeod_math::JeodQuat;
 
 const MU_EARTH: f64 = 3.986004418e14; // m^3/s^2
 const R_EARTH: f64 = 6_378_137.0; // m
-const R_EARTH_POL: f64 = 6_356_752.314_2; // m
+const R_EARTH_POL: f64 = 6_356_752.314_245_179_3; // m, r_eq * (1 - 1/298.257223563)
 const R_SUN: f64 = 6.98e8; // m
 
 /// Compute GMST in radians (same formula as MET model / JEOD atmos_MET_TME.cc).

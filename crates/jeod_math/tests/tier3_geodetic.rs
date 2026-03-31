@@ -12,8 +12,8 @@ use std::path::Path;
 
 /// WGS84 equatorial radius (m).
 const EARTH_R_EQ: f64 = 6_378_137.0;
-/// WGS84 polar radius (m).
-const EARTH_R_POL: f64 = 6_356_752.314_2;
+/// WGS84 polar radius (m), computed as r_eq * (1 - 1/298.257223563) to match JEOD's runtime derivation.
+const EARTH_R_POL: f64 = 6_356_752.314_245_179_3;
 
 /// Parsed record from the SIM_NED CSV.
 #[derive(Debug)]
@@ -133,24 +133,24 @@ fn tier3_geodetic_vs_jeod_sim_ned() {
         max_lon_err = max_lon_err.max(lon_err);
 
         assert!(
-            alt_err < 1e-4,
-            "t={:.1}s: altitude error {alt_err:.6e} m exceeds 1e-4 m \
+            alt_err < 1e-7,
+            "t={:.1}s: altitude error {alt_err:.6e} m exceeds 1e-7 m \
              (ours={:.6}, JEOD={:.6})",
             rec.time,
             geo.altitude,
             rec.ellip_altitude
         );
         assert!(
-            lat_err < 1e-10,
-            "t={:.1}s: latitude error {lat_err:.6e} rad exceeds 1e-10 rad \
+            lat_err < 1e-14,
+            "t={:.1}s: latitude error {lat_err:.6e} rad exceeds 1e-14 rad \
              (ours={:.15e}, JEOD={:.15e})",
             rec.time,
             geo.latitude,
             rec.ellip_latitude
         );
         assert!(
-            lon_err < 1e-10,
-            "t={:.1}s: longitude error {lon_err:.6e} rad exceeds 1e-10 rad \
+            lon_err < 1e-14,
+            "t={:.1}s: longitude error {lon_err:.6e} rad exceeds 1e-14 rad \
              (ours={:.15e}, JEOD={:.15e})",
             rec.time,
             geo.longitude,

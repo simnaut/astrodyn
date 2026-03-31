@@ -16,7 +16,8 @@ use jeod_math::OrbitalElements;
 use std::path::Path;
 
 /// Earth gravitational parameter (m^3/s^2), matching JEOD's value.
-const MU_EARTH: f64 = 3.986_004_418e14;
+/// Earth gravitational parameter from GGM05C (matches JEOD SIM_OrbElem's gravity source).
+const MU_EARTH: f64 = 3.986_004_415e14;
 
 /// Parsed record from the SIM_OrbElem CSV.
 #[derive(Debug)]
@@ -192,47 +193,47 @@ fn tier3_orbital_elements_vs_jeod_sim_orbelem() {
         max_rmag_err = max_rmag_err.max(rmag_err);
         max_vmag_err = max_vmag_err.max(vmag_err);
 
-        // Per-step assertions. With composite_body frame (matching JEOD's
-        // orbital element computation), errors are near machine precision.
+        // Per-step assertions. With correct mu (matching JEOD's gravity source)
+        // and identical SWP 2005 angle algorithm, errors are near machine precision.
         assert!(
-            sma_err < 0.1,
-            "t={:.1}s: semi_major_axis error {sma_err:.6e} m exceeds 0.1 m \
+            sma_err < 1e-6,
+            "t={:.1}s: semi_major_axis error {sma_err:.6e} m exceeds 1e-6 m \
              (ours={:.6}, JEOD={:.6})",
             rec.time,
             oe.semi_major_axis,
             rec.semi_major_axis
         );
         assert!(
-            ecc_err < 1e-8,
-            "t={:.1}s: eccentricity error {ecc_err:.6e} exceeds 1e-8 \
+            ecc_err < 1e-14,
+            "t={:.1}s: eccentricity error {ecc_err:.6e} exceeds 1e-14 \
              (ours={:.15e}, JEOD={:.15e})",
             rec.time,
             oe.e_mag,
             rec.e_mag
         );
         assert!(
-            inc_err < 1e-12,
-            "t={:.1}s: inclination error {inc_err:.6e} rad exceeds 1e-12 rad",
+            inc_err < 1e-15,
+            "t={:.1}s: inclination error {inc_err:.6e} rad exceeds 1e-15 rad",
             rec.time
         );
         assert!(
-            aop_err < 1e-8,
-            "t={:.1}s: arg_periapsis error {aop_err:.6e} rad exceeds 1e-8 rad",
+            aop_err < 1e-13,
+            "t={:.1}s: arg_periapsis error {aop_err:.6e} rad exceeds 1e-13 rad",
             rec.time
         );
         assert!(
-            lan_err < 1e-12,
-            "t={:.1}s: long_asc_node error {lan_err:.6e} rad exceeds 1e-12 rad",
+            lan_err < 1e-13,
+            "t={:.1}s: long_asc_node error {lan_err:.6e} rad exceeds 1e-13 rad",
             rec.time
         );
         assert!(
-            ta_err < 1e-8,
-            "t={:.1}s: true_anom error {ta_err:.6e} rad exceeds 1e-8 rad",
+            ta_err < 1e-13,
+            "t={:.1}s: true_anom error {ta_err:.6e} rad exceeds 1e-13 rad",
             rec.time
         );
         assert!(
-            ma_err < 1e-8,
-            "t={:.1}s: mean_anom error {ma_err:.6e} rad exceeds 1e-8 rad",
+            ma_err < 1e-13,
+            "t={:.1}s: mean_anom error {ma_err:.6e} rad exceeds 1e-13 rad",
             rec.time
         );
 

@@ -127,7 +127,7 @@ fn get_elliptic_parameters(r: f64, z: f64, r_eq: f64, r_pol: f64) -> (f64, f64) 
         let c = (a * a - b * b) / (ar * ar + bz * bz).sqrt();
 
         let mut y0 = y0_init;
-        let max_iters = 20;
+        let max_iters = 10; // JEOD: PlanetFixedPosition::Max_iteration_limit
 
         let mut y_val = y0;
         for _ in 0..max_iters {
@@ -185,7 +185,7 @@ mod tests {
     use std::f64::consts::PI;
 
     const EARTH_R_EQ: f64 = 6_378_137.0; // WGS84 equatorial radius (m)
-    const EARTH_R_POL: f64 = 6_356_752.314_245; // WGS84 polar radius (m)
+    const EARTH_R_POL: f64 = 6_356_752.314_245_179_3; // WGS84: r_eq * (1 - 1/298.257223563)
 
     #[test]
     fn spherical_equator_sea_level() {
