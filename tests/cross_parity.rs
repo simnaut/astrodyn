@@ -1070,7 +1070,10 @@ fn assert_orbital_elements_eq(label: &str, a: &OrbitalElements, b: &OrbitalEleme
         a.orb_ang_momentum,
         b.orb_ang_momentum,
     );
-    println!("  {label}: bit-identical (11 orbital element fields)");
+    assert_bits_eq(label, "orbital_anom", a.orbital_anom, b.orbital_anom);
+    assert_bits_eq(label, "r_mag", a.r_mag, b.r_mag);
+    assert_bits_eq(label, "vel_mag", a.vel_mag, b.vel_mag);
+    println!("  {label}: bit-identical (14 orbital element fields)");
 }
 
 fn assert_lvlh_eq(label: &str, a: &LvlhFrame, b: &LvlhFrame) {
@@ -1090,7 +1093,23 @@ fn assert_lvlh_eq(label: &str, a: &LvlhFrame, b: &LvlhFrame) {
             b.ang_vel_this[i],
         );
     }
-    println!("  {label}: bit-identical (12 LVLH frame components)");
+    for i in 0..3 {
+        assert_bits_eq(
+            label,
+            &format!("position[{i}]"),
+            a.position[i],
+            b.position[i],
+        );
+    }
+    for i in 0..3 {
+        assert_bits_eq(
+            label,
+            &format!("velocity[{i}]"),
+            a.velocity[i],
+            b.velocity[i],
+        );
+    }
+    println!("  {label}: bit-identical (18 LVLH frame components)");
 }
 
 // ── Scenario I: Derived states (orbital elements, Euler, LVLH, solar beta) ──

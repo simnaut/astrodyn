@@ -715,6 +715,9 @@ mod tests {
             "D→E ang_vel exceeds {tol_rot:.0e}"
         );
 
-        println!("  4-level frame tree: all 4 frame pairs match direct composition to 1e-14");
+        println!(
+            "  4-level frame tree: all 4 frame pairs match direct composition within tolerances \
+             (rot {tol_rot:.0e}, pos/vel {tol_pos:.0e})"
+        );
     }
 }
