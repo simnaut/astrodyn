@@ -349,10 +349,14 @@ pub fn orbital_elements_system(
 ///
 /// Placed in `JeodSet::DerivedState`.
 pub fn euler_angles_system(
-    mut query: Query<(&RotationalStateC, &EulerAnglesConfigC, &mut EulerAnglesC)>,
+    mut query: Query<(Option<&RotationalStateC>, &EulerAnglesConfigC, &mut EulerAnglesC)>,
 ) {
-    for (rot, config, mut angles) in &mut query {
-        angles.0 = jeod_sim::compute_body_euler_angles(&rot.0, config.sequence);
+    for (rot_opt, config, mut angles) in &mut query {
+        if let Some(rot) = rot_opt {
+            angles.0 = jeod_sim::compute_body_euler_angles(&rot.0, config.sequence);
+        } else {
+            angles.0 = Default::default();
+        }
     }
 }
 
@@ -404,8 +408,8 @@ pub fn solar_beta_system(
         }
         Err(bevy::ecs::query::QuerySingleError::MultipleEntities(_)) => {
             panic!(
-                "Multiple entities with SunMarker found. In JEOD, RadiationPressure \
-                 has exactly one RadiationSource. Ensure exactly one Sun entity exists."
+                "Multiple entities with SunMarker found in solar_beta_system. \
+                 JEOD assumes exactly one Sun body; ensure exactly one SunMarker entity exists."
             );
         }
     };

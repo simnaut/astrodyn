@@ -19,7 +19,7 @@
 use glam::{DMat3, DVec3};
 use jeod_sim::{
     met_atmosphere, AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig, FlatPlateState,
-    GravityAcceleration, GravityControl, GravityControls, GravityModel, GravitySource,
+    GravityControl, GravityControls, GravityModel, GravitySource,
     GravitySourceEntry, JeodQuat, MassProperties, MetAtmosphere, RotationalState, SimBody,
     Simulation, SimulationTime, TranslationalState,
 };
@@ -155,38 +155,10 @@ fn tier3_simulation_run2_3dof() {
             position: init.position,
             velocity: init.velocity,
         },
-        rot: None,
-        mass: None,
-        config: DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: false,
-            three_dof: true,
-        },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
-        drag: None,
-        t_struct_body: DMat3::IDENTITY,
-        compute_gravity_torque: false,
-        atmospheric_state: None,
-        gravity_accel: GravityAcceleration::default(),
-        total_force: Default::default(),
-        frame_derivs: Default::default(),
-        aero_force: None,
-        radiation_force: None,
-        gravity_torque: None,
-        flat_plate_state: None,
-        shadow_body: None,
-        orbital_elements_mu: None,
-        euler_sequence: None,
-        compute_lvlh: false,
-        geodetic_planet: None,
-        orbital_elements: None,
-        euler_angles: None,
-        lvlh_frame: None,
-        geodetic_state: None,
-        compute_solar_beta: false,
-        solar_beta: None,
+        ..Default::default()
     });
 
     sim.validate().unwrap();
@@ -283,28 +255,7 @@ fn tier3_simulation_run2_6dof() {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
-        drag: None,
-        t_struct_body: DMat3::IDENTITY,
-        compute_gravity_torque: false,
-        atmospheric_state: None,
-        gravity_accel: GravityAcceleration::default(),
-        total_force: Default::default(),
-        frame_derivs: Default::default(),
-        aero_force: None,
-        radiation_force: None,
-        gravity_torque: None,
-        flat_plate_state: None,
-        shadow_body: None,
-        orbital_elements_mu: None,
-        euler_sequence: None,
-        compute_lvlh: false,
-        geodetic_planet: None,
-        orbital_elements: None,
-        euler_angles: None,
-        lvlh_frame: None,
-        geodetic_state: None,
-        compute_solar_beta: false,
-        solar_beta: None,
+        ..Default::default()
     });
 
     sim.validate().unwrap();
@@ -458,27 +409,8 @@ fn tier3_simulation_run6b_drag() {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
         drag: Some(drag_config),
-        t_struct_body: DMat3::IDENTITY,
-        compute_gravity_torque: false,
         atmospheric_state: Some(Default::default()), // presence enables atmosphere
-        gravity_accel: GravityAcceleration::default(),
-        total_force: Default::default(),
-        frame_derivs: Default::default(),
-        aero_force: None,
-        radiation_force: None,
-        gravity_torque: None,
-        flat_plate_state: None,
-        shadow_body: None,
-        orbital_elements_mu: None,
-        euler_sequence: None,
-        compute_lvlh: false,
-        geodetic_planet: None,
-        orbital_elements: None,
-        euler_angles: None,
-        lvlh_frame: None,
-        geodetic_state: None,
-        compute_solar_beta: false,
-        solar_beta: None,
+        ..Default::default()
     });
 
     sim.validate().unwrap();
@@ -593,40 +525,12 @@ fn run_sh_simulation_test(csv_name: &str, degree: usize, order: usize, label: &s
             position: init.position,
             velocity: init.velocity,
         },
-        rot: None,
-        mass: None,
-        config: DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: false,
-            three_dof: true,
-        },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_nonspherical(
                 earth, degree, order, false,
             )],
         },
-        drag: None,
-        t_struct_body: DMat3::IDENTITY,
-        compute_gravity_torque: false,
-        atmospheric_state: None,
-        gravity_accel: GravityAcceleration::default(),
-        total_force: Default::default(),
-        frame_derivs: Default::default(),
-        aero_force: None,
-        radiation_force: None,
-        gravity_torque: None,
-        flat_plate_state: None,
-        shadow_body: None,
-        orbital_elements_mu: None,
-        euler_sequence: None,
-        compute_lvlh: false,
-        geodetic_planet: None,
-        orbital_elements: None,
-        euler_angles: None,
-        lvlh_frame: None,
-        geodetic_state: None,
-        compute_solar_beta: false,
-        solar_beta: None,
+        ..Default::default()
     });
 
     sim.validate().unwrap();
@@ -925,28 +829,8 @@ fn tier3_simulation_run10a_gravity_torque() {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, true)], // gradient=true
         },
-        drag: None,
-        t_struct_body: DMat3::IDENTITY,
         compute_gravity_torque: true,
-        atmospheric_state: None,
-        gravity_accel: GravityAcceleration::default(),
-        total_force: Default::default(),
-        frame_derivs: Default::default(),
-        aero_force: None,
-        radiation_force: None,
-        gravity_torque: None,
-        flat_plate_state: None,
-        shadow_body: None,
-        orbital_elements_mu: None,
-        euler_sequence: None,
-        compute_lvlh: false,
-        geodetic_planet: None,
-        orbital_elements: None,
-        euler_angles: None,
-        lvlh_frame: None,
-        geodetic_state: None,
-        compute_solar_beta: false,
-        solar_beta: None,
+        ..Default::default()
     });
 
     sim.validate().unwrap();
@@ -1187,46 +1071,21 @@ fn tier3_simulation_srp_flat_plate() {
             position: init.position,
             velocity: init.velocity,
         },
-        rot: None, // identity attitude (structural = inertial)
         mass: Some(MassProperties::with_inertia(
             SRP_MASS,
             DMat3::from_diagonal(DVec3::splat(1.0)),
             DVec3::ZERO,
         )),
-        config: DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: false,
-            three_dof: true,
-        },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
-        drag: None,
         flat_plate_state: Some(FlatPlateState {
             plates,
             temperatures: vec![init_temp; num_plates],
             t_pow4_cached: vec![init_temp.powi(4); num_plates],
         }),
         shadow_body: Some((earth, SRP_R_EARTH)),
-        t_struct_body: DMat3::IDENTITY,
-        compute_gravity_torque: false,
-        atmospheric_state: None,
-        gravity_accel: GravityAcceleration::default(),
-        total_force: Default::default(),
-        frame_derivs: Default::default(),
-        aero_force: None,
-        radiation_force: None,
-        gravity_torque: None,
-        orbital_elements_mu: None,
-        euler_sequence: None,
-        compute_lvlh: false,
-        geodetic_planet: None,
-        orbital_elements: None,
-        euler_angles: None,
-        lvlh_frame: None,
-        geodetic_state: None,
-        compute_solar_beta: false,
-        solar_beta: None,
+        ..Default::default()
     });
 
     sim.validate().unwrap();

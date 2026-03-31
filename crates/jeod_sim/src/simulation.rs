@@ -98,6 +98,40 @@ pub struct SimBody {
     pub solar_beta: Option<f64>,
 }
 
+impl Default for SimBody {
+    fn default() -> Self {
+        Self {
+            trans: TranslationalState::default(),
+            rot: None,
+            mass: None,
+            config: DynamicsConfig::default(),
+            gravity_controls: GravityControls::default(),
+            drag: None,
+            flat_plate_state: None,
+            shadow_body: None,
+            t_struct_body: DMat3::IDENTITY,
+            compute_gravity_torque: false,
+            atmospheric_state: None,
+            gravity_accel: GravityAcceleration::default(),
+            total_force: TotalForce::default(),
+            frame_derivs: FrameDerivatives::default(),
+            aero_force: None,
+            radiation_force: None,
+            gravity_torque: None,
+            orbital_elements_mu: None,
+            euler_sequence: None,
+            compute_lvlh: false,
+            geodetic_planet: None,
+            compute_solar_beta: false,
+            orbital_elements: None,
+            euler_angles: None,
+            lvlh_frame: None,
+            geodetic_state: None,
+            solar_beta: None,
+        }
+    }
+}
+
 /// ECS-agnostic simulation runner.
 ///
 /// Owns all simulation state and runs the JEOD pipeline in `step()`.

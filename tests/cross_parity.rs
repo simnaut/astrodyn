@@ -32,7 +32,7 @@ use bevy_jeod::{
 use glam::{DMat3, DVec3};
 use jeod_sim::{
     AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig, EulerSequence,
-    ExponentialAtmosphere, GravityAcceleration, GravityControl, GravityControls, GravityModel,
+    ExponentialAtmosphere, GravityControl, GravityControls, GravityModel,
     GravitySource, GravitySourceEntry, JeodQuat, LvlhFrame, MassProperties, OrbitalElements,
     PlanetShape, RotationalState, SimBody, Simulation, SixDofState, TranslationalState,
 };
@@ -169,28 +169,7 @@ fn new_sim_body_sixdof(earth_idx: usize, gradient: bool) -> SimBody {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, gradient)],
         },
-        drag: None,
-        t_struct_body: DMat3::IDENTITY,
-        compute_gravity_torque: false,
-        atmospheric_state: None,
-        gravity_accel: GravityAcceleration::default(),
-        total_force: Default::default(),
-        frame_derivs: Default::default(),
-        aero_force: None,
-        radiation_force: None,
-        gravity_torque: None,
-        flat_plate_state: None,
-        shadow_body: None,
-        orbital_elements_mu: None,
-        euler_sequence: None,
-        compute_lvlh: false,
-        geodetic_planet: None,
-        orbital_elements: None,
-        euler_angles: None,
-        lvlh_frame: None,
-        geodetic_state: None,
-        compute_solar_beta: false,
-        solar_beta: None,
+        ..Default::default()
     }
 }
 
@@ -659,38 +638,10 @@ fn tier3_bevy_sh4x4_rnp() {
 
     sim.add_body(SimBody {
         trans: iss_trans(),
-        rot: None,
-        mass: None,
-        config: DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: false,
-            three_dof: true,
-        },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_nonspherical(earth_idx, 4, 4, false)],
         },
-        drag: None,
-        t_struct_body: DMat3::IDENTITY,
-        compute_gravity_torque: false,
-        atmospheric_state: None,
-        gravity_accel: GravityAcceleration::default(),
-        total_force: Default::default(),
-        frame_derivs: Default::default(),
-        aero_force: None,
-        radiation_force: None,
-        gravity_torque: None,
-        flat_plate_state: None,
-        shadow_body: None,
-        orbital_elements_mu: None,
-        euler_sequence: None,
-        compute_lvlh: false,
-        geodetic_planet: None,
-        orbital_elements: None,
-        euler_angles: None,
-        lvlh_frame: None,
-        geodetic_state: None,
-        compute_solar_beta: false,
-        solar_beta: None,
+        ..Default::default()
     });
 
     sim.validate().unwrap();
@@ -996,42 +947,17 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
             position: vehicle_pos,
             velocity: vehicle_vel,
         },
-        rot: None,
         mass: Some(mass),
-        config: DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: false,
-            three_dof: true,
-        },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
-        drag: None,
         flat_plate_state: Some(jeod_sim::FlatPlateState {
             plates: plates_data,
             temperatures: vec![init_temp; num_plates],
             t_pow4_cached: vec![init_temp.powi(4); num_plates],
         }),
         shadow_body: Some((earth_idx, 6_378_137.0)),
-        t_struct_body: DMat3::IDENTITY,
-        compute_gravity_torque: false,
-        atmospheric_state: None,
-        gravity_accel: GravityAcceleration::default(),
-        total_force: Default::default(),
-        frame_derivs: Default::default(),
-        aero_force: None,
-        radiation_force: None,
-        gravity_torque: None,
-        orbital_elements_mu: None,
-        euler_sequence: None,
-        compute_lvlh: false,
-        geodetic_planet: None,
-        orbital_elements: None,
-        euler_angles: None,
-        lvlh_frame: None,
-        geodetic_state: None,
-        compute_solar_beta: false,
-        solar_beta: None,
+        ..Default::default()
     });
 
     sim.validate().unwrap();
@@ -1317,38 +1243,11 @@ fn tier3_bevy_geodetic_derived_state() {
 
     let body = SimBody {
         trans: iss_trans(),
-        rot: None,
-        mass: None,
-        config: DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: false,
-            three_dof: true,
-        },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
-        drag: None,
-        t_struct_body: DMat3::IDENTITY,
-        compute_gravity_torque: false,
-        atmospheric_state: None,
-        gravity_accel: GravityAcceleration::default(),
-        total_force: Default::default(),
-        frame_derivs: Default::default(),
-        aero_force: None,
-        radiation_force: None,
-        gravity_torque: None,
-        flat_plate_state: None,
-        shadow_body: None,
-        orbital_elements_mu: None,
-        euler_sequence: None,
-        compute_lvlh: false,
         geodetic_planet: Some((earth_idx, earth_shape.r_eq, earth_shape.r_pol)),
-        orbital_elements: None,
-        euler_angles: None,
-        lvlh_frame: None,
-        geodetic_state: None,
-        compute_solar_beta: false,
-        solar_beta: None,
+        ..Default::default()
     };
     sim.add_body(body);
 
