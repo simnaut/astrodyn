@@ -1133,7 +1133,7 @@ fn tier3_bevy_derived_states() {
     sim.sun_source = Some(sun_idx);
 
     let mut body = new_sim_body_sixdof(earth_idx, false);
-    body.orbital_elements_mu = Some(MU_EARTH);
+    body.orbital_elements_source = Some(earth_idx);
     body.euler_sequence = Some(EulerSequence::ZYX);
     body.compute_lvlh = true;
     body.compute_solar_beta = true;

@@ -34,6 +34,8 @@ pub enum ValidationError {
     ShadowBodyOutOfRange { index: usize, num_sources: usize },
     /// `geodetic_planet` source index is out of range for the sources table.
     GeodeticPlanetOutOfRange { index: usize, num_sources: usize },
+    /// `orbital_elements_source` index is out of range for the sources table.
+    OrbitalElementsSourceOutOfRange { index: usize, num_sources: usize },
 }
 
 impl std::fmt::Display for ValidationError {
@@ -117,6 +119,13 @@ impl std::fmt::Display for ValidationError {
                     f,
                     "geodetic_planet index {index} is out of range (only {num_sources} sources). \
                      Ensure geodetic_planet refers to a valid source index."
+                )
+            }
+            Self::OrbitalElementsSourceOutOfRange { index, num_sources } => {
+                write!(
+                    f,
+                    "orbital_elements_source index {index} is out of range (only {num_sources} sources). \
+                     Ensure orbital_elements_source refers to a valid source index."
                 )
             }
         }

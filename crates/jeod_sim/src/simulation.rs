@@ -74,8 +74,10 @@ pub struct SimBody {
     pub gravity_torque: Option<DVec3>,
 
     // ── Derived state configuration (optional per-body) ──
-    /// Gravitational parameter for orbital elements computation. `None` = skip.
-    pub orbital_elements_mu: Option<f64>,
+    /// Gravity source index for orbital elements computation. `None` = skip.
+    /// `mu` is read from the corresponding `GravitySourceEntry` at runtime,
+    /// ensuring consistency with the dynamics gravity model.
+    pub orbital_elements_source: Option<usize>,
     /// Euler angle decomposition sequence. `None` = skip.
     pub euler_sequence: Option<EulerSequence>,
     /// Whether to compute LVLH frame each step.
@@ -118,7 +120,7 @@ impl Default for SimBody {
             aero_force: None,
             radiation_force: None,
             gravity_torque: None,
-            orbital_elements_mu: None,
+            orbital_elements_source: None,
             euler_sequence: None,
             compute_lvlh: false,
             geodetic_planet: None,
@@ -245,6 +247,16 @@ impl Simulation {
                 }
             }
 
+            // Validate orbital_elements_source index
+            if let Some(idx) = body.orbital_elements_source {
+                if idx >= self.sources.len() {
+                    all_errors.push(ValidationError::OrbitalElementsSourceOutOfRange {
+                        index: idx,
+                        num_sources: self.sources.len(),
+                    });
+                }
+            }
+
             // Apply gravity control auto-corrections (degree/order clamping).
             // JEOD_INV: GV.03 — check_validity() auto-corrects out-of-range settings
             for ctrl in &mut body.gravity_controls.controls {
@@ -351,7 +363,9 @@ impl Simulation {
         }
 
         // ── 6. Interactions — drag, SRP, gravity torque ──
-        let sun_pos = self.sun_source.map(|idx| self.sources[idx].position);
+        let sun_pos = self
+            .sun_source
+            .and_then(|idx| self.sources.get(idx).map(|s| s.position));
         let sources = &self.sources;
 
         for body in &mut self.bodies {
@@ -483,14 +497,23 @@ impl Simulation {
 
         // ── 9. Derived states ──
         let sources = &self.sources;
-        let sun_pos = self.sun_source.map(|idx| self.sources[idx].position);
+        let sun_pos = self
+            .sun_source
+            .and_then(|idx| self.sources.get(idx).map(|s| s.position));
 
         for body in &mut self.bodies {
             // Orbital elements
-            if let Some(mu) = body.orbital_elements_mu {
-                body.orbital_elements =
-                    crate::compute_orbital_elements(mu, body.trans.position, body.trans.velocity)
-                        .ok();
+            if let Some(src_idx) = body.orbital_elements_source {
+                if let Some(mu) = sources.get(src_idx).map(|s| s.source.mu) {
+                    body.orbital_elements = crate::compute_orbital_elements(
+                        mu,
+                        body.trans.position,
+                        body.trans.velocity,
+                    )
+                    .ok();
+                } else {
+                    body.orbital_elements = None;
+                }
             }
 
             // Euler angles
