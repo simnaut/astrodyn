@@ -61,6 +61,68 @@ pub fn compute_body_geodetic(
 ///
 /// Panics if the orbital angular momentum `h = r × v` is zero (degenerate
 /// orbit) or if the Sun position coincides with the body position.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verify that `compute_body_geodetic` correctly applies the inertial-to-
+    /// planet-fixed rotation before computing geodetic coordinates.
+    ///
+    /// Uses a 90-degree rotation about Z so a position on the inertial +X axis
+    /// maps to the planet-fixed +Y axis, producing longitude ≈ π/2.
+    /// A transpose/sign error in the rotation would yield longitude ≈ −π/2.
+    #[test]
+    fn geodetic_with_rotation() {
+        use std::f64::consts::FRAC_PI_2;
+
+        const R_EQ: f64 = 6_378_137.0;
+        const R_POL: f64 = 6_356_752.314_245;
+
+        // 90° rotation about Z: maps +X_inertial → +Y_pfix
+        //
+        // Row-major rotation matrix for +90° about Z:
+        //   [ cos  -sin  0 ]     [ 0  -1  0 ]
+        //   [ sin   cos  0 ]  =  [ 1   0  0 ]
+        //   [  0     0   1 ]     [ 0   0  1 ]
+        //
+        // glam DMat3::from_cols takes column-major, so transpose the rows.
+        let t_inertial_pfix = DMat3::from_cols(
+            DVec3::new(0.0, 1.0, 0.0),  // col 0
+            DVec3::new(-1.0, 0.0, 0.0), // col 1
+            DVec3::new(0.0, 0.0, 1.0),  // col 2
+        );
+
+        // ISS-altitude position along inertial +X axis
+        let pos_inertial = DVec3::new(R_EQ + 408_000.0, 0.0, 0.0);
+
+        let geo = compute_body_geodetic(pos_inertial, &t_inertial_pfix, R_EQ, R_POL);
+
+        // After rotation, planet-fixed position is along +Y → longitude ≈ π/2
+        assert!(
+            (geo.longitude - FRAC_PI_2).abs() < 1e-10,
+            "expected longitude ≈ π/2, got {}",
+            geo.longitude
+        );
+        // Latitude should be ≈ 0 (equatorial)
+        assert!(
+            geo.latitude.abs() < 1e-10,
+            "expected latitude ≈ 0, got {}",
+            geo.latitude
+        );
+        // Altitude should be ≈ 408 km
+        assert!(
+            (geo.altitude - 408_000.0).abs() < 1.0,
+            "expected altitude ≈ 408000 m, got {}",
+            geo.altitude
+        );
+
+        // Verify against direct computation to lock down the convention
+        let pos_pfix = t_inertial_pfix * pos_inertial;
+        let expected = jeod_math::cartesian_to_geodetic(pos_pfix, R_EQ, R_POL);
+        assert_eq!(geo, expected);
+    }
+}
+
 pub fn compute_body_solar_beta(position: DVec3, velocity: DVec3, sun_position: DVec3) -> f64 {
     let h = position.cross(velocity);
     let rel_sun = sun_position - position;
