@@ -363,6 +363,7 @@ impl Simulation {
         }
 
         // ── 6. Interactions — drag, SRP, gravity torque ──
+        // sun_pos is also used in stage 9 (solar beta); compute once here.
         let sun_pos = self
             .sun_source
             .and_then(|idx| self.sources.get(idx).map(|s| s.position));
@@ -497,9 +498,6 @@ impl Simulation {
 
         // ── 9. Derived states ──
         let sources = &self.sources;
-        let sun_pos = self
-            .sun_source
-            .and_then(|idx| self.sources.get(idx).map(|s| s.position));
 
         for body in &mut self.bodies {
             // Orbital elements
