@@ -385,7 +385,7 @@ fn tier3_simulation_run6b_drag() {
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Met(met_model),
         r_eq: 6_378_137.0,
-        r_pol: 6_356_752.314_245,
+        r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
         planet_omega: OMEGA_EARTH,
     });
     sim.atmosphere_planet_source = Some(earth);

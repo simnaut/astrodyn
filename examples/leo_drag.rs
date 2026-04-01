@@ -16,7 +16,7 @@ use jeod_sim::{
 
 const MU_EARTH: f64 = 3.986004418e14;
 const R_EARTH_EQ: f64 = 6_378_137.0;
-const R_EARTH_POL: f64 = 6_356_752.3142;
+const R_EARTH_POL: f64 = R_EARTH_EQ * (1.0 - 1.0 / 298.257_223_563); // JEOD: r_eq * (1 - flat_coeff)
 /// Earth angular velocity (rad/s), from JEOD RNPJ2000 data.
 const OMEGA_EARTH: f64 = 7.292_115_146_706_388e-5;
 

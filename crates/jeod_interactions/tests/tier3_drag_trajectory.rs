@@ -30,7 +30,7 @@ use std::path::Path;
 
 const MU_EARTH: f64 = 3.986004418e14;
 const R_EARTH_EQ: f64 = 6_378_137.0; // WGS84 equatorial radius (m)
-const R_EARTH_POL: f64 = 6_356_752.314_245; // WGS84 polar radius (m)
+const R_EARTH_POL: f64 = R_EARTH_EQ * (1.0 - 1.0 / 298.257_223_563); // JEOD: r_eq * (1 - flat_coeff)
 
 /// Earth rotation rate from JEOD RNPJ2000 default data (GEM-T1 gravity model).
 /// See models/environment/RNP/RNPJ2000/data/src/data_rnp_j2000.cc

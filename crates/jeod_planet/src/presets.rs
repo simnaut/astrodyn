@@ -13,10 +13,10 @@ use crate::planet::PlanetShape;
 /// measurement uncertainty.
 pub const EARTH: PlanetShape = PlanetShape {
     name: "Earth",
-    mu: 3.986_004_415e14,
-    r_eq: 6_378_137.0,
-    r_pol: 6_356_752.314_245_179, // r_eq * (1 - 1/298.257223563)
-    flat_coeff: 1.0 / 298.257_223_563,
+    mu: 398_600.441_50e9, // JEOD earth_GGM05C.cc:40
+    r_eq: 1000.0 * 6378.137, // JEOD earth.cc:37
+    r_pol: 1000.0 * 6378.137 * (1.0 - 1.0 / 298.257_223_563), // JEOD: r_eq * (1 - flat_coeff)
+    flat_coeff: 1.0 / 298.257_223_563, // JEOD earth.cc:36
 };
 
 /// Moon.
@@ -28,10 +28,10 @@ pub const EARTH: PlanetShape = PlanetShape {
 /// - mu = 4902.79980693169e9 m^3/s^2
 pub const MOON: PlanetShape = PlanetShape {
     name: "Moon",
-    mu: 4.902_799_806_931_69e12,
-    r_eq: 1_738_140.0,
-    r_pol: 1_735_967.325, // 1738140.0 * (1 - 0.00125)
-    flat_coeff: 0.00125,
+    mu: 1_000_000_000.0 * 4902.799_806_931_69, // JEOD moon_GRAIL150.cc:60
+    r_eq: 1000.0 * 1738.14, // JEOD moon.cc:53
+    r_pol: 1000.0 * 1738.14 * (1.0 - 0.00125), // JEOD: r_eq * (1 - flat_coeff)
+    flat_coeff: 0.00125, // JEOD moon.cc:52
 };
 
 /// Sun.
@@ -39,14 +39,14 @@ pub const MOON: PlanetShape = PlanetShape {
 /// Constants from JEOD `planet/data/src/sun.cc`:
 /// - r_eq = 696000 km, flat_coeff = 5e-5
 ///
-/// Gravitational parameter from JPL DE421 constants:
-/// - mu = 1.32712440018e20 m^3/s^2 (GMS)
+/// Gravitational parameter from JEOD `sun_spherical.cc`:
+/// - mu = 1.32712440E+20 m^3/s^2
 pub const SUN: PlanetShape = PlanetShape {
     name: "Sun",
-    mu: 1.327_124_400_18e20,
-    r_eq: 696_000_000.0,
-    r_pol: 695_965_200.0, // 696000000.0 * (1 - 5e-5)
-    flat_coeff: 5.0e-5,
+    mu: 1.327_124_40e20, // JEOD sun_spherical.cc:46
+    r_eq: 1000.0 * 696_000.0, // JEOD sun.cc:38
+    r_pol: 1000.0 * 696_000.0 * (1.0 - 5e-5), // JEOD: r_eq * (1 - flat_coeff)
+    flat_coeff: 5.0e-5, // JEOD sun.cc:41
 };
 
 /// Mars.
@@ -54,12 +54,12 @@ pub const SUN: PlanetShape = PlanetShape {
 /// Constants from JEOD `planet/data/src/mars.cc`:
 /// - r_eq = 3396.0 km, flat_coeff = 0.005186
 ///
-/// Gravitational parameter from JEOD `mars_MRO110B2.cc` or standard:
-/// - mu = 4.2828372e13 m^3/s^2
+/// Gravitational parameter from JEOD `mars_MRO110B2.cc`:
+/// - mu = 4.2828374527E+13 m^3/s^2
 pub const MARS: PlanetShape = PlanetShape {
     name: "Mars",
-    mu: 4.282_837_2e13,
-    r_eq: 3_396_000.0,
-    r_pol: 3_378_388.584, // 3396000.0 * (1 - 0.005186)
-    flat_coeff: 0.005186,
+    mu: 4.282_837_452_7e13, // JEOD mars_MRO110B2.cc:57
+    r_eq: 1000.0 * 3396.0, // JEOD mars.cc:46
+    r_pol: 1000.0 * 3396.0 * (1.0 - 0.005186), // JEOD: r_eq * (1 - flat_coeff)
+    flat_coeff: 0.005186, // JEOD mars.cc:45
 };
