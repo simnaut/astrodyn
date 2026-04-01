@@ -135,7 +135,7 @@ fn tier3_geodetic_vs_jeod_sim_ned() {
         assert!(
             alt_err < 1e-7,
             "t={:.1}s: altitude error {alt_err:.6e} m exceeds 1e-7 m \
-             (ours={:.6}, JEOD={:.6})",
+             (ours={:.15e}, JEOD={:.15e})",
             rec.time,
             geo.altitude,
             rec.ellip_altitude
