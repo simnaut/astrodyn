@@ -188,7 +188,7 @@ mod tests {
     use std::f64::consts::PI;
 
     const EARTH_R_EQ: f64 = 6_378_137.0; // WGS84 equatorial radius (m)
-    const EARTH_R_POL: f64 = 6_356_752.314_245_179_3; // WGS84: r_eq * (1 - 1/298.257223563)
+    const EARTH_R_POL: f64 = EARTH_R_EQ * (1.0 - 1.0 / 298.257_223_563); // JEOD: r_eq * (1 - flat_coeff)
 
     #[test]
     fn spherical_equator_sea_level() {

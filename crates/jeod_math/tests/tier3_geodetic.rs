@@ -12,8 +12,8 @@ use std::path::Path;
 
 /// WGS84 equatorial radius (m).
 const EARTH_R_EQ: f64 = 6_378_137.0;
-/// WGS84 polar radius (m), computed as r_eq * (1 - 1/298.257223563) to match JEOD's runtime derivation.
-const EARTH_R_POL: f64 = 6_356_752.314_245_179_3;
+/// WGS84 polar radius (m), matching JEOD's runtime derivation: r_eq * (1 - 1/flat_inv).
+const EARTH_R_POL: f64 = EARTH_R_EQ * (1.0 - 1.0 / 298.257_223_563);
 
 /// Parsed record from the SIM_NED CSV.
 #[derive(Debug)]
