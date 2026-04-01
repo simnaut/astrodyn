@@ -16,7 +16,7 @@
 use jeod_dynamics::{init_from_mean_anomaly, init_from_orbital_elements, TranslationalState};
 
 /// Earth gravitational parameter (m^3/s^2), matching JEOD's value.
-const EARTH_MU: f64 = 3.986_004_418e14;
+const EARTH_MU: f64 = 3.986_004_415e14;
 
 /// Load the JEOD path, panicking with a clear message if not available.
 fn jeod_root() -> std::path::PathBuf {

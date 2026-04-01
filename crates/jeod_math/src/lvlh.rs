@@ -98,7 +98,7 @@ pub fn compute_lvlh_frame(position: DVec3, velocity: DVec3) -> LvlhFrame {
 mod tests {
     use super::*;
 
-    const EARTH_MU: f64 = 3.986_004_418e14; // m^3/s^2
+    const EARTH_MU: f64 = 3.986_004_415e14; // m^3/s^2
 
     #[test]
     fn circular_equatorial_orbit() {

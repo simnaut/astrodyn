@@ -27,10 +27,10 @@ pub const EARTH: PlanetShape = PlanetShape {
 /// - mu = 4902.79980693169e9 m^3/s^2
 pub const MOON: PlanetShape = PlanetShape {
     name: "Moon",
-    mu: 1_000_000_000.0 * 4902.79980693169, // JEOD moon_GRAIL150.cc:60
-    r_eq: 1000.0 * 1738.14,                 // JEOD moon.cc:53
+    mu: 4902.79980693169e9,                    // JEOD moon_GRAIL150.cc:60
+    r_eq: 1000.0 * 1738.14,                    // JEOD moon.cc:53
     r_pol: 1000.0 * 1738.14 * (1.0 - 0.00125), // JEOD: r_eq * (1 - flat_coeff)
-    flat_coeff: 0.00125,                    // JEOD moon.cc:52
+    flat_coeff: 0.00125,                       // JEOD moon.cc:52
 };
 
 /// Sun.
