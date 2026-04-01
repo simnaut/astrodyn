@@ -8,6 +8,10 @@
 
 use glam::DVec3;
 
+/// Maximum iterations for Borkowski's geodetic latitude solver.
+/// Matches JEOD `PlanetFixedPosition::Max_iteration_limit` (class-level constant).
+const MAX_ITERATION_LIMIT: usize = 10;
+
 /// Geodetic coordinates on a reference ellipsoid.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct GeodeticState {
@@ -127,10 +131,9 @@ fn get_elliptic_parameters(r: f64, z: f64, r_eq: f64, r_pol: f64) -> (f64, f64) 
         let c = (a * a - b * b) / (ar * ar + bz * bz).sqrt();
 
         let mut y0 = y0_init;
-        let max_iters = 10; // JEOD: PlanetFixedPosition::Max_iteration_limit
 
         let mut y_val = y0;
-        for _ in 0..max_iters {
+        for _ in 0..MAX_ITERATION_LIMIT {
             let d = 2.0 * ((y0 - w).cos() - c * (2.0 * y0).cos());
             y_val = y0 - (2.0 * (y0 - w).sin() - c * (2.0 * y0).sin()) / d;
             if (y_val - y0).abs() < 1.0e-12 {

@@ -135,7 +135,6 @@ impl OrbitalElements {
 
         // ---- Node vector ----
         let line_of_nodes = k_cross_h; // points toward ascending node
-        let _line_of_nodes_mag = k_cross_h_mag;
 
         // JEOD: (inclination < tolerance) || ((M_PI - tolerance) < inclination)
         #[allow(clippy::manual_range_contains)]

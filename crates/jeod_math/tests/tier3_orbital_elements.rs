@@ -15,8 +15,7 @@ use glam::DVec3;
 use jeod_math::OrbitalElements;
 use std::path::Path;
 
-/// Earth gravitational parameter (m^3/s^2), matching JEOD's value.
-/// Earth gravitational parameter from GGM05C (matches JEOD SIM_OrbElem's gravity source).
+/// Earth gravitational parameter (m³/s²) from GGM05C, matching JEOD SIM_OrbElem's gravity source.
 const MU_EARTH: f64 = 3.986_004_415e14;
 
 /// Parsed record from the SIM_OrbElem CSV.
