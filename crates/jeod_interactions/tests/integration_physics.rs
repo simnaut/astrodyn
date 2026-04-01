@@ -17,7 +17,7 @@ use jeod_interactions::{
 use jeod_math::geodetic::cartesian_to_geodetic;
 use jeod_math::JeodQuat;
 
-const MU_EARTH: f64 = 3.986004418e14; // m^3/s^2
+const MU_EARTH: f64 = 3.986_004_415e14; // m^3/s^2
 const R_EARTH: f64 = 6_378_137.0; // m
 const R_EARTH_POL: f64 = R_EARTH * (1.0 - 1.0 / 298.257_223_563); // JEOD: r_eq * (1 - flat_coeff)
 const R_SUN: f64 = 6.98e8; // m

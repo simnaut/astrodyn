@@ -7,7 +7,7 @@ use jeod_math::OrbitalElements;
 use jeod_test_data::{euler_test, jeod_path, orbital_data, orbital_init, reference_state};
 
 /// Earth's gravitational parameter in m^3/s^2 (matches JEOD's value).
-const MU_EARTH: f64 = 3.986004418e14;
+const MU_EARTH: f64 = 3.986_004_415e14;
 
 // =========================================================================
 // Orbital elements: ISS reference data

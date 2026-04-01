@@ -15,7 +15,7 @@
 #include <cstdlib>
 
 // JEOD's GM for Earth (from gravity data)
-static const double MU_EARTH = 3.986004418e14;  // m^3/s^2
+static const double MU_EARTH = 3.986004415e14;  // m^3/s^2
 
 // Simple point-mass gravity computation (matching JEOD's calc_spherical)
 void compute_point_mass(const double pos[3], double mu,

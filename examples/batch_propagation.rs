@@ -20,7 +20,7 @@ fn eccentricity(mu: f64, position: DVec3, velocity: DVec3) -> f64 {
 }
 
 fn main() {
-    let mu_earth: f64 = 3.986004418e14; // m^3/s^2
+    let mu_earth: f64 = 3.986_004_415e14; // m^3/s^2
     let r0: f64 = 6_778_137.0; // m (400 km altitude)
     let v0 = (mu_earth / r0).sqrt(); // circular velocity
 

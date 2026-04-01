@@ -8,7 +8,7 @@ use glam::DVec3;
 use jeod_dynamics::{rk4_translational_step, TranslationalState};
 use std::f64::consts::PI;
 
-const MU_EARTH: f64 = 3.986004418e14; // m^3/s^2
+const MU_EARTH: f64 = 3.986_004_415e14; // m^3/s^2
 const R_EARTH: f64 = 6_378_137.0; // m
 
 fn point_mass_accel(mu: f64, pos: DVec3) -> DVec3 {
@@ -372,7 +372,7 @@ fn tier3_cross_validate_gravity_at_jeod_positions() {
 
     let cases = jeod_test_data::gravity_verif::load_gravity_test_cases(&jeod_root);
 
-    let mu_earth = 3.986004418e14;
+    let mu_earth = 3.986_004_415e14;
 
     let mut full_count = 0;
     let mut perturb_count = 0;

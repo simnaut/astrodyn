@@ -524,7 +524,7 @@ mod tests {
     use super::*;
     use crate::types::DVec3;
 
-    const MU_EARTH: f64 = 398600.4418; // km^3/s^2
+    const MU_EARTH: f64 = 398_600.441_50; // km^3/s^2, JEOD earth_GGM05C.cc:40
 
     /// Helper: verify round-trip from_cartesian -> to_cartesian.
     fn roundtrip_check(mu: f64, pos: DVec3, vel: DVec3, tol: f64) {

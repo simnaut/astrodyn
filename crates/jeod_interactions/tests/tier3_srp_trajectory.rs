@@ -2,7 +2,7 @@
 //! JEOD SIM_3_ORBIT RUN_radiation reference data.
 //!
 //! SIM_3_ORBIT/RUN_radiation configuration:
-//! - Spherical gravity (point-mass Earth, mu=3.986004418e14 m³/s²)
+//! - Spherical gravity (point-mass Earth, mu=3.986_004_415e14 m³/s²)
 //! - 6 flat plates: 4×60 m² at ±X/±Y, 2×16 m² at ±Z
 //!   - albedo=0.5, diffuse=0.5
 //! - Earth conical shadow (Moon shadow disabled)
@@ -26,7 +26,7 @@ use jeod_interactions::{
 };
 use std::path::Path;
 
-const MU_EARTH: f64 = 3.986004418e14;
+const MU_EARTH: f64 = 3.986_004_415e14;
 const R_EARTH: f64 = 6_378_137.0; // WGS84 equatorial radius (m)
 
 /// SIM_3_ORBIT epoch: 1998-12-01 00:00:00 UTC (= 00:00:31 TAI).
