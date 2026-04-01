@@ -95,7 +95,7 @@ mod tests {
         use std::f64::consts::FRAC_PI_2;
 
         const R_EQ: f64 = 6_378_137.0;
-        const R_POL: f64 = 6_356_752.314_245;
+        const R_POL: f64 = R_EQ * (1.0 - 1.0 / 298.257_223_563); // JEOD: r_eq * (1 - flat_coeff)
 
         // 90° rotation about Z: maps +X_inertial → +Y_pfix
         //

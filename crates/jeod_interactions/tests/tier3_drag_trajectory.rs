@@ -2,7 +2,7 @@
 //! JEOD SIM_dyncomp RUN_6B reference data.
 //!
 //! RUN_6B configuration (from SET_test/RUN_6B/input.py):
-//! - Spherical gravity (point-mass Earth, mu=3.986004418e14 m^3/s^2)
+//! - Spherical gravity (point-mass Earth, mu=3.986_004_415e14 m^3/s^2)
 //! - MET atmosphere: F10.7=128.8, F10B=128.8, Ap=15.7 (solar mean)
 //! - Ballistic drag: Cd=0.02, Area=1.0 m^2, DRAG_OPT_CD
 //! - Unit sphere mass: mass=1.0 kg, I=diag(0.4, 0.4, 0.4), CoM at origin
@@ -28,9 +28,9 @@ use jeod_math::geodetic::cartesian_to_geodetic;
 use jeod_math::JeodQuat;
 use std::path::Path;
 
-const MU_EARTH: f64 = 3.986004418e14;
+const MU_EARTH: f64 = 3.986_004_415e14;
 const R_EARTH_EQ: f64 = 6_378_137.0; // WGS84 equatorial radius (m)
-const R_EARTH_POL: f64 = 6_356_752.314_245; // WGS84 polar radius (m)
+const R_EARTH_POL: f64 = R_EARTH_EQ * (1.0 - 1.0 / 298.257_223_563); // JEOD: r_eq * (1 - flat_coeff)
 
 /// Earth rotation rate from JEOD RNPJ2000 default data (GEM-T1 gravity model).
 /// See models/environment/RNP/RNPJ2000/data/src/data_rnp_j2000.cc

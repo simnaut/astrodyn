@@ -21,7 +21,7 @@ use jeod_sim::{
 };
 use std::time::Duration;
 
-const MU_EARTH: f64 = 3.986004418e14;
+const MU_EARTH: f64 = 3.986_004_415e14;
 
 fn eccentricity(mu: f64, position: DVec3, velocity: DVec3) -> f64 {
     let h = position.cross(velocity);

@@ -25,7 +25,7 @@ use jeod_sim::{
 };
 use std::path::Path;
 
-const MU_EARTH: f64 = 3.986004418e14;
+const MU_EARTH: f64 = 3.986_004_415e14;
 const DT: f64 = 0.03125; // 32 Hz, matches JEOD SIM_dyncomp
 
 // ── CSV parsing (same column layout as existing tier 3 tests) ──
@@ -385,7 +385,7 @@ fn tier3_simulation_run6b_drag() {
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Met(met_model),
         r_eq: 6_378_137.0,
-        r_pol: 6_356_752.314_245,
+        r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
         planet_omega: OMEGA_EARTH,
     });
     sim.atmosphere_planet_source = Some(earth);
@@ -898,7 +898,7 @@ fn tier3_simulation_run10a_gravity_torque() {
 // 2,000,000s (~23 days), dt=1.0s, logged every 1000s.
 // Sun position from DE421 ephemeris (updated each logging interval).
 
-const SRP_MU_EARTH: f64 = 3.986004418e14;
+const SRP_MU_EARTH: f64 = 3.986_004_415e14;
 const SRP_R_EARTH: f64 = 6_378_137.0;
 const SRP_MASS: f64 = 300.0;
 const SRP_DT: f64 = 1.0;

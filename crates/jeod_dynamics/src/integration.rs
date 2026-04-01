@@ -450,7 +450,7 @@ mod tests {
         let initial_vel = DVec3::new(0.0, 7_500.0, 0.0);
 
         // Simple 1/r^2 gravity for testing
-        let mu = 3.986004418e14;
+        let mu = 3.986_004_415e14;
 
         // 3-DOF reference
         let mut state_3dof = TranslationalState {

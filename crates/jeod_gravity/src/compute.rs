@@ -222,7 +222,7 @@ pub fn gravitation_with_scratch(
 mod tests {
     use super::*;
 
-    const EARTH_MU: f64 = 3.986_004_418e14; // m^3/s^2
+    const EARTH_MU: f64 = 3.986_004_415e14; // m^3/s^2
     const EARTH_RADIUS: f64 = 6_378_137.0; // m
 
     #[test]

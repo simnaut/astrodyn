@@ -37,7 +37,7 @@ use jeod_sim::{
     RotationalState, SimBody, Simulation, SixDofState, TranslationalState,
 };
 
-const MU_EARTH: f64 = 3.986004418e14;
+const MU_EARTH: f64 = 3.986_004_415e14;
 const DT: f64 = 10.0;
 const NUM_STEPS: usize = 100;
 
@@ -261,7 +261,7 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
         config: AtmosphereConfig {
             model: AtmosphereModel::Exponential(exp_atmos),
             r_eq: 6_378_137.0,
-            r_pol: 6_356_752.314_245,
+            r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
             planet_omega: 0.0, // no wind for simplicity
         },
         planet_entity: None, // no rotation for exponential
@@ -312,7 +312,7 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Exponential(exp_atmos),
         r_eq: 6_378_137.0,
-        r_pol: 6_356_752.314_245,
+        r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
         planet_omega: 0.0,
     });
 
@@ -442,7 +442,7 @@ fn tier3_bevy_full_stack_sixdof() {
         config: AtmosphereConfig {
             model: AtmosphereModel::Exponential(exp_atmos),
             r_eq: 6_378_137.0,
-            r_pol: 6_356_752.314_245,
+            r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
             planet_omega: 7.292_115_146_706_388e-5, // Earth co-rotation wind
         },
         planet_entity: None,
@@ -524,7 +524,7 @@ fn tier3_bevy_full_stack_sixdof() {
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Exponential(exp_atmos),
         r_eq: 6_378_137.0,
-        r_pol: 6_356_752.314_245,
+        r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
         planet_omega: 7.292_115_146_706_388e-5,
     });
 
@@ -1187,7 +1187,7 @@ fn tier3_bevy_geodetic_derived_state() {
         name: "Earth",
         mu: MU_EARTH,
         r_eq: 6_378_137.0,
-        r_pol: 6_356_752.314_245,
+        r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
         flat_coeff: 1.0 / 298.257_223_563,
     };
 

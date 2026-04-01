@@ -88,7 +88,7 @@ fn point_mass_reasonable_at_jeod_positions() {
     );
 
     let cases = load_gravity_test_cases(&root);
-    let mu_earth = 3.986004418e14;
+    let mu_earth = 3.986_004_415e14;
 
     for case in &cases {
         let result = jeod_gravity::calc_spherical(mu_earth, case.position);

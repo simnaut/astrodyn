@@ -206,7 +206,7 @@ batch computation without Bevy.
 | ID | Task | Description | JEOD Reference |
 |----|------|-------------|----------------|
 | 2.33 | PlanetShape struct | `{ r_eq, r_pol, flattening }` | `planet/include/planet.hh` |
-| 2.34 | Earth preset | GM = 3.986004418e14, r_eq = 6378137.0, f = 1/298.257223563 (WGS84). | `planet/data/` |
+| 2.34 | Earth preset | GM = 3.986004415e14 (GGM05C), r_eq = 6378137.0, f = 1/298.257223563 (WGS84). | `planet/data/` |
 | 2.35 | Moon preset | GM, radius, shape parameters. | `planet/data/` |
 | 2.36 | Sun preset | GM, radius (point mass only). | `planet/data/` |
 | 2.37 | Mars preset | GM, radius, flattening. | `planet/data/` |

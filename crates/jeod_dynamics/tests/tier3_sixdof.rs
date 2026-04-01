@@ -22,7 +22,7 @@ use jeod_dynamics::{
 use jeod_math::JeodQuat;
 use std::path::Path;
 
-const MU_EARTH: f64 = 3.986004418e14;
+const MU_EARTH: f64 = 3.986_004_415e14;
 
 /// Parsed 6-DOF state record from JEOD CSV.
 #[derive(Debug)]

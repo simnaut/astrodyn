@@ -230,9 +230,9 @@ mod tests {
     use super::*;
     use std::f64::consts::PI;
 
-    const EARTH_MU: f64 = 3.986_004_418e14; // m^3/s^2
+    const EARTH_MU: f64 = 3.986_004_415e14; // m^3/s^2
     const EARTH_R_EQ: f64 = 6_378_137.0; // WGS84 equatorial radius (m)
-    const EARTH_R_POL: f64 = 6_356_752.314_245; // WGS84 polar radius (m)
+    const EARTH_R_POL: f64 = EARTH_R_EQ * (1.0 - 1.0 / 298.257_223_563); // JEOD: r_eq * (1 - flat_coeff)
 
     // =======================================================================
     // Test 1: Circular orbit from elements

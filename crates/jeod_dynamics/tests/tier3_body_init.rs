@@ -13,7 +13,7 @@ use glam::DVec3;
 use jeod_dynamics::init_from_orbital_elements;
 use std::path::Path;
 
-const MU_EARTH: f64 = 3.986_004_418e14;
+const MU_EARTH: f64 = 3.986_004_415e14;
 
 #[test]
 fn tier3_body_init_round_trip_over_trajectory() {

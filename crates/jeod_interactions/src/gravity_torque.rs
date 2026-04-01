@@ -77,7 +77,7 @@ mod tests {
         let inertia = DMat3::from_diagonal(DVec3::new(100.0, 100.0, 100.0));
 
         // Point-mass gradient at 7000 km, nadir along +X in inertial
-        let mu = 3.986004418e14;
+        let mu = 3.986_004_415e14;
         let r = 7_000_000.0;
         let r3 = r * r * r;
         // Gradient for point mass with nadir along X:
@@ -111,7 +111,7 @@ mod tests {
     ///   τ_y = 3μ/(2r³) · sin(2θ) · (A − C)
     #[test]
     fn analytical_gravity_gradient_torque() {
-        let mu = 3.986004418e14;
+        let mu = 3.986_004_415e14;
         let r = 7_000_000.0;
         let r3 = r * r * r;
 
@@ -165,7 +165,7 @@ mod tests {
     /// Non-diagonal inertia tensor: verify formula works for general case.
     #[test]
     fn non_diagonal_inertia() {
-        let mu = 3.986004418e14;
+        let mu = 3.986_004_415e14;
         let r = 7_000_000.0;
         let r3 = r * r * r;
 
@@ -229,7 +229,7 @@ mod tests {
     /// Torque magnitude increases with inertia asymmetry.
     #[test]
     fn torque_scales_with_inertia_difference() {
-        let mu = 3.986004418e14;
+        let mu = 3.986_004_415e14;
         let r = 7_000_000.0;
         let r3 = r * r * r;
         let grad = DMat3::from_diagonal(DVec3::new(1.0, 1.0, -2.0)) * (mu / r3);

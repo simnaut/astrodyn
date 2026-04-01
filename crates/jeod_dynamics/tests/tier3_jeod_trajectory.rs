@@ -18,7 +18,7 @@ use glam::DVec3;
 use jeod_dynamics::{rk4_translational_step, TranslationalState};
 use std::path::Path;
 
-const MU_EARTH: f64 = 3.986004418e14;
+const MU_EARTH: f64 = 3.986_004_415e14;
 
 fn point_mass_accel(pos: DVec3) -> DVec3 {
     let r_sq = pos.length_squared();
