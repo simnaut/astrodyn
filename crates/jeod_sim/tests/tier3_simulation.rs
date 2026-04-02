@@ -1776,14 +1776,11 @@ fn tier3_simulation_euler() {
 
         // Compute expected Euler angles from JEOD's quaternion for comparison
         let jeod_t = record.quaternion.left_quat_to_transformation();
-        let jeod_euler =
-            jeod_math::compute_euler_angles_from_matrix(&jeod_t, EulerSequence::XYZ);
+        let jeod_euler = jeod_math::compute_euler_angles_from_matrix(&jeod_t, EulerSequence::XYZ);
 
         // Also check quaternion error to understand the attitude tracking
-        let quat_err = quaternion_angle_error(
-            &body.rot.as_ref().unwrap().quaternion,
-            &record.quaternion,
-        );
+        let quat_err =
+            quaternion_angle_error(&body.rot.as_ref().unwrap().quaternion, &record.quaternion);
         max_quat_err = max_quat_err.max(quat_err);
 
         for k in 0..3 {
@@ -1929,19 +1926,13 @@ fn tier3_simulation_solar_beta() {
         max_pos_err = max_pos_err.max(pos_err);
 
         let beta = body.solar_beta.unwrap_or_else(|| {
-            panic!(
-                "Simulation did not compute solar beta at t={}",
-                record.time
-            )
+            panic!("Simulation did not compute solar beta at t={}", record.time)
         });
 
         // Self-consistency: verify against manual computation from Simulation's
         // own state. Must be bit-identical (same code path).
-        let expected = jeod_sim::compute_body_solar_beta(
-            body.trans.position,
-            body.trans.velocity,
-            sun_pos,
-        );
+        let expected =
+            jeod_sim::compute_body_solar_beta(body.trans.position, body.trans.velocity, sun_pos);
         assert_eq!(
             beta.to_bits(),
             expected.to_bits(),
