@@ -59,8 +59,7 @@ fn test_data_path(filename: &str) -> std::path::PathBuf {
 
 /// Get Sun position from DE421 ephemeris at the SIM_2_SHADOW_CALC epoch.
 fn sun_position_at_epoch() -> DVec3 {
-    let bsp_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../test_data/de421.bsp");
+    let bsp_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data/de421.bsp");
     assert!(
         bsp_path.exists(),
         "DE421 ephemeris not found at {}",
@@ -95,18 +94,16 @@ fn tier3_shadow_annular_eclipse() {
     let earth_pos = DVec3::ZERO; // Earth-centered inertial frame
 
     println!("=== Shadow: Annular Eclipse ({} points) ===", records.len());
-    println!("  Sun position: [{:.0}, {:.0}, {:.0}] m", sun_pos.x, sun_pos.y, sun_pos.z);
+    println!(
+        "  Sun position: [{:.0}, {:.0}, {:.0}] m",
+        sun_pos.x, sun_pos.y, sun_pos.z
+    );
 
     let mut max_flux_err = 0.0_f64;
 
     for (i, rec) in records.iter().enumerate() {
-        let our_shadow = compute_shadow_fraction(
-            rec.position,
-            sun_pos,
-            earth_pos,
-            R_EARTH,
-            SOLAR_RADIUS,
-        );
+        let our_shadow =
+            compute_shadow_fraction(rec.position, sun_pos, earth_pos, R_EARTH, SOLAR_RADIUS);
 
         let sun_dist = (rec.position - sun_pos).length();
         let our_flux = solar_flux_at_distance(sun_dist) * our_shadow;
@@ -160,13 +157,8 @@ fn tier3_shadow_annular_eclipse() {
     // Flux magnitude should match within 1% for illuminated points
     for (i, rec) in records.iter().enumerate() {
         if rec.flux_mag > 1.0 {
-            let our_shadow = compute_shadow_fraction(
-                rec.position,
-                sun_pos,
-                earth_pos,
-                R_EARTH,
-                SOLAR_RADIUS,
-            );
+            let our_shadow =
+                compute_shadow_fraction(rec.position, sun_pos, earth_pos, R_EARTH, SOLAR_RADIUS);
             let sun_dist = (rec.position - sun_pos).length();
             let our_flux = solar_flux_at_distance(sun_dist) * our_shadow;
             let rel_err = (our_flux - rec.flux_mag).abs() / rec.flux_mag;
@@ -204,13 +196,8 @@ fn tier3_shadow_transverse_shadow() {
     let mut max_rel_flux_err = 0.0_f64;
 
     for (i, rec) in records.iter().enumerate() {
-        let our_shadow = compute_shadow_fraction(
-            rec.position,
-            sun_pos,
-            earth_pos,
-            R_EARTH,
-            SOLAR_RADIUS,
-        );
+        let our_shadow =
+            compute_shadow_fraction(rec.position, sun_pos, earth_pos, R_EARTH, SOLAR_RADIUS);
 
         let sun_dist = (rec.position - sun_pos).length();
         let our_flux = solar_flux_at_distance(sun_dist) * our_shadow;

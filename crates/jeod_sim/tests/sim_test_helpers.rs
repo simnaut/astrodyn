@@ -129,7 +129,12 @@ pub fn load_orbelem_csv(path: &Path) -> Vec<OrbElemRecord> {
             continue;
         }
         let f: Vec<&str> = line.split(',').collect();
-        assert!(f.len() >= 21, "line {}: expected >=21 columns, got {}", i + 1, f.len());
+        assert!(
+            f.len() >= 21,
+            "line {}: expected >=21 columns, got {}",
+            i + 1,
+            f.len()
+        );
         let p = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
         records.push(OrbElemRecord {
             time: p(0),
@@ -164,7 +169,12 @@ pub fn load_lvlh_csv(path: &Path) -> Vec<LvlhRecord> {
             continue;
         }
         let f: Vec<&str> = line.split(',').collect();
-        assert!(f.len() >= 17, "line {}: expected >=17 columns, got {}", i + 1, f.len());
+        assert!(
+            f.len() >= 17,
+            "line {}: expected >=17 columns, got {}",
+            i + 1,
+            f.len()
+        );
         let p = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
         // JEOD row-major T[row][col] → glam column-major
         let t_parent_this = DMat3::from_cols(
@@ -204,7 +214,12 @@ pub fn load_ned_csv(path: &Path) -> Vec<NedRecord> {
             continue;
         }
         let f: Vec<&str> = line.split(',').collect();
-        assert!(f.len() >= 16, "line {}: expected >=16 columns, got {}", i + 1, f.len());
+        assert!(
+            f.len() >= 16,
+            "line {}: expected >=16 columns, got {}",
+            i + 1,
+            f.len()
+        );
         let p = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
         // CSV columns: 0=time, 1-3=cart_coords, 4=ellip_alt, 5=sphere_alt,
         // 6=ellip_lat, 7=sphere_lat, 8=ellip_lon, 9=sphere_lon,
@@ -239,7 +254,12 @@ pub fn load_srp_trajectory(path: &Path) -> Vec<SrpRecord> {
             continue;
         }
         let f: Vec<&str> = line.split(',').collect();
-        assert!(f.len() >= 7, "line {}: expected >=7 columns, got {}", i + 1, f.len());
+        assert!(
+            f.len() >= 7,
+            "line {}: expected >=7 columns, got {}",
+            i + 1,
+            f.len()
+        );
         let p = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
         records.push(SrpRecord {
             time: p(0),

@@ -984,7 +984,10 @@ fn tier3_simulation_run10c_gravity_torque_elliptical() {
         }
     }
 
-    println!("RUN_10C: max pos={:.4} m, max quat={:.2e} rad", max_pos_error, max_quat_error);
+    println!(
+        "RUN_10C: max pos={:.4} m, max quat={:.2e} rad",
+        max_pos_error, max_quat_error
+    );
     assert!(max_pos_error < 0.5);
     assert!(max_quat_error < 0.01);
 }
@@ -1059,7 +1062,10 @@ fn tier3_simulation_run10d_gravity_torque_elliptical_rate() {
         }
     }
 
-    println!("RUN_10D: max pos={:.4} m, max quat={:.2e} rad", max_pos_error, max_quat_error);
+    println!(
+        "RUN_10D: max pos={:.4} m, max quat={:.2e} rad",
+        max_pos_error, max_quat_error
+    );
     assert!(max_pos_error < 0.5);
     assert!(max_quat_error < 0.01);
 }
@@ -1126,12 +1132,12 @@ fn tier3_simulation_run9c_force_torque() {
             // External force [10,0,0] N and torque [10,0,0] N·m in
             // structural frame during [1000, 2000)s. Force must be rotated
             // to inertial frame; torque stays in body frame.
-            let (ext_force_struct, external_torque) =
-                if (999.999..1999.999).contains(&current_time) {
-                    (DVec3::new(10.0, 0.0, 0.0), DVec3::new(10.0, 0.0, 0.0))
-                } else {
-                    (DVec3::ZERO, DVec3::ZERO)
-                };
+            let (ext_force_struct, external_torque) = if (999.999..1999.999).contains(&current_time)
+            {
+                (DVec3::new(10.0, 0.0, 0.0), DVec3::new(10.0, 0.0, 0.0))
+            } else {
+                (DVec3::ZERO, DVec3::ZERO)
+            };
 
             let t_inertial_body = rot.quaternion.left_quat_to_transformation();
             let external_force_inertial = t_inertial_body.transpose() * ext_force_struct;
@@ -1168,7 +1174,10 @@ fn tier3_simulation_run9c_force_torque() {
             max_quat_error.max(quaternion_angle_error(&rot.quaternion, &record.quaternion));
     }
 
-    println!("RUN_9C: max pos={:.4} m, max quat={:.2e} rad", max_pos_error, max_quat_error);
+    println!(
+        "RUN_9C: max pos={:.4} m, max quat={:.2e} rad",
+        max_pos_error, max_quat_error
+    );
     assert!(max_pos_error < 0.5);
     assert!(max_quat_error < 0.01);
 }
@@ -1230,12 +1239,12 @@ fn tier3_simulation_run9d_force_torque_rate() {
                 Some((&earth_source, None))
             });
 
-            let (ext_force_struct, external_torque) =
-                if (999.999..1999.999).contains(&current_time) {
-                    (DVec3::new(10.0, 0.0, 0.0), DVec3::new(10.0, 0.0, 0.0))
-                } else {
-                    (DVec3::ZERO, DVec3::ZERO)
-                };
+            let (ext_force_struct, external_torque) = if (999.999..1999.999).contains(&current_time)
+            {
+                (DVec3::new(10.0, 0.0, 0.0), DVec3::new(10.0, 0.0, 0.0))
+            } else {
+                (DVec3::ZERO, DVec3::ZERO)
+            };
 
             let t_inertial_body = rot.quaternion.left_quat_to_transformation();
             let external_force_inertial = t_inertial_body.transpose() * ext_force_struct;
@@ -1272,7 +1281,10 @@ fn tier3_simulation_run9d_force_torque_rate() {
             max_quat_error.max(quaternion_angle_error(&rot.quaternion, &record.quaternion));
     }
 
-    println!("RUN_9D: max pos={:.4} m, max quat={:.2e} rad", max_pos_error, max_quat_error);
+    println!(
+        "RUN_9D: max pos={:.4} m, max quat={:.2e} rad",
+        max_pos_error, max_quat_error
+    );
     assert!(max_pos_error < 0.5);
     assert!(max_quat_error < 0.01);
 }
@@ -1323,7 +1335,10 @@ fn tier3_simulation_run6a_const_density_drag() {
         model: GravityModel::PointMass,
     };
 
-    let drag_config = DragConfig { cd: 0.02, area: 1.0 };
+    let drag_config = DragConfig {
+        cd: 0.02,
+        area: 1.0,
+    };
 
     const CONST_DENSITY: f64 = 1.4e-12; // kg/m³
 
