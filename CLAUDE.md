@@ -170,6 +170,17 @@ Set `JEOD_HOME` (or `JEOD_PATH`) to the JEOD source checkout.
 `JEOD_HOME` and `TRICK_HOME` follow the standard JEOD/Trick environment
 variable conventions.
 
+When running the full test suite and inspecting results, capture output to a
+temp file first, then grep it — never run the suite multiple times:
+
+```bash
+cargo test --workspace 2>&1 | tee /tmp/test-output.txt
+# then inspect:
+grep -c 'test .* \.\.\. ok' /tmp/test-output.txt    # count passing
+grep 'FAILED' /tmp/test-output.txt                   # find failures
+grep 'warning' /tmp/test-output.txt                  # find warnings
+```
+
 ### Test tiers and CI
 
 All Tier 3 test functions use the `tier3_` prefix, enabling cargo's name-based
