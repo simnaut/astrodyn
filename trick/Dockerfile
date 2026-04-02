@@ -66,12 +66,12 @@ if [ ! -f /generate_references.sh ]; then\n\
   echo "" >&2\n\
   echo "The script must be bind-mounted at runtime. From the bevy_jeod root:" >&2\n\
   echo "" >&2\n\
-  echo "  docker run --rm \\\\" >&2\n\
-  echo "    -v \\$(pwd)/test_data:/output \\\\" >&2\n\
-  echo "    -v \\$(pwd)/trick/generate_references.sh:/generate_references.sh:ro \\\\" >&2\n\
+  echo "  docker run --rm \\" >&2\n\
+  echo "    -v \\$(pwd)/test_data:/output \\" >&2\n\
+  echo "    -v \\$(pwd)/trick/generate_references.sh:/generate_references.sh:ro \\" >&2\n\
   echo "    jeod-trick" >&2\n\
   exit 1\n\
 fi\n\
-exec /generate_references.sh "$@"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
+exec /bin/bash /generate_references.sh "$@"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
 
 CMD ["/entrypoint.sh"]
