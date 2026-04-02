@@ -34,7 +34,7 @@ Phases are defined in [STRATEGY.md](STRATEGY.md) Section 8.
 - [ ] `cargo test --workspace` runs (0 tests, 0 failures)
 - [ ] `cargo clippy --workspace` produces no warnings
 - [ ] Each `jeod_*` crate compiles with **zero** Bevy dependency
-- [ ] Each `bevy_jeod_*` crate depends only on `jeod_sim` and `bevy` (never on `jeod_*` directly)
+- [x] Bevy glue (`src/`) depends only on `jeod_sim` and `bevy` (never on `jeod_*` directly)
 - [ ] CI pipeline runs successfully (if configured)
 
 ---
@@ -909,11 +909,13 @@ delivers new physics must add a scenario here. Current scenarios:
 |----------|---------|----------|
 | A | Point-mass gravity, 6-DOF | Phase 1 |
 | B | Exponential atmosphere + drag, 6-DOF | Phase 4 |
-| C | Solar radiation pressure, 3-DOF | Phase 4 |
+| C | Flat-plate SRP + conical shadow, 3-DOF | Phase 4 |
 | D | Gravity gradient torque, 6-DOF | Phase 4 |
 | E | Full stack (all interactions), 6-DOF | Phase 4 |
 | F | Spherical harmonics 4x4 + RNP | Phase 4 |
 | G | External torque via per-body functions | Phase 4 |
+| H | Derived states (orbital elements, LVLH, Euler, geodetic) | Phase 3a |
+| I | Geodetic derived state (planet-fixed rotation) | Phase 3a |
 
 Future phases must add: MET atmosphere (time-dependent), multi-body gravity,
 advanced integrators (Gauss-Jackson, RKF45).
@@ -927,7 +929,7 @@ advanced integrators (Gauss-Jackson, RKF45).
 5. Orchestration logic delegates to `jeod_sim` per-body functions
 6. Bevy system (if applicable) delegates to `jeod_sim`, not directly to `jeod_*`
 7. If new physics: Bevy-vs-Simulation scenario added to `tests/cross_parity.rs`
-8. If new physics: Simulation-vs-JEOD test added to `tier3_simulation.rs`
+8. If new physics: Simulation-vs-JEOD test added to `tier3_sim_*.rs` (named after JEOD source sim)
 
 ### Phase Transition Protocol
 
