@@ -2,7 +2,10 @@
 #
 # Usage (from bevy_jeod project root, with trick and jeod as siblings):
 #   docker build -f trick/Dockerfile -t jeod-trick ..
-#   docker run --rm -v $(pwd)/test_data:/output jeod-trick
+#   docker run --rm \
+#     -v $(pwd)/test_data:/output \
+#     -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro \
+#     jeod-trick
 #
 # The build context is the parent directory (..) so that both trick/ and jeod/
 # are accessible via COPY. BEVY_JEOD_DIR defaults to "bevy_jeod" but can be
@@ -46,11 +49,29 @@ RUN rm -rf build build_unit_test lib_jeod_unit_test && \
     cmake .. -DCMAKE_BUILD_TYPE=Release -DTRICK_HOME=/trick && \
     make -j$(nproc)
 
-# ── Copy the reference data generation script ──
-COPY ${BEVY_JEOD_DIR}/trick/generate_references.sh /generate_references.sh
-RUN chmod +x /generate_references.sh
-
 # ── Output volume ──
 VOLUME /output
 
-CMD ["/generate_references.sh"]
+# The generate_references.sh script is mounted at runtime, not baked into the
+# image.  This avoids Docker layer cache issues when only the script changes:
+#   docker run --rm -e FORCE=1 \
+#     -v $(pwd)/test_data:/output \
+#     -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro \
+#     jeod-trick
+# Wrapper entrypoint that prints a clear usage message if the script is not
+# bind-mounted into the container.
+RUN printf '#!/bin/sh\n\
+if [ ! -f /generate_references.sh ]; then\n\
+  echo "Error: /generate_references.sh not found in the container." >&2\n\
+  echo "" >&2\n\
+  echo "The script must be bind-mounted at runtime. From the bevy_jeod root:" >&2\n\
+  echo "" >&2\n\
+  echo "  docker run --rm \\" >&2\n\
+  echo "    -v \\$(pwd)/test_data:/output \\" >&2\n\
+  echo "    -v \\$(pwd)/trick/generate_references.sh:/generate_references.sh:ro \\" >&2\n\
+  echo "    jeod-trick" >&2\n\
+  exit 1\n\
+fi\n\
+exec /bin/bash /generate_references.sh "$@"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
+
+CMD ["/entrypoint.sh"]

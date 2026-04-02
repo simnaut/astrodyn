@@ -322,8 +322,8 @@ for prefix in ["vehA"]:
         dr.add_variable(f"{prefix}.ned.ned_state.ellip_coords.{coord}")
         dr.add_variable(f"{prefix}.ned.ned_state.sphere_coords.{coord}")
     for i in range(3):
-        dr.add_variable(f"{prefix}.dyn_body.structure.state.trans.position[{i}]")
-        dr.add_variable(f"{prefix}.dyn_body.structure.state.trans.velocity[{i}]")
+        dr.add_variable(f"{prefix}.dyn_body.composite_body.state.trans.position[{i}]")
+        dr.add_variable(f"{prefix}.dyn_body.composite_body.state.trans.velocity[{i}]")
 trick.add_data_record_group(dr)
 '
 
@@ -333,8 +333,8 @@ dr.set_cycle(5400)
 dr.freq = trick.sim_services.DR_Always
 dr.add_variable("veh.solar_beta.solar_beta")
 for i in range(3):
-    dr.add_variable(f"veh.dyn_body.structure.state.trans.position[{i}]")
-    dr.add_variable(f"veh.dyn_body.structure.state.trans.velocity[{i}]")
+    dr.add_variable(f"veh.dyn_body.composite_body.state.trans.position[{i}]")
+    dr.add_variable(f"veh.dyn_body.composite_body.state.trans.velocity[{i}]")
 trick.add_data_record_group(dr)
 '
 
@@ -347,8 +347,8 @@ for seq in ["euler_rpy", "euler_pyr_lvlh", "euler_rpy_lvlh", "euler_ypr_lvlh", "
         for i in range(3):
             dr.add_variable(f"veh.{seq}.{form}[{i}]")
 for i in range(3):
-    dr.add_variable(f"veh.dyn_body.structure.state.trans.position[{i}]")
-    dr.add_variable(f"veh.dyn_body.structure.state.trans.velocity[{i}]")
+    dr.add_variable(f"veh.dyn_body.composite_body.state.trans.position[{i}]")
+    dr.add_variable(f"veh.dyn_body.composite_body.state.trans.velocity[{i}]")
 for i in range(3):
     for j in range(3):
         dr.add_variable(f"veh.dyn_body.composite_body.state.rot.T_parent_this[{i}][{j}]")
