@@ -128,7 +128,7 @@ fn tier3_simulation_run2_3dof() {
     assert!(
         csv_path.exists(),
         "JEOD reference not found at {}.\n\
-         Generate with: docker run --rm -v $(pwd)/test_data:/output jeod-trick",
+         Generate with: docker run --rm -v $(pwd)/test_data:/output -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro jeod-trick",
         csv_path.display()
     );
 
@@ -335,7 +335,7 @@ fn tier3_simulation_run6b_drag() {
     assert!(
         csv_path.exists(),
         "JEOD reference not found at {}.\n\
-         Generate with: docker run --rm -v $(pwd)/test_data:/output jeod-trick",
+         Generate with: docker run --rm -v $(pwd)/test_data:/output -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro jeod-trick",
         csv_path.display()
     );
 
@@ -787,7 +787,7 @@ fn tier3_simulation_run10a_gravity_torque() {
     assert!(
         csv_path.exists(),
         "JEOD reference not found at {}.\n\
-         Generate with: docker run --rm -v $(pwd)/test_data:/output jeod-trick",
+         Generate with: docker run --rm -v $(pwd)/test_data:/output -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro jeod-trick",
         csv_path.display()
     );
 
@@ -992,9 +992,12 @@ fn load_srp_trajectory(path: &std::path::Path) -> Vec<SrpRecord> {
             continue;
         }
         let f: Vec<&str> = line.split(',').collect();
-        if f.len() < 7 {
-            continue;
-        }
+        assert!(
+            f.len() >= 7,
+            "line {}: expected >=7 columns, got {}",
+            i + 1,
+            f.len()
+        );
         let p = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
         records.push(SrpRecord {
             time: p(0),
@@ -1141,7 +1144,7 @@ fn tier3_simulation_srp_flat_plate() {
 // populated on SimBody each step.
 // ════════════════════════════════════════════════════════════════════════
 
-use jeod_sim::{EulerSequence, LvlhFrame, OrbitalElements};
+use jeod_sim::EulerSequence;
 
 // ── CSV loaders for derived-state sims ──
 
@@ -1163,7 +1166,7 @@ fn load_orbelem_csv(path: &Path) -> Vec<OrbElemRecord> {
     let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
         panic!(
             "Failed to read SIM_OrbElem CSV from {}: {e}\n\
-             Generate with: docker run --rm -v $(pwd)/test_data:/output jeod-trick",
+             Generate with: docker run --rm -v $(pwd)/test_data:/output -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro jeod-trick",
             path.display()
         )
     });
@@ -1173,9 +1176,12 @@ fn load_orbelem_csv(path: &Path) -> Vec<OrbElemRecord> {
             continue;
         }
         let f: Vec<&str> = line.split(',').collect();
-        if f.len() < 21 {
-            continue;
-        }
+        assert!(
+            f.len() >= 21,
+            "line {}: expected >=21 columns, got {}",
+            i + 1,
+            f.len()
+        );
         let p = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
         records.push(OrbElemRecord {
             time: p(0),
@@ -1206,7 +1212,7 @@ fn load_lvlh_csv(path: &Path) -> Vec<LvlhRecord> {
     let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
         panic!(
             "Failed to read SIM_LVLH CSV from {}: {e}\n\
-             Generate with: docker run --rm -v $(pwd)/test_data:/output jeod-trick",
+             Generate with: docker run --rm -v $(pwd)/test_data:/output -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro jeod-trick",
             path.display()
         )
     });
@@ -1216,9 +1222,12 @@ fn load_lvlh_csv(path: &Path) -> Vec<LvlhRecord> {
             continue;
         }
         let f: Vec<&str> = line.split(',').collect();
-        if f.len() < 17 {
-            continue;
-        }
+        assert!(
+            f.len() >= 17,
+            "line {}: expected >=17 columns, got {}",
+            i + 1,
+            f.len()
+        );
         let p = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
         // JEOD row-major T[row][col] → glam column-major
         let t_parent_this = DMat3::from_cols(
@@ -1276,7 +1285,7 @@ fn tier3_simulation_orbelem() {
     assert!(
         csv_path.exists(),
         "SIM_OrbElem RUN_ecc CSV not found at {}.\n\
-         Generate with: docker run --rm -v $(pwd)/test_data:/output jeod-trick",
+         Generate with: docker run --rm -v $(pwd)/test_data:/output -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro jeod-trick",
         csv_path.display()
     );
 
@@ -1420,7 +1429,7 @@ fn tier3_simulation_lvlh() {
     assert!(
         csv_path.exists(),
         "SIM_LVLH RUN_inc CSV not found at {}.\n\
-         Generate with: docker run --rm -v $(pwd)/test_data:/output jeod-trick",
+         Generate with: docker run --rm -v $(pwd)/test_data:/output -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro jeod-trick",
         csv_path.display()
     );
 
@@ -1523,7 +1532,8 @@ fn tier3_simulation_lvlh() {
 // The original CSV logged structure frame (which differs from composite_body
 // by the mass CoM offset [1,2,3] m). Run:
 //   docker build -f trick/Dockerfile -t jeod-trick ..
-//   docker run --rm -e FORCE=1 -v $(pwd)/test_data:/output jeod-trick
+//   docker run --rm -e FORCE=1 -v $(pwd)/test_data:/output \
+//     -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro jeod-trick
 
 const GEO_R_EQ: f64 = 6_378_137.0;
 const GEO_R_POL: f64 = GEO_R_EQ * (1.0 - 1.0 / 298.257_223_563);
@@ -1551,7 +1561,7 @@ fn load_ned_csv(path: &Path) -> Vec<NedRecord> {
     let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
         panic!(
             "Failed to read SIM_NED CSV from {}: {e}\n\
-             Generate with: docker run --rm -e FORCE=1 -v $(pwd)/test_data:/output jeod-trick",
+             Generate with: docker run --rm -e FORCE=1 -v $(pwd)/test_data:/output -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro jeod-trick",
             path.display()
         )
     });
@@ -1561,9 +1571,12 @@ fn load_ned_csv(path: &Path) -> Vec<NedRecord> {
             continue;
         }
         let f: Vec<&str> = line.split(',').collect();
-        if f.len() < 16 {
-            continue;
-        }
+        assert!(
+            f.len() >= 16,
+            "line {}: expected >=16 columns, got {}",
+            i + 1,
+            f.len()
+        );
         let p = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
         records.push(NedRecord {
             time: p(0),
@@ -1583,7 +1596,7 @@ fn tier3_simulation_geodetic() {
     assert!(
         csv_path.exists(),
         "SIM_NED CSV not found at {}.\n\
-         Generate with: docker run --rm -e FORCE=1 -v $(pwd)/test_data:/output jeod-trick",
+         Generate with: docker run --rm -e FORCE=1 -v $(pwd)/test_data:/output -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro jeod-trick",
         csv_path.display()
     );
 

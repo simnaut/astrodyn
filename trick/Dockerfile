@@ -58,4 +58,20 @@ VOLUME /output
 #     -v $(pwd)/test_data:/output \
 #     -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro \
 #     jeod-trick
-CMD ["/generate_references.sh"]
+# Wrapper entrypoint that prints a clear usage message if the script is not
+# bind-mounted into the container.
+RUN printf '#!/bin/sh\n\
+if [ ! -f /generate_references.sh ]; then\n\
+  echo "Error: /generate_references.sh not found in the container." >&2\n\
+  echo "" >&2\n\
+  echo "The script must be bind-mounted at runtime. From the bevy_jeod root:" >&2\n\
+  echo "" >&2\n\
+  echo "  docker run --rm \\\\" >&2\n\
+  echo "    -v \\$(pwd)/test_data:/output \\\\" >&2\n\
+  echo "    -v \\$(pwd)/trick/generate_references.sh:/generate_references.sh:ro \\\\" >&2\n\
+  echo "    jeod-trick" >&2\n\
+  exit 1\n\
+fi\n\
+exec /generate_references.sh "$@"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
+
+CMD ["/entrypoint.sh"]
