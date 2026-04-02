@@ -15,6 +15,9 @@
 //!   - RUN_9A:  External torque, 6-DOF (28800s)
 //!   - RUN_10A: Gravity gradient torque, cylinder mass, 6-DOF (28800s)
 //!   - SIM_3_ORBIT: Flat-plate SRP + shadow (~23 days)
+//!
+//! Additional interaction tests (RUN_10A libration, 10C/D, 9C/D, 6A)
+//! are in `tier3_sim_interactions.rs`.
 
 use glam::{DMat3, DVec3};
 use jeod_sim::{

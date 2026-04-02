@@ -319,18 +319,18 @@ batch computation without Bevy.
 
 ### Exit Criteria
 
-- [ ] **ISS reference state**: Position error < 1 m, velocity error < 0.001 m/s vs. JEOD reference data (`reference_inertial_trans_state.py`)
-- [ ] **Euler angles**: 6/6 test vectors from `euler_derived_state_ut.cc` pass within 1e-12 rad
-- [ ] **Quaternion stability**: Unit norm maintained to < 1e-14 over 86400s propagation (no renormalization)
-- [ ] **Torque-free precession**: Symmetric body precession rate matches analytical `ω_p` to < 0.1%
-- [ ] **Composite mass**: Two-body attachment composite inertia matches parallel axis theorem to < 1e-10 kg·m²
-- [ ] **Attach/detach**: Round-trip preserves total angular momentum to < 1e-10 N·m·s
-- [ ] **Geodetic conversion**: Round-trip (cartesian → geodetic → cartesian) error < 1e-6 m for 10+ test points
-- [ ] **Frame tree**: Relative state between any two frames matches direct computation to < 1e-14
-- [ ] **Portability**: All `jeod_*` Phase 3 additions compile without Bevy
-- [ ] **Bevy≡Simulation parity**: Every new Bevy system has a `jeod_sim` counterpart. `tier3_bevy_*` scenario added for each new physics capability, passing with `to_bits()` equality.
-- [ ] **Simulation≈JEOD**: `tier3_simulation_*` test added for each new capability, validated against JEOD Trick CSV.
-- [ ] `cargo test --workspace` — all tests pass
+- [x] **ISS reference state**: Position error < 1 m, velocity error < 0.001 m/s vs. JEOD reference data (`reference_inertial_trans_state.py`)
+- [x] **Euler angles**: 6/6 test vectors from `euler_derived_state_ut.cc` pass within 1e-12 rad
+- [x] **Quaternion stability**: Unit norm maintained to < 1e-14 over 86400s propagation (no renormalization)
+- [x] **Torque-free precession**: Symmetric body precession rate matches analytical `ω_p` to < 0.1%
+- [x] **Composite mass**: Two-body attachment composite inertia matches parallel axis theorem to < 1e-10 kg·m²
+- [x] **Attach/detach**: Round-trip preserves total angular momentum to < 1e-10 N·m·s
+- [x] **Geodetic conversion**: Round-trip (cartesian → geodetic → cartesian) error < 1e-6 m for 10+ test points
+- [x] **Frame tree**: Relative state between any two frames matches direct computation to < 1e-14
+- [x] **Portability**: All `jeod_*` Phase 3 additions compile without Bevy
+- [x] **Bevy≡Simulation parity**: Every new Bevy system has a `jeod_sim` counterpart. `tier3_bevy_*` scenario added for each new physics capability, passing with `to_bits()` equality.
+- [x] **Simulation≈JEOD**: `tier3_simulation_*` test added for each new capability, validated against JEOD Trick CSV.
+- [x] `cargo test --workspace` — all tests pass
 
 ---
 
@@ -388,17 +388,17 @@ without adding new physics.
 
 ### Exit Criteria
 
-- [ ] **Planet-fixed gravity**: Spherical harmonics Tier 3 (RUN_3A) position error < 5 m over 8h (down from 15.6 m with identity placeholder)
-- [ ] **Frame propagation**: Structure and core_body frame positions from `propagate_forward/reverse` match JEOD CSV columns to < 1e-6 m at each timestep over 8h (RUN_2)
-- [ ] **Orbital elements trajectory**: Our `from_cartesian()` matches JEOD `SIM_OrbElem` logged elements to < 1e-6 on each element over 1+ orbits
-- [ ] **LVLH frame trajectory**: Our `compute_lvlh_frame()` T_parent_this matches JEOD `SIM_LVLH` logged LVLH frame to < 1e-6 rad over 1+ orbits
-- [ ] **Geodetic + NED trajectory**: Our geodetic conversion matches JEOD `SIM_NED` logged ellipsoidal coordinates to < 1e-6 m altitude, < 1e-10 rad lat/lon over 1+ orbits
-- [ ] **Solar beta trajectory**: Our `solar_beta_angle()` matches JEOD `SIM_SolarBeta` logged beta to < 1e-4 rad over 24h (ISS-like orbit with Sun/Moon)
-- [ ] **Euler angle trajectory**: Our `compute_euler_angles_from_matrix()` matches JEOD `SIM_Euler` logged angles to < 1e-6 rad over 24h
-- [ ] **Body init from elements**: `init_from_orbital_elements()` for ISS produces position < 1 m, velocity < 0.001 m/s vs JEOD reference state
-- [ ] **Bevy≡Simulation parity**: `tier3_bevy_*` scenario for each new derived state (orbital elements, LVLH, Euler, geodetic, solar beta), passing with `to_bits()` equality vs `jeod_sim::Simulation`.
-- [ ] **Simulation≈JEOD**: Each derived state has a `tier3_simulation_*` test validated against JEOD Trick CSV.
-- [ ] `cargo test --workspace` — all tests pass, no regressions
+- [x] **Planet-fixed gravity**: Spherical harmonics Tier 3 (RUN_3A) position error < 5 m over 8h (down from 15.6 m with identity placeholder)
+- [x] **Frame propagation**: Structure and core_body frame positions from `propagate_forward/reverse` match JEOD CSV columns to < 1e-6 m at each timestep over 8h (RUN_2)
+- [x] **Orbital elements trajectory**: Our `from_cartesian()` matches JEOD `SIM_OrbElem` logged elements to < 1e-6 on each element over 1+ orbits
+- [x] **LVLH frame trajectory**: Our `compute_lvlh_frame()` T_parent_this matches JEOD `SIM_LVLH` logged LVLH frame to < 1e-6 rad over 1+ orbits
+- [x] **Geodetic + NED trajectory**: Our geodetic conversion matches JEOD `SIM_NED` logged ellipsoidal coordinates to < 1e-6 m altitude, < 1e-10 rad lat/lon over 1+ orbits
+- [x] **Solar beta trajectory**: Our `solar_beta_angle()` matches JEOD `SIM_SolarBeta` logged beta to < 1e-4 rad over 24h (ISS-like orbit with Sun/Moon)
+- [x] **Euler angle trajectory**: Our `compute_euler_angles_from_matrix()` matches JEOD `SIM_Euler` logged angles to < 1e-6 rad over 24h
+- [x] **Body init from elements**: `init_from_orbital_elements()` for ISS produces position < 1 m, velocity < 0.001 m/s vs JEOD reference state
+- [x] **Bevy≡Simulation parity**: `tier3_bevy_*` scenario for each new derived state (orbital elements, LVLH, Euler, geodetic, solar beta), passing with `to_bits()` equality vs `jeod_sim::Simulation`.
+- [x] **Simulation≈JEOD**: Each derived state has a `tier3_simulation_*` test validated against JEOD Trick CSV.
+- [x] `cargo test --workspace` — all tests pass, no regressions
 
 ---
 
@@ -479,10 +479,10 @@ without adding new physics.
 - [x] **MET atmosphere**: Density at 400 km in correct order-of-magnitude range for solar min (~1e-13 to 1e-12), mean (~1e-12 to 1e-11), and max (~1e-11 to 1e-10) kg/m³
 
 #### Tier 3 (trajectory cross-validation — requires Docker reference data)
-- [ ] **Tier 3 gravity torque**: 6-DOF trajectory with gravity gradient torque enabled. Compare attitude evolution against JEOD SIM_dyncomp RUN_9A/9B (ISS inertia, applied torque + gravity gradient). Quaternion error < 0.01 rad over 8h.
-- [ ] **Tier 3 drag trajectory**: LEO trajectory with MET atmosphere + ballistic drag. Compare position against JEOD SIM_dyncomp with drag enabled (RUN_5A or equivalent). Position error < 100 m over 24h.
-- [ ] **Tier 3 SRP trajectory**: Trajectory with solar radiation pressure. Compare against JEOD sim with SRP enabled. Position error < 10 m over 24h.
-- [ ] **Tier 3 shadow transitions**: Eclipse entry/exit times match JEOD logged shadow state to < 10 s over multiple orbits.
+- [x] **Tier 3 gravity torque**: 6-DOF trajectory with gravity gradient torque enabled. Compare attitude evolution against JEOD SIM_dyncomp RUN_9A/9B (ISS inertia, applied torque + gravity gradient). Quaternion error < 0.01 rad over 8h.
+- [x] **Tier 3 drag trajectory**: LEO trajectory with MET atmosphere + ballistic drag. Compare position against JEOD SIM_dyncomp with drag enabled (RUN_5A or equivalent). Position error < 100 m over 24h.
+- [x] **Tier 3 SRP trajectory**: Trajectory with solar radiation pressure. Compare against JEOD sim with SRP enabled. Position error < 10 m over 24h.
+- [x] **Tier 3 shadow transitions**: Eclipse entry/exit times match JEOD logged shadow state to < 10 s over multiple orbits.
 
 #### Other
 - [x] **Portability**: All `jeod_*` Phase 4 additions compile without Bevy; `leo_drag.rs` example uses only `jeod_*`/`glam` crates

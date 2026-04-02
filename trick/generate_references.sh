@@ -211,6 +211,14 @@ run_dyncomp_group() {
         "SET_test/RUN_6B:dyncomp_run6b:dyncomp_run6b_state.csv"
         "SET_test/RUN_10A:dyncomp_run10a:dyncomp_run10a_state.csv"
         "SET_test/RUN_10B:dyncomp_run10b:dyncomp_run10b_state.csv"
+        # Phase 4a additions (zero build cost — same SIM_dyncomp executable)
+        "SET_test/RUN_5B:dyncomp_run5b:dyncomp_run5b_state.csv"
+        "SET_test/RUN_5C:dyncomp_run5c:dyncomp_run5c_state.csv"
+        "SET_test/RUN_6A:dyncomp_run6a:dyncomp_run6a_state.csv"
+        "SET_test/RUN_9C:dyncomp_run9c:dyncomp_run9c_state.csv"
+        "SET_test/RUN_9D:dyncomp_run9d:dyncomp_run9d_state.csv"
+        "SET_test/RUN_10C:dyncomp_run10c:dyncomp_run10c_state.csv"
+        "SET_test/RUN_10D:dyncomp_run10d:dyncomp_run10d_state.csv"
     )
 
     # Skip entire group (including build) if all primary outputs exist
@@ -379,6 +387,47 @@ dr.add_variable("radiation.rad_pressure.source.flux_mag")
 trick.add_data_record_group(dr)
 '
 
+# ── ASCII logging snippet for SIM_torque_compare_simple (gravity torque) ──
+# Logs gravity torque, state, and angular velocity at 1-second resolution.
+TORQUE_SIMPLE_SNIPPET='
+dr = trick.sim_services.DRAscii("torque_simple_ASCII")
+dr.set_cycle(1.0)
+dr.freq = trick.sim_services.DR_Always
+for ii in range(3):
+    dr.add_variable("sv_dyn.body.composite_body.state.trans.position[" + str(ii) + "]")
+for ii in range(3):
+    dr.add_variable("sv_dyn.body.composite_body.state.trans.velocity[" + str(ii) + "]")
+for ii in range(3):
+    dr.add_variable("sv_dyn.body.composite_body.state.rot.ang_vel_this[" + str(ii) + "]")
+for ii in range(3):
+    for jj in range(3):
+        dr.add_variable("sv_dyn.body.composite_body.state.rot.T_parent_this[" + str(ii) + "][" + str(jj) + "]")
+for ii in range(4):
+    if ii < 3:
+        dr.add_variable("sv_dyn.body.composite_body.state.rot.Q_parent_this.vector[" + str(ii) + "]")
+    else:
+        dr.add_variable("sv_dyn.body.composite_body.state.rot.Q_parent_this.scalar")
+for ii in range(3):
+    dr.add_variable("sv_dyn.grav_torque.torque[" + str(ii) + "]")
+trick.add_data_record_group(dr)
+'
+
+# ── ASCII logging snippet for SIM_2_SHADOW_CALC (eclipse geometry) ──
+# Logs vehicle position, flux magnitude, and radiation force/torque.
+SHADOW_CALC_SNIPPET='
+dr = trick.sim_services.DRAscii("shadow_calc_ASCII")
+dr.set_cycle(1.0)
+dr.freq = trick.sim_services.DR_Always
+for ii in range(3):
+    dr.add_variable("vehicle.dyn_body.structure.state.trans.position[" + str(ii) + "]")
+dr.add_variable("radiation.rad_pressure.source.flux_mag")
+for ii in range(3):
+    dr.add_variable("radiation.rad_pressure.force[" + str(ii) + "]")
+for ii in range(3):
+    dr.add_variable("radiation.rad_pressure.torque[" + str(ii) + "]")
+trick.add_data_record_group(dr)
+'
+
 # ════════════════════════════════════════════════════════════════════
 # LAUNCH ALL GROUPS IN PARALLEL
 # ════════════════════════════════════════════════════════════════════
@@ -420,6 +469,64 @@ PID_INTEG=$!
 run_sim_with_ascii "models/interactions/radiation_pressure/verif/SIM_3_ORBIT" "SET_test/RUN_radiation" "srp_orbit_radiation" "$SRP_ORBIT_SNIPPET" &
 PID_SRP_ORBIT=$!
 
+# Group 10: SIM_torque_compare_simple (high-resolution gravity torque, 6 runs)
+run_torque_compare_simple_group() {
+    local sim_dir="models/interactions/gravity_torque/verif/SIM_torque_compare_simple"
+    local -a RUNS=(
+        "SET_test/RUN_01:torque_simple_run01"
+        "SET_test/RUN_02:torque_simple_run02"
+        "SET_test/RUN_03:torque_simple_run03"
+        "SET_test/RUN_04:torque_simple_run04"
+        "SET_test/RUN_05:torque_simple_run05"
+        "SET_test/RUN_06:torque_simple_run06"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label <<< "$entry"
+        if ! has_output "$label"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_torque_compare_simple group (all outputs exist) ==="
+        return 0
+    fi
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$TORQUE_SIMPLE_SNIPPET" || true
+    done
+}
+run_torque_compare_simple_group &
+PID_TORQUE_SIMPLE=$!
+
+# Group 11: SIM_2_SHADOW_CALC (eclipse geometry, 2 runs)
+run_shadow_calc_group() {
+    local sim_dir="models/interactions/radiation_pressure/verif/SIM_2_SHADOW_CALC"
+    local -a RUNS=(
+        "SET_test/RUN_annular_eclipse:shadow_annular_eclipse"
+        "SET_test/RUN_transverse_shadow:shadow_transverse_shadow"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label <<< "$entry"
+        if ! has_output "$label"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_2_SHADOW_CALC group (all outputs exist) ==="
+        return 0
+    fi
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$SHADOW_CALC_SNIPPET" || true
+    done
+}
+run_shadow_calc_group &
+PID_SHADOW_CALC=$!
+
 # ════════════════════════════════════════════════════════════════════
 # WAIT FOR ALL GROUPS
 # ════════════════════════════════════════════════════════════════════
@@ -434,7 +541,9 @@ wait $PID_NED       || { echo "WARN: SIM_NED failed"; FAIL=1; }
 wait $PID_SOLARBETA  || { echo "WARN: SIM_SolarBeta failed"; FAIL=1; }
 wait $PID_EULER     || { echo "WARN: SIM_Euler failed"; FAIL=1; }
 wait $PID_INTEG     || { echo "WARN: SIM_integ_test failed"; FAIL=1; }
-wait $PID_SRP_ORBIT || { echo "WARN: SIM_3_ORBIT SRP failed"; FAIL=1; }
+wait $PID_SRP_ORBIT    || { echo "WARN: SIM_3_ORBIT SRP failed"; FAIL=1; }
+wait $PID_TORQUE_SIMPLE || { echo "WARN: SIM_torque_compare_simple failed"; FAIL=1; }
+wait $PID_SHADOW_CALC  || { echo "WARN: SIM_2_SHADOW_CALC failed"; FAIL=1; }
 
 echo ""
 echo "=== Reference data generation complete ==="
