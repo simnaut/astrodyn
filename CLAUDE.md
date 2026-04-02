@@ -194,10 +194,16 @@ docker build -f trick/Dockerfile -t jeod-trick ..
 
 # Generate reference CSVs into test_data/ (incremental — skips existing outputs)
 mkdir -p test_data
-docker run --rm -v $(pwd)/test_data:/output jeod-trick
+docker run --rm \
+  -v $(pwd)/test_data:/output \
+  -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro \
+  jeod-trick
 
 # Force regenerate all data (ignores existing outputs)
-docker run --rm -e FORCE=1 -v $(pwd)/test_data:/output jeod-trick
+docker run --rm -e FORCE=1 \
+  -v $(pwd)/test_data:/output \
+  -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro \
+  jeod-trick
 ```
 
 The generation script is **incremental by default**: it checks for existing

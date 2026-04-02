@@ -2,7 +2,10 @@
 #
 # Usage (from bevy_jeod project root, with trick and jeod as siblings):
 #   docker build -f trick/Dockerfile -t jeod-trick ..
-#   docker run --rm -v $(pwd)/test_data:/output jeod-trick
+#   docker run --rm \
+#     -v $(pwd)/test_data:/output \
+#     -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro \
+#     jeod-trick
 #
 # The build context is the parent directory (..) so that both trick/ and jeod/
 # are accessible via COPY. BEVY_JEOD_DIR defaults to "bevy_jeod" but can be
@@ -46,11 +49,13 @@ RUN rm -rf build build_unit_test lib_jeod_unit_test && \
     cmake .. -DCMAKE_BUILD_TYPE=Release -DTRICK_HOME=/trick && \
     make -j$(nproc)
 
-# ── Copy the reference data generation script ──
-COPY ${BEVY_JEOD_DIR}/trick/generate_references.sh /generate_references.sh
-RUN chmod +x /generate_references.sh
-
 # ── Output volume ──
 VOLUME /output
 
+# The generate_references.sh script is mounted at runtime, not baked into the
+# image.  This avoids Docker layer cache issues when only the script changes:
+#   docker run --rm -e FORCE=1 \
+#     -v $(pwd)/test_data:/output \
+#     -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro \
+#     jeod-trick
 CMD ["/generate_references.sh"]
