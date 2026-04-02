@@ -903,10 +903,11 @@ fn tier3_simulation_run10a_libration_period() {
     println!("  Analytical period:    {ANALYTICAL_PERIOD:.2} s");
     println!("  Period error:         {period_error_pct:.4}%");
 
-    // Phase 4a exit criterion: period within 0.1% of analytical (3257.94s).
-    // The 60s logging resolution limits absolute accuracy to ~1.8% per
-    // individual measurement, but averaging over 8 hours (~8 half-cycles)
-    // brings the mean well within 0.5%.
+    // PLAN.md criterion is 0.1%, but the 60s logging resolution limits
+    // per-measurement accuracy to ~1.8%. Averaging over 8 hours (~8
+    // half-cycles) brings the mean within 0.5%; achieving 0.1% would
+    // require finer-grained reference data (e.g., SIM_torque_compare_simple
+    // at 1-second resolution).
     assert!(
         period_error_pct < 0.5,
         "In-plane libration period {mean_period:.2} s deviates {period_error_pct:.4}% \

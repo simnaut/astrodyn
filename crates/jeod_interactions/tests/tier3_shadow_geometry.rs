@@ -17,8 +17,8 @@ use std::path::Path;
 
 const R_EARTH: f64 = 6_378_137.0; // WGS84 equatorial radius
 
-/// SIM_2_SHADOW_CALC epoch: 1998-12-01 00:00:31 TAI.
-/// Same as SIM_3_ORBIT.
+/// Epoch used for SIM_2_SHADOW_CALC / SIM_3_ORBIT in truncated Julian time (TJT).
+/// TJT = MJD - 40000; here EPOCH_TJT = 11148.0 => JD = 2_451_148.5 (~ 1998-12-01 00:00 TDB).
 const EPOCH_TJT: f64 = 11148.0;
 
 struct ShadowRecord {
