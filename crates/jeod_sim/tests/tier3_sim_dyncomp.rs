@@ -810,7 +810,7 @@ fn tier3_simulation_run10a_gravity_torque() {
 // and validates the period against the analytical value.
 
 #[test]
-fn tier3_simulation_run10a_libration_period() {
+fn tier3_reference_run10a_libration_period() {
     let csv_path = test_data_path("dyncomp_run10a_state.csv");
     assert!(
         csv_path.exists(),
@@ -989,8 +989,14 @@ fn tier3_simulation_run10c_gravity_torque_elliptical() {
         "RUN_10C: max pos={:.4} m, max quat={:.2e} rad",
         max_pos_error, max_quat_error
     );
-    assert!(max_pos_error < 0.5);
-    assert!(max_quat_error < 0.01);
+    assert!(
+        max_pos_error < 0.5,
+        "RUN_10C: position error {max_pos_error:.4} m exceeds 0.5 m"
+    );
+    assert!(
+        max_quat_error < 0.01,
+        "RUN_10C: quaternion error {max_quat_error:.2e} rad exceeds 0.01 rad"
+    );
 }
 
 // ── RUN_10D: Gravity gradient torque, elliptical orbit, initial rate ──
@@ -1067,8 +1073,14 @@ fn tier3_simulation_run10d_gravity_torque_elliptical_rate() {
         "RUN_10D: max pos={:.4} m, max quat={:.2e} rad",
         max_pos_error, max_quat_error
     );
-    assert!(max_pos_error < 0.5);
-    assert!(max_quat_error < 0.01);
+    assert!(
+        max_pos_error < 0.5,
+        "RUN_10D: position error {max_pos_error:.4} m exceeds 0.5 m"
+    );
+    assert!(
+        max_quat_error < 0.01,
+        "RUN_10D: quaternion error {max_quat_error:.2e} rad exceeds 0.01 rad"
+    );
 }
 
 // ── RUN_9C: External force + torque, zero inertial rate ──
@@ -1179,8 +1191,14 @@ fn tier3_simulation_run9c_force_torque() {
         "RUN_9C: max pos={:.4} m, max quat={:.2e} rad",
         max_pos_error, max_quat_error
     );
-    assert!(max_pos_error < 0.5);
-    assert!(max_quat_error < 0.01);
+    assert!(
+        max_pos_error < 0.5,
+        "RUN_9C: position error {max_pos_error:.4} m exceeds 0.5 m"
+    );
+    assert!(
+        max_quat_error < 0.01,
+        "RUN_9C: quaternion error {max_quat_error:.2e} rad exceeds 0.01 rad"
+    );
 }
 
 // ── RUN_9D: External force + torque, with orbit rate ──
@@ -1286,8 +1304,14 @@ fn tier3_simulation_run9d_force_torque_rate() {
         "RUN_9D: max pos={:.4} m, max quat={:.2e} rad",
         max_pos_error, max_quat_error
     );
-    assert!(max_pos_error < 0.5);
-    assert!(max_quat_error < 0.01);
+    assert!(
+        max_pos_error < 0.5,
+        "RUN_9D: position error {max_pos_error:.4} m exceeds 0.5 m"
+    );
+    assert!(
+        max_quat_error < 0.01,
+        "RUN_9D: quaternion error {max_quat_error:.2e} rad exceeds 0.01 rad"
+    );
 }
 
 // ── RUN_6A: Constant-density drag, sphere mass ──
