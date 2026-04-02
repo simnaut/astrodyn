@@ -1821,11 +1821,10 @@ fn tier3_simulation_euler() {
         "Quaternion error {max_quat_err:.2e} rad exceeds 0.01 rad"
     );
     // Euler angle error derives from quaternion error
-    for k in 0..3 {
+    for (k, &err) in max_angle_err.iter().enumerate() {
         assert!(
-            max_angle_err[k] < 0.02,
-            "Euler angle[{k}] error {:.2e} rad exceeds 0.02 rad",
-            max_angle_err[k]
+            err < 0.02,
+            "Euler angle[{k}] error {err:.2e} rad exceeds 0.02 rad",
         );
     }
 }
