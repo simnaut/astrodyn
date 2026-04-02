@@ -492,10 +492,12 @@ run_torque_compare_simple_group() {
         echo "=== Skipping SIM_torque_compare_simple group (all outputs exist) ==="
         return 0
     fi
+    local fail=0
     for entry in "${RUNS[@]}"; do
         IFS=: read -r run_dir label <<< "$entry"
-        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$TORQUE_SIMPLE_SNIPPET" || true
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$TORQUE_SIMPLE_SNIPPET" || fail=1
     done
+    return $fail
 }
 run_torque_compare_simple_group &
 PID_TORQUE_SIMPLE=$!
@@ -519,10 +521,12 @@ run_shadow_calc_group() {
         echo "=== Skipping SIM_2_SHADOW_CALC group (all outputs exist) ==="
         return 0
     fi
+    local fail=0
     for entry in "${RUNS[@]}"; do
         IFS=: read -r run_dir label <<< "$entry"
-        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$SHADOW_CALC_SNIPPET" || true
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$SHADOW_CALC_SNIPPET" || fail=1
     done
+    return $fail
 }
 run_shadow_calc_group &
 PID_SHADOW_CALC=$!
