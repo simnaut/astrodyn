@@ -110,13 +110,13 @@ fn tier3_simulation_geodetic() {
 
         if (record.time % 3600.0).abs() < 6.1 {
             println!(
-                "  t={:6.0}s: pos_err={:.4} m  alt_err={:.3e} m  lat_err={:.3e} rad  lon_err={:.3e} rad",
+                "  t={:6.0}s: pos_err={:.3e} m  alt_err={:.3e} m  lat_err={:.3e} rad  lon_err={:.3e} rad",
                 record.time, pos_err, alt_err, lat_err, lon_err
             );
         }
     }
 
-    println!("  Max position error:  {:.4} m", max_pos_err);
+    println!("  Max position error:  {:.6e} m", max_pos_err);
     println!("  Max altitude error:  {:.6e} m", max_alt_err);
     println!("  Max latitude error:  {:.6e} rad", max_lat_err);
     println!("  Max longitude error: {:.6e} rad", max_lon_err);
