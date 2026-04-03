@@ -303,31 +303,43 @@ fn tier3_simulation_run10c_gravity_torque_elliptical() {
     sim.validate().unwrap();
 
     let mut max_pos_error = 0.0_f64;
+    let mut max_vel_error = 0.0_f64;
     let mut max_quat_error = 0.0_f64;
+    let mut max_omega_error = 0.0_f64;
 
     for record in &trajectory[1..] {
         sim.step_until(record.time);
 
         let body = sim.body(0);
         max_pos_error = max_pos_error.max((body.trans.position - record.position).length());
+        max_vel_error = max_vel_error.max((body.trans.velocity - record.velocity).length());
 
         if let Some(ref rot) = body.rot {
             max_quat_error =
                 max_quat_error.max(quaternion_angle_error(&rot.quaternion, &record.quaternion));
+            max_omega_error = max_omega_error.max((rot.ang_vel_body - record.ang_vel).length());
         }
     }
 
     println!(
-        "RUN_10C: max pos={:.4} m, max quat={:.2e} rad",
-        max_pos_error, max_quat_error
+        "RUN_10C: max pos={:.4} m  vel={:.6} m/s  quat={:.2e} rad  omega={:.2e} rad/s",
+        max_pos_error, max_vel_error, max_quat_error, max_omega_error
     );
     assert!(
         max_pos_error < 0.5,
         "RUN_10C: position error {max_pos_error:.4} m exceeds 0.5 m"
     );
     assert!(
+        max_vel_error < 0.001,
+        "RUN_10C: velocity error {max_vel_error:.6} m/s exceeds 0.001 m/s"
+    );
+    assert!(
         max_quat_error < 0.01,
         "RUN_10C: quaternion error {max_quat_error:.2e} rad exceeds 0.01 rad"
+    );
+    assert!(
+        max_omega_error < 1e-5,
+        "RUN_10C: omega error {max_omega_error:.2e} rad/s exceeds 1e-5 rad/s"
     );
 }
 
@@ -387,30 +399,42 @@ fn tier3_simulation_run10d_gravity_torque_elliptical_rate() {
     sim.validate().unwrap();
 
     let mut max_pos_error = 0.0_f64;
+    let mut max_vel_error = 0.0_f64;
     let mut max_quat_error = 0.0_f64;
+    let mut max_omega_error = 0.0_f64;
 
     for record in &trajectory[1..] {
         sim.step_until(record.time);
 
         let body = sim.body(0);
         max_pos_error = max_pos_error.max((body.trans.position - record.position).length());
+        max_vel_error = max_vel_error.max((body.trans.velocity - record.velocity).length());
 
         if let Some(ref rot) = body.rot {
             max_quat_error =
                 max_quat_error.max(quaternion_angle_error(&rot.quaternion, &record.quaternion));
+            max_omega_error = max_omega_error.max((rot.ang_vel_body - record.ang_vel).length());
         }
     }
 
     println!(
-        "RUN_10D: max pos={:.4} m, max quat={:.2e} rad",
-        max_pos_error, max_quat_error
+        "RUN_10D: max pos={:.4} m  vel={:.6} m/s  quat={:.2e} rad  omega={:.2e} rad/s",
+        max_pos_error, max_vel_error, max_quat_error, max_omega_error
     );
     assert!(
         max_pos_error < 0.5,
         "RUN_10D: position error {max_pos_error:.4} m exceeds 0.5 m"
     );
     assert!(
+        max_vel_error < 0.001,
+        "RUN_10D: velocity error {max_vel_error:.6} m/s exceeds 0.001 m/s"
+    );
+    assert!(
         max_quat_error < 0.01,
         "RUN_10D: quaternion error {max_quat_error:.2e} rad exceeds 0.01 rad"
+    );
+    assert!(
+        max_omega_error < 1e-5,
+        "RUN_10D: omega error {max_omega_error:.2e} rad/s exceeds 1e-5 rad/s"
     );
 }

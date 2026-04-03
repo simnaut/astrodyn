@@ -1,14 +1,13 @@
-//! Tier 3: SIM_dyncomp RUN_5B/5C — Atmosphere comparison (solar mean/max)
+//! Tier 3: SIM_dyncomp RUN_5B/5C — Elliptical orbit, 6-DOF (ISS mass)
 //!
-//! These runs use ISS mass in an elliptical orbit with the MET atmosphere
-//! model active but aerodynamic drag disabled. Gravity gradient is computed
-//! but gravity torque is off. The atmosphere does not affect the trajectory
-//! (no drag force), so these validate:
-//!   1. Point-mass 6-DOF propagation from elliptical orbit ICs
-//!   2. Correct trajectory despite atmosphere model running in background
+//! JEOD labels these "atmosphere comparison" runs, but drag is disabled
+//! so the atmosphere model has no effect on the trajectory. These are
+//! effectively point-mass 6-DOF tests with elliptical orbit ICs and ISS
+//! mass/inertia — validating gravity + rotational dynamics on a different
+//! orbit geometry than the typical (near-circular) RUN_2.
 //!
-//! RUN_5B: F10.7 = 128.8 (solar mean), geo_index = 15.7
-//! RUN_5C: F10.7 = 250.0 (solar max),  geo_index = 25.0
+//! RUN_5B: JEOD config uses F10.7 = 128.8 (solar mean)
+//! RUN_5C: JEOD config uses F10.7 = 250.0 (solar max)
 
 mod sim_test_helpers;
 use sim_test_helpers::*;
@@ -36,9 +35,9 @@ fn tier3_simulation_run5c_atmosphere_max() {
 
 /// Shared test body for RUN_5B/5C.
 ///
-/// Both runs have identical physics (drag off, gravity torque off) — only
-/// the atmosphere parameters differ, which don't affect the trajectory.
-/// We propagate with the Simulation runner and compare against JEOD CSV.
+/// Both runs have identical physics (point-mass gravity, 6-DOF, drag off,
+/// gravity torque off) with elliptical orbit ICs. We propagate with the
+/// Simulation runner and compare against JEOD CSV.
 fn run_atmosphere_test(csv_filename: &str, label: &str) {
     let csv_path = test_data_path(csv_filename);
     assert!(

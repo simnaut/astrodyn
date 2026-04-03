@@ -898,7 +898,7 @@ call the same functions in the same order.
 
 Tier 3 has two complementary test paths:
 
-**Simulation-vs-JEOD** (`jeod_sim/tests/tier3_simulation.rs`): validates the
+**Simulation-vs-JEOD** (`jeod_sim/tests/tier3_sim_*.rs`): validates the
 `Simulation::step()` production code path against JEOD Trick CSV data.
 
 **Bevy-vs-Simulation** (`tests/cross_parity.rs`): validates that the Bevy ECS
