@@ -99,10 +99,7 @@ fn run_atmosphere_test(csv_filename: &str, label: &str) {
 
     sim.validate().unwrap();
 
-    println!(
-        "Tier 3 (Simulation): {label}, {} points",
-        trajectory.len()
-    );
+    println!("Tier 3 (Simulation): {label}, {} points", trajectory.len());
 
     let mut max_pos_error = 0.0_f64;
     let mut max_vel_error = 0.0_f64;
