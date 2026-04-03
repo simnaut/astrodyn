@@ -473,17 +473,17 @@ PID_SRP_ORBIT=$!
 run_torque_compare_simple_group() {
     local sim_dir="models/interactions/gravity_torque/verif/SIM_torque_compare_simple"
     local -a RUNS=(
-        "SET_test/RUN_01:torque_simple_run01"
-        "SET_test/RUN_02:torque_simple_run02"
-        "SET_test/RUN_03:torque_simple_run03"
-        "SET_test/RUN_04:torque_simple_run04"
-        "SET_test/RUN_05:torque_simple_run05"
-        "SET_test/RUN_06:torque_simple_run06"
+        "SET_test/RUN_01:torque_simple_run01:torque_simple_run01_torque_simple.csv"
+        "SET_test/RUN_02:torque_simple_run02:torque_simple_run02_torque_simple.csv"
+        "SET_test/RUN_03:torque_simple_run03:torque_simple_run03_torque_simple.csv"
+        "SET_test/RUN_04:torque_simple_run04:torque_simple_run04_torque_simple.csv"
+        "SET_test/RUN_05:torque_simple_run05:torque_simple_run05_torque_simple.csv"
+        "SET_test/RUN_06:torque_simple_run06:torque_simple_run06_torque_simple.csv"
     )
     local needs_build=0
     for entry in "${RUNS[@]}"; do
-        IFS=: read -r _run_dir label <<< "$entry"
-        if ! has_output "$label"; then
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
             needs_build=1
             break
         fi
@@ -494,7 +494,7 @@ run_torque_compare_simple_group() {
     fi
     local fail=0
     for entry in "${RUNS[@]}"; do
-        IFS=: read -r run_dir label <<< "$entry"
+        IFS=: read -r run_dir label _required <<< "$entry"
         run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$TORQUE_SIMPLE_SNIPPET" || fail=1
     done
     return $fail
@@ -506,13 +506,13 @@ PID_TORQUE_SIMPLE=$!
 run_shadow_calc_group() {
     local sim_dir="models/interactions/radiation_pressure/verif/SIM_2_SHADOW_CALC"
     local -a RUNS=(
-        "SET_test/RUN_annular_eclipse:shadow_annular_eclipse"
-        "SET_test/RUN_transverse_shadow:shadow_transverse_shadow"
+        "SET_test/RUN_annular_eclipse:shadow_annular_eclipse:shadow_annular_eclipse_shadow_calc.csv"
+        "SET_test/RUN_transverse_shadow:shadow_transverse_shadow:shadow_transverse_shadow_shadow_calc.csv"
     )
     local needs_build=0
     for entry in "${RUNS[@]}"; do
-        IFS=: read -r _run_dir label <<< "$entry"
-        if ! has_output "$label"; then
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
             needs_build=1
             break
         fi
@@ -523,7 +523,7 @@ run_shadow_calc_group() {
     fi
     local fail=0
     for entry in "${RUNS[@]}"; do
-        IFS=: read -r run_dir label <<< "$entry"
+        IFS=: read -r run_dir label _required <<< "$entry"
         run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$SHADOW_CALC_SNIPPET" || fail=1
     done
     return $fail

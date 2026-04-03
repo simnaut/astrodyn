@@ -32,14 +32,7 @@ pub struct SixDofRecord {
 }
 
 pub fn load_trans_trajectory(path: &Path) -> Vec<TransRecord> {
-    let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
-        panic!(
-            "Failed to read JEOD trajectory CSV from {}: {e}\n\
-             Generate with: docker build -f trick/Dockerfile -t jeod-trick .. && \
-             docker run --rm -v $(pwd)/test_data:/output jeod-trick",
-            path.display()
-        )
-    });
+    let content = read_csv(path, "SIM_dyncomp");
     let mut records = Vec::new();
     for (i, line) in content.lines().enumerate() {
         if i == 0 || line.trim().is_empty() {
@@ -63,14 +56,7 @@ pub fn load_trans_trajectory(path: &Path) -> Vec<TransRecord> {
 }
 
 pub fn load_sixdof_trajectory(path: &Path) -> Vec<SixDofRecord> {
-    let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
-        panic!(
-            "Failed to read JEOD trajectory CSV from {}: {e}\n\
-             Generate with: docker build -f trick/Dockerfile -t jeod-trick .. && \
-             docker run --rm -v $(pwd)/test_data:/output jeod-trick",
-            path.display()
-        )
-    });
+    let content = read_csv(path, "SIM_dyncomp");
     let mut records = Vec::new();
     for (i, line) in content.lines().enumerate() {
         if i == 0 || line.trim().is_empty() {
