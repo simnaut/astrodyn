@@ -457,27 +457,44 @@ pub struct PlanetFixedPosition {
 pub fn cartesian_to_geodetic(pos: DVec3, shape: &PlanetShape) -> PlanetFixedPosition { ... }
 ```
 
-### 3.8 Bevy Bundles
+### 3.8 Bevy Components
 
-Bundles group components for convenient entity spawning. These exist only in the
-Bevy glue layer (`src/`).
+Component wrappers live in `src/components.rs`. Each wraps a `jeod_sim` type
+with `#[derive(Component)]` and a `C` suffix:
 
 ```rust
-// ── src/components.rs (Bevy-only) ──────────────────────────────
+// ── src/components.rs ──────────────────────────────────────────
 
-#[derive(Bundle)]
-pub struct DynBodyBundle {
-    pub name: Name,
-    pub trans_state: TranslationalStateComponent,
-    pub rot_state: RotationalStateComponent,
-    pub mass: MassPropertiesComponent,
-    pub dynamics_config: DynamicsConfigComponent,
-    pub integ_frame: IntegrationFrameRef,   // Bevy Entity reference
-    pub gravity_accel: GravityAccelerationComponent,
-    pub gravity_controls: BevyGravityControls,
-    pub total_force: TotalForceComponent,
-    pub derivs: FrameDerivativesComponent,
-}
+#[derive(Component, Deref, DerefMut)]
+pub struct TranslationalStateC(pub TranslationalState);
+
+#[derive(Component, Deref, DerefMut)]
+pub struct RotationalStateC(pub RotationalState);
+
+#[derive(Component, Deref, DerefMut)]
+pub struct MassPropertiesC(pub MassProperties);
+
+#[derive(Component, Deref, DerefMut)]
+pub struct DynamicsConfigC(pub DynamicsConfig);
+
+#[derive(Component, Deref, DerefMut)]
+pub struct GravityControlsC(pub GravityControls<Entity>);
+// ... etc.
+```
+
+Entities are spawned with individual components (no bundle struct):
+
+```rust
+commands.spawn((
+    TranslationalStateC(state),
+    RotationalStateC(rot),
+    MassPropertiesC(mass),
+    DynamicsConfigC(config),
+    GravityControlsC(controls),
+    GravityAccelerationC(GravityAcceleration::default()),
+    TotalForceC(TotalForce::default()),
+    FrameDerivativesC(FrameDerivatives::default()),
+));
 ```
 
 ---
