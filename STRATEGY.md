@@ -946,7 +946,7 @@ fn tier3_cross_validate_against_jeod_dyncomp() {
 
 **Two complementary Tier 3 test paths:**
 
-1. **Simulation-vs-JEOD** (`jeod_sim/tests/tier3_simulation.rs`): runs
+1. **Simulation-vs-JEOD** (`jeod_sim/tests/tier3_sim_*.rs`): runs
    `jeod_sim::Simulation::step()` from JEOD initial conditions and compares
    against JEOD Trick CSV output at each checkpoint. Validates the production
    code path against NASA's reference.

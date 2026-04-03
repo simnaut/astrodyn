@@ -209,6 +209,8 @@ fn tier3_simulation_run6a_const_density_drag() {
     const CONST_DENSITY: f64 = 1.4e-12; // kg/m³
 
     let mut max_pos_error = 0.0_f64;
+    let mut max_vel_error = 0.0_f64;
+    let mut max_quat_error = 0.0_f64;
     let mut current_time = init.time;
 
     for record in &trajectory[1..] {
@@ -264,14 +266,29 @@ fn tier3_simulation_run6a_const_density_drag() {
         }
 
         max_pos_error = max_pos_error.max((trans.position - record.position).length());
+        max_vel_error = max_vel_error.max((trans.velocity - record.velocity).length());
+        max_quat_error =
+            max_quat_error.max(quaternion_angle_error(&rot.quaternion, &record.quaternion));
     }
 
-    println!("RUN_6A: max pos={:.4} m", max_pos_error);
+    println!(
+        "RUN_6A: max pos={:.3e} m  vel={:.3e} m/s  quat={:.2e} rad",
+        max_pos_error, max_vel_error, max_quat_error
+    );
 
-    // Tighter tolerance than RUN_6B — constant density eliminates
-    // atmosphere model as error source.
+    // Constant density eliminates MET model as error source.
+    // Actual error is sub-millimeter (~7e-4 m); use 0.5 m tolerance
+    // consistent with other dyncomp tests.
     assert!(
-        max_pos_error < 50.0,
-        "Position error {max_pos_error:.2} m exceeds 50 m"
+        max_pos_error < 0.5,
+        "RUN_6A: position error {max_pos_error:.3e} m exceeds 0.5 m"
+    );
+    assert!(
+        max_vel_error < 0.001,
+        "RUN_6A: velocity error {max_vel_error:.3e} m/s exceeds 0.001 m/s"
+    );
+    assert!(
+        max_quat_error < 0.01,
+        "RUN_6A: quaternion error {max_quat_error:.2e} rad exceeds 0.01 rad"
     );
 }

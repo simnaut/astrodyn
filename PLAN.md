@@ -20,9 +20,9 @@ Phases are defined in [STRATEGY.md](STRATEGY.md) Section 8.
 |----|------|-------|-------------|
 | 0.1 | Initialize Cargo workspace | root | `Cargo.toml` with `[workspace]`, resolver = "2" |
 | 0.2 | Create core crate skeletons | `jeod_math`, `jeod_dynamics`, `jeod_gravity`, `jeod_frames` | `cargo init --lib` for each, add to workspace members, set `edition = "2021"` |
-| 0.3 | Create Bevy glue crate skeletons | `bevy_jeod_dynamics`, `bevy_jeod_gravity`, `bevy_jeod_frames` | Add `bevy` dependency, depend on corresponding `jeod_*` crate |
+| 0.3 | Create Bevy glue | `src/` (root package) | Components, systems, plugin registration. Originally planned as separate `bevy_jeod_*` crates; consolidated into unified root package. |
 | 0.4 | Create test data crate skeleton | `jeod_test_data` | No Bevy dependency. Add `JEOD_PATH` env var support |
-| 0.5 | Create top-level lib crate | `src/lib.rs` | Re-export all `bevy_jeod_*` plugins as `JeodPlugin` |
+| 0.5 | Create top-level lib crate | `src/lib.rs` | Unified `JeodPlugin` with all systems and schedule sets |
 | 0.6 | Add shared dependencies | workspace `Cargo.toml` | `glam` (f64 features), `nalgebra` (optional), `thiserror`, `regex` (test_data) |
 | 0.7 | Set up CI configuration | `.github/workflows/` or equivalent | `cargo build --workspace`, `cargo test --workspace`, `cargo clippy`, `cargo fmt --check` |
 | 0.8 | Create `.env.example` | root | Document `JEOD_PATH=../jeod` |
@@ -96,7 +96,7 @@ batch computation without Bevy.
 | 1.24 | Frame composition | `incr_left()`, `incr_right()`, `negate()` operations for composing/inverting frame states. | `ref_frame_state.hh:225-234` |
 | 1.25 | Frames unit tests | Compose A→B and B→C to get A→C. Compose and invert yields identity. | — |
 
-#### 1E. Bevy Glue (`bevy_jeod_*`)
+#### 1E. Bevy Glue (`src/`)
 
 | ID | Task | Description |
 |----|------|-------------|
@@ -215,10 +215,10 @@ batch computation without Bevy.
 
 | ID | Task | Description |
 |----|------|-------------|
-| 2.38 | `bevy_jeod_time` plugin | `SimulationTime` as `Resource`. `time_advance_system` in `TimeUpdateSet`. |
-| 2.39 | `bevy_jeod_gravity` update | Replace point-mass system with spherical harmonics. Load coefficients via `AssetServer` or embed. |
-| 2.40 | `bevy_jeod_ephemeris` plugin | `EphemerisData` resource. `ephemeris_update_system` in `EphemerisUpdateSet`. Updates planet frame positions each step. |
-| 2.41 | `bevy_jeod_planet` plugin | `Planet` marker component. Preset spawning functions (`spawn_earth()`, etc.). |
+| 2.38 | Time system in `src/` | `SimulationTimeR` resource. `time_advance_system` in `TimeUpdate` set. |
+| 2.39 | Gravity system update | Spherical harmonics gravity in `src/systems.rs`. |
+| 2.40 | Ephemeris system | `EphemerisR` resource. `planet_fixed_rotation_system` in `EphemerisUpdate` set. |
+| 2.41 | Planet presets | Planet constants in `jeod_planet`. Spawn helpers in `src/`. |
 | 2.42 | `leo_j2.rs` example | Bevy example: Earth with J2, satellite in LEO, print nodal regression rate. |
 
 ### Exit Criteria
@@ -314,7 +314,7 @@ batch computation without Bevy.
 | 3.32 | Force + torque collection | Update `force_collection_system` to sum torques into `TotalForce.torque` |
 | 3.33 | Mass tree via Bevy hierarchy | Map `jeod_dynamics` mass tree to Bevy `Parent`/`Children`. System to recompute composite properties on hierarchy change. |
 | 3.34 | Frame propagation system | After integration, propagate structure → composite → core. Then propagate to child bodies. |
-| 3.35 | `bevy_jeod_derived` plugin | Components + systems for OrbitalElements, EulerAngles, PlanetFixedPosition, LvlhState, SolarBeta. Each system calls corresponding `jeod_math` pure function. |
+| 3.35 | Derived state systems in `src/` | Components + systems for OrbitalElements, EulerAngles, PlanetFixedPosition, LvlhState, SolarBeta. Each system delegates to `jeod_sim`. |
 | 3.36 | `iss_orbit.rs` example | ISS initialized from orbital elements, full GGM05C gravity, 6-DOF, display orbital elements and attitude. |
 
 ### Exit Criteria
@@ -454,7 +454,7 @@ without adding new physics.
 
 | ID | Task | Description |
 |----|------|-------------|
-| 4.16 | `bevy_jeod_atmosphere` plugin | `AtmosphereState` component. `atmosphere_update_system` in `EnvironmentSet`: query body position, compute geodetic coords, call `Atmosphere::density()`. |
+| 4.16 | Atmosphere system in `src/` | `AtmosphereModelR` resource. `atmosphere_system` in `Environment` set: query body position, compute geodetic coords, call atmosphere model. |
 | 4.17 | Aerodynamic force system | `AerodynamicForce` component. `aero_drag_system` in `InteractionSet`. |
 | 4.18 | Radiation pressure system | `RadiationForce` component. `flat_plate_srp_system` in `InteractionSet`. Reads Sun entity position. |
 | 4.19 | Gravity torque system | `GravityTorque` component. `gravity_torque_system` in `InteractionSet`. |
