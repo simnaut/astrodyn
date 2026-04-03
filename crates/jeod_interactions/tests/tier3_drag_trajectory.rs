@@ -220,6 +220,7 @@ fn tier3_drag_trajectory_run6b() {
     let drag_config = DragConfig {
         cd: 0.02,
         area: 1.0,
+        constant_density: None,
     };
 
     // Initialize from first JEOD record

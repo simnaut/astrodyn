@@ -14,11 +14,11 @@ paths from the workspace root.
 
 All physics lives in **`jeod_*`** crates (pure Rust, zero Bevy dependency).
 Orchestration lives in **`jeod_sim`** (composes `jeod_*` functions into pipeline
-stages, re-exports all types; zero Bevy dependency). Bevy wiring lives in
-**`bevy_jeod_*`** crates (thin glue: component derives, systems that delegate to
-`jeod_sim` functions, plugin registration).
+stages, re-exports all types; zero Bevy dependency). Bevy wiring lives in the
+**`bevy_jeod`** root package (`src/` — thin glue: component derives, systems
+that delegate to `jeod_sim` functions, plugin registration).
 
-`bevy_jeod_*` crates depend **only** on `jeod_sim` + `bevy` — never on `jeod_*`
+The root package depends **only** on `jeod_sim` + `bevy` — never on `jeod_*`
 crates directly. This makes `jeod_sim` the single API surface for any ECS adapter.
 
 Never put physics algorithms directly in a Bevy system function. The system queries
@@ -169,6 +169,17 @@ cargo test -p jeod_dynamics --test tier3_jeod_trajectory  # single Tier 3 test
 Set `JEOD_HOME` (or `JEOD_PATH`) to the JEOD source checkout.
 `JEOD_HOME` and `TRICK_HOME` follow the standard JEOD/Trick environment
 variable conventions.
+
+When running the full test suite and inspecting results, capture output to a
+temp file first, then grep it — never run the suite multiple times:
+
+```bash
+cargo test --workspace 2>&1 | tee /tmp/test-output.txt
+# then inspect:
+grep -c 'test .* \.\.\. ok' /tmp/test-output.txt    # count passing
+grep 'FAILED' /tmp/test-output.txt                   # find failures
+grep 'warning' /tmp/test-output.txt                  # find warnings
+```
 
 ### Test tiers and CI
 

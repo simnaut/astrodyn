@@ -248,6 +248,7 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
     let drag_config = DragConfig {
         cd: 2.2,
         area: 1000.0,
+        constant_density: None,
     };
     let exp_atmos = ExponentialAtmosphere::default();
 
@@ -411,6 +412,7 @@ fn tier3_bevy_full_stack_sixdof() {
     let drag_config = DragConfig {
         cd: 2.2,
         area: 1000.0,
+        constant_density: None,
     };
     // Single flat plate approximating a spherical absorber (100 m² facing Sun)
     use jeod_sim::{FlatPlate, FlatPlateParams, FlatPlateThermal};

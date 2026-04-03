@@ -21,6 +21,11 @@ pub struct DragConfig {
     pub cd: f64,
     /// Cross-sectional area in m^2.
     pub area: f64,
+    /// Override atmospheric density with a constant value (kg/m³).
+    /// When `Some`, the atmosphere model's density is ignored and this
+    /// value is used instead. Wind is still taken from the atmosphere.
+    /// Port of JEOD `AerodynamicDrag::constant_density` + `density`.
+    pub constant_density: Option<f64>,
 }
 
 /// Aerodynamic force and torque on a vehicle.
@@ -61,7 +66,9 @@ pub fn compute_ballistic_drag(
     inertial_velocity: DVec3,
     t_inertial_struct: &DMat3,
 ) -> AerodynamicForce {
-    if atmos.density <= 0.0 {
+    // JEOD aero_drag.cc line 128: if(constant_density == false) { density = atmos_ptr->density; }
+    let density = config.constant_density.unwrap_or(atmos.density);
+    if density <= 0.0 {
         return AerodynamicForce::default();
     }
 
@@ -81,8 +88,8 @@ pub fn compute_ballistic_drag(
     let rel_vel_struct_hat = rel_vel_cm_struct / rel_vel_mag;
 
     // Dynamic pressure: 0.5 · ρ · v²
-    // JEOD aero_drag.cc line 132
-    let dynamic_pressure = 0.5 * atmos.density * rel_vel_mag * rel_vel_mag;
+    // JEOD aero_drag.cc line 132: param.dynamic_pressure = 0.5 * density * rel_vel_mag * rel_vel_mag
+    let dynamic_pressure = 0.5 * density * rel_vel_mag * rel_vel_mag;
 
     // Drag force magnitude (negative = opposing motion)
     // JEOD default_aero.cc line 70: drag = -dynamic_pressure * area * Cd
@@ -110,6 +117,7 @@ mod tests {
         let config = DragConfig {
             cd: 2.2,
             area: 10.0, // m^2
+            constant_density: None,
         };
         let density = 1e-12; // kg/m^3 (typical at 400 km)
         let velocity = 7600.0; // m/s (LEO orbital speed)
@@ -149,6 +157,7 @@ mod tests {
         let config = DragConfig {
             cd: 2.2,
             area: 10.0,
+            constant_density: None,
         };
         let atmos = AtmosphereState::default(); // density = 0
         let vel = DVec3::new(7600.0, 0.0, 0.0);
@@ -160,7 +169,11 @@ mod tests {
     /// Drag opposes relative velocity, not absolute velocity.
     #[test]
     fn drag_opposes_relative_velocity() {
-        let config = DragConfig { cd: 2.0, area: 1.0 };
+        let config = DragConfig {
+            cd: 2.0,
+            area: 1.0,
+            constant_density: None,
+        };
         let atmos = AtmosphereState {
             density: 1e-12,
             temperature: 0.0,
@@ -194,6 +207,7 @@ mod tests {
         let config = DragConfig {
             cd: 2.2,
             area: 10.0,
+            constant_density: None,
         };
         let atmos = AtmosphereState {
             density: 1e-12,
@@ -208,7 +222,11 @@ mod tests {
     /// Drag force is in the structural frame (rotated from inertial).
     #[test]
     fn drag_in_structural_frame() {
-        let config = DragConfig { cd: 2.0, area: 1.0 };
+        let config = DragConfig {
+            cd: 2.0,
+            area: 1.0,
+            constant_density: None,
+        };
         let atmos = AtmosphereState {
             density: 1e-12,
             ..Default::default()
@@ -248,6 +266,7 @@ mod tests {
         let config = DragConfig {
             cd: 2.2,
             area: 1900.0, // m^2 (Cd*A/m ≈ 2.2*1900/420000 ≈ 0.01)
+            constant_density: None,
         };
 
         // Typical density at 400 km during solar mean

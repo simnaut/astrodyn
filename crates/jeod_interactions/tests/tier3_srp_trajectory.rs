@@ -15,7 +15,7 @@
 //! 1. Flat-plate SRP force decomposition (absorption, diffuse, specular)
 //! 2. Solar flux computation at vehicle distance
 //! 3. Conical Earth shadow detection and illumination fraction
-//! 4. Coupled gravity + SRP trajectory over ~23 days (< 50 m position error)
+//! 4. Coupled gravity + SRP trajectory over ~23 days (< 50 m position error, < 10 m at 24h)
 
 use glam::DVec3;
 use jeod_dynamics::TranslationalState;
@@ -377,6 +377,7 @@ fn tier3_srp_trajectory_sim3_orbit() {
     };
 
     let mut max_pos_err = 0.0_f64;
+    let mut max_pos_err_24h = 0.0_f64;
     let mut max_vel_err = 0.0_f64;
     let mut max_force_dir_err = 0.0_f64;
     let mut max_force_mag_rel_err = 0.0_f64;
@@ -398,6 +399,9 @@ fn tier3_srp_trajectory_sim3_orbit() {
         let pos_err = (state.position - target.position).length();
         let vel_err = (state.velocity - target.velocity).length();
         max_pos_err = max_pos_err.max(pos_err);
+        if target.time <= 86400.0 {
+            max_pos_err_24h = max_pos_err_24h.max(pos_err);
+        }
         max_vel_err = max_vel_err.max(vel_err);
 
         // Print diagnostics at key intervals
@@ -516,6 +520,7 @@ fn tier3_srp_trajectory_sim3_orbit() {
         trajectory.last().unwrap().time,
         trajectory.last().unwrap().time / 86400.0
     );
+    eprintln!("  Max position error (24h):  {max_pos_err_24h:.3} m");
     eprintln!("  Max position error (full): {max_pos_err:.1} m");
     eprintln!("  Max velocity error: {max_vel_err:.6} m/s");
     eprintln!("  Max SRP force direction error: {max_force_dir_err:.6} rad");
@@ -532,6 +537,12 @@ fn tier3_srp_trajectory_sim3_orbit() {
     assert!(
         shadow_mismatches <= 2,
         "Shadow state mismatches: {shadow_mismatches} (expected 0-2 for transition timing)"
+    );
+
+    // Phase 4 exit criterion: SRP position error < 10 m over 24h.
+    assert!(
+        max_pos_err_24h < 10.0,
+        "24h position error {max_pos_err_24h:.3} m exceeds 10 m threshold"
     );
 
     // Force magnitude: at full illumination, matches within a few percent. Near shadow
