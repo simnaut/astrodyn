@@ -133,8 +133,9 @@ run_sim_with_ascii() {
     local run_dir="$2"
     local label="$3"
     local ascii_snippet="$4"  # Python code to create DRAscii logger
+    local required="${5:-}"   # optional: specific file to check (e.g. label_snippet.csv)
 
-    if has_output "$label"; then
+    if has_output "$label" "$required"; then
         echo "--- Skipping ${label} (output exists in ${OUTPUT_DIR}) ---"
         return 0
     fi
@@ -494,8 +495,8 @@ run_torque_compare_simple_group() {
     fi
     local fail=0
     for entry in "${RUNS[@]}"; do
-        IFS=: read -r run_dir label _required <<< "$entry"
-        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$TORQUE_SIMPLE_SNIPPET" || fail=1
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$TORQUE_SIMPLE_SNIPPET" "$required" || fail=1
     done
     return $fail
 }
@@ -523,8 +524,8 @@ run_shadow_calc_group() {
     fi
     local fail=0
     for entry in "${RUNS[@]}"; do
-        IFS=: read -r run_dir label _required <<< "$entry"
-        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$SHADOW_CALC_SNIPPET" || fail=1
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$SHADOW_CALC_SNIPPET" "$required" || fail=1
     done
     return $fail
 }
