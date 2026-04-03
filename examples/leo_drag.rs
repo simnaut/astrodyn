@@ -50,6 +50,7 @@ fn main() {
     let drag_config = DragConfig {
         cd: 2.2,
         area: 1900.0, // m^2 (cross-sectional area)
+        constant_density: None,
     };
     let mass = 420_000.0; // kg
 

@@ -90,6 +90,7 @@ fn drag_causes_altitude_decay() {
     let drag_config = DragConfig {
         cd: 2.2,
         area: 1900.0, // ISS-like
+        constant_density: None,
     };
 
     let atmos = met::SOLAR_MEAN;

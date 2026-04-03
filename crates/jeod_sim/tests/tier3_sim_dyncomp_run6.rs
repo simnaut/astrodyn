@@ -50,6 +50,7 @@ fn tier3_simulation_run6b_drag() {
     let drag_config = DragConfig {
         cd: 0.02,
         area: 1.0,
+        constant_density: None,
     };
 
     // Initialize Simulation at the SIM_dyncomp epoch with correct time offsets.
@@ -157,8 +158,9 @@ fn tier3_simulation_run6b_drag() {
 
 // ── RUN_6A: Constant-density drag, sphere mass ──
 //
-// Same as RUN_6B but with constant atmospheric density = 1.4e-12 kg/m³.
-// Isolates drag computation from atmosphere model.
+// Same as RUN_6B but with constant atmospheric density = 1.4e-12 kg/m³
+// (JEOD `AerodynamicDrag::constant_density = True`, `density = 1.4e-12`).
+// Isolates drag force computation from the MET atmosphere model.
 
 #[test]
 fn tier3_simulation_run6a_const_density_drag() {
@@ -166,7 +168,8 @@ fn tier3_simulation_run6a_const_density_drag() {
     assert!(
         csv_path.exists(),
         "JEOD reference not found at {}.\n\
-         Generate with: docker run --rm -v $(pwd)/test_data:/output -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro jeod-trick",
+         Generate with: docker run --rm -v $(pwd)/test_data:/output \
+         -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro jeod-trick",
         csv_path.display()
     );
 
@@ -174,111 +177,110 @@ fn tier3_simulation_run6a_const_density_drag() {
     assert!(trajectory.len() >= 100);
     let init = &trajectory[0];
 
+    // Unit sphere mass (from Modified_data/mass.py)
     let inertia = DMat3::from_diagonal(DVec3::splat(0.4));
     let mass_props = MassProperties::with_inertia(1.0, inertia, DVec3::ZERO);
 
-    let mut trans = TranslationalState {
-        position: init.position,
-        velocity: init.velocity,
-    };
-    let mut rot = RotationalState {
-        quaternion: init.quaternion,
-        ang_vel_body: init.ang_vel,
-    };
-
-    let config = DynamicsConfig {
-        translational_dynamics: true,
-        rotational_dynamics: true,
-        three_dof: false,
+    // MET atmosphere config — the Simulation still runs the atmosphere pipeline
+    // for wind (co-rotation), but constant_density overrides the MET density.
+    let met_model = MetAtmosphere {
+        f10: 128.8,
+        f10b: 128.8,
+        geo_index: 15.7,
+        geo_index_type: met_atmosphere::GeoIndexType::Ap,
     };
 
-    let gravity_controls: GravityControls<usize> = GravityControls {
-        controls: vec![GravityControl::new_spherical(0_usize, false)],
-    };
-
-    let earth_source = GravitySource {
-        mu: MU_EARTH,
-        model: GravityModel::PointMass,
-    };
-
+    // Drag config with constant density = 1.4e-12 kg/m³
+    // (from Modified_data/aero_drag.py: set_aero_const_density_drag)
     let drag_config = DragConfig {
         cd: 0.02,
         area: 1.0,
+        constant_density: Some(1.4e-12),
     };
 
-    const CONST_DENSITY: f64 = 1.4e-12; // kg/m³
+    let epoch_tai_tjt = DRAG_EPOCH_UTC_TJT + DRAG_TAI_UTC_S / 86400.0;
+    let mut time = SimulationTime::new(epoch_tai_tjt, jeod_sim::default_leap_second_table());
+    time.set_ut1_tai_offset(DRAG_TAI_TO_UT1_S);
+
+    let mut sim = Simulation::new(time, DT);
+
+    let earth = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: MU_EARTH,
+            model: GravityModel::PointMass,
+        },
+        position: DVec3::ZERO,
+        t_inertial_pfix: Some(DMat3::IDENTITY),
+    });
+
+    sim.atmosphere = Some(AtmosphereConfig {
+        model: AtmosphereModel::Met(met_model),
+        r_eq: 6_378_137.0,
+        r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
+        planet_omega: OMEGA_EARTH,
+    });
+    sim.atmosphere_planet_source = Some(earth);
+
+    sim.add_body(SimBody {
+        trans: TranslationalState {
+            position: init.position,
+            velocity: init.velocity,
+        },
+        rot: Some(RotationalState {
+            quaternion: init.quaternion,
+            ang_vel_body: init.ang_vel,
+        }),
+        mass: Some(mass_props),
+        config: DynamicsConfig {
+            translational_dynamics: true,
+            rotational_dynamics: true,
+            three_dof: false,
+        },
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth, false)],
+        },
+        drag: Some(drag_config),
+        atmospheric_state: Some(Default::default()),
+        ..Default::default()
+    });
+
+    sim.validate().unwrap();
+
+    println!(
+        "Tier 3 (Simulation): RUN_6A constant-density drag, {} points",
+        trajectory.len()
+    );
 
     let mut max_pos_error = 0.0_f64;
     let mut max_vel_error = 0.0_f64;
     let mut max_quat_error = 0.0_f64;
-    let mut current_time = init.time;
 
     for record in &trajectory[1..] {
-        while current_time + DT <= record.time + 0.001 {
-            let grav = jeod_sim::accumulate_gravity(trans.position, &gravity_controls, |_| {
-                Some((&earth_source, None))
-            });
+        sim.step_until(record.time);
 
-            let wind = DVec3::new(
-                -OMEGA_EARTH * trans.position.y,
-                OMEGA_EARTH * trans.position.x,
-                0.0,
-            );
-            let atmos = jeod_atmosphere::AtmosphereState {
-                density: CONST_DENSITY,
-                temperature: 0.0,
-                pressure: 0.0,
-                wind,
-            };
-            let t_inertial_body = rot.quaternion.left_quat_to_transformation();
-            let aero = jeod_interactions::compute_ballistic_drag(
-                &drag_config,
-                &atmos,
-                trans.velocity,
-                &t_inertial_body,
-            );
+        let body = sim.body(0);
+        let pos_error = (body.trans.position - record.position).length();
+        let vel_error = (body.trans.velocity - record.velocity).length();
+        max_pos_error = max_pos_error.max(pos_error);
+        max_vel_error = max_vel_error.max(vel_error);
 
-            let (total, _) = jeod_sim::collect_and_resolve_forces(
-                Some(&aero),
-                None,
-                None,
-                Some(&rot),
-                DMat3::IDENTITY,
-                Some(&mass_props),
-                grav.grav_accel,
-            );
-
-            let gravity_fn = |pos: DVec3| {
-                let r = pos.length();
-                pos * (-MU_EARTH / (r * r * r))
-            };
-            jeod_sim::integrate_body(
-                &config,
-                &mut trans,
-                Some(&mut rot),
-                Some(&mass_props),
-                gravity_fn,
-                total.force,
-                total.torque,
-                DT,
-            );
-            current_time += DT;
+        if let Some(ref rot) = body.rot {
+            let quat_error = quaternion_angle_error(&rot.quaternion, &record.quaternion);
+            max_quat_error = max_quat_error.max(quat_error);
         }
 
-        max_pos_error = max_pos_error.max((trans.position - record.position).length());
-        max_vel_error = max_vel_error.max((trans.velocity - record.velocity).length());
-        max_quat_error =
-            max_quat_error.max(quaternion_angle_error(&rot.quaternion, &record.quaternion));
+        if (record.time % 7200.0).abs() < 30.1 {
+            println!(
+                "  t={:6.0}s: pos_err={:.3e} m  vel_err={:.3e} m/s",
+                record.time, pos_error, vel_error
+            );
+        }
     }
 
-    println!(
-        "RUN_6A: max pos={:.3e} m  vel={:.3e} m/s  quat={:.2e} rad",
-        max_pos_error, max_vel_error, max_quat_error
-    );
+    println!("  Max position error:  {:.6e} m", max_pos_error);
+    println!("  Max velocity error:  {:.6e} m/s", max_vel_error);
+    println!("  Max quaternion error: {:.2e} rad", max_quat_error);
 
-    // Constant density eliminates MET model as error source.
-    // Actual error is sub-millimeter (~7e-4 m); use 0.5 m tolerance
-    // consistent with other dyncomp tests.
     assert!(
         max_pos_error < 0.5,
         "RUN_6A: position error {max_pos_error:.3e} m exceeds 0.5 m"
