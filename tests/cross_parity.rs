@@ -32,9 +32,10 @@ use bevy_jeod::{
 use glam::{DMat3, DVec3};
 use jeod_sim::{
     AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig, EulerSequence,
-    ExponentialAtmosphere, GravityControl, GravityControls, GravityModel, GravitySource,
-    GravitySourceEntry, JeodQuat, LvlhFrame, MassProperties, OrbitalElements, PlanetShape,
-    RotationalState, SimBody, Simulation, SixDofState, TranslationalState,
+    ExponentialAtmosphere, GeoIndexType, GravityControl, GravityControls, GravityModel,
+    GravitySource, GravitySourceEntry, JeodQuat, LvlhFrame, MassProperties, MetAtmosphere,
+    OrbitalElements, PlanetShape, RotationalState, SimBody, Simulation, SixDofState,
+    TranslationalState,
 };
 
 const MU_EARTH: f64 = 3.986_004_415e14;
@@ -1282,4 +1283,203 @@ fn tier3_bevy_geodetic_derived_state() {
         sim_geodetic.altitude,
     );
     println!("  Bevy vs Sim geodetic: bit-identical (lat, lon, alt)");
+}
+
+// ── Scenario K: Constant-density drag (Phase 4a parity) ──
+// Exercises the `constant_density` override branch in compute_ballistic_drag,
+// which is a distinct code path from atmosphere-provided density.
+
+#[test]
+fn tier3_bevy_constant_density_drag_sixdof() {
+    println!("Scenario K: Constant-density drag, 6-DOF");
+
+    let drag_config = DragConfig {
+        cd: 2.2,
+        area: 1000.0,
+        constant_density: Some(1.4e-12), // override atmosphere density
+    };
+    let exp_atmos = ExponentialAtmosphere::default();
+
+    // ── Bevy ──
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.add_plugins(JeodPlugin);
+
+    app.insert_resource(AtmosphereModelR {
+        config: AtmosphereConfig {
+            model: AtmosphereModel::Exponential(exp_atmos),
+            r_eq: 6_378_137.0,
+            r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
+            planet_omega: 0.0,
+        },
+        planet_entity: None,
+    });
+
+    let planet = app
+        .world_mut()
+        .spawn((
+            Name::new("Earth"),
+            GravitySourceC(earth_source()),
+            TranslationalStateC::default(),
+        ))
+        .id();
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(iss_trans()),
+            RotationalStateC(tumble_rot()),
+            MassPropertiesC(iss_mass()),
+            DynamicsConfigC(DynamicsConfig {
+                translational_dynamics: true,
+                rotational_dynamics: true,
+                three_dof: false,
+            }),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+            DragConfigC(drag_config),
+            AtmosphericStateC::default(),
+            AerodynamicForceC::default(),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+    let bevy_state = read_sixdof(app.world(), vehicle);
+
+    // ── Simulation ──
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sim = Simulation::new(time, DT);
+    let earth_idx = sim.add_source(GravitySourceEntry {
+        source: earth_source(),
+        position: DVec3::ZERO,
+        t_inertial_pfix: None,
+    });
+    sim.atmosphere = Some(AtmosphereConfig {
+        model: AtmosphereModel::Exponential(exp_atmos),
+        r_eq: 6_378_137.0,
+        r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
+        planet_omega: 0.0,
+    });
+
+    let mut body = new_sim_body_sixdof(earth_idx, false);
+    body.drag = Some(drag_config);
+    body.atmospheric_state = Some(Default::default());
+    sim.add_body(body);
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    let body = sim.body(0);
+    let sim_state = SixDofState {
+        trans: body.trans,
+        rot: body.rot.unwrap(),
+    };
+
+    assert_sixdof_eq("Bevy vs Sim (const-density drag)", &bevy_state, &sim_state);
+}
+
+// ── Scenario L: MET atmosphere + drag (Phase 4a parity) ──
+// Exercises the MET atmosphere code path which requires SimulationTime (TAI TJT)
+// and planet-fixed rotation for geodetic coordinate computation.
+
+#[test]
+fn tier3_bevy_met_atmosphere_drag_sixdof() {
+    println!("Scenario L: MET atmosphere + drag, 6-DOF");
+
+    let drag_config = DragConfig {
+        cd: 2.2,
+        area: 1000.0,
+        constant_density: None,
+    };
+    let met = MetAtmosphere {
+        f10: 128.8,
+        f10b: 128.8,
+        geo_index: 15.7,
+        geo_index_type: GeoIndexType::Ap,
+    };
+
+    // ── Bevy ──
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.add_plugins(JeodPlugin);
+
+    let planet = app
+        .world_mut()
+        .spawn((
+            Name::new("Earth"),
+            GravitySourceC(earth_source()),
+            TranslationalStateC::default(),
+            PlanetFixedRotationC(DMat3::IDENTITY),
+        ))
+        .id();
+
+    app.insert_resource(AtmosphereModelR {
+        config: AtmosphereConfig {
+            model: AtmosphereModel::Met(met),
+            r_eq: 6_378_137.0,
+            r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
+            planet_omega: 7.292_115_146_706_388e-5,
+        },
+        planet_entity: Some(planet),
+    });
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(iss_trans()),
+            RotationalStateC(tumble_rot()),
+            MassPropertiesC(iss_mass()),
+            DynamicsConfigC(DynamicsConfig {
+                translational_dynamics: true,
+                rotational_dynamics: true,
+                three_dof: false,
+            }),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+            DragConfigC(drag_config),
+            AtmosphericStateC::default(),
+            AerodynamicForceC::default(),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+    let bevy_state = read_sixdof(app.world(), vehicle);
+
+    // ── Simulation ──
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sim = Simulation::new(time, DT);
+    let earth_idx = sim.add_source(GravitySourceEntry {
+        source: earth_source(),
+        position: DVec3::ZERO,
+        t_inertial_pfix: Some(DMat3::IDENTITY),
+    });
+    sim.atmosphere = Some(AtmosphereConfig {
+        model: AtmosphereModel::Met(met),
+        r_eq: 6_378_137.0,
+        r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
+        planet_omega: 7.292_115_146_706_388e-5,
+    });
+    sim.atmosphere_planet_source = Some(earth_idx);
+
+    let mut body = new_sim_body_sixdof(earth_idx, false);
+    body.drag = Some(drag_config);
+    body.atmospheric_state = Some(Default::default());
+    sim.add_body(body);
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    let body = sim.body(0);
+    let sim_state = SixDofState {
+        trans: body.trans,
+        rot: body.rot.unwrap(),
+    };
+
+    assert_sixdof_eq("Bevy vs Sim (MET drag)", &bevy_state, &sim_state);
 }

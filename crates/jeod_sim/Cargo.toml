@@ -18,3 +18,4 @@ log = { workspace = true }
 
 [dev-dependencies]
 jeod_test_data = { path = "../jeod_test_data" }
+jeod_interactions = { path = "../jeod_interactions" }
