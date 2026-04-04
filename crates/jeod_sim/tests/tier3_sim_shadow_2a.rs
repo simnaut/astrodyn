@@ -69,6 +69,9 @@ fn run_shadow_comparison(csv_filename: &str, label: &str) {
 
         // Derive JEOD's shadow fraction: compute what full-sun flux would be at
         // this vehicle's distance from Sun, then ratio with actual logged flux.
+        // Both flux_mag (from JEOD CSV) and solar_flux_at_distance() are in W/m².
+        // (The CSV header labels flux as `{N/m2}` — Trick's default unit label
+        // for radiation flux — but the physical quantity is irradiance in W/m².)
         let sun_dist = (sun_pos - record.position).length();
         let full_sun_flux = solar_flux_at_distance(sun_dist);
         let jeod_frac = if full_sun_flux > 1.0 {
@@ -97,12 +100,11 @@ fn run_shadow_comparison(csv_filename: &str, label: &str) {
         };
         if our_state != jeod_state {
             shadow_state_mismatches += 1;
+            println!(
+                "  MISMATCH t={:5.0}s: our={:.6} jeod={:.6} err={:.3e} [{}/{}]",
+                record.time, our_frac, jeod_frac, frac_err, our_state, jeod_state,
+            );
         }
-
-        println!(
-            "  t={:5.0}s: our={:.6} jeod={:.6} err={:.3e} [{}/{}]",
-            record.time, our_frac, jeod_frac, frac_err, our_state, jeod_state,
-        );
     }
 
     println!("  Max shadow fraction error:  {:.6e}", max_frac_err);

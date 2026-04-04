@@ -91,7 +91,7 @@ fn run_drag_comparison(csv_filename: &str, label: &str, config: DragConfig) {
 }
 
 #[test]
-fn tier3_drag_const_cd() {
+fn tier3_drag_const_force() {
     // DRAG_OPT_CONST: JEOD uses drag=0.05 as a CONSTANT FORCE MAGNITUDE (N),
     // not a coefficient. The formula is: force = rel_vel_hat * drag.
     // Our compute_ballistic_drag doesn't support this mode — it always computes
