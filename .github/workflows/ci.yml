@@ -80,3 +80,10 @@ jobs:
         env:
           JEOD_HOME: ${{ github.workspace }}/../jeod
         run: cargo test --workspace -- tier3_
+      - name: Generate cross-validation report
+        run: cargo run -p jeod_test_data --bin tier3_report
+      - name: Upload cross-validation report
+        uses: actions/upload-artifact@v4
+        with:
+          name: tier3-crossval-report
+          path: target/tier3_report.md
