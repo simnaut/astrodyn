@@ -53,6 +53,11 @@ const TAI_TO_UT1_S: f64 = -32.469;
 /// Load GGM05C spherical harmonics data from JEOD source.
 fn load_ggm05c() -> GravitySource {
     let jeod_root = jeod_test_data::jeod_path();
+    assert!(
+        jeod_root.exists(),
+        "JEOD root does not exist: {}. Set JEOD_HOME or JEOD_PATH.",
+        jeod_root.display()
+    );
     let ggm05c_path = jeod_root.join("models/environment/gravity/data/src/earth_GGM05C.cc");
     let sh_data = jeod_sim::coefficients::load_from_jeod_cc(&ggm05c_path).expect("load GGM05C");
     GravitySource {
@@ -227,6 +232,11 @@ fn run_propagation_test(config: &RunConfig) {
         "{}: position error {max_pos_error:.2} m exceeds 100 m",
         config.label
     );
+    assert!(
+        max_vel_error < 0.1,
+        "{}: velocity error {max_vel_error:.6} m/s exceeds 0.1 m/s",
+        config.label
+    );
     // Quaternion: the ISS inertia tensor is non-diagonal with asymmetric
     // principal moments, so the torque-free body precesses at ~7.7e-4 rad/s
     // (multiple full cycles over 3h). Integration truncation errors accumulate
@@ -235,16 +245,26 @@ fn run_propagation_test(config: &RunConfig) {
     // - Gradient-OFF (01/04): free precession, no restoring torque → ~π rad
     // - Point-mass gradient (02/03/05): restoring torque limits drift → ~0.04 rad
     // - SH gradient (06): more sensitive feedback → ~0.6 rad
-    let quat_threshold = if !config.earth_gradient {
-        std::f64::consts::PI + 0.1 // torque-free precession, no restoring force
-    } else if config.gradient_degree > 0 {
-        1.0
+    if !config.earth_gradient {
+        // `quaternion_angle_error` uses acos(|dot|), bounded to [0, π].
+        // For gradient-OFF runs we only check finiteness — torque-free
+        // precession can diverge to nearly π rad over 3h.
+        assert!(
+            max_quat_error.is_finite() && max_quat_error <= std::f64::consts::PI,
+            "{}: quaternion error {max_quat_error:.2e} rad is outside the valid [0, π] range",
+            config.label
+        );
     } else {
-        0.1
-    };
+        let quat_threshold = if config.gradient_degree > 0 { 1.0 } else { 0.1 };
+        assert!(
+            max_quat_error < quat_threshold,
+            "{}: quaternion error {max_quat_error:.2e} rad exceeds {quat_threshold} rad",
+            config.label
+        );
+    }
     assert!(
-        max_quat_error < quat_threshold,
-        "{}: quaternion error {max_quat_error:.2e} rad exceeds {quat_threshold} rad",
+        max_omega_error < 0.01,
+        "{}: omega error {max_omega_error:.2e} rad/s exceeds 0.01 rad/s",
         config.label
     );
     // Torque: gradient-OFF runs must produce exactly zero torque.
