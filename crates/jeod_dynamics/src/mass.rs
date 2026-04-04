@@ -14,6 +14,11 @@ pub struct MassProperties {
     pub inertia: DMat3,         // kg*m^2, in body frame
     pub inverse_inertia: DMat3, // precomputed I^-1
     pub position: DVec3,        // m, in structural frame
+    /// Set to `true` after mutating `mass` or `inertia` to trigger
+    /// recomputation of `inverse_mass` and `inverse_inertia` on the next
+    /// call to [`recompute_derived`]. Constructors leave this `false`
+    /// (derived quantities are already computed).
+    pub dirty: bool,
 }
 
 impl MassProperties {
@@ -34,6 +39,7 @@ impl MassProperties {
             inertia: DMat3::IDENTITY * mass,
             inverse_inertia: DMat3::IDENTITY / mass,
             position: DVec3::ZERO,
+            dirty: false,
         }
     }
 
@@ -60,6 +66,7 @@ impl MassProperties {
             inertia,
             inverse_inertia,
             position,
+            dirty: false,
         }
     }
 
@@ -79,6 +86,11 @@ impl MassProperties {
     // JEOD_INV: MA.04 — inverse_inertia consistent with inertia (recomputed from inertia)
     // JEOD_INV: MA.07 — derived quantities recomputed after mutation
     pub fn recompute_derived(&mut self) {
+        if !self.dirty {
+            return;
+        }
+        self.dirty = false;
+
         assert!(self.mass > 0.0, "mass must be positive, got {}", self.mass);
         self.inverse_mass = 1.0 / self.mass;
 
@@ -170,12 +182,23 @@ mod tests {
 
         // Simulate fuel burn: mass decreases
         mp.mass = 8.0;
+        mp.dirty = true;
         // inverse_mass is now stale (still 0.1)
         assert_eq!(mp.inverse_mass, 0.1);
 
         mp.recompute_derived();
         assert!((mp.inverse_mass - 0.125).abs() < 1e-15);
         assert!((mp.mass * mp.inverse_mass - 1.0).abs() < 1e-15);
+        assert!(!mp.dirty);
+    }
+
+    #[test]
+    fn recompute_derived_skips_when_clean() {
+        let mut mp = MassProperties::new(10.0);
+        assert!(!mp.dirty);
+        // recompute_derived is a no-op when clean
+        mp.recompute_derived();
+        assert_eq!(mp.inverse_mass, 0.1);
     }
 
     #[test]
@@ -188,6 +211,7 @@ mod tests {
 
         // Change inertia (e.g., fuel redistribution)
         mp.inertia = DMat3::from_diagonal(DVec3::new(50.0, 100.0, 150.0));
+        mp.dirty = true;
         // inverse_inertia is now stale
         mp.recompute_derived();
 

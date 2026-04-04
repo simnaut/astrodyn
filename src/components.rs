@@ -30,6 +30,7 @@ pub struct FrameDerivativesC(pub FrameDerivatives);
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
 pub struct DynamicsConfigC(pub DynamicsConfig);
 
+/// Phase 5 scaffolding — not yet used.
 #[derive(Component, Debug, Clone, Copy)]
 pub struct IntegrationFrameRef(pub Entity);
 
@@ -136,9 +137,11 @@ pub struct SunMarker;
 
 // ── Frames ──
 
+/// Phase 5 scaffolding — not yet used.
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Default)]
 pub struct RefFrameStateC(pub RefFrameState);
 
+/// Phase 5 scaffolding — not yet used.
 #[derive(Component, Debug, Clone)]
 pub struct RefFrameNameC(pub String);
 

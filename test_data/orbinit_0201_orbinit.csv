@@ -1,0 +1,2 @@
+sys.exec.out.time {s},target.dyn_body.composite_body.state.trans.position[0] {m},target.dyn_body.composite_body.state.trans.position[1] {m},target.dyn_body.composite_body.state.trans.position[2] {m},target.dyn_body.composite_body.state.trans.velocity[0] {m/s},target.dyn_body.composite_body.state.trans.velocity[1] {m/s},target.dyn_body.composite_body.state.trans.velocity[2] {m/s}
+                   0,   1244540.336462717,   5655938.802744529,   3425643.360843232,   -6003.83315183158,  -1469.496289202212,   4590.511665610799

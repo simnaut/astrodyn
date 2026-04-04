@@ -355,7 +355,7 @@ pub fn calc_nonspherical_with_scratch(
 
                 let dbl_jj = i2d[jj];
                 let dbl_jjp1 = i2d[jj + 1];
-                let dbl_jjm1 = if jj > 0 { i2d[jj - 1] } else { 0.0 };
+                let dbl_jjm1 = i2d[jj - 1]; // jj >= 1 always in this loop
 
                 let c_iijj = c_ii[jj];
                 let s_iijj = s_ii[jj];

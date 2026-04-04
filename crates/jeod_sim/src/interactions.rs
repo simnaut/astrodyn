@@ -1,7 +1,7 @@
 use glam::{DMat3, DVec3};
 use jeod_dynamics::RotationalState;
 use jeod_interactions::{
-    AerodynamicForce, DragConfig, FlatPlate, FlatPlateParams, FlatPlateThermal,
+    AerodynamicForce, DragConfig, FlatPlate, FlatPlateParams, FlatPlateThermal, STEFAN_BOLTZMANN,
 };
 
 /// Flat-plate SRP configuration with mutable thermal state.
@@ -21,19 +21,66 @@ pub struct FlatPlateState {
 }
 
 impl FlatPlateState {
-    /// Integrate plate temperatures (forward Euler) and update the T^4 cache.
+    /// Integrate plate temperatures via RK4 with overshoot clamping.
+    ///
+    /// Port of JEOD `ThermalIntegrableObject::integrate()` (thermal_integrable_object.cc:98-124).
+    /// Uses RK4 (matching the orbital state integrator order) with overshoot
+    /// detection: if the integrated temperature crosses the radiative equilibrium
+    /// value, it is clamped to equilibrium.
+    ///
+    /// `temp_dots_k1` is the per-plate temperature derivative from the current
+    /// step's `compute_flat_plate_srp_thermal` call. The absorbed power is
+    /// recovered from k1 and held constant over the RK4 sub-steps (solar flux
+    /// changes negligibly over one timestep).
     ///
     /// Called after `compute_flat_plate_srp_thermal` returns `temp_dots`.
-    /// Clamps temperatures to non-negative.
-    pub fn integrate_temperatures(&mut self, temp_dots: &[f64], dt: f64) {
-        for (i, temp) in self.temperatures.iter_mut().enumerate() {
-            *temp += temp_dots[i] * dt;
-            if *temp < 0.0 {
-                *temp = 0.0;
+    pub fn integrate_temperatures(&mut self, temp_dots_k1: &[f64], dt: f64) {
+        for (i, (plate, _params, thermal)) in self.plates.iter().enumerate() {
+            let old_temp = self.temperatures[i];
+            let old_t_pow4 = self.t_pow4_cached[i];
+
+            let rad_constant = plate.area * thermal.emissivity * STEFAN_BOLTZMANN;
+            let heat_cap = thermal.heat_capacity_per_area * plate.area;
+            if heat_cap <= 0.0 {
+                continue;
             }
-        }
-        for (i, cached) in self.t_pow4_cached.iter_mut().enumerate() {
-            *cached = self.temperatures[i].powi(4);
+
+            // Recover power_absorb from k1 (constant over the RK4 step).
+            // temp_dot = (power_absorb - power_emit) / heat_capacity
+            // power_absorb = temp_dot * heat_capacity + rad_constant * T^4
+            let power_absorb = temp_dots_k1[i] * heat_cap + rad_constant * old_t_pow4;
+
+            // Temperature derivative at a given temperature (power_absorb is constant).
+            let tdot = |temp: f64| -> f64 {
+                let t4 = temp * temp * temp * temp;
+                (power_absorb - rad_constant * t4) / heat_cap
+            };
+
+            // RK4 stages
+            let k1 = temp_dots_k1[i];
+            let k2 = tdot(old_temp + k1 * dt * 0.5);
+            let k3 = tdot(old_temp + k2 * dt * 0.5);
+            let k4 = tdot(old_temp + k3 * dt);
+
+            let mut new_temp = old_temp + (k1 + 2.0 * k2 + 2.0 * k3 + k4) * (dt / 6.0);
+            new_temp = new_temp.max(0.0);
+
+            let new_t_pow4 = new_temp * new_temp * new_temp * new_temp;
+
+            // JEOD overshoot clamping (thermal_integrable_object.cc:106-121).
+            // If temp_dot and (T_eq^4 - T^4) have opposite signs, the temperature
+            // crossed the radiative equilibrium asymptote — clamp to equilibrium.
+            if rad_constant > 0.0 {
+                let t_eq_pow4 = power_absorb / rad_constant;
+                if k1 * (t_eq_pow4 - new_t_pow4) < 0.0 {
+                    self.t_pow4_cached[i] = t_eq_pow4.max(0.0);
+                    self.temperatures[i] = self.t_pow4_cached[i].sqrt().sqrt();
+                    continue;
+                }
+            }
+
+            self.temperatures[i] = new_temp;
+            self.t_pow4_cached[i] = new_t_pow4;
         }
     }
 }

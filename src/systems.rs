@@ -20,6 +20,10 @@ pub fn time_advance_system(mut sim_time: ResMut<SimulationTimeR>, time: Res<Time
 ///
 /// This replaces the `DMat3::IDENTITY` placeholder so that spherical-harmonic
 /// gravity evaluation uses the correct body-fixed coordinates.
+///
+/// NOTE: Currently applies the same Earth RNP rotation to ALL entities with
+/// `PlanetFixedRotationC`. Multi-planet sims would need per-entity rotation
+/// parameters (Phase 5 work).
 pub fn planet_fixed_rotation_system(
     sim_time: Res<SimulationTimeR>,
     mut query: Query<&mut PlanetFixedRotationC>,

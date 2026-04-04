@@ -271,6 +271,7 @@ fn gravity_torque_causes_libration() {
         inertia,
         inverse_inertia,
         position: DVec3::ZERO,
+        dirty: false,
     };
 
     // Start with body tilted 5° from nadir about Y

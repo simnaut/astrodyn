@@ -53,7 +53,8 @@ The three verification tiers:
 
 Use `f64` everywhere. Do NOT use Bevy's `Transform`/`GlobalTransform` (f32).
 Use `glam::DVec3`, `glam::DQuat`, `glam::DMat3` for 3D types.
-Use `nalgebra` only for variable-size matrices (spherical harmonics coefficients).
+Spherical harmonics coefficients use `Vec<Vec<f64>>`. `nalgebra` is available
+transitively via `anise` but not used directly.
 
 ## Quaternion Convention
 
@@ -335,3 +336,18 @@ formula immediately.
 - JEOD's `DynBody` has three reference frames: `structure` (geometric origin),
   `composite_body` (composite CoM), `core_body` (this body's CoM only).
   State is integrated in one of these, then propagated to the others.
+- **Trick DRAscii silently drops unregistered variables**: When injecting ASCII logging
+  snippets in `generate_references.sh`, variable names must match the S_define's object
+  names exactly. If a variable doesn't exist in the sim, Trick silently omits it from
+  the CSV — producing fewer columns than expected with no error message. Always verify
+  the S_define (e.g., SIM_2A_SHADOW_CALC uses `radiation_simple`, not `radiation`).
+- **Geodetic longitude at the poles**: At latitude ±90°, longitude is geometrically
+  undefined (all meridians converge). `atan2(y, x)` becomes hypersensitive to position
+  errors: at 89.8° latitude, ~3.7e-6 rad/m sensitivity. Polar orbit NED tests must use
+  relaxed longitude tolerances (~0.1 rad) or exclude longitude comparison within ±0.5°
+  of the poles. This is not a code bug — both JEOD and our code produce valid but
+  numerically unstable values.
+- **DE421 ephemeris drift**: Our DE421 reader (Anise) and JEOD's native reader produce
+  ~10 arcsecond Sun direction offsets that grow at ~1.5e-4 rad/day. This affects solar
+  beta, SRP direction, and 3rd-body gravity accuracy. Duration-dependent tolerances are
+  required for ephemeris-driven quantities. See simnaut/bevy_jeod#27.

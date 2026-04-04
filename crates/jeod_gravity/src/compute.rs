@@ -96,48 +96,24 @@ pub fn gravitation(
                 calc_spherical(source.mu, position)
             }
         }
-        GravityModel::SphericalHarmonics(data) => {
-            assert!(
-                (source.mu - data.mu).abs() < 1e-10,
-                "GravitySource.mu ({}) must match SphericalHarmonicsData.mu ({})",
-                source.mu,
-                data.mu
-            );
-
-            // Vector3::transform(T_parent_this, posn, posn_pf)
-            let posn_pf = vector3_transform(t_parent_this, position);
-
-            let sh_pf = crate::spherical_harmonics_calc_nonspherical::calc_nonspherical(
-                data,
-                posn_pf,
+        GravityModel::SphericalHarmonics(_) => {
+            // Allocate a temporary scratch buffer. Callers in the RK4 inner
+            // loop should use gravitation_with_scratch() to avoid per-call
+            // allocation.
+            let mut scratch =
+                crate::spherical_harmonics_calc_nonspherical::GottliebScratch::new(degree.max(2));
+            gravitation_with_scratch(
+                source,
+                position,
+                t_parent_this,
                 degree,
                 order,
+                perturbing_only,
                 compute_gradient,
                 gradient_degree,
                 gradient_order,
-            );
-
-            // Vector3::transform_transpose(T_parent_this, body_grav_accel)
-            let sh_accel_inertial = vector3_transform_transpose(t_parent_this, sh_pf.grav_accel);
-
-            // Matrix3x3::transpose_transform_matrix(T_parent_this, dgdx_pf, dgdx)
-            let sh_gradient_inertial =
-                matrix3x3_transpose_transform_matrix(t_parent_this, &sh_pf.grav_grad);
-
-            if perturbing_only {
-                GravityAcceleration {
-                    grav_accel: sh_accel_inertial,
-                    grav_grad: sh_gradient_inertial,
-                    grav_pot: sh_pf.grav_pot,
-                }
-            } else {
-                let pm = calc_spherical(source.mu, position);
-                GravityAcceleration {
-                    grav_accel: pm.grav_accel + sh_accel_inertial,
-                    grav_grad: pm.grav_grad + sh_gradient_inertial,
-                    grav_pot: pm.grav_pot + sh_pf.grav_pot,
-                }
-            }
+                &mut scratch,
+            )
         }
     }
 }
@@ -171,7 +147,10 @@ pub fn gravitation_with_scratch(
             }
         }
         GravityModel::SphericalHarmonics(data) => {
-            assert!(
+            // Configuration invariant: source.mu must match data.mu. Validated at
+            // construction time; debug_assert avoids per-call overhead in the RK4
+            // inner loop (called 4x per body per timestep).
+            debug_assert!(
                 (source.mu - data.mu).abs() < 1e-10,
                 "GravitySource.mu ({}) must match SphericalHarmonicsData.mu ({})",
                 source.mu,

@@ -451,12 +451,13 @@ impl OrbitalElements {
 
 /// Solve Kepler's equation for elliptic orbits:  M = E - e sin(E).
 ///
-/// Newton-Raphson iteration with tolerance 1e-8 and maximum 1000 iterations.
+/// Newton-Raphson iteration with tolerance 1e-14 and maximum 1000 iterations.
+/// Port of JEOD `orbital_elements.cc` `kep_eqtn_e()`.
 pub fn kep_eqtn_e(m: f64, e: f64) -> Result<f64, OrbitalError> {
-    const TOL: f64 = 1e-8;
+    const TOL: f64 = 1e-14;
     const MAX_ITER: usize = 1000;
 
-    // Initial guess
+    // Initial guess (JEOD heuristic)
     let mut ea = if e < 0.8 { m } else { PI };
 
     for _ in 0..MAX_ITER {
@@ -474,20 +475,25 @@ pub fn kep_eqtn_e(m: f64, e: f64) -> Result<f64, OrbitalError> {
 
 /// Solve Kepler's equation for hyperbolic orbits:  M = e sinh(H) - H.
 ///
-/// Newton-Raphson iteration.
+/// Newton-Raphson iteration with tolerance 1e-14 and maximum 1000 iterations.
+/// Port of JEOD `orbital_elements.cc` `kep_eqtn_h()`, including the 4-case
+/// initial guess heuristic for robust convergence at extreme eccentricities.
 pub fn kep_eqtn_h(m: f64, e: f64) -> Result<f64, OrbitalError> {
-    const TOL: f64 = 1e-8;
+    const TOL: f64 = 1e-14;
     const MAX_ITER: usize = 1000;
 
-    // Simplified initial guess. JEOD uses a 4-case heuristic for faster
-    // convergence at extreme eccentricities:
-    //   1. e < 1.6, M > 0:  H0 = M + e
-    //   2. e < 1.6, M < 0:  H0 = M - e
-    //   3. e < 3.6 && |M| > pi:  H0 = M - sign(M)*e
-    //   4. otherwise:  H0 = M / (e - 1)
-    // This simpler guess (H0 = M) converges within the 1000-iteration
-    // budget for all tested cases.
-    let mut ha = m;
+    // JEOD 4-case initial guess heuristic (orbital_elements.cc)
+    let mut ha = if e < 1.6 {
+        if m > 0.0 {
+            m + e
+        } else {
+            m - e
+        }
+    } else if e < 3.6 && m.abs() > PI {
+        m - m.signum() * e
+    } else {
+        m / (e - 1.0)
+    };
 
     for _ in 0..MAX_ITER {
         let f = e * ha.sinh() - ha - m;
@@ -690,7 +696,7 @@ mod tests {
     fn kepler_elliptic_m_zero() {
         let ea = kep_eqtn_e(0.0, 0.5).unwrap();
         assert!(
-            (ea).abs() < 1e-8 || (ea - TAU).abs() < 1e-8,
+            (ea).abs() < 1e-14 || (ea - TAU).abs() < 1e-14,
             "E(M=0) should be 0 (or 2pi), got {}",
             ea
         );
@@ -700,7 +706,7 @@ mod tests {
     fn kepler_elliptic_m_pi() {
         let ea = kep_eqtn_e(PI, 0.5).unwrap();
         assert!(
-            (ea - PI).abs() < 1e-8,
+            (ea - PI).abs() < 1e-13,
             "E(M=pi, e=0.5) should be ~pi, got {}",
             ea
         );
@@ -718,7 +724,7 @@ mod tests {
             let diff = (m_wrapped - m_check_wrapped).abs();
             let diff = diff.min(TAU - diff);
             assert!(
-                diff < 1e-7,
+                diff < 1e-13,
                 "Kepler check failed: M={}, e={}, E={}, M_recomputed={}",
                 m,
                 e,
@@ -735,12 +741,30 @@ mod tests {
         let ha = kep_eqtn_h(m, e).unwrap();
         let m_check = e * ha.sinh() - ha;
         assert!(
-            (m - m_check).abs() < 1e-7,
+            (m - m_check).abs() < 1e-13,
             "Hyperbolic Kepler: M={}, H={}, M_check={}",
             m,
             ha,
             m_check
         );
+    }
+
+    #[test]
+    fn kepler_hyperbolic_extreme_eccentricity() {
+        // JEOD 4-case heuristic prevents sinh overflow for large e*M
+        for (e, m) in [(10.0, 100.0), (5.0, 50.0), (1.5, 0.1), (3.0, 10.0)] {
+            let ha = kep_eqtn_h(m, e).unwrap();
+            let m_check = e * ha.sinh() - ha;
+            assert!(
+                (m - m_check).abs() < 1e-10,
+                "Extreme hyperbolic Kepler: e={}, M={}, H={}, M_check={}, err={}",
+                e,
+                m,
+                ha,
+                m_check,
+                (m - m_check).abs()
+            );
+        }
     }
 
     #[test]
@@ -752,6 +776,21 @@ mod tests {
         assert!(
             (m - m_check).abs() < 1e-10,
             "Parabolic Kepler: M={}, D={}, M_check={}",
+            m,
+            d,
+            m_check
+        );
+    }
+
+    #[test]
+    fn kepler_parabolic_negative_m() {
+        // M = D + D^3/3.  For D = -1: M = -1 - 1/3 = -4/3
+        let m = -4.0 / 3.0;
+        let d = kep_eqtn_b(m);
+        let m_check = d + d * d * d / 3.0;
+        assert!(
+            (m - m_check).abs() < 1e-10,
+            "Parabolic Kepler negative M: M={}, D={}, M_check={}",
             m,
             d,
             m_check
@@ -892,7 +931,7 @@ mod tests {
         let nu_diff = (oe.true_anom - oe2.true_anom).abs();
         let nu_diff = nu_diff.min(TAU - nu_diff);
         assert!(
-            nu_diff < 1e-8,
+            nu_diff < 1e-13,
             "True anomaly round-trip error: {} (original {} vs reconstructed {})",
             nu_diff,
             oe.true_anom,

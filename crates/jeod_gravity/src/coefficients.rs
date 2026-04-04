@@ -165,6 +165,42 @@ pub fn load_binary(path: &std::path::Path) -> Result<SphericalHarmonicsData, Coe
 pub fn load_binary_from_bytes(buf: &[u8]) -> Result<SphericalHarmonicsData, CoeffLoadError> {
     let mut pos = 0;
 
+    // Bounds-checked read helpers (prevent panics on truncated/corrupted files)
+    let read_u32 = |pos: &mut usize| -> Result<u32, CoeffLoadError> {
+        if *pos + 4 > buf.len() {
+            return Err(CoeffLoadError::InvalidFormat(format!(
+                "truncated binary file at offset {}",
+                *pos
+            )));
+        }
+        let val = u32::from_le_bytes(buf[*pos..*pos + 4].try_into().unwrap());
+        *pos += 4;
+        Ok(val)
+    };
+    let read_f64 = |pos: &mut usize| -> Result<f64, CoeffLoadError> {
+        if *pos + 8 > buf.len() {
+            return Err(CoeffLoadError::InvalidFormat(format!(
+                "truncated binary file at offset {}",
+                *pos
+            )));
+        }
+        let val = f64::from_le_bytes(buf[*pos..*pos + 8].try_into().unwrap());
+        *pos += 8;
+        Ok(val)
+    };
+    let read_u8 = |pos: &mut usize| -> Result<u8, CoeffLoadError> {
+        if *pos >= buf.len() {
+            return Err(CoeffLoadError::InvalidFormat(format!(
+                "truncated binary file at offset {}",
+                *pos
+            )));
+        }
+        let val = buf[*pos];
+        *pos += 1;
+        Ok(val)
+    };
+
+    // Magic number
     if buf.len() < 8 {
         return Err(CoeffLoadError::InvalidFormat(
             "binary coefficient file too short".into(),
@@ -176,38 +212,51 @@ pub fn load_binary_from_bytes(buf: &[u8]) -> Result<SphericalHarmonicsData, Coef
         ));
     }
     pos += 4;
-    let version = u32::from_le_bytes(buf[4..8].try_into().unwrap());
+    let version = read_u32(&mut pos)?;
     if version != 1 {
         return Err(CoeffLoadError::InvalidFormat(format!(
             "unsupported binary coefficient version {version}"
         )));
     }
-    pos += 4;
 
-    let read_u32 = |pos: &mut usize| -> u32 {
-        let val = u32::from_le_bytes(buf[*pos..*pos + 4].try_into().unwrap());
-        *pos += 4;
-        val
-    };
-    let read_f64 = |pos: &mut usize| -> f64 {
-        let val = f64::from_le_bytes(buf[*pos..*pos + 8].try_into().unwrap());
-        *pos += 8;
-        val
-    };
+    let degree = read_u32(&mut pos)? as usize;
+    let order = read_u32(&mut pos)? as usize;
 
-    let degree = read_u32(&mut pos) as usize;
-    let order = read_u32(&mut pos) as usize;
-    let radius = read_f64(&mut pos);
-    let mu = read_f64(&mut pos);
-    let tide_free = buf[pos] != 0;
-    pos += 1;
-    let tide_free_delta = read_f64(&mut pos);
+    // Sanity checks to prevent unbounded memory allocation
+    if degree > 10000 {
+        return Err(CoeffLoadError::InvalidFormat(format!(
+            "degree {degree} exceeds maximum supported (10000)"
+        )));
+    }
+    if order > degree {
+        return Err(CoeffLoadError::InvalidFormat(format!(
+            "order ({order}) exceeds degree ({degree})"
+        )));
+    }
+
+    // Verify buffer has enough data for the claimed degree
+    // Header: 4(magic) + 4(version) + 4(degree) + 4(order) + 8(radius) + 8(mu)
+    //         + 1(tide_free) + 8(tide_free_delta) = 41 bytes
+    // Coefficients: 2 * sum(n+1 for n=0..=degree) * 8 = 2 * (degree+1)*(degree+2)/2 * 8
+    let num_coeffs = (degree + 1) * (degree + 2) / 2;
+    let expected_size = 41 + 2 * num_coeffs * 8;
+    if buf.len() < expected_size {
+        return Err(CoeffLoadError::InvalidFormat(format!(
+            "binary file too short for degree {degree}: need {expected_size} bytes, have {}",
+            buf.len()
+        )));
+    }
+
+    let radius = read_f64(&mut pos)?;
+    let mu = read_f64(&mut pos)?;
+    let tide_free = read_u8(&mut pos)? != 0;
+    let tide_free_delta = read_f64(&mut pos)?;
 
     let mut cnm = Vec::with_capacity(degree + 1);
     for n in 0..=degree {
         let mut row = Vec::with_capacity(n + 1);
         for _ in 0..=n {
-            row.push(read_f64(&mut pos));
+            row.push(read_f64(&mut pos)?);
         }
         cnm.push(row);
     }
@@ -216,7 +265,7 @@ pub fn load_binary_from_bytes(buf: &[u8]) -> Result<SphericalHarmonicsData, Coef
     for n in 0..=degree {
         let mut row = Vec::with_capacity(n + 1);
         for _ in 0..=n {
-            row.push(read_f64(&mut pos));
+            row.push(read_f64(&mut pos)?);
         }
         snm.push(row);
     }

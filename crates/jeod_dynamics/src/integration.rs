@@ -325,6 +325,7 @@ mod tests {
             inertia,
             inverse_inertia,
             position: DVec3::ZERO,
+            dirty: false,
         }
     }
 
