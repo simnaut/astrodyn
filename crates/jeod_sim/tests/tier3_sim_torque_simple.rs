@@ -226,12 +226,13 @@ fn run_propagation_test(config: &RunConfig) {
     let mut max_torque_error = 0.0_f64;
 
     for record in &records[1..] {
-        // Update Sun and Moon positions from ephemeris
+        sim.step_until(record.time);
+
+        // Update Sun and Moon positions from ephemeris at the current sim time
+        // (after stepping) so forces see time-consistent source states.
         sim.sources[src.sun].position = body_position_at(&ephemeris, EphemerisBody::Sun, &sim.time);
         sim.sources[src.moon].position =
             body_position_at(&ephemeris, EphemerisBody::Moon, &sim.time);
-
-        sim.step_until(record.time);
 
         let body = sim.body(0);
 
@@ -241,8 +242,9 @@ fn run_propagation_test(config: &RunConfig) {
         max_pos_error = max_pos_error.max(pos_error);
         max_vel_error = max_vel_error.max(vel_error);
 
+        let mut quat_error = 0.0;
         if let Some(ref rot) = body.rot {
-            let quat_error = quaternion_angle_error(&rot.quaternion, &record.quaternion);
+            quat_error = quaternion_angle_error(&rot.quaternion, &record.quaternion);
             let omega_error = (rot.ang_vel_body - record.ang_vel).length();
             max_quat_error = max_quat_error.max(quat_error);
             max_omega_error = max_omega_error.max(omega_error);
@@ -257,7 +259,7 @@ fn run_propagation_test(config: &RunConfig) {
         if (record.time % 1000.0).abs() < 0.5 {
             println!(
                 "  t={:6.0}s: pos={:10.4} m  quat={:.2e} rad  torque={:.2e} N·m",
-                record.time, pos_error, max_quat_error, torque_error
+                record.time, pos_error, quat_error, torque_error
             );
         }
     }
@@ -303,9 +305,15 @@ fn run_propagation_test(config: &RunConfig) {
         "{}: quaternion error {max_quat_error:.2e} rad exceeds {quat_threshold} rad",
         config.label
     );
-    // Torque: gradient-OFF runs produce zero torque on both sides.
+    // Torque: gradient-OFF runs must produce exactly zero torque.
     // For gradient-ON, error is dominated by attitude divergence.
-    if config.earth_gradient {
+    if !config.earth_gradient {
+        assert!(
+            max_torque_error == 0.0,
+            "{}: gradient OFF but torque error is {max_torque_error:.2e} N·m (expected exactly 0)",
+            config.label
+        );
+    } else {
         let torque_threshold = if config.gradient_degree > 0 {
             200.0
         } else {
