@@ -13,11 +13,13 @@
 //!   06: SH 20×20 gravity, SH 4×4 gradient          → SH gradient torque
 //!
 //! All runs share: ISS mass (400,000 kg, non-diagonal inertia), epoch Nov 20 2007
-//! 00:00 UTC, RK4 at 32 Hz, 10,800 s duration. JEOD includes Earth GGM05C + Sun
-//! + Moon (spherical, no gradient); our tests use Earth only because differential
-//! 3rd-body acceleration is not yet ported (Phase 5 task 5.40). This causes ~10 m
-//! position drift over 3h from the missing ~1e-6 m/s² Sun/Moon perturbation,
-//! which cascades through gravity gradient torque feedback into attitude divergence.
+//! 00:00 UTC, RK4 at 32 Hz, 10,800 s duration.
+//!
+//! JEOD includes Earth GGM05C + Sun + Moon (spherical, no gradient); our tests
+//! use Earth only because differential 3rd-body acceleration is not yet ported
+//! (Phase 5 task 5.40). This causes ~10 m position drift over 3h from the missing
+//! ~1e-6 m/s² Sun/Moon perturbation, which cascades through gravity gradient
+//! torque feedback into attitude divergence.
 
 mod sim_test_helpers;
 use sim_test_helpers::*;
