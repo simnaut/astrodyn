@@ -1,0 +1,2 @@
+sys.exec.out.time {s},veh.solar_beta.solar_beta {rad},veh.dyn_body.composite_body.state.trans.position[0] {m},veh.dyn_body.composite_body.state.trans.velocity[0] {m/s},veh.dyn_body.composite_body.state.trans.position[1] {m},veh.dyn_body.composite_body.state.trans.velocity[1] {m/s},veh.dyn_body.composite_body.state.trans.position[2] {m},veh.dyn_body.composite_body.state.trans.velocity[2] {m/s}
+                   0, -0.4958473140081605,          -972896.02,         5585.497069,         -6014900.38,         1508.108071,         -2866287.24,        -5072.582182

@@ -220,6 +220,12 @@ run_dyncomp_group() {
         "SET_test/RUN_9D:dyncomp_run9d:dyncomp_run9d_state.csv"
         "SET_test/RUN_10C:dyncomp_run10c:dyncomp_run10c_state.csv"
         "SET_test/RUN_10D:dyncomp_run10d:dyncomp_run10d_state.csv"
+        # Phase 4b-A additions (combined-force; consumed by Phase 5 tests)
+        "SET_test/RUN_4:dyncomp_run4:dyncomp_run4_state.csv"
+        "SET_test/RUN_7A:dyncomp_run7a:dyncomp_run7a_state.csv"
+        "SET_test/RUN_7B:dyncomp_run7b:dyncomp_run7b_state.csv"
+        "SET_test/RUN_7C:dyncomp_run7c:dyncomp_run7c_state.csv"
+        "SET_test/RUN_7D:dyncomp_run7d:dyncomp_run7d_state.csv"
     )
 
     # Skip entire group (including build) if all primary outputs exist
@@ -429,6 +435,66 @@ for ii in range(3):
 trick.add_data_record_group(dr)
 '
 
+# ── ASCII logging snippet for SIM_orbinit (body initialization) ──
+# Logs position and velocity of the initialized body.
+ORBINIT_SNIPPET='
+dr = trick.sim_services.DRAscii("orbinit_ASCII")
+dr.set_cycle(1.0)
+dr.freq = trick.sim_services.DR_Always
+for ii in range(3):
+    dr.add_variable("target.dyn_body.composite_body.state.trans.position[" + str(ii) + "]")
+for ii in range(3):
+    dr.add_variable("target.dyn_body.composite_body.state.trans.velocity[" + str(ii) + "]")
+trick.add_data_record_group(dr)
+'
+
+# ── ASCII logging snippet for SIM_VER_DRAG (aerodynamic drag verification) ──
+# Logs aggregate aero force/torque, inertial velocity, and acceleration magnitude.
+DRAG_SNIPPET='
+dr = trick.sim_services.DRAscii("drag_ASCII")
+dr.set_cycle(1.0)
+dr.freq = trick.sim_services.DR_Always
+for ii in range(3):
+    dr.add_variable("aero_test.aero_drag.aero_force[" + str(ii) + "]")
+for ii in range(3):
+    dr.add_variable("aero_test.aero_drag.aero_torque[" + str(ii) + "]")
+for ii in range(3):
+    dr.add_variable("aero_test.inertial_vel[" + str(ii) + "]")
+dr.add_variable("aero_test.logging.accel_mag")
+trick.add_data_record_group(dr)
+'
+
+# ── ASCII logging snippet for SIM_1_BASIC (basic SRP verification) ──
+# Logs radiation force/torque, flux magnitude, and surface temperature.
+SRP_BASIC_SNIPPET='
+dr = trick.sim_services.DRAscii("srp_basic_ASCII")
+dr.set_cycle(1.0)
+dr.freq = trick.sim_services.DR_Always
+for ii in range(3):
+    dr.add_variable("radiation.rad_pressure.force[" + str(ii) + "]")
+for ii in range(3):
+    dr.add_variable("radiation.rad_pressure.torque[" + str(ii) + "]")
+dr.add_variable("radiation.rad_pressure.source.flux_mag")
+dr.add_variable("radiation_simple.rad_surface.temperature")
+trick.add_data_record_group(dr)
+'
+
+# ── ASCII logging snippet for SIM_2A_SHADOW_CALC (advanced shadow geometry) ──
+# SIM_2A uses "radiation_simple" object (not "radiation" like SIM_2_SHADOW_CALC).
+SHADOW_2A_SNIPPET='
+dr = trick.sim_services.DRAscii("shadow_calc_ASCII")
+dr.set_cycle(1.0)
+dr.freq = trick.sim_services.DR_Always
+for ii in range(3):
+    dr.add_variable("vehicle.dyn_body.structure.state.trans.position[" + str(ii) + "]")
+dr.add_variable("radiation_simple.rad_pressure.source.flux_mag")
+for ii in range(3):
+    dr.add_variable("radiation_simple.rad_pressure.force[" + str(ii) + "]")
+for ii in range(3):
+    dr.add_variable("radiation_simple.rad_pressure.torque[" + str(ii) + "]")
+trick.add_data_record_group(dr)
+'
+
 # ════════════════════════════════════════════════════════════════════
 # LAUNCH ALL GROUPS IN PARALLEL
 # ════════════════════════════════════════════════════════════════════
@@ -438,28 +504,167 @@ echo "=== Launching sim groups in parallel ==="
 run_dyncomp_group &
 PID_DYNCOMP=$!
 
-# Group 2: SIM_orbinit
-run_sim "models/dynamics/body_action/verif/SIM_orbinit" "SET_test/RUN_0001" "orbinit_0001" &
+# Group 2: SIM_orbinit (multiple initialization methods, sequential within group)
+run_orbinit_group() {
+    local sim_dir="models/dynamics/body_action/verif/SIM_orbinit"
+    local -a RUNS=(
+        "SET_test/RUN_0001:orbinit_0001:orbinit_0001_orbinit.csv"
+        # Phase 4b-B additions (4 initialization methods)
+        "SET_test/RUN_0101:orbinit_0101:orbinit_0101_orbinit.csv"
+        "SET_test/RUN_0201:orbinit_0201:orbinit_0201_orbinit.csv"
+        "SET_test/RUN_0301:orbinit_0301:orbinit_0301_orbinit.csv"
+        "SET_test/RUN_0401:orbinit_0401:orbinit_0401_orbinit.csv"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_orbinit group (all outputs exist) ==="
+        return 0
+    fi
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$ORBINIT_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+run_orbinit_group &
 PID_ORBINIT=$!
 
 # Group 3: SIM_OrbElem
 run_sim_with_ascii "models/dynamics/derived_state/verif/SIM_OrbElem" "SET_test/RUN_ecc" "orbelem_ecc" "$ORBELEM_SNIPPET" &
 PID_ORBELEM=$!
 
-# Group 4: SIM_LVLH
-run_sim_with_ascii "models/dynamics/derived_state/verif/SIM_LVLH" "SET_test/RUN_inc" "lvlh_inc" "$LVLH_SNIPPET" &
+# Group 4: SIM_LVLH (multiple orbit types, sequential within group)
+run_lvlh_group() {
+    local sim_dir="models/dynamics/derived_state/verif/SIM_LVLH"
+    local -a RUNS=(
+        "SET_test/RUN_inc:lvlh_inc:lvlh_inc_lvlh.csv"
+        # Phase 4b-B additions
+        "SET_test/RUN_ecc:lvlh_ecc:lvlh_ecc_lvlh.csv"
+        "SET_test/RUN_equ:lvlh_equ:lvlh_equ_lvlh.csv"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_LVLH group (all outputs exist) ==="
+        return 0
+    fi
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$LVLH_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+run_lvlh_group &
 PID_LVLH=$!
 
-# Group 5: SIM_NED
-run_sim_with_ascii "models/dynamics/derived_state/verif/SIM_NED" "SET_test/RUN_ell_inc" "ned_ell_inc" "$NED_SNIPPET" &
+# Group 5: SIM_NED (multiple orbit types + Earth models, sequential within group)
+run_ned_group() {
+    local sim_dir="models/dynamics/derived_state/verif/SIM_NED"
+    local -a RUNS=(
+        "SET_test/RUN_ell_inc:ned_ell_inc:ned_ell_inc_ned.csv"
+        # Phase 4b-B additions
+        "SET_test/RUN_ell_polar:ned_ell_polar:ned_ell_polar_ned.csv"
+        "SET_test/RUN_sph_inc:ned_sph_inc:ned_sph_inc_ned.csv"
+        "SET_test/RUN_sph_polar:ned_sph_polar:ned_sph_polar_ned.csv"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_NED group (all outputs exist) ==="
+        return 0
+    fi
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$NED_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+run_ned_group &
 PID_NED=$!
 
-# Group 6: SIM_SolarBeta
-run_sim_with_ascii "models/dynamics/derived_state/verif/SIM_SolarBeta" "SET_test/RUN_incl_51_6" "solarbeta_incl_51_6" "$SOLARBETA_SNIPPET" &
+# Group 6: SIM_SolarBeta (multiple inclinations, sequential within group)
+run_solarbeta_group() {
+    local sim_dir="models/dynamics/derived_state/verif/SIM_SolarBeta"
+    local -a RUNS=(
+        "SET_test/RUN_incl_51_6:solarbeta_incl_51_6:solarbeta_incl_51_6_solarbeta.csv"
+        # Phase 4b-B additions
+        "SET_test/RUN_incl_0:solarbeta_incl_0:solarbeta_incl_0_solarbeta.csv"
+        "SET_test/RUN_incl_23_4:solarbeta_incl_23_4:solarbeta_incl_23_4_solarbeta.csv"
+        "SET_test/RUN_comp_ISS:solarbeta_comp_iss:solarbeta_comp_iss_solarbeta.csv"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_SolarBeta group (all outputs exist) ==="
+        return 0
+    fi
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$SOLARBETA_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+run_solarbeta_group &
 PID_SOLARBETA=$!
 
-# Group 7: SIM_Euler
-run_sim_with_ascii "models/dynamics/derived_state/verif/SIM_Euler" "SET_test/RUN_inc" "euler_inc" "$EULER_SNIPPET" &
+# Group 7: SIM_Euler (multiple orbit types, sequential within group)
+run_euler_group() {
+    local sim_dir="models/dynamics/derived_state/verif/SIM_Euler"
+    local -a RUNS=(
+        "SET_test/RUN_inc:euler_inc:euler_inc_euler.csv"
+        # Phase 4b-B additions
+        "SET_test/RUN_ecc:euler_ecc:euler_ecc_euler.csv"
+        "SET_test/RUN_equ:euler_equ:euler_equ_euler.csv"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_Euler group (all outputs exist) ==="
+        return 0
+    fi
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$EULER_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+run_euler_group &
 PID_EULER=$!
 
 # Group 8: SIM_integ_test
@@ -532,23 +737,125 @@ run_shadow_calc_group() {
 run_shadow_calc_group &
 PID_SHADOW_CALC=$!
 
+# Group 12: SIM_VER_DRAG (aerodynamic drag verification, 3 Cd modes)
+# Phase 4b-C — requires its own trick-CP build
+run_drag_group() {
+    local sim_dir="models/interactions/aerodynamics/verif/SIM_VER_DRAG"
+    local -a RUNS=(
+        "SET_test/RUN_aero_drag_const:drag_const:drag_const_drag.csv"
+        "SET_test/RUN_aero_drag_CD:drag_cd:drag_cd_drag.csv"
+        "SET_test/RUN_aero_drag_BC:drag_bc:drag_bc_drag.csv"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_VER_DRAG group (all outputs exist) ==="
+        return 0
+    fi
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$DRAG_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+run_drag_group &
+PID_DRAG=$!
+
+# Group 13: SIM_1_BASIC (basic SRP verification, 2 runs)
+# Phase 4b-C — requires its own trick-CP build
+run_srp_basic_group() {
+    local sim_dir="models/interactions/radiation_pressure/verif/SIM_1_BASIC"
+    local -a RUNS=(
+        "SET_test/RUN_basic:srp_basic:srp_basic_srp_basic.csv"
+        "SET_test/RUN_basic_cr:srp_basic_cr:srp_basic_cr_srp_basic.csv"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_1_BASIC group (all outputs exist) ==="
+        return 0
+    fi
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$SRP_BASIC_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+run_srp_basic_group &
+PID_SRP_BASIC=$!
+
+# Group 14: SIM_2A_SHADOW_CALC (advanced shadow with thermal effects)
+# Phase 4b-C — different S_define from SIM_2_SHADOW_CALC, needs own build
+run_shadow_2a_group() {
+    local sim_dir="models/interactions/radiation_pressure/verif/SIM_2A_SHADOW_CALC"
+    local -a RUNS=(
+        "SET_test/RUN_annular_eclipse:shadow_2a_annular:shadow_2a_annular_shadow_calc.csv"
+        "SET_test/RUN_shadow_cooling:shadow_2a_cooling:shadow_2a_cooling_shadow_calc.csv"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_2A_SHADOW_CALC group (all outputs exist) ==="
+        return 0
+    fi
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$SHADOW_2A_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+run_shadow_2a_group &
+PID_SHADOW_2A=$!
+
+# Group 15: SIM_3_ORBIT_1st_ORDER (first-order SRP model)
+# Phase 4b-C — different S_define from SIM_3_ORBIT, needs own build
+run_sim_with_ascii "models/interactions/radiation_pressure/verif/SIM_3_ORBIT_1st_ORDER" \
+    "SET_test/RUN_radiation" "srp_1st_order_radiation" "$SRP_ORBIT_SNIPPET" &
+PID_SRP_1ST_ORDER=$!
+
 # ════════════════════════════════════════════════════════════════════
 # WAIT FOR ALL GROUPS
 # ════════════════════════════════════════════════════════════════════
 echo "=== Waiting for all sim groups to complete ==="
 FAIL=0
 
-wait $PID_DYNCOMP   || { echo "WARN: SIM_dyncomp group had failures"; FAIL=1; }
-wait $PID_ORBINIT   || { echo "WARN: SIM_orbinit failed"; FAIL=1; }
-wait $PID_ORBELEM   || { echo "WARN: SIM_OrbElem failed"; FAIL=1; }
-wait $PID_LVLH      || { echo "WARN: SIM_LVLH failed"; FAIL=1; }
-wait $PID_NED       || { echo "WARN: SIM_NED failed"; FAIL=1; }
-wait $PID_SOLARBETA  || { echo "WARN: SIM_SolarBeta failed"; FAIL=1; }
-wait $PID_EULER     || { echo "WARN: SIM_Euler failed"; FAIL=1; }
-wait $PID_INTEG     || { echo "WARN: SIM_integ_test failed"; FAIL=1; }
-wait $PID_SRP_ORBIT    || { echo "WARN: SIM_3_ORBIT SRP failed"; FAIL=1; }
+wait $PID_DYNCOMP       || { echo "WARN: SIM_dyncomp group had failures"; FAIL=1; }
+wait $PID_ORBINIT       || { echo "WARN: SIM_orbinit group had failures"; FAIL=1; }
+wait $PID_ORBELEM       || { echo "WARN: SIM_OrbElem failed"; FAIL=1; }
+wait $PID_LVLH          || { echo "WARN: SIM_LVLH group had failures"; FAIL=1; }
+wait $PID_NED           || { echo "WARN: SIM_NED group had failures"; FAIL=1; }
+wait $PID_SOLARBETA     || { echo "WARN: SIM_SolarBeta group had failures"; FAIL=1; }
+wait $PID_EULER         || { echo "WARN: SIM_Euler group had failures"; FAIL=1; }
+wait $PID_INTEG         || { echo "WARN: SIM_integ_test failed"; FAIL=1; }
+wait $PID_SRP_ORBIT     || { echo "WARN: SIM_3_ORBIT SRP failed"; FAIL=1; }
 wait $PID_TORQUE_SIMPLE || { echo "WARN: SIM_torque_compare_simple failed"; FAIL=1; }
-wait $PID_SHADOW_CALC  || { echo "WARN: SIM_2_SHADOW_CALC failed"; FAIL=1; }
+wait $PID_SHADOW_CALC   || { echo "WARN: SIM_2_SHADOW_CALC failed"; FAIL=1; }
+# Phase 4b-C additions
+wait $PID_DRAG          || { echo "WARN: SIM_VER_DRAG group had failures"; FAIL=1; }
+wait $PID_SRP_BASIC     || { echo "WARN: SIM_1_BASIC group had failures"; FAIL=1; }
+wait $PID_SHADOW_2A     || { echo "WARN: SIM_2A_SHADOW_CALC group had failures"; FAIL=1; }
+wait $PID_SRP_1ST_ORDER || { echo "WARN: SIM_3_ORBIT_1st_ORDER failed"; FAIL=1; }
 
 echo ""
 echo "=== Reference data generation complete ==="
