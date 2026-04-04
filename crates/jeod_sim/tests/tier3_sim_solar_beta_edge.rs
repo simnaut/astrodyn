@@ -78,8 +78,9 @@ fn run_solar_beta_test(csv_filename: &str, label: &str) {
 
     // Beta error comes from Sun position differences between our DE421 (via Anise)
     // and JEOD's native DE421 reader — different Chebyshev evaluation paths produce
-    // ~10 arcsecond directional offsets that grow linearly with duration (~5e-5 rad/day).
-    // Over the 10-day SIM_SolarBeta scenario, this accumulates to ~5e-4 to 1.2e-3 rad.
+    // ~10 arcsecond directional offsets that grow roughly linearly with duration at
+    // ~1.5e-4 rad/day. Over the 10-day SIM_SolarBeta scenario, that contributes
+    // ~1.5e-3 rad, plus the 1e-4 rad base tolerance below.
     let duration_days = records.last().unwrap().time / 86_400.0;
     let tol = 1e-4 + duration_days * 1.5e-4; // base + ~1.5e-4 rad/day ephemeris drift
     assert!(

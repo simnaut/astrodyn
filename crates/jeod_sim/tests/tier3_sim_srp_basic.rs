@@ -7,7 +7,7 @@
 //!
 //! This test validates:
 //!   1. Flux at ~1 AU matches expected solar constant (~1361 W/m²)
-//!   2. Force direction is anti-Sun (force[0] < 0 for vehicle at +X from Sun)
+//!   2. Force direction is away from the Sun (force[0] > 0 for vehicle at +X from Sun)
 //!   3. Force magnitude is physically plausible for the surface area
 //!   4. Temperature evolves (thermal model active)
 //!   5. Both runs (basic / basic_cr) produce consistent results
