@@ -170,6 +170,14 @@ Set `JEOD_HOME` (or `JEOD_PATH`) to the JEOD source checkout.
 `JEOD_HOME` and `TRICK_HOME` follow the standard JEOD/Trick environment
 variable conventions.
 
+**Before every commit**, run the same checks CI runs:
+
+```bash
+cargo fmt --check && cargo clippy --workspace --tests -- -D warnings
+```
+
+Fix any issues before committing. This avoids lint-only CI failures.
+
 When running the full test suite and inspecting results, capture output to a
 temp file first, then grep it — never run the suite multiple times:
 
