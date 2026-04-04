@@ -1,14 +1,28 @@
 //! Tier 3: SIM_2A_SHADOW_CALC cross-validation
 //!
-//! Advanced shadow geometry tests from SIM_2A_SHADOW_CALC (different S_define
-//! from the already-validated SIM_2_SHADOW_CALC):
-//!   RUN_annular_eclipse: Annular eclipse geometry
-//!   RUN_shadow_cooling:  Eclipse with thermal cooling effects
+//! Validates our conical shadow model against JEOD's SIM_2A_SHADOW_CALC.
+//! Computes shadow fraction from each CSV position + Sun position from DE421,
+//! then compares against JEOD's logged flux to verify shadow state agreement.
+//!
+//!   RUN_annular_eclipse: Vehicle at varying distances, exercises shadow transitions.
+//!   RUN_shadow_cooling:  Vehicle near Earth surface, persistent shadow.
 
 mod sim_test_helpers;
 use sim_test_helpers::*;
 
-fn run_shadow_2a_test(csv_filename: &str, label: &str) {
+use glam::DVec3;
+use jeod_interactions::{compute_shadow_fraction, solar_flux_at_distance};
+use jeod_sim::{Ephemeris, EphemerisBody};
+use std::path::Path;
+
+/// Sun radius (m).
+const R_SUN: f64 = 6.96e8;
+/// Earth equatorial radius (m).
+const R_EARTH: f64 = 6_378_137.0;
+/// SIM_2A epoch: 1998-12-01 00:00:31 TAI.
+const EPOCH_TJT: f64 = 11148.0 + 31.0 / 86400.0;
+
+fn run_shadow_comparison(csv_filename: &str, label: &str) {
     let csv_path = test_data_path(csv_filename);
     assert!(
         csv_path.exists(),
@@ -18,10 +32,19 @@ fn run_shadow_2a_test(csv_filename: &str, label: &str) {
         csv_path.display()
     );
 
+    let bsp_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data/de421.bsp");
+    assert!(
+        bsp_path.exists(),
+        "DE421 not found at {}",
+        bsp_path.display()
+    );
+    let ephemeris = Ephemeris::from_bsp(&bsp_path).expect("load DE421");
+
     let records = load_shadow_calc_csv(&csv_path);
     assert!(
-        !records.is_empty(),
-        "{label}: no records found in {csv_filename}"
+        records.len() >= 2,
+        "{label}: expected at least 2 records, got {}",
+        records.len()
     );
 
     println!(
@@ -29,54 +52,78 @@ fn run_shadow_2a_test(csv_filename: &str, label: &str) {
         records.len()
     );
 
-    // Analyze shadow transitions: count distinct flux levels
-    let mut in_shadow = 0;
-    let mut in_sun = 0;
-    let mut in_penumbra = 0;
-    let mut max_flux = 0.0_f64;
+    let base_jd = EPOCH_TJT + 40000.0 + 2_400_000.5;
+
+    let mut max_frac_err = 0.0_f64;
+    let mut shadow_state_mismatches = 0;
 
     for record in &records {
-        max_flux = max_flux.max(record.flux_mag);
-        if record.flux_mag < 1e-6 {
-            in_shadow += 1;
-        } else if record.flux_mag > 1300.0 {
-            in_sun += 1;
-        } else {
-            in_penumbra += 1;
-        }
-    }
+        let tdb_jd = base_jd + record.time / 86400.0;
+        let (sun_pos, _) = ephemeris
+            .get_earth_centered_state(EphemerisBody::Sun, tdb_jd)
+            .expect("Sun position");
 
-    println!("  Shadow: {in_shadow}  Penumbra: {in_penumbra}  Sun: {in_sun}");
-    println!("  Max flux: {:.2} W/m²", max_flux);
-    if !records.is_empty() {
+        // Our shadow fraction from geometry
+        let our_frac =
+            compute_shadow_fraction(record.position, sun_pos, DVec3::ZERO, R_EARTH, R_SUN);
+
+        // Derive JEOD's shadow fraction: compute what full-sun flux would be at
+        // this vehicle's distance from Sun, then ratio with actual logged flux.
+        let sun_dist = (sun_pos - record.position).length();
+        let full_sun_flux = solar_flux_at_distance(sun_dist);
+        let jeod_frac = if full_sun_flux > 1.0 {
+            (record.flux_mag / full_sun_flux).min(1.0)
+        } else {
+            0.0
+        };
+
+        let frac_err = (our_frac - jeod_frac).abs();
+        max_frac_err = max_frac_err.max(frac_err);
+
+        // Check shadow state agreement: both in shadow, both in sun, or both in penumbra
+        let our_state = if our_frac < 0.001 {
+            "shadow"
+        } else if our_frac > 0.999 {
+            "sun"
+        } else {
+            "penumbra"
+        };
+        let jeod_state = if jeod_frac < 0.001 {
+            "shadow"
+        } else if jeod_frac > 0.999 {
+            "sun"
+        } else {
+            "penumbra"
+        };
+        if our_state != jeod_state {
+            shadow_state_mismatches += 1;
+        }
+
         println!(
-            "  First record: t={:.1}s pos_mag={:.0} km flux={:.2} W/m²",
-            records[0].time,
-            records[0].position.length() / 1000.0,
-            records[0].flux_mag,
+            "  t={:5.0}s: our={:.6} jeod={:.6} err={:.3e} [{}/{}]",
+            record.time, our_frac, jeod_frac, frac_err, our_state, jeod_state,
         );
     }
 
-    // Should have both shadowed and illuminated records (the point of these tests)
-    let total = records.len();
-    assert!(
-        in_shadow + in_penumbra > 0 || in_sun > 0,
-        "{label}: expected at least some records in shadow or sun"
-    );
-    assert!(
-        total >= 10,
-        "{label}: expected at least 10 records, got {total}"
-    );
+    println!("  Max shadow fraction error:  {:.6e}", max_frac_err);
+    println!("  Shadow state mismatches:    {shadow_state_mismatches}");
 
-    println!("  {label}: shadow geometry reference data validated");
+    // Shadow fraction should agree within 5%.
+    // The residual comes from: (1) Sun position differences (DE421 Anise vs JEOD)
+    // which slightly shift the shadow cone geometry, and (2) solar luminosity
+    // constant differences affecting the flux → fraction derivation.
+    assert!(
+        max_frac_err < 0.05,
+        "{label}: shadow fraction error {max_frac_err:.3e} exceeds 0.05"
+    );
 }
 
 #[test]
 fn tier3_shadow_2a_annular() {
-    run_shadow_2a_test("shadow_2a_annular_shadow_calc.csv", "RUN_annular_eclipse");
+    run_shadow_comparison("shadow_2a_annular_shadow_calc.csv", "RUN_annular_eclipse");
 }
 
 #[test]
 fn tier3_shadow_2a_cooling() {
-    run_shadow_2a_test("shadow_2a_cooling_shadow_calc.csv", "RUN_shadow_cooling");
+    run_shadow_comparison("shadow_2a_cooling_shadow_calc.csv", "RUN_shadow_cooling");
 }

@@ -475,7 +475,7 @@ pub fn load_orbinit_csv(path: &Path) -> Vec<OrbInitRecord> {
     records
 }
 
-// ── Euler CSV loader (55 columns: 36 angles + 6 pos/vel + 9 T + 4 quat) ──
+// ── Euler CSV loader (56 columns: time + 36 angles + 6 pos/vel + 9 T + 4 quat) ──
 
 #[derive(Debug)]
 pub struct EulerRecord {
@@ -531,7 +531,7 @@ pub fn load_euler_csv(path: &Path) -> Vec<EulerRecord> {
     records
 }
 
-// ── SolarBeta CSV loader (7 columns) ──
+// ── SolarBeta CSV loader (8 columns: time + beta + 3×(pos,vel) interleaved) ──
 
 #[derive(Debug)]
 pub struct SolarBetaRecord {
