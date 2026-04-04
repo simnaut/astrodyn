@@ -59,7 +59,18 @@ fn load_ggm05c() -> GravitySource {
         jeod_root.display()
     );
     let ggm05c_path = jeod_root.join("models/environment/gravity/data/src/earth_GGM05C.cc");
-    let sh_data = jeod_sim::coefficients::load_from_jeod_cc(&ggm05c_path).expect("load GGM05C");
+    assert!(
+        ggm05c_path.exists(),
+        "GGM05C file does not exist: {}",
+        ggm05c_path.display()
+    );
+    let sh_data = jeod_sim::coefficients::load_from_jeod_cc(&ggm05c_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to load GGM05C from {}: {}",
+            ggm05c_path.display(),
+            err
+        )
+    });
     GravitySource {
         mu: sh_data.mu,
         model: GravityModel::SphericalHarmonics(Box::new(sh_data)),
