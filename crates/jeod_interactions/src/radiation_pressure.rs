@@ -248,6 +248,7 @@ pub fn compute_flat_plate_srp_thermal(
         // JEOD thermal_integrable_object.cc:144:
         //   power_emit = rad_constant * t_pow4;   // uses CACHED T^4
         //   temp_dot = (power_absorb - power_emit) / heat_capacity;
+        // JEOD_INV: IN.18 — power_emit must be non-negative (structural: both factors non-negative)
         let rad_constant = plate.area * thermal.emissivity * STEFAN_BOLTZMANN;
         let power_emit = rad_constant * t_pow4_cached[i];
 

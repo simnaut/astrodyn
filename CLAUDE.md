@@ -53,7 +53,8 @@ The three verification tiers:
 
 Use `f64` everywhere. Do NOT use Bevy's `Transform`/`GlobalTransform` (f32).
 Use `glam::DVec3`, `glam::DQuat`, `glam::DMat3` for 3D types.
-Use `nalgebra` only for variable-size matrices (spherical harmonics coefficients).
+Spherical harmonics coefficients use `Vec<Vec<f64>>`. `nalgebra` is available
+transitively via `anise` but not used directly.
 
 ## Quaternion Convention
 

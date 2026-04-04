@@ -62,7 +62,7 @@ pub fn compute_rotational_acceleration(
     // Rotational acceleration: alpha = I^-1 * torque
     let rot_accel = *inverse_inertia * torque_body;
 
-    // JEOD zero_small: truncate tiny values to avoid numerical noise
+    // JEOD_INV: DB.20 — small rot_accel truncated to zero (< 1e-20 per component)
     zero_small(rot_accel)
 }
 

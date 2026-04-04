@@ -36,6 +36,10 @@ pub enum ValidationError {
     GeodeticPlanetOutOfRange { index: usize, num_sources: usize },
     /// `orbital_elements_source` index is out of range for the sources table.
     OrbitalElementsSourceOutOfRange { index: usize, num_sources: usize },
+    /// `atmosphere_planet_source` index is out of range for the sources table.
+    AtmospherePlanetOutOfRange { index: usize, num_sources: usize },
+    /// Drag or SRP configured but no mass properties (force → acceleration requires mass).
+    ForceProducerWithoutMass,
 }
 
 impl std::fmt::Display for ValidationError {
@@ -126,6 +130,20 @@ impl std::fmt::Display for ValidationError {
                     f,
                     "orbital_elements_source index {index} is out of range (only {num_sources} sources). \
                      Ensure orbital_elements_source refers to a valid source index."
+                )
+            }
+            Self::AtmospherePlanetOutOfRange { index, num_sources } => {
+                write!(
+                    f,
+                    "atmosphere_planet_source index {index} is out of range (only {num_sources} sources). \
+                     Ensure atmosphere_planet_source refers to a valid source index."
+                )
+            }
+            Self::ForceProducerWithoutMass => {
+                write!(
+                    f,
+                    "Drag or SRP configured but no MassProperties. In JEOD, DynBody always \
+                     has mass. Provide MassProperties for any body with interaction forces."
                 )
             }
         }

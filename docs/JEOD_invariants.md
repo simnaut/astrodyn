@@ -53,7 +53,7 @@ grep the JEOD tree for the distinctive identifier in the invariant description
 | DB.17 | Only root body computes total acceleration | structural | structural | deferred (Phase 5) |
 | DB.18 | `inverse_mass` used for F=ma (precomputed) | structural | consistency | enforced (`forces.rs:85,221`, `mass.rs:79`; `inverse_mass` precomputed, F=ma via multiplication matching JEOD `Vector3::scale`) |
 | DB.19 | `inverse_inertia` used for Euler equation | structural | consistency | enforced (`validation.rs:101`, `rotational.rs:46`) |
-| DB.20 | Small rot_accel truncated to zero (< 1e-20) | structural | runtime | not enforced |
+| DB.20 | Small rot_accel truncated to zero (< 1e-20) | structural | runtime | enforced (`rotational.rs:66`, `zero_small` per-component) |
 | DB.21 | Only unattached bodies integrate | flag-gate | runtime | deferred (Phase 5, no frame attachment yet) |
 | DB.22 | DynBody not copyable | structural | structural | n/a (ECS components are Copy where needed) |
 | DB.23 | `compute_inverse_inertia` enabled for DynBody | structural | structural | structural (`mass.rs:38`, always computed in `MassProperties::with_inertia`) |

@@ -257,6 +257,11 @@ impl Simulation {
                 }
             }
 
+            // Validate force producers have mass (JEOD_INV: MA.01 — MassBody always present)
+            if (body.drag.is_some() || body.flat_plate_state.is_some()) && body.mass.is_none() {
+                all_errors.push(ValidationError::ForceProducerWithoutMass);
+            }
+
             // Apply gravity control auto-corrections (degree/order clamping).
             // JEOD_INV: GV.03 — check_validity() auto-corrects out-of-range settings
             for ctrl in &mut body.gravity_controls.controls {
@@ -270,6 +275,16 @@ impl Simulation {
         if let Some(idx) = self.sun_source {
             if idx >= self.sources.len() {
                 all_errors.push(ValidationError::SunSourceOutOfRange {
+                    index: idx,
+                    num_sources: self.sources.len(),
+                });
+            }
+        }
+
+        // Validate atmosphere_planet_source index
+        if let Some(idx) = self.atmosphere_planet_source {
+            if idx >= self.sources.len() {
+                all_errors.push(ValidationError::AtmospherePlanetOutOfRange {
                     index: idx,
                     num_sources: self.sources.len(),
                 });
@@ -312,6 +327,9 @@ impl Simulation {
 
         // ── 2. Ephemeris update — planet-fixed rotations ──
         // JEOD_INV: DM.13 — ephemeris updated before gravity
+        // NOTE: Currently applies the same Earth RNP rotation to ALL rotating
+        // sources. Multi-planet sims (Moon, Mars) would need per-source rotation
+        // parameters. This is a Phase 5 limitation.
         let rotation =
             crate::compute_t_parent_this_from_tjt(self.time.gmst_seconds, self.time.tt_tjt());
         for source in &mut self.sources {
