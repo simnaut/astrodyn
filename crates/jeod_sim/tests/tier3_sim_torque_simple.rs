@@ -227,8 +227,7 @@ fn run_propagation_test(config: &RunConfig) {
 
     for record in &records[1..] {
         // Update Sun and Moon positions from ephemeris
-        sim.sources[src.sun].position =
-            body_position_at(&ephemeris, EphemerisBody::Sun, &sim.time);
+        sim.sources[src.sun].position = body_position_at(&ephemeris, EphemerisBody::Sun, &sim.time);
         sim.sources[src.moon].position =
             body_position_at(&ephemeris, EphemerisBody::Moon, &sim.time);
 
