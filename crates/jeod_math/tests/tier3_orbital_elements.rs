@@ -265,14 +265,14 @@ fn tier3_orbital_elements_vs_jeod_sim_orbelem() {
     crossval_report(
         "tier3_orbital_elements_vs_jeod_sim_orbelem",
         &[
-            ("semi_major_axis", max_sma_err, "m"),
-            ("semiparam", max_sp_err, "m"),
-            ("eccentricity", max_ecc_err, ""),
-            ("inclination", max_inc_err, "rad"),
-            ("arg_periapsis", max_aop_err, "rad"),
-            ("long_asc_node", max_lan_err, "rad"),
-            ("true_anom", max_ta_err, "rad"),
-            ("mean_anom", max_ma_err, "rad"),
+            ("semi_major_axis", max_sma_err, 1e-6, "m"),
+            ("semiparam", max_sp_err, 1e-6, "m"),
+            ("eccentricity", max_ecc_err, 1e-14, ""),
+            ("inclination", max_inc_err, 1e-15, "rad"),
+            ("arg_periapsis", max_aop_err, 1e-13, "rad"),
+            ("long_asc_node", max_lan_err, 1e-13, "rad"),
+            ("true_anom", max_ta_err, 1e-13, "rad"),
+            ("mean_anom", max_ma_err, 1e-13, "rad"),
         ],
     );
 }

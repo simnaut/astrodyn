@@ -198,8 +198,8 @@ fn run_sh_trajectory_test(
     crossval_report(
         test_name,
         &[
-            ("position", max_pos_error, "m"),
-            ("velocity", max_vel_error, "m/s"),
+            ("position", max_pos_error, 0.5, "m"),
+            ("velocity", max_vel_error, 0.001, "m/s"),
         ],
     );
 

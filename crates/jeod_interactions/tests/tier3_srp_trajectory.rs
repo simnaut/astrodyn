@@ -531,12 +531,12 @@ fn tier3_srp_trajectory_sim3_orbit() {
     crossval_report(
         "tier3_srp_trajectory_sim3_orbit",
         &[
-            ("position_24h", max_pos_err_24h, "m"),
-            ("position", max_pos_err, "m"),
-            ("velocity", max_vel_err, "m/s"),
-            ("force_direction", max_force_dir_err, "rad"),
-            ("force_magnitude_rel", max_force_mag_rel_err, ""),
-            ("shadow_mismatches", shadow_mismatches as f64, ""),
+            ("position_24h", max_pos_err_24h, 10.0, "m"),
+            ("position", max_pos_err, 50.0, "m"),
+            ("velocity", max_vel_err, 50.0, "m/s"),
+            ("force_direction", max_force_dir_err, 0.05, "rad"),
+            ("force_magnitude_rel", max_force_mag_rel_err, 5.0, ""),
+            ("shadow_mismatches", shadow_mismatches as f64, 2.0, ""),
         ],
     );
 

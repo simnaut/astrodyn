@@ -114,10 +114,10 @@ fn tier3_simulation_run10a_gravity_torque() {
     crossval_report(
         "tier3_simulation_run10a_gravity_torque",
         &[
-            ("position", max_pos_error, "m"),
-            ("velocity", max_vel_error, "m/s"),
-            ("quaternion", max_quat_error, "rad"),
-            ("omega", max_omega_error, "rad/s"),
+            ("position", max_pos_error, 0.5, "m"),
+            ("velocity", max_vel_error, 0.001, "m/s"),
+            ("quaternion", max_quat_error, 0.01, "rad"),
+            ("omega", max_omega_error, 1e-5, "rad/s"),
         ],
     );
 
@@ -248,7 +248,7 @@ fn tier3_reference_run10a_libration_period() {
 
     crossval_report(
         "tier3_reference_run10a_libration_period",
-        &[("period_error_pct", period_error_pct, "%")],
+        &[("period_error_pct", period_error_pct, 0.5, "%")],
     );
 
     // PLAN.md criterion is 0.1%, but the 60s logging resolution limits
@@ -345,10 +345,10 @@ fn tier3_simulation_run10c_gravity_torque_elliptical() {
     crossval_report(
         "tier3_simulation_run10c_gravity_torque_elliptical",
         &[
-            ("position", max_pos_error, "m"),
-            ("velocity", max_vel_error, "m/s"),
-            ("quaternion", max_quat_error, "rad"),
-            ("omega", max_omega_error, "rad/s"),
+            ("position", max_pos_error, 0.5, "m"),
+            ("velocity", max_vel_error, 0.001, "m/s"),
+            ("quaternion", max_quat_error, 0.01, "rad"),
+            ("omega", max_omega_error, 1e-5, "rad/s"),
         ],
     );
 
@@ -452,10 +452,10 @@ fn tier3_simulation_run10d_gravity_torque_elliptical_rate() {
     crossval_report(
         "tier3_simulation_run10d_gravity_torque_elliptical_rate",
         &[
-            ("position", max_pos_error, "m"),
-            ("velocity", max_vel_error, "m/s"),
-            ("quaternion", max_quat_error, "rad"),
-            ("omega", max_omega_error, "rad/s"),
+            ("position", max_pos_error, 0.5, "m"),
+            ("velocity", max_vel_error, 0.001, "m/s"),
+            ("quaternion", max_quat_error, 0.01, "rad"),
+            ("omega", max_omega_error, 1e-5, "rad/s"),
         ],
     );
 

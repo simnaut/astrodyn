@@ -117,14 +117,14 @@ fn tier3_simulation_orbelem() {
     crossval_report(
         "tier3_simulation_orbelem",
         &[
-            ("position", max_pos_err, "m"),
-            ("sma", max_sma_err, "m"),
-            ("eccentricity", max_ecc_err, ""),
-            ("inclination", max_inc_err, "rad"),
-            ("arg_periapsis", max_aop_err, "rad"),
-            ("long_asc_node", max_lan_err, "rad"),
-            ("true_anom", max_ta_err, "rad"),
-            ("mean_anom", max_ma_err, "rad"),
+            ("position", max_pos_err, 0.5, "m"),
+            ("sma", max_sma_err, 1.0, "m"),
+            ("eccentricity", max_ecc_err, 1e-10, ""),
+            ("inclination", max_inc_err, 1e-10, "rad"),
+            ("arg_periapsis", max_aop_err, 1e-8, "rad"),
+            ("long_asc_node", max_lan_err, 1e-8, "rad"),
+            ("true_anom", max_ta_err, 1e-8, "rad"),
+            ("mean_anom", max_ma_err, 1e-8, "rad"),
         ],
     );
 

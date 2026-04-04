@@ -325,12 +325,12 @@ fn tier3_rnp_component_comparison() {
     crossval_report(
         "tier3_rnp_component_comparison",
         &[
-            ("precession", max_p_err, ""),
-            ("nutation", max_n_err, ""),
-            ("gast_rotation", max_r_err, ""),
-            ("composed_T", max_t_err, ""),
-            ("equa_equinoxes", max_equa_err, "s"),
-            ("theta_gast", max_theta_gast_err, "rad"),
+            ("precession", max_p_err, 1e-10, ""),
+            ("nutation", max_n_err, 1e-10, ""),
+            ("gast_rotation", max_r_err, 1e-10, ""),
+            ("composed_T", max_t_err, 1e-10, ""),
+            ("equa_equinoxes", max_equa_err, 1e-10, "s"),
+            ("theta_gast", max_theta_gast_err, 1e-10, "rad"),
         ],
     );
 

@@ -97,9 +97,9 @@ fn run_lvlh_test(csv_filename: &str, label: &str, test_name: &str) {
     crossval_report(
         test_name,
         &[
-            ("position", max_pos_err, "m"),
-            ("T_parent_this", max_mat_err, ""),
-            ("ang_vel", max_angvel_err, "rad/s"),
+            ("position", max_pos_err, 0.5, "m"),
+            ("T_parent_this", max_mat_err, 1e-6, ""),
+            ("ang_vel", max_angvel_err, 1e-10, "rad/s"),
         ],
     );
 

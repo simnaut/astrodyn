@@ -157,7 +157,7 @@ fn tier3_shadow_annular_eclipse() {
 
     crossval_report(
         "tier3_shadow_annular_eclipse",
-        &[("flux", max_flux_err, "W/m²")],
+        &[("flux", max_flux_err, f64::INFINITY, "W/m²")],
     );
 
     // Flux magnitude should match within 1% for illuminated points

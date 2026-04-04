@@ -145,9 +145,9 @@ fn tier3_simulation_run6b_drag() {
     crossval_report(
         "tier3_simulation_run6b_drag",
         &[
-            ("position", max_pos_error, "m"),
-            ("velocity", max_vel_error, "m/s"),
-            ("quaternion", max_quat_error, "rad"),
+            ("position", max_pos_error, 2.0, "m"),
+            ("velocity", max_vel_error, 0.005, "m/s"),
+            ("quaternion", max_quat_error, 0.01, "rad"),
         ],
     );
 
@@ -294,9 +294,9 @@ fn tier3_simulation_run6a_const_density_drag() {
     crossval_report(
         "tier3_simulation_run6a_const_density_drag",
         &[
-            ("position", max_pos_error, "m"),
-            ("velocity", max_vel_error, "m/s"),
-            ("quaternion", max_quat_error, "rad"),
+            ("position", max_pos_error, 0.5, "m"),
+            ("velocity", max_vel_error, 0.001, "m/s"),
+            ("quaternion", max_quat_error, 0.01, "rad"),
         ],
     );
 

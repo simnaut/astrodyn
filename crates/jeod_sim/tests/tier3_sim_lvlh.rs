@@ -94,9 +94,9 @@ fn tier3_simulation_lvlh() {
     crossval_report(
         "tier3_simulation_lvlh",
         &[
-            ("position", max_pos_err, "m"),
-            ("t_parent_this", max_mat_err, ""),
-            ("ang_vel", max_angvel_err, "rad/s"),
+            ("position", max_pos_err, 0.5, "m"),
+            ("t_parent_this", max_mat_err, 1e-6, ""),
+            ("ang_vel", max_angvel_err, 1e-10, "rad/s"),
         ],
     );
 

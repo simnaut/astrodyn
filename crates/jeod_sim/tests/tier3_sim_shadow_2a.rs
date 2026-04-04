@@ -114,8 +114,13 @@ fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str) {
     crossval_report(
         test_name,
         &[
-            ("shadow_fraction", max_frac_err, ""),
-            ("shadow_mismatches", shadow_state_mismatches as f64, ""),
+            ("shadow_fraction", max_frac_err, 0.01, ""),
+            (
+                "shadow_mismatches",
+                shadow_state_mismatches as f64,
+                f64::INFINITY,
+                "",
+            ),
         ],
     );
 

@@ -175,9 +175,9 @@ fn tier3_geodetic_vs_jeod_sim_ned() {
     crossval_report(
         "tier3_geodetic_vs_jeod_sim_ned",
         &[
-            ("altitude", max_alt_err, "m"),
-            ("latitude", max_lat_err, "rad"),
-            ("longitude", max_lon_err, "rad"),
+            ("altitude", max_alt_err, 1e-7, "m"),
+            ("latitude", max_lat_err, 1e-14, "rad"),
+            ("longitude", max_lon_err, 1e-14, "rad"),
         ],
     );
 }

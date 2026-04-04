@@ -115,8 +115,8 @@ fn tier3_energy_conservation_10_orbits() {
     crossval_report(
         "tier3_energy_conservation_10_orbits",
         &[
-            ("energy_drift", max_energy_drift, ""),
-            ("h_drift", max_h_drift, ""),
+            ("energy_drift", max_energy_drift, f64::INFINITY, ""),
+            ("h_drift", max_h_drift, f64::INFINITY, ""),
         ],
     );
 }
@@ -167,7 +167,7 @@ fn tier3_orbital_period_accuracy() {
 
     crossval_report(
         "tier3_orbital_period_accuracy",
-        &[("period_rel_error", period_error, "")],
+        &[("period_rel_error", period_error, 1e-4, "")],
     );
 
     assert!(
@@ -220,7 +220,10 @@ fn tier3_position_return_after_one_orbit() {
 
     crossval_report(
         "tier3_position_return_after_one_orbit",
-        &[("position", pos_error, "m"), ("velocity", vel_error, "m/s")],
+        &[
+            ("position", pos_error, 100.0, "m"),
+            ("velocity", vel_error, 0.1, "m/s"),
+        ],
     );
 
     assert!(
@@ -284,8 +287,8 @@ fn tier3_eccentric_orbit_apse_distances() {
     crossval_report(
         "tier3_eccentric_orbit_apse_distances",
         &[
-            ("periapsis_rel_error", periapsis_error, ""),
-            ("apoapsis_rel_error", apoapsis_error, ""),
+            ("periapsis_rel_error", periapsis_error, 1e-6, ""),
+            ("apoapsis_rel_error", apoapsis_error, 1e-6, ""),
         ],
     );
 
@@ -365,7 +368,7 @@ fn tier3_iss_24h_propagation() {
 
     crossval_report(
         "tier3_iss_24h_propagation",
-        &[("energy_drift", relative_energy_drift, "")],
+        &[("energy_drift", relative_energy_drift, 1e-7, "")],
     );
 
     assert!(

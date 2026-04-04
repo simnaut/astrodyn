@@ -188,10 +188,10 @@ fn tier3_simulation_run9a_torque() {
     crossval_report(
         "tier3_simulation_run9a_torque",
         &[
-            ("position", max_pos_error, "m"),
-            ("velocity", max_vel_error, "m/s"),
-            ("quaternion", max_quat_error, "rad"),
-            ("omega", max_omega_error, "rad/s"),
+            ("position", max_pos_error, 0.5, "m"),
+            ("velocity", max_vel_error, 0.001, "m/s"),
+            ("quaternion", max_quat_error, 0.01, "rad"),
+            ("omega", max_omega_error, 1e-5, "rad/s"),
         ],
     );
 
@@ -329,10 +329,10 @@ fn tier3_simulation_run9c_force_torque() {
     crossval_report(
         "tier3_simulation_run9c_force_torque",
         &[
-            ("position", max_pos_error, "m"),
-            ("velocity", max_vel_error, "m/s"),
-            ("quaternion", max_quat_error, "rad"),
-            ("omega", max_omega_error, "rad/s"),
+            ("position", max_pos_error, 0.5, "m"),
+            ("velocity", max_vel_error, 0.001, "m/s"),
+            ("quaternion", max_quat_error, 0.01, "rad"),
+            ("omega", max_omega_error, 1e-5, "rad/s"),
         ],
     );
 
@@ -465,10 +465,10 @@ fn tier3_simulation_run9d_force_torque_rate() {
     crossval_report(
         "tier3_simulation_run9d_force_torque_rate",
         &[
-            ("position", max_pos_error, "m"),
-            ("velocity", max_vel_error, "m/s"),
-            ("quaternion", max_quat_error, "rad"),
-            ("omega", max_omega_error, "rad/s"),
+            ("position", max_pos_error, 0.5, "m"),
+            ("velocity", max_vel_error, 0.001, "m/s"),
+            ("quaternion", max_quat_error, 0.01, "rad"),
+            ("omega", max_omega_error, 1e-5, "rad/s"),
         ],
     );
 

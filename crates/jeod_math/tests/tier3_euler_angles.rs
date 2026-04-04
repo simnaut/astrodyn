@@ -225,9 +225,9 @@ fn tier3_euler_angles_vs_jeod_sim_euler() {
     crossval_report(
         "tier3_euler_angles_vs_jeod_sim_euler",
         &[
-            ("euler_roll", max_angle_err[0], "rad"),
-            ("euler_pitch", max_angle_err[1], "rad"),
-            ("euler_yaw", max_angle_err[2], "rad"),
+            ("euler_roll", max_angle_err[0], 1e-6, "rad"),
+            ("euler_pitch", max_angle_err[1], 1e-6, "rad"),
+            ("euler_yaw", max_angle_err[2], 1e-6, "rad"),
         ],
     );
 }

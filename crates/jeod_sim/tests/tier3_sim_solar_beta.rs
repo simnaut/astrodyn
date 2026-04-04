@@ -135,7 +135,7 @@ fn tier3_simulation_solar_beta() {
 
     crossval_report(
         "tier3_simulation_solar_beta",
-        &[("position", max_pos_err, "m")],
+        &[("position", max_pos_err, 0.5, "m")],
     );
 
     // Position tracks JEOD RUN_2 trajectory

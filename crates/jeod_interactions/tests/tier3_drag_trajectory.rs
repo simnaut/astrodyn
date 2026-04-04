@@ -403,8 +403,8 @@ fn tier3_drag_trajectory_run6b() {
     crossval_report(
         "tier3_drag_trajectory_run6b",
         &[
-            ("position", max_pos_error, "m"),
-            ("velocity", max_vel_error, "m/s"),
+            ("position", max_pos_error, 2.0, "m"),
+            ("velocity", max_vel_error, 0.005, "m/s"),
         ],
     );
 

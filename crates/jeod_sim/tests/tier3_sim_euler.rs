@@ -118,7 +118,7 @@ fn tier3_simulation_euler() {
 
     crossval_report(
         "tier3_simulation_euler",
-        &[("quaternion", max_quat_err, "rad")],
+        &[("quaternion", max_quat_err, 0.01, "rad")],
     );
 
     println!(

@@ -155,8 +155,8 @@ fn tier3_lvlh_frame_vs_jeod_sim_lvlh() {
     crossval_report(
         "tier3_lvlh_frame_vs_jeod_sim_lvlh",
         &[
-            ("t_parent_this", max_mat_error, ""),
-            ("ang_vel_mag", max_angvel_error, "rad/s"),
+            ("t_parent_this", max_mat_error, 1e-10, ""),
+            ("ang_vel_mag", max_angvel_error, 1e-12, "rad/s"),
         ],
     );
 }

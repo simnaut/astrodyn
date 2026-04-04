@@ -101,8 +101,8 @@ fn tier3_body_init_round_trip_over_trajectory() {
     crossval_report(
         "tier3_body_init_round_trip_over_trajectory",
         &[
-            ("position", max_pos_err, "m"),
-            ("velocity", max_vel_err, "m/s"),
+            ("position", max_pos_err, f64::INFINITY, "m"),
+            ("velocity", max_vel_err, f64::INFINITY, "m/s"),
         ],
     );
 }

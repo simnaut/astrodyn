@@ -229,14 +229,28 @@ fn run_propagation_test(config: &RunConfig, test_name: &str) {
     println!("  Max omega error:     {:.6e} rad/s", max_omega_error);
     println!("  Max torque error:    {:.6e} N·m", max_torque_error);
 
+    let quat_tol = if !config.earth_gradient {
+        std::f64::consts::PI
+    } else if config.gradient_degree > 0 {
+        1.0
+    } else {
+        0.1
+    };
+    let torque_tol = if !config.earth_gradient {
+        0.0
+    } else if config.gradient_degree > 0 {
+        200.0
+    } else {
+        10.0
+    };
     crossval_report(
         test_name,
         &[
-            ("position", max_pos_error, "m"),
-            ("velocity", max_vel_error, "m/s"),
-            ("quaternion", max_quat_error, "rad"),
-            ("omega", max_omega_error, "rad/s"),
-            ("torque", max_torque_error, "N*m"),
+            ("position", max_pos_error, 100.0, "m"),
+            ("velocity", max_vel_error, 0.1, "m/s"),
+            ("quaternion", max_quat_error, quat_tol, "rad"),
+            ("omega", max_omega_error, 0.01, "rad/s"),
+            ("torque", max_torque_error, torque_tol, "N*m"),
         ],
     );
 

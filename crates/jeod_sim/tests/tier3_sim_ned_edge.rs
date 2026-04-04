@@ -149,10 +149,10 @@ fn run_ned_test(
     crossval_report(
         test_name,
         &[
-            ("position", max_pos_err, "m"),
-            ("altitude", max_alt_err, "m"),
-            ("latitude", max_lat_err, "rad"),
-            ("longitude", max_lon_err, "rad"),
+            ("position", max_pos_err, 0.5, "m"),
+            ("altitude", max_alt_err, f64::INFINITY, "m"),
+            ("latitude", max_lat_err, f64::INFINITY, "rad"),
+            ("longitude", max_lon_err, f64::INFINITY, "rad"),
         ],
     );
 

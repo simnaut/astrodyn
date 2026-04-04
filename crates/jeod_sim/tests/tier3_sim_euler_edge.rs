@@ -128,10 +128,10 @@ fn run_euler_test(csv_filename: &str, label: &str, test_name: &str) {
     crossval_report(
         test_name,
         &[
-            ("quaternion", max_quat_err, "rad"),
-            ("euler_roll", max_angle_err[0], "rad"),
-            ("euler_pitch", max_angle_err[1], "rad"),
-            ("euler_yaw", max_angle_err[2], "rad"),
+            ("quaternion", max_quat_err, 0.01, "rad"),
+            ("euler_roll", max_angle_err[0], f64::INFINITY, "rad"),
+            ("euler_pitch", max_angle_err[1], f64::INFINITY, "rad"),
+            ("euler_yaw", max_angle_err[2], f64::INFINITY, "rad"),
         ],
     );
 

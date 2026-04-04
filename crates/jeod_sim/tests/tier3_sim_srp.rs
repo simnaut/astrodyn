@@ -204,7 +204,7 @@ fn tier3_simulation_srp_flat_plate() {
 
     crossval_report(
         "tier3_simulation_srp_flat_plate",
-        &[("position", max_pos_error, "m")],
+        &[("position", max_pos_error, 50.0, "m")],
     );
 
     // Tolerance matches existing tier3_srp_trajectory test

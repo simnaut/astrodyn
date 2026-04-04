@@ -209,7 +209,7 @@ fn tier3_srp_1st_order_trajectory() {
 
     crossval_report(
         "tier3_srp_1st_order_trajectory",
-        &[("position", max_pos_error, "m")],
+        &[("position", max_pos_error, 100.0, "m")],
     );
 
     // 1st-order thermal integrator differs from our RK4, so expect slightly

@@ -125,10 +125,10 @@ fn tier3_simulation_geodetic() {
     crossval_report(
         "tier3_simulation_geodetic",
         &[
-            ("position", max_pos_err, "m"),
-            ("altitude", max_alt_err, "m"),
-            ("latitude", max_lat_err, "rad"),
-            ("longitude", max_lon_err, "rad"),
+            ("position", max_pos_err, 0.5, "m"),
+            ("altitude", max_alt_err, 1.0, "m"),
+            ("latitude", max_lat_err, 1e-6, "rad"),
+            ("longitude", max_lon_err, 1e-6, "rad"),
         ],
     );
 

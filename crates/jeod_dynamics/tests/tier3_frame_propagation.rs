@@ -282,14 +282,14 @@ fn tier3_frame_propagation_composite_to_structure() {
     crossval_report(
         "tier3_frame_propagation_composite_to_structure",
         &[
-            ("rev_position", max_pos_error_rev, "m"),
-            ("rev_velocity", max_vel_error_rev, "m/s"),
-            ("rev_T_matrix", max_t_error_rev, ""),
-            ("rev_omega", max_angvel_error_rev, "rad/s"),
-            ("fwd_position", max_pos_error_fwd, "m"),
-            ("fwd_velocity", max_vel_error_fwd, "m/s"),
-            ("fwd_T_matrix", max_t_error_fwd, ""),
-            ("fwd_omega", max_angvel_error_fwd, "rad/s"),
+            ("rev_position", max_pos_error_rev, 1e-6, "m"),
+            ("rev_velocity", max_vel_error_rev, 1e-6, "m/s"),
+            ("rev_T_matrix", max_t_error_rev, 1e-10, ""),
+            ("rev_omega", max_angvel_error_rev, 1e-12, "rad/s"),
+            ("fwd_position", max_pos_error_fwd, 1e-6, "m"),
+            ("fwd_velocity", max_vel_error_fwd, 1e-6, "m/s"),
+            ("fwd_T_matrix", max_t_error_fwd, 1e-10, ""),
+            ("fwd_omega", max_angvel_error_fwd, 1e-12, "rad/s"),
         ],
     );
 
@@ -400,10 +400,10 @@ fn tier3_frame_propagation_core_equals_composite() {
     crossval_report(
         "tier3_frame_propagation_core_equals_composite",
         &[
-            ("position", max_pos_diff, "m"),
-            ("velocity", max_vel_diff, "m/s"),
-            ("T_matrix", max_t_diff, ""),
-            ("omega", max_angvel_diff, "rad/s"),
+            ("position", max_pos_diff, 1e-12, "m"),
+            ("velocity", max_vel_diff, 1e-12, "m/s"),
+            ("T_matrix", max_t_diff, 1e-14, ""),
+            ("omega", max_angvel_diff, 1e-14, "rad/s"),
         ],
     );
 
@@ -509,10 +509,10 @@ fn tier3_frame_propagation_round_trip() {
     crossval_report(
         "tier3_frame_propagation_round_trip",
         &[
-            ("position", max_pos_rt, "m"),
-            ("velocity", max_vel_rt, "m/s"),
-            ("T_matrix", max_t_rt, ""),
-            ("omega", max_angvel_rt, "rad/s"),
+            ("position", max_pos_rt, 1e-8, "m"),
+            ("velocity", max_vel_rt, 1e-8, "m/s"),
+            ("T_matrix", max_t_rt, 1e-14, ""),
+            ("omega", max_angvel_rt, 1e-14, "rad/s"),
         ],
     );
 

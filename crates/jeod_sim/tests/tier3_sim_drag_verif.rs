@@ -83,8 +83,8 @@ fn run_drag_comparison(csv_filename: &str, label: &str, config: DragConfig, test
     crossval_report(
         test_name,
         &[
-            ("force", max_force_err, "N"),
-            ("force_rel", max_force_rel_err, ""),
+            ("force", max_force_err, 1e-3, "N"),
+            ("force_rel", max_force_rel_err, 1e-10, ""),
         ],
     );
 
@@ -147,7 +147,7 @@ fn tier3_drag_const_force() {
 
     crossval_report(
         "tier3_drag_const_force",
-        &[("accel", max_accel_err, "m/s2")],
+        &[("accel", max_accel_err, 1e-6, "m/s2")],
     );
 }
 

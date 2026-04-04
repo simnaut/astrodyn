@@ -180,6 +180,6 @@ fn tier3_solar_beta_vs_jeod_sim_solarbeta() {
 
     crossval_report(
         "tier3_solar_beta_vs_jeod_sim_solarbeta",
-        &[("solar_beta", max_beta_err, "rad")],
+        &[("solar_beta", max_beta_err, 1e-4, "rad")],
     );
 }

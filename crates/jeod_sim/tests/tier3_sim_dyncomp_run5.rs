@@ -134,9 +134,9 @@ fn run_atmosphere_test(csv_filename: &str, label: &str) {
     crossval_report(
         "tier3_simulation_run5c_atmosphere_max",
         &[
-            ("position", max_pos_error, "m"),
-            ("velocity", max_vel_error, "m/s"),
-            ("quaternion", max_quat_error, "rad"),
+            ("position", max_pos_error, 0.5, "m"),
+            ("velocity", max_vel_error, 0.001, "m/s"),
+            ("quaternion", max_quat_error, 0.01, "rad"),
         ],
     );
 

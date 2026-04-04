@@ -289,9 +289,9 @@ fn tier3_external_torque_sixdof_run9a() {
     crossval_report(
         "tier3_external_torque_sixdof_run9a",
         &[
-            ("position", max_pos_error, "m"),
-            ("velocity", max_vel_error, "m/s"),
-            ("ang_vel", max_angvel_error, "rad/s"),
+            ("position", max_pos_error, 0.5, "m"),
+            ("velocity", max_vel_error, 0.001, "m/s"),
+            ("ang_vel", max_angvel_error, 1e-5, "rad/s"),
         ],
     );
 

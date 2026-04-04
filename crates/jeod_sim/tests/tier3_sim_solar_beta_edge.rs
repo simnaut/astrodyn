@@ -77,8 +77,7 @@ fn run_solar_beta_test(csv_filename: &str, label: &str, test_name: &str) {
 
     println!("  Max beta error: {:.6e} rad", max_beta_err);
 
-    crossval_report(test_name, &[("beta", max_beta_err, "rad")]);
-
+    crossval_report(test_name, &[("beta", max_beta_err, f64::INFINITY, "rad")]);
     // Beta error comes from Sun position differences between our DE421 (via Anise)
     // and JEOD's native DE421 reader — different Chebyshev evaluation paths produce
     // ~10 arcsecond directional offsets that grow roughly linearly with duration at
