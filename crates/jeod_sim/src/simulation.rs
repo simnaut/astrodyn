@@ -207,7 +207,7 @@ impl Simulation {
     // JEOD_INV: GV.03 — check_validity() called at startup (auto-corrections applied in-place)
     pub fn validate(&mut self) -> Result<(), Vec<ValidationError>> {
         let mut all_errors = Vec::new();
-        for body in &mut self.bodies {
+        for (body_idx, body) in self.bodies.iter_mut().enumerate() {
             let plate_counts = body.flat_plate_state.as_ref().map(|fps| {
                 (
                     fps.plates.len(),
@@ -259,7 +259,7 @@ impl Simulation {
 
             // Validate force producers have mass (JEOD_INV: MA.01 — MassBody always present)
             if (body.drag.is_some() || body.flat_plate_state.is_some()) && body.mass.is_none() {
-                all_errors.push(ValidationError::ForceProducerWithoutMass);
+                all_errors.push(ValidationError::ForceProducerWithoutMass { body_idx });
             }
 
             // Apply gravity control auto-corrections (degree/order clamping).

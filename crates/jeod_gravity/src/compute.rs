@@ -88,23 +88,34 @@ pub fn gravitation(
     gradient_degree: usize,
     gradient_order: usize,
 ) -> GravityAcceleration {
-    // For PointMass, scratch is unused. For SphericalHarmonics, allocate a
-    // temporary scratch buffer. Callers in the RK4 inner loop should use
-    // gravitation_with_scratch() to avoid per-call allocation.
-    let mut scratch =
-        crate::spherical_harmonics_calc_nonspherical::GottliebScratch::new(degree.max(2));
-    gravitation_with_scratch(
-        source,
-        position,
-        t_parent_this,
-        degree,
-        order,
-        perturbing_only,
-        compute_gradient,
-        gradient_degree,
-        gradient_order,
-        &mut scratch,
-    )
+    match &source.model {
+        GravityModel::PointMass => {
+            if perturbing_only {
+                GravityAcceleration::default()
+            } else {
+                calc_spherical(source.mu, position)
+            }
+        }
+        GravityModel::SphericalHarmonics(_) => {
+            // Allocate a temporary scratch buffer. Callers in the RK4 inner
+            // loop should use gravitation_with_scratch() to avoid per-call
+            // allocation.
+            let mut scratch =
+                crate::spherical_harmonics_calc_nonspherical::GottliebScratch::new(degree.max(2));
+            gravitation_with_scratch(
+                source,
+                position,
+                t_parent_this,
+                degree,
+                order,
+                perturbing_only,
+                compute_gradient,
+                gradient_degree,
+                gradient_order,
+                &mut scratch,
+            )
+        }
+    }
 }
 
 /// Dispatch gravity computation with a reusable scratch workspace.

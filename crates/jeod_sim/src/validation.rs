@@ -39,7 +39,7 @@ pub enum ValidationError {
     /// `atmosphere_planet_source` index is out of range for the sources table.
     AtmospherePlanetOutOfRange { index: usize, num_sources: usize },
     /// Drag or SRP configured but no mass properties (force → acceleration requires mass).
-    ForceProducerWithoutMass,
+    ForceProducerWithoutMass { body_idx: usize },
 }
 
 impl std::fmt::Display for ValidationError {
@@ -139,11 +139,12 @@ impl std::fmt::Display for ValidationError {
                      Ensure atmosphere_planet_source refers to a valid source index."
                 )
             }
-            Self::ForceProducerWithoutMass => {
+            Self::ForceProducerWithoutMass { body_idx } => {
                 write!(
                     f,
-                    "Drag or SRP configured but no MassProperties. In JEOD, DynBody always \
-                     has mass. Provide MassProperties for any body with interaction forces."
+                    "Body {body_idx}: drag or SRP configured but no MassProperties. In JEOD, \
+                     DynBody always has mass. Provide MassProperties for any body with \
+                     interaction forces."
                 )
             }
         }
