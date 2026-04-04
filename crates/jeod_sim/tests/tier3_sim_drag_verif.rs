@@ -2,9 +2,9 @@
 //!
 //! Validates aerodynamic drag force computation against JEOD in isolation
 //! (no orbit propagation). Three drag modes:
-//!   RUN_aero_drag_const: Constant drag (Cd*A = 0.05)
+//!   RUN_aero_drag_const: Constant drag force magnitude = 0.05 N
 //!   RUN_aero_drag_CD:    Cd=2, A=100 m²
-//!   RUN_aero_drag_BC:    BC=0.005, mass=1.0 kg → Cd*A = 0.005
+//!   RUN_aero_drag_BC:    BC=0.005, mass=1.0 kg → mass/BC = 200 (equivalent to Cd*A = 200)
 //!
 //! Atmospheric conditions: density=1e-12 kg/m³, T=1487 K, zero wind.
 //! Vehicle rotation: identity (body frame = inertial frame).
@@ -122,6 +122,11 @@ fn tier3_drag_const_cd() {
             record.time
         );
     }
+    // Acceleration should be consistent: force/mass = 0.05/1.0 = 0.05 m/s²
+    assert!(
+        max_accel_err < 1e-6,
+        "Acceleration error {max_accel_err:.3e} m/s² exceeds 1e-6"
+    );
     println!(
         "  DRAG_OPT_CONST: force=0.05 N (constant), max accel_err={:.3e}",
         max_accel_err
