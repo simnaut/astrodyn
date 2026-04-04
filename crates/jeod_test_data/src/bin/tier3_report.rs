@@ -91,7 +91,7 @@ fn extract_nullable_number(s: &str, key: &str) -> Option<f64> {
 
 fn fmt_tol(tol: Option<f64>) -> String {
     match tol {
-        Some(t) => format!("{t:.6e}"),
+        Some(t) => format!("{t:.3e}"),
         None => "—".to_string(),
     }
 }
@@ -150,7 +150,7 @@ fn main() {
             let test_col = if i == 0 { short.as_str() } else { "" };
             writeln!(
                 out,
-                "| {test_col} | {} | {:.6e} | {} | {} |",
+                "| {test_col} | {} | {:.3e} | {} | {} |",
                 m.var,
                 m.val,
                 fmt_tol(m.tol),
