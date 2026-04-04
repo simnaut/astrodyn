@@ -3,13 +3,13 @@
 mod sim_test_helpers;
 use sim_test_helpers::*;
 
-use glam::{DMat3, DVec3};
+use glam::{DMat3, DQuat, DVec3};
 use jeod_sim::{
     DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource,
     GravitySourceEntry, MassProperties, RotationalState, SimBody, Simulation, SimulationTime,
     TranslationalState,
 };
-use jeod_test_data::crossval::crossval_report;
+use jeod_test_data::crossval::{CrossvalReport, StateSnapshot};
 
 // ── Scenario 1: Point-mass 3-DOF (RUN_2) ──
 
@@ -59,36 +59,45 @@ fn tier3_simulation_run2_3dof() {
         trajectory.len()
     );
 
-    let mut max_pos_error = 0.0_f64;
-    let mut max_vel_error = 0.0_f64;
+    let mut report = CrossvalReport::new("tier3_simulation_run2_3dof");
 
     for record in &trajectory[1..] {
         sim.step_until(record.time);
 
         let body = sim.body(0);
-        let pos_error = (body.trans.position - record.position).length();
-        let vel_error = (body.trans.velocity - record.velocity).length();
-        max_pos_error = max_pos_error.max(pos_error);
-        max_vel_error = max_vel_error.max(vel_error);
-
-        if (record.time % 3600.0).abs() < 30.1 {
-            println!(
-                "  t={:6.0}s: pos_err={:10.4} m  vel_err={:.6} m/s",
-                record.time, pos_error, vel_error
-            );
-        }
+        report.accumulate(
+            &StateSnapshot {
+                position: Some(body.trans.position),
+                velocity: Some(body.trans.velocity),
+                ..Default::default()
+            },
+            &StateSnapshot {
+                position: Some(record.position),
+                velocity: Some(record.velocity),
+                ..Default::default()
+            },
+        );
     }
+
+    report.position_tol = Some([0.5; 3]);
+    report.velocity_tol = Some([0.001; 3]);
+    report.write();
+
+    let max_pos_error = report
+        .position
+        .unwrap()
+        .iter()
+        .copied()
+        .fold(0.0_f64, f64::max);
+    let max_vel_error = report
+        .velocity
+        .unwrap()
+        .iter()
+        .copied()
+        .fold(0.0_f64, f64::max);
 
     println!("  Max position error: {:.6e} m", max_pos_error);
     println!("  Max velocity error: {:.6e} m/s", max_vel_error);
-
-    crossval_report(
-        "tier3_simulation_run2_3dof",
-        &[
-            ("position", max_pos_error, 0.5, "m"),
-            ("velocity", max_vel_error, 0.001, "m/s"),
-        ],
-    );
 
     assert!(
         max_pos_error < 0.5,
@@ -164,49 +173,61 @@ fn tier3_simulation_run2_6dof() {
         trajectory.len()
     );
 
-    let mut max_pos_error = 0.0_f64;
-    let mut max_vel_error = 0.0_f64;
-    let mut max_quat_error = 0.0_f64;
-    let mut max_omega_error = 0.0_f64;
+    let mut report = CrossvalReport::new("tier3_simulation_run2_6dof");
 
     for record in &trajectory[1..] {
         sim.step_until(record.time);
 
         let body = sim.body(0);
-        let pos_error = (body.trans.position - record.position).length();
-        let vel_error = (body.trans.velocity - record.velocity).length();
-        max_pos_error = max_pos_error.max(pos_error);
-        max_vel_error = max_vel_error.max(vel_error);
-
-        if let Some(ref rot) = body.rot {
-            let quat_error = quaternion_angle_error(&rot.quaternion, &record.quaternion);
-            let omega_error = (rot.ang_vel_body - record.ang_vel).length();
-            max_quat_error = max_quat_error.max(quat_error);
-            max_omega_error = max_omega_error.max(omega_error);
-        }
-
-        if (record.time % 3600.0).abs() < 30.1 {
-            println!(
-                "  t={:6.0}s: pos_err={:10.4} m  quat_err={:.6e} rad",
-                record.time, pos_error, max_quat_error
-            );
-        }
+        let rot = body.rot.as_ref().unwrap();
+        report.accumulate(
+            &StateSnapshot {
+                position: Some(body.trans.position),
+                velocity: Some(body.trans.velocity),
+                quaternion: Some(rot.quaternion.to_glam()),
+                ang_vel: Some(rot.ang_vel_body),
+                ..Default::default()
+            },
+            &StateSnapshot {
+                position: Some(record.position),
+                velocity: Some(record.velocity),
+                quaternion: Some(record.quaternion.to_glam()),
+                ang_vel: Some(record.ang_vel),
+                ..Default::default()
+            },
+        );
     }
+
+    report.position_tol = Some([0.5; 3]);
+    report.velocity_tol = Some([0.001; 3]);
+    report.quat_angle_tol = Some(0.01);
+    report.ang_vel_tol = Some([1e-5; 3]);
+    report.write();
+
+    let max_pos_error = report
+        .position
+        .unwrap()
+        .iter()
+        .copied()
+        .fold(0.0_f64, f64::max);
+    let max_vel_error = report
+        .velocity
+        .unwrap()
+        .iter()
+        .copied()
+        .fold(0.0_f64, f64::max);
+    let max_quat_error = report.quat_angle.unwrap();
+    let max_omega_error = report
+        .ang_vel
+        .unwrap()
+        .iter()
+        .copied()
+        .fold(0.0_f64, f64::max);
 
     println!("  Max position error:  {:.6e} m", max_pos_error);
     println!("  Max velocity error:  {:.6e} m/s", max_vel_error);
     println!("  Max quaternion error: {:.6e} rad", max_quat_error);
     println!("  Max omega error:     {:.6e} rad/s", max_omega_error);
-
-    crossval_report(
-        "tier3_simulation_run2_6dof",
-        &[
-            ("position", max_pos_error, 0.5, "m"),
-            ("velocity", max_vel_error, 0.001, "m/s"),
-            ("quaternion", max_quat_error, 0.01, "rad"),
-            ("omega", max_omega_error, 1e-5, "rad/s"),
-        ],
-    );
 
     assert!(
         max_pos_error < 0.5,
