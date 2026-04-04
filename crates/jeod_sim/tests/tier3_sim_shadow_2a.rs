@@ -108,13 +108,20 @@ fn run_shadow_comparison(csv_filename: &str, label: &str) {
     println!("  Max shadow fraction error:  {:.6e}", max_frac_err);
     println!("  Shadow state mismatches:    {shadow_state_mismatches}");
 
-    // Shadow fraction should agree within 5%.
-    // The residual comes from: (1) Sun position differences (DE421 Anise vs JEOD)
-    // which slightly shift the shadow cone geometry, and (2) solar luminosity
-    // constant differences affecting the flux → fraction derivation.
+    // Shadow fraction agreement: measured 5.4e-3 max (at the umbra-antumbra
+    // transition at ~1.4 Gm). The residual is dominated by the ~10 arcsecond
+    // DE421 Sun position offset (#27) which shifts the shadow cone boundary
+    // by ~70 m at 1.4 Gm distance. Error decreases with distance (1.2e-4
+    // at 10 Gm, 3.5e-5 at 100 Gm). Shadow state (umbra/penumbra/sun) always
+    // agrees — the discrepancy is in the fractional illumination during
+    // penumbra transitions.
     assert!(
-        max_frac_err < 0.05,
-        "{label}: shadow fraction error {max_frac_err:.3e} exceeds 0.05"
+        max_frac_err < 0.01,
+        "{label}: shadow fraction error {max_frac_err:.3e} exceeds 0.01"
+    );
+    assert_eq!(
+        shadow_state_mismatches, 0,
+        "{label}: {shadow_state_mismatches} shadow state disagreements (expected 0)"
     );
 }
 
