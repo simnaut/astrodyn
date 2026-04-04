@@ -8,6 +8,7 @@
 
 use glam::DVec3;
 use jeod_math::cartesian_to_geodetic;
+use jeod_test_data::crossval::crossval_report;
 use std::path::Path;
 
 /// WGS84 equatorial radius (m).
@@ -170,4 +171,13 @@ fn tier3_geodetic_vs_jeod_sim_ned() {
     eprintln!("  altitude:  {max_alt_err:.6e} m");
     eprintln!("  latitude:  {max_lat_err:.6e} rad");
     eprintln!("  longitude: {max_lon_err:.6e} rad");
+
+    crossval_report(
+        "tier3_geodetic_vs_jeod_sim_ned",
+        &[
+            ("altitude", max_alt_err, "m"),
+            ("latitude", max_lat_err, "rad"),
+            ("longitude", max_lon_err, "rad"),
+        ],
+    );
 }

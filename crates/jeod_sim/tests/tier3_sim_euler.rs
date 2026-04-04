@@ -12,6 +12,7 @@ use jeod_sim::{
     GravitySourceEntry, MassProperties, RotationalState, SimBody, Simulation, SimulationTime,
     TranslationalState,
 };
+use jeod_test_data::crossval::crossval_report;
 
 #[test]
 fn tier3_simulation_euler() {
@@ -107,15 +108,21 @@ fn tier3_simulation_euler() {
 
         if (record.time % 3600.0).abs() < 30.1 {
             println!(
-                "  t={:6.0}s: quat_err={:.2e} rad  euler_err=[{:.2e}, {:.2e}, {:.2e}] rad",
+                "  t={:6.0}s: quat_err={:.6e} rad  euler_err=[{:.6e}, {:.6e}, {:.6e}] rad",
                 record.time, quat_err, max_angle_err[0], max_angle_err[1], max_angle_err[2]
             );
         }
     }
 
-    println!("  Max quaternion error: {:.2e} rad", max_quat_err);
+    println!("  Max quaternion error: {:.6e} rad", max_quat_err);
+
+    crossval_report(
+        "tier3_simulation_euler",
+        &[("quaternion", max_quat_err, "rad")],
+    );
+
     println!(
-        "  Max Euler angle errors: [{:.2e}, {:.2e}, {:.2e}] rad",
+        "  Max Euler angle errors: [{:.6e}, {:.6e}, {:.6e}] rad",
         max_angle_err[0], max_angle_err[1], max_angle_err[2]
     );
 

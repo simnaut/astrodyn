@@ -15,9 +15,10 @@ mod sim_test_helpers;
 use sim_test_helpers::*;
 
 use jeod_sim::{Ephemeris, EphemerisBody};
+use jeod_test_data::crossval::crossval_report;
 use std::path::Path;
 
-fn run_solar_beta_test(csv_filename: &str, label: &str) {
+fn run_solar_beta_test(csv_filename: &str, label: &str, test_name: &str) {
     let csv_path = test_data_path(csv_filename);
     assert!(
         csv_path.exists(),
@@ -76,6 +77,8 @@ fn run_solar_beta_test(csv_filename: &str, label: &str) {
 
     println!("  Max beta error: {:.6e} rad", max_beta_err);
 
+    crossval_report(test_name, &[("beta", max_beta_err, "rad")]);
+
     // Beta error comes from Sun position differences between our DE421 (via Anise)
     // and JEOD's native DE421 reader — different Chebyshev evaluation paths produce
     // ~10 arcsecond directional offsets that grow roughly linearly with duration at
@@ -92,7 +95,11 @@ fn run_solar_beta_test(csv_filename: &str, label: &str) {
 
 #[test]
 fn tier3_simulation_solar_beta_equ() {
-    run_solar_beta_test("solarbeta_incl_0_solarbeta.csv", "RUN_incl_0 (equatorial)");
+    run_solar_beta_test(
+        "solarbeta_incl_0_solarbeta.csv",
+        "RUN_incl_0 (equatorial)",
+        "tier3_simulation_solar_beta_equ",
+    );
 }
 
 #[test]
@@ -100,5 +107,6 @@ fn tier3_simulation_solar_beta_obliquity() {
     run_solar_beta_test(
         "solarbeta_incl_23_4_solarbeta.csv",
         "RUN_incl_23_4 (obliquity)",
+        "tier3_simulation_solar_beta_obliquity",
     );
 }

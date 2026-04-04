@@ -9,4 +9,5 @@ glam = { workspace = true }
 
 [dev-dependencies]
 jeod_math = { path = "../jeod_math", features = ["test-utils"] }
+jeod_test_data = { path = "../jeod_test_data" }
 jeod_time = { path = "../jeod_time" }

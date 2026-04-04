@@ -8,6 +8,7 @@ use jeod_sim::{
     DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource, MassProperties,
     RotationalState, TranslationalState,
 };
+use jeod_test_data::crossval::crossval_report;
 
 // ── RUN_9A: External torque, 6-DOF ──
 //
@@ -173,16 +174,26 @@ fn tier3_simulation_run9a_torque() {
 
         if (record.time % 3600.0).abs() < 30.1 {
             println!(
-                "  t={:6.0}s: pos_err={:10.4} m  quat_err={:.2e} rad  omega_err={:.2e}",
+                "  t={:6.0}s: pos_err={:10.4} m  quat_err={:.6e} rad  omega_err={:.6e}",
                 record.time, pos_error, quat_error, omega_error
             );
         }
     }
 
-    println!("  Max position error:  {:.4} m", max_pos_error);
-    println!("  Max velocity error:  {:.6} m/s", max_vel_error);
-    println!("  Max quaternion error: {:.2e} rad", max_quat_error);
-    println!("  Max omega error:     {:.2e} rad/s", max_omega_error);
+    println!("  Max position error:  {:.6e} m", max_pos_error);
+    println!("  Max velocity error:  {:.6e} m/s", max_vel_error);
+    println!("  Max quaternion error: {:.6e} rad", max_quat_error);
+    println!("  Max omega error:     {:.6e} rad/s", max_omega_error);
+
+    crossval_report(
+        "tier3_simulation_run9a_torque",
+        &[
+            ("position", max_pos_error, "m"),
+            ("velocity", max_vel_error, "m/s"),
+            ("quaternion", max_quat_error, "rad"),
+            ("omega", max_omega_error, "rad/s"),
+        ],
+    );
 
     assert!(
         max_pos_error < 0.5,
@@ -311,9 +322,20 @@ fn tier3_simulation_run9c_force_torque() {
     }
 
     println!(
-        "RUN_9C: max pos={:.4} m  vel={:.6} m/s  quat={:.2e} rad  omega={:.2e} rad/s",
+        "RUN_9C: max pos={:.4} m  vel={:.6} m/s  quat={:.6e} rad  omega={:.6e} rad/s",
         max_pos_error, max_vel_error, max_quat_error, max_omega_error
     );
+
+    crossval_report(
+        "tier3_simulation_run9c_force_torque",
+        &[
+            ("position", max_pos_error, "m"),
+            ("velocity", max_vel_error, "m/s"),
+            ("quaternion", max_quat_error, "rad"),
+            ("omega", max_omega_error, "rad/s"),
+        ],
+    );
+
     assert!(
         max_pos_error < 0.5,
         "RUN_9C: position error {max_pos_error:.4} m exceeds 0.5 m"
@@ -436,9 +458,20 @@ fn tier3_simulation_run9d_force_torque_rate() {
     }
 
     println!(
-        "RUN_9D: max pos={:.4} m  vel={:.6} m/s  quat={:.2e} rad  omega={:.2e} rad/s",
+        "RUN_9D: max pos={:.4} m  vel={:.6} m/s  quat={:.6e} rad  omega={:.6e} rad/s",
         max_pos_error, max_vel_error, max_quat_error, max_omega_error
     );
+
+    crossval_report(
+        "tier3_simulation_run9d_force_torque_rate",
+        &[
+            ("position", max_pos_error, "m"),
+            ("velocity", max_vel_error, "m/s"),
+            ("quaternion", max_quat_error, "rad"),
+            ("omega", max_omega_error, "rad/s"),
+        ],
+    );
+
     assert!(
         max_pos_error < 0.5,
         "RUN_9D: position error {max_pos_error:.4} m exceeds 0.5 m"

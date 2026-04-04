@@ -27,6 +27,7 @@ use jeod_dynamics::{
     rk4_sixdof_step, MassProperties, RotationalState, SixDofState, TranslationalState,
 };
 use jeod_math::JeodQuat;
+use jeod_test_data::crossval::crossval_report;
 use std::path::Path;
 
 const MU_EARTH: f64 = 3.986_004_415e14;
@@ -257,7 +258,7 @@ fn tier3_external_torque_sixdof_run9a() {
         if log_hourly || log_torque {
             println!(
                 "  t={:6.0}s ({:.1}h): pos_err={:10.2}m  vel_err={:.6}m/s  \
-                 quat_err={:.2e}rad  angvel_err={:.2e}rad/s",
+                 quat_err={:.6e}rad  angvel_err={:.6e}rad/s",
                 record.time,
                 record.time / 3600.0,
                 pos_error,
@@ -276,14 +277,23 @@ fn tier3_external_torque_sixdof_run9a() {
         trajectory.len()
     );
     println!("Torque: [10, 0, 0] N*m in structural frame, t=1000-2000s");
-    println!("Max position error:   {:.2} m", max_pos_error);
-    println!("Max velocity error:   {:.6} m/s", max_vel_error);
+    println!("Max position error:   {:.6e} m", max_pos_error);
+    println!("Max velocity error:   {:.6e} m/s", max_vel_error);
     println!(
-        "Max quaternion error: {:.2e} rad ({:.4} deg)",
+        "Max quaternion error: {:.6e} rad ({:.4} deg)",
         max_quat_error,
         max_quat_error.to_degrees()
     );
-    println!("Max ang_vel error:    {:.2e} rad/s", max_angvel_error);
+    println!("Max ang_vel error:    {:.6e} rad/s", max_angvel_error);
+
+    crossval_report(
+        "tier3_external_torque_sixdof_run9a",
+        &[
+            ("position", max_pos_error, "m"),
+            ("velocity", max_vel_error, "m/s"),
+            ("ang_vel", max_angvel_error, "rad/s"),
+        ],
+    );
 
     // Translational thresholds match the existing RUN_2 6-DOF test.
     // dt=0.03125s matches JEOD's SIM_dyncomp integration rate (32 Hz).
@@ -304,12 +314,12 @@ fn tier3_external_torque_sixdof_run9a() {
     // integration rates.
     assert!(
         max_quat_error < 0.01,
-        "Quaternion angular error {:.2e} rad exceeds 0.01 rad threshold",
+        "Quaternion angular error {:.6e} rad exceeds 0.01 rad threshold",
         max_quat_error
     );
     assert!(
         max_angvel_error < 1e-5,
-        "Angular velocity error {:.2e} rad/s exceeds 1e-5 rad/s threshold",
+        "Angular velocity error {:.6e} rad/s exceeds 1e-5 rad/s threshold",
         max_angvel_error
     );
 }

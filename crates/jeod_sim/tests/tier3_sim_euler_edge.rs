@@ -16,10 +16,11 @@ use jeod_sim::{
     GravitySourceEntry, MassProperties, RotationalState, SimBody, Simulation, SimulationTime,
     TranslationalState,
 };
+use jeod_test_data::crossval::crossval_report;
 
 /// Set up an Euler-style simulation from CSV initial conditions.
 /// SIM_Euler uses the same mass/config as SIM_dyncomp RUN_2.
-fn run_euler_test(csv_filename: &str, label: &str) {
+fn run_euler_test(csv_filename: &str, label: &str, test_name: &str) {
     let csv_path = test_data_path(csv_filename);
     assert!(
         csv_path.exists(),
@@ -112,16 +113,26 @@ fn run_euler_test(csv_filename: &str, label: &str) {
 
         if (record.time % 7200.0).abs() < 6.1 {
             println!(
-                "  t={:6.0}s: quat_err={:.2e} rad  euler_err=[{:.2e}, {:.2e}, {:.2e}] rad",
+                "  t={:6.0}s: quat_err={:.6e} rad  euler_err=[{:.6e}, {:.6e}, {:.6e}] rad",
                 record.time, quat_err, max_angle_err[0], max_angle_err[1], max_angle_err[2]
             );
         }
     }
 
-    println!("  Max quaternion error: {:.2e} rad", max_quat_err);
+    println!("  Max quaternion error: {:.6e} rad", max_quat_err);
     println!(
-        "  Max Euler angle errors: [{:.2e}, {:.2e}, {:.2e}] rad",
+        "  Max Euler angle errors: [{:.6e}, {:.6e}, {:.6e}] rad",
         max_angle_err[0], max_angle_err[1], max_angle_err[2]
+    );
+
+    crossval_report(
+        test_name,
+        &[
+            ("quaternion", max_quat_err, "rad"),
+            ("euler_roll", max_angle_err[0], "rad"),
+            ("euler_pitch", max_angle_err[1], "rad"),
+            ("euler_yaw", max_angle_err[2], "rad"),
+        ],
     );
 
     assert!(
@@ -138,10 +149,18 @@ fn run_euler_test(csv_filename: &str, label: &str) {
 
 #[test]
 fn tier3_simulation_euler_ecc() {
-    run_euler_test("euler_ecc_euler.csv", "RUN_ecc (eccentric)");
+    run_euler_test(
+        "euler_ecc_euler.csv",
+        "RUN_ecc (eccentric)",
+        "tier3_simulation_euler_ecc",
+    );
 }
 
 #[test]
 fn tier3_simulation_euler_equ() {
-    run_euler_test("euler_equ_euler.csv", "RUN_equ (equatorial)");
+    run_euler_test(
+        "euler_equ_euler.csv",
+        "RUN_equ (equatorial)",
+        "tier3_simulation_euler_equ",
+    );
 }

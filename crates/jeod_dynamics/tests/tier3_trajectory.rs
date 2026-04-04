@@ -6,6 +6,7 @@
 
 use glam::DVec3;
 use jeod_dynamics::{rk4_translational_step, TranslationalState};
+use jeod_test_data::crossval::crossval_report;
 use std::f64::consts::PI;
 
 const MU_EARTH: f64 = 3.986_004_415e14; // m^3/s^2
@@ -82,13 +83,13 @@ fn tier3_energy_conservation_10_orbits() {
         // Per-step assertions with generous bounds
         assert!(
             energy_drift < 1e-7,
-            "Energy drift {:.2e} at t={:.0}s exceeds 1e-7",
+            "Energy drift {:.6e} at t={:.0}s exceeds 1e-7",
             energy_drift,
             t
         );
         assert!(
             h_drift < 1e-7,
-            "Angular momentum drift {:.2e} at t={:.0}s exceeds 1e-7",
+            "Angular momentum drift {:.6e} at t={:.0}s exceeds 1e-7",
             h_drift,
             t
         );
@@ -97,19 +98,27 @@ fn tier3_energy_conservation_10_orbits() {
     // Tighter final bounds
     assert!(
         max_energy_drift < 1e-8,
-        "Max relative energy drift {:.2e} exceeds 1e-8",
+        "Max relative energy drift {:.6e} exceeds 1e-8",
         max_energy_drift
     );
     assert!(
         max_h_drift < 1e-8,
-        "Max relative angular momentum drift {:.2e} exceeds 1e-8",
+        "Max relative angular momentum drift {:.6e} exceeds 1e-8",
         max_h_drift
     );
 
     println!("10-orbit conservation (dt={}s):", dt);
-    println!("  Max relative energy drift:  {:.2e}", max_energy_drift);
-    println!("  Max relative h drift:       {:.2e}", max_h_drift);
+    println!("  Max relative energy drift:  {:.6e}", max_energy_drift);
+    println!("  Max relative h drift:       {:.6e}", max_h_drift);
     println!("  Total steps:                {}", trajectory.len());
+
+    crossval_report(
+        "tier3_energy_conservation_10_orbits",
+        &[
+            ("energy_drift", max_energy_drift, ""),
+            ("h_drift", max_h_drift, ""),
+        ],
+    );
 }
 
 // ========================================================================
@@ -154,11 +163,16 @@ fn tier3_orbital_period_accuracy() {
     println!("Orbital period test (dt={}s):", dt);
     println!("  Analytical period: {:.6} s", analytical_period);
     println!("  Measured period:   {:.6} s", measured_period);
-    println!("  Relative error:    {:.2e}", period_error);
+    println!("  Relative error:    {:.6e}", period_error);
+
+    crossval_report(
+        "tier3_orbital_period_accuracy",
+        &[("period_rel_error", period_error, "")],
+    );
 
     assert!(
         period_error < 1e-4,
-        "Period error {:.2e} exceeds 1e-4 (0.01%)",
+        "Period error {:.6e} exceeds 1e-4 (0.01%)",
         period_error
     );
 }
@@ -201,8 +215,13 @@ fn tier3_position_return_after_one_orbit() {
         "One-orbit return test (dt={}s, {} full steps + {:.3}s remainder):",
         dt, full_steps, remainder
     );
-    println!("  Position error: {:.3} m", pos_error);
-    println!("  Velocity error: {:.6} m/s", vel_error);
+    println!("  Position error: {:.6e} m", pos_error);
+    println!("  Velocity error: {:.6e} m/s", vel_error);
+
+    crossval_report(
+        "tier3_position_return_after_one_orbit",
+        &[("position", pos_error, "m"), ("velocity", vel_error, "m/s")],
+    );
 
     assert!(
         pos_error < 100.0,
@@ -254,22 +273,30 @@ fn tier3_eccentric_orbit_apse_distances() {
 
     println!("Eccentric orbit apse test (e={}, dt={}s):", e, dt);
     println!(
-        "  Analytical periapsis: {:.1} m, measured: {:.1} m, error: {:.2e}",
+        "  Analytical periapsis: {:.1} m, measured: {:.1} m, error: {:.6e}",
         r_periapsis, min_r, periapsis_error
     );
     println!(
-        "  Analytical apoapsis:  {:.1} m, measured: {:.1} m, error: {:.2e}",
+        "  Analytical apoapsis:  {:.1} m, measured: {:.1} m, error: {:.6e}",
         r_apoapsis, max_r, apoapsis_error
+    );
+
+    crossval_report(
+        "tier3_eccentric_orbit_apse_distances",
+        &[
+            ("periapsis_rel_error", periapsis_error, ""),
+            ("apoapsis_rel_error", apoapsis_error, ""),
+        ],
     );
 
     assert!(
         periapsis_error < 1e-6,
-        "Periapsis error {:.2e} exceeds 1e-6",
+        "Periapsis error {:.6e} exceeds 1e-6",
         periapsis_error
     );
     assert!(
         apoapsis_error < 1e-6,
-        "Apoapsis error {:.2e} exceeds 1e-6",
+        "Apoapsis error {:.6e} exceeds 1e-6",
         apoapsis_error
     );
 }
@@ -323,7 +350,7 @@ fn tier3_iss_24h_propagation() {
         "ISS 24-hour propagation (dt={}s, {:.1} orbits):",
         dt, n_orbits
     );
-    println!("  Relative energy drift:     {:.2e}", relative_energy_drift);
+    println!("  Relative energy drift:     {:.6e}", relative_energy_drift);
     println!(
         "  Expected altitude range:   {:.1} - {:.1} km",
         expected_min_alt / 1000.0,
@@ -336,9 +363,14 @@ fn tier3_iss_24h_propagation() {
     );
     println!("  Total steps:               {}", trajectory.len());
 
+    crossval_report(
+        "tier3_iss_24h_propagation",
+        &[("energy_drift", relative_energy_drift, "")],
+    );
+
     assert!(
         relative_energy_drift < 1e-7,
-        "24h energy drift {:.2e} exceeds 1e-7",
+        "24h energy drift {:.6e} exceeds 1e-7",
         relative_energy_drift
     );
 
@@ -404,7 +436,7 @@ fn tier3_cross_validate_gravity_at_jeod_positions() {
             let relative_diff = ((point_mass_mag - jeod_mag) / jeod_mag).abs();
             assert!(
                 relative_diff < 0.01,
-                "Case {}: point-mass {:.6e} vs JEOD total {:.6e}, diff {:.2e}",
+                "Case {}: point-mass {:.6e} vs JEOD total {:.6e}, diff {:.6e}",
                 case.case_num,
                 point_mass_mag,
                 jeod_mag,

@@ -9,6 +9,7 @@ use jeod_sim::{
     GravityControls, GravityModel, GravitySource, GravitySourceEntry, MassProperties,
     MetAtmosphere, RotationalState, SimBody, Simulation, SimulationTime, TranslationalState,
 };
+use jeod_test_data::crossval::crossval_report;
 
 /// Epoch for SIM_dyncomp: midnight 2007-11-20 UTC.
 /// MJD = 54424.0, TJT = MJD - 40000 = 14424.0.
@@ -137,9 +138,18 @@ fn tier3_simulation_run6b_drag() {
         }
     }
 
-    println!("  Max position error:  {:.4} m", max_pos_error);
-    println!("  Max velocity error:  {:.6} m/s", max_vel_error);
-    println!("  Max quaternion error: {:.2e} rad", max_quat_error);
+    println!("  Max position error:  {:.6e} m", max_pos_error);
+    println!("  Max velocity error:  {:.6e} m/s", max_vel_error);
+    println!("  Max quaternion error: {:.6e} rad", max_quat_error);
+
+    crossval_report(
+        "tier3_simulation_run6b_drag",
+        &[
+            ("position", max_pos_error, "m"),
+            ("velocity", max_vel_error, "m/s"),
+            ("quaternion", max_quat_error, "rad"),
+        ],
+    );
 
     // Tolerances match existing tier3_drag_trajectory test
     assert!(
@@ -279,7 +289,16 @@ fn tier3_simulation_run6a_const_density_drag() {
 
     println!("  Max position error:  {:.6e} m", max_pos_error);
     println!("  Max velocity error:  {:.6e} m/s", max_vel_error);
-    println!("  Max quaternion error: {:.2e} rad", max_quat_error);
+    println!("  Max quaternion error: {:.6e} rad", max_quat_error);
+
+    crossval_report(
+        "tier3_simulation_run6a_const_density_drag",
+        &[
+            ("position", max_pos_error, "m"),
+            ("velocity", max_vel_error, "m/s"),
+            ("quaternion", max_quat_error, "rad"),
+        ],
+    );
 
     assert!(
         max_pos_error < 0.5,

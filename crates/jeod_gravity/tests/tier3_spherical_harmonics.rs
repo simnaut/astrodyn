@@ -17,6 +17,7 @@ use glam::{DMat3, DVec3};
 use jeod_dynamics::{rk4_translational_step, TranslationalState};
 use jeod_frames::rotation_j2000;
 use jeod_gravity::coefficients;
+use jeod_test_data::crossval::crossval_report;
 use jeod_test_data::jeod_path;
 use jeod_time::epoch::{J2000_NOON_TJT, SECONDS_PER_DAY};
 use jeod_time::time_converter_ut1_gmst::ut1_to_gmst_days;
@@ -97,7 +98,13 @@ fn load_jeod_trajectory(path: &Path) -> Vec<JeodStateRecord> {
     records
 }
 
-fn run_sh_trajectory_test(csv_name: &str, degree: usize, order: usize, label: &str) {
+fn run_sh_trajectory_test(
+    csv_name: &str,
+    degree: usize,
+    order: usize,
+    label: &str,
+    test_name: &str,
+) {
     let root = jeod_path();
     assert!(root.exists(), "JEOD source not found");
 
@@ -185,8 +192,16 @@ fn run_sh_trajectory_test(csv_name: &str, degree: usize, order: usize, label: &s
     }
 
     eprintln!();
-    eprintln!("  Max position error: {:.2} m", max_pos_error);
-    eprintln!("  Max velocity error: {:.6} m/s", max_vel_error);
+    eprintln!("  Max position error: {:.6e} m", max_pos_error);
+    eprintln!("  Max velocity error: {:.6e} m/s", max_vel_error);
+
+    crossval_report(
+        test_name,
+        &[
+            ("position", max_pos_error, "m"),
+            ("velocity", max_vel_error, "m/s"),
+        ],
+    );
 
     // dt=0.03125s matches JEOD's SIM_dyncomp integration rate (32 Hz).
     // Residual comes from floating-point differences in RNP and gravity
@@ -208,10 +223,22 @@ fn run_sh_trajectory_test(csv_name: &str, degree: usize, order: usize, label: &s
 
 #[test]
 fn tier3_dyncomp_run3a_4x4_gravity() {
-    run_sh_trajectory_test("dyncomp_run3a_state.csv", 4, 4, "RUN_3A (4x4)");
+    run_sh_trajectory_test(
+        "dyncomp_run3a_state.csv",
+        4,
+        4,
+        "RUN_3A (4x4)",
+        "tier3_dyncomp_run3a_4x4_gravity",
+    );
 }
 
 #[test]
 fn tier3_dyncomp_run3b_8x8_gravity() {
-    run_sh_trajectory_test("dyncomp_run3b_state.csv", 8, 8, "RUN_3B (8x8)");
+    run_sh_trajectory_test(
+        "dyncomp_run3b_state.csv",
+        8,
+        8,
+        "RUN_3B (8x8)",
+        "tier3_dyncomp_run3b_8x8_gravity",
+    );
 }

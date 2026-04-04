@@ -16,6 +16,7 @@
 
 use glam::DVec3;
 use jeod_dynamics::{rk4_translational_step, TranslationalState};
+use jeod_test_data::crossval::crossval_report;
 use std::path::Path;
 
 const MU_EARTH: f64 = 3.986_004_415e14;
@@ -159,8 +160,16 @@ fn tier3_cross_validate_against_jeod_dyncomp() {
     }
 
     println!();
-    println!("  Max position error: {:.1} m", max_pos_error);
-    println!("  Max velocity error: {:.4} m/s", max_vel_error);
+    println!("  Max position error: {:.6e} m", max_pos_error);
+    println!("  Max velocity error: {:.6e} m/s", max_vel_error);
+
+    crossval_report(
+        "tier3_cross_validate_against_jeod_dyncomp",
+        &[
+            ("position", max_pos_error, "m"),
+            ("velocity", max_vel_error, "m/s"),
+        ],
+    );
 
     // dt=0.03125s matches JEOD's SIM_dyncomp integration rate (32 Hz).
     // With point-mass gravity and matching timestep, the only residual comes

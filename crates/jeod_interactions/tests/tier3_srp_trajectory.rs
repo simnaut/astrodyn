@@ -24,6 +24,7 @@ use jeod_interactions::{
     compute_flat_plate_srp_thermal, compute_shadow_fraction, solar_flux_at_distance, FlatPlate,
     FlatPlateParams, FlatPlateThermal, SOLAR_RADIUS, STEFAN_BOLTZMANN,
 };
+use jeod_test_data::crossval::crossval_report;
 use std::path::Path;
 
 const MU_EARTH: f64 = 3.986_004_415e14;
@@ -433,7 +434,7 @@ fn tier3_srp_trajectory_sim3_orbit() {
                     (-1.0, -1.0)
                 };
             eprintln!(
-                "  t={:9.0}s ({:5.1}d)  pos_err={:8.3}m  vel_err={:.6}m/s  F_rel={:.2e}  F_dir={:.4}rad",
+                "  t={:9.0}s ({:5.1}d)  pos_err={:8.3}m  vel_err={:.6}m/s  F_rel={:.6e}  F_dir={:.4}rad",
                 t, t / 86400.0, pos_err, vel_err, force_rel_err, force_dir_err,
             );
         }
@@ -520,12 +521,24 @@ fn tier3_srp_trajectory_sim3_orbit() {
         trajectory.last().unwrap().time,
         trajectory.last().unwrap().time / 86400.0
     );
-    eprintln!("  Max position error (24h):  {max_pos_err_24h:.3} m");
-    eprintln!("  Max position error (full): {max_pos_err:.1} m");
-    eprintln!("  Max velocity error: {max_vel_err:.6} m/s");
-    eprintln!("  Max SRP force direction error: {max_force_dir_err:.6} rad");
-    eprintln!("  Max SRP force magnitude rel error: {max_force_mag_rel_err:.4}");
+    eprintln!("  Max position error (24h):  {max_pos_err_24h:.6e} m");
+    eprintln!("  Max position error (full): {max_pos_err:.6e} m");
+    eprintln!("  Max velocity error: {max_vel_err:.6e} m/s");
+    eprintln!("  Max SRP force direction error: {max_force_dir_err:.6e} rad");
+    eprintln!("  Max SRP force magnitude rel error: {max_force_mag_rel_err:.6e}");
     eprintln!("  Shadow state mismatches: {shadow_mismatches}");
+
+    crossval_report(
+        "tier3_srp_trajectory_sim3_orbit",
+        &[
+            ("position_24h", max_pos_err_24h, "m"),
+            ("position", max_pos_err, "m"),
+            ("velocity", max_vel_err, "m/s"),
+            ("force_direction", max_force_dir_err, "rad"),
+            ("force_magnitude_rel", max_force_mag_rel_err, ""),
+            ("shadow_mismatches", shadow_mismatches as f64, ""),
+        ],
+    );
 
     // Force direction should match closely now that thermal emission is included.
     assert!(

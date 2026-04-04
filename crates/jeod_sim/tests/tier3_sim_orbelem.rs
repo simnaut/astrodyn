@@ -11,6 +11,7 @@ use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry, SimBody,
     Simulation, SimulationTime, TranslationalState,
 };
+use jeod_test_data::crossval::crossval_report;
 
 #[test]
 fn tier3_simulation_orbelem() {
@@ -104,7 +105,7 @@ fn tier3_simulation_orbelem() {
         }
     }
 
-    println!("  Max position error:  {:.4} m", max_pos_err);
+    println!("  Max position error:  {:.6e} m", max_pos_err);
     println!("  Max SMA error:       {:.6e} m", max_sma_err);
     println!("  Max eccentricity:    {:.6e}", max_ecc_err);
     println!("  Max inclination:     {:.6e} rad", max_inc_err);
@@ -112,6 +113,20 @@ fn tier3_simulation_orbelem() {
     println!("  Max long_asc_node:   {:.6e} rad", max_lan_err);
     println!("  Max true_anom:       {:.6e} rad", max_ta_err);
     println!("  Max mean_anom:       {:.6e} rad", max_ma_err);
+
+    crossval_report(
+        "tier3_simulation_orbelem",
+        &[
+            ("position", max_pos_err, "m"),
+            ("sma", max_sma_err, "m"),
+            ("eccentricity", max_ecc_err, ""),
+            ("inclination", max_inc_err, "rad"),
+            ("arg_periapsis", max_aop_err, "rad"),
+            ("long_asc_node", max_lan_err, "rad"),
+            ("true_anom", max_ta_err, "rad"),
+            ("mean_anom", max_ma_err, "rad"),
+        ],
+    );
 
     // Position tolerance (same as RUN_2 point-mass test)
     assert!(

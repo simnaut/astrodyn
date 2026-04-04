@@ -8,13 +8,20 @@ use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry, SimBody,
     Simulation, SimulationTime, TranslationalState,
 };
+use jeod_test_data::crossval::crossval_report;
 
 /// JEOD SIM_dyncomp epoch constants (from the original SH test).
 const SH_TAI_UTC_S: f64 = 32.0;
 const SH_TAI_TO_UT1_S: f64 = -32.469;
 const SH_EPOCH_UTC_TJT: f64 = 14424.0;
 
-fn run_sh_simulation_test(csv_name: &str, degree: usize, order: usize, label: &str) {
+fn run_sh_simulation_test(
+    csv_name: &str,
+    degree: usize,
+    order: usize,
+    label: &str,
+    test_name: &str,
+) {
     let jeod_root = jeod_test_data::jeod_path();
     assert!(
         jeod_root.exists(),
@@ -98,8 +105,16 @@ fn run_sh_simulation_test(csv_name: &str, degree: usize, order: usize, label: &s
         }
     }
 
-    println!("  Max position error: {:.4} m", max_pos_error);
-    println!("  Max velocity error: {:.6} m/s", max_vel_error);
+    println!("  Max position error: {:.6e} m", max_pos_error);
+    println!("  Max velocity error: {:.6e} m/s", max_vel_error);
+
+    crossval_report(
+        test_name,
+        &[
+            ("position", max_pos_error, "m"),
+            ("velocity", max_vel_error, "m/s"),
+        ],
+    );
 
     // Tolerances match existing tier3_spherical_harmonics test
     assert!(
@@ -114,10 +129,22 @@ fn run_sh_simulation_test(csv_name: &str, degree: usize, order: usize, label: &s
 
 #[test]
 fn tier3_simulation_run3a_sh4x4() {
-    run_sh_simulation_test("dyncomp_run3a_state.csv", 4, 4, "RUN_3A (4x4 SH + RNP)");
+    run_sh_simulation_test(
+        "dyncomp_run3a_state.csv",
+        4,
+        4,
+        "RUN_3A (4x4 SH + RNP)",
+        "tier3_simulation_run3a_sh4x4",
+    );
 }
 
 #[test]
 fn tier3_simulation_run3b_sh8x8() {
-    run_sh_simulation_test("dyncomp_run3b_state.csv", 8, 8, "RUN_3B (8x8 SH + RNP)");
+    run_sh_simulation_test(
+        "dyncomp_run3b_state.csv",
+        8,
+        8,
+        "RUN_3B (8x8 SH + RNP)",
+        "tier3_simulation_run3b_sh8x8",
+    );
 }

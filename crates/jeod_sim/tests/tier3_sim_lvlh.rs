@@ -11,6 +11,7 @@ use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry, SimBody,
     Simulation, SimulationTime, TranslationalState,
 };
+use jeod_test_data::crossval::crossval_report;
 
 #[test]
 fn tier3_simulation_lvlh() {
@@ -86,9 +87,18 @@ fn tier3_simulation_lvlh() {
         }
     }
 
-    println!("  Max position error:  {:.4} m", max_pos_err);
+    println!("  Max position error:  {:.6e} m", max_pos_err);
     println!("  Max T_parent_this:   {:.6e}", max_mat_err);
     println!("  Max ang_vel error:   {:.6e} rad/s", max_angvel_err);
+
+    crossval_report(
+        "tier3_simulation_lvlh",
+        &[
+            ("position", max_pos_err, "m"),
+            ("t_parent_this", max_mat_err, ""),
+            ("ang_vel", max_angvel_err, "rad/s"),
+        ],
+    );
 
     assert!(
         max_pos_err < 0.5,

@@ -20,6 +20,7 @@ use jeod_dynamics::{
     rk4_sixdof_step, MassProperties, RotationalState, SixDofState, TranslationalState,
 };
 use jeod_math::JeodQuat;
+use jeod_test_data::crossval::crossval_report;
 use std::path::Path;
 
 const MU_EARTH: f64 = 3.986_004_415e14;
@@ -237,14 +238,24 @@ fn tier3_sixdof_attitude_from_run2() {
         trajectory.last().unwrap().time,
         trajectory.len()
     );
-    println!("Max position error:   {:.2} m", max_pos_error);
-    println!("Max velocity error:   {:.4} m/s", max_vel_error);
+    println!("Max position error:   {:.6e} m", max_pos_error);
+    println!("Max velocity error:   {:.6e} m/s", max_vel_error);
     println!(
-        "Max quaternion error: {:.2e} rad ({:.4} deg)",
+        "Max quaternion error: {:.6e} rad ({:.4} deg)",
         max_quat_error,
         max_quat_error.to_degrees()
     );
-    println!("Max ang_vel error:    {:.2e} rad/s", max_angvel_error);
+    println!("Max ang_vel error:    {:.6e} rad/s", max_angvel_error);
+
+    crossval_report(
+        "tier3_sixdof_attitude_from_run2",
+        &[
+            ("position", max_pos_error, "m"),
+            ("velocity", max_vel_error, "m/s"),
+            ("quaternion", max_quat_error, "rad"),
+            ("omega", max_angvel_error, "rad/s"),
+        ],
+    );
 
     // dt=0.03125s matches JEOD's SIM_dyncomp integration rate (32 Hz).
     // Residual comes from FP differences between our Rust/LLVM implementation
@@ -261,12 +272,12 @@ fn tier3_sixdof_attitude_from_run2() {
     );
     assert!(
         max_quat_error < 0.01,
-        "Quaternion angular error {:.2e} rad exceeds 0.01 rad threshold",
+        "Quaternion angular error {:.6e} rad exceeds 0.01 rad threshold",
         max_quat_error
     );
     assert!(
         max_angvel_error < 1e-5,
-        "Angular velocity error {:.2e} rad/s exceeds 1e-5 rad/s threshold",
+        "Angular velocity error {:.6e} rad/s exceeds 1e-5 rad/s threshold",
         max_angvel_error
     );
 }

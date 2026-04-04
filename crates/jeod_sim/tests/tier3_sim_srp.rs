@@ -11,6 +11,7 @@ use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry,
     MassProperties, SimBody, Simulation, SimulationTime, TranslationalState,
 };
+use jeod_test_data::crossval::crossval_report;
 use std::path::Path;
 
 const SRP_MU_EARTH: f64 = 3.986_004_415e14;
@@ -199,7 +200,12 @@ fn tier3_simulation_srp_flat_plate() {
         }
     }
 
-    println!("  Max position error: {:.2} m", max_pos_error);
+    println!("  Max position error: {:.6e} m", max_pos_error);
+
+    crossval_report(
+        "tier3_simulation_srp_flat_plate",
+        &[("position", max_pos_error, "m")],
+    );
 
     // Tolerance matches existing tier3_srp_trajectory test
     assert!(

@@ -9,6 +9,7 @@ use jeod_sim::{
     GravitySourceEntry, MassProperties, RotationalState, SimBody, Simulation, SimulationTime,
     TranslationalState,
 };
+use jeod_test_data::crossval::crossval_report;
 
 // ── RUN_10A: Gravity gradient torque, cylinder mass, 6-DOF ──
 //
@@ -99,16 +100,26 @@ fn tier3_simulation_run10a_gravity_torque() {
 
         if (record.time % 3600.0).abs() < 30.1 {
             println!(
-                "  t={:6.0}s: pos_err={:10.4} m  quat_err={:.2e} rad  omega_err={:.2e}",
+                "  t={:6.0}s: pos_err={:10.4} m  quat_err={:.6e} rad  omega_err={:.6e}",
                 record.time, pos_error, max_quat_error, max_omega_error
             );
         }
     }
 
-    println!("  Max position error:  {:.4} m", max_pos_error);
-    println!("  Max velocity error:  {:.6} m/s", max_vel_error);
-    println!("  Max quaternion error: {:.2e} rad", max_quat_error);
-    println!("  Max omega error:     {:.2e} rad/s", max_omega_error);
+    println!("  Max position error:  {:.6e} m", max_pos_error);
+    println!("  Max velocity error:  {:.6e} m/s", max_vel_error);
+    println!("  Max quaternion error: {:.6e} rad", max_quat_error);
+    println!("  Max omega error:     {:.6e} rad/s", max_omega_error);
+
+    crossval_report(
+        "tier3_simulation_run10a_gravity_torque",
+        &[
+            ("position", max_pos_error, "m"),
+            ("velocity", max_vel_error, "m/s"),
+            ("quaternion", max_quat_error, "rad"),
+            ("omega", max_omega_error, "rad/s"),
+        ],
+    );
 
     assert!(
         max_pos_error < 0.5,
@@ -235,6 +246,11 @@ fn tier3_reference_run10a_libration_period() {
     println!("  Analytical period:    {ANALYTICAL_PERIOD:.2} s");
     println!("  Period error:         {period_error_pct:.4}%");
 
+    crossval_report(
+        "tier3_reference_run10a_libration_period",
+        &[("period_error_pct", period_error_pct, "%")],
+    );
+
     // PLAN.md criterion is 0.1%, but the 60s logging resolution limits
     // per-measurement accuracy to ~1.8%. Averaging over 8 hours (~8
     // half-cycles) brings the mean within 0.5%; achieving 0.1% would
@@ -322,9 +338,20 @@ fn tier3_simulation_run10c_gravity_torque_elliptical() {
     }
 
     println!(
-        "RUN_10C: max pos={:.4} m  vel={:.6} m/s  quat={:.2e} rad  omega={:.2e} rad/s",
+        "RUN_10C: max pos={:.4} m  vel={:.6} m/s  quat={:.6e} rad  omega={:.6e} rad/s",
         max_pos_error, max_vel_error, max_quat_error, max_omega_error
     );
+
+    crossval_report(
+        "tier3_simulation_run10c_gravity_torque_elliptical",
+        &[
+            ("position", max_pos_error, "m"),
+            ("velocity", max_vel_error, "m/s"),
+            ("quaternion", max_quat_error, "rad"),
+            ("omega", max_omega_error, "rad/s"),
+        ],
+    );
+
     assert!(
         max_pos_error < 0.5,
         "RUN_10C: position error {max_pos_error:.4} m exceeds 0.5 m"
@@ -418,9 +445,20 @@ fn tier3_simulation_run10d_gravity_torque_elliptical_rate() {
     }
 
     println!(
-        "RUN_10D: max pos={:.4} m  vel={:.6} m/s  quat={:.2e} rad  omega={:.2e} rad/s",
+        "RUN_10D: max pos={:.4} m  vel={:.6} m/s  quat={:.6e} rad  omega={:.6e} rad/s",
         max_pos_error, max_vel_error, max_quat_error, max_omega_error
     );
+
+    crossval_report(
+        "tier3_simulation_run10d_gravity_torque_elliptical_rate",
+        &[
+            ("position", max_pos_error, "m"),
+            ("velocity", max_vel_error, "m/s"),
+            ("quaternion", max_quat_error, "rad"),
+            ("omega", max_omega_error, "rad/s"),
+        ],
+    );
+
     assert!(
         max_pos_error < 0.5,
         "RUN_10D: position error {max_pos_error:.4} m exceeds 0.5 m"

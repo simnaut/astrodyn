@@ -13,6 +13,7 @@
 
 use glam::{DMat3, DVec3};
 use jeod_math::{compute_euler_angles_from_matrix, EulerSequence};
+use jeod_test_data::crossval::crossval_report;
 use std::path::Path;
 
 /// Number of angle fields per sequence: ref_body_angles[3] + body_ref_angles[3] = 6.
@@ -220,4 +221,13 @@ fn tier3_euler_angles_vs_jeod_sim_euler() {
     if skipped_gimbal > 0 {
         eprintln!("  Gimbal-lock regions skipped: {skipped_gimbal}");
     }
+
+    crossval_report(
+        "tier3_euler_angles_vs_jeod_sim_euler",
+        &[
+            ("euler_roll", max_angle_err[0], "rad"),
+            ("euler_pitch", max_angle_err[1], "rad"),
+            ("euler_yaw", max_angle_err[2], "rad"),
+        ],
+    );
 }

@@ -13,6 +13,7 @@
 
 use glam::DVec3;
 use jeod_math::OrbitalElements;
+use jeod_test_data::crossval::crossval_report;
 use std::path::Path;
 
 /// Earth gravitational parameter (m³/s²) from GGM05C, matching JEOD SIM_OrbElem's gravity source.
@@ -260,4 +261,18 @@ fn tier3_orbital_elements_vs_jeod_sim_orbelem() {
     eprintln!("  orb_ang_momentum:   {max_hmag_err:.6e} m^2/s");
     eprintln!("  r_mag:              {max_rmag_err:.6e} m");
     eprintln!("  vel_mag:            {max_vmag_err:.6e} m/s");
+
+    crossval_report(
+        "tier3_orbital_elements_vs_jeod_sim_orbelem",
+        &[
+            ("semi_major_axis", max_sma_err, "m"),
+            ("semiparam", max_sp_err, "m"),
+            ("eccentricity", max_ecc_err, ""),
+            ("inclination", max_inc_err, "rad"),
+            ("arg_periapsis", max_aop_err, "rad"),
+            ("long_asc_node", max_lan_err, "rad"),
+            ("true_anom", max_ta_err, "rad"),
+            ("mean_anom", max_ma_err, "rad"),
+        ],
+    );
 }

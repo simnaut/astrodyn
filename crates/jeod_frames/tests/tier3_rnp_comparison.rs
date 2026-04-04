@@ -13,6 +13,7 @@ use glam::{DMat3, DVec3};
 use jeod_frames::nutation_j2000::nutation;
 use jeod_frames::precession_j2000::precession_matrix;
 use jeod_frames::rotation_j2000::{compute_t_parent_this, gast_rotation_matrix};
+use jeod_test_data::crossval::crossval_report;
 use jeod_time::epoch::{J2000_NOON_TJT, SECONDS_PER_DAY, TAI_TT_OFFSET};
 use jeod_time::time_converter_ut1_gmst::ut1_to_gmst_days;
 use std::path::Path;
@@ -235,7 +236,7 @@ fn tier3_rnp_component_comparison() {
         // Hourly diagnostics
         if rec.time == 0.0 || (rec.time % 3600.0).abs() < 0.1 {
             eprintln!(
-                "  t={:6.0}s ({:.1}h): P_err={:.2e}  N_err={:.2e}  R_err={:.2e}  T_err={:.2e}  equa_err={:.2e}s  theta_err={:.2e}rad",
+                "  t={:6.0}s ({:.1}h): P_err={:.6e}  N_err={:.6e}  R_err={:.6e}  T_err={:.6e}  equa_err={:.6e}s  theta_err={:.6e}rad",
                 rec.time,
                 rec.time / 3600.0,
                 p_err,
@@ -319,6 +320,18 @@ fn tier3_rnp_component_comparison() {
         max_equa_err < 1e-10,
         "Equation of equinoxes error {:.4e}s exceeds 1e-10s.",
         max_equa_err,
+    );
+
+    crossval_report(
+        "tier3_rnp_component_comparison",
+        &[
+            ("precession", max_p_err, ""),
+            ("nutation", max_n_err, ""),
+            ("gast_rotation", max_r_err, ""),
+            ("composed_T", max_t_err, ""),
+            ("equa_equinoxes", max_equa_err, "s"),
+            ("theta_gast", max_theta_gast_err, "rad"),
+        ],
     );
 
     eprintln!("  All RNP components match JEOD within 1e-10 element-wise.");

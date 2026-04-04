@@ -8,6 +8,7 @@
 
 use glam::{DMat3, DVec3};
 use jeod_math::compute_lvlh_frame;
+use jeod_test_data::crossval::crossval_report;
 use std::path::Path;
 
 /// Parsed record from the SIM_LVLH CSV.
@@ -150,4 +151,12 @@ fn tier3_lvlh_frame_vs_jeod_sim_lvlh() {
     eprintln!("\n  === Max errors across {} timesteps ===", records.len());
     eprintln!("  T_parent_this element: {max_mat_error:.6e}");
     eprintln!("  ang_vel magnitude:     {max_angvel_error:.6e} rad/s");
+
+    crossval_report(
+        "tier3_lvlh_frame_vs_jeod_sim_lvlh",
+        &[
+            ("t_parent_this", max_mat_error, ""),
+            ("ang_vel_mag", max_angvel_error, "rad/s"),
+        ],
+    );
 }

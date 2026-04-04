@@ -16,6 +16,7 @@ use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry, SimBody,
     Simulation, SimulationTime, TranslationalState,
 };
+use jeod_test_data::crossval::crossval_report;
 
 const GEO_R_EQ: f64 = 6_378_137.0;
 const GEO_R_POL: f64 = GEO_R_EQ * (1.0 - 1.0 / 298.257_223_563);
@@ -35,6 +36,7 @@ fn run_ned_test(
     tol_alt: f64,
     tol_lat: f64,
     tol_lon: f64,
+    test_name: &str,
 ) {
     let csv_path = test_data_path(csv_filename);
     assert!(
@@ -144,6 +146,16 @@ fn run_ned_test(
     println!("  Max latitude error:  {:.6e} rad", max_lat_err);
     println!("  Max longitude error: {:.6e} rad", max_lon_err);
 
+    crossval_report(
+        test_name,
+        &[
+            ("position", max_pos_err, "m"),
+            ("altitude", max_alt_err, "m"),
+            ("latitude", max_lat_err, "rad"),
+            ("longitude", max_lon_err, "rad"),
+        ],
+    );
+
     assert!(
         max_pos_err < 0.5,
         "{label}: position error {max_pos_err:.2} m exceeds 0.5 m"
@@ -176,6 +188,7 @@ fn tier3_simulation_ned_polar() {
         1.0,  // altitude: same as existing ell_inc test
         1e-6, // latitude: same as existing ell_inc test
         0.1,  // longitude: pole singularity (actual: 3e-5 rad)
+        "tier3_simulation_ned_polar",
     );
 }
 
@@ -189,6 +202,7 @@ fn tier3_simulation_ned_sph_inc() {
         1.0,  // altitude: same as existing ell_inc test
         1e-6, // latitude: same as existing ell_inc test
         1e-6, // longitude: same as existing ell_inc test
+        "tier3_simulation_ned_sph_inc",
     );
 }
 
@@ -202,5 +216,6 @@ fn tier3_simulation_ned_sph_polar() {
         1.0,  // altitude: same as existing ell_inc test
         1e-6, // latitude: same as existing ell_inc test
         0.1,  // longitude: pole singularity (actual: 3e-5 rad)
+        "tier3_simulation_ned_sph_polar",
     );
 }

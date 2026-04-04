@@ -30,6 +30,7 @@ use jeod_sim::{
     GravitySourceEntry, MassProperties, RotationalState, SimBody, Simulation, SimulationTime,
     TranslationalState,
 };
+use jeod_test_data::crossval::crossval_report;
 
 // ── ISS mass properties from JEOD Modified_data/mass/iss.py ──
 
@@ -161,7 +162,7 @@ fn build_simulation(config: &RunConfig, init: &TorqueSimpleRecord) -> Simulation
 
 // ── Tier 3 full-propagation test ──
 
-fn run_propagation_test(config: &RunConfig) {
+fn run_propagation_test(config: &RunConfig, test_name: &str) {
     let csv_path = test_data_path(config.csv_filename);
     assert!(
         csv_path.exists(),
@@ -216,17 +217,28 @@ fn run_propagation_test(config: &RunConfig) {
         // Log every 1000s
         if (record.time % 1000.0).abs() < 0.5 {
             println!(
-                "  t={:6.0}s: pos={:10.4} m  quat={:.2e} rad  torque={:.2e} N·m",
+                "  t={:6.0}s: pos={:10.4} m  quat={:.6e} rad  torque={:.6e} N·m",
                 record.time, pos_error, quat_error, torque_error
             );
         }
     }
 
-    println!("  Max position error:  {:.4} m", max_pos_error);
-    println!("  Max velocity error:  {:.6} m/s", max_vel_error);
-    println!("  Max quaternion error: {:.2e} rad", max_quat_error);
-    println!("  Max omega error:     {:.2e} rad/s", max_omega_error);
-    println!("  Max torque error:    {:.2e} N·m", max_torque_error);
+    println!("  Max position error:  {:.6e} m", max_pos_error);
+    println!("  Max velocity error:  {:.6e} m/s", max_vel_error);
+    println!("  Max quaternion error: {:.6e} rad", max_quat_error);
+    println!("  Max omega error:     {:.6e} rad/s", max_omega_error);
+    println!("  Max torque error:    {:.6e} N·m", max_torque_error);
+
+    crossval_report(
+        test_name,
+        &[
+            ("position", max_pos_error, "m"),
+            ("velocity", max_vel_error, "m/s"),
+            ("quaternion", max_quat_error, "rad"),
+            ("omega", max_omega_error, "rad/s"),
+            ("torque", max_torque_error, "N*m"),
+        ],
+    );
 
     // ── Thresholds ──
     //
@@ -304,74 +316,92 @@ fn run_propagation_test(config: &RunConfig) {
 
 #[test]
 fn tier3_torque_simple_run01() {
-    run_propagation_test(&RunConfig {
-        label: "RUN_01 (spherical gravity, gradient OFF)",
-        csv_filename: "torque_simple_run01_torque_simple.csv",
-        earth_nonspherical: false,
-        earth_gradient: false,
-        gradient_degree: 0,
-        gradient_order: 0,
-    });
+    run_propagation_test(
+        &RunConfig {
+            label: "RUN_01 (spherical gravity, gradient OFF)",
+            csv_filename: "torque_simple_run01_torque_simple.csv",
+            earth_nonspherical: false,
+            earth_gradient: false,
+            gradient_degree: 0,
+            gradient_order: 0,
+        },
+        "tier3_torque_simple_run01",
+    );
 }
 
 #[test]
 fn tier3_torque_simple_run02() {
-    run_propagation_test(&RunConfig {
-        label: "RUN_02 (spherical gravity, point-mass gradient)",
-        csv_filename: "torque_simple_run02_torque_simple.csv",
-        earth_nonspherical: false,
-        earth_gradient: true,
-        gradient_degree: 0,
-        gradient_order: 0,
-    });
+    run_propagation_test(
+        &RunConfig {
+            label: "RUN_02 (spherical gravity, point-mass gradient)",
+            csv_filename: "torque_simple_run02_torque_simple.csv",
+            earth_nonspherical: false,
+            earth_gradient: true,
+            gradient_degree: 0,
+            gradient_order: 0,
+        },
+        "tier3_torque_simple_run02",
+    );
 }
 
 #[test]
 fn tier3_torque_simple_run03() {
     // Run 03 has gradient_degree=4 but spherical=true, so JEOD computes
     // point-mass gradient only. Run 03 produces identical torques to Run 02.
-    run_propagation_test(&RunConfig {
-        label: "RUN_03 (spherical gravity, gradient_degree=4 — same as point-mass)",
-        csv_filename: "torque_simple_run03_torque_simple.csv",
-        earth_nonspherical: false,
-        earth_gradient: true,
-        gradient_degree: 0, // spherical=true overrides gradient_degree
-        gradient_order: 0,
-    });
+    run_propagation_test(
+        &RunConfig {
+            label: "RUN_03 (spherical gravity, gradient_degree=4 — same as point-mass)",
+            csv_filename: "torque_simple_run03_torque_simple.csv",
+            earth_nonspherical: false,
+            earth_gradient: true,
+            gradient_degree: 0, // spherical=true overrides gradient_degree
+            gradient_order: 0,
+        },
+        "tier3_torque_simple_run03",
+    );
 }
 
 #[test]
 fn tier3_torque_simple_run04() {
-    run_propagation_test(&RunConfig {
-        label: "RUN_04 (SH 20x20 gravity, gradient OFF)",
-        csv_filename: "torque_simple_run04_torque_simple.csv",
-        earth_nonspherical: true,
-        earth_gradient: false,
-        gradient_degree: 0,
-        gradient_order: 0,
-    });
+    run_propagation_test(
+        &RunConfig {
+            label: "RUN_04 (SH 20x20 gravity, gradient OFF)",
+            csv_filename: "torque_simple_run04_torque_simple.csv",
+            earth_nonspherical: true,
+            earth_gradient: false,
+            gradient_degree: 0,
+            gradient_order: 0,
+        },
+        "tier3_torque_simple_run04",
+    );
 }
 
 #[test]
 fn tier3_torque_simple_run05() {
-    run_propagation_test(&RunConfig {
-        label: "RUN_05 (SH 20x20 gravity, point-mass gradient)",
-        csv_filename: "torque_simple_run05_torque_simple.csv",
-        earth_nonspherical: true,
-        earth_gradient: true,
-        gradient_degree: 0,
-        gradient_order: 0,
-    });
+    run_propagation_test(
+        &RunConfig {
+            label: "RUN_05 (SH 20x20 gravity, point-mass gradient)",
+            csv_filename: "torque_simple_run05_torque_simple.csv",
+            earth_nonspherical: true,
+            earth_gradient: true,
+            gradient_degree: 0,
+            gradient_order: 0,
+        },
+        "tier3_torque_simple_run05",
+    );
 }
 
 #[test]
 fn tier3_torque_simple_run06() {
-    run_propagation_test(&RunConfig {
-        label: "RUN_06 (SH 20x20 gravity, SH 4x4 gradient)",
-        csv_filename: "torque_simple_run06_torque_simple.csv",
-        earth_nonspherical: true,
-        earth_gradient: true,
-        gradient_degree: 4,
-        gradient_order: 4,
-    });
+    run_propagation_test(
+        &RunConfig {
+            label: "RUN_06 (SH 20x20 gravity, SH 4x4 gradient)",
+            csv_filename: "torque_simple_run06_torque_simple.csv",
+            earth_nonspherical: true,
+            earth_gradient: true,
+            gradient_degree: 4,
+            gradient_order: 4,
+        },
+        "tier3_torque_simple_run06",
+    );
 }

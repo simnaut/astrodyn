@@ -15,6 +15,7 @@ use jeod_sim::{
     Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel, GravitySource,
     GravitySourceEntry, SimBody, Simulation, SimulationTime, TranslationalState,
 };
+use jeod_test_data::crossval::crossval_report;
 use std::path::Path;
 
 #[test]
@@ -130,7 +131,12 @@ fn tier3_simulation_solar_beta() {
         }
     }
 
-    println!("  Max position error: {:.4} m", max_pos_err);
+    println!("  Max position error: {:.6e} m", max_pos_err);
+
+    crossval_report(
+        "tier3_simulation_solar_beta",
+        &[("position", max_pos_err, "m")],
+    );
 
     // Position tracks JEOD RUN_2 trajectory
     assert!(

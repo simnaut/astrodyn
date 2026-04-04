@@ -13,6 +13,7 @@ use sim_test_helpers::*;
 use glam::DVec3;
 use jeod_interactions::{compute_shadow_fraction, solar_flux_at_distance};
 use jeod_sim::{Ephemeris, EphemerisBody};
+use jeod_test_data::crossval::crossval_report;
 use std::path::Path;
 
 /// Sun radius (m).
@@ -22,7 +23,7 @@ const R_EARTH: f64 = 6_378_137.0;
 /// SIM_2A epoch: 1998-12-01 00:00:31 TAI.
 const EPOCH_TJT: f64 = 11148.0 + 31.0 / 86400.0;
 
-fn run_shadow_comparison(csv_filename: &str, label: &str) {
+fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str) {
     let csv_path = test_data_path(csv_filename);
     assert!(
         csv_path.exists(),
@@ -110,6 +111,14 @@ fn run_shadow_comparison(csv_filename: &str, label: &str) {
     println!("  Max shadow fraction error:  {:.6e}", max_frac_err);
     println!("  Shadow state mismatches:    {shadow_state_mismatches}");
 
+    crossval_report(
+        test_name,
+        &[
+            ("shadow_fraction", max_frac_err, ""),
+            ("shadow_mismatches", shadow_state_mismatches as f64, ""),
+        ],
+    );
+
     // Shadow fraction agreement: measured 5.4e-3 max (at the umbra-antumbra
     // transition at ~1.4 Gm). The residual is dominated by the ~10 arcsecond
     // DE421 Sun position offset (#27) which shifts the shadow cone boundary
@@ -129,10 +138,18 @@ fn run_shadow_comparison(csv_filename: &str, label: &str) {
 
 #[test]
 fn tier3_shadow_2a_annular() {
-    run_shadow_comparison("shadow_2a_annular_shadow_calc.csv", "RUN_annular_eclipse");
+    run_shadow_comparison(
+        "shadow_2a_annular_shadow_calc.csv",
+        "RUN_annular_eclipse",
+        "tier3_shadow_2a_annular",
+    );
 }
 
 #[test]
 fn tier3_shadow_2a_cooling() {
-    run_shadow_comparison("shadow_2a_cooling_shadow_calc.csv", "RUN_shadow_cooling");
+    run_shadow_comparison(
+        "shadow_2a_cooling_shadow_calc.csv",
+        "RUN_shadow_cooling",
+        "tier3_shadow_2a_cooling",
+    );
 }

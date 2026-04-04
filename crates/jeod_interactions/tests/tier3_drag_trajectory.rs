@@ -26,6 +26,7 @@ use jeod_dynamics::{
 use jeod_interactions::{compute_ballistic_drag, DragConfig};
 use jeod_math::geodetic::cartesian_to_geodetic;
 use jeod_math::JeodQuat;
+use jeod_test_data::crossval::crossval_report;
 use std::path::Path;
 
 const MU_EARTH: f64 = 3.986_004_415e14;
@@ -396,10 +397,19 @@ fn tier3_drag_trajectory_run6b() {
     );
     println!("Atmosphere: MET solar mean (F10.7=128.8, Ap=15.7)");
     println!("Drag: Cd=0.02, Area=1.0 m^2, mass=1.0 kg");
-    println!("Max position error:   {:.4} m", max_pos_error);
-    println!("Max velocity error:   {:.6} m/s", max_vel_error);
+    println!("Max position error:   {:.6e} m", max_pos_error);
+    println!("Max velocity error:   {:.6e} m/s", max_vel_error);
+
+    crossval_report(
+        "tier3_drag_trajectory_run6b",
+        &[
+            ("position", max_pos_error, "m"),
+            ("velocity", max_vel_error, "m/s"),
+        ],
+    );
+
     println!(
-        "Max quaternion error: {:.2e} rad ({:.4} deg)",
+        "Max quaternion error: {:.6e} rad ({:.4} deg)",
         max_quat_error,
         max_quat_error.to_degrees()
     );
@@ -422,7 +432,7 @@ fn tier3_drag_trajectory_run6b() {
     // remain nearly constant (only numerical drift). Use generous threshold.
     assert!(
         max_quat_error < 0.01,
-        "Quaternion angular error {:.2e} rad exceeds 0.01 rad threshold",
+        "Quaternion angular error {:.6e} rad exceeds 0.01 rad threshold",
         max_quat_error
     );
 }

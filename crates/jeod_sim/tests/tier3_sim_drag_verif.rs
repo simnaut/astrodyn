@@ -16,10 +16,11 @@ use sim_test_helpers::*;
 use glam::{DMat3, DVec3};
 use jeod_atmosphere::AtmosphereState;
 use jeod_interactions::{compute_ballistic_drag, DragConfig};
+use jeod_test_data::crossval::crossval_report;
 
 const DRAG_DENSITY: f64 = 1e-12; // kg/m³
 
-fn run_drag_comparison(csv_filename: &str, label: &str, config: DragConfig) {
+fn run_drag_comparison(csv_filename: &str, label: &str, config: DragConfig, test_name: &str) {
     let csv_path = test_data_path(csv_filename);
     assert!(
         csv_path.exists(),
@@ -79,6 +80,14 @@ fn run_drag_comparison(csv_filename: &str, label: &str, config: DragConfig) {
     println!("  Max force error:     {:.6e} N", max_force_err);
     println!("  Max force rel error: {:.6e}", max_force_rel_err);
 
+    crossval_report(
+        test_name,
+        &[
+            ("force", max_force_err, "N"),
+            ("force_rel", max_force_rel_err, ""),
+        ],
+    );
+
     // Drag force should match JEOD to high precision (same formula, same inputs)
     assert!(
         max_force_err < 1e-3,
@@ -135,6 +144,11 @@ fn tier3_drag_const_force() {
         "  Note: DRAG_OPT_CONST mode not implemented in our code — JEOD sets force \
          magnitude directly, bypassing F=0.5*ρ*v²*Cd*A. Validated as reference data."
     );
+
+    crossval_report(
+        "tier3_drag_const_force",
+        &[("accel", max_accel_err, "m/s2")],
+    );
 }
 
 #[test]
@@ -149,6 +163,7 @@ fn tier3_drag_variable_cd() {
             area: 100.0,
             constant_density: Some(DRAG_DENSITY),
         },
+        "tier3_drag_variable_cd",
     );
 }
 
@@ -164,5 +179,6 @@ fn tier3_drag_ballistic_coeff() {
             area: 1.0,
             constant_density: Some(DRAG_DENSITY),
         },
+        "tier3_drag_ballistic_coeff",
     );
 }

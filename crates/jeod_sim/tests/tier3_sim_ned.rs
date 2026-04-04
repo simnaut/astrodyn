@@ -17,6 +17,7 @@ use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry, SimBody,
     Simulation, SimulationTime, TranslationalState,
 };
+use jeod_test_data::crossval::crossval_report;
 
 const GEO_R_EQ: f64 = 6_378_137.0;
 const GEO_R_POL: f64 = GEO_R_EQ * (1.0 - 1.0 / 298.257_223_563);
@@ -120,6 +121,16 @@ fn tier3_simulation_geodetic() {
     println!("  Max altitude error:  {:.6e} m", max_alt_err);
     println!("  Max latitude error:  {:.6e} rad", max_lat_err);
     println!("  Max longitude error: {:.6e} rad", max_lon_err);
+
+    crossval_report(
+        "tier3_simulation_geodetic",
+        &[
+            ("position", max_pos_err, "m"),
+            ("altitude", max_alt_err, "m"),
+            ("latitude", max_lat_err, "rad"),
+            ("longitude", max_lon_err, "rad"),
+        ],
+    );
 
     // Point-mass gravity, 24h. Position should match JEOD to < 0.5m.
     assert!(

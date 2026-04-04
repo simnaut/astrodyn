@@ -18,6 +18,7 @@ use jeod_sim::{
     GravitySourceEntry, MassProperties, RotationalState, SimBody, Simulation, SimulationTime,
     TranslationalState,
 };
+use jeod_test_data::crossval::crossval_report;
 
 // ── RUN_5B: MET solar mean, elliptical orbit, no drag ──
 
@@ -120,7 +121,7 @@ fn run_atmosphere_test(csv_filename: &str, label: &str) {
 
         if (record.time % 7200.0).abs() < 30.1 {
             println!(
-                "  t={:6.0}s: pos_err={:.3e} m  vel_err={:.3e} m/s  quat_err={:.2e} rad",
+                "  t={:6.0}s: pos_err={:.3e} m  vel_err={:.3e} m/s  quat_err={:.6e} rad",
                 record.time, pos_error, vel_error, max_quat_error
             );
         }
@@ -128,7 +129,16 @@ fn run_atmosphere_test(csv_filename: &str, label: &str) {
 
     println!("  Max position error:  {:.6e} m", max_pos_error);
     println!("  Max velocity error:  {:.6e} m/s", max_vel_error);
-    println!("  Max quaternion error: {:.2e} rad", max_quat_error);
+    println!("  Max quaternion error: {:.6e} rad", max_quat_error);
+
+    crossval_report(
+        "tier3_simulation_run5c_atmosphere_max",
+        &[
+            ("position", max_pos_error, "m"),
+            ("velocity", max_vel_error, "m/s"),
+            ("quaternion", max_quat_error, "rad"),
+        ],
+    );
 
     assert!(
         max_pos_error < 0.5,

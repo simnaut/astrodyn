@@ -14,8 +14,9 @@ use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry, SimBody,
     Simulation, SimulationTime, TranslationalState,
 };
+use jeod_test_data::crossval::crossval_report;
 
-fn run_lvlh_test(csv_filename: &str, label: &str) {
+fn run_lvlh_test(csv_filename: &str, label: &str, test_name: &str) {
     let csv_path = test_data_path(csv_filename);
     assert!(
         csv_path.exists(),
@@ -89,9 +90,18 @@ fn run_lvlh_test(csv_filename: &str, label: &str) {
         }
     }
 
-    println!("  Max position error:  {:.4} m", max_pos_err);
+    println!("  Max position error:  {:.6e} m", max_pos_err);
     println!("  Max T_parent_this:   {:.6e}", max_mat_err);
     println!("  Max ang_vel error:   {:.6e} rad/s", max_angvel_err);
+
+    crossval_report(
+        test_name,
+        &[
+            ("position", max_pos_err, "m"),
+            ("T_parent_this", max_mat_err, ""),
+            ("ang_vel", max_angvel_err, "rad/s"),
+        ],
+    );
 
     assert!(
         max_pos_err < 0.5,
@@ -109,10 +119,18 @@ fn run_lvlh_test(csv_filename: &str, label: &str) {
 
 #[test]
 fn tier3_simulation_lvlh_ecc() {
-    run_lvlh_test("lvlh_ecc_lvlh.csv", "RUN_ecc (eccentric)");
+    run_lvlh_test(
+        "lvlh_ecc_lvlh.csv",
+        "RUN_ecc (eccentric)",
+        "tier3_simulation_lvlh_ecc",
+    );
 }
 
 #[test]
 fn tier3_simulation_lvlh_equ() {
-    run_lvlh_test("lvlh_equ_lvlh.csv", "RUN_equ (equatorial)");
+    run_lvlh_test(
+        "lvlh_equ_lvlh.csv",
+        "RUN_equ (equatorial)",
+        "tier3_simulation_lvlh_equ",
+    );
 }
