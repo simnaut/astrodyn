@@ -15,17 +15,21 @@
 //! All runs share: ISS mass (400,000 kg, non-diagonal inertia), epoch Nov 20 2007
 //! 00:00 UTC, Earth GGM05C + Sun + Moon (spherical, no gradient), RK4 at 32 Hz,
 //! 10,800 s duration.
+//!
+//! Sun/Moon 3rd-body gravity: JEOD includes Sun and Moon as spherical point-mass
+//! sources. Our gravity pipeline does not yet implement differential 3rd-body
+//! acceleration (Phase 5 task 5.40), so Sun/Moon are omitted. This causes ~10 m
+//! position drift over 3h from the missing ~1e-6 m/s² perturbation, which
+//! cascades through gravity gradient torque feedback into attitude divergence.
 
 mod sim_test_helpers;
 use sim_test_helpers::*;
 
-use std::path::Path;
-
 use glam::{DMat3, DVec3};
 use jeod_sim::{
-    DynamicsConfig, Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel,
-    GravitySource, GravitySourceEntry, MassProperties, RotationalState, SimBody, Simulation,
-    SimulationTime, TranslationalState,
+    DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource,
+    GravitySourceEntry, MassProperties, RotationalState, SimBody, Simulation, SimulationTime,
+    TranslationalState,
 };
 
 // ── ISS mass properties from JEOD Modified_data/mass/iss.py ──
@@ -39,15 +43,13 @@ fn iss_mass_props() -> MassProperties {
     MassProperties::with_inertia(400_000.0, inertia, DVec3::new(-3.0, -1.5, 4.0))
 }
 
-// ── Epoch and physical constants ──
+// ── Epoch constants ──
+// Nov 20, 2007 00:00:00 UTC
 // JEOD overrides: leap_sec_override_val = 32, tai_to_ut1_override_val = -32.469
 
-const EPOCH_UTC_TJT: f64 = 14424.0; // Nov 20, 2007 00:00:00 UTC
+const EPOCH_UTC_TJT: f64 = 14424.0;
 const TAI_UTC_S: f64 = 32.0;
 const TAI_TO_UT1_S: f64 = -32.469;
-// Sun and Moon GM values (for Phase 5 when 3rd-body gravity is ported):
-// const MU_SUN: f64 = 1.327_124_40e20;
-// const MU_MOON: f64 = 4.902_801_076e12;
 
 /// Load GGM05C spherical harmonics data from JEOD source.
 fn load_ggm05c() -> GravitySource {
@@ -58,23 +60,6 @@ fn load_ggm05c() -> GravitySource {
         mu: sh_data.mu,
         model: GravityModel::SphericalHarmonics(Box::new(sh_data)),
     }
-}
-
-fn load_ephemeris() -> Ephemeris {
-    let bsp_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data/de421.bsp");
-    assert!(
-        bsp_path.exists(),
-        "DE421 ephemeris not found at {}",
-        bsp_path.display()
-    );
-    Ephemeris::from_bsp(&bsp_path).expect("load DE421")
-}
-
-fn body_position_at(ephemeris: &Ephemeris, body: EphemerisBody, time: &SimulationTime) -> DVec3 {
-    let (pos, _) = ephemeris
-        .get_earth_centered_state(body, time.tdb_julian_date())
-        .expect("ephemeris query failed");
-    pos
 }
 
 // ── Shared Simulation builder ──
@@ -91,17 +76,7 @@ struct RunConfig {
     gradient_order: usize,
 }
 
-/// Indices of Sun and Moon gravity sources in the Simulation.
-struct SourceIndices {
-    sun: usize,
-    moon: usize,
-}
-
-fn build_simulation(
-    config: &RunConfig,
-    init: &TorqueSimpleRecord,
-    ephemeris: &Ephemeris,
-) -> (Simulation, SourceIndices) {
+fn build_simulation(config: &RunConfig, init: &TorqueSimpleRecord) -> Simulation {
     let epoch_tai_tjt = EPOCH_UTC_TJT + TAI_UTC_S / 86400.0;
     let mut time = SimulationTime::new(epoch_tai_tjt, jeod_sim::default_leap_second_table());
     time.set_ut1_tai_offset(TAI_TO_UT1_S);
@@ -127,32 +102,6 @@ fn build_simulation(
         },
     });
 
-    // Sun and Moon: present in JEOD config as spherical 3rd-body sources
-    // (no gradient). Our gravity pipeline does not yet implement differential
-    // 3rd-body acceleration (Phase 5 task 5.40), so we include Sun/Moon with
-    // mu=0 to track their positions (for future use) without perturbing the
-    // trajectory. This means our trajectory will drift ~10 m over 3h from
-    // missing 3rd-body perturbations (~1e-6 m/s² combined Sun+Moon).
-    let initial_sun = body_position_at(ephemeris, EphemerisBody::Sun, &sim.time);
-    let sun = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: 0.0, // No 3rd-body gravity yet (Phase 5)
-            model: GravityModel::PointMass,
-        },
-        position: initial_sun,
-        t_inertial_pfix: None,
-    });
-
-    let initial_moon = body_position_at(ephemeris, EphemerisBody::Moon, &sim.time);
-    let moon = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: 0.0, // No 3rd-body gravity yet (Phase 5)
-            model: GravityModel::PointMass,
-        },
-        position: initial_moon,
-        t_inertial_pfix: None,
-    });
-
     // Earth gravity control
     let mut earth_ctrl = if config.earth_nonspherical {
         GravityControl::new_nonspherical(earth, 20, 20, config.earth_gradient)
@@ -163,6 +112,11 @@ fn build_simulation(
         earth_ctrl.gradient_degree = config.gradient_degree;
         earth_ctrl.gradient_order = config.gradient_order;
     }
+
+    // Sun/Moon omitted: 3rd-body differential acceleration is Phase 5 scope.
+    // JEOD includes them as spherical point-mass sources (gradient=false).
+    // When Phase 5 adds differential acceleration, add Sun/Moon sources here
+    // with real mu values and ephemeris-driven positions.
 
     sim.add_body(SimBody {
         trans: TranslationalState {
@@ -180,18 +134,14 @@ fn build_simulation(
             three_dof: false,
         },
         gravity_controls: GravityControls {
-            controls: vec![
-                earth_ctrl,
-                GravityControl::new_spherical(sun, false),
-                GravityControl::new_spherical(moon, false),
-            ],
+            controls: vec![earth_ctrl],
         },
         compute_gravity_torque: config.earth_gradient,
         ..Default::default()
     });
 
     sim.validate().unwrap();
-    (sim, SourceIndices { sun, moon })
+    sim
 }
 
 // ── Tier 3 full-propagation test ──
@@ -210,8 +160,7 @@ fn run_propagation_test(config: &RunConfig) {
     assert!(records.len() > 100);
     let init = &records[0];
 
-    let ephemeris = load_ephemeris();
-    let (mut sim, src) = build_simulation(config, init, &ephemeris);
+    let mut sim = build_simulation(config, init);
 
     println!(
         "=== Tier 3 (Simulation): {} ({} points) ===",
@@ -227,12 +176,6 @@ fn run_propagation_test(config: &RunConfig) {
 
     for record in &records[1..] {
         sim.step_until(record.time);
-
-        // Update Sun and Moon positions from ephemeris at the current sim time
-        // (after stepping) so forces see time-consistent source states.
-        sim.sources[src.sun].position = body_position_at(&ephemeris, EphemerisBody::Sun, &sim.time);
-        sim.sources[src.moon].position =
-            body_position_at(&ephemeris, EphemerisBody::Moon, &sim.time);
 
         let body = sim.body(0);
 
