@@ -256,6 +256,56 @@ pub fn load_srp_trajectory(path: &Path) -> Vec<SrpRecord> {
     records
 }
 
+// ── SIM_torque_compare_simple CSV loader (26 columns) ──
+
+#[derive(Debug)]
+pub struct TorqueSimpleRecord {
+    pub time: f64,
+    pub position: DVec3,
+    pub velocity: DVec3,
+    pub ang_vel: DVec3,
+    pub t_parent_this: DMat3,
+    pub quaternion: JeodQuat,
+    pub gravity_torque: DVec3,
+}
+
+pub fn load_torque_simple_csv(path: &Path) -> Vec<TorqueSimpleRecord> {
+    let content = read_csv(path, "SIM_torque_compare_simple");
+    let mut records = Vec::new();
+    for (i, line) in content.lines().enumerate() {
+        if i == 0 || line.trim().is_empty() {
+            continue;
+        }
+        let f: Vec<&str> = line.split(',').collect();
+        assert!(
+            f.len() >= 26,
+            "line {}: expected >=26 columns, got {}",
+            i + 1,
+            f.len()
+        );
+        let p = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
+        // Cols 10-18: T_parent_this row-major T[row][col]
+        // glam DMat3::from_cols is column-major: col0=(T00,T10,T20), etc.
+        let t_parent_this = DMat3::from_cols(
+            DVec3::new(p(10), p(13), p(16)),
+            DVec3::new(p(11), p(14), p(17)),
+            DVec3::new(p(12), p(15), p(18)),
+        );
+        // Cols 19-21: Q.vector[0..2], Col 22: Q.scalar (JEOD scalar-first)
+        let quaternion = JeodQuat::new(p(22), p(19), p(20), p(21));
+        records.push(TorqueSimpleRecord {
+            time: p(0),
+            position: DVec3::new(p(1), p(2), p(3)),
+            velocity: DVec3::new(p(4), p(5), p(6)),
+            ang_vel: DVec3::new(p(7), p(8), p(9)),
+            t_parent_this,
+            quaternion,
+            gravity_torque: DVec3::new(p(23), p(24), p(25)),
+        });
+    }
+    records
+}
+
 /// Compute angular difference accounting for wraparound at 2π.
 pub fn angle_diff(a: f64, b: f64) -> f64 {
     let tau = 2.0 * std::f64::consts::PI;
