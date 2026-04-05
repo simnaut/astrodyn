@@ -44,10 +44,11 @@ jobs:
             models/dynamics/derived_state/verif/unit_tests \
             models/utils/orbital_elements/verif/SIM_orb_elem/Modified_data
           git checkout
+      - uses: taiki-e/install-action@nextest
       - name: Run tests (skip Tier 3 trajectory validation)
         env:
           JEOD_HOME: ${{ github.workspace }}/../jeod
-        run: cargo test --workspace -- --skip tier3_
+        run: cargo nextest run --workspace -E 'not test(tier3_)'
 
   test-tier3:
     name: Test (Tier 3 trajectory)
@@ -76,10 +77,11 @@ jobs:
             models/dynamics/derived_state/verif/unit_tests \
             models/utils/orbital_elements/verif/SIM_orb_elem/Modified_data
           git checkout
+      - uses: taiki-e/install-action@nextest
       - name: Run Tier 3 trajectory tests
         env:
           JEOD_HOME: ${{ github.workspace }}/../jeod
-        run: cargo test --workspace -- tier3_
+        run: cargo nextest run --workspace -E 'test(tier3_)'
       - name: Generate cross-validation report
         run: cargo run -p jeod_test_data --bin tier3_report
       - name: Upload cross-validation report

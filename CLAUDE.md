@@ -167,6 +167,15 @@ cargo test -p jeod_gravity -- verif             # gravity verification tests onl
 cargo test -p jeod_dynamics --test tier3_jeod_trajectory  # single Tier 3 test
 ```
 
+CI uses [`cargo-nextest`](https://nexte.st/) for parallel test execution. To run
+tests the same way locally (recommended for Tier 3, which has ~85 tests across
+47 binaries):
+
+```bash
+cargo nextest run --workspace -E 'not test(tier3_)'  # unit + tier 2
+cargo nextest run --workspace -E 'test(tier3_)'      # tier 3 only
+```
+
 Set `JEOD_HOME` (or `JEOD_PATH`) to the JEOD source checkout.
 `JEOD_HOME` and `TRICK_HOME` follow the standard JEOD/Trick environment
 variable conventions.
