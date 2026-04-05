@@ -17,11 +17,10 @@ mod sim_test_helpers;
 use sim_test_helpers::*;
 
 use glam::DVec3;
-use jeod_ephemeris::{Ephemeris, EphemerisBody};
 use jeod_sim::{
-    DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource,
-    GravitySourceEntry, JeodQuat, MassProperties, RotationalState, SimBody, Simulation,
-    SimulationTime, TranslationalState,
+    DynamicsConfig, Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel,
+    GravitySource, GravitySourceEntry, JeodQuat, MassProperties, RotationalState, SimBody,
+    Simulation, SimulationTime, TranslationalState,
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::Path;
