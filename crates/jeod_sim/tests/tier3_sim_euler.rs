@@ -112,6 +112,7 @@ fn tier3_simulation_euler() {
             time: record.time,
             acceleration: Some(body.frame_derivs.trans_accel),
             quaternion: Some(body.rot.as_ref().unwrap().quaternion.to_glam()),
+            ang_vel: Some(body.rot.as_ref().unwrap().ang_vel_body),
             ang_accel: Some(body.frame_derivs.rot_accel),
             ..Default::default()
         });
@@ -119,6 +120,7 @@ fn tier3_simulation_euler() {
             time: record.time,
             acceleration: record.trans_accel,
             quaternion: Some(record.quaternion.to_glam()),
+            ang_vel: Some(record.ang_vel),
             ang_accel: record.rot_accel,
             ..Default::default()
         });

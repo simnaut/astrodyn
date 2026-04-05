@@ -191,7 +191,6 @@ fn tier3_simulation_run9a_torque() {
             quaternion: Some(r.quaternion.to_glam()),
             ang_vel: Some(r.ang_vel),
             ang_accel: r.rot_accel,
-            ..Default::default()
         })
         .collect();
 
@@ -348,7 +347,6 @@ fn tier3_simulation_run9c_force_torque() {
             quaternion: Some(r.quaternion.to_glam()),
             ang_vel: Some(r.ang_vel),
             ang_accel: r.rot_accel,
-            ..Default::default()
         })
         .collect();
 
@@ -505,7 +503,6 @@ fn tier3_simulation_run9d_force_torque_rate() {
             quaternion: Some(r.quaternion.to_glam()),
             ang_vel: Some(r.ang_vel),
             ang_accel: r.rot_accel,
-            ..Default::default()
         })
         .collect();
 

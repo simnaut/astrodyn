@@ -131,8 +131,8 @@ fn run_atmosphere_test(csv_filename: &str, label: &str, test_name: &str) {
             velocity: Some(body.trans.velocity),
             acceleration: Some(body.frame_derivs.trans_accel),
             quaternion: Some(rot.quaternion.to_glam()),
+            ang_vel: Some(rot.ang_vel_body),
             ang_accel: Some(body.frame_derivs.rot_accel),
-            ..Default::default()
         });
     }
 
@@ -145,8 +145,8 @@ fn run_atmosphere_test(csv_filename: &str, label: &str, test_name: &str) {
             velocity: Some(r.velocity),
             acceleration: r.trans_accel,
             quaternion: Some(r.quaternion.to_glam()),
+            ang_vel: Some(r.ang_vel),
             ang_accel: r.rot_accel,
-            ..Default::default()
         })
         .collect();
 

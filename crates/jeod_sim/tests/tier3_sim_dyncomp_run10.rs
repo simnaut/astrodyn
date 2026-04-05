@@ -102,7 +102,6 @@ fn tier3_simulation_run10a_gravity_torque() {
             quaternion: Some(rot.quaternion.to_glam()),
             ang_vel: Some(rot.ang_vel_body),
             ang_accel: Some(body.frame_derivs.rot_accel),
-            ..Default::default()
         });
     }
 
@@ -117,7 +116,6 @@ fn tier3_simulation_run10a_gravity_torque() {
             quaternion: Some(r.quaternion.to_glam()),
             ang_vel: Some(r.ang_vel),
             ang_accel: r.rot_accel,
-            ..Default::default()
         })
         .collect();
 
@@ -351,7 +349,6 @@ fn tier3_simulation_run10c_gravity_torque_elliptical() {
             quaternion: Some(rot.quaternion.to_glam()),
             ang_vel: Some(rot.ang_vel_body),
             ang_accel: Some(body.frame_derivs.rot_accel),
-            ..Default::default()
         });
     }
 
@@ -366,7 +363,6 @@ fn tier3_simulation_run10c_gravity_torque_elliptical() {
             quaternion: Some(r.quaternion.to_glam()),
             ang_vel: Some(r.ang_vel),
             ang_accel: r.rot_accel,
-            ..Default::default()
         })
         .collect();
 
@@ -479,7 +475,6 @@ fn tier3_simulation_run10d_gravity_torque_elliptical_rate() {
             quaternion: Some(rot.quaternion.to_glam()),
             ang_vel: Some(rot.ang_vel_body),
             ang_accel: Some(body.frame_derivs.rot_accel),
-            ..Default::default()
         });
     }
 
@@ -494,7 +489,6 @@ fn tier3_simulation_run10d_gravity_torque_elliptical_rate() {
             quaternion: Some(r.quaternion.to_glam()),
             ang_vel: Some(r.ang_vel),
             ang_accel: r.rot_accel,
-            ..Default::default()
         })
         .collect();
 

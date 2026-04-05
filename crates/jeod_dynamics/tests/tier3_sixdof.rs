@@ -33,6 +33,8 @@ struct JeodSixDofRecord {
     velocity: DVec3,
     quaternion: JeodQuat,
     ang_vel: DVec3,
+    trans_accel: Option<DVec3>,
+    rot_accel: Option<DVec3>,
 }
 
 /// Parse the JEOD log_state_ASCII CSV for composite_body 6-DOF state.
@@ -109,12 +111,31 @@ fn load_sixdof_trajectory(path: &Path) -> Vec<JeodSixDofRecord> {
         );
         let quaternion = JeodQuat::new(q_scalar, q_vec.x, q_vec.y, q_vec.z);
 
+        // Parse optional acceleration columns (same layout as sim_test_helpers)
+        let (trans_accel, rot_accel) = if fields.len() >= 79 {
+            let ta = DVec3::new(
+                parse(fields[68], 68),
+                parse(fields[72], 72),
+                parse(fields[76], 76),
+            );
+            let ra = DVec3::new(
+                parse(fields[69], 69),
+                parse(fields[73], 73),
+                parse(fields[77], 77),
+            );
+            (Some(ta), Some(ra))
+        } else {
+            (None, None)
+        };
+
         records.push(JeodSixDofRecord {
             time: parse(fields[0], 0),
             position,
             velocity,
             quaternion,
             ang_vel,
+            trans_accel,
+            rot_accel,
         });
     }
     records
@@ -178,9 +199,10 @@ fn tier3_sixdof_attitude_from_run2() {
             time: r.time,
             position: Some(r.position),
             velocity: Some(r.velocity),
+            acceleration: r.trans_accel,
             quaternion: Some(r.quaternion.to_glam()),
             ang_vel: Some(r.ang_vel),
-            ..Default::default()
+            ang_accel: r.rot_accel,
         })
         .collect();
 
