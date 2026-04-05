@@ -8,13 +8,22 @@ use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry, SimBody,
     Simulation, SimulationTime, TranslationalState,
 };
+use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
 /// JEOD SIM_dyncomp epoch constants (from the original SH test).
 const SH_TAI_UTC_S: f64 = 32.0;
 const SH_TAI_TO_UT1_S: f64 = -32.469;
 const SH_EPOCH_UTC_TJT: f64 = 14424.0;
 
-fn run_sh_simulation_test(csv_name: &str, degree: usize, order: usize, label: &str) {
+fn run_sh_simulation_test(
+    csv_name: &str,
+    degree: usize,
+    order: usize,
+    label: &str,
+    test_name: &str,
+    pos_tol: [f64; 3],
+    vel_tol: [f64; 3],
+) {
     let jeod_root = jeod_test_data::jeod_path();
     assert!(
         jeod_root.exists(),
@@ -33,7 +42,7 @@ fn run_sh_simulation_test(csv_name: &str, degree: usize, order: usize, label: &s
     let ggm02c_path = jeod_root.join("models/environment/gravity/data/src/earth_GGM02C.cc");
     let sh_data = jeod_sim::coefficients::load_from_jeod_cc(&ggm02c_path).expect("load GGM02C");
 
-    let trajectory = load_trans_trajectory(&csv_path);
+    let trajectory = load_dyncomp_csv(&csv_path);
     assert!(trajectory.len() > 100);
     let init = &trajectory[0];
 
@@ -63,8 +72,8 @@ fn run_sh_simulation_test(csv_name: &str, degree: usize, order: usize, label: &s
 
     sim.add_body(SimBody {
         trans: TranslationalState {
-            position: init.position,
-            velocity: init.velocity,
+            position: init.composite_body.position,
+            velocity: init.composite_body.velocity,
         },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_nonspherical(
@@ -78,46 +87,83 @@ fn run_sh_simulation_test(csv_name: &str, degree: usize, order: usize, label: &s
 
     println!("Tier 3 (Simulation): {label}, {} points", trajectory.len());
 
-    let mut max_pos_error = 0.0_f64;
-    let mut max_vel_error = 0.0_f64;
-
+    // Log our propagated states
+    let mut our_states = Vec::with_capacity(trajectory.len() - 1);
     for record in &trajectory[1..] {
         sim.step_until(record.time);
-
         let body = sim.body(0);
-        let pos_error = (body.trans.position - record.position).length();
-        let vel_error = (body.trans.velocity - record.velocity).length();
-        max_pos_error = max_pos_error.max(pos_error);
-        max_vel_error = max_vel_error.max(vel_error);
 
+        let pos_error = (body.trans.position - record.composite_body.position).length();
+        let vel_error = (body.trans.velocity - record.composite_body.velocity).length();
         if (record.time % 3600.0).abs() < 30.1 {
             println!(
                 "  t={:6.0}s: pos_err={:10.4} m  vel_err={:.6} m/s",
                 record.time, pos_error, vel_error
             );
         }
+
+        our_states.push(StateLog {
+            time: record.time,
+            position: Some(body.trans.position),
+            velocity: Some(body.trans.velocity),
+            acceleration: Some(body.frame_derivs.trans_accel),
+            ang_accel: Some(body.frame_derivs.rot_accel),
+            ..Default::default()
+        });
     }
 
-    println!("  Max position error: {:.4} m", max_pos_error);
-    println!("  Max velocity error: {:.6} m/s", max_vel_error);
+    // Reference states from JEOD CSV
+    let ref_states: Vec<StateLog> = trajectory[1..]
+        .iter()
+        .map(|r| StateLog {
+            time: r.time,
+            position: Some(r.composite_body.position),
+            velocity: Some(r.composite_body.velocity),
+            acceleration: r.derivs.as_ref().map(|d| d.trans_accel),
+            ang_accel: r.derivs.as_ref().map(|d| d.rot_accel),
+            ..Default::default()
+        })
+        .collect();
 
-    // Tolerances match existing tier3_spherical_harmonics test
-    assert!(
-        max_pos_error < 0.5,
-        "{label}: position error {max_pos_error:.2} m exceeds 0.5 m"
+    // Post-process: compute errors
+    let report = CrossvalReport::compute(test_name, &our_states, &ref_states);
+    report.write();
+
+    println!(
+        "  Max position error: {:.6e} m",
+        report.max_position_component()
     );
-    assert!(
-        max_vel_error < 0.001,
-        "{label}: velocity error {max_vel_error:.6} m/s exceeds 0.001 m/s"
+    println!(
+        "  Max velocity error: {:.6e} m/s",
+        report.max_velocity_component()
     );
+
+    report.assert_position(pos_tol);
+    report.assert_velocity(vel_tol);
 }
 
 #[test]
 fn tier3_simulation_run3a_sh4x4() {
-    run_sh_simulation_test("dyncomp_run3a_state.csv", 4, 4, "RUN_3A (4x4 SH + RNP)");
+    run_sh_simulation_test(
+        "dyncomp_run3a_state.csv",
+        4,
+        4,
+        "RUN_3A (4x4 SH + RNP)",
+        "tier3_simulation_run3a_sh4x4",
+        [5.3e-2, 1.344e-1, 1.026e-1],
+        [6.151e-5, 1.246e-4, 1.24e-4],
+    );
 }
 
 #[test]
 fn tier3_simulation_run3b_sh8x8() {
-    run_sh_simulation_test("dyncomp_run3b_state.csv", 8, 8, "RUN_3B (8x8 SH + RNP)");
+    run_sh_simulation_test(
+        "dyncomp_run3b_state.csv",
+        8,
+        8,
+        "RUN_3B (8x8 SH + RNP)",
+        "tier3_simulation_run3b_sh8x8",
+        [1.325e-1, 2.3e-1, 1.646e-1],
+        [1.478e-4, 2.329e-4, 1.892e-4],
+    );
 }

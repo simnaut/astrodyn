@@ -11,6 +11,7 @@ use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry,
     MassProperties, SimBody, Simulation, SimulationTime, TranslationalState,
 };
+use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::Path;
 
 const SRP_MU_EARTH: f64 = 3.986_004_415e14;
@@ -177,7 +178,8 @@ fn tier3_simulation_srp_flat_plate() {
         trajectory.last().unwrap().time / 86400.0
     );
 
-    let mut max_pos_error = 0.0_f64;
+    let mut our_states = Vec::with_capacity(trajectory.len() - 1);
+    let mut ref_states = Vec::with_capacity(trajectory.len() - 1);
 
     for record in &trajectory[1..] {
         // Update Sun position from ephemeris before stepping
@@ -186,10 +188,22 @@ fn tier3_simulation_srp_flat_plate() {
         sim.step_until(record.time);
 
         let body = sim.body(0);
-        let pos_error = (body.trans.position - record.position).length();
-        max_pos_error = max_pos_error.max(pos_error);
+
+        our_states.push(StateLog {
+            time: record.time,
+            position: Some(body.trans.position),
+            velocity: Some(body.trans.velocity),
+            ..Default::default()
+        });
+        ref_states.push(StateLog {
+            time: record.time,
+            position: Some(record.position),
+            velocity: Some(record.velocity),
+            ..Default::default()
+        });
 
         if (record.time % 86400.0).abs() < 500.1 {
+            let pos_error = (body.trans.position - record.position).length();
             println!(
                 "  t={:8.0}s ({:5.1}d): pos_err={:10.2} m",
                 record.time,
@@ -199,11 +213,12 @@ fn tier3_simulation_srp_flat_plate() {
         }
     }
 
-    println!("  Max position error: {:.2} m", max_pos_error);
+    let report =
+        CrossvalReport::compute("tier3_simulation_srp_flat_plate", &our_states, &ref_states);
+    report.write();
 
-    // Tolerance matches existing tier3_srp_trajectory test
-    assert!(
-        max_pos_error < 50.0,
-        "Position error {max_pos_error:.2} m exceeds 50 m over ~23 days"
-    );
+    let max_pos_error = report.max_position_component();
+    println!("  Max position error: {:.6e} m", max_pos_error);
+
+    report.assert_position([8.564, 1.611e1, 7.002]);
 }

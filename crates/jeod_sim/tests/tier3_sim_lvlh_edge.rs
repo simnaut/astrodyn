@@ -14,8 +14,16 @@ use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry, SimBody,
     Simulation, SimulationTime, TranslationalState,
 };
+use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
-fn run_lvlh_test(csv_filename: &str, label: &str) {
+fn run_lvlh_test(
+    csv_filename: &str,
+    label: &str,
+    test_name: &str,
+    pos_tol: [f64; 3],
+    t_tol: f64,
+    omega_tol: f64,
+) {
     let csv_path = test_data_path(csv_filename);
     assert!(
         csv_path.exists(),
@@ -60,16 +68,15 @@ fn run_lvlh_test(csv_filename: &str, label: &str) {
         records.len()
     );
 
+    let mut our_states = Vec::with_capacity(records.len() - 1);
+    let mut ref_states = Vec::with_capacity(records.len() - 1);
     let mut max_mat_err = 0.0_f64;
     let mut max_angvel_err = 0.0_f64;
-    let mut max_pos_err = 0.0_f64;
 
     for record in &records[1..] {
         sim.step_until(record.time);
 
         let body = sim.body(0);
-        let pos_err = (body.trans.position - record.position).length();
-        max_pos_err = max_pos_err.max(pos_err);
 
         let lvlh = body.lvlh_frame.as_ref().unwrap_or_else(|| {
             panic!("Simulation did not compute LVLH frame at t={}", record.time)
@@ -81,7 +88,21 @@ fn run_lvlh_test(csv_filename: &str, label: &str) {
         max_mat_err = max_mat_err.max(mat_err);
         max_angvel_err = max_angvel_err.max(angvel_err);
 
+        our_states.push(StateLog {
+            time: record.time,
+            position: Some(body.trans.position),
+            velocity: Some(body.trans.velocity),
+            ..Default::default()
+        });
+        ref_states.push(StateLog {
+            time: record.time,
+            position: Some(record.position),
+            velocity: Some(record.velocity),
+            ..Default::default()
+        });
+
         if (record.time % 7200.0).abs() < 6.1 {
+            let pos_err = (body.trans.position - record.position).length();
             println!(
                 "  t={:6.0}s: pos_err={:.4} m  mat_err={:.3e}  angvel_err={:.3e}",
                 record.time, pos_err, mat_err, angvel_err
@@ -89,30 +110,46 @@ fn run_lvlh_test(csv_filename: &str, label: &str) {
         }
     }
 
-    println!("  Max position error:  {:.4} m", max_pos_err);
+    let max_pos_err = our_states
+        .iter()
+        .zip(ref_states.iter())
+        .map(|(a, b)| (a.position.unwrap() - b.position.unwrap()).length())
+        .fold(0.0_f64, f64::max);
+
+    println!("  Max position error:  {:.6e} m", max_pos_err);
     println!("  Max T_parent_this:   {:.6e}", max_mat_err);
     println!("  Max ang_vel error:   {:.6e} rad/s", max_angvel_err);
 
-    assert!(
-        max_pos_err < 0.5,
-        "{label}: position error {max_pos_err:.2} m exceeds 0.5 m"
-    );
-    assert!(
-        max_mat_err < 1e-6,
-        "{label}: LVLH matrix error {max_mat_err:.3e} exceeds 1e-6"
-    );
-    assert!(
-        max_angvel_err < 1e-10,
-        "{label}: LVLH ang_vel error {max_angvel_err:.3e} rad/s exceeds 1e-10"
-    );
+    let mut report = CrossvalReport::compute(test_name, &our_states, &ref_states);
+    report.add_extra("t_parent_this", max_mat_err, "");
+    assert!(max_mat_err < t_tol, "t_parent_this");
+    report.add_extra("ang_vel", max_angvel_err, "rad/s");
+    assert!(max_angvel_err < omega_tol, "ang_vel");
+    report.write();
+
+    report.assert_position(pos_tol);
 }
 
 #[test]
 fn tier3_simulation_lvlh_ecc() {
-    run_lvlh_test("lvlh_ecc_lvlh.csv", "RUN_ecc (eccentric)");
+    run_lvlh_test(
+        "lvlh_ecc_lvlh.csv",
+        "RUN_ecc (eccentric)",
+        "tier3_simulation_lvlh_ecc",
+        [6.556e-5, 5.15e-5, 5.478e-8],
+        9.71e-12,
+        4.81e-15,
+    );
 }
 
 #[test]
 fn tier3_simulation_lvlh_equ() {
-    run_lvlh_test("lvlh_equ_lvlh.csv", "RUN_equ (equatorial)");
+    run_lvlh_test(
+        "lvlh_equ_lvlh.csv",
+        "RUN_equ (equatorial)",
+        "tier3_simulation_lvlh_equ",
+        [1.486e-4, 1.466e-4, 1.261e-7],
+        2.192e-11,
+        4.704e-16,
+    );
 }

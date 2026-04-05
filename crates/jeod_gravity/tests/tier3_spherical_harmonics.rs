@@ -17,6 +17,8 @@ use glam::{DMat3, DVec3};
 use jeod_dynamics::{rk4_translational_step, TranslationalState};
 use jeod_frames::rotation_j2000;
 use jeod_gravity::coefficients;
+use jeod_test_data::crossval::{CrossvalReport, StateLog};
+use jeod_test_data::dyncomp_csv::load_dyncomp_csv;
 use jeod_test_data::jeod_path;
 use jeod_time::epoch::{J2000_NOON_TJT, SECONDS_PER_DAY};
 use jeod_time::time_converter_ut1_gmst::ut1_to_gmst_days;
@@ -60,44 +62,13 @@ fn rotation_at_sim_time(sim_time_s: f64) -> DMat3 {
     rotation_j2000::compute_t_parent_this(gmst_seconds, tt_centuries)
 }
 
-#[derive(Debug)]
-struct JeodStateRecord {
-    time: f64,
-    position: DVec3,
-    velocity: DVec3,
-}
-
-fn load_jeod_trajectory(path: &Path) -> Vec<JeodStateRecord> {
-    let content = std::fs::read_to_string(path)
-        .unwrap_or_else(|e| panic!("Failed to read {}: {e}", path.display()));
-    let mut records = Vec::new();
-    for (i, line) in content.lines().enumerate() {
-        if i == 0 {
-            continue;
-        } // skip header
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let f: Vec<&str> = line.split(',').collect();
-        assert!(
-            f.len() >= 17,
-            "{}:{}: expected >= 17 CSV columns, got {} — file may be truncated",
-            path.display(),
-            i + 1,
-            f.len()
-        );
-        let p = |s: &str| -> f64 { s.trim().parse().unwrap() };
-        records.push(JeodStateRecord {
-            time: p(f[0]),
-            position: DVec3::new(p(f[1]), p(f[8]), p(f[15])),
-            velocity: DVec3::new(p(f[2]), p(f[9]), p(f[16])),
-        });
-    }
-    records
-}
-
-fn run_sh_trajectory_test(csv_name: &str, degree: usize, order: usize, label: &str) {
+fn run_sh_trajectory_test(
+    csv_name: &str,
+    degree: usize,
+    order: usize,
+    label: &str,
+    test_name: &str,
+) {
     let root = jeod_path();
     assert!(root.exists(), "JEOD source not found");
 
@@ -114,7 +85,7 @@ fn run_sh_trajectory_test(csv_name: &str, degree: usize, order: usize, label: &s
     let ggm02c_path = root.join("models/environment/gravity/data/src/earth_GGM02C.cc");
     let sh_data = coefficients::load_from_jeod_cc(&ggm02c_path).expect("load GGM02C coefficients");
 
-    let trajectory = load_jeod_trajectory(&csv_path);
+    let trajectory = load_dyncomp_csv(&csv_path);
     assert!(trajectory.len() > 100);
 
     // Gravity acceleration using our own RNP with truncated degree/order.
@@ -135,8 +106,8 @@ fn run_sh_trajectory_test(csv_name: &str, degree: usize, order: usize, label: &s
 
     let initial = &trajectory[0];
     let mut state = TranslationalState {
-        position: initial.position,
-        velocity: initial.velocity,
+        position: initial.composite_body.position,
+        velocity: initial.composite_body.velocity,
     };
 
     eprintln!("Tier 3: JEOD SIM_dyncomp {} cross-validation", label);
@@ -151,9 +122,20 @@ fn run_sh_trajectory_test(csv_name: &str, degree: usize, order: usize, label: &s
     );
 
     let dt = 0.03125;
-    let mut max_pos_error = 0.0_f64;
-    let mut max_vel_error = 0.0_f64;
     let mut current_time = 0.0_f64;
+
+    let mut our_states = Vec::with_capacity(trajectory.len() - 1);
+    let ref_states: Vec<StateLog> = trajectory[1..]
+        .iter()
+        .map(|r| StateLog {
+            time: r.time,
+            position: Some(r.composite_body.position),
+            velocity: Some(r.composite_body.velocity),
+            acceleration: r.derivs.as_ref().map(|d| d.trans_accel),
+            ang_accel: r.derivs.as_ref().map(|d| d.rot_accel),
+            ..Default::default()
+        })
+        .collect();
 
     for jeod_record in &trajectory[1..] {
         while current_time + dt <= jeod_record.time + 0.001 {
@@ -168,10 +150,15 @@ fn run_sh_trajectory_test(csv_name: &str, degree: usize, order: usize, label: &s
             current_time += remainder;
         }
 
-        let pos_error = (state.position - jeod_record.position).length();
-        let vel_error = (state.velocity - jeod_record.velocity).length();
-        max_pos_error = max_pos_error.max(pos_error);
-        max_vel_error = max_vel_error.max(vel_error);
+        our_states.push(StateLog {
+            time: jeod_record.time,
+            position: Some(state.position),
+            velocity: Some(state.velocity),
+            ..Default::default()
+        });
+
+        let pos_error = (state.position - jeod_record.composite_body.position).length();
+        let vel_error = (state.velocity - jeod_record.composite_body.velocity).length();
 
         if (jeod_record.time % 3600.0).abs() < 30.1 {
             eprintln!(
@@ -184,34 +171,38 @@ fn run_sh_trajectory_test(csv_name: &str, degree: usize, order: usize, label: &s
         }
     }
 
-    eprintln!();
-    eprintln!("  Max position error: {:.2} m", max_pos_error);
-    eprintln!("  Max velocity error: {:.6} m/s", max_vel_error);
+    let report = CrossvalReport::compute(test_name, &our_states, &ref_states);
+    report.write();
 
-    // dt=0.03125s matches JEOD's SIM_dyncomp integration rate (32 Hz).
-    // Residual comes from floating-point differences in RNP and gravity
-    // between our code and JEOD (aero drag is OFF so atmosphere has no effect).
-    // Observed: RUN_3A ≈ 0.12 m, RUN_3B ≈ 0.20 m.
-    assert!(
-        max_pos_error < 0.5,
-        "{}: Position error {:.2}m exceeds 0.5m over 8 hours",
-        label,
-        max_pos_error,
-    );
-    assert!(
-        max_vel_error < 0.001,
-        "{}: Velocity error {:.6}m/s exceeds 0.001 m/s over 8 hours",
-        label,
-        max_vel_error,
-    );
+    let max_pos_error = report.max_position_component();
+    let max_vel_error = report.max_velocity_component();
+
+    eprintln!();
+    eprintln!("  Max position error: {:.6e} m", max_pos_error);
+    eprintln!("  Max velocity error: {:.6e} m/s", max_vel_error);
+
+    report.assert_position([1.164e-1, 2.107e-1, 1.469e-1]);
+    report.assert_velocity([1.324e-4, 2.077e-4, 1.716e-4]);
 }
 
 #[test]
 fn tier3_dyncomp_run3a_4x4_gravity() {
-    run_sh_trajectory_test("dyncomp_run3a_state.csv", 4, 4, "RUN_3A (4x4)");
+    run_sh_trajectory_test(
+        "dyncomp_run3a_state.csv",
+        4,
+        4,
+        "RUN_3A (4x4)",
+        "tier3_dyncomp_run3a_4x4_gravity",
+    );
 }
 
 #[test]
 fn tier3_dyncomp_run3b_8x8_gravity() {
-    run_sh_trajectory_test("dyncomp_run3b_state.csv", 8, 8, "RUN_3B (8x8)");
+    run_sh_trajectory_test(
+        "dyncomp_run3b_state.csv",
+        8,
+        8,
+        "RUN_3B (8x8)",
+        "tier3_dyncomp_run3b_8x8_gravity",
+    );
 }

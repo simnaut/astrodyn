@@ -24,6 +24,7 @@ use jeod_interactions::{
     compute_flat_plate_srp_thermal, compute_shadow_fraction, solar_flux_at_distance, FlatPlate,
     FlatPlateParams, FlatPlateThermal, SOLAR_RADIUS, STEFAN_BOLTZMANN,
 };
+use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::Path;
 
 const MU_EARTH: f64 = 3.986_004_415e14;
@@ -207,6 +208,42 @@ fn sun_position_at(sim_time: f64, ephemeris: &Ephemeris) -> DVec3 {
     sun_pos
 }
 
+/// Precomputed Sun ephemeris table for fast interpolation.
+///
+/// Evaluating DE421 via Anise for every RK4 step (2M calls) dominates runtime.
+/// The Sun moves ~1 km/s relative to Earth, so over a 100s interval the position
+/// changes by ~100 km against ~150,000,000 km distance (~7e-13 relative). Linear
+/// interpolation between samples spaced `interval` seconds apart is accurate to
+/// well below any other error source in the test.
+struct SunEphemerisTable {
+    positions: Vec<DVec3>,
+    interval: f64,
+}
+
+impl SunEphemerisTable {
+    fn precompute(total_time: f64, interval: f64, ephemeris: &Ephemeris) -> Self {
+        let n = (total_time / interval).ceil() as usize + 1;
+        let positions: Vec<DVec3> = (0..n)
+            .map(|i| sun_position_at(i as f64 * interval, ephemeris))
+            .collect();
+        Self {
+            positions,
+            interval,
+        }
+    }
+
+    fn at(&self, sim_time: f64) -> DVec3 {
+        let idx = sim_time / self.interval;
+        let lo = idx as usize;
+        let frac = idx - lo as f64;
+        if lo + 1 >= self.positions.len() {
+            self.positions[self.positions.len() - 1]
+        } else {
+            self.positions[lo] * (1.0 - frac) + self.positions[lo + 1] * frac
+        }
+    }
+}
+
 /// Evaluate SRP force + temperature derivatives at a given state.
 ///
 /// Uses `t_pow4_cached` for emission (JEOD convention: T⁴ is cached from
@@ -370,18 +407,30 @@ fn tier3_srp_trajectory_sim3_orbit() {
         )
     });
 
+    // Precompute Sun ephemeris table (100s intervals, ~20k lookups instead of 2M).
+    let total_time = trajectory.last().unwrap().time;
+    let sun_table = SunEphemerisTable::precompute(total_time, 100.0, &ephemeris);
+
     // Initialize from first JEOD data point
     let mut state = TranslationalState {
         position: trajectory[0].position,
         velocity: trajectory[0].velocity,
     };
 
-    let mut max_pos_err = 0.0_f64;
     let mut max_pos_err_24h = 0.0_f64;
-    let mut max_vel_err = 0.0_f64;
     let mut max_force_dir_err = 0.0_f64;
     let mut max_force_mag_rel_err = 0.0_f64;
     let mut shadow_mismatches = 0;
+    let mut our_states = Vec::with_capacity(trajectory.len() - 1);
+    let ref_states: Vec<StateLog> = trajectory[1..]
+        .iter()
+        .map(|r| StateLog {
+            time: r.time,
+            position: Some(r.position),
+            velocity: Some(r.velocity),
+            ..Default::default()
+        })
+        .collect();
 
     for window in trajectory.windows(2) {
         let target = &window[1];
@@ -392,17 +441,22 @@ fn tier3_srp_trajectory_sim3_orbit() {
         // Propagate from current state to next logged time
         for step_i in 0..steps {
             let sim_time = start_time + (step_i as f64) * dt;
-            let sun_pos = sun_position_at(sim_time, &ephemeris);
+            let sun_pos = sun_table.at(sim_time);
             state = rk4_step(&state, &plates, &mut temp, &mut t_pow4, sun_pos, dt, MASS);
         }
 
+        our_states.push(StateLog {
+            time: target.time,
+            position: Some(state.position),
+            velocity: Some(state.velocity),
+            ..Default::default()
+        });
+
         let pos_err = (state.position - target.position).length();
         let vel_err = (state.velocity - target.velocity).length();
-        max_pos_err = max_pos_err.max(pos_err);
         if target.time <= 86400.0 {
             max_pos_err_24h = max_pos_err_24h.max(pos_err);
         }
-        max_vel_err = max_vel_err.max(vel_err);
 
         // Print diagnostics at key intervals
         let t = target.time;
@@ -410,7 +464,7 @@ fn tier3_srp_trajectory_sim3_orbit() {
             // Force comparison at this point
             let (force_rel_err, force_dir_err) =
                 if target.flux_mag > 100.0 && target.srp_force.length() > 1e-6 {
-                    let sun_pos = sun_position_at(target.time, &ephemeris);
+                    let sun_pos = sun_table.at(target.time);
                     let stv = target.position - sun_pos;
                     let d = stv.length();
                     let fh = stv / d;
@@ -433,14 +487,14 @@ fn tier3_srp_trajectory_sim3_orbit() {
                     (-1.0, -1.0)
                 };
             eprintln!(
-                "  t={:9.0}s ({:5.1}d)  pos_err={:8.3}m  vel_err={:.6}m/s  F_rel={:.2e}  F_dir={:.4}rad",
+                "  t={:9.0}s ({:5.1}d)  pos_err={:8.3}m  vel_err={:.6}m/s  F_rel={:.6e}  F_dir={:.4}rad",
                 t, t / 86400.0, pos_err, vel_err, force_rel_err, force_dir_err,
             );
         }
 
         // Compare SRP force (only when well-illuminated).
         if target.flux_mag > 100.0 && target.srp_force.length() > 1e-6 {
-            let sun_pos = sun_position_at(target.time, &ephemeris);
+            let sun_pos = sun_table.at(target.time);
             let sun_to_vehicle = target.position - sun_pos;
             let dist = sun_to_vehicle.length();
             let flux_hat = sun_to_vehicle / dist;
@@ -494,7 +548,7 @@ fn tier3_srp_trajectory_sim3_orbit() {
         }
 
         // Shadow comparison: check if our shadow agrees with JEOD flux
-        let sun_pos = sun_position_at(target.time, &ephemeris);
+        let sun_pos = sun_table.at(target.time);
         let our_illum =
             compute_shadow_fraction(target.position, sun_pos, DVec3::ZERO, R_EARTH, SOLAR_RADIUS);
         let jeod_in_shadow = target.flux_mag < 1e-10;
@@ -513,6 +567,21 @@ fn tier3_srp_trajectory_sim3_orbit() {
         );
     }
 
+    let mut report =
+        CrossvalReport::compute("tier3_srp_trajectory_sim3_orbit", &our_states, &ref_states);
+    report.add_extra("position_24h", max_pos_err_24h, "m");
+    assert!(max_pos_err_24h < 9.847e-2, "position_24h");
+    report.add_extra("force_direction", max_force_dir_err, "rad");
+    assert!(max_force_dir_err < 3.099e-2, "force_direction");
+    report.add_extra("force_magnitude_rel", max_force_mag_rel_err, "");
+    assert!(max_force_mag_rel_err < 4.261, "force_magnitude_rel");
+    report.add_extra("shadow_mismatches", shadow_mismatches as f64, "");
+    assert!((shadow_mismatches as f64) < 2.0, "shadow_mismatches");
+    report.write();
+
+    let max_pos_err = report.max_position_component();
+    let max_vel_err = report.max_velocity_component();
+
     eprintln!("=== Tier 3 SRP Trajectory (SIM_3_ORBIT RUN_radiation) ===");
     eprintln!("  Data points: {}", trajectory.len());
     eprintln!(
@@ -520,36 +589,13 @@ fn tier3_srp_trajectory_sim3_orbit() {
         trajectory.last().unwrap().time,
         trajectory.last().unwrap().time / 86400.0
     );
-    eprintln!("  Max position error (24h):  {max_pos_err_24h:.3} m");
-    eprintln!("  Max position error (full): {max_pos_err:.1} m");
-    eprintln!("  Max velocity error: {max_vel_err:.6} m/s");
-    eprintln!("  Max SRP force direction error: {max_force_dir_err:.6} rad");
-    eprintln!("  Max SRP force magnitude rel error: {max_force_mag_rel_err:.4}");
+    eprintln!("  Max position error (24h):  {max_pos_err_24h:.6e} m");
+    eprintln!("  Max position error (full): {max_pos_err:.6e} m");
+    eprintln!("  Max velocity error: {max_vel_err:.6e} m/s");
+    eprintln!("  Max SRP force direction error: {max_force_dir_err:.6e} rad");
+    eprintln!("  Max SRP force magnitude rel error: {max_force_mag_rel_err:.6e}");
     eprintln!("  Shadow state mismatches: {shadow_mismatches}");
 
-    // Force direction should match closely now that thermal emission is included.
-    assert!(
-        max_force_dir_err < 0.05,
-        "SRP force direction error {max_force_dir_err:.4} rad exceeds 0.05 rad"
-    );
-
-    // Shadow detection: no mismatches expected for a GEO orbit
-    assert!(
-        shadow_mismatches <= 2,
-        "Shadow state mismatches: {shadow_mismatches} (expected 0-2 for transition timing)"
-    );
-
-    // Phase 4 exit criterion: SRP position error < 10 m over 24h.
-    assert!(
-        max_pos_err_24h < 10.0,
-        "24h position error {max_pos_err_24h:.3} m exceeds 10 m threshold"
-    );
-
-    // Force magnitude: at full illumination, matches within a few percent. Near shadow
-    // transitions, temperature history diverges (our RK4 vs JEOD's integrable-object ODE)
-    // causing larger relative errors at low-flux points.
-    assert!(
-        max_force_mag_rel_err < 5.0,
-        "SRP force magnitude relative error {max_force_mag_rel_err:.4} exceeds 500%"
-    );
+    report.assert_position([1.802e1, 1.776e1, 7.706]);
+    report.assert_velocity([1.35e-3, 1.207e-3, 5.231e-4]);
 }

@@ -13,6 +13,7 @@
 use glam::DVec3;
 use jeod_ephemeris::{Ephemeris, EphemerisBody};
 use jeod_math::solar_beta_angle;
+use jeod_test_data::crossval::CrossvalReport;
 use std::path::Path;
 
 /// Parsed record from the SIM_SolarBeta CSV.
@@ -149,8 +150,8 @@ fn tier3_solar_beta_vs_jeod_sim_solarbeta() {
         max_beta_err = max_beta_err.max(beta_err);
 
         assert!(
-            beta_err < 1e-4,
-            "t={:.1}s: solar_beta error {beta_err:.6e} rad exceeds 1e-4 rad \
+            beta_err < 6.828e-9,
+            "t={:.1}s: solar_beta error {beta_err:.6e} rad exceeds 6.828e-9 rad \
              (ours={:.8} rad, JEOD={:.8} rad, diff={:.6} deg)",
             rec.time,
             beta,
@@ -175,5 +176,16 @@ fn tier3_solar_beta_vs_jeod_sim_solarbeta() {
     eprintln!(
         "  solar_beta: {max_beta_err:.6e} rad ({:.6e} deg)",
         max_beta_err.to_degrees()
+    );
+
+    let mut report = CrossvalReport::compute("tier3_solar_beta_vs_jeod_sim_solarbeta", &[], &[]);
+    report.add_extra("solar_beta", max_beta_err, "rad");
+    assert!(max_beta_err < 6.828e-9, "solar_beta");
+    report.write();
+
+    assert!(
+        max_beta_err < 6.828e-9,
+        "solar_beta max error {:.6e} exceeds 6.828e-9 rad",
+        max_beta_err
     );
 }

@@ -15,22 +15,37 @@ use sim_test_helpers::*;
 use glam::{DMat3, DVec3};
 use jeod_sim::{
     DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource,
-    GravitySourceEntry, MassProperties, RotationalState, SimBody, Simulation, SimulationTime,
-    TranslationalState,
+    GravitySourceEntry, JeodQuat, MassProperties, RotationalState, SimBody, Simulation,
+    SimulationTime, TranslationalState,
 };
+use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
 // ── RUN_5B: MET solar mean, elliptical orbit, no drag ──
 
 #[test]
 fn tier3_simulation_run5b_atmosphere_mean() {
-    run_atmosphere_test("dyncomp_run5b_state.csv", "RUN_5B (solar mean)");
+    run_atmosphere_test(
+        "dyncomp_run5b_state.csv",
+        "RUN_5B (solar mean)",
+        "tier3_simulation_run5b_atmosphere_mean",
+        [5.374e-7, 8.376e-7, 6.318e-7],
+        [5.179e-10, 9.311e-10, 7.361e-10],
+        4.426e-8,
+    );
 }
 
 // ── RUN_5C: MET solar max, elliptical orbit, no drag ──
 
 #[test]
 fn tier3_simulation_run5c_atmosphere_max() {
-    run_atmosphere_test("dyncomp_run5c_state.csv", "RUN_5C (solar max)");
+    run_atmosphere_test(
+        "dyncomp_run5c_state.csv",
+        "RUN_5C (solar max)",
+        "tier3_simulation_run5c_atmosphere_max",
+        [5.374e-7, 8.376e-7, 6.318e-7],
+        [5.179e-10, 9.311e-10, 7.361e-10],
+        4.426e-8,
+    );
 }
 
 /// Shared test body for RUN_5B/5C.
@@ -38,7 +53,14 @@ fn tier3_simulation_run5c_atmosphere_max() {
 /// Both runs have identical physics (point-mass gravity, 6-DOF, drag off,
 /// gravity torque off) with elliptical orbit ICs. We propagate with the
 /// Simulation runner and compare against JEOD CSV.
-fn run_atmosphere_test(csv_filename: &str, label: &str) {
+fn run_atmosphere_test(
+    csv_filename: &str,
+    label: &str,
+    test_name: &str,
+    pos_tol: [f64; 3],
+    vel_tol: [f64; 3],
+    quat_angle_tol: f64,
+) {
     let csv_path = test_data_path(csv_filename);
     assert!(
         csv_path.exists(),
@@ -48,7 +70,7 @@ fn run_atmosphere_test(csv_filename: &str, label: &str) {
         csv_path.display()
     );
 
-    let trajectory = load_sixdof_trajectory(&csv_path);
+    let trajectory = load_dyncomp_csv(&csv_path);
     assert!(trajectory.len() >= 100);
     let init = &trajectory[0];
 
@@ -76,12 +98,12 @@ fn run_atmosphere_test(csv_filename: &str, label: &str) {
     // Gravity gradient is computed (gradient=true) but not used as torque.
     sim.add_body(SimBody {
         trans: TranslationalState {
-            position: init.position,
-            velocity: init.velocity,
+            position: init.composite_body.position,
+            velocity: init.composite_body.velocity,
         },
         rot: Some(RotationalState {
-            quaternion: init.quaternion,
-            ang_vel_body: init.ang_vel,
+            quaternion: JeodQuat::from_glam(init.composite_body.quaternion),
+            ang_vel_body: init.composite_body.ang_vel,
         }),
         mass: Some(mass_props),
         config: DynamicsConfig {
@@ -100,46 +122,65 @@ fn run_atmosphere_test(csv_filename: &str, label: &str) {
 
     println!("Tier 3 (Simulation): {label}, {} points", trajectory.len());
 
-    let mut max_pos_error = 0.0_f64;
-    let mut max_vel_error = 0.0_f64;
-    let mut max_quat_error = 0.0_f64;
-
+    // Log our propagated states
+    let mut our_states = Vec::with_capacity(trajectory.len() - 1);
     for record in &trajectory[1..] {
         sim.step_until(record.time);
-
         let body = sim.body(0);
-        let pos_error = (body.trans.position - record.position).length();
-        let vel_error = (body.trans.velocity - record.velocity).length();
-        max_pos_error = max_pos_error.max(pos_error);
-        max_vel_error = max_vel_error.max(vel_error);
+        let rot = body.rot.as_ref().unwrap();
 
-        if let Some(ref rot) = body.rot {
-            let quat_error = quaternion_angle_error(&rot.quaternion, &record.quaternion);
-            max_quat_error = max_quat_error.max(quat_error);
-        }
-
+        let pos_error = (body.trans.position - record.composite_body.position).length();
+        let vel_error = (body.trans.velocity - record.composite_body.velocity).length();
         if (record.time % 7200.0).abs() < 30.1 {
             println!(
-                "  t={:6.0}s: pos_err={:.3e} m  vel_err={:.3e} m/s  quat_err={:.2e} rad",
-                record.time, pos_error, vel_error, max_quat_error
+                "  t={:6.0}s: pos_err={:.3e} m  vel_err={:.3e} m/s",
+                record.time, pos_error, vel_error
             );
         }
+
+        our_states.push(StateLog {
+            time: record.time,
+            position: Some(body.trans.position),
+            velocity: Some(body.trans.velocity),
+            acceleration: Some(body.frame_derivs.trans_accel),
+            quaternion: Some(rot.quaternion.to_glam()),
+            ang_vel: Some(rot.ang_vel_body),
+            ang_accel: Some(body.frame_derivs.rot_accel),
+        });
     }
 
-    println!("  Max position error:  {:.6e} m", max_pos_error);
-    println!("  Max velocity error:  {:.6e} m/s", max_vel_error);
-    println!("  Max quaternion error: {:.2e} rad", max_quat_error);
+    // Reference states from JEOD CSV
+    let ref_states: Vec<StateLog> = trajectory[1..]
+        .iter()
+        .map(|r| StateLog {
+            time: r.time,
+            position: Some(r.composite_body.position),
+            velocity: Some(r.composite_body.velocity),
+            acceleration: r.derivs.as_ref().map(|d| d.trans_accel),
+            quaternion: Some(r.composite_body.quaternion),
+            ang_vel: Some(r.composite_body.ang_vel),
+            ang_accel: r.derivs.as_ref().map(|d| d.rot_accel),
+        })
+        .collect();
 
-    assert!(
-        max_pos_error < 0.5,
-        "{label}: position error {max_pos_error:.4} m exceeds 0.5 m"
+    // Post-process: compute errors
+    let report = CrossvalReport::compute(test_name, &our_states, &ref_states);
+    report.write();
+
+    println!(
+        "  Max position error:  {:.6e} m",
+        report.max_position_component()
     );
-    assert!(
-        max_vel_error < 0.001,
-        "{label}: velocity error {max_vel_error:.6} m/s exceeds 0.001 m/s"
+    println!(
+        "  Max velocity error:  {:.6e} m/s",
+        report.max_velocity_component()
     );
-    assert!(
-        max_quat_error < 0.01,
-        "{label}: quaternion error {max_quat_error:.2e} rad exceeds 0.01 rad"
+    println!(
+        "  Max quaternion error: {:.6e} rad",
+        report.max_quat_angle()
     );
+
+    report.assert_position(pos_tol);
+    report.assert_velocity(vel_tol);
+    report.assert_quat_angle(quat_angle_tol);
 }

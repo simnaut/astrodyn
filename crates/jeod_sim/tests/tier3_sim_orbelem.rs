@@ -11,6 +11,7 @@ use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry, SimBody,
     Simulation, SimulationTime, TranslationalState,
 };
+use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
 #[test]
 fn tier3_simulation_orbelem() {
@@ -57,6 +58,8 @@ fn tier3_simulation_orbelem() {
         records.len()
     );
 
+    let mut our_states = Vec::with_capacity(records.len() - 1);
+    let mut ref_states = Vec::with_capacity(records.len() - 1);
     let mut max_sma_err = 0.0_f64;
     let mut max_ecc_err = 0.0_f64;
     let mut max_inc_err = 0.0_f64;
@@ -64,14 +67,11 @@ fn tier3_simulation_orbelem() {
     let mut max_lan_err = 0.0_f64;
     let mut max_ta_err = 0.0_f64;
     let mut max_ma_err = 0.0_f64;
-    let mut max_pos_err = 0.0_f64;
 
     for record in &records[1..] {
         sim.step_until(record.time);
 
         let body = sim.body(0);
-        let pos_err = (body.trans.position - record.position).length();
-        max_pos_err = max_pos_err.max(pos_err);
 
         let oe = body.orbital_elements.as_ref().unwrap_or_else(|| {
             panic!(
@@ -96,7 +96,21 @@ fn tier3_simulation_orbelem() {
         max_ta_err = max_ta_err.max(ta_err);
         max_ma_err = max_ma_err.max(ma_err);
 
+        our_states.push(StateLog {
+            time: record.time,
+            position: Some(body.trans.position),
+            velocity: Some(body.trans.velocity),
+            ..Default::default()
+        });
+        ref_states.push(StateLog {
+            time: record.time,
+            position: Some(record.position),
+            velocity: Some(record.velocity),
+            ..Default::default()
+        });
+
         if (record.time % 3600.0).abs() < 6.1 {
+            let pos_err = (body.trans.position - record.position).length();
             println!(
                 "  t={:6.0}s: pos_err={:.4} m  sma_err={:.3e} m  ecc_err={:.3e}",
                 record.time, pos_err, sma_err, ecc_err
@@ -104,7 +118,13 @@ fn tier3_simulation_orbelem() {
         }
     }
 
-    println!("  Max position error:  {:.4} m", max_pos_err);
+    let max_pos_err = our_states
+        .iter()
+        .zip(ref_states.iter())
+        .map(|(a, b)| (a.position.unwrap() - b.position.unwrap()).length())
+        .fold(0.0_f64, f64::max);
+
+    println!("  Max position error:  {:.6e} m", max_pos_err);
     println!("  Max SMA error:       {:.6e} m", max_sma_err);
     println!("  Max eccentricity:    {:.6e}", max_ecc_err);
     println!("  Max inclination:     {:.6e} rad", max_inc_err);
@@ -113,40 +133,22 @@ fn tier3_simulation_orbelem() {
     println!("  Max true_anom:       {:.6e} rad", max_ta_err);
     println!("  Max mean_anom:       {:.6e} rad", max_ma_err);
 
-    // Position tolerance (same as RUN_2 point-mass test)
-    assert!(
-        max_pos_err < 0.5,
-        "Position error {max_pos_err:.2} m exceeds 0.5 m"
-    );
-    // Orbital element tolerances account for integration-induced position drift.
-    // SMA: ~0.5 m position error -> ~0.1 m SMA error via vis-viva.
-    // Angular elements: near machine precision since the math is validated.
-    assert!(
-        max_sma_err < 1.0,
-        "SMA error {max_sma_err:.3e} m exceeds 1.0 m"
-    );
-    assert!(
-        max_ecc_err < 1e-10,
-        "Eccentricity error {max_ecc_err:.3e} exceeds 1e-10"
-    );
-    assert!(
-        max_inc_err < 1e-10,
-        "Inclination error {max_inc_err:.3e} rad exceeds 1e-10"
-    );
-    assert!(
-        max_aop_err < 1e-8,
-        "Arg periapsis error {max_aop_err:.3e} rad exceeds 1e-8"
-    );
-    assert!(
-        max_lan_err < 1e-8,
-        "Long asc node error {max_lan_err:.3e} rad exceeds 1e-8"
-    );
-    assert!(
-        max_ta_err < 1e-8,
-        "True anomaly error {max_ta_err:.3e} rad exceeds 1e-8"
-    );
-    assert!(
-        max_ma_err < 1e-8,
-        "Mean anomaly error {max_ma_err:.3e} rad exceeds 1e-8"
-    );
+    let mut report = CrossvalReport::compute("tier3_simulation_orbelem", &our_states, &ref_states);
+    report.add_extra("sma", max_sma_err, "m");
+    assert!(max_sma_err < 2.613e-6, "sma");
+    report.add_extra("eccentricity", max_ecc_err, "");
+    assert!(max_ecc_err < 1.496e-13, "eccentricity");
+    report.add_extra("inclination", max_inc_err, "rad");
+    assert!(max_inc_err < 8.436e-17, "inclination");
+    report.add_extra("arg_periapsis", max_aop_err, "rad");
+    assert!(max_aop_err < 1.78e-12, "arg_periapsis");
+    report.add_extra("long_asc_node", max_lan_err, "rad");
+    assert!(max_lan_err < 9.513e-14, "long_asc_node");
+    report.add_extra("true_anom", max_ta_err, "rad");
+    assert!(max_ta_err < 1.136e-11, "true_anom");
+    report.add_extra("mean_anom", max_ma_err, "rad");
+    assert!(max_ma_err < 5.642e-12, "mean_anom");
+    report.write();
+
+    report.assert_position([6.556e-5, 5.15e-5, 5.478e-8]);
 }

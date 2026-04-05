@@ -13,6 +13,7 @@
 
 use glam::DVec3;
 use jeod_math::OrbitalElements;
+use jeod_test_data::crossval::CrossvalReport;
 use std::path::Path;
 
 /// Earth gravitational parameter (m³/s²) from GGM05C, matching JEOD SIM_OrbElem's gravity source.
@@ -195,44 +196,44 @@ fn tier3_orbital_elements_vs_jeod_sim_orbelem() {
         // Per-step assertions. With correct mu (matching JEOD's gravity source)
         // and identical SWP 2005 angle algorithm, errors are near machine precision.
         assert!(
-            sma_err < 1e-6,
-            "t={:.1}s: semi_major_axis error {sma_err:.6e} m exceeds 1e-6 m \
+            sma_err < 1.956e-8,
+            "t={:.1}s: semi_major_axis error {sma_err:.6e} m exceeds 1.956e-8 m \
              (ours={:.6}, JEOD={:.6})",
             rec.time,
             oe.semi_major_axis,
             rec.semi_major_axis
         );
         assert!(
-            ecc_err < 1e-14,
-            "t={:.1}s: eccentricity error {ecc_err:.6e} exceeds 1e-14 \
+            ecc_err < 8.161e-16,
+            "t={:.1}s: eccentricity error {ecc_err:.6e} exceeds 8.161e-16 \
              (ours={:.15e}, JEOD={:.15e})",
             rec.time,
             oe.e_mag,
             rec.e_mag
         );
         assert!(
-            inc_err < 1e-15,
-            "t={:.1}s: inclination error {inc_err:.6e} rad exceeds 1e-15 rad",
+            inc_err < 5.693e-19,
+            "t={:.1}s: inclination error {inc_err:.6e} rad exceeds 5.693e-19 rad",
             rec.time
         );
         assert!(
-            aop_err < 1e-13,
-            "t={:.1}s: arg_periapsis error {aop_err:.6e} rad exceeds 1e-13 rad",
+            aop_err < 2.857e-15,
+            "t={:.1}s: arg_periapsis error {aop_err:.6e} rad exceeds 2.857e-15 rad",
             rec.time
         );
         assert!(
-            lan_err < 1e-13,
-            "t={:.1}s: long_asc_node error {lan_err:.6e} rad exceeds 1e-13 rad",
+            lan_err < 1.866e-15,
+            "t={:.1}s: long_asc_node error {lan_err:.6e} rad exceeds 1.866e-15 rad",
             rec.time
         );
         assert!(
-            ta_err < 1e-13,
-            "t={:.1}s: true_anom error {ta_err:.6e} rad exceeds 1e-13 rad",
+            ta_err < 3.731e-15,
+            "t={:.1}s: true_anom error {ta_err:.6e} rad exceeds 3.731e-15 rad",
             rec.time
         );
         assert!(
-            ma_err < 1e-13,
-            "t={:.1}s: mean_anom error {ma_err:.6e} rad exceeds 1e-13 rad",
+            ma_err < 3.731e-15,
+            "t={:.1}s: mean_anom error {ma_err:.6e} rad exceeds 3.731e-15 rad",
             rec.time
         );
 
@@ -260,4 +261,65 @@ fn tier3_orbital_elements_vs_jeod_sim_orbelem() {
     eprintln!("  orb_ang_momentum:   {max_hmag_err:.6e} m^2/s");
     eprintln!("  r_mag:              {max_rmag_err:.6e} m");
     eprintln!("  vel_mag:            {max_vmag_err:.6e} m/s");
+
+    let mut report =
+        CrossvalReport::compute("tier3_orbital_elements_vs_jeod_sim_orbelem", &[], &[]);
+    report.add_extra("semi_major_axis", max_sma_err, "m");
+    assert!(max_sma_err < 1.956e-8, "semi_major_axis");
+    report.add_extra("semiparam", max_sp_err, "m");
+    assert!(max_sp_err < 1.761e-8, "semiparam");
+    report.add_extra("eccentricity", max_ecc_err, "");
+    assert!(max_ecc_err < 8.161e-16, "eccentricity");
+    report.add_extra("inclination", max_inc_err, "rad");
+    assert!(max_inc_err < 5.693e-19, "inclination");
+    report.add_extra("arg_periapsis", max_aop_err, "rad");
+    assert!(max_aop_err < 2.857e-15, "arg_periapsis");
+    report.add_extra("long_asc_node", max_lan_err, "rad");
+    assert!(max_lan_err < 1.866e-15, "long_asc_node");
+    report.add_extra("true_anom", max_ta_err, "rad");
+    assert!(max_ta_err < 3.731e-15, "true_anom");
+    report.add_extra("mean_anom", max_ma_err, "rad");
+    assert!(max_ma_err < 3.731e-15, "mean_anom");
+    report.write();
+
+    assert!(
+        max_sma_err < 1.956e-8,
+        "semi_major_axis max error {:.6e} exceeds 1.956e-8 m",
+        max_sma_err
+    );
+    assert!(
+        max_sp_err < 1.761e-8,
+        "semiparam max error {:.6e} exceeds 1.761e-8 m",
+        max_sp_err
+    );
+    assert!(
+        max_ecc_err < 8.161e-16,
+        "eccentricity max error {:.6e} exceeds 8.161e-16",
+        max_ecc_err
+    );
+    assert!(
+        max_inc_err < 5.693e-19,
+        "inclination max error {:.6e} exceeds 5.693e-19 rad",
+        max_inc_err
+    );
+    assert!(
+        max_aop_err < 2.857e-15,
+        "arg_periapsis max error {:.6e} exceeds 2.857e-15 rad",
+        max_aop_err
+    );
+    assert!(
+        max_lan_err < 1.866e-15,
+        "long_asc_node max error {:.6e} exceeds 1.866e-15 rad",
+        max_lan_err
+    );
+    assert!(
+        max_ta_err < 3.731e-15,
+        "true_anom max error {:.6e} exceeds 3.731e-15 rad",
+        max_ta_err
+    );
+    assert!(
+        max_ma_err < 3.731e-15,
+        "mean_anom max error {:.6e} exceeds 3.731e-15 rad",
+        max_ma_err
+    );
 }

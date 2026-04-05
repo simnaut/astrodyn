@@ -932,7 +932,7 @@ Trick's CI (`test_linux.yml` Rocky 9 matrix entry), runs verification sims, and
 exports ASCII CSV trajectories. The CSV files are gitignored — they are generated
 locally and consumed by `cargo test`.
 
-**Cross-validation test (implemented):**
+**Cross-validation test pattern (implemented):**
 
 ```rust
 #[test]
@@ -941,25 +941,31 @@ fn tier3_cross_validate_against_jeod_dyncomp() {
     assert!(csv_path.exists(), "Generate with: docker run ...");
 
     let jeod_trajectory = load_jeod_trajectory(&csv_path);
-    let mut state = TranslationalState {
-        position: jeod_trajectory[0].position,
-        velocity: jeod_trajectory[0].velocity,
-    };
+    // ... propagate using OUR ported code, collect StateLog entries ...
 
-    for record in &jeod_trajectory[1..] {
-        // Propagate using OUR ported code — never JEOD outputs
-        state = propagate_to(state, record.time, dt);
-        let pos_error = (state.position - record.position).length();
-        assert!(pos_error < tolerance);
-    }
+    let report = CrossvalReport::compute("tier3_...", &our_states, &ref_states);
+    report.write();  // errors to target/tier3_crossval/<name>.json
+
+    // Per-component tolerances at 5% above observed max error
+    report.assert_position([1.37e-6, 2.154e-6, 1.826e-6]);
+    report.assert_velocity([1.446e-9, 2.389e-9, 1.814e-9]);
 }
 ```
+
+`CrossvalReport` computes per-component max errors and writes them to JSON.
+It has no tolerance fields — tolerances live exclusively in the test source
+as literal values passed to `assert_position`, `assert_velocity`,
+`assert_quat_angle`, `assert_ang_vel`, or via `assert!(var < literal, "name")`
+for scalar extras. The report binary extracts all tolerances from source for
+display — JSON contains only errors.
 
 **Key rules:**
 - Tests assert on missing data — never skip gracefully.
 - All computation (gravity, Earth rotation, time conversion) is our own ported code.
   JEOD CSV data is used **only** for comparison, never as input to our computation.
 - Tier 3 tests are part of the **definition of done** for every phase, not optional.
+- Tolerances are literal per-test values (5% above observed error), never
+  runtime-computed or conditional. JEOD CSVs are static, our code is deterministic.
 
 **Two complementary Tier 3 test paths:**
 
@@ -1396,7 +1402,7 @@ pub fn euler_test_cases(jeod_root: &str) -> Vec<EulerTestCase>;
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| **Numerical precision drift vs. JEOD** | Tests fail despite correct implementation | Use relative tolerances scaled by magnitude. Document known precision differences between GCC and Rust's LLVM backend. Start with generous tolerances, tighten as confidence grows. |
+| **Numerical precision drift vs. JEOD** | Tests fail despite correct implementation | Use per-component tolerances at 5% above observed error. Document known precision differences between GCC and Rust's LLVM backend. Tolerances are literal values in test source — tighten after each code improvement. |
 | **Spherical harmonics performance** | Degree-2190 GGM05C is computationally expensive | Implement with cache-friendly memory layout. Benchmark early. Provide degree/order truncation as a runtime option. Consider SIMD for inner loops. |
 | **JEOD verification data requires Trick** | Cannot produce Tier 3 baseline trajectories without Trick installed | Start with Tier 1 (analytical) and Tier 2 (reference values) — these need no Trick. Generate Tier 3 baselines once, store as CSV. |
 | **Bevy's `FixedUpdate` assumes fixed timestep** | Adaptive integrators (RKF45, LSODE) need variable dt | Use inner sub-stepping loop within `FixedUpdate`. The outer schedule provides a maximum dt; the integrator may take smaller steps internally. |

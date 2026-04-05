@@ -22,117 +22,21 @@
 //! in mass.py), so the [10, 0, 0] N*m structural-frame torque maps directly
 //! to body-frame torque without transformation.
 
-use glam::{DMat3, DVec3};
+use glam::{DMat3, DQuat, DVec3};
 use jeod_dynamics::{
     rk4_sixdof_step, MassProperties, RotationalState, SixDofState, TranslationalState,
 };
 use jeod_math::JeodQuat;
+use jeod_test_data::crossval::{CrossvalReport, StateLog};
+use jeod_test_data::dyncomp_csv::load_dyncomp_csv;
 use std::path::Path;
 
 const MU_EARTH: f64 = 3.986_004_415e14;
 
-/// Parsed 6-DOF state record from JEOD CSV.
-#[derive(Debug)]
-struct JeodSixDofRecord {
-    time: f64,
-    position: DVec3,
-    velocity: DVec3,
-    quaternion: JeodQuat,
-    ang_vel: DVec3,
-}
-
-/// Parse the JEOD log_state_ASCII CSV for composite_body 6-DOF state.
-///
-/// CSV column layout (0-indexed, after time at col 0):
-/// For each axis i in [0,1,2], stride of 7:
-///   position[i], velocity[i], ang_vel_this[i],
-///   T_parent_this[i][0..2], Q_parent_this.vector[i]
-/// Then: Q_parent_this.scalar
-///
-/// composite_body columns:
-///   i=0: cols 1(pos0), 2(vel0), 3(angvel0), 4-6(T[0][0..2]), 7(Q.vec[0])
-///   i=1: cols 8(pos1), 9(vel1), 10(angvel1), 11-13(T[1][0..2]), 14(Q.vec[1])
-///   i=2: cols 15(pos2), 16(vel2), 17(angvel2), 18-20(T[2][0..2]), 21(Q.vec[2])
-///   col 22: Q.scalar
-fn load_sixdof_trajectory(path: &Path) -> Vec<JeodSixDofRecord> {
-    let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
-        panic!(
-            "Failed to read JEOD trajectory CSV from {}: {e}\n\
-             Generate with: docker build -f trick/Dockerfile -t jeod-trick .. && \
-             docker run --rm -v $(pwd)/test_data:/output jeod-trick",
-            path.display()
-        )
-    });
-
-    let mut records = Vec::new();
-    for (i, line) in content.lines().enumerate() {
-        if i == 0 {
-            continue; // skip header
-        }
-        if line.trim().is_empty() {
-            continue;
-        }
-        let fields: Vec<&str> = line.split(',').collect();
-        assert!(
-            fields.len() >= 23,
-            "Malformed JEOD CSV at line {}: expected at least 23 fields, found {}",
-            i + 1,
-            fields.len(),
-        );
-
-        let parse = |s: &str, col: usize| -> f64 {
-            let line_no = i + 1;
-            s.trim().parse::<f64>().unwrap_or_else(|e| {
-                panic!("Failed to parse JEOD CSV at line {line_no}, col {col}: {s:?} ({e})")
-            })
-        };
-
-        // Composite body state columns
-        let position = DVec3::new(
-            parse(fields[1], 1),
-            parse(fields[8], 8),
-            parse(fields[15], 15),
-        );
-        let velocity = DVec3::new(
-            parse(fields[2], 2),
-            parse(fields[9], 9),
-            parse(fields[16], 16),
-        );
-        let ang_vel = DVec3::new(
-            parse(fields[3], 3),
-            parse(fields[10], 10),
-            parse(fields[17], 17),
-        );
-
-        // Quaternion: CSV has vec[0] at col 7, vec[1] at col 14, vec[2] at col 21, scalar at col 22
-        let q_scalar = parse(fields[22], 22);
-        let q_vec = DVec3::new(
-            parse(fields[7], 7),
-            parse(fields[14], 14),
-            parse(fields[21], 21),
-        );
-        let quaternion = JeodQuat::new(q_scalar, q_vec.x, q_vec.y, q_vec.z);
-
-        records.push(JeodSixDofRecord {
-            time: parse(fields[0], 0),
-            position,
-            velocity,
-            quaternion,
-            ang_vel,
-        });
-    }
-    records
-}
-
 /// Compute angular error between two quaternions in radians.
-fn quaternion_angle_error(q1: &JeodQuat, q2: &JeodQuat) -> f64 {
-    let dot = (q1.scalar() * q2.scalar()
-        + q1.vector().x * q2.vector().x
-        + q1.vector().y * q2.vector().y
-        + q1.vector().z * q2.vector().z)
-        .abs();
-    // Clamp to avoid NaN from numerical noise
-    2.0 * dot.min(1.0).acos()
+fn quaternion_angle_error_dquat(a: DQuat, b: DQuat) -> f64 {
+    let dot = a.dot(b).abs();
+    (2.0 * dot * dot - 1.0).clamp(-1.0, 1.0).acos()
 }
 
 #[test]
@@ -149,7 +53,7 @@ fn tier3_external_torque_sixdof_run9a() {
         csv_path.display()
     );
 
-    let trajectory = load_sixdof_trajectory(&csv_path);
+    let trajectory = load_dyncomp_csv(&csv_path);
     assert!(
         trajectory.len() >= 100,
         "Expected at least 100 data points, got {}",
@@ -177,22 +81,32 @@ fn tier3_external_torque_sixdof_run9a() {
     let init = &trajectory[0];
     let mut state = SixDofState {
         trans: TranslationalState {
-            position: init.position,
-            velocity: init.velocity,
+            position: init.composite_body.position,
+            velocity: init.composite_body.velocity,
         },
         rot: RotationalState {
-            quaternion: init.quaternion,
-            ang_vel_body: init.ang_vel,
+            quaternion: JeodQuat::from_glam(init.composite_body.quaternion),
+            ang_vel_body: init.composite_body.ang_vel,
         },
     };
 
     let dt = 0.03125; // match JEOD's SIM_dyncomp integration rate (32 Hz)
     let mut current_time = init.time;
 
-    let mut max_pos_error = 0.0_f64;
-    let mut max_vel_error = 0.0_f64;
-    let mut max_quat_error = 0.0_f64;
-    let mut max_angvel_error = 0.0_f64;
+    let mut our_states = Vec::with_capacity(trajectory.len() - 1);
+    let ref_states: Vec<StateLog> = trajectory
+        .iter()
+        .skip(1)
+        .map(|r| StateLog {
+            time: r.time,
+            position: Some(r.composite_body.position),
+            velocity: Some(r.composite_body.velocity),
+            acceleration: r.derivs.as_ref().map(|d| d.trans_accel),
+            quaternion: Some(r.composite_body.quaternion),
+            ang_vel: Some(r.composite_body.ang_vel),
+            ang_accel: r.derivs.as_ref().map(|d| d.rot_accel),
+        })
+        .collect();
 
     // RUN_9A external torque schedule (from RUN_9B/input.py):
     // trick.add_read(1000.0, "vehicle.torque_extern.torque = [10.0, 0.0, 0.0]")
@@ -239,17 +153,23 @@ fn tier3_external_torque_sixdof_run9a() {
             current_time += remainder;
         }
 
-        // Compare translational state
-        let pos_error = (state.trans.position - record.position).length();
-        let vel_error = (state.trans.velocity - record.velocity).length();
-        max_pos_error = max_pos_error.max(pos_error);
-        max_vel_error = max_vel_error.max(vel_error);
+        our_states.push(StateLog {
+            time: record.time,
+            position: Some(state.trans.position),
+            velocity: Some(state.trans.velocity),
+            quaternion: Some(state.rot.quaternion.to_glam()),
+            ang_vel: Some(state.rot.ang_vel_body),
+            ..Default::default()
+        });
 
-        // Compare rotational state
-        let quat_error = quaternion_angle_error(&state.rot.quaternion, &record.quaternion);
-        let angvel_error = (state.rot.ang_vel_body - record.ang_vel).length();
-        max_quat_error = max_quat_error.max(quat_error);
-        max_angvel_error = max_angvel_error.max(angvel_error);
+        // Compare for logging
+        let pos_error = (state.trans.position - record.composite_body.position).length();
+        let vel_error = (state.trans.velocity - record.composite_body.velocity).length();
+        let quat_error = quaternion_angle_error_dquat(
+            state.rot.quaternion.to_glam(),
+            record.composite_body.quaternion,
+        );
+        let angvel_error = (state.rot.ang_vel_body - record.composite_body.ang_vel).length();
 
         // Log progress at key points: every hour and at torque boundaries
         let log_hourly = (record.time % 3600.0).abs() < 30.1;
@@ -257,7 +177,7 @@ fn tier3_external_torque_sixdof_run9a() {
         if log_hourly || log_torque {
             println!(
                 "  t={:6.0}s ({:.1}h): pos_err={:10.2}m  vel_err={:.6}m/s  \
-                 quat_err={:.2e}rad  angvel_err={:.2e}rad/s",
+                 quat_err={:.6e}rad  angvel_err={:.6e}rad/s",
                 record.time,
                 record.time / 3600.0,
                 pos_error,
@@ -268,6 +188,18 @@ fn tier3_external_torque_sixdof_run9a() {
         }
     }
 
+    let report = CrossvalReport::compute(
+        "tier3_external_torque_sixdof_run9a",
+        &our_states,
+        &ref_states,
+    );
+    report.write();
+
+    let max_pos_error = report.max_position_component();
+    let max_vel_error = report.max_velocity_component();
+    let max_quat_error = report.max_quat_angle();
+    let max_angvel_error = report.max_ang_vel_component();
+
     println!();
     println!("=== Tier 3 External Torque 6-DOF Cross-Validation (RUN_9A) ===");
     println!(
@@ -276,40 +208,17 @@ fn tier3_external_torque_sixdof_run9a() {
         trajectory.len()
     );
     println!("Torque: [10, 0, 0] N*m in structural frame, t=1000-2000s");
-    println!("Max position error:   {:.2} m", max_pos_error);
-    println!("Max velocity error:   {:.6} m/s", max_vel_error);
+    println!("Max position error:   {:.6e} m", max_pos_error);
+    println!("Max velocity error:   {:.6e} m/s", max_vel_error);
     println!(
-        "Max quaternion error: {:.2e} rad ({:.4} deg)",
+        "Max quaternion error: {:.6e} rad ({:.4} deg)",
         max_quat_error,
         max_quat_error.to_degrees()
     );
-    println!("Max ang_vel error:    {:.2e} rad/s", max_angvel_error);
+    println!("Max ang_vel error:    {:.6e} rad/s", max_angvel_error);
 
-    // Translational thresholds match the existing RUN_2 6-DOF test.
-    // dt=0.03125s matches JEOD's SIM_dyncomp integration rate (32 Hz).
-    assert!(
-        max_pos_error < 0.5,
-        "Position error {:.2} m exceeds 0.5 m threshold",
-        max_pos_error
-    );
-    assert!(
-        max_vel_error < 0.001,
-        "Velocity error {:.6} m/s exceeds 0.001 m/s threshold",
-        max_vel_error
-    );
-
-    // Rotational thresholds: the external torque creates non-trivial angular
-    // motion over 8 hours. Quaternion error < 0.01 rad is the Phase 4 exit
-    // criterion. Angular velocity error should track closely given matching
-    // integration rates.
-    assert!(
-        max_quat_error < 0.01,
-        "Quaternion angular error {:.2e} rad exceeds 0.01 rad threshold",
-        max_quat_error
-    );
-    assert!(
-        max_angvel_error < 1e-5,
-        "Angular velocity error {:.2e} rad/s exceeds 1e-5 rad/s threshold",
-        max_angvel_error
-    );
+    report.assert_position([1.37e-6, 2.154e-6, 1.826e-6]);
+    report.assert_velocity([1.446e-9, 2.389e-9, 1.814e-9]);
+    report.assert_quat_angle(4.426e-8);
+    report.assert_ang_vel([3.558e-20, 4.447e-21, 7.116e-21]);
 }

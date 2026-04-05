@@ -13,6 +13,7 @@ use glam::{DMat3, DVec3};
 use jeod_frames::nutation_j2000::nutation;
 use jeod_frames::precession_j2000::precession_matrix;
 use jeod_frames::rotation_j2000::{compute_t_parent_this, gast_rotation_matrix};
+use jeod_test_data::crossval::CrossvalReport;
 use jeod_time::epoch::{J2000_NOON_TJT, SECONDS_PER_DAY, TAI_TT_OFFSET};
 use jeod_time::time_converter_ut1_gmst::ut1_to_gmst_days;
 use std::path::Path;
@@ -235,7 +236,7 @@ fn tier3_rnp_component_comparison() {
         // Hourly diagnostics
         if rec.time == 0.0 || (rec.time % 3600.0).abs() < 0.1 {
             eprintln!(
-                "  t={:6.0}s ({:.1}h): P_err={:.2e}  N_err={:.2e}  R_err={:.2e}  T_err={:.2e}  equa_err={:.2e}s  theta_err={:.2e}rad",
+                "  t={:6.0}s ({:.1}h): P_err={:.6e}  N_err={:.6e}  R_err={:.6e}  T_err={:.6e}  equa_err={:.6e}s  theta_err={:.6e}rad",
                 rec.time,
                 rec.time / 3600.0,
                 p_err,
@@ -284,42 +285,63 @@ fn tier3_rnp_component_comparison() {
     // theta_gast computation difference.
 
     assert!(
-        max_p_err < 1e-10,
-        "Precession matrix error {:.4e} exceeds 1e-10 (worst at t={:.0}s). \
+        max_p_err < 2.05e-18,
+        "Precession matrix error {:.4e} exceeds 2.05e-18 (worst at t={:.0}s). \
          This indicates a formula difference in precession_matrix().",
         max_p_err,
         worst_p_time,
     );
 
     assert!(
-        max_n_err < 1e-10,
-        "Nutation matrix error {:.4e} exceeds 1e-10 (worst at t={:.0}s). \
+        max_n_err < 1.63e-18,
+        "Nutation matrix error {:.4e} exceeds 1.63e-18 (worst at t={:.0}s). \
          This indicates a formula difference in nutation().",
         max_n_err,
         worst_n_time,
     );
 
     assert!(
-        max_r_err < 1e-10,
-        "GAST rotation matrix error {:.4e} exceeds 1e-10 (worst at t={:.0}s). \
+        max_r_err < 2.054e-11,
+        "GAST rotation matrix error {:.4e} exceeds 2.054e-11 (worst at t={:.0}s). \
          This indicates a GMST or theta_gast computation difference.",
         max_r_err,
         worst_r_time,
     );
 
     assert!(
-        max_t_err < 1e-10,
-        "T_parent_this error {:.4e} exceeds 1e-10 (worst at t={:.0}s). \
+        max_t_err < 2.053e-11,
+        "T_parent_this error {:.4e} exceeds 2.053e-11 (worst at t={:.0}s). \
          This indicates a composition error in compute_t_parent_this().",
         max_t_err,
         worst_t_time,
     );
 
     assert!(
-        max_equa_err < 1e-10,
-        "Equation of equinoxes error {:.4e}s exceeds 1e-10s.",
+        max_equa_err < 2.233e-14,
+        "Equation of equinoxes error {:.4e}s exceeds 2.233e-14s.",
         max_equa_err,
     );
+
+    assert!(
+        max_theta_gast_err < 2.101e-11,
+        "Theta GAST error {:.4e} rad exceeds 2.101e-11 rad.",
+        max_theta_gast_err,
+    );
+
+    let mut report = CrossvalReport::compute("tier3_rnp_component_comparison", &[], &[]);
+    report.add_extra("precession", max_p_err, "");
+    assert!(max_p_err < 2.05e-18, "precession");
+    report.add_extra("nutation", max_n_err, "");
+    assert!(max_n_err < 1.63e-18, "nutation");
+    report.add_extra("gast_rotation", max_r_err, "");
+    assert!(max_r_err < 2.054e-11, "gast_rotation");
+    report.add_extra("composed_T", max_t_err, "");
+    assert!(max_t_err < 2.053e-11, "composed_T");
+    report.add_extra("equa_equinoxes", max_equa_err, "s");
+    assert!(max_equa_err < 2.233e-14, "equa_equinoxes");
+    report.add_extra("theta_gast", max_theta_gast_err, "rad");
+    assert!(max_theta_gast_err < 2.101e-11, "theta_gast");
+    report.write();
 
     eprintln!("  All RNP components match JEOD within 1e-10 element-wise.");
 }

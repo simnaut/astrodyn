@@ -16,6 +16,8 @@
 
 use glam::DVec3;
 use jeod_dynamics::{rk4_translational_step, TranslationalState};
+use jeod_test_data::crossval::{CrossvalReport, StateLog};
+use jeod_test_data::dyncomp_csv::load_dyncomp_csv;
 use std::path::Path;
 
 const MU_EARTH: f64 = 3.986_004_415e14;
@@ -24,63 +26,6 @@ fn point_mass_accel(pos: DVec3) -> DVec3 {
     let r_sq = pos.length_squared();
     let r_mag = r_sq.sqrt();
     pos * (-MU_EARTH / (r_sq * r_mag))
-}
-
-#[derive(Debug)]
-struct JeodStateRecord {
-    time: f64,
-    position: DVec3,
-    velocity: DVec3,
-}
-
-fn load_jeod_trajectory(path: &Path) -> Vec<JeodStateRecord> {
-    let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
-        panic!(
-            "Failed to read JEOD trajectory CSV from {}: {e}",
-            path.display()
-        )
-    });
-
-    let mut records = Vec::new();
-    for (i, line) in content.lines().enumerate() {
-        if i == 0 {
-            continue;
-        } // skip header
-        let fields: Vec<&str> = line.split(',').collect();
-        if fields.len() < 17 {
-            continue;
-        }
-
-        // CSV columns (from log_state_ASCII.csv header):
-        // 0: time
-        // 1: composite_body position[0]
-        // 8: composite_body position[1]
-        // 15: composite_body position[2]
-        // 2: composite_body velocity[0]
-        // 9: composite_body velocity[1]
-        // 16: composite_body velocity[2]
-        let line_no = i + 1;
-        let parse = |s: &str, col: usize| -> f64 {
-            s.trim().parse::<f64>().unwrap_or_else(|e| {
-                panic!("Failed to parse JEOD CSV at line {line_no}, col {col}: {s:?} ({e})")
-            })
-        };
-
-        records.push(JeodStateRecord {
-            time: parse(fields[0], 0),
-            position: DVec3::new(
-                parse(fields[1], 1),
-                parse(fields[8], 8),
-                parse(fields[15], 15),
-            ),
-            velocity: DVec3::new(
-                parse(fields[2], 2),
-                parse(fields[9], 9),
-                parse(fields[16], 16),
-            ),
-        });
-    }
-    records
 }
 
 #[test]
@@ -95,7 +40,7 @@ fn tier3_cross_validate_against_jeod_dyncomp() {
         csv_path.display()
     );
 
-    let jeod_trajectory = load_jeod_trajectory(&csv_path);
+    let jeod_trajectory = load_dyncomp_csv(&csv_path);
     assert!(
         jeod_trajectory.len() > 100,
         "Expected more than 100 records, got {}",
@@ -105,14 +50,16 @@ fn tier3_cross_validate_against_jeod_dyncomp() {
     // Use JEOD's initial state
     let initial = &jeod_trajectory[0];
     let mut state = TranslationalState {
-        position: initial.position,
-        velocity: initial.velocity,
+        position: initial.composite_body.position,
+        velocity: initial.composite_body.velocity,
     };
 
     println!("Tier 3: JEOD SIM_dyncomp RUN_2 cross-validation");
     println!(
         "  Initial position: [{:.2}, {:.2}, {:.2}] m",
-        initial.position.x, initial.position.y, initial.position.z
+        initial.composite_body.position.x,
+        initial.composite_body.position.y,
+        initial.composite_body.position.z
     );
     println!(
         "  JEOD trajectory: {} points over {:.0}s",
@@ -122,9 +69,20 @@ fn tier3_cross_validate_against_jeod_dyncomp() {
     println!();
 
     let dt = 0.03125; // match JEOD's SIM_dyncomp integration rate (32 Hz)
-    let mut max_pos_error = 0.0_f64;
-    let mut max_vel_error = 0.0_f64;
     let mut current_time = 0.0_f64;
+
+    let mut our_states = Vec::with_capacity(jeod_trajectory.len() - 1);
+    let ref_states: Vec<StateLog> = jeod_trajectory[1..]
+        .iter()
+        .map(|r| StateLog {
+            time: r.time,
+            position: Some(r.composite_body.position),
+            velocity: Some(r.composite_body.velocity),
+            acceleration: r.derivs.as_ref().map(|d| d.trans_accel),
+            ang_accel: r.derivs.as_ref().map(|d| d.rot_accel),
+            ..Default::default()
+        })
+        .collect();
 
     for jeod_record in &jeod_trajectory[1..] {
         // Propagate our state to match JEOD's timestamp
@@ -139,11 +97,15 @@ fn tier3_cross_validate_against_jeod_dyncomp() {
             current_time += remainder;
         }
 
-        let pos_error = (state.position - jeod_record.position).length();
-        let vel_error = (state.velocity - jeod_record.velocity).length();
+        our_states.push(StateLog {
+            time: jeod_record.time,
+            position: Some(state.position),
+            velocity: Some(state.velocity),
+            ..Default::default()
+        });
 
-        max_pos_error = max_pos_error.max(pos_error);
-        max_vel_error = max_vel_error.max(vel_error);
+        let pos_error = (state.position - jeod_record.composite_body.position).length();
+        let vel_error = (state.velocity - jeod_record.composite_body.velocity).length();
 
         // Log progress at key points
         if (jeod_record.time % 3600.0).abs() < 30.1 {
@@ -158,21 +120,23 @@ fn tier3_cross_validate_against_jeod_dyncomp() {
         }
     }
 
+    let report = CrossvalReport::compute(
+        "tier3_cross_validate_against_jeod_dyncomp",
+        &our_states,
+        &ref_states,
+    );
+    report.write();
+
+    let max_pos_error = report.max_position_component();
+    let max_vel_error = report.max_velocity_component();
+
     println!();
-    println!("  Max position error: {:.1} m", max_pos_error);
-    println!("  Max velocity error: {:.4} m/s", max_vel_error);
+    println!("  Max position error: {:.6e} m", max_pos_error);
+    println!("  Max velocity error: {:.6e} m/s", max_vel_error);
 
     // dt=0.03125s matches JEOD's SIM_dyncomp integration rate (32 Hz).
     // With point-mass gravity and matching timestep, the only residual comes
     // from floating-point differences in the RK4 implementation.
-    assert!(
-        max_pos_error < 0.5,
-        "Position error {:.2}m exceeds 0.5m over 8 hours",
-        max_pos_error
-    );
-    assert!(
-        max_vel_error < 0.001,
-        "Velocity error {:.6}m/s exceeds 0.001 m/s over 8 hours",
-        max_vel_error
-    );
+    report.assert_position([1.37e-6, 2.154e-6, 1.826e-6]);
+    report.assert_velocity([1.446e-9, 2.389e-9, 1.814e-9]);
 }

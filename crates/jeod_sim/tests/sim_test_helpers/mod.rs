@@ -5,9 +5,12 @@
 
 #![allow(dead_code)]
 
-use glam::{DMat3, DVec3};
+use glam::{DMat3, DQuat, DVec3};
 use jeod_sim::JeodQuat;
 use std::path::Path;
+
+#[allow(unused_imports)] // Not all test binaries use dyncomp CSV loading
+pub use jeod_test_data::dyncomp_csv::{load_dyncomp_csv, DyncompRecord};
 
 pub const MU_EARTH: f64 = 3.986_004_415e14;
 pub const DT: f64 = 0.03125; // 32 Hz, matches JEOD SIM_dyncomp
@@ -15,73 +18,18 @@ pub const DT: f64 = 0.03125; // 32 Hz, matches JEOD SIM_dyncomp
 /// Earth rotation rate (JEOD RNPJ2000 default).
 pub const OMEGA_EARTH: f64 = 7.292_115_146_706_388e-5;
 
-#[derive(Debug)]
-pub struct TransRecord {
-    pub time: f64,
-    pub position: DVec3,
-    pub velocity: DVec3,
-}
-
-#[derive(Debug)]
-pub struct SixDofRecord {
-    pub time: f64,
-    pub position: DVec3,
-    pub velocity: DVec3,
-    pub quaternion: JeodQuat,
-    pub ang_vel: DVec3,
-}
-
-pub fn load_trans_trajectory(path: &Path) -> Vec<TransRecord> {
-    let content = read_csv(path, "SIM_dyncomp");
-    let mut records = Vec::new();
-    for (i, line) in content.lines().enumerate() {
-        if i == 0 || line.trim().is_empty() {
-            continue;
-        }
-        let f: Vec<&str> = line.split(',').collect();
-        assert!(
-            f.len() >= 17,
-            "line {}: expected >=17 columns, got {}",
-            i + 1,
-            f.len()
-        );
-        let p = |s: &str| -> f64 { s.trim().parse().unwrap() };
-        records.push(TransRecord {
-            time: p(f[0]),
-            position: DVec3::new(p(f[1]), p(f[8]), p(f[15])),
-            velocity: DVec3::new(p(f[2]), p(f[9]), p(f[16])),
-        });
-    }
-    records
-}
-
-pub fn load_sixdof_trajectory(path: &Path) -> Vec<SixDofRecord> {
-    let content = read_csv(path, "SIM_dyncomp");
-    let mut records = Vec::new();
-    for (i, line) in content.lines().enumerate() {
-        if i == 0 || line.trim().is_empty() {
-            continue;
-        }
-        let f: Vec<&str> = line.split(',').collect();
-        assert!(f.len() >= 23, "line {}: expected >=23 columns", i + 1);
-        let p = |s: &str| -> f64 { s.trim().parse().unwrap() };
-        records.push(SixDofRecord {
-            time: p(f[0]),
-            position: DVec3::new(p(f[1]), p(f[8]), p(f[15])),
-            velocity: DVec3::new(p(f[2]), p(f[9]), p(f[16])),
-            ang_vel: DVec3::new(p(f[3]), p(f[10]), p(f[17])),
-            quaternion: JeodQuat::new(p(f[22]), p(f[7]), p(f[14]), p(f[21])),
-        });
-    }
-    records
-}
-
 pub fn quaternion_angle_error(q1: &JeodQuat, q2: &JeodQuat) -> f64 {
     let dot = (q1.scalar() * q2.scalar()
         + q1.vector().x * q2.vector().x
         + q1.vector().y * q2.vector().y
         + q1.vector().z * q2.vector().z)
         .abs();
+    2.0 * dot.min(1.0).acos()
+}
+
+/// Angle error between two glam `DQuat` values (radians).
+pub fn dquat_angle_error(a: DQuat, b: DQuat) -> f64 {
+    let dot = a.dot(b).abs();
     2.0 * dot.min(1.0).acos()
 }
 

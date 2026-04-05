@@ -26,6 +26,8 @@ use jeod_dynamics::{
 use jeod_interactions::{compute_ballistic_drag, DragConfig};
 use jeod_math::geodetic::cartesian_to_geodetic;
 use jeod_math::JeodQuat;
+use jeod_test_data::crossval::{CrossvalReport, StateLog};
+use jeod_test_data::dyncomp_csv::load_dyncomp_csv;
 use std::path::Path;
 
 const MU_EARTH: f64 = 3.986_004_415e14;
@@ -73,110 +75,6 @@ fn compute_gmst(tjt: f64) -> f64 {
 ///   jeod_time.time_utc.set_date_and_time(2007, 11, 20, 0, 0, 0.0)
 const EPOCH_TJT: f64 = 14424.0;
 
-/// Parsed 6-DOF state record from JEOD CSV.
-#[derive(Debug)]
-struct JeodSixDofRecord {
-    time: f64,
-    position: DVec3,
-    velocity: DVec3,
-    quaternion: JeodQuat,
-    ang_vel: DVec3,
-}
-
-/// Parse the JEOD log_state_ASCII CSV for composite_body 6-DOF state.
-///
-/// CSV column layout (0-indexed, after time at col 0):
-/// For each axis i in [0,1,2], stride of 7:
-///   position[i], velocity[i], ang_vel_this[i],
-///   T_parent_this[i][0..2], Q_parent_this.vector[i]
-/// Then: Q_parent_this.scalar
-///
-/// composite_body columns:
-///   i=0: cols 1(pos0), 2(vel0), 3(angvel0), 4-6(T[0][0..2]), 7(Q.vec[0])
-///   i=1: cols 8(pos1), 9(vel1), 10(angvel1), 11-13(T[1][0..2]), 14(Q.vec[1])
-///   i=2: cols 15(pos2), 16(vel2), 17(angvel2), 18-20(T[2][0..2]), 21(Q.vec[2])
-///   col 22: Q.scalar
-fn load_sixdof_trajectory(path: &Path) -> Vec<JeodSixDofRecord> {
-    let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
-        panic!(
-            "Failed to read JEOD trajectory CSV from {}: {e}\n\
-             Generate with: docker build -f trick/Dockerfile -t jeod-trick .. && \
-             docker run --rm -v $(pwd)/test_data:/output jeod-trick",
-            path.display()
-        )
-    });
-
-    let mut records = Vec::new();
-    for (i, line) in content.lines().enumerate() {
-        if i == 0 {
-            continue; // skip header
-        }
-        if line.trim().is_empty() {
-            continue;
-        }
-        let fields: Vec<&str> = line.split(',').collect();
-        assert!(
-            fields.len() >= 23,
-            "Malformed JEOD CSV at line {}: expected at least 23 fields, found {}",
-            i + 1,
-            fields.len(),
-        );
-
-        let parse = |s: &str, col: usize| -> f64 {
-            let line_no = i + 1;
-            s.trim().parse::<f64>().unwrap_or_else(|e| {
-                panic!("Failed to parse JEOD CSV at line {line_no}, col {col}: {s:?} ({e})")
-            })
-        };
-
-        // Composite body state columns
-        let position = DVec3::new(
-            parse(fields[1], 1),
-            parse(fields[8], 8),
-            parse(fields[15], 15),
-        );
-        let velocity = DVec3::new(
-            parse(fields[2], 2),
-            parse(fields[9], 9),
-            parse(fields[16], 16),
-        );
-        let ang_vel = DVec3::new(
-            parse(fields[3], 3),
-            parse(fields[10], 10),
-            parse(fields[17], 17),
-        );
-
-        // Quaternion: CSV has vec[0] at col 7, vec[1] at col 14, vec[2] at col 21, scalar at col 22
-        let q_scalar = parse(fields[22], 22);
-        let q_vec = DVec3::new(
-            parse(fields[7], 7),
-            parse(fields[14], 14),
-            parse(fields[21], 21),
-        );
-        let quaternion = JeodQuat::new(q_scalar, q_vec.x, q_vec.y, q_vec.z);
-
-        records.push(JeodSixDofRecord {
-            time: parse(fields[0], 0),
-            position,
-            velocity,
-            quaternion,
-            ang_vel,
-        });
-    }
-    records
-}
-
-/// Compute angular error between two quaternions in radians.
-fn quaternion_angle_error(q1: &JeodQuat, q2: &JeodQuat) -> f64 {
-    let dot = (q1.scalar() * q2.scalar()
-        + q1.vector().x * q2.vector().x
-        + q1.vector().y * q2.vector().y
-        + q1.vector().z * q2.vector().z)
-        .abs();
-    // Clamp to avoid NaN from numerical noise
-    2.0 * dot.min(1.0).acos()
-}
-
 #[test]
 fn tier3_drag_trajectory_run6b() {
     let csv_path =
@@ -191,7 +89,7 @@ fn tier3_drag_trajectory_run6b() {
         csv_path.display()
     );
 
-    let trajectory = load_sixdof_trajectory(&csv_path);
+    let trajectory = load_dyncomp_csv(&csv_path);
     assert!(
         trajectory.len() >= 100,
         "Expected at least 100 data points, got {}",
@@ -227,21 +125,32 @@ fn tier3_drag_trajectory_run6b() {
     let init = &trajectory[0];
     let mut state = SixDofState {
         trans: TranslationalState {
-            position: init.position,
-            velocity: init.velocity,
+            position: init.composite_body.position,
+            velocity: init.composite_body.velocity,
         },
         rot: RotationalState {
-            quaternion: init.quaternion,
-            ang_vel_body: init.ang_vel,
+            quaternion: JeodQuat::from_glam(init.composite_body.quaternion),
+            ang_vel_body: init.composite_body.ang_vel,
         },
     };
 
     let dt = 0.03125; // match JEOD's SIM_dyncomp integration rate (32 Hz)
     let mut current_time = init.time;
 
-    let mut max_pos_error = 0.0_f64;
-    let mut max_vel_error = 0.0_f64;
-    let mut max_quat_error = 0.0_f64;
+    let mut our_states = Vec::with_capacity(trajectory.len() - 1);
+    let ref_states: Vec<StateLog> = trajectory
+        .iter()
+        .skip(1)
+        .map(|r| StateLog {
+            time: r.time,
+            position: Some(r.composite_body.position),
+            velocity: Some(r.composite_body.velocity),
+            acceleration: r.derivs.as_ref().map(|d| d.trans_accel),
+            quaternion: Some(r.composite_body.quaternion),
+            ang_vel: Some(r.composite_body.ang_vel),
+            ang_accel: r.derivs.as_ref().map(|d| d.rot_accel),
+        })
+        .collect();
 
     // Gravity + drag acceleration closure
     let gravity_plus_drag_accel = |s: &SixDofState, sim_time: f64| -> DVec3 {
@@ -328,15 +237,18 @@ fn tier3_drag_trajectory_run6b() {
             current_time += remainder;
         }
 
-        // Compare translational state
-        let pos_error = (state.trans.position - record.position).length();
-        let vel_error = (state.trans.velocity - record.velocity).length();
-        max_pos_error = max_pos_error.max(pos_error);
-        max_vel_error = max_vel_error.max(vel_error);
+        our_states.push(StateLog {
+            time: record.time,
+            position: Some(state.trans.position),
+            velocity: Some(state.trans.velocity),
+            quaternion: Some(state.rot.quaternion.to_glam()),
+            ang_vel: Some(state.rot.ang_vel_body),
+            ..Default::default()
+        });
 
-        // Compare rotational state
-        let quat_error = quaternion_angle_error(&state.rot.quaternion, &record.quaternion);
-        max_quat_error = max_quat_error.max(quat_error);
+        // Compare for logging
+        let pos_error = (state.trans.position - record.composite_body.position).length();
+        let vel_error = (state.trans.velocity - record.composite_body.velocity).length();
 
         // Log progress hourly with position error, density, drag force
         let log_hourly = (record.time % 3600.0).abs() < 30.1;
@@ -387,6 +299,13 @@ fn tier3_drag_trajectory_run6b() {
         }
     }
 
+    let report = CrossvalReport::compute("tier3_drag_trajectory_run6b", &our_states, &ref_states);
+    report.write();
+
+    let max_pos_error = report.max_position_component();
+    let max_vel_error = report.max_velocity_component();
+    let max_quat_error = report.max_quat_angle();
+
     println!();
     println!("=== Tier 3 Drag Trajectory Cross-Validation (RUN_6B) ===");
     println!(
@@ -396,33 +315,15 @@ fn tier3_drag_trajectory_run6b() {
     );
     println!("Atmosphere: MET solar mean (F10.7=128.8, Ap=15.7)");
     println!("Drag: Cd=0.02, Area=1.0 m^2, mass=1.0 kg");
-    println!("Max position error:   {:.4} m", max_pos_error);
-    println!("Max velocity error:   {:.6} m/s", max_vel_error);
+    println!("Max position error:   {:.6e} m", max_pos_error);
+    println!("Max velocity error:   {:.6e} m/s", max_vel_error);
     println!(
-        "Max quaternion error: {:.2e} rad ({:.4} deg)",
+        "Max quaternion error: {:.6e} rad ({:.4} deg)",
         max_quat_error,
         max_quat_error.to_degrees()
     );
 
-    // Position threshold: tightened to 2x actual (~0.8 m) to catch regression.
-    // PLAN.md exit criterion is 100 m, but actual performance is sub-meter
-    // thanks to matching JEOD's geodetic pipeline, co-rotation wind, and GMST.
-    assert!(
-        max_pos_error < 2.0,
-        "Position error {:.4} m exceeds 2.0 m threshold (regression?)",
-        max_pos_error
-    );
-    assert!(
-        max_vel_error < 0.005,
-        "Velocity error {:.6} m/s exceeds 0.005 m/s threshold (regression?)",
-        max_vel_error
-    );
-
-    // Quaternion threshold: the sphere has no torques, so attitude should
-    // remain nearly constant (only numerical drift). Use generous threshold.
-    assert!(
-        max_quat_error < 0.01,
-        "Quaternion angular error {:.2e} rad exceeds 0.01 rad threshold",
-        max_quat_error
-    );
+    report.assert_position([3.19e-1, 4.297e-1, 3.581e-1]);
+    report.assert_velocity([3.012e-4, 4.856e-4, 3.863e-4]);
+    report.assert_quat_angle(4.426e-8);
 }

@@ -13,6 +13,7 @@ use sim_test_helpers::*;
 use glam::DVec3;
 use jeod_interactions::{compute_shadow_fraction, solar_flux_at_distance};
 use jeod_sim::{Ephemeris, EphemerisBody};
+use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::Path;
 
 /// Sun radius (m).
@@ -22,7 +23,7 @@ const R_EARTH: f64 = 6_378_137.0;
 /// SIM_2A epoch: 1998-12-01 00:00:31 TAI.
 const EPOCH_TJT: f64 = 11148.0 + 31.0 / 86400.0;
 
-fn run_shadow_comparison(csv_filename: &str, label: &str) {
+fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str, frac_tol: f64) {
     let csv_path = test_data_path(csv_filename);
     assert!(
         csv_path.exists(),
@@ -57,6 +58,16 @@ fn run_shadow_comparison(csv_filename: &str, label: &str) {
     let mut max_frac_err = 0.0_f64;
     let mut shadow_state_mismatches = 0;
 
+    // These tests don't propagate state; use empty state logs and report via extras.
+    let our_states: Vec<StateLog> = records
+        .iter()
+        .map(|r| StateLog {
+            time: r.time,
+            ..Default::default()
+        })
+        .collect();
+    let ref_states: Vec<StateLog> = our_states.clone();
+
     for record in &records {
         let tdb_jd = base_jd + record.time / 86400.0;
         let (sun_pos, _) = ephemeris
@@ -69,9 +80,9 @@ fn run_shadow_comparison(csv_filename: &str, label: &str) {
 
         // Derive JEOD's shadow fraction: compute what full-sun flux would be at
         // this vehicle's distance from Sun, then ratio with actual logged flux.
-        // Both flux_mag (from JEOD CSV) and solar_flux_at_distance() are in W/m².
+        // Both flux_mag (from JEOD CSV) and solar_flux_at_distance() are in W/m2.
         // (The CSV header labels flux as `{N/m2}` — Trick's default unit label
-        // for radiation flux — but the physical quantity is irradiance in W/m².)
+        // for radiation flux — but the physical quantity is irradiance in W/m2.)
         let sun_dist = (sun_pos - record.position).length();
         let full_sun_flux = solar_flux_at_distance(sun_dist);
         let jeod_frac = if full_sun_flux > 1.0 {
@@ -110,16 +121,15 @@ fn run_shadow_comparison(csv_filename: &str, label: &str) {
     println!("  Max shadow fraction error:  {:.6e}", max_frac_err);
     println!("  Shadow state mismatches:    {shadow_state_mismatches}");
 
-    // Shadow fraction agreement: measured 5.4e-3 max (at the umbra-antumbra
-    // transition at ~1.4 Gm). The residual is dominated by the ~10 arcsecond
-    // DE421 Sun position offset (#27) which shifts the shadow cone boundary
-    // by ~70 m at 1.4 Gm distance. Error decreases with distance (1.2e-4
-    // at 10 Gm, 3.5e-5 at 100 Gm). Shadow state (umbra/penumbra/sun) always
-    // agrees — the discrepancy is in the fractional illumination during
-    // penumbra transitions.
+    let mut report = CrossvalReport::compute(test_name, &our_states, &ref_states);
+    report.add_extra("shadow_fraction", max_frac_err, "");
+    assert!(max_frac_err < frac_tol, "shadow_fraction");
+    report.add_extra("shadow_mismatches", shadow_state_mismatches as f64, "");
+    report.write();
+
     assert!(
-        max_frac_err < 0.01,
-        "{label}: shadow fraction error {max_frac_err:.3e} exceeds 0.01"
+        max_frac_err < frac_tol,
+        "{label}: shadow fraction error {max_frac_err:.3e} exceeds {frac_tol:.3e}"
     );
     assert_eq!(
         shadow_state_mismatches, 0,
@@ -129,10 +139,20 @@ fn run_shadow_comparison(csv_filename: &str, label: &str) {
 
 #[test]
 fn tier3_shadow_2a_annular() {
-    run_shadow_comparison("shadow_2a_annular_shadow_calc.csv", "RUN_annular_eclipse");
+    run_shadow_comparison(
+        "shadow_2a_annular_shadow_calc.csv",
+        "RUN_annular_eclipse",
+        "tier3_shadow_2a_annular",
+        5.71e-3,
+    );
 }
 
 #[test]
 fn tier3_shadow_2a_cooling() {
-    run_shadow_comparison("shadow_2a_cooling_shadow_calc.csv", "RUN_shadow_cooling");
+    run_shadow_comparison(
+        "shadow_2a_cooling_shadow_calc.csv",
+        "RUN_shadow_cooling",
+        "tier3_shadow_2a_cooling",
+        1e-10,
+    );
 }

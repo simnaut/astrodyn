@@ -2371,6 +2371,7 @@ version = "0.1.0"
 dependencies = [
  "glam 0.30.10",
  "jeod_math",
+ "jeod_test_data",
  "jeod_time",
 ]
 
@@ -2397,6 +2398,7 @@ dependencies = [
  "jeod_dynamics",
  "jeod_ephemeris",
  "jeod_math",
+ "jeod_test_data",
  "jeod_time",
 ]
 

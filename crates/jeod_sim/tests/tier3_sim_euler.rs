@@ -9,9 +9,10 @@ use sim_test_helpers::*;
 use glam::{DMat3, DVec3};
 use jeod_sim::{
     DynamicsConfig, EulerSequence, GravityControl, GravityControls, GravityModel, GravitySource,
-    GravitySourceEntry, MassProperties, RotationalState, SimBody, Simulation, SimulationTime,
-    TranslationalState,
+    GravitySourceEntry, JeodQuat, MassProperties, RotationalState, SimBody, Simulation,
+    SimulationTime, TranslationalState,
 };
+use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
 #[test]
 fn tier3_simulation_euler() {
@@ -22,7 +23,7 @@ fn tier3_simulation_euler() {
         csv_path.display()
     );
 
-    let trajectory = load_sixdof_trajectory(&csv_path);
+    let trajectory = load_dyncomp_csv(&csv_path);
     assert!(trajectory.len() > 100);
     let init = &trajectory[0];
 
@@ -48,12 +49,12 @@ fn tier3_simulation_euler() {
 
     sim.add_body(SimBody {
         trans: TranslationalState {
-            position: init.position,
-            velocity: init.velocity,
+            position: init.composite_body.position,
+            velocity: init.composite_body.velocity,
         },
         rot: Some(RotationalState {
-            quaternion: init.quaternion,
-            ang_vel_body: init.ang_vel,
+            quaternion: JeodQuat::from_glam(init.composite_body.quaternion),
+            ang_vel_body: init.composite_body.ang_vel,
         }),
         mass: Some(mass_props),
         config: DynamicsConfig {
@@ -75,6 +76,8 @@ fn tier3_simulation_euler() {
         trajectory.len()
     );
 
+    let mut our_states = Vec::with_capacity(trajectory.len() - 1);
+    let mut ref_states = Vec::with_capacity(trajectory.len() - 1);
     let mut max_angle_err = [0.0_f64; 3];
     let mut max_quat_err = 0.0_f64;
 
@@ -92,12 +95,15 @@ fn tier3_simulation_euler() {
         });
 
         // Compute expected Euler angles from JEOD's quaternion for comparison
-        let jeod_t = record.quaternion.left_quat_to_transformation();
+        let jeod_t =
+            JeodQuat::from_glam(record.composite_body.quaternion).left_quat_to_transformation();
         let jeod_euler = jeod_math::compute_euler_angles_from_matrix(&jeod_t, EulerSequence::XYZ);
 
         // Also check quaternion error to understand the attitude tracking
-        let quat_err =
-            quaternion_angle_error(&body.rot.as_ref().unwrap().quaternion, &record.quaternion);
+        let quat_err = dquat_angle_error(
+            body.rot.as_ref().unwrap().quaternion.to_glam(),
+            record.composite_body.quaternion,
+        );
         max_quat_err = max_quat_err.max(quat_err);
 
         for k in 0..3 {
@@ -105,30 +111,46 @@ fn tier3_simulation_euler() {
             max_angle_err[k] = max_angle_err[k].max(err);
         }
 
+        our_states.push(StateLog {
+            time: record.time,
+            acceleration: Some(body.frame_derivs.trans_accel),
+            quaternion: Some(body.rot.as_ref().unwrap().quaternion.to_glam()),
+            ang_vel: Some(body.rot.as_ref().unwrap().ang_vel_body),
+            ang_accel: Some(body.frame_derivs.rot_accel),
+            ..Default::default()
+        });
+        ref_states.push(StateLog {
+            time: record.time,
+            acceleration: record.derivs.as_ref().map(|d| d.trans_accel),
+            quaternion: Some(record.composite_body.quaternion),
+            ang_vel: Some(record.composite_body.ang_vel),
+            ang_accel: record.derivs.as_ref().map(|d| d.rot_accel),
+            ..Default::default()
+        });
+
         if (record.time % 3600.0).abs() < 30.1 {
             println!(
-                "  t={:6.0}s: quat_err={:.2e} rad  euler_err=[{:.2e}, {:.2e}, {:.2e}] rad",
+                "  t={:6.0}s: quat_err={:.6e} rad  euler_err=[{:.6e}, {:.6e}, {:.6e}] rad",
                 record.time, quat_err, max_angle_err[0], max_angle_err[1], max_angle_err[2]
             );
         }
     }
 
-    println!("  Max quaternion error: {:.2e} rad", max_quat_err);
+    println!("  Max quaternion error: {:.6e} rad", max_quat_err);
+
+    let mut report = CrossvalReport::compute("tier3_simulation_euler", &our_states, &ref_states);
+    report.add_extra("euler_roll", max_angle_err[0], "rad");
+    assert!(max_angle_err[0] < 1.846e-13, "euler_roll");
+    report.add_extra("euler_pitch", max_angle_err[1], "rad");
+    assert!(max_angle_err[1] < 8.674e-14, "euler_pitch");
+    report.add_extra("euler_yaw", max_angle_err[2], "rad");
+    assert!(max_angle_err[2] < 1.103e-13, "euler_yaw");
+    report.write();
+
     println!(
-        "  Max Euler angle errors: [{:.2e}, {:.2e}, {:.2e}] rad",
+        "  Max Euler angle errors: [{:.6e}, {:.6e}, {:.6e}] rad",
         max_angle_err[0], max_angle_err[1], max_angle_err[2]
     );
 
-    // Quaternion tolerance matches existing RUN_2 6-DOF test
-    assert!(
-        max_quat_err < 0.01,
-        "Quaternion error {max_quat_err:.2e} rad exceeds 0.01 rad"
-    );
-    // Euler angle error derives from quaternion error
-    for (k, &err) in max_angle_err.iter().enumerate() {
-        assert!(
-            err < 0.02,
-            "Euler angle[{k}] error {err:.2e} rad exceeds 0.02 rad",
-        );
-    }
+    report.assert_quat_angle(4.426e-8);
 }

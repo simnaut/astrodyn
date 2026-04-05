@@ -15,6 +15,7 @@ use jeod_sim::{
     Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel, GravitySource,
     GravitySourceEntry, SimBody, Simulation, SimulationTime, TranslationalState,
 };
+use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::Path;
 
 #[test]
@@ -34,7 +35,7 @@ fn tier3_simulation_solar_beta() {
     );
 
     let ephemeris = Ephemeris::from_bsp(&bsp_path).expect("load DE421");
-    let trajectory = load_trans_trajectory(&csv_path);
+    let trajectory = load_dyncomp_csv(&csv_path);
     assert!(trajectory.len() > 100);
     let init = &trajectory[0];
 
@@ -69,8 +70,8 @@ fn tier3_simulation_solar_beta() {
 
     sim.add_body(SimBody {
         trans: TranslationalState {
-            position: init.position,
-            velocity: init.velocity,
+            position: init.composite_body.position,
+            velocity: init.composite_body.velocity,
         },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
@@ -86,7 +87,8 @@ fn tier3_simulation_solar_beta() {
         trajectory.len()
     );
 
-    let mut max_pos_err = 0.0_f64;
+    let mut our_states = Vec::with_capacity(trajectory.len() - 1);
+    let mut ref_states = Vec::with_capacity(trajectory.len() - 1);
 
     for record in &trajectory[1..] {
         // Update Sun position from ephemeris
@@ -99,8 +101,6 @@ fn tier3_simulation_solar_beta() {
         sim.step_until(record.time);
 
         let body = sim.body(0);
-        let pos_err = (body.trans.position - record.position).length();
-        max_pos_err = max_pos_err.max(pos_err);
 
         let beta = body.solar_beta.unwrap_or_else(|| {
             panic!("Simulation did not compute solar beta at t={}", record.time)
@@ -119,7 +119,25 @@ fn tier3_simulation_solar_beta() {
             expected
         );
 
+        our_states.push(StateLog {
+            time: record.time,
+            position: Some(body.trans.position),
+            velocity: Some(body.trans.velocity),
+            acceleration: Some(body.frame_derivs.trans_accel),
+            ang_accel: Some(body.frame_derivs.rot_accel),
+            ..Default::default()
+        });
+        ref_states.push(StateLog {
+            time: record.time,
+            position: Some(record.composite_body.position),
+            velocity: Some(record.composite_body.velocity),
+            acceleration: record.derivs.as_ref().map(|d| d.trans_accel),
+            ang_accel: record.derivs.as_ref().map(|d| d.rot_accel),
+            ..Default::default()
+        });
+
         if (record.time % 3600.0).abs() < 30.1 {
+            let pos_err = (body.trans.position - record.composite_body.position).length();
             println!(
                 "  t={:6.0}s: pos_err={:.4} m  beta={:.4} deg ({:.6} rad)",
                 record.time,
@@ -130,11 +148,11 @@ fn tier3_simulation_solar_beta() {
         }
     }
 
-    println!("  Max position error: {:.4} m", max_pos_err);
+    let report = CrossvalReport::compute("tier3_simulation_solar_beta", &our_states, &ref_states);
+    report.write();
 
-    // Position tracks JEOD RUN_2 trajectory
-    assert!(
-        max_pos_err < 0.5,
-        "Position error {max_pos_err:.2} m exceeds 0.5 m"
-    );
+    let max_pos_err = report.max_position_component();
+    println!("  Max position error: {:.6e} m", max_pos_err);
+
+    report.assert_position([1.37e-6, 2.154e-6, 1.826e-6]);
 }

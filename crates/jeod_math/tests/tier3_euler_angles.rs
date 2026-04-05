@@ -13,6 +13,7 @@
 
 use glam::{DMat3, DVec3};
 use jeod_math::{compute_euler_angles_from_matrix, EulerSequence};
+use jeod_test_data::crossval::CrossvalReport;
 use std::path::Path;
 
 /// Number of angle fields per sequence: ref_body_angles[3] + body_ref_angles[3] = 6.
@@ -181,9 +182,10 @@ fn tier3_euler_angles_vs_jeod_sim_euler() {
             let err = angle_diff(angles[k], jeod_angles[k]);
             max_angle_err[k] = max_angle_err[k].max(err);
 
+            let tol = [2.332e-16, 8.744e-17, 4.663e-16][k];
             assert!(
-                err < 1e-6,
-                "t={:.1}s: RPY angle[{k}] error {err:.6e} rad exceeds 1e-6 rad \
+                err < tol,
+                "t={:.1}s: RPY angle[{k}] error {err:.6e} rad exceeds {tol:.3e} rad \
                  (ours={:.10}, JEOD={:.10})",
                 rec.time,
                 angles[k],
@@ -220,4 +222,29 @@ fn tier3_euler_angles_vs_jeod_sim_euler() {
     if skipped_gimbal > 0 {
         eprintln!("  Gimbal-lock regions skipped: {skipped_gimbal}");
     }
+
+    let mut report = CrossvalReport::compute("tier3_euler_angles_vs_jeod_sim_euler", &[], &[]);
+    report.add_extra("euler_roll", max_angle_err[0], "rad");
+    assert!(max_angle_err[0] < 2.332e-16, "euler_roll");
+    report.add_extra("euler_pitch", max_angle_err[1], "rad");
+    assert!(max_angle_err[1] < 8.744e-17, "euler_pitch");
+    report.add_extra("euler_yaw", max_angle_err[2], "rad");
+    assert!(max_angle_err[2] < 4.663e-16, "euler_yaw");
+    report.write();
+
+    assert!(
+        max_angle_err[0] < 2.332e-16,
+        "euler_roll max error {:.6e} exceeds 2.332e-16 rad",
+        max_angle_err[0]
+    );
+    assert!(
+        max_angle_err[1] < 8.744e-17,
+        "euler_pitch max error {:.6e} exceeds 8.744e-17 rad",
+        max_angle_err[1]
+    );
+    assert!(
+        max_angle_err[2] < 4.663e-16,
+        "euler_yaw max error {:.6e} exceeds 4.663e-16 rad",
+        max_angle_err[2]
+    );
 }

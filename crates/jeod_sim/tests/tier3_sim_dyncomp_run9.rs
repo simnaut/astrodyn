@@ -5,9 +5,10 @@ use sim_test_helpers::*;
 
 use glam::{DMat3, DVec3};
 use jeod_sim::{
-    DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource, MassProperties,
-    RotationalState, TranslationalState,
+    DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource, JeodQuat,
+    MassProperties, RotationalState, TranslationalState,
 };
+use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
 // ── RUN_9A: External torque, 6-DOF ──
 //
@@ -31,7 +32,7 @@ fn tier3_simulation_run9a_torque() {
         csv_path.display()
     );
 
-    let trajectory = load_sixdof_trajectory(&csv_path);
+    let trajectory = load_dyncomp_csv(&csv_path);
     assert!(trajectory.len() >= 100);
     let init = &trajectory[0];
 
@@ -46,12 +47,12 @@ fn tier3_simulation_run9a_torque() {
     // Use per-body functions directly for torque injection.
     // This still validates jeod_sim's integrate_body and accumulate_gravity.
     let mut trans = TranslationalState {
-        position: init.position,
-        velocity: init.velocity,
+        position: init.composite_body.position,
+        velocity: init.composite_body.velocity,
     };
     let mut rot = RotationalState {
-        quaternion: init.quaternion,
-        ang_vel_body: init.ang_vel,
+        quaternion: JeodQuat::from_glam(init.composite_body.quaternion),
+        ang_vel_body: init.composite_body.ang_vel,
     };
 
     let config = DynamicsConfig {
@@ -74,10 +75,7 @@ fn tier3_simulation_run9a_torque() {
         trajectory.len()
     );
 
-    let mut max_pos_error = 0.0_f64;
-    let mut max_vel_error = 0.0_f64;
-    let mut max_quat_error = 0.0_f64;
-    let mut max_omega_error = 0.0_f64;
+    let mut our_states = Vec::with_capacity(trajectory.len() - 1);
     let mut current_time = init.time;
 
     for record in &trajectory[1..] {
@@ -161,45 +159,67 @@ fn tier3_simulation_run9a_torque() {
             current_time += remainder;
         }
 
-        let pos_error = (trans.position - record.position).length();
-        let vel_error = (trans.velocity - record.velocity).length();
-        let quat_error = quaternion_angle_error(&rot.quaternion, &record.quaternion);
-        let omega_error = (rot.ang_vel_body - record.ang_vel).length();
-
-        max_pos_error = max_pos_error.max(pos_error);
-        max_vel_error = max_vel_error.max(vel_error);
-        max_quat_error = max_quat_error.max(quat_error);
-        max_omega_error = max_omega_error.max(omega_error);
+        let pos_error = (trans.position - record.composite_body.position).length();
+        let quat_error =
+            dquat_angle_error(rot.quaternion.to_glam(), record.composite_body.quaternion);
+        let omega_error = (rot.ang_vel_body - record.composite_body.ang_vel).length();
 
         if (record.time % 3600.0).abs() < 30.1 {
             println!(
-                "  t={:6.0}s: pos_err={:10.4} m  quat_err={:.2e} rad  omega_err={:.2e}",
+                "  t={:6.0}s: pos_err={:10.4} m  quat_err={:.6e} rad  omega_err={:.6e}",
                 record.time, pos_error, quat_error, omega_error
             );
         }
+
+        our_states.push(StateLog {
+            time: record.time,
+            position: Some(trans.position),
+            velocity: Some(trans.velocity),
+            quaternion: Some(rot.quaternion.to_glam()),
+            ang_vel: Some(rot.ang_vel_body),
+            ..Default::default()
+        });
     }
 
-    println!("  Max position error:  {:.4} m", max_pos_error);
-    println!("  Max velocity error:  {:.6} m/s", max_vel_error);
-    println!("  Max quaternion error: {:.2e} rad", max_quat_error);
-    println!("  Max omega error:     {:.2e} rad/s", max_omega_error);
+    // Reference states from JEOD CSV
+    let ref_states: Vec<StateLog> = trajectory[1..]
+        .iter()
+        .map(|r| StateLog {
+            time: r.time,
+            position: Some(r.composite_body.position),
+            velocity: Some(r.composite_body.velocity),
+            acceleration: r.derivs.as_ref().map(|d| d.trans_accel),
+            quaternion: Some(r.composite_body.quaternion),
+            ang_vel: Some(r.composite_body.ang_vel),
+            ang_accel: r.derivs.as_ref().map(|d| d.rot_accel),
+        })
+        .collect();
 
-    assert!(
-        max_pos_error < 0.5,
-        "Position error {max_pos_error:.2} m exceeds 0.5 m"
+    // Post-process: compute errors
+    let report = CrossvalReport::compute("tier3_simulation_run9a_torque", &our_states, &ref_states);
+    report.write();
+
+    println!(
+        "  Max position error:  {:.6e} m",
+        report.max_position_component()
     );
-    assert!(
-        max_vel_error < 0.001,
-        "Velocity error {max_vel_error:.6} m/s exceeds 0.001 m/s"
+    println!(
+        "  Max velocity error:  {:.6e} m/s",
+        report.max_velocity_component()
     );
-    assert!(
-        max_quat_error < 0.01,
-        "Quaternion error {max_quat_error:.2e} rad exceeds 0.01 rad"
+    println!(
+        "  Max quaternion error: {:.6e} rad",
+        report.max_quat_angle()
     );
-    assert!(
-        max_omega_error < 1e-5,
-        "Omega error {max_omega_error:.2e} rad/s exceeds 1e-5 rad/s"
+    println!(
+        "  Max omega error:     {:.6e} rad/s",
+        report.max_ang_vel_component()
     );
+
+    report.assert_position([9.965e-7, 1.284e-6, 1.103e-6]);
+    report.assert_velocity([9.763e-10, 1.623e-9, 1.232e-9]);
+    report.assert_quat_angle(4.426e-8);
+    report.assert_ang_vel([3.558e-20, 4.447e-21, 7.116e-21]);
 }
 
 // ── RUN_9C: External force + torque, zero inertial rate ──
@@ -216,7 +236,7 @@ fn tier3_simulation_run9c_force_torque() {
         csv_path.display()
     );
 
-    let trajectory = load_sixdof_trajectory(&csv_path);
+    let trajectory = load_dyncomp_csv(&csv_path);
     assert!(trajectory.len() >= 100);
     let init = &trajectory[0];
 
@@ -228,12 +248,12 @@ fn tier3_simulation_run9c_force_torque() {
     let mass_props = MassProperties::with_inertia(400_000.0, inertia, DVec3::new(-3.0, -1.5, 4.0));
 
     let mut trans = TranslationalState {
-        position: init.position,
-        velocity: init.velocity,
+        position: init.composite_body.position,
+        velocity: init.composite_body.velocity,
     };
     let mut rot = RotationalState {
-        quaternion: init.quaternion,
-        ang_vel_body: init.ang_vel,
+        quaternion: JeodQuat::from_glam(init.composite_body.quaternion),
+        ang_vel_body: init.composite_body.ang_vel,
     };
 
     let config = DynamicsConfig {
@@ -251,10 +271,7 @@ fn tier3_simulation_run9c_force_torque() {
         model: GravityModel::PointMass,
     };
 
-    let mut max_pos_error = 0.0_f64;
-    let mut max_vel_error = 0.0_f64;
-    let mut max_quat_error = 0.0_f64;
-    let mut max_omega_error = 0.0_f64;
+    let mut our_states = Vec::with_capacity(trajectory.len() - 1);
     let mut current_time = init.time;
 
     for record in &trajectory[1..] {
@@ -303,33 +320,50 @@ fn tier3_simulation_run9c_force_torque() {
             current_time += DT;
         }
 
-        max_pos_error = max_pos_error.max((trans.position - record.position).length());
-        max_vel_error = max_vel_error.max((trans.velocity - record.velocity).length());
-        max_quat_error =
-            max_quat_error.max(quaternion_angle_error(&rot.quaternion, &record.quaternion));
-        max_omega_error = max_omega_error.max((rot.ang_vel_body - record.ang_vel).length());
+        our_states.push(StateLog {
+            time: record.time,
+            position: Some(trans.position),
+            velocity: Some(trans.velocity),
+            quaternion: Some(rot.quaternion.to_glam()),
+            ang_vel: Some(rot.ang_vel_body),
+            ..Default::default()
+        });
     }
 
+    // Reference states from JEOD CSV
+    let ref_states: Vec<StateLog> = trajectory[1..]
+        .iter()
+        .map(|r| StateLog {
+            time: r.time,
+            position: Some(r.composite_body.position),
+            velocity: Some(r.composite_body.velocity),
+            acceleration: r.derivs.as_ref().map(|d| d.trans_accel),
+            quaternion: Some(r.composite_body.quaternion),
+            ang_vel: Some(r.composite_body.ang_vel),
+            ang_accel: r.derivs.as_ref().map(|d| d.rot_accel),
+        })
+        .collect();
+
+    // Post-process: compute errors
+    let report = CrossvalReport::compute(
+        "tier3_simulation_run9c_force_torque",
+        &our_states,
+        &ref_states,
+    );
+    report.write();
+
     println!(
-        "RUN_9C: max pos={:.4} m  vel={:.6} m/s  quat={:.2e} rad  omega={:.2e} rad/s",
-        max_pos_error, max_vel_error, max_quat_error, max_omega_error
+        "RUN_9C: max pos={:.4} m  vel={:.6} m/s  quat={:.6e} rad  omega={:.6e} rad/s",
+        report.max_position_component(),
+        report.max_velocity_component(),
+        report.max_quat_angle(),
+        report.max_ang_vel_component(),
     );
-    assert!(
-        max_pos_error < 0.5,
-        "RUN_9C: position error {max_pos_error:.4} m exceeds 0.5 m"
-    );
-    assert!(
-        max_vel_error < 0.001,
-        "RUN_9C: velocity error {max_vel_error:.6} m/s exceeds 0.001 m/s"
-    );
-    assert!(
-        max_quat_error < 0.01,
-        "RUN_9C: quaternion error {max_quat_error:.2e} rad exceeds 0.01 rad"
-    );
-    assert!(
-        max_omega_error < 1e-5,
-        "RUN_9C: omega error {max_omega_error:.2e} rad/s exceeds 1e-5 rad/s"
-    );
+
+    report.assert_position([7.679e-5, 1.2e-4, 8.628e-5]);
+    report.assert_velocity([8.526e-8, 1.269e-7, 1.062e-7]);
+    report.assert_quat_angle(4.426e-8);
+    report.assert_ang_vel([3.558e-20, 4.447e-21, 7.116e-21]);
 }
 
 // ── RUN_9D: External force + torque, with orbit rate ──
@@ -344,7 +378,7 @@ fn tier3_simulation_run9d_force_torque_rate() {
         csv_path.display()
     );
 
-    let trajectory = load_sixdof_trajectory(&csv_path);
+    let trajectory = load_dyncomp_csv(&csv_path);
     assert!(trajectory.len() >= 100);
     let init = &trajectory[0];
 
@@ -356,12 +390,12 @@ fn tier3_simulation_run9d_force_torque_rate() {
     let mass_props = MassProperties::with_inertia(400_000.0, inertia, DVec3::new(-3.0, -1.5, 4.0));
 
     let mut trans = TranslationalState {
-        position: init.position,
-        velocity: init.velocity,
+        position: init.composite_body.position,
+        velocity: init.composite_body.velocity,
     };
     let mut rot = RotationalState {
-        quaternion: init.quaternion,
-        ang_vel_body: init.ang_vel,
+        quaternion: JeodQuat::from_glam(init.composite_body.quaternion),
+        ang_vel_body: init.composite_body.ang_vel,
     };
 
     let config = DynamicsConfig {
@@ -379,10 +413,7 @@ fn tier3_simulation_run9d_force_torque_rate() {
         model: GravityModel::PointMass,
     };
 
-    let mut max_pos_error = 0.0_f64;
-    let mut max_vel_error = 0.0_f64;
-    let mut max_quat_error = 0.0_f64;
-    let mut max_omega_error = 0.0_f64;
+    let mut our_states = Vec::with_capacity(trajectory.len() - 1);
     let mut current_time = init.time;
 
     for record in &trajectory[1..] {
@@ -428,31 +459,48 @@ fn tier3_simulation_run9d_force_torque_rate() {
             current_time += DT;
         }
 
-        max_pos_error = max_pos_error.max((trans.position - record.position).length());
-        max_vel_error = max_vel_error.max((trans.velocity - record.velocity).length());
-        max_quat_error =
-            max_quat_error.max(quaternion_angle_error(&rot.quaternion, &record.quaternion));
-        max_omega_error = max_omega_error.max((rot.ang_vel_body - record.ang_vel).length());
+        our_states.push(StateLog {
+            time: record.time,
+            position: Some(trans.position),
+            velocity: Some(trans.velocity),
+            quaternion: Some(rot.quaternion.to_glam()),
+            ang_vel: Some(rot.ang_vel_body),
+            ..Default::default()
+        });
     }
 
+    // Reference states from JEOD CSV
+    let ref_states: Vec<StateLog> = trajectory[1..]
+        .iter()
+        .map(|r| StateLog {
+            time: r.time,
+            position: Some(r.composite_body.position),
+            velocity: Some(r.composite_body.velocity),
+            acceleration: r.derivs.as_ref().map(|d| d.trans_accel),
+            quaternion: Some(r.composite_body.quaternion),
+            ang_vel: Some(r.composite_body.ang_vel),
+            ang_accel: r.derivs.as_ref().map(|d| d.rot_accel),
+        })
+        .collect();
+
+    // Post-process: compute errors
+    let report = CrossvalReport::compute(
+        "tier3_simulation_run9d_force_torque_rate",
+        &our_states,
+        &ref_states,
+    );
+    report.write();
+
     println!(
-        "RUN_9D: max pos={:.4} m  vel={:.6} m/s  quat={:.2e} rad  omega={:.2e} rad/s",
-        max_pos_error, max_vel_error, max_quat_error, max_omega_error
+        "RUN_9D: max pos={:.4} m  vel={:.6} m/s  quat={:.6e} rad  omega={:.6e} rad/s",
+        report.max_position_component(),
+        report.max_velocity_component(),
+        report.max_quat_angle(),
+        report.max_ang_vel_component(),
     );
-    assert!(
-        max_pos_error < 0.5,
-        "RUN_9D: position error {max_pos_error:.4} m exceeds 0.5 m"
-    );
-    assert!(
-        max_vel_error < 0.001,
-        "RUN_9D: velocity error {max_vel_error:.6} m/s exceeds 0.001 m/s"
-    );
-    assert!(
-        max_quat_error < 0.01,
-        "RUN_9D: quaternion error {max_quat_error:.2e} rad exceeds 0.01 rad"
-    );
-    assert!(
-        max_omega_error < 1e-5,
-        "RUN_9D: omega error {max_omega_error:.2e} rad/s exceeds 1e-5 rad/s"
-    );
+
+    report.assert_position([5.278e-3, 8.255e-3, 6.635e-3]);
+    report.assert_velocity([5.911e-6, 9.056e-6, 7.276e-6]);
+    report.assert_quat_angle(4.426e-8);
+    report.assert_ang_vel([1.651e-18, 1.367e-18, 6.262e-19]);
 }
