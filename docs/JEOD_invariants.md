@@ -124,7 +124,7 @@ grep the JEOD tree for the distinctive identifier in the invariant description
 | GV.11 | gradient_order ≤ order (clamped) | error | consistency | enforced (`gravity_controls.rs check_validity`) |
 | GV.12 | Gravity source must exist for control | error | initialization | enforced (`validation.rs` + `systems.rs` panic) |
 | GV.13 | Gravity source must have inertial frame | error | initialization | enforced (`systems.rs` panics if nonspherical without PlanetFixedRotationC) |
-| GV.14 | Third-body vs direct gravity classification | structural | initialization | deferred (Phase 5, requires frame tree ancestry) |
+| GV.14 | Third-body vs direct gravity classification | structural | initialization | enforced (`GravityControl.differential` flag, set explicitly per control; JEOD derives from frame tree ancestry via `is_progeny_of`) |
 | GV.15 | `integ_frame_index` synchronized with body's integration frame | structural | consistency | deferred (Phase 5) |
 | GV.16 | Active controls subscribe to inertial frame | structural | consistency | n/a (no frame subscription in ECS) |
 | GV.17 | Active nonspherical controls subscribe to planet-fixed frame | structural | consistency | enforced (PlanetFixedRotationC required for nonspherical) |

@@ -50,7 +50,7 @@ pub use derived::{
     compute_body_solar_beta, compute_orbital_elements,
 };
 pub use forces::collect_and_resolve_forces;
-pub use gravity::accumulate_gravity;
+pub use gravity::{accumulate_gravity, ResolvedSource};
 pub use integration::integrate_body;
 pub use interactions::{compute_drag, compute_gravity_torque, FlatPlateState};
 pub use pipeline::{PipelineStage, PIPELINE_ORDER};

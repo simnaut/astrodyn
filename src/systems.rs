@@ -130,7 +130,11 @@ pub fn integration_system(
         &GravityControlsC,
         &TotalForceC,
     )>,
-    sources: Query<(&GravitySourceC, Option<&PlanetFixedRotationC>)>,
+    sources: Query<(
+        &GravitySourceC,
+        Option<&PlanetFixedRotationC>,
+        Option<&SourceInertialPositionC>,
+    )>,
     time: Res<Time<Fixed>>,
 ) {
     let dt = time.delta_secs_f64();
@@ -146,11 +150,15 @@ pub fn integration_system(
             rot_state.as_mut().map(|r| &mut r.0),
             mass.map(|m| &m.0),
             |pos| {
-                jeod_sim::accumulate_gravity(pos, &controls.0, |source_entity| {
+                jeod_sim::accumulate_gravity(pos, &controls.0, DVec3::ZERO, |source_entity| {
                     sources
                         .get(source_entity)
                         .ok()
-                        .map(|(s, r)| (&s.0, r.map(|r| &r.0)))
+                        .map(|(s, r, p)| jeod_sim::ResolvedSource {
+                            source: &s.0,
+                            rotation: r.map(|r| &r.0),
+                            position: p.map_or(DVec3::ZERO, |p| p.0),
+                        })
                 })
                 .grav_accel
             },
@@ -177,23 +185,31 @@ pub fn gravity_computation_system(
         &GravityControlsC,
         &mut GravityAccelerationC,
     )>,
-    sources: Query<(&GravitySourceC, Option<&PlanetFixedRotationC>)>,
+    sources: Query<(
+        &GravitySourceC,
+        Option<&PlanetFixedRotationC>,
+        Option<&SourceInertialPositionC>,
+    )>,
 ) {
     for (entity, state, controls, mut accel) in &mut bodies {
-        accel.0 =
-            jeod_sim::accumulate_gravity(
-                state.position,
-                &controls.0,
-                |source_entity| match sources.get(source_entity) {
-                    Ok((source, rot)) => Some((&source.0, rot.map(|r| &r.0))),
-                    Err(_) => {
-                        panic!(
-                            "Entity {entity:?}: GravityControl references source \
+        accel.0 = jeod_sim::accumulate_gravity(
+            state.position,
+            &controls.0,
+            DVec3::ZERO,
+            |source_entity| match sources.get(source_entity) {
+                Ok((source, rot, pos)) => Some(jeod_sim::ResolvedSource {
+                    source: &source.0,
+                    rotation: rot.map(|r| &r.0),
+                    position: pos.map_or(DVec3::ZERO, |p| p.0),
+                }),
+                Err(_) => {
+                    panic!(
+                        "Entity {entity:?}: GravityControl references source \
                          {source_entity:?} which does not exist or has no GravitySourceC."
-                        );
-                    }
-                },
-            );
+                    );
+                }
+            },
+        );
     }
 }
 

@@ -352,10 +352,13 @@ impl Simulation {
             body.gravity_accel = accumulate_gravity(
                 body.trans.position,
                 &body.gravity_controls,
+                DVec3::ZERO,
                 |source_id: usize| {
-                    sources
-                        .get(source_id)
-                        .map(|s| (&s.source, s.t_inertial_pfix.as_ref()))
+                    sources.get(source_id).map(|s| crate::ResolvedSource {
+                        source: &s.source,
+                        rotation: s.t_inertial_pfix.as_ref(),
+                        position: s.position,
+                    })
                 },
             );
         }
@@ -501,10 +504,12 @@ impl Simulation {
                 body.rot.as_mut(),
                 body.mass.as_ref(),
                 |pos| {
-                    accumulate_gravity(pos, controls, |source_id| {
-                        sources
-                            .get(source_id)
-                            .map(|s| (&s.source, s.t_inertial_pfix.as_ref()))
+                    accumulate_gravity(pos, controls, DVec3::ZERO, |source_id| {
+                        sources.get(source_id).map(|s| crate::ResolvedSource {
+                            source: &s.source,
+                            rotation: s.t_inertial_pfix.as_ref(),
+                            position: s.position,
+                        })
                     })
                     .grav_accel
                 },

@@ -4,8 +4,9 @@
 //! validated to < 0.5 m against JEOD) with DE421 ephemeris for Sun direction.
 //! Self-consistency is verified to bit-identical precision.
 //!
-//! Once Phase 5 delivers third-body gravity, this test should be upgraded to
-//! run the full SIM_SolarBeta scenario (10 days, 8x8 SH + Sun/Moon).
+//! Sun has mu=0 because this test compares against RUN_2 (Earth-only gravity).
+//! The Sun source is used solely for solar beta direction, not gravitational
+//! perturbation. For 3rd-body gravity validation, see `tier3_sim_dyncomp_run4`.
 
 mod sim_test_helpers;
 use sim_test_helpers::*;

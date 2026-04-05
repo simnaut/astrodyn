@@ -81,9 +81,18 @@ fn tier3_simulation_run9a_torque() {
     for record in &trajectory[1..] {
         while current_time + DT <= record.time + 0.001 {
             // Gravity (per-body function)
-            let grav = jeod_sim::accumulate_gravity(trans.position, &gravity_controls, |_| {
-                Some((&earth_source, None))
-            });
+            let grav = jeod_sim::accumulate_gravity(
+                trans.position,
+                &gravity_controls,
+                DVec3::ZERO,
+                |_| {
+                    Some(jeod_sim::ResolvedSource {
+                        source: &earth_source,
+                        rotation: None,
+                        position: DVec3::ZERO,
+                    })
+                },
+            );
 
             // External torque: [10, 0, 0] N·m in body frame during [1000, 2000)s
             let external_torque = if (999.999..1999.999).contains(&current_time) {
@@ -125,9 +134,18 @@ fn tier3_simulation_run9a_torque() {
         // Handle fractional remainder
         let remainder = record.time - current_time;
         if remainder > 0.001 {
-            let grav = jeod_sim::accumulate_gravity(trans.position, &gravity_controls, |_| {
-                Some((&earth_source, None))
-            });
+            let grav = jeod_sim::accumulate_gravity(
+                trans.position,
+                &gravity_controls,
+                DVec3::ZERO,
+                |_| {
+                    Some(jeod_sim::ResolvedSource {
+                        source: &earth_source,
+                        rotation: None,
+                        position: DVec3::ZERO,
+                    })
+                },
+            );
             let external_torque = if (999.999..1999.999).contains(&current_time) {
                 DVec3::new(10.0, 0.0, 0.0)
             } else {
@@ -276,9 +294,18 @@ fn tier3_simulation_run9c_force_torque() {
 
     for record in &trajectory[1..] {
         while current_time + DT <= record.time + 0.001 {
-            let grav = jeod_sim::accumulate_gravity(trans.position, &gravity_controls, |_| {
-                Some((&earth_source, None))
-            });
+            let grav = jeod_sim::accumulate_gravity(
+                trans.position,
+                &gravity_controls,
+                DVec3::ZERO,
+                |_| {
+                    Some(jeod_sim::ResolvedSource {
+                        source: &earth_source,
+                        rotation: None,
+                        position: DVec3::ZERO,
+                    })
+                },
+            );
 
             // External force [10,0,0] N and torque [10,0,0] N·m in
             // structural frame during [1000, 2000)s. Force must be rotated
@@ -418,9 +445,18 @@ fn tier3_simulation_run9d_force_torque_rate() {
 
     for record in &trajectory[1..] {
         while current_time + DT <= record.time + 0.001 {
-            let grav = jeod_sim::accumulate_gravity(trans.position, &gravity_controls, |_| {
-                Some((&earth_source, None))
-            });
+            let grav = jeod_sim::accumulate_gravity(
+                trans.position,
+                &gravity_controls,
+                DVec3::ZERO,
+                |_| {
+                    Some(jeod_sim::ResolvedSource {
+                        source: &earth_source,
+                        rotation: None,
+                        position: DVec3::ZERO,
+                    })
+                },
+            );
 
             let (ext_force_struct, external_torque) = if (999.999..1999.999).contains(&current_time)
             {

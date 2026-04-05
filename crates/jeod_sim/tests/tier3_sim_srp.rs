@@ -136,7 +136,10 @@ fn tier3_simulation_srp_flat_plate() {
         t_inertial_pfix: None,
     });
 
-    // Sun (position updated each logging interval from ephemeris)
+    // Sun (position updated each logging interval from ephemeris).
+    // mu=0 because the JEOD SIM_3_ORBIT reference sim uses Sun only for SRP
+    // direction, not gravitational perturbation. For 3rd-body gravity
+    // validation, see tier3_sim_dyncomp_run4.
     let initial_sun = srp_sun_position(0.0, &ephemeris);
     let sun = sim.add_source(GravitySourceEntry {
         source: GravitySource {

@@ -705,8 +705,12 @@ fn tier3_bevy_external_torque_per_body() {
         } else {
             DVec3::ZERO
         };
-        let grav = jeod_sim::accumulate_gravity(trans_a.position, &controls, |_| {
-            Some((&earth_source, None))
+        let grav = jeod_sim::accumulate_gravity(trans_a.position, &controls, DVec3::ZERO, |_| {
+            Some(jeod_sim::ResolvedSource {
+                source: &earth_source,
+                rotation: None,
+                position: DVec3::ZERO,
+            })
         });
         let (total, _) = jeod_sim::collect_and_resolve_forces(
             None,
@@ -723,8 +727,14 @@ fn tier3_bevy_external_torque_per_body() {
             Some(&mut rot_a),
             Some(&mass_props),
             |pos| {
-                jeod_sim::accumulate_gravity(pos, &controls, |_| Some((&earth_source, None)))
-                    .grav_accel
+                jeod_sim::accumulate_gravity(pos, &controls, DVec3::ZERO, |_| {
+                    Some(jeod_sim::ResolvedSource {
+                        source: &earth_source,
+                        rotation: None,
+                        position: DVec3::ZERO,
+                    })
+                })
+                .grav_accel
             },
             total.force,
             total.torque + torque,
@@ -741,8 +751,12 @@ fn tier3_bevy_external_torque_per_body() {
         } else {
             DVec3::ZERO
         };
-        let grav = jeod_sim::accumulate_gravity(trans_b.position, &controls, |_| {
-            Some((&earth_source, None))
+        let grav = jeod_sim::accumulate_gravity(trans_b.position, &controls, DVec3::ZERO, |_| {
+            Some(jeod_sim::ResolvedSource {
+                source: &earth_source,
+                rotation: None,
+                position: DVec3::ZERO,
+            })
         });
         let (total, _) = jeod_sim::collect_and_resolve_forces(
             None,
@@ -759,8 +773,14 @@ fn tier3_bevy_external_torque_per_body() {
             Some(&mut rot_b),
             Some(&mass_props),
             |pos| {
-                jeod_sim::accumulate_gravity(pos, &controls, |_| Some((&earth_source, None)))
-                    .grav_accel
+                jeod_sim::accumulate_gravity(pos, &controls, DVec3::ZERO, |_| {
+                    Some(jeod_sim::ResolvedSource {
+                        source: &earth_source,
+                        rotation: None,
+                        position: DVec3::ZERO,
+                    })
+                })
+                .grav_accel
             },
             total.force,
             total.torque + torque,

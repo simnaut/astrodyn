@@ -660,9 +660,8 @@ Tests below exercise Phase 3/4 physics only — no Phase 5 dependencies.
 |----|------|-------------|----------------|
 | 5.1 | RKF45 integrator | Runge-Kutta-Fehlberg 4(5) with adaptive step control. Error estimation from embedded 4th and 5th order solutions. Step size adjustment with safety factor. | `er7_utils` RKF45 |
 | 5.2 | Gauss-Jackson integrator | Multi-step second-sum method. Startup via RK4 (needs history). Predictor-corrector formulation. Order 8 default. | `utils/integration/gauss_jackson/` |
-| 5.3 | LSODE integrator | Livermore Solver for Ordinary Differential Equations. Variable-order, variable-step. BDF method for stiff problems. Adams method for non-stiff. | `utils/integration/lsode/` |
 | 5.4 | Integrator selection | Enum-based dispatch. All integrators implement same trait/interface. | — |
-| 5.5 | Integrator unit tests | All integrators on harmonic oscillator: verify convergence order. RKF45: verify step size adapts to maintain tolerance. Gauss-Jackson: verify startup and steady-state accuracy. Compare 24h LEO trajectory across all integrators (should agree to within tolerances). | — |
+| 5.5 | Integrator unit tests | RKF45 and Gauss-Jackson on harmonic oscillator: verify convergence order. RKF45: verify step size adapts to maintain tolerance. Gauss-Jackson: verify startup and steady-state accuracy. Compare 24h LEO trajectory across integrators (should agree to within tolerances). | — |
 
 #### 5B. Advanced Gravity (`jeod_gravity`)
 
@@ -671,34 +670,18 @@ Tests below exercise Phase 3/4 physics only — no Phase 5 dependencies.
 | 5.6 | Solid body tides | Time-dependent delta coefficients (ΔCnm, ΔSnm) from body deformation. Permanent tide, frequency-dependent corrections. | `gravity/include/spherical_harmonics_delta_coeffs.hh` |
 | 5.7 | Tide unit tests | Tidal gravity perturbation at known epoch/position matches JEOD reference value. | — |
 
-#### 5C. Earth Rotation (`jeod_planet`)
+#### 5C. Earth Rotation — Polar Motion (`jeod_frames`)
+
+Precession (5.8), nutation (5.9), and GAST rotation (5.11) were completed in Phase 2
+(`jeod_frames/src/precession_j2000.rs`, `nutation_j2000.rs`, `rotation_j2000.rs`).
+Only polar motion remains.
 
 | ID | Task | Description | JEOD Reference |
 |----|------|-------------|----------------|
-| 5.8 | Precession model | IAU 2006 precession: compute precession matrix from epoch. | `RNP/RNPJ2000/` |
-| 5.9 | Nutation model | IAU 2000A or 2000B nutation: compute nutation angles (Δψ, Δε) and nutation matrix. | `RNP/RNPJ2000/` |
-| 5.10 | Polar motion | Apply polar motion correction (x_p, y_p from IERS data). | `RNP/RNPJ2000/` |
-| 5.11 | Full RNP composition | GCRS → ITRS: W(polar) · R(Earth rotation) · N(nutation) · P(precession). | `RNP/GenericRNP/` |
-| 5.12 | RNP unit tests | Earth-fixed frame orientation at J2000.0 matches IERS reference to < 1 arcsecond. Sidereal day rate matches expected value. | — |
+| 5.10 | Polar motion | Apply polar motion correction (x_p, y_p from IERS data). Compose into full RNP: W(polar) · R(GAST) · N · P. | `RNP/RNPJ2000/` |
+| 5.12 | Polar motion unit tests | Earth-fixed frame orientation with polar motion matches JEOD/IERS to < 1 arcsecond at 5+ test epochs. | — |
 
-#### 5D. SPICE Integration (`jeod_ephemeris`)
-
-| ID | Task | Description | JEOD Reference |
-|----|------|-------------|----------------|
-| 5.13 | SPICE FFI bindings | Rust bindings to `cspice` via `cc` crate or existing `spice` Rust crate. | `environment/spice/` |
-| 5.14 | SPICE state query | Query planet/body state from SPICE kernels at arbitrary epoch. | `environment/spice/` |
-| 5.15 | Kernel management | Load/unload SPICE kernels (BSP, TF, LSK). | — |
-| 5.16 | SPICE unit tests | Earth position from SPICE matches DE421 to < 1 m. | — |
-
-#### 5E. Contact Dynamics (`jeod_interactions`)
-
-| ID | Task | Description | JEOD Reference |
-|----|------|-------------|----------------|
-| 5.17 | Contact surface model | Facet-based surface geometry. Contact point detection between two bodies. | `interactions/contact/` |
-| 5.18 | Contact force model | Spring-damper contact forces. Normal and friction forces. | `interactions/contact/` |
-| 5.19 | Contact unit tests | Two spheres approaching: detect contact at expected distance. Contact force magnitude matches spring constant × penetration. | — |
-
-#### 5F. Dynamics Manager ODE Scheduling
+#### 5D. Dynamics Manager ODE Scheduling
 
 | ID | Task | Description | JEOD Reference |
 |----|------|-------------|----------------|
@@ -721,15 +704,13 @@ JEOD 5.4).
 | 5.22 | Generate Mars reference | Add `Integrated_Validation/SIM_Mars` RUN_dawn (Dawn at Mars: MRO110B2 gravity + Sun 3rd-body, 3h) and RUN_phobos (Phobos orbit). |
 | 5.35 | Generate tides reference | Add `gravity/verif/SIM_tide_verif` RUN_01 (8x8 GEM-T1 + solid body tides + Sun/Moon 3rd-body, 8h ISS orbit) and RUN_02. Only JEOD sim that exercises tidal delta-Cnm/delta-Snm trajectory effects. |
 | 5.36 | Generate polar motion reference | Add `RNP/RNPJ2000/verif/SIM_RNP_J2000_prop` RUN_J2000_RNP_prop (full RNP + polar motion, 24h) and RUN_J2000_RNP_Polar_off (RNP without polar motion). Differential comparison isolates polar motion contribution. |
-| 5.37 | Generate advanced integrator references | Add `integration/verif/SIM_integ_test` RUN_gauss_jackson and RUN_lsode. Add `integration/verif/SIM_GJ_test` RUN_GJ_step1_order8_noeval_nobs and RUN_GJ_step1_order12_noeval_nobs. Validates integrator accuracy independently of force model. |
-| 5.38 | Generate ephemeris propagation reference | Add `ephemerides/verif/SIM_prop_planet` RUN_ephem (DE430 ephemeris mode) and RUN_prop (numerically propagated). Duration ~150 years — long-term ephemeris fidelity baseline. |
-| 5.39 | Generate Mercury relativistic reference | Add `gravity/verif/SIM_mercury` RUN_newtonian and RUN_relativistic_sun (Mercury orbit with all 9 planets, Gauss-Jackson integrator). Differential comparison isolates GR perihelion precession (~43 arcsec/century). Depends on Gauss-Jackson (5.2). |
+| 5.37 | Generate advanced integrator references | Add `integration/verif/SIM_integ_test` RUN_gauss_jackson. Add `integration/verif/SIM_GJ_test` RUN_GJ_step1_order8_noeval_nobs and RUN_GJ_step1_order12_noeval_nobs. Validates integrator accuracy independently of force model. |
 
 ##### Cross-Validation Tests
 
 | ID | Task | Description |
 |----|------|-------------|
-| 5.23 | Extend CSV trajectory loader | Extend the loader for new column layouts (SIM_Earth_Moon, SIM_Mars, SIM_tide_verif, SIM_RNP_J2000_prop, SIM_prop_planet). |
+| 5.23 | Extend CSV trajectory loader | Extend the loader for new column layouts (SIM_Earth_Moon, SIM_Mars, SIM_tide_verif, SIM_RNP_J2000_prop). |
 | 5.24 | Trajectory comparison harness | Generalize comparison: report max error, RMS error, drift rate per scenario. |
 | 5.25 | Tier 3: LEO 24h (high-fidelity gravity) | SIM_dyncomp RUN_7A/7B: 4x4 or 8x8 gravity + Sun/Moon 3rd-body, no drag, 8h. Isolates gravity + ephemeris fidelity from atmosphere/drag. |
 | 5.26 | Tier 3: LEO with drag | SIM_dyncomp RUN_7C/7D: gravity + 3rd-body + MET atmosphere + drag, 8h. Full combined translational dynamics. |
@@ -739,9 +720,6 @@ JEOD 5.4).
 | 5.41 | Tier 3: solid tides | SIM_tide_verif RUN_01 vs RUN_02: trajectory with/without tides. Position delta (tides ON vs OFF) must match JEOD's delta. |
 | 5.42 | Tier 3: polar motion | SIM_RNP_J2000_prop RUN_J2000_RNP_prop vs RUN_J2000_RNP_Polar_off: Earth-fixed frame with/without polar motion. Differential comparison isolates polar motion contribution. |
 | 5.43 | Tier 3: Gauss-Jackson | SIM_integ_test RUN_gauss_jackson or SIM_GJ_test: same LEO scenario as RK4, verify GJ matches JEOD trajectory. |
-| 5.44 | Tier 3: LSODE | SIM_integ_test RUN_lsode: variable-order variable-step integration on LEO scenario, compare trajectory to JEOD. |
-| 5.45 | Tier 3: long-term ephemeris | SIM_prop_planet: compare Anise-based DE421/430 queries against JEOD's DE430 propagation over multi-year spans. Validates interpolation drift over decades. |
-| 5.46 | Tier 3: Mercury relativistic (stretch) | SIM_mercury: perihelion advance delta from GR corrections. Requires Gauss-Jackson + multi-planet gravity. |
 | 5.29 | Tier 4 regression harness | CI script that runs all Tier 1-3 tests and produces pass/fail summary with error budgets. |
 
 #### 5H. Examples
@@ -776,12 +754,9 @@ JEOD 5.4).
 - [ ] **Tier 3 SRP thermal parity**: SIM_3_ORBIT RUN_radiation (23 days, flat-plate + thermal emission + shadow). Position error < 5 m over 23 days. Requires matching JEOD's DynManager multi-integrable-object RK4 scheduling so the coupled orbital + thermal ODE produces the same sub-step sequencing (see simnaut/bevy_jeod#13)
 - [ ] **Tier 3 3rd-body isolation**: SIM_dyncomp RUN_4 (spherical gravity + Sun/Moon). Position error vs. JEOD < 5 m over 8h. Validates differential acceleration separately from non-spherical gravity.
 - [ ] **Tier 3 Sun/Moon 3rd-body resolved**: With 3rd-body differential acceleration ported, set Sun/Moon to their real mu values (Sun: 1.327e20, Moon: 4.903e12) in tests that currently use `mu: 0.0` as a workaround (`tier3_sim_srp.rs`, `tier3_sim_solar_beta.rs`) and add Sun/Moon sources to `tier3_sim_torque_simple.rs` (currently omitted entirely). Retighten torque_simple thresholds to standard Tier 3 levels: position < 0.5 m, quaternion < 0.01 rad, torque < 1e-2 N·m (Phase 4a thresholds of 100 m / 0.1–1.0 rad / 10–200 N·m were inflated by missing 3rd-body perturbation). Verify SRP and solar beta tests maintain or improve their existing tolerances. Note: solar beta will retain a ~1.5e-4 rad/day baseline drift from DE421 interpolation differences between Anise and JEOD's native reader (simnaut/bevy_jeod#27); 3rd-body resolution improves position-driven error but does not eliminate the ephemeris component.
-- [ ] **Tier 3 LSODE trajectory**: SIM_integ_test RUN_lsode on LEO scenario. Position error vs. JEOD < 10 m over 24h with variable-order, variable-step integration.
-- [ ] **Tier 3 long-term ephemeris**: SIM_prop_planet. Planet positions from Anise-based DE421/430 match JEOD's DE430 propagation to < 1 km over multi-decade spans.
-- [ ] **Tier 3 Mercury relativistic** (stretch): SIM_mercury. GR-induced perihelion advance rate within 1% of JEOD's computed delta (~43 arcsec/century). Requires Gauss-Jackson (5.2) + multi-planet gravity.
 
 #### Bevy≡Simulation parity
-- [ ] **Cross-parity for each new integrator**: `tier3_bevy_*` scenario for Gauss-Jackson, RKF45, LSODE — `to_bits()` equality vs Simulation runner.
+- [ ] **Cross-parity for each new integrator**: `tier3_bevy_*` scenario for Gauss-Jackson, RKF45 — `to_bits()` equality vs Simulation runner.
 - [ ] **Cross-parity for new physics**: `tier3_bevy_*` scenario for polar motion, solid tides, multi-body gravity, Mars gravity — `to_bits()` equality.
 - [ ] **Feature parity**: Every `jeod_sim` function used by the Simulation runner has a corresponding Bevy system. No Simulation-only capabilities.
 
@@ -858,6 +833,73 @@ edge cases, and specialized scenarios to ensure no JEOD capability goes unverifi
 - [ ] **Full JEOD parity**: Every major JEOD verification sim category (dynamics, gravity, time, ephemerides, RNP, atmosphere, aerodynamics, radiation pressure, gravity torque, derived states, orbital elements, earth lighting) has at least one `tier3_simulation_*` test AND a matching `tier3_bevy_*` cross-parity test.
 - [ ] **Portability**: All `jeod_*` crates compile without Bevy
 - [ ] `cargo test --workspace` — all tests pass, no regressions
+
+---
+
+## Future Work
+
+Tasks removed from phased scope but worth revisiting when a use case arises.
+
+### LSODE Integrator
+
+| ID | Task | Description | JEOD Reference |
+|----|------|-------------|----------------|
+| F.1 | LSODE integrator | Livermore Solver for Ordinary Differential Equations. Variable-order, variable-step. BDF method for stiff problems. Adams method for non-stiff. | `utils/integration/lsode/` |
+| F.2 | LSODE unit tests | Convergence order verification on harmonic oscillator. Compare 24h LEO trajectory against RK4/GJ. | — |
+| F.3 | Tier 3: LSODE trajectory | SIM_integ_test RUN_lsode: variable-order variable-step integration on LEO scenario, compare trajectory to JEOD. | — |
+| F.4 | Docker: LSODE reference data | Add RUN_lsode to `SIM_integ_test` in `generate_references.sh`. | — |
+
+**Why deferred:** Complex Fortran→C port. Gauss-Jackson covers the primary "better than
+RK4" use case for orbital mechanics. LSODE is most valuable for stiff problems (e.g.,
+chemical kinetics, thermal transients) not exercised in current JEOD verification sims.
+
+### SPICE FFI Bindings
+
+| ID | Task | Description | JEOD Reference |
+|----|------|-------------|----------------|
+| F.5 | SPICE FFI bindings | Rust bindings to `cspice` via `cc` crate or existing `spice` Rust crate. | `environment/spice/` |
+| F.6 | SPICE state query | Query planet/body state from SPICE kernels at arbitrary epoch. | `environment/spice/` |
+| F.7 | Kernel management | Load/unload SPICE kernels (BSP, TF, LSK). | — |
+| F.8 | SPICE unit tests | Earth position from SPICE matches DE421 to < 1 m. | — |
+
+**Why deferred:** ANISE (pure Rust SPICE reader) is already working for DE421 ephemeris.
+Adding C `cspice` would introduce a C build dependency, break pure-Rust compilation, and
+add Windows/WASM build complexity. The ~10 arcsecond interpolation difference
+(simnaut/bevy_jeod#27) is between two valid implementations, not an error.
+
+### Contact Dynamics
+
+| ID | Task | Description | JEOD Reference |
+|----|------|-------------|----------------|
+| F.9 | Contact surface model | Facet-based surface geometry. Contact point detection between two bodies. | `interactions/contact/` |
+| F.10 | Contact force model | Spring-damper contact forces. Normal and friction forces. | `interactions/contact/` |
+| F.11 | Contact unit tests | Two spheres approaching: detect contact at expected distance. Contact force magnitude matches spring constant × penetration. | — |
+
+**Why deferred:** No JEOD verification sim exercises contact forces among the ~60
+available sims. Cannot meet the "Tier 3 is definition of done" rule without a
+cross-validation target.
+
+### Mercury Relativistic Perihelion Advance
+
+| ID | Task | Description | JEOD Reference |
+|----|------|-------------|----------------|
+| F.12 | General relativity corrections | Post-Newtonian gravitational acceleration terms for Mercury orbit. | `gravity/verif/SIM_mercury` |
+| F.13 | Docker: Mercury reference data | Add `SIM_mercury` RUN_newtonian and RUN_relativistic_sun to `generate_references.sh`. | — |
+| F.14 | Tier 3: Mercury relativistic | SIM_mercury: perihelion advance delta from GR corrections. GR-induced perihelion advance rate within 1% of JEOD's delta (~43 arcsec/century). Requires Gauss-Jackson + multi-planet gravity. | — |
+
+**Why deferred:** Requires Gauss-Jackson (Phase 5) + all 9 planets + general relativity
+corrections — a large dependency chain for a single validation test. Revisit after
+Gauss-Jackson is stable.
+
+### Long-Term Ephemeris Validation
+
+| ID | Task | Description | JEOD Reference |
+|----|------|-------------|----------------|
+| F.15 | Docker: long-term ephemeris reference | Add `SIM_prop_planet` RUN_ephem (DE430 mode) and RUN_prop (numerically propagated, ~150 years). | — |
+| F.16 | Tier 3: long-term ephemeris | SIM_prop_planet: compare Anise-based DE421/430 queries against JEOD's DE430 propagation over multi-decade spans. Validates interpolation drift over decades. | — |
+
+**Why deferred:** Tests ANISE's interpolation accuracy over decades, not our physics code.
+Validates a dependency rather than our implementation.
 
 ---
 

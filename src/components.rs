@@ -40,6 +40,15 @@ pub struct GravityControlsC(pub GravityControls<Entity>);
 #[derive(Component, Debug, Clone, Deref, DerefMut)]
 pub struct GravitySourceC(pub GravitySource);
 
+/// Inertial-frame position of a gravity source (m).
+///
+/// For the central body (e.g., Earth in an Earth-centered sim), this is
+/// `DVec3::ZERO`. For third bodies (Sun, Moon), this is updated each step
+/// by the ephemeris system. Used by the gravity computation to apply
+/// differential (third-body) acceleration corrections.
+#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
+pub struct SourceInertialPositionC(pub DVec3);
+
 /// Aerodynamic force and torque in the **structural** frame (N, N*m).
 ///
 /// Written by `aero_drag_system`.
