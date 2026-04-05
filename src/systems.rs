@@ -26,10 +26,15 @@ pub fn time_advance_system(mut sim_time: ResMut<SimulationTimeR>, time: Res<Time
 /// parameters (Phase 5 work).
 pub fn planet_fixed_rotation_system(
     sim_time: Res<SimulationTimeR>,
+    polar: Option<Res<crate::PolarMotionR>>,
     mut query: Query<&mut PlanetFixedRotationC>,
 ) {
-    let rotation =
-        jeod_sim::compute_t_parent_this_from_tjt(sim_time.gmst_seconds, sim_time.tt_tjt());
+    let polar_params = polar.map(|p| (p.xp, p.yp));
+    let rotation = jeod_sim::compute_t_parent_this_from_tjt_with_polar(
+        sim_time.gmst_seconds,
+        sim_time.tt_tjt(),
+        polar_params,
+    );
     for mut rot in &mut query {
         rot.0 = rotation;
     }

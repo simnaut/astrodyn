@@ -30,6 +30,22 @@ impl Default for SimulationTimeR {
 #[derive(Resource)]
 pub struct EphemerisR(pub jeod_sim::Ephemeris);
 
+/// Optional Bevy resource for polar motion (xp, yp) in radians.
+///
+/// When inserted, the `planet_fixed_rotation_system` includes polar motion
+/// in the RNP composition: W(xp,yp) × R(GAST) × N × P.
+/// When absent, polar motion is omitted (equivalent to `enable_polar=false`).
+///
+/// For time-varying polar motion, update this resource each step from
+/// IERS EOP data.
+#[derive(Resource, Debug, Clone, Copy)]
+pub struct PolarMotionR {
+    /// Polar motion x_p in radians.
+    pub xp: f64,
+    /// Polar motion y_p in radians.
+    pub yp: f64,
+}
+
 /// Bevy resource wrapping [`AtmosphereConfig`] with an entity reference for
 /// the planet whose rotation matrix is used for geodetic conversion.
 #[derive(Resource, Debug, Clone)]

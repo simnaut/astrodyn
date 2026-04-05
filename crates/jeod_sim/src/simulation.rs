@@ -164,6 +164,13 @@ pub struct Simulation {
     pub atmosphere_planet_source: Option<usize>,
     /// Index into `sources` for the Sun (used by SRP).
     pub sun_source: Option<usize>,
+    /// Polar motion parameters (xp, yp) in radians. When `Some`, the RNP
+    /// composition includes polar motion: W(xp,yp) × R(GAST) × N × P.
+    /// When `None`, polar motion is omitted (matches JEOD `enable_polar=false`).
+    ///
+    /// For static simulations, set this once. For time-varying polar motion,
+    /// update before each step from IERS EOP data (table interpolation).
+    pub polar_motion: Option<(f64, f64)>,
     /// Integration timestep (seconds).
     pub dt: f64,
 }
@@ -178,6 +185,7 @@ impl Simulation {
             atmosphere: None,
             atmosphere_planet_source: None,
             sun_source: None,
+            polar_motion: None,
             dt,
         }
     }
@@ -330,8 +338,11 @@ impl Simulation {
         // NOTE: Currently applies the same Earth RNP rotation to ALL rotating
         // sources. Multi-planet sims (Moon, Mars) would need per-source rotation
         // parameters. This is a Phase 5 limitation.
-        let rotation =
-            crate::compute_t_parent_this_from_tjt(self.time.gmst_seconds, self.time.tt_tjt());
+        let rotation = crate::compute_t_parent_this_from_tjt_with_polar(
+            self.time.gmst_seconds,
+            self.time.tt_tjt(),
+            self.polar_motion,
+        );
         for source in &mut self.sources {
             if source.t_inertial_pfix.is_some() {
                 source.t_inertial_pfix = Some(rotation);
