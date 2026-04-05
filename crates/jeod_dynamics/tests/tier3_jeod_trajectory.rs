@@ -17,6 +17,7 @@
 use glam::DVec3;
 use jeod_dynamics::{rk4_translational_step, TranslationalState};
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
+use jeod_test_data::dyncomp_csv::load_dyncomp_csv;
 use std::path::Path;
 
 const MU_EARTH: f64 = 3.986_004_415e14;
@@ -25,85 +26,6 @@ fn point_mass_accel(pos: DVec3) -> DVec3 {
     let r_sq = pos.length_squared();
     let r_mag = r_sq.sqrt();
     pos * (-MU_EARTH / (r_sq * r_mag))
-}
-
-#[derive(Debug)]
-struct JeodStateRecord {
-    time: f64,
-    position: DVec3,
-    velocity: DVec3,
-    trans_accel: Option<DVec3>,
-    rot_accel: Option<DVec3>,
-}
-
-fn load_jeod_trajectory(path: &Path) -> Vec<JeodStateRecord> {
-    let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
-        panic!(
-            "Failed to read JEOD trajectory CSV from {}: {e}",
-            path.display()
-        )
-    });
-
-    let mut records = Vec::new();
-    for (i, line) in content.lines().enumerate() {
-        if i == 0 {
-            continue;
-        } // skip header
-        let fields: Vec<&str> = line.split(',').collect();
-        if fields.len() < 17 {
-            continue;
-        }
-
-        // CSV columns (from log_state_ASCII.csv header):
-        // 0: time
-        // 1: composite_body position[0]
-        // 8: composite_body position[1]
-        // 15: composite_body position[2]
-        // 2: composite_body velocity[0]
-        // 9: composite_body velocity[1]
-        // 16: composite_body velocity[2]
-        let line_no = i + 1;
-        let parse = |s: &str, col: usize| -> f64 {
-            s.trim().parse::<f64>().unwrap_or_else(|e| {
-                panic!("Failed to parse JEOD CSV at line {line_no}, col {col}: {s:?} ({e})")
-            })
-        };
-
-        // Parse acceleration columns if present (80-column SIM_dyncomp format)
-        let (trans_accel, rot_accel) = if fields.len() >= 79 {
-            (
-                Some(DVec3::new(
-                    parse(fields[68], 68),
-                    parse(fields[72], 72),
-                    parse(fields[76], 76),
-                )),
-                Some(DVec3::new(
-                    parse(fields[69], 69),
-                    parse(fields[73], 73),
-                    parse(fields[77], 77),
-                )),
-            )
-        } else {
-            (None, None)
-        };
-
-        records.push(JeodStateRecord {
-            time: parse(fields[0], 0),
-            position: DVec3::new(
-                parse(fields[1], 1),
-                parse(fields[8], 8),
-                parse(fields[15], 15),
-            ),
-            velocity: DVec3::new(
-                parse(fields[2], 2),
-                parse(fields[9], 9),
-                parse(fields[16], 16),
-            ),
-            trans_accel,
-            rot_accel,
-        });
-    }
-    records
 }
 
 #[test]
@@ -118,7 +40,7 @@ fn tier3_cross_validate_against_jeod_dyncomp() {
         csv_path.display()
     );
 
-    let jeod_trajectory = load_jeod_trajectory(&csv_path);
+    let jeod_trajectory = load_dyncomp_csv(&csv_path);
     assert!(
         jeod_trajectory.len() > 100,
         "Expected more than 100 records, got {}",
@@ -128,14 +50,16 @@ fn tier3_cross_validate_against_jeod_dyncomp() {
     // Use JEOD's initial state
     let initial = &jeod_trajectory[0];
     let mut state = TranslationalState {
-        position: initial.position,
-        velocity: initial.velocity,
+        position: initial.composite_body.position,
+        velocity: initial.composite_body.velocity,
     };
 
     println!("Tier 3: JEOD SIM_dyncomp RUN_2 cross-validation");
     println!(
         "  Initial position: [{:.2}, {:.2}, {:.2}] m",
-        initial.position.x, initial.position.y, initial.position.z
+        initial.composite_body.position.x,
+        initial.composite_body.position.y,
+        initial.composite_body.position.z
     );
     println!(
         "  JEOD trajectory: {} points over {:.0}s",
@@ -152,10 +76,10 @@ fn tier3_cross_validate_against_jeod_dyncomp() {
         .iter()
         .map(|r| StateLog {
             time: r.time,
-            position: Some(r.position),
-            velocity: Some(r.velocity),
-            acceleration: r.trans_accel,
-            ang_accel: r.rot_accel,
+            position: Some(r.composite_body.position),
+            velocity: Some(r.composite_body.velocity),
+            acceleration: r.derivs.as_ref().map(|d| d.trans_accel),
+            ang_accel: r.derivs.as_ref().map(|d| d.rot_accel),
             ..Default::default()
         })
         .collect();
@@ -180,8 +104,8 @@ fn tier3_cross_validate_against_jeod_dyncomp() {
             ..Default::default()
         });
 
-        let pos_error = (state.position - jeod_record.position).length();
-        let vel_error = (state.velocity - jeod_record.velocity).length();
+        let pos_error = (state.position - jeod_record.composite_body.position).length();
+        let vel_error = (state.velocity - jeod_record.composite_body.velocity).length();
 
         // Log progress at key points
         if (jeod_record.time % 3600.0).abs() < 30.1 {

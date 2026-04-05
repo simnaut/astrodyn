@@ -40,7 +40,7 @@ fn run_sh_simulation_test(
     let ggm02c_path = jeod_root.join("models/environment/gravity/data/src/earth_GGM02C.cc");
     let sh_data = jeod_sim::coefficients::load_from_jeod_cc(&ggm02c_path).expect("load GGM02C");
 
-    let trajectory = load_trans_trajectory(&csv_path);
+    let trajectory = load_dyncomp_csv(&csv_path);
     assert!(trajectory.len() > 100);
     let init = &trajectory[0];
 
@@ -70,8 +70,8 @@ fn run_sh_simulation_test(
 
     sim.add_body(SimBody {
         trans: TranslationalState {
-            position: init.position,
-            velocity: init.velocity,
+            position: init.composite_body.position,
+            velocity: init.composite_body.velocity,
         },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_nonspherical(
@@ -91,8 +91,8 @@ fn run_sh_simulation_test(
         sim.step_until(record.time);
         let body = sim.body(0);
 
-        let pos_error = (body.trans.position - record.position).length();
-        let vel_error = (body.trans.velocity - record.velocity).length();
+        let pos_error = (body.trans.position - record.composite_body.position).length();
+        let vel_error = (body.trans.velocity - record.composite_body.velocity).length();
         if (record.time % 3600.0).abs() < 30.1 {
             println!(
                 "  t={:6.0}s: pos_err={:10.4} m  vel_err={:.6} m/s",
@@ -115,10 +115,10 @@ fn run_sh_simulation_test(
         .iter()
         .map(|r| StateLog {
             time: r.time,
-            position: Some(r.position),
-            velocity: Some(r.velocity),
-            acceleration: r.trans_accel,
-            ang_accel: r.rot_accel,
+            position: Some(r.composite_body.position),
+            velocity: Some(r.composite_body.velocity),
+            acceleration: r.derivs.as_ref().map(|d| d.trans_accel),
+            ang_accel: r.derivs.as_ref().map(|d| d.rot_accel),
             ..Default::default()
         })
         .collect();

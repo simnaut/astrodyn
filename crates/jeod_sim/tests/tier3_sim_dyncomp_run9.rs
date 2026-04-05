@@ -5,8 +5,8 @@ use sim_test_helpers::*;
 
 use glam::{DMat3, DVec3};
 use jeod_sim::{
-    DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource, MassProperties,
-    RotationalState, TranslationalState,
+    DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource, JeodQuat,
+    MassProperties, RotationalState, TranslationalState,
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
@@ -32,7 +32,7 @@ fn tier3_simulation_run9a_torque() {
         csv_path.display()
     );
 
-    let trajectory = load_sixdof_trajectory(&csv_path);
+    let trajectory = load_dyncomp_csv(&csv_path);
     assert!(trajectory.len() >= 100);
     let init = &trajectory[0];
 
@@ -47,12 +47,12 @@ fn tier3_simulation_run9a_torque() {
     // Use per-body functions directly for torque injection.
     // This still validates jeod_sim's integrate_body and accumulate_gravity.
     let mut trans = TranslationalState {
-        position: init.position,
-        velocity: init.velocity,
+        position: init.composite_body.position,
+        velocity: init.composite_body.velocity,
     };
     let mut rot = RotationalState {
-        quaternion: init.quaternion,
-        ang_vel_body: init.ang_vel,
+        quaternion: JeodQuat::from_glam(init.composite_body.quaternion),
+        ang_vel_body: init.composite_body.ang_vel,
     };
 
     let config = DynamicsConfig {
@@ -159,9 +159,10 @@ fn tier3_simulation_run9a_torque() {
             current_time += remainder;
         }
 
-        let pos_error = (trans.position - record.position).length();
-        let quat_error = quaternion_angle_error(&rot.quaternion, &record.quaternion);
-        let omega_error = (rot.ang_vel_body - record.ang_vel).length();
+        let pos_error = (trans.position - record.composite_body.position).length();
+        let quat_error =
+            dquat_angle_error(rot.quaternion.to_glam(), record.composite_body.quaternion);
+        let omega_error = (rot.ang_vel_body - record.composite_body.ang_vel).length();
 
         if (record.time % 3600.0).abs() < 30.1 {
             println!(
@@ -185,12 +186,12 @@ fn tier3_simulation_run9a_torque() {
         .iter()
         .map(|r| StateLog {
             time: r.time,
-            position: Some(r.position),
-            velocity: Some(r.velocity),
-            acceleration: r.trans_accel,
-            quaternion: Some(r.quaternion.to_glam()),
-            ang_vel: Some(r.ang_vel),
-            ang_accel: r.rot_accel,
+            position: Some(r.composite_body.position),
+            velocity: Some(r.composite_body.velocity),
+            acceleration: r.derivs.as_ref().map(|d| d.trans_accel),
+            quaternion: Some(r.composite_body.quaternion),
+            ang_vel: Some(r.composite_body.ang_vel),
+            ang_accel: r.derivs.as_ref().map(|d| d.rot_accel),
         })
         .collect();
 
@@ -242,7 +243,7 @@ fn tier3_simulation_run9c_force_torque() {
         csv_path.display()
     );
 
-    let trajectory = load_sixdof_trajectory(&csv_path);
+    let trajectory = load_dyncomp_csv(&csv_path);
     assert!(trajectory.len() >= 100);
     let init = &trajectory[0];
 
@@ -254,12 +255,12 @@ fn tier3_simulation_run9c_force_torque() {
     let mass_props = MassProperties::with_inertia(400_000.0, inertia, DVec3::new(-3.0, -1.5, 4.0));
 
     let mut trans = TranslationalState {
-        position: init.position,
-        velocity: init.velocity,
+        position: init.composite_body.position,
+        velocity: init.composite_body.velocity,
     };
     let mut rot = RotationalState {
-        quaternion: init.quaternion,
-        ang_vel_body: init.ang_vel,
+        quaternion: JeodQuat::from_glam(init.composite_body.quaternion),
+        ang_vel_body: init.composite_body.ang_vel,
     };
 
     let config = DynamicsConfig {
@@ -341,12 +342,12 @@ fn tier3_simulation_run9c_force_torque() {
         .iter()
         .map(|r| StateLog {
             time: r.time,
-            position: Some(r.position),
-            velocity: Some(r.velocity),
-            acceleration: r.trans_accel,
-            quaternion: Some(r.quaternion.to_glam()),
-            ang_vel: Some(r.ang_vel),
-            ang_accel: r.rot_accel,
+            position: Some(r.composite_body.position),
+            velocity: Some(r.composite_body.velocity),
+            acceleration: r.derivs.as_ref().map(|d| d.trans_accel),
+            quaternion: Some(r.composite_body.quaternion),
+            ang_vel: Some(r.composite_body.ang_vel),
+            ang_accel: r.derivs.as_ref().map(|d| d.rot_accel),
         })
         .collect();
 
@@ -401,7 +402,7 @@ fn tier3_simulation_run9d_force_torque_rate() {
         csv_path.display()
     );
 
-    let trajectory = load_sixdof_trajectory(&csv_path);
+    let trajectory = load_dyncomp_csv(&csv_path);
     assert!(trajectory.len() >= 100);
     let init = &trajectory[0];
 
@@ -413,12 +414,12 @@ fn tier3_simulation_run9d_force_torque_rate() {
     let mass_props = MassProperties::with_inertia(400_000.0, inertia, DVec3::new(-3.0, -1.5, 4.0));
 
     let mut trans = TranslationalState {
-        position: init.position,
-        velocity: init.velocity,
+        position: init.composite_body.position,
+        velocity: init.composite_body.velocity,
     };
     let mut rot = RotationalState {
-        quaternion: init.quaternion,
-        ang_vel_body: init.ang_vel,
+        quaternion: JeodQuat::from_glam(init.composite_body.quaternion),
+        ang_vel_body: init.composite_body.ang_vel,
     };
 
     let config = DynamicsConfig {
@@ -497,12 +498,12 @@ fn tier3_simulation_run9d_force_torque_rate() {
         .iter()
         .map(|r| StateLog {
             time: r.time,
-            position: Some(r.position),
-            velocity: Some(r.velocity),
-            acceleration: r.trans_accel,
-            quaternion: Some(r.quaternion.to_glam()),
-            ang_vel: Some(r.ang_vel),
-            ang_accel: r.rot_accel,
+            position: Some(r.composite_body.position),
+            velocity: Some(r.composite_body.velocity),
+            acceleration: r.derivs.as_ref().map(|d| d.trans_accel),
+            quaternion: Some(r.composite_body.quaternion),
+            ang_vel: Some(r.composite_body.ang_vel),
+            ang_accel: r.derivs.as_ref().map(|d| d.rot_accel),
         })
         .collect();
 

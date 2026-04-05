@@ -15,8 +15,8 @@ use sim_test_helpers::*;
 use glam::{DMat3, DVec3};
 use jeod_sim::{
     DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource,
-    GravitySourceEntry, MassProperties, RotationalState, SimBody, Simulation, SimulationTime,
-    TranslationalState,
+    GravitySourceEntry, JeodQuat, MassProperties, RotationalState, SimBody, Simulation,
+    SimulationTime, TranslationalState,
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
@@ -57,7 +57,7 @@ fn run_atmosphere_test(csv_filename: &str, label: &str, test_name: &str) {
         csv_path.display()
     );
 
-    let trajectory = load_sixdof_trajectory(&csv_path);
+    let trajectory = load_dyncomp_csv(&csv_path);
     assert!(trajectory.len() >= 100);
     let init = &trajectory[0];
 
@@ -85,12 +85,12 @@ fn run_atmosphere_test(csv_filename: &str, label: &str, test_name: &str) {
     // Gravity gradient is computed (gradient=true) but not used as torque.
     sim.add_body(SimBody {
         trans: TranslationalState {
-            position: init.position,
-            velocity: init.velocity,
+            position: init.composite_body.position,
+            velocity: init.composite_body.velocity,
         },
         rot: Some(RotationalState {
-            quaternion: init.quaternion,
-            ang_vel_body: init.ang_vel,
+            quaternion: JeodQuat::from_glam(init.composite_body.quaternion),
+            ang_vel_body: init.composite_body.ang_vel,
         }),
         mass: Some(mass_props),
         config: DynamicsConfig {
@@ -116,8 +116,8 @@ fn run_atmosphere_test(csv_filename: &str, label: &str, test_name: &str) {
         let body = sim.body(0);
         let rot = body.rot.as_ref().unwrap();
 
-        let pos_error = (body.trans.position - record.position).length();
-        let vel_error = (body.trans.velocity - record.velocity).length();
+        let pos_error = (body.trans.position - record.composite_body.position).length();
+        let vel_error = (body.trans.velocity - record.composite_body.velocity).length();
         if (record.time % 7200.0).abs() < 30.1 {
             println!(
                 "  t={:6.0}s: pos_err={:.3e} m  vel_err={:.3e} m/s",
@@ -141,12 +141,12 @@ fn run_atmosphere_test(csv_filename: &str, label: &str, test_name: &str) {
         .iter()
         .map(|r| StateLog {
             time: r.time,
-            position: Some(r.position),
-            velocity: Some(r.velocity),
-            acceleration: r.trans_accel,
-            quaternion: Some(r.quaternion.to_glam()),
-            ang_vel: Some(r.ang_vel),
-            ang_accel: r.rot_accel,
+            position: Some(r.composite_body.position),
+            velocity: Some(r.composite_body.velocity),
+            acceleration: r.derivs.as_ref().map(|d| d.trans_accel),
+            quaternion: Some(r.composite_body.quaternion),
+            ang_vel: Some(r.composite_body.ang_vel),
+            ang_accel: r.derivs.as_ref().map(|d| d.rot_accel),
         })
         .collect();
 

@@ -9,8 +9,8 @@ use sim_test_helpers::*;
 use glam::{DMat3, DVec3};
 use jeod_sim::{
     DynamicsConfig, EulerSequence, GravityControl, GravityControls, GravityModel, GravitySource,
-    GravitySourceEntry, MassProperties, RotationalState, SimBody, Simulation, SimulationTime,
-    TranslationalState,
+    GravitySourceEntry, JeodQuat, MassProperties, RotationalState, SimBody, Simulation,
+    SimulationTime, TranslationalState,
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
@@ -23,7 +23,7 @@ fn tier3_simulation_euler() {
         csv_path.display()
     );
 
-    let trajectory = load_sixdof_trajectory(&csv_path);
+    let trajectory = load_dyncomp_csv(&csv_path);
     assert!(trajectory.len() > 100);
     let init = &trajectory[0];
 
@@ -49,12 +49,12 @@ fn tier3_simulation_euler() {
 
     sim.add_body(SimBody {
         trans: TranslationalState {
-            position: init.position,
-            velocity: init.velocity,
+            position: init.composite_body.position,
+            velocity: init.composite_body.velocity,
         },
         rot: Some(RotationalState {
-            quaternion: init.quaternion,
-            ang_vel_body: init.ang_vel,
+            quaternion: JeodQuat::from_glam(init.composite_body.quaternion),
+            ang_vel_body: init.composite_body.ang_vel,
         }),
         mass: Some(mass_props),
         config: DynamicsConfig {
@@ -95,12 +95,15 @@ fn tier3_simulation_euler() {
         });
 
         // Compute expected Euler angles from JEOD's quaternion for comparison
-        let jeod_t = record.quaternion.left_quat_to_transformation();
+        let jeod_t =
+            JeodQuat::from_glam(record.composite_body.quaternion).left_quat_to_transformation();
         let jeod_euler = jeod_math::compute_euler_angles_from_matrix(&jeod_t, EulerSequence::XYZ);
 
         // Also check quaternion error to understand the attitude tracking
-        let quat_err =
-            quaternion_angle_error(&body.rot.as_ref().unwrap().quaternion, &record.quaternion);
+        let quat_err = dquat_angle_error(
+            body.rot.as_ref().unwrap().quaternion.to_glam(),
+            record.composite_body.quaternion,
+        );
         max_quat_err = max_quat_err.max(quat_err);
 
         for k in 0..3 {
@@ -118,10 +121,10 @@ fn tier3_simulation_euler() {
         });
         ref_states.push(StateLog {
             time: record.time,
-            acceleration: record.trans_accel,
-            quaternion: Some(record.quaternion.to_glam()),
-            ang_vel: Some(record.ang_vel),
-            ang_accel: record.rot_accel,
+            acceleration: record.derivs.as_ref().map(|d| d.trans_accel),
+            quaternion: Some(record.composite_body.quaternion),
+            ang_vel: Some(record.composite_body.ang_vel),
+            ang_accel: record.derivs.as_ref().map(|d| d.rot_accel),
             ..Default::default()
         });
 

@@ -35,7 +35,7 @@ fn tier3_simulation_solar_beta() {
     );
 
     let ephemeris = Ephemeris::from_bsp(&bsp_path).expect("load DE421");
-    let trajectory = load_trans_trajectory(&csv_path);
+    let trajectory = load_dyncomp_csv(&csv_path);
     assert!(trajectory.len() > 100);
     let init = &trajectory[0];
 
@@ -70,8 +70,8 @@ fn tier3_simulation_solar_beta() {
 
     sim.add_body(SimBody {
         trans: TranslationalState {
-            position: init.position,
-            velocity: init.velocity,
+            position: init.composite_body.position,
+            velocity: init.composite_body.velocity,
         },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
@@ -129,15 +129,15 @@ fn tier3_simulation_solar_beta() {
         });
         ref_states.push(StateLog {
             time: record.time,
-            position: Some(record.position),
-            velocity: Some(record.velocity),
-            acceleration: record.trans_accel,
-            ang_accel: record.rot_accel,
+            position: Some(record.composite_body.position),
+            velocity: Some(record.composite_body.velocity),
+            acceleration: record.derivs.as_ref().map(|d| d.trans_accel),
+            ang_accel: record.derivs.as_ref().map(|d| d.rot_accel),
             ..Default::default()
         });
 
         if (record.time % 3600.0).abs() < 30.1 {
-            let pos_err = (body.trans.position - record.position).length();
+            let pos_err = (body.trans.position - record.composite_body.position).length();
             println!(
                 "  t={:6.0}s: pos_err={:.4} m  beta={:.4} deg ({:.6} rad)",
                 record.time,

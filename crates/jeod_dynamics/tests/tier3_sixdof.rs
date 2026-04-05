@@ -21,125 +21,10 @@ use jeod_dynamics::{
 };
 use jeod_math::JeodQuat;
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
+use jeod_test_data::dyncomp_csv::load_dyncomp_csv;
 use std::path::Path;
 
 const MU_EARTH: f64 = 3.986_004_415e14;
-
-/// Parsed 6-DOF state record from JEOD CSV.
-#[derive(Debug)]
-struct JeodSixDofRecord {
-    time: f64,
-    position: DVec3,
-    velocity: DVec3,
-    quaternion: JeodQuat,
-    ang_vel: DVec3,
-    trans_accel: Option<DVec3>,
-    rot_accel: Option<DVec3>,
-}
-
-/// Parse the JEOD log_state_ASCII CSV for composite_body 6-DOF state.
-///
-/// CSV column layout (per frame, repeated for composite_body, core_body, structure):
-/// For each axis i in [0,1,2]:
-///   position[i], velocity[i], ang_vel_this[i],
-///   T_parent_this[i][0], T_parent_this[i][1], T_parent_this[i][2],
-///   Q_parent_this.vector[i]
-/// Then: Q_parent_this.scalar
-///
-/// composite_body columns (0-based, after time col 0):
-///   Row i=0: cols 1(pos0), 2(vel0), 3(angvel0), 4-6(T[0][0..2]), 7(Q.vec[0])
-///   Row i=1: cols 8(pos1), 9(vel1), 10(angvel1), 11-13(T[1][0..2]), 14(Q.vec[1])
-///   Row i=2: cols 15(pos2), 16(vel2), 17(angvel2), 18-20(T[2][0..2]), 21(Q.vec[2])
-///   Then: col 22 = Q.scalar
-fn load_sixdof_trajectory(path: &Path) -> Vec<JeodSixDofRecord> {
-    let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
-        panic!(
-            "Failed to read JEOD trajectory CSV from {}: {e}\n\
-             Generate with: docker build -f trick/Dockerfile -t jeod-trick .. && \
-             docker run --rm -v $(pwd)/test_data:/output jeod-trick",
-            path.display()
-        )
-    });
-
-    let mut records = Vec::new();
-    for (i, line) in content.lines().enumerate() {
-        if i == 0 {
-            continue;
-        } // skip header
-        if line.trim().is_empty() {
-            continue;
-        }
-        let fields: Vec<&str> = line.split(',').collect();
-        assert!(
-            fields.len() >= 23,
-            "Malformed JEOD CSV at line {}: expected at least 23 fields, found {}",
-            i + 1,
-            fields.len(),
-        );
-
-        let parse = |s: &str, col: usize| -> f64 {
-            let line_no = i + 1;
-            s.trim().parse::<f64>().unwrap_or_else(|e| {
-                panic!("Failed to parse JEOD CSV at line {line_no}, col {col}: {s:?} ({e})")
-            })
-        };
-
-        // Composite body state columns
-        let position = DVec3::new(
-            parse(fields[1], 1),
-            parse(fields[8], 8),
-            parse(fields[15], 15),
-        );
-        let velocity = DVec3::new(
-            parse(fields[2], 2),
-            parse(fields[9], 9),
-            parse(fields[16], 16),
-        );
-        let ang_vel = DVec3::new(
-            parse(fields[3], 3),
-            parse(fields[10], 10),
-            parse(fields[17], 17),
-        );
-
-        // Quaternion: JEOD stores [scalar, vec[0], vec[1], vec[2]]
-        // CSV has vec[0] at col 7, vec[1] at col 14, vec[2] at col 21, scalar at col 22
-        let q_scalar = parse(fields[22], 22);
-        let q_vec = DVec3::new(
-            parse(fields[7], 7),
-            parse(fields[14], 14),
-            parse(fields[21], 21),
-        );
-        let quaternion = JeodQuat::new(q_scalar, q_vec.x, q_vec.y, q_vec.z);
-
-        // Parse optional acceleration columns (same layout as sim_test_helpers)
-        let (trans_accel, rot_accel) = if fields.len() >= 79 {
-            let ta = DVec3::new(
-                parse(fields[68], 68),
-                parse(fields[72], 72),
-                parse(fields[76], 76),
-            );
-            let ra = DVec3::new(
-                parse(fields[69], 69),
-                parse(fields[73], 73),
-                parse(fields[77], 77),
-            );
-            (Some(ta), Some(ra))
-        } else {
-            (None, None)
-        };
-
-        records.push(JeodSixDofRecord {
-            time: parse(fields[0], 0),
-            position,
-            velocity,
-            quaternion,
-            ang_vel,
-            trans_accel,
-            rot_accel,
-        });
-    }
-    records
-}
 
 #[test]
 fn tier3_sixdof_attitude_from_run2() {
@@ -155,7 +40,7 @@ fn tier3_sixdof_attitude_from_run2() {
         csv_path.display()
     );
 
-    let trajectory = load_sixdof_trajectory(&csv_path);
+    let trajectory = load_dyncomp_csv(&csv_path);
     assert!(
         trajectory.len() >= 100,
         "Expected at least 100 data points, got {}",
@@ -179,12 +64,12 @@ fn tier3_sixdof_attitude_from_run2() {
     let init = &trajectory[0];
     let mut state = SixDofState {
         trans: TranslationalState {
-            position: init.position,
-            velocity: init.velocity,
+            position: init.composite_body.position,
+            velocity: init.composite_body.velocity,
         },
         rot: RotationalState {
-            quaternion: init.quaternion,
-            ang_vel_body: init.ang_vel,
+            quaternion: JeodQuat::from_glam(init.composite_body.quaternion),
+            ang_vel_body: init.composite_body.ang_vel,
         },
     };
 
@@ -197,12 +82,12 @@ fn tier3_sixdof_attitude_from_run2() {
         .skip(1)
         .map(|r| StateLog {
             time: r.time,
-            position: Some(r.position),
-            velocity: Some(r.velocity),
-            acceleration: r.trans_accel,
-            quaternion: Some(r.quaternion.to_glam()),
-            ang_vel: Some(r.ang_vel),
-            ang_accel: r.rot_accel,
+            position: Some(r.composite_body.position),
+            velocity: Some(r.composite_body.velocity),
+            acceleration: r.derivs.as_ref().map(|d| d.trans_accel),
+            quaternion: Some(r.composite_body.quaternion),
+            ang_vel: Some(r.composite_body.ang_vel),
+            ang_accel: r.derivs.as_ref().map(|d| d.rot_accel),
         })
         .collect();
 

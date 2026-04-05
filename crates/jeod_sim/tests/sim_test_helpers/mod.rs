@@ -3,11 +3,13 @@
 //! Provides CSV parsing for SIM_dyncomp and derived-state trajectory data,
 //! quaternion error computation, and test data path resolution.
 
-#![allow(dead_code)]
+#![allow(dead_code, unused_imports)]
 
-use glam::{DMat3, DVec3};
+use glam::{DMat3, DQuat, DVec3};
 use jeod_sim::JeodQuat;
 use std::path::Path;
+
+pub use jeod_test_data::dyncomp_csv::{load_dyncomp_csv, DyncompRecord};
 
 pub const MU_EARTH: f64 = 3.986_004_415e14;
 pub const DT: f64 = 0.03125; // 32 Hz, matches JEOD SIM_dyncomp
@@ -15,98 +17,18 @@ pub const DT: f64 = 0.03125; // 32 Hz, matches JEOD SIM_dyncomp
 /// Earth rotation rate (JEOD RNPJ2000 default).
 pub const OMEGA_EARTH: f64 = 7.292_115_146_706_388e-5;
 
-#[derive(Debug)]
-pub struct TransRecord {
-    pub time: f64,
-    pub position: DVec3,
-    pub velocity: DVec3,
-    pub trans_accel: Option<DVec3>,
-    pub rot_accel: Option<DVec3>,
-}
-
-#[derive(Debug)]
-pub struct SixDofRecord {
-    pub time: f64,
-    pub position: DVec3,
-    pub velocity: DVec3,
-    pub quaternion: JeodQuat,
-    pub ang_vel: DVec3,
-    pub trans_accel: Option<DVec3>,
-    pub rot_accel: Option<DVec3>,
-}
-
-// SIM_dyncomp CSV derivs columns (0-indexed):
-// 67=non_grav_accel[0], 68=trans_accel[0], 69=rot_accel[0], 70=Qdot[0]
-// 71=non_grav_accel[1], 72=trans_accel[1], 73=rot_accel[1], 74=Qdot[1]
-// 75=non_grav_accel[2], 76=trans_accel[2], 77=rot_accel[2], 78=Qdot[2]
-fn parse_accels(f: &[&str]) -> (Option<DVec3>, Option<DVec3>) {
-    if f.len() >= 79 {
-        let p = |s: &str| -> f64 { s.trim().parse().unwrap() };
-        let trans_accel = Some(DVec3::new(p(f[68]), p(f[72]), p(f[76])));
-        let rot_accel = Some(DVec3::new(p(f[69]), p(f[73]), p(f[77])));
-        (trans_accel, rot_accel)
-    } else {
-        (None, None)
-    }
-}
-
-pub fn load_trans_trajectory(path: &Path) -> Vec<TransRecord> {
-    let content = read_csv(path, "SIM_dyncomp");
-    let mut records = Vec::new();
-    for (i, line) in content.lines().enumerate() {
-        if i == 0 || line.trim().is_empty() {
-            continue;
-        }
-        let f: Vec<&str> = line.split(',').collect();
-        assert!(
-            f.len() >= 17,
-            "line {}: expected >=17 columns, got {}",
-            i + 1,
-            f.len()
-        );
-        let p = |s: &str| -> f64 { s.trim().parse().unwrap() };
-        let (trans_accel, rot_accel) = parse_accels(&f);
-        records.push(TransRecord {
-            time: p(f[0]),
-            position: DVec3::new(p(f[1]), p(f[8]), p(f[15])),
-            velocity: DVec3::new(p(f[2]), p(f[9]), p(f[16])),
-            trans_accel,
-            rot_accel,
-        });
-    }
-    records
-}
-
-pub fn load_sixdof_trajectory(path: &Path) -> Vec<SixDofRecord> {
-    let content = read_csv(path, "SIM_dyncomp");
-    let mut records = Vec::new();
-    for (i, line) in content.lines().enumerate() {
-        if i == 0 || line.trim().is_empty() {
-            continue;
-        }
-        let f: Vec<&str> = line.split(',').collect();
-        assert!(f.len() >= 23, "line {}: expected >=23 columns", i + 1);
-        let p = |s: &str| -> f64 { s.trim().parse().unwrap() };
-        let (trans_accel, rot_accel) = parse_accels(&f);
-        records.push(SixDofRecord {
-            time: p(f[0]),
-            position: DVec3::new(p(f[1]), p(f[8]), p(f[15])),
-            velocity: DVec3::new(p(f[2]), p(f[9]), p(f[16])),
-            ang_vel: DVec3::new(p(f[3]), p(f[10]), p(f[17])),
-            quaternion: JeodQuat::new(p(f[22]), p(f[7]), p(f[14]), p(f[21])),
-            trans_accel,
-            rot_accel,
-        });
-    }
-    records
-}
-
 pub fn quaternion_angle_error(q1: &JeodQuat, q2: &JeodQuat) -> f64 {
     let dot = (q1.scalar() * q2.scalar()
         + q1.vector().x * q2.vector().x
         + q1.vector().y * q2.vector().y
         + q1.vector().z * q2.vector().z)
         .abs();
+    2.0 * dot.min(1.0).acos()
+}
+
+/// Angle error between two glam `DQuat` values (radians).
+pub fn dquat_angle_error(a: DQuat, b: DQuat) -> f64 {
+    let dot = a.dot(b).abs();
     2.0 * dot.min(1.0).acos()
 }
 

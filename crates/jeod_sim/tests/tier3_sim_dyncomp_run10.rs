@@ -6,8 +6,8 @@ use sim_test_helpers::*;
 use glam::{DMat3, DVec3};
 use jeod_sim::{
     DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource,
-    GravitySourceEntry, MassProperties, RotationalState, SimBody, Simulation, SimulationTime,
-    TranslationalState,
+    GravitySourceEntry, JeodQuat, MassProperties, RotationalState, SimBody, Simulation,
+    SimulationTime, TranslationalState,
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
@@ -28,7 +28,7 @@ fn tier3_simulation_run10a_gravity_torque() {
         csv_path.display()
     );
 
-    let trajectory = load_sixdof_trajectory(&csv_path);
+    let trajectory = load_dyncomp_csv(&csv_path);
     assert!(trajectory.len() >= 100);
     let init = &trajectory[0];
 
@@ -50,12 +50,12 @@ fn tier3_simulation_run10a_gravity_torque() {
 
     sim.add_body(SimBody {
         trans: TranslationalState {
-            position: init.position,
-            velocity: init.velocity,
+            position: init.composite_body.position,
+            velocity: init.composite_body.velocity,
         },
         rot: Some(RotationalState {
-            quaternion: init.quaternion,
-            ang_vel_body: init.ang_vel,
+            quaternion: JeodQuat::from_glam(init.composite_body.quaternion),
+            ang_vel_body: init.composite_body.ang_vel,
         }),
         mass: Some(mass_props),
         config: DynamicsConfig {
@@ -84,10 +84,11 @@ fn tier3_simulation_run10a_gravity_torque() {
         let body = sim.body(0);
         let rot = body.rot.as_ref().unwrap();
 
-        let pos_error = (body.trans.position - record.position).length();
+        let pos_error = (body.trans.position - record.composite_body.position).length();
         if (record.time % 3600.0).abs() < 30.1 {
-            let quat_error = quaternion_angle_error(&rot.quaternion, &record.quaternion);
-            let omega_error = (rot.ang_vel_body - record.ang_vel).length();
+            let quat_error =
+                dquat_angle_error(rot.quaternion.to_glam(), record.composite_body.quaternion);
+            let omega_error = (rot.ang_vel_body - record.composite_body.ang_vel).length();
             println!(
                 "  t={:6.0}s: pos_err={:10.4} m  quat_err={:.6e} rad  omega_err={:.6e}",
                 record.time, pos_error, quat_error, omega_error
@@ -110,12 +111,12 @@ fn tier3_simulation_run10a_gravity_torque() {
         .iter()
         .map(|r| StateLog {
             time: r.time,
-            position: Some(r.position),
-            velocity: Some(r.velocity),
-            acceleration: r.trans_accel,
-            quaternion: Some(r.quaternion.to_glam()),
-            ang_vel: Some(r.ang_vel),
-            ang_accel: r.rot_accel,
+            position: Some(r.composite_body.position),
+            velocity: Some(r.composite_body.velocity),
+            acceleration: r.derivs.as_ref().map(|d| d.trans_accel),
+            quaternion: Some(r.composite_body.quaternion),
+            ang_vel: Some(r.composite_body.ang_vel),
+            ang_accel: r.derivs.as_ref().map(|d| d.rot_accel),
         })
         .collect();
 
@@ -179,7 +180,7 @@ fn tier3_reference_run10a_libration_period() {
         csv_path.display()
     );
 
-    let trajectory = load_sixdof_trajectory(&csv_path);
+    let trajectory = load_dyncomp_csv(&csv_path);
     assert!(trajectory.len() >= 200);
 
     // Extract the pitch-from-nadir angle at each timestep.
@@ -196,11 +197,12 @@ fn tier3_reference_run10a_libration_period() {
         .iter()
         .map(|r| {
             // Body X-axis in inertial frame: first column of T_parent_this^T
-            let t_inertial_body = r.quaternion.left_quat_to_transformation();
+            let t_inertial_body =
+                JeodQuat::from_glam(r.composite_body.quaternion).left_quat_to_transformation();
             let body_x_inertial = t_inertial_body.transpose().col(0);
 
             // Nadir direction
-            let nadir = -r.position.normalize();
+            let nadir = -r.composite_body.position.normalize();
 
             // Angle between body X and nadir
             let cos_angle = body_x_inertial.dot(nadir).clamp(-1.0, 1.0);
@@ -291,7 +293,7 @@ fn tier3_simulation_run10c_gravity_torque_elliptical() {
         csv_path.display()
     );
 
-    let trajectory = load_sixdof_trajectory(&csv_path);
+    let trajectory = load_dyncomp_csv(&csv_path);
     assert!(trajectory.len() >= 100);
     let init = &trajectory[0];
 
@@ -312,12 +314,12 @@ fn tier3_simulation_run10c_gravity_torque_elliptical() {
 
     sim.add_body(SimBody {
         trans: TranslationalState {
-            position: init.position,
-            velocity: init.velocity,
+            position: init.composite_body.position,
+            velocity: init.composite_body.velocity,
         },
         rot: Some(RotationalState {
-            quaternion: init.quaternion,
-            ang_vel_body: init.ang_vel,
+            quaternion: JeodQuat::from_glam(init.composite_body.quaternion),
+            ang_vel_body: init.composite_body.ang_vel,
         }),
         mass: Some(mass_props),
         config: DynamicsConfig {
@@ -357,12 +359,12 @@ fn tier3_simulation_run10c_gravity_torque_elliptical() {
         .iter()
         .map(|r| StateLog {
             time: r.time,
-            position: Some(r.position),
-            velocity: Some(r.velocity),
-            acceleration: r.trans_accel,
-            quaternion: Some(r.quaternion.to_glam()),
-            ang_vel: Some(r.ang_vel),
-            ang_accel: r.rot_accel,
+            position: Some(r.composite_body.position),
+            velocity: Some(r.composite_body.velocity),
+            acceleration: r.derivs.as_ref().map(|d| d.trans_accel),
+            quaternion: Some(r.composite_body.quaternion),
+            ang_vel: Some(r.composite_body.ang_vel),
+            ang_accel: r.derivs.as_ref().map(|d| d.rot_accel),
         })
         .collect();
 
@@ -417,7 +419,7 @@ fn tier3_simulation_run10d_gravity_torque_elliptical_rate() {
         csv_path.display()
     );
 
-    let trajectory = load_sixdof_trajectory(&csv_path);
+    let trajectory = load_dyncomp_csv(&csv_path);
     assert!(trajectory.len() >= 100);
     let init = &trajectory[0];
 
@@ -438,12 +440,12 @@ fn tier3_simulation_run10d_gravity_torque_elliptical_rate() {
 
     sim.add_body(SimBody {
         trans: TranslationalState {
-            position: init.position,
-            velocity: init.velocity,
+            position: init.composite_body.position,
+            velocity: init.composite_body.velocity,
         },
         rot: Some(RotationalState {
-            quaternion: init.quaternion,
-            ang_vel_body: init.ang_vel,
+            quaternion: JeodQuat::from_glam(init.composite_body.quaternion),
+            ang_vel_body: init.composite_body.ang_vel,
         }),
         mass: Some(mass_props),
         config: DynamicsConfig {
@@ -483,12 +485,12 @@ fn tier3_simulation_run10d_gravity_torque_elliptical_rate() {
         .iter()
         .map(|r| StateLog {
             time: r.time,
-            position: Some(r.position),
-            velocity: Some(r.velocity),
-            acceleration: r.trans_accel,
-            quaternion: Some(r.quaternion.to_glam()),
-            ang_vel: Some(r.ang_vel),
-            ang_accel: r.rot_accel,
+            position: Some(r.composite_body.position),
+            velocity: Some(r.composite_body.velocity),
+            acceleration: r.derivs.as_ref().map(|d| d.trans_accel),
+            quaternion: Some(r.composite_body.quaternion),
+            ang_vel: Some(r.composite_body.ang_vel),
+            ang_accel: r.derivs.as_ref().map(|d| d.rot_accel),
         })
         .collect();
 

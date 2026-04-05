@@ -18,154 +18,8 @@ use jeod_dynamics::propagation::{propagate_forward, propagate_reverse};
 use jeod_dynamics::MassPointState;
 use jeod_math::JeodQuat;
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
+use jeod_test_data::dyncomp_csv::load_dyncomp_csv;
 use std::path::Path;
-
-/// Parsed frame state record from a single 22-column block in the JEOD CSV.
-#[derive(Debug)]
-struct FrameRecord {
-    position: DVec3,
-    velocity: DVec3,
-    ang_vel: DVec3,
-    t_parent_this: DMat3,
-    q_parent_this: JeodQuat,
-}
-
-/// Parse a single frame's state from a CSV row given the column base offset.
-///
-/// Within a 22-column frame block starting at column `base`:
-///   For axis i in {0,1,2}, group starts at base + i*7:
-///     position[i]        = base + i*7 + 0
-///     velocity[i]        = base + i*7 + 1
-///     ang_vel_this[i]    = base + i*7 + 2
-///     T_parent_this[i][0]= base + i*7 + 3
-///     T_parent_this[i][1]= base + i*7 + 4
-///     T_parent_this[i][2]= base + i*7 + 5
-///     Q.vector[i]        = base + i*7 + 6
-///   Q_parent_this.scalar = base + 21
-fn parse_frame_record(fields: &[&str], base: usize, line_no: usize) -> FrameRecord {
-    let parse = |col: usize| -> f64 {
-        fields[col].trim().parse::<f64>().unwrap_or_else(|e| {
-            panic!(
-                "Failed to parse CSV at line {line_no}, col {col}: {:?} ({e})",
-                fields[col]
-            )
-        })
-    };
-
-    let position = DVec3::new(parse(base), parse(base + 7), parse(base + 14));
-    let velocity = DVec3::new(parse(base + 1), parse(base + 8), parse(base + 15));
-    let ang_vel = DVec3::new(parse(base + 2), parse(base + 9), parse(base + 16));
-
-    // Transformation matrix: T[row][col] where row index = axis i
-    // Row 0: cols base+3, base+4, base+5
-    // Row 1: cols base+10, base+11, base+12
-    // Row 2: cols base+17, base+18, base+19
-    //
-    // JEOD stores T in row-major order: T[i][j].
-    // glam DMat3 is column-major, so DMat3::from_cols takes columns.
-    // Column j of the matrix = (T[0][j], T[1][j], T[2][j]).
-    let t_parent_this = DMat3::from_cols(
-        DVec3::new(parse(base + 3), parse(base + 10), parse(base + 17)),
-        DVec3::new(parse(base + 4), parse(base + 11), parse(base + 18)),
-        DVec3::new(parse(base + 5), parse(base + 12), parse(base + 19)),
-    );
-
-    let q_vec = DVec3::new(parse(base + 6), parse(base + 13), parse(base + 20));
-    let q_scalar = parse(base + 21);
-    let q_parent_this = JeodQuat::new(q_scalar, q_vec.x, q_vec.y, q_vec.z);
-
-    FrameRecord {
-        position,
-        velocity,
-        ang_vel,
-        t_parent_this,
-        q_parent_this,
-    }
-}
-
-/// All three frame records for a single timestep.
-#[derive(Debug)]
-struct ThreeFrameRecord {
-    time: f64,
-    composite: FrameRecord,
-    core: FrameRecord,
-    structure: FrameRecord,
-    trans_accel: Option<DVec3>,
-    rot_accel: Option<DVec3>,
-}
-
-/// Load all three frames from the JEOD CSV.
-fn load_three_frame_trajectory(path: &Path) -> Vec<ThreeFrameRecord> {
-    let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
-        panic!(
-            "Failed to read JEOD trajectory CSV from {}: {e}\n\
-             Generate with: docker build -f trick/Dockerfile -t jeod-trick .. && \
-             docker run --rm -v $(pwd)/test_data:/output jeod-trick",
-            path.display()
-        )
-    });
-
-    let mut records = Vec::new();
-    for (i, line) in content.lines().enumerate() {
-        if i == 0 {
-            continue; // skip header
-        }
-        if line.trim().is_empty() {
-            continue;
-        }
-        let fields: Vec<&str> = line.split(',').collect();
-        assert!(
-            fields.len() >= 67,
-            "Malformed JEOD CSV at line {}: expected at least 67 fields (time + 3 frames x 22 cols), found {}",
-            i + 1,
-            fields.len(),
-        );
-
-        let line_no = i + 1;
-        let time: f64 = fields[0].trim().parse().unwrap_or_else(|e| {
-            panic!(
-                "Failed to parse time at line {line_no}: {:?} ({e})",
-                fields[0]
-            )
-        });
-
-        // Composite body: columns 1..22 (base=1)
-        let composite = parse_frame_record(&fields, 1, line_no);
-        // Core body: columns 23..44 (base=23)
-        let core = parse_frame_record(&fields, 23, line_no);
-        // Structure: columns 45..66 (base=45)
-        let structure = parse_frame_record(&fields, 45, line_no);
-
-        // Derivs columns (0-indexed): 68=trans_accel[0], 72=[1], 76=[2]
-        //                              69=rot_accel[0], 73=[1], 77=[2]
-        let (trans_accel, rot_accel) = if fields.len() >= 79 {
-            let parse = |col: usize| -> f64 {
-                fields[col].trim().parse::<f64>().unwrap_or_else(|e| {
-                    panic!(
-                        "Failed to parse CSV at line {line_no}, col {col}: {:?} ({e})",
-                        fields[col]
-                    )
-                })
-            };
-            (
-                Some(DVec3::new(parse(68), parse(72), parse(76))),
-                Some(DVec3::new(parse(69), parse(73), parse(77))),
-            )
-        } else {
-            (None, None)
-        };
-
-        records.push(ThreeFrameRecord {
-            time,
-            composite,
-            core,
-            structure,
-            trans_accel,
-            rot_accel,
-        });
-    }
-    records
-}
 
 #[test]
 fn tier3_frame_propagation_composite_to_structure() {
@@ -181,7 +35,7 @@ fn tier3_frame_propagation_composite_to_structure() {
         csv_path.display()
     );
 
-    let trajectory = load_three_frame_trajectory(&csv_path);
+    let trajectory = load_dyncomp_csv(&csv_path);
     assert!(
         trajectory.len() >= 100,
         "Expected at least 100 data points, got {}",
@@ -213,13 +67,13 @@ fn tier3_frame_propagation_composite_to_structure() {
         // Build the composite body RefFrameState from CSV data.
         let composite_state = jeod_frames::RefFrameState {
             trans: jeod_frames::RefFrameTrans {
-                position: record.composite.position,
-                velocity: record.composite.velocity,
+                position: record.composite_body.position,
+                velocity: record.composite_body.velocity,
             },
             rot: jeod_frames::RefFrameRot {
-                q_parent_this: record.composite.q_parent_this,
-                t_parent_this: record.composite.t_parent_this,
-                ang_vel_this: record.composite.ang_vel,
+                q_parent_this: JeodQuat::from_glam(record.composite_body.quaternion),
+                t_parent_this: record.composite_body.t_parent_this,
+                ang_vel_this: record.composite_body.ang_vel,
             },
         };
 
@@ -252,7 +106,7 @@ fn tier3_frame_propagation_composite_to_structure() {
                 velocity: record.structure.velocity,
             },
             rot: jeod_frames::RefFrameRot {
-                q_parent_this: record.structure.q_parent_this,
+                q_parent_this: JeodQuat::from_glam(record.structure.quaternion),
                 t_parent_this: record.structure.t_parent_this,
                 ang_vel_this: record.structure.ang_vel,
             },
@@ -260,12 +114,14 @@ fn tier3_frame_propagation_composite_to_structure() {
 
         let computed_composite = propagate_forward(&structure_state, &struct_to_composite);
 
-        let pos_err_f = (computed_composite.trans.position - record.composite.position).length();
-        let vel_err_f = (computed_composite.trans.velocity - record.composite.velocity).length();
+        let pos_err_f =
+            (computed_composite.trans.position - record.composite_body.position).length();
+        let vel_err_f =
+            (computed_composite.trans.velocity - record.composite_body.velocity).length();
         let angvel_err_f =
-            (computed_composite.rot.ang_vel_this - record.composite.ang_vel).length();
+            (computed_composite.rot.ang_vel_this - record.composite_body.ang_vel).length();
 
-        let t_diff_f = computed_composite.rot.t_parent_this - record.composite.t_parent_this;
+        let t_diff_f = computed_composite.rot.t_parent_this - record.composite_body.t_parent_this;
         let t_err_f = [t_diff_f.x_axis, t_diff_f.y_axis, t_diff_f.z_axis]
             .iter()
             .flat_map(|col| [col.x.abs(), col.y.abs(), col.z.abs()])
@@ -309,13 +165,13 @@ fn tier3_frame_propagation_composite_to_structure() {
     for record in &trajectory {
         let composite_state = jeod_frames::RefFrameState {
             trans: jeod_frames::RefFrameTrans {
-                position: record.composite.position,
-                velocity: record.composite.velocity,
+                position: record.composite_body.position,
+                velocity: record.composite_body.velocity,
             },
             rot: jeod_frames::RefFrameRot {
-                q_parent_this: record.composite.q_parent_this,
-                t_parent_this: record.composite.t_parent_this,
-                ang_vel_this: record.composite.ang_vel,
+                q_parent_this: JeodQuat::from_glam(record.composite_body.quaternion),
+                t_parent_this: record.composite_body.t_parent_this,
+                ang_vel_this: record.composite_body.ang_vel,
             },
         };
 
@@ -333,8 +189,8 @@ fn tier3_frame_propagation_composite_to_structure() {
             position: Some(record.structure.position),
             velocity: Some(record.structure.velocity),
             ang_vel: Some(record.structure.ang_vel),
-            acceleration: record.trans_accel,
-            ang_accel: record.rot_accel,
+            acceleration: record.derivs.as_ref().map(|d| d.trans_accel),
+            ang_accel: record.derivs.as_ref().map(|d| d.rot_accel),
             ..Default::default()
         });
     }
@@ -416,7 +272,7 @@ fn tier3_frame_propagation_core_equals_composite() {
         csv_path.display()
     );
 
-    let trajectory = load_three_frame_trajectory(&csv_path);
+    let trajectory = load_dyncomp_csv(&csv_path);
     assert!(
         trajectory.len() >= 100,
         "Expected at least 100 data points, got {}",
@@ -431,11 +287,11 @@ fn tier3_frame_propagation_core_equals_composite() {
     let mut max_t_diff = 0.0_f64;
 
     for record in &trajectory {
-        let pos_diff = (record.core.position - record.composite.position).length();
-        let vel_diff = (record.core.velocity - record.composite.velocity).length();
-        let angvel_diff = (record.core.ang_vel - record.composite.ang_vel).length();
+        let pos_diff = (record.core_body.position - record.composite_body.position).length();
+        let vel_diff = (record.core_body.velocity - record.composite_body.velocity).length();
+        let angvel_diff = (record.core_body.ang_vel - record.composite_body.ang_vel).length();
 
-        let t_diff_mat = record.core.t_parent_this - record.composite.t_parent_this;
+        let t_diff_mat = record.core_body.t_parent_this - record.composite_body.t_parent_this;
         let t_diff = [t_diff_mat.x_axis, t_diff_mat.y_axis, t_diff_mat.z_axis]
             .iter()
             .flat_map(|col| [col.x.abs(), col.y.abs(), col.z.abs()])
@@ -503,7 +359,7 @@ fn tier3_frame_propagation_round_trip() {
         csv_path.display()
     );
 
-    let trajectory = load_three_frame_trajectory(&csv_path);
+    let trajectory = load_dyncomp_csv(&csv_path);
     assert!(
         trajectory.len() >= 100,
         "Expected at least 100 data points, got {}",
@@ -524,13 +380,13 @@ fn tier3_frame_propagation_round_trip() {
     for record in &trajectory {
         let composite_state = jeod_frames::RefFrameState {
             trans: jeod_frames::RefFrameTrans {
-                position: record.composite.position,
-                velocity: record.composite.velocity,
+                position: record.composite_body.position,
+                velocity: record.composite_body.velocity,
             },
             rot: jeod_frames::RefFrameRot {
-                q_parent_this: record.composite.q_parent_this,
-                t_parent_this: record.composite.t_parent_this,
-                ang_vel_this: record.composite.ang_vel,
+                q_parent_this: JeodQuat::from_glam(record.composite_body.quaternion),
+                t_parent_this: record.composite_body.t_parent_this,
+                ang_vel_this: record.composite_body.ang_vel,
             },
         };
 
