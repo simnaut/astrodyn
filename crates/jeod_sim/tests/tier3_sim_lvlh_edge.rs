@@ -115,7 +115,7 @@ fn run_lvlh_test(csv_filename: &str, label: &str, test_name: &str) {
 
     let mut report = CrossvalReport::compute(test_name, &our_states, &ref_states);
     report.position_tol = Some([0.5; 3]);
-    report.add_extra("T_parent_this", max_mat_err, 1e-6, "");
+    report.add_extra("t_parent_this", max_mat_err, 1e-6, "");
     report.add_extra("ang_vel", max_angvel_err, 1e-10, "rad/s");
     report.write();
 

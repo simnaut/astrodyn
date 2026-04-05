@@ -182,10 +182,15 @@ impl CrossvalReport {
     /// Write the report to `target/tier3_crossval/<test_name>.json`.
     pub fn write(&self) {
         let dir = output_dir();
-        let _ = std::fs::create_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap_or_else(|e| {
+            panic!(
+                "failed to create tier3_crossval directory {}: {e}",
+                dir.display()
+            )
+        });
         let path = dir.join(format!("{}.json", self.test_name));
 
-        let mut json = format!(r#"{{"test":"{}""#, self.test_name);
+        let mut json = format!(r#"{{"test":"{}""#, json_escape(&self.test_name));
 
         write_vec3_field(&mut json, "position", &self.position);
         write_vec3_field(&mut json, "velocity", &self.velocity);
@@ -213,8 +218,10 @@ impl CrossvalReport {
                     Some(t) => format!("{t:.6e}"),
                     None => "null".to_string(),
                 };
+                let var_esc = json_escape(var);
+                let unit_esc = json_escape(unit);
                 json.push_str(&format!(
-                    r#"{{"var":"{var}","val":{val:.6e},"tol":{tol_str},"unit":"{unit}"}}"#
+                    r#"{{"var":"{var_esc}","val":{val:.6e},"tol":{tol_str},"unit":"{unit_esc}"}}"#
                 ));
             }
             json.push(']');
@@ -227,6 +234,14 @@ impl CrossvalReport {
         file.write_all(json.as_bytes())
             .expect("failed to write tier3_crossval JSON file");
     }
+}
+
+fn json_escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\t', "\\t")
 }
 
 fn write_vec3_field(json: &mut String, name: &str, val: &Option<[f64; 3]>) {
