@@ -105,8 +105,8 @@ pub fn load_dyncomp_csv(path: &Path) -> Vec<DyncompRecord> {
         }
         let f: Vec<&str> = line.split(',').collect();
         assert!(
-            f.len() >= 17,
-            "line {}: expected >=17 columns, got {}",
+            f.len() >= 23,
+            "line {}: expected >=23 columns (composite_body frame), got {}",
             i + 1,
             f.len()
         );
