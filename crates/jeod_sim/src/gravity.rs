@@ -90,6 +90,13 @@ pub fn accumulate_gravity<'a, S: Copy + std::fmt::Debug>(
         // where d = vehicle->source, rho = frame_origin->source.
         if ctrl.differential {
             let frame_pos_relative_to_source = integration_origin - resolved.position;
+            assert!(
+                frame_pos_relative_to_source.length_squared() > 0.0,
+                "Differential (third-body) gravity source {:?} is at the integration \
+                 frame origin. Third-body sources must be distinct from the central \
+                 body (e.g., Sun/Moon when integrating in an Earth-centered frame).",
+                ctrl.source_name
+            );
             let frame_accel = ctrl.evaluate_accel_only(
                 resolved.source,
                 frame_pos_relative_to_source,

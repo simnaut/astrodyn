@@ -133,7 +133,7 @@ pub fn integration_system(
     sources: Query<(
         &GravitySourceC,
         Option<&PlanetFixedRotationC>,
-        Option<&SourceInertialPositionC>,
+        &SourceInertialPositionC,
     )>,
     time: Res<Time<Fixed>>,
 ) {
@@ -157,7 +157,7 @@ pub fn integration_system(
                         .map(|(s, r, p)| jeod_sim::ResolvedSource {
                             source: &s.0,
                             rotation: r.map(|r| &r.0),
-                            position: p.map_or(DVec3::ZERO, |p| p.0),
+                            position: p.0,
                         })
                 })
                 .grav_accel
@@ -188,7 +188,7 @@ pub fn gravity_computation_system(
     sources: Query<(
         &GravitySourceC,
         Option<&PlanetFixedRotationC>,
-        Option<&SourceInertialPositionC>,
+        &SourceInertialPositionC,
     )>,
 ) {
     for (entity, state, controls, mut accel) in &mut bodies {
@@ -200,12 +200,13 @@ pub fn gravity_computation_system(
                 Ok((source, rot, pos)) => Some(jeod_sim::ResolvedSource {
                     source: &source.0,
                     rotation: rot.map(|r| &r.0),
-                    position: pos.map_or(DVec3::ZERO, |p| p.0),
+                    position: pos.0,
                 }),
                 Err(_) => {
                     panic!(
                         "Entity {entity:?}: GravityControl references source \
-                         {source_entity:?} which does not exist or has no GravitySourceC."
+                         {source_entity:?} which does not exist or lacks \
+                         GravitySourceC + SourceInertialPositionC."
                     );
                 }
             },

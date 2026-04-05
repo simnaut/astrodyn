@@ -13,7 +13,7 @@ use std::time::Duration;
 use bevy::prelude::*;
 use bevy_jeod::{
     DynamicsConfigC, GravityAccelerationC, GravityControlsC, GravitySourceC, JeodPlugin,
-    MassPropertiesC, RotationalStateC, TotalForceC, TranslationalStateC,
+    MassPropertiesC, RotationalStateC, SourceInertialPositionC, TotalForceC, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
 use jeod_sim::{
@@ -73,6 +73,7 @@ fn build_app() -> (App, Entity, Entity) {
                 mu: MU_EARTH,
                 model: GravityModel::PointMass,
             }),
+            SourceInertialPositionC::default(),
             TranslationalStateC(TranslationalState::default()),
         ))
         .id();

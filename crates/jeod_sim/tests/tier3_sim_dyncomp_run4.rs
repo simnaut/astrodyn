@@ -10,7 +10,8 @@
 //! - No drag, no gravity gradient torque
 //! - ISS mass/orbit, 28800s (8h), 60s logging
 //!
-//! Sun and Moon positions are queried from DE421 ephemeris each step.
+//! Sun and Moon positions are queried from the DE421 ephemeris at each
+//! logged 60s sample.
 
 mod sim_test_helpers;
 use sim_test_helpers::*;
@@ -29,14 +30,7 @@ const MU_SUN: f64 = 1.327_124_40e20;
 const MU_MOON: f64 = 4902.79980693169e9;
 
 /// Compute Earth-centered position of a body from DE421 ephemeris.
-///
-/// `sim_time` is seconds since J2000.0 TAI.
-fn earth_centered_position(body: EphemerisBody, sim_time: f64, ephemeris: &Ephemeris) -> DVec3 {
-    // Convert simulation time (seconds since J2000 TAI) to TDB Julian date.
-    // J2000.0 TDB = JD 2451545.0
-    // TAI->TDB offset is ~32.184s + periodic terms, negligible for position queries.
-    let sim_days = sim_time / 86400.0;
-    let tdb_jd = 2_451_545.0 + sim_days;
+fn earth_centered_position(body: EphemerisBody, tdb_jd: f64, ephemeris: &Ephemeris) -> DVec3 {
     let (pos, _) = ephemeris
         .get_earth_centered_state(body, tdb_jd)
         .expect("ephemeris query failed");
@@ -81,7 +75,8 @@ fn tier3_simulation_run4_3rd_body() {
     });
 
     // Sun: third-body (differential acceleration)
-    let initial_sun = earth_centered_position(EphemerisBody::Sun, 0.0, &ephemeris);
+    let tdb_jd = sim.time.tdb_julian_date();
+    let initial_sun = earth_centered_position(EphemerisBody::Sun, tdb_jd, &ephemeris);
     let sun = sim.add_source(GravitySourceEntry {
         source: GravitySource {
             mu: MU_SUN,
@@ -92,7 +87,7 @@ fn tier3_simulation_run4_3rd_body() {
     });
 
     // Moon: third-body (differential acceleration)
-    let initial_moon = earth_centered_position(EphemerisBody::Moon, 0.0, &ephemeris);
+    let initial_moon = earth_centered_position(EphemerisBody::Moon, tdb_jd, &ephemeris);
     let moon = sim.add_source(GravitySourceEntry {
         source: GravitySource {
             mu: MU_MOON,
@@ -148,11 +143,14 @@ fn tier3_simulation_run4_3rd_body() {
     // reader (~10 arcsecond Sun direction offset, see simnaut/bevy_jeod#27).
     let mut our_states = Vec::with_capacity(trajectory.len() - 1);
     for record in &trajectory[1..] {
-        // Update ephemeris-driven source positions before stepping
+        // Update ephemeris-driven source positions before stepping.
+        // Compute TDB JD for the target time using the epoch's TDB JD plus
+        // elapsed simulation days. This uses the proper TDB timescale.
+        let target_tdb_jd = tdb_jd + record.time / 86400.0;
         sim.sources[sun].position =
-            earth_centered_position(EphemerisBody::Sun, record.time, &ephemeris);
+            earth_centered_position(EphemerisBody::Sun, target_tdb_jd, &ephemeris);
         sim.sources[moon].position =
-            earth_centered_position(EphemerisBody::Moon, record.time, &ephemeris);
+            earth_centered_position(EphemerisBody::Moon, target_tdb_jd, &ephemeris);
 
         sim.step_until(record.time);
 

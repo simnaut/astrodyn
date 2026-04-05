@@ -27,7 +27,8 @@ use bevy_jeod::{
     EulerAnglesC, EulerAnglesConfigC, FlatPlateConfigC, GeodeticConfigC, GeodeticStateC,
     GravityAccelerationC, GravityControlsC, GravitySourceC, GravityTorqueC, JeodPlugin, LvlhFrameC,
     MassPropertiesC, OrbitalElementsC, OrbitalElementsConfigC, PlanetC, PlanetFixedRotationC,
-    RadiationForceC, RotationalStateC, SolarBetaC, SunMarker, TotalForceC, TranslationalStateC,
+    RadiationForceC, RotationalStateC, SolarBetaC, SourceInertialPositionC, SunMarker, TotalForceC,
+    TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
 use jeod_sim::{
@@ -192,6 +193,7 @@ fn tier3_bevy_point_mass_sixdof() {
         .spawn((
             Name::new("Earth"),
             GravitySourceC(earth_source()),
+            SourceInertialPositionC::default(),
             TranslationalStateC::default(),
         ))
         .id();
@@ -274,6 +276,7 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
         .spawn((
             Name::new("Earth"),
             GravitySourceC(earth_source()),
+            SourceInertialPositionC::default(),
             TranslationalStateC::default(),
         ))
         .id();
@@ -352,6 +355,7 @@ fn tier3_bevy_gravity_torque_sixdof() {
         .spawn((
             Name::new("Earth"),
             GravitySourceC(earth_source()),
+            SourceInertialPositionC::default(),
             TranslationalStateC::default(),
         ))
         .id();
@@ -456,6 +460,7 @@ fn tier3_bevy_full_stack_sixdof() {
         .spawn((
             Name::new("Earth"),
             GravitySourceC(earth_source()),
+            SourceInertialPositionC::default(),
             TranslationalStateC::default(),
         ))
         .id();
@@ -605,6 +610,7 @@ fn tier3_bevy_sh4x4_rnp() {
         .spawn((
             Name::new("Earth"),
             GravitySourceC(sh_source.clone()),
+            SourceInertialPositionC::default(),
             TranslationalStateC::default(),
             PlanetFixedRotationC(DMat3::IDENTITY),
         ))
@@ -896,6 +902,7 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
         .spawn((
             Name::new("Earth"),
             GravitySourceC(earth_source()),
+            SourceInertialPositionC::default(),
             TranslationalStateC::default(),
             ShadowBodyC {
                 radius: 6_378_137.0,
@@ -1077,6 +1084,7 @@ fn tier3_bevy_derived_states() {
         .spawn((
             Name::new("Earth"),
             GravitySourceC(earth_source()),
+            SourceInertialPositionC::default(),
             TranslationalStateC::default(),
         ))
         .id();
@@ -1224,6 +1232,7 @@ fn tier3_bevy_geodetic_derived_state() {
         .spawn((
             Name::new("Earth"),
             GravitySourceC(earth_source()),
+            SourceInertialPositionC::default(),
             TranslationalStateC::default(),
             PlanetFixedRotationC(DMat3::IDENTITY),
             PlanetC(earth_shape),
@@ -1341,6 +1350,7 @@ fn tier3_bevy_constant_density_drag_sixdof() {
         .spawn((
             Name::new("Earth"),
             GravitySourceC(earth_source()),
+            SourceInertialPositionC::default(),
             TranslationalStateC::default(),
         ))
         .id();
@@ -1432,6 +1442,7 @@ fn tier3_bevy_met_atmosphere_drag_sixdof() {
         .spawn((
             Name::new("Earth"),
             GravitySourceC(earth_source()),
+            SourceInertialPositionC::default(),
             TranslationalStateC::default(),
             PlanetFixedRotationC(DMat3::IDENTITY),
         ))
@@ -1529,6 +1540,7 @@ fn tier3_bevy_eccentric_derived_states() {
         .spawn((
             Name::new("Earth"),
             GravitySourceC(earth_source()),
+            SourceInertialPositionC::default(),
             TranslationalStateC::default(),
         ))
         .id();
@@ -1691,6 +1703,7 @@ fn tier3_bevy_polar_geodetic() {
         .spawn((
             Name::new("Earth"),
             GravitySourceC(earth_source()),
+            SourceInertialPositionC::default(),
             TranslationalStateC::default(),
             PlanetFixedRotationC(DMat3::IDENTITY),
             PlanetC(earth_shape),
@@ -1787,6 +1800,7 @@ fn tier3_bevy_equatorial_solar_beta() {
         .spawn((
             Name::new("Earth"),
             GravitySourceC(earth_source()),
+            SourceInertialPositionC::default(),
             TranslationalStateC::default(),
         ))
         .id();

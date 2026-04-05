@@ -97,18 +97,7 @@ struct RunConfig {
 }
 
 /// Compute Earth-centered position of a body from DE421 ephemeris.
-///
-/// `sim_time` is seconds since epoch. `epoch_tai_tjt` is the epoch in TJT days.
-fn earth_centered_position(
-    body: EphemerisBody,
-    sim_time: f64,
-    epoch_tai_tjt: f64,
-    ephemeris: &Ephemeris,
-) -> DVec3 {
-    // Convert to TDB Julian date.
-    // TJT is days since modified Julian epoch, TAI-based.
-    // JD = TJT + 40000 + 2_400_000.5 (approximate — TAI->TDB offset is ~32.184s).
-    let tdb_jd = (epoch_tai_tjt + sim_time / 86400.0) + 40000.0 + 2_400_000.5;
+fn earth_centered_position(body: EphemerisBody, tdb_jd: f64, ephemeris: &Ephemeris) -> DVec3 {
     let (pos, _) = ephemeris
         .get_earth_centered_state(body, tdb_jd)
         .expect("ephemeris query failed");
@@ -119,7 +108,9 @@ struct SimSetup {
     sim: Simulation,
     sun_idx: usize,
     moon_idx: usize,
-    epoch_tai_tjt: f64,
+    /// TDB Julian date at epoch, used to compute TDB JD for ephemeris queries
+    /// at arbitrary simulation times: `epoch_tdb_jd + sim_time / 86400`.
+    epoch_tdb_jd: f64,
 }
 
 fn build_simulation(
@@ -153,7 +144,8 @@ fn build_simulation(
     });
 
     // Sun: third-body differential acceleration (matches JEOD: spherical, gradient=false)
-    let initial_sun = earth_centered_position(EphemerisBody::Sun, 0.0, epoch_tai_tjt, ephemeris);
+    let epoch_tdb_jd = sim.time.tdb_julian_date();
+    let initial_sun = earth_centered_position(EphemerisBody::Sun, epoch_tdb_jd, ephemeris);
     let sun_idx = sim.add_source(GravitySourceEntry {
         source: GravitySource {
             mu: MU_SUN,
@@ -164,7 +156,7 @@ fn build_simulation(
     });
 
     // Moon: third-body differential acceleration (matches JEOD: spherical, gradient=false)
-    let initial_moon = earth_centered_position(EphemerisBody::Moon, 0.0, epoch_tai_tjt, ephemeris);
+    let initial_moon = earth_centered_position(EphemerisBody::Moon, epoch_tdb_jd, ephemeris);
     let moon_idx = sim.add_source(GravitySourceEntry {
         source: GravitySource {
             mu: MU_MOON,
@@ -216,7 +208,7 @@ fn build_simulation(
         sim,
         sun_idx,
         moon_idx,
-        epoch_tai_tjt,
+        epoch_tdb_jd,
     }
 }
 
@@ -266,19 +258,12 @@ fn run_propagation_test(
     let mut max_torque_error = 0.0_f64;
 
     for record in &records[1..] {
-        // Update Sun/Moon positions from ephemeris
-        sim.sources[setup.sun_idx].position = earth_centered_position(
-            EphemerisBody::Sun,
-            record.time,
-            setup.epoch_tai_tjt,
-            &ephemeris,
-        );
-        sim.sources[setup.moon_idx].position = earth_centered_position(
-            EphemerisBody::Moon,
-            record.time,
-            setup.epoch_tai_tjt,
-            &ephemeris,
-        );
+        // Update Sun/Moon positions from ephemeris using proper TDB timescale
+        let target_tdb_jd = setup.epoch_tdb_jd + record.time / 86400.0;
+        sim.sources[setup.sun_idx].position =
+            earth_centered_position(EphemerisBody::Sun, target_tdb_jd, &ephemeris);
+        sim.sources[setup.moon_idx].position =
+            earth_centered_position(EphemerisBody::Moon, target_tdb_jd, &ephemeris);
 
         sim.step_until(record.time);
 

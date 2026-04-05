@@ -43,9 +43,14 @@ pub struct GravitySourceC(pub GravitySource);
 /// Inertial-frame position of a gravity source (m).
 ///
 /// For the central body (e.g., Earth in an Earth-centered sim), this is
-/// `DVec3::ZERO`. For third bodies (Sun, Moon), this is updated each step
-/// by the ephemeris system. Used by the gravity computation to apply
-/// differential (third-body) acceleration corrections.
+/// typically `DVec3::ZERO`. For third bodies (Sun, Moon), this value should
+/// be provided and maintained by the application's ephemeris/update logic.
+/// Used by the gravity computation to apply differential (third-body)
+/// acceleration corrections.
+///
+/// Required on all gravity source entities. The gravity systems will panic
+/// if a source entity referenced by a `GravityControlsC` is missing this
+/// component.
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
 pub struct SourceInertialPositionC(pub DVec3);
 
