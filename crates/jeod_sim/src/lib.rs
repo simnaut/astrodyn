@@ -90,7 +90,9 @@ pub use jeod_frames::RefFrameState;
 pub use jeod_time::{leap_second::default_leap_second_table, SimulationTime};
 
 // jeod_time: planet rotation (used by ephemeris stage)
-pub use jeod_frames::rotation_j2000::compute_t_parent_this_from_tjt;
+pub use jeod_frames::rotation_j2000::{
+    compute_t_parent_this_from_tjt, compute_t_parent_this_from_tjt_with_polar, polar_motion_matrix,
+};
 
 // jeod_ephemeris: ephemeris data
 pub use jeod_ephemeris::{Ephemeris, EphemerisBody};
