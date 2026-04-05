@@ -116,7 +116,15 @@ pub fn load_dyncomp_csv(path: &Path) -> Vec<DyncompRecord> {
             f.len()
         );
 
-        let p = |s: &str| -> f64 { s.trim().parse().unwrap() };
+        let line_no = i + 1;
+        let p = |s: &str| -> f64 {
+            s.trim().parse().unwrap_or_else(|e| {
+                panic!(
+                    "{}: line {line_no}: failed to parse {s:?} as f64: {e}",
+                    path.display()
+                )
+            })
+        };
 
         let composite_body = parse_frame(&f, 1, &p);
 
