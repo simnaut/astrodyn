@@ -89,7 +89,8 @@ fn run_solar_beta_test(csv_filename: &str, label: &str, test_name: &str, beta_to
     println!("  Max beta error: {:.6e} rad", max_beta_err);
 
     let mut report = CrossvalReport::compute(test_name, &our_states, &ref_states);
-    report.add_extra("beta", max_beta_err, beta_tol, "rad");
+    report.add_extra("beta", max_beta_err, "rad");
+    assert!(max_beta_err < beta_tol, "beta");
     report.write();
 
     assert!(

@@ -179,7 +179,8 @@ fn tier3_solar_beta_vs_jeod_sim_solarbeta() {
     );
 
     let mut report = CrossvalReport::compute("tier3_solar_beta_vs_jeod_sim_solarbeta", &[], &[]);
-    report.add_extra("solar_beta", max_beta_err, 6.828e-9, "rad");
+    report.add_extra("solar_beta", max_beta_err, "rad");
+    assert!(max_beta_err < 6.828e-9, "solar_beta");
     report.write();
 
     assert!(

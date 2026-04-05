@@ -245,7 +245,12 @@ fn run_propagation_test(
     }
 
     let mut report = CrossvalReport::compute(test_name, &our_states, &ref_states);
-    report.add_extra("torque", max_torque_error, torque_tol, "N*m");
+    report.add_extra("torque", max_torque_error, "N*m");
+    if torque_tol > 0.0 {
+        assert!(max_torque_error < torque_tol, "torque");
+    } else {
+        assert!(max_torque_error == 0.0, "torque");
+    }
     report.write();
 
     let max_pos_error = report.max_position_component();

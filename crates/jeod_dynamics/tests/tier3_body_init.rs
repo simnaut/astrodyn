@@ -100,7 +100,7 @@ fn tier3_body_init_round_trip_over_trajectory() {
 
     let mut report =
         CrossvalReport::compute("tier3_body_init_round_trip_over_trajectory", &[], &[]);
-    report.add_extra("position", max_pos_err, f64::INFINITY, "m");
-    report.add_extra("velocity", max_vel_err, f64::INFINITY, "m/s");
+    report.add_extra("position", max_pos_err, "m");
+    report.add_extra("velocity", max_vel_err, "m/s");
     report.write();
 }

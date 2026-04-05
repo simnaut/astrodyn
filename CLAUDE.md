@@ -197,11 +197,13 @@ live exclusively in the test source code.
 
 Tests assert tolerances via `report.assert_position(tol)`, `report.assert_velocity(tol)`,
 `report.assert_quat_angle(tol)`, `report.assert_ang_vel(tol)` (per-component checks),
-plus `assert!(var < tol)` for extras added via `report.add_extra(name, val, tol, unit)`.
+plus `assert!(var < tol, "metric_name")` for extras added via
+`report.add_extra(name, val, unit)`.
 
-The report binary (`cargo run -p jeod_test_data --bin tier3_report`) extracts tolerance
-values from test source files by regex-parsing the `assert_*` call sites. It never reads
-tolerances from JSON — the JSON contains only errors.
+The report binary (`cargo run -p jeod_test_data --bin tier3_report`) extracts all
+tolerance values from test source files by regex-parsing the `assert_*` call sites
+and `assert!(var < LITERAL, "name")` patterns. JSON contains only errors — no
+tolerances.
 
 **Tolerance policy:** each tolerance is set to 5% above the observed max error, per
 component. Since JEOD reference CSVs are static and our code is deterministic, errors

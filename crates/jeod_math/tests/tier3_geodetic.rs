@@ -173,9 +173,12 @@ fn tier3_geodetic_vs_jeod_sim_ned() {
     eprintln!("  longitude: {max_lon_err:.6e} rad");
 
     let mut report = CrossvalReport::compute("tier3_geodetic_vs_jeod_sim_ned", &[], &[]);
-    report.add_extra("altitude", max_alt_err, 2.69e-9, "m");
-    report.add_extra("latitude", max_lat_err, 4.663e-16, "rad");
-    report.add_extra("longitude", max_lon_err, 9.326e-16, "rad");
+    report.add_extra("altitude", max_alt_err, "m");
+    assert!(max_alt_err < 2.69e-9, "altitude");
+    report.add_extra("latitude", max_lat_err, "rad");
+    assert!(max_lat_err < 4.663e-16, "latitude");
+    report.add_extra("longitude", max_lon_err, "rad");
+    assert!(max_lon_err < 9.326e-16, "longitude");
     report.write();
 
     assert!(

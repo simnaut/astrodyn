@@ -569,10 +569,14 @@ fn tier3_srp_trajectory_sim3_orbit() {
 
     let mut report =
         CrossvalReport::compute("tier3_srp_trajectory_sim3_orbit", &our_states, &ref_states);
-    report.add_extra("position_24h", max_pos_err_24h, 9.847e-2, "m");
-    report.add_extra("force_direction", max_force_dir_err, 3.099e-2, "rad");
-    report.add_extra("force_magnitude_rel", max_force_mag_rel_err, 4.261, "");
-    report.add_extra("shadow_mismatches", shadow_mismatches as f64, 2.0, "");
+    report.add_extra("position_24h", max_pos_err_24h, "m");
+    assert!(max_pos_err_24h < 9.847e-2, "position_24h");
+    report.add_extra("force_direction", max_force_dir_err, "rad");
+    assert!(max_force_dir_err < 3.099e-2, "force_direction");
+    report.add_extra("force_magnitude_rel", max_force_mag_rel_err, "");
+    assert!(max_force_mag_rel_err < 4.261, "force_magnitude_rel");
+    report.add_extra("shadow_mismatches", shadow_mismatches as f64, "");
+    assert!((shadow_mismatches as f64) < 2.0, "shadow_mismatches");
     report.write();
 
     let max_pos_err = report.max_position_component();

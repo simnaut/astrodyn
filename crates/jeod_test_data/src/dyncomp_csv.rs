@@ -93,8 +93,10 @@ fn parse_derivs(f: &[&str], p: &dyn Fn(&str) -> f64) -> FrameDerivs {
 
 /// Load a SIM_dyncomp state CSV (80-column format).
 ///
-/// Parses all three frames and derivatives. Gracefully handles CSVs with
-/// fewer than 80 columns by omitting optional sections.
+/// Parses all three frames and derivatives. CSVs with fewer than 80 columns
+/// are handled by substituting `composite_body` data for missing
+/// `core_body`/`structure` frames (the frames are identical for single-body
+/// sims). Derivative fields are `None` when their columns are absent.
 pub fn load_dyncomp_csv(path: &Path) -> Vec<DyncompRecord> {
     let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
         panic!(

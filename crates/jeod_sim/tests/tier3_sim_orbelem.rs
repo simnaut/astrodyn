@@ -134,13 +134,20 @@ fn tier3_simulation_orbelem() {
     println!("  Max mean_anom:       {:.6e} rad", max_ma_err);
 
     let mut report = CrossvalReport::compute("tier3_simulation_orbelem", &our_states, &ref_states);
-    report.add_extra("sma", max_sma_err, 2.613e-6, "m");
-    report.add_extra("eccentricity", max_ecc_err, 1.496e-13, "");
-    report.add_extra("inclination", max_inc_err, 8.436e-17, "rad");
-    report.add_extra("arg_periapsis", max_aop_err, 1.78e-12, "rad");
-    report.add_extra("long_asc_node", max_lan_err, 9.513e-14, "rad");
-    report.add_extra("true_anom", max_ta_err, 1.136e-11, "rad");
-    report.add_extra("mean_anom", max_ma_err, 5.642e-12, "rad");
+    report.add_extra("sma", max_sma_err, "m");
+    assert!(max_sma_err < 2.613e-6, "sma");
+    report.add_extra("eccentricity", max_ecc_err, "");
+    assert!(max_ecc_err < 1.496e-13, "eccentricity");
+    report.add_extra("inclination", max_inc_err, "rad");
+    assert!(max_inc_err < 8.436e-17, "inclination");
+    report.add_extra("arg_periapsis", max_aop_err, "rad");
+    assert!(max_aop_err < 1.78e-12, "arg_periapsis");
+    report.add_extra("long_asc_node", max_lan_err, "rad");
+    assert!(max_lan_err < 9.513e-14, "long_asc_node");
+    report.add_extra("true_anom", max_ta_err, "rad");
+    assert!(max_ta_err < 1.136e-11, "true_anom");
+    report.add_extra("mean_anom", max_ma_err, "rad");
+    assert!(max_ma_err < 5.642e-12, "mean_anom");
     report.write();
 
     report.assert_position([6.556e-5, 5.15e-5, 5.478e-8]);

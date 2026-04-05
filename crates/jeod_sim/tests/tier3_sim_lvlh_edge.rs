@@ -121,8 +121,10 @@ fn run_lvlh_test(
     println!("  Max ang_vel error:   {:.6e} rad/s", max_angvel_err);
 
     let mut report = CrossvalReport::compute(test_name, &our_states, &ref_states);
-    report.add_extra("t_parent_this", max_mat_err, t_tol, "");
-    report.add_extra("ang_vel", max_angvel_err, omega_tol, "rad/s");
+    report.add_extra("t_parent_this", max_mat_err, "");
+    assert!(max_mat_err < t_tol, "t_parent_this");
+    report.add_extra("ang_vel", max_angvel_err, "rad/s");
+    assert!(max_angvel_err < omega_tol, "ang_vel");
     report.write();
 
     report.assert_position(pos_tol);

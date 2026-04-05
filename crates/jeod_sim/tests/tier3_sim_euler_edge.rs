@@ -139,9 +139,12 @@ fn run_euler_test(csv_filename: &str, label: &str, test_name: &str, quat_tol: f6
     );
 
     let mut report = CrossvalReport::compute(test_name, &our_states, &ref_states);
-    report.add_extra("euler_roll", max_angle_err[0], euler_tol, "rad");
-    report.add_extra("euler_pitch", max_angle_err[1], euler_tol, "rad");
-    report.add_extra("euler_yaw", max_angle_err[2], euler_tol, "rad");
+    report.add_extra("euler_roll", max_angle_err[0], "rad");
+    assert!(max_angle_err[0] < euler_tol, "euler_roll");
+    report.add_extra("euler_pitch", max_angle_err[1], "rad");
+    assert!(max_angle_err[1] < euler_tol, "euler_pitch");
+    report.add_extra("euler_yaw", max_angle_err[2], "rad");
+    assert!(max_angle_err[2] < euler_tol, "euler_yaw");
     report.write();
 
     report.assert_quat_angle(quat_tol);

@@ -37,7 +37,7 @@ struct TestResult {
     velocity_tol: Option<[f64; 3]>,
     quat_angle_tol: Option<f64>,
     ang_vel_tol: Option<[f64; 3]>,
-    // Extras: (var, val, tol, unit) — tol from source or add_extra arg
+    // Extras: (var, val, tol_from_source, unit)
     extras: Vec<(String, f64, Option<f64>, String)>,
 }
 
@@ -150,9 +150,9 @@ fn parse_extras(s: &str) -> Vec<(String, f64, Option<f64>, String)> {
         };
         let obj = &arr[pos + obj_start..pos + obj_start + obj_end + 1];
         if let (Some(var), Some(val)) = (extract_string(obj, "var"), parse_f64(obj, "val")) {
-            let tol = parse_f64(obj, "tol");
             let unit = extract_string(obj, "unit").unwrap_or_default();
-            result.push((var, val, tol, unit));
+            // tol=None here; filled from source later
+            result.push((var, val, None, unit));
         }
         pos = pos + obj_start + obj_end + 1;
     }
@@ -300,6 +300,90 @@ struct SourceTolerances {
     source_file: Option<String>,
 }
 
+/// Extract tolerances for extras from source.
+/// Looks for `assert!(EXPR < LITERAL, "metric_name")` near the test name.
+fn extract_extras_tolerances(
+    test_name: &str,
+    extras: &mut [(String, f64, Option<f64>, String)],
+    source_contents: &[(String, String)],
+) {
+    // Find which file contains the test name, then search near the test name
+    // for add_extra("NAME",...) followed by assert!(... < LITERAL, "NAME").
+    for (_path, content) in source_contents {
+        let name_pattern = format!("\"{}\"", test_name);
+        let Some(name_pos) = content.find(&name_pattern) else {
+            continue;
+        };
+
+        // Search within ±3000 chars of the test name (covers the function body
+        // for both inline tests and shared helpers)
+        let window_start = name_pos.saturating_sub(3000);
+        let window_end = (name_pos + 5000).min(content.len());
+        let window = &content[window_start..window_end];
+
+        for extra in extras.iter_mut() {
+            if extra.2.is_some() {
+                continue;
+            }
+            let add_extra_pattern = format!("add_extra(\"{}\",", extra.0);
+            let assert_pattern = format!("\"{}\")", extra.0);
+
+            // Find the add_extra call within the window
+            if let Some(ae_pos) = window.find(&add_extra_pattern) {
+                // Look for assert within ~500 chars after the add_extra
+                let search_end = (ae_pos + 500).min(window.len());
+                let nearby = &window[ae_pos..search_end];
+
+                for line in nearby.lines() {
+                    if line.contains(&assert_pattern) && line.contains("assert!") {
+                        if let Some(lt_pos) = line.rfind('<') {
+                            let after_lt = &line[lt_pos + 1..];
+                            if let Some(comma_pos) = after_lt.find(',') {
+                                let literal_str = after_lt[..comma_pos].trim();
+                                if let Some(val) = parse_rust_float(literal_str) {
+                                    extra.2 = Some(val);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Second pass: for any extras still missing, search the entire file.
+        // This handles shared helpers where the add_extra+assert are far from
+        // the test name call site. Only take the FIRST match in the file to
+        // avoid cross-contamination from other tests using the same metric name.
+        for extra in extras.iter_mut() {
+            if extra.2.is_some() {
+                continue;
+            }
+            let add_extra_pattern = format!("add_extra(\"{}\",", extra.0);
+            let assert_pattern = format!("\"{}\")", extra.0);
+
+            if let Some(ae_pos) = content.find(&add_extra_pattern) {
+                let search_end = (ae_pos + 500).min(content.len());
+                let nearby = &content[ae_pos..search_end];
+                for line in nearby.lines() {
+                    if line.contains(&assert_pattern) && line.contains("assert!") {
+                        if let Some(lt_pos) = line.rfind('<') {
+                            let after_lt = &line[lt_pos + 1..];
+                            if let Some(comma_pos) = after_lt.find(',') {
+                                let literal_str = after_lt[..comma_pos].trim();
+                                if let Some(val) = parse_rust_float(literal_str) {
+                                    extra.2 = Some(val);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        break; // found the file containing this test
+    }
+}
+
 // ── Formatting ──
 
 fn f3(v: f64) -> String {
@@ -364,6 +448,9 @@ fn main() {
         entry.velocity_tol = tols.velocity;
         entry.quat_angle_tol = tols.quat_angle;
         entry.ang_vel_tol = tols.ang_vel;
+
+        // Extract extras tolerances from assert!(var < LITERAL, "metric_name")
+        extract_extras_tolerances(&entry.test, &mut entry.extras, &source_contents);
 
         if entry.position.is_some() && entry.position_tol.is_none() {
             missing_tols += 1;

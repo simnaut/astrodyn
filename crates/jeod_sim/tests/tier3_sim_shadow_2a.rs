@@ -122,13 +122,9 @@ fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str, frac_
     println!("  Shadow state mismatches:    {shadow_state_mismatches}");
 
     let mut report = CrossvalReport::compute(test_name, &our_states, &ref_states);
-    report.add_extra("shadow_fraction", max_frac_err, frac_tol, "");
-    report.add_extra(
-        "shadow_mismatches",
-        shadow_state_mismatches as f64,
-        f64::INFINITY,
-        "",
-    );
+    report.add_extra("shadow_fraction", max_frac_err, "");
+    assert!(max_frac_err < frac_tol, "shadow_fraction");
+    report.add_extra("shadow_mismatches", shadow_state_mismatches as f64, "");
     report.write();
 
     assert!(

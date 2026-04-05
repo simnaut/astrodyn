@@ -139,9 +139,12 @@ fn tier3_simulation_euler() {
     println!("  Max quaternion error: {:.6e} rad", max_quat_err);
 
     let mut report = CrossvalReport::compute("tier3_simulation_euler", &our_states, &ref_states);
-    report.add_extra("euler_roll", max_angle_err[0], 1.846e-13, "rad");
-    report.add_extra("euler_pitch", max_angle_err[1], 8.674e-14, "rad");
-    report.add_extra("euler_yaw", max_angle_err[2], 1.103e-13, "rad");
+    report.add_extra("euler_roll", max_angle_err[0], "rad");
+    assert!(max_angle_err[0] < 1.846e-13, "euler_roll");
+    report.add_extra("euler_pitch", max_angle_err[1], "rad");
+    assert!(max_angle_err[1] < 8.674e-14, "euler_pitch");
+    report.add_extra("euler_yaw", max_angle_err[2], "rad");
+    assert!(max_angle_err[2] < 1.103e-13, "euler_yaw");
     report.write();
 
     println!(

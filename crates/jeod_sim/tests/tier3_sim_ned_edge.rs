@@ -168,9 +168,12 @@ fn run_ned_test(
     println!("  Max longitude error: {:.6e} rad", max_lon_err);
 
     let mut report = CrossvalReport::compute(test_name, &our_states, &ref_states);
-    report.add_extra("altitude", max_alt_err, tol_alt, "m");
-    report.add_extra("latitude", max_lat_err, tol_lat, "rad");
-    report.add_extra("longitude", max_lon_err, tol_lon, "rad");
+    report.add_extra("altitude", max_alt_err, "m");
+    assert!(max_alt_err < tol_alt, "altitude");
+    report.add_extra("latitude", max_lat_err, "rad");
+    assert!(max_lat_err < tol_lat, "latitude");
+    report.add_extra("longitude", max_lon_err, "rad");
+    assert!(max_lon_err < tol_lon, "longitude");
     report.write();
 
     report.assert_position(pos_tol);

@@ -955,8 +955,9 @@ fn tier3_cross_validate_against_jeod_dyncomp() {
 `CrossvalReport` computes per-component max errors and writes them to JSON.
 It has no tolerance fields — tolerances live exclusively in the test source
 as literal values passed to `assert_position`, `assert_velocity`,
-`assert_quat_angle`, `assert_ang_vel`, or via `assert!(var < literal)` for
-scalar extras. The report binary extracts these from source for display.
+`assert_quat_angle`, `assert_ang_vel`, or via `assert!(var < literal, "name")`
+for scalar extras. The report binary extracts all tolerances from source for
+display — JSON contains only errors.
 
 **Key rules:**
 - Tests assert on missing data — never skip gracefully.

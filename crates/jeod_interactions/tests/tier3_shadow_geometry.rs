@@ -156,7 +156,7 @@ fn tier3_shadow_annular_eclipse() {
     println!("  Max flux error: {:.6e} W/m²", max_flux_err);
 
     let mut report = CrossvalReport::compute("tier3_shadow_annular_eclipse", &[], &[]);
-    report.add_extra("flux", max_flux_err, f64::INFINITY, "W/m²");
+    report.add_extra("flux", max_flux_err, "W/m²");
     report.write();
 
     // Flux magnitude should match within 1% for illuminated points

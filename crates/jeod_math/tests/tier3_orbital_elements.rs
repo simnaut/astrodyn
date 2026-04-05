@@ -264,14 +264,22 @@ fn tier3_orbital_elements_vs_jeod_sim_orbelem() {
 
     let mut report =
         CrossvalReport::compute("tier3_orbital_elements_vs_jeod_sim_orbelem", &[], &[]);
-    report.add_extra("semi_major_axis", max_sma_err, 1.956e-8, "m");
-    report.add_extra("semiparam", max_sp_err, 1.761e-8, "m");
-    report.add_extra("eccentricity", max_ecc_err, 8.161e-16, "");
-    report.add_extra("inclination", max_inc_err, 5.693e-19, "rad");
-    report.add_extra("arg_periapsis", max_aop_err, 2.857e-15, "rad");
-    report.add_extra("long_asc_node", max_lan_err, 1.866e-15, "rad");
-    report.add_extra("true_anom", max_ta_err, 3.731e-15, "rad");
-    report.add_extra("mean_anom", max_ma_err, 3.731e-15, "rad");
+    report.add_extra("semi_major_axis", max_sma_err, "m");
+    assert!(max_sma_err < 1.956e-8, "semi_major_axis");
+    report.add_extra("semiparam", max_sp_err, "m");
+    assert!(max_sp_err < 1.761e-8, "semiparam");
+    report.add_extra("eccentricity", max_ecc_err, "");
+    assert!(max_ecc_err < 8.161e-16, "eccentricity");
+    report.add_extra("inclination", max_inc_err, "rad");
+    assert!(max_inc_err < 5.693e-19, "inclination");
+    report.add_extra("arg_periapsis", max_aop_err, "rad");
+    assert!(max_aop_err < 2.857e-15, "arg_periapsis");
+    report.add_extra("long_asc_node", max_lan_err, "rad");
+    assert!(max_lan_err < 1.866e-15, "long_asc_node");
+    report.add_extra("true_anom", max_ta_err, "rad");
+    assert!(max_ta_err < 3.731e-15, "true_anom");
+    report.add_extra("mean_anom", max_ma_err, "rad");
+    assert!(max_ma_err < 3.731e-15, "mean_anom");
     report.write();
 
     assert!(

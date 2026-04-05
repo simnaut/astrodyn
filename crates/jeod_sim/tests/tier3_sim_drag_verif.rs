@@ -91,8 +91,10 @@ fn run_drag_comparison(csv_filename: &str, label: &str, config: DragConfig, test
     println!("  Max force rel error: {:.6e}", max_force_rel_err);
 
     let mut report = CrossvalReport::compute(test_name, &our_states, &ref_states);
-    report.add_extra("force", max_force_err, 4.605e-18, "N");
-    report.add_extra("force_rel", max_force_rel_err, 8.186e-16, "");
+    report.add_extra("force", max_force_err, "N");
+    assert!(max_force_err < 4.605e-18, "force");
+    report.add_extra("force_rel", max_force_rel_err, "");
+    assert!(max_force_rel_err < 8.186e-16, "force_rel");
     report.write();
 
     // Drag force should match JEOD to high precision (same formula, same inputs)
@@ -162,7 +164,8 @@ fn tier3_drag_const_force() {
     let ref_states: Vec<StateLog> = our_states.clone();
 
     let mut report = CrossvalReport::compute("tier3_drag_const_force", &our_states, &ref_states);
-    report.add_extra("accel", max_accel_err, 1.458e-17, "m/s2");
+    report.add_extra("accel", max_accel_err, "m/s2");
+    assert!(max_accel_err < 1.458e-17, "accel");
     report.write();
 
     assert!(

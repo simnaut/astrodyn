@@ -224,9 +224,12 @@ fn tier3_euler_angles_vs_jeod_sim_euler() {
     }
 
     let mut report = CrossvalReport::compute("tier3_euler_angles_vs_jeod_sim_euler", &[], &[]);
-    report.add_extra("euler_roll", max_angle_err[0], 2.332e-16, "rad");
-    report.add_extra("euler_pitch", max_angle_err[1], 8.744e-17, "rad");
-    report.add_extra("euler_yaw", max_angle_err[2], 4.663e-16, "rad");
+    report.add_extra("euler_roll", max_angle_err[0], "rad");
+    assert!(max_angle_err[0] < 2.332e-16, "euler_roll");
+    report.add_extra("euler_pitch", max_angle_err[1], "rad");
+    assert!(max_angle_err[1] < 8.744e-17, "euler_pitch");
+    report.add_extra("euler_yaw", max_angle_err[2], "rad");
+    assert!(max_angle_err[2] < 4.663e-16, "euler_yaw");
     report.write();
 
     assert!(

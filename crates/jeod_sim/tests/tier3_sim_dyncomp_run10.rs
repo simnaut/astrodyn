@@ -253,7 +253,8 @@ fn tier3_reference_run10a_libration_period() {
     println!("  Period error:         {period_error_pct:.4}%");
 
     let mut report = CrossvalReport::compute("tier3_reference_run10a_libration_period", &[], &[]);
-    report.add_extra("period_error_pct", period_error_pct, 3.924e-1, "%");
+    report.add_extra("period_error_pct", period_error_pct, "%");
+    assert!(period_error_pct < 3.924e-1, "period_error_pct");
     report.write();
 
     // PLAN.md criterion is 0.1%, but the 60s logging resolution limits

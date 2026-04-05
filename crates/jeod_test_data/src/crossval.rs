@@ -51,9 +51,8 @@ pub struct CrossvalReport {
     pub ang_vel: Option<[f64; 3]>,
     pub ang_accel: Option<[f64; 3]>,
 
-    // Test-specific extras: (variable_name, value, tolerance, unit)
-    // Tolerance is kept here temporarily for the report binary transition.
-    extras: Vec<(String, f64, Option<f64>, String)>,
+    // Test-specific extras: (variable_name, value, unit)
+    extras: Vec<(String, f64, String)>,
 }
 
 impl CrossvalReport {
@@ -68,6 +67,17 @@ impl CrossvalReport {
             ours.len(),
             reference.len()
         );
+
+        // Verify time alignment
+        for (i, (a, b)) in ours.iter().zip(reference.iter()).enumerate() {
+            let dt = (a.time - b.time).abs();
+            assert!(
+                dt < 0.1,
+                "Time mismatch at index {i}: ours={:.3}s, ref={:.3}s (delta={dt:.6e}s)",
+                a.time,
+                b.time
+            );
+        }
 
         let mut report = Self {
             test_name: test_name.to_string(),
@@ -140,12 +150,10 @@ impl CrossvalReport {
         report
     }
 
-    /// Add a test-specific extra metric.
-    /// Use `f64::INFINITY` for tolerance when there is no explicit threshold.
-    pub fn add_extra(&mut self, var: &str, val: f64, tol: f64, unit: &str) {
-        let tol = if tol.is_finite() { Some(tol) } else { None };
-        self.extras
-            .push((var.to_string(), val, tol, unit.to_string()));
+    /// Add a test-specific extra metric (error value only, no tolerance).
+    /// Tolerances live in the test's `assert!` statements.
+    pub fn add_extra(&mut self, var: &str, val: f64, unit: &str) {
+        self.extras.push((var.to_string(), val, unit.to_string()));
     }
 
     /// Worst-component position error (∞-norm, for assert! statements).
@@ -251,18 +259,14 @@ impl CrossvalReport {
 
         if !self.extras.is_empty() {
             json.push_str(",\"extras\":[");
-            for (i, (var, val, tol, unit)) in self.extras.iter().enumerate() {
+            for (i, (var, val, unit)) in self.extras.iter().enumerate() {
                 if i > 0 {
                     json.push(',');
                 }
-                let tol_str = match tol {
-                    Some(t) => format!("{t:.6e}"),
-                    None => "null".to_string(),
-                };
                 let var_esc = json_escape(var);
                 let unit_esc = json_escape(unit);
                 json.push_str(&format!(
-                    r#"{{"var":"{var_esc}","val":{val:.6e},"tol":{tol_str},"unit":"{unit_esc}"}}"#
+                    r#"{{"var":"{var_esc}","val":{val:.6e},"unit":"{unit_esc}"}}"#
                 ));
             }
             json.push(']');

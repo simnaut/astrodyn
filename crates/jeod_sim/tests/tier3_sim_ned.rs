@@ -142,9 +142,12 @@ fn tier3_simulation_geodetic() {
     println!("  Max longitude error: {:.6e} rad", max_lon_err);
 
     let mut report = CrossvalReport::compute("tier3_simulation_geodetic", &our_states, &ref_states);
-    report.add_extra("altitude", max_alt_err, 8.938e-4, "m");
-    report.add_extra("latitude", max_lat_err, 4.182e-8, "rad");
-    report.add_extra("longitude", max_lon_err, 6.493e-8, "rad");
+    report.add_extra("altitude", max_alt_err, "m");
+    assert!(max_alt_err < 8.938e-4, "altitude");
+    report.add_extra("latitude", max_lat_err, "rad");
+    assert!(max_lat_err < 4.182e-8, "latitude");
+    report.add_extra("longitude", max_lon_err, "rad");
+    assert!(max_lon_err < 6.493e-8, "longitude");
     report.write();
 
     report.assert_position([3.78e-6, 5.155e-6, 3.717e-6]);

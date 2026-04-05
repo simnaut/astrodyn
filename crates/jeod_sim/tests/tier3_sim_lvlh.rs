@@ -111,8 +111,10 @@ fn tier3_simulation_lvlh() {
     println!("  Max ang_vel error:   {:.6e} rad/s", max_angvel_err);
 
     let mut report = CrossvalReport::compute("tier3_simulation_lvlh", &our_states, &ref_states);
-    report.add_extra("t_parent_this", max_mat_err, 1.42e-11, "");
-    report.add_extra("ang_vel", max_angvel_err, 3.68e-16, "rad/s");
+    report.add_extra("t_parent_this", max_mat_err, "");
+    assert!(max_mat_err < 1.42e-11, "t_parent_this");
+    report.add_extra("ang_vel", max_angvel_err, "rad/s");
+    assert!(max_angvel_err < 3.68e-16, "ang_vel");
     report.write();
 
     report.assert_position([6.96e-5, 9.448e-5, 6.874e-5]);

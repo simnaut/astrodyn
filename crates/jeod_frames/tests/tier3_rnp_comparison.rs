@@ -329,12 +329,18 @@ fn tier3_rnp_component_comparison() {
     );
 
     let mut report = CrossvalReport::compute("tier3_rnp_component_comparison", &[], &[]);
-    report.add_extra("precession", max_p_err, 2.05e-18, "");
-    report.add_extra("nutation", max_n_err, 1.63e-18, "");
-    report.add_extra("gast_rotation", max_r_err, 2.054e-11, "");
-    report.add_extra("composed_T", max_t_err, 2.053e-11, "");
-    report.add_extra("equa_equinoxes", max_equa_err, 2.233e-14, "s");
-    report.add_extra("theta_gast", max_theta_gast_err, 2.101e-11, "rad");
+    report.add_extra("precession", max_p_err, "");
+    assert!(max_p_err < 2.05e-18, "precession");
+    report.add_extra("nutation", max_n_err, "");
+    assert!(max_n_err < 1.63e-18, "nutation");
+    report.add_extra("gast_rotation", max_r_err, "");
+    assert!(max_r_err < 2.054e-11, "gast_rotation");
+    report.add_extra("composed_T", max_t_err, "");
+    assert!(max_t_err < 2.053e-11, "composed_T");
+    report.add_extra("equa_equinoxes", max_equa_err, "s");
+    assert!(max_equa_err < 2.233e-14, "equa_equinoxes");
+    report.add_extra("theta_gast", max_theta_gast_err, "rad");
+    assert!(max_theta_gast_err < 2.101e-11, "theta_gast");
     report.write();
 
     eprintln!("  All RNP components match JEOD within 1e-10 element-wise.");
