@@ -66,6 +66,8 @@ struct JeodStateRecord {
     time: f64,
     position: DVec3,
     velocity: DVec3,
+    trans_accel: Option<DVec3>,
+    rot_accel: Option<DVec3>,
 }
 
 fn load_jeod_trajectory(path: &Path) -> Vec<JeodStateRecord> {
@@ -89,10 +91,21 @@ fn load_jeod_trajectory(path: &Path) -> Vec<JeodStateRecord> {
             f.len()
         );
         let p = |s: &str| -> f64 { s.trim().parse().unwrap() };
+        // Parse acceleration columns if present (80-column SIM_dyncomp format)
+        let (trans_accel, rot_accel) = if f.len() >= 79 {
+            (
+                Some(DVec3::new(p(f[68]), p(f[72]), p(f[76]))),
+                Some(DVec3::new(p(f[69]), p(f[73]), p(f[77]))),
+            )
+        } else {
+            (None, None)
+        };
         records.push(JeodStateRecord {
             time: p(f[0]),
             position: DVec3::new(p(f[1]), p(f[8]), p(f[15])),
             velocity: DVec3::new(p(f[2]), p(f[9]), p(f[16])),
+            trans_accel,
+            rot_accel,
         });
     }
     records
@@ -167,6 +180,8 @@ fn run_sh_trajectory_test(
             time: r.time,
             position: Some(r.position),
             velocity: Some(r.velocity),
+            acceleration: r.trans_accel,
+            ang_accel: r.rot_accel,
             ..Default::default()
         })
         .collect();

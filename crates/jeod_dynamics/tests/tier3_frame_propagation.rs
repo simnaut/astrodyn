@@ -90,6 +90,8 @@ struct ThreeFrameRecord {
     composite: FrameRecord,
     core: FrameRecord,
     structure: FrameRecord,
+    trans_accel: Option<DVec3>,
+    rot_accel: Option<DVec3>,
 }
 
 /// Load all three frames from the JEOD CSV.
@@ -134,11 +136,32 @@ fn load_three_frame_trajectory(path: &Path) -> Vec<ThreeFrameRecord> {
         // Structure: columns 45..66 (base=45)
         let structure = parse_frame_record(&fields, 45, line_no);
 
+        // Derivs columns (0-indexed): 68=trans_accel[0], 72=[1], 76=[2]
+        //                              69=rot_accel[0], 73=[1], 77=[2]
+        let (trans_accel, rot_accel) = if fields.len() >= 79 {
+            let parse = |col: usize| -> f64 {
+                fields[col].trim().parse::<f64>().unwrap_or_else(|e| {
+                    panic!(
+                        "Failed to parse CSV at line {line_no}, col {col}: {:?} ({e})",
+                        fields[col]
+                    )
+                })
+            };
+            (
+                Some(DVec3::new(parse(68), parse(72), parse(76))),
+                Some(DVec3::new(parse(69), parse(73), parse(77))),
+            )
+        } else {
+            (None, None)
+        };
+
         records.push(ThreeFrameRecord {
             time,
             composite,
             core,
             structure,
+            trans_accel,
+            rot_accel,
         });
     }
     records
@@ -310,6 +333,8 @@ fn tier3_frame_propagation_composite_to_structure() {
             position: Some(record.structure.position),
             velocity: Some(record.structure.velocity),
             ang_vel: Some(record.structure.ang_vel),
+            acceleration: record.trans_accel,
+            ang_accel: record.rot_accel,
             ..Default::default()
         });
     }
