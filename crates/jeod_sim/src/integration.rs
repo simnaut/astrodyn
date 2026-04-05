@@ -1,13 +1,14 @@
 use glam::DVec3;
 use jeod_dynamics::{
-    DynamicsConfig, MassProperties, RotationalState, SixDofState, TranslationalState,
+    DynamicsConfig, IntegratorType, MassProperties, RotationalState, SixDofState,
+    TranslationalState,
 };
 
 /// Integrate a single body's state forward by one timestep.
 ///
 /// Handles 6-DOF vs 3-DOF routing based on configuration flags and
-/// available state. The gravity function is called at each RK4 intermediate
-/// state for proper 4th-order accuracy, matching JEOD's
+/// available state. The gravity function is called at each integrator
+/// intermediate state for proper multi-stage accuracy, matching JEOD's
 /// `DynamicsIntegrationGroup` behavior where the derivative function
 /// recomputes gravity at every stage.
 ///
@@ -19,10 +20,11 @@ use jeod_dynamics::{
 /// - `trans`: translational state (mutated in place)
 /// - `rot`: optional rotational state (mutated in place if 6-DOF)
 /// - `mass`: mass properties (required for non-zero forces and 6-DOF)
-/// - `gravity_fn`: computes gravitational acceleration from position (called per RK4 stage)
+/// - `gravity_fn`: computes gravitational acceleration from position (called per integrator stage)
 /// - `non_grav_force`: total non-gravity force in inertial frame (constant over step)
 /// - `torque`: total torque in body frame (constant over step)
 /// - `dt`: timestep in seconds
+/// - `integrator`: integration method to use
 ///
 /// # Panics
 /// - Non-zero force without mass properties (JEOD_INV: MA.01)
@@ -41,6 +43,7 @@ pub fn integrate_body(
     non_grav_force: DVec3,
     torque: DVec3,
     dt: f64,
+    integrator: IntegratorType,
 ) {
     // JEOD_INV: DB.07 — translational_dynamics gates integration
     if !config.translational_dynamics {
@@ -72,15 +75,18 @@ pub fn integrate_body(
             };
 
             let constant_torque = torque;
-            // Gravity recomputed at each RK4 intermediate state for 4th-order accuracy.
-            // Non-gravity acceleration held constant (negligible change over one step).
-            let new_state = jeod_dynamics::rk4_sixdof_step(
-                &six_state,
-                |s| gravity_fn(s.trans.position) + non_grav_accel,
-                |_s| constant_torque,
-                mass_props,
-                dt,
-            );
+            // Gravity recomputed at each integrator intermediate state for
+            // multi-stage accuracy. Non-gravity acceleration held constant
+            // (negligible change over one step).
+            let new_state = match integrator {
+                IntegratorType::Rk4 => jeod_dynamics::rk4_sixdof_step(
+                    &six_state,
+                    |s| gravity_fn(s.trans.position) + non_grav_accel,
+                    |_s| constant_torque,
+                    mass_props,
+                    dt,
+                ),
+            };
             *trans = new_state.trans;
             *rot = new_state.rot;
             return;
@@ -94,10 +100,12 @@ pub fn integrate_body(
     }
 
     // 3-DOF path: translational only
-    let new_trans = jeod_dynamics::rk4_translational_step(
-        trans,
-        |s| gravity_fn(s.position) + non_grav_accel,
-        dt,
-    );
+    let new_trans = match integrator {
+        IntegratorType::Rk4 => jeod_dynamics::rk4_translational_step(
+            trans,
+            |s| gravity_fn(s.position) + non_grav_accel,
+            dt,
+        ),
+    };
     *trans = new_trans;
 }

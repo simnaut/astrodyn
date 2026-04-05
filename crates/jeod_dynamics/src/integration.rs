@@ -4,6 +4,20 @@ use crate::state::TranslationalState;
 use glam::DVec3;
 use jeod_math::JeodQuat;
 
+/// Integration method selection.
+///
+/// Follows the existing enum-dispatch pattern (`GravityModel`). Each variant
+/// dispatches to its own pure-function step implementation.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum IntegratorType {
+    /// Classical 4th-order Runge-Kutta (fixed step).
+    #[default]
+    Rk4,
+    // Future variants (Phase 5d/5f):
+    // Rkf45 { tol: f64, min_dt: f64, max_dt: f64 },
+    // GaussJackson { order: usize },
+}
+
 /// Advance translational state by one RK4 step.
 ///
 /// The `accel_fn` computes acceleration from the current state. It is called

@@ -44,6 +44,8 @@ pub struct SimBody {
     pub config: DynamicsConfig,
     /// Gravity controls referencing sources by index.
     pub gravity_controls: GravityControls<usize>,
+    /// Integration method. Defaults to `IntegratorType::Rk4`.
+    pub integrator: jeod_dynamics::IntegratorType,
     /// Drag configuration. `None` disables drag.
     pub drag: Option<DragConfig>,
     /// Flat-plate SRP configuration with thermal state. `None` disables SRP.
@@ -107,6 +109,7 @@ impl Default for SimBody {
             rot: None,
             mass: None,
             config: DynamicsConfig::default(),
+            integrator: jeod_dynamics::IntegratorType::default(),
             gravity_controls: GravityControls::default(),
             drag: None,
             flat_plate_state: None,
@@ -527,6 +530,7 @@ impl Simulation {
                 body.total_force.force,
                 body.total_force.torque,
                 dt,
+                body.integrator,
             );
         }
 

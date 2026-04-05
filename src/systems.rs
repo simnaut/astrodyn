@@ -170,6 +170,7 @@ pub fn integration_system(
             total_force.force,
             total_force.torque,
             dt,
+            jeod_sim::IntegratorType::Rk4,
         );
     }
 }

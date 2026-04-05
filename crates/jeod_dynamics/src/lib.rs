@@ -16,7 +16,7 @@ pub use forces::{
     compute_translational_acceleration, compute_translational_derivatives, DynamicsConfig,
     ForceContributions, FrameDerivatives, GravityAcceleration, TotalForce,
 };
-pub use integration::{rk4_sixdof_step, rk4_translational_step};
+pub use integration::{rk4_sixdof_step, rk4_translational_step, IntegratorType};
 pub use mass::{MassProperties, INERTIA_CONSISTENCY_TOL};
 pub use mass_body::{point_mass_inertia, MassBody, MassBodyId, MassPointState, MassTree};
 pub use propagation::{propagate_body_frames, propagate_forward, propagate_reverse};
