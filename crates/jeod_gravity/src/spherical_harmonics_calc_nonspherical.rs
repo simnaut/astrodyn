@@ -50,15 +50,6 @@ impl GottliebScratch {
         }
     }
 
-    /// Reset all scratch buffers to zero for reuse.
-    fn reset(&mut self) {
-        self.cos_mlambda.fill(0.0);
-        self.sin_mlambda.fill(0.0);
-        self.c_tilde.fill(0.0);
-        self.s_tilde.fill(0.0);
-        self.pnm_flat.fill(0.0);
-    }
-
     #[inline]
     fn pnm(&self, ii: usize, jj: usize) -> f64 {
         self.pnm_flat[self.pnm_offsets[ii] + jj]
@@ -173,8 +164,9 @@ pub fn calc_nonspherical_with_scratch(
         0
     };
 
-    // Reset scratch buffers
-    scratch.reset();
+    // No full scratch.reset() needed: every element is written before it is
+    // read. Pnm diagonals, cos/sin_mlambda, c/s_tilde are all initialized
+    // explicitly below before the degree loop accesses them.
 
     // Compute position vector magnitude
     let r_mag = posn_pf.length();
@@ -262,11 +254,13 @@ pub fn calc_nonspherical_with_scratch(
     // (delta C20) are added to local_Cnm[0] per-call. We preserve the
     // pattern for when tidal corrections are ported. The copy is small
     // (degree-2 row has only 3 elements regardless of model degree).
-    let local_cnm: Vec<f64> = if degree >= 2 {
-        data.cnm[2].clone()
-    } else {
-        vec![]
-    };
+    // Stack-allocated to avoid heap allocation in the hot path.
+    let mut local_cnm = [0.0_f64; 3];
+    if degree >= 2 {
+        let src = &data.cnm[2];
+        let n = src.len().min(3);
+        local_cnm[..n].copy_from_slice(&src[..n]);
+    }
     // TODO(Phase 4): Apply variational tidal correction to local_cnm[0].
     // JEOD adds delta_coeffs->delta_Cnm to local_Cnm[0] here, accounting
     // for solid Earth tides. The tide_free_delta field in
