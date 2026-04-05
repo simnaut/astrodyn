@@ -132,7 +132,9 @@ fn tier3_simulation_run6b_drag() {
             time: record.time,
             position: Some(body.trans.position),
             velocity: Some(body.trans.velocity),
+            acceleration: Some(body.frame_derivs.trans_accel),
             quaternion: Some(rot.quaternion.to_glam()),
+            ang_accel: Some(body.frame_derivs.rot_accel),
             ..Default::default()
         });
     }
@@ -144,7 +146,9 @@ fn tier3_simulation_run6b_drag() {
             time: r.time,
             position: Some(r.position),
             velocity: Some(r.velocity),
+            acceleration: r.trans_accel,
             quaternion: Some(r.quaternion.to_glam()),
+            ang_accel: r.rot_accel,
             ..Default::default()
         })
         .collect();
@@ -292,7 +296,9 @@ fn tier3_simulation_run6a_const_density_drag() {
             time: record.time,
             position: Some(body.trans.position),
             velocity: Some(body.trans.velocity),
+            acceleration: Some(body.frame_derivs.trans_accel),
             quaternion: Some(rot.quaternion.to_glam()),
+            ang_accel: Some(body.frame_derivs.rot_accel),
             ..Default::default()
         });
     }
@@ -304,7 +310,9 @@ fn tier3_simulation_run6a_const_density_drag() {
             time: r.time,
             position: Some(r.position),
             velocity: Some(r.velocity),
+            acceleration: r.trans_accel,
             quaternion: Some(r.quaternion.to_glam()),
+            ang_accel: r.rot_accel,
             ..Default::default()
         })
         .collect();

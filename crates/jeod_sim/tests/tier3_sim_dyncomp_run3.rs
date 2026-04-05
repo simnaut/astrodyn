@@ -104,6 +104,8 @@ fn run_sh_simulation_test(
             time: record.time,
             position: Some(body.trans.position),
             velocity: Some(body.trans.velocity),
+            acceleration: Some(body.frame_derivs.trans_accel),
+            ang_accel: Some(body.frame_derivs.rot_accel),
             ..Default::default()
         });
     }
@@ -115,6 +117,8 @@ fn run_sh_simulation_test(
             time: r.time,
             position: Some(r.position),
             velocity: Some(r.velocity),
+            acceleration: r.trans_accel,
+            ang_accel: r.rot_accel,
             ..Default::default()
         })
         .collect();

@@ -123,12 +123,16 @@ fn tier3_simulation_solar_beta() {
             time: record.time,
             position: Some(body.trans.position),
             velocity: Some(body.trans.velocity),
+            acceleration: Some(body.frame_derivs.trans_accel),
+            ang_accel: Some(body.frame_derivs.rot_accel),
             ..Default::default()
         });
         ref_states.push(StateLog {
             time: record.time,
             position: Some(record.position),
             velocity: Some(record.velocity),
+            acceleration: record.trans_accel,
+            ang_accel: record.rot_accel,
             ..Default::default()
         });
 

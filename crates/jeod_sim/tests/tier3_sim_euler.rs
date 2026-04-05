@@ -110,12 +110,16 @@ fn tier3_simulation_euler() {
 
         our_states.push(StateLog {
             time: record.time,
+            acceleration: Some(body.frame_derivs.trans_accel),
             quaternion: Some(body.rot.as_ref().unwrap().quaternion.to_glam()),
+            ang_accel: Some(body.frame_derivs.rot_accel),
             ..Default::default()
         });
         ref_states.push(StateLog {
             time: record.time,
+            acceleration: record.trans_accel,
             quaternion: Some(record.quaternion.to_glam()),
+            ang_accel: record.rot_accel,
             ..Default::default()
         });
 

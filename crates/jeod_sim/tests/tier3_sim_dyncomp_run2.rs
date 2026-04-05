@@ -67,6 +67,8 @@ fn tier3_simulation_run2_3dof() {
             time: record.time,
             position: Some(body.trans.position),
             velocity: Some(body.trans.velocity),
+            acceleration: Some(body.frame_derivs.trans_accel),
+            ang_accel: Some(body.frame_derivs.rot_accel),
             ..Default::default()
         });
     }
@@ -78,6 +80,8 @@ fn tier3_simulation_run2_3dof() {
             time: r.time,
             position: Some(r.position),
             velocity: Some(r.velocity),
+            acceleration: r.trans_accel,
+            ang_accel: r.rot_accel,
             ..Default::default()
         })
         .collect();
@@ -174,8 +178,10 @@ fn tier3_simulation_run2_6dof() {
             time: record.time,
             position: Some(body.trans.position),
             velocity: Some(body.trans.velocity),
+            acceleration: Some(body.frame_derivs.trans_accel),
             quaternion: Some(rot.quaternion.to_glam()),
             ang_vel: Some(rot.ang_vel_body),
+            ang_accel: Some(body.frame_derivs.rot_accel),
             ..Default::default()
         });
     }
@@ -187,8 +193,10 @@ fn tier3_simulation_run2_6dof() {
             time: r.time,
             position: Some(r.position),
             velocity: Some(r.velocity),
+            acceleration: r.trans_accel,
             quaternion: Some(r.quaternion.to_glam()),
             ang_vel: Some(r.ang_vel),
+            ang_accel: r.rot_accel,
             ..Default::default()
         })
         .collect();

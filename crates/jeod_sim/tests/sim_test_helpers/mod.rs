@@ -20,6 +20,8 @@ pub struct TransRecord {
     pub time: f64,
     pub position: DVec3,
     pub velocity: DVec3,
+    pub trans_accel: Option<DVec3>,
+    pub rot_accel: Option<DVec3>,
 }
 
 #[derive(Debug)]
@@ -29,6 +31,23 @@ pub struct SixDofRecord {
     pub velocity: DVec3,
     pub quaternion: JeodQuat,
     pub ang_vel: DVec3,
+    pub trans_accel: Option<DVec3>,
+    pub rot_accel: Option<DVec3>,
+}
+
+// SIM_dyncomp CSV derivs columns (0-indexed):
+// 67=non_grav_accel[0], 68=trans_accel[0], 69=rot_accel[0], 70=Qdot[0]
+// 71=non_grav_accel[1], 72=trans_accel[1], 73=rot_accel[1], 74=Qdot[1]
+// 75=non_grav_accel[2], 76=trans_accel[2], 77=rot_accel[2], 78=Qdot[2]
+fn parse_accels(f: &[&str]) -> (Option<DVec3>, Option<DVec3>) {
+    if f.len() >= 79 {
+        let p = |s: &str| -> f64 { s.trim().parse().unwrap() };
+        let trans_accel = Some(DVec3::new(p(f[68]), p(f[72]), p(f[76])));
+        let rot_accel = Some(DVec3::new(p(f[69]), p(f[73]), p(f[77])));
+        (trans_accel, rot_accel)
+    } else {
+        (None, None)
+    }
 }
 
 pub fn load_trans_trajectory(path: &Path) -> Vec<TransRecord> {
@@ -46,10 +65,13 @@ pub fn load_trans_trajectory(path: &Path) -> Vec<TransRecord> {
             f.len()
         );
         let p = |s: &str| -> f64 { s.trim().parse().unwrap() };
+        let (trans_accel, rot_accel) = parse_accels(&f);
         records.push(TransRecord {
             time: p(f[0]),
             position: DVec3::new(p(f[1]), p(f[8]), p(f[15])),
             velocity: DVec3::new(p(f[2]), p(f[9]), p(f[16])),
+            trans_accel,
+            rot_accel,
         });
     }
     records
@@ -65,12 +87,15 @@ pub fn load_sixdof_trajectory(path: &Path) -> Vec<SixDofRecord> {
         let f: Vec<&str> = line.split(',').collect();
         assert!(f.len() >= 23, "line {}: expected >=23 columns", i + 1);
         let p = |s: &str| -> f64 { s.trim().parse().unwrap() };
+        let (trans_accel, rot_accel) = parse_accels(&f);
         records.push(SixDofRecord {
             time: p(f[0]),
             position: DVec3::new(p(f[1]), p(f[8]), p(f[15])),
             velocity: DVec3::new(p(f[2]), p(f[9]), p(f[16])),
             ang_vel: DVec3::new(p(f[3]), p(f[10]), p(f[17])),
             quaternion: JeodQuat::new(p(f[22]), p(f[7]), p(f[14]), p(f[21])),
+            trans_accel,
+            rot_accel,
         });
     }
     records
