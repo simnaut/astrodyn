@@ -13,6 +13,9 @@ pub struct ResolvedSource<'a> {
     /// Source center position in the inertial frame (m). Used for differential
     /// (third-body) acceleration computation.
     pub position: DVec3,
+    /// Tidal ΔC20 to add to the base C20 coefficient during spherical harmonics
+    /// evaluation. Zero when no tidal effects are configured.
+    pub delta_c20: f64,
 }
 
 /// Accumulate gravity from all sources for a single body.
@@ -81,7 +84,12 @@ pub fn accumulate_gravity<'a, S: Copy + std::fmt::Debug>(
         // In our coordinates: pos_rel = vehicle_inertial - source_inertial.
         let pos_relative_to_source = position - resolved.position;
 
-        let result = ctrl.evaluate(resolved.source, pos_relative_to_source, resolved.rotation);
+        let result = ctrl.evaluate(
+            resolved.source,
+            pos_relative_to_source,
+            resolved.rotation,
+            resolved.delta_c20,
+        );
 
         // JEOD_INV: GV.14 — third-body sources use differential acceleration
         // JEOD gravity_controls.cc:306-347: if is_third_body, subtract the
@@ -101,6 +109,7 @@ pub fn accumulate_gravity<'a, S: Copy + std::fmt::Debug>(
                 resolved.source,
                 frame_pos_relative_to_source,
                 resolved.rotation,
+                resolved.delta_c20,
             );
             total.grav_accel += result.grav_accel - frame_accel.grav_accel;
         } else {

@@ -134,6 +134,8 @@ fn tier3_simulation_srp_flat_plate() {
         },
         position: DVec3::ZERO,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
     // Sun (position updated each logging interval from ephemeris).
@@ -148,6 +150,8 @@ fn tier3_simulation_srp_flat_plate() {
         },
         position: initial_sun,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
     sim.sun_source = Some(sun);
 

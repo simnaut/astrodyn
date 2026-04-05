@@ -141,6 +141,8 @@ fn build_simulation(
         } else {
             None
         },
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
     // Sun: third-body differential acceleration (matches JEOD: spherical, gradient=false)
@@ -153,6 +155,8 @@ fn build_simulation(
         },
         position: initial_sun,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
     // Moon: third-body differential acceleration (matches JEOD: spherical, gradient=false)
@@ -164,6 +168,8 @@ fn build_simulation(
         },
         position: initial_moon,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
     // Earth gravity control

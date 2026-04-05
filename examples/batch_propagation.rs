@@ -45,6 +45,8 @@ fn main() {
         },
         position: DVec3::ZERO,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
     let body_idx = sim.add_body(SimBody {
         trans: state0,

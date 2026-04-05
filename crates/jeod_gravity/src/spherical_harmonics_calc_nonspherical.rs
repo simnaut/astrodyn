@@ -102,6 +102,7 @@ pub fn calc_nonspherical(
         gradient_degree,
         gradient_order,
         &mut scratch,
+        0.0, // no tidal delta in standalone mode
     )
 }
 
@@ -120,6 +121,7 @@ pub fn calc_nonspherical_with_scratch(
     gradient_degree: usize,
     gradient_order: usize,
     scratch: &mut GottliebScratch,
+    delta_c20: f64,
 ) -> GravityAcceleration {
     // Matching JEOD's check_validity(): these are fatal errors, not silent clamps.
     assert!(
@@ -261,10 +263,11 @@ pub fn calc_nonspherical_with_scratch(
         let n = src.len().min(3);
         local_cnm[..n].copy_from_slice(&src[..n]);
     }
-    // TODO(Phase 4): Apply variational tidal correction to local_cnm[0].
-    // JEOD adds delta_coeffs->delta_Cnm to local_Cnm[0] here, accounting
-    // for solid Earth tides. The tide_free_delta field in
-    // SphericalHarmonicsData is loaded but not yet applied.
+    // Apply tidal ΔC20 correction to local copy of C20.
+    // JEOD: local_Cnm[0] += total_dC20 (gravity_controls.cc:95).
+    if delta_c20 != 0.0 && degree >= 2 {
+        local_cnm[0] += delta_c20;
+    }
 
     for ii in 2..=degree {
         let ii_grad_deg_nonzero = ii <= gradient_degree && gradient_degree > 0;

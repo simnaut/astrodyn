@@ -220,6 +220,7 @@ impl<SourceId> GravityControl<SourceId> {
         source: &GravitySource,
         position: DVec3,
         t_inertial_pfix: Option<&DMat3>,
+        delta_c20: f64,
     ) -> GravityAcceleration {
         self.evaluate_inner(
             source,
@@ -228,6 +229,7 @@ impl<SourceId> GravityControl<SourceId> {
             self.gradient,
             self.gradient_degree,
             self.gradient_order,
+            delta_c20,
         )
     }
 
@@ -246,13 +248,15 @@ impl<SourceId> GravityControl<SourceId> {
         source: &GravitySource,
         position: DVec3,
         t_inertial_pfix: Option<&DMat3>,
+        delta_c20: f64,
     ) -> GravityAcceleration {
-        self.evaluate_inner(source, position, t_inertial_pfix, false, 0, 0)
+        self.evaluate_inner(source, position, t_inertial_pfix, false, 0, 0, delta_c20)
     }
 
     /// Shared dispatch for [`evaluate`] and [`evaluate_accel_only`].
     // JEOD_INV: GV.13 — gravity source must have inertial frame (planet-fixed rotation required for non-spherical)
     // JEOD_INV: GV.17 — active nonspherical controls subscribe to planet-fixed frame
+    #[allow(clippy::too_many_arguments)]
     fn evaluate_inner(
         &self,
         source: &GravitySource,
@@ -261,6 +265,7 @@ impl<SourceId> GravityControl<SourceId> {
         compute_gradient: bool,
         gradient_degree: usize,
         gradient_order: usize,
+        delta_c20: f64,
     ) -> GravityAcceleration {
         if self.is_nonspherical() {
             let rot = t_inertial_pfix.unwrap_or_else(|| {
@@ -281,6 +286,7 @@ impl<SourceId> GravityControl<SourceId> {
                 compute_gradient,
                 gradient_degree,
                 gradient_order,
+                delta_c20,
             )
         } else {
             crate::gravitation(
@@ -293,6 +299,7 @@ impl<SourceId> GravityControl<SourceId> {
                 compute_gradient,
                 gradient_degree,
                 gradient_order,
+                0.0, // point-mass: no SH coefficients to modify
             )
         }
     }

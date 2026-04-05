@@ -23,6 +23,25 @@ pub struct GravitySourceEntry {
     /// Inertial-to-planet-fixed rotation matrix. If `Some`, the ephemeris stage
     /// updates it each step. If `None`, no rotation is applied (point-mass only).
     pub t_inertial_pfix: Option<DMat3>,
+    /// Tidal ΔC20 to add to the base C20 coefficient before spherical harmonics
+    /// evaluation. Updated each step by the environment stage if tidal effects
+    /// are configured. Zero when no tides.
+    pub delta_c20: f64,
+    /// Tidal configuration. When `Some`, the simulation computes ΔC20 each step.
+    pub tidal_config: Option<jeod_gravity::tides::TidalConfig>,
+}
+
+impl GravitySourceEntry {
+    /// Create a new gravity source entry without tidal effects.
+    pub fn new(source: GravitySource, position: DVec3, t_inertial_pfix: Option<DMat3>) -> Self {
+        Self {
+            source,
+            position,
+            t_inertial_pfix,
+            delta_c20: 0.0,
+            tidal_config: None,
+        }
+    }
 }
 
 /// Per-body simulation state and configuration.
@@ -350,6 +369,10 @@ impl Simulation {
             if source.t_inertial_pfix.is_some() {
                 source.t_inertial_pfix = Some(rotation);
             }
+            // Compute tidal ΔC20 if configured
+            if let Some(ref config) = source.tidal_config {
+                source.delta_c20 = jeod_gravity::tides::compute_delta_c20(config, &rotation);
+            }
         }
 
         // ── 3. Mass update — recompute inverse_mass/inverse_inertia ──
@@ -372,6 +395,7 @@ impl Simulation {
                         source: &s.source,
                         rotation: s.t_inertial_pfix.as_ref(),
                         position: s.position,
+                        delta_c20: s.delta_c20,
                     })
                 },
             );
@@ -523,6 +547,7 @@ impl Simulation {
                             source: &s.source,
                             rotation: s.t_inertial_pfix.as_ref(),
                             position: s.position,
+                            delta_c20: s.delta_c20,
                         })
                     })
                     .grav_accel

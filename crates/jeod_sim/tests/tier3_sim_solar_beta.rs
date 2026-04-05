@@ -51,6 +51,8 @@ fn tier3_simulation_solar_beta() {
         },
         position: DVec3::ZERO,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
     // Sun source -- position from DE421 at J2000.0
@@ -66,6 +68,8 @@ fn tier3_simulation_solar_beta() {
         },
         position: initial_sun,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
     sim.sun_source = Some(sun);
 

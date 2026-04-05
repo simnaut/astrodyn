@@ -169,6 +169,7 @@ pub fn integration_system(
                             source: &s.0,
                             rotation: r.map(|r| &r.0),
                             position: p.0,
+                            delta_c20: 0.0,
                         })
                 })
                 .grav_accel
@@ -213,6 +214,7 @@ pub fn gravity_computation_system(
                     source: &source.0,
                     rotation: rot.map(|r| &r.0),
                     position: pos.0,
+                    delta_c20: 0.0,
                 }),
                 Err(_) => {
                     panic!(

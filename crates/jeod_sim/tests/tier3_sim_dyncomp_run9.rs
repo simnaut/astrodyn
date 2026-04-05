@@ -90,6 +90,7 @@ fn tier3_simulation_run9a_torque() {
                         source: &earth_source,
                         rotation: None,
                         position: DVec3::ZERO,
+                        delta_c20: 0.0,
                     })
                 },
             );
@@ -144,6 +145,7 @@ fn tier3_simulation_run9a_torque() {
                         source: &earth_source,
                         rotation: None,
                         position: DVec3::ZERO,
+                        delta_c20: 0.0,
                     })
                 },
             );
@@ -305,6 +307,7 @@ fn tier3_simulation_run9c_force_torque() {
                         source: &earth_source,
                         rotation: None,
                         position: DVec3::ZERO,
+                        delta_c20: 0.0,
                     })
                 },
             );
@@ -457,6 +460,7 @@ fn tier3_simulation_run9d_force_torque_rate() {
                         source: &earth_source,
                         rotation: None,
                         position: DVec3::ZERO,
+                        delta_c20: 0.0,
                     })
                 },
             );

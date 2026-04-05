@@ -71,6 +71,8 @@ fn tier3_simulation_run4_3rd_body() {
         },
         position: DVec3::ZERO,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
     // Sun: third-body (differential acceleration)
@@ -83,6 +85,8 @@ fn tier3_simulation_run4_3rd_body() {
         },
         position: initial_sun,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
     // Moon: third-body (differential acceleration)
@@ -94,6 +98,8 @@ fn tier3_simulation_run4_3rd_body() {
         },
         position: initial_moon,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
     // ISS mass properties (same as RUN_2 6-DOF test)

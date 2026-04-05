@@ -227,6 +227,8 @@ fn tier3_bevy_point_mass_sixdof() {
         source: earth_source(),
         position: DVec3::ZERO,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
     sim.add_body(new_sim_body_sixdof(earth_idx, false));
     sim.validate().unwrap();
@@ -313,6 +315,8 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
         source: earth_source(),
         position: DVec3::ZERO,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Exponential(exp_atmos),
@@ -390,6 +394,8 @@ fn tier3_bevy_gravity_torque_sixdof() {
         source: earth_source(),
         position: DVec3::ZERO,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
     let mut body = new_sim_body_sixdof(earth_idx, true); // gradient=true
@@ -519,6 +525,8 @@ fn tier3_bevy_full_stack_sixdof() {
         source: earth_source(),
         position: DVec3::ZERO,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
     let sun_idx = sim.add_source(GravitySourceEntry {
         source: GravitySource {
@@ -527,6 +535,8 @@ fn tier3_bevy_full_stack_sixdof() {
         },
         position: sun_pos,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
     sim.sun_source = Some(sun_idx);
     sim.atmosphere = Some(AtmosphereConfig {
@@ -643,6 +653,8 @@ fn tier3_bevy_sh4x4_rnp() {
         source: sh_source,
         position: DVec3::ZERO,
         t_inertial_pfix: Some(DMat3::IDENTITY),
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
     sim.add_body(SimBody {
@@ -716,6 +728,7 @@ fn tier3_bevy_external_torque_per_body() {
                 source: &earth_source,
                 rotation: None,
                 position: DVec3::ZERO,
+                delta_c20: 0.0,
             })
         });
         let (total, _) = jeod_sim::collect_and_resolve_forces(
@@ -738,6 +751,7 @@ fn tier3_bevy_external_torque_per_body() {
                         source: &earth_source,
                         rotation: None,
                         position: DVec3::ZERO,
+                        delta_c20: 0.0,
                     })
                 })
                 .grav_accel
@@ -763,6 +777,7 @@ fn tier3_bevy_external_torque_per_body() {
                 source: &earth_source,
                 rotation: None,
                 position: DVec3::ZERO,
+                delta_c20: 0.0,
             })
         });
         let (total, _) = jeod_sim::collect_and_resolve_forces(
@@ -785,6 +800,7 @@ fn tier3_bevy_external_torque_per_body() {
                         source: &earth_source,
                         rotation: None,
                         position: DVec3::ZERO,
+                        delta_c20: 0.0,
                     })
                 })
                 .grav_accel
@@ -962,6 +978,8 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
         source: earth_source(),
         position: DVec3::ZERO,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
     let sun_idx = sim.add_source(GravitySourceEntry {
@@ -971,6 +989,8 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
         },
         position: sun_pos,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
     sim.sun_source = Some(sun_idx);
 
@@ -1154,6 +1174,8 @@ fn tier3_bevy_derived_states() {
         source: earth_source(),
         position: DVec3::ZERO,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
     let sun_idx = sim.add_source(GravitySourceEntry {
         source: GravitySource {
@@ -1162,6 +1184,8 @@ fn tier3_bevy_derived_states() {
         },
         position: sun_pos,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
     sim.sun_source = Some(sun_idx);
 
@@ -1273,6 +1297,8 @@ fn tier3_bevy_geodetic_derived_state() {
         source: earth_source(),
         position: DVec3::ZERO,
         t_inertial_pfix: Some(DMat3::IDENTITY), // triggers RNP update
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
     let body = SimBody {
@@ -1389,6 +1415,8 @@ fn tier3_bevy_constant_density_drag_sixdof() {
         source: earth_source(),
         position: DVec3::ZERO,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Exponential(exp_atmos),
@@ -1492,6 +1520,8 @@ fn tier3_bevy_met_atmosphere_drag_sixdof() {
         source: earth_source(),
         position: DVec3::ZERO,
         t_inertial_pfix: Some(DMat3::IDENTITY),
+        delta_c20: 0.0,
+        tidal_config: None,
     });
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Met(met),
@@ -1609,6 +1639,8 @@ fn tier3_bevy_eccentric_derived_states() {
         source: earth_source(),
         position: DVec3::ZERO,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
     let sun_idx = sim.add_source(GravitySourceEntry {
         source: GravitySource {
@@ -1617,6 +1649,8 @@ fn tier3_bevy_eccentric_derived_states() {
         },
         position: sun_pos,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
     sim.sun_source = Some(sun_idx);
 
@@ -1743,6 +1777,8 @@ fn tier3_bevy_polar_geodetic() {
         source: earth_source(),
         position: DVec3::ZERO,
         t_inertial_pfix: Some(DMat3::IDENTITY),
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
     sim.add_body(SimBody {
@@ -1852,6 +1888,8 @@ fn tier3_bevy_equatorial_solar_beta() {
         source: earth_source(),
         position: DVec3::ZERO,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
     let sun_idx = sim.add_source(GravitySourceEntry {
         source: GravitySource {
@@ -1860,6 +1898,8 @@ fn tier3_bevy_equatorial_solar_beta() {
         },
         position: sun_pos,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
     sim.sun_source = Some(sun_idx);
 

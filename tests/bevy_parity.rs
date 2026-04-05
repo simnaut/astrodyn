@@ -137,6 +137,8 @@ fn run_simulation_steps() -> SixDofState {
         },
         position: DVec3::ZERO,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
     sim.add_body(jeod_sim::SimBody {
@@ -280,6 +282,8 @@ fn tier3_bevy_rkf45_matches_simulation_bit_identical() {
         },
         position: DVec3::ZERO,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
     sim.add_body(jeod_sim::SimBody {

@@ -101,6 +101,8 @@ fn run_7_test(
         source: sh_source,
         position: DVec3::ZERO,
         t_inertial_pfix: Some(DMat3::IDENTITY),
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
     // Sun and Moon: third-body differential acceleration
@@ -112,6 +114,8 @@ fn run_7_test(
         },
         position: earth_centered_position(EphemerisBody::Sun, tdb_jd, &ephemeris),
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
     let moon = sim.add_source(GravitySourceEntry {
         source: GravitySource {
@@ -120,6 +124,8 @@ fn run_7_test(
         },
         position: earth_centered_position(EphemerisBody::Moon, tdb_jd, &ephemeris),
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
     // Drag configuration (only for RUN_7C/7D)
