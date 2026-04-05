@@ -4,6 +4,7 @@ pub mod integration;
 pub mod mass;
 pub mod mass_body;
 pub mod propagation;
+pub mod rkf45;
 pub mod rotational;
 pub mod state;
 
@@ -20,5 +21,6 @@ pub use integration::{rk4_sixdof_step, rk4_translational_step, IntegratorType};
 pub use mass::{MassProperties, INERTIA_CONSISTENCY_TOL};
 pub use mass_body::{point_mass_inertia, MassBody, MassBodyId, MassPointState, MassTree};
 pub use propagation::{propagate_body_frames, propagate_forward, propagate_reverse};
+pub use rkf45::{rkf45_sixdof_step, rkf45_translational_step};
 pub use rotational::{RotationalState, SixDofState};
 pub use state::TranslationalState;

@@ -13,8 +13,11 @@ pub enum IntegratorType {
     /// Classical 4th-order Runge-Kutta (fixed step).
     #[default]
     Rk4,
-    // Future variants (Phase 5d/5f):
-    // Rkf45 { tol: f64, min_dt: f64, max_dt: f64 },
+    /// Runge-Kutta-Fehlberg 4(5) (fixed step, 5th-order result).
+    /// Uses 6 function evaluations per step vs RK4's 4, but achieves
+    /// 5th-order accuracy. Step size is fixed (no adaptive control).
+    Rkf45,
+    // Future variants (Phase 5f):
     // GaussJackson { order: usize },
 }
 

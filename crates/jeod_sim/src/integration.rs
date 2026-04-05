@@ -78,14 +78,15 @@ pub fn integrate_body(
             // Gravity recomputed at each integrator intermediate state for
             // multi-stage accuracy. Non-gravity acceleration held constant
             // (negligible change over one step).
+            let accel = |s: &SixDofState| gravity_fn(s.trans.position) + non_grav_accel;
+            let torque_fn = |_s: &SixDofState| constant_torque;
             let new_state = match integrator {
-                IntegratorType::Rk4 => jeod_dynamics::rk4_sixdof_step(
-                    &six_state,
-                    |s| gravity_fn(s.trans.position) + non_grav_accel,
-                    |_s| constant_torque,
-                    mass_props,
-                    dt,
-                ),
+                IntegratorType::Rk4 => {
+                    jeod_dynamics::rk4_sixdof_step(&six_state, accel, torque_fn, mass_props, dt)
+                }
+                IntegratorType::Rkf45 => {
+                    jeod_dynamics::rkf45_sixdof_step(&six_state, accel, torque_fn, mass_props, dt)
+                }
             };
             *trans = new_state.trans;
             *rot = new_state.rot;
@@ -100,12 +101,10 @@ pub fn integrate_body(
     }
 
     // 3-DOF path: translational only
+    let accel = |s: &TranslationalState| gravity_fn(s.position) + non_grav_accel;
     let new_trans = match integrator {
-        IntegratorType::Rk4 => jeod_dynamics::rk4_translational_step(
-            trans,
-            |s| gravity_fn(s.position) + non_grav_accel,
-            dt,
-        ),
+        IntegratorType::Rk4 => jeod_dynamics::rk4_translational_step(trans, accel, dt),
+        IntegratorType::Rkf45 => jeod_dynamics::rkf45_translational_step(trans, accel, dt),
     };
     *trans = new_trans;
 }
