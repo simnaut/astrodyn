@@ -306,9 +306,9 @@ fn tier3_drag_trajectory_run6b() {
     report.quat_angle_tol = Some(0.01);
     report.write();
 
-    let max_pos_error = report.max_position_error();
-    let max_vel_error = report.max_velocity_error();
-    let max_quat_error = report.max_quat_angle_error();
+    let max_pos_error = report.max_position_component();
+    let max_vel_error = report.max_velocity_component();
+    let max_quat_error = report.max_quat_angle();
 
     println!();
     println!("=== Tier 3 Drag Trajectory Cross-Validation (RUN_6B) ===");

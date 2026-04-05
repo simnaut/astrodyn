@@ -93,8 +93,8 @@ fn tier3_simulation_run2_3dof() {
     report.velocity_tol = Some([0.001; 3]);
     report.write();
 
-    let max_pos = report.max_position_error();
-    let max_vel = report.max_velocity_error();
+    let max_pos = report.max_position_component();
+    let max_vel = report.max_velocity_component();
     println!("  Max position error: {max_pos:.6e} m");
     println!("  Max velocity error: {max_vel:.6e} m/s");
 
@@ -208,10 +208,10 @@ fn tier3_simulation_run2_6dof() {
     report.ang_vel_tol = Some([1e-5; 3]);
     report.write();
 
-    let max_pos = report.max_position_error();
-    let max_vel = report.max_velocity_error();
-    let max_quat = report.max_quat_angle_error();
-    let max_omega = report.max_ang_vel_error();
+    let max_pos = report.max_position_component();
+    let max_vel = report.max_velocity_component();
+    let max_quat = report.max_quat_angle();
+    let max_omega = report.max_ang_vel_component();
 
     println!("  Max position error:  {max_pos:.6e} m");
     println!("  Max velocity error:  {max_vel:.6e} m/s");

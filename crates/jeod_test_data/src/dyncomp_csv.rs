@@ -10,6 +10,11 @@
 //! - 23..44: core_body frame state
 //! - 45..66: structure frame state
 //! - 67..79: derivs (non_grav_accel, trans_accel, rot_accel, Qdot)
+//!
+//! Only non_grav_accel, trans_accel, and rot_accel are parsed from the
+//! derivs block. Qdot_parent_this (columns 70/74/78 vector + 79 scalar)
+//! is present in the CSV but not extracted — it is not needed for
+//! cross-validation.
 
 use glam::{DMat3, DQuat, DVec3};
 use std::path::Path;
@@ -127,7 +132,8 @@ pub fn load_dyncomp_csv(path: &Path) -> Vec<DyncompRecord> {
             composite_body.clone()
         };
 
-        let derivs = if f.len() >= 79 {
+        // Derivs block: highest index is f[77] (rot_accel[2]), so >= 78.
+        let derivs = if f.len() >= 78 {
             Some(parse_derivs(&f, &p))
         } else {
             None

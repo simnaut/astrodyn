@@ -129,8 +129,8 @@ fn tier3_cross_validate_against_jeod_dyncomp() {
     report.velocity_tol = Some([0.001; 3]);
     report.write();
 
-    let max_pos_error = report.max_position_error();
-    let max_vel_error = report.max_velocity_error();
+    let max_pos_error = report.max_position_component();
+    let max_vel_error = report.max_velocity_component();
 
     println!();
     println!("  Max position error: {:.6e} m", max_pos_error);

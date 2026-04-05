@@ -218,7 +218,7 @@ fn tier3_simulation_srp_flat_plate() {
     report.position_tol = Some([50.0; 3]);
     report.write();
 
-    let max_pos_error = report.max_position_error();
+    let max_pos_error = report.max_position_component();
     println!("  Max position error: {:.6e} m", max_pos_error);
 
     // Tolerance matches existing tier3_srp_trajectory test

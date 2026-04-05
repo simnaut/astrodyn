@@ -116,13 +116,20 @@ impl CrossvalReport {
                 e[2] = e[2].max(d.z.abs());
             }
             if let (Some(aq), Some(bq)) = (a.quaternion, b.quaternion) {
+                // Canonicalize: q and -q represent the same rotation.
+                // If dot < 0, negate one so component diffs are meaningful.
+                let dot = aq.w * bq.w + aq.x * bq.x + aq.y * bq.y + aq.z * bq.z;
+                let bq = if dot < 0.0 {
+                    DQuat::from_xyzw(-bq.x, -bq.y, -bq.z, -bq.w)
+                } else {
+                    bq
+                };
                 let e = report.quaternion.get_or_insert([0.0; 4]);
                 e[0] = e[0].max((aq.w - bq.w).abs());
                 e[1] = e[1].max((aq.x - bq.x).abs());
                 e[2] = e[2].max((aq.y - bq.y).abs());
                 e[3] = e[3].max((aq.z - bq.z).abs());
-                let dot = (aq.w * bq.w + aq.x * bq.x + aq.y * bq.y + aq.z * bq.z).abs();
-                let angle = (2.0 * dot * dot - 1.0).clamp(-1.0, 1.0).acos();
+                let angle = (2.0 * dot.abs() * dot.abs() - 1.0).clamp(-1.0, 1.0).acos();
                 let qa = report.quat_angle.get_or_insert(0.0);
                 *qa = qa.max(angle);
             }
@@ -153,29 +160,29 @@ impl CrossvalReport {
             .push((var.to_string(), val, tol, unit.to_string()));
     }
 
-    /// Max component error as a scalar (for use in assert! statements).
-    pub fn max_position_error(&self) -> f64 {
+    /// Worst-component position error (∞-norm, for assert! statements).
+    pub fn max_position_component(&self) -> f64 {
         self.position
             .map(|p| p.iter().copied().fold(0.0_f64, f64::max))
             .unwrap_or(0.0)
     }
 
-    /// Max component error as a scalar (for use in assert! statements).
-    pub fn max_velocity_error(&self) -> f64 {
+    /// Worst-component velocity error (∞-norm, for assert! statements).
+    pub fn max_velocity_component(&self) -> f64 {
         self.velocity
             .map(|v| v.iter().copied().fold(0.0_f64, f64::max))
             .unwrap_or(0.0)
     }
 
-    /// Max component error as a scalar (for use in assert! statements).
-    pub fn max_ang_vel_error(&self) -> f64 {
+    /// Worst-component angular velocity error (∞-norm, for assert! statements).
+    pub fn max_ang_vel_component(&self) -> f64 {
         self.ang_vel
             .map(|v| v.iter().copied().fold(0.0_f64, f64::max))
             .unwrap_or(0.0)
     }
 
-    /// Quaternion angle error in radians.
-    pub fn max_quat_angle_error(&self) -> f64 {
+    /// Quaternion angle error in radians (rotation-invariant).
+    pub fn max_quat_angle(&self) -> f64 {
         self.quat_angle.unwrap_or(0.0)
     }
 

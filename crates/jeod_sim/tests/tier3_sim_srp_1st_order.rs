@@ -223,7 +223,7 @@ fn tier3_srp_1st_order_trajectory() {
     report.position_tol = Some([100.0; 3]);
     report.write();
 
-    let max_pos_error = report.max_position_error();
+    let max_pos_error = report.max_position_component();
     println!("  Max position error: {:.6e} m", max_pos_error);
 
     // 1st-order thermal integrator differs from our RK4, so expect slightly

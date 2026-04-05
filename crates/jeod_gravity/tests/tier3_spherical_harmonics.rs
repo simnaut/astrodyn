@@ -176,8 +176,8 @@ fn run_sh_trajectory_test(
     report.velocity_tol = Some([0.001; 3]);
     report.write();
 
-    let max_pos_error = report.max_position_error();
-    let max_vel_error = report.max_velocity_error();
+    let max_pos_error = report.max_position_component();
+    let max_vel_error = report.max_velocity_component();
 
     eprintln!();
     eprintln!("  Max position error: {:.6e} m", max_pos_error);

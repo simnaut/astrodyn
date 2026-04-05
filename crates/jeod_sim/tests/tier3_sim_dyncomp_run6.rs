@@ -161,9 +161,9 @@ fn tier3_simulation_run6b_drag() {
     report.quat_angle_tol = Some(0.01);
     report.write();
 
-    let max_pos = report.max_position_error();
-    let max_vel = report.max_velocity_error();
-    let max_quat = report.max_quat_angle_error();
+    let max_pos = report.max_position_component();
+    let max_vel = report.max_velocity_component();
+    let max_quat = report.max_quat_angle();
 
     println!("  Max position error:  {max_pos:.6e} m");
     println!("  Max velocity error:  {max_vel:.6e} m/s");
@@ -328,9 +328,9 @@ fn tier3_simulation_run6a_const_density_drag() {
     report.quat_angle_tol = Some(0.01);
     report.write();
 
-    let max_pos = report.max_position_error();
-    let max_vel = report.max_velocity_error();
-    let max_quat = report.max_quat_angle_error();
+    let max_pos = report.max_position_component();
+    let max_vel = report.max_velocity_component();
+    let max_quat = report.max_quat_angle();
 
     println!("  Max position error:  {max_pos:.6e} m");
     println!("  Max velocity error:  {max_vel:.6e} m/s");

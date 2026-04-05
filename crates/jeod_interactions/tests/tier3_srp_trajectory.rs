@@ -208,6 +208,42 @@ fn sun_position_at(sim_time: f64, ephemeris: &Ephemeris) -> DVec3 {
     sun_pos
 }
 
+/// Precomputed Sun ephemeris table for fast interpolation.
+///
+/// Evaluating DE421 via Anise for every RK4 step (2M calls) dominates runtime.
+/// The Sun moves ~1 km/s relative to Earth, so over a 100s interval the position
+/// changes by ~100 km against ~150,000,000 km distance (~7e-13 relative). Linear
+/// interpolation between samples spaced `interval` seconds apart is accurate to
+/// well below any other error source in the test.
+struct SunEphemerisTable {
+    positions: Vec<DVec3>,
+    interval: f64,
+}
+
+impl SunEphemerisTable {
+    fn precompute(total_time: f64, interval: f64, ephemeris: &Ephemeris) -> Self {
+        let n = (total_time / interval).ceil() as usize + 1;
+        let positions: Vec<DVec3> = (0..n)
+            .map(|i| sun_position_at(i as f64 * interval, ephemeris))
+            .collect();
+        Self {
+            positions,
+            interval,
+        }
+    }
+
+    fn at(&self, sim_time: f64) -> DVec3 {
+        let idx = sim_time / self.interval;
+        let lo = idx as usize;
+        let frac = idx - lo as f64;
+        if lo + 1 >= self.positions.len() {
+            self.positions[self.positions.len() - 1]
+        } else {
+            self.positions[lo] * (1.0 - frac) + self.positions[lo + 1] * frac
+        }
+    }
+}
+
 /// Evaluate SRP force + temperature derivatives at a given state.
 ///
 /// Uses `t_pow4_cached` for emission (JEOD convention: T⁴ is cached from
@@ -371,6 +407,10 @@ fn tier3_srp_trajectory_sim3_orbit() {
         )
     });
 
+    // Precompute Sun ephemeris table (100s intervals, ~20k lookups instead of 2M).
+    let total_time = trajectory.last().unwrap().time;
+    let sun_table = SunEphemerisTable::precompute(total_time, 100.0, &ephemeris);
+
     // Initialize from first JEOD data point
     let mut state = TranslationalState {
         position: trajectory[0].position,
@@ -401,7 +441,7 @@ fn tier3_srp_trajectory_sim3_orbit() {
         // Propagate from current state to next logged time
         for step_i in 0..steps {
             let sim_time = start_time + (step_i as f64) * dt;
-            let sun_pos = sun_position_at(sim_time, &ephemeris);
+            let sun_pos = sun_table.at(sim_time);
             state = rk4_step(&state, &plates, &mut temp, &mut t_pow4, sun_pos, dt, MASS);
         }
 
@@ -424,7 +464,7 @@ fn tier3_srp_trajectory_sim3_orbit() {
             // Force comparison at this point
             let (force_rel_err, force_dir_err) =
                 if target.flux_mag > 100.0 && target.srp_force.length() > 1e-6 {
-                    let sun_pos = sun_position_at(target.time, &ephemeris);
+                    let sun_pos = sun_table.at(target.time);
                     let stv = target.position - sun_pos;
                     let d = stv.length();
                     let fh = stv / d;
@@ -454,7 +494,7 @@ fn tier3_srp_trajectory_sim3_orbit() {
 
         // Compare SRP force (only when well-illuminated).
         if target.flux_mag > 100.0 && target.srp_force.length() > 1e-6 {
-            let sun_pos = sun_position_at(target.time, &ephemeris);
+            let sun_pos = sun_table.at(target.time);
             let sun_to_vehicle = target.position - sun_pos;
             let dist = sun_to_vehicle.length();
             let flux_hat = sun_to_vehicle / dist;
@@ -508,7 +548,7 @@ fn tier3_srp_trajectory_sim3_orbit() {
         }
 
         // Shadow comparison: check if our shadow agrees with JEOD flux
-        let sun_pos = sun_position_at(target.time, &ephemeris);
+        let sun_pos = sun_table.at(target.time);
         let our_illum =
             compute_shadow_fraction(target.position, sun_pos, DVec3::ZERO, R_EARTH, SOLAR_RADIUS);
         let jeod_in_shadow = target.flux_mag < 1e-10;
@@ -537,8 +577,8 @@ fn tier3_srp_trajectory_sim3_orbit() {
     report.add_extra("shadow_mismatches", shadow_mismatches as f64, 2.0, "");
     report.write();
 
-    let max_pos_err = report.max_position_error();
-    let max_vel_err = report.max_velocity_error();
+    let max_pos_err = report.max_position_component();
+    let max_vel_err = report.max_velocity_component();
 
     eprintln!("=== Tier 3 SRP Trajectory (SIM_3_ORBIT RUN_radiation) ===");
     eprintln!("  Data points: {}", trajectory.len());

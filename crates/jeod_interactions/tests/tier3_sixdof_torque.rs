@@ -199,10 +199,10 @@ fn tier3_external_torque_sixdof_run9a() {
     report.ang_vel_tol = Some([1e-5; 3]);
     report.write();
 
-    let max_pos_error = report.max_position_error();
-    let max_vel_error = report.max_velocity_error();
-    let max_quat_error = report.max_quat_angle_error();
-    let max_angvel_error = report.max_ang_vel_error();
+    let max_pos_error = report.max_position_component();
+    let max_vel_error = report.max_velocity_component();
+    let max_quat_error = report.max_quat_angle();
+    let max_angvel_error = report.max_ang_vel_component();
 
     println!();
     println!("=== Tier 3 External Torque 6-DOF Cross-Validation (RUN_9A) ===");

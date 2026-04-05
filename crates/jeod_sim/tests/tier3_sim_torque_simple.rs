@@ -260,10 +260,10 @@ fn run_propagation_test(config: &RunConfig, test_name: &str) {
     report.add_extra("torque", max_torque_error, torque_tol, "N*m");
     report.write();
 
-    let max_pos_error = report.max_position_error();
-    let max_vel_error = report.max_velocity_error();
-    let max_quat_error = report.max_quat_angle_error();
-    let max_omega_error = report.max_ang_vel_error();
+    let max_pos_error = report.max_position_component();
+    let max_vel_error = report.max_velocity_component();
+    let max_quat_error = report.max_quat_angle();
+    let max_omega_error = report.max_ang_vel_component();
 
     println!("  Max position error:  {:.6e} m", max_pos_error);
     println!("  Max velocity error:  {:.6e} m/s", max_vel_error);
