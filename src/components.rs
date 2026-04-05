@@ -34,6 +34,13 @@ pub struct DynamicsConfigC(pub DynamicsConfig);
 #[derive(Component, Debug, Clone, Copy)]
 pub struct IntegrationFrameRef(pub Entity);
 
+/// Integration method for this body. Defaults to RK4 when absent.
+///
+/// When present on a dynamic body entity, the integration system dispatches
+/// to the specified method. When absent, `IntegratorType::Rk4` is used.
+#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
+pub struct IntegratorTypeC(pub jeod_sim::IntegratorType);
+
 #[derive(Component, Debug, Clone)]
 pub struct GravityControlsC(pub GravityControls<Entity>);
 

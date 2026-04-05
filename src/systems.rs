@@ -121,9 +121,11 @@ pub fn force_collection_system(
 /// Advances translational (and optionally rotational) state via RK4 integration.
 ///
 /// Delegates to [`jeod_sim::integrate_body`] for 6-DOF/3-DOF routing and
-/// RK4 stepping. Gravity is recomputed at each RK4 intermediate state
-/// for proper 4th-order accuracy, matching JEOD's `DynamicsIntegrationGroup`
-/// where the derivative function recomputes gravity at every stage.
+/// integration stepping. Gravity is recomputed at each intermediate state
+/// for proper multi-stage accuracy.
+///
+/// The integration method is determined by the optional `IntegratorTypeC`
+/// component. When absent, RK4 is used.
 #[allow(clippy::type_complexity)]
 pub fn integration_system(
     mut bodies: Query<(
@@ -134,6 +136,7 @@ pub fn integration_system(
         Option<&MassPropertiesC>,
         &GravityControlsC,
         &TotalForceC,
+        Option<&IntegratorTypeC>,
     )>,
     sources: Query<(
         &GravitySourceC,
@@ -147,8 +150,11 @@ pub fn integration_system(
         return;
     }
 
-    for (entity, config, mut state, mut rot_state, mass, controls, total_force) in &mut bodies {
+    for (entity, config, mut state, mut rot_state, mass, controls, total_force, integrator) in
+        &mut bodies
+    {
         let _ = entity; // available for panic context if integrate_body fails
+        let integrator_type = integrator.map_or(jeod_sim::IntegratorType::Rk4, |c| c.0);
         jeod_sim::integrate_body(
             config,
             &mut state.0,
@@ -170,7 +176,7 @@ pub fn integration_system(
             total_force.force,
             total_force.torque,
             dt,
-            jeod_sim::IntegratorType::Rk4,
+            integrator_type,
         );
     }
 }
