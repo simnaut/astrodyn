@@ -27,7 +27,7 @@ use jeod_dynamics::{
     rk4_sixdof_step, MassProperties, RotationalState, SixDofState, TranslationalState,
 };
 use jeod_math::JeodQuat;
-use jeod_test_data::crossval::crossval_report;
+use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::Path;
 
 const MU_EARTH: f64 = 3.986_004_415e14;
@@ -190,10 +190,19 @@ fn tier3_external_torque_sixdof_run9a() {
     let dt = 0.03125; // match JEOD's SIM_dyncomp integration rate (32 Hz)
     let mut current_time = init.time;
 
-    let mut max_pos_error = 0.0_f64;
-    let mut max_vel_error = 0.0_f64;
-    let mut max_quat_error = 0.0_f64;
-    let mut max_angvel_error = 0.0_f64;
+    let mut our_states = Vec::with_capacity(trajectory.len() - 1);
+    let ref_states: Vec<StateLog> = trajectory
+        .iter()
+        .skip(1)
+        .map(|r| StateLog {
+            time: r.time,
+            position: Some(r.position),
+            velocity: Some(r.velocity),
+            quaternion: Some(r.quaternion.to_glam()),
+            ang_vel: Some(r.ang_vel),
+            ..Default::default()
+        })
+        .collect();
 
     // RUN_9A external torque schedule (from RUN_9B/input.py):
     // trick.add_read(1000.0, "vehicle.torque_extern.torque = [10.0, 0.0, 0.0]")
@@ -240,17 +249,20 @@ fn tier3_external_torque_sixdof_run9a() {
             current_time += remainder;
         }
 
-        // Compare translational state
+        our_states.push(StateLog {
+            time: record.time,
+            position: Some(state.trans.position),
+            velocity: Some(state.trans.velocity),
+            quaternion: Some(state.rot.quaternion.to_glam()),
+            ang_vel: Some(state.rot.ang_vel_body),
+            ..Default::default()
+        });
+
+        // Compare for logging
         let pos_error = (state.trans.position - record.position).length();
         let vel_error = (state.trans.velocity - record.velocity).length();
-        max_pos_error = max_pos_error.max(pos_error);
-        max_vel_error = max_vel_error.max(vel_error);
-
-        // Compare rotational state
         let quat_error = quaternion_angle_error(&state.rot.quaternion, &record.quaternion);
         let angvel_error = (state.rot.ang_vel_body - record.ang_vel).length();
-        max_quat_error = max_quat_error.max(quat_error);
-        max_angvel_error = max_angvel_error.max(angvel_error);
 
         // Log progress at key points: every hour and at torque boundaries
         let log_hourly = (record.time % 3600.0).abs() < 30.1;
@@ -269,6 +281,22 @@ fn tier3_external_torque_sixdof_run9a() {
         }
     }
 
+    let mut report = CrossvalReport::compute(
+        "tier3_external_torque_sixdof_run9a",
+        &our_states,
+        &ref_states,
+    );
+    report.position_tol = Some([0.5; 3]);
+    report.velocity_tol = Some([0.001; 3]);
+    report.quat_angle_tol = Some(0.01);
+    report.ang_vel_tol = Some([1e-5; 3]);
+    report.write();
+
+    let max_pos_error = report.max_position_error();
+    let max_vel_error = report.max_velocity_error();
+    let max_quat_error = report.max_quat_angle_error();
+    let max_angvel_error = report.max_ang_vel_error();
+
     println!();
     println!("=== Tier 3 External Torque 6-DOF Cross-Validation (RUN_9A) ===");
     println!(
@@ -285,15 +313,6 @@ fn tier3_external_torque_sixdof_run9a() {
         max_quat_error.to_degrees()
     );
     println!("Max ang_vel error:    {:.6e} rad/s", max_angvel_error);
-
-    crossval_report(
-        "tier3_external_torque_sixdof_run9a",
-        &[
-            ("position", max_pos_error, 0.5, "m"),
-            ("velocity", max_vel_error, 0.001, "m/s"),
-            ("ang_vel", max_angvel_error, 1e-5, "rad/s"),
-        ],
-    );
 
     // Translational thresholds match the existing RUN_2 6-DOF test.
     // dt=0.03125s matches JEOD's SIM_dyncomp integration rate (32 Hz).

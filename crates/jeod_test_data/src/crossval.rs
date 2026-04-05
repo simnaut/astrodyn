@@ -229,17 +229,6 @@ impl CrossvalReport {
     }
 }
 
-/// Legacy wrapper — emits extras-only JSON for tests not yet converted to
-/// `CrossvalReport`. Will be removed once all tests are migrated.
-#[deprecated(note = "Use CrossvalReport::compute() + write() instead")]
-pub fn crossval_report(test_name: &str, metrics: &[(&str, f64, f64, &str)]) {
-    let mut report = CrossvalReport::compute(test_name, &[], &[]);
-    for (var, val, tol, unit) in metrics {
-        report.add_extra(var, *val, *tol, unit);
-    }
-    report.write();
-}
-
 fn write_vec3_field(json: &mut String, name: &str, val: &Option<[f64; 3]>) {
     match val {
         Some([x, y, z]) => {

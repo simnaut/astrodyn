@@ -26,7 +26,7 @@ use jeod_dynamics::{
 use jeod_interactions::{compute_ballistic_drag, DragConfig};
 use jeod_math::geodetic::cartesian_to_geodetic;
 use jeod_math::JeodQuat;
-use jeod_test_data::crossval::crossval_report;
+use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::Path;
 
 const MU_EARTH: f64 = 3.986_004_415e14;
@@ -167,17 +167,6 @@ fn load_sixdof_trajectory(path: &Path) -> Vec<JeodSixDofRecord> {
     records
 }
 
-/// Compute angular error between two quaternions in radians.
-fn quaternion_angle_error(q1: &JeodQuat, q2: &JeodQuat) -> f64 {
-    let dot = (q1.scalar() * q2.scalar()
-        + q1.vector().x * q2.vector().x
-        + q1.vector().y * q2.vector().y
-        + q1.vector().z * q2.vector().z)
-        .abs();
-    // Clamp to avoid NaN from numerical noise
-    2.0 * dot.min(1.0).acos()
-}
-
 #[test]
 fn tier3_drag_trajectory_run6b() {
     let csv_path =
@@ -240,9 +229,18 @@ fn tier3_drag_trajectory_run6b() {
     let dt = 0.03125; // match JEOD's SIM_dyncomp integration rate (32 Hz)
     let mut current_time = init.time;
 
-    let mut max_pos_error = 0.0_f64;
-    let mut max_vel_error = 0.0_f64;
-    let mut max_quat_error = 0.0_f64;
+    let mut our_states = Vec::with_capacity(trajectory.len() - 1);
+    let ref_states: Vec<StateLog> = trajectory
+        .iter()
+        .skip(1)
+        .map(|r| StateLog {
+            time: r.time,
+            position: Some(r.position),
+            velocity: Some(r.velocity),
+            quaternion: Some(r.quaternion.to_glam()),
+            ..Default::default()
+        })
+        .collect();
 
     // Gravity + drag acceleration closure
     let gravity_plus_drag_accel = |s: &SixDofState, sim_time: f64| -> DVec3 {
@@ -329,15 +327,17 @@ fn tier3_drag_trajectory_run6b() {
             current_time += remainder;
         }
 
-        // Compare translational state
+        our_states.push(StateLog {
+            time: record.time,
+            position: Some(state.trans.position),
+            velocity: Some(state.trans.velocity),
+            quaternion: Some(state.rot.quaternion.to_glam()),
+            ..Default::default()
+        });
+
+        // Compare for logging
         let pos_error = (state.trans.position - record.position).length();
         let vel_error = (state.trans.velocity - record.velocity).length();
-        max_pos_error = max_pos_error.max(pos_error);
-        max_vel_error = max_vel_error.max(vel_error);
-
-        // Compare rotational state
-        let quat_error = quaternion_angle_error(&state.rot.quaternion, &record.quaternion);
-        max_quat_error = max_quat_error.max(quat_error);
 
         // Log progress hourly with position error, density, drag force
         let log_hourly = (record.time % 3600.0).abs() < 30.1;
@@ -388,6 +388,17 @@ fn tier3_drag_trajectory_run6b() {
         }
     }
 
+    let mut report =
+        CrossvalReport::compute("tier3_drag_trajectory_run6b", &our_states, &ref_states);
+    report.position_tol = Some([2.0; 3]);
+    report.velocity_tol = Some([0.005; 3]);
+    report.quat_angle_tol = Some(0.01);
+    report.write();
+
+    let max_pos_error = report.max_position_error();
+    let max_vel_error = report.max_velocity_error();
+    let max_quat_error = report.max_quat_angle_error();
+
     println!();
     println!("=== Tier 3 Drag Trajectory Cross-Validation (RUN_6B) ===");
     println!(
@@ -399,15 +410,6 @@ fn tier3_drag_trajectory_run6b() {
     println!("Drag: Cd=0.02, Area=1.0 m^2, mass=1.0 kg");
     println!("Max position error:   {:.6e} m", max_pos_error);
     println!("Max velocity error:   {:.6e} m/s", max_vel_error);
-
-    crossval_report(
-        "tier3_drag_trajectory_run6b",
-        &[
-            ("position", max_pos_error, 2.0, "m"),
-            ("velocity", max_vel_error, 0.005, "m/s"),
-        ],
-    );
-
     println!(
         "Max quaternion error: {:.6e} rad ({:.4} deg)",
         max_quat_error,

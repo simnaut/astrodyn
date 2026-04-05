@@ -9,7 +9,7 @@ use jeod_sim::{
     GravitySourceEntry, MassProperties, RotationalState, SimBody, Simulation, SimulationTime,
     TranslationalState,
 };
-use jeod_test_data::crossval::crossval_report;
+use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
 // ── RUN_10A: Gravity gradient torque, cylinder mass, 6-DOF ──
 //
@@ -77,65 +77,80 @@ fn tier3_simulation_run10a_gravity_torque() {
         trajectory.len()
     );
 
-    let mut max_pos_error = 0.0_f64;
-    let mut max_vel_error = 0.0_f64;
-    let mut max_quat_error = 0.0_f64;
-    let mut max_omega_error = 0.0_f64;
-
+    // Log our propagated states
+    let mut our_states = Vec::with_capacity(trajectory.len() - 1);
     for record in &trajectory[1..] {
         sim.step_until(record.time);
-
         let body = sim.body(0);
-        let pos_error = (body.trans.position - record.position).length();
-        let vel_error = (body.trans.velocity - record.velocity).length();
-        max_pos_error = max_pos_error.max(pos_error);
-        max_vel_error = max_vel_error.max(vel_error);
+        let rot = body.rot.as_ref().unwrap();
 
-        if let Some(ref rot) = body.rot {
+        let pos_error = (body.trans.position - record.position).length();
+        if (record.time % 3600.0).abs() < 30.1 {
             let quat_error = quaternion_angle_error(&rot.quaternion, &record.quaternion);
             let omega_error = (rot.ang_vel_body - record.ang_vel).length();
-            max_quat_error = max_quat_error.max(quat_error);
-            max_omega_error = max_omega_error.max(omega_error);
-        }
-
-        if (record.time % 3600.0).abs() < 30.1 {
             println!(
                 "  t={:6.0}s: pos_err={:10.4} m  quat_err={:.6e} rad  omega_err={:.6e}",
-                record.time, pos_error, max_quat_error, max_omega_error
+                record.time, pos_error, quat_error, omega_error
             );
         }
+
+        our_states.push(StateLog {
+            time: record.time,
+            position: Some(body.trans.position),
+            velocity: Some(body.trans.velocity),
+            quaternion: Some(rot.quaternion.to_glam()),
+            ang_vel: Some(rot.ang_vel_body),
+            ..Default::default()
+        });
     }
 
-    println!("  Max position error:  {:.6e} m", max_pos_error);
-    println!("  Max velocity error:  {:.6e} m/s", max_vel_error);
-    println!("  Max quaternion error: {:.6e} rad", max_quat_error);
-    println!("  Max omega error:     {:.6e} rad/s", max_omega_error);
+    // Reference states from JEOD CSV
+    let ref_states: Vec<StateLog> = trajectory[1..]
+        .iter()
+        .map(|r| StateLog {
+            time: r.time,
+            position: Some(r.position),
+            velocity: Some(r.velocity),
+            quaternion: Some(r.quaternion.to_glam()),
+            ang_vel: Some(r.ang_vel),
+            ..Default::default()
+        })
+        .collect();
 
-    crossval_report(
+    // Post-process: compute errors
+    let mut report = CrossvalReport::compute(
         "tier3_simulation_run10a_gravity_torque",
-        &[
-            ("position", max_pos_error, 0.5, "m"),
-            ("velocity", max_vel_error, 0.001, "m/s"),
-            ("quaternion", max_quat_error, 0.01, "rad"),
-            ("omega", max_omega_error, 1e-5, "rad/s"),
-        ],
+        &our_states,
+        &ref_states,
     );
+    report.position_tol = Some([0.5; 3]);
+    report.velocity_tol = Some([0.001; 3]);
+    report.quat_angle_tol = Some(0.01);
+    report.ang_vel_tol = Some([1e-5; 3]);
+    report.write();
 
+    let max_pos = report.max_position_error();
+    let max_vel = report.max_velocity_error();
+    let max_quat = report.max_quat_angle_error();
+    let max_omega = report.max_ang_vel_error();
+
+    println!("  Max position error:  {max_pos:.6e} m");
+    println!("  Max velocity error:  {max_vel:.6e} m/s");
+    println!("  Max quaternion error: {max_quat:.6e} rad");
+    println!("  Max omega error:     {max_omega:.6e} rad/s");
+
+    assert!(max_pos < 0.5, "Position error {max_pos:.2} m exceeds 0.5 m");
     assert!(
-        max_pos_error < 0.5,
-        "Position error {max_pos_error:.2} m exceeds 0.5 m"
+        max_vel < 0.001,
+        "Velocity error {max_vel:.6} m/s exceeds 0.001 m/s"
     );
     assert!(
-        max_vel_error < 0.001,
-        "Velocity error {max_vel_error:.6} m/s exceeds 0.001 m/s"
+        max_quat < 0.01,
+        "Quaternion error {max_quat:.2e} rad exceeds 0.01 rad"
     );
     assert!(
-        max_quat_error < 0.01,
-        "Quaternion error {max_quat_error:.2e} rad exceeds 0.01 rad"
-    );
-    assert!(
-        max_omega_error < 1e-5,
-        "Omega error {max_omega_error:.2e} rad/s exceeds 1e-5 rad/s"
+        max_omega < 1e-5,
+        "Omega error {max_omega:.2e} rad/s exceeds 1e-5 rad/s"
     );
 }
 
@@ -246,10 +261,9 @@ fn tier3_reference_run10a_libration_period() {
     println!("  Analytical period:    {ANALYTICAL_PERIOD:.2} s");
     println!("  Period error:         {period_error_pct:.4}%");
 
-    crossval_report(
-        "tier3_reference_run10a_libration_period",
-        &[("period_error_pct", period_error_pct, 0.5, "%")],
-    );
+    let mut report = CrossvalReport::compute("tier3_reference_run10a_libration_period", &[], &[]);
+    report.add_extra("period_error_pct", period_error_pct, 0.5, "%");
+    report.write();
 
     // PLAN.md criterion is 0.1%, but the 60s logging resolution limits
     // per-measurement accuracy to ~1.8%. Averaging over 8 hours (~8
@@ -318,55 +332,72 @@ fn tier3_simulation_run10c_gravity_torque_elliptical() {
 
     sim.validate().unwrap();
 
-    let mut max_pos_error = 0.0_f64;
-    let mut max_vel_error = 0.0_f64;
-    let mut max_quat_error = 0.0_f64;
-    let mut max_omega_error = 0.0_f64;
-
+    // Log our propagated states
+    let mut our_states = Vec::with_capacity(trajectory.len() - 1);
     for record in &trajectory[1..] {
         sim.step_until(record.time);
-
         let body = sim.body(0);
-        max_pos_error = max_pos_error.max((body.trans.position - record.position).length());
-        max_vel_error = max_vel_error.max((body.trans.velocity - record.velocity).length());
+        let rot = body.rot.as_ref().unwrap();
 
-        if let Some(ref rot) = body.rot {
-            max_quat_error =
-                max_quat_error.max(quaternion_angle_error(&rot.quaternion, &record.quaternion));
-            max_omega_error = max_omega_error.max((rot.ang_vel_body - record.ang_vel).length());
-        }
+        our_states.push(StateLog {
+            time: record.time,
+            position: Some(body.trans.position),
+            velocity: Some(body.trans.velocity),
+            quaternion: Some(rot.quaternion.to_glam()),
+            ang_vel: Some(rot.ang_vel_body),
+            ..Default::default()
+        });
     }
 
-    println!(
-        "RUN_10C: max pos={:.4} m  vel={:.6} m/s  quat={:.6e} rad  omega={:.6e} rad/s",
-        max_pos_error, max_vel_error, max_quat_error, max_omega_error
-    );
+    // Reference states from JEOD CSV
+    let ref_states: Vec<StateLog> = trajectory[1..]
+        .iter()
+        .map(|r| StateLog {
+            time: r.time,
+            position: Some(r.position),
+            velocity: Some(r.velocity),
+            quaternion: Some(r.quaternion.to_glam()),
+            ang_vel: Some(r.ang_vel),
+            ..Default::default()
+        })
+        .collect();
 
-    crossval_report(
+    // Post-process: compute errors
+    let mut report = CrossvalReport::compute(
         "tier3_simulation_run10c_gravity_torque_elliptical",
-        &[
-            ("position", max_pos_error, 0.5, "m"),
-            ("velocity", max_vel_error, 0.001, "m/s"),
-            ("quaternion", max_quat_error, 0.01, "rad"),
-            ("omega", max_omega_error, 1e-5, "rad/s"),
-        ],
+        &our_states,
+        &ref_states,
+    );
+    report.position_tol = Some([0.5; 3]);
+    report.velocity_tol = Some([0.001; 3]);
+    report.quat_angle_tol = Some(0.01);
+    report.ang_vel_tol = Some([1e-5; 3]);
+    report.write();
+
+    let max_pos = report.max_position_error();
+    let max_vel = report.max_velocity_error();
+    let max_quat = report.max_quat_angle_error();
+    let max_omega = report.max_ang_vel_error();
+
+    println!(
+        "RUN_10C: max pos={max_pos:.4} m  vel={max_vel:.6} m/s  quat={max_quat:.6e} rad  omega={max_omega:.6e} rad/s",
     );
 
     assert!(
-        max_pos_error < 0.5,
-        "RUN_10C: position error {max_pos_error:.4} m exceeds 0.5 m"
+        max_pos < 0.5,
+        "RUN_10C: position error {max_pos:.4} m exceeds 0.5 m"
     );
     assert!(
-        max_vel_error < 0.001,
-        "RUN_10C: velocity error {max_vel_error:.6} m/s exceeds 0.001 m/s"
+        max_vel < 0.001,
+        "RUN_10C: velocity error {max_vel:.6} m/s exceeds 0.001 m/s"
     );
     assert!(
-        max_quat_error < 0.01,
-        "RUN_10C: quaternion error {max_quat_error:.2e} rad exceeds 0.01 rad"
+        max_quat < 0.01,
+        "RUN_10C: quaternion error {max_quat:.2e} rad exceeds 0.01 rad"
     );
     assert!(
-        max_omega_error < 1e-5,
-        "RUN_10C: omega error {max_omega_error:.2e} rad/s exceeds 1e-5 rad/s"
+        max_omega < 1e-5,
+        "RUN_10C: omega error {max_omega:.2e} rad/s exceeds 1e-5 rad/s"
     );
 }
 
@@ -425,54 +456,71 @@ fn tier3_simulation_run10d_gravity_torque_elliptical_rate() {
 
     sim.validate().unwrap();
 
-    let mut max_pos_error = 0.0_f64;
-    let mut max_vel_error = 0.0_f64;
-    let mut max_quat_error = 0.0_f64;
-    let mut max_omega_error = 0.0_f64;
-
+    // Log our propagated states
+    let mut our_states = Vec::with_capacity(trajectory.len() - 1);
     for record in &trajectory[1..] {
         sim.step_until(record.time);
-
         let body = sim.body(0);
-        max_pos_error = max_pos_error.max((body.trans.position - record.position).length());
-        max_vel_error = max_vel_error.max((body.trans.velocity - record.velocity).length());
+        let rot = body.rot.as_ref().unwrap();
 
-        if let Some(ref rot) = body.rot {
-            max_quat_error =
-                max_quat_error.max(quaternion_angle_error(&rot.quaternion, &record.quaternion));
-            max_omega_error = max_omega_error.max((rot.ang_vel_body - record.ang_vel).length());
-        }
+        our_states.push(StateLog {
+            time: record.time,
+            position: Some(body.trans.position),
+            velocity: Some(body.trans.velocity),
+            quaternion: Some(rot.quaternion.to_glam()),
+            ang_vel: Some(rot.ang_vel_body),
+            ..Default::default()
+        });
     }
 
-    println!(
-        "RUN_10D: max pos={:.4} m  vel={:.6} m/s  quat={:.6e} rad  omega={:.6e} rad/s",
-        max_pos_error, max_vel_error, max_quat_error, max_omega_error
-    );
+    // Reference states from JEOD CSV
+    let ref_states: Vec<StateLog> = trajectory[1..]
+        .iter()
+        .map(|r| StateLog {
+            time: r.time,
+            position: Some(r.position),
+            velocity: Some(r.velocity),
+            quaternion: Some(r.quaternion.to_glam()),
+            ang_vel: Some(r.ang_vel),
+            ..Default::default()
+        })
+        .collect();
 
-    crossval_report(
+    // Post-process: compute errors
+    let mut report = CrossvalReport::compute(
         "tier3_simulation_run10d_gravity_torque_elliptical_rate",
-        &[
-            ("position", max_pos_error, 0.5, "m"),
-            ("velocity", max_vel_error, 0.001, "m/s"),
-            ("quaternion", max_quat_error, 0.01, "rad"),
-            ("omega", max_omega_error, 1e-5, "rad/s"),
-        ],
+        &our_states,
+        &ref_states,
+    );
+    report.position_tol = Some([0.5; 3]);
+    report.velocity_tol = Some([0.001; 3]);
+    report.quat_angle_tol = Some(0.01);
+    report.ang_vel_tol = Some([1e-5; 3]);
+    report.write();
+
+    let max_pos = report.max_position_error();
+    let max_vel = report.max_velocity_error();
+    let max_quat = report.max_quat_angle_error();
+    let max_omega = report.max_ang_vel_error();
+
+    println!(
+        "RUN_10D: max pos={max_pos:.4} m  vel={max_vel:.6} m/s  quat={max_quat:.6e} rad  omega={max_omega:.6e} rad/s",
     );
 
     assert!(
-        max_pos_error < 0.5,
-        "RUN_10D: position error {max_pos_error:.4} m exceeds 0.5 m"
+        max_pos < 0.5,
+        "RUN_10D: position error {max_pos:.4} m exceeds 0.5 m"
     );
     assert!(
-        max_vel_error < 0.001,
-        "RUN_10D: velocity error {max_vel_error:.6} m/s exceeds 0.001 m/s"
+        max_vel < 0.001,
+        "RUN_10D: velocity error {max_vel:.6} m/s exceeds 0.001 m/s"
     );
     assert!(
-        max_quat_error < 0.01,
-        "RUN_10D: quaternion error {max_quat_error:.2e} rad exceeds 0.01 rad"
+        max_quat < 0.01,
+        "RUN_10D: quaternion error {max_quat:.2e} rad exceeds 0.01 rad"
     );
     assert!(
-        max_omega_error < 1e-5,
-        "RUN_10D: omega error {max_omega_error:.2e} rad/s exceeds 1e-5 rad/s"
+        max_omega < 1e-5,
+        "RUN_10D: omega error {max_omega:.2e} rad/s exceeds 1e-5 rad/s"
     );
 }

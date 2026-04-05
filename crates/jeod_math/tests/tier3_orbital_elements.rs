@@ -13,7 +13,7 @@
 
 use glam::DVec3;
 use jeod_math::OrbitalElements;
-use jeod_test_data::crossval::crossval_report;
+use jeod_test_data::crossval::CrossvalReport;
 use std::path::Path;
 
 /// Earth gravitational parameter (m³/s²) from GGM05C, matching JEOD SIM_OrbElem's gravity source.
@@ -262,17 +262,15 @@ fn tier3_orbital_elements_vs_jeod_sim_orbelem() {
     eprintln!("  r_mag:              {max_rmag_err:.6e} m");
     eprintln!("  vel_mag:            {max_vmag_err:.6e} m/s");
 
-    crossval_report(
-        "tier3_orbital_elements_vs_jeod_sim_orbelem",
-        &[
-            ("semi_major_axis", max_sma_err, 1e-6, "m"),
-            ("semiparam", max_sp_err, 1e-6, "m"),
-            ("eccentricity", max_ecc_err, 1e-14, ""),
-            ("inclination", max_inc_err, 1e-15, "rad"),
-            ("arg_periapsis", max_aop_err, 1e-13, "rad"),
-            ("long_asc_node", max_lan_err, 1e-13, "rad"),
-            ("true_anom", max_ta_err, 1e-13, "rad"),
-            ("mean_anom", max_ma_err, 1e-13, "rad"),
-        ],
-    );
+    let mut report =
+        CrossvalReport::compute("tier3_orbital_elements_vs_jeod_sim_orbelem", &[], &[]);
+    report.add_extra("semi_major_axis", max_sma_err, 1e-6, "m");
+    report.add_extra("semiparam", max_sp_err, 1e-6, "m");
+    report.add_extra("eccentricity", max_ecc_err, 1e-14, "");
+    report.add_extra("inclination", max_inc_err, 1e-15, "rad");
+    report.add_extra("arg_periapsis", max_aop_err, 1e-13, "rad");
+    report.add_extra("long_asc_node", max_lan_err, 1e-13, "rad");
+    report.add_extra("true_anom", max_ta_err, 1e-13, "rad");
+    report.add_extra("mean_anom", max_ma_err, 1e-13, "rad");
+    report.write();
 }

@@ -12,7 +12,7 @@ use jeod_sim::{
     GravitySourceEntry, MassProperties, RotationalState, SimBody, Simulation, SimulationTime,
     TranslationalState,
 };
-use jeod_test_data::crossval::crossval_report;
+use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
 #[test]
 fn tier3_simulation_euler() {
@@ -76,6 +76,8 @@ fn tier3_simulation_euler() {
         trajectory.len()
     );
 
+    let mut our_states = Vec::with_capacity(trajectory.len() - 1);
+    let mut ref_states = Vec::with_capacity(trajectory.len() - 1);
     let mut max_angle_err = [0.0_f64; 3];
     let mut max_quat_err = 0.0_f64;
 
@@ -106,6 +108,17 @@ fn tier3_simulation_euler() {
             max_angle_err[k] = max_angle_err[k].max(err);
         }
 
+        our_states.push(StateLog {
+            time: record.time,
+            quaternion: Some(body.rot.as_ref().unwrap().quaternion.to_glam()),
+            ..Default::default()
+        });
+        ref_states.push(StateLog {
+            time: record.time,
+            quaternion: Some(record.quaternion.to_glam()),
+            ..Default::default()
+        });
+
         if (record.time % 3600.0).abs() < 30.1 {
             println!(
                 "  t={:6.0}s: quat_err={:.6e} rad  euler_err=[{:.6e}, {:.6e}, {:.6e}] rad",
@@ -116,10 +129,12 @@ fn tier3_simulation_euler() {
 
     println!("  Max quaternion error: {:.6e} rad", max_quat_err);
 
-    crossval_report(
-        "tier3_simulation_euler",
-        &[("quaternion", max_quat_err, 0.01, "rad")],
-    );
+    let mut report = CrossvalReport::compute("tier3_simulation_euler", &our_states, &ref_states);
+    report.quat_angle_tol = Some(0.01);
+    report.add_extra("euler_roll", max_angle_err[0], 0.02, "rad");
+    report.add_extra("euler_pitch", max_angle_err[1], 0.02, "rad");
+    report.add_extra("euler_yaw", max_angle_err[2], 0.02, "rad");
+    report.write();
 
     println!(
         "  Max Euler angle errors: [{:.6e}, {:.6e}, {:.6e}] rad",

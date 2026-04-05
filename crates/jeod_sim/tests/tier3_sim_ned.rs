@@ -17,7 +17,7 @@ use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry, SimBody,
     Simulation, SimulationTime, TranslationalState,
 };
-use jeod_test_data::crossval::crossval_report;
+use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
 const GEO_R_EQ: f64 = 6_378_137.0;
 const GEO_R_POL: f64 = GEO_R_EQ * (1.0 - 1.0 / 298.257_223_563);
@@ -81,17 +81,16 @@ fn tier3_simulation_geodetic() {
         records.len()
     );
 
+    let mut our_states = Vec::with_capacity(records.len() - 1);
+    let mut ref_states = Vec::with_capacity(records.len() - 1);
     let mut max_alt_err = 0.0_f64;
     let mut max_lat_err = 0.0_f64;
     let mut max_lon_err = 0.0_f64;
-    let mut max_pos_err = 0.0_f64;
 
     for record in &records[1..] {
         sim.step_until(record.time);
 
         let body = sim.body(0);
-        let pos_err = (body.trans.position - record.position).length();
-        max_pos_err = max_pos_err.max(pos_err);
 
         let geo = body.geodetic_state.as_ref().unwrap_or_else(|| {
             panic!(
@@ -109,7 +108,21 @@ fn tier3_simulation_geodetic() {
         max_lat_err = max_lat_err.max(lat_err);
         max_lon_err = max_lon_err.max(lon_err);
 
+        our_states.push(StateLog {
+            time: record.time,
+            position: Some(body.trans.position),
+            velocity: Some(body.trans.velocity),
+            ..Default::default()
+        });
+        ref_states.push(StateLog {
+            time: record.time,
+            position: Some(record.position),
+            velocity: Some(record.velocity),
+            ..Default::default()
+        });
+
         if (record.time % 3600.0).abs() < 6.1 {
+            let pos_err = (body.trans.position - record.position).length();
             println!(
                 "  t={:6.0}s: pos_err={:.3e} m  alt_err={:.3e} m  lat_err={:.3e} rad  lon_err={:.3e} rad",
                 record.time, pos_err, alt_err, lat_err, lon_err
@@ -117,20 +130,23 @@ fn tier3_simulation_geodetic() {
         }
     }
 
+    let max_pos_err = our_states
+        .iter()
+        .zip(ref_states.iter())
+        .map(|(a, b)| (a.position.unwrap() - b.position.unwrap()).length())
+        .fold(0.0_f64, f64::max);
+
     println!("  Max position error:  {:.6e} m", max_pos_err);
     println!("  Max altitude error:  {:.6e} m", max_alt_err);
     println!("  Max latitude error:  {:.6e} rad", max_lat_err);
     println!("  Max longitude error: {:.6e} rad", max_lon_err);
 
-    crossval_report(
-        "tier3_simulation_geodetic",
-        &[
-            ("position", max_pos_err, 0.5, "m"),
-            ("altitude", max_alt_err, 1.0, "m"),
-            ("latitude", max_lat_err, 1e-6, "rad"),
-            ("longitude", max_lon_err, 1e-6, "rad"),
-        ],
-    );
+    let mut report = CrossvalReport::compute("tier3_simulation_geodetic", &our_states, &ref_states);
+    report.position_tol = Some([0.5; 3]);
+    report.add_extra("altitude", max_alt_err, 1.0, "m");
+    report.add_extra("latitude", max_lat_err, 1e-6, "rad");
+    report.add_extra("longitude", max_lon_err, 1e-6, "rad");
+    report.write();
 
     // Point-mass gravity, 24h. Position should match JEOD to < 0.5m.
     assert!(

@@ -24,7 +24,7 @@ use jeod_interactions::{
     compute_flat_plate_srp_thermal, compute_shadow_fraction, solar_flux_at_distance, FlatPlate,
     FlatPlateParams, FlatPlateThermal, SOLAR_RADIUS, STEFAN_BOLTZMANN,
 };
-use jeod_test_data::crossval::crossval_report;
+use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::Path;
 
 const MU_EARTH: f64 = 3.986_004_415e14;
@@ -377,12 +377,20 @@ fn tier3_srp_trajectory_sim3_orbit() {
         velocity: trajectory[0].velocity,
     };
 
-    let mut max_pos_err = 0.0_f64;
     let mut max_pos_err_24h = 0.0_f64;
-    let mut max_vel_err = 0.0_f64;
     let mut max_force_dir_err = 0.0_f64;
     let mut max_force_mag_rel_err = 0.0_f64;
     let mut shadow_mismatches = 0;
+    let mut our_states = Vec::with_capacity(trajectory.len() - 1);
+    let ref_states: Vec<StateLog> = trajectory[1..]
+        .iter()
+        .map(|r| StateLog {
+            time: r.time,
+            position: Some(r.position),
+            velocity: Some(r.velocity),
+            ..Default::default()
+        })
+        .collect();
 
     for window in trajectory.windows(2) {
         let target = &window[1];
@@ -397,13 +405,18 @@ fn tier3_srp_trajectory_sim3_orbit() {
             state = rk4_step(&state, &plates, &mut temp, &mut t_pow4, sun_pos, dt, MASS);
         }
 
+        our_states.push(StateLog {
+            time: target.time,
+            position: Some(state.position),
+            velocity: Some(state.velocity),
+            ..Default::default()
+        });
+
         let pos_err = (state.position - target.position).length();
         let vel_err = (state.velocity - target.velocity).length();
-        max_pos_err = max_pos_err.max(pos_err);
         if target.time <= 86400.0 {
             max_pos_err_24h = max_pos_err_24h.max(pos_err);
         }
-        max_vel_err = max_vel_err.max(vel_err);
 
         // Print diagnostics at key intervals
         let t = target.time;
@@ -514,6 +527,19 @@ fn tier3_srp_trajectory_sim3_orbit() {
         );
     }
 
+    let mut report =
+        CrossvalReport::compute("tier3_srp_trajectory_sim3_orbit", &our_states, &ref_states);
+    report.position_tol = Some([50.0; 3]);
+    report.velocity_tol = Some([50.0; 3]);
+    report.add_extra("position_24h", max_pos_err_24h, 10.0, "m");
+    report.add_extra("force_direction", max_force_dir_err, 0.05, "rad");
+    report.add_extra("force_magnitude_rel", max_force_mag_rel_err, 5.0, "");
+    report.add_extra("shadow_mismatches", shadow_mismatches as f64, 2.0, "");
+    report.write();
+
+    let max_pos_err = report.max_position_error();
+    let max_vel_err = report.max_velocity_error();
+
     eprintln!("=== Tier 3 SRP Trajectory (SIM_3_ORBIT RUN_radiation) ===");
     eprintln!("  Data points: {}", trajectory.len());
     eprintln!(
@@ -527,18 +553,6 @@ fn tier3_srp_trajectory_sim3_orbit() {
     eprintln!("  Max SRP force direction error: {max_force_dir_err:.6e} rad");
     eprintln!("  Max SRP force magnitude rel error: {max_force_mag_rel_err:.6e}");
     eprintln!("  Shadow state mismatches: {shadow_mismatches}");
-
-    crossval_report(
-        "tier3_srp_trajectory_sim3_orbit",
-        &[
-            ("position_24h", max_pos_err_24h, 10.0, "m"),
-            ("position", max_pos_err, 50.0, "m"),
-            ("velocity", max_vel_err, 50.0, "m/s"),
-            ("force_direction", max_force_dir_err, 0.05, "rad"),
-            ("force_magnitude_rel", max_force_mag_rel_err, 5.0, ""),
-            ("shadow_mismatches", shadow_mismatches as f64, 2.0, ""),
-        ],
-    );
 
     // Force direction should match closely now that thermal emission is included.
     assert!(

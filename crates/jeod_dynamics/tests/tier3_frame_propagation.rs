@@ -17,7 +17,7 @@ use glam::{DMat3, DVec3};
 use jeod_dynamics::propagation::{propagate_forward, propagate_reverse};
 use jeod_dynamics::MassPointState;
 use jeod_math::JeodQuat;
-use jeod_test_data::crossval::crossval_report;
+use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::Path;
 
 /// Parsed frame state record from a single 22-column block in the JEOD CSV.
@@ -279,19 +279,55 @@ fn tier3_frame_propagation_composite_to_structure() {
         max_angvel_error_fwd
     );
 
-    crossval_report(
+    // Build StateLog vectors for position+velocity+angular velocity comparison
+    let mut our_states = Vec::with_capacity(trajectory.len());
+    let mut ref_states = Vec::with_capacity(trajectory.len());
+
+    for record in &trajectory {
+        let composite_state = jeod_frames::RefFrameState {
+            trans: jeod_frames::RefFrameTrans {
+                position: record.composite.position,
+                velocity: record.composite.velocity,
+            },
+            rot: jeod_frames::RefFrameRot {
+                q_parent_this: record.composite.q_parent_this,
+                t_parent_this: record.composite.t_parent_this,
+                ang_vel_this: record.composite.ang_vel,
+            },
+        };
+
+        let computed_structure = propagate_reverse(&composite_state, &struct_to_composite);
+
+        our_states.push(StateLog {
+            time: record.time,
+            position: Some(computed_structure.trans.position),
+            velocity: Some(computed_structure.trans.velocity),
+            ang_vel: Some(computed_structure.rot.ang_vel_this),
+            ..Default::default()
+        });
+        ref_states.push(StateLog {
+            time: record.time,
+            position: Some(record.structure.position),
+            velocity: Some(record.structure.velocity),
+            ang_vel: Some(record.structure.ang_vel),
+            ..Default::default()
+        });
+    }
+
+    let mut report = CrossvalReport::compute(
         "tier3_frame_propagation_composite_to_structure",
-        &[
-            ("rev_position", max_pos_error_rev, 1e-6, "m"),
-            ("rev_velocity", max_vel_error_rev, 1e-6, "m/s"),
-            ("rev_T_matrix", max_t_error_rev, 1e-10, ""),
-            ("rev_omega", max_angvel_error_rev, 1e-12, "rad/s"),
-            ("fwd_position", max_pos_error_fwd, 1e-6, "m"),
-            ("fwd_velocity", max_vel_error_fwd, 1e-6, "m/s"),
-            ("fwd_T_matrix", max_t_error_fwd, 1e-10, ""),
-            ("fwd_omega", max_angvel_error_fwd, 1e-12, "rad/s"),
-        ],
+        &our_states,
+        &ref_states,
     );
+    report.position_tol = Some([1e-6; 3]);
+    report.velocity_tol = Some([1e-6; 3]);
+    report.ang_vel_tol = Some([1e-12; 3]);
+    report.add_extra("rev_T_matrix", max_t_error_rev, 1e-10, "");
+    report.add_extra("fwd_position", max_pos_error_fwd, 1e-6, "m");
+    report.add_extra("fwd_velocity", max_vel_error_fwd, 1e-6, "m/s");
+    report.add_extra("fwd_T_matrix", max_t_error_fwd, 1e-10, "");
+    report.add_extra("fwd_omega", max_angvel_error_fwd, 1e-12, "rad/s");
+    report.write();
 
     // These are pure coordinate transforms, no integration involved.
     // Differences should be near machine precision.
@@ -397,15 +433,13 @@ fn tier3_frame_propagation_core_equals_composite() {
     println!("Max T matrix diff:     {:.6e}", max_t_diff);
     println!("Max angular vel diff:  {:.6e} rad/s", max_angvel_diff);
 
-    crossval_report(
-        "tier3_frame_propagation_core_equals_composite",
-        &[
-            ("position", max_pos_diff, 1e-12, "m"),
-            ("velocity", max_vel_diff, 1e-12, "m/s"),
-            ("T_matrix", max_t_diff, 1e-14, ""),
-            ("omega", max_angvel_diff, 1e-14, "rad/s"),
-        ],
-    );
+    let mut report =
+        CrossvalReport::compute("tier3_frame_propagation_core_equals_composite", &[], &[]);
+    report.add_extra("position", max_pos_diff, 1e-12, "m");
+    report.add_extra("velocity", max_vel_diff, 1e-12, "m/s");
+    report.add_extra("T_matrix", max_t_diff, 1e-14, "");
+    report.add_extra("omega", max_angvel_diff, 1e-14, "rad/s");
+    report.write();
 
     // Single body: core and composite must be identical (zero offset).
     assert!(
@@ -506,15 +540,12 @@ fn tier3_frame_propagation_round_trip() {
     println!("Max T matrix error:      {:.6e}", max_t_rt);
     println!("Max angular vel error:   {:.6e} rad/s", max_angvel_rt);
 
-    crossval_report(
-        "tier3_frame_propagation_round_trip",
-        &[
-            ("position", max_pos_rt, 1e-8, "m"),
-            ("velocity", max_vel_rt, 1e-8, "m/s"),
-            ("T_matrix", max_t_rt, 1e-14, ""),
-            ("omega", max_angvel_rt, 1e-14, "rad/s"),
-        ],
-    );
+    let mut report = CrossvalReport::compute("tier3_frame_propagation_round_trip", &[], &[]);
+    report.add_extra("position", max_pos_rt, 1e-8, "m");
+    report.add_extra("velocity", max_vel_rt, 1e-8, "m/s");
+    report.add_extra("T_matrix", max_t_rt, 1e-14, "");
+    report.add_extra("omega", max_angvel_rt, 1e-14, "rad/s");
+    report.write();
 
     // Round-trip should be near machine precision.
     assert!(

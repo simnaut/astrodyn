@@ -16,7 +16,7 @@ use jeod_sim::{
     GravitySourceEntry, MassProperties, RotationalState, SimBody, Simulation, SimulationTime,
     TranslationalState,
 };
-use jeod_test_data::crossval::crossval_report;
+use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
 /// Set up an Euler-style simulation from CSV initial conditions.
 /// SIM_Euler uses the same mass/config as SIM_dyncomp RUN_2.
@@ -83,6 +83,8 @@ fn run_euler_test(csv_filename: &str, label: &str, test_name: &str) {
         records.len()
     );
 
+    let mut our_states = Vec::with_capacity(records.len() - 1);
+    let mut ref_states = Vec::with_capacity(records.len() - 1);
     let mut max_angle_err = [0.0_f64; 3];
     let mut max_quat_err = 0.0_f64;
 
@@ -111,6 +113,17 @@ fn run_euler_test(csv_filename: &str, label: &str, test_name: &str) {
             max_angle_err[k] = max_angle_err[k].max(err);
         }
 
+        our_states.push(StateLog {
+            time: record.time,
+            quaternion: Some(body.rot.as_ref().unwrap().quaternion.to_glam()),
+            ..Default::default()
+        });
+        ref_states.push(StateLog {
+            time: record.time,
+            quaternion: Some(record.quaternion.to_glam()),
+            ..Default::default()
+        });
+
         if (record.time % 7200.0).abs() < 6.1 {
             println!(
                 "  t={:6.0}s: quat_err={:.6e} rad  euler_err=[{:.6e}, {:.6e}, {:.6e}] rad",
@@ -125,15 +138,12 @@ fn run_euler_test(csv_filename: &str, label: &str, test_name: &str) {
         max_angle_err[0], max_angle_err[1], max_angle_err[2]
     );
 
-    crossval_report(
-        test_name,
-        &[
-            ("quaternion", max_quat_err, 0.01, "rad"),
-            ("euler_roll", max_angle_err[0], f64::INFINITY, "rad"),
-            ("euler_pitch", max_angle_err[1], f64::INFINITY, "rad"),
-            ("euler_yaw", max_angle_err[2], f64::INFINITY, "rad"),
-        ],
-    );
+    let mut report = CrossvalReport::compute(test_name, &our_states, &ref_states);
+    report.quat_angle_tol = Some(0.01);
+    report.add_extra("euler_roll", max_angle_err[0], 1e-6, "rad");
+    report.add_extra("euler_pitch", max_angle_err[1], 1e-6, "rad");
+    report.add_extra("euler_yaw", max_angle_err[2], 1e-6, "rad");
+    report.write();
 
     assert!(
         max_quat_err < 0.01,

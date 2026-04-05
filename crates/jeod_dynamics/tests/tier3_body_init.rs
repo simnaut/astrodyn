@@ -11,7 +11,7 @@
 
 use glam::DVec3;
 use jeod_dynamics::init_from_orbital_elements;
-use jeod_test_data::crossval::crossval_report;
+use jeod_test_data::crossval::CrossvalReport;
 use std::path::Path;
 
 const MU_EARTH: f64 = 3.986_004_415e14;
@@ -98,11 +98,9 @@ fn tier3_body_init_round_trip_over_trajectory() {
     eprintln!("  Max position error: {max_pos_err:.2e} m");
     eprintln!("  Max velocity error: {max_vel_err:.2e} m/s");
 
-    crossval_report(
-        "tier3_body_init_round_trip_over_trajectory",
-        &[
-            ("position", max_pos_err, f64::INFINITY, "m"),
-            ("velocity", max_vel_err, f64::INFINITY, "m/s"),
-        ],
-    );
+    let mut report =
+        CrossvalReport::compute("tier3_body_init_round_trip_over_trajectory", &[], &[]);
+    report.add_extra("position", max_pos_err, f64::INFINITY, "m");
+    report.add_extra("velocity", max_vel_err, f64::INFINITY, "m/s");
+    report.write();
 }

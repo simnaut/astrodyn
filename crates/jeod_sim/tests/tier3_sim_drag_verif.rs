@@ -3,10 +3,10 @@
 //! Validates aerodynamic drag force computation against JEOD in isolation
 //! (no orbit propagation). Three drag modes:
 //!   RUN_aero_drag_const: Constant drag force magnitude = 0.05 N
-//!   RUN_aero_drag_CD:    Cd=2, A=100 m²
-//!   RUN_aero_drag_BC:    BC=0.005, mass=1.0 kg → mass/BC = 200 (equivalent to Cd*A = 200)
+//!   RUN_aero_drag_CD:    Cd=2, A=100 m2
+//!   RUN_aero_drag_BC:    BC=0.005, mass=1.0 kg -> mass/BC = 200 (equivalent to Cd*A = 200)
 //!
-//! Atmospheric conditions: density=1e-12 kg/m³, T=1487 K, zero wind.
+//! Atmospheric conditions: density=1e-12 kg/m3, T=1487 K, zero wind.
 //! Vehicle rotation: identity (body frame = inertial frame).
 //! Velocity from CSV (time-varying as drag decelerates the vehicle).
 
@@ -16,9 +16,9 @@ use sim_test_helpers::*;
 use glam::{DMat3, DVec3};
 use jeod_atmosphere::AtmosphereState;
 use jeod_interactions::{compute_ballistic_drag, DragConfig};
-use jeod_test_data::crossval::crossval_report;
+use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
-const DRAG_DENSITY: f64 = 1e-12; // kg/m³
+const DRAG_DENSITY: f64 = 1e-12; // kg/m3
 
 fn run_drag_comparison(csv_filename: &str, label: &str, config: DragConfig, test_name: &str) {
     let csv_path = test_data_path(csv_filename);
@@ -52,6 +52,16 @@ fn run_drag_comparison(csv_filename: &str, label: &str, config: DragConfig, test
     let mut max_force_err = 0.0_f64;
     let mut max_force_rel_err = 0.0_f64;
 
+    // These tests don't propagate state; use empty state logs and report via extras.
+    let our_states: Vec<StateLog> = records
+        .iter()
+        .map(|r| StateLog {
+            time: r.time,
+            ..Default::default()
+        })
+        .collect();
+    let ref_states: Vec<StateLog> = our_states.clone();
+
     for record in &records {
         // Compute drag using our code with JEOD's velocity from CSV
         let result =
@@ -80,13 +90,10 @@ fn run_drag_comparison(csv_filename: &str, label: &str, config: DragConfig, test
     println!("  Max force error:     {:.6e} N", max_force_err);
     println!("  Max force rel error: {:.6e}", max_force_rel_err);
 
-    crossval_report(
-        test_name,
-        &[
-            ("force", max_force_err, 1e-3, "N"),
-            ("force_rel", max_force_rel_err, 1e-10, ""),
-        ],
-    );
+    let mut report = CrossvalReport::compute(test_name, &our_states, &ref_states);
+    report.add_extra("force", max_force_err, 1e-3, "N");
+    report.add_extra("force_rel", max_force_rel_err, 1e-10, "");
+    report.write();
 
     // Drag force should match JEOD to high precision (same formula, same inputs)
     assert!(
@@ -104,7 +111,7 @@ fn tier3_drag_const_force() {
     // DRAG_OPT_CONST: JEOD uses drag=0.05 as a CONSTANT FORCE MAGNITUDE (N),
     // not a coefficient. The formula is: force = rel_vel_hat * drag.
     // Our compute_ballistic_drag doesn't support this mode — it always computes
-    // F = -0.5*ρ*v²*Cd*A. Validate the reference data instead.
+    // F = -0.5*rho*v2*Cd*A. Validate the reference data instead.
     let csv_path = test_data_path("drag_const_drag.csv");
     assert!(csv_path.exists(), "CSV not found at {}", csv_path.display());
     let records = load_drag_csv(&csv_path);
@@ -116,7 +123,7 @@ fn tier3_drag_const_force() {
     );
 
     // JEOD DRAG_OPT_CONST: force magnitude = drag = 0.05 N (constant)
-    // Acceleration = force / mass = 0.05 / 1.0 = 0.05 m/s² (constant)
+    // Acceleration = force / mass = 0.05 / 1.0 = 0.05 m/s2 (constant)
     let mut max_accel_err = 0.0_f64;
     for record in &records {
         let force_mag = record.aero_force.length();
@@ -131,10 +138,10 @@ fn tier3_drag_const_force() {
             record.time
         );
     }
-    // Acceleration should be consistent: force/mass = 0.05/1.0 = 0.05 m/s²
+    // Acceleration should be consistent: force/mass = 0.05/1.0 = 0.05 m/s2
     assert!(
         max_accel_err < 1e-6,
-        "Acceleration error {max_accel_err:.3e} m/s² exceeds 1e-6"
+        "Acceleration error {max_accel_err:.3e} m/s2 exceeds 1e-6"
     );
     println!(
         "  DRAG_OPT_CONST: force=0.05 N (constant), max accel_err={:.3e}",
@@ -142,19 +149,27 @@ fn tier3_drag_const_force() {
     );
     println!(
         "  Note: DRAG_OPT_CONST mode not implemented in our code — JEOD sets force \
-         magnitude directly, bypassing F=0.5*ρ*v²*Cd*A. Validated as reference data."
+         magnitude directly, bypassing F=0.5*rho*v2*Cd*A. Validated as reference data."
     );
 
-    crossval_report(
-        "tier3_drag_const_force",
-        &[("accel", max_accel_err, 1e-6, "m/s2")],
-    );
+    let our_states: Vec<StateLog> = records
+        .iter()
+        .map(|r| StateLog {
+            time: r.time,
+            ..Default::default()
+        })
+        .collect();
+    let ref_states: Vec<StateLog> = our_states.clone();
+
+    let mut report = CrossvalReport::compute("tier3_drag_const_force", &our_states, &ref_states);
+    report.add_extra("accel", max_accel_err, 1e-6, "m/s2");
+    report.write();
 }
 
 #[test]
 fn tier3_drag_variable_cd() {
-    // DRAG_OPT_CD: drag = -0.5*ρ*v² * area * Cd
-    // Cd=2, area=100 m² → Cd*A = 200
+    // DRAG_OPT_CD: drag = -0.5*rho*v2 * area * Cd
+    // Cd=2, area=100 m2 -> Cd*A = 200
     run_drag_comparison(
         "drag_cd_drag.csv",
         "RUN_aero_drag_CD (Cd=2, A=100)",
@@ -169,11 +184,11 @@ fn tier3_drag_variable_cd() {
 
 #[test]
 fn tier3_drag_ballistic_coeff() {
-    // DRAG_OPT_BC: drag = -(0.5*ρ*v² * mass) / BC
-    // BC=0.005, mass=1.0 kg → mass/BC = 200 → same as Cd*A=200
+    // DRAG_OPT_BC: drag = -(0.5*rho*v2 * mass) / BC
+    // BC=0.005, mass=1.0 kg -> mass/BC = 200 -> same as Cd*A=200
     run_drag_comparison(
         "drag_bc_drag.csv",
-        "RUN_aero_drag_BC (BC=0.005, m=1kg → Cd*A=200)",
+        "RUN_aero_drag_BC (BC=0.005, m=1kg -> Cd*A=200)",
         DragConfig {
             cd: 200.0,
             area: 1.0,

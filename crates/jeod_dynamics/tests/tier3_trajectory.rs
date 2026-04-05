@@ -6,7 +6,7 @@
 
 use glam::DVec3;
 use jeod_dynamics::{rk4_translational_step, TranslationalState};
-use jeod_test_data::crossval::crossval_report;
+use jeod_test_data::crossval::CrossvalReport;
 use std::f64::consts::PI;
 
 const MU_EARTH: f64 = 3.986_004_415e14; // m^3/s^2
@@ -112,13 +112,10 @@ fn tier3_energy_conservation_10_orbits() {
     println!("  Max relative h drift:       {:.6e}", max_h_drift);
     println!("  Total steps:                {}", trajectory.len());
 
-    crossval_report(
-        "tier3_energy_conservation_10_orbits",
-        &[
-            ("energy_drift", max_energy_drift, f64::INFINITY, ""),
-            ("h_drift", max_h_drift, f64::INFINITY, ""),
-        ],
-    );
+    let mut report = CrossvalReport::compute("tier3_energy_conservation_10_orbits", &[], &[]);
+    report.add_extra("energy_drift", max_energy_drift, f64::INFINITY, "");
+    report.add_extra("h_drift", max_h_drift, f64::INFINITY, "");
+    report.write();
 }
 
 // ========================================================================
@@ -165,10 +162,9 @@ fn tier3_orbital_period_accuracy() {
     println!("  Measured period:   {:.6} s", measured_period);
     println!("  Relative error:    {:.6e}", period_error);
 
-    crossval_report(
-        "tier3_orbital_period_accuracy",
-        &[("period_rel_error", period_error, 1e-4, "")],
-    );
+    let mut report = CrossvalReport::compute("tier3_orbital_period_accuracy", &[], &[]);
+    report.add_extra("period_rel_error", period_error, 1e-4, "");
+    report.write();
 
     assert!(
         period_error < 1e-4,
@@ -218,13 +214,10 @@ fn tier3_position_return_after_one_orbit() {
     println!("  Position error: {:.6e} m", pos_error);
     println!("  Velocity error: {:.6e} m/s", vel_error);
 
-    crossval_report(
-        "tier3_position_return_after_one_orbit",
-        &[
-            ("position", pos_error, 100.0, "m"),
-            ("velocity", vel_error, 0.1, "m/s"),
-        ],
-    );
+    let mut report = CrossvalReport::compute("tier3_position_return_after_one_orbit", &[], &[]);
+    report.add_extra("position", pos_error, 100.0, "m");
+    report.add_extra("velocity", vel_error, 0.1, "m/s");
+    report.write();
 
     assert!(
         pos_error < 100.0,
@@ -284,13 +277,10 @@ fn tier3_eccentric_orbit_apse_distances() {
         r_apoapsis, max_r, apoapsis_error
     );
 
-    crossval_report(
-        "tier3_eccentric_orbit_apse_distances",
-        &[
-            ("periapsis_rel_error", periapsis_error, 1e-6, ""),
-            ("apoapsis_rel_error", apoapsis_error, 1e-6, ""),
-        ],
-    );
+    let mut report = CrossvalReport::compute("tier3_eccentric_orbit_apse_distances", &[], &[]);
+    report.add_extra("periapsis_rel_error", periapsis_error, 1e-6, "");
+    report.add_extra("apoapsis_rel_error", apoapsis_error, 1e-6, "");
+    report.write();
 
     assert!(
         periapsis_error < 1e-6,
@@ -366,10 +356,9 @@ fn tier3_iss_24h_propagation() {
     );
     println!("  Total steps:               {}", trajectory.len());
 
-    crossval_report(
-        "tier3_iss_24h_propagation",
-        &[("energy_drift", relative_energy_drift, 1e-7, "")],
-    );
+    let mut report = CrossvalReport::compute("tier3_iss_24h_propagation", &[], &[]);
+    report.add_extra("energy_drift", relative_energy_drift, 1e-7, "");
+    report.write();
 
     assert!(
         relative_energy_drift < 1e-7,

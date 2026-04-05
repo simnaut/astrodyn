@@ -8,7 +8,7 @@ use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry, SimBody,
     Simulation, SimulationTime, TranslationalState,
 };
-use jeod_test_data::crossval::crossval_report;
+use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
 /// JEOD SIM_dyncomp epoch constants (from the original SH test).
 const SH_TAI_UTC_S: f64 = 32.0;
@@ -85,45 +85,59 @@ fn run_sh_simulation_test(
 
     println!("Tier 3 (Simulation): {label}, {} points", trajectory.len());
 
-    let mut max_pos_error = 0.0_f64;
-    let mut max_vel_error = 0.0_f64;
-
+    // Log our propagated states
+    let mut our_states = Vec::with_capacity(trajectory.len() - 1);
     for record in &trajectory[1..] {
         sim.step_until(record.time);
-
         let body = sim.body(0);
+
         let pos_error = (body.trans.position - record.position).length();
         let vel_error = (body.trans.velocity - record.velocity).length();
-        max_pos_error = max_pos_error.max(pos_error);
-        max_vel_error = max_vel_error.max(vel_error);
-
         if (record.time % 3600.0).abs() < 30.1 {
             println!(
                 "  t={:6.0}s: pos_err={:10.4} m  vel_err={:.6} m/s",
                 record.time, pos_error, vel_error
             );
         }
+
+        our_states.push(StateLog {
+            time: record.time,
+            position: Some(body.trans.position),
+            velocity: Some(body.trans.velocity),
+            ..Default::default()
+        });
     }
 
-    println!("  Max position error: {:.6e} m", max_pos_error);
-    println!("  Max velocity error: {:.6e} m/s", max_vel_error);
+    // Reference states from JEOD CSV
+    let ref_states: Vec<StateLog> = trajectory[1..]
+        .iter()
+        .map(|r| StateLog {
+            time: r.time,
+            position: Some(r.position),
+            velocity: Some(r.velocity),
+            ..Default::default()
+        })
+        .collect();
 
-    crossval_report(
-        test_name,
-        &[
-            ("position", max_pos_error, 0.5, "m"),
-            ("velocity", max_vel_error, 0.001, "m/s"),
-        ],
-    );
+    // Post-process: compute errors
+    let mut report = CrossvalReport::compute(test_name, &our_states, &ref_states);
+    report.position_tol = Some([0.5; 3]);
+    report.velocity_tol = Some([0.001; 3]);
+    report.write();
+
+    let max_pos = report.max_position_error();
+    let max_vel = report.max_velocity_error();
+    println!("  Max position error: {max_pos:.6e} m");
+    println!("  Max velocity error: {max_vel:.6e} m/s");
 
     // Tolerances match existing tier3_spherical_harmonics test
     assert!(
-        max_pos_error < 0.5,
-        "{label}: position error {max_pos_error:.2} m exceeds 0.5 m"
+        max_pos < 0.5,
+        "{label}: position error {max_pos:.2} m exceeds 0.5 m"
     );
     assert!(
-        max_vel_error < 0.001,
-        "{label}: velocity error {max_vel_error:.6} m/s exceeds 0.001 m/s"
+        max_vel < 0.001,
+        "{label}: velocity error {max_vel:.6} m/s exceeds 0.001 m/s"
     );
 }
 

@@ -13,7 +13,7 @@
 use glam::DVec3;
 use jeod_ephemeris::{Ephemeris, EphemerisBody};
 use jeod_interactions::{compute_shadow_fraction, solar_flux_at_distance, SOLAR_RADIUS};
-use jeod_test_data::crossval::crossval_report;
+use jeod_test_data::crossval::CrossvalReport;
 use std::path::Path;
 
 const R_EARTH: f64 = 6_378_137.0; // WGS84 equatorial radius
@@ -155,10 +155,9 @@ fn tier3_shadow_annular_eclipse() {
 
     println!("  Max flux error: {:.6e} W/m²", max_flux_err);
 
-    crossval_report(
-        "tier3_shadow_annular_eclipse",
-        &[("flux", max_flux_err, f64::INFINITY, "W/m²")],
-    );
+    let mut report = CrossvalReport::compute("tier3_shadow_annular_eclipse", &[], &[]);
+    report.add_extra("flux", max_flux_err, f64::INFINITY, "W/m²");
+    report.write();
 
     // Flux magnitude should match within 1% for illuminated points
     for (i, rec) in records.iter().enumerate() {

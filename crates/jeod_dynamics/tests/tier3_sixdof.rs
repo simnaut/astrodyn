@@ -20,7 +20,7 @@ use jeod_dynamics::{
     rk4_sixdof_step, MassProperties, RotationalState, SixDofState, TranslationalState,
 };
 use jeod_math::JeodQuat;
-use jeod_test_data::crossval::crossval_report;
+use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::Path;
 
 const MU_EARTH: f64 = 3.986_004_415e14;
@@ -120,18 +120,6 @@ fn load_sixdof_trajectory(path: &Path) -> Vec<JeodSixDofRecord> {
     records
 }
 
-/// Compute angular error between two quaternions in radians.
-fn quaternion_angle_error(q1: &JeodQuat, q2: &JeodQuat) -> f64 {
-    // The angle between two quaternions: 2 * acos(|q1 · q2|)
-    let dot = (q1.scalar() * q2.scalar()
-        + q1.vector().x * q2.vector().x
-        + q1.vector().y * q2.vector().y
-        + q1.vector().z * q2.vector().z)
-        .abs();
-    // Clamp to avoid NaN from numerical noise
-    2.0 * dot.min(1.0).acos()
-}
-
 #[test]
 fn tier3_sixdof_attitude_from_run2() {
     let csv_path =
@@ -182,10 +170,19 @@ fn tier3_sixdof_attitude_from_run2() {
     let dt = 0.03125; // match JEOD's SIM_dyncomp integration rate (32 Hz)
     let mut current_time = init.time;
 
-    let mut max_pos_error = 0.0_f64;
-    let mut max_vel_error = 0.0_f64;
-    let mut max_quat_error = 0.0_f64;
-    let mut max_angvel_error = 0.0_f64;
+    let mut our_states = Vec::with_capacity(trajectory.len() - 1);
+    let ref_states: Vec<StateLog> = trajectory
+        .iter()
+        .skip(1)
+        .map(|r| StateLog {
+            time: r.time,
+            position: Some(r.position),
+            velocity: Some(r.velocity),
+            quaternion: Some(r.quaternion.to_glam()),
+            ang_vel: Some(r.ang_vel),
+            ..Default::default()
+        })
+        .collect();
 
     for record in trajectory.iter().skip(1) {
         // Integrate forward to this record's time
@@ -219,18 +216,28 @@ fn tier3_sixdof_attitude_from_run2() {
             current_time += remainder;
         }
 
-        // Compare translational state
-        let pos_error = (state.trans.position - record.position).length();
-        let vel_error = (state.trans.velocity - record.velocity).length();
-        max_pos_error = max_pos_error.max(pos_error);
-        max_vel_error = max_vel_error.max(vel_error);
-
-        // Compare rotational state
-        let quat_error = quaternion_angle_error(&state.rot.quaternion, &record.quaternion);
-        let angvel_error = (state.rot.ang_vel_body - record.ang_vel).length();
-        max_quat_error = max_quat_error.max(quat_error);
-        max_angvel_error = max_angvel_error.max(angvel_error);
+        our_states.push(StateLog {
+            time: record.time,
+            position: Some(state.trans.position),
+            velocity: Some(state.trans.velocity),
+            quaternion: Some(state.rot.quaternion.to_glam()),
+            ang_vel: Some(state.rot.ang_vel_body),
+            ..Default::default()
+        });
     }
+
+    let mut report =
+        CrossvalReport::compute("tier3_sixdof_attitude_from_run2", &our_states, &ref_states);
+    report.position_tol = Some([0.5; 3]);
+    report.velocity_tol = Some([0.001; 3]);
+    report.quat_angle_tol = Some(0.01);
+    report.ang_vel_tol = Some([1e-5; 3]);
+    report.write();
+
+    let max_pos_error = report.max_position_error();
+    let max_vel_error = report.max_velocity_error();
+    let max_quat_error = report.max_quat_angle_error();
+    let max_angvel_error = report.max_ang_vel_error();
 
     println!("=== Tier 3 6-DOF Cross-Validation (RUN_2) ===");
     println!(
@@ -246,16 +253,6 @@ fn tier3_sixdof_attitude_from_run2() {
         max_quat_error.to_degrees()
     );
     println!("Max ang_vel error:    {:.6e} rad/s", max_angvel_error);
-
-    crossval_report(
-        "tier3_sixdof_attitude_from_run2",
-        &[
-            ("position", max_pos_error, 0.5, "m"),
-            ("velocity", max_vel_error, 0.001, "m/s"),
-            ("quaternion", max_quat_error, 0.01, "rad"),
-            ("omega", max_angvel_error, 1e-5, "rad/s"),
-        ],
-    );
 
     // dt=0.03125s matches JEOD's SIM_dyncomp integration rate (32 Hz).
     // Residual comes from FP differences between our Rust/LLVM implementation

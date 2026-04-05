@@ -17,7 +17,7 @@ use glam::{DMat3, DVec3};
 use jeod_dynamics::{rk4_translational_step, TranslationalState};
 use jeod_frames::rotation_j2000;
 use jeod_gravity::coefficients;
-use jeod_test_data::crossval::crossval_report;
+use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use jeod_test_data::jeod_path;
 use jeod_time::epoch::{J2000_NOON_TJT, SECONDS_PER_DAY};
 use jeod_time::time_converter_ut1_gmst::ut1_to_gmst_days;
@@ -158,9 +158,18 @@ fn run_sh_trajectory_test(
     );
 
     let dt = 0.03125;
-    let mut max_pos_error = 0.0_f64;
-    let mut max_vel_error = 0.0_f64;
     let mut current_time = 0.0_f64;
+
+    let mut our_states = Vec::with_capacity(trajectory.len() - 1);
+    let ref_states: Vec<StateLog> = trajectory[1..]
+        .iter()
+        .map(|r| StateLog {
+            time: r.time,
+            position: Some(r.position),
+            velocity: Some(r.velocity),
+            ..Default::default()
+        })
+        .collect();
 
     for jeod_record in &trajectory[1..] {
         while current_time + dt <= jeod_record.time + 0.001 {
@@ -175,10 +184,15 @@ fn run_sh_trajectory_test(
             current_time += remainder;
         }
 
+        our_states.push(StateLog {
+            time: jeod_record.time,
+            position: Some(state.position),
+            velocity: Some(state.velocity),
+            ..Default::default()
+        });
+
         let pos_error = (state.position - jeod_record.position).length();
         let vel_error = (state.velocity - jeod_record.velocity).length();
-        max_pos_error = max_pos_error.max(pos_error);
-        max_vel_error = max_vel_error.max(vel_error);
 
         if (jeod_record.time % 3600.0).abs() < 30.1 {
             eprintln!(
@@ -191,17 +205,17 @@ fn run_sh_trajectory_test(
         }
     }
 
+    let mut report = CrossvalReport::compute(test_name, &our_states, &ref_states);
+    report.position_tol = Some([0.5; 3]);
+    report.velocity_tol = Some([0.001; 3]);
+    report.write();
+
+    let max_pos_error = report.max_position_error();
+    let max_vel_error = report.max_velocity_error();
+
     eprintln!();
     eprintln!("  Max position error: {:.6e} m", max_pos_error);
     eprintln!("  Max velocity error: {:.6e} m/s", max_vel_error);
-
-    crossval_report(
-        test_name,
-        &[
-            ("position", max_pos_error, 0.5, "m"),
-            ("velocity", max_vel_error, 0.001, "m/s"),
-        ],
-    );
 
     // dt=0.03125s matches JEOD's SIM_dyncomp integration rate (32 Hz).
     // Residual comes from floating-point differences in RNP and gravity

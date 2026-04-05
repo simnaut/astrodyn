@@ -15,7 +15,7 @@ use jeod_sim::{
     Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel, GravitySource,
     GravitySourceEntry, SimBody, Simulation, SimulationTime, TranslationalState,
 };
-use jeod_test_data::crossval::crossval_report;
+use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::Path;
 
 #[test]
@@ -87,7 +87,8 @@ fn tier3_simulation_solar_beta() {
         trajectory.len()
     );
 
-    let mut max_pos_err = 0.0_f64;
+    let mut our_states = Vec::with_capacity(trajectory.len() - 1);
+    let mut ref_states = Vec::with_capacity(trajectory.len() - 1);
 
     for record in &trajectory[1..] {
         // Update Sun position from ephemeris
@@ -100,8 +101,6 @@ fn tier3_simulation_solar_beta() {
         sim.step_until(record.time);
 
         let body = sim.body(0);
-        let pos_err = (body.trans.position - record.position).length();
-        max_pos_err = max_pos_err.max(pos_err);
 
         let beta = body.solar_beta.unwrap_or_else(|| {
             panic!("Simulation did not compute solar beta at t={}", record.time)
@@ -120,7 +119,21 @@ fn tier3_simulation_solar_beta() {
             expected
         );
 
+        our_states.push(StateLog {
+            time: record.time,
+            position: Some(body.trans.position),
+            velocity: Some(body.trans.velocity),
+            ..Default::default()
+        });
+        ref_states.push(StateLog {
+            time: record.time,
+            position: Some(record.position),
+            velocity: Some(record.velocity),
+            ..Default::default()
+        });
+
         if (record.time % 3600.0).abs() < 30.1 {
+            let pos_err = (body.trans.position - record.position).length();
             println!(
                 "  t={:6.0}s: pos_err={:.4} m  beta={:.4} deg ({:.6} rad)",
                 record.time,
@@ -131,12 +144,18 @@ fn tier3_simulation_solar_beta() {
         }
     }
 
+    let max_pos_err = our_states
+        .iter()
+        .zip(ref_states.iter())
+        .map(|(a, b)| (a.position.unwrap() - b.position.unwrap()).length())
+        .fold(0.0_f64, f64::max);
+
     println!("  Max position error: {:.6e} m", max_pos_err);
 
-    crossval_report(
-        "tier3_simulation_solar_beta",
-        &[("position", max_pos_err, 0.5, "m")],
-    );
+    let mut report =
+        CrossvalReport::compute("tier3_simulation_solar_beta", &our_states, &ref_states);
+    report.position_tol = Some([0.5; 3]);
+    report.write();
 
     // Position tracks JEOD RUN_2 trajectory
     assert!(

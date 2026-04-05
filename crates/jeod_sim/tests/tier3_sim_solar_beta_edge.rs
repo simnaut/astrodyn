@@ -15,7 +15,7 @@ mod sim_test_helpers;
 use sim_test_helpers::*;
 
 use jeod_sim::{Ephemeris, EphemerisBody};
-use jeod_test_data::crossval::crossval_report;
+use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::Path;
 
 fn run_solar_beta_test(csv_filename: &str, label: &str, test_name: &str) {
@@ -51,6 +51,17 @@ fn run_solar_beta_test(csv_filename: &str, label: &str, test_name: &str) {
     let j2000_jd = 2_451_545.0;
     let mut max_beta_err = 0.0_f64;
 
+    // These tests don't propagate state -- they compute beta from each CSV record's
+    // position/velocity. Use empty state logs and report beta as an extra.
+    let our_states: Vec<StateLog> = records
+        .iter()
+        .map(|r| StateLog {
+            time: r.time,
+            ..Default::default()
+        })
+        .collect();
+    let ref_states: Vec<StateLog> = our_states.clone();
+
     for record in &records {
         // Sun position from DE421 at this epoch
         let tdb_jd = j2000_jd + record.time / 86_400.0;
@@ -77,7 +88,6 @@ fn run_solar_beta_test(csv_filename: &str, label: &str, test_name: &str) {
 
     println!("  Max beta error: {:.6e} rad", max_beta_err);
 
-    crossval_report(test_name, &[("beta", max_beta_err, f64::INFINITY, "rad")]);
     // Beta error comes from Sun position differences between our DE421 (via Anise)
     // and JEOD's native DE421 reader — different Chebyshev evaluation paths produce
     // ~10 arcsecond directional offsets that grow roughly linearly with duration at
@@ -85,6 +95,11 @@ fn run_solar_beta_test(csv_filename: &str, label: &str, test_name: &str) {
     // ~1.5e-3 rad, plus the 1e-4 rad base tolerance below.
     let duration_days = records.last().unwrap().time / 86_400.0;
     let tol = 1e-4 + duration_days * 1.5e-4; // base + ~1.5e-4 rad/day ephemeris drift
+
+    let mut report = CrossvalReport::compute(test_name, &our_states, &ref_states);
+    report.add_extra("beta", max_beta_err, tol, "rad");
+    report.write();
+
     assert!(
         max_beta_err < tol,
         "{label}: beta error {max_beta_err:.3e} rad exceeds {tol:.3e} rad \

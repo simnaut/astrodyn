@@ -9,7 +9,7 @@ use jeod_sim::{
     GravityControls, GravityModel, GravitySource, GravitySourceEntry, MassProperties,
     MetAtmosphere, RotationalState, SimBody, Simulation, SimulationTime, TranslationalState,
 };
-use jeod_test_data::crossval::crossval_report;
+use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
 /// Epoch for SIM_dyncomp: midnight 2007-11-20 UTC.
 /// MJD = 54424.0, TJT = MJD - 40000 = 14424.0.
@@ -112,57 +112,68 @@ fn tier3_simulation_run6b_drag() {
         trajectory.len()
     );
 
-    let mut max_pos_error = 0.0_f64;
-    let mut max_vel_error = 0.0_f64;
-    let mut max_quat_error = 0.0_f64;
-
+    // Log our propagated states
+    let mut our_states = Vec::with_capacity(trajectory.len() - 1);
     for record in &trajectory[1..] {
         sim.step_until(record.time);
-
         let body = sim.body(0);
+        let rot = body.rot.as_ref().unwrap();
+
         let pos_error = (body.trans.position - record.position).length();
         let vel_error = (body.trans.velocity - record.velocity).length();
-        max_pos_error = max_pos_error.max(pos_error);
-        max_vel_error = max_vel_error.max(vel_error);
-
-        if let Some(ref rot) = body.rot {
-            let quat_error = quaternion_angle_error(&rot.quaternion, &record.quaternion);
-            max_quat_error = max_quat_error.max(quat_error);
-        }
-
         if (record.time % 3600.0).abs() < 30.1 {
             println!(
                 "  t={:6.0}s: pos_err={:10.4} m  vel_err={:.6} m/s",
                 record.time, pos_error, vel_error
             );
         }
+
+        our_states.push(StateLog {
+            time: record.time,
+            position: Some(body.trans.position),
+            velocity: Some(body.trans.velocity),
+            quaternion: Some(rot.quaternion.to_glam()),
+            ..Default::default()
+        });
     }
 
-    println!("  Max position error:  {:.6e} m", max_pos_error);
-    println!("  Max velocity error:  {:.6e} m/s", max_vel_error);
-    println!("  Max quaternion error: {:.6e} rad", max_quat_error);
+    // Reference states from JEOD CSV
+    let ref_states: Vec<StateLog> = trajectory[1..]
+        .iter()
+        .map(|r| StateLog {
+            time: r.time,
+            position: Some(r.position),
+            velocity: Some(r.velocity),
+            quaternion: Some(r.quaternion.to_glam()),
+            ..Default::default()
+        })
+        .collect();
 
-    crossval_report(
-        "tier3_simulation_run6b_drag",
-        &[
-            ("position", max_pos_error, 2.0, "m"),
-            ("velocity", max_vel_error, 0.005, "m/s"),
-            ("quaternion", max_quat_error, 0.01, "rad"),
-        ],
-    );
+    // Post-process: compute errors
+    let mut report =
+        CrossvalReport::compute("tier3_simulation_run6b_drag", &our_states, &ref_states);
+    report.position_tol = Some([2.0; 3]);
+    report.velocity_tol = Some([0.005; 3]);
+    report.quat_angle_tol = Some(0.01);
+    report.write();
+
+    let max_pos = report.max_position_error();
+    let max_vel = report.max_velocity_error();
+    let max_quat = report.max_quat_angle_error();
+
+    println!("  Max position error:  {max_pos:.6e} m");
+    println!("  Max velocity error:  {max_vel:.6e} m/s");
+    println!("  Max quaternion error: {max_quat:.6e} rad");
 
     // Tolerances match existing tier3_drag_trajectory test
+    assert!(max_pos < 2.0, "Position error {max_pos:.2} m exceeds 2.0 m");
     assert!(
-        max_pos_error < 2.0,
-        "Position error {max_pos_error:.2} m exceeds 2.0 m"
+        max_vel < 0.005,
+        "Velocity error {max_vel:.6} m/s exceeds 0.005 m/s"
     );
     assert!(
-        max_vel_error < 0.005,
-        "Velocity error {max_vel_error:.6} m/s exceeds 0.005 m/s"
-    );
-    assert!(
-        max_quat_error < 0.01,
-        "Quaternion error {max_quat_error:.2e} rad exceeds 0.01 rad"
+        max_quat < 0.01,
+        "Quaternion error {max_quat:.2e} rad exceeds 0.01 rad"
     );
 }
 
@@ -261,55 +272,72 @@ fn tier3_simulation_run6a_const_density_drag() {
         trajectory.len()
     );
 
-    let mut max_pos_error = 0.0_f64;
-    let mut max_vel_error = 0.0_f64;
-    let mut max_quat_error = 0.0_f64;
-
+    // Log our propagated states
+    let mut our_states = Vec::with_capacity(trajectory.len() - 1);
     for record in &trajectory[1..] {
         sim.step_until(record.time);
-
         let body = sim.body(0);
+        let rot = body.rot.as_ref().unwrap();
+
         let pos_error = (body.trans.position - record.position).length();
         let vel_error = (body.trans.velocity - record.velocity).length();
-        max_pos_error = max_pos_error.max(pos_error);
-        max_vel_error = max_vel_error.max(vel_error);
-
-        if let Some(ref rot) = body.rot {
-            let quat_error = quaternion_angle_error(&rot.quaternion, &record.quaternion);
-            max_quat_error = max_quat_error.max(quat_error);
-        }
-
         if (record.time % 7200.0).abs() < 30.1 {
             println!(
                 "  t={:6.0}s: pos_err={:.3e} m  vel_err={:.3e} m/s",
                 record.time, pos_error, vel_error
             );
         }
+
+        our_states.push(StateLog {
+            time: record.time,
+            position: Some(body.trans.position),
+            velocity: Some(body.trans.velocity),
+            quaternion: Some(rot.quaternion.to_glam()),
+            ..Default::default()
+        });
     }
 
-    println!("  Max position error:  {:.6e} m", max_pos_error);
-    println!("  Max velocity error:  {:.6e} m/s", max_vel_error);
-    println!("  Max quaternion error: {:.6e} rad", max_quat_error);
+    // Reference states from JEOD CSV
+    let ref_states: Vec<StateLog> = trajectory[1..]
+        .iter()
+        .map(|r| StateLog {
+            time: r.time,
+            position: Some(r.position),
+            velocity: Some(r.velocity),
+            quaternion: Some(r.quaternion.to_glam()),
+            ..Default::default()
+        })
+        .collect();
 
-    crossval_report(
+    // Post-process: compute errors
+    let mut report = CrossvalReport::compute(
         "tier3_simulation_run6a_const_density_drag",
-        &[
-            ("position", max_pos_error, 0.5, "m"),
-            ("velocity", max_vel_error, 0.001, "m/s"),
-            ("quaternion", max_quat_error, 0.01, "rad"),
-        ],
+        &our_states,
+        &ref_states,
     );
+    report.position_tol = Some([0.5; 3]);
+    report.velocity_tol = Some([0.001; 3]);
+    report.quat_angle_tol = Some(0.01);
+    report.write();
+
+    let max_pos = report.max_position_error();
+    let max_vel = report.max_velocity_error();
+    let max_quat = report.max_quat_angle_error();
+
+    println!("  Max position error:  {max_pos:.6e} m");
+    println!("  Max velocity error:  {max_vel:.6e} m/s");
+    println!("  Max quaternion error: {max_quat:.6e} rad");
 
     assert!(
-        max_pos_error < 0.5,
-        "RUN_6A: position error {max_pos_error:.3e} m exceeds 0.5 m"
+        max_pos < 0.5,
+        "RUN_6A: position error {max_pos:.3e} m exceeds 0.5 m"
     );
     assert!(
-        max_vel_error < 0.001,
-        "RUN_6A: velocity error {max_vel_error:.3e} m/s exceeds 0.001 m/s"
+        max_vel < 0.001,
+        "RUN_6A: velocity error {max_vel:.3e} m/s exceeds 0.001 m/s"
     );
     assert!(
-        max_quat_error < 0.01,
-        "RUN_6A: quaternion error {max_quat_error:.2e} rad exceeds 0.01 rad"
+        max_quat < 0.01,
+        "RUN_6A: quaternion error {max_quat:.2e} rad exceeds 0.01 rad"
     );
 }

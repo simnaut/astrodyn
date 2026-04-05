@@ -13,7 +13,7 @@ use glam::{DMat3, DVec3};
 use jeod_frames::nutation_j2000::nutation;
 use jeod_frames::precession_j2000::precession_matrix;
 use jeod_frames::rotation_j2000::{compute_t_parent_this, gast_rotation_matrix};
-use jeod_test_data::crossval::crossval_report;
+use jeod_test_data::crossval::CrossvalReport;
 use jeod_time::epoch::{J2000_NOON_TJT, SECONDS_PER_DAY, TAI_TT_OFFSET};
 use jeod_time::time_converter_ut1_gmst::ut1_to_gmst_days;
 use std::path::Path;
@@ -322,17 +322,14 @@ fn tier3_rnp_component_comparison() {
         max_equa_err,
     );
 
-    crossval_report(
-        "tier3_rnp_component_comparison",
-        &[
-            ("precession", max_p_err, 1e-10, ""),
-            ("nutation", max_n_err, 1e-10, ""),
-            ("gast_rotation", max_r_err, 1e-10, ""),
-            ("composed_T", max_t_err, 1e-10, ""),
-            ("equa_equinoxes", max_equa_err, 1e-10, "s"),
-            ("theta_gast", max_theta_gast_err, 1e-10, "rad"),
-        ],
-    );
+    let mut report = CrossvalReport::compute("tier3_rnp_component_comparison", &[], &[]);
+    report.add_extra("precession", max_p_err, 1e-10, "");
+    report.add_extra("nutation", max_n_err, 1e-10, "");
+    report.add_extra("gast_rotation", max_r_err, 1e-10, "");
+    report.add_extra("composed_T", max_t_err, 1e-10, "");
+    report.add_extra("equa_equinoxes", max_equa_err, 1e-10, "s");
+    report.add_extra("theta_gast", max_theta_gast_err, 1e-10, "rad");
+    report.write();
 
     eprintln!("  All RNP components match JEOD within 1e-10 element-wise.");
 }
