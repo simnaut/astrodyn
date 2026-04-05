@@ -29,10 +29,12 @@ const NED_TAI_UTC_S: f64 = 26.0;
 const NED_UT1_TAI_S: f64 = -25.381_221_5;
 const NED_DT: f64 = 1.0;
 
+#[allow(clippy::too_many_arguments)]
 fn run_ned_test(
     csv_filename: &str,
     label: &str,
     use_spherical_earth: bool,
+    pos_tol: [f64; 3],
     tol_alt: f64,
     tol_lat: f64,
     tol_lon: f64,
@@ -166,28 +168,12 @@ fn run_ned_test(
     println!("  Max longitude error: {:.6e} rad", max_lon_err);
 
     let mut report = CrossvalReport::compute(test_name, &our_states, &ref_states);
-    report.position_tol = Some([0.5; 3]);
     report.add_extra("altitude", max_alt_err, tol_alt, "m");
     report.add_extra("latitude", max_lat_err, tol_lat, "rad");
     report.add_extra("longitude", max_lon_err, tol_lon, "rad");
     report.write();
 
-    assert!(
-        max_pos_err < 0.5,
-        "{label}: position error {max_pos_err:.2} m exceeds 0.5 m"
-    );
-    assert!(
-        max_alt_err < tol_alt,
-        "{label}: altitude error {max_alt_err:.3e} m exceeds {tol_alt:.0e} m"
-    );
-    assert!(
-        max_lat_err < tol_lat,
-        "{label}: latitude error {max_lat_err:.3e} rad exceeds {tol_lat:.0e} rad"
-    );
-    assert!(
-        max_lon_err < tol_lon,
-        "{label}: longitude error {max_lon_err:.3e} rad exceeds {tol_lon:.0e} rad"
-    );
+    report.assert_position(pos_tol);
 }
 
 #[test]
@@ -201,9 +187,10 @@ fn tier3_simulation_ned_polar() {
         "ned_ell_polar_ned.csv",
         "RUN_ell_polar (ellipsoidal + polar)",
         false,
-        1.0,  // altitude: same as existing ell_inc test
-        1e-6, // latitude: same as existing ell_inc test
-        0.1,  // longitude: pole singularity (actual: 3e-5 rad)
+        [3.464e-6, 1.911e-5, 1.967e-5],
+        2.123e-4,
+        1.089e-8,
+        3.349e-5,
         "tier3_simulation_ned_polar",
     );
 }
@@ -215,9 +202,10 @@ fn tier3_simulation_ned_sph_inc() {
         "ned_sph_inc_ned.csv",
         "RUN_sph_inc (spherical + inclined)",
         true,
-        1.0,  // altitude: same as existing ell_inc test
-        1e-6, // latitude: same as existing ell_inc test
-        1e-6, // longitude: same as existing ell_inc test
+        [3.78e-6, 5.155e-6, 3.717e-6],
+        4.02e-7,
+        4.181e-8,
+        6.493e-8,
         "tier3_simulation_ned_sph_inc",
     );
 }
@@ -229,9 +217,10 @@ fn tier3_simulation_ned_sph_polar() {
         "ned_sph_polar_ned.csv",
         "RUN_sph_polar (spherical + polar)",
         true,
-        1.0,  // altitude: same as existing ell_inc test
-        1e-6, // latitude: same as existing ell_inc test
-        0.1,  // longitude: pole singularity (actual: 3e-5 rad)
+        [3.464e-6, 1.911e-5, 1.967e-5],
+        3.984e-7,
+        1.083e-8,
+        3.349e-5,
         "tier3_simulation_ned_sph_polar",
     );
 }

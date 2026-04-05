@@ -21,6 +21,8 @@ fn run_sh_simulation_test(
     order: usize,
     label: &str,
     test_name: &str,
+    pos_tol: [f64; 3],
+    vel_tol: [f64; 3],
 ) {
     let jeod_root = jeod_test_data::jeod_path();
     assert!(
@@ -124,25 +126,20 @@ fn run_sh_simulation_test(
         .collect();
 
     // Post-process: compute errors
-    let mut report = CrossvalReport::compute(test_name, &our_states, &ref_states);
-    report.position_tol = Some([0.5; 3]);
-    report.velocity_tol = Some([0.001; 3]);
+    let report = CrossvalReport::compute(test_name, &our_states, &ref_states);
     report.write();
 
-    let max_pos = report.max_position_component();
-    let max_vel = report.max_velocity_component();
-    println!("  Max position error: {max_pos:.6e} m");
-    println!("  Max velocity error: {max_vel:.6e} m/s");
+    println!(
+        "  Max position error: {:.6e} m",
+        report.max_position_component()
+    );
+    println!(
+        "  Max velocity error: {:.6e} m/s",
+        report.max_velocity_component()
+    );
 
-    // Tolerances match existing tier3_spherical_harmonics test
-    assert!(
-        max_pos < 0.5,
-        "{label}: position error {max_pos:.2} m exceeds 0.5 m"
-    );
-    assert!(
-        max_vel < 0.001,
-        "{label}: velocity error {max_vel:.6} m/s exceeds 0.001 m/s"
-    );
+    report.assert_position(pos_tol);
+    report.assert_velocity(vel_tol);
 }
 
 #[test]
@@ -153,6 +150,8 @@ fn tier3_simulation_run3a_sh4x4() {
         4,
         "RUN_3A (4x4 SH + RNP)",
         "tier3_simulation_run3a_sh4x4",
+        [5.3e-2, 1.344e-1, 1.026e-1],
+        [6.151e-5, 1.246e-4, 1.24e-4],
     );
 }
 
@@ -164,5 +163,7 @@ fn tier3_simulation_run3b_sh8x8() {
         8,
         "RUN_3B (8x8 SH + RNP)",
         "tier3_simulation_run3b_sh8x8",
+        [1.325e-1, 2.3e-1, 1.646e-1],
+        [1.478e-4, 2.329e-4, 1.892e-4],
     );
 }

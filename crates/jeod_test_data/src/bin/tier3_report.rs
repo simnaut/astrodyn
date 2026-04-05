@@ -3,8 +3,9 @@
 //! Usage:
 //!   cargo run -p jeod_test_data --bin tier3_report
 //!
-//! Reads JSON files from `target/tier3_crossval/` (written by `CrossvalReport`)
-//! during `cargo test`) and writes `target/tier3_report.md`.
+//! Reads JSON files from `target/tier3_crossval/` (written by `CrossvalReport`
+//! during `cargo test`) and extracts tolerances from test source files.
+//! Writes `target/tier3_report.md`.
 
 use std::fs;
 use std::io::Write;
@@ -31,15 +32,16 @@ struct TestResult {
     quat_angle: Option<f64>,
     ang_vel: Option<[f64; 3]>,
     ang_accel: Option<[f64; 3]>,
+    // Tolerances extracted from test source files
     position_tol: Option<[f64; 3]>,
     velocity_tol: Option<[f64; 3]>,
-    acceleration_tol: Option<[f64; 3]>,
-    quaternion_tol: Option<[f64; 4]>,
     quat_angle_tol: Option<f64>,
     ang_vel_tol: Option<[f64; 3]>,
-    ang_accel_tol: Option<[f64; 3]>,
+    // Extras: (var, val, tol, unit) — tol from source or add_extra arg
     extras: Vec<(String, f64, Option<f64>, String)>,
 }
+
+// ── JSON parsing ──
 
 fn parse_json(s: &str) -> Option<TestResult> {
     let test = extract_string(s, "test")?;
@@ -52,13 +54,10 @@ fn parse_json(s: &str) -> Option<TestResult> {
         quat_angle: parse_f64(s, "quat_angle"),
         ang_vel: parse_vec3(s, "ang_vel"),
         ang_accel: parse_vec3(s, "ang_accel"),
-        position_tol: parse_vec3(s, "position_tol"),
-        velocity_tol: parse_vec3(s, "velocity_tol"),
-        acceleration_tol: parse_vec3(s, "acceleration_tol"),
-        quaternion_tol: parse_vec4(s, "quaternion_tol"),
-        quat_angle_tol: parse_f64(s, "quat_angle_tol"),
-        ang_vel_tol: parse_vec3(s, "ang_vel_tol"),
-        ang_accel_tol: parse_vec3(s, "ang_accel_tol"),
+        position_tol: None,
+        velocity_tol: None,
+        quat_angle_tol: None,
+        ang_vel_tol: None,
         extras: parse_extras(s),
     })
 }
@@ -160,6 +159,149 @@ fn parse_extras(s: &str) -> Vec<(String, f64, Option<f64>, String)> {
     result
 }
 
+// ── Source tolerance extraction ──
+
+/// Parse a float from a Rust source fragment (handles scientific notation).
+fn parse_rust_float(s: &str) -> Option<f64> {
+    let s = s.trim().trim_end_matches([',', ')', ']']);
+    s.parse().ok()
+}
+
+/// Extract an [f64; 3] array literal from a string like `[1.37e-6, 2.154e-6, 1.826e-6]`
+/// or `[1e-15; 3]`.
+fn extract_array3(s: &str) -> Option<[f64; 3]> {
+    let start = s.find('[')?;
+    let end = s[start..].find(']')? + start;
+    let inner = s[start + 1..end].trim();
+    // Check for [val; 3] syntax
+    if let Some(semi) = inner.find(';') {
+        let val = parse_rust_float(inner[..semi].trim())?;
+        return Some([val; 3]);
+    }
+    let parts: Vec<&str> = inner.split(',').collect();
+    if parts.len() == 3 {
+        let a = parse_rust_float(parts[0])?;
+        let b = parse_rust_float(parts[1])?;
+        let c = parse_rust_float(parts[2])?;
+        Some([a, b, c])
+    } else {
+        None
+    }
+}
+
+/// Extract a scalar float from the first argument after the opening paren,
+/// e.g. from `assert_quat_angle(4.426e-8)`.
+fn extract_scalar_arg(s: &str) -> Option<f64> {
+    let start = s.find('(')?;
+    let end = s[start..].find(')')? + start;
+    parse_rust_float(s[start + 1..end].trim())
+}
+
+/// For a given test name, search source files for assert_position/velocity/etc.
+/// calls and extract their tolerance values.
+fn extract_source_tolerances(
+    test_name: &str,
+    source_contents: &[(String, String)],
+) -> SourceTolerances {
+    let mut tols = SourceTolerances::default();
+
+    // Find lines near the test name string literal
+    for (path, content) in source_contents {
+        // Find the test name in the source
+        let name_pattern = format!("\"{}\"", test_name);
+        let Some(name_pos) = content.find(&name_pattern) else {
+            continue;
+        };
+
+        // Look in a window around the test name (the function body)
+        // Go back to find function start and forward to find function end
+        let search_start = name_pos.saturating_sub(3000);
+        let search_end = (name_pos + 5000).min(content.len());
+        let window = &content[search_start..search_end];
+
+        // Extract assert_position([...])
+        if let Some(pos) = window.find("assert_position(") {
+            let rest = &window[pos..];
+            tols.position = extract_array3(rest);
+        }
+
+        // Extract assert_velocity([...])
+        if let Some(pos) = window.find("assert_velocity(") {
+            let rest = &window[pos..];
+            tols.velocity = extract_array3(rest);
+        }
+
+        // Extract assert_quat_angle(val)
+        if let Some(pos) = window.find("assert_quat_angle(") {
+            let rest = &window[pos..];
+            tols.quat_angle = extract_scalar_arg(rest);
+        }
+
+        // Extract assert_ang_vel([...])
+        if let Some(pos) = window.find("assert_ang_vel(") {
+            let rest = &window[pos..];
+            tols.ang_vel = extract_array3(rest);
+        }
+
+        if tols.position.is_some() || tols.velocity.is_some() {
+            tols.source_file = Some(path.clone());
+            break;
+        }
+    }
+
+    // If assert_* calls use variable names (shared helper pattern),
+    // try to find the call site that passes the test name and extract
+    // array literals from nearby arguments.
+    if tols.position.is_none() {
+        for (_path, content) in source_contents {
+            let name_pattern = format!("\"{}\"", test_name);
+            let Some(name_pos) = content.find(&name_pattern) else {
+                continue;
+            };
+            // Search backwards from the test name for array literals in the same call
+            let call_start = name_pos.saturating_sub(500);
+            let call_end = (name_pos + 200).min(content.len());
+            let call_window = &content[call_start..call_end];
+
+            // Look for array literals that might be tolerance arguments
+            let mut arrays: Vec<[f64; 3]> = Vec::new();
+            let mut search_pos = 0;
+            while let Some(bracket) = call_window[search_pos..].find('[') {
+                let abs_pos = search_pos + bracket;
+                if let Some(arr) = extract_array3(&call_window[abs_pos..]) {
+                    arrays.push(arr);
+                }
+                search_pos = abs_pos + 1;
+            }
+
+            // Heuristic: the last two arrays before the test name are likely pos_tol, vel_tol
+            if arrays.len() >= 2 {
+                tols.position = Some(arrays[arrays.len() - 2]);
+                tols.velocity = Some(arrays[arrays.len() - 1]);
+            } else if arrays.len() == 1 {
+                tols.position = Some(arrays[0]);
+            }
+
+            if tols.position.is_some() {
+                break;
+            }
+        }
+    }
+
+    tols
+}
+
+#[derive(Default)]
+struct SourceTolerances {
+    position: Option<[f64; 3]>,
+    velocity: Option<[f64; 3]>,
+    quat_angle: Option<f64>,
+    ang_vel: Option<[f64; 3]>,
+    source_file: Option<String>,
+}
+
+// ── Formatting ──
+
 fn f3(v: f64) -> String {
     format!("{v:.3e}")
 }
@@ -182,6 +324,7 @@ fn main() {
         std::process::exit(1);
     }
 
+    // Load JSON reports
     let mut entries: Vec<TestResult> = Vec::new();
     let mut files: Vec<_> = fs::read_dir(&data_dir)
         .expect("failed to read tier3_crossval directory")
@@ -205,6 +348,36 @@ fn main() {
     }
 
     entries.sort_by(|a, b| a.test.cmp(&b.test));
+
+    // Load test source files for tolerance extraction
+    let source_contents = load_test_sources(&root);
+    eprintln!(
+        "Loaded {} test source files for tolerance extraction",
+        source_contents.len()
+    );
+
+    // Extract tolerances from source for each test
+    let mut missing_tols = 0;
+    for entry in &mut entries {
+        let tols = extract_source_tolerances(&entry.test, &source_contents);
+        entry.position_tol = tols.position;
+        entry.velocity_tol = tols.velocity;
+        entry.quat_angle_tol = tols.quat_angle;
+        entry.ang_vel_tol = tols.ang_vel;
+
+        if entry.position.is_some() && entry.position_tol.is_none() {
+            missing_tols += 1;
+            eprintln!(
+                "  Warning: no position tolerance found in source for {}",
+                entry.test
+            );
+        }
+    }
+    if missing_tols > 0 {
+        eprintln!("{missing_tols} tests missing source-extracted tolerances");
+    }
+
+    // ── Generate report ──
 
     let mut out = fs::File::create(&output_path).expect("failed to create tier3_report.md");
 
@@ -269,23 +442,23 @@ fn main() {
     writeln!(out).unwrap();
     writeln!(
         out,
-        "| Test | pos_x (m) | pos_y (m) | pos_z (m) | vel_x (m/s) | vel_y (m/s) | vel_z (m/s) | acc_x (m/s²) | acc_y (m/s²) | acc_z (m/s²) |"
-    ).unwrap();
+        "| Test | pos_x (m) | pos_y (m) | pos_z (m) | vel_x (m/s) | vel_y (m/s) | vel_z (m/s) |"
+    )
+    .unwrap();
     writeln!(
         out,
-        "|------|-----------|-----------|-----------|-------------|-------------|-------------|--------------|--------------|--------------|"
-    ).unwrap();
+        "|------|-----------|-----------|-----------|-------------|-------------|-------------|"
+    )
+    .unwrap();
 
     for e in &entries {
-        let has_tol =
-            e.position_tol.is_some() || e.velocity_tol.is_some() || e.acceleration_tol.is_some();
+        let has_tol = e.position_tol.is_some() || e.velocity_tol.is_some();
         if !has_tol {
             continue;
         }
         let short = e.test.replace("tier3_", "");
         let p = e.position_tol.unwrap_or([f64::NAN; 3]);
         let v = e.velocity_tol.unwrap_or([f64::NAN; 3]);
-        let a = e.acceleration_tol.unwrap_or([f64::NAN; 3]);
         let fc = |val: f64| -> String {
             if val.is_nan() {
                 "—".to_string()
@@ -295,16 +468,13 @@ fn main() {
         };
         writeln!(
             out,
-            "| {short} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
+            "| {short} | {} | {} | {} | {} | {} | {} |",
             fc(p[0]),
             fc(p[1]),
             fc(p[2]),
             fc(v[0]),
             fc(v[1]),
             fc(v[2]),
-            fc(a[0]),
-            fc(a[1]),
-            fc(a[2]),
         )
         .unwrap();
     }
@@ -362,23 +532,22 @@ fn main() {
     writeln!(out).unwrap();
     writeln!(
         out,
-        "| Test | q_w | q_x | q_y | q_z | q_angle (rad) | ω_x (rad/s) | ω_y (rad/s) | ω_z (rad/s) | α_x (rad/s²) | α_y (rad/s²) | α_z (rad/s²) |"
-    ).unwrap();
+        "| Test | q_angle (rad) | ω_x (rad/s) | ω_y (rad/s) | ω_z (rad/s) |"
+    )
+    .unwrap();
     writeln!(
         out,
-        "|------|-----|-----|-----|-----|---------------|-------------|-------------|-------------|--------------|--------------|--------------|"
-    ).unwrap();
+        "|------|---------------|-------------|-------------|-------------|"
+    )
+    .unwrap();
 
     for e in &entries {
-        let has_tol =
-            e.quaternion_tol.is_some() || e.ang_vel_tol.is_some() || e.ang_accel_tol.is_some();
+        let has_tol = e.quat_angle_tol.is_some() || e.ang_vel_tol.is_some();
         if !has_tol {
             continue;
         }
         let short = e.test.replace("tier3_", "");
-        let q = e.quaternion_tol.unwrap_or([f64::NAN; 4]);
         let w = e.ang_vel_tol.unwrap_or([f64::NAN; 3]);
-        let a = e.ang_accel_tol.unwrap_or([f64::NAN; 3]);
         let fc = |val: f64| -> String {
             if val.is_nan() {
                 "—".to_string()
@@ -388,18 +557,11 @@ fn main() {
         };
         writeln!(
             out,
-            "| {short} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
-            fc(q[0]),
-            fc(q[1]),
-            fc(q[2]),
-            fc(q[3]),
+            "| {short} | {} | {} | {} | {} |",
             f3_opt(e.quat_angle_tol),
             fc(w[0]),
             fc(w[1]),
             fc(w[2]),
-            fc(a[0]),
-            fc(a[1]),
-            fc(a[2]),
         )
         .unwrap();
     }
@@ -469,4 +631,54 @@ fn main() {
     .unwrap();
 
     eprintln!("Wrote {}", output_path.display());
+}
+
+/// Load all tier3 test source files.
+fn load_test_sources(root: &std::path::Path) -> Vec<(String, String)> {
+    let mut sources = Vec::new();
+    let crates_dir = root.join("crates");
+
+    if let Ok(crate_entries) = fs::read_dir(&crates_dir) {
+        for crate_entry in crate_entries.flatten() {
+            let tests_dir = crate_entry.path().join("tests");
+            if !tests_dir.is_dir() {
+                continue;
+            }
+            if let Ok(test_files) = fs::read_dir(&tests_dir) {
+                for test_file in test_files.flatten() {
+                    let path = test_file.path();
+                    if path
+                        .file_name()
+                        .is_some_and(|n| n.to_string_lossy().starts_with("tier3_"))
+                        && path.extension().is_some_and(|e| e == "rs")
+                    {
+                        if let Ok(content) = fs::read_to_string(&path) {
+                            sources.push((path.display().to_string(), content));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Also check root tests/ directory
+    let root_tests = root.join("tests");
+    if root_tests.is_dir() {
+        if let Ok(test_files) = fs::read_dir(&root_tests) {
+            for test_file in test_files.flatten() {
+                let path = test_file.path();
+                if path
+                    .file_name()
+                    .is_some_and(|n| n.to_string_lossy().starts_with("tier3_"))
+                    && path.extension().is_some_and(|e| e == "rs")
+                {
+                    if let Ok(content) = fs::read_to_string(&path) {
+                        sources.push((path.display().to_string(), content));
+                    }
+                }
+            }
+        }
+    }
+
+    sources
 }

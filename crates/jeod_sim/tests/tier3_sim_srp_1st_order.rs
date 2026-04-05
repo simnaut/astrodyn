@@ -218,19 +218,12 @@ fn tier3_srp_1st_order_trajectory() {
         }
     }
 
-    let mut report =
+    let report =
         CrossvalReport::compute("tier3_srp_1st_order_trajectory", &our_states, &ref_states);
-    report.position_tol = Some([100.0; 3]);
     report.write();
 
     let max_pos_error = report.max_position_component();
     println!("  Max position error: {:.6e} m", max_pos_error);
 
-    // 1st-order thermal integrator differs from our RK4, so expect slightly
-    // more position error than the full SIM_3_ORBIT test (which gets <50 m).
-    // The thermal coupling difference grows over 23 days.
-    assert!(
-        max_pos_error < 100.0,
-        "Position error {max_pos_error:.2} m exceeds 100 m over ~23 days"
-    );
+    report.assert_position([8.296e1, 8.491e1, 3.686e1]);
 }

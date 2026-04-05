@@ -18,7 +18,7 @@ use jeod_sim::{Ephemeris, EphemerisBody};
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::Path;
 
-fn run_solar_beta_test(csv_filename: &str, label: &str, test_name: &str) {
+fn run_solar_beta_test(csv_filename: &str, label: &str, test_name: &str, beta_tol: f64) {
     let csv_path = test_data_path(csv_filename);
     assert!(
         csv_path.exists(),
@@ -88,22 +88,13 @@ fn run_solar_beta_test(csv_filename: &str, label: &str, test_name: &str) {
 
     println!("  Max beta error: {:.6e} rad", max_beta_err);
 
-    // Beta error comes from Sun position differences between our DE421 (via Anise)
-    // and JEOD's native DE421 reader — different Chebyshev evaluation paths produce
-    // ~10 arcsecond directional offsets that grow roughly linearly with duration at
-    // ~1.5e-4 rad/day. Over the 10-day SIM_SolarBeta scenario, that contributes
-    // ~1.5e-3 rad, plus the 1e-4 rad base tolerance below.
-    let duration_days = records.last().unwrap().time / 86_400.0;
-    let tol = 1e-4 + duration_days * 1.5e-4; // base + ~1.5e-4 rad/day ephemeris drift
-
     let mut report = CrossvalReport::compute(test_name, &our_states, &ref_states);
-    report.add_extra("beta", max_beta_err, tol, "rad");
+    report.add_extra("beta", max_beta_err, beta_tol, "rad");
     report.write();
 
     assert!(
-        max_beta_err < tol,
-        "{label}: beta error {max_beta_err:.3e} rad exceeds {tol:.3e} rad \
-         (duration={duration_days:.0} days)"
+        max_beta_err < beta_tol,
+        "{label}: beta error {max_beta_err:.3e} rad exceeds {beta_tol:.3e} rad"
     );
 }
 
@@ -113,6 +104,7 @@ fn tier3_simulation_solar_beta_equ() {
         "solarbeta_incl_0_solarbeta.csv",
         "RUN_incl_0 (equatorial)",
         "tier3_simulation_solar_beta_equ",
+        5.701e-4,
     );
 }
 
@@ -122,5 +114,6 @@ fn tier3_simulation_solar_beta_obliquity() {
         "solarbeta_incl_23_4_solarbeta.csv",
         "RUN_incl_23_4 (obliquity)",
         "tier3_simulation_solar_beta_obliquity",
+        1.269e-3,
     );
 }

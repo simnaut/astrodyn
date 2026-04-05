@@ -213,17 +213,12 @@ fn tier3_simulation_srp_flat_plate() {
         }
     }
 
-    let mut report =
+    let report =
         CrossvalReport::compute("tier3_simulation_srp_flat_plate", &our_states, &ref_states);
-    report.position_tol = Some([50.0; 3]);
     report.write();
 
     let max_pos_error = report.max_position_component();
     println!("  Max position error: {:.6e} m", max_pos_error);
 
-    // Tolerance matches existing tier3_srp_trajectory test
-    assert!(
-        max_pos_error < 50.0,
-        "Position error {max_pos_error:.2} m exceeds 50 m over ~23 days"
-    );
+    report.assert_position([8.564, 1.611e1, 7.002]);
 }

@@ -200,60 +200,46 @@ fn tier3_frame_propagation_composite_to_structure() {
         &our_states,
         &ref_states,
     );
-    report.position_tol = Some([1e-6; 3]);
-    report.velocity_tol = Some([1e-6; 3]);
-    report.ang_vel_tol = Some([1e-12; 3]);
-    report.add_extra("rev_T_matrix", max_t_error_rev, 1e-10, "");
-    report.add_extra("fwd_position", max_pos_error_fwd, 1e-6, "m");
-    report.add_extra("fwd_velocity", max_vel_error_fwd, 1e-6, "m/s");
-    report.add_extra("fwd_T_matrix", max_t_error_fwd, 1e-10, "");
-    report.add_extra("fwd_omega", max_angvel_error_fwd, 1e-12, "rad/s");
+    report.add_extra("rev_T_matrix", max_t_error_rev, 1.166e-15, "");
+    report.add_extra("fwd_position", max_pos_error_fwd, 2.031e-9, "m");
+    report.add_extra("fwd_velocity", max_vel_error_fwd, 1.969e-12, "m/s");
+    report.add_extra("fwd_T_matrix", max_t_error_fwd, 1.166e-15, "");
+    report.add_extra("fwd_omega", max_angvel_error_fwd, 1e-15, "rad/s");
     report.write();
 
     // These are pure coordinate transforms, no integration involved.
     // Differences should be near machine precision.
 
-    // Reverse: composite -> structure
+    // Reverse: composite -> structure (assert_* covers per-component max errors)
+    report.assert_position([9.779e-10, 1.956e-9, 9.779e-10]);
+    report.assert_velocity([1.91e-12, 9.55e-13, 9.55e-13]);
+    report.assert_ang_vel([1e-15; 3]);
+
     assert!(
-        max_pos_error_rev < 1e-6,
-        "Reverse position error {:.6e} m exceeds 1e-6 m threshold",
-        max_pos_error_rev
-    );
-    assert!(
-        max_vel_error_rev < 1e-6,
-        "Reverse velocity error {:.6e} m/s exceeds 1e-6 m/s threshold",
-        max_vel_error_rev
-    );
-    assert!(
-        max_t_error_rev < 1e-10,
-        "Reverse T matrix error {:.6e} exceeds 1e-10 threshold",
+        max_t_error_rev < 1.166e-15,
+        "Reverse T matrix error {:.6e} exceeds 1.166e-15 threshold",
         max_t_error_rev
-    );
-    assert!(
-        max_angvel_error_rev < 1e-12,
-        "Reverse angular velocity error {:.6e} rad/s exceeds 1e-12 rad/s threshold",
-        max_angvel_error_rev
     );
 
     // Forward: structure -> composite
     assert!(
-        max_pos_error_fwd < 1e-6,
-        "Forward position error {:.6e} m exceeds 1e-6 m threshold",
+        max_pos_error_fwd < 2.031e-9,
+        "Forward position error {:.6e} m exceeds 2.031e-9 m threshold",
         max_pos_error_fwd
     );
     assert!(
-        max_vel_error_fwd < 1e-6,
-        "Forward velocity error {:.6e} m/s exceeds 1e-6 m/s threshold",
+        max_vel_error_fwd < 1.969e-12,
+        "Forward velocity error {:.6e} m/s exceeds 1.969e-12 m/s threshold",
         max_vel_error_fwd
     );
     assert!(
-        max_t_error_fwd < 1e-10,
-        "Forward T matrix error {:.6e} exceeds 1e-10 threshold",
+        max_t_error_fwd < 1.166e-15,
+        "Forward T matrix error {:.6e} exceeds 1.166e-15 threshold",
         max_t_error_fwd
     );
     assert!(
-        max_angvel_error_fwd < 1e-12,
-        "Forward angular velocity error {:.6e} rad/s exceeds 1e-12 rad/s threshold",
+        max_angvel_error_fwd < 1e-15,
+        "Forward angular velocity error {:.6e} rad/s exceeds 1e-15 rad/s threshold",
         max_angvel_error_fwd
     );
 }
@@ -318,7 +304,7 @@ fn tier3_frame_propagation_core_equals_composite() {
         CrossvalReport::compute("tier3_frame_propagation_core_equals_composite", &[], &[]);
     report.add_extra("position", max_pos_diff, 1e-12, "m");
     report.add_extra("velocity", max_vel_diff, 1e-12, "m/s");
-    report.add_extra("T_matrix", max_t_diff, 1e-14, "");
+    report.add_extra("T_matrix", max_t_diff, 1.166e-15, "");
     report.add_extra("omega", max_angvel_diff, 1e-14, "rad/s");
     report.write();
 
@@ -334,7 +320,7 @@ fn tier3_frame_propagation_core_equals_composite() {
         max_vel_diff
     );
     assert!(
-        max_t_diff < 1e-14,
+        max_t_diff < 1.166e-15,
         "Core vs composite T diff {:.6e} -- single body should have zero offset",
         max_t_diff
     );

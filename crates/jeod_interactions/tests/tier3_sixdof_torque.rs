@@ -188,15 +188,11 @@ fn tier3_external_torque_sixdof_run9a() {
         }
     }
 
-    let mut report = CrossvalReport::compute(
+    let report = CrossvalReport::compute(
         "tier3_external_torque_sixdof_run9a",
         &our_states,
         &ref_states,
     );
-    report.position_tol = Some([0.5; 3]);
-    report.velocity_tol = Some([0.001; 3]);
-    report.quat_angle_tol = Some(0.01);
-    report.ang_vel_tol = Some([1e-5; 3]);
     report.write();
 
     let max_pos_error = report.max_position_component();
@@ -221,31 +217,8 @@ fn tier3_external_torque_sixdof_run9a() {
     );
     println!("Max ang_vel error:    {:.6e} rad/s", max_angvel_error);
 
-    // Translational thresholds match the existing RUN_2 6-DOF test.
-    // dt=0.03125s matches JEOD's SIM_dyncomp integration rate (32 Hz).
-    assert!(
-        max_pos_error < 0.5,
-        "Position error {:.2} m exceeds 0.5 m threshold",
-        max_pos_error
-    );
-    assert!(
-        max_vel_error < 0.001,
-        "Velocity error {:.6} m/s exceeds 0.001 m/s threshold",
-        max_vel_error
-    );
-
-    // Rotational thresholds: the external torque creates non-trivial angular
-    // motion over 8 hours. Quaternion error < 0.01 rad is the Phase 4 exit
-    // criterion. Angular velocity error should track closely given matching
-    // integration rates.
-    assert!(
-        max_quat_error < 0.01,
-        "Quaternion angular error {:.6e} rad exceeds 0.01 rad threshold",
-        max_quat_error
-    );
-    assert!(
-        max_angvel_error < 1e-5,
-        "Angular velocity error {:.6e} rad/s exceeds 1e-5 rad/s threshold",
-        max_angvel_error
-    );
+    report.assert_position([1.37e-6, 2.154e-6, 1.826e-6]);
+    report.assert_velocity([1.446e-9, 2.389e-9, 1.814e-9]);
+    report.assert_quat_angle(4.426e-8);
+    report.assert_ang_vel([3.558e-20, 4.447e-21, 7.116e-21]);
 }

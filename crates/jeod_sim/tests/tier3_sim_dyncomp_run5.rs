@@ -28,6 +28,9 @@ fn tier3_simulation_run5b_atmosphere_mean() {
         "dyncomp_run5b_state.csv",
         "RUN_5B (solar mean)",
         "tier3_simulation_run5b_atmosphere_mean",
+        [5.374e-7, 8.376e-7, 6.318e-7],
+        [5.179e-10, 9.311e-10, 7.361e-10],
+        4.426e-8,
     );
 }
 
@@ -39,6 +42,9 @@ fn tier3_simulation_run5c_atmosphere_max() {
         "dyncomp_run5c_state.csv",
         "RUN_5C (solar max)",
         "tier3_simulation_run5c_atmosphere_max",
+        [5.374e-7, 8.376e-7, 6.318e-7],
+        [5.179e-10, 9.311e-10, 7.361e-10],
+        4.426e-8,
     );
 }
 
@@ -47,7 +53,14 @@ fn tier3_simulation_run5c_atmosphere_max() {
 /// Both runs have identical physics (point-mass gravity, 6-DOF, drag off,
 /// gravity torque off) with elliptical orbit ICs. We propagate with the
 /// Simulation runner and compare against JEOD CSV.
-fn run_atmosphere_test(csv_filename: &str, label: &str, test_name: &str) {
+fn run_atmosphere_test(
+    csv_filename: &str,
+    label: &str,
+    test_name: &str,
+    pos_tol: [f64; 3],
+    vel_tol: [f64; 3],
+    quat_angle_tol: f64,
+) {
     let csv_path = test_data_path(csv_filename);
     assert!(
         csv_path.exists(),
@@ -151,30 +164,23 @@ fn run_atmosphere_test(csv_filename: &str, label: &str, test_name: &str) {
         .collect();
 
     // Post-process: compute errors
-    let mut report = CrossvalReport::compute(test_name, &our_states, &ref_states);
-    report.position_tol = Some([0.5; 3]);
-    report.velocity_tol = Some([0.001; 3]);
-    report.quat_angle_tol = Some(0.01);
+    let report = CrossvalReport::compute(test_name, &our_states, &ref_states);
     report.write();
 
-    let max_pos = report.max_position_component();
-    let max_vel = report.max_velocity_component();
-    let max_quat = report.max_quat_angle();
+    println!(
+        "  Max position error:  {:.6e} m",
+        report.max_position_component()
+    );
+    println!(
+        "  Max velocity error:  {:.6e} m/s",
+        report.max_velocity_component()
+    );
+    println!(
+        "  Max quaternion error: {:.6e} rad",
+        report.max_quat_angle()
+    );
 
-    println!("  Max position error:  {max_pos:.6e} m");
-    println!("  Max velocity error:  {max_vel:.6e} m/s");
-    println!("  Max quaternion error: {max_quat:.6e} rad");
-
-    assert!(
-        max_pos < 0.5,
-        "{label}: position error {max_pos:.4} m exceeds 0.5 m"
-    );
-    assert!(
-        max_vel < 0.001,
-        "{label}: velocity error {max_vel:.6} m/s exceeds 0.001 m/s"
-    );
-    assert!(
-        max_quat < 0.01,
-        "{label}: quaternion error {max_quat:.2e} rad exceeds 0.01 rad"
-    );
+    report.assert_position(pos_tol);
+    report.assert_velocity(vel_tol);
+    report.assert_quat_angle(quat_angle_tol);
 }

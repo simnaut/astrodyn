@@ -299,11 +299,7 @@ fn tier3_drag_trajectory_run6b() {
         }
     }
 
-    let mut report =
-        CrossvalReport::compute("tier3_drag_trajectory_run6b", &our_states, &ref_states);
-    report.position_tol = Some([2.0; 3]);
-    report.velocity_tol = Some([0.005; 3]);
-    report.quat_angle_tol = Some(0.01);
+    let report = CrossvalReport::compute("tier3_drag_trajectory_run6b", &our_states, &ref_states);
     report.write();
 
     let max_pos_error = report.max_position_component();
@@ -327,25 +323,7 @@ fn tier3_drag_trajectory_run6b() {
         max_quat_error.to_degrees()
     );
 
-    // Position threshold: tightened to 2x actual (~0.8 m) to catch regression.
-    // PLAN.md exit criterion is 100 m, but actual performance is sub-meter
-    // thanks to matching JEOD's geodetic pipeline, co-rotation wind, and GMST.
-    assert!(
-        max_pos_error < 2.0,
-        "Position error {:.4} m exceeds 2.0 m threshold (regression?)",
-        max_pos_error
-    );
-    assert!(
-        max_vel_error < 0.005,
-        "Velocity error {:.6} m/s exceeds 0.005 m/s threshold (regression?)",
-        max_vel_error
-    );
-
-    // Quaternion threshold: the sphere has no torques, so attitude should
-    // remain nearly constant (only numerical drift). Use generous threshold.
-    assert!(
-        max_quat_error < 0.01,
-        "Quaternion angular error {:.6e} rad exceeds 0.01 rad threshold",
-        max_quat_error
-    );
+    report.assert_position([3.19e-1, 4.297e-1, 3.581e-1]);
+    report.assert_velocity([3.012e-4, 4.856e-4, 3.863e-4]);
+    report.assert_quat_angle(4.426e-8);
 }

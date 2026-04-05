@@ -134,24 +134,24 @@ fn tier3_geodetic_vs_jeod_sim_ned() {
         max_lon_err = max_lon_err.max(lon_err);
 
         assert!(
-            alt_err < 1e-7,
-            "t={:.1}s: altitude error {alt_err:.6e} m exceeds 1e-7 m \
+            alt_err < 2.69e-9,
+            "t={:.1}s: altitude error {alt_err:.6e} m exceeds 2.69e-9 m \
              (ours={:.15e}, JEOD={:.15e})",
             rec.time,
             geo.altitude,
             rec.ellip_altitude
         );
         assert!(
-            lat_err < 1e-14,
-            "t={:.1}s: latitude error {lat_err:.6e} rad exceeds 1e-14 rad \
+            lat_err < 4.663e-16,
+            "t={:.1}s: latitude error {lat_err:.6e} rad exceeds 4.663e-16 rad \
              (ours={:.15e}, JEOD={:.15e})",
             rec.time,
             geo.latitude,
             rec.ellip_latitude
         );
         assert!(
-            lon_err < 1e-14,
-            "t={:.1}s: longitude error {lon_err:.6e} rad exceeds 1e-14 rad \
+            lon_err < 9.326e-16,
+            "t={:.1}s: longitude error {lon_err:.6e} rad exceeds 9.326e-16 rad \
              (ours={:.15e}, JEOD={:.15e})",
             rec.time,
             geo.longitude,
@@ -173,8 +173,24 @@ fn tier3_geodetic_vs_jeod_sim_ned() {
     eprintln!("  longitude: {max_lon_err:.6e} rad");
 
     let mut report = CrossvalReport::compute("tier3_geodetic_vs_jeod_sim_ned", &[], &[]);
-    report.add_extra("altitude", max_alt_err, 1e-7, "m");
-    report.add_extra("latitude", max_lat_err, 1e-14, "rad");
-    report.add_extra("longitude", max_lon_err, 1e-14, "rad");
+    report.add_extra("altitude", max_alt_err, 2.69e-9, "m");
+    report.add_extra("latitude", max_lat_err, 4.663e-16, "rad");
+    report.add_extra("longitude", max_lon_err, 9.326e-16, "rad");
     report.write();
+
+    assert!(
+        max_alt_err < 2.69e-9,
+        "altitude max error {:.6e} exceeds 2.69e-9 m",
+        max_alt_err
+    );
+    assert!(
+        max_lat_err < 4.663e-16,
+        "latitude max error {:.6e} exceeds 4.663e-16 rad",
+        max_lat_err
+    );
+    assert!(
+        max_lon_err < 9.326e-16,
+        "longitude max error {:.6e} exceeds 9.326e-16 rad",
+        max_lon_err
+    );
 }

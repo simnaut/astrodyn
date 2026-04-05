@@ -171,9 +171,7 @@ fn run_sh_trajectory_test(
         }
     }
 
-    let mut report = CrossvalReport::compute(test_name, &our_states, &ref_states);
-    report.position_tol = Some([0.5; 3]);
-    report.velocity_tol = Some([0.001; 3]);
+    let report = CrossvalReport::compute(test_name, &our_states, &ref_states);
     report.write();
 
     let max_pos_error = report.max_position_component();
@@ -183,22 +181,8 @@ fn run_sh_trajectory_test(
     eprintln!("  Max position error: {:.6e} m", max_pos_error);
     eprintln!("  Max velocity error: {:.6e} m/s", max_vel_error);
 
-    // dt=0.03125s matches JEOD's SIM_dyncomp integration rate (32 Hz).
-    // Residual comes from floating-point differences in RNP and gravity
-    // between our code and JEOD (aero drag is OFF so atmosphere has no effect).
-    // Observed: RUN_3A ≈ 0.12 m, RUN_3B ≈ 0.20 m.
-    assert!(
-        max_pos_error < 0.5,
-        "{}: Position error {:.2}m exceeds 0.5m over 8 hours",
-        label,
-        max_pos_error,
-    );
-    assert!(
-        max_vel_error < 0.001,
-        "{}: Velocity error {:.6}m/s exceeds 0.001 m/s over 8 hours",
-        label,
-        max_vel_error,
-    );
+    report.assert_position([1.164e-1, 2.107e-1, 1.469e-1]);
+    report.assert_velocity([1.324e-4, 2.077e-4, 1.716e-4]);
 }
 
 #[test]

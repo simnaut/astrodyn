@@ -148,22 +148,11 @@ fn tier3_simulation_solar_beta() {
         }
     }
 
-    let max_pos_err = our_states
-        .iter()
-        .zip(ref_states.iter())
-        .map(|(a, b)| (a.position.unwrap() - b.position.unwrap()).length())
-        .fold(0.0_f64, f64::max);
-
-    println!("  Max position error: {:.6e} m", max_pos_err);
-
-    let mut report =
-        CrossvalReport::compute("tier3_simulation_solar_beta", &our_states, &ref_states);
-    report.position_tol = Some([0.5; 3]);
+    let report = CrossvalReport::compute("tier3_simulation_solar_beta", &our_states, &ref_states);
     report.write();
 
-    // Position tracks JEOD RUN_2 trajectory
-    assert!(
-        max_pos_err < 0.5,
-        "Position error {max_pos_err:.2} m exceeds 0.5 m"
-    );
+    let max_pos_err = report.max_position_component();
+    println!("  Max position error: {:.6e} m", max_pos_err);
+
+    report.assert_position([1.37e-6, 2.154e-6, 1.826e-6]);
 }

@@ -156,24 +156,25 @@ plus optional interaction components (AerodynamicForce, RadiationForce, GravityT
 
 ## Build and Test
 
+Use [`cargo-nextest`](https://nexte.st/) for test execution (matches CI, parallel
+by default):
+
 ```bash
 cargo build --workspace
-cargo test --workspace                          # all tests (needs JEOD_HOME or JEOD_PATH)
-cargo test --workspace -- --skip tier3_         # fast subset: unit + tier 2 (skip trajectory)
-cargo test --workspace -- tier3_               # tier 3 only: trajectory cross-validation
-JEOD_HOME=../jeod cargo test                    # explicit path
-cargo test -p jeod_math                         # single crate
-cargo test -p jeod_gravity -- verif             # gravity verification tests only
-cargo test -p jeod_dynamics --test tier3_jeod_trajectory  # single Tier 3 test
+cargo nextest run --workspace                                 # all tests
+cargo nextest run --workspace -E 'not test(tier3_)'           # unit + tier 2 (fast)
+cargo nextest run --workspace -E 'test(tier3_)'               # tier 3 only
+cargo nextest run -p jeod_math                                # single crate
+cargo nextest run -p jeod_gravity -E 'test(verif)'            # gravity verification only
+cargo nextest run -p jeod_dynamics --test tier3_jeod_trajectory  # single Tier 3 test
 ```
 
-CI uses [`cargo-nextest`](https://nexte.st/) for parallel test execution. To run
-tests the same way locally (recommended for Tier 3, which has ~85 tests across
-47 binaries):
+Plain `cargo test` also works but runs tests serially per binary:
 
 ```bash
-cargo nextest run --workspace -E 'not test(tier3_)'  # unit + tier 2
-cargo nextest run --workspace -E 'test(tier3_)'      # tier 3 only
+cargo test --workspace                          # all tests (needs JEOD_HOME or JEOD_PATH)
+cargo test --workspace -- --skip tier3_         # unit + tier 2
+JEOD_HOME=../jeod cargo test                    # explicit path
 ```
 
 Set `JEOD_HOME` (or `JEOD_PATH`) to the JEOD source checkout.
@@ -188,16 +189,27 @@ cargo fmt --check && cargo clippy --workspace --tests -- -D warnings
 
 Fix any issues before committing. This avoids lint-only CI failures.
 
-When running the full test suite and inspecting results, capture output to a
-temp file first, then grep it — never run the suite multiple times:
+### Cross-validation tolerances
 
-```bash
-cargo test --workspace 2>&1 | tee /tmp/test-output.txt
-# then inspect:
-grep -c 'test .* \.\.\. ok' /tmp/test-output.txt    # count passing
-grep 'FAILED' /tmp/test-output.txt                   # find failures
-grep 'warning' /tmp/test-output.txt                  # find warnings
-```
+`CrossvalReport` (`crates/jeod_test_data/src/crossval.rs`) computes per-component
+max errors between our trajectory and JEOD's. It has no tolerance fields — tolerances
+live exclusively in the test source code.
+
+Tests assert tolerances via `report.assert_position(tol)`, `report.assert_velocity(tol)`,
+`report.assert_quat_angle(tol)`, `report.assert_ang_vel(tol)` (per-component checks),
+plus `assert!(var < tol)` for extras added via `report.add_extra(name, val, tol, unit)`.
+
+The report binary (`cargo run -p jeod_test_data --bin tier3_report`) extracts tolerance
+values from test source files by regex-parsing the `assert_*` call sites. It never reads
+tolerances from JSON — the JSON contains only errors.
+
+**Tolerance policy:** each tolerance is set to 5% above the observed max error, per
+component. Since JEOD reference CSVs are static and our code is deterministic, errors
+are fixed numbers — no runtime-computed or conditional tolerances.
+
+When tightening tolerances after a code improvement: run the full test suite, inspect
+the JSON reports in `target/tier3_crossval/`, compute `error * 1.05` per component,
+and update the literal values in the test source.
 
 ### Test tiers and CI
 
@@ -352,11 +364,12 @@ formula immediately.
   the S_define (e.g., SIM_2A_SHADOW_CALC uses `radiation_simple`, not `radiation`).
 - **Geodetic longitude at the poles**: At latitude ±90°, longitude is geometrically
   undefined (all meridians converge). `atan2(y, x)` becomes hypersensitive to position
-  errors: at 89.8° latitude, ~3.7e-6 rad/m sensitivity. Polar orbit NED tests must use
-  relaxed longitude tolerances (~0.1 rad) or exclude longitude comparison within ±0.5°
-  of the poles. This is not a code bug — both JEOD and our code produce valid but
-  numerically unstable values.
+  errors: at 89.8° latitude, ~3.7e-6 rad/m sensitivity. Polar orbit NED tests have
+  larger longitude tolerances (~3.3e-5 rad) than inclined orbit tests (~6.5e-8 rad).
+  This is not a code bug — both JEOD and our code produce valid but numerically
+  unstable values.
 - **DE421 ephemeris drift**: Our DE421 reader (Anise) and JEOD's native reader produce
   ~10 arcsecond Sun direction offsets that grow at ~1.5e-4 rad/day. This affects solar
-  beta, SRP direction, and 3rd-body gravity accuracy. Duration-dependent tolerances are
-  required for ephemeris-driven quantities. See simnaut/bevy_jeod#27.
+  beta, SRP direction, and 3rd-body gravity accuracy. Ephemeris-driven quantities have
+  per-test literal tolerances sized to accommodate this drift for each test's specific
+  duration. See simnaut/bevy_jeod#27.

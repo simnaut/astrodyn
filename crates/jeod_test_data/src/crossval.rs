@@ -35,7 +35,10 @@ pub struct StateLog {
     pub ang_accel: Option<DVec3>,
 }
 
-/// Per-component max absolute errors and tolerances, plus test-specific extras.
+/// Per-component max absolute errors, plus test-specific extras.
+///
+/// Tolerances live exclusively in the test source code (assert statements).
+/// The report binary extracts them from source for display.
 pub struct CrossvalReport {
     test_name: String,
 
@@ -48,16 +51,8 @@ pub struct CrossvalReport {
     pub ang_vel: Option<[f64; 3]>,
     pub ang_accel: Option<[f64; 3]>,
 
-    // Per-component tolerances
-    pub position_tol: Option<[f64; 3]>,
-    pub velocity_tol: Option<[f64; 3]>,
-    pub acceleration_tol: Option<[f64; 3]>,
-    pub quaternion_tol: Option<[f64; 4]>,
-    pub quat_angle_tol: Option<f64>,
-    pub ang_vel_tol: Option<[f64; 3]>,
-    pub ang_accel_tol: Option<[f64; 3]>,
-
-    // Test-specific extras
+    // Test-specific extras: (variable_name, value, tolerance, unit)
+    // Tolerance is kept here temporarily for the report binary transition.
     extras: Vec<(String, f64, Option<f64>, String)>,
 }
 
@@ -83,13 +78,6 @@ impl CrossvalReport {
             quat_angle: None,
             ang_vel: None,
             ang_accel: None,
-            position_tol: None,
-            velocity_tol: None,
-            acceleration_tol: None,
-            quaternion_tol: None,
-            quat_angle_tol: None,
-            ang_vel_tol: None,
-            ang_accel_tol: None,
             extras: Vec::new(),
         };
 
@@ -186,6 +174,60 @@ impl CrossvalReport {
         self.quat_angle.unwrap_or(0.0)
     }
 
+    /// Assert each position component is within its tolerance.
+    pub fn assert_position(&self, tol: [f64; 3]) {
+        let p = self.position.expect("no position data");
+        for (i, label) in ["x", "y", "z"].iter().enumerate() {
+            assert!(
+                p[i] < tol[i],
+                "{}: position_{label} error {:.6e} m exceeds tolerance {:.6e} m",
+                self.test_name,
+                p[i],
+                tol[i]
+            );
+        }
+    }
+
+    /// Assert each velocity component is within its tolerance.
+    pub fn assert_velocity(&self, tol: [f64; 3]) {
+        let v = self.velocity.expect("no velocity data");
+        for (i, label) in ["x", "y", "z"].iter().enumerate() {
+            assert!(
+                v[i] < tol[i],
+                "{}: velocity_{label} error {:.6e} m/s exceeds tolerance {:.6e} m/s",
+                self.test_name,
+                v[i],
+                tol[i]
+            );
+        }
+    }
+
+    /// Assert quaternion angle error is within tolerance.
+    pub fn assert_quat_angle(&self, tol: f64) {
+        let q = self.quat_angle.expect("no quaternion angle data");
+        assert!(
+            q < tol,
+            "{}: quat_angle error {:.6e} rad exceeds tolerance {:.6e} rad",
+            self.test_name,
+            q,
+            tol
+        );
+    }
+
+    /// Assert each angular velocity component is within its tolerance.
+    pub fn assert_ang_vel(&self, tol: [f64; 3]) {
+        let w = self.ang_vel.expect("no angular velocity data");
+        for (i, label) in ["x", "y", "z"].iter().enumerate() {
+            assert!(
+                w[i] < tol[i],
+                "{}: ang_vel_{label} error {:.6e} rad/s exceeds tolerance {:.6e} rad/s",
+                self.test_name,
+                w[i],
+                tol[i]
+            );
+        }
+    }
+
     /// Write the report to `target/tier3_crossval/<test_name>.json`.
     pub fn write(&self) {
         let dir = output_dir();
@@ -206,14 +248,6 @@ impl CrossvalReport {
         write_f64_field(&mut json, "quat_angle", &self.quat_angle);
         write_vec3_field(&mut json, "ang_vel", &self.ang_vel);
         write_vec3_field(&mut json, "ang_accel", &self.ang_accel);
-
-        write_vec3_field(&mut json, "position_tol", &self.position_tol);
-        write_vec3_field(&mut json, "velocity_tol", &self.velocity_tol);
-        write_vec3_field(&mut json, "acceleration_tol", &self.acceleration_tol);
-        write_vec4_field(&mut json, "quaternion_tol", &self.quaternion_tol);
-        write_f64_field(&mut json, "quat_angle_tol", &self.quat_angle_tol);
-        write_vec3_field(&mut json, "ang_vel_tol", &self.ang_vel_tol);
-        write_vec3_field(&mut json, "ang_accel_tol", &self.ang_accel_tol);
 
         if !self.extras.is_empty() {
             json.push_str(",\"extras\":[");

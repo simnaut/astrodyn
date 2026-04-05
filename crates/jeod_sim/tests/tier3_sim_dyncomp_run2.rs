@@ -87,10 +87,7 @@ fn tier3_simulation_run2_3dof() {
         .collect();
 
     // Post-process: compute errors
-    let mut report =
-        CrossvalReport::compute("tier3_simulation_run2_3dof", &our_states, &ref_states);
-    report.position_tol = Some([0.5; 3]);
-    report.velocity_tol = Some([0.001; 3]);
+    let report = CrossvalReport::compute("tier3_simulation_run2_3dof", &our_states, &ref_states);
     report.write();
 
     let max_pos = report.max_position_component();
@@ -98,11 +95,8 @@ fn tier3_simulation_run2_3dof() {
     println!("  Max position error: {max_pos:.6e} m");
     println!("  Max velocity error: {max_vel:.6e} m/s");
 
-    assert!(max_pos < 0.5, "Position error {max_pos:.2} m exceeds 0.5 m");
-    assert!(
-        max_vel < 0.001,
-        "Velocity error {max_vel:.6} m/s exceeds 0.001 m/s"
-    );
+    report.assert_position([1.37e-6, 2.154e-6, 1.826e-6]);
+    report.assert_velocity([1.446e-9, 2.389e-9, 1.814e-9]);
 }
 
 // ── Scenario 2: Point-mass 6-DOF with ISS mass (RUN_2) ──
@@ -200,12 +194,7 @@ fn tier3_simulation_run2_6dof() {
         .collect();
 
     // Post-process: compute errors
-    let mut report =
-        CrossvalReport::compute("tier3_simulation_run2_6dof", &our_states, &ref_states);
-    report.position_tol = Some([0.5; 3]);
-    report.velocity_tol = Some([0.001; 3]);
-    report.quat_angle_tol = Some(0.01);
-    report.ang_vel_tol = Some([1e-5; 3]);
+    let report = CrossvalReport::compute("tier3_simulation_run2_6dof", &our_states, &ref_states);
     report.write();
 
     let max_pos = report.max_position_component();
@@ -218,17 +207,8 @@ fn tier3_simulation_run2_6dof() {
     println!("  Max quaternion error: {max_quat:.6e} rad");
     println!("  Max omega error:     {max_omega:.6e} rad/s");
 
-    assert!(max_pos < 0.5, "Position error {max_pos:.2} m exceeds 0.5 m");
-    assert!(
-        max_vel < 0.001,
-        "Velocity error {max_vel:.6} m/s exceeds 0.001 m/s"
-    );
-    assert!(
-        max_quat < 0.01,
-        "Quaternion error {max_quat:.2e} rad exceeds 0.01 rad"
-    );
-    assert!(
-        max_omega < 1e-5,
-        "Omega error {max_omega:.2e} rad/s exceeds 1e-5 rad/s"
-    );
+    report.assert_position([1.37e-6, 2.154e-6, 1.826e-6]);
+    report.assert_velocity([1.446e-9, 2.389e-9, 1.814e-9]);
+    report.assert_quat_angle(4.426e-8);
+    report.assert_ang_vel([2.619e-18, 1.367e-18, 7.969e-19]);
 }

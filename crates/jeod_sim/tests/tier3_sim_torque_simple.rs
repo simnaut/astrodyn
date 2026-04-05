@@ -162,7 +162,15 @@ fn build_simulation(config: &RunConfig, init: &TorqueSimpleRecord) -> Simulation
 
 // -- Tier 3 full-propagation test --
 
-fn run_propagation_test(config: &RunConfig, test_name: &str) {
+fn run_propagation_test(
+    config: &RunConfig,
+    test_name: &str,
+    pos_tol: [f64; 3],
+    vel_tol: [f64; 3],
+    quat_tol: f64,
+    omega_tol: [f64; 3],
+    torque_tol: f64,
+) {
     let csv_path = test_data_path(config.csv_filename);
     assert!(
         csv_path.exists(),
@@ -237,26 +245,6 @@ fn run_propagation_test(config: &RunConfig, test_name: &str) {
     }
 
     let mut report = CrossvalReport::compute(test_name, &our_states, &ref_states);
-    report.position_tol = Some([100.0; 3]);
-    report.velocity_tol = Some([0.1; 3]);
-
-    let quat_tol = if !config.earth_gradient {
-        std::f64::consts::PI
-    } else if config.gradient_degree > 0 {
-        1.0
-    } else {
-        0.1
-    };
-    report.quat_angle_tol = Some(quat_tol);
-    report.ang_vel_tol = Some([0.01; 3]);
-
-    let torque_tol = if !config.earth_gradient {
-        0.0
-    } else if config.gradient_degree > 0 {
-        200.0
-    } else {
-        10.0
-    };
     report.add_extra("torque", max_torque_error, torque_tol, "N*m");
     report.write();
 
@@ -271,73 +259,21 @@ fn run_propagation_test(config: &RunConfig, test_name: &str) {
     println!("  Max omega error:     {:.6e} rad/s", max_omega_error);
     println!("  Max torque error:    {:.6e} N*m", max_torque_error);
 
-    // -- Thresholds --
-    //
-    // Our propagation omits Sun/Moon 3rd-body gravity (~1e-6 m/s2 combined
-    // differential acceleration in LEO), which is Phase 5 scope. Over 3h this
-    // produces ~10 m position drift. The gravity gradient torque creates a
-    // nonlinear feedback loop: position drift -> gradient offset -> torque
-    // offset -> attitude divergence -> amplified gradient offset. The feedback
-    // strength depends on the gradient computation (SH gradients are more
-    // sensitive than point-mass). These thresholds will tighten significantly
-    // when Phase 5 adds 3rd-body differential acceleration.
-    assert!(
-        max_pos_error < 100.0,
-        "{}: position error {max_pos_error:.2} m exceeds 100 m",
-        config.label
-    );
-    assert!(
-        max_vel_error < 0.1,
-        "{}: velocity error {max_vel_error:.6} m/s exceeds 0.1 m/s",
-        config.label
-    );
-    // Quaternion: the ISS inertia tensor is non-diagonal with asymmetric
-    // principal moments, so the torque-free body precesses at ~7.7e-4 rad/s
-    // (multiple full cycles over 3h). Integration truncation errors accumulate
-    // through these cycles, causing large attitude divergence in gradient-OFF
-    // runs even though translation tracks to ~10 m.
-    // - Gradient-OFF (01/04): free precession, no restoring torque -> ~pi rad
-    // - Point-mass gradient (02/03/05): restoring torque limits drift -> ~0.04 rad
-    // - SH gradient (06): more sensitive feedback -> ~0.6 rad
-    if !config.earth_gradient {
-        // `quaternion_angle_error` uses acos(|dot|), bounded to [0, pi].
-        // For gradient-OFF runs we only check finiteness -- torque-free
-        // precession can diverge to nearly pi rad over 3h.
-        assert!(
-            max_quat_error.is_finite() && max_quat_error <= std::f64::consts::PI,
-            "{}: quaternion error {max_quat_error:.2e} rad is outside the valid [0, pi] range",
-            config.label
-        );
-    } else {
-        let quat_threshold = if config.gradient_degree > 0 { 1.0 } else { 0.1 };
-        assert!(
-            max_quat_error < quat_threshold,
-            "{}: quaternion error {max_quat_error:.2e} rad exceeds {quat_threshold} rad",
-            config.label
-        );
-    }
-    assert!(
-        max_omega_error < 0.01,
-        "{}: omega error {max_omega_error:.2e} rad/s exceeds 0.01 rad/s",
-        config.label
-    );
-    // Torque: gradient-OFF runs must produce exactly zero torque.
-    // For gradient-ON, error is dominated by attitude divergence.
-    if !config.earth_gradient {
+    report.assert_position(pos_tol);
+    report.assert_velocity(vel_tol);
+    report.assert_quat_angle(quat_tol);
+    report.assert_ang_vel(omega_tol);
+
+    if torque_tol == 0.0 {
         assert!(
             max_torque_error == 0.0,
             "{}: gradient OFF but torque error is {max_torque_error:.2e} N*m (expected exactly 0)",
             config.label
         );
     } else {
-        let torque_threshold = if config.gradient_degree > 0 {
-            200.0
-        } else {
-            10.0
-        };
         assert!(
-            max_torque_error < torque_threshold,
-            "{}: torque error {max_torque_error:.2e} N*m exceeds {torque_threshold} N*m",
+            max_torque_error < torque_tol,
+            "{}: torque error {max_torque_error:.2e} N*m exceeds {torque_tol} N*m",
             config.label
         );
     }
@@ -357,6 +293,11 @@ fn tier3_torque_simple_run01() {
             gradient_order: 0,
         },
         "tier3_torque_simple_run01",
+        [3.02, 8.51, 1.046e1],
+        [3.292e-3, 1.053e-2, 1.026e-2],
+        3.299,
+        [2.248e-3, 3.136e-3, 4.999e-4],
+        0.0,
     );
 }
 
@@ -372,6 +313,11 @@ fn tier3_torque_simple_run02() {
             gradient_order: 0,
         },
         "tier3_torque_simple_run02",
+        [3.02, 8.51, 1.046e1],
+        [3.292e-3, 1.053e-2, 1.026e-2],
+        3.827e-2,
+        [4.372e-5, 3.294e-5, 2.742e-6],
+        5.353,
     );
 }
 
@@ -389,6 +335,11 @@ fn tier3_torque_simple_run03() {
             gradient_order: 0,
         },
         "tier3_torque_simple_run03",
+        [3.02, 8.51, 1.046e1],
+        [3.292e-3, 1.053e-2, 1.026e-2],
+        3.827e-2,
+        [4.372e-5, 3.294e-5, 2.742e-6],
+        5.353,
     );
 }
 
@@ -404,6 +355,11 @@ fn tier3_torque_simple_run04() {
             gradient_order: 0,
         },
         "tier3_torque_simple_run04",
+        [2.697, 8.024, 1.008e1],
+        [2.918e-3, 1.003e-2, 9.838e-3],
+        3.299,
+        [2.244e-3, 3.187e-3, 4.977e-4],
+        0.0,
     );
 }
 
@@ -419,6 +375,11 @@ fn tier3_torque_simple_run05() {
             gradient_order: 0,
         },
         "tier3_torque_simple_run05",
+        [2.697, 8.024, 1.008e1],
+        [2.918e-3, 1.003e-2, 9.838e-3],
+        1.845e-2,
+        [1.841e-5, 1.439e-5, 4.579e-6],
+        3.783,
     );
 }
 
@@ -434,5 +395,10 @@ fn tier3_torque_simple_run06() {
             gradient_order: 4,
         },
         "tier3_torque_simple_run06",
+        [2.697, 8.024, 1.008e1],
+        [2.918e-3, 1.003e-2, 9.838e-3],
+        6.242e-1,
+        [5.698e-4, 5.049e-4, 1.75e-4],
+        1.214e2,
     );
 }

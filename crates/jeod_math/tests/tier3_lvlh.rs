@@ -129,13 +129,13 @@ fn tier3_lvlh_frame_vs_jeod_sim_lvlh() {
         max_angvel_error = max_angvel_error.max(angvel_err);
 
         assert!(
-            mat_err < 1e-10,
-            "t={:.1}s: T_parent_this max element error {mat_err:.6e} exceeds 1e-10",
+            mat_err < 3.498e-16,
+            "t={:.1}s: T_parent_this max element error {mat_err:.6e} exceeds 3.498e-16",
             rec.time
         );
         assert!(
-            angvel_err < 1e-12,
-            "t={:.1}s: ang_vel magnitude error {angvel_err:.6e} rad/s exceeds 1e-12",
+            angvel_err < 1.139e-18,
+            "t={:.1}s: ang_vel magnitude error {angvel_err:.6e} rad/s exceeds 1.139e-18",
             rec.time
         );
 
@@ -153,7 +153,18 @@ fn tier3_lvlh_frame_vs_jeod_sim_lvlh() {
     eprintln!("  ang_vel magnitude:     {max_angvel_error:.6e} rad/s");
 
     let mut report = CrossvalReport::compute("tier3_lvlh_frame_vs_jeod_sim_lvlh", &[], &[]);
-    report.add_extra("t_parent_this", max_mat_error, 1e-10, "");
-    report.add_extra("ang_vel_mag", max_angvel_error, 1e-12, "rad/s");
+    report.add_extra("t_parent_this", max_mat_error, 3.498e-16, "");
+    report.add_extra("ang_vel_mag", max_angvel_error, 1.139e-18, "rad/s");
     report.write();
+
+    assert!(
+        max_mat_error < 3.498e-16,
+        "t_parent_this max error {:.6e} exceeds 3.498e-16",
+        max_mat_error
+    );
+    assert!(
+        max_angvel_error < 1.139e-18,
+        "ang_vel_mag max error {:.6e} exceeds 1.139e-18 rad/s",
+        max_angvel_error
+    );
 }

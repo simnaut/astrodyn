@@ -139,10 +139,9 @@ fn tier3_simulation_euler() {
     println!("  Max quaternion error: {:.6e} rad", max_quat_err);
 
     let mut report = CrossvalReport::compute("tier3_simulation_euler", &our_states, &ref_states);
-    report.quat_angle_tol = Some(0.01);
-    report.add_extra("euler_roll", max_angle_err[0], 0.02, "rad");
-    report.add_extra("euler_pitch", max_angle_err[1], 0.02, "rad");
-    report.add_extra("euler_yaw", max_angle_err[2], 0.02, "rad");
+    report.add_extra("euler_roll", max_angle_err[0], 1.846e-13, "rad");
+    report.add_extra("euler_pitch", max_angle_err[1], 8.674e-14, "rad");
+    report.add_extra("euler_yaw", max_angle_err[2], 1.103e-13, "rad");
     report.write();
 
     println!(
@@ -150,16 +149,5 @@ fn tier3_simulation_euler() {
         max_angle_err[0], max_angle_err[1], max_angle_err[2]
     );
 
-    // Quaternion tolerance matches existing RUN_2 6-DOF test
-    assert!(
-        max_quat_err < 0.01,
-        "Quaternion error {max_quat_err:.2e} rad exceeds 0.01 rad"
-    );
-    // Euler angle error derives from quaternion error
-    for (k, &err) in max_angle_err.iter().enumerate() {
-        assert!(
-            err < 0.02,
-            "Euler angle[{k}] error {err:.2e} rad exceeds 0.02 rad",
-        );
-    }
+    report.assert_quat_angle(4.426e-8);
 }

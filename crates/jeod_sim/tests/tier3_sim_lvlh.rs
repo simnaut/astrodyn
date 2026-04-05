@@ -111,23 +111,9 @@ fn tier3_simulation_lvlh() {
     println!("  Max ang_vel error:   {:.6e} rad/s", max_angvel_err);
 
     let mut report = CrossvalReport::compute("tier3_simulation_lvlh", &our_states, &ref_states);
-    report.position_tol = Some([0.5; 3]);
-    report.add_extra("t_parent_this", max_mat_err, 1e-6, "");
-    report.add_extra("ang_vel", max_angvel_err, 1e-10, "rad/s");
+    report.add_extra("t_parent_this", max_mat_err, 1.42e-11, "");
+    report.add_extra("ang_vel", max_angvel_err, 3.68e-16, "rad/s");
     report.write();
 
-    assert!(
-        max_pos_err < 0.5,
-        "Position error {max_pos_err:.2} m exceeds 0.5 m"
-    );
-    // LVLH frame direction error from ~0.5 m position drift at ~6800 km radius
-    // -> angular error ~ 0.5/6.8e6 ~ 7e-8 rad -> matrix element error ~ 7e-8
-    assert!(
-        max_mat_err < 1e-6,
-        "LVLH matrix error {max_mat_err:.3e} exceeds 1e-6"
-    );
-    assert!(
-        max_angvel_err < 1e-10,
-        "LVLH ang_vel error {max_angvel_err:.3e} rad/s exceeds 1e-10"
-    );
+    report.assert_position([6.96e-5, 9.448e-5, 6.874e-5]);
 }

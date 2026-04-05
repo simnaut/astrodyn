@@ -196,37 +196,30 @@ fn tier3_simulation_run9a_torque() {
         .collect();
 
     // Post-process: compute errors
-    let mut report =
-        CrossvalReport::compute("tier3_simulation_run9a_torque", &our_states, &ref_states);
-    report.position_tol = Some([0.5; 3]);
-    report.velocity_tol = Some([0.001; 3]);
-    report.quat_angle_tol = Some(0.01);
-    report.ang_vel_tol = Some([1e-5; 3]);
+    let report = CrossvalReport::compute("tier3_simulation_run9a_torque", &our_states, &ref_states);
     report.write();
 
-    let max_pos = report.max_position_component();
-    let max_vel = report.max_velocity_component();
-    let max_quat = report.max_quat_angle();
-    let max_omega = report.max_ang_vel_component();
+    println!(
+        "  Max position error:  {:.6e} m",
+        report.max_position_component()
+    );
+    println!(
+        "  Max velocity error:  {:.6e} m/s",
+        report.max_velocity_component()
+    );
+    println!(
+        "  Max quaternion error: {:.6e} rad",
+        report.max_quat_angle()
+    );
+    println!(
+        "  Max omega error:     {:.6e} rad/s",
+        report.max_ang_vel_component()
+    );
 
-    println!("  Max position error:  {max_pos:.6e} m");
-    println!("  Max velocity error:  {max_vel:.6e} m/s");
-    println!("  Max quaternion error: {max_quat:.6e} rad");
-    println!("  Max omega error:     {max_omega:.6e} rad/s");
-
-    assert!(max_pos < 0.5, "Position error {max_pos:.2} m exceeds 0.5 m");
-    assert!(
-        max_vel < 0.001,
-        "Velocity error {max_vel:.6} m/s exceeds 0.001 m/s"
-    );
-    assert!(
-        max_quat < 0.01,
-        "Quaternion error {max_quat:.2e} rad exceeds 0.01 rad"
-    );
-    assert!(
-        max_omega < 1e-5,
-        "Omega error {max_omega:.2e} rad/s exceeds 1e-5 rad/s"
-    );
+    report.assert_position([9.965e-7, 1.284e-6, 1.103e-6]);
+    report.assert_velocity([9.763e-10, 1.623e-9, 1.232e-9]);
+    report.assert_quat_angle(4.426e-8);
+    report.assert_ang_vel([3.558e-20, 4.447e-21, 7.116e-21]);
 }
 
 // ── RUN_9C: External force + torque, zero inertial rate ──
@@ -352,42 +345,25 @@ fn tier3_simulation_run9c_force_torque() {
         .collect();
 
     // Post-process: compute errors
-    let mut report = CrossvalReport::compute(
+    let report = CrossvalReport::compute(
         "tier3_simulation_run9c_force_torque",
         &our_states,
         &ref_states,
     );
-    report.position_tol = Some([0.5; 3]);
-    report.velocity_tol = Some([0.001; 3]);
-    report.quat_angle_tol = Some(0.01);
-    report.ang_vel_tol = Some([1e-5; 3]);
     report.write();
 
-    let max_pos = report.max_position_component();
-    let max_vel = report.max_velocity_component();
-    let max_quat = report.max_quat_angle();
-    let max_omega = report.max_ang_vel_component();
-
     println!(
-        "RUN_9C: max pos={max_pos:.4} m  vel={max_vel:.6} m/s  quat={max_quat:.6e} rad  omega={max_omega:.6e} rad/s",
+        "RUN_9C: max pos={:.4} m  vel={:.6} m/s  quat={:.6e} rad  omega={:.6e} rad/s",
+        report.max_position_component(),
+        report.max_velocity_component(),
+        report.max_quat_angle(),
+        report.max_ang_vel_component(),
     );
 
-    assert!(
-        max_pos < 0.5,
-        "RUN_9C: position error {max_pos:.4} m exceeds 0.5 m"
-    );
-    assert!(
-        max_vel < 0.001,
-        "RUN_9C: velocity error {max_vel:.6} m/s exceeds 0.001 m/s"
-    );
-    assert!(
-        max_quat < 0.01,
-        "RUN_9C: quaternion error {max_quat:.2e} rad exceeds 0.01 rad"
-    );
-    assert!(
-        max_omega < 1e-5,
-        "RUN_9C: omega error {max_omega:.2e} rad/s exceeds 1e-5 rad/s"
-    );
+    report.assert_position([7.679e-5, 1.2e-4, 8.628e-5]);
+    report.assert_velocity([8.526e-8, 1.269e-7, 1.062e-7]);
+    report.assert_quat_angle(4.426e-8);
+    report.assert_ang_vel([3.558e-20, 4.447e-21, 7.116e-21]);
 }
 
 // ── RUN_9D: External force + torque, with orbit rate ──
@@ -508,40 +484,23 @@ fn tier3_simulation_run9d_force_torque_rate() {
         .collect();
 
     // Post-process: compute errors
-    let mut report = CrossvalReport::compute(
+    let report = CrossvalReport::compute(
         "tier3_simulation_run9d_force_torque_rate",
         &our_states,
         &ref_states,
     );
-    report.position_tol = Some([0.5; 3]);
-    report.velocity_tol = Some([0.001; 3]);
-    report.quat_angle_tol = Some(0.01);
-    report.ang_vel_tol = Some([1e-5; 3]);
     report.write();
 
-    let max_pos = report.max_position_component();
-    let max_vel = report.max_velocity_component();
-    let max_quat = report.max_quat_angle();
-    let max_omega = report.max_ang_vel_component();
-
     println!(
-        "RUN_9D: max pos={max_pos:.4} m  vel={max_vel:.6} m/s  quat={max_quat:.6e} rad  omega={max_omega:.6e} rad/s",
+        "RUN_9D: max pos={:.4} m  vel={:.6} m/s  quat={:.6e} rad  omega={:.6e} rad/s",
+        report.max_position_component(),
+        report.max_velocity_component(),
+        report.max_quat_angle(),
+        report.max_ang_vel_component(),
     );
 
-    assert!(
-        max_pos < 0.5,
-        "RUN_9D: position error {max_pos:.4} m exceeds 0.5 m"
-    );
-    assert!(
-        max_vel < 0.001,
-        "RUN_9D: velocity error {max_vel:.6} m/s exceeds 0.001 m/s"
-    );
-    assert!(
-        max_quat < 0.01,
-        "RUN_9D: quaternion error {max_quat:.2e} rad exceeds 0.01 rad"
-    );
-    assert!(
-        max_omega < 1e-5,
-        "RUN_9D: omega error {max_omega:.2e} rad/s exceeds 1e-5 rad/s"
-    );
+    report.assert_position([5.278e-3, 8.255e-3, 6.635e-3]);
+    report.assert_velocity([5.911e-6, 9.056e-6, 7.276e-6]);
+    report.assert_quat_angle(4.426e-8);
+    report.assert_ang_vel([1.651e-18, 1.367e-18, 6.262e-19]);
 }

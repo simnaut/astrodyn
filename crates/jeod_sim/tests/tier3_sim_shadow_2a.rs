@@ -23,7 +23,7 @@ const R_EARTH: f64 = 6_378_137.0;
 /// SIM_2A epoch: 1998-12-01 00:00:31 TAI.
 const EPOCH_TJT: f64 = 11148.0 + 31.0 / 86400.0;
 
-fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str) {
+fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str, frac_tol: f64) {
     let csv_path = test_data_path(csv_filename);
     assert!(
         csv_path.exists(),
@@ -122,7 +122,7 @@ fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str) {
     println!("  Shadow state mismatches:    {shadow_state_mismatches}");
 
     let mut report = CrossvalReport::compute(test_name, &our_states, &ref_states);
-    report.add_extra("shadow_fraction", max_frac_err, 0.01, "");
+    report.add_extra("shadow_fraction", max_frac_err, frac_tol, "");
     report.add_extra(
         "shadow_mismatches",
         shadow_state_mismatches as f64,
@@ -131,16 +131,9 @@ fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str) {
     );
     report.write();
 
-    // Shadow fraction agreement: measured 5.4e-3 max (at the umbra-antumbra
-    // transition at ~1.4 Gm). The residual is dominated by the ~10 arcsecond
-    // DE421 Sun position offset (#27) which shifts the shadow cone boundary
-    // by ~70 m at 1.4 Gm distance. Error decreases with distance (1.2e-4
-    // at 10 Gm, 3.5e-5 at 100 Gm). Shadow state (umbra/penumbra/sun) always
-    // agrees — the discrepancy is in the fractional illumination during
-    // penumbra transitions.
     assert!(
-        max_frac_err < 0.01,
-        "{label}: shadow fraction error {max_frac_err:.3e} exceeds 0.01"
+        max_frac_err < frac_tol,
+        "{label}: shadow fraction error {max_frac_err:.3e} exceeds {frac_tol:.3e}"
     );
     assert_eq!(
         shadow_state_mismatches, 0,
@@ -154,6 +147,7 @@ fn tier3_shadow_2a_annular() {
         "shadow_2a_annular_shadow_calc.csv",
         "RUN_annular_eclipse",
         "tier3_shadow_2a_annular",
+        5.71e-3,
     );
 }
 
@@ -163,5 +157,6 @@ fn tier3_shadow_2a_cooling() {
         "shadow_2a_cooling_shadow_calc.csv",
         "RUN_shadow_cooling",
         "tier3_shadow_2a_cooling",
+        1e-10,
     );
 }

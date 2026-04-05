@@ -142,29 +142,10 @@ fn tier3_simulation_geodetic() {
     println!("  Max longitude error: {:.6e} rad", max_lon_err);
 
     let mut report = CrossvalReport::compute("tier3_simulation_geodetic", &our_states, &ref_states);
-    report.position_tol = Some([0.5; 3]);
-    report.add_extra("altitude", max_alt_err, 1.0, "m");
-    report.add_extra("latitude", max_lat_err, 1e-6, "rad");
-    report.add_extra("longitude", max_lon_err, 1e-6, "rad");
+    report.add_extra("altitude", max_alt_err, 8.938e-4, "m");
+    report.add_extra("latitude", max_lat_err, 4.182e-8, "rad");
+    report.add_extra("longitude", max_lon_err, 6.493e-8, "rad");
     report.write();
 
-    // Point-mass gravity, 24h. Position should match JEOD to < 0.5m.
-    assert!(
-        max_pos_err < 0.5,
-        "Position error {max_pos_err:.2} m exceeds 0.5 m"
-    );
-    // Geodetic tolerances: altitude sensitive to position error (~0.5m),
-    // lat/lon from position error at ~6800 km radius (~7e-8 rad).
-    assert!(
-        max_alt_err < 1.0,
-        "Altitude error {max_alt_err:.3e} m exceeds 1.0 m"
-    );
-    assert!(
-        max_lat_err < 1e-6,
-        "Latitude error {max_lat_err:.3e} rad exceeds 1e-6 rad"
-    );
-    assert!(
-        max_lon_err < 1e-6,
-        "Longitude error {max_lon_err:.3e} rad exceeds 1e-6 rad"
-    );
+    report.assert_position([3.78e-6, 5.155e-6, 3.717e-6]);
 }

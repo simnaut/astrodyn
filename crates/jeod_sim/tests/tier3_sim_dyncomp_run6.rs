@@ -154,31 +154,25 @@ fn tier3_simulation_run6b_drag() {
         .collect();
 
     // Post-process: compute errors
-    let mut report =
-        CrossvalReport::compute("tier3_simulation_run6b_drag", &our_states, &ref_states);
-    report.position_tol = Some([2.0; 3]);
-    report.velocity_tol = Some([0.005; 3]);
-    report.quat_angle_tol = Some(0.01);
+    let report = CrossvalReport::compute("tier3_simulation_run6b_drag", &our_states, &ref_states);
     report.write();
 
-    let max_pos = report.max_position_component();
-    let max_vel = report.max_velocity_component();
-    let max_quat = report.max_quat_angle();
-
-    println!("  Max position error:  {max_pos:.6e} m");
-    println!("  Max velocity error:  {max_vel:.6e} m/s");
-    println!("  Max quaternion error: {max_quat:.6e} rad");
-
-    // Tolerances match existing tier3_drag_trajectory test
-    assert!(max_pos < 2.0, "Position error {max_pos:.2} m exceeds 2.0 m");
-    assert!(
-        max_vel < 0.005,
-        "Velocity error {max_vel:.6} m/s exceeds 0.005 m/s"
+    println!(
+        "  Max position error:  {:.6e} m",
+        report.max_position_component()
     );
-    assert!(
-        max_quat < 0.01,
-        "Quaternion error {max_quat:.2e} rad exceeds 0.01 rad"
+    println!(
+        "  Max velocity error:  {:.6e} m/s",
+        report.max_velocity_component()
     );
+    println!(
+        "  Max quaternion error: {:.6e} rad",
+        report.max_quat_angle()
+    );
+
+    report.assert_position([7.971e-1, 1.114, 8.945e-1]);
+    report.assert_velocity([7.861e-4, 1.254e-3, 1.003e-3]);
+    report.assert_quat_angle(4.426e-8);
 }
 
 // ── RUN_6A: Constant-density drag, sphere mass ──
@@ -318,34 +312,27 @@ fn tier3_simulation_run6a_const_density_drag() {
         .collect();
 
     // Post-process: compute errors
-    let mut report = CrossvalReport::compute(
+    let report = CrossvalReport::compute(
         "tier3_simulation_run6a_const_density_drag",
         &our_states,
         &ref_states,
     );
-    report.position_tol = Some([0.5; 3]);
-    report.velocity_tol = Some([0.001; 3]);
-    report.quat_angle_tol = Some(0.01);
     report.write();
 
-    let max_pos = report.max_position_component();
-    let max_vel = report.max_velocity_component();
-    let max_quat = report.max_quat_angle();
+    println!(
+        "  Max position error:  {:.6e} m",
+        report.max_position_component()
+    );
+    println!(
+        "  Max velocity error:  {:.6e} m/s",
+        report.max_velocity_component()
+    );
+    println!(
+        "  Max quaternion error: {:.6e} rad",
+        report.max_quat_angle()
+    );
 
-    println!("  Max position error:  {max_pos:.6e} m");
-    println!("  Max velocity error:  {max_vel:.6e} m/s");
-    println!("  Max quaternion error: {max_quat:.6e} rad");
-
-    assert!(
-        max_pos < 0.5,
-        "RUN_6A: position error {max_pos:.3e} m exceeds 0.5 m"
-    );
-    assert!(
-        max_vel < 0.001,
-        "RUN_6A: velocity error {max_vel:.3e} m/s exceeds 0.001 m/s"
-    );
-    assert!(
-        max_quat < 0.01,
-        "RUN_6A: quaternion error {max_quat:.2e} rad exceeds 0.01 rad"
-    );
+    report.assert_position([4.366e-4, 6.84e-4, 5.325e-4]);
+    report.assert_velocity([4.942e-7, 7.482e-7, 6.155e-7]);
+    report.assert_quat_angle(4.426e-8);
 }

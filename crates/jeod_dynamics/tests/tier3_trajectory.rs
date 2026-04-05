@@ -163,12 +163,12 @@ fn tier3_orbital_period_accuracy() {
     println!("  Relative error:    {:.6e}", period_error);
 
     let mut report = CrossvalReport::compute("tier3_orbital_period_accuracy", &[], &[]);
-    report.add_extra("period_rel_error", period_error, 1e-4, "");
+    report.add_extra("period_rel_error", period_error, 2.39e-12, "");
     report.write();
 
     assert!(
-        period_error < 1e-4,
-        "Period error {:.6e} exceeds 1e-4 (0.01%)",
+        period_error < 2.39e-12,
+        "Period error {:.6e} exceeds 2.39e-12",
         period_error
     );
 }
@@ -215,18 +215,18 @@ fn tier3_position_return_after_one_orbit() {
     println!("  Velocity error: {:.6e} m/s", vel_error);
 
     let mut report = CrossvalReport::compute("tier3_position_return_after_one_orbit", &[], &[]);
-    report.add_extra("position", pos_error, 100.0, "m");
-    report.add_extra("velocity", vel_error, 0.1, "m/s");
+    report.add_extra("position", pos_error, 1.788e-2, "m");
+    report.add_extra("velocity", vel_error, 2.022e-5, "m/s");
     report.write();
 
     assert!(
-        pos_error < 100.0,
-        "Position return error {:.1} m exceeds 100 m",
+        pos_error < 1.788e-2,
+        "Position return error {:.6e} m exceeds 1.788e-2 m",
         pos_error
     );
     assert!(
-        vel_error < 0.1,
-        "Velocity return error {:.4} m/s exceeds 0.1 m/s",
+        vel_error < 2.022e-5,
+        "Velocity return error {:.6e} m/s exceeds 2.022e-5 m/s",
         vel_error
     );
 }
@@ -279,7 +279,7 @@ fn tier3_eccentric_orbit_apse_distances() {
 
     let mut report = CrossvalReport::compute("tier3_eccentric_orbit_apse_distances", &[], &[]);
     report.add_extra("periapsis_rel_error", periapsis_error, 1e-6, "");
-    report.add_extra("apoapsis_rel_error", apoapsis_error, 1e-6, "");
+    report.add_extra("apoapsis_rel_error", apoapsis_error, 9.034e-7, "");
     report.write();
 
     assert!(
@@ -288,8 +288,8 @@ fn tier3_eccentric_orbit_apse_distances() {
         periapsis_error
     );
     assert!(
-        apoapsis_error < 1e-6,
-        "Apoapsis error {:.6e} exceeds 1e-6",
+        apoapsis_error < 9.034e-7,
+        "Apoapsis error {:.6e} exceeds 9.034e-7",
         apoapsis_error
     );
 }
@@ -357,12 +357,12 @@ fn tier3_iss_24h_propagation() {
     println!("  Total steps:               {}", trajectory.len());
 
     let mut report = CrossvalReport::compute("tier3_iss_24h_propagation", &[], &[]);
-    report.add_extra("energy_drift", relative_energy_drift, 1e-7, "");
+    report.add_extra("energy_drift", relative_energy_drift, 5.622e-10, "");
     report.write();
 
     assert!(
-        relative_energy_drift < 1e-7,
-        "24h energy drift {:.6e} exceeds 1e-7",
+        relative_energy_drift < 5.622e-10,
+        "24h energy drift {:.6e} exceeds 5.622e-10",
         relative_energy_drift
     );
 

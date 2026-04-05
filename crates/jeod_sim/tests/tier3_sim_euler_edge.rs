@@ -20,7 +20,7 @@ use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
 /// Set up an Euler-style simulation from CSV initial conditions.
 /// SIM_Euler uses the same mass/config as SIM_dyncomp RUN_2.
-fn run_euler_test(csv_filename: &str, label: &str, test_name: &str) {
+fn run_euler_test(csv_filename: &str, label: &str, test_name: &str, quat_tol: f64, euler_tol: f64) {
     let csv_path = test_data_path(csv_filename);
     assert!(
         csv_path.exists(),
@@ -139,20 +139,17 @@ fn run_euler_test(csv_filename: &str, label: &str, test_name: &str) {
     );
 
     let mut report = CrossvalReport::compute(test_name, &our_states, &ref_states);
-    report.quat_angle_tol = Some(0.01);
-    report.add_extra("euler_roll", max_angle_err[0], 1e-6, "rad");
-    report.add_extra("euler_pitch", max_angle_err[1], 1e-6, "rad");
-    report.add_extra("euler_yaw", max_angle_err[2], 1e-6, "rad");
+    report.add_extra("euler_roll", max_angle_err[0], euler_tol, "rad");
+    report.add_extra("euler_pitch", max_angle_err[1], euler_tol, "rad");
+    report.add_extra("euler_yaw", max_angle_err[2], euler_tol, "rad");
     report.write();
 
-    assert!(
-        max_quat_err < 0.01,
-        "{label}: quaternion error {max_quat_err:.2e} rad exceeds 0.01 rad"
-    );
+    report.assert_quat_angle(quat_tol);
+
     for (k, &err) in max_angle_err.iter().enumerate() {
         assert!(
-            err < 1e-6,
-            "{label}: Euler angle[{k}] error {err:.2e} rad exceeds 1e-6 rad",
+            err < euler_tol,
+            "{label}: Euler angle[{k}] error {err:.2e} rad exceeds {euler_tol:.2e} rad",
         );
     }
 }
@@ -163,6 +160,8 @@ fn tier3_simulation_euler_ecc() {
         "euler_ecc_euler.csv",
         "RUN_ecc (eccentric)",
         "tier3_simulation_euler_ecc",
+        1e-10,
+        1e-10,
     );
 }
 
@@ -172,5 +171,7 @@ fn tier3_simulation_euler_equ() {
         "euler_equ_euler.csv",
         "RUN_equ (equatorial)",
         "tier3_simulation_euler_equ",
+        1e-10,
+        1e-10,
     );
 }

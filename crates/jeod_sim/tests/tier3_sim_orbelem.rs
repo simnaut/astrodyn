@@ -134,50 +134,14 @@ fn tier3_simulation_orbelem() {
     println!("  Max mean_anom:       {:.6e} rad", max_ma_err);
 
     let mut report = CrossvalReport::compute("tier3_simulation_orbelem", &our_states, &ref_states);
-    report.position_tol = Some([0.5; 3]);
-    report.add_extra("sma", max_sma_err, 1.0, "m");
-    report.add_extra("eccentricity", max_ecc_err, 1e-10, "");
-    report.add_extra("inclination", max_inc_err, 1e-10, "rad");
-    report.add_extra("arg_periapsis", max_aop_err, 1e-8, "rad");
-    report.add_extra("long_asc_node", max_lan_err, 1e-8, "rad");
-    report.add_extra("true_anom", max_ta_err, 1e-8, "rad");
-    report.add_extra("mean_anom", max_ma_err, 1e-8, "rad");
+    report.add_extra("sma", max_sma_err, 2.613e-6, "m");
+    report.add_extra("eccentricity", max_ecc_err, 1.496e-13, "");
+    report.add_extra("inclination", max_inc_err, 8.436e-17, "rad");
+    report.add_extra("arg_periapsis", max_aop_err, 1.78e-12, "rad");
+    report.add_extra("long_asc_node", max_lan_err, 9.513e-14, "rad");
+    report.add_extra("true_anom", max_ta_err, 1.136e-11, "rad");
+    report.add_extra("mean_anom", max_ma_err, 5.642e-12, "rad");
     report.write();
 
-    // Position tolerance (same as RUN_2 point-mass test)
-    assert!(
-        max_pos_err < 0.5,
-        "Position error {max_pos_err:.2} m exceeds 0.5 m"
-    );
-    // Orbital element tolerances account for integration-induced position drift.
-    // SMA: ~0.5 m position error -> ~0.1 m SMA error via vis-viva.
-    // Angular elements: near machine precision since the math is validated.
-    assert!(
-        max_sma_err < 1.0,
-        "SMA error {max_sma_err:.3e} m exceeds 1.0 m"
-    );
-    assert!(
-        max_ecc_err < 1e-10,
-        "Eccentricity error {max_ecc_err:.3e} exceeds 1e-10"
-    );
-    assert!(
-        max_inc_err < 1e-10,
-        "Inclination error {max_inc_err:.3e} rad exceeds 1e-10"
-    );
-    assert!(
-        max_aop_err < 1e-8,
-        "Arg periapsis error {max_aop_err:.3e} rad exceeds 1e-8"
-    );
-    assert!(
-        max_lan_err < 1e-8,
-        "Long asc node error {max_lan_err:.3e} rad exceeds 1e-8"
-    );
-    assert!(
-        max_ta_err < 1e-8,
-        "True anomaly error {max_ta_err:.3e} rad exceeds 1e-8"
-    );
-    assert!(
-        max_ma_err < 1e-8,
-        "Mean anomaly error {max_ma_err:.3e} rad exceeds 1e-8"
-    );
+    report.assert_position([6.556e-5, 5.15e-5, 5.478e-8]);
 }

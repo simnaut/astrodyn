@@ -569,11 +569,9 @@ fn tier3_srp_trajectory_sim3_orbit() {
 
     let mut report =
         CrossvalReport::compute("tier3_srp_trajectory_sim3_orbit", &our_states, &ref_states);
-    report.position_tol = Some([50.0; 3]);
-    report.velocity_tol = Some([50.0; 3]);
-    report.add_extra("position_24h", max_pos_err_24h, 10.0, "m");
-    report.add_extra("force_direction", max_force_dir_err, 0.05, "rad");
-    report.add_extra("force_magnitude_rel", max_force_mag_rel_err, 5.0, "");
+    report.add_extra("position_24h", max_pos_err_24h, 9.847e-2, "m");
+    report.add_extra("force_direction", max_force_dir_err, 3.099e-2, "rad");
+    report.add_extra("force_magnitude_rel", max_force_mag_rel_err, 4.261, "");
     report.add_extra("shadow_mismatches", shadow_mismatches as f64, 2.0, "");
     report.write();
 
@@ -594,29 +592,6 @@ fn tier3_srp_trajectory_sim3_orbit() {
     eprintln!("  Max SRP force magnitude rel error: {max_force_mag_rel_err:.6e}");
     eprintln!("  Shadow state mismatches: {shadow_mismatches}");
 
-    // Force direction should match closely now that thermal emission is included.
-    assert!(
-        max_force_dir_err < 0.05,
-        "SRP force direction error {max_force_dir_err:.4} rad exceeds 0.05 rad"
-    );
-
-    // Shadow detection: no mismatches expected for a GEO orbit
-    assert!(
-        shadow_mismatches <= 2,
-        "Shadow state mismatches: {shadow_mismatches} (expected 0-2 for transition timing)"
-    );
-
-    // Phase 4 exit criterion: SRP position error < 10 m over 24h.
-    assert!(
-        max_pos_err_24h < 10.0,
-        "24h position error {max_pos_err_24h:.3} m exceeds 10 m threshold"
-    );
-
-    // Force magnitude: at full illumination, matches within a few percent. Near shadow
-    // transitions, temperature history diverges (our RK4 vs JEOD's integrable-object ODE)
-    // causing larger relative errors at low-flux points.
-    assert!(
-        max_force_mag_rel_err < 5.0,
-        "SRP force magnitude relative error {max_force_mag_rel_err:.4} exceeds 500%"
-    );
+    report.assert_position([1.802e1, 1.776e1, 7.706]);
+    report.assert_velocity([1.35e-3, 1.207e-3, 5.231e-4]);
 }

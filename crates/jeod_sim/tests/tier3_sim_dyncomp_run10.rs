@@ -121,15 +121,11 @@ fn tier3_simulation_run10a_gravity_torque() {
         .collect();
 
     // Post-process: compute errors
-    let mut report = CrossvalReport::compute(
+    let report = CrossvalReport::compute(
         "tier3_simulation_run10a_gravity_torque",
         &our_states,
         &ref_states,
     );
-    report.position_tol = Some([0.5; 3]);
-    report.velocity_tol = Some([0.001; 3]);
-    report.quat_angle_tol = Some(0.01);
-    report.ang_vel_tol = Some([1e-5; 3]);
     report.write();
 
     let max_pos = report.max_position_component();
@@ -142,19 +138,10 @@ fn tier3_simulation_run10a_gravity_torque() {
     println!("  Max quaternion error: {max_quat:.6e} rad");
     println!("  Max omega error:     {max_omega:.6e} rad/s");
 
-    assert!(max_pos < 0.5, "Position error {max_pos:.2} m exceeds 0.5 m");
-    assert!(
-        max_vel < 0.001,
-        "Velocity error {max_vel:.6} m/s exceeds 0.001 m/s"
-    );
-    assert!(
-        max_quat < 0.01,
-        "Quaternion error {max_quat:.2e} rad exceeds 0.01 rad"
-    );
-    assert!(
-        max_omega < 1e-5,
-        "Omega error {max_omega:.2e} rad/s exceeds 1e-5 rad/s"
-    );
+    report.assert_position([1.37e-6, 2.154e-6, 1.826e-6]);
+    report.assert_velocity([1.446e-9, 2.389e-9, 1.814e-9]);
+    report.assert_quat_angle(7.556e-5);
+    report.assert_ang_vel([1e-15, 1.172e-7, 9.301e-8]);
 }
 
 // ── RUN_10A Analytical Libration Validation ──
@@ -266,7 +253,7 @@ fn tier3_reference_run10a_libration_period() {
     println!("  Period error:         {period_error_pct:.4}%");
 
     let mut report = CrossvalReport::compute("tier3_reference_run10a_libration_period", &[], &[]);
-    report.add_extra("period_error_pct", period_error_pct, 0.5, "%");
+    report.add_extra("period_error_pct", period_error_pct, 3.924e-1, "%");
     report.write();
 
     // PLAN.md criterion is 0.1%, but the 60s logging resolution limits
@@ -275,9 +262,9 @@ fn tier3_reference_run10a_libration_period() {
     // require finer-grained reference data (e.g., SIM_torque_compare_simple
     // at 1-second resolution).
     assert!(
-        period_error_pct < 0.5,
+        period_error_pct < 3.924e-1,
         "In-plane libration period {mean_period:.2} s deviates {period_error_pct:.4}% \
-         from analytical {ANALYTICAL_PERIOD:.2} s (threshold: 0.5%)"
+         from analytical {ANALYTICAL_PERIOD:.2} s (threshold: 0.3924%)"
     );
 }
 
@@ -369,15 +356,11 @@ fn tier3_simulation_run10c_gravity_torque_elliptical() {
         .collect();
 
     // Post-process: compute errors
-    let mut report = CrossvalReport::compute(
+    let report = CrossvalReport::compute(
         "tier3_simulation_run10c_gravity_torque_elliptical",
         &our_states,
         &ref_states,
     );
-    report.position_tol = Some([0.5; 3]);
-    report.velocity_tol = Some([0.001; 3]);
-    report.quat_angle_tol = Some(0.01);
-    report.ang_vel_tol = Some([1e-5; 3]);
     report.write();
 
     let max_pos = report.max_position_component();
@@ -389,22 +372,10 @@ fn tier3_simulation_run10c_gravity_torque_elliptical() {
         "RUN_10C: max pos={max_pos:.4} m  vel={max_vel:.6} m/s  quat={max_quat:.6e} rad  omega={max_omega:.6e} rad/s",
     );
 
-    assert!(
-        max_pos < 0.5,
-        "RUN_10C: position error {max_pos:.4} m exceeds 0.5 m"
-    );
-    assert!(
-        max_vel < 0.001,
-        "RUN_10C: velocity error {max_vel:.6} m/s exceeds 0.001 m/s"
-    );
-    assert!(
-        max_quat < 0.01,
-        "RUN_10C: quaternion error {max_quat:.2e} rad exceeds 0.01 rad"
-    );
-    assert!(
-        max_omega < 1e-5,
-        "RUN_10C: omega error {max_omega:.2e} rad/s exceeds 1e-5 rad/s"
-    );
+    report.assert_position([5.374e-7, 8.376e-7, 6.318e-7]);
+    report.assert_velocity([5.179e-10, 9.311e-10, 7.361e-10]);
+    report.assert_quat_angle(7.978e-5);
+    report.assert_ang_vel([1e-15, 1.243e-7, 9.646e-8]);
 }
 
 // ── RUN_10D: Gravity gradient torque, elliptical orbit, initial rate ──
@@ -495,15 +466,11 @@ fn tier3_simulation_run10d_gravity_torque_elliptical_rate() {
         .collect();
 
     // Post-process: compute errors
-    let mut report = CrossvalReport::compute(
+    let report = CrossvalReport::compute(
         "tier3_simulation_run10d_gravity_torque_elliptical_rate",
         &our_states,
         &ref_states,
     );
-    report.position_tol = Some([0.5; 3]);
-    report.velocity_tol = Some([0.001; 3]);
-    report.quat_angle_tol = Some(0.01);
-    report.ang_vel_tol = Some([1e-5; 3]);
     report.write();
 
     let max_pos = report.max_position_component();
@@ -515,20 +482,8 @@ fn tier3_simulation_run10d_gravity_torque_elliptical_rate() {
         "RUN_10D: max pos={max_pos:.4} m  vel={max_vel:.6} m/s  quat={max_quat:.6e} rad  omega={max_omega:.6e} rad/s",
     );
 
-    assert!(
-        max_pos < 0.5,
-        "RUN_10D: position error {max_pos:.4} m exceeds 0.5 m"
-    );
-    assert!(
-        max_vel < 0.001,
-        "RUN_10D: velocity error {max_vel:.6} m/s exceeds 0.001 m/s"
-    );
-    assert!(
-        max_quat < 0.01,
-        "RUN_10D: quaternion error {max_quat:.2e} rad exceeds 0.01 rad"
-    );
-    assert!(
-        max_omega < 1e-5,
-        "RUN_10D: omega error {max_omega:.2e} rad/s exceeds 1e-5 rad/s"
-    );
+    report.assert_position([5.374e-7, 8.376e-7, 6.318e-7]);
+    report.assert_velocity([5.179e-10, 9.311e-10, 7.361e-10]);
+    report.assert_quat_angle(1.106e-4);
+    report.assert_ang_vel([1e-15, 1.825e-7, 1.196e-7]);
 }

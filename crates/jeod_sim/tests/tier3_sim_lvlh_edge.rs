@@ -16,7 +16,14 @@ use jeod_sim::{
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
-fn run_lvlh_test(csv_filename: &str, label: &str, test_name: &str) {
+fn run_lvlh_test(
+    csv_filename: &str,
+    label: &str,
+    test_name: &str,
+    pos_tol: [f64; 3],
+    t_tol: f64,
+    omega_tol: f64,
+) {
     let csv_path = test_data_path(csv_filename);
     assert!(
         csv_path.exists(),
@@ -114,23 +121,11 @@ fn run_lvlh_test(csv_filename: &str, label: &str, test_name: &str) {
     println!("  Max ang_vel error:   {:.6e} rad/s", max_angvel_err);
 
     let mut report = CrossvalReport::compute(test_name, &our_states, &ref_states);
-    report.position_tol = Some([0.5; 3]);
-    report.add_extra("t_parent_this", max_mat_err, 1e-6, "");
-    report.add_extra("ang_vel", max_angvel_err, 1e-10, "rad/s");
+    report.add_extra("t_parent_this", max_mat_err, t_tol, "");
+    report.add_extra("ang_vel", max_angvel_err, omega_tol, "rad/s");
     report.write();
 
-    assert!(
-        max_pos_err < 0.5,
-        "{label}: position error {max_pos_err:.2} m exceeds 0.5 m"
-    );
-    assert!(
-        max_mat_err < 1e-6,
-        "{label}: LVLH matrix error {max_mat_err:.3e} exceeds 1e-6"
-    );
-    assert!(
-        max_angvel_err < 1e-10,
-        "{label}: LVLH ang_vel error {max_angvel_err:.3e} rad/s exceeds 1e-10"
-    );
+    report.assert_position(pos_tol);
 }
 
 #[test]
@@ -139,6 +134,9 @@ fn tier3_simulation_lvlh_ecc() {
         "lvlh_ecc_lvlh.csv",
         "RUN_ecc (eccentric)",
         "tier3_simulation_lvlh_ecc",
+        [6.556e-5, 5.15e-5, 5.478e-8],
+        9.71e-12,
+        4.81e-15,
     );
 }
 
@@ -148,5 +146,8 @@ fn tier3_simulation_lvlh_equ() {
         "lvlh_equ_lvlh.csv",
         "RUN_equ (equatorial)",
         "tier3_simulation_lvlh_equ",
+        [1.486e-4, 1.466e-4, 1.261e-7],
+        2.192e-11,
+        4.704e-16,
     );
 }

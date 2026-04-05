@@ -285,50 +285,56 @@ fn tier3_rnp_component_comparison() {
     // theta_gast computation difference.
 
     assert!(
-        max_p_err < 1e-10,
-        "Precession matrix error {:.4e} exceeds 1e-10 (worst at t={:.0}s). \
+        max_p_err < 2.05e-18,
+        "Precession matrix error {:.4e} exceeds 2.05e-18 (worst at t={:.0}s). \
          This indicates a formula difference in precession_matrix().",
         max_p_err,
         worst_p_time,
     );
 
     assert!(
-        max_n_err < 1e-10,
-        "Nutation matrix error {:.4e} exceeds 1e-10 (worst at t={:.0}s). \
+        max_n_err < 1.63e-18,
+        "Nutation matrix error {:.4e} exceeds 1.63e-18 (worst at t={:.0}s). \
          This indicates a formula difference in nutation().",
         max_n_err,
         worst_n_time,
     );
 
     assert!(
-        max_r_err < 1e-10,
-        "GAST rotation matrix error {:.4e} exceeds 1e-10 (worst at t={:.0}s). \
+        max_r_err < 2.054e-11,
+        "GAST rotation matrix error {:.4e} exceeds 2.054e-11 (worst at t={:.0}s). \
          This indicates a GMST or theta_gast computation difference.",
         max_r_err,
         worst_r_time,
     );
 
     assert!(
-        max_t_err < 1e-10,
-        "T_parent_this error {:.4e} exceeds 1e-10 (worst at t={:.0}s). \
+        max_t_err < 2.053e-11,
+        "T_parent_this error {:.4e} exceeds 2.053e-11 (worst at t={:.0}s). \
          This indicates a composition error in compute_t_parent_this().",
         max_t_err,
         worst_t_time,
     );
 
     assert!(
-        max_equa_err < 1e-10,
-        "Equation of equinoxes error {:.4e}s exceeds 1e-10s.",
+        max_equa_err < 2.233e-14,
+        "Equation of equinoxes error {:.4e}s exceeds 2.233e-14s.",
         max_equa_err,
     );
 
+    assert!(
+        max_theta_gast_err < 2.101e-11,
+        "Theta GAST error {:.4e} rad exceeds 2.101e-11 rad.",
+        max_theta_gast_err,
+    );
+
     let mut report = CrossvalReport::compute("tier3_rnp_component_comparison", &[], &[]);
-    report.add_extra("precession", max_p_err, 1e-10, "");
-    report.add_extra("nutation", max_n_err, 1e-10, "");
-    report.add_extra("gast_rotation", max_r_err, 1e-10, "");
-    report.add_extra("composed_T", max_t_err, 1e-10, "");
-    report.add_extra("equa_equinoxes", max_equa_err, 1e-10, "s");
-    report.add_extra("theta_gast", max_theta_gast_err, 1e-10, "rad");
+    report.add_extra("precession", max_p_err, 2.05e-18, "");
+    report.add_extra("nutation", max_n_err, 1.63e-18, "");
+    report.add_extra("gast_rotation", max_r_err, 2.054e-11, "");
+    report.add_extra("composed_T", max_t_err, 2.053e-11, "");
+    report.add_extra("equa_equinoxes", max_equa_err, 2.233e-14, "s");
+    report.add_extra("theta_gast", max_theta_gast_err, 2.101e-11, "rad");
     report.write();
 
     eprintln!("  All RNP components match JEOD within 1e-10 element-wise.");

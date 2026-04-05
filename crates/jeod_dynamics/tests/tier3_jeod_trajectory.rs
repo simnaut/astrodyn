@@ -120,13 +120,11 @@ fn tier3_cross_validate_against_jeod_dyncomp() {
         }
     }
 
-    let mut report = CrossvalReport::compute(
+    let report = CrossvalReport::compute(
         "tier3_cross_validate_against_jeod_dyncomp",
         &our_states,
         &ref_states,
     );
-    report.position_tol = Some([0.5; 3]);
-    report.velocity_tol = Some([0.001; 3]);
     report.write();
 
     let max_pos_error = report.max_position_component();
@@ -139,14 +137,6 @@ fn tier3_cross_validate_against_jeod_dyncomp() {
     // dt=0.03125s matches JEOD's SIM_dyncomp integration rate (32 Hz).
     // With point-mass gravity and matching timestep, the only residual comes
     // from floating-point differences in the RK4 implementation.
-    assert!(
-        max_pos_error < 0.5,
-        "Position error {:.2}m exceeds 0.5m over 8 hours",
-        max_pos_error
-    );
-    assert!(
-        max_vel_error < 0.001,
-        "Velocity error {:.6}m/s exceeds 0.001 m/s over 8 hours",
-        max_vel_error
-    );
+    report.assert_position([1.37e-6, 2.154e-6, 1.826e-6]);
+    report.assert_velocity([1.446e-9, 2.389e-9, 1.814e-9]);
 }
