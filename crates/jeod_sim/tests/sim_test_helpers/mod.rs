@@ -3,12 +3,13 @@
 //! Provides CSV parsing for SIM_dyncomp and derived-state trajectory data,
 //! quaternion error computation, and test data path resolution.
 
-#![allow(dead_code, unused_imports)]
+#![allow(dead_code)]
 
 use glam::{DMat3, DQuat, DVec3};
 use jeod_sim::JeodQuat;
 use std::path::Path;
 
+#[allow(unused_imports)] // Not all test binaries use dyncomp CSV loading
 pub use jeod_test_data::dyncomp_csv::{load_dyncomp_csv, DyncompRecord};
 
 pub const MU_EARTH: f64 = 3.986_004_415e14;
