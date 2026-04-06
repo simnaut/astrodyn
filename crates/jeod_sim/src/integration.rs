@@ -87,6 +87,12 @@ pub fn integrate_body(
                 IntegratorType::Rkf45 => {
                     jeod_dynamics::rkf45_sixdof_step(&six_state, accel, torque_fn, mass_props, dt)
                 }
+                IntegratorType::GaussJackson { .. } => {
+                    panic!(
+                        "GaussJackson 6-DOF integration not yet supported. \
+                         GJ is currently translational-only."
+                    );
+                }
             };
             *trans = new_state.trans;
             *rot = new_state.rot;
@@ -105,6 +111,12 @@ pub fn integrate_body(
     let new_trans = match integrator {
         IntegratorType::Rk4 => jeod_dynamics::rk4_translational_step(trans, accel, dt),
         IntegratorType::Rkf45 => jeod_dynamics::rkf45_translational_step(trans, accel, dt),
+        IntegratorType::GaussJackson { .. } => {
+            panic!(
+                "GaussJackson requires stateful integration via GaussJacksonState. \
+                 Use GaussJacksonState::step() directly instead of integrate_body()."
+            );
+        }
     };
     *trans = new_trans;
 }

@@ -17,8 +17,13 @@ pub enum IntegratorType {
     /// Uses 6 function evaluations per step vs RK4's 4, but achieves
     /// 5th-order accuracy. Step size is fixed (no adaptive control).
     Rkf45,
-    // Future variants (Phase 5f):
-    // GaussJackson { order: usize },
+    /// Gauss-Jackson (Adams-Bashforth-Moulton) multi-step predictor-corrector.
+    /// Requires persistent `GaussJacksonState` across steps. Uses RK4 for
+    /// priming, then ABM for efficient high-order stepping. Order 8 default.
+    /// Note: GJ is stateful — the `GaussJacksonState` must be stored
+    /// externally (in `SimBody` or as a Bevy component) and passed to
+    /// the integration function.
+    GaussJackson { order: usize },
 }
 
 /// Advance translational state by one RK4 step.
