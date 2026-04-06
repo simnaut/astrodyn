@@ -118,14 +118,14 @@ pub fn force_collection_system(
     }
 }
 
-/// Advances translational (and optionally rotational) state via RK4 integration.
+/// Advances translational (and optionally rotational) state by one timestep.
 ///
 /// Delegates to [`jeod_sim::integrate_body`] for 6-DOF/3-DOF routing and
 /// integration stepping. Gravity is recomputed at each intermediate state
 /// for proper multi-stage accuracy.
 ///
 /// The integration method is determined by the optional `IntegratorTypeC`
-/// component. When absent, RK4 is used.
+/// component (RK4, RKF45, etc.). When absent, RK4 is used.
 #[allow(clippy::type_complexity)]
 pub fn integration_system(
     mut bodies: Query<(
@@ -162,15 +162,21 @@ pub fn integration_system(
             mass.map(|m| &m.0),
             |pos| {
                 jeod_sim::accumulate_gravity(pos, &controls.0, DVec3::ZERO, |source_entity| {
-                    sources
-                        .get(source_entity)
-                        .ok()
-                        .map(|(s, r, p)| jeod_sim::ResolvedSource {
+                    match sources.get(source_entity) {
+                        Ok((s, r, p)) => Some(jeod_sim::ResolvedSource {
                             source: &s.0,
                             rotation: r.map(|r| &r.0),
                             position: p.0,
                             delta_c20: 0.0,
-                        })
+                        }),
+                        Err(_) => {
+                            panic!(
+                                "Entity {entity:?}: GravityControl references source \
+                                 {source_entity:?} which does not exist or lacks \
+                                 GravitySourceC + SourceInertialPositionC."
+                            );
+                        }
+                    }
                 })
                 .grav_accel
             },

@@ -3,10 +3,10 @@
 //! Port of JEOD/Trick ER7 `rkf45_butcher_tableau.cc` coefficients and
 //! `rkf45_second_order_ode_integrator.cc` step logic.
 //!
-//! RKF45 uses 6 stages to compute both a 4th-order and 5th-order solution.
-//! The 5th-order solution (b5 weights) is used for the state update.
-//! The difference between the two gives a local error estimate that can
-//! drive adaptive step control.
+//! This implementation uses the RKF45 6-stage tableau and applies the
+//! 5th-order solution (b5 weights) for the state update.
+//! It does not currently compute or expose the embedded 4th-order solution
+//! or an error estimate for adaptive step control.
 
 use crate::mass::MassProperties;
 use crate::rotational::*;

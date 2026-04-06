@@ -94,6 +94,7 @@ pub struct GaussJacksonState {
     /// am[0] multiplies f_{n+1}, am[1] multiplies f_n, etc.
     am: Vec<f64>,
     /// Acceleration history. Index 0 = most recent (f_n), 1 = f_{n-1}, etc.
+    /// New entries are inserted at front; oldest entries are truncated at end.
     acc_hist: Vec<DVec3>,
     /// Velocity history. Index 0 = most recent (v_n), 1 = v_{n-1}, etc.
     vel_hist: Vec<DVec3>,
