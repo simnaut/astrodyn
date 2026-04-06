@@ -1,9 +1,13 @@
-//! Tier 3: Polar motion validation via differential comparison.
+//! Tier 3: Polar motion regression check (point-mass gravity).
 //!
-//! Compares RUN_2 (polar motion OFF, existing) vs RUN_2P (polar motion ON)
-//! to isolate the polar motion contribution. Both use identical initial
-//! conditions (ISS point-mass orbit, 8h) — the only difference is
-//! `earth.rnp.enable_polar = True` in RUN_2P.
+//! Validates that enabling `Simulation::polar_motion` does not break
+//! point-mass propagation. With point-mass gravity (`t_inertial_pfix: None`),
+//! the planet-fixed rotation is never used, so polar motion has **zero**
+//! trajectory effect — errors should match RUN_2 exactly.
+//!
+//! A meaningful polar motion validation requires spherical-harmonic gravity
+//! where the planet-fixed rotation enters the gravity computation (see
+//! RUN_3* and RUN_7* tests).
 //!
 //! We propagate our Simulation with polar motion enabled using the IERS
 //! values from the JEOD input file (xp=0.06806", yp=0.24156" converted

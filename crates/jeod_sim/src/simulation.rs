@@ -299,6 +299,15 @@ impl Simulation {
                 all_errors.push(ValidationError::ForceProducerWithoutMass { body_idx });
             }
 
+            // GaussJackson is translational-only (6-DOF not yet supported)
+            if matches!(
+                body.integrator,
+                jeod_dynamics::IntegratorType::GaussJackson { .. }
+            ) && body.config.rotational_dynamics
+            {
+                all_errors.push(ValidationError::GaussJacksonWith6Dof { body_idx });
+            }
+
             // Apply gravity control auto-corrections (degree/order clamping).
             // JEOD_INV: GV.03 — check_validity() auto-corrects out-of-range settings
             for ctrl in &mut body.gravity_controls.controls {

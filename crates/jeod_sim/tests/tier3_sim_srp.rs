@@ -87,9 +87,8 @@ fn srp_plates() -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
     ]
 }
 
-fn srp_sun_position(sim_time: f64, ephemeris: &Ephemeris) -> DVec3 {
-    let sim_days = sim_time / 86400.0;
-    let tdb_jd = (SRP_EPOCH_TJT + sim_days) + 40000.0 + 2_400_000.5;
+fn srp_sun_position(sim_time: f64, epoch_tdb_jd: f64, ephemeris: &Ephemeris) -> DVec3 {
+    let tdb_jd = epoch_tdb_jd + sim_time / 86400.0;
     let (sun_pos, _) = ephemeris
         .get_earth_centered_state(EphemerisBody::Sun, tdb_jd)
         .expect("Sun position query failed");
@@ -109,16 +108,19 @@ struct SunTable {
 
 impl SunTable {
     /// Build a table from t=0 to `end_time` with the given sample spacing.
-    fn build(end_time: f64, spacing: f64, ephemeris: &Ephemeris) -> Self {
+    fn build(end_time: f64, spacing: f64, epoch_tdb_jd: f64, ephemeris: &Ephemeris) -> Self {
         let n = (end_time / spacing).ceil() as usize + 1;
         let mut samples = Vec::with_capacity(n);
         for i in 0..n {
             let t = (i as f64) * spacing;
-            samples.push((t, srp_sun_position(t, ephemeris)));
+            samples.push((t, srp_sun_position(t, epoch_tdb_jd, ephemeris)));
         }
         // Ensure the final time is included
         if samples.last().is_none_or(|(t, _)| *t < end_time) {
-            samples.push((end_time, srp_sun_position(end_time, ephemeris)));
+            samples.push((
+                end_time,
+                srp_sun_position(end_time, epoch_tdb_jd, ephemeris),
+            ));
         }
         Self { samples }
     }
@@ -171,6 +173,7 @@ fn tier3_simulation_srp_flat_plate() {
     // Epoch: 1998-12-01 UTC. TAI-UTC=31s at this date.
     let epoch_tai_tjt = SRP_EPOCH_TJT + 31.0 / 86400.0;
     let time = SimulationTime::new(epoch_tai_tjt, jeod_sim::default_leap_second_table());
+    let epoch_tdb_jd = time.tdb_julian_date();
     let mut sim = Simulation::new(time, SRP_DT);
 
     // Earth at origin (gravity source + shadow body)
@@ -189,7 +192,7 @@ fn tier3_simulation_srp_flat_plate() {
     // mu=0 because the JEOD SIM_3_ORBIT reference sim uses Sun only for SRP
     // direction, not gravitational perturbation. For 3rd-body gravity
     // validation, see tier3_sim_dyncomp_run4.
-    let initial_sun = srp_sun_position(0.0, &ephemeris);
+    let initial_sun = srp_sun_position(0.0, epoch_tdb_jd, &ephemeris);
     let sun = sim.add_source(GravitySourceEntry {
         source: GravitySource {
             mu: 0.0,
@@ -237,7 +240,7 @@ fn tier3_simulation_srp_flat_plate() {
     // JEOD updates Sun position every integration step (1s); the previous test
     // code only updated at record boundaries (1000s), introducing a stale-Sun
     // error of ~2-5 m over 23 days.
-    let sun_table = SunTable::build(total_time, 100.0, &ephemeris);
+    let sun_table = SunTable::build(total_time, 100.0, epoch_tdb_jd, &ephemeris);
 
     let mut our_states = Vec::with_capacity(trajectory.len() - 1);
     let mut ref_states = Vec::with_capacity(trajectory.len() - 1);
@@ -293,5 +296,5 @@ fn tier3_simulation_srp_flat_plate() {
     let max_pos_error = report.max_position_component();
     println!("  Max position error: {:.6e} m", max_pos_error);
 
-    report.assert_position([2.764, 3.693, 1.601]);
+    report.assert_position([3.074, 2.799, 1.216]);
 }

@@ -28,6 +28,11 @@ use std::path::Path;
 const MU_SUN: f64 = 1.327_124_40e20;
 const MU_MOON: f64 = 4902.79980693169e9;
 
+/// SIM_dyncomp epoch: 2007-11-20 midnight UTC, same as all other RUN_* tests.
+const DYNCOMP_UTC_TJT: f64 = 14424.0;
+const DYNCOMP_TAI_UTC_S: f64 = 32.0;
+const DYNCOMP_UT1_TAI_S: f64 = -32.469;
+
 /// Compute Earth-centered position of a body from DE421 ephemeris.
 fn earth_centered_position(body: EphemerisBody, tdb_jd: f64, ephemeris: &Ephemeris) -> DVec3 {
     let (pos, _) = ephemeris
@@ -60,7 +65,11 @@ fn tier3_simulation_run4_3rd_body() {
 
     let init = &trajectory[0];
 
-    let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    // Initialize at the SIM_dyncomp epoch (2007-11-20 UTC) so DE421 Sun/Moon
+    // queries match the JEOD reference sim's absolute time.
+    let epoch_tai_tjt = DYNCOMP_UTC_TJT + DYNCOMP_TAI_UTC_S / 86400.0;
+    let mut time = SimulationTime::new(epoch_tai_tjt, jeod_sim::default_leap_second_table());
+    time.set_ut1_tai_offset(DYNCOMP_UT1_TAI_S);
     let mut sim = Simulation::new(time, DT);
 
     // Earth: central body at origin (not differential)
@@ -202,12 +211,11 @@ fn tier3_simulation_run4_3rd_body() {
     println!("  Max omega error:      {max_omega:.6e} rad/s");
 
     // Tolerances: 5% above observed max error per component.
-    // Residual (~37 m) is dominated by DE421 interpolation differences between
-    // Anise and JEOD's native reader (~10 arcsecond Sun direction offset, see
-    // simnaut/bevy_jeod#27). This causes ~37 m position drift over 8h from
-    // the accumulated 3rd-body differential acceleration error.
-    report.assert_position([16.68, 38.9, 34.36]);
-    report.assert_velocity([0.01878, 0.04224, 0.03995]);
+    // With the correct SIM_dyncomp epoch (2007-11-20 UTC), errors are ~2e-3 m
+    // (vs ~37 m with the wrong J2000 epoch). Residual is from DE421 Anise vs
+    // JEOD native reader interpolation differences (see simnaut/bevy_jeod#27).
+    report.assert_position([1.644e-3, 2.098e-3, 2.025e-3]);
+    report.assert_velocity([1.762e-6, 2.082e-6, 2.400e-6]);
     report.assert_quat_angle(4.426e-8);
     report.assert_ang_vel([2.619e-18, 1.367e-18, 7.969e-19]);
 }

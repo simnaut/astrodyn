@@ -205,7 +205,7 @@ pub fn integration_system(
 /// Pre-computes gravity for each dynamic body.
 ///
 /// Gravity is precomputed here in the Environment stage but is recomputed at
-/// each RK4 stage by the integration system for 4th-order accuracy.
+/// each integrator stage by the integration system for multi-stage accuracy.
 ///
 /// Delegates to [`jeod_sim::accumulate_gravity`] for the per-body accumulation
 /// loop, providing a closure that resolves Bevy entity references.

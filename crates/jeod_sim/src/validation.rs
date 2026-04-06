@@ -40,6 +40,8 @@ pub enum ValidationError {
     AtmospherePlanetOutOfRange { index: usize, num_sources: usize },
     /// Drag or SRP configured but no mass properties (force → acceleration requires mass).
     ForceProducerWithoutMass { body_idx: usize },
+    /// GaussJackson integrator with rotational_dynamics=true (6-DOF not supported).
+    GaussJacksonWith6Dof { body_idx: usize },
 }
 
 impl std::fmt::Display for ValidationError {
@@ -145,6 +147,14 @@ impl std::fmt::Display for ValidationError {
                     "Body {body_idx}: drag or SRP configured but no MassProperties. In JEOD, \
                      DynBody always has mass. Provide MassProperties for any body with \
                      interaction forces."
+                )
+            }
+            Self::GaussJacksonWith6Dof { body_idx } => {
+                write!(
+                    f,
+                    "Body {body_idx}: GaussJackson integrator with rotational_dynamics=true. \
+                     GJ is currently translational-only. Set rotational_dynamics=false \
+                     for GJ bodies."
                 )
             }
         }
