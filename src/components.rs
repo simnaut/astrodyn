@@ -41,6 +41,14 @@ pub struct IntegrationFrameRef(pub Entity);
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
 pub struct IntegratorTypeC(pub jeod_sim::IntegratorType);
 
+/// Persistent Gauss-Jackson (ABM) integrator state.
+///
+/// Required on entities using `IntegratorType::GaussJackson`. Created once
+/// with `GaussJacksonState::new(order)` and maintained across steps.
+/// When absent, `integration_system` will panic if `IntegratorTypeC` is GJ.
+#[derive(Component, Debug, Clone, Deref, DerefMut)]
+pub struct GaussJacksonStateC(pub jeod_sim::GaussJacksonState);
+
 #[derive(Component, Debug, Clone)]
 pub struct GravityControlsC(pub GravityControls<Entity>);
 

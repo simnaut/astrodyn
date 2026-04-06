@@ -44,6 +44,7 @@ pub fn integrate_body(
     torque: DVec3,
     dt: f64,
     integrator: IntegratorType,
+    gj_state: Option<&mut jeod_dynamics::GaussJacksonState>,
 ) {
     // JEOD_INV: DB.07 — translational_dynamics gates integration
     if !config.translational_dynamics {
@@ -90,7 +91,7 @@ pub fn integrate_body(
                 IntegratorType::GaussJackson { .. } => {
                     panic!(
                         "GaussJackson 6-DOF integration not yet supported. \
-                         GJ is currently translational-only."
+                         Set rotational_dynamics=false for GJ bodies."
                     );
                 }
             };
@@ -112,10 +113,11 @@ pub fn integrate_body(
         IntegratorType::Rk4 => jeod_dynamics::rk4_translational_step(trans, accel, dt),
         IntegratorType::Rkf45 => jeod_dynamics::rkf45_translational_step(trans, accel, dt),
         IntegratorType::GaussJackson { .. } => {
-            panic!(
-                "GaussJackson requires stateful integration via GaussJacksonState. \
-                 Use GaussJacksonState::step() directly instead of integrate_body()."
+            let gj = gj_state.expect(
+                "GaussJackson integrator requires gj_state. \
+                 Set SimBody::gj_state or call Simulation::validate() first.",
             );
+            gj.step(trans, accel, dt)
         }
     };
     *trans = new_trans;

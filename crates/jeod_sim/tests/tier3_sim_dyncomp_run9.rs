@@ -129,6 +129,7 @@ fn tier3_simulation_run9a_torque() {
                 total.torque + external_torque,
                 DT,
                 jeod_sim::IntegratorType::Rk4,
+                None,
             );
             current_time += DT;
         }
@@ -177,6 +178,7 @@ fn tier3_simulation_run9a_torque() {
                 total.torque + external_torque,
                 remainder,
                 jeod_sim::IntegratorType::Rk4,
+                None,
             );
             current_time += remainder;
         }
@@ -349,6 +351,7 @@ fn tier3_simulation_run9c_force_torque() {
                 total.torque + external_torque,
                 DT,
                 jeod_sim::IntegratorType::Rk4,
+                None,
             );
             current_time += DT;
         }
@@ -499,6 +502,7 @@ fn tier3_simulation_run9d_force_torque_rate() {
                 total.torque + external_torque,
                 DT,
                 jeod_sim::IntegratorType::Rk4,
+                None,
             );
             current_time += DT;
         }

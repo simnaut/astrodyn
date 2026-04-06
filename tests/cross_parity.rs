@@ -18,25 +18,26 @@
 //!   F. Spherical harmonics 4x4 + RNP
 //!   G. External torque via per-body functions
 //!   H. Flat-plate SRP with shadow detection
+//!   I. Gauss-Jackson ABM8, point-mass 3-DOF
 
 use std::time::Duration;
 
 use bevy::prelude::*;
 use bevy_jeod::{
     AerodynamicForceC, AtmosphereModelR, AtmosphericStateC, DragConfigC, DynamicsConfigC,
-    EulerAnglesC, EulerAnglesConfigC, FlatPlateConfigC, GeodeticConfigC, GeodeticStateC,
-    GravityAccelerationC, GravityControlsC, GravitySourceC, GravityTorqueC, JeodPlugin, LvlhFrameC,
-    MassPropertiesC, OrbitalElementsC, OrbitalElementsConfigC, PlanetC, PlanetFixedRotationC,
-    RadiationForceC, RotationalStateC, SolarBetaC, SourceInertialPositionC, SunMarker, TotalForceC,
-    TranslationalStateC,
+    EulerAnglesC, EulerAnglesConfigC, FlatPlateConfigC, GaussJacksonStateC, GeodeticConfigC,
+    GeodeticStateC, GravityAccelerationC, GravityControlsC, GravitySourceC, GravityTorqueC,
+    IntegratorTypeC, JeodPlugin, LvlhFrameC, MassPropertiesC, OrbitalElementsC,
+    OrbitalElementsConfigC, PlanetC, PlanetFixedRotationC, RadiationForceC, RotationalStateC,
+    SolarBetaC, SourceInertialPositionC, SunMarker, TotalForceC, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
 use jeod_sim::{
     AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig, EulerSequence,
-    ExponentialAtmosphere, GeoIndexType, GravityControl, GravityControls, GravityModel,
-    GravitySource, GravitySourceEntry, JeodQuat, LvlhFrame, MassProperties, MetAtmosphere,
-    OrbitalElements, PlanetShape, RotationalState, SimBody, Simulation, SixDofState,
-    TranslationalState,
+    ExponentialAtmosphere, GaussJacksonState, GeoIndexType, GravityControl, GravityControls,
+    GravityModel, GravitySource, GravitySourceEntry, IntegratorType, JeodQuat, LvlhFrame,
+    MassProperties, MetAtmosphere, OrbitalElements, PlanetShape, RotationalState, SimBody,
+    Simulation, SixDofState, TranslationalState,
 };
 
 const MU_EARTH: f64 = 3.986_004_415e14;
@@ -760,6 +761,7 @@ fn tier3_bevy_external_torque_per_body() {
             total.torque + torque,
             step_dt,
             jeod_sim::IntegratorType::Rk4,
+            None,
         );
     }
 
@@ -809,6 +811,7 @@ fn tier3_bevy_external_torque_per_body() {
             total.torque + torque,
             step_dt,
             jeod_sim::IntegratorType::Rk4,
+            None,
         );
     }
 
@@ -1932,4 +1935,84 @@ fn tier3_bevy_equatorial_solar_beta() {
     let sim_beta = sim_body.solar_beta.expect("solar beta computed");
     assert_bits_eq("Bevy vs Sim (equ)", "solar_beta", bevy_beta, sim_beta);
     println!("  Bevy vs Sim equatorial solar beta: bit-identical");
+}
+
+// ── Scenario I: Gauss-Jackson ABM8, point-mass 3-DOF ──
+
+#[test]
+fn tier3_bevy_gj_point_mass() {
+    println!("Scenario I: GJ ABM8 point-mass 3-DOF");
+
+    let gj_trans = TranslationalState {
+        position: DVec3::new(9e6, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 8000.0, 0.0),
+    };
+
+    // ── Bevy ──
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.add_plugins(JeodPlugin);
+
+    let planet = app
+        .world_mut()
+        .spawn((
+            Name::new("Earth"),
+            GravitySourceC(GravitySource {
+                mu: MU_EARTH,
+                model: GravityModel::PointMass,
+            }),
+            SourceInertialPositionC::default(),
+            TranslationalStateC::default(),
+        ))
+        .id();
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            DynamicsConfigC::default(),
+            TranslationalStateC(gj_trans),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+            IntegratorTypeC(IntegratorType::GaussJackson { order: 8 }),
+            GaussJacksonStateC(GaussJacksonState::new(8)),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+
+    let bevy_trans = read_trans(app.world(), vehicle);
+
+    // ── Simulation ──
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sim = Simulation::new(time, DT);
+    let earth_idx = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: MU_EARTH,
+            model: GravityModel::PointMass,
+        },
+        position: DVec3::ZERO,
+        t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
+    });
+
+    sim.add_body(SimBody {
+        trans: gj_trans,
+        integrator: IntegratorType::GaussJackson { order: 8 },
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+        },
+        ..Default::default()
+    });
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    let sim_trans = sim.body(0).trans;
+
+    assert_trans_eq("Bevy vs Sim (GJ ABM8)", &bevy_trans, &sim_trans);
+    println!("  Bevy vs Sim GJ ABM8 point-mass: bit-identical");
 }

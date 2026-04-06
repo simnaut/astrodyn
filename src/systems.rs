@@ -125,7 +125,8 @@ pub fn force_collection_system(
 /// for proper multi-stage accuracy.
 ///
 /// The integration method is determined by the optional `IntegratorTypeC`
-/// component (RK4, RKF45, etc.). When absent, RK4 is used.
+/// component (RK4, RKF45, GaussJackson). When absent, RK4 is used.
+/// GaussJackson requires `GaussJacksonStateC` on the entity.
 #[allow(clippy::type_complexity)]
 pub fn integration_system(
     mut bodies: Query<(
@@ -137,6 +138,7 @@ pub fn integration_system(
         &GravityControlsC,
         &TotalForceC,
         Option<&IntegratorTypeC>,
+        Option<&mut GaussJacksonStateC>,
     )>,
     sources: Query<(
         &GravitySourceC,
@@ -150,8 +152,17 @@ pub fn integration_system(
         return;
     }
 
-    for (entity, config, mut state, mut rot_state, mass, controls, total_force, integrator) in
-        &mut bodies
+    for (
+        entity,
+        config,
+        mut state,
+        mut rot_state,
+        mass,
+        controls,
+        total_force,
+        integrator,
+        mut gj_state,
+    ) in &mut bodies
     {
         let _ = entity; // available for panic context if integrate_body fails
         let integrator_type = integrator.map_or(jeod_sim::IntegratorType::Rk4, |c| c.0);
@@ -184,6 +195,7 @@ pub fn integration_system(
             total_force.torque,
             dt,
             integrator_type,
+            gj_state.as_mut().map(|g| &mut g.0),
         );
     }
 }

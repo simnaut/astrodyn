@@ -880,31 +880,28 @@ run_tide_group() {
 run_tide_group &
 PID_TIDE=$!
 
-# Group 17: SIM_integ_test (Gauss-Jackson reference, Phase 5f)
-INTEG_SNIPPET='
-dr = trick.sim_services.DRAscii("integ_ASCII")
-dr.set_cycle(60)
+# Group 17: SIM_GJ_test (Gauss-Jackson reference, Phase 5f)
+# Uses SIM_GJ_test instead of SIM_integ_test (which fails to compile in
+# Docker due to header incompatibility — see issue #33).
+# Scenario: circular orbit, mu=5.76e14, r0=9e6m, GJ order 8, dt=1s, 300000s.
+GJ_SNIPPET='
+dr = trick.sim_services.DRAscii("gj_ASCII")
+dr.set_cycle(300)
 dr.freq = trick.sim_services.DR_Always
 for v in [
-    "test.orbit.prop_integ_state.position[0]",
-    "test.orbit.prop_integ_state.position[1]",
-    "test.orbit.prop_integ_state.position[2]",
-    "test.orbit.prop_integ_state.velocity[0]",
-    "test.orbit.prop_integ_state.velocity[1]",
-    "test.orbit.prop_integ_state.velocity[2]",
-    "test.orbit.true_canon_state.position[0]",
-    "test.orbit.true_canon_state.position[1]",
-    "test.orbit.true_canon_state.position[2]",
-    "test.orbit.true_canon_state.velocity[0]",
-    "test.orbit.true_canon_state.velocity[1]",
-    "test.orbit.true_canon_state.velocity[2]",
+    "vehicle.dyn_body.composite_body.state.trans.position[0]",
+    "vehicle.dyn_body.composite_body.state.trans.position[1]",
+    "vehicle.dyn_body.composite_body.state.trans.position[2]",
+    "vehicle.dyn_body.composite_body.state.trans.velocity[0]",
+    "vehicle.dyn_body.composite_body.state.trans.velocity[1]",
+    "vehicle.dyn_body.composite_body.state.trans.velocity[2]",
 ]:
     dr.add_variable(v)
 trick.add_data_record_group(dr, trick.DR_Buffer)
 '
 
-run_sim_with_ascii "models/utils/integration/verif/SIM_integ_test" \
-    "SET_test/RUN_gauss_jackson" "integ_gj" "$INTEG_SNIPPET" &
+run_sim_with_ascii "models/utils/integration/verif/SIM_GJ_test" \
+    "SET_test/RUN_GJ_step1_order8_noeval_nobs" "integ_gj" "$GJ_SNIPPET" &
 PID_INTEG_GJ=$!
 
 # ════════════════════════════════════════════════════════════════════
@@ -931,7 +928,7 @@ wait $PID_SHADOW_2A     || { echo "WARN: SIM_2A_SHADOW_CALC group had failures";
 wait $PID_SRP_1ST_ORDER || { echo "WARN: SIM_3_ORBIT_1st_ORDER failed"; FAIL=1; }
 # Phase 5e-5f additions
 wait $PID_TIDE          || { echo "WARN: SIM_tide_verif group had failures"; FAIL=1; }
-wait $PID_INTEG_GJ      || { echo "WARN: SIM_integ_test GJ failed"; FAIL=1; }
+wait $PID_INTEG_GJ      || { echo "WARN: SIM_GJ_test failed"; FAIL=1; }
 
 echo ""
 echo "=== Reference data generation complete ==="

@@ -423,6 +423,32 @@ pub fn load_orbinit_csv(path: &Path) -> Vec<OrbInitRecord> {
     records
 }
 
+// ── SIM_GJ_test CSV loader (7 columns: time + pos[3] + vel[3]) ──
+
+pub fn load_gj_csv(path: &Path) -> Vec<OrbInitRecord> {
+    let content = read_csv(path, "SIM_GJ_test");
+    let mut records = Vec::new();
+    for (i, line) in content.lines().enumerate() {
+        if i == 0 || line.trim().is_empty() {
+            continue;
+        }
+        let f: Vec<&str> = line.split(',').collect();
+        assert!(
+            f.len() >= 7,
+            "line {}: expected >=7 columns, got {}",
+            i + 1,
+            f.len()
+        );
+        let p = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
+        records.push(OrbInitRecord {
+            time: p(0),
+            position: DVec3::new(p(1), p(2), p(3)),
+            velocity: DVec3::new(p(4), p(5), p(6)),
+        });
+    }
+    records
+}
+
 // ── Euler CSV loader (56 columns: time + 36 angles + 6 pos/vel + 9 T + 4 quat) ──
 
 #[derive(Debug)]

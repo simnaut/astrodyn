@@ -119,6 +119,12 @@ pub struct SimBody {
     pub geodetic_state: Option<GeodeticState>,
     /// Solar beta angle (radians).
     pub solar_beta: Option<f64>,
+
+    // ── Stateful integrator state ──
+    /// Gauss-Jackson (ABM) integrator state. `None` for non-GJ bodies.
+    /// Auto-initialized by `Simulation::validate()` when `integrator` is
+    /// `IntegratorType::GaussJackson { order }`.
+    pub gj_state: Option<jeod_dynamics::GaussJacksonState>,
 }
 
 impl Default for SimBody {
@@ -152,6 +158,7 @@ impl Default for SimBody {
             lvlh_frame: None,
             geodetic_state: None,
             solar_beta: None,
+            gj_state: None,
         }
     }
 }
@@ -330,11 +337,20 @@ impl Simulation {
                 fatal.push(error);
             }
         }
-        if fatal.is_empty() {
-            Ok(())
-        } else {
-            Err(fatal)
+        if !fatal.is_empty() {
+            return Err(fatal);
         }
+
+        // Auto-initialize Gauss-Jackson state for bodies that need it.
+        for body in &mut self.bodies {
+            if let jeod_dynamics::IntegratorType::GaussJackson { order } = body.integrator {
+                if body.gj_state.is_none() {
+                    body.gj_state = Some(jeod_dynamics::GaussJacksonState::new(order));
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Advance the simulation by one timestep.
@@ -556,6 +572,7 @@ impl Simulation {
                 body.total_force.torque,
                 dt,
                 body.integrator,
+                body.gj_state.as_mut(),
             );
         }
 
@@ -644,6 +661,21 @@ impl Simulation {
         }
         let remainder = target_time - self.time.simtime;
         if remainder > 0.001 {
+            // Fractional steps corrupt Gauss-Jackson history (ABM coefficients
+            // assume constant dt). Guard against this.
+            let has_gj = self.bodies.iter().any(|b| {
+                matches!(
+                    b.integrator,
+                    jeod_dynamics::IntegratorType::GaussJackson { .. }
+                )
+            });
+            assert!(
+                !has_gj,
+                "step_until() would take a fractional step ({remainder:.6}s vs dt={:.6}s). \
+                 GaussJackson requires constant dt. Ensure target_time is \
+                 an integer multiple of dt.",
+                self.dt
+            );
             let saved_dt = self.dt;
             self.dt = remainder;
             self.step();

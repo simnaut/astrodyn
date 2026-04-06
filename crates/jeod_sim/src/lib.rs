@@ -53,7 +53,7 @@ pub use forces::collect_and_resolve_forces;
 pub use gravity::{accumulate_gravity, ResolvedSource};
 pub use integration::integrate_body;
 pub use interactions::{compute_drag, compute_gravity_torque, FlatPlateState};
-pub use jeod_dynamics::IntegratorType;
+pub use jeod_dynamics::{GaussJacksonState, IntegratorType};
 pub use pipeline::{PipelineStage, PIPELINE_ORDER};
 pub use simulation::{GravitySourceEntry, SimBody, Simulation};
 pub use validation::{validate_body, ValidationError};
