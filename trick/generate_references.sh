@@ -836,6 +836,77 @@ run_sim_with_ascii "models/interactions/radiation_pressure/verif/SIM_3_ORBIT_1st
     "SET_test/RUN_radiation" "srp_1st_order_radiation" "$SRP_ORBIT_SNIPPET" &
 PID_SRP_1ST_ORDER=$!
 
+# Group 16: SIM_tide_verif (solid body tides, Phase 5e)
+TIDE_SNIPPET='
+dr = trick.sim_services.DRAscii("tide_ASCII")
+dr.set_cycle(60)
+dr.freq = trick.sim_services.DR_Always
+for v in [
+    "sv_dyn.dyn_body.composite_body.state.trans.position[0]",
+    "sv_dyn.dyn_body.composite_body.state.trans.position[1]",
+    "sv_dyn.dyn_body.composite_body.state.trans.position[2]",
+    "sv_dyn.dyn_body.composite_body.state.trans.velocity[0]",
+    "sv_dyn.dyn_body.composite_body.state.trans.velocity[1]",
+    "sv_dyn.dyn_body.composite_body.state.trans.velocity[2]",
+    "earth.sb_tide.dC20",
+]:
+    dr.add_variable(v)
+trick.add_data_record_group(dr, trick.DR_Buffer)
+'
+
+run_tide_group() {
+    local sim_path="models/environment/gravity/verif/SIM_tide_verif"
+    local runs=(
+        "SET_test/RUN_01:tide_run01:tide_run01_tide_ASCII.csv"
+        "SET_test/RUN_02:tide_run02:tide_run02_tide_ASCII.csv"
+    )
+    local needs_build=0
+    for entry in "${runs[@]}"; do
+        IFS=: read -r _run_dir label primary <<< "$entry"
+        if ! has_output "$label" "$primary"; then
+            needs_build=1; break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_tide_verif group (all outputs exist) ==="; return 0
+    fi
+    local fail=0
+    for entry in "${runs[@]}"; do
+        IFS=: read -r run_dir label primary <<< "$entry"
+        run_sim_with_ascii "$sim_path" "$run_dir" "$label" "$TIDE_SNIPPET" || fail=1
+    done
+    return $fail
+}
+run_tide_group &
+PID_TIDE=$!
+
+# Group 17: SIM_integ_test (Gauss-Jackson reference, Phase 5f)
+INTEG_SNIPPET='
+dr = trick.sim_services.DRAscii("integ_ASCII")
+dr.set_cycle(60)
+dr.freq = trick.sim_services.DR_Always
+for v in [
+    "test.orbit.prop_integ_state.position[0]",
+    "test.orbit.prop_integ_state.position[1]",
+    "test.orbit.prop_integ_state.position[2]",
+    "test.orbit.prop_integ_state.velocity[0]",
+    "test.orbit.prop_integ_state.velocity[1]",
+    "test.orbit.prop_integ_state.velocity[2]",
+    "test.orbit.true_canon_state.position[0]",
+    "test.orbit.true_canon_state.position[1]",
+    "test.orbit.true_canon_state.position[2]",
+    "test.orbit.true_canon_state.velocity[0]",
+    "test.orbit.true_canon_state.velocity[1]",
+    "test.orbit.true_canon_state.velocity[2]",
+]:
+    dr.add_variable(v)
+trick.add_data_record_group(dr, trick.DR_Buffer)
+'
+
+run_sim_with_ascii "models/utils/integration/verif/SIM_integ_test" \
+    "SET_test/RUN_gauss_jackson" "integ_gj" "$INTEG_SNIPPET" &
+PID_INTEG_GJ=$!
+
 # ════════════════════════════════════════════════════════════════════
 # WAIT FOR ALL GROUPS
 # ════════════════════════════════════════════════════════════════════
@@ -858,6 +929,9 @@ wait $PID_DRAG          || { echo "WARN: SIM_VER_DRAG group had failures"; FAIL=
 wait $PID_SRP_BASIC     || { echo "WARN: SIM_1_BASIC group had failures"; FAIL=1; }
 wait $PID_SHADOW_2A     || { echo "WARN: SIM_2A_SHADOW_CALC group had failures"; FAIL=1; }
 wait $PID_SRP_1ST_ORDER || { echo "WARN: SIM_3_ORBIT_1st_ORDER failed"; FAIL=1; }
+# Phase 5e-5f additions
+wait $PID_TIDE          || { echo "WARN: SIM_tide_verif group had failures"; FAIL=1; }
+wait $PID_INTEG_GJ      || { echo "WARN: SIM_integ_test GJ failed"; FAIL=1; }
 
 echo ""
 echo "=== Reference data generation complete ==="
