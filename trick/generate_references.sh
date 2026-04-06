@@ -222,6 +222,8 @@ run_dyncomp_group() {
         "SET_test/RUN_10D:dyncomp_run10d:dyncomp_run10d_state.csv"
         # Phase 4b-A additions (combined-force; consumed by Phase 5 tests)
         "SET_test/RUN_4:dyncomp_run4:dyncomp_run4_state.csv"
+        # Phase 5c: polar motion validation (identical to RUN_2 but enable_polar=True)
+        "SET_test/RUN_2P:dyncomp_run2p:dyncomp_run2p_state.csv"
         "SET_test/RUN_7A:dyncomp_run7a:dyncomp_run7a_state.csv"
         "SET_test/RUN_7B:dyncomp_run7b:dyncomp_run7b_state.csv"
         "SET_test/RUN_7C:dyncomp_run7c:dyncomp_run7c_state.csv"
