@@ -647,10 +647,10 @@ Tests below exercise Phase 3/4 physics only — no Phase 5 dependencies.
 
 ### Entrance Criteria
 
-- [ ] Phase 4b exit criteria met
-- [ ] All interaction forces and derived states Tier 3 validated
-- [ ] Docker available for running Trick container (established in Phase 1)
-- [ ] SIM_dyncomp full-force reference data available (generated in Phase 4b)
+- [x] Phase 4b exit criteria met
+- [x] All interaction forces and derived states Tier 3 validated
+- [x] Docker available for running Trick container (established in Phase 1)
+- [x] SIM_dyncomp full-force reference data available (generated in Phase 4b)
 
 ### Tasks
 
@@ -744,8 +744,8 @@ JEOD 5.4).
 - [x] **All prior phase exit criteria** still pass (no regressions) — 300 tests pass
 - [x] **Tier 3 LEO 24h (high-fidelity gravity)**: Position error vs. JEOD < 10 m — RUN_3A (4x4): 0.13 m, RUN_3B (8x8): 0.23 m
 - [x] **Tier 3 LEO with drag**: Position error vs. JEOD < 100 m over 24h — RUN_6B: 1.1 m over 8h
-- [ ] **Tier 3 Earth-Moon multi-body**: Position error vs. JEOD < 100 m over 7 days (Earth + Moon + Sun gravity, differential acceleration) — deferred to Phase 6 (requires Moon gravity model + lunar RNP)
-- [ ] **Tier 3 Mars orbit**: Position error vs. JEOD < 100 m over 7 days (MRO110B2 gravity) — deferred to Phase 6 (requires Mars RNP)
+- ~~**Tier 3 Earth-Moon multi-body**~~ — moved to Phase 6 exit criteria (requires Moon gravity model + lunar RNP)
+- ~~**Tier 3 Mars orbit**~~ — moved to Phase 6 exit criteria (requires Mars RNP)
 - [x] **Tier 3 Gauss-Jackson trajectory**: Position error vs. JEOD < 1 m — `tier3_simulation_gj_order8` achieves 2.3e-4 m
 - [x] **Tier 3 RKF45 trajectory**: RKF45 on same scenario — `tier3_bevy_rkf45_matches_simulation_bit_identical` validates bit-identical Bevy/Simulation parity; JEOD's RKF45 is also fixed-step (see Tier 1 note)
 - [x] **Tier 3 polar motion**: Earth-fixed frame with polar motion — `tier3_simulation_run2p_polar_motion` matches JEOD
@@ -774,8 +774,8 @@ edge cases, and specialized scenarios to ensure no JEOD capability goes unverifi
 
 ### Entrance Criteria
 
-- [ ] Phase 5 exit criteria met
-- [ ] All Phase 5 physics (advanced integrators, tides, polar motion, multi-body) functional
+- [x] Phase 5 exit criteria met
+- [x] All Phase 5 physics (advanced integrators, tides, polar motion, multi-body) functional
 - [ ] Docker pipeline capable of building dedicated JEOD sims beyond SIM_dyncomp
 
 ### Tasks
@@ -814,6 +814,8 @@ edge cases, and specialized scenarios to ensure no JEOD capability goes unverifi
 
 #### Tier 3 (trajectory cross-validation)
 - [ ] **All prior phase exit criteria** still pass (no regressions)
+- [ ] **Tier 3 Earth-Moon multi-body**: Position error vs. JEOD < 100 m over 7 days (Earth + Moon + Sun gravity, differential acceleration). Requires Moon gravity model + lunar RNP.
+- [ ] **Tier 3 Mars orbit**: Position error vs. JEOD < 100 m over 7 days (MRO110B2 gravity). Requires Mars RNP.
 - [ ] **Relative dynamics**: Relative state between two vehicles matches JEOD to < 1e-6 m over 100s (SIM_Relative)
 - [ ] **Planetary derived states**: Orbital elements in LEO/GEO/polar match JEOD to < 1e-6 per element over 24h (SIM_Planetary)
 - [ ] **Earth lighting**: Shadow fraction matches JEOD to < 0.01 across all 10 geometries (SIM_LIGHT_CIR)
