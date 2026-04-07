@@ -29,7 +29,8 @@ use bevy_jeod::{
     GeodeticStateC, GravityAccelerationC, GravityControlsC, GravitySourceC, GravityTorqueC,
     IntegratorTypeC, JeodPlugin, LvlhFrameC, MassPropertiesC, OrbitalElementsC,
     OrbitalElementsConfigC, PlanetC, PlanetFixedRotationC, RadiationForceC, RotationalStateC,
-    SolarBetaC, SourceInertialPositionC, SunMarker, TotalForceC, TranslationalStateC,
+    SolarBetaC, SourceInertialPositionC, SunMarker, TidalConfigC, TidalDeltaC20C, TotalForceC,
+    TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
 use jeod_sim::{
@@ -37,7 +38,7 @@ use jeod_sim::{
     ExponentialAtmosphere, GaussJacksonState, GeoIndexType, GravityControl, GravityControls,
     GravityModel, GravitySource, GravitySourceEntry, IntegratorType, JeodQuat, LvlhFrame,
     MassProperties, MetAtmosphere, OrbitalElements, PlanetShape, RotationalState, SimBody,
-    Simulation, SixDofState, TranslationalState,
+    Simulation, SixDofState, TidalBody, TidalConfig, TranslationalState,
 };
 
 const MU_EARTH: f64 = 3.986_004_415e14;
@@ -2015,4 +2016,116 @@ fn tier3_bevy_gj_point_mass() {
 
     assert_trans_eq("Bevy vs Sim (GJ ABM8)", &bevy_trans, &sim_trans);
     println!("  Bevy vs Sim GJ ABM8 point-mass: bit-identical");
+}
+
+// ── Scenario J: Solid body tides ──
+// SH 4x4 + RNP + tidal ΔC20 with fixed Moon/Sun positions.
+// Proves TidalConfigC + TidalDeltaC20C + tidal_update_system produce
+// bit-identical results to Simulation's internal tidal pipeline.
+
+#[test]
+fn tier3_bevy_tidal_sh4x4() {
+    println!("Scenario J: SH 4x4 + RNP + solid body tides");
+
+    let jeod_root = jeod_test_data::jeod_path();
+    let ggm02c_path = jeod_root.join("models/environment/gravity/data/src/earth_GGM02C.cc");
+    assert!(
+        ggm02c_path.exists(),
+        "GGM02C coefficients not found at {}",
+        ggm02c_path.display()
+    );
+    let sh_data = jeod_sim::coefficients::load_from_jeod_cc(&ggm02c_path).expect("load GGM02C");
+    let mu = sh_data.mu;
+    let radius = sh_data.radius;
+
+    // Fixed Moon/Sun positions (representative, not from ephemeris)
+    let moon_pos = DVec3::new(2.0e8, 3.0e8, 1.0e8);
+    let sun_pos = DVec3::new(1.0e11, 0.5e11, 0.2e11);
+
+    let tidal_config = TidalConfig {
+        k2: jeod_sim::EARTH_K2,
+        mu_primary: mu,
+        radius_primary: radius,
+        tidal_bodies: vec![
+            TidalBody {
+                mu: 4902.79980693169e9,
+                position_inertial: moon_pos,
+            },
+            TidalBody {
+                mu: 1.327_124_40e20,
+                position_inertial: sun_pos,
+            },
+        ],
+    };
+
+    let sh_source = GravitySource {
+        mu,
+        model: GravityModel::SphericalHarmonics(Box::new(sh_data)),
+    };
+
+    // ── Bevy ──
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.add_plugins(JeodPlugin);
+
+    let planet = app
+        .world_mut()
+        .spawn((
+            Name::new("Earth"),
+            GravitySourceC(sh_source.clone()),
+            SourceInertialPositionC::default(),
+            TranslationalStateC::default(),
+            PlanetFixedRotationC(DMat3::IDENTITY),
+            TidalConfigC(tidal_config.clone()),
+            TidalDeltaC20C(0.0),
+        ))
+        .id();
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(iss_trans()),
+            DynamicsConfigC(DynamicsConfig {
+                translational_dynamics: true,
+                rotational_dynamics: false,
+                three_dof: true,
+            }),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_nonspherical(planet, 4, 4, false)],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+    let bevy_state = read_trans(app.world(), vehicle);
+
+    // ── Simulation ──
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sim = Simulation::new(time, DT);
+    let earth_idx = sim.add_source(GravitySourceEntry {
+        source: sh_source,
+        position: DVec3::ZERO,
+        t_inertial_pfix: Some(DMat3::IDENTITY),
+        delta_c20: 0.0,
+        tidal_config: Some(tidal_config),
+    });
+
+    sim.add_body(SimBody {
+        trans: iss_trans(),
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_nonspherical(earth_idx, 4, 4, false)],
+        },
+        ..Default::default()
+    });
+
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    let sim_state = sim.body(0).trans;
+
+    assert_trans_eq("Bevy vs Sim (SH 4x4 + tides)", &bevy_state, &sim_state);
+    println!("  Bevy vs Sim SH 4x4 + tides: bit-identical");
 }

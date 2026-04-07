@@ -70,7 +70,7 @@ pub use jeod_dynamics::{
 };
 
 // jeod_gravity: source definitions, controls, and tides
-pub use jeod_gravity::tides::{compute_delta_c20, TidalBody, TidalConfig};
+pub use jeod_gravity::tides::{compute_delta_c20, TidalBody, TidalConfig, EARTH_K2};
 pub use jeod_gravity::{GravityControl, GravityControls, GravityModel, GravitySource};
 
 // jeod_atmosphere: state output and model types

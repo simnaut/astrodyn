@@ -55,7 +55,10 @@ fn tier3_simulation_solar_beta() {
         tidal_config: None,
     });
 
-    // Sun source -- position from DE421 at J2000.0
+    // Sun source -- position from DE421 at J2000.0.
+    // mu=0 matches the JEOD RUN_2 reference (Earth-only gravity). Sun is used
+    // solely for solar beta direction. 3rd-body gravity validated separately
+    // by tier3_sim_dyncomp_run4 and tier3_sim_torque_simple.
     // J2000.0 = JD 2451545.0
     let j2000_jd = 2_451_545.0;
     let (initial_sun, _) = ephemeris
