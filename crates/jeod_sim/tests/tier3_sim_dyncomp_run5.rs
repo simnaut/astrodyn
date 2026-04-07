@@ -92,6 +92,8 @@ fn run_atmosphere_test(
         },
         position: DVec3::ZERO,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
     // Drag OFF, gravity torque OFF (common_input defaults).

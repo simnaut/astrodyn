@@ -4,6 +4,28 @@ use crate::state::TranslationalState;
 use glam::DVec3;
 use jeod_math::JeodQuat;
 
+/// Integration method selection.
+///
+/// Follows the existing enum-dispatch pattern (`GravityModel`). Each variant
+/// dispatches to its own pure-function step implementation.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum IntegratorType {
+    /// Classical 4th-order Runge-Kutta (fixed step).
+    #[default]
+    Rk4,
+    /// Runge-Kutta-Fehlberg 4(5) (fixed step, 5th-order result).
+    /// Uses 6 function evaluations per step vs RK4's 4, but achieves
+    /// 5th-order accuracy. Step size is fixed (no adaptive control).
+    Rkf45,
+    /// Gauss-Jackson (Adams-Bashforth-Moulton) multi-step predictor-corrector.
+    /// Requires persistent `GaussJacksonState` across steps. Uses RK4 for
+    /// priming, then ABM for efficient high-order stepping. Order 8 default.
+    /// Note: GJ is stateful — the `GaussJacksonState` must be stored
+    /// externally (in `SimBody` or as a Bevy component) and passed to
+    /// the integration function.
+    GaussJackson { order: usize },
+}
+
 /// Advance translational state by one RK4 step.
 ///
 /// The `accel_fn` computes acceleration from the current state. It is called

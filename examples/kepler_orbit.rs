@@ -107,7 +107,7 @@ fn print_state(
             continue;
         }
 
-        if counter.0 % 100 == 0 || counter.0 <= 1 {
+        if counter.0.is_multiple_of(100) || counter.0 <= 1 {
             let v = state.velocity.length();
             let alt_km = (state.position.length() - 6_378_137.0) / 1000.0;
 

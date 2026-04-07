@@ -50,9 +50,10 @@ pub use derived::{
     compute_body_solar_beta, compute_orbital_elements,
 };
 pub use forces::collect_and_resolve_forces;
-pub use gravity::accumulate_gravity;
+pub use gravity::{accumulate_gravity, ResolvedSource};
 pub use integration::integrate_body;
 pub use interactions::{compute_drag, compute_gravity_torque, FlatPlateState};
+pub use jeod_dynamics::{GaussJacksonState, IntegratorType};
 pub use pipeline::{PipelineStage, PIPELINE_ORDER};
 pub use simulation::{GravitySourceEntry, SimBody, Simulation};
 pub use validation::{validate_body, ValidationError};
@@ -68,7 +69,8 @@ pub use jeod_dynamics::{
     TranslationalState, INERTIA_CONSISTENCY_TOL,
 };
 
-// jeod_gravity: source definitions and controls
+// jeod_gravity: source definitions, controls, and tides
+pub use jeod_gravity::tides::{compute_delta_c20, TidalBody, TidalConfig, EARTH_K2};
 pub use jeod_gravity::{GravityControl, GravityControls, GravityModel, GravitySource};
 
 // jeod_atmosphere: state output and model types
@@ -90,7 +92,9 @@ pub use jeod_frames::RefFrameState;
 pub use jeod_time::{leap_second::default_leap_second_table, SimulationTime};
 
 // jeod_time: planet rotation (used by ephemeris stage)
-pub use jeod_frames::rotation_j2000::compute_t_parent_this_from_tjt;
+pub use jeod_frames::rotation_j2000::{
+    compute_t_parent_this_from_tjt, compute_t_parent_this_from_tjt_with_polar, polar_motion_matrix,
+};
 
 // jeod_ephemeris: ephemeris data
 pub use jeod_ephemeris::{Ephemeris, EphemerisBody};

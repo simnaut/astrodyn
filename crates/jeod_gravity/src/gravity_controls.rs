@@ -25,6 +25,17 @@ pub struct GravityControl<SourceId = String> {
     pub gradient_degree: usize,
     /// Order for gradient computation. Must be <= order and <= gradient_degree.
     pub gradient_order: usize,
+    /// If true, compute gravity as differential acceleration: the acceleration
+    /// of the vehicle toward this source minus the acceleration of the
+    /// integration frame origin toward this source. This is the correct
+    /// treatment for third-body perturbations (e.g., Sun/Moon when integrating
+    /// in an Earth-centered frame).
+    ///
+    /// Matches JEOD's `GravityIntegFrame::is_third_body` flag. In JEOD, this
+    /// is set automatically based on whether the source's inertial frame is a
+    /// progeny of the integration frame. Here it is set explicitly per control.
+    // JEOD_INV: GV.14 — third-body vs direct gravity classification (set explicitly; JEOD derives from frame tree ancestry)
+    pub differential: bool,
 }
 
 impl<SourceId> GravityControl<SourceId> {
@@ -39,6 +50,7 @@ impl<SourceId> GravityControl<SourceId> {
             perturbing_only: false,
             gradient_degree: 0,
             gradient_order: 0,
+            differential: false,
         }
     }
 
@@ -58,6 +70,26 @@ impl<SourceId> GravityControl<SourceId> {
             perturbing_only: false,
             gradient_degree: 0,
             gradient_order: 0,
+            differential: false,
+        }
+    }
+
+    /// Create a spherical (point-mass) gravity control for a third-body source.
+    ///
+    /// Third-body sources use differential acceleration: the acceleration of
+    /// the vehicle toward this source minus the acceleration of the integration
+    /// frame origin toward this source.
+    pub fn new_third_body(source_name: SourceId) -> Self {
+        Self {
+            source_name,
+            gradient: false,
+            spherical: true,
+            degree: 0,
+            order: 0,
+            perturbing_only: false,
+            gradient_degree: 0,
+            gradient_order: 0,
+            differential: true,
         }
     }
 
@@ -188,6 +220,7 @@ impl<SourceId> GravityControl<SourceId> {
         source: &GravitySource,
         position: DVec3,
         t_inertial_pfix: Option<&DMat3>,
+        delta_c20: f64,
     ) -> GravityAcceleration {
         self.evaluate_inner(
             source,
@@ -196,6 +229,7 @@ impl<SourceId> GravityControl<SourceId> {
             self.gradient,
             self.gradient_degree,
             self.gradient_order,
+            delta_c20,
         )
     }
 
@@ -214,13 +248,15 @@ impl<SourceId> GravityControl<SourceId> {
         source: &GravitySource,
         position: DVec3,
         t_inertial_pfix: Option<&DMat3>,
+        delta_c20: f64,
     ) -> GravityAcceleration {
-        self.evaluate_inner(source, position, t_inertial_pfix, false, 0, 0)
+        self.evaluate_inner(source, position, t_inertial_pfix, false, 0, 0, delta_c20)
     }
 
     /// Shared dispatch for [`evaluate`] and [`evaluate_accel_only`].
     // JEOD_INV: GV.13 — gravity source must have inertial frame (planet-fixed rotation required for non-spherical)
     // JEOD_INV: GV.17 — active nonspherical controls subscribe to planet-fixed frame
+    #[allow(clippy::too_many_arguments)]
     fn evaluate_inner(
         &self,
         source: &GravitySource,
@@ -229,6 +265,7 @@ impl<SourceId> GravityControl<SourceId> {
         compute_gradient: bool,
         gradient_degree: usize,
         gradient_order: usize,
+        delta_c20: f64,
     ) -> GravityAcceleration {
         if self.is_nonspherical() {
             let rot = t_inertial_pfix.unwrap_or_else(|| {
@@ -249,6 +286,7 @@ impl<SourceId> GravityControl<SourceId> {
                 compute_gradient,
                 gradient_degree,
                 gradient_order,
+                delta_c20,
             )
         } else {
             crate::gravitation(
@@ -261,6 +299,7 @@ impl<SourceId> GravityControl<SourceId> {
                 compute_gradient,
                 gradient_degree,
                 gradient_order,
+                0.0, // point-mass: no SH coefficients to modify
             )
         }
     }

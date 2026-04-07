@@ -23,6 +23,25 @@ pub struct GravitySourceEntry {
     /// Inertial-to-planet-fixed rotation matrix. If `Some`, the ephemeris stage
     /// updates it each step. If `None`, no rotation is applied (point-mass only).
     pub t_inertial_pfix: Option<DMat3>,
+    /// Tidal ΔC20 to add to the base C20 coefficient before spherical harmonics
+    /// evaluation. Updated each step by the environment stage if tidal effects
+    /// are configured. Zero when no tides.
+    pub delta_c20: f64,
+    /// Tidal configuration. When `Some`, the simulation computes ΔC20 each step.
+    pub tidal_config: Option<jeod_gravity::tides::TidalConfig>,
+}
+
+impl GravitySourceEntry {
+    /// Create a new gravity source entry without tidal effects.
+    pub fn new(source: GravitySource, position: DVec3, t_inertial_pfix: Option<DMat3>) -> Self {
+        Self {
+            source,
+            position,
+            t_inertial_pfix,
+            delta_c20: 0.0,
+            tidal_config: None,
+        }
+    }
 }
 
 /// Per-body simulation state and configuration.
@@ -44,6 +63,8 @@ pub struct SimBody {
     pub config: DynamicsConfig,
     /// Gravity controls referencing sources by index.
     pub gravity_controls: GravityControls<usize>,
+    /// Integration method. Defaults to `IntegratorType::Rk4`.
+    pub integrator: jeod_dynamics::IntegratorType,
     /// Drag configuration. `None` disables drag.
     pub drag: Option<DragConfig>,
     /// Flat-plate SRP configuration with thermal state. `None` disables SRP.
@@ -98,6 +119,12 @@ pub struct SimBody {
     pub geodetic_state: Option<GeodeticState>,
     /// Solar beta angle (radians).
     pub solar_beta: Option<f64>,
+
+    // ── Stateful integrator state ──
+    /// Gauss-Jackson (ABM) integrator state. `None` for non-GJ bodies.
+    /// Auto-initialized by `Simulation::validate()` when `integrator` is
+    /// `IntegratorType::GaussJackson { order }`.
+    pub gj_state: Option<jeod_dynamics::GaussJacksonState>,
 }
 
 impl Default for SimBody {
@@ -107,6 +134,7 @@ impl Default for SimBody {
             rot: None,
             mass: None,
             config: DynamicsConfig::default(),
+            integrator: jeod_dynamics::IntegratorType::default(),
             gravity_controls: GravityControls::default(),
             drag: None,
             flat_plate_state: None,
@@ -130,6 +158,7 @@ impl Default for SimBody {
             lvlh_frame: None,
             geodetic_state: None,
             solar_beta: None,
+            gj_state: None,
         }
     }
 }
@@ -164,6 +193,13 @@ pub struct Simulation {
     pub atmosphere_planet_source: Option<usize>,
     /// Index into `sources` for the Sun (used by SRP).
     pub sun_source: Option<usize>,
+    /// Polar motion parameters (xp, yp) in radians. When `Some`, the RNP
+    /// composition includes polar motion: W(xp,yp) × R(GAST) × N × P.
+    /// When `None`, polar motion is omitted (matches JEOD `enable_polar=false`).
+    ///
+    /// For static simulations, set this once. For time-varying polar motion,
+    /// update before each step from IERS EOP data (table interpolation).
+    pub polar_motion: Option<(f64, f64)>,
     /// Integration timestep (seconds).
     pub dt: f64,
 }
@@ -178,6 +214,7 @@ impl Simulation {
             atmosphere: None,
             atmosphere_planet_source: None,
             sun_source: None,
+            polar_motion: None,
             dt,
         }
     }
@@ -262,6 +299,23 @@ impl Simulation {
                 all_errors.push(ValidationError::ForceProducerWithoutMass { body_idx });
             }
 
+            // GaussJackson is translational-only (6-DOF not yet supported)
+            if matches!(
+                body.integrator,
+                jeod_dynamics::IntegratorType::GaussJackson { .. }
+            ) && body.config.rotational_dynamics
+            {
+                all_errors.push(ValidationError::GaussJacksonWith6Dof { body_idx });
+            }
+
+            // GaussJackson order must be in supported range (AB/AM tables go up to 8)
+            if let jeod_dynamics::IntegratorType::GaussJackson { order } = body.integrator {
+                if !(1..=8).contains(&order) {
+                    all_errors
+                        .push(ValidationError::GaussJacksonOrderOutOfRange { body_idx, order });
+                }
+            }
+
             // Apply gravity control auto-corrections (degree/order clamping).
             // JEOD_INV: GV.03 — check_validity() auto-corrects out-of-range settings
             for ctrl in &mut body.gravity_controls.controls {
@@ -300,11 +354,20 @@ impl Simulation {
                 fatal.push(error);
             }
         }
-        if fatal.is_empty() {
-            Ok(())
-        } else {
-            Err(fatal)
+        if !fatal.is_empty() {
+            return Err(fatal);
         }
+
+        // Auto-initialize Gauss-Jackson state for bodies that need it.
+        for body in &mut self.bodies {
+            if let jeod_dynamics::IntegratorType::GaussJackson { order } = body.integrator {
+                if body.gj_state.is_none() {
+                    body.gj_state = Some(jeod_dynamics::GaussJacksonState::new(order));
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Advance the simulation by one timestep.
@@ -330,11 +393,20 @@ impl Simulation {
         // NOTE: Currently applies the same Earth RNP rotation to ALL rotating
         // sources. Multi-planet sims (Moon, Mars) would need per-source rotation
         // parameters. This is a Phase 5 limitation.
-        let rotation =
-            crate::compute_t_parent_this_from_tjt(self.time.gmst_seconds, self.time.tt_tjt());
+        let rotation = crate::compute_t_parent_this_from_tjt_with_polar(
+            self.time.gmst_seconds,
+            self.time.tt_tjt(),
+            self.polar_motion,
+        );
         for source in &mut self.sources {
             if source.t_inertial_pfix.is_some() {
                 source.t_inertial_pfix = Some(rotation);
+            }
+            // Compute tidal ΔC20 if configured; otherwise clear any stale value.
+            if let Some(ref config) = source.tidal_config {
+                source.delta_c20 = jeod_gravity::tides::compute_delta_c20(config, &rotation);
+            } else {
+                source.delta_c20 = 0.0;
             }
         }
 
@@ -352,10 +424,14 @@ impl Simulation {
             body.gravity_accel = accumulate_gravity(
                 body.trans.position,
                 &body.gravity_controls,
+                DVec3::ZERO,
                 |source_id: usize| {
-                    sources
-                        .get(source_id)
-                        .map(|s| (&s.source, s.t_inertial_pfix.as_ref()))
+                    sources.get(source_id).map(|s| crate::ResolvedSource {
+                        source: &s.source,
+                        rotation: s.t_inertial_pfix.as_ref(),
+                        position: s.position,
+                        delta_c20: s.delta_c20,
+                    })
                 },
             );
         }
@@ -501,16 +577,21 @@ impl Simulation {
                 body.rot.as_mut(),
                 body.mass.as_ref(),
                 |pos| {
-                    accumulate_gravity(pos, controls, |source_id| {
-                        sources
-                            .get(source_id)
-                            .map(|s| (&s.source, s.t_inertial_pfix.as_ref()))
+                    accumulate_gravity(pos, controls, DVec3::ZERO, |source_id| {
+                        sources.get(source_id).map(|s| crate::ResolvedSource {
+                            source: &s.source,
+                            rotation: s.t_inertial_pfix.as_ref(),
+                            position: s.position,
+                            delta_c20: s.delta_c20,
+                        })
                     })
                     .grav_accel
                 },
                 body.total_force.force,
                 body.total_force.torque,
                 dt,
+                body.integrator,
+                body.gj_state.as_mut(),
             );
         }
 
@@ -599,6 +680,21 @@ impl Simulation {
         }
         let remainder = target_time - self.time.simtime;
         if remainder > 0.001 {
+            // Fractional steps corrupt Gauss-Jackson history (ABM coefficients
+            // assume constant dt). Guard against this.
+            let has_gj = self.bodies.iter().any(|b| {
+                matches!(
+                    b.integrator,
+                    jeod_dynamics::IntegratorType::GaussJackson { .. }
+                )
+            });
+            assert!(
+                !has_gj,
+                "step_until() would take a fractional step ({remainder:.6}s vs dt={:.6}s). \
+                 GaussJackson requires constant dt. Ensure target_time is \
+                 an integer multiple of dt.",
+                self.dt
+            );
             let saved_dt = self.dt;
             self.dt = remainder;
             self.step();

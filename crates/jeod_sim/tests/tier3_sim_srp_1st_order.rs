@@ -142,8 +142,12 @@ fn tier3_srp_1st_order_trajectory() {
         },
         position: DVec3::ZERO,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
+    // Sun: mu=0 because the JEOD SIM_3_ORBIT_1st_ORDER reference sim uses Sun
+    // only for SRP direction, not gravitational perturbation.
     let initial_sun = srp_sun_position(0.0, &ephemeris);
     let sun = sim.add_source(GravitySourceEntry {
         source: GravitySource {
@@ -152,6 +156,8 @@ fn tier3_srp_1st_order_trajectory() {
         },
         position: initial_sun,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
     sim.sun_source = Some(sun);
 

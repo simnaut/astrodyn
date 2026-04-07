@@ -47,6 +47,8 @@ fn run_lvlh_test(
         },
         position: DVec3::ZERO,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
     sim.add_body(SimBody {

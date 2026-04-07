@@ -15,22 +15,26 @@
 //! All runs share: ISS mass (400,000 kg, non-diagonal inertia), epoch Nov 20 2007
 //! 00:00 UTC, RK4 at 32 Hz, 10,800 s duration.
 //!
-//! JEOD includes Earth GGM05C + Sun + Moon (spherical, no gradient); our tests
-//! use Earth only because differential 3rd-body acceleration is not yet ported
-//! (Phase 5 task 5.40). This causes ~10 m position drift over 3h from the missing
-//! ~1e-6 m/s2 Sun/Moon perturbation, which cascades through gravity gradient
-//! torque feedback into attitude divergence.
+//! JEOD includes Earth GGM05C + Sun + Moon (spherical, no gradient). Our tests
+//! include Sun/Moon as differential third-body sources with DE421 ephemeris
+//! (Phase 5a). Residual error is dominated by DE421 interpolation differences
+//! between Anise and JEOD's native reader (~10 arcsecond Sun direction offset,
+//! see simnaut/bevy_jeod#27).
 
 mod sim_test_helpers;
 use sim_test_helpers::*;
 
 use glam::{DMat3, DVec3};
 use jeod_sim::{
-    DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource,
-    GravitySourceEntry, MassProperties, RotationalState, SimBody, Simulation, SimulationTime,
-    TranslationalState,
+    DynamicsConfig, Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel,
+    GravitySource, GravitySourceEntry, MassProperties, RotationalState, SimBody, Simulation,
+    SimulationTime, TranslationalState,
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
+use std::path::Path;
+
+const MU_SUN: f64 = 1.327_124_40e20;
+const MU_MOON: f64 = 4902.79980693169e9;
 
 // -- ISS mass properties from JEOD Modified_data/mass/iss.py --
 
@@ -92,7 +96,28 @@ struct RunConfig {
     gradient_order: usize,
 }
 
-fn build_simulation(config: &RunConfig, init: &TorqueSimpleRecord) -> Simulation {
+/// Compute Earth-centered position of a body from DE421 ephemeris.
+fn earth_centered_position(body: EphemerisBody, tdb_jd: f64, ephemeris: &Ephemeris) -> DVec3 {
+    let (pos, _) = ephemeris
+        .get_earth_centered_state(body, tdb_jd)
+        .expect("ephemeris query failed");
+    pos
+}
+
+struct SimSetup {
+    sim: Simulation,
+    sun_idx: usize,
+    moon_idx: usize,
+    /// TDB Julian date at epoch, used to compute TDB JD for ephemeris queries
+    /// at arbitrary simulation times: `epoch_tdb_jd + sim_time / 86400`.
+    epoch_tdb_jd: f64,
+}
+
+fn build_simulation(
+    config: &RunConfig,
+    init: &TorqueSimpleRecord,
+    ephemeris: &Ephemeris,
+) -> SimSetup {
     let epoch_tai_tjt = EPOCH_UTC_TJT + TAI_UTC_S / 86400.0;
     let mut time = SimulationTime::new(epoch_tai_tjt, jeod_sim::default_leap_second_table());
     time.set_ut1_tai_offset(TAI_TO_UT1_S);
@@ -116,6 +141,35 @@ fn build_simulation(config: &RunConfig, init: &TorqueSimpleRecord) -> Simulation
         } else {
             None
         },
+        delta_c20: 0.0,
+        tidal_config: None,
+    });
+
+    // Sun: third-body differential acceleration (matches JEOD: spherical, gradient=false)
+    let epoch_tdb_jd = sim.time.tdb_julian_date();
+    let initial_sun = earth_centered_position(EphemerisBody::Sun, epoch_tdb_jd, ephemeris);
+    let sun_idx = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: MU_SUN,
+            model: GravityModel::PointMass,
+        },
+        position: initial_sun,
+        t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
+    });
+
+    // Moon: third-body differential acceleration (matches JEOD: spherical, gradient=false)
+    let initial_moon = earth_centered_position(EphemerisBody::Moon, epoch_tdb_jd, ephemeris);
+    let moon_idx = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: MU_MOON,
+            model: GravityModel::PointMass,
+        },
+        position: initial_moon,
+        t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
     // Earth gravity control
@@ -128,11 +182,6 @@ fn build_simulation(config: &RunConfig, init: &TorqueSimpleRecord) -> Simulation
         earth_ctrl.gradient_degree = config.gradient_degree;
         earth_ctrl.gradient_order = config.gradient_order;
     }
-
-    // Sun/Moon omitted: 3rd-body differential acceleration is Phase 5 scope.
-    // JEOD includes them as spherical point-mass sources (gradient=false).
-    // When Phase 5 adds differential acceleration, add Sun/Moon sources here
-    // with real mu values and ephemeris-driven positions.
 
     sim.add_body(SimBody {
         trans: TranslationalState {
@@ -150,14 +199,23 @@ fn build_simulation(config: &RunConfig, init: &TorqueSimpleRecord) -> Simulation
             three_dof: false,
         },
         gravity_controls: GravityControls {
-            controls: vec![earth_ctrl],
+            controls: vec![
+                earth_ctrl,
+                GravityControl::new_third_body(sun_idx),
+                GravityControl::new_third_body(moon_idx),
+            ],
         },
         compute_gravity_torque: config.earth_gradient,
         ..Default::default()
     });
 
     sim.validate().unwrap();
-    sim
+    SimSetup {
+        sim,
+        sun_idx,
+        moon_idx,
+        epoch_tdb_jd,
+    }
 }
 
 // -- Tier 3 full-propagation test --
@@ -184,7 +242,16 @@ fn run_propagation_test(
     assert!(records.len() > 100);
     let init = &records[0];
 
-    let mut sim = build_simulation(config, init);
+    let bsp_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data/de421.bsp");
+    assert!(
+        bsp_path.exists(),
+        "DE421 ephemeris not found at {}",
+        bsp_path.display()
+    );
+    let ephemeris = Ephemeris::from_bsp(&bsp_path).expect("load DE421");
+
+    let setup = build_simulation(config, init, &ephemeris);
+    let mut sim = setup.sim;
 
     println!(
         "=== Tier 3 (Simulation): {} ({} points) ===",
@@ -197,6 +264,13 @@ fn run_propagation_test(
     let mut max_torque_error = 0.0_f64;
 
     for record in &records[1..] {
+        // Update Sun/Moon positions from ephemeris using proper TDB timescale
+        let target_tdb_jd = setup.epoch_tdb_jd + record.time / 86400.0;
+        sim.sources[setup.sun_idx].position =
+            earth_centered_position(EphemerisBody::Sun, target_tdb_jd, &ephemeris);
+        sim.sources[setup.moon_idx].position =
+            earth_centered_position(EphemerisBody::Moon, target_tdb_jd, &ephemeris);
+
         sim.step_until(record.time);
 
         let body = sim.body(0);
@@ -298,8 +372,8 @@ fn tier3_torque_simple_run01() {
             gradient_order: 0,
         },
         "tier3_torque_simple_run01",
-        [3.02, 8.51, 1.046e1],
-        [3.292e-3, 1.053e-2, 1.026e-2],
+        [4.928e-4, 8.746e-4, 9.074e-4],
+        [7.443e-7, 8.554e-7, 8.158e-7],
         3.299,
         [2.248e-3, 3.136e-3, 4.999e-4],
         0.0,
@@ -318,10 +392,10 @@ fn tier3_torque_simple_run02() {
             gradient_order: 0,
         },
         "tier3_torque_simple_run02",
-        [3.02, 8.51, 1.046e1],
-        [3.292e-3, 1.053e-2, 1.026e-2],
-        3.827e-2,
-        [4.372e-5, 3.294e-5, 2.742e-6],
+        [4.928e-4, 8.746e-4, 9.074e-4],
+        [7.443e-7, 8.554e-7, 8.158e-7],
+        3.755e-2,
+        [4.290e-5, 3.233e-5, 2.689e-6],
         5.353,
     );
 }
@@ -340,10 +414,10 @@ fn tier3_torque_simple_run03() {
             gradient_order: 0,
         },
         "tier3_torque_simple_run03",
-        [3.02, 8.51, 1.046e1],
-        [3.292e-3, 1.053e-2, 1.026e-2],
-        3.827e-2,
-        [4.372e-5, 3.294e-5, 2.742e-6],
+        [4.928e-4, 8.746e-4, 9.074e-4],
+        [7.443e-7, 8.554e-7, 8.158e-7],
+        3.755e-2,
+        [4.290e-5, 3.233e-5, 2.689e-6],
         5.353,
     );
 }
@@ -360,8 +434,8 @@ fn tier3_torque_simple_run04() {
             gradient_order: 0,
         },
         "tier3_torque_simple_run04",
-        [2.697, 8.024, 1.008e1],
-        [2.918e-3, 1.003e-2, 9.838e-3],
+        [0.3083, 0.4835, 0.4257],
+        [3.543e-4, 5.589e-4, 4.104e-4],
         3.299,
         [2.244e-3, 3.187e-3, 4.977e-4],
         0.0,
@@ -380,10 +454,10 @@ fn tier3_torque_simple_run05() {
             gradient_order: 0,
         },
         "tier3_torque_simple_run05",
-        [2.697, 8.024, 1.008e1],
-        [2.918e-3, 1.003e-2, 9.838e-3],
-        1.845e-2,
-        [1.841e-5, 1.439e-5, 4.579e-6],
+        [0.3083, 0.4835, 0.4257],
+        [3.543e-4, 5.589e-4, 4.104e-4],
+        1.81e-2,
+        [1.806e-5, 1.412e-5, 4.493e-6],
         3.783,
     );
 }
@@ -400,10 +474,10 @@ fn tier3_torque_simple_run06() {
             gradient_order: 4,
         },
         "tier3_torque_simple_run06",
-        [2.697, 8.024, 1.008e1],
-        [2.918e-3, 1.003e-2, 9.838e-3],
-        6.242e-1,
-        [5.698e-4, 5.049e-4, 1.75e-4],
+        [0.3083, 0.4835, 0.4257],
+        [3.543e-4, 5.589e-4, 4.104e-4],
+        6.24e-1,
+        [5.696e-4, 5.047e-4, 1.749e-4],
         1.214e2,
     );
 }

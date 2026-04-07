@@ -60,6 +60,8 @@ fn tier3_simulation_geodetic() {
         },
         position: DVec3::ZERO,
         t_inertial_pfix: Some(DMat3::IDENTITY), // triggers RNP update for geodetic
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
     sim.add_body(SimBody {

@@ -26,12 +26,29 @@ pub fn time_advance_system(mut sim_time: ResMut<SimulationTimeR>, time: Res<Time
 /// parameters (Phase 5 work).
 pub fn planet_fixed_rotation_system(
     sim_time: Res<SimulationTimeR>,
+    polar: Option<Res<crate::PolarMotionR>>,
     mut query: Query<&mut PlanetFixedRotationC>,
 ) {
-    let rotation =
-        jeod_sim::compute_t_parent_this_from_tjt(sim_time.gmst_seconds, sim_time.tt_tjt());
+    let polar_params = polar.map(|p| (p.xp, p.yp));
+    let rotation = jeod_sim::compute_t_parent_this_from_tjt_with_polar(
+        sim_time.gmst_seconds,
+        sim_time.tt_tjt(),
+        polar_params,
+    );
     for mut rot in &mut query {
         rot.0 = rotation;
+    }
+}
+
+/// Computes tidal ΔC20 for each gravity source that has a `TidalConfigC`.
+///
+/// Runs after `planet_fixed_rotation_system` so the rotation matrix is current.
+/// Sources without `TidalConfigC` keep their default `TidalDeltaC20C(0.0)`.
+pub fn tidal_update_system(
+    mut query: Query<(&TidalConfigC, &PlanetFixedRotationC, &mut TidalDeltaC20C)>,
+) {
+    for (config, rotation, mut delta) in &mut query {
+        delta.0 = jeod_sim::compute_delta_c20(&config.0, &rotation.0);
     }
 }
 
@@ -113,12 +130,15 @@ pub fn force_collection_system(
     }
 }
 
-/// Advances translational (and optionally rotational) state via RK4 integration.
+/// Advances translational (and optionally rotational) state by one timestep.
 ///
 /// Delegates to [`jeod_sim::integrate_body`] for 6-DOF/3-DOF routing and
-/// RK4 stepping. Gravity is recomputed at each RK4 intermediate state
-/// for proper 4th-order accuracy, matching JEOD's `DynamicsIntegrationGroup`
-/// where the derivative function recomputes gravity at every stage.
+/// integration stepping. Gravity is recomputed at each intermediate state
+/// for proper multi-stage accuracy.
+///
+/// The integration method is determined by the optional `IntegratorTypeC`
+/// component (RK4, RKF45, GaussJackson). When absent, RK4 is used.
+/// GaussJackson requires `GaussJacksonStateC` on the entity.
 #[allow(clippy::type_complexity)]
 pub fn integration_system(
     mut bodies: Query<(
@@ -129,8 +149,15 @@ pub fn integration_system(
         Option<&MassPropertiesC>,
         &GravityControlsC,
         &TotalForceC,
+        Option<&IntegratorTypeC>,
+        Option<&mut GaussJacksonStateC>,
     )>,
-    sources: Query<(&GravitySourceC, Option<&PlanetFixedRotationC>)>,
+    sources: Query<(
+        &GravitySourceC,
+        Option<&PlanetFixedRotationC>,
+        &SourceInertialPositionC,
+        Option<&TidalDeltaC20C>,
+    )>,
     time: Res<Time<Fixed>>,
 ) {
     let dt = time.delta_secs_f64();
@@ -138,25 +165,60 @@ pub fn integration_system(
         return;
     }
 
-    for (entity, config, mut state, mut rot_state, mass, controls, total_force) in &mut bodies {
-        let _ = entity; // available for panic context if integrate_body fails
+    for (
+        entity,
+        config,
+        mut state,
+        mut rot_state,
+        mass,
+        controls,
+        total_force,
+        integrator,
+        mut gj_state,
+    ) in &mut bodies
+    {
+        let integrator_type = integrator.map_or(jeod_sim::IntegratorType::Rk4, |c| c.0);
+        if matches!(
+            integrator_type,
+            jeod_sim::IntegratorType::GaussJackson { .. }
+        ) {
+            assert!(
+                gj_state.is_some(),
+                "Entity {entity:?}: IntegratorTypeC is GaussJackson but \
+                 GaussJacksonStateC component is missing. Add \
+                 GaussJacksonStateC(GaussJacksonState::new(order)) to the entity."
+            );
+        }
         jeod_sim::integrate_body(
             config,
             &mut state.0,
             rot_state.as_mut().map(|r| &mut r.0),
             mass.map(|m| &m.0),
             |pos| {
-                jeod_sim::accumulate_gravity(pos, &controls.0, |source_entity| {
-                    sources
-                        .get(source_entity)
-                        .ok()
-                        .map(|(s, r)| (&s.0, r.map(|r| &r.0)))
+                jeod_sim::accumulate_gravity(pos, &controls.0, DVec3::ZERO, |source_entity| {
+                    match sources.get(source_entity) {
+                        Ok((s, r, p, tidal)) => Some(jeod_sim::ResolvedSource {
+                            source: &s.0,
+                            rotation: r.map(|r| &r.0),
+                            position: p.0,
+                            delta_c20: tidal.map_or(0.0, |t| t.0),
+                        }),
+                        Err(_) => {
+                            panic!(
+                                "Entity {entity:?}: GravityControl references source \
+                                 {source_entity:?} which does not exist or lacks \
+                                 GravitySourceC + SourceInertialPositionC."
+                            );
+                        }
+                    }
                 })
                 .grav_accel
             },
             total_force.force,
             total_force.torque,
             dt,
+            integrator_type,
+            gj_state.as_mut().map(|g| &mut g.0),
         );
     }
 }
@@ -166,7 +228,7 @@ pub fn integration_system(
 /// Pre-computes gravity for each dynamic body.
 ///
 /// Gravity is precomputed here in the Environment stage but is recomputed at
-/// each RK4 stage by the integration system for 4th-order accuracy.
+/// each integrator stage by the integration system for multi-stage accuracy.
 ///
 /// Delegates to [`jeod_sim::accumulate_gravity`] for the per-body accumulation
 /// loop, providing a closure that resolves Bevy entity references.
@@ -177,23 +239,34 @@ pub fn gravity_computation_system(
         &GravityControlsC,
         &mut GravityAccelerationC,
     )>,
-    sources: Query<(&GravitySourceC, Option<&PlanetFixedRotationC>)>,
+    sources: Query<(
+        &GravitySourceC,
+        Option<&PlanetFixedRotationC>,
+        &SourceInertialPositionC,
+        Option<&TidalDeltaC20C>,
+    )>,
 ) {
     for (entity, state, controls, mut accel) in &mut bodies {
-        accel.0 =
-            jeod_sim::accumulate_gravity(
-                state.position,
-                &controls.0,
-                |source_entity| match sources.get(source_entity) {
-                    Ok((source, rot)) => Some((&source.0, rot.map(|r| &r.0))),
-                    Err(_) => {
-                        panic!(
-                            "Entity {entity:?}: GravityControl references source \
-                         {source_entity:?} which does not exist or has no GravitySourceC."
-                        );
-                    }
-                },
-            );
+        accel.0 = jeod_sim::accumulate_gravity(
+            state.position,
+            &controls.0,
+            DVec3::ZERO,
+            |source_entity| match sources.get(source_entity) {
+                Ok((source, rot, pos, tidal)) => Some(jeod_sim::ResolvedSource {
+                    source: &source.0,
+                    rotation: rot.map(|r| &r.0),
+                    position: pos.0,
+                    delta_c20: tidal.map_or(0.0, |t| t.0),
+                }),
+                Err(_) => {
+                    panic!(
+                        "Entity {entity:?}: GravityControl references source \
+                         {source_entity:?} which does not exist or lacks \
+                         GravitySourceC + SourceInertialPositionC."
+                    );
+                }
+            },
+        );
     }
 }
 

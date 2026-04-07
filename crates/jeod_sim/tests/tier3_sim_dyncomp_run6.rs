@@ -71,6 +71,8 @@ fn tier3_simulation_run6b_drag() {
         },
         position: DVec3::ZERO,
         t_inertial_pfix: Some(DMat3::IDENTITY), // triggers ephemeris update each step
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
     // Configure atmosphere with planet rotation lookup
@@ -230,6 +232,8 @@ fn tier3_simulation_run6a_const_density_drag() {
         },
         position: DVec3::ZERO,
         t_inertial_pfix: Some(DMat3::IDENTITY),
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
     sim.atmosphere = Some(AtmosphereConfig {

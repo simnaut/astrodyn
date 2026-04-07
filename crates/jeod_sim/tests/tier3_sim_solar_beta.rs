@@ -4,8 +4,9 @@
 //! validated to < 0.5 m against JEOD) with DE421 ephemeris for Sun direction.
 //! Self-consistency is verified to bit-identical precision.
 //!
-//! Once Phase 5 delivers third-body gravity, this test should be upgraded to
-//! run the full SIM_SolarBeta scenario (10 days, 8x8 SH + Sun/Moon).
+//! Sun has mu=0 because this test compares against RUN_2 (Earth-only gravity).
+//! The Sun source is used solely for solar beta direction, not gravitational
+//! perturbation. For 3rd-body gravity validation, see `tier3_sim_dyncomp_run4`.
 
 mod sim_test_helpers;
 use sim_test_helpers::*;
@@ -50,9 +51,14 @@ fn tier3_simulation_solar_beta() {
         },
         position: DVec3::ZERO,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
-    // Sun source -- position from DE421 at J2000.0
+    // Sun source -- position from DE421 at J2000.0.
+    // mu=0 matches the JEOD RUN_2 reference (Earth-only gravity). Sun is used
+    // solely for solar beta direction. 3rd-body gravity validated separately
+    // by tier3_sim_dyncomp_run4 and tier3_sim_torque_simple.
     // J2000.0 = JD 2451545.0
     let j2000_jd = 2_451_545.0;
     let (initial_sun, _) = ephemeris
@@ -65,6 +71,8 @@ fn tier3_simulation_solar_beta() {
         },
         position: initial_sun,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
     sim.sun_source = Some(sun);
 

@@ -12,13 +12,14 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 use bevy_jeod::{
-    DynamicsConfigC, GravityAccelerationC, GravityControlsC, GravitySourceC, JeodPlugin,
-    MassPropertiesC, RotationalStateC, TotalForceC, TranslationalStateC,
+    DynamicsConfigC, GravityAccelerationC, GravityControlsC, GravitySourceC, IntegratorTypeC,
+    JeodPlugin, MassPropertiesC, RotationalStateC, SourceInertialPositionC, TotalForceC,
+    TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
 use jeod_sim::{
-    DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource, JeodQuat,
-    MassProperties, RotationalState, SixDofState, TranslationalState,
+    DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource, IntegratorType,
+    JeodQuat, MassProperties, RotationalState, SixDofState, TranslationalState,
 };
 
 const MU_EARTH: f64 = 3.986_004_415e14;
@@ -73,6 +74,7 @@ fn build_app() -> (App, Entity, Entity) {
                 mu: MU_EARTH,
                 model: GravityModel::PointMass,
             }),
+            SourceInertialPositionC::default(),
             TranslationalStateC(TranslationalState::default()),
         ))
         .id();
@@ -135,6 +137,8 @@ fn run_simulation_steps() -> SixDofState {
         },
         position: DVec3::ZERO,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
     sim.add_body(jeod_sim::SimBody {
@@ -218,4 +222,94 @@ fn tier3_bevy_matches_simulation_bit_identical() {
     let sim_state = run_simulation_steps();
 
     assert_sixdof_bit_identical("Bevy vs Sim", &bevy_state, &sim_state);
+}
+
+/// Same as above but with RKF45 integrator — verifies IntegratorTypeC dispatch.
+#[test]
+fn tier3_bevy_rkf45_matches_simulation_bit_identical() {
+    // Build Bevy app with RKF45
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.add_plugins(JeodPlugin);
+
+    let planet = app
+        .world_mut()
+        .spawn((
+            Name::new("Earth"),
+            GravitySourceC(GravitySource {
+                mu: MU_EARTH,
+                model: GravityModel::PointMass,
+            }),
+            SourceInertialPositionC::default(),
+            TranslationalStateC(TranslationalState::default()),
+        ))
+        .id();
+
+    let controls = GravityControls {
+        controls: vec![GravityControl::new_spherical(planet, false)],
+    };
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            Name::new("Vehicle"),
+            TranslationalStateC(initial_trans()),
+            RotationalStateC(initial_rot()),
+            MassPropertiesC(mass_props()),
+            DynamicsConfigC(DynamicsConfig {
+                translational_dynamics: true,
+                rotational_dynamics: true,
+                three_dof: false,
+            }),
+            GravityControlsC(controls),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+            IntegratorTypeC(IntegratorType::Rkf45),
+        ))
+        .id();
+
+    let bevy_state = run_bevy_steps(&mut app, vehicle);
+
+    // Run Simulation with RKF45
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sim = jeod_sim::Simulation::new(time, DT);
+
+    let earth = sim.add_source(jeod_sim::GravitySourceEntry {
+        source: GravitySource {
+            mu: MU_EARTH,
+            model: GravityModel::PointMass,
+        },
+        position: DVec3::ZERO,
+        t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
+    });
+
+    sim.add_body(jeod_sim::SimBody {
+        trans: initial_trans(),
+        rot: Some(initial_rot()),
+        mass: Some(mass_props()),
+        config: DynamicsConfig {
+            translational_dynamics: true,
+            rotational_dynamics: true,
+            three_dof: false,
+        },
+        integrator: IntegratorType::Rkf45,
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth, false)],
+        },
+        ..Default::default()
+    });
+
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    let body = sim.body(0);
+    let sim_state = SixDofState {
+        trans: body.trans,
+        rot: body.rot.unwrap(),
+    };
+
+    assert_sixdof_bit_identical("Bevy RKF45 vs Sim RKF45", &bevy_state, &sim_state);
 }

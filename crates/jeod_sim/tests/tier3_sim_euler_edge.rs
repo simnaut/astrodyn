@@ -52,6 +52,8 @@ fn run_euler_test(csv_filename: &str, label: &str, test_name: &str, quat_tol: f6
         },
         position: DVec3::ZERO,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
     sim.add_body(SimBody {

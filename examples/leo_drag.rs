@@ -69,6 +69,8 @@ fn main() {
         position: DVec3::ZERO,
         // Set to Some so Simulation updates this with GMST each step.
         t_inertial_pfix: Some(DMat3::IDENTITY),
+        delta_c20: 0.0,
+        tidal_config: None,
     });
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Met(met_model),

@@ -46,6 +46,8 @@ fn tier3_simulation_run10a_gravity_torque() {
         },
         position: DVec3::ZERO,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
     sim.add_body(SimBody {
@@ -298,6 +300,8 @@ fn tier3_simulation_run10c_gravity_torque_elliptical() {
         },
         position: DVec3::ZERO,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
     sim.add_body(SimBody {
@@ -408,6 +412,8 @@ fn tier3_simulation_run10d_gravity_torque_elliptical_rate() {
         },
         position: DVec3::ZERO,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
     sim.add_body(SimBody {

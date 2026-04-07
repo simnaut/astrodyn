@@ -38,6 +38,8 @@ fn tier3_simulation_run2_3dof() {
         },
         position: DVec3::ZERO,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
     sim.add_body(SimBody {
@@ -132,6 +134,8 @@ fn tier3_simulation_run2_6dof() {
         },
         position: DVec3::ZERO,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
     sim.add_body(SimBody {

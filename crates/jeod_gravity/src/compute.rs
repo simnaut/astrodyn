@@ -87,6 +87,7 @@ pub fn gravitation(
     compute_gradient: bool,
     gradient_degree: usize,
     gradient_order: usize,
+    delta_c20: f64,
 ) -> GravityAcceleration {
     match &source.model {
         GravityModel::PointMass => {
@@ -113,6 +114,7 @@ pub fn gravitation(
                 gradient_degree,
                 gradient_order,
                 &mut scratch,
+                delta_c20,
             )
         }
     }
@@ -137,6 +139,7 @@ pub fn gravitation_with_scratch(
     gradient_degree: usize,
     gradient_order: usize,
     scratch: &mut crate::spherical_harmonics_calc_nonspherical::GottliebScratch,
+    delta_c20: f64,
 ) -> GravityAcceleration {
     match &source.model {
         GravityModel::PointMass => {
@@ -170,6 +173,7 @@ pub fn gravitation_with_scratch(
                     gradient_degree,
                     gradient_order,
                     scratch,
+                    delta_c20,
                 );
 
             // Vector3::transform_transpose(T_parent_this, body_grav_accel)
@@ -330,7 +334,18 @@ mod tests {
             model: GravityModel::PointMass,
         };
         let pos = DVec3::new(EARTH_RADIUS, 0.0, 0.0);
-        let result = gravitation(&source, pos, &DMat3::IDENTITY, 0, 0, false, false, 0, 0);
+        let result = gravitation(
+            &source,
+            pos,
+            &DMat3::IDENTITY,
+            0,
+            0,
+            false,
+            false,
+            0,
+            0,
+            0.0,
+        );
         let direct = calc_spherical(EARTH_MU, pos);
 
         assert_eq!(result.grav_accel, direct.grav_accel);

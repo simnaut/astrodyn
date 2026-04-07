@@ -87,13 +87,62 @@ fn srp_plates() -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
     ]
 }
 
-fn srp_sun_position(sim_time: f64, ephemeris: &Ephemeris) -> DVec3 {
-    let sim_days = sim_time / 86400.0;
-    let tdb_jd = (SRP_EPOCH_TJT + sim_days) + 40000.0 + 2_400_000.5;
+fn srp_sun_position(sim_time: f64, epoch_tdb_jd: f64, ephemeris: &Ephemeris) -> DVec3 {
+    let tdb_jd = epoch_tdb_jd + sim_time / 86400.0;
     let (sun_pos, _) = ephemeris
         .get_earth_centered_state(EphemerisBody::Sun, tdb_jd)
         .expect("Sun position query failed");
     sun_pos
+}
+
+/// Precomputed Sun position table for efficient per-step interpolation.
+///
+/// Evaluates the ephemeris at coarse intervals and linearly interpolates
+/// between samples. This avoids calling the expensive BSP query at every
+/// 1-second timestep while keeping the Sun direction accurate to sub-arcsecond
+/// levels (Sun moves ~0.01°/day as seen from Earth).
+struct SunTable {
+    /// (sim_time, position) pairs, sorted by time.
+    samples: Vec<(f64, DVec3)>,
+}
+
+impl SunTable {
+    /// Build a table from t=0 to `end_time` with the given sample spacing.
+    fn build(end_time: f64, spacing: f64, epoch_tdb_jd: f64, ephemeris: &Ephemeris) -> Self {
+        let n = (end_time / spacing).ceil() as usize + 1;
+        let mut samples = Vec::with_capacity(n);
+        for i in 0..n {
+            let t = (i as f64) * spacing;
+            samples.push((t, srp_sun_position(t, epoch_tdb_jd, ephemeris)));
+        }
+        // Ensure the final time is included
+        if samples.last().is_none_or(|(t, _)| *t < end_time) {
+            samples.push((
+                end_time,
+                srp_sun_position(end_time, epoch_tdb_jd, ephemeris),
+            ));
+        }
+        Self { samples }
+    }
+
+    /// Linearly interpolate the Sun position at the given simulation time.
+    fn at(&self, t: f64) -> DVec3 {
+        if t <= self.samples[0].0 {
+            return self.samples[0].1;
+        }
+        if t >= self.samples.last().unwrap().0 {
+            return self.samples.last().unwrap().1;
+        }
+        // Binary search for the bracketing interval
+        let idx = self
+            .samples
+            .partition_point(|(st, _)| *st <= t)
+            .saturating_sub(1);
+        let (t0, p0) = self.samples[idx];
+        let (t1, p1) = self.samples[idx + 1];
+        let frac = (t - t0) / (t1 - t0);
+        p0 + (p1 - p0) * frac
+    }
 }
 
 #[test]
@@ -124,6 +173,7 @@ fn tier3_simulation_srp_flat_plate() {
     // Epoch: 1998-12-01 UTC. TAI-UTC=31s at this date.
     let epoch_tai_tjt = SRP_EPOCH_TJT + 31.0 / 86400.0;
     let time = SimulationTime::new(epoch_tai_tjt, jeod_sim::default_leap_second_table());
+    let epoch_tdb_jd = time.tdb_julian_date();
     let mut sim = Simulation::new(time, SRP_DT);
 
     // Earth at origin (gravity source + shadow body)
@@ -134,10 +184,16 @@ fn tier3_simulation_srp_flat_plate() {
         },
         position: DVec3::ZERO,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
-    // Sun (position updated each logging interval from ephemeris)
-    let initial_sun = srp_sun_position(0.0, &ephemeris);
+    // Sun (position updated each logging interval from ephemeris).
+    // mu=0 matches the JEOD SIM_3_ORBIT reference sim, which uses Sun only
+    // for SRP direction — Sun/Moon gravity controls are commented out in
+    // vehicle_baseline.py. 3rd-body gravity is validated independently by
+    // tier3_sim_dyncomp_run4, run7, and tier3_sim_torque_simple.
+    let initial_sun = srp_sun_position(0.0, epoch_tdb_jd, &ephemeris);
     let sun = sim.add_source(GravitySourceEntry {
         source: GravitySource {
             mu: 0.0,
@@ -145,6 +201,8 @@ fn tier3_simulation_srp_flat_plate() {
         },
         position: initial_sun,
         t_inertial_pfix: None,
+        delta_c20: 0.0,
+        tidal_config: None,
     });
     sim.sun_source = Some(sun);
 
@@ -172,44 +230,63 @@ fn tier3_simulation_srp_flat_plate() {
 
     sim.validate().unwrap();
 
+    let total_time = trajectory.last().unwrap().time;
     println!(
         "Tier 3 (Simulation): SRP flat-plate + shadow, {} points over {:.0} days",
         trajectory.len(),
-        trajectory.last().unwrap().time / 86400.0
+        total_time / 86400.0
     );
+
+    // Precompute Sun ephemeris at 100s intervals for per-step interpolation.
+    // JEOD updates Sun position every integration step (1s); the previous test
+    // code only updated at record boundaries (1000s), introducing a stale-Sun
+    // error of ~2-5 m over 23 days.
+    let sun_table = SunTable::build(total_time, 100.0, epoch_tdb_jd, &ephemeris);
 
     let mut our_states = Vec::with_capacity(trajectory.len() - 1);
     let mut ref_states = Vec::with_capacity(trajectory.len() - 1);
 
-    for record in &trajectory[1..] {
-        // Update Sun position from ephemeris before stepping
-        sim.sources[sun].position = srp_sun_position(record.time, &ephemeris);
+    let mut next_record = 1;
+    let total_steps = (total_time / SRP_DT).round() as usize;
 
-        sim.step_until(record.time);
+    for step_i in 1..=total_steps {
+        let t = (step_i as f64) * SRP_DT;
 
-        let body = sim.body(0);
+        // Update Sun position every step (matching JEOD's per-step ephemeris update)
+        sim.sources[sun].position = sun_table.at(t);
 
-        our_states.push(StateLog {
-            time: record.time,
-            position: Some(body.trans.position),
-            velocity: Some(body.trans.velocity),
-            ..Default::default()
-        });
-        ref_states.push(StateLog {
-            time: record.time,
-            position: Some(record.position),
-            velocity: Some(record.velocity),
-            ..Default::default()
-        });
+        sim.step();
 
-        if (record.time % 86400.0).abs() < 500.1 {
-            let pos_error = (body.trans.position - record.position).length();
-            println!(
-                "  t={:8.0}s ({:5.1}d): pos_err={:10.2} m",
-                record.time,
-                record.time / 86400.0,
-                pos_error
-            );
+        // Collect comparison data at record times
+        if next_record < trajectory.len() {
+            let record = &trajectory[next_record];
+            if (sim.time.simtime - record.time).abs() < SRP_DT * 0.5 {
+                let body = sim.body(0);
+
+                our_states.push(StateLog {
+                    time: record.time,
+                    position: Some(body.trans.position),
+                    velocity: Some(body.trans.velocity),
+                    ..Default::default()
+                });
+                ref_states.push(StateLog {
+                    time: record.time,
+                    position: Some(record.position),
+                    velocity: Some(record.velocity),
+                    ..Default::default()
+                });
+
+                if (record.time % 86400.0).abs() < 500.1 {
+                    let pos_error = (body.trans.position - record.position).length();
+                    println!(
+                        "  t={:8.0}s ({:5.1}d): pos_err={:10.2} m",
+                        record.time,
+                        record.time / 86400.0,
+                        pos_error
+                    );
+                }
+                next_record += 1;
+            }
         }
     }
 
@@ -220,5 +297,5 @@ fn tier3_simulation_srp_flat_plate() {
     let max_pos_error = report.max_position_component();
     println!("  Max position error: {:.6e} m", max_pos_error);
 
-    report.assert_position([8.564, 1.611e1, 7.002]);
+    report.assert_position([3.074, 2.799, 1.216]);
 }

@@ -68,6 +68,8 @@ fn run_sh_simulation_test(
         source: sh_source,
         position: DVec3::ZERO,
         t_inertial_pfix: Some(DMat3::IDENTITY), // presence triggers ephemeris update
+        delta_c20: 0.0,
+        tidal_config: None,
     });
 
     sim.add_body(SimBody {

@@ -34,11 +34,40 @@ pub struct DynamicsConfigC(pub DynamicsConfig);
 #[derive(Component, Debug, Clone, Copy)]
 pub struct IntegrationFrameRef(pub Entity);
 
+/// Integration method for this body. Defaults to RK4 when absent.
+///
+/// When present on a dynamic body entity, the integration system dispatches
+/// to the specified method. When absent, `IntegratorType::Rk4` is used.
+#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
+pub struct IntegratorTypeC(pub jeod_sim::IntegratorType);
+
+/// Persistent Gauss-Jackson (ABM) integrator state.
+///
+/// Required on entities using `IntegratorType::GaussJackson`. Created once
+/// with `GaussJacksonState::new(order)` and maintained across steps.
+/// When absent, `integration_system` will panic if `IntegratorTypeC` is GJ.
+#[derive(Component, Debug, Clone, Deref, DerefMut)]
+pub struct GaussJacksonStateC(pub jeod_sim::GaussJacksonState);
+
 #[derive(Component, Debug, Clone)]
 pub struct GravityControlsC(pub GravityControls<Entity>);
 
 #[derive(Component, Debug, Clone, Deref, DerefMut)]
 pub struct GravitySourceC(pub GravitySource);
+
+/// Inertial-frame position of a gravity source (m).
+///
+/// For the central body (e.g., Earth in an Earth-centered sim), this is
+/// typically `DVec3::ZERO`. For third bodies (Sun, Moon), this value should
+/// be provided and maintained by the application's ephemeris/update logic.
+/// Used by the gravity computation to apply differential (third-body)
+/// acceleration corrections.
+///
+/// Required on all gravity source entities. The gravity systems will panic
+/// if a source entity referenced by a `GravityControlsC` is missing this
+/// component.
+#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
+pub struct SourceInertialPositionC(pub DVec3);
 
 /// Aerodynamic force and torque in the **structural** frame (N, N*m).
 ///
@@ -106,6 +135,22 @@ impl Default for StructuralTransformC {
 /// spherical-harmonic gravity.
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut)]
 pub struct PlanetFixedRotationC(pub glam::DMat3);
+
+/// Tidal configuration for a gravity source entity.
+///
+/// When present on a gravity source entity alongside `PlanetFixedRotationC`,
+/// the `tidal_update_system` computes ΔC20 each step and writes it to
+/// `TidalDeltaC20C`. The application is responsible for updating
+/// `tidal_bodies[].position_inertial` each step from ephemeris data.
+#[derive(Component, Debug, Clone, Deref, DerefMut)]
+pub struct TidalConfigC(pub jeod_sim::TidalConfig);
+
+/// Computed tidal ΔC20 for a gravity source entity.
+///
+/// Written by `tidal_update_system`. Read by gravity computation and
+/// integration systems. Defaults to 0.0 (no tidal effect).
+#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
+pub struct TidalDeltaC20C(pub f64);
 
 // ── Interactions ──
 
