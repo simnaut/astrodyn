@@ -133,14 +133,24 @@ fn get_elliptic_parameters(r: f64, z: f64, r_eq: f64, r_pol: f64) -> (f64, f64) 
         let mut y0 = y0_init;
 
         let mut y_val = y0;
+        let mut converged = false;
         for _ in 0..MAX_ITERATION_LIMIT {
             let d = 2.0 * ((y0 - w).cos() - c * (2.0 * y0).cos());
+            debug_assert!(
+                d.abs() > f64::EPSILON,
+                "geodetic iteration: denominator near zero (d={d})"
+            );
             y_val = y0 - (2.0 * (y0 - w).sin() - c * (2.0 * y0).sin()) / d;
             if (y_val - y0).abs() < 1.0e-12 {
+                converged = true;
                 break;
             }
             y0 = y_val;
         }
+        debug_assert!(
+            converged,
+            "geodetic iteration did not converge after {MAX_ITERATION_LIMIT} iterations"
+        );
         y = y_val;
         lat = (a * y.sin() / (b * y.cos())).atan();
     } else {

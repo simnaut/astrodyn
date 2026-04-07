@@ -44,6 +44,12 @@ pub enum ValidationError {
     GaussJacksonWith6Dof { body_idx: usize },
     /// GaussJackson order out of supported range (1..=8).
     GaussJacksonOrderOutOfRange { body_idx: usize, order: usize },
+    /// Body has `atmospheric_state` but simulation has no atmosphere config.
+    AtmosphericStateWithoutAtmosphere { body_idx: usize },
+    /// Body has `compute_solar_beta=true` but simulation has no `sun_source`.
+    SolarBetaWithoutSunSource { body_idx: usize },
+    /// Body has `compute_gravity_torque=true` but lacks mass or rotational state.
+    GravityTorqueWithoutMassOrRot { body_idx: usize },
 }
 
 impl std::fmt::Display for ValidationError {
@@ -164,6 +170,28 @@ impl std::fmt::Display for ValidationError {
                     f,
                     "Body {body_idx}: GaussJackson order {order} is out of supported range \
                      (1..=8). AB/AM coefficient tables only exist up to order 8."
+                )
+            }
+            Self::AtmosphericStateWithoutAtmosphere { body_idx } => {
+                write!(
+                    f,
+                    "Body {body_idx}: atmospheric_state is set but simulation has no \
+                     atmosphere config. Set Simulation::atmosphere to enable atmosphere \
+                     evaluation."
+                )
+            }
+            Self::SolarBetaWithoutSunSource { body_idx } => {
+                write!(
+                    f,
+                    "Body {body_idx}: compute_solar_beta=true but simulation has no sun_source. \
+                     Set Simulation::sun_source to enable solar beta computation."
+                )
+            }
+            Self::GravityTorqueWithoutMassOrRot { body_idx } => {
+                write!(
+                    f,
+                    "Body {body_idx}: compute_gravity_torque=true but body lacks mass \
+                     properties or rotational state. Gravity gradient torque requires both."
                 )
             }
         }

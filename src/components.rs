@@ -2,8 +2,7 @@ use bevy::prelude::*;
 use glam::DVec3;
 use jeod_sim::{
     DragConfig, DynamicsConfig, FrameDerivatives, GravityAcceleration, GravityControls,
-    GravitySource, MassProperties, PlanetShape, RefFrameState, RotationalState, TotalForce,
-    TranslationalState,
+    GravitySource, MassProperties, PlanetShape, RotationalState, TotalForce, TranslationalState,
 };
 
 // ── Dynamics ──
@@ -29,10 +28,6 @@ pub struct FrameDerivativesC(pub FrameDerivatives);
 
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
 pub struct DynamicsConfigC(pub DynamicsConfig);
-
-/// Phase 5 scaffolding — not yet used.
-#[derive(Component, Debug, Clone, Copy)]
-pub struct IntegrationFrameRef(pub Entity);
 
 /// Integration method for this body. Defaults to RK4 when absent.
 ///
@@ -179,16 +174,6 @@ pub struct ShadowBodyC {
 /// Marker component for the Sun entity (used by SRP system to find Sun position).
 #[derive(Component)]
 pub struct SunMarker;
-
-// ── Frames ──
-
-/// Phase 5 scaffolding — not yet used.
-#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Default)]
-pub struct RefFrameStateC(pub RefFrameState);
-
-/// Phase 5 scaffolding — not yet used.
-#[derive(Component, Debug, Clone)]
-pub struct RefFrameNameC(pub String);
 
 // ── Planet ──
 

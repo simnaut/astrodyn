@@ -265,8 +265,13 @@ pub fn calc_nonspherical_with_scratch(
     }
     // Apply tidal ΔC20 correction to local copy of C20.
     // JEOD: local_Cnm[0] += total_dC20 (gravity_controls.cc:95).
+    // Also apply permanent tide correction for non-tide-free models.
+    // JEOD: spherical_harmonics_calc_nonspherical.cc:91-105.
     if delta_c20 != 0.0 && degree >= 2 {
         local_cnm[0] += delta_c20;
+        if !data.tide_free {
+            local_cnm[0] += data.tide_free_delta;
+        }
     }
 
     for ii in 2..=degree {

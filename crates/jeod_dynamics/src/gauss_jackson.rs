@@ -1,15 +1,16 @@
-//! Gauss-Jackson multi-step predictor-corrector integrator.
+//! Placeholder multi-step predictor-corrector integrator.
 //!
-//! Implements an Adams-Bashforth-Moulton (ABM) multi-step method for
-//! second-order ODEs (y'' = f(t,y)). The system y''=f is treated as
-//! y'=v, v'=f(t,y) with both velocity and position integrated using
-//! AB predictor + AM corrector.
+//! **WARNING: This module implements Adams-Bashforth-Moulton (ABM), NOT the
+//! Gauss-Jackson (Störmer-Cowell) method that JEOD uses.** JEOD's GJ
+//! integrator (`gauss_jackson_integrator_base_second.hh`) is fundamentally
+//! different: it uses dual Störmer-Cowell / Summed-Adams coefficient sets,
+//! inverse backward difference accumulators (`delinv`), and a 5-state
+//! finite state machine for startup. A full rewrite is required to match
+//! JEOD line-by-line. See issue #36 (Critical C1).
 //!
-//! Uses RK4 for priming (building initial derivative history), then
-//! switches to the ABM predictor-corrector for efficient high-order stepping.
-//!
-//! Order 8 uses 8 history points and achieves 8th-order accuracy with
-//! only 2 function evaluations per step (vs RK4's 4).
+//! Current implementation: ABM with RK4 priming, using standard Adams
+//! coefficients for both velocity and position integration via velocity
+//! history. This is NOT equivalent to JEOD's approach.
 
 use crate::state::TranslationalState;
 use glam::DVec3;
@@ -206,6 +207,18 @@ impl GaussJacksonState {
         // CORRECTOR (Adams-Moulton): implicit correction
         // v_{n+1}^C = v_n + h * (am[0]*a^P_{n+1} + am[1]*a_n + am[2]*a_{n-1} + ...)
         // x_{n+1}^C = x_n + h * (am[0]*v^P_{n+1} + am[1]*v_n + am[2]*v_{n-1} + ...)
+        //
+        // BUG: This entire module implements Adams-Bashforth-Moulton, NOT the
+        // Gauss-Jackson (Störmer-Cowell) method that JEOD uses. JEOD's GJ
+        // integrator uses:
+        //   - Dual Störmer-Cowell / Summed-Adams coefficient sets (gj_coefs, sa_coefs)
+        //   - Inverse backward difference accumulators (delinv)
+        //   - A 5-state FSM for startup (Reset → Priming → BootstrapEdit →
+        //     BootstrapStep → Operational)
+        //   - Both velocity and position computed from acceleration history only
+        //     (not velocity history)
+        // See issue #36 (Critical C1) for details. A full rewrite to match
+        // JEOD's gauss_jackson_integrator_base_second.hh is required.
         let mut corr_vel = state.velocity + pred_acc * (self.am[0] * dt);
         let mut corr_pos = state.position + pred_vel * (self.am[0] * dt);
         for (i, &c) in self.am[1..].iter().enumerate() {
@@ -325,8 +338,8 @@ mod tests {
         let pos_error = (state.position - DVec3::new(r0, 0.0, 0.0)).length();
         println!("GJ8 Kepler orbit: pos_err={pos_error:.2e} m (1 period)");
         // ABM8 at dt=10s for LEO (period ~5800s) gives ~11 km error.
-        // This is higher than RK4 at same dt because ABM methods have larger
-        // error constants than Runge-Kutta methods. ABM shines with small dt.
+        // This is NOT representative of JEOD's true Gauss-Jackson performance.
+        // This module implements ABM, not GJ — see issue #36 (Critical C1).
         assert!(
             pos_error < 15_000.0,
             "GJ8 orbit position error {pos_error:.2e} m exceeds 15 km"

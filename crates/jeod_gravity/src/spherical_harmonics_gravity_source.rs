@@ -54,6 +54,24 @@ impl SphericalHarmonicsData {
         assert!(order <= degree, "order must be <= degree");
         assert_eq!(cnm.len(), degree + 1);
         assert_eq!(snm.len(), degree + 1);
+        for (n, row) in cnm.iter().enumerate() {
+            assert_eq!(
+                row.len(),
+                n + 1,
+                "cnm[{n}] must have {} elements, got {}",
+                n + 1,
+                row.len()
+            );
+        }
+        for (n, row) in snm.iter().enumerate() {
+            assert_eq!(
+                row.len(),
+                n + 1,
+                "snm[{n}] must have {} elements, got {}",
+                n + 1,
+                row.len()
+            );
+        }
 
         let mut data = Self {
             degree,
