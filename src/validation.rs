@@ -9,7 +9,7 @@ use bevy::prelude::*;
 
 use crate::components::{
     DynamicsConfigC, FlatPlateConfigC, GravityAccelerationC, GravityControlsC, GravitySourceC,
-    MassPropertiesC, RotationalStateC, TranslationalStateC,
+    MassPropertiesC, RotationalStateC, TidalConfigC, TidalDeltaC20C, TranslationalStateC,
 };
 
 /// Validates JEOD invariants on all dynamic body entities.
@@ -37,12 +37,22 @@ pub fn validate_jeod_invariants(
         Option<&FlatPlateConfigC>,
     )>,
     sources: Query<(Entity, &GravitySourceC)>,
+    tidal_sources: Query<(Entity, &TidalConfigC, Option<&TidalDeltaC20C>)>,
     mut has_run: Local<bool>,
 ) {
     if *has_run {
         return;
     }
     *has_run = true;
+
+    // Validate tidal component pairing on gravity sources.
+    for (entity, _config, delta) in &tidal_sources {
+        assert!(
+            delta.is_some(),
+            "Entity {entity:?}: TidalConfigC is present but TidalDeltaC20C is missing. \
+             Add TidalDeltaC20C(0.0) to the entity so tidal_update_system can write ΔC20."
+        );
+    }
 
     for (entity, config, mut controls, grav_accel, mass, rot_state, trans_state, flat_plates) in
         &mut bodies

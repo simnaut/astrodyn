@@ -42,6 +42,8 @@ pub enum ValidationError {
     ForceProducerWithoutMass { body_idx: usize },
     /// GaussJackson integrator with rotational_dynamics=true (6-DOF not supported).
     GaussJacksonWith6Dof { body_idx: usize },
+    /// GaussJackson order out of supported range (1..=8).
+    GaussJacksonOrderOutOfRange { body_idx: usize, order: usize },
 }
 
 impl std::fmt::Display for ValidationError {
@@ -155,6 +157,13 @@ impl std::fmt::Display for ValidationError {
                     "Body {body_idx}: GaussJackson integrator with rotational_dynamics=true. \
                      GJ is currently translational-only. Set rotational_dynamics=false \
                      for GJ bodies."
+                )
+            }
+            Self::GaussJacksonOrderOutOfRange { body_idx, order } => {
+                write!(
+                    f,
+                    "Body {body_idx}: GaussJackson order {order} is out of supported range \
+                     (1..=8). AB/AM coefficient tables only exist up to order 8."
                 )
             }
         }

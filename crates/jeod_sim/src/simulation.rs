@@ -308,6 +308,14 @@ impl Simulation {
                 all_errors.push(ValidationError::GaussJacksonWith6Dof { body_idx });
             }
 
+            // GaussJackson order must be in supported range (AB/AM tables go up to 8)
+            if let jeod_dynamics::IntegratorType::GaussJackson { order } = body.integrator {
+                if !(1..=8).contains(&order) {
+                    all_errors
+                        .push(ValidationError::GaussJacksonOrderOutOfRange { body_idx, order });
+                }
+            }
+
             // Apply gravity control auto-corrections (degree/order clamping).
             // JEOD_INV: GV.03 — check_validity() auto-corrects out-of-range settings
             for ctrl in &mut body.gravity_controls.controls {
