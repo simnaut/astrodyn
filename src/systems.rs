@@ -40,6 +40,18 @@ pub fn planet_fixed_rotation_system(
     }
 }
 
+/// Computes tidal ΔC20 for each gravity source that has a `TidalConfigC`.
+///
+/// Runs after `planet_fixed_rotation_system` so the rotation matrix is current.
+/// Sources without `TidalConfigC` keep their default `TidalDeltaC20C(0.0)`.
+pub fn tidal_update_system(
+    mut query: Query<(&TidalConfigC, &PlanetFixedRotationC, &mut TidalDeltaC20C)>,
+) {
+    for (config, rotation, mut delta) in &mut query {
+        delta.0 = jeod_sim::compute_delta_c20(&config.0, &rotation.0);
+    }
+}
+
 // ── Dynamics ──
 
 /// Recompute derived mass quantities (`inverse_mass`, `inverse_inertia`) each step.
@@ -144,6 +156,7 @@ pub fn integration_system(
         &GravitySourceC,
         Option<&PlanetFixedRotationC>,
         &SourceInertialPositionC,
+        Option<&TidalDeltaC20C>,
     )>,
     time: Res<Time<Fixed>>,
 ) {
@@ -174,11 +187,11 @@ pub fn integration_system(
             |pos| {
                 jeod_sim::accumulate_gravity(pos, &controls.0, DVec3::ZERO, |source_entity| {
                     match sources.get(source_entity) {
-                        Ok((s, r, p)) => Some(jeod_sim::ResolvedSource {
+                        Ok((s, r, p, tidal)) => Some(jeod_sim::ResolvedSource {
                             source: &s.0,
                             rotation: r.map(|r| &r.0),
                             position: p.0,
-                            delta_c20: 0.0,
+                            delta_c20: tidal.map_or(0.0, |t| t.0),
                         }),
                         Err(_) => {
                             panic!(
@@ -220,6 +233,7 @@ pub fn gravity_computation_system(
         &GravitySourceC,
         Option<&PlanetFixedRotationC>,
         &SourceInertialPositionC,
+        Option<&TidalDeltaC20C>,
     )>,
 ) {
     for (entity, state, controls, mut accel) in &mut bodies {
@@ -228,11 +242,11 @@ pub fn gravity_computation_system(
             &controls.0,
             DVec3::ZERO,
             |source_entity| match sources.get(source_entity) {
-                Ok((source, rot, pos)) => Some(jeod_sim::ResolvedSource {
+                Ok((source, rot, pos, tidal)) => Some(jeod_sim::ResolvedSource {
                     source: &source.0,
                     rotation: rot.map(|r| &r.0),
                     position: pos.0,
-                    delta_c20: 0.0,
+                    delta_c20: tidal.map_or(0.0, |t| t.0),
                 }),
                 Err(_) => {
                     panic!(

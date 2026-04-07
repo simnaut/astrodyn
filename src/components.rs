@@ -136,6 +136,22 @@ impl Default for StructuralTransformC {
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut)]
 pub struct PlanetFixedRotationC(pub glam::DMat3);
 
+/// Tidal configuration for a gravity source entity.
+///
+/// When present on a gravity source entity alongside `PlanetFixedRotationC`,
+/// the `tidal_update_system` computes ΔC20 each step and writes it to
+/// `TidalDeltaC20C`. The application is responsible for updating
+/// `tidal_bodies[].position_inertial` each step from ephemeris data.
+#[derive(Component, Debug, Clone, Deref, DerefMut)]
+pub struct TidalConfigC(pub jeod_sim::TidalConfig);
+
+/// Computed tidal ΔC20 for a gravity source entity.
+///
+/// Written by `tidal_update_system`. Read by gravity computation and
+/// integration systems. Defaults to 0.0 (no tidal effect).
+#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
+pub struct TidalDeltaC20C(pub f64);
+
 // ── Interactions ──
 
 /// Vehicle drag configuration (Cd, area).

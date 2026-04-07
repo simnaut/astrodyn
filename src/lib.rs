@@ -93,6 +93,10 @@ impl Plugin for JeodPlugin {
                 systems::time_advance_system.in_set(JeodSet::TimeUpdate),
                 // Planet-fixed rotation (RNP)
                 systems::planet_fixed_rotation_system.in_set(JeodSet::EphemerisUpdate),
+                // Tidal ΔC20 (must run after planet-fixed rotation)
+                systems::tidal_update_system
+                    .in_set(JeodSet::EphemerisUpdate)
+                    .after(systems::planet_fixed_rotation_system),
                 // Mass update: recompute inverse_mass/inverse_inertia each step.
                 systems::mass_update_system
                     .after(JeodSet::TimeUpdate)

@@ -394,9 +394,11 @@ impl Simulation {
             if source.t_inertial_pfix.is_some() {
                 source.t_inertial_pfix = Some(rotation);
             }
-            // Compute tidal ΔC20 if configured
+            // Compute tidal ΔC20 if configured; otherwise clear any stale value.
             if let Some(ref config) = source.tidal_config {
                 source.delta_c20 = jeod_gravity::tides::compute_delta_c20(config, &rotation);
+            } else {
+                source.delta_c20 = 0.0;
             }
         }
 
