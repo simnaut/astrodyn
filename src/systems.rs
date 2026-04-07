@@ -177,8 +177,18 @@ pub fn integration_system(
         mut gj_state,
     ) in &mut bodies
     {
-        let _ = entity; // available for panic context if integrate_body fails
         let integrator_type = integrator.map_or(jeod_sim::IntegratorType::Rk4, |c| c.0);
+        if matches!(
+            integrator_type,
+            jeod_sim::IntegratorType::GaussJackson { .. }
+        ) {
+            assert!(
+                gj_state.is_some(),
+                "Entity {entity:?}: IntegratorTypeC is GaussJackson but \
+                 GaussJacksonStateC component is missing. Add \
+                 GaussJacksonStateC(GaussJacksonState::new(order)) to the entity."
+            );
+        }
         jeod_sim::integrate_body(
             config,
             &mut state.0,

@@ -857,8 +857,8 @@ trick.add_data_record_group(dr, trick.DR_Buffer)
 run_tide_group() {
     local sim_path="models/environment/gravity/verif/SIM_tide_verif"
     local runs=(
-        "SET_test/RUN_01:tide_run01:tide_run01_tide_ASCII.csv"
-        "SET_test/RUN_02:tide_run02:tide_run02_tide_ASCII.csv"
+        "SET_test/RUN_01:tide_run01:tide_run01_tide.csv"
+        "SET_test/RUN_02:tide_run02:tide_run02_tide.csv"
     )
     local needs_build=0
     for entry in "${runs[@]}"; do
