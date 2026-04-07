@@ -37,7 +37,12 @@ pub fn validate_jeod_invariants(
         Option<&FlatPlateConfigC>,
     )>,
     sources: Query<(Entity, &GravitySourceC)>,
-    tidal_sources: Query<(Entity, &TidalConfigC, Option<&TidalDeltaC20C>)>,
+    tidal_sources: Query<(
+        Entity,
+        &TidalConfigC,
+        Option<&TidalDeltaC20C>,
+        Option<&crate::components::PlanetFixedRotationC>,
+    )>,
     mut has_run: Local<bool>,
 ) {
     if *has_run {
@@ -46,11 +51,17 @@ pub fn validate_jeod_invariants(
     *has_run = true;
 
     // Validate tidal component pairing on gravity sources.
-    for (entity, _config, delta) in &tidal_sources {
+    for (entity, _config, delta, rotation) in &tidal_sources {
         assert!(
             delta.is_some(),
             "Entity {entity:?}: TidalConfigC is present but TidalDeltaC20C is missing. \
              Add TidalDeltaC20C(0.0) to the entity so tidal_update_system can write ΔC20."
+        );
+        assert!(
+            rotation.is_some(),
+            "Entity {entity:?}: TidalConfigC is present but PlanetFixedRotationC is missing. \
+             tidal_update_system requires PlanetFixedRotationC to transform tidal body \
+             positions into the planet-fixed frame."
         );
     }
 
