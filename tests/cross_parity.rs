@@ -731,6 +731,7 @@ fn tier3_bevy_external_torque_per_body() {
                 rotation: None,
                 position: DVec3::ZERO,
                 delta_c20: 0.0,
+                has_delta_coeffs: false,
             })
         });
         let (total, _) = jeod_sim::collect_and_resolve_forces(
@@ -754,6 +755,7 @@ fn tier3_bevy_external_torque_per_body() {
                         rotation: None,
                         position: DVec3::ZERO,
                         delta_c20: 0.0,
+                        has_delta_coeffs: false,
                     })
                 })
                 .grav_accel
@@ -781,6 +783,7 @@ fn tier3_bevy_external_torque_per_body() {
                 rotation: None,
                 position: DVec3::ZERO,
                 delta_c20: 0.0,
+                has_delta_coeffs: false,
             })
         });
         let (total, _) = jeod_sim::collect_and_resolve_forces(
@@ -804,6 +807,7 @@ fn tier3_bevy_external_torque_per_body() {
                         rotation: None,
                         position: DVec3::ZERO,
                         delta_c20: 0.0,
+                        has_delta_coeffs: false,
                     })
                 })
                 .grav_accel

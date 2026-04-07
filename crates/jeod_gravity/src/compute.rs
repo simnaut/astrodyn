@@ -88,6 +88,7 @@ pub fn gravitation(
     gradient_degree: usize,
     gradient_order: usize,
     delta_c20: f64,
+    has_delta_coeffs: bool,
 ) -> GravityAcceleration {
     match &source.model {
         GravityModel::PointMass => {
@@ -115,6 +116,7 @@ pub fn gravitation(
                 gradient_order,
                 &mut scratch,
                 delta_c20,
+                has_delta_coeffs,
             )
         }
     }
@@ -140,6 +142,7 @@ pub fn gravitation_with_scratch(
     gradient_order: usize,
     scratch: &mut crate::spherical_harmonics_calc_nonspherical::GottliebScratch,
     delta_c20: f64,
+    has_delta_coeffs: bool,
 ) -> GravityAcceleration {
     match &source.model {
         GravityModel::PointMass => {
@@ -174,6 +177,7 @@ pub fn gravitation_with_scratch(
                     gradient_order,
                     scratch,
                     delta_c20,
+                    has_delta_coeffs,
                 );
 
             // Vector3::transform_transpose(T_parent_this, body_grav_accel)
@@ -345,6 +349,7 @@ mod tests {
             0,
             0,
             0.0,
+            false,
         );
         let direct = calc_spherical(EARTH_MU, pos);
 

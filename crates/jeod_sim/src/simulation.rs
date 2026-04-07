@@ -450,6 +450,7 @@ impl Simulation {
                         rotation: s.t_inertial_pfix.as_ref(),
                         position: s.position,
                         delta_c20: s.delta_c20,
+                        has_delta_coeffs: s.tidal_config.is_some(),
                     })
                 },
             );
@@ -602,6 +603,7 @@ impl Simulation {
                             rotation: s.t_inertial_pfix.as_ref(),
                             position: s.position,
                             delta_c20: s.delta_c20,
+                            has_delta_coeffs: s.tidal_config.is_some(),
                         })
                     })
                     .grav_accel

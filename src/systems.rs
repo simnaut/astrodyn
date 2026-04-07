@@ -202,6 +202,7 @@ pub fn integration_system(
                             rotation: r.map(|r| &r.0),
                             position: p.0,
                             delta_c20: tidal.map_or(0.0, |t| t.0),
+                            has_delta_coeffs: tidal.is_some(),
                         }),
                         Err(_) => {
                             panic!(
@@ -257,6 +258,7 @@ pub fn gravity_computation_system(
                     rotation: rot.map(|r| &r.0),
                     position: pos.0,
                     delta_c20: tidal.map_or(0.0, |t| t.0),
+                    has_delta_coeffs: tidal.is_some(),
                 }),
                 Err(_) => {
                     panic!(

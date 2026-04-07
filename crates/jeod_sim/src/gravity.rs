@@ -16,6 +16,11 @@ pub struct ResolvedSource<'a> {
     /// Tidal ΔC20 to add to the base C20 coefficient during spherical harmonics
     /// evaluation. Zero when no tidal effects are configured.
     pub delta_c20: f64,
+    /// Whether this source has tidal delta coefficient sets configured.
+    /// Matches JEOD's `n_deltacoeffs > 0` (`harmonics_source->delta_coeffs.size() > 0`).
+    /// Gates permanent tide correction (`tide_free_delta`) in the spherical
+    /// harmonics computation.
+    pub has_delta_coeffs: bool,
 }
 
 /// Accumulate gravity from all sources for a single body.
@@ -89,6 +94,7 @@ pub fn accumulate_gravity<'a, S: Copy + std::fmt::Debug>(
             pos_relative_to_source,
             resolved.rotation,
             resolved.delta_c20,
+            resolved.has_delta_coeffs,
         );
 
         // JEOD_INV: GV.14 — third-body sources use differential acceleration
@@ -110,6 +116,7 @@ pub fn accumulate_gravity<'a, S: Copy + std::fmt::Debug>(
                 frame_pos_relative_to_source,
                 resolved.rotation,
                 resolved.delta_c20,
+                resolved.has_delta_coeffs,
             );
             total.grav_accel += result.grav_accel - frame_accel.grav_accel;
         } else {

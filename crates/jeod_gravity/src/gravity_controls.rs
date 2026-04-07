@@ -221,6 +221,7 @@ impl<SourceId> GravityControl<SourceId> {
         position: DVec3,
         t_inertial_pfix: Option<&DMat3>,
         delta_c20: f64,
+        has_delta_coeffs: bool,
     ) -> GravityAcceleration {
         self.evaluate_inner(
             source,
@@ -230,6 +231,7 @@ impl<SourceId> GravityControl<SourceId> {
             self.gradient_degree,
             self.gradient_order,
             delta_c20,
+            has_delta_coeffs,
         )
     }
 
@@ -249,8 +251,18 @@ impl<SourceId> GravityControl<SourceId> {
         position: DVec3,
         t_inertial_pfix: Option<&DMat3>,
         delta_c20: f64,
+        has_delta_coeffs: bool,
     ) -> GravityAcceleration {
-        self.evaluate_inner(source, position, t_inertial_pfix, false, 0, 0, delta_c20)
+        self.evaluate_inner(
+            source,
+            position,
+            t_inertial_pfix,
+            false,
+            0,
+            0,
+            delta_c20,
+            has_delta_coeffs,
+        )
     }
 
     /// Shared dispatch for [`evaluate`] and [`evaluate_accel_only`].
@@ -266,6 +278,7 @@ impl<SourceId> GravityControl<SourceId> {
         gradient_degree: usize,
         gradient_order: usize,
         delta_c20: f64,
+        has_delta_coeffs: bool,
     ) -> GravityAcceleration {
         if self.is_nonspherical() {
             let rot = t_inertial_pfix.unwrap_or_else(|| {
@@ -287,6 +300,7 @@ impl<SourceId> GravityControl<SourceId> {
                 gradient_degree,
                 gradient_order,
                 delta_c20,
+                has_delta_coeffs,
             )
         } else {
             crate::gravitation(
@@ -299,7 +313,8 @@ impl<SourceId> GravityControl<SourceId> {
                 compute_gradient,
                 gradient_degree,
                 gradient_order,
-                0.0, // point-mass: no SH coefficients to modify
+                0.0,   // point-mass: no SH coefficients to modify
+                false, // point-mass: no delta coefficients
             )
         }
     }
