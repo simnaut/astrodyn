@@ -900,8 +900,39 @@ for v in [
 trick.add_data_record_group(dr, trick.DR_Buffer)
 '
 
-run_sim_with_ascii "models/utils/integration/verif/SIM_GJ_test" \
-    "SET_test/RUN_GJ_step1_order8_noeval_nobs" "integ_gj" "$GJ_SNIPPET" &
+run_gj_group() {
+    local sim_path="models/utils/integration/verif/SIM_GJ_test"
+    local fail=0
+    # Baseline: order 8, dt=1s
+    run_sim_with_ascii "$sim_path" \
+        "SET_test/RUN_GJ_step1_order8_noeval_nobs" "integ_gj" "$GJ_SNIPPET" || fail=1
+    # Order 4, dt=1s
+    run_sim_with_ascii "$sim_path" \
+        "SET_test/RUN_GJ_step1_order4_noeval_nobs" "integ_gj_order4" "$GJ_SNIPPET" || fail=1
+    # Order 12, dt=1s
+    run_sim_with_ascii "$sim_path" \
+        "SET_test/RUN_GJ_step1_order12_noeval_nobs" "integ_gj_order12" "$GJ_SNIPPET" || fail=1
+    # Order 8, dt=10s (scale_factor=10 → cycle=30 sim-seconds = 300 dynamic-seconds)
+    local GJ_SNIPPET_DT10='
+dr = trick.sim_services.DRAscii("gj_ASCII")
+dr.set_cycle(30)
+dr.freq = trick.sim_services.DR_Always
+for v in [
+    "vehicle.dyn_body.composite_body.state.trans.position[0]",
+    "vehicle.dyn_body.composite_body.state.trans.position[1]",
+    "vehicle.dyn_body.composite_body.state.trans.position[2]",
+    "vehicle.dyn_body.composite_body.state.trans.velocity[0]",
+    "vehicle.dyn_body.composite_body.state.trans.velocity[1]",
+    "vehicle.dyn_body.composite_body.state.trans.velocity[2]",
+]:
+    dr.add_variable(v)
+trick.add_data_record_group(dr, trick.DR_Buffer)
+'
+    run_sim_with_ascii "$sim_path" \
+        "SET_test/RUN_GJ_step10_order8_noeval_nobs" "integ_gj_dt10" "$GJ_SNIPPET_DT10" || fail=1
+    return $fail
+}
+run_gj_group &
 PID_INTEG_GJ=$!
 
 # ════════════════════════════════════════════════════════════════════
