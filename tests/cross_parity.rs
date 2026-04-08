@@ -18,7 +18,7 @@
 //!   F. Spherical harmonics 4x4 + RNP
 //!   G. External torque via per-body functions
 //!   H. Flat-plate SRP with shadow detection
-//!   I. Gauss-Jackson ABM8, point-mass 3-DOF
+//!   I. Gauss-Jackson (Störmer-Cowell), point-mass 3-DOF
 
 use std::time::Duration;
 

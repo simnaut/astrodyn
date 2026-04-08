@@ -129,6 +129,7 @@ pub fn integrate_body(
             // JEOD's max is ~order*max_correction_iterations bootstrap edits
             // + 4 primer stages + 2 GJ stages; 1000 is generous.
             const MAX_STAGES: usize = 1000;
+            let mut completed = false;
             for _ in 0..MAX_STAGES {
                 let acc = gravity_fn(trans.position) + non_grav_accel;
                 let result = gj.integrate(dt, acc, trans);
@@ -139,9 +140,15 @@ pub fn integrate_body(
                              (position may be degraded)"
                         );
                     }
+                    completed = true;
                     break;
                 }
             }
+            assert!(
+                completed,
+                "GaussJackson integration did not complete within {MAX_STAGES} stages. \
+                 The FSM may be stuck. Reset the integrator or check configuration."
+            );
         }
     }
 }
