@@ -43,7 +43,7 @@ pub enum ValidationError {
     /// GaussJackson integrator with rotational_dynamics=true (6-DOF not supported).
     GaussJacksonWith6Dof { body_idx: usize },
     /// GaussJackson config invalid (order must be even, 2..=14).
-    GaussJacksonOrderOutOfRange { body_idx: usize, order: usize },
+    GaussJacksonConfigInvalid { body_idx: usize, order: usize },
     /// Body has `atmospheric_state` but simulation has no atmosphere config.
     AtmosphericStateWithoutAtmosphere { body_idx: usize },
     /// Body has `compute_solar_beta=true` but simulation has no `sun_source`.
@@ -165,7 +165,7 @@ impl std::fmt::Display for ValidationError {
                      for GJ bodies."
                 )
             }
-            Self::GaussJacksonOrderOutOfRange { body_idx, order } => {
+            Self::GaussJacksonConfigInvalid { body_idx, order } => {
                 write!(
                     f,
                     "Body {body_idx}: GaussJackson config invalid (order {order}). \
