@@ -27,11 +27,17 @@ use jeod_test_data::crossval::{CrossvalReport, StateLog};
 const MU_GJ_TEST: f64 = 5.76e14;
 
 /// Run a GJ cross-validation test with the given config and reference CSV.
+///
+/// `time_scale` converts CSV sim-time to dynamic time. JEOD's SIM_GJ_test
+/// uses `dyn_time.scale_factor` to vary the effective dt: a scale of 10
+/// means CSV timestamps are in sim-seconds (1/10th of dynamic seconds).
+/// For dt=1 runs, `time_scale = 1.0`. For dt=10 runs, `time_scale = 10.0`.
 fn run_gj_test(
     test_name: &str,
     csv_label: &str,
     config: GaussJacksonConfig,
     dt: f64,
+    time_scale: f64,
     pos_tol: [f64; 3],
     vel_tol: [f64; 3],
 ) {
@@ -81,18 +87,20 @@ fn run_gj_test(
 
     sim.validate().unwrap();
 
+    let final_dyn_time = trajectory.last().unwrap().time * time_scale;
     println!(
         "Tier 3 (Simulation): {test_name}, {} points over {:.0}s, dt={dt}s",
         trajectory.len(),
-        trajectory.last().unwrap().time
+        final_dyn_time
     );
 
     let mut our_states = Vec::with_capacity(trajectory.len() - 1);
     for record in &trajectory[1..] {
-        sim.step_until(record.time);
+        let dyn_time = record.time * time_scale;
+        sim.step_until(dyn_time);
         let body = sim.body(0);
         our_states.push(StateLog {
-            time: record.time,
+            time: dyn_time,
             position: Some(body.trans.position),
             velocity: Some(body.trans.velocity),
             ..Default::default()
@@ -102,7 +110,7 @@ fn run_gj_test(
     let ref_states: Vec<StateLog> = trajectory[1..]
         .iter()
         .map(|r| StateLog {
-            time: r.time,
+            time: r.time * time_scale,
             position: Some(r.position),
             velocity: Some(r.velocity),
             ..Default::default()
@@ -130,49 +138,54 @@ fn tier3_simulation_gj_order8() {
         "integ_gj",
         GaussJacksonConfig::with_order(8),
         1.0,
-        [2.338e-4, 2.326e-4, 1e-10],
-        [2.066e-7, 2.078e-7, 1e-13],
+        1.0,
+        [1.321e-4, 1.309e-4, 1e-10],
+        [1.161e-7, 1.168e-7, 1e-13],
     );
 }
 
 #[test]
 fn tier3_simulation_gj_order4() {
-    // GJ order 4, dt=1s. Lower order → larger truncation error.
-    // Tolerances set after first run (placeholder: 10x baseline).
+    // GJ order 4, dt=1s.
+    // Observed: pos [3.676e-5, 3.714e-5, 0] m, vel [3.283e-8, 3.270e-8, 0] m/s.
     run_gj_test(
         "tier3_simulation_gj_order4",
         "integ_gj_order4",
         GaussJacksonConfig::with_order(4),
         1.0,
-        [1.0, 1.0, 1e-10],
-        [1e-3, 1e-3, 1e-13],
+        1.0,
+        [3.860e-5, 3.900e-5, 1e-10],
+        [3.447e-8, 3.434e-8, 1e-13],
     );
 }
 
 #[test]
 fn tier3_simulation_gj_order12() {
-    // GJ order 12, dt=1s. Higher order → smaller truncation error.
-    // Tolerances set after first run (placeholder: same as baseline).
+    // GJ order 12, dt=1s.
+    // Observed: pos [1.851e-4, 1.847e-4, 0] m, vel [1.643e-7, 1.645e-7, 0] m/s.
     run_gj_test(
         "tier3_simulation_gj_order12",
         "integ_gj_order12",
         GaussJacksonConfig::with_order(12),
         1.0,
-        [2.338e-4, 2.326e-4, 1e-10],
-        [2.066e-7, 2.078e-7, 1e-13],
+        1.0,
+        [1.943e-4, 1.939e-4, 1e-10],
+        [1.725e-7, 1.728e-7, 1e-13],
     );
 }
 
 #[test]
 fn tier3_simulation_gj_dt10() {
     // GJ order 8, dt=10s. Coarser timestep → larger truncation error.
-    // Tolerances set after first run (placeholder: 100x baseline).
+    // JEOD SIM_GJ_test uses scale_factor=10 → CSV times are sim-seconds.
+    // Observed: pos [9.862e-1, 9.846e-1, 0] m, vel [8.751e-4, 8.755e-4, 0] m/s.
     run_gj_test(
         "tier3_simulation_gj_dt10",
         "integ_gj_dt10",
         GaussJacksonConfig::with_order(8),
         10.0,
-        [1.0, 1.0, 1e-10],
-        [1e-3, 1e-3, 1e-13],
+        10.0,
+        [1.036e0, 1.034e0, 1e-10],
+        [9.189e-4, 9.193e-4, 1e-13],
     );
 }
