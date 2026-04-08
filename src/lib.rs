@@ -25,11 +25,6 @@ impl Default for SimulationTimeR {
     }
 }
 
-/// Bevy resource wrapping the planetary ephemeris.
-/// Phase 5 scaffolding — not yet used.
-#[derive(Resource)]
-pub struct EphemerisR(pub jeod_sim::Ephemeris);
-
 /// Optional Bevy resource for polar motion (xp, yp) in radians.
 ///
 /// When inserted, the `planet_fixed_rotation_system` includes polar motion

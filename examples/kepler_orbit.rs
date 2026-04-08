@@ -12,7 +12,8 @@ use bevy::app::ScheduleRunnerPlugin;
 use bevy::prelude::*;
 use bevy_jeod::{
     DynamicsConfigC, FrameDerivativesC, GravityAccelerationC, GravityControlsC, GravitySourceC,
-    JeodPlugin, JeodSet, MassPropertiesC, TotalForceC, TranslationalStateC,
+    JeodPlugin, JeodSet, MassPropertiesC, SourceInertialPositionC, TotalForceC,
+    TranslationalStateC,
 };
 use glam::DVec3;
 use jeod_sim::{
@@ -62,6 +63,7 @@ fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
                 mu: mu_earth,
                 model: GravityModel::PointMass,
             }),
+            SourceInertialPositionC::default(),
         ))
         .id();
 

@@ -43,6 +43,10 @@ pub fn init_from_orbital_elements(
         semi_major_axis.is_finite(),
         "init_from_orbital_elements: semi_major_axis must be finite, got {semi_major_axis}"
     );
+    assert!(
+        (0.0..1.0).contains(&eccentricity),
+        "init_from_orbital_elements: eccentricity must be in [0, 1), got {eccentricity}"
+    );
 
     // Build OrbitalElements with the provided Keplerian elements.
     // Following JEOD dyn_body_init_orbit.cc: populate semiparam, angles, true_anom,
@@ -96,6 +100,10 @@ pub fn init_from_mean_anomaly(
     assert!(
         semi_major_axis.is_finite(),
         "init_from_mean_anomaly: semi_major_axis must be finite, got {semi_major_axis}"
+    );
+    assert!(
+        (0.0..1.0).contains(&eccentricity),
+        "init_from_mean_anomaly: eccentricity must be in [0, 1), got {eccentricity}"
     );
 
     // Following JEOD dyn_body_init_orbit.cc lines 302-318:

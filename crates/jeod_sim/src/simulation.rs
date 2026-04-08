@@ -316,6 +316,21 @@ impl Simulation {
                 }
             }
 
+            // Atmospheric state requires atmosphere config on the simulation
+            if body.atmospheric_state.is_some() && self.atmosphere.is_none() {
+                all_errors.push(ValidationError::AtmosphericStateWithoutAtmosphere { body_idx });
+            }
+
+            // Solar beta requires sun_source on the simulation
+            if body.compute_solar_beta && self.sun_source.is_none() {
+                all_errors.push(ValidationError::SolarBetaWithoutSunSource { body_idx });
+            }
+
+            // Gravity torque requires both mass and rotational state
+            if body.compute_gravity_torque && (body.mass.is_none() || body.rot.is_none()) {
+                all_errors.push(ValidationError::GravityTorqueWithoutMassOrRot { body_idx });
+            }
+
             // Apply gravity control auto-corrections (degree/order clamping).
             // JEOD_INV: GV.03 — check_validity() auto-corrects out-of-range settings
             for ctrl in &mut body.gravity_controls.controls {
@@ -383,8 +398,12 @@ impl Simulation {
     /// 8. State integration (RK4)
     /// 9. Derived state computation
     pub fn step(&mut self) {
-        let dt = self.dt;
+        self.step_internal(self.dt);
+    }
 
+    /// Internal step with explicit dt (avoids temporary mutation of `self.dt`
+    /// in `step_until`).
+    fn step_internal(&mut self, dt: f64) {
         // ── 1. Time update ──
         self.time.advance(dt);
 
@@ -431,6 +450,7 @@ impl Simulation {
                         rotation: s.t_inertial_pfix.as_ref(),
                         position: s.position,
                         delta_c20: s.delta_c20,
+                        has_delta_coeffs: s.tidal_config.is_some(),
                     })
                 },
             );
@@ -583,6 +603,7 @@ impl Simulation {
                             rotation: s.t_inertial_pfix.as_ref(),
                             position: s.position,
                             delta_c20: s.delta_c20,
+                            has_delta_coeffs: s.tidal_config.is_some(),
                         })
                     })
                     .grav_accel
@@ -695,10 +716,7 @@ impl Simulation {
                  an integer multiple of dt.",
                 self.dt
             );
-            let saved_dt = self.dt;
-            self.dt = remainder;
-            self.step();
-            self.dt = saved_dt;
+            self.step_internal(remainder);
         }
     }
 

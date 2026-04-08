@@ -102,7 +102,8 @@ pub fn calc_nonspherical(
         gradient_degree,
         gradient_order,
         &mut scratch,
-        0.0, // no tidal delta in standalone mode
+        0.0,   // no tidal delta in standalone mode
+        false, // no delta coefficients configured
     )
 }
 
@@ -122,6 +123,7 @@ pub fn calc_nonspherical_with_scratch(
     gradient_order: usize,
     scratch: &mut GottliebScratch,
     delta_c20: f64,
+    has_delta_coeffs: bool,
 ) -> GravityAcceleration {
     // Matching JEOD's check_validity(): these are fatal errors, not silent clamps.
     assert!(
@@ -263,10 +265,18 @@ pub fn calc_nonspherical_with_scratch(
         let n = src.len().min(3);
         local_cnm[..n].copy_from_slice(&src[..n]);
     }
-    // Apply tidal ΔC20 correction to local copy of C20.
-    // JEOD: local_Cnm[0] += total_dC20 (gravity_controls.cc:95).
-    if delta_c20 != 0.0 && degree >= 2 {
+    // Apply tidal ΔC20 and permanent tide corrections.
+    // JEOD: spherical_harmonics_calc_nonspherical.cc:91-105.
+    // Gate on has_delta_coeffs (JEOD: n_deltacoeffs > 0), which indicates
+    // tidal delta coefficient sets are configured on this source — NOT on
+    // whether total_dC20 is nonzero.
+    if has_delta_coeffs && degree >= 2 {
         local_cnm[0] += delta_c20;
+        // Correct permanent tide if already included in C20 coefficient.
+        // JEOD: if(!harmonics_source->tide_free) local_Cnm[0] += tide_free_delta
+        if !data.tide_free {
+            local_cnm[0] += data.tide_free_delta;
+        }
     }
 
     for ii in 2..=degree {
