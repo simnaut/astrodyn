@@ -308,14 +308,24 @@ impl Simulation {
                 all_errors.push(ValidationError::GaussJacksonWith6Dof { body_idx });
             }
 
-            // GaussJackson config validation
+            // GaussJackson config validation — report each invalid field separately
             if let jeod_dynamics::IntegratorType::GaussJackson(ref config) = body.integrator {
-                if config.initial_order % 2 != 0
-                    || config.initial_order > 14
-                    || config.final_order % 2 != 0
-                    || config.final_order > 14
-                    || config.final_order < config.initial_order
-                {
+                let initial_bad = config.initial_order % 2 != 0 || config.initial_order > 14;
+                let final_bad = config.final_order % 2 != 0 || config.final_order > 14;
+
+                if initial_bad {
+                    all_errors.push(ValidationError::GaussJacksonOrderOutOfRange {
+                        body_idx,
+                        order: config.initial_order,
+                    });
+                }
+                if final_bad {
+                    all_errors.push(ValidationError::GaussJacksonOrderOutOfRange {
+                        body_idx,
+                        order: config.final_order,
+                    });
+                }
+                if !initial_bad && !final_bad && config.final_order < config.initial_order {
                     all_errors.push(ValidationError::GaussJacksonOrderOutOfRange {
                         body_idx,
                         order: config.final_order,
@@ -708,8 +718,8 @@ impl Simulation {
         }
         let remainder = target_time - self.time.simtime;
         if remainder > 0.001 {
-            // Fractional steps corrupt Gauss-Jackson history (ABM coefficients
-            // assume constant dt). Guard against this.
+            // Fractional steps corrupt Gauss-Jackson history (the Störmer-Cowell
+            // coefficients and delinv accumulators assume constant dt).
             let has_gj = self.bodies.iter().any(|b| {
                 matches!(
                     b.integrator,
