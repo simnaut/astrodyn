@@ -308,8 +308,9 @@ impl Simulation {
                 all_errors.push(ValidationError::GaussJacksonWith6Dof { body_idx });
             }
 
-            // GaussJackson config validation — report each invalid field separately.
-            // Mirrors GaussJacksonConfig::validate() predicate.
+            // GaussJackson config validation — mirrors GaussJacksonConfig::validate().
+            // Reports errors via ValidationError instead of panicking, so callers
+            // get all issues at once rather than one-at-a-time panics.
             if let jeod_dynamics::IntegratorType::GaussJackson(ref config) = body.integrator {
                 let is_valid_order =
                     |order: usize| (2..=14).contains(&order) && order.is_multiple_of(2);
@@ -333,6 +334,22 @@ impl Simulation {
                         body_idx,
                         order: config.final_order,
                     });
+                }
+                if config.ndoubling_steps > 20 {
+                    all_errors.push(ValidationError::GaussJacksonConfigInvalid {
+                        body_idx,
+                        order: config.ndoubling_steps,
+                    });
+                }
+                if config.relative_tolerance < 0.0 || config.relative_tolerance > 1.0 {
+                    all_errors.push(ValidationError::GaussJacksonConfigInvalid {
+                        body_idx,
+                        order: 0, // tolerance error, order field not applicable
+                    });
+                }
+                if config.absolute_tolerance < 0.0 {
+                    all_errors
+                        .push(ValidationError::GaussJacksonConfigInvalid { body_idx, order: 0 });
                 }
             }
 
