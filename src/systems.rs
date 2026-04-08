@@ -157,6 +157,7 @@ pub fn integration_system(
         Option<&PlanetFixedRotationC>,
         &SourceInertialPositionC,
         Option<&TidalDeltaC20C>,
+        Option<&TidalConfigC>,
     )>,
     time: Res<Time<Fixed>>,
 ) {
@@ -197,13 +198,17 @@ pub fn integration_system(
             |pos| {
                 jeod_sim::accumulate_gravity(pos, &controls.0, DVec3::ZERO, |source_entity| {
                     match sources.get(source_entity) {
-                        Ok((s, r, p, tidal)) => Some(jeod_sim::ResolvedSource {
-                            source: &s.0,
-                            rotation: r.map(|r| &r.0),
-                            position: p.0,
-                            delta_c20: tidal.map_or(0.0, |t| t.0),
-                            has_delta_coeffs: tidal.is_some(),
-                        }),
+                        Ok((s, r, p, tidal, tidal_config)) => {
+                            Some(jeod_sim::ResolvedSource {
+                                source: &s.0,
+                                rotation: r.map(|r| &r.0),
+                                position: p.0,
+                                delta_c20: tidal.map_or(0.0, |t| t.0),
+                                // JEOD gates on n_deltacoeffs > 0 (tidal config
+                                // present), not on whether ΔC20 component exists.
+                                has_delta_coeffs: tidal_config.is_some(),
+                            })
+                        }
                         Err(_) => {
                             panic!(
                                 "Entity {entity:?}: GravityControl references source \
@@ -233,6 +238,7 @@ pub fn integration_system(
 ///
 /// Delegates to [`jeod_sim::accumulate_gravity`] for the per-body accumulation
 /// loop, providing a closure that resolves Bevy entity references.
+#[allow(clippy::type_complexity)]
 pub fn gravity_computation_system(
     mut bodies: Query<(
         Entity,
@@ -245,6 +251,7 @@ pub fn gravity_computation_system(
         Option<&PlanetFixedRotationC>,
         &SourceInertialPositionC,
         Option<&TidalDeltaC20C>,
+        Option<&TidalConfigC>,
     )>,
 ) {
     for (entity, state, controls, mut accel) in &mut bodies {
@@ -253,12 +260,14 @@ pub fn gravity_computation_system(
             &controls.0,
             DVec3::ZERO,
             |source_entity| match sources.get(source_entity) {
-                Ok((source, rot, pos, tidal)) => Some(jeod_sim::ResolvedSource {
+                Ok((source, rot, pos, tidal, tidal_config)) => Some(jeod_sim::ResolvedSource {
                     source: &source.0,
                     rotation: rot.map(|r| &r.0),
                     position: pos.0,
                     delta_c20: tidal.map_or(0.0, |t| t.0),
-                    has_delta_coeffs: tidal.is_some(),
+                    // JEOD gates on n_deltacoeffs > 0 (tidal config
+                    // present), not on whether ΔC20 component exists.
+                    has_delta_coeffs: tidal_config.is_some(),
                 }),
                 Err(_) => {
                     panic!(
