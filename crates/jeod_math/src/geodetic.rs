@@ -151,7 +151,7 @@ fn get_elliptic_parameters(r: f64, z: f64, r_eq: f64, r_pol: f64) -> (f64, f64) 
             y0 = y_val;
         }
         // Not in JEOD: JEOD silently uses the last iterate on non-convergence.
-        // We assert because the Bowring iteration is guaranteed to converge for
+        // We assert because the Borkowski iteration is guaranteed to converge for
         // physically valid inputs and failure indicates a bug in the caller.
         assert!(
             converged,
