@@ -36,10 +36,10 @@ pub struct DynamicsConfigC(pub DynamicsConfig);
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
 pub struct IntegratorTypeC(pub jeod_sim::IntegratorType);
 
-/// Persistent Gauss-Jackson (ABM) integrator state.
+/// Persistent Gauss-Jackson (Störmer-Cowell) integrator state.
 ///
 /// Required on entities using `IntegratorType::GaussJackson`. Created once
-/// with `GaussJacksonState::new(order)` and maintained across steps.
+/// with `GaussJacksonState::new(config)` and maintained across steps.
 /// When absent, `integration_system` will panic if `IntegratorTypeC` is GJ.
 #[derive(Component, Debug, Clone, Deref, DerefMut)]
 pub struct GaussJacksonStateC(pub jeod_sim::GaussJacksonState);

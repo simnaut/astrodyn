@@ -88,7 +88,7 @@ pub fn integrate_body(
                 IntegratorType::Rkf45 => {
                     jeod_dynamics::rkf45_sixdof_step(&six_state, accel, torque_fn, mass_props, dt)
                 }
-                IntegratorType::GaussJackson { .. } => {
+                IntegratorType::GaussJackson(..) => {
                     panic!(
                         "GaussJackson 6-DOF integration not yet supported. \
                          Set rotational_dynamics=false for GJ bodies."
@@ -109,16 +109,28 @@ pub fn integrate_body(
 
     // 3-DOF path: translational only
     let accel = |s: &TranslationalState| gravity_fn(s.position) + non_grav_accel;
-    let new_trans = match integrator {
-        IntegratorType::Rk4 => jeod_dynamics::rk4_translational_step(trans, accel, dt),
-        IntegratorType::Rkf45 => jeod_dynamics::rkf45_translational_step(trans, accel, dt),
-        IntegratorType::GaussJackson { .. } => {
+    match integrator {
+        IntegratorType::Rk4 => {
+            *trans = jeod_dynamics::rk4_translational_step(trans, accel, dt);
+        }
+        IntegratorType::Rkf45 => {
+            *trans = jeod_dynamics::rkf45_translational_step(trans, accel, dt);
+        }
+        IntegratorType::GaussJackson(..) => {
             let gj = gj_state.expect(
                 "GaussJackson integrator requires gj_state. \
                  Set SimBody::gj_state or call Simulation::validate() first.",
             );
-            gj.step(trans, accel, dt)
+            // Integration loop matching JEOD's IntegrationControls.
+            // Stages are managed internally by the integrator.
+            // Gravity is recomputed between stages at the predicted position.
+            loop {
+                let acc = gravity_fn(trans.position) + non_grav_accel;
+                let result = gj.integrate(dt, acc, trans);
+                if result.time_scale > 0.0 {
+                    break;
+                }
+            }
         }
-    };
-    *trans = new_trans;
+    }
 }

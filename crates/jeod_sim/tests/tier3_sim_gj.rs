@@ -15,8 +15,8 @@ use sim_test_helpers::*;
 
 use glam::DVec3;
 use jeod_sim::{
-    GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry,
-    IntegratorType, SimBody, Simulation, SimulationTime, TranslationalState,
+    GaussJacksonConfig, GravityControl, GravityControls, GravityModel, GravitySource,
+    GravitySourceEntry, IntegratorType, SimBody, Simulation, SimulationTime, TranslationalState,
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
@@ -64,7 +64,7 @@ fn tier3_simulation_gj_order8() {
             position: init.position,
             velocity: init.velocity,
         },
-        integrator: IntegratorType::GaussJackson { order: 8 },
+        integrator: IntegratorType::GaussJackson(GaussJacksonConfig::with_order(8)),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },

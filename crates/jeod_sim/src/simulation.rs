@@ -123,7 +123,7 @@ pub struct SimBody {
     // ── Stateful integrator state ──
     /// Gauss-Jackson (ABM) integrator state. `None` for non-GJ bodies.
     /// Auto-initialized by `Simulation::validate()` when `integrator` is
-    /// `IntegratorType::GaussJackson { order }`.
+    /// `IntegratorType::GaussJackson(config)`.
     pub gj_state: Option<jeod_dynamics::GaussJacksonState>,
 }
 
@@ -302,17 +302,24 @@ impl Simulation {
             // GaussJackson is translational-only (6-DOF not yet supported)
             if matches!(
                 body.integrator,
-                jeod_dynamics::IntegratorType::GaussJackson { .. }
+                jeod_dynamics::IntegratorType::GaussJackson(..)
             ) && body.config.rotational_dynamics
             {
                 all_errors.push(ValidationError::GaussJacksonWith6Dof { body_idx });
             }
 
-            // GaussJackson order must be in supported range (AB/AM tables go up to 8)
-            if let jeod_dynamics::IntegratorType::GaussJackson { order } = body.integrator {
-                if !(1..=8).contains(&order) {
-                    all_errors
-                        .push(ValidationError::GaussJacksonOrderOutOfRange { body_idx, order });
+            // GaussJackson config validation
+            if let jeod_dynamics::IntegratorType::GaussJackson(ref config) = body.integrator {
+                if config.initial_order % 2 != 0
+                    || config.initial_order > 14
+                    || config.final_order % 2 != 0
+                    || config.final_order > 14
+                    || config.final_order < config.initial_order
+                {
+                    all_errors.push(ValidationError::GaussJacksonOrderOutOfRange {
+                        body_idx,
+                        order: config.final_order,
+                    });
                 }
             }
 
@@ -375,9 +382,9 @@ impl Simulation {
 
         // Auto-initialize Gauss-Jackson state for bodies that need it.
         for body in &mut self.bodies {
-            if let jeod_dynamics::IntegratorType::GaussJackson { order } = body.integrator {
+            if let jeod_dynamics::IntegratorType::GaussJackson(ref config) = body.integrator {
                 if body.gj_state.is_none() {
-                    body.gj_state = Some(jeod_dynamics::GaussJacksonState::new(order));
+                    body.gj_state = Some(jeod_dynamics::GaussJacksonState::new(*config));
                 }
             }
         }
@@ -706,7 +713,7 @@ impl Simulation {
             let has_gj = self.bodies.iter().any(|b| {
                 matches!(
                     b.integrator,
-                    jeod_dynamics::IntegratorType::GaussJackson { .. }
+                    jeod_dynamics::IntegratorType::GaussJackson(..)
                 )
             });
             assert!(

@@ -35,10 +35,10 @@ use bevy_jeod::{
 use glam::{DMat3, DVec3};
 use jeod_sim::{
     AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig, EulerSequence,
-    ExponentialAtmosphere, GaussJacksonState, GeoIndexType, GravityControl, GravityControls,
-    GravityModel, GravitySource, GravitySourceEntry, IntegratorType, JeodQuat, LvlhFrame,
-    MassProperties, MetAtmosphere, OrbitalElements, PlanetShape, RotationalState, SimBody,
-    Simulation, SixDofState, TidalBody, TidalConfig, TranslationalState,
+    ExponentialAtmosphere, GaussJacksonConfig, GaussJacksonState, GeoIndexType, GravityControl,
+    GravityControls, GravityModel, GravitySource, GravitySourceEntry, IntegratorType, JeodQuat,
+    LvlhFrame, MassProperties, MetAtmosphere, OrbitalElements, PlanetShape, RotationalState,
+    SimBody, Simulation, SixDofState, TidalBody, TidalConfig, TranslationalState,
 };
 
 const MU_EARTH: f64 = 3.986_004_415e14;
@@ -1982,8 +1982,10 @@ fn tier3_bevy_gj_point_mass() {
             }),
             GravityAccelerationC::default(),
             TotalForceC::default(),
-            IntegratorTypeC(IntegratorType::GaussJackson { order: 8 }),
-            GaussJacksonStateC(GaussJacksonState::new(8)),
+            IntegratorTypeC(IntegratorType::GaussJackson(
+                GaussJacksonConfig::with_order(8),
+            )),
+            GaussJacksonStateC(GaussJacksonState::new(GaussJacksonConfig::with_order(8))),
         ))
         .id();
 
@@ -2007,7 +2009,7 @@ fn tier3_bevy_gj_point_mass() {
 
     sim.add_body(SimBody {
         trans: gj_trans,
-        integrator: IntegratorType::GaussJackson { order: 8 },
+        integrator: IntegratorType::GaussJackson(GaussJacksonConfig::with_order(8)),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
