@@ -95,11 +95,9 @@ impl GaussJacksonConfig {
             self.final_order
         );
         // JEOD: ndoubling_steps <= 20 in validate_configuration().
-        // Also guard against overflow in `1usize << ndoubling_steps`.
         assert!(
-            self.ndoubling_steps < usize::BITS as usize,
-            "ndoubling_steps must be < {}, got {}",
-            usize::BITS,
+            self.ndoubling_steps <= 20,
+            "ndoubling_steps must be ≤ 20, got {}",
             self.ndoubling_steps
         );
         assert!(

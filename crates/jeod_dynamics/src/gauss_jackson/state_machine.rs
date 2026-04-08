@@ -144,13 +144,16 @@ impl StateMachine {
     // ── Mutators ──
 
     /// Tell the state machine that the edit did not pass convergence.
+    /// Only requests a redo if another iteration is still allowed; otherwise
+    /// the edit proceeds with the non-converged result (the outer loop
+    /// will observe `passed=false`).
     ///
     /// JEOD: `GaussJacksonStateMachine::set_bootstrap_edit_redo_needed()`.
-    #[allow(dead_code)]
     pub fn set_bootstrap_edit_redo_needed(&mut self) {
         assert_eq!(self.fsm_state, FsmState::BootstrapEdit);
-        assert!(self.correction_iterations < self.max_correction_iterations);
-        self.bootstrap_edit_redo_needed = true;
+        if self.correction_iterations < self.max_correction_iterations {
+            self.bootstrap_edit_redo_needed = true;
+        }
     }
 
     /// Reset the state machine.
