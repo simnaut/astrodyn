@@ -126,11 +126,18 @@ pub fn integrate_body(
             // Gravity is recomputed between stages at the predicted position.
             //
             // Stage cap prevents infinite loops if the FSM gets stuck.
-            // JEOD's max is ~order*max_correction_iterations bootstrap edits
-            // + 4 primer stages + 2 GJ stages; 1000 is generous.
-            const MAX_STAGES: usize = 1000;
+            // Worst case per step: primer (4 stages) + bootstrap edit
+            // (order * max_correction_iterations) + GJ predict/correct (2).
+            // JEOD doesn't validate max_correction_iterations, but we cap
+            // the total to prevent runaway loops.
+            let max_stages = if let IntegratorType::GaussJackson(ref cfg) = integrator {
+                let edits = cfg.final_order * (cfg.max_correction_iterations + 1);
+                (edits + 10).max(100) // generous headroom
+            } else {
+                100
+            };
             let mut completed = false;
-            for _ in 0..MAX_STAGES {
+            for _ in 0..max_stages {
                 let acc = gravity_fn(trans.position) + non_grav_accel;
                 let result = gj.integrate(dt, acc, trans);
                 if result.time_scale > 0.0 {
@@ -146,7 +153,7 @@ pub fn integrate_body(
             }
             assert!(
                 completed,
-                "GaussJackson integration did not complete within {MAX_STAGES} stages. \
+                "GaussJackson integration did not complete within {max_stages} stages. \
                  The FSM may be stuck. Reset the integrator or check configuration."
             );
         }

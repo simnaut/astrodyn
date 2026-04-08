@@ -42,8 +42,8 @@ pub enum ValidationError {
     ForceProducerWithoutMass { body_idx: usize },
     /// GaussJackson integrator with rotational_dynamics=true (6-DOF not supported).
     GaussJacksonWith6Dof { body_idx: usize },
-    /// GaussJackson config invalid (order must be even, 2..=14).
-    GaussJacksonConfigInvalid { body_idx: usize, order: usize },
+    /// GaussJackson config invalid.
+    GaussJacksonConfigInvalid { body_idx: usize, detail: String },
     /// Body has `atmospheric_state` but simulation has no atmosphere config.
     AtmosphericStateWithoutAtmosphere { body_idx: usize },
     /// Body has `compute_solar_beta=true` but simulation has no `sun_source`.
@@ -165,12 +165,8 @@ impl std::fmt::Display for ValidationError {
                      for GJ bodies."
                 )
             }
-            Self::GaussJacksonConfigInvalid { body_idx, order } => {
-                write!(
-                    f,
-                    "Body {body_idx}: GaussJackson config invalid (order {order}). \
-                     Orders must be even, ≥ 2, ≤ 14, and final_order ≥ initial_order."
-                )
+            Self::GaussJacksonConfigInvalid { body_idx, detail } => {
+                write!(f, "Body {body_idx}: GaussJackson config invalid: {detail}")
             }
             Self::AtmosphericStateWithoutAtmosphere { body_idx } => {
                 write!(

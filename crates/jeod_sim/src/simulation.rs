@@ -320,36 +320,53 @@ impl Simulation {
                 if initial_bad {
                     all_errors.push(ValidationError::GaussJacksonConfigInvalid {
                         body_idx,
-                        order: config.initial_order,
+                        detail: format!(
+                            "initial_order {} must be even, ≥ 2, ≤ 14",
+                            config.initial_order
+                        ),
                     });
                 }
                 if final_bad {
                     all_errors.push(ValidationError::GaussJacksonConfigInvalid {
                         body_idx,
-                        order: config.final_order,
+                        detail: format!(
+                            "final_order {} must be even, ≥ 2, ≤ 14",
+                            config.final_order
+                        ),
                     });
                 }
                 if !initial_bad && !final_bad && config.final_order < config.initial_order {
                     all_errors.push(ValidationError::GaussJacksonConfigInvalid {
                         body_idx,
-                        order: config.final_order,
+                        detail: format!(
+                            "final_order {} < initial_order {}",
+                            config.final_order, config.initial_order
+                        ),
                     });
                 }
                 if config.ndoubling_steps > 20 {
                     all_errors.push(ValidationError::GaussJacksonConfigInvalid {
                         body_idx,
-                        order: config.ndoubling_steps,
+                        detail: format!("ndoubling_steps {} must be ≤ 20", config.ndoubling_steps),
                     });
                 }
                 if config.relative_tolerance < 0.0 || config.relative_tolerance > 1.0 {
                     all_errors.push(ValidationError::GaussJacksonConfigInvalid {
                         body_idx,
-                        order: 0, // tolerance error, order field not applicable
+                        detail: format!(
+                            "relative_tolerance {} must be in [0, 1]",
+                            config.relative_tolerance
+                        ),
                     });
                 }
                 if config.absolute_tolerance < 0.0 {
-                    all_errors
-                        .push(ValidationError::GaussJacksonConfigInvalid { body_idx, order: 0 });
+                    all_errors.push(ValidationError::GaussJacksonConfigInvalid {
+                        body_idx,
+                        detail: format!(
+                            "absolute_tolerance {} must be ≥ 0",
+                            config.absolute_tolerance
+                        ),
+                    });
                 }
             }
 
