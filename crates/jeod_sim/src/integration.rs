@@ -124,10 +124,21 @@ pub fn integrate_body(
             // Integration loop matching JEOD's IntegrationControls.
             // Stages are managed internally by the integrator.
             // Gravity is recomputed between stages at the predicted position.
-            loop {
+            //
+            // Stage cap prevents infinite loops if the FSM gets stuck.
+            // JEOD's max is ~order*max_correction_iterations bootstrap edits
+            // + 4 primer stages + 2 GJ stages; 1000 is generous.
+            const MAX_STAGES: usize = 1000;
+            for _ in 0..MAX_STAGES {
                 let acc = gravity_fn(trans.position) + non_grav_accel;
                 let result = gj.integrate(dt, acc, trans);
                 if result.time_scale > 0.0 {
+                    if !result.passed {
+                        log::warn!(
+                            "GaussJackson integration step did not converge \
+                             (position may be degraded)"
+                        );
+                    }
                     break;
                 }
             }

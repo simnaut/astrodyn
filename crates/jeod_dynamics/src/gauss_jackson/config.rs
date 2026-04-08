@@ -79,17 +79,28 @@ impl GaussJacksonConfig {
     /// JEOD: `GaussJacksonConfig::validate_configuration()`.
     pub fn validate(&self) {
         assert!(
-            self.initial_order.is_multiple_of(2) && self.initial_order <= 14,
-            "initial_order must be even and ≤ 14, got {}",
+            self.initial_order >= 2
+                && self.initial_order.is_multiple_of(2)
+                && self.initial_order <= 14,
+            "initial_order must be even, ≥ 2, and ≤ 14, got {}",
             self.initial_order
         );
         assert!(
-            self.final_order.is_multiple_of(2)
+            self.final_order >= 2
+                && self.final_order.is_multiple_of(2)
                 && self.final_order >= self.initial_order
                 && self.final_order <= 14,
-            "final_order must be even, ≥ initial_order ({}), and ≤ 14, got {}",
+            "final_order must be even, ≥ 2, ≥ initial_order ({}), and ≤ 14, got {}",
             self.initial_order,
             self.final_order
+        );
+        // JEOD: ndoubling_steps <= 20 in validate_configuration().
+        // Also guard against overflow in `1usize << ndoubling_steps`.
+        assert!(
+            self.ndoubling_steps < usize::BITS as usize,
+            "ndoubling_steps must be < {}, got {}",
+            usize::BITS,
+            self.ndoubling_steps
         );
         assert!(
             self.relative_tolerance >= 0.0 && self.relative_tolerance <= 1.0,

@@ -184,7 +184,8 @@ pub fn integration_system(
                 gj_state.is_some(),
                 "Entity {entity:?}: IntegratorTypeC is GaussJackson but \
                  GaussJacksonStateC component is missing. Add \
-                 GaussJacksonStateC(GaussJacksonState::new(config)) to the entity."
+                 GaussJacksonStateC(GaussJacksonState::new(\
+                 GaussJacksonConfig::with_order(N))) to the entity."
             );
         }
         jeod_sim::integrate_body(

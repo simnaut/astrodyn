@@ -251,7 +251,13 @@ impl GaussJacksonState {
                 // reconstructs the state at history_length. Returns time_scale=0
                 // so the caller keeps looping (providing fresh acceleration at
                 // the mid-corrected position for the next edit point).
-                let _passed = self.edit_point(dt, state);
+                //
+                // JEOD: if edit fails convergence, set_bootstrap_edit_redo_needed()
+                // triggers a redo on the next FSM transition.
+                let passed = self.edit_point(dt, state);
+                if !passed {
+                    self.state_machine.set_bootstrap_edit_redo_needed();
+                }
                 self.current_stage = 0; // Reset for next call
                 IntegratorResult::more_stages()
             }
