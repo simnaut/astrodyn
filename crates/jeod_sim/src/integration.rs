@@ -23,7 +23,11 @@ use jeod_dynamics::{
 /// - `gravity_fn`: computes gravitational acceleration from position (called per integrator stage)
 /// - `non_grav_force`: total non-gravity force in inertial frame (constant over step)
 /// - `torque`: total torque in body frame (constant over step)
-/// - `dt`: timestep in seconds
+/// - `dt`: simulation timestep in seconds (JEOD: `sim_dt`)
+/// - `time_scale_factor`: ratio of dynamic time to simulation time
+///   (JEOD: `TimeDyn::scale_factor`). Applied uniformly to all integrators:
+///   RK4/RKF45 use `integ_dyndt = dt * time_scale_factor`, Gauss-Jackson
+///   uses `cycle_dyndt = dt * cycle_scale * time_scale_factor`.
 /// - `integrator`: integration method to use
 ///
 /// # Panics
@@ -67,6 +71,10 @@ pub fn integrate_body(
         );
     };
 
+    // JEOD: integ_dyndt = sim_dt * time_scale_factor
+    // (single_cycle_integration_controls.cc:63-65, standard_integration_controls.cc:80-82)
+    let integ_dyndt = dt * time_scale_factor;
+
     // JEOD_INV: DB.08 — rotational_dynamics gates integration
     // 6-DOF path: rotational dynamics enabled AND components present
     if config.rotational_dynamics {
@@ -83,12 +91,20 @@ pub fn integrate_body(
             let accel = |s: &SixDofState| gravity_fn(s.trans.position) + non_grav_accel;
             let torque_fn = |_s: &SixDofState| constant_torque;
             let new_state = match integrator {
-                IntegratorType::Rk4 => {
-                    jeod_dynamics::rk4_sixdof_step(&six_state, accel, torque_fn, mass_props, dt)
-                }
-                IntegratorType::Rkf45 => {
-                    jeod_dynamics::rkf45_sixdof_step(&six_state, accel, torque_fn, mass_props, dt)
-                }
+                IntegratorType::Rk4 => jeod_dynamics::rk4_sixdof_step(
+                    &six_state,
+                    accel,
+                    torque_fn,
+                    mass_props,
+                    integ_dyndt,
+                ),
+                IntegratorType::Rkf45 => jeod_dynamics::rkf45_sixdof_step(
+                    &six_state,
+                    accel,
+                    torque_fn,
+                    mass_props,
+                    integ_dyndt,
+                ),
                 IntegratorType::GaussJackson(..) => {
                     panic!(
                         "GaussJackson 6-DOF integration not yet supported. \
@@ -112,10 +128,10 @@ pub fn integrate_body(
     let accel = |s: &TranslationalState| gravity_fn(s.position) + non_grav_accel;
     match integrator {
         IntegratorType::Rk4 => {
-            *trans = jeod_dynamics::rk4_translational_step(trans, accel, dt);
+            *trans = jeod_dynamics::rk4_translational_step(trans, accel, integ_dyndt);
         }
         IntegratorType::Rkf45 => {
-            *trans = jeod_dynamics::rkf45_translational_step(trans, accel, dt);
+            *trans = jeod_dynamics::rkf45_translational_step(trans, accel, integ_dyndt);
         }
         IntegratorType::GaussJackson(cfg) => {
             let gj = gj_state.expect(

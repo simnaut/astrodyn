@@ -262,10 +262,12 @@ impl GaussJacksonState {
         }
 
         // ── Start of cycle (stage 1 for all non-operational states) ──
-        // start_cycle may trigger a downsample which changes cycle_scale,
-        // so we must recompute cycle_dyndt afterwards.
+        // start_cycle may trigger a downsample which changes cycle_scale.
+        // It takes sim_dt + time_scale_factor (not pre-computed cycle_dyndt)
+        // so it can derive cycle_dyndt from the post-downsample cycle_scale
+        // for delinv reinitialization.
         let cycle_dyndt = if stage == 1 {
-            self.start_cycle(cycle_dyndt, acc, state);
+            self.start_cycle(sim_dt, time_scale_factor, acc, state);
             // Recompute: cycle_scale may have changed via downsample.
             sim_dt * self.state_machine.cycle_scale() * time_scale_factor
         } else {
@@ -389,8 +391,20 @@ impl GaussJacksonState {
 
     /// Start an integration cycle.
     ///
-    /// JEOD: `GaussJacksonIntegratorBase::start_cycle(dt, acc, state)`.
-    fn start_cycle(&mut self, dt: f64, acc: DVec3, state: &TranslationalState) {
+    /// JEOD: `GaussJacksonIntegratorBase::start_cycle(dt, acc, state)` +
+    /// `GaussJacksonIntegrationControls::start_cycle(sim_dt)`.
+    ///
+    /// Takes `sim_dt` and `time_scale_factor` rather than pre-computed
+    /// `cycle_dyndt` because `perform_step()` may trigger a downsample that
+    /// changes `cycle_scale`. The post-downsample `cycle_dyndt` must be used
+    /// for `initialize_*_integration_constants()`.
+    fn start_cycle(
+        &mut self,
+        sim_dt: f64,
+        time_scale_factor: f64,
+        acc: DVec3,
+        state: &TranslationalState,
+    ) {
         if self.fsm_state == FsmState::Reset {
             // Save epoch data.
             // JEOD: `save_epoch_data(acc, state)`
@@ -410,6 +424,8 @@ impl GaussJacksonState {
         self.fsm_state = self.state_machine.fsm_state();
 
         // Downsample if indicated.
+        // JEOD: cycle_simdt and cycle_dyndt are recomputed here, BEFORE
+        // the reinitialize check (gauss_jackson_integration_controls.cc:298-301).
         if self.state_machine.at_downsample() {
             self.downsample_hist();
         }
@@ -424,12 +440,14 @@ impl GaussJacksonState {
         }
 
         // Reinitialize delinv if indicated.
+        // Compute cycle_dyndt from the (possibly updated) cycle_scale.
         if self.state_machine.at_reinitialize() {
+            let cycle_dyndt = sim_dt * self.state_machine.cycle_scale() * time_scale_factor;
             if self.fsm_state == FsmState::BootstrapEdit {
-                self.initialize_edit_integration_constants(dt);
+                self.initialize_edit_integration_constants(cycle_dyndt);
                 self.history_length = 1;
             } else {
-                self.initialize_predictor_integration_constants(dt);
+                self.initialize_predictor_integration_constants(cycle_dyndt);
             }
         }
     }
@@ -793,9 +811,10 @@ mod tests {
         let r0: f64 = 7_000_000.0;
         let v0 = (mu / r0).sqrt();
 
-        let dt: f64 = 10.0;
+        let target_dt: f64 = 10.0;
         let period = 2.0 * std::f64::consts::PI * (r0.powi(3) / mu).sqrt();
-        let steps = (period / dt).round() as usize;
+        let steps = (period / target_dt).round() as usize;
+        let dt = period / steps as f64;
 
         let mut state = TranslationalState {
             position: DVec3::new(r0, 0.0, 0.0),
@@ -951,9 +970,12 @@ mod tests {
         let r0: f64 = 7_000_000.0;
         let v0 = (mu / r0).sqrt();
 
-        let dt: f64 = 10.0;
+        // Choose dt so that steps * dt == period exactly, avoiding orbit
+        // closure error from rounding mismatch.
+        let target_dt: f64 = 10.0;
         let period = 2.0 * std::f64::consts::PI * (r0.powi(3) / mu).sqrt();
-        let steps = (period / dt).round() as usize;
+        let steps = (period / target_dt).round() as usize;
+        let dt = period / steps as f64;
 
         let mut state = TranslationalState {
             position: DVec3::new(r0, 0.0, 0.0),
