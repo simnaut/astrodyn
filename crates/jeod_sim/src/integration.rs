@@ -88,7 +88,7 @@ pub fn integrate_body(
                 IntegratorType::Rkf45 => {
                     jeod_dynamics::rkf45_sixdof_step(&six_state, accel, torque_fn, mass_props, dt)
                 }
-                IntegratorType::GaussJackson { .. } => {
+                IntegratorType::GaussJackson(..) => {
                     panic!(
                         "GaussJackson 6-DOF integration not yet supported. \
                          Set rotational_dynamics=false for GJ bodies."
@@ -109,16 +109,57 @@ pub fn integrate_body(
 
     // 3-DOF path: translational only
     let accel = |s: &TranslationalState| gravity_fn(s.position) + non_grav_accel;
-    let new_trans = match integrator {
-        IntegratorType::Rk4 => jeod_dynamics::rk4_translational_step(trans, accel, dt),
-        IntegratorType::Rkf45 => jeod_dynamics::rkf45_translational_step(trans, accel, dt),
-        IntegratorType::GaussJackson { .. } => {
+    match integrator {
+        IntegratorType::Rk4 => {
+            *trans = jeod_dynamics::rk4_translational_step(trans, accel, dt);
+        }
+        IntegratorType::Rkf45 => {
+            *trans = jeod_dynamics::rkf45_translational_step(trans, accel, dt);
+        }
+        IntegratorType::GaussJackson(cfg) => {
             let gj = gj_state.expect(
                 "GaussJackson integrator requires gj_state. \
                  Set SimBody::gj_state or call Simulation::validate() first.",
             );
-            gj.step(trans, accel, dt)
+            debug_assert_eq!(
+                gj.config(),
+                &cfg,
+                "GaussJacksonState config does not match IntegratorType config. \
+                 Recreate the state from the same config or call Simulation::validate()."
+            );
+            // Integration loop matching JEOD's IntegrationControls.
+            // Stages are managed internally by the integrator.
+            // Gravity is recomputed between stages at the predicted position.
+            //
+            // Stage cap from the state's actual config (not the IntegratorType
+            // config, which could differ if constructed manually).
+            // Worst case per step: primer (4 stages) + bootstrap edit
+            // (order * max_correction_iterations) + GJ predict/correct (2).
+            let max_stages = {
+                let cfg = gj.config();
+                let edits = cfg.final_order * (cfg.max_correction_iterations + 1);
+                (edits + 10).max(100) // generous headroom
+            };
+            let mut completed = false;
+            for _ in 0..max_stages {
+                let acc = gravity_fn(trans.position) + non_grav_accel;
+                let result = gj.integrate(dt, acc, trans);
+                if result.time_scale > 0.0 {
+                    if !result.passed {
+                        log::warn!(
+                            "GaussJackson integration step did not converge \
+                             (position may be degraded)"
+                        );
+                    }
+                    completed = true;
+                    break;
+                }
+            }
+            assert!(
+                completed,
+                "GaussJackson integration did not complete within {max_stages} stages. \
+                 The FSM may be stuck. Reset the integrator or check configuration."
+            );
         }
-    };
-    *trans = new_trans;
+    }
 }

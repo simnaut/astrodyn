@@ -42,8 +42,8 @@ pub enum ValidationError {
     ForceProducerWithoutMass { body_idx: usize },
     /// GaussJackson integrator with rotational_dynamics=true (6-DOF not supported).
     GaussJacksonWith6Dof { body_idx: usize },
-    /// GaussJackson order out of supported range (1..=8).
-    GaussJacksonOrderOutOfRange { body_idx: usize, order: usize },
+    /// GaussJackson config invalid.
+    GaussJacksonConfigInvalid { body_idx: usize, detail: String },
     /// Body has `atmospheric_state` but simulation has no atmosphere config.
     AtmosphericStateWithoutAtmosphere { body_idx: usize },
     /// Body has `compute_solar_beta=true` but simulation has no `sun_source`.
@@ -165,12 +165,8 @@ impl std::fmt::Display for ValidationError {
                      for GJ bodies."
                 )
             }
-            Self::GaussJacksonOrderOutOfRange { body_idx, order } => {
-                write!(
-                    f,
-                    "Body {body_idx}: GaussJackson order {order} is out of supported range \
-                     (1..=8). AB/AM coefficient tables only exist up to order 8."
-                )
+            Self::GaussJacksonConfigInvalid { body_idx, detail } => {
+                write!(f, "Body {body_idx}: GaussJackson config invalid: {detail}")
             }
             Self::AtmosphericStateWithoutAtmosphere { body_idx } => {
                 write!(

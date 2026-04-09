@@ -121,9 +121,9 @@ pub struct SimBody {
     pub solar_beta: Option<f64>,
 
     // ── Stateful integrator state ──
-    /// Gauss-Jackson (ABM) integrator state. `None` for non-GJ bodies.
+    /// Gauss-Jackson (Störmer-Cowell) integrator state. `None` for non-GJ bodies.
     /// Auto-initialized by `Simulation::validate()` when `integrator` is
-    /// `IntegratorType::GaussJackson { order }`.
+    /// `IntegratorType::GaussJackson(config)`.
     pub gj_state: Option<jeod_dynamics::GaussJacksonState>,
 }
 
@@ -302,17 +302,18 @@ impl Simulation {
             // GaussJackson is translational-only (6-DOF not yet supported)
             if matches!(
                 body.integrator,
-                jeod_dynamics::IntegratorType::GaussJackson { .. }
+                jeod_dynamics::IntegratorType::GaussJackson(..)
             ) && body.config.rotational_dynamics
             {
                 all_errors.push(ValidationError::GaussJacksonWith6Dof { body_idx });
             }
 
-            // GaussJackson order must be in supported range (AB/AM tables go up to 8)
-            if let jeod_dynamics::IntegratorType::GaussJackson { order } = body.integrator {
-                if !(1..=8).contains(&order) {
+            // GaussJackson config validation — delegates to GaussJacksonConfig::check()
+            // so the predicate is defined in one place.
+            if let jeod_dynamics::IntegratorType::GaussJackson(ref config) = body.integrator {
+                for detail in config.check() {
                     all_errors
-                        .push(ValidationError::GaussJacksonOrderOutOfRange { body_idx, order });
+                        .push(ValidationError::GaussJacksonConfigInvalid { body_idx, detail });
                 }
             }
 
@@ -374,12 +375,33 @@ impl Simulation {
         }
 
         // Auto-initialize Gauss-Jackson state for bodies that need it.
-        for body in &mut self.bodies {
-            if let jeod_dynamics::IntegratorType::GaussJackson { order } = body.integrator {
-                if body.gj_state.is_none() {
-                    body.gj_state = Some(jeod_dynamics::GaussJacksonState::new(order));
+        // Check config consistency for pre-existing states.
+        for (body_idx, body) in self.bodies.iter_mut().enumerate() {
+            if let jeod_dynamics::IntegratorType::GaussJackson(ref config) = body.integrator {
+                match &body.gj_state {
+                    None => {
+                        body.gj_state = Some(jeod_dynamics::GaussJacksonState::new(*config));
+                    }
+                    Some(state) if state.config() != config => {
+                        fatal.push(ValidationError::GaussJacksonConfigInvalid {
+                            body_idx,
+                            detail: format!(
+                                "existing gj_state config does not match IntegratorType config \
+                                 (initial_order {}/{}, final_order {}/{}). \
+                                 Remove gj_state or recreate from the same config.",
+                                state.config().initial_order,
+                                config.initial_order,
+                                state.config().final_order,
+                                config.final_order,
+                            ),
+                        });
+                    }
+                    Some(_) => {} // config matches, keep existing state
                 }
             }
+        }
+        if !fatal.is_empty() {
+            return Err(fatal);
         }
 
         Ok(())
@@ -701,12 +723,12 @@ impl Simulation {
         }
         let remainder = target_time - self.time.simtime;
         if remainder > 0.001 {
-            // Fractional steps corrupt Gauss-Jackson history (ABM coefficients
-            // assume constant dt). Guard against this.
+            // Fractional steps corrupt Gauss-Jackson history (the Störmer-Cowell
+            // coefficients and delinv accumulators assume constant dt).
             let has_gj = self.bodies.iter().any(|b| {
                 matches!(
                     b.integrator,
-                    jeod_dynamics::IntegratorType::GaussJackson { .. }
+                    jeod_dynamics::IntegratorType::GaussJackson(..)
                 )
             });
             assert!(

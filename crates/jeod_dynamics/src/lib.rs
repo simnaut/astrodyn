@@ -18,7 +18,8 @@ pub use forces::{
     compute_translational_acceleration, compute_translational_derivatives, DynamicsConfig,
     ForceContributions, FrameDerivatives, GravityAcceleration, TotalForce,
 };
-pub use gauss_jackson::GaussJacksonState;
+pub use gauss_jackson::config::GaussJacksonConfig;
+pub use gauss_jackson::{GaussJacksonState, IntegratorResult};
 pub use integration::{rk4_sixdof_step, rk4_translational_step, IntegratorType};
 pub use mass::{MassProperties, INERTIA_CONSISTENCY_TOL};
 pub use mass_body::{point_mass_inertia, MassBody, MassBodyId, MassPointState, MassTree};

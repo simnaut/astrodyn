@@ -18,7 +18,7 @@
 //!   F. Spherical harmonics 4x4 + RNP
 //!   G. External torque via per-body functions
 //!   H. Flat-plate SRP with shadow detection
-//!   I. Gauss-Jackson ABM8, point-mass 3-DOF
+//!   I. Gauss-Jackson (Störmer-Cowell), point-mass 3-DOF
 
 use std::time::Duration;
 
@@ -35,10 +35,10 @@ use bevy_jeod::{
 use glam::{DMat3, DVec3};
 use jeod_sim::{
     AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig, EulerSequence,
-    ExponentialAtmosphere, GaussJacksonState, GeoIndexType, GravityControl, GravityControls,
-    GravityModel, GravitySource, GravitySourceEntry, IntegratorType, JeodQuat, LvlhFrame,
-    MassProperties, MetAtmosphere, OrbitalElements, PlanetShape, RotationalState, SimBody,
-    Simulation, SixDofState, TidalBody, TidalConfig, TranslationalState,
+    ExponentialAtmosphere, GaussJacksonConfig, GaussJacksonState, GeoIndexType, GravityControl,
+    GravityControls, GravityModel, GravitySource, GravitySourceEntry, IntegratorType, JeodQuat,
+    LvlhFrame, MassProperties, MetAtmosphere, OrbitalElements, PlanetShape, RotationalState,
+    SimBody, Simulation, SixDofState, TidalBody, TidalConfig, TranslationalState,
 };
 
 const MU_EARTH: f64 = 3.986_004_415e14;
@@ -79,10 +79,14 @@ fn earth_source() -> GravitySource {
 // ── Bevy helpers ──
 
 fn step_bevy(app: &mut App, n: usize) {
+    step_bevy_dt(app, n, DT);
+}
+
+fn step_bevy_dt(app: &mut App, n: usize, dt: f64) {
     for _ in 0..n {
         app.world_mut()
             .resource_mut::<Time<Fixed>>()
-            .advance_by(Duration::from_secs_f64(DT));
+            .advance_by(Duration::from_secs_f64(dt));
         app.world_mut().run_schedule(FixedUpdate);
     }
 }
@@ -1942,12 +1946,10 @@ fn tier3_bevy_equatorial_solar_beta() {
     println!("  Bevy vs Sim equatorial solar beta: bit-identical");
 }
 
-// ── Scenario I: Gauss-Jackson ABM8, point-mass 3-DOF ──
+// ── Scenario I: Gauss-Jackson point-mass 3-DOF ──
 
-#[test]
-fn tier3_bevy_gj_point_mass() {
-    println!("Scenario I: GJ ABM8 point-mass 3-DOF");
-
+/// Shared helper for GJ Bevy-vs-Simulation parity tests.
+fn run_gj_parity(label: &str, config: GaussJacksonConfig, dt: f64, n_steps: usize) {
     let gj_trans = TranslationalState {
         position: DVec3::new(9e6, 0.0, 0.0),
         velocity: DVec3::new(0.0, 8000.0, 0.0),
@@ -1956,7 +1958,7 @@ fn tier3_bevy_gj_point_mass() {
     // ── Bevy ──
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
-    app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.insert_resource(Time::<Fixed>::from_seconds(dt));
     app.add_plugins(JeodPlugin);
 
     let planet = app
@@ -1982,18 +1984,17 @@ fn tier3_bevy_gj_point_mass() {
             }),
             GravityAccelerationC::default(),
             TotalForceC::default(),
-            IntegratorTypeC(IntegratorType::GaussJackson { order: 8 }),
-            GaussJacksonStateC(GaussJacksonState::new(8)),
+            IntegratorTypeC(IntegratorType::GaussJackson(config)),
+            GaussJacksonStateC(GaussJacksonState::new(config)),
         ))
         .id();
 
-    step_bevy(&mut app, NUM_STEPS);
-
+    step_bevy_dt(&mut app, n_steps, dt);
     let bevy_trans = read_trans(app.world(), vehicle);
 
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
-    let mut sim = Simulation::new(time, DT);
+    let mut sim = Simulation::new(time, dt);
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: GravitySource {
             mu: MU_EARTH,
@@ -2007,19 +2008,65 @@ fn tier3_bevy_gj_point_mass() {
 
     sim.add_body(SimBody {
         trans: gj_trans,
-        integrator: IntegratorType::GaussJackson { order: 8 },
+        integrator: IntegratorType::GaussJackson(config),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
         ..Default::default()
     });
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(n_steps);
 
     let sim_trans = sim.body(0).trans;
 
-    assert_trans_eq("Bevy vs Sim (GJ ABM8)", &bevy_trans, &sim_trans);
-    println!("  Bevy vs Sim GJ ABM8 point-mass: bit-identical");
+    assert_trans_eq(label, &bevy_trans, &sim_trans);
+    println!("  {label}: bit-identical");
+}
+
+#[test]
+fn tier3_bevy_gj_point_mass() {
+    println!("Scenario I: GJ order 8, dt=10s, point-mass 3-DOF");
+    run_gj_parity(
+        "Bevy vs Sim (GJ order 8)",
+        GaussJacksonConfig::with_order(8),
+        DT,
+        NUM_STEPS,
+    );
+}
+
+#[test]
+fn tier3_bevy_gj_order4() {
+    println!("Scenario I-b: GJ order 4, dt=10s, point-mass 3-DOF");
+    run_gj_parity(
+        "Bevy vs Sim (GJ order 4)",
+        GaussJacksonConfig::with_order(4),
+        DT,
+        NUM_STEPS,
+    );
+}
+
+#[test]
+fn tier3_bevy_gj_order12() {
+    println!("Scenario I-c: GJ order 12, dt=10s, point-mass 3-DOF");
+    run_gj_parity(
+        "Bevy vs Sim (GJ order 12)",
+        GaussJacksonConfig::with_order(12),
+        DT,
+        NUM_STEPS,
+    );
+}
+
+#[test]
+fn tier3_bevy_gj_dt1() {
+    // Smaller timestep to verify GJ behavior at dt=1s.
+    // Uses more steps to cover the same time range as other parity tests.
+    println!("Scenario I-d: GJ order 8, dt=1s, point-mass 3-DOF");
+    run_gj_parity(
+        "Bevy vs Sim (GJ order 8, dt=1s)",
+        GaussJacksonConfig::with_order(8),
+        1.0,
+        1000,
+    );
 }
 
 // ── Scenario J: Solid body tides ──
