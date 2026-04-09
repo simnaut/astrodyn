@@ -375,6 +375,7 @@ impl Simulation {
         }
 
         // Auto-initialize Gauss-Jackson state for bodies that need it.
+        // Check config consistency for pre-existing states.
         for (body_idx, body) in self.bodies.iter_mut().enumerate() {
             if let jeod_dynamics::IntegratorType::GaussJackson(ref config) = body.integrator {
                 match &body.gj_state {
@@ -382,7 +383,7 @@ impl Simulation {
                         body.gj_state = Some(jeod_dynamics::GaussJacksonState::new(*config));
                     }
                     Some(state) if state.config() != config => {
-                        return Err(vec![ValidationError::GaussJacksonConfigInvalid {
+                        fatal.push(ValidationError::GaussJacksonConfigInvalid {
                             body_idx,
                             detail: format!(
                                 "existing gj_state config does not match IntegratorType config \
@@ -393,11 +394,14 @@ impl Simulation {
                                 state.config().final_order,
                                 config.final_order,
                             ),
-                        }]);
+                        });
                     }
                     Some(_) => {} // config matches, keep existing state
                 }
             }
+        }
+        if !fatal.is_empty() {
+            return Err(fatal);
         }
 
         Ok(())

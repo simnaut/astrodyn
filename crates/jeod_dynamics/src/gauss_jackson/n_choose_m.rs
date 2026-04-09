@@ -2,14 +2,17 @@
 //!
 //! Port of JEOD's `NChooseM` (er7_utils/math/include/n_choose_m.hh).
 //! Stores Pascal's triangle for fast lookup of C(n, m).
-//! Uses symmetry: C(n, m) = C(n, n-m) to store only floor((n+1)/2) entries per row.
+//! Uses symmetry: C(n, m) = C(n, n-m) to store only floor(n/2) entries per row
+//! (C(n,0)=1 is implicit). Storage is indexed via `row_index(n) = n²/4` which
+//! may over-allocate slightly for odd n, but lookups are consistent.
 
 /// Cached binomial coefficient calculator using Pascal's triangle.
 ///
 /// JEOD: `NChooseM` in `er7_utils/math/include/n_choose_m.hh`.
 pub(crate) struct NChooseM {
     /// Pascal's triangle stored as a flat array.
-    /// Row n starts at index `row_index(n)` and contains `floor((n+1)/2)` elements.
+    /// Row n starts at index `row_index(n)` and contains `floor(n/2)` entries
+    /// (for m = 1..=n/2; C(n,0) = 1 is implicit).
     triangle: Vec<u64>,
     /// Number of rows currently computed.
     nrows: usize,
