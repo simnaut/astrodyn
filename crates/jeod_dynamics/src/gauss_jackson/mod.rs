@@ -225,36 +225,58 @@ impl GaussJacksonState {
     /// - Priming: 4 calls per step (staged RK4)
     /// - BootstrapEdit: 1 call per edit point (time_scale=0, no time advance)
     /// - BootstrapStep/Operational: 2 calls per step (predict, correct)
+    ///
+    /// # Arguments
+    /// - `sim_dt`: simulation timestep (JEOD: `sim_dt` passed to integration controls)
+    /// - `time_scale_factor`: ratio of dynamic time to simulation time
+    ///   (JEOD: `TimeDyn::scale_factor`, read via `TimeInterface::get_time_scale_factor()`).
+    ///   1.0 for real-time, >1.0 for fast-forward.
+    /// - `acc`: acceleration at current `state.position`
+    /// - `state`: translational state (mutated in place)
     pub fn integrate(
         &mut self,
-        dt: f64,
+        sim_dt: f64,
+        time_scale_factor: f64,
         acc: DVec3,
         state: &mut TranslationalState,
     ) -> IntegratorResult {
         self.current_stage += 1;
         let stage = self.current_stage;
 
+        // JEOD dt variables (gauss_jackson_integration_controls.cc:144-149):
+        //   cycle_simdt = sim_dt * cycle_scale
+        //   cycle_dyndt = cycle_simdt * time_scale_factor
+        // cycle_scale may change during start_cycle (via downsample), so we
+        // compute cycle_dyndt after start_cycle for stage-1 paths. For
+        // operational fast-path and primer stages 2-4, cycle_scale is stable.
+        let cycle_dyndt = sim_dt * self.state_machine.cycle_scale() * time_scale_factor;
+
         // ── Operational fast path ──
         if self.fsm_state == FsmState::Operational {
-            return self.integrate_operational(dt, stage, acc, state);
+            return self.integrate_operational(cycle_dyndt, stage, acc, state);
         }
 
         // ── Priming: stages 2-4 of RK4 (stage 1 handled after start_cycle) ──
         if self.fsm_state == FsmState::Priming && stage > 1 {
-            return self.primer_step(dt, stage, acc, state);
+            return self.primer_step(cycle_dyndt, stage, acc, state);
         }
 
         // ── Start of cycle (stage 1 for all non-operational states) ──
-        if stage == 1 {
-            self.start_cycle(dt, acc, state);
-            // FSM may have transitioned in start_cycle.
-        }
+        // start_cycle may trigger a downsample which changes cycle_scale,
+        // so we must recompute cycle_dyndt afterwards.
+        let cycle_dyndt = if stage == 1 {
+            self.start_cycle(cycle_dyndt, acc, state);
+            // Recompute: cycle_scale may have changed via downsample.
+            sim_dt * self.state_machine.cycle_scale() * time_scale_factor
+        } else {
+            cycle_dyndt
+        };
 
         // ── Dispatch based on FSM state after start_cycle ──
         match self.fsm_state {
             FsmState::Priming => {
                 // Stage 1 of RK4 primer.
-                self.primer_step(dt, 1, acc, state)
+                self.primer_step(cycle_dyndt, 1, acc, state)
             }
 
             FsmState::BootstrapEdit => {
@@ -266,7 +288,7 @@ impl GaussJacksonState {
                 //
                 // JEOD: if edit fails convergence, set_bootstrap_edit_redo_needed()
                 // triggers a redo on the next FSM transition.
-                let passed = self.edit_point(dt, state);
+                let passed = self.edit_point(cycle_dyndt, state);
                 if !passed {
                     self.state_machine.set_bootstrap_edit_redo_needed();
                 }
@@ -276,12 +298,12 @@ impl GaussJacksonState {
 
             FsmState::BootstrapStep => {
                 // Predict/correct using GJ at current (possibly reduced) order.
-                self.integrate_bootstrap_step(dt, stage, acc, state)
+                self.integrate_bootstrap_step(cycle_dyndt, stage, acc, state)
             }
 
             FsmState::Operational => {
                 // Just transitioned to operational (first step after bootstrap).
-                self.integrate_operational(dt, stage, acc, state)
+                self.integrate_operational(cycle_dyndt, stage, acc, state)
             }
 
             FsmState::Reset => {
@@ -293,7 +315,7 @@ impl GaussJacksonState {
     /// Operational mode: predict (stage 1) then correct (stage 2).
     fn integrate_operational(
         &mut self,
-        dt: f64,
+        cycle_dyndt: f64,
         stage: usize,
         acc: DVec3,
         state: &mut TranslationalState,
@@ -304,7 +326,7 @@ impl GaussJacksonState {
         }
 
         let passed = self.integrate_gj(
-            dt,
+            cycle_dyndt,
             stage,
             self.order as isize,
             self.order as isize,
@@ -317,7 +339,13 @@ impl GaussJacksonState {
             IntegratorResult::more_stages()
         } else {
             self.current_stage = 0;
-            IntegratorResult::complete(passed)
+            // Operational mode always has at_end_of_tour=true (scale_factor=1),
+            // but check for consistency with bootstrap paths.
+            if self.state_machine.at_end_of_tour() {
+                IntegratorResult::complete(passed)
+            } else {
+                IntegratorResult::more_stages()
+            }
         }
     }
 
@@ -325,7 +353,7 @@ impl GaussJacksonState {
     /// Note: start_cycle has already been called for stage 1 by integrate().
     fn integrate_bootstrap_step(
         &mut self,
-        dt: f64,
+        cycle_dyndt: f64,
         stage: usize,
         acc: DVec3,
         state: &mut TranslationalState,
@@ -333,13 +361,25 @@ impl GaussJacksonState {
         let hist_len = self.history_length as isize;
         let offset = (hist_len - (self.order as isize + 1)) as usize;
 
-        let passed = self.integrate_gj(dt, stage, hist_len - 1, hist_len, acc, Some(offset), state);
+        let passed = self.integrate_gj(
+            cycle_dyndt,
+            stage,
+            hist_len - 1,
+            hist_len,
+            acc,
+            Some(offset),
+            state,
+        );
 
         if stage == 1 {
             IntegratorResult::more_stages()
         } else {
             self.current_stage = 0;
-            IntegratorResult::complete(passed)
+            if self.state_machine.at_end_of_tour() {
+                IntegratorResult::complete(passed)
+            } else {
+                IntegratorResult::more_stages()
+            }
         }
     }
 
@@ -622,11 +662,12 @@ impl GaussJacksonState {
 
     /// One stage of the RK4 primer.
     ///
-    /// Returns `more_stages()` for stages 1-3, `complete(true)` for stage 4.
+    /// Returns `more_stages()` for stages 1-3, `complete(true)` for stage 4
+    /// (or `more_stages()` if the tour is not yet complete during subcycling).
     /// Between calls, the caller must evaluate acceleration at `state.position`.
     fn primer_step(
         &mut self,
-        dt: f64,
+        cycle_dyndt: f64,
         target_stage: usize,
         acc: DVec3,
         state: &mut TranslationalState,
@@ -640,8 +681,8 @@ impl GaussJacksonState {
                 self.primer_k_pos[0] = state.velocity; // v_n
 
                 // Move state to midpoint 1 for next derivative eval
-                state.position = self.primer_base_pos + 0.5 * dt * self.primer_k_pos[0];
-                state.velocity = self.primer_base_vel + 0.5 * dt * self.primer_k_vel[0];
+                state.position = self.primer_base_pos + 0.5 * cycle_dyndt * self.primer_k_pos[0];
+                state.velocity = self.primer_base_vel + 0.5 * cycle_dyndt * self.primer_k_vel[0];
 
                 IntegratorResult::more_stages()
             }
@@ -651,8 +692,8 @@ impl GaussJacksonState {
                 self.primer_k_pos[1] = state.velocity;
 
                 // Move state to midpoint 2
-                state.position = self.primer_base_pos + 0.5 * dt * self.primer_k_pos[1];
-                state.velocity = self.primer_base_vel + 0.5 * dt * self.primer_k_vel[1];
+                state.position = self.primer_base_pos + 0.5 * cycle_dyndt * self.primer_k_pos[1];
+                state.velocity = self.primer_base_vel + 0.5 * cycle_dyndt * self.primer_k_vel[1];
 
                 IntegratorResult::more_stages()
             }
@@ -662,8 +703,8 @@ impl GaussJacksonState {
                 self.primer_k_pos[2] = state.velocity;
 
                 // Move state to endpoint
-                state.position = self.primer_base_pos + dt * self.primer_k_pos[2];
-                state.velocity = self.primer_base_vel + dt * self.primer_k_vel[2];
+                state.position = self.primer_base_pos + cycle_dyndt * self.primer_k_pos[2];
+                state.velocity = self.primer_base_vel + cycle_dyndt * self.primer_k_vel[2];
 
                 IntegratorResult::more_stages()
             }
@@ -674,14 +715,14 @@ impl GaussJacksonState {
 
                 // Combine: x_{n+1} = x_n + dt/6 * (k1 + 2*k2 + 2*k3 + k4)
                 state.velocity = self.primer_base_vel
-                    + (dt / 6.0)
+                    + (cycle_dyndt / 6.0)
                         * (self.primer_k_vel[0]
                             + 2.0 * self.primer_k_vel[1]
                             + 2.0 * self.primer_k_vel[2]
                             + self.primer_k_vel[3]);
 
                 state.position = self.primer_base_pos
-                    + (dt / 6.0)
+                    + (cycle_dyndt / 6.0)
                         * (self.primer_k_pos[0]
                             + 2.0 * self.primer_k_pos[1]
                             + 2.0 * self.primer_k_pos[2]
@@ -691,7 +732,11 @@ impl GaussJacksonState {
                 self.pos_hist.set_dvec3(self.history_length, state.position);
 
                 self.current_stage = 0; // Reset for next step
-                IntegratorResult::complete(true)
+                if self.state_machine.at_end_of_tour() {
+                    IntegratorResult::complete(true)
+                } else {
+                    IntegratorResult::more_stages()
+                }
             }
             _ => panic!("RK4 primer: invalid target_stage {target_stage} (expected 1-4)"),
         }
@@ -719,7 +764,7 @@ mod tests {
         for _ in 0..steps {
             loop {
                 let acc = -state.position;
-                let result = gj.integrate(dt, acc, &mut state);
+                let result = gj.integrate(dt, 1.0, acc, &mut state);
                 if result.time_scale > 0.0 {
                     break;
                 }
@@ -763,7 +808,7 @@ mod tests {
             loop {
                 let r = state.position.length();
                 let acc = -mu / (r * r * r) * state.position;
-                let result = gj.integrate(dt, acc, &mut state);
+                let result = gj.integrate(dt, 1.0, acc, &mut state);
                 if result.time_scale > 0.0 {
                     break;
                 }
@@ -798,7 +843,7 @@ mod tests {
 
         for _ in 0..20 {
             loop {
-                let result = gj.integrate(dt, DVec3::ZERO, &mut state);
+                let result = gj.integrate(dt, 1.0, DVec3::ZERO, &mut state);
                 if result.time_scale > 0.0 {
                     break;
                 }
@@ -834,7 +879,7 @@ mod tests {
         for _ in 0..steps {
             loop {
                 let acc = -state_gj.position;
-                let result = gj.integrate(dt, acc, &mut state_gj);
+                let result = gj.integrate(dt, 1.0, acc, &mut state_gj);
                 if result.time_scale > 0.0 {
                     break;
                 }
@@ -850,5 +895,137 @@ mod tests {
             err_gj < err_rk4,
             "GJ8 ({err_gj:.2e}) should be more accurate than RK4 ({err_rk4:.2e})"
         );
+    }
+
+    #[test]
+    fn gj_harmonic_oscillator_bootstrap() {
+        // Full bootstrap path: initial_order=4, final_order=12, ndoubling_steps=4.
+        // With ndoubling_steps=4, tour_count=16, so the bootstrap phase uses
+        // subcycled steps at dt/16, dt/8, dt/4, dt/2, then full dt.
+        // This exercises the cycle_dyndt scaling and at_end_of_tour gating.
+        let dt: f64 = 0.01;
+        let total_time = 10.0;
+        let steps = (total_time / dt).round() as usize;
+
+        let mut state = TranslationalState {
+            position: DVec3::new(1.0, 0.0, 0.0),
+            velocity: DVec3::ZERO,
+        };
+
+        let mut gj = GaussJacksonState::new(GaussJacksonConfig::default());
+
+        for _ in 0..steps {
+            loop {
+                let acc = -state.position;
+                let result = gj.integrate(dt, 1.0, acc, &mut state);
+                if result.time_scale > 0.0 {
+                    break;
+                }
+            }
+        }
+
+        let exact_pos = total_time.cos();
+        let exact_vel = -total_time.sin();
+        let pos_error = (state.position.x - exact_pos).abs();
+        let vel_error = (state.velocity.x - exact_vel).abs();
+
+        println!(
+            "GJ12 bootstrap harmonic oscillator: pos_err={pos_error:.2e}, vel_err={vel_error:.2e}"
+        );
+        // GJ12 with full bootstrap should be very accurate
+        assert!(
+            pos_error < 1e-10,
+            "GJ12 bootstrap position error {pos_error:.2e} exceeds 1e-10"
+        );
+        assert!(
+            vel_error < 1e-10,
+            "GJ12 bootstrap velocity error {vel_error:.2e} exceeds 1e-10"
+        );
+    }
+
+    #[test]
+    fn gj_kepler_orbit_standard() {
+        // GaussJacksonConfig::standard(): initial=8, final=12, ndoubling=2.
+        // Tests bootstrap with smaller ndoubling (tour_count=4).
+        let mu: f64 = 3.986_004_415e14;
+        let r0: f64 = 7_000_000.0;
+        let v0 = (mu / r0).sqrt();
+
+        let dt: f64 = 10.0;
+        let period = 2.0 * std::f64::consts::PI * (r0.powi(3) / mu).sqrt();
+        let steps = (period / dt).round() as usize;
+
+        let mut state = TranslationalState {
+            position: DVec3::new(r0, 0.0, 0.0),
+            velocity: DVec3::new(0.0, v0, 0.0),
+        };
+
+        let mut gj = GaussJacksonState::new(GaussJacksonConfig::standard());
+
+        for _ in 0..steps {
+            loop {
+                let r = state.position.length();
+                let acc = -mu / (r * r * r) * state.position;
+                let result = gj.integrate(dt, 1.0, acc, &mut state);
+                if result.time_scale > 0.0 {
+                    break;
+                }
+            }
+        }
+
+        let pos_error = (state.position - DVec3::new(r0, 0.0, 0.0)).length();
+        println!("GJ standard Kepler orbit: pos_err={pos_error:.2e} m (1 period)");
+        // GJ12 with bootstrap should have smaller orbit closure error than GJ8 fixed.
+        assert!(
+            pos_error < 15_000.0,
+            "GJ standard orbit position error {pos_error:.2e} m exceeds 15 km"
+        );
+    }
+
+    #[test]
+    fn gj_cycle_scale_progression() {
+        // Verify that cycle_scale follows the expected doubling sequence
+        // during bootstrap.
+        use state_machine::StateMachine;
+
+        // ndoubling_steps=3, tour_count=8
+        let config = GaussJacksonConfig {
+            initial_order: 4,
+            final_order: 10,
+            ndoubling_steps: 3,
+            ..Default::default()
+        };
+        let sm = StateMachine::configure(&config);
+        assert!((sm.cycle_scale() - 1.0 / 8.0).abs() < 1e-15);
+
+        // Run through FSM until operational, recording cycle_scale at
+        // each downsample.
+        let mut sm = StateMachine::configure(&config);
+        let mut scales = vec![sm.cycle_scale()];
+
+        for _ in 0..500 {
+            sm.perform_step();
+            if sm.at_downsample() {
+                scales.push(sm.cycle_scale());
+            }
+            if sm.fsm_state() == FsmState::Operational {
+                break;
+            }
+        }
+        assert_eq!(
+            sm.fsm_state(),
+            FsmState::Operational,
+            "FSM did not reach operational"
+        );
+
+        // Initial scale = 1/8, then doubles: 1/4, 1/2, 1.0
+        assert_eq!(scales.len(), 4, "Expected 3 doublings + initial");
+        let expected = [1.0 / 8.0, 1.0 / 4.0, 1.0 / 2.0, 1.0];
+        for (i, (&got, &exp)) in scales.iter().zip(expected.iter()).enumerate() {
+            assert!(
+                (got - exp).abs() < 1e-15,
+                "cycle_scale[{i}]: expected {exp}, got {got}"
+            );
+        }
     }
 }

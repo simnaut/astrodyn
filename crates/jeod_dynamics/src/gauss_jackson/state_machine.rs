@@ -131,9 +131,13 @@ impl StateMachine {
         self.at_order_change
     }
 
-    #[allow(dead_code)]
     pub fn at_end_of_tour(&self) -> bool {
         self.at_end_of_tour
+    }
+
+    /// JEOD: `GaussJacksonStateMachine::get_cycle_scale()`.
+    pub fn cycle_scale(&self) -> f64 {
+        self.cycle_scale
     }
 
     #[allow(dead_code)]

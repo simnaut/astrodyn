@@ -52,6 +52,12 @@ pub struct SimulationTime {
     /// [`set_ut1_tai_offset`](Self::set_ut1_tai_offset) with a value from
     /// IERS Bulletin A/B when sub-second accuracy in Earth orientation is needed.
     pub ut1_tai_offset: f64,
+    /// Ratio of dynamic time to simulation time.
+    /// JEOD: `TimeDyn::scale_factor`, read by integration controls via
+    /// `TimeInterface::get_time_scale_factor()`.
+    /// 1.0 = real-time, >1.0 = fast-forward, <0 = time reversal.
+    /// Default: 1.0.
+    pub time_scale_factor: f64,
 }
 
 impl SimulationTime {
@@ -81,6 +87,7 @@ impl SimulationTime {
             simtime: 0.0,
             leap_second_table: leap_table,
             ut1_tai_offset,
+            time_scale_factor: 1.0,
         };
         sim.recompute_derived();
         sim

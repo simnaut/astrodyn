@@ -43,6 +43,7 @@ pub fn integrate_body(
     non_grav_force: DVec3,
     torque: DVec3,
     dt: f64,
+    time_scale_factor: f64,
     integrator: IntegratorType,
     gj_state: Option<&mut jeod_dynamics::GaussJacksonState>,
 ) {
@@ -137,13 +138,14 @@ pub fn integrate_body(
             // (order * max_correction_iterations) + GJ predict/correct (2).
             let max_stages = {
                 let cfg = gj.config();
+                let tour_count = 1usize << cfg.ndoubling_steps;
                 let edits = cfg.final_order * (cfg.max_correction_iterations + 1);
-                (edits + 10).max(100) // generous headroom
+                ((edits + 10) * tour_count).max(100) // generous headroom
             };
             let mut completed = false;
             for _ in 0..max_stages {
                 let acc = gravity_fn(trans.position) + non_grav_accel;
-                let result = gj.integrate(dt, acc, trans);
+                let result = gj.integrate(dt, time_scale_factor, acc, trans);
                 if result.time_scale > 0.0 {
                     if !result.passed {
                         log::warn!(
