@@ -580,12 +580,14 @@ impl GaussJacksonState {
         let threshold = new_pos.abs() * self.relative_tolerance;
 
         // JEOD: if (error > absolute_tolerance) && (error > relative_tolerance * |new_data|)
-        for i in 0..3 {
-            let e = [error.x, error.y, error.z][i];
-            let t = [threshold.x, threshold.y, threshold.z][i];
-            if e > self.absolute_tolerance && e > t {
-                passed = false;
-            }
+        if error.x > self.absolute_tolerance && error.x > threshold.x {
+            passed = false;
+        }
+        if error.y > self.absolute_tolerance && error.y > threshold.y {
+            passed = false;
+        }
+        if error.z > self.absolute_tolerance && error.z > threshold.z {
+            passed = false;
         }
 
         // Update pos_hist with new data.

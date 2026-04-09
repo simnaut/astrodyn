@@ -95,7 +95,7 @@ impl TwoDArray {
     ///
     /// JEOD: `TwoDArray::downsample(limit)`.
     /// ```text
-    /// For i in 1..limit-1: swap(rows[i], rows[2*i])
+    /// For i in 1..limit: swap(rows[i], rows[2*i])
     /// ```
     pub fn downsample(&mut self, limit: usize) {
         for i in 1..limit {
