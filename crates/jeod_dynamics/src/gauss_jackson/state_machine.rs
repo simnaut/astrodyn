@@ -145,8 +145,8 @@ impl StateMachine {
 
     /// Tell the state machine that the edit did not pass convergence.
     /// Only requests a redo if another iteration is still allowed; otherwise
-    /// the edit proceeds with the non-converged result (the outer loop
-    /// will observe `passed=false`).
+    /// no redo is requested and the edit proceeds with the non-converged
+    /// result.
     ///
     /// JEOD: `GaussJacksonStateMachine::set_bootstrap_edit_redo_needed()`.
     pub fn set_bootstrap_edit_redo_needed(&mut self) {

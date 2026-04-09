@@ -190,11 +190,23 @@ impl GaussJacksonState {
     /// Reset the integrator to its initial state.
     ///
     /// JEOD: `GaussJacksonIntegratorBase::base_reset()`.
+    /// Also resets internal stage counter and primer scratch state
+    /// (not present in JEOD, which manages stages externally).
     pub fn reset(&mut self) {
         self.fsm_state = FsmState::Reset;
         self.history_length = 0;
         self.order = self.initial_order;
         self.state_machine.reset();
+        self.current_stage = 0;
+        self.primer_base_pos = DVec3::ZERO;
+        self.primer_base_vel = DVec3::ZERO;
+        self.primer_k_vel = [DVec3::ZERO; 4];
+        self.primer_k_pos = [DVec3::ZERO; 4];
+    }
+
+    /// Returns the configuration this integrator was created with.
+    pub fn config(&self) -> &GaussJacksonConfig {
+        &self.config
     }
 
     /// Returns true if the integrator is still in the priming phase.
