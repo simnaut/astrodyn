@@ -1028,4 +1028,157 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn gj_time_scale_factor_equivalence() {
+        // Validates that time_scale_factor actually multiplies into cycle_dyndt.
+        //
+        // Key insight: integrate(sim_dt=0.005, tsf=2.0) produces the same
+        // cycle_dyndt as integrate(sim_dt=0.01, tsf=1.0) at every stage.
+        // With the same number of integrate() calls, the state machine sees
+        // identical step counts and the physics sees identical cycle_dyndt,
+        // so the trajectories must be bitwise identical.
+        //
+        // This test would FAIL if time_scale_factor were ignored: run B
+        // would integrate at half the effective dt, producing a very
+        // different trajectory.
+        let config = GaussJacksonConfig::default(); // ndoubling=4
+        let n_steps: usize = 1000;
+
+        // Run A: sim_dt=0.01, time_scale_factor=1.0 (baseline)
+        // Dynamic time per step = 0.01 * 1.0 = 0.01
+        let mut state_a = TranslationalState {
+            position: DVec3::new(1.0, 0.0, 0.0),
+            velocity: DVec3::ZERO,
+        };
+        let mut gj_a = GaussJacksonState::new(config);
+        for _ in 0..n_steps {
+            loop {
+                let acc = -state_a.position;
+                let result = gj_a.integrate(0.01, 1.0, acc, &mut state_a);
+                if result.time_scale > 0.0 {
+                    break;
+                }
+            }
+        }
+
+        // Run B: sim_dt=0.005, time_scale_factor=2.0 (same effective dt)
+        // Dynamic time per step = 0.005 * 2.0 = 0.01
+        // Same number of calls → same total dynamic time (10.0s).
+        let mut state_b = TranslationalState {
+            position: DVec3::new(1.0, 0.0, 0.0),
+            velocity: DVec3::ZERO,
+        };
+        let mut gj_b = GaussJacksonState::new(config);
+        for _ in 0..n_steps {
+            loop {
+                let acc = -state_b.position;
+                let result = gj_b.integrate(0.005, 2.0, acc, &mut state_b);
+                if result.time_scale > 0.0 {
+                    break;
+                }
+            }
+        }
+
+        // Both should reach the same state (bitwise identical cycle_dyndt
+        // at every stage means identical floating-point trajectories).
+        let pos_diff = (state_a.position - state_b.position).length();
+        let vel_diff = (state_a.velocity - state_b.velocity).length();
+        println!("time_scale_factor equivalence: pos_diff={pos_diff:.2e}, vel_diff={vel_diff:.2e}");
+        assert!(
+            pos_diff < 1e-14,
+            "Position divergence {pos_diff:.2e} between tsf=1.0 and tsf=2.0 runs"
+        );
+        assert!(
+            vel_diff < 1e-14,
+            "Velocity divergence {vel_diff:.2e} between tsf=1.0 and tsf=2.0 runs"
+        );
+
+        // Sanity: both should also be accurate vs exact solution
+        let total_dyn_time: f64 = 10.0;
+        let exact_pos = total_dyn_time.cos();
+        let err_a = (state_a.position.x - exact_pos).abs();
+        let err_b = (state_b.position.x - exact_pos).abs();
+        assert!(
+            err_a < 1e-10,
+            "Run A position error {err_a:.2e} exceeds 1e-10"
+        );
+        assert!(
+            err_b < 1e-10,
+            "Run B position error {err_b:.2e} exceeds 1e-10"
+        );
+    }
+
+    #[test]
+    fn gj_time_scale_factor_affects_dynamics() {
+        // Validates that time_scale_factor != 1.0 actually changes the dynamics.
+        //
+        // With tsf=2.0 and sim_dt=0.01, the effective dt is 0.02 per sim step.
+        // After 500 sim steps, dynamic time = 500 * 0.02 = 10.0s.
+        // With tsf=1.0 and sim_dt=0.01, after 500 sim steps, dynamic time = 5.0s.
+        //
+        // The two trajectories MUST differ — if they don't, time_scale_factor
+        // is being ignored.
+        let config = GaussJacksonConfig::default();
+        let sim_steps = 500;
+
+        // Run A: tsf=1.0, 500 steps → 5.0s of dynamic time
+        let mut state_a = TranslationalState {
+            position: DVec3::new(1.0, 0.0, 0.0),
+            velocity: DVec3::ZERO,
+        };
+        let mut gj_a = GaussJacksonState::new(config);
+        for _ in 0..sim_steps {
+            loop {
+                let acc = -state_a.position;
+                let result = gj_a.integrate(0.01, 1.0, acc, &mut state_a);
+                if result.time_scale > 0.0 {
+                    break;
+                }
+            }
+        }
+
+        // Run B: tsf=2.0, 500 steps → 10.0s of dynamic time
+        let mut state_b = TranslationalState {
+            position: DVec3::new(1.0, 0.0, 0.0),
+            velocity: DVec3::ZERO,
+        };
+        let mut gj_b = GaussJacksonState::new(config);
+        for _ in 0..sim_steps {
+            loop {
+                let acc = -state_b.position;
+                let result = gj_b.integrate(0.01, 2.0, acc, &mut state_b);
+                if result.time_scale > 0.0 {
+                    break;
+                }
+            }
+        }
+
+        // Run A should be at cos(5.0), Run B at cos(10.0) — very different
+        let exact_a = 5.0_f64.cos();
+        let exact_b = 10.0_f64.cos();
+        let err_a = (state_a.position.x - exact_a).abs();
+        let err_b = (state_b.position.x - exact_b).abs();
+
+        println!(
+            "tsf=1.0: pos={:.10}, exact={exact_a:.10}, err={err_a:.2e}",
+            state_a.position.x
+        );
+        println!(
+            "tsf=2.0: pos={:.10}, exact={exact_b:.10}, err={err_b:.2e}",
+            state_b.position.x
+        );
+
+        assert!(err_a < 1e-10, "tsf=1.0 error {err_a:.2e} exceeds 1e-10");
+        // tsf=2.0 doubles the effective dt → larger truncation error
+        assert!(err_b < 1e-9, "tsf=2.0 error {err_b:.2e} exceeds 1e-9");
+
+        // The states must actually differ (proves tsf is not ignored)
+        let pos_diff = (state_a.position.x - state_b.position.x).abs();
+        assert!(
+            pos_diff > 0.1,
+            "Runs with different time_scale_factor produced nearly identical \
+             positions (diff={pos_diff:.2e}), suggesting time_scale_factor is ignored"
+        );
+    }
 }
