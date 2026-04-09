@@ -49,8 +49,10 @@ impl Default for GaussJacksonConfig {
 }
 
 impl GaussJacksonConfig {
-    /// Create a config with fixed order (no bootstrap).
+    /// Create a config with fixed order, no step-doubling.
     /// `initial_order = final_order = order`, `ndoubling_steps = 0`.
+    /// Bootstrap editing still runs (controlled by `max_correction_iterations`)
+    /// to refine primed data — only step-doubling is skipped.
     pub fn with_order(order: usize) -> Self {
         Self {
             initial_order: order,
@@ -115,6 +117,14 @@ impl GaussJacksonConfig {
             errors.push(format!(
                 "absolute_tolerance {} must be ≥ 0",
                 self.absolute_tolerance
+            ));
+        }
+        // JEOD doesn't validate max_correction_iterations, but cap it to
+        // prevent overflow in stage-cap arithmetic (order * iterations).
+        if self.max_correction_iterations > 1000 {
+            errors.push(format!(
+                "max_correction_iterations {} must be ≤ 1000",
+                self.max_correction_iterations
             ));
         }
         errors
