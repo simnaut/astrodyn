@@ -74,41 +74,61 @@ impl GaussJacksonConfig {
         }
     }
 
+    /// Non-panicking validation. Returns a list of error descriptions.
+    ///
+    /// Used by `Simulation::validate()` to report all issues at once.
+    /// JEOD: `validate_config()` in `gauss_jackson_config.cc`.
+    pub fn check(&self) -> Vec<String> {
+        let mut errors = Vec::new();
+        let is_valid_order = |o: usize| (2..=14).contains(&o) && o.is_multiple_of(2);
+
+        if !is_valid_order(self.initial_order) {
+            errors.push(format!(
+                "initial_order {} must be even, ≥ 2, ≤ 14",
+                self.initial_order
+            ));
+        }
+        if !is_valid_order(self.final_order) {
+            errors.push(format!(
+                "final_order {} must be even, ≥ 2, ≤ 14",
+                self.final_order
+            ));
+        } else if self.final_order < self.initial_order {
+            errors.push(format!(
+                "final_order {} < initial_order {}",
+                self.final_order, self.initial_order
+            ));
+        }
+        if self.ndoubling_steps > 20 {
+            errors.push(format!(
+                "ndoubling_steps {} must be ≤ 20",
+                self.ndoubling_steps
+            ));
+        }
+        if !(0.0..=1.0).contains(&self.relative_tolerance) {
+            errors.push(format!(
+                "relative_tolerance {} must be in [0, 1]",
+                self.relative_tolerance
+            ));
+        }
+        if self.absolute_tolerance < 0.0 {
+            errors.push(format!(
+                "absolute_tolerance {} must be ≥ 0",
+                self.absolute_tolerance
+            ));
+        }
+        errors
+    }
+
     /// Validate the configuration, panicking on invalid values.
     ///
     /// JEOD: `GaussJacksonConfig::validate_configuration()`.
     pub fn validate(&self) {
+        let errors = self.check();
         assert!(
-            self.initial_order >= 2
-                && self.initial_order.is_multiple_of(2)
-                && self.initial_order <= 14,
-            "initial_order must be even, ≥ 2, and ≤ 14, got {}",
-            self.initial_order
-        );
-        assert!(
-            self.final_order >= 2
-                && self.final_order.is_multiple_of(2)
-                && self.final_order >= self.initial_order
-                && self.final_order <= 14,
-            "final_order must be even, ≥ 2, ≥ initial_order ({}), and ≤ 14, got {}",
-            self.initial_order,
-            self.final_order
-        );
-        // JEOD: ndoubling_steps <= 20 in validate_configuration().
-        assert!(
-            self.ndoubling_steps <= 20,
-            "ndoubling_steps must be ≤ 20, got {}",
-            self.ndoubling_steps
-        );
-        assert!(
-            self.relative_tolerance >= 0.0 && self.relative_tolerance <= 1.0,
-            "relative_tolerance must be in [0, 1], got {}",
-            self.relative_tolerance
-        );
-        assert!(
-            self.absolute_tolerance >= 0.0,
-            "absolute_tolerance must be ≥ 0, got {}",
-            self.absolute_tolerance
+            errors.is_empty(),
+            "Invalid GaussJacksonConfig: {}",
+            errors.join("; ")
         );
     }
 }

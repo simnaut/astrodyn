@@ -116,7 +116,7 @@ pub fn integrate_body(
         IntegratorType::Rkf45 => {
             *trans = jeod_dynamics::rkf45_translational_step(trans, accel, dt);
         }
-        IntegratorType::GaussJackson(..) => {
+        IntegratorType::GaussJackson(cfg) => {
             let gj = gj_state.expect(
                 "GaussJackson integrator requires gj_state. \
                  Set SimBody::gj_state or call Simulation::validate() first.",
@@ -128,13 +128,9 @@ pub fn integrate_body(
             // Stage cap prevents infinite loops if the FSM gets stuck.
             // Worst case per step: primer (4 stages) + bootstrap edit
             // (order * max_correction_iterations) + GJ predict/correct (2).
-            // JEOD doesn't validate max_correction_iterations, but we cap
-            // the total to prevent runaway loops.
-            let max_stages = if let IntegratorType::GaussJackson(ref cfg) = integrator {
+            let max_stages = {
                 let edits = cfg.final_order * (cfg.max_correction_iterations + 1);
                 (edits + 10).max(100) // generous headroom
-            } else {
-                100
             };
             let mut completed = false;
             for _ in 0..max_stages {

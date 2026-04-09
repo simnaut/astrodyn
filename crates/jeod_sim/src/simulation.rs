@@ -121,7 +121,7 @@ pub struct SimBody {
     pub solar_beta: Option<f64>,
 
     // ── Stateful integrator state ──
-    /// Gauss-Jackson (ABM) integrator state. `None` for non-GJ bodies.
+    /// Gauss-Jackson (Störmer-Cowell) integrator state. `None` for non-GJ bodies.
     /// Auto-initialized by `Simulation::validate()` when `integrator` is
     /// `IntegratorType::GaussJackson(config)`.
     pub gj_state: Option<jeod_dynamics::GaussJacksonState>,
@@ -308,65 +308,12 @@ impl Simulation {
                 all_errors.push(ValidationError::GaussJacksonWith6Dof { body_idx });
             }
 
-            // GaussJackson config validation — mirrors GaussJacksonConfig::validate().
-            // Reports errors via ValidationError instead of panicking, so callers
-            // get all issues at once rather than one-at-a-time panics.
+            // GaussJackson config validation — delegates to GaussJacksonConfig::check()
+            // so the predicate is defined in one place.
             if let jeod_dynamics::IntegratorType::GaussJackson(ref config) = body.integrator {
-                let is_valid_order =
-                    |order: usize| (2..=14).contains(&order) && order.is_multiple_of(2);
-                let initial_bad = !is_valid_order(config.initial_order);
-                let final_bad = !is_valid_order(config.final_order);
-
-                if initial_bad {
-                    all_errors.push(ValidationError::GaussJacksonConfigInvalid {
-                        body_idx,
-                        detail: format!(
-                            "initial_order {} must be even, ≥ 2, ≤ 14",
-                            config.initial_order
-                        ),
-                    });
-                }
-                if final_bad {
-                    all_errors.push(ValidationError::GaussJacksonConfigInvalid {
-                        body_idx,
-                        detail: format!(
-                            "final_order {} must be even, ≥ 2, ≤ 14",
-                            config.final_order
-                        ),
-                    });
-                }
-                if !initial_bad && !final_bad && config.final_order < config.initial_order {
-                    all_errors.push(ValidationError::GaussJacksonConfigInvalid {
-                        body_idx,
-                        detail: format!(
-                            "final_order {} < initial_order {}",
-                            config.final_order, config.initial_order
-                        ),
-                    });
-                }
-                if config.ndoubling_steps > 20 {
-                    all_errors.push(ValidationError::GaussJacksonConfigInvalid {
-                        body_idx,
-                        detail: format!("ndoubling_steps {} must be ≤ 20", config.ndoubling_steps),
-                    });
-                }
-                if config.relative_tolerance < 0.0 || config.relative_tolerance > 1.0 {
-                    all_errors.push(ValidationError::GaussJacksonConfigInvalid {
-                        body_idx,
-                        detail: format!(
-                            "relative_tolerance {} must be in [0, 1]",
-                            config.relative_tolerance
-                        ),
-                    });
-                }
-                if config.absolute_tolerance < 0.0 {
-                    all_errors.push(ValidationError::GaussJacksonConfigInvalid {
-                        body_idx,
-                        detail: format!(
-                            "absolute_tolerance {} must be ≥ 0",
-                            config.absolute_tolerance
-                        ),
-                    });
+                for detail in config.check() {
+                    all_errors
+                        .push(ValidationError::GaussJacksonConfigInvalid { body_idx, detail });
                 }
             }
 
