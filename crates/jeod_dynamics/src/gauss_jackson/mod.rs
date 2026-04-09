@@ -60,6 +60,13 @@ impl IntegratorResult {
             passed: true,
         }
     }
+
+    fn more_stages_with(passed: bool) -> Self {
+        Self {
+            time_scale: 0.0,
+            passed,
+        }
+    }
 }
 
 /// Gauss-Jackson integrator state for second-order ODEs.
@@ -346,7 +353,7 @@ impl GaussJacksonState {
             if self.state_machine.at_end_of_tour() {
                 IntegratorResult::complete(passed)
             } else {
-                IntegratorResult::more_stages()
+                IntegratorResult::more_stages_with(passed)
             }
         }
     }
@@ -380,7 +387,7 @@ impl GaussJacksonState {
             if self.state_machine.at_end_of_tour() {
                 IntegratorResult::complete(passed)
             } else {
-                IntegratorResult::more_stages()
+                IntegratorResult::more_stages_with(passed)
             }
         }
     }

@@ -154,9 +154,16 @@ pub fn integrate_body(
             // (order * max_correction_iterations) + GJ predict/correct (2).
             let max_stages = {
                 let cfg = gj.config();
-                let tour_count = 1usize << cfg.ndoubling_steps;
-                let edits = cfg.final_order * (cfg.max_correction_iterations + 1);
-                ((edits + 10) * tour_count).max(100) // generous headroom
+                // Cap ndoubling_steps to avoid huge tour_count (JEOD default: 4).
+                let capped_ndoubling = cfg.ndoubling_steps.min(10);
+                let tour_count = 1usize << capped_ndoubling;
+                let edits = cfg
+                    .final_order
+                    .saturating_mul(cfg.max_correction_iterations + 1);
+                edits
+                    .saturating_add(10)
+                    .saturating_mul(tour_count)
+                    .clamp(100, 10_000_000) // hard cap: prevent runaway loops
             };
             let mut completed = false;
             for _ in 0..max_stages {
