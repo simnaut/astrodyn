@@ -28,9 +28,10 @@ const MU_GJ_TEST: f64 = 5.76e14;
 
 /// Run a GJ cross-validation test with the given config and reference CSV.
 ///
-/// `time_scale` converts CSV sim-time to dynamic time. JEOD's SIM_GJ_test
-/// uses `dyn_time.scale_factor` to vary the effective dt: a scale of 10
-/// means CSV timestamps are in sim-seconds (1/10th of dynamic seconds).
+/// `time_scale` converts CSV sim-time to dynamic time via
+/// `dyn_time = sim_time * time_scale`. JEOD's SIM_GJ_test uses
+/// `dyn_time.scale_factor` to vary the effective dt: a scale of 10
+/// means each CSV sim-second corresponds to 10 dynamic seconds.
 /// For dt=1 runs, `time_scale = 1.0`. For dt=10 runs, `time_scale = 10.0`.
 fn run_gj_test(
     test_name: &str,

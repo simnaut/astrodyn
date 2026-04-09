@@ -116,10 +116,16 @@ pub fn integrate_body(
         IntegratorType::Rkf45 => {
             *trans = jeod_dynamics::rkf45_translational_step(trans, accel, dt);
         }
-        IntegratorType::GaussJackson(_) => {
+        IntegratorType::GaussJackson(cfg) => {
             let gj = gj_state.expect(
                 "GaussJackson integrator requires gj_state. \
                  Set SimBody::gj_state or call Simulation::validate() first.",
+            );
+            debug_assert_eq!(
+                gj.config(),
+                &cfg,
+                "GaussJacksonState config does not match IntegratorType config. \
+                 Recreate the state from the same config or call Simulation::validate()."
             );
             // Integration loop matching JEOD's IntegrationControls.
             // Stages are managed internally by the integrator.
