@@ -107,15 +107,15 @@ impl GaussJacksonConfig {
                 self.ndoubling_steps
             ));
         }
-        if !(0.0..=1.0).contains(&self.relative_tolerance) {
+        if !self.relative_tolerance.is_finite() || !(0.0..=1.0).contains(&self.relative_tolerance) {
             errors.push(format!(
-                "relative_tolerance {} must be in [0, 1]",
+                "relative_tolerance {} must be finite and in [0, 1]",
                 self.relative_tolerance
             ));
         }
-        if self.absolute_tolerance < 0.0 {
+        if !self.absolute_tolerance.is_finite() || self.absolute_tolerance < 0.0 {
             errors.push(format!(
-                "absolute_tolerance {} must be ≥ 0",
+                "absolute_tolerance {} must be finite and ≥ 0",
                 self.absolute_tolerance
             ));
         }
