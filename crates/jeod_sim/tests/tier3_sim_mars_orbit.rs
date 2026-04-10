@@ -75,10 +75,12 @@ fn tier3_simulation_mars_dawn() {
     let mars_mu = sh_data.mu;
 
     // Dawn epoch: 2009-02-17 23:00:00 UTC
-    // TAI-UTC = 34s at this epoch; TAI TJT = (MJD - 40000) where MJD = JD - 2400000.5
-    // JD(2009-02-17 23:00 UTC) = 2454880.4583; MJD = 54880.4583; TJT = 14880.4583
-    // TAI TJT = UTC TJT + 34/86400 = 14880.4583 + 0.000394 = 14880.458727
-    let dawn_tai_tjt = 14_880.458_727;
+    // TAI-UTC = 34s at this epoch; TAI TJT = MJD - 40000, MJD = JD - 2400000.5
+    // JD(2009-02-17 23:00 UTC) = 2454880.4583
+    // MJD = 2454880.4583 - 2400000.5 = 54879.9583
+    // UTC TJT = 54879.9583 - 40000 = 14879.9583
+    // TAI TJT = UTC TJT + 34/86400 = 14879.9583 + 0.000394 = 14879.958727
+    let dawn_tai_tjt = 14_879.958_727;
     let leap_table = jeod_sim::default_leap_second_table();
     let time = SimulationTime::new(dawn_tai_tjt, leap_table);
 
@@ -175,9 +177,9 @@ fn tier3_simulation_mars_dawn() {
 
     let max_pos = report.max_position_component();
     println!("  Mars Dawn: max position error = {max_pos:.1} m (MRO110B2 SH 110x110)");
-    // After fixing the Mars rotation transpose (P*N*R → (P*N*R)^T), the error
-    // dropped from 25 km to ~2.4 km. Remaining residual is from SH evaluation
-    // and DE421 Sun ephemeris differences vs JEOD. Tolerance: 2540 × 1.05 per
-    // component.
-    report.assert_position([2667.0, 2667.0, 2667.0]);
+    // After fixing the Mars rotation transpose and the 12-hour epoch offset,
+    // the error dropped from 25 km to ~3.8 m. Residual is from SH evaluation
+    // sensitivity and Lyapunov divergence in the 110x110 gravity field.
+    // Observed max per-component: 3.8 m × 1.05 = 3.99 ≈ 4.0 m.
+    report.assert_position([4.0, 4.0, 4.0]);
 }
