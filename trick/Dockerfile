@@ -60,7 +60,7 @@ VOLUME /output
 #     jeod-trick
 # Wrapper entrypoint that prints a clear usage message if the script is not
 # bind-mounted into the container.
-RUN printf '#!/bin/sh\n\
+RUN printf '#!/bin/bash\n\
 if [ ! -f /generate_references.sh ]; then\n\
   echo "Error: /generate_references.sh not found in the container." >&2\n\
   echo "" >&2\n\

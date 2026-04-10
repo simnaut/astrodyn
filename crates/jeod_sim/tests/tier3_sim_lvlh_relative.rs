@@ -37,15 +37,16 @@ fn load_lvlhrel_csv(path: &std::path::Path) -> Vec<LvlhRelRecord> {
             continue;
         }
         let p = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
-        // Columns: time, vehA pos[0-2] vel[0-2] (interleaved), vehB pos/vel, rel pos/vel
+        // Columns (0-indexed): time, vehA pos/vel (interleaved), vehB pos/vel (interleaved),
+        // rel pos[0-2] (grouped), rel vel[0-2] (grouped)
         records.push(LvlhRelRecord {
             time: p(0),
             ref_pos: DVec3::new(p(1), p(3), p(5)),
             ref_vel: DVec3::new(p(2), p(4), p(6)),
             subj_pos: DVec3::new(p(7), p(9), p(11)),
             subj_vel: DVec3::new(p(8), p(10), p(12)),
-            jeod_rel_pos: DVec3::new(p(13), p(15), p(17)),
-            jeod_rel_vel: DVec3::new(p(14), p(16), p(18)),
+            jeod_rel_pos: DVec3::new(p(13), p(14), p(15)),
+            jeod_rel_vel: DVec3::new(p(16), p(17), p(18)),
         });
     }
     records
@@ -69,12 +70,16 @@ fn run_lvlhrel_scenario(label: &str, csv_name: &str) {
         max_pos_err = max_pos_err.max(pos_err);
         max_vel_err = max_vel_err.max(vel_err);
 
-        // JEOD's rectilinear LVLH may use a different convention than our
-        // LVLH frame (axis ordering, rotation direction). Loose tolerance
-        // validates pipeline connectivity; tighten after convention audit.
+        // LVLH-relative with Coriolis correction matches JEOD convention.
+        // Observed max: 2.13e-14 m position, 4.97e-16 m/s velocity.
         assert!(
-            pos_err < 200.0,
+            pos_err < 2.3e-14,
             "{label} point {i} (t={:.1}): LVLH position error {pos_err:.4e} m",
+            rec.time
+        );
+        assert!(
+            vel_err < 5.3e-16,
+            "{label} point {i} (t={:.1}): LVLH velocity error {vel_err:.4e} m/s",
             rec.time
         );
     }

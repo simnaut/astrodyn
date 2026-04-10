@@ -2378,24 +2378,31 @@ fn tier3_sim_relative_state_consistency() {
 
     let rel = compute_relative_state(&a.trans, a.rot.as_ref(), &b.trans, b.rot.as_ref());
 
-    // Relative position should equal B.pos - A.pos
-    let expected_pos = b.trans.position - a.trans.position;
-    assert_eq!(
-        rel.position.x.to_bits(),
-        expected_pos.x.to_bits(),
-        "relative position x should be exact"
+    // Relative position should equal T_ref * (B.pos - A.pos) — in ref body frame
+    let t_ref = a
+        .rot
+        .as_ref()
+        .unwrap()
+        .quaternion
+        .left_quat_to_transformation();
+    let rel_pos_inertial = b.trans.position - a.trans.position;
+    let expected_pos = t_ref * rel_pos_inertial;
+    let pos_err = (rel.position - expected_pos).length();
+    assert!(
+        pos_err < 1e-10,
+        "relative position error {pos_err:.4e} m exceeds 1e-10"
     );
-    assert_eq!(
-        rel.position.y.to_bits(),
-        expected_pos.y.to_bits(),
-        "relative position y should be exact"
+
+    // Relative velocity includes Coriolis: T * Δv - ω × pos
+    let rel_vel_inertial = b.trans.velocity - a.trans.velocity;
+    let omega_ref = a.rot.as_ref().unwrap().ang_vel_body;
+    let expected_vel = t_ref * rel_vel_inertial - omega_ref.cross(expected_pos);
+    let vel_err = (rel.velocity - expected_vel).length();
+    assert!(
+        vel_err < 1e-10,
+        "relative velocity error {vel_err:.4e} m/s exceeds 1e-10"
     );
-    assert_eq!(
-        rel.position.z.to_bits(),
-        expected_pos.z.to_bits(),
-        "relative position z should be exact"
-    );
-    println!("  Relative state: bit-identical with direct subtraction");
+    println!("  Relative state: matches body-frame computation within {pos_err:.2e} m, {vel_err:.2e} m/s");
 }
 
 // ── Scenario R: LVLH-relative state ──
@@ -2413,12 +2420,13 @@ fn tier3_sim_lvlh_relative_consistency() {
 
     let lvlh_rel = compute_lvlh_relative_state(ref_pos, ref_vel, subj_pos, subj_vel);
 
-    // Manual computation: get LVLH frame, rotate relative state
+    // Manual computation: get LVLH frame, rotate relative state + Coriolis
     let lvlh = compute_body_lvlh_frame(ref_pos, ref_vel);
     let rel_pos_inertial = subj_pos - ref_pos;
     let rel_vel_inertial = subj_vel - ref_vel;
     let expected_pos = lvlh.t_parent_this * rel_pos_inertial;
-    let expected_vel = lvlh.t_parent_this * rel_vel_inertial;
+    let expected_vel =
+        lvlh.t_parent_this * rel_vel_inertial - lvlh.ang_vel_this.cross(expected_pos);
 
     assert_eq!(
         lvlh_rel.position.x.to_bits(),
@@ -2440,7 +2448,17 @@ fn tier3_sim_lvlh_relative_consistency() {
         expected_vel.x.to_bits(),
         "LVLH vel x"
     );
-    println!("  LVLH-relative: bit-identical with manual LVLH rotation");
+    assert_eq!(
+        lvlh_rel.velocity.y.to_bits(),
+        expected_vel.y.to_bits(),
+        "LVLH vel y"
+    );
+    assert_eq!(
+        lvlh_rel.velocity.z.to_bits(),
+        expected_vel.z.to_bits(),
+        "LVLH vel z"
+    );
+    println!("  LVLH-relative: bit-identical with manual LVLH rotation + Coriolis");
 }
 
 // ── Scenario T: Mars IAU rotation dispatch ──

@@ -1208,7 +1208,12 @@ run_time_reversal_group &
 PID_TIME_REVERSAL=$!
 
 # ── Snippet: SIM_Relative (relative state between two vehicles) ──
+# Override frame names to use composite_body (matches our logged states) instead
+# of the default RefPoint frames configured in input_common.py.
 RELATIVE_SNIPPET='
+rel_state.vehA_wrt_vehB_in_B.subject_frame_name = "vehicleA.composite_body"
+rel_state.vehA_wrt_vehB_in_B.target_frame_name  = "vehicleB.composite_body"
+
 dr = trick.sim_services.DRAscii("relative_ASCII")
 dr.set_cycle(1)
 dr.freq = trick.sim_services.DR_Always
