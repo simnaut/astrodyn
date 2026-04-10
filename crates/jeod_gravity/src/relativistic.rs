@@ -65,10 +65,14 @@ pub fn compute_relativistic_correction(
         return DVec3::ZERO; // Avoid singularity
     }
 
-    // ── Compute potentials and primary body acceleration from other sources ──
-    let mut body_potential = 0.0; // Potential at primary due to others
-    let mut point_potential = 0.0; // Potential at vehicle due to others
-    let mut body_accel = DVec3::ZERO; // Acceleration of primary toward others
+    // ── Compute potentials and primary body acceleration ──
+    // body_potential: potential at the primary due to other sources only.
+    // point_potential: total potential at the vehicle, including the primary
+    // body's own GM/r. JEOD's calc_relativistic includes the primary when
+    // summing point_potential, providing the 2(β+γ)GM/r term in Folkner eq 27.
+    let mut body_potential = 0.0;
+    let mut point_potential = primary_mu / r_mag;
+    let mut body_accel = DVec3::ZERO;
 
     for src in other_sources {
         // Distance from vehicle to this source

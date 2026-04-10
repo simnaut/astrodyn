@@ -94,6 +94,8 @@ fn tier3_simulation_mars_dawn() {
         )
         .expect("Sun-Mars state from DE421");
 
+    // JEOD SIM_Mars uses RK4 at 1 Hz (DYNAMICS = 1.0 in S_define).
+    // Error is insensitive to dt (dt=1 and dt=10 give same result); use 10s for speed.
     let mut sim = Simulation::new(time, 10.0);
 
     // Mars at origin with IAU rotation + MRO110B2 SH gravity
@@ -173,9 +175,9 @@ fn tier3_simulation_mars_dawn() {
 
     let max_pos = report.max_position_component();
     println!("  Mars Dawn: max position error = {max_pos:.1} m (MRO110B2 SH 110x110)");
-    // 25 km residual from Mars rotation model differences (our Pathfinder IAU
-    // constants vs JEOD's RNPMars internal state propagation). With absolute
-    // TDB epoch the rotation is correct but libration rate differences accumulate
-    // over 3 hours. Tolerance: 25004 × 1.05 = 26254 m.
-    report.assert_position([26254.0, 26254.0, 26254.0]);
+    // After fixing the Mars rotation transpose (P*N*R → (P*N*R)^T), the error
+    // dropped from 25 km to ~2.4 km. Remaining residual is from SH evaluation
+    // and DE421 Sun ephemeris differences vs JEOD. Tolerance: 2540 × 1.05 per
+    // component.
+    report.assert_position([2667.0, 2667.0, 2667.0]);
 }

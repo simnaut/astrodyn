@@ -177,7 +177,8 @@ fn compute_rotation(time_days: f64, psi_nut: f64, obliquity: f64) -> DMat3 {
 ///
 /// # Returns
 /// 3x3 rotation matrix mapping vectors from the Mars-centered inertial frame
-/// (ICRF) to the Mars body-fixed frame. Composition: P × N × R.
+/// (ICRF) to the Mars body-fixed frame. Composition: (P × N × R)^T, matching
+/// JEOD's `T_parent_this` convention from `planet_rnp.cc:propagate_rnp()`.
 pub fn compute_mars_rotation(tdb_seconds_since_j2000: f64) -> DMat3 {
     let time_days = tdb_seconds_since_j2000 / SECONDS_PER_DAY;
 
@@ -190,8 +191,9 @@ pub fn compute_mars_rotation(tdb_seconds_since_j2000: f64) -> DMat3 {
     // 3. Rotation (depends on psi_nut and obliquity)
     let r = compute_rotation(time_days, nut.psi_nut, nut.obliquity);
 
-    // 4. Compose: inertial_to_body = P × N × R
-    p * nut.matrix * r
+    // 4. Compose: inertial_to_body = (P × N × R)^T
+    // JEOD's propagate_rnp() transposes each component: T = R^T × N^T × P^T.
+    (p * nut.matrix * r).transpose()
 }
 
 #[cfg(test)]
