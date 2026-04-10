@@ -5,8 +5,8 @@ use sim_test_helpers::*;
 
 use glam::{DMat3, DVec3};
 use jeod_sim::{
-    GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry, SimBody,
-    Simulation, SimulationTime, TranslationalState,
+    GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry,
+    RotationModel, SimBody, Simulation, SimulationTime, TranslationalState,
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
@@ -67,8 +67,10 @@ fn run_sh_simulation_test(
     let earth = sim.add_source(GravitySourceEntry {
         source: sh_source,
         position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: Some(DMat3::IDENTITY), // presence triggers ephemeris update
         delta_c20: 0.0,
+        rotation_model: RotationModel::EarthRNP,
         tidal_config: None,
     });
 

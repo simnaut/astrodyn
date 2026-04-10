@@ -44,8 +44,10 @@ fn main() {
             model: GravityModel::PointMass,
         },
         position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: jeod_sim::RotationModel::default(),
         tidal_config: None,
     });
     let body_idx = sim.add_body(SimBody {

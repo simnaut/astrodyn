@@ -19,8 +19,8 @@ use sim_test_helpers::*;
 use glam::DVec3;
 use jeod_sim::{
     DynamicsConfig, Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel,
-    GravitySource, GravitySourceEntry, JeodQuat, MassProperties, RotationalState, SimBody,
-    Simulation, SimulationTime, TranslationalState,
+    GravitySource, GravitySourceEntry, JeodQuat, MassProperties, RotationModel, RotationalState,
+    SimBody, Simulation, SimulationTime, TranslationalState,
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::Path;
@@ -79,8 +79,10 @@ fn tier3_simulation_run4_3rd_body() {
             model: GravityModel::PointMass,
         },
         position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
         tidal_config: None,
     });
 
@@ -93,8 +95,10 @@ fn tier3_simulation_run4_3rd_body() {
             model: GravityModel::PointMass,
         },
         position: initial_sun,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
         tidal_config: None,
     });
 
@@ -106,8 +110,10 @@ fn tier3_simulation_run4_3rd_body() {
             model: GravityModel::PointMass,
         },
         position: initial_moon,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
         tidal_config: None,
     });
 

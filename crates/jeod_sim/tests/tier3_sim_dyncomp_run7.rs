@@ -21,8 +21,8 @@ use glam::{DMat3, DVec3};
 use jeod_sim::{
     met_atmosphere, AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig, Ephemeris,
     EphemerisBody, GravityControl, GravityControls, GravityModel, GravitySource,
-    GravitySourceEntry, JeodQuat, MassProperties, MetAtmosphere, RotationalState, SimBody,
-    Simulation, SimulationTime, TranslationalState,
+    GravitySourceEntry, JeodQuat, MassProperties, MetAtmosphere, RotationModel, RotationalState,
+    SimBody, Simulation, SimulationTime, TranslationalState,
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::Path;
@@ -100,8 +100,10 @@ fn run_7_test(
     let earth = sim.add_source(GravitySourceEntry {
         source: sh_source,
         position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: Some(DMat3::IDENTITY),
         delta_c20: 0.0,
+        rotation_model: RotationModel::EarthRNP,
         tidal_config: None,
     });
 
@@ -113,8 +115,10 @@ fn run_7_test(
             model: GravityModel::PointMass,
         },
         position: earth_centered_position(EphemerisBody::Sun, tdb_jd, &ephemeris),
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
         tidal_config: None,
     });
     let moon = sim.add_source(GravitySourceEntry {
@@ -123,8 +127,10 @@ fn run_7_test(
             model: GravityModel::PointMass,
         },
         position: earth_centered_position(EphemerisBody::Moon, tdb_jd, &ephemeris),
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
         tidal_config: None,
     });
 

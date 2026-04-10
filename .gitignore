@@ -3,3 +3,6 @@
 .env
 .cargo/config.toml
 test_data/*.trk
+# Mercury CSVs are ~774 MB each (600-year sim at 1-hour intervals)
+test_data/mercury_newtonian_mercury.csv
+test_data/mercury_relativistic_mercury.csv

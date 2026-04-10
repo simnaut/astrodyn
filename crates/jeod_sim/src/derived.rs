@@ -4,10 +4,37 @@
 //! Each function is pure (no side effects) and takes explicit parameters so that
 //! any ECS adapter can call it from a system function.
 
-use glam::{DMat3, DVec3};
+use glam::{DMat3, DQuat, DVec3};
 
 use crate::{EulerSequence, GeodeticState, LvlhFrame, OrbitalElements, RotationalState};
 use jeod_math::OrbitalError;
+
+/// Relative state between two bodies in the inertial frame.
+///
+/// Position/velocity are of `subject` relative to `reference`, expressed in
+/// the inertial frame. The quaternion is the relative attitude (reference-to-
+/// subject), and angular velocity is of `subject` relative to `reference`,
+/// expressed in the subject body frame.
+#[derive(Debug, Clone)]
+pub struct RelativeState {
+    /// Position of subject relative to reference (inertial frame, m).
+    pub position: DVec3,
+    /// Velocity of subject relative to reference (inertial frame, m/s).
+    pub velocity: DVec3,
+    /// Relative quaternion: reference body frame → subject body frame.
+    pub quaternion: DQuat,
+    /// Angular velocity of subject relative to reference (subject body frame, rad/s).
+    pub ang_vel: DVec3,
+}
+
+/// Relative state expressed in the LVLH frame of the reference vehicle.
+#[derive(Debug, Clone)]
+pub struct LvlhRelativeState {
+    /// Position of subject relative to reference (LVLH frame, m).
+    pub position: DVec3,
+    /// Velocity of subject relative to reference (LVLH frame, m/s).
+    pub velocity: DVec3,
+}
 
 /// Compute orbital elements from translational state.
 ///
@@ -78,6 +105,75 @@ pub fn compute_body_solar_beta(position: DVec3, velocity: DVec3, sun_position: D
 
     let sun_dir = rel_sun.normalize();
     jeod_math::solar_beta_angle(h, sun_dir)
+}
+
+/// Compute the relative state between two bodies.
+///
+/// Returns the state of `subject` relative to `reference`. If either body
+/// has no rotational state, the quaternion and angular velocity are set to
+/// identity/zero.
+///
+/// Mirrors JEOD's `compute_relative_state` for dynamic bodies where both
+/// states are in the same inertial frame.
+pub fn compute_relative_state(
+    ref_trans: &crate::TranslationalState,
+    ref_rot: Option<&RotationalState>,
+    subj_trans: &crate::TranslationalState,
+    subj_rot: Option<&RotationalState>,
+) -> RelativeState {
+    let position = subj_trans.position - ref_trans.position;
+    let velocity = subj_trans.velocity - ref_trans.velocity;
+
+    // Relative quaternion: q_rel = q_subj * q_ref^{-1}
+    // This gives the rotation from reference body frame to subject body frame.
+    let (quaternion, ang_vel) = match (ref_rot, subj_rot) {
+        (Some(r_ref), Some(r_subj)) => {
+            // Convert JEOD scalar-first to glam DQuat for composition
+            let q_ref = r_ref.quaternion.to_glam();
+            let q_subj = r_subj.quaternion.to_glam();
+            // q_rel = q_subj * conj(q_ref)
+            let q_rel = q_subj * q_ref.conjugate();
+            // Relative angular velocity in subject body frame
+            let rel_ang_vel = r_subj.ang_vel_body - r_ref.ang_vel_body;
+            (q_rel, rel_ang_vel)
+        }
+        _ => (DQuat::IDENTITY, DVec3::ZERO),
+    };
+
+    RelativeState {
+        position,
+        velocity,
+        quaternion,
+        ang_vel,
+    }
+}
+
+/// Compute relative state expressed in the LVLH frame of the reference vehicle.
+///
+/// Takes the inertial relative position/velocity and rotates them into the
+/// LVLH frame of the reference vehicle. The LVLH frame is computed from the
+/// reference vehicle's position and velocity.
+pub fn compute_lvlh_relative_state(
+    ref_pos: DVec3,
+    ref_vel: DVec3,
+    subj_pos: DVec3,
+    subj_vel: DVec3,
+) -> LvlhRelativeState {
+    let lvlh = compute_body_lvlh_frame(ref_pos, ref_vel);
+
+    // Relative state in inertial frame
+    let rel_pos_inertial = subj_pos - ref_pos;
+    let rel_vel_inertial = subj_vel - ref_vel;
+
+    // Rotate into LVLH frame using the T_parent_this matrix
+    // T_parent_this transforms from parent (inertial) to this (LVLH)
+    let pos_lvlh = lvlh.t_parent_this * rel_pos_inertial;
+    let vel_lvlh = lvlh.t_parent_this * rel_vel_inertial;
+
+    LvlhRelativeState {
+        position: pos_lvlh,
+        velocity: vel_lvlh,
+    }
 }
 
 #[cfg(test)]

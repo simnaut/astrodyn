@@ -12,6 +12,26 @@ use crate::{
     TranslationalState,
 };
 
+/// Rotation model for a gravity source's planet-fixed frame.
+///
+/// Determines how `t_inertial_pfix` is updated each step. Each planet has its
+/// own rotation model; point-mass sources use `None`.
+#[derive(Debug, Clone, Default)]
+pub enum RotationModel {
+    /// No rotation — point-mass source or body without a planet-fixed frame.
+    #[default]
+    None,
+    /// Earth rotation via IAU 2000A precession-nutation + GAST + optional polar
+    /// motion. Uses the simulation's `gmst_seconds`, `tt_tjt`, and `polar_motion`.
+    EarthRNP,
+    /// Mars rotation via IAU pole orientation + spin + nutation Fourier series.
+    /// Uses the simulation's TDB Julian date.
+    MarsIAU,
+    /// Moon rotation via IAU 2009 pole + prime meridian model.
+    /// Uses the simulation's TDB seconds.
+    MoonIAU,
+}
+
 /// Entry in the gravity source table.
 ///
 /// Gravity sources are referenced by index (`usize`) from body gravity controls.
@@ -20,9 +40,14 @@ pub struct GravitySourceEntry {
     pub source: GravitySource,
     /// Position in the inertial frame (m). For Earth-centered sims, Earth is at origin.
     pub position: DVec3,
+    /// Velocity in the inertial frame (m/s). Required for relativistic corrections.
+    /// Zero for stationary sources (e.g., central body at origin).
+    pub velocity: DVec3,
     /// Inertial-to-planet-fixed rotation matrix. If `Some`, the ephemeris stage
     /// updates it each step. If `None`, no rotation is applied (point-mass only).
     pub t_inertial_pfix: Option<DMat3>,
+    /// Rotation model for updating `t_inertial_pfix` each step.
+    pub rotation_model: RotationModel,
     /// Tidal ΔC20 to add to the base C20 coefficient before spherical harmonics
     /// evaluation. Updated each step by the environment stage if tidal effects
     /// are configured. Zero when no tides.
@@ -34,10 +59,18 @@ pub struct GravitySourceEntry {
 impl GravitySourceEntry {
     /// Create a new gravity source entry without tidal effects.
     pub fn new(source: GravitySource, position: DVec3, t_inertial_pfix: Option<DMat3>) -> Self {
+        // Infer rotation model from t_inertial_pfix presence for backward compat
+        let rotation_model = if t_inertial_pfix.is_some() {
+            RotationModel::EarthRNP
+        } else {
+            RotationModel::None
+        };
         Self {
             source,
             position,
+            velocity: DVec3::ZERO,
             t_inertial_pfix,
+            rotation_model,
             delta_c20: 0.0,
             tidal_config: None,
         }
@@ -202,6 +235,13 @@ pub struct Simulation {
     pub polar_motion: Option<(f64, f64)>,
     /// Integration timestep (seconds).
     pub dt: f64,
+    /// Optional ephemeris for per-step source position updates.
+    /// When set, sources with `ephemeris_body` configured will have their
+    /// position (and velocity) updated from DE421 each step.
+    pub ephemeris: Option<crate::Ephemeris>,
+    /// Per-source ephemeris body mapping. Index matches `sources` vector.
+    /// `None` means the source position is static (not updated from ephemeris).
+    pub source_ephem_bodies: Vec<Option<(crate::EphemerisBody, crate::EphemerisBody)>>,
 }
 
 impl Simulation {
@@ -216,6 +256,8 @@ impl Simulation {
             sun_source: None,
             polar_motion: None,
             dt,
+            ephemeris: None,
+            source_ephem_bodies: Vec::new(),
         }
     }
 
@@ -223,7 +265,23 @@ impl Simulation {
     pub fn add_source(&mut self, entry: GravitySourceEntry) -> usize {
         let idx = self.sources.len();
         self.sources.push(entry);
+        self.source_ephem_bodies.push(None);
         idx
+    }
+
+    /// Configure ephemeris-based position updates for a source.
+    /// Each step, the source's position and velocity will be updated from DE4xx.
+    /// `target` is the body this source represents (e.g., `EphemerisBody::Sun`).
+    /// `observer` is the integration frame center (e.g., `EphemerisBody::Earth`).
+    pub fn set_source_ephemeris(
+        &mut self,
+        source_idx: usize,
+        target: crate::EphemerisBody,
+        observer: crate::EphemerisBody,
+    ) {
+        if source_idx < self.source_ephem_bodies.len() {
+            self.source_ephem_bodies[source_idx] = Some((target, observer));
+        }
     }
 
     /// Add a dynamic body. Returns its index.
@@ -431,23 +489,61 @@ impl Simulation {
 
         // ── 2. Ephemeris update — planet-fixed rotations ──
         // JEOD_INV: DM.13 — ephemeris updated before gravity
-        // NOTE: Currently applies the same Earth RNP rotation to ALL rotating
-        // sources. Multi-planet sims (Moon, Mars) would need per-source rotation
-        // parameters. This is a Phase 5 limitation.
-        let rotation = crate::compute_t_parent_this_from_tjt_with_polar(
-            self.time.gmst_seconds,
-            self.time.tt_tjt(),
-            self.polar_motion,
-        );
+        // Per-source rotation dispatch: each source has its own rotation model.
+        // Lazy-compute Earth RNP only if needed (most common case).
+        let mut earth_rotation: Option<DMat3> = Option::None;
         for source in &mut self.sources {
-            if source.t_inertial_pfix.is_some() {
-                source.t_inertial_pfix = Some(rotation);
+            match source.rotation_model {
+                RotationModel::None => {}
+                RotationModel::EarthRNP => {
+                    let rotation = *earth_rotation.get_or_insert_with(|| {
+                        crate::compute_t_parent_this_from_tjt_with_polar(
+                            self.time.gmst_seconds,
+                            self.time.tt_tjt(),
+                            self.polar_motion,
+                        )
+                    });
+                    source.t_inertial_pfix = Some(rotation);
+                }
+                RotationModel::MarsIAU => {
+                    // JEOD's RNPMars receives TT seconds since J2000 (time_tt.seconds).
+                    // Compute absolute TT seconds since J2000 from TT TJT:
+                    //   tt_seconds = (tt_tjt - J2000_TT_TJT) * 86400
+                    // J2000 TT TJT = 11544.5 (2000-01-01 12:00:00 TT)
+                    let tt_s_since_j2000 = (self.time.tt_tjt() - 11544.5) * 86400.0;
+                    let rotation =
+                        jeod_frames::rotation_mars::compute_mars_rotation(tt_s_since_j2000);
+                    source.t_inertial_pfix = Some(rotation);
+                }
+                RotationModel::MoonIAU => {
+                    let tdb_jd = self.time.tdb_julian_date();
+                    let tdb_s_since_j2000 = (tdb_jd - 2_451_545.0) * 86400.0;
+                    let rotation =
+                        jeod_frames::rotation_moon::compute_moon_rotation(tdb_s_since_j2000);
+                    source.t_inertial_pfix = Some(rotation);
+                }
             }
             // Compute tidal ΔC20 if configured; otherwise clear any stale value.
+            // Uses whatever rotation is current (Earth RNP for Earth sources).
             if let Some(ref config) = source.tidal_config {
+                let rotation = source.t_inertial_pfix.unwrap_or(DMat3::IDENTITY);
                 source.delta_c20 = jeod_gravity::tides::compute_delta_c20(config, &rotation);
             } else {
                 source.delta_c20 = 0.0;
+            }
+        }
+
+        // ── 2b. Ephemeris update — source positions from DE4xx ──
+        // Update source positions from ephemeris each step (for 3rd-body accuracy).
+        if let Some(ref eph) = self.ephemeris {
+            let tdb_jd = self.time.tdb_julian_date();
+            for (i, source) in self.sources.iter_mut().enumerate() {
+                if let Some(Some((target, observer))) = self.source_ephem_bodies.get(i) {
+                    if let Ok((pos, vel)) = eph.get_state(*target, *observer, tdb_jd) {
+                        source.position = pos;
+                        source.velocity = vel;
+                    }
+                }
             }
         }
 
@@ -476,6 +572,44 @@ impl Simulation {
                     })
                 },
             );
+        }
+
+        // ── 4b. Relativistic corrections ──
+        // After Newtonian gravity, apply post-Newtonian PPN correction for
+        // any source with `relativistic: true`. Folkner eq 27 (β=γ=1).
+        for body in &mut self.bodies {
+            for ctrl in &body.gravity_controls.controls {
+                if !ctrl.relativistic {
+                    continue;
+                }
+                if let Some(src) = sources.get(ctrl.source_name) {
+                    // Build "other sources" list for potential computation
+                    let other: Vec<jeod_gravity::relativistic::RelativisticSource> = body
+                        .gravity_controls
+                        .controls
+                        .iter()
+                        .filter(|c| c.source_name != ctrl.source_name)
+                        .filter_map(|c| {
+                            sources.get(c.source_name).map(|s| {
+                                jeod_gravity::relativistic::RelativisticSource {
+                                    mu: s.source.mu,
+                                    position: s.position,
+                                }
+                            })
+                        })
+                        .collect();
+
+                    let correction = jeod_gravity::relativistic::compute_relativistic_correction(
+                        src.source.mu,
+                        src.position,
+                        body.trans.position,
+                        body.trans.velocity,
+                        src.velocity,
+                        &other,
+                    );
+                    body.gravity_accel.grav_accel += correction;
+                }
+            }
         }
 
         // ── 5. Environment — atmosphere ──
@@ -613,13 +747,14 @@ impl Simulation {
         let sources = &self.sources;
         for body in &mut self.bodies {
             let controls = &body.gravity_controls;
+            let body_vel = body.trans.velocity; // Capture for relativistic closure
             integrate_body(
                 &body.config,
                 &mut body.trans,
                 body.rot.as_mut(),
                 body.mass.as_ref(),
                 |pos| {
-                    accumulate_gravity(pos, controls, DVec3::ZERO, |source_id| {
+                    let mut accel = accumulate_gravity(pos, controls, DVec3::ZERO, |source_id| {
                         sources.get(source_id).map(|s| crate::ResolvedSource {
                             source: &s.source,
                             rotation: s.t_inertial_pfix.as_ref(),
@@ -628,7 +763,38 @@ impl Simulation {
                             has_delta_coeffs: s.tidal_config.is_some(),
                         })
                     })
-                    .grav_accel
+                    .grav_accel;
+                    // Apply relativistic corrections inside the gravity closure
+                    // so they're evaluated at each RK4 substep position.
+                    for ctrl in &controls.controls {
+                        if ctrl.relativistic {
+                            if let Some(src) = sources.get(ctrl.source_name) {
+                                let other: Vec<_> = controls
+                                    .controls
+                                    .iter()
+                                    .filter(|c| c.source_name != ctrl.source_name)
+                                    .filter_map(|c| {
+                                        sources.get(c.source_name).map(|s| {
+                                            jeod_gravity::relativistic::RelativisticSource {
+                                                mu: s.source.mu,
+                                                position: s.position,
+                                            }
+                                        })
+                                    })
+                                    .collect();
+                                accel +=
+                                    jeod_gravity::relativistic::compute_relativistic_correction(
+                                        src.source.mu,
+                                        src.position,
+                                        pos,
+                                        body_vel, // Approximate: uses pre-step velocity
+                                        src.velocity,
+                                        &other,
+                                    );
+                            }
+                        }
+                    }
+                    accel
                 },
                 body.total_force.force,
                 body.total_force.torque,
@@ -756,6 +922,17 @@ impl Simulation {
     /// Number of bodies in the simulation.
     pub fn num_bodies(&self) -> usize {
         self.bodies.len()
+    }
+
+    /// Set the integration timestep. Use to reverse time direction mid-simulation
+    /// (JEOD's `scale_factor = -1` mode). All integrators (RK4, RKF45) work
+    /// with negative dt; Gauss-Jackson requires the same absolute step size.
+    ///
+    /// # Panics
+    /// Panics if `dt` is not finite.
+    pub fn set_dt(&mut self, dt: f64) {
+        assert!(dt.is_finite(), "dt must be finite, got {dt}");
+        self.dt = dt;
     }
 
     /// Current simulation elapsed time in seconds.

@@ -27,8 +27,8 @@ use sim_test_helpers::*;
 use glam::{DMat3, DVec3};
 use jeod_sim::{
     DynamicsConfig, Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel,
-    GravitySource, GravitySourceEntry, MassProperties, RotationalState, SimBody, Simulation,
-    SimulationTime, TranslationalState,
+    GravitySource, GravitySourceEntry, MassProperties, RotationModel, RotationalState, SimBody,
+    Simulation, SimulationTime, TranslationalState,
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::Path;
@@ -136,12 +136,18 @@ fn build_simulation(
     let earth = sim.add_source(GravitySourceEntry {
         source: earth_source,
         position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: if config.earth_nonspherical || config.gradient_degree > 0 {
             Some(DMat3::IDENTITY) // triggers RNP update each step
         } else {
             None
         },
         delta_c20: 0.0,
+        rotation_model: if config.earth_nonspherical || config.gradient_degree > 0 {
+            RotationModel::EarthRNP
+        } else {
+            RotationModel::None
+        },
         tidal_config: None,
     });
 
@@ -154,8 +160,10 @@ fn build_simulation(
             model: GravityModel::PointMass,
         },
         position: initial_sun,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
         tidal_config: None,
     });
 
@@ -167,8 +175,10 @@ fn build_simulation(
             model: GravityModel::PointMass,
         },
         position: initial_moon,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
         tidal_config: None,
     });
 

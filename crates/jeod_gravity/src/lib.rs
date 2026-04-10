@@ -2,6 +2,7 @@ pub mod coefficients;
 pub mod compute;
 pub mod gravity_controls;
 pub mod gravity_source;
+pub mod relativistic;
 pub mod spherical_harmonics_calc_nonspherical;
 pub mod spherical_harmonics_gravity_controls;
 pub mod spherical_harmonics_gravity_source;

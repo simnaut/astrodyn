@@ -39,6 +39,9 @@ pub struct SimulationTime {
     /// GMST in accumulated sidereal seconds since J2000.
     /// Matches JEOD's `TimeGMST::seconds`.
     pub gmst_seconds: f64,
+    /// GPS seconds elapsed since simulation start. GPS = TAI − 19s (constant
+    /// offset, by definition since GPS epoch 1980-01-06).
+    pub gps_seconds: f64,
     /// Elapsed simulation time (same as tai_seconds for forward sim).
     pub simtime: f64,
     /// Leap second table for TAI↔UTC conversion.
@@ -76,6 +79,7 @@ impl SimulationTime {
             ut1_seconds: 0.0,
             tt_seconds: 0.0,
             tdb_seconds: 0.0,
+            gps_seconds: 0.0,
             gmst_radians: 0.0,
             gmst_seconds: 0.0,
             simtime: 0.0,
@@ -103,13 +107,15 @@ impl SimulationTime {
     // JEOD_INV: TM.03 — time types updated in dependency order via recompute_derived()
     /// Advance the simulation by `dt` seconds.
     ///
+    /// Negative `dt` is permitted for time-reversed propagation (JEOD's
+    /// `scale_factor = -1` mode). All derived time scales (TT, TDB, UTC,
+    /// UT1, GMST, GPS) are recomputed correctly for both forward and
+    /// backward time.
+    ///
     /// # Panics
-    /// Panics if `dt` is NaN, infinite, or negative.
+    /// Panics if `dt` is NaN or infinite.
     pub fn advance(&mut self, dt: f64) {
-        assert!(
-            dt.is_finite() && dt >= 0.0,
-            "dt must be finite and non-negative, got {dt}"
-        );
+        assert!(dt.is_finite(), "dt must be finite, got {dt}");
         self.tai_seconds += dt;
         self.tai_tjt = self.tai_tjt_at_epoch + self.tai_seconds / SECONDS_PER_DAY;
         self.simtime += dt;
@@ -152,6 +158,11 @@ impl SimulationTime {
         let utc_tjt = self.leap_second_table.tai_to_utc_tjt(self.tai_tjt);
         let utc_tjt_at_epoch = self.leap_second_table.tai_to_utc_tjt(self.tai_tjt_at_epoch);
         self.utc_seconds = (utc_tjt - utc_tjt_at_epoch) * SECONDS_PER_DAY;
+
+        // GPS = TAI − 19s (constant offset, defined at GPS epoch 1980-01-06).
+        // GPS time measures elapsed seconds since the GPS epoch, offset from
+        // TAI by exactly 19 leap seconds that had accumulated by 1980.
+        self.gps_seconds = self.tai_seconds - 19.0;
 
         // UT1 = TAI + ut1_tai_offset (offset is approximately constant over
         // short spans; updated from IERS bulletins via set_ut1_tai_offset).
@@ -242,23 +253,69 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "must be finite and non-negative")]
+    #[should_panic(expected = "must be finite")]
     fn advance_nan_panics() {
         let mut sim = SimulationTime::at_j2000(default_leap_second_table());
         sim.advance(f64::NAN);
     }
 
     #[test]
-    #[should_panic(expected = "must be finite and non-negative")]
+    #[should_panic(expected = "must be finite")]
     fn advance_inf_panics() {
         let mut sim = SimulationTime::at_j2000(default_leap_second_table());
         sim.advance(f64::INFINITY);
     }
 
     #[test]
-    #[should_panic(expected = "must be finite and non-negative")]
-    fn advance_negative_panics() {
+    fn advance_negative_for_time_reversal() {
         let mut sim = SimulationTime::at_j2000(default_leap_second_table());
-        sim.advance(-1.0);
+        let dt = 3600.0;
+        sim.advance(dt);
+        let tai_after_forward = sim.tai_seconds;
+        let gmst_after_forward = sim.gmst_seconds;
+
+        // Reverse time by the same amount — should return to initial state
+        sim.advance(-dt);
+        assert!(
+            sim.tai_seconds.abs() < 1e-15,
+            "tai_seconds should return to 0, got {}",
+            sim.tai_seconds
+        );
+        assert!(
+            (sim.gmst_seconds - SimulationTime::at_j2000(default_leap_second_table()).gmst_seconds)
+                .abs()
+                < 1e-10,
+            "GMST should return to initial value"
+        );
+        // Forward-backward round-trip for GPS
+        assert!(
+            (sim.gps_seconds - (-19.0)).abs() < 1e-15,
+            "GPS should return to initial value (-19.0), got {}",
+            sim.gps_seconds
+        );
+        let _ = (tai_after_forward, gmst_after_forward); // suppress unused
+    }
+
+    #[test]
+    fn gps_offset() {
+        let sim = SimulationTime::at_j2000(default_leap_second_table());
+        // GPS = TAI - 19s. At t=0, tai_seconds = 0, so gps_seconds = -19.
+        assert!(
+            (sim.gps_seconds - (-19.0)).abs() < 1e-15,
+            "GPS at t=0: expected -19.0, got {}",
+            sim.gps_seconds
+        );
+    }
+
+    #[test]
+    fn gps_advances_with_tai() {
+        let mut sim = SimulationTime::at_j2000(default_leap_second_table());
+        sim.advance(100.0);
+        // GPS = TAI - 19 = 100 - 19 = 81
+        assert!(
+            (sim.gps_seconds - 81.0).abs() < 1e-15,
+            "GPS after 100s: expected 81.0, got {}",
+            sim.gps_seconds
+        );
     }
 }

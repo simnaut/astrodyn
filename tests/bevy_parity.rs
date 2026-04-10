@@ -19,7 +19,7 @@ use bevy_jeod::{
 use glam::{DMat3, DVec3};
 use jeod_sim::{
     DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource, IntegratorType,
-    JeodQuat, MassProperties, RotationalState, SixDofState, TranslationalState,
+    JeodQuat, MassProperties, RotationModel, RotationalState, SixDofState, TranslationalState,
 };
 
 const MU_EARTH: f64 = 3.986_004_415e14;
@@ -136,8 +136,10 @@ fn run_simulation_steps() -> SixDofState {
             model: GravityModel::PointMass,
         },
         position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
         tidal_config: None,
     });
 
@@ -281,8 +283,10 @@ fn tier3_bevy_rkf45_matches_simulation_bit_identical() {
             model: GravityModel::PointMass,
         },
         position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
         tidal_config: None,
     });
 

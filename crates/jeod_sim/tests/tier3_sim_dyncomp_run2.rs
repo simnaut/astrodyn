@@ -6,8 +6,8 @@ use sim_test_helpers::*;
 use glam::{DMat3, DVec3};
 use jeod_sim::{
     DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource,
-    GravitySourceEntry, JeodQuat, MassProperties, RotationalState, SimBody, Simulation,
-    SimulationTime, TranslationalState,
+    GravitySourceEntry, JeodQuat, MassProperties, RotationModel, RotationalState, SimBody,
+    Simulation, SimulationTime, TranslationalState,
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
@@ -37,8 +37,10 @@ fn tier3_simulation_run2_3dof() {
             model: GravityModel::PointMass,
         },
         position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
         tidal_config: None,
     });
 
@@ -133,8 +135,10 @@ fn tier3_simulation_run2_6dof() {
             model: GravityModel::PointMass,
         },
         position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
         tidal_config: None,
     });
 
