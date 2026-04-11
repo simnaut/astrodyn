@@ -31,7 +31,7 @@ pub enum RotationModel {
     /// Uses the simulation's TDB seconds.
     MoonIAU,
     /// Moon rotation from DE421 BPC libration data (high-fidelity).
-    /// Requires ephemeris with BPC loaded via `Simulation::set_ephemeris`.
+    /// Requires the simulation's `ephemeris` field to be set with BPC loaded.
     MoonDE421,
 }
 
@@ -533,7 +533,7 @@ impl Simulation {
                 RotationModel::MoonDE421 => {
                     let eph = self.ephemeris.as_ref().expect(
                         "MoonDE421 rotation requires ephemeris with BPC. \
-                         Call set_ephemeris() and load_bpc() first.",
+                         Set sim.ephemeris = Some(eph) after calling eph.load_bpc().",
                     );
                     let tdb_jd = self.time.tdb_julian_date();
                     let rotation = eph
@@ -545,7 +545,10 @@ impl Simulation {
             // Compute tidal ΔC20 if configured; otherwise clear any stale value.
             // Uses whatever rotation is current (Earth RNP for Earth sources).
             if let Some(ref config) = source.tidal_config {
-                let rotation = source.t_inertial_pfix.unwrap_or(DMat3::IDENTITY);
+                let rotation = source.t_inertial_pfix.expect(
+                    "tidal_config requires t_inertial_pfix (planet-fixed rotation). \
+                     Set a rotation_model or provide an initial t_inertial_pfix.",
+                );
                 source.delta_c20 = jeod_gravity::tides::compute_delta_c20(config, &rotation);
             } else {
                 source.delta_c20 = 0.0;
