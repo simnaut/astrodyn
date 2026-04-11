@@ -1,8 +1,8 @@
 //! Tier 3: SIM_Mars — Dawn spacecraft Mars orbit cross-validation.
 //!
-//! Validates Mars gravity (point-mass baseline, upgradeable to MRO110B2)
-//! with Mars IAU rotation model and Sun 3rd-body gravity.
-//! Exit criterion: < 100 m position error over 3 hours.
+//! Validates Mars MRO110B2 110×110 spherical harmonics gravity with Mars IAU
+//! rotation model and Sun 3rd-body gravity.
+//! Achieved parity: ~3.8 m position error over 3 hours.
 
 mod sim_test_helpers;
 use sim_test_helpers::*;

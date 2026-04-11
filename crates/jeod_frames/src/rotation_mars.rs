@@ -172,15 +172,16 @@ fn compute_rotation(time_days: f64, psi_nut: f64, obliquity: f64) -> DMat3 {
 /// Compute the full Mars inertial-to-body-fixed transformation matrix.
 ///
 /// # Arguments
-/// * `tdb_seconds_since_j2000` — TDB seconds elapsed since J2000.0 epoch.
-///   Typically obtained from `SimulationTime::tdb_seconds` or equivalent.
+/// * `tt_seconds_since_j2000` — TT seconds elapsed since J2000.0 epoch.
+///   JEOD's `RNPMars::update_rnp()` reads `time_tt.seconds` (TT, not TDB).
+///   Typically obtained from `(tt_tjt - 11544.5) * 86400.0`.
 ///
 /// # Returns
 /// 3x3 rotation matrix mapping vectors from the Mars-centered inertial frame
 /// (ICRF) to the Mars body-fixed frame. Composition: (P × N × R)^T, matching
 /// JEOD's `T_parent_this` convention from `planet_rnp.cc:propagate_rnp()`.
-pub fn compute_mars_rotation(tdb_seconds_since_j2000: f64) -> DMat3 {
-    let time_days = tdb_seconds_since_j2000 / SECONDS_PER_DAY;
+pub fn compute_mars_rotation(tt_seconds_since_j2000: f64) -> DMat3 {
+    let time_days = tt_seconds_since_j2000 / SECONDS_PER_DAY;
 
     // 1. Nutation (must be first — precession and rotation depend on it)
     let nut = compute_nutation(time_days);

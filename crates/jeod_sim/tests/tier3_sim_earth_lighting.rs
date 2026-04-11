@@ -75,8 +75,8 @@ fn run_lighting_scenario(label: &str, csv_name: &str) {
             rec.time
         );
 
-        // Separated circles: no intersection
-        if rec.d_centers >= rec.r_bottom + rec.r_top {
+        // Separated circles: no intersection (strict >, matching circle_intersect)
+        if rec.d_centers > rec.r_bottom + rec.r_top {
             assert!(
                 !intersects,
                 "{label}[{i}]: separated circles should not intersect"

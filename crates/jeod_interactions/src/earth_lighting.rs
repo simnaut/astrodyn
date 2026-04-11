@@ -4,7 +4,9 @@
 //! in the vicinity of Earth, considering Sun-Earth and Moon-Earth shadow
 //! geometry via angular disk intersections.
 //!
-//! Port of JEOD `models/environment/earth_lighting/src/earth_lighting.cc`.
+//! Eclipse geometry (`circle_intersect`, Sun-Earth/Moon-Earth occlusion) is a
+//! faithful port of JEOD `models/environment/earth_lighting/src/earth_lighting.cc`.
+//! Earth albedo lighting uses a crude cosine approximation (not a JEOD port).
 
 use glam::DVec3;
 use std::f64::consts::PI;
@@ -35,7 +37,9 @@ pub struct LightingParams {
     pub occlusion: f64,
     /// Fraction of body surface visible = 1 − occlusion.
     pub visible: f64,
-    /// Effective lighting = phase × visible.
+    /// Effective lighting. For eclipse pairs: `phase × visible`.
+    /// For `earth_albedo`: set directly from the albedo approximation
+    /// (phase/visible are not populated).
     pub lighting: f64,
 }
 

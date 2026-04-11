@@ -25,7 +25,7 @@ pub enum RotationModel {
     /// motion. Uses the simulation's `gmst_seconds`, `tt_tjt`, and `polar_motion`.
     EarthRNP,
     /// Mars rotation via IAU pole orientation + spin + nutation Fourier series.
-    /// Uses the simulation's TDB Julian date.
+    /// Uses the simulation's TT seconds since J2000 (matching JEOD's RNPMars).
     MarsIAU,
     /// Moon rotation via IAU 2009 pole + prime meridian model.
     /// Uses the simulation's TDB seconds.
