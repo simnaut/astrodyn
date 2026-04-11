@@ -1164,12 +1164,12 @@ dr = trick.sim_services.DRAscii("reversal_ASCII")
 dr.set_cycle(60)
 dr.freq = trick.sim_services.DR_Always
 for v in [
-    "composite_body.state.trans.position[0]",
-    "composite_body.state.trans.position[1]",
-    "composite_body.state.trans.position[2]",
-    "composite_body.state.trans.velocity[0]",
-    "composite_body.state.trans.velocity[1]",
-    "composite_body.state.trans.velocity[2]",
+    "sv_dyn.body.composite_body.state.trans.position[0]",
+    "sv_dyn.body.composite_body.state.trans.velocity[0]",
+    "sv_dyn.body.composite_body.state.trans.position[1]",
+    "sv_dyn.body.composite_body.state.trans.velocity[1]",
+    "sv_dyn.body.composite_body.state.trans.position[2]",
+    "sv_dyn.body.composite_body.state.trans.velocity[2]",
     "jeod_time.tai.seconds",
     "jeod_time.tai.trunc_julian_time",
 ]:

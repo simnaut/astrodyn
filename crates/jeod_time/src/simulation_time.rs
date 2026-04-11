@@ -112,20 +112,21 @@ impl SimulationTime {
     }
 
     // JEOD_INV: TM.03 — time types updated in dependency order via recompute_derived()
-    /// Advance the simulation by `dt` seconds.
+    /// Advance the simulation by `sim_dt` seconds.
     ///
-    /// Negative `dt` is permitted for time-reversed propagation (JEOD's
-    /// `scale_factor = -1` mode). All derived time scales (TT, TDB, UTC,
-    /// UT1, GMST, GPS) are recomputed correctly for both forward and
-    /// backward time.
+    /// Dynamic time (TAI, TDB, etc.) advances by `sim_dt * time_scale_factor`,
+    /// while `simtime` always advances by raw `sim_dt`. When
+    /// `time_scale_factor = -1.0`, TAI runs backward while simtime runs forward,
+    /// matching JEOD's `TimeDyn::scale_factor` behavior.
     ///
     /// # Panics
-    /// Panics if `dt` is NaN or infinite.
-    pub fn advance(&mut self, dt: f64) {
-        assert!(dt.is_finite(), "dt must be finite, got {dt}");
-        self.tai_seconds += dt;
+    /// Panics if `sim_dt` is NaN or infinite.
+    pub fn advance(&mut self, sim_dt: f64) {
+        assert!(sim_dt.is_finite(), "sim_dt must be finite, got {sim_dt}");
+        let dyn_dt = sim_dt * self.time_scale_factor;
+        self.tai_seconds += dyn_dt;
         self.tai_tjt = self.tai_tjt_at_epoch + self.tai_seconds / SECONDS_PER_DAY;
-        self.simtime += dt;
+        self.simtime += sim_dt;
         self.recompute_derived();
     }
 

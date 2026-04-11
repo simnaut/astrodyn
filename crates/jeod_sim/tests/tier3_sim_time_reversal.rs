@@ -1,22 +1,22 @@
 //! Tier 3: SIM_7_time_reversal — time-reversed propagation cross-validation.
 //!
 //! JEOD propagates forward 60,000 s then sets `scale_factor = -1.0` for another
-//! 60,000 sim-seconds. Validates that our `SimulationTime` produces matching
-//! TAI seconds and TAI TJT during both forward and reverse phases.
-//!
-//! Note: reference CSVs contain only time data (no position/velocity) due to a
-//! variable naming issue in the Trick logging snippet. Trajectory cross-validation
-//! requires regenerating the CSVs with corrected variable names.
+//! 60,000 sim-seconds. Validates time scale round-trip and trajectory parity
+//! during both forward and reverse phases.
 
 mod sim_test_helpers;
 use sim_test_helpers::*;
 
+use glam::DVec3;
 use jeod_sim::SimulationTime;
 
 const SECONDS_PER_DAY: f64 = 86400.0;
 
+#[allow(dead_code)]
 struct ReversalRecord {
     time: f64,
+    position: DVec3,
+    velocity: DVec3,
     tai_seconds: f64,
     tai_tjt: f64,
 }
@@ -36,16 +36,20 @@ fn load_reversal_csv(path: &std::path::Path) -> Vec<ReversalRecord> {
         }
         let f: Vec<&str> = line.split(',').collect();
         assert!(
-            f.len() >= 3,
-            "line {}: expected >=3 columns, got {}",
+            f.len() >= 9,
+            "line {}: expected >=9 columns, got {}",
             i + 1,
             f.len()
         );
         let p = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
+        // Columns: time, pos[0], vel[0], pos[1], vel[1], pos[2], vel[2],
+        //          tai_seconds, tai_tjt
         records.push(ReversalRecord {
             time: p(0),
-            tai_seconds: p(1),
-            tai_tjt: p(2),
+            position: DVec3::new(p(1), p(3), p(5)),
+            velocity: DVec3::new(p(2), p(4), p(6)),
+            tai_seconds: p(7),
+            tai_tjt: p(8),
         });
     }
     records
@@ -81,9 +85,9 @@ fn run_reversal_scenario(label: &str, csv_name: &str) {
                 sim_time.time_scale_factor = -1.0;
             }
 
-            // Dynamic dt = sim_dt * time_scale_factor
-            let dyn_dt = sim_dt * sim_time.time_scale_factor;
-            sim_time.advance(dyn_dt);
+            // advance() applies time_scale_factor internally:
+            // tai_seconds += sim_dt * time_scale_factor
+            sim_time.advance(sim_dt);
         }
 
         // Compare elapsed TAI seconds (our tai_seconds starts at 0,
