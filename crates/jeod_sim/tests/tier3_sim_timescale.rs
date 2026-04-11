@@ -67,6 +67,12 @@ fn tier3_simulation_timescale_tdb() {
     let leap_table = jeod_sim::default_leap_second_table();
     let mut sim_time = SimulationTime::new(init.tai_tjt, leap_table);
 
+    // Derive UT1-TAI from the JEOD CSV's UT1 and TAI TJT values (IERS data).
+    // Default assumes UT1-UTC=0 → UT1-TAI = -37s, but the actual IERS value
+    // at this epoch is ~-36.712s. Without this, GMST error is ~0.29 s.
+    let ut1_tai_offset = (init.ut1_tjt - init.tai_tjt) * SECONDS_PER_DAY;
+    sim_time.set_ut1_tai_offset(ut1_tai_offset);
+
     let mut max_tai_err = 0.0_f64;
     let mut max_tt_err = 0.0_f64;
     let mut max_tdb_err = 0.0_f64;
@@ -97,8 +103,9 @@ fn tier3_simulation_timescale_tdb() {
         let gmst_err = (sim_time.gmst_seconds - rec.gmst_seconds).abs();
         max_gmst_err = max_gmst_err.max(gmst_err);
 
-        // Compare GPS TJT: GPS = TAI − 19 s, so GPS TJT = TAI TJT − 19/86400 days.
-        let our_gps_tjt = sim_time.tai_tjt - 19.0 / SECONDS_PER_DAY;
+        // GPS TJT = TAI TJT in JEOD's convention (the 19 s offset is absorbed
+        // into the difference between GPS and TAI tjt_at_epoch values).
+        let our_gps_tjt = sim_time.tai_tjt;
         let gps_err = (our_gps_tjt - rec.gps_tjt).abs() * SECONDS_PER_DAY;
         max_gps_err = max_gps_err.max(gps_err);
     }
@@ -109,12 +116,15 @@ fn tier3_simulation_timescale_tdb() {
         records.len()
     );
 
-    // TAI and TT: JEOD initializes from a different epoch convention;
-    // small residual from epoch offset computation. < 1e-6 s is acceptable.
-    assert!(max_tai_err < 1e-5, "TAI error {max_tai_err:.4e} s");
-    assert!(max_tt_err < 1e-5, "TT error {max_tt_err:.4e} s");
-    // TDB has periodic terms + epoch convention offset — 1e-5 s tolerance
-    assert!(max_tdb_err < 1e-5, "TDB error {max_tdb_err:.4e} s");
-    // GMST may differ due to UT1-TAI offset convention
-    assert!(max_gmst_err < 1.0, "GMST error {max_gmst_err:.4e} s");
+    // TAI/TT/TDB: ~1.6e-6 s residual from JEOD's indirect Dyn→TDB→TAI update
+    // chain vs our direct accumulation. Irreducible without replicating JEOD's
+    // exact floating-point path.
+    assert!(max_tai_err < 2e-6, "TAI error {max_tai_err:.4e} s");
+    assert!(max_tt_err < 2e-6, "TT error {max_tt_err:.4e} s");
+    assert!(max_tdb_err < 2e-6, "TDB error {max_tdb_err:.4e} s");
+    // GMST: with correct UT1-TAI from IERS data, residual is from JEOD's
+    // time-varying UT1-TAI gradient interpolation vs our constant offset.
+    assert!(max_gmst_err < 1e-4, "GMST error {max_gmst_err:.4e} s");
+    // GPS TJT = TAI TJT in JEOD's convention
+    assert!(max_gps_err < 2e-6, "GPS error {max_gps_err:.4e} s");
 }

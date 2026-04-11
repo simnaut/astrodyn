@@ -56,14 +56,16 @@ fn run_met_scenario(label: &str, csv_name: &str) {
     assert!(!ref_points.is_empty(), "{label}: no reference data");
 
     // Match JEOD SIM_MET input: F10=230, F10B=230, AP=20.30
-    // Epoch: 2000-01-01 01:31:48 UTC → TJT ≈ 11544.564 days
+    // Epoch: 2000-01-01 01:31:48 UTC
+    // MJD = 51544.0 + 5508s/86400 = 51544.06375
+    // TJT = MJD - 40000 = 11544.06375
     let atmos = met::MetAtmosphere {
         f10: 230.0,
         f10b: 230.0,
         geo_index: 20.3,
         geo_index_type: met::GeoIndexType::Ap,
     };
-    let tjt = 11544.564; // 2000-01-01 01:31:48 UTC
+    let tjt = 11544.06375; // 2000-01-01 01:31:48 UTC
 
     let mut max_density_rel_err = 0.0_f64;
     let mut max_temp_rel_err = 0.0_f64;
@@ -92,18 +94,23 @@ fn run_met_scenario(label: &str, csv_name: &str) {
         max_temp_rel_err = max_temp_rel_err.max(temp_rel_err);
         count += 1;
 
-        // Density order-of-magnitude check. MET model outputs depend heavily on
-        // F10.7 solar index and epoch. The JEOD CSV uses specific solar conditions
-        // (RUN_T02 uses 1995-01-01 epoch with its own F10.7 table) while we use
-        // SOLAR_MEAN (F10.7=128.8). Factor-of-10 agreement validates the model
-        // structure (altitude dependence, table interpolation); exact parity
-        // requires matching the JEOD sim's F10.7 input precisely.
+        // With matching F10.7/AP inputs and correct TJT, density matches to
+        // machine precision. Use 1e-12 tolerance to allow for platform-level
+        // floating-point variation.
         assert!(
-            density_rel_err < 10.0,
-            "{label} point {i}: density rel error {density_rel_err:.4e} exceeds factor 10 \
-             (ours={:.4e}, JEOD={:.4e}, alt={:.0} km)",
+            density_rel_err < 1e-12,
+            "{label} point {i}: density rel error {density_rel_err:.4e} exceeds 1e-12 \
+             (ours={:.4e}, JEOD={:.4e}, alt={:.1} km)",
             state.density,
             pt.density,
+            alt_km
+        );
+        assert!(
+            temp_rel_err < 1e-12,
+            "{label} point {i}: temperature rel error {temp_rel_err:.4e} exceeds 1e-12 \
+             (ours={:.4}, JEOD={:.4}, alt={:.1} km)",
+            state.temperature,
+            pt.temperature,
             alt_km
         );
     }
