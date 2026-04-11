@@ -51,21 +51,23 @@ fn load_met_csv(path: &std::path::Path) -> Vec<MetRefPoint> {
 }
 
 fn run_met_scenario(label: &str, csv_name: &str) {
+    // Default epoch: 2000-01-01 01:31:48 UTC (from input_core.py)
+    // MJD = 51544.0 + 5508/86400 = 51544.06375, TJT = MJD - 40000
+    run_met_scenario_with_tjt(label, csv_name, 11544.06375);
+}
+
+fn run_met_scenario_with_tjt(label: &str, csv_name: &str, tjt: f64) {
     let csv_path = test_data_path(csv_name);
     let ref_points = load_met_csv(&csv_path);
     assert!(!ref_points.is_empty(), "{label}: no reference data");
 
     // Match JEOD SIM_MET input: F10=230, F10B=230, AP=20.30
-    // Epoch: 2000-01-01 01:31:48 UTC
-    // MJD = 51544.0 + 5508s/86400 = 51544.06375
-    // TJT = MJD - 40000 = 11544.06375
     let atmos = met::MetAtmosphere {
         f10: 230.0,
         f10b: 230.0,
         geo_index: 20.3,
         geo_index_type: met::GeoIndexType::Ap,
     };
-    let tjt = 11544.06375; // 2000-01-01 01:31:48 UTC
 
     let mut max_density_rel_err = 0.0_f64;
     let mut max_temp_rel_err = 0.0_f64;
@@ -120,6 +122,13 @@ fn run_met_scenario(label: &str, csv_name: &str) {
         "  {label}: {count} points, max density rel err = {max_density_rel_err:.4e}, \
          max temp rel err = {max_temp_rel_err:.4e}"
     );
+}
+
+#[test]
+fn tier3_simulation_met_t01() {
+    // RUN_T01: epoch 1995-01-01 00:00:01 UTC
+    // MJD = 49718.0 + 1/86400, TJT = MJD - 40000 = 9718.000012
+    run_met_scenario_with_tjt("met_t01", "met_t01_met.csv", 9_718.000_011_574_077);
 }
 
 #[test]

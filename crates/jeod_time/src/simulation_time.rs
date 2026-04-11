@@ -112,7 +112,7 @@ impl SimulationTime {
     }
 
     // JEOD_INV: TM.03 — time types updated in dependency order via recompute_derived()
-    /// Advance the simulation by `sim_dt` seconds.
+    /// Advance the simulation by `sim_dt` seconds (must be non-negative).
     ///
     /// Dynamic time (TAI, TDB, etc.) advances by `sim_dt * time_scale_factor`,
     /// while `simtime` always advances by raw `sim_dt`. When
@@ -120,9 +120,12 @@ impl SimulationTime {
     /// matching JEOD's `TimeDyn::scale_factor` behavior.
     ///
     /// # Panics
-    /// Panics if `sim_dt` is NaN or infinite.
+    /// Panics if `sim_dt` is not finite or is negative.
     pub fn advance(&mut self, sim_dt: f64) {
-        assert!(sim_dt.is_finite(), "sim_dt must be finite, got {sim_dt}");
+        assert!(
+            sim_dt.is_finite() && sim_dt >= 0.0,
+            "sim_dt must be finite and >= 0, got {sim_dt}"
+        );
         let dyn_dt = sim_dt * self.time_scale_factor;
         self.tai_seconds += dyn_dt;
         self.tai_tjt = self.tai_tjt_at_epoch + self.tai_seconds / SECONDS_PER_DAY;
@@ -275,15 +278,16 @@ mod tests {
     }
 
     #[test]
-    fn advance_negative_for_time_reversal() {
+    fn advance_time_scale_factor_reversal() {
         let mut sim = SimulationTime::at_j2000(default_leap_second_table());
         let dt = 3600.0;
         sim.advance(dt);
         let tai_after_forward = sim.tai_seconds;
         let gmst_after_forward = sim.gmst_seconds;
 
-        // Reverse time by the same amount — should return to initial state
-        sim.advance(-dt);
+        // Reverse dynamic time via time_scale_factor = -1.0
+        sim.time_scale_factor = -1.0;
+        sim.advance(dt);
         assert!(
             sim.tai_seconds.abs() < 1e-15,
             "tai_seconds should return to 0, got {}",

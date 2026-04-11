@@ -751,6 +751,33 @@ impl Simulation {
         let sources = &self.sources;
         for body in &mut self.bodies {
             let controls = &body.gravity_controls;
+
+            // Precompute relativistic "other source" lists outside the closure
+            // to avoid heap allocation at every RK4 stage. Source positions are
+            // constant within a single step.
+            let rel_data: Vec<_> = controls
+                .controls
+                .iter()
+                .filter(|c| c.relativistic)
+                .filter_map(|ctrl| {
+                    let src = sources.get(ctrl.source_name)?;
+                    let other: Vec<_> = controls
+                        .controls
+                        .iter()
+                        .filter(|c| c.source_name != ctrl.source_name)
+                        .filter_map(|c| {
+                            sources.get(c.source_name).map(|s| {
+                                jeod_gravity::relativistic::RelativisticSource {
+                                    mu: s.source.mu,
+                                    position: s.position,
+                                }
+                            })
+                        })
+                        .collect();
+                    Some((src.source.mu, src.position, src.velocity, other))
+                })
+                .collect();
+
             integrate_body(
                 &body.config,
                 &mut body.trans,
@@ -767,35 +794,10 @@ impl Simulation {
                         })
                     })
                     .grav_accel;
-                    // Apply relativistic corrections inside the gravity closure
-                    // so they're evaluated at each RK4 substep position.
-                    for ctrl in &controls.controls {
-                        if ctrl.relativistic {
-                            if let Some(src) = sources.get(ctrl.source_name) {
-                                let other: Vec<_> = controls
-                                    .controls
-                                    .iter()
-                                    .filter(|c| c.source_name != ctrl.source_name)
-                                    .filter_map(|c| {
-                                        sources.get(c.source_name).map(|s| {
-                                            jeod_gravity::relativistic::RelativisticSource {
-                                                mu: s.source.mu,
-                                                position: s.position,
-                                            }
-                                        })
-                                    })
-                                    .collect();
-                                accel +=
-                                    jeod_gravity::relativistic::compute_relativistic_correction(
-                                        src.source.mu,
-                                        src.position,
-                                        pos,
-                                        vel,
-                                        src.velocity,
-                                        &other,
-                                    );
-                            }
-                        }
+                    for &(mu, src_pos, src_vel, ref other) in &rel_data {
+                        accel += jeod_gravity::relativistic::compute_relativistic_correction(
+                            mu, src_pos, pos, vel, src_vel, other,
+                        );
                     }
                     accel
                 },
@@ -928,14 +930,19 @@ impl Simulation {
         self.bodies.len()
     }
 
-    /// Set the integration timestep. Use to reverse time direction mid-simulation
-    /// (JEOD's `scale_factor = -1` mode). All integrators (RK4, RKF45) work
-    /// with negative dt; Gauss-Jackson requires the same absolute step size.
+    /// Set the integration timestep (must be positive).
+    ///
+    /// For JEOD-style time reversal, use `sim.time.time_scale_factor = -1.0`
+    /// instead of negative dt. This keeps `simtime` monotonically increasing
+    /// while reversing dynamic time (TAI, TDB, etc.) and integration direction.
     ///
     /// # Panics
-    /// Panics if `dt` is not finite.
+    /// Panics if `dt` is not finite or not positive.
     pub fn set_dt(&mut self, dt: f64) {
-        assert!(dt.is_finite(), "dt must be finite, got {dt}");
+        assert!(
+            dt.is_finite() && dt > 0.0,
+            "dt must be finite and > 0, got {dt}"
+        );
         self.dt = dt;
     }
 

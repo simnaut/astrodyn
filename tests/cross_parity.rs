@@ -2306,8 +2306,8 @@ fn tier3_sim_time_reversal_round_trip() {
         "should have moved after 50 steps"
     );
 
-    // Reverse 50 steps
-    sim.set_dt(-DT);
+    // Reverse 50 steps via JEOD-style time_scale_factor = -1.0
+    sim.time.time_scale_factor = -1.0;
     sim.step_n(50);
     let final_pos = sim.body(0).trans.position;
     let final_vel = sim.body(0).trans.velocity;
