@@ -22,17 +22,22 @@ use jeod_test_data::crossval::{CrossvalReport, StateLog};
 const GEO_R_EQ: f64 = 6_378_137.0;
 const GEO_R_POL: f64 = GEO_R_EQ * (1.0 - 1.0 / 298.257_223_563);
 
-/// SIM_NED epoch: 1991-01-01 00:00:00 UTC.
-/// MJD = 48257.0, TJT = MJD - 40000 = 8257.0.
-const NED_EPOCH_UTC_TJT: f64 = 8257.0;
-const NED_TAI_UTC_S: f64 = 26.0;
+/// SIM_NED directory relative to JEOD root.
+const SIM_NED: &str = "models/dynamics/derived_state/verif/SIM_NED";
+
 /// UT1-TAI from JEOD tai_to_ut1.cc at 1991-01-01 (index 10592).
+/// This comes from JEOD's internal UT1 data table, not a sim config file.
 const NED_UT1_TAI_S: f64 = -25.381_221_5;
-/// Integration step: 1.0s (matches JEOD SIM_NED DYNAMICS rate).
-const NED_DT: f64 = 1.0;
 
 #[test]
 fn tier3_simulation_geodetic() {
+    let jeod_root = jeod_test_data::jeod_path();
+    assert!(
+        jeod_root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        jeod_root.display()
+    );
+
     let csv_path = test_data_path("ned_ell_inc_ned.csv");
     assert!(
         csv_path.exists(),
@@ -41,21 +46,39 @@ fn tier3_simulation_geodetic() {
         csv_path.display()
     );
 
+    let sim_dir = jeod_root.join(SIM_NED);
+    let grav_data_dir = jeod_root.join("models/environment/gravity/data/src");
+
+    // Load epoch from JEOD time config. SIM_NED uses UTC initializer without
+    // leap_sec_override_val, so we look up TAI-UTC from our leap second table.
+    let time_cfg = jeod_test_data::time_config::load_time_config(
+        &sim_dir.join("Modified_data/date_and_time.py"),
+    );
+    let leap_table = jeod_sim::default_leap_second_table();
+    let tai_utc_s = leap_table.tai_utc_at_utc_tjt(time_cfg.utc_tjt());
+    let epoch_tai_tjt = time_cfg.tai_tjt_with_offset(tai_utc_s);
+
+    // Load integration step size from S_define
+    let ned_dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+
+    // Load Earth mu from JEOD gravity data
+    let mu_earth =
+        jeod_sim::coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc"))
+            .expect("load Earth mu");
+
     let records = load_ned_csv(&csv_path);
     assert!(records.len() > 100);
     let init = &records[0];
 
-    // Initialize at 1991-01-01 00:00:00 UTC
-    let epoch_tai_tjt = NED_EPOCH_UTC_TJT + NED_TAI_UTC_S / 86400.0;
-    let mut time = SimulationTime::new(epoch_tai_tjt, jeod_sim::default_leap_second_table());
+    let mut time = SimulationTime::new(epoch_tai_tjt, leap_table);
     time.set_ut1_tai_offset(NED_UT1_TAI_S);
 
-    let mut sim = Simulation::new(time, NED_DT);
+    let mut sim = Simulation::new(time, ned_dt);
 
     // Earth: point-mass gravity (JEOD SIM_NED uses spherical=1) with RNP rotation
     let earth = sim.add_source(GravitySourceEntry {
         source: GravitySource {
-            mu: MU_EARTH,
+            mu: mu_earth,
             model: GravityModel::PointMass,
         },
         position: DVec3::ZERO,

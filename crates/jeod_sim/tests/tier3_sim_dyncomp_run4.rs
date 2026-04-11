@@ -12,6 +12,9 @@
 //!
 //! Sun and Moon positions are queried from the DE421 ephemeris at each
 //! logged 60s sample.
+//!
+//! All simulation parameters (epoch, step size, mu values, mass) are loaded
+//! from the JEOD source files rather than hardcoded, per issue #44.
 
 mod sim_test_helpers;
 use sim_test_helpers::*;
@@ -25,13 +28,8 @@ use jeod_sim::{
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::Path;
 
-const MU_SUN: f64 = 1.327_124_40e20;
-const MU_MOON: f64 = 4902.79980693169e9;
-
-/// SIM_dyncomp epoch: 2007-11-20 midnight UTC, same as all other RUN_* tests.
-const DYNCOMP_UTC_TJT: f64 = 14424.0;
-const DYNCOMP_TAI_UTC_S: f64 = 32.0;
-const DYNCOMP_UT1_TAI_S: f64 = -32.469;
+/// SIM_dyncomp root directory (relative to JEOD_HOME).
+const SIM_DYNCOMP: &str = "verif/SIM_dyncomp";
 
 /// Compute Earth-centered position of a body from DE421 ephemeris.
 fn earth_centered_position(body: EphemerisBody, tdb_jd: f64, ephemeris: &Ephemeris) -> DVec3 {
@@ -43,6 +41,13 @@ fn earth_centered_position(body: EphemerisBody, tdb_jd: f64, ephemeris: &Ephemer
 
 #[test]
 fn tier3_simulation_run4_3rd_body() {
+    let jeod_root = jeod_test_data::jeod_path();
+    assert!(
+        jeod_root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        jeod_root.display()
+    );
+
     let csv_path = test_data_path("dyncomp_run4_state.csv");
     assert!(
         csv_path.exists(),
@@ -60,22 +65,53 @@ fn tier3_simulation_run4_3rd_body() {
     );
     let ephemeris = Ephemeris::from_bsp(&bsp_path).expect("load DE421");
 
+    let sim_dir = jeod_root.join(SIM_DYNCOMP);
+    let grav_data_dir = jeod_root.join("models/environment/gravity/data/src");
+
+    // Load epoch and time offsets from JEOD time config
+    let time_cfg =
+        jeod_test_data::time_config::load_time_config(&sim_dir.join("Modified_data/time.py"));
+    let epoch_tai_tjt = time_cfg.tai_tjt();
+    let ut1_tai_offset = time_cfg
+        .ut1_tai_offset()
+        .expect("SIM_dyncomp time.py must specify tai_to_ut1_override_val");
+
+    // Load integration step size from S_define
+    let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+
+    // Load mu values from JEOD gravity coefficient files.
+    // Sun/Moon use load_mu (spherical-only files lack degree/order fields).
+    let earth_grav =
+        jeod_sim::coefficients::load_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc"))
+            .expect("load Earth gravity");
+    let mu_sun =
+        jeod_sim::coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("sun_spherical.cc"))
+            .expect("load Sun mu");
+    let mu_moon =
+        jeod_sim::coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("moon_GRAIL150.cc"))
+            .expect("load Moon mu");
+
+    // Load ISS mass properties from SIM_dyncomp mass.py
+    let mass_init = jeod_test_data::mass_data::load_mass_from_file(
+        &sim_dir.join("Modified_data/mass.py"),
+        Some("set_mass_iss"),
+    );
+
     let trajectory = load_dyncomp_csv(&csv_path);
     assert!(trajectory.len() > 100);
 
     let init = &trajectory[0];
 
-    // Initialize at the SIM_dyncomp epoch (2007-11-20 UTC) so DE421 Sun/Moon
+    // Initialize at the SIM_dyncomp epoch (parsed from time.py) so DE421 Sun/Moon
     // queries match the JEOD reference sim's absolute time.
-    let epoch_tai_tjt = DYNCOMP_UTC_TJT + DYNCOMP_TAI_UTC_S / 86400.0;
     let mut time = SimulationTime::new(epoch_tai_tjt, jeod_sim::default_leap_second_table());
-    time.set_ut1_tai_offset(DYNCOMP_UT1_TAI_S);
-    let mut sim = Simulation::new(time, DT);
+    time.set_ut1_tai_offset(ut1_tai_offset);
+    let mut sim = Simulation::new(time, dt);
 
     // Earth: central body at origin (not differential)
     let earth = sim.add_source(GravitySourceEntry {
         source: GravitySource {
-            mu: MU_EARTH,
+            mu: earth_grav.mu,
             model: GravityModel::PointMass,
         },
         position: DVec3::ZERO,
@@ -91,7 +127,7 @@ fn tier3_simulation_run4_3rd_body() {
     let initial_sun = earth_centered_position(EphemerisBody::Sun, tdb_jd, &ephemeris);
     let sun = sim.add_source(GravitySourceEntry {
         source: GravitySource {
-            mu: MU_SUN,
+            mu: mu_sun,
             model: GravityModel::PointMass,
         },
         position: initial_sun,
@@ -106,7 +142,7 @@ fn tier3_simulation_run4_3rd_body() {
     let initial_moon = earth_centered_position(EphemerisBody::Moon, tdb_jd, &ephemeris);
     let moon = sim.add_source(GravitySourceEntry {
         source: GravitySource {
-            mu: MU_MOON,
+            mu: mu_moon,
             model: GravityModel::PointMass,
         },
         position: initial_moon,
@@ -117,13 +153,29 @@ fn tier3_simulation_run4_3rd_body() {
         tidal_config: None,
     });
 
-    // ISS mass properties (same as RUN_2 6-DOF test)
+    // ISS mass properties (parsed from Modified_data/mass.py)
     let inertia = glam::DMat3::from_cols(
-        DVec3::new(1.02e8, -6.96e6, -5.48e6),
-        DVec3::new(-6.96e6, 0.91e8, 5.90e5),
-        DVec3::new(-5.48e6, 5.90e5, 1.64e8),
+        DVec3::new(
+            mass_init.inertia[0][0],
+            mass_init.inertia[1][0],
+            mass_init.inertia[2][0],
+        ),
+        DVec3::new(
+            mass_init.inertia[0][1],
+            mass_init.inertia[1][1],
+            mass_init.inertia[2][1],
+        ),
+        DVec3::new(
+            mass_init.inertia[0][2],
+            mass_init.inertia[1][2],
+            mass_init.inertia[2][2],
+        ),
     );
-    let mass_props = MassProperties::with_inertia(400_000.0, inertia, DVec3::new(-3.0, -1.5, 4.0));
+    let mass_props = MassProperties::with_inertia(
+        mass_init.mass,
+        inertia,
+        DVec3::from_slice(&mass_init.position),
+    );
 
     sim.add_body(SimBody {
         trans: TranslationalState {

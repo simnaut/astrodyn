@@ -91,7 +91,10 @@ pub use jeod_interactions::{
 pub use jeod_frames::RefFrameState;
 
 // jeod_time: simulation time and leap seconds
-pub use jeod_time::{leap_second::default_leap_second_table, SimulationTime};
+pub use jeod_time::{
+    leap_second::{default_leap_second_table, LeapSecondTable},
+    SimulationTime,
+};
 
 // jeod_time: planet rotation (used by ephemeris stage)
 pub use jeod_frames::rotation_j2000::{

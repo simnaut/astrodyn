@@ -22,7 +22,21 @@ use jeod_sim::{
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
-const MU_EARTH: f64 = 3.986_004_415e14;
+fn load_mu_earth() -> f64 {
+    let jeod_root = jeod_test_data::jeod_path();
+    jeod_sim::coefficients::load_mu_from_jeod_cc(
+        &jeod_root.join("models/environment/gravity/data/src/earth_GGM05C.cc"),
+    )
+    .expect("load Earth mu from GGM05C")
+}
+
+fn load_mu_sun() -> f64 {
+    let jeod_root = jeod_test_data::jeod_path();
+    jeod_sim::coefficients::load_mu_from_jeod_cc(
+        &jeod_root.join("models/environment/gravity/data/src/sun_spherical.cc"),
+    )
+    .expect("load Sun mu from sun_spherical")
+}
 
 /// Load a state CSV with interleaved columns: time, pos[0], vel[0], pos[1], vel[1], pos[2], vel[2].
 fn load_interleaved_csv(path: &std::path::Path, sim_name: &str) -> Vec<StateLog> {
@@ -60,6 +74,8 @@ fn load_interleaved_csv(path: &std::path::Path, sim_name: &str) -> Vec<StateLog>
 /// + cannonball SRP, matching JEOD SIM_Earth_Moon RUN_clem.
 #[test]
 fn tier3_simulation_earth_moon_clem() {
+    let mu_earth = load_mu_earth();
+    let mu_sun = load_mu_sun();
     let csv_path = test_data_path("earth_moon_clem_earth_moon.csv");
     let ref_states = load_interleaved_csv(&csv_path, "SIM_Earth_Moon RUN_clem");
     assert!(
@@ -124,7 +140,7 @@ fn tier3_simulation_earth_moon_clem() {
 
     let earth = sim.add_source(GravitySourceEntry::new(
         GravitySource {
-            mu: MU_EARTH,
+            mu: mu_earth,
             model: GravityModel::PointMass,
         },
         earth_pos_from_moon,
@@ -138,7 +154,7 @@ fn tier3_simulation_earth_moon_clem() {
         .expect("Sun-Moon state from DE421");
     let sun = sim.add_source(GravitySourceEntry::new(
         GravitySource {
-            mu: 1.327_124_40e20,
+            mu: mu_sun,
             model: GravityModel::PointMass,
         },
         sun_pos_from_moon,

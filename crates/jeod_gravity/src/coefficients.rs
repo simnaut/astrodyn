@@ -13,6 +13,28 @@ pub enum CoeffLoadError {
     InvalidFormat(String),
 }
 
+/// Load only the gravitational parameter (mu) from a JEOD C++ gravity data file.
+///
+/// Works with any JEOD gravity file including spherical-only files (like
+/// `sun_spherical.cc`, `moon_spherical.cc`) that lack `degree`/`order` fields.
+///
+/// Returns mu in m³/s².
+pub fn load_mu_from_jeod_cc(path: &std::path::Path) -> Result<f64, CoeffLoadError> {
+    let content = std::fs::read_to_string(path)?;
+    let path_str = path.display().to_string();
+
+    for line in content.lines() {
+        if let Some(val) = extract_assign_f64(line.trim(), "mu") {
+            return Ok(val);
+        }
+    }
+
+    Err(CoeffLoadError::MissingField {
+        field: "mu",
+        path: path_str,
+    })
+}
+
 /// Load spherical harmonics coefficients from a JEOD C++ data file.
 ///
 /// Parses files like `earth_GGM05C.cc` that contain lines of the form:

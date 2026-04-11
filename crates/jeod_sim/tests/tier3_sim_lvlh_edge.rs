@@ -4,7 +4,7 @@
 //!          exercises LVLH frame computation at different velocities.
 //! RUN_equ: Equatorial orbit (i=0) — near-singular LVLH at zero inclination.
 //!
-//! Point-mass Earth gravity, RK4 at DT=0.03125s, 24h.
+//! Point-mass Earth gravity, RK4 at the SIM_LVLH S_define step size, 24h.
 
 mod sim_test_helpers;
 use sim_test_helpers::*;
@@ -15,6 +15,14 @@ use jeod_sim::{
     RotationModel, SimBody, Simulation, SimulationTime, TranslationalState,
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
+
+fn load_mu_earth() -> f64 {
+    let jeod_root = jeod_test_data::jeod_path();
+    jeod_sim::coefficients::load_mu_from_jeod_cc(
+        &jeod_root.join("models/environment/gravity/data/src/earth_GGM05C.cc"),
+    )
+    .expect("load Earth mu from GGM05C")
+}
 
 fn run_lvlh_test(
     csv_filename: &str,
@@ -37,12 +45,22 @@ fn run_lvlh_test(
     assert!(records.len() > 100);
     let init = &records[0];
 
+    let mu_earth = load_mu_earth();
+    let jeod_root = jeod_test_data::jeod_path();
+    assert!(
+        jeod_root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        jeod_root.display()
+    );
+    let dt = jeod_test_data::s_define::load_dynamics_dt(
+        &jeod_root.join("models/dynamics/derived_state/verif/SIM_LVLH/S_define"),
+    );
     let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
-    let mut sim = Simulation::new(time, DT);
+    let mut sim = Simulation::new(time, dt);
 
     let earth = sim.add_source(GravitySourceEntry {
         source: GravitySource {
-            mu: MU_EARTH,
+            mu: mu_earth,
             model: GravityModel::PointMass,
         },
         position: DVec3::ZERO,
