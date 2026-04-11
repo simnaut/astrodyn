@@ -115,13 +115,13 @@ pub fn load_mass_from_file(path: &std::path::Path, function_name: Option<&str>) 
 fn extract_function_body(content: &str, function_name: &str, source: &std::path::Path) -> String {
     let mut lines = Vec::new();
     let mut in_function = false;
-    let def_pattern = format!("def {}(", function_name);
-    // Also match `def name() :`  with flexible whitespace
-    let def_pattern_alt = format!("def {}", function_name);
+    // Match `def name(` exactly — the char after the name must be `(` or whitespace
+    // to avoid prefix matches (e.g., `set_mass_iss` matching `set_mass_iss2`).
+    let re = Regex::new(&format!(r"^def\s+{}\s*\(", regex::escape(function_name))).unwrap();
 
     for line in content.lines() {
         let trimmed = line.trim_start();
-        if trimmed.starts_with(&def_pattern) || trimmed.starts_with(&def_pattern_alt) {
+        if re.is_match(trimmed) {
             in_function = true;
             continue;
         }
