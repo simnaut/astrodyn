@@ -89,6 +89,13 @@ jobs:
         env:
           JEOD_HOME: ${{ github.workspace }}/../jeod
         run: cargo nextest run --workspace -E 'test(tier3_) and not test(earth_moon)'
+      - name: Generate cross-validation report
+        run: cargo run -p jeod_test_data --bin tier3_report
+      - name: Upload cross-validation report
+        uses: actions/upload-artifact@v4
+        with:
+          name: tier3-crossval-report
+          path: target/tier3_report.md
 
   test-tier3-full:
     name: Test (Tier 3 full + earth_moon)
@@ -133,8 +140,8 @@ jobs:
         run: cargo nextest run --workspace -E 'test(tier3_)'
       - name: Generate cross-validation report
         run: cargo run -p jeod_test_data --bin tier3_report
-      - name: Upload cross-validation report
+      - name: Upload cross-validation report (full)
         uses: actions/upload-artifact@v4
         with:
-          name: tier3-crossval-report
+          name: tier3-crossval-report-full
           path: target/tier3_report.md
