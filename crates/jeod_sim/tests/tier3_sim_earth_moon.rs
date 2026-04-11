@@ -8,7 +8,7 @@
 //! - Integrator: RK4 at 0.03125 s (32 Hz)
 //! - Moon gravity: LP150Q 60×60
 //! - Moon rotation: DE421 BPC libration (per-step update)
-//! - Earth/Sun: point-mass 3rd-body with per-step DE405 ephemeris
+//! - Earth/Sun: point-mass 3rd-body with per-step DE421 ephemeris (JEOD uses DE405)
 //! - SRP: cannonball (cx_area=2.1432 m², albedo=1.0, diffuse=0.27)
 //! - No drag, no gravity torque
 
@@ -120,7 +120,7 @@ fn tier3_simulation_earth_moon_clem() {
     let epoch_tdb_jd = sim.time.tdb_julian_date();
     let (earth_pos_from_moon, _earth_vel) = ephemeris
         .get_state(EphemerisBody::Earth, EphemerisBody::Moon, epoch_tdb_jd)
-        .expect("Earth-Moon state from DE405");
+        .expect("Earth-Moon state from DE421");
 
     let earth = sim.add_source(GravitySourceEntry::new(
         GravitySource {
@@ -135,7 +135,7 @@ fn tier3_simulation_earth_moon_clem() {
     // Sun as 3rd-body with per-step ephemeris updates (also SRP source)
     let (sun_pos_from_moon, _) = ephemeris
         .get_state(EphemerisBody::Sun, EphemerisBody::Moon, epoch_tdb_jd)
-        .expect("Sun-Moon state from DE405");
+        .expect("Sun-Moon state from DE421");
     let sun = sim.add_source(GravitySourceEntry::new(
         GravitySource {
             mu: 1.327_124_40e20,
