@@ -96,8 +96,8 @@ impl Ephemeris {
 
     /// Get the rotation matrix from J2000 inertial to a body's body-fixed frame.
     ///
-    /// For Moon: uses DE421 Principal Axes (PA) frame from BPC kernel (must be
-    /// loaded via `load_bpc()`). Falls back to IAU_MOON if no BPC loaded.
+    /// For Moon: uses the DE421 Principal Axes (PA) frame from a BPC kernel,
+    /// which must already be loaded via `load_bpc()`.
     /// For Mars: uses IAU_MARS built-in constants.
     pub fn get_body_rotation(
         &self,

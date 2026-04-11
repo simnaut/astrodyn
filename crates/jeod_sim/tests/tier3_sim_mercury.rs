@@ -158,50 +158,6 @@ fn compute_advance_rate(
     slope_rad_per_s * arcsec_per_rad * seconds_per_century
 }
 
-/// Compute absolute advance rate from a single periapsis event series.
-/// Fits a linear trend to the longitude of perihelion vs time.
-fn absolute_advance_rate(events: &[PeriapsisEvent], skip_first: usize) -> f64 {
-    assert!(
-        events.len() > skip_first + 5,
-        "need at least {} events, got {}",
-        skip_first + 5,
-        events.len()
-    );
-
-    // Unwrap the longitude series to avoid 2pi discontinuities
-    let mut unwrapped = Vec::with_capacity(events.len() - skip_first);
-    let mut prev = events[skip_first].long_perihelion;
-    unwrapped.push((events[skip_first].time, prev));
-
-    for e in &events[skip_first + 1..] {
-        let mut lp = e.long_perihelion;
-        while lp - prev > std::f64::consts::PI {
-            lp -= 2.0 * std::f64::consts::PI;
-        }
-        while prev - lp > std::f64::consts::PI {
-            lp += 2.0 * std::f64::consts::PI;
-        }
-        prev = lp;
-        unwrapped.push((e.time, lp));
-    }
-
-    // Linear regression
-    let n = unwrapped.len() as f64;
-    let (mut st, mut slp, mut st2, mut stlp) = (0.0, 0.0, 0.0, 0.0);
-    for &(t, lp) in &unwrapped {
-        st += t;
-        slp += lp;
-        st2 += t * t;
-        stlp += t * lp;
-    }
-    let slope = (n * stlp - st * slp) / (n * st2 - st * st);
-
-    // rad/s → arcsec/century
-    let arcsec_per_rad = 3600.0 * 180.0 / std::f64::consts::PI;
-    let seconds_per_century = 100.0 * 365.25 * 86400.0;
-    slope * arcsec_per_rad * seconds_per_century
-}
-
 /// Detect periapsis passages from a CSV file by streaming line-by-line.
 /// CSV format: time, pos[0], vel[0], pos[1], vel[1], pos[2], vel[2] (interleaved).
 fn detect_periapses_from_csv(path: &std::path::Path, mu: f64) -> Vec<PeriapsisEvent> {
@@ -373,9 +329,9 @@ fn tier3_mercury_perihelion_advance_rate() {
     // Skip the first 5 orbits to avoid initial transient effects
     let skip = 5;
 
-    // Compute advance rate from the GR run (absolute, not differential).
-    // The Newtonian orbit has zero precession in the Sun-only two-body case.
-    let rate = absolute_advance_rate(&gr_events, skip);
+    // Differential advance rate (GR minus Newtonian) cancels integrator drift,
+    // isolating the true relativistic precession.
+    let rate = compute_advance_rate(&newton_events, &gr_events, skip);
     println!("  GR perihelion advance rate: {rate:.2} arcsec/century");
 
     // Theoretical GR advance for Mercury: ~42.98 arcsec/century (Sun only).

@@ -2,7 +2,7 @@
 //!
 //! Validates multi-body gravity (Earth + Moon LP150Q 60×60 spherical harmonics,
 //! Sun 3rd-body, DE421 BPC libration) against the JEOD reference trajectory.
-//! Clementine-like orbit, 7 days. Achieved parity: ~0.21 m position error.
+//! Clementine-like orbit, 1 hour. Achieved parity: ~0.21 m position error.
 
 mod sim_test_helpers;
 use sim_test_helpers::*;

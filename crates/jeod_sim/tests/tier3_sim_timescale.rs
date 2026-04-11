@@ -1,7 +1,8 @@
 //! Tier 3: SIM_5_all_inclusive — time scale parity cross-validation.
 //!
-//! Validates all time scales (TAI, UTC, UT1, TT, TDB, GMST, GPS) against
-//! JEOD reference data over 2 hours at 60s intervals.
+//! Validates TAI, TT, TDB, GMST, and GPS time scales against JEOD reference
+//! data over 2 hours at 60s intervals. (UTC and UT1 are loaded but not yet
+//! compared — UT1 requires IERS gradient interpolation for sub-ms parity.)
 
 mod sim_test_helpers;
 use sim_test_helpers::*;
