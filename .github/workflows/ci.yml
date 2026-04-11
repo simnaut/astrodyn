@@ -51,9 +51,7 @@ jobs:
         run: cargo nextest run --workspace -E 'not test(tier3_)'
 
   test-tier3:
-    name: Test (Tier 3 trajectory)
-    if: github.ref == 'refs/heads/main'
-    needs: test
+    name: Test (Tier 3 fast)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -66,7 +64,6 @@ jobs:
           git clone --no-checkout --depth 1 --branch "$JEOD_TAG" \
             https://github.com/nasa/jeod.git ../jeod
           cd ../jeod
-          # Verify immutable tag hasn't moved
           [ "$(git rev-parse HEAD)" = "$JEOD_SHA" ] || \
             { echo "FATAL: $JEOD_TAG resolved to $(git rev-parse HEAD), expected $JEOD_SHA"; exit 1; }
           git sparse-checkout set \
@@ -75,10 +72,62 @@ jobs:
             models/environment/time/data \
             models/dynamics/body_action/verif/SIM_orbinit/Modified_data \
             models/dynamics/derived_state/verif/unit_tests \
-            models/utils/orbital_elements/verif/SIM_orb_elem/Modified_data
+            models/dynamics/derived_state/verif/SIM_NED \
+            models/dynamics/derived_state/verif/SIM_LVLH \
+            models/dynamics/derived_state/verif/SIM_OrbElem \
+            models/dynamics/derived_state/verif/SIM_Euler \
+            models/dynamics/derived_state/verif/SIM_Planetary \
+            models/interactions/radiation_pressure/verif/SIM_3_ORBIT \
+            models/interactions/radiation_pressure/verif/SIM_3_ORBIT_1st_ORDER \
+            models/interactions/radiation_pressure/verif/SIM_2A_SHADOW_CALC \
+            models/environment/time/verif/SIM_7_time_reversal \
+            models/utils/orbital_elements/verif/SIM_orb_elem/Modified_data \
+            verif/SIM_dyncomp
           git checkout
       - uses: taiki-e/install-action@nextest
-      - name: Run Tier 3 trajectory tests
+      - name: Run Tier 3 tests (exclude earth_moon ~17 min)
+        env:
+          JEOD_HOME: ${{ github.workspace }}/../jeod
+        run: cargo nextest run --workspace -E 'test(tier3_) and not test(earth_moon)'
+
+  test-tier3-full:
+    name: Test (Tier 3 full + earth_moon)
+    if: github.ref == 'refs/heads/main'
+    needs: test-tier3
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Sparse checkout JEOD reference data
+        run: |
+          JEOD_TAG=jeod_v5.4.0
+          JEOD_SHA=27893108bbde8bb162b3213a30d57af89acd1c76
+          git clone --no-checkout --depth 1 --branch "$JEOD_TAG" \
+            https://github.com/nasa/jeod.git ../jeod
+          cd ../jeod
+          [ "$(git rev-parse HEAD)" = "$JEOD_SHA" ] || \
+            { echo "FATAL: $JEOD_TAG resolved to $(git rev-parse HEAD), expected $JEOD_SHA"; exit 1; }
+          git sparse-checkout set \
+            models/environment/gravity/data \
+            models/environment/gravity/verif/unit_tests/grav_geospherical/data \
+            models/environment/time/data \
+            models/dynamics/body_action/verif/SIM_orbinit/Modified_data \
+            models/dynamics/derived_state/verif/unit_tests \
+            models/dynamics/derived_state/verif/SIM_NED \
+            models/dynamics/derived_state/verif/SIM_LVLH \
+            models/dynamics/derived_state/verif/SIM_OrbElem \
+            models/dynamics/derived_state/verif/SIM_Euler \
+            models/dynamics/derived_state/verif/SIM_Planetary \
+            models/interactions/radiation_pressure/verif/SIM_3_ORBIT \
+            models/interactions/radiation_pressure/verif/SIM_3_ORBIT_1st_ORDER \
+            models/interactions/radiation_pressure/verif/SIM_2A_SHADOW_CALC \
+            models/environment/time/verif/SIM_7_time_reversal \
+            models/utils/orbital_elements/verif/SIM_orb_elem/Modified_data \
+            verif/SIM_dyncomp
+          git checkout
+      - uses: taiki-e/install-action@nextest
+      - name: Run all Tier 3 tests (including earth_moon)
         env:
           JEOD_HOME: ${{ github.workspace }}/../jeod
         run: cargo nextest run --workspace -E 'test(tier3_)'
