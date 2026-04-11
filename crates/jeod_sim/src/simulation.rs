@@ -542,10 +542,16 @@ impl Simulation {
             let tdb_jd = self.time.tdb_julian_date();
             for (i, source) in self.sources.iter_mut().enumerate() {
                 if let Some(Some((target, observer))) = self.source_ephem_bodies.get(i) {
-                    if let Ok((pos, vel)) = eph.get_state(*target, *observer, tdb_jd) {
-                        source.position = pos;
-                        source.velocity = vel;
-                    }
+                    let (pos, vel) =
+                        eph.get_state(*target, *observer, tdb_jd)
+                            .unwrap_or_else(|e| {
+                                panic!(
+                                    "Ephemeris lookup failed for source {i} \
+                                 ({target:?} wrt {observer:?}) at TDB JD {tdb_jd}: {e}"
+                                )
+                            });
+                    source.position = pos;
+                    source.velocity = vel;
                 }
             }
         }

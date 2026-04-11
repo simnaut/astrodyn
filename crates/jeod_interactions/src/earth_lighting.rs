@@ -138,14 +138,11 @@ pub fn compute_earth_lighting(
     let moon_dist = moon_rel.length();
     let earth_dist = earth_rel.length();
 
-    // Apparent half-angles (angular radii of disks as seen from observer)
-    let sun_half = (sun_radius / sun_dist).asin();
-    let moon_half = (moon_radius / moon_dist).asin();
-    let earth_half = if earth_dist >= earth_radius {
-        (earth_radius / earth_dist).asin()
-    } else {
-        std::f64::consts::FRAC_PI_2
-    };
+    // Apparent half-angles (angular radii of disks as seen from observer).
+    // Clamp ratio to [0,1] to avoid NaN from asin when observer is inside a body.
+    let sun_half = (sun_radius / sun_dist).clamp(0.0, 1.0).asin();
+    let moon_half = (moon_radius / moon_dist).clamp(0.0, 1.0).asin();
+    let earth_half = (earth_radius / earth_dist).clamp(0.0, 1.0).asin();
 
     // Sun-Earth observation angle (angle between Sun and Earth as seen from observer)
     let sun_earth_obs = observation_angle(sun_rel, sun_dist, earth_rel, earth_dist);
@@ -227,9 +224,12 @@ pub fn compute_earth_lighting(
 ///
 /// Uses `atan2(|cross|, dot)` for numerical stability (avoids acos near 0/π).
 fn observation_angle(dir_a: DVec3, dist_a: f64, dir_b: DVec3, dist_b: f64) -> f64 {
-    let cos_obs = dir_a.dot(dir_b) / (dist_a * dist_b);
-    let cross = dir_a.cross(dir_b);
-    let sin_obs = cross.length() / (dist_a * dist_b);
+    let denom = dist_a * dist_b;
+    if denom <= 0.0 {
+        return 0.0;
+    }
+    let cos_obs = dir_a.dot(dir_b) / denom;
+    let sin_obs = dir_a.cross(dir_b).length() / denom;
     sin_obs.atan2(cos_obs)
 }
 

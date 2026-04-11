@@ -38,9 +38,12 @@ fn load_timescale_csv(path: &std::path::Path) -> Vec<TimescaleRecord> {
             continue;
         }
         let f: Vec<&str> = line.split(',').collect();
-        if f.len() < 9 {
-            continue;
-        }
+        assert!(
+            f.len() >= 9,
+            "line {}: expected >=9 columns, got {}",
+            i + 1,
+            f.len()
+        );
         let p = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
         records.push(TimescaleRecord {
             time: p(0),
