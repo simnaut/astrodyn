@@ -1388,6 +1388,8 @@ PID_LIGHTING=$!
 
 # ── Snippet: SIM_Earth_Moon (vehicle state in Moon-centered orbit) ──
 EARTH_MOON_SNIPPET='
+# Override common_input.py stop time (3600s) to 7 days for full validation
+trick.sim_services.exec_set_terminate_time(604800)
 dr = trick.sim_services.DRAscii("earth_moon_ASCII")
 dr.set_cycle(60)
 dr.freq = trick.sim_services.DR_Always

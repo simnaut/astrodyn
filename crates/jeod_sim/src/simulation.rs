@@ -30,6 +30,9 @@ pub enum RotationModel {
     /// Moon rotation via IAU 2009 pole + prime meridian model.
     /// Uses the simulation's TDB seconds.
     MoonIAU,
+    /// Moon rotation from DE421 BPC libration data (high-fidelity).
+    /// Requires ephemeris with BPC loaded via `Simulation::set_ephemeris`.
+    MoonDE421,
 }
 
 /// Entry in the gravity source table.
@@ -43,8 +46,9 @@ pub struct GravitySourceEntry {
     /// Velocity in the inertial frame (m/s). Required for relativistic corrections.
     /// Zero for stationary sources (e.g., central body at origin).
     pub velocity: DVec3,
-    /// Inertial-to-planet-fixed rotation matrix. If `Some`, the ephemeris stage
-    /// updates it each step. If `None`, no rotation is applied (point-mass only).
+    /// Inertial-to-planet-fixed rotation matrix. Updated each step when
+    /// `rotation_model` is not `None`. If `None`, no rotation is applied
+    /// (point-mass only).
     pub t_inertial_pfix: Option<DMat3>,
     /// Rotation model for updating `t_inertial_pfix` each step.
     pub rotation_model: RotationModel,
@@ -520,6 +524,17 @@ impl Simulation {
                     let tdb_s_since_j2000 = (tdb_jd - 2_451_545.0) * 86400.0;
                     let rotation =
                         jeod_frames::rotation_moon::compute_moon_rotation(tdb_s_since_j2000);
+                    source.t_inertial_pfix = Some(rotation);
+                }
+                RotationModel::MoonDE421 => {
+                    let eph = self.ephemeris.as_ref().expect(
+                        "MoonDE421 rotation requires ephemeris with BPC. \
+                         Call set_ephemeris() and load_bpc() first.",
+                    );
+                    let tdb_jd = self.time.tdb_julian_date();
+                    let rotation = eph
+                        .get_body_rotation(crate::EphemerisBody::Moon, tdb_jd)
+                        .expect("Moon DE421 BPC rotation query failed");
                     source.t_inertial_pfix = Some(rotation);
                 }
             }
