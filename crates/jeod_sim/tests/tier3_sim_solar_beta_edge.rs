@@ -48,7 +48,10 @@ fn run_solar_beta_test(csv_filename: &str, label: &str, test_name: &str, beta_to
         records.len()
     );
 
-    let j2000_jd = 2_451_545.0;
+    // SIM_SolarBeta epoch: 1991-01-01 00:00:00 UTC = JD 2448257.5
+    // TAI-UTC = 26 s at this date; TT = TAI + 32.184 s = UTC + 58.184 s
+    // TDB ≈ TT for Sun direction purposes
+    let epoch_tdb_jd = 2_448_257.5 + 58.184 / 86_400.0;
     let mut max_beta_err = 0.0_f64;
 
     // These tests don't propagate state -- they compute beta from each CSV record's
@@ -64,7 +67,7 @@ fn run_solar_beta_test(csv_filename: &str, label: &str, test_name: &str, beta_to
 
     for record in &records {
         // Sun position from DE421 at this epoch
-        let tdb_jd = j2000_jd + record.time / 86_400.0;
+        let tdb_jd = epoch_tdb_jd + record.time / 86_400.0;
         let (sun_pos, _) = ephemeris
             .get_earth_centered_state(EphemerisBody::Sun, tdb_jd)
             .expect("Sun position query");
@@ -105,7 +108,7 @@ fn tier3_simulation_solar_beta_equ() {
         "solarbeta_incl_0_solarbeta.csv",
         "RUN_incl_0 (equatorial)",
         "tier3_simulation_solar_beta_equ",
-        5.701e-4,
+        1.892e-5,
     );
 }
 
@@ -115,6 +118,6 @@ fn tier3_simulation_solar_beta_obliquity() {
         "solarbeta_incl_23_4_solarbeta.csv",
         "RUN_incl_23_4 (obliquity)",
         "tier3_simulation_solar_beta_obliquity",
-        1.269e-3,
+        3.446e-5,
     );
 }

@@ -205,8 +205,7 @@ fn tier3_simulation_earth_moon_clem() {
         max_pos
     );
     // 7-day lunar orbit with LP150Q 60x60, per-step DE421 BPC libration,
-    // Earth+Sun 3rd-body with per-step ephemeris. Residual from DE421
-    // ephemeris drift (~10 arcsec Sun direction offset over 7 days).
+    // Earth+Sun 3rd-body with per-step ephemeris.
     // Tolerance: observed max × 1.05.
     report.assert_position([222.0, 133.0, 314.0]);
 }
