@@ -33,9 +33,12 @@ fn load_lvlhrel_csv(path: &std::path::Path) -> Vec<LvlhRelRecord> {
             continue;
         }
         let f: Vec<&str> = line.split(',').collect();
-        if f.len() < 19 {
-            continue;
-        }
+        assert!(
+            f.len() >= 19,
+            "line {}: expected >=19 columns, got {}",
+            i + 1,
+            f.len()
+        );
         let p = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
         // Columns (0-indexed): time, vehA pos/vel (interleaved), vehB pos/vel (interleaved),
         // rel pos[0-2] (grouped), rel vel[0-2] (grouped)

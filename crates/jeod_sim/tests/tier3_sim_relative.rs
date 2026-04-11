@@ -40,9 +40,12 @@ fn load_relative_csv(path: &std::path::Path) -> Vec<RelativeRecord> {
             continue;
         }
         let f: Vec<&str> = line.split(',').collect();
-        if f.len() < 57 {
-            continue;
-        }
+        assert!(
+            f.len() >= 57,
+            "line {}: expected >=57 columns, got {}",
+            i + 1,
+            f.len()
+        );
         let p = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
         // Columns (57 total, 0-indexed):
         // 0: time

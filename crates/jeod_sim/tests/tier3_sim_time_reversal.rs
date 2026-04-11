@@ -69,7 +69,7 @@ fn run_reversal_scenario(label: &str, csv_name: &str) {
     let reversal_idx = records
         .windows(2)
         .position(|w| w[1].tai_seconds < w[0].tai_seconds)
-        .expect("{label}: no reversal point found in CSV");
+        .unwrap_or_else(|| panic!("{label}: no reversal point found in CSV"));
 
     let mut max_tai_s_err = 0.0_f64;
     let mut max_tai_tjt_err = 0.0_f64;

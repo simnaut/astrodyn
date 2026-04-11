@@ -58,19 +58,16 @@ pub struct GravitySourceEntry {
 
 impl GravitySourceEntry {
     /// Create a new gravity source entry without tidal effects.
+    ///
+    /// `rotation_model` defaults to `None`. Set it explicitly after construction
+    /// (or use struct literal syntax) to enable per-step rotation updates.
     pub fn new(source: GravitySource, position: DVec3, t_inertial_pfix: Option<DMat3>) -> Self {
-        // Infer rotation model from t_inertial_pfix presence for backward compat
-        let rotation_model = if t_inertial_pfix.is_some() {
-            RotationModel::EarthRNP
-        } else {
-            RotationModel::None
-        };
         Self {
             source,
             position,
             velocity: DVec3::ZERO,
             t_inertial_pfix,
-            rotation_model,
+            rotation_model: RotationModel::None,
             delta_c20: 0.0,
             tidal_config: None,
         }
