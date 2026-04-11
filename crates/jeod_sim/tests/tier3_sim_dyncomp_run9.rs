@@ -116,7 +116,7 @@ fn tier3_simulation_run9a_torque() {
 
             // Integration with external torque added.
             // Gravity recomputed at each RK4 intermediate state via closure.
-            let gravity_fn = |pos: DVec3| {
+            let gravity_fn = |pos: DVec3, _vel: DVec3| {
                 let r = pos.length();
                 pos * (-MU_EARTH / (r * r * r))
             };
@@ -167,7 +167,7 @@ fn tier3_simulation_run9a_torque() {
                 Some(&mass_props),
                 grav.grav_accel,
             );
-            let gravity_fn = |pos: DVec3| {
+            let gravity_fn = |pos: DVec3, _vel: DVec3| {
                 let r = pos.length();
                 pos * (-MU_EARTH / (r * r * r))
             };
@@ -342,7 +342,7 @@ fn tier3_simulation_run9c_force_torque() {
                 grav.grav_accel,
             );
 
-            let gravity_fn = |pos: DVec3| {
+            let gravity_fn = |pos: DVec3, _vel: DVec3| {
                 let r = pos.length();
                 pos * (-MU_EARTH / (r * r * r))
             };
@@ -495,7 +495,7 @@ fn tier3_simulation_run9d_force_torque_rate() {
                 grav.grav_accel,
             );
 
-            let gravity_fn = |pos: DVec3| {
+            let gravity_fn = |pos: DVec3, _vel: DVec3| {
                 let r = pos.length();
                 pos * (-MU_EARTH / (r * r * r))
             };

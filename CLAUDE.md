@@ -370,8 +370,3 @@ formula immediately.
   larger longitude tolerances (~3.3e-5 rad) than inclined orbit tests (~6.5e-8 rad).
   This is not a code bug — both JEOD and our code produce valid but numerically
   unstable values.
-- **DE421 ephemeris drift**: Our DE421 reader (Anise) and JEOD's native reader produce
-  ~10 arcsecond Sun direction offsets that grow at ~1.5e-4 rad/day. This affects solar
-  beta, SRP direction, and 3rd-body gravity accuracy. Ephemeris-driven quantities have
-  per-test literal tolerances sized to accommodate this drift for each test's specific
-  duration. See simnaut/bevy_jeod#27.

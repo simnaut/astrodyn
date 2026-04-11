@@ -37,11 +37,12 @@ use jeod_sim::{
     AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig, EulerSequence,
     ExponentialAtmosphere, GaussJacksonConfig, GaussJacksonState, GeoIndexType, GravityControl,
     GravityControls, GravityModel, GravitySource, GravitySourceEntry, IntegratorType, JeodQuat,
-    LvlhFrame, MassProperties, MetAtmosphere, OrbitalElements, PlanetShape, RotationalState,
-    SimBody, Simulation, SixDofState, TidalBody, TidalConfig, TranslationalState,
+    LvlhFrame, MassProperties, MetAtmosphere, OrbitalElements, PlanetShape, RotationModel,
+    RotationalState, SimBody, Simulation, SixDofState, TidalBody, TidalConfig, TranslationalState,
 };
 
 const MU_EARTH: f64 = 3.986_004_415e14;
+const MU_SUN: f64 = 1.327_124_40e20;
 const DT: f64 = 10.0;
 const NUM_STEPS: usize = 100;
 
@@ -232,8 +233,10 @@ fn tier3_bevy_point_mass_sixdof() {
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
         position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
         tidal_config: None,
     });
     sim.add_body(new_sim_body_sixdof(earth_idx, false));
@@ -320,8 +323,10 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
         position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
         tidal_config: None,
     });
     sim.atmosphere = Some(AtmosphereConfig {
@@ -399,8 +404,10 @@ fn tier3_bevy_gravity_torque_sixdof() {
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
         position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
         tidal_config: None,
     });
 
@@ -432,7 +439,7 @@ fn tier3_bevy_full_stack_sixdof() {
         constant_density: None,
     };
     // Single flat plate approximating a spherical absorber (100 m² facing Sun)
-    use jeod_sim::{FlatPlate, FlatPlateParams, FlatPlateThermal};
+    use jeod_sim::{FlatPlate, FlatPlateParams, FlatPlateThermal, RotationModel};
     let srp_plates = vec![(
         FlatPlate {
             area: 100.0,
@@ -530,8 +537,10 @@ fn tier3_bevy_full_stack_sixdof() {
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
         position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
         tidal_config: None,
     });
     let sun_idx = sim.add_source(GravitySourceEntry {
@@ -540,8 +549,10 @@ fn tier3_bevy_full_stack_sixdof() {
             model: GravityModel::PointMass,
         },
         position: sun_pos,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
         tidal_config: None,
     });
     sim.sun_source = Some(sun_idx);
@@ -658,8 +669,10 @@ fn tier3_bevy_sh4x4_rnp() {
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: sh_source,
         position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: Some(DMat3::IDENTITY),
         delta_c20: 0.0,
+        rotation_model: RotationModel::EarthRNP,
         tidal_config: None,
     });
 
@@ -752,7 +765,7 @@ fn tier3_bevy_external_torque_per_body() {
             &mut trans_a,
             Some(&mut rot_a),
             Some(&mass_props),
-            |pos| {
+            |pos, _vel| {
                 jeod_sim::accumulate_gravity(pos, &controls, DVec3::ZERO, |_| {
                     Some(jeod_sim::ResolvedSource {
                         source: &earth_source,
@@ -805,7 +818,7 @@ fn tier3_bevy_external_torque_per_body() {
             &mut trans_b,
             Some(&mut rot_b),
             Some(&mass_props),
-            |pos| {
+            |pos, _vel| {
                 jeod_sim::accumulate_gravity(pos, &controls, DVec3::ZERO, |_| {
                     Some(jeod_sim::ResolvedSource {
                         source: &earth_source,
@@ -846,7 +859,7 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
     println!("Scenario H: Flat-plate SRP with shadow detection");
 
     use bevy_jeod::{FlatPlateConfigC, ShadowBodyC};
-    use jeod_sim::{FlatPlate, FlatPlateParams, FlatPlateThermal};
+    use jeod_sim::{FlatPlate, FlatPlateParams, FlatPlateThermal, RotationModel};
 
     let params = FlatPlateParams {
         albedo: 0.5,
@@ -991,8 +1004,10 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
         position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
         tidal_config: None,
     });
 
@@ -1002,8 +1017,10 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
             model: GravityModel::PointMass,
         },
         position: sun_pos,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
         tidal_config: None,
     });
     sim.sun_source = Some(sun_idx);
@@ -1187,8 +1204,10 @@ fn tier3_bevy_derived_states() {
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
         position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
         tidal_config: None,
     });
     let sun_idx = sim.add_source(GravitySourceEntry {
@@ -1197,8 +1216,10 @@ fn tier3_bevy_derived_states() {
             model: GravityModel::PointMass,
         },
         position: sun_pos,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
         tidal_config: None,
     });
     sim.sun_source = Some(sun_idx);
@@ -1310,8 +1331,10 @@ fn tier3_bevy_geodetic_derived_state() {
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
         position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: Some(DMat3::IDENTITY), // triggers RNP update
         delta_c20: 0.0,
+        rotation_model: RotationModel::EarthRNP,
         tidal_config: None,
     });
 
@@ -1428,8 +1451,10 @@ fn tier3_bevy_constant_density_drag_sixdof() {
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
         position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
         tidal_config: None,
     });
     sim.atmosphere = Some(AtmosphereConfig {
@@ -1533,8 +1558,10 @@ fn tier3_bevy_met_atmosphere_drag_sixdof() {
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
         position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: Some(DMat3::IDENTITY),
         delta_c20: 0.0,
+        rotation_model: RotationModel::EarthRNP,
         tidal_config: None,
     });
     sim.atmosphere = Some(AtmosphereConfig {
@@ -1652,8 +1679,10 @@ fn tier3_bevy_eccentric_derived_states() {
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
         position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
         tidal_config: None,
     });
     let sun_idx = sim.add_source(GravitySourceEntry {
@@ -1662,8 +1691,10 @@ fn tier3_bevy_eccentric_derived_states() {
             model: GravityModel::PointMass,
         },
         position: sun_pos,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
         tidal_config: None,
     });
     sim.sun_source = Some(sun_idx);
@@ -1790,8 +1821,10 @@ fn tier3_bevy_polar_geodetic() {
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
         position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: Some(DMat3::IDENTITY),
         delta_c20: 0.0,
+        rotation_model: RotationModel::EarthRNP,
         tidal_config: None,
     });
 
@@ -1901,8 +1934,10 @@ fn tier3_bevy_equatorial_solar_beta() {
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
         position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
         tidal_config: None,
     });
     let sun_idx = sim.add_source(GravitySourceEntry {
@@ -1911,8 +1946,10 @@ fn tier3_bevy_equatorial_solar_beta() {
             model: GravityModel::PointMass,
         },
         position: sun_pos,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
         tidal_config: None,
     });
     sim.sun_source = Some(sun_idx);
@@ -2003,8 +2040,10 @@ fn run_gj_parity(label: &str, config: GaussJacksonConfig, dt: f64, n_steps: usiz
             model: GravityModel::PointMass,
         },
         position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
         tidal_config: None,
     });
 
@@ -2161,7 +2200,9 @@ fn tier3_bevy_tidal_sh4x4() {
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: sh_source,
         position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: Some(DMat3::IDENTITY),
+        rotation_model: RotationModel::EarthRNP,
         delta_c20: 0.0,
         tidal_config: Some(tidal_config),
     });
@@ -2181,4 +2222,407 @@ fn tier3_bevy_tidal_sh4x4() {
 
     assert_trans_eq("Bevy vs Sim (SH 4x4 + tides)", &bevy_state, &sim_state);
     println!("  Bevy vs Sim SH 4x4 + tides: bit-identical");
+}
+
+// ── Scenario S: Earth lighting consistency ──
+// Validates compute_earth_lighting returns physically reasonable values
+// and is deterministic (same inputs → same outputs).
+#[test]
+fn tier3_sim_earth_lighting_consistency() {
+    use jeod_sim::compute_earth_lighting;
+    println!("Scenario S: Earth lighting consistency");
+
+    let pos_veh = DVec3::new(6.778e6, 0.0, 0.0); // LEO, sunlit side
+    let pos_sun = DVec3::new(1.496e11, 0.0, 0.0);
+    let pos_moon = DVec3::new(0.0, 3.844e8, 0.0);
+
+    let state1 = compute_earth_lighting(pos_veh, pos_sun, pos_moon, 6.96e8, 6.371e6, 1.737e6);
+    let state2 = compute_earth_lighting(pos_veh, pos_sun, pos_moon, 6.96e8, 6.371e6, 1.737e6);
+
+    // Deterministic: same inputs → bit-identical outputs
+    assert_eq!(
+        state1.sun_earth.visible.to_bits(),
+        state2.sun_earth.visible.to_bits(),
+        "earth lighting should be deterministic"
+    );
+    assert_eq!(
+        state1.sun_earth.occlusion.to_bits(),
+        state2.sun_earth.occlusion.to_bits(),
+        "occlusion should be deterministic"
+    );
+
+    // Physical checks
+    assert!(state1.sun_earth.visible >= 0.0 && state1.sun_earth.visible <= 1.0);
+    assert!(state1.sun_earth.occlusion >= 0.0 && state1.sun_earth.occlusion <= 1.0);
+    assert!((state1.sun_earth.visible + state1.sun_earth.occlusion - 1.0).abs() < 1e-12);
+    assert!(state1.earth_albedo.lighting >= 0.0);
+
+    // Vehicle in sunlit side: should be fully visible
+    assert!(
+        state1.sun_earth.visible > 0.99,
+        "sunlit vehicle should have visible > 0.99, got {}",
+        state1.sun_earth.visible
+    );
+    println!("  Earth lighting: deterministic, physically consistent");
+}
+
+// ── Scenario P: Time reversal round-trip ──
+// Validates that Simulation forward+backward returns to initial state.
+// RK4 is reversible in exact arithmetic; floating-point round-trip tests
+// that no state corruption occurs (sign errors, time wrapping, etc.).
+#[test]
+fn tier3_sim_time_reversal_round_trip() {
+    println!("Scenario P: Time reversal round-trip");
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sim = Simulation::new(time, DT);
+    let earth = sim.add_source(GravitySourceEntry::new(
+        GravitySource {
+            mu: MU_EARTH,
+            model: GravityModel::PointMass,
+        },
+        DVec3::ZERO,
+        None,
+    ));
+    sim.add_body(SimBody {
+        trans: iss_trans(),
+        rot: Some(tumble_rot()),
+        mass: Some(iss_mass()),
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth, false)],
+        },
+        ..Default::default()
+    });
+    sim.validate().unwrap();
+
+    // Save initial state
+    let initial_pos = sim.body(0).trans.position;
+    let initial_vel = sim.body(0).trans.velocity;
+
+    // Forward 50 steps
+    sim.step_n(50);
+    let mid_pos = sim.body(0).trans.position;
+    assert!(
+        (mid_pos - initial_pos).length() > 1.0,
+        "should have moved after 50 steps"
+    );
+
+    // Reverse 50 steps via JEOD-style time_scale_factor = -1.0
+    sim.time.time_scale_factor = -1.0;
+    sim.step_n(50);
+    let final_pos = sim.body(0).trans.position;
+    let final_vel = sim.body(0).trans.velocity;
+
+    // RK4 is not exactly reversible due to floating-point, but error should be tiny
+    let pos_err = (final_pos - initial_pos).length();
+    let vel_err = (final_vel - initial_vel).length();
+    assert!(
+        pos_err < 1e-3,
+        "round-trip position error {pos_err} m should be < 1e-3 m"
+    );
+    assert!(
+        vel_err < 1e-6,
+        "round-trip velocity error {vel_err} m/s should be < 1e-6 m/s"
+    );
+    println!("  Time reversal round-trip: pos_err={pos_err:.2e} m, vel_err={vel_err:.2e} m/s");
+}
+
+// ── Scenario Q: Relative state computation ──
+// Validates compute_relative_state by checking that A_relative_to_B
+// is consistent with the individual body states.
+#[test]
+fn tier3_sim_relative_state_consistency() {
+    use jeod_sim::compute_relative_state;
+    println!("Scenario Q: Relative state consistency");
+
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sim = Simulation::new(time, DT);
+    let earth = sim.add_source(GravitySourceEntry::new(
+        GravitySource {
+            mu: MU_EARTH,
+            model: GravityModel::PointMass,
+        },
+        DVec3::ZERO,
+        None,
+    ));
+
+    // Body A: ISS orbit
+    sim.add_body(SimBody {
+        trans: iss_trans(),
+        rot: Some(tumble_rot()),
+        mass: Some(iss_mass()),
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth, false)],
+        },
+        ..Default::default()
+    });
+
+    // Body B: slightly offset orbit (100m ahead in velocity direction)
+    let mut trans_b = iss_trans();
+    trans_b.position += DVec3::new(100.0, 0.0, 0.0);
+    sim.add_body(SimBody {
+        trans: trans_b,
+        rot: Some(RotationalState {
+            quaternion: JeodQuat::identity(),
+            ang_vel_body: DVec3::new(0.0, 0.0, 0.001),
+        }),
+        mass: Some(iss_mass()),
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth, false)],
+        },
+        ..Default::default()
+    });
+
+    sim.validate().unwrap();
+    sim.step_n(10);
+
+    let a = sim.body(0);
+    let b = sim.body(1);
+
+    let rel = compute_relative_state(&a.trans, a.rot.as_ref(), &b.trans, b.rot.as_ref());
+
+    // Relative position should equal T_ref * (B.pos - A.pos) — in ref body frame
+    let t_ref = a
+        .rot
+        .as_ref()
+        .unwrap()
+        .quaternion
+        .left_quat_to_transformation();
+    let rel_pos_inertial = b.trans.position - a.trans.position;
+    let expected_pos = t_ref * rel_pos_inertial;
+    let pos_err = (rel.position - expected_pos).length();
+    assert!(
+        pos_err < 1e-10,
+        "relative position error {pos_err:.4e} m exceeds 1e-10"
+    );
+
+    // Relative velocity includes Coriolis: T * Δv - ω × pos
+    let rel_vel_inertial = b.trans.velocity - a.trans.velocity;
+    let omega_ref = a.rot.as_ref().unwrap().ang_vel_body;
+    let expected_vel = t_ref * rel_vel_inertial - omega_ref.cross(expected_pos);
+    let vel_err = (rel.velocity - expected_vel).length();
+    assert!(
+        vel_err < 1e-10,
+        "relative velocity error {vel_err:.4e} m/s exceeds 1e-10"
+    );
+    println!("  Relative state: matches body-frame computation within {pos_err:.2e} m, {vel_err:.2e} m/s");
+}
+
+// ── Scenario R: LVLH-relative state ──
+// Validates compute_lvlh_relative_state is consistent with manual
+// LVLH frame rotation of the inertial relative state.
+#[test]
+fn tier3_sim_lvlh_relative_consistency() {
+    use jeod_sim::{compute_body_lvlh_frame, compute_lvlh_relative_state};
+    println!("Scenario R: LVLH-relative state consistency");
+
+    let ref_pos = iss_trans().position;
+    let ref_vel = iss_trans().velocity;
+    let subj_pos = ref_pos + DVec3::new(100.0, 50.0, -30.0);
+    let subj_vel = ref_vel + DVec3::new(0.01, -0.02, 0.005);
+
+    let lvlh_rel = compute_lvlh_relative_state(ref_pos, ref_vel, subj_pos, subj_vel);
+
+    // Manual computation: get LVLH frame, rotate relative state + Coriolis
+    let lvlh = compute_body_lvlh_frame(ref_pos, ref_vel);
+    let rel_pos_inertial = subj_pos - ref_pos;
+    let rel_vel_inertial = subj_vel - ref_vel;
+    let expected_pos = lvlh.t_parent_this * rel_pos_inertial;
+    let expected_vel =
+        lvlh.t_parent_this * rel_vel_inertial - lvlh.ang_vel_this.cross(expected_pos);
+
+    assert_eq!(
+        lvlh_rel.position.x.to_bits(),
+        expected_pos.x.to_bits(),
+        "LVLH pos x"
+    );
+    assert_eq!(
+        lvlh_rel.position.y.to_bits(),
+        expected_pos.y.to_bits(),
+        "LVLH pos y"
+    );
+    assert_eq!(
+        lvlh_rel.position.z.to_bits(),
+        expected_pos.z.to_bits(),
+        "LVLH pos z"
+    );
+    assert_eq!(
+        lvlh_rel.velocity.x.to_bits(),
+        expected_vel.x.to_bits(),
+        "LVLH vel x"
+    );
+    assert_eq!(
+        lvlh_rel.velocity.y.to_bits(),
+        expected_vel.y.to_bits(),
+        "LVLH vel y"
+    );
+    assert_eq!(
+        lvlh_rel.velocity.z.to_bits(),
+        expected_vel.z.to_bits(),
+        "LVLH vel z"
+    );
+    println!("  LVLH-relative: bit-identical with manual LVLH rotation + Coriolis");
+}
+
+// ── Scenario T: Mars IAU rotation dispatch ──
+// Validates that per-source rotation dispatch works for Mars by confirming
+// that a MarsIAU source produces a non-identity rotation after stepping.
+#[test]
+fn tier3_sim_mars_rotation_dispatch() {
+    println!("Scenario T: Mars IAU rotation dispatch");
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sim = Simulation::new(time, DT);
+
+    let mars_mu = 4.282_837_452_7e13;
+    let mars = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: mars_mu,
+            model: GravityModel::PointMass,
+        },
+        position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
+        t_inertial_pfix: Some(DMat3::IDENTITY),
+        rotation_model: RotationModel::MarsIAU,
+        delta_c20: 0.0,
+        tidal_config: None,
+    });
+
+    sim.add_body(SimBody {
+        trans: TranslationalState {
+            position: DVec3::new(3.5e6, 0.0, 0.0), // Low Mars orbit
+            velocity: DVec3::new(0.0, 3.5e3, 0.0),
+        },
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(mars, false)],
+        },
+        ..Default::default()
+    });
+
+    sim.validate().unwrap();
+    sim.step_n(10);
+
+    // After stepping, Mars rotation should have been updated from identity
+    let rot = sim.sources[mars].t_inertial_pfix.unwrap();
+    assert!(
+        rot != DMat3::IDENTITY,
+        "Mars rotation should differ from identity after 10 steps"
+    );
+
+    // Should be a valid rotation matrix
+    let det = rot.determinant();
+    assert!(
+        (det - 1.0).abs() < 1e-10,
+        "Mars rotation determinant should be 1, got {det}"
+    );
+
+    println!("  Mars rotation dispatch: non-identity, det={det:.15}");
+}
+
+// ── Scenario U: Multi-source rotation (Earth + Mars) ──
+// Validates that two sources with different rotation models are dispatched
+// correctly in the same simulation.
+#[test]
+fn tier3_sim_multi_source_rotation() {
+    println!("Scenario U: Multi-source rotation dispatch");
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sim = Simulation::new(time, DT);
+
+    // Earth with EarthRNP
+    let earth = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: MU_EARTH,
+            model: GravityModel::PointMass,
+        },
+        position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
+        t_inertial_pfix: Some(DMat3::IDENTITY),
+        rotation_model: RotationModel::EarthRNP,
+        delta_c20: 0.0,
+        tidal_config: None,
+    });
+
+    // Mars with MarsIAU (at some offset)
+    let mars = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: 4.282_837_452_7e13,
+            model: GravityModel::PointMass,
+        },
+        position: DVec3::new(2.28e11, 0.0, 0.0),
+        velocity: DVec3::ZERO,
+        t_inertial_pfix: Some(DMat3::IDENTITY),
+        rotation_model: RotationModel::MarsIAU,
+        delta_c20: 0.0,
+        tidal_config: None,
+    });
+
+    sim.add_body(SimBody {
+        trans: iss_trans(),
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth, false)],
+        },
+        ..Default::default()
+    });
+
+    sim.validate().unwrap();
+    sim.step_n(10);
+
+    let earth_rot = sim.sources[earth].t_inertial_pfix.unwrap();
+    let mars_rot = sim.sources[mars].t_inertial_pfix.unwrap();
+
+    // Both should be non-identity
+    assert!(earth_rot != DMat3::IDENTITY, "Earth rotation updated");
+    assert!(mars_rot != DMat3::IDENTITY, "Mars rotation updated");
+
+    // They should differ (different planets, different rotation models)
+    assert!(
+        earth_rot != mars_rot,
+        "Earth and Mars rotations should differ"
+    );
+
+    println!("  Multi-source rotation: Earth and Mars independently dispatched");
+}
+
+// ── Scenario V: Relativistic gravity correction ──
+// Validates compute_relativistic_correction by checking that the correction
+// is non-zero and physically reasonable for Mercury near the Sun.
+#[test]
+fn tier3_sim_relativistic_gravity_consistency() {
+    use jeod_sim::relativistic::compute_relativistic_correction;
+    println!("Scenario V: Relativistic gravity correction");
+
+    // Mercury at perihelion
+    let sun_pos = DVec3::ZERO;
+    let sun_vel = DVec3::ZERO;
+    let mercury_pos = DVec3::new(4.6e10, 0.0, 0.0);
+    let mercury_vel = DVec3::new(0.0, 5.898e4, 0.0);
+
+    let correction =
+        compute_relativistic_correction(MU_SUN, sun_pos, mercury_pos, mercury_vel, sun_vel, &[]);
+
+    // Should be non-zero
+    assert!(correction.length() > 0.0, "correction should be non-zero");
+
+    // Newtonian acceleration ≈ μ/r²
+    let newtonian = MU_SUN / (4.6e10 * 4.6e10);
+    let ratio = correction.length() / newtonian;
+
+    // GR correction is ~v²/c² ≈ (6e4)²/(3e8)² ≈ 4e-8 of Newtonian
+    assert!(
+        ratio > 1e-9 && ratio < 1e-5,
+        "correction/newtonian ratio {ratio:.2e} should be ~1e-7 to 1e-8"
+    );
+
+    // Deterministic
+    let correction2 =
+        compute_relativistic_correction(MU_SUN, sun_pos, mercury_pos, mercury_vel, sun_vel, &[]);
+    assert_eq!(
+        correction.x.to_bits(),
+        correction2.x.to_bits(),
+        "relativistic correction should be deterministic"
+    );
+
+    println!(
+        "  Relativistic correction: {:.4e} m/s² ({:.2e} of Newtonian)",
+        correction.length(),
+        ratio
+    );
 }

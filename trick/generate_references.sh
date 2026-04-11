@@ -936,6 +936,577 @@ run_gj_group &
 PID_INTEG_GJ=$!
 
 # ════════════════════════════════════════════════════════════════════
+# Phase 6 additions: comprehensive JEOD parity validation
+# ════════════════════════════════════════════════════════════════════
+
+# ── Snippet: SIM_orb_elem (different object name from SIM_OrbElem) ──
+# SIM_orb_elem is a static verification sim — runs for 1 second, computes
+# orbital elements from input position/velocity. Object: orb_elem_test.
+ORBELEM_VERIF_SNIPPET='
+dr = trick.sim_services.DRAscii("orbelem_ASCII")
+dr.set_cycle(1)
+dr.freq = trick.sim_services.DR_Always
+for v in [
+    "orb_elem_test.orb_elem.semi_major_axis",
+    "orb_elem_test.orb_elem.semiparam",
+    "orb_elem_test.orb_elem.e_mag",
+    "orb_elem_test.orb_elem.inclination",
+    "orb_elem_test.orb_elem.arg_periapsis",
+    "orb_elem_test.orb_elem.long_asc_node",
+    "orb_elem_test.orb_elem.r_mag",
+    "orb_elem_test.orb_elem.vel_mag",
+    "orb_elem_test.orb_elem.true_anom",
+    "orb_elem_test.orb_elem.mean_anom",
+    "orb_elem_test.orb_elem.mean_motion",
+    "orb_elem_test.orb_elem.orbital_anom",
+    "orb_elem_test.orb_elem.orb_energy",
+    "orb_elem_test.orb_elem.orb_ang_momentum",
+    "orb_elem_test.orb_elem_ver.position[0]",
+    "orb_elem_test.orb_elem_ver.position[1]",
+    "orb_elem_test.orb_elem_ver.position[2]",
+    "orb_elem_test.orb_elem_ver.velocity[0]",
+    "orb_elem_test.orb_elem_ver.velocity[1]",
+    "orb_elem_test.orb_elem_ver.velocity[2]",
+]:
+    dr.add_variable(v)
+trick.add_data_record_group(dr)
+'
+
+# Group 18: SIM_orb_elem (7 representative orbit families)
+run_orbelem_verif_group() {
+    local sim_dir="models/utils/orbital_elements/verif/SIM_orb_elem"
+    local -a RUNS=(
+        "SET_test/RUN_T01_OE_VER:orbelem_verif_t01:orbelem_verif_t01_orbelem.csv"
+        "SET_test/RUN_T10_OE_VER:orbelem_verif_t10:orbelem_verif_t10_orbelem.csv"
+        "SET_test/RUN_T20_OE_VER:orbelem_verif_t20:orbelem_verif_t20_orbelem.csv"
+        "SET_test/RUN_T30_OE_VER:orbelem_verif_t30:orbelem_verif_t30_orbelem.csv"
+        "SET_test/RUN_T40_OE_VER:orbelem_verif_t40:orbelem_verif_t40_orbelem.csv"
+        "SET_test/RUN_T50_OE_VER:orbelem_verif_t50:orbelem_verif_t50_orbelem.csv"
+        "SET_test/RUN_T55_OE_VER:orbelem_verif_t55:orbelem_verif_t55_orbelem.csv"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_orb_elem verif group (all outputs exist) ==="
+        return 0
+    fi
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$ORBELEM_VERIF_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+run_orbelem_verif_group &
+PID_ORBELEM_VERIF=$!
+
+# ── Snippet: SIM_Planetary (orbital elements + position/velocity) ──
+PLANETARY_SNIPPET='
+dr = trick.sim_services.DRAscii("planetary_ASCII")
+dr.set_cycle(12)
+dr.freq = trick.sim_services.DR_Always
+for v in [
+    "veh.orb_elem.elements.semi_major_axis",
+    "veh.orb_elem.elements.semiparam",
+    "veh.orb_elem.elements.e_mag",
+    "veh.orb_elem.elements.inclination",
+    "veh.orb_elem.elements.arg_periapsis",
+    "veh.orb_elem.elements.long_asc_node",
+    "veh.orb_elem.elements.true_anom",
+    "veh.orb_elem.elements.mean_anom",
+    "veh.dyn_body.composite_body.state.trans.position[0]",
+    "veh.dyn_body.composite_body.state.trans.position[1]",
+    "veh.dyn_body.composite_body.state.trans.position[2]",
+    "veh.dyn_body.composite_body.state.trans.velocity[0]",
+    "veh.dyn_body.composite_body.state.trans.velocity[1]",
+    "veh.dyn_body.composite_body.state.trans.velocity[2]",
+]:
+    dr.add_variable(v)
+trick.add_data_record_group(dr)
+'
+
+# Group 19: SIM_Planetary (5 orbit regimes)
+run_planetary_group() {
+    local sim_dir="models/dynamics/derived_state/verif/SIM_Planetary"
+    local -a RUNS=(
+        "SET_test/RUN_LEO_inc:planetary_leo_inc:planetary_leo_inc_planetary.csv"
+        "SET_test/RUN_LEO_polar:planetary_leo_polar:planetary_leo_polar_planetary.csv"
+        "SET_test/RUN_LEO_ecc:planetary_leo_ecc:planetary_leo_ecc_planetary.csv"
+        "SET_test/RUN_LEO_equ:planetary_leo_equ:planetary_leo_equ_planetary.csv"
+        "SET_test/RUN_GEO:planetary_geo:planetary_geo_planetary.csv"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_Planetary group (all outputs exist) ==="
+        return 0
+    fi
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$PLANETARY_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+run_planetary_group &
+PID_PLANETARY=$!
+
+# ── Snippet: SIM_MET (atmosphere density/temperature at altitude) ──
+MET_VERIF_SNIPPET='
+dr = trick.sim_services.DRAscii("met_ASCII")
+dr.set_cycle(1)
+dr.freq = trick.sim_services.DR_Always
+for v in [
+    "vehicle.atmos_state.density",
+    "vehicle.atmos_state.temperature",
+    "vehicle.pos.ellip_coords.altitude",
+    "vehicle.pos.ellip_coords.latitude",
+    "vehicle.pos.ellip_coords.longitude",
+]:
+    dr.add_variable(v)
+trick.add_data_record_group(dr)
+'
+
+# Group 20: SIM_MET (3 atmosphere validation runs)
+run_met_verif_group() {
+    local sim_dir="models/environment/atmosphere/MET/verif/SIM_MET"
+    local -a RUNS=(
+        "SET_test/RUN_T01_MET_VER:met_t01:met_t01_met.csv"
+        "SET_test/RUN_T02_MET_VER:met_t02:met_t02_met.csv"
+        "SET_test/RUN_T03_GRAM_MET:met_t03_gram:met_t03_gram_met.csv"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_MET verif group (all outputs exist) ==="
+        return 0
+    fi
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$MET_VERIF_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+run_met_verif_group &
+PID_MET_VERIF=$!
+
+# ── Snippet: SIM_5_all_inclusive (all time scales) ──
+TIMESCALE_SNIPPET='
+dr = trick.sim_services.DRAscii("timescale_ASCII")
+dr.set_cycle(60)
+dr.freq = trick.sim_services.DR_Always
+for v in [
+    "jeod_time.tai.trunc_julian_time",
+    "jeod_time.tai.seconds",
+    "jeod_time.utc.trunc_julian_time",
+    "jeod_time.ut1.trunc_julian_time",
+    "jeod_time.tt.trunc_julian_time",
+    "jeod_time.tdb.trunc_julian_time",
+    "jeod_time.gmst.seconds",
+    "jeod_time.gps.trunc_julian_time",
+]:
+    dr.add_variable(v)
+trick.add_data_record_group(dr)
+'
+
+# Group 21: SIM_5_all_inclusive (2 time scale runs)
+run_timescale_group() {
+    local sim_dir="models/environment/time/verif/SIM_5_all_inclusive"
+    local -a RUNS=(
+        "SET_test/RUN_UTC_initialized:timescale_utc:timescale_utc_timescale.csv"
+        "SET_test/RUN_UTC_initialized_tdb:timescale_tdb:timescale_tdb_timescale.csv"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_5_all_inclusive group (all outputs exist) ==="
+        return 0
+    fi
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$TIMESCALE_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+run_timescale_group &
+PID_TIMESCALE=$!
+
+# ── Snippet: SIM_7_time_reversal (state + time for reversal tests) ──
+# Reuses the dyncomp state snippet since the sim has the same DynBody structure.
+TIME_REVERSAL_SNIPPET='
+dr = trick.sim_services.DRAscii("reversal_ASCII")
+dr.set_cycle(60)
+dr.freq = trick.sim_services.DR_Always
+for v in [
+    "sv_dyn.body.composite_body.state.trans.position[0]",
+    "sv_dyn.body.composite_body.state.trans.velocity[0]",
+    "sv_dyn.body.composite_body.state.trans.position[1]",
+    "sv_dyn.body.composite_body.state.trans.velocity[1]",
+    "sv_dyn.body.composite_body.state.trans.position[2]",
+    "sv_dyn.body.composite_body.state.trans.velocity[2]",
+    "jeod_time.tai.seconds",
+    "jeod_time.tai.trunc_julian_time",
+]:
+    dr.add_variable(v)
+trick.add_data_record_group(dr)
+'
+
+# Group 22: SIM_7_time_reversal (3 key reversal runs)
+run_time_reversal_group() {
+    local sim_dir="models/environment/time/verif/SIM_7_time_reversal"
+    local -a RUNS=(
+        "SET_test/RUN_1:reversal_run1:reversal_run1_reversal.csv"
+        "SET_test/RUN_3A:reversal_run3a:reversal_run3a_reversal.csv"
+        "SET_test/RUN_8B:reversal_run8b:reversal_run8b_reversal.csv"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_7_time_reversal group (all outputs exist) ==="
+        return 0
+    fi
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$TIME_REVERSAL_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+run_time_reversal_group &
+PID_TIME_REVERSAL=$!
+
+# ── Snippet: SIM_Relative (relative state between two vehicles) ──
+# Override frame names to use composite_body (matches our logged states) instead
+# of the default RefPoint frames configured in input_common.py.
+RELATIVE_SNIPPET='
+rel_state.vehA_wrt_vehB_in_B.subject_frame_name = "vehicleA.composite_body"
+rel_state.vehA_wrt_vehB_in_B.target_frame_name  = "vehicleB.composite_body"
+
+dr = trick.sim_services.DRAscii("relative_ASCII")
+dr.set_cycle(1)
+dr.freq = trick.sim_services.DR_Always
+for prefix in ["vehA", "vehB"]:
+    for i in range(3):
+        dr.add_variable(f"{prefix}.dyn_body.composite_body.state.trans.position[{i}]")
+        dr.add_variable(f"{prefix}.dyn_body.composite_body.state.trans.velocity[{i}]")
+    for i in range(4):
+        dr.add_variable(f"{prefix}.dyn_body.composite_body.state.rot.Q_parent_this.scalar")
+        dr.add_variable(f"{prefix}.dyn_body.composite_body.state.rot.Q_parent_this.vector[0]")
+        dr.add_variable(f"{prefix}.dyn_body.composite_body.state.rot.Q_parent_this.vector[1]")
+        dr.add_variable(f"{prefix}.dyn_body.composite_body.state.rot.Q_parent_this.vector[2]")
+    for i in range(3):
+        dr.add_variable(f"{prefix}.dyn_body.composite_body.state.rot.ang_vel_this[{i}]")
+for v in [
+    "rel_state.vehA_wrt_vehB_in_B.rel_state.trans.position[0]",
+    "rel_state.vehA_wrt_vehB_in_B.rel_state.trans.position[1]",
+    "rel_state.vehA_wrt_vehB_in_B.rel_state.trans.position[2]",
+    "rel_state.vehA_wrt_vehB_in_B.rel_state.trans.velocity[0]",
+    "rel_state.vehA_wrt_vehB_in_B.rel_state.trans.velocity[1]",
+    "rel_state.vehA_wrt_vehB_in_B.rel_state.trans.velocity[2]",
+]:
+    dr.add_variable(v)
+trick.add_data_record_group(dr)
+'
+
+# Group 23: SIM_Relative (7 rotation+translation combinations)
+run_relative_group() {
+    local sim_dir="models/dynamics/derived_state/verif/SIM_Relative"
+    local -a RUNS=(
+        "SET_test/RUN_AB_rot_AB_trans:relative_ab_rot_ab_trans:relative_ab_rot_ab_trans_relative.csv"
+        "SET_test/RUN_AB_rot_no_trans:relative_ab_rot_no_trans:relative_ab_rot_no_trans_relative.csv"
+        "SET_test/RUN_A_rot_no_trans:relative_a_rot_no_trans:relative_a_rot_no_trans_relative.csv"
+        "SET_test/RUN_B_rot_no_trans:relative_b_rot_no_trans:relative_b_rot_no_trans_relative.csv"
+        "SET_test/RUN_no_rot_AB_trans:relative_no_rot_ab_trans:relative_no_rot_ab_trans_relative.csv"
+        "SET_test/RUN_no_rot_A_trans:relative_no_rot_a_trans:relative_no_rot_a_trans_relative.csv"
+        "SET_test/RUN_no_rot_B_trans:relative_no_rot_b_trans:relative_no_rot_b_trans_relative.csv"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_Relative group (all outputs exist) ==="
+        return 0
+    fi
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$RELATIVE_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+run_relative_group &
+PID_RELATIVE=$!
+
+# ── Snippet: SIM_LvlhRelative (LVLH-relative state) ──
+LVLH_RELATIVE_SNIPPET='
+dr = trick.sim_services.DRAscii("lvlhrel_ASCII")
+dr.set_cycle(1)
+dr.freq = trick.sim_services.DR_Always
+for prefix in ["vehA", "vehB"]:
+    for i in range(3):
+        dr.add_variable(f"{prefix}.dyn_body.composite_body.state.trans.position[{i}]")
+        dr.add_variable(f"{prefix}.dyn_body.composite_body.state.trans.velocity[{i}]")
+for v in [
+    "rel_state.vehB_in_vehA_rectilvlh.rel_state.trans.position[0]",
+    "rel_state.vehB_in_vehA_rectilvlh.rel_state.trans.position[1]",
+    "rel_state.vehB_in_vehA_rectilvlh.rel_state.trans.position[2]",
+    "rel_state.vehB_in_vehA_rectilvlh.rel_state.trans.velocity[0]",
+    "rel_state.vehB_in_vehA_rectilvlh.rel_state.trans.velocity[1]",
+    "rel_state.vehB_in_vehA_rectilvlh.rel_state.trans.velocity[2]",
+]:
+    dr.add_variable(v)
+trick.add_data_record_group(dr)
+'
+
+# Group 24: SIM_LvlhRelative (2 LVLH proximity runs)
+run_lvlh_relative_group() {
+    local sim_dir="models/dynamics/derived_state/verif/SIM_LvlhRelative"
+    local -a RUNS=(
+        "SET_test/RUN_test0:lvlhrel_test0:lvlhrel_test0_lvlhrel.csv"
+        "SET_test/RUN_test1:lvlhrel_test1:lvlhrel_test1_lvlhrel.csv"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_LvlhRelative group (all outputs exist) ==="
+        return 0
+    fi
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$LVLH_RELATIVE_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+run_lvlh_relative_group &
+PID_LVLH_RELATIVE=$!
+
+# ── Snippet: SIM_LIGHT_CIR (earth lighting circle intersection) ──
+LIGHTING_SNIPPET='
+dr = trick.sim_services.DRAscii("lighting_ASCII")
+dr.set_cycle(1)
+dr.freq = trick.sim_services.DR_Always
+for v in [
+    "light.r_bottom",
+    "light.r_top",
+    "light.d_centers",
+    "light.area",
+    "light.lighting.sun_earth.obs_angle",
+    "light.lighting.sun_earth.phase",
+    "light.lighting.sun_earth.occlusion",
+    "light.lighting.sun_earth.visible",
+    "light.lighting.sun_earth.lighting",
+    "light.lighting.moon_earth.obs_angle",
+    "light.lighting.moon_earth.occlusion",
+    "light.lighting.moon_earth.visible",
+    "light.lighting.moon_earth.lighting",
+    "light.lighting.earth_albedo.lighting",
+]:
+    dr.add_variable(v)
+trick.add_data_record_group(dr)
+'
+
+# Group 25: SIM_LIGHT_CIR (10 lighting geometry scenarios)
+run_lighting_group() {
+    local sim_dir="models/environment/earth_lighting/verif/SIM_LIGHT_CIR"
+    local -a RUNS=(
+        "SET_test/RUN_T01_LIGHT_VER:lighting_t01:lighting_t01_lighting.csv"
+        "SET_test/RUN_T02_LIGHT_VER:lighting_t02:lighting_t02_lighting.csv"
+        "SET_test/RUN_T03_LIGHT_VER:lighting_t03:lighting_t03_lighting.csv"
+        "SET_test/RUN_T04_LIGHT_VER:lighting_t04:lighting_t04_lighting.csv"
+        "SET_test/RUN_T05_LIGHT_VER:lighting_t05:lighting_t05_lighting.csv"
+        "SET_test/RUN_T06_LIGHT_VER:lighting_t06:lighting_t06_lighting.csv"
+        "SET_test/RUN_T07_LIGHT_VER:lighting_t07:lighting_t07_lighting.csv"
+        "SET_test/RUN_T08_LIGHT_VER:lighting_t08:lighting_t08_lighting.csv"
+        "SET_test/RUN_T09_LIGHT_VER:lighting_t09:lighting_t09_lighting.csv"
+        "SET_test/RUN_T10_LIGHT_VER:lighting_t10:lighting_t10_lighting.csv"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_LIGHT_CIR group (all outputs exist) ==="
+        return 0
+    fi
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$LIGHTING_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+run_lighting_group &
+PID_LIGHTING=$!
+
+# ── Snippet: SIM_Earth_Moon (vehicle state in Moon-centered orbit) ──
+EARTH_MOON_SNIPPET='
+# Override common_input.py stop time (3600s) to 7 days for full validation
+trick.sim_services.exec_set_terminate_time(604800)
+dr = trick.sim_services.DRAscii("earth_moon_ASCII")
+dr.set_cycle(60)
+dr.freq = trick.sim_services.DR_Always
+for i in range(3):
+    dr.add_variable(f"vehicle.dyn_body.composite_body.state.trans.position[{i}]")
+    dr.add_variable(f"vehicle.dyn_body.composite_body.state.trans.velocity[{i}]")
+trick.add_data_record_group(dr)
+'
+
+# Group 26: SIM_Earth_Moon (Clementine lunar orbit)
+run_earth_moon_group() {
+    local sim_dir="verif/Integrated_Validation/SIM_Earth_Moon"
+    local -a RUNS=(
+        "SET_test/RUN_clem:earth_moon_clem:earth_moon_clem_earth_moon.csv"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_Earth_Moon group (all outputs exist) ==="
+        return 0
+    fi
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$EARTH_MOON_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+run_earth_moon_group &
+PID_EARTH_MOON=$!
+
+# ── Snippet: SIM_Mars (Dawn spacecraft at Mars) ──
+MARS_SNIPPET='
+dr = trick.sim_services.DRAscii("mars_ASCII")
+dr.set_cycle(60)
+dr.freq = trick.sim_services.DR_Always
+for i in range(3):
+    dr.add_variable(f"dawn.dyn_body.composite_body.state.trans.position[{i}]")
+    dr.add_variable(f"dawn.dyn_body.composite_body.state.trans.velocity[{i}]")
+trick.add_data_record_group(dr)
+'
+
+# Group 27: SIM_Mars (Dawn orbit)
+run_mars_group() {
+    local sim_dir="verif/Integrated_Validation/SIM_Mars"
+    local -a RUNS=(
+        "SET_test/RUN_dawn:mars_dawn:mars_dawn_mars.csv"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_Mars group (all outputs exist) ==="
+        return 0
+    fi
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$MARS_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+run_mars_group &
+PID_MARS=$!
+
+# ── Snippet: SIM_mercury (Mercury propagation) ──
+MERCURY_SNIPPET='
+dr = trick.sim_services.DRAscii("mercury_ASCII")
+dr.set_cycle(3600)
+dr.freq = trick.sim_services.DR_Always
+for i in range(3):
+    dr.add_variable(f"mercury.prop_planet.body.composite_body.state.trans.position[{i}]")
+    dr.add_variable(f"mercury.prop_planet.body.composite_body.state.trans.velocity[{i}]")
+trick.add_data_record_group(dr)
+'
+
+# Group 28: SIM_mercury (Newtonian + relativistic)
+run_mercury_group() {
+    local sim_dir="models/environment/gravity/verif/SIM_mercury"
+    local -a RUNS=(
+        "SET_test/RUN_newtonian:mercury_newtonian:mercury_newtonian_mercury.csv"
+        "SET_test/RUN_relativistic_sun:mercury_relativistic:mercury_relativistic_mercury.csv"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_mercury group (all outputs exist) ==="
+        return 0
+    fi
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$MERCURY_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+run_mercury_group &
+PID_MERCURY=$!
+
+# ════════════════════════════════════════════════════════════════════
 # WAIT FOR ALL GROUPS
 # ════════════════════════════════════════════════════════════════════
 echo "=== Waiting for all sim groups to complete ==="
@@ -960,6 +1531,18 @@ wait $PID_SRP_1ST_ORDER || { echo "WARN: SIM_3_ORBIT_1st_ORDER failed"; FAIL=1; 
 # Phase 5e-5f additions
 wait $PID_TIDE          || { echo "WARN: SIM_tide_verif group had failures"; FAIL=1; }
 wait $PID_INTEG_GJ      || { echo "WARN: SIM_GJ_test failed"; FAIL=1; }
+# Phase 6 additions
+wait $PID_ORBELEM_VERIF  || { echo "WARN: SIM_orb_elem verif group had failures"; FAIL=1; }
+wait $PID_PLANETARY      || { echo "WARN: SIM_Planetary group had failures"; FAIL=1; }
+wait $PID_MET_VERIF      || { echo "WARN: SIM_MET verif group had failures"; FAIL=1; }
+wait $PID_TIMESCALE      || { echo "WARN: SIM_5_all_inclusive group had failures"; FAIL=1; }
+wait $PID_TIME_REVERSAL  || { echo "WARN: SIM_7_time_reversal group had failures"; FAIL=1; }
+wait $PID_RELATIVE       || { echo "WARN: SIM_Relative group had failures"; FAIL=1; }
+wait $PID_LVLH_RELATIVE  || { echo "WARN: SIM_LvlhRelative group had failures"; FAIL=1; }
+wait $PID_LIGHTING       || { echo "WARN: SIM_LIGHT_CIR group had failures"; FAIL=1; }
+wait $PID_EARTH_MOON     || { echo "WARN: SIM_Earth_Moon group had failures"; FAIL=1; }
+wait $PID_MARS           || { echo "WARN: SIM_Mars group had failures"; FAIL=1; }
+wait $PID_MERCURY        || { echo "WARN: SIM_mercury group had failures"; FAIL=1; }
 
 echo ""
 echo "=== Reference data generation complete ==="

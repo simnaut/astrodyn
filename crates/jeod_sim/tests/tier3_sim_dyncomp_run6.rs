@@ -7,7 +7,8 @@ use glam::{DMat3, DVec3};
 use jeod_sim::{
     met_atmosphere, AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig, GravityControl,
     GravityControls, GravityModel, GravitySource, GravitySourceEntry, JeodQuat, MassProperties,
-    MetAtmosphere, RotationalState, SimBody, Simulation, SimulationTime, TranslationalState,
+    MetAtmosphere, RotationModel, RotationalState, SimBody, Simulation, SimulationTime,
+    TranslationalState,
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
@@ -70,8 +71,10 @@ fn tier3_simulation_run6b_drag() {
             model: GravityModel::PointMass,
         },
         position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: Some(DMat3::IDENTITY), // triggers ephemeris update each step
         delta_c20: 0.0,
+        rotation_model: RotationModel::EarthRNP,
         tidal_config: None,
     });
 
@@ -231,8 +234,10 @@ fn tier3_simulation_run6a_const_density_drag() {
             model: GravityModel::PointMass,
         },
         position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: Some(DMat3::IDENTITY),
         delta_c20: 0.0,
+        rotation_model: RotationModel::EarthRNP,
         tidal_config: None,
     });
 

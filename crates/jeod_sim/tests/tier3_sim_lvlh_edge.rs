@@ -11,8 +11,8 @@ use sim_test_helpers::*;
 
 use glam::DVec3;
 use jeod_sim::{
-    GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry, SimBody,
-    Simulation, SimulationTime, TranslationalState,
+    GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry,
+    RotationModel, SimBody, Simulation, SimulationTime, TranslationalState,
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
@@ -46,8 +46,10 @@ fn run_lvlh_test(
             model: GravityModel::PointMass,
         },
         position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
         tidal_config: None,
     });
 

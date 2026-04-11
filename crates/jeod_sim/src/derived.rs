@@ -4,10 +4,39 @@
 //! Each function is pure (no side effects) and takes explicit parameters so that
 //! any ECS adapter can call it from a system function.
 
-use glam::{DMat3, DVec3};
+use glam::{DMat3, DQuat, DVec3};
 
 use crate::{EulerSequence, GeodeticState, LvlhFrame, OrbitalElements, RotationalState};
 use jeod_math::OrbitalError;
+
+/// Relative state between two bodies.
+///
+/// Position/velocity are of `subject` relative to `reference`, expressed in
+/// the reference body frame (matching JEOD convention `S_{ref:subj}`). When
+/// the reference has no rotational state, they remain in the inertial frame.
+/// The quaternion is the relative attitude (reference-to-subject), and angular
+/// velocity is of `subject` relative to `reference`, expressed in the subject
+/// body frame.
+#[derive(Debug, Clone)]
+pub struct RelativeState {
+    /// Position of subject relative to reference (reference body frame, m).
+    pub position: DVec3,
+    /// Velocity of subject relative to reference (reference body frame, m/s).
+    pub velocity: DVec3,
+    /// Relative quaternion: reference body frame → subject body frame.
+    pub quaternion: DQuat,
+    /// Angular velocity of subject relative to reference (subject body frame, rad/s).
+    pub ang_vel: DVec3,
+}
+
+/// Relative state expressed in the LVLH frame of the reference vehicle.
+#[derive(Debug, Clone)]
+pub struct LvlhRelativeState {
+    /// Position of subject relative to reference (LVLH frame, m).
+    pub position: DVec3,
+    /// Velocity of subject relative to reference (LVLH frame, m/s).
+    pub velocity: DVec3,
+}
 
 /// Compute orbital elements from translational state.
 ///
@@ -78,6 +107,95 @@ pub fn compute_body_solar_beta(position: DVec3, velocity: DVec3, sun_position: D
 
     let sun_dir = rel_sun.normalize();
     jeod_math::solar_beta_angle(h, sun_dir)
+}
+
+/// Compute the relative state between two bodies.
+///
+/// Returns the state of `subject` relative to `reference`, with
+/// position/velocity expressed in the reference body frame (matching JEOD's
+/// `compute_relative_state` convention). When the reference has no rotational
+/// state, position/velocity remain in the inertial frame.
+///
+/// Derived from JEOD `decr_left` (ref_frame_state.cc):
+///   x_{ref:subj} = T_ref * (x_subj - x_ref)
+///   v_{ref:subj} = T_ref * (v_subj - v_ref) - ω_ref × x_{ref:subj}
+///   w_{ref:subj} = ω_subj - T_{ref→subj} * ω_ref
+pub fn compute_relative_state(
+    ref_trans: &crate::TranslationalState,
+    ref_rot: Option<&RotationalState>,
+    subj_trans: &crate::TranslationalState,
+    subj_rot: Option<&RotationalState>,
+) -> RelativeState {
+    let rel_pos_inertial = subj_trans.position - ref_trans.position;
+    let rel_vel_inertial = subj_trans.velocity - ref_trans.velocity;
+
+    // Rotate into reference body frame if rotational state available.
+    // T_ref transforms from inertial (parent) to reference body frame.
+    let (position, velocity, t_ref_opt) = if let Some(r_ref) = ref_rot {
+        let t_ref = r_ref.quaternion.left_quat_to_transformation();
+        let pos = t_ref * rel_pos_inertial;
+        // Coriolis correction: v_{ref:subj} = T * Δv - ω_ref × pos
+        let vel = t_ref * rel_vel_inertial - r_ref.ang_vel_body.cross(pos);
+        (pos, vel, Some(t_ref))
+    } else {
+        (rel_pos_inertial, rel_vel_inertial, None)
+    };
+
+    // Relative attitude and angular velocity
+    let (quaternion, ang_vel) = match (ref_rot, subj_rot) {
+        (Some(r_ref), Some(r_subj)) => {
+            let q_ref = r_ref.quaternion.to_glam();
+            let q_subj = r_subj.quaternion.to_glam();
+            let q_rel = q_subj * q_ref.conjugate();
+
+            // ω_rel in subject body frame:
+            //   ω_{ref:subj} = ω_subj - T_{ref→subj} * ω_ref
+            let t_subj = r_subj.quaternion.left_quat_to_transformation();
+            let t_ref = t_ref_opt.unwrap_or_else(|| r_ref.quaternion.left_quat_to_transformation());
+            let t_ref_to_subj = t_subj * t_ref.transpose();
+            let rel_ang_vel = r_subj.ang_vel_body - t_ref_to_subj * r_ref.ang_vel_body;
+
+            (q_rel, rel_ang_vel)
+        }
+        _ => (DQuat::IDENTITY, DVec3::ZERO),
+    };
+
+    RelativeState {
+        position,
+        velocity,
+        quaternion,
+        ang_vel,
+    }
+}
+
+/// Compute relative state expressed in the LVLH frame of the reference vehicle.
+///
+/// Takes the inertial relative position/velocity and rotates them into the
+/// LVLH frame of the reference vehicle. Velocity includes the Coriolis
+/// correction for the rotating LVLH frame (ω_LVLH × pos_LVLH), matching
+/// JEOD's `compute_relative_state` through the frame tree.
+pub fn compute_lvlh_relative_state(
+    ref_pos: DVec3,
+    ref_vel: DVec3,
+    subj_pos: DVec3,
+    subj_vel: DVec3,
+) -> LvlhRelativeState {
+    let lvlh = compute_body_lvlh_frame(ref_pos, ref_vel);
+
+    // Relative state in inertial frame
+    let rel_pos_inertial = subj_pos - ref_pos;
+    let rel_vel_inertial = subj_vel - ref_vel;
+
+    // Rotate into LVLH frame using the T_parent_this matrix
+    // T_parent_this transforms from parent (inertial) to this (LVLH)
+    let pos_lvlh = lvlh.t_parent_this * rel_pos_inertial;
+    // Coriolis correction: v_LVLH = T * Δv - ω_LVLH × pos_LVLH
+    let vel_lvlh = lvlh.t_parent_this * rel_vel_inertial - lvlh.ang_vel_this.cross(pos_lvlh);
+
+    LvlhRelativeState {
+        position: pos_lvlh,
+        velocity: vel_lvlh,
+    }
 }
 
 #[cfg(test)]

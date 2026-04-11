@@ -9,7 +9,7 @@ use glam::{DMat3, DVec3};
 use jeod_sim::{
     Ephemeris, EphemerisBody, FlatPlate, FlatPlateParams, FlatPlateState, FlatPlateThermal,
     GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry,
-    MassProperties, SimBody, Simulation, SimulationTime, TranslationalState,
+    MassProperties, RotationModel, SimBody, Simulation, SimulationTime, TranslationalState,
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::Path;
@@ -183,8 +183,10 @@ fn tier3_simulation_srp_flat_plate() {
             model: GravityModel::PointMass,
         },
         position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
         tidal_config: None,
     });
 
@@ -200,8 +202,10 @@ fn tier3_simulation_srp_flat_plate() {
             model: GravityModel::PointMass,
         },
         position: initial_sun,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
         tidal_config: None,
     });
     sim.sun_source = Some(sun);

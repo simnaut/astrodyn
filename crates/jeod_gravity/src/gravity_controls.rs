@@ -36,6 +36,10 @@ pub struct GravityControl<SourceId = String> {
     /// progeny of the integration frame. Here it is set explicitly per control.
     // JEOD_INV: GV.14 — third-body vs direct gravity classification (set explicitly; JEOD derives from frame tree ancestry)
     pub differential: bool,
+    /// If true, apply post-Newtonian relativistic correction for this source.
+    /// Requires source velocity in `GravitySourceEntry`. Only significant for
+    /// Mercury-like orbits near massive bodies.
+    pub relativistic: bool,
 }
 
 impl<SourceId> GravityControl<SourceId> {
@@ -51,6 +55,7 @@ impl<SourceId> GravityControl<SourceId> {
             gradient_degree: 0,
             gradient_order: 0,
             differential: false,
+            relativistic: false,
         }
     }
 
@@ -71,6 +76,7 @@ impl<SourceId> GravityControl<SourceId> {
             gradient_degree: 0,
             gradient_order: 0,
             differential: false,
+            relativistic: false,
         }
     }
 
@@ -90,6 +96,7 @@ impl<SourceId> GravityControl<SourceId> {
             gradient_degree: 0,
             gradient_order: 0,
             differential: true,
+            relativistic: false,
         }
     }
 

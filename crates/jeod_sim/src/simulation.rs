@@ -12,6 +12,29 @@ use crate::{
     TranslationalState,
 };
 
+/// Rotation model for a gravity source's planet-fixed frame.
+///
+/// Determines how `t_inertial_pfix` is updated each step. Each planet has its
+/// own rotation model; point-mass sources use `None`.
+#[derive(Debug, Clone, Default)]
+pub enum RotationModel {
+    /// No rotation — point-mass source or body without a planet-fixed frame.
+    #[default]
+    None,
+    /// Earth rotation via IAU 2000A precession-nutation + GAST + optional polar
+    /// motion. Uses the simulation's `gmst_seconds`, `tt_tjt`, and `polar_motion`.
+    EarthRNP,
+    /// Mars rotation via IAU pole orientation + spin + nutation Fourier series.
+    /// Uses the simulation's TT seconds since J2000 (matching JEOD's RNPMars).
+    MarsIAU,
+    /// Moon rotation via IAU 2009 pole + prime meridian model.
+    /// Uses the simulation's TDB seconds.
+    MoonIAU,
+    /// Moon rotation from DE421 BPC libration data (high-fidelity).
+    /// Requires the simulation's `ephemeris` field to be set with BPC loaded.
+    MoonDE421,
+}
+
 /// Entry in the gravity source table.
 ///
 /// Gravity sources are referenced by index (`usize`) from body gravity controls.
@@ -20,9 +43,15 @@ pub struct GravitySourceEntry {
     pub source: GravitySource,
     /// Position in the inertial frame (m). For Earth-centered sims, Earth is at origin.
     pub position: DVec3,
-    /// Inertial-to-planet-fixed rotation matrix. If `Some`, the ephemeris stage
-    /// updates it each step. If `None`, no rotation is applied (point-mass only).
+    /// Velocity in the inertial frame (m/s). Required for relativistic corrections.
+    /// Zero for stationary sources (e.g., central body at origin).
+    pub velocity: DVec3,
+    /// Inertial-to-planet-fixed rotation matrix. Updated each step when
+    /// `rotation_model` is not `None`. If `None`, no rotation is applied
+    /// (point-mass only).
     pub t_inertial_pfix: Option<DMat3>,
+    /// Rotation model for updating `t_inertial_pfix` each step.
+    pub rotation_model: RotationModel,
     /// Tidal ΔC20 to add to the base C20 coefficient before spherical harmonics
     /// evaluation. Updated each step by the environment stage if tidal effects
     /// are configured. Zero when no tides.
@@ -33,11 +62,16 @@ pub struct GravitySourceEntry {
 
 impl GravitySourceEntry {
     /// Create a new gravity source entry without tidal effects.
+    ///
+    /// `rotation_model` defaults to `None`. Set it explicitly after construction
+    /// (or use struct literal syntax) to enable per-step rotation updates.
     pub fn new(source: GravitySource, position: DVec3, t_inertial_pfix: Option<DMat3>) -> Self {
         Self {
             source,
             position,
+            velocity: DVec3::ZERO,
             t_inertial_pfix,
+            rotation_model: RotationModel::None,
             delta_c20: 0.0,
             tidal_config: None,
         }
@@ -69,8 +103,11 @@ pub struct SimBody {
     pub drag: Option<DragConfig>,
     /// Flat-plate SRP configuration with thermal state. `None` disables SRP.
     pub flat_plate_state: Option<crate::FlatPlateState>,
+    /// Cannonball SRP: `(cx_area_m2, albedo, diffuse)`. Uses JEOD's
+    /// `RadiationDefaultSurface` formula. Mutually exclusive with flat-plate.
+    pub cannonball_srp: Option<(f64, f64, f64)>,
     /// Shadow-casting body: `(source_index, body_radius_m)`.
-    /// Used by flat-plate SRP for eclipse computation.
+    /// Used by SRP (flat-plate or cannonball) for eclipse computation.
     pub shadow_body: Option<(usize, f64)>,
     /// Structural-to-body rotation matrix. `DMat3::IDENTITY` when structure = body.
     pub t_struct_body: DMat3,
@@ -138,6 +175,7 @@ impl Default for SimBody {
             gravity_controls: GravityControls::default(),
             drag: None,
             flat_plate_state: None,
+            cannonball_srp: None,
             shadow_body: None,
             t_struct_body: DMat3::IDENTITY,
             compute_gravity_torque: false,
@@ -202,6 +240,13 @@ pub struct Simulation {
     pub polar_motion: Option<(f64, f64)>,
     /// Integration timestep (seconds).
     pub dt: f64,
+    /// Optional ephemeris for per-step source position updates.
+    /// When set, sources with `ephemeris_body` configured will have their
+    /// position (and velocity) updated from DE421 each step.
+    pub ephemeris: Option<crate::Ephemeris>,
+    /// Per-source ephemeris body mapping. Index matches `sources` vector.
+    /// `None` means the source position is static (not updated from ephemeris).
+    pub source_ephem_bodies: Vec<Option<(crate::EphemerisBody, crate::EphemerisBody)>>,
 }
 
 impl Simulation {
@@ -216,6 +261,8 @@ impl Simulation {
             sun_source: None,
             polar_motion: None,
             dt,
+            ephemeris: None,
+            source_ephem_bodies: Vec::new(),
         }
     }
 
@@ -223,7 +270,26 @@ impl Simulation {
     pub fn add_source(&mut self, entry: GravitySourceEntry) -> usize {
         let idx = self.sources.len();
         self.sources.push(entry);
+        self.source_ephem_bodies.push(None);
         idx
+    }
+
+    /// Configure ephemeris-based position updates for a source.
+    /// Each step, the source's position and velocity will be updated from DE4xx.
+    /// `target` is the body this source represents (e.g., `EphemerisBody::Sun`).
+    /// `observer` is the integration frame center (e.g., `EphemerisBody::Earth`).
+    pub fn set_source_ephemeris(
+        &mut self,
+        source_idx: usize,
+        target: crate::EphemerisBody,
+        observer: crate::EphemerisBody,
+    ) {
+        assert!(
+            source_idx < self.source_ephem_bodies.len(),
+            "set_source_ephemeris: source_idx {source_idx} out of bounds (len = {})",
+            self.source_ephem_bodies.len()
+        );
+        self.source_ephem_bodies[source_idx] = Some((target, observer));
     }
 
     /// Add a dynamic body. Returns its index.
@@ -431,23 +497,81 @@ impl Simulation {
 
         // ── 2. Ephemeris update — planet-fixed rotations ──
         // JEOD_INV: DM.13 — ephemeris updated before gravity
-        // NOTE: Currently applies the same Earth RNP rotation to ALL rotating
-        // sources. Multi-planet sims (Moon, Mars) would need per-source rotation
-        // parameters. This is a Phase 5 limitation.
-        let rotation = crate::compute_t_parent_this_from_tjt_with_polar(
-            self.time.gmst_seconds,
-            self.time.tt_tjt(),
-            self.polar_motion,
-        );
+        // Per-source rotation dispatch: each source has its own rotation model.
+        // Lazy-compute Earth RNP only if needed (most common case).
+        let mut earth_rotation: Option<DMat3> = Option::None;
         for source in &mut self.sources {
-            if source.t_inertial_pfix.is_some() {
-                source.t_inertial_pfix = Some(rotation);
+            match source.rotation_model {
+                RotationModel::None => {}
+                RotationModel::EarthRNP => {
+                    let rotation = *earth_rotation.get_or_insert_with(|| {
+                        crate::compute_t_parent_this_from_tjt_with_polar(
+                            self.time.gmst_seconds,
+                            self.time.tt_tjt(),
+                            self.polar_motion,
+                        )
+                    });
+                    source.t_inertial_pfix = Some(rotation);
+                }
+                RotationModel::MarsIAU => {
+                    // JEOD's RNPMars receives TT seconds since J2000 (time_tt.seconds).
+                    // Compute absolute TT seconds since J2000 from TT TJT:
+                    //   tt_seconds = (tt_tjt - J2000_TT_TJT) * 86400
+                    // J2000 TT TJT = 11544.5 (2000-01-01 12:00:00 TT)
+                    let tt_s_since_j2000 = (self.time.tt_tjt() - 11544.5) * 86400.0;
+                    let rotation =
+                        jeod_frames::rotation_mars::compute_mars_rotation(tt_s_since_j2000);
+                    source.t_inertial_pfix = Some(rotation);
+                }
+                RotationModel::MoonIAU => {
+                    let tdb_jd = self.time.tdb_julian_date();
+                    let tdb_s_since_j2000 = (tdb_jd - 2_451_545.0) * 86400.0;
+                    let rotation =
+                        jeod_frames::rotation_moon::compute_moon_rotation(tdb_s_since_j2000);
+                    source.t_inertial_pfix = Some(rotation);
+                }
+                RotationModel::MoonDE421 => {
+                    let eph = self.ephemeris.as_ref().expect(
+                        "MoonDE421 rotation requires ephemeris with BPC. \
+                         Set sim.ephemeris = Some(eph) after calling eph.load_bpc().",
+                    );
+                    let tdb_jd = self.time.tdb_julian_date();
+                    let rotation = eph
+                        .get_body_rotation(crate::EphemerisBody::Moon, tdb_jd)
+                        .expect("Moon DE421 BPC rotation query failed");
+                    source.t_inertial_pfix = Some(rotation);
+                }
             }
             // Compute tidal ΔC20 if configured; otherwise clear any stale value.
+            // Uses whatever rotation is current (Earth RNP for Earth sources).
             if let Some(ref config) = source.tidal_config {
+                let rotation = source.t_inertial_pfix.expect(
+                    "tidal_config requires t_inertial_pfix (planet-fixed rotation). \
+                     Set a rotation_model or provide an initial t_inertial_pfix.",
+                );
                 source.delta_c20 = jeod_gravity::tides::compute_delta_c20(config, &rotation);
             } else {
                 source.delta_c20 = 0.0;
+            }
+        }
+
+        // ── 2b. Ephemeris update — source positions from DE4xx ──
+        // Update source positions from ephemeris each step (for 3rd-body accuracy).
+        if let Some(ref eph) = self.ephemeris {
+            let tdb_jd = self.time.tdb_julian_date();
+            for (i, source) in self.sources.iter_mut().enumerate() {
+                if let Some(Some((target, observer))) = self.source_ephem_bodies.get(i) {
+                    let (pos, vel) =
+                        eph.get_state(*target, *observer, tdb_jd)
+                            .unwrap_or_else(|e| {
+                                panic!(
+                                    "Ephemeris lookup failed for source {i} \
+                                 ({target:?} wrt {observer:?}) at TDB JD {tdb_jd}: {e}"
+                                )
+                            });
+                    source.position = pos;
+                    source.velocity = vel;
+                }
             }
         }
 
@@ -476,6 +600,44 @@ impl Simulation {
                     })
                 },
             );
+        }
+
+        // ── 4b. Relativistic corrections ──
+        // After Newtonian gravity, apply post-Newtonian PPN correction for
+        // any source with `relativistic: true`. Folkner eq 27 (β=γ=1).
+        for body in &mut self.bodies {
+            for ctrl in &body.gravity_controls.controls {
+                if !ctrl.relativistic {
+                    continue;
+                }
+                if let Some(src) = sources.get(ctrl.source_name) {
+                    // Build "other sources" list for potential computation
+                    let other: Vec<jeod_gravity::relativistic::RelativisticSource> = body
+                        .gravity_controls
+                        .controls
+                        .iter()
+                        .filter(|c| c.source_name != ctrl.source_name)
+                        .filter_map(|c| {
+                            sources.get(c.source_name).map(|s| {
+                                jeod_gravity::relativistic::RelativisticSource {
+                                    mu: s.source.mu,
+                                    position: s.position,
+                                }
+                            })
+                        })
+                        .collect();
+
+                    let correction = jeod_gravity::relativistic::compute_relativistic_correction(
+                        src.source.mu,
+                        src.position,
+                        body.trans.position,
+                        body.trans.velocity,
+                        src.velocity,
+                        &other,
+                    );
+                    body.gravity_accel.grav_accel += correction;
+                }
+            }
         }
 
         // ── 5. Environment — atmosphere ──
@@ -575,6 +737,36 @@ impl Simulation {
 
                         fps.integrate_temperatures(&srp_result.temp_dots, dt);
                     }
+                } else if let Some((cx_area, albedo, diffuse)) = body.cannonball_srp {
+                    // Cannonball SRP: JEOD RadiationDefaultSurface formula.
+                    // Force = (flux/c) * cx_area * [1 + albedo*diffuse*(4/9)] * flux_hat
+                    let sun_to_vehicle = body.trans.position - sun_position;
+                    let distance = sun_to_vehicle.length();
+                    if distance >= 1.0 {
+                        let flux_hat = sun_to_vehicle / distance;
+                        let flux_mag = crate::solar_flux_at_distance(distance);
+
+                        let illum_factor = body
+                            .shadow_body
+                            .map(|(idx, radius)| {
+                                crate::compute_shadow_fraction(
+                                    body.trans.position,
+                                    sun_position,
+                                    sources[idx].position,
+                                    radius,
+                                    crate::SOLAR_RADIUS,
+                                )
+                            })
+                            .unwrap_or(1.0);
+
+                        let coeff = 1.0 + albedo * diffuse * (4.0 / 9.0);
+                        let force_mag =
+                            cx_area * flux_mag / crate::SPEED_OF_LIGHT * coeff * illum_factor;
+                        body.radiation_force = Some(RadiationForce {
+                            force: flux_hat * force_mag,
+                            torque: DVec3::ZERO,
+                        });
+                    }
                 }
             }
 
@@ -607,19 +799,47 @@ impl Simulation {
         }
 
         // ── 8. Integration ──
-        // Gravity is recomputed at each RK4 intermediate state for 4th-order
-        // accuracy, matching JEOD's DynamicsIntegrationGroup where the
-        // derivative function calls gravity at every stage.
+        // Gravity (including relativistic corrections) is recomputed at each
+        // RK4 intermediate state for 4th-order accuracy, matching JEOD's
+        // DynamicsIntegrationGroup where the derivative function calls gravity
+        // at every stage with the current intermediate position and velocity.
         let sources = &self.sources;
         for body in &mut self.bodies {
             let controls = &body.gravity_controls;
+
+            // Precompute relativistic "other source" lists outside the closure
+            // to avoid heap allocation at every RK4 stage. Source positions are
+            // constant within a single step.
+            let rel_data: Vec<_> = controls
+                .controls
+                .iter()
+                .filter(|c| c.relativistic)
+                .filter_map(|ctrl| {
+                    let src = sources.get(ctrl.source_name)?;
+                    let other: Vec<_> = controls
+                        .controls
+                        .iter()
+                        .filter(|c| c.source_name != ctrl.source_name)
+                        .filter_map(|c| {
+                            sources.get(c.source_name).map(|s| {
+                                jeod_gravity::relativistic::RelativisticSource {
+                                    mu: s.source.mu,
+                                    position: s.position,
+                                }
+                            })
+                        })
+                        .collect();
+                    Some((src.source.mu, src.position, src.velocity, other))
+                })
+                .collect();
+
             integrate_body(
                 &body.config,
                 &mut body.trans,
                 body.rot.as_mut(),
                 body.mass.as_ref(),
-                |pos| {
-                    accumulate_gravity(pos, controls, DVec3::ZERO, |source_id| {
+                |pos, vel| {
+                    let mut accel = accumulate_gravity(pos, controls, DVec3::ZERO, |source_id| {
                         sources.get(source_id).map(|s| crate::ResolvedSource {
                             source: &s.source,
                             rotation: s.t_inertial_pfix.as_ref(),
@@ -628,7 +848,13 @@ impl Simulation {
                             has_delta_coeffs: s.tidal_config.is_some(),
                         })
                     })
-                    .grav_accel
+                    .grav_accel;
+                    for &(mu, src_pos, src_vel, ref other) in &rel_data {
+                        accel += jeod_gravity::relativistic::compute_relativistic_correction(
+                            mu, src_pos, pos, vel, src_vel, other,
+                        );
+                    }
+                    accel
                 },
                 body.total_force.force,
                 body.total_force.torque,
@@ -757,6 +983,22 @@ impl Simulation {
     /// Number of bodies in the simulation.
     pub fn num_bodies(&self) -> usize {
         self.bodies.len()
+    }
+
+    /// Set the integration timestep (must be positive).
+    ///
+    /// For JEOD-style time reversal, use `sim.time.time_scale_factor = -1.0`
+    /// instead of negative dt. This keeps `simtime` monotonically increasing
+    /// while reversing dynamic time (TAI, TDB, etc.) and integration direction.
+    ///
+    /// # Panics
+    /// Panics if `dt` is not finite or not positive.
+    pub fn set_dt(&mut self, dt: f64) {
+        assert!(
+            dt.is_finite() && dt > 0.0,
+            "dt must be finite and > 0, got {dt}"
+        );
+        self.dt = dt;
     }
 
     /// Current simulation elapsed time in seconds.

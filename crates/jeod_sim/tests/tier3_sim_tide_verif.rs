@@ -16,8 +16,8 @@ use glam::{DMat3, DVec3};
 use jeod_gravity::tides::{TidalBody, TidalConfig, EARTH_K2};
 use jeod_sim::{
     DynamicsConfig, Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel,
-    GravitySource, GravitySourceEntry, JeodQuat, MassProperties, RotationalState, SimBody,
-    Simulation, SimulationTime, TranslationalState,
+    GravitySource, GravitySourceEntry, JeodQuat, MassProperties, RotationModel, RotationalState,
+    SimBody, Simulation, SimulationTime, TranslationalState,
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::Path;
@@ -120,7 +120,9 @@ fn tier3_simulation_tide_run01() {
             model: GravityModel::SphericalHarmonics(Box::new(sh_data)),
         },
         position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: Some(DMat3::IDENTITY),
+        rotation_model: RotationModel::EarthRNP,
         delta_c20: 0.0,
         tidal_config: Some(tidal_config),
     });
@@ -132,8 +134,10 @@ fn tier3_simulation_tide_run01() {
             model: GravityModel::PointMass,
         },
         position: initial_sun,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
         tidal_config: None,
     });
 
@@ -144,8 +148,10 @@ fn tier3_simulation_tide_run01() {
             model: GravityModel::PointMass,
         },
         position: initial_moon,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
         delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
         tidal_config: None,
     });
 

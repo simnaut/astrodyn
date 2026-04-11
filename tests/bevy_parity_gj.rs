@@ -144,7 +144,9 @@ fn run_gj_parity(
             model: GravityModel::PointMass,
         },
         position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
         t_inertial_pfix: None,
+        rotation_model: jeod_sim::RotationModel::None,
         delta_c20: 0.0,
         tidal_config: None,
     });

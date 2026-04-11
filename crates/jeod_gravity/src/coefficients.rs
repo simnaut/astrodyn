@@ -297,20 +297,38 @@ fn extract_assign_usize(line: &str, key: &str) -> Option<usize> {
 }
 
 fn extract_assign_f64(line: &str, key: &str) -> Option<f64> {
-    // Match: ->key = value; with possible scientific notation
+    // Match: ->key = value; with possible scientific notation or multiplication.
+    // Handles: `->mu = 398600.44150E+09;`
+    //          `->mu = 1000000000 * (4902.801076);`
     let pattern = format!("->{} = ", key);
     if let Some(idx) = line.find(&pattern) {
         let rest = &line[idx + pattern.len()..];
-        let val_str: String = rest
-            .chars()
-            .take_while(|c| {
-                *c == '-' || *c == '+' || *c == '.' || *c == 'E' || *c == 'e' || c.is_ascii_digit()
-            })
-            .collect();
-        val_str.parse().ok()
+        // Extract up to semicolon, then evaluate
+        let expr: String = rest.chars().take_while(|c| *c != ';').collect();
+        eval_simple_expr(&expr)
     } else {
         None
     }
+}
+
+/// Evaluate a simple numeric expression: a single f64, or `a * (b)` multiplication.
+fn eval_simple_expr(expr: &str) -> Option<f64> {
+    let expr = expr.trim();
+    // Try direct parse first
+    if let Ok(val) = expr.parse::<f64>() {
+        return Some(val);
+    }
+    // Try multiplication: "A * (B)" or "A * B"
+    if let Some(star_idx) = expr.find('*') {
+        let lhs = expr[..star_idx].trim();
+        let rhs = expr[star_idx + 1..]
+            .trim()
+            .trim_matches(|c| c == '(' || c == ')');
+        if let (Ok(a), Ok(b)) = (lhs.parse::<f64>(), rhs.trim().parse::<f64>()) {
+            return Some(a * b);
+        }
+    }
+    None
 }
 
 fn extract_coeff(line: &str, name: &str) -> Option<(usize, usize, f64)> {

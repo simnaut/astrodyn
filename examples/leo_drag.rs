@@ -67,9 +67,11 @@ fn main() {
             model: GravityModel::PointMass,
         },
         position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
         // Set to Some so Simulation updates this with GMST each step.
         t_inertial_pfix: Some(DMat3::IDENTITY),
         delta_c20: 0.0,
+        rotation_model: jeod_sim::RotationModel::default(),
         tidal_config: None,
     });
     sim.atmosphere = Some(AtmosphereConfig {

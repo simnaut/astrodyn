@@ -47,7 +47,8 @@ pub mod validation;
 pub use atmosphere::{evaluate_atmosphere, AtmosphereConfig, AtmosphereModel};
 pub use derived::{
     compute_body_euler_angles, compute_body_geodetic, compute_body_lvlh_frame,
-    compute_body_solar_beta, compute_orbital_elements,
+    compute_body_solar_beta, compute_lvlh_relative_state, compute_orbital_elements,
+    compute_relative_state, LvlhRelativeState, RelativeState,
 };
 pub use forces::collect_and_resolve_forces;
 pub use gravity::{accumulate_gravity, ResolvedSource};
@@ -55,7 +56,7 @@ pub use integration::integrate_body;
 pub use interactions::{compute_drag, compute_gravity_torque, FlatPlateState};
 pub use jeod_dynamics::{GaussJacksonConfig, GaussJacksonState, IntegratorResult, IntegratorType};
 pub use pipeline::{PipelineStage, PIPELINE_ORDER};
-pub use simulation::{GravitySourceEntry, SimBody, Simulation};
+pub use simulation::{GravitySourceEntry, RotationModel, SimBody, Simulation};
 pub use validation::{validate_body, ValidationError};
 
 // ── Re-exports from jeod_* crates ──
@@ -80,9 +81,10 @@ pub use jeod_atmosphere::AtmosphereState;
 
 // jeod_interactions: config, result types, and computation functions
 pub use jeod_interactions::{
-    compute_flat_plate_srp_thermal, compute_shadow_fraction, solar_flux_at_distance,
-    AerodynamicForce, DragConfig, FlatPlate, FlatPlateParams, FlatPlateSrpResult, FlatPlateThermal,
-    RadiationForce, SOLAR_RADIUS,
+    compute_earth_lighting, compute_flat_plate_srp_thermal, compute_shadow_fraction,
+    solar_flux_at_distance, AerodynamicForce, DragConfig, EarthLightingState, FlatPlate,
+    FlatPlateParams, FlatPlateSrpResult, FlatPlateThermal, LightingBody, LightingParams,
+    RadiationForce, SOLAR_RADIUS, SPEED_OF_LIGHT,
 };
 
 // jeod_frames: reference frame state
@@ -95,12 +97,14 @@ pub use jeod_time::{leap_second::default_leap_second_table, SimulationTime};
 pub use jeod_frames::rotation_j2000::{
     compute_t_parent_this_from_tjt, compute_t_parent_this_from_tjt_with_polar, polar_motion_matrix,
 };
+pub use jeod_frames::rotation_mars;
 
 // jeod_ephemeris: ephemeris data
 pub use jeod_ephemeris::{Ephemeris, EphemerisBody};
 
 // jeod_gravity: coefficient loading (for test/data infrastructure)
 pub use jeod_gravity::coefficients;
+pub use jeod_gravity::relativistic;
 
 // jeod_planet: planet shape
 pub use jeod_planet::PlanetShape;
