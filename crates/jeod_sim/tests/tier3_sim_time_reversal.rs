@@ -111,7 +111,6 @@ fn tier3_sim_time_reversal_run1() {
             translational_dynamics: true,
             rotational_dynamics: true,
             three_dof: false,
-            ..Default::default()
         },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
