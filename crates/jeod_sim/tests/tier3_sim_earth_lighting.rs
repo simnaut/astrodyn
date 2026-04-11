@@ -2,24 +2,23 @@
 //!
 //! Validates `circle_intersect()` against JEOD SIM_LIGHT_CIR reference data.
 //! Each CSV has parametric geometry inputs and JEOD's computed outputs.
-//! The `area` field in JEOD has scheduling lag (computed from previous step's
-//! inputs), so we compare the lighting fraction outputs instead.
+//!
+//! JEOD's logged `area` field is always 0 in these CSVs due to Trick scheduling
+//! lag (area is computed from the previous step's inputs). We validate our
+//! `circle_intersect` with geometric bounds: area must be non-negative, at most
+//! the smaller circle's area, and consistent with the overlap/containment
+//! geometry.
 
 mod sim_test_helpers;
 use sim_test_helpers::*;
 
 use jeod_interactions::earth_lighting::circle_intersect;
 
-#[allow(dead_code)]
 struct LightingRecord {
     time: f64,
     r_bottom: f64,
     r_top: f64,
     d_centers: f64,
-    jeod_area: f64,
-    sun_earth_visible: f64,
-    sun_earth_occlusion: f64,
-    sun_earth_lighting: f64,
 }
 
 fn load_lighting_csv(path: &std::path::Path) -> Vec<LightingRecord> {
@@ -45,10 +44,6 @@ fn load_lighting_csv(path: &std::path::Path) -> Vec<LightingRecord> {
             r_bottom: p(1),
             r_top: p(2),
             d_centers: p(3),
-            jeod_area: p(4),
-            sun_earth_visible: p(8),
-            sun_earth_occlusion: p(7),
-            sun_earth_lighting: p(9),
         });
     }
     records
@@ -59,42 +54,48 @@ fn run_lighting_scenario(label: &str, csv_name: &str) {
     let records = load_lighting_csv(&csv_path);
     assert!(!records.is_empty(), "{label}: no reference data");
 
-    // Use the last record (t=max, after parametric inputs take effect)
-    let rec = records.last().unwrap();
+    let pi = std::f64::consts::PI;
+    for (i, rec) in records.iter().enumerate() {
+        if rec.r_bottom <= 0.0 || rec.r_top <= 0.0 {
+            continue;
+        }
 
-    // Test circle_intersect with the parametric inputs
-    if rec.r_bottom > 0.0 && rec.r_top > 0.0 {
-        let (_intersects, our_area) = circle_intersect(rec.r_bottom, rec.r_top, rec.d_centers);
+        let (intersects, area) = circle_intersect(rec.r_bottom, rec.r_top, rec.d_centers);
+        let min_r = rec.r_bottom.min(rec.r_top);
+        let max_circle = pi * min_r * min_r;
 
-        // The area should be physically reasonable (non-negative, bounded)
         assert!(
-            our_area >= 0.0,
-            "{label}: area should be non-negative, got {our_area}"
+            area >= 0.0,
+            "{label}[{i}] t={}: area must be non-negative, got {area}",
+            rec.time
+        );
+        assert!(
+            area <= max_circle + 1e-12,
+            "{label}[{i}] t={}: area {area} exceeds smaller circle area {max_circle}",
+            rec.time
         );
 
-        // If JEOD area is nonzero, compare. If zero, it may be a scheduling lag.
-        if rec.jeod_area > 0.0 {
-            let err = (our_area - rec.jeod_area).abs();
+        // Separated circles: no intersection
+        if rec.d_centers >= rec.r_bottom + rec.r_top {
             assert!(
-                err < 1e-10,
-                "{label}: area error {err:.4e} (ours={our_area:.10e}, JEOD={:.10e})",
-                rec.jeod_area
+                !intersects,
+                "{label}[{i}]: separated circles should not intersect"
+            );
+            assert!(
+                area.abs() < 1e-15,
+                "{label}[{i}]: separated circles area should be 0"
+            );
+        }
+        // One circle contains the other
+        if rec.d_centers + min_r <= rec.r_bottom.max(rec.r_top) + 1e-12 {
+            assert!(
+                (area - max_circle).abs() < 1e-10,
+                "{label}[{i}] t={}: contained circle area should be {max_circle}, got {area}",
+                rec.time
             );
         }
     }
-
-    println!(
-        "  {label}: r_bot={:.2}, r_top={:.2}, d={:.2}, our_area={:.6}, jeod_area={:.6}",
-        rec.r_bottom,
-        rec.r_top,
-        rec.d_centers,
-        if rec.r_bottom > 0.0 {
-            circle_intersect(rec.r_bottom, rec.r_top, rec.d_centers).1
-        } else {
-            0.0
-        },
-        rec.jeod_area
-    );
+    println!("  {label}: validated {} records", records.len());
 }
 
 #[test]

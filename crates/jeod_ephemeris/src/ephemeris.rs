@@ -152,7 +152,7 @@ fn body_to_naif(body: EphemerisBody) -> i32 {
         EphemerisBody::Venus => VENUS,
         EphemerisBody::EarthMoonBarycenter => EARTH_MOON_BARYCENTER,
         EphemerisBody::Earth => EARTH,
-        EphemerisBody::Mars => MARS_BARYCENTER,
+        EphemerisBody::Mars => 499, // Mars body (not barycenter) — orientation frame IAU_MARS is body-fixed
         EphemerisBody::Jupiter => JUPITER_BARYCENTER,
         EphemerisBody::Saturn => SATURN_BARYCENTER,
         EphemerisBody::Uranus => URANUS_BARYCENTER,

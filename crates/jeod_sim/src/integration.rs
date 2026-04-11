@@ -20,7 +20,7 @@ use jeod_dynamics::{
 /// - `trans`: translational state (mutated in place)
 /// - `rot`: optional rotational state (mutated in place if 6-DOF)
 /// - `mass`: mass properties (required for non-zero forces and 6-DOF)
-/// - `gravity_fn`: computes gravitational acceleration from position (called per integrator stage)
+/// - `gravity_fn`: computes gravitational acceleration from (position, velocity) per integrator stage
 /// - `non_grav_force`: total non-gravity force in inertial frame (constant over step)
 /// - `torque`: total torque in body frame (constant over step)
 /// - `dt`: timestep in seconds
@@ -39,7 +39,7 @@ pub fn integrate_body(
     trans: &mut TranslationalState,
     rot: Option<&mut RotationalState>,
     mass: Option<&MassProperties>,
-    gravity_fn: impl Fn(DVec3) -> DVec3,
+    gravity_fn: impl Fn(DVec3, DVec3) -> DVec3,
     non_grav_force: DVec3,
     torque: DVec3,
     dt: f64,
@@ -79,7 +79,8 @@ pub fn integrate_body(
             // Gravity recomputed at each integrator intermediate state for
             // multi-stage accuracy. Non-gravity acceleration held constant
             // (negligible change over one step).
-            let accel = |s: &SixDofState| gravity_fn(s.trans.position) + non_grav_accel;
+            let accel =
+                |s: &SixDofState| gravity_fn(s.trans.position, s.trans.velocity) + non_grav_accel;
             let torque_fn = |_s: &SixDofState| constant_torque;
             let new_state = match integrator {
                 IntegratorType::Rk4 => {
@@ -108,7 +109,7 @@ pub fn integrate_body(
     }
 
     // 3-DOF path: translational only
-    let accel = |s: &TranslationalState| gravity_fn(s.position) + non_grav_accel;
+    let accel = |s: &TranslationalState| gravity_fn(s.position, s.velocity) + non_grav_accel;
     match integrator {
         IntegratorType::Rk4 => {
             *trans = jeod_dynamics::rk4_translational_step(trans, accel, dt);
@@ -142,7 +143,7 @@ pub fn integrate_body(
             };
             let mut completed = false;
             for _ in 0..max_stages {
-                let acc = gravity_fn(trans.position) + non_grav_accel;
+                let acc = gravity_fn(trans.position, trans.velocity) + non_grav_accel;
                 let result = gj.integrate(dt, acc, trans);
                 if result.time_scale > 0.0 {
                     if !result.passed {

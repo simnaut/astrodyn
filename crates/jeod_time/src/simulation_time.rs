@@ -39,8 +39,8 @@ pub struct SimulationTime {
     /// GMST in accumulated sidereal seconds since J2000.
     /// Matches JEOD's `TimeGMST::seconds`.
     pub gmst_seconds: f64,
-    /// GPS seconds elapsed since simulation start. GPS = TAI − 19s (constant
-    /// offset, by definition since GPS epoch 1980-01-06).
+    /// GPS seconds: TAI seconds minus 19 s (constant offset per the GPS epoch
+    /// 1980-01-06 definition). Starts at −19 when `tai_seconds` is 0.
     pub gps_seconds: f64,
     /// Elapsed simulation time (same as tai_seconds for forward sim).
     pub simtime: f64,

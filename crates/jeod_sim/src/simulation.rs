@@ -279,9 +279,12 @@ impl Simulation {
         target: crate::EphemerisBody,
         observer: crate::EphemerisBody,
     ) {
-        if source_idx < self.source_ephem_bodies.len() {
-            self.source_ephem_bodies[source_idx] = Some((target, observer));
-        }
+        assert!(
+            source_idx < self.source_ephem_bodies.len(),
+            "set_source_ephemeris: source_idx {source_idx} out of bounds (len = {})",
+            self.source_ephem_bodies.len()
+        );
+        self.source_ephem_bodies[source_idx] = Some((target, observer));
     }
 
     /// Add a dynamic body. Returns its index.
@@ -741,19 +744,19 @@ impl Simulation {
         }
 
         // ── 8. Integration ──
-        // Gravity is recomputed at each RK4 intermediate state for 4th-order
-        // accuracy, matching JEOD's DynamicsIntegrationGroup where the
-        // derivative function calls gravity at every stage.
+        // Gravity (including relativistic corrections) is recomputed at each
+        // RK4 intermediate state for 4th-order accuracy, matching JEOD's
+        // DynamicsIntegrationGroup where the derivative function calls gravity
+        // at every stage with the current intermediate position and velocity.
         let sources = &self.sources;
         for body in &mut self.bodies {
             let controls = &body.gravity_controls;
-            let body_vel = body.trans.velocity; // Capture for relativistic closure
             integrate_body(
                 &body.config,
                 &mut body.trans,
                 body.rot.as_mut(),
                 body.mass.as_ref(),
-                |pos| {
+                |pos, vel| {
                     let mut accel = accumulate_gravity(pos, controls, DVec3::ZERO, |source_id| {
                         sources.get(source_id).map(|s| crate::ResolvedSource {
                             source: &s.source,
@@ -787,7 +790,7 @@ impl Simulation {
                                         src.source.mu,
                                         src.position,
                                         pos,
-                                        body_vel, // Approximate: uses pre-step velocity
+                                        vel,
                                         src.velocity,
                                         &other,
                                     );

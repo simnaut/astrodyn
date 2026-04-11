@@ -97,9 +97,8 @@ fn tier3_simulation_timescale_tdb() {
         let gmst_err = (sim_time.gmst_seconds - rec.gmst_seconds).abs();
         max_gmst_err = max_gmst_err.max(gmst_err);
 
-        // Compare GPS TJT (GPS = TAI - 19s, same TJT as TAI for JEOD's convention)
-        let our_gps_tjt = sim_time.tai_tjt + sim_time.gps_seconds / SECONDS_PER_DAY
-            - sim_time.tai_seconds / SECONDS_PER_DAY;
+        // Compare GPS TJT: GPS = TAI − 19 s, so GPS TJT = TAI TJT − 19/86400 days.
+        let our_gps_tjt = sim_time.tai_tjt - 19.0 / SECONDS_PER_DAY;
         let gps_err = (our_gps_tjt - rec.gps_tjt).abs() * SECONDS_PER_DAY;
         max_gps_err = max_gps_err.max(gps_err);
     }

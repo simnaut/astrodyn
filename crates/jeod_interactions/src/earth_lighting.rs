@@ -89,10 +89,10 @@ pub fn circle_intersect(r_bottom: f64, r_top: f64, d_centers: f64) -> (bool, f64
     let diff_r2 = r_b2 - r_t2;
 
     // Law of cosines for intersection angles
-    let cos_bottom_ang = (d_c2 + diff_r2) / (2.0 * d_centers * r_bottom);
+    let cos_bottom_ang = ((d_c2 + diff_r2) / (2.0 * d_centers * r_bottom)).clamp(-1.0, 1.0);
     let bottom_ang = cos_bottom_ang.acos();
 
-    let cos_top_ang = (d_c2 - diff_r2) / (2.0 * d_centers * r_top);
+    let cos_top_ang = ((d_c2 - diff_r2) / (2.0 * d_centers * r_top)).clamp(-1.0, 1.0);
     let top_ang = cos_top_ang.acos();
 
     // Sum of circular segments
