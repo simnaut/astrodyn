@@ -189,6 +189,15 @@ pub fn integration_system(
                  GaussJacksonStateC(GaussJacksonState::new(config))"
             );
         }
+        // Relativistic gravity is not yet wired through the Bevy adapter.
+        // Panic early rather than silently producing Newtonian results.
+        assert!(
+            !controls.0.controls.iter().any(|c| c.relativistic),
+            "Entity {entity:?}: relativistic gravity is enabled but not yet \
+             supported in the Bevy adapter. Use jeod_sim::Simulation directly \
+             for relativistic corrections."
+        );
+
         jeod_sim::integrate_body(
             config,
             &mut state.0,

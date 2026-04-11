@@ -128,7 +128,7 @@ wget -O test_data/moon_pa_de421_1900-2050.bpc \
   https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/moon_pa_de421_1900-2050.bpc
 ```
 
-**Used by:** `jeod_sim/tests/tier3_sim_earth_moon.rs` (Clementine lunar orbit,
+**Used by:** `crates/jeod_sim/tests/tier3_sim_earth_moon.rs` (Clementine lunar orbit,
 LP150Q 60x60 gravity + cannonball SRP, dt=0.03125s — achieves 0.93 m parity over 7 days)
 
 ---
@@ -193,7 +193,7 @@ Column 5: position[2] {m}
 Column 6: velocity[2] {m/s}
 ```
 
-**Used by:** `jeod_sim/tests/tier3_sim_mercury.rs` — validates that the
+**Used by:** `crates/jeod_sim/tests/tier3_sim_mercury.rs` — validates that the
 relativistic correction produces a measurable trajectory divergence. The full
 perihelion advance measurement (~43 arcsec/century) requires propagating both
 trajectories and measuring the argument of periapsis drift over multiple
