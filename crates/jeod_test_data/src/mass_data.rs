@@ -250,7 +250,11 @@ def set_mass_cylinder() :
   vehicle.mass_init.properties.inertia[1]  = [   0.0, 12250.0,     0.0]
   vehicle.mass_init.properties.inertia[2]  = [   0.0,     0.0, 12250.0]
 "#;
-        let tmpdir = std::env::temp_dir().join("jeod_test_mass");
+        let tmpdir = std::env::temp_dir().join(format!(
+            "jeod_test_mass_{}_{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
         std::fs::create_dir_all(&tmpdir).unwrap();
         let path = tmpdir.join("mass.py");
         std::fs::write(&path, content).unwrap();
@@ -267,7 +271,6 @@ def set_mass_cylinder() :
         assert_eq!(cyl.position, [6.0, 0.0, 0.0]);
         assert_eq!(cyl.inertia[0][0], 500.0);
 
-        std::fs::remove_file(&path).ok();
-        std::fs::remove_dir(&tmpdir).ok();
+        let _ = std::fs::remove_dir_all(&tmpdir);
     }
 }

@@ -21,6 +21,11 @@ use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
 fn load_mu_earth() -> f64 {
     let jeod_root = jeod_test_data::jeod_path();
+    assert!(
+        jeod_root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        jeod_root.display()
+    );
     jeod_sim::coefficients::load_mu_from_jeod_cc(
         &jeod_root.join("models/environment/gravity/data/src/earth_GGM05C.cc"),
     )

@@ -104,7 +104,11 @@ vehicle.earth_grav_control.order  = 4
 # Turn off grav gradient
 vehicle.earth_grav_control.gradient  = False
 "#;
-        let tmpdir = std::env::temp_dir().join("jeod_test_grav_ctrl");
+        let tmpdir = std::env::temp_dir().join(format!(
+            "jeod_test_grav_ctrl_{}_{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
         std::fs::create_dir_all(&tmpdir).unwrap();
         let grav_path = tmpdir.join("grav_controls.py");
         let run_path = tmpdir.join("input.py");
@@ -117,9 +121,7 @@ vehicle.earth_grav_control.gradient  = False
         assert_eq!(cfg.order, 4);
         assert!(!cfg.gradient);
 
-        std::fs::remove_file(&grav_path).ok();
-        std::fs::remove_file(&run_path).ok();
-        std::fs::remove_dir(&tmpdir).ok();
+        let _ = std::fs::remove_dir_all(&tmpdir);
     }
 
     #[test]

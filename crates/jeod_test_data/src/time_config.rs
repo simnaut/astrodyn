@@ -164,10 +164,13 @@ fn parse_time_config_str(content: &str, source: &Path) -> TimeConfig {
         }
     }
 
+    // All date fields are captured by a single regex — if year is missing, none are set.
+    if utc_year.is_none() {
+        panic!("No set_date_and_time() found in {}", source.display());
+    }
     TimeConfig {
         initializer: initializer.unwrap_or(TimeInitializer::Utc),
-        utc_year: utc_year
-            .unwrap_or_else(|| panic!("No set_date_and_time() found in {}", source.display())),
+        utc_year: utc_year.unwrap(),
         utc_month: utc_month.unwrap(),
         utc_day: utc_day.unwrap(),
         utc_hour: utc_hour.unwrap(),

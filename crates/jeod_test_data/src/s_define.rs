@@ -45,7 +45,11 @@ mod tests {
 
 #include "sim_objects/default_trick_sys.sm"
 "#;
-        let tmpdir = std::env::temp_dir().join("jeod_test_s_define");
+        let tmpdir = std::env::temp_dir().join(format!(
+            "jeod_test_s_define_{}_{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
         std::fs::create_dir_all(&tmpdir).unwrap();
         let path = tmpdir.join("S_define");
         std::fs::write(&path, content).unwrap();
@@ -53,14 +57,17 @@ mod tests {
         let dt = load_dynamics_dt(&path);
         assert!((dt - 0.03125).abs() < 1e-15, "Expected 0.03125, got {}", dt);
 
-        std::fs::remove_file(&path).ok();
-        std::fs::remove_dir(&tmpdir).ok();
+        let _ = std::fs::remove_dir_all(&tmpdir);
     }
 
     #[test]
     fn test_parse_dynamics_dt_integer() {
         let content = "#define DYNAMICS 1.0\n";
-        let tmpdir = std::env::temp_dir().join("jeod_test_s_define2");
+        let tmpdir = std::env::temp_dir().join(format!(
+            "jeod_test_s_define_int_{}_{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
         std::fs::create_dir_all(&tmpdir).unwrap();
         let path = tmpdir.join("S_define");
         std::fs::write(&path, content).unwrap();
@@ -68,7 +75,6 @@ mod tests {
         let dt = load_dynamics_dt(&path);
         assert!((dt - 1.0).abs() < 1e-15, "Expected 1.0, got {}", dt);
 
-        std::fs::remove_file(&path).ok();
-        std::fs::remove_dir(&tmpdir).ok();
+        let _ = std::fs::remove_dir_all(&tmpdir);
     }
 }
