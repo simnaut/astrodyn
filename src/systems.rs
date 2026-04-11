@@ -160,6 +160,7 @@ pub fn integration_system(
         Option<&TidalConfigC>,
     )>,
     time: Res<Time<Fixed>>,
+    sim_time: Res<SimulationTimeR>,
 ) {
     let dt = time.delta_secs_f64();
     if dt == 0.0 {
@@ -221,6 +222,7 @@ pub fn integration_system(
             total_force.force,
             total_force.torque,
             dt,
+            sim_time.0.time_scale_factor,
             integrator_type,
             gj_state.as_mut().map(|g| &mut g.0),
         );

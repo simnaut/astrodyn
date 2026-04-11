@@ -780,6 +780,7 @@ fn tier3_bevy_external_torque_per_body() {
             total.force,
             total.torque + torque,
             step_dt,
+            1.0,
             jeod_sim::IntegratorType::Rk4,
             None,
         );
@@ -832,6 +833,7 @@ fn tier3_bevy_external_torque_per_body() {
             total.force,
             total.torque + torque,
             step_dt,
+            1.0,
             jeod_sim::IntegratorType::Rk4,
             None,
         );

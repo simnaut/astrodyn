@@ -29,17 +29,20 @@ const MU_GJ_TEST: f64 = 5.76e14;
 
 /// Run a GJ cross-validation test with the given config and reference CSV.
 ///
-/// `time_scale` converts CSV sim-time to dynamic time via
-/// `dyn_time = sim_time * time_scale`. JEOD's SIM_GJ_test uses
-/// `dyn_time.scale_factor` to vary the effective dt: a scale of 10
-/// means each CSV sim-second corresponds to 10 dynamic seconds.
-/// For dt=1 runs, `time_scale = 1.0`. For dt=10 runs, `time_scale = 10.0`.
+/// JEOD's SIM_GJ_test uses `dyn_time.scale_factor` to vary the effective dt.
+/// We match this by setting `SimulationTime::time_scale_factor` and stepping
+/// the simulation at `sim_dt` (the sim clock rate), while the integrator
+/// internally computes `cycle_dyndt = sim_dt * cycle_scale * time_scale_factor`.
+///
+/// CSV times are in sim-seconds. For dt=1 runs, `time_scale_factor=1.0` and
+/// `sim_dt=1.0`. For dt=10 runs, `time_scale_factor=10.0` and `sim_dt=1.0`
+/// (each sim step advances 10s of dynamic time).
 fn run_gj_test(
     test_name: &str,
     csv_label: &str,
     config: GaussJacksonConfig,
-    dt: f64,
-    time_scale: f64,
+    sim_dt: f64,
+    time_scale_factor: f64,
     pos_tol: [f64; 3],
     vel_tol: [f64; 3],
 ) {
@@ -61,8 +64,9 @@ fn run_gj_test(
 
     let init = &trajectory[0];
 
-    let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
-    let mut sim = Simulation::new(time, dt);
+    let mut time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    time.time_scale_factor = time_scale_factor;
+    let mut sim = Simulation::new(time, sim_dt);
 
     let earth = sim.add_source(GravitySourceEntry {
         source: GravitySource {
@@ -91,20 +95,23 @@ fn run_gj_test(
 
     sim.validate().unwrap();
 
-    let final_dyn_time = trajectory.last().unwrap().time * time_scale;
+    // CSV times are in sim-seconds; step_until uses simtime.
+    let final_sim_time = trajectory.last().unwrap().time;
+    let effective_dt = sim_dt * time_scale_factor;
     println!(
-        "Tier 3 (Simulation): {test_name}, {} points over {:.0}s, dt={dt}s",
+        "Tier 3 (Simulation): {test_name}, {} points over {:.0}s sim ({:.0}s dyn), \
+         sim_dt={sim_dt}s, tsf={time_scale_factor}, effective_dt={effective_dt}s",
         trajectory.len(),
-        final_dyn_time
+        final_sim_time,
+        final_sim_time * time_scale_factor,
     );
 
     let mut our_states = Vec::with_capacity(trajectory.len() - 1);
     for record in &trajectory[1..] {
-        let dyn_time = record.time * time_scale;
-        sim.step_until(dyn_time);
+        sim.step_until(record.time);
         let body = sim.body(0);
         our_states.push(StateLog {
-            time: dyn_time,
+            time: record.time,
             position: Some(body.trans.position),
             velocity: Some(body.trans.velocity),
             ..Default::default()
@@ -114,7 +121,7 @@ fn run_gj_test(
     let ref_states: Vec<StateLog> = trajectory[1..]
         .iter()
         .map(|r| StateLog {
-            time: r.time * time_scale,
+            time: r.time,
             position: Some(r.position),
             velocity: Some(r.velocity),
             ..Default::default()
@@ -180,14 +187,17 @@ fn tier3_simulation_gj_order12() {
 
 #[test]
 fn tier3_simulation_gj_dt10() {
-    // GJ order 8, dt=10s. Coarser timestep → larger truncation error.
-    // JEOD SIM_GJ_test uses scale_factor=10 → CSV times are sim-seconds.
+    // GJ order 8, effective dt=10s. Coarser timestep → larger truncation error.
+    // Matches JEOD SIM_GJ_test: sim_dt=1.0, dyn_time.scale_factor=10.
+    // The integrator sees cycle_dyndt = 1.0 * cycle_scale * 10.0 = 10.0 * cycle_scale,
+    // producing the same physics as dt=10 with tsf=1.0.
+    // CSV times are in sim-seconds (log_cycle=30s, terminate=30000s).
     // Observed: pos [9.862e-1, 9.846e-1, 0] m, vel [8.751e-4, 8.755e-4, 0] m/s.
     run_gj_test(
         "tier3_simulation_gj_dt10",
         "integ_gj_dt10",
         GaussJacksonConfig::with_order(8),
-        10.0,
+        1.0,
         10.0,
         [1.036e0, 1.034e0, 1e-10],
         [9.189e-4, 9.193e-4, 1e-13],

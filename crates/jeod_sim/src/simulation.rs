@@ -802,6 +802,7 @@ impl Simulation {
                 body.total_force.force,
                 body.total_force.torque,
                 dt,
+                self.time.time_scale_factor,
                 body.integrator,
                 body.gj_state.as_mut(),
             );
