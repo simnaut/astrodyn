@@ -40,6 +40,14 @@ bevy = { version = "0.18", default-features = false, features = [
 log = "0.4"
 thiserror = "2"
 
+# Optimize all code in dev/test builds — spherical harmonics evaluation
+# is ~20× slower at opt-level=0, making 7-day lunar orbit tests impractical.
+# opt-level=2 gives ~20× speedup with minimal compile-time increase.
+[profile.dev]
+opt-level = 2
+[profile.test]
+opt-level = 2
+
 [[example]]
 name = "kepler_orbit"
 path = "examples/kepler_orbit.rs"

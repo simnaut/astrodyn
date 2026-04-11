@@ -84,7 +84,7 @@ pub use jeod_interactions::{
     compute_earth_lighting, compute_flat_plate_srp_thermal, compute_shadow_fraction,
     solar_flux_at_distance, AerodynamicForce, DragConfig, EarthLightingState, FlatPlate,
     FlatPlateParams, FlatPlateSrpResult, FlatPlateThermal, LightingBody, LightingParams,
-    RadiationForce, SOLAR_RADIUS,
+    RadiationForce, SOLAR_RADIUS, SPEED_OF_LIGHT,
 };
 
 // jeod_frames: reference frame state

@@ -1,8 +1,16 @@
 //! Tier 3: SIM_Earth_Moon — Clementine lunar orbit cross-validation.
 //!
 //! Validates multi-body gravity (Earth + Moon LP150Q 60×60 spherical harmonics,
-//! Sun 3rd-body, DE421 BPC libration) against the JEOD reference trajectory.
-//! Clementine-like orbit, 7 days (604,800 s at 60 s intervals).
+//! Sun 3rd-body, DE421 BPC libration, cannonball SRP) against the JEOD
+//! reference trajectory. Clementine-like orbit, 7 days (604,800 s).
+//!
+//! Matches JEOD SIM_Earth_Moon RUN_clem configuration:
+//! - Integrator: RK4 at 0.03125 s (32 Hz)
+//! - Moon gravity: LP150Q 60×60
+//! - Moon rotation: DE421 BPC libration (per-step update)
+//! - Earth/Sun: point-mass 3rd-body with per-step DE405 ephemeris
+//! - SRP: cannonball (cx_area=2.1432 m², albedo=1.0, diffuse=0.27)
+//! - No drag, no gravity torque
 
 mod sim_test_helpers;
 use sim_test_helpers::*;
@@ -48,10 +56,8 @@ fn load_interleaved_csv(path: &std::path::Path, sim_name: &str) -> Vec<StateLog>
     records
 }
 
-/// Clementine lunar orbit: Moon LP150Q 60×60 + Earth 3rd-body + Sun 3rd-body.
-///
-/// Loads DE421 ephemeris for third-body positions and DE421 BPC libration
-/// for lunar orientation.
+/// Clementine lunar orbit: Moon LP150Q 60×60 + Earth 3rd-body + Sun 3rd-body
+/// + cannonball SRP, matching JEOD SIM_Earth_Moon RUN_clem.
 #[test]
 fn tier3_simulation_earth_moon_clem() {
     let csv_path = test_data_path("earth_moon_clem_earth_moon.csv");
@@ -66,7 +72,8 @@ fn tier3_simulation_earth_moon_clem() {
     let init_pos = init.position.unwrap();
     let init_vel = init.velocity.unwrap();
 
-    // Load ephemeris for 3rd-body positions + Moon orientation
+    // JEOD uses DE405; we use DE421 (no LE DE405 BSP available for Anise).
+    // DE405/DE421 difference is sub-meter for Moon-centered 7-day orbits.
     let bsp_path = test_data_path("de421.bsp");
     let mut ephemeris = Ephemeris::from_bsp(&bsp_path).expect("load DE421");
     let bpc_path = test_data_path("moon_pa_de421_1900-2050.bpc");
@@ -76,11 +83,11 @@ fn tier3_simulation_earth_moon_clem() {
 
     // Clementine epoch: 1994-03-01 00:00:00 UTC
     // JD = 2449412.5; MJD = 49412.0; TJT = MJD - 40000 = 9412.0
-    // TAI-UTC = 29s at 1994-03-01; TAI TJT = UTC TJT + 29/86400
-    let clem_tai_tjt = 9412.0 + 29.0 / 86400.0;
+    // TAI-UTC = 28 s at 1994-03-01 (29th leap second added 1994-07-01)
+    let clem_tai_tjt = 9412.0 + 28.0 / 86400.0;
     let leap_table = jeod_sim::default_leap_second_table();
     let time = SimulationTime::new(clem_tai_tjt, leap_table);
-    let mut sim = Simulation::new(time, 10.0); // 10s timestep
+    let mut sim = Simulation::new(time, 0.03125); // 32 Hz, matching JEOD S_define
 
     // Load LP150Q spherical harmonics for Moon (matching JEOD's SIM_Earth_Moon)
     let jeod_root = jeod_test_data::jeod_path();
@@ -113,7 +120,7 @@ fn tier3_simulation_earth_moon_clem() {
     let epoch_tdb_jd = sim.time.tdb_julian_date();
     let (earth_pos_from_moon, _earth_vel) = ephemeris
         .get_state(EphemerisBody::Earth, EphemerisBody::Moon, epoch_tdb_jd)
-        .expect("Earth-Moon state from DE421");
+        .expect("Earth-Moon state from DE405");
 
     let earth = sim.add_source(GravitySourceEntry::new(
         GravitySource {
@@ -123,13 +130,12 @@ fn tier3_simulation_earth_moon_clem() {
         earth_pos_from_moon,
         None,
     ));
-    // Enable per-step ephemeris update for Earth position relative to Moon
     sim.set_source_ephemeris(earth, EphemerisBody::Earth, EphemerisBody::Moon);
 
-    // Sun as 3rd-body with per-step ephemeris updates
+    // Sun as 3rd-body with per-step ephemeris updates (also SRP source)
     let (sun_pos_from_moon, _) = ephemeris
         .get_state(EphemerisBody::Sun, EphemerisBody::Moon, epoch_tdb_jd)
-        .expect("Sun-Moon state from DE421");
+        .expect("Sun-Moon state from DE405");
     let sun = sim.add_source(GravitySourceEntry::new(
         GravitySource {
             mu: 1.327_124_40e20,
@@ -139,6 +145,7 @@ fn tier3_simulation_earth_moon_clem() {
         None,
     ));
     sim.set_source_ephemeris(sun, EphemerisBody::Sun, EphemerisBody::Moon);
+    sim.sun_source = Some(sun);
 
     // Store ephemeris for per-step updates
     sim.ephemeris = Some(ephemeris);
@@ -155,6 +162,11 @@ fn tier3_simulation_earth_moon_clem() {
                 GravityControl::new_third_body(sun),
             ],
         },
+        // Clementine mass: 424 kg (from Modified_data/mass.py)
+        mass: Some(jeod_sim::MassProperties::new(424.0)),
+        // Cannonball SRP matching JEOD Clementine: cx_area=2.1432 m²,
+        // albedo=1.0, diffuse=0.27 (from Modified_data/radiation_pressure.py)
+        cannonball_srp: Some((2.1432, 1.0, 0.27)),
         ..Default::default()
     });
 
@@ -182,7 +194,6 @@ fn tier3_simulation_earth_moon_clem() {
             );
             let err = (body.trans.position - jeod_pos).length();
             println!("  t={}: error={:.1} m", record.time, err);
-            println!("  mu={:.6e}", sim.sources[moon].source.mu);
         }
         our_states.push(StateLog {
             time: record.time,
@@ -201,11 +212,11 @@ fn tier3_simulation_earth_moon_clem() {
 
     let max_pos = report.max_position_component();
     println!(
-        "  Earth-Moon Clem: max position error = {:.1} m (LP150Q 60x60 + DE421 BPC libration)",
+        "  Earth-Moon Clem: max position error = {:.2} m \
+         (LP150Q 60x60 + DE421 BPC + cannonball SRP, dt=0.03125s, 7 days)",
         max_pos
     );
-    // 7-day lunar orbit with LP150Q 60x60, per-step DE421 BPC libration,
-    // Earth+Sun 3rd-body with per-step ephemeris.
+    // Residual from DE405/DE421 difference (JEOD uses DE405, we use DE421).
     // Tolerance: observed max × 1.05.
-    report.assert_position([222.0, 133.0, 314.0]);
+    report.assert_position([0.832, 0.331, 0.972]);
 }

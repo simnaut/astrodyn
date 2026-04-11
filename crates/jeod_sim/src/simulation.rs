@@ -103,8 +103,11 @@ pub struct SimBody {
     pub drag: Option<DragConfig>,
     /// Flat-plate SRP configuration with thermal state. `None` disables SRP.
     pub flat_plate_state: Option<crate::FlatPlateState>,
+    /// Cannonball SRP: `(cx_area_m2, albedo, diffuse)`. Uses JEOD's
+    /// `RadiationDefaultSurface` formula. Mutually exclusive with flat-plate.
+    pub cannonball_srp: Option<(f64, f64, f64)>,
     /// Shadow-casting body: `(source_index, body_radius_m)`.
-    /// Used by flat-plate SRP for eclipse computation.
+    /// Used by SRP (flat-plate or cannonball) for eclipse computation.
     pub shadow_body: Option<(usize, f64)>,
     /// Structural-to-body rotation matrix. `DMat3::IDENTITY` when structure = body.
     pub t_struct_body: DMat3,
@@ -172,6 +175,7 @@ impl Default for SimBody {
             gravity_controls: GravityControls::default(),
             drag: None,
             flat_plate_state: None,
+            cannonball_srp: None,
             shadow_body: None,
             t_struct_body: DMat3::IDENTITY,
             compute_gravity_torque: false,
@@ -729,6 +733,36 @@ impl Simulation {
                         });
 
                         fps.integrate_temperatures(&srp_result.temp_dots, dt);
+                    }
+                } else if let Some((cx_area, albedo, diffuse)) = body.cannonball_srp {
+                    // Cannonball SRP: JEOD RadiationDefaultSurface formula.
+                    // Force = (flux/c) * cx_area * [1 + albedo*diffuse*(4/9)] * flux_hat
+                    let sun_to_vehicle = body.trans.position - sun_position;
+                    let distance = sun_to_vehicle.length();
+                    if distance >= 1.0 {
+                        let flux_hat = sun_to_vehicle / distance;
+                        let flux_mag = crate::solar_flux_at_distance(distance);
+
+                        let illum_factor = body
+                            .shadow_body
+                            .map(|(idx, radius)| {
+                                crate::compute_shadow_fraction(
+                                    body.trans.position,
+                                    sun_position,
+                                    sources[idx].position,
+                                    radius,
+                                    crate::SOLAR_RADIUS,
+                                )
+                            })
+                            .unwrap_or(1.0);
+
+                        let coeff = 1.0 + albedo * diffuse * (4.0 / 9.0);
+                        let force_mag =
+                            cx_area * flux_mag / crate::SPEED_OF_LIGHT * coeff * illum_factor;
+                        body.radiation_force = Some(RadiationForce {
+                            force: flux_hat * force_mag,
+                            torque: DVec3::ZERO,
+                        });
                     }
                 }
             }
