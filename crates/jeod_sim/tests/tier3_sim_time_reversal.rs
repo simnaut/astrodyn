@@ -1,8 +1,9 @@
 //! Tier 3: SIM_7_time_reversal — time-reversed propagation cross-validation.
 //!
 //! JEOD propagates forward 60,000 s then sets `scale_factor = -1.0` for another
-//! 60,000 sim-seconds. Validates time scale round-trip and trajectory parity
-//! during both forward and reverse phases.
+//! 60,000 sim-seconds. Validates TAI seconds and TAI TJT round-trip parity
+//! during both forward and reverse phases (time-only; position/velocity
+//! parsed but not yet asserted).
 
 mod sim_test_helpers;
 use sim_test_helpers::*;

@@ -814,7 +814,7 @@ edge cases, and specialized scenarios to ensure no JEOD capability goes unverifi
 
 #### Tier 3 (trajectory cross-validation)
 - [x] **All prior phase exit criteria** still pass (no regressions) — 500 tests pass
-- [x] **Tier 3 Earth-Moon multi-body**: Position error vs. JEOD < 100 m over 7 days (Earth + Moon + Sun gravity, differential acceleration). Requires Moon gravity model + lunar RNP. — **0.21 m**
+- [x] **Tier 3 Earth-Moon multi-body**: Position error vs. JEOD < 1 m over 7 days (LP150Q 60×60 + cannonball SRP + DE421 BPC, dt=0.03125s). — **0.93 m**
 - [x] **Tier 3 Mars orbit**: Position error vs. JEOD < 100 m over 3 hours (MRO110B2 gravity). Requires Mars RNP. — **3.8 m**
 - [x] **Relative dynamics**: Relative state between two vehicles matches JEOD to < 1e-6 m over 100s (SIM_Relative) — **8.0e-14 m** (frame convention fixed)
 - [x] **Planetary derived states**: Trajectory in LEO/GEO/polar matches JEOD to < 1 m over 24h (SIM_Planetary) — **1.0 m**

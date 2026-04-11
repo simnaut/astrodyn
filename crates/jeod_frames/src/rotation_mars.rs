@@ -158,10 +158,8 @@ fn compute_rotation(time_days: f64, psi_nut: f64, obliquity: f64) -> DMat3 {
     // Konopliv 2006, pg 41: Phi(t) = Phi_o + Phi_dot*t - psi_nut*cos(I)
     let mut phi_spin = PHI_AT_J2000 + PLANET_ROT_VEL * time_days - psi_nut * obliquity.cos();
 
-    // Normalize to [0, 2π)
-    if phi_spin < 0.0 {
-        phi_spin += 2.0 * PI;
-    }
+    // Normalize to [0, 2π) for numerical stability with large angles
+    phi_spin = phi_spin.rem_euclid(2.0 * PI);
 
     let cos_phi = phi_spin.cos();
     let sin_phi = phi_spin.sin();

@@ -129,7 +129,7 @@ wget -O test_data/moon_pa_de421_1900-2050.bpc \
 ```
 
 **Used by:** `jeod_sim/tests/tier3_sim_earth_moon.rs` (Clementine lunar orbit,
-LP150Q 60x60 gravity — achieves 0.2 m parity with JEOD)
+LP150Q 60x60 gravity + cannonball SRP, dt=0.03125s — achieves 0.93 m parity over 7 days)
 
 ---
 
