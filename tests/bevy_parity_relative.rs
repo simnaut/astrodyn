@@ -6,8 +6,6 @@
 //! then computes relative state post-step and asserts `f64::to_bits()`
 //! equality.
 
-use std::time::Duration;
-
 use bevy::prelude::*;
 use bevy_jeod::{
     DynamicsConfigC, GravityAccelerationC, GravityControlsC, JeodPlugin, MassPropertiesC,
@@ -32,9 +30,8 @@ fn new_bevy_app(dt: f64) -> App {
 
 fn step_bevy(app: &mut App, n: usize) {
     for _ in 0..n {
-        app.world_mut()
-            .resource_mut::<Time<Fixed>>()
-            .advance_by(Duration::from_secs_f64(DT));
+        let dt = app.world().resource::<Time<Fixed>>().timestep();
+        app.world_mut().resource_mut::<Time<Fixed>>().advance_by(dt);
         app.world_mut().run_schedule(FixedUpdate);
     }
 }
