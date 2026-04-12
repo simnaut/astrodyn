@@ -50,6 +50,21 @@ under its own physics, and results are compared against JEOD's reference output 
 checkpoints. Tests that call per-body functions directly or evaluate static data
 points bypass the pipeline and must be upgraded to use `Simulation::step()`.
 
+## No Half-Baked Implementations or Tests (non-negotiable)
+
+Reject every urge to rationalize a simplified, approximate, or incomplete
+implementation or test. When JEOD's verification sim exercises a specific gravity
+model, rotation model, epoch, integration step size, or force configuration, our
+test must match that configuration exactly — not substitute point-mass for spherical
+harmonics, skip a force term, use a convenient epoch, or widen tolerances to paper
+over a mismatch.
+
+If matching JEOD's case definition reveals a bug or missing capability in our code,
+the answer is to fix the code, not to weaken the test. "Good enough" and "close
+enough" are not acceptable when the reference implementation specifies the answer.
+Every implementation and test must include everything that the corresponding JEOD
+implementation or test exercises.
+
 The three verification tiers:
 - **Tier 1**: Unit tests — pure function correctness, round-trips, convergence
 - **Tier 2**: JEOD reference data — static test vectors from JEOD source files
