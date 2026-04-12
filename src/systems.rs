@@ -317,6 +317,10 @@ pub fn integration_system(
                 let mut accel = grav.grav_accel;
 
                 // Apply relativistic (post-Newtonian PPN) corrections.
+                // TODO: Source velocity is currently DVec3::ZERO. For moving sources
+                // (e.g., barycentric Sun), add a SourceInertialVelocityC component
+                // to avoid Bevy query conflicts with body TranslationalStateC.
+                // See PR #51 review comment.
                 accel += jeod_sim::accumulate_relativistic_corrections(
                     pos,
                     vel,
@@ -646,7 +650,13 @@ pub fn earth_lighting_system(
 ) {
     let sun_state = match sun_query.single() {
         Ok(s) => s,
-        Err(bevy::ecs::query::QuerySingleError::NoEntities(_)) => return,
+        Err(bevy::ecs::query::QuerySingleError::NoEntities(_)) => {
+            // No SunMarker present: clear stale earth lighting values
+            for (_, _, mut lighting) in &mut query {
+                lighting.0 = Default::default();
+            }
+            return;
+        }
         Err(bevy::ecs::query::QuerySingleError::MultipleEntities(_)) => {
             panic!(
                 "Multiple entities with SunMarker found in earth_lighting_system. \
@@ -656,7 +666,13 @@ pub fn earth_lighting_system(
     };
     let moon_state = match moon_query.single() {
         Ok(s) => s,
-        Err(bevy::ecs::query::QuerySingleError::NoEntities(_)) => return,
+        Err(bevy::ecs::query::QuerySingleError::NoEntities(_)) => {
+            // No MoonMarker present: clear stale earth lighting values
+            for (_, _, mut lighting) in &mut query {
+                lighting.0 = Default::default();
+            }
+            return;
+        }
         Err(bevy::ecs::query::QuerySingleError::MultipleEntities(_)) => {
             panic!(
                 "Multiple entities with MoonMarker found in earth_lighting_system. \
