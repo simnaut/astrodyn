@@ -414,6 +414,16 @@ impl Simulation {
                 all_errors.push(ValidationError::SolarBetaWithoutSunSource { body_idx });
             }
 
+            // Earth lighting requires both sun_source and moon_source
+            if body.earth_lighting_config.is_some() {
+                if self.sun_source.is_none() {
+                    all_errors.push(ValidationError::EarthLightingWithoutSunSource { body_idx });
+                }
+                if self.moon_source.is_none() {
+                    all_errors.push(ValidationError::EarthLightingWithoutMoonSource { body_idx });
+                }
+            }
+
             // Gravity torque requires both mass and rotational state
             if body.compute_gravity_torque && (body.mass.is_none() || body.rot.is_none()) {
                 all_errors.push(ValidationError::GravityTorqueWithoutMassOrRot { body_idx });

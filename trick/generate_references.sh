@@ -920,8 +920,9 @@ PID_SHADOW_2A=$LAST_BG_PID
 
 # Group 15: SIM_3_ORBIT_1st_ORDER (first-order SRP model)
 # Phase 4b-C — different S_define from SIM_3_ORBIT, needs own build
-PID_SRP_1ST_ORDER=$(throttled_bg run_sim_with_ascii "models/interactions/radiation_pressure/verif/SIM_3_ORBIT_1st_ORDER" \
-    "SET_test/RUN_radiation" "srp_1st_order_radiation" "$SRP_ORBIT_SNIPPET")
+throttled_bg run_sim_with_ascii "models/interactions/radiation_pressure/verif/SIM_3_ORBIT_1st_ORDER" \
+    "SET_test/RUN_radiation" "srp_1st_order_radiation" "$SRP_ORBIT_SNIPPET"
+PID_SRP_1ST_ORDER=$LAST_BG_PID
 
 # Group 16: SIM_tide_verif (solid body tides, Phase 5e)
 TIDE_SNIPPET='
