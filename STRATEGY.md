@@ -963,6 +963,11 @@ display — JSON contains only errors.
 - Tests assert on missing data — never skip gracefully.
 - All computation (gravity, Earth rotation, time conversion) is our own ported code.
   JEOD CSV data is used **only** for comparison, never as input to our computation.
+  JEOD data must never be injected into intermediate computation steps — the
+  Simulation propagates entirely under its own physics from initial conditions.
+- Every Tier 3 test must exercise the full `Simulation::step()` pipeline
+  end-to-end. Tests that call per-body functions directly or evaluate static
+  data points bypass the pipeline and must be upgraded.
 - Tier 3 tests are part of the **definition of done** for every phase, not optional.
 - Tolerances are literal per-test values (5% above observed error), never
   runtime-computed or conditional. JEOD CSVs are static, our code is deterministic.

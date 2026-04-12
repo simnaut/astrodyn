@@ -43,11 +43,19 @@ are part of the **definition of done** for every phase. They are not optional ex
 or afterthoughts. When a phase delivers new physics, a Tier 3 test exercising that
 physics must be included.
 
+Every Tier 3 test must exercise the full `Simulation::step()` pipeline end-to-end.
+Tests must use only initial conditions from JEOD source files — JEOD data must never
+be injected into intermediate computation steps. The Simulation propagates entirely
+under its own physics, and results are compared against JEOD's reference output at
+checkpoints. Tests that call per-body functions directly or evaluate static data
+points bypass the pipeline and must be upgraded to use `Simulation::step()`.
+
 The three verification tiers:
 - **Tier 1**: Unit tests — pure function correctness, round-trips, convergence
 - **Tier 2**: JEOD reference data — static test vectors from JEOD source files
-- **Tier 3**: Trajectory cross-validation — propagate from same initial conditions,
-  compare against JEOD Trick simulation output over hours/days
+- **Tier 3**: Trajectory cross-validation — propagate from same initial conditions
+  through `Simulation::step()`, compare against JEOD Trick simulation output over
+  hours/days
 
 ## Precision
 
