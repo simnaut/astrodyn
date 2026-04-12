@@ -1,208 +1,174 @@
-//! Tier 3: SIM_VER_DRAG cross-validation (aerodynamics/verif/SIM_VER_DRAG)
+//! Tier 3: SIM_dyncomp RUN_6B — aerodynamic drag via Simulation pipeline
 //!
-//! Validates aerodynamic drag force computation against JEOD in isolation
-//! (no orbit propagation). Three drag modes:
-//!   RUN_aero_drag_const: Constant drag force magnitude = 0.05 N
-//!   RUN_aero_drag_CD:    Cd=2, A=100 m2
-//!   RUN_aero_drag_BC:    BC=0.005, mass=1.0 kg -> mass/BC = 200 (equivalent to Cd*A = 200)
+//! Propagates a 1 kg sphere in elliptical orbit with point-mass gravity, MET
+//! atmosphere (mean solar activity), and Cd-based drag through
+//! `Simulation::step()`. Compares trajectory and aero force against JEOD.
 //!
-//! Atmospheric conditions: density=1e-12 kg/m3, T=1487 K, zero wind.
-//! Vehicle rotation: identity (body frame = inertial frame).
-//! Velocity from CSV (time-varying as drag decelerates the vehicle).
+//! RUN_6B: Cd=0.02, area=1.0 m², mass=1kg sphere, F10.7=128.8, Ap=15.7
 
 mod sim_test_helpers;
 use sim_test_helpers::*;
 
 use glam::{DMat3, DVec3};
-use jeod_atmosphere::AtmosphereState;
-use jeod_interactions::{compute_ballistic_drag, DragConfig};
+use jeod_atmosphere::met as met_atmosphere;
+use jeod_sim::{
+    AtmosphereConfig, AtmosphereModel, AtmosphereState, DragConfig, GravityControl,
+    GravityControls, GravityModel, GravitySource, GravitySourceEntry, MassProperties,
+    MetAtmosphere, RotationModel, SimBody, Simulation, SimulationTime, TranslationalState,
+};
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
-const DRAG_DENSITY: f64 = 1e-12; // kg/m3
+const SIM_DYNCOMP: &str = "verif/SIM_dyncomp";
 
-fn run_drag_comparison(csv_filename: &str, label: &str, config: DragConfig, test_name: &str) {
-    let csv_path = test_data_path(csv_filename);
+#[test]
+fn tier3_simulation_drag_run6b() {
+    let jeod_root = jeod_test_data::jeod_path();
+    assert!(
+        jeod_root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        jeod_root.display()
+    );
+
+    let csv_path = test_data_path("dyncomp_run6b_aero_aero_traj.csv");
     assert!(
         csv_path.exists(),
-        "SIM_VER_DRAG CSV not found at {}.\n\
-         Generate with: docker run --rm -v $(pwd)/test_data:/output \
-         -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro jeod-trick",
+        "Aero trajectory CSV not found at {}.\n\
+         Generate with: docker run --rm -e FORCE=1 --entrypoint /bin/bash \
+         -v $(pwd)/test_data:/output \
+         -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro \
+         jeod-trick /generate_references.sh",
         csv_path.display()
     );
 
-    let records = load_drag_csv(&csv_path);
-    assert!(
-        !records.is_empty(),
-        "{label}: no records found in {csv_filename}"
-    );
+    let sim_dir = jeod_root.join(SIM_DYNCOMP);
+    let grav_data_dir = jeod_root.join("models/environment/gravity/data/src");
 
-    println!(
-        "Tier 3 (Simulation): SIM_VER_DRAG {label}, {} points",
-        records.len()
-    );
+    let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+    let mu_earth =
+        jeod_sim::coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc"))
+            .expect("load Earth mu");
 
-    let atmos = AtmosphereState {
-        density: DRAG_DENSITY,
-        temperature: 1487.0,
-        pressure: 0.0,
-        wind: DVec3::ZERO,
+    let records = load_aero_traj_csv(&csv_path);
+    assert!(records.len() > 100, "Expected >100 records");
+    let init = &records[0];
+
+    // MET atmosphere: mean solar activity (RUN_6B: F10.7=128.8, Ap=15.7)
+    let met_model = MetAtmosphere {
+        f10: 128.8,
+        f10b: 128.8,
+        geo_index: 15.7,
+        geo_index_type: met_atmosphere::GeoIndexType::Ap,
     };
-    let t_inertial_struct = DMat3::IDENTITY;
 
-    let mut max_force_err = 0.0_f64;
-    let mut max_force_rel_err = 0.0_f64;
+    let drag_config = DragConfig {
+        cd: 0.02,
+        area: 1.0,
+        constant_density: None,
+    };
 
-    // These tests don't propagate state; use empty state logs and report via extras.
-    let our_states: Vec<StateLog> = records
-        .iter()
-        .map(|r| StateLog {
-            time: r.time,
-            ..Default::default()
-        })
-        .collect();
-    let ref_states: Vec<StateLog> = our_states.clone();
+    // Load epoch from JEOD time config (matches SIM_dyncomp epoch)
+    let time_cfg =
+        jeod_test_data::time_config::load_time_config(&sim_dir.join("Modified_data/time.py"));
+    let epoch_tai_tjt = time_cfg.tai_tjt();
+    let ut1_tai_offset = time_cfg
+        .ut1_tai_offset()
+        .expect("SIM_dyncomp requires UT1-TAI offset for GMST/RNP");
+    let mut time = SimulationTime::new(epoch_tai_tjt, jeod_sim::default_leap_second_table());
+    time.set_ut1_tai_offset(ut1_tai_offset);
+    let mut sim = Simulation::new(time, dt);
 
-    for record in &records {
-        // Compute drag using our code with JEOD's velocity from CSV
-        let result =
-            compute_ballistic_drag(&config, &atmos, record.inertial_vel, &t_inertial_struct);
+    let earth = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: mu_earth,
+            model: GravityModel::PointMass,
+        },
+        position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
+        t_inertial_pfix: Some(DMat3::IDENTITY),
+        delta_c20: 0.0,
+        rotation_model: RotationModel::EarthRNP,
+        tidal_config: None,
+    });
 
-        let force_err = (result.force - record.aero_force).length();
-        max_force_err = max_force_err.max(force_err);
+    sim.atmosphere = Some(AtmosphereConfig {
+        model: AtmosphereModel::Met(met_model),
+        r_eq: 6_378_137.0,
+        r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
+        planet_omega: OMEGA_EARTH,
+    });
+    sim.atmosphere_planet_source = Some(earth);
 
-        let jeod_mag = record.aero_force.length();
-        if jeod_mag > 1e-20 {
-            let rel_err = force_err / jeod_mag;
-            max_force_rel_err = max_force_rel_err.max(rel_err);
-        }
+    // 1 kg sphere (RUN_6B replaces ISS mass with sphere)
+    sim.add_body(SimBody {
+        trans: TranslationalState {
+            position: init.position,
+            velocity: init.velocity,
+        },
+        rot: Some(jeod_sim::RotationalState {
+            quaternion: jeod_sim::JeodQuat::identity(),
+            ang_vel_body: DVec3::ZERO,
+        }),
+        mass: Some(MassProperties::new(1.0)),
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth, false)],
+        },
+        atmospheric_state: Some(AtmosphereState::default()),
+        drag: Some(drag_config),
+        ..Default::default()
+    });
 
-        if (record.time % 60.0).abs() < 0.5 {
-            println!(
-                "  t={:5.0}s: our=[{:.6e}, {:.6e}, {:.6e}] jeod=[{:.6e}, {:.6e}, {:.6e}] err={:.3e} N",
-                record.time,
-                result.force.x, result.force.y, result.force.z,
-                record.aero_force.x, record.aero_force.y, record.aero_force.z,
-                force_err,
-            );
-        }
-    }
-
-    println!("  Max force error:     {:.6e} N", max_force_err);
-    println!("  Max force rel error: {:.6e}", max_force_rel_err);
-
-    let mut report = CrossvalReport::compute(test_name, &our_states, &ref_states);
-    report.add_extra("force", max_force_err, "N");
-    assert!(max_force_err < 4.605e-18, "force");
-    report.add_extra("force_rel", max_force_rel_err, "");
-    assert!(max_force_rel_err < 8.186e-16, "force_rel");
-    report.write();
-
-    // Drag force should match JEOD to high precision (same formula, same inputs)
-    assert!(
-        max_force_err < 4.605e-18,
-        "{label}: force error {max_force_err:.3e} N exceeds 4.605e-18 N"
-    );
-    assert!(
-        max_force_rel_err < 8.186e-16,
-        "{label}: relative force error {max_force_rel_err:.3e} exceeds 8.186e-16"
-    );
-}
-
-#[test]
-fn tier3_drag_const_force() {
-    // DRAG_OPT_CONST: JEOD uses drag=0.05 as a CONSTANT FORCE MAGNITUDE (N),
-    // not a coefficient. The formula is: force = rel_vel_hat * drag.
-    // Our compute_ballistic_drag doesn't support this mode — it always computes
-    // F = -0.5*rho*v2*Cd*A. Validate the reference data instead.
-    let csv_path = test_data_path("drag_const_drag.csv");
-    assert!(csv_path.exists(), "CSV not found at {}", csv_path.display());
-    let records = load_drag_csv(&csv_path);
-    assert!(!records.is_empty());
+    sim.validate().unwrap();
 
     println!(
-        "Tier 3 (Simulation): SIM_VER_DRAG const force mode, {} points",
+        "Tier 3 (Simulation): SIM_dyncomp RUN_6B drag, {} points",
         records.len()
     );
 
-    // JEOD DRAG_OPT_CONST: force magnitude = drag = 0.05 N (constant)
-    // Acceleration = force / mass = 0.05 / 1.0 = 0.05 m/s2 (constant)
-    let mut max_accel_err = 0.0_f64;
-    for record in &records {
-        let force_mag = record.aero_force.length();
-        let accel_err = (record.accel_mag - 0.05).abs();
-        max_accel_err = max_accel_err.max(accel_err);
+    let mut our_states = Vec::with_capacity(records.len() - 1);
+    let mut ref_states = Vec::with_capacity(records.len() - 1);
+    let mut max_force_err = 0.0_f64;
 
-        // Force magnitude should be ~0.05 N (constant) but direction follows velocity
-        // As velocity decreases from drag, force magnitude stays at 0.05 N
-        assert!(
-            (force_mag - 0.05).abs() < 0.001,
-            "Constant drag force {force_mag:.6} N deviates from 0.05 N at t={}",
-            record.time
-        );
-    }
-    // Acceleration should be consistent: force/mass = 0.05/1.0 = 0.05 m/s2
-    assert!(
-        max_accel_err < 1.458e-17,
-        "Acceleration error {max_accel_err:.3e} m/s2 exceeds 1.458e-17"
-    );
-    println!(
-        "  DRAG_OPT_CONST: force=0.05 N (constant), max accel_err={:.3e}",
-        max_accel_err
-    );
-    println!(
-        "  Note: DRAG_OPT_CONST mode not implemented in our code — JEOD sets force \
-         magnitude directly, bypassing F=0.5*rho*v2*Cd*A. Validated as reference data."
-    );
+    for rec in &records[1..] {
+        sim.step_until(rec.time);
 
-    let our_states: Vec<StateLog> = records
-        .iter()
-        .map(|r| StateLog {
-            time: r.time,
+        let body = sim.body(0);
+        if let Some(ref aero) = body.aero_force {
+            let force_err = (aero.force - rec.aero_force).length();
+            max_force_err = max_force_err.max(force_err);
+        }
+
+        our_states.push(StateLog {
+            time: rec.time,
+            position: Some(body.trans.position),
+            velocity: Some(body.trans.velocity),
             ..Default::default()
-        })
-        .collect();
-    let ref_states: Vec<StateLog> = our_states.clone();
+        });
+        ref_states.push(StateLog {
+            time: rec.time,
+            position: Some(rec.position),
+            velocity: Some(rec.velocity),
+            ..Default::default()
+        });
+    }
 
-    let mut report = CrossvalReport::compute("tier3_drag_const_force", &our_states, &ref_states);
-    report.add_extra("accel", max_accel_err, "m/s2");
-    assert!(max_accel_err < 1.458e-17, "accel");
+    let report = CrossvalReport::compute("tier3_simulation_drag_run6b", &our_states, &ref_states);
     report.write();
 
+    println!(
+        "  Max position error: {:.6e} m",
+        report.max_position_component()
+    );
+    println!(
+        "  Max velocity error: {:.6e} m/s",
+        report.max_velocity_component()
+    );
+    println!("  Max aero force error: {:.6e} N", max_force_err);
+
+    // Tolerances at 5% above observed max error
+    report.assert_position([1.12, 1.12, 1.12]);
+    report.assert_velocity([1.254e-3, 1.254e-3, 1.254e-3]);
     assert!(
-        max_accel_err < 1.458e-17,
-        "accel max error {:.6e} exceeds 1.458e-17 m/s2",
-        max_accel_err
-    );
-}
-
-#[test]
-fn tier3_drag_variable_cd() {
-    // DRAG_OPT_CD: drag = -0.5*rho*v2 * area * Cd
-    // Cd=2, area=100 m2 -> Cd*A = 200
-    run_drag_comparison(
-        "drag_cd_drag.csv",
-        "RUN_aero_drag_CD (Cd=2, A=100)",
-        DragConfig {
-            cd: 2.0,
-            area: 100.0,
-            constant_density: Some(DRAG_DENSITY),
-        },
-        "tier3_drag_variable_cd",
-    );
-}
-
-#[test]
-fn tier3_drag_ballistic_coeff() {
-    // DRAG_OPT_BC: drag = -(0.5*rho*v2 * mass) / BC
-    // BC=0.005, mass=1.0 kg -> mass/BC = 200 -> same as Cd*A=200
-    run_drag_comparison(
-        "drag_bc_drag.csv",
-        "RUN_aero_drag_BC (BC=0.005, m=1kg -> Cd*A=200)",
-        DragConfig {
-            cd: 200.0,
-            area: 1.0,
-            constant_density: Some(DRAG_DENSITY),
-        },
-        "tier3_drag_ballistic_coeff",
+        max_force_err < 1.23e-5,
+        "Aero force error {max_force_err:.3e} N exceeds 1.23e-5 N"
     );
 }

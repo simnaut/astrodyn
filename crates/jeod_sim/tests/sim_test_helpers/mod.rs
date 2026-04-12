@@ -551,6 +551,82 @@ pub fn load_solar_beta_csv(path: &Path) -> Vec<SolarBetaRecord> {
     records
 }
 
+// ── SIM_dyncomp atmosphere trajectory CSV loader (9 columns) ──
+
+#[derive(Debug)]
+pub struct AtmosTrajRecord {
+    pub time: f64,
+    pub position: DVec3,
+    pub velocity: DVec3,
+    pub density: f64,
+    pub temperature: f64,
+}
+
+pub fn load_atmos_traj_csv(path: &Path) -> Vec<AtmosTrajRecord> {
+    let content = read_csv(path, "SIM_dyncomp (atmos_traj)");
+    let mut records = Vec::new();
+    for (i, line) in content.lines().enumerate() {
+        if i == 0 || line.trim().is_empty() {
+            continue;
+        }
+        let f: Vec<&str> = line.split(',').collect();
+        assert!(
+            f.len() >= 9,
+            "line {}: expected >=9 columns, got {}",
+            i + 1,
+            f.len()
+        );
+        let p = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
+        records.push(AtmosTrajRecord {
+            time: p(0),
+            position: DVec3::new(p(1), p(2), p(3)),
+            velocity: DVec3::new(p(4), p(5), p(6)),
+            density: p(7),
+            temperature: p(8),
+        });
+    }
+    records
+}
+
+// ── SIM_dyncomp aero trajectory CSV loader (14 columns) ──
+
+#[derive(Debug)]
+pub struct AeroTrajRecord {
+    pub time: f64,
+    pub position: DVec3,
+    pub velocity: DVec3,
+    pub aero_force: DVec3,
+    pub aero_torque: DVec3,
+    pub density: f64,
+}
+
+pub fn load_aero_traj_csv(path: &Path) -> Vec<AeroTrajRecord> {
+    let content = read_csv(path, "SIM_dyncomp (aero_traj)");
+    let mut records = Vec::new();
+    for (i, line) in content.lines().enumerate() {
+        if i == 0 || line.trim().is_empty() {
+            continue;
+        }
+        let f: Vec<&str> = line.split(',').collect();
+        assert!(
+            f.len() >= 14,
+            "line {}: expected >=14 columns, got {}",
+            i + 1,
+            f.len()
+        );
+        let p = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
+        records.push(AeroTrajRecord {
+            time: p(0),
+            position: DVec3::new(p(1), p(2), p(3)),
+            velocity: DVec3::new(p(4), p(5), p(6)),
+            aero_force: DVec3::new(p(7), p(8), p(9)),
+            aero_torque: DVec3::new(p(10), p(11), p(12)),
+            density: p(13),
+        });
+    }
+    records
+}
+
 fn read_csv(path: &Path, sim_name: &str) -> String {
     std::fs::read_to_string(path).unwrap_or_else(|e| {
         panic!(
