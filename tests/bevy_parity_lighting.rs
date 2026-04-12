@@ -8,10 +8,8 @@ use bevy_jeod::{
     GravityControlsC, MoonMarker, SunMarker, TotalForceC, TranslationalStateC,
 };
 use glam::DVec3;
-use jeod_sim::{
-    GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry,
-    RotationModel, SimBody, TranslationalState,
-};
+use jeod_runner::{GravitySourceEntry, RotationModel, SimBody};
+use jeod_sim::{GravityControl, GravityControls, GravityModel, GravitySource, TranslationalState};
 
 use parity_helpers::*;
 

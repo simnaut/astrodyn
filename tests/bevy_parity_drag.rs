@@ -9,10 +9,10 @@ use bevy_jeod::{
     RotationalStateC, SourceInertialPositionC, TotalForceC, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
+use jeod_runner::{GravitySourceEntry, RotationModel};
 use jeod_sim::{
     AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig, ExponentialAtmosphere,
-    GeoIndexType, GravityControl, GravityControls, GravitySourceEntry, MetAtmosphere,
-    RotationModel, SixDofState,
+    GeoIndexType, GravityControl, GravityControls, MetAtmosphere, SixDofState,
 };
 
 use parity_helpers::*;
@@ -83,7 +83,7 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
 
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
-    let mut sim = jeod_sim::Simulation::new(time, DT);
+    let mut sim = jeod_runner::Simulation::new(time, DT);
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
         position: DVec3::ZERO,
@@ -182,7 +182,7 @@ fn tier3_bevy_constant_density_drag_sixdof() {
 
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
-    let mut sim = jeod_sim::Simulation::new(time, DT);
+    let mut sim = jeod_runner::Simulation::new(time, DT);
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
         position: DVec3::ZERO,
@@ -287,7 +287,7 @@ fn tier3_bevy_met_atmosphere_drag_sixdof() {
 
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
-    let mut sim = jeod_sim::Simulation::new(time, DT);
+    let mut sim = jeod_runner::Simulation::new(time, DT);
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
         position: DVec3::ZERO,
@@ -387,7 +387,7 @@ fn tier3_bevy_met_run5a() {
 
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
-    let mut sim = jeod_sim::Simulation::new(time, DT);
+    let mut sim = jeod_runner::Simulation::new(time, DT);
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
         position: DVec3::ZERO,
@@ -491,7 +491,7 @@ fn tier3_bevy_drag_run6b() {
 
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
-    let mut sim = jeod_sim::Simulation::new(time, DT);
+    let mut sim = jeod_runner::Simulation::new(time, DT);
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
         position: DVec3::ZERO,

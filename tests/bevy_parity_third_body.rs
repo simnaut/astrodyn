@@ -11,10 +11,10 @@ use bevy_jeod::{
     SunMarker, TotalForceC, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
+use jeod_runner::{GravitySourceEntry, RotationModel, SimBody};
 use jeod_sim::{
     DynamicsConfig, Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel,
-    GravitySource, GravitySourceEntry, MassProperties, RotationModel, SimBody, SixDofState,
-    TranslationalState,
+    GravitySource, MassProperties, SixDofState, TranslationalState,
 };
 
 use parity_helpers::*;
@@ -515,7 +515,7 @@ fn tier3_bevy_mars_dawn() {
 
     let eph_sim = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
-    let mut sim = jeod_sim::Simulation::new(time, DT);
+    let mut sim = jeod_runner::Simulation::new(time, DT);
     let mars_idx = sim.add_source(GravitySourceEntry {
         source: GravitySource {
             mu: mu_mars,
@@ -611,7 +611,7 @@ fn tier3_bevy_mercury_relativistic() {
     let bevy_trans = read_trans(app.world(), vehicle);
 
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
-    let mut sim = jeod_sim::Simulation::new(time, DT);
+    let mut sim = jeod_runner::Simulation::new(time, DT);
     let sun_idx = sim.add_source(GravitySourceEntry {
         source: GravitySource {
             mu: mu_sun,
@@ -707,7 +707,7 @@ fn tier3_bevy_relativistic_moving_source() {
 
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
-    let mut sim = jeod_sim::Simulation::new(time, DT);
+    let mut sim = jeod_runner::Simulation::new(time, DT);
     let sun_idx = sim.add_source(GravitySourceEntry {
         source: GravitySource {
             mu: mu_sun,

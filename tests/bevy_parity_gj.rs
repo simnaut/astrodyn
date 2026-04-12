@@ -1,4 +1,4 @@
-//! Bevy App vs jeod_sim::Simulation parity for Gauss-Jackson integrator.
+//! Bevy App vs jeod_runner::Simulation parity for Gauss-Jackson integrator.
 //!
 //! Mirrors each test in `crates/jeod_sim/tests/tier3_sim_gj.rs` with a
 //! Bevy-vs-Simulation bit-identical assertion, establishing:
@@ -16,9 +16,10 @@ use bevy_jeod::{
     TranslationalStateC,
 };
 use glam::DVec3;
+use jeod_runner::{GravitySourceEntry, SimBody, Simulation};
 use jeod_sim::{
     GaussJacksonConfig, GaussJacksonState, GravityControl, GravityControls, GravityModel,
-    GravitySource, GravitySourceEntry, IntegratorType, SimBody, Simulation, TranslationalState,
+    GravitySource, IntegratorType, TranslationalState,
 };
 
 /// Non-standard μ matching SIM_GJ_test (same as tier3_sim_gj.rs).
@@ -146,7 +147,7 @@ fn run_gj_parity(
         position: DVec3::ZERO,
         velocity: DVec3::ZERO,
         t_inertial_pfix: None,
-        rotation_model: jeod_sim::RotationModel::None,
+        rotation_model: jeod_runner::RotationModel::None,
         delta_c20: 0.0,
         tidal_config: None,
     });

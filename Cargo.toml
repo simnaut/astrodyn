@@ -12,6 +12,7 @@ bevy = { workspace = true }
 glam = { workspace = true }
 jeod_test_data = { path = "crates/jeod_test_data" }
 jeod_sim = { path = "crates/jeod_sim" }
+jeod_runner = { path = "crates/jeod_runner" }
 
 [workspace]
 resolver = "2"
@@ -27,6 +28,7 @@ members = [
     "crates/jeod_interactions",
     "crates/jeod_test_data",
     "crates/jeod_sim",
+    "crates/jeod_runner",
 ]
 
 [workspace.dependencies]
@@ -51,11 +53,3 @@ opt-level = 2
 [[example]]
 name = "kepler_orbit"
 path = "examples/kepler_orbit.rs"
-
-[[example]]
-name = "batch_propagation"
-path = "examples/batch_propagation.rs"
-
-[[example]]
-name = "leo_drag"
-path = "examples/leo_drag.rs"

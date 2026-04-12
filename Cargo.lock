@@ -655,6 +655,7 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "glam 0.30.10",
+ "jeod_runner",
  "jeod_sim",
  "jeod_test_data",
 ]
@@ -2415,6 +2416,23 @@ dependencies = [
 [[package]]
 name = "jeod_planet"
 version = "0.1.0"
+
+[[package]]
+name = "jeod_runner"
+version = "0.1.0"
+dependencies = [
+ "glam 0.30.10",
+ "jeod_atmosphere",
+ "jeod_dynamics",
+ "jeod_frames",
+ "jeod_gravity",
+ "jeod_interactions",
+ "jeod_math",
+ "jeod_sim",
+ "jeod_test_data",
+ "jeod_time",
+ "log",
+]
 
 [[package]]
 name = "jeod_sim"

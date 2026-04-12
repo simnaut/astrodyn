@@ -22,11 +22,12 @@
 //! - [`compute_body_geodetic`] — geodetic coordinates from inertial position
 //! - [`compute_body_solar_beta`] — solar beta angle
 //!
-//! ## Simulation runner (for non-ECS use)
+//! ## Standalone runner
 //!
-//! A standalone [`Simulation`] struct for batch propagation, scripting, and
-//! tests. Owns all state and runs the pipeline internally. ECS adapters
-//! should **not** use this — use the per-body functions instead.
+//! For batch propagation and Tier 3 tests, see the `jeod_runner` crate which
+//! provides a standalone `Simulation` struct that owns all state and drives the
+//! pipeline. ECS adapters should **not** use `jeod_runner` — use the per-body
+//! functions from this crate instead.
 //!
 //! ## Pipeline ordering
 //!
@@ -40,7 +41,7 @@ pub mod gravity;
 pub mod integration;
 pub mod interactions;
 pub mod pipeline;
-pub mod simulation;
+pub mod rotation_model;
 pub mod validation;
 
 // ── Orchestration functions ──
@@ -61,7 +62,7 @@ pub use interactions::{
 };
 pub use jeod_dynamics::{GaussJacksonConfig, GaussJacksonState, IntegratorResult, IntegratorType};
 pub use pipeline::{PipelineStage, PIPELINE_ORDER};
-pub use simulation::{GravitySourceEntry, RotationModel, SimBody, Simulation};
+pub use rotation_model::RotationModel;
 pub use validation::{validate_body, ValidationError};
 
 // ── Re-exports from jeod_* crates ──

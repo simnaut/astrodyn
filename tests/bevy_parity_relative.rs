@@ -1,8 +1,8 @@
-//! Tier 3: Bevy App vs jeod_sim::Simulation bit-identical parity tests
+//! Tier 3: Bevy App vs jeod_runner::Simulation bit-identical parity tests
 //! for relative dynamics and LVLH-relative state computations.
 //!
 //! Each test sets up identical initial conditions in both a Bevy App
-//! and a jeod_sim::Simulation, steps both the same number of times,
+//! and a jeod_runner::Simulation, steps both the same number of times,
 //! then computes relative state post-step and asserts `f64::to_bits()`
 //! equality.
 
@@ -12,9 +12,10 @@ use bevy_jeod::{
     RotationalStateC, TotalForceC, TranslationalStateC,
 };
 use glam::DVec3;
+use jeod_runner::{SimBody, Simulation};
 use jeod_sim::{
-    DynamicsConfig, GravityControls, JeodQuat, MassProperties, RotationalState, SimBody,
-    Simulation, SixDofState, TranslationalState,
+    DynamicsConfig, GravityControls, JeodQuat, MassProperties, RotationalState, SixDofState,
+    TranslationalState,
 };
 
 const DT: f64 = 10.0;
