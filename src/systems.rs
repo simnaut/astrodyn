@@ -15,15 +15,21 @@ pub fn time_advance_system(mut sim_time: ResMut<SimulationTimeR>, time: Res<Time
 
 // ── Ephemeris / Frames ──
 
-/// Computes the inertial-to-planet-fixed rotation matrix (RNP) for each entity
+/// Computes the inertial-to-planet-fixed rotation matrix for each entity
 /// that carries a `PlanetFixedRotationC` component.
 ///
-/// This replaces the `DMat3::IDENTITY` placeholder so that spherical-harmonic
-/// gravity evaluation uses the correct body-fixed coordinates.
+/// Dispatches per-entity via `RotationModelC`:
 ///
-/// NOTE: Currently applies the same Earth RNP rotation to ALL entities with
-/// `PlanetFixedRotationC`. Multi-planet sims would need per-entity rotation
-/// parameters (Phase 5 work).
+/// - `EarthRNP`: IAU 2000A precession-nutation + GAST + optional polar motion
+/// - `MarsIAU`: IAU pole + spin + nutation Fourier series
+/// - `MoonIAU`: IAU 2009 pole + prime meridian
+/// - `MoonDE421`: DE421 BPC libration (requires `EphemerisR`)
+/// - `None`: skip (leaves `PlanetFixedRotationC` unchanged)
+///
+/// When `RotationModelC` is absent, defaults to `EarthRNP`.
+///
+/// Earth RNP is lazy-computed once per step and reused across all `EarthRNP`
+/// entities.
 pub fn planet_fixed_rotation_system(
     sim_time: Res<SimulationTimeR>,
     polar: Option<Res<crate::PolarMotionR>>,
@@ -295,7 +301,7 @@ pub fn integration_system(
             rot_state.as_mut().map(|r| &mut r.0),
             mass.map(|m| &m.0),
             |pos, vel| {
-                let grav =
+                let mut accel =
                     jeod_sim::accumulate_gravity(pos, &controls.0, DVec3::ZERO, |source_entity| {
                         match sources.get(source_entity) {
                             Ok((s, r, p, tidal, tidal_config)) => Some(jeod_sim::ResolvedSource {
@@ -313,14 +319,11 @@ pub fn integration_system(
                                 );
                             }
                         }
-                    });
-                let mut accel = grav.grav_accel;
+                    })
+                    .grav_accel;
 
-                // Apply relativistic (post-Newtonian PPN) corrections.
-                // TODO: Source velocity is currently DVec3::ZERO. For moving sources
-                // (e.g., barycentric Sun), add a SourceInertialVelocityC component
-                // to avoid Bevy query conflicts with body TranslationalStateC.
-                // See PR #51 review comment.
+                // Relativistic correction at each integrator stage.
+                // TODO(#53): source velocity is DVec3::ZERO.
                 accel += jeod_sim::accumulate_relativistic_corrections(
                     pos,
                     vel,
@@ -395,6 +398,24 @@ pub fn gravity_computation_system(
                          GravitySourceC + SourceInertialPositionC."
                     );
                 }
+            },
+        );
+
+        // Apply relativistic (post-Newtonian PPN) corrections after Newtonian
+        // gravity, matching Simulation::step() stage 4b ordering.
+        // TODO: Source velocity is DVec3::ZERO — see #53.
+        accel.grav_accel += jeod_sim::accumulate_relativistic_corrections(
+            state.position,
+            state.velocity,
+            &controls.0,
+            |source_entity| {
+                sources.get(source_entity).ok().map(|(s, _, p, _, _)| {
+                    jeod_sim::ResolvedRelativisticSource {
+                        mu: s.mu,
+                        position: p.0,
+                        velocity: DVec3::ZERO,
+                    }
+                })
             },
         );
     }
@@ -715,7 +736,7 @@ pub fn flat_plate_srp_system(
             Option<&StructuralTransformC>,
             &mut RadiationForceC,
         ),
-        Without<SunMarker>,
+        (Without<SunMarker>, Without<CannonballSrpC>),
     >,
     sun_query: Query<&TranslationalStateC, With<SunMarker>>,
     shadow_bodies: Query<(&TranslationalStateC, &ShadowBodyC), Without<SunMarker>>,
@@ -788,10 +809,11 @@ pub fn flat_plate_srp_system(
 /// Writes force to `RadiationForceC` (torque is always zero for cannonball).
 ///
 /// Placed in `JeodSet::Interaction`.
+#[allow(clippy::type_complexity)]
 pub fn cannonball_srp_system(
     mut query: Query<
         (&CannonballSrpC, &TranslationalStateC, &mut RadiationForceC),
-        Without<SunMarker>,
+        (Without<SunMarker>, Without<FlatPlateConfigC>),
     >,
     sun_query: Query<&TranslationalStateC, With<SunMarker>>,
     shadow_bodies: Query<(&TranslationalStateC, &ShadowBodyC), Without<SunMarker>>,

@@ -8,8 +8,9 @@
 use bevy::prelude::*;
 
 use crate::components::{
-    DynamicsConfigC, FlatPlateConfigC, GravityAccelerationC, GravityControlsC, GravitySourceC,
-    MassPropertiesC, RotationalStateC, TidalConfigC, TidalDeltaC20C, TranslationalStateC,
+    CannonballSrpC, DynamicsConfigC, FlatPlateConfigC, GravityAccelerationC, GravityControlsC,
+    GravitySourceC, MassPropertiesC, RotationalStateC, TidalConfigC, TidalDeltaC20C,
+    TranslationalStateC,
 };
 
 /// Validates JEOD invariants on all dynamic body entities.
@@ -43,6 +44,7 @@ pub fn validate_jeod_invariants(
         Option<&TidalDeltaC20C>,
         Option<&crate::components::PlanetFixedRotationC>,
     )>,
+    srp_exclusion: Query<Entity, With<CannonballSrpC>>,
     mut has_run: Local<bool>,
 ) {
     if *has_run {
@@ -63,6 +65,17 @@ pub fn validate_jeod_invariants(
              tidal_update_system requires PlanetFixedRotationC to transform tidal body \
              positions into the planet-fixed frame."
         );
+    }
+
+    // Validate SRP mutual exclusion: CannonballSrpC and FlatPlateConfigC
+    // must not coexist on the same entity (both write RadiationForceC).
+    for (entity, _, _, _, _, _, _, flat_plates) in &bodies {
+        if flat_plates.is_some() && srp_exclusion.get(entity).is_ok() {
+            panic!(
+                "Entity {entity:?}: both FlatPlateConfigC and CannonballSrpC are present. \
+                 These are mutually exclusive — use one SRP model per entity."
+            );
+        }
     }
 
     for (entity, config, mut controls, grav_accel, mass, rot_state, trans_state, flat_plates) in
