@@ -13,6 +13,9 @@
 //! and GGM02C gravity coefficients with RNP Earth rotation.
 //!
 //! Sun and Moon positions are queried from DE421 ephemeris at each logged 60s sample.
+//!
+//! Simulation parameters (epoch, step size, mu values) are loaded from the JEOD
+//! source files rather than hardcoded, per issue #44.
 
 mod sim_test_helpers;
 use sim_test_helpers::*;
@@ -27,13 +30,8 @@ use jeod_sim::{
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::Path;
 
-const MU_SUN: f64 = 1.327_124_40e20;
-const MU_MOON: f64 = 4902.79980693169e9;
-
-/// Epoch constants (same as other SIM_dyncomp tests: Nov 20 2007 00:00 UTC).
-const EPOCH_UTC_TJT: f64 = 14424.0;
-const TAI_UTC_S: f64 = 32.0;
-const TAI_TO_UT1_S: f64 = -32.469;
+/// SIM_dyncomp root directory (relative to JEOD_HOME).
+const SIM_DYNCOMP: &str = "verif/SIM_dyncomp";
 
 fn earth_centered_position(body: EphemerisBody, tdb_jd: f64, ephemeris: &Ephemeris) -> DVec3 {
     let (pos, _) = ephemeris
@@ -42,11 +40,9 @@ fn earth_centered_position(body: EphemerisBody, tdb_jd: f64, ephemeris: &Ephemer
     pos
 }
 
-#[allow(clippy::too_many_arguments)]
 fn run_7_test(
     csv_name: &str,
-    degree: usize,
-    order: usize,
+    run_dir: &str,
     with_drag: bool,
     label: &str,
     test_name: &str,
@@ -77,20 +73,59 @@ fn run_7_test(
     );
     let ephemeris = Ephemeris::from_bsp(&bsp_path).expect("load DE421");
 
-    // Load GGM02C spherical harmonics coefficients (same as RUN_3 tests)
-    let ggm02c_path = jeod_root.join("models/environment/gravity/data/src/earth_GGM02C.cc");
+    let sim_dir = jeod_root.join(SIM_DYNCOMP);
+    let grav_data_dir = jeod_root.join("models/environment/gravity/data/src");
+
+    // Load epoch and time offsets from JEOD time config
+    let time_cfg =
+        jeod_test_data::time_config::load_time_config(&sim_dir.join("Modified_data/time.py"));
+    let epoch_tai_tjt = time_cfg.tai_tjt();
+    let ut1_tai_offset = time_cfg
+        .ut1_tai_offset()
+        .expect("SIM_dyncomp time.py must specify tai_to_ut1_override_val");
+
+    // Load integration step size from S_define
+    let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+
+    // Load gravity control (degree/order) from the exec chain.
+    // All RUN_7* start from RUN_7A (which sets 4x4). RUN_7B/7D override to 8x8.
+    // RUN_7C exec's RUN_7A, RUN_7D exec's RUN_7B.
+    let mut grav_files: Vec<std::path::PathBuf> =
+        vec![sim_dir.join("Modified_data/grav_controls.py")];
+    // RUN_7A is always in the chain
+    grav_files.push(sim_dir.join("SET_test/RUN_7A/input.py"));
+    // For 8x8 variants (7B, 7D), RUN_7B adds the override
+    if run_dir == "RUN_7B" || run_dir == "RUN_7D" {
+        grav_files.push(sim_dir.join("SET_test/RUN_7B/input.py"));
+    }
+    // 7C and 7D have their own files too (mostly drag, no gravity changes)
+    if run_dir == "RUN_7C" || run_dir == "RUN_7D" {
+        grav_files.push(sim_dir.join(format!("SET_test/{run_dir}/input.py")));
+    }
+    let grav_file_refs: Vec<&std::path::Path> = grav_files.iter().map(|p| p.as_path()).collect();
+    let grav_cfg = jeod_test_data::gravity_control::load_gravity_control(&grav_file_refs);
+
+    // Load GGM02C spherical harmonics coefficients
+    let ggm02c_path = grav_data_dir.join("earth_GGM02C.cc");
     let sh_data = jeod_sim::coefficients::load_from_jeod_cc(&ggm02c_path).expect("load GGM02C");
+
+    // Load Sun/Moon mu (spherical-only files lack degree/order fields)
+    let mu_sun =
+        jeod_sim::coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("sun_spherical.cc"))
+            .expect("load Sun mu");
+    let mu_moon =
+        jeod_sim::coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("moon_GRAIL150.cc"))
+            .expect("load Moon mu");
 
     let trajectory = load_dyncomp_csv(&csv_path);
     assert!(trajectory.len() > 100);
     let init = &trajectory[0];
 
-    // Initialize Simulation at the SIM_dyncomp epoch
-    let epoch_tai_tjt = EPOCH_UTC_TJT + TAI_UTC_S / 86400.0;
+    // Initialize Simulation at the SIM_dyncomp epoch (parsed from time.py)
     let mut time = SimulationTime::new(epoch_tai_tjt, jeod_sim::default_leap_second_table());
-    time.set_ut1_tai_offset(TAI_TO_UT1_S);
+    time.set_ut1_tai_offset(ut1_tai_offset);
 
-    let mut sim = Simulation::new(time, DT);
+    let mut sim = Simulation::new(time, dt);
 
     // Earth source with SH gravity and planet-fixed rotation
     let sh_source = GravitySource {
@@ -107,11 +142,11 @@ fn run_7_test(
         tidal_config: None,
     });
 
-    // Sun and Moon: third-body differential acceleration
+    // Sun and Moon: third-body differential acceleration (mu from JEOD gravity files)
     let tdb_jd = sim.time.tdb_julian_date();
     let sun = sim.add_source(GravitySourceEntry {
         source: GravitySource {
-            mu: MU_SUN,
+            mu: mu_sun,
             model: GravityModel::PointMass,
         },
         position: earth_centered_position(EphemerisBody::Sun, tdb_jd, &ephemeris),
@@ -123,7 +158,7 @@ fn run_7_test(
     });
     let moon = sim.add_source(GravitySourceEntry {
         source: GravitySource {
-            mu: MU_MOON,
+            mu: mu_moon,
             model: GravityModel::PointMass,
         },
         position: earth_centered_position(EphemerisBody::Moon, tdb_jd, &ephemeris),
@@ -160,9 +195,33 @@ fn run_7_test(
         None
     };
 
-    // Sphere mass: 1 kg, inertia 0.4*I, CoM at origin (from Modified_data/mass.py)
-    let sphere_mass =
-        MassProperties::with_inertia(1.0, DMat3::from_diagonal(DVec3::splat(0.4)), DVec3::ZERO);
+    // Sphere mass (loaded from JEOD Modified_data/mass.py, function set_mass_sphere)
+    let mass_init = jeod_test_data::mass_data::load_mass_from_file(
+        &sim_dir.join("Modified_data/mass.py"),
+        Some("set_mass_sphere"),
+    );
+    let sphere_inertia = DMat3::from_cols(
+        DVec3::new(
+            mass_init.inertia[0][0],
+            mass_init.inertia[1][0],
+            mass_init.inertia[2][0],
+        ),
+        DVec3::new(
+            mass_init.inertia[0][1],
+            mass_init.inertia[1][1],
+            mass_init.inertia[2][1],
+        ),
+        DVec3::new(
+            mass_init.inertia[0][2],
+            mass_init.inertia[1][2],
+            mass_init.inertia[2][2],
+        ),
+    );
+    let sphere_mass = MassProperties::with_inertia(
+        mass_init.mass,
+        sphere_inertia,
+        DVec3::from_slice(&mass_init.position),
+    );
 
     // Drag requires RotationalState for inertial-to-body frame transform.
     // Even for a sphere (isotropic drag), the code path needs orientation.
@@ -192,7 +251,12 @@ fn run_7_test(
         config,
         gravity_controls: GravityControls {
             controls: vec![
-                GravityControl::new_nonspherical(earth, degree, order, false),
+                GravityControl::new_nonspherical(
+                    earth,
+                    grav_cfg.degree,
+                    grav_cfg.order,
+                    grav_cfg.gradient,
+                ),
                 GravityControl::new_third_body(sun),
                 GravityControl::new_third_body(moon),
             ],
@@ -265,14 +329,11 @@ fn run_7_test(
     report.assert_velocity(vel_tol);
 }
 
-// Provisional tolerances: set high initially, tighten after first run.
-
 #[test]
 fn tier3_simulation_run7a_sh4x4_3rd_body() {
     run_7_test(
         "dyncomp_run7a_state.csv",
-        4,
-        4,
+        "RUN_7A",
         false,
         "RUN_7A (4x4 SH + Sun/Moon, no drag)",
         "tier3_simulation_run7a",
@@ -285,8 +346,7 @@ fn tier3_simulation_run7a_sh4x4_3rd_body() {
 fn tier3_simulation_run7b_sh8x8_3rd_body() {
     run_7_test(
         "dyncomp_run7b_state.csv",
-        8,
-        8,
+        "RUN_7B",
         false,
         "RUN_7B (8x8 SH + Sun/Moon, no drag)",
         "tier3_simulation_run7b",
@@ -299,8 +359,7 @@ fn tier3_simulation_run7b_sh8x8_3rd_body() {
 fn tier3_simulation_run7c_sh4x4_3rd_body_drag() {
     run_7_test(
         "dyncomp_run7c_state.csv",
-        4,
-        4,
+        "RUN_7C",
         true,
         "RUN_7C (4x4 SH + Sun/Moon + drag)",
         "tier3_simulation_run7c",
@@ -313,8 +372,7 @@ fn tier3_simulation_run7c_sh4x4_3rd_body_drag() {
 fn tier3_simulation_run7d_sh8x8_3rd_body_drag() {
     run_7_test(
         "dyncomp_run7d_state.csv",
-        8,
-        8,
+        "RUN_7D",
         true,
         "RUN_7D (8x8 SH + Sun/Moon + drag)",
         "tier3_simulation_run7d",

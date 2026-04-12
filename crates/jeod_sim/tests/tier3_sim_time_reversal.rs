@@ -16,8 +16,18 @@ use jeod_sim::{
     TranslationalState,
 };
 
-// GEM-T1 mu (used by JEOD SIM_7_time_reversal), NOT GGM05C
-const MU_EARTH_GEMT1: f64 = 3.986_004_36e14;
+fn load_mu_earth_gemt1() -> f64 {
+    let jeod_root = jeod_test_data::jeod_path();
+    assert!(
+        jeod_root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        jeod_root.display()
+    );
+    jeod_sim::coefficients::load_mu_from_jeod_cc(
+        &jeod_root.join("models/environment/gravity/data/src/earth_GEMT1.cc"),
+    )
+    .expect("load Earth mu from GEMT1")
+}
 
 #[allow(dead_code)] // position/velocity used by run1, not by time-only run3a/run8b
 struct ReversalRecord {
@@ -64,6 +74,7 @@ fn load_reversal_csv(path: &std::path::Path) -> Vec<ReversalRecord> {
 /// Validates both time and trajectory against JEOD reference.
 #[test]
 fn tier3_sim_time_reversal_run1() {
+    let mu_earth_gemt1 = load_mu_earth_gemt1();
     let csv_path = test_data_path("reversal_run1_reversal.csv");
     let records = load_reversal_csv(&csv_path);
     assert!(records.len() > 1, "no reference data");
@@ -71,13 +82,23 @@ fn tier3_sim_time_reversal_run1() {
     let init = &records[0];
 
     // Epoch: 2007-11-20 00:00:00 UTC. TAI TJT from CSV.
+    let jeod_root = jeod_test_data::jeod_path();
+    assert!(
+        jeod_root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        jeod_root.display()
+    );
+    let dt = jeod_test_data::s_define::load_dynamics_dt(
+        &jeod_root.join("models/environment/time/verif/SIM_7_time_reversal/S_define"),
+    );
+
     let leap_table = jeod_sim::default_leap_second_table();
     let time = SimulationTime::new(init.tai_tjt, leap_table);
-    let mut sim = Simulation::new(time, DT); // 0.03125 s
+    let mut sim = Simulation::new(time, dt);
 
     let earth = sim.add_source(GravitySourceEntry::new(
         GravitySource {
-            mu: MU_EARTH_GEMT1,
+            mu: mu_earth_gemt1,
             model: GravityModel::PointMass,
         },
         DVec3::ZERO,

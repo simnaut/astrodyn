@@ -14,7 +14,18 @@ use jeod_sim::{
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
-const MU_SUN: f64 = 1.327_124_40e20;
+fn load_mu_sun() -> f64 {
+    let jeod_root = jeod_test_data::jeod_path();
+    assert!(
+        jeod_root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        jeod_root.display()
+    );
+    jeod_sim::coefficients::load_mu_from_jeod_cc(
+        &jeod_root.join("models/environment/gravity/data/src/sun_spherical.cc"),
+    )
+    .expect("load Sun mu from sun_spherical")
+}
 
 /// Load a state CSV with interleaved columns: time, pos[0], vel[0], pos[1], vel[1], pos[2], vel[2].
 /// This is the default DRAscii layout when position and velocity are logged per-component.
@@ -56,6 +67,7 @@ fn load_interleaved_csv(path: &std::path::Path, sim_name: &str) -> Vec<StateLog>
 /// tighten the tolerance significantly.
 #[test]
 fn tier3_simulation_mars_dawn() {
+    let mu_sun = load_mu_sun();
     let csv_path = test_data_path("mars_dawn_mars.csv");
     let ref_states = load_interleaved_csv(&csv_path, "SIM_Mars RUN_dawn");
     assert!(
@@ -117,7 +129,7 @@ fn tier3_simulation_mars_dawn() {
     // Sun as 3rd-body with per-step DE421 ephemeris updates
     let sun = sim.add_source(GravitySourceEntry::new(
         GravitySource {
-            mu: MU_SUN,
+            mu: mu_sun,
             model: GravityModel::PointMass,
         },
         sun_pos_from_mars,

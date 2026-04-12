@@ -12,9 +12,6 @@ use std::path::Path;
 #[allow(unused_imports)] // Not all test binaries use dyncomp CSV loading
 pub use jeod_test_data::dyncomp_csv::{load_dyncomp_csv, DyncompRecord};
 
-pub const MU_EARTH: f64 = 3.986_004_415e14;
-pub const DT: f64 = 0.03125; // 32 Hz, matches JEOD SIM_dyncomp
-
 /// Earth rotation rate (JEOD RNPJ2000 default).
 pub const OMEGA_EARTH: f64 = 7.292_115_146_706_388e-5;
 

@@ -14,11 +14,11 @@ use jeod_sim::{
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::Path;
 
-const SRP_MU_EARTH: f64 = 3.986_004_415e14;
+/// SIM_3_ORBIT directory relative to JEOD root.
+const SIM_3_ORBIT: &str = "models/interactions/radiation_pressure/verif/SIM_3_ORBIT";
+
 const SRP_R_EARTH: f64 = 6_378_137.0;
 const SRP_MASS: f64 = 300.0;
-const SRP_DT: f64 = 1.0;
-const SRP_EPOCH_TJT: f64 = 11148.0; // 1998-12-01 UTC
 
 fn srp_plates() -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
     let params = FlatPlateParams {
@@ -147,6 +147,13 @@ impl SunTable {
 
 #[test]
 fn tier3_simulation_srp_flat_plate() {
+    let jeod_root = jeod_test_data::jeod_path();
+    assert!(
+        jeod_root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        jeod_root.display()
+    );
+
     let csv_path = test_data_path("srp_orbit_radiation_srp_orbit.csv");
     assert!(
         csv_path.exists(),
@@ -162,6 +169,24 @@ fn tier3_simulation_srp_flat_plate() {
     );
     let ephemeris = Ephemeris::from_bsp(&bsp_path).expect("load DE421");
 
+    let sim_dir = jeod_root.join(SIM_3_ORBIT);
+    let grav_data_dir = jeod_root.join("models/environment/gravity/data/src");
+
+    // Load epoch from JEOD time config. SIM_3_ORBIT uses TAI initializer,
+    // so tai_tjt() returns the TAI TJT directly from the calendar date.
+    let time_cfg = jeod_test_data::time_config::load_time_config(
+        &sim_dir.join("Modified_data/date_and_time.py"),
+    );
+    let epoch_tai_tjt = time_cfg.tai_tjt();
+
+    // Load integration step size from S_define
+    let srp_dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+
+    // Load Earth mu from JEOD gravity data
+    let srp_mu_earth =
+        jeod_sim::coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc"))
+            .expect("load Earth mu");
+
     let trajectory = load_srp_trajectory(&csv_path);
     assert!(trajectory.len() > 100);
     let init = &trajectory[0];
@@ -170,16 +195,14 @@ fn tier3_simulation_srp_flat_plate() {
     let num_plates = plates.len();
     let init_temp = 270.0_f64;
 
-    // Epoch: 1998-12-01 UTC. TAI-UTC=31s at this date.
-    let epoch_tai_tjt = SRP_EPOCH_TJT + 31.0 / 86400.0;
     let time = SimulationTime::new(epoch_tai_tjt, jeod_sim::default_leap_second_table());
     let epoch_tdb_jd = time.tdb_julian_date();
-    let mut sim = Simulation::new(time, SRP_DT);
+    let mut sim = Simulation::new(time, srp_dt);
 
     // Earth at origin (gravity source + shadow body)
     let earth = sim.add_source(GravitySourceEntry {
         source: GravitySource {
-            mu: SRP_MU_EARTH,
+            mu: srp_mu_earth,
             model: GravityModel::PointMass,
         },
         position: DVec3::ZERO,
@@ -251,10 +274,10 @@ fn tier3_simulation_srp_flat_plate() {
     let mut ref_states = Vec::with_capacity(trajectory.len() - 1);
 
     let mut next_record = 1;
-    let total_steps = (total_time / SRP_DT).round() as usize;
+    let total_steps = (total_time / srp_dt).round() as usize;
 
     for step_i in 1..=total_steps {
-        let t = (step_i as f64) * SRP_DT;
+        let t = (step_i as f64) * srp_dt;
 
         // Update Sun position every step (matching JEOD's per-step ephemeris update)
         sim.sources[sun].position = sun_table.at(t);
@@ -264,7 +287,7 @@ fn tier3_simulation_srp_flat_plate() {
         // Collect comparison data at record times
         if next_record < trajectory.len() {
             let record = &trajectory[next_record];
-            if (sim.time.simtime - record.time).abs() < SRP_DT * 0.5 {
+            if (sim.time.simtime - record.time).abs() < srp_dt * 0.5 {
                 let body = sim.body(0);
 
                 our_states.push(StateLog {

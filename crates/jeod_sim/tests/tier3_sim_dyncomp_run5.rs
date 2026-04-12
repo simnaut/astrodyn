@@ -8,11 +8,13 @@
 //!
 //! RUN_5B: JEOD config uses F10.7 = 128.8 (solar mean)
 //! RUN_5C: JEOD config uses F10.7 = 250.0 (solar max)
+//!
+//! Mass properties are loaded from the JEOD source files, per issue #44.
 
 mod sim_test_helpers;
 use sim_test_helpers::*;
 
-use glam::{DMat3, DVec3};
+use glam::DVec3;
 use jeod_sim::{
     DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource,
     GravitySourceEntry, JeodQuat, MassProperties, RotationModel, RotationalState, SimBody,
@@ -70,24 +72,59 @@ fn run_atmosphere_test(
         csv_path.display()
     );
 
+    let jeod_root = jeod_test_data::jeod_path();
+    assert!(
+        jeod_root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        jeod_root.display()
+    );
+
     let trajectory = load_dyncomp_csv(&csv_path);
     assert!(trajectory.len() >= 100);
     let init = &trajectory[0];
 
-    // ISS mass properties (from Modified_data/mass.py set_mass_iss)
-    let inertia = DMat3::from_cols(
-        DVec3::new(1.02e8, -6.96e6, -5.48e6),
-        DVec3::new(-6.96e6, 0.91e8, 5.90e5),
-        DVec3::new(-5.48e6, 5.90e5, 1.64e8),
+    // ISS mass properties (loaded from JEOD Modified_data/mass.py)
+    let sim_dir = jeod_root.join("verif/SIM_dyncomp");
+    let mass_init = jeod_test_data::mass_data::load_mass_from_file(
+        &sim_dir.join("Modified_data/mass.py"),
+        Some("set_mass_iss"),
     );
-    let mass_props = MassProperties::with_inertia(400_000.0, inertia, DVec3::new(-3.0, -1.5, 4.0));
+    let inertia = glam::DMat3::from_cols(
+        DVec3::new(
+            mass_init.inertia[0][0],
+            mass_init.inertia[1][0],
+            mass_init.inertia[2][0],
+        ),
+        DVec3::new(
+            mass_init.inertia[0][1],
+            mass_init.inertia[1][1],
+            mass_init.inertia[2][1],
+        ),
+        DVec3::new(
+            mass_init.inertia[0][2],
+            mass_init.inertia[1][2],
+            mass_init.inertia[2][2],
+        ),
+    );
+    let mass_props = MassProperties::with_inertia(
+        mass_init.mass,
+        inertia,
+        DVec3::from_slice(&mass_init.position),
+    );
+
+    // Load Earth mu and step size from JEOD source files
+    let mu_earth = jeod_sim::coefficients::load_mu_from_jeod_cc(
+        &jeod_root.join("models/environment/gravity/data/src/earth_GGM05C.cc"),
+    )
+    .expect("load Earth mu");
+    let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
 
     let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
-    let mut sim = Simulation::new(time, DT);
+    let mut sim = Simulation::new(time, dt);
 
     let earth = sim.add_source(GravitySourceEntry {
         source: GravitySource {
-            mu: MU_EARTH,
+            mu: mu_earth,
             model: GravityModel::PointMass,
         },
         position: DVec3::ZERO,

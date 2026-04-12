@@ -16,14 +16,22 @@ use jeod_sim::{Ephemeris, EphemerisBody};
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::Path;
 
+/// SIM_2A_SHADOW_CALC directory relative to JEOD root.
+const SIM_2A: &str = "models/interactions/radiation_pressure/verif/SIM_2A_SHADOW_CALC";
+
 /// Sun radius (m).
 const R_SUN: f64 = 6.96e8;
 /// Earth equatorial radius (m).
 const R_EARTH: f64 = 6_378_137.0;
-/// SIM_2A epoch: 1998-12-01 00:00:31 TAI.
-const EPOCH_TJT: f64 = 11148.0 + 31.0 / 86400.0;
 
 fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str, frac_tol: f64) {
+    let jeod_root = jeod_test_data::jeod_path();
+    assert!(
+        jeod_root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        jeod_root.display()
+    );
+
     let csv_path = test_data_path(csv_filename);
     assert!(
         csv_path.exists(),
@@ -41,6 +49,13 @@ fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str, frac_
     );
     let ephemeris = Ephemeris::from_bsp(&bsp_path).expect("load DE421");
 
+    // Load epoch from JEOD time config. SIM_2A uses TAI initializer.
+    let sim_dir = jeod_root.join(SIM_2A);
+    let time_cfg = jeod_test_data::time_config::load_time_config(
+        &sim_dir.join("Modified_data/date_and_time.py"),
+    );
+    let epoch_tjt = time_cfg.tai_tjt();
+
     let records = load_shadow_calc_csv(&csv_path);
     assert!(
         records.len() >= 2,
@@ -53,7 +68,7 @@ fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str, frac_
         records.len()
     );
 
-    let base_jd = EPOCH_TJT + 40000.0 + 2_400_000.5;
+    let base_jd = epoch_tjt + 40000.0 + 2_400_000.5;
 
     let mut max_frac_err = 0.0_f64;
     let mut shadow_state_mismatches = 0;

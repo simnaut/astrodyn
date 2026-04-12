@@ -19,6 +19,19 @@ use sim_test_helpers::*;
 use glam::DVec3;
 use jeod_sim::OrbitalElements;
 
+fn load_mu_earth() -> f64 {
+    let jeod_root = jeod_test_data::jeod_path();
+    assert!(
+        jeod_root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        jeod_root.display()
+    );
+    jeod_sim::coefficients::load_mu_from_jeod_cc(
+        &jeod_root.join("models/environment/gravity/data/src/earth_GGM05C.cc"),
+    )
+    .expect("load Earth mu from GGM05C")
+}
+
 /// Full record parsed from the verification CSV (all 21 columns).
 struct VerifRecord {
     semi_major_axis: f64,
@@ -129,9 +142,10 @@ fn assert_angle_close(name: &str, computed: f64, reference: f64, abs_tol: f64) {
 /// orb_ang_momentum=0). Our code computes valid values for these, but JEOD
 /// intentionally zeros them out for parabolic-regime orbits.
 fn verify_orbit_family(csv_name: &str, label: &str, skip_degenerate_scalars: bool) {
+    let mu_earth = load_mu_earth();
     let rec = load_verif_record(csv_name);
 
-    let oe = OrbitalElements::from_cartesian(MU_EARTH, rec.position, rec.velocity)
+    let oe = OrbitalElements::from_cartesian(mu_earth, rec.position, rec.velocity)
         .unwrap_or_else(|e| panic!("{label}: from_cartesian failed: {e:?}"));
 
     println!("Tier 3 (Static): {label}");

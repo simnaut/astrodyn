@@ -18,16 +18,21 @@ use jeod_sim::{
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
+use jeod_sim::LeapSecondTable;
+
 const GEO_R_EQ: f64 = 6_378_137.0;
 const GEO_R_POL: f64 = GEO_R_EQ * (1.0 - 1.0 / 298.257_223_563);
 /// Spherical Earth radius (JEOD uses r_eq for spherical model).
 const GEO_R_SPH: f64 = GEO_R_EQ;
 
-/// SIM_NED epoch: 1991-01-01 00:00:00 UTC.
-const NED_EPOCH_UTC_TJT: f64 = 8257.0;
-const NED_TAI_UTC_S: f64 = 26.0;
+/// Derived-state verif directory (shared Modified_data/ lives here, not in SIM_NED/).
+const DERIVED_STATE_VERIF: &str = "models/dynamics/derived_state/verif";
+/// SIM_NED directory relative to JEOD root.
+const SIM_NED: &str = "models/dynamics/derived_state/verif/SIM_NED";
+
+/// UT1-TAI from JEOD tai_to_ut1.cc at 1991-01-01 (index 10592).
+/// This comes from JEOD's internal UT1 data table, not a sim config file.
 const NED_UT1_TAI_S: f64 = -25.381_221_5;
-const NED_DT: f64 = 1.0;
 
 #[allow(clippy::too_many_arguments)]
 fn run_ned_test(
@@ -39,6 +44,10 @@ fn run_ned_test(
     tol_lat: f64,
     tol_lon: f64,
     test_name: &str,
+    epoch_tai_tjt: f64,
+    leap_table: LeapSecondTable,
+    ned_dt: f64,
+    mu_earth: f64,
 ) {
     let csv_path = test_data_path(csv_filename);
     assert!(
@@ -53,15 +62,14 @@ fn run_ned_test(
     assert!(records.len() > 100);
     let init = &records[0];
 
-    let epoch_tai_tjt = NED_EPOCH_UTC_TJT + NED_TAI_UTC_S / 86400.0;
-    let mut time = SimulationTime::new(epoch_tai_tjt, jeod_sim::default_leap_second_table());
+    let mut time = SimulationTime::new(epoch_tai_tjt, leap_table);
     time.set_ut1_tai_offset(NED_UT1_TAI_S);
 
-    let mut sim = Simulation::new(time, NED_DT);
+    let mut sim = Simulation::new(time, ned_dt);
 
     let earth = sim.add_source(GravitySourceEntry {
         source: GravitySource {
-            mu: MU_EARTH,
+            mu: mu_earth,
             model: GravityModel::PointMass,
         },
         position: DVec3::ZERO,
@@ -183,8 +191,42 @@ fn run_ned_test(
     report.assert_position(pos_tol);
 }
 
+/// Load SIM_NED parameters from JEOD source files.
+fn load_ned_params() -> (f64, LeapSecondTable, f64, f64) {
+    let jeod_root = jeod_test_data::jeod_path();
+    assert!(
+        jeod_root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        jeod_root.display()
+    );
+
+    let sim_dir = jeod_root.join(SIM_NED);
+    let verif_dir = jeod_root.join(DERIVED_STATE_VERIF);
+    let grav_data_dir = jeod_root.join("models/environment/gravity/data/src");
+
+    // Load epoch from JEOD time config. The derived-state SIMs share
+    // Modified_data/ at the verif/ level (not inside each SIM directory).
+    let time_cfg = jeod_test_data::time_config::load_time_config(
+        &verif_dir.join("Modified_data/date_and_time.py"),
+    );
+    let leap_table = jeod_sim::default_leap_second_table();
+    let tai_utc_s = leap_table.tai_utc_at_utc_tjt(time_cfg.utc_tjt());
+    let epoch_tai_tjt = time_cfg.tai_tjt_with_offset(tai_utc_s);
+
+    // Load integration step size from S_define
+    let ned_dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+
+    // Load Earth mu from JEOD gravity data
+    let mu_earth =
+        jeod_sim::coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc"))
+            .expect("load Earth mu");
+
+    (epoch_tai_tjt, leap_table, ned_dt, mu_earth)
+}
+
 #[test]
 fn tier3_simulation_ned_polar() {
+    let (epoch_tai_tjt, leap_table, ned_dt, mu_earth) = load_ned_params();
     // Polar orbit on ellipsoidal Earth. Position drift ~20 um over 24h causes:
     //   altitude: 2e-4 m (comparable to existing ell_inc's 8.5e-4 m)
     //   latitude: 1e-8 rad (well-behaved even at poles)
@@ -199,11 +241,16 @@ fn tier3_simulation_ned_polar() {
         1.089e-8,
         3.349e-5,
         "tier3_simulation_ned_polar",
+        epoch_tai_tjt,
+        leap_table,
+        ned_dt,
+        mu_earth,
     );
 }
 
 #[test]
 fn tier3_simulation_ned_sph_inc() {
+    let (epoch_tai_tjt, leap_table, ned_dt, mu_earth) = load_ned_params();
     // Inclined orbit on spherical Earth. All errors < 1e-6, same regime as ell_inc.
     run_ned_test(
         "ned_sph_inc_ned.csv",
@@ -214,11 +261,16 @@ fn tier3_simulation_ned_sph_inc() {
         4.181e-8,
         6.493e-8,
         "tier3_simulation_ned_sph_inc",
+        epoch_tai_tjt,
+        leap_table,
+        ned_dt,
+        mu_earth,
     );
 }
 
 #[test]
 fn tier3_simulation_ned_sph_polar() {
+    let (epoch_tai_tjt, leap_table, ned_dt, mu_earth) = load_ned_params();
     // Polar orbit on spherical Earth. Same pole singularity as ell_polar.
     run_ned_test(
         "ned_sph_polar_ned.csv",
@@ -229,5 +281,9 @@ fn tier3_simulation_ned_sph_polar() {
         1.083e-8,
         3.349e-5,
         "tier3_simulation_ned_sph_polar",
+        epoch_tai_tjt,
+        leap_table,
+        ned_dt,
+        mu_earth,
     );
 }

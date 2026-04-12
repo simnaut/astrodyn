@@ -1,12 +1,15 @@
 pub mod crossval;
 pub mod dyncomp_csv;
 pub mod euler_test;
+pub mod gravity_control;
 pub mod gravity_verif;
 pub mod leap_second;
 pub mod mass_data;
 pub mod orbital_data;
 pub mod orbital_init;
 pub mod reference_state;
+pub mod s_define;
+pub mod time_config;
 
 /// Get the JEOD root path from environment variables.
 ///

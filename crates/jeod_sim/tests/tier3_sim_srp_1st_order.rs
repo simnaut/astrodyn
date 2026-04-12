@@ -21,11 +21,11 @@ use jeod_sim::{
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::Path;
 
-const SRP_MU_EARTH: f64 = 3.986_004_415e14;
+/// SIM_3_ORBIT_1st_ORDER directory relative to JEOD root.
+const SIM_3_ORBIT_1ST: &str = "models/interactions/radiation_pressure/verif/SIM_3_ORBIT_1st_ORDER";
+
 const SRP_R_EARTH: f64 = 6_378_137.0;
 const SRP_MASS: f64 = 300.0;
-const SRP_DT: f64 = 1.0;
-const SRP_EPOCH_TJT: f64 = 11148.0; // 1998-12-01 UTC
 
 fn srp_plates() -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
     let params = FlatPlateParams {
@@ -94,9 +94,9 @@ fn srp_plates() -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
     ]
 }
 
-fn srp_sun_position(sim_time: f64, ephemeris: &Ephemeris) -> DVec3 {
+fn srp_sun_position(sim_time: f64, epoch_tai_tjt: f64, ephemeris: &Ephemeris) -> DVec3 {
     let sim_days = sim_time / 86400.0;
-    let tdb_jd = (SRP_EPOCH_TJT + sim_days) + 40000.0 + 2_400_000.5;
+    let tdb_jd = (epoch_tai_tjt + sim_days) + 40000.0 + 2_400_000.5;
     let (sun_pos, _) = ephemeris
         .get_earth_centered_state(EphemerisBody::Sun, tdb_jd)
         .expect("Sun position query failed");
@@ -105,6 +105,13 @@ fn srp_sun_position(sim_time: f64, ephemeris: &Ephemeris) -> DVec3 {
 
 #[test]
 fn tier3_srp_1st_order_trajectory() {
+    let jeod_root = jeod_test_data::jeod_path();
+    assert!(
+        jeod_root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        jeod_root.display()
+    );
+
     let csv_path = test_data_path("srp_1st_order_radiation_srp_orbit.csv");
     assert!(
         csv_path.exists(),
@@ -122,6 +129,23 @@ fn tier3_srp_1st_order_trajectory() {
     );
     let ephemeris = Ephemeris::from_bsp(&bsp_path).expect("load DE421");
 
+    let sim_dir = jeod_root.join(SIM_3_ORBIT_1ST);
+    let grav_data_dir = jeod_root.join("models/environment/gravity/data/src");
+
+    // Load epoch from JEOD time config. SIM_3_ORBIT_1st_ORDER uses TAI initializer.
+    let time_cfg = jeod_test_data::time_config::load_time_config(
+        &sim_dir.join("Modified_data/date_and_time.py"),
+    );
+    let epoch_tai_tjt = time_cfg.tai_tjt();
+
+    // Load integration step size from S_define
+    let srp_dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+
+    // Load Earth mu from JEOD gravity data
+    let srp_mu_earth =
+        jeod_sim::coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc"))
+            .expect("load Earth mu");
+
     let trajectory = load_srp_trajectory(&csv_path);
     assert!(trajectory.len() > 100);
     let init = &trajectory[0];
@@ -130,14 +154,12 @@ fn tier3_srp_1st_order_trajectory() {
     let num_plates = plates.len();
     let init_temp = 270.0_f64;
 
-    // Epoch: 1998-12-01 UTC. TAI-UTC=31s at this date.
-    let epoch_tai_tjt = SRP_EPOCH_TJT + 31.0 / 86400.0;
     let time = SimulationTime::new(epoch_tai_tjt, jeod_sim::default_leap_second_table());
-    let mut sim = Simulation::new(time, SRP_DT);
+    let mut sim = Simulation::new(time, srp_dt);
 
     let earth = sim.add_source(GravitySourceEntry {
         source: GravitySource {
-            mu: SRP_MU_EARTH,
+            mu: srp_mu_earth,
             model: GravityModel::PointMass,
         },
         position: DVec3::ZERO,
@@ -150,7 +172,7 @@ fn tier3_srp_1st_order_trajectory() {
 
     // Sun: mu=0 because the JEOD SIM_3_ORBIT_1st_ORDER reference sim uses Sun
     // only for SRP direction, not gravitational perturbation.
-    let initial_sun = srp_sun_position(0.0, &ephemeris);
+    let initial_sun = srp_sun_position(0.0, epoch_tai_tjt, &ephemeris);
     let sun = sim.add_source(GravitySourceEntry {
         source: GravitySource {
             mu: 0.0,
@@ -199,7 +221,7 @@ fn tier3_srp_1st_order_trajectory() {
     let mut ref_states = Vec::with_capacity(trajectory.len() - 1);
 
     for record in &trajectory[1..] {
-        sim.sources[sun].position = srp_sun_position(record.time, &ephemeris);
+        sim.sources[sun].position = srp_sun_position(record.time, epoch_tai_tjt, &ephemeris);
         sim.step_until(record.time);
 
         let body = sim.body(0);

@@ -14,8 +14,22 @@ use jeod_sim::{
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
+fn load_mu_earth() -> f64 {
+    let jeod_root = jeod_test_data::jeod_path();
+    assert!(
+        jeod_root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        jeod_root.display()
+    );
+    jeod_sim::coefficients::load_mu_from_jeod_cc(
+        &jeod_root.join("models/environment/gravity/data/src/earth_GGM05C.cc"),
+    )
+    .expect("load Earth mu from GGM05C")
+}
+
 #[test]
 fn tier3_simulation_euler() {
+    let mu_earth = load_mu_earth();
     let csv_path = test_data_path("dyncomp_run2_state.csv");
     assert!(
         csv_path.exists(),
@@ -35,12 +49,21 @@ fn tier3_simulation_euler() {
     );
     let mass_props = MassProperties::with_inertia(400_000.0, inertia, DVec3::new(-3.0, -1.5, 4.0));
 
+    let jeod_root = jeod_test_data::jeod_path();
+    assert!(
+        jeod_root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        jeod_root.display()
+    );
+    let dt =
+        jeod_test_data::s_define::load_dynamics_dt(&jeod_root.join("verif/SIM_dyncomp/S_define"));
+
     let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
-    let mut sim = Simulation::new(time, DT);
+    let mut sim = Simulation::new(time, dt);
 
     let earth = sim.add_source(GravitySourceEntry {
         source: GravitySource {
-            mu: MU_EARTH,
+            mu: mu_earth,
             model: GravityModel::PointMass,
         },
         position: DVec3::ZERO,

@@ -4,7 +4,7 @@
 //!          exercises Euler angle computation at different angular velocities.
 //! RUN_equ: Equatorial orbit (i=0) — exercises gimbal-lock-adjacent sequences.
 //!
-//! Both use point-mass Earth gravity, RK4 at DT=0.03125s, 24h duration.
+//! Both use point-mass Earth gravity, RK4 at the SIM_Euler S_define step size, 24h duration.
 //! Euler angles are validated against JEOD's logged quaternion data.
 
 mod sim_test_helpers;
@@ -18,9 +18,23 @@ use jeod_sim::{
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
+fn load_mu_earth() -> f64 {
+    let jeod_root = jeod_test_data::jeod_path();
+    assert!(
+        jeod_root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        jeod_root.display()
+    );
+    jeod_sim::coefficients::load_mu_from_jeod_cc(
+        &jeod_root.join("models/environment/gravity/data/src/earth_GGM05C.cc"),
+    )
+    .expect("load Earth mu from GGM05C")
+}
+
 /// Set up an Euler-style simulation from CSV initial conditions.
 /// SIM_Euler uses the same mass/config as SIM_dyncomp RUN_2.
 fn run_euler_test(csv_filename: &str, label: &str, test_name: &str, quat_tol: f64, euler_tol: f64) {
+    let mu_earth = load_mu_earth();
     let csv_path = test_data_path(csv_filename);
     assert!(
         csv_path.exists(),
@@ -42,12 +56,22 @@ fn run_euler_test(csv_filename: &str, label: &str, test_name: &str, quat_tol: f6
     );
     let mass_props = MassProperties::with_inertia(400_000.0, inertia, DVec3::new(-3.0, -1.5, 4.0));
 
+    let jeod_root = jeod_test_data::jeod_path();
+    assert!(
+        jeod_root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        jeod_root.display()
+    );
+    let dt = jeod_test_data::s_define::load_dynamics_dt(
+        &jeod_root.join("models/dynamics/derived_state/verif/SIM_Euler/S_define"),
+    );
+
     let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
-    let mut sim = Simulation::new(time, DT);
+    let mut sim = Simulation::new(time, dt);
 
     let earth = sim.add_source(GravitySourceEntry {
         source: GravitySource {
-            mu: MU_EARTH,
+            mu: mu_earth,
             model: GravityModel::PointMass,
         },
         position: DVec3::ZERO,

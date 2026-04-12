@@ -1,4 +1,7 @@
 //! Tier 3: SIM_dyncomp RUN_6A/6B — Drag (constant density and MET atmosphere)
+//!
+//! All simulation parameters (epoch, step size, mu, mass) are loaded from JEOD
+//! source files rather than hardcoded, per issue #44.
 
 mod sim_test_helpers;
 use sim_test_helpers::*;
@@ -12,17 +15,20 @@ use jeod_sim::{
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
-/// Epoch for SIM_dyncomp: midnight 2007-11-20 UTC.
-/// MJD = 54424.0, TJT = MJD - 40000 = 14424.0.
-/// From JEOD time.py: TAI-UTC = 32s override, tai_to_ut1 = -32.469s.
-const DRAG_EPOCH_UTC_TJT: f64 = 14424.0;
-const DRAG_TAI_UTC_S: f64 = 32.0;
-const DRAG_TAI_TO_UT1_S: f64 = -32.469;
+/// SIM_dyncomp root directory (relative to JEOD_HOME).
+const SIM_DYNCOMP: &str = "verif/SIM_dyncomp";
 
 // ── RUN_6B: MET atmosphere + drag, 6-DOF ──
 
 #[test]
 fn tier3_simulation_run6b_drag() {
+    let jeod_root = jeod_test_data::jeod_path();
+    assert!(
+        jeod_root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        jeod_root.display()
+    );
+
     let csv_path = test_data_path("dyncomp_run6b_state.csv");
     assert!(
         csv_path.exists(),
@@ -31,14 +37,59 @@ fn tier3_simulation_run6b_drag() {
         csv_path.display()
     );
 
+    let sim_dir = jeod_root.join(SIM_DYNCOMP);
+    let grav_data_dir = jeod_root.join("models/environment/gravity/data/src");
+
+    // Load epoch and time offsets from JEOD time config
+    let time_cfg =
+        jeod_test_data::time_config::load_time_config(&sim_dir.join("Modified_data/time.py"));
+    let epoch_tai_tjt = time_cfg.tai_tjt();
+    let ut1_tai_offset = time_cfg
+        .ut1_tai_offset()
+        .expect("SIM_dyncomp time.py must specify tai_to_ut1_override_val");
+
+    // Load integration step size from S_define
+    let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+
+    // Load mu from JEOD gravity coefficient file
+    let earth_grav =
+        jeod_sim::coefficients::load_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc"))
+            .expect("load Earth gravity");
+
+    // Load sphere mass properties from SIM_dyncomp mass.py
+    let mass_init = jeod_test_data::mass_data::load_mass_from_file(
+        &sim_dir.join("Modified_data/mass.py"),
+        Some("set_mass_sphere"),
+    );
+
     let trajectory = load_dyncomp_csv(&csv_path);
     assert!(trajectory.len() >= 100);
 
     let init = &trajectory[0];
 
-    // Unit sphere mass (from Modified_data/mass.py)
-    let inertia = DMat3::from_diagonal(DVec3::splat(0.4));
-    let mass_props = MassProperties::with_inertia(1.0, inertia, DVec3::ZERO);
+    // Sphere mass properties (parsed from Modified_data/mass.py)
+    let inertia = glam::DMat3::from_cols(
+        DVec3::new(
+            mass_init.inertia[0][0],
+            mass_init.inertia[1][0],
+            mass_init.inertia[2][0],
+        ),
+        DVec3::new(
+            mass_init.inertia[0][1],
+            mass_init.inertia[1][1],
+            mass_init.inertia[2][1],
+        ),
+        DVec3::new(
+            mass_init.inertia[0][2],
+            mass_init.inertia[1][2],
+            mass_init.inertia[2][2],
+        ),
+    );
+    let mass_props = MassProperties::with_inertia(
+        mass_init.mass,
+        inertia,
+        DVec3::from_slice(&mass_init.position),
+    );
 
     // MET atmosphere: solar mean conditions (from Modified_data/solar_flux.py)
     let met_model = MetAtmosphere {
@@ -56,18 +107,17 @@ fn tier3_simulation_run6b_drag() {
     };
 
     // Initialize Simulation at the SIM_dyncomp epoch with correct time offsets.
-    let epoch_tai_tjt = DRAG_EPOCH_UTC_TJT + DRAG_TAI_UTC_S / 86400.0;
     let mut time = SimulationTime::new(epoch_tai_tjt, jeod_sim::default_leap_second_table());
-    time.set_ut1_tai_offset(DRAG_TAI_TO_UT1_S);
+    time.set_ut1_tai_offset(ut1_tai_offset);
 
-    let mut sim = Simulation::new(time, DT);
+    let mut sim = Simulation::new(time, dt);
 
     // Earth source with planet-fixed rotation — the Simulation's ephemeris stage
     // updates it each step via RNP, so the atmosphere system sees correct geodetic
     // coordinates. Without this, MET density is evaluated at wrong lat/lon.
     let earth = sim.add_source(GravitySourceEntry {
         source: GravitySource {
-            mu: MU_EARTH,
+            mu: earth_grav.mu,
             model: GravityModel::PointMass,
         },
         position: DVec3::ZERO,
@@ -188,6 +238,13 @@ fn tier3_simulation_run6b_drag() {
 
 #[test]
 fn tier3_simulation_run6a_const_density_drag() {
+    let jeod_root = jeod_test_data::jeod_path();
+    assert!(
+        jeod_root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        jeod_root.display()
+    );
+
     let csv_path = test_data_path("dyncomp_run6a_state.csv");
     assert!(
         csv_path.exists(),
@@ -197,13 +254,58 @@ fn tier3_simulation_run6a_const_density_drag() {
         csv_path.display()
     );
 
+    let sim_dir = jeod_root.join(SIM_DYNCOMP);
+    let grav_data_dir = jeod_root.join("models/environment/gravity/data/src");
+
+    // Load epoch and time offsets from JEOD time config
+    let time_cfg =
+        jeod_test_data::time_config::load_time_config(&sim_dir.join("Modified_data/time.py"));
+    let epoch_tai_tjt = time_cfg.tai_tjt();
+    let ut1_tai_offset = time_cfg
+        .ut1_tai_offset()
+        .expect("SIM_dyncomp time.py must specify tai_to_ut1_override_val");
+
+    // Load integration step size from S_define
+    let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+
+    // Load mu from JEOD gravity coefficient file
+    let earth_grav =
+        jeod_sim::coefficients::load_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc"))
+            .expect("load Earth gravity");
+
+    // Load sphere mass properties from SIM_dyncomp mass.py
+    let mass_init = jeod_test_data::mass_data::load_mass_from_file(
+        &sim_dir.join("Modified_data/mass.py"),
+        Some("set_mass_sphere"),
+    );
+
     let trajectory = load_dyncomp_csv(&csv_path);
     assert!(trajectory.len() >= 100);
     let init = &trajectory[0];
 
-    // Unit sphere mass (from Modified_data/mass.py)
-    let inertia = DMat3::from_diagonal(DVec3::splat(0.4));
-    let mass_props = MassProperties::with_inertia(1.0, inertia, DVec3::ZERO);
+    // Sphere mass properties (parsed from Modified_data/mass.py)
+    let inertia = glam::DMat3::from_cols(
+        DVec3::new(
+            mass_init.inertia[0][0],
+            mass_init.inertia[1][0],
+            mass_init.inertia[2][0],
+        ),
+        DVec3::new(
+            mass_init.inertia[0][1],
+            mass_init.inertia[1][1],
+            mass_init.inertia[2][1],
+        ),
+        DVec3::new(
+            mass_init.inertia[0][2],
+            mass_init.inertia[1][2],
+            mass_init.inertia[2][2],
+        ),
+    );
+    let mass_props = MassProperties::with_inertia(
+        mass_init.mass,
+        inertia,
+        DVec3::from_slice(&mass_init.position),
+    );
 
     // MET atmosphere config — the Simulation still runs the atmosphere pipeline
     // for wind (co-rotation), but constant_density overrides the MET density.
@@ -222,15 +324,14 @@ fn tier3_simulation_run6a_const_density_drag() {
         constant_density: Some(1.4e-12),
     };
 
-    let epoch_tai_tjt = DRAG_EPOCH_UTC_TJT + DRAG_TAI_UTC_S / 86400.0;
     let mut time = SimulationTime::new(epoch_tai_tjt, jeod_sim::default_leap_second_table());
-    time.set_ut1_tai_offset(DRAG_TAI_TO_UT1_S);
+    time.set_ut1_tai_offset(ut1_tai_offset);
 
-    let mut sim = Simulation::new(time, DT);
+    let mut sim = Simulation::new(time, dt);
 
     let earth = sim.add_source(GravitySourceEntry {
         source: GravitySource {
-            mu: MU_EARTH,
+            mu: earth_grav.mu,
             model: GravityModel::PointMass,
         },
         position: DVec3::ZERO,

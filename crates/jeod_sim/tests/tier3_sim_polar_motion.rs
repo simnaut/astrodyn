@@ -23,6 +23,19 @@ use jeod_sim::{
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
+fn load_mu_earth() -> f64 {
+    let jeod_root = jeod_test_data::jeod_path();
+    assert!(
+        jeod_root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        jeod_root.display()
+    );
+    jeod_sim::coefficients::load_mu_from_jeod_cc(
+        &jeod_root.join("models/environment/gravity/data/src/earth_GGM05C.cc"),
+    )
+    .expect("load Earth mu from GGM05C")
+}
+
 /// Arcseconds to radians conversion factor (from JEOD polar_motion data).
 const ARCSEC_TO_RAD: f64 = 4.848_136_811_095_36e-6;
 
@@ -61,8 +74,17 @@ fn tier3_simulation_run2p_polar_motion() {
     assert!(trajectory.len() > 100);
     let init = &trajectory[0];
 
+    let mu_earth = load_mu_earth();
+    let jeod_root = jeod_test_data::jeod_path();
+    assert!(
+        jeod_root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        jeod_root.display()
+    );
+    let dt =
+        jeod_test_data::s_define::load_dynamics_dt(&jeod_root.join("verif/SIM_dyncomp/S_define"));
     let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
-    let mut sim = Simulation::new(time, DT);
+    let mut sim = Simulation::new(time, dt);
 
     // Enable polar motion
     let xp = XP_ARCSEC * ARCSEC_TO_RAD;
@@ -71,7 +93,7 @@ fn tier3_simulation_run2p_polar_motion() {
 
     let earth = sim.add_source(GravitySourceEntry {
         source: GravitySource {
-            mu: MU_EARTH,
+            mu: mu_earth,
             model: GravityModel::PointMass,
         },
         position: DVec3::ZERO,

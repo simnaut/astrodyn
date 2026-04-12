@@ -18,7 +18,18 @@ use jeod_sim::{
     Simulation, SimulationTime, TranslationalState,
 };
 
-const MU_SUN: f64 = 1.327_124_400_18e20;
+fn load_mu_sun() -> f64 {
+    let jeod_root = jeod_test_data::jeod_path();
+    assert!(
+        jeod_root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        jeod_root.display()
+    );
+    jeod_sim::coefficients::load_mu_from_jeod_cc(
+        &jeod_root.join("models/environment/gravity/data/src/sun_spherical.cc"),
+    )
+    .expect("load Sun mu from sun_spherical")
+}
 
 /// Mercury at perihelion (approximate J2000 elements).
 fn mercury_perihelion_state() -> (DVec3, DVec3) {
@@ -39,7 +50,11 @@ struct PeriapsisEvent {
 }
 
 /// Propagate Mercury for N orbits, collecting periapsis events.
-fn propagate_mercury_periapses(relativistic: bool, num_orbits: usize) -> Vec<PeriapsisEvent> {
+fn propagate_mercury_periapses(
+    relativistic: bool,
+    num_orbits: usize,
+    mu_sun: f64,
+) -> Vec<PeriapsisEvent> {
     let leap_table = jeod_sim::default_leap_second_table();
     let time = SimulationTime::at_j2000(leap_table);
     let dt = 100.0; // 100s timestep
@@ -49,7 +64,7 @@ fn propagate_mercury_periapses(relativistic: bool, num_orbits: usize) -> Vec<Per
 
     let sun = sim.add_source(GravitySourceEntry::new(
         GravitySource {
-            mu: MU_SUN,
+            mu: mu_sun,
             model: GravityModel::PointMass,
         },
         DVec3::ZERO,
@@ -89,7 +104,7 @@ fn propagate_mercury_periapses(relativistic: bool, num_orbits: usize) -> Vec<Per
         let r_dot = r.dot(v) / r.length();
 
         if step > 0 && prev_rdot < 0.0 && r_dot >= 0.0 {
-            if let Ok(e) = jeod_sim::OrbitalElements::from_cartesian(MU_SUN, r, v) {
+            if let Ok(e) = jeod_sim::OrbitalElements::from_cartesian(mu_sun, r, v) {
                 events.push(PeriapsisEvent {
                     time: sim_time,
                     long_perihelion: e.arg_periapsis + e.long_asc_node,
@@ -219,6 +234,7 @@ fn detect_periapses_from_csv(path: &std::path::Path, mu: f64) -> Vec<PeriapsisEv
 /// the relativistic correction is functioning in the simulation pipeline.
 #[test]
 fn tier3_simulation_mercury_relativistic_effect() {
+    let mu_sun = load_mu_sun();
     let num_orbits = 10;
 
     // Propagate Newtonian
@@ -234,7 +250,7 @@ fn tier3_simulation_mercury_relativistic_effect() {
     let mut sim_n = Simulation::new(time_n, dt);
     let sun_n = sim_n.add_source(GravitySourceEntry::new(
         GravitySource {
-            mu: MU_SUN,
+            mu: mu_sun,
             model: GravityModel::PointMass,
         },
         DVec3::ZERO,
@@ -260,7 +276,7 @@ fn tier3_simulation_mercury_relativistic_effect() {
     let mut sim_r = Simulation::new(time_r, dt);
     let sun_r = sim_r.add_source(GravitySourceEntry::new(
         GravitySource {
-            mu: MU_SUN,
+            mu: mu_sun,
             model: GravityModel::PointMass,
         },
         DVec3::ZERO,
@@ -313,12 +329,13 @@ fn tier3_simulation_mercury_relativistic_effect() {
 /// runs use the same integrator, so systematic integration errors cancel.
 #[test]
 fn tier3_mercury_perihelion_advance_rate() {
+    let mu_sun = load_mu_sun();
     let num_orbits = 200;
 
     println!("  Propagating Newtonian ({num_orbits} orbits)...");
-    let newton_events = propagate_mercury_periapses(false, num_orbits);
+    let newton_events = propagate_mercury_periapses(false, num_orbits, mu_sun);
     println!("  Propagating relativistic ({num_orbits} orbits)...");
-    let gr_events = propagate_mercury_periapses(true, num_orbits);
+    let gr_events = propagate_mercury_periapses(true, num_orbits, mu_sun);
 
     println!(
         "  Detected {} Newtonian and {} GR periapsis passages",
@@ -361,7 +378,7 @@ fn tier3_mercury_jeod_advance_rate() {
     // JEOD SIM_mercury uses DE405 GMs. The Sun mu in DE405 AU^3/day^2 units,
     // converted to km^3/s^2 by the setup.py. For our orbital element computation
     // we need mu in m^3/s^2 — use the same value as our simulation.
-    let mu = MU_SUN;
+    let mu = load_mu_sun();
 
     let newton_csv = test_data_path("mercury_newtonian_mercury.csv");
     let gr_csv = test_data_path("mercury_relativistic_mercury.csv");

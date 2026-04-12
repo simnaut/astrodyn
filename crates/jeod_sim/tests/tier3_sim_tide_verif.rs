@@ -22,13 +22,8 @@ use jeod_sim::{
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::Path;
 
-const MU_SUN: f64 = 1.327_124_40e20;
-const MU_MOON: f64 = 4902.79980693169e9;
-
-/// Epoch: Nov 20, 2007 00:00 UTC (same as SIM_dyncomp)
-const EPOCH_UTC_TJT: f64 = 14424.0;
-const TAI_UTC_S: f64 = 32.0;
-const TAI_TO_UT1_S: f64 = -32.469;
+/// SIM_dyncomp directory relative to JEOD root.
+const SIM_DYNCOMP: &str = "verif/SIM_dyncomp";
 
 fn earth_centered_position(body: EphemerisBody, tdb_jd: f64, ephemeris: &Ephemeris) -> DVec3 {
     let (pos, _) = ephemeris
@@ -60,6 +55,13 @@ fn load_tide_csv(path: &std::path::Path) -> Vec<(f64, DVec3, DVec3, f64)> {
 
 #[test]
 fn tier3_simulation_tide_run01() {
+    let jeod_root = jeod_test_data::jeod_path();
+    assert!(
+        jeod_root.exists(),
+        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        jeod_root.display()
+    );
+
     let csv_path = test_data_path("tide_run01_tide.csv");
     assert!(
         csv_path.exists(),
@@ -75,23 +77,42 @@ fn tier3_simulation_tide_run01() {
     );
     let ephemeris = Ephemeris::from_bsp(&bsp_path).expect("load DE421");
 
-    let jeod_root = jeod_test_data::jeod_path();
-    let ggm05c_path = jeod_root.join("models/environment/gravity/data/src/earth_GGM05C.cc");
+    let sim_dir = jeod_root.join(SIM_DYNCOMP);
+    let grav_data_dir = jeod_root.join("models/environment/gravity/data/src");
+
+    // Load epoch and time offsets from JEOD time config
+    let time_cfg =
+        jeod_test_data::time_config::load_time_config(&sim_dir.join("Modified_data/time.py"));
+    let epoch_tai_tjt = time_cfg.tai_tjt();
+    let ut1_tai_offset = time_cfg
+        .ut1_tai_offset()
+        .expect("SIM_dyncomp time.py must specify tai_to_ut1_override_val");
+
+    // Load integration step size from S_define
+    let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+
+    // Load gravity parameters from JEOD coefficient files
+    let ggm05c_path = grav_data_dir.join("earth_GGM05C.cc");
     let sh_data = jeod_sim::coefficients::load_from_jeod_cc(&ggm05c_path).expect("load GGM05C");
     let earth_mu = sh_data.mu;
     let earth_radius = sh_data.radius;
+    let mu_sun =
+        jeod_sim::coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("sun_spherical.cc"))
+            .expect("load Sun mu");
+    let mu_moon =
+        jeod_sim::coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("moon_GRAIL150.cc"))
+            .expect("load Moon mu");
 
     let records = load_tide_csv(&csv_path);
     assert!(records.len() > 100);
 
     let (_, init_pos, init_vel, _) = &records[0];
 
-    // Initialize at same epoch as SIM_dyncomp/SIM_tide_verif
-    let epoch_tai_tjt = EPOCH_UTC_TJT + TAI_UTC_S / 86400.0;
+    // Initialize at the SIM_dyncomp epoch (parsed from time.py)
     let mut time = SimulationTime::new(epoch_tai_tjt, jeod_sim::default_leap_second_table());
-    time.set_ut1_tai_offset(TAI_TO_UT1_S);
+    time.set_ut1_tai_offset(ut1_tai_offset);
 
-    let mut sim = Simulation::new(time, DT);
+    let mut sim = Simulation::new(time, dt);
 
     // Earth source with SH gravity, RNP rotation, and tidal configuration
     let tdb_jd = sim.time.tdb_julian_date();
@@ -104,11 +125,11 @@ fn tier3_simulation_tide_run01() {
         radius_primary: earth_radius,
         tidal_bodies: vec![
             TidalBody {
-                mu: MU_MOON,
+                mu: mu_moon,
                 position_inertial: initial_moon,
             },
             TidalBody {
-                mu: MU_SUN,
+                mu: mu_sun,
                 position_inertial: initial_sun,
             },
         ],
@@ -130,7 +151,7 @@ fn tier3_simulation_tide_run01() {
     // Sun: 3rd-body differential
     let sun = sim.add_source(GravitySourceEntry {
         source: GravitySource {
-            mu: MU_SUN,
+            mu: mu_sun,
             model: GravityModel::PointMass,
         },
         position: initial_sun,
@@ -144,7 +165,7 @@ fn tier3_simulation_tide_run01() {
     // Moon: 3rd-body differential
     let moon = sim.add_source(GravitySourceEntry {
         source: GravitySource {
-            mu: MU_MOON,
+            mu: mu_moon,
             model: GravityModel::PointMass,
         },
         position: initial_moon,

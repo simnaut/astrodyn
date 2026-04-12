@@ -33,27 +33,39 @@ use jeod_sim::{
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::Path;
 
-const MU_SUN: f64 = 1.327_124_40e20;
-const MU_MOON: f64 = 4902.79980693169e9;
+/// SIM_dyncomp root directory (relative to JEOD_HOME).
+const SIM_DYNCOMP: &str = "verif/SIM_dyncomp";
 
-// -- ISS mass properties from JEOD Modified_data/mass/iss.py --
-
+/// Load ISS mass properties from JEOD SIM_dyncomp Modified_data/mass.py.
 fn iss_mass_props() -> MassProperties {
-    let inertia = DMat3::from_cols(
-        DVec3::new(1.02e8, -6.96e6, -5.48e6),
-        DVec3::new(-6.96e6, 0.91e8, 5.90e5),
-        DVec3::new(-5.48e6, 5.90e5, 1.64e8),
+    let jeod_root = jeod_test_data::jeod_path();
+    let mass_init = jeod_test_data::mass_data::load_mass_from_file(
+        &jeod_root.join(SIM_DYNCOMP).join("Modified_data/mass.py"),
+        Some("set_mass_iss"),
     );
-    MassProperties::with_inertia(400_000.0, inertia, DVec3::new(-3.0, -1.5, 4.0))
+    let inertia = DMat3::from_cols(
+        DVec3::new(
+            mass_init.inertia[0][0],
+            mass_init.inertia[1][0],
+            mass_init.inertia[2][0],
+        ),
+        DVec3::new(
+            mass_init.inertia[0][1],
+            mass_init.inertia[1][1],
+            mass_init.inertia[2][1],
+        ),
+        DVec3::new(
+            mass_init.inertia[0][2],
+            mass_init.inertia[1][2],
+            mass_init.inertia[2][2],
+        ),
+    );
+    MassProperties::with_inertia(
+        mass_init.mass,
+        inertia,
+        DVec3::from_slice(&mass_init.position),
+    )
 }
-
-// -- Epoch constants --
-// Nov 20, 2007 00:00:00 UTC
-// JEOD overrides: leap_sec_override_val = 32, tai_to_ut1_override_val = -32.469
-
-const EPOCH_UTC_TJT: f64 = 14424.0;
-const TAI_UTC_S: f64 = 32.0;
-const TAI_TO_UT1_S: f64 = -32.469;
 
 /// Load GGM05C spherical harmonics data from JEOD source.
 fn load_ggm05c() -> GravitySource {
@@ -118,18 +130,36 @@ fn build_simulation(
     init: &TorqueSimpleRecord,
     ephemeris: &Ephemeris,
 ) -> SimSetup {
-    let epoch_tai_tjt = EPOCH_UTC_TJT + TAI_UTC_S / 86400.0;
-    let mut time = SimulationTime::new(epoch_tai_tjt, jeod_sim::default_leap_second_table());
-    time.set_ut1_tai_offset(TAI_TO_UT1_S);
+    let jeod_root = jeod_test_data::jeod_path();
+    let sim_dir = jeod_root.join(SIM_DYNCOMP);
+    let grav_data_dir = jeod_root.join("models/environment/gravity/data/src");
 
-    let mut sim = Simulation::new(time, DT);
+    // Load epoch and time offsets from JEOD time config
+    let time_cfg =
+        jeod_test_data::time_config::load_time_config(&sim_dir.join("Modified_data/time.py"));
+    let epoch_tai_tjt = time_cfg.tai_tjt();
+    let ut1_tai_offset = time_cfg
+        .ut1_tai_offset()
+        .expect("SIM_dyncomp time.py must specify tai_to_ut1_override_val");
+
+    // Load integration step size from S_define
+    let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+
+    let mut time = SimulationTime::new(epoch_tai_tjt, jeod_sim::default_leap_second_table());
+    time.set_ut1_tai_offset(ut1_tai_offset);
+
+    let mut sim = Simulation::new(time, dt);
 
     // Earth source — with planet-fixed rotation for SH gravity and SH gradient
     let earth_source = if config.earth_nonspherical || config.gradient_degree > 0 {
         load_ggm05c()
     } else {
+        // Load Earth mu from gravity coefficient file even for point-mass
+        let earth_grav =
+            jeod_sim::coefficients::load_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc"))
+                .expect("load Earth gravity");
         GravitySource {
-            mu: MU_EARTH,
+            mu: earth_grav.mu,
             model: GravityModel::PointMass,
         }
     };
@@ -151,12 +181,20 @@ fn build_simulation(
         tidal_config: None,
     });
 
+    // Sun/Moon mu (spherical-only files lack degree/order fields)
+    let mu_sun =
+        jeod_sim::coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("sun_spherical.cc"))
+            .expect("load Sun mu");
+    let mu_moon =
+        jeod_sim::coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("moon_GRAIL150.cc"))
+            .expect("load Moon mu");
+
     // Sun: third-body differential acceleration (matches JEOD: spherical, gradient=false)
     let epoch_tdb_jd = sim.time.tdb_julian_date();
     let initial_sun = earth_centered_position(EphemerisBody::Sun, epoch_tdb_jd, ephemeris);
     let sun_idx = sim.add_source(GravitySourceEntry {
         source: GravitySource {
-            mu: MU_SUN,
+            mu: mu_sun,
             model: GravityModel::PointMass,
         },
         position: initial_sun,
@@ -171,7 +209,7 @@ fn build_simulation(
     let initial_moon = earth_centered_position(EphemerisBody::Moon, epoch_tdb_jd, ephemeris);
     let moon_idx = sim.add_source(GravitySourceEntry {
         source: GravitySource {
-            mu: MU_MOON,
+            mu: mu_moon,
             model: GravityModel::PointMass,
         },
         position: initial_moon,
