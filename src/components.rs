@@ -171,9 +171,52 @@ pub struct ShadowBodyC {
     pub radius: f64,
 }
 
+/// Per-source rotation model dispatch.
+///
+/// When present on a gravity source entity alongside `PlanetFixedRotationC`,
+/// the `planet_fixed_rotation_system` dispatches to the correct rotation
+/// computation based on this value. When absent, `EarthRNP` is assumed
+/// for backward compatibility.
+#[derive(Component, Debug, Clone, Default, Deref, DerefMut)]
+pub struct RotationModelC(pub jeod_sim::RotationModel);
+
+/// Ephemeris body mapping for automatic position updates from DE4xx.
+///
+/// When present on a gravity source entity, the `ephemeris_update_system`
+/// queries the `EphemerisR` resource each step to update the entity's
+/// `SourceInertialPositionC` (and optionally `TranslationalStateC`).
+#[derive(Component, Debug, Clone, Copy)]
+pub struct EphemerisBodyC {
+    /// The body this source represents (e.g., `EphemerisBody::Sun`).
+    pub target: jeod_sim::EphemerisBody,
+    /// The integration frame center (e.g., `EphemerisBody::Earth`).
+    pub observer: jeod_sim::EphemerisBody,
+}
+
+/// Cannonball SRP configuration using JEOD's `RadiationDefaultSurface` formula.
+///
+/// Force = (flux/c) * cx_area * [1 + albedo*diffuse*(4/9)] * flux_hat * illum_factor.
+/// Mutually exclusive with `FlatPlateConfigC` (use one or the other).
+///
+/// Requires `SunMarker` entity in the world. Optional `ShadowBodyC` for eclipse.
+/// Writes to `RadiationForceC`.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct CannonballSrpC {
+    /// Cross-section area * Cr (m²).
+    pub cx_area: f64,
+    /// Surface albedo (0–1).
+    pub albedo: f64,
+    /// Diffuse reflection fraction (0–1).
+    pub diffuse: f64,
+}
+
 /// Marker component for the Sun entity (used by SRP system to find Sun position).
 #[derive(Component)]
 pub struct SunMarker;
+
+/// Marker component for the Moon entity (used by earth lighting system).
+#[derive(Component)]
+pub struct MoonMarker;
 
 // ── Planet ──
 
@@ -248,3 +291,45 @@ pub struct GeodeticStateC(pub jeod_sim::GeodeticState);
 /// `SunMarker` entity to exist in the world.
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct SolarBetaC(pub f64);
+
+/// Configuration for Earth lighting (eclipse/albedo) computation.
+///
+/// Requires `SunMarker` and `MoonMarker` entities to exist in the world.
+/// Presence of this component + `EarthLightingStateC` on an entity enables
+/// per-step earth lighting computation in `JeodSet::DerivedState`.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct EarthLightingConfigC {
+    /// Earth equatorial radius (m).
+    pub earth_radius: f64,
+    /// Moon mean radius (m).
+    pub moon_radius: f64,
+    /// Sun mean radius (m).
+    pub sun_radius: f64,
+}
+
+/// Earth lighting state computed each step.
+///
+/// Written by `earth_lighting_system` for entities that also have
+/// `EarthLightingConfigC`.
+#[derive(Component, Debug, Clone, Default)]
+pub struct EarthLightingStateC(pub jeod_sim::EarthLightingState);
+
+// ── External Loads ──
+
+/// External force in the **inertial** frame (N).
+///
+/// Added to `TotalForceC.force` each step after force collection.
+/// Matches `SimBody.external_force` in `jeod_sim::Simulation`.
+///
+/// Mutate between steps to implement time-scheduled force injection.
+#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
+pub struct ExternalForceC(pub DVec3);
+
+/// External torque in the **body** frame (N·m).
+///
+/// Added to `TotalForceC.torque` each step after force collection.
+/// Matches `SimBody.external_torque` in `jeod_sim::Simulation`.
+///
+/// Mutate between steps to implement time-scheduled torque injection.
+#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
+pub struct ExternalTorqueC(pub DVec3);

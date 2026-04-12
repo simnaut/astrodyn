@@ -52,6 +52,13 @@ pub struct AtmosphereModelR {
     pub planet_entity: Option<Entity>,
 }
 
+/// Bevy resource wrapping [`jeod_sim::Ephemeris`] for DE4xx ephemeris access.
+///
+/// When inserted, `planet_fixed_rotation_system` can use `MoonDE421` rotation
+/// and `ephemeris_update_system` can update source positions from DE421/DE440.
+#[derive(Resource, Deref, DerefMut)]
+pub struct EphemerisR(pub jeod_sim::Ephemeris);
+
 /// Unified JEOD plugin — registers all pipeline systems and schedule sets.
 pub struct JeodPlugin;
 
@@ -88,6 +95,8 @@ impl Plugin for JeodPlugin {
                 systems::time_advance_system.in_set(JeodSet::TimeUpdate),
                 // Planet-fixed rotation (RNP)
                 systems::planet_fixed_rotation_system.in_set(JeodSet::EphemerisUpdate),
+                // Ephemeris position updates (DE4xx)
+                systems::ephemeris_update_system.in_set(JeodSet::EphemerisUpdate),
                 // Tidal ΔC20 (must run after planet-fixed rotation)
                 systems::tidal_update_system
                     .in_set(JeodSet::EphemerisUpdate)
@@ -104,6 +113,7 @@ impl Plugin for JeodPlugin {
                 systems::aero_drag_system.in_set(JeodSet::Interaction),
                 systems::gravity_torque_system.in_set(JeodSet::Interaction),
                 systems::flat_plate_srp_system.in_set(JeodSet::Interaction),
+                systems::cannonball_srp_system.in_set(JeodSet::Interaction),
                 // Force collection and integration
                 systems::force_collection_system.in_set(JeodSet::ForceCollection),
                 systems::integration_system.in_set(JeodSet::Integration),
@@ -113,6 +123,7 @@ impl Plugin for JeodPlugin {
                 systems::lvlh_system.in_set(JeodSet::DerivedState),
                 systems::geodetic_system.in_set(JeodSet::DerivedState),
                 systems::solar_beta_system.in_set(JeodSet::DerivedState),
+                systems::earth_lighting_system.in_set(JeodSet::DerivedState),
             ),
         );
     }

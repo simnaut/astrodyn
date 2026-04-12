@@ -647,38 +647,20 @@ impl Simulation {
         // After Newtonian gravity, apply post-Newtonian PPN correction for
         // any source with `relativistic: true`. Folkner eq 27 (β=γ=1).
         for body in &mut self.bodies {
-            for ctrl in &body.gravity_controls.controls {
-                if !ctrl.relativistic {
-                    continue;
-                }
-                if let Some(src) = sources.get(ctrl.source_name) {
-                    // Build "other sources" list for potential computation
-                    let other: Vec<jeod_gravity::relativistic::RelativisticSource> = body
-                        .gravity_controls
-                        .controls
-                        .iter()
-                        .filter(|c| c.source_name != ctrl.source_name)
-                        .filter_map(|c| {
-                            sources.get(c.source_name).map(|s| {
-                                jeod_gravity::relativistic::RelativisticSource {
-                                    mu: s.source.mu,
-                                    position: s.position,
-                                }
-                            })
+            body.gravity_accel.grav_accel += crate::accumulate_relativistic_corrections(
+                body.trans.position,
+                body.trans.velocity,
+                &body.gravity_controls,
+                |source_id: usize| {
+                    sources
+                        .get(source_id)
+                        .map(|s| crate::ResolvedRelativisticSource {
+                            mu: s.source.mu,
+                            position: s.position,
+                            velocity: s.velocity,
                         })
-                        .collect();
-
-                    let correction = jeod_gravity::relativistic::compute_relativistic_correction(
-                        src.source.mu,
-                        src.position,
-                        body.trans.position,
-                        body.trans.velocity,
-                        src.velocity,
-                        &other,
-                    );
-                    body.gravity_accel.grav_accel += correction;
-                }
-            }
+                },
+            );
         }
 
         // ── 5. Environment — atmosphere ──
@@ -782,32 +764,30 @@ impl Simulation {
                         fps.integrate_temperatures(&srp_result.temp_dots, dt);
                     }
                 } else if let Some((cx_area, albedo, diffuse)) = body.cannonball_srp {
-                    // Cannonball SRP: JEOD RadiationDefaultSurface formula.
-                    // Force = (flux/c) * cx_area * [1 + albedo*diffuse*(4/9)] * flux_hat
-                    let sun_to_vehicle = body.trans.position - sun_position;
-                    let distance = sun_to_vehicle.length();
-                    if distance >= 1.0 {
-                        let flux_hat = sun_to_vehicle / distance;
-                        let flux_mag = crate::solar_flux_at_distance(distance);
+                    let illum_factor = body
+                        .shadow_body
+                        .map(|(idx, radius)| {
+                            crate::compute_shadow_fraction(
+                                body.trans.position,
+                                sun_position,
+                                sources[idx].position,
+                                radius,
+                                crate::SOLAR_RADIUS,
+                            )
+                        })
+                        .unwrap_or(1.0);
 
-                        let illum_factor = body
-                            .shadow_body
-                            .map(|(idx, radius)| {
-                                crate::compute_shadow_fraction(
-                                    body.trans.position,
-                                    sun_position,
-                                    sources[idx].position,
-                                    radius,
-                                    crate::SOLAR_RADIUS,
-                                )
-                            })
-                            .unwrap_or(1.0);
-
-                        let coeff = 1.0 + albedo * diffuse * (4.0 / 9.0);
-                        let force_mag =
-                            cx_area * flux_mag / crate::SPEED_OF_LIGHT * coeff * illum_factor;
+                    let force = crate::compute_cannonball_srp(
+                        body.trans.position,
+                        sun_position,
+                        cx_area,
+                        albedo,
+                        diffuse,
+                        illum_factor,
+                    );
+                    if force != DVec3::ZERO {
                         body.radiation_force = Some(RadiationForce {
-                            force: flux_hat * force_mag,
+                            force,
                             torque: DVec3::ZERO,
                         });
                     }

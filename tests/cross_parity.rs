@@ -24,21 +24,24 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 use bevy_jeod::{
-    AerodynamicForceC, AtmosphereModelR, AtmosphericStateC, DragConfigC, DynamicsConfigC,
-    EulerAnglesC, EulerAnglesConfigC, FlatPlateConfigC, GaussJacksonStateC, GeodeticConfigC,
-    GeodeticStateC, GravityAccelerationC, GravityControlsC, GravitySourceC, GravityTorqueC,
-    IntegratorTypeC, JeodPlugin, LvlhFrameC, MassPropertiesC, OrbitalElementsC,
-    OrbitalElementsConfigC, PlanetC, PlanetFixedRotationC, RadiationForceC, RotationalStateC,
-    SolarBetaC, SourceInertialPositionC, SunMarker, TidalConfigC, TidalDeltaC20C, TotalForceC,
+    AerodynamicForceC, AtmosphereModelR, AtmosphericStateC, CannonballSrpC, DragConfigC,
+    DynamicsConfigC, EarthLightingConfigC, EarthLightingStateC, EphemerisBodyC, EulerAnglesC,
+    EulerAnglesConfigC, ExternalForceC, ExternalTorqueC, FlatPlateConfigC, FrameDerivativesC,
+    GaussJacksonStateC, GeodeticConfigC, GeodeticStateC, GravityAccelerationC, GravityControlsC,
+    GravitySourceC, GravityTorqueC, IntegratorTypeC, JeodPlugin, LvlhFrameC, MassPropertiesC,
+    MoonMarker, OrbitalElementsC, OrbitalElementsConfigC, PlanetC, PlanetFixedRotationC,
+    RadiationForceC, RotationModelC, RotationalStateC, ShadowBodyC, SolarBetaC,
+    SourceInertialPositionC, SunMarker, TidalConfigC, TidalDeltaC20C, TotalForceC,
     TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
 use jeod_sim::{
-    AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig, EulerSequence,
-    ExponentialAtmosphere, GaussJacksonConfig, GaussJacksonState, GeoIndexType, GravityControl,
-    GravityControls, GravityModel, GravitySource, GravitySourceEntry, IntegratorType, JeodQuat,
-    LvlhFrame, MassProperties, MetAtmosphere, OrbitalElements, PlanetShape, RotationModel,
-    RotationalState, SimBody, Simulation, SixDofState, TidalBody, TidalConfig, TranslationalState,
+    AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig, Ephemeris, EphemerisBody,
+    EulerSequence, ExponentialAtmosphere, GaussJacksonConfig, GaussJacksonState, GeoIndexType,
+    GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry,
+    IntegratorType, JeodQuat, LvlhFrame, MassProperties, MetAtmosphere, OrbitalElements,
+    PlanetShape, RotationModel, RotationalState, SimBody, Simulation, SixDofState, TidalBody,
+    TidalConfig, TranslationalState,
 };
 
 const MU_EARTH: f64 = 3.986_004_415e14;
@@ -78,6 +81,14 @@ fn earth_source() -> GravitySource {
 }
 
 // ── Bevy helpers ──
+
+fn new_bevy_app(dt: f64) -> App {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(dt));
+    app.add_plugins(JeodPlugin);
+    app
+}
 
 fn step_bevy(app: &mut App, n: usize) {
     step_bevy_dt(app, n, DT);
@@ -163,6 +174,39 @@ fn assert_trans_eq(label: &str, a: &TranslationalState, b: &TranslationalState) 
         );
     }
     println!("  {label}: bit-identical (all 6 components)");
+}
+
+fn new_sim_earth(dt: f64) -> (Simulation, usize) {
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sim = Simulation::new(time, dt);
+    let earth_idx = sim.add_source(GravitySourceEntry {
+        source: earth_source(),
+        position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
+        t_inertial_pfix: None,
+        delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
+        tidal_config: None,
+    });
+    (sim, earth_idx)
+}
+
+fn spawn_earth_source(app: &mut App) -> Entity {
+    app.world_mut()
+        .spawn((
+            Name::new("Earth"),
+            GravitySourceC(earth_source()),
+            SourceInertialPositionC::default(),
+            TranslationalStateC::default(),
+        ))
+        .id()
+}
+
+fn assert_geodetic_eq(label: &str, a: &jeod_sim::GeodeticState, b: &jeod_sim::GeodeticState) {
+    assert_bits_eq(label, "latitude", a.latitude, b.latitude);
+    assert_bits_eq(label, "longitude", a.longitude, b.longitude);
+    assert_bits_eq(label, "altitude", a.altitude, b.altitude);
+    println!("  {label}: bit-identical (lat, lon, alt)");
 }
 
 fn new_sim_body_sixdof(earth_idx: usize, gradient: bool) -> SimBody {
@@ -2625,4 +2669,3004 @@ fn tier3_sim_relativistic_gravity_consistency() {
         correction.length(),
         ratio
     );
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Phase 1 parity tests: already-wired Bevy features
+// ══════════════════════════════════════════════════════════════════
+
+// ── Euler angle parity (XYZ sequence, various orbit geometries) ──
+
+fn run_euler_parity(label: &str, trans: TranslationalState, sequence: EulerSequence) {
+    let sun_pos = DVec3::new(1.496e11, 0.0, 0.0);
+
+    // ── Bevy ──
+    let mut app = new_bevy_app(DT);
+    let planet = spawn_earth_source(&mut app);
+    let _sun = app
+        .world_mut()
+        .spawn((
+            Name::new("Sun"),
+            SunMarker,
+            TranslationalStateC(TranslationalState {
+                position: sun_pos,
+                velocity: DVec3::ZERO,
+            }),
+        ))
+        .id();
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(trans),
+            RotationalStateC(tumble_rot()),
+            MassPropertiesC(iss_mass()),
+            DynamicsConfigC(DynamicsConfig {
+                translational_dynamics: true,
+                rotational_dynamics: true,
+                three_dof: false,
+            }),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+            EulerAnglesConfigC { sequence },
+            EulerAnglesC::default(),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+    let bevy_state = read_sixdof(app.world(), vehicle);
+    let bevy_euler = app.world().get::<EulerAnglesC>(vehicle).unwrap().0;
+
+    // ── Simulation ──
+    let (mut sim, earth_idx) = new_sim_earth(DT);
+    sim.add_body(SimBody {
+        trans,
+        rot: Some(tumble_rot()),
+        mass: Some(iss_mass()),
+        config: DynamicsConfig {
+            translational_dynamics: true,
+            rotational_dynamics: true,
+            three_dof: false,
+        },
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+        },
+        euler_sequence: Some(sequence),
+        ..Default::default()
+    });
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    let sim_body = sim.body(0);
+    let sim_state = SixDofState {
+        trans: sim_body.trans,
+        rot: sim_body.rot.unwrap(),
+    };
+    assert_sixdof_eq(&format!("Bevy vs Sim ({label})"), &bevy_state, &sim_state);
+
+    let sim_euler = sim_body.euler_angles.expect("euler angles computed");
+    for i in 0..3 {
+        assert_bits_eq(
+            &format!("Bevy vs Sim Euler ({label})"),
+            &format!("angle[{i}]"),
+            bevy_euler[i],
+            sim_euler[i],
+        );
+    }
+    println!("  Bevy vs Sim Euler ({label}): bit-identical");
+}
+
+#[test]
+fn tier3_bevy_euler() {
+    run_euler_parity("euler_inc", iss_trans(), EulerSequence::XYZ);
+}
+
+#[test]
+fn tier3_bevy_euler_ecc() {
+    // Eccentric orbit: 400 km x 8000 km
+    let ecc_trans = TranslationalState {
+        position: DVec3::new(6_778_137.0, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 9500.0, 0.0),
+    };
+    run_euler_parity("euler_ecc", ecc_trans, EulerSequence::XYZ);
+}
+
+#[test]
+fn tier3_bevy_euler_equ() {
+    // Equatorial orbit: i=0 (velocity purely in-plane)
+    let equ_trans = TranslationalState {
+        position: DVec3::new(6_778_137.0, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7668.56, 0.0),
+    };
+    run_euler_parity("euler_equ", equ_trans, EulerSequence::XYZ);
+}
+
+// ── LVLH parity (various orbit geometries) ──
+
+fn run_lvlh_parity(label: &str, trans: TranslationalState) {
+    // ── Bevy ──
+    let mut app = new_bevy_app(DT);
+    let planet = spawn_earth_source(&mut app);
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(trans),
+            DynamicsConfigC::default(),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+            LvlhFrameC::default(),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+    let bevy_trans = read_trans(app.world(), vehicle);
+    let bevy_lvlh = app.world().get::<LvlhFrameC>(vehicle).unwrap().0;
+
+    // ── Simulation ──
+    let (mut sim, earth_idx) = new_sim_earth(DT);
+    sim.add_body(SimBody {
+        trans,
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+        },
+        compute_lvlh: true,
+        ..Default::default()
+    });
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    let sim_body = sim.body(0);
+    assert_trans_eq(
+        &format!("Bevy vs Sim ({label})"),
+        &bevy_trans,
+        &sim_body.trans,
+    );
+
+    let sim_lvlh = sim_body.lvlh_frame.as_ref().expect("LVLH computed");
+    assert_lvlh_eq(&format!("Bevy vs Sim LVLH ({label})"), &bevy_lvlh, sim_lvlh);
+}
+
+#[test]
+fn tier3_bevy_lvlh() {
+    run_lvlh_parity("lvlh_inc", iss_trans());
+}
+
+#[test]
+fn tier3_bevy_lvlh_ecc() {
+    let ecc_trans = TranslationalState {
+        position: DVec3::new(6_778_137.0, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 9500.0, 0.0),
+    };
+    run_lvlh_parity("lvlh_ecc", ecc_trans);
+}
+
+#[test]
+fn tier3_bevy_lvlh_equ() {
+    let equ_trans = TranslationalState {
+        position: DVec3::new(6_778_137.0, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7668.56, 0.0),
+    };
+    run_lvlh_parity("lvlh_equ", equ_trans);
+}
+
+// ── NED/Geodetic parity (spherical Earth variants) ──
+
+fn run_ned_parity(label: &str, trans: TranslationalState, r_eq: f64, r_pol: f64) {
+    let earth_shape = PlanetShape {
+        name: "Earth",
+        mu: MU_EARTH,
+        r_eq,
+        r_pol,
+        flat_coeff: if (r_eq - r_pol).abs() < 1.0 {
+            0.0
+        } else {
+            1.0 - r_pol / r_eq
+        },
+    };
+
+    // ── Bevy ──
+    let mut app = new_bevy_app(DT);
+    let planet = app
+        .world_mut()
+        .spawn((
+            Name::new("Earth"),
+            GravitySourceC(earth_source()),
+            SourceInertialPositionC::default(),
+            TranslationalStateC::default(),
+            PlanetFixedRotationC(DMat3::IDENTITY),
+            PlanetC(earth_shape),
+        ))
+        .id();
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(trans),
+            DynamicsConfigC(DynamicsConfig {
+                translational_dynamics: true,
+                rotational_dynamics: false,
+                three_dof: true,
+            }),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+            GeodeticConfigC { planet },
+            GeodeticStateC::default(),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+    let bevy_trans = read_trans(app.world(), vehicle);
+    let bevy_geodetic = app.world().get::<GeodeticStateC>(vehicle).unwrap().0;
+
+    // ── Simulation ──
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sim = Simulation::new(time, DT);
+    let earth_idx = sim.add_source(GravitySourceEntry {
+        source: earth_source(),
+        position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
+        t_inertial_pfix: Some(DMat3::IDENTITY),
+        delta_c20: 0.0,
+        rotation_model: RotationModel::EarthRNP,
+        tidal_config: None,
+    });
+
+    sim.add_body(SimBody {
+        trans,
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+        },
+        geodetic_planet: Some((earth_idx, r_eq, r_pol)),
+        ..Default::default()
+    });
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    let sim_body = sim.body(0);
+    assert_trans_eq(
+        &format!("Bevy vs Sim ({label})"),
+        &bevy_trans,
+        &sim_body.trans,
+    );
+    let sim_geodetic = sim_body.geodetic_state.expect("geodetic computed");
+    assert_geodetic_eq(
+        &format!("Bevy vs Sim geodetic ({label})"),
+        &bevy_geodetic,
+        &sim_geodetic,
+    );
+}
+
+#[test]
+fn tier3_bevy_ned_sph_inc() {
+    let r_sph = 6_378_137.0;
+    run_ned_parity("ned_sph_inc", iss_trans(), r_sph, r_sph);
+}
+
+#[test]
+fn tier3_bevy_ned_sph_polar() {
+    let r_sph = 6_378_137.0;
+    let polar_trans = TranslationalState {
+        position: DVec3::new(6_778_137.0, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 0.0, 7668.56),
+    };
+    run_ned_parity("ned_sph_polar", polar_trans, r_sph, r_sph);
+}
+
+// ── Planetary orbit parity (3-DOF, various orbit geometries) ──
+
+fn run_planetary_parity(label: &str, trans: TranslationalState) {
+    // ── Bevy ──
+    let mut app = new_bevy_app(DT);
+    let planet = spawn_earth_source(&mut app);
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(trans),
+            DynamicsConfigC::default(),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+    let bevy_trans = read_trans(app.world(), vehicle);
+
+    // ── Simulation ──
+    let (mut sim, earth_idx) = new_sim_earth(DT);
+    sim.add_body(SimBody {
+        trans,
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+        },
+        ..Default::default()
+    });
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    assert_trans_eq(
+        &format!("Bevy vs Sim ({label})"),
+        &bevy_trans,
+        &sim.body(0).trans,
+    );
+}
+
+#[test]
+fn tier3_bevy_planetary_leo_inc() {
+    // Inclined LEO: i≈51.6° (ISS-like)
+    run_planetary_parity("planetary_leo_inc", iss_trans());
+}
+
+#[test]
+fn tier3_bevy_planetary_leo_polar() {
+    // Polar LEO: i=90°
+    let trans = TranslationalState {
+        position: DVec3::new(6_778_137.0, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 0.0, 7668.56),
+    };
+    run_planetary_parity("planetary_leo_polar", trans);
+}
+
+#[test]
+fn tier3_bevy_planetary_leo_ecc() {
+    // Eccentric LEO: 400 km x 8000 km
+    let trans = TranslationalState {
+        position: DVec3::new(6_778_137.0, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 9500.0, 0.0),
+    };
+    run_planetary_parity("planetary_leo_ecc", trans);
+}
+
+#[test]
+fn tier3_bevy_planetary_leo_equ() {
+    // Equatorial LEO: i=0°
+    let trans = TranslationalState {
+        position: DVec3::new(6_778_137.0, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7668.56, 0.0),
+    };
+    run_planetary_parity("planetary_leo_equ", trans);
+}
+
+#[test]
+fn tier3_bevy_planetary_geo() {
+    // GEO: r≈42164 km, v≈3075 m/s
+    let trans = TranslationalState {
+        position: DVec3::new(42_164_000.0, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 3074.66, 0.0),
+    };
+    run_planetary_parity("planetary_geo", trans);
+}
+
+// ── Orbital elements parity (7 orbit families) ──
+
+fn run_orbelem_parity(label: &str, trans: TranslationalState) {
+    // Use tiny dt so one step barely changes state (same as orbelem_comprehensive)
+    let tiny_dt = 1e-9;
+
+    // ── Bevy ──
+    let mut app = new_bevy_app(tiny_dt);
+    let planet = spawn_earth_source(&mut app);
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(trans),
+            DynamicsConfigC::default(),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+            OrbitalElementsConfigC {
+                gravity_source: planet,
+            },
+            OrbitalElementsC::default(),
+        ))
+        .id();
+
+    step_bevy_dt(&mut app, 1, tiny_dt);
+    let bevy_oe = app
+        .world()
+        .get::<OrbitalElementsC>(vehicle)
+        .unwrap()
+        .0
+        .clone();
+
+    // ── Simulation ──
+    let (mut sim, earth_idx) = new_sim_earth(tiny_dt);
+    sim.add_body(SimBody {
+        trans,
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+        },
+        orbital_elements_source: Some(earth_idx),
+        ..Default::default()
+    });
+    sim.validate().unwrap();
+    sim.step();
+
+    let sim_oe = sim.body(0).orbital_elements.as_ref().expect("OE computed");
+    assert_orbital_elements_eq(&format!("Bevy vs Sim OE ({label})"), &bevy_oe, sim_oe);
+}
+
+#[test]
+fn tier3_bevy_orbelem_t01() {
+    // T01: Circular orbit (e≈0)
+    let trans = TranslationalState {
+        position: DVec3::new(6_778_137.0, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7668.56, 0.0),
+    };
+    run_orbelem_parity("orbelem_t01_circular", trans);
+}
+
+#[test]
+fn tier3_bevy_orbelem_t10() {
+    // T10: Eccentric orbit (0 < e < 1)
+    let trans = TranslationalState {
+        position: DVec3::new(6_778_137.0, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 9500.0, 0.0),
+    };
+    run_orbelem_parity("orbelem_t10_eccentric", trans);
+}
+
+#[test]
+fn tier3_bevy_orbelem_t20() {
+    // T20: Hyperbolic orbit (e > 1)
+    let trans = TranslationalState {
+        position: DVec3::new(6_778_137.0, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 12_000.0, 0.0),
+    };
+    run_orbelem_parity("orbelem_t20_hyperbolic", trans);
+}
+
+#[test]
+fn tier3_bevy_orbelem_t30() {
+    // T30: Near-parabolic orbit (e≈1)
+    let v_esc = (2.0 * MU_EARTH / 6_778_137.0).sqrt();
+    let trans = TranslationalState {
+        position: DVec3::new(6_778_137.0, 0.0, 0.0),
+        velocity: DVec3::new(0.0, v_esc * 1.0001, 0.0),
+    };
+    run_orbelem_parity("orbelem_t30_near_parabolic", trans);
+}
+
+#[test]
+fn tier3_bevy_orbelem_t40() {
+    // T40: Retrograde orbit (i > 90°)
+    let trans = TranslationalState {
+        position: DVec3::new(6_778_137.0, 0.0, 0.0),
+        velocity: DVec3::new(0.0, -7668.56, 0.0),
+    };
+    run_orbelem_parity("orbelem_t40_retrograde", trans);
+}
+
+#[test]
+fn tier3_bevy_orbelem_t50() {
+    // T50: Equatorial orbit (i≈0)
+    let trans = TranslationalState {
+        position: DVec3::new(6_778_137.0, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7668.56, 0.0),
+    };
+    run_orbelem_parity("orbelem_t50_equatorial", trans);
+}
+
+#[test]
+fn tier3_bevy_orbelem_t55() {
+    // T55: Polar orbit (i≈90°)
+    let trans = TranslationalState {
+        position: DVec3::new(6_778_137.0, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 0.0, 7668.56),
+    };
+    run_orbelem_parity("orbelem_t55_polar", trans);
+}
+
+// ── Orbelem timeseries parity (multi-step) ──
+
+#[test]
+fn tier3_bevy_orbelem() {
+    // Eccentric orbit propagated for NUM_STEPS with OE computed each step
+    let ecc_trans = TranslationalState {
+        position: DVec3::new(6_778_137.0, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 9500.0, 0.0),
+    };
+
+    // ── Bevy ──
+    let mut app = new_bevy_app(DT);
+    let planet = spawn_earth_source(&mut app);
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(ecc_trans),
+            DynamicsConfigC::default(),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+            OrbitalElementsConfigC {
+                gravity_source: planet,
+            },
+            OrbitalElementsC::default(),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+    let bevy_oe = app
+        .world()
+        .get::<OrbitalElementsC>(vehicle)
+        .unwrap()
+        .0
+        .clone();
+
+    // ── Simulation ──
+    let (mut sim, earth_idx) = new_sim_earth(DT);
+    sim.add_body(SimBody {
+        trans: ecc_trans,
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+        },
+        orbital_elements_source: Some(earth_idx),
+        ..Default::default()
+    });
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    let sim_oe = sim.body(0).orbital_elements.as_ref().expect("OE computed");
+    assert_orbital_elements_eq("Bevy vs Sim OE (timeseries)", &bevy_oe, sim_oe);
+}
+
+// ── Solar beta parity ──
+
+#[test]
+fn tier3_bevy_solar_beta() {
+    let sun_pos = DVec3::new(1.496e11, 0.0, 0.0);
+    // Inclined orbit for non-trivial beta angle
+    let inc_trans = TranslationalState {
+        position: DVec3::new(6_778_137.0, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 5423.0, 5423.0), // ~45° inclination
+    };
+
+    // ── Bevy ──
+    let mut app = new_bevy_app(DT);
+    let planet = spawn_earth_source(&mut app);
+    let _sun = app
+        .world_mut()
+        .spawn((
+            Name::new("Sun"),
+            SunMarker,
+            TranslationalStateC(TranslationalState {
+                position: sun_pos,
+                velocity: DVec3::ZERO,
+            }),
+        ))
+        .id();
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(inc_trans),
+            DynamicsConfigC::default(),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+            SolarBetaC::default(),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+    let bevy_beta = app.world().get::<SolarBetaC>(vehicle).unwrap().0;
+
+    // ── Simulation ──
+    let (mut sim, earth_idx) = new_sim_earth(DT);
+    let sun_idx = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: 0.0,
+            model: GravityModel::PointMass,
+        },
+        position: sun_pos,
+        velocity: DVec3::ZERO,
+        t_inertial_pfix: None,
+        delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
+        tidal_config: None,
+    });
+    sim.sun_source = Some(sun_idx);
+
+    sim.add_body(SimBody {
+        trans: inc_trans,
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+        },
+        compute_solar_beta: true,
+        ..Default::default()
+    });
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    let sim_beta = sim.body(0).solar_beta.expect("solar beta computed");
+    assert_bits_eq("Bevy vs Sim", "solar_beta", bevy_beta, sim_beta);
+    println!("  Bevy vs Sim solar beta: bit-identical");
+}
+
+// ── Timescale parity ──
+
+#[test]
+fn tier3_bevy_timescale_tdb() {
+    println!("Timescale TDB parity: Bevy vs Simulation");
+    let dt = 60.0;
+    let n_steps = 120; // 2 hours
+
+    // ── Bevy ──
+    let mut app = new_bevy_app(dt);
+    // JeodPlugin inserts SimulationTimeR at J2000 by default
+    step_bevy_dt(&mut app, n_steps, dt);
+    let bevy_time = app.world().resource::<bevy_jeod::SimulationTimeR>();
+
+    // ── Simulation ──
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sim = Simulation::new(time, dt);
+    sim.validate().unwrap();
+    sim.step_n(n_steps);
+
+    // Compare all time scales
+    assert_bits_eq(
+        "Bevy vs Sim",
+        "tai_tjt",
+        bevy_time.tai_tjt,
+        sim.time.tai_tjt,
+    );
+    assert_bits_eq(
+        "Bevy vs Sim",
+        "gmst_seconds",
+        bevy_time.gmst_seconds,
+        sim.time.gmst_seconds,
+    );
+    assert_bits_eq(
+        "Bevy vs Sim",
+        "simtime",
+        bevy_time.simtime,
+        sim.time.simtime,
+    );
+    println!("  Bevy vs Sim timescale: bit-identical");
+}
+
+// ── Orbinit cross-consistency parity ──
+
+#[test]
+fn tier3_bevy_orbinit_cross_consistency() {
+    println!("Orbinit cross-consistency parity");
+    // Use 4 different orbit geometries, step each once, verify Bevy ≡ Simulation
+    let orbits = [
+        (
+            "circular",
+            TranslationalState {
+                position: DVec3::new(6_778_137.0, 0.0, 0.0),
+                velocity: DVec3::new(0.0, 7668.56, 0.0),
+            },
+        ),
+        (
+            "eccentric",
+            TranslationalState {
+                position: DVec3::new(6_778_137.0, 0.0, 0.0),
+                velocity: DVec3::new(0.0, 9500.0, 0.0),
+            },
+        ),
+        (
+            "inclined",
+            TranslationalState {
+                position: DVec3::new(6_778_137.0, 0.0, 0.0),
+                velocity: DVec3::new(0.0, 5423.0, 5423.0),
+            },
+        ),
+        (
+            "polar",
+            TranslationalState {
+                position: DVec3::new(6_778_137.0, 0.0, 0.0),
+                velocity: DVec3::new(0.0, 0.0, 7668.56),
+            },
+        ),
+    ];
+
+    for (label, trans) in &orbits {
+        let mut app = new_bevy_app(DT);
+        let planet = spawn_earth_source(&mut app);
+        let vehicle = app
+            .world_mut()
+            .spawn((
+                TranslationalStateC(*trans),
+                DynamicsConfigC::default(),
+                GravityControlsC(GravityControls {
+                    controls: vec![GravityControl::new_spherical(planet, false)],
+                }),
+                GravityAccelerationC::default(),
+                TotalForceC::default(),
+            ))
+            .id();
+        step_bevy_dt(&mut app, 1, DT);
+        let bevy_trans = read_trans(app.world(), vehicle);
+
+        let (mut sim, earth_idx) = new_sim_earth(DT);
+        sim.add_body(SimBody {
+            trans: *trans,
+            gravity_controls: GravityControls {
+                controls: vec![GravityControl::new_spherical(earth_idx, false)],
+            },
+            ..Default::default()
+        });
+        sim.validate().unwrap();
+        sim.step();
+        assert_trans_eq(
+            &format!("Bevy vs Sim (orbinit {label})"),
+            &bevy_trans,
+            &sim.body(0).trans,
+        );
+    }
+}
+
+// ── Gravity torque parity (elliptical + with rate) ──
+
+fn run_gravity_torque_parity(label: &str, trans: TranslationalState, rot: RotationalState) {
+    // ── Bevy ──
+    let mut app = new_bevy_app(DT);
+    let planet = spawn_earth_source(&mut app);
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(trans),
+            RotationalStateC(rot),
+            MassPropertiesC(iss_mass()),
+            DynamicsConfigC(DynamicsConfig {
+                translational_dynamics: true,
+                rotational_dynamics: true,
+                three_dof: false,
+            }),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, true)], // gradient=true
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+            GravityTorqueC::default(),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+    let bevy_state = read_sixdof(app.world(), vehicle);
+
+    // ── Simulation ──
+    let (mut sim, earth_idx) = new_sim_earth(DT);
+    sim.add_body(SimBody {
+        trans,
+        rot: Some(rot),
+        mass: Some(iss_mass()),
+        config: DynamicsConfig {
+            translational_dynamics: true,
+            rotational_dynamics: true,
+            three_dof: false,
+        },
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth_idx, true)],
+        },
+        compute_gravity_torque: true,
+        ..Default::default()
+    });
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    let sim_body = sim.body(0);
+    let sim_state = SixDofState {
+        trans: sim_body.trans,
+        rot: sim_body.rot.unwrap(),
+    };
+    assert_sixdof_eq(&format!("Bevy vs Sim ({label})"), &bevy_state, &sim_state);
+}
+
+#[test]
+fn tier3_bevy_run10c_gravity_torque_elliptical() {
+    // Elliptical orbit with zero initial angular rate
+    let ecc_trans = TranslationalState {
+        position: DVec3::new(6_778_137.0, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 9500.0, 0.0),
+    };
+    let rot = RotationalState {
+        quaternion: JeodQuat::new(0.5_f64.sqrt(), 0.5, 0.0, 0.5_f64.sqrt() - 0.5),
+        ang_vel_body: DVec3::ZERO,
+    };
+    run_gravity_torque_parity("run10c_grav_torque_ecc", ecc_trans, rot);
+}
+
+#[test]
+fn tier3_bevy_run10d_gravity_torque_elliptical_rate() {
+    // Elliptical orbit with non-zero initial angular rate
+    let ecc_trans = TranslationalState {
+        position: DVec3::new(6_778_137.0, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 9500.0, 0.0),
+    };
+    run_gravity_torque_parity("run10d_grav_torque_ecc_rate", ecc_trans, tumble_rot());
+}
+
+// ── Run2 6-DOF parity ──
+
+#[test]
+fn tier3_bevy_run2_6dof() {
+    println!("Run2 6-DOF parity: point-mass gravity with rotation");
+    let mut app = new_bevy_app(DT);
+    let planet = spawn_earth_source(&mut app);
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(iss_trans()),
+            RotationalStateC(tumble_rot()),
+            MassPropertiesC(iss_mass()),
+            DynamicsConfigC(DynamicsConfig {
+                translational_dynamics: true,
+                rotational_dynamics: true,
+                three_dof: false,
+            }),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+    let bevy_state = read_sixdof(app.world(), vehicle);
+
+    // ── Simulation ──
+    let (mut sim, earth_idx) = new_sim_earth(DT);
+    sim.add_body(new_sim_body_sixdof(earth_idx, false));
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    let sim_body = sim.body(0);
+    let sim_state = SixDofState {
+        trans: sim_body.trans,
+        rot: sim_body.rot.unwrap(),
+    };
+    assert_sixdof_eq("Bevy vs Sim (run2_6dof)", &bevy_state, &sim_state);
+}
+
+// ── Polar motion parity ──
+
+#[test]
+fn tier3_bevy_run2p_polar_motion() {
+    println!("Run2p polar motion parity");
+    const ARCSEC_TO_RAD: f64 = std::f64::consts::PI / (180.0 * 3600.0);
+    let xp = 0.06806 * ARCSEC_TO_RAD;
+    let yp = 0.24156 * ARCSEC_TO_RAD;
+
+    // ── Bevy ──
+    let mut app = new_bevy_app(DT);
+    app.insert_resource(bevy_jeod::PolarMotionR { xp, yp });
+    let planet = spawn_earth_source(&mut app);
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(iss_trans()),
+            DynamicsConfigC::default(),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+    let bevy_trans = read_trans(app.world(), vehicle);
+
+    // ── Simulation ──
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sim = Simulation::new(time, DT);
+    let earth_idx = sim.add_source(GravitySourceEntry {
+        source: earth_source(),
+        position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
+        t_inertial_pfix: None,
+        delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
+        tidal_config: None,
+    });
+    sim.polar_motion = Some((xp, yp));
+
+    sim.add_body(SimBody {
+        trans: iss_trans(),
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+        },
+        ..Default::default()
+    });
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    assert_trans_eq(
+        "Bevy vs Sim (polar motion)",
+        &bevy_trans,
+        &sim.body(0).trans,
+    );
+}
+
+// ── Atmosphere variants parity (run5b mean, run5c max) ──
+
+fn run_atmosphere_parity(label: &str, trans: TranslationalState) {
+    // Elliptical orbit with no drag — validates atmosphere evaluation path
+    // ── Bevy ──
+    let mut app = new_bevy_app(DT);
+    let planet = spawn_earth_source(&mut app);
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(trans),
+            RotationalStateC(tumble_rot()),
+            MassPropertiesC(iss_mass()),
+            DynamicsConfigC(DynamicsConfig {
+                translational_dynamics: true,
+                rotational_dynamics: true,
+                three_dof: false,
+            }),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, true)],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+    let bevy_state = read_sixdof(app.world(), vehicle);
+
+    // ── Simulation ──
+    let (mut sim, earth_idx) = new_sim_earth(DT);
+    sim.add_body(SimBody {
+        trans,
+        rot: Some(tumble_rot()),
+        mass: Some(iss_mass()),
+        config: DynamicsConfig {
+            translational_dynamics: true,
+            rotational_dynamics: true,
+            three_dof: false,
+        },
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth_idx, true)],
+        },
+        ..Default::default()
+    });
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    let sim_body = sim.body(0);
+    let sim_state = SixDofState {
+        trans: sim_body.trans,
+        rot: sim_body.rot.unwrap(),
+    };
+    assert_sixdof_eq(&format!("Bevy vs Sim ({label})"), &bevy_state, &sim_state);
+}
+
+#[test]
+fn tier3_bevy_run5b_atmosphere_mean() {
+    // Elliptical orbit — same physics as run5b (no actual drag applied)
+    let ecc_trans = TranslationalState {
+        position: DVec3::new(6_778_137.0, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 9500.0, 0.0),
+    };
+    run_atmosphere_parity("run5b_atmos_mean", ecc_trans);
+}
+
+#[test]
+fn tier3_bevy_run5c_atmosphere_max() {
+    let ecc_trans = TranslationalState {
+        position: DVec3::new(6_778_137.0, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 9500.0, 0.0),
+    };
+    run_atmosphere_parity("run5c_atmos_max", ecc_trans);
+}
+
+// ── MET atmosphere drag parity (run5a) ──
+
+#[test]
+fn tier3_bevy_met_run5a() {
+    println!("MET run5a parity: minimum solar");
+    let met = MetAtmosphere {
+        f10: 70.0,
+        f10b: 70.0,
+        geo_index: 0.0,
+        geo_index_type: GeoIndexType::Ap,
+    };
+
+    // ── Bevy ──
+    let mut app = new_bevy_app(DT);
+    let planet = app
+        .world_mut()
+        .spawn((
+            Name::new("Earth"),
+            GravitySourceC(earth_source()),
+            SourceInertialPositionC::default(),
+            TranslationalStateC::default(),
+            PlanetFixedRotationC(DMat3::IDENTITY),
+        ))
+        .id();
+
+    app.insert_resource(AtmosphereModelR {
+        config: AtmosphereConfig {
+            model: AtmosphereModel::Met(met),
+            r_eq: 6_378_137.0,
+            r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
+            planet_omega: 7.292_115_146_706_388e-5,
+        },
+        planet_entity: Some(planet),
+    });
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(iss_trans()),
+            RotationalStateC(tumble_rot()),
+            MassPropertiesC(iss_mass()),
+            DynamicsConfigC(DynamicsConfig {
+                translational_dynamics: true,
+                rotational_dynamics: true,
+                three_dof: false,
+            }),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+            DragConfigC(DragConfig {
+                cd: 2.2,
+                area: 1000.0,
+                constant_density: None,
+            }),
+            AtmosphericStateC::default(),
+            AerodynamicForceC::default(),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+    let bevy_state = read_sixdof(app.world(), vehicle);
+
+    // ── Simulation ──
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sim = Simulation::new(time, DT);
+    let earth_idx = sim.add_source(GravitySourceEntry {
+        source: earth_source(),
+        position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
+        t_inertial_pfix: Some(DMat3::IDENTITY),
+        delta_c20: 0.0,
+        rotation_model: RotationModel::EarthRNP,
+        tidal_config: None,
+    });
+    sim.atmosphere = Some(AtmosphereConfig {
+        model: AtmosphereModel::Met(met),
+        r_eq: 6_378_137.0,
+        r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
+        planet_omega: 7.292_115_146_706_388e-5,
+    });
+    sim.atmosphere_planet_source = Some(earth_idx);
+
+    let mut body = new_sim_body_sixdof(earth_idx, false);
+    body.drag = Some(DragConfig {
+        cd: 2.2,
+        area: 1000.0,
+        constant_density: None,
+    });
+    body.atmospheric_state = Some(Default::default());
+    sim.add_body(body);
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    let sim_body = sim.body(0);
+    let sim_state = SixDofState {
+        trans: sim_body.trans,
+        rot: sim_body.rot.unwrap(),
+    };
+    assert_sixdof_eq("Bevy vs Sim (MET run5a)", &bevy_state, &sim_state);
+}
+
+// ── Drag run6b parity (MET atmosphere + drag) ──
+
+#[test]
+fn tier3_bevy_drag_run6b() {
+    println!("Drag run6b parity: MET atmosphere + drag");
+    let met = MetAtmosphere {
+        f10: 128.8,
+        f10b: 128.8,
+        geo_index: 15.7,
+        geo_index_type: GeoIndexType::Ap,
+    };
+    let drag_config = DragConfig {
+        cd: 0.02,
+        area: 1.0,
+        constant_density: None,
+    };
+
+    // ── Bevy ──
+    let mut app = new_bevy_app(DT);
+    let planet = app
+        .world_mut()
+        .spawn((
+            Name::new("Earth"),
+            GravitySourceC(earth_source()),
+            SourceInertialPositionC::default(),
+            TranslationalStateC::default(),
+            PlanetFixedRotationC(DMat3::IDENTITY),
+        ))
+        .id();
+
+    app.insert_resource(AtmosphereModelR {
+        config: AtmosphereConfig {
+            model: AtmosphereModel::Met(met),
+            r_eq: 6_378_137.0,
+            r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
+            planet_omega: 7.292_115_146_706_388e-5,
+        },
+        planet_entity: Some(planet),
+    });
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(iss_trans()),
+            RotationalStateC(tumble_rot()),
+            MassPropertiesC(iss_mass()),
+            DynamicsConfigC(DynamicsConfig {
+                translational_dynamics: true,
+                rotational_dynamics: true,
+                three_dof: false,
+            }),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+            DragConfigC(drag_config),
+            AtmosphericStateC::default(),
+            AerodynamicForceC::default(),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+    let bevy_state = read_sixdof(app.world(), vehicle);
+
+    // ── Simulation ──
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sim = Simulation::new(time, DT);
+    let earth_idx = sim.add_source(GravitySourceEntry {
+        source: earth_source(),
+        position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
+        t_inertial_pfix: Some(DMat3::IDENTITY),
+        delta_c20: 0.0,
+        rotation_model: RotationModel::EarthRNP,
+        tidal_config: None,
+    });
+    sim.atmosphere = Some(AtmosphereConfig {
+        model: AtmosphereModel::Met(met),
+        r_eq: 6_378_137.0,
+        r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
+        planet_omega: 7.292_115_146_706_388e-5,
+    });
+    sim.atmosphere_planet_source = Some(earth_idx);
+
+    let mut body = new_sim_body_sixdof(earth_idx, false);
+    body.drag = Some(drag_config);
+    body.atmospheric_state = Some(Default::default());
+    sim.add_body(body);
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    let sim_body = sim.body(0);
+    let sim_state = SixDofState {
+        trans: sim_body.trans,
+        rot: sim_body.rot.unwrap(),
+    };
+    assert_sixdof_eq("Bevy vs Sim (drag run6b)", &bevy_state, &sim_state);
+}
+
+// ── SRP shadow variants parity ──
+
+#[test]
+fn tier3_bevy_shadow_2a_annular() {
+    use jeod_sim::{FlatPlate, FlatPlateParams, FlatPlateThermal};
+    println!("Shadow 2a annular parity");
+
+    let sun_pos = DVec3::new(1.496e11, 0.0, 0.0);
+    let srp_plates = vec![(
+        FlatPlate {
+            area: 100.0,
+            normal: DVec3::X,
+            position: DVec3::ZERO,
+        },
+        FlatPlateParams {
+            albedo: 0.0,
+            diffuse: 0.0,
+        },
+        FlatPlateThermal {
+            emissivity: 0.0,
+            heat_capacity_per_area: 50.0,
+        },
+    )];
+
+    // ── Bevy ──
+    let mut app = new_bevy_app(DT);
+    let planet = app
+        .world_mut()
+        .spawn((
+            Name::new("Earth"),
+            GravitySourceC(earth_source()),
+            SourceInertialPositionC::default(),
+            TranslationalStateC::default(),
+            ShadowBodyC {
+                radius: 6_371_000.0,
+            },
+        ))
+        .id();
+
+    let _sun = app
+        .world_mut()
+        .spawn((
+            Name::new("Sun"),
+            SunMarker,
+            TranslationalStateC(TranslationalState {
+                position: sun_pos,
+                velocity: DVec3::ZERO,
+            }),
+        ))
+        .id();
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(iss_trans()),
+            RotationalStateC(tumble_rot()),
+            MassPropertiesC(iss_mass()),
+            DynamicsConfigC(DynamicsConfig {
+                translational_dynamics: true,
+                rotational_dynamics: true,
+                three_dof: false,
+            }),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+            FlatPlateConfigC(jeod_sim::FlatPlateState {
+                plates: srp_plates.clone(),
+                temperatures: vec![270.0; srp_plates.len()],
+                t_pow4_cached: vec![270.0_f64.powi(4); srp_plates.len()],
+            }),
+            RadiationForceC::default(),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+    let bevy_state = read_sixdof(app.world(), vehicle);
+
+    // ── Simulation ──
+    let (mut sim, earth_idx) = new_sim_earth(DT);
+    let sun_idx = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: 0.0,
+            model: GravityModel::PointMass,
+        },
+        position: sun_pos,
+        velocity: DVec3::ZERO,
+        t_inertial_pfix: None,
+        delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
+        tidal_config: None,
+    });
+    sim.sun_source = Some(sun_idx);
+
+    let mut body = new_sim_body_sixdof(earth_idx, false);
+    body.flat_plate_state = Some(jeod_sim::FlatPlateState {
+        plates: srp_plates.clone(),
+        temperatures: vec![270.0; srp_plates.len()],
+        t_pow4_cached: vec![270.0_f64.powi(4); srp_plates.len()],
+    });
+    body.shadow_body = Some((earth_idx, 6_371_000.0));
+    sim.add_body(body);
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    let sim_body = sim.body(0);
+    let sim_state = SixDofState {
+        trans: sim_body.trans,
+        rot: sim_body.rot.unwrap(),
+    };
+    assert_sixdof_eq("Bevy vs Sim (shadow_2a_annular)", &bevy_state, &sim_state);
+}
+
+#[test]
+fn tier3_bevy_shadow_2a_cooling() {
+    use jeod_sim::{FlatPlate, FlatPlateParams, FlatPlateThermal};
+    println!("Shadow 2a cooling parity");
+
+    let sun_pos = DVec3::new(1.496e11, 0.0, 0.0);
+    let srp_plates = vec![(
+        FlatPlate {
+            area: 100.0,
+            normal: DVec3::X,
+            position: DVec3::ZERO,
+        },
+        FlatPlateParams {
+            albedo: 0.0,
+            diffuse: 0.0,
+        },
+        FlatPlateThermal {
+            emissivity: 0.9,
+            heat_capacity_per_area: 50.0,
+        },
+    )];
+
+    // ── Bevy ──
+    let mut app = new_bevy_app(DT);
+    let planet = app
+        .world_mut()
+        .spawn((
+            Name::new("Earth"),
+            GravitySourceC(earth_source()),
+            SourceInertialPositionC::default(),
+            TranslationalStateC::default(),
+            ShadowBodyC {
+                radius: 6_371_000.0,
+            },
+        ))
+        .id();
+
+    let _sun = app
+        .world_mut()
+        .spawn((
+            Name::new("Sun"),
+            SunMarker,
+            TranslationalStateC(TranslationalState {
+                position: sun_pos,
+                velocity: DVec3::ZERO,
+            }),
+        ))
+        .id();
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(iss_trans()),
+            RotationalStateC(tumble_rot()),
+            MassPropertiesC(iss_mass()),
+            DynamicsConfigC(DynamicsConfig {
+                translational_dynamics: true,
+                rotational_dynamics: true,
+                three_dof: false,
+            }),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+            FlatPlateConfigC(jeod_sim::FlatPlateState {
+                plates: srp_plates.clone(),
+                temperatures: vec![270.0; srp_plates.len()],
+                t_pow4_cached: vec![270.0_f64.powi(4); srp_plates.len()],
+            }),
+            RadiationForceC::default(),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+    let bevy_state = read_sixdof(app.world(), vehicle);
+
+    // ── Simulation ──
+    let (mut sim, earth_idx) = new_sim_earth(DT);
+    let sun_idx = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: 0.0,
+            model: GravityModel::PointMass,
+        },
+        position: sun_pos,
+        velocity: DVec3::ZERO,
+        t_inertial_pfix: None,
+        delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
+        tidal_config: None,
+    });
+    sim.sun_source = Some(sun_idx);
+
+    let mut body = new_sim_body_sixdof(earth_idx, false);
+    body.flat_plate_state = Some(jeod_sim::FlatPlateState {
+        plates: srp_plates.clone(),
+        temperatures: vec![270.0; srp_plates.len()],
+        t_pow4_cached: vec![270.0_f64.powi(4); srp_plates.len()],
+    });
+    body.shadow_body = Some((earth_idx, 6_371_000.0));
+    sim.add_body(body);
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    let sim_body = sim.body(0);
+    let sim_state = SixDofState {
+        trans: sim_body.trans,
+        rot: sim_body.rot.unwrap(),
+    };
+    assert_sixdof_eq("Bevy vs Sim (shadow_2a_cooling)", &bevy_state, &sim_state);
+}
+
+// ── SRP basic variants parity ──
+
+#[test]
+fn tier3_bevy_srp_basic_default() {
+    use jeod_sim::{FlatPlate, FlatPlateParams, FlatPlateThermal};
+    println!("SRP basic default parity");
+
+    let sun_pos = DVec3::new(1.496e11, 0.0, 0.0);
+    let srp_plates = vec![(
+        FlatPlate {
+            area: 100.0,
+            normal: DVec3::X,
+            position: DVec3::ZERO,
+        },
+        FlatPlateParams {
+            albedo: 0.3,
+            diffuse: 0.3,
+        },
+        FlatPlateThermal {
+            emissivity: 0.0,
+            heat_capacity_per_area: 50.0,
+        },
+    )];
+
+    // ── Bevy ──
+    let mut app = new_bevy_app(DT);
+    let planet = spawn_earth_source(&mut app);
+    let _sun = app
+        .world_mut()
+        .spawn((
+            Name::new("Sun"),
+            SunMarker,
+            TranslationalStateC(TranslationalState {
+                position: sun_pos,
+                velocity: DVec3::ZERO,
+            }),
+        ))
+        .id();
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(iss_trans()),
+            RotationalStateC(tumble_rot()),
+            MassPropertiesC(iss_mass()),
+            DynamicsConfigC(DynamicsConfig {
+                translational_dynamics: true,
+                rotational_dynamics: true,
+                three_dof: false,
+            }),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+            FlatPlateConfigC(jeod_sim::FlatPlateState {
+                plates: srp_plates.clone(),
+                temperatures: vec![270.0; srp_plates.len()],
+                t_pow4_cached: vec![270.0_f64.powi(4); srp_plates.len()],
+            }),
+            RadiationForceC::default(),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+    let bevy_state = read_sixdof(app.world(), vehicle);
+
+    // ── Simulation ──
+    let (mut sim, earth_idx) = new_sim_earth(DT);
+    let sun_idx = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: 0.0,
+            model: GravityModel::PointMass,
+        },
+        position: sun_pos,
+        velocity: DVec3::ZERO,
+        t_inertial_pfix: None,
+        delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
+        tidal_config: None,
+    });
+    sim.sun_source = Some(sun_idx);
+
+    let mut body = new_sim_body_sixdof(earth_idx, false);
+    body.flat_plate_state = Some(jeod_sim::FlatPlateState {
+        plates: srp_plates.clone(),
+        temperatures: vec![270.0; srp_plates.len()],
+        t_pow4_cached: vec![270.0_f64.powi(4); srp_plates.len()],
+    });
+    sim.add_body(body);
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    let sim_body = sim.body(0);
+    let sim_state = SixDofState {
+        trans: sim_body.trans,
+        rot: sim_body.rot.unwrap(),
+    };
+    assert_sixdof_eq("Bevy vs Sim (srp_basic_default)", &bevy_state, &sim_state);
+}
+
+#[test]
+fn tier3_bevy_srp_basic_varied_cr() {
+    use jeod_sim::{FlatPlate, FlatPlateParams, FlatPlateThermal};
+    println!("SRP basic varied Cr parity");
+
+    let sun_pos = DVec3::new(1.496e11, 0.0, 0.0);
+    let srp_plates = vec![(
+        FlatPlate {
+            area: 100.0,
+            normal: DVec3::X,
+            position: DVec3::ZERO,
+        },
+        FlatPlateParams {
+            albedo: 0.8,
+            diffuse: 0.1,
+        },
+        FlatPlateThermal {
+            emissivity: 0.0,
+            heat_capacity_per_area: 50.0,
+        },
+    )];
+
+    // ── Bevy ──
+    let mut app = new_bevy_app(DT);
+    let planet = spawn_earth_source(&mut app);
+    let _sun = app
+        .world_mut()
+        .spawn((
+            Name::new("Sun"),
+            SunMarker,
+            TranslationalStateC(TranslationalState {
+                position: sun_pos,
+                velocity: DVec3::ZERO,
+            }),
+        ))
+        .id();
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(iss_trans()),
+            RotationalStateC(tumble_rot()),
+            MassPropertiesC(iss_mass()),
+            DynamicsConfigC(DynamicsConfig {
+                translational_dynamics: true,
+                rotational_dynamics: true,
+                three_dof: false,
+            }),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+            FlatPlateConfigC(jeod_sim::FlatPlateState {
+                plates: srp_plates.clone(),
+                temperatures: vec![270.0; srp_plates.len()],
+                t_pow4_cached: vec![270.0_f64.powi(4); srp_plates.len()],
+            }),
+            RadiationForceC::default(),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+    let bevy_state = read_sixdof(app.world(), vehicle);
+
+    // ── Simulation ──
+    let (mut sim, earth_idx) = new_sim_earth(DT);
+    let sun_idx = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: 0.0,
+            model: GravityModel::PointMass,
+        },
+        position: sun_pos,
+        velocity: DVec3::ZERO,
+        t_inertial_pfix: None,
+        delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
+        tidal_config: None,
+    });
+    sim.sun_source = Some(sun_idx);
+
+    let mut body = new_sim_body_sixdof(earth_idx, false);
+    body.flat_plate_state = Some(jeod_sim::FlatPlateState {
+        plates: srp_plates.clone(),
+        temperatures: vec![270.0; srp_plates.len()],
+        t_pow4_cached: vec![270.0_f64.powi(4); srp_plates.len()],
+    });
+    sim.add_body(body);
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    let sim_body = sim.body(0);
+    let sim_state = SixDofState {
+        trans: sim_body.trans,
+        rot: sim_body.rot.unwrap(),
+    };
+    assert_sixdof_eq("Bevy vs Sim (srp_basic_varied_cr)", &bevy_state, &sim_state);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Phase 2: External force/torque parity tests
+// ══════════════════════════════════════════════════════════════════
+
+/// Torque window: [1000, 2000) seconds, matching SIM_dyncomp RUN_9.
+const TORQUE_START: f64 = 1000.0;
+const TORQUE_END: f64 = 2000.0;
+
+fn in_torque_window(t: f64, dt: f64) -> bool {
+    t + dt * 0.5 >= TORQUE_START && t + dt * 0.5 < TORQUE_END
+}
+
+/// Run a Bevy vs Simulation parity test with time-scheduled external
+/// force/torque. Steps both runners in lockstep, updating external loads
+/// between each step based on the time window.
+fn run_external_parity(
+    label: &str,
+    init_ang_vel: DVec3,
+    force_torque_fn: fn(f64, f64, &JeodQuat) -> (DVec3, DVec3),
+) {
+    let n_steps = 300; // 3000 s at dt=10 — covers full torque window
+    let dt = DT;
+
+    // ── Bevy ──
+    let mut app = new_bevy_app(dt);
+    let planet = spawn_earth_source(&mut app);
+
+    let rot = RotationalState {
+        quaternion: JeodQuat::new(0.5_f64.sqrt(), 0.5, 0.0, 0.5_f64.sqrt() - 0.5),
+        ang_vel_body: init_ang_vel,
+    };
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(iss_trans()),
+            RotationalStateC(rot),
+            MassPropertiesC(iss_mass()),
+            DynamicsConfigC(DynamicsConfig {
+                translational_dynamics: true,
+                rotational_dynamics: true,
+                three_dof: false,
+            }),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+            FrameDerivativesC::default(),
+            ExternalForceC::default(),
+            ExternalTorqueC::default(),
+        ))
+        .id();
+
+    // ── Simulation ──
+    let (mut sim, earth_idx) = new_sim_earth(dt);
+    sim.add_body(SimBody {
+        trans: iss_trans(),
+        rot: Some(rot),
+        mass: Some(iss_mass()),
+        config: DynamicsConfig {
+            translational_dynamics: true,
+            rotational_dynamics: true,
+            three_dof: false,
+        },
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+        },
+        ..Default::default()
+    });
+    sim.validate().unwrap();
+
+    // Step both in lockstep with external loads
+    for step in 0..n_steps {
+        let t = step as f64 * dt;
+
+        // Get current quaternion from Simulation to compute body-to-inertial rotation
+        let quat = sim.body(0).rot.as_ref().unwrap().quaternion;
+        let (force, torque) = force_torque_fn(t, dt, &quat);
+
+        // Update Bevy external loads
+        let mut ext_f = app.world_mut().get_mut::<ExternalForceC>(vehicle).unwrap();
+        ext_f.0 = force;
+        let mut ext_t = app.world_mut().get_mut::<ExternalTorqueC>(vehicle).unwrap();
+        ext_t.0 = torque;
+
+        // Update Simulation external loads
+        sim.set_body_external_force(0, force);
+        sim.set_body_external_torque(0, torque);
+
+        // Step both
+        app.world_mut()
+            .resource_mut::<Time<Fixed>>()
+            .advance_by(Duration::from_secs_f64(dt));
+        app.world_mut().run_schedule(FixedUpdate);
+        sim.step();
+    }
+
+    let bevy_state = read_sixdof(app.world(), vehicle);
+    let sim_body = sim.body(0);
+    let sim_state = SixDofState {
+        trans: sim_body.trans,
+        rot: sim_body.rot.unwrap(),
+    };
+    assert_sixdof_eq(&format!("Bevy vs Sim ({label})"), &bevy_state, &sim_state);
+}
+
+#[test]
+fn tier3_bevy_run9a_torque() {
+    run_external_parity("run9a_torque", DVec3::ZERO, |t, dt, _quat| {
+        let torque = if in_torque_window(t, dt) {
+            DVec3::new(10.0, 0.0, 0.0)
+        } else {
+            DVec3::ZERO
+        };
+        (DVec3::ZERO, torque)
+    });
+}
+
+#[test]
+fn tier3_bevy_run9c_force_torque() {
+    run_external_parity("run9c_force_torque", DVec3::ZERO, |t, dt, quat| {
+        if in_torque_window(t, dt) {
+            // Force [10,0,0] N in body frame → rotate to inertial
+            let t_inertial_body = quat.left_quat_to_transformation();
+            let force_inertial = t_inertial_body.transpose() * DVec3::new(10.0, 0.0, 0.0);
+            let torque = DVec3::new(10.0, 0.0, 0.0);
+            (force_inertial, torque)
+        } else {
+            (DVec3::ZERO, DVec3::ZERO)
+        }
+    });
+}
+
+#[test]
+fn tier3_bevy_run9d_force_torque_rate() {
+    // Non-zero initial angular rate
+    let init_ang_vel = DVec3::new(0.001, -0.0005, 0.001);
+    run_external_parity("run9d_force_torque_rate", init_ang_vel, |t, dt, quat| {
+        if in_torque_window(t, dt) {
+            let t_inertial_body = quat.left_quat_to_transformation();
+            let force_inertial = t_inertial_body.transpose() * DVec3::new(10.0, 0.0, 0.0);
+            let torque = DVec3::new(10.0, 0.0, 0.0);
+            (force_inertial, torque)
+        } else {
+            (DVec3::ZERO, DVec3::ZERO)
+        }
+    });
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Phase 3: Earth lighting parity tests
+// ══════════════════════════════════════════════════════════════════
+
+fn assert_earth_lighting_eq(
+    label: &str,
+    a: &jeod_sim::EarthLightingState,
+    b: &jeod_sim::EarthLightingState,
+) {
+    assert_bits_eq(
+        label,
+        "sun_earth.visible",
+        a.sun_earth.visible,
+        b.sun_earth.visible,
+    );
+    assert_bits_eq(
+        label,
+        "sun_earth.occlusion",
+        a.sun_earth.occlusion,
+        b.sun_earth.occlusion,
+    );
+    assert_bits_eq(
+        label,
+        "sun_earth.lighting",
+        a.sun_earth.lighting,
+        b.sun_earth.lighting,
+    );
+    assert_bits_eq(
+        label,
+        "moon_earth.visible",
+        a.moon_earth.visible,
+        b.moon_earth.visible,
+    );
+    assert_bits_eq(
+        label,
+        "moon_earth.occlusion",
+        a.moon_earth.occlusion,
+        b.moon_earth.occlusion,
+    );
+    assert_bits_eq(
+        label,
+        "earth_albedo.lighting",
+        a.earth_albedo.lighting,
+        b.earth_albedo.lighting,
+    );
+    println!("  {label}: bit-identical (6 earth lighting fields)");
+}
+
+/// Run an earth lighting parity test with specific vehicle/Sun/Moon positions.
+fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_pos: DVec3) {
+    let earth_r = 6_378_137.0;
+    let moon_r = 1_737_400.0;
+    let sun_r = 6.96e8;
+
+    // ── Bevy ──
+    let mut app = new_bevy_app(DT);
+    let planet = spawn_earth_source(&mut app);
+    app.world_mut().spawn((
+        Name::new("Sun"),
+        SunMarker,
+        TranslationalStateC(TranslationalState {
+            position: sun_pos,
+            velocity: DVec3::ZERO,
+        }),
+    ));
+    app.world_mut().spawn((
+        Name::new("Moon"),
+        MoonMarker,
+        TranslationalStateC(TranslationalState {
+            position: moon_pos,
+            velocity: DVec3::ZERO,
+        }),
+    ));
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(TranslationalState {
+                position: veh_pos,
+                velocity: DVec3::new(0.0, 7668.56, 0.0),
+            }),
+            DynamicsConfigC::default(),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+            EarthLightingConfigC {
+                earth_radius: earth_r,
+                moon_radius: moon_r,
+                sun_radius: sun_r,
+            },
+            EarthLightingStateC::default(),
+        ))
+        .id();
+
+    step_bevy_dt(&mut app, 1, DT);
+    let bevy_lighting = app
+        .world()
+        .get::<EarthLightingStateC>(vehicle)
+        .unwrap()
+        .0
+        .clone();
+
+    // ── Simulation ──
+    let (mut sim, earth_idx) = new_sim_earth(DT);
+    let sun_idx = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: 0.0,
+            model: GravityModel::PointMass,
+        },
+        position: sun_pos,
+        velocity: DVec3::ZERO,
+        t_inertial_pfix: None,
+        delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
+        tidal_config: None,
+    });
+    let moon_idx = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: 0.0,
+            model: GravityModel::PointMass,
+        },
+        position: moon_pos,
+        velocity: DVec3::ZERO,
+        t_inertial_pfix: None,
+        delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
+        tidal_config: None,
+    });
+    sim.sun_source = Some(sun_idx);
+    sim.moon_source = Some(moon_idx);
+
+    sim.add_body(SimBody {
+        trans: TranslationalState {
+            position: veh_pos,
+            velocity: DVec3::new(0.0, 7668.56, 0.0),
+        },
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+        },
+        earth_lighting_config: Some((earth_r, moon_r, sun_r)),
+        ..Default::default()
+    });
+    sim.validate().unwrap();
+    sim.step();
+
+    let sim_lighting = sim
+        .body(0)
+        .earth_lighting
+        .as_ref()
+        .expect("earth lighting computed");
+    assert_earth_lighting_eq(
+        &format!("Bevy vs Sim ({label})"),
+        &bevy_lighting,
+        sim_lighting,
+    );
+}
+
+#[test]
+fn tier3_bevy_earth_lighting_t01() {
+    run_earth_lighting_parity(
+        "t01_sunlit",
+        DVec3::new(6_778_137.0, 0.0, 0.0),
+        DVec3::new(1.496e11, 0.0, 0.0),
+        DVec3::new(0.0, 3.844e8, 0.0),
+    );
+}
+
+#[test]
+fn tier3_bevy_earth_lighting_t02() {
+    run_earth_lighting_parity(
+        "t02_shadow",
+        DVec3::new(-6_778_137.0, 0.0, 0.0),
+        DVec3::new(1.496e11, 0.0, 0.0),
+        DVec3::new(0.0, 3.844e8, 0.0),
+    );
+}
+
+#[test]
+fn tier3_bevy_earth_lighting_t03() {
+    run_earth_lighting_parity(
+        "t03_terminator",
+        DVec3::new(0.0, 6_778_137.0, 0.0),
+        DVec3::new(1.496e11, 0.0, 0.0),
+        DVec3::new(0.0, 3.844e8, 0.0),
+    );
+}
+
+#[test]
+fn tier3_bevy_earth_lighting_t04() {
+    run_earth_lighting_parity(
+        "t04_moon_inline",
+        DVec3::new(6_778_137.0, 0.0, 0.0),
+        DVec3::new(1.496e11, 0.0, 0.0),
+        DVec3::new(3.844e8, 0.0, 0.0),
+    );
+}
+
+#[test]
+fn tier3_bevy_earth_lighting_t05() {
+    run_earth_lighting_parity(
+        "t05_geo_sunlit",
+        DVec3::new(42_164_000.0, 0.0, 0.0),
+        DVec3::new(1.496e11, 0.0, 0.0),
+        DVec3::new(0.0, 3.844e8, 0.0),
+    );
+}
+
+#[test]
+fn tier3_bevy_earth_lighting_t06() {
+    run_earth_lighting_parity(
+        "t06_polar",
+        DVec3::new(0.0, 0.0, 6_778_137.0),
+        DVec3::new(1.496e11, 0.0, 0.0),
+        DVec3::new(0.0, 3.844e8, 0.0),
+    );
+}
+
+#[test]
+fn tier3_bevy_earth_lighting_t07() {
+    run_earth_lighting_parity(
+        "t07_offset_sun_moon",
+        DVec3::new(6_778_137.0, 0.0, 0.0),
+        DVec3::new(1.496e11, 1e10, 0.0),
+        DVec3::new(3.844e8, 1e7, 0.0),
+    );
+}
+
+#[test]
+fn tier3_bevy_earth_lighting_t08() {
+    run_earth_lighting_parity(
+        "t08_deep_shadow",
+        DVec3::new(-1e7, 0.0, 0.0),
+        DVec3::new(1.496e11, 0.0, 0.0),
+        DVec3::new(0.0, 0.0, 3.844e8),
+    );
+}
+
+#[test]
+fn tier3_bevy_earth_lighting_t09() {
+    run_earth_lighting_parity(
+        "t09_moon_near_veh_dir",
+        DVec3::new(6_778_137.0, 1e5, 0.0),
+        DVec3::new(1.496e11, 0.0, 0.0),
+        DVec3::new(6_778_137.0 * 50.0, 1e5 * 50.0, 0.0),
+    );
+}
+
+#[test]
+fn tier3_bevy_earth_lighting_t10() {
+    run_earth_lighting_parity(
+        "t10_coplanar_45deg",
+        DVec3::new(4_793_000.0, 4_793_000.0, 0.0),
+        DVec3::new(1.058e11, 1.058e11, 0.0),
+        DVec3::new(-2.718e8, 2.718e8, 0.0),
+    );
+}
+
+#[test]
+fn tier3_bevy_earth_lighting_pipeline() {
+    let earth_r = 6_378_137.0;
+    let moon_r = 1_737_400.0;
+    let sun_r = 6.96e8;
+    let sun_pos = DVec3::new(1.496e11, 0.0, 0.0);
+    let moon_pos = DVec3::new(0.0, 3.844e8, 0.0);
+
+    // ── Bevy ──
+    let mut app = new_bevy_app(DT);
+    let planet = spawn_earth_source(&mut app);
+    app.world_mut().spawn((
+        Name::new("Sun"),
+        SunMarker,
+        TranslationalStateC(TranslationalState {
+            position: sun_pos,
+            velocity: DVec3::ZERO,
+        }),
+    ));
+    app.world_mut().spawn((
+        Name::new("Moon"),
+        MoonMarker,
+        TranslationalStateC(TranslationalState {
+            position: moon_pos,
+            velocity: DVec3::ZERO,
+        }),
+    ));
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(iss_trans()),
+            DynamicsConfigC::default(),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+            EarthLightingConfigC {
+                earth_radius: earth_r,
+                moon_radius: moon_r,
+                sun_radius: sun_r,
+            },
+            EarthLightingStateC::default(),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+    let bevy_trans = read_trans(app.world(), vehicle);
+    let bevy_lighting = app
+        .world()
+        .get::<EarthLightingStateC>(vehicle)
+        .unwrap()
+        .0
+        .clone();
+
+    // ── Simulation ──
+    let (mut sim, earth_idx) = new_sim_earth(DT);
+    let sun_idx = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: 0.0,
+            model: GravityModel::PointMass,
+        },
+        position: sun_pos,
+        velocity: DVec3::ZERO,
+        t_inertial_pfix: None,
+        delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
+        tidal_config: None,
+    });
+    let moon_idx = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: 0.0,
+            model: GravityModel::PointMass,
+        },
+        position: moon_pos,
+        velocity: DVec3::ZERO,
+        t_inertial_pfix: None,
+        delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
+        tidal_config: None,
+    });
+    sim.sun_source = Some(sun_idx);
+    sim.moon_source = Some(moon_idx);
+
+    sim.add_body(SimBody {
+        trans: iss_trans(),
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+        },
+        earth_lighting_config: Some((earth_r, moon_r, sun_r)),
+        ..Default::default()
+    });
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    assert_trans_eq(
+        "Bevy vs Sim (earth lighting pipeline)",
+        &bevy_trans,
+        &sim.body(0).trans,
+    );
+    let sim_lighting = sim
+        .body(0)
+        .earth_lighting
+        .as_ref()
+        .expect("earth lighting computed");
+    assert_earth_lighting_eq(
+        "Bevy vs Sim earth lighting (pipeline)",
+        &bevy_lighting,
+        sim_lighting,
+    );
+}
+
+// ── Solar beta edge cases with DE421 ephemeris ──
+
+fn bsp_path() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/de421.bsp")
+}
+
+const J2000_JD: f64 = 2_451_545.0;
+
+/// Helper: load initial Sun position from DE421 at J2000.
+fn sun_initial_pos() -> DVec3 {
+    let eph = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
+    let (pos, _vel) = eph
+        .get_earth_centered_state(EphemerisBody::Sun, J2000_JD)
+        .expect("Sun state at J2000");
+    pos
+}
+
+/// Helper: load initial Moon position from DE421 at J2000.
+fn moon_initial_pos() -> DVec3 {
+    let eph = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
+    let (pos, _vel) = eph
+        .get_earth_centered_state(EphemerisBody::Moon, J2000_JD)
+        .expect("Moon state at J2000");
+    pos
+}
+
+#[test]
+fn tier3_bevy_solar_beta_equ() {
+    println!("Solar beta: equatorial orbit with DE421 ephemeris");
+    let initial_sun_pos = sun_initial_pos();
+
+    // Equatorial orbit: velocity purely in xy-plane
+    let equ_trans = TranslationalState {
+        position: DVec3::new(6_778_137.0, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7668.56, 0.0),
+    };
+
+    // ── Bevy ──
+    let eph_bevy = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
+    let mut app = new_bevy_app(DT);
+    app.insert_resource(bevy_jeod::EphemerisR(eph_bevy));
+    let planet = spawn_earth_source(&mut app);
+
+    let _sun = app
+        .world_mut()
+        .spawn((
+            Name::new("Sun"),
+            SunMarker,
+            TranslationalStateC(TranslationalState {
+                position: initial_sun_pos,
+                velocity: DVec3::ZERO,
+            }),
+            SourceInertialPositionC(initial_sun_pos),
+            EphemerisBodyC {
+                target: EphemerisBody::Sun,
+                observer: EphemerisBody::Earth,
+            },
+        ))
+        .id();
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(equ_trans),
+            DynamicsConfigC::default(),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+            SolarBetaC::default(),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+    let bevy_beta = app.world().get::<SolarBetaC>(vehicle).unwrap().0;
+    let bevy_trans = read_trans(app.world(), vehicle);
+
+    // ── Simulation ──
+    let eph_sim = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
+    let (mut sim, earth_idx) = new_sim_earth(DT);
+    let sun_idx = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: 0.0,
+            model: GravityModel::PointMass,
+        },
+        position: initial_sun_pos,
+        velocity: DVec3::ZERO,
+        t_inertial_pfix: None,
+        delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
+        tidal_config: None,
+    });
+    sim.set_source_ephemeris(sun_idx, EphemerisBody::Sun, EphemerisBody::Earth);
+    sim.sun_source = Some(sun_idx);
+    sim.ephemeris = Some(eph_sim);
+
+    sim.add_body(SimBody {
+        trans: equ_trans,
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+        },
+        compute_solar_beta: true,
+        ..Default::default()
+    });
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    let sim_beta = sim.body(0).solar_beta.expect("solar beta computed");
+    assert_bits_eq("Bevy vs Sim", "solar_beta_equ", bevy_beta, sim_beta);
+    assert_trans_eq(
+        "Bevy vs Sim (solar_beta_equ)",
+        &bevy_trans,
+        &sim.body(0).trans,
+    );
+    println!("  Solar beta equatorial: bit-identical");
+}
+
+#[test]
+fn tier3_bevy_solar_beta_obliquity() {
+    println!("Solar beta: obliquity-inclined orbit with DE421 ephemeris");
+    let initial_sun_pos = sun_initial_pos();
+
+    // Inclined at ~23.44° (Earth obliquity)
+    let obliq_rad = 23.44_f64.to_radians();
+    let v_mag = 7668.56;
+    let obl_trans = TranslationalState {
+        position: DVec3::new(6_778_137.0, 0.0, 0.0),
+        velocity: DVec3::new(0.0, v_mag * obliq_rad.cos(), v_mag * obliq_rad.sin()),
+    };
+
+    // ── Bevy ──
+    let eph_bevy = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
+    let mut app = new_bevy_app(DT);
+    app.insert_resource(bevy_jeod::EphemerisR(eph_bevy));
+    let planet = spawn_earth_source(&mut app);
+
+    let _sun = app
+        .world_mut()
+        .spawn((
+            Name::new("Sun"),
+            SunMarker,
+            TranslationalStateC(TranslationalState {
+                position: initial_sun_pos,
+                velocity: DVec3::ZERO,
+            }),
+            SourceInertialPositionC(initial_sun_pos),
+            EphemerisBodyC {
+                target: EphemerisBody::Sun,
+                observer: EphemerisBody::Earth,
+            },
+        ))
+        .id();
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(obl_trans),
+            DynamicsConfigC::default(),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+            SolarBetaC::default(),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+    let bevy_beta = app.world().get::<SolarBetaC>(vehicle).unwrap().0;
+    let bevy_trans = read_trans(app.world(), vehicle);
+
+    // ── Simulation ──
+    let eph_sim = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
+    let (mut sim, earth_idx) = new_sim_earth(DT);
+    let sun_idx = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: 0.0,
+            model: GravityModel::PointMass,
+        },
+        position: initial_sun_pos,
+        velocity: DVec3::ZERO,
+        t_inertial_pfix: None,
+        delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
+        tidal_config: None,
+    });
+    sim.set_source_ephemeris(sun_idx, EphemerisBody::Sun, EphemerisBody::Earth);
+    sim.sun_source = Some(sun_idx);
+    sim.ephemeris = Some(eph_sim);
+
+    sim.add_body(SimBody {
+        trans: obl_trans,
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+        },
+        compute_solar_beta: true,
+        ..Default::default()
+    });
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    let sim_beta = sim.body(0).solar_beta.expect("solar beta computed");
+    assert_bits_eq("Bevy vs Sim", "solar_beta_obliquity", bevy_beta, sim_beta);
+    assert_trans_eq(
+        "Bevy vs Sim (solar_beta_obliquity)",
+        &bevy_trans,
+        &sim.body(0).trans,
+    );
+    println!("  Solar beta obliquity: bit-identical");
+}
+
+// ── Dyncomp 3rd-body parity ──
+//
+// These test that EphemerisBodyC + ephemeris_update_system correctly updates
+// Sun/Moon positions and that 3rd-body gravity accumulation in Bevy matches
+// Simulation. All use point-mass gravity (SH parity is tested in tier3_bevy_sh4x4_rnp).
+
+fn run_3rd_body_parity(label: &str, trans: TranslationalState, include_moon: bool, sixdof: bool) {
+    let initial_sun_pos = sun_initial_pos();
+    let initial_moon_pos = if include_moon {
+        Some(moon_initial_pos())
+    } else {
+        None
+    };
+
+    // ── Bevy ──
+    let eph_bevy = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
+    let mut app = new_bevy_app(DT);
+    app.insert_resource(bevy_jeod::EphemerisR(eph_bevy));
+    let planet = spawn_earth_source(&mut app);
+
+    let sun_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Sun"),
+            SunMarker,
+            GravitySourceC(GravitySource {
+                mu: MU_SUN,
+                model: GravityModel::PointMass,
+            }),
+            TranslationalStateC(TranslationalState {
+                position: initial_sun_pos,
+                velocity: DVec3::ZERO,
+            }),
+            SourceInertialPositionC(initial_sun_pos),
+            EphemerisBodyC {
+                target: EphemerisBody::Sun,
+                observer: EphemerisBody::Earth,
+            },
+        ))
+        .id();
+
+    let moon_entity = if let Some(moon_pos) = initial_moon_pos {
+        let mu_moon = 4.902_800_066e12;
+        Some(
+            app.world_mut()
+                .spawn((
+                    Name::new("Moon"),
+                    MoonMarker,
+                    GravitySourceC(GravitySource {
+                        mu: mu_moon,
+                        model: GravityModel::PointMass,
+                    }),
+                    TranslationalStateC(TranslationalState {
+                        position: moon_pos,
+                        velocity: DVec3::ZERO,
+                    }),
+                    SourceInertialPositionC(moon_pos),
+                    EphemerisBodyC {
+                        target: EphemerisBody::Moon,
+                        observer: EphemerisBody::Earth,
+                    },
+                ))
+                .id(),
+        )
+    } else {
+        None
+    };
+
+    let mut sun_ctrl = GravityControl::new_spherical(sun_entity, false);
+    sun_ctrl.differential = true;
+
+    let mut controls = vec![GravityControl::new_spherical(planet, false), sun_ctrl];
+    if let Some(moon_ent) = moon_entity {
+        let mut moon_ctrl = GravityControl::new_spherical(moon_ent, false);
+        moon_ctrl.differential = true;
+        controls.push(moon_ctrl);
+    }
+
+    let config = DynamicsConfig {
+        translational_dynamics: true,
+        rotational_dynamics: sixdof,
+        three_dof: !sixdof,
+    };
+
+    let vehicle = if sixdof {
+        app.world_mut()
+            .spawn((
+                TranslationalStateC(trans),
+                RotationalStateC(tumble_rot()),
+                MassPropertiesC(iss_mass()),
+                DynamicsConfigC(config),
+                GravityControlsC(GravityControls { controls }),
+                GravityAccelerationC::default(),
+                TotalForceC::default(),
+            ))
+            .id()
+    } else {
+        app.world_mut()
+            .spawn((
+                TranslationalStateC(trans),
+                DynamicsConfigC(config),
+                GravityControlsC(GravityControls { controls }),
+                GravityAccelerationC::default(),
+                TotalForceC::default(),
+            ))
+            .id()
+    };
+
+    step_bevy(&mut app, NUM_STEPS);
+
+    // ── Simulation ──
+    let eph_sim = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
+    let (mut sim, earth_idx) = new_sim_earth(DT);
+    let sun_idx = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: MU_SUN,
+            model: GravityModel::PointMass,
+        },
+        position: initial_sun_pos,
+        velocity: DVec3::ZERO,
+        t_inertial_pfix: None,
+        delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
+        tidal_config: None,
+    });
+    sim.set_source_ephemeris(sun_idx, EphemerisBody::Sun, EphemerisBody::Earth);
+    sim.sun_source = Some(sun_idx);
+
+    let moon_idx = if include_moon {
+        let mu_moon = 4.902_800_066e12;
+        let moon_pos = initial_moon_pos.unwrap();
+        let idx = sim.add_source(GravitySourceEntry {
+            source: GravitySource {
+                mu: mu_moon,
+                model: GravityModel::PointMass,
+            },
+            position: moon_pos,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: RotationModel::default(),
+            tidal_config: None,
+        });
+        sim.set_source_ephemeris(idx, EphemerisBody::Moon, EphemerisBody::Earth);
+        sim.moon_source = Some(idx);
+        Some(idx)
+    } else {
+        None
+    };
+
+    sim.ephemeris = Some(eph_sim);
+
+    let mut sim_sun_ctrl = GravityControl::new_spherical(sun_idx, false);
+    sim_sun_ctrl.differential = true;
+
+    let mut sim_controls = vec![
+        GravityControl::new_spherical(earth_idx, false),
+        sim_sun_ctrl,
+    ];
+    if let Some(m_idx) = moon_idx {
+        let mut sim_moon_ctrl = GravityControl::new_spherical(m_idx, false);
+        sim_moon_ctrl.differential = true;
+        sim_controls.push(sim_moon_ctrl);
+    }
+
+    sim.add_body(SimBody {
+        trans,
+        rot: if sixdof { Some(tumble_rot()) } else { None },
+        mass: if sixdof { Some(iss_mass()) } else { None },
+        config,
+        gravity_controls: GravityControls {
+            controls: sim_controls,
+        },
+        ..Default::default()
+    });
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    if sixdof {
+        let bevy_state = read_sixdof(app.world(), vehicle);
+        let sim_state = SixDofState {
+            trans: sim.body(0).trans,
+            rot: sim.body(0).rot.unwrap(),
+        };
+        assert_sixdof_eq(&format!("Bevy vs Sim ({label})"), &bevy_state, &sim_state);
+    } else {
+        let bevy_trans = read_trans(app.world(), vehicle);
+        assert_trans_eq(
+            &format!("Bevy vs Sim ({label})"),
+            &bevy_trans,
+            &sim.body(0).trans,
+        );
+    }
+}
+
+#[test]
+fn tier3_bevy_run3b_3rd_body_sun() {
+    println!("Dyncomp run3b: ISS + Sun 3rd body, 3-DOF");
+    run_3rd_body_parity("run3b", iss_trans(), false, false);
+}
+
+#[test]
+fn tier3_bevy_run4_3rd_body_sun_moon() {
+    println!("Dyncomp run4: ISS + Sun + Moon 3rd body, 3-DOF");
+    run_3rd_body_parity("run4", iss_trans(), true, false);
+}
+
+#[test]
+fn tier3_bevy_run7a_3rd_body_sixdof() {
+    println!("Dyncomp run7a: ISS + Sun 3rd body, 6-DOF");
+    run_3rd_body_parity("run7a", iss_trans(), false, true);
+}
+
+#[test]
+fn tier3_bevy_run7b_3rd_body_sun_moon_sixdof() {
+    println!("Dyncomp run7b: ISS + Sun + Moon 3rd body, 6-DOF");
+    run_3rd_body_parity("run7b", iss_trans(), true, true);
+}
+
+#[test]
+fn tier3_bevy_run7c_3rd_body_inclined() {
+    println!("Dyncomp run7c: inclined orbit + Sun 3rd body, 3-DOF");
+    let inclined = TranslationalState {
+        position: DVec3::new(6_778_137.0, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 5423.0, 5423.0),
+    };
+    run_3rd_body_parity("run7c", inclined, false, false);
+}
+
+#[test]
+fn tier3_bevy_run7d_3rd_body_polar() {
+    println!("Dyncomp run7d: polar orbit + Sun + Moon 3rd body, 3-DOF");
+    let polar = TranslationalState {
+        position: DVec3::new(6_778_137.0, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 0.0, 7668.56),
+    };
+    run_3rd_body_parity("run7d", polar, true, false);
+}
+
+// ── Planetary mission parity ──
+
+#[test]
+fn tier3_bevy_mars_dawn() {
+    println!("Mars dawn: Mars point-mass + MarsIAU rotation + Sun 3rd body");
+
+    // Mars orbit (Dawn-like, ~500 km altitude circular)
+    let mu_mars: f64 = 4.282_837_4e13;
+    let r_mars: f64 = 3_389_500.0 + 500_000.0; // surface + altitude
+    let v_circ = (mu_mars / r_mars).sqrt();
+    let mars_trans = TranslationalState {
+        position: DVec3::new(r_mars, 0.0, 0.0),
+        velocity: DVec3::new(0.0, v_circ, 0.0),
+    };
+
+    // Sun position relative to Mars at J2000 via DE421
+    let eph_init = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
+    let (sun_rel_mars, _) = eph_init
+        .get_state(EphemerisBody::Sun, EphemerisBody::Mars, J2000_JD)
+        .expect("Sun wrt Mars at J2000");
+
+    // ── Bevy ──
+    let eph_bevy = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
+    let mut app = new_bevy_app(DT);
+    app.insert_resource(bevy_jeod::EphemerisR(eph_bevy));
+
+    let mars_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Mars"),
+            GravitySourceC(GravitySource {
+                mu: mu_mars,
+                model: GravityModel::PointMass,
+            }),
+            SourceInertialPositionC::default(),
+            TranslationalStateC::default(),
+            PlanetFixedRotationC(DMat3::IDENTITY),
+            RotationModelC(RotationModel::MarsIAU),
+        ))
+        .id();
+
+    let sun_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Sun"),
+            SunMarker,
+            GravitySourceC(GravitySource {
+                mu: MU_SUN,
+                model: GravityModel::PointMass,
+            }),
+            TranslationalStateC(TranslationalState {
+                position: sun_rel_mars,
+                velocity: DVec3::ZERO,
+            }),
+            SourceInertialPositionC(sun_rel_mars),
+            EphemerisBodyC {
+                target: EphemerisBody::Sun,
+                observer: EphemerisBody::Mars,
+            },
+        ))
+        .id();
+
+    let mut sun_ctrl = GravityControl::new_spherical(sun_entity, false);
+    sun_ctrl.differential = true;
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(mars_trans),
+            DynamicsConfigC::default(),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(mars_entity, false), sun_ctrl],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+    let bevy_trans = read_trans(app.world(), vehicle);
+
+    // ── Simulation ──
+    let eph_sim = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sim = Simulation::new(time, DT);
+    let mars_idx = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: mu_mars,
+            model: GravityModel::PointMass,
+        },
+        position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
+        t_inertial_pfix: Some(DMat3::IDENTITY),
+        delta_c20: 0.0,
+        rotation_model: RotationModel::MarsIAU,
+        tidal_config: None,
+    });
+    let sun_idx = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: MU_SUN,
+            model: GravityModel::PointMass,
+        },
+        position: sun_rel_mars,
+        velocity: DVec3::ZERO,
+        t_inertial_pfix: None,
+        delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
+        tidal_config: None,
+    });
+    sim.set_source_ephemeris(sun_idx, EphemerisBody::Sun, EphemerisBody::Mars);
+    sim.sun_source = Some(sun_idx);
+    sim.ephemeris = Some(eph_sim);
+
+    let mut sim_sun_ctrl = GravityControl::new_spherical(sun_idx, false);
+    sim_sun_ctrl.differential = true;
+
+    sim.add_body(SimBody {
+        trans: mars_trans,
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(mars_idx, false), sim_sun_ctrl],
+        },
+        ..Default::default()
+    });
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    assert_trans_eq("Bevy vs Sim (mars_dawn)", &bevy_trans, &sim.body(0).trans);
+    println!("  Mars dawn: bit-identical");
+}
+
+#[test]
+fn tier3_bevy_mercury_relativistic() {
+    println!("Mercury relativistic: Sun point-mass with PPN correction");
+
+    // Mercury at perihelion (heliocentric)
+    let mu_sun = 1.327_124_400_18e20;
+    let r_perihelion = 4.6e10; // ~0.307 AU
+    let v_perihelion = 5.898e4; // ~58.98 km/s at perihelion
+    let mercury_trans = TranslationalState {
+        position: DVec3::new(r_perihelion, 0.0, 0.0),
+        velocity: DVec3::new(0.0, v_perihelion, 0.0),
+    };
+
+    // ── Bevy ──
+    let mut app = new_bevy_app(DT);
+
+    // Sun at origin (central body)
+    let sun_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Sun"),
+            SunMarker,
+            GravitySourceC(GravitySource {
+                mu: mu_sun,
+                model: GravityModel::PointMass,
+            }),
+            SourceInertialPositionC::default(),
+            TranslationalStateC::default(),
+        ))
+        .id();
+
+    let mut sun_ctrl = GravityControl::new_spherical(sun_entity, false);
+    sun_ctrl.relativistic = true;
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(mercury_trans),
+            DynamicsConfigC::default(),
+            GravityControlsC(GravityControls {
+                controls: vec![sun_ctrl],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+    let bevy_trans = read_trans(app.world(), vehicle);
+
+    // ── Simulation ──
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sim = Simulation::new(time, DT);
+    let sun_idx = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: mu_sun,
+            model: GravityModel::PointMass,
+        },
+        position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
+        t_inertial_pfix: None,
+        delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
+        tidal_config: None,
+    });
+
+    let mut sim_sun_ctrl = GravityControl::new_spherical(sun_idx, false);
+    sim_sun_ctrl.relativistic = true;
+
+    sim.add_body(SimBody {
+        trans: mercury_trans,
+        gravity_controls: GravityControls {
+            controls: vec![sim_sun_ctrl],
+        },
+        ..Default::default()
+    });
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    assert_trans_eq(
+        "Bevy vs Sim (mercury_relativistic)",
+        &bevy_trans,
+        &sim.body(0).trans,
+    );
+    println!("  Mercury relativistic: bit-identical");
+}
+
+#[test]
+fn tier3_bevy_earth_moon_clem() {
+    println!("Earth-Moon Clementine: Earth + Moon + Sun with cannonball SRP");
+
+    let initial_sun_pos = sun_initial_pos();
+    let initial_moon_pos = moon_initial_pos();
+
+    // Clementine-like trans-lunar orbit (high eccentricity, ~400 km perigee)
+    let r_perigee = 6_378_137.0 + 400_000.0;
+    let v_perigee = 10_500.0; // high velocity for trans-lunar trajectory
+    let clem_trans = TranslationalState {
+        position: DVec3::new(r_perigee, 0.0, 0.0),
+        velocity: DVec3::new(0.0, v_perigee, 0.0),
+    };
+    let mu_moon = 4.902_800_066e12;
+
+    // Cannonball SRP parameters
+    let cx_area = 5.0; // m^2
+    let albedo = 0.3;
+    let diffuse = 0.5;
+    let mass = 500.0; // kg (lightweight spacecraft)
+    let mass_props = MassProperties::with_inertia(
+        mass,
+        DMat3::from_diagonal(DVec3::new(200.0, 200.0, 200.0)),
+        DVec3::ZERO,
+    );
+
+    // ── Bevy ──
+    let eph_bevy = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
+    let mut app = new_bevy_app(DT);
+    app.insert_resource(bevy_jeod::EphemerisR(eph_bevy));
+    let planet = spawn_earth_source(&mut app);
+
+    let sun_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Sun"),
+            SunMarker,
+            GravitySourceC(GravitySource {
+                mu: MU_SUN,
+                model: GravityModel::PointMass,
+            }),
+            TranslationalStateC(TranslationalState {
+                position: initial_sun_pos,
+                velocity: DVec3::ZERO,
+            }),
+            SourceInertialPositionC(initial_sun_pos),
+            EphemerisBodyC {
+                target: EphemerisBody::Sun,
+                observer: EphemerisBody::Earth,
+            },
+        ))
+        .id();
+
+    let moon_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Moon"),
+            MoonMarker,
+            GravitySourceC(GravitySource {
+                mu: mu_moon,
+                model: GravityModel::PointMass,
+            }),
+            TranslationalStateC(TranslationalState {
+                position: initial_moon_pos,
+                velocity: DVec3::ZERO,
+            }),
+            SourceInertialPositionC(initial_moon_pos),
+            EphemerisBodyC {
+                target: EphemerisBody::Moon,
+                observer: EphemerisBody::Earth,
+            },
+        ))
+        .id();
+
+    let mut sun_ctrl = GravityControl::new_spherical(sun_entity, false);
+    sun_ctrl.differential = true;
+    let mut moon_ctrl = GravityControl::new_spherical(moon_entity, false);
+    moon_ctrl.differential = true;
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(clem_trans),
+            MassPropertiesC(mass_props),
+            DynamicsConfigC::default(),
+            GravityControlsC(GravityControls {
+                controls: vec![
+                    GravityControl::new_spherical(planet, false),
+                    sun_ctrl,
+                    moon_ctrl,
+                ],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+            CannonballSrpC {
+                cx_area,
+                albedo,
+                diffuse,
+            },
+            RadiationForceC::default(),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+    let bevy_trans = read_trans(app.world(), vehicle);
+
+    // ── Simulation ──
+    let eph_sim = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
+    let (mut sim, earth_idx) = new_sim_earth(DT);
+    let sun_idx = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: MU_SUN,
+            model: GravityModel::PointMass,
+        },
+        position: initial_sun_pos,
+        velocity: DVec3::ZERO,
+        t_inertial_pfix: None,
+        delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
+        tidal_config: None,
+    });
+    sim.set_source_ephemeris(sun_idx, EphemerisBody::Sun, EphemerisBody::Earth);
+    sim.sun_source = Some(sun_idx);
+
+    let moon_idx = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: mu_moon,
+            model: GravityModel::PointMass,
+        },
+        position: initial_moon_pos,
+        velocity: DVec3::ZERO,
+        t_inertial_pfix: None,
+        delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
+        tidal_config: None,
+    });
+    sim.set_source_ephemeris(moon_idx, EphemerisBody::Moon, EphemerisBody::Earth);
+    sim.moon_source = Some(moon_idx);
+    sim.ephemeris = Some(eph_sim);
+
+    let mut sim_sun_ctrl = GravityControl::new_spherical(sun_idx, false);
+    sim_sun_ctrl.differential = true;
+    let mut sim_moon_ctrl = GravityControl::new_spherical(moon_idx, false);
+    sim_moon_ctrl.differential = true;
+
+    sim.add_body(SimBody {
+        trans: clem_trans,
+        mass: Some(mass_props),
+        gravity_controls: GravityControls {
+            controls: vec![
+                GravityControl::new_spherical(earth_idx, false),
+                sim_sun_ctrl,
+                sim_moon_ctrl,
+            ],
+        },
+        cannonball_srp: Some((cx_area, albedo, diffuse)),
+        ..Default::default()
+    });
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    assert_trans_eq(
+        "Bevy vs Sim (earth_moon_clem)",
+        &bevy_trans,
+        &sim.body(0).trans,
+    );
+    println!("  Earth-Moon Clementine SRP: bit-identical");
 }
