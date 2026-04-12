@@ -7,8 +7,8 @@ use bevy::prelude::*;
 use bevy_jeod::{
     CannonballSrpC, DynamicsConfigC, EphemerisBodyC, GravityAccelerationC, GravityControlsC,
     GravitySourceC, MassPropertiesC, MoonMarker, PlanetFixedRotationC, RadiationForceC,
-    RotationModelC, RotationalStateC, SolarBetaC, SourceInertialPositionC,
-    SourceInertialVelocityC, SunMarker, TotalForceC, TranslationalStateC,
+    RotationModelC, RotationalStateC, SolarBetaC, SourceInertialPositionC, SourceInertialVelocityC,
+    SunMarker, TotalForceC, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
 use jeod_sim::{

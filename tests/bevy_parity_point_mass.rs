@@ -638,9 +638,11 @@ fn tier3_sim_relativistic_gravity_consistency() {
     let newtonian = MU_SUN / (4.6e10 * 4.6e10);
     let ratio = correction.length() / newtonian;
 
+    let lo = 1e-9;
+    let hi = 1e-5;
     assert!(
-        ratio > 1e-9 && ratio < 1e-5,
-        "correction/newtonian ratio {ratio:.2e} should be ~1e-7 to 1e-8"
+        ratio > lo && ratio < hi,
+        "correction/newtonian ratio {ratio:.2e} should be in ({lo:.0e}, {hi:.0e})"
     );
 
     let correction2 =

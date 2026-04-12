@@ -345,28 +345,25 @@ pub fn bsp_path() -> std::path::PathBuf {
 
 pub const J2000_JD: f64 = 2_451_545.0;
 
-/// Cached DE421 initial positions at J2000 to avoid redundant BSP loads.
-static SUN_POS_J2000: std::sync::OnceLock<DVec3> = std::sync::OnceLock::new();
-static MOON_POS_J2000: std::sync::OnceLock<DVec3> = std::sync::OnceLock::new();
+/// Cached DE421 ephemeris to avoid redundant BSP loads.
+static DE421_EPHEMERIS: std::sync::OnceLock<Ephemeris> = std::sync::OnceLock::new();
 
-/// Helper: load initial Sun position from DE421 at J2000 (cached).
-pub fn sun_initial_pos() -> DVec3 {
-    *SUN_POS_J2000.get_or_init(|| {
-        let eph = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
-        let (pos, _vel) = eph
-            .get_earth_centered_state(EphemerisBody::Sun, J2000_JD)
-            .expect("Sun state at J2000");
-        pos
-    })
+fn de421_ephemeris() -> &'static Ephemeris {
+    DE421_EPHEMERIS.get_or_init(|| Ephemeris::from_bsp(&bsp_path()).expect("load DE421"))
 }
 
-/// Helper: load initial Moon position from DE421 at J2000 (cached).
+/// Helper: load initial Sun position from DE421 at J2000 (cached ephemeris).
+pub fn sun_initial_pos() -> DVec3 {
+    let (pos, _vel) = de421_ephemeris()
+        .get_earth_centered_state(EphemerisBody::Sun, J2000_JD)
+        .expect("Sun state at J2000");
+    pos
+}
+
+/// Helper: load initial Moon position from DE421 at J2000 (cached ephemeris).
 pub fn moon_initial_pos() -> DVec3 {
-    *MOON_POS_J2000.get_or_init(|| {
-        let eph = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
-        let (pos, _vel) = eph
-            .get_earth_centered_state(EphemerisBody::Moon, J2000_JD)
-            .expect("Moon state at J2000");
-        pos
-    })
+    let (pos, _vel) = de421_ephemeris()
+        .get_earth_centered_state(EphemerisBody::Moon, J2000_JD)
+        .expect("Moon state at J2000");
+    pos
 }
