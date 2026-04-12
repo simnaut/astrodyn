@@ -1,0 +1,2 @@
+sys.exec.out.time {s},jeod_time.tai.trunc_julian_time {day},jeod_time.tai.seconds {s},jeod_time.utc.trunc_julian_time {day},jeod_time.ut1.trunc_julian_time {day},jeod_time.tt.trunc_julian_time {day},jeod_time.tdb.trunc_julian_time {day},jeod_time.gmst.seconds {s},jeod_time.gps.trunc_julian_time {day}
+                   0,   11179.00024305556,  -31579146.81599975,   11178.99988425926,   11178.99988097773,   11179.00061555556,   11179.00061555464,  -31598360.75022747,   11179.00024305556

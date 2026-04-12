@@ -8,9 +8,6 @@
 //! with earth lighting exists to compare against. It exercises the pipeline
 //! end-to-end but asserts physical plausibility, not JEOD parity.
 //! True Tier 3 cross-validation is tracked in issue #49.
-//!
-//! The test function retains the `tier3_` prefix for CI filtering but does
-//! not meet the Tier 3 definition (compare against JEOD reference output).
 
 use glam::DVec3;
 use jeod_sim::{
@@ -20,7 +17,7 @@ use jeod_sim::{
 use std::path::Path;
 
 #[test]
-fn tier3_simulation_earth_lighting_pipeline() {
+fn pipeline_earth_lighting_smoke() {
     let jeod_root = jeod_test_data::jeod_path();
     assert!(
         jeod_root.exists(),
