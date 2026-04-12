@@ -116,6 +116,14 @@ pub struct SimBody {
     /// Set to `Some(Default)` to enable atmosphere computation for this body.
     /// `None` means no atmosphere (JEOD_INV: AT.01 — absence = inactive).
     pub atmospheric_state: Option<AtmosphereState>,
+    /// External force in the inertial frame (N). Added to `total_force.force`
+    /// each step after force collection. Set between steps via
+    /// [`Simulation::set_body_external_force`]. Defaults to zero.
+    pub external_force: DVec3,
+    /// External torque in the body frame (N·m). Added to `total_force.torque`
+    /// each step after force collection. Set between steps via
+    /// [`Simulation::set_body_external_torque`]. Defaults to zero.
+    pub external_torque: DVec3,
 
     // ── Computed intermediates (written each step, readable after) ──
     /// Accumulated gravitational acceleration, gradient, and potential.
@@ -144,6 +152,10 @@ pub struct SimBody {
     pub geodetic_planet: Option<(usize, f64, f64)>,
     /// Whether to compute solar beta angle each step. Requires `sun_source` on Simulation.
     pub compute_solar_beta: bool,
+    /// Earth lighting configuration: `(earth_radius, moon_radius, sun_radius)` in metres.
+    /// When `Some`, earth lighting is computed each step using Sun/Moon/Earth positions
+    /// from the Simulation's source table. Requires `sun_source` and `moon_source`.
+    pub earth_lighting_config: Option<(f64, f64, f64)>,
 
     // ── Derived state outputs (written each step if configured) ──
     /// Orbital elements from latest translational state.
@@ -156,6 +168,8 @@ pub struct SimBody {
     pub geodetic_state: Option<GeodeticState>,
     /// Solar beta angle (radians).
     pub solar_beta: Option<f64>,
+    /// Earth lighting state (sun/moon occlusion, albedo).
+    pub earth_lighting: Option<jeod_interactions::earth_lighting::EarthLightingState>,
 
     // ── Stateful integrator state ──
     /// Gauss-Jackson (Störmer-Cowell) integrator state. `None` for non-GJ bodies.
@@ -180,6 +194,8 @@ impl Default for SimBody {
             t_struct_body: DMat3::IDENTITY,
             compute_gravity_torque: false,
             atmospheric_state: None,
+            external_force: DVec3::ZERO,
+            external_torque: DVec3::ZERO,
             gravity_accel: GravityAcceleration::default(),
             total_force: TotalForce::default(),
             frame_derivs: FrameDerivatives::default(),
@@ -191,11 +207,13 @@ impl Default for SimBody {
             compute_lvlh: false,
             geodetic_planet: None,
             compute_solar_beta: false,
+            earth_lighting_config: None,
             orbital_elements: None,
             euler_angles: None,
             lvlh_frame: None,
             geodetic_state: None,
             solar_beta: None,
+            earth_lighting: None,
             gj_state: None,
         }
     }
@@ -229,8 +247,10 @@ pub struct Simulation {
     pub atmosphere: Option<AtmosphereConfig>,
     /// Index into `sources` for the planet whose rotation is used for atmosphere.
     pub atmosphere_planet_source: Option<usize>,
-    /// Index into `sources` for the Sun (used by SRP).
+    /// Index into `sources` for the Sun (used by SRP and earth lighting).
     pub sun_source: Option<usize>,
+    /// Index into `sources` for the Moon (used by earth lighting).
+    pub moon_source: Option<usize>,
     /// Polar motion parameters (xp, yp) in radians. When `Some`, the RNP
     /// composition includes polar motion: W(xp,yp) × R(GAST) × N × P.
     /// When `None`, polar motion is omitted (matches JEOD `enable_polar=false`).
@@ -259,6 +279,7 @@ impl Simulation {
             atmosphere: None,
             atmosphere_planet_source: None,
             sun_source: None,
+            moon_source: None,
             polar_motion: None,
             dt,
             ephemeris: None,
@@ -393,6 +414,16 @@ impl Simulation {
                 all_errors.push(ValidationError::SolarBetaWithoutSunSource { body_idx });
             }
 
+            // Earth lighting requires both sun_source and moon_source
+            if body.earth_lighting_config.is_some() {
+                if self.sun_source.is_none() {
+                    all_errors.push(ValidationError::EarthLightingWithoutSunSource { body_idx });
+                }
+                if self.moon_source.is_none() {
+                    all_errors.push(ValidationError::EarthLightingWithoutMoonSource { body_idx });
+                }
+            }
+
             // Gravity torque requires both mass and rotational state
             if body.compute_gravity_torque && (body.mass.is_none() || body.rot.is_none()) {
                 all_errors.push(ValidationError::GravityTorqueWithoutMassOrRot { body_idx });
@@ -411,6 +442,16 @@ impl Simulation {
         if let Some(idx) = self.sun_source {
             if idx >= self.sources.len() {
                 all_errors.push(ValidationError::SunSourceOutOfRange {
+                    index: idx,
+                    num_sources: self.sources.len(),
+                });
+            }
+        }
+
+        // Validate moon_source index
+        if let Some(idx) = self.moon_source {
+            if idx >= self.sources.len() {
+                all_errors.push(ValidationError::MoonSourceOutOfRange {
                     index: idx,
                     num_sources: self.sources.len(),
                 });
@@ -661,9 +702,12 @@ impl Simulation {
         }
 
         // ── 6. Interactions — drag, SRP, gravity torque ──
-        // sun_pos is also used in stage 9 (solar beta); compute once here.
+        // sun_pos is also used in stage 9 (solar beta, earth lighting); compute once here.
         let sun_pos = self
             .sun_source
+            .and_then(|idx| self.sources.get(idx).map(|s| s.position));
+        let moon_pos = self
+            .moon_source
             .and_then(|idx| self.sources.get(idx).map(|s| s.position));
         let sources = &self.sources;
 
@@ -796,6 +840,21 @@ impl Simulation {
             );
             body.total_force = total;
             body.frame_derivs = derivs;
+
+            // Apply external force/torque (set by caller between steps).
+            // Recompute frame derivatives so they stay consistent with total_force.
+            body.total_force.force += body.external_force;
+            body.total_force.torque += body.external_torque;
+            if body.external_force != DVec3::ZERO {
+                if let Some(mass) = &body.mass {
+                    body.frame_derivs.trans_accel += body.external_force * mass.inverse_mass;
+                }
+            }
+            if body.external_torque != DVec3::ZERO {
+                if let Some(mass) = &body.mass {
+                    body.frame_derivs.rot_accel += mass.inverse_inertia * body.external_torque;
+                }
+            }
         }
 
         // ── 8. Integration ──
@@ -930,6 +989,23 @@ impl Simulation {
                     body.solar_beta = None;
                 }
             }
+
+            // Earth lighting
+            if let Some((earth_r, moon_r, sun_r)) = body.earth_lighting_config {
+                if let (Some(sp), Some(mp)) = (sun_pos, moon_pos) {
+                    body.earth_lighting =
+                        Some(jeod_interactions::earth_lighting::compute_earth_lighting(
+                            body.trans.position,
+                            sp,
+                            mp,
+                            sun_r,
+                            earth_r,
+                            moon_r,
+                        ));
+                } else {
+                    body.earth_lighting = None;
+                }
+            }
         }
     }
 
@@ -973,6 +1049,30 @@ impl Simulation {
     /// Access a body by index (read-only).
     pub fn body(&self, idx: usize) -> &SimBody {
         &self.bodies[idx]
+    }
+
+    /// Set the externally applied force (inertial frame, N) for a body.
+    ///
+    /// Added to `total_force.force` each step after force collection.
+    /// This is the supported post-validation mutation path — it does not
+    /// expose derived-state configuration fields.
+    pub fn set_body_external_force(&mut self, idx: usize, force: DVec3) {
+        self.bodies[idx].external_force = force;
+    }
+
+    /// Set the externally applied torque (body frame, N*m) for a body.
+    ///
+    /// Added to `total_force.torque` each step after force collection.
+    pub fn set_body_external_torque(&mut self, idx: usize, torque: DVec3) {
+        self.bodies[idx].external_torque = torque;
+    }
+
+    /// Set a body's translational position (inertial frame, m).
+    ///
+    /// Used for prescribed-motion tests where position is set externally
+    /// at each timestep (e.g., SIM_2A_SHADOW_CALC).
+    pub fn set_body_position(&mut self, idx: usize, position: DVec3) {
+        self.bodies[idx].trans.position = position;
     }
 
     /// Read-only slice of all bodies.

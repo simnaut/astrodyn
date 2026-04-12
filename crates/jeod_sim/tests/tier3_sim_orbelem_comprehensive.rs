@@ -1,23 +1,17 @@
-//! Tier 3: SIM_orb_elem comprehensive -- 7 orbit families
+//! Tier 3: SIM_orb_elem comprehensive -- 7 orbit families via Simulation pipeline
 //!
-//! Static cross-validation: each CSV has a fixed position/velocity at t=0 and t=1
-//! (identical values). We extract the t=0 state, compute orbital elements via
-//! `OrbitalElements::from_cartesian`, and compare against JEOD's logged elements.
-//!
-//! The 7 orbit families:
-//! - T01: circular orbit (e ~ 0)
-//! - T10: eccentric orbit (0 < e < 1)
-//! - T20: hyperbolic orbit (e > 1)
-//! - T30: near-parabolic orbit (e ~ 1)
-//! - T40: retrograde orbit (i > 90 deg)
-//! - T50: equatorial orbit (i ~ 0)
-//! - T55: polar orbit (i ~ 90 deg)
+//! Creates a `Simulation` for each orbit family, adds a body with
+//! `orbital_elements_source` configured, steps once to trigger derived-state
+//! computation, and compares orbital elements against JEOD reference.
 
 mod sim_test_helpers;
 use sim_test_helpers::*;
 
 use glam::DVec3;
-use jeod_sim::OrbitalElements;
+use jeod_sim::{
+    GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry,
+    RotationModel, SimBody, Simulation, SimulationTime, TranslationalState,
+};
 
 fn load_mu_earth() -> f64 {
     let jeod_root = jeod_test_data::jeod_path();
@@ -70,7 +64,6 @@ fn load_verif_record(csv_name: &str) -> VerifRecord {
         )
     });
 
-    // Take the first data line (t=0)
     let line = content
         .lines()
         .nth(1)
@@ -99,10 +92,6 @@ fn load_verif_record(csv_name: &str) -> VerifRecord {
     }
 }
 
-/// Compare a computed value against a JEOD reference value.
-///
-/// Uses relative tolerance when the reference magnitude is large enough,
-/// absolute tolerance otherwise.
 fn assert_close(name: &str, computed: f64, reference: f64, rel_tol: f64, abs_tol: f64) {
     let diff = (computed - reference).abs();
     let tol = if reference.abs() > abs_tol {
@@ -117,7 +106,6 @@ fn assert_close(name: &str, computed: f64, reference: f64, rel_tol: f64, abs_tol
     );
 }
 
-/// Compare an angular value against JEOD reference, accounting for wraparound.
 fn assert_angle_close(name: &str, computed: f64, reference: f64, abs_tol: f64) {
     let diff = angle_diff(computed, reference);
     assert!(
@@ -127,64 +115,77 @@ fn assert_angle_close(name: &str, computed: f64, reference: f64, abs_tol: f64) {
     );
 }
 
-/// Compute orbital elements from a verification CSV and assert parity with JEOD.
-///
-/// The JEOD sim computes orbital elements from exact analytical initial conditions,
-/// then logs both the elements and the position/velocity. We recompute elements from
-/// the logged position/velocity, which has finite CSV precision (~15 significant
-/// digits). This truncation amplifies into element-level differences on the order
-/// of 1e-6 relative for SMA/semiparam and 1e-4 to 1e-7 for eccentricity (depending
-/// on how close to circular the orbit is).
-///
-/// `skip_degenerate_scalars`: when true, skip assertions on fields that JEOD
-/// reports as zero due to near-parabolic or degenerate orbit conventions
-/// (semi_major_axis=0, r_mag=0, vel_mag=0, mean_motion=0, orb_energy=0,
-/// orb_ang_momentum=0). Our code computes valid values for these, but JEOD
-/// intentionally zeros them out for parabolic-regime orbits.
+/// Create a Simulation, add body with orbital_elements derived state, step once,
+/// and compare orbital elements against JEOD reference.
 fn verify_orbit_family(csv_name: &str, label: &str, skip_degenerate_scalars: bool) {
     let mu_earth = load_mu_earth();
     let rec = load_verif_record(csv_name);
 
-    let oe = OrbitalElements::from_cartesian(mu_earth, rec.position, rec.velocity)
-        .unwrap_or_else(|e| panic!("{label}: from_cartesian failed: {e:?}"));
+    // Create Simulation with Earth point-mass gravity
+    let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    // Use tiny dt so one step barely changes the state.
+    // dt=1e-9 keeps position drift below 1e-5 m.
+    let mut sim = Simulation::new(time, 1e-9);
 
-    println!("Tier 3 (Static): {label}");
-    println!("  position:        {:?}", rec.position);
-    println!("  velocity:        {:?}", rec.velocity);
-    println!("  JEOD sma:        {:.15e}", rec.semi_major_axis);
-    println!("  ours sma:        {:.15e}", oe.semi_major_axis);
-    println!("  JEOD e_mag:      {:.15e}", rec.e_mag);
-    println!("  ours e_mag:      {:.15e}", oe.e_mag);
-    println!("  JEOD incl:       {:.15e}", rec.inclination);
-    println!("  ours incl:       {:.15e}", oe.inclination);
+    let earth = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: mu_earth,
+            model: GravityModel::PointMass,
+        },
+        position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
+        t_inertial_pfix: None,
+        delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
+        tidal_config: None,
+    });
 
-    // Tolerances calibrated at 5% above observed max errors.
-    //
-    // These errors arise from CSV position/velocity truncation, not code bugs:
-    // JEOD computes elements from exact initial conditions, we recompute from
-    // the logged (truncated) position/velocity.
-    //
-    // SMA relative error: max ~2.85e-6 (T20 hyperbolic), tolerance 3.0e-6
-    // Semiparam relative error: max ~1.9e-6, tolerance 2.1e-6
-    // Eccentricity: for near-circular orbits (e~0) the absolute eccentricity
-    //   our code computes is ~1.9e-6 vs JEOD's ~0 or ~1.8e-15. This is expected:
-    //   tiny CSV rounding in velocity produces a non-zero eccentricity vector.
-    //   For orbits with meaningful eccentricity (e>0.001), relative error is ~1.5e-4.
+    sim.add_body(SimBody {
+        trans: TranslationalState {
+            position: rec.position,
+            velocity: rec.velocity,
+        },
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth, false)],
+        },
+        orbital_elements_source: Some(earth),
+        ..Default::default()
+    });
+
+    sim.validate().unwrap();
+
+    // Step once to trigger derived-state computation (stage 9)
+    sim.step();
+
+    let oe = sim
+        .body(0)
+        .orbital_elements
+        .as_ref()
+        .unwrap_or_else(|| panic!("{label}: orbital_elements not computed after step()"));
+
+    println!("Tier 3 (Simulation): {label}");
+    println!(
+        "  JEOD sma: {:.15e}  ours: {:.15e}",
+        rec.semi_major_axis, oe.semi_major_axis
+    );
+    println!("  JEOD e:   {:.15e}  ours: {:.15e}", rec.e_mag, oe.e_mag);
+    println!(
+        "  JEOD i:   {:.15e}  ours: {:.15e}",
+        rec.inclination, oe.inclination
+    );
+
     let sma_rel_tol = 3.0e-6;
     let semiparam_rel_tol = 2.1e-6;
-    let ecc_abs_tol = 2.0e-6; // absolute for near-circular
-    let ecc_rel_tol = 1.5e-4; // relative for e > 0.001
-    let incl_abs_tol = 1.1e-15; // inclination matches to machine precision
-    let rmag_rel_tol = 1e-10; // r_mag matches very closely (just pos magnitude)
-    let vmag_rel_tol = 1e-10; // vel_mag matches very closely
-    let mean_motion_rel_tol = 5.6e-6; // derived from SMA, propagates error (max ~5.23e-6 on T20)
-    let energy_rel_tol = 6.0e-6; // derived from v^2 and r, propagates
-    let ang_mom_rel_tol = 1e-10; // cross product, matches well
-    let angle_tol = 1.6e-4; // angular elements (rad) -- dominated by T55 polar orbit
-                            // where small e (0.0025) amplifies CSV truncation into
-                            // periapsis direction uncertainty (~1.46e-4 rad)
+    let ecc_abs_tol = 2.0e-6;
+    let ecc_rel_tol = 1.5e-4;
+    let incl_abs_tol = 1.1e-15;
+    let rmag_rel_tol = 1e-10;
+    let vmag_rel_tol = 1e-10;
+    let mean_motion_rel_tol = 5.6e-6;
+    let energy_rel_tol = 6.0e-6;
+    let ang_mom_rel_tol = 1e-10;
+    let angle_tol = 1.6e-4;
 
-    // ---- Scalar quantities ----
     if !skip_degenerate_scalars {
         assert_close(
             &format!("{label}/semi_major_axis"),
@@ -238,7 +239,6 @@ fn verify_orbit_family(csv_name: &str, label: &str, skip_degenerate_scalars: boo
         1e-6,
     );
 
-    // Eccentricity: use absolute tolerance for near-circular, relative for eccentric
     if rec.e_mag > 0.001 {
         assert_close(
             &format!("{label}/e_mag"),
@@ -266,12 +266,7 @@ fn verify_orbit_family(csv_name: &str, label: &str, skip_degenerate_scalars: boo
         incl_abs_tol,
     );
 
-    // ---- Angular quantities (wraparound-safe) ----
-    // For near-circular orbits, arg_periapsis and true_anom are ill-defined
-    // (periapsis direction is arbitrary). Skip angle assertions when e < 0.001
-    // and the reference angle is near zero.
     let skip_periapsis_angles = rec.e_mag < 0.001;
-
     if !skip_periapsis_angles {
         assert_angle_close(
             &format!("{label}/arg_periapsis"),
@@ -304,7 +299,6 @@ fn verify_orbit_family(csv_name: &str, label: &str, skip_degenerate_scalars: boo
         );
     }
 
-    // LAN: for equatorial orbits (i~0), LAN is ill-defined. Skip when i < 1e-10.
     if rec.inclination > 1e-10 {
         assert_angle_close(
             &format!("{label}/long_asc_node"),
@@ -318,8 +312,6 @@ fn verify_orbit_family(csv_name: &str, label: &str, skip_degenerate_scalars: boo
 
     println!("  PASS: {label}");
 }
-
-// ── Individual test functions ──
 
 #[test]
 fn tier3_simulation_orbelem_t01() {
@@ -346,9 +338,6 @@ fn tier3_simulation_orbelem_t20() {
 
 #[test]
 fn tier3_simulation_orbelem_t30() {
-    // Near-parabolic: JEOD reports sma=0, r_mag=0, vel_mag=0, mean_motion=0,
-    // orb_energy=0, orb_ang_momentum=0 for parabolic-regime orbits. Our code
-    // computes valid values for these fields but JEOD intentionally zeros them.
     verify_orbit_family(
         "orbelem_verif_t30_orbelem.csv",
         "T30 near-parabolic (e~1)",
@@ -358,8 +347,6 @@ fn tier3_simulation_orbelem_t30() {
 
 #[test]
 fn tier3_simulation_orbelem_t40() {
-    // Retrograde: JEOD also zeros out sma, r_mag, vel_mag, etc. for this
-    // test case (same convention as t30).
     verify_orbit_family(
         "orbelem_verif_t40_orbelem.csv",
         "T40 retrograde (i>90deg)",

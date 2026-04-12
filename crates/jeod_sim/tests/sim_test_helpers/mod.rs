@@ -6,7 +6,7 @@
 #![allow(dead_code)]
 
 use glam::{DMat3, DQuat, DVec3};
-use jeod_sim::JeodQuat;
+use jeod_sim::{JeodQuat, MassProperties};
 use std::path::Path;
 
 #[allow(unused_imports)] // Not all test binaries use dyncomp CSV loading
@@ -14,6 +14,19 @@ pub use jeod_test_data::dyncomp_csv::{load_dyncomp_csv, DyncompRecord};
 
 /// Earth rotation rate (JEOD RNPJ2000 default).
 pub const OMEGA_EARTH: f64 = 7.292_115_146_706_388e-5;
+
+/// Build `MassProperties` from parsed JEOD mass initialization data.
+///
+/// Converts the row-major `[[f64; 3]; 3]` inertia tensor to glam `DMat3`
+/// (column-major) and passes through mass and CoM position.
+pub fn mass_props_from_init(init: &jeod_test_data::mass_data::MassInitData) -> MassProperties {
+    let inertia = DMat3::from_cols(
+        DVec3::new(init.inertia[0][0], init.inertia[1][0], init.inertia[2][0]),
+        DVec3::new(init.inertia[0][1], init.inertia[1][1], init.inertia[2][1]),
+        DVec3::new(init.inertia[0][2], init.inertia[1][2], init.inertia[2][2]),
+    );
+    MassProperties::with_inertia(init.mass, inertia, DVec3::from_slice(&init.position))
+}
 
 pub fn quaternion_angle_error(q1: &JeodQuat, q2: &JeodQuat) -> f64 {
     let dot = (q1.scalar() * q2.scalar()
@@ -533,6 +546,82 @@ pub fn load_solar_beta_csv(path: &Path) -> Vec<SolarBetaRecord> {
             solar_beta: p(1),
             position: DVec3::new(p(2), p(4), p(6)),
             velocity: DVec3::new(p(3), p(5), p(7)),
+        });
+    }
+    records
+}
+
+// ── SIM_dyncomp atmosphere trajectory CSV loader (9 columns) ──
+
+#[derive(Debug)]
+pub struct AtmosTrajRecord {
+    pub time: f64,
+    pub position: DVec3,
+    pub velocity: DVec3,
+    pub density: f64,
+    pub temperature: f64,
+}
+
+pub fn load_atmos_traj_csv(path: &Path) -> Vec<AtmosTrajRecord> {
+    let content = read_csv(path, "SIM_dyncomp (atmos_traj)");
+    let mut records = Vec::new();
+    for (i, line) in content.lines().enumerate() {
+        if i == 0 || line.trim().is_empty() {
+            continue;
+        }
+        let f: Vec<&str> = line.split(',').collect();
+        assert!(
+            f.len() >= 9,
+            "line {}: expected >=9 columns, got {}",
+            i + 1,
+            f.len()
+        );
+        let p = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
+        records.push(AtmosTrajRecord {
+            time: p(0),
+            position: DVec3::new(p(1), p(2), p(3)),
+            velocity: DVec3::new(p(4), p(5), p(6)),
+            density: p(7),
+            temperature: p(8),
+        });
+    }
+    records
+}
+
+// ── SIM_dyncomp aero trajectory CSV loader (14 columns) ──
+
+#[derive(Debug)]
+pub struct AeroTrajRecord {
+    pub time: f64,
+    pub position: DVec3,
+    pub velocity: DVec3,
+    pub aero_force: DVec3,
+    pub aero_torque: DVec3,
+    pub density: f64,
+}
+
+pub fn load_aero_traj_csv(path: &Path) -> Vec<AeroTrajRecord> {
+    let content = read_csv(path, "SIM_dyncomp (aero_traj)");
+    let mut records = Vec::new();
+    for (i, line) in content.lines().enumerate() {
+        if i == 0 || line.trim().is_empty() {
+            continue;
+        }
+        let f: Vec<&str> = line.split(',').collect();
+        assert!(
+            f.len() >= 14,
+            "line {}: expected >=14 columns, got {}",
+            i + 1,
+            f.len()
+        );
+        let p = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
+        records.push(AeroTrajRecord {
+            time: p(0),
+            position: DVec3::new(p(1), p(2), p(3)),
+            velocity: DVec3::new(p(4), p(5), p(6)),
+            aero_force: DVec3::new(p(7), p(8), p(9)),
+            aero_torque: DVec3::new(p(10), p(11), p(12)),
+            density: p(13),
         });
     }
     records

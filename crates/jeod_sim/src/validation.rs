@@ -38,6 +38,8 @@ pub enum ValidationError {
     OrbitalElementsSourceOutOfRange { index: usize, num_sources: usize },
     /// `atmosphere_planet_source` index is out of range for the sources table.
     AtmospherePlanetOutOfRange { index: usize, num_sources: usize },
+    /// `moon_source` index is out of range for the sources table.
+    MoonSourceOutOfRange { index: usize, num_sources: usize },
     /// Drag or SRP configured but no mass properties (force → acceleration requires mass).
     ForceProducerWithoutMass { body_idx: usize },
     /// GaussJackson integrator with rotational_dynamics=true (6-DOF not supported).
@@ -50,6 +52,10 @@ pub enum ValidationError {
     SolarBetaWithoutSunSource { body_idx: usize },
     /// Body has `compute_gravity_torque=true` but lacks mass or rotational state.
     GravityTorqueWithoutMassOrRot { body_idx: usize },
+    /// Body has `earth_lighting_config` but simulation has no `sun_source`.
+    EarthLightingWithoutSunSource { body_idx: usize },
+    /// Body has `earth_lighting_config` but simulation has no `moon_source`.
+    EarthLightingWithoutMoonSource { body_idx: usize },
 }
 
 impl std::fmt::Display for ValidationError {
@@ -121,6 +127,13 @@ impl std::fmt::Display for ValidationError {
                      Ensure sun_source refers to a valid source index."
                 )
             }
+            Self::MoonSourceOutOfRange { index, num_sources } => {
+                write!(
+                    f,
+                    "moon_source index {index} is out of range (only {num_sources} sources). \
+                     Ensure moon_source refers to a valid source index."
+                )
+            }
             Self::ShadowBodyOutOfRange { index, num_sources } => {
                 write!(
                     f,
@@ -188,6 +201,20 @@ impl std::fmt::Display for ValidationError {
                     f,
                     "Body {body_idx}: compute_gravity_torque=true but body lacks mass \
                      properties or rotational state. Gravity gradient torque requires both."
+                )
+            }
+            Self::EarthLightingWithoutSunSource { body_idx } => {
+                write!(
+                    f,
+                    "Body {body_idx}: earth_lighting_config is set but simulation has no \
+                     sun_source. Set Simulation::sun_source for earth lighting computation."
+                )
+            }
+            Self::EarthLightingWithoutMoonSource { body_idx } => {
+                write!(
+                    f,
+                    "Body {body_idx}: earth_lighting_config is set but simulation has no \
+                     moon_source. Set Simulation::moon_source for earth lighting computation."
                 )
             }
         }

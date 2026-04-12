@@ -1,15 +1,18 @@
-//! Tier 3: SIM_Relative — relative state between two vehicles.
+//! Tier 3: SIM_Relative — relative state between two vehicles via Simulation pipeline.
 //!
 //! Validates `compute_relative_state()` against JEOD SIM_Relative reference.
-//! The sim is purely kinematic (no gravity) — vehicles translate and rotate
-//! freely, and relative state is computed from their individual states.
+//! The sim is purely kinematic (no gravity) — two bodies are propagated force-free
+//! through `Simulation::step()`, and relative state is computed at each checkpoint.
 
 mod sim_test_helpers;
 use sim_test_helpers::*;
 
 use glam::DVec3;
 use jeod_math::JeodQuat;
-use jeod_sim::{compute_relative_state, RotationalState, TranslationalState};
+use jeod_sim::{
+    compute_relative_state, DynamicsConfig, MassProperties, RotationalState, SimBody, Simulation,
+    SimulationTime, TranslationalState,
+};
 
 #[allow(dead_code)]
 struct RelativeRecord {
@@ -47,16 +50,6 @@ fn load_relative_csv(path: &std::path::Path) -> Vec<RelativeRecord> {
             f.len()
         );
         let p = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
-        // Columns (57 total, 0-indexed):
-        // 0: time
-        // 1-6: vehA pos/vel interleaved (pos[0],vel[0],pos[1],vel[1],pos[2],vel[2])
-        // 7-22: vehA quaternion (scalar, vector[0-2]) × 4 duplicates
-        // 23-25: vehA ang_vel[0-2]
-        // 26-31: vehB pos/vel interleaved
-        // 32-47: vehB quaternion × 4 duplicates
-        // 48-50: vehB ang_vel[0-2]
-        // 51-53: rel position[0-2] (grouped)
-        // 54-56: rel velocity[0-2] (grouped)
         records.push(RelativeRecord {
             time: p(0),
             veh_a_pos: DVec3::new(p(1), p(3), p(5)),
@@ -79,30 +72,81 @@ fn run_relative_scenario(label: &str, csv_name: &str) {
     let records = load_relative_csv(&csv_path);
     assert!(!records.is_empty(), "{label}: no reference data");
 
+    let init = &records[0];
+
+    // Create Simulation with 2 bodies, no gravity sources (kinematic/force-free)
+    let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let dt = if records.len() > 1 {
+        records[1].time - records[0].time
+    } else {
+        1.0
+    };
+    let mut sim = Simulation::new(time, dt);
+
+    let config_6dof = DynamicsConfig {
+        translational_dynamics: true,
+        rotational_dynamics: true,
+        three_dof: false,
+    };
+
+    // Dummy mass — required by validation for rotational dynamics
+    let dummy_mass = MassProperties::new(1.0);
+
+    // Body 0: vehicle A (subject)
+    sim.add_body(SimBody {
+        trans: TranslationalState {
+            position: init.veh_a_pos,
+            velocity: init.veh_a_vel,
+        },
+        rot: Some(RotationalState {
+            quaternion: init.veh_a_quat,
+            ang_vel_body: init.veh_a_ang_vel,
+        }),
+        mass: Some(dummy_mass),
+        config: config_6dof,
+        ..Default::default()
+    });
+
+    // Body 1: vehicle B (reference)
+    sim.add_body(SimBody {
+        trans: TranslationalState {
+            position: init.veh_b_pos,
+            velocity: init.veh_b_vel,
+        },
+        rot: Some(RotationalState {
+            quaternion: init.veh_b_quat,
+            ang_vel_body: init.veh_b_ang_vel,
+        }),
+        mass: Some(dummy_mass),
+        config: config_6dof,
+        ..Default::default()
+    });
+
+    sim.validate().unwrap();
+
     let mut max_pos_err = 0.0_f64;
     let mut max_vel_err = 0.0_f64;
 
-    for rec in &records {
-        let ref_trans = TranslationalState {
-            position: rec.veh_b_pos,
-            velocity: rec.veh_b_vel,
-        };
-        let ref_rot = RotationalState {
-            quaternion: rec.veh_b_quat,
-            ang_vel_body: rec.veh_b_ang_vel,
-        };
-        let subj_trans = TranslationalState {
-            position: rec.veh_a_pos,
-            velocity: rec.veh_a_vel,
-        };
-        let subj_rot = RotationalState {
-            quaternion: rec.veh_a_quat,
-            ang_vel_body: rec.veh_a_ang_vel,
-        };
+    // Check t=0 (before any steps)
+    {
+        let a = sim.body(0);
+        let b = sim.body(1);
+        let rel = compute_relative_state(&b.trans, b.rot.as_ref(), &a.trans, a.rot.as_ref());
+        let pos_err = (rel.position - init.jeod_rel_pos).length();
+        let vel_err = (rel.velocity - init.jeod_rel_vel).length();
+        max_pos_err = max_pos_err.max(pos_err);
+        max_vel_err = max_vel_err.max(vel_err);
+    }
 
-        let rel = compute_relative_state(&ref_trans, Some(&ref_rot), &subj_trans, Some(&subj_rot));
+    // Step through remaining records
+    for rec in &records[1..] {
+        sim.step_until(rec.time);
 
-        // JEOD's relative state is "A w.r.t. B in B" — position of A relative to B
+        let a = sim.body(0);
+        let b = sim.body(1);
+
+        let rel = compute_relative_state(&b.trans, b.rot.as_ref(), &a.trans, a.rot.as_ref());
+
         let pos_err = (rel.position - rec.jeod_rel_pos).length();
         let vel_err = (rel.velocity - rec.jeod_rel_vel).length();
 
@@ -115,15 +159,17 @@ fn run_relative_scenario(label: &str, csv_name: &str) {
         n = records.len()
     );
 
-    // Position/velocity expressed in B's body frame, matching JEOD convention.
-    // Observed max: 8.04e-14 m position, 7.14e-15 m/s velocity.
+    // Kinematic propagation with RK4: constant velocity is exact, but constant
+    // angular velocity produces nonlinear quaternion dynamics (qdot = 0.5*q*omega),
+    // so RK4 has small truncation error that accumulates. Tolerance reflects
+    // the propagation-induced quaternion drift affecting body-frame relative state.
     assert!(
-        max_pos_err < 8.5e-14,
-        "{label}: max position error {max_pos_err:.4e} m exceeds 8.5e-14 m"
+        max_pos_err < 3.8e-5,
+        "{label}: max position error {max_pos_err:.4e} m exceeds 3.8e-5 m"
     );
     assert!(
-        max_vel_err < 7.5e-15,
-        "{label}: max velocity error {max_vel_err:.4e} m/s exceeds 7.5e-15 m/s"
+        max_vel_err < 3.0e-6,
+        "{label}: max velocity error {max_vel_err:.4e} m/s exceeds 3.0e-6 m/s"
     );
 }
 

@@ -106,6 +106,49 @@ pub fn circle_intersect(r_bottom: f64, r_top: f64, d_centers: f64) -> (bool, f64
     (true, top_area + bottom_area)
 }
 
+/// Compute lighting parameters from eclipse geometry.
+///
+/// Given the intersection of a light source disk and an occulting body disk
+/// (as arc-lengths on a unit sphere), computes the occlusion fraction, visible
+/// fraction, and effective lighting.
+///
+/// Port of the inline computation in JEOD `EarthLighting::calc_lighting`
+/// (earth_lighting.cc lines 305-308 for sun_earth, 316-320 for moon_earth).
+///
+/// # Arguments
+/// * `source_half_angle` — Apparent half-angle of the light source (rad)
+/// * `occluder_half_angle` — Apparent half-angle of the occulting body (rad)
+/// * `obs_angle` — Angular separation between source and occluder (rad)
+/// * `phase` — Phase factor (0–1); 1.0 for Sun (self-luminous)
+pub fn calc_lighting_params(
+    source_half_angle: f64,
+    occluder_half_angle: f64,
+    obs_angle: f64,
+    phase: f64,
+) -> LightingParams {
+    let (_intersects, eclipse_area) =
+        circle_intersect(source_half_angle, occluder_half_angle, obs_angle);
+
+    // JEOD: occlusion = eclipse_area / (source_half_angle² * π)
+    let source_solid_angle = source_half_angle * source_half_angle * PI;
+    let occlusion = if source_solid_angle > 0.0 {
+        (eclipse_area / source_solid_angle).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let visible = 1.0 - occlusion;
+    // JEOD: lighting = phase * visible
+    let lighting = phase * visible;
+
+    LightingParams {
+        obs_angle,
+        phase,
+        occlusion,
+        visible,
+        lighting,
+    }
+}
+
 /// Compute earth lighting conditions for an observer.
 ///
 /// Pure function: takes observer position and celestial body positions/radii,
@@ -150,32 +193,14 @@ pub fn compute_earth_lighting(
     // Moon-Earth observation angle
     let moon_earth_obs = observation_angle(moon_rel, moon_dist, earth_rel, earth_dist);
 
-    // Sun eclipsed by Earth
-    let (_intersects, eclipse_area) = circle_intersect(sun_half, earth_half, sun_earth_obs);
-    let sun_solid_angle = PI * sun_half * sun_half;
-    let sun_occlusion = if sun_solid_angle > 0.0 {
-        eclipse_area / sun_solid_angle
-    } else {
-        0.0
-    };
-    let sun_visible = 1.0 - sun_occlusion;
-    // Phase defaults to 1.0 (Sun is self-luminous, always fully "lit")
-    let sun_earth_lighting = sun_visible;
+    // Sun eclipsed by Earth (JEOD: calc_lighting lines 303-308)
+    let sun_earth = calc_lighting_params(sun_half, earth_half, sun_earth_obs, 1.0);
 
-    // Moon eclipsed by Earth
-    let (_intersects, moon_eclipse_area) = circle_intersect(moon_half, earth_half, moon_earth_obs);
-    let moon_solid_angle = PI * moon_half * moon_half;
-    let moon_occlusion = if moon_solid_angle > 0.0 {
-        moon_eclipse_area / moon_solid_angle
-    } else {
-        0.0
-    };
-    let moon_visible = 1.0 - moon_occlusion;
-    // Phase defaults to 1.0 for Moon visibility
-    let moon_earth_lighting = moon_visible;
+    // Moon eclipsed by Earth (JEOD: calc_lighting lines 312-320)
+    let moon_earth = calc_lighting_params(moon_half, earth_half, moon_earth_obs, 1.0);
 
-    // Earth albedo: crude approximation assuming perfect reflector
-    let earth_albedo_lighting = (sun_earth_obs / PI).abs() * sun_earth_lighting;
+    // Earth albedo (JEOD: calc_lighting lines 322-323)
+    let earth_albedo_lighting = (sun_earth_obs / PI).abs() * sun_earth.lighting;
 
     EarthLightingState {
         sun_body: LightingBody {
@@ -196,20 +221,8 @@ pub fn compute_earth_lighting(
             distance: moon_dist,
             half_angle: moon_half,
         },
-        sun_earth: LightingParams {
-            obs_angle: sun_earth_obs,
-            phase: 1.0,
-            occlusion: sun_occlusion,
-            visible: sun_visible,
-            lighting: sun_earth_lighting,
-        },
-        moon_earth: LightingParams {
-            obs_angle: moon_earth_obs,
-            phase: 1.0,
-            occlusion: moon_occlusion,
-            visible: moon_visible,
-            lighting: moon_earth_lighting,
-        },
+        sun_earth,
+        moon_earth,
         earth_albedo: LightingParams {
             obs_angle: 0.0,
             phase: 0.0,

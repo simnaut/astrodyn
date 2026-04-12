@@ -12,12 +12,57 @@ set -uo pipefail
 # Note: -e is intentionally omitted so that individual sim failures don't
 # kill the entire script. Each run_sim invocation handles its own errors.
 
+# Require Bash >= 4.3 for `wait -n` (used by throttled_bg).
+if [[ "${BASH_VERSINFO[0]}" -lt 4 || ( "${BASH_VERSINFO[0]}" -eq 4 && "${BASH_VERSINFO[1]}" -lt 3 ) ]]; then
+    echo "ERROR: Bash >= 4.3 required for 'wait -n'. Found: ${BASH_VERSION}" >&2
+    echo "On macOS, install a newer bash: brew install bash" >&2
+    exit 1
+fi
+
 OUTPUT_DIR="${1:-/output}"
 mkdir -p "$OUTPUT_DIR"
 
 # Skip generation for labels that already have CSV output in OUTPUT_DIR.
 # Set FORCE=1 to regenerate everything: FORCE=1 ./generate_references.sh
 FORCE="${FORCE:-0}"
+
+# ── Parallelism throttle ──
+# trick-CP builds are memory-hungry (~1-2 GB each). Limit concurrent builds
+# to avoid OOM on machines with limited RAM. Set MAX_PARALLEL=1 for serial.
+MAX_PARALLEL="${MAX_PARALLEL:-4}"
+RUNNING_PIDS=()
+
+# Launch a background job, blocking if MAX_PARALLEL slots are full.
+throttled_bg() {
+    # Reap finished PIDs
+    local alive=()
+    for pid in "${RUNNING_PIDS[@]}"; do
+        if kill -0 "$pid" 2>/dev/null; then
+            alive+=("$pid")
+        fi
+    done
+    RUNNING_PIDS=("${alive[@]}")
+
+    # Wait for a slot if at capacity
+    while [ "${#RUNNING_PIDS[@]}" -ge "$MAX_PARALLEL" ]; do
+        # Wait for any one child to finish
+        wait -n 2>/dev/null || true
+        alive=()
+        for pid in "${RUNNING_PIDS[@]}"; do
+            if kill -0 "$pid" 2>/dev/null; then
+                alive+=("$pid")
+            fi
+        done
+        RUNNING_PIDS=("${alive[@]}")
+    done
+
+    # Launch the command in background and track its PID.
+    # Set LAST_BG_PID instead of echoing — command substitution would
+    # capture sim stdout into the PID variable and risk deadlock.
+    "$@" &
+    LAST_BG_PID=$!
+    RUNNING_PIDS+=("$LAST_BG_PID")
+}
 
 has_output() {
     local label="$1"
@@ -273,6 +318,23 @@ run_dyncomp_group() {
         return 1
     fi
     echo "Validated: $expected ($lines lines)"
+
+    # ── Additional ASCII-injected runs for trajectory + interaction data ──
+    # These reuse the SIM_dyncomp executable built above. Each adds an ASCII
+    # data recorder alongside the existing JEOD run configuration, capturing
+    # interaction-specific columns (aero forces, density) that the default
+    # log_suite only writes to binary .trk files.
+
+    # RUN_5A with atmosphere trajectory (pos + vel + density + temperature)
+    run_sim_with_ascii "verif/SIM_dyncomp" "SET_test/RUN_5A" \
+        "dyncomp_run5a_atmos" "$DYNCOMP_ATMOS_SNIPPET" \
+        "dyncomp_run5a_atmos_atmos_traj.csv" || fail=1
+
+    # RUN_6B with drag trajectory (pos + vel + aero_force + aero_torque + density)
+    run_sim_with_ascii "verif/SIM_dyncomp" "SET_test/RUN_6B" \
+        "dyncomp_run6b_aero" "$DYNCOMP_AERO_SNIPPET" \
+        "dyncomp_run6b_aero_aero_traj.csv" || fail=1
+
     return $fail
 }
 
@@ -437,6 +499,39 @@ for ii in range(3):
 trick.add_data_record_group(dr)
 '
 
+# ── ASCII logging snippet for SIM_dyncomp atmosphere (RUN_5A/5B/5C) ──
+# Logs trajectory + atmosphere state. Used for tier3_sim_met.
+DYNCOMP_ATMOS_SNIPPET='
+dr = trick.sim_services.DRAscii("atmos_traj_ASCII")
+dr.set_cycle(60.0)
+dr.freq = trick.sim_services.DR_Always
+for ii in range(3):
+    dr.add_variable("vehicle.dyn_body.composite_body.state.trans.position[" + str(ii) + "]")
+for ii in range(3):
+    dr.add_variable("vehicle.dyn_body.composite_body.state.trans.velocity[" + str(ii) + "]")
+dr.add_variable("vehicle.atmos_state.density")
+dr.add_variable("vehicle.atmos_state.temperature")
+trick.add_data_record_group(dr)
+'
+
+# ── ASCII logging snippet for SIM_dyncomp aerodynamic drag (RUN_6B) ──
+# Logs trajectory + aero force/torque + density. Used for tier3_sim_drag_verif.
+DYNCOMP_AERO_SNIPPET='
+dr = trick.sim_services.DRAscii("aero_traj_ASCII")
+dr.set_cycle(60.0)
+dr.freq = trick.sim_services.DR_Always
+for ii in range(3):
+    dr.add_variable("vehicle.dyn_body.composite_body.state.trans.position[" + str(ii) + "]")
+for ii in range(3):
+    dr.add_variable("vehicle.dyn_body.composite_body.state.trans.velocity[" + str(ii) + "]")
+for ii in range(3):
+    dr.add_variable("vehicle.aero_drag.aero_force[" + str(ii) + "]")
+for ii in range(3):
+    dr.add_variable("vehicle.aero_drag.aero_torque[" + str(ii) + "]")
+dr.add_variable("vehicle.atmos_state.density")
+trick.add_data_record_group(dr)
+'
+
 # ── ASCII logging snippet for SIM_orbinit (body initialization) ──
 # Logs position and velocity of the initialized body.
 ORBINIT_SNIPPET='
@@ -500,11 +595,11 @@ trick.add_data_record_group(dr)
 # ════════════════════════════════════════════════════════════════════
 # LAUNCH ALL GROUPS IN PARALLEL
 # ════════════════════════════════════════════════════════════════════
-echo "=== Launching sim groups in parallel ==="
+echo "=== Launching sim groups (max ${MAX_PARALLEL} parallel) ==="
 
 # Group 1: SIM_dyncomp (sequential internally)
-run_dyncomp_group &
-PID_DYNCOMP=$!
+throttled_bg run_dyncomp_group
+PID_DYNCOMP=$LAST_BG_PID
 
 # Group 2: SIM_orbinit (multiple initialization methods, sequential within group)
 run_orbinit_group() {
@@ -536,12 +631,12 @@ run_orbinit_group() {
     done
     return $fail
 }
-run_orbinit_group &
-PID_ORBINIT=$!
+throttled_bg run_orbinit_group
+PID_ORBINIT=$LAST_BG_PID
 
 # Group 3: SIM_OrbElem
-run_sim_with_ascii "models/dynamics/derived_state/verif/SIM_OrbElem" "SET_test/RUN_ecc" "orbelem_ecc" "$ORBELEM_SNIPPET" &
-PID_ORBELEM=$!
+throttled_bg run_sim_with_ascii "models/dynamics/derived_state/verif/SIM_OrbElem" "SET_test/RUN_ecc" "orbelem_ecc" "$ORBELEM_SNIPPET"
+PID_ORBELEM=$LAST_BG_PID
 
 # Group 4: SIM_LVLH (multiple orbit types, sequential within group)
 run_lvlh_group() {
@@ -571,8 +666,8 @@ run_lvlh_group() {
     done
     return $fail
 }
-run_lvlh_group &
-PID_LVLH=$!
+throttled_bg run_lvlh_group
+PID_LVLH=$LAST_BG_PID
 
 # Group 5: SIM_NED (multiple orbit types + Earth models, sequential within group)
 run_ned_group() {
@@ -603,8 +698,8 @@ run_ned_group() {
     done
     return $fail
 }
-run_ned_group &
-PID_NED=$!
+throttled_bg run_ned_group
+PID_NED=$LAST_BG_PID
 
 # Group 6: SIM_SolarBeta (multiple inclinations, sequential within group)
 run_solarbeta_group() {
@@ -635,8 +730,8 @@ run_solarbeta_group() {
     done
     return $fail
 }
-run_solarbeta_group &
-PID_SOLARBETA=$!
+throttled_bg run_solarbeta_group
+PID_SOLARBETA=$LAST_BG_PID
 
 # Group 7: SIM_Euler (multiple orbit types, sequential within group)
 run_euler_group() {
@@ -666,16 +761,16 @@ run_euler_group() {
     done
     return $fail
 }
-run_euler_group &
-PID_EULER=$!
+throttled_bg run_euler_group
+PID_EULER=$LAST_BG_PID
 
 # Group 8: SIM_integ_test
-run_sim "models/utils/integration/verif/SIM_integ_test" "SET_test/RUN_rk4" "integ_rk4" &
-PID_INTEG=$!
+throttled_bg run_sim "models/utils/integration/verif/SIM_integ_test" "SET_test/RUN_rk4" "integ_rk4"
+PID_INTEG=$LAST_BG_PID
 
 # Group 9: SIM_3_ORBIT (radiation pressure SRP verification)
-run_sim_with_ascii "models/interactions/radiation_pressure/verif/SIM_3_ORBIT" "SET_test/RUN_radiation" "srp_orbit_radiation" "$SRP_ORBIT_SNIPPET" &
-PID_SRP_ORBIT=$!
+throttled_bg run_sim_with_ascii "models/interactions/radiation_pressure/verif/SIM_3_ORBIT" "SET_test/RUN_radiation" "srp_orbit_radiation" "$SRP_ORBIT_SNIPPET"
+PID_SRP_ORBIT=$LAST_BG_PID
 
 # Group 10: SIM_torque_compare_simple (high-resolution gravity torque, 6 runs)
 run_torque_compare_simple_group() {
@@ -707,8 +802,8 @@ run_torque_compare_simple_group() {
     done
     return $fail
 }
-run_torque_compare_simple_group &
-PID_TORQUE_SIMPLE=$!
+throttled_bg run_torque_compare_simple_group
+PID_TORQUE_SIMPLE=$LAST_BG_PID
 
 # Group 11: SIM_2_SHADOW_CALC (eclipse geometry, 2 runs)
 run_shadow_calc_group() {
@@ -736,8 +831,8 @@ run_shadow_calc_group() {
     done
     return $fail
 }
-run_shadow_calc_group &
-PID_SHADOW_CALC=$!
+throttled_bg run_shadow_calc_group
+PID_SHADOW_CALC=$LAST_BG_PID
 
 # Group 12: SIM_VER_DRAG (aerodynamic drag verification, 3 Cd modes)
 # Phase 4b-C — requires its own trick-CP build
@@ -767,8 +862,8 @@ run_drag_group() {
     done
     return $fail
 }
-run_drag_group &
-PID_DRAG=$!
+throttled_bg run_drag_group
+PID_DRAG=$LAST_BG_PID
 
 # Group 13: SIM_1_BASIC (basic SRP verification, 2 runs)
 # Phase 4b-C — requires its own trick-CP build
@@ -797,8 +892,8 @@ run_srp_basic_group() {
     done
     return $fail
 }
-run_srp_basic_group &
-PID_SRP_BASIC=$!
+throttled_bg run_srp_basic_group
+PID_SRP_BASIC=$LAST_BG_PID
 
 # Group 14: SIM_2A_SHADOW_CALC (advanced shadow with thermal effects)
 # Phase 4b-C — different S_define from SIM_2_SHADOW_CALC, needs own build
@@ -827,14 +922,14 @@ run_shadow_2a_group() {
     done
     return $fail
 }
-run_shadow_2a_group &
-PID_SHADOW_2A=$!
+throttled_bg run_shadow_2a_group
+PID_SHADOW_2A=$LAST_BG_PID
 
 # Group 15: SIM_3_ORBIT_1st_ORDER (first-order SRP model)
 # Phase 4b-C — different S_define from SIM_3_ORBIT, needs own build
-run_sim_with_ascii "models/interactions/radiation_pressure/verif/SIM_3_ORBIT_1st_ORDER" \
-    "SET_test/RUN_radiation" "srp_1st_order_radiation" "$SRP_ORBIT_SNIPPET" &
-PID_SRP_1ST_ORDER=$!
+throttled_bg run_sim_with_ascii "models/interactions/radiation_pressure/verif/SIM_3_ORBIT_1st_ORDER" \
+    "SET_test/RUN_radiation" "srp_1st_order_radiation" "$SRP_ORBIT_SNIPPET"
+PID_SRP_1ST_ORDER=$LAST_BG_PID
 
 # Group 16: SIM_tide_verif (solid body tides, Phase 5e)
 TIDE_SNIPPET='
@@ -877,8 +972,8 @@ run_tide_group() {
     done
     return $fail
 }
-run_tide_group &
-PID_TIDE=$!
+throttled_bg run_tide_group
+PID_TIDE=$LAST_BG_PID
 
 # Group 17: SIM_GJ_test (Gauss-Jackson reference, Phase 5f)
 # Uses SIM_GJ_test instead of SIM_integ_test (which fails to compile in
@@ -932,8 +1027,8 @@ trick.add_data_record_group(dr, trick.DR_Buffer)
         "SET_test/RUN_GJ_step10_order8_noeval_nobs" "integ_gj_dt10" "$GJ_SNIPPET_DT10" || fail=1
     return $fail
 }
-run_gj_group &
-PID_INTEG_GJ=$!
+throttled_bg run_gj_group
+PID_INTEG_GJ=$LAST_BG_PID
 
 # ════════════════════════════════════════════════════════════════════
 # Phase 6 additions: comprehensive JEOD parity validation
@@ -1003,8 +1098,8 @@ run_orbelem_verif_group() {
     done
     return $fail
 }
-run_orbelem_verif_group &
-PID_ORBELEM_VERIF=$!
+throttled_bg run_orbelem_verif_group
+PID_ORBELEM_VERIF=$LAST_BG_PID
 
 # ── Snippet: SIM_Planetary (orbital elements + position/velocity) ──
 PLANETARY_SNIPPET='
@@ -1060,8 +1155,8 @@ run_planetary_group() {
     done
     return $fail
 }
-run_planetary_group &
-PID_PLANETARY=$!
+throttled_bg run_planetary_group
+PID_PLANETARY=$LAST_BG_PID
 
 # ── Snippet: SIM_MET (atmosphere density/temperature at altitude) ──
 MET_VERIF_SNIPPET='
@@ -1106,8 +1201,8 @@ run_met_verif_group() {
     done
     return $fail
 }
-run_met_verif_group &
-PID_MET_VERIF=$!
+throttled_bg run_met_verif_group
+PID_MET_VERIF=$LAST_BG_PID
 
 # ── Snippet: SIM_5_all_inclusive (all time scales) ──
 TIMESCALE_SNIPPET='
@@ -1154,8 +1249,8 @@ run_timescale_group() {
     done
     return $fail
 }
-run_timescale_group &
-PID_TIMESCALE=$!
+throttled_bg run_timescale_group
+PID_TIMESCALE=$LAST_BG_PID
 
 # ── Snippet: SIM_7_time_reversal (state + time for reversal tests) ──
 # Reuses the dyncomp state snippet since the sim has the same DynBody structure.
@@ -1204,8 +1299,8 @@ run_time_reversal_group() {
     done
     return $fail
 }
-run_time_reversal_group &
-PID_TIME_REVERSAL=$!
+throttled_bg run_time_reversal_group
+PID_TIME_REVERSAL=$LAST_BG_PID
 
 # ── Snippet: SIM_Relative (relative state between two vehicles) ──
 # Override frame names to use composite_body (matches our logged states) instead
@@ -1271,8 +1366,8 @@ run_relative_group() {
     done
     return $fail
 }
-run_relative_group &
-PID_RELATIVE=$!
+throttled_bg run_relative_group
+PID_RELATIVE=$LAST_BG_PID
 
 # ── Snippet: SIM_LvlhRelative (LVLH-relative state) ──
 LVLH_RELATIVE_SNIPPET='
@@ -1321,8 +1416,8 @@ run_lvlh_relative_group() {
     done
     return $fail
 }
-run_lvlh_relative_group &
-PID_LVLH_RELATIVE=$!
+throttled_bg run_lvlh_relative_group
+PID_LVLH_RELATIVE=$LAST_BG_PID
 
 # ── Snippet: SIM_LIGHT_CIR (earth lighting circle intersection) ──
 LIGHTING_SNIPPET='
@@ -1383,8 +1478,8 @@ run_lighting_group() {
     done
     return $fail
 }
-run_lighting_group &
-PID_LIGHTING=$!
+throttled_bg run_lighting_group
+PID_LIGHTING=$LAST_BG_PID
 
 # ── Snippet: SIM_Earth_Moon (vehicle state in Moon-centered orbit) ──
 EARTH_MOON_SNIPPET='
@@ -1424,8 +1519,8 @@ run_earth_moon_group() {
     done
     return $fail
 }
-run_earth_moon_group &
-PID_EARTH_MOON=$!
+throttled_bg run_earth_moon_group
+PID_EARTH_MOON=$LAST_BG_PID
 
 # ── Snippet: SIM_Mars (Dawn spacecraft at Mars) ──
 MARS_SNIPPET='
@@ -1463,8 +1558,8 @@ run_mars_group() {
     done
     return $fail
 }
-run_mars_group &
-PID_MARS=$!
+throttled_bg run_mars_group
+PID_MARS=$LAST_BG_PID
 
 # ── Snippet: SIM_mercury (Mercury propagation) ──
 MERCURY_SNIPPET='
@@ -1503,8 +1598,8 @@ run_mercury_group() {
     done
     return $fail
 }
-run_mercury_group &
-PID_MERCURY=$!
+throttled_bg run_mercury_group
+PID_MERCURY=$LAST_BG_PID
 
 # ════════════════════════════════════════════════════════════════════
 # WAIT FOR ALL GROUPS

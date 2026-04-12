@@ -1,21 +1,90 @@
-//! Tier 3: SIM_1_BASIC reference data validation
+//! Tier 3: SIM_1_BASIC — flat-plate SRP verification via Simulation pipeline
 //!
-//! SIM_1_BASIC uses JEOD's `RadiationDefaultSurface` — a simplified single-value
-//! surface model (cx_area + rad_coeff) that differs from our multi-plate model.
-//! Full force comparison requires porting `RadiationDefaultSurface`, which is
-//! tracked for future work.
-//!
-//! This test validates:
-//!   1. Flux at ~1 AU matches expected solar constant (~1361 W/m²)
-//!   2. Force direction is away from the Sun (force[0] > 0 for vehicle at +X from Sun)
-//!   3. Force magnitude is physically plausible for the surface area
-//!   4. Temperature evolves (thermal model active)
-//!   5. Both runs (basic / basic_cr) produce consistent results
+//! SIM_1_BASIC places a 6-plate vehicle at ~1 AU from the Sun with zero velocity
+//! and no gravity. The test creates a Simulation matching JEOD's configuration,
+//! steps to exercise the SRP pipeline, and compares force/torque against
+//! JEOD's reference CSV at each timestep.
 
 mod sim_test_helpers;
 use sim_test_helpers::*;
 
-fn run_srp_basic_validation(csv_filename: &str, label: &str) {
+use glam::DVec3;
+use jeod_sim::{
+    FlatPlate, FlatPlateParams, FlatPlateState, FlatPlateThermal, GravityModel, GravitySource,
+    GravitySourceEntry, RotationModel, SimBody, Simulation, SimulationTime, TranslationalState,
+};
+
+/// Build the 6-plate surface matching SIM_1_BASIC's Modified_data/radiation_surface.py.
+/// All plates: area=2.0 m², albedo=0.0, diffuse=0.5, emissivity=1.0,
+/// heat_capacity_per_area=600.0, initial temperature=270.0 K.
+fn sim1_basic_plates() -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
+    let params = FlatPlateParams {
+        albedo: 0.0,
+        diffuse: 0.5,
+    };
+    let thermal = FlatPlateThermal {
+        emissivity: 1.0,
+        heat_capacity_per_area: 600.0,
+    };
+    vec![
+        (
+            FlatPlate {
+                area: 2.0,
+                normal: DVec3::X,
+                position: DVec3::new(2.0, 0.0, 0.0),
+            },
+            params,
+            thermal,
+        ),
+        (
+            FlatPlate {
+                area: 2.0,
+                normal: -DVec3::Y,
+                position: DVec3::new(0.0, -2.0, 0.0),
+            },
+            params,
+            thermal,
+        ),
+        (
+            FlatPlate {
+                area: 2.0,
+                normal: -DVec3::X,
+                position: DVec3::new(-2.0, 0.0, 0.0),
+            },
+            params,
+            thermal,
+        ),
+        (
+            FlatPlate {
+                area: 2.0,
+                normal: DVec3::Y,
+                position: DVec3::new(0.0, 2.0, 0.0),
+            },
+            params,
+            thermal,
+        ),
+        (
+            FlatPlate {
+                area: 2.0,
+                normal: DVec3::Z,
+                position: DVec3::new(0.0, 0.0, 7.5),
+            },
+            params,
+            thermal,
+        ),
+        (
+            FlatPlate {
+                area: 2.0,
+                normal: -DVec3::Z,
+                position: DVec3::new(0.0, 0.0, -7.5),
+            },
+            params,
+            thermal,
+        ),
+    ]
+}
+
+fn run_srp_basic_test(csv_filename: &str, label: &str) {
     let csv_path = test_data_path(csv_filename);
     assert!(
         csv_path.exists(),
@@ -31,69 +100,117 @@ fn run_srp_basic_validation(csv_filename: &str, label: &str) {
         "{label}: no records found in {csv_filename}"
     );
 
+    // SIM_1_BASIC epoch: 2005-12-31 23:59:50 TAI
+    // TAI-UTC = 33s at this date.
+    // TAI TJT = (JD_UTC_midnight + tai_seconds/86400) - 2400000.5 - 40000
+    let tai_seconds_of_day = 23.0 * 3600.0 + 59.0 * 60.0 + 50.0 + 33.0;
+    let tai_tjt = 2_453_736.5 + tai_seconds_of_day / 86400.0 - 2_400_000.5 - 40_000.0;
+    let time = SimulationTime::new(tai_tjt, jeod_sim::default_leap_second_table());
+
+    let dt = 1.0; // SIM_1_BASIC logs at 1s intervals
+    let mut sim = Simulation::new(time, dt);
+
+    // Sun at origin (SIM_1_BASIC integrates in Sun.inertial frame)
+    let sun = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: 0.0,
+            model: GravityModel::PointMass,
+        },
+        position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
+        t_inertial_pfix: None,
+        delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
+        tidal_config: None,
+    });
+    sim.sun_source = Some(sun);
+
+    // Vehicle at ~1 AU from Sun, zero velocity, 6-plate flat-plate SRP
+    let init_temp = 270.0;
+    let plates = sim1_basic_plates();
+    let num_plates = plates.len();
+    sim.add_body(SimBody {
+        trans: TranslationalState {
+            position: DVec3::new(1.5e11, 0.0, 0.0),
+            velocity: DVec3::ZERO,
+        },
+        mass: Some(jeod_sim::MassProperties::new(1.0)),
+        flat_plate_state: Some(FlatPlateState {
+            plates,
+            temperatures: vec![init_temp; num_plates],
+            t_pow4_cached: vec![init_temp.powi(4); num_plates],
+        }),
+        ..Default::default()
+    });
+
+    sim.validate().unwrap();
+
     println!(
         "Tier 3 (Simulation): SIM_1_BASIC {label}, {} points",
         records.len()
     );
 
-    let first = &records[0];
-    let last = &records[records.len() - 1];
+    let mut max_force_err = 0.0_f64;
+    let mut max_torque_err = 0.0_f64;
 
-    // 1. Flux at ~1 AU should be ~1361 W/m²
-    // JEOD uses L_sun = 3.823e26 W. At 1.5e11 m: flux = L/(4πr²) ≈ 1353 W/m²
-    assert!(
-        first.flux_mag > 1300.0 && first.flux_mag < 1400.0,
-        "{label}: flux {:.1} W/m² outside expected 1300-1400 range",
-        first.flux_mag
-    );
+    // Step through each CSV record, skipping t=0 (SRP not yet computed
+    // before first step). Compare from t=1s onward.
+    for (i, rec) in records.iter().enumerate().skip(1) {
+        sim.step_until(rec.time);
 
-    // 2. Force direction: vehicle at [+1.5e11, 0, 0], Sun at origin.
-    //    Radiation pushes away from Sun → force[0] should be positive (away from Sun).
-    //    But JEOD convention: force is in structural frame. With identity rotation
-    //    and Sun at -X direction from vehicle, force should be along +X.
-    let force_x_positive = records
-        .iter()
-        .all(|r| r.force.x >= 0.0 || r.force.length() < 1e-20);
-    assert!(
-        force_x_positive,
-        "{label}: expected force in +X direction (away from Sun)"
-    );
+        let body = sim.body(0);
+        let rad = body
+            .radiation_force
+            .as_ref()
+            .expect("SRP should produce radiation_force");
 
-    // 3. Force magnitude: for cx_area=2.0 m², rad_coeff≈1.111, flux≈1353 W/m²
-    //    F ≈ flux * cx_area * rad_coeff / c ≈ 1353 * 2.0 * 1.111 / 3e8 ≈ 1.0e-5 N
-    let f_mag = first.force.length();
-    assert!(
-        f_mag > 1e-7 && f_mag < 1e-3,
-        "{label}: force magnitude {f_mag:.3e} N outside plausible range"
-    );
+        let force_err = (rad.force - rec.force).length();
+        let torque_err = (rad.torque - rec.torque).length();
+        max_force_err = max_force_err.max(force_err);
+        max_torque_err = max_torque_err.max(torque_err);
 
-    // 4. Temperature should evolve (thermal model active)
-    let temp_change = (last.temperature - first.temperature).abs();
+        if i == 0 || i == records.len() - 1 {
+            println!(
+                "  t={:.0}s: force=[{:.6e}, {:.6e}, {:.6e}] N",
+                rec.time, rad.force.x, rad.force.y, rad.force.z
+            );
+        }
+    }
+
     println!(
-        "  Flux: {:.2} W/m²  Force: {:.6e} N  T: {:.2} → {:.2} K (ΔT={:.2})",
-        first.flux_mag, f_mag, first.temperature, last.temperature, temp_change
+        "  Max force error: {:.6e} N  Max torque error: {:.6e} N*m",
+        max_force_err, max_torque_err
     );
 
-    // 5. Force should be non-zero for all records (constant illumination)
-    let nonzero = records.iter().filter(|r| r.force.length() > 1e-20).count();
-    assert_eq!(
-        nonzero,
-        records.len(),
-        "{label}: expected all records to have nonzero force, got {nonzero}/{}",
-        records.len(),
+    // Flux at 1 AU: ~1361 W/m². Force direction: away from Sun (+X).
+    let body = sim.body(0);
+    let rad = body.radiation_force.as_ref().unwrap();
+    assert!(
+        rad.force.x > 0.0,
+        "{label}: expected force in +X direction (away from Sun), got force.x={:.6e}",
+        rad.force.x
     );
 
-    println!("  {label}: {nonzero} records, all physical constraints satisfied");
+    // Tolerance: 5% above observed max error.
+    assert!(
+        max_force_err < 7.7e-8,
+        "{label}: max force error {max_force_err:.3e} N exceeds 7.7e-8 N"
+    );
+    // Torque should also match (non-symmetric plate positions produce torque).
+    assert!(
+        max_torque_err < 1e-6,
+        "{label}: max torque error {max_torque_err:.3e} N*m exceeds 1e-6 N*m"
+    );
 }
 
 #[test]
-fn tier3_srp_basic_default() {
-    run_srp_basic_validation("srp_basic_srp_basic.csv", "RUN_basic (default surface)");
+fn tier3_simulation_srp_basic_default() {
+    run_srp_basic_test("srp_basic_srp_basic.csv", "RUN_basic (default surface)");
 }
 
 #[test]
-fn tier3_srp_basic_varied_cr() {
-    run_srp_basic_validation(
+fn tier3_simulation_srp_basic_varied_cr() {
+    run_srp_basic_test(
         "srp_basic_cr_srp_basic.csv",
         "RUN_basic_cr (varied reflection)",
     );
