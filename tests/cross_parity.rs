@@ -5621,7 +5621,21 @@ fn tier3_bevy_relativistic_moving_source() {
         &bevy_trans,
         &sim.body(0).trans,
     );
-    println!("  Relativistic moving source: bit-identical");
+
+    // Also compare gravity acceleration to cover gravity_computation_system
+    // wiring of SourceInertialVelocityC (integration_system recomputes gravity
+    // internally, so trans parity alone doesn't prove the precomputed path).
+    let bevy_grav = app.world().get::<GravityAccelerationC>(vehicle).unwrap();
+    let sim_grav = &sim.body(0).gravity_accel;
+    for i in 0..3 {
+        assert_bits_eq(
+            "Bevy vs Sim (relativistic_moving_source)",
+            &format!("grav_accel[{i}]"),
+            bevy_grav.grav_accel[i],
+            sim_grav.grav_accel[i],
+        );
+    }
+    println!("  Relativistic moving source: bit-identical (trans + gravity)");
 }
 
 #[test]
