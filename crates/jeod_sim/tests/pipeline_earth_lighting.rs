@@ -7,7 +7,6 @@
 //! This is NOT a Tier 3 cross-validation test — no JEOD propagating sim
 //! with earth lighting exists to compare against. It exercises the pipeline
 //! end-to-end but asserts physical plausibility, not JEOD parity.
-//! True Tier 3 cross-validation is tracked in issue #49.
 
 use glam::DVec3;
 use jeod_sim::{
