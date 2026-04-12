@@ -177,68 +177,54 @@ fn tier3_bevy_external_torque_per_body() {
         );
     }
 
-    // Path B
-    let mut trans_b = iss_trans();
-    let mut rot_b = tumble_rot();
+    // Path B: Simulation::step() pipeline with set_body_external_torque
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sim = jeod_sim::Simulation::new(time, step_dt);
+    let earth_idx = sim.add_source(GravitySourceEntry {
+        source: earth_src,
+        position: DVec3::ZERO,
+        velocity: DVec3::ZERO,
+        t_inertial_pfix: None,
+        delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
+        tidal_config: None,
+    });
+    sim.add_body(SimBody {
+        trans: iss_trans(),
+        rot: Some(tumble_rot()),
+        mass: Some(mass_props),
+        config,
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+        },
+        ..Default::default()
+    });
+    sim.validate().unwrap();
+
     for step in 0..num_steps {
         let torque = if (10..20).contains(&step) {
             external_torque
         } else {
             DVec3::ZERO
         };
-        let grav = jeod_sim::accumulate_gravity(trans_b.position, &controls, DVec3::ZERO, |_| {
-            Some(jeod_sim::ResolvedSource {
-                source: &earth_src,
-                rotation: None,
-                position: DVec3::ZERO,
-                delta_c20: 0.0,
-                has_delta_coeffs: false,
-            })
-        });
-        let (total, _) = jeod_sim::collect_and_resolve_forces(
-            None,
-            None,
-            None,
-            Some(&rot_b),
-            DMat3::IDENTITY,
-            Some(&mass_props),
-            grav.grav_accel,
-        );
-        jeod_sim::integrate_body(
-            &config,
-            &mut trans_b,
-            Some(&mut rot_b),
-            Some(&mass_props),
-            |pos, _vel| {
-                jeod_sim::accumulate_gravity(pos, &controls, DVec3::ZERO, |_| {
-                    Some(jeod_sim::ResolvedSource {
-                        source: &earth_src,
-                        rotation: None,
-                        position: DVec3::ZERO,
-                        delta_c20: 0.0,
-                        has_delta_coeffs: false,
-                    })
-                })
-                .grav_accel
-            },
-            total.force,
-            total.torque + torque,
-            step_dt,
-            1.0,
-            jeod_sim::IntegratorType::Rk4,
-            None,
-        );
+        sim.set_body_external_torque(0, torque);
+        sim.step();
     }
 
     let state_a = SixDofState {
         trans: trans_a,
         rot: rot_a,
     };
+    let sim_body = sim.body(0);
     let state_b = SixDofState {
-        trans: trans_b,
-        rot: rot_b,
+        trans: sim_body.trans,
+        rot: sim_body.rot.unwrap(),
     };
-    assert_sixdof_eq("Path A vs Path B (ext torque)", &state_a, &state_b);
+    assert_sixdof_eq(
+        "Per-body functions vs Simulation::step() (ext torque)",
+        &state_a,
+        &state_b,
+    );
 }
 
 // ── Gravity torque parity (elliptical + with rate) ──
