@@ -50,6 +50,11 @@ under its own physics, and results are compared against JEOD's reference output 
 checkpoints. Tests that call per-body functions directly or evaluate static data
 points bypass the pipeline and must be upgraded to use `Simulation::step()`.
 
+Initial conditions may come from JEOD source files (Modified_data/*.py, S_define,
+gravity coefficient files) or from the t=0 row of a JEOD reference CSV — both are
+"JEOD source data." The prohibition is against feeding JEOD output into our
+computation at intermediate time steps (e.g., setting position from CSV at t=100s).
+
 ## No Half-Baked Implementations or Tests (non-negotiable)
 
 Reject every urge to rationalize a simplified, approximate, or incomplete

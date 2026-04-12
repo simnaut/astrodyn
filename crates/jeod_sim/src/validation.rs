@@ -38,6 +38,8 @@ pub enum ValidationError {
     OrbitalElementsSourceOutOfRange { index: usize, num_sources: usize },
     /// `atmosphere_planet_source` index is out of range for the sources table.
     AtmospherePlanetOutOfRange { index: usize, num_sources: usize },
+    /// `moon_source` index is out of range for the sources table.
+    MoonSourceOutOfRange { index: usize, num_sources: usize },
     /// Drag or SRP configured but no mass properties (force → acceleration requires mass).
     ForceProducerWithoutMass { body_idx: usize },
     /// GaussJackson integrator with rotational_dynamics=true (6-DOF not supported).
@@ -123,6 +125,13 @@ impl std::fmt::Display for ValidationError {
                     f,
                     "sun_source index {index} is out of range (only {num_sources} sources). \
                      Ensure sun_source refers to a valid source index."
+                )
+            }
+            Self::MoonSourceOutOfRange { index, num_sources } => {
+                write!(
+                    f,
+                    "moon_source index {index} is out of range (only {num_sources} sources). \
+                     Ensure moon_source refers to a valid source index."
                 )
             }
             Self::ShadowBodyOutOfRange { index, num_sources } => {

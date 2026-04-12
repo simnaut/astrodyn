@@ -117,12 +117,12 @@ pub struct SimBody {
     /// `None` means no atmosphere (JEOD_INV: AT.01 — absence = inactive).
     pub atmospheric_state: Option<AtmosphereState>,
     /// External force in the inertial frame (N). Added to `total_force.force`
-    /// each step after force collection. Set between steps via `set_body_external_force()` / `set_body_external_torque()`.
-    /// Defaults to zero (no external force).
+    /// each step after force collection. Set between steps via
+    /// [`Simulation::set_body_external_force`]. Defaults to zero.
     pub external_force: DVec3,
     /// External torque in the body frame (N·m). Added to `total_force.torque`
-    /// each step after force collection. Set between steps via `set_body_external_force()` / `set_body_external_torque()`.
-    /// Defaults to zero (no external torque).
+    /// each step after force collection. Set between steps via
+    /// [`Simulation::set_body_external_torque`]. Defaults to zero.
     pub external_torque: DVec3,
 
     // ── Computed intermediates (written each step, readable after) ──
@@ -442,6 +442,16 @@ impl Simulation {
         if let Some(idx) = self.sun_source {
             if idx >= self.sources.len() {
                 all_errors.push(ValidationError::SunSourceOutOfRange {
+                    index: idx,
+                    num_sources: self.sources.len(),
+                });
+            }
+        }
+
+        // Validate moon_source index
+        if let Some(idx) = self.moon_source {
+            if idx >= self.sources.len() {
+                all_errors.push(ValidationError::MoonSourceOutOfRange {
                     index: idx,
                     num_sources: self.sources.len(),
                 });

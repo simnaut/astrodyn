@@ -85,10 +85,10 @@ fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str, frac_
         tidal_config: None,
     });
 
-    // Sun from DE421
-    let base_jd = epoch_tjt + 40000.0 + 2_400_000.5;
+    // Sun from DE421 (query in TDB JD, not TAI JD)
+    let tdb_jd = sim.time.tdb_julian_date();
     let (initial_sun, _) = ephemeris
-        .get_earth_centered_state(EphemerisBody::Sun, base_jd)
+        .get_earth_centered_state(EphemerisBody::Sun, tdb_jd)
         .expect("Sun position at epoch");
     let sun = sim.add_source(GravitySourceEntry {
         source: GravitySource {

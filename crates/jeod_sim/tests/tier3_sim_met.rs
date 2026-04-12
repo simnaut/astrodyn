@@ -172,7 +172,6 @@ fn tier3_simulation_met_run5a() {
 
     // Position: same gravity model, so trajectory should match closely
     report.assert_position([2.5e-6, 2.5e-6, 2.5e-6]);
-    // MET density: small differences from position-dependent altitude drift
     // MET density: small differences from position-dependent altitude at different
     // orbital phases and epoch-dependent time in the MET model tables.
     assert!(
