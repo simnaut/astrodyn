@@ -104,6 +104,7 @@ pub fn ephemeris_update_system(
     mut query: Query<(
         &EphemerisBodyC,
         &mut SourceInertialPositionC,
+        Option<&mut SourceInertialVelocityC>,
         Option<&mut TranslationalStateC>,
     )>,
 ) {
@@ -111,7 +112,7 @@ pub fn ephemeris_update_system(
         return;
     };
     let tdb_jd = sim_time.tdb_julian_date();
-    for (ephem_body, mut source_pos, trans_state) in &mut query {
+    for (ephem_body, mut source_pos, source_vel, trans_state) in &mut query {
         let (pos, vel) = eph
             .get_state(ephem_body.target, ephem_body.observer, tdb_jd)
             .unwrap_or_else(|e| {
@@ -121,6 +122,9 @@ pub fn ephemeris_update_system(
                 )
             });
         source_pos.0 = pos;
+        if let Some(mut sv) = source_vel {
+            sv.0 = vel;
+        }
         if let Some(mut ts) = trans_state {
             ts.0.position = pos;
             ts.0.velocity = vel;
@@ -264,6 +268,7 @@ pub fn integration_system(
         &GravitySourceC,
         Option<&PlanetFixedRotationC>,
         &SourceInertialPositionC,
+        Option<&SourceInertialVelocityC>,
         Option<&TidalDeltaC20C>,
         Option<&TidalConfigC>,
     )>,
@@ -306,13 +311,15 @@ pub fn integration_system(
                 let mut accel =
                     jeod_sim::accumulate_gravity(pos, &controls.0, DVec3::ZERO, |source_entity| {
                         match sources.get(source_entity) {
-                            Ok((s, r, p, tidal, tidal_config)) => Some(jeod_sim::ResolvedSource {
-                                source: &s.0,
-                                rotation: r.map(|r| &r.0),
-                                position: p.0,
-                                delta_c20: tidal.map_or(0.0, |t| t.0),
-                                has_delta_coeffs: tidal_config.is_some(),
-                            }),
+                            Ok((s, r, p, _, tidal, tidal_config)) => {
+                                Some(jeod_sim::ResolvedSource {
+                                    source: &s.0,
+                                    rotation: r.map(|r| &r.0),
+                                    position: p.0,
+                                    delta_c20: tidal.map_or(0.0, |t| t.0),
+                                    has_delta_coeffs: tidal_config.is_some(),
+                                })
+                            }
                             Err(_) => {
                                 panic!(
                                     "Entity {entity:?}: GravityControl references source \
@@ -325,17 +332,16 @@ pub fn integration_system(
                     .grav_accel;
 
                 // Relativistic correction at each integrator stage.
-                // TODO(#53): source velocity is DVec3::ZERO.
                 accel += jeod_sim::accumulate_relativistic_corrections(
                     pos,
                     vel,
                     &controls.0,
                     |source_entity| {
-                        sources.get(source_entity).ok().map(|(s, _, p, _, _)| {
+                        sources.get(source_entity).ok().map(|(s, _, p, v, _, _)| {
                             jeod_sim::ResolvedRelativisticSource {
                                 mu: s.mu,
                                 position: p.0,
-                                velocity: DVec3::ZERO,
+                                velocity: v.map_or(DVec3::ZERO, |v| v.0),
                             }
                         })
                     },
