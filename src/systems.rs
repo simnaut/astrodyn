@@ -94,8 +94,9 @@ pub fn tidal_update_system(
 ///
 /// Queries entities with `EphemerisBodyC` + `SourceInertialPositionC` and
 /// looks up the current position/velocity from the `EphemerisR` resource.
-/// Also updates `TranslationalStateC` if present (for Sun/Moon entities
-/// used by SRP, solar beta, and earth lighting systems).
+/// Also updates `SourceInertialVelocityC` and `TranslationalStateC` when
+/// present (velocity for relativistic corrections; translational state for
+/// Sun/Moon entities used by SRP, solar beta, and earth lighting systems).
 ///
 /// Placed in `JeodSet::EphemerisUpdate`.
 pub fn ephemeris_update_system(
