@@ -152,6 +152,10 @@ pub struct SimBody {
     pub geodetic_planet: Option<(usize, f64, f64)>,
     /// Whether to compute solar beta angle each step. Requires `sun_source` on Simulation.
     pub compute_solar_beta: bool,
+    /// Earth lighting configuration: `(earth_radius, moon_radius, sun_radius)` in metres.
+    /// When `Some`, earth lighting is computed each step using Sun/Moon/Earth positions
+    /// from the Simulation's source table. Requires `sun_source` and `moon_source`.
+    pub earth_lighting_config: Option<(f64, f64, f64)>,
 
     // ── Derived state outputs (written each step if configured) ──
     /// Orbital elements from latest translational state.
@@ -164,6 +168,8 @@ pub struct SimBody {
     pub geodetic_state: Option<GeodeticState>,
     /// Solar beta angle (radians).
     pub solar_beta: Option<f64>,
+    /// Earth lighting state (sun/moon occlusion, albedo).
+    pub earth_lighting: Option<jeod_interactions::earth_lighting::EarthLightingState>,
 
     // ── Stateful integrator state ──
     /// Gauss-Jackson (Störmer-Cowell) integrator state. `None` for non-GJ bodies.
@@ -201,11 +207,13 @@ impl Default for SimBody {
             compute_lvlh: false,
             geodetic_planet: None,
             compute_solar_beta: false,
+            earth_lighting_config: None,
             orbital_elements: None,
             euler_angles: None,
             lvlh_frame: None,
             geodetic_state: None,
             solar_beta: None,
+            earth_lighting: None,
             gj_state: None,
         }
     }
@@ -239,8 +247,10 @@ pub struct Simulation {
     pub atmosphere: Option<AtmosphereConfig>,
     /// Index into `sources` for the planet whose rotation is used for atmosphere.
     pub atmosphere_planet_source: Option<usize>,
-    /// Index into `sources` for the Sun (used by SRP).
+    /// Index into `sources` for the Sun (used by SRP and earth lighting).
     pub sun_source: Option<usize>,
+    /// Index into `sources` for the Moon (used by earth lighting).
+    pub moon_source: Option<usize>,
     /// Polar motion parameters (xp, yp) in radians. When `Some`, the RNP
     /// composition includes polar motion: W(xp,yp) × R(GAST) × N × P.
     /// When `None`, polar motion is omitted (matches JEOD `enable_polar=false`).
@@ -269,6 +279,7 @@ impl Simulation {
             atmosphere: None,
             atmosphere_planet_source: None,
             sun_source: None,
+            moon_source: None,
             polar_motion: None,
             dt,
             ephemeris: None,
@@ -671,9 +682,12 @@ impl Simulation {
         }
 
         // ── 6. Interactions — drag, SRP, gravity torque ──
-        // sun_pos is also used in stage 9 (solar beta); compute once here.
+        // sun_pos is also used in stage 9 (solar beta, earth lighting); compute once here.
         let sun_pos = self
             .sun_source
+            .and_then(|idx| self.sources.get(idx).map(|s| s.position));
+        let moon_pos = self
+            .moon_source
             .and_then(|idx| self.sources.get(idx).map(|s| s.position));
         let sources = &self.sources;
 
@@ -947,6 +961,23 @@ impl Simulation {
                     ));
                 } else {
                     body.solar_beta = None;
+                }
+            }
+
+            // Earth lighting
+            if let Some((earth_r, moon_r, sun_r)) = body.earth_lighting_config {
+                if let (Some(sp), Some(mp)) = (sun_pos, moon_pos) {
+                    body.earth_lighting =
+                        Some(jeod_interactions::earth_lighting::compute_earth_lighting(
+                            body.trans.position,
+                            sp,
+                            mp,
+                            sun_r,
+                            earth_r,
+                            moon_r,
+                        ));
+                } else {
+                    body.earth_lighting = None;
                 }
             }
         }
