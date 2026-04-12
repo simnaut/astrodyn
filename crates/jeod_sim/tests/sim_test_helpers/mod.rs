@@ -6,7 +6,7 @@
 #![allow(dead_code)]
 
 use glam::{DMat3, DQuat, DVec3};
-use jeod_sim::JeodQuat;
+use jeod_sim::{JeodQuat, MassProperties};
 use std::path::Path;
 
 #[allow(unused_imports)] // Not all test binaries use dyncomp CSV loading
@@ -14,6 +14,19 @@ pub use jeod_test_data::dyncomp_csv::{load_dyncomp_csv, DyncompRecord};
 
 /// Earth rotation rate (JEOD RNPJ2000 default).
 pub const OMEGA_EARTH: f64 = 7.292_115_146_706_388e-5;
+
+/// Build `MassProperties` from parsed JEOD mass initialization data.
+///
+/// Converts the row-major `[[f64; 3]; 3]` inertia tensor to glam `DMat3`
+/// (column-major) and passes through mass and CoM position.
+pub fn mass_props_from_init(init: &jeod_test_data::mass_data::MassInitData) -> MassProperties {
+    let inertia = DMat3::from_cols(
+        DVec3::new(init.inertia[0][0], init.inertia[1][0], init.inertia[2][0]),
+        DVec3::new(init.inertia[0][1], init.inertia[1][1], init.inertia[2][1]),
+        DVec3::new(init.inertia[0][2], init.inertia[1][2], init.inertia[2][2]),
+    );
+    MassProperties::with_inertia(init.mass, inertia, DVec3::from_slice(&init.position))
+}
 
 pub fn quaternion_angle_error(q1: &JeodQuat, q2: &JeodQuat) -> f64 {
     let dot = (q1.scalar() * q2.scalar()

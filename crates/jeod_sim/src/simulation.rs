@@ -116,6 +116,14 @@ pub struct SimBody {
     /// Set to `Some(Default)` to enable atmosphere computation for this body.
     /// `None` means no atmosphere (JEOD_INV: AT.01 — absence = inactive).
     pub atmospheric_state: Option<AtmosphereState>,
+    /// External force in the inertial frame (N). Added to `total_force.force`
+    /// each step after force collection. Set between steps via `body_mut()`.
+    /// Defaults to zero (no external force).
+    pub external_force: DVec3,
+    /// External torque in the body frame (N·m). Added to `total_force.torque`
+    /// each step after force collection. Set between steps via `body_mut()`.
+    /// Defaults to zero (no external torque).
+    pub external_torque: DVec3,
 
     // ── Computed intermediates (written each step, readable after) ──
     /// Accumulated gravitational acceleration, gradient, and potential.
@@ -180,6 +188,8 @@ impl Default for SimBody {
             t_struct_body: DMat3::IDENTITY,
             compute_gravity_torque: false,
             atmospheric_state: None,
+            external_force: DVec3::ZERO,
+            external_torque: DVec3::ZERO,
             gravity_accel: GravityAcceleration::default(),
             total_force: TotalForce::default(),
             frame_derivs: FrameDerivatives::default(),
@@ -796,6 +806,15 @@ impl Simulation {
             );
             body.total_force = total;
             body.frame_derivs = derivs;
+
+            // Apply external force/torque (set by caller between steps).
+            body.total_force.force += body.external_force;
+            body.total_force.torque += body.external_torque;
+            if body.external_force != DVec3::ZERO {
+                if let Some(mass) = &body.mass {
+                    body.frame_derivs.trans_accel += body.external_force * mass.inverse_mass;
+                }
+            }
         }
 
         // ── 8. Integration ──
@@ -973,6 +992,15 @@ impl Simulation {
     /// Access a body by index (read-only).
     pub fn body(&self, idx: usize) -> &SimBody {
         &self.bodies[idx]
+    }
+
+    /// Mutable access to a body by index.
+    ///
+    /// Use between steps to set `external_force` / `external_torque` or update
+    /// dynamic state. Derived-state *configuration* fields (e.g.,
+    /// `orbital_elements_source`) should not be changed after `validate()`.
+    pub fn body_mut(&mut self, idx: usize) -> &mut SimBody {
+        &mut self.bodies[idx]
     }
 
     /// Read-only slice of all bodies.

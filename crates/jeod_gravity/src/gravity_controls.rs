@@ -43,7 +43,10 @@ pub struct GravityControl<SourceId = String> {
 }
 
 impl<SourceId> GravityControl<SourceId> {
-    /// Create a spherical (point-mass) gravity control.
+    /// Create a spherical (point-mass only) gravity control.
+    ///
+    /// Uses only µ/r² acceleration. Any spherical harmonics data on the source
+    /// is ignored. For gravity with J2+ harmonics, use [`new_nonspherical`](Self::new_nonspherical).
     pub fn new_spherical(source_name: SourceId, gradient: bool) -> Self {
         Self {
             source_name,
@@ -60,6 +63,10 @@ impl<SourceId> GravityControl<SourceId> {
     }
 
     /// Create a non-spherical (spherical harmonics) gravity control.
+    ///
+    /// Evaluates the source's spherical harmonics coefficients up to the given
+    /// `degree` and `order`. The source must have a `SphericalHarmonics` model
+    /// and the gravity source entry must provide a planet-fixed rotation matrix.
     pub fn new_nonspherical(
         source_name: SourceId,
         degree: usize,
