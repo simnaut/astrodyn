@@ -9,10 +9,10 @@ use bevy_jeod::{
     TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
+use jeod_runner::{GravitySourceEntry, RotationModel, SimBody};
 use jeod_sim::{
-    DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource,
-    GravitySourceEntry, JeodQuat, MassProperties, RotationModel, RotationalState, SimBody,
-    SixDofState, TranslationalState,
+    DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource, JeodQuat,
+    MassProperties, RotationalState, SixDofState, TranslationalState,
 };
 
 use parity_helpers::*;
@@ -64,7 +64,7 @@ fn tier3_bevy_gravity_torque_sixdof() {
 
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
-    let mut sim = jeod_sim::Simulation::new(time, DT);
+    let mut sim = jeod_runner::Simulation::new(time, DT);
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
         position: DVec3::ZERO,
@@ -179,7 +179,7 @@ fn tier3_bevy_external_torque_per_body() {
 
     // Path B: Simulation::step() pipeline with set_body_external_torque
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
-    let mut sim = jeod_sim::Simulation::new(time, step_dt);
+    let mut sim = jeod_runner::Simulation::new(time, step_dt);
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_src,
         position: DVec3::ZERO,

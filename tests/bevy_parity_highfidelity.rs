@@ -10,10 +10,10 @@ use bevy_jeod::{
     TidalDeltaC20C, TotalForceC, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
+use jeod_runner::{GravitySourceEntry, RotationModel, SimBody};
 use jeod_sim::{
     GaussJacksonConfig, GaussJacksonState, GravityControl, GravityControls, GravityModel,
-    GravitySource, GravitySourceEntry, IntegratorType, RotationModel, SimBody, TidalBody,
-    TidalConfig, TranslationalState,
+    GravitySource, IntegratorType, TidalBody, TidalConfig, TranslationalState,
 };
 
 use parity_helpers::*;
@@ -83,7 +83,7 @@ fn tier3_bevy_sh4x4_rnp() {
 
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
-    let mut sim = jeod_sim::Simulation::new(time, DT);
+    let mut sim = jeod_runner::Simulation::new(time, DT);
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: sh_source,
         position: DVec3::ZERO,
@@ -192,7 +192,7 @@ fn tier3_bevy_tidal_sh4x4() {
 
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
-    let mut sim = jeod_sim::Simulation::new(time, DT);
+    let mut sim = jeod_runner::Simulation::new(time, DT);
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: sh_source,
         position: DVec3::ZERO,
@@ -250,7 +250,7 @@ fn tier3_bevy_run2p_polar_motion() {
     let bevy_trans = read_trans(app.world(), vehicle);
 
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
-    let mut sim = jeod_sim::Simulation::new(time, DT);
+    let mut sim = jeod_runner::Simulation::new(time, DT);
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
         position: DVec3::ZERO,
@@ -326,7 +326,7 @@ fn run_gj_parity(label: &str, config: GaussJacksonConfig, dt: f64, n_steps: usiz
 
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
-    let mut sim = jeod_sim::Simulation::new(time, dt);
+    let mut sim = jeod_runner::Simulation::new(time, dt);
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: GravitySource {
             mu: MU_EARTH,

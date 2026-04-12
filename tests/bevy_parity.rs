@@ -1,4 +1,4 @@
-//! Bevy App vs jeod_sim::Simulation parity test.
+//! Bevy App vs jeod_runner::Simulation parity test.
 //!
 //! Validates that the Bevy ECS pipeline and the standalone Simulation runner
 //! produce bit-identical state from the same initial conditions. Both go
@@ -17,9 +17,10 @@ use bevy_jeod::{
     TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
+use jeod_runner::RotationModel;
 use jeod_sim::{
     DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource, IntegratorType,
-    JeodQuat, MassProperties, RotationModel, RotationalState, SixDofState, TranslationalState,
+    JeodQuat, MassProperties, RotationalState, SixDofState, TranslationalState,
 };
 
 const MU_EARTH: f64 = 3.986_004_415e14;
@@ -124,13 +125,13 @@ fn run_bevy_steps(app: &mut App, vehicle: Entity) -> SixDofState {
     }
 }
 
-/// Run 100 integration steps via jeod_sim::Simulation with identical
+/// Run 100 integration steps via jeod_runner::Simulation with identical
 /// initial conditions and gravity setup.
 fn run_simulation_steps() -> SixDofState {
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
-    let mut sim = jeod_sim::Simulation::new(time, DT);
+    let mut sim = jeod_runner::Simulation::new(time, DT);
 
-    let earth = sim.add_source(jeod_sim::GravitySourceEntry {
+    let earth = sim.add_source(jeod_runner::GravitySourceEntry {
         source: GravitySource {
             mu: MU_EARTH,
             model: GravityModel::PointMass,
@@ -143,7 +144,7 @@ fn run_simulation_steps() -> SixDofState {
         tidal_config: None,
     });
 
-    sim.add_body(jeod_sim::SimBody {
+    sim.add_body(jeod_runner::SimBody {
         trans: initial_trans(),
         rot: Some(initial_rot()),
         mass: Some(mass_props()),
@@ -211,7 +212,7 @@ fn assert_sixdof_bit_identical(label: &str, a: &SixDofState, b: &SixDofState) {
     }
 }
 
-/// Bevy App vs jeod_sim::Simulation — bit-identical output required.
+/// Bevy App vs jeod_runner::Simulation — bit-identical output required.
 ///
 /// Both paths go through `accumulate_gravity` → `collect_and_resolve_forces`
 /// → `integrate_body` with the same `jeod_*` functions underneath. Any
@@ -275,9 +276,9 @@ fn tier3_bevy_rkf45_matches_simulation_bit_identical() {
 
     // Run Simulation with RKF45
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
-    let mut sim = jeod_sim::Simulation::new(time, DT);
+    let mut sim = jeod_runner::Simulation::new(time, DT);
 
-    let earth = sim.add_source(jeod_sim::GravitySourceEntry {
+    let earth = sim.add_source(jeod_runner::GravitySourceEntry {
         source: GravitySource {
             mu: MU_EARTH,
             model: GravityModel::PointMass,
@@ -290,7 +291,7 @@ fn tier3_bevy_rkf45_matches_simulation_bit_identical() {
         tidal_config: None,
     });
 
-    sim.add_body(jeod_sim::SimBody {
+    sim.add_body(jeod_runner::SimBody {
         trans: initial_trans(),
         rot: Some(initial_rot()),
         mass: Some(mass_props()),

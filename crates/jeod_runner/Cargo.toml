@@ -1,0 +1,27 @@
+[package]
+name = "jeod_runner"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+jeod_sim = { path = "../jeod_sim" }
+jeod_dynamics = { path = "../jeod_dynamics" }
+jeod_gravity = { path = "../jeod_gravity" }
+jeod_time = { path = "../jeod_time" }
+jeod_frames = { path = "../jeod_frames" }
+jeod_interactions = { path = "../jeod_interactions" }
+glam = { workspace = true }
+log = { workspace = true }
+
+[dev-dependencies]
+jeod_test_data = { path = "../jeod_test_data" }
+jeod_math = { path = "../jeod_math" }
+jeod_atmosphere = { path = "../jeod_atmosphere" }
+
+[[example]]
+name = "batch_propagation"
+path = "examples/batch_propagation.rs"
+
+[[example]]
+name = "leo_drag"
+path = "examples/leo_drag.rs"

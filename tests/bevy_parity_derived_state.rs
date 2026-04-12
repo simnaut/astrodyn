@@ -11,9 +11,10 @@ use bevy_jeod::{
     SolarBetaC, SourceInertialPositionC, SunMarker, TotalForceC, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
+use jeod_runner::{GravitySourceEntry, RotationModel, SimBody};
 use jeod_sim::{
     DynamicsConfig, EulerSequence, GravityControl, GravityControls, GravityModel, GravitySource,
-    GravitySourceEntry, PlanetShape, RotationModel, SimBody, SixDofState, TranslationalState,
+    PlanetShape, SixDofState, TranslationalState,
 };
 
 use parity_helpers::*;
@@ -95,7 +96,7 @@ fn tier3_bevy_derived_states() {
 
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
-    let mut sim = jeod_sim::Simulation::new(time, DT);
+    let mut sim = jeod_runner::Simulation::new(time, DT);
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
         position: DVec3::ZERO,
@@ -219,7 +220,7 @@ fn tier3_bevy_geodetic_derived_state() {
 
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
-    let mut sim = jeod_sim::Simulation::new(time, DT);
+    let mut sim = jeod_runner::Simulation::new(time, DT);
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
         position: DVec3::ZERO,
@@ -352,7 +353,7 @@ fn tier3_bevy_eccentric_derived_states() {
 
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
-    let mut sim = jeod_sim::Simulation::new(time, DT);
+    let mut sim = jeod_runner::Simulation::new(time, DT);
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
         position: DVec3::ZERO,
@@ -491,7 +492,7 @@ fn tier3_bevy_polar_geodetic() {
 
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
-    let mut sim = jeod_sim::Simulation::new(time, DT);
+    let mut sim = jeod_runner::Simulation::new(time, DT);
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
         position: DVec3::ZERO,
@@ -601,7 +602,7 @@ fn tier3_bevy_equatorial_solar_beta() {
 
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
-    let mut sim = jeod_sim::Simulation::new(time, DT);
+    let mut sim = jeod_runner::Simulation::new(time, DT);
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
         position: DVec3::ZERO,
@@ -883,7 +884,7 @@ fn run_ned_parity(label: &str, trans: TranslationalState, r_eq: f64, r_pol: f64)
     let bevy_geodetic = app.world().get::<GeodeticStateC>(vehicle).unwrap().0;
 
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
-    let mut sim = jeod_sim::Simulation::new(time, DT);
+    let mut sim = jeod_runner::Simulation::new(time, DT);
     let earth_idx = sim.add_source(GravitySourceEntry {
         source: earth_source(),
         position: DVec3::ZERO,
