@@ -117,11 +117,11 @@ pub struct SimBody {
     /// `None` means no atmosphere (JEOD_INV: AT.01 — absence = inactive).
     pub atmospheric_state: Option<AtmosphereState>,
     /// External force in the inertial frame (N). Added to `total_force.force`
-    /// each step after force collection. Set between steps via `body_mut()`.
+    /// each step after force collection. Set between steps via `set_body_external_force()` / `set_body_external_torque()`.
     /// Defaults to zero (no external force).
     pub external_force: DVec3,
     /// External torque in the body frame (N·m). Added to `total_force.torque`
-    /// each step after force collection. Set between steps via `body_mut()`.
+    /// each step after force collection. Set between steps via `set_body_external_force()` / `set_body_external_torque()`.
     /// Defaults to zero (no external torque).
     pub external_torque: DVec3,
 
@@ -822,11 +822,17 @@ impl Simulation {
             body.frame_derivs = derivs;
 
             // Apply external force/torque (set by caller between steps).
+            // Recompute frame derivatives so they stay consistent with total_force.
             body.total_force.force += body.external_force;
             body.total_force.torque += body.external_torque;
             if body.external_force != DVec3::ZERO {
                 if let Some(mass) = &body.mass {
                     body.frame_derivs.trans_accel += body.external_force * mass.inverse_mass;
+                }
+            }
+            if body.external_torque != DVec3::ZERO {
+                if let Some(mass) = &body.mass {
+                    body.frame_derivs.rot_accel += mass.inverse_inertia * body.external_torque;
                 }
             }
         }
@@ -1025,13 +1031,28 @@ impl Simulation {
         &self.bodies[idx]
     }
 
-    /// Mutable access to a body by index.
+    /// Set the externally applied force (inertial frame, N) for a body.
     ///
-    /// Use between steps to set `external_force` / `external_torque` or update
-    /// dynamic state. Derived-state *configuration* fields (e.g.,
-    /// `orbital_elements_source`) should not be changed after `validate()`.
-    pub fn body_mut(&mut self, idx: usize) -> &mut SimBody {
-        &mut self.bodies[idx]
+    /// Added to `total_force.force` each step after force collection.
+    /// This is the supported post-validation mutation path — it does not
+    /// expose derived-state configuration fields.
+    pub fn set_body_external_force(&mut self, idx: usize, force: DVec3) {
+        self.bodies[idx].external_force = force;
+    }
+
+    /// Set the externally applied torque (body frame, N*m) for a body.
+    ///
+    /// Added to `total_force.torque` each step after force collection.
+    pub fn set_body_external_torque(&mut self, idx: usize, torque: DVec3) {
+        self.bodies[idx].external_torque = torque;
+    }
+
+    /// Set a body's translational position (inertial frame, m).
+    ///
+    /// Used for prescribed-motion tests where position is set externally
+    /// at each timestep (e.g., SIM_2A_SHADOW_CALC).
+    pub fn set_body_position(&mut self, idx: usize, position: DVec3) {
+        self.bodies[idx].trans.position = position;
     }
 
     /// Read-only slice of all bodies.

@@ -141,7 +141,7 @@ fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str, frac_
 
     for (i, record) in records.iter().enumerate() {
         // Set prescribed position (matching JEOD's non-integrated motion)
-        sim.body_mut(0).trans.position = record.position;
+        sim.set_body_position(0, record.position);
 
         // Step to advance time + recompute ephemeris + shadow + SRP
         sim.step();

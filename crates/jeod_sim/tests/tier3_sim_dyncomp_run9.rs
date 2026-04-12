@@ -122,9 +122,8 @@ where
     while sim.elapsed() + dt <= target_time + 0.001 {
         let quat = sim.body(0).rot.as_ref().unwrap().quaternion;
         let (force, torque) = force_torque_fn(sim.elapsed(), &quat);
-        let body = sim.body_mut(0);
-        body.external_force = force;
-        body.external_torque = torque;
+        sim.set_body_external_force(0, force);
+        sim.set_body_external_torque(0, torque);
         sim.step();
     }
     // Fractional remainder
@@ -132,9 +131,8 @@ where
     if remainder > 0.001 {
         let quat = sim.body(0).rot.as_ref().unwrap().quaternion;
         let (force, torque) = force_torque_fn(sim.elapsed(), &quat);
-        let body = sim.body_mut(0);
-        body.external_force = force;
-        body.external_torque = torque;
+        sim.set_body_external_force(0, force);
+        sim.set_body_external_torque(0, torque);
         sim.set_dt(remainder);
         sim.step();
         sim.set_dt(dt);
