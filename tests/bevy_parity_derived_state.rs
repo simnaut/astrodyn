@@ -39,7 +39,7 @@ fn tier3_bevy_derived_states() {
         ))
         .id();
 
-    let sun = app
+    let _sun = app
         .world_mut()
         .spawn((
             Name::new("Sun"),
@@ -50,7 +50,6 @@ fn tier3_bevy_derived_states() {
             }),
         ))
         .id();
-    let _ = sun;
 
     let vehicle = app
         .world_mut()
@@ -297,7 +296,7 @@ fn tier3_bevy_eccentric_derived_states() {
         ))
         .id();
 
-    let sun = app
+    let _sun = app
         .world_mut()
         .spawn((
             Name::new("Sun"),
@@ -308,7 +307,6 @@ fn tier3_bevy_eccentric_derived_states() {
             }),
         ))
         .id();
-    let _ = sun;
 
     let vehicle = app
         .world_mut()
@@ -564,7 +562,7 @@ fn tier3_bevy_equatorial_solar_beta() {
         ))
         .id();
 
-    let sun = app
+    let _sun = app
         .world_mut()
         .spawn((
             Name::new("Sun"),
@@ -575,7 +573,6 @@ fn tier3_bevy_equatorial_solar_beta() {
             }),
         ))
         .id();
-    let _ = sun;
 
     let vehicle = app
         .world_mut()
