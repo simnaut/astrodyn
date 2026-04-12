@@ -4,12 +4,12 @@ mod parity_helpers;
 
 use bevy::prelude::*;
 use bevy_jeod::{
-    AerodynamicForceC, AtmosphereModelR, AtmosphericStateC, DragConfigC, DynamicsConfigC,
-    GravityAccelerationC, GravityControlsC, GravitySourceC, MassPropertiesC, PlanetFixedRotationC,
-    RotationalStateC, SourceInertialPositionC, TotalForceC, TranslationalStateC,
+    AtmosphereModelR, DragConfigC, DynamicsConfigC, GravityControlsC, GravitySourceC,
+    MassPropertiesC, PlanetFixedRotationC, RotationalStateC, SourceInertialPositionC,
+    TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
-use jeod_runner::{GravitySourceEntry, RotationModel};
+use jeod_runner::GravitySourceEntry;
 use jeod_sim::{
     AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig, ExponentialAtmosphere,
     GeoIndexType, GravityControl, GravityControls, MetAtmosphere, SixDofState,
@@ -70,11 +70,7 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
             DragConfigC(drag_config),
-            AtmosphericStateC::default(),
-            AerodynamicForceC::default(),
         ))
         .id();
 
@@ -84,15 +80,7 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(GravitySourceEntry {
-        source: earth_source(),
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+    let earth_idx = sim.add_source(GravitySourceEntry::new(earth_source(), DVec3::ZERO, None));
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Exponential(exp_atmos),
         r_eq: 6_378_137.0,
@@ -102,7 +90,6 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
 
     let mut body = new_sim_body_sixdof(earth_idx, false);
     body.drag = Some(drag_config);
-    body.atmospheric_state = Some(Default::default());
     sim.add_body(body);
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS);
@@ -169,11 +156,7 @@ fn tier3_bevy_constant_density_drag_sixdof() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
             DragConfigC(drag_config),
-            AtmosphericStateC::default(),
-            AerodynamicForceC::default(),
         ))
         .id();
 
@@ -183,15 +166,7 @@ fn tier3_bevy_constant_density_drag_sixdof() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(GravitySourceEntry {
-        source: earth_source(),
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+    let earth_idx = sim.add_source(GravitySourceEntry::new(earth_source(), DVec3::ZERO, None));
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Exponential(exp_atmos),
         r_eq: 6_378_137.0,
@@ -201,7 +176,6 @@ fn tier3_bevy_constant_density_drag_sixdof() {
 
     let mut body = new_sim_body_sixdof(earth_idx, false);
     body.drag = Some(drag_config);
-    body.atmospheric_state = Some(Default::default());
     sim.add_body(body);
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS);
@@ -274,11 +248,7 @@ fn tier3_bevy_met_atmosphere_drag_sixdof() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
             DragConfigC(drag_config),
-            AtmosphericStateC::default(),
-            AerodynamicForceC::default(),
         ))
         .id();
 
@@ -294,7 +264,7 @@ fn tier3_bevy_met_atmosphere_drag_sixdof() {
         velocity: DVec3::ZERO,
         t_inertial_pfix: Some(DMat3::IDENTITY),
         delta_c20: 0.0,
-        rotation_model: RotationModel::EarthRNP,
+        rotation_model: jeod_runner::RotationModel::EarthRNP,
         tidal_config: None,
     });
     sim.atmosphere = Some(AtmosphereConfig {
@@ -307,7 +277,6 @@ fn tier3_bevy_met_atmosphere_drag_sixdof() {
 
     let mut body = new_sim_body_sixdof(earth_idx, false);
     body.drag = Some(drag_config);
-    body.atmospheric_state = Some(Default::default());
     sim.add_body(body);
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS);
@@ -370,15 +339,11 @@ fn tier3_bevy_met_run5a() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
             DragConfigC(DragConfig {
                 cd: 2.2,
                 area: 1000.0,
                 constant_density: None,
             }),
-            AtmosphericStateC::default(),
-            AerodynamicForceC::default(),
         ))
         .id();
 
@@ -394,7 +359,7 @@ fn tier3_bevy_met_run5a() {
         velocity: DVec3::ZERO,
         t_inertial_pfix: Some(DMat3::IDENTITY),
         delta_c20: 0.0,
-        rotation_model: RotationModel::EarthRNP,
+        rotation_model: jeod_runner::RotationModel::EarthRNP,
         tidal_config: None,
     });
     sim.atmosphere = Some(AtmosphereConfig {
@@ -411,7 +376,6 @@ fn tier3_bevy_met_run5a() {
         area: 1000.0,
         constant_density: None,
     });
-    body.atmospheric_state = Some(Default::default());
     sim.add_body(body);
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS);
@@ -478,11 +442,7 @@ fn tier3_bevy_drag_run6b() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
             DragConfigC(drag_config),
-            AtmosphericStateC::default(),
-            AerodynamicForceC::default(),
         ))
         .id();
 
@@ -498,7 +458,7 @@ fn tier3_bevy_drag_run6b() {
         velocity: DVec3::ZERO,
         t_inertial_pfix: Some(DMat3::IDENTITY),
         delta_c20: 0.0,
-        rotation_model: RotationModel::EarthRNP,
+        rotation_model: jeod_runner::RotationModel::EarthRNP,
         tidal_config: None,
     });
     sim.atmosphere = Some(AtmosphereConfig {
@@ -511,7 +471,6 @@ fn tier3_bevy_drag_run6b() {
 
     let mut body = new_sim_body_sixdof(earth_idx, false);
     body.drag = Some(drag_config);
-    body.atmospheric_state = Some(Default::default());
     sim.add_body(body);
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS);

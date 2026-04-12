@@ -16,7 +16,7 @@ mod sim_test_helpers;
 use sim_test_helpers::*;
 
 use glam::DVec3;
-use jeod_runner::{GravitySourceEntry, RotationModel, SimBody, Simulation};
+use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, SrpModel, VehicleConfig};
 use jeod_sim::{
     Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel, GravitySource,
     SimulationTime, TranslationalState,
@@ -177,7 +177,7 @@ fn tier3_simulation_earth_moon_clem() {
     // Store ephemeris for per-step updates
     sim.ephemeris = Some(ephemeris);
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: TranslationalState {
             position: init_pos,
             velocity: init_vel,
@@ -193,7 +193,11 @@ fn tier3_simulation_earth_moon_clem() {
         mass: Some(jeod_sim::MassProperties::new(424.0)),
         // Cannonball SRP matching JEOD Clementine: cx_area=2.1432 m²,
         // albedo=1.0, diffuse=0.27 (from Modified_data/radiation_pressure.py)
-        cannonball_srp: Some((2.1432, 1.0, 0.27)),
+        srp: Some(SrpModel::Cannonball {
+            cx_area: 2.1432,
+            albedo: 1.0,
+            diffuse: 0.27,
+        }),
         ..Default::default()
     });
 

@@ -12,7 +12,10 @@ mod sim_test_helpers;
 use sim_test_helpers::*;
 
 use glam::{DMat3, DVec3};
-use jeod_runner::{GravitySourceEntry, RotationModel, SimBody, Simulation};
+use jeod_runner::{
+    DerivedStateConfig, GeodeticConfig, GravitySourceEntry, RotationModel, Simulation,
+    VehicleConfig,
+};
 use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, SimulationTime,
     TranslationalState,
@@ -87,7 +90,7 @@ fn run_ned_test(
         (GEO_R_EQ, GEO_R_POL) // Ellipsoidal (WGS84)
     };
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: TranslationalState {
             position: init.position,
             velocity: init.velocity,
@@ -95,7 +98,14 @@ fn run_ned_test(
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
-        geodetic_planet: Some((earth, r_eq, r_pol)),
+        derived: DerivedStateConfig {
+            geodetic: Some(GeodeticConfig {
+                source_idx: earth,
+                r_eq,
+                r_pol,
+            }),
+            ..Default::default()
+        },
         ..Default::default()
     });
 

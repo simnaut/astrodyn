@@ -10,10 +10,10 @@ mod sim_test_helpers;
 use sim_test_helpers::*;
 
 use glam::DVec3;
-use jeod_runner::{GravitySourceEntry, SimBody, Simulation};
+use jeod_runner::{GravitySourceEntry, Simulation, VehicleConfig};
 use jeod_sim::{
-    DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource, MassProperties,
-    RotationalState, SimulationTime, TranslationalState,
+    GravityControl, GravityControls, GravityModel, GravitySource, MassProperties, RotationalState,
+    SimulationTime, TranslationalState,
 };
 
 fn load_mu_earth_gemt1() -> f64 {
@@ -118,7 +118,7 @@ fn tier3_sim_time_reversal_run1() {
     let glam_quat = glam::DQuat::from_mat3(&t_inertial_body);
     let init_quat = jeod_math::JeodQuat::new(glam_quat.w, glam_quat.x, glam_quat.y, glam_quat.z);
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: TranslationalState {
             position: init.position,
             velocity: init.velocity,
@@ -128,11 +128,6 @@ fn tier3_sim_time_reversal_run1() {
             ang_vel_body: DVec3::ZERO,
         }),
         mass: Some(MassProperties::new(1.0)), // mass doesn't affect spherical gravity
-        config: DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: true,
-            three_dof: false,
-        },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },

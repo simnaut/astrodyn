@@ -13,7 +13,7 @@ mod sim_test_helpers;
 use sim_test_helpers::*;
 
 use glam::DVec3;
-use jeod_runner::{GravitySourceEntry, RotationModel, SimBody, Simulation};
+use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
 use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, SimulationTime,
     TranslationalState,
@@ -80,7 +80,7 @@ fn tier3_simulation_orbinit_cross_consistency() {
             tidal_config: None,
         });
 
-        sim.add_body(SimBody {
+        sim.add_body(VehicleConfig {
             trans: TranslationalState {
                 position: init.position,
                 velocity: init.velocity,

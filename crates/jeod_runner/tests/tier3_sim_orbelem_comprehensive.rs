@@ -8,7 +8,9 @@ mod sim_test_helpers;
 use sim_test_helpers::*;
 
 use glam::DVec3;
-use jeod_runner::{GravitySourceEntry, RotationModel, SimBody, Simulation};
+use jeod_runner::{
+    DerivedStateConfig, GravitySourceEntry, RotationModel, Simulation, VehicleConfig,
+};
 use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, SimulationTime,
     TranslationalState,
@@ -141,7 +143,7 @@ fn verify_orbit_family(csv_name: &str, label: &str, skip_degenerate_scalars: boo
         tidal_config: None,
     });
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: TranslationalState {
             position: rec.position,
             velocity: rec.velocity,
@@ -149,7 +151,10 @@ fn verify_orbit_family(csv_name: &str, label: &str, skip_degenerate_scalars: boo
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
-        orbital_elements_source: Some(earth),
+        derived: DerivedStateConfig {
+            orbital_elements_source: Some(earth),
+            ..Default::default()
+        },
         ..Default::default()
     });
 
@@ -158,8 +163,8 @@ fn verify_orbit_family(csv_name: &str, label: &str, skip_degenerate_scalars: boo
     // Step once to trigger derived-state computation (stage 9)
     sim.step();
 
-    let oe = sim
-        .body(0)
+    let output = sim.body(0);
+    let oe = output
         .orbital_elements
         .as_ref()
         .unwrap_or_else(|| panic!("{label}: orbital_elements not computed after step()"));

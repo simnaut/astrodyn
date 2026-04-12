@@ -5,11 +5,10 @@ mod parity_helpers;
 
 use bevy::prelude::*;
 use bevy_jeod::{
-    DynamicsConfigC, GravityAccelerationC, GravityControlsC, MassPropertiesC, RotationalStateC,
-    TotalForceC, TranslationalStateC,
+    DynamicsConfigC, GravityControlsC, MassPropertiesC, RotationalStateC, TranslationalStateC,
 };
 use glam::DVec3;
-use jeod_runner::{GravitySourceEntry, RotationModel, SimBody, Simulation};
+use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
 use jeod_sim::{
     DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource, JeodQuat,
     RotationalState, SixDofState, TranslationalState,
@@ -53,8 +52,6 @@ fn tier3_bevy_point_mass_sixdof() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
         ))
         .id();
 
@@ -64,15 +61,7 @@ fn tier3_bevy_point_mass_sixdof() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
-    let earth_idx = sim.add_source(GravitySourceEntry {
-        source: earth_source(),
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+    let earth_idx = sim.add_source(GravitySourceEntry::new(earth_source(), DVec3::ZERO, None));
     sim.add_body(new_sim_body_sixdof(earth_idx, false));
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS);
@@ -101,8 +90,6 @@ fn run_planetary_parity(label: &str, trans: TranslationalState) {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
         ))
         .id();
 
@@ -111,7 +98,7 @@ fn run_planetary_parity(label: &str, trans: TranslationalState) {
 
     // ── Simulation ──
     let (mut sim, earth_idx) = new_sim_earth(DT);
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
@@ -191,8 +178,6 @@ fn tier3_bevy_run2_6dof() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
         ))
         .id();
 
@@ -260,15 +245,13 @@ fn tier3_bevy_orbinit_cross_consistency() {
                 GravityControlsC(GravityControls {
                     controls: vec![GravityControl::new_spherical(planet, false)],
                 }),
-                GravityAccelerationC::default(),
-                TotalForceC::default(),
             ))
             .id();
         step_bevy_dt(&mut app, 1, DT);
         let bevy_trans = read_trans(app.world(), vehicle);
 
         let (mut sim, earth_idx) = new_sim_earth(DT);
-        sim.add_body(SimBody {
+        sim.add_body(VehicleConfig {
             trans: *trans,
             gravity_controls: GravityControls {
                 controls: vec![GravityControl::new_spherical(earth_idx, false)],
@@ -340,7 +323,7 @@ fn tier3_sim_time_reversal_round_trip() {
         DVec3::ZERO,
         None,
     ));
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: iss_trans(),
         rot: Some(tumble_rot()),
         mass: Some(iss_mass()),
@@ -397,7 +380,7 @@ fn tier3_sim_relative_state_consistency() {
         None,
     ));
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: iss_trans(),
         rot: Some(tumble_rot()),
         mass: Some(iss_mass()),
@@ -409,7 +392,7 @@ fn tier3_sim_relative_state_consistency() {
 
     let mut trans_b = iss_trans();
     trans_b.position += DVec3::new(100.0, 0.0, 0.0);
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: trans_b,
         rot: Some(RotationalState {
             quaternion: JeodQuat::identity(),
@@ -531,7 +514,7 @@ fn tier3_sim_mars_rotation_dispatch() {
         tidal_config: None,
     });
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: TranslationalState {
             position: DVec3::new(3.5e6, 0.0, 0.0),
             velocity: DVec3::new(0.0, 3.5e3, 0.0),
@@ -594,7 +577,7 @@ fn tier3_sim_multi_source_rotation() {
         tidal_config: None,
     });
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: iss_trans(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
@@ -681,8 +664,6 @@ fn run_atmosphere_parity(label: &str, trans: TranslationalState) {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, true)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
         ))
         .id();
 
@@ -691,15 +672,10 @@ fn run_atmosphere_parity(label: &str, trans: TranslationalState) {
 
     // ── Simulation ──
     let (mut sim, earth_idx) = new_sim_earth(DT);
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans,
         rot: Some(tumble_rot()),
         mass: Some(iss_mass()),
-        config: DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: true,
-            three_dof: false,
-        },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, true)],
         },

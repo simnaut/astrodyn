@@ -11,12 +11,11 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 use bevy_jeod::{
-    DynamicsConfigC, GaussJacksonStateC, GravityAccelerationC, GravityControlsC, GravitySourceC,
-    IntegratorTypeC, JeodPlugin, SimulationTimeR, SourceInertialPositionC, TotalForceC,
-    TranslationalStateC,
+    DynamicsConfigC, GaussJacksonStateC, GravityControlsC, GravitySourceC, IntegratorTypeC,
+    JeodPlugin, SimulationTimeR, SourceInertialPositionC, TranslationalStateC,
 };
 use glam::DVec3;
-use jeod_runner::{GravitySourceEntry, SimBody, Simulation};
+use jeod_runner::{GravitySourceEntry, Simulation, VehicleConfig};
 use jeod_sim::{
     GaussJacksonConfig, GaussJacksonState, GravityControl, GravityControls, GravityModel,
     GravitySource, IntegratorType, TranslationalState,
@@ -124,8 +123,6 @@ fn run_gj_parity(
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
             IntegratorTypeC(IntegratorType::GaussJackson(config)),
             GaussJacksonStateC(GaussJacksonState::new(config)),
         ))
@@ -139,20 +136,16 @@ fn run_gj_parity(
     time.time_scale_factor = time_scale_factor;
     let mut sim = Simulation::new(time, sim_dt);
 
-    let earth_idx = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
+    let earth_idx = sim.add_source(GravitySourceEntry::new(
+        GravitySource {
             mu: MU_GJ_TEST,
             model: GravityModel::PointMass,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        rotation_model: jeod_runner::RotationModel::None,
-        delta_c20: 0.0,
-        tidal_config: None,
-    });
+        DVec3::ZERO,
+        None,
+    ));
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans,
         integrator: IntegratorType::GaussJackson(config),
         gravity_controls: GravityControls {

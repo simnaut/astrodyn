@@ -4,6 +4,8 @@ use jeod_atmosphere::met::MetAtmosphere;
 use jeod_atmosphere::AtmosphereState;
 use jeod_math::geodetic::cartesian_to_geodetic;
 
+use crate::planet_config::PlanetConfig;
+
 /// Selectable atmosphere model.
 #[derive(Debug, Clone)]
 pub enum AtmosphereModel {
@@ -19,6 +21,9 @@ pub enum AtmosphereModel {
 ///
 /// Bevy adapter wraps this in a `Resource` and adds an `Entity` for planet lookup.
 /// `Simulation` stores the planet source index separately.
+///
+/// Use [`from_planet`](AtmosphereConfig::from_planet) to construct from a
+/// [`PlanetConfig`] preset, avoiding scattered planet constants.
 #[derive(Debug, Clone)]
 pub struct AtmosphereConfig {
     /// The atmosphere model to evaluate.
@@ -31,6 +36,32 @@ pub struct AtmosphereConfig {
     /// Set to 0.0 to disable wind computation.
     /// Earth: 7.292115146706388e-5 rad/s (from JEOD RNPJ2000 data).
     pub planet_omega: f64,
+}
+
+impl AtmosphereConfig {
+    /// Create an atmosphere configuration from a [`PlanetConfig`] preset.
+    ///
+    /// Extracts r_eq, r_pol, and omega from the planet config so that
+    /// constants aren't scattered across multiple configuration sites.
+    ///
+    /// # Example
+    /// ```ignore
+    /// use jeod_sim::{AtmosphereConfig, AtmosphereModel, EARTH};
+    /// use jeod_atmosphere::exponential::ExponentialAtmosphere;
+    ///
+    /// let config = AtmosphereConfig::from_planet(
+    ///     AtmosphereModel::Exponential(ExponentialAtmosphere::default()),
+    ///     &EARTH,
+    /// );
+    /// ```
+    pub fn from_planet(model: AtmosphereModel, planet: &PlanetConfig) -> Self {
+        Self {
+            model,
+            r_eq: planet.shape.r_eq,
+            r_pol: planet.shape.r_pol,
+            planet_omega: planet.omega,
+        }
+    }
 }
 
 /// Evaluate atmosphere at a body's position.

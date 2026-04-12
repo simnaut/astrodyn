@@ -9,16 +9,21 @@
 //!
 //! # Example
 //! ```ignore
-//! use jeod_runner::{Simulation, SimBody, GravitySourceEntry};
-//! use jeod_sim::SimulationTime;
+//! use jeod_runner::{Simulation, VehicleConfig, GravitySourceEntry};
+//! use jeod_sim::{SimulationTime, EARTH};
 //!
 //! let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
 //! let mut sim = Simulation::new(time, 10.0);
-//! let earth = sim.add_source(earth_source);
-//! let vehicle = sim.add_body(vehicle_body);
+//! let earth = sim.add_source(GravitySourceEntry::central_body(&EARTH));
+//! let vehicle = sim.add_body(VehicleConfig {
+//!     trans: initial_state,
+//!     gravity_controls: controls,
+//!     ..Default::default()
+//! });
 //! sim.validate().unwrap();
 //! sim.step_n(100);
-//! println!("{:?}", sim.body(vehicle).trans.position);
+//! let output = sim.body(vehicle);
+//! println!("{:?}", output.trans.position);
 //! ```
 
 use glam::{DMat3, DVec3};
@@ -31,13 +36,22 @@ use jeod_sim::validation::ValidationError;
 use jeod_sim::{
     AerodynamicForce, AtmosphereState, DragConfig, DynamicsConfig, EulerSequence, FrameDerivatives,
     GeodeticState, GravityAcceleration, GravityControls, GravitySource, LvlhFrame, MassProperties,
-    OrbitalElements, RadiationForce, RotationalState, SimulationTime, TotalForce,
+    OrbitalElements, PlanetConfig, RadiationForce, RotationalState, SimulationTime, TotalForce,
     TranslationalState,
 };
+
+pub mod builder;
 
 // Re-export jeod_sim so downstream tests can access types through either path.
 pub use jeod_sim;
 pub use jeod_sim::RotationModel;
+
+// Re-export builder types for ergonomic use.
+pub use builder::{SimulationBuilder, VehicleBuilder};
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Gravity source
+// ══════════════════════════════════════════════════════════════════════════════
 
 /// Entry in the gravity source table.
 ///
@@ -80,15 +94,162 @@ impl GravitySourceEntry {
             tidal_config: None,
         }
     }
+
+    /// Central body at the origin with point-mass gravity and rotation from a
+    /// [`PlanetConfig`] preset.
+    ///
+    /// Sets rotation model and initial identity rotation matrix (if the planet
+    /// has a rotation model). Position and velocity are zero (central body).
+    pub fn central_body(planet: &PlanetConfig) -> Self {
+        Self {
+            source: GravitySource {
+                mu: planet.shape.mu,
+                model: jeod_sim::GravityModel::PointMass,
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: if planet.rotation_model != RotationModel::None {
+                Some(DMat3::IDENTITY)
+            } else {
+                None
+            },
+            rotation_model: planet.rotation_model,
+            delta_c20: 0.0,
+            tidal_config: None,
+        }
+    }
+
+    /// Central body at the origin with spherical harmonics gravity and rotation
+    /// from a [`PlanetConfig`] preset.
+    ///
+    /// Uses `mu` from the spherical harmonics data (which may differ slightly
+    /// from the planet preset's geodetic mu).
+    pub fn central_body_sh(
+        planet: &PlanetConfig,
+        sh_data: jeod_gravity::SphericalHarmonicsData,
+    ) -> Self {
+        Self {
+            source: GravitySource {
+                mu: sh_data.mu,
+                model: jeod_sim::GravityModel::SphericalHarmonics(Box::new(sh_data)),
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: if planet.rotation_model != RotationModel::None {
+                Some(DMat3::IDENTITY)
+            } else {
+                None
+            },
+            rotation_model: planet.rotation_model,
+            delta_c20: 0.0,
+            tidal_config: None,
+        }
+    }
+
+    /// Third body (perturbation source) at a given position.
+    ///
+    /// Point-mass only, no rotation. Typical use: Sun or Moon as a third-body
+    /// perturbation in Earth-centered integration.
+    pub fn third_body(planet: &PlanetConfig, position: DVec3) -> Self {
+        Self {
+            source: GravitySource {
+                mu: planet.shape.mu,
+                model: jeod_sim::GravityModel::PointMass,
+            },
+            position,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: None,
+            rotation_model: RotationModel::None,
+            delta_c20: 0.0,
+            tidal_config: None,
+        }
+    }
+
+    /// Add tidal configuration (builder-style, consumes and returns self).
+    pub fn with_tidal(mut self, config: jeod_gravity::tides::TidalConfig) -> Self {
+        self.tidal_config = Some(config);
+        self
+    }
 }
 
-/// Per-body simulation state and configuration.
+// ══════════════════════════════════════════════════════════════════════════════
+// Vehicle configuration (public, user-facing)
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Solar radiation pressure model — mutually exclusive variants.
+#[derive(Debug, Clone)]
+pub enum SrpModel {
+    /// Per-plate modeling with thermal emission.
+    FlatPlate(jeod_sim::FlatPlateState),
+    /// Simple cannonball model.
+    Cannonball {
+        /// Effective cross-section area (m²).
+        cx_area: f64,
+        /// Surface albedo.
+        albedo: f64,
+        /// Diffuse reflection fraction.
+        diffuse: f64,
+    },
+}
+
+/// Shadow-casting body for SRP eclipse computation.
+#[derive(Debug, Clone, Copy)]
+pub struct ShadowBody {
+    /// Index into the gravity source table.
+    pub source_idx: usize,
+    /// Body radius (m) for eclipse geometry.
+    pub radius: f64,
+}
+
+/// Geodetic computation configuration.
+#[derive(Debug, Clone, Copy)]
+pub struct GeodeticConfig {
+    /// Gravity source index (must have `t_inertial_pfix` for planet-fixed rotation).
+    pub source_idx: usize,
+    /// Equatorial radius (m).
+    pub r_eq: f64,
+    /// Polar radius (m).
+    pub r_pol: f64,
+}
+
+/// Earth lighting computation configuration.
+#[derive(Debug, Clone, Copy)]
+pub struct EarthLightingConfig {
+    /// Earth mean radius (m) for eclipse geometry.
+    pub earth_radius: f64,
+    /// Moon mean radius (m) for eclipse geometry.
+    pub moon_radius: f64,
+    /// Sun mean radius (m) for eclipse geometry.
+    pub sun_radius: f64,
+}
+
+/// All derived-state requests for a vehicle, grouped in one place.
+#[derive(Debug, Clone, Default)]
+pub struct DerivedStateConfig {
+    /// Gravity source index for orbital elements. `None` = skip.
+    pub orbital_elements_source: Option<usize>,
+    /// Euler angle decomposition sequence. `None` = skip.
+    pub euler_sequence: Option<EulerSequence>,
+    /// Whether to compute LVLH frame each step.
+    pub lvlh: bool,
+    /// Geodetic computation config. `None` = skip.
+    pub geodetic: Option<GeodeticConfig>,
+    /// Whether to compute solar beta angle. Requires `sun_source` on Simulation.
+    pub solar_beta: bool,
+    /// Earth lighting config. Requires `sun_source` and `moon_source`.
+    pub earth_lighting: Option<EarthLightingConfig>,
+}
+
+/// User-facing vehicle configuration.
 ///
-/// Combines dynamic state (integrated), configuration (fixed), and computed
-/// intermediates (written each step). In an ECS, these would be separate
-/// components; here they are co-located for standalone use.
-pub struct SimBody {
-    // ── Dynamic state (integrated each step) ──
+/// Passed to [`Simulation::add_body`] to create a simulated vehicle.
+/// Contains initial state plus all physics configuration. No output fields —
+/// results are accessed via [`Simulation::body`] which returns [`VehicleOutput`].
+///
+/// Use the builder ([`VehicleConfig::builder`]) for ergonomic construction, or
+/// struct literal syntax with `..Default::default()` for direct access.
+pub struct VehicleConfig {
+    // ── Initial state ──
     /// Translational state: position and velocity in the inertial frame.
     pub trans: TranslationalState,
     /// Rotational state: quaternion and angular velocity. `None` for 3-DOF bodies.
@@ -96,77 +257,76 @@ pub struct SimBody {
     /// Mass properties. `None` for massless test particles (gravity-only).
     pub mass: Option<MassProperties>,
 
-    // ── Configuration (fixed between steps) ──
-    /// Dynamics flags: translational/rotational/three_dof.
-    pub config: DynamicsConfig,
-    /// Gravity controls referencing sources by index.
-    pub gravity_controls: GravityControls<usize>,
+    // ── Dynamics ──
     /// Integration method. Defaults to `IntegratorType::Rk4`.
     pub integrator: jeod_dynamics::IntegratorType,
-    /// Drag configuration. `None` disables drag.
-    pub drag: Option<DragConfig>,
-    /// Flat-plate SRP configuration with thermal state. `None` disables SRP.
-    pub flat_plate_state: Option<jeod_sim::FlatPlateState>,
-    /// Cannonball SRP: `(cx_area_m2, albedo, diffuse)`. Uses JEOD's
-    /// `RadiationDefaultSurface` formula. Mutually exclusive with flat-plate.
-    pub cannonball_srp: Option<(f64, f64, f64)>,
-    /// Shadow-casting body: `(source_index, body_radius_m)`.
-    /// Used by SRP (flat-plate or cannonball) for eclipse computation.
-    pub shadow_body: Option<(usize, f64)>,
     /// Structural-to-body rotation matrix. `DMat3::IDENTITY` when structure = body.
     pub t_struct_body: DMat3,
-    /// Whether to compute gravity gradient torque for this body.
-    pub compute_gravity_torque: bool,
-    /// Set to `Some(Default)` to enable atmosphere computation for this body.
-    /// `None` means no atmosphere (JEOD_INV: AT.01 — absence = inactive).
-    pub atmospheric_state: Option<AtmosphereState>,
-    /// External force in the inertial frame (N). Added to `total_force.force`
-    /// each step after force collection. Set between steps via
-    /// [`Simulation::set_body_external_force`]. Defaults to zero.
+
+    // ── Gravity ──
+    /// Gravity controls referencing sources by index.
+    pub gravity_controls: GravityControls<usize>,
+    /// Whether to compute gravity gradient (needed for gravity torque).
+    pub compute_gravity_gradient: bool,
+
+    // ── Interactions ──
+    /// Drag configuration. `None` disables drag.
+    pub drag: Option<DragConfig>,
+    /// Solar radiation pressure model. `None` disables SRP.
+    pub srp: Option<SrpModel>,
+    /// Shadow-casting body for SRP eclipse. `None` = full illumination.
+    pub shadow_body: Option<ShadowBody>,
+
+    // ── Derived state requests ──
+    /// Derived state computation requests.
+    pub derived: DerivedStateConfig,
+
+    // ── External loads ──
+    /// External force in the inertial frame (N). Defaults to zero.
     pub external_force: DVec3,
-    /// External torque in the body frame (N·m). Added to `total_force.torque`
-    /// each step after force collection. Set between steps via
-    /// [`Simulation::set_body_external_torque`]. Defaults to zero.
+    /// External torque in the body frame (N·m). Defaults to zero.
     pub external_torque: DVec3,
+}
 
-    // ── Computed intermediates (written each step, readable after) ──
-    /// Accumulated gravitational acceleration, gradient, and potential.
-    pub gravity_accel: GravityAcceleration,
-    /// Total non-gravity force (inertial) and torque (body).
-    pub total_force: TotalForce,
-    /// Frame derivatives (translational and rotational acceleration).
-    pub frame_derivs: FrameDerivatives,
-    /// Aerodynamic force and torque in structural frame.
-    pub aero_force: Option<AerodynamicForce>,
-    /// Radiation force (inertial) and torque (structural).
-    pub radiation_force: Option<RadiationForce>,
-    /// Gravity gradient torque in body frame.
-    pub gravity_torque: Option<DVec3>,
+impl Default for VehicleConfig {
+    fn default() -> Self {
+        Self {
+            trans: TranslationalState::default(),
+            rot: None,
+            mass: None,
+            integrator: jeod_dynamics::IntegratorType::default(),
+            t_struct_body: DMat3::IDENTITY,
+            gravity_controls: GravityControls::default(),
+            compute_gravity_gradient: false,
+            drag: None,
+            srp: None,
+            shadow_body: None,
+            derived: DerivedStateConfig::default(),
+            external_force: DVec3::ZERO,
+            external_torque: DVec3::ZERO,
+        }
+    }
+}
 
-    // ── Derived state configuration (optional per-body) ──
-    /// Gravity source index for orbital elements computation. `None` = skip.
-    /// `mu` is read from the corresponding `GravitySourceEntry` at runtime,
-    /// ensuring consistency with the dynamics gravity model.
-    pub orbital_elements_source: Option<usize>,
-    /// Euler angle decomposition sequence. `None` = skip.
-    pub euler_sequence: Option<EulerSequence>,
-    /// Whether to compute LVLH frame each step.
-    pub compute_lvlh: bool,
-    /// Planet source for geodetic: `(source_idx, r_eq, r_pol)`. `None` = skip.
-    pub geodetic_planet: Option<(usize, f64, f64)>,
-    /// Whether to compute solar beta angle each step. Requires `sun_source` on Simulation.
-    pub compute_solar_beta: bool,
-    /// Earth lighting configuration: `(earth_radius, moon_radius, sun_radius)` in metres.
-    /// When `Some`, earth lighting is computed each step using Sun/Moon/Earth positions
-    /// from the Simulation's source table. Requires `sun_source` and `moon_source`.
-    pub earth_lighting_config: Option<(f64, f64, f64)>,
+// ══════════════════════════════════════════════════════════════════════════════
+// Vehicle output (public, read-only view of results after step)
+// ══════════════════════════════════════════════════════════════════════════════
 
-    // ── Derived state outputs (written each step if configured) ──
-    /// Orbital elements from latest translational state.
+/// Read-only view of vehicle state after stepping.
+///
+/// Returned by [`Simulation::body`]. Contains the current integrated state
+/// plus any derived states that were configured.
+#[derive(Debug, Clone)]
+pub struct VehicleOutput {
+    /// Current translational state (position, velocity) in inertial frame.
+    pub trans: TranslationalState,
+    /// Current rotational state (quaternion, angular velocity). `None` for 3-DOF.
+    pub rot: Option<RotationalState>,
+    /// Orbital elements from the latest step.
     pub orbital_elements: Option<OrbitalElements>,
-    /// Euler angles `[phi, theta, psi]` from latest rotational state.
+    /// Euler angles `[phi, theta, psi]` from the latest step.
     pub euler_angles: Option<[f64; 3]>,
-    /// LVLH frame from latest translational state.
+    /// LVLH frame from the latest step.
     pub lvlh_frame: Option<LvlhFrame>,
     /// Geodetic state (latitude, longitude, altitude).
     pub geodetic_state: Option<GeodeticState>,
@@ -174,54 +334,156 @@ pub struct SimBody {
     pub solar_beta: Option<f64>,
     /// Earth lighting state (sun/moon occlusion, albedo).
     pub earth_lighting: Option<jeod_interactions::earth_lighting::EarthLightingState>,
-
-    // ── Stateful integrator state ──
-    /// Gauss-Jackson (Störmer-Cowell) integrator state. `None` for non-GJ bodies.
-    /// Auto-initialized by `Simulation::validate()` when `integrator` is
-    /// `IntegratorType::GaussJackson(config)`.
-    pub gj_state: Option<jeod_dynamics::GaussJacksonState>,
 }
 
-impl Default for SimBody {
-    fn default() -> Self {
+// ══════════════════════════════════════════════════════════════════════════════
+// Internal body state (private — not part of public API)
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Internal per-body simulation state. Combines user config with bookkeeping
+/// and output fields. Not exposed publicly — users interact through
+/// [`VehicleConfig`] (input) and [`VehicleOutput`] (output).
+struct SimBody {
+    // ── Config (from VehicleConfig) ──
+    trans: TranslationalState,
+    rot: Option<RotationalState>,
+    mass: Option<MassProperties>,
+    config: DynamicsConfig,
+    gravity_controls: GravityControls<usize>,
+    integrator: jeod_dynamics::IntegratorType,
+    drag: Option<DragConfig>,
+    flat_plate_state: Option<jeod_sim::FlatPlateState>,
+    cannonball_srp: Option<(f64, f64, f64)>,
+    shadow_body: Option<(usize, f64)>,
+    t_struct_body: DMat3,
+    compute_gravity_torque: bool,
+    atmospheric_state: Option<AtmosphereState>,
+    external_force: DVec3,
+    external_torque: DVec3,
+
+    // ── Bookkeeping (written each step, not user-visible) ──
+    gravity_accel: GravityAcceleration,
+    total_force: TotalForce,
+    frame_derivs: FrameDerivatives,
+    aero_force: Option<AerodynamicForce>,
+    radiation_force: Option<RadiationForce>,
+    gravity_torque: Option<DVec3>,
+
+    // ── Derived state config ──
+    orbital_elements_source: Option<usize>,
+    euler_sequence: Option<EulerSequence>,
+    compute_lvlh: bool,
+    geodetic_planet: Option<(usize, f64, f64)>,
+    compute_solar_beta: bool,
+    earth_lighting_config: Option<(f64, f64, f64)>,
+
+    // ── Derived state outputs ──
+    orbital_elements: Option<OrbitalElements>,
+    euler_angles: Option<[f64; 3]>,
+    lvlh_frame: Option<LvlhFrame>,
+    geodetic_state: Option<GeodeticState>,
+    solar_beta: Option<f64>,
+    earth_lighting: Option<jeod_interactions::earth_lighting::EarthLightingState>,
+
+    // ── Integrator state ──
+    gj_state: Option<jeod_dynamics::GaussJacksonState>,
+}
+
+impl SimBody {
+    /// Convert a user-facing VehicleConfig into an internal SimBody.
+    fn from_config(config: VehicleConfig) -> Self {
+        let has_rot = config.rot.is_some();
+        let dynamics_config = DynamicsConfig {
+            translational_dynamics: true,
+            rotational_dynamics: has_rot,
+            three_dof: !has_rot,
+        };
+
+        let (flat_plate_state, cannonball_srp) = match config.srp {
+            Some(SrpModel::FlatPlate(fps)) => (Some(fps), None),
+            Some(SrpModel::Cannonball {
+                cx_area,
+                albedo,
+                diffuse,
+            }) => (None, Some((cx_area, albedo, diffuse))),
+            None => (None, None),
+        };
+
+        let shadow_body = config.shadow_body.map(|sb| (sb.source_idx, sb.radius));
+
+        let has_drag = config.drag.is_some();
+        let atmospheric_state = if has_drag {
+            Some(AtmosphereState::default())
+        } else {
+            None
+        };
+
         Self {
-            trans: TranslationalState::default(),
-            rot: None,
-            mass: None,
-            config: DynamicsConfig::default(),
-            integrator: jeod_dynamics::IntegratorType::default(),
-            gravity_controls: GravityControls::default(),
-            drag: None,
-            flat_plate_state: None,
-            cannonball_srp: None,
-            shadow_body: None,
-            t_struct_body: DMat3::IDENTITY,
-            compute_gravity_torque: false,
-            atmospheric_state: None,
-            external_force: DVec3::ZERO,
-            external_torque: DVec3::ZERO,
+            trans: config.trans,
+            rot: config.rot,
+            mass: config.mass,
+            config: dynamics_config,
+            gravity_controls: config.gravity_controls,
+            integrator: config.integrator,
+            drag: config.drag,
+            flat_plate_state,
+            cannonball_srp,
+            shadow_body,
+            t_struct_body: config.t_struct_body,
+            compute_gravity_torque: config.compute_gravity_gradient,
+            atmospheric_state,
+            external_force: config.external_force,
+            external_torque: config.external_torque,
+
             gravity_accel: GravityAcceleration::default(),
             total_force: TotalForce::default(),
             frame_derivs: FrameDerivatives::default(),
             aero_force: None,
             radiation_force: None,
             gravity_torque: None,
-            orbital_elements_source: None,
-            euler_sequence: None,
-            compute_lvlh: false,
-            geodetic_planet: None,
-            compute_solar_beta: false,
-            earth_lighting_config: None,
+
+            orbital_elements_source: config.derived.orbital_elements_source,
+            euler_sequence: config.derived.euler_sequence,
+            compute_lvlh: config.derived.lvlh,
+            geodetic_planet: config
+                .derived
+                .geodetic
+                .map(|g| (g.source_idx, g.r_eq, g.r_pol)),
+            compute_solar_beta: config.derived.solar_beta,
+            earth_lighting_config: config
+                .derived
+                .earth_lighting
+                .map(|e| (e.earth_radius, e.moon_radius, e.sun_radius)),
+
             orbital_elements: None,
             euler_angles: None,
             lvlh_frame: None,
             geodetic_state: None,
             solar_beta: None,
             earth_lighting: None,
+
             gj_state: None,
         }
     }
+
+    /// Create a VehicleOutput view of the current state.
+    fn output(&self) -> VehicleOutput {
+        VehicleOutput {
+            trans: self.trans,
+            rot: self.rot,
+            orbital_elements: self.orbital_elements.clone(),
+            euler_angles: self.euler_angles,
+            lvlh_frame: self.lvlh_frame,
+            geodetic_state: self.geodetic_state,
+            solar_beta: self.solar_beta,
+            earth_lighting: self.earth_lighting.clone(),
+        }
+    }
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Simulation
+// ══════════════════════════════════════════════════════════════════════════════
 
 /// ECS-agnostic simulation runner.
 ///
@@ -233,16 +495,20 @@ impl Default for SimBody {
 /// # Example
 /// ```ignore
 /// let mut sim = Simulation::new(time, 10.0);
-/// let earth = sim.add_source(earth_source);
-/// let vehicle = sim.add_body(vehicle_body);
+/// let earth = sim.add_source(GravitySourceEntry::central_body(&EARTH));
+/// let vehicle = sim.add_body(VehicleConfig {
+///     trans: initial_state,
+///     gravity_controls: controls,
+///     ..Default::default()
+/// });
 /// sim.validate().unwrap();
 /// sim.step_n(100);
-/// println!("{:?}", sim.body(vehicle).trans.position);
+/// let output = sim.body(vehicle);
 /// ```
 pub struct Simulation {
     /// Simulation time (TAI, UTC, TDB, GMST, etc.).
     pub time: SimulationTime,
-    /// Dynamic bodies.
+    /// Dynamic bodies (internal, private).
     // JEOD_INV: DS.01 — private to prevent runtime mutation of derived-state config
     bodies: Vec<SimBody>,
     /// Gravity sources.
@@ -258,18 +524,12 @@ pub struct Simulation {
     /// Polar motion parameters (xp, yp) in radians. When `Some`, the RNP
     /// composition includes polar motion: W(xp,yp) × R(GAST) × N × P.
     /// When `None`, polar motion is omitted (matches JEOD `enable_polar=false`).
-    ///
-    /// For static simulations, set this once. For time-varying polar motion,
-    /// update before each step from IERS EOP data (table interpolation).
     pub polar_motion: Option<(f64, f64)>,
     /// Integration timestep (seconds).
     pub dt: f64,
     /// Optional ephemeris for per-step source position updates.
-    /// When set, sources with `ephemeris_body` configured will have their
-    /// position (and velocity) updated from DE421 each step.
     pub ephemeris: Option<jeod_sim::Ephemeris>,
     /// Per-source ephemeris body mapping. Index matches `sources` vector.
-    /// `None` means the source position is static (not updated from ephemeris).
     pub source_ephem_bodies: Vec<Option<(jeod_sim::EphemerisBody, jeod_sim::EphemerisBody)>>,
 }
 
@@ -318,10 +578,13 @@ impl Simulation {
         self.source_ephem_bodies[source_idx] = Some((target, observer));
     }
 
-    /// Add a dynamic body. Returns its index.
-    pub fn add_body(&mut self, body: SimBody) -> usize {
+    /// Add a dynamic body from a [`VehicleConfig`]. Returns its index.
+    ///
+    /// The config is consumed and converted into internal state. Use
+    /// [`body`](Simulation::body) to access results after stepping.
+    pub fn add_body(&mut self, config: VehicleConfig) -> usize {
         let idx = self.bodies.len();
-        self.bodies.push(body);
+        self.bodies.push(SimBody::from_config(config));
         idx
     }
 
@@ -1030,16 +1293,17 @@ impl Simulation {
     }
 
     // JEOD_INV: DS.01 — derived state config immutable after init; read-only access only
-    /// Access a body by index (read-only).
-    pub fn body(&self, idx: usize) -> &SimBody {
-        &self.bodies[idx]
+    /// Get the current output state of a body by index.
+    ///
+    /// Returns a [`VehicleOutput`] containing the current integrated state
+    /// plus any derived states that were configured.
+    pub fn body(&self, idx: usize) -> VehicleOutput {
+        self.bodies[idx].output()
     }
 
     /// Set the externally applied force (inertial frame, N) for a body.
     ///
     /// Added to `total_force.force` each step after force collection.
-    /// This is the supported post-validation mutation path — it does not
-    /// expose derived-state configuration fields.
     pub fn set_body_external_force(&mut self, idx: usize, force: DVec3) {
         self.bodies[idx].external_force = force;
     }
@@ -1057,11 +1321,6 @@ impl Simulation {
     /// at each timestep (e.g., SIM_2A_SHADOW_CALC).
     pub fn set_body_position(&mut self, idx: usize, position: DVec3) {
         self.bodies[idx].trans.position = position;
-    }
-
-    /// Read-only slice of all bodies.
-    pub fn bodies(&self) -> &[SimBody] {
-        &self.bodies
     }
 
     /// Number of bodies in the simulation.

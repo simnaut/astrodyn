@@ -7,10 +7,12 @@ mod sim_test_helpers;
 use sim_test_helpers::*;
 
 use glam::{DMat3, DVec3};
-use jeod_runner::{GravitySourceEntry, RotationModel, SimBody, Simulation};
+use jeod_runner::{
+    DerivedStateConfig, GravitySourceEntry, RotationModel, Simulation, VehicleConfig,
+};
 use jeod_sim::{
-    DynamicsConfig, EulerSequence, GravityControl, GravityControls, GravityModel, GravitySource,
-    JeodQuat, MassProperties, RotationalState, SimulationTime, TranslationalState,
+    EulerSequence, GravityControl, GravityControls, GravityModel, GravitySource, JeodQuat,
+    MassProperties, RotationalState, SimulationTime, TranslationalState,
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
@@ -74,7 +76,7 @@ fn tier3_simulation_euler() {
         tidal_config: None,
     });
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: TranslationalState {
             position: init.composite_body.position,
             velocity: init.composite_body.velocity,
@@ -84,15 +86,13 @@ fn tier3_simulation_euler() {
             ang_vel_body: init.composite_body.ang_vel,
         }),
         mass: Some(mass_props),
-        config: DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: true,
-            three_dof: false,
-        },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
-        euler_sequence: Some(EulerSequence::XYZ),
+        derived: DerivedStateConfig {
+            euler_sequence: Some(EulerSequence::XYZ),
+            ..Default::default()
+        },
         ..Default::default()
     });
 
@@ -140,10 +140,10 @@ fn tier3_simulation_euler() {
 
         our_states.push(StateLog {
             time: record.time,
-            acceleration: Some(body.frame_derivs.trans_accel),
+            acceleration: None,
             quaternion: Some(body.rot.as_ref().unwrap().quaternion.to_glam()),
             ang_vel: Some(body.rot.as_ref().unwrap().ang_vel_body),
-            ang_accel: Some(body.frame_derivs.rot_accel),
+            ang_accel: None,
             ..Default::default()
         });
         ref_states.push(StateLog {

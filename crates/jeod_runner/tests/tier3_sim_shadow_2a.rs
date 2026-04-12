@@ -13,7 +13,9 @@ mod sim_test_helpers;
 use sim_test_helpers::*;
 
 use glam::DVec3;
-use jeod_runner::{GravitySourceEntry, RotationModel, SimBody, Simulation};
+use jeod_runner::{
+    GravitySourceEntry, RotationModel, ShadowBody, Simulation, SrpModel, VehicleConfig,
+};
 use jeod_sim::{
     compute_shadow_fraction, solar_flux_at_distance, Ephemeris, EphemerisBody, GravityModel,
     GravitySource, SimulationTime, TranslationalState, SOLAR_RADIUS,
@@ -110,21 +112,21 @@ fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str, frac_
     // Position is set from reference data at each timestep to match JEOD's
     // test configuration, which explicitly disables integration.
     let init = &records[0];
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: TranslationalState {
             position: init.position,
             velocity: DVec3::ZERO,
         },
-        // Disable integration — SIM_2A uses prescribed (non-integrated) motion.
-        // Position is set externally via set_body_position() each step.
-        config: jeod_sim::DynamicsConfig {
-            translational_dynamics: false,
-            rotational_dynamics: false,
-            three_dof: false,
-        },
         mass: Some(jeod_sim::MassProperties::new(1.0)),
-        shadow_body: Some((earth, R_EARTH)),
-        cannonball_srp: Some((1.0, 0.0, 0.5)),
+        shadow_body: Some(ShadowBody {
+            source_idx: earth,
+            radius: R_EARTH,
+        }),
+        srp: Some(SrpModel::Cannonball {
+            cx_area: 1.0,
+            albedo: 0.0,
+            diffuse: 0.5,
+        }),
         ..Default::default()
     });
 

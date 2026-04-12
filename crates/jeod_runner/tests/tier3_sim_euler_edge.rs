@@ -11,10 +11,12 @@ mod sim_test_helpers;
 use sim_test_helpers::*;
 
 use glam::{DMat3, DVec3};
-use jeod_runner::{GravitySourceEntry, RotationModel, SimBody, Simulation};
+use jeod_runner::{
+    DerivedStateConfig, GravitySourceEntry, RotationModel, Simulation, VehicleConfig,
+};
 use jeod_sim::{
-    DynamicsConfig, EulerSequence, GravityControl, GravityControls, GravityModel, GravitySource,
-    MassProperties, RotationalState, SimulationTime, TranslationalState,
+    EulerSequence, GravityControl, GravityControls, GravityModel, GravitySource, MassProperties,
+    RotationalState, SimulationTime, TranslationalState,
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
@@ -82,7 +84,7 @@ fn run_euler_test(csv_filename: &str, label: &str, test_name: &str, quat_tol: f6
         tidal_config: None,
     });
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: TranslationalState {
             position: init.position,
             velocity: init.velocity,
@@ -92,15 +94,13 @@ fn run_euler_test(csv_filename: &str, label: &str, test_name: &str, quat_tol: f6
             ang_vel_body: DVec3::ZERO, // SIM_Euler initializes with zero angular velocity
         }),
         mass: Some(mass_props),
-        config: DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: true,
-            three_dof: false,
-        },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
-        euler_sequence: Some(EulerSequence::XYZ),
+        derived: DerivedStateConfig {
+            euler_sequence: Some(EulerSequence::XYZ),
+            ..Default::default()
+        },
         ..Default::default()
     });
 

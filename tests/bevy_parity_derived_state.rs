@@ -6,12 +6,14 @@ mod parity_helpers;
 use bevy::prelude::*;
 use bevy_jeod::{
     DynamicsConfigC, EulerAnglesC, EulerAnglesConfigC, GeodeticConfigC, GeodeticStateC,
-    GravityAccelerationC, GravityControlsC, GravitySourceC, LvlhFrameC, MassPropertiesC,
-    OrbitalElementsC, OrbitalElementsConfigC, PlanetC, PlanetFixedRotationC, RotationalStateC,
-    SolarBetaC, SourceInertialPositionC, SunMarker, TotalForceC, TranslationalStateC,
+    GravityControlsC, GravitySourceC, LvlhFrameC, MassPropertiesC, OrbitalElementsC,
+    OrbitalElementsConfigC, PlanetC, PlanetFixedRotationC, RotationalStateC, SolarBetaC,
+    SourceInertialPositionC, SunMarker, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
-use jeod_runner::{GravitySourceEntry, RotationModel, SimBody};
+use jeod_runner::{
+    DerivedStateConfig, GeodeticConfig, GravitySourceEntry, RotationModel, VehicleConfig,
+};
 use jeod_sim::{
     DynamicsConfig, EulerSequence, GravityControl, GravityControls, GravityModel, GravitySource,
     PlanetShape, SixDofState, TranslationalState,
@@ -66,16 +68,12 @@ fn tier3_bevy_derived_states() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
             OrbitalElementsConfigC {
                 gravity_source: planet,
             },
-            OrbitalElementsC::default(),
             EulerAnglesConfigC {
                 sequence: EulerSequence::ZYX,
             },
-            EulerAnglesC::default(),
             LvlhFrameC::default(),
             SolarBetaC::default(),
         ))
@@ -97,34 +95,25 @@ fn tier3_bevy_derived_states() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(GravitySourceEntry {
-        source: earth_source(),
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
-    let sun_idx = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
+    let earth_idx = sim.add_source(GravitySourceEntry::new(earth_source(), DVec3::ZERO, None));
+    let sun_idx = sim.add_source(GravitySourceEntry::new(
+        GravitySource {
             mu: 0.0,
             model: GravityModel::PointMass,
         },
-        position: sun_pos,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+        sun_pos,
+        None,
+    ));
     sim.sun_source = Some(sun_idx);
 
     let mut body = new_sim_body_sixdof(earth_idx, false);
-    body.orbital_elements_source = Some(earth_idx);
-    body.euler_sequence = Some(EulerSequence::ZYX);
-    body.compute_lvlh = true;
-    body.compute_solar_beta = true;
+    body.derived = DerivedStateConfig {
+        orbital_elements_source: Some(earth_idx),
+        euler_sequence: Some(EulerSequence::ZYX),
+        lvlh: true,
+        solar_beta: true,
+        ..Default::default()
+    };
     sim.add_body(body);
 
     sim.validate().unwrap();
@@ -206,10 +195,7 @@ fn tier3_bevy_geodetic_derived_state() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
             GeodeticConfigC { planet },
-            GeodeticStateC::default(),
         ))
         .id();
 
@@ -231,12 +217,19 @@ fn tier3_bevy_geodetic_derived_state() {
         tidal_config: None,
     });
 
-    let body = SimBody {
+    let body = VehicleConfig {
         trans: iss_trans(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
-        geodetic_planet: Some((earth_idx, earth_shape.r_eq, earth_shape.r_pol)),
+        derived: DerivedStateConfig {
+            geodetic: Some(GeodeticConfig {
+                source_idx: earth_idx,
+                r_eq: earth_shape.r_eq,
+                r_pol: earth_shape.r_pol,
+            }),
+            ..Default::default()
+        },
         ..Default::default()
     };
     sim.add_body(body);
@@ -323,16 +316,12 @@ fn tier3_bevy_eccentric_derived_states() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
             OrbitalElementsConfigC {
                 gravity_source: planet,
             },
-            OrbitalElementsC::default(),
             EulerAnglesConfigC {
                 sequence: EulerSequence::XYZ,
             },
-            EulerAnglesC::default(),
             LvlhFrameC::default(),
             SolarBetaC::default(),
         ))
@@ -354,45 +343,31 @@ fn tier3_bevy_eccentric_derived_states() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(GravitySourceEntry {
-        source: earth_source(),
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
-    let sun_idx = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
+    let earth_idx = sim.add_source(GravitySourceEntry::new(earth_source(), DVec3::ZERO, None));
+    let sun_idx = sim.add_source(GravitySourceEntry::new(
+        GravitySource {
             mu: 0.0,
             model: GravityModel::PointMass,
         },
-        position: sun_pos,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+        sun_pos,
+        None,
+    ));
     sim.sun_source = Some(sun_idx);
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: ecc_trans,
         rot: Some(tumble_rot()),
         mass: Some(iss_mass()),
-        config: DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: true,
-            three_dof: false,
-        },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
-        orbital_elements_source: Some(earth_idx),
-        euler_sequence: Some(EulerSequence::XYZ),
-        compute_lvlh: true,
-        compute_solar_beta: true,
+        derived: DerivedStateConfig {
+            orbital_elements_source: Some(earth_idx),
+            euler_sequence: Some(EulerSequence::XYZ),
+            lvlh: true,
+            solar_beta: true,
+            ..Default::default()
+        },
         ..Default::default()
     });
     sim.validate().unwrap();
@@ -478,10 +453,7 @@ fn tier3_bevy_polar_geodetic() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
             GeodeticConfigC { planet },
-            GeodeticStateC::default(),
         ))
         .id();
 
@@ -503,12 +475,19 @@ fn tier3_bevy_polar_geodetic() {
         tidal_config: None,
     });
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: polar_trans,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
-        geodetic_planet: Some((earth_idx, r_sph, r_sph)),
+        derived: DerivedStateConfig {
+            geodetic: Some(GeodeticConfig {
+                source_idx: earth_idx,
+                r_eq: r_sph,
+                r_pol: r_sph,
+            }),
+            ..Default::default()
+        },
         ..Default::default()
     });
 
@@ -589,8 +568,6 @@ fn tier3_bevy_equatorial_solar_beta() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
             SolarBetaC::default(),
         ))
         .id();
@@ -603,42 +580,28 @@ fn tier3_bevy_equatorial_solar_beta() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(GravitySourceEntry {
-        source: earth_source(),
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
-    let sun_idx = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
+    let earth_idx = sim.add_source(GravitySourceEntry::new(earth_source(), DVec3::ZERO, None));
+    let sun_idx = sim.add_source(GravitySourceEntry::new(
+        GravitySource {
             mu: 0.0,
             model: GravityModel::PointMass,
         },
-        position: sun_pos,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+        sun_pos,
+        None,
+    ));
     sim.sun_source = Some(sun_idx);
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: iss_trans(),
         rot: Some(tumble_rot()),
         mass: Some(iss_mass()),
-        config: DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: true,
-            three_dof: false,
-        },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
-        compute_solar_beta: true,
+        derived: DerivedStateConfig {
+            solar_beta: true,
+            ..Default::default()
+        },
         ..Default::default()
     });
     sim.validate().unwrap();
@@ -690,10 +653,7 @@ fn run_euler_parity(label: &str, trans: TranslationalState, sequence: EulerSeque
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
             EulerAnglesConfigC { sequence },
-            EulerAnglesC::default(),
         ))
         .id();
 
@@ -702,19 +662,17 @@ fn run_euler_parity(label: &str, trans: TranslationalState, sequence: EulerSeque
     let bevy_euler = app.world().get::<EulerAnglesC>(vehicle).unwrap().0;
 
     let (mut sim, earth_idx) = new_sim_earth(DT);
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans,
         rot: Some(tumble_rot()),
         mass: Some(iss_mass()),
-        config: DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: true,
-            three_dof: false,
-        },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
-        euler_sequence: Some(sequence),
+        derived: DerivedStateConfig {
+            euler_sequence: Some(sequence),
+            ..Default::default()
+        },
         ..Default::default()
     });
     sim.validate().unwrap();
@@ -776,8 +734,6 @@ fn run_lvlh_parity(label: &str, trans: TranslationalState) {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
             LvlhFrameC::default(),
         ))
         .id();
@@ -787,12 +743,15 @@ fn run_lvlh_parity(label: &str, trans: TranslationalState) {
     let bevy_lvlh = app.world().get::<LvlhFrameC>(vehicle).unwrap().0;
 
     let (mut sim, earth_idx) = new_sim_earth(DT);
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
-        compute_lvlh: true,
+        derived: DerivedStateConfig {
+            lvlh: true,
+            ..Default::default()
+        },
         ..Default::default()
     });
     sim.validate().unwrap();
@@ -872,10 +831,7 @@ fn run_ned_parity(label: &str, trans: TranslationalState, r_eq: f64, r_pol: f64)
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
             GeodeticConfigC { planet },
-            GeodeticStateC::default(),
         ))
         .id();
 
@@ -895,12 +851,19 @@ fn run_ned_parity(label: &str, trans: TranslationalState, r_eq: f64, r_pol: f64)
         tidal_config: None,
     });
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
-        geodetic_planet: Some((earth_idx, r_eq, r_pol)),
+        derived: DerivedStateConfig {
+            geodetic: Some(GeodeticConfig {
+                source_idx: earth_idx,
+                r_eq,
+                r_pol,
+            }),
+            ..Default::default()
+        },
         ..Default::default()
     });
     sim.validate().unwrap();
@@ -952,12 +915,9 @@ fn run_orbelem_parity(label: &str, trans: TranslationalState) {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
             OrbitalElementsConfigC {
                 gravity_source: planet,
             },
-            OrbitalElementsC::default(),
         ))
         .id();
 
@@ -970,18 +930,22 @@ fn run_orbelem_parity(label: &str, trans: TranslationalState) {
         .clone();
 
     let (mut sim, earth_idx) = new_sim_earth(tiny_dt);
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
-        orbital_elements_source: Some(earth_idx),
+        derived: DerivedStateConfig {
+            orbital_elements_source: Some(earth_idx),
+            ..Default::default()
+        },
         ..Default::default()
     });
     sim.validate().unwrap();
     sim.step();
 
-    let sim_oe = sim.body(0).orbital_elements.as_ref().expect("OE computed");
+    let sim_output = sim.body(0);
+    let sim_oe = sim_output.orbital_elements.as_ref().expect("OE computed");
     assert_orbital_elements_eq(&format!("Bevy vs Sim OE ({label})"), &bevy_oe, sim_oe);
 }
 
@@ -1069,12 +1033,9 @@ fn tier3_bevy_orbelem() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
             OrbitalElementsConfigC {
                 gravity_source: planet,
             },
-            OrbitalElementsC::default(),
         ))
         .id();
 
@@ -1087,18 +1048,22 @@ fn tier3_bevy_orbelem() {
         .clone();
 
     let (mut sim, earth_idx) = new_sim_earth(DT);
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: ecc_trans,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
-        orbital_elements_source: Some(earth_idx),
+        derived: DerivedStateConfig {
+            orbital_elements_source: Some(earth_idx),
+            ..Default::default()
+        },
         ..Default::default()
     });
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS);
 
-    let sim_oe = sim.body(0).orbital_elements.as_ref().expect("OE computed");
+    let sim_output = sim.body(0);
+    let sim_oe = sim_output.orbital_elements.as_ref().expect("OE computed");
     assert_orbital_elements_eq("Bevy vs Sim OE (timeseries)", &bevy_oe, sim_oe);
 }
 
@@ -1134,8 +1099,6 @@ fn tier3_bevy_solar_beta() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
             SolarBetaC::default(),
         ))
         .id();
@@ -1144,26 +1107,25 @@ fn tier3_bevy_solar_beta() {
     let bevy_beta = app.world().get::<SolarBetaC>(vehicle).unwrap().0;
 
     let (mut sim, earth_idx) = new_sim_earth(DT);
-    let sun_idx = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
+    let sun_idx = sim.add_source(GravitySourceEntry::new(
+        GravitySource {
             mu: 0.0,
             model: GravityModel::PointMass,
         },
-        position: sun_pos,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+        sun_pos,
+        None,
+    ));
     sim.sun_source = Some(sun_idx);
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: inc_trans,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
-        compute_solar_beta: true,
+        derived: DerivedStateConfig {
+            solar_beta: true,
+            ..Default::default()
+        },
         ..Default::default()
     });
     sim.validate().unwrap();

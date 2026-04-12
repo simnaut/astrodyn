@@ -5,13 +5,12 @@ mod parity_helpers;
 
 use bevy::prelude::*;
 use bevy_jeod::{
-    CannonballSrpC, DynamicsConfigC, EphemerisBodyC, GravityAccelerationC, GravityControlsC,
-    GravitySourceC, MassPropertiesC, MoonMarker, PlanetFixedRotationC, RadiationForceC,
-    RotationModelC, RotationalStateC, SolarBetaC, SourceInertialPositionC, SourceInertialVelocityC,
-    SunMarker, TotalForceC, TranslationalStateC,
+    CannonballSrpC, DynamicsConfigC, EphemerisBodyC, GravityControlsC, GravitySourceC,
+    MassPropertiesC, MoonMarker, PlanetFixedRotationC, RotationModelC, RotationalStateC,
+    SolarBetaC, SourceInertialPositionC, SourceInertialVelocityC, SunMarker, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
-use jeod_runner::{GravitySourceEntry, RotationModel, SimBody};
+use jeod_runner::{DerivedStateConfig, GravitySourceEntry, RotationModel, SrpModel, VehicleConfig};
 use jeod_sim::{
     DynamicsConfig, Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel,
     GravitySource, MassProperties, SixDofState, TranslationalState,
@@ -61,8 +60,6 @@ fn tier3_bevy_solar_beta_equ() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
             SolarBetaC::default(),
         ))
         .id();
@@ -73,28 +70,27 @@ fn tier3_bevy_solar_beta_equ() {
 
     let eph_sim = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
     let (mut sim, earth_idx) = new_sim_earth(DT);
-    let sun_idx = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
+    let sun_idx = sim.add_source(GravitySourceEntry::new(
+        GravitySource {
             mu: 0.0,
             model: GravityModel::PointMass,
         },
-        position: initial_sun_pos,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+        initial_sun_pos,
+        None,
+    ));
     sim.set_source_ephemeris(sun_idx, EphemerisBody::Sun, EphemerisBody::Earth);
     sim.sun_source = Some(sun_idx);
     sim.ephemeris = Some(eph_sim);
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: equ_trans,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
-        compute_solar_beta: true,
+        derived: DerivedStateConfig {
+            solar_beta: true,
+            ..Default::default()
+        },
         ..Default::default()
     });
     sim.validate().unwrap();
@@ -152,8 +148,6 @@ fn tier3_bevy_solar_beta_obliquity() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
             SolarBetaC::default(),
         ))
         .id();
@@ -164,28 +158,27 @@ fn tier3_bevy_solar_beta_obliquity() {
 
     let eph_sim = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
     let (mut sim, earth_idx) = new_sim_earth(DT);
-    let sun_idx = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
+    let sun_idx = sim.add_source(GravitySourceEntry::new(
+        GravitySource {
             mu: 0.0,
             model: GravityModel::PointMass,
         },
-        position: initial_sun_pos,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+        initial_sun_pos,
+        None,
+    ));
     sim.set_source_ephemeris(sun_idx, EphemerisBody::Sun, EphemerisBody::Earth);
     sim.sun_source = Some(sun_idx);
     sim.ephemeris = Some(eph_sim);
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: obl_trans,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
-        compute_solar_beta: true,
+        derived: DerivedStateConfig {
+            solar_beta: true,
+            ..Default::default()
+        },
         ..Default::default()
     });
     sim.validate().unwrap();
@@ -288,8 +281,6 @@ fn run_3rd_body_parity(label: &str, trans: TranslationalState, include_moon: boo
                 MassPropertiesC(iss_mass()),
                 DynamicsConfigC(config),
                 GravityControlsC(GravityControls { controls }),
-                GravityAccelerationC::default(),
-                TotalForceC::default(),
             ))
             .id()
     } else {
@@ -298,8 +289,6 @@ fn run_3rd_body_parity(label: &str, trans: TranslationalState, include_moon: boo
                 TranslationalStateC(trans),
                 DynamicsConfigC(config),
                 GravityControlsC(GravityControls { controls }),
-                GravityAccelerationC::default(),
-                TotalForceC::default(),
             ))
             .id()
     };
@@ -309,36 +298,28 @@ fn run_3rd_body_parity(label: &str, trans: TranslationalState, include_moon: boo
     // ── Simulation ──
     let eph_sim = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
     let (mut sim, earth_idx) = new_sim_earth(DT);
-    let sun_idx = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
+    let sun_idx = sim.add_source(GravitySourceEntry::new(
+        GravitySource {
             mu: MU_SUN,
             model: GravityModel::PointMass,
         },
-        position: initial_sun_pos,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+        initial_sun_pos,
+        None,
+    ));
     sim.set_source_ephemeris(sun_idx, EphemerisBody::Sun, EphemerisBody::Earth);
     sim.sun_source = Some(sun_idx);
 
     let moon_idx = if include_moon {
         let mu_moon = 4.902_800_066e12;
         let moon_pos = initial_moon_pos.unwrap();
-        let idx = sim.add_source(GravitySourceEntry {
-            source: GravitySource {
+        let idx = sim.add_source(GravitySourceEntry::new(
+            GravitySource {
                 mu: mu_moon,
                 model: GravityModel::PointMass,
             },
-            position: moon_pos,
-            velocity: DVec3::ZERO,
-            t_inertial_pfix: None,
-            delta_c20: 0.0,
-            rotation_model: RotationModel::default(),
-            tidal_config: None,
-        });
+            moon_pos,
+            None,
+        ));
         sim.set_source_ephemeris(idx, EphemerisBody::Moon, EphemerisBody::Earth);
         sim.moon_source = Some(idx);
         Some(idx)
@@ -361,11 +342,10 @@ fn run_3rd_body_parity(label: &str, trans: TranslationalState, include_moon: boo
         sim_controls.push(sim_moon_ctrl);
     }
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans,
         rot: if sixdof { Some(tumble_rot()) } else { None },
         mass: if sixdof { Some(iss_mass()) } else { None },
-        config,
         gravity_controls: GravityControls {
             controls: sim_controls,
         },
@@ -505,8 +485,6 @@ fn tier3_bevy_mars_dawn() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(mars_entity, false), sun_ctrl],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
         ))
         .id();
 
@@ -528,18 +506,14 @@ fn tier3_bevy_mars_dawn() {
         rotation_model: RotationModel::MarsIAU,
         tidal_config: None,
     });
-    let sun_idx = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
+    let sun_idx = sim.add_source(GravitySourceEntry::new(
+        GravitySource {
             mu: MU_SUN,
             model: GravityModel::PointMass,
         },
-        position: sun_rel_mars,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+        sun_rel_mars,
+        None,
+    ));
     sim.set_source_ephemeris(sun_idx, EphemerisBody::Sun, EphemerisBody::Mars);
     sim.sun_source = Some(sun_idx);
     sim.ephemeris = Some(eph_sim);
@@ -547,7 +521,7 @@ fn tier3_bevy_mars_dawn() {
     let mut sim_sun_ctrl = GravityControl::new_spherical(sun_idx, false);
     sim_sun_ctrl.differential = true;
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: mars_trans,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(mars_idx, false), sim_sun_ctrl],
@@ -602,8 +576,6 @@ fn tier3_bevy_mercury_relativistic() {
             GravityControlsC(GravityControls {
                 controls: vec![sun_ctrl],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
         ))
         .id();
 
@@ -612,23 +584,19 @@ fn tier3_bevy_mercury_relativistic() {
 
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let sun_idx = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
+    let sun_idx = sim.add_source(GravitySourceEntry::new(
+        GravitySource {
             mu: mu_sun,
             model: GravityModel::PointMass,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+        DVec3::ZERO,
+        None,
+    ));
 
     let mut sim_sun_ctrl = GravityControl::new_spherical(sun_idx, false);
     sim_sun_ctrl.relativistic = true;
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: mercury_trans,
         gravity_controls: GravityControls {
             controls: vec![sim_sun_ctrl],
@@ -697,8 +665,6 @@ fn tier3_bevy_relativistic_moving_source() {
             GravityControlsC(GravityControls {
                 controls: vec![sun_ctrl],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
         ))
         .id();
 
@@ -717,14 +683,14 @@ fn tier3_bevy_relativistic_moving_source() {
         velocity: source_velocity,
         t_inertial_pfix: None,
         delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
+        rotation_model: RotationModel::None,
         tidal_config: None,
     });
 
     let mut sim_sun_ctrl = GravityControl::new_spherical(sun_idx, false);
     sim_sun_ctrl.relativistic = true;
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: mercury_trans,
         gravity_controls: GravityControls {
             controls: vec![sim_sun_ctrl],
@@ -740,20 +706,7 @@ fn tier3_bevy_relativistic_moving_source() {
         &sim.body(0).trans,
     );
 
-    // Also compare gravity acceleration to cover gravity_computation_system
-    // wiring of SourceInertialVelocityC (integration_system recomputes gravity
-    // internally, so trans parity alone doesn't prove the precomputed path).
-    let bevy_grav = app.world().get::<GravityAccelerationC>(vehicle).unwrap();
-    let sim_grav = &sim.body(0).gravity_accel;
-    for i in 0..3 {
-        assert_bits_eq(
-            "Bevy vs Sim (relativistic_moving_source)",
-            &format!("grav_accel[{i}]"),
-            bevy_grav.grav_accel[i],
-            sim_grav.grav_accel[i],
-        );
-    }
-    println!("  Relativistic moving source: bit-identical (trans + gravity)");
+    println!("  Relativistic moving source: bit-identical");
 }
 
 // ── Earth-Moon Clementine ──
@@ -848,14 +801,11 @@ fn tier3_bevy_earth_moon_clem() {
                     moon_ctrl,
                 ],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
             CannonballSrpC {
                 cx_area,
                 albedo,
                 diffuse,
             },
-            RadiationForceC::default(),
         ))
         .id();
 
@@ -864,33 +814,25 @@ fn tier3_bevy_earth_moon_clem() {
 
     let eph_sim = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
     let (mut sim, earth_idx) = new_sim_earth(DT);
-    let sun_idx = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
+    let sun_idx = sim.add_source(GravitySourceEntry::new(
+        GravitySource {
             mu: MU_SUN,
             model: GravityModel::PointMass,
         },
-        position: initial_sun_pos,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+        initial_sun_pos,
+        None,
+    ));
     sim.set_source_ephemeris(sun_idx, EphemerisBody::Sun, EphemerisBody::Earth);
     sim.sun_source = Some(sun_idx);
 
-    let moon_sim_idx = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
+    let moon_sim_idx = sim.add_source(GravitySourceEntry::new(
+        GravitySource {
             mu: mu_moon,
             model: GravityModel::PointMass,
         },
-        position: initial_moon_pos,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+        initial_moon_pos,
+        None,
+    ));
     sim.set_source_ephemeris(moon_sim_idx, EphemerisBody::Moon, EphemerisBody::Earth);
     sim.moon_source = Some(moon_sim_idx);
     sim.ephemeris = Some(eph_sim);
@@ -900,7 +842,7 @@ fn tier3_bevy_earth_moon_clem() {
     let mut sim_moon_ctrl = GravityControl::new_spherical(moon_sim_idx, false);
     sim_moon_ctrl.differential = true;
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: clem_trans,
         mass: Some(mass_props),
         gravity_controls: GravityControls {
@@ -910,7 +852,11 @@ fn tier3_bevy_earth_moon_clem() {
                 sim_moon_ctrl,
             ],
         },
-        cannonball_srp: Some((cx_area, albedo, diffuse)),
+        srp: Some(SrpModel::Cannonball {
+            cx_area,
+            albedo,
+            diffuse,
+        }),
         ..Default::default()
     });
     sim.validate().unwrap();

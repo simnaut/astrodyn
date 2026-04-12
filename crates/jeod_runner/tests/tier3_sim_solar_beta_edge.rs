@@ -11,7 +11,9 @@ mod sim_test_helpers;
 use sim_test_helpers::*;
 
 use glam::DVec3;
-use jeod_runner::{GravitySourceEntry, RotationModel, SimBody, Simulation};
+use jeod_runner::{
+    DerivedStateConfig, GravitySourceEntry, RotationModel, Simulation, VehicleConfig,
+};
 use jeod_sim::{
     Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel, GravitySource,
     SimulationTime, TranslationalState,
@@ -149,7 +151,7 @@ fn run_solar_beta_test(
     sim.sun_source = Some(sun);
     sim.ephemeris = Some(ephemeris);
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: TranslationalState {
             position: init.position,
             velocity: init.velocity,
@@ -161,7 +163,10 @@ fn run_solar_beta_test(
                 GravityControl::new_spherical(earth, false)
             }],
         },
-        compute_solar_beta: true,
+        derived: DerivedStateConfig {
+            solar_beta: true,
+            ..Default::default()
+        },
         ..Default::default()
     });
 

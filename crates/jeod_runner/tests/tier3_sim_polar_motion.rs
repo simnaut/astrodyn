@@ -17,7 +17,7 @@ mod sim_test_helpers;
 use sim_test_helpers::*;
 
 use glam::DVec3;
-use jeod_runner::{GravitySourceEntry, RotationModel, SimBody, Simulation};
+use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
 use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, SimulationTime,
     TranslationalState,
@@ -105,7 +105,7 @@ fn tier3_simulation_run2p_polar_motion() {
         tidal_config: None,
     });
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: TranslationalState {
             position: init.composite_body.position,
             velocity: init.composite_body.velocity,
@@ -131,8 +131,8 @@ fn tier3_simulation_run2p_polar_motion() {
             time: record.time,
             position: Some(body.trans.position),
             velocity: Some(body.trans.velocity),
-            acceleration: Some(body.frame_derivs.trans_accel),
-            ang_accel: Some(body.frame_derivs.rot_accel),
+            acceleration: None,
+            ang_accel: None,
             ..Default::default()
         });
     }

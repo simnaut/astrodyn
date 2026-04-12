@@ -6,7 +6,9 @@ mod sim_test_helpers;
 use sim_test_helpers::*;
 
 use glam::{DMat3, DVec3};
-use jeod_runner::{GravitySourceEntry, RotationModel, SimBody, Simulation};
+use jeod_runner::{
+    GravitySourceEntry, RotationModel, ShadowBody, Simulation, SrpModel, VehicleConfig,
+};
 use jeod_sim::{
     Ephemeris, EphemerisBody, FlatPlate, FlatPlateParams, FlatPlateState, FlatPlateThermal,
     GravityControl, GravityControls, GravityModel, GravitySource, MassProperties, SimulationTime,
@@ -234,7 +236,7 @@ fn tier3_simulation_srp_flat_plate() {
     });
     sim.sun_source = Some(sun);
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: TranslationalState {
             position: init.position,
             velocity: init.velocity,
@@ -247,12 +249,15 @@ fn tier3_simulation_srp_flat_plate() {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
-        flat_plate_state: Some(FlatPlateState {
+        srp: Some(SrpModel::FlatPlate(FlatPlateState {
             plates,
             temperatures: vec![init_temp; num_plates],
             t_pow4_cached: vec![init_temp.powi(4); num_plates],
+        })),
+        shadow_body: Some(ShadowBody {
+            source_idx: earth,
+            radius: SRP_R_EARTH,
         }),
-        shadow_body: Some((earth, SRP_R_EARTH)),
         ..Default::default()
     });
 

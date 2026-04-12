@@ -4,13 +4,12 @@ mod parity_helpers;
 
 use bevy::prelude::*;
 use bevy_jeod::{
-    AerodynamicForceC, AtmosphereModelR, AtmosphericStateC, DragConfigC, DynamicsConfigC,
-    FlatPlateConfigC, GravityAccelerationC, GravityControlsC, GravitySourceC, GravityTorqueC,
-    MassPropertiesC, RadiationForceC, RotationalStateC, ShadowBodyC, SourceInertialPositionC,
-    SunMarker, TotalForceC, TranslationalStateC,
+    AtmosphereModelR, DragConfigC, DynamicsConfigC, FlatPlateConfigC, GravityControlsC,
+    GravitySourceC, GravityTorqueC, MassPropertiesC, RotationalStateC, ShadowBodyC,
+    SourceInertialPositionC, SunMarker, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
-use jeod_runner::{GravitySourceEntry, RotationModel, SimBody};
+use jeod_runner::{GravitySourceEntry, ShadowBody as RunnerShadowBody, SrpModel, VehicleConfig};
 use jeod_sim::{
     AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig, ExponentialAtmosphere,
     FlatPlate, FlatPlateParams, FlatPlateThermal, GravityControl, GravityControls, GravityModel,
@@ -100,17 +99,12 @@ fn tier3_bevy_full_stack_sixdof() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, true)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
             DragConfigC(drag_config),
-            AtmosphericStateC::default(),
-            AerodynamicForceC::default(),
             FlatPlateConfigC(jeod_sim::FlatPlateState {
                 plates: srp_plates.clone(),
                 temperatures: vec![270.0],
                 t_pow4_cached: vec![270.0_f64.powi(4)],
             }),
-            RadiationForceC::default(),
             GravityTorqueC::default(),
         ))
         .id();
@@ -121,27 +115,15 @@ fn tier3_bevy_full_stack_sixdof() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(GravitySourceEntry {
-        source: earth_source(),
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
-    let sun_idx = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
+    let earth_idx = sim.add_source(GravitySourceEntry::new(earth_source(), DVec3::ZERO, None));
+    let sun_idx = sim.add_source(GravitySourceEntry::new(
+        GravitySource {
             mu: 0.0,
             model: GravityModel::PointMass,
         },
-        position: sun_pos,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+        sun_pos,
+        None,
+    ));
     sim.sun_source = Some(sun_idx);
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Exponential(exp_atmos),
@@ -152,13 +134,12 @@ fn tier3_bevy_full_stack_sixdof() {
 
     let mut body = new_sim_body_sixdof(earth_idx, true);
     body.drag = Some(drag_config);
-    body.flat_plate_state = Some(jeod_sim::FlatPlateState {
+    body.srp = Some(SrpModel::FlatPlate(jeod_sim::FlatPlateState {
         plates: srp_plates,
         temperatures: vec![270.0],
         t_pow4_cached: vec![270.0_f64.powi(4)],
-    });
-    body.compute_gravity_torque = true;
-    body.atmospheric_state = Some(Default::default());
+    }));
+    body.compute_gravity_gradient = true;
     sim.add_body(body);
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS);
@@ -170,19 +151,6 @@ fn tier3_bevy_full_stack_sixdof() {
     };
 
     assert_sixdof_eq("Bevy vs Sim (full stack)", &bevy_state, &sim_state);
-
-    println!(
-        "  Gravity accel magnitude: {:.6e} m/s^2",
-        body.gravity_accel.grav_accel.length()
-    );
-    println!(
-        "  Total non-grav force:    {:.6e} N",
-        body.total_force.force.length()
-    );
-    println!(
-        "  Total torque:            {:.6e} N*m",
-        body.total_force.torque.length()
-    );
 }
 
 // ── Scenario H: Flat-plate SRP with shadow detection ──
@@ -312,14 +280,11 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
             FlatPlateConfigC(jeod_sim::FlatPlateState {
                 plates: plates_data.clone(),
                 temperatures: vec![init_temp; num_plates],
                 t_pow4_cached: vec![init_temp.powi(4); num_plates],
             }),
-            RadiationForceC::default(),
         ))
         .id();
 
@@ -330,31 +295,19 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
 
-    let earth_idx = sim.add_source(GravitySourceEntry {
-        source: earth_source(),
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+    let earth_idx = sim.add_source(GravitySourceEntry::new(earth_source(), DVec3::ZERO, None));
 
-    let sun_idx = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
+    let sun_idx = sim.add_source(GravitySourceEntry::new(
+        GravitySource {
             mu: 0.0,
             model: GravityModel::PointMass,
         },
-        position: sun_pos,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+        sun_pos,
+        None,
+    ));
     sim.sun_source = Some(sun_idx);
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: TranslationalState {
             position: vehicle_pos,
             velocity: vehicle_vel,
@@ -363,12 +316,15 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
-        flat_plate_state: Some(jeod_sim::FlatPlateState {
+        srp: Some(SrpModel::FlatPlate(jeod_sim::FlatPlateState {
             plates: plates_data,
             temperatures: vec![init_temp; num_plates],
             t_pow4_cached: vec![init_temp.powi(4); num_plates],
+        })),
+        shadow_body: Some(RunnerShadowBody {
+            source_idx: earth_idx,
+            radius: 6_378_137.0,
         }),
-        shadow_body: Some((earth_idx, 6_378_137.0)),
         ..Default::default()
     });
 
@@ -449,14 +405,11 @@ fn run_shadow_parity(label: &str, srp_plates: Vec<(FlatPlate, FlatPlateParams, F
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
             FlatPlateConfigC(jeod_sim::FlatPlateState {
                 plates: srp_plates.clone(),
                 temperatures: vec![270.0; srp_plates.len()],
                 t_pow4_cached: vec![270.0_f64.powi(4); srp_plates.len()],
             }),
-            RadiationForceC::default(),
         ))
         .id();
 
@@ -465,27 +418,26 @@ fn run_shadow_parity(label: &str, srp_plates: Vec<(FlatPlate, FlatPlateParams, F
 
     // ── Simulation ──
     let (mut sim, earth_idx) = new_sim_earth(DT);
-    let sun_idx = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
+    let sun_idx = sim.add_source(GravitySourceEntry::new(
+        GravitySource {
             mu: 0.0,
             model: GravityModel::PointMass,
         },
-        position: sun_pos,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+        sun_pos,
+        None,
+    ));
     sim.sun_source = Some(sun_idx);
 
     let mut body = new_sim_body_sixdof(earth_idx, false);
-    body.flat_plate_state = Some(jeod_sim::FlatPlateState {
+    body.srp = Some(SrpModel::FlatPlate(jeod_sim::FlatPlateState {
         plates: srp_plates.clone(),
         temperatures: vec![270.0; srp_plates.len()],
         t_pow4_cached: vec![270.0_f64.powi(4); srp_plates.len()],
+    }));
+    body.shadow_body = Some(RunnerShadowBody {
+        source_idx: earth_idx,
+        radius: 6_371_000.0,
     });
-    body.shadow_body = Some((earth_idx, 6_371_000.0));
     sim.add_body(body);
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS);
@@ -547,14 +499,11 @@ fn run_srp_basic_parity(
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
             FlatPlateConfigC(jeod_sim::FlatPlateState {
                 plates: srp_plates.clone(),
                 temperatures: vec![270.0; srp_plates.len()],
                 t_pow4_cached: vec![270.0_f64.powi(4); srp_plates.len()],
             }),
-            RadiationForceC::default(),
         ))
         .id();
 
@@ -563,26 +512,22 @@ fn run_srp_basic_parity(
 
     // ── Simulation ──
     let (mut sim, earth_idx) = new_sim_earth(DT);
-    let sun_idx = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
+    let sun_idx = sim.add_source(GravitySourceEntry::new(
+        GravitySource {
             mu: 0.0,
             model: GravityModel::PointMass,
         },
-        position: sun_pos,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+        sun_pos,
+        None,
+    ));
     sim.sun_source = Some(sun_idx);
 
     let mut body = new_sim_body_sixdof(earth_idx, false);
-    body.flat_plate_state = Some(jeod_sim::FlatPlateState {
+    body.srp = Some(SrpModel::FlatPlate(jeod_sim::FlatPlateState {
         plates: srp_plates.clone(),
         temperatures: vec![270.0; srp_plates.len()],
         t_pow4_cached: vec![270.0_f64.powi(4); srp_plates.len()],
-    });
+    }));
     sim.add_body(body);
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS);

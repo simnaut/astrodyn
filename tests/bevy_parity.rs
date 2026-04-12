@@ -12,12 +12,10 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 use bevy_jeod::{
-    DynamicsConfigC, GravityAccelerationC, GravityControlsC, GravitySourceC, IntegratorTypeC,
-    JeodPlugin, MassPropertiesC, RotationalStateC, SourceInertialPositionC, TotalForceC,
-    TranslationalStateC,
+    DynamicsConfigC, GravityControlsC, GravitySourceC, IntegratorTypeC, JeodPlugin,
+    MassPropertiesC, RotationalStateC, SourceInertialPositionC, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
-use jeod_runner::RotationModel;
 use jeod_sim::{
     DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource, IntegratorType,
     JeodQuat, MassProperties, RotationalState, SixDofState, TranslationalState,
@@ -98,8 +96,6 @@ fn build_app() -> (App, Entity, Entity) {
                 three_dof: false,
             }),
             GravityControlsC(controls),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
         ))
         .id();
 
@@ -131,28 +127,19 @@ fn run_simulation_steps() -> SixDofState {
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
 
-    let earth = sim.add_source(jeod_runner::GravitySourceEntry {
-        source: GravitySource {
+    let earth = sim.add_source(jeod_runner::GravitySourceEntry::new(
+        GravitySource {
             mu: MU_EARTH,
             model: GravityModel::PointMass,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+        DVec3::ZERO,
+        None,
+    ));
 
-    sim.add_body(jeod_runner::SimBody {
+    sim.add_body(jeod_runner::VehicleConfig {
         trans: initial_trans(),
         rot: Some(initial_rot()),
         mass: Some(mass_props()),
-        config: DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: true,
-            three_dof: false,
-        },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -266,8 +253,6 @@ fn tier3_bevy_rkf45_matches_simulation_bit_identical() {
                 three_dof: false,
             }),
             GravityControlsC(controls),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
             IntegratorTypeC(IntegratorType::Rkf45),
         ))
         .id();
@@ -278,28 +263,19 @@ fn tier3_bevy_rkf45_matches_simulation_bit_identical() {
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
 
-    let earth = sim.add_source(jeod_runner::GravitySourceEntry {
-        source: GravitySource {
+    let earth = sim.add_source(jeod_runner::GravitySourceEntry::new(
+        GravitySource {
             mu: MU_EARTH,
             model: GravityModel::PointMass,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+        DVec3::ZERO,
+        None,
+    ));
 
-    sim.add_body(jeod_runner::SimBody {
+    sim.add_body(jeod_runner::VehicleConfig {
         trans: initial_trans(),
         rot: Some(initial_rot()),
         mass: Some(mass_props()),
-        config: DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: true,
-            three_dof: false,
-        },
         integrator: IntegratorType::Rkf45,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],

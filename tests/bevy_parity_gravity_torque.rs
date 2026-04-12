@@ -4,12 +4,11 @@ mod parity_helpers;
 
 use bevy::prelude::*;
 use bevy_jeod::{
-    DynamicsConfigC, ExternalForceC, ExternalTorqueC, FrameDerivativesC, GravityAccelerationC,
-    GravityControlsC, GravityTorqueC, MassPropertiesC, RotationalStateC, TotalForceC,
-    TranslationalStateC,
+    DynamicsConfigC, ExternalForceC, ExternalTorqueC, GravityControlsC, GravityTorqueC,
+    MassPropertiesC, RotationalStateC, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
-use jeod_runner::{GravitySourceEntry, RotationModel, SimBody};
+use jeod_runner::{GravitySourceEntry, VehicleConfig};
 use jeod_sim::{
     DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource, JeodQuat,
     MassProperties, RotationalState, SixDofState, TranslationalState,
@@ -53,8 +52,6 @@ fn tier3_bevy_gravity_torque_sixdof() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, true)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
             GravityTorqueC::default(),
         ))
         .id();
@@ -65,18 +62,10 @@ fn tier3_bevy_gravity_torque_sixdof() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(GravitySourceEntry {
-        source: earth_source(),
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+    let earth_idx = sim.add_source(GravitySourceEntry::new(earth_source(), DVec3::ZERO, None));
 
     let mut body = new_sim_body_sixdof(earth_idx, true);
-    body.compute_gravity_torque = true;
+    body.compute_gravity_gradient = true;
     sim.add_body(body);
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS);
@@ -180,20 +169,11 @@ fn tier3_bevy_external_torque_per_body() {
     // Path B: Simulation::step() pipeline with set_body_external_torque
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, step_dt);
-    let earth_idx = sim.add_source(GravitySourceEntry {
-        source: earth_src,
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
-    sim.add_body(SimBody {
+    let earth_idx = sim.add_source(GravitySourceEntry::new(earth_src, DVec3::ZERO, None));
+    sim.add_body(VehicleConfig {
         trans: iss_trans(),
         rot: Some(tumble_rot()),
         mass: Some(mass_props),
-        config,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
@@ -248,8 +228,6 @@ fn run_gravity_torque_parity(label: &str, trans: TranslationalState, rot: Rotati
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, true)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
             GravityTorqueC::default(),
         ))
         .id();
@@ -259,19 +237,14 @@ fn run_gravity_torque_parity(label: &str, trans: TranslationalState, rot: Rotati
 
     // ── Simulation ──
     let (mut sim, earth_idx) = new_sim_earth(DT);
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans,
         rot: Some(rot),
         mass: Some(iss_mass()),
-        config: DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: true,
-            three_dof: false,
-        },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, true)],
         },
-        compute_gravity_torque: true,
+        compute_gravity_gradient: true,
         ..Default::default()
     });
     sim.validate().unwrap();
@@ -347,9 +320,6 @@ fn run_external_parity(
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
-            FrameDerivativesC::default(),
             ExternalForceC::default(),
             ExternalTorqueC::default(),
         ))
@@ -357,15 +327,10 @@ fn run_external_parity(
 
     // ── Simulation ──
     let (mut sim, earth_idx) = new_sim_earth(dt);
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: iss_trans(),
         rot: Some(rot),
         mass: Some(iss_mass()),
-        config: DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: true,
-            three_dof: false,
-        },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },

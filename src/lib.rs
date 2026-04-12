@@ -1,8 +1,10 @@
+pub mod bundles;
 pub mod components;
 pub mod sets;
 pub mod systems;
 pub mod validation;
 
+pub use bundles::*;
 pub use components::*;
 pub use sets::*;
 pub use systems::*;
