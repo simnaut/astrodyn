@@ -6,9 +6,27 @@ Rust reimplementation of [NASA JEOD](https://github.com/nasa/jeod) (JSC Engineer
 Orbital Dynamics, v5.4, 714 C++ source files) using Bevy ECS instead of NASA's Trick.
 See [STRATEGY.md](STRATEGY.md) for architecture and [PLAN.md](PLAN.md) for tasking.
 
+### Environment Setup
+
+Clone JEOD and Trick alongside this repo, then set environment variables:
+
+```bash
+cd /home/user/git   # or wherever your repos live
+git clone https://github.com/nasa/jeod.git
+git clone https://github.com/nasa/trick.git
+
+export JEOD_HOME=$(pwd)/jeod
+export TRICK_HOME=$(pwd)/trick
+```
+
 Copy `.cargo/config.toml.example` to `.cargo/config.toml` and set `JEOD_HOME`
 and `TRICK_HOME` to your local checkouts. Cargo resolves `relative = true`
 paths from the workspace root.
+
+`JEOD_HOME` (or `JEOD_PATH`) is required for any test that loads JEOD source
+files (gravity coefficients, mass data, S_define parameters). Without it,
+unit tests and Bevy parity tests pass but Tier 3 cross-validation tests
+that reference JEOD data will panic with a descriptive error.
 
 ## Three-Layer Architecture (non-negotiable)
 

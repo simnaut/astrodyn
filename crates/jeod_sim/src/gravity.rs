@@ -131,3 +131,70 @@ pub fn accumulate_gravity<'a, S: Copy + std::fmt::Debug>(
 
     total
 }
+
+/// Resolved source for relativistic correction computation.
+///
+/// Provides the mu and position of a gravity source, plus its velocity
+/// for the post-Newtonian coordinate velocity term.
+pub struct ResolvedRelativisticSource {
+    /// Gravitational parameter (m³/s²).
+    pub mu: f64,
+    /// Position of source in the inertial frame (m).
+    pub position: DVec3,
+    /// Velocity of source in the inertial frame (m/s).
+    pub velocity: DVec3,
+}
+
+/// Compute post-Newtonian relativistic corrections for all gravity controls
+/// that have `relativistic: true`.
+///
+/// Returns the total relativistic acceleration correction to be added to
+/// the Newtonian gravity acceleration.
+///
+/// This function iterates over the gravity controls, and for each relativistic
+/// source, builds the "other sources" list and calls
+/// [`jeod_gravity::relativistic::compute_relativistic_correction`].
+///
+/// `source_lookup` resolves source identifiers (index or Entity) to
+/// `ResolvedRelativisticSource` values, the same pattern as `accumulate_gravity`.
+pub fn accumulate_relativistic_corrections<S: Copy + std::fmt::Debug + PartialEq>(
+    body_position: DVec3,
+    body_velocity: DVec3,
+    controls: &GravityControls<S>,
+    source_lookup: impl Fn(S) -> Option<ResolvedRelativisticSource>,
+) -> DVec3 {
+    let mut total_correction = DVec3::ZERO;
+
+    for ctrl in &controls.controls {
+        if !ctrl.relativistic {
+            continue;
+        }
+        let Some(src) = source_lookup(ctrl.source_name) else {
+            continue;
+        };
+        let other: Vec<jeod_gravity::relativistic::RelativisticSource> = controls
+            .controls
+            .iter()
+            .filter(|c| c.source_name != ctrl.source_name)
+            .filter_map(|c| {
+                source_lookup(c.source_name).map(|s| {
+                    jeod_gravity::relativistic::RelativisticSource {
+                        mu: s.mu,
+                        position: s.position,
+                    }
+                })
+            })
+            .collect();
+
+        total_correction += jeod_gravity::relativistic::compute_relativistic_correction(
+            src.mu,
+            src.position,
+            body_position,
+            body_velocity,
+            src.velocity,
+            &other,
+        );
+    }
+
+    total_correction
+}

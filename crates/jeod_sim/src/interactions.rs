@@ -125,3 +125,37 @@ pub fn compute_gravity_torque(grav_grad: &DMat3, rot: &RotationalState, inertia:
     let t_parent_this = rot.quaternion.left_quat_to_transformation();
     jeod_interactions::compute_gravity_torque(grav_grad, &t_parent_this, inertia)
 }
+
+/// Compute cannonball SRP force using JEOD's `RadiationDefaultSurface` formula.
+///
+/// Force = (flux/c) * cx_area * [1 + albedo*diffuse*(4/9)] * flux_hat * illum_factor.
+///
+/// Returns the force vector in the inertial frame (N). Torque is always zero
+/// for the cannonball model (force acts through center of mass).
+///
+/// # Arguments
+/// - `body_pos`: vehicle position in inertial frame (m)
+/// - `sun_pos`: Sun position in inertial frame (m)
+/// - `cx_area`: cross-section area * Cr (m²)
+/// - `albedo`: surface albedo (0–1)
+/// - `diffuse`: diffuse reflection fraction (0–1)
+/// - `illum_factor`: illumination factor from shadow computation (0–1)
+pub fn compute_cannonball_srp(
+    body_pos: DVec3,
+    sun_pos: DVec3,
+    cx_area: f64,
+    albedo: f64,
+    diffuse: f64,
+    illum_factor: f64,
+) -> DVec3 {
+    let sun_to_vehicle = body_pos - sun_pos;
+    let distance = sun_to_vehicle.length();
+    if distance < 1.0 {
+        return DVec3::ZERO;
+    }
+    let flux_hat = sun_to_vehicle / distance;
+    let flux_mag = crate::solar_flux_at_distance(distance);
+    let coeff = 1.0 + albedo * diffuse * (4.0 / 9.0);
+    let force_mag = cx_area * flux_mag / crate::SPEED_OF_LIGHT * coeff * illum_factor;
+    flux_hat * force_mag
+}

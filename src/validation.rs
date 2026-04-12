@@ -8,8 +8,9 @@
 use bevy::prelude::*;
 
 use crate::components::{
-    DynamicsConfigC, FlatPlateConfigC, GravityAccelerationC, GravityControlsC, GravitySourceC,
-    MassPropertiesC, RotationalStateC, TidalConfigC, TidalDeltaC20C, TranslationalStateC,
+    CannonballSrpC, DynamicsConfigC, EarthLightingConfigC, FlatPlateConfigC, GravityAccelerationC,
+    GravityControlsC, GravitySourceC, MassPropertiesC, MoonMarker, RotationalStateC, SolarBetaC,
+    SunMarker, TidalConfigC, TidalDeltaC20C, TranslationalStateC,
 };
 
 /// Validates JEOD invariants on all dynamic body entities.
@@ -43,12 +44,76 @@ pub fn validate_jeod_invariants(
         Option<&TidalDeltaC20C>,
         Option<&crate::components::PlanetFixedRotationC>,
     )>,
+    srp_exclusion: Query<Entity, With<CannonballSrpC>>,
+    derived_state_markers: Query<(
+        Entity,
+        Option<&SolarBetaC>,
+        Option<&EarthLightingConfigC>,
+        Option<&SunMarker>,
+        Option<&MoonMarker>,
+        Option<&TranslationalStateC>,
+    )>,
     mut has_run: Local<bool>,
 ) {
     if *has_run {
         return;
     }
     *has_run = true;
+
+    // Validate derived-state marker prerequisites.
+    // Matches Simulation::validate() which errors on missing sun_source/moon_source.
+    // Count markers and validate they have TranslationalStateC (required by
+    // solar_beta_system/earth_lighting_system queries).
+    let mut sun_count = 0;
+    let mut moon_count = 0;
+    for (entity, _, _, sun, moon, trans) in &derived_state_markers {
+        if sun.is_some() {
+            sun_count += 1;
+            assert!(
+                trans.is_some(),
+                "Entity {entity:?}: SunMarker present but TranslationalStateC is missing. \
+                 Sun entity requires TranslationalStateC for position queries."
+            );
+        }
+        if moon.is_some() {
+            moon_count += 1;
+            assert!(
+                trans.is_some(),
+                "Entity {entity:?}: MoonMarker present but TranslationalStateC is missing. \
+                 Moon entity requires TranslationalStateC for position queries."
+            );
+        }
+    }
+    assert!(
+        sun_count <= 1,
+        "Multiple SunMarker entities found. JEOD assumes exactly one Sun body."
+    );
+    assert!(
+        moon_count <= 1,
+        "Multiple MoonMarker entities found. JEOD assumes exactly one Moon body."
+    );
+    for (entity, solar_beta, earth_lighting, _, _, _) in &derived_state_markers {
+        if solar_beta.is_some() && sun_count == 0 {
+            panic!(
+                "Entity {entity:?}: SolarBetaC present but no SunMarker entity exists. \
+                 Solar beta computation requires exactly one SunMarker entity."
+            );
+        }
+        if earth_lighting.is_some() {
+            if sun_count == 0 {
+                panic!(
+                    "Entity {entity:?}: EarthLightingConfigC present but no SunMarker entity. \
+                     Earth lighting requires both SunMarker and MoonMarker entities."
+                );
+            }
+            if moon_count == 0 {
+                panic!(
+                    "Entity {entity:?}: EarthLightingConfigC present but no MoonMarker entity. \
+                     Earth lighting requires both SunMarker and MoonMarker entities."
+                );
+            }
+        }
+    }
 
     // Validate tidal component pairing on gravity sources.
     for (entity, _config, delta, rotation) in &tidal_sources {
@@ -63,6 +128,17 @@ pub fn validate_jeod_invariants(
              tidal_update_system requires PlanetFixedRotationC to transform tidal body \
              positions into the planet-fixed frame."
         );
+    }
+
+    // Validate SRP mutual exclusion: CannonballSrpC and FlatPlateConfigC
+    // must not coexist on the same entity (both write RadiationForceC).
+    for (entity, _, _, _, _, _, _, flat_plates) in &bodies {
+        if flat_plates.is_some() && srp_exclusion.get(entity).is_ok() {
+            panic!(
+                "Entity {entity:?}: both FlatPlateConfigC and CannonballSrpC are present. \
+                 These are mutually exclusive — use one SRP model per entity."
+            );
+        }
     }
 
     for (entity, config, mut controls, grav_accel, mass, rot_state, trans_state, flat_plates) in

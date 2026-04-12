@@ -51,9 +51,14 @@ pub use derived::{
     compute_relative_state, LvlhRelativeState, RelativeState,
 };
 pub use forces::collect_and_resolve_forces;
-pub use gravity::{accumulate_gravity, ResolvedSource};
+pub use gravity::{
+    accumulate_gravity, accumulate_relativistic_corrections, ResolvedRelativisticSource,
+    ResolvedSource,
+};
 pub use integration::integrate_body;
-pub use interactions::{compute_drag, compute_gravity_torque, FlatPlateState};
+pub use interactions::{
+    compute_cannonball_srp, compute_drag, compute_gravity_torque, FlatPlateState,
+};
 pub use jeod_dynamics::{GaussJacksonConfig, GaussJacksonState, IntegratorResult, IntegratorType};
 pub use pipeline::{PipelineStage, PIPELINE_ORDER};
 pub use simulation::{GravitySourceEntry, RotationModel, SimBody, Simulation};
@@ -90,8 +95,9 @@ pub use jeod_interactions::{
 // jeod_frames: reference frame state
 pub use jeod_frames::RefFrameState;
 
-// jeod_time: simulation time and leap seconds
+// jeod_time: simulation time, leap seconds, and epoch constants
 pub use jeod_time::{
+    epoch::{J2000_TT_JD, J2000_TT_TJT, SECONDS_PER_DAY},
     leap_second::{default_leap_second_table, LeapSecondTable},
     SimulationTime,
 };
@@ -101,6 +107,7 @@ pub use jeod_frames::rotation_j2000::{
     compute_t_parent_this_from_tjt, compute_t_parent_this_from_tjt_with_polar, polar_motion_matrix,
 };
 pub use jeod_frames::rotation_mars;
+pub use jeod_frames::rotation_moon;
 
 // jeod_ephemeris: ephemeris data
 pub use jeod_ephemeris::{Ephemeris, EphemerisBody};

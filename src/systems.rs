@@ -15,28 +15,66 @@ pub fn time_advance_system(mut sim_time: ResMut<SimulationTimeR>, time: Res<Time
 
 // ── Ephemeris / Frames ──
 
-/// Computes the inertial-to-planet-fixed rotation matrix (RNP) for each entity
+/// Computes the inertial-to-planet-fixed rotation matrix for each entity
 /// that carries a `PlanetFixedRotationC` component.
 ///
-/// This replaces the `DMat3::IDENTITY` placeholder so that spherical-harmonic
-/// gravity evaluation uses the correct body-fixed coordinates.
+/// Dispatches per-entity via `RotationModelC`:
 ///
-/// NOTE: Currently applies the same Earth RNP rotation to ALL entities with
-/// `PlanetFixedRotationC`. Multi-planet sims would need per-entity rotation
-/// parameters (Phase 5 work).
+/// - `EarthRNP`: IAU 2000A precession-nutation + GAST + optional polar motion
+/// - `MarsIAU`: IAU pole + spin + nutation Fourier series
+/// - `MoonIAU`: IAU 2009 pole + prime meridian
+/// - `MoonDE421`: DE421 BPC libration (requires `EphemerisR`)
+/// - `None`: skip (leaves `PlanetFixedRotationC` unchanged)
+///
+/// When `RotationModelC` is absent, defaults to `EarthRNP`.
+///
+/// Earth RNP is lazy-computed once per step and reused across all `EarthRNP`
+/// entities.
 pub fn planet_fixed_rotation_system(
     sim_time: Res<SimulationTimeR>,
     polar: Option<Res<crate::PolarMotionR>>,
-    mut query: Query<&mut PlanetFixedRotationC>,
+    ephemeris: Option<Res<crate::EphemerisR>>,
+    mut query: Query<(&mut PlanetFixedRotationC, Option<&RotationModelC>)>,
 ) {
     let polar_params = polar.map(|p| (p.xp, p.yp));
-    let rotation = jeod_sim::compute_t_parent_this_from_tjt_with_polar(
-        sim_time.gmst_seconds,
-        sim_time.tt_tjt(),
-        polar_params,
-    );
-    for mut rot in &mut query {
-        rot.0 = rotation;
+    // Lazy-compute Earth RNP only if needed (most common case).
+    let mut earth_rotation: Option<glam::DMat3> = Option::None;
+    for (mut rot, model) in &mut query {
+        let default_model = jeod_sim::RotationModel::EarthRNP;
+        let rotation_model = model.map_or(&default_model, |m| &m.0);
+        match rotation_model {
+            jeod_sim::RotationModel::None => {}
+            jeod_sim::RotationModel::EarthRNP => {
+                let rotation = *earth_rotation.get_or_insert_with(|| {
+                    jeod_sim::compute_t_parent_this_from_tjt_with_polar(
+                        sim_time.gmst_seconds,
+                        sim_time.tt_tjt(),
+                        polar_params,
+                    )
+                });
+                rot.0 = rotation;
+            }
+            jeod_sim::RotationModel::MarsIAU => {
+                let tt_s_since_j2000 =
+                    (sim_time.tt_tjt() - jeod_sim::J2000_TT_TJT) * jeod_sim::SECONDS_PER_DAY;
+                rot.0 = jeod_sim::rotation_mars::compute_mars_rotation(tt_s_since_j2000);
+            }
+            jeod_sim::RotationModel::MoonIAU => {
+                let tdb_jd = sim_time.tdb_julian_date();
+                let tdb_s_since_j2000 =
+                    (tdb_jd - jeod_sim::J2000_TT_JD) * jeod_sim::SECONDS_PER_DAY;
+                rot.0 = jeod_sim::rotation_moon::compute_moon_rotation(tdb_s_since_j2000);
+            }
+            jeod_sim::RotationModel::MoonDE421 => {
+                let eph = ephemeris
+                    .as_ref()
+                    .expect("MoonDE421 rotation requires EphemerisR resource with BPC loaded.");
+                let tdb_jd = sim_time.tdb_julian_date();
+                rot.0 = eph
+                    .get_body_rotation(jeod_sim::EphemerisBody::Moon, tdb_jd)
+                    .expect("Moon DE421 BPC rotation query failed");
+            }
+        }
     }
 }
 
@@ -49,6 +87,44 @@ pub fn tidal_update_system(
 ) {
     for (config, rotation, mut delta) in &mut query {
         delta.0 = jeod_sim::compute_delta_c20(&config.0, &rotation.0);
+    }
+}
+
+/// Updates source positions from DE4xx ephemeris each step.
+///
+/// Queries entities with `EphemerisBodyC` + `SourceInertialPositionC` and
+/// looks up the current position/velocity from the `EphemerisR` resource.
+/// Also updates `TranslationalStateC` if present (for Sun/Moon entities
+/// used by SRP, solar beta, and earth lighting systems).
+///
+/// Placed in `JeodSet::EphemerisUpdate`.
+pub fn ephemeris_update_system(
+    ephemeris: Option<Res<crate::EphemerisR>>,
+    sim_time: Res<SimulationTimeR>,
+    mut query: Query<(
+        &EphemerisBodyC,
+        &mut SourceInertialPositionC,
+        Option<&mut TranslationalStateC>,
+    )>,
+) {
+    let Some(eph) = ephemeris else {
+        return;
+    };
+    let tdb_jd = sim_time.tdb_julian_date();
+    for (ephem_body, mut source_pos, trans_state) in &mut query {
+        let (pos, vel) = eph
+            .get_state(ephem_body.target, ephem_body.observer, tdb_jd)
+            .unwrap_or_else(|e| {
+                panic!(
+                    "Ephemeris lookup failed for {:?} wrt {:?} at TDB JD {tdb_jd}: {e}",
+                    ephem_body.target, ephem_body.observer,
+                )
+            });
+        source_pos.0 = pos;
+        if let Some(mut ts) = trans_state {
+            ts.0.position = pos;
+            ts.0.velocity = vel;
+        }
     }
 }
 
@@ -92,10 +168,23 @@ pub fn force_collection_system(
         Option<&RadiationForceC>,
         Option<&GravityTorqueC>,
         Option<&StructuralTransformC>,
+        Option<&ExternalForceC>,
+        Option<&ExternalTorqueC>,
     )>,
 ) {
-    for (mut total, derivs, grav, rot_state, mass, aero, srp, grav_torque, struct_xform) in
-        &mut query
+    for (
+        mut total,
+        derivs,
+        grav,
+        rot_state,
+        mass,
+        aero,
+        srp,
+        grav_torque,
+        struct_xform,
+        ext_force,
+        ext_torque,
+    ) in &mut query
     {
         let t_struct_body = struct_xform.map_or(glam::DMat3::IDENTITY, |s| s.0);
         let grav_accel = grav.map_or(DVec3::ZERO, |g| g.grav_accel);
@@ -111,7 +200,7 @@ pub fn force_collection_system(
         });
         let gravity_torque_val = grav_torque.map(|gt| gt.0);
 
-        let (collected, frame_derivs) = jeod_sim::collect_and_resolve_forces(
+        let (collected, mut frame_derivs) = jeod_sim::collect_and_resolve_forces(
             aero_ref.as_ref(),
             srp_ref.as_ref(),
             gravity_torque_val,
@@ -123,6 +212,25 @@ pub fn force_collection_system(
 
         total.force = collected.force;
         total.torque = collected.torque;
+
+        // Apply external force/torque (set by caller between steps).
+        // Matches simulation.rs:846-855 logic.
+        if let Some(ef) = ext_force {
+            if ef.0 != DVec3::ZERO {
+                total.force += ef.0;
+                if let Some(mass) = mass {
+                    frame_derivs.trans_accel += ef.0 * mass.inverse_mass;
+                }
+            }
+        }
+        if let Some(et) = ext_torque {
+            if et.0 != DVec3::ZERO {
+                total.torque += et.0;
+                if let Some(mass) = mass {
+                    frame_derivs.rot_accel += mass.inverse_inertia * et.0;
+                }
+            }
+        }
 
         if let Some(mut derivs) = derivs {
             **derivs = frame_derivs;
@@ -189,44 +297,51 @@ pub fn integration_system(
                  GaussJacksonStateC(GaussJacksonState::new(config))"
             );
         }
-        // Relativistic gravity is not yet wired through the Bevy adapter.
-        // Panic early rather than silently producing Newtonian results.
-        assert!(
-            !controls.0.controls.iter().any(|c| c.relativistic),
-            "Entity {entity:?}: relativistic gravity is enabled but not yet \
-             supported in the Bevy adapter. Use jeod_sim::Simulation directly \
-             for relativistic corrections."
-        );
-
         jeod_sim::integrate_body(
             config,
             &mut state.0,
             rot_state.as_mut().map(|r| &mut r.0),
             mass.map(|m| &m.0),
-            |pos, _vel| {
-                jeod_sim::accumulate_gravity(pos, &controls.0, DVec3::ZERO, |source_entity| {
-                    match sources.get(source_entity) {
-                        Ok((s, r, p, tidal, tidal_config)) => {
-                            Some(jeod_sim::ResolvedSource {
+            |pos, vel| {
+                let mut accel =
+                    jeod_sim::accumulate_gravity(pos, &controls.0, DVec3::ZERO, |source_entity| {
+                        match sources.get(source_entity) {
+                            Ok((s, r, p, tidal, tidal_config)) => Some(jeod_sim::ResolvedSource {
                                 source: &s.0,
                                 rotation: r.map(|r| &r.0),
                                 position: p.0,
                                 delta_c20: tidal.map_or(0.0, |t| t.0),
-                                // JEOD gates on n_deltacoeffs > 0 (tidal config
-                                // present), not on whether ΔC20 component exists.
                                 has_delta_coeffs: tidal_config.is_some(),
-                            })
+                            }),
+                            Err(_) => {
+                                panic!(
+                                    "Entity {entity:?}: GravityControl references source \
+                                     {source_entity:?} which does not exist or lacks \
+                                     GravitySourceC + SourceInertialPositionC."
+                                );
+                            }
                         }
-                        Err(_) => {
-                            panic!(
-                                "Entity {entity:?}: GravityControl references source \
-                                 {source_entity:?} which does not exist or lacks \
-                                 GravitySourceC + SourceInertialPositionC."
-                            );
-                        }
-                    }
-                })
-                .grav_accel
+                    })
+                    .grav_accel;
+
+                // Relativistic correction at each integrator stage.
+                // TODO(#53): source velocity is DVec3::ZERO.
+                accel += jeod_sim::accumulate_relativistic_corrections(
+                    pos,
+                    vel,
+                    &controls.0,
+                    |source_entity| {
+                        sources.get(source_entity).ok().map(|(s, _, p, _, _)| {
+                            jeod_sim::ResolvedRelativisticSource {
+                                mu: s.mu,
+                                position: p.0,
+                                velocity: DVec3::ZERO,
+                            }
+                        })
+                    },
+                );
+
+                accel
             },
             total_force.force,
             total_force.torque,
@@ -285,6 +400,24 @@ pub fn gravity_computation_system(
                          GravitySourceC + SourceInertialPositionC."
                     );
                 }
+            },
+        );
+
+        // Apply relativistic (post-Newtonian PPN) corrections after Newtonian
+        // gravity, matching Simulation::step() stage 4b ordering.
+        // TODO: Source velocity is DVec3::ZERO — see #53.
+        accel.grav_accel += jeod_sim::accumulate_relativistic_corrections(
+            state.position,
+            state.velocity,
+            &controls.0,
+            |source_entity| {
+                sources.get(source_entity).ok().map(|(s, _, p, _, _)| {
+                    jeod_sim::ResolvedRelativisticSource {
+                        mu: s.mu,
+                        position: p.0,
+                        velocity: DVec3::ZERO,
+                    }
+                })
             },
         );
     }
@@ -520,6 +653,68 @@ pub fn solar_beta_system(
     }
 }
 
+/// Compute earth lighting (eclipse/albedo) for entities with `EarthLightingConfigC`.
+///
+/// Requires `SunMarker` and `MoonMarker` entities in the world.
+///
+/// Placed in `JeodSet::DerivedState`.
+#[allow(clippy::type_complexity)]
+pub fn earth_lighting_system(
+    mut query: Query<
+        (
+            &TranslationalStateC,
+            &EarthLightingConfigC,
+            &mut EarthLightingStateC,
+        ),
+        (Without<SunMarker>, Without<MoonMarker>),
+    >,
+    sun_query: Query<&TranslationalStateC, With<SunMarker>>,
+    moon_query: Query<&TranslationalStateC, With<MoonMarker>>,
+) {
+    let sun_state = match sun_query.single() {
+        Ok(s) => s,
+        Err(bevy::ecs::query::QuerySingleError::NoEntities(_)) => {
+            // No SunMarker present: clear stale earth lighting values
+            for (_, _, mut lighting) in &mut query {
+                lighting.0 = Default::default();
+            }
+            return;
+        }
+        Err(bevy::ecs::query::QuerySingleError::MultipleEntities(_)) => {
+            panic!(
+                "Multiple entities with SunMarker found in earth_lighting_system. \
+                 JEOD assumes exactly one Sun body."
+            );
+        }
+    };
+    let moon_state = match moon_query.single() {
+        Ok(s) => s,
+        Err(bevy::ecs::query::QuerySingleError::NoEntities(_)) => {
+            // No MoonMarker present: clear stale earth lighting values
+            for (_, _, mut lighting) in &mut query {
+                lighting.0 = Default::default();
+            }
+            return;
+        }
+        Err(bevy::ecs::query::QuerySingleError::MultipleEntities(_)) => {
+            panic!(
+                "Multiple entities with MoonMarker found in earth_lighting_system. \
+                 JEOD assumes exactly one Moon body."
+            );
+        }
+    };
+    for (state, config, mut lighting) in &mut query {
+        lighting.0 = jeod_sim::compute_earth_lighting(
+            state.position,
+            sun_state.position,
+            moon_state.position,
+            config.sun_radius,
+            config.earth_radius,
+            config.moon_radius,
+        );
+    }
+}
+
 /// Compute flat-plate SRP with thermal emission and shadow detection.
 ///
 // JEOD_INV: IN.06 — RadiationPressure.active gates computation (structural: no FlatPlateConfigC → no SRP)
@@ -543,7 +738,7 @@ pub fn flat_plate_srp_system(
             Option<&StructuralTransformC>,
             &mut RadiationForceC,
         ),
-        Without<SunMarker>,
+        (Without<SunMarker>, Without<CannonballSrpC>),
     >,
     sun_query: Query<&TranslationalStateC, With<SunMarker>>,
     shadow_bodies: Query<(&TranslationalStateC, &ShadowBodyC), Without<SunMarker>>,
@@ -604,5 +799,49 @@ pub fn flat_plate_srp_system(
         if dt > 0.0 {
             flat_config.integrate_temperatures(&srp_result.temp_dots, dt);
         }
+    }
+}
+
+/// Compute cannonball SRP using JEOD's `RadiationDefaultSurface` formula.
+///
+/// Force = (flux/c) * cx_area * [1 + albedo*diffuse*(4/9)] * flux_hat * illum_factor.
+///
+/// For entities with `CannonballSrpC`. Requires `SunMarker` entity in the world.
+/// Optional shadow detection via `ShadowBodyC` entities.
+/// Writes force to `RadiationForceC` (torque is always zero for cannonball).
+///
+/// Placed in `JeodSet::Interaction`.
+#[allow(clippy::type_complexity)]
+pub fn cannonball_srp_system(
+    mut query: Query<
+        (&CannonballSrpC, &TranslationalStateC, &mut RadiationForceC),
+        (Without<SunMarker>, Without<FlatPlateConfigC>),
+    >,
+    sun_query: Query<&TranslationalStateC, With<SunMarker>>,
+    shadow_bodies: Query<(&TranslationalStateC, &ShadowBodyC), Without<SunMarker>>,
+) {
+    let sun_state = match sun_query.single() {
+        Ok(s) => s,
+        Err(bevy::ecs::query::QuerySingleError::NoEntities(_)) => return,
+        Err(bevy::ecs::query::QuerySingleError::MultipleEntities(_)) => {
+            panic!(
+                "Multiple entities with SunMarker found. \
+                 Ensure exactly one Sun entity exists."
+            );
+        }
+    };
+
+    for (config, state, mut srp_force) in &mut query {
+        let illum_factor = compute_illum_factor(state.position, sun_state.position, &shadow_bodies);
+
+        srp_force.force = jeod_sim::compute_cannonball_srp(
+            state.position,
+            sun_state.position,
+            config.cx_area,
+            config.albedo,
+            config.diffuse,
+            illum_factor,
+        );
+        srp_force.torque = DVec3::ZERO;
     }
 }
