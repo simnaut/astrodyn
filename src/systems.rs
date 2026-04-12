@@ -380,6 +380,7 @@ pub fn gravity_computation_system(
         &GravitySourceC,
         Option<&PlanetFixedRotationC>,
         &SourceInertialPositionC,
+        Option<&SourceInertialVelocityC>,
         Option<&TidalDeltaC20C>,
         Option<&TidalConfigC>,
     )>,
@@ -390,15 +391,17 @@ pub fn gravity_computation_system(
             &controls.0,
             DVec3::ZERO,
             |source_entity| match sources.get(source_entity) {
-                Ok((source, rot, pos, tidal, tidal_config)) => Some(jeod_sim::ResolvedSource {
-                    source: &source.0,
-                    rotation: rot.map(|r| &r.0),
-                    position: pos.0,
-                    delta_c20: tidal.map_or(0.0, |t| t.0),
-                    // JEOD gates on n_deltacoeffs > 0 (tidal config
-                    // present), not on whether ΔC20 component exists.
-                    has_delta_coeffs: tidal_config.is_some(),
-                }),
+                Ok((source, rot, pos, _, tidal, tidal_config)) => {
+                    Some(jeod_sim::ResolvedSource {
+                        source: &source.0,
+                        rotation: rot.map(|r| &r.0),
+                        position: pos.0,
+                        delta_c20: tidal.map_or(0.0, |t| t.0),
+                        // JEOD gates on n_deltacoeffs > 0 (tidal config
+                        // present), not on whether ΔC20 component exists.
+                        has_delta_coeffs: tidal_config.is_some(),
+                    })
+                }
                 Err(_) => {
                     panic!(
                         "Entity {entity:?}: GravityControl references source \
@@ -411,17 +414,16 @@ pub fn gravity_computation_system(
 
         // Apply relativistic (post-Newtonian PPN) corrections after Newtonian
         // gravity, matching Simulation::step() stage 4b ordering.
-        // TODO: Source velocity is DVec3::ZERO — see #53.
         accel.grav_accel += jeod_sim::accumulate_relativistic_corrections(
             state.position,
             state.velocity,
             &controls.0,
             |source_entity| {
-                sources.get(source_entity).ok().map(|(s, _, p, _, _)| {
+                sources.get(source_entity).ok().map(|(s, _, p, v, _, _)| {
                     jeod_sim::ResolvedRelativisticSource {
                         mu: s.mu,
                         position: p.0,
-                        velocity: DVec3::ZERO,
+                        velocity: v.map_or(DVec3::ZERO, |v| v.0),
                     }
                 })
             },

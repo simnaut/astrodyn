@@ -66,12 +66,14 @@ pub struct SourceInertialPositionC(pub DVec3);
 
 /// Inertial-frame velocity of a gravity source (m/s).
 ///
-/// For the central body (e.g., Earth in an Earth-centered sim), this is
-/// typically `DVec3::ZERO`. For third bodies (Sun, Moon), this value is
-/// maintained by the `ephemeris_update_system`.
+/// Optional component. For the central body (e.g., Earth in an Earth-centered
+/// sim), this is typically `DVec3::ZERO`. For third bodies (Sun, Moon), attach
+/// this component alongside [`EphemerisBodyC`] and the `ephemeris_update_system`
+/// will populate it each step. When absent, relativistic corrections fall back
+/// to zero source velocity.
 ///
-/// Used by the integration system to provide source velocity to the
-/// relativistic correction computation. Stored separately from
+/// Used by the gravity and integration systems to provide source velocity to
+/// the relativistic correction computation. Stored separately from
 /// `TranslationalStateC` to avoid Bevy query conflicts (the body's
 /// `TranslationalStateC` is already mutably queried by the integration system).
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]

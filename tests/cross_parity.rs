@@ -31,8 +31,8 @@ use bevy_jeod::{
     GravitySourceC, GravityTorqueC, IntegratorTypeC, JeodPlugin, LvlhFrameC, MassPropertiesC,
     MoonMarker, OrbitalElementsC, OrbitalElementsConfigC, PlanetC, PlanetFixedRotationC,
     RadiationForceC, RotationModelC, RotationalStateC, ShadowBodyC, SolarBetaC,
-    SourceInertialPositionC, SunMarker, TidalConfigC, TidalDeltaC20C, TotalForceC,
-    TranslationalStateC,
+    SourceInertialPositionC, SourceInertialVelocityC, SunMarker, TidalConfigC, TidalDeltaC20C,
+    TotalForceC, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
 use jeod_sim::{
@@ -5526,6 +5526,102 @@ fn tier3_bevy_mercury_relativistic() {
         &sim.body(0).trans,
     );
     println!("  Mercury relativistic: bit-identical");
+}
+
+/// Relativistic parity with non-zero source velocity.
+///
+/// A satellite orbits a Sun that is itself moving at 30 km/s (as if the Sun
+/// were in a barycentric frame). Both Bevy and Simulation receive the same
+/// non-zero source velocity for the PPN correction. This exercises
+/// `SourceInertialVelocityC` and ensures it is wired through both the
+/// `gravity_computation_system` and `integration_system`.
+#[test]
+fn tier3_bevy_relativistic_moving_source() {
+    println!("Relativistic moving source: Sun with non-zero velocity");
+
+    let mu_sun = 1.327_124_400_18e20;
+    let r_perihelion = 4.6e10;
+    let v_perihelion = 5.898e4;
+    let mercury_trans = TranslationalState {
+        position: DVec3::new(r_perihelion, 0.0, 0.0),
+        velocity: DVec3::new(0.0, v_perihelion, 0.0),
+    };
+
+    // Non-zero source velocity (Sun moving in barycentric frame)
+    let source_velocity = DVec3::new(0.0, 0.0, 3.0e4);
+
+    // ── Bevy ──
+    let mut app = new_bevy_app(DT);
+
+    let sun_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Sun"),
+            SunMarker,
+            GravitySourceC(GravitySource {
+                mu: mu_sun,
+                model: GravityModel::PointMass,
+            }),
+            SourceInertialPositionC::default(),
+            SourceInertialVelocityC(source_velocity),
+            TranslationalStateC::default(),
+        ))
+        .id();
+
+    let mut sun_ctrl = GravityControl::new_spherical(sun_entity, false);
+    sun_ctrl.relativistic = true;
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(mercury_trans),
+            DynamicsConfigC::default(),
+            GravityControlsC(GravityControls {
+                controls: vec![sun_ctrl],
+            }),
+            GravityAccelerationC::default(),
+            TotalForceC::default(),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+    let bevy_trans = read_trans(app.world(), vehicle);
+
+    // ── Simulation ──
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sim = Simulation::new(time, DT);
+    let sun_idx = sim.add_source(GravitySourceEntry {
+        source: GravitySource {
+            mu: mu_sun,
+            model: GravityModel::PointMass,
+        },
+        position: DVec3::ZERO,
+        velocity: source_velocity,
+        t_inertial_pfix: None,
+        delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
+        tidal_config: None,
+    });
+
+    let mut sim_sun_ctrl = GravityControl::new_spherical(sun_idx, false);
+    sim_sun_ctrl.relativistic = true;
+
+    sim.add_body(SimBody {
+        trans: mercury_trans,
+        gravity_controls: GravityControls {
+            controls: vec![sim_sun_ctrl],
+        },
+        ..Default::default()
+    });
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    assert_trans_eq(
+        "Bevy vs Sim (relativistic_moving_source)",
+        &bevy_trans,
+        &sim.body(0).trans,
+    );
+    println!("  Relativistic moving source: bit-identical");
 }
 
 #[test]
