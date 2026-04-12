@@ -177,7 +177,7 @@ pub struct ShadowBodyC {
 /// the `planet_fixed_rotation_system` dispatches to the correct rotation
 /// computation based on this value. When absent, `EarthRNP` is assumed
 /// for backward compatibility.
-#[derive(Component, Debug, Clone, Default, Deref, DerefMut)]
+#[derive(Component, Debug, Clone, Deref, DerefMut)]
 pub struct RotationModelC(pub jeod_sim::RotationModel);
 
 /// Ephemeris body mapping for automatic position updates from DE4xx.

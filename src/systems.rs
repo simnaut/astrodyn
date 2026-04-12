@@ -55,12 +55,14 @@ pub fn planet_fixed_rotation_system(
                 rot.0 = rotation;
             }
             jeod_sim::RotationModel::MarsIAU => {
-                let tt_s_since_j2000 = (sim_time.tt_tjt() - 11544.5) * 86400.0;
+                let tt_s_since_j2000 =
+                    (sim_time.tt_tjt() - jeod_sim::J2000_TT_TJT) * jeod_sim::SECONDS_PER_DAY;
                 rot.0 = jeod_sim::rotation_mars::compute_mars_rotation(tt_s_since_j2000);
             }
             jeod_sim::RotationModel::MoonIAU => {
                 let tdb_jd = sim_time.tdb_julian_date();
-                let tdb_s_since_j2000 = (tdb_jd - 2_451_545.0) * 86400.0;
+                let tdb_s_since_j2000 =
+                    (tdb_jd - jeod_sim::J2000_TT_JD) * jeod_sim::SECONDS_PER_DAY;
                 rot.0 = jeod_sim::rotation_moon::compute_moon_rotation(tdb_s_since_j2000);
             }
             jeod_sim::RotationModel::MoonDE421 => {

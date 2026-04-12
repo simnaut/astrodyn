@@ -4465,48 +4465,67 @@ fn tier3_bevy_run9d_force_torque_rate() {
 // Phase 3: Earth lighting parity tests
 // ══════════════════════════════════════════════════════════════════
 
+fn assert_lighting_body_eq(
+    label: &str,
+    prefix: &str,
+    a: &jeod_sim::LightingBody,
+    b: &jeod_sim::LightingBody,
+) {
+    assert_bits_eq(label, &format!("{prefix}.radius"), a.radius, b.radius);
+    for i in 0..3 {
+        assert_bits_eq(
+            label,
+            &format!("{prefix}.position[{i}]"),
+            a.position[i],
+            b.position[i],
+        );
+    }
+    assert_bits_eq(label, &format!("{prefix}.distance"), a.distance, b.distance);
+    assert_bits_eq(
+        label,
+        &format!("{prefix}.half_angle"),
+        a.half_angle,
+        b.half_angle,
+    );
+}
+
+fn assert_lighting_params_eq(
+    label: &str,
+    prefix: &str,
+    a: &jeod_sim::LightingParams,
+    b: &jeod_sim::LightingParams,
+) {
+    assert_bits_eq(
+        label,
+        &format!("{prefix}.obs_angle"),
+        a.obs_angle,
+        b.obs_angle,
+    );
+    assert_bits_eq(label, &format!("{prefix}.phase"), a.phase, b.phase);
+    assert_bits_eq(
+        label,
+        &format!("{prefix}.occlusion"),
+        a.occlusion,
+        b.occlusion,
+    );
+    assert_bits_eq(label, &format!("{prefix}.visible"), a.visible, b.visible);
+    assert_bits_eq(label, &format!("{prefix}.lighting"), a.lighting, b.lighting);
+}
+
 fn assert_earth_lighting_eq(
     label: &str,
     a: &jeod_sim::EarthLightingState,
     b: &jeod_sim::EarthLightingState,
 ) {
-    assert_bits_eq(
-        label,
-        "sun_earth.visible",
-        a.sun_earth.visible,
-        b.sun_earth.visible,
-    );
-    assert_bits_eq(
-        label,
-        "sun_earth.occlusion",
-        a.sun_earth.occlusion,
-        b.sun_earth.occlusion,
-    );
-    assert_bits_eq(
-        label,
-        "sun_earth.lighting",
-        a.sun_earth.lighting,
-        b.sun_earth.lighting,
-    );
-    assert_bits_eq(
-        label,
-        "moon_earth.visible",
-        a.moon_earth.visible,
-        b.moon_earth.visible,
-    );
-    assert_bits_eq(
-        label,
-        "moon_earth.occlusion",
-        a.moon_earth.occlusion,
-        b.moon_earth.occlusion,
-    );
-    assert_bits_eq(
-        label,
-        "earth_albedo.lighting",
-        a.earth_albedo.lighting,
-        b.earth_albedo.lighting,
-    );
-    println!("  {label}: bit-identical (6 earth lighting fields)");
+    // Body geometry (position, distance, half-angle)
+    assert_lighting_body_eq(label, "sun_body", &a.sun_body, &b.sun_body);
+    assert_lighting_body_eq(label, "earth_body", &a.earth_body, &b.earth_body);
+    assert_lighting_body_eq(label, "moon_body", &a.moon_body, &b.moon_body);
+    // Eclipse/visibility parameters
+    assert_lighting_params_eq(label, "sun_earth", &a.sun_earth, &b.sun_earth);
+    assert_lighting_params_eq(label, "moon_earth", &a.moon_earth, &b.moon_earth);
+    assert_lighting_params_eq(label, "earth_albedo", &a.earth_albedo, &b.earth_albedo);
+    println!("  {label}: bit-identical (all earth lighting fields)");
 }
 
 /// Run an earth lighting parity test with specific vehicle/Sun/Moon positions.

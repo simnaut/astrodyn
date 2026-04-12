@@ -51,6 +51,7 @@ pub fn validate_jeod_invariants(
         Option<&EarthLightingConfigC>,
         Option<&SunMarker>,
         Option<&MoonMarker>,
+        Option<&TranslationalStateC>,
     )>,
     mut has_run: Local<bool>,
 ) {
@@ -61,14 +62,28 @@ pub fn validate_jeod_invariants(
 
     // Validate derived-state marker prerequisites.
     // Matches Simulation::validate() which errors on missing sun_source/moon_source.
-    let sun_count = derived_state_markers
-        .iter()
-        .filter(|(_, _, _, sun, _)| sun.is_some())
-        .count();
-    let moon_count = derived_state_markers
-        .iter()
-        .filter(|(_, _, _, _, moon)| moon.is_some())
-        .count();
+    // Count markers and validate they have TranslationalStateC (required by
+    // solar_beta_system/earth_lighting_system queries).
+    let mut sun_count = 0;
+    let mut moon_count = 0;
+    for (entity, _, _, sun, moon, trans) in &derived_state_markers {
+        if sun.is_some() {
+            sun_count += 1;
+            assert!(
+                trans.is_some(),
+                "Entity {entity:?}: SunMarker present but TranslationalStateC is missing. \
+                 Sun entity requires TranslationalStateC for position queries."
+            );
+        }
+        if moon.is_some() {
+            moon_count += 1;
+            assert!(
+                trans.is_some(),
+                "Entity {entity:?}: MoonMarker present but TranslationalStateC is missing. \
+                 Moon entity requires TranslationalStateC for position queries."
+            );
+        }
+    }
     assert!(
         sun_count <= 1,
         "Multiple SunMarker entities found. JEOD assumes exactly one Sun body."
@@ -77,7 +92,7 @@ pub fn validate_jeod_invariants(
         moon_count <= 1,
         "Multiple MoonMarker entities found. JEOD assumes exactly one Moon body."
     );
-    for (entity, solar_beta, earth_lighting, _, _) in &derived_state_markers {
+    for (entity, solar_beta, earth_lighting, _, _, _) in &derived_state_markers {
         if solar_beta.is_some() && sun_count == 0 {
             panic!(
                 "Entity {entity:?}: SolarBetaC present but no SunMarker entity exists. \

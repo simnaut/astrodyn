@@ -95,8 +95,9 @@ pub use jeod_interactions::{
 // jeod_frames: reference frame state
 pub use jeod_frames::RefFrameState;
 
-// jeod_time: simulation time and leap seconds
+// jeod_time: simulation time, leap seconds, and epoch constants
 pub use jeod_time::{
+    epoch::{J2000_TT_JD, J2000_TT_TJT, SECONDS_PER_DAY},
     leap_second::{default_leap_second_table, LeapSecondTable},
     SimulationTime,
 };

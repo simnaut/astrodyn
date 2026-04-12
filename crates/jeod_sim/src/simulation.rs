@@ -556,17 +556,16 @@ impl Simulation {
                 }
                 RotationModel::MarsIAU => {
                     // JEOD's RNPMars receives TT seconds since J2000 (time_tt.seconds).
-                    // Compute absolute TT seconds since J2000 from TT TJT:
-                    //   tt_seconds = (tt_tjt - J2000_TT_TJT) * 86400
-                    // J2000 TT TJT = 11544.5 (2000-01-01 12:00:00 TT)
-                    let tt_s_since_j2000 = (self.time.tt_tjt() - 11544.5) * 86400.0;
+                    let tt_s_since_j2000 = (self.time.tt_tjt() - jeod_time::epoch::J2000_TT_TJT)
+                        * jeod_time::epoch::SECONDS_PER_DAY;
                     let rotation =
                         jeod_frames::rotation_mars::compute_mars_rotation(tt_s_since_j2000);
                     source.t_inertial_pfix = Some(rotation);
                 }
                 RotationModel::MoonIAU => {
                     let tdb_jd = self.time.tdb_julian_date();
-                    let tdb_s_since_j2000 = (tdb_jd - 2_451_545.0) * 86400.0;
+                    let tdb_s_since_j2000 = (tdb_jd - jeod_time::epoch::J2000_TT_JD)
+                        * jeod_time::epoch::SECONDS_PER_DAY;
                     let rotation =
                         jeod_frames::rotation_moon::compute_moon_rotation(tdb_s_since_j2000);
                     source.t_inertial_pfix = Some(rotation);
