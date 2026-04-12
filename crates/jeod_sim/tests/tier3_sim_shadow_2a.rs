@@ -140,13 +140,15 @@ fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str, frac_
     let ref_states = our_states.clone();
 
     for (i, record) in records.iter().enumerate() {
+        // Advance time + ephemeris before comparing (skip for t=0)
+        if i > 0 {
+            sim.step();
+        }
+
         // Set prescribed position (matching JEOD's non-integrated motion)
         sim.set_body_position(0, record.position);
 
-        // Step to advance time + recompute ephemeris + shadow + SRP
-        sim.step();
-
-        // Compute our shadow fraction from the updated Sun position
+        // Compute our shadow fraction at the current Sun position
         let sun_pos = sim.sources[sun].position;
         let our_frac =
             compute_shadow_fraction(record.position, sun_pos, DVec3::ZERO, R_EARTH, SOLAR_RADIUS);

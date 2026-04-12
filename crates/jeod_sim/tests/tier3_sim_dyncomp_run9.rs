@@ -73,7 +73,7 @@ fn setup_run9(
     let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, dt);
 
-    sim.add_source(GravitySourceEntry {
+    let earth = sim.add_source(GravitySourceEntry {
         source: GravitySource {
             mu: mu_earth,
             model: GravityModel::PointMass,
@@ -102,7 +102,7 @@ fn setup_run9(
             three_dof: false,
         },
         gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(0, false)],
+            controls: vec![GravityControl::new_spherical(earth, false)],
         },
         ..Default::default()
     });

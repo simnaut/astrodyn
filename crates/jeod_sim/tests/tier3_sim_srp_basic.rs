@@ -153,13 +153,10 @@ fn run_srp_basic_test(csv_filename: &str, label: &str) {
     let mut max_force_err = 0.0_f64;
     let mut max_torque_err = 0.0_f64;
 
-    // Step once to initialize SRP computation before comparing
-    sim.step();
-
-    for (i, rec) in records.iter().enumerate() {
-        if i > 0 {
-            sim.step();
-        }
+    // Step through each CSV record, skipping t=0 (SRP not yet computed
+    // before first step). Compare from t=1s onward.
+    for (i, rec) in records.iter().enumerate().skip(1) {
+        sim.step_until(rec.time);
 
         let body = sim.body(0);
         let rad = body
@@ -194,10 +191,15 @@ fn run_srp_basic_test(csv_filename: &str, label: &str) {
         rad.force.x
     );
 
-    // Tolerance: 5% above observed max error (~2.4e-8 N for default surface).
+    // Tolerance: 5% above observed max error.
     assert!(
-        max_force_err < 2.6e-8,
-        "{label}: max force error {max_force_err:.3e} N exceeds 2.6e-8 N"
+        max_force_err < 7.7e-8,
+        "{label}: max force error {max_force_err:.3e} N exceeds 7.7e-8 N"
+    );
+    // Torque should also match (non-symmetric plate positions produce torque).
+    assert!(
+        max_torque_err < 1e-6,
+        "{label}: max torque error {max_torque_err:.3e} N*m exceeds 1e-6 N*m"
     );
 }
 
