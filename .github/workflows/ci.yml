@@ -71,12 +71,7 @@ jobs:
             models/environment/gravity/verif/unit_tests/grav_geospherical/data \
             models/environment/time/data \
             models/dynamics/body_action/verif/SIM_orbinit/Modified_data \
-            models/dynamics/derived_state/verif/unit_tests \
-            models/dynamics/derived_state/verif/SIM_NED \
-            models/dynamics/derived_state/verif/SIM_LVLH \
-            models/dynamics/derived_state/verif/SIM_OrbElem \
-            models/dynamics/derived_state/verif/SIM_Euler \
-            models/dynamics/derived_state/verif/SIM_Planetary \
+            models/dynamics/derived_state/verif \
             models/interactions/radiation_pressure/verif/SIM_3_ORBIT \
             models/interactions/radiation_pressure/verif/SIM_3_ORBIT_1st_ORDER \
             models/interactions/radiation_pressure/verif/SIM_2A_SHADOW_CALC \
@@ -120,12 +115,7 @@ jobs:
             models/environment/gravity/verif/unit_tests/grav_geospherical/data \
             models/environment/time/data \
             models/dynamics/body_action/verif/SIM_orbinit/Modified_data \
-            models/dynamics/derived_state/verif/unit_tests \
-            models/dynamics/derived_state/verif/SIM_NED \
-            models/dynamics/derived_state/verif/SIM_LVLH \
-            models/dynamics/derived_state/verif/SIM_OrbElem \
-            models/dynamics/derived_state/verif/SIM_Euler \
-            models/dynamics/derived_state/verif/SIM_Planetary \
+            models/dynamics/derived_state/verif \
             models/interactions/radiation_pressure/verif/SIM_3_ORBIT \
             models/interactions/radiation_pressure/verif/SIM_3_ORBIT_1st_ORDER \
             models/interactions/radiation_pressure/verif/SIM_2A_SHADOW_CALC \

@@ -25,6 +25,8 @@ const GEO_R_POL: f64 = GEO_R_EQ * (1.0 - 1.0 / 298.257_223_563);
 /// Spherical Earth radius (JEOD uses r_eq for spherical model).
 const GEO_R_SPH: f64 = GEO_R_EQ;
 
+/// Derived-state verif directory (shared Modified_data/ lives here, not in SIM_NED/).
+const DERIVED_STATE_VERIF: &str = "models/dynamics/derived_state/verif";
 /// SIM_NED directory relative to JEOD root.
 const SIM_NED: &str = "models/dynamics/derived_state/verif/SIM_NED";
 
@@ -199,12 +201,13 @@ fn load_ned_params() -> (f64, LeapSecondTable, f64, f64) {
     );
 
     let sim_dir = jeod_root.join(SIM_NED);
+    let verif_dir = jeod_root.join(DERIVED_STATE_VERIF);
     let grav_data_dir = jeod_root.join("models/environment/gravity/data/src");
 
-    // Load epoch from JEOD time config. SIM_NED uses UTC initializer without
-    // leap_sec_override_val, so we look up TAI-UTC from our leap second table.
+    // Load epoch from JEOD time config. The derived-state SIMs share
+    // Modified_data/ at the verif/ level (not inside each SIM directory).
     let time_cfg = jeod_test_data::time_config::load_time_config(
-        &sim_dir.join("Modified_data/date_and_time.py"),
+        &verif_dir.join("Modified_data/date_and_time.py"),
     );
     let leap_table = jeod_sim::default_leap_second_table();
     let tai_utc_s = leap_table.tai_utc_at_utc_tjt(time_cfg.utc_tjt());
