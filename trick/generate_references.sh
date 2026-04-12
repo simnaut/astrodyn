@@ -12,6 +12,13 @@ set -uo pipefail
 # Note: -e is intentionally omitted so that individual sim failures don't
 # kill the entire script. Each run_sim invocation handles its own errors.
 
+# Require Bash >= 4.3 for `wait -n` (used by throttled_bg).
+if [[ "${BASH_VERSINFO[0]}" -lt 4 || ( "${BASH_VERSINFO[0]}" -eq 4 && "${BASH_VERSINFO[1]}" -lt 3 ) ]]; then
+    echo "ERROR: Bash >= 4.3 required for 'wait -n'. Found: ${BASH_VERSION}" >&2
+    echo "On macOS, install a newer bash: brew install bash" >&2
+    exit 1
+fi
+
 OUTPUT_DIR="${1:-/output}"
 mkdir -p "$OUTPUT_DIR"
 

@@ -1,13 +1,16 @@
-//! Tier 3: Earth lighting pipeline validation via Simulation::step()
+//! Pipeline smoke test: Earth lighting via Simulation::step()
 //!
 //! Creates a Simulation with Earth+Sun+Moon (DE421 ephemeris), propagates
 //! an ISS-like LEO orbit, and verifies that EarthLightingState is computed
 //! at each step with physically plausible sunlit/shadow transitions.
 //!
-//! Note: No JEOD propagating sim with earth lighting exists to cross-validate
-//! against. This test exercises the pipeline end-to-end but compares against
-//! physical plausibility, not JEOD reference output. A true Tier 3 cross-
-//! validation is tracked in issue #49.
+//! This is NOT a Tier 3 cross-validation test — no JEOD propagating sim
+//! with earth lighting exists to compare against. It exercises the pipeline
+//! end-to-end but asserts physical plausibility, not JEOD parity.
+//! True Tier 3 cross-validation is tracked in issue #49.
+//!
+//! The test function retains the `tier3_` prefix for CI filtering but does
+//! not meet the Tier 3 definition (compare against JEOD reference output).
 
 use glam::DVec3;
 use jeod_sim::{

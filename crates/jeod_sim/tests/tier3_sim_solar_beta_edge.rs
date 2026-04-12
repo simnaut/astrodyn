@@ -82,9 +82,16 @@ fn run_solar_beta_test(
     let sim_dir = jeod_root.join("models/dynamics/derived_state/verif/SIM_SolarBeta");
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
 
-    // Build Simulation at the SIM_SolarBeta epoch
+    // Build Simulation at the SIM_SolarBeta epoch with UT1-TAI offset
+    // from JEOD time config (affects GMST → Earth RNP → SH gravity evaluation)
     let leap_table = jeod_sim::default_leap_second_table();
-    let time = SimulationTime::new(EPOCH_TAI_TJT, leap_table);
+    let mut time = SimulationTime::new(EPOCH_TAI_TJT, leap_table);
+    let time_cfg = jeod_test_data::time_config::load_time_config(
+        &sim_dir.join("Modified_data/date_and_time.py"),
+    );
+    if let Some(ut1_tai) = time_cfg.ut1_tai_offset() {
+        time.set_ut1_tai_offset(ut1_tai);
+    }
     let mut sim = Simulation::new(time, dt);
 
     let gravity_model = if let Some(sh) = sh_data {

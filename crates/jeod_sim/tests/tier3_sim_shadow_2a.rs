@@ -115,6 +115,13 @@ fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str, frac_
             position: init.position,
             velocity: DVec3::ZERO,
         },
+        // Disable integration — SIM_2A uses prescribed (non-integrated) motion.
+        // Position is set externally via set_body_position() each step.
+        config: jeod_sim::DynamicsConfig {
+            translational_dynamics: false,
+            rotational_dynamics: false,
+            three_dof: false,
+        },
         mass: Some(jeod_sim::MassProperties::new(1.0)),
         shadow_body: Some((earth, R_EARTH)),
         cannonball_srp: Some((1.0, 0.0, 0.5)),
