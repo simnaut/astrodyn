@@ -12,6 +12,5 @@ jeod_dynamics = { path = "../jeod_dynamics" }
 jeod_ephemeris = { path = "../jeod_ephemeris" }
 jeod_gravity = { path = "../jeod_gravity" }
 jeod_math = { path = "../jeod_math" }
-jeod_planet = { path = "../jeod_planet" }
 jeod_test_data = { path = "../jeod_test_data" }
 jeod_time = { path = "../jeod_time" }

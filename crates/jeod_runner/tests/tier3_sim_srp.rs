@@ -184,11 +184,10 @@ fn tier3_simulation_srp_flat_plate() {
     // Load integration step size from S_define
     let srp_dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
 
-    // Load Earth gravity data (mu, radius) from JEOD coefficient file
-    let earth_grav =
-        jeod_sim::coefficients::load_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc"))
-            .expect("load Earth gravity");
-    let srp_mu_earth = earth_grav.mu;
+    // Load Earth mu from JEOD gravity coefficient file
+    let srp_mu_earth =
+        jeod_sim::coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc"))
+            .expect("load Earth mu");
 
     let trajectory = load_srp_trajectory(&csv_path);
     assert!(trajectory.len() > 100);
