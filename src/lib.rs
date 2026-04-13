@@ -67,6 +67,12 @@ pub struct EphemerisR(pub jeod_sim::Ephemeris);
 /// The `staging_system` processes [`AttachEvent`](components::AttachEvent) and
 /// [`DetachEvent`](components::DetachEvent) to modify the tree and sync
 /// composite mass properties back to affected entities.
+///
+/// This resource is not inserted automatically by [`JeodPlugin`]. Applications
+/// that use staging must insert `MassTreeR` before sending
+/// [`AttachEvent`](components::AttachEvent) or
+/// [`DetachEvent`](components::DetachEvent). If the resource is absent, staging
+/// events are silently drained.
 #[derive(Resource, Deref, DerefMut)]
 pub struct MassTreeR(pub jeod_sim::MassTree);
 
@@ -133,13 +139,13 @@ impl Plugin for JeodPlugin {
         app.add_systems(
             FixedUpdate,
             (
+                // Mass tree staging (attach/detach) — runs before force collection
+                // so mass changes affect the current step's forces and integration.
+                systems::staging_system
+                    .after(JeodSet::Interaction)
+                    .before(JeodSet::ForceCollection),
                 // Force collection and integration
                 systems::force_collection_system.in_set(JeodSet::ForceCollection),
-                // Mass tree staging (attach/detach) — runs before integration
-                // so mass changes affect the current step.
-                systems::staging_system
-                    .in_set(JeodSet::Integration)
-                    .before(systems::integration_system),
                 systems::integration_system.in_set(JeodSet::Integration),
                 // Derived states
                 systems::orbital_elements_system.in_set(JeodSet::DerivedState),

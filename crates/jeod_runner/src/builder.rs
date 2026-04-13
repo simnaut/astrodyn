@@ -409,6 +409,9 @@ impl SimulationBuilder {
     ///
     /// Both bodies must be registered via [`register_in_mass_tree`](Self::register_in_mass_tree).
     /// The attachment is resolved during [`build`](Self::build).
+    ///
+    /// # Panics
+    /// Panics if either body has not been registered in the mass tree.
     pub fn attach_bodies(
         &mut self,
         child_idx: usize,
@@ -416,6 +419,14 @@ impl SimulationBuilder {
         offset: DVec3,
         t_parent_child: DMat3,
     ) -> &mut Self {
+        assert!(
+            self.mass_tree_names[child_idx].is_some(),
+            "attach_bodies: child body {child_idx} not registered in mass tree"
+        );
+        assert!(
+            self.mass_tree_names[parent_idx].is_some(),
+            "attach_bodies: parent body {parent_idx} not registered in mass tree"
+        );
         self.mass_tree_attachments.push(MassTreeAttachment {
             child_idx,
             parent_idx,

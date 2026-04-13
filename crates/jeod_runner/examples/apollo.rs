@@ -153,8 +153,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sivb_tree_id = tree.add_body("S-IVB".to_string(), MassProperties::new(MASS_SIVB));
     tree.attach(sivb_tree_id, csm_tree_id, DVec3::ZERO, DMat3::IDENTITY);
     // Update body mass from tree composite
-    let composite = tree.get(csm_tree_id).composite_properties;
-    sim.set_body_mass(body_idx, composite);
+    sim.sync_body_mass_from_tree(body_idx);
 
     sim.validate().expect("validation failed");
 
@@ -214,8 +213,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Detach S-IVB: body keeps CSM mass only
             let tree = sim.mass_tree.as_mut().unwrap();
             tree.detach(sivb_tree_id);
-            let csm_mass = tree.get(csm_tree_id).composite_properties;
-            sim.set_body_mass(body_idx, csm_mass);
+            let csm_mass = tree.get(csm_tree_id).composite_properties.mass;
+            sim.sync_body_mass_from_tree(body_idx);
             separated = true;
             println!(
                 "{:10.1}  {:>12}  {:>12}  {:>12}  {:10.0}  SEPARATE",
@@ -223,7 +222,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "---",
                 "---",
                 "---",
-                csm_mass.mass
+                csm_mass
             );
         }
 

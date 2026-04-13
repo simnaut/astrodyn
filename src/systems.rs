@@ -855,15 +855,22 @@ pub fn cannonball_srp_system(
     }
 }
 
-/// Process mass-tree attach/detach events and sync composite properties.
+/// Process mass-tree attach/detach messages and sync composite properties.
 ///
-/// Runs before integration so that mass changes from staging are reflected
-/// in the current step's force collection and integration.
+/// Runs before force collection so that mass changes from staging are
+/// reflected in the current step's forces and integration.
+///
+/// Note: [`crate::MassTreeR`] must be present as a resource for attach/detach
+/// messages to have any effect.
 ///
 /// # Example
 /// ```ignore
-/// // In user code (e.g., an observer or system):
-/// commands.send_event(DetachEvent { child: booster_entity });
+/// fn detach_booster(
+///     mut detach_messages: bevy::ecs::message::MessageWriter<crate::DetachEvent>,
+///     booster_entity: Entity,
+/// ) {
+///     detach_messages.write(crate::DetachEvent { child: booster_entity });
+/// }
 /// ```
 pub fn staging_system(
     tree: Option<ResMut<crate::MassTreeR>>,
@@ -883,12 +890,12 @@ pub fn staging_system(
     for evt in attach_events.read() {
         let child_id = bodies
             .get(evt.child)
-            .expect("AttachEvent child has no MassBodyIdC")
+            .expect("AttachEvent child entity missing MassBodyIdC or MassPropertiesC")
             .0
              .0;
         let parent_id = bodies
             .get(evt.parent)
-            .expect("AttachEvent parent has no MassBodyIdC")
+            .expect("AttachEvent parent entity missing MassBodyIdC or MassPropertiesC")
             .0
              .0;
         tree.attach(child_id, parent_id, evt.offset, evt.t_parent_child);
@@ -899,7 +906,7 @@ pub fn staging_system(
     for evt in detach_events.read() {
         let child_id = bodies
             .get(evt.child)
-            .expect("DetachEvent child has no MassBodyIdC")
+            .expect("DetachEvent child entity missing MassBodyIdC or MassPropertiesC")
             .0
              .0;
         if let Some(parent_id) = tree.parent(child_id) {
@@ -925,7 +932,7 @@ pub fn staging_system(
         sync_ids.dedup();
 
         for (body_id, mut mass) in &mut bodies {
-            if sync_ids.contains(&body_id.0) {
+            if sync_ids.binary_search(&body_id.0).is_ok() {
                 *mass = MassPropertiesC(tree.get(body_id.0).composite_properties);
             }
         }

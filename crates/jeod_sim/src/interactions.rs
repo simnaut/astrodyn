@@ -21,19 +21,25 @@ pub struct FlatPlateState {
 }
 
 impl FlatPlateState {
-    /// Integrate plate temperatures via RK4 with overshoot clamping.
+    /// Integrate plate temperatures via Forward Euler with overshoot clamping.
     ///
     /// Port of JEOD `ThermalIntegrableObject::integrate()` (thermal_integrable_object.cc:98-124).
-    /// Uses RK4 (matching the orbital state integrator order) with overshoot
-    /// detection: if the integrated temperature crosses the radiative equilibrium
-    /// value, it is clamped to equilibrium.
+    /// JEOD's standard `radiation.sm` schedules `compute_temp_dot()` as a
+    /// "scheduled" job (once per step, not per integrator stage), so the
+    /// derivative is constant across all RK4 stages. This produces
+    /// `new_temp = old_temp + temp_dot * dt` — effectively Forward Euler.
+    /// We match this behavior for parity with JEOD's standard SIM_3_ORBIT.
+    ///
+    /// Overshoot detection: if the integrated temperature crosses the radiative
+    /// equilibrium value, it is clamped to equilibrium.
     ///
     /// `temp_dots_k1` is the per-plate temperature derivative from the current
-    /// step's `compute_flat_plate_srp_thermal` call. The absorbed power is
-    /// recovered from k1 and held constant over the RK4 sub-steps (solar flux
-    /// changes negligibly over one timestep).
+    /// step's `compute_flat_plate_srp_thermal` call.
     ///
     /// Called after `compute_flat_plate_srp_thermal` returns `temp_dots`.
+    /// For true RK4 thermal integration (derivative-class SRP), use
+    /// [`finalize_rk4_temperatures`](Self::finalize_rk4_temperatures) via
+    /// [`crate::integration::integrate_body_coupled`] instead.
     pub fn integrate_temperatures(&mut self, temp_dots_k1: &[f64], dt: f64) {
         for (i, (plate, _params, thermal)) in self.plates.iter().enumerate() {
             let old_temp = self.temperatures[i];

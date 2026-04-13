@@ -299,6 +299,11 @@ pub fn integrate_body_coupled(
 
     // Stage 1: evaluate at current state
     let eval1 = stage_fn(trans, None, thermal);
+    debug_assert_eq!(
+        eval1.temp_dots.len(),
+        n_plates,
+        "stage_fn returned wrong temp_dots length at stage 1"
+    );
     let k1_accel = compute_total_accel(&eval1, mass);
     let k1_v = vel0;
     let k1_tdots = &eval1.temp_dots;
@@ -311,6 +316,11 @@ pub fn integrate_body_coupled(
     };
     advance_thermal_intermediate(thermal, &temps0, &t_pow4_0, k1_tdots, half_dt);
     let eval2 = stage_fn(&s2_trans, None, thermal);
+    debug_assert_eq!(
+        eval2.temp_dots.len(),
+        n_plates,
+        "stage_fn returned wrong temp_dots length at stage 2"
+    );
     let k2_accel = compute_total_accel(&eval2, mass);
     let k2_v = s2_trans.velocity;
     let k2_tdots = eval2.temp_dots.clone();
@@ -322,6 +332,11 @@ pub fn integrate_body_coupled(
     };
     advance_thermal_intermediate(thermal, &temps0, &t_pow4_0, &k2_tdots, half_dt);
     let eval3 = stage_fn(&s3_trans, None, thermal);
+    debug_assert_eq!(
+        eval3.temp_dots.len(),
+        n_plates,
+        "stage_fn returned wrong temp_dots length at stage 3"
+    );
     let k3_accel = compute_total_accel(&eval3, mass);
     let k3_v = s3_trans.velocity;
     let k3_tdots = eval3.temp_dots.clone();
@@ -333,6 +348,11 @@ pub fn integrate_body_coupled(
     };
     advance_thermal_intermediate(thermal, &temps0, &t_pow4_0, &k3_tdots, integ_dyndt);
     let eval4 = stage_fn(&s4_trans, None, thermal);
+    debug_assert_eq!(
+        eval4.temp_dots.len(),
+        n_plates,
+        "stage_fn returned wrong temp_dots length at stage 4"
+    );
     let k4_accel = compute_total_accel(&eval4, mass);
     let k4_v = s4_trans.velocity;
 
@@ -407,6 +427,11 @@ fn integrate_coupled_sixdof(
 
     // Stage 1
     let eval1 = stage_fn(trans, Some(rot), thermal);
+    debug_assert_eq!(
+        eval1.temp_dots.len(),
+        n_plates,
+        "stage_fn returned wrong temp_dots length at stage 1"
+    );
     let (k1_accel, k1_qdot, k1_alpha) = eval_rot_derivs(&eval1, rot);
     let k1_v = vel0;
     let k1_tdots = &eval1.temp_dots;
@@ -420,6 +445,11 @@ fn integrate_coupled_sixdof(
     let s2_rot = make_rot(step_q(q0, k1_qdot, half_dt), omega0 + k1_alpha * half_dt);
     advance_thermal_intermediate(thermal, &temps0, &t_pow4_0, k1_tdots, half_dt);
     let eval2 = stage_fn(&s2_trans, Some(&s2_rot), thermal);
+    debug_assert_eq!(
+        eval2.temp_dots.len(),
+        n_plates,
+        "stage_fn returned wrong temp_dots length at stage 2"
+    );
     let (k2_accel, k2_qdot, k2_alpha) = eval_rot_derivs(&eval2, &s2_rot);
     let k2_v = s2_trans.velocity;
     let k2_tdots = eval2.temp_dots.clone();
@@ -432,6 +462,11 @@ fn integrate_coupled_sixdof(
     let s3_rot = make_rot(step_q(q0, k2_qdot, half_dt), omega0 + k2_alpha * half_dt);
     advance_thermal_intermediate(thermal, &temps0, &t_pow4_0, &k2_tdots, half_dt);
     let eval3 = stage_fn(&s3_trans, Some(&s3_rot), thermal);
+    debug_assert_eq!(
+        eval3.temp_dots.len(),
+        n_plates,
+        "stage_fn returned wrong temp_dots length at stage 3"
+    );
     let (k3_accel, k3_qdot, k3_alpha) = eval_rot_derivs(&eval3, &s3_rot);
     let k3_v = s3_trans.velocity;
     let k3_tdots = eval3.temp_dots.clone();
@@ -447,6 +482,11 @@ fn integrate_coupled_sixdof(
     );
     advance_thermal_intermediate(thermal, &temps0, &t_pow4_0, &k3_tdots, integ_dyndt);
     let eval4 = stage_fn(&s4_trans, Some(&s4_rot), thermal);
+    debug_assert_eq!(
+        eval4.temp_dots.len(),
+        n_plates,
+        "stage_fn returned wrong temp_dots length at stage 4"
+    );
     let (k4_accel, k4_qdot, k4_alpha) = eval_rot_derivs(&eval4, &s4_rot);
     let k4_v = s4_trans.velocity;
 

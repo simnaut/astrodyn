@@ -1341,9 +1341,34 @@ impl Simulation {
     ///
     /// Used for discrete mass changes (e.g., post-burn fuel consumption,
     /// stage separation). Recomputes `inverse_mass` and `inverse_inertia`.
+    ///
+    /// **Warning:** If the body is registered in the mass tree, calling this
+    /// method will desynchronize the body's mass from the tree's copy. Use
+    /// [`sync_body_mass_from_tree`](Self::sync_body_mass_from_tree) instead
+    /// when the mass tree has been modified via `attach`/`detach`.
     pub fn set_body_mass(&mut self, idx: usize, mut mass: MassProperties) {
         mass.recompute_derived();
         self.bodies[idx].mass = Some(mass);
+    }
+
+    /// Sync a body's mass properties from the mass tree's composite.
+    ///
+    /// After modifying the mass tree via `attach`/`detach`, call this to
+    /// update the body's mass from the tree's composite properties.
+    ///
+    /// # Panics
+    /// Panics if the body is not registered in the mass tree.
+    pub fn sync_body_mass_from_tree(&mut self, idx: usize) {
+        let id = self.bodies[idx]
+            .mass_body_id
+            .expect("sync_body_mass_from_tree requires body registered in mass tree");
+        let tree = self
+            .mass_tree
+            .as_ref()
+            .expect("sync_body_mass_from_tree requires a mass tree");
+        let mut composite = tree.get(id).composite_properties;
+        composite.recompute_derived();
+        self.bodies[idx].mass = Some(composite);
     }
 
     /// Register a body in the simulation's mass tree.
