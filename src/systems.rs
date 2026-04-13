@@ -854,3 +854,80 @@ pub fn cannonball_srp_system(
         srp_force.torque = DVec3::ZERO;
     }
 }
+
+/// Process mass-tree attach/detach events and sync composite properties.
+///
+/// Runs before integration so that mass changes from staging are reflected
+/// in the current step's force collection and integration.
+///
+/// # Example
+/// ```ignore
+/// // In user code (e.g., an observer or system):
+/// commands.send_event(DetachEvent { child: booster_entity });
+/// ```
+pub fn staging_system(
+    tree: Option<ResMut<crate::MassTreeR>>,
+    mut attach_events: bevy::ecs::message::MessageReader<crate::AttachEvent>,
+    mut detach_events: bevy::ecs::message::MessageReader<crate::DetachEvent>,
+    mut bodies: Query<(&crate::MassBodyIdC, &mut MassPropertiesC)>,
+) {
+    // No mass tree resource → drain events and return.
+    let Some(mut tree) = tree else {
+        attach_events.clear();
+        detach_events.clear();
+        return;
+    };
+
+    let mut changed_ids: Vec<jeod_sim::MassBodyId> = Vec::new();
+
+    for evt in attach_events.read() {
+        let child_id = bodies
+            .get(evt.child)
+            .expect("AttachEvent child has no MassBodyIdC")
+            .0
+             .0;
+        let parent_id = bodies
+            .get(evt.parent)
+            .expect("AttachEvent parent has no MassBodyIdC")
+            .0
+             .0;
+        tree.attach(child_id, parent_id, evt.offset, evt.t_parent_child);
+        changed_ids.push(child_id);
+        changed_ids.push(parent_id);
+    }
+
+    for evt in detach_events.read() {
+        let child_id = bodies
+            .get(evt.child)
+            .expect("DetachEvent child has no MassBodyIdC")
+            .0
+             .0;
+        if let Some(parent_id) = tree.parent(child_id) {
+            changed_ids.push(parent_id);
+        }
+        tree.detach(child_id);
+        changed_ids.push(child_id);
+    }
+
+    // Sync composite mass properties for all affected nodes.
+    // Walk up from each changed node to the root to capture cascading updates.
+    if !changed_ids.is_empty() {
+        let mut sync_ids: Vec<jeod_sim::MassBodyId> = Vec::new();
+        for &id in &changed_ids {
+            let mut current = id;
+            sync_ids.push(current);
+            while let Some(parent) = tree.parent(current) {
+                sync_ids.push(parent);
+                current = parent;
+            }
+        }
+        sync_ids.sort_unstable();
+        sync_ids.dedup();
+
+        for (body_id, mut mass) in &mut bodies {
+            if sync_ids.contains(&body_id.0) {
+                *mass = MassPropertiesC(tree.get(body_id.0).composite_properties);
+            }
+        }
+    }
+}

@@ -57,7 +57,7 @@ pub use gravity::{
     accumulate_gravity, accumulate_relativistic_corrections, ResolvedRelativisticSource,
     ResolvedSource,
 };
-pub use integration::integrate_body;
+pub use integration::{integrate_body, integrate_body_coupled, CoupledStageEval};
 pub use interactions::{
     compute_cannonball_srp, compute_drag, compute_gravity_torque, FlatPlateState,
 };
@@ -74,8 +74,8 @@ pub use validation::{validate_body, ValidationError};
 // jeod_dynamics: state types, force types, mass, config, frame utilities
 pub use jeod_dynamics::{
     compute_t_inertial_struct, DynamicsConfig, ForceContributions, FrameDerivatives,
-    GravityAcceleration, MassProperties, RotationalState, SixDofState, TotalForce,
-    TranslationalState, INERTIA_CONSISTENCY_TOL,
+    GravityAcceleration, MassBodyId, MassProperties, MassTree, RotationalState, SixDofState,
+    TotalForce, TranslationalState, INERTIA_CONSISTENCY_TOL,
 };
 
 // jeod_gravity: source definitions, controls, and tides

@@ -61,6 +61,15 @@ pub struct AtmosphereModelR {
 #[derive(Resource, Deref, DerefMut)]
 pub struct EphemerisR(pub jeod_sim::Ephemeris);
 
+/// Bevy resource wrapping `MassTree` for multi-body vehicles.
+///
+/// Shared by all entities that have [`MassBodyIdC`](components::MassBodyIdC).
+/// The `staging_system` processes [`AttachEvent`](components::AttachEvent) and
+/// [`DetachEvent`](components::DetachEvent) to modify the tree and sync
+/// composite mass properties back to affected entities.
+#[derive(Resource, Deref, DerefMut)]
+pub struct MassTreeR(pub jeod_sim::MassTree);
+
 /// Unified JEOD plugin — registers all pipeline systems and schedule sets.
 pub struct JeodPlugin;
 
@@ -85,13 +94,16 @@ impl Plugin for JeodPlugin {
         // ── Resources ──
         app.init_resource::<SimulationTimeR>();
 
+        // ── Events ──
+        app.add_message::<AttachEvent>();
+        app.add_message::<DetachEvent>();
+
         // ── Systems ──
+        // Split into two add_systems calls to stay within Bevy's tuple size limit.
         app.add_systems(
             FixedUpdate,
             (
                 // Validation runs first — matches JEOD's initialize_simulation()
-                // which validates all bodies before the first integration step.
-                // Uses Local<bool> to run only once.
                 validation::validate_jeod_invariants.before(JeodSet::TimeUpdate),
                 // Time advance
                 systems::time_advance_system.in_set(JeodSet::TimeUpdate),
@@ -116,8 +128,18 @@ impl Plugin for JeodPlugin {
                 systems::gravity_torque_system.in_set(JeodSet::Interaction),
                 systems::flat_plate_srp_system.in_set(JeodSet::Interaction),
                 systems::cannonball_srp_system.in_set(JeodSet::Interaction),
+            ),
+        );
+        app.add_systems(
+            FixedUpdate,
+            (
                 // Force collection and integration
                 systems::force_collection_system.in_set(JeodSet::ForceCollection),
+                // Mass tree staging (attach/detach) — runs before integration
+                // so mass changes affect the current step.
+                systems::staging_system
+                    .in_set(JeodSet::Integration)
+                    .before(systems::integration_system),
                 systems::integration_system.in_set(JeodSet::Integration),
                 // Derived states
                 systems::orbital_elements_system.in_set(JeodSet::DerivedState),

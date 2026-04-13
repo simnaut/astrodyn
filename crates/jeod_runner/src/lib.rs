@@ -348,6 +348,8 @@ struct SimBody {
     trans: TranslationalState,
     rot: Option<RotationalState>,
     mass: Option<MassProperties>,
+    /// If this body participates in a mass tree, its node ID.
+    mass_body_id: Option<jeod_dynamics::MassBodyId>,
     config: DynamicsConfig,
     gravity_controls: GravityControls<usize>,
     integrator: jeod_dynamics::IntegratorType,
@@ -422,6 +424,7 @@ impl SimBody {
             trans: config.trans,
             rot: config.rot,
             mass: config.mass,
+            mass_body_id: None,
             config: dynamics_config,
             gravity_controls: config.gravity_controls,
             integrator: config.integrator,
@@ -531,6 +534,9 @@ pub struct Simulation {
     pub ephemeris: Option<jeod_sim::Ephemeris>,
     /// Per-source ephemeris body mapping. Index matches `sources` vector.
     pub source_ephem_bodies: Vec<Option<(jeod_sim::EphemerisBody, jeod_sim::EphemerisBody)>>,
+    /// Optional mass tree for multi-body vehicles (attach/detach/staging).
+    /// Bodies participating in the tree have `SimBody::mass_body_id` set.
+    pub mass_tree: Option<jeod_dynamics::MassTree>,
 }
 
 impl Simulation {
@@ -548,6 +554,7 @@ impl Simulation {
             dt,
             ephemeris: None,
             source_ephem_bodies: Vec::new(),
+            mass_tree: None,
         }
     }
 
@@ -1321,6 +1328,100 @@ impl Simulation {
     /// at each timestep (e.g., SIM_2A_SHADOW_CALC).
     pub fn set_body_position(&mut self, idx: usize, position: DVec3) {
         self.bodies[idx].trans.position = position;
+    }
+
+    /// Set a body's translational velocity (inertial frame, m/s).
+    ///
+    /// Used for impulsive maneuvers (e.g., Apollo TLI delta-V).
+    pub fn set_body_velocity(&mut self, idx: usize, velocity: DVec3) {
+        self.bodies[idx].trans.velocity = velocity;
+    }
+
+    /// Replace a body's mass properties.
+    ///
+    /// Used for discrete mass changes (e.g., post-burn fuel consumption,
+    /// stage separation). Recomputes `inverse_mass` and `inverse_inertia`.
+    pub fn set_body_mass(&mut self, idx: usize, mut mass: MassProperties) {
+        mass.recompute_derived();
+        self.bodies[idx].mass = Some(mass);
+    }
+
+    /// Register a body in the simulation's mass tree.
+    ///
+    /// Creates (or reuses) a `MassTree` and adds the body's mass as a node.
+    /// Returns the `MassBodyId` for use with [`attach`](Self::attach) and
+    /// [`detach`](Self::detach). The body's `mass` field must be `Some`.
+    ///
+    /// # Panics
+    /// Panics if the body has no mass properties.
+    pub fn add_body_to_tree(
+        &mut self,
+        body_idx: usize,
+        name: impl Into<String>,
+    ) -> jeod_dynamics::MassBodyId {
+        let mass = self.bodies[body_idx]
+            .mass
+            .expect("add_body_to_tree requires mass properties");
+        let tree = self
+            .mass_tree
+            .get_or_insert_with(jeod_dynamics::MassTree::new);
+        let id = tree.add_body(name.into(), mass);
+        self.bodies[body_idx].mass_body_id = Some(id);
+        id
+    }
+
+    /// Attach a child body to a parent body in the mass tree.
+    ///
+    /// Both bodies must have been registered via [`add_body_to_tree`](Self::add_body_to_tree).
+    /// After attachment, the parent's composite mass properties are updated
+    /// automatically. The parent body's `mass` is synced from the tree.
+    ///
+    /// # Panics
+    /// Panics if either body is not in the tree, or if the child already has a parent.
+    pub fn attach(
+        &mut self,
+        child_idx: usize,
+        parent_idx: usize,
+        offset: DVec3,
+        t_parent_child: DMat3,
+    ) {
+        let child_id = self.bodies[child_idx]
+            .mass_body_id
+            .expect("child not in mass tree");
+        let parent_id = self.bodies[parent_idx]
+            .mass_body_id
+            .expect("parent not in mass tree");
+        let tree = self.mass_tree.as_mut().expect("no mass tree");
+        tree.attach(child_id, parent_id, offset, t_parent_child);
+        // Sync parent's composite mass from tree
+        self.bodies[parent_idx].mass = Some(tree.get(parent_id).composite_properties);
+    }
+
+    /// Detach a child body from its parent in the mass tree.
+    ///
+    /// After detachment, both the former parent's and the child's mass
+    /// properties are updated from the tree's recomputed composites.
+    ///
+    /// # Panics
+    /// Panics if the body is not in the tree or has no parent.
+    pub fn detach(&mut self, child_idx: usize) {
+        let child_id = self.bodies[child_idx]
+            .mass_body_id
+            .expect("child not in mass tree");
+        let tree = self.mass_tree.as_mut().expect("no mass tree");
+        let parent_id = tree
+            .parent(child_id)
+            .expect("detach called on body with no parent in tree");
+        tree.detach(child_id);
+        // Sync both bodies' mass from tree
+        self.bodies[child_idx].mass = Some(tree.get(child_id).composite_properties);
+        // Find parent body index and sync
+        for body in &mut self.bodies {
+            if body.mass_body_id == Some(parent_id) {
+                body.mass = Some(tree.get(parent_id).composite_properties);
+                break;
+            }
+        }
     }
 
     /// Number of bodies in the simulation.
