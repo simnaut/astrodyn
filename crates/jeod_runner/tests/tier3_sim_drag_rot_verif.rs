@@ -37,10 +37,10 @@ fn tier3_simulation_drag_run6b_rotated() {
     assert!(
         csv_path.exists(),
         "Rotated-frame aero trajectory CSV not found at {}.\n\
-         Generate with: docker run --rm -e FORCE=1 \
+         Generate with: docker run --rm -e FORCE=1 --entrypoint /bin/bash \
          -v $(pwd)/test_data:/output \
          -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro \
-         jeod-trick",
+         jeod-trick /generate_references.sh",
         csv_path.display()
     );
 
