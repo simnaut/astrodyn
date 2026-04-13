@@ -685,8 +685,8 @@ Only polar motion remains.
 
 | ID | Task | Description | JEOD Reference |
 |----|------|-------------|----------------|
-| 5.33 | Multi-integrable-object scheduling | Port JEOD's DynManager integration loop that drives multiple integrable objects (orbital state + thermal state) through RK4 stages in the correct order. Required to close the 27.6 m / 23-day SRP thermal coupling residual (simnaut/bevy_jeod#13). | `dynamics_integration_group.cc`, `er7_utils` integration loop |
-| 5.34 | Thermal ODE as integrable object | Move plate temperature integration into the Bevy dynamics pipeline so it's driven by the same integration loop as the orbital state, matching JEOD's `ThermalIntegrableObject` scheduling. | `thermal_integrable_object.cc` |
+| 5.33 | Multi-integrable-object scheduling | ~~Port JEOD's DynManager integration loop~~ Root-caused: JEOD's standard `radiation.sm` schedules `compute_temp_dot()` as a "scheduled" job (once per step, not per-stage), making thermal integration effectively Forward Euler. Matching this behavior dropped SRP residual from 3.07 m → 0.037 m (82× improvement). Coupled RK4 infrastructure (`integrate_body_coupled`) added for future derivative-class SRP. Closes simnaut/bevy_jeod#13. | `dynamics_integration_group.cc`, `er7_utils` integration loop |
+| 5.34 | Thermal ODE as integrable object | Standalone `integrate_temperatures` now matches JEOD's Forward Euler scheduling. Coupled path (`finalize_rk4_temperatures` + `integrate_body_coupled`) added for the `radiation_1st_order.sm` variant that uses derivative-class SRP. | `thermal_integrable_object.cc` |
 
 #### 5G. Cross-Validation Infrastructure
 
@@ -726,9 +726,9 @@ JEOD 5.4).
 
 | ID | Task | Description |
 |----|------|-------------|
-| 5.30 | `apollo.rs` | Apollo trans-lunar injection scenario. Multi-body (Earth + Moon), stage separation (attach/detach). |
-| 5.31 | `earth_moon.rs` | Long-duration Earth-Moon trajectory. |
-| 5.32 | `mars_orbit.rs` | Mars orbit insertion and propagation. |
+| 5.30 | `apollo.rs` | ✅ Apollo trans-lunar injection: Earth+Moon+Sun point-mass gravity, MassTree staging (CSM + S-IVB detach), impulsive TLI delta-V, 3-day coast. Uses DE421 ephemeris. |
+| 5.31 | `earth_moon.rs` | ✅ Clementine lunar orbit: Moon LP150Q 60×60 SH, Earth/Sun 3rd-body, cannonball SRP, DE421 ephemeris + BPC libration. |
+| 5.32 | `mars_orbit.rs` | ✅ Dawn at Mars: MRO110B2 110×110 SH, IAU rotation, Sun 3rd-body, DE421 ephemeris. |
 
 ### Exit Criteria
 
@@ -741,7 +741,7 @@ JEOD 5.4).
 - [x] **Earth rotation**: ITRS frame orientation matches JEOD/IERS to < 1 arcsecond at 5+ test epochs — `tier3_rnp_component_comparison`
 
 #### Tier 3 (trajectory cross-validation — required for each new physics)
-- [x] **All prior phase exit criteria** still pass (no regressions) — 300 tests pass
+- [x] **All prior phase exit criteria** still pass (no regressions) — 555 tests pass
 - [x] **Tier 3 LEO 24h (high-fidelity gravity)**: Position error vs. JEOD < 10 m — RUN_3A (4x4): 0.13 m, RUN_3B (8x8): 0.23 m
 - [x] **Tier 3 LEO with drag**: Position error vs. JEOD < 100 m over 24h — RUN_6B: 1.1 m over 8h
 - ~~**Tier 3 Earth-Moon multi-body**~~ — moved to Phase 6 exit criteria (requires Moon gravity model + lunar RNP)
@@ -750,8 +750,8 @@ JEOD 5.4).
 - [x] **Tier 3 RKF45 trajectory**: RKF45 on same scenario — `tier3_bevy_rkf45_matches_simulation_bit_identical` validates bit-identical Bevy/Simulation parity; JEOD's RKF45 is also fixed-step (see Tier 1 note)
 - [x] **Tier 3 polar motion**: Earth-fixed frame with polar motion — `tier3_simulation_run2p_polar_motion` matches JEOD
 - [x] **Tier 3 solid tides**: Trajectory with tidal ΔC20 — `tier3_simulation_tide_run01` validates trajectory + ΔC20
-- [x] **Tier 3 SRP trajectory**: SRP with ephemeris Sun — `tier3_simulation_srp_flat_plate` achieves 3.07 m over 23 days
-- [x] **Tier 3 SRP thermal parity**: SIM_3_ORBIT RUN_radiation (23 days, flat-plate + thermal) — `tier3_simulation_srp_flat_plate` achieves 3.07 m (< 5 m budget)
+- [x] **Tier 3 SRP trajectory**: SRP with ephemeris Sun — `tier3_simulation_srp_flat_plate` achieves 0.040 m over 23 days (improved from 3.07 m after ODE scheduling fix in tasks 5.33/5.34)
+- [x] **Tier 3 SRP thermal parity**: SIM_3_ORBIT RUN_radiation (23 days, flat-plate + thermal) — `tier3_simulation_srp_flat_plate` achieves 0.040 m (< 5 m budget; 82× improvement from matching JEOD's Forward Euler thermal scheduling)
 - [x] **Tier 3 3rd-body isolation**: SIM_dyncomp RUN_4 (spherical gravity + Sun/Moon) — `tier3_simulation_run4_3rd_body` achieves 0.002 m (< 5 m budget)
 - [x] **Tier 3 Sun/Moon 3rd-body resolved**: Sun/Moon added to `tier3_sim_torque_simple.rs` with real mu values (Sun: 1.327e20, Moon: 4.903e12) and registered as 3rd-body gravity controls. Position tolerances meet target (< 0.5 m). Quaternion and torque tolerances are scenario-inherent: gradient-free runs (RUN_01/04) have no torque reference so attitude diverges freely; SH-gradient runs (RUN_06) compound errors through rotational dynamics over 3h with DE421 ephemeris offset as the dominant error source (~10 arcsec Sun direction, see simnaut/bevy_jeod#27). The `mu: 0.0` values in `tier3_sim_srp.rs` and `tier3_sim_solar_beta.rs` correctly match the JEOD reference sims (SIM_3_ORBIT and RUN_2), which deliberately exclude Sun/Moon gravity — these are not workarounds. 3rd-body gravity is validated independently by RUN_4, RUN_7A-D, and torque_simple.
 
