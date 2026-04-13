@@ -41,6 +41,7 @@ pub mod gravity;
 pub mod integration;
 pub mod interactions;
 pub mod pipeline;
+pub mod planet_config;
 pub mod rotation_model;
 pub mod validation;
 
@@ -62,6 +63,7 @@ pub use interactions::{
 };
 pub use jeod_dynamics::{GaussJacksonConfig, GaussJacksonState, IntegratorResult, IntegratorType};
 pub use pipeline::{PipelineStage, PIPELINE_ORDER};
+pub use planet_config::{PlanetConfig, EARTH, MARS, MOON, SUN};
 pub use rotation_model::RotationModel;
 pub use validation::{validate_body, ValidationError};
 

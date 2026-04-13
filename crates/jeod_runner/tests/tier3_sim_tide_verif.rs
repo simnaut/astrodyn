@@ -14,10 +14,10 @@ use sim_test_helpers::*;
 
 use glam::{DMat3, DVec3};
 use jeod_gravity::tides::{TidalBody, TidalConfig, EARTH_K2};
-use jeod_runner::{GravitySourceEntry, RotationModel, SimBody, Simulation};
+use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
 use jeod_sim::{
-    DynamicsConfig, Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel,
-    GravitySource, JeodQuat, MassProperties, RotationalState, SimulationTime, TranslationalState,
+    Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel, GravitySource,
+    JeodQuat, MassProperties, RotationalState, SimulationTime, TranslationalState,
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::Path;
@@ -184,7 +184,7 @@ fn tier3_simulation_tide_run01() {
     );
     let mass_props = MassProperties::with_inertia(400_000.0, inertia, DVec3::new(-3.0, -1.5, 4.0));
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: TranslationalState {
             position: *init_pos,
             velocity: *init_vel,
@@ -194,11 +194,6 @@ fn tier3_simulation_tide_run01() {
             ang_vel_body: DVec3::ZERO,
         }),
         mass: Some(mass_props),
-        config: DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: true,
-            three_dof: false,
-        },
         gravity_controls: GravityControls {
             controls: vec![
                 GravityControl::new_nonspherical(earth, 8, 8, true),
@@ -206,7 +201,7 @@ fn tier3_simulation_tide_run01() {
                 GravityControl::new_third_body(moon),
             ],
         },
-        compute_gravity_torque: true,
+        compute_gravity_gradient: true,
         ..Default::default()
     });
 

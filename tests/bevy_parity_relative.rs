@@ -8,11 +8,11 @@
 
 use bevy::prelude::*;
 use bevy_jeod::{
-    DynamicsConfigC, GravityAccelerationC, GravityControlsC, JeodPlugin, MassPropertiesC,
-    RotationalStateC, TotalForceC, TranslationalStateC,
+    DynamicsConfigC, GravityControlsC, JeodPlugin, MassPropertiesC, RotationalStateC,
+    TranslationalStateC,
 };
 use glam::DVec3;
-use jeod_runner::{SimBody, Simulation};
+use jeod_runner::{Simulation, VehicleConfig};
 use jeod_sim::{
     DynamicsConfig, GravityControls, JeodQuat, MassProperties, RotationalState, SixDofState,
     TranslationalState,
@@ -138,8 +138,6 @@ fn run_relative_parity(
             MassPropertiesC(dummy_mass),
             DynamicsConfigC(config_6dof),
             GravityControlsC(GravityControls::<Entity> { controls: vec![] }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
         ))
         .id();
 
@@ -151,8 +149,6 @@ fn run_relative_parity(
             MassPropertiesC(dummy_mass),
             DynamicsConfigC(config_6dof),
             GravityControlsC(GravityControls::<Entity> { controls: vec![] }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
         ))
         .id();
 
@@ -169,18 +165,16 @@ fn run_relative_parity(
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: trans_a,
         rot: Some(rot_a),
         mass: Some(dummy_mass),
-        config: config_6dof,
         ..Default::default()
     });
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: trans_b,
         rot: Some(rot_b),
         mass: Some(dummy_mass),
-        config: config_6dof,
         ..Default::default()
     });
     sim.validate().unwrap();
@@ -293,8 +287,6 @@ fn run_lvlhrel_parity(label: &str, ref_trans: TranslationalState, subj_trans: Tr
             TranslationalStateC(ref_trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls::<Entity> { controls: vec![] }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
         ))
         .id();
 
@@ -304,8 +296,6 @@ fn run_lvlhrel_parity(label: &str, ref_trans: TranslationalState, subj_trans: Tr
             TranslationalStateC(subj_trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls::<Entity> { controls: vec![] }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
         ))
         .id();
 
@@ -322,11 +312,11 @@ fn run_lvlhrel_parity(label: &str, ref_trans: TranslationalState, subj_trans: Tr
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: ref_trans,
         ..Default::default()
     });
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: subj_trans,
         ..Default::default()
     });

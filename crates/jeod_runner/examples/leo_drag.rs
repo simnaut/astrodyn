@@ -8,7 +8,7 @@
 //! ```
 
 use glam::{DMat3, DVec3};
-use jeod_runner::{GravitySourceEntry, RotationModel, SimBody, Simulation};
+use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
 use jeod_sim::{
     default_leap_second_table, met_atmosphere, AtmosphereConfig, AtmosphereModel, DragConfig,
     GravityControl, GravityControls, GravityModel, GravitySource, MassProperties, SimulationTime,
@@ -83,14 +83,13 @@ fn main() {
     });
     sim.atmosphere_planet_source = Some(earth_idx);
 
-    let body_idx = sim.add_body(SimBody {
+    let body_idx = sim.add_body(VehicleConfig {
         trans: state0,
         mass: Some(MassProperties::new(mass)),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
         drag: Some(drag_config),
-        atmospheric_state: Some(Default::default()),
         ..Default::default()
     });
     sim.validate().expect("valid LEO drag setup");
@@ -113,10 +112,10 @@ fn main() {
     println!("Atmosphere: MET solar mean (F10.7={}, F10B={})", f10, f10b);
     println!();
     println!(
-        "{:>8}  {:>10}  {:>12}  {:>10}  {:>14}  {:>12}",
-        "Time(h)", "Alt(km)", "a(km)", "e", "Density(kg/m3)", "DragF(mN)"
+        "{:>8}  {:>10}  {:>12}  {:>10}",
+        "Time(h)", "Alt(km)", "a(km)", "e"
     );
-    println!("{}", "-".repeat(78));
+    println!("{}", "-".repeat(48));
 
     for step in 0..steps {
         sim.step();
@@ -129,20 +128,10 @@ fn main() {
             let alt_km = (state.position.length() - R_EARTH_EQ) / 1000.0;
             let e_mag = eccentricity(MU_EARTH, state.position, state.velocity);
             let a_km = semi_major_axis(MU_EARTH, state.position, state.velocity) / 1000.0;
-            let atmos_state = body
-                .atmospheric_state
-                .as_ref()
-                .expect("atmospheric state enabled");
-            let drag = body.aero_force.expect("drag force should be computed");
 
             println!(
-                "{:>8.1}  {:>10.3}  {:>12.3}  {:>10.6}  {:>14.6e}  {:>12.6}",
-                time_h,
-                alt_km,
-                a_km,
-                e_mag,
-                atmos_state.density,
-                drag.force.length() * 1000.0, // mN
+                "{:>8.1}  {:>10.3}  {:>12.3}  {:>10.6}",
+                time_h, alt_km, a_km, e_mag,
             );
         }
     }

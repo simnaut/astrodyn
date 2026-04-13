@@ -14,10 +14,10 @@ use bevy_jeod::{
     GravitySourceC, JeodPlugin, RotationalStateC, SourceInertialPositionC, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
-use jeod_runner::{GravitySourceEntry, RotationModel, SimBody, Simulation};
+use jeod_runner::{GravitySourceEntry, Simulation, VehicleConfig};
 use jeod_sim::{
-    DynamicsConfig, Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel,
-    GravitySource, MassProperties, RotationalState, SixDofState, TranslationalState,
+    Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel, GravitySource,
+    MassProperties, RotationalState, SixDofState, TranslationalState,
 };
 
 pub const MU_EARTH: f64 = 3.986_004_415e14;
@@ -155,15 +155,7 @@ pub fn assert_trans_eq(label: &str, a: &TranslationalState, b: &TranslationalSta
 pub fn new_sim_earth(dt: f64) -> (Simulation, usize) {
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, dt);
-    let earth_idx = sim.add_source(GravitySourceEntry {
-        source: earth_source(),
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+    let earth_idx = sim.add_source(GravitySourceEntry::new(earth_source(), DVec3::ZERO, None));
     (sim, earth_idx)
 }
 
@@ -185,19 +177,15 @@ pub fn assert_geodetic_eq(label: &str, a: &jeod_sim::GeodeticState, b: &jeod_sim
     println!("  {label}: bit-identical (lat, lon, alt)");
 }
 
-pub fn new_sim_body_sixdof(earth_idx: usize, gradient: bool) -> SimBody {
-    SimBody {
+pub fn new_sim_body_sixdof(earth_idx: usize, gradient: bool) -> VehicleConfig {
+    VehicleConfig {
         trans: iss_trans(),
         rot: Some(tumble_rot()),
         mass: Some(iss_mass()),
-        config: DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: true,
-            three_dof: false,
-        },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, gradient)],
         },
+        compute_gravity_gradient: gradient,
         ..Default::default()
     }
 }

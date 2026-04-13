@@ -13,7 +13,7 @@ mod sim_test_helpers;
 use sim_test_helpers::test_data_path;
 
 use glam::DVec3;
-use jeod_runner::{GravitySourceEntry, SimBody, Simulation};
+use jeod_runner::{GravitySourceEntry, Simulation, VehicleConfig};
 use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, SimulationTime,
     TranslationalState,
@@ -75,7 +75,7 @@ fn propagate_mercury_periapses(
     let mut ctrl = GravityControl::new_spherical(sun, false);
     ctrl.relativistic = relativistic;
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: TranslationalState {
             position: init_pos,
             velocity: init_vel,
@@ -257,7 +257,7 @@ fn tier3_simulation_mercury_relativistic_effect() {
         DVec3::ZERO,
         None,
     ));
-    sim_n.add_body(SimBody {
+    sim_n.add_body(VehicleConfig {
         trans: TranslationalState {
             position: init_pos,
             velocity: init_vel,
@@ -285,7 +285,7 @@ fn tier3_simulation_mercury_relativistic_effect() {
     ));
     let mut ctrl = GravityControl::new_spherical(sun_r, false);
     ctrl.relativistic = true;
-    sim_r.add_body(SimBody {
+    sim_r.add_body(VehicleConfig {
         trans: TranslationalState {
             position: init_pos,
             velocity: init_vel,

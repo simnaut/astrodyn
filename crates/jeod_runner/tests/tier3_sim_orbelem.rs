@@ -7,7 +7,9 @@ mod sim_test_helpers;
 use sim_test_helpers::*;
 
 use glam::DVec3;
-use jeod_runner::{GravitySourceEntry, RotationModel, SimBody, Simulation};
+use jeod_runner::{
+    DerivedStateConfig, GravitySourceEntry, RotationModel, Simulation, VehicleConfig,
+};
 use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, SimulationTime,
     TranslationalState,
@@ -68,7 +70,7 @@ fn tier3_simulation_orbelem() {
         tidal_config: None,
     });
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: TranslationalState {
             position: init.position,
             velocity: init.velocity,
@@ -76,7 +78,10 @@ fn tier3_simulation_orbelem() {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
-        orbital_elements_source: Some(earth),
+        derived: DerivedStateConfig {
+            orbital_elements_source: Some(earth),
+            ..Default::default()
+        },
         ..Default::default()
     });
 

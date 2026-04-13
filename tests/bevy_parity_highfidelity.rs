@@ -5,12 +5,11 @@ mod parity_helpers;
 
 use bevy::prelude::*;
 use bevy_jeod::{
-    DynamicsConfigC, GaussJacksonStateC, GravityAccelerationC, GravityControlsC, GravitySourceC,
-    IntegratorTypeC, PlanetFixedRotationC, PolarMotionR, SourceInertialPositionC, TidalConfigC,
-    TidalDeltaC20C, TotalForceC, TranslationalStateC,
+    DynamicsConfigC, GaussJacksonStateC, GravityControlsC, GravitySourceC, IntegratorTypeC,
+    PlanetFixedRotationC, PolarMotionR, SourceInertialPositionC, TidalConfigC, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
-use jeod_runner::{GravitySourceEntry, RotationModel, SimBody};
+use jeod_runner::{GravitySourceEntry, RotationModel, VehicleConfig};
 use jeod_sim::{
     GaussJacksonConfig, GaussJacksonState, GravityControl, GravityControls, GravityModel,
     GravitySource, IntegratorType, TidalBody, TidalConfig, TranslationalState,
@@ -73,8 +72,6 @@ fn tier3_bevy_sh4x4_rnp() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_nonspherical(planet, 4, 4, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
         ))
         .id();
 
@@ -94,7 +91,7 @@ fn tier3_bevy_sh4x4_rnp() {
         tidal_config: None,
     });
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: iss_trans(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_nonspherical(earth_idx, 4, 4, false)],
@@ -166,7 +163,6 @@ fn tier3_bevy_tidal_sh4x4() {
             TranslationalStateC::default(),
             PlanetFixedRotationC(DMat3::IDENTITY),
             TidalConfigC(tidal_config.clone()),
-            TidalDeltaC20C(0.0),
         ))
         .id();
 
@@ -182,8 +178,6 @@ fn tier3_bevy_tidal_sh4x4() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_nonspherical(planet, 4, 4, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
         ))
         .id();
 
@@ -203,7 +197,7 @@ fn tier3_bevy_tidal_sh4x4() {
         tidal_config: Some(tidal_config),
     });
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: iss_trans(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_nonspherical(earth_idx, 4, 4, false)],
@@ -241,8 +235,6 @@ fn tier3_bevy_run2p_polar_motion() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
         ))
         .id();
 
@@ -251,18 +243,10 @@ fn tier3_bevy_run2p_polar_motion() {
 
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(GravitySourceEntry {
-        source: earth_source(),
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+    let earth_idx = sim.add_source(GravitySourceEntry::new(earth_source(), DVec3::ZERO, None));
     sim.polar_motion = Some((xp, yp));
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: iss_trans(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
@@ -314,8 +298,6 @@ fn run_gj_parity(label: &str, config: GaussJacksonConfig, dt: f64, n_steps: usiz
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
             IntegratorTypeC(IntegratorType::GaussJackson(config)),
             GaussJacksonStateC(GaussJacksonState::new(config)),
         ))
@@ -327,20 +309,16 @@ fn run_gj_parity(label: &str, config: GaussJacksonConfig, dt: f64, n_steps: usiz
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, dt);
-    let earth_idx = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
+    let earth_idx = sim.add_source(GravitySourceEntry::new(
+        GravitySource {
             mu: MU_EARTH,
             model: GravityModel::PointMass,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+        DVec3::ZERO,
+        None,
+    ));
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: gj_trans,
         integrator: IntegratorType::GaussJackson(config),
         gravity_controls: GravityControls {

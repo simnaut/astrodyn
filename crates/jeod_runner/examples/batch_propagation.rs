@@ -4,7 +4,7 @@
 //! runner, printing eccentricity and energy drift at regular intervals.
 
 use glam::DVec3;
-use jeod_runner::{GravitySourceEntry, SimBody, Simulation};
+use jeod_runner::{GravitySourceEntry, Simulation, VehicleConfig};
 use jeod_sim::{
     default_leap_second_table, GravityControl, GravityControls, GravityModel, GravitySource,
     SimulationTime, TranslationalState,
@@ -51,7 +51,7 @@ fn main() {
         rotation_model: jeod_sim::RotationModel::default(),
         tidal_config: None,
     });
-    let body_idx = sim.add_body(SimBody {
+    let body_idx = sim.add_body(VehicleConfig {
         trans: state0,
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],

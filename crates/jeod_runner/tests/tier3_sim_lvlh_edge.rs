@@ -10,7 +10,9 @@ mod sim_test_helpers;
 use sim_test_helpers::*;
 
 use glam::DVec3;
-use jeod_runner::{GravitySourceEntry, RotationModel, SimBody, Simulation};
+use jeod_runner::{
+    DerivedStateConfig, GravitySourceEntry, RotationModel, Simulation, VehicleConfig,
+};
 use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, SimulationTime,
     TranslationalState,
@@ -77,7 +79,7 @@ fn run_lvlh_test(
         tidal_config: None,
     });
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: TranslationalState {
             position: init.position,
             velocity: init.velocity,
@@ -85,7 +87,10 @@ fn run_lvlh_test(
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
-        compute_lvlh: true,
+        derived: DerivedStateConfig {
+            lvlh: true,
+            ..Default::default()
+        },
         ..Default::default()
     });
 

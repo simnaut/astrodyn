@@ -9,7 +9,10 @@
 //! end-to-end but asserts physical plausibility, not JEOD parity.
 
 use glam::DVec3;
-use jeod_runner::{GravitySourceEntry, RotationModel, SimBody, Simulation};
+use jeod_runner::{
+    DerivedStateConfig, EarthLightingConfig, GravitySourceEntry, RotationModel, Simulation,
+    VehicleConfig,
+};
 use jeod_sim::{
     Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel, GravitySource,
     SimulationTime, TranslationalState,
@@ -97,7 +100,7 @@ fn pipeline_earth_lighting_smoke() {
 
     // ISS-like LEO body with earth lighting enabled
     // earth_lighting_config = (earth_radius, moon_radius, sun_radius)
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: TranslationalState {
             position: DVec3::new(6_778_137.0, 0.0, 0.0),
             velocity: DVec3::new(0.0, 7_668.558, 0.0),
@@ -105,7 +108,14 @@ fn pipeline_earth_lighting_smoke() {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
-        earth_lighting_config: Some((6_378_137.0, 1_737_400.0, 6.96e8)),
+        derived: DerivedStateConfig {
+            earth_lighting: Some(EarthLightingConfig {
+                earth_radius: 6_378_137.0,
+                moon_radius: 1_737_400.0,
+                sun_radius: 6.96e8,
+            }),
+            ..Default::default()
+        },
         ..Default::default()
     });
 

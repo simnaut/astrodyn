@@ -8,7 +8,7 @@ mod sim_test_helpers;
 use sim_test_helpers::*;
 
 use glam::DVec3;
-use jeod_runner::{SimBody, Simulation};
+use jeod_runner::{Simulation, VehicleConfig};
 use jeod_sim::{compute_lvlh_relative_state, SimulationTime, TranslationalState};
 
 struct LvlhRelRecord {
@@ -72,7 +72,7 @@ fn run_lvlhrel_scenario(label: &str, csv_name: &str) {
     let mut sim = Simulation::new(time, dt);
 
     // Body 0: reference vehicle
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: TranslationalState {
             position: init.ref_pos,
             velocity: init.ref_vel,
@@ -81,7 +81,7 @@ fn run_lvlhrel_scenario(label: &str, csv_name: &str) {
     });
 
     // Body 1: subject vehicle
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: TranslationalState {
             position: init.subj_pos,
             velocity: init.subj_vel,

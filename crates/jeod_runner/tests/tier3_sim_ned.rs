@@ -13,7 +13,10 @@ mod sim_test_helpers;
 use sim_test_helpers::*;
 
 use glam::{DMat3, DVec3};
-use jeod_runner::{GravitySourceEntry, RotationModel, SimBody, Simulation};
+use jeod_runner::{
+    DerivedStateConfig, GeodeticConfig, GravitySourceEntry, RotationModel, Simulation,
+    VehicleConfig,
+};
 use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, SimulationTime,
     TranslationalState,
@@ -95,7 +98,7 @@ fn tier3_simulation_geodetic() {
         tidal_config: None,
     });
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: TranslationalState {
             position: init.position,
             velocity: init.velocity,
@@ -103,7 +106,14 @@ fn tier3_simulation_geodetic() {
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
-        geodetic_planet: Some((earth, GEO_R_EQ, GEO_R_POL)),
+        derived: DerivedStateConfig {
+            geodetic: Some(GeodeticConfig {
+                source_idx: earth,
+                r_eq: GEO_R_EQ,
+                r_pol: GEO_R_POL,
+            }),
+            ..Default::default()
+        },
         ..Default::default()
     });
 

@@ -27,6 +27,7 @@ pub struct TotalForceC(pub TotalForce);
 pub struct FrameDerivativesC(pub FrameDerivatives);
 
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
+#[require(FrameDerivativesC)]
 pub struct DynamicsConfigC(pub DynamicsConfig);
 
 /// Integration method for this body. Defaults to RK4 when absent.
@@ -45,6 +46,7 @@ pub struct IntegratorTypeC(pub jeod_sim::IntegratorType);
 pub struct GaussJacksonStateC(pub jeod_sim::GaussJacksonState);
 
 #[derive(Component, Debug, Clone)]
+#[require(GravityAccelerationC, TotalForceC)]
 pub struct GravityControlsC(pub GravityControls<Entity>);
 
 #[derive(Component, Debug, Clone, Deref, DerefMut)]
@@ -153,6 +155,7 @@ pub struct PlanetFixedRotationC(pub glam::DMat3);
 /// `TidalDeltaC20C`. The application is responsible for updating
 /// `tidal_bodies[].position_inertial` each step from ephemeris data.
 #[derive(Component, Debug, Clone, Deref, DerefMut)]
+#[require(TidalDeltaC20C)]
 pub struct TidalConfigC(pub jeod_sim::TidalConfig);
 
 /// Computed tidal ΔC20 for a gravity source entity.
@@ -165,14 +168,20 @@ pub struct TidalDeltaC20C(pub f64);
 // ── Interactions ──
 
 /// Vehicle drag configuration (Cd, area).
+///
+/// Auto-inserts [`AtmosphericStateC`] and [`AerodynamicForceC`] when added.
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut)]
+#[require(AtmosphericStateC, AerodynamicForceC)]
 pub struct DragConfigC(pub DragConfig);
 
 /// Flat-plate SRP configuration with thermal state.
 ///
 /// Wraps [`jeod_sim::FlatPlateState`] so the same type (and its
 /// `integrate_temperatures` method) is shared with the `Simulation` runner.
+///
+/// Auto-inserts [`RadiationForceC`] when added.
 #[derive(Component, Debug, Clone, Deref, DerefMut)]
+#[require(RadiationForceC)]
 pub struct FlatPlateConfigC(pub jeod_sim::FlatPlateState);
 
 /// Marker for an entity that casts shadows (e.g., Earth).
@@ -215,7 +224,10 @@ pub struct EphemerisBodyC {
 ///
 /// Requires `SunMarker` entity in the world. Optional `ShadowBodyC` for eclipse.
 /// Writes to `RadiationForceC`.
+///
+/// Auto-inserts [`RadiationForceC`] when added.
 #[derive(Component, Debug, Clone, Copy)]
+#[require(RadiationForceC)]
 pub struct CannonballSrpC {
     /// Cross-section area * Cr (m²).
     pub cx_area: f64,
@@ -247,6 +259,7 @@ pub struct PlanetC(pub PlanetShape);
 /// Presence of this component + `OrbitalElementsC` on an entity enables
 /// per-step orbital elements computation in `JeodSet::DerivedState`.
 #[derive(Component, Debug, Clone, Copy)]
+#[require(OrbitalElementsC)]
 pub struct OrbitalElementsConfigC {
     pub gravity_source: Entity,
 }
@@ -256,6 +269,7 @@ pub struct OrbitalElementsConfigC {
 /// Presence of this component + `EulerAnglesC` on an entity enables
 /// per-step Euler angle computation in `JeodSet::DerivedState`.
 #[derive(Component, Debug, Clone, Copy)]
+#[require(EulerAnglesC)]
 pub struct EulerAnglesConfigC {
     pub sequence: jeod_sim::EulerSequence,
 }
@@ -267,6 +281,7 @@ pub struct EulerAnglesConfigC {
 /// Presence of this component + `GeodeticStateC` on an entity enables
 /// per-step geodetic computation in `JeodSet::DerivedState`.
 #[derive(Component, Debug, Clone, Copy)]
+#[require(GeodeticStateC)]
 pub struct GeodeticConfigC {
     pub planet: Entity,
 }
@@ -313,6 +328,7 @@ pub struct SolarBetaC(pub f64);
 /// Presence of this component + `EarthLightingStateC` on an entity enables
 /// per-step earth lighting computation in `JeodSet::DerivedState`.
 #[derive(Component, Debug, Clone, Copy)]
+#[require(EarthLightingStateC)]
 pub struct EarthLightingConfigC {
     /// Earth equatorial radius (m).
     pub earth_radius: f64,

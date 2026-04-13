@@ -4,11 +4,11 @@ mod parity_helpers;
 
 use bevy::prelude::*;
 use bevy_jeod::{
-    DynamicsConfigC, EarthLightingConfigC, EarthLightingStateC, GravityAccelerationC,
-    GravityControlsC, MoonMarker, SunMarker, TotalForceC, TranslationalStateC,
+    DynamicsConfigC, EarthLightingConfigC, EarthLightingStateC, GravityControlsC, MoonMarker,
+    SunMarker, TranslationalStateC,
 };
 use glam::DVec3;
-use jeod_runner::{GravitySourceEntry, RotationModel, SimBody};
+use jeod_runner::{DerivedStateConfig, EarthLightingConfig, GravitySourceEntry, VehicleConfig};
 use jeod_sim::{GravityControl, GravityControls, GravityModel, GravitySource, TranslationalState};
 
 use parity_helpers::*;
@@ -89,14 +89,11 @@ fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_p
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
             EarthLightingConfigC {
                 earth_radius: earth_r,
                 moon_radius: moon_r,
                 sun_radius: sun_r,
             },
-            EarthLightingStateC::default(),
         ))
         .id();
 
@@ -110,34 +107,26 @@ fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_p
 
     // ── Simulation ──
     let (mut sim, earth_idx) = new_sim_earth(DT);
-    let sun_idx = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
+    let sun_idx = sim.add_source(GravitySourceEntry::new(
+        GravitySource {
             mu: 0.0,
             model: GravityModel::PointMass,
         },
-        position: sun_pos,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
-    let moon_idx = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
+        sun_pos,
+        None,
+    ));
+    let moon_idx = sim.add_source(GravitySourceEntry::new(
+        GravitySource {
             mu: 0.0,
             model: GravityModel::PointMass,
         },
-        position: moon_pos,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+        moon_pos,
+        None,
+    ));
     sim.sun_source = Some(sun_idx);
     sim.moon_source = Some(moon_idx);
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: TranslationalState {
             position: veh_pos,
             velocity: DVec3::new(0.0, 7668.56, 0.0),
@@ -145,14 +134,21 @@ fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_p
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
-        earth_lighting_config: Some((earth_r, moon_r, sun_r)),
+        derived: DerivedStateConfig {
+            earth_lighting: Some(EarthLightingConfig {
+                earth_radius: earth_r,
+                moon_radius: moon_r,
+                sun_radius: sun_r,
+            }),
+            ..Default::default()
+        },
         ..Default::default()
     });
     sim.validate().unwrap();
     sim.step();
 
-    let sim_lighting = sim
-        .body(0)
+    let sim_body = sim.body(0);
+    let sim_lighting = sim_body
         .earth_lighting
         .as_ref()
         .expect("earth lighting computed");
@@ -298,14 +294,11 @@ fn tier3_bevy_earth_lighting_pipeline() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            GravityAccelerationC::default(),
-            TotalForceC::default(),
             EarthLightingConfigC {
                 earth_radius: earth_r,
                 moon_radius: moon_r,
                 sun_radius: sun_r,
             },
-            EarthLightingStateC::default(),
         ))
         .id();
 
@@ -320,51 +313,50 @@ fn tier3_bevy_earth_lighting_pipeline() {
 
     // ── Simulation ──
     let (mut sim, earth_idx) = new_sim_earth(DT);
-    let sun_idx = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
+    let sun_idx = sim.add_source(GravitySourceEntry::new(
+        GravitySource {
             mu: 0.0,
             model: GravityModel::PointMass,
         },
-        position: sun_pos,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
-    let moon_idx = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
+        sun_pos,
+        None,
+    ));
+    let moon_idx = sim.add_source(GravitySourceEntry::new(
+        GravitySource {
             mu: 0.0,
             model: GravityModel::PointMass,
         },
-        position: moon_pos,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+        moon_pos,
+        None,
+    ));
     sim.sun_source = Some(sun_idx);
     sim.moon_source = Some(moon_idx);
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: iss_trans(),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth_idx, false)],
         },
-        earth_lighting_config: Some((earth_r, moon_r, sun_r)),
+        derived: DerivedStateConfig {
+            earth_lighting: Some(EarthLightingConfig {
+                earth_radius: earth_r,
+                moon_radius: moon_r,
+                sun_radius: sun_r,
+            }),
+            ..Default::default()
+        },
         ..Default::default()
     });
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS);
 
+    let sim_body = sim.body(0);
     assert_trans_eq(
         "Bevy vs Sim (earth lighting pipeline)",
         &bevy_trans,
-        &sim.body(0).trans,
+        &sim_body.trans,
     );
-    let sim_lighting = sim
-        .body(0)
+    let sim_lighting = sim_body
         .earth_lighting
         .as_ref()
         .expect("earth lighting computed");

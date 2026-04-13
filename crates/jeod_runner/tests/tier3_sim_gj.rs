@@ -17,7 +17,7 @@ mod sim_test_helpers;
 use sim_test_helpers::*;
 
 use glam::DVec3;
-use jeod_runner::{GravitySourceEntry, RotationModel, SimBody, Simulation};
+use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
 use jeod_sim::{
     GaussJacksonConfig, GravityControl, GravityControls, GravityModel, GravitySource,
     IntegratorType, SimulationTime, TranslationalState,
@@ -81,7 +81,7 @@ fn run_gj_test(
         tidal_config: None,
     });
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: TranslationalState {
             position: init.position,
             velocity: init.velocity,

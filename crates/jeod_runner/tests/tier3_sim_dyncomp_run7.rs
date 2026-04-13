@@ -21,11 +21,11 @@ mod sim_test_helpers;
 use sim_test_helpers::*;
 
 use glam::{DMat3, DVec3};
-use jeod_runner::{GravitySourceEntry, RotationModel, SimBody, Simulation};
+use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
 use jeod_sim::{
-    met_atmosphere, AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig, Ephemeris,
-    EphemerisBody, GravityControl, GravityControls, GravityModel, GravitySource, JeodQuat,
-    MassProperties, MetAtmosphere, RotationalState, SimulationTime, TranslationalState,
+    met_atmosphere, AtmosphereConfig, AtmosphereModel, DragConfig, Ephemeris, EphemerisBody,
+    GravityControl, GravityControls, GravityModel, GravitySource, JeodQuat, MassProperties,
+    MetAtmosphere, RotationalState, SimulationTime, TranslationalState,
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::Path;
@@ -225,30 +225,22 @@ fn run_7_test(
 
     // Drag requires RotationalState for inertial-to-body frame transform.
     // Even for a sphere (isotropic drag), the code path needs orientation.
-    let (rot, config) = if with_drag {
-        (
-            Some(RotationalState {
-                quaternion: JeodQuat::from_glam(init.composite_body.quaternion),
-                ang_vel_body: init.composite_body.ang_vel,
-            }),
-            DynamicsConfig {
-                translational_dynamics: true,
-                rotational_dynamics: true,
-                three_dof: false,
-            },
-        )
+    let rot = if with_drag {
+        Some(RotationalState {
+            quaternion: JeodQuat::from_glam(init.composite_body.quaternion),
+            ang_vel_body: init.composite_body.ang_vel,
+        })
     } else {
-        (None, DynamicsConfig::default())
+        None
     };
 
-    let mut body = SimBody {
+    let mut body = VehicleConfig {
         trans: TranslationalState {
             position: init.composite_body.position,
             velocity: init.composite_body.velocity,
         },
         rot,
         mass: Some(sphere_mass),
-        config,
         gravity_controls: GravityControls {
             controls: vec![
                 GravityControl::new_nonspherical(
@@ -266,7 +258,6 @@ fn run_7_test(
 
     if let Some(dc) = drag_config {
         body.drag = Some(dc);
-        body.atmospheric_state = Some(Default::default());
     }
 
     sim.add_body(body);
@@ -295,8 +286,8 @@ fn run_7_test(
             time: record.time,
             position: Some(body.trans.position),
             velocity: Some(body.trans.velocity),
-            acceleration: Some(body.frame_derivs.trans_accel),
-            ang_accel: Some(body.frame_derivs.rot_accel),
+            acceleration: None,
+            ang_accel: None,
             ..Default::default()
         });
     }

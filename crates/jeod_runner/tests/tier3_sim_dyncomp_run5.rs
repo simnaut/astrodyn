@@ -15,10 +15,10 @@ mod sim_test_helpers;
 use sim_test_helpers::*;
 
 use glam::DVec3;
-use jeod_runner::{GravitySourceEntry, RotationModel, SimBody, Simulation};
+use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
 use jeod_sim::{
-    DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource, JeodQuat,
-    MassProperties, RotationalState, SimulationTime, TranslationalState,
+    GravityControl, GravityControls, GravityModel, GravitySource, JeodQuat, MassProperties,
+    RotationalState, SimulationTime, TranslationalState,
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
@@ -137,7 +137,7 @@ fn run_atmosphere_test(
 
     // Drag OFF, gravity torque OFF (common_input defaults).
     // Gravity gradient is computed (gradient=true) but not used as torque.
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: TranslationalState {
             position: init.composite_body.position,
             velocity: init.composite_body.velocity,
@@ -147,11 +147,6 @@ fn run_atmosphere_test(
             ang_vel_body: init.composite_body.ang_vel,
         }),
         mass: Some(mass_props),
-        config: DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: true,
-            three_dof: false,
-        },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, true)], // gradient=true
         },
@@ -183,10 +178,10 @@ fn run_atmosphere_test(
             time: record.time,
             position: Some(body.trans.position),
             velocity: Some(body.trans.velocity),
-            acceleration: Some(body.frame_derivs.trans_accel),
+            acceleration: None,
             quaternion: Some(rot.quaternion.to_glam()),
             ang_vel: Some(rot.ang_vel_body),
-            ang_accel: Some(body.frame_derivs.rot_accel),
+            ang_accel: None,
         });
     }
 

@@ -9,10 +9,9 @@ use sim_test_helpers::*;
 
 use glam::DVec3;
 use jeod_math::JeodQuat;
-use jeod_runner::{SimBody, Simulation};
+use jeod_runner::{Simulation, VehicleConfig};
 use jeod_sim::{
-    compute_relative_state, DynamicsConfig, MassProperties, RotationalState, SimulationTime,
-    TranslationalState,
+    compute_relative_state, MassProperties, RotationalState, SimulationTime, TranslationalState,
 };
 
 #[allow(dead_code)]
@@ -84,17 +83,11 @@ fn run_relative_scenario(label: &str, csv_name: &str) {
     };
     let mut sim = Simulation::new(time, dt);
 
-    let config_6dof = DynamicsConfig {
-        translational_dynamics: true,
-        rotational_dynamics: true,
-        three_dof: false,
-    };
-
     // Dummy mass — required by validation for rotational dynamics
     let dummy_mass = MassProperties::new(1.0);
 
     // Body 0: vehicle A (subject)
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: TranslationalState {
             position: init.veh_a_pos,
             velocity: init.veh_a_vel,
@@ -104,12 +97,11 @@ fn run_relative_scenario(label: &str, csv_name: &str) {
             ang_vel_body: init.veh_a_ang_vel,
         }),
         mass: Some(dummy_mass),
-        config: config_6dof,
         ..Default::default()
     });
 
     // Body 1: vehicle B (reference)
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: TranslationalState {
             position: init.veh_b_pos,
             velocity: init.veh_b_vel,
@@ -119,7 +111,6 @@ fn run_relative_scenario(label: &str, csv_name: &str) {
             ang_vel_body: init.veh_b_ang_vel,
         }),
         mass: Some(dummy_mass),
-        config: config_6dof,
         ..Default::default()
     });
 

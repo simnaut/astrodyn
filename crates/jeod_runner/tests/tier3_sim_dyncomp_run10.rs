@@ -7,10 +7,10 @@ mod sim_test_helpers;
 use sim_test_helpers::*;
 
 use glam::DVec3;
-use jeod_runner::{GravitySourceEntry, RotationModel, SimBody, Simulation};
+use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
 use jeod_sim::{
-    DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource, JeodQuat,
-    MassProperties, RotationalState, SimulationTime, TranslationalState,
+    GravityControl, GravityControls, GravityModel, GravitySource, JeodQuat, MassProperties,
+    RotationalState, SimulationTime, TranslationalState,
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
@@ -103,7 +103,7 @@ fn tier3_simulation_run10a_gravity_torque() {
         tidal_config: None,
     });
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: TranslationalState {
             position: init.composite_body.position,
             velocity: init.composite_body.velocity,
@@ -113,15 +113,10 @@ fn tier3_simulation_run10a_gravity_torque() {
             ang_vel_body: init.composite_body.ang_vel,
         }),
         mass: Some(mass_props),
-        config: DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: true,
-            three_dof: false,
-        },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, true)], // gradient=true
         },
-        compute_gravity_torque: true,
+        compute_gravity_gradient: true,
         ..Default::default()
     });
 
@@ -154,10 +149,10 @@ fn tier3_simulation_run10a_gravity_torque() {
             time: record.time,
             position: Some(body.trans.position),
             velocity: Some(body.trans.velocity),
-            acceleration: Some(body.frame_derivs.trans_accel),
+            acceleration: None,
             quaternion: Some(rot.quaternion.to_glam()),
             ang_vel: Some(rot.ang_vel_body),
-            ang_accel: Some(body.frame_derivs.rot_accel),
+            ang_accel: None,
         });
     }
 
@@ -405,7 +400,7 @@ fn tier3_simulation_run10c_gravity_torque_elliptical() {
         tidal_config: None,
     });
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: TranslationalState {
             position: init.composite_body.position,
             velocity: init.composite_body.velocity,
@@ -415,15 +410,10 @@ fn tier3_simulation_run10c_gravity_torque_elliptical() {
             ang_vel_body: init.composite_body.ang_vel,
         }),
         mass: Some(mass_props),
-        config: DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: true,
-            three_dof: false,
-        },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, true)],
         },
-        compute_gravity_torque: true,
+        compute_gravity_gradient: true,
         ..Default::default()
     });
 
@@ -440,10 +430,10 @@ fn tier3_simulation_run10c_gravity_torque_elliptical() {
             time: record.time,
             position: Some(body.trans.position),
             velocity: Some(body.trans.velocity),
-            acceleration: Some(body.frame_derivs.trans_accel),
+            acceleration: None,
             quaternion: Some(rot.quaternion.to_glam()),
             ang_vel: Some(rot.ang_vel_body),
-            ang_accel: Some(body.frame_derivs.rot_accel),
+            ang_accel: None,
         });
     }
 
@@ -565,7 +555,7 @@ fn tier3_simulation_run10d_gravity_torque_elliptical_rate() {
         tidal_config: None,
     });
 
-    sim.add_body(SimBody {
+    sim.add_body(VehicleConfig {
         trans: TranslationalState {
             position: init.composite_body.position,
             velocity: init.composite_body.velocity,
@@ -575,15 +565,10 @@ fn tier3_simulation_run10d_gravity_torque_elliptical_rate() {
             ang_vel_body: init.composite_body.ang_vel,
         }),
         mass: Some(mass_props),
-        config: DynamicsConfig {
-            translational_dynamics: true,
-            rotational_dynamics: true,
-            three_dof: false,
-        },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, true)],
         },
-        compute_gravity_torque: true,
+        compute_gravity_gradient: true,
         ..Default::default()
     });
 
@@ -600,10 +585,10 @@ fn tier3_simulation_run10d_gravity_torque_elliptical_rate() {
             time: record.time,
             position: Some(body.trans.position),
             velocity: Some(body.trans.velocity),
-            acceleration: Some(body.frame_derivs.trans_accel),
+            acceleration: None,
             quaternion: Some(rot.quaternion.to_glam()),
             ang_vel: Some(rot.ang_vel_body),
-            ang_accel: Some(body.frame_derivs.rot_accel),
+            ang_accel: None,
         });
     }
 

@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>jeod_runner vs Bevy ECS — Configuration Comparison</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --text-muted: #8b949e;
+    --accent-runner: #58a6ff;
+    --accent-bevy: #7ee787;
+    --accent-runner-bg: #122640;
+    --accent-bevy-bg: #12261e;
+    --code-bg: #0d1117;
+    --highlight: #f0883e;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+  }
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 2rem 2rem 1.5rem;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  header h1 {
+    font-size: 1.75rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+  }
+  header p { color: var(--text-muted); font-size: 0.95rem; }
+  .badge-runner {
+    display: inline-block;
+    background: var(--accent-runner-bg);
+    color: var(--accent-runner);
+    border: 1px solid var(--accent-runner);
+    border-radius: 4px;
+    padding: 0.1em 0.5em;
+    font-size: 0.8em;
+    font-family: monospace;
+    font-weight: 600;
+  }
+  .badge-bevy {
+    display: inline-block;
+    background: var(--accent-bevy-bg);
+    color: var(--accent-bevy);
+    border: 1px solid var(--accent-bevy);
+    border-radius: 4px;
+    padding: 0.1em 0.5em;
+    font-size: 0.8em;
+    font-family: monospace;
+    font-weight: 600;
+  }
+  main { max-width: 1400px; margin: 0 auto; padding: 2rem; }
+
+  /* Architecture overview */
+  .arch-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    margin-bottom: 3rem;
+  }
+  .arch-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+  }
+  .arch-card h3 { margin-bottom: 0.75rem; font-size: 1.1rem; }
+  .arch-card ul { padding-left: 1.25rem; color: var(--text-muted); }
+  .arch-card li { margin-bottom: 0.35rem; }
+  .arch-card.runner { border-top: 3px solid var(--accent-runner); }
+  .arch-card.bevy { border-top: 3px solid var(--accent-bevy); }
+
+  /* Scenario sections */
+  .scenario {
+    margin-bottom: 3rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .scenario-header {
+    background: var(--surface);
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    cursor: pointer;
+    user-select: none;
+  }
+  .scenario-header:hover { background: #1c2128; }
+  .scenario-header h2 { font-size: 1.15rem; font-weight: 600; }
+  .scenario-tag {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.15em 0.5em;
+  }
+  .scenario-header .chevron {
+    margin-left: auto;
+    transition: transform 0.2s;
+    color: var(--text-muted);
+    font-size: 1.2rem;
+  }
+  .scenario.collapsed .scenario-body { display: none; }
+  .scenario.collapsed .chevron { transform: rotate(-90deg); }
+  .scenario-body { display: grid; grid-template-columns: 1fr 1fr; }
+  .scenario-body .callout {
+    grid-column: 1 / -1;
+    background: #1c1206;
+    border-left: 3px solid var(--highlight);
+    padding: 0.75rem 1.25rem;
+    color: #e3b341;
+    font-size: 0.9rem;
+  }
+  .code-panel {
+    padding: 1rem 1.25rem;
+    border-right: 1px solid var(--border);
+    overflow-x: auto;
+  }
+  .code-panel:last-child { border-right: none; }
+  .code-panel h4 {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.75rem;
+    font-weight: 600;
+  }
+  .code-panel.runner h4 { color: var(--accent-runner); }
+  .code-panel.bevy h4 { color: var(--accent-bevy); }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem;
+    font-size: 0.82rem;
+    line-height: 1.55;
+    overflow-x: auto;
+    color: var(--text);
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+  }
+  pre .kw { color: #ff7b72; }
+  pre .ty { color: #79c0ff; }
+  pre .fn { color: #d2a8ff; }
+  pre .str { color: #a5d6ff; }
+  pre .num { color: #79c0ff; }
+  pre .cm { color: #8b949e; font-style: italic; }
+  pre .field { color: #ffa657; }
+
+  /* Summary table */
+  .summary-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+    font-size: 0.9rem;
+  }
+  .summary-table th {
+    text-align: left;
+    padding: 0.65rem 1rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    font-weight: 600;
+    color: var(--text);
+  }
+  .summary-table td {
+    padding: 0.65rem 1rem;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+  }
+  .summary-table td:nth-child(2) { color: var(--accent-runner); }
+  .summary-table td:nth-child(3) { color: var(--accent-bevy); }
+  .summary-table tr:hover td { background: #161b22; }
+
+  section > h2 {
+    font-size: 1.3rem;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  @media (max-width: 900px) {
+    .arch-grid { grid-template-columns: 1fr; }
+    .scenario-body { grid-template-columns: 1fr; }
+    .code-panel { border-right: none; border-bottom: 1px solid var(--border); }
+    .code-panel:last-child { border-bottom: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>jeod_runner vs Bevy ECS &mdash; Configuration Comparison</h1>
+  <p>
+    Side-by-side comparison of how the same physics scenarios are configured in
+    <span class="badge-runner">jeod_runner</span> (standalone batch runner) and
+    <span class="badge-bevy">bevy_jeod</span> (Bevy ECS integration).
+    Both call identical <code>jeod_sim</code> physics functions and produce bit-identical results.
+  </p>
+</header>
+
+<main>
+
+<!-- ── Architecture Overview ── -->
+<section style="margin-bottom: 3rem;">
+  <h2>Architecture Overview</h2>
+  <div class="arch-grid">
+    <div class="arch-card runner">
+      <h3><span class="badge-runner">jeod_runner</span> &mdash; Standalone Runner</h3>
+      <ul>
+        <li>Monolithic <code>Simulation</code> struct owns all state</li>
+        <li>Bodies in <code>Vec&lt;SimBody&gt;</code>, sources in <code>Vec&lt;GravitySourceEntry&gt;</code></li>
+        <li>Global config as fields on <code>Simulation</code></li>
+        <li>Sources referenced by <code>usize</code> index</li>
+        <li>Imperative API: <code>add_source()</code> &rarr; <code>add_body()</code> &rarr; <code>validate()</code> &rarr; <code>step()</code></li>
+        <li>Pipeline order hardcoded in <code>step_internal()</code></li>
+        <li>Best for: batch scripts, Tier 3 tests, standalone tools</li>
+      </ul>
+    </div>
+    <div class="arch-card bevy">
+      <h3><span class="badge-bevy">bevy_jeod</span> &mdash; Bevy ECS</h3>
+      <ul>
+        <li>State decomposed into components on entities</li>
+        <li>Sources and bodies are entities with opt-in components</li>
+        <li>Global config as Bevy <code>Resource</code>s</li>
+        <li>Sources referenced by <code>Entity</code> handle</li>
+        <li>Declarative API: spawn entities &rarr; insert resources &rarr; add <code>JeodPlugin</code></li>
+        <li>Pipeline order via <code>ScheduleSet</code> ordering in <code>FixedUpdate</code></li>
+        <li>Best for: interactive apps, realtime visualization, games</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ── Scenario A ── -->
+<div class="scenario">
+  <div class="scenario-header" onclick="toggleScenario(this)">
+    <h2>Scenario A: ISS Circular Orbit</h2>
+    <span class="scenario-tag">Point-Mass</span>
+    <span class="scenario-tag">6-DOF</span>
+    <span class="chevron">&#9662;</span>
+  </div>
+  <div class="scenario-body">
+    <div class="code-panel runner">
+      <h4>jeod_runner</h4>
+<pre><span class="kw">let</span> (<span class="kw">mut</span> sim, earth_idx) = <span class="fn">new_sim_earth</span>(DT);
+
+sim.<span class="fn">add_body</span>(<span class="ty">SimBody</span> {
+    <span class="field">trans</span>: <span class="fn">iss_trans</span>(),
+    <span class="field">rot</span>: <span class="ty">Some</span>(<span class="fn">tumble_rot</span>()),
+    <span class="field">mass</span>: <span class="ty">Some</span>(<span class="fn">iss_mass</span>()),
+    <span class="field">config</span>: <span class="ty">DynamicsConfig</span> {
+        <span class="field">translational_dynamics</span>: <span class="kw">true</span>,
+        <span class="field">rotational_dynamics</span>: <span class="kw">true</span>,
+        <span class="field">three_dof</span>: <span class="kw">false</span>,
+    },
+    <span class="field">gravity_controls</span>: <span class="ty">GravityControls</span> {
+        <span class="field">controls</span>: <span class="kw">vec!</span>[
+            <span class="ty">GravityControl</span>::<span class="fn">new_spherical</span>(earth_idx, <span class="kw">false</span>),
+        ],
+    },
+    ..<span class="ty">Default</span>::<span class="fn">default</span>()
+});
+
+sim.<span class="fn">validate</span>().<span class="fn">unwrap</span>();
+sim.<span class="fn">step_n</span>(<span class="num">100</span>);</pre>
+    </div>
+    <div class="code-panel bevy">
+      <h4>Bevy ECS</h4>
+<pre>app.<span class="fn">add_plugins</span>(<span class="ty">bevy_jeod</span>::<span class="ty">JeodPlugin</span>);
+
+<span class="kw">let</span> planet = app.<span class="fn">world_mut</span>().<span class="fn">spawn</span>((
+    <span class="ty">GravitySourceC</span>(<span class="fn">earth_source</span>()),
+    <span class="ty">SourceInertialPositionC</span>::<span class="fn">default</span>(),
+    <span class="ty">TranslationalStateC</span>::<span class="fn">default</span>(),
+)).<span class="fn">id</span>();
+
+<span class="kw">let</span> vehicle = app.<span class="fn">world_mut</span>().<span class="fn">spawn</span>((
+    <span class="ty">TranslationalStateC</span>(<span class="fn">iss_trans</span>()),
+    <span class="ty">RotationalStateC</span>(<span class="fn">tumble_rot</span>()),
+    <span class="ty">MassPropertiesC</span>(<span class="fn">iss_mass</span>()),
+    <span class="ty">DynamicsConfigC</span>(<span class="ty">DynamicsConfig</span> {
+        <span class="field">translational_dynamics</span>: <span class="kw">true</span>,
+        <span class="field">rotational_dynamics</span>: <span class="kw">true</span>,
+        <span class="field">three_dof</span>: <span class="kw">false</span>,
+    }),
+    <span class="ty">GravityControlsC</span>(<span class="ty">GravityControls</span> {
+        <span class="field">controls</span>: <span class="kw">vec!</span>[
+            <span class="ty">GravityControl</span>::<span class="fn">new_spherical</span>(planet, <span class="kw">false</span>),
+        ],
+    }),
+    <span class="ty">GravityAccelerationC</span>::<span class="fn">default</span>(),
+    <span class="ty">TotalForceC</span>::<span class="fn">default</span>(),
+)).<span class="fn">id</span>();
+
+<span class="fn">step_bevy</span>(&amp;<span class="kw">mut</span> app, <span class="num">100</span>);</pre>
+    </div>
+    <div class="callout">
+      <strong>Key difference:</strong>
+      jeod_runner references sources by <code>usize</code> index; Bevy uses <code>Entity</code> handles.
+      Bevy requires explicit output components (<code>GravityAccelerationC</code>, <code>TotalForceC</code>).
+    </div>
+  </div>
+</div>
+
+<!-- ── Scenario B ── -->
+<div class="scenario">
+  <div class="scenario-header" onclick="toggleScenario(this)">
+    <h2>Scenario B: Drag + Exponential Atmosphere</h2>
+    <span class="scenario-tag">Aero</span>
+    <span class="scenario-tag">6-DOF</span>
+    <span class="chevron">&#9662;</span>
+  </div>
+  <div class="scenario-body">
+    <div class="code-panel runner">
+      <h4>jeod_runner</h4>
+<pre><span class="kw">let mut</span> sim = <span class="ty">Simulation</span>::<span class="fn">new</span>(time, DT);
+
+<span class="cm">// Atmosphere is a field on the Simulation</span>
+sim.<span class="field">atmosphere</span> = <span class="ty">Some</span>(<span class="ty">AtmosphereConfig</span> {
+    <span class="field">model</span>: <span class="ty">AtmosphereModel</span>::<span class="ty">Exponential</span>(
+        <span class="ty">ExponentialAtmosphere</span>::<span class="fn">default</span>()
+    ),
+    <span class="field">r_eq</span>:  <span class="num">6_378_137.0</span>,
+    <span class="field">r_pol</span>: <span class="num">6_356_752.3</span>,
+    <span class="field">planet_omega</span>: <span class="num">0.0</span>,
+});
+
+<span class="kw">let</span> earth_idx = sim.<span class="fn">add_source</span>(<span class="cm">/* ... */</span>);
+
+<span class="cm">// Drag config is a field on the body</span>
+<span class="kw">let mut</span> body = <span class="fn">new_sim_body_sixdof</span>(earth_idx, <span class="kw">false</span>);
+body.<span class="field">drag</span> = <span class="ty">Some</span>(<span class="ty">DragConfig</span> {
+    <span class="field">cd</span>: <span class="num">2.2</span>,
+    <span class="field">area</span>: <span class="num">1000.0</span>,
+    <span class="field">constant_density</span>: <span class="ty">None</span>,
+});
+body.<span class="field">atmospheric_state</span> = <span class="ty">Some</span>(<span class="ty">Default</span>::<span class="fn">default</span>());
+sim.<span class="fn">add_body</span>(body);
+
+sim.<span class="fn">validate</span>().<span class="fn">unwrap</span>();
+sim.<span class="fn">step_n</span>(NUM_STEPS);</pre>
+    </div>
+    <div class="code-panel bevy">
+      <h4>Bevy ECS</h4>
+<pre>app.<span class="fn">add_plugins</span>(<span class="ty">bevy_jeod</span>::<span class="ty">JeodPlugin</span>);
+
+<span class="cm">// Atmosphere is a global Resource</span>
+app.<span class="fn">insert_resource</span>(<span class="ty">AtmosphereModelR</span> {
+    <span class="field">config</span>: <span class="ty">AtmosphereConfig</span> {
+        <span class="field">model</span>: <span class="ty">AtmosphereModel</span>::<span class="ty">Exponential</span>(
+            <span class="ty">ExponentialAtmosphere</span>::<span class="fn">default</span>()
+        ),
+        <span class="field">r_eq</span>:  <span class="num">6_378_137.0</span>,
+        <span class="field">r_pol</span>: <span class="num">6_356_752.3</span>,
+        <span class="field">planet_omega</span>: <span class="num">0.0</span>,
+    },
+    <span class="field">planet_entity</span>: <span class="ty">None</span>,
+});
+
+<span class="cm">// Drag config is a per-entity component</span>
+<span class="kw">let</span> vehicle = app.<span class="fn">world_mut</span>().<span class="fn">spawn</span>((
+    <span class="cm">/* ...state &amp; dynamics components... */</span>
+    <span class="ty">DragConfigC</span>(<span class="ty">DragConfig</span> {
+        <span class="field">cd</span>: <span class="num">2.2</span>,
+        <span class="field">area</span>: <span class="num">1000.0</span>,
+        <span class="field">constant_density</span>: <span class="ty">None</span>,
+    }),
+    <span class="ty">AtmosphericStateC</span>::<span class="fn">default</span>(),
+    <span class="ty">AerodynamicForceC</span>::<span class="fn">default</span>(),
+)).<span class="fn">id</span>();
+
+<span class="fn">step_bevy</span>(&amp;<span class="kw">mut</span> app, NUM_STEPS);</pre>
+    </div>
+    <div class="callout">
+      <strong>Key difference:</strong>
+      Both treat atmosphere as global and drag as per-body.
+      The mapping is direct: <code>sim.atmosphere</code> &harr; <code>AtmosphereModelR</code> resource,
+      <code>body.drag</code> &harr; <code>DragConfigC</code> component.
+      Bevy needs an extra <code>AerodynamicForceC</code> output component.
+    </div>
+  </div>
+</div>
+
+<!-- ── Scenario C ── -->
+<div class="scenario">
+  <div class="scenario-header" onclick="toggleScenario(this)">
+    <h2>Scenario C: Spherical Harmonics 4&times;4 + Earth Rotation</h2>
+    <span class="scenario-tag">SH Gravity</span>
+    <span class="scenario-tag">RNP</span>
+    <span class="chevron">&#9662;</span>
+  </div>
+  <div class="scenario-body">
+    <div class="code-panel runner">
+      <h4>jeod_runner</h4>
+<pre><span class="kw">let</span> sh_data = <span class="fn">load_from_jeod_cc</span>(&amp;path)
+    .<span class="fn">expect</span>(<span class="str">"load GGM02C"</span>);
+
+<span class="kw">let</span> earth_idx = sim.<span class="fn">add_source</span>(<span class="ty">GravitySourceEntry</span> {
+    <span class="field">source</span>: <span class="ty">GravitySource</span> {
+        <span class="field">mu</span>: sh_data.mu,
+        <span class="field">model</span>: <span class="ty">GravityModel</span>::<span class="ty">SphericalHarmonics</span>(
+            <span class="ty">Box</span>::<span class="fn">new</span>(sh_data)
+        ),
+    },
+    <span class="cm">// Rotation config + initial matrix together</span>
+    <span class="field">t_inertial_pfix</span>: <span class="ty">Some</span>(<span class="ty">DMat3</span>::IDENTITY),
+    <span class="field">rotation_model</span>: <span class="ty">RotationModel</span>::EarthRNP,
+    ..<span class="ty">Default</span>::<span class="fn">default</span>()
+});
+
+sim.<span class="fn">add_body</span>(<span class="ty">SimBody</span> {
+    <span class="field">gravity_controls</span>: <span class="ty">GravityControls</span> {
+        <span class="field">controls</span>: <span class="kw">vec!</span>[
+            <span class="ty">GravityControl</span>::<span class="fn">new_nonspherical</span>(
+                earth_idx, <span class="num">4</span>, <span class="num">4</span>, <span class="kw">false</span>
+            ),
+        ],
+    },
+    ..<span class="ty">Default</span>::<span class="fn">default</span>()
+});</pre>
+    </div>
+    <div class="code-panel bevy">
+      <h4>Bevy ECS</h4>
+<pre><span class="kw">let</span> sh_data = <span class="fn">load_from_jeod_cc</span>(&amp;path)
+    .<span class="fn">expect</span>(<span class="str">"load GGM02C"</span>);
+
+<span class="kw">let</span> planet = app.<span class="fn">world_mut</span>().<span class="fn">spawn</span>((
+    <span class="ty">GravitySourceC</span>(<span class="ty">GravitySource</span> {
+        <span class="field">mu</span>: sh_data.mu,
+        <span class="field">model</span>: <span class="ty">GravityModel</span>::<span class="ty">SphericalHarmonics</span>(
+            <span class="ty">Box</span>::<span class="fn">new</span>(sh_data)
+        ),
+    }),
+    <span class="ty">SourceInertialPositionC</span>::<span class="fn">default</span>(),
+    <span class="ty">TranslationalStateC</span>::<span class="fn">default</span>(),
+    <span class="cm">// Config and output are separate components</span>
+    <span class="ty">RotationModelC</span>(<span class="ty">RotationModel</span>::EarthRNP),
+    <span class="ty">PlanetFixedRotationC</span>(<span class="ty">DMat3</span>::IDENTITY),
+)).<span class="fn">id</span>();
+
+<span class="kw">let</span> vehicle = app.<span class="fn">world_mut</span>().<span class="fn">spawn</span>((
+    <span class="cm">/* ...state components... */</span>
+    <span class="ty">GravityControlsC</span>(<span class="ty">GravityControls</span> {
+        <span class="field">controls</span>: <span class="kw">vec!</span>[
+            <span class="ty">GravityControl</span>::<span class="fn">new_nonspherical</span>(
+                planet, <span class="num">4</span>, <span class="num">4</span>, <span class="kw">false</span>
+            ),
+        ],
+    }),
+)).<span class="fn">id</span>();</pre>
+    </div>
+    <div class="callout">
+      <strong>Key difference:</strong>
+      jeod_runner bundles rotation config (<code>rotation_model</code>) and output matrix
+      (<code>t_inertial_pfix</code>) in one struct.
+      Bevy separates them: <code>RotationModelC</code> (config) vs <code>PlanetFixedRotationC</code> (output, updated each step).
+    </div>
+  </div>
+</div>
+
+<!-- ── Scenario D ── -->
+<div class="scenario">
+  <div class="scenario-header" onclick="toggleScenario(this)">
+    <h2>Scenario D: Solid Body Tides</h2>
+    <span class="scenario-tag">SH 4&times;4</span>
+    <span class="scenario-tag">RNP</span>
+    <span class="scenario-tag">Tides</span>
+    <span class="chevron">&#9662;</span>
+  </div>
+  <div class="scenario-body">
+    <div class="code-panel runner">
+      <h4>jeod_runner</h4>
+<pre><span class="kw">let</span> tidal_config = <span class="ty">TidalConfig</span> {
+    <span class="field">k2</span>: EARTH_K2,
+    <span class="field">mu_primary</span>: mu,
+    <span class="field">radius_primary</span>: radius,
+    <span class="field">tidal_bodies</span>: <span class="kw">vec!</span>[
+        <span class="ty">TidalBody</span> {
+            <span class="field">mu</span>: <span class="num">4902.8e9</span>,
+            <span class="field">position_inertial</span>: moon_pos,
+        },
+        <span class="ty">TidalBody</span> {
+            <span class="field">mu</span>: <span class="num">1.327e20</span>,
+            <span class="field">position_inertial</span>: sun_pos,
+        },
+    ],
+};
+
+<span class="kw">let</span> earth_idx = sim.<span class="fn">add_source</span>(<span class="ty">GravitySourceEntry</span> {
+    <span class="field">source</span>: sh_source,
+    <span class="field">t_inertial_pfix</span>: <span class="ty">Some</span>(<span class="ty">DMat3</span>::IDENTITY),
+    <span class="field">rotation_model</span>: <span class="ty">RotationModel</span>::EarthRNP,
+    <span class="cm">// Tides config + output (delta_c20) together</span>
+    <span class="field">tidal_config</span>: <span class="ty">Some</span>(tidal_config),
+    <span class="field">delta_c20</span>: <span class="num">0.0</span>,
+    ..<span class="ty">Default</span>::<span class="fn">default</span>()
+});</pre>
+    </div>
+    <div class="code-panel bevy">
+      <h4>Bevy ECS</h4>
+<pre><span class="kw">let</span> tidal_config = <span class="ty">TidalConfig</span> {
+    <span class="field">k2</span>: EARTH_K2,
+    <span class="field">mu_primary</span>: mu,
+    <span class="field">radius_primary</span>: radius,
+    <span class="field">tidal_bodies</span>: <span class="kw">vec!</span>[
+        <span class="ty">TidalBody</span> {
+            <span class="field">mu</span>: <span class="num">4902.8e9</span>,
+            <span class="field">position_inertial</span>: moon_pos,
+        },
+        <span class="ty">TidalBody</span> {
+            <span class="field">mu</span>: <span class="num">1.327e20</span>,
+            <span class="field">position_inertial</span>: sun_pos,
+        },
+    ],
+};
+
+<span class="kw">let</span> planet = app.<span class="fn">world_mut</span>().<span class="fn">spawn</span>((
+    <span class="ty">GravitySourceC</span>(sh_source),
+    <span class="ty">SourceInertialPositionC</span>::<span class="fn">default</span>(),
+    <span class="ty">TranslationalStateC</span>::<span class="fn">default</span>(),
+    <span class="ty">RotationModelC</span>(<span class="ty">RotationModel</span>::EarthRNP),
+    <span class="ty">PlanetFixedRotationC</span>(<span class="ty">DMat3</span>::IDENTITY),
+    <span class="cm">// Config and output are separate components</span>
+    <span class="ty">TidalConfigC</span>(tidal_config),
+    <span class="ty">TidalDeltaC20C</span>(<span class="num">0.0</span>),
+)).<span class="fn">id</span>();</pre>
+    </div>
+    <div class="callout">
+      <strong>Key difference:</strong>
+      Same config/output separation pattern as rotation:
+      jeod_runner has <code>tidal_config</code> + <code>delta_c20</code> on the same struct;
+      Bevy splits into <code>TidalConfigC</code> (input) and <code>TidalDeltaC20C</code> (output, updated by <code>tidal_update_system</code>).
+    </div>
+  </div>
+</div>
+
+<!-- ── Scenario E ── -->
+<div class="scenario">
+  <div class="scenario-header" onclick="toggleScenario(this)">
+    <h2>Scenario E: Full Stack (Drag + SRP + Gravity Torque)</h2>
+    <span class="scenario-tag">Aero</span>
+    <span class="scenario-tag">Flat-Plate SRP</span>
+    <span class="scenario-tag">Torque</span>
+    <span class="chevron">&#9662;</span>
+  </div>
+  <div class="scenario-body">
+    <div class="code-panel runner">
+      <h4>jeod_runner</h4>
+<pre>sim.<span class="field">sun_source</span> = <span class="ty">Some</span>(sun_idx);
+sim.<span class="field">atmosphere</span> = <span class="ty">Some</span>(atmos_config);
+
+<span class="kw">let mut</span> body = <span class="fn">new_sim_body_sixdof</span>(earth_idx, <span class="kw">true</span>);
+
+<span class="cm">// All interaction configs are fields on SimBody</span>
+body.<span class="field">drag</span> = <span class="ty">Some</span>(<span class="ty">DragConfig</span> {
+    <span class="field">cd</span>: <span class="num">2.2</span>,
+    <span class="field">area</span>: <span class="num">1000.0</span>,
+    <span class="field">constant_density</span>: <span class="ty">None</span>,
+});
+body.<span class="field">flat_plate_state</span> = <span class="ty">Some</span>(<span class="ty">FlatPlateState</span> {
+    <span class="field">plates</span>: srp_plates,
+    <span class="field">temperatures</span>: <span class="kw">vec!</span>[<span class="num">270.0</span>],
+    <span class="field">t_pow4_cached</span>: <span class="kw">vec!</span>[<span class="num">270.0_f64</span>.<span class="fn">powi</span>(<span class="num">4</span>)],
+});
+body.<span class="field">compute_gravity_torque</span> = <span class="kw">true</span>;
+body.<span class="field">atmospheric_state</span> = <span class="ty">Some</span>(<span class="ty">Default</span>::<span class="fn">default</span>());
+
+sim.<span class="fn">add_body</span>(body);</pre>
+    </div>
+    <div class="code-panel bevy">
+      <h4>Bevy ECS</h4>
+<pre><span class="cm">// Sun is its own entity with a marker</span>
+app.<span class="fn">world_mut</span>().<span class="fn">spawn</span>((
+    <span class="ty">SunMarker</span>,
+    <span class="ty">TranslationalStateC</span>(<span class="cm">/* sun state */</span>),
+));
+
+app.<span class="fn">insert_resource</span>(<span class="ty">AtmosphereModelR</span> {
+    <span class="field">config</span>: atmos_config,
+    <span class="field">planet_entity</span>: <span class="ty">None</span>,
+});
+
+<span class="cm">// Each interaction is a separate component</span>
+<span class="kw">let</span> vehicle = app.<span class="fn">world_mut</span>().<span class="fn">spawn</span>((
+    <span class="cm">/* ...state &amp; dynamics... */</span>
+    <span class="ty">DragConfigC</span>(<span class="ty">DragConfig</span> {
+        <span class="field">cd</span>: <span class="num">2.2</span>, <span class="field">area</span>: <span class="num">1000.0</span>,
+        <span class="field">constant_density</span>: <span class="ty">None</span>,
+    }),
+    <span class="ty">AtmosphericStateC</span>::<span class="fn">default</span>(),
+    <span class="ty">AerodynamicForceC</span>::<span class="fn">default</span>(),
+    <span class="ty">FlatPlateConfigC</span>(<span class="ty">FlatPlateState</span> {
+        <span class="field">plates</span>: srp_plates,
+        <span class="field">temperatures</span>: <span class="kw">vec!</span>[<span class="num">270.0</span>],
+        <span class="field">t_pow4_cached</span>: <span class="kw">vec!</span>[<span class="num">270.0_f64</span>.<span class="fn">powi</span>(<span class="num">4</span>)],
+    }),
+    <span class="ty">RadiationForceC</span>::<span class="fn">default</span>(),
+    <span class="ty">GravityTorqueC</span>::<span class="fn">default</span>(),
+)).<span class="fn">id</span>();</pre>
+    </div>
+    <div class="callout">
+      <strong>Key difference:</strong>
+      jeod_runner uses <code>sim.sun_source = Some(idx)</code> to identify the Sun;
+      Bevy uses a <code>SunMarker</code> component on an entity (queried by systems).
+      The boolean <code>compute_gravity_torque</code> field becomes the presence/absence of
+      <code>GravityTorqueC</code>.
+    </div>
+  </div>
+</div>
+
+<!-- ── Scenario F ── -->
+<div class="scenario">
+  <div class="scenario-header" onclick="toggleScenario(this)">
+    <h2>Scenario F: Derived States (OE, Euler, LVLH, Solar Beta)</h2>
+    <span class="scenario-tag">Derived State</span>
+    <span class="scenario-tag">Post-Integration</span>
+    <span class="chevron">&#9662;</span>
+  </div>
+  <div class="scenario-body">
+    <div class="code-panel runner">
+      <h4>jeod_runner</h4>
+<pre>sim.<span class="field">sun_source</span> = <span class="ty">Some</span>(sun_idx);
+
+<span class="kw">let mut</span> body = <span class="fn">new_sim_body_sixdof</span>(earth_idx, <span class="kw">false</span>);
+
+<span class="cm">// Enable derived states via Option fields</span>
+body.<span class="field">orbital_elements_source</span> = <span class="ty">Some</span>(earth_idx);
+body.<span class="field">euler_sequence</span> = <span class="ty">Some</span>(<span class="ty">EulerSequence</span>::ZYX);
+body.<span class="field">compute_lvlh</span> = <span class="kw">true</span>;
+body.<span class="field">compute_solar_beta</span> = <span class="kw">true</span>;
+sim.<span class="fn">add_body</span>(body);
+
+sim.<span class="fn">validate</span>().<span class="fn">unwrap</span>();
+sim.<span class="fn">step_n</span>(NUM_STEPS);
+
+<span class="cm">// Read results from body fields</span>
+<span class="kw">let</span> body = sim.<span class="fn">body</span>(<span class="num">0</span>);
+<span class="kw">let</span> oe   = body.<span class="field">orbital_elements</span>.<span class="fn">as_ref</span>().<span class="fn">unwrap</span>();
+<span class="kw">let</span> eul  = body.<span class="field">euler_angles</span>.<span class="fn">unwrap</span>();
+<span class="kw">let</span> lvlh = body.<span class="field">lvlh_frame</span>.<span class="fn">as_ref</span>().<span class="fn">unwrap</span>();
+<span class="kw">let</span> beta = body.<span class="field">solar_beta</span>.<span class="fn">unwrap</span>();</pre>
+    </div>
+    <div class="code-panel bevy">
+      <h4>Bevy ECS</h4>
+<pre>app.<span class="fn">world_mut</span>().<span class="fn">spawn</span>((
+    <span class="ty">SunMarker</span>,
+    <span class="ty">TranslationalStateC</span>(<span class="cm">/* sun state */</span>),
+));
+
+<span class="cm">// Enable derived states by adding components</span>
+<span class="kw">let</span> vehicle = app.<span class="fn">world_mut</span>().<span class="fn">spawn</span>((
+    <span class="cm">/* ...state &amp; dynamics... */</span>
+    <span class="ty">OrbitalElementsConfigC</span> {
+        <span class="field">gravity_source</span>: planet,
+    },
+    <span class="ty">OrbitalElementsC</span>::<span class="fn">default</span>(),
+    <span class="ty">EulerAnglesConfigC</span> {
+        <span class="field">sequence</span>: <span class="ty">EulerSequence</span>::ZYX,
+    },
+    <span class="ty">EulerAnglesC</span>::<span class="fn">default</span>(),
+    <span class="ty">LvlhFrameC</span>::<span class="fn">default</span>(),
+    <span class="ty">SolarBetaC</span>::<span class="fn">default</span>(),
+)).<span class="fn">id</span>();
+
+<span class="fn">step_bevy</span>(&amp;<span class="kw">mut</span> app, NUM_STEPS);
+
+<span class="cm">// Read results from components</span>
+<span class="kw">let</span> oe   = app.<span class="fn">world</span>().<span class="fn">get</span>::&lt;<span class="ty">OrbitalElementsC</span>&gt;(vehicle);
+<span class="kw">let</span> eul  = app.<span class="fn">world</span>().<span class="fn">get</span>::&lt;<span class="ty">EulerAnglesC</span>&gt;(vehicle);
+<span class="kw">let</span> lvlh = app.<span class="fn">world</span>().<span class="fn">get</span>::&lt;<span class="ty">LvlhFrameC</span>&gt;(vehicle);
+<span class="kw">let</span> beta = app.<span class="fn">world</span>().<span class="fn">get</span>::&lt;<span class="ty">SolarBetaC</span>&gt;(vehicle);</pre>
+    </div>
+    <div class="callout">
+      <strong>Key difference:</strong>
+      jeod_runner uses <code>Option</code> fields and booleans to opt in (<code>compute_lvlh = true</code>).
+      Bevy uses component presence &mdash; adding <code>LvlhFrameC</code> to the entity is what enables LVLH computation.
+      Some derived states have config+output pairs (e.g., <code>OrbitalElementsConfigC</code> + <code>OrbitalElementsC</code>).
+    </div>
+  </div>
+</div>
+
+<!-- ── Global Config ── -->
+<div class="scenario">
+  <div class="scenario-header" onclick="toggleScenario(this)">
+    <h2>Global Configuration: Time, Ephemeris, Polar Motion</h2>
+    <span class="scenario-tag">Resources</span>
+    <span class="chevron">&#9662;</span>
+  </div>
+  <div class="scenario-body">
+    <div class="code-panel runner">
+      <h4>jeod_runner</h4>
+<pre><span class="cm">// All global state are fields on Simulation</span>
+<span class="kw">let</span> time = <span class="ty">SimulationTime</span>::<span class="fn">at_j2000</span>(
+    <span class="fn">default_leap_second_table</span>()
+);
+<span class="kw">let mut</span> sim = <span class="ty">Simulation</span>::<span class="fn">new</span>(time, <span class="num">10.0</span>);
+
+sim.<span class="field">ephemeris</span> = <span class="ty">Some</span>(<span class="fn">load_de421</span>());
+sim.<span class="field">polar_motion</span> = <span class="ty">Some</span>((<span class="num">0.0</span>, <span class="num">0.0</span>));
+sim.<span class="field">sun_source</span>  = <span class="ty">Some</span>(sun_idx);
+sim.<span class="field">moon_source</span> = <span class="ty">Some</span>(moon_idx);</pre>
+    </div>
+    <div class="code-panel bevy">
+      <h4>Bevy ECS</h4>
+<pre><span class="cm">// Each global concern is a separate Resource</span>
+app.<span class="fn">insert_resource</span>(
+    <span class="ty">Time</span>::&lt;<span class="ty">Fixed</span>&gt;::<span class="fn">from_seconds</span>(<span class="num">10.0</span>)
+);
+app.<span class="fn">insert_resource</span>(
+    <span class="ty">SimulationTimeR</span>::<span class="fn">default</span>()
+);
+app.<span class="fn">insert_resource</span>(
+    <span class="ty">EphemerisR</span>(<span class="fn">load_de421</span>())
+);
+app.<span class="fn">insert_resource</span>(
+    <span class="ty">PolarMotionR</span> { <span class="field">xp</span>: <span class="num">0.0</span>, <span class="field">yp</span>: <span class="num">0.0</span> }
+);
+
+<span class="cm">// Sun/Moon are entities with markers</span>
+app.<span class="fn">world_mut</span>().<span class="fn">spawn</span>((<span class="ty">SunMarker</span>,  <span class="cm">/*...*/</span>));
+app.<span class="fn">world_mut</span>().<span class="fn">spawn</span>((<span class="ty">MoonMarker</span>, <span class="cm">/*...*/</span>));</pre>
+    </div>
+    <div class="callout">
+      <strong>Key difference:</strong>
+      jeod_runner has a single <code>Simulation</code> struct with <code>dt</code>, <code>time</code>, <code>ephemeris</code>, <code>polar_motion</code> fields.
+      Bevy distributes these across separate typed resources (<code>Time&lt;Fixed&gt;</code>, <code>SimulationTimeR</code>, <code>EphemerisR</code>, <code>PolarMotionR</code>).
+      Sun/Moon go from <code>Option&lt;usize&gt;</code> indices to marker-component entities.
+    </div>
+  </div>
+</div>
+
+<!-- ── Summary Table ── -->
+<section style="margin-top: 3rem;">
+  <h2>Structural Mapping Summary</h2>
+  <table class="summary-table">
+    <thead>
+      <tr>
+        <th>Aspect</th>
+        <th>jeod_runner</th>
+        <th>Bevy ECS</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Source references</td>
+        <td><code>usize</code> index</td>
+        <td><code>Entity</code> handle</td>
+      </tr>
+      <tr>
+        <td>Body configuration</td>
+        <td>Monolithic <code>SimBody</code> struct</td>
+        <td>Individual components per concern</td>
+      </tr>
+      <tr>
+        <td>Global state</td>
+        <td>Fields on <code>Simulation</code></td>
+        <td>Bevy <code>Resource</code>s</td>
+      </tr>
+      <tr>
+        <td>Opt-in features</td>
+        <td><code>Option&lt;T&gt;</code> fields, booleans</td>
+        <td>Component presence/absence</td>
+      </tr>
+      <tr>
+        <td>Output state</td>
+        <td>Fields on same struct (filled after step)</td>
+        <td>Separate output components</td>
+      </tr>
+      <tr>
+        <td>Config/output split</td>
+        <td>Colocated in one struct</td>
+        <td>Separate components (e.g., <code>RotationModelC</code> + <code>PlanetFixedRotationC</code>)</td>
+      </tr>
+      <tr>
+        <td>Sun/Moon identity</td>
+        <td><code>Option&lt;usize&gt;</code> on Simulation</td>
+        <td>Marker components (<code>SunMarker</code>, <code>MoonMarker</code>)</td>
+      </tr>
+      <tr>
+        <td>Pipeline ordering</td>
+        <td>Hardcoded in <code>step_internal()</code></td>
+        <td>Declarative <code>ScheduleSet</code> ordering</td>
+      </tr>
+      <tr>
+        <td>Time step</td>
+        <td><code>sim.step()</code> / <code>sim.step_n(n)</code></td>
+        <td><code>run_schedule(FixedUpdate)</code></td>
+      </tr>
+      <tr>
+        <td>Validation</td>
+        <td><code>sim.validate()</code> before first step</td>
+        <td><code>validate_jeod_invariants</code> system (runs once)</td>
+      </tr>
+      <tr>
+        <td>Best for</td>
+        <td>Batch scripts, Tier 3 tests, CLI tools</td>
+        <td>Interactive apps, games, visualization</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+</main>
+
+<script>
+function toggleScenario(header) {
+  header.parentElement.classList.toggle('collapsed');
+}
+</script>
+
+</body>
+</html>
