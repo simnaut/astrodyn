@@ -857,8 +857,9 @@ pub fn cannonball_srp_system(
 
 /// Process mass-tree attach/detach messages and sync composite properties.
 ///
-/// Runs before force collection so that mass changes from staging are
-/// reflected in the current step's forces and integration.
+/// Runs before interactions so that mass changes from staging are
+/// reflected in the current step's interaction forces, force collection,
+/// and integration.
 ///
 /// Note: [`crate::MassTreeR`] must be present as a resource for attach/detach
 /// messages to have any effect.

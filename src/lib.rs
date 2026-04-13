@@ -130,6 +130,11 @@ impl Plugin for JeodPlugin {
                 // Atmosphere evaluation
                 systems::atmosphere_update_system.in_set(JeodSet::Environment),
                 // Interactions
+                // Mass tree staging (attach/detach) — runs before interactions
+                // so mass changes affect the current step's forces and integration.
+                systems::staging_system
+                    .after(JeodSet::Environment)
+                    .before(JeodSet::Interaction),
                 systems::aero_drag_system.in_set(JeodSet::Interaction),
                 systems::gravity_torque_system.in_set(JeodSet::Interaction),
                 systems::flat_plate_srp_system.in_set(JeodSet::Interaction),
@@ -139,11 +144,6 @@ impl Plugin for JeodPlugin {
         app.add_systems(
             FixedUpdate,
             (
-                // Mass tree staging (attach/detach) — runs before force collection
-                // so mass changes affect the current step's forces and integration.
-                systems::staging_system
-                    .after(JeodSet::Interaction)
-                    .before(JeodSet::ForceCollection),
                 // Force collection and integration
                 systems::force_collection_system.in_set(JeodSet::ForceCollection),
                 systems::integration_system.in_set(JeodSet::Integration),

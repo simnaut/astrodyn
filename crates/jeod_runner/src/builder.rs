@@ -400,7 +400,14 @@ impl SimulationBuilder {
     ///
     /// Must be called after [`add_body`](Self::add_body). Bodies registered in
     /// the tree can be connected via [`attach_bodies`](Self::attach_bodies).
+    ///
+    /// # Panics
+    /// Panics if the body does not define mass properties.
     pub fn register_in_mass_tree(&mut self, body_idx: usize, name: impl Into<String>) -> &mut Self {
+        assert!(
+            self.bodies[body_idx].mass.is_some(),
+            "register_in_mass_tree: body {body_idx} has no mass properties"
+        );
         self.mass_tree_names[body_idx] = Some(name.into());
         self
     }

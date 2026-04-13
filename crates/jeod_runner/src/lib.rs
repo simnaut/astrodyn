@@ -1347,6 +1347,7 @@ impl Simulation {
     /// [`sync_body_mass_from_tree`](Self::sync_body_mass_from_tree) instead
     /// when the mass tree has been modified via `attach`/`detach`.
     pub fn set_body_mass(&mut self, idx: usize, mut mass: MassProperties) {
+        mass.dirty = true;
         mass.recompute_derived();
         self.bodies[idx].mass = Some(mass);
     }
@@ -1367,6 +1368,7 @@ impl Simulation {
             .as_ref()
             .expect("sync_body_mass_from_tree requires a mass tree");
         let mut composite = tree.get(id).composite_properties;
+        composite.dirty = true;
         composite.recompute_derived();
         self.bodies[idx].mass = Some(composite);
     }
