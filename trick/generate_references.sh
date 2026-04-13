@@ -275,7 +275,9 @@ run_dyncomp_group() {
         "SET_test/RUN_7D:dyncomp_run7d:dyncomp_run7d_state.csv"
     )
 
-    # Skip entire group (including build) if all primary outputs exist
+    # Skip entire group (including build) if all primary outputs exist.
+    # This includes both base DYNCOMP_RUNS and ASCII-injected runs so that
+    # adding a new ASCII run triggers a rebuild when its output is missing.
     local needs_build=0
     for entry in "${DYNCOMP_RUNS[@]}"; do
         IFS=: read -r _run_dir label primary <<< "$entry"
@@ -284,6 +286,19 @@ run_dyncomp_group() {
             break
         fi
     done
+    # Also check ASCII-injected run outputs
+    if [ "$needs_build" = "0" ]; then
+        for required in \
+            "dyncomp_run5a_atmos_atmos_traj.csv" \
+            "dyncomp_run6b_aero_aero_traj.csv" \
+            "dyncomp_run6b_rot_aero_traj.csv" \
+        ; do
+            if ! [ -s "${OUTPUT_DIR}/${required}" ]; then
+                needs_build=1
+                break
+            fi
+        done
+    fi
     if [ "$needs_build" = "0" ]; then
         echo "=== Skipping SIM_dyncomp group (all outputs exist) ==="
         return 0
@@ -334,6 +349,11 @@ run_dyncomp_group() {
     run_sim_with_ascii "verif/SIM_dyncomp" "SET_test/RUN_6B" \
         "dyncomp_run6b_aero" "$DYNCOMP_AERO_SNIPPET" \
         "dyncomp_run6b_aero_aero_traj.csv" || fail=1
+
+    # RUN_6B with rotated structural frame (15 deg about [1,1,1]) — issue #14
+    run_sim_with_ascii "verif/SIM_dyncomp" "SET_test/RUN_6B" \
+        "dyncomp_run6b_rot" "$DYNCOMP_AERO_ROT_SNIPPET" \
+        "dyncomp_run6b_rot_aero_traj.csv" || fail=1
 
     return $fail
 }
@@ -517,6 +537,32 @@ trick.add_data_record_group(dr)
 # ── ASCII logging snippet for SIM_dyncomp aerodynamic drag (RUN_6B) ──
 # Logs trajectory + aero force/torque + density. Used for tier3_sim_drag_verif.
 DYNCOMP_AERO_SNIPPET='
+dr = trick.sim_services.DRAscii("aero_traj_ASCII")
+dr.set_cycle(60.0)
+dr.freq = trick.sim_services.DR_Always
+for ii in range(3):
+    dr.add_variable("vehicle.dyn_body.composite_body.state.trans.position[" + str(ii) + "]")
+for ii in range(3):
+    dr.add_variable("vehicle.dyn_body.composite_body.state.trans.velocity[" + str(ii) + "]")
+for ii in range(3):
+    dr.add_variable("vehicle.aero_drag.aero_force[" + str(ii) + "]")
+for ii in range(3):
+    dr.add_variable("vehicle.aero_drag.aero_torque[" + str(ii) + "]")
+dr.add_variable("vehicle.atmos_state.density")
+trick.add_data_record_group(dr)
+'
+
+# ── ASCII logging snippet for SIM_dyncomp drag with rotated structural frame ──
+# Same logging as DYNCOMP_AERO_SNIPPET but overrides eigen_angle to 15 deg about
+# [1,1,1] (normalized) before sim start. Used for tier3_sim_drag_rot_verif (issue #14).
+DYNCOMP_AERO_ROT_SNIPPET='
+import math
+# Override structural-to-body orientation: 15 deg about [1,1,1] normalized
+vehicle.mass_init.properties.pt_orientation.data_source = trick.Orientation.InputEigenRotation
+vehicle.mass_init.properties.pt_orientation.eigen_angle = trick.attach_units("degree", 15.0)
+inv_sqrt3 = 1.0 / math.sqrt(3.0)
+vehicle.mass_init.properties.pt_orientation.eigen_axis = [inv_sqrt3, inv_sqrt3, inv_sqrt3]
+
 dr = trick.sim_services.DRAscii("aero_traj_ASCII")
 dr.set_cycle(60.0)
 dr.freq = trick.sim_services.DR_Always
