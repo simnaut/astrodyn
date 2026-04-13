@@ -47,9 +47,6 @@ const PARKING_ORBITS: f64 = 2.5; // coast in parking orbit before TLI
 const DT: f64 = 60.0; // 1-minute timesteps
 const TOTAL_DURATION: f64 = 3.0 * 86_400.0; // 3 days
 
-// J2000.0 epoch for simplicity
-const EPOCH_TAI_TJT: f64 = 0.000_428; // J2000 + 37s TAI-UTC offset
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let data_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data");
     let bsp_path = data_dir.join("de421.bsp");
@@ -60,7 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let ephemeris = jeod_sim::Ephemeris::from_bsp(&bsp_path)?;
-    let time = SimulationTime::new(EPOCH_TAI_TJT, jeod_sim::default_leap_second_table());
+    let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let epoch_tdb_jd = time.tdb_julian_date();
 
     // Get Moon and Sun positions at epoch
