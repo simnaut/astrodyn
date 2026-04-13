@@ -26,8 +26,8 @@ use std::path::Path;
 /// SIM_2A_SHADOW_CALC directory relative to JEOD root.
 const SIM_2A: &str = "models/interactions/radiation_pressure/verif/SIM_2A_SHADOW_CALC";
 
-/// Earth equatorial radius (m).
-const R_EARTH: f64 = 6_378_137.0;
+/// Earth equatorial radius for shadow geometry (from JEOD planet/data/src/earth.cc).
+const R_EARTH: f64 = jeod_sim::EARTH.shadow_radius;
 
 fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str, frac_tol: f64) {
     let jeod_root = jeod_test_data::jeod_path();

@@ -9,6 +9,7 @@ use jeod_dynamics::{
     rk4_sixdof_step, rk4_translational_step, MassProperties, RotationalState, SixDofState,
     TranslationalState,
 };
+use jeod_gravity::calc_spherical;
 use jeod_interactions::{
     compute_ballistic_drag, compute_flat_plate_srp_thermal, compute_gravity_torque,
     compute_shadow_fraction, solar_flux_at_distance, DragConfig, FlatPlate, FlatPlateParams,
@@ -22,7 +23,12 @@ const R_EARTH: f64 = 6_378_137.0; // m
 const R_EARTH_POL: f64 = R_EARTH * (1.0 - 1.0 / 298.257_223_563); // JEOD: r_eq * (1 - flat_coeff)
 const R_SUN: f64 = 6.98e8; // m
 
-/// Compute GMST in radians (same formula as MET model / JEOD atmos_MET_TME.cc).
+/// MET-internal GMST formula (from JEOD atmos_MET_TME.cc, Jacchia's Almanac polynomial).
+///
+/// This is NOT the same as `jeod_time::ut1_to_gmst_radians()` — the MET atmosphere
+/// model uses its own TJT-based GMST computation embedded in its temperature/density
+/// calculation. This test drives MET outside the Simulation pipeline, so it needs
+/// this formula directly.
 fn compute_gmst(tjt: f64) -> f64 {
     let tjt_prev_midnight = tjt.floor();
     let fraction_of_day = tjt - tjt_prev_midnight;
@@ -35,40 +41,6 @@ fn compute_gmst(tjt: f64) -> f64 {
         + 0.250684477 * minutes_of_day)
         .rem_euclid(360.0);
     greenwich_mean_position * 0.017453293
-}
-
-/// Compute point-mass gravity acceleration.
-fn gravity_accel(pos: DVec3) -> DVec3 {
-    let r = pos.length();
-    -MU_EARTH / (r * r * r) * pos
-}
-
-/// Compute point-mass gravity gradient tensor at a position.
-fn gravity_gradient(pos: DVec3) -> DMat3 {
-    let r = pos.length();
-    let r2 = r * r;
-    let r5 = r2 * r2 * r;
-    let mu_r5 = MU_EARTH / r5;
-
-    // G_ij = mu * (3*r_i*r_j / r^5 - delta_ij / r^3)
-    let mu_r3 = MU_EARTH / (r2 * r);
-    DMat3::from_cols(
-        DVec3::new(
-            mu_r5 * 3.0 * pos.x * pos.x - mu_r3,
-            mu_r5 * 3.0 * pos.y * pos.x,
-            mu_r5 * 3.0 * pos.z * pos.x,
-        ),
-        DVec3::new(
-            mu_r5 * 3.0 * pos.x * pos.y,
-            mu_r5 * 3.0 * pos.y * pos.y - mu_r3,
-            mu_r5 * 3.0 * pos.z * pos.y,
-        ),
-        DVec3::new(
-            mu_r5 * 3.0 * pos.x * pos.z,
-            mu_r5 * 3.0 * pos.y * pos.z,
-            mu_r5 * 3.0 * pos.z * pos.z - mu_r3,
-        ),
-    )
 }
 
 /// LEO orbit with drag: altitude should decrease over time.
@@ -108,7 +80,7 @@ fn drag_causes_altitude_decay() {
         let new_state = rk4_translational_step(
             &state,
             |s| {
-                let grav = gravity_accel(s.position);
+                let grav = calc_spherical(MU_EARTH, s.position).grav_accel;
 
                 // Rotate inertial → planet-fixed via GMST, then geodetic coords.
                 // Matches JEOD's PlanetFixedPosition → MET pipeline.
@@ -208,7 +180,7 @@ fn srp_changes_eccentricity() {
         let new_state = rk4_translational_step(
             &state,
             |s| {
-                let grav = gravity_accel(s.position);
+                let grav = calc_spherical(MU_EARTH, s.position).grav_accel;
                 let sun_to_vehicle = s.position - sun_pos;
                 let dist = sun_to_vehicle.length();
                 if dist < 1.0 {
@@ -294,13 +266,13 @@ fn gravity_torque_causes_libration() {
     let mut max_omega = 0.0_f64;
 
     for _ in 0..steps {
-        let grad = gravity_gradient(state.trans.position);
+        let grad = calc_spherical(MU_EARTH, state.trans.position).grav_grad;
         let t_parent_this = state.rot.quaternion.left_quat_to_transformation();
         let grav_torque = compute_gravity_torque(&grad, &t_parent_this, &inertia);
 
         let new_state = rk4_sixdof_step(
             &state,
-            |s| gravity_accel(s.trans.position),
+            |s| calc_spherical(MU_EARTH, s.trans.position).grav_accel,
             |_s| grav_torque, // constant torque per step
             &mass_props,
             dt,
@@ -351,7 +323,11 @@ fn leo_eclipse_fraction() {
         if frac < 0.5 {
             shadow_count += 1;
         }
-        state = rk4_translational_step(&state, |s| gravity_accel(s.position), dt);
+        state = rk4_translational_step(
+            &state,
+            |s| calc_spherical(MU_EARTH, s.position).grav_accel,
+            dt,
+        );
     }
 
     let eclipse_fraction = shadow_count as f64 / steps as f64;

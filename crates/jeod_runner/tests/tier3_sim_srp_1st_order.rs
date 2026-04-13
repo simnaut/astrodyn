@@ -27,7 +27,6 @@ use std::path::Path;
 /// SIM_3_ORBIT_1st_ORDER directory relative to JEOD root.
 const SIM_3_ORBIT_1ST: &str = "models/interactions/radiation_pressure/verif/SIM_3_ORBIT_1st_ORDER";
 
-const SRP_R_EARTH: f64 = 6_378_137.0;
 const SRP_MASS: f64 = 300.0;
 
 fn srp_plates() -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
@@ -210,7 +209,7 @@ fn tier3_srp_1st_order_trajectory() {
         })),
         shadow_body: Some(ShadowBody {
             source_idx: earth,
-            radius: SRP_R_EARTH,
+            radius: jeod_sim::EARTH.shadow_radius,
         }),
         ..Default::default()
     });
