@@ -20,7 +20,6 @@ use std::path::Path;
 /// SIM_3_ORBIT directory relative to JEOD root.
 const SIM_3_ORBIT: &str = "models/interactions/radiation_pressure/verif/SIM_3_ORBIT";
 
-const SRP_R_EARTH: f64 = 6_378_137.0;
 const SRP_MASS: f64 = 300.0;
 
 fn srp_plates() -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
@@ -185,10 +184,11 @@ fn tier3_simulation_srp_flat_plate() {
     // Load integration step size from S_define
     let srp_dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
 
-    // Load Earth mu from JEOD gravity data
-    let srp_mu_earth =
-        jeod_sim::coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc"))
-            .expect("load Earth mu");
+    // Load Earth gravity data (mu, radius) from JEOD coefficient file
+    let earth_grav =
+        jeod_sim::coefficients::load_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc"))
+            .expect("load Earth gravity");
+    let srp_mu_earth = earth_grav.mu;
 
     let trajectory = load_srp_trajectory(&csv_path);
     assert!(trajectory.len() > 100);
@@ -256,7 +256,7 @@ fn tier3_simulation_srp_flat_plate() {
         })),
         shadow_body: Some(ShadowBody {
             source_idx: earth,
-            radius: SRP_R_EARTH,
+            radius: jeod_sim::EARTH.shadow_radius,
         }),
         ..Default::default()
     });

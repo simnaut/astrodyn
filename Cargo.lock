@@ -2398,7 +2398,9 @@ dependencies = [
  "jeod_atmosphere",
  "jeod_dynamics",
  "jeod_ephemeris",
+ "jeod_gravity",
  "jeod_math",
+ "jeod_planet",
  "jeod_test_data",
  "jeod_time",
 ]
