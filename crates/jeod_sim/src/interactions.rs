@@ -21,19 +21,25 @@ pub struct FlatPlateState {
 }
 
 impl FlatPlateState {
-    /// Integrate plate temperatures via RK4 with overshoot clamping.
+    /// Integrate plate temperatures via Forward Euler with overshoot clamping.
     ///
     /// Port of JEOD `ThermalIntegrableObject::integrate()` (thermal_integrable_object.cc:98-124).
-    /// Uses RK4 (matching the orbital state integrator order) with overshoot
-    /// detection: if the integrated temperature crosses the radiative equilibrium
-    /// value, it is clamped to equilibrium.
+    /// JEOD's standard `radiation.sm` schedules `compute_temp_dot()` as a
+    /// "scheduled" job (once per step, not per integrator stage), so the
+    /// derivative is constant across all RK4 stages. This produces
+    /// `new_temp = old_temp + temp_dot * dt` — effectively Forward Euler.
+    /// We match this behavior for parity with JEOD's standard SIM_3_ORBIT.
+    ///
+    /// Overshoot detection: if the integrated temperature crosses the radiative
+    /// equilibrium value, it is clamped to equilibrium.
     ///
     /// `temp_dots_k1` is the per-plate temperature derivative from the current
-    /// step's `compute_flat_plate_srp_thermal` call. The absorbed power is
-    /// recovered from k1 and held constant over the RK4 sub-steps (solar flux
-    /// changes negligibly over one timestep).
+    /// step's `compute_flat_plate_srp_thermal` call.
     ///
     /// Called after `compute_flat_plate_srp_thermal` returns `temp_dots`.
+    /// For true RK4 thermal integration (derivative-class SRP), use
+    /// [`finalize_rk4_temperatures`](Self::finalize_rk4_temperatures) via
+    /// [`crate::integration::integrate_body_coupled`] instead.
     pub fn integrate_temperatures(&mut self, temp_dots_k1: &[f64], dt: f64) {
         for (i, (plate, _params, thermal)) in self.plates.iter().enumerate() {
             let old_temp = self.temperatures[i];
@@ -50,19 +56,17 @@ impl FlatPlateState {
             // power_absorb = temp_dot * heat_capacity + rad_constant * T^4
             let power_absorb = temp_dots_k1[i] * heat_cap + rad_constant * old_t_pow4;
 
-            // Temperature derivative at a given temperature (power_absorb is constant).
-            let tdot = |temp: f64| -> f64 {
-                let t4 = temp * temp * temp * temp;
-                (power_absorb - rad_constant * t4) / heat_cap
-            };
-
-            // RK4 stages
+            // JEOD's standard radiation.sm schedules compute_temp_dot() as a
+            // "scheduled" job (once per step), not a "derivative" job (per stage).
+            // This means temp_dot is constant across all RK4 stages, so the
+            // er7_utils integrator sees k1=k2=k3=k4=temp_dot, producing:
+            //   new_temp = old_temp + temp_dot * dt  (Forward Euler equivalent)
+            //
+            // We match this behavior for parity with JEOD's standard SIM_3_ORBIT
+            // reference trajectory. The 1st-order variant (radiation_1st_order.sm)
+            // uses derivative-class SRP, which WOULD recompute temp_dot per stage.
             let k1 = temp_dots_k1[i];
-            let k2 = tdot(old_temp + k1 * dt * 0.5);
-            let k3 = tdot(old_temp + k2 * dt * 0.5);
-            let k4 = tdot(old_temp + k3 * dt);
-
-            let mut new_temp = old_temp + (k1 + 2.0 * k2 + 2.0 * k3 + k4) * (dt / 6.0);
+            let mut new_temp = old_temp + k1 * dt;
             new_temp = new_temp.max(0.0);
 
             let new_t_pow4 = new_temp * new_temp * new_temp * new_temp;
@@ -76,6 +80,59 @@ impl FlatPlateState {
                     self.t_pow4_cached[i] = t_eq_pow4.max(0.0);
                     self.temperatures[i] = self.t_pow4_cached[i].sqrt().sqrt();
                     continue;
+                }
+            }
+
+            self.temperatures[i] = new_temp;
+            self.t_pow4_cached[i] = new_t_pow4;
+        }
+    }
+
+    /// Finalize RK4 thermal integration from four stage derivatives.
+    ///
+    /// Combines k1–k4 temperature derivatives via the standard RK4 formula
+    /// and applies JEOD overshoot clamping (thermal_integrable_object.cc:106-121).
+    /// Called by [`crate::integration::integrate_body_coupled`] after all four
+    /// stages have been evaluated.
+    ///
+    /// This is the coupled-integration counterpart of [`Self::integrate_temperatures`]:
+    /// instead of deriving k2–k4 internally from k1's `power_absorb`, the four
+    /// derivatives were computed at intermediate orbital positions by the stage
+    /// closure.
+    #[allow(clippy::too_many_arguments)]
+    pub fn finalize_rk4_temperatures(
+        &mut self,
+        temps0: &[f64],
+        t_pow4_0: &[f64],
+        k1_tdots: &[f64],
+        k2_tdots: &[f64],
+        k3_tdots: &[f64],
+        k4_tdots: &[f64],
+        dt: f64,
+        n_plates: usize,
+    ) {
+        let sixth_dt = dt / 6.0;
+        for i in 0..n_plates {
+            let combined_tdot = k1_tdots[i] + 2.0 * k2_tdots[i] + 2.0 * k3_tdots[i] + k4_tdots[i];
+            let mut new_temp = (temps0[i] + combined_tdot * sixth_dt).max(0.0);
+            let mut new_t_pow4 = new_temp * new_temp * new_temp * new_temp;
+
+            // JEOD overshoot clamping (thermal_integrable_object.cc:106-121).
+            // If integrated temperature crossed the radiative equilibrium asymptote,
+            // clamp to equilibrium. Use k1's derivative and recover power_absorb from
+            // the initial state, matching the standalone path.
+            let (_, _, thermal) = &self.plates[i];
+            let plate = &self.plates[i].0;
+            let rad_constant = plate.area * thermal.emissivity * STEFAN_BOLTZMANN;
+            if rad_constant > 0.0 {
+                let heat_cap = thermal.heat_capacity_per_area * plate.area;
+                if heat_cap > 0.0 {
+                    let power_absorb = k1_tdots[i] * heat_cap + rad_constant * t_pow4_0[i];
+                    let t_eq_pow4 = power_absorb / rad_constant;
+                    if k1_tdots[i] * (t_eq_pow4 - new_t_pow4) < 0.0 {
+                        new_t_pow4 = t_eq_pow4.max(0.0);
+                        new_temp = new_t_pow4.sqrt().sqrt();
+                    }
                 }
             }
 

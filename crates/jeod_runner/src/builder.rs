@@ -270,6 +270,18 @@ impl VehicleBuilder {
 /// builder.add_body(VehicleConfig::builder(trans).gravity(ctrl).build());
 /// let mut sim = builder.build()?;
 /// ```
+/// A pending mass-tree attachment, resolved during [`SimulationBuilder::build`].
+struct MassTreeAttachment {
+    /// Body index of the child.
+    child_idx: usize,
+    /// Body index of the parent.
+    parent_idx: usize,
+    /// Child structural origin in parent's structural frame (m).
+    offset: DVec3,
+    /// Rotation from parent structural frame to child structural frame.
+    t_parent_child: DMat3,
+}
+
 pub struct SimulationBuilder {
     time: SimulationTime,
     dt: f64,
@@ -282,6 +294,10 @@ pub struct SimulationBuilder {
     sources: Vec<GravitySourceEntry>,
     source_ephem_bodies: Vec<Option<(jeod_sim::EphemerisBody, jeod_sim::EphemerisBody)>>,
     bodies: Vec<VehicleConfig>,
+    /// Body names for mass tree registration (index matches `bodies`).
+    mass_tree_names: Vec<Option<String>>,
+    /// Pending attachments, resolved during `build()`.
+    mass_tree_attachments: Vec<MassTreeAttachment>,
 }
 
 impl Simulation {
@@ -299,6 +315,8 @@ impl Simulation {
             sources: Vec::new(),
             source_ephem_bodies: Vec::new(),
             bodies: Vec::new(),
+            mass_tree_names: Vec::new(),
+            mass_tree_attachments: Vec::new(),
         }
     }
 }
@@ -374,7 +392,55 @@ impl SimulationBuilder {
     pub fn add_body(&mut self, config: VehicleConfig) -> usize {
         let idx = self.bodies.len();
         self.bodies.push(config);
+        self.mass_tree_names.push(None);
         idx
+    }
+
+    /// Register a body in the mass tree with the given name.
+    ///
+    /// Must be called after [`add_body`](Self::add_body). Bodies registered in
+    /// the tree can be connected via [`attach_bodies`](Self::attach_bodies).
+    ///
+    /// # Panics
+    /// Panics if the body does not define mass properties.
+    pub fn register_in_mass_tree(&mut self, body_idx: usize, name: impl Into<String>) -> &mut Self {
+        assert!(
+            self.bodies[body_idx].mass.is_some(),
+            "register_in_mass_tree: body {body_idx} has no mass properties"
+        );
+        self.mass_tree_names[body_idx] = Some(name.into());
+        self
+    }
+
+    /// Declare a mass-tree attachment between two bodies.
+    ///
+    /// Both bodies must be registered via [`register_in_mass_tree`](Self::register_in_mass_tree).
+    /// The attachment is resolved during [`build`](Self::build).
+    ///
+    /// # Panics
+    /// Panics if either body has not been registered in the mass tree.
+    pub fn attach_bodies(
+        &mut self,
+        child_idx: usize,
+        parent_idx: usize,
+        offset: DVec3,
+        t_parent_child: DMat3,
+    ) -> &mut Self {
+        assert!(
+            self.mass_tree_names[child_idx].is_some(),
+            "attach_bodies: child body {child_idx} not registered in mass tree"
+        );
+        assert!(
+            self.mass_tree_names[parent_idx].is_some(),
+            "attach_bodies: parent body {parent_idx} not registered in mass tree"
+        );
+        self.mass_tree_attachments.push(MassTreeAttachment {
+            child_idx,
+            parent_idx,
+            offset,
+            t_parent_child,
+        });
+        self
     }
 
     // ── Build ──
@@ -409,6 +475,24 @@ impl SimulationBuilder {
 
         for body in self.bodies {
             sim.add_body(body);
+        }
+
+        // Wire up mass tree if any bodies were registered.
+        let has_tree = self.mass_tree_names.iter().any(|n| n.is_some());
+        if has_tree {
+            for (idx, name) in self.mass_tree_names.into_iter().enumerate() {
+                if let Some(name) = name {
+                    sim.add_body_to_tree(idx, name);
+                }
+            }
+            for att in self.mass_tree_attachments {
+                sim.attach(
+                    att.child_idx,
+                    att.parent_idx,
+                    att.offset,
+                    att.t_parent_child,
+                );
+            }
         }
 
         sim

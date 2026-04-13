@@ -61,6 +61,21 @@ pub struct AtmosphereModelR {
 #[derive(Resource, Deref, DerefMut)]
 pub struct EphemerisR(pub jeod_sim::Ephemeris);
 
+/// Bevy resource wrapping `MassTree` for multi-body vehicles.
+///
+/// Shared by all entities that have [`MassBodyIdC`](components::MassBodyIdC).
+/// The `staging_system` processes [`AttachEvent`](components::AttachEvent) and
+/// [`DetachEvent`](components::DetachEvent) to modify the tree and sync
+/// composite mass properties back to affected entities.
+///
+/// This resource is not inserted automatically by [`JeodPlugin`]. Applications
+/// that use staging must insert `MassTreeR` before sending
+/// [`AttachEvent`](components::AttachEvent) or
+/// [`DetachEvent`](components::DetachEvent). If the resource is absent, staging
+/// events are silently drained.
+#[derive(Resource, Deref, DerefMut)]
+pub struct MassTreeR(pub jeod_sim::MassTree);
+
 /// Unified JEOD plugin — registers all pipeline systems and schedule sets.
 pub struct JeodPlugin;
 
@@ -85,13 +100,16 @@ impl Plugin for JeodPlugin {
         // ── Resources ──
         app.init_resource::<SimulationTimeR>();
 
+        // ── Events ──
+        app.add_message::<AttachEvent>();
+        app.add_message::<DetachEvent>();
+
         // ── Systems ──
+        // Split into two add_systems calls to stay within Bevy's tuple size limit.
         app.add_systems(
             FixedUpdate,
             (
                 // Validation runs first — matches JEOD's initialize_simulation()
-                // which validates all bodies before the first integration step.
-                // Uses Local<bool> to run only once.
                 validation::validate_jeod_invariants.before(JeodSet::TimeUpdate),
                 // Time advance
                 systems::time_advance_system.in_set(JeodSet::TimeUpdate),
@@ -112,10 +130,20 @@ impl Plugin for JeodPlugin {
                 // Atmosphere evaluation
                 systems::atmosphere_update_system.in_set(JeodSet::Environment),
                 // Interactions
+                // Mass tree staging (attach/detach) — runs before interactions
+                // so mass changes affect the current step's forces and integration.
+                systems::staging_system
+                    .after(JeodSet::Environment)
+                    .before(JeodSet::Interaction),
                 systems::aero_drag_system.in_set(JeodSet::Interaction),
                 systems::gravity_torque_system.in_set(JeodSet::Interaction),
                 systems::flat_plate_srp_system.in_set(JeodSet::Interaction),
                 systems::cannonball_srp_system.in_set(JeodSet::Interaction),
+            ),
+        );
+        app.add_systems(
+            FixedUpdate,
+            (
                 // Force collection and integration
                 systems::force_collection_system.in_set(JeodSet::ForceCollection),
                 systems::integration_system.in_set(JeodSet::Integration),

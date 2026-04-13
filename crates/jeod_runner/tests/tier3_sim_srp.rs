@@ -329,5 +329,8 @@ fn tier3_simulation_srp_flat_plate() {
     let max_pos_error = report.max_position_component();
     println!("  Max position error: {:.6e} m", max_pos_error);
 
-    report.assert_position([3.074, 2.799, 1.216]);
+    // Thermal integration matches JEOD's scheduled-class temp_dot (constant
+    // across RK4 stages, effective Forward Euler). Previous tolerance was ~3 m
+    // when using RK4 thermal with per-stage derivative recomputation.
+    report.assert_position([0.034, 0.040, 0.016]);
 }

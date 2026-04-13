@@ -364,3 +364,39 @@ pub struct ExternalForceC(pub DVec3);
 /// Mutate between steps to implement time-scheduled torque injection.
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
 pub struct ExternalTorqueC(pub DVec3);
+
+// ── Mass Tree (Staging) ──
+
+/// Maps this entity to a node in the shared [`MassTreeR`](crate::MassTreeR) resource.
+///
+/// Entities with this component participate in the mass tree. After
+/// attach/detach events are processed, the entity's [`MassPropertiesC`]
+/// is synced from the tree's composite properties.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct MassBodyIdC(pub jeod_sim::MassBodyId);
+
+/// Message: attach a child body to a parent in the mass tree.
+///
+/// Both entities must have [`MassBodyIdC`]. Processed by `staging_system`
+/// before integration each step.
+#[derive(Message, Debug, Clone)]
+pub struct AttachEvent {
+    /// Entity of the child body.
+    pub child: Entity,
+    /// Entity of the parent body.
+    pub parent: Entity,
+    /// Child structural origin in parent's structural frame (m).
+    pub offset: DVec3,
+    /// Rotation from parent structural frame to child structural frame.
+    pub t_parent_child: glam::DMat3,
+}
+
+/// Message: detach a child body from its parent in the mass tree.
+///
+/// The entity must have [`MassBodyIdC`] and be attached to a parent.
+/// Processed by `staging_system` before integration each step.
+#[derive(Message, Debug, Clone)]
+pub struct DetachEvent {
+    /// Entity to detach from its parent.
+    pub child: Entity,
+}
