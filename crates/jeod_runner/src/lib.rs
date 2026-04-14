@@ -618,7 +618,10 @@ pub struct Simulation {
     /// Reference frame tree — single source of truth for celestial body positions,
     /// velocities, and rotations. Updated each step from ephemeris data.
     pub frame_tree: FrameTree,
-    /// Root frame ID (Earth.inertial). All positions are relative to this.
+    /// Root inertial frame ID for this simulation. This is the integration-origin
+    /// frame to which all positions are relative, and it is not necessarily
+    /// `Earth.inertial` (for example, it may be renamed to match the configured
+    /// central body, such as `Mars.inertial`).
     pub root_frame_id: FrameId,
     /// Per-source frame tree node IDs (parallel to `gravity_data`).
     source_frame_ids: Vec<SourceFrameIds>,
@@ -676,8 +679,11 @@ impl Simulation {
 
     /// Add a gravity source. Returns its index for use in `GravityControls`.
     ///
-    /// Sources at the origin (position=ZERO, velocity=ZERO) are treated as the
-    /// central body and mapped to the root frame. Third bodies get child frames.
+    /// Sources with `central: true` (set by [`GravitySourceEntry::central_body`]
+    /// and [`GravitySourceEntry::central_body_sh`]) are mapped to the root frame.
+    /// Non-central sources get child inertial frames under the root.
+    ///
+    /// Only one central source may be added; a second will panic.
     ///
     /// If the source has a rotation model, a planet-fixed child frame is also
     /// created under the source's inertial frame.
@@ -685,13 +691,19 @@ impl Simulation {
         let idx = self.gravity_data.len();
         let name = name.into();
 
-        // Every source gets its own frame node. Central bodies at the origin
-        // get a node with zero position (identical to root), but the node
-        // stores the source's velocity for relativistic corrections.
+        // Central bodies map to the root frame; third bodies get child frames.
+        // Only one central source is allowed (the root can't be shared).
         let inertial_name = format!("{name}.inertial");
         let inertial_id = if entry.central {
-            // Central body: use the root frame directly. Its position is ZERO
-            // by definition. Rename the root to match the source name.
+            assert!(
+                !self
+                    .source_frame_ids
+                    .iter()
+                    .any(|sf| sf.inertial == self.root_frame_id),
+                "add_source: a central source already maps to root_frame_id. \
+                 Only one central source is allowed per simulation."
+            );
+            // Central body: use the root frame directly. Rename to match.
             self.frame_tree.get_mut(self.root_frame_id).name = inertial_name;
             self.root_frame_id
         } else {
@@ -779,7 +791,18 @@ impl Simulation {
         // Resolve integration frame from source index.
         let integ_frame_id = config
             .integ_source
-            .map(|src| self.source_frame_ids[src].inertial)
+            .map(|src| {
+                self.source_frame_ids
+                    .get(src)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "VehicleConfig::integ_source index {src} is out of range; \
+                             {} source frame(s) configured",
+                            self.source_frame_ids.len()
+                        )
+                    })
+                    .inertial
+            })
             .unwrap_or(self.root_frame_id);
 
         // Create body frame in tree under the integration frame.
@@ -1228,11 +1251,17 @@ impl Simulation {
                                 )
                             });
                     // Update frame tree node with ephemeris position/velocity.
+                    // Skip the root frame — its state must remain identity
+                    // (JEOD invariant: root frame is the inertial reference).
                     let fid = self.source_frame_ids[i].inertial;
-                    let node = self.frame_tree.get_mut(fid);
-                    node.state.trans.position = pos;
-                    node.state.trans.velocity = vel;
-                    // Also update gravity_data velocity for relativistic corrections.
+                    if fid != self.root_frame_id {
+                        let node = self.frame_tree.get_mut(fid);
+                        node.state.trans.position = pos;
+                        node.state.trans.velocity = vel;
+                    }
+                    // Always update gravity_data velocity for relativistic corrections
+                    // (central bodies at root have zero tree velocity but may need
+                    // physical velocity for PPN).
                     self.gravity_data[i].velocity = vel;
                 }
             }
@@ -1529,12 +1558,12 @@ impl Simulation {
         // DynamicsIntegrationGroup where the derivative function calls gravity
         // at every stage with the current intermediate position and velocity.
         //
-        // Frame tree sub-stage updates: source positions are linearly
-        // interpolated at each RK4 sub-stage via velocity * (time_frac * dt),
-        // matching JEOD's behavior of updating the reference frame tree at
-        // each derivative evaluation.
+        // For RK4 sub-stage evaluations, source positions are derived from a
+        // linear interpolation of their base inertial position using
+        // velocity * (time_frac * dt), matching JEOD's behavior of evaluating
+        // gravity using the current sub-stage source state.
         //
-        // Snapshot base positions for sub-stage interpolation (restored after integration).
+        // Snapshot base source positions and velocities for sub-stage interpolation.
         let base_positions: Vec<DVec3> = self
             .source_frame_ids
             .iter()
