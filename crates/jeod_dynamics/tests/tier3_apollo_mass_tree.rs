@@ -273,9 +273,11 @@ fn assert_composite_match(
 ) {
     let body = tree.get(body_id);
     let comp = &body.composite_properties;
-    let tol_mass = 1e-3; // kg (absolute)
-    let tol_pos = 1e-6; // m (absolute)
-    let tol_inertia = 1e-2; // kg*m^2 (absolute)
+    // Observed max errors across 48 body validations: mass 4.9e-7, CoM 4.6e-7,
+    // inertia 6.0e-7. These are f64 arithmetic noise. Tolerances set to 5% above.
+    let tol_mass = 5.2e-7; // kg (observed 4.9e-7 * 1.05)
+    let tol_pos = 4.9e-7; // m (observed 4.6e-7 * 1.05)
+    let tol_inertia = 6.3e-7; // kg*m^2 (observed 6.0e-7 * 1.05)
 
     assert!(
         (comp.mass - ref_body.composite_mass).abs() < tol_mass,
