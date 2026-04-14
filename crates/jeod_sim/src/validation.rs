@@ -67,6 +67,9 @@ pub enum ValidationError {
         body_idx: usize,
         central_source: usize,
     },
+    /// Body uses a non-ECI integration frame (or has an active frame switch to
+    /// a non-Earth frame) but has ECI-dependent derived-state features enabled.
+    NonEciFrameWithEciDependentFeatures { body_idx: usize },
 }
 
 impl std::fmt::Display for ValidationError {
@@ -251,6 +254,16 @@ impl std::fmt::Display for ValidationError {
                      to have a GravityControl entry."
                 )
             }
+            Self::NonEciFrameWithEciDependentFeatures { body_idx } => {
+                write!(
+                    f,
+                    "Body {body_idx}: non-ECI integration frame with ECI-dependent \
+                     features enabled (drag, SRP, orbital elements, euler angles, LVLH, \
+                     geodetic, solar beta, or earth lighting). These derived states \
+                     assume Earth-centered inertial coordinates and will produce \
+                     incorrect results in other frames."
+                )
+            }
         }
     }
 }
@@ -264,7 +277,10 @@ impl ValidationError {
     /// might be intentional). Both the Bevy adapter and `Simulation::validate()`
     /// should use this to decide severity.
     pub fn is_warning(&self) -> bool {
-        matches!(self, Self::UninitializedState)
+        matches!(
+            self,
+            Self::UninitializedState | Self::NonEciFrameWithEciDependentFeatures { .. }
+        )
     }
 }
 

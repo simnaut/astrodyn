@@ -132,6 +132,9 @@ pub fn parse_print_tree(content: &str) -> PrintedTree {
     PrintedTree { bodies }
 }
 
+/// Advance past a labeled line. Panics with line number on unexpected content.
+/// For richer error context (body name, filename), callers should catch panics
+/// or this should be refactored to return Result (future improvement).
 fn skip_label(lines: &[&str], i: &mut usize, label: &str) {
     while *i < lines.len() {
         let line = lines[*i].trim();

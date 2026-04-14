@@ -773,23 +773,55 @@ impl Simulation {
             // Frame switch central_source must be a valid source index AND
             // present in the body's gravity controls (so the post-switch
             // differential flip actually takes effect).
+            // Only validate active switches — JEOD only evaluates active switches.
             for sw in &body.frame_switches {
-                if let Some(central) = sw.central_source {
-                    if central >= self.sources.len() {
-                        all_errors.push(ValidationError::FrameSwitchCentralSourceOutOfRange {
+                if sw.active {
+                    if let Some(central) = sw.central_source {
+                        if central >= self.sources.len() {
+                            all_errors.push(ValidationError::FrameSwitchCentralSourceOutOfRange {
+                                body_idx,
+                                central_source: central,
+                                num_sources: self.sources.len(),
+                            });
+                        } else if !body
+                            .gravity_controls
+                            .controls
+                            .iter()
+                            .any(|c| c.source_name == central)
+                        {
+                            all_errors.push(
+                                ValidationError::FrameSwitchCentralSourceNotInControls {
+                                    body_idx,
+                                    central_source: central,
+                                },
+                            );
+                        }
+                    }
+                }
+            }
+
+            // Warn when non-ECI frame is used with ECI-dependent features.
+            // JEOD evaluates these derived states in Earth-centered inertial; they
+            // will produce incorrect results in other frames.
+            {
+                let non_eci_integ = body.integ_frame != IntegrationFrame::EarthInertial;
+                let non_eci_switch = body
+                    .frame_switches
+                    .iter()
+                    .any(|sw| sw.active && sw.target_frame != IntegrationFrame::EarthInertial);
+                if non_eci_integ || non_eci_switch {
+                    let has_eci_feature = body.drag.is_some()
+                        || body.flat_plate_state.is_some()
+                        || body.cannonball_srp.is_some()
+                        || body.orbital_elements_source.is_some()
+                        || body.euler_sequence.is_some()
+                        || body.compute_lvlh
+                        || body.geodetic_planet.is_some()
+                        || body.compute_solar_beta
+                        || body.earth_lighting_config.is_some();
+                    if has_eci_feature {
+                        all_errors.push(ValidationError::NonEciFrameWithEciDependentFeatures {
                             body_idx,
-                            central_source: central,
-                            num_sources: self.sources.len(),
-                        });
-                    } else if !body
-                        .gravity_controls
-                        .controls
-                        .iter()
-                        .any(|c| c.source_name == central)
-                    {
-                        all_errors.push(ValidationError::FrameSwitchCentralSourceNotInControls {
-                            body_idx,
-                            central_source: central,
                         });
                     }
                 }

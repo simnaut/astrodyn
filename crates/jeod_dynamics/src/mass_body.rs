@@ -176,8 +176,16 @@ impl MassTree {
         position: DVec3,
         t_parent_this: DMat3,
     ) {
+        let name_str: String = name.into();
+        // JEOD_INV: MA.09 — mass point names must be unique per body (mass.cc:359-368)
+        assert!(
+            self.find_mass_point(body_id, &name_str).is_none(),
+            "duplicate mass point name '{}' on body '{}'",
+            name_str,
+            self.nodes[body_id].name
+        );
         self.nodes[body_id].mass_points.push(MassPoint {
-            name: name.into(),
+            name: name_str,
             position,
             t_parent_this,
         });
