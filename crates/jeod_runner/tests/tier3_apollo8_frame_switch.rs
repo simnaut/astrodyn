@@ -58,7 +58,7 @@ fn test_data_dir() -> std::path::PathBuf {
 /// Returns (sim, body_index).
 fn build_apollo8_sim(frame_switches: Vec<FrameSwitchConfig>) -> (Simulation, usize) {
     let data_dir = test_data_dir();
-    let bsp_path = data_dir.join("de421.bsp");
+    let bsp_path = data_dir.join("de405.bsp");
     assert!(
         bsp_path.exists(),
         "DE421 not found at {}",
@@ -191,7 +191,7 @@ fn tier3_apollo8_eci_integ() {
         }
     }
 
-    // 67 µm over 100s. Residual from DE421 vs DE405 ephemeris differences.
+    // 67 µm over 100s. Residual from ANISE vs JEOD's compiled DE405 reader.
     let tol = 7.1e-5; // m (6.7e-5 * 1.05)
     assert!(
         max_pos_err < tol,
@@ -233,19 +233,17 @@ fn tier3_apollo8_frame_switch() {
         }
     }
 
-    // ECI phase (before switch): should match within DE421 vs DE405 tolerance.
-    let tol_eci = 7.1e-5; // m (same as ECI-only test)
+    // ECI phase (before switch): ANISE vs JEOD compiled DE405 reader.
+    let tol_eci = 1.1e-5; // m (1.0e-5 * 1.05)
     assert!(
         max_err_eci < tol_eci,
         "Frame switch ECI phase: {max_err_eci:.6} m exceeds {tol_eci:.1e} m"
     );
 
-    // Moon-centered phase (60s): 5.35 m from DE421 vs DE405 ephemeris.
-    // The DE Moon position difference (~100-300 m) shifts our Moon-centered
-    // coordinates vs JEOD's, and this difference accumulates through the
-    // gravity computation over 60 seconds. Same root cause as the 0.067 mm
-    // ECI error but larger in Moon-centered frame.
-    let tol_moon = 5.7; // m (5.35 * 1.05)
+    // Moon-centered phase (60s): 0.31 m from frozen source positions during
+    // RK4 sub-stages. JEOD updates its reference frame tree at each derivative
+    // evaluation; we freeze source positions per step.
+    let tol_moon = 0.33; // m (0.31 * 1.05)
     assert!(
         max_err_moon < tol_moon,
         "Frame switch Moon phase: {max_err_moon:.6} m exceeds {tol_moon} m"
