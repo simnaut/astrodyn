@@ -770,10 +770,18 @@ impl Simulation {
                 all_errors.push(ValidationError::GravityTorqueWithoutMassOrRot { body_idx });
             }
 
-            // Frame switch central_source must be a valid source index
+            // Frame switch central_source must be a valid source index AND
+            // present in the body's gravity controls (so the post-switch
+            // differential flip actually takes effect).
             for sw in &body.frame_switches {
                 if let Some(central) = sw.central_source {
-                    if central >= self.sources.len() {
+                    let in_range = central < self.sources.len();
+                    let in_controls = body
+                        .gravity_controls
+                        .controls
+                        .iter()
+                        .any(|c| c.source_name == central);
+                    if !in_range || !in_controls {
                         all_errors.push(ValidationError::FrameSwitchCentralSourceOutOfRange {
                             body_idx,
                             central_source: central,

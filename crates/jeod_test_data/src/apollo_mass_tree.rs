@@ -139,13 +139,18 @@ fn skip_label(lines: &[&str], i: &mut usize, label: &str) {
             *i += 1;
             return;
         }
-        if line.is_empty() {
+        if line.is_empty() || line.contains("-----") || line.contains("====") {
             *i += 1;
             continue;
         }
-        // If the line doesn't match, it might be the data itself — don't skip.
-        return;
+        panic!(
+            "expected label {:?} before data, found {:?} at line {}",
+            label,
+            line,
+            *i + 1
+        );
     }
+    panic!("expected label {:?} before end of input", label);
 }
 
 fn skip_separator(lines: &[&str], i: &mut usize) {
