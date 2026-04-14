@@ -264,50 +264,62 @@ fn load_reference(filename: &str) -> jeod_test_data::apollo_mass_tree::PrintedTr
     jeod_test_data::apollo_mass_tree::parse_print_tree(&content)
 }
 
-/// Assert that a body's composite properties match the reference.
-fn assert_composite_match(
-    tree: &MassTree,
-    body_id: usize,
-    ref_body: &jeod_test_data::apollo_mass_tree::PrintedBody,
-    phase: &str,
-) {
-    let body = tree.get(body_id);
-    let comp = &body.composite_properties;
-    // Observed max errors across 48 body validations: mass 4.9e-7, CoM 4.6e-7,
-    // inertia 6.0e-7. These are f64 arithmetic noise. Tolerances set to 5% above.
-    let tol_mass = 5.2e-7; // kg (observed 4.9e-7 * 1.05)
-    let tol_pos = 4.9e-7; // m (observed 4.6e-7 * 1.05)
-    let tol_inertia = 6.3e-7; // kg*m^2 (observed 6.0e-7 * 1.05)
+/// Compute per-body composite errors and track max across all phases.
+struct MaxErrors {
+    mass: f64,
+    com: f64,
+    inertia: f64,
+}
 
-    assert!(
-        (comp.mass - ref_body.composite_mass).abs() < tol_mass,
-        "[{phase}] {}: composite mass {:.6} != ref {:.6} (diff={:.2e})",
-        body.name,
-        comp.mass,
-        ref_body.composite_mass,
-        (comp.mass - ref_body.composite_mass).abs()
-    );
+impl MaxErrors {
+    fn new() -> Self {
+        Self {
+            mass: 0.0,
+            com: 0.0,
+            inertia: 0.0,
+        }
+    }
 
-    let pos_diff = (comp.position - ref_body.composite_cm).length();
-    assert!(
-        pos_diff < tol_pos,
-        "[{phase}] {}: composite CoM diff {pos_diff:.2e} m exceeds tolerance {tol_pos:.0e}",
-        body.name
-    );
+    fn check(
+        &mut self,
+        tree: &MassTree,
+        body_id: usize,
+        ref_body: &jeod_test_data::apollo_mass_tree::PrintedBody,
+        phase: &str,
+    ) {
+        let body = tree.get(body_id);
+        let comp = &body.composite_properties;
 
-    for (col_idx, (our_col, ref_col)) in [
-        (comp.inertia.x_axis, ref_body.composite_inertia.x_axis),
-        (comp.inertia.y_axis, ref_body.composite_inertia.y_axis),
-        (comp.inertia.z_axis, ref_body.composite_inertia.z_axis),
-    ]
-    .iter()
-    .enumerate()
-    {
-        let diff = (*our_col - *ref_col).length();
+        let mass_err = (comp.mass - ref_body.composite_mass).abs();
+        let com_err = (comp.position - ref_body.composite_cm).length();
+        let inertia_err = [
+            (comp.inertia.x_axis - ref_body.composite_inertia.x_axis).length(),
+            (comp.inertia.y_axis - ref_body.composite_inertia.y_axis).length(),
+            (comp.inertia.z_axis - ref_body.composite_inertia.z_axis).length(),
+        ]
+        .iter()
+        .copied()
+        .fold(0.0_f64, f64::max);
+
+        self.mass = self.mass.max(mass_err);
+        self.com = self.com.max(com_err);
+        self.inertia = self.inertia.max(inertia_err);
+
+        // Assert with tight tolerances (5% above observed f64 noise).
         assert!(
-            diff < tol_inertia,
-            "[{phase}] {}: composite inertia col {col_idx} diff {diff:.2e} exceeds tolerance {tol_inertia:.0e}",
-            body.name
+            mass_err < 5.2e-7,
+            "[{phase}] {}: composite mass diff={mass_err:.2e} kg",
+            body.name,
+        );
+        assert!(
+            com_err < 4.9e-7,
+            "[{phase}] {}: composite CoM diff={com_err:.2e} m",
+            body.name,
+        );
+        assert!(
+            inertia_err < 6.3e-7,
+            "[{phase}] {}: composite inertia diff={inertia_err:.2e} kg*m²",
+            body.name,
         );
     }
 }
@@ -320,8 +332,14 @@ fn body_id(name: &str, ids: &[(&str, usize)]) -> usize {
         .1
 }
 
-/// Validate ALL bodies in a reference file against the tree.
-fn assert_all_bodies(tree: &MassTree, ref_file: &str, phase: &str, ids: &[(&str, usize)]) {
+/// Validate ALL bodies in a reference file against the tree, tracking max errors.
+fn check_all_bodies(
+    tree: &MassTree,
+    ref_file: &str,
+    phase: &str,
+    ids: &[(&str, usize)],
+    errors: &mut MaxErrors,
+) {
     let reference = load_reference(ref_file);
     assert!(
         !reference.bodies.is_empty(),
@@ -329,7 +347,7 @@ fn assert_all_bodies(tree: &MassTree, ref_file: &str, phase: &str, ids: &[(&str,
     );
     for ref_body in &reference.bodies {
         let bid = body_id(&ref_body.name, ids);
-        assert_composite_match(tree, bid, ref_body, phase);
+        errors.check(tree, bid, ref_body, phase);
     }
 }
 
@@ -349,58 +367,120 @@ fn tier3_apollo_mass_tree() {
         ("les", les),
     ];
 
+    let mut errors = MaxErrors::new();
+
     // Phase 0: Full stack — all 8 bodies
-    assert_all_bodies(&tree, "apollo_Full_Stack.out", "Full_Stack", ids);
+    check_all_bodies(
+        &tree,
+        "apollo_Full_Stack.out",
+        "Full_Stack",
+        ids,
+        &mut errors,
+    );
 
     // Phase 1: First stage separation — 7 bodies (s1 detached)
     tree.detach(s1);
-    assert_all_bodies(&tree, "apollo_1st_Stage_Sep.out", "1st_Stage_Sep", ids);
+    check_all_bodies(
+        &tree,
+        "apollo_1st_Stage_Sep.out",
+        "1st_Stage_Sep",
+        ids,
+        &mut errors,
+    );
 
     // Phase 2: Second stage separation — 6 bodies
     tree.detach(s2);
-    assert_all_bodies(&tree, "apollo_2nd_Stage_Sep.out", "2nd_Stage_Sep", ids);
+    check_all_bodies(
+        &tree,
+        "apollo_2nd_Stage_Sep.out",
+        "2nd_Stage_Sep",
+        ids,
+        &mut errors,
+    );
 
     // Phase 3: LES jettison — 5 bodies
     tree.detach(les);
-    assert_all_bodies(&tree, "apollo_LES_Jettison.out", "LES_Jettison", ids);
+    check_all_bodies(
+        &tree,
+        "apollo_LES_Jettison.out",
+        "LES_Jettison",
+        ids,
+        &mut errors,
+    );
 
     // Phase 4: Third stage separation — CM+SM tree
     tree.detach(s3);
-    assert_all_bodies(&tree, "apollo_3rd_Stage_Sep.out", "3rd_Stage_Sep", ids);
+    check_all_bodies(
+        &tree,
+        "apollo_3rd_Stage_Sep.out",
+        "3rd_Stage_Sep",
+        ids,
+        &mut errors,
+    );
 
     // Phase 5: LM separation — LM+DM tree and CM+SM tree
     tree.detach(lm);
-    assert_all_bodies(&tree, "apollo_LEM_Sep.out", "LEM_Sep", ids);
-    assert_all_bodies(&tree, "apollo_Apollo.out", "Apollo", ids);
+    check_all_bodies(&tree, "apollo_LEM_Sep.out", "LEM_Sep", ids, &mut errors);
+    check_all_bodies(&tree, "apollo_Apollo.out", "Apollo", ids, &mut errors);
 
     // Phase 6: LM docks to CM (trans-lunar configuration)
     tree.attach_aligned(lm, "LM docking port", cm, "CM docking port");
-    assert_all_bodies(&tree, "apollo_Trans_Lunar.out", "Trans_Lunar", ids);
+    check_all_bodies(
+        &tree,
+        "apollo_Trans_Lunar.out",
+        "Trans_Lunar",
+        ids,
+        &mut errors,
+    );
 
     // Phase 7: LM undocks for lunar descent
     tree.detach(lm);
-    assert_all_bodies(&tree, "apollo_LM_Descent.out", "LM_Descent", ids);
-    assert_all_bodies(&tree, "apollo_Lunar_Orbit.out", "Lunar_Orbit", ids);
+    check_all_bodies(
+        &tree,
+        "apollo_LM_Descent.out",
+        "LM_Descent",
+        ids,
+        &mut errors,
+    );
+    check_all_bodies(
+        &tree,
+        "apollo_Lunar_Orbit.out",
+        "Lunar_Orbit",
+        ids,
+        &mut errors,
+    );
 
     // Phase 8: Descent module separation
     tree.detach(dm);
-    assert_all_bodies(&tree, "apollo_LM_Ascent.out", "LM_Ascent", ids);
+    check_all_bodies(&tree, "apollo_LM_Ascent.out", "LM_Ascent", ids, &mut errors);
 
     // Phase 9: LM re-docks to CM (lunar rendezvous)
     tree.attach_aligned(lm, "LM docking port", cm, "CM docking port");
-    assert_all_bodies(
+    check_all_bodies(
         &tree,
         "apollo_Lunar_Rendezvous.out",
         "Lunar_Rendezvous",
         ids,
+        &mut errors,
     );
 
     // Phase 10: LM final separation
     tree.detach(lm);
-    assert_all_bodies(&tree, "apollo_Return.out", "Return", ids);
+    check_all_bodies(&tree, "apollo_Return.out", "Return", ids, &mut errors);
 
     // Phase 11: SM jettison (entry)
     tree.detach(sm);
-    assert_all_bodies(&tree, "apollo_Entry.out", "Entry", ids);
-    assert_all_bodies(&tree, "apollo_Final.out", "Final", ids);
+    check_all_bodies(&tree, "apollo_Entry.out", "Entry", ids, &mut errors);
+    check_all_bodies(&tree, "apollo_Final.out", "Final", ids, &mut errors);
+
+    // Write CrossvalReport so tier3_report picks up the results.
+    let mut report = jeod_test_data::crossval::CrossvalReport::compute(
+        "tier3_apollo_mass_tree",
+        &[], // No trajectory data — mass tree is discrete, not a time series
+        &[],
+    );
+    report.add_extra("composite_mass", errors.mass, "kg");
+    report.add_extra("composite_com", errors.com, "m");
+    report.add_extra("composite_inertia", errors.inertia, "kg*m^2");
+    report.write();
 }
