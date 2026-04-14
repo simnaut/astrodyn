@@ -61,7 +61,10 @@ fn tier3_bevy_point_mass_sixdof() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
-    let earth_idx = sim.add_source(GravitySourceEntry::new(earth_source(), DVec3::ZERO, None));
+    let earth_idx = sim.add_source(
+        "Earth",
+        GravitySourceEntry::new(earth_source(), DVec3::ZERO, None),
+    );
     sim.add_body(new_sim_body_sixdof(earth_idx, false));
     sim.validate().unwrap();
     sim.step_n(NUM_STEPS);
@@ -315,14 +318,17 @@ fn tier3_sim_time_reversal_round_trip() {
     println!("Scenario P: Time reversal round-trip");
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
-    let earth = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: MU_EARTH,
-            model: GravityModel::PointMass,
-        },
-        DVec3::ZERO,
-        None,
-    ));
+    let earth = sim.add_source(
+        "Earth",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: MU_EARTH,
+                model: GravityModel::PointMass,
+            },
+            DVec3::ZERO,
+            None,
+        ),
+    );
     sim.add_body(VehicleConfig {
         trans: iss_trans(),
         rot: Some(tumble_rot()),
@@ -371,14 +377,17 @@ fn tier3_sim_relative_state_consistency() {
 
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
-    let earth = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: MU_EARTH,
-            model: GravityModel::PointMass,
-        },
-        DVec3::ZERO,
-        None,
-    ));
+    let earth = sim.add_source(
+        "Earth",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: MU_EARTH,
+                model: GravityModel::PointMass,
+            },
+            DVec3::ZERO,
+            None,
+        ),
+    );
 
     sim.add_body(VehicleConfig {
         trans: iss_trans(),
@@ -501,18 +510,22 @@ fn tier3_sim_mars_rotation_dispatch() {
     let mut sim = Simulation::new(time, DT);
 
     let mars_mu = 4.282_837_452_7e13;
-    let mars = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: mars_mu,
-            model: GravityModel::PointMass,
+    let mars = sim.add_source(
+        "Mars",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: mars_mu,
+                model: GravityModel::PointMass,
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: Some(glam::DMat3::IDENTITY),
+            rotation_model: RotationModel::MarsIAU,
+            delta_c20: 0.0,
+            tidal_config: None,
+            central: true,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: Some(glam::DMat3::IDENTITY),
-        rotation_model: RotationModel::MarsIAU,
-        delta_c20: 0.0,
-        tidal_config: None,
-    });
+    );
 
     sim.add_body(VehicleConfig {
         trans: TranslationalState {
@@ -528,7 +541,7 @@ fn tier3_sim_mars_rotation_dispatch() {
     sim.validate().unwrap();
     sim.step_n(10);
 
-    let rot = sim.sources[mars].t_inertial_pfix.unwrap();
+    let rot = sim.source_pfix_rotation(mars).unwrap();
     assert!(
         rot != glam::DMat3::IDENTITY,
         "Mars rotation should differ from identity after 10 steps"
@@ -551,31 +564,39 @@ fn tier3_sim_multi_source_rotation() {
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
 
-    let earth = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: MU_EARTH,
-            model: GravityModel::PointMass,
+    let earth = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: MU_EARTH,
+                model: GravityModel::PointMass,
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: Some(glam::DMat3::IDENTITY),
+            rotation_model: RotationModel::EarthRNP,
+            delta_c20: 0.0,
+            tidal_config: None,
+            central: true,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: Some(glam::DMat3::IDENTITY),
-        rotation_model: RotationModel::EarthRNP,
-        delta_c20: 0.0,
-        tidal_config: None,
-    });
+    );
 
-    let mars = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: 4.282_837_452_7e13,
-            model: GravityModel::PointMass,
+    let mars = sim.add_source(
+        "Mars",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: 4.282_837_452_7e13,
+                model: GravityModel::PointMass,
+            },
+            position: DVec3::new(2.28e11, 0.0, 0.0),
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: Some(glam::DMat3::IDENTITY),
+            rotation_model: RotationModel::MarsIAU,
+            delta_c20: 0.0,
+            tidal_config: None,
+            central: false,
         },
-        position: DVec3::new(2.28e11, 0.0, 0.0),
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: Some(glam::DMat3::IDENTITY),
-        rotation_model: RotationModel::MarsIAU,
-        delta_c20: 0.0,
-        tidal_config: None,
-    });
+    );
 
     sim.add_body(VehicleConfig {
         trans: iss_trans(),
@@ -588,8 +609,8 @@ fn tier3_sim_multi_source_rotation() {
     sim.validate().unwrap();
     sim.step_n(10);
 
-    let earth_rot = sim.sources[earth].t_inertial_pfix.unwrap();
-    let mars_rot = sim.sources[mars].t_inertial_pfix.unwrap();
+    let earth_rot = sim.source_pfix_rotation(earth).unwrap();
+    let mars_rot = sim.source_pfix_rotation(mars).unwrap();
 
     assert!(earth_rot != glam::DMat3::IDENTITY, "Earth rotation updated");
     assert!(mars_rot != glam::DMat3::IDENTITY, "Mars rotation updated");

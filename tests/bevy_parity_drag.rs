@@ -80,7 +80,10 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(GravitySourceEntry::new(earth_source(), DVec3::ZERO, None));
+    let earth_idx = sim.add_source(
+        "Earth",
+        GravitySourceEntry::new(earth_source(), DVec3::ZERO, None),
+    );
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Exponential(exp_atmos),
         r_eq: 6_378_137.0,
@@ -166,7 +169,10 @@ fn tier3_bevy_constant_density_drag_sixdof() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(GravitySourceEntry::new(earth_source(), DVec3::ZERO, None));
+    let earth_idx = sim.add_source(
+        "Earth",
+        GravitySourceEntry::new(earth_source(), DVec3::ZERO, None),
+    );
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Exponential(exp_atmos),
         r_eq: 6_378_137.0,
@@ -258,15 +264,19 @@ fn tier3_bevy_met_atmosphere_drag_sixdof() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(GravitySourceEntry {
-        source: earth_source(),
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: Some(DMat3::IDENTITY),
-        delta_c20: 0.0,
-        rotation_model: jeod_runner::RotationModel::EarthRNP,
-        tidal_config: None,
-    });
+    let earth_idx = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: earth_source(),
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: Some(DMat3::IDENTITY),
+            delta_c20: 0.0,
+            rotation_model: jeod_runner::RotationModel::EarthRNP,
+            tidal_config: None,
+            central: true,
+        },
+    );
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Met(met),
         r_eq: 6_378_137.0,
@@ -353,15 +363,19 @@ fn tier3_bevy_met_run5a() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(GravitySourceEntry {
-        source: earth_source(),
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: Some(DMat3::IDENTITY),
-        delta_c20: 0.0,
-        rotation_model: jeod_runner::RotationModel::EarthRNP,
-        tidal_config: None,
-    });
+    let earth_idx = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: earth_source(),
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: Some(DMat3::IDENTITY),
+            delta_c20: 0.0,
+            rotation_model: jeod_runner::RotationModel::EarthRNP,
+            tidal_config: None,
+            central: true,
+        },
+    );
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Met(met),
         r_eq: 6_378_137.0,
@@ -452,15 +466,19 @@ fn tier3_bevy_drag_run6b() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(GravitySourceEntry {
-        source: earth_source(),
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: Some(DMat3::IDENTITY),
-        delta_c20: 0.0,
-        rotation_model: jeod_runner::RotationModel::EarthRNP,
-        tidal_config: None,
-    });
+    let earth_idx = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: earth_source(),
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: Some(DMat3::IDENTITY),
+            delta_c20: 0.0,
+            rotation_model: jeod_runner::RotationModel::EarthRNP,
+            tidal_config: None,
+            central: true,
+        },
+    );
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Met(met),
         r_eq: 6_378_137.0,

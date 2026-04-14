@@ -68,18 +68,22 @@ fn run_gj_test(
     time.time_scale_factor = time_scale_factor;
     let mut sim = Simulation::new(time, sim_dt);
 
-    let earth = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: MU_GJ_TEST,
-            model: GravityModel::PointMass,
+    let earth = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: MU_GJ_TEST,
+                model: GravityModel::PointMass,
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: RotationModel::default(),
+            tidal_config: None,
+            central: true,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+    );
 
     sim.add_body(VehicleConfig {
         trans: TranslationalState {

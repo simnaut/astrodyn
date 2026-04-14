@@ -159,34 +159,42 @@ fn tier3_srp_1st_order_trajectory() {
     let time = SimulationTime::new(epoch_tai_tjt, jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, srp_dt);
 
-    let earth = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: srp_mu_earth,
-            model: GravityModel::PointMass,
+    let earth = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: srp_mu_earth,
+                model: GravityModel::PointMass,
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: RotationModel::default(),
+            tidal_config: None,
+            central: true,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+    );
 
     // Sun: mu=0 because the JEOD SIM_3_ORBIT_1st_ORDER reference sim uses Sun
     // only for SRP direction, not gravitational perturbation.
     let initial_sun = srp_sun_position(0.0, epoch_tai_tjt, &ephemeris);
-    let sun = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: 0.0,
-            model: GravityModel::PointMass,
+    let sun = sim.add_source(
+        "Sun",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            position: initial_sun,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: RotationModel::default(),
+            tidal_config: None,
+            central: false,
         },
-        position: initial_sun,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+    );
     sim.sun_source = Some(sun);
 
     sim.add_body(VehicleConfig {
@@ -226,7 +234,10 @@ fn tier3_srp_1st_order_trajectory() {
     let mut ref_states = Vec::with_capacity(trajectory.len() - 1);
 
     for record in &trajectory[1..] {
-        sim.sources[sun].position = srp_sun_position(record.time, epoch_tai_tjt, &ephemeris);
+        sim.set_source_position(
+            sun,
+            srp_sun_position(record.time, epoch_tai_tjt, &ephemeris),
+        );
         sim.step_until(record.time);
 
         let body = sim.body(0);

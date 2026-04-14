@@ -107,22 +107,28 @@ fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_p
 
     // ── Simulation ──
     let (mut sim, earth_idx) = new_sim_earth(DT);
-    let sun_idx = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: 0.0,
-            model: GravityModel::PointMass,
-        },
-        sun_pos,
-        None,
-    ));
-    let moon_idx = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: 0.0,
-            model: GravityModel::PointMass,
-        },
-        moon_pos,
-        None,
-    ));
+    let sun_idx = sim.add_source(
+        "Sun",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            sun_pos,
+            None,
+        ),
+    );
+    let moon_idx = sim.add_source(
+        "Moon",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            moon_pos,
+            None,
+        ),
+    );
     sim.sun_source = Some(sun_idx);
     sim.moon_source = Some(moon_idx);
 
@@ -313,22 +319,28 @@ fn tier3_bevy_earth_lighting_pipeline() {
 
     // ── Simulation ──
     let (mut sim, earth_idx) = new_sim_earth(DT);
-    let sun_idx = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: 0.0,
-            model: GravityModel::PointMass,
-        },
-        sun_pos,
-        None,
-    ));
-    let moon_idx = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: 0.0,
-            model: GravityModel::PointMass,
-        },
-        moon_pos,
-        None,
-    ));
+    let sun_idx = sim.add_source(
+        "Sun",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            sun_pos,
+            None,
+        ),
+    );
+    let moon_idx = sim.add_source(
+        "Moon",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            moon_pos,
+            None,
+        ),
+    );
     sim.sun_source = Some(sun_idx);
     sim.moon_source = Some(moon_idx);
 

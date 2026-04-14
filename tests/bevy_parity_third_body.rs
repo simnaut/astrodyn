@@ -70,14 +70,17 @@ fn tier3_bevy_solar_beta_equ() {
 
     let eph_sim = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
     let (mut sim, earth_idx) = new_sim_earth(DT);
-    let sun_idx = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: 0.0,
-            model: GravityModel::PointMass,
-        },
-        initial_sun_pos,
-        None,
-    ));
+    let sun_idx = sim.add_source(
+        "Sun",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            initial_sun_pos,
+            None,
+        ),
+    );
     sim.set_source_ephemeris(sun_idx, EphemerisBody::Sun, EphemerisBody::Earth);
     sim.sun_source = Some(sun_idx);
     sim.ephemeris = Some(eph_sim);
@@ -158,14 +161,17 @@ fn tier3_bevy_solar_beta_obliquity() {
 
     let eph_sim = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
     let (mut sim, earth_idx) = new_sim_earth(DT);
-    let sun_idx = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: 0.0,
-            model: GravityModel::PointMass,
-        },
-        initial_sun_pos,
-        None,
-    ));
+    let sun_idx = sim.add_source(
+        "Sun",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            initial_sun_pos,
+            None,
+        ),
+    );
     sim.set_source_ephemeris(sun_idx, EphemerisBody::Sun, EphemerisBody::Earth);
     sim.sun_source = Some(sun_idx);
     sim.ephemeris = Some(eph_sim);
@@ -298,28 +304,34 @@ fn run_3rd_body_parity(label: &str, trans: TranslationalState, include_moon: boo
     // ── Simulation ──
     let eph_sim = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
     let (mut sim, earth_idx) = new_sim_earth(DT);
-    let sun_idx = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: MU_SUN,
-            model: GravityModel::PointMass,
-        },
-        initial_sun_pos,
-        None,
-    ));
+    let sun_idx = sim.add_source(
+        "Sun",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: MU_SUN,
+                model: GravityModel::PointMass,
+            },
+            initial_sun_pos,
+            None,
+        ),
+    );
     sim.set_source_ephemeris(sun_idx, EphemerisBody::Sun, EphemerisBody::Earth);
     sim.sun_source = Some(sun_idx);
 
     let moon_idx = if include_moon {
         let mu_moon = 4.902_800_066e12;
         let moon_pos = initial_moon_pos.unwrap();
-        let idx = sim.add_source(GravitySourceEntry::new(
-            GravitySource {
-                mu: mu_moon,
-                model: GravityModel::PointMass,
-            },
-            moon_pos,
-            None,
-        ));
+        let idx = sim.add_source(
+            "Moon",
+            GravitySourceEntry::new(
+                GravitySource {
+                    mu: mu_moon,
+                    model: GravityModel::PointMass,
+                },
+                moon_pos,
+                None,
+            ),
+        );
         sim.set_source_ephemeris(idx, EphemerisBody::Moon, EphemerisBody::Earth);
         sim.moon_source = Some(idx);
         Some(idx)
@@ -494,26 +506,33 @@ fn tier3_bevy_mars_dawn() {
     let eph_sim = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let mars_idx = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: mu_mars,
-            model: GravityModel::PointMass,
+    let mars_idx = sim.add_source(
+        "Mars",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: mu_mars,
+                model: GravityModel::PointMass,
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: Some(DMat3::IDENTITY),
+            delta_c20: 0.0,
+            rotation_model: RotationModel::MarsIAU,
+            tidal_config: None,
+            central: true,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: Some(DMat3::IDENTITY),
-        delta_c20: 0.0,
-        rotation_model: RotationModel::MarsIAU,
-        tidal_config: None,
-    });
-    let sun_idx = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: MU_SUN,
-            model: GravityModel::PointMass,
-        },
-        sun_rel_mars,
-        None,
-    ));
+    );
+    let sun_idx = sim.add_source(
+        "Sun",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: MU_SUN,
+                model: GravityModel::PointMass,
+            },
+            sun_rel_mars,
+            None,
+        ),
+    );
     sim.set_source_ephemeris(sun_idx, EphemerisBody::Sun, EphemerisBody::Mars);
     sim.sun_source = Some(sun_idx);
     sim.ephemeris = Some(eph_sim);
@@ -584,14 +603,17 @@ fn tier3_bevy_mercury_relativistic() {
 
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let sun_idx = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: mu_sun,
-            model: GravityModel::PointMass,
-        },
-        DVec3::ZERO,
-        None,
-    ));
+    let sun_idx = sim.add_source(
+        "Sun",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: mu_sun,
+                model: GravityModel::PointMass,
+            },
+            DVec3::ZERO,
+            None,
+        ),
+    );
 
     let mut sim_sun_ctrl = GravityControl::new_spherical(sun_idx, false);
     sim_sun_ctrl.relativistic = true;
@@ -674,18 +696,22 @@ fn tier3_bevy_relativistic_moving_source() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let sun_idx = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: mu_sun,
-            model: GravityModel::PointMass,
+    let sun_idx = sim.add_source(
+        "Sun",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: mu_sun,
+                model: GravityModel::PointMass,
+            },
+            position: DVec3::ZERO,
+            velocity: source_velocity,
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: RotationModel::None,
+            tidal_config: None,
+            central: true,
         },
-        position: DVec3::ZERO,
-        velocity: source_velocity,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::None,
-        tidal_config: None,
-    });
+    );
 
     let mut sim_sun_ctrl = GravityControl::new_spherical(sun_idx, false);
     sim_sun_ctrl.relativistic = true;
@@ -814,25 +840,31 @@ fn tier3_bevy_earth_moon_clem() {
 
     let eph_sim = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
     let (mut sim, earth_idx) = new_sim_earth(DT);
-    let sun_idx = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: MU_SUN,
-            model: GravityModel::PointMass,
-        },
-        initial_sun_pos,
-        None,
-    ));
+    let sun_idx = sim.add_source(
+        "Sun",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: MU_SUN,
+                model: GravityModel::PointMass,
+            },
+            initial_sun_pos,
+            None,
+        ),
+    );
     sim.set_source_ephemeris(sun_idx, EphemerisBody::Sun, EphemerisBody::Earth);
     sim.sun_source = Some(sun_idx);
 
-    let moon_sim_idx = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: mu_moon,
-            model: GravityModel::PointMass,
-        },
-        initial_moon_pos,
-        None,
-    ));
+    let moon_sim_idx = sim.add_source(
+        "Moon",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: mu_moon,
+                model: GravityModel::PointMass,
+            },
+            initial_moon_pos,
+            None,
+        ),
+    );
     sim.set_source_ephemeris(moon_sim_idx, EphemerisBody::Moon, EphemerisBody::Earth);
     sim.moon_source = Some(moon_sim_idx);
     sim.ephemeris = Some(eph_sim);

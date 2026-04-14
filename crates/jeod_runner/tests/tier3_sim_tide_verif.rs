@@ -135,46 +135,58 @@ fn tier3_simulation_tide_run01() {
         ],
     };
 
-    let earth = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: earth_mu,
-            model: GravityModel::SphericalHarmonics(Box::new(sh_data)),
+    let earth = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: earth_mu,
+                model: GravityModel::SphericalHarmonics(Box::new(sh_data)),
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: Some(DMat3::IDENTITY),
+            rotation_model: RotationModel::EarthRNP,
+            delta_c20: 0.0,
+            tidal_config: Some(tidal_config),
+            central: true,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: Some(DMat3::IDENTITY),
-        rotation_model: RotationModel::EarthRNP,
-        delta_c20: 0.0,
-        tidal_config: Some(tidal_config),
-    });
+    );
 
     // Sun: 3rd-body differential
-    let sun = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: mu_sun,
-            model: GravityModel::PointMass,
+    let sun = sim.add_source(
+        "Sun",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: mu_sun,
+                model: GravityModel::PointMass,
+            },
+            position: initial_sun,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: RotationModel::default(),
+            tidal_config: None,
+            central: false,
         },
-        position: initial_sun,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+    );
 
     // Moon: 3rd-body differential
-    let moon = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: mu_moon,
-            model: GravityModel::PointMass,
+    let moon = sim.add_source(
+        "Moon",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: mu_moon,
+                model: GravityModel::PointMass,
+            },
+            position: initial_moon,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: RotationModel::default(),
+            tidal_config: None,
+            central: false,
         },
-        position: initial_moon,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+    );
 
     // ISS mass (from Modified_data/mass.py — same as torque_simple)
     let inertia = DMat3::from_cols(
@@ -221,11 +233,11 @@ fn tier3_simulation_tide_run01() {
         let sun_pos = earth_centered_position(EphemerisBody::Sun, target_tdb_jd, &ephemeris);
         let moon_pos = earth_centered_position(EphemerisBody::Moon, target_tdb_jd, &ephemeris);
 
-        sim.sources[sun].position = sun_pos;
-        sim.sources[moon].position = moon_pos;
+        sim.set_source_position(sun, sun_pos);
+        sim.set_source_position(moon, moon_pos);
 
         // Update tidal body positions (Moon=0, Sun=1 in tidal_config)
-        if let Some(ref mut tc) = sim.sources[earth].tidal_config {
+        if let Some(tc) = sim.source_tidal_config_mut(earth) {
             tc.tidal_bodies[0].position_inertial = moon_pos;
             tc.tidal_bodies[1].position_inertial = sun_pos;
         }
@@ -234,7 +246,7 @@ fn tier3_simulation_tide_run01() {
         let body = sim.body(0);
 
         // Compare dC20
-        let our_dc20 = sim.sources[earth].delta_c20;
+        let our_dc20 = sim.source_delta_c20(earth);
         let dc20_err = (our_dc20 - ref_dc20).abs();
         max_dc20_err = max_dc20_err.max(dc20_err);
 

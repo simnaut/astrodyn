@@ -130,18 +130,22 @@ fn tier3_simulation_earth_moon_clem() {
         .expect("Moon DE421 libration rotation");
 
     // Moon at origin with LP150Q SH gravity + per-step DE421 BPC rotation.
-    let moon = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: moon_mu,
-            model: GravityModel::SphericalHarmonics(Box::new(sh_data)),
+    let moon = sim.add_source(
+        "Moon",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: moon_mu,
+                model: GravityModel::SphericalHarmonics(Box::new(sh_data)),
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: Some(moon_rotation),
+            rotation_model: RotationModel::MoonDE421,
+            delta_c20: 0.0,
+            tidal_config: None,
+            central: true,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: Some(moon_rotation),
-        rotation_model: RotationModel::MoonDE421,
-        delta_c20: 0.0,
-        tidal_config: None,
-    });
+    );
 
     // Earth as 3rd-body with per-step ephemeris updates
     let epoch_tdb_jd = sim.time.tdb_julian_date();
@@ -149,28 +153,34 @@ fn tier3_simulation_earth_moon_clem() {
         .get_state(EphemerisBody::Earth, EphemerisBody::Moon, epoch_tdb_jd)
         .expect("Earth-Moon state from DE421");
 
-    let earth = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: mu_earth,
-            model: GravityModel::PointMass,
-        },
-        earth_pos_from_moon,
-        None,
-    ));
+    let earth = sim.add_source(
+        "Earth",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: mu_earth,
+                model: GravityModel::PointMass,
+            },
+            earth_pos_from_moon,
+            None,
+        ),
+    );
     sim.set_source_ephemeris(earth, EphemerisBody::Earth, EphemerisBody::Moon);
 
     // Sun as 3rd-body with per-step ephemeris updates (also SRP source)
     let (sun_pos_from_moon, _) = ephemeris
         .get_state(EphemerisBody::Sun, EphemerisBody::Moon, epoch_tdb_jd)
         .expect("Sun-Moon state from DE421");
-    let sun = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: mu_sun,
-            model: GravityModel::PointMass,
-        },
-        sun_pos_from_moon,
-        None,
-    ));
+    let sun = sim.add_source(
+        "Sun",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: mu_sun,
+                model: GravityModel::PointMass,
+            },
+            sun_pos_from_moon,
+            None,
+        ),
+    );
     sim.set_source_ephemeris(sun, EphemerisBody::Sun, EphemerisBody::Moon);
     sim.sun_source = Some(sun);
 

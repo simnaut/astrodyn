@@ -91,14 +91,17 @@ fn run_planetary_scenario(label: &str, csv_name: &str) {
     let time = SimulationTime::at_j2000(leap_table);
     let mut sim = Simulation::new(time, dt);
 
-    let earth = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: mu_earth,
-            model: GravityModel::PointMass,
-        },
-        DVec3::ZERO,
-        None,
-    ));
+    let earth = sim.add_source(
+        "Earth",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: mu_earth,
+                model: GravityModel::PointMass,
+            },
+            DVec3::ZERO,
+            None,
+        ),
+    );
 
     sim.add_body(VehicleConfig {
         trans: TranslationalState {

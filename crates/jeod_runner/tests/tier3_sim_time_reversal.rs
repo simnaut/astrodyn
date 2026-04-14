@@ -96,14 +96,17 @@ fn tier3_sim_time_reversal_run1() {
     let time = SimulationTime::new(init.tai_tjt, leap_table);
     let mut sim = Simulation::new(time, dt);
 
-    let earth = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: mu_earth_gemt1,
-            model: GravityModel::PointMass,
-        },
-        DVec3::ZERO,
-        None,
-    ));
+    let earth = sim.add_source(
+        "Earth",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: mu_earth_gemt1,
+                model: GravityModel::PointMass,
+            },
+            DVec3::ZERO,
+            None,
+        ),
+    );
 
     // JEOD initializes attitude in LVLH: Yaw=0, Pitch=-11.6°, Roll=0, omega=0.
     // Compute the LVLH frame, then apply the Euler rotation.

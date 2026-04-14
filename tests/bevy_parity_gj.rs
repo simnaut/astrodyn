@@ -136,14 +136,17 @@ fn run_gj_parity(
     time.time_scale_factor = time_scale_factor;
     let mut sim = Simulation::new(time, sim_dt);
 
-    let earth_idx = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: MU_GJ_TEST,
-            model: GravityModel::PointMass,
-        },
-        DVec3::ZERO,
-        None,
-    ));
+    let earth_idx = sim.add_source(
+        "Earth",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: MU_GJ_TEST,
+                model: GravityModel::PointMass,
+            },
+            DVec3::ZERO,
+            None,
+        ),
+    );
 
     sim.add_body(VehicleConfig {
         trans,

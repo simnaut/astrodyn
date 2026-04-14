@@ -92,18 +92,22 @@ fn tier3_simulation_run2p_polar_motion() {
     let yp = YP_ARCSEC * ARCSEC_TO_RAD;
     sim.polar_motion = Some((xp, yp));
 
-    let earth = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: mu_earth,
-            model: GravityModel::PointMass,
+    let earth = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: mu_earth,
+                model: GravityModel::PointMass,
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: RotationModel::default(),
+            tidal_config: None,
+            central: true,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+    );
 
     sim.add_body(VehicleConfig {
         trans: TranslationalState {

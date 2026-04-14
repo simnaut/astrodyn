@@ -90,18 +90,22 @@ fn tier3_simulation_run10a_gravity_torque() {
     let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, dt);
 
-    let earth = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: earth_grav.mu,
-            model: GravityModel::PointMass,
+    let earth = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: earth_grav.mu,
+                model: GravityModel::PointMass,
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: RotationModel::default(),
+            tidal_config: None,
+            central: true,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+    );
 
     sim.add_body(VehicleConfig {
         trans: TranslationalState {
@@ -387,18 +391,22 @@ fn tier3_simulation_run10c_gravity_torque_elliptical() {
     let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, dt);
 
-    let earth = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: earth_grav.mu,
-            model: GravityModel::PointMass,
+    let earth = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: earth_grav.mu,
+                model: GravityModel::PointMass,
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: RotationModel::default(),
+            tidal_config: None,
+            central: true,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+    );
 
     sim.add_body(VehicleConfig {
         trans: TranslationalState {
@@ -542,18 +550,22 @@ fn tier3_simulation_run10d_gravity_torque_elliptical_rate() {
     let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, dt);
 
-    let earth = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: earth_grav.mu,
-            model: GravityModel::PointMass,
+    let earth = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: earth_grav.mu,
+                model: GravityModel::PointMass,
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: RotationModel::default(),
+            tidal_config: None,
+            central: true,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+    );
 
     sim.add_body(VehicleConfig {
         trans: TranslationalState {

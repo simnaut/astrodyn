@@ -14,9 +14,7 @@
 
 use glam::{DMat3, DQuat, DVec3};
 use jeod_math::JeodQuat;
-use jeod_runner::{
-    FrameSwitchConfig, GravitySourceEntry, IntegrationFrame, Simulation, SwitchSense, VehicleConfig,
-};
+use jeod_runner::{FrameSwitchConfig, GravitySourceEntry, Simulation, SwitchSense, VehicleConfig};
 use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, MassProperties, RotationalState,
     SimulationTime,
@@ -85,37 +83,46 @@ fn build_apollo8_sim(frame_switches: Vec<FrameSwitchConfig>) -> (Simulation, usi
     sim.ephemeris = Some(ephemeris);
 
     // Gravity sources: Sun, Earth, Moon (all spherical, matching JEOD config)
-    let sun = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: MU_SUN,
-            model: GravityModel::PointMass,
-        },
-        DVec3::ZERO,
-        None,
-    ));
+    let sun = sim.add_source(
+        "Sun",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: MU_SUN,
+                model: GravityModel::PointMass,
+            },
+            DVec3::ZERO,
+            None,
+        ),
+    );
     sim.set_source_ephemeris(
         sun,
         jeod_sim::EphemerisBody::Sun,
         jeod_sim::EphemerisBody::Earth,
     );
 
-    let earth = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: MU_EARTH,
-            model: GravityModel::PointMass,
-        },
-        DVec3::ZERO,
-        None,
-    ));
+    let earth = sim.add_source(
+        "Earth",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: MU_EARTH,
+                model: GravityModel::PointMass,
+            },
+            DVec3::ZERO,
+            None,
+        ),
+    );
 
-    let moon = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: MU_MOON,
-            model: GravityModel::PointMass,
-        },
-        DVec3::ZERO,
-        None,
-    ));
+    let moon = sim.add_source(
+        "Moon",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: MU_MOON,
+                model: GravityModel::PointMass,
+            },
+            DVec3::ZERO,
+            None,
+        ),
+    );
     sim.set_source_ephemeris(
         moon,
         jeod_sim::EphemerisBody::Moon,
@@ -153,7 +160,7 @@ fn build_apollo8_sim(frame_switches: Vec<FrameSwitchConfig>) -> (Simulation, usi
                 GravityControl::new_third_body(moon),
             ],
         },
-        integ_frame: IntegrationFrame::EarthInertial,
+        integ_source: None,
         frame_switches,
         ..Default::default()
     });
@@ -291,11 +298,10 @@ fn tier3_apollo8_eci_integ() {
 #[test]
 fn tier3_apollo8_frame_switch() {
     let (mut sim, body_idx) = build_apollo8_sim(vec![FrameSwitchConfig {
-        target_frame: IntegrationFrame::MoonInertial,
+        target_source: 2, // moon source index
         switch_sense: SwitchSense::OnApproach,
         switch_distance: SWITCH_DISTANCE,
         active: true,
-        central_source: Some(2),
     }]);
 
     let ref_positions = load_reference_positions("apollo8_frame_switch_V_1_State.csv");
@@ -312,7 +318,7 @@ fn tier3_apollo8_frame_switch() {
         }
         let our_pos = sim.body(body_idx).trans.position;
         let err = (our_pos - ref_positions[ref_idx]).length();
-        if sim.body(body_idx).integ_frame == IntegrationFrame::EarthInertial {
+        if sim.body(body_idx).integ_frame_id == sim.root_frame_id {
             max_err_eci = max_err_eci.max(err);
         } else {
             max_err_moon = max_err_moon.max(err);

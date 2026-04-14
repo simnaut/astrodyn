@@ -57,18 +57,22 @@ fn tier3_simulation_lvlh() {
     let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, dt);
 
-    let earth = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: mu_earth,
-            model: GravityModel::PointMass,
+    let earth = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: mu_earth,
+                model: GravityModel::PointMass,
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: RotationModel::default(),
+            tidal_config: None,
+            central: true,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+    );
 
     sim.add_body(VehicleConfig {
         trans: TranslationalState {

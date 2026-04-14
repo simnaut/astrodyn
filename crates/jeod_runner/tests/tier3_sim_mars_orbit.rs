@@ -114,28 +114,35 @@ fn tier3_simulation_mars_dawn() {
     let mut sim = Simulation::new(time, 10.0);
 
     // Mars at origin with IAU rotation + MRO110B2 SH gravity
-    let mars = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: mars_mu,
-            model: GravityModel::SphericalHarmonics(Box::new(sh_data)),
+    let mars = sim.add_source(
+        "Mars",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: mars_mu,
+                model: GravityModel::SphericalHarmonics(Box::new(sh_data)),
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: Some(DMat3::IDENTITY), // Triggers Mars rotation update
+            rotation_model: RotationModel::MarsIAU,
+            delta_c20: 0.0,
+            tidal_config: None,
+            central: true,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: Some(DMat3::IDENTITY), // Triggers Mars rotation update
-        rotation_model: RotationModel::MarsIAU,
-        delta_c20: 0.0,
-        tidal_config: None,
-    });
+    );
 
     // Sun as 3rd-body with per-step DE421 ephemeris updates
-    let sun = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: mu_sun,
-            model: GravityModel::PointMass,
-        },
-        sun_pos_from_mars,
-        None,
-    ));
+    let sun = sim.add_source(
+        "Sun",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: mu_sun,
+                model: GravityModel::PointMass,
+            },
+            sun_pos_from_mars,
+            None,
+        ),
+    );
     sim.set_source_ephemeris(
         sun,
         jeod_sim::EphemerisBody::Sun,

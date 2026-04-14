@@ -71,18 +71,22 @@ fn run_ned_test(
 
     let mut sim = Simulation::new(time, ned_dt);
 
-    let earth = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: mu_earth,
-            model: GravityModel::PointMass,
+    let earth = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: mu_earth,
+                model: GravityModel::PointMass,
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: Some(DMat3::IDENTITY),
+            delta_c20: 0.0,
+            rotation_model: RotationModel::EarthRNP,
+            tidal_config: None,
+            central: true,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: Some(DMat3::IDENTITY),
-        delta_c20: 0.0,
-        rotation_model: RotationModel::EarthRNP,
-        tidal_config: None,
-    });
+    );
 
     let (r_eq, r_pol) = if use_spherical_earth {
         (GEO_R_SPH, GEO_R_SPH) // Spherical: r_eq = r_pol

@@ -85,18 +85,22 @@ fn tier3_simulation_geodetic() {
     let mut sim = Simulation::new(time, ned_dt);
 
     // Earth: point-mass gravity (JEOD SIM_NED uses spherical=1) with RNP rotation
-    let earth = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: mu_earth,
-            model: GravityModel::PointMass,
+    let earth = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: mu_earth,
+                model: GravityModel::PointMass,
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: Some(DMat3::IDENTITY), // triggers RNP update for geodetic
+            delta_c20: 0.0,
+            rotation_model: RotationModel::EarthRNP,
+            tidal_config: None,
+            central: true,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: Some(DMat3::IDENTITY), // triggers RNP update for geodetic
-        delta_c20: 0.0,
-        rotation_model: RotationModel::EarthRNP,
-        tidal_config: None,
-    });
+    );
 
     sim.add_body(VehicleConfig {
         trans: TranslationalState {

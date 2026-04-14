@@ -115,18 +115,22 @@ fn tier3_simulation_run6b_drag() {
     // Earth source with planet-fixed rotation — the Simulation's ephemeris stage
     // updates it each step via RNP, so the atmosphere system sees correct geodetic
     // coordinates. Without this, MET density is evaluated at wrong lat/lon.
-    let earth = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: earth_grav.mu,
-            model: GravityModel::PointMass,
+    let earth = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: earth_grav.mu,
+                model: GravityModel::PointMass,
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: Some(DMat3::IDENTITY), // triggers ephemeris update each step
+            delta_c20: 0.0,
+            rotation_model: RotationModel::EarthRNP,
+            tidal_config: None,
+            central: true,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: Some(DMat3::IDENTITY), // triggers ephemeris update each step
-        delta_c20: 0.0,
-        rotation_model: RotationModel::EarthRNP,
-        tidal_config: None,
-    });
+    );
 
     // Configure atmosphere with planet rotation lookup
     sim.atmosphere = Some(AtmosphereConfig {
@@ -323,18 +327,22 @@ fn tier3_simulation_run6a_const_density_drag() {
 
     let mut sim = Simulation::new(time, dt);
 
-    let earth = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: earth_grav.mu,
-            model: GravityModel::PointMass,
+    let earth = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: earth_grav.mu,
+                model: GravityModel::PointMass,
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: Some(DMat3::IDENTITY),
+            delta_c20: 0.0,
+            rotation_model: RotationModel::EarthRNP,
+            tidal_config: None,
+            central: true,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: Some(DMat3::IDENTITY),
-        delta_c20: 0.0,
-        rotation_model: RotationModel::EarthRNP,
-        tidal_config: None,
-    });
+    );
 
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Met(met_model),

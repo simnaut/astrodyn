@@ -39,18 +39,22 @@ fn main() {
 
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut sim = Simulation::new(time, dt);
-    let earth_idx = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: mu_earth,
-            model: GravityModel::PointMass,
+    let earth_idx = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: mu_earth,
+                model: GravityModel::PointMass,
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: jeod_sim::RotationModel::default(),
+            tidal_config: None,
+            central: true,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: jeod_sim::RotationModel::default(),
-        tidal_config: None,
-    });
+    );
     let body_idx = sim.add_body(VehicleConfig {
         trans: state0,
         gravity_controls: GravityControls {

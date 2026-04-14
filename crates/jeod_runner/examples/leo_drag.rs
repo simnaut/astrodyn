@@ -62,19 +62,23 @@ fn main() {
 
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut sim = Simulation::new(time, 60.0);
-    let earth_idx = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: MU_EARTH,
-            model: GravityModel::PointMass,
+    let earth_idx = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: MU_EARTH,
+                model: GravityModel::PointMass,
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            // Set to Some so Simulation updates this with GMST each step.
+            t_inertial_pfix: Some(DMat3::IDENTITY),
+            delta_c20: 0.0,
+            rotation_model: RotationModel::default(),
+            tidal_config: None,
+            central: true,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        // Set to Some so Simulation updates this with GMST each step.
-        t_inertial_pfix: Some(DMat3::IDENTITY),
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+    );
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Met(met_model),
         r_eq: R_EARTH_EQ,

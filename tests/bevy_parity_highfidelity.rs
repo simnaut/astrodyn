@@ -81,15 +81,19 @@ fn tier3_bevy_sh4x4_rnp() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(GravitySourceEntry {
-        source: sh_source,
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: Some(DMat3::IDENTITY),
-        delta_c20: 0.0,
-        rotation_model: RotationModel::EarthRNP,
-        tidal_config: None,
-    });
+    let earth_idx = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: sh_source,
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: Some(DMat3::IDENTITY),
+            delta_c20: 0.0,
+            rotation_model: RotationModel::EarthRNP,
+            tidal_config: None,
+            central: true,
+        },
+    );
 
     sim.add_body(VehicleConfig {
         trans: iss_trans(),
@@ -187,15 +191,19 @@ fn tier3_bevy_tidal_sh4x4() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(GravitySourceEntry {
-        source: sh_source,
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: Some(DMat3::IDENTITY),
-        rotation_model: RotationModel::EarthRNP,
-        delta_c20: 0.0,
-        tidal_config: Some(tidal_config),
-    });
+    let earth_idx = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: sh_source,
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: Some(DMat3::IDENTITY),
+            rotation_model: RotationModel::EarthRNP,
+            delta_c20: 0.0,
+            tidal_config: Some(tidal_config),
+            central: true,
+        },
+    );
 
     sim.add_body(VehicleConfig {
         trans: iss_trans(),
@@ -243,7 +251,10 @@ fn tier3_bevy_run2p_polar_motion() {
 
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(GravitySourceEntry::new(earth_source(), DVec3::ZERO, None));
+    let earth_idx = sim.add_source(
+        "Earth",
+        GravitySourceEntry::new(earth_source(), DVec3::ZERO, None),
+    );
     sim.polar_motion = Some((xp, yp));
 
     sim.add_body(VehicleConfig {
@@ -309,14 +320,17 @@ fn run_gj_parity(label: &str, config: GaussJacksonConfig, dt: f64, n_steps: usiz
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, dt);
-    let earth_idx = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: MU_EARTH,
-            model: GravityModel::PointMass,
-        },
-        DVec3::ZERO,
-        None,
-    ));
+    let earth_idx = sim.add_source(
+        "Earth",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: MU_EARTH,
+                model: GravityModel::PointMass,
+            },
+            DVec3::ZERO,
+            None,
+        ),
+    );
 
     sim.add_body(VehicleConfig {
         trans: gj_trans,
