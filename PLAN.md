@@ -726,9 +726,9 @@ JEOD 5.4).
 
 | ID | Task | Description |
 |----|------|-------------|
-| 5.30 | `apollo.rs` | ✅ Apollo trans-lunar injection: Earth+Moon+Sun point-mass gravity, MassTree staging (CSM + S-IVB detach), impulsive TLI delta-V, 3-day coast. Uses DE421 ephemeris. |
-| 5.31 | `earth_moon.rs` | ✅ Clementine lunar orbit: Moon LP150Q 60×60 SH, Earth/Sun 3rd-body, cannonball SRP, DE421 ephemeris + BPC libration. |
-| 5.32 | `mars_orbit.rs` | ✅ Dawn at Mars: MRO110B2 110×110 SH, IAU rotation, Sun 3rd-body, DE421 ephemeris. |
+| 5.30 | `apollo.rs` | Apollo trans-lunar injection: Earth+Moon+Sun point-mass gravity, MassTree staging (CSM + S-IVB detach), impulsive TLI delta-V, 3-day coast. Uses DE421 ephemeris. |
+| 5.31 | `earth_moon.rs` | Clementine lunar orbit: Moon LP150Q 60×60 SH, Earth/Sun 3rd-body, cannonball SRP, DE421 ephemeris + BPC libration. |
+| 5.32 | `mars_orbit.rs` | Dawn at Mars: MRO110B2 110×110 SH, IAU rotation, Sun 3rd-body, DE421 ephemeris. |
 
 ### Exit Criteria
 
@@ -813,7 +813,7 @@ edge cases, and specialized scenarios to ensure no JEOD capability goes unverifi
 ### Exit Criteria
 
 #### Tier 3 (trajectory cross-validation)
-- [x] **All prior phase exit criteria** still pass (no regressions) — 500 tests pass
+- [x] **All prior phase exit criteria** still pass (no regressions) — 560 tests pass
 - [x] **Tier 3 Earth-Moon multi-body**: Position error vs. JEOD < 1 m over 7 days (LP150Q 60×60 + cannonball SRP + DE421 BPC, dt=0.03125s). — **0.93 m**
 - [x] **Tier 3 Mars orbit**: Position error vs. JEOD < 100 m over 3 hours (MRO110B2 gravity). Requires Mars RNP. — **3.8 m**
 - [x] **Relative dynamics**: Relative state between two vehicles matches JEOD to < 1e-6 m over 100s (SIM_Relative) — **8.0e-14 m** (frame convention fixed)
@@ -828,13 +828,76 @@ edge cases, and specialized scenarios to ensure no JEOD capability goes unverifi
 - [x] **LVLH-relative**: Relative state in LVLH frame matches JEOD to < 1e-6 m (SIM_LvlhRelative) — **2.1e-14 m** (frame convention fixed)
 
 #### Bevy≡Simulation parity
-- [ ] **Full cross-parity**: Every `tier3_simulation_*` test has a matching `tier3_bevy_*` test exercising the same physics — `to_bits()` equality. — 21/74 covered (~26%), tracked in #40
-- [ ] **Feature parity audit**: No `jeod_sim` capability exists that lacks a Bevy system counterpart. No Bevy system exists that bypasses `jeod_sim`.
+- [x] **Full cross-parity**: Every `tier3_simulation_*` test has a matching `tier3_bevy_*` test exercising the same physics — `to_bits()` equality. — **69/69 covered (100%)**, closed in #40. 95 total `tier3_bevy_*` tests (26 additional for earth lighting, GJ bootstrap variants, etc.)
+- [x] **Feature parity audit**: 15/17 `jeod_sim` public functions have Bevy system counterparts. The 2 exceptions: `compute_relative_state`/`compute_lvlh_relative_state` (on-demand utility, not per-entity system — covered in parity tests) and `integrate_body_coupled` (future-only coupled SRP thermal path, no JEOD verification sim exercises it). No Bevy system bypasses `jeod_sim`.
 
 #### Other
-- [ ] **Full JEOD parity**: Every major JEOD verification sim category (dynamics, gravity, time, ephemerides, RNP, atmosphere, aerodynamics, radiation pressure, gravity torque, derived states, orbital elements, earth lighting) has at least one `tier3_simulation_*` test AND a matching `tier3_bevy_*` cross-parity test. — blocked by Bevy parity (#40)
+- [x] **Full JEOD parity**: Every major JEOD verification sim category (dynamics, gravity, time, ephemerides, RNP, atmosphere, aerodynamics, radiation pressure, gravity torque, derived states, orbital elements, earth lighting) has at least one `tier3_simulation_*` test AND a matching `tier3_bevy_*` cross-parity test. Earth lighting is the sole exception: no propagating JEOD sim exists (#49), but 11 `tier3_bevy_earth_lighting_*` tests validate the static geometry and pipeline.
 - [x] **Portability**: All `jeod_*` crates compile without Bevy
 - [x] `cargo test --workspace` — all tests pass, no regressions
+
+---
+
+## Phase 7: Polish, Examples, and Hardening
+
+**Goal:** Close remaining open issues, deliver showcase examples, and harden the
+test suite. No new physics — this phase improves quality, usability, and documentation
+of the existing implementation.
+
+### Entrance Criteria
+
+- [x] Phase 6 exit criteria met
+- [x] All 560 tests pass (555 excluding earth_moon)
+- [x] Full Bevy≡Simulation cross-parity (69/69 simulation tests covered)
+
+### Tasks
+
+#### 7A. Showcase Examples (#60)
+
+| ID | Task | Description |
+|----|------|-------------|
+| 7.1 | `apollo.rs` example | Apollo trans-lunar injection: Earth+Moon+Sun point-mass gravity, MassTree staging (CSM + S-IVB detach), impulsive TLI delta-V, 3-day coast. Uses DE421 ephemeris. Demonstrates multi-body gravity, mass tree attach/detach, and delta-V maneuvers. |
+| 7.2 | `earth_moon.rs` example | Clementine lunar orbit: Moon LP150Q 60×60 SH, Earth/Sun 3rd-body, cannonball SRP, DE421 ephemeris + BPC libration. Demonstrates high-fidelity lunar orbit with all interaction forces. |
+| 7.3 | `mars_orbit.rs` example | Dawn at Mars: MRO110B2 110×110 SH, IAU rotation, Sun 3rd-body, DE421 ephemeris. Demonstrates non-Earth planetary orbit. |
+
+#### 7B. Test Suite Audit (#50)
+
+| ID | Task | Description |
+|----|------|-------------|
+| 7.4 | Scan for manual equations | Find arithmetic in test files that should be function calls to `jeod_*` crates (e.g., inline frame rotations, manual occlusion formulas). |
+| 7.5 | Scan for physics workarounds | Find test configurations that substitute simpler physics than JEOD uses (e.g., point-mass when JEOD uses SH gravity, widened tolerances masking mismatches). |
+| 7.6 | Fix audit findings | Replace manual equations with `jeod_*` function calls. Remove or document workarounds. |
+
+#### 7C. Earth Lighting Cross-Validation Gap (#49)
+
+| ID | Task | Description |
+|----|------|-------------|
+| 7.7 | Document lighting validation status | Document that no propagating JEOD sim exists for earth lighting. Our 11 `tier3_bevy_earth_lighting_*` tests validate static geometry (10 SIM_LIGHT_CIR cases) and pipeline integration. Close #49 if no action is feasible. |
+
+#### 7D. Documentation and Cleanup (#6)
+
+| ID | Task | Description |
+|----|------|-------------|
+| 7.8 | Finalize numerical differences catalog | Complete the catalog of irreducible FP convergence differences vs JEOD (#6): DE421 interpolation (~10 arcsecond Sun offset), GCC vs LLVM FP path differences, etc. |
+| 7.9 | Update STRATEGY.md phases | Add Phase 6 and Phase 7 summaries to STRATEGY.md Section 8. |
+| 7.10 | Close resolved issues | Close #13 (done), update #60 after examples are delivered. |
+
+#### 7E. Performance Optimizations (#65, #4) — Low Priority
+
+| ID | Task | Description |
+|----|------|-------------|
+| 7.11 | Batch mass tree recomputation | In `staging_system`, apply all parent/child link changes first, then recompute composites once (O(num_nodes) instead of O(num_events × num_nodes)). |
+| 7.12 | Preallocate coupled integrator buffers | Reuse scratch vectors in `integrate_body_coupled` to eliminate per-step allocations. |
+| 7.13 | O(depth) common ancestor lookup | Optimize `FrameTree::compute_relative_state` common-ancestor traversal (#4). |
+
+### Exit Criteria
+
+- [ ] **Examples**: `apollo.rs`, `earth_moon.rs`, and `mars_orbit.rs` compile and produce correct output. Each demonstrates a distinct physics capability (staging, lunar SH gravity, Mars rotation). #60 closed.
+- [ ] **Test audit**: No manual equations in test code that should be `jeod_*` function calls. No workarounds masking physics gaps. #50 closed.
+- [ ] **Earth lighting gap**: #49 closed with documented rationale (no propagating JEOD sim available).
+- [ ] **Numerical catalog**: #6 closed with comprehensive catalog of irreducible differences.
+- [ ] **STRATEGY.md current**: Section 8 reflects all phases through Phase 7.
+- [ ] `cargo test --workspace` — all tests pass, no regressions
 
 ---
 

@@ -43,10 +43,11 @@ const TOTAL_TIME: f64 = 100.0;
 /// Frame switch distance threshold (m) — switch to Moon.inertial on approach.
 const SWITCH_DISTANCE: f64 = 66.1e6;
 
-// Gravitational parameters (spherical)
-const MU_EARTH: f64 = 3.986_004_418e14;
-const MU_MOON: f64 = 4.902_800_066e12;
-const MU_SUN: f64 = 1.327_124_400_41e20;
+// Gravitational parameters — match JEOD's spherical gravity data exactly:
+// earth_spherical.cc, moon_spherical.cc, sun_spherical.cc
+const MU_EARTH: f64 = 3.986_004_415e14;
+const MU_MOON: f64 = 4.902_801_076e12;
+const MU_SUN: f64 = 1.327_124_40e20;
 
 fn test_data_dir() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../test_data")
@@ -124,9 +125,11 @@ fn build_apollo8_sim(frame_switches: Vec<FrameSwitchConfig>) -> (Simulation, usi
         mass: Some(jeod_sim::MassProperties::new(MASS)),
         gravity_controls: GravityControls {
             controls: vec![
-                GravityControl::new_spherical(sun, false),
+                // Earth is the central body for Earth-centered integration.
                 GravityControl::new_spherical(earth, false),
-                GravityControl::new_spherical(moon, false),
+                // Sun and Moon are third-body (differential acceleration).
+                GravityControl::new_third_body(sun),
+                GravityControl::new_third_body(moon),
             ],
         },
         integ_frame: IntegrationFrame::EarthInertial,
@@ -190,7 +193,7 @@ fn tier3_apollo8_eci_integ() {
 
     // 32.4 m over 100s at ~300 million km from Earth (~1e-10 relative).
     // Difference is from DE421 ephemeris interpolation (ANISE vs Trick SPICE).
-    let tol = 34.1; // m (32.4 * 1.05)
+    let tol = 8.2; // m (7.79 * 1.05)
     assert!(
         max_pos_err < tol,
         "Apollo 8 ECI: max position error {max_pos_err:.6} m exceeds tolerance {tol} m"
@@ -205,6 +208,8 @@ fn tier3_apollo8_frame_switch() {
         switch_sense: SwitchSense::OnApproach,
         switch_distance: SWITCH_DISTANCE,
         active: true,
+        // Moon (source index 2) becomes central body after switching to Moon.inertial.
+        central_source: Some(2),
     }]);
 
     // Also run baseline ECI for comparison
@@ -235,12 +240,15 @@ fn tier3_apollo8_frame_switch() {
         max_pos_diff = max_pos_diff.max(diff);
     }
 
-    // The frame-switched sim produces a numerically different but physically
-    // equivalent trajectory. The difference arises because the integration
-    // origin acceleration correction is applied at different precision when
-    // integrating in Moon-centered vs Earth-centered frames. Over 100s at
-    // ~300 million km from Earth, ~550 m error is typical.
-    let tol = 600.0; // m
+    // With DE421 ephemeris, the body starts within the 66.1e6 m switch
+    // threshold, so the frame switch triggers on the first step. The ~522 m
+    // constant offset arises from ephemeris interpolation timing: the frame
+    // transform uses Moon position from one ephemeris query while the test
+    // comparison uses a slightly different query point. This is a test
+    // measurement artifact, not a physics error — the offset does not grow.
+    // (JEOD uses DE405, where the initial distance is > 66.1e6 m, so the
+    // switch triggers later at ~t=40s and this artifact doesn't appear.)
+    let tol = 550.0; // m (522 * 1.05)
     assert!(
         max_pos_diff < tol,
         "Apollo 8 frame switch: max ECI-vs-switch position diff {max_pos_diff:.6} m exceeds {tol} m"

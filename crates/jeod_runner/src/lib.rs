@@ -91,6 +91,10 @@ pub struct FrameSwitchConfig {
     pub switch_distance: f64,
     /// Whether this switch is active.
     pub active: bool,
+    /// Index of the gravity source that is the central body in the target frame.
+    /// On switch, this source becomes non-differential and all others become
+    /// differential, matching JEOD's `GravityInteraction::set_integ_frame()`.
+    pub central_source: Option<usize>,
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1044,13 +1048,24 @@ impl Simulation {
             }
             if let Some(idx) = switch_idx {
                 let target_frame = body.frame_switches[idx].target_frame;
+                let central_source = body.frame_switches[idx].central_source;
                 body.frame_switches[idx].active = false;
 
+                // Transform state from old frame to new frame.
                 let (old_origin, old_vel) = resolve(body.integ_frame);
                 let (new_origin, new_vel) = resolve(target_frame);
                 body.trans.position = body.trans.position + old_origin - new_origin;
                 body.trans.velocity = body.trans.velocity + old_vel - new_vel;
                 body.integ_frame = target_frame;
+
+                // Update gravity controls: the central body in the new frame
+                // is non-differential; all others become differential (third-body).
+                // Matches JEOD's GravityInteraction::set_integ_frame().
+                if let Some(central) = central_source {
+                    for ctrl in &mut body.gravity_controls.controls {
+                        ctrl.differential = ctrl.source_name != central;
+                    }
+                }
             }
         }
 
