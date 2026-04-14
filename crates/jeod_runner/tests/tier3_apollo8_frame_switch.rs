@@ -240,9 +240,11 @@ fn tier3_apollo8_frame_switch() {
         "Frame switch ECI phase: {max_err_eci:.6} m exceeds {tol_eci:.1e} m"
     );
 
-    // Moon-centered phase (60s): 5.35 m from frozen source positions during
-    // RK4 sub-stages. JEOD updates its reference frame tree at each derivative
-    // evaluation; we freeze source positions per step.
+    // Moon-centered phase (60s): 5.35 m from DE421 vs DE405 ephemeris.
+    // The DE Moon position difference (~100-300 m) shifts our Moon-centered
+    // coordinates vs JEOD's, and this difference accumulates through the
+    // gravity computation over 60 seconds. Same root cause as the 0.067 mm
+    // ECI error but larger in Moon-centered frame.
     let tol_moon = 5.7; // m (5.35 * 1.05)
     assert!(
         max_err_moon < tol_moon,
