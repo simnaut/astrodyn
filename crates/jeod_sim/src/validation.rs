@@ -56,11 +56,16 @@ pub enum ValidationError {
     EarthLightingWithoutSunSource { body_idx: usize },
     /// Body has `earth_lighting_config` but simulation has no `moon_source`.
     EarthLightingWithoutMoonSource { body_idx: usize },
-    /// Frame switch `central_source` index is out of range.
+    /// Frame switch `central_source` index exceeds number of gravity sources.
     FrameSwitchCentralSourceOutOfRange {
         body_idx: usize,
         central_source: usize,
         num_sources: usize,
+    },
+    /// Frame switch `central_source` is not in the body's gravity controls.
+    FrameSwitchCentralSourceNotInControls {
+        body_idx: usize,
+        central_source: usize,
     },
 }
 
@@ -232,6 +237,18 @@ impl std::fmt::Display for ValidationError {
                     f,
                     "Body {body_idx}: frame switch central_source index {central_source} \
                      is out of range (simulation has {num_sources} gravity sources)."
+                )
+            }
+            Self::FrameSwitchCentralSourceNotInControls {
+                body_idx,
+                central_source,
+            } => {
+                write!(
+                    f,
+                    "Body {body_idx}: frame switch central_source index {central_source} \
+                     is not present in the body's gravity_controls. The post-switch \
+                     differential/central gravity classification requires the source \
+                     to have a GravityControl entry."
                 )
             }
         }

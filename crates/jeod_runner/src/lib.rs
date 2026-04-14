@@ -775,17 +775,21 @@ impl Simulation {
             // differential flip actually takes effect).
             for sw in &body.frame_switches {
                 if let Some(central) = sw.central_source {
-                    let in_range = central < self.sources.len();
-                    let in_controls = body
-                        .gravity_controls
-                        .controls
-                        .iter()
-                        .any(|c| c.source_name == central);
-                    if !in_range || !in_controls {
+                    if central >= self.sources.len() {
                         all_errors.push(ValidationError::FrameSwitchCentralSourceOutOfRange {
                             body_idx,
                             central_source: central,
                             num_sources: self.sources.len(),
+                        });
+                    } else if !body
+                        .gravity_controls
+                        .controls
+                        .iter()
+                        .any(|c| c.source_name == central)
+                    {
+                        all_errors.push(ValidationError::FrameSwitchCentralSourceNotInControls {
+                            body_idx,
+                            central_source: central,
                         });
                     }
                 }
@@ -1091,10 +1095,12 @@ impl Simulation {
         // ── 4b. Relativistic corrections ──
         // After Newtonian gravity, apply post-Newtonian PPN correction for
         // any source with `relativistic: true`. Folkner eq 27 (β=γ=1).
+        // PPN uses inertial coordinates — convert from integration frame.
         for body in &mut self.bodies {
+            let (origin, origin_vel) = resolve(body.integ_frame);
             body.gravity_accel.grav_accel += jeod_sim::accumulate_relativistic_corrections(
-                body.trans.position,
-                body.trans.velocity,
+                body.trans.position + origin,
+                body.trans.velocity + origin_vel,
                 &body.gravity_controls,
                 |source_id: usize| {
                     sources
@@ -1397,12 +1403,16 @@ impl Simulation {
                 let (target_origin, _) = resolve(sw.target_frame);
                 let (current_origin, _) = resolve(body.integ_frame);
                 let body_pos_eci = body.trans.position + current_origin;
-                let dist_sq = (body_pos_eci - target_origin).length_squared();
                 let threshold_sq = sw.switch_distance * sw.switch_distance;
 
+                // JEOD dyn_body_frame_switch.cc:173-182:
+                // OnApproach: compute_position_from(*integ_frame) → distance to target
+                // OnDeparture: state.trans.position magnitude → distance from current origin
                 let triggered = match sw.switch_sense {
-                    SwitchSense::OnApproach => dist_sq < threshold_sq,
-                    SwitchSense::OnDeparture => dist_sq > threshold_sq,
+                    SwitchSense::OnApproach => {
+                        (body_pos_eci - target_origin).length_squared() < threshold_sq
+                    }
+                    SwitchSense::OnDeparture => body.trans.position.length_squared() > threshold_sq,
                 };
                 if triggered {
                     switch_idx = Some(idx);
