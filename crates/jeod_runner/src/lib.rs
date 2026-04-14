@@ -997,27 +997,46 @@ impl Simulation {
             }
         }
 
-        // Precompute frame origins to avoid borrow conflicts in later phases.
-        // Panic if any body needs Moon/Sun origins but ephemeris is absent.
-        let needs_non_earth = self.bodies.iter().any(|body| {
-            !matches!(body.integ_frame, IntegrationFrame::EarthInertial)
-                || body.frame_switches.iter().any(|sw| {
-                    sw.active && !matches!(sw.target_frame, IntegrationFrame::EarthInertial)
-                })
-        });
+        // Precompute frame origins only for frames actually in use.
+        // Avoids unnecessary ephemeris lookups and panics early if ephemeris
+        // is absent but a non-Earth frame is needed.
+        let (needs_moon, needs_sun) =
+            self.bodies
+                .iter()
+                .fold((false, false), |(moon, sun), body| {
+                    let (m, s) = match body.integ_frame {
+                        IntegrationFrame::MoonInertial => (true, sun),
+                        IntegrationFrame::SunInertial => (moon, true),
+                        IntegrationFrame::EarthInertial => (moon, sun),
+                    };
+                    body.frame_switches
+                        .iter()
+                        .filter(|sw| sw.active)
+                        .fold((m, s), |(m, s), sw| match sw.target_frame {
+                            IntegrationFrame::MoonInertial => (true, s),
+                            IntegrationFrame::SunInertial => (m, true),
+                            IntegrationFrame::EarthInertial => (m, s),
+                        })
+                });
 
         let earth_origin = (DVec3::ZERO, DVec3::ZERO);
-        let moon_origin = if self.ephemeris.is_some() {
-            self.resolve_frame_origin(IntegrationFrame::MoonInertial)
-        } else if needs_non_earth {
-            panic!("Moon/Sun frame origins require ephemeris. Set sim.ephemeris = Some(...).")
+        let moon_origin = if needs_moon {
+            if self.ephemeris.is_some() {
+                self.resolve_frame_origin(IntegrationFrame::MoonInertial)
+            } else {
+                panic!("MoonInertial frame requires ephemeris. Set sim.ephemeris = Some(...).")
+            }
         } else {
             (DVec3::ZERO, DVec3::ZERO)
         };
-        let sun_origin = if self.ephemeris.is_some() {
-            self.resolve_frame_origin(IntegrationFrame::SunInertial)
+        let sun_origin = if needs_sun {
+            if self.ephemeris.is_some() {
+                self.resolve_frame_origin(IntegrationFrame::SunInertial)
+            } else {
+                panic!("SunInertial frame requires ephemeris. Set sim.ephemeris = Some(...).")
+            }
         } else {
-            (DVec3::ZERO, DVec3::ZERO) // Already panicked above if needed
+            (DVec3::ZERO, DVec3::ZERO)
         };
         let resolve = |frame: IntegrationFrame| -> (DVec3, DVec3) {
             match frame {
@@ -1317,9 +1336,13 @@ impl Simulation {
                             })
                         })
                         .grav_accel;
+                    // Relativistic corrections use inertial coordinates.
+                    // Convert from integration frame to ECI for the PPN formula.
+                    let pos_eci = pos + origin;
+                    let vel_eci = vel + integ_vel;
                     for &(mu, src_pos, src_vel, ref other) in &rel_data {
                         accel += jeod_gravity::relativistic::compute_relativistic_correction(
-                            mu, src_pos, pos, vel, src_vel, other,
+                            mu, src_pos, pos_eci, vel_eci, src_vel, other,
                         );
                     }
                     accel

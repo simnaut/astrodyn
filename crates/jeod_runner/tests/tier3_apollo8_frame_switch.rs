@@ -61,7 +61,7 @@ fn build_apollo8_sim(frame_switches: Vec<FrameSwitchConfig>) -> (Simulation, usi
     let bsp_path = data_dir.join("de405.bsp");
     assert!(
         bsp_path.exists(),
-        "DE421 not found at {}",
+        "DE405 ephemeris not found at {}",
         bsp_path.display()
     );
 
@@ -74,7 +74,7 @@ fn build_apollo8_sim(frame_switches: Vec<FrameSwitchConfig>) -> (Simulation, usi
     let time = SimulationTime::new(tai_tjt, leap_table);
 
     let ephemeris =
-        jeod_sim::Ephemeris::from_bsp(&bsp_path).expect("Failed to load DE421 ephemeris");
+        jeod_sim::Ephemeris::from_bsp(&bsp_path).expect("Failed to load DE405 ephemeris");
 
     let mut sim = Simulation::new(time, DT);
     sim.ephemeris = Some(ephemeris);
