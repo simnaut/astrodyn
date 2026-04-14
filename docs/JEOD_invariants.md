@@ -88,6 +88,7 @@ grep the JEOD tree for the distinctive identifier in the invariant description
 | MA.18 | Partially initialized child state blocks attachment | warn | consistency | deferred (Phase 5) |
 | MA.19 | No same-tree attachment (cycle prevention) | error | consistency | enforced (`mass_body.rs:165`) |
 | MA.20 | Child integration frame synced to parent on attach | structural | consistency | deferred (Phase 5) |
+| MA.21 | Named attachment points must exist on body for attach_aligned | error | structural | enforced (`mass_body.rs` attach_aligned) |
 
 ## Section DM: DynManager
 

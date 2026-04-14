@@ -42,6 +42,27 @@ impl Default for MassPointState {
 }
 
 // ---------------------------------------------------------------------------
+// MassPoint (named attachment point)
+// ---------------------------------------------------------------------------
+
+/// Named attachment point on a body, used for docking-style attachments.
+///
+/// Maps to JEOD's `MassPoint` / `MassPointInit`: each body can have zero or
+/// more named points (e.g., "CM docking port", "SM interface") that define
+/// a position and orientation within the body's structural frame. The
+/// [`MassTree::attach_aligned`] method uses these to compute the structural
+/// offset and rotation between two bodies when they dock.
+#[derive(Debug, Clone)]
+pub struct MassPoint {
+    /// Human-readable name (e.g., "CM docking port").
+    pub name: String,
+    /// Position in the body's structural frame (m).
+    pub position: DVec3,
+    /// Rotation from structural frame to this point's frame.
+    pub t_parent_this: DMat3,
+}
+
+// ---------------------------------------------------------------------------
 // MassBody
 // ---------------------------------------------------------------------------
 
@@ -64,6 +85,8 @@ pub struct MassBody {
     pub core_wrt_composite: MassPointState,
     /// Composite CoM position in the **parent's** structural frame.
     pub composite_wrt_pstr: MassPointState,
+    /// Named attachment points on this body (JEOD `MassPoint` list).
+    pub mass_points: Vec<MassPoint>,
 }
 
 // ---------------------------------------------------------------------------
@@ -126,6 +149,7 @@ impl MassTree {
             structure_point: MassPointState::default(),
             core_wrt_composite: MassPointState::default(),
             composite_wrt_pstr: MassPointState::default(),
+            mass_points: Vec::new(),
         };
         self.nodes.push(body);
         self.parent.push(None);
@@ -136,6 +160,112 @@ impl MassTree {
     /// Add a root body (convenience wrapper around [`add_body`](Self::add_body)).
     pub fn add_root(&mut self, name: String, core: MassProperties) -> MassBodyId {
         self.add_body(name, core)
+    }
+
+    // -- mass points -----------------------------------------------------------
+
+    /// Register a named attachment point on a body.
+    ///
+    /// `position` is the point's location in the body's structural frame.
+    /// `t_parent_this` is the rotation from the structural frame to the
+    /// point's frame.
+    pub fn add_mass_point(
+        &mut self,
+        body_id: MassBodyId,
+        name: impl Into<String>,
+        position: DVec3,
+        t_parent_this: DMat3,
+    ) {
+        self.nodes[body_id].mass_points.push(MassPoint {
+            name: name.into(),
+            position,
+            t_parent_this,
+        });
+    }
+
+    /// Look up a named attachment point on a body.
+    pub fn find_mass_point(&self, body_id: MassBodyId, name: &str) -> Option<&MassPoint> {
+        self.nodes[body_id]
+            .mass_points
+            .iter()
+            .find(|p| p.name == name)
+    }
+
+    /// Attach two bodies via named attachment points (docking-style).
+    ///
+    /// Port of JEOD `MassBody::attach_to(this_point_name, parent_point_name, parent)`
+    /// from `mass_attach.cc:66-136`. The algorithm chains three transforms:
+    ///
+    /// 1. Invert child point: child_struct → child_point
+    /// 2. 180° yaw (docking alignment): child_point → parent_point
+    /// 3. Parent point → parent_struct
+    ///
+    /// The 180° yaw (`T = diag(-1, -1, 1)`) is JEOD's hardcoded docking
+    /// convention: two attachment points face each other with opposite X/Y axes.
+    ///
+    /// # Panics
+    ///
+    /// Panics if either named point is not found on its body.
+    // JEOD_INV: MA.21 — named points must exist on body (MessageHandler::fail in JEOD)
+    pub fn attach_aligned(
+        &mut self,
+        child_id: MassBodyId,
+        child_point_name: &str,
+        parent_id: MassBodyId,
+        parent_point_name: &str,
+    ) {
+        // Look up both points.
+        let child_point = self
+            .find_mass_point(child_id, child_point_name)
+            .unwrap_or_else(|| {
+                panic!(
+                    "mass point '{}' not found on body '{}'",
+                    child_point_name, self.nodes[child_id].name
+                )
+            });
+        let child_pt_pos = child_point.position;
+        let child_pt_t = child_point.t_parent_this;
+
+        let parent_point = self
+            .find_mass_point(parent_id, parent_point_name)
+            .unwrap_or_else(|| {
+                panic!(
+                    "mass point '{}' not found on body '{}'",
+                    parent_point_name, self.nodes[parent_id].name
+                )
+            });
+        let parent_pt_pos = parent_point.position;
+        let parent_pt_t = parent_point.t_parent_this;
+
+        // Step 1: Invert child point (child_struct in child_point frame).
+        // JEOD mass_attach.cc:103-106: inv_pos = -(T * pos), inv_T = T^T
+        let inv_pos = -(child_pt_t * child_pt_pos);
+        let inv_t = child_pt_t.transpose();
+
+        // Step 2: 180° yaw docking alignment (JEOD mass_attach.cc:112-115).
+        let t_yaw = DMat3::from_cols(
+            DVec3::new(-1.0, 0.0, 0.0),
+            DVec3::new(0.0, -1.0, 0.0),
+            DVec3::new(0.0, 0.0, 1.0),
+        );
+
+        // Step 3: Compose the chain child_struct → child_point → parent_point → parent_struct.
+        //
+        // Position: walk up from child_struct (origin) through each link.
+        //   In child_point frame: inv_pos
+        //   In parent_point frame: t_yaw^T * inv_pos (t_yaw is symmetric)
+        //   In parent_struct frame: parent_pt_t^T * (above) + parent_pt_pos
+        let pos_after_yaw = t_yaw * inv_pos; // t_yaw^T = t_yaw (symmetric)
+        let offset = parent_pt_t.transpose() * pos_after_yaw + parent_pt_pos;
+
+        // Rotation: compose T_parent_this along the chain.
+        //   parent_struct → parent_point: parent_pt_t
+        //   parent_point → child_point:   t_yaw
+        //   child_point → child_struct:   inv_t = child_pt_t^T
+        //   Total: T_parent_struct_to_child_struct = inv_t * t_yaw * parent_pt_t
+        let t_parent_child = inv_t * t_yaw * parent_pt_t;
+
+        self.attach(child_id, parent_id, offset, t_parent_child);
     }
 
     // -- attach / detach ----------------------------------------------------
@@ -830,7 +960,238 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // 8. Angular momentum conservation across attach/detach
+    // 8. Named attachment points: attach_aligned
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn attach_aligned_identity_points() {
+        // Two bodies with points at their origins, identity rotation.
+        // After docking, child struct origin should be at parent point position
+        // (no child offset to subtract), and rotation should be 180° yaw.
+        let mut tree = MassTree::new();
+        let pid = tree.add_root("parent".into(), MassProperties::new(10.0));
+        let cid = tree.add_body("child".into(), MassProperties::new(5.0));
+
+        tree.add_mass_point(pid, "dock", DVec3::new(3.0, 0.0, 0.0), DMat3::IDENTITY);
+        tree.add_mass_point(cid, "dock", DVec3::ZERO, DMat3::IDENTITY);
+
+        tree.attach_aligned(cid, "dock", pid, "dock");
+
+        // Child struct origin at (3, 0, 0) in parent struct frame.
+        let child = tree.get(cid);
+        assert_vec3_close(
+            child.structure_point.position,
+            DVec3::new(3.0, 0.0, 0.0),
+            1e-12,
+            "child offset",
+        );
+
+        // Rotation: 180° yaw = diag(-1, -1, 1)
+        let expected_t = DMat3::from_cols(
+            DVec3::new(-1.0, 0.0, 0.0),
+            DVec3::new(0.0, -1.0, 0.0),
+            DVec3::new(0.0, 0.0, 1.0),
+        );
+        assert_mat3_close(
+            child.structure_point.t_parent_this,
+            expected_t,
+            1e-12,
+            "child rotation",
+        );
+    }
+
+    #[test]
+    fn attach_aligned_offset_points() {
+        // SM "CM interface" at (24.6, 0, 0) attaches to CM "SM interface" at (11.6, 0, 0).
+        // All identity rotations. Expected offset: 11.6 + 24.6 = 36.2.
+        let mut tree = MassTree::new();
+        let cm = tree.add_root("CM".into(), MassProperties::new(10.0));
+        let sm = tree.add_body("SM".into(), MassProperties::new(10.0));
+
+        tree.add_mass_point(
+            cm,
+            "SM interface",
+            DVec3::new(11.6, 0.0, 0.0),
+            DMat3::IDENTITY,
+        );
+        tree.add_mass_point(
+            sm,
+            "CM interface",
+            DVec3::new(24.6, 0.0, 0.0),
+            DMat3::IDENTITY,
+        );
+
+        tree.attach_aligned(sm, "CM interface", cm, "SM interface");
+
+        assert_vec3_close(
+            tree.get(sm).structure_point.position,
+            DVec3::new(36.2, 0.0, 0.0),
+            1e-10,
+            "SM offset in CM frame",
+        );
+    }
+
+    #[test]
+    fn attach_aligned_rotated_points() {
+        // Child point has 180° yaw, parent point has 180° yaw.
+        // The three yaws (child invert + docking + parent) should compose to
+        // a net 180° yaw (odd number of 180° yaws about Z).
+        let yaw_180 = DMat3::from_cols(
+            DVec3::new(-1.0, 0.0, 0.0),
+            DVec3::new(0.0, -1.0, 0.0),
+            DVec3::new(0.0, 0.0, 1.0),
+        );
+
+        let mut tree = MassTree::new();
+        let pid = tree.add_root("parent".into(), MassProperties::new(10.0));
+        let cid = tree.add_body("child".into(), MassProperties::new(5.0));
+
+        // Parent point at (4, 0, 0) with 180° yaw
+        tree.add_mass_point(pid, "port", DVec3::new(4.0, 0.0, 0.0), yaw_180);
+        // Child point at (0, 0, 0) with 180° yaw
+        tree.add_mass_point(cid, "port", DVec3::ZERO, yaw_180);
+
+        tree.attach_aligned(cid, "port", pid, "port");
+
+        // Rotation chain:
+        //   inv_t = child_pt_t^T = yaw_180^T = yaw_180
+        //   t_parent_child = inv_t * yaw_dock * parent_pt_t
+        //                  = yaw_180 * yaw_180 * yaw_180
+        //                  = I * yaw_180 = yaw_180
+        assert_mat3_close(
+            tree.get(cid).structure_point.t_parent_this,
+            yaw_180,
+            1e-12,
+            "triple yaw rotation",
+        );
+
+        // Position: inv_pos = -(yaw_180 * (0,0,0)) = (0,0,0)
+        // pos_after_yaw = yaw_dock * (0,0,0) = (0,0,0)
+        // offset = yaw_180^T * (0,0,0) + (4,0,0) = (4,0,0)
+        assert_vec3_close(
+            tree.get(cid).structure_point.position,
+            DVec3::new(4.0, 0.0, 0.0),
+            1e-12,
+            "offset with rotated points",
+        );
+    }
+
+    #[test]
+    fn attach_aligned_matches_manual() {
+        // Verify that attach_aligned produces identical results to manually
+        // computing the offset/rotation and calling attach() directly.
+        let yaw_180 = DMat3::from_cols(
+            DVec3::new(-1.0, 0.0, 0.0),
+            DVec3::new(0.0, -1.0, 0.0),
+            DVec3::new(0.0, 0.0, 1.0),
+        );
+
+        // Setup: CM "SM interface" at (11.6, 0, 0) identity, SM "CM interface" at (24.6, 0, 0) identity
+        let core_cm = MassProperties::with_inertia(
+            5810.5, // 12807 lb
+            DMat3::from_diagonal(DVec3::new(6631.0, 2723.0, 2723.0)),
+            DVec3::new(2.65176, 0.0, 0.0),
+        );
+        let core_sm = MassProperties::with_inertia(
+            24520.0, // 54064 lb
+            DMat3::from_diagonal(DVec3::new(46648.0, 52040.0, 52040.0)),
+            DVec3::new(3.74904, 0.0, 0.0),
+        );
+
+        // Method 1: attach_aligned
+        let mut tree1 = MassTree::new();
+        let cm1 = tree1.add_root("CM".into(), core_cm);
+        let sm1 = tree1.add_body("SM".into(), core_sm);
+        tree1.add_mass_point(
+            cm1,
+            "SM interface",
+            DVec3::new(11.6 * 0.3048, 0.0, 0.0),
+            DMat3::IDENTITY,
+        );
+        tree1.add_mass_point(
+            sm1,
+            "CM interface",
+            DVec3::new(24.6 * 0.3048, 0.0, 0.0),
+            DMat3::IDENTITY,
+        );
+        tree1.attach_aligned(sm1, "CM interface", cm1, "SM interface");
+
+        // Method 2: manual attach with precomputed offset/rotation
+        // offset = parent_pt_pos + parent_pt_t^T * t_yaw * (-(child_pt_t * child_pt_pos))
+        // = (11.6*0.3048, 0, 0) + I * yaw * (-(I * (24.6*0.3048, 0, 0)))
+        // = (11.6*0.3048, 0, 0) + (24.6*0.3048, 0, 0)  [since yaw negates the negated x]
+        // = (36.2*0.3048, 0, 0)
+        let manual_offset = DVec3::new(36.2 * 0.3048, 0.0, 0.0);
+
+        let mut tree2 = MassTree::new();
+        let cm2 = tree2.add_root("CM".into(), core_cm);
+        let sm2 = tree2.add_body("SM".into(), core_sm);
+        tree2.attach(sm2, cm2, manual_offset, yaw_180);
+
+        // Compare composite properties
+        let comp1 = &tree1.get(cm1).composite_properties;
+        let comp2 = &tree2.get(cm2).composite_properties;
+
+        assert!(
+            (comp1.mass - comp2.mass).abs() < 1e-10,
+            "mass: {} vs {}",
+            comp1.mass,
+            comp2.mass
+        );
+        assert_vec3_close(comp1.position, comp2.position, 1e-10, "composite CoM");
+        assert_mat3_close(comp1.inertia, comp2.inertia, 1e-6, "composite inertia");
+    }
+
+    #[test]
+    fn attach_aligned_non_trivial_rotation() {
+        // Test with a non-symmetric rotation to catch composition order bugs.
+        // Child point: 90° about Z (T = [[0,-1,0],[1,0,0],[0,0,1]])
+        // Parent point: identity
+        let rot_90z = DMat3::from_cols(
+            DVec3::new(0.0, 1.0, 0.0),
+            DVec3::new(-1.0, 0.0, 0.0),
+            DVec3::new(0.0, 0.0, 1.0),
+        );
+        let yaw_180 = DMat3::from_cols(
+            DVec3::new(-1.0, 0.0, 0.0),
+            DVec3::new(0.0, -1.0, 0.0),
+            DVec3::new(0.0, 0.0, 1.0),
+        );
+
+        let mut tree = MassTree::new();
+        let pid = tree.add_root("parent".into(), MassProperties::new(10.0));
+        let cid = tree.add_body("child".into(), MassProperties::new(5.0));
+
+        tree.add_mass_point(pid, "dock", DVec3::new(5.0, 0.0, 0.0), DMat3::IDENTITY);
+        tree.add_mass_point(cid, "dock", DVec3::new(2.0, 0.0, 0.0), rot_90z);
+
+        tree.attach_aligned(cid, "dock", pid, "dock");
+
+        // Expected rotation: inv_t * yaw * parent_pt_t
+        //   inv_t = rot_90z^T = [[0,1,0],[-1,0,0],[0,0,1]]
+        //   T = rot_90z^T * yaw * I = rot_90z^T * yaw
+        let expected_t = rot_90z.transpose() * yaw_180;
+        assert_mat3_close(
+            tree.get(cid).structure_point.t_parent_this,
+            expected_t,
+            1e-12,
+            "non-trivial rotation composition",
+        );
+
+        // Expected position:
+        //   inv_pos = -(rot_90z * (2, 0, 0)) = -(0, 2, 0) = (0, -2, 0)
+        //   pos_after_yaw = yaw * (0, -2, 0) = (0, 2, 0)
+        //   offset = I * (0, 2, 0) + (5, 0, 0) = (5, 2, 0)
+        assert_vec3_close(
+            tree.get(cid).structure_point.position,
+            DVec3::new(5.0, 2.0, 0.0),
+            1e-12,
+            "non-trivial position",
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // 9. Angular momentum conservation across attach/detach
     // -----------------------------------------------------------------------
 
     /// Verifies that total angular momentum is conserved through the

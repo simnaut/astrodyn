@@ -250,6 +250,8 @@ impl VehicleBuilder {
             derived: self.derived,
             external_force: self.external_force,
             external_torque: self.external_torque,
+            integ_frame: crate::IntegrationFrame::default(),
+            frame_switches: Vec::new(),
         }
     }
 }
