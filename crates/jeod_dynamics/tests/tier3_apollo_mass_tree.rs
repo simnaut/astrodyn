@@ -310,115 +310,95 @@ fn assert_composite_match(
     }
 }
 
+/// Map body name to tree ID.
+fn body_id(name: &str, ids: &[(&str, usize)]) -> usize {
+    ids.iter()
+        .find(|(n, _)| *n == name)
+        .unwrap_or_else(|| panic!("unknown body name '{name}'"))
+        .1
+}
+
+/// Validate ALL bodies in a reference file against the tree.
+fn assert_all_bodies(tree: &MassTree, ref_file: &str, phase: &str, ids: &[(&str, usize)]) {
+    let reference = load_reference(ref_file);
+    assert!(
+        !reference.bodies.is_empty(),
+        "[{phase}] {ref_file} contains no bodies"
+    );
+    for ref_body in &reference.bodies {
+        let bid = body_id(&ref_body.name, ids);
+        assert_composite_match(tree, bid, ref_body, phase);
+    }
+}
+
 #[test]
 fn tier3_apollo_mass_tree() {
     let (mut tree, cm, sm, lm, dm, s3, s2, s1, les) = build_apollo_tree();
     assemble_launch_stack(&mut tree, cm, sm, lm, dm, s3, s2, s1, les);
 
-    // Phase 0: Full stack
-    let ref_full = load_reference("apollo_Full_Stack.out");
-    let refcm = ref_full
-        .find("cm")
-        .expect("apollo_Full_Stack.out missing 'cm'");
-    assert_composite_match(&tree, cm, refcm, "Full_Stack");
+    let ids: &[(&str, usize)] = &[
+        ("cm", cm),
+        ("sm", sm),
+        ("lm", lm),
+        ("dm", dm),
+        ("s3", s3),
+        ("s2", s2),
+        ("s1", s1),
+        ("les", les),
+    ];
 
-    // Phase 1: First stage separation
+    // Phase 0: Full stack — all 8 bodies
+    assert_all_bodies(&tree, "apollo_Full_Stack.out", "Full_Stack", ids);
+
+    // Phase 1: First stage separation — 7 bodies (s1 detached)
     tree.detach(s1);
-    let ref_1 = load_reference("apollo_1st_Stage_Sep.out");
-    let refcm = ref_1
-        .find("cm")
-        .expect("apollo_1st_Stage_Sep.out missing 'cm'");
-    assert_composite_match(&tree, cm, refcm, "1st_Stage_Sep");
+    assert_all_bodies(&tree, "apollo_1st_Stage_Sep.out", "1st_Stage_Sep", ids);
 
-    // Phase 2: Second stage separation
+    // Phase 2: Second stage separation — 6 bodies
     tree.detach(s2);
-    let ref_2 = load_reference("apollo_2nd_Stage_Sep.out");
-    let refcm = ref_2
-        .find("cm")
-        .expect("apollo_2nd_Stage_Sep.out missing 'cm'");
-    assert_composite_match(&tree, cm, refcm, "2nd_Stage_Sep");
+    assert_all_bodies(&tree, "apollo_2nd_Stage_Sep.out", "2nd_Stage_Sep", ids);
 
-    // Phase 3: LES jettison
+    // Phase 3: LES jettison — 5 bodies
     tree.detach(les);
-    let ref_3 = load_reference("apollo_LES_Jettison.out");
-    let refcm = ref_3
-        .find("cm")
-        .expect("apollo_LES_Jettison.out missing 'cm'");
-    assert_composite_match(&tree, cm, refcm, "LES_Jettison");
+    assert_all_bodies(&tree, "apollo_LES_Jettison.out", "LES_Jettison", ids);
 
-    // Phase 4: Third stage separation
+    // Phase 4: Third stage separation — CM+SM tree
     tree.detach(s3);
-    let ref_4 = load_reference("apollo_3rd_Stage_Sep.out");
-    let refcm = ref_4
-        .find("cm")
-        .expect("apollo_3rd_Stage_Sep.out missing 'cm'");
-    assert_composite_match(&tree, cm, refcm, "3rd_Stage_Sep");
+    assert_all_bodies(&tree, "apollo_3rd_Stage_Sep.out", "3rd_Stage_Sep", ids);
 
-    // Phase 5: LM separation (LM detaches from CM's subtree)
+    // Phase 5: LM separation — LM+DM tree and CM+SM tree
     tree.detach(lm);
-    let ref_5_lem = load_reference("apollo_LEM_Sep.out");
-    let ref_lm = ref_5_lem
-        .find("lm")
-        .expect("apollo_LEM_Sep.out missing 'lm'");
-    assert_composite_match(&tree, lm, ref_lm, "LEM_Sep/lm");
-    let ref_5_apollo = load_reference("apollo_Apollo.out");
-    let refcm = ref_5_apollo
-        .find("cm")
-        .expect("apollo_Apollo.out missing 'cm'");
-    assert_composite_match(&tree, cm, refcm, "Apollo/cm");
+    assert_all_bodies(&tree, "apollo_LEM_Sep.out", "LEM_Sep", ids);
+    assert_all_bodies(&tree, "apollo_Apollo.out", "Apollo", ids);
 
     // Phase 6: LM docks to CM (trans-lunar configuration)
-    // input.py: cm_dyn.dyn_body.attach_child("CM docking port", "LM docking port", lm_dyn.dyn_body)
-    // attach_child(parent_point, child_point, child) is equivalent to
-    // child.attach_to(child_point, parent_point, parent)
     tree.attach_aligned(lm, "LM docking port", cm, "CM docking port");
-    let ref_6 = load_reference("apollo_Trans_Lunar.out");
-    let refcm = ref_6
-        .find("cm")
-        .expect("apollo_Trans_Lunar.out missing 'cm'");
-    assert_composite_match(&tree, cm, refcm, "Trans_Lunar");
+    assert_all_bodies(&tree, "apollo_Trans_Lunar.out", "Trans_Lunar", ids);
 
     // Phase 7: LM undocks for lunar descent
     tree.detach(lm);
-    let ref_7_lm = load_reference("apollo_LM_Descent.out");
-    let ref_lm = ref_7_lm
-        .find("lm")
-        .expect("apollo_LM_Descent.out missing 'lm'");
-    assert_composite_match(&tree, lm, ref_lm, "LM_Descent/lm");
-    let ref_7cm = load_reference("apollo_Lunar_Orbit.out");
-    let refcm = ref_7cm
-        .find("cm")
-        .expect("apollo_Lunar_Orbit.out missing 'cm'");
-    assert_composite_match(&tree, cm, refcm, "Lunar_Orbit/cm");
+    assert_all_bodies(&tree, "apollo_LM_Descent.out", "LM_Descent", ids);
+    assert_all_bodies(&tree, "apollo_Lunar_Orbit.out", "Lunar_Orbit", ids);
 
     // Phase 8: Descent module separation
     tree.detach(dm);
-    let ref_8 = load_reference("apollo_LM_Ascent.out");
-    let ref_lm = ref_8.find("lm").expect("apollo_LM_Ascent.out missing 'lm'");
-    assert_composite_match(&tree, lm, ref_lm, "LM_Ascent");
+    assert_all_bodies(&tree, "apollo_LM_Ascent.out", "LM_Ascent", ids);
 
     // Phase 9: LM re-docks to CM (lunar rendezvous)
-    // input.py: lm_dyn.dyn_body.attach_to("LM docking port", "CM docking port", cm_dyn.dyn_body)
     tree.attach_aligned(lm, "LM docking port", cm, "CM docking port");
-    let ref_9 = load_reference("apollo_Lunar_Rendezvous.out");
-    let refcm = ref_9
-        .find("cm")
-        .expect("apollo_Lunar_Rendezvous.out missing 'cm'");
-    assert_composite_match(&tree, cm, refcm, "Lunar_Rendezvous");
+    assert_all_bodies(
+        &tree,
+        "apollo_Lunar_Rendezvous.out",
+        "Lunar_Rendezvous",
+        ids,
+    );
 
     // Phase 10: LM final separation
     tree.detach(lm);
-    let ref_10 = load_reference("apollo_Return.out");
-    let refcm = ref_10.find("cm").expect("apollo_Return.out missing 'cm'");
-    assert_composite_match(&tree, cm, refcm, "Return");
+    assert_all_bodies(&tree, "apollo_Return.out", "Return", ids);
 
-    // Phase 11: SM jettison (entry configuration)
+    // Phase 11: SM jettison (entry)
     tree.detach(sm);
-    let ref_11 = load_reference("apollo_Entry.out");
-    let refcm = ref_11.find("cm").expect("apollo_Entry.out missing 'cm'");
-    assert_composite_match(&tree, cm, refcm, "Entry");
-    // Final.out should match Entry.out for the CM (printed twice in input.py)
-    let ref_final = load_reference("apollo_Final.out");
-    let refcm = ref_final.find("cm").expect("apollo_Final.out missing 'cm'");
-    assert_composite_match(&tree, cm, refcm, "Final");
+    assert_all_bodies(&tree, "apollo_Entry.out", "Entry", ids);
+    assert_all_bodies(&tree, "apollo_Final.out", "Final", ids);
 }
