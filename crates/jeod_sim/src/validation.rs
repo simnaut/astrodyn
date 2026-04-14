@@ -56,6 +56,12 @@ pub enum ValidationError {
     EarthLightingWithoutSunSource { body_idx: usize },
     /// Body has `earth_lighting_config` but simulation has no `moon_source`.
     EarthLightingWithoutMoonSource { body_idx: usize },
+    /// Frame switch `central_source` index is out of range.
+    FrameSwitchCentralSourceOutOfRange {
+        body_idx: usize,
+        central_source: usize,
+        num_sources: usize,
+    },
 }
 
 impl std::fmt::Display for ValidationError {
@@ -215,6 +221,17 @@ impl std::fmt::Display for ValidationError {
                     f,
                     "Body {body_idx}: earth_lighting_config is set but simulation has no \
                      moon_source. Set Simulation::moon_source for earth lighting computation."
+                )
+            }
+            Self::FrameSwitchCentralSourceOutOfRange {
+                body_idx,
+                central_source,
+                num_sources,
+            } => {
+                write!(
+                    f,
+                    "Body {body_idx}: frame switch central_source index {central_source} \
+                     is out of range (simulation has {num_sources} gravity sources)."
                 )
             }
         }

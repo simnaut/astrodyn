@@ -217,7 +217,7 @@ fn build_apollo_tree() -> (
 #[allow(clippy::too_many_arguments)]
 fn assemble_launch_stack(
     tree: &mut MassTree,
-    _cm: usize,
+    cm: usize,
     sm: usize,
     lm: usize,
     dm: usize,
@@ -234,7 +234,7 @@ fn assemble_launch_stack(
         "Descent Module interface",
     );
     // 2. SM "CM interface" -> CM "SM interface"
-    tree.attach_aligned(sm, "CM interface", _cm, "SM interface");
+    tree.attach_aligned(sm, "CM interface", cm, "SM interface");
     // 3. S3 "LEM/SM/CM interface" -> SM "Stage 3 interface"
     tree.attach_aligned(s3, "LEM/SM/CM interface", sm, "Stage 3 interface");
     // 4. LM "Stage 3 interface" -> S3 "LEM/SM/CM interface"
@@ -244,7 +244,7 @@ fn assemble_launch_stack(
     // 6. S1 "Stage 2 interface" -> S2 "Stage 1 interface"
     tree.attach_aligned(s1, "Stage 2 interface", s2, "Stage 1 interface");
     // 7. LES "CM interface" -> CM "CM docking port"
-    tree.attach_aligned(les, "CM interface", _cm, "CM docking port");
+    tree.attach_aligned(les, "CM interface", cm, "CM docking port");
 }
 
 fn test_data_dir() -> std::path::PathBuf {
@@ -317,42 +317,42 @@ fn tier3_apollo_mass_tree() {
 
     // Phase 0: Full stack
     let ref_full = load_reference("apollo_Full_Stack.out");
-    let ref_cm = ref_full
+    let refcm = ref_full
         .find("cm")
         .expect("apollo_Full_Stack.out missing 'cm'");
-    assert_composite_match(&tree, cm, ref_cm, "Full_Stack");
+    assert_composite_match(&tree, cm, refcm, "Full_Stack");
 
     // Phase 1: First stage separation
     tree.detach(s1);
     let ref_1 = load_reference("apollo_1st_Stage_Sep.out");
-    let ref_cm = ref_1
+    let refcm = ref_1
         .find("cm")
         .expect("apollo_1st_Stage_Sep.out missing 'cm'");
-    assert_composite_match(&tree, cm, ref_cm, "1st_Stage_Sep");
+    assert_composite_match(&tree, cm, refcm, "1st_Stage_Sep");
 
     // Phase 2: Second stage separation
     tree.detach(s2);
     let ref_2 = load_reference("apollo_2nd_Stage_Sep.out");
-    let ref_cm = ref_2
+    let refcm = ref_2
         .find("cm")
         .expect("apollo_2nd_Stage_Sep.out missing 'cm'");
-    assert_composite_match(&tree, cm, ref_cm, "2nd_Stage_Sep");
+    assert_composite_match(&tree, cm, refcm, "2nd_Stage_Sep");
 
     // Phase 3: LES jettison
     tree.detach(les);
     let ref_3 = load_reference("apollo_LES_Jettison.out");
-    let ref_cm = ref_3
+    let refcm = ref_3
         .find("cm")
         .expect("apollo_LES_Jettison.out missing 'cm'");
-    assert_composite_match(&tree, cm, ref_cm, "LES_Jettison");
+    assert_composite_match(&tree, cm, refcm, "LES_Jettison");
 
     // Phase 4: Third stage separation
     tree.detach(s3);
     let ref_4 = load_reference("apollo_3rd_Stage_Sep.out");
-    let ref_cm = ref_4
+    let refcm = ref_4
         .find("cm")
         .expect("apollo_3rd_Stage_Sep.out missing 'cm'");
-    assert_composite_match(&tree, cm, ref_cm, "3rd_Stage_Sep");
+    assert_composite_match(&tree, cm, refcm, "3rd_Stage_Sep");
 
     // Phase 5: LM separation (LM detaches from CM's subtree)
     tree.detach(lm);
@@ -362,10 +362,10 @@ fn tier3_apollo_mass_tree() {
         .expect("apollo_LEM_Sep.out missing 'lm'");
     assert_composite_match(&tree, lm, ref_lm, "LEM_Sep/lm");
     let ref_5_apollo = load_reference("apollo_Apollo.out");
-    let ref_cm = ref_5_apollo
+    let refcm = ref_5_apollo
         .find("cm")
         .expect("apollo_Apollo.out missing 'cm'");
-    assert_composite_match(&tree, cm, ref_cm, "Apollo/cm");
+    assert_composite_match(&tree, cm, refcm, "Apollo/cm");
 
     // Phase 6: LM docks to CM (trans-lunar configuration)
     // input.py: cm_dyn.dyn_body.attach_child("CM docking port", "LM docking port", lm_dyn.dyn_body)
@@ -373,10 +373,10 @@ fn tier3_apollo_mass_tree() {
     // child.attach_to(child_point, parent_point, parent)
     tree.attach_aligned(lm, "LM docking port", cm, "CM docking port");
     let ref_6 = load_reference("apollo_Trans_Lunar.out");
-    let ref_cm = ref_6
+    let refcm = ref_6
         .find("cm")
         .expect("apollo_Trans_Lunar.out missing 'cm'");
-    assert_composite_match(&tree, cm, ref_cm, "Trans_Lunar");
+    assert_composite_match(&tree, cm, refcm, "Trans_Lunar");
 
     // Phase 7: LM undocks for lunar descent
     tree.detach(lm);
@@ -385,11 +385,11 @@ fn tier3_apollo_mass_tree() {
         .find("lm")
         .expect("apollo_LM_Descent.out missing 'lm'");
     assert_composite_match(&tree, lm, ref_lm, "LM_Descent/lm");
-    let ref_7_cm = load_reference("apollo_Lunar_Orbit.out");
-    let ref_cm = ref_7_cm
+    let ref_7cm = load_reference("apollo_Lunar_Orbit.out");
+    let refcm = ref_7cm
         .find("cm")
         .expect("apollo_Lunar_Orbit.out missing 'cm'");
-    assert_composite_match(&tree, cm, ref_cm, "Lunar_Orbit/cm");
+    assert_composite_match(&tree, cm, refcm, "Lunar_Orbit/cm");
 
     // Phase 8: Descent module separation
     tree.detach(dm);
@@ -401,24 +401,24 @@ fn tier3_apollo_mass_tree() {
     // input.py: lm_dyn.dyn_body.attach_to("LM docking port", "CM docking port", cm_dyn.dyn_body)
     tree.attach_aligned(lm, "LM docking port", cm, "CM docking port");
     let ref_9 = load_reference("apollo_Lunar_Rendezvous.out");
-    let ref_cm = ref_9
+    let refcm = ref_9
         .find("cm")
         .expect("apollo_Lunar_Rendezvous.out missing 'cm'");
-    assert_composite_match(&tree, cm, ref_cm, "Lunar_Rendezvous");
+    assert_composite_match(&tree, cm, refcm, "Lunar_Rendezvous");
 
     // Phase 10: LM final separation
     tree.detach(lm);
     let ref_10 = load_reference("apollo_Return.out");
-    let ref_cm = ref_10.find("cm").expect("apollo_Return.out missing 'cm'");
-    assert_composite_match(&tree, cm, ref_cm, "Return");
+    let refcm = ref_10.find("cm").expect("apollo_Return.out missing 'cm'");
+    assert_composite_match(&tree, cm, refcm, "Return");
 
     // Phase 11: SM jettison (entry configuration)
     tree.detach(sm);
     let ref_11 = load_reference("apollo_Entry.out");
-    let ref_cm = ref_11.find("cm").expect("apollo_Entry.out missing 'cm'");
-    assert_composite_match(&tree, cm, ref_cm, "Entry");
+    let refcm = ref_11.find("cm").expect("apollo_Entry.out missing 'cm'");
+    assert_composite_match(&tree, cm, refcm, "Entry");
     // Final.out should match Entry.out for the CM (printed twice in input.py)
     let ref_final = load_reference("apollo_Final.out");
-    let ref_cm = ref_final.find("cm").expect("apollo_Final.out missing 'cm'");
-    assert_composite_match(&tree, cm, ref_cm, "Final");
+    let refcm = ref_final.find("cm").expect("apollo_Final.out missing 'cm'");
+    assert_composite_match(&tree, cm, refcm, "Final");
 }

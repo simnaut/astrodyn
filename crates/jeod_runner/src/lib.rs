@@ -770,6 +770,19 @@ impl Simulation {
                 all_errors.push(ValidationError::GravityTorqueWithoutMassOrRot { body_idx });
             }
 
+            // Frame switch central_source must be a valid source index
+            for sw in &body.frame_switches {
+                if let Some(central) = sw.central_source {
+                    if central >= self.sources.len() {
+                        all_errors.push(ValidationError::FrameSwitchCentralSourceOutOfRange {
+                            body_idx,
+                            central_source: central,
+                            num_sources: self.sources.len(),
+                        });
+                    }
+                }
+            }
+
             // Apply gravity control auto-corrections (degree/order clamping).
             // JEOD_INV: GV.03 — check_validity() auto-corrects out-of-range settings
             for ctrl in &mut body.gravity_controls.controls {
@@ -1281,7 +1294,10 @@ impl Simulation {
 
             // Precompute relativistic "other source" lists outside the closure
             // to avoid heap allocation at every RK4 stage. Source positions are
-            // constant within a single step.
+            // constant within a single step. NOTE: for non-ECI frames, Newtonian
+            // gravity interpolates source positions per sub-stage but relativistic
+            // corrections use these frozen positions. The PPN correction is ~1e-8
+            // of Newtonian gravity, so the sub-stage shift is negligible.
             let rel_data: Vec<_> = controls
                 .controls
                 .iter()
@@ -1405,10 +1421,13 @@ impl Simulation {
         }
 
         // ── 9. Derived states ──
-        // NOTE: Derived state computations (orbital elements, LVLH, geodetic, etc.)
-        // assume body.trans.position is in Earth-centered inertial coordinates.
+        // NOTE: Derived states, atmosphere evaluation, SRP/shadow geometry, solar
+        // beta, and earth lighting all assume body.trans.position is in ECI.
         // When integ_frame != EarthInertial, these results will be incorrect.
-        // A proper fix requires converting to ECI first (tracked in #67).
+        // Currently frame switching is only supported for gravity + integration;
+        // non-Earth frames disable these other pipeline stages in practice
+        // (no existing test configures both frame switching and interactions).
+        // A proper fix requires converting to ECI at each call site (#67).
         let sources = &self.sources;
 
         for body in &mut self.bodies {
