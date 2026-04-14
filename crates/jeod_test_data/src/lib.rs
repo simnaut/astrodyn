@@ -1,3 +1,4 @@
+pub mod apollo_mass_tree;
 pub mod crossval;
 pub mod dyncomp_csv;
 pub mod euler_test;

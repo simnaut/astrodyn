@@ -46,7 +46,7 @@ pub fn integrate_body(
     trans: &mut TranslationalState,
     rot: Option<&mut RotationalState>,
     mass: Option<&MassProperties>,
-    gravity_fn: impl Fn(DVec3, DVec3) -> DVec3,
+    gravity_fn: impl Fn(DVec3, DVec3, f64) -> DVec3,
     non_grav_force: DVec3,
     torque: DVec3,
     dt: f64,
@@ -91,8 +91,9 @@ pub fn integrate_body(
             // Gravity recomputed at each integrator intermediate state for
             // multi-stage accuracy. Non-gravity acceleration held constant
             // (negligible change over one step).
-            let accel =
-                |s: &SixDofState| gravity_fn(s.trans.position, s.trans.velocity) + non_grav_accel;
+            let accel = |s: &SixDofState, time_frac: f64| {
+                gravity_fn(s.trans.position, s.trans.velocity, time_frac) + non_grav_accel
+            };
             let torque_fn = |_s: &SixDofState| constant_torque;
             let new_state = match integrator {
                 IntegratorType::Rk4 => jeod_dynamics::rk4_sixdof_step(
@@ -129,7 +130,9 @@ pub fn integrate_body(
     }
 
     // 3-DOF path: translational only
-    let accel = |s: &TranslationalState| gravity_fn(s.position, s.velocity) + non_grav_accel;
+    let accel = |s: &TranslationalState, time_frac: f64| {
+        gravity_fn(s.position, s.velocity, time_frac) + non_grav_accel
+    };
     match integrator {
         IntegratorType::Rk4 => {
             *trans = jeod_dynamics::rk4_translational_step(trans, accel, integ_dyndt);
@@ -171,7 +174,7 @@ pub fn integrate_body(
             };
             let mut completed = false;
             for _ in 0..max_stages {
-                let acc = gravity_fn(trans.position, trans.velocity) + non_grav_accel;
+                let acc = gravity_fn(trans.position, trans.velocity, 0.0) + non_grav_accel;
                 let result = gj.integrate(dt, time_scale_factor, acc, trans);
                 if result.time_scale > 0.0 {
                     if !result.passed {
@@ -589,7 +592,7 @@ mod tests {
             &mut trans1,
             None,
             Some(&mass),
-            |pos, _vel| -mu / pos.length().powi(3) * pos,
+            |pos, _vel, _time_frac| -mu / pos.length().powi(3) * pos,
             srp_force,
             DVec3::ZERO,
             dt,

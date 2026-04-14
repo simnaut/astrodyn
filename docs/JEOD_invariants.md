@@ -76,7 +76,7 @@ grep the JEOD tree for the distinctive identifier in the invariant description
 | MA.06 | Bottom-up mass property update (children first) | structural | ordering | enforced (`mass_body.rs:240`) |
 | MA.07 | Derived quantities recomputed after mutation | structural | consistency | enforced (`mass_body.rs:241`, `mass.rs:79`; `recompute_derived()` updates `inverse_mass`/`inverse_inertia`, `mass_update_system` calls it each step) |
 | MA.08 | No cycle in mass tree | error | consistency | enforced (`mass_body.rs:164`) |
-| MA.09 | MassPoint names unique within body | fatal | initialization | deferred (no mass points in ECS yet) |
+| MA.09 | MassPoint names unique within body | fatal | initialization | enforced (`mass_body.rs:add_mass_point`) |
 | MA.10 | MassPoint names non-empty | fatal | initialization | deferred |
 | MA.11 | core/composite attached to structure (internal tree) | structural | structural | deferred (Phase 5, three-frame model) |
 | MA.12 | core_wrt_composite has identity orientation | structural | structural | deferred (Phase 5) |
@@ -88,6 +88,7 @@ grep the JEOD tree for the distinctive identifier in the invariant description
 | MA.18 | Partially initialized child state blocks attachment | warn | consistency | deferred (Phase 5) |
 | MA.19 | No same-tree attachment (cycle prevention) | error | consistency | enforced (`mass_body.rs:165`) |
 | MA.20 | Child integration frame synced to parent on attach | structural | consistency | deferred (Phase 5) |
+| MA.21 | Named attachment points must exist on body for attach_aligned | error | structural | enforced (`mass_body.rs` attach_aligned) |
 
 ## Section DM: DynManager
 

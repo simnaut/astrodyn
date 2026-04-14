@@ -50,6 +50,54 @@ pub use jeod_sim::RotationModel;
 pub use builder::{SimulationBuilder, VehicleBuilder};
 
 // ══════════════════════════════════════════════════════════════════════════════
+// Integration frame switching
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Which celestial body's inertial frame is used for integration.
+///
+/// Body position/velocity are stored relative to this frame's origin.
+/// The frame's origin position in canonical (Earth-centered) coordinates
+/// is derived from ephemeris at each timestep.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum IntegrationFrame {
+    /// Earth-centered inertial (J2000 ICRF). Origin at (0,0,0).
+    #[default]
+    EarthInertial,
+    /// Moon-centered inertial. Origin = Moon ephemeris position.
+    MoonInertial,
+    /// Sun-centered inertial. Origin = Sun ephemeris position.
+    SunInertial,
+}
+
+/// Trigger condition for a frame switch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SwitchSense {
+    /// Switch when the body approaches the target frame origin.
+    OnApproach,
+    /// Switch when the body departs from the current frame origin.
+    OnDeparture,
+}
+
+/// Configuration for a distance-based integration frame switch.
+///
+/// Port of JEOD's `DynBodyFrameSwitch` body action.
+#[derive(Debug, Clone)]
+pub struct FrameSwitchConfig {
+    /// Target integration frame to switch to.
+    pub target_frame: IntegrationFrame,
+    /// Whether to switch on approach or departure.
+    pub switch_sense: SwitchSense,
+    /// Distance threshold (meters).
+    pub switch_distance: f64,
+    /// Whether this switch is active.
+    pub active: bool,
+    /// Index of the gravity source that is the central body in the target frame.
+    /// On switch, this source becomes non-differential and all others become
+    /// differential, matching JEOD's `GravityInteraction::set_integ_frame()`.
+    pub central_source: Option<usize>,
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // Gravity source
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -286,6 +334,12 @@ pub struct VehicleConfig {
     pub external_force: DVec3,
     /// External torque in the body frame (N·m). Defaults to zero.
     pub external_torque: DVec3,
+
+    // ── Frame switching ──
+    /// Initial integration frame. Defaults to [`IntegrationFrame::EarthInertial`].
+    pub integ_frame: IntegrationFrame,
+    /// Distance-based frame switch triggers.
+    pub frame_switches: Vec<FrameSwitchConfig>,
 }
 
 impl Default for VehicleConfig {
@@ -304,6 +358,8 @@ impl Default for VehicleConfig {
             derived: DerivedStateConfig::default(),
             external_force: DVec3::ZERO,
             external_torque: DVec3::ZERO,
+            integ_frame: IntegrationFrame::default(),
+            frame_switches: Vec::new(),
         }
     }
 }
@@ -318,8 +374,10 @@ impl Default for VehicleConfig {
 /// plus any derived states that were configured.
 #[derive(Debug, Clone)]
 pub struct VehicleOutput {
-    /// Current translational state (position, velocity) in inertial frame.
+    /// Current translational state (position, velocity) in the integration frame.
     pub trans: TranslationalState,
+    /// Current integration frame (for converting to inertial if needed).
+    pub integ_frame: IntegrationFrame,
     /// Current rotational state (quaternion, angular velocity). `None` for 3-DOF.
     pub rot: Option<RotationalState>,
     /// Orbital elements from the latest step.
@@ -362,6 +420,10 @@ struct SimBody {
     atmospheric_state: Option<AtmosphereState>,
     external_force: DVec3,
     external_torque: DVec3,
+
+    // ── Frame switching ──
+    integ_frame: IntegrationFrame,
+    frame_switches: Vec<FrameSwitchConfig>,
 
     // ── Bookkeeping (written each step, not user-visible) ──
     gravity_accel: GravityAcceleration,
@@ -438,6 +500,9 @@ impl SimBody {
             external_force: config.external_force,
             external_torque: config.external_torque,
 
+            integ_frame: config.integ_frame,
+            frame_switches: config.frame_switches,
+
             gravity_accel: GravityAcceleration::default(),
             total_force: TotalForce::default(),
             frame_derivs: FrameDerivatives::default(),
@@ -473,6 +538,7 @@ impl SimBody {
     fn output(&self) -> VehicleOutput {
         VehicleOutput {
             trans: self.trans,
+            integ_frame: self.integ_frame,
             rot: self.rot,
             orbital_elements: self.orbital_elements.clone(),
             euler_angles: self.euler_angles,
@@ -704,6 +770,63 @@ impl Simulation {
                 all_errors.push(ValidationError::GravityTorqueWithoutMassOrRot { body_idx });
             }
 
+            // Frame switch central_source must be a valid source index AND
+            // present in the body's gravity controls (so the post-switch
+            // differential flip actually takes effect).
+            // Only validate active switches — JEOD only evaluates active switches.
+            for sw in &body.frame_switches {
+                if sw.active {
+                    if let Some(central) = sw.central_source {
+                        if central >= self.sources.len() {
+                            all_errors.push(ValidationError::FrameSwitchCentralSourceOutOfRange {
+                                body_idx,
+                                central_source: central,
+                                num_sources: self.sources.len(),
+                            });
+                        } else if !body
+                            .gravity_controls
+                            .controls
+                            .iter()
+                            .any(|c| c.source_name == central)
+                        {
+                            all_errors.push(
+                                ValidationError::FrameSwitchCentralSourceNotInControls {
+                                    body_idx,
+                                    central_source: central,
+                                },
+                            );
+                        }
+                    }
+                }
+            }
+
+            // Warn when non-ECI frame is used with ECI-dependent features.
+            // JEOD evaluates these derived states in Earth-centered inertial; they
+            // will produce incorrect results in other frames.
+            {
+                let non_eci_integ = body.integ_frame != IntegrationFrame::EarthInertial;
+                let non_eci_switch = body
+                    .frame_switches
+                    .iter()
+                    .any(|sw| sw.active && sw.target_frame != IntegrationFrame::EarthInertial);
+                if non_eci_integ || non_eci_switch {
+                    let has_eci_feature = body.drag.is_some()
+                        || body.flat_plate_state.is_some()
+                        || body.cannonball_srp.is_some()
+                        || body.orbital_elements_source.is_some()
+                        || body.euler_sequence.is_some()
+                        || body.compute_lvlh
+                        || body.geodetic_planet.is_some()
+                        || body.compute_solar_beta
+                        || body.earth_lighting_config.is_some();
+                    if has_eci_feature {
+                        all_errors.push(ValidationError::NonEciFrameWithEciDependentFeatures {
+                            body_idx,
+                        });
+                    }
+                }
+            }
+
             // Apply gravity control auto-corrections (degree/order clamping).
             // JEOD_INV: GV.03 — check_validity() auto-corrects out-of-range settings
             for ctrl in &mut body.gravity_controls.controls {
@@ -805,6 +928,40 @@ impl Simulation {
         self.step_internal(self.dt);
     }
 
+    /// Resolve the origin position and velocity of an integration frame
+    /// in canonical (Earth-centered inertial) coordinates.
+    pub fn resolve_frame_origin(&self, frame: IntegrationFrame) -> (DVec3, DVec3) {
+        match frame {
+            IntegrationFrame::EarthInertial => (DVec3::ZERO, DVec3::ZERO),
+            IntegrationFrame::MoonInertial => {
+                if let Some(ref eph) = self.ephemeris {
+                    let tdb_jd = self.time.tdb_julian_date();
+                    eph.get_state(
+                        jeod_sim::EphemerisBody::Moon,
+                        jeod_sim::EphemerisBody::Earth,
+                        tdb_jd,
+                    )
+                    .expect("Moon ephemeris lookup failed for frame switch")
+                } else {
+                    panic!("MoonInertial frame requires ephemeris");
+                }
+            }
+            IntegrationFrame::SunInertial => {
+                if let Some(ref eph) = self.ephemeris {
+                    let tdb_jd = self.time.tdb_julian_date();
+                    eph.get_state(
+                        jeod_sim::EphemerisBody::Sun,
+                        jeod_sim::EphemerisBody::Earth,
+                        tdb_jd,
+                    )
+                    .expect("Sun ephemeris lookup failed for frame switch")
+                } else {
+                    panic!("SunInertial frame requires ephemeris");
+                }
+            }
+        }
+    }
+
     /// Internal step with explicit dt (avoids temporary mutation of `self.dt`
     /// in `step_until`).
     fn step_internal(&mut self, dt: f64) {
@@ -897,14 +1054,64 @@ impl Simulation {
             }
         }
 
+        // Precompute frame origins only for frames actually in use.
+        // Avoids unnecessary ephemeris lookups and panics early if ephemeris
+        // is absent but a non-Earth frame is needed.
+        let (needs_moon, needs_sun) =
+            self.bodies
+                .iter()
+                .fold((false, false), |(moon, sun), body| {
+                    let (m, s) = match body.integ_frame {
+                        IntegrationFrame::MoonInertial => (true, sun),
+                        IntegrationFrame::SunInertial => (moon, true),
+                        IntegrationFrame::EarthInertial => (moon, sun),
+                    };
+                    body.frame_switches
+                        .iter()
+                        .filter(|sw| sw.active)
+                        .fold((m, s), |(m, s), sw| match sw.target_frame {
+                            IntegrationFrame::MoonInertial => (true, s),
+                            IntegrationFrame::SunInertial => (m, true),
+                            IntegrationFrame::EarthInertial => (m, s),
+                        })
+                });
+
+        let earth_origin = (DVec3::ZERO, DVec3::ZERO);
+        let moon_origin = if needs_moon {
+            if self.ephemeris.is_some() {
+                self.resolve_frame_origin(IntegrationFrame::MoonInertial)
+            } else {
+                panic!("MoonInertial frame requires ephemeris. Set sim.ephemeris = Some(...).")
+            }
+        } else {
+            (DVec3::ZERO, DVec3::ZERO)
+        };
+        let sun_origin = if needs_sun {
+            if self.ephemeris.is_some() {
+                self.resolve_frame_origin(IntegrationFrame::SunInertial)
+            } else {
+                panic!("SunInertial frame requires ephemeris. Set sim.ephemeris = Some(...).")
+            }
+        } else {
+            (DVec3::ZERO, DVec3::ZERO)
+        };
+        let resolve = |frame: IntegrationFrame| -> (DVec3, DVec3) {
+            match frame {
+                IntegrationFrame::EarthInertial => earth_origin,
+                IntegrationFrame::MoonInertial => moon_origin,
+                IntegrationFrame::SunInertial => sun_origin,
+            }
+        };
+
         // ── 4. Environment — gravity ──
         // Split borrows: sources (immutable) vs bodies (mutable)
         let sources = &self.sources;
         for body in &mut self.bodies {
+            let integ_origin = resolve(body.integ_frame).0;
             body.gravity_accel = accumulate_gravity(
-                body.trans.position,
+                body.trans.position + integ_origin,
                 &body.gravity_controls,
-                DVec3::ZERO,
+                integ_origin,
                 |source_id: usize| {
                     sources.get(source_id).map(|s| jeod_sim::ResolvedSource {
                         source: &s.source,
@@ -920,10 +1127,12 @@ impl Simulation {
         // ── 4b. Relativistic corrections ──
         // After Newtonian gravity, apply post-Newtonian PPN correction for
         // any source with `relativistic: true`. Folkner eq 27 (β=γ=1).
+        // PPN uses inertial coordinates — convert from integration frame.
         for body in &mut self.bodies {
+            let (origin, origin_vel) = resolve(body.integ_frame);
             body.gravity_accel.grav_accel += jeod_sim::accumulate_relativistic_corrections(
-                body.trans.position,
-                body.trans.velocity,
+                body.trans.position + origin,
+                body.trans.velocity + origin_vel,
                 &body.gravity_controls,
                 |source_id: usize| {
                     sources
@@ -1116,13 +1325,25 @@ impl Simulation {
         // RK4 intermediate state for 4th-order accuracy, matching JEOD's
         // DynamicsIntegrationGroup where the derivative function calls gravity
         // at every stage with the current intermediate position and velocity.
+        //
+        // Precompute per-body integration frame origins and velocities.
+        // For non-ECI bodies, the origin velocity is used to linearly
+        // interpolate the frame origin at each RK4 sub-stage, matching
+        // JEOD's behavior of updating the reference frame tree at each
+        // derivative evaluation (even with deriv_ephem_update=false).
+        let body_integ_data: Vec<(DVec3, DVec3)> =
+            self.bodies.iter().map(|b| resolve(b.integ_frame)).collect();
         let sources = &self.sources;
-        for body in &mut self.bodies {
+        for (body_idx, body) in self.bodies.iter_mut().enumerate() {
+            let (integ_origin, integ_vel) = body_integ_data[body_idx];
             let controls = &body.gravity_controls;
 
             // Precompute relativistic "other source" lists outside the closure
             // to avoid heap allocation at every RK4 stage. Source positions are
-            // constant within a single step.
+            // constant within a single step. NOTE: for non-ECI frames, Newtonian
+            // gravity interpolates source positions per sub-stage but relativistic
+            // corrections use these frozen positions. The PPN correction is ~1e-8
+            // of Newtonian gravity, so the sub-stage shift is negligible.
             let rel_data: Vec<_> = controls
                 .controls
                 .iter()
@@ -1151,20 +1372,39 @@ impl Simulation {
                 &mut body.trans,
                 body.rot.as_mut(),
                 body.mass.as_ref(),
-                |pos, vel| {
-                    let mut accel = accumulate_gravity(pos, controls, DVec3::ZERO, |source_id| {
-                        sources.get(source_id).map(|s| jeod_sim::ResolvedSource {
-                            source: &s.source,
-                            rotation: s.t_inertial_pfix.as_ref(),
-                            position: s.position,
-                            delta_c20: s.delta_c20,
-                            has_delta_coeffs: s.tidal_config.is_some(),
+                |pos, vel, time_frac| {
+                    // For non-ECI frames, linearly interpolate the frame origin
+                    // at the current integrator sub-stage time. This matches JEOD's
+                    // behavior of updating its reference frame tree at each
+                    // derivative evaluation.
+                    let origin = integ_origin + integ_vel * (time_frac * dt);
+                    // Interpolate source positions at the sub-stage time,
+                    // matching JEOD's continuous frame tree updates.
+                    // Only for non-ECI frames; ECI with deriv_ephem_update=false
+                    // freezes source positions per step (matching JEOD).
+                    let sub_dt = if integ_vel != DVec3::ZERO {
+                        time_frac * dt
+                    } else {
+                        0.0
+                    };
+                    let mut accel =
+                        accumulate_gravity(pos + origin, controls, origin, |source_id| {
+                            sources.get(source_id).map(|s| jeod_sim::ResolvedSource {
+                                source: &s.source,
+                                rotation: s.t_inertial_pfix.as_ref(),
+                                position: s.position + s.velocity * sub_dt,
+                                delta_c20: s.delta_c20,
+                                has_delta_coeffs: s.tidal_config.is_some(),
+                            })
                         })
-                    })
-                    .grav_accel;
+                        .grav_accel;
+                    // Relativistic corrections use inertial coordinates.
+                    // Convert from integration frame to ECI for the PPN formula.
+                    let pos_eci = pos + origin;
+                    let vel_eci = vel + integ_vel;
                     for &(mu, src_pos, src_vel, ref other) in &rel_data {
                         accel += jeod_gravity::relativistic::compute_relativistic_correction(
-                            mu, src_pos, pos, vel, src_vel, other,
+                            mu, src_pos, pos_eci, vel_eci, src_vel, other,
                         );
                     }
                     accel
@@ -1178,7 +1418,66 @@ impl Simulation {
             );
         }
 
+        // ── 8b. Frame switch (body actions) ──
+        // Applied AFTER integration, matching JEOD's pipeline where
+        // DynBodyFrameSwitch is a body action evaluated post-integration.
+        // The body has already been integrated in its current frame for this
+        // step; the switch transforms to the new frame for the NEXT step.
+        for body in &mut self.bodies {
+            if body.frame_switches.is_empty() {
+                continue;
+            }
+            let mut switch_idx = None;
+            for (idx, sw) in body.frame_switches.iter().enumerate() {
+                if !sw.active {
+                    continue;
+                }
+                let (target_origin, _) = resolve(sw.target_frame);
+                let (current_origin, _) = resolve(body.integ_frame);
+                let body_pos_eci = body.trans.position + current_origin;
+                let threshold_sq = sw.switch_distance * sw.switch_distance;
+
+                // JEOD dyn_body_frame_switch.cc:173-182:
+                // OnApproach: compute_position_from(*integ_frame) → distance to target
+                // OnDeparture: state.trans.position magnitude → distance from current origin
+                let triggered = match sw.switch_sense {
+                    SwitchSense::OnApproach => {
+                        (body_pos_eci - target_origin).length_squared() < threshold_sq
+                    }
+                    SwitchSense::OnDeparture => body.trans.position.length_squared() > threshold_sq,
+                };
+                if triggered {
+                    switch_idx = Some(idx);
+                    break;
+                }
+            }
+            if let Some(idx) = switch_idx {
+                let target_frame = body.frame_switches[idx].target_frame;
+                let central_source = body.frame_switches[idx].central_source;
+                body.frame_switches[idx].active = false;
+
+                let (old_origin, old_vel) = resolve(body.integ_frame);
+                let (new_origin, new_vel) = resolve(target_frame);
+                body.trans.position = body.trans.position + old_origin - new_origin;
+                body.trans.velocity = body.trans.velocity + old_vel - new_vel;
+                body.integ_frame = target_frame;
+
+                if let Some(central) = central_source {
+                    for ctrl in &mut body.gravity_controls.controls {
+                        ctrl.differential = ctrl.source_name != central;
+                    }
+                }
+            }
+        }
+
         // ── 9. Derived states ──
+        // NOTE: Derived states, atmosphere evaluation, SRP/shadow geometry, solar
+        // beta, and earth lighting all assume body.trans.position is in ECI.
+        // When integ_frame != EarthInertial, these results will be incorrect.
+        // Currently frame switching is only supported for gravity + integration;
+        // non-Earth frames disable these other pipeline stages in practice
+        // (no existing test configures both frame switching and interactions).
+        // A proper fix requires converting to ECI at each call site (#67).
         let sources = &self.sources;
 
         for body in &mut self.bodies {

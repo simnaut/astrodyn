@@ -37,11 +37,11 @@ pub enum IntegratorType {
 /// multi-stage integration even when forces depend on position (e.g., gravity).
 pub fn rk4_translational_step(
     state: &TranslationalState,
-    accel_fn: impl Fn(&TranslationalState) -> DVec3,
+    accel_fn: impl Fn(&TranslationalState, f64) -> DVec3,
     dt: f64,
 ) -> TranslationalState {
     // Stage 1: evaluate at current state
-    let k1_a = accel_fn(state);
+    let k1_a = accel_fn(state, 0.0);
     let k1_v = state.velocity;
 
     // Stage 2: evaluate at t + dt/2, using k1
@@ -49,7 +49,7 @@ pub fn rk4_translational_step(
         position: state.position + k1_v * (dt * 0.5),
         velocity: state.velocity + k1_a * (dt * 0.5),
     };
-    let k2_a = accel_fn(&s2);
+    let k2_a = accel_fn(&s2, 0.5);
     let k2_v = s2.velocity;
 
     // Stage 3: evaluate at t + dt/2, using k2
@@ -57,7 +57,7 @@ pub fn rk4_translational_step(
         position: state.position + k2_v * (dt * 0.5),
         velocity: state.velocity + k2_a * (dt * 0.5),
     };
-    let k3_a = accel_fn(&s3);
+    let k3_a = accel_fn(&s3, 0.5);
     let k3_v = s3.velocity;
 
     // Stage 4: evaluate at t + dt, using k3
@@ -65,7 +65,7 @@ pub fn rk4_translational_step(
         position: state.position + k3_v * dt,
         velocity: state.velocity + k3_a * dt,
     };
-    let k4_a = accel_fn(&s4);
+    let k4_a = accel_fn(&s4, 1.0);
     let k4_v = s4.velocity;
 
     // Combine: weighted average
@@ -90,7 +90,7 @@ pub fn rk4_translational_step(
 /// `normalize_integ` (without forcing scalar non-negative).
 pub fn rk4_sixdof_step(
     state: &SixDofState,
-    accel_fn: impl Fn(&SixDofState) -> DVec3,
+    accel_fn: impl Fn(&SixDofState, f64) -> DVec3,
     torque_fn: impl Fn(&SixDofState) -> DVec3,
     mass_props: &MassProperties,
     dt: f64,
@@ -116,9 +116,9 @@ pub fn rk4_sixdof_step(
     };
 
     // Helper: evaluate derivatives at a given state
-    let eval_derivs = |s: &SixDofState| -> (DVec3, DVec3, [f64; 4], DVec3) {
+    let eval_derivs = |s: &SixDofState, time_frac: f64| -> (DVec3, DVec3, [f64; 4], DVec3) {
         let k_v = s.trans.velocity;
-        let k_a = accel_fn(s);
+        let k_a = accel_fn(s, time_frac);
         let k_qdot = compute_left_quat_deriv(&s.rot.quaternion, s.rot.ang_vel_body);
         let k_alpha = compute_rotational_acceleration(
             &mass_props.inertia,
@@ -140,7 +140,7 @@ pub fn rk4_sixdof_step(
     };
 
     // Stage 1: evaluate at current state
-    let (k1_v, k1_a, k1_qdot, k1_alpha) = eval_derivs(state);
+    let (k1_v, k1_a, k1_qdot, k1_alpha) = eval_derivs(state, 0.0);
 
     // Stage 2: evaluate at t + dt/2, using k1
     let half_dt = dt * 0.5;
@@ -150,7 +150,7 @@ pub fn rk4_sixdof_step(
         step_q(q0, k1_qdot, half_dt),
         omega0 + k1_alpha * half_dt,
     );
-    let (k2_v, k2_a, k2_qdot, k2_alpha) = eval_derivs(&s2);
+    let (k2_v, k2_a, k2_qdot, k2_alpha) = eval_derivs(&s2, 0.5);
 
     // Stage 3: evaluate at t + dt/2, using k2
     let s3 = make_state(
@@ -159,7 +159,7 @@ pub fn rk4_sixdof_step(
         step_q(q0, k2_qdot, half_dt),
         omega0 + k2_alpha * half_dt,
     );
-    let (k3_v, k3_a, k3_qdot, k3_alpha) = eval_derivs(&s3);
+    let (k3_v, k3_a, k3_qdot, k3_alpha) = eval_derivs(&s3, 0.5);
 
     // Stage 4: evaluate at t + dt, using k3
     let s4 = make_state(
@@ -168,7 +168,7 @@ pub fn rk4_sixdof_step(
         step_q(q0, k3_qdot, dt),
         omega0 + k3_alpha * dt,
     );
-    let (k4_v, k4_a, k4_qdot, k4_alpha) = eval_derivs(&s4);
+    let (k4_v, k4_a, k4_qdot, k4_alpha) = eval_derivs(&s4, 1.0);
 
     // Combine: weighted average (1/6)(k1 + 2*k2 + 2*k3 + k4) * dt
     let sixth_dt = dt / 6.0;
@@ -226,7 +226,7 @@ mod tests {
         };
 
         // Acceleration: a = -x (simple harmonic oscillator along x-axis)
-        let accel_fn = |s: &TranslationalState| -> DVec3 { -s.position };
+        let accel_fn = |s: &TranslationalState, _t: f64| -> DVec3 { -s.position };
 
         for _ in 0..steps {
             state = rk4_translational_step(&state, accel_fn, dt);
@@ -260,7 +260,7 @@ mod tests {
             velocity: DVec3::new(0.0, 0.0, 0.0),
         };
 
-        let accel_fn = |s: &TranslationalState| -> DVec3 { -s.position };
+        let accel_fn = |s: &TranslationalState, _t: f64| -> DVec3 { -s.position };
 
         // Analytical solution at t=1: x = cos(1), v = -sin(1)
         let exact_pos = total_time.cos();
@@ -312,7 +312,7 @@ mod tests {
             velocity: initial_vel,
         };
 
-        let zero_accel = |_: &TranslationalState| -> DVec3 { DVec3::ZERO };
+        let zero_accel = |_: &TranslationalState, _t: f64| -> DVec3 { DVec3::ZERO };
 
         let num_steps = 10;
         for _ in 0..num_steps {
@@ -390,7 +390,7 @@ mod tests {
         let dt = 0.001;
         let steps = (period / dt).round() as usize;
 
-        let zero_accel = |_: &SixDofState| -> DVec3 { DVec3::ZERO };
+        let zero_accel = |_: &SixDofState, _t: f64| -> DVec3 { DVec3::ZERO };
         let zero_torque = |_: &SixDofState| -> DVec3 { DVec3::ZERO };
 
         let mut state = initial;
@@ -447,7 +447,7 @@ mod tests {
         let dt = 1.0;
         let total_seconds = 86400;
 
-        let zero_accel = |_: &SixDofState| -> DVec3 { DVec3::ZERO };
+        let zero_accel = |_: &SixDofState, _t: f64| -> DVec3 { DVec3::ZERO };
         let zero_torque = |_: &SixDofState| -> DVec3 { DVec3::ZERO };
 
         let mut state = initial;
@@ -503,7 +503,7 @@ mod tests {
         for _ in 0..steps {
             state_3dof = rk4_translational_step(
                 &state_3dof,
-                |s| {
+                |s, _t| {
                     let r = s.position.length();
                     -mu / (r * r * r) * s.position
                 },
@@ -512,7 +512,7 @@ mod tests {
 
             state_6dof = rk4_sixdof_step(
                 &state_6dof,
-                |s| {
+                |s, _t| {
                     let r = s.trans.position.length();
                     -mu / (r * r * r) * s.trans.position
                 },

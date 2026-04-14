@@ -56,6 +56,20 @@ pub enum ValidationError {
     EarthLightingWithoutSunSource { body_idx: usize },
     /// Body has `earth_lighting_config` but simulation has no `moon_source`.
     EarthLightingWithoutMoonSource { body_idx: usize },
+    /// Frame switch `central_source` index exceeds number of gravity sources.
+    FrameSwitchCentralSourceOutOfRange {
+        body_idx: usize,
+        central_source: usize,
+        num_sources: usize,
+    },
+    /// Frame switch `central_source` is not in the body's gravity controls.
+    FrameSwitchCentralSourceNotInControls {
+        body_idx: usize,
+        central_source: usize,
+    },
+    /// Body uses a non-ECI integration frame (or has an active frame switch to
+    /// a non-Earth frame) but has ECI-dependent derived-state features enabled.
+    NonEciFrameWithEciDependentFeatures { body_idx: usize },
 }
 
 impl std::fmt::Display for ValidationError {
@@ -217,6 +231,39 @@ impl std::fmt::Display for ValidationError {
                      moon_source. Set Simulation::moon_source for earth lighting computation."
                 )
             }
+            Self::FrameSwitchCentralSourceOutOfRange {
+                body_idx,
+                central_source,
+                num_sources,
+            } => {
+                write!(
+                    f,
+                    "Body {body_idx}: frame switch central_source index {central_source} \
+                     is out of range (simulation has {num_sources} gravity sources)."
+                )
+            }
+            Self::FrameSwitchCentralSourceNotInControls {
+                body_idx,
+                central_source,
+            } => {
+                write!(
+                    f,
+                    "Body {body_idx}: frame switch central_source index {central_source} \
+                     is not present in the body's gravity_controls. The post-switch \
+                     differential/central gravity classification requires the source \
+                     to have a GravityControl entry."
+                )
+            }
+            Self::NonEciFrameWithEciDependentFeatures { body_idx } => {
+                write!(
+                    f,
+                    "Body {body_idx}: non-ECI integration frame with ECI-dependent \
+                     features enabled (drag, SRP, orbital elements, euler angles, LVLH, \
+                     geodetic, solar beta, or earth lighting). These derived states \
+                     assume Earth-centered inertial coordinates and will produce \
+                     incorrect results in other frames."
+                )
+            }
         }
     }
 }
@@ -230,7 +277,10 @@ impl ValidationError {
     /// might be intentional). Both the Bevy adapter and `Simulation::validate()`
     /// should use this to decide severity.
     pub fn is_warning(&self) -> bool {
-        matches!(self, Self::UninitializedState)
+        matches!(
+            self,
+            Self::UninitializedState | Self::NonEciFrameWithEciDependentFeatures { .. }
+        )
     }
 }
 

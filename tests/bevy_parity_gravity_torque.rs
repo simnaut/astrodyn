@@ -145,7 +145,7 @@ fn tier3_bevy_external_torque_per_body() {
             &mut trans_a,
             Some(&mut rot_a),
             Some(&mass_props),
-            |pos, _vel| {
+            |pos, _vel, _time_frac| {
                 jeod_sim::accumulate_gravity(pos, &controls, DVec3::ZERO, |_| {
                     Some(jeod_sim::ResolvedSource {
                         source: &earth_src,

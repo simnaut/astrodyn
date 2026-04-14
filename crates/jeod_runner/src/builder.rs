@@ -15,8 +15,8 @@ use jeod_sim::{
 };
 
 use crate::{
-    DerivedStateConfig, EarthLightingConfig, GeodeticConfig, GravitySourceEntry, ShadowBody,
-    Simulation, SrpModel, VehicleConfig,
+    DerivedStateConfig, EarthLightingConfig, FrameSwitchConfig, GeodeticConfig, GravitySourceEntry,
+    IntegrationFrame, ShadowBody, Simulation, SrpModel, VehicleConfig,
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -52,6 +52,8 @@ pub struct VehicleBuilder {
     derived: DerivedStateConfig,
     external_force: DVec3,
     external_torque: DVec3,
+    integ_frame: IntegrationFrame,
+    frame_switches: Vec<FrameSwitchConfig>,
 }
 
 impl VehicleConfig {
@@ -71,6 +73,8 @@ impl VehicleConfig {
             derived: DerivedStateConfig::default(),
             external_force: DVec3::ZERO,
             external_torque: DVec3::ZERO,
+            integ_frame: IntegrationFrame::default(),
+            frame_switches: Vec::new(),
         }
     }
 }
@@ -229,6 +233,20 @@ impl VehicleBuilder {
         self
     }
 
+    // ── Frame switching ──
+
+    /// Set the initial integration frame (default: [`IntegrationFrame::EarthInertial`]).
+    pub fn integ_frame(mut self, frame: IntegrationFrame) -> Self {
+        self.integ_frame = frame;
+        self
+    }
+
+    /// Set distance-based frame switch triggers.
+    pub fn frame_switches(mut self, switches: Vec<FrameSwitchConfig>) -> Self {
+        self.frame_switches = switches;
+        self
+    }
+
     // ── Build ──
 
     /// Build the [`VehicleConfig`].
@@ -250,6 +268,8 @@ impl VehicleBuilder {
             derived: self.derived,
             external_force: self.external_force,
             external_torque: self.external_torque,
+            integ_frame: self.integ_frame,
+            frame_switches: self.frame_switches,
         }
     }
 }

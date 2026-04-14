@@ -10,18 +10,43 @@ data is used **only** for comparison — never as input to our computation.
 | File | Size | Source |
 |------|------|--------|
 | `de421.bsp` | 16.8 MB | JPL Development Ephemeris 421 (SPICE binary) |
+| `de405.bsp` | 63 MB | JPL Development Ephemeris 405 (SPICE binary, byte-swapped) |
 
-**How obtained:**
+#### DE421 (production ephemeris)
 
 ```bash
 curl -Lo test_data/de421.bsp https://public-data.nyxspace.com/anise/de421.bsp
 ```
 
-This is the same DE421 kernel used by JEOD for planetary ephemerides.  It is a
-standard NASA/JPL product covering 1899–2053.
+Standard NASA/JPL product covering 1899-2053. Used as the production ephemeris
+for all non-cross-validation scenarios.
 
-**Used by:** `jeod_ephemeris/tests/ephemeris_validation.rs` (3 tests: Earth-Moon
-distance, Sun direction at equinox, Sun-Earth distance at J2000)
+**Used by:** `jeod_ephemeris/tests/ephemeris_validation.rs`, all Tier 3
+trajectory tests except Apollo 8 frame switch.
+
+#### DE405 (cross-validation only)
+
+**Do not use DE405 for anything other than JEOD cross-validation.** JEOD v5.4
+defaults to DE405 via compiled C++ Chebyshev coefficient arrays. To match JEOD's
+ephemeris exactly, the Apollo 8 frame switch test uses DE405. For all other
+purposes, use DE421 (more accurate, based on additional decades of observations).
+
+**How the file was made:** JPL distributes DE405 only in the pre-2003 big-endian
+DAF format, which ANISE cannot read (it requires the `LTL-IEEE` / `BIG-IEEE`
+endian flag added to DAF in 2003). The committed `de405.bsp` was converted from
+big-endian to little-endian with a Python script that:
+
+1. Downloaded the original from `ftp://ssd.jpl.nasa.gov/pub/eph/planets/bsp/de405.bsp`
+2. Swapped the file record integers and endian flag to little-endian
+3. Swapped each summary record (epoch doubles + body/frame integers)
+4. Swapped all data records (Chebyshev coefficient doubles)
+5. Preserved ASCII fields (internal name, comment area, segment names)
+
+The conversion preserves all numerical data at full f64 precision. The resulting
+file passes ANISE's DAF validation and produces ephemeris states consistent with
+JPL Horizons to sub-millimeter precision.
+
+**Used by:** `jeod_runner/tests/tier3_apollo8_frame_switch.rs` only.
 
 ---
 

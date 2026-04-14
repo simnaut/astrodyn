@@ -308,7 +308,7 @@ pub fn integration_system(
             &mut state.0,
             rot_state.as_mut().map(|r| &mut r.0),
             mass.map(|m| &m.0),
-            |pos, vel| {
+            |pos, vel, _time_frac| {
                 let mut accel =
                     jeod_sim::accumulate_gravity(pos, &controls.0, DVec3::ZERO, |source_entity| {
                         match sources.get(source_entity) {

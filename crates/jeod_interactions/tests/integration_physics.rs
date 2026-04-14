@@ -79,7 +79,7 @@ fn drag_causes_altitude_decay() {
         let tjt = tjt_start + (step as f64 * dt) / 86400.0;
         let new_state = rk4_translational_step(
             &state,
-            |s| {
+            |s, _t| {
                 let grav = calc_spherical(MU_EARTH, s.position).grav_accel;
 
                 // Rotate inertial → planet-fixed via GMST, then geodetic coords.
@@ -179,7 +179,7 @@ fn srp_changes_eccentricity() {
     for _ in 0..steps {
         let new_state = rk4_translational_step(
             &state,
-            |s| {
+            |s, _t| {
                 let grav = calc_spherical(MU_EARTH, s.position).grav_accel;
                 let sun_to_vehicle = s.position - sun_pos;
                 let dist = sun_to_vehicle.length();
@@ -272,7 +272,7 @@ fn gravity_torque_causes_libration() {
 
         let new_state = rk4_sixdof_step(
             &state,
-            |s| calc_spherical(MU_EARTH, s.trans.position).grav_accel,
+            |s, _t| calc_spherical(MU_EARTH, s.trans.position).grav_accel,
             |_s| grav_torque, // constant torque per step
             &mass_props,
             dt,
@@ -325,7 +325,7 @@ fn leo_eclipse_fraction() {
         }
         state = rk4_translational_step(
             &state,
-            |s| calc_spherical(MU_EARTH, s.position).grav_accel,
+            |s, _t| calc_spherical(MU_EARTH, s.position).grav_accel,
             dt,
         );
     }

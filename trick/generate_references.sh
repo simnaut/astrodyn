@@ -1647,6 +1647,104 @@ run_mercury_group() {
 throttled_bg run_mercury_group
 PID_MERCURY=$LAST_BG_PID
 
+# Group 29: SIM_Apollo (mass tree attach/detach)
+# This sim produces .out text files (mass tree printouts), not CSVs.
+run_apollo_group() {
+    local sim_dir="sims/SIM_Apollo"
+    local label="apollo"
+    local run_dir="SET_test/RUN_test"
+
+    # Check for existing output (use a representative file).
+    if has_output "$label" "apollo_Full_Stack.out"; then
+        echo "=== Skipping SIM_Apollo (output exists) ==="
+        return 0
+    fi
+
+    echo "--- Building SIM_Apollo ---"
+    cd "${JEOD_HOME}/${sim_dir}" || return 1
+
+    if ! ls S_main*.exe >/dev/null 2>&1; then
+        if ! trick-CP 2>&1 | tail -5; then
+            echo "ERROR: trick-CP failed for SIM_Apollo"
+            return 1
+        fi
+    fi
+
+    echo "--- Running SIM_Apollo ---"
+    local exe
+    exe=$(ls S_main*.exe 2>/dev/null | head -1)
+    if [ -z "$exe" ]; then
+        echo "ERROR: No S_main executable found for SIM_Apollo"
+        return 1
+    fi
+
+    if ! "./${exe}" "${run_dir}/input.py" 2>&1 | tail -3; then
+        echo "ERROR: SIM_Apollo execution failed"
+        return 1
+    fi
+
+    # Collect .out files (mass tree printouts) from the RUN directory.
+    echo "--- Collecting SIM_Apollo mass tree output ---"
+    while IFS= read -r -d '' out_file; do
+        local base
+        base=$(basename "$out_file")
+        local dest="${OUTPUT_DIR}/${label}_${base}"
+        cp "$out_file" "$dest"
+        echo "  -> ${dest}"
+    done < <(find "${run_dir}" -name "*.out" -print0 2>/dev/null)
+    echo ""
+}
+throttled_bg run_apollo_group
+PID_APOLLO=$LAST_BG_PID
+
+# Group 30: SIM_verif_frame_switch (Apollo 8 frame switching)
+# Inject ASCII logging for 6-DOF state (translational + rotational).
+APOLLO8_SNIPPET='
+dr = trick.DRAscii("sixdof_state")
+dr.thisown = 0
+dr.set_cycle(0.5)
+dr.freq = trick.sim_services.DR_Always
+for i in range(3):
+    dr.add_variable(f"veh.dyn_body.composite_body.state.trans.position[{i}]")
+    dr.add_variable(f"veh.dyn_body.composite_body.state.trans.velocity[{i}]")
+dr.add_variable("veh.dyn_body.composite_body.state.rot.Q_parent_this.scalar")
+for i in range(3):
+    dr.add_variable(f"veh.dyn_body.composite_body.state.rot.Q_parent_this.vector[{i}]")
+for i in range(3):
+    dr.add_variable(f"veh.dyn_body.composite_body.state.rot.ang_vel_this[{i}]")
+trick.add_data_record_group(dr)
+'
+
+run_frame_switch_group() {
+    local sim_dir="models/dynamics/body_action/verif/SIM_verif_frame_switch"
+    local -a RUNS=(
+        "SET_test/RUN_Apollo_08_ECI_integ:apollo8_eci:apollo8_eci_sixdof_state.csv"
+        "SET_test/RUN_Apollo_08_frame_switch:apollo8_frame_switch:apollo8_frame_switch_sixdof_state.csv"
+    )
+
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_verif_frame_switch group (all outputs exist) ==="
+        return 0
+    fi
+
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$APOLLO8_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+throttled_bg run_frame_switch_group
+PID_FRAME_SWITCH=$LAST_BG_PID
+
 # ════════════════════════════════════════════════════════════════════
 # WAIT FOR ALL GROUPS
 # ════════════════════════════════════════════════════════════════════
@@ -1684,6 +1782,8 @@ wait $PID_LIGHTING       || { echo "WARN: SIM_LIGHT_CIR group had failures"; FAI
 wait $PID_EARTH_MOON     || { echo "WARN: SIM_Earth_Moon group had failures"; FAIL=1; }
 wait $PID_MARS           || { echo "WARN: SIM_Mars group had failures"; FAIL=1; }
 wait $PID_MERCURY        || { echo "WARN: SIM_mercury group had failures"; FAIL=1; }
+wait $PID_APOLLO         || { echo "WARN: SIM_Apollo group had failures"; FAIL=1; }
+wait $PID_FRAME_SWITCH   || { echo "WARN: SIM_verif_frame_switch group had failures"; FAIL=1; }
 
 echo ""
 echo "=== Reference data generation complete ==="
