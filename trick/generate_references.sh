@@ -1701,8 +1701,8 @@ PID_APOLLO=$LAST_BG_PID
 run_frame_switch_group() {
     local sim_dir="models/dynamics/body_action/verif/SIM_verif_frame_switch"
     local -a RUNS=(
-        "SET_test/RUN_Apollo_08_ECI_integ:apollo8_eci:apollo8_eci_state.csv"
-        "SET_test/RUN_Apollo_08_frame_switch:apollo8_frame_switch:apollo8_frame_switch_state.csv"
+        "SET_test/RUN_Apollo_08_ECI_integ:apollo8_eci:apollo8_eci_V_1_State.csv"
+        "SET_test/RUN_Apollo_08_frame_switch:apollo8_frame_switch:apollo8_frame_switch_V_1_State.csv"
     )
 
     local needs_build=0

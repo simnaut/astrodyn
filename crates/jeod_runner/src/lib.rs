@@ -998,16 +998,26 @@ impl Simulation {
         }
 
         // Precompute frame origins to avoid borrow conflicts in later phases.
+        // Panic if any body needs Moon/Sun origins but ephemeris is absent.
+        let needs_non_earth = self.bodies.iter().any(|body| {
+            !matches!(body.integ_frame, IntegrationFrame::EarthInertial)
+                || body.frame_switches.iter().any(|sw| {
+                    sw.active && !matches!(sw.target_frame, IntegrationFrame::EarthInertial)
+                })
+        });
+
         let earth_origin = (DVec3::ZERO, DVec3::ZERO);
         let moon_origin = if self.ephemeris.is_some() {
             self.resolve_frame_origin(IntegrationFrame::MoonInertial)
+        } else if needs_non_earth {
+            panic!("Moon/Sun frame origins require ephemeris. Set sim.ephemeris = Some(...).")
         } else {
             (DVec3::ZERO, DVec3::ZERO)
         };
         let sun_origin = if self.ephemeris.is_some() {
             self.resolve_frame_origin(IntegrationFrame::SunInertial)
         } else {
-            (DVec3::ZERO, DVec3::ZERO)
+            (DVec3::ZERO, DVec3::ZERO) // Already panicked above if needed
         };
         let resolve = |frame: IntegrationFrame| -> (DVec3, DVec3) {
             match frame {
@@ -1372,6 +1382,10 @@ impl Simulation {
         }
 
         // ── 9. Derived states ──
+        // NOTE: Derived state computations (orbital elements, LVLH, geodetic, etc.)
+        // assume body.trans.position is in Earth-centered inertial coordinates.
+        // When integ_frame != EarthInertial, these results will be incorrect.
+        // A proper fix requires converting to ECI first (tracked in #67).
         let sources = &self.sources;
 
         for body in &mut self.bodies {

@@ -317,48 +317,55 @@ fn tier3_apollo_mass_tree() {
 
     // Phase 0: Full stack
     let ref_full = load_reference("apollo_Full_Stack.out");
-    if let Some(ref_cm) = ref_full.find("cm") {
-        assert_composite_match(&tree, cm, ref_cm, "Full_Stack");
-    }
+    let ref_cm = ref_full
+        .find("cm")
+        .expect("apollo_Full_Stack.out missing 'cm'");
+    assert_composite_match(&tree, cm, ref_cm, "Full_Stack");
 
     // Phase 1: First stage separation
     tree.detach(s1);
     let ref_1 = load_reference("apollo_1st_Stage_Sep.out");
-    if let Some(ref_cm) = ref_1.find("cm") {
-        assert_composite_match(&tree, cm, ref_cm, "1st_Stage_Sep");
-    }
+    let ref_cm = ref_1
+        .find("cm")
+        .expect("apollo_1st_Stage_Sep.out missing 'cm'");
+    assert_composite_match(&tree, cm, ref_cm, "1st_Stage_Sep");
 
     // Phase 2: Second stage separation
     tree.detach(s2);
     let ref_2 = load_reference("apollo_2nd_Stage_Sep.out");
-    if let Some(ref_cm) = ref_2.find("cm") {
-        assert_composite_match(&tree, cm, ref_cm, "2nd_Stage_Sep");
-    }
+    let ref_cm = ref_2
+        .find("cm")
+        .expect("apollo_2nd_Stage_Sep.out missing 'cm'");
+    assert_composite_match(&tree, cm, ref_cm, "2nd_Stage_Sep");
 
     // Phase 3: LES jettison
     tree.detach(les);
     let ref_3 = load_reference("apollo_LES_Jettison.out");
-    if let Some(ref_cm) = ref_3.find("cm") {
-        assert_composite_match(&tree, cm, ref_cm, "LES_Jettison");
-    }
+    let ref_cm = ref_3
+        .find("cm")
+        .expect("apollo_LES_Jettison.out missing 'cm'");
+    assert_composite_match(&tree, cm, ref_cm, "LES_Jettison");
 
     // Phase 4: Third stage separation
     tree.detach(s3);
     let ref_4 = load_reference("apollo_3rd_Stage_Sep.out");
-    if let Some(ref_cm) = ref_4.find("cm") {
-        assert_composite_match(&tree, cm, ref_cm, "3rd_Stage_Sep");
-    }
+    let ref_cm = ref_4
+        .find("cm")
+        .expect("apollo_3rd_Stage_Sep.out missing 'cm'");
+    assert_composite_match(&tree, cm, ref_cm, "3rd_Stage_Sep");
 
     // Phase 5: LM separation (LM detaches from CM's subtree)
     tree.detach(lm);
     let ref_5_lem = load_reference("apollo_LEM_Sep.out");
-    if let Some(ref_lm) = ref_5_lem.find("lm") {
-        assert_composite_match(&tree, lm, ref_lm, "LEM_Sep/lm");
-    }
+    let ref_lm = ref_5_lem
+        .find("lm")
+        .expect("apollo_LEM_Sep.out missing 'lm'");
+    assert_composite_match(&tree, lm, ref_lm, "LEM_Sep/lm");
     let ref_5_apollo = load_reference("apollo_Apollo.out");
-    if let Some(ref_cm) = ref_5_apollo.find("cm") {
-        assert_composite_match(&tree, cm, ref_cm, "Apollo/cm");
-    }
+    let ref_cm = ref_5_apollo
+        .find("cm")
+        .expect("apollo_Apollo.out missing 'cm'");
+    assert_composite_match(&tree, cm, ref_cm, "Apollo/cm");
 
     // Phase 6: LM docks to CM (trans-lunar configuration)
     // input.py: cm_dyn.dyn_body.attach_child("CM docking port", "LM docking port", lm_dyn.dyn_body)
@@ -366,52 +373,52 @@ fn tier3_apollo_mass_tree() {
     // child.attach_to(child_point, parent_point, parent)
     tree.attach_aligned(lm, "LM docking port", cm, "CM docking port");
     let ref_6 = load_reference("apollo_Trans_Lunar.out");
-    if let Some(ref_cm) = ref_6.find("cm") {
-        assert_composite_match(&tree, cm, ref_cm, "Trans_Lunar");
-    }
+    let ref_cm = ref_6
+        .find("cm")
+        .expect("apollo_Trans_Lunar.out missing 'cm'");
+    assert_composite_match(&tree, cm, ref_cm, "Trans_Lunar");
 
     // Phase 7: LM undocks for lunar descent
     tree.detach(lm);
     let ref_7_lm = load_reference("apollo_LM_Descent.out");
-    if let Some(ref_lm) = ref_7_lm.find("lm") {
-        assert_composite_match(&tree, lm, ref_lm, "LM_Descent/lm");
-    }
+    let ref_lm = ref_7_lm
+        .find("lm")
+        .expect("apollo_LM_Descent.out missing 'lm'");
+    assert_composite_match(&tree, lm, ref_lm, "LM_Descent/lm");
     let ref_7_cm = load_reference("apollo_Lunar_Orbit.out");
-    if let Some(ref_cm) = ref_7_cm.find("cm") {
-        assert_composite_match(&tree, cm, ref_cm, "Lunar_Orbit/cm");
-    }
+    let ref_cm = ref_7_cm
+        .find("cm")
+        .expect("apollo_Lunar_Orbit.out missing 'cm'");
+    assert_composite_match(&tree, cm, ref_cm, "Lunar_Orbit/cm");
 
     // Phase 8: Descent module separation
     tree.detach(dm);
     let ref_8 = load_reference("apollo_LM_Ascent.out");
-    if let Some(ref_lm) = ref_8.find("lm") {
-        assert_composite_match(&tree, lm, ref_lm, "LM_Ascent");
-    }
+    let ref_lm = ref_8.find("lm").expect("apollo_LM_Ascent.out missing 'lm'");
+    assert_composite_match(&tree, lm, ref_lm, "LM_Ascent");
 
     // Phase 9: LM re-docks to CM (lunar rendezvous)
     // input.py: lm_dyn.dyn_body.attach_to("LM docking port", "CM docking port", cm_dyn.dyn_body)
     tree.attach_aligned(lm, "LM docking port", cm, "CM docking port");
     let ref_9 = load_reference("apollo_Lunar_Rendezvous.out");
-    if let Some(ref_cm) = ref_9.find("cm") {
-        assert_composite_match(&tree, cm, ref_cm, "Lunar_Rendezvous");
-    }
+    let ref_cm = ref_9
+        .find("cm")
+        .expect("apollo_Lunar_Rendezvous.out missing 'cm'");
+    assert_composite_match(&tree, cm, ref_cm, "Lunar_Rendezvous");
 
     // Phase 10: LM final separation
     tree.detach(lm);
     let ref_10 = load_reference("apollo_Return.out");
-    if let Some(ref_cm) = ref_10.find("cm") {
-        assert_composite_match(&tree, cm, ref_cm, "Return");
-    }
+    let ref_cm = ref_10.find("cm").expect("apollo_Return.out missing 'cm'");
+    assert_composite_match(&tree, cm, ref_cm, "Return");
 
     // Phase 11: SM jettison (entry configuration)
     tree.detach(sm);
     let ref_11 = load_reference("apollo_Entry.out");
-    if let Some(ref_cm) = ref_11.find("cm") {
-        assert_composite_match(&tree, cm, ref_cm, "Entry");
-    }
+    let ref_cm = ref_11.find("cm").expect("apollo_Entry.out missing 'cm'");
+    assert_composite_match(&tree, cm, ref_cm, "Entry");
     // Final.out should match Entry.out for the CM (printed twice in input.py)
     let ref_final = load_reference("apollo_Final.out");
-    if let Some(ref_cm) = ref_final.find("cm") {
-        assert_composite_match(&tree, cm, ref_cm, "Final");
-    }
+    let ref_cm = ref_final.find("cm").expect("apollo_Final.out missing 'cm'");
+    assert_composite_match(&tree, cm, ref_cm, "Final");
 }
