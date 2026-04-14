@@ -199,131 +199,53 @@ fn tier3_apollo8_eci_integ() {
     );
 }
 
-/// Verify frame switch convergence: the ECI-vs-Moon-centered position offset
-/// must scale linearly with dt (confirming it's the intrinsic Moon_vel*dt term
-/// from frozen source positions, not a systematic physics bug).
+/// Cross-validate the frame-switch simulation against JEOD's reference data.
+/// JEOD logs position in the current integration frame: ECI before the switch,
+/// Moon-centered after.
 #[test]
 fn tier3_apollo8_frame_switch() {
-    // Run at two timesteps and verify the offset scales linearly with dt.
-    // The intrinsic offset is approximately |Moon_vel| * dt ≈ 1000 * dt meters.
-    let offset_coarse = run_frame_switch_offset(DT); // dt = 0.5s
-    let offset_fine = run_frame_switch_offset(DT / 10.0); // dt = 0.05s
-
-    // The ratio should be ~10 (linear scaling with dt).
-    let ratio = offset_coarse / offset_fine;
-    assert!(
-        (ratio - 10.0).abs() < 1.0,
-        "Frame switch offset should scale linearly with dt: \
-         coarse={offset_coarse:.1} m, fine={offset_fine:.1} m, ratio={ratio:.2} (expected ~10)"
-    );
-
-    // The coarse offset should be approximately Moon_vel * dt ≈ 1000 * 0.5 = 500 m.
-    assert!(
-        offset_coarse > 400.0 && offset_coarse < 600.0,
-        "Frame switch offset {offset_coarse:.1} m outside expected range [400, 600] for dt={DT}s"
-    );
-}
-
-/// Run the frame switch scenario and return the max ECI-vs-Moon-centered position offset.
-fn run_frame_switch_offset(dt: f64) -> f64 {
-    // Build two sims with the given dt.
-    let build = |switches| {
-        let data_dir = test_data_dir();
-        let bsp_path = data_dir.join("de421.bsp");
-        let utc_tjt = 2_440_214.318_055_555_5 - 2_440_000.5;
-        let leap_table = jeod_sim::default_leap_second_table();
-        let tai_tjt = leap_table.utc_to_tai_tjt(utc_tjt);
-        let time = SimulationTime::new(tai_tjt, leap_table);
-        let ephemeris =
-            jeod_sim::Ephemeris::from_bsp(&bsp_path).expect("Failed to load DE421 ephemeris");
-
-        let mut sim = Simulation::new(time, dt);
-        sim.ephemeris = Some(ephemeris);
-
-        let sun = sim.add_source(GravitySourceEntry::new(
-            GravitySource {
-                mu: MU_SUN,
-                model: GravityModel::PointMass,
-            },
-            DVec3::ZERO,
-            None,
-        ));
-        sim.set_source_ephemeris(
-            sun,
-            jeod_sim::EphemerisBody::Sun,
-            jeod_sim::EphemerisBody::Earth,
-        );
-
-        let earth = sim.add_source(GravitySourceEntry::new(
-            GravitySource {
-                mu: MU_EARTH,
-                model: GravityModel::PointMass,
-            },
-            DVec3::ZERO,
-            None,
-        ));
-
-        let moon = sim.add_source(GravitySourceEntry::new(
-            GravitySource {
-                mu: MU_MOON,
-                model: GravityModel::PointMass,
-            },
-            DVec3::ZERO,
-            None,
-        ));
-        sim.set_source_ephemeris(
-            moon,
-            jeod_sim::EphemerisBody::Moon,
-            jeod_sim::EphemerisBody::Earth,
-        );
-
-        let body = sim.add_body(VehicleConfig {
-            trans: jeod_sim::TranslationalState {
-                position: POS_ECI,
-                velocity: VEL_ECI,
-            },
-            mass: Some(jeod_sim::MassProperties::new(MASS)),
-            gravity_controls: GravityControls {
-                controls: vec![
-                    GravityControl::new_spherical(earth, false),
-                    GravityControl::new_third_body(sun),
-                    GravityControl::new_third_body(moon),
-                ],
-            },
-            integ_frame: IntegrationFrame::EarthInertial,
-            frame_switches: switches,
-            ..Default::default()
-        });
-        sim.validate().unwrap();
-        (sim, body)
-    };
-
-    let (mut sim_switch, body_switch) = build(vec![FrameSwitchConfig {
+    let (mut sim, body_idx) = build_apollo8_sim(vec![FrameSwitchConfig {
         target_frame: IntegrationFrame::MoonInertial,
         switch_sense: SwitchSense::OnApproach,
         switch_distance: SWITCH_DISTANCE,
         active: true,
         central_source: Some(2),
     }]);
-    let (mut sim_eci, body_eci) = build(vec![]);
 
-    let steps = (TOTAL_TIME / dt).round() as usize;
-    let mut max_diff = 0.0_f64;
+    let ref_positions = load_reference_positions("apollo8_frame_switch_V_1_State.csv");
 
-    for _ in 0..steps {
-        sim_switch.step();
-        sim_eci.step();
+    let steps = (TOTAL_TIME / DT).round() as usize;
+    let mut max_err_eci = 0.0_f64;
+    let mut max_err_moon = 0.0_f64;
 
-        let eci_pos = sim_eci.body(body_eci).trans.position;
-        let switch_output = sim_switch.body(body_switch);
-        let switch_pos_eci = match switch_output.integ_frame {
-            IntegrationFrame::EarthInertial => switch_output.trans.position,
-            frame => {
-                let (origin, _) = sim_switch.resolve_frame_origin(frame);
-                switch_output.trans.position + origin
-            }
-        };
-        max_diff = max_diff.max((eci_pos - switch_pos_eci).length());
+    for step in 0..steps {
+        sim.step();
+        let ref_idx = step + 1;
+        if ref_idx >= ref_positions.len() {
+            break;
+        }
+        let our_pos = sim.body(body_idx).trans.position;
+        let err = (our_pos - ref_positions[ref_idx]).length();
+        if sim.body(body_idx).integ_frame == IntegrationFrame::EarthInertial {
+            max_err_eci = max_err_eci.max(err);
+        } else {
+            max_err_moon = max_err_moon.max(err);
+        }
     }
-    max_diff
+
+    // ECI phase (before switch): should match within DE421 vs DE405 tolerance.
+    let tol_eci = 7.1e-5; // m (same as ECI-only test)
+    assert!(
+        max_err_eci < tol_eci,
+        "Frame switch ECI phase: {max_err_eci:.6} m exceeds {tol_eci:.1e} m"
+    );
+
+    // Moon-centered phase (60s): 5.35 m from frozen source positions during
+    // RK4 sub-stages. JEOD updates its reference frame tree at each derivative
+    // evaluation; we freeze source positions per step.
+    let tol_moon = 5.7; // m (5.35 * 1.05)
+    assert!(
+        max_err_moon < tol_moon,
+        "Frame switch Moon phase: {max_err_moon:.6} m exceeds {tol_moon} m"
+    );
 }
