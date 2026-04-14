@@ -235,7 +235,7 @@ impl VehicleBuilder {
 
     // ── Frame switching ──
 
-    /// Set the initial integration source (default: root frame / Earth).
+    /// Set the initial integration source (default: simulation root / central body).
     /// `source_idx` is the index returned by `SimulationBuilder::add_source()`.
     pub fn integ_source(mut self, source_idx: usize) -> Self {
         self.integ_source = Some(source_idx);

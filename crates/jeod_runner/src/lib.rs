@@ -617,7 +617,9 @@ pub struct Simulation {
     bodies: Vec<SimBody>,
     /// Reference frame tree — single source of truth for celestial body positions,
     /// velocities, and rotations. Updated each step from ephemeris data.
-    pub frame_tree: FrameTree,
+    /// Private to protect invariants; use [`frame_tree()`](Self::frame_tree) for
+    /// read-only access.
+    frame_tree: FrameTree,
     /// Root inertial frame ID for this simulation. This is the integration-origin
     /// frame to which all positions are relative, and it is not necessarily
     /// `Earth.inertial` (for example, it may be renamed to match the configured
@@ -703,7 +705,14 @@ impl Simulation {
                 "add_source: a central source already maps to root_frame_id. \
                  Only one central source is allowed per simulation."
             );
+            assert!(
+                entry.position == DVec3::ZERO,
+                "add_source: central sources must have zero position because they map \
+                 directly to root_frame_id."
+            );
             // Central body: use the root frame directly. Rename to match.
+            // `entry.velocity` is stored in `gravity_data` for relativistic
+            // corrections, but is not applied as root-frame kinematics.
             self.frame_tree.get_mut(self.root_frame_id).name = inertial_name;
             self.root_frame_id
         } else {
@@ -822,6 +831,11 @@ impl Simulation {
         self.bodies
             .push(SimBody::from_config(config, integ_frame_id, body_frame_id));
         idx
+    }
+
+    /// Read-only access to the reference frame tree.
+    pub fn frame_tree(&self) -> &FrameTree {
+        &self.frame_tree
     }
 
     /// Number of gravity sources.
@@ -1250,18 +1264,23 @@ impl Simulation {
                                  ({target:?} wrt {observer:?}) at TDB JD {tdb_jd}: {e}"
                                 )
                             });
-                    // Update frame tree node with ephemeris position/velocity.
-                    // Skip the root frame — its state must remain identity
-                    // (JEOD invariant: root frame is the inertial reference).
+                    // Root-mapped sources cannot consume ephemeris position updates:
+                    // the root frame must remain identity, so accepting such a
+                    // mapping would silently ignore `pos` and yield an incorrect
+                    // source position.
                     let fid = self.source_frame_ids[i].inertial;
-                    if fid != self.root_frame_id {
-                        let node = self.frame_tree.get_mut(fid);
-                        node.state.trans.position = pos;
-                        node.state.trans.velocity = vel;
-                    }
-                    // Always update gravity_data velocity for relativistic corrections
-                    // (central bodies at root have zero tree velocity but may need
-                    // physical velocity for PPN).
+                    assert!(
+                        fid != self.root_frame_id,
+                        "Invalid ephemeris mapping for source {i} \
+                         ({target:?} wrt {observer:?}): source inertial frame is the root frame, \
+                         whose state must remain identity. Root-mapped sources cannot use \
+                         ephemeris position updates."
+                    );
+                    // Update frame tree node with ephemeris position/velocity.
+                    let node = self.frame_tree.get_mut(fid);
+                    node.state.trans.position = pos;
+                    node.state.trans.velocity = vel;
+                    // Also update gravity_data velocity for relativistic corrections.
                     self.gravity_data[i].velocity = vel;
                 }
             }
