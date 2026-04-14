@@ -67,8 +67,8 @@ fn build_apollo8_sim(frame_switches: Vec<FrameSwitchConfig>) -> (Simulation, usi
 
     // Dec 23, 1968, 19:38:00 UTC.
     // JD = 2440213.5 (Dec 23 0h UT) + 19h38m/24h = 2440214.31806
-    // UTC TJT = JD - 2440000.0, then convert to TAI TJT via leap table.
-    let utc_tjt = 2_440_214.318_055_555_5 - 2_440_000.0; // 214.318...
+    // TJT = JD - 2440000.5 (JEOD truncated Julian convention).
+    let utc_tjt = 2_440_214.318_055_555_5 - 2_440_000.5; // 213.818...
     let leap_table = jeod_sim::default_leap_second_table();
     let tai_tjt = leap_table.utc_to_tai_tjt(utc_tjt);
     let time = SimulationTime::new(tai_tjt, leap_table);
@@ -191,9 +191,8 @@ fn tier3_apollo8_eci_integ() {
         }
     }
 
-    // 32.4 m over 100s at ~300 million km from Earth (~1e-10 relative).
-    // Difference is from DE421 ephemeris interpolation (ANISE vs Trick SPICE).
-    let tol = 8.2; // m (7.79 * 1.05)
+    // 67 µm over 100s. Residual from DE421 vs DE405 ephemeris differences.
+    let tol = 7.1e-5; // m (6.7e-5 * 1.05)
     assert!(
         max_pos_err < tol,
         "Apollo 8 ECI: max position error {max_pos_err:.6} m exceeds tolerance {tol} m"
@@ -231,7 +230,7 @@ fn run_frame_switch_offset(dt: f64) -> f64 {
     let build = |switches| {
         let data_dir = test_data_dir();
         let bsp_path = data_dir.join("de421.bsp");
-        let utc_tjt = 2_440_214.318_055_555_5 - 2_440_000.0;
+        let utc_tjt = 2_440_214.318_055_555_5 - 2_440_000.5;
         let leap_table = jeod_sim::default_leap_second_table();
         let tai_tjt = leap_table.utc_to_tai_tjt(utc_tjt);
         let time = SimulationTime::new(tai_tjt, leap_table);
