@@ -603,17 +603,16 @@ fn tier3_bevy_mercury_relativistic() {
 
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let sun_idx = sim.add_source(
-        "Sun",
-        GravitySourceEntry::new(
-            GravitySource {
-                mu: mu_sun,
-                model: GravityModel::PointMass,
-            },
-            DVec3::ZERO,
-            None,
-        ),
+    let mut sun_entry = GravitySourceEntry::new(
+        GravitySource {
+            mu: mu_sun,
+            model: GravityModel::PointMass,
+        },
+        DVec3::ZERO,
+        None,
     );
+    sun_entry.central = true;
+    let sun_idx = sim.add_source("Sun", sun_entry);
 
     let mut sim_sun_ctrl = GravityControl::new_spherical(sun_idx, false);
     sim_sun_ctrl.relativistic = true;

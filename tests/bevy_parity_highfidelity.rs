@@ -251,10 +251,9 @@ fn tier3_bevy_run2p_polar_motion() {
 
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(
-        "Earth",
-        GravitySourceEntry::new(earth_source(), DVec3::ZERO, None),
-    );
+    let mut earth_entry = GravitySourceEntry::new(earth_source(), DVec3::ZERO, None);
+    earth_entry.central = true;
+    let earth_idx = sim.add_source("Earth", earth_entry);
     sim.polar_motion = Some((xp, yp));
 
     sim.add_body(VehicleConfig {
@@ -320,17 +319,16 @@ fn run_gj_parity(label: &str, config: GaussJacksonConfig, dt: f64, n_steps: usiz
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, dt);
-    let earth_idx = sim.add_source(
-        "Earth",
-        GravitySourceEntry::new(
-            GravitySource {
-                mu: MU_EARTH,
-                model: GravityModel::PointMass,
-            },
-            DVec3::ZERO,
-            None,
-        ),
+    let mut earth_entry = GravitySourceEntry::new(
+        GravitySource {
+            mu: MU_EARTH,
+            model: GravityModel::PointMass,
+        },
+        DVec3::ZERO,
+        None,
     );
+    earth_entry.central = true;
+    let earth_idx = sim.add_source("Earth", earth_entry);
 
     sim.add_body(VehicleConfig {
         trans: gj_trans,

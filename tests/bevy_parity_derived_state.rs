@@ -95,10 +95,9 @@ fn tier3_bevy_derived_states() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(
-        "Earth",
-        GravitySourceEntry::new(earth_source(), DVec3::ZERO, None),
-    );
+    let mut earth_entry = GravitySourceEntry::new(earth_source(), DVec3::ZERO, None);
+    earth_entry.central = true;
+    let earth_idx = sim.add_source("Earth", earth_entry);
     let sun_idx = sim.add_source(
         "Sun",
         GravitySourceEntry::new(
@@ -353,10 +352,9 @@ fn tier3_bevy_eccentric_derived_states() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(
-        "Earth",
-        GravitySourceEntry::new(earth_source(), DVec3::ZERO, None),
-    );
+    let mut earth_entry = GravitySourceEntry::new(earth_source(), DVec3::ZERO, None);
+    earth_entry.central = true;
+    let earth_idx = sim.add_source("Earth", earth_entry);
     let sun_idx = sim.add_source(
         "Sun",
         GravitySourceEntry::new(
@@ -600,10 +598,9 @@ fn tier3_bevy_equatorial_solar_beta() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(
-        "Earth",
-        GravitySourceEntry::new(earth_source(), DVec3::ZERO, None),
-    );
+    let mut earth_entry = GravitySourceEntry::new(earth_source(), DVec3::ZERO, None);
+    earth_entry.central = true;
+    let earth_idx = sim.add_source("Earth", earth_entry);
     let sun_idx = sim.add_source(
         "Sun",
         GravitySourceEntry::new(

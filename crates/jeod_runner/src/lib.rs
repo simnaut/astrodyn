@@ -1033,7 +1033,10 @@ impl Simulation {
                 let non_eci_integ = body.integ_frame_id != self.root_frame_id;
                 let non_eci_switch = body.frame_switches.iter().any(|sw| {
                     sw.active
-                        && self.source_frame_ids[sw.target_source].inertial != self.root_frame_id
+                        && self
+                            .source_frame_ids
+                            .get(sw.target_source)
+                            .is_some_and(|frame| frame.inertial != self.root_frame_id)
                 });
                 if non_eci_integ || non_eci_switch {
                     let has_eci_feature = body.drag.is_some()

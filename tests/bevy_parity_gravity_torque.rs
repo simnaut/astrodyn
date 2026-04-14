@@ -62,10 +62,9 @@ fn tier3_bevy_gravity_torque_sixdof() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(
-        "Earth",
-        GravitySourceEntry::new(earth_source(), DVec3::ZERO, None),
-    );
+    let mut earth_entry = GravitySourceEntry::new(earth_source(), DVec3::ZERO, None);
+    earth_entry.central = true;
+    let earth_idx = sim.add_source("Earth", earth_entry);
 
     let mut body = new_sim_body_sixdof(earth_idx, true);
     body.compute_gravity_gradient = true;
@@ -172,10 +171,9 @@ fn tier3_bevy_external_torque_per_body() {
     // Path B: Simulation::step() pipeline with set_body_external_torque
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, step_dt);
-    let earth_idx = sim.add_source(
-        "Earth",
-        GravitySourceEntry::new(earth_src, DVec3::ZERO, None),
-    );
+    let mut earth_entry = GravitySourceEntry::new(earth_src, DVec3::ZERO, None);
+    earth_entry.central = true;
+    let earth_idx = sim.add_source("Earth", earth_entry);
     sim.add_body(VehicleConfig {
         trans: iss_trans(),
         rot: Some(tumble_rot()),

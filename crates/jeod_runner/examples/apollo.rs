@@ -75,17 +75,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut sim = Simulation::new(time, DT);
 
     // Earth at origin
-    let earth = sim.add_source(
-        "Earth",
-        GravitySourceEntry::new(
-            GravitySource {
-                mu: MU_EARTH,
-                model: GravityModel::PointMass,
-            },
-            DVec3::ZERO,
-            None,
-        ),
+    let mut earth_entry = GravitySourceEntry::new(
+        GravitySource {
+            mu: MU_EARTH,
+            model: GravityModel::PointMass,
+        },
+        DVec3::ZERO,
+        None,
     );
+    earth_entry.central = true;
+    let earth = sim.add_source("Earth", earth_entry);
 
     // Moon with per-step ephemeris updates
     let moon = sim.add_source(

@@ -74,7 +74,7 @@ fn main() {
             // Set to Some so Simulation updates this with GMST each step.
             t_inertial_pfix: Some(DMat3::IDENTITY),
             delta_c20: 0.0,
-            rotation_model: RotationModel::default(),
+            rotation_model: RotationModel::EarthRNP,
             tidal_config: None,
             central: true,
         },
