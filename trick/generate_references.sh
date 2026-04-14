@@ -1698,11 +1698,28 @@ throttled_bg run_apollo_group
 PID_APOLLO=$LAST_BG_PID
 
 # Group 30: SIM_verif_frame_switch (Apollo 8 frame switching)
+# Inject ASCII logging for 6-DOF state (translational + rotational).
+APOLLO8_SNIPPET='
+dr = trick.DRAscii("sixdof_state")
+dr.thisown = 0
+dr.set_cycle(0.5)
+dr.freq = trick.sim_services.DR_Always
+for i in range(3):
+    dr.add_variable(f"veh.dyn_body.composite_body.state.trans.position[{i}]")
+    dr.add_variable(f"veh.dyn_body.composite_body.state.trans.velocity[{i}]")
+dr.add_variable("veh.dyn_body.composite_body.state.rot.Q_parent_this.scalar")
+for i in range(3):
+    dr.add_variable(f"veh.dyn_body.composite_body.state.rot.Q_parent_this.vector[{i}]")
+for i in range(3):
+    dr.add_variable(f"veh.dyn_body.composite_body.state.rot.ang_vel_this[{i}]")
+trick.add_data_record_group(dr)
+'
+
 run_frame_switch_group() {
     local sim_dir="models/dynamics/body_action/verif/SIM_verif_frame_switch"
     local -a RUNS=(
-        "SET_test/RUN_Apollo_08_ECI_integ:apollo8_eci:apollo8_eci_V_1_State.csv"
-        "SET_test/RUN_Apollo_08_frame_switch:apollo8_frame_switch:apollo8_frame_switch_V_1_State.csv"
+        "SET_test/RUN_Apollo_08_ECI_integ:apollo8_eci:apollo8_eci_sixdof_state.csv"
+        "SET_test/RUN_Apollo_08_frame_switch:apollo8_frame_switch:apollo8_frame_switch_sixdof_state.csv"
     )
 
     local needs_build=0
@@ -1721,7 +1738,7 @@ run_frame_switch_group() {
     local fail=0
     for entry in "${RUNS[@]}"; do
         IFS=: read -r run_dir label required <<< "$entry"
-        run_sim "$sim_dir" "$run_dir" "$label" "$required" || fail=1
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$APOLLO8_SNIPPET" "$required" || fail=1
     done
     return $fail
 }
