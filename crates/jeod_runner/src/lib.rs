@@ -1276,33 +1276,32 @@ impl Simulation {
                 })
                 .collect();
 
-            // RK4 stage counter for interpolating non-inertial frame origins.
-            // RK4 evaluates gravity at t, t+dt/2, t+dt/2, t+dt.
-            let rk4_stage = std::cell::Cell::new(0_usize);
             integrate_body(
                 &body.config,
                 &mut body.trans,
                 body.rot.as_mut(),
                 body.mass.as_ref(),
-                |pos, vel| {
+                |pos, vel, time_frac| {
                     // For non-ECI frames, linearly interpolate the frame origin
-                    // at the current RK4 sub-stage time. This matches JEOD's
+                    // at the current integrator sub-stage time. This matches JEOD's
                     // behavior of updating its reference frame tree at each
                     // derivative evaluation.
-                    let stage = rk4_stage.get();
-                    rk4_stage.set(stage + 1);
-                    let stage_frac = match stage {
-                        0 => 0.0,
-                        1 | 2 => 0.5,
-                        _ => 1.0,
+                    let origin = integ_origin + integ_vel * (time_frac * dt);
+                    // Interpolate source positions at the sub-stage time,
+                    // matching JEOD's continuous frame tree updates.
+                    // Only for non-ECI frames; ECI with deriv_ephem_update=false
+                    // freezes source positions per step (matching JEOD).
+                    let sub_dt = if integ_vel != DVec3::ZERO {
+                        time_frac * dt
+                    } else {
+                        0.0
                     };
-                    let origin = integ_origin + integ_vel * (stage_frac * dt);
                     let mut accel =
                         accumulate_gravity(pos + origin, controls, origin, |source_id| {
                             sources.get(source_id).map(|s| jeod_sim::ResolvedSource {
                                 source: &s.source,
                                 rotation: s.t_inertial_pfix.as_ref(),
-                                position: s.position,
+                                position: s.position + s.velocity * sub_dt,
                                 delta_c20: s.delta_c20,
                                 has_delta_coeffs: s.tidal_config.is_some(),
                             })

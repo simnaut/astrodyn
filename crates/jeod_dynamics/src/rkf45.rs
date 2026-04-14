@@ -56,7 +56,7 @@ const B56: f64 = 2.0 / 55.0;
 /// The `accel_fn` is called 6 times at intermediate states.
 pub fn rkf45_translational_step(
     state: &TranslationalState,
-    accel_fn: impl Fn(&TranslationalState) -> DVec3,
+    accel_fn: impl Fn(&TranslationalState, f64) -> DVec3,
     dt: f64,
 ) -> TranslationalState {
     let pos0 = state.position;
@@ -64,7 +64,7 @@ pub fn rkf45_translational_step(
 
     // Stage 1: evaluate at t
     let k1_v = vel0;
-    let k1_a = accel_fn(state);
+    let k1_a = accel_fn(state, 0.0);
 
     // Stage 2: evaluate at t + c2*dt
     let s2 = TranslationalState {
@@ -72,7 +72,7 @@ pub fn rkf45_translational_step(
         velocity: vel0 + k1_a * (A21 * dt),
     };
     let k2_v = s2.velocity;
-    let k2_a = accel_fn(&s2);
+    let k2_a = accel_fn(&s2, 0.25);
 
     // Stage 3: evaluate at t + c3*dt
     let s3 = TranslationalState {
@@ -80,7 +80,7 @@ pub fn rkf45_translational_step(
         velocity: vel0 + (k1_a * A31 + k2_a * A32) * dt,
     };
     let k3_v = s3.velocity;
-    let k3_a = accel_fn(&s3);
+    let k3_a = accel_fn(&s3, 3.0 / 8.0);
 
     // Stage 4: evaluate at t + c4*dt
     let s4 = TranslationalState {
@@ -88,7 +88,7 @@ pub fn rkf45_translational_step(
         velocity: vel0 + (k1_a * A41 + k2_a * A42 + k3_a * A43) * dt,
     };
     let k4_v = s4.velocity;
-    let k4_a = accel_fn(&s4);
+    let k4_a = accel_fn(&s4, 12.0 / 13.0);
 
     // Stage 5: evaluate at t + dt
     let s5 = TranslationalState {
@@ -96,7 +96,7 @@ pub fn rkf45_translational_step(
         velocity: vel0 + (k1_a * A51 + k2_a * A52 + k3_a * A53 + k4_a * A54) * dt,
     };
     let k5_v = s5.velocity;
-    let k5_a = accel_fn(&s5);
+    let k5_a = accel_fn(&s5, 1.0);
 
     // Stage 6: evaluate at t + c6*dt
     let s6 = TranslationalState {
@@ -104,7 +104,7 @@ pub fn rkf45_translational_step(
         velocity: vel0 + (k1_a * A61 + k2_a * A62 + k3_a * A63 + k4_a * A64 + k5_a * A65) * dt,
     };
     let k6_v = s6.velocity;
-    let k6_a = accel_fn(&s6);
+    let k6_a = accel_fn(&s6, 0.5);
 
     // 5th-order combination (b5 weights)
     TranslationalState {
@@ -119,7 +119,7 @@ pub fn rkf45_translational_step(
 /// quaternion[4], angular velocity[3]. Uses 6 derivative evaluations.
 pub fn rkf45_sixdof_step(
     state: &SixDofState,
-    accel_fn: impl Fn(&SixDofState) -> DVec3,
+    accel_fn: impl Fn(&SixDofState, f64) -> DVec3,
     torque_fn: impl Fn(&SixDofState) -> DVec3,
     mass_props: &MassProperties,
     dt: f64,
@@ -142,9 +142,9 @@ pub fn rkf45_sixdof_step(
         }
     };
 
-    let eval_derivs = |s: &SixDofState| -> (DVec3, DVec3, [f64; 4], DVec3) {
+    let eval_derivs = |s: &SixDofState, time_frac: f64| -> (DVec3, DVec3, [f64; 4], DVec3) {
         let k_v = s.trans.velocity;
-        let k_a = accel_fn(s);
+        let k_a = accel_fn(s, time_frac);
         let k_qdot = compute_left_quat_deriv(&s.rot.quaternion, s.rot.ang_vel_body);
         let k_alpha = compute_rotational_acceleration(
             &mass_props.inertia,
@@ -166,7 +166,7 @@ pub fn rkf45_sixdof_step(
     };
 
     // Stage 1
-    let (k1_v, k1_a, k1_qd, k1_al) = eval_derivs(state);
+    let (k1_v, k1_a, k1_qd, k1_al) = eval_derivs(state, 0.0);
     let h1 = A21 * dt;
 
     // Stage 2
@@ -176,7 +176,7 @@ pub fn rkf45_sixdof_step(
         step_q(q0, &[(k1_qd, h1)]),
         omega0 + k1_al * h1,
     );
-    let (k2_v, k2_a, k2_qd, k2_al) = eval_derivs(&s2);
+    let (k2_v, k2_a, k2_qd, k2_al) = eval_derivs(&s2, 0.25);
 
     // Stage 3
     let s3 = make_state(
@@ -185,7 +185,7 @@ pub fn rkf45_sixdof_step(
         step_q(q0, &[(k1_qd, A31 * dt), (k2_qd, A32 * dt)]),
         omega0 + (k1_al * A31 + k2_al * A32) * dt,
     );
-    let (k3_v, k3_a, k3_qd, k3_al) = eval_derivs(&s3);
+    let (k3_v, k3_a, k3_qd, k3_al) = eval_derivs(&s3, 3.0 / 8.0);
 
     // Stage 4
     let s4 = make_state(
@@ -197,7 +197,7 @@ pub fn rkf45_sixdof_step(
         ),
         omega0 + (k1_al * A41 + k2_al * A42 + k3_al * A43) * dt,
     );
-    let (k4_v, k4_a, k4_qd, k4_al) = eval_derivs(&s4);
+    let (k4_v, k4_a, k4_qd, k4_al) = eval_derivs(&s4, 12.0 / 13.0);
 
     // Stage 5
     let s5 = make_state(
@@ -214,7 +214,7 @@ pub fn rkf45_sixdof_step(
         ),
         omega0 + (k1_al * A51 + k2_al * A52 + k3_al * A53 + k4_al * A54) * dt,
     );
-    let (k5_v, k5_a, k5_qd, k5_al) = eval_derivs(&s5);
+    let (k5_v, k5_a, k5_qd, k5_al) = eval_derivs(&s5, 1.0);
 
     // Stage 6
     let s6 = make_state(
@@ -232,7 +232,7 @@ pub fn rkf45_sixdof_step(
         ),
         omega0 + (k1_al * A61 + k2_al * A62 + k3_al * A63 + k4_al * A64 + k5_al * A65) * dt,
     );
-    let (k6_v, k6_a, k6_qd, k6_al) = eval_derivs(&s6);
+    let (k6_v, k6_a, k6_qd, k6_al) = eval_derivs(&s6, 0.5);
 
     // 5th-order combination (b5 weights, b52=0)
     let final_pos = pos0 + (k1_v * B51 + k3_v * B53 + k4_v * B54 + k5_v * B55 + k6_v * B56) * dt;
@@ -285,7 +285,7 @@ mod tests {
             velocity: DVec3::ZERO,
         };
 
-        let accel_fn = |s: &TranslationalState| -> DVec3 { -s.position };
+        let accel_fn = |s: &TranslationalState, _t: f64| -> DVec3 { -s.position };
 
         let mut state_rk4 = initial;
         let mut state_rkf45 = initial;
@@ -318,7 +318,7 @@ mod tests {
             velocity: DVec3::ZERO,
         };
 
-        let accel_fn = |s: &TranslationalState| -> DVec3 { -s.position };
+        let accel_fn = |s: &TranslationalState, _t: f64| -> DVec3 { -s.position };
         let exact_pos = total_time.cos();
 
         let steps_coarse = (total_time / dt_coarse).round() as usize;
@@ -355,7 +355,7 @@ mod tests {
             velocity: initial_vel,
         };
 
-        let zero_accel = |_: &TranslationalState| DVec3::ZERO;
+        let zero_accel = |_: &TranslationalState, _t: f64| DVec3::ZERO;
 
         for _ in 0..10 {
             state = rkf45_translational_step(&state, zero_accel, dt);

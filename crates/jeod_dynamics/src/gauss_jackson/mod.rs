@@ -891,7 +891,7 @@ mod tests {
             position: DVec3::new(1.0, 0.0, 0.0),
             velocity: DVec3::ZERO,
         };
-        let accel_fn = |s: &TranslationalState| -> DVec3 { -s.position };
+        let accel_fn = |s: &TranslationalState, _t: f64| -> DVec3 { -s.position };
 
         // RK4 reference
         let mut state_rk4 = initial;

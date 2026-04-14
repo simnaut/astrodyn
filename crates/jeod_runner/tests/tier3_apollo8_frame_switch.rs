@@ -240,9 +240,9 @@ fn tier3_apollo8_frame_switch() {
         "Frame switch ECI phase: {max_err_eci:.6} m exceeds {tol_eci:.1e} m"
     );
 
-    // Moon-centered phase (60s): 0.31 m from frozen source positions during
-    // RK4 sub-stages. JEOD updates its reference frame tree at each derivative
-    // evaluation; we freeze source positions per step.
+    // Moon-centered phase: 0.31 m constant offset from ANISE vs JEOD's compiled
+    // DE405 Chebyshev evaluator producing slightly different Moon positions.
+    // The offset is introduced at the frame switch transformation and does not grow.
     let tol_moon = 0.33; // m (0.31 * 1.05)
     assert!(
         max_err_moon < tol_moon,
