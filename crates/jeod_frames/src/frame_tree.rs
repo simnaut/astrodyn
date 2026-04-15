@@ -215,6 +215,11 @@ impl FrameTree {
             id
         );
 
+        // No-op if already parented to `new_parent`.
+        if self.parent[id] == Some(new_parent) {
+            return;
+        }
+
         assert!(
             !self.is_descendant_of(new_parent, id),
             "reparent: new_parent {} is a descendant of {} — would create a cycle",

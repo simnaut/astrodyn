@@ -1252,6 +1252,29 @@ impl Simulation {
         (state.trans.position, state.trans.velocity)
     }
 
+    /// Sync a planet-fixed frame node's rotation state from a computed matrix.
+    ///
+    /// Sets `t_parent_this`, derives `q_parent_this` from it, and sets
+    /// `ang_vel_this = [0, 0, planet_omega]` for models with a constant spin
+    /// rate (matching JEOD's `planet_rnp.cc`). Moon models have
+    /// time-varying angular velocity due to libration; `ang_vel_this` is left
+    /// at zero for those (a known limitation).
+    fn sync_pfix_rotation(
+        frame_tree: &mut jeod_frames::FrameTree,
+        pfix_id: jeod_frames::FrameId,
+        rotation: DMat3,
+        model: RotationModel,
+    ) {
+        let node = frame_tree.get_mut(pfix_id);
+        node.state.rot.t_parent_this = rotation;
+        node.state.rot.q_parent_this = JeodQuat::left_quat_from_transformation(&rotation);
+        // JEOD sets ang_vel_this = [0, 0, planet_omega] in planet_rnp.cc.
+        // This is used by compute_relative_state velocity composition.
+        if let Some(omega) = model.planet_omega() {
+            node.state.rot.ang_vel_this = DVec3::new(0.0, 0.0, omega);
+        }
+    }
+
     /// Internal step with explicit dt (avoids temporary mutation of `self.dt`
     /// in `step_until`).
     fn step_internal(&mut self, dt: f64) {
@@ -1276,10 +1299,12 @@ impl Simulation {
                     });
                     // Sync to frame tree pfix node.
                     if let Some(pfix_id) = self.source_frame_ids[i].pfix {
-                        let node = self.frame_tree.get_mut(pfix_id);
-                        node.state.rot.t_parent_this = rotation;
-                        node.state.rot.q_parent_this =
-                            JeodQuat::left_quat_from_transformation(&rotation);
+                        Self::sync_pfix_rotation(
+                            &mut self.frame_tree,
+                            pfix_id,
+                            rotation,
+                            grav.rotation_model,
+                        );
                     }
                 }
                 RotationModel::MarsIAU => {
@@ -1289,10 +1314,12 @@ impl Simulation {
                     let rotation =
                         jeod_frames::rotation_mars::compute_mars_rotation(tt_s_since_j2000);
                     if let Some(pfix_id) = self.source_frame_ids[i].pfix {
-                        let node = self.frame_tree.get_mut(pfix_id);
-                        node.state.rot.t_parent_this = rotation;
-                        node.state.rot.q_parent_this =
-                            JeodQuat::left_quat_from_transformation(&rotation);
+                        Self::sync_pfix_rotation(
+                            &mut self.frame_tree,
+                            pfix_id,
+                            rotation,
+                            grav.rotation_model,
+                        );
                     }
                 }
                 RotationModel::MoonIAU => {
@@ -1302,10 +1329,12 @@ impl Simulation {
                     let rotation =
                         jeod_frames::rotation_moon::compute_moon_rotation(tdb_s_since_j2000);
                     if let Some(pfix_id) = self.source_frame_ids[i].pfix {
-                        let node = self.frame_tree.get_mut(pfix_id);
-                        node.state.rot.t_parent_this = rotation;
-                        node.state.rot.q_parent_this =
-                            JeodQuat::left_quat_from_transformation(&rotation);
+                        Self::sync_pfix_rotation(
+                            &mut self.frame_tree,
+                            pfix_id,
+                            rotation,
+                            grav.rotation_model,
+                        );
                     }
                 }
                 RotationModel::MoonDE421 => {
@@ -1318,10 +1347,12 @@ impl Simulation {
                         .get_body_rotation(jeod_sim::EphemerisBody::Moon, tdb_jd)
                         .expect("Moon DE421 BPC rotation query failed");
                     if let Some(pfix_id) = self.source_frame_ids[i].pfix {
-                        let node = self.frame_tree.get_mut(pfix_id);
-                        node.state.rot.t_parent_this = rotation;
-                        node.state.rot.q_parent_this =
-                            JeodQuat::left_quat_from_transformation(&rotation);
+                        Self::sync_pfix_rotation(
+                            &mut self.frame_tree,
+                            pfix_id,
+                            rotation,
+                            grav.rotation_model,
+                        );
                     }
                 }
             }
