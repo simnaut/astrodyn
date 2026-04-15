@@ -896,7 +896,15 @@ impl Simulation {
     /// Get the planet-fixed rotation matrix for a gravity source. Returns `None`
     /// if the source has no rotation model (no pfix frame).
     pub fn source_pfix_rotation(&self, source_idx: usize) -> Option<DMat3> {
-        self.source_frame_ids[source_idx]
+        self.source_frame_ids
+            .get(source_idx)
+            .unwrap_or_else(|| {
+                panic!(
+                    "source_pfix_rotation: source index {source_idx} out of range; \
+                     {} source(s) configured",
+                    self.source_frame_ids.len()
+                )
+            })
             .pfix
             .map(|pfix_id| self.frame_tree.get(pfix_id).state.rot.t_parent_this)
     }
@@ -906,11 +914,27 @@ impl Simulation {
         &mut self,
         source_idx: usize,
     ) -> Option<&mut jeod_gravity::tides::TidalConfig> {
-        self.gravity_data[source_idx].tidal_config.as_mut()
+        let len = self.gravity_data.len();
+        self.gravity_data
+            .get_mut(source_idx)
+            .unwrap_or_else(|| {
+                panic!(
+                    "source_tidal_config_mut: source index {source_idx} out of range; \
+                     {len} source(s) configured",
+                )
+            })
+            .tidal_config
+            .as_mut()
     }
 
     /// Get the current ΔC20 tidal correction for a gravity source.
     pub fn source_delta_c20(&self, source_idx: usize) -> f64 {
+        assert!(
+            source_idx < self.gravity_data.len(),
+            "source_delta_c20: source index {source_idx} out of range; \
+             {} source(s) configured",
+            self.gravity_data.len()
+        );
         self.gravity_data[source_idx].delta_c20
     }
 
