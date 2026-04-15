@@ -1099,9 +1099,10 @@ impl Simulation {
                 }
             }
 
-            // Warn when non-ECI frame is used with ECI-dependent features.
-            // JEOD evaluates these derived states in Earth-centered inertial; they
-            // will produce incorrect results in other frames.
+            // Warn when body uses a non-root integration frame with features
+            // that assume root-inertial coordinates. JEOD evaluates these
+            // derived states in the central-body inertial frame; they will
+            // produce incorrect results in other frames.
             {
                 let non_eci_integ = body.integ_frame_id != self.root_frame_id;
                 let non_eci_switch = body.frame_switches.iter().any(|sw| {
@@ -1237,7 +1238,7 @@ impl Simulation {
         self.step_internal(self.dt);
     }
 
-    /// Get the position and velocity of a frame relative to the root (ECI).
+    /// Get the position and velocity of a frame relative to the root inertial frame.
     pub fn frame_origin(&self, frame_id: FrameId) -> (DVec3, DVec3) {
         if frame_id == self.root_frame_id {
             return (DVec3::ZERO, DVec3::ZERO);
@@ -1734,12 +1735,14 @@ impl Simulation {
                     // Sub-stage interpolation for the integration frame origin.
                     let origin = integ_origin + integ_vel * (time_frac * dt);
                     // Source position interpolation: JEOD's `deriv_ephem_update`
-                    // defaults to false, meaning ephemerides are NOT updated at
-                    // each derivative evaluation — source positions are frozen
-                    // within a step. We match this for ECI integration
-                    // (integ_vel == ZERO). For non-ECI frames the frame origin
-                    // moves within the step, so we must also interpolate source
-                    // positions to keep gravity evaluation consistent.
+                    // (DynamicsIntegrationGroup, default false) controls whether
+                    // ephemerides are updated at each derivative evaluation.
+                    // With default=false, source positions are frozen within a
+                    // step — we match this for root-frame integration where
+                    // integ_vel == ZERO. For non-root frames the frame origin
+                    // moves within the step, so we must interpolate source
+                    // positions to keep gravity evaluation consistent with the
+                    // interpolated integration-frame origin.
                     let sub_dt = if integ_vel != DVec3::ZERO {
                         time_frac * dt
                     } else {
