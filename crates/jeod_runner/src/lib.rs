@@ -1294,7 +1294,7 @@ impl Simulation {
             if let Some(ref config) = grav.tidal_config {
                 let pfix_id = self.source_frame_ids[i]
                     .pfix
-                    .expect("tidal_config requires a planet-fixed frame (rotation_model != None).");
+                    .expect("tidal_config requires a planet-fixed frame (set rotation_model or t_inertial_pfix).");
                 let rotation = self.frame_tree.get(pfix_id).state.rot.t_parent_this;
                 grav.delta_c20 = jeod_gravity::tides::compute_delta_c20(config, &rotation);
             } else {
