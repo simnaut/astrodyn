@@ -1104,16 +1104,16 @@ impl Simulation {
             // derived states in the central-body inertial frame; they will
             // produce incorrect results in other frames.
             {
-                let non_eci_integ = body.integ_frame_id != self.root_frame_id;
-                let non_eci_switch = body.frame_switches.iter().any(|sw| {
+                let non_root_integ = body.integ_frame_id != self.root_frame_id;
+                let non_root_switch = body.frame_switches.iter().any(|sw| {
                     sw.active
                         && self
                             .source_frame_ids
                             .get(sw.target_source)
                             .is_some_and(|frame| frame.inertial != self.root_frame_id)
                 });
-                if non_eci_integ || non_eci_switch {
-                    let has_eci_feature = body.drag.is_some()
+                if non_root_integ || non_root_switch {
+                    let has_root_dependent_feature = body.drag.is_some()
                         || body.flat_plate_state.is_some()
                         || body.cannonball_srp.is_some()
                         || body.orbital_elements_source.is_some()
@@ -1122,8 +1122,8 @@ impl Simulation {
                         || body.geodetic_planet.is_some()
                         || body.compute_solar_beta
                         || body.earth_lighting_config.is_some();
-                    if has_eci_feature {
-                        all_errors.push(ValidationError::NonEciFrameWithEciDependentFeatures {
+                    if has_root_dependent_feature {
+                        all_errors.push(ValidationError::NonRootFrameWithRootDependentFeatures {
                             body_idx,
                         });
                     }

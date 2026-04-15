@@ -69,7 +69,7 @@ pub enum ValidationError {
     },
     /// Body uses a non-root integration frame (or has an active frame switch to
     /// a non-root frame) but has features that assume root-inertial coordinates.
-    NonEciFrameWithEciDependentFeatures { body_idx: usize },
+    NonRootFrameWithRootDependentFeatures { body_idx: usize },
     /// Source has an ephemeris mapping but its inertial frame is the root frame.
     /// The root frame must remain at the origin; ephemeris position updates
     /// would be silently ignored.
@@ -258,7 +258,7 @@ impl std::fmt::Display for ValidationError {
                      to have a GravityControl entry."
                 )
             }
-            Self::NonEciFrameWithEciDependentFeatures { body_idx } => {
+            Self::NonRootFrameWithRootDependentFeatures { body_idx } => {
                 write!(
                     f,
                     "Body {body_idx}: non-root integration frame with features that \
@@ -292,7 +292,7 @@ impl ValidationError {
     pub fn is_warning(&self) -> bool {
         matches!(
             self,
-            Self::UninitializedState | Self::NonEciFrameWithEciDependentFeatures { .. }
+            Self::UninitializedState | Self::NonRootFrameWithRootDependentFeatures { .. }
         )
     }
 }
