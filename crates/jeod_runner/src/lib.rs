@@ -796,12 +796,9 @@ impl Simulation {
             "set_source_ephemeris: source_idx {source_idx} out of bounds (len = {})",
             self.source_ephem_bodies.len()
         );
-        assert!(
-            self.source_frame_ids[source_idx].inertial != self.root_frame_id,
-            "set_source_ephemeris: source {source_idx} ({target:?} wrt {observer:?}) \
-             is mapped to the root frame. The root frame must remain at the origin; \
-             ephemeris position updates would be silently ignored."
-        );
+        // Root-frame conflict is caught by validate() → EphemerisOnRootSource.
+        // We don't panic here so that all misconfiguration errors are reported
+        // together in a single validate() pass rather than aborting on the first.
         self.source_ephem_bodies[source_idx] = Some((target, observer));
     }
 
@@ -897,6 +894,27 @@ impl Simulation {
             "Cannot set position of the root (central body) source"
         );
         self.frame_tree.get_mut(fid).state.trans.position = position;
+    }
+
+    /// Set the position and velocity of a gravity source in the inertial frame.
+    ///
+    /// Prefer this over [`set_source_position`](Simulation::set_source_position)
+    /// when velocity is also available, to keep position and velocity consistent.
+    pub fn set_source_state(&mut self, source_idx: usize, position: DVec3, velocity: DVec3) {
+        assert!(
+            source_idx < self.source_frame_ids.len(),
+            "set_source_state: source index {source_idx} out of range; \
+             {} source(s) configured",
+            self.source_frame_ids.len()
+        );
+        let fid = self.source_frame_ids[source_idx].inertial;
+        assert_ne!(
+            fid, self.root_frame_id,
+            "Cannot set state of the root (central body) source"
+        );
+        let node = self.frame_tree.get_mut(fid);
+        node.state.trans.position = position;
+        node.state.trans.velocity = velocity;
     }
 
     /// Get the planet-fixed rotation matrix for a gravity source. Returns `None`
@@ -1458,26 +1476,8 @@ impl Simulation {
 
         // ── 6. Interactions — drag, SRP, gravity torque ──
         // sun_pos is also used in stage 9 (solar beta, earth lighting); compute once here.
-        let sun_pos = self.sun_source.and_then(|idx| {
-            self.source_frame_ids.get(idx).map(|sfids| {
-                let fid = sfids.inertial;
-                if fid == self.root_frame_id {
-                    DVec3::ZERO
-                } else {
-                    self.frame_tree.get(fid).state.trans.position
-                }
-            })
-        });
-        let moon_pos = self.moon_source.and_then(|idx| {
-            self.source_frame_ids.get(idx).map(|sfids| {
-                let fid = sfids.inertial;
-                if fid == self.root_frame_id {
-                    DVec3::ZERO
-                } else {
-                    self.frame_tree.get(fid).state.trans.position
-                }
-            })
-        });
+        let sun_pos = self.sun_source.map(|idx| self.source_position(idx));
+        let moon_pos = self.moon_source.map(|idx| self.source_position(idx));
         let source_frame_ids = &self.source_frame_ids;
         let frame_tree = &self.frame_tree;
         let root_fid = self.root_frame_id;
