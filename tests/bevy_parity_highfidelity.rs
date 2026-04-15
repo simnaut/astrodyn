@@ -91,6 +91,7 @@ fn tier3_bevy_sh4x4_rnp() {
             delta_c20: 0.0,
             rotation_model: RotationModel::EarthRNP,
             tidal_config: None,
+            planet_omega: jeod_sim::planet_config::EARTH.omega,
             central: true,
         },
     );
@@ -201,6 +202,7 @@ fn tier3_bevy_tidal_sh4x4() {
             rotation_model: RotationModel::EarthRNP,
             delta_c20: 0.0,
             tidal_config: Some(tidal_config),
+            planet_omega: jeod_sim::planet_config::EARTH.omega,
             central: true,
         },
     );

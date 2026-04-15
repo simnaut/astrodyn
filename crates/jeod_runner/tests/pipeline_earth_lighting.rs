@@ -58,6 +58,7 @@ fn pipeline_earth_lighting_smoke() {
             delta_c20: 0.0,
             rotation_model: RotationModel::default(),
             tidal_config: None,
+            planet_omega: 0.0,
             central: true,
         },
     );
@@ -80,6 +81,7 @@ fn pipeline_earth_lighting_smoke() {
             delta_c20: 0.0,
             rotation_model: RotationModel::default(),
             tidal_config: None,
+            planet_omega: 0.0,
             central: false,
         },
     );
@@ -103,6 +105,7 @@ fn pipeline_earth_lighting_smoke() {
             delta_c20: 0.0,
             rotation_model: RotationModel::default(),
             tidal_config: None,
+            planet_omega: 0.0,
             central: false,
         },
     );

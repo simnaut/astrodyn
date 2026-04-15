@@ -87,6 +87,7 @@ fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str, frac_
             delta_c20: 0.0,
             rotation_model: RotationModel::default(),
             tidal_config: None,
+            planet_omega: 0.0,
             central: true,
         },
     );
@@ -109,6 +110,7 @@ fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str, frac_
             delta_c20: 0.0,
             rotation_model: RotationModel::default(),
             tidal_config: None,
+            planet_omega: 0.0,
             central: false,
         },
     );

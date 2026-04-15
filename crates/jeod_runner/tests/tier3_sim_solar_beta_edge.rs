@@ -131,6 +131,7 @@ fn run_solar_beta_test(
                 RotationModel::default()
             },
             tidal_config: None,
+            planet_omega: 0.0,
             central: true,
         },
     );
@@ -152,6 +153,7 @@ fn run_solar_beta_test(
             delta_c20: 0.0,
             rotation_model: RotationModel::default(),
             tidal_config: None,
+            planet_omega: 0.0,
             central: false,
         },
     );

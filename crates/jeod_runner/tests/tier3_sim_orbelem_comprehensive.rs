@@ -143,6 +143,7 @@ fn verify_orbit_family(csv_name: &str, label: &str, skip_degenerate_scalars: boo
             delta_c20: 0.0,
             rotation_model: RotationModel::default(),
             tidal_config: None,
+            planet_omega: 0.0,
             central: true,
         },
     );

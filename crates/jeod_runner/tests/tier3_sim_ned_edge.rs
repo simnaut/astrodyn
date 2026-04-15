@@ -84,6 +84,7 @@ fn run_ned_test(
             delta_c20: 0.0,
             rotation_model: RotationModel::EarthRNP,
             tidal_config: None,
+            planet_omega: 0.0,
             central: true,
         },
     );

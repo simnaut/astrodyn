@@ -99,6 +99,7 @@ fn run_sh_simulation_test(
             delta_c20: 0.0,
             rotation_model: RotationModel::EarthRNP,
             tidal_config: None,
+            planet_omega: OMEGA_EARTH,
             central: true,
         },
     );

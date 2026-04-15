@@ -52,6 +52,7 @@ fn main() {
             delta_c20: 0.0,
             rotation_model: jeod_sim::RotationModel::default(),
             tidal_config: None,
+            planet_omega: 0.0,
             central: true,
         },
     );

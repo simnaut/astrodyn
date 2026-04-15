@@ -84,6 +84,7 @@ fn run_euler_test(csv_filename: &str, label: &str, test_name: &str, quat_tol: f6
             delta_c20: 0.0,
             rotation_model: RotationModel::default(),
             tidal_config: None,
+            planet_omega: 0.0,
             central: true,
         },
     );

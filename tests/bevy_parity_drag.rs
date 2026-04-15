@@ -272,6 +272,7 @@ fn tier3_bevy_met_atmosphere_drag_sixdof() {
             delta_c20: 0.0,
             rotation_model: jeod_runner::RotationModel::EarthRNP,
             tidal_config: None,
+            planet_omega: jeod_sim::planet_config::EARTH.omega,
             central: true,
         },
     );
@@ -371,6 +372,7 @@ fn tier3_bevy_met_run5a() {
             delta_c20: 0.0,
             rotation_model: jeod_runner::RotationModel::EarthRNP,
             tidal_config: None,
+            planet_omega: jeod_sim::planet_config::EARTH.omega,
             central: true,
         },
     );
@@ -474,6 +476,7 @@ fn tier3_bevy_drag_run6b() {
             delta_c20: 0.0,
             rotation_model: jeod_runner::RotationModel::EarthRNP,
             tidal_config: None,
+            planet_omega: jeod_sim::planet_config::EARTH.omega,
             central: true,
         },
     );

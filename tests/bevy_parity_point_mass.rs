@@ -520,6 +520,7 @@ fn tier3_sim_mars_rotation_dispatch() {
             rotation_model: RotationModel::MarsIAU,
             delta_c20: 0.0,
             tidal_config: None,
+            planet_omega: 0.0,
             central: true,
         },
     );
@@ -574,6 +575,7 @@ fn tier3_sim_multi_source_rotation() {
             rotation_model: RotationModel::EarthRNP,
             delta_c20: 0.0,
             tidal_config: None,
+            planet_omega: 0.0,
             central: true,
         },
     );
@@ -591,6 +593,7 @@ fn tier3_sim_multi_source_rotation() {
             rotation_model: RotationModel::MarsIAU,
             delta_c20: 0.0,
             tidal_config: None,
+            planet_omega: 0.0,
             central: false,
         },
     );

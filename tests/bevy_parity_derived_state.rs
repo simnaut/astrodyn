@@ -222,6 +222,7 @@ fn tier3_bevy_geodetic_derived_state() {
             delta_c20: 0.0,
             rotation_model: RotationModel::EarthRNP,
             tidal_config: None,
+            planet_omega: jeod_sim::planet_config::EARTH.omega,
             central: true,
         },
     );
@@ -489,6 +490,7 @@ fn tier3_bevy_polar_geodetic() {
             delta_c20: 0.0,
             rotation_model: RotationModel::EarthRNP,
             tidal_config: None,
+            planet_omega: jeod_sim::planet_config::EARTH.omega,
             central: true,
         },
     );
@@ -874,6 +876,7 @@ fn run_ned_parity(label: &str, trans: TranslationalState, r_eq: f64, r_pol: f64)
             delta_c20: 0.0,
             rotation_model: RotationModel::EarthRNP,
             tidal_config: None,
+            planet_omega: jeod_sim::planet_config::EARTH.omega,
             central: true,
         },
     );

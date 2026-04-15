@@ -128,6 +128,7 @@ fn tier3_simulation_run6b_drag() {
             delta_c20: 0.0,
             rotation_model: RotationModel::EarthRNP,
             tidal_config: None,
+            planet_omega: 0.0,
             central: true,
         },
     );
@@ -340,6 +341,7 @@ fn tier3_simulation_run6a_const_density_drag() {
             delta_c20: 0.0,
             rotation_model: RotationModel::EarthRNP,
             tidal_config: None,
+            planet_omega: 0.0,
             central: true,
         },
     );

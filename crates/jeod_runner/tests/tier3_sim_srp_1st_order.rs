@@ -172,6 +172,7 @@ fn tier3_srp_1st_order_trajectory() {
             delta_c20: 0.0,
             rotation_model: RotationModel::default(),
             tidal_config: None,
+            planet_omega: 0.0,
             central: true,
         },
     );
@@ -192,6 +193,7 @@ fn tier3_srp_1st_order_trajectory() {
             delta_c20: 0.0,
             rotation_model: RotationModel::default(),
             tidal_config: None,
+            planet_omega: 0.0,
             central: false,
         },
     );

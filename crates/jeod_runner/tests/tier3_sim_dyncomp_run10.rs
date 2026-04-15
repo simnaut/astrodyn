@@ -103,6 +103,7 @@ fn tier3_simulation_run10a_gravity_torque() {
             delta_c20: 0.0,
             rotation_model: RotationModel::default(),
             tidal_config: None,
+            planet_omega: 0.0,
             central: true,
         },
     );
@@ -404,6 +405,7 @@ fn tier3_simulation_run10c_gravity_torque_elliptical() {
             delta_c20: 0.0,
             rotation_model: RotationModel::default(),
             tidal_config: None,
+            planet_omega: 0.0,
             central: true,
         },
     );
@@ -563,6 +565,7 @@ fn tier3_simulation_run10d_gravity_torque_elliptical_rate() {
             delta_c20: 0.0,
             rotation_model: RotationModel::default(),
             tidal_config: None,
+            planet_omega: 0.0,
             central: true,
         },
     );

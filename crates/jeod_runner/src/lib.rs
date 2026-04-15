@@ -118,6 +118,10 @@ struct GravityData {
     tidal_config: Option<jeod_gravity::tides::TidalConfig>,
     /// Rotation model for updating planet-fixed frame each step.
     rotation_model: RotationModel,
+    /// Sidereal angular velocity (rad/s) for the planet-fixed frame's
+    /// `ang_vel_this`. Sourced from `PlanetConfig::omega` at setup time.
+    /// JEOD sets this as `[0, 0, planet_omega]` in `planet_rnp.cc`.
+    planet_omega: f64,
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -147,6 +151,10 @@ pub struct GravitySourceEntry {
     pub delta_c20: f64,
     /// Tidal configuration. When `Some`, the simulation computes ΔC20 each step.
     pub tidal_config: Option<jeod_gravity::tides::TidalConfig>,
+    /// Sidereal angular velocity (rad/s) for the planet-fixed frame's
+    /// `ang_vel_this`. Sourced from [`PlanetConfig::omega`]. Set to 0.0
+    /// for sources without a rotation model.
+    pub planet_omega: f64,
     /// Whether this is the central body (uses the root frame in the tree).
     /// Set automatically by [`central_body`](Self::central_body) and
     /// [`central_body_sh`](Self::central_body_sh).
@@ -165,6 +173,7 @@ impl GravitySourceEntry {
             velocity: DVec3::ZERO,
             t_inertial_pfix,
             rotation_model: RotationModel::None,
+            planet_omega: 0.0,
             delta_c20: 0.0,
             tidal_config: None,
             central: false,
@@ -190,6 +199,7 @@ impl GravitySourceEntry {
                 None
             },
             rotation_model: planet.rotation_model,
+            planet_omega: planet.omega,
             delta_c20: 0.0,
             tidal_config: None,
             central: true,
@@ -218,6 +228,7 @@ impl GravitySourceEntry {
                 None
             },
             rotation_model: planet.rotation_model,
+            planet_omega: planet.omega,
             delta_c20: 0.0,
             tidal_config: None,
             central: true,
@@ -238,6 +249,7 @@ impl GravitySourceEntry {
             velocity: DVec3::ZERO,
             t_inertial_pfix: None,
             rotation_model: RotationModel::None,
+            planet_omega: 0.0,
             delta_c20: 0.0,
             tidal_config: None,
             central: false,
@@ -775,6 +787,7 @@ impl Simulation {
             delta_c20: entry.delta_c20,
             tidal_config: entry.tidal_config,
             rotation_model: entry.rotation_model,
+            planet_omega: entry.planet_omega,
         });
         self.source_ephem_bodies.push(None);
         idx
@@ -1255,24 +1268,21 @@ impl Simulation {
     /// Sync a planet-fixed frame node's rotation state from a computed matrix.
     ///
     /// Sets `t_parent_this`, derives `q_parent_this` from it, and sets
-    /// `ang_vel_this = [0, 0, planet_omega]` for models with a constant spin
-    /// rate (matching JEOD's `planet_rnp.cc`). Moon models have
-    /// time-varying angular velocity due to libration; `ang_vel_this` is left
-    /// at zero for those (a known limitation).
+    /// `ang_vel_this = [0, 0, planet_omega]` matching JEOD's `planet_rnp.cc`.
+    /// The `planet_omega` value comes from [`PlanetConfig::omega`] via
+    /// [`GravityData::planet_omega`].
     fn sync_pfix_rotation(
         frame_tree: &mut jeod_frames::FrameTree,
         pfix_id: jeod_frames::FrameId,
         rotation: DMat3,
-        model: RotationModel,
+        planet_omega: f64,
     ) {
         let node = frame_tree.get_mut(pfix_id);
         node.state.rot.t_parent_this = rotation;
         node.state.rot.q_parent_this = JeodQuat::left_quat_from_transformation(&rotation);
         // JEOD sets ang_vel_this = [0, 0, planet_omega] in planet_rnp.cc.
         // This is used by compute_relative_state velocity composition.
-        if let Some(omega) = model.planet_omega() {
-            node.state.rot.ang_vel_this = DVec3::new(0.0, 0.0, omega);
-        }
+        node.state.rot.ang_vel_this = DVec3::new(0.0, 0.0, planet_omega);
     }
 
     /// Internal step with explicit dt (avoids temporary mutation of `self.dt`
@@ -1303,7 +1313,7 @@ impl Simulation {
                             &mut self.frame_tree,
                             pfix_id,
                             rotation,
-                            grav.rotation_model,
+                            grav.planet_omega,
                         );
                     }
                 }
@@ -1318,7 +1328,7 @@ impl Simulation {
                             &mut self.frame_tree,
                             pfix_id,
                             rotation,
-                            grav.rotation_model,
+                            grav.planet_omega,
                         );
                     }
                 }
@@ -1333,7 +1343,7 @@ impl Simulation {
                             &mut self.frame_tree,
                             pfix_id,
                             rotation,
-                            grav.rotation_model,
+                            grav.planet_omega,
                         );
                     }
                 }
@@ -1351,7 +1361,7 @@ impl Simulation {
                             &mut self.frame_tree,
                             pfix_id,
                             rotation,
-                            grav.rotation_model,
+                            grav.planet_omega,
                         );
                     }
                 }

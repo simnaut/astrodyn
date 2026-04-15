@@ -148,6 +148,7 @@ fn tier3_simulation_tide_run01() {
             rotation_model: RotationModel::EarthRNP,
             delta_c20: 0.0,
             tidal_config: Some(tidal_config),
+            planet_omega: 0.0,
             central: true,
         },
     );
@@ -166,6 +167,7 @@ fn tier3_simulation_tide_run01() {
             delta_c20: 0.0,
             rotation_model: RotationModel::default(),
             tidal_config: None,
+            planet_omega: 0.0,
             central: false,
         },
     );
@@ -184,6 +186,7 @@ fn tier3_simulation_tide_run01() {
             delta_c20: 0.0,
             rotation_model: RotationModel::default(),
             tidal_config: None,
+            planet_omega: 0.0,
             central: false,
         },
     );

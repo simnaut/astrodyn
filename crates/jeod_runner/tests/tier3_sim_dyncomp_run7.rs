@@ -142,6 +142,7 @@ fn run_7_test(
             delta_c20: 0.0,
             rotation_model: RotationModel::EarthRNP,
             tidal_config: None,
+            planet_omega: OMEGA_EARTH,
             central: true,
         },
     );
@@ -161,6 +162,7 @@ fn run_7_test(
             delta_c20: 0.0,
             rotation_model: RotationModel::default(),
             tidal_config: None,
+            planet_omega: 0.0,
             central: false,
         },
     );
@@ -177,6 +179,7 @@ fn run_7_test(
             delta_c20: 0.0,
             rotation_model: RotationModel::default(),
             tidal_config: None,
+            planet_omega: 0.0,
             central: false,
         },
     );
