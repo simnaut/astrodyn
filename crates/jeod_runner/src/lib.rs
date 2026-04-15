@@ -855,12 +855,21 @@ impl Simulation {
 
     /// Get the inertial frame ID for a gravity source.
     pub fn source_frame(&self, source_idx: usize) -> FrameId {
-        self.source_frame_ids[source_idx].inertial
+        self.source_frame_ids
+            .get(source_idx)
+            .unwrap_or_else(|| {
+                panic!(
+                    "source_frame: source index {source_idx} is out of range; \
+                     {} source frame(s) configured",
+                    self.num_sources()
+                )
+            })
+            .inertial
     }
 
     /// Get the current position of a gravity source in the inertial frame.
     pub fn source_position(&self, source_idx: usize) -> DVec3 {
-        let fid = self.source_frame_ids[source_idx].inertial;
+        let fid = self.source_frame(source_idx);
         if fid == self.root_frame_id {
             DVec3::ZERO
         } else {
@@ -870,6 +879,12 @@ impl Simulation {
 
     /// Set the position of a gravity source in the inertial frame.
     pub fn set_source_position(&mut self, source_idx: usize, position: DVec3) {
+        assert!(
+            source_idx < self.source_frame_ids.len(),
+            "set_source_position: source index {source_idx} out of range; \
+             {} source(s) configured",
+            self.source_frame_ids.len()
+        );
         let fid = self.source_frame_ids[source_idx].inertial;
         assert_ne!(
             fid, self.root_frame_id,
