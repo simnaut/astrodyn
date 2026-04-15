@@ -1445,21 +1445,25 @@ impl Simulation {
 
         // ── 6. Interactions — drag, SRP, gravity torque ──
         // sun_pos is also used in stage 9 (solar beta, earth lighting); compute once here.
-        let sun_pos = self.sun_source.map(|idx| {
-            let fid = self.source_frame_ids[idx].inertial;
-            if fid == self.root_frame_id {
-                DVec3::ZERO
-            } else {
-                self.frame_tree.get(fid).state.trans.position
-            }
+        let sun_pos = self.sun_source.and_then(|idx| {
+            self.source_frame_ids.get(idx).map(|sfids| {
+                let fid = sfids.inertial;
+                if fid == self.root_frame_id {
+                    DVec3::ZERO
+                } else {
+                    self.frame_tree.get(fid).state.trans.position
+                }
+            })
         });
-        let moon_pos = self.moon_source.map(|idx| {
-            let fid = self.source_frame_ids[idx].inertial;
-            if fid == self.root_frame_id {
-                DVec3::ZERO
-            } else {
-                self.frame_tree.get(fid).state.trans.position
-            }
+        let moon_pos = self.moon_source.and_then(|idx| {
+            self.source_frame_ids.get(idx).map(|sfids| {
+                let fid = sfids.inertial;
+                if fid == self.root_frame_id {
+                    DVec3::ZERO
+                } else {
+                    self.frame_tree.get(fid).state.trans.position
+                }
+            })
         });
         let source_frame_ids = &self.source_frame_ids;
         let frame_tree = &self.frame_tree;
