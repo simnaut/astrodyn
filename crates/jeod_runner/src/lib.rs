@@ -915,6 +915,8 @@ impl Simulation {
         let node = self.frame_tree.get_mut(fid);
         node.state.trans.position = position;
         node.state.trans.velocity = velocity;
+        // Keep gravity_data velocity in sync for relativistic corrections (PPN).
+        self.gravity_data[source_idx].velocity = velocity;
     }
 
     /// Get the planet-fixed rotation matrix for a gravity source. Returns `None`
