@@ -56,16 +56,18 @@ pub enum ValidationError {
     EarthLightingWithoutSunSource { body_idx: usize },
     /// Body has `earth_lighting_config` but simulation has no `moon_source`.
     EarthLightingWithoutMoonSource { body_idx: usize },
-    /// Frame switch `central_source` index exceeds number of gravity sources.
-    FrameSwitchCentralSourceOutOfRange {
+    /// Frame switch `target_source` index exceeds number of gravity sources.
+    FrameSwitchTargetSourceOutOfRange {
         body_idx: usize,
-        central_source: usize,
+        target_source: usize,
         num_sources: usize,
     },
-    /// Frame switch `central_source` is not in the body's gravity controls.
-    FrameSwitchCentralSourceNotInControls {
+    /// Frame switch `target_source` is not in the body's gravity controls.
+    /// The post-switch gravity reclassification requires a control entry for
+    /// the target source (it becomes the non-differential central body).
+    FrameSwitchTargetSourceNotInControls {
         body_idx: usize,
-        central_source: usize,
+        target_source: usize,
     },
     /// Body uses a non-root integration frame (or has an active frame switch to
     /// a non-root frame) but has features that assume root-inertial coordinates.
@@ -235,27 +237,27 @@ impl std::fmt::Display for ValidationError {
                      moon_source. Set Simulation::moon_source for earth lighting computation."
                 )
             }
-            Self::FrameSwitchCentralSourceOutOfRange {
+            Self::FrameSwitchTargetSourceOutOfRange {
                 body_idx,
-                central_source,
+                target_source,
                 num_sources,
             } => {
                 write!(
                     f,
-                    "Body {body_idx}: frame switch central_source index {central_source} \
+                    "Body {body_idx}: frame switch target_source index {target_source} \
                      is out of range (simulation has {num_sources} gravity sources)."
                 )
             }
-            Self::FrameSwitchCentralSourceNotInControls {
+            Self::FrameSwitchTargetSourceNotInControls {
                 body_idx,
-                central_source,
+                target_source,
             } => {
                 write!(
                     f,
-                    "Body {body_idx}: frame switch central_source index {central_source} \
-                     is not present in the body's gravity_controls. The post-switch \
-                     differential/central gravity classification requires the source \
-                     to have a GravityControl entry."
+                    "Body {body_idx}: frame switch target_source index {target_source} \
+                     is not in the body's gravity_controls. The post-switch gravity \
+                     reclassification requires the target source to have a \
+                     GravityControl entry (it becomes the non-differential central body)."
                 )
             }
             Self::NonRootFrameWithRootDependentFeatures { body_idx } => {

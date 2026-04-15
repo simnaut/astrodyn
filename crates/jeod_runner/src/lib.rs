@@ -870,7 +870,8 @@ impl Simulation {
             .inertial
     }
 
-    /// Get the current position of a gravity source in the inertial frame.
+    /// Get the current position of a gravity source relative to the root
+    /// inertial frame. Returns `DVec3::ZERO` for the root-mapped central source.
     pub fn source_position(&self, source_idx: usize) -> DVec3 {
         let fid = self.source_frame(source_idx);
         if fid == self.root_frame_id {
@@ -880,7 +881,7 @@ impl Simulation {
         }
     }
 
-    /// Set the position of a gravity source in the inertial frame.
+    /// Set the position of a gravity source relative to the root inertial frame.
     pub fn set_source_position(&mut self, source_idx: usize, position: DVec3) {
         assert!(
             source_idx < self.source_frame_ids.len(),
@@ -896,7 +897,7 @@ impl Simulation {
         self.frame_tree.get_mut(fid).state.trans.position = position;
     }
 
-    /// Set the position and velocity of a gravity source in the inertial frame.
+    /// Set the position and velocity of a gravity source relative to the root inertial frame.
     ///
     /// Prefer this over [`set_source_position`](Simulation::set_source_position)
     /// when velocity is also available, to keep position and velocity consistent.
@@ -1080,22 +1081,22 @@ impl Simulation {
             // Only validate active switches — JEOD only evaluates active switches.
             for sw in &body.frame_switches {
                 if sw.active {
-                    let central = sw.target_source;
-                    if central >= num_sources {
-                        all_errors.push(ValidationError::FrameSwitchCentralSourceOutOfRange {
+                    let target = sw.target_source;
+                    if target >= num_sources {
+                        all_errors.push(ValidationError::FrameSwitchTargetSourceOutOfRange {
                             body_idx,
-                            central_source: central,
+                            target_source: target,
                             num_sources,
                         });
                     } else if !body
                         .gravity_controls
                         .controls
                         .iter()
-                        .any(|c| c.source_name == central)
+                        .any(|c| c.source_name == target)
                     {
-                        all_errors.push(ValidationError::FrameSwitchCentralSourceNotInControls {
+                        all_errors.push(ValidationError::FrameSwitchTargetSourceNotInControls {
                             body_idx,
-                            central_source: central,
+                            target_source: target,
                         });
                     }
                 }
