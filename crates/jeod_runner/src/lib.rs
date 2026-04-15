@@ -1988,6 +1988,8 @@ impl Simulation {
     /// at each timestep (e.g., SIM_2A_SHADOW_CALC).
     pub fn set_body_position(&mut self, idx: usize, position: DVec3) {
         self.bodies[idx].trans.position = position;
+        let fid = self.bodies[idx].body_frame_id;
+        self.frame_tree.get_mut(fid).state.trans.position = position;
     }
 
     /// Set a body's translational velocity (inertial frame, m/s).
@@ -1995,6 +1997,8 @@ impl Simulation {
     /// Used for impulsive maneuvers (e.g., Apollo TLI delta-V).
     pub fn set_body_velocity(&mut self, idx: usize, velocity: DVec3) {
         self.bodies[idx].trans.velocity = velocity;
+        let fid = self.bodies[idx].body_frame_id;
+        self.frame_tree.get_mut(fid).state.trans.velocity = velocity;
     }
 
     /// Replace a body's mass properties.
