@@ -100,17 +100,16 @@ fn build_apollo8_sim(frame_switches: Vec<FrameSwitchConfig>) -> (Simulation, usi
         jeod_sim::EphemerisBody::Earth,
     );
 
-    let earth = sim.add_source(
-        "Earth",
-        GravitySourceEntry::new(
-            GravitySource {
-                mu: MU_EARTH,
-                model: GravityModel::PointMass,
-            },
-            DVec3::ZERO,
-            None,
-        ),
+    let mut earth_entry = GravitySourceEntry::new(
+        GravitySource {
+            mu: MU_EARTH,
+            model: GravityModel::PointMass,
+        },
+        DVec3::ZERO,
+        None,
     );
+    earth_entry.central = true;
+    let earth = sim.add_source("Earth", earth_entry);
 
     let moon = sim.add_source(
         "Moon",
