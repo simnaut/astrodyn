@@ -127,14 +127,16 @@ fn run_simulation_steps() -> SixDofState {
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
 
-    let earth = sim.add_source(jeod_runner::GravitySourceEntry::new(
+    let mut earth_entry = jeod_runner::GravitySourceEntry::new(
         GravitySource {
             mu: MU_EARTH,
             model: GravityModel::PointMass,
         },
         DVec3::ZERO,
         None,
-    ));
+    );
+    earth_entry.central = true;
+    let earth = sim.add_source("Earth", earth_entry);
 
     sim.add_body(jeod_runner::VehicleConfig {
         trans: initial_trans(),
@@ -263,14 +265,16 @@ fn tier3_bevy_rkf45_matches_simulation_bit_identical() {
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
 
-    let earth = sim.add_source(jeod_runner::GravitySourceEntry::new(
+    let mut earth_entry = jeod_runner::GravitySourceEntry::new(
         GravitySource {
             mu: MU_EARTH,
             model: GravityModel::PointMass,
         },
         DVec3::ZERO,
         None,
-    ));
+    );
+    earth_entry.central = true;
+    let earth = sim.add_source("Earth", earth_entry);
 
     sim.add_body(jeod_runner::VehicleConfig {
         trans: initial_trans(),

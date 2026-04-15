@@ -63,14 +63,17 @@ fn propagate_mercury_periapses(
 
     let (init_pos, init_vel) = mercury_perihelion_state();
 
-    let sun = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: mu_sun,
-            model: GravityModel::PointMass,
-        },
-        DVec3::ZERO,
-        None,
-    ));
+    let sun = sim.add_source(
+        "Sun",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: mu_sun,
+                model: GravityModel::PointMass,
+            },
+            DVec3::ZERO,
+            None,
+        ),
+    );
 
     let mut ctrl = GravityControl::new_spherical(sun, false);
     ctrl.relativistic = relativistic;
@@ -249,14 +252,17 @@ fn tier3_simulation_mercury_relativistic_effect() {
     // Newtonian run
     let time_n = SimulationTime::at_j2000(leap_table.clone());
     let mut sim_n = Simulation::new(time_n, dt);
-    let sun_n = sim_n.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: mu_sun,
-            model: GravityModel::PointMass,
-        },
-        DVec3::ZERO,
-        None,
-    ));
+    let sun_n = sim_n.add_source(
+        "Sun",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: mu_sun,
+                model: GravityModel::PointMass,
+            },
+            DVec3::ZERO,
+            None,
+        ),
+    );
     sim_n.add_body(VehicleConfig {
         trans: TranslationalState {
             position: init_pos,
@@ -275,14 +281,17 @@ fn tier3_simulation_mercury_relativistic_effect() {
     // Relativistic run
     let time_r = SimulationTime::at_j2000(leap_table);
     let mut sim_r = Simulation::new(time_r, dt);
-    let sun_r = sim_r.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: mu_sun,
-            model: GravityModel::PointMass,
-        },
-        DVec3::ZERO,
-        None,
-    ));
+    let sun_r = sim_r.add_source(
+        "Sun",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: mu_sun,
+                model: GravityModel::PointMass,
+            },
+            DVec3::ZERO,
+            None,
+        ),
+    );
     let mut ctrl = GravityControl::new_spherical(sun_r, false);
     ctrl.relativistic = true;
     sim_r.add_body(VehicleConfig {

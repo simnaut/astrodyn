@@ -90,43 +90,54 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Moon: central body with LP150Q 60x60 SH gravity + DE421 BPC libration
     let moon_rotation = ephemeris.get_body_rotation(EphemerisBody::Moon, epoch_tdb_jd)?;
 
-    let moon = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: moon_mu,
-            model: GravityModel::SphericalHarmonics(Box::new(lp150q)),
+    let moon = sim.add_source(
+        "Moon",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: moon_mu,
+                model: GravityModel::SphericalHarmonics(Box::new(lp150q)),
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: Some(moon_rotation),
+            rotation_model: RotationModel::MoonDE421,
+            delta_c20: 0.0,
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: true,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: Some(moon_rotation),
-        rotation_model: RotationModel::MoonDE421,
-        delta_c20: 0.0,
-        tidal_config: None,
-    });
+    );
 
     // Earth: 3rd-body perturbation with per-step ephemeris
     let (earth_pos, _) =
         ephemeris.get_state(EphemerisBody::Earth, EphemerisBody::Moon, epoch_tdb_jd)?;
-    let earth = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: mu_earth,
-            model: GravityModel::PointMass,
-        },
-        earth_pos,
-        None,
-    ));
+    let earth = sim.add_source(
+        "Earth",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: mu_earth,
+                model: GravityModel::PointMass,
+            },
+            earth_pos,
+            None,
+        ),
+    );
     sim.set_source_ephemeris(earth, EphemerisBody::Earth, EphemerisBody::Moon);
 
     // Sun: 3rd-body + SRP source with per-step ephemeris
     let (sun_pos, _) =
         ephemeris.get_state(EphemerisBody::Sun, EphemerisBody::Moon, epoch_tdb_jd)?;
-    let sun = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: mu_sun,
-            model: GravityModel::PointMass,
-        },
-        sun_pos,
-        None,
-    ));
+    let sun = sim.add_source(
+        "Sun",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: mu_sun,
+                model: GravityModel::PointMass,
+            },
+            sun_pos,
+            None,
+        ),
+    );
     sim.set_source_ephemeris(sun, EphemerisBody::Sun, EphemerisBody::Moon);
     sim.sun_source = Some(sun);
     sim.ephemeris = Some(ephemeris);

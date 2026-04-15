@@ -112,18 +112,23 @@ fn run_srp_basic_test(csv_filename: &str, label: &str) {
     let mut sim = Simulation::new(time, dt);
 
     // Sun at origin (SIM_1_BASIC integrates in Sun.inertial frame)
-    let sun = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: 0.0,
-            model: GravityModel::PointMass,
+    let sun = sim.add_source(
+        "Sun",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: RotationModel::default(),
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: true,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+    );
     sim.sun_source = Some(sun);
 
     // Vehicle at ~1 AU from Sun, zero velocity, 6-plate flat-plate SRP

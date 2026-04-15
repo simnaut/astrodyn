@@ -70,18 +70,23 @@ fn tier3_simulation_solar_beta() {
     let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, dt);
 
-    let earth = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: mu_earth,
-            model: GravityModel::PointMass,
+    let earth = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: mu_earth,
+                model: GravityModel::PointMass,
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: RotationModel::default(),
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: true,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+    );
 
     // Sun source -- position from DE421 at J2000.0.
     // mu=0 matches the JEOD RUN_2 reference (Earth-only gravity). Sun is used
@@ -92,18 +97,23 @@ fn tier3_simulation_solar_beta() {
     let (initial_sun, _) = ephemeris
         .get_earth_centered_state(EphemerisBody::Sun, j2000_jd)
         .expect("Sun position at J2000");
-    let sun = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: 0.0,
-            model: GravityModel::PointMass,
+    let sun = sim.add_source(
+        "Sun",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            position: initial_sun,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: RotationModel::default(),
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: false,
         },
-        position: initial_sun,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+    );
     sim.sun_source = Some(sun);
 
     sim.add_body(VehicleConfig {
@@ -137,7 +147,7 @@ fn tier3_simulation_solar_beta() {
         let (sun_pos, _) = ephemeris
             .get_earth_centered_state(EphemerisBody::Sun, tdb_jd)
             .expect("Sun position query");
-        sim.sources[sun].position = sun_pos;
+        sim.set_source_position(sun, sun_pos);
 
         sim.step_until(record.time);
 

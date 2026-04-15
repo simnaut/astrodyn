@@ -75,24 +75,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut sim = Simulation::new(time, DT);
 
     // Earth at origin
-    let earth = sim.add_source(GravitySourceEntry::new(
+    let mut earth_entry = GravitySourceEntry::new(
         GravitySource {
             mu: MU_EARTH,
             model: GravityModel::PointMass,
         },
         DVec3::ZERO,
         None,
-    ));
+    );
+    earth_entry.central = true;
+    let earth = sim.add_source("Earth", earth_entry);
 
     // Moon with per-step ephemeris updates
-    let moon = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: MU_MOON,
-            model: GravityModel::PointMass,
-        },
-        moon_pos,
-        None,
-    ));
+    let moon = sim.add_source(
+        "Moon",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: MU_MOON,
+                model: GravityModel::PointMass,
+            },
+            moon_pos,
+            None,
+        ),
+    );
     sim.set_source_ephemeris(
         moon,
         jeod_sim::EphemerisBody::Moon,
@@ -100,14 +105,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Sun as 3rd-body (weak perturbation for TLI, but included for completeness)
-    let sun = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: MU_SUN,
-            model: GravityModel::PointMass,
-        },
-        sun_pos,
-        None,
-    ));
+    let sun = sim.add_source(
+        "Sun",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: MU_SUN,
+                model: GravityModel::PointMass,
+            },
+            sun_pos,
+            None,
+        ),
+    );
     sim.set_source_ephemeris(
         sun,
         jeod_sim::EphemerisBody::Sun,
@@ -229,7 +237,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let body = sim.body(body_idx);
             let pos = body.trans.position;
             let vel = body.trans.velocity;
-            let moon_source_pos = sim.sources[moon].position;
+            let moon_source_pos = sim.source_position(moon);
 
             let alt_km = (pos.length() - R_EARTH) / 1000.0;
             let dist_moon_km = (pos - moon_source_pos).length() / 1000.0;
@@ -252,7 +260,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let final_body = sim.body(body_idx);
-    let final_moon_dist = (final_body.trans.position - sim.sources[moon].position).length();
+    let final_moon_dist = (final_body.trans.position - sim.source_position(moon)).length();
     println!();
     println!(
         "Final distance to Moon: {:.0} km after {:.1} days",

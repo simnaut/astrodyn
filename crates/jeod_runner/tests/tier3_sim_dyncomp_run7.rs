@@ -132,42 +132,57 @@ fn run_7_test(
         mu: sh_data.mu,
         model: GravityModel::SphericalHarmonics(Box::new(sh_data)),
     };
-    let earth = sim.add_source(GravitySourceEntry {
-        source: sh_source,
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: Some(DMat3::IDENTITY),
-        delta_c20: 0.0,
-        rotation_model: RotationModel::EarthRNP,
-        tidal_config: None,
-    });
+    let earth = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: sh_source,
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: Some(DMat3::IDENTITY),
+            delta_c20: 0.0,
+            rotation_model: RotationModel::EarthRNP,
+            tidal_config: None,
+            planet_omega: OMEGA_EARTH,
+            central: true,
+        },
+    );
 
     // Sun and Moon: third-body differential acceleration (mu from JEOD gravity files)
     let tdb_jd = sim.time.tdb_julian_date();
-    let sun = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: mu_sun,
-            model: GravityModel::PointMass,
+    let sun = sim.add_source(
+        "Sun",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: mu_sun,
+                model: GravityModel::PointMass,
+            },
+            position: earth_centered_position(EphemerisBody::Sun, tdb_jd, &ephemeris),
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: RotationModel::default(),
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: false,
         },
-        position: earth_centered_position(EphemerisBody::Sun, tdb_jd, &ephemeris),
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
-    let moon = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: mu_moon,
-            model: GravityModel::PointMass,
+    );
+    let moon = sim.add_source(
+        "Moon",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: mu_moon,
+                model: GravityModel::PointMass,
+            },
+            position: earth_centered_position(EphemerisBody::Moon, tdb_jd, &ephemeris),
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: RotationModel::default(),
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: false,
         },
-        position: earth_centered_position(EphemerisBody::Moon, tdb_jd, &ephemeris),
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+    );
 
     // Drag configuration (only for RUN_7C/7D)
     let drag_config = if with_drag {
@@ -269,10 +284,14 @@ fn run_7_test(
     for record in &trajectory[1..] {
         // Update Sun/Moon positions from ephemeris
         let target_tdb_jd = tdb_jd + record.time / 86400.0;
-        sim.sources[sun].position =
-            earth_centered_position(EphemerisBody::Sun, target_tdb_jd, &ephemeris);
-        sim.sources[moon].position =
-            earth_centered_position(EphemerisBody::Moon, target_tdb_jd, &ephemeris);
+        sim.set_source_position(
+            sun,
+            earth_centered_position(EphemerisBody::Sun, target_tdb_jd, &ephemeris),
+        );
+        sim.set_source_position(
+            moon,
+            earth_centered_position(EphemerisBody::Moon, target_tdb_jd, &ephemeris),
+        );
 
         sim.step_until(record.time);
         let body = sim.body(0);

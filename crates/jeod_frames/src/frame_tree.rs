@@ -173,6 +173,96 @@ impl FrameTree {
         from_negated.incr_right(&state_to)
     }
 
+    // -- lookup --------------------------------------------------------------
+
+    /// Find a frame by name. Returns the first match, or `None`.
+    pub fn find_by_name(&self, name: &str) -> Option<FrameId> {
+        self.nodes.iter().position(|n| n.name == name)
+    }
+
+    // -- tree mutation -------------------------------------------------------
+
+    /// Test whether `id` is a descendant of `ancestor` (or equal to it).
+    pub fn is_descendant_of(&self, id: FrameId, ancestor: FrameId) -> bool {
+        if id == ancestor {
+            return true;
+        }
+        let mut current = id;
+        while let Some(p) = self.parent[current] {
+            if p == ancestor {
+                return true;
+            }
+            current = p;
+        }
+        false
+    }
+
+    /// Move a frame to a new parent, preserving its absolute state.
+    ///
+    /// Port of JEOD's `RefFrame::transplant_node()`: the frame's position in
+    /// the tree changes, but its state relative to the root is preserved by
+    /// recomputing the relative state with respect to the new parent.
+    ///
+    /// # Panics
+    /// - `new_parent` is a descendant of `id` (would create a cycle).
+    /// - `id` is a root frame with no parent.
+    /// - `id` and `new_parent` do not share a common root.
+    pub fn reparent(&mut self, id: FrameId, new_parent: FrameId) {
+        // Check root first — root has no parent to detach from.
+        assert!(
+            self.parent[id].is_some(),
+            "reparent: frame {} has no parent (is a root) — cannot reparent root frames",
+            id
+        );
+
+        // No-op if already parented to `new_parent`.
+        if self.parent[id] == Some(new_parent) {
+            return;
+        }
+
+        assert!(
+            !self.is_descendant_of(new_parent, id),
+            "reparent: new_parent {} is a descendant of {} — would create a cycle",
+            new_parent,
+            id
+        );
+
+        // Verify frames share a common root before computing relative state.
+        // find_common_ancestor panics with a generic message; catch it here
+        // with a reparent-specific message for easier debugging.
+        {
+            let mut cur = new_parent;
+            while let Some(p) = self.parent[cur] {
+                cur = p;
+            }
+            let new_parent_root = cur;
+            cur = id;
+            while let Some(p) = self.parent[cur] {
+                cur = p;
+            }
+            assert!(
+                cur == new_parent_root,
+                "reparent: frame {id} and new_parent {new_parent} do not share a common root"
+            );
+        }
+
+        // Compute state of `id` relative to `new_parent` (preserves absolute state).
+        let new_state = self.compute_relative_state(new_parent, id);
+
+        // Remove from old parent's children list.
+        let old_parent = self.parent[id].unwrap();
+        self.children[old_parent].retain(|&c| c != id);
+
+        // Attach to new parent.
+        self.parent[id] = Some(new_parent);
+        self.children[new_parent].push(id);
+
+        // Store recomputed relative state.
+        self.nodes[id].state = new_state;
+    }
+
+    // -- tree traversal (internal) ------------------------------------------
+
     /// Compose states from `id` up to `ancestor`, returning the state of
     /// `id` relative to `ancestor`.
     ///
@@ -719,5 +809,174 @@ mod tests {
             "  4-level frame tree: all 4 frame pairs match direct composition within tolerances \
              (rot {tol_rot:.0e}, pos/vel {tol_pos:.0e})"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // 9. find_by_name
+    // -----------------------------------------------------------------------
+    #[test]
+    fn find_by_name() {
+        let mut tree = FrameTree::new();
+        let root = tree.add_root("Earth.inertial".into(), RefFrameKind::Inertial);
+        let moon = tree.add_child(
+            root,
+            "Moon.inertial".into(),
+            RefFrameKind::Inertial,
+            RefFrameState::default(),
+        );
+
+        assert_eq!(tree.find_by_name("Earth.inertial"), Some(root));
+        assert_eq!(tree.find_by_name("Moon.inertial"), Some(moon));
+        assert_eq!(tree.find_by_name("Mars.inertial"), None);
+    }
+
+    // -----------------------------------------------------------------------
+    // 10. is_descendant_of
+    // -----------------------------------------------------------------------
+    #[test]
+    fn is_descendant_of() {
+        let mut tree = FrameTree::new();
+        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let a = tree.add_child(
+            root,
+            "A".into(),
+            RefFrameKind::Body,
+            RefFrameState::default(),
+        );
+        let b = tree.add_child(a, "B".into(), RefFrameKind::Body, RefFrameState::default());
+        let c = tree.add_child(
+            root,
+            "C".into(),
+            RefFrameKind::Body,
+            RefFrameState::default(),
+        );
+
+        assert!(tree.is_descendant_of(b, root));
+        assert!(tree.is_descendant_of(b, a));
+        assert!(tree.is_descendant_of(a, root));
+        assert!(tree.is_descendant_of(root, root)); // self
+        assert!(!tree.is_descendant_of(root, a));
+        assert!(!tree.is_descendant_of(c, a)); // sibling, not descendant
+        assert!(!tree.is_descendant_of(b, c)); // cross-branch
+    }
+
+    // -----------------------------------------------------------------------
+    // 11. reparent: move a child to a different parent, verify state preserved
+    // -----------------------------------------------------------------------
+    #[test]
+    fn reparent_preserves_absolute_state() {
+        let mut tree = FrameTree::new();
+        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+
+        // Two children of root with distinct states.
+        let state_a = make_state(
+            0.3,
+            DVec3::new(1000.0, 0.0, 0.0),
+            DVec3::new(10.0, 0.0, 0.0),
+            DVec3::new(0.0, 0.0, 0.01),
+        );
+        let a = tree.add_child(root, "A".into(), RefFrameKind::Body, state_a);
+
+        let state_b = make_state(
+            -0.5,
+            DVec3::new(0.0, 2000.0, 0.0),
+            DVec3::new(0.0, 20.0, 0.0),
+            DVec3::new(0.0, 0.0, 0.02),
+        );
+        let b = tree.add_child(root, "B".into(), RefFrameKind::Body, state_b);
+
+        // Child of B.
+        let state_c = make_state(
+            0.1,
+            DVec3::new(100.0, 100.0, 0.0),
+            DVec3::new(1.0, 1.0, 0.0),
+            DVec3::new(0.001, 0.0, 0.0),
+        );
+        let c = tree.add_child(b, "C".into(), RefFrameKind::Body, state_c);
+
+        // Record absolute state of C before reparent (root -> C).
+        let abs_before = tree.compute_relative_state(root, c);
+
+        // Reparent C from B to A.
+        tree.reparent(c, a);
+
+        // Verify tree structure changed.
+        assert_eq!(tree.parent(c), Some(a));
+        assert!(tree.children(a).contains(&c));
+        assert!(!tree.children(b).contains(&c));
+
+        // Verify absolute state is preserved.
+        let abs_after = tree.compute_relative_state(root, c);
+
+        let tol_pos = 1e-10;
+        let tol_rot = 1e-13;
+        assert!(
+            approx_eq_vec3(abs_after.trans.position, abs_before.trans.position, tol_pos),
+            "reparent position drift: expected {:?}, got {:?}, diff = {:.4e}",
+            abs_before.trans.position,
+            abs_after.trans.position,
+            (abs_after.trans.position - abs_before.trans.position).length()
+        );
+        assert!(
+            approx_eq_vec3(abs_after.trans.velocity, abs_before.trans.velocity, tol_pos),
+            "reparent velocity drift: expected {:?}, got {:?}",
+            abs_before.trans.velocity,
+            abs_after.trans.velocity
+        );
+        assert!(
+            approx_eq_mat3(
+                &abs_after.rot.t_parent_this,
+                &abs_before.rot.t_parent_this,
+                tol_rot
+            ),
+            "reparent rotation drift"
+        );
+        assert!(
+            approx_eq_vec3(
+                abs_after.rot.ang_vel_this,
+                abs_before.rot.ang_vel_this,
+                tol_rot
+            ),
+            "reparent ang_vel drift"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // 12. reparent panics on cycle
+    // -----------------------------------------------------------------------
+    #[test]
+    #[should_panic(expected = "would create a cycle")]
+    fn reparent_cycle_panics() {
+        let mut tree = FrameTree::new();
+        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let a = tree.add_child(
+            root,
+            "A".into(),
+            RefFrameKind::Body,
+            RefFrameState::default(),
+        );
+        let b = tree.add_child(a, "B".into(), RefFrameKind::Body, RefFrameState::default());
+
+        // Try to reparent A under its own descendant B — should panic.
+        tree.reparent(a, b);
+    }
+
+    // -----------------------------------------------------------------------
+    // 13. reparent panics on root
+    // -----------------------------------------------------------------------
+    #[test]
+    #[should_panic(expected = "cannot reparent root frames")]
+    fn reparent_root_panics() {
+        let mut tree = FrameTree::new();
+        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let a = tree.add_child(
+            root,
+            "A".into(),
+            RefFrameKind::Body,
+            RefFrameState::default(),
+        );
+
+        // Try to reparent the root — should panic.
+        tree.reparent(root, a);
     }
 }

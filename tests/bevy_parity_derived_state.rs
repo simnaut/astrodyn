@@ -95,15 +95,20 @@ fn tier3_bevy_derived_states() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(GravitySourceEntry::new(earth_source(), DVec3::ZERO, None));
-    let sun_idx = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: 0.0,
-            model: GravityModel::PointMass,
-        },
-        sun_pos,
-        None,
-    ));
+    let mut earth_entry = GravitySourceEntry::new(earth_source(), DVec3::ZERO, None);
+    earth_entry.central = true;
+    let earth_idx = sim.add_source("Earth", earth_entry);
+    let sun_idx = sim.add_source(
+        "Sun",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            sun_pos,
+            None,
+        ),
+    );
     sim.sun_source = Some(sun_idx);
 
     let mut body = new_sim_body_sixdof(earth_idx, false);
@@ -207,15 +212,20 @@ fn tier3_bevy_geodetic_derived_state() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(GravitySourceEntry {
-        source: earth_source(),
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: Some(DMat3::IDENTITY),
-        delta_c20: 0.0,
-        rotation_model: RotationModel::EarthRNP,
-        tidal_config: None,
-    });
+    let earth_idx = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: earth_source(),
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: Some(DMat3::IDENTITY),
+            delta_c20: 0.0,
+            rotation_model: RotationModel::EarthRNP,
+            tidal_config: None,
+            planet_omega: jeod_sim::planet_config::EARTH.omega,
+            central: true,
+        },
+    );
 
     let body = VehicleConfig {
         trans: iss_trans(),
@@ -343,15 +353,20 @@ fn tier3_bevy_eccentric_derived_states() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(GravitySourceEntry::new(earth_source(), DVec3::ZERO, None));
-    let sun_idx = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: 0.0,
-            model: GravityModel::PointMass,
-        },
-        sun_pos,
-        None,
-    ));
+    let mut earth_entry = GravitySourceEntry::new(earth_source(), DVec3::ZERO, None);
+    earth_entry.central = true;
+    let earth_idx = sim.add_source("Earth", earth_entry);
+    let sun_idx = sim.add_source(
+        "Sun",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            sun_pos,
+            None,
+        ),
+    );
     sim.sun_source = Some(sun_idx);
 
     sim.add_body(VehicleConfig {
@@ -465,15 +480,20 @@ fn tier3_bevy_polar_geodetic() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(GravitySourceEntry {
-        source: earth_source(),
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: Some(DMat3::IDENTITY),
-        delta_c20: 0.0,
-        rotation_model: RotationModel::EarthRNP,
-        tidal_config: None,
-    });
+    let earth_idx = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: earth_source(),
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: Some(DMat3::IDENTITY),
+            delta_c20: 0.0,
+            rotation_model: RotationModel::EarthRNP,
+            tidal_config: None,
+            planet_omega: jeod_sim::planet_config::EARTH.omega,
+            central: true,
+        },
+    );
 
     sim.add_body(VehicleConfig {
         trans: polar_trans,
@@ -580,15 +600,20 @@ fn tier3_bevy_equatorial_solar_beta() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(GravitySourceEntry::new(earth_source(), DVec3::ZERO, None));
-    let sun_idx = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: 0.0,
-            model: GravityModel::PointMass,
-        },
-        sun_pos,
-        None,
-    ));
+    let mut earth_entry = GravitySourceEntry::new(earth_source(), DVec3::ZERO, None);
+    earth_entry.central = true;
+    let earth_idx = sim.add_source("Earth", earth_entry);
+    let sun_idx = sim.add_source(
+        "Sun",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            sun_pos,
+            None,
+        ),
+    );
     sim.sun_source = Some(sun_idx);
 
     sim.add_body(VehicleConfig {
@@ -841,15 +866,20 @@ fn run_ned_parity(label: &str, trans: TranslationalState, r_eq: f64, r_pol: f64)
 
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(GravitySourceEntry {
-        source: earth_source(),
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: Some(DMat3::IDENTITY),
-        delta_c20: 0.0,
-        rotation_model: RotationModel::EarthRNP,
-        tidal_config: None,
-    });
+    let earth_idx = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: earth_source(),
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: Some(DMat3::IDENTITY),
+            delta_c20: 0.0,
+            rotation_model: RotationModel::EarthRNP,
+            tidal_config: None,
+            planet_omega: jeod_sim::planet_config::EARTH.omega,
+            central: true,
+        },
+    );
 
     sim.add_body(VehicleConfig {
         trans,
@@ -1107,14 +1137,17 @@ fn tier3_bevy_solar_beta() {
     let bevy_beta = app.world().get::<SolarBetaC>(vehicle).unwrap().0;
 
     let (mut sim, earth_idx) = new_sim_earth(DT);
-    let sun_idx = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: 0.0,
-            model: GravityModel::PointMass,
-        },
-        sun_pos,
-        None,
-    ));
+    let sun_idx = sim.add_source(
+        "Sun",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            sun_pos,
+            None,
+        ),
+    );
     sim.sun_source = Some(sun_idx);
 
     sim.add_body(VehicleConfig {

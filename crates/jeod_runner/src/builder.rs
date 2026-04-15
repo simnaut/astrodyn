@@ -16,7 +16,7 @@ use jeod_sim::{
 
 use crate::{
     DerivedStateConfig, EarthLightingConfig, FrameSwitchConfig, GeodeticConfig, GravitySourceEntry,
-    IntegrationFrame, ShadowBody, Simulation, SrpModel, VehicleConfig,
+    ShadowBody, Simulation, SrpModel, VehicleConfig,
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -52,7 +52,7 @@ pub struct VehicleBuilder {
     derived: DerivedStateConfig,
     external_force: DVec3,
     external_torque: DVec3,
-    integ_frame: IntegrationFrame,
+    integ_source: Option<usize>,
     frame_switches: Vec<FrameSwitchConfig>,
 }
 
@@ -73,7 +73,7 @@ impl VehicleConfig {
             derived: DerivedStateConfig::default(),
             external_force: DVec3::ZERO,
             external_torque: DVec3::ZERO,
-            integ_frame: IntegrationFrame::default(),
+            integ_source: None,
             frame_switches: Vec::new(),
         }
     }
@@ -235,9 +235,10 @@ impl VehicleBuilder {
 
     // ── Frame switching ──
 
-    /// Set the initial integration frame (default: [`IntegrationFrame::EarthInertial`]).
-    pub fn integ_frame(mut self, frame: IntegrationFrame) -> Self {
-        self.integ_frame = frame;
+    /// Set the initial integration source (default: simulation root / central body).
+    /// `source_idx` is the index returned by `SimulationBuilder::add_source()`.
+    pub fn integ_source(mut self, source_idx: usize) -> Self {
+        self.integ_source = Some(source_idx);
         self
     }
 
@@ -268,7 +269,7 @@ impl VehicleBuilder {
             derived: self.derived,
             external_force: self.external_force,
             external_torque: self.external_torque,
-            integ_frame: self.integ_frame,
+            integ_source: self.integ_source,
             frame_switches: self.frame_switches,
         }
     }
@@ -286,7 +287,7 @@ impl VehicleBuilder {
 /// use jeod_sim::{SimulationTime, EARTH, AtmosphereModel};
 ///
 /// let mut builder = Simulation::builder(time, 10.0);
-/// let earth = builder.add_source(GravitySourceEntry::central_body(&EARTH));
+/// let earth = builder.add_source("Earth", GravitySourceEntry::central_body(&EARTH));
 /// builder.add_body(VehicleConfig::builder(trans).gravity(ctrl).build());
 /// let mut sim = builder.build()?;
 /// ```
@@ -311,7 +312,7 @@ pub struct SimulationBuilder {
     polar_motion: Option<(f64, f64)>,
     sun_source: Option<usize>,
     moon_source: Option<usize>,
-    sources: Vec<GravitySourceEntry>,
+    sources: Vec<(String, GravitySourceEntry)>,
     source_ephem_bodies: Vec<Option<(jeod_sim::EphemerisBody, jeod_sim::EphemerisBody)>>,
     bodies: Vec<VehicleConfig>,
     /// Body names for mass tree registration (index matches `bodies`).
@@ -389,10 +390,10 @@ impl SimulationBuilder {
 
     // ── Sources and bodies (&mut self for index returns) ──
 
-    /// Add a gravity source. Returns its index.
-    pub fn add_source(&mut self, entry: GravitySourceEntry) -> usize {
+    /// Add a gravity source with a name for the frame tree. Returns its index.
+    pub fn add_source(&mut self, name: impl Into<String>, entry: GravitySourceEntry) -> usize {
         let idx = self.sources.len();
-        self.sources.push(entry);
+        self.sources.push((name.into(), entry));
         self.source_ephem_bodies.push(None);
         idx
     }
@@ -486,8 +487,8 @@ impl SimulationBuilder {
         sim.sun_source = self.sun_source;
         sim.moon_source = self.moon_source;
 
-        for (i, source) in self.sources.into_iter().enumerate() {
-            sim.add_source(source);
+        for (i, (name, source)) in self.sources.into_iter().enumerate() {
+            sim.add_source(name, source);
             if let Some(Some((target, observer))) = self.source_ephem_bodies.get(i) {
                 sim.set_source_ephemeris(i, *target, *observer);
             }

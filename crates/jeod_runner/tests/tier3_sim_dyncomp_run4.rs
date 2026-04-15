@@ -109,49 +109,64 @@ fn tier3_simulation_run4_3rd_body() {
     let mut sim = Simulation::new(time, dt);
 
     // Earth: central body at origin (not differential)
-    let earth = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: earth_grav.mu,
-            model: GravityModel::PointMass,
+    let earth = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: earth_grav.mu,
+                model: GravityModel::PointMass,
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: RotationModel::default(),
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: true,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+    );
 
     // Sun: third-body (differential acceleration)
     let tdb_jd = sim.time.tdb_julian_date();
     let initial_sun = earth_centered_position(EphemerisBody::Sun, tdb_jd, &ephemeris);
-    let sun = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: mu_sun,
-            model: GravityModel::PointMass,
+    let sun = sim.add_source(
+        "Sun",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: mu_sun,
+                model: GravityModel::PointMass,
+            },
+            position: initial_sun,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: RotationModel::default(),
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: false,
         },
-        position: initial_sun,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+    );
 
     // Moon: third-body (differential acceleration)
     let initial_moon = earth_centered_position(EphemerisBody::Moon, tdb_jd, &ephemeris);
-    let moon = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: mu_moon,
-            model: GravityModel::PointMass,
+    let moon = sim.add_source(
+        "Moon",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: mu_moon,
+                model: GravityModel::PointMass,
+            },
+            position: initial_moon,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: RotationModel::default(),
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: false,
         },
-        position: initial_moon,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+    );
 
     // ISS mass properties (parsed from Modified_data/mass.py)
     let inertia = glam::DMat3::from_cols(
@@ -214,10 +229,14 @@ fn tier3_simulation_run4_3rd_body() {
         // Compute TDB JD for the target time using the epoch's TDB JD plus
         // elapsed simulation days. This uses the proper TDB timescale.
         let target_tdb_jd = tdb_jd + record.time / 86400.0;
-        sim.sources[sun].position =
-            earth_centered_position(EphemerisBody::Sun, target_tdb_jd, &ephemeris);
-        sim.sources[moon].position =
-            earth_centered_position(EphemerisBody::Moon, target_tdb_jd, &ephemeris);
+        sim.set_source_position(
+            sun,
+            earth_centered_position(EphemerisBody::Sun, target_tdb_jd, &ephemeris),
+        );
+        sim.set_source_position(
+            moon,
+            earth_centered_position(EphemerisBody::Moon, target_tdb_jd, &ephemeris),
+        );
 
         sim.step_until(record.time);
 

@@ -89,15 +89,20 @@ fn run_sh_simulation_test(
 
     // Earth source with planet-fixed rotation (Simulation updates it each step).
     // Initialize with identity — first step() will compute the real rotation.
-    let earth = sim.add_source(GravitySourceEntry {
-        source: sh_source,
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: Some(DMat3::IDENTITY), // presence triggers ephemeris update
-        delta_c20: 0.0,
-        rotation_model: RotationModel::EarthRNP,
-        tidal_config: None,
-    });
+    let earth = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: sh_source,
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: Some(DMat3::IDENTITY), // presence triggers ephemeris update
+            delta_c20: 0.0,
+            rotation_model: RotationModel::EarthRNP,
+            tidal_config: None,
+            planet_omega: OMEGA_EARTH,
+            central: true,
+        },
+    );
 
     sim.add_body(VehicleConfig {
         trans: TranslationalState {

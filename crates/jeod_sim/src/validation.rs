@@ -56,20 +56,26 @@ pub enum ValidationError {
     EarthLightingWithoutSunSource { body_idx: usize },
     /// Body has `earth_lighting_config` but simulation has no `moon_source`.
     EarthLightingWithoutMoonSource { body_idx: usize },
-    /// Frame switch `central_source` index exceeds number of gravity sources.
-    FrameSwitchCentralSourceOutOfRange {
+    /// Frame switch `target_source` index exceeds number of gravity sources.
+    FrameSwitchTargetSourceOutOfRange {
         body_idx: usize,
-        central_source: usize,
+        target_source: usize,
         num_sources: usize,
     },
-    /// Frame switch `central_source` is not in the body's gravity controls.
-    FrameSwitchCentralSourceNotInControls {
+    /// Frame switch `target_source` is not in the body's gravity controls.
+    /// The post-switch gravity reclassification requires a control entry for
+    /// the target source (it becomes the non-differential central body).
+    FrameSwitchTargetSourceNotInControls {
         body_idx: usize,
-        central_source: usize,
+        target_source: usize,
     },
-    /// Body uses a non-ECI integration frame (or has an active frame switch to
-    /// a non-Earth frame) but has ECI-dependent derived-state features enabled.
-    NonEciFrameWithEciDependentFeatures { body_idx: usize },
+    /// Body uses a non-root integration frame (or has an active frame switch to
+    /// a non-root frame) but has features that assume root-inertial coordinates.
+    NonRootFrameWithRootDependentFeatures { body_idx: usize },
+    /// Source has an ephemeris mapping but its inertial frame is the root frame.
+    /// The root frame must remain at the origin; ephemeris position updates
+    /// would be silently ignored.
+    EphemerisOnRootSource { source_idx: usize },
 }
 
 impl std::fmt::Display for ValidationError {
@@ -231,37 +237,46 @@ impl std::fmt::Display for ValidationError {
                      moon_source. Set Simulation::moon_source for earth lighting computation."
                 )
             }
-            Self::FrameSwitchCentralSourceOutOfRange {
+            Self::FrameSwitchTargetSourceOutOfRange {
                 body_idx,
-                central_source,
+                target_source,
                 num_sources,
             } => {
                 write!(
                     f,
-                    "Body {body_idx}: frame switch central_source index {central_source} \
+                    "Body {body_idx}: frame switch target_source index {target_source} \
                      is out of range (simulation has {num_sources} gravity sources)."
                 )
             }
-            Self::FrameSwitchCentralSourceNotInControls {
+            Self::FrameSwitchTargetSourceNotInControls {
                 body_idx,
-                central_source,
+                target_source,
             } => {
                 write!(
                     f,
-                    "Body {body_idx}: frame switch central_source index {central_source} \
-                     is not present in the body's gravity_controls. The post-switch \
-                     differential/central gravity classification requires the source \
-                     to have a GravityControl entry."
+                    "Body {body_idx}: frame switch target_source index {target_source} \
+                     is not in the body's gravity_controls. The post-switch gravity \
+                     reclassification requires the target source to have a \
+                     GravityControl entry (it becomes the non-differential central body)."
                 )
             }
-            Self::NonEciFrameWithEciDependentFeatures { body_idx } => {
+            Self::NonRootFrameWithRootDependentFeatures { body_idx } => {
                 write!(
                     f,
-                    "Body {body_idx}: non-ECI integration frame with ECI-dependent \
-                     features enabled (drag, SRP, orbital elements, euler angles, LVLH, \
-                     geodetic, solar beta, or earth lighting). These derived states \
-                     assume Earth-centered inertial coordinates and will produce \
-                     incorrect results in other frames."
+                    "Body {body_idx}: non-root integration frame with features that \
+                     assume root-inertial coordinates (drag, SRP, orbital elements, \
+                     euler angles, LVLH, geodetic, solar beta, or earth lighting). \
+                     These derived states assume the simulation's central-body \
+                     inertial frame and will produce incorrect results in other frames."
+                )
+            }
+            Self::EphemerisOnRootSource { source_idx } => {
+                write!(
+                    f,
+                    "Source {source_idx}: has an ephemeris mapping but its inertial frame \
+                     is the root frame. The root frame must remain at the origin; \
+                     ephemeris position updates would be silently ignored. Remove the \
+                     ephemeris mapping for the central body source."
                 )
             }
         }
@@ -279,7 +294,7 @@ impl ValidationError {
     pub fn is_warning(&self) -> bool {
         matches!(
             self,
-            Self::UninitializedState | Self::NonEciFrameWithEciDependentFeatures { .. }
+            Self::UninitializedState | Self::NonRootFrameWithRootDependentFeatures { .. }
         )
     }
 }

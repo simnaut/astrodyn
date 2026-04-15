@@ -45,36 +45,46 @@ fn pipeline_earth_lighting_smoke() {
     let mut sim = Simulation::new(time, 60.0);
 
     // Earth
-    let earth = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: mu_earth,
-            model: GravityModel::PointMass,
+    let earth = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: mu_earth,
+                model: GravityModel::PointMass,
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: RotationModel::default(),
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: true,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+    );
 
     // Sun from DE421
     let j2000_jd = 2_451_545.0;
     let (initial_sun, _) = ephemeris
         .get_earth_centered_state(EphemerisBody::Sun, j2000_jd)
         .expect("Sun position at J2000");
-    let sun = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: 0.0,
-            model: GravityModel::PointMass,
+    let sun = sim.add_source(
+        "Sun",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            position: initial_sun,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: RotationModel::default(),
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: false,
         },
-        position: initial_sun,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+    );
     sim.set_source_ephemeris(sun, EphemerisBody::Sun, EphemerisBody::Earth);
     sim.sun_source = Some(sun);
 
@@ -82,18 +92,23 @@ fn pipeline_earth_lighting_smoke() {
     let (initial_moon, _) = ephemeris
         .get_earth_centered_state(EphemerisBody::Moon, j2000_jd)
         .expect("Moon position at J2000");
-    let moon = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: 0.0,
-            model: GravityModel::PointMass,
+    let moon = sim.add_source(
+        "Moon",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            position: initial_moon,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: RotationModel::default(),
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: false,
         },
-        position: initial_moon,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+    );
     sim.set_source_ephemeris(moon, EphemerisBody::Moon, EphemerisBody::Earth);
     sim.moon_source = Some(moon);
     sim.ephemeris = Some(ephemeris);

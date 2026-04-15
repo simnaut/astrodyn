@@ -202,18 +202,23 @@ fn tier3_simulation_srp_flat_plate() {
     let mut sim = Simulation::new(time, srp_dt);
 
     // Earth at origin (gravity source + shadow body)
-    let earth = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: srp_mu_earth,
-            model: GravityModel::PointMass,
+    let earth = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: srp_mu_earth,
+                model: GravityModel::PointMass,
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: RotationModel::default(),
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: true,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+    );
 
     // Sun (position updated each logging interval from ephemeris).
     // mu=0 matches the JEOD SIM_3_ORBIT reference sim, which uses Sun only
@@ -221,18 +226,23 @@ fn tier3_simulation_srp_flat_plate() {
     // vehicle_baseline.py. 3rd-body gravity is validated independently by
     // tier3_sim_dyncomp_run4, run7, and tier3_sim_torque_simple.
     let initial_sun = srp_sun_position(0.0, epoch_tdb_jd, &ephemeris);
-    let sun = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: 0.0,
-            model: GravityModel::PointMass,
+    let sun = sim.add_source(
+        "Sun",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            position: initial_sun,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: RotationModel::default(),
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: false,
         },
-        position: initial_sun,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+    );
     sim.sun_source = Some(sun);
 
     sim.add_body(VehicleConfig {
@@ -285,7 +295,7 @@ fn tier3_simulation_srp_flat_plate() {
         let t = (step_i as f64) * srp_dt;
 
         // Update Sun position every step (matching JEOD's per-step ephemeris update)
-        sim.sources[sun].position = sun_table.at(t);
+        sim.set_source_position(sun, sun_table.at(t));
 
         sim.step();
 

@@ -14,9 +14,7 @@
 
 use glam::{DMat3, DQuat, DVec3};
 use jeod_math::JeodQuat;
-use jeod_runner::{
-    FrameSwitchConfig, GravitySourceEntry, IntegrationFrame, Simulation, SwitchSense, VehicleConfig,
-};
+use jeod_runner::{FrameSwitchConfig, GravitySourceEntry, Simulation, SwitchSense, VehicleConfig};
 use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, MassProperties, RotationalState,
     SimulationTime,
@@ -60,8 +58,11 @@ fn test_data_dir() -> std::path::PathBuf {
 
 /// Build a Simulation configured for the Apollo 8 scenario.
 ///
-/// Returns (sim, body_index).
-fn build_apollo8_sim(frame_switches: Vec<FrameSwitchConfig>) -> (Simulation, usize) {
+/// Returns (sim, body_index, moon_source_index).
+///
+/// If `enable_frame_switch` is true, a distance-based frame switch to the
+/// Moon's inertial frame is configured.
+fn build_apollo8_sim(enable_frame_switch: bool) -> (Simulation, usize, usize) {
     let data_dir = test_data_dir();
     let bsp_path = data_dir.join("de405.bsp");
     assert!(
@@ -85,37 +86,45 @@ fn build_apollo8_sim(frame_switches: Vec<FrameSwitchConfig>) -> (Simulation, usi
     sim.ephemeris = Some(ephemeris);
 
     // Gravity sources: Sun, Earth, Moon (all spherical, matching JEOD config)
-    let sun = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: MU_SUN,
-            model: GravityModel::PointMass,
-        },
-        DVec3::ZERO,
-        None,
-    ));
+    let sun = sim.add_source(
+        "Sun",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: MU_SUN,
+                model: GravityModel::PointMass,
+            },
+            DVec3::ZERO,
+            None,
+        ),
+    );
     sim.set_source_ephemeris(
         sun,
         jeod_sim::EphemerisBody::Sun,
         jeod_sim::EphemerisBody::Earth,
     );
 
-    let earth = sim.add_source(GravitySourceEntry::new(
+    let mut earth_entry = GravitySourceEntry::new(
         GravitySource {
             mu: MU_EARTH,
             model: GravityModel::PointMass,
         },
         DVec3::ZERO,
         None,
-    ));
+    );
+    earth_entry.central = true;
+    let earth = sim.add_source("Earth", earth_entry);
 
-    let moon = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: MU_MOON,
-            model: GravityModel::PointMass,
-        },
-        DVec3::ZERO,
-        None,
-    ));
+    let moon = sim.add_source(
+        "Moon",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: MU_MOON,
+                model: GravityModel::PointMass,
+            },
+            DVec3::ZERO,
+            None,
+        ),
+    );
     sim.set_source_ephemeris(
         moon,
         jeod_sim::EphemerisBody::Moon,
@@ -153,14 +162,23 @@ fn build_apollo8_sim(frame_switches: Vec<FrameSwitchConfig>) -> (Simulation, usi
                 GravityControl::new_third_body(moon),
             ],
         },
-        integ_frame: IntegrationFrame::EarthInertial,
-        frame_switches,
+        integ_source: None,
+        frame_switches: if enable_frame_switch {
+            vec![FrameSwitchConfig {
+                target_source: moon,
+                switch_sense: SwitchSense::OnApproach,
+                switch_distance: SWITCH_DISTANCE,
+                active: true,
+            }]
+        } else {
+            vec![]
+        },
         ..Default::default()
     });
 
     sim.validate().expect("validation failed");
 
-    (sim, body)
+    (sim, body, moon)
 }
 
 /// Load reference CSV and return position vectors at each timestep.
@@ -241,7 +259,7 @@ fn load_reference_sixdof(filename: &str) -> Vec<RefState> {
 
 #[test]
 fn tier3_apollo8_eci_integ() {
-    let (mut sim, body_idx) = build_apollo8_sim(vec![]);
+    let (mut sim, body_idx, _moon) = build_apollo8_sim(false);
 
     let ref_states = load_reference_sixdof("apollo8_eci_sixdof_state.csv");
 
@@ -290,13 +308,7 @@ fn tier3_apollo8_eci_integ() {
 /// Moon-centered after.
 #[test]
 fn tier3_apollo8_frame_switch() {
-    let (mut sim, body_idx) = build_apollo8_sim(vec![FrameSwitchConfig {
-        target_frame: IntegrationFrame::MoonInertial,
-        switch_sense: SwitchSense::OnApproach,
-        switch_distance: SWITCH_DISTANCE,
-        active: true,
-        central_source: Some(2),
-    }]);
+    let (mut sim, body_idx, _moon) = build_apollo8_sim(true);
 
     let ref_positions = load_reference_positions("apollo8_frame_switch_V_1_State.csv");
 
@@ -312,7 +324,7 @@ fn tier3_apollo8_frame_switch() {
         }
         let our_pos = sim.body(body_idx).trans.position;
         let err = (our_pos - ref_positions[ref_idx]).length();
-        if sim.body(body_idx).integ_frame == IntegrationFrame::EarthInertial {
+        if sim.body(body_idx).integ_frame_id == sim.root_frame_id {
             max_err_eci = max_err_eci.max(err);
         } else {
             max_err_moon = max_err_moon.max(err);

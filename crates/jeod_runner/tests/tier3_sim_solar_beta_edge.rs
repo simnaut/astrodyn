@@ -114,39 +114,49 @@ fn run_solar_beta_test(
     } else {
         None
     };
-    let earth = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: mu_earth,
-            model: gravity_model,
+    let earth = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: mu_earth,
+                model: gravity_model,
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: initial_rotation,
+            delta_c20: 0.0,
+            rotation_model: if use_sh_gravity {
+                RotationModel::EarthRNP
+            } else {
+                RotationModel::default()
+            },
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: true,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: initial_rotation,
-        delta_c20: 0.0,
-        rotation_model: if use_sh_gravity {
-            RotationModel::EarthRNP
-        } else {
-            RotationModel::default()
-        },
-        tidal_config: None,
-    });
+    );
 
     // Sun source — position from DE421 at epoch
     let (initial_sun, _) = ephemeris
         .get_earth_centered_state(EphemerisBody::Sun, EPOCH_TDB_JD)
         .expect("Sun position at epoch");
-    let sun = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: 0.0,
-            model: GravityModel::PointMass,
+    let sun = sim.add_source(
+        "Sun",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            position: initial_sun,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: RotationModel::default(),
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: false,
         },
-        position: initial_sun,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: None,
-        delta_c20: 0.0,
-        rotation_model: RotationModel::default(),
-        tidal_config: None,
-    });
+    );
     sim.set_source_ephemeris(sun, EphemerisBody::Sun, EphemerisBody::Earth);
     sim.sun_source = Some(sun);
     sim.ephemeris = Some(ephemeris);

@@ -77,28 +77,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut sim = Simulation::new(time, DT);
 
     // Mars: central body with MRO110B2 SH gravity + IAU rotation
-    let mars = sim.add_source(GravitySourceEntry {
-        source: GravitySource {
-            mu: mars_mu,
-            model: GravityModel::SphericalHarmonics(Box::new(sh_data)),
+    let mars = sim.add_source(
+        "Mars",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: mars_mu,
+                model: GravityModel::SphericalHarmonics(Box::new(sh_data)),
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: Some(DMat3::IDENTITY),
+            rotation_model: RotationModel::MarsIAU,
+            delta_c20: 0.0,
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: true,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        t_inertial_pfix: Some(DMat3::IDENTITY),
-        rotation_model: RotationModel::MarsIAU,
-        delta_c20: 0.0,
-        tidal_config: None,
-    });
+    );
 
     // Sun: 3rd-body with per-step DE421 ephemeris
-    let sun = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: mu_sun,
-            model: GravityModel::PointMass,
-        },
-        sun_pos,
-        None,
-    ));
+    let sun = sim.add_source(
+        "Sun",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: mu_sun,
+                model: GravityModel::PointMass,
+            },
+            sun_pos,
+            None,
+        ),
+    );
     sim.set_source_ephemeris(
         sun,
         jeod_sim::EphemerisBody::Sun,

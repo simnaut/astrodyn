@@ -115,15 +115,20 @@ fn tier3_bevy_full_stack_sixdof() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let earth_idx = sim.add_source(GravitySourceEntry::new(earth_source(), DVec3::ZERO, None));
-    let sun_idx = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: 0.0,
-            model: GravityModel::PointMass,
-        },
-        sun_pos,
-        None,
-    ));
+    let mut earth_entry = GravitySourceEntry::new(earth_source(), DVec3::ZERO, None);
+    earth_entry.central = true;
+    let earth_idx = sim.add_source("Earth", earth_entry);
+    let sun_idx = sim.add_source(
+        "Sun",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            sun_pos,
+            None,
+        ),
+    );
     sim.sun_source = Some(sun_idx);
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Exponential(exp_atmos),
@@ -295,16 +300,21 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
 
-    let earth_idx = sim.add_source(GravitySourceEntry::new(earth_source(), DVec3::ZERO, None));
+    let mut earth_entry = GravitySourceEntry::new(earth_source(), DVec3::ZERO, None);
+    earth_entry.central = true;
+    let earth_idx = sim.add_source("Earth", earth_entry);
 
-    let sun_idx = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: 0.0,
-            model: GravityModel::PointMass,
-        },
-        sun_pos,
-        None,
-    ));
+    let sun_idx = sim.add_source(
+        "Sun",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            sun_pos,
+            None,
+        ),
+    );
     sim.sun_source = Some(sun_idx);
 
     sim.add_body(VehicleConfig {
@@ -418,14 +428,17 @@ fn run_shadow_parity(label: &str, srp_plates: Vec<(FlatPlate, FlatPlateParams, F
 
     // ── Simulation ──
     let (mut sim, earth_idx) = new_sim_earth(DT);
-    let sun_idx = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: 0.0,
-            model: GravityModel::PointMass,
-        },
-        sun_pos,
-        None,
-    ));
+    let sun_idx = sim.add_source(
+        "Sun",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            sun_pos,
+            None,
+        ),
+    );
     sim.sun_source = Some(sun_idx);
 
     let mut body = new_sim_body_sixdof(earth_idx, false);
@@ -512,14 +525,17 @@ fn run_srp_basic_parity(
 
     // ── Simulation ──
     let (mut sim, earth_idx) = new_sim_earth(DT);
-    let sun_idx = sim.add_source(GravitySourceEntry::new(
-        GravitySource {
-            mu: 0.0,
-            model: GravityModel::PointMass,
-        },
-        sun_pos,
-        None,
-    ));
+    let sun_idx = sim.add_source(
+        "Sun",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            sun_pos,
+            None,
+        ),
+    );
     sim.sun_source = Some(sun_idx);
 
     let mut body = new_sim_body_sixdof(earth_idx, false);
