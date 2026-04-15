@@ -730,30 +730,40 @@ impl Simulation {
             )
         };
 
-        // Create planet-fixed child if source has a rotation model.
-        let pfix_id = if entry.rotation_model != RotationModel::None {
-            let pfix_name = format!("{name}.pfix");
-            let rot = if let Some(t) = entry.t_inertial_pfix {
-                RefFrameRot {
-                    q_parent_this: JeodQuat::left_quat_from_transformation(&t),
-                    t_parent_this: t,
-                    ang_vel_this: DVec3::ZERO,
-                }
+        // Create a planet-fixed child when the source has a rotation model or
+        // an explicit inertial-to-pfix transform. This ensures a fixed initial
+        // orientation is not silently ignored when rotation_model is None.
+        let pfix_id =
+            if entry.rotation_model != RotationModel::None || entry.t_inertial_pfix.is_some() {
+                let pfix_name = format!("{name}.pfix");
+                let rot = if let Some(t) = entry.t_inertial_pfix {
+                    RefFrameRot {
+                        q_parent_this: JeodQuat::left_quat_from_transformation(&t),
+                        t_parent_this: t,
+                        ang_vel_this: DVec3::ZERO,
+                    }
+                } else {
+                    RefFrameRot::default()
+                };
+                Some(self.frame_tree.add_child(
+                    inertial_id,
+                    pfix_name,
+                    RefFrameKind::PlanetFixed,
+                    RefFrameState {
+                        trans: RefFrameTrans::default(),
+                        rot,
+                    },
+                ))
             } else {
-                RefFrameRot::default()
+                None
             };
-            Some(self.frame_tree.add_child(
-                inertial_id,
-                pfix_name,
-                RefFrameKind::PlanetFixed,
-                RefFrameState {
-                    trans: RefFrameTrans::default(),
-                    rot,
-                },
-            ))
-        } else {
-            None
-        };
+
+        // Tidal ΔC20 requires a planet-fixed frame for the rotation matrix.
+        assert!(
+            entry.tidal_config.is_none() || pfix_id.is_some(),
+            "add_source: tidal_config requires a planet-fixed frame \
+             (set rotation_model or t_inertial_pfix on the source)."
+        );
 
         self.source_frame_ids.push(SourceFrameIds {
             inertial: inertial_id,

@@ -206,6 +206,7 @@ impl FrameTree {
     /// # Panics
     /// - `new_parent` is a descendant of `id` (would create a cycle).
     /// - `id` is a root frame with no parent.
+    /// - `id` and `new_parent` do not share a common root.
     pub fn reparent(&mut self, id: FrameId, new_parent: FrameId) {
         // Check root first — root has no parent to detach from.
         assert!(
@@ -220,6 +221,25 @@ impl FrameTree {
             new_parent,
             id
         );
+
+        // Verify frames share a common root before computing relative state.
+        // find_common_ancestor panics with a generic message; catch it here
+        // with a reparent-specific message for easier debugging.
+        {
+            let mut cur = new_parent;
+            while let Some(p) = self.parent[cur] {
+                cur = p;
+            }
+            let new_parent_root = cur;
+            cur = id;
+            while let Some(p) = self.parent[cur] {
+                cur = p;
+            }
+            assert!(
+                cur == new_parent_root,
+                "reparent: frame {id} and new_parent {new_parent} do not share a common root"
+            );
+        }
 
         // Compute state of `id` relative to `new_parent` (preserves absolute state).
         let new_state = self.compute_relative_state(new_parent, id);
