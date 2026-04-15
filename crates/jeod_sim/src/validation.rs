@@ -70,6 +70,10 @@ pub enum ValidationError {
     /// Body uses a non-ECI integration frame (or has an active frame switch to
     /// a non-Earth frame) but has ECI-dependent derived-state features enabled.
     NonEciFrameWithEciDependentFeatures { body_idx: usize },
+    /// Source has an ephemeris mapping but its inertial frame is the root frame.
+    /// The root frame must remain at the origin; ephemeris position updates
+    /// would be silently ignored.
+    EphemerisOnRootSource { source_idx: usize },
 }
 
 impl std::fmt::Display for ValidationError {
@@ -262,6 +266,15 @@ impl std::fmt::Display for ValidationError {
                      geodetic, solar beta, or earth lighting). These derived states \
                      assume Earth-centered inertial coordinates and will produce \
                      incorrect results in other frames."
+                )
+            }
+            Self::EphemerisOnRootSource { source_idx } => {
+                write!(
+                    f,
+                    "Source {source_idx}: has an ephemeris mapping but its inertial frame \
+                     is the root frame. The root frame must remain at the origin; \
+                     ephemeris position updates would be silently ignored. Remove the \
+                     ephemeris mapping for the central body source."
                 )
             }
         }

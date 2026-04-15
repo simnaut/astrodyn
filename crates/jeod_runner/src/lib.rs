@@ -796,6 +796,12 @@ impl Simulation {
             "set_source_ephemeris: source_idx {source_idx} out of bounds (len = {})",
             self.source_ephem_bodies.len()
         );
+        assert!(
+            self.source_frame_ids[source_idx].inertial != self.root_frame_id,
+            "set_source_ephemeris: source {source_idx} ({target:?} wrt {observer:?}) \
+             is mapped to the root frame. The root frame must remain at the origin; \
+             ephemeris position updates would be silently ignored."
+        );
         self.source_ephem_bodies[source_idx] = Some((target, observer));
     }
 
@@ -1141,6 +1147,13 @@ impl Simulation {
                     index: idx,
                     num_sources,
                 });
+            }
+        }
+
+        // Ephemeris mapping on root-frame sources — would silently discard position.
+        for (i, ephem) in self.source_ephem_bodies.iter().enumerate() {
+            if ephem.is_some() && self.source_frame_ids[i].inertial == self.root_frame_id {
+                all_errors.push(ValidationError::EphemerisOnRootSource { source_idx: i });
             }
         }
 
@@ -1793,7 +1806,18 @@ impl Simulation {
                 if !sw.active {
                     continue;
                 }
-                let target_fid = self.source_frame_ids[sw.target_source].inertial;
+                let target_fid = self
+                    .source_frame_ids
+                    .get(sw.target_source)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "frame switch evaluation: target_source {} out of range; \
+                             {} source(s) configured. Run validate() before step().",
+                            sw.target_source,
+                            self.source_frame_ids.len()
+                        )
+                    })
+                    .inertial;
                 let (target_origin, _) = self.frame_origin(target_fid);
                 let (current_origin, _) = self.frame_origin(self.bodies[body_idx].integ_frame_id);
                 let body_pos_eci = self.bodies[body_idx].trans.position + current_origin;
@@ -1819,7 +1843,7 @@ impl Simulation {
                 let target_source = self.bodies[body_idx].frame_switches[idx].target_source;
                 self.bodies[body_idx].frame_switches[idx].active = false;
 
-                let new_integ_fid = self.source_frame_ids[target_source].inertial;
+                let new_integ_fid = self.source_frame_ids[target_source].inertial; // bounds already checked above
                 let body_fid = self.bodies[body_idx].body_frame_id;
 
                 // Reparent body frame in tree (preserves absolute state).
