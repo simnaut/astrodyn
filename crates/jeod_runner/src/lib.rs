@@ -1665,12 +1665,15 @@ impl Simulation {
                 body.rot.as_mut(),
                 body.mass.as_ref(),
                 |pos, vel, time_frac| {
-                    // Sub-stage interpolation: linearly interpolate source positions
-                    // at the sub-stage time fraction, matching JEOD's continuous
-                    // frame tree updates at each derivative evaluation.
+                    // Sub-stage interpolation for the integration frame origin.
                     let origin = integ_origin + integ_vel * (time_frac * dt);
-                    // Only interpolate for non-ECI frames; ECI with
-                    // deriv_ephem_update=false freezes positions per step.
+                    // Source position interpolation: JEOD's `deriv_ephem_update`
+                    // defaults to false, meaning ephemerides are NOT updated at
+                    // each derivative evaluation — source positions are frozen
+                    // within a step. We match this for ECI integration
+                    // (integ_vel == ZERO). For non-ECI frames the frame origin
+                    // moves within the step, so we must also interpolate source
+                    // positions to keep gravity evaluation consistent.
                     let sub_dt = if integ_vel != DVec3::ZERO {
                         time_frac * dt
                     } else {
