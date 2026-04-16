@@ -820,4 +820,143 @@ mod tests {
         // Y and Z components should be non-zero due to diffuse reflection off the -X plate
         // (diffuse component has -2/3*normal contribution)
     }
+
+    // ── Thermal integration helper tests ─────────────────────────────
+
+    /// Forward Euler: plate cools when not illuminated (negative temp_dot).
+    #[test]
+    fn euler_cooling() {
+        let (new_temp, new_t_pow4) = integrate_plate_temperature_euler(
+            300.0, // old_temp K
+            300.0_f64.powi(4),
+            -5.0, // temp_dot: cooling
+            60.0, // area
+            0.5,  // emissivity
+            50.0, // heat_capacity_per_area
+            10.0, // dt
+        );
+        assert!(new_temp < 300.0, "Should cool: got {new_temp}");
+        assert!(new_t_pow4 < 300.0_f64.powi(4));
+    }
+
+    /// Forward Euler: temperature is clamped to >= 0.
+    #[test]
+    fn euler_non_negative_temperature() {
+        let (new_temp, new_t_pow4) = integrate_plate_temperature_euler(
+            10.0,
+            10.0_f64.powi(4),
+            -100.0, // huge negative derivative
+            60.0,
+            0.5,
+            50.0,
+            1.0,
+        );
+        assert!(
+            new_temp >= 0.0,
+            "Temperature must not go negative: got {new_temp}"
+        );
+        assert!(new_t_pow4 >= 0.0);
+    }
+
+    /// Forward Euler: zero heat capacity leaves temperature unchanged.
+    #[test]
+    fn euler_zero_heat_capacity() {
+        let (new_temp, new_t_pow4) = integrate_plate_temperature_euler(
+            300.0,
+            300.0_f64.powi(4),
+            10.0,
+            60.0,
+            0.5,
+            0.0, // zero heat capacity
+            10.0,
+        );
+        assert_eq!(new_temp, 300.0);
+        assert_eq!(new_t_pow4, 300.0_f64.powi(4));
+    }
+
+    /// Forward Euler: overshoot clamping triggers when temperature crosses equilibrium.
+    #[test]
+    fn euler_overshoot_clamp() {
+        // Set up a scenario where Forward Euler would overshoot equilibrium.
+        // Use a large dt so the linear step crosses the asymptote.
+        let area = 60.0;
+        let emissivity = 0.5;
+        let heat_cap_per_area = 50.0;
+        let old_temp: f64 = 200.0;
+        let old_t_pow4 = old_temp.powi(4);
+
+        // Compute a temp_dot that implies some power_absorb
+        let rad_constant = area * emissivity * STEFAN_BOLTZMANN;
+        let power_emit = rad_constant * old_t_pow4;
+        let power_absorb = power_emit + 1000.0; // net heating
+        let heat_cap = heat_cap_per_area * area;
+        let temp_dot = (power_absorb - power_emit) / heat_cap;
+
+        // Equilibrium temperature: T_eq = (power_absorb / rad_constant)^(1/4)
+        let t_eq_pow4 = power_absorb / rad_constant;
+        let t_eq = t_eq_pow4.sqrt().sqrt();
+
+        // Use a huge dt to guarantee overshoot
+        let dt = 1e6;
+        let (new_temp, _) = integrate_plate_temperature_euler(
+            old_temp,
+            old_t_pow4,
+            temp_dot,
+            area,
+            emissivity,
+            heat_cap_per_area,
+            dt,
+        );
+
+        // Should be clamped to equilibrium, not wildly overshot
+        let rel_err = (new_temp - t_eq).abs() / t_eq;
+        assert!(
+            rel_err < 1e-10,
+            "Overshoot should clamp to equilibrium {t_eq:.2}, got {new_temp:.2}"
+        );
+    }
+
+    /// RK4: combines four stage derivatives correctly.
+    #[test]
+    fn rk4_combination() {
+        let temp0: f64 = 300.0;
+        let t_pow4_0 = temp0.powi(4);
+        // Constant derivative across all stages (should match Euler)
+        let tdot = 2.0;
+        let dt = 10.0;
+
+        let (rk4_temp, _) = integrate_plate_temperature_rk4(
+            temp0, t_pow4_0, tdot, tdot, tdot, tdot, 60.0, 0.5, 50.0, dt,
+        );
+
+        // RK4 with constant derivative: (1 + 2 + 2 + 1)/6 * tdot * dt = tdot * dt
+        let expected = temp0 + tdot * dt;
+        let rel_err = (rk4_temp - expected).abs() / expected;
+        assert!(
+            rel_err < 1e-12,
+            "Constant-derivative RK4 should match Euler: expected {expected}, got {rk4_temp}"
+        );
+    }
+
+    /// RK4: non-negative temperature clamp.
+    #[test]
+    fn rk4_non_negative_temperature() {
+        let (new_temp, new_t_pow4) = integrate_plate_temperature_rk4(
+            10.0,
+            10.0_f64.powi(4),
+            -100.0,
+            -100.0,
+            -100.0,
+            -100.0,
+            60.0,
+            0.5,
+            50.0,
+            1.0,
+        );
+        assert!(
+            new_temp >= 0.0,
+            "Temperature must not go negative: got {new_temp}"
+        );
+        assert!(new_t_pow4 >= 0.0);
+    }
 }

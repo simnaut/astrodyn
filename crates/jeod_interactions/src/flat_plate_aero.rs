@@ -344,7 +344,7 @@ fn compute_single_facet(
                 // Tangent vector: projection of velocity onto plate surface
                 // tangent = (rel_vel_hat - normal * sin_alpha) / cos_alpha
                 // JEOD flat_plate_aero_facet.cc lines 154-157
-                let tangent = (rel_vel_hat - facet.normal * sin_alpha) / cos_alpha;
+                let tangent = (rel_vel_hat - facet.normal * sin_alpha_clamped) / cos_alpha;
 
                 let drag_coef_tang = ((2.0 * one_m_epsilon / (2.0 / M_2_SQRTPI))
                     * s
