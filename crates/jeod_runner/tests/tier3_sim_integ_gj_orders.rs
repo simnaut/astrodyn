@@ -1,16 +1,17 @@
 //! Tier 3: Gauss-Jackson order sweep tests.
 //!
-//! Verifies GJ energy conservation at different orders and that higher-order
-//! configurations produce smaller energy drift on a long propagation where
-//! operational mode dominates over bootstrap.
+//! Verifies GJ energy conservation at different orders by comparing the
+//! maximum relative energy error over the full propagation, including the
+//! bootstrap priming phase.
 //!
 //! Scenario: ISS-like circular orbit (a = 6778 km), point-mass Earth gravity,
 //! dt = 1s, propagate for 10 orbits (~54000s). 3-DOF (translational only).
 //!
-//! The dt=1s / 10-orbit configuration ensures that operational-mode
-//! propagation dominates (~54000 steps total), but the bootstrap priming
-//! phase (order+1 RK4 steps) produces the peak energy error. Higher-order
-//! GJ needs more priming steps, leading to larger bootstrap transients.
+//! The dt=1s / 10-orbit configuration yields a long operational-mode
+//! propagation (~54000 steps total), but the peak energy error is produced
+//! during the bootstrap priming phase (order+1 RK4 steps). Higher-order GJ
+//! needs more priming steps, so the asserted max error can be larger at
+//! higher order due to larger bootstrap transients.
 
 mod sim_test_helpers;
 

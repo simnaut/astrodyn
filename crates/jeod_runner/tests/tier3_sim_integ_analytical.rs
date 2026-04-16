@@ -100,15 +100,19 @@ struct AnalyticalResult {
     max_pos_err: f64,
     /// Max velocity error (m/s) sampled every step over the orbit.
     max_vel_err: f64,
-    /// Position error at exactly t = T (after 1 orbit).
+    /// Position error (m) at the final sampled time, `n_steps * dt`,
+    /// where `n_steps = floor(T / dt)`.
     final_pos_err: f64,
-    /// Velocity error at exactly t = T.
+    /// Velocity error (m/s) at the final sampled time, `n_steps * dt`,
+    /// where `n_steps = floor(T / dt)`.
     final_vel_err: f64,
 }
 
 /// Propagate for one orbit with the given integrator and compare to analytical.
 ///
-/// Steps by integer multiples of dt only (GJ requires constant step size).
+/// Steps by integer multiples of `dt` only (GJ requires constant step size),
+/// so the final reported error is evaluated at the largest integer multiple of
+/// `dt` that does not exceed one orbital period `T`.
 fn compare_analytical(integrator: IntegratorType, dt: f64) -> AnalyticalResult {
     let mut sim = make_sim(integrator, dt);
     let period = orbital_period();

@@ -87,12 +87,17 @@ fn make_sim(integrator: IntegratorType, dt: f64) -> Simulation {
 
 /// Propagate for one orbit and return (final_position, final_velocity, max_relative_energy_error).
 ///
-/// Uses a constant step size (required by GJ) and adjusts it slightly so that
-/// an integer number of steps lands exactly on one orbital period.
+/// Uses a constant step size (required by GJ) and adjusts the requested `dt`
+/// slightly so that an integer number of steps lands exactly on one orbital
+/// period.
 fn propagate_one_orbit(integrator: IntegratorType, dt: f64) -> (DVec3, DVec3, f64) {
     let period = orbital_period();
     let n_steps = ((period / dt).round() as usize).max(1);
     let adjusted_dt = period / (n_steps as f64);
+    println!(
+        "propagate_one_orbit: requested dt = {dt:.6}s, adjusted dt = {adjusted_dt:.6}s, \
+         steps = {n_steps}"
+    );
     let mut sim = make_sim(integrator, adjusted_dt);
     let e0 = specific_energy(init_position(), init_velocity());
 
