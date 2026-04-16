@@ -1,7 +1,7 @@
 use glam::{DMat3, DVec3};
 use jeod_dynamics::RotationalState;
 use jeod_interactions::{
-    AerodynamicForce, DragConfig, FlatPlate, FlatPlateParams, FlatPlateThermal, STEFAN_BOLTZMANN,
+    AerodynamicForce, DragConfig, FlatPlate, FlatPlateParams, FlatPlateThermal,
 };
 
 /// Flat-plate SRP configuration with mutable thermal state.
@@ -42,47 +42,15 @@ impl FlatPlateState {
     /// [`crate::integration::integrate_body_coupled`] instead.
     pub fn integrate_temperatures(&mut self, temp_dots_k1: &[f64], dt: f64) {
         for (i, (plate, _params, thermal)) in self.plates.iter().enumerate() {
-            let old_temp = self.temperatures[i];
-            let old_t_pow4 = self.t_pow4_cached[i];
-
-            let rad_constant = plate.area * thermal.emissivity * STEFAN_BOLTZMANN;
-            let heat_cap = thermal.heat_capacity_per_area * plate.area;
-            if heat_cap <= 0.0 {
-                continue;
-            }
-
-            // Recover power_absorb from k1 (constant over the RK4 step).
-            // temp_dot = (power_absorb - power_emit) / heat_capacity
-            // power_absorb = temp_dot * heat_capacity + rad_constant * T^4
-            let power_absorb = temp_dots_k1[i] * heat_cap + rad_constant * old_t_pow4;
-
-            // JEOD's standard radiation.sm schedules compute_temp_dot() as a
-            // "scheduled" job (once per step), not a "derivative" job (per stage).
-            // This means temp_dot is constant across all RK4 stages, so the
-            // er7_utils integrator sees k1=k2=k3=k4=temp_dot, producing:
-            //   new_temp = old_temp + temp_dot * dt  (Forward Euler equivalent)
-            //
-            // We match this behavior for parity with JEOD's standard SIM_3_ORBIT
-            // reference trajectory. The 1st-order variant (radiation_1st_order.sm)
-            // uses derivative-class SRP, which WOULD recompute temp_dot per stage.
-            let k1 = temp_dots_k1[i];
-            let mut new_temp = old_temp + k1 * dt;
-            new_temp = new_temp.max(0.0);
-
-            let new_t_pow4 = new_temp * new_temp * new_temp * new_temp;
-
-            // JEOD overshoot clamping (thermal_integrable_object.cc:106-121).
-            // If temp_dot and (T_eq^4 - T^4) have opposite signs, the temperature
-            // crossed the radiative equilibrium asymptote — clamp to equilibrium.
-            if rad_constant > 0.0 {
-                let t_eq_pow4 = power_absorb / rad_constant;
-                if k1 * (t_eq_pow4 - new_t_pow4) < 0.0 {
-                    self.t_pow4_cached[i] = t_eq_pow4.max(0.0);
-                    self.temperatures[i] = self.t_pow4_cached[i].sqrt().sqrt();
-                    continue;
-                }
-            }
-
+            let (new_temp, new_t_pow4) = jeod_interactions::integrate_plate_temperature_euler(
+                self.temperatures[i],
+                self.t_pow4_cached[i],
+                temp_dots_k1[i],
+                plate.area,
+                thermal.emissivity,
+                thermal.heat_capacity_per_area,
+                dt,
+            );
             self.temperatures[i] = new_temp;
             self.t_pow4_cached[i] = new_t_pow4;
         }
@@ -111,31 +79,20 @@ impl FlatPlateState {
         dt: f64,
         n_plates: usize,
     ) {
-        let sixth_dt = dt / 6.0;
         for i in 0..n_plates {
-            let combined_tdot = k1_tdots[i] + 2.0 * k2_tdots[i] + 2.0 * k3_tdots[i] + k4_tdots[i];
-            let mut new_temp = (temps0[i] + combined_tdot * sixth_dt).max(0.0);
-            let mut new_t_pow4 = new_temp * new_temp * new_temp * new_temp;
-
-            // JEOD overshoot clamping (thermal_integrable_object.cc:106-121).
-            // If integrated temperature crossed the radiative equilibrium asymptote,
-            // clamp to equilibrium. Use k1's derivative and recover power_absorb from
-            // the initial state, matching the standalone path.
-            let (_, _, thermal) = &self.plates[i];
-            let plate = &self.plates[i].0;
-            let rad_constant = plate.area * thermal.emissivity * STEFAN_BOLTZMANN;
-            if rad_constant > 0.0 {
-                let heat_cap = thermal.heat_capacity_per_area * plate.area;
-                if heat_cap > 0.0 {
-                    let power_absorb = k1_tdots[i] * heat_cap + rad_constant * t_pow4_0[i];
-                    let t_eq_pow4 = power_absorb / rad_constant;
-                    if k1_tdots[i] * (t_eq_pow4 - new_t_pow4) < 0.0 {
-                        new_t_pow4 = t_eq_pow4.max(0.0);
-                        new_temp = new_t_pow4.sqrt().sqrt();
-                    }
-                }
-            }
-
+            let (plate, _, thermal) = &self.plates[i];
+            let (new_temp, new_t_pow4) = jeod_interactions::integrate_plate_temperature_rk4(
+                temps0[i],
+                t_pow4_0[i],
+                k1_tdots[i],
+                k2_tdots[i],
+                k3_tdots[i],
+                k4_tdots[i],
+                plate.area,
+                thermal.emissivity,
+                thermal.heat_capacity_per_area,
+                dt,
+            );
             self.temperatures[i] = new_temp;
             self.t_pow4_cached[i] = new_t_pow4;
         }
@@ -185,18 +142,7 @@ pub fn compute_gravity_torque(grav_grad: &DMat3, rot: &RotationalState, inertia:
 
 /// Compute cannonball SRP force using JEOD's `RadiationDefaultSurface` formula.
 ///
-/// Force = (flux/c) * cx_area * [1 + albedo*diffuse*(4/9)] * flux_hat * illum_factor.
-///
-/// Returns the force vector in the inertial frame (N). Torque is always zero
-/// for the cannonball model (force acts through center of mass).
-///
-/// # Arguments
-/// - `body_pos`: vehicle position in inertial frame (m)
-/// - `sun_pos`: Sun position in inertial frame (m)
-/// - `cx_area`: cross-section area * Cr (m²)
-/// - `albedo`: surface albedo (0–1)
-/// - `diffuse`: diffuse reflection fraction (0–1)
-/// - `illum_factor`: illumination factor from shadow computation (0–1)
+/// Delegates to [`jeod_interactions::compute_cannonball_srp`].
 pub fn compute_cannonball_srp(
     body_pos: DVec3,
     sun_pos: DVec3,
@@ -205,14 +151,12 @@ pub fn compute_cannonball_srp(
     diffuse: f64,
     illum_factor: f64,
 ) -> DVec3 {
-    let sun_to_vehicle = body_pos - sun_pos;
-    let distance = sun_to_vehicle.length();
-    if distance < 1.0 {
-        return DVec3::ZERO;
-    }
-    let flux_hat = sun_to_vehicle / distance;
-    let flux_mag = crate::solar_flux_at_distance(distance);
-    let coeff = 1.0 + albedo * diffuse * (4.0 / 9.0);
-    let force_mag = cx_area * flux_mag / crate::SPEED_OF_LIGHT * coeff * illum_factor;
-    flux_hat * force_mag
+    jeod_interactions::compute_cannonball_srp(
+        body_pos,
+        sun_pos,
+        cx_area,
+        albedo,
+        diffuse,
+        illum_factor,
+    )
 }
