@@ -123,7 +123,7 @@ fn tier3_integ_rk4_energy_conservation() {
     let dt = 10.0;
     let (_, _, max_rel_err) = propagate_one_orbit(IntegratorType::Rk4, dt);
     println!("RK4 max relative energy error: {max_rel_err:.6e}");
-    // RK4 4th order with dt=10s on a ~5400s orbit: expect < 1e-10 relative.
+    // RK4 4th order with dt=10s on a ~5550s orbit: expect < 1e-10 relative.
     assert!(
         max_rel_err < 1e-10,
         "RK4 energy conservation: {max_rel_err:.6e} >= 1e-10"
@@ -150,7 +150,7 @@ fn tier3_integ_gj_energy_conservation() {
         dt,
     );
     println!("GJ-8 max relative energy error: {max_rel_err:.6e}");
-    // GJ-8 with dt=10s over 1 orbit (~540 steps): the bootstrap/priming phase
+    // GJ-8 with dt=10s over 1 orbit (~555 steps): the bootstrap/priming phase
     // (order+1 RK4 steps) is a significant fraction of the total run, so energy
     // conservation is worse than on long runs where operational mode dominates.
     assert!(
