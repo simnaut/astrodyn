@@ -6,7 +6,8 @@
 #![allow(dead_code)]
 
 use glam::{DMat3, DQuat, DVec3};
-use jeod_sim::{JeodQuat, MassProperties};
+use jeod_math::OrbitalElements;
+use jeod_sim::{JeodQuat, MassProperties, TranslationalState};
 use std::path::Path;
 
 #[allow(unused_imports)] // Not all test binaries use dyncomp CSV loading
@@ -262,6 +263,37 @@ pub fn load_torque_simple_csv(path: &Path) -> Vec<TorqueSimpleRecord> {
         });
     }
     records
+}
+
+/// Initialize a [`TranslationalState`] from classical orbital elements.
+/// Works for all eccentricities including e >= 1 (hyperbolic).
+pub fn state_from_elements(
+    a: f64,
+    e: f64,
+    i: f64,
+    raan: f64,
+    argp: f64,
+    nu: f64,
+    mu: f64,
+) -> TranslationalState {
+    let mut oe = OrbitalElements::default();
+    oe.semi_major_axis = a;
+    oe.e_mag = e;
+    oe.inclination = i;
+    oe.long_asc_node = raan;
+    oe.arg_periapsis = argp;
+    oe.true_anom = nu;
+
+    if e < 1.0 {
+        oe.semiparam = a * (1.0 - e * e);
+    } else {
+        // Hyperbolic: a is negative, p = a(1 - e^2) = |a|(e^2 - 1)
+        oe.semiparam = a.abs() * (e * e - 1.0);
+    }
+    oe.nu_to_anomalies();
+
+    let (position, velocity) = oe.to_cartesian(mu).expect("to_cartesian failed");
+    TranslationalState { position, velocity }
 }
 
 /// Compute angular difference accounting for wraparound at 2π.

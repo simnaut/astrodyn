@@ -14,45 +14,14 @@ mod sim_test_helpers;
 use glam::DVec3;
 use jeod_math::OrbitalElements;
 use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
-use jeod_sim::{
-    GravityControl, GravityControls, GravityModel, GravitySource, SimulationTime,
-    TranslationalState,
-};
+use jeod_sim::{GravityControl, GravityControls, GravityModel, GravitySource, SimulationTime};
+use sim_test_helpers::state_from_elements;
 
 /// Earth gravitational parameter (m^3/s^2) -- GGM05C value.
 const MU_EARTH: f64 = 3.986_004_415e14;
 
 /// Earth equatorial radius (m).
 const R_EARTH: f64 = 6_378_137.0;
-
-/// Initialize from classical elements using OrbitalElements directly.
-fn state_from_elements(
-    a: f64,
-    e: f64,
-    i: f64,
-    raan: f64,
-    argp: f64,
-    nu: f64,
-    mu: f64,
-) -> TranslationalState {
-    let mut oe = OrbitalElements::default();
-    oe.semi_major_axis = a;
-    oe.e_mag = e;
-    oe.inclination = i;
-    oe.long_asc_node = raan;
-    oe.arg_periapsis = argp;
-    oe.true_anom = nu;
-
-    if e < 1.0 {
-        oe.semiparam = a * (1.0 - e * e);
-    } else {
-        oe.semiparam = a.abs() * (e * e - 1.0);
-    }
-    oe.nu_to_anomalies();
-
-    let (position, velocity) = oe.to_cartesian(mu).expect("to_cartesian failed");
-    TranslationalState { position, velocity }
-}
 
 /// Build a Simulation, propagate for approximately one full orbit (for bound
 /// orbits), recover orbital elements, and verify shape/orientation elements

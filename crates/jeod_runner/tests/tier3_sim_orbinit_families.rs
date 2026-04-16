@@ -13,12 +13,12 @@
 mod sim_test_helpers;
 
 use glam::DVec3;
-use jeod_math::OrbitalElements;
 use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
 use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, SimulationTime,
     TranslationalState,
 };
+use sim_test_helpers::state_from_elements;
 
 /// Earth gravitational parameter (m^3/s^2) -- GGM05C value.
 const MU_EARTH: f64 = 3.986_004_415e14;
@@ -72,40 +72,17 @@ fn specific_ang_momentum(pos: DVec3, vel: DVec3) -> f64 {
     pos.cross(vel).length()
 }
 
-/// Initialize from classical elements using OrbitalElements directly.
-/// Works for all eccentricities including e >= 1.
-fn state_from_elements(
-    a: f64,
-    e: f64,
-    i: f64,
-    raan: f64,
-    argp: f64,
-    nu: f64,
-    mu: f64,
-) -> TranslationalState {
-    let mut oe = OrbitalElements::default();
-    oe.semi_major_axis = a;
-    oe.e_mag = e;
-    oe.inclination = i;
-    oe.long_asc_node = raan;
-    oe.arg_periapsis = argp;
-    oe.true_anom = nu;
-
-    if e < 1.0 {
-        oe.semiparam = a * (1.0 - e * e);
-    } else {
-        // Hyperbolic: a is negative, p = a(1 - e^2) = |a|(e^2 - 1)
-        oe.semiparam = a.abs() * (e * e - 1.0);
-    }
-    oe.nu_to_anomalies();
-
-    let (position, velocity) = oe.to_cartesian(mu).expect("to_cartesian failed");
-    TranslationalState { position, velocity }
+/// Conservation verification results — radius extremes tracked during propagation.
+struct ConservationResult {
+    min_r: f64,
+    max_r: f64,
 }
 
 /// Propagate and verify energy and angular momentum conservation.
 ///
-/// Returns (max_energy_error, max_h_rel_error) for additional assertions.
+/// Also tracks min/max radius across all steps so callers can assert
+/// radius bounds without a separate propagation pass.
+///
 /// Energy error is relative when |E₀| is large, but switches to absolute
 /// error normalized by mu/r₀ when |E₀| is small (near-parabolic orbits
 /// where E₀ ≈ 0 makes relative error ill-conditioned).
@@ -115,38 +92,43 @@ fn verify_conservation(
     label: &str,
     energy_tol: f64,
     h_tol: f64,
-) -> (f64, f64) {
+) -> ConservationResult {
     let body0 = sim.body(0);
-    let e0 = specific_energy(body0.trans.position, body0.trans.velocity, MU_EARTH);
+    let energy_0 = specific_energy(body0.trans.position, body0.trans.velocity, MU_EARTH);
     let h0 = specific_ang_momentum(body0.trans.position, body0.trans.velocity);
 
     // For near-parabolic orbits, |E₀| can be near zero, making relative
     // energy error ill-conditioned (inf/NaN). Use mu/r₀ as a stable scale.
     let r0 = body0.trans.position.length();
-    let energy_scale = if e0.abs() > MU_EARTH / r0 * 1e-6 {
-        e0.abs() // standard relative error
+    let energy_scale = if energy_0.abs() > MU_EARTH / r0 * 1e-6 {
+        energy_0.abs() // standard relative error
     } else {
         MU_EARTH / r0 // stable scale for near-parabolic
     };
 
-    let mut max_e_err = 0.0_f64;
+    let mut max_energy_err = 0.0_f64;
     let mut max_h_err = 0.0_f64;
+    let mut min_r = r0;
+    let mut max_r = r0;
 
     for step in 1..=n_steps {
         sim.step();
         let body = sim.body(0);
-        let e_now = specific_energy(body.trans.position, body.trans.velocity, MU_EARTH);
+        let energy_now = specific_energy(body.trans.position, body.trans.velocity, MU_EARTH);
         let h_now = specific_ang_momentum(body.trans.position, body.trans.velocity);
+        let r_now = body.trans.position.length();
 
-        let e_err = ((e_now - e0) / energy_scale).abs();
+        let energy_err = ((energy_now - energy_0) / energy_scale).abs();
         let h_rel = ((h_now - h0) / h0).abs();
 
-        max_e_err = max_e_err.max(e_err);
+        max_energy_err = max_energy_err.max(energy_err);
         max_h_err = max_h_err.max(h_rel);
+        min_r = min_r.min(r_now);
+        max_r = max_r.max(r_now);
 
         if step % 100 == 0 || step == n_steps {
             println!(
-                "  {label} step {step}/{n_steps}: E_err={e_err:.3e}, h_rel={h_rel:.3e}, \
+                "  {label} step {step}/{n_steps}: E_err={energy_err:.3e}, h_rel={h_rel:.3e}, \
                  r={:.1} km, v={:.3} km/s",
                 body.trans.position.length() / 1000.0,
                 body.trans.velocity.length() / 1000.0,
@@ -155,13 +137,13 @@ fn verify_conservation(
     }
 
     println!(
-        "  {label}: max E_err={max_e_err:.3e} (tol {energy_tol:.1e}), \
+        "  {label}: max E_err={max_energy_err:.3e} (tol {energy_tol:.1e}), \
          max h_rel={max_h_err:.3e} (tol {h_tol:.1e})"
     );
 
     assert!(
-        max_e_err < energy_tol,
-        "{label}: energy conservation failed: max error {max_e_err:.6e} \
+        max_energy_err < energy_tol,
+        "{label}: energy conservation failed: max error {max_energy_err:.6e} \
          exceeds tolerance {energy_tol:.1e}"
     );
     assert!(
@@ -170,7 +152,7 @@ fn verify_conservation(
          exceeds tolerance {h_tol:.1e}"
     );
 
-    (max_e_err, max_h_err)
+    ConservationResult { min_r, max_r }
 }
 
 // ======================================================================
@@ -203,29 +185,18 @@ fn tier3_orbinit_circular_leo() {
     );
     println!("  Period={period:.1} s, dt={dt} s, n_steps={n_steps}");
 
-    verify_conservation(&mut sim, n_steps, "circular_leo", 1e-10, 1e-10);
+    let result = verify_conservation(&mut sim, n_steps, "circular_leo", 1e-10, 1e-10);
 
-    // Additional check: radius should stay nearly constant for circular orbit
-    // over the full propagation window, not just at the final sample.
-    let mut radius_sim = build_sim(trans, dt);
-    let mut min_r = r;
-    let mut max_r = r;
-
-    for _ in 0..n_steps {
-        radius_sim.step();
-        let body = radius_sim.body(0);
-        let r_now = body.trans.position.length();
-        min_r = min_r.min(r_now);
-        max_r = max_r.max(r_now);
-    }
-
-    let max_rel_err = ((max_r - r).abs().max((r - min_r).abs())) / r;
+    // Additional check: radius should stay nearly constant for circular orbit.
+    let max_rel_err = ((result.max_r - r).abs().max((r - result.min_r).abs())) / r;
     println!(
-        "  Radius: initial={r:.1} m, min={min_r:.1} m, max={max_r:.1} m, max_rel_err={max_rel_err:.3e}"
+        "  Radius: initial={r:.1} m, min={:.1} m, max={:.1} m, max_rel_err={max_rel_err:.3e}",
+        result.min_r, result.max_r
     );
     assert!(
         max_rel_err < 1e-8,
-        "Circular orbit radius varied during propagation: min={min_r:.6e}, max={max_r:.6e}, max_rel_err={max_rel_err:.6e}"
+        "Circular orbit radius varied during propagation: min={:.6e}, max={:.6e}, max_rel_err={max_rel_err:.6e}",
+        result.min_r, result.max_r
     );
 }
 
@@ -256,29 +227,20 @@ fn tier3_orbinit_eccentric() {
         i.to_degrees()
     );
 
-    verify_conservation(&mut sim, n_steps, "eccentric_e03", 2.2e-10, 1e-10);
+    let result = verify_conservation(&mut sim, n_steps, "eccentric_e03", 2.2e-10, 1e-10);
 
     // Verify periapsis/apoapsis bounds over the full propagation window.
     let r_peri = a * (1.0 - e);
     let r_apo = a * (1.0 + e);
-    let mut bounds_sim = build_sim(trans, dt);
-    let mut min_r = f64::MAX;
-    let mut max_r = 0.0_f64;
-
-    for _ in 0..n_steps {
-        bounds_sim.step();
-        let body = bounds_sim.body(0);
-        let r_now = body.trans.position.length();
-        min_r = min_r.min(r_now);
-        max_r = max_r.max(r_now);
-    }
-
     println!(
-        "  Radius bounds: min={min_r:.1} m (peri={r_peri:.1}), max={max_r:.1} m (apo={r_apo:.1})"
+        "  Radius bounds: min={:.1} m (peri={r_peri:.1}), max={:.1} m (apo={r_apo:.1})",
+        result.min_r, result.max_r
     );
     assert!(
-        min_r >= r_peri * 0.999 && max_r <= r_apo * 1.001,
-        "Radius outside [{r_peri:.0}, {r_apo:.0}] m bounds: min={min_r:.0}, max={max_r:.0}"
+        result.min_r >= r_peri * 0.999 && result.max_r <= r_apo * 1.001,
+        "Radius outside [{r_peri:.0}, {r_apo:.0}] m bounds: min={:.0}, max={:.0}",
+        result.min_r,
+        result.max_r
     );
 }
 
