@@ -278,8 +278,8 @@ mod tests {
     /// precision limits of the direct subtraction method.
     ///
     /// Uses two geometries:
-    /// 1. A close source (10,000 km) where both methods are well-conditioned,
-    ///    verified with tight tolerance against a precomputed expected vector.
+    /// 1. A close source (10,000 km) where both methods are well-conditioned
+    ///    and should agree to a tight tolerance.
     /// 2. A distant source (Sun at 1 AU) where direct subtraction loses ~5
     ///    digits but both methods should still agree in direction and magnitude.
     #[test]
