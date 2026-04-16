@@ -137,13 +137,17 @@ impl TimeManager {
 
     /// Add a Mission Elapsed Time scale with epoch at the given TAI seconds.
     pub fn add_met(&mut self, tai_seconds_at_epoch: f64) {
-        self.met = Some(MissionElapsedTime::new(tai_seconds_at_epoch));
+        let mut met = MissionElapsedTime::new(tai_seconds_at_epoch);
+        met.update(self.tai_seconds);
+        self.met = Some(met);
     }
 
     /// Add a User-Defined Epoch time scale.
     pub fn add_ude(&mut self, epoch_in_parent: f64) -> usize {
         let idx = self.ude.len();
-        self.ude.push(UserDefinedEpoch::new(epoch_in_parent));
+        let mut ude = UserDefinedEpoch::new(epoch_in_parent);
+        ude.update(self.tai_seconds);
+        self.ude.push(ude);
         idx
     }
 
@@ -162,14 +166,13 @@ impl TimeManager {
             "sim_dt must be finite and >= 0, got {sim_dt}"
         );
 
-        // Dynamic time advances by sim_dt * scale_factor
+        // Advance the dynamic integration clock first, then derive TAI from it
+        // so DYN remains the authoritative source for dynamic-time progression.
         let dyn_dt = sim_dt * self.dyn_time.scale_factor;
-        self.tai_seconds += dyn_dt;
+        self.dyn_time.seconds += dyn_dt;
+        self.tai_seconds = self.dyn_time.seconds;
         self.tai_tjt = self.tai_tjt_at_epoch + self.tai_seconds / SECONDS_PER_DAY;
         self.simtime += sim_dt;
-
-        // Keep DYN in sync
-        self.dyn_time.seconds = self.tai_seconds;
 
         self.update_all();
     }

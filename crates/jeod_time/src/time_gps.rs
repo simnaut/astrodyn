@@ -27,14 +27,14 @@ pub fn gps_to_tai(gps_seconds: f64) -> f64 {
     gps_seconds + TAI_GPS_OFFSET
 }
 
-/// GPS week/day decomposition from GPS elapsed seconds.
+/// GPS week/day decomposition from GPS elapsed days since GPS epoch.
 ///
 /// Matches JEOD `TimeGPS::set_time_by_seconds()`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GpsTimeComponents {
-    /// Seconds elapsed in last (partial) day.
+    /// Seconds elapsed in the current (partial) day.
     pub seconds_of_day: f64,
-    /// Seconds elapsed in last (partial) week.
+    /// Seconds elapsed in the current (partial) week.
     pub seconds_of_week: f64,
     /// Number of whole days this week (0-6).
     pub day_of_week: i32,
@@ -50,20 +50,24 @@ pub struct GpsTimeComponents {
 
 /// Decompose GPS elapsed days into week/day components.
 ///
+/// `gps_days` is the number of days elapsed since the GPS epoch.
+///
 /// Ported from JEOD `time_gps.cc::set_time_by_seconds()`.
 pub fn gps_components(gps_days: f64) -> GpsTimeComponents {
-    let gps_time_int = gps_days as i32;
+    let gps_time_int = gps_days.floor() as i32;
     let seconds_of_day = (gps_days - gps_time_int as f64) * 86400.0;
 
     // 10-bit rollover: 1024 weeks = 7168 days
-    let rollover_count = gps_time_int / 7168;
-    // 13-bit rollover: 8192 weeks = 57344 days
-    let rollover_count_13_bit = gps_time_int / 57344;
-    let week_13_bit = (gps_time_int - 57344 * rollover_count_13_bit) / 7;
+    let rollover_count = gps_time_int.div_euclid(7168);
+    let gps_in_rollover = gps_time_int.rem_euclid(7168);
 
-    let gps_in_rollover = gps_time_int - rollover_count * 7168;
+    // 13-bit rollover: 8192 weeks = 57344 days
+    let rollover_count_13_bit = gps_time_int.div_euclid(57344);
+    let gps_in_13_bit_rollover = gps_time_int.rem_euclid(57344);
+    let week_13_bit = gps_in_13_bit_rollover / 7;
+
     let week = gps_in_rollover / 7;
-    let day_of_week = gps_in_rollover - week * 7;
+    let day_of_week = gps_in_rollover % 7;
     let seconds_of_week = day_of_week as f64 * 86400.0 + seconds_of_day;
 
     GpsTimeComponents {

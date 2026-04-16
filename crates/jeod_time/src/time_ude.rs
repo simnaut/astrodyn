@@ -54,13 +54,12 @@ impl UserDefinedEpoch {
     ///
     /// Ported from JEOD `TimeUDE::clock_update()`.
     fn clock_update(&mut self) {
-        let mut scratch = self.seconds;
-        self.clock_day = (scratch / 86400.0) as i32;
-        scratch -= self.clock_day as f64 * 86400.0;
-        self.clock_hour = (scratch / 3600.0) as i32;
-        scratch -= self.clock_hour as f64 * 3600.0;
-        self.clock_minute = (scratch / 60.0) as i32;
-        self.clock_second = scratch - self.clock_minute as f64 * 60.0;
+        let mut scratch = self.seconds.rem_euclid(86400.0);
+        self.clock_day = self.seconds.div_euclid(86400.0) as i32;
+        self.clock_hour = scratch.div_euclid(3600.0) as i32;
+        scratch = scratch.rem_euclid(3600.0);
+        self.clock_minute = scratch.div_euclid(60.0) as i32;
+        self.clock_second = scratch.rem_euclid(60.0);
 
         // Clock resolution rounding (JEOD default: 1e-6)
         let clock_resolution = 1e-6;
