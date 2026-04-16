@@ -384,8 +384,10 @@ fn tier3_orbinit_polar() {
 
     println!("Tier 3: Polar orbit (a={:.0} m, e={e}, i=90 deg)", a);
 
-    // Verify orbit passes over the poles by propagating further and
-    // tracking the maximum |z|/r ratio across steps.
+    verify_conservation(&mut sim, n_steps, "polar", 1e-10, 1e-10);
+
+    // Propagate another 2 orbits to verify the orbit passes over the poles:
+    // track the maximum |z|/r ratio across steps.
     let mut max_z_frac = 0.0_f64;
     for _ in 0..n_steps {
         sim.step();
