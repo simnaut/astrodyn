@@ -1,10 +1,11 @@
-//! Time Manager — converter graph for routing between time scales.
+//! Time Manager — dependency-ordered conversion between time scales.
 //!
 //! Ported from JEOD `time_manager.cc`.
 //!
-//! The TimeManager maintains a directed graph of converters between time
-//! scales. Given TAI advancement, it propagates updates through the graph
-//! to keep all registered time scales in sync.
+//! This Rust implementation does not maintain a dynamic converter graph.
+//! Instead, `TimeManager` stores the supported time scales in a flat struct
+//! and recomputes derived values in a fixed dependency order whenever TAI
+//! advances, keeping the registered scales in sync.
 
 use crate::epoch::{J2000_NOON_TJT, J2000_TAI_TJT, SECONDS_PER_DAY, TAI_TT_OFFSET};
 use crate::leap_second::LeapSecondTable;
@@ -83,8 +84,10 @@ pub struct TimeManager {
     pub ut1_tai_offset: f64,
 
     // --- Dynamic time ---
-    /// Dynamic time state (integration clock).
-    pub dyn_time: DynamicTime,
+    /// Dynamic time state (integration clock). Private to ensure
+    /// `DynamicTime` invariants are maintained — use `set_scale_factor()`
+    /// to change the integration rate.
+    dyn_time: DynamicTime,
     /// Raw simulation time (always advances forward).
     pub simtime: f64,
 
@@ -135,6 +138,20 @@ impl TimeManager {
         self.update_all();
     }
 
+    /// Set the dynamic time scale factor.
+    ///
+    /// 1.0 = real-time, >1.0 = fast-forward, <0 = time reversal.
+    /// The offset is adjusted automatically on the next `advance()` to
+    /// maintain continuity.
+    pub fn set_scale_factor(&mut self, factor: f64) {
+        self.dyn_time.scale_factor = factor;
+    }
+
+    /// Get the current dynamic time scale factor.
+    pub fn scale_factor(&self) -> f64 {
+        self.dyn_time.scale_factor
+    }
+
     /// Add a Mission Elapsed Time scale with epoch at the given TAI seconds.
     pub fn add_met(&mut self, tai_seconds_at_epoch: f64) {
         let mut met = MissionElapsedTime::new(tai_seconds_at_epoch);
@@ -166,18 +183,22 @@ impl TimeManager {
             "sim_dt must be finite and >= 0, got {sim_dt}"
         );
 
-        // Advance the dynamic integration clock first, then derive TAI from it
-        // so DYN remains the authoritative source for dynamic-time progression.
-        let dyn_dt = sim_dt * self.dyn_time.scale_factor;
-        self.dyn_time.seconds += dyn_dt;
+        // Apply any pending scale-factor change so DynamicTime's offset stays
+        // consistent, then advance simtime and let DYN compute its own seconds.
+        self.dyn_time.update_offset(self.simtime);
+        self.simtime += sim_dt;
+        self.dyn_time.update(self.simtime);
+
         self.tai_seconds = self.dyn_time.seconds;
         self.tai_tjt = self.tai_tjt_at_epoch + self.tai_seconds / SECONDS_PER_DAY;
-        self.simtime += sim_dt;
 
         self.update_all();
     }
 
     /// Retrieve the value of a specific time scale in seconds.
+    ///
+    /// For UDE scales, this returns the first UDE. Use [`get_ude_seconds`]
+    /// to access a specific UDE by index.
     pub fn get_seconds(&self, scale: TimeScaleId) -> f64 {
         match scale {
             TimeScaleId::TAI => self.tai_seconds,
@@ -191,6 +212,22 @@ impl TimeManager {
             TimeScaleId::MET => self.met.as_ref().map_or(0.0, |m| m.seconds),
             TimeScaleId::UDE => self.ude.first().map_or(0.0, |u| u.seconds),
         }
+    }
+
+    /// Retrieve UDE seconds by index.
+    ///
+    /// # Panics
+    /// Panics if `idx` is out of range.
+    pub fn get_ude_seconds(&self, idx: usize) -> f64 {
+        self.ude[idx].seconds
+    }
+
+    /// Get a reference to a UDE by index.
+    ///
+    /// # Panics
+    /// Panics if `idx` is out of range.
+    pub fn get_ude(&self, idx: usize) -> &UserDefinedEpoch {
+        &self.ude[idx]
     }
 
     /// TDB Julian Date (for ephemeris queries).
@@ -272,7 +309,7 @@ mod tests {
         assert!((mgr.tt_seconds - (3600.0 + 32.184)).abs() < 1e-10);
         assert!((mgr.gps_seconds - (3600.0 - 19.0)).abs() < 1e-15);
         assert!((mgr.simtime - 3600.0).abs() < 1e-15);
-        assert!((mgr.dyn_time.seconds - 3600.0).abs() < 1e-15);
+        assert!((mgr.get_seconds(TimeScaleId::DYN) - 3600.0).abs() < 1e-15);
     }
 
     #[test]
@@ -333,7 +370,7 @@ mod tests {
         let tai_100 = mgr.tai_seconds;
 
         // Reverse time
-        mgr.dyn_time.scale_factor = -1.0;
+        mgr.set_scale_factor(-1.0);
         mgr.advance(100.0);
 
         assert!(

@@ -211,10 +211,17 @@ fn time_manager_full_propagation() {
         tdb_tt_diff
     );
 
-    // GMST should have advanced (not zero)
+    // GMST should have advanced from its initial value
+    let gmst_initial = {
+        let fresh = TimeManager::at_j2000(default_leap_second_table());
+        fresh.get_seconds(TimeScaleId::GMST)
+    };
+    let gmst_delta = mgr.get_seconds(TimeScaleId::GMST) - gmst_initial;
+    // 2 hours of sidereal time ≈ 7200 * (366.25/365.25) ≈ 7219.7 sidereal seconds
     assert!(
-        mgr.get_seconds(TimeScaleId::GMST).abs() > 1.0,
-        "GMST should be nonzero after 2 hours"
+        (gmst_delta - 7219.7).abs() < 1.0,
+        "GMST should advance ~7219.7 sidereal seconds in 2 hours, delta={}",
+        gmst_delta
     );
 
     // Verify simtime tracks independently
@@ -249,7 +256,7 @@ fn time_manager_dyn_reversal_round_trip() {
     let gps_fwd = mgr.gps_seconds;
 
     // Reverse time
-    mgr.dyn_time.scale_factor = -1.0;
+    mgr.set_scale_factor(-1.0);
     mgr.advance(3600.0);
 
     assert!(
