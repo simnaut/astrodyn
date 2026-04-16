@@ -6,7 +6,6 @@ use crate::gravity_source::{GravityModel, GravitySource};
 use log::warn;
 
 #[derive(Debug, Clone)]
-#[non_exhaustive]
 pub struct GravityControl<SourceId = String> {
     pub source_name: SourceId,
     pub gradient: bool,
