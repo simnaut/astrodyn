@@ -4,7 +4,7 @@
 //! and verifies energy conservation on the same circular LEO scenario.
 //!
 //! Scenario: ISS-like circular orbit (a = 6778 km), point-mass Earth gravity,
-//! dt = 10s, propagate for 1 orbit (~5400s). 3-DOF (translational only).
+//! dt = 10s, propagate for 1 orbit (~5550s, ~92.5 min). 3-DOF (translational only).
 
 mod sim_test_helpers;
 
@@ -227,25 +227,33 @@ fn tier3_integ_rk4_convergence_order() {
     // Run with dt and dt/2. For a p-th order method, the error ratio
     // at halved step size is ~2^p. For RK4 (p=4), expect ratio ~16.
     //
-    // We use the analytical solution for circular orbit as reference:
-    // after time t, the satellite returns to (a, 0, 0) at t = T.
-    // We propagate for half an orbit (T/2) and compare to analytical position.
+    // Use an analytically known circular-orbit position as reference, but
+    // choose a propagation duration that is an exact multiple of both step
+    // sizes so `step_until` does not take a final fractional step.
     let period = orbital_period();
     let half_period = period / 2.0;
-
-    // Analytical position at T/2: (-a, 0, 0) for circular orbit starting at (a,0,0).
-    let analytical_pos = DVec3::new(-SMA, 0.0, 0.0);
 
     let dt1 = 20.0;
     let dt2 = 10.0;
 
-    let pos1 = propagate_fixed_time(IntegratorType::Rk4, dt1, half_period);
-    let pos2 = propagate_fixed_time(IntegratorType::Rk4, dt2, half_period);
+    // Align the comparison time to a whole number of full steps for both
+    // dt1 and dt2. Since dt2 divides dt1, snapping to a dt1 multiple is
+    // sufficient for both runs.
+    let aligned_duration = (half_period / dt1).floor() * dt1;
+
+    let theta = 2.0 * std::f64::consts::PI * (aligned_duration / period);
+    let analytical_pos = DVec3::new(SMA * theta.cos(), SMA * theta.sin(), 0.0);
+
+    let pos1 = propagate_fixed_time(IntegratorType::Rk4, dt1, aligned_duration);
+    let pos2 = propagate_fixed_time(IntegratorType::Rk4, dt2, aligned_duration);
 
     let err1 = (pos1 - analytical_pos).length();
     let err2 = (pos2 - analytical_pos).length();
 
-    println!("RK4 convergence: dt={dt1} err={err1:.6e}, dt={dt2} err={err2:.6e}");
+    println!(
+        "RK4 convergence: dt={dt1} err={err1:.6e}, dt={dt2} err={err2:.6e}, \
+         duration={aligned_duration:.3}"
+    );
 
     // Avoid division by zero if err2 is extremely small.
     assert!(
@@ -271,20 +279,27 @@ fn tier3_integ_rk4_convergence_order() {
 #[test]
 fn tier3_integ_rkf45_convergence_order() {
     // RKF45 is 5th order. Error ratio at halved step size should be ~2^5 = 32.
+    // Same aligned-duration approach as the RK4 convergence test.
     let period = orbital_period();
     let half_period = period / 2.0;
-    let analytical_pos = DVec3::new(-SMA, 0.0, 0.0);
 
     let dt1 = 20.0;
     let dt2 = 10.0;
 
-    let pos1 = propagate_fixed_time(IntegratorType::Rkf45, dt1, half_period);
-    let pos2 = propagate_fixed_time(IntegratorType::Rkf45, dt2, half_period);
+    let aligned_duration = (half_period / dt1).floor() * dt1;
+    let theta = 2.0 * std::f64::consts::PI * (aligned_duration / period);
+    let analytical_pos = DVec3::new(SMA * theta.cos(), SMA * theta.sin(), 0.0);
+
+    let pos1 = propagate_fixed_time(IntegratorType::Rkf45, dt1, aligned_duration);
+    let pos2 = propagate_fixed_time(IntegratorType::Rkf45, dt2, aligned_duration);
 
     let err1 = (pos1 - analytical_pos).length();
     let err2 = (pos2 - analytical_pos).length();
 
-    println!("RKF45 convergence: dt={dt1} err={err1:.6e}, dt={dt2} err={err2:.6e}");
+    println!(
+        "RKF45 convergence: dt={dt1} err={err1:.6e}, dt={dt2} err={err2:.6e}, \
+         duration={aligned_duration:.3}"
+    );
 
     assert!(
         err2 > 1e-15,
