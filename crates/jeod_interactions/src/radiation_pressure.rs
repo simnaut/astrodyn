@@ -282,6 +282,139 @@ pub fn compute_flat_plate_srp_thermal(
     }
 }
 
+/// Compute cannonball SRP force using JEOD's `RadiationDefaultSurface` formula.
+///
+/// Force = (flux/c) * cx_area * [1 + albedo*diffuse*(4/9)] * flux_hat * illum_factor.
+///
+/// Returns the force vector in the inertial frame (N). Torque is always zero
+/// for the cannonball model (force acts through center of mass).
+///
+/// # Arguments
+/// - `body_pos`: vehicle position in inertial frame (m)
+/// - `sun_pos`: Sun position in inertial frame (m)
+/// - `cx_area`: cross-section area * Cr (m²)
+/// - `albedo`: surface albedo (0–1)
+/// - `diffuse`: diffuse reflection fraction (0–1)
+/// - `illum_factor`: illumination factor from shadow computation (0–1)
+pub fn compute_cannonball_srp(
+    body_pos: DVec3,
+    sun_pos: DVec3,
+    cx_area: f64,
+    albedo: f64,
+    diffuse: f64,
+    illum_factor: f64,
+) -> DVec3 {
+    let sun_to_vehicle = body_pos - sun_pos;
+    let distance = sun_to_vehicle.length();
+    if distance < 1.0 {
+        return DVec3::ZERO;
+    }
+    let flux_hat = sun_to_vehicle / distance;
+    let flux_mag = solar_flux_at_distance(distance);
+    let coeff = 1.0 + albedo * diffuse * (4.0 / 9.0);
+    let force_mag = cx_area * flux_mag / SPEED_OF_LIGHT * coeff * illum_factor;
+    flux_hat * force_mag
+}
+
+/// Integrate a single plate's temperature via Forward Euler with overshoot clamping.
+///
+/// Port of JEOD `ThermalIntegrableObject::integrate()` (thermal_integrable_object.cc:98-124).
+/// Returns `(new_temp, new_t_pow4)`.
+///
+/// # Arguments
+/// * `old_temp` - Current plate temperature (K)
+/// * `old_t_pow4` - Cached T⁴ from previous step
+/// * `temp_dot` - Temperature derivative (K/s) from `compute_flat_plate_srp_thermal`
+/// * `area` - Plate area (m²)
+/// * `emissivity` - Plate emissivity (0–1)
+/// * `heat_capacity_per_area` - Thermal mass per unit area (J/(m²·K))
+/// * `dt` - Time step (s)
+pub fn integrate_plate_temperature_euler(
+    old_temp: f64,
+    old_t_pow4: f64,
+    temp_dot: f64,
+    area: f64,
+    emissivity: f64,
+    heat_capacity_per_area: f64,
+    dt: f64,
+) -> (f64, f64) {
+    let rad_constant = area * emissivity * STEFAN_BOLTZMANN;
+    let heat_cap = heat_capacity_per_area * area;
+    if heat_cap <= 0.0 {
+        return (old_temp, old_t_pow4);
+    }
+
+    // Recover power_absorb from temp_dot (constant over the step).
+    // temp_dot = (power_absorb - power_emit) / heat_capacity
+    // power_absorb = temp_dot * heat_capacity + rad_constant * T^4
+    let power_absorb = temp_dot * heat_cap + rad_constant * old_t_pow4;
+
+    let new_temp = (old_temp + temp_dot * dt).max(0.0);
+    let new_t_pow4 = new_temp * new_temp * new_temp * new_temp;
+
+    // JEOD overshoot clamping (thermal_integrable_object.cc:106-121).
+    // If temp_dot and (T_eq^4 - T^4) have opposite signs, the temperature
+    // crossed the radiative equilibrium asymptote — clamp to equilibrium.
+    if rad_constant > 0.0 {
+        let t_eq_pow4 = power_absorb / rad_constant;
+        if temp_dot * (t_eq_pow4 - new_t_pow4) < 0.0 {
+            let clamped_t_pow4 = t_eq_pow4.max(0.0);
+            return (clamped_t_pow4.sqrt().sqrt(), clamped_t_pow4);
+        }
+    }
+
+    (new_temp, new_t_pow4)
+}
+
+/// Finalize a single plate's temperature from four RK4 stage derivatives.
+///
+/// Combines k1–k4 via the standard RK4 formula and applies JEOD overshoot
+/// clamping (thermal_integrable_object.cc:106-121).
+/// Returns `(new_temp, new_t_pow4)`.
+///
+/// # Arguments
+/// * `temp0` - Temperature at start of step (K)
+/// * `t_pow4_0` - Cached T⁴ at start of step
+/// * `k1`–`k4` - Temperature derivatives at each RK4 stage (K/s)
+/// * `area` - Plate area (m²)
+/// * `emissivity` - Plate emissivity (0–1)
+/// * `heat_capacity_per_area` - Thermal mass per unit area (J/(m²·K))
+/// * `dt` - Time step (s)
+#[allow(clippy::too_many_arguments)]
+pub fn integrate_plate_temperature_rk4(
+    temp0: f64,
+    t_pow4_0: f64,
+    k1: f64,
+    k2: f64,
+    k3: f64,
+    k4: f64,
+    area: f64,
+    emissivity: f64,
+    heat_capacity_per_area: f64,
+    dt: f64,
+) -> (f64, f64) {
+    let sixth_dt = dt / 6.0;
+    let combined_tdot = k1 + 2.0 * k2 + 2.0 * k3 + k4;
+    let mut new_temp = (temp0 + combined_tdot * sixth_dt).max(0.0);
+    let mut new_t_pow4 = new_temp * new_temp * new_temp * new_temp;
+
+    // JEOD overshoot clamping (thermal_integrable_object.cc:106-121).
+    let rad_constant = area * emissivity * STEFAN_BOLTZMANN;
+    if rad_constant > 0.0 {
+        let heat_cap = heat_capacity_per_area * area;
+        if heat_cap > 0.0 {
+            let power_absorb = k1 * heat_cap + rad_constant * t_pow4_0;
+            let t_eq_pow4 = power_absorb / rad_constant;
+            if k1 * (t_eq_pow4 - new_t_pow4) < 0.0 {
+                new_t_pow4 = t_eq_pow4.max(0.0);
+                new_temp = new_t_pow4.sqrt().sqrt();
+            }
+        }
+    }
+
+    (new_temp, new_t_pow4)
+}
+
 /// Compute solar flux at a given distance from the Sun.
 ///
 /// Returns flux in W/m². Port of JEOD `RadiationSource::calculate_flux()`.
@@ -686,5 +819,144 @@ mod tests {
         );
         // Y and Z components should be non-zero due to diffuse reflection off the -X plate
         // (diffuse component has -2/3*normal contribution)
+    }
+
+    // ── Thermal integration helper tests ─────────────────────────────
+
+    /// Forward Euler: plate cools when not illuminated (negative temp_dot).
+    #[test]
+    fn euler_cooling() {
+        let (new_temp, new_t_pow4) = integrate_plate_temperature_euler(
+            300.0, // old_temp K
+            300.0_f64.powi(4),
+            -5.0, // temp_dot: cooling
+            60.0, // area
+            0.5,  // emissivity
+            50.0, // heat_capacity_per_area
+            10.0, // dt
+        );
+        assert!(new_temp < 300.0, "Should cool: got {new_temp}");
+        assert!(new_t_pow4 < 300.0_f64.powi(4));
+    }
+
+    /// Forward Euler: temperature is clamped to >= 0.
+    #[test]
+    fn euler_non_negative_temperature() {
+        let (new_temp, new_t_pow4) = integrate_plate_temperature_euler(
+            10.0,
+            10.0_f64.powi(4),
+            -100.0, // huge negative derivative
+            60.0,
+            0.5,
+            50.0,
+            1.0,
+        );
+        assert!(
+            new_temp >= 0.0,
+            "Temperature must not go negative: got {new_temp}"
+        );
+        assert!(new_t_pow4 >= 0.0);
+    }
+
+    /// Forward Euler: zero heat capacity leaves temperature unchanged.
+    #[test]
+    fn euler_zero_heat_capacity() {
+        let (new_temp, new_t_pow4) = integrate_plate_temperature_euler(
+            300.0,
+            300.0_f64.powi(4),
+            10.0,
+            60.0,
+            0.5,
+            0.0, // zero heat capacity
+            10.0,
+        );
+        assert_eq!(new_temp, 300.0);
+        assert_eq!(new_t_pow4, 300.0_f64.powi(4));
+    }
+
+    /// Forward Euler: overshoot clamping triggers when temperature crosses equilibrium.
+    #[test]
+    fn euler_overshoot_clamp() {
+        // Set up a scenario where Forward Euler would overshoot equilibrium.
+        // Use a large dt so the linear step crosses the asymptote.
+        let area = 60.0;
+        let emissivity = 0.5;
+        let heat_cap_per_area = 50.0;
+        let old_temp: f64 = 200.0;
+        let old_t_pow4 = old_temp.powi(4);
+
+        // Compute a temp_dot that implies some power_absorb
+        let rad_constant = area * emissivity * STEFAN_BOLTZMANN;
+        let power_emit = rad_constant * old_t_pow4;
+        let power_absorb = power_emit + 1000.0; // net heating
+        let heat_cap = heat_cap_per_area * area;
+        let temp_dot = (power_absorb - power_emit) / heat_cap;
+
+        // Equilibrium temperature: T_eq = (power_absorb / rad_constant)^(1/4)
+        let t_eq_pow4 = power_absorb / rad_constant;
+        let t_eq = t_eq_pow4.sqrt().sqrt();
+
+        // Use a huge dt to guarantee overshoot
+        let dt = 1e6;
+        let (new_temp, _) = integrate_plate_temperature_euler(
+            old_temp,
+            old_t_pow4,
+            temp_dot,
+            area,
+            emissivity,
+            heat_cap_per_area,
+            dt,
+        );
+
+        // Should be clamped to equilibrium, not wildly overshot
+        let rel_err = (new_temp - t_eq).abs() / t_eq;
+        assert!(
+            rel_err < 1e-10,
+            "Overshoot should clamp to equilibrium {t_eq:.2}, got {new_temp:.2}"
+        );
+    }
+
+    /// RK4: combines four stage derivatives correctly.
+    #[test]
+    fn rk4_combination() {
+        let temp0: f64 = 300.0;
+        let t_pow4_0 = temp0.powi(4);
+        // Constant derivative across all stages (should match Euler)
+        let tdot = 2.0;
+        let dt = 10.0;
+
+        let (rk4_temp, _) = integrate_plate_temperature_rk4(
+            temp0, t_pow4_0, tdot, tdot, tdot, tdot, 60.0, 0.5, 50.0, dt,
+        );
+
+        // RK4 with constant derivative: (1 + 2 + 2 + 1)/6 * tdot * dt = tdot * dt
+        let expected = temp0 + tdot * dt;
+        let rel_err = (rk4_temp - expected).abs() / expected;
+        assert!(
+            rel_err < 1e-12,
+            "Constant-derivative RK4 should match Euler: expected {expected}, got {rk4_temp}"
+        );
+    }
+
+    /// RK4: non-negative temperature clamp.
+    #[test]
+    fn rk4_non_negative_temperature() {
+        let (new_temp, new_t_pow4) = integrate_plate_temperature_rk4(
+            10.0,
+            10.0_f64.powi(4),
+            -100.0,
+            -100.0,
+            -100.0,
+            -100.0,
+            60.0,
+            0.5,
+            50.0,
+            1.0,
+        );
+        assert!(
+            new_temp >= 0.0,
+            "Temperature must not go negative: got {new_temp}"
+        );
+        assert!(new_t_pow4 >= 0.0);
     }
 }
