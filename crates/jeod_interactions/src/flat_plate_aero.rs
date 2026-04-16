@@ -52,18 +52,51 @@ pub enum AeroCoeffMethod {
     /// Mixed specular + diffuse with configurable fraction `epsilon`.
     /// `epsilon` is the fraction of molecules that "bounce" (specular).
     /// JEOD assumes sin_alpha=1 for coefficient calculation.
+    ///
+    /// Prefer constructing via [`AeroCoeffMethod::mixed`], which clamps
+    /// `epsilon` into the physical range `[0, 1]`.
     Mixed {
-        /// Fraction of molecules that bounce (specular). Range [0, 1].
+        /// Fraction of molecules that bounce (specular).
+        /// Expected physical range `[0, 1]`.
         epsilon: f64,
     },
     /// Full coefficient calculation based on angle of attack, material
     /// properties, wall temperature, and freestream conditions.
     /// Uses the exact formulas from JEOD with normal and tangential
     /// drag coefficients computed per-facet.
+    ///
+    /// Prefer constructing via [`AeroCoeffMethod::calc_coef`], which clamps
+    /// `epsilon` into the physical range `[0, 1]`.
     CalcCoef {
-        /// Fraction of molecules that "bounce" (specular). Range [0, 1].
+        /// Fraction of molecules that "bounce" (specular).
+        /// Expected physical range `[0, 1]`.
         epsilon: f64,
     },
+}
+
+impl AeroCoeffMethod {
+    #[inline]
+    fn clamp_epsilon(epsilon: f64) -> f64 {
+        epsilon.clamp(0.0, 1.0)
+    }
+
+    /// Construct a mixed specular/diffuse coefficient model, clamping
+    /// `epsilon` into the physical range `[0, 1]`.
+    #[inline]
+    pub fn mixed(epsilon: f64) -> Self {
+        Self::Mixed {
+            epsilon: Self::clamp_epsilon(epsilon),
+        }
+    }
+
+    /// Construct a full coefficient-calculation model, clamping `epsilon`
+    /// into the physical range `[0, 1]`.
+    #[inline]
+    pub fn calc_coef(epsilon: f64) -> Self {
+        Self::CalcCoef {
+            epsilon: Self::clamp_epsilon(epsilon),
+        }
+    }
 }
 
 /// Parameters for the freestream gas, shared across all facets.
@@ -203,7 +236,15 @@ fn compute_single_facet(
 
     // Speed ratio: s = v / sqrt(2 * R * T)
     // JEOD flat_plate_aero_facet.cc line 117
-    let s = rel_vel_mag / (2.0 * gas_params.gas_const * gas_params.temp_free_stream).sqrt();
+    debug_assert!(
+        gas_params.gas_const > 0.0 && gas_params.temp_free_stream > 0.0,
+        "gas_const and temp_free_stream must be positive"
+    );
+    let denom = (2.0 * gas_params.gas_const * gas_params.temp_free_stream).sqrt();
+    if denom <= 0.0 {
+        return DVec3::ZERO;
+    }
+    let s = rel_vel_mag / denom;
     let s_2 = s * s;
 
     match facet.coeff_method {
@@ -282,13 +323,18 @@ fn compute_single_facet(
 
             let force_n = force_base * drag_coef_norm;
 
-            // Check if plate is full-on (alpha = 90 degrees => sin_alpha = 1)
+            // Check if plate is full-on (alpha = 90 degrees => sin_alpha = 1).
+            // sin_alpha comes from a dot product of unit vectors, so it can be
+            // slightly above 1.0 due to floating-point error. Clamp to [0, 1]
+            // before computing cos_alpha to avoid NaN from sqrt of a negative.
             // JEOD flat_plate_aero_facet.cc line 231
-            if (sin_alpha - 1.0).abs() < f64::EPSILON {
+            let sin_alpha_clamped = sin_alpha.min(1.0);
+            let cos_alpha_sq = 1.0 - sin_alpha_clamped * sin_alpha_clamped;
+            if cos_alpha_sq < 1e-20 {
                 // No tangential component when plate faces directly into flow
                 facet.normal * force_n
             } else {
-                let cos_alpha = (1.0 - sin_alpha * sin_alpha).sqrt();
+                let cos_alpha = cos_alpha_sq.sqrt();
 
                 // Tangent vector: projection of velocity onto plate surface
                 // tangent = (rel_vel_hat - normal * sin_alpha) / cos_alpha
@@ -298,8 +344,7 @@ fn compute_single_facet(
                 let drag_coef_tang = ((2.0 * one_m_epsilon / (2.0 / M_2_SQRTPI))
                     * s
                     * cos_alpha
-                    * ((-s_sinalpha * s_sinalpha).exp()
-                        + (2.0 / M_2_SQRTPI) * s_sinalpha * erf(s_sinalpha)))
+                    * (exp_ssa2 + (2.0 / M_2_SQRTPI) * s_sinalpha * erf_ssa))
                     / s_2;
                 let drag_coef_tang = drag_coef_tang.abs();
 
@@ -651,8 +696,8 @@ mod tests {
     /// For a flat plate normal to flow, specular should give approximately
     /// F = dyn_press * A * Cd_spec (where Cd_spec depends on speed ratio).
     /// Compare with ballistic F = dyn_press * A * Cd.
-    /// At LEO speeds, s is large (~10), so Cd_spec approaches 4 (2+4*s^2/s^2=6,
-    /// but including the exp term it's close to 4+2/s^2 ≈ 4).
+    /// At LEO speeds, s is large (~10), so Cd_spec approaches 4 because the
+    /// exp term becomes negligible and (2 + 4*s^2) / s^2 = 4 + 2/s^2 ≈ 4.
     #[test]
     fn specular_vs_ballistic_comparison() {
         let density = 1e-12;
