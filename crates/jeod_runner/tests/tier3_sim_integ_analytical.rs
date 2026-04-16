@@ -7,7 +7,7 @@
 //! - theta(t) = theta_0 + n*t, where n = sqrt(mu/a^3)
 //!
 //! Tests each integrator (RK4, RKF45, GJ-8) against this analytical solution
-//! for position error, velocity error, and period accuracy after 1 orbit.
+//! for position and velocity error over a one-orbit propagation interval.
 
 mod sim_test_helpers;
 
