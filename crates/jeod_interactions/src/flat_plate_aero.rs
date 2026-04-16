@@ -173,7 +173,7 @@ pub fn compute_flat_plate_aero(
     center_grav: DVec3,
 ) -> FlatPlateAeroResult {
     let rel_vel_mag = rel_vel_struct.length();
-    if rel_vel_mag < 1e-30 || dynamic_pressure <= 0.0 {
+    if rel_vel_mag < 1e-10 || dynamic_pressure <= 0.0 {
         return FlatPlateAeroResult::default();
     }
 
@@ -346,7 +346,8 @@ fn compute_single_facet(
                 // JEOD flat_plate_aero_facet.cc lines 154-157
                 let tangent = (rel_vel_hat - facet.normal * sin_alpha_clamped) / cos_alpha;
 
-                let drag_coef_tang = ((2.0 * one_m_epsilon / (2.0 / M_2_SQRTPI))
+                let drag_coef_tang = (one_m_epsilon
+                    * M_2_SQRTPI
                     * s
                     * cos_alpha
                     * (exp_ssa2 + (2.0 / M_2_SQRTPI) * s_sinalpha * erf_ssa))
