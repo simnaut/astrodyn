@@ -26,6 +26,7 @@ fn sim1_basic_plates() -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
     let thermal = FlatPlateThermal {
         emissivity: 1.0,
         heat_capacity_per_area: 600.0,
+        thermal_power_dump: 0.0,
     };
     vec![
         (

@@ -165,6 +165,7 @@ fn srp_changes_eccentricity() {
         FlatPlateThermal {
             emissivity: 0.0,
             heat_capacity_per_area: 50.0,
+            thermal_power_dump: 0.0,
         },
     )];
     let t_pow4_cached = vec![270.0_f64.powi(4)];
