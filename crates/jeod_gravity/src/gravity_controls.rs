@@ -36,6 +36,16 @@ pub struct GravityControl<SourceId = String> {
     /// progeny of the integration frame. Here it is set explicitly per control.
     // JEOD_INV: GV.14 — third-body vs direct gravity classification (set explicitly; JEOD derives from frame tree ancestry)
     pub differential: bool,
+    /// If true, use Battin's method for improved numerical accuracy in
+    /// third-body (differential) gravity computation. Only meaningful when
+    /// `differential` is also true. Off by default in JEOD.
+    ///
+    /// Battin's method reformulates the differential acceleration to avoid
+    /// catastrophic cancellation when the vehicle is close to the integration
+    /// frame origin relative to the third-body source distance.
+    ///
+    /// JEOD ref: `gravity_controls.cc:317-331`.
+    pub battin_method: bool,
     /// If true, apply post-Newtonian relativistic correction for this source.
     /// Requires source velocity in `GravitySourceEntry`. Only significant for
     /// Mercury-like orbits near massive bodies.
@@ -58,6 +68,7 @@ impl<SourceId> GravityControl<SourceId> {
             gradient_degree: 0,
             gradient_order: 0,
             differential: false,
+            battin_method: false,
             relativistic: false,
         }
     }
@@ -83,6 +94,7 @@ impl<SourceId> GravityControl<SourceId> {
             gradient_degree: 0,
             gradient_order: 0,
             differential: false,
+            battin_method: false,
             relativistic: false,
         }
     }
@@ -103,6 +115,7 @@ impl<SourceId> GravityControl<SourceId> {
             gradient_degree: 0,
             gradient_order: 0,
             differential: true,
+            battin_method: false,
             relativistic: false,
         }
     }
