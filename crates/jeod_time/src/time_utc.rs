@@ -74,10 +74,7 @@ pub fn calendar_to_tjt(cal: &CalendarDate) -> f64 {
 /// Ported from JEOD `time_standard.cc::calculate_calendar_values()`.
 /// Coverage: March 1, 1600 onward.
 pub fn tjt_to_calendar(tjt: f64) -> CalendarDate {
-    let mut julian_day = tjt as i32;
-    if julian_day < 0 && (tjt - julian_day as f64) != 0.0 {
-        julian_day -= 1;
-    }
+    let mut julian_day = tjt.floor() as i32;
 
     // Minutes in fractional day
     let temp = 1440.0 * (tjt - julian_day as f64);

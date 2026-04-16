@@ -48,8 +48,21 @@ impl DynamicTime {
     ///
     /// Returns `true` if the scale factor changed (time direction/rate change).
     /// Matches JEOD `TimeDyn::update_offset()`.
+    ///
+    /// # Panics
+    /// Panics if `scale_factor` or `simtime` is not finite.
     pub fn update_offset(&mut self, simtime: f64) -> bool {
-        if (self.ref_scale - self.scale_factor).abs() > 0.0 {
+        assert!(
+            self.scale_factor.is_finite(),
+            "scale_factor must be finite, got {}",
+            self.scale_factor
+        );
+        assert!(
+            simtime.is_finite(),
+            "simtime must be finite, got {}",
+            simtime
+        );
+        if self.ref_scale != self.scale_factor {
             self.offset = self.seconds - (self.scale_factor * simtime);
             let _direction_changed = self.ref_scale * self.scale_factor < 0.0;
             self.ref_scale = self.scale_factor;

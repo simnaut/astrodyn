@@ -197,8 +197,9 @@ impl TimeManager {
 
     /// Retrieve the value of a specific time scale in seconds.
     ///
-    /// For UDE scales, this returns the first UDE. Use [`get_ude_seconds`]
-    /// to access a specific UDE by index.
+    /// For optional scales (MET, UDE), panics if the scale has not been
+    /// registered. Use [`get_met_seconds`] or [`get_ude_seconds`] for
+    /// `Option`-returning variants. For UDE, returns the first UDE.
     pub fn get_seconds(&self, scale: TimeScaleId) -> f64 {
         match scale {
             TimeScaleId::TAI => self.tai_seconds,
@@ -209,17 +210,29 @@ impl TimeManager {
             TimeScaleId::GMST => self.gmst_seconds,
             TimeScaleId::GPS => self.gps_seconds,
             TimeScaleId::DYN => self.dyn_time.seconds,
-            TimeScaleId::MET => self.met.as_ref().map_or(0.0, |m| m.seconds),
-            TimeScaleId::UDE => self.ude.first().map_or(0.0, |u| u.seconds),
+            TimeScaleId::MET => {
+                self.met
+                    .as_ref()
+                    .expect("MET scale not registered; call add_met() first")
+                    .seconds
+            }
+            TimeScaleId::UDE => {
+                self.ude
+                    .first()
+                    .expect("no UDE scales registered; call add_ude() first")
+                    .seconds
+            }
         }
     }
 
-    /// Retrieve UDE seconds by index.
-    ///
-    /// # Panics
-    /// Panics if `idx` is out of range.
-    pub fn get_ude_seconds(&self, idx: usize) -> f64 {
-        self.ude[idx].seconds
+    /// Retrieve MET seconds, or `None` if MET is not registered.
+    pub fn get_met_seconds(&self) -> Option<f64> {
+        self.met.as_ref().map(|m| m.seconds)
+    }
+
+    /// Retrieve UDE seconds by index, or `None` if the index is out of range.
+    pub fn get_ude_seconds(&self, idx: usize) -> Option<f64> {
+        self.ude.get(idx).map(|u| u.seconds)
     }
 
     /// Get a reference to a UDE by index.

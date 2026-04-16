@@ -121,8 +121,9 @@ fn calendar_jd_round_trip() {
     for (cal, expected_jd) in &known_dates {
         let tjt = calendar_to_tjt(cal);
         let jd = tjt_to_jd(tjt);
+        // These inputs have exact JD values; 1e-10 day ≈ 8.6 µs.
         assert!(
-            (jd - expected_jd).abs() < 0.001,
+            (jd - expected_jd).abs() < 1e-10,
             "Calendar {:?} -> JD {}, expected {}",
             cal,
             jd,
@@ -142,6 +143,13 @@ fn calendar_jd_round_trip() {
         assert_eq!(cal_back.month, cal.month, "Month mismatch for {:?}", cal);
         assert_eq!(cal_back.day, cal.day, "Day mismatch for {:?}", cal);
         assert_eq!(cal_back.hour, cal.hour, "Hour mismatch for {:?}", cal);
+        assert_eq!(cal_back.minute, cal.minute, "Minute mismatch for {:?}", cal);
+        assert!(
+            (cal_back.second - cal.second).abs() < 1e-6,
+            "Second mismatch for {:?}: got {}",
+            cal,
+            cal_back.second
+        );
     }
 }
 
