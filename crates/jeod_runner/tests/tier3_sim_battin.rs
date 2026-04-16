@@ -38,12 +38,11 @@ const DT: f64 = 10.0;
 /// Logging interval (seconds): record state every 60s for comparison.
 const LOG_INTERVAL: f64 = 60.0;
 
-/// Compute Earth-centered position of a body from DE421 ephemeris.
-fn earth_centered_position(body: EphemerisBody, tdb_jd: f64, ephemeris: &Ephemeris) -> DVec3 {
-    let (pos, _) = ephemeris
+/// Compute Earth-centered position and velocity of a body from DE421 ephemeris.
+fn earth_centered_state(body: EphemerisBody, tdb_jd: f64, ephemeris: &Ephemeris) -> (DVec3, DVec3) {
+    ephemeris
         .get_earth_centered_state(body, tdb_jd)
-        .expect("ephemeris query failed");
-    pos
+        .expect("ephemeris query failed")
 }
 
 /// Build a `Simulation` with ISS-like orbit, Earth central, Sun + Moon third-body.
@@ -118,7 +117,8 @@ fn build_sim(battin: bool, jeod_root: &Path, ephemeris: &Ephemeris) -> (Simulati
 
     // Sun: third-body (differential acceleration)
     let tdb_jd = sim.time.tdb_julian_date();
-    let initial_sun = earth_centered_position(EphemerisBody::Sun, tdb_jd, ephemeris);
+    let (initial_sun_pos, initial_sun_vel) =
+        earth_centered_state(EphemerisBody::Sun, tdb_jd, ephemeris);
     let sun = sim.add_source(
         "Sun",
         GravitySourceEntry {
@@ -126,8 +126,8 @@ fn build_sim(battin: bool, jeod_root: &Path, ephemeris: &Ephemeris) -> (Simulati
                 mu: mu_sun,
                 model: GravityModel::PointMass,
             },
-            position: initial_sun,
-            velocity: DVec3::ZERO,
+            position: initial_sun_pos,
+            velocity: initial_sun_vel,
             t_inertial_pfix: None,
             delta_c20: 0.0,
             rotation_model: RotationModel::default(),
@@ -138,7 +138,8 @@ fn build_sim(battin: bool, jeod_root: &Path, ephemeris: &Ephemeris) -> (Simulati
     );
 
     // Moon: third-body (differential acceleration)
-    let initial_moon = earth_centered_position(EphemerisBody::Moon, tdb_jd, ephemeris);
+    let (initial_moon_pos, initial_moon_vel) =
+        earth_centered_state(EphemerisBody::Moon, tdb_jd, ephemeris);
     let moon = sim.add_source(
         "Moon",
         GravitySourceEntry {
@@ -146,8 +147,8 @@ fn build_sim(battin: bool, jeod_root: &Path, ephemeris: &Ephemeris) -> (Simulati
                 mu: mu_moon,
                 model: GravityModel::PointMass,
             },
-            position: initial_moon,
-            velocity: DVec3::ZERO,
+            position: initial_moon_pos,
+            velocity: initial_moon_vel,
             t_inertial_pfix: None,
             delta_c20: 0.0,
             rotation_model: RotationModel::default(),
@@ -205,16 +206,13 @@ fn propagate(
     for i in 1..=n_points {
         let target_time = i as f64 * LOG_INTERVAL;
 
-        // Update ephemeris-driven source positions before stepping.
+        // Update ephemeris-driven source state before stepping.
         let target_tdb_jd = tdb_jd + target_time / 86400.0;
-        sim.set_source_position(
-            sun_source,
-            earth_centered_position(EphemerisBody::Sun, target_tdb_jd, ephemeris),
-        );
-        sim.set_source_position(
-            moon_source,
-            earth_centered_position(EphemerisBody::Moon, target_tdb_jd, ephemeris),
-        );
+        let (sun_pos, sun_vel) = earth_centered_state(EphemerisBody::Sun, target_tdb_jd, ephemeris);
+        sim.set_source_state(sun_source, sun_pos, sun_vel);
+        let (moon_pos, moon_vel) =
+            earth_centered_state(EphemerisBody::Moon, target_tdb_jd, ephemeris);
+        sim.set_source_state(moon_source, moon_pos, moon_vel);
 
         sim.step_until(target_time);
 

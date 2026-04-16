@@ -131,8 +131,10 @@ pub fn accumulate_gravity<'a, S: Copy + std::fmt::Debug>(
                 let mu = resolved.source.mu;
                 // vehicle relative to frame origin
                 let integ_pos = position - integration_origin;
+                // Reuse the already-computed frame-relative vector so the
+                // Battin and direct-subtraction paths stay consistent.
                 // grav_pos = frame_origin - source = -rho (matches JEOD's grav_source_frame.pos)
-                let grav_pos = integration_origin - resolved.position;
+                let grav_pos = frame_pos_relative_to_source;
                 let rho_sq = grav_pos.length_squared();
                 let rho_mag = rho_sq.sqrt();
                 let rho_3rd = rho_sq * rho_mag;
