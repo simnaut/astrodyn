@@ -236,12 +236,15 @@ fn compute_single_facet(
 
     // Speed ratio: s = v / sqrt(2 * R * T)
     // JEOD flat_plate_aero_facet.cc line 117
-    debug_assert!(
-        gas_params.gas_const > 0.0 && gas_params.temp_free_stream > 0.0,
-        "gas_const and temp_free_stream must be positive"
-    );
+    if !(gas_params.gas_const.is_finite()
+        && gas_params.gas_const > 0.0
+        && gas_params.temp_free_stream.is_finite()
+        && gas_params.temp_free_stream > 0.0)
+    {
+        return DVec3::ZERO;
+    }
     let denom = (2.0 * gas_params.gas_const * gas_params.temp_free_stream).sqrt();
-    if denom <= 0.0 {
+    if !denom.is_finite() || denom <= 0.0 {
         return DVec3::ZERO;
     }
     let s = rel_vel_mag / denom;
@@ -265,7 +268,7 @@ fn compute_single_facet(
             // JEOD: assumes epsilon=0, sin_alpha=1 for coeff.
             // JEOD flat_plate_aero_facet.cc lines 182-196
             let exp_s2 = (-s_2).exp();
-            let temp_ratio = facet.temperature / gas_params.temp_free_stream;
+            let temp_ratio = facet.temperature.max(0.0) / gas_params.temp_free_stream;
             let drag_coef_diff = (M_2_SQRTPI * s * exp_s2
                 + temp_ratio.sqrt() * (2.0 / M_2_SQRTPI) * s
                 + 1.0
@@ -279,11 +282,12 @@ fn compute_single_facet(
         }
 
         AeroCoeffMethod::Mixed { epsilon } => {
+            let epsilon = epsilon.clamp(0.0, 1.0);
             // JEOD: computes both specular and diffuse coefficients, then mixes.
             // JEOD flat_plate_aero_facet.cc lines 199-207
             let exp_s2 = (-s_2).exp();
             let drag_coef_spec = (2.0 * M_2_SQRTPI * s * exp_s2 + 2.0 + 4.0 * s_2) / s_2;
-            let temp_ratio = facet.temperature / gas_params.temp_free_stream;
+            let temp_ratio = facet.temperature.max(0.0) / gas_params.temp_free_stream;
             let drag_coef_diff = (M_2_SQRTPI * s * exp_s2
                 + temp_ratio.sqrt() * (2.0 / M_2_SQRTPI) * s
                 + 1.0
@@ -302,6 +306,7 @@ fn compute_single_facet(
         }
 
         AeroCoeffMethod::CalcCoef { epsilon } => {
+            let epsilon = epsilon.clamp(0.0, 1.0);
             // Full coefficient calculation with angle-dependent normal and
             // tangential drag coefficients.
             // JEOD flat_plate_aero_facet.cc lines 124-166
@@ -313,7 +318,7 @@ fn compute_single_facet(
             let erf_ssa = erf(s_sinalpha);
 
             let local_temp_reflect =
-                one_m_epsilon * facet.temperature + epsilon * gas_params.temp_free_stream;
+                one_m_epsilon * facet.temperature.max(0.0) + epsilon * gas_params.temp_free_stream;
             let temp_ratio = local_temp_reflect / gas_params.temp_free_stream;
 
             let drag_coef_norm = (M_2_SQRTPI * one_p_epsilon * s_sinalpha * exp_ssa2
