@@ -55,11 +55,18 @@ fn state_from_elements(
 }
 
 /// Build a Simulation, propagate for approximately one full orbit (for bound
-/// orbits), recover elements, and verify they match the originals.
+/// orbits), recover orbital elements, and verify shape/orientation elements
+/// match the originals.
 ///
-/// For point-mass gravity, after approximately one orbit all elements should
-/// remain preserved within the test tolerances (the orbit is a fixed
-/// Keplerian ellipse).
+/// Asserts: semi-major axis (a), eccentricity (e), inclination (i), and
+/// conditionally RAAN (non-equatorial) and argument of periapsis
+/// (non-circular). Anomalies (true, mean, eccentric) are excluded because
+/// they evolve with time and do not return to their initial values unless
+/// the propagation time matches the period exactly.
+///
+/// For point-mass gravity, after approximately one orbit these
+/// shape/orientation elements should remain preserved within the test
+/// tolerances (the orbit is a fixed Keplerian ellipse).
 #[allow(clippy::too_many_arguments)]
 fn roundtrip_via_simulation(
     a: f64,
@@ -195,22 +202,86 @@ fn tier3_orbinit_roundtrip_circular() {
 
     println!("Tier 3 round-trip: Circular LEO (period={period:.1} s, {n_steps} steps)");
 
-    // For circular orbit, a and e are special: JEOD uses r_mag for a, e~0
-    // After one orbit, the state returns close to the start, so recovered
-    // elements should match. Use relaxed e_tol since e~0 is degenerate.
-    roundtrip_via_simulation(
-        a,
-        e,
-        i,
-        raan,
-        argp,
-        nu,
-        dt,
-        n_steps,
-        "circular_leo",
-        1e-10, // a relative
-        1e-8,  // e absolute (degenerate for circular)
-        1e-8,  // angle
+    // For circular orbits, from_cartesian switches branches at e_mag < 1e-13
+    // (setting a = r_mag in the circular branch). Tiny numerical eccentricity
+    // after integration can cross this threshold, changing how semi_major_axis
+    // is computed. Instead, compare specific energy E = -mu/(2a), which is
+    // branch-independent and stable for near-circular orbits.
+    let trans = state_from_elements(a, e, i, raan, argp, nu, MU_EARTH);
+
+    let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sim = Simulation::new(time, dt);
+
+    let earth = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: MU_EARTH,
+                model: GravityModel::PointMass,
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: RotationModel::default(),
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: true,
+        },
+    );
+
+    sim.add_body(VehicleConfig {
+        trans,
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth, false)],
+        },
+        ..Default::default()
+    });
+
+    sim.validate().unwrap();
+
+    // Compute initial specific energy
+    let body0 = sim.body(0);
+    let energy_0 =
+        body0.trans.velocity.length_squared() / 2.0 - MU_EARTH / body0.trans.position.length();
+
+    sim.step_n(n_steps);
+
+    let body = sim.body(0);
+    let oe_recovered =
+        OrbitalElements::from_cartesian(MU_EARTH, body.trans.position, body.trans.velocity)
+            .expect("from_cartesian failed after propagation");
+
+    // Specific energy: E = v^2/2 - mu/r = -mu/(2a), branch-independent
+    let energy_now =
+        body.trans.velocity.length_squared() / 2.0 - MU_EARTH / body.trans.position.length();
+    let energy_err = (energy_now - energy_0).abs() / energy_0.abs();
+    println!("  circular_leo: energy_rel_err={energy_err:.3e}");
+    assert!(
+        energy_err < 1e-10,
+        "circular_leo: energy relative error {energy_err:.6e} exceeds tolerance 1e-10"
+    );
+
+    // Eccentricity should remain near zero
+    let e_err = oe_recovered.e_mag;
+    println!("  circular_leo: recovered e={e_err:.3e}");
+    assert!(
+        e_err < 1e-8,
+        "circular_leo: eccentricity {e_err:.6e} exceeds tolerance 1e-8"
+    );
+
+    // Inclination
+    let i_err = (oe_recovered.inclination - i).abs();
+    assert!(
+        i_err < 1e-8,
+        "circular_leo: inclination error {i_err:.6e} rad exceeds tolerance 1e-8"
+    );
+
+    // RAAN
+    let raan_err = angle_diff(oe_recovered.long_asc_node, raan);
+    assert!(
+        raan_err < 1e-8,
+        "circular_leo: RAAN error {raan_err:.6e} rad exceeds tolerance 1e-8"
     );
 }
 
@@ -389,61 +460,18 @@ fn tier3_orbinit_roundtrip_hyperbolic() {
 
     println!("Tier 3 round-trip: Hyperbolic (a={a:.0} m, e={e})");
 
-    let trans = state_from_elements(a, e, i, raan, argp, nu, MU_EARTH);
-
-    let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
-    let mut sim = Simulation::new(time, dt);
-
-    let earth = sim.add_source(
-        "Earth",
-        GravitySourceEntry {
-            source: GravitySource {
-                mu: MU_EARTH,
-                model: GravityModel::PointMass,
-            },
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
-            t_inertial_pfix: None,
-            delta_c20: 0.0,
-            rotation_model: RotationModel::default(),
-            tidal_config: None,
-            planet_omega: 0.0,
-            central: true,
-        },
-    );
-
-    sim.add_body(VehicleConfig {
-        trans,
-        gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth, false)],
-        },
-        ..Default::default()
-    });
-
-    sim.validate().unwrap();
-    sim.step_n(n_steps);
-
-    let body = sim.body(0);
-    let oe = OrbitalElements::from_cartesian(MU_EARTH, body.trans.position, body.trans.velocity)
-        .expect("from_cartesian failed");
-
-    // For hyperbolic orbits, a is negative
-    let a_err = (oe.semi_major_axis - a).abs() / a.abs();
-    let e_err = (oe.e_mag - e).abs();
-    let i_err = (oe.inclination - i).abs();
-
-    println!("  hyperbolic: a_err={a_err:.3e}, e_err={e_err:.3e}, i_err={i_err:.3e}");
-
-    assert!(
-        a_err < 1e-10,
-        "Hyperbolic a relative error {a_err:.6e} exceeds tolerance"
-    );
-    assert!(
-        e_err < 1e-10,
-        "Hyperbolic e error {e_err:.6e} exceeds tolerance"
-    );
-    assert!(
-        i_err < 1e-10,
-        "Hyperbolic i error {i_err:.6e} exceeds tolerance"
+    roundtrip_via_simulation(
+        a,
+        e,
+        i,
+        raan,
+        argp,
+        nu,
+        dt,
+        n_steps,
+        "hyperbolic",
+        1e-10,
+        1e-10,
+        1e-10,
     );
 }

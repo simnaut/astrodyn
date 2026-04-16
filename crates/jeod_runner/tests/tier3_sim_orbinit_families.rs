@@ -376,12 +376,19 @@ fn tier3_orbinit_equatorial() {
 
     verify_conservation(&mut sim, n_steps, "equatorial", 1e-10, 1e-10);
 
-    // Verify orbit stays in equatorial plane (z components ~ 0)
-    let body = sim.body(0);
-    let z_frac = body.trans.position.z.abs() / body.trans.position.length();
+    // Verify orbit stays in equatorial plane over the full propagation window.
+    let mut eq_sim = build_sim(trans, dt);
+    let mut max_z_frac = 0.0_f64;
+    for _ in 0..n_steps {
+        eq_sim.step();
+        let body = eq_sim.body(0);
+        let z_frac = body.trans.position.z.abs() / body.trans.position.length();
+        max_z_frac = max_z_frac.max(z_frac);
+    }
+    println!("  Equatorial: max |z|/r = {max_z_frac:.3e}");
     assert!(
-        z_frac < 1e-12,
-        "Equatorial orbit left the equatorial plane: z/r={z_frac:.3e}"
+        max_z_frac < 1e-12,
+        "Equatorial orbit left the equatorial plane: max |z|/r={max_z_frac:.3e}"
     );
 }
 
