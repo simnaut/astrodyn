@@ -98,11 +98,13 @@ pub use jeod_interactions::{
 // jeod_frames: reference frame state
 pub use jeod_frames::RefFrameState;
 
-// jeod_time: simulation time, leap seconds, and epoch constants
+// jeod_time: simulation time, leap seconds, epoch constants, and time scale network
 pub use jeod_time::{
     epoch::{J2000_TT_JD, J2000_TT_TJT, SECONDS_PER_DAY},
     leap_second::{default_leap_second_table, LeapSecondTable},
-    SimulationTime,
+    time_utc::{calendar_to_tjt, tjt_to_calendar, CalendarDate},
+    DynamicTime, MissionElapsedTime, SimulationTime, TimeManager, TimeScaleId, UserDefinedEpoch,
+    TAI_GPS_OFFSET,
 };
 
 // jeod_time: planet rotation (used by ephemeris stage)
