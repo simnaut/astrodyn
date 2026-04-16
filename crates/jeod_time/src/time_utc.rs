@@ -43,7 +43,43 @@ impl CalendarDate {
 ///
 /// Ported from JEOD `time_standard.cc::convert_from_calendar()`.
 /// Coverage: March 1, 1600 onward.
+///
+/// # Panics
+/// Panics if the date is before 1600-03-01 or if any field is out of range.
 pub fn calendar_to_tjt(cal: &CalendarDate) -> f64 {
+    assert!(
+        (1..=12).contains(&cal.month),
+        "month must be 1..=12, got {}",
+        cal.month
+    );
+    assert!(
+        (1..=31).contains(&cal.day),
+        "day must be 1..=31, got {}",
+        cal.day
+    );
+    assert!(
+        (0..=23).contains(&cal.hour),
+        "hour must be 0..=23, got {}",
+        cal.hour
+    );
+    assert!(
+        (0..=59).contains(&cal.minute),
+        "minute must be 0..=59, got {}",
+        cal.minute
+    );
+    assert!(
+        cal.second >= 0.0 && cal.second < 61.0,
+        "second must be in [0, 61), got {}",
+        cal.second
+    );
+    assert!(
+        cal.year > 1600 || (cal.year == 1600 && cal.month >= 3),
+        "date must be 1600-03-01 or later, got {}-{:02}-{:02}",
+        cal.year,
+        cal.month,
+        cal.day
+    );
+
     // Adjust year to represent whole years since March 1, 1600
     let y = cal.year - 1601 + (cal.month + 9) / 12;
 

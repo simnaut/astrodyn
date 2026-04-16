@@ -41,7 +41,9 @@ pub enum TimeScaleId {
     // UDE is intentionally excluded — use get_ude_seconds(idx) for indexed access.
 }
 
-// JEOD_INV: TM.03 — time types updated in dependency order (TAI -> TT -> TDB -> UTC -> GPS -> UT1 -> GMST -> MET -> UDE)
+// JEOD_INV: TM.03 — time types updated in dependency order:
+// TAI drives TT, UTC, GPS, MET, and UDE; TDB depends on TT; UT1 depends on TAI
+// plus ut1_tai_offset; GMST depends on UT1.
 // JEOD_INV: TM.04 — all time types reachable from initializer (all scales updated from TAI in update_all)
 // JEOD_INV: TM.06 — no duplicate converters (each scale has exactly one conversion path)
 /// Time manager: maintains all time scale values and propagates updates.
@@ -81,6 +83,8 @@ pub struct TimeManager {
     pub leap_second_table: LeapSecondTable,
     /// UT1-TAI offset in seconds (from IERS data).
     pub ut1_tai_offset: f64,
+    /// Cached UTC TJT at simulation epoch (constant, avoids repeated leap-second lookup).
+    utc_tjt_at_epoch: f64,
 
     // --- Dynamic time ---
     /// Dynamic time state (integration clock). Private to ensure
@@ -103,6 +107,7 @@ impl TimeManager {
     pub fn new(tai_tjt_at_epoch: f64, leap_table: LeapSecondTable) -> Self {
         let tai_utc_s = leap_table.tai_utc_at_tai_tjt(tai_tjt_at_epoch);
         let ut1_tai_offset = -tai_utc_s;
+        let utc_tjt_at_epoch = leap_table.tai_to_utc_tjt(tai_tjt_at_epoch);
 
         let mut mgr = Self {
             tai_seconds: 0.0,
@@ -117,6 +122,7 @@ impl TimeManager {
             gps_seconds: 0.0,
             leap_second_table: leap_table,
             ut1_tai_offset,
+            utc_tjt_at_epoch,
             dyn_time: DynamicTime::new(),
             simtime: 0.0,
             met: None,
@@ -253,7 +259,9 @@ impl TimeManager {
         self.tt_tjt() + 40_000.0 + 2_400_000.5
     }
 
-    // JEOD_INV: TM.03 — time types updated in dependency order (TAI -> TT -> TDB -> UTC -> UT1 -> GMST -> GPS -> MET -> UDE)
+    // JEOD_INV: TM.03 — time types updated in dependency order
+    // (TAI -> TT -> TDB -> UTC -> GPS -> UT1 -> GMST -> MET -> UDE);
+    // GPS depends only on TAI, so it is computed before UT1/GMST.
     /// Recompute all derived time scales from current TAI state.
     fn update_all(&mut self) {
         // TT = TAI + 32.184
@@ -262,10 +270,9 @@ impl TimeManager {
         // TDB = TT + periodic offset
         self.tdb_seconds = time_converter_tai_tdb::tai_to_tdb(self.tai_seconds, self.tai_tjt);
 
-        // UTC via leap second table
+        // UTC via leap second table (epoch value cached at construction)
         let utc_tjt = self.leap_second_table.tai_to_utc_tjt(self.tai_tjt);
-        let utc_tjt_at_epoch = self.leap_second_table.tai_to_utc_tjt(self.tai_tjt_at_epoch);
-        self.utc_seconds = (utc_tjt - utc_tjt_at_epoch) * SECONDS_PER_DAY;
+        self.utc_seconds = (utc_tjt - self.utc_tjt_at_epoch) * SECONDS_PER_DAY;
 
         // GPS = TAI - 19s
         self.gps_seconds = time_gps::tai_to_gps(self.tai_seconds);
