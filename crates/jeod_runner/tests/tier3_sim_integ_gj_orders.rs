@@ -13,8 +13,6 @@
 //! needs more priming steps, so the asserted max error can be larger at
 //! higher order due to larger bootstrap transients.
 
-mod sim_test_helpers;
-
 use glam::DVec3;
 use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
 use jeod_sim::{

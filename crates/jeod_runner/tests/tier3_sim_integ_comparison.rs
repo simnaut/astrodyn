@@ -6,8 +6,6 @@
 //! Scenario: ISS-like circular orbit (a = 6778 km), point-mass Earth gravity,
 //! dt = 10s, propagate for 1 orbit (~5550s, ~92.5 min). 3-DOF (translational only).
 
-mod sim_test_helpers;
-
 use glam::DVec3;
 use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
 use jeod_sim::{

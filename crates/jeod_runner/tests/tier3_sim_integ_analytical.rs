@@ -9,8 +9,6 @@
 //! Tests each integrator (RK4, RKF45, GJ-8) against this analytical solution
 //! for position and velocity error over a one-orbit propagation interval.
 
-mod sim_test_helpers;
-
 use glam::DVec3;
 use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
 use jeod_sim::{
