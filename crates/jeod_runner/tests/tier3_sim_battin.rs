@@ -48,7 +48,11 @@ fn earth_centered_state(body: EphemerisBody, tdb_jd: f64, ephemeris: &Ephemeris)
 /// Build a `Simulation` with ISS-like orbit, Earth central, Sun + Moon third-body.
 ///
 /// When `battin` is true, the Sun and Moon gravity controls use Battin's method.
-fn build_sim(battin: bool, jeod_root: &Path, ephemeris: &Ephemeris) -> (Simulation, f64) {
+fn build_sim(
+    battin: bool,
+    jeod_root: &Path,
+    ephemeris: &Ephemeris,
+) -> (Simulation, f64, usize, usize) {
     let sim_dir = jeod_root.join(SIM_DYNCOMP);
     let grav_data_dir = jeod_root.join("models/environment/gravity/data/src");
 
@@ -186,7 +190,7 @@ fn build_sim(battin: bool, jeod_root: &Path, ephemeris: &Ephemeris) -> (Simulati
 
     sim.validate().unwrap();
 
-    (sim, tdb_jd)
+    (sim, tdb_jd, sun, moon)
 }
 
 /// Propagate a simulation for 8 hours, logging states every 60s.
@@ -243,7 +247,7 @@ fn tier3_battin_vs_direct_trajectory() {
         jeod_root.display()
     );
 
-    let bsp_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data/de421.bsp");
+    let bsp_path = test_data_path("de421.bsp");
     assert!(
         bsp_path.exists(),
         "DE421 ephemeris not found at {}",
@@ -252,13 +256,21 @@ fn tier3_battin_vs_direct_trajectory() {
     let ephemeris = Ephemeris::from_bsp(&bsp_path).expect("load DE421");
 
     // Run 1: direct subtraction (default, battin_method = false)
-    let (mut sim_direct, tdb_jd) = build_sim(false, &jeod_root, &ephemeris);
-    // Source indices: 0=Earth, 1=Sun, 2=Moon (order of add_source calls)
-    let (times_d, pos_d, vel_d) = propagate(&mut sim_direct, tdb_jd, 1, 2, &ephemeris);
+    let (mut sim_direct, tdb_jd, sun_direct, moon_direct) =
+        build_sim(false, &jeod_root, &ephemeris);
+    let (times_d, pos_d, vel_d) =
+        propagate(&mut sim_direct, tdb_jd, sun_direct, moon_direct, &ephemeris);
 
     // Run 2: Battin's method (battin_method = true)
-    let (mut sim_battin, tdb_jd_b) = build_sim(true, &jeod_root, &ephemeris);
-    let (times_b, pos_b, vel_b) = propagate(&mut sim_battin, tdb_jd_b, 1, 2, &ephemeris);
+    let (mut sim_battin, tdb_jd_b, sun_battin, moon_battin) =
+        build_sim(true, &jeod_root, &ephemeris);
+    let (times_b, pos_b, vel_b) = propagate(
+        &mut sim_battin,
+        tdb_jd_b,
+        sun_battin,
+        moon_battin,
+        &ephemeris,
+    );
 
     assert_eq!(times_d.len(), times_b.len());
 
