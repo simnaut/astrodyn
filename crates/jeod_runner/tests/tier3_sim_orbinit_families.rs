@@ -206,13 +206,26 @@ fn tier3_orbinit_circular_leo() {
     verify_conservation(&mut sim, n_steps, "circular_leo", 1e-10, 1e-10);
 
     // Additional check: radius should stay nearly constant for circular orbit
-    let body = sim.body(0);
-    let r_final = body.trans.position.length();
-    let r_err = (r_final - r).abs() / r;
-    println!("  Radius: initial={r:.1} m, final={r_final:.1} m, rel_err={r_err:.3e}");
+    // over the full propagation window, not just at the final sample.
+    let mut radius_sim = build_sim(trans, dt);
+    let mut min_r = r;
+    let mut max_r = r;
+
+    for _ in 0..n_steps {
+        radius_sim.step();
+        let body = radius_sim.body(0);
+        let r_now = body.trans.position.length();
+        min_r = min_r.min(r_now);
+        max_r = max_r.max(r_now);
+    }
+
+    let max_rel_err = ((max_r - r).abs().max((r - min_r).abs())) / r;
+    println!(
+        "  Radius: initial={r:.1} m, min={min_r:.1} m, max={max_r:.1} m, max_rel_err={max_rel_err:.3e}"
+    );
     assert!(
-        r_err < 1e-8,
-        "Circular orbit radius changed: rel_err={r_err:.6e}"
+        max_rel_err < 1e-8,
+        "Circular orbit radius varied during propagation: min={min_r:.6e}, max={max_r:.6e}, max_rel_err={max_rel_err:.6e}"
     );
 }
 
@@ -245,16 +258,27 @@ fn tier3_orbinit_eccentric() {
 
     verify_conservation(&mut sim, n_steps, "eccentric_e03", 2.2e-10, 1e-10);
 
-    // Verify periapsis/apoapsis bounds
+    // Verify periapsis/apoapsis bounds over the full propagation window.
     let r_peri = a * (1.0 - e);
     let r_apo = a * (1.0 + e);
-    let body = sim.body(0);
-    let r_now = body.trans.position.length();
+    let mut bounds_sim = build_sim(trans, dt);
+    let mut min_r = f64::MAX;
+    let mut max_r = 0.0_f64;
+
+    for _ in 0..n_steps {
+        bounds_sim.step();
+        let body = bounds_sim.body(0);
+        let r_now = body.trans.position.length();
+        min_r = min_r.min(r_now);
+        max_r = max_r.max(r_now);
+    }
+
+    println!(
+        "  Radius bounds: min={min_r:.1} m (peri={r_peri:.1}), max={max_r:.1} m (apo={r_apo:.1})"
+    );
     assert!(
-        r_now >= r_peri * 0.999 && r_now <= r_apo * 1.001,
-        "Radius {r_now:.0} m outside [{:.0}, {:.0}] m bounds",
-        r_peri,
-        r_apo
+        min_r >= r_peri * 0.999 && max_r <= r_apo * 1.001,
+        "Radius outside [{r_peri:.0}, {r_apo:.0}] m bounds: min={min_r:.0}, max={max_r:.0}"
     );
 }
 

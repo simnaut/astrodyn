@@ -54,11 +54,12 @@ fn state_from_elements(
     TranslationalState { position, velocity }
 }
 
-/// Build a Simulation, propagate exactly one full orbit (for bound orbits),
-/// recover elements, and verify they match the originals.
+/// Build a Simulation, propagate for approximately one full orbit (for bound
+/// orbits), recover elements, and verify they match the originals.
 ///
-/// For point-mass gravity, after exactly one orbit all elements should be
-/// preserved (the orbit is a fixed Keplerian ellipse).
+/// For point-mass gravity, after approximately one orbit all elements should
+/// remain preserved within the test tolerances (the orbit is a fixed
+/// Keplerian ellipse).
 #[allow(clippy::too_many_arguments)]
 fn roundtrip_via_simulation(
     a: f64,
