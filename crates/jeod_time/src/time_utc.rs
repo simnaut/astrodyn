@@ -73,6 +73,11 @@ pub fn calendar_to_tjt(cal: &CalendarDate) -> f64 {
 ///
 /// Ported from JEOD `time_standard.cc::calculate_calendar_values()`.
 /// Coverage: March 1, 1600 onward.
+///
+/// Note: this function does not represent UTC leap seconds. The `second`
+/// field is always in `[0, 60)` — values within 1e-6 of 60.0 are rounded
+/// up to the next minute. A `23:59:60` leap second instant cannot be
+/// produced. This matches JEOD's `calculate_calendar_values()` behavior.
 pub fn tjt_to_calendar(tjt: f64) -> CalendarDate {
     let mut julian_day = tjt.floor() as i32;
 

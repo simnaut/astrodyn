@@ -5,6 +5,8 @@
 //! A UDE counts seconds from an arbitrary user-defined epoch within
 //! a configurable parent time scale. `UDE = parent_time - epoch_in_parent`.
 
+use crate::epoch::SECONDS_PER_DAY;
+
 /// User-Defined Epoch time state.
 ///
 /// Matches the core functionality of JEOD `TimeUDE`: a time scale
@@ -46,7 +48,7 @@ impl UserDefinedEpoch {
     /// Update UDE from the parent time scale's current value.
     pub fn update(&mut self, parent_seconds: f64) {
         self.seconds = parent_seconds - self.epoch_in_parent;
-        self.days = self.seconds / 86400.0;
+        self.days = self.seconds / SECONDS_PER_DAY;
         self.clock_update();
     }
 
@@ -54,8 +56,8 @@ impl UserDefinedEpoch {
     ///
     /// Ported from JEOD `TimeUDE::clock_update()`.
     fn clock_update(&mut self) {
-        let mut scratch = self.seconds.rem_euclid(86400.0);
-        self.clock_day = self.seconds.div_euclid(86400.0) as i32;
+        let mut scratch = self.seconds.rem_euclid(SECONDS_PER_DAY);
+        self.clock_day = self.seconds.div_euclid(SECONDS_PER_DAY) as i32;
         self.clock_hour = scratch.div_euclid(3600.0) as i32;
         scratch = scratch.rem_euclid(3600.0);
         self.clock_minute = scratch.div_euclid(60.0) as i32;

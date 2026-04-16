@@ -5,6 +5,8 @@
 //! GPS time = TAI - 19 seconds (the number of leap seconds accumulated
 //! by the GPS epoch, January 6, 1980 00:00:00 UTC).
 
+use crate::epoch::SECONDS_PER_DAY;
+
 /// TAI-GPS offset in seconds: GPS = TAI - 19s.
 ///
 /// This is the number of leap seconds that had accumulated by the GPS
@@ -15,7 +17,7 @@ pub const TAI_GPS_OFFSET: f64 = 19.0;
 ///
 /// From JEOD `time_gps.cc`: GPS epoch is midnight Jan 5/6, 1980 UTC.
 /// UTC TJT at that point is 4244.0. TAI TJT = UTC TJT + 19/86400.
-pub const GPS_EPOCH_TAI_TJT: f64 = 4244.0 + 19.0 / 86400.0;
+pub const GPS_EPOCH_TAI_TJT: f64 = 4244.0 + 19.0 / SECONDS_PER_DAY;
 
 /// Convert TAI seconds-since-epoch to GPS seconds-since-epoch.
 pub fn tai_to_gps(tai_seconds: f64) -> f64 {
@@ -55,7 +57,7 @@ pub struct GpsTimeComponents {
 /// Ported from JEOD `time_gps.cc::set_time_by_seconds()`.
 pub fn gps_components(gps_days: f64) -> GpsTimeComponents {
     let gps_time_int = gps_days.floor() as i32;
-    let seconds_of_day = (gps_days - gps_time_int as f64) * 86400.0;
+    let seconds_of_day = (gps_days - gps_time_int as f64) * SECONDS_PER_DAY;
 
     // 10-bit rollover: 1024 weeks = 7168 days
     let rollover_count = gps_time_int.div_euclid(7168);
@@ -68,7 +70,7 @@ pub fn gps_components(gps_days: f64) -> GpsTimeComponents {
 
     let week = gps_in_rollover / 7;
     let day_of_week = gps_in_rollover % 7;
-    let seconds_of_week = day_of_week as f64 * 86400.0 + seconds_of_day;
+    let seconds_of_week = day_of_week as f64 * SECONDS_PER_DAY + seconds_of_day;
 
     GpsTimeComponents {
         seconds_of_day,

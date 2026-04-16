@@ -38,11 +38,10 @@ pub enum TimeScaleId {
     MET,
     /// Dynamic Time (integration clock).
     DYN,
-    /// User-Defined Epoch time.
-    UDE,
+    // UDE is intentionally excluded — use get_ude_seconds(idx) for indexed access.
 }
 
-// JEOD_INV: TM.03 — time types updated in dependency order (TAI -> TT -> TDB -> UTC -> UT1 -> GMST -> GPS -> DYN -> MET -> UDE)
+// JEOD_INV: TM.03 — time types updated in dependency order (TAI -> TT -> TDB -> UTC -> GPS -> UT1 -> GMST -> MET -> UDE)
 // JEOD_INV: TM.04 — all time types reachable from initializer (all scales updated from TAI in update_all)
 // JEOD_INV: TM.06 — no duplicate converters (each scale has exactly one conversion path)
 /// Time manager: maintains all time scale values and propagates updates.
@@ -197,9 +196,9 @@ impl TimeManager {
 
     /// Retrieve the value of a specific time scale in seconds.
     ///
-    /// For optional scales (MET, UDE), panics if the scale has not been
-    /// registered. Use [`get_met_seconds`] or [`get_ude_seconds`] for
-    /// `Option`-returning variants. For UDE, returns the first UDE.
+    /// For MET, panics if MET has not been registered. Use
+    /// [`get_met_seconds`] for an `Option`-returning variant.
+    /// For UDE scales, use [`get_ude_seconds`] with an explicit index.
     pub fn get_seconds(&self, scale: TimeScaleId) -> f64 {
         match scale {
             TimeScaleId::TAI => self.tai_seconds,
@@ -214,12 +213,6 @@ impl TimeManager {
                 self.met
                     .as_ref()
                     .expect("MET scale not registered; call add_met() first")
-                    .seconds
-            }
-            TimeScaleId::UDE => {
-                self.ude
-                    .first()
-                    .expect("no UDE scales registered; call add_ude() first")
                     .seconds
             }
         }

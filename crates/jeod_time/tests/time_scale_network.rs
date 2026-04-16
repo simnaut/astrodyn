@@ -205,10 +205,11 @@ fn time_manager_full_propagation() {
     );
 
     // UDE = TAI - 3600 = 7200 - 3600 = 3600
+    let ude_s = mgr.get_ude_seconds(0).expect("UDE 0 should be registered");
     assert!(
-        (mgr.get_seconds(TimeScaleId::UDE) - 3600.0).abs() < 1e-15,
+        (ude_s - 3600.0).abs() < 1e-15,
         "UDE: expected 3600, got {}",
-        mgr.get_seconds(TimeScaleId::UDE)
+        ude_s
     );
 
     // TDB ≈ TT (within ~2ms)
