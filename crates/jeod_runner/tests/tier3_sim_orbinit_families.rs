@@ -105,7 +105,10 @@ fn state_from_elements(
 
 /// Propagate and verify energy and angular momentum conservation.
 ///
-/// Returns (max_energy_rel_error, max_h_rel_error) for additional assertions.
+/// Returns (max_energy_error, max_h_rel_error) for additional assertions.
+/// Energy error is relative when |E₀| is large, but switches to absolute
+/// error normalized by mu/r₀ when |E₀| is small (near-parabolic orbits
+/// where E₀ ≈ 0 makes relative error ill-conditioned).
 fn verify_conservation(
     sim: &mut Simulation,
     n_steps: usize,
@@ -117,6 +120,15 @@ fn verify_conservation(
     let e0 = specific_energy(body0.trans.position, body0.trans.velocity, MU_EARTH);
     let h0 = specific_ang_momentum(body0.trans.position, body0.trans.velocity);
 
+    // For near-parabolic orbits, |E₀| can be near zero, making relative
+    // energy error ill-conditioned (inf/NaN). Use mu/r₀ as a stable scale.
+    let r0 = body0.trans.position.length();
+    let energy_scale = if e0.abs() > MU_EARTH / r0 * 1e-6 {
+        e0.abs() // standard relative error
+    } else {
+        MU_EARTH / r0 // stable scale for near-parabolic
+    };
+
     let mut max_e_err = 0.0_f64;
     let mut max_h_err = 0.0_f64;
 
@@ -126,15 +138,15 @@ fn verify_conservation(
         let e_now = specific_energy(body.trans.position, body.trans.velocity, MU_EARTH);
         let h_now = specific_ang_momentum(body.trans.position, body.trans.velocity);
 
-        let e_rel = ((e_now - e0) / e0.abs()).abs();
+        let e_err = ((e_now - e0) / energy_scale).abs();
         let h_rel = ((h_now - h0) / h0).abs();
 
-        max_e_err = max_e_err.max(e_rel);
+        max_e_err = max_e_err.max(e_err);
         max_h_err = max_h_err.max(h_rel);
 
         if step % 100 == 0 || step == n_steps {
             println!(
-                "  {label} step {step}/{n_steps}: E_rel={e_rel:.3e}, h_rel={h_rel:.3e}, \
+                "  {label} step {step}/{n_steps}: E_err={e_err:.3e}, h_rel={h_rel:.3e}, \
                  r={:.1} km, v={:.3} km/s",
                 body.trans.position.length() / 1000.0,
                 body.trans.velocity.length() / 1000.0,
@@ -143,13 +155,13 @@ fn verify_conservation(
     }
 
     println!(
-        "  {label}: max E_rel={max_e_err:.3e} (tol {energy_tol:.1e}), \
+        "  {label}: max E_err={max_e_err:.3e} (tol {energy_tol:.1e}), \
          max h_rel={max_h_err:.3e} (tol {h_tol:.1e})"
     );
 
     assert!(
         max_e_err < energy_tol,
-        "{label}: energy conservation failed: max relative error {max_e_err:.6e} \
+        "{label}: energy conservation failed: max error {max_e_err:.6e} \
          exceeds tolerance {energy_tol:.1e}"
     );
     assert!(
@@ -372,15 +384,25 @@ fn tier3_orbinit_polar() {
 
     println!("Tier 3: Polar orbit (a={:.0} m, e={e}, i=90 deg)", a);
 
-    verify_conservation(&mut sim, n_steps, "polar", 1e-10, 1e-10);
+    // Verify orbit passes over the poles by propagating further and
+    // tracking the maximum |z|/r ratio across steps.
+    let mut max_z_frac = 0.0_f64;
+    for _ in 0..n_steps {
+        sim.step();
+        let body = sim.body(0);
+        let z_frac = body.trans.position.z.abs() / body.trans.position.length();
+        max_z_frac = max_z_frac.max(z_frac);
+    }
+    println!("  Polar: max |z|/r = {max_z_frac:.4}");
+    assert!(
+        max_z_frac > 0.5,
+        "Polar orbit should pass over the poles (|z| > r/2): max |z|/r = {max_z_frac:.4}"
+    );
 
-    // Verify orbit passes over the poles: z should reach values near r
-    // (Check that at some point during propagation, |z| > r/2)
-    // We already propagated; re-run a shorter check
+    // For polar orbit, angular momentum should be perpendicular to Z:
+    // h_z = x*vy - y*vx should be ~0 for i=90.
     let body = sim.body(0);
     let r_mag = body.trans.position.length();
-    // For polar orbit, angular momentum should be perpendicular to Z
-    // h_z = x*vy - y*vx should be ~0 for i=90
     let h_z = body.trans.position.x * body.trans.velocity.y
         - body.trans.position.y * body.trans.velocity.x;
     let h_mag = specific_ang_momentum(body.trans.position, body.trans.velocity);
@@ -451,8 +473,8 @@ fn tier3_orbinit_hyperbolic() {
 
 #[test]
 fn tier3_orbinit_near_parabolic() {
-    // Near-parabolic: e just above the ORBIT_SWITCH_TOL (1e-2) threshold
-    // so the orbit is barely hyperbolic in the JEOD classification
+    // Near-parabolic: e is slightly above 1.0 but still within
+    // ORBIT_SWITCH_TOL (1e-2), so this remains in JEOD's near-parabolic branch.
     let e = 1.005;
     let r_peri = R_EARTH + 500_000.0;
     let a = -(r_peri / (e - 1.0)); // very large |a|

@@ -173,18 +173,7 @@ fn roundtrip_via_simulation(
     }
 }
 
-/// Angular difference accounting for wraparound at 2*pi.
-fn angle_diff(a: f64, b: f64) -> f64 {
-    let tau = 2.0 * std::f64::consts::PI;
-    let mut d = (a - b) % tau;
-    if d > std::f64::consts::PI {
-        d -= tau;
-    }
-    if d < -std::f64::consts::PI {
-        d += tau;
-    }
-    d.abs()
-}
+use sim_test_helpers::angle_diff;
 
 // ======================================================================
 // Circular LEO round-trip
