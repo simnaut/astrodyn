@@ -26,7 +26,10 @@ pub use mass_body::{
     point_mass_inertia, MassBody, MassBodyId, MassPoint, MassPointState, MassTree,
 };
 pub use propagation::{propagate_body_frames, propagate_forward, propagate_reverse};
-pub use rkf45::{rkf45_sixdof_step, rkf45_translational_step};
+pub use rkf45::{
+    rkf45_adaptive_sixdof_step, rkf45_adaptive_translational_step, rkf45_sixdof_step,
+    rkf45_translational_step, AdaptiveConfig, AdaptiveResult,
+};
 pub use rotational::{
     compute_left_quat_deriv, compute_rotational_acceleration, normalize_integ, RotationalState,
     SixDofState,
