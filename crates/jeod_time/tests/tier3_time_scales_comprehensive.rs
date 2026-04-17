@@ -17,7 +17,7 @@ use jeod_time::{TimeManager, TimeScaleId};
 /// Advances the TimeManager by 86400s in 1s steps, checking at each step:
 ///   TT = TAI + 32.184s (exact)
 ///   GPS = TAI - 19s (exact)
-///   |TDB - TT| < 1.7ms (periodic correction bounded)
+///   |TDB - TT| < 2ms (periodic correction bounded)
 ///   UTC elapsed ~= TAI elapsed (no leap second crossed near J2000)
 #[test]
 fn tier3_time_all_scales_24h_propagation() {
@@ -181,7 +181,8 @@ fn tier3_time_gps_week_rollover() {
     assert_eq!(c1.day_of_week, 0, "After 7 days: day_of_week should be 0");
 
     // First rollover at 1024 weeks = 7168 days
-    // This corresponds to August 21, 1999
+    // This corresponds to August 22, 1999 (Sunday, since 7168 is a multiple of 7
+    // from the 1980-01-06 Sunday epoch)
     let c_rollover = time_gps::gps_components(7168.0);
     assert_eq!(
         c_rollover.rollover_count, 1,
@@ -211,7 +212,7 @@ fn tier3_time_gps_week_rollover() {
         "At 7167 days: day_of_week should be 6"
     );
 
-    // Second rollover at 2 * 7168 = 14336 days (April 6, 2019)
+    // Second rollover at 2 * 7168 = 14336 days (April 7, 2019, Sunday)
     let c_second_rollover = time_gps::gps_components(14336.0);
     assert_eq!(
         c_second_rollover.rollover_count, 2,
@@ -488,7 +489,7 @@ fn tier3_time_calendar_roundtrip_extended() {
 /// Verify TDB-TT relationship over 1 year.
 ///
 /// The TDB-TT offset is a small periodic correction (Fairhead & Bretagnon).
-/// Over an entire year, the maximum |TDB - TT| should remain under 1.7 ms.
+/// Over an entire year, the maximum |TDB - TT| should remain under 2 ms.
 #[test]
 fn tier3_time_tt_tdb_relationship() {
     let mut mgr = TimeManager::at_j2000(default_leap_second_table());
@@ -523,11 +524,12 @@ fn tier3_time_tt_tdb_relationship() {
         max_diff
     );
 
-    // Verify the TDB-TT offset function directly at J2000
-    let offset_j2000 = time_converter_tai_tdb::tdb_tt_offset(mgr.tai_tjt);
+    // Verify the TDB-TT offset function directly at J2000 (fresh manager, before propagation)
+    let mgr_j2000 = TimeManager::at_j2000(default_leap_second_table());
+    let offset_j2000 = time_converter_tai_tdb::tdb_tt_offset(mgr_j2000.tai_tjt);
     assert!(
         offset_j2000.abs() < 0.002,
-        "TDB-TT at end of year: {} s",
+        "TDB-TT at J2000: {} s",
         offset_j2000
     );
 }
@@ -535,7 +537,8 @@ fn tier3_time_tt_tdb_relationship() {
 /// Verify GMST increases monotonically with UT1 over 24 hours.
 ///
 /// Over 24 hours of UT1, GMST should advance by approximately
-/// 24h + 3m56.555s = 86636.555s (the sidereal excess).
+/// 86636.56s (the full sidereal-equivalent delta — 24h plus the ~236.56s
+/// sidereal excess over a solar day).
 #[test]
 fn tier3_time_gmst_increases_with_ut1() {
     let mut mgr = TimeManager::at_j2000(default_leap_second_table());
@@ -563,37 +566,47 @@ fn tier3_time_gmst_increases_with_ut1() {
     let gmst_final = mgr.get_seconds(TimeScaleId::GMST);
     let gmst_delta = gmst_final - gmst_initial;
 
-    // Sidereal day = solar day * 366.25/365.25
-    // 24h solar = 86400s solar = 86400 * (366.25/365.25) = 86636.56 sidereal seconds
-    // The delta in GMST "seconds" (accumulated sidereal seconds) should be
-    // approximately 86636.56 sidereal seconds.
-    let expected_sidereal_excess = 86400.0 * (366.25 / 365.25);
+    // Sidereal day = solar day * 366.25/365.25.
+    // Over 24h of solar time, accumulated GMST "seconds" should increase by the
+    // full sidereal-equivalent delta: 86400 * (366.25/365.25) ~= 86636.56 s.
+    let expected_gmst_delta = 86400.0 * (366.25 / 365.25);
     assert!(
-        (gmst_delta - expected_sidereal_excess).abs() < 2.0,
-        "GMST delta over 24h: {} s, expected ~{} s (sidereal day)",
+        (gmst_delta - expected_gmst_delta).abs() < 2.0,
+        "GMST delta over 24h: {} s, expected ~{} s (full sidereal-equivalent delta)",
         gmst_delta,
-        expected_sidereal_excess
+        expected_gmst_delta
     );
 }
 
-/// Verify GPS time through TimeManager matches the standalone conversion.
+/// Verify GPS time through TimeManager honors the GPS = TAI - 19 invariant.
 ///
-/// Advances TimeManager for several hours and checks that
-/// mgr.gps_seconds == tai_to_gps(mgr.tai_seconds) at each step.
+/// GPS is offset from TAI by exactly 19 seconds (the TAI-UTC offset at the
+/// GPS epoch, 1980-01-06). Since the offset is fixed (no leap seconds in GPS),
+/// this relationship must hold exactly at every propagation step.
 #[test]
 fn tier3_time_gps_through_manager() {
     let mut mgr = TimeManager::at_j2000(default_leap_second_table());
 
+    // Check at t=0 as well as throughout propagation.
+    let gps0 = mgr.get_seconds(TimeScaleId::GPS);
+    let tai0 = mgr.get_seconds(TimeScaleId::TAI);
+    assert!(
+        (gps0 - (tai0 - 19.0)).abs() < 1e-12,
+        "At t=0: GPS = {}, TAI - 19 = {}",
+        gps0,
+        tai0 - 19.0
+    );
+
     for _ in 0..3600 {
         mgr.advance(10.0); // 10s steps for 10 hours
-        let gps_mgr = mgr.get_seconds(TimeScaleId::GPS);
-        let gps_direct = time_gps::tai_to_gps(mgr.tai_seconds);
+        let gps = mgr.get_seconds(TimeScaleId::GPS);
+        let tai = mgr.get_seconds(TimeScaleId::TAI);
         assert!(
-            (gps_mgr - gps_direct).abs() < 1e-15,
-            "GPS mismatch at TAI={}: mgr={}, direct={}",
-            mgr.tai_seconds,
-            gps_mgr,
-            gps_direct
+            (gps - (tai - 19.0)).abs() < 1e-12,
+            "GPS != TAI - 19 at TAI={}: GPS = {}, expected {}",
+            tai,
+            gps,
+            tai - 19.0
         );
     }
 }
