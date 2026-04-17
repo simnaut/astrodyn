@@ -1,4 +1,5 @@
 pub mod body_init;
+pub mod constraints;
 pub mod forces;
 pub mod gauss_jackson;
 pub mod integration;
@@ -13,6 +14,7 @@ pub use body_init::{
     compute_ned_rotation, init_from_lvlh, init_from_mean_anomaly, init_from_ned,
     init_from_orbital_elements,
 };
+pub use constraints::{apply_constraint, BaumgarteSolver, HolonomicConstraint, PendulumConstraint};
 pub use forces::{
     collect_forces, compute_frame_derivatives, compute_t_inertial_struct,
     compute_translational_acceleration, compute_translational_derivatives, DynamicsConfig,
