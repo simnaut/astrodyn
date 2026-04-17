@@ -60,7 +60,7 @@ fn tier3_time_all_scales_24h_propagation() {
             tai - 19.0
         );
 
-        // |TDB - TT| < 1.7ms (Fairhead & Bretagnon periodic correction)
+        // |TDB - TT| < 2ms (Fairhead & Bretagnon periodic correction)
         let tdb = mgr.get_seconds(TimeScaleId::TDB);
         let tdb_tt_diff = (tdb - tt).abs();
         assert!(
@@ -630,9 +630,12 @@ fn tier3_time_tdb_julian_date_propagation() {
     let one_year_s = 365.25 * SECONDS_PER_DAY;
     mgr.advance(one_year_s);
     let jd1 = mgr.tdb_julian_date();
-    // TDB JD should advance by approximately 365.25 days
+    // TDB JD should advance by approximately 365.25 days. The delta is
+    // deterministic: TAI advances by exactly 365.25 days, and the TDB-TT
+    // periodic correction contributes at most ~2 * 1.67 ms ~= 4e-8 days of
+    // endpoint-dependent drift, so the tolerance can be very tight.
     assert!(
-        (jd1 - jd0 - 365.25).abs() < 0.01,
+        (jd1 - jd0 - 365.25).abs() < 1.0e-7,
         "TDB JD after 1 year: delta = {}, expected ~365.25",
         jd1 - jd0
     );
