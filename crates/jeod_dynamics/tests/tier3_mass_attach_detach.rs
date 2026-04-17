@@ -44,10 +44,29 @@ fn assert_symmetric(m: DMat3, tol: f64, msg: &str) {
 
 /// Parallel axis theorem: inertia of a point mass at offset r from reference.
 /// I[i][j] = mass * (r^2 * delta_ij - r[i] * r[j])
+///
+/// Computed element-wise so the test oracle is structurally independent of the
+/// production `jeod_dynamics::point_mass_inertia` (which uses an `r²·I − outer`
+/// matrix form). A regression in the production formula would therefore not be
+/// mirrored here.
 fn point_mass_inertia(mass: f64, offset: DVec3) -> DMat3 {
-    let r_sq = offset.length_squared();
-    let outer = DMat3::from_cols(offset * offset.x, offset * offset.y, offset * offset.z);
-    DMat3::from_diagonal(DVec3::splat(r_sq)) * mass - outer * mass
+    let x = offset.x;
+    let y = offset.y;
+    let z = offset.z;
+
+    let i_xx = mass * (y * y + z * z);
+    let i_yy = mass * (x * x + z * z);
+    let i_zz = mass * (x * x + y * y);
+
+    let i_xy = -mass * x * y;
+    let i_xz = -mass * x * z;
+    let i_yz = -mass * y * z;
+
+    DMat3::from_cols(
+        DVec3::new(i_xx, i_xy, i_xz),
+        DVec3::new(i_xy, i_yy, i_yz),
+        DVec3::new(i_xz, i_yz, i_zz),
+    )
 }
 
 // ── Tests ──
