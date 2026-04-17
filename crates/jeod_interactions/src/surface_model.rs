@@ -34,10 +34,10 @@ pub enum SurfaceShape {
         /// Outward-facing unit normal in the structural frame.
         normal: DVec3,
     },
-    /// A solid cylinder with a circular cross section.
+    /// A solid, closed cylinder with a circular cross section.
     ///
-    /// The cylinder is open in both directions along `axis`; end caps are
-    /// treated as circular disks of area `pi * radius²` attached at each end.
+    /// The modeled geometry is the lateral surface plus circular end caps
+    /// of area `pi * radius²` at both ends along `axis`.
     Cylinder {
         /// Cylinder radius (m).
         radius: f64,
@@ -224,12 +224,10 @@ impl SurfaceShape {
     ///   ```text
     ///   A_proj = (r_b + r_t)·L·|sin θ| + π·r_forward²·|cos θ|
     ///   ```
-    ///   where `r_forward = r_t` when `axis · v̂ > 0` (flow hits the top
-    ///   cap end-on from behind, meaning the top cap is the rear and the
-    ///   bottom cap is forward) and `r_forward = r_b` otherwise. Because
-    ///   `v̂` points *in* the flow direction, the forward-facing cap is the
-    ///   one whose outward normal has negative dot with `v̂` — i.e.
-    ///   `r_forward = r_t` when `axis · v̂ < 0`, else `r_b`.
+    ///   The forward-facing cap is the one whose outward normal opposes
+    ///   the flow (`n_out · v̂ < 0`). With outward normals `-axis` on the
+    ///   bottom cap and `+axis` on the top cap, this gives
+    ///   `r_forward = r_b` when `axis · v̂ > 0`, else `r_forward = r_t`.
     pub fn projected_area(&self, flow_direction: DVec3) -> f64 {
         let flow_len2 = flow_direction.length_squared();
         if flow_len2 <= 0.0 {
@@ -248,6 +246,9 @@ impl SurfaceShape {
                 axis,
             } => {
                 let a = normalize_or_zero(axis);
+                if a == DVec3::ZERO {
+                    return 0.0;
+                }
                 let cos_theta = a.dot(v_hat);
                 // |sin θ| = sqrt(max(0, 1 - cos²θ))  (clamp for FP error)
                 let sin_theta = (1.0 - cos_theta * cos_theta).max(0.0).sqrt();
@@ -261,6 +262,9 @@ impl SurfaceShape {
                 axis,
             } => {
                 let a = normalize_or_zero(axis);
+                if a == DVec3::ZERO {
+                    return 0.0;
+                }
                 let cos_theta = a.dot(v_hat);
                 let sin_theta = (1.0 - cos_theta * cos_theta).max(0.0).sqrt();
                 // Forward-facing cap: outward normal has negative dot with flow.
@@ -308,11 +312,16 @@ impl SurfaceShape {
                     n
                 }
             }
-            SurfaceShape::Cylinder { .. } | SurfaceShape::ConicalFrustum { .. } => {
+            SurfaceShape::Cylinder { axis, .. } | SurfaceShape::ConicalFrustum { axis, .. } => {
                 // For a body of revolution the net pressure force is along
                 // the flow direction by symmetry, so the effective normal
-                // is simply -v̂.
-                -v_hat
+                // is simply -v̂. A zero-length axis leaves orientation
+                // undefined; return ZERO per the doc contract.
+                if normalize_or_zero(axis) == DVec3::ZERO {
+                    DVec3::ZERO
+                } else {
+                    -v_hat
+                }
             }
         }
     }
@@ -737,6 +746,27 @@ mod tests {
         };
         assert_eq!(shape.projected_area(DVec3::ZERO), 0.0);
         assert_eq!(shape.effective_normal(DVec3::ZERO), DVec3::ZERO);
+    }
+
+    /// Zero-length cylinder/frustum axis yields zero area (orientation undefined).
+    #[test]
+    fn zero_axis_zero_area() {
+        let cyl = SurfaceShape::Cylinder {
+            radius: 2.0,
+            length: 5.0,
+            axis: DVec3::ZERO,
+        };
+        assert_eq!(cyl.projected_area(DVec3::X), 0.0);
+        assert_eq!(cyl.effective_normal(DVec3::X), DVec3::ZERO);
+
+        let fr = SurfaceShape::ConicalFrustum {
+            radius_bottom: 3.0,
+            radius_top: 1.0,
+            length: 4.0,
+            axis: DVec3::ZERO,
+        };
+        assert_eq!(fr.projected_area(DVec3::X), 0.0);
+        assert_eq!(fr.effective_normal(DVec3::X), DVec3::ZERO);
     }
 
     /// Non-unit flow direction is normalized internally.
