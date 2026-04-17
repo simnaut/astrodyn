@@ -4,6 +4,7 @@ pub mod flat_plate_aero;
 pub mod gravity_torque;
 pub mod radiation_pressure;
 pub mod shadow;
+pub mod surface_model;
 
 pub use aero_drag::*;
 pub use earth_lighting::{
@@ -13,3 +14,4 @@ pub use flat_plate_aero::*;
 pub use gravity_torque::compute_gravity_torque;
 pub use radiation_pressure::*;
 pub use shadow::*;
+pub use surface_model::{ArticulatedFacet, ArticulationState, SurfaceFacet, SurfaceShape};
