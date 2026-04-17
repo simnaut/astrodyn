@@ -10,12 +10,15 @@
 //! - tier3_dyncomp_point_mass_3dof_conservation:
 //!   RUN_2 family (point-mass gravity): energy + angular momentum
 //!   conservation for Keplerian orbits.
-//! - tier3_dyncomp_sh_plus_thirdbody_conservation:
-//!   RUN_7A/7B (SH + Sun/Moon): third-body perturbations do not conserve
-//!   orbital angular momentum, but total energy bounded over short spans.
-//! - tier3_dyncomp_drag_plus_sh_monotonic_decay:
-//!   RUN_6/RUN_7C/7D (drag with non-spherical gravity): semi-major axis
-//!   must trend monotonically downward under drag.
+//! - tier3_dyncomp_point_mass_plus_thirdbody_conservation:
+//!   RUN_7A/7B analog (third-body torque effect from Sun/Moon): third bodies
+//!   do not conserve orbital angular momentum, but total energy stays bounded
+//!   over short spans. Uses point-mass Earth; full SH adds secular drift but
+//!   is not required to exhibit third-body torques.
+//! - tier3_dyncomp_drag_point_mass_monotonic_decay:
+//!   RUN_6/RUN_7C/7D analog (drag with gravity): semi-major axis must trend
+//!   monotonically downward under drag. Uses point-mass Earth; SH adds a
+//!   secular J2 SMA correction but is not required for monotonic decay.
 //! - tier3_dyncomp_6dof_rigid_body_invariance:
 //!   RUN_8A (torque-free rotation in orbit): inertial angular momentum is
 //!   conserved, body-frame omega varies (Euler's equations).
@@ -143,17 +146,18 @@ fn tier3_dyncomp_point_mass_3dof_conservation() {
     );
 }
 
-// ─── Test 2: SH + third-body produces non-conservation of h ───
+// ─── Test 2: Point-mass Earth + third-body produces non-conservation of h ───
 
-/// RUN_7A/7B physics (SH gravity + Sun + Moon third body): third bodies
-/// exert torques about Earth, so orbital angular momentum about Earth is
-/// NOT strictly conserved. Its direction drifts (nodal regression, inclination
+/// Analytical analog of RUN_7A/7B: Sun + Moon third-body gravity exerts
+/// torques about Earth, so orbital angular momentum about Earth is NOT
+/// strictly conserved. Its direction drifts (nodal regression, inclination
 /// wobble), yet total orbital energy stays bounded over short spans.
 ///
-/// For this analytical test we use point-mass Earth (the non-sphericity from
-/// SH adds secular drift but is not required to exhibit third-body torques).
+/// This test intentionally uses point-mass Earth gravity only. Full
+/// spherical-harmonic Earth gravity would add secular drift, but it is not
+/// required to demonstrate the third-body torque effect checked here.
 #[test]
-fn tier3_dyncomp_sh_plus_thirdbody_conservation() {
+fn tier3_dyncomp_point_mass_plus_thirdbody_conservation() {
     let (pos, vel) = iss_circular_state();
     let dt = 10.0;
 
@@ -261,12 +265,17 @@ fn tier3_dyncomp_sh_plus_thirdbody_conservation() {
 
 // ─── Test 3: drag leads to monotonic decay of SMA ───
 
-/// RUN_6/RUN_7C/7D physics (gravity + drag): in a spherical-gravity + drag
-/// LEO orbit, the semi-major axis must trend monotonically downward.  We
-/// sample at orbital-period intervals (filtering out the in-orbit oscillation
-/// of instantaneous position) and verify strict monotonic decrease.
+/// Analytical analog of RUN_6/RUN_7C/7D (gravity + drag): in a point-mass
+/// Earth + drag LEO orbit, the semi-major axis must trend monotonically
+/// downward. We sample at orbital-period intervals (filtering out the
+/// in-orbit oscillation of instantaneous position) and verify strict
+/// monotonic decrease.
+///
+/// This test intentionally uses point-mass Earth gravity only. Full
+/// spherical-harmonic Earth gravity would add secular J2 effects but is
+/// not required to demonstrate monotonic SMA decay under drag.
 #[test]
-fn tier3_dyncomp_drag_plus_sh_monotonic_decay() {
+fn tier3_dyncomp_drag_point_mass_monotonic_decay() {
     use jeod_sim::{AtmosphereConfig, AtmosphereModel, DragConfig, ExponentialAtmosphere};
 
     let (pos, vel) = iss_circular_state();

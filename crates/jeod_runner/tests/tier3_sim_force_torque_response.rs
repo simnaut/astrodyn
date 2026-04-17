@@ -278,17 +278,17 @@ fn tier3_force_and_torque_decoupled() {
     assert!((omega_b.z - expected_omega_z).abs() < 1.0e-12);
 }
 
-// ─── Test 4: force/torque time integral cancellation returns body to origin ───
+// ─── Test 4: symmetric +F/-F forcing returns body to rest with residual displacement ───
 
 /// Mirrors JEOD's SIM_force_torque scheduling:
-///   From t=7 to t=9 apply force that reverses from +F to -F so that net
-///   velocity change is zero and net position change is also zero after
-///   the symmetric impulse pair.
+///   From t=7 to t=9 apply force that reverses from +F to -F so that the
+///   net velocity change is zero after the symmetric impulse pair.
 ///
-/// Here: 5 seconds at +F, then 5 seconds at -F.  Velocity returns to zero,
-/// and position returns to the midpoint coordinate (not the starting point;
-/// that would require asymmetric bang-bang).  A symmetric triangle of
-/// acceleration is enough to assert that the body behaves linearly.
+/// Here: 5 seconds at +F, then 5 seconds at -F. Velocity returns to zero,
+/// but position remains positive because the body continues to drift while
+/// decelerating; analytically, the final displacement is twice the position
+/// reached at `t = half_duration`. A symmetric triangle of acceleration is
+/// enough to assert that the body behaves linearly.
 #[test]
 fn tier3_force_symmetric_impulse_returns_to_rest() {
     let mass = 100.0;
