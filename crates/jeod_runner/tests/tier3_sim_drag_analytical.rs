@@ -353,13 +353,14 @@ fn tier3_drag_no_drag_at_zero_density() {
     println!("  Energy conservation error: {de:.6e} J/kg");
     println!("  Angular momentum conservation error: {dh:.6e} m^2/s");
 
-    // RK4 at dt=10s should conserve energy to ~1e-3 J/kg over one orbit
+    // RK4 at dt=10s conserves energy to ~1e-3 J/kg over one orbit (observed 9.5e-4)
+    // and angular momentum to ~1 m^2/s (observed 0.84).
     assert!(
-        de < 0.1,
+        de < 1e-3,
         "Energy should be conserved with zero density: |dE|={de:.6e} J/kg"
     );
     assert!(
-        dh < 1e3,
+        dh < 1.0,
         "Angular momentum should be conserved: |dH|={dh:.6e} m^2/s"
     );
 }
@@ -425,23 +426,19 @@ fn tier3_drag_corotation_wind_effect() {
     println!("  Prograde energy loss:   {e_loss_pro:.6e} J/kg");
     println!("  Retrograde energy loss: {e_loss_retro:.6e} J/kg");
 
-    // Retrograde should lose more energy (higher relative velocity due to wind)
-    // The prograde energy loss is positive (energy decreases).
-    // The retrograde energy is also decreasing, so e_loss_retro should also be positive.
-    // But since retrograde orbit energy is the same magnitude initially,
-    // the retrograde should have a larger absolute energy loss.
+    // Both orbits must lose energy to drag — compare signed values so a
+    // wrong-sign regression (energy gain) fails here rather than being
+    // masked by an absolute-value comparison.
     assert!(
-        e_loss_retro.abs() > e_loss_pro.abs(),
-        "Retrograde orbit (|dE|={:.6e}) should lose more energy than prograde (|dE|={:.6e}) \
-         due to atmospheric co-rotation",
-        e_loss_retro.abs(),
-        e_loss_pro.abs()
+        e_loss_retro > e_loss_pro,
+        "Retrograde orbit (dE={e_loss_retro:.6e}) should lose more energy than prograde \
+         (dE={e_loss_pro:.6e}) due to atmospheric co-rotation"
     );
 
     // Co-rotation wind at 400 km is ~460 m/s. Orbital velocity is ~7670 m/s.
     // Prograde v_rel ~ 7210, retrograde v_rel ~ 8130.
     // Drag ratio ~ (8130/7210)^2 ~ 1.27. Allow generous tolerance.
-    let ratio = e_loss_retro.abs() / e_loss_pro.abs();
+    let ratio = e_loss_retro / e_loss_pro;
     println!("  Energy loss ratio (retro/pro): {ratio:.3}");
     assert!(
         ratio > 1.05,
@@ -488,7 +485,8 @@ fn make_drag_sim_with_wind(
         },
     );
 
-    // Atmosphere with co-rotation wind (planet_omega provides wind = omega x r_pfix)
+    // Atmosphere with co-rotation wind: evaluate_atmosphere computes
+    // wind = omega x r_inertial (see jeod_atmosphere::compute_corotation_wind).
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Exponential(ExponentialAtmosphere {
             rho_0: 1e-12,
