@@ -10,13 +10,13 @@
 //! * `tier3_solar_beta_polar_orbit` — polar orbit. Over one year, β can swing
 //!   across the full [-90°, +90°] range. We verify three snapshot geometries.
 //! * `tier3_solar_beta_iss_orbit` — ISS inclination (51.6°); for Sun on the
-//!   +Z axis β = inclination, for Sun in the orbital plane β = 0.
+//!   +Z axis β = π/2 − inclination, for Sun in the orbital plane β = 0.
 //! * `tier3_solar_beta_sun_in_orbital_plane` — Sun direction in the orbital
 //!   plane regardless of orbit inclination → β = 0.
 //! * `tier3_solar_beta_sun_perpendicular_to_plane` — Sun along the orbit
 //!   normal → |β| = 90°.
 //! * `tier3_solar_beta_bounded` — for every propagated checkpoint of a mid-
-//!   inclination orbit with a fixed Sun position, |β| ≤ 90° + inclination.
+//!   inclination orbit with a fixed Sun position, |β| ≤ 90°.
 //!
 //! No Docker reference data required.
 

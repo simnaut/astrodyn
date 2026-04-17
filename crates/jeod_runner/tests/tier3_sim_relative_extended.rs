@@ -303,7 +303,7 @@ fn tier3_relative_same_orbit_phase_difference() {
         max_dev = max_dev.max((sep - expected_sep).abs());
     }
 
-    // Check every 30 s over 2 orbits
+    // Check every dt seconds over 2 orbits
     let n_steps = (2.0 * period / dt) as usize;
     for step in 1..=n_steps {
         let t = step as f64 * dt;
