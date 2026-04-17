@@ -35,8 +35,6 @@ fn semi_major_axis_from_energy(energy: f64, mu: f64) -> f64 {
 }
 
 /// Create a minimal simulation with point-mass gravity and constant-density drag.
-///
-/// Returns `(sim, earth_source_idx)`.
 fn make_drag_sim(
     pos: DVec3,
     vel: DVec3,
@@ -166,9 +164,10 @@ fn tier3_drag_constant_density_energy_loss() {
 ///
 /// With constant density and ballistic drag, the semi-major axis should
 /// steadily decrease. The decay rate is verified against the analytical
-/// King-Hele formula for a circular orbit:
-///   da/rev = -pi * rho * Cd * A * a^2 / m
-/// (derived from integrating F_drag = -0.5*rho*v^2*Cd*A over one orbit).
+/// circular-orbit formula for F_drag = 0.5 * rho * v^2 * Cd * A:
+///   da/rev = -2*pi * rho * Cd * A * a^2 / m
+/// Derivation: dE/dt = -F_drag * v = -0.5*rho*v^3*Cd*A/m; integrate over
+/// one orbit of period T = 2*pi*sqrt(a^3/mu); then use da = (2*a^2/mu)*dE.
 #[test]
 fn tier3_drag_altitude_decay() {
     let (pos, vel) = iss_circular_state();
@@ -203,11 +202,11 @@ fn tier3_drag_altitude_decay() {
         "SMA must decrease: a_final={a_final:.3} >= a_initial={a_initial:.3}"
     );
 
-    // Analytical King-Hele formula for circular orbit SMA decay per revolution:
-    //   da/rev = -pi * rho * Cd * A * a^2 / m
-    // This comes from: dE/dt = F_drag * v, integrated over one orbit.
+    // Analytical circular-orbit SMA decay magnitude per revolution for the
+    // ballistic drag law F_drag = 0.5 * rho * v^2 * Cd * A:
+    //   |da|/rev = 2*pi * rho * Cd * A * a^2 / m
     let da_per_rev_analytical =
-        std::f64::consts::PI * density * cd * area * a_initial * a_initial / mass;
+        2.0 * std::f64::consts::PI * density * cd * area * a_initial * a_initial / mass;
     let da_per_rev_measured = da / 2.0; // averaged over 2 orbits
 
     let ratio = da_per_rev_measured / da_per_rev_analytical;
@@ -215,8 +214,8 @@ fn tier3_drag_altitude_decay() {
         "  Analytical da/rev: {da_per_rev_analytical:.3} m, measured: {da_per_rev_measured:.3} m, ratio: {ratio:.3}"
     );
     assert!(
-        ratio > 0.3 && ratio < 3.0,
-        "Measured decay rate ratio {ratio:.3} is outside [0.3, 3.0] of analytical estimate"
+        ratio > 0.95 && ratio < 1.05,
+        "Measured decay rate ratio {ratio:.3} is outside [0.95, 1.05] of analytical value"
     );
 }
 
