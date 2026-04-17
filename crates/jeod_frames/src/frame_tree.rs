@@ -116,31 +116,83 @@ impl FrameTree {
 
     // -- tree traversal -----------------------------------------------------
 
-    /// Find the common ancestor of two frames.
-    ///
-    /// Walks parent pointers from both frames, collecting ancestors of `a`
-    /// into a linear list, then walking from `b` until a match is found via
-    /// a membership check on that list.
-    ///
-    /// Panics if the frames do not share a common root.
-    pub fn find_common_ancestor(&self, a: FrameId, b: FrameId) -> FrameId {
-        // Collect all ancestors of `a` (including `a` itself).
-        let mut ancestors_a = Vec::new();
-        let mut current = a;
-        ancestors_a.push(current);
+    /// Depth of `id` in the tree (root has depth 0).
+    pub fn depth(&self, id: FrameId) -> usize {
+        let mut d = 0usize;
+        let mut current = id;
         while let Some(p) = self.parent[current] {
-            ancestors_a.push(p);
+            d += 1;
             current = p;
         }
+        d
+    }
 
-        // Walk from `b` upward until we find an ancestor of `a`.
-        current = b;
-        loop {
-            if ancestors_a.contains(&current) {
-                return current;
-            }
-            current = self.parent[current].expect("frames do not share a common ancestor");
+    /// Find the common ancestor of two frames in O(depth).
+    ///
+    /// Computes both depths, brings the deeper frame up to the other's depth,
+    /// then walks both up in lockstep until they meet.
+    ///
+    /// Returns `None` if the frames do not share a common root (disconnected
+    /// subtrees).
+    pub fn common_ancestor(&self, a: FrameId, b: FrameId) -> Option<FrameId> {
+        let mut da = self.depth(a);
+        let mut db = self.depth(b);
+        let mut ca = a;
+        let mut cb = b;
+
+        // Equalize depths.
+        while da > db {
+            ca = self.parent[ca]?;
+            da -= 1;
         }
+        while db > da {
+            cb = self.parent[cb]?;
+            db -= 1;
+        }
+
+        // Walk up in lockstep.
+        while ca != cb {
+            ca = self.parent[ca]?;
+            cb = self.parent[cb]?;
+        }
+        Some(ca)
+    }
+
+    /// Find the common ancestor of two frames.
+    ///
+    /// Convenience wrapper around `common_ancestor` that panics if the frames
+    /// do not share a common root. Prefer `common_ancestor` in new code.
+    pub fn find_common_ancestor(&self, a: FrameId, b: FrameId) -> FrameId {
+        self.common_ancestor(a, b)
+            .expect("frames do not share a common ancestor")
+    }
+
+    /// Path from `descendant` up to `ancestor` (inclusive of both endpoints).
+    ///
+    /// Returns `None` if `ancestor` is not actually an ancestor of `descendant`.
+    pub fn path_to_ancestor(&self, descendant: FrameId, ancestor: FrameId) -> Option<Vec<FrameId>> {
+        let mut path = Vec::new();
+        let mut current = descendant;
+        loop {
+            path.push(current);
+            if current == ancestor {
+                return Some(path);
+            }
+            current = self.parent[current]?;
+        }
+    }
+
+    /// Compute the relative state between two frames, returning `None` if
+    /// they don't share a common ancestor.
+    ///
+    /// Option-returning variant of `compute_relative_state`. Useful when the
+    /// frame relationship isn't statically known.
+    pub fn try_compute_relative_state(&self, from: FrameId, to: FrameId) -> Option<RefFrameState> {
+        let ancestor = self.common_ancestor(from, to)?;
+        let state_from = self.compose_to_ancestor(from, ancestor);
+        let state_to = self.compose_to_ancestor(to, ancestor);
+        let from_negated = RefFrameState::negate(&state_from);
+        Some(from_negated.incr_right(&state_to))
     }
 
     /// Compute the relative state between two frames.
@@ -978,5 +1030,199 @@ mod tests {
 
         // Try to reparent the root — should panic.
         tree.reparent(root, a);
+    }
+
+    // -----------------------------------------------------------------------
+    // 14. common_ancestor: basic cases
+    // -----------------------------------------------------------------------
+    #[test]
+    fn common_ancestor_same_frame() {
+        let mut tree = FrameTree::new();
+        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        assert_eq!(tree.common_ancestor(root, root), Some(root));
+    }
+
+    #[test]
+    fn common_ancestor_parent_child() {
+        let mut tree = FrameTree::new();
+        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let child = tree.add_child(
+            root,
+            "child".into(),
+            RefFrameKind::Body,
+            RefFrameState::default(),
+        );
+        assert_eq!(tree.common_ancestor(root, child), Some(root));
+        assert_eq!(tree.common_ancestor(child, root), Some(root));
+    }
+
+    #[test]
+    fn common_ancestor_siblings() {
+        let mut tree = FrameTree::new();
+        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let a = tree.add_child(
+            root,
+            "A".into(),
+            RefFrameKind::Body,
+            RefFrameState::default(),
+        );
+        let b = tree.add_child(
+            root,
+            "B".into(),
+            RefFrameKind::Body,
+            RefFrameState::default(),
+        );
+        assert_eq!(tree.common_ancestor(a, b), Some(root));
+    }
+
+    #[test]
+    fn common_ancestor_unrelated_trees() {
+        let mut tree = FrameTree::new();
+        let root_a = tree.add_root("root_a".into(), RefFrameKind::Inertial);
+        let root_b = tree.add_root("root_b".into(), RefFrameKind::Inertial);
+        assert_eq!(tree.common_ancestor(root_a, root_b), None);
+    }
+
+    #[test]
+    fn common_ancestor_deep_tree() {
+        //     root
+        //     ├── A
+        //     │   ├── B
+        //     │   │   └── C
+        //     │   │       └── D
+        //     │   └── E
+        //     └── F
+        let mut tree = FrameTree::new();
+        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let a = tree.add_child(
+            root,
+            "A".into(),
+            RefFrameKind::Body,
+            RefFrameState::default(),
+        );
+        let b = tree.add_child(a, "B".into(), RefFrameKind::Body, RefFrameState::default());
+        let c = tree.add_child(b, "C".into(), RefFrameKind::Body, RefFrameState::default());
+        let d = tree.add_child(c, "D".into(), RefFrameKind::Body, RefFrameState::default());
+        let e = tree.add_child(a, "E".into(), RefFrameKind::Body, RefFrameState::default());
+        let f = tree.add_child(
+            root,
+            "F".into(),
+            RefFrameKind::Body,
+            RefFrameState::default(),
+        );
+
+        assert_eq!(tree.common_ancestor(d, e), Some(a));
+        assert_eq!(tree.common_ancestor(d, f), Some(root));
+        assert_eq!(tree.common_ancestor(b, d), Some(b));
+        assert_eq!(tree.common_ancestor(d, a), Some(a));
+    }
+
+    // -----------------------------------------------------------------------
+    // 15. depth
+    // -----------------------------------------------------------------------
+    #[test]
+    fn depth_computation() {
+        let mut tree = FrameTree::new();
+        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let a = tree.add_child(
+            root,
+            "A".into(),
+            RefFrameKind::Body,
+            RefFrameState::default(),
+        );
+        let b = tree.add_child(a, "B".into(), RefFrameKind::Body, RefFrameState::default());
+        let c = tree.add_child(b, "C".into(), RefFrameKind::Body, RefFrameState::default());
+
+        assert_eq!(tree.depth(root), 0);
+        assert_eq!(tree.depth(a), 1);
+        assert_eq!(tree.depth(b), 2);
+        assert_eq!(tree.depth(c), 3);
+    }
+
+    // -----------------------------------------------------------------------
+    // 16. path_to_ancestor
+    // -----------------------------------------------------------------------
+    #[test]
+    fn path_to_ancestor_basic() {
+        let mut tree = FrameTree::new();
+        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let a = tree.add_child(
+            root,
+            "A".into(),
+            RefFrameKind::Body,
+            RefFrameState::default(),
+        );
+        let b = tree.add_child(a, "B".into(), RefFrameKind::Body, RefFrameState::default());
+        let c = tree.add_child(b, "C".into(), RefFrameKind::Body, RefFrameState::default());
+
+        assert_eq!(tree.path_to_ancestor(c, root), Some(vec![c, b, a, root]));
+        assert_eq!(tree.path_to_ancestor(c, a), Some(vec![c, b, a]));
+        assert_eq!(tree.path_to_ancestor(c, c), Some(vec![c]));
+    }
+
+    #[test]
+    fn path_to_ancestor_not_an_ancestor() {
+        let mut tree = FrameTree::new();
+        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let a = tree.add_child(
+            root,
+            "A".into(),
+            RefFrameKind::Body,
+            RefFrameState::default(),
+        );
+        let b = tree.add_child(
+            root,
+            "B".into(),
+            RefFrameKind::Body,
+            RefFrameState::default(),
+        );
+
+        // A is not an ancestor of B (they are siblings).
+        assert_eq!(tree.path_to_ancestor(b, a), None);
+    }
+
+    // -----------------------------------------------------------------------
+    // 17. try_compute_relative_state
+    // -----------------------------------------------------------------------
+    #[test]
+    fn try_compute_relative_state_returns_none_for_disconnected() {
+        let mut tree = FrameTree::new();
+        let root_a = tree.add_root("root_a".into(), RefFrameKind::Inertial);
+        let root_b = tree.add_root("root_b".into(), RefFrameKind::Inertial);
+        assert!(tree.try_compute_relative_state(root_a, root_b).is_none());
+    }
+
+    #[test]
+    fn try_compute_relative_state_matches_panicking_variant() {
+        let mut tree = FrameTree::new();
+        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let child_state = make_state(
+            0.3,
+            DVec3::new(1e6, 2e6, 3e6),
+            DVec3::new(100.0, 200.0, 300.0),
+            DVec3::ZERO,
+        );
+        let child = tree.add_child(root, "child".into(), RefFrameKind::Body, child_state);
+
+        let panicking = tree.compute_relative_state(root, child);
+        let non_panicking = tree
+            .try_compute_relative_state(root, child)
+            .expect("should succeed");
+
+        assert!(approx_eq_vec3(
+            panicking.trans.position,
+            non_panicking.trans.position,
+            TOL
+        ));
+        assert!(approx_eq_vec3(
+            panicking.trans.velocity,
+            non_panicking.trans.velocity,
+            TOL
+        ));
+        assert!(approx_eq_mat3(
+            &panicking.rot.t_parent_this,
+            &non_panicking.rot.t_parent_this,
+            TOL
+        ));
     }
 }
