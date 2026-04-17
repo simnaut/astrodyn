@@ -214,7 +214,8 @@ fn tier3_relative_hohmann_transfer_geometry() {
     sim.validate().unwrap();
 
     // Initial separation: both bodies at the same point → 0.
-    let init_sep = (sim.body(1).trans.position - sim.body(0).trans.position).length();
+    let init_rel = compute_relative_state(&sim.body(0).trans, None, &sim.body(1).trans, None);
+    let init_sep = init_rel.position.length();
     assert!(
         init_sep < 1e-9,
         "Hohmann setup: initial separation {init_sep} m should be 0"
@@ -236,7 +237,8 @@ fn tier3_relative_hohmann_transfer_geometry() {
 
         let chief = sim.body(0);
         let deputy = sim.body(1);
-        let sep = (deputy.trans.position - chief.trans.position).length();
+        let rel = compute_relative_state(&chief.trans, None, &deputy.trans, None);
+        let sep = rel.position.length();
         max_sep = max_sep.max(sep);
     }
 
@@ -430,13 +432,13 @@ fn tier3_relative_round_trip_frames() {
         let a = sim.body(0);
         let b = sim.body(1);
 
-        // State of A wrt B
-        let ab = compute_relative_state(&b.trans, None, &a.trans, None);
-        // State of B wrt A
-        let ba = compute_relative_state(&a.trans, None, &b.trans, None);
+        // State of A wrt B (reference = B, subject = A).
+        let a_wrt_b = compute_relative_state(&b.trans, None, &a.trans, None);
+        // State of B wrt A (reference = A, subject = B).
+        let b_wrt_a = compute_relative_state(&a.trans, None, &b.trans, None);
 
-        let pos_sum = (ab.position + ba.position).length();
-        let vel_sum = (ab.velocity + ba.velocity).length();
+        let pos_sum = (a_wrt_b.position + b_wrt_a.position).length();
+        let vel_sum = (a_wrt_b.velocity + b_wrt_a.velocity).length();
         max_sum_pos = max_sum_pos.max(pos_sum);
         max_sum_vel = max_sum_vel.max(vel_sum);
     }
@@ -445,10 +447,10 @@ fn tier3_relative_round_trip_frames() {
     // construction: both compute (p_s - p_r) with opposite role assignments).
     assert!(
         max_sum_pos < 1e-9,
-        "round-trip: ab.position + ba.position has magnitude {max_sum_pos} m"
+        "round-trip: a_wrt_b.position + b_wrt_a.position has magnitude {max_sum_pos} m"
     );
     assert!(
         max_sum_vel < 1e-9,
-        "round-trip: ab.velocity + ba.velocity has magnitude {max_sum_vel} m/s"
+        "round-trip: a_wrt_b.velocity + b_wrt_a.velocity has magnitude {max_sum_vel} m/s"
     );
 }
