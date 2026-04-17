@@ -366,9 +366,12 @@ pub struct AdaptiveResult<S> {
     /// Recommended step size for the next step.
     pub dt_next: f64,
     /// True if at least one step attempt was rejected before acceptance.
+    /// (Does not imply the accepted step exceeded tolerance — see `forced_accept`.)
     pub rejected: bool,
     /// True if the step was accepted despite `error_ratio > 1.0` because the
-    /// rejection budget was exhausted (`attempt == max_rejections`).
+    /// rejection budget was exhausted (`attempt == max_rejections`). Orthogonal
+    /// to `rejected`: a forced accept with `max_rejections == 0` has
+    /// `rejected == false` (no retries occurred) but `forced_accept == true`.
     pub forced_accept: bool,
     /// Max position component error (meters).
     pub pos_error: f64,
@@ -393,6 +396,16 @@ fn compute_step_factor(err_ratio: f64, safety: f64, growing: bool) -> f64 {
     safety * err_ratio.powf(-exponent)
 }
 
+/// Clamp `dt` magnitude to `[min_step, max_step]` while preserving its sign,
+/// so reverse-time stepping (`dt < 0`) and `dt == 0` (no-op) are handled
+/// consistently with the fixed-step functions.
+fn signed_clamp(dt: f64, min_step: f64, max_step: f64) -> f64 {
+    if dt == 0.0 {
+        return 0.0;
+    }
+    dt.signum() * dt.abs().clamp(min_step, max_step)
+}
+
 /// Advance translational state by one adaptive RKF45 step.
 ///
 /// Computes both 4th-order and 5th-order solutions, estimates the local
@@ -409,7 +422,23 @@ pub fn rkf45_adaptive_translational_step(
     config: &AdaptiveConfig,
 ) -> AdaptiveResult<TranslationalState> {
     debug_assert!(config.check().is_ok());
-    let mut dt_try = dt.clamp(config.min_step, config.max_step);
+    assert!(
+        dt.is_finite(),
+        "rkf45_adaptive_translational_step requires a finite dt, got {dt}"
+    );
+    if dt == 0.0 {
+        return AdaptiveResult {
+            state: *state,
+            dt_used: 0.0,
+            dt_next: 0.0,
+            rejected: false,
+            forced_accept: false,
+            pos_error: 0.0,
+            vel_error: 0.0,
+            error_ratio: 0.0,
+        };
+    }
+    let mut dt_try = signed_clamp(dt, config.min_step, config.max_step);
     let mut rejected = false;
 
     for attempt in 0..=config.max_rejections {
@@ -485,7 +514,7 @@ pub fn rkf45_adaptive_translational_step(
             // Accept step. On forced accept (tolerance exceeded), use the
             // shrinking exponent so the recommendation reflects the error.
             let factor = compute_step_factor(err_ratio, config.safety_factor, within_tolerance);
-            let dt_next = (dt_try * factor).clamp(config.min_step, config.max_step);
+            let dt_next = signed_clamp(dt_try * factor, config.min_step, config.max_step);
 
             return AdaptiveResult {
                 state: TranslationalState {
@@ -494,7 +523,7 @@ pub fn rkf45_adaptive_translational_step(
                 },
                 dt_used: dt_try,
                 dt_next,
-                rejected: rejected || forced_accept,
+                rejected,
                 forced_accept,
                 pos_error,
                 vel_error,
@@ -505,7 +534,7 @@ pub fn rkf45_adaptive_translational_step(
         // Reject step — shrink and retry
         rejected = true;
         let factor = compute_step_factor(err_ratio, config.safety_factor, false);
-        dt_try = (dt_try * factor).clamp(config.min_step, config.max_step);
+        dt_try = signed_clamp(dt_try * factor, config.min_step, config.max_step);
     }
 
     unreachable!("loop always returns via attempt == max_rejections")
@@ -525,7 +554,23 @@ pub fn rkf45_adaptive_sixdof_step(
     config: &AdaptiveConfig,
 ) -> AdaptiveResult<SixDofState> {
     debug_assert!(config.check().is_ok());
-    let mut dt_try = dt.clamp(config.min_step, config.max_step);
+    assert!(
+        dt.is_finite(),
+        "rkf45_adaptive_sixdof_step requires a finite dt, got {dt}"
+    );
+    if dt == 0.0 {
+        return AdaptiveResult {
+            state: *state,
+            dt_used: 0.0,
+            dt_next: 0.0,
+            rejected: false,
+            forced_accept: false,
+            pos_error: 0.0,
+            vel_error: 0.0,
+            error_ratio: 0.0,
+        };
+    }
+    let mut dt_try = signed_clamp(dt, config.min_step, config.max_step);
     let mut rejected = false;
 
     let make_state = |pos: DVec3, vel: DVec3, q: [f64; 4], omega: DVec3| -> SixDofState {
@@ -680,7 +725,7 @@ pub fn rkf45_adaptive_sixdof_step(
             // Accept step. On forced accept (tolerance exceeded), use the
             // shrinking exponent so the recommendation reflects the error.
             let factor = compute_step_factor(err_ratio, config.safety_factor, within_tolerance);
-            let dt_next = (dt_try * factor).clamp(config.min_step, config.max_step);
+            let dt_next = signed_clamp(dt_try * factor, config.min_step, config.max_step);
 
             // JEOD_INV: DB.09 — quaternion normalized after every integration step
             let mut final_quat = JeodQuat::new(q5[0], q5[1], q5[2], q5[3]);
@@ -699,7 +744,7 @@ pub fn rkf45_adaptive_sixdof_step(
                 },
                 dt_used: dt_try,
                 dt_next,
-                rejected: rejected || forced_accept,
+                rejected,
                 forced_accept,
                 pos_error,
                 vel_error,
@@ -710,7 +755,7 @@ pub fn rkf45_adaptive_sixdof_step(
         // Reject step — shrink and retry
         rejected = true;
         let factor = compute_step_factor(err_ratio, config.safety_factor, false);
-        dt_try = (dt_try * factor).clamp(config.min_step, config.max_step);
+        dt_try = signed_clamp(dt_try * factor, config.min_step, config.max_step);
     }
 
     unreachable!("loop always returns via attempt == max_rejections")
@@ -1027,6 +1072,65 @@ mod tests {
             vel_diff, 0.0,
             "adaptive and fixed 5th-order velocity differ: {vel_diff:e}"
         );
+    }
+
+    /// `dt == 0` should be a no-op (state unchanged, all errors zero).
+    #[test]
+    fn adaptive_zero_dt_is_noop() {
+        let mu: f64 = 3.986_004_415e14;
+        let r0: f64 = 6_778_000.0;
+        let v0 = (mu / r0).sqrt();
+        let initial = TranslationalState {
+            position: DVec3::new(r0, 0.0, 0.0),
+            velocity: DVec3::new(0.0, v0, 0.0),
+        };
+        let accel_fn =
+            |s: &TranslationalState, _c_i: f64| -> DVec3 { central_gravity_accel(s.position, mu) };
+        let config = AdaptiveConfig::default();
+
+        let result = rkf45_adaptive_translational_step(&initial, accel_fn, 0.0, &config);
+        assert_eq!(result.dt_used, 0.0);
+        assert_eq!(result.dt_next, 0.0);
+        assert_eq!(result.state.position, initial.position);
+        assert_eq!(result.state.velocity, initial.velocity);
+        assert_eq!(result.error_ratio, 0.0);
+        assert!(!result.rejected && !result.forced_accept);
+    }
+
+    /// Negative `dt` should step backwards in time: a forward step followed by
+    /// a reverse step of the same magnitude returns near the initial state.
+    #[test]
+    fn adaptive_negative_dt_reverses_time() {
+        let mu: f64 = 3.986_004_415e14;
+        let r0: f64 = 6_778_000.0;
+        let v0 = (mu / r0).sqrt();
+        let initial = TranslationalState {
+            position: DVec3::new(r0, 0.0, 0.0),
+            velocity: DVec3::new(0.0, v0, 0.0),
+        };
+        let accel_fn =
+            |s: &TranslationalState, _c_i: f64| -> DVec3 { central_gravity_accel(s.position, mu) };
+
+        // Use min_step==max_step==|dt| so the retry loop can't change the magnitude.
+        let config = AdaptiveConfig {
+            pos_tolerance: 1.0,
+            vel_tolerance: 1.0,
+            safety_factor: 0.9,
+            min_step: 1.0,
+            max_step: 1.0,
+            max_rejections: 0,
+        };
+
+        let forward = rkf45_adaptive_translational_step(&initial, accel_fn, 1.0, &config);
+        assert!(forward.dt_used > 0.0, "forward dt should be positive");
+
+        let back = rkf45_adaptive_translational_step(&forward.state, accel_fn, -1.0, &config);
+        assert!(back.dt_used < 0.0, "reverse dt should be negative");
+
+        let pos_err = (back.state.position - initial.position).length();
+        let vel_err = (back.state.velocity - initial.velocity).length();
+        assert!(pos_err < 1e-3, "forward+reverse pos err: {pos_err}");
+        assert!(vel_err < 1e-6, "forward+reverse vel err: {vel_err}");
     }
 
     /// Multi-step propagation: adaptive with a step cap equal to the fixed dt
