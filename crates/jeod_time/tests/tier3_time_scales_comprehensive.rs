@@ -304,8 +304,8 @@ fn tier3_time_met_hold_resume() {
 
 /// Verify DYN scale factor effects.
 ///
-/// DYN with scale_factor = 2.0: advance TAI by 100s sim -> DYN advances by 200s.
-/// DYN with scale_factor = 0.5: advance TAI by 100s sim -> DYN advances by 50s.
+/// DYN with scale_factor = 2.0: advance simtime by 100s -> TAI and DYN advance by 200s.
+/// DYN with scale_factor = 0.5: advance simtime by 100s -> TAI and DYN advance by 50s.
 #[test]
 fn tier3_time_dyn_scale_factor() {
     // Test 2x speed
@@ -619,8 +619,12 @@ fn tier3_time_gps_through_manager() {
 fn tier3_time_tdb_julian_date_propagation() {
     let mgr0 = TimeManager::at_j2000(default_leap_second_table());
     let jd0 = mgr0.tdb_julian_date();
+    // At J2000, TDB differs from TT by the bounded periodic correction
+    // (~ms, i.e., ~2e-8 days), so the JD should be within a very tight
+    // tolerance of the canonical 2451545.0. This catches unit/offset
+    // regressions that a loose multi-second bound would miss.
     assert!(
-        (jd0 - 2_451_545.0).abs() < 0.001,
+        (jd0 - 2_451_545.0).abs() < 1.0e-7,
         "TDB JD at J2000: {}, expected ~2451545.0",
         jd0
     );
