@@ -421,7 +421,9 @@ pub fn rkf45_adaptive_translational_step(
     dt: f64,
     config: &AdaptiveConfig,
 ) -> AdaptiveResult<TranslationalState> {
-    debug_assert!(config.check().is_ok());
+    if let Err(err) = config.check() {
+        panic!("rkf45_adaptive_translational_step: invalid AdaptiveConfig: {err}");
+    }
     assert!(
         dt.is_finite(),
         "rkf45_adaptive_translational_step requires a finite dt, got {dt}"
@@ -553,7 +555,9 @@ pub fn rkf45_adaptive_sixdof_step(
     dt: f64,
     config: &AdaptiveConfig,
 ) -> AdaptiveResult<SixDofState> {
-    debug_assert!(config.check().is_ok());
+    if let Err(err) = config.check() {
+        panic!("rkf45_adaptive_sixdof_step: invalid AdaptiveConfig: {err}");
+    }
     assert!(
         dt.is_finite(),
         "rkf45_adaptive_sixdof_step requires a finite dt, got {dt}"
@@ -1159,12 +1163,14 @@ mod tests {
             state_fixed = rkf45_translational_step(&state_fixed, accel_fn, dt_fixed);
         }
 
-        // Adaptive with tolerance tight enough that it uses ~1s steps
+        // Adaptive with tolerance tight enough that it uses ~1s steps.
+        // `min_step` is set far below any `remaining` the loop can produce so
+        // the final partial step is never clamped up past `t_end`.
         let config = AdaptiveConfig {
             pos_tolerance: 1e-6,
             vel_tolerance: 1e-9,
             safety_factor: 0.9,
-            min_step: 0.01,
+            min_step: 1e-12,
             max_step: 1.0, // cap at the same fixed step
             max_rejections: 10,
         };
@@ -1181,6 +1187,13 @@ mod tests {
             t += result.dt_used;
             dt = result.dt_next;
         }
+
+        // Adaptive must land at exactly t_end so the comparison below is
+        // meaningful (both states propagated over the same total time).
+        assert!(
+            (t - t_end).abs() < 1e-9,
+            "adaptive loop did not land on t_end: t = {t}, t_end = {t_end}"
+        );
 
         // Both should agree to within a few meters over 100s at 1s steps
         let pos_diff = (state_adaptive.position - state_fixed.position).length();
