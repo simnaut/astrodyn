@@ -1,4 +1,5 @@
 pub mod aero_drag;
+pub mod contact;
 pub mod earth_lighting;
 pub mod flat_plate_aero;
 pub mod gravity_torque;
@@ -7,6 +8,9 @@ pub mod shadow;
 pub mod surface_model;
 
 pub use aero_drag::*;
+pub use contact::{
+    compute_contact_force, ContactFacet, ContactForce, ContactMaterial, ContactShape,
+};
 pub use earth_lighting::{
     compute_earth_lighting, EarthLightingState, LightingBody, LightingParams,
 };

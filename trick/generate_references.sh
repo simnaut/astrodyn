@@ -1745,6 +1745,100 @@ run_frame_switch_group() {
 throttled_bg run_frame_switch_group
 PID_FRAME_SWITCH=$LAST_BG_PID
 
+# Group 31: SIM_contact — free-space contact dynamics (5 scenarios)
+# ASCII snippet logs: time (implicit), veh{1,2} position/velocity,
+# contact force/torque on each vehicle, composite masses.
+# Matches JEOD Log_data/log_contact_data.py variables.
+CONTACT_SNIPPET='
+dr = trick.DRAscii("contact_state")
+dr.thisown = 0
+dr.set_cycle(0.05)
+dr.freq = trick.sim_services.DR_Always
+for i in range(3):
+    dr.add_variable(f"veh1_dyn.body.composite_body.state.trans.position[{i}]")
+for i in range(3):
+    dr.add_variable(f"veh1_dyn.body.composite_body.state.trans.velocity[{i}]")
+for i in range(3):
+    dr.add_variable(f"veh1_dyn.contact_surface.contact_force[{i}]")
+for i in range(3):
+    dr.add_variable(f"veh1_dyn.contact_surface.contact_torque[{i}]")
+for i in range(3):
+    dr.add_variable(f"veh2_dyn.body.composite_body.state.trans.position[{i}]")
+for i in range(3):
+    dr.add_variable(f"veh2_dyn.body.composite_body.state.trans.velocity[{i}]")
+for i in range(3):
+    dr.add_variable(f"veh2_dyn.contact_surface.contact_force[{i}]")
+for i in range(3):
+    dr.add_variable(f"veh2_dyn.contact_surface.contact_torque[{i}]")
+dr.add_variable("veh1_dyn.body.mass.composite_properties.mass")
+dr.add_variable("veh2_dyn.body.mass.composite_properties.mass")
+trick.add_data_record_group(dr)
+'
+
+run_contact_group() {
+    local sim_dir="models/interactions/contact/verif/SIM_contact"
+    local -a RUNS=(
+        "SET_test/RUN_point:contact_point:contact_point_contact_state.csv"
+        "SET_test/RUN_line:contact_line:contact_line_contact_state.csv"
+        "SET_test/RUN_line_point:contact_line_point:contact_line_point_contact_state.csv"
+        "SET_test/RUN_line_side_to_side:contact_line_side:contact_line_side_contact_state.csv"
+        "SET_test/RUN_point_off_center:contact_point_off_center:contact_point_off_center_contact_state.csv"
+    )
+
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_contact group (all outputs exist) ==="
+        return 0
+    fi
+
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$CONTACT_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+throttled_bg run_contact_group
+PID_CONTACT=$LAST_BG_PID
+
+# Group 32: SIM_ground_contact — Earth-frame ground contact (1 scenario)
+# Shares the CONTACT_SNIPPET log variables; adds Earth central body.
+run_ground_contact_group() {
+    local sim_dir="models/interactions/contact/verif/SIM_ground_contact"
+    local -a RUNS=(
+        "SET_test/RUN_contact_ground:contact_ground:contact_ground_contact_state.csv"
+    )
+
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_ground_contact group (all outputs exist) ==="
+        return 0
+    fi
+
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$CONTACT_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+throttled_bg run_ground_contact_group
+PID_GROUND_CONTACT=$LAST_BG_PID
+
 # ════════════════════════════════════════════════════════════════════
 # WAIT FOR ALL GROUPS
 # ════════════════════════════════════════════════════════════════════
@@ -1784,6 +1878,8 @@ wait $PID_MARS           || { echo "WARN: SIM_Mars group had failures"; FAIL=1; 
 wait $PID_MERCURY        || { echo "WARN: SIM_mercury group had failures"; FAIL=1; }
 wait $PID_APOLLO         || { echo "WARN: SIM_Apollo group had failures"; FAIL=1; }
 wait $PID_FRAME_SWITCH   || { echo "WARN: SIM_verif_frame_switch group had failures"; FAIL=1; }
+wait $PID_CONTACT        || { echo "WARN: SIM_contact group had failures"; FAIL=1; }
+wait $PID_GROUND_CONTACT || { echo "WARN: SIM_ground_contact group had failures"; FAIL=1; }
 
 echo ""
 echo "=== Reference data generation complete ==="

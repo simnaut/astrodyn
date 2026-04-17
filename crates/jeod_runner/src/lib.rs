@@ -32,13 +32,13 @@ use jeod_frames::{FrameTree, RefFrameKind, RefFrameRot, RefFrameState, RefFrameT
 use jeod_sim::atmosphere::{evaluate_atmosphere, AtmosphereConfig};
 use jeod_sim::forces::collect_and_resolve_forces;
 use jeod_sim::gravity::accumulate_gravity;
-use jeod_sim::integration::integrate_body;
+use jeod_sim::integration::{integrate_bodies_contact_coupled, integrate_body, CoupledBodyInput};
 use jeod_sim::validation::ValidationError;
 use jeod_sim::{
-    AerodynamicForce, AtmosphereState, DragConfig, DynamicsConfig, EulerSequence, FrameDerivatives,
-    GeodeticState, GravityAcceleration, GravityControls, GravitySource, JeodQuat, LvlhFrame,
-    MassProperties, OrbitalElements, PlanetConfig, RadiationForce, RotationalState, SimulationTime,
-    TotalForce, TranslationalState,
+    evaluate_contact_pair, AerodynamicForce, AtmosphereState, ContactFacet, DragConfig,
+    DynamicsConfig, EulerSequence, FrameDerivatives, GeodeticState, GravityAcceleration,
+    GravityControls, GravitySource, JeodQuat, LvlhFrame, MassProperties, OrbitalElements,
+    PlanetConfig, RadiationForce, RotationalState, SimulationTime, TotalForce, TranslationalState,
 };
 
 pub mod builder;
@@ -84,6 +84,29 @@ pub struct FrameSwitchConfig {
     pub switch_distance: f64,
     /// Whether this switch is active.
     pub active: bool,
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Contact pair
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Registration of a contact interaction between two bodies.
+///
+/// Port of JEOD's `ContactPair` — the two facets are registered with the
+/// `Contact` manager, which runs `check_contact()` at each derivative
+/// evaluation (see `contact.sm`). In this runner, registered pairs are
+/// evaluated at every RK4 stage inside [`Simulation::step`] when any pairs
+/// are present.
+#[derive(Debug, Clone)]
+pub struct ContactPairConfig {
+    /// Index of body A (the "subject" in JEOD terminology).
+    pub body_a: usize,
+    /// Facet on body A (shape positions in A's structural frame).
+    pub facet_a: ContactFacet,
+    /// Index of body B (the "target" in JEOD terminology).
+    pub body_b: usize,
+    /// Facet on body B (shape positions in B's structural frame).
+    pub facet_b: ContactFacet,
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -662,6 +685,14 @@ pub struct Simulation {
     /// Optional mass tree for multi-body vehicles (attach/detach/staging).
     /// Bodies participating in the tree have `SimBody::mass_body_id` set.
     pub mass_tree: Option<jeod_dynamics::MassTree>,
+    /// Registered contact pairs (inter-body spring-damper contact).
+    ///
+    /// When non-empty, `step_internal` uses a multi-body coupled RK4 path in
+    /// which contact forces are recomputed at each of the 4 RK4 stages with
+    /// each pair's intermediate states. This matches JEOD's `check_contact()`
+    /// derivative-class job. Only RK4 + 6-DOF is supported; adding a pair
+    /// while a body uses non-RK4 or 3-DOF is a validation error.
+    contact_pairs: Vec<ContactPairConfig>,
 }
 
 impl Simulation {
@@ -689,7 +720,54 @@ impl Simulation {
             dt,
             ephemeris: None,
             mass_tree: None,
+            contact_pairs: Vec::new(),
         }
+    }
+
+    /// Register a contact interaction between two bodies.
+    ///
+    /// Once registered, contact forces between these facets are evaluated at
+    /// each RK4 stage of [`step`](Self::step). This matches JEOD's
+    /// derivative-class `check_contact()` scheduling in `SIM_contact`.
+    ///
+    /// The force acts on body A (`facet_a`); the equal-and-opposite force
+    /// acts on body B. Torques are accumulated about each body's CoM.
+    ///
+    /// # Panics
+    /// Panics if either body index is out of range.
+    pub fn register_contact_pair(
+        &mut self,
+        body_a: usize,
+        facet_a: ContactFacet,
+        body_b: usize,
+        facet_b: ContactFacet,
+    ) {
+        assert!(
+            body_a < self.bodies.len(),
+            "register_contact_pair: body_a index {body_a} out of range ({} bodies)",
+            self.bodies.len()
+        );
+        assert!(
+            body_b < self.bodies.len(),
+            "register_contact_pair: body_b index {body_b} out of range ({} bodies)",
+            self.bodies.len()
+        );
+        // JEOD_INV: IN.19 — contact pair bodies must be distinct (JEOD `unique_pair`)
+        assert_ne!(
+            body_a, body_b,
+            "register_contact_pair: body A and body B must be distinct (got both = {body_a})"
+        );
+        self.contact_pairs.push(ContactPairConfig {
+            body_a,
+            facet_a,
+            body_b,
+            facet_b,
+        });
+    }
+
+    /// Number of registered contact pairs.
+    pub fn num_contact_pairs(&self) -> usize {
+        self.contact_pairs.len()
     }
 
     /// Add a gravity source. Returns its index for use in `GravityControls`.
@@ -1726,108 +1804,241 @@ impl Simulation {
         let frame_tree = &self.frame_tree;
         let root_fid = self.root_frame_id;
 
-        for (body_idx, body) in self.bodies.iter_mut().enumerate() {
-            let (integ_origin, integ_vel) = body_integ_origins[body_idx];
-            let controls = &body.gravity_controls;
-
-            // Precompute relativistic "other source" lists outside the closure
-            // to avoid heap allocation at every RK4 stage. Source positions are
-            // constant within a single step. NOTE: for non-ECI frames, Newtonian
-            // gravity interpolates source positions per sub-stage but relativistic
-            // corrections use these frozen positions. The PPN correction is ~1e-8
-            // of Newtonian gravity, so the sub-stage shift is negligible.
-            let rel_data: Vec<_> = controls
-                .controls
-                .iter()
-                .filter(|c| c.relativistic)
-                .filter_map(|ctrl| {
-                    let grav = gravity_data.get(ctrl.source_name)?;
-                    let sfids = &source_frame_ids[ctrl.source_name];
-                    let src_pos = if sfids.inertial == root_fid {
-                        DVec3::ZERO
-                    } else {
-                        frame_tree.get(sfids.inertial).state.trans.position
-                    };
-                    let src_vel = grav.velocity;
-                    let other: Vec<_> = controls
-                        .controls
-                        .iter()
-                        .filter(|c| c.source_name != ctrl.source_name)
-                        .filter_map(|c| {
-                            let g = gravity_data.get(c.source_name)?;
-                            let sf = &source_frame_ids[c.source_name];
-                            let pos = if sf.inertial == root_fid {
-                                DVec3::ZERO
-                            } else {
-                                frame_tree.get(sf.inertial).state.trans.position
-                            };
-                            Some(jeod_gravity::relativistic::RelativisticSource {
-                                mu: g.source.mu,
-                                position: pos,
+        // Precompute per-body relativistic "other source" lists outside the
+        // closures to avoid heap allocation at every RK4 stage.
+        // Indexed by body_idx.
+        type RelDatum = (
+            f64,
+            DVec3,
+            DVec3,
+            Vec<jeod_gravity::relativistic::RelativisticSource>,
+        );
+        let per_body_rel_data: Vec<Vec<RelDatum>> = self
+            .bodies
+            .iter()
+            .map(|body| {
+                let controls = &body.gravity_controls;
+                controls
+                    .controls
+                    .iter()
+                    .filter(|c| c.relativistic)
+                    .filter_map(|ctrl| {
+                        let grav = gravity_data.get(ctrl.source_name)?;
+                        let sfids = &source_frame_ids[ctrl.source_name];
+                        let src_pos = if sfids.inertial == root_fid {
+                            DVec3::ZERO
+                        } else {
+                            frame_tree.get(sfids.inertial).state.trans.position
+                        };
+                        let src_vel = grav.velocity;
+                        let other: Vec<_> = controls
+                            .controls
+                            .iter()
+                            .filter(|c| c.source_name != ctrl.source_name)
+                            .filter_map(|c| {
+                                let g = gravity_data.get(c.source_name)?;
+                                let sf = &source_frame_ids[c.source_name];
+                                let pos = if sf.inertial == root_fid {
+                                    DVec3::ZERO
+                                } else {
+                                    frame_tree.get(sf.inertial).state.trans.position
+                                };
+                                Some(jeod_gravity::relativistic::RelativisticSource {
+                                    mu: g.source.mu,
+                                    position: pos,
+                                })
                             })
+                            .collect();
+                        Some((grav.source.mu, src_pos, src_vel, other))
+                    })
+                    .collect()
+            })
+            .collect();
+
+        // Extract gravity_controls into a separate vector so the gravity
+        // closure doesn't need to borrow self.bodies.
+        let per_body_gravity_controls: Vec<GravityControls<usize>> = self
+            .bodies
+            .iter()
+            .map(|b| b.gravity_controls.clone())
+            .collect();
+
+        // Helper: evaluate gravity (Newtonian + relativistic) at an
+        // intermediate (pos, vel) for the given body index.
+        let eval_body_gravity =
+            |body_idx: usize, pos: DVec3, vel: DVec3, time_frac: f64| -> DVec3 {
+                let controls = &per_body_gravity_controls[body_idx];
+                let (integ_origin, integ_vel) = body_integ_origins[body_idx];
+                let origin = integ_origin + integ_vel * (time_frac * dt);
+                let sub_dt = if integ_vel != DVec3::ZERO {
+                    time_frac * dt
+                } else {
+                    0.0
+                };
+                let mut accel =
+                    accumulate_gravity(pos + origin, controls, origin, |source_id: usize| {
+                        let grav = gravity_data.get(source_id)?;
+                        let sfids = &source_frame_ids[source_id];
+                        let position =
+                            base_positions[source_id] + base_velocities[source_id] * sub_dt;
+                        let rotation = sfids
+                            .pfix
+                            .map(|pfix_id| &frame_tree.get(pfix_id).state.rot.t_parent_this);
+                        Some(jeod_sim::ResolvedSource {
+                            source: &grav.source,
+                            rotation,
+                            position,
+                            delta_c20: grav.delta_c20,
+                            has_delta_coeffs: grav.tidal_config.is_some(),
                         })
-                        .collect();
-                    Some((grav.source.mu, src_pos, src_vel, other))
-                })
+                    })
+                    .grav_accel;
+                let pos_eci = pos + origin;
+                let vel_eci = vel + integ_vel;
+                for &(mu, src_pos, src_vel, ref other) in &per_body_rel_data[body_idx] {
+                    accel += jeod_gravity::relativistic::compute_relativistic_correction(
+                        mu, src_pos, pos_eci, vel_eci, src_vel, other,
+                    );
+                }
+                accel
+            };
+
+        if self.contact_pairs.is_empty() {
+            // ── Standard path: per-body RK4 / GJ integration ──
+            for (body_idx, body) in self.bodies.iter_mut().enumerate() {
+                integrate_body(
+                    &body.config,
+                    &mut body.trans,
+                    body.rot.as_mut(),
+                    body.mass.as_ref(),
+                    |pos, vel, time_frac| eval_body_gravity(body_idx, pos, vel, time_frac),
+                    body.total_force.force,
+                    body.total_force.torque,
+                    dt,
+                    self.time.time_scale_factor,
+                    body.integrator,
+                    body.gj_state.as_mut(),
+                );
+            }
+        } else {
+            // ── Contact-coupled path: multi-body RK4 where contact forces
+            //    are recomputed at each stage from all bodies' intermediate
+            //    states (matching JEOD's `check_contact()` derivative job).
+            // JEOD_INV: IN.20 — contact evaluated at every derivative evaluation
+            //
+            // Enforce preconditions: all bodies participating in contact
+            // pairs must use RK4 + 6-DOF. We integrate ALL bodies through
+            // the coupled path; bodies without contact pairs just pass
+            // their constant forces through the same RK4 kernel.
+            assert!(
+                self.bodies
+                    .iter()
+                    .all(|b| matches!(b.integrator, jeod_dynamics::IntegratorType::Rk4)),
+                "contact pairs require RK4 integrator on all bodies"
+            );
+            assert!(
+                self.bodies
+                    .iter()
+                    .all(|b| b.rot.is_some() && b.mass.is_some()),
+                "contact pairs require 6-DOF (rotational state + mass) on all bodies"
+            );
+
+            // Snapshot pre-integration state for post-step frame tree sync.
+            let integ_dt = dt * self.time.time_scale_factor;
+
+            // Split `self.bodies` into per-body borrow components so we can
+            // pass distinct mutable references into `CoupledBodyInput`.
+            let bodies_mut = &mut self.bodies;
+
+            // Extract immutable inputs we'll need inside the per-stage closures.
+            let contact_pairs = self.contact_pairs.clone();
+
+            // Build coupled inputs. Gather per-body constant forces/torques
+            // (already accumulated in `total_force` for this step) and the
+            // mass and state references. We split the struct into 4 parallel
+            // vectors to satisfy the borrow checker: `CoupledBodyInput` needs
+            // separate &mut for trans / rot from the same SimBody.
+            //
+            // We use raw pointers to work around the split-borrow limitation:
+            // each SimBody has distinct trans/rot/mass fields, and bodies are
+            // a slice so the pointers remain valid across the function call.
+            let n_bodies = bodies_mut.len();
+            let mut inputs: Vec<CoupledBodyInput<'_>> = Vec::with_capacity(n_bodies);
+            // Safety: we produce exactly one &mut to each field of each
+            // SimBody, and the borrow checker can't see through the indexing.
+            // The references do not alias because each comes from a distinct
+            // SimBody (different array index).
+            unsafe {
+                let ptr = bodies_mut.as_mut_ptr();
+                for i in 0..n_bodies {
+                    let body: *mut SimBody = ptr.add(i);
+                    let trans_ref: &mut TranslationalState = &mut (*body).trans;
+                    let rot_ref: &mut RotationalState = (*body)
+                        .rot
+                        .as_mut()
+                        .expect("validated: 6-DOF required for contact-coupled path");
+                    let mass_ref: &MassProperties = (*body)
+                        .mass
+                        .as_ref()
+                        .expect("validated: mass required for contact-coupled path");
+                    // Extract constant non-contact force/torque. `total_force`
+                    // already includes gravity's acceleration-equivalent force
+                    // via frame_derivs; but because the coupled kernel
+                    // recomputes gravity itself inside `gravity_fn`, we must
+                    // pass it only the NON-GRAVITY portion of the total force.
+                    // `body.total_force.force` = non-grav forces (aero + SRP +
+                    // external) + NOT gravity (gravity is added via accel).
+                    // Verify that by reading `collect_and_resolve_forces`:
+                    // it returns `total.force = aero + srp` (no gravity).
+                    let non_grav_non_contact = (*body).total_force.force;
+                    let non_contact_torque = (*body).total_force.torque;
+                    inputs.push(CoupledBodyInput {
+                        trans: trans_ref,
+                        rot: rot_ref,
+                        mass: mass_ref,
+                        non_grav_non_contact_force: non_grav_non_contact,
+                        non_contact_torque_body: non_contact_torque,
+                    });
+                }
+            }
+
+            // Cache body t_struct_body matrices for facet transforms.
+            let t_struct_body_vec: Vec<DMat3> =
+                bodies_mut.iter().map(|b| b.t_struct_body).collect();
+            let mass_vec: Vec<MassProperties> = bodies_mut
+                .iter()
+                .map(|b| b.mass.expect("validated"))
                 .collect();
 
-            integrate_body(
-                &body.config,
-                &mut body.trans,
-                body.rot.as_mut(),
-                body.mass.as_ref(),
-                |pos, vel, time_frac| {
-                    // Sub-stage interpolation for the integration frame origin.
-                    let origin = integ_origin + integ_vel * (time_frac * dt);
-                    // Source position interpolation: JEOD's `deriv_ephem_update`
-                    // (DynamicsIntegrationGroup, default false) controls whether
-                    // ephemerides are updated at each derivative evaluation.
-                    // With default=false, source positions are frozen within a
-                    // step — we match this for root-frame integration where
-                    // integ_vel == ZERO. For non-root frames the frame origin
-                    // moves within the step, so we must interpolate source
-                    // positions to keep gravity evaluation consistent with the
-                    // interpolated integration-frame origin.
-                    let sub_dt = if integ_vel != DVec3::ZERO {
-                        time_frac * dt
-                    } else {
-                        0.0
-                    };
-                    let mut accel =
-                        accumulate_gravity(pos + origin, controls, origin, |source_id: usize| {
-                            let grav = gravity_data.get(source_id)?;
-                            let sfids = &source_frame_ids[source_id];
-                            let position =
-                                base_positions[source_id] + base_velocities[source_id] * sub_dt;
-                            let rotation = sfids
-                                .pfix
-                                .map(|pfix_id| &frame_tree.get(pfix_id).state.rot.t_parent_this);
-                            Some(jeod_sim::ResolvedSource {
-                                source: &grav.source,
-                                rotation,
-                                position,
-                                delta_c20: grav.delta_c20,
-                                has_delta_coeffs: grav.tidal_config.is_some(),
-                            })
-                        })
-                        .grav_accel;
-                    // Relativistic corrections use inertial coordinates.
-                    // Convert from integration frame to ECI for the PPN formula.
-                    let pos_eci = pos + origin;
-                    let vel_eci = vel + integ_vel;
-                    for &(mu, src_pos, src_vel, ref other) in &rel_data {
-                        accel += jeod_gravity::relativistic::compute_relativistic_correction(
-                            mu, src_pos, pos_eci, vel_eci, src_vel, other,
-                        );
+            integrate_bodies_contact_coupled(
+                &mut inputs,
+                eval_body_gravity,
+                |stage_trans: &[TranslationalState], stage_rot: &[RotationalState]| {
+                    // Evaluate every registered contact pair at the stage states
+                    // and accumulate force/torque on each body.
+                    let mut out = vec![(DVec3::ZERO, DVec3::ZERO); n_bodies];
+                    for pair in &contact_pairs {
+                        if let Some(eval) = evaluate_contact_pair(
+                            &pair.facet_a,
+                            &pair.facet_b,
+                            &stage_trans[pair.body_a],
+                            &stage_trans[pair.body_b],
+                            Some(&stage_rot[pair.body_a]),
+                            Some(&stage_rot[pair.body_b]),
+                            t_struct_body_vec[pair.body_a],
+                            t_struct_body_vec[pair.body_b],
+                            Some(&mass_vec[pair.body_a]),
+                            Some(&mass_vec[pair.body_b]),
+                        ) {
+                            out[pair.body_a].0 += eval.force_on_a;
+                            out[pair.body_b].0 -= eval.force_on_a;
+                            out[pair.body_a].1 += eval.torque_a_body;
+                            out[pair.body_b].1 += eval.torque_b_body;
+                        }
                     }
-                    accel
+                    out
                 },
-                body.total_force.force,
-                body.total_force.torque,
-                dt,
-                self.time.time_scale_factor,
-                body.integrator,
-                body.gj_state.as_mut(),
+                integ_dt,
             );
         }
 

@@ -197,6 +197,8 @@ grep the JEOD tree for the distinctive identifier in the invariant description
 | IN.16 | RadiationThirdBody requires inertial frame pointer | fatal | initialization | n/a (stateless function takes positions directly) |
 | IN.17 | RadiationSurface requires at least one facet (`num_facets > 0`) | fatal | initialization | deferred (caller passes plate slice; empty slice produces zero force) |
 | IN.18 | `power_emit` must be non-negative (thermal radiation) | fatal | runtime | structural (`power_emit = rad_constant * t_pow4`; both factors non-negative by construction) |
+| IN.19 | Contact pair bodies must be distinct (`unique_pair` in `contact.cc`) | fatal | initialization | enforced (`register_contact_pair` asserts `body_a != body_b`) |
+| IN.20 | Contact forces evaluated at every derivative evaluation (JEOD `check_contact` is a derivative-class job in `contact.sm`) | structural (Trick job scheduling) | runtime | enforced (`Simulation::step_internal` uses `integrate_bodies_contact_coupled` when contact pairs are registered, evaluating every pair at each RK4 stage) |
 
 ## Section DS: Derived States
 
