@@ -385,8 +385,12 @@ pub struct AdaptiveResult<S> {
 /// Compute the optimal step-size factor from the normalized error ratio.
 ///
 /// `err_ratio = max(pos_err/pos_tol, vel_err/vel_tol)` (dimensionless).
-/// For shrinking (rejected/forced-accept), use exponent 1/4 (4th-order error estimate).
-/// For growing (within tolerance), use exponent 1/5 (5th-order method).
+/// Uses the asymmetric exponents from *Numerical Recipes*, 3rd ed., §17.2:
+/// 1/5 when growing (matches the 5th-order method used for the state update)
+/// and 1/4 when shrinking (the Richardson exponent "one order higher" than the
+/// error estimate). The 1/4 shrink is slightly more aggressive than the
+/// symmetric 1/5 rule and empirically reduces step-size oscillation near the
+/// tolerance boundary.
 fn compute_step_factor(err_ratio: f64, safety: f64, growing: bool) -> f64 {
     if err_ratio == 0.0 {
         // Error is zero — allow maximum growth
@@ -1065,16 +1069,16 @@ mod tests {
         );
         assert_eq!(adaptive.dt_used, dt);
 
-        // 5th-order solutions must match bit-for-bit.
-        let pos_diff = (adaptive.state.position - fixed.position).length();
-        let vel_diff = (adaptive.state.velocity - fixed.velocity).length();
+        // 5th-order solutions must match bit-for-bit. Compare vectors
+        // componentwise — `.length() == 0.0` can mask tiny differences whose
+        // squares underflow to zero.
         assert_eq!(
-            pos_diff, 0.0,
-            "adaptive and fixed 5th-order position differ: {pos_diff:e}"
+            adaptive.state.position, fixed.position,
+            "adaptive and fixed 5th-order position differ"
         );
         assert_eq!(
-            vel_diff, 0.0,
-            "adaptive and fixed 5th-order velocity differ: {vel_diff:e}"
+            adaptive.state.velocity, fixed.velocity,
+            "adaptive and fixed 5th-order velocity differ"
         );
     }
 
