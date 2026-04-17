@@ -375,7 +375,6 @@ fn tier3_mass_many_children_composite() {
     let n = 10;
     let pid = tree.add_root("parent".into(), MassProperties::new(parent_mass));
 
-    let mut children = Vec::new();
     let mut offsets = Vec::new();
 
     for i in 0..n {
@@ -384,7 +383,6 @@ fn tier3_mass_many_children_composite() {
         let angle = i as f64 * std::f64::consts::TAU / n as f64;
         let offset = DVec3::new(i as f64 * 0.5, 2.0 * angle.cos(), 2.0 * angle.sin());
         tree.attach(cid, pid, offset, DMat3::IDENTITY);
-        children.push(cid);
         offsets.push(offset);
     }
 
