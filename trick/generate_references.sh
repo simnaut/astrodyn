@@ -880,14 +880,25 @@ run_shadow_calc_group() {
 throttled_bg run_shadow_calc_group
 PID_SHADOW_CALC=$LAST_BG_PID
 
-# Group 12: SIM_VER_DRAG (aerodynamic drag verification, 3 Cd modes)
+# Group 12: SIM_VER_DRAG (aerodynamic drag verification)
 # Phase 4b-C — requires its own trick-CP build
+# Covers ballistic (const/CD/BC) and flat-plate (specular/diffuse/mixed/calc_coef/orbiter) runs.
 run_drag_group() {
     local sim_dir="models/interactions/aerodynamics/verif/SIM_VER_DRAG"
     local -a RUNS=(
+        # Ballistic (DefaultAero) runs
         "SET_test/RUN_aero_drag_const:drag_const:drag_const_drag.csv"
         "SET_test/RUN_aero_drag_CD:drag_cd:drag_cd_drag.csv"
         "SET_test/RUN_aero_drag_BC:drag_bc:drag_bc_drag.csv"
+        # Flat-plate runs — exercise each coefficient method in FlatPlateAeroFacet
+        "SET_test/RUN_one_plate_accel_spec_max_coef:drag_one_plate_spec:drag_one_plate_spec_drag.csv"
+        "SET_test/RUN_one_plate_accel_diff_max_coef:drag_one_plate_diff:drag_one_plate_diff_drag.csv"
+        "SET_test/RUN_one_plate_accel_mixed_eps05_max_coef:drag_one_plate_mixed:drag_one_plate_mixed_drag.csv"
+        "SET_test/RUN_one_plate_accel_calc_coef_eps00:drag_one_plate_calc_eps00:drag_one_plate_calc_eps00_drag.csv"
+        "SET_test/RUN_one_plate_accel_calc_coef_eps05:drag_one_plate_calc_eps05:drag_one_plate_calc_eps05_drag.csv"
+        "SET_test/RUN_one_plate_accel_calc_coef_eps1:drag_one_plate_calc_eps1:drag_one_plate_calc_eps1_drag.csv"
+        "SET_test/RUN_one_plate_torque:drag_one_plate_torque:drag_one_plate_torque_drag.csv"
+        "SET_test/RUN_orbiter:drag_orbiter:drag_orbiter_drag.csv"
     )
     local needs_build=0
     for entry in "${RUNS[@]}"; do
