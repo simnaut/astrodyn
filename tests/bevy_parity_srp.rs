@@ -42,6 +42,7 @@ fn tier3_bevy_full_stack_sixdof() {
         FlatPlateThermal {
             emissivity: 0.0,
             heat_capacity_per_area: 50.0,
+            thermal_power_dump: 0.0,
         },
     )];
     let exp_atmos = ExponentialAtmosphere::default();
@@ -171,6 +172,7 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
     let thermal = FlatPlateThermal {
         emissivity: 0.5,
         heat_capacity_per_area: 50.0,
+        thermal_power_dump: 0.0,
     };
     let plates_data = vec![
         (
@@ -367,6 +369,7 @@ fn make_single_plate(
         FlatPlateThermal {
             emissivity,
             heat_capacity_per_area: 50.0,
+            thermal_power_dump: 0.0,
         },
     )]
 }

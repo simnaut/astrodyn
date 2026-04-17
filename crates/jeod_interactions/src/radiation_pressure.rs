@@ -166,6 +166,30 @@ pub struct FlatPlateThermal {
     pub emissivity: f64,
     /// Thermal mass per unit area in J/(m²·K).
     pub heat_capacity_per_area: f64,
+    /// Internal thermal power dump (W). Positive = heat added to facet.
+    /// Port of JEOD `ThermalFacetRider::thermal_power_dump`.
+    pub thermal_power_dump: f64,
+}
+
+/// Inter-facet thermal conduction configuration.
+///
+/// Port of JEOD `RadiationSurface::thermal_conduction` and
+/// `RadiationSurface::include_conduction`. JEOD stores conduction as
+/// an upper-triangular matrix (`thermal_conduction[i][j]` for `i < j`).
+/// We use a flat `Vec` of `(i, j, conductance_w_per_k)` pairs for
+/// flexibility and sparsity.
+///
+/// The conduction term added to `power_absorb` for facet `i` is:
+/// `sum_j( conductance_ij * (T_j - T_i) )`
+///
+/// Port of JEOD `ThermalFacetRider::accumulate_thermal_sources()` commented-out
+/// conduction code (`thermal_facet_rider.cc:63-90`).
+#[derive(Debug, Clone, Default)]
+pub struct ThermalConductionMatrix {
+    /// Conduction links: `(facet_i, facet_j, conductance)` where conductance
+    /// is in W/K. Heat flows from hotter to cooler: if `T_j > T_i`, facet `i`
+    /// gains `conductance * (T_j - T_i)` watts and facet `j` loses the same.
+    pub links: Vec<(usize, usize, f64)>,
 }
 
 /// Result of flat-plate SRP computation with thermal emission.
@@ -211,7 +235,66 @@ pub fn compute_flat_plate_srp_thermal(
     center_grav: DVec3,
     illum_factor: f64,
 ) -> FlatPlateSrpResult {
-    assert_eq!(plates.len(), t_pow4_cached.len());
+    compute_flat_plate_srp_thermal_conduction(
+        plates,
+        t_pow4_cached,
+        None, // no temperatures needed when no conduction
+        flux_struct_hat,
+        flux_mag,
+        center_grav,
+        illum_factor,
+        None,
+    )
+}
+
+/// Compute SRP force, torque, and temperature derivatives from flat plates
+/// with thermal emission and optional inter-facet conduction.
+///
+/// Extends [`compute_flat_plate_srp_thermal`] with inter-facet thermal conduction.
+/// When `conduction` is `Some`, heat flows between connected facets according to
+/// their temperature difference and the conductance value (W/K).
+///
+/// Port of JEOD `ThermalFacetRider::accumulate_thermal_sources()` conduction code
+/// (`thermal_facet_rider.cc:63-90`) and `RadiationSurface::thermal_conduction`.
+///
+/// The temperature ODE per plate is:
+/// ```text
+/// dT/dt = (Q_absorbed + Q_dump + Q_conducted - Q_emitted) / C_thermal
+/// ```
+/// where:
+/// - `Q_absorbed = solar_flux * area * (1 - albedo) * cos(theta)`
+/// - `Q_emitted = emissivity * sigma * T^4 * area` (Stefan-Boltzmann)
+/// - `Q_conducted = sum(conductance_ij * (T_j - T_i))` for all connected plates
+/// - `Q_dump = thermal_power_dump` (internal heat source)
+/// - `C_thermal = heat_capacity_per_area * area`
+///
+/// The thermal re-radiation force per plate is:
+/// ```text
+/// F_thermal = -(2/3) * emissivity * sigma * T^4 * area / c * n_hat
+/// ```
+///
+/// # Arguments
+/// * `plates` - Flat plates with optical and thermal properties
+/// * `t_pow4_cached` - Per-plate cached T⁴ values from previous step (JEOD convention)
+/// * `temperatures` - Per-plate current temperatures (K); required when `conduction` is `Some`
+/// * `flux_struct_hat` - Incoming flux direction (Sun → vehicle) in structural frame
+/// * `flux_mag` - Solar flux at the vehicle (W/m²)
+/// * `center_grav` - Center of gravity in structural frame (m)
+/// * `illum_factor` - Illumination factor: 0.0 = full shadow, 1.0 = full sun
+/// * `conduction` - Optional conduction matrix for inter-facet heat flow
+#[allow(clippy::too_many_arguments)]
+pub fn compute_flat_plate_srp_thermal_conduction(
+    plates: &[(FlatPlate, FlatPlateParams, FlatPlateThermal)],
+    t_pow4_cached: &[f64],
+    temperatures: Option<&[f64]>,
+    flux_struct_hat: DVec3,
+    flux_mag: f64,
+    center_grav: DVec3,
+    illum_factor: f64,
+    conduction: Option<&ThermalConductionMatrix>,
+) -> FlatPlateSrpResult {
+    let n = plates.len();
+    assert_eq!(n, t_pow4_cached.len());
 
     let effective_flux = if illum_factor > 0.0 && flux_mag > 0.0 {
         flux_mag * illum_factor
@@ -221,7 +304,45 @@ pub fn compute_flat_plate_srp_thermal(
 
     let mut total_force = DVec3::ZERO;
     let mut total_torque = DVec3::ZERO;
-    let mut temp_dots = vec![0.0; plates.len()];
+
+    // Per-plate power_absorb accumulator (includes solar + dump + conduction).
+    let mut power_absorbs = vec![0.0_f64; n];
+
+    // Solar absorption power per plate.
+    for (i, (plate, params, thermal)) in plates.iter().enumerate() {
+        let sin_theta = -plate.normal.dot(flux_struct_hat);
+        let illuminated = sin_theta > 0.0 && effective_flux > 0.0;
+
+        if illuminated {
+            power_absorbs[i] = (1.0 - params.albedo) * plate.area * sin_theta * effective_flux;
+        }
+
+        // Add internal thermal power dump.
+        // Port of JEOD ThermalFacetRider::accumulate_thermal_sources():
+        //   power_absorb += thermal_power_dump;
+        power_absorbs[i] += thermal.thermal_power_dump;
+    }
+
+    // Inter-facet conduction.
+    // Port of JEOD thermal_facet_rider.cc:63-90 (commented-out conduction code).
+    // For each link (i, j, conductance): heat flows from hotter to cooler.
+    //   cond_calc = conductance * (T_j - T_i)
+    //   power_absorb[i] += cond_calc
+    //   power_absorb[j] -= cond_calc
+    if let Some(cond) = conduction {
+        let temps =
+            temperatures.expect("temperatures must be provided when conduction matrix is present");
+        assert_eq!(temps.len(), n);
+        for &(i, j, conductance) in &cond.links {
+            assert!(i < n && j < n, "conduction link indices out of range");
+            let cond_calc = conductance * (temps[j] - temps[i]);
+            power_absorbs[i] += cond_calc;
+            power_absorbs[j] -= cond_calc;
+        }
+    }
+
+    // Compute forces and temperature derivatives.
+    let mut temp_dots = vec![0.0; n];
 
     for (i, (plate, params, thermal)) in plates.iter().enumerate() {
         let sin_theta = -plate.normal.dot(flux_struct_hat);
@@ -252,15 +373,9 @@ pub fn compute_flat_plate_srp_thermal(
         let rad_constant = plate.area * thermal.emissivity * STEFAN_BOLTZMANN;
         let power_emit = rad_constant * t_pow4_cached[i];
 
-        let power_absorb = if illuminated {
-            (1.0 - params.albedo) * plate.area * sin_theta * effective_flux
-        } else {
-            0.0
-        };
-
         let heat_capacity = thermal.heat_capacity_per_area * plate.area;
         if heat_capacity > 0.0 {
-            temp_dots[i] = (power_absorb - power_emit) / heat_capacity;
+            temp_dots[i] = (power_absorbs[i] - power_emit) / heat_capacity;
         }
 
         // Emission force: -(2/3) * power_emit / c * normal
@@ -607,6 +722,7 @@ mod tests {
         let thermal = FlatPlateThermal {
             emissivity: 0.5,
             heat_capacity_per_area: 50.0,
+            thermal_power_dump: 0.0,
         };
         let t_pow4 = [270.0_f64.powi(4)];
 
@@ -643,6 +759,7 @@ mod tests {
         let thermal = FlatPlateThermal {
             emissivity: 0.5,
             heat_capacity_per_area: 50.0,
+            thermal_power_dump: 0.0,
         };
         let t_pow4 = [270.0_f64.powi(4)];
 
@@ -680,6 +797,7 @@ mod tests {
         let thermal = FlatPlateThermal {
             emissivity: 0.5,
             heat_capacity_per_area: 50.0,
+            thermal_power_dump: 0.0,
         };
         let t_pow4 = [270.0_f64.powi(4)];
 
@@ -714,6 +832,7 @@ mod tests {
         let thermal = FlatPlateThermal {
             emissivity: 0.5,
             heat_capacity_per_area: 50.0,
+            thermal_power_dump: 0.0,
         };
         let flux_hat = DVec3::X;
         let flux_mag = 1400.0;
@@ -958,5 +1077,345 @@ mod tests {
             "Temperature must not go negative: got {new_temp}"
         );
         assert!(new_t_pow4 >= 0.0);
+    }
+
+    // ── Inter-facet conduction tests ─────────────────────────────────
+
+    /// Two plates at different temperatures with conduction: heat flows
+    /// from hot to cold. The hot plate's temp_dot should be more negative
+    /// and the cold plate's should be more positive compared to no conduction.
+    #[test]
+    fn conduction_heat_flow_direction() {
+        let plate_a = FlatPlate {
+            area: 10.0,
+            normal: DVec3::X,
+            position: DVec3::ZERO,
+        };
+        let plate_b = FlatPlate {
+            area: 10.0,
+            normal: -DVec3::X,
+            position: DVec3::ZERO,
+        };
+        let params = FlatPlateParams {
+            albedo: 0.5,
+            diffuse: 0.5,
+        };
+        let thermal = FlatPlateThermal {
+            emissivity: 0.5,
+            heat_capacity_per_area: 50.0,
+            thermal_power_dump: 0.0,
+        };
+        let plates = vec![(plate_a, params, thermal), (plate_b, params, thermal)];
+
+        let temp_hot = 400.0_f64;
+        let temp_cold = 200.0_f64;
+        let t_pow4 = [temp_hot.powi(4), temp_cold.powi(4)];
+        let temps = [temp_hot, temp_cold];
+
+        // Without conduction
+        let no_cond = compute_flat_plate_srp_thermal(
+            &plates,
+            &t_pow4,
+            DVec3::Y, // perpendicular to both plates, no illumination
+            0.0,
+            DVec3::ZERO,
+            0.0,
+        );
+
+        // With conduction (100 W/K between plates 0 and 1)
+        let cond = ThermalConductionMatrix {
+            links: vec![(0, 1, 100.0)],
+        };
+        let with_cond = compute_flat_plate_srp_thermal_conduction(
+            &plates,
+            &t_pow4,
+            Some(&temps),
+            DVec3::Y,
+            0.0,
+            DVec3::ZERO,
+            0.0,
+            Some(&cond),
+        );
+
+        // Hot plate (0) should cool faster with conduction (more negative temp_dot)
+        assert!(
+            with_cond.temp_dots[0] < no_cond.temp_dots[0],
+            "Hot plate should lose heat via conduction: with={:.4e} vs without={:.4e}",
+            with_cond.temp_dots[0],
+            no_cond.temp_dots[0]
+        );
+
+        // Cold plate (1) should warm faster with conduction (less negative temp_dot)
+        assert!(
+            with_cond.temp_dots[1] > no_cond.temp_dots[1],
+            "Cold plate should gain heat via conduction: with={:.4e} vs without={:.4e}",
+            with_cond.temp_dots[1],
+            no_cond.temp_dots[1]
+        );
+    }
+
+    /// Conduction between two plates at the same temperature: zero net heat flow.
+    #[test]
+    fn conduction_zero_at_equal_temperatures() {
+        let plate = FlatPlate {
+            area: 10.0,
+            normal: DVec3::X,
+            position: DVec3::ZERO,
+        };
+        let params = FlatPlateParams {
+            albedo: 0.5,
+            diffuse: 0.5,
+        };
+        let thermal = FlatPlateThermal {
+            emissivity: 0.5,
+            heat_capacity_per_area: 50.0,
+            thermal_power_dump: 0.0,
+        };
+        let plates = vec![(plate, params, thermal), (plate, params, thermal)];
+
+        let temp = 300.0_f64;
+        let t_pow4 = [temp.powi(4), temp.powi(4)];
+        let temps = [temp, temp];
+
+        let cond = ThermalConductionMatrix {
+            links: vec![(0, 1, 500.0)], // large conductance
+        };
+
+        let with_cond = compute_flat_plate_srp_thermal_conduction(
+            &plates,
+            &t_pow4,
+            Some(&temps),
+            DVec3::Y,
+            0.0,
+            DVec3::ZERO,
+            0.0,
+            Some(&cond),
+        );
+
+        let no_cond =
+            compute_flat_plate_srp_thermal(&plates, &t_pow4, DVec3::Y, 0.0, DVec3::ZERO, 0.0);
+
+        // With equal temperatures, conduction should not change temp_dots
+        assert!(
+            (with_cond.temp_dots[0] - no_cond.temp_dots[0]).abs() < 1e-20,
+            "Equal-temp conduction should be zero: diff={:.4e}",
+            (with_cond.temp_dots[0] - no_cond.temp_dots[0]).abs()
+        );
+        assert!(
+            (with_cond.temp_dots[1] - no_cond.temp_dots[1]).abs() < 1e-20,
+            "Equal-temp conduction should be zero: diff={:.4e}",
+            (with_cond.temp_dots[1] - no_cond.temp_dots[1]).abs()
+        );
+    }
+
+    /// Conduction magnitude: verify the exact heat flow term.
+    /// For two plates with conductance G and temperature difference dT,
+    /// the conduction power is G * dT.
+    #[test]
+    fn conduction_magnitude() {
+        let plate = FlatPlate {
+            area: 10.0,
+            normal: DVec3::X,
+            position: DVec3::ZERO,
+        };
+        let params = FlatPlateParams {
+            albedo: 0.0,
+            diffuse: 0.0,
+        };
+        let thermal = FlatPlateThermal {
+            emissivity: 0.5,
+            heat_capacity_per_area: 50.0,
+            thermal_power_dump: 0.0,
+        };
+        let plates = vec![(plate, params, thermal), (plate, params, thermal)];
+
+        let temp_a = 350.0_f64;
+        let temp_b = 250.0_f64;
+        let t_pow4 = [temp_a.powi(4), temp_b.powi(4)];
+        let temps = [temp_a, temp_b];
+        let conductance = 200.0; // W/K
+
+        let cond = ThermalConductionMatrix {
+            links: vec![(0, 1, conductance)],
+        };
+
+        let with_cond = compute_flat_plate_srp_thermal_conduction(
+            &plates,
+            &t_pow4,
+            Some(&temps),
+            DVec3::Y,
+            0.0,
+            DVec3::ZERO,
+            0.0,
+            Some(&cond),
+        );
+
+        let no_cond =
+            compute_flat_plate_srp_thermal(&plates, &t_pow4, DVec3::Y, 0.0, DVec3::ZERO, 0.0);
+
+        let heat_cap = thermal.heat_capacity_per_area * plate.area;
+        let expected_cond_power = conductance * (temp_b - temp_a); // = 200 * (-100) = -20000 W
+
+        // Plate 0 gains cond_power, plate 1 loses it
+        let tdot_diff_0 = with_cond.temp_dots[0] - no_cond.temp_dots[0];
+        let tdot_diff_1 = with_cond.temp_dots[1] - no_cond.temp_dots[1];
+
+        let expected_tdot_diff_0 = expected_cond_power / heat_cap;
+        let expected_tdot_diff_1 = -expected_cond_power / heat_cap;
+
+        assert!(
+            (tdot_diff_0 - expected_tdot_diff_0).abs() < 1e-10,
+            "Plate 0 tdot diff: expected {expected_tdot_diff_0:.4e}, got {tdot_diff_0:.4e}"
+        );
+        assert!(
+            (tdot_diff_1 - expected_tdot_diff_1).abs() < 1e-10,
+            "Plate 1 tdot diff: expected {expected_tdot_diff_1:.4e}, got {tdot_diff_1:.4e}"
+        );
+    }
+
+    /// Thermal equilibrium: plate reaches steady-state temperature where
+    /// Q_absorbed = Q_emitted. At equilibrium, temp_dot should be zero.
+    #[test]
+    fn thermal_equilibrium_temp_dot_zero() {
+        let area = 10.0;
+        let emissivity = 0.8;
+        let absorptivity = 0.6; // 1 - albedo
+        let flux_mag = 1400.0; // W/m^2 (~ solar constant)
+
+        // Equilibrium: absorptivity * area * flux = emissivity * sigma * T_eq^4 * area
+        // T_eq^4 = absorptivity * flux / (emissivity * sigma)
+        let t_eq_pow4 = absorptivity * flux_mag / (emissivity * STEFAN_BOLTZMANN);
+
+        let plate = FlatPlate {
+            area,
+            normal: -DVec3::X,
+            position: DVec3::ZERO,
+        };
+        let params = FlatPlateParams {
+            albedo: 1.0 - absorptivity,
+            diffuse: 0.5,
+        };
+        let thermal = FlatPlateThermal {
+            emissivity,
+            heat_capacity_per_area: 50.0,
+            thermal_power_dump: 0.0,
+        };
+
+        let result = compute_flat_plate_srp_thermal(
+            &[(plate, params, thermal)],
+            &[t_eq_pow4],
+            DVec3::X, // flux from -X toward +X; plate normal is -X, so sin_theta = 1
+            flux_mag,
+            DVec3::ZERO,
+            1.0,
+        );
+
+        assert!(
+            result.temp_dots[0].abs() < 1e-6,
+            "At equilibrium, temp_dot should be ~0, got {:.4e}",
+            result.temp_dots[0]
+        );
+    }
+
+    /// Re-radiation force magnitude at known temperature matches
+    /// F = (2/3) * emissivity * sigma * T^4 * area / c.
+    #[test]
+    fn re_radiation_force_at_known_temperature() {
+        let area = 20.0;
+        let emissivity = 0.9;
+        let temp = 350.0_f64;
+        let t_pow4 = temp.powi(4);
+
+        let plate = FlatPlate {
+            area,
+            normal: DVec3::Z,
+            position: DVec3::ZERO,
+        };
+        let params = FlatPlateParams {
+            albedo: 0.5,
+            diffuse: 0.5,
+        };
+        let thermal = FlatPlateThermal {
+            emissivity,
+            heat_capacity_per_area: 50.0,
+            thermal_power_dump: 0.0,
+        };
+
+        // No solar flux, only thermal emission
+        let result = compute_flat_plate_srp_thermal(
+            &[(plate, params, thermal)],
+            &[t_pow4],
+            DVec3::X,
+            0.0,
+            DVec3::ZERO,
+            0.0,
+        );
+
+        let expected_power = emissivity * STEFAN_BOLTZMANN * t_pow4 * area;
+        let expected_force_mag = TWO_THIRDS * expected_power / SPEED_OF_LIGHT;
+        let actual_force_mag = result.force.length();
+
+        let rel_err = (actual_force_mag - expected_force_mag).abs() / expected_force_mag;
+        assert!(
+            rel_err < 1e-10,
+            "Re-radiation force: expected {expected_force_mag:.6e}, got {actual_force_mag:.6e}"
+        );
+
+        // Force should be in -Z direction (opposite to normal)
+        assert!(result.force.z < 0.0, "Force should oppose normal (+Z)");
+    }
+
+    /// Thermal power dump increases temp_dot.
+    #[test]
+    fn thermal_power_dump_increases_temp_dot() {
+        let plate = FlatPlate {
+            area: 10.0,
+            normal: DVec3::X,
+            position: DVec3::ZERO,
+        };
+        let params = FlatPlateParams {
+            albedo: 0.5,
+            diffuse: 0.5,
+        };
+        let thermal_no_dump = FlatPlateThermal {
+            emissivity: 0.5,
+            heat_capacity_per_area: 50.0,
+            thermal_power_dump: 0.0,
+        };
+        let thermal_with_dump = FlatPlateThermal {
+            emissivity: 0.5,
+            heat_capacity_per_area: 50.0,
+            thermal_power_dump: 500.0, // 500 W internal heat
+        };
+
+        let temp = 300.0_f64;
+        let t_pow4 = [temp.powi(4)];
+
+        let no_dump = compute_flat_plate_srp_thermal(
+            &[(plate, params, thermal_no_dump)],
+            &t_pow4,
+            DVec3::Y,
+            0.0,
+            DVec3::ZERO,
+            0.0,
+        );
+
+        let with_dump = compute_flat_plate_srp_thermal(
+            &[(plate, params, thermal_with_dump)],
+            &t_pow4,
+            DVec3::Y,
+            0.0,
+            DVec3::ZERO,
+            0.0,
+        );
+
+        let heat_cap = 50.0 * 10.0;
+        let expected_diff = 500.0 / heat_cap; // = 1.0 K/s
+
+        let actual_diff = with_dump.temp_dots[0] - no_dump.temp_dots[0];
+        assert!(
+            (actual_diff - expected_diff).abs() < 1e-10,
+            "Power dump should add {expected_diff:.4e} K/s, got {actual_diff:.4e}"
+        );
     }
 }

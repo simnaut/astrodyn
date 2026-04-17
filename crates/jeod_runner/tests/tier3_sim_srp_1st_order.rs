@@ -37,6 +37,7 @@ fn srp_plates() -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
     let thermal = FlatPlateThermal {
         emissivity: 0.5,
         heat_capacity_per_area: 50.0,
+        thermal_power_dump: 0.0,
     };
     vec![
         (
