@@ -134,7 +134,8 @@ fn tier3_relative_two_coorbiting_vehicles() {
 
         let chief = sim.body(0);
         let deputy = sim.body(1);
-        let sep = (deputy.trans.position - chief.trans.position).length();
+        let rel_inertial = compute_relative_state(&chief.trans, None, &deputy.trans, None);
+        let sep = rel_inertial.position.length();
         max_sep = max_sep.max(sep);
         min_sep = min_sep.min(sep);
 
