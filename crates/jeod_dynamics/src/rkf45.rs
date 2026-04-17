@@ -285,8 +285,10 @@ pub fn rkf45_sixdof_step(
 /// Configuration for RKF45 adaptive step size control.
 #[derive(Debug, Clone, Copy)]
 pub struct AdaptiveConfig {
-    /// Absolute error tolerance (e.g., meters for position).
-    pub tolerance: f64,
+    /// Absolute position error tolerance (meters).
+    pub pos_tolerance: f64,
+    /// Absolute velocity error tolerance (m/s).
+    pub vel_tolerance: f64,
     /// Safety factor applied when computing the next step size (typically 0.9).
     pub safety_factor: f64,
     /// Minimum allowed step size (seconds).
@@ -300,11 +302,56 @@ pub struct AdaptiveConfig {
 impl Default for AdaptiveConfig {
     fn default() -> Self {
         Self {
-            tolerance: 1e-6,
+            pos_tolerance: 1e-6,
+            vel_tolerance: 1e-6,
             safety_factor: 0.9,
             min_step: 1e-6,
             max_step: 1000.0,
             max_rejections: 10,
+        }
+    }
+}
+
+impl AdaptiveConfig {
+    /// Check whether this adaptive-step configuration is valid.
+    pub fn check(&self) -> Result<(), &'static str> {
+        if !self.pos_tolerance.is_finite() {
+            return Err("AdaptiveConfig.pos_tolerance must be finite");
+        }
+        if self.pos_tolerance <= 0.0 {
+            return Err("AdaptiveConfig.pos_tolerance must be > 0");
+        }
+        if !self.vel_tolerance.is_finite() {
+            return Err("AdaptiveConfig.vel_tolerance must be finite");
+        }
+        if self.vel_tolerance <= 0.0 {
+            return Err("AdaptiveConfig.vel_tolerance must be > 0");
+        }
+        if !self.safety_factor.is_finite() {
+            return Err("AdaptiveConfig.safety_factor must be finite");
+        }
+        if self.safety_factor <= 0.0 || self.safety_factor > 1.0 {
+            return Err("AdaptiveConfig.safety_factor must satisfy 0 < safety_factor <= 1");
+        }
+        if !self.min_step.is_finite() {
+            return Err("AdaptiveConfig.min_step must be finite");
+        }
+        if self.min_step <= 0.0 {
+            return Err("AdaptiveConfig.min_step must be > 0");
+        }
+        if !self.max_step.is_finite() {
+            return Err("AdaptiveConfig.max_step must be finite");
+        }
+        if self.max_step < self.min_step {
+            return Err("AdaptiveConfig.max_step must be >= min_step");
+        }
+        Ok(())
+    }
+
+    /// Validate this adaptive-step configuration, panicking if invalid.
+    pub fn validate(&self) {
+        if let Err(err) = self.check() {
+            panic!("{err}");
         }
     }
 }
@@ -320,21 +367,30 @@ pub struct AdaptiveResult<S> {
     pub dt_next: f64,
     /// True if at least one step attempt was rejected before acceptance.
     pub rejected: bool,
-    /// Estimated local truncation error magnitude (max over components).
-    pub error_estimate: f64,
+    /// True if the step was accepted despite `error_ratio > 1.0` because the
+    /// rejection budget was exhausted (`attempt == max_rejections`).
+    pub forced_accept: bool,
+    /// Max position component error (meters).
+    pub pos_error: f64,
+    /// Max velocity component error (m/s).
+    pub vel_error: f64,
+    /// Normalized error ratio `max(pos_error/pos_tolerance, vel_error/vel_tolerance)`.
+    /// Dimensionless; `<= 1.0` means the step was within tolerance.
+    pub error_ratio: f64,
 }
 
-/// Compute the optimal step size ratio given error and tolerance.
+/// Compute the optimal step-size factor from the normalized error ratio.
 ///
-/// For a rejected step (shrinking), use exponent 1/4 (4th-order error estimate).
-/// For an accepted step (growing), use exponent 1/5 (5th-order method).
-fn compute_step_factor(error: f64, tolerance: f64, safety: f64, growing: bool) -> f64 {
-    if error == 0.0 {
+/// `err_ratio = max(pos_err/pos_tol, vel_err/vel_tol)` (dimensionless).
+/// For shrinking (rejected/forced-accept), use exponent 1/4 (4th-order error estimate).
+/// For growing (within tolerance), use exponent 1/5 (5th-order method).
+fn compute_step_factor(err_ratio: f64, safety: f64, growing: bool) -> f64 {
+    if err_ratio == 0.0 {
         // Error is zero — allow maximum growth
         return safety * 5.0;
     }
     let exponent = if growing { 0.2 } else { 0.25 };
-    safety * (tolerance / error).powf(exponent)
+    safety * err_ratio.powf(-exponent)
 }
 
 /// Advance translational state by one adaptive RKF45 step.
@@ -344,15 +400,15 @@ fn compute_step_factor(error: f64, tolerance: f64, safety: f64, growing: bool) -
 /// The accepted state uses the 5th-order solution (local extrapolation).
 ///
 /// The `accel_fn` signature matches the existing fixed-step functions:
-/// `accel_fn(state, time_fraction)` where `time_fraction` is the fractional
-/// offset within the step (0.0 to 1.0).
+/// `accel_fn(state, time_fraction)` where `time_fraction` is the Butcher
+/// tableau `c_i` value (fractional offset within the step, 0.0 to 1.0).
 pub fn rkf45_adaptive_translational_step(
     state: &TranslationalState,
     accel_fn: impl Fn(&TranslationalState, f64) -> DVec3,
-    _t: f64,
     dt: f64,
     config: &AdaptiveConfig,
 ) -> AdaptiveResult<TranslationalState> {
+    debug_assert!(config.check().is_ok());
     let mut dt_try = dt.clamp(config.min_step, config.max_step);
     let mut rejected = false;
 
@@ -414,18 +470,21 @@ pub fn rkf45_adaptive_translational_step(
         let pos4 = pos0 + (k1_v * B41 + k3_v * B43 + k4_v * B44 + k5_v * B45) * dt_try;
         let vel4 = vel0 + (k1_a * B41 + k3_a * B43 + k4_a * B44 + k5_a * B45) * dt_try;
 
-        // Error estimate: max component-wise difference in position
-        let pos_err = (pos5 - pos4).abs();
-        let vel_err = (vel5 - vel4).abs();
-        let error = pos_err
-            .x
-            .max(pos_err.y)
-            .max(pos_err.z)
-            .max(vel_err.x.max(vel_err.y).max(vel_err.z));
+        // Error estimate: max component-wise differences in position (m) and
+        // velocity (m/s), normalized by their respective tolerances.
+        let pos_err_vec = (pos5 - pos4).abs();
+        let vel_err_vec = (vel5 - vel4).abs();
+        let pos_error = pos_err_vec.x.max(pos_err_vec.y).max(pos_err_vec.z);
+        let vel_error = vel_err_vec.x.max(vel_err_vec.y).max(vel_err_vec.z);
+        let err_ratio = (pos_error / config.pos_tolerance).max(vel_error / config.vel_tolerance);
 
-        if error <= config.tolerance || attempt == config.max_rejections {
-            // Accept step
-            let factor = compute_step_factor(error, config.tolerance, config.safety_factor, true);
+        let within_tolerance = err_ratio <= 1.0;
+        let forced_accept = !within_tolerance && attempt == config.max_rejections;
+
+        if within_tolerance || forced_accept {
+            // Accept step. On forced accept (tolerance exceeded), use the
+            // shrinking exponent so the recommendation reflects the error.
+            let factor = compute_step_factor(err_ratio, config.safety_factor, within_tolerance);
             let dt_next = (dt_try * factor).clamp(config.min_step, config.max_step);
 
             return AdaptiveResult {
@@ -435,14 +494,17 @@ pub fn rkf45_adaptive_translational_step(
                 },
                 dt_used: dt_try,
                 dt_next,
-                rejected,
-                error_estimate: error,
+                rejected: rejected || forced_accept,
+                forced_accept,
+                pos_error,
+                vel_error,
+                error_ratio: err_ratio,
             };
         }
 
         // Reject step — shrink and retry
         rejected = true;
-        let factor = compute_step_factor(error, config.tolerance, config.safety_factor, false);
+        let factor = compute_step_factor(err_ratio, config.safety_factor, false);
         dt_try = (dt_try * factor).clamp(config.min_step, config.max_step);
     }
 
@@ -459,10 +521,10 @@ pub fn rkf45_adaptive_sixdof_step(
     accel_fn: impl Fn(&SixDofState, f64) -> DVec3,
     torque_fn: impl Fn(&SixDofState) -> DVec3,
     mass_props: &MassProperties,
-    _t: f64,
     dt: f64,
     config: &AdaptiveConfig,
 ) -> AdaptiveResult<SixDofState> {
+    debug_assert!(config.check().is_ok());
     let mut dt_try = dt.clamp(config.min_step, config.max_step);
     let mut rejected = false;
 
@@ -601,18 +663,23 @@ pub fn rkf45_adaptive_sixdof_step(
         let pos4 = pos0 + (k1_v * B41 + k3_v * B43 + k4_v * B44 + k5_v * B45) * dt_try;
         let vel4 = vel0 + (k1_a * B41 + k3_a * B43 + k4_a * B44 + k5_a * B45) * dt_try;
 
-        // Error estimate: max component-wise difference in position and velocity
-        let pos_err = (pos5 - pos4).abs();
-        let vel_err = (vel5 - vel4).abs();
-        let error = pos_err
-            .x
-            .max(pos_err.y)
-            .max(pos_err.z)
-            .max(vel_err.x.max(vel_err.y).max(vel_err.z));
+        // Error estimate: max component-wise differences in position (m) and
+        // velocity (m/s), normalized by their respective tolerances. Rotation
+        // state (quaternion, angular velocity) is not included in the metric
+        // here — translational tolerances are the primary driver.
+        let pos_err_vec = (pos5 - pos4).abs();
+        let vel_err_vec = (vel5 - vel4).abs();
+        let pos_error = pos_err_vec.x.max(pos_err_vec.y).max(pos_err_vec.z);
+        let vel_error = vel_err_vec.x.max(vel_err_vec.y).max(vel_err_vec.z);
+        let err_ratio = (pos_error / config.pos_tolerance).max(vel_error / config.vel_tolerance);
 
-        if error <= config.tolerance || attempt == config.max_rejections {
-            // Accept step
-            let factor = compute_step_factor(error, config.tolerance, config.safety_factor, true);
+        let within_tolerance = err_ratio <= 1.0;
+        let forced_accept = !within_tolerance && attempt == config.max_rejections;
+
+        if within_tolerance || forced_accept {
+            // Accept step. On forced accept (tolerance exceeded), use the
+            // shrinking exponent so the recommendation reflects the error.
+            let factor = compute_step_factor(err_ratio, config.safety_factor, within_tolerance);
             let dt_next = (dt_try * factor).clamp(config.min_step, config.max_step);
 
             // JEOD_INV: DB.09 — quaternion normalized after every integration step
@@ -632,14 +699,17 @@ pub fn rkf45_adaptive_sixdof_step(
                 },
                 dt_used: dt_try,
                 dt_next,
-                rejected,
-                error_estimate: error,
+                rejected: rejected || forced_accept,
+                forced_accept,
+                pos_error,
+                vel_error,
+                error_ratio: err_ratio,
             };
         }
 
         // Reject step — shrink and retry
         rejected = true;
-        let factor = compute_step_factor(error, config.tolerance, config.safety_factor, false);
+        let factor = compute_step_factor(err_ratio, config.safety_factor, false);
         dt_try = (dt_try * factor).clamp(config.min_step, config.max_step);
     }
 
@@ -747,8 +817,9 @@ mod tests {
 
     // ── Adaptive step size control tests ──
 
-    /// Helper: circular orbit acceleration (mu/r^2, central force).
-    fn circular_orbit_accel(pos: DVec3, mu: f64) -> DVec3 {
+    /// Helper: central gravity acceleration (mu/r^2, -r_hat direction).
+    /// Used for both circular and eccentric orbit tests.
+    fn central_gravity_accel(pos: DVec3, mu: f64) -> DVec3 {
         let r = pos.length();
         -mu / (r * r * r) * pos
     }
@@ -767,7 +838,8 @@ mod tests {
         };
 
         let config = AdaptiveConfig {
-            tolerance: 1.0, // 1 meter tolerance — generous for a smooth orbit
+            pos_tolerance: 1.0,  // 1 m — generous for a smooth orbit
+            vel_tolerance: 1e-3, // 1 mm/s
             safety_factor: 0.9,
             min_step: 1.0,
             max_step: 120.0,
@@ -775,7 +847,7 @@ mod tests {
         };
 
         let accel_fn =
-            |s: &TranslationalState, _t: f64| -> DVec3 { circular_orbit_accel(s.position, mu) };
+            |s: &TranslationalState, _c_i: f64| -> DVec3 { central_gravity_accel(s.position, mu) };
 
         let mut state = initial;
         let mut t = 0.0;
@@ -785,7 +857,7 @@ mod tests {
         // Propagate for ~1 orbit period (~5560 s)
         let t_end = 5560.0;
         while t < t_end {
-            let result = rkf45_adaptive_translational_step(&state, accel_fn, t, dt, &config);
+            let result = rkf45_adaptive_translational_step(&state, accel_fn, dt, &config);
             state = result.state;
             t += result.dt_used;
             dt = result.dt_next;
@@ -818,7 +890,8 @@ mod tests {
         };
 
         let config = AdaptiveConfig {
-            tolerance: 1e-3, // 1 mm — tight enough to force step reduction
+            pos_tolerance: 1e-3, // 1 mm — tight enough to force step reduction
+            vel_tolerance: 1e-6, // 1 µm/s
             safety_factor: 0.9,
             min_step: 0.01,
             max_step: 1000.0,
@@ -826,7 +899,7 @@ mod tests {
         };
 
         let accel_fn =
-            |s: &TranslationalState, _t: f64| -> DVec3 { circular_orbit_accel(s.position, mu) };
+            |s: &TranslationalState, _c_i: f64| -> DVec3 { central_gravity_accel(s.position, mu) };
 
         let mut state = initial;
         let mut t: f64 = 0.0;
@@ -836,7 +909,7 @@ mod tests {
         // Propagate through periapsis passage (first 500 seconds)
         let t_end: f64 = 500.0;
         while t < t_end {
-            let result = rkf45_adaptive_translational_step(&state, accel_fn, t, dt, &config);
+            let result = rkf45_adaptive_translational_step(&state, accel_fn, dt, &config);
             state = result.state;
             t += result.dt_used;
             dt = result.dt_next;
@@ -853,7 +926,7 @@ mod tests {
     }
 
     /// Adaptive error is bounded: propagate a circular orbit and verify that
-    /// the position error at each step is below the tolerance.
+    /// the normalized error ratio at each accepted step is <= 1.0.
     #[test]
     fn adaptive_error_bounded() {
         let mu: f64 = 3.986_004_415e14;
@@ -866,7 +939,8 @@ mod tests {
         };
 
         let config = AdaptiveConfig {
-            tolerance: 0.1, // 10 cm
+            pos_tolerance: 0.1,  // 10 cm
+            vel_tolerance: 1e-4, // 0.1 mm/s
             safety_factor: 0.9,
             min_step: 0.1,
             max_step: 60.0,
@@ -874,34 +948,89 @@ mod tests {
         };
 
         let accel_fn =
-            |s: &TranslationalState, _t: f64| -> DVec3 { circular_orbit_accel(s.position, mu) };
+            |s: &TranslationalState, _c_i: f64| -> DVec3 { central_gravity_accel(s.position, mu) };
 
         let mut state = initial;
         let mut t = 0.0;
         let mut dt = 10.0;
-        let mut max_error = 0.0_f64;
+        let mut max_ratio = 0.0_f64;
+        let mut any_forced = false;
 
         // Propagate for 1000 seconds
         let t_end = 1000.0;
         while t < t_end {
-            let result = rkf45_adaptive_translational_step(&state, accel_fn, t, dt, &config);
-            max_error = max_error.max(result.error_estimate);
+            let result = rkf45_adaptive_translational_step(&state, accel_fn, dt, &config);
+            max_ratio = max_ratio.max(result.error_ratio);
+            any_forced |= result.forced_accept;
             state = result.state;
             t += result.dt_used;
             dt = result.dt_next;
         }
 
-        // Every accepted step should have error <= tolerance
         assert!(
-            max_error <= config.tolerance,
-            "Max error {:.2e} exceeds tolerance {:.2e}",
-            max_error,
-            config.tolerance,
+            !any_forced,
+            "step was forced-accepted despite adequate budget"
+        );
+        // Every accepted step should be within tolerance (ratio <= 1.0)
+        assert!(
+            max_ratio <= 1.0,
+            "Max error ratio {max_ratio:.3} exceeds 1.0 (tolerance violated)"
         );
     }
 
-    /// With very tight tolerance and a small initial step, adaptive should
-    /// produce the same result as fixed-step RKF45 to high precision.
+    /// Single-step equivalence: a single adaptive step with sufficient tolerance
+    /// to accept the step on the first try must produce exactly the same 5th-order
+    /// state as the fixed-step function at the same dt.
+    #[test]
+    fn adaptive_consistent_with_fixed_step() {
+        let mu: f64 = 3.986_004_415e14;
+        let r0: f64 = 6_778_000.0;
+        let v0 = (mu / r0).sqrt();
+
+        let initial = TranslationalState {
+            position: DVec3::new(r0, 0.0, 0.0),
+            velocity: DVec3::new(0.0, v0, 0.0),
+        };
+
+        let dt: f64 = 10.0;
+        let accel_fn =
+            |s: &TranslationalState, _c_i: f64| -> DVec3 { central_gravity_accel(s.position, mu) };
+
+        // Generous tolerance so the first attempt is accepted without retry.
+        let config = AdaptiveConfig {
+            pos_tolerance: 1.0,
+            vel_tolerance: 1.0,
+            safety_factor: 0.9,
+            min_step: dt,
+            max_step: dt,
+            max_rejections: 0,
+        };
+
+        let fixed = rkf45_translational_step(&initial, accel_fn, dt);
+        let adaptive = rkf45_adaptive_translational_step(&initial, accel_fn, dt, &config);
+
+        assert!(!adaptive.rejected, "step should not be rejected");
+        assert!(
+            !adaptive.forced_accept,
+            "step should not be forced-accepted"
+        );
+        assert_eq!(adaptive.dt_used, dt);
+
+        // 5th-order solutions must match bit-for-bit.
+        let pos_diff = (adaptive.state.position - fixed.position).length();
+        let vel_diff = (adaptive.state.velocity - fixed.velocity).length();
+        assert_eq!(
+            pos_diff, 0.0,
+            "adaptive and fixed 5th-order position differ: {pos_diff:e}"
+        );
+        assert_eq!(
+            vel_diff, 0.0,
+            "adaptive and fixed 5th-order velocity differ: {vel_diff:e}"
+        );
+    }
+
+    /// Multi-step propagation: adaptive with a step cap equal to the fixed dt
+    /// should stay within a few meters of the fixed-step reference over 100 s.
     #[test]
     fn adaptive_matches_fixed_for_small_tolerance() {
         let mu: f64 = 3.986_004_415e14;
@@ -918,7 +1047,7 @@ mod tests {
         let steps = (t_end / dt_fixed).round() as usize;
 
         let accel_fn =
-            |s: &TranslationalState, _t: f64| -> DVec3 { circular_orbit_accel(s.position, mu) };
+            |s: &TranslationalState, _c_i: f64| -> DVec3 { central_gravity_accel(s.position, mu) };
 
         // Fixed-step reference
         let mut state_fixed = initial;
@@ -928,7 +1057,8 @@ mod tests {
 
         // Adaptive with tolerance tight enough that it uses ~1s steps
         let config = AdaptiveConfig {
-            tolerance: 1e-6,
+            pos_tolerance: 1e-6,
+            vel_tolerance: 1e-9,
             safety_factor: 0.9,
             min_step: 0.01,
             max_step: 1.0, // cap at the same fixed step
@@ -942,7 +1072,7 @@ mod tests {
             let remaining = t_end - t;
             let dt_try = dt.min(remaining);
             let result =
-                rkf45_adaptive_translational_step(&state_adaptive, accel_fn, t, dt_try, &config);
+                rkf45_adaptive_translational_step(&state_adaptive, accel_fn, dt_try, &config);
             state_adaptive = result.state;
             t += result.dt_used;
             dt = result.dt_next;
@@ -955,6 +1085,32 @@ mod tests {
             "Adaptive vs fixed position difference: {:.2e} m (expected < 10 m)",
             pos_diff,
         );
+    }
+
+    /// Config validation: check() rejects invalid configurations.
+    #[test]
+    fn adaptive_config_validation() {
+        let ok = AdaptiveConfig::default();
+        assert!(ok.check().is_ok());
+
+        let bad = AdaptiveConfig {
+            pos_tolerance: -1.0,
+            ..AdaptiveConfig::default()
+        };
+        assert!(bad.check().is_err());
+
+        let bad = AdaptiveConfig {
+            safety_factor: 1.5,
+            ..AdaptiveConfig::default()
+        };
+        assert!(bad.check().is_err());
+
+        let bad = AdaptiveConfig {
+            min_step: 10.0,
+            max_step: 5.0,
+            ..AdaptiveConfig::default()
+        };
+        assert!(bad.check().is_err());
     }
 
     /// Regression test: existing fixed-step rkf45_translational_step produces
@@ -972,7 +1128,7 @@ mod tests {
 
         let dt = 10.0;
         let accel_fn =
-            |s: &TranslationalState, _t: f64| -> DVec3 { circular_orbit_accel(s.position, mu) };
+            |s: &TranslationalState, _c_i: f64| -> DVec3 { central_gravity_accel(s.position, mu) };
 
         // Take one step
         let result = rkf45_translational_step(&initial, accel_fn, dt);
