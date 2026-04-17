@@ -1,3 +1,4 @@
+pub mod abm4;
 pub mod body_init;
 pub mod forces;
 pub mod gauss_jackson;
@@ -9,6 +10,7 @@ pub mod rkf45;
 pub mod rotational;
 pub mod state;
 
+pub use abm4::{abm4_translational_step, Abm4State};
 pub use body_init::{
     compute_ned_rotation, init_from_lvlh, init_from_mean_anomaly, init_from_ned,
     init_from_orbital_elements,

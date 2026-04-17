@@ -28,6 +28,21 @@ pub enum IntegratorType {
     /// be stored externally (in `SimBody` or as a Bevy component) and passed
     /// to the integration function.
     GaussJackson(crate::gauss_jackson::config::GaussJacksonConfig),
+    /// Adams-Bashforth-Moulton 4th-order (PECE scheme, fixed step).
+    ///
+    /// Port of Trick's `ABM4SimpleSecondOrderODEIntegrator`, the integrator
+    /// exercised by JEOD's `SIM_integ_test/RUN_abm4`. Uses RK4 for the first
+    /// 3 priming steps, then the classic AB4 predictor + AM3 corrector.
+    ///
+    /// This is also the non-stiff Adams mode used by JEOD's LSODE for orbital
+    /// problems — at fixed order 4. The variable-order Adams method and BDF
+    /// (stiff) support from LSODE are future work. For the verification sim
+    /// `RUN_lsode` (LSODE with default ImplicitAdamsNonStiff) this fixed-order
+    /// ABM4 is the best available approximation.
+    ///
+    /// Requires persistent `Abm4State` across steps, stored externally.
+    /// Translational-only; 6-DOF is not yet supported.
+    Abm4,
 }
 
 /// Advance translational state by one RK4 step.

@@ -165,6 +165,7 @@ fn tier3_bevy_external_torque_per_body() {
             1.0,
             jeod_sim::IntegratorType::Rk4,
             None,
+            None,
         );
     }
 

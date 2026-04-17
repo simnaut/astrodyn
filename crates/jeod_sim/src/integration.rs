@@ -53,6 +53,7 @@ pub fn integrate_body(
     time_scale_factor: f64,
     integrator: IntegratorType,
     gj_state: Option<&mut jeod_dynamics::GaussJacksonState>,
+    abm4_state: Option<&mut jeod_dynamics::Abm4State>,
 ) {
     // JEOD_INV: DB.07 — translational_dynamics gates integration
     if !config.translational_dynamics {
@@ -116,6 +117,12 @@ pub fn integrate_body(
                          Set rotational_dynamics=false for GJ bodies."
                     );
                 }
+                IntegratorType::Abm4 => {
+                    panic!(
+                        "ABM4 6-DOF integration not yet supported. \
+                         Set rotational_dynamics=false for ABM4 bodies."
+                    );
+                }
             };
             *trans = new_state.trans;
             *rot = new_state.rot;
@@ -139,6 +146,13 @@ pub fn integrate_body(
         }
         IntegratorType::Rkf45 => {
             *trans = jeod_dynamics::rkf45_translational_step(trans, accel, integ_dyndt);
+        }
+        IntegratorType::Abm4 => {
+            let abm = abm4_state.expect(
+                "ABM4 integrator requires abm4_state. \
+                 Set SimBody::abm4_state or call Simulation::validate() first.",
+            );
+            *trans = jeod_dynamics::abm4_translational_step(trans, accel, integ_dyndt, abm);
         }
         IntegratorType::GaussJackson(cfg) => {
             let gj = gj_state.expect(
@@ -598,6 +612,7 @@ mod tests {
             dt,
             tsf,
             jeod_dynamics::IntegratorType::Rk4,
+            None,
             None,
         );
 
