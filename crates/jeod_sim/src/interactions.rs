@@ -240,9 +240,25 @@ impl IntegrableObject for FlatPlateState {
     }
 
     fn advance_intermediate(&mut self, deriv: &[f64], h: f64) {
+        // `zip()` truncates silently if any iterator is shorter — assert
+        // length parity across every backing vector so a mismatched
+        // snapshot or stale derivative fails fast rather than leaving the
+        // state partially updated.
+        let n = self.temperatures.len();
+        debug_assert_eq!(
+            self.t_pow4_cached.len(),
+            n,
+            "t_pow4_cached length must equal temperatures length",
+        );
+        debug_assert_eq!(
+            self.temps_snapshot.len(),
+            n,
+            "temps_snapshot length must equal temperatures length; \
+             call IntegrableObject::snapshot before advance_intermediate",
+        );
         debug_assert_eq!(
             deriv.len(),
-            self.temperatures.len(),
+            n,
             "advance_intermediate derivative length must equal temperature count",
         );
         for ((t, t_pow4), (&t0, &d)) in self

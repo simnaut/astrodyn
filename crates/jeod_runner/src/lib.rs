@@ -2116,8 +2116,9 @@ impl Simulation {
                                         srp_result.temp_dots
                                     } else {
                                         k1_temp_dots
-                                            .clone()
+                                            .as_ref()
                                             .expect("stage 1 runs before stages 2-4")
+                                            .clone()
                                     }
                                 }
                                 jeod_sim::ThermalIntegrationOrder::Scheduled => {

@@ -391,7 +391,7 @@ pub fn integration_system(
                 &mut state.0,
                 rot_state.as_mut().map(|r| &mut r.0),
                 mass_copy.as_ref(),
-                |stage_trans, stage_rot, stage_thermal, _time_frac| {
+                |stage_trans, stage_rot, stage_thermal, time_frac| {
                     let gravity_accel =
                         eval_gravity(entity, controls, stage_trans.position, stage_trans.velocity);
                     let t_inertial_body = stage_rot.map_or(glam::DMat3::IDENTITY, |r| {
@@ -414,13 +414,14 @@ pub fn integration_system(
                     let temp_dots = match thermal_order {
                         jeod_sim::ThermalIntegrationOrder::DerivativeRk4 => srp_result.temp_dots,
                         jeod_sim::ThermalIntegrationOrder::DerivativeFirstOrder => {
-                            if _time_frac == 0.0 {
+                            if time_frac == 0.0 {
                                 k1_temp_dots = Some(srp_result.temp_dots.clone());
                                 srp_result.temp_dots
                             } else {
                                 k1_temp_dots
-                                    .clone()
+                                    .as_ref()
                                     .expect("stage 1 runs before stages 2-4")
+                                    .clone()
                             }
                         }
                         jeod_sim::ThermalIntegrationOrder::Scheduled => {

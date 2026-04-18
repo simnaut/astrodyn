@@ -788,7 +788,10 @@ pub fn integrate_body_coupled(
     );
     let k1_accel = compute_total_accel(&eval1, mass);
     let k1_v = vel0;
-    let k1_tdots = eval1.temp_dots.clone();
+    // Move `temp_dots` out of `eval1`; we've already read everything we
+    // need from `eval1` via `compute_total_accel` above, and the Vec
+    // allocation is large enough to matter when the plate count is high.
+    let k1_tdots = eval1.temp_dots;
 
     // Stage 2: evaluate at t + dt/2 using k1
     let half_dt = integ_dyndt * 0.5;
@@ -805,7 +808,7 @@ pub fn integrate_body_coupled(
     );
     let k2_accel = compute_total_accel(&eval2, mass);
     let k2_v = s2_trans.velocity;
-    let k2_tdots = eval2.temp_dots.clone();
+    let k2_tdots = eval2.temp_dots;
 
     // Stage 3: evaluate at t + dt/2 using k2
     let s3_trans = TranslationalState {
@@ -821,7 +824,7 @@ pub fn integrate_body_coupled(
     );
     let k3_accel = compute_total_accel(&eval3, mass);
     let k3_v = s3_trans.velocity;
-    let k3_tdots = eval3.temp_dots.clone();
+    let k3_tdots = eval3.temp_dots;
 
     // Stage 4: evaluate at t + dt using k3
     let s4_trans = TranslationalState {
@@ -914,7 +917,9 @@ fn integrate_coupled_sixdof(
     );
     let (k1_accel, k1_qdot, k1_alpha) = eval_rot_derivs(&eval1, rot);
     let k1_v = vel0;
-    let k1_tdots = eval1.temp_dots.clone();
+    // Move temp_dots out of eval1 rather than cloning — `eval_rot_derivs`
+    // has already consumed everything we need from the borrow above.
+    let k1_tdots = eval1.temp_dots;
 
     // Stage 2
     let half_dt = integ_dyndt * 0.5;
@@ -932,7 +937,7 @@ fn integrate_coupled_sixdof(
     );
     let (k2_accel, k2_qdot, k2_alpha) = eval_rot_derivs(&eval2, &s2_rot);
     let k2_v = s2_trans.velocity;
-    let k2_tdots = eval2.temp_dots.clone();
+    let k2_tdots = eval2.temp_dots;
 
     // Stage 3
     let s3_trans = TranslationalState {
@@ -949,7 +954,7 @@ fn integrate_coupled_sixdof(
     );
     let (k3_accel, k3_qdot, k3_alpha) = eval_rot_derivs(&eval3, &s3_rot);
     let k3_v = s3_trans.velocity;
-    let k3_tdots = eval3.temp_dots.clone();
+    let k3_tdots = eval3.temp_dots;
 
     // Stage 4
     let s4_trans = TranslationalState {
