@@ -467,32 +467,6 @@ pub struct VehicleOutput {
 // Internal body state (private — not part of public API)
 // ══════════════════════════════════════════════════════════════════════════════
 
-/// Step-constant SRP inputs cached in Stage 5 for the coupled Rk4 thermal
-/// path, then consumed in Stage 8's per-stage closure.
-///
-/// The shadow `illum_factor` and solar `flux_inertial_hat` are evaluated
-/// once at step start — JEOD's scheduled-class shadow evaluation in
-/// SIM_3_ORBIT. Per-stage plate-frame rotation of the flux happens inside
-/// the stage closure.
-// JEOD_INV: IN.32 — IntegrableObject per-stage protocol consumes these
-// cached step-constant inputs alongside the stage-dependent plate state.
-#[derive(Debug, Clone, Copy)]
-struct SrpStageInputs {
-    /// Unit flux direction from Sun to vehicle in inertial frame (step start).
-    flux_inertial_hat: DVec3,
-    /// Solar flux magnitude at vehicle distance (W/m²).
-    flux_mag: f64,
-    /// Shadow illumination factor from step-start shadow evaluation.
-    illum_factor: f64,
-    /// Center of gravity in structural frame.
-    center_grav: DVec3,
-    /// Which derivative-class order is in effect. `DerivativeFirstOrder`
-    /// captures stage-1 temp_dots and reuses them at stages 2-4 so the
-    /// RK4 combine collapses to Euler; `DerivativeRk4` uses true per-stage
-    /// derivatives.
-    order: jeod_sim::ThermalIntegrationOrder,
-}
-
 /// Internal per-body simulation state. Combines user config with bookkeeping
 /// and output fields. Not exposed publicly — users interact through
 /// [`VehicleConfig`] (input) and [`VehicleOutput`] (output).
@@ -528,12 +502,6 @@ struct SimBody {
     aero_force: Option<AerodynamicForce>,
     radiation_force: Option<RadiationForce>,
     gravity_torque: Option<DVec3>,
-    /// Cached SRP inputs for the Rk4-coupled thermal path. Populated in
-    /// Stage 5 (interactions) and consumed by the stage closure in Stage 8
-    /// (integration) when `flat_plate_state.integration_order ==
-    /// ThermalIntegrationOrder::Rk4Coupled`. `None` when SRP is off, too
-    /// close to the Sun, or the 1st-order (Euler) thermal path is in use.
-    srp_stage_inputs: Option<SrpStageInputs>,
 
     // ── Derived state config ──
     orbital_elements_source: Option<usize>,
@@ -613,7 +581,6 @@ impl SimBody {
             aero_force: None,
             radiation_force: None,
             gravity_torque: None,
-            srp_stage_inputs: None,
 
             orbital_elements_source: config.derived.orbital_elements_source,
             euler_sequence: config.derived.euler_sequence,
@@ -1751,7 +1718,9 @@ impl Simulation {
 
             // Solar radiation pressure (flat-plate)
             body.radiation_force = None;
-            body.srp_stage_inputs = None;
+            if let Some(ref mut fps) = body.flat_plate_state {
+                fps.stage_inputs = None;
+            }
             if let Some(sun_position) = sun_pos {
                 if let Some(ref mut fps) = body.flat_plate_state {
                     // Flat-plate SRP with thermal emission
@@ -1814,14 +1783,13 @@ impl Simulation {
                             | jeod_sim::ThermalIntegrationOrder::DerivativeRk4 => {
                                 // Derivative-class: SRP force (and optionally T)
                                 // recomputed per RK4 stage. Stash the step-start
-                                // inputs here; Stage 8 consumes them via
-                                // `integrate_body_coupled` below.
-                                body.srp_stage_inputs = Some(SrpStageInputs {
+                                // inputs on the plate state; Stage 8 consumes
+                                // them via `integrate_body_coupled` below.
+                                fps.stage_inputs = Some(jeod_sim::FlatPlateStageInputs {
                                     flux_inertial_hat,
                                     flux_mag,
                                     illum_factor,
                                     center_grav,
-                                    order: fps.integration_order,
                                 });
                                 // `radiation_force` is left None here; Stage 8
                                 // writes a representative final-stage value so
@@ -2064,7 +2032,11 @@ impl Simulation {
             // fields of `body` are borrowed mutably for the integrator.
             let time_scale_factor = self.time.time_scale_factor;
             for (body_idx, body) in self.bodies.iter_mut().enumerate() {
-                if let Some(srp_inputs) = body.srp_stage_inputs {
+                let stage_inputs_and_order = body
+                    .flat_plate_state
+                    .as_ref()
+                    .and_then(|fps| fps.stage_inputs.map(|si| (si, fps.integration_order)));
+                if let Some((srp_inputs, thermal_order)) = stage_inputs_and_order {
                     // JEOD_INV: IN.32 — Rk4Coupled thermal: SRP force +
                     // temp_dots recomputed at each RK4 stage from the
                     // intermediate orbital + thermal state. Aero /
@@ -2127,7 +2099,7 @@ impl Simulation {
                             // final-state SRP — cached for writeback below.
                             final_srp_inertial_force = srp_force_inertial;
                             final_srp_torque = srp_result.torque;
-                            let temp_dots = match srp_inputs.order {
+                            let temp_dots = match thermal_order {
                                 jeod_sim::ThermalIntegrationOrder::DerivativeRk4 => {
                                     srp_result.temp_dots
                                 }
@@ -2216,9 +2188,12 @@ impl Simulation {
             // per-stage thermal hook yet; opt such bodies into FirstOrder
             // or disable contact pairs.
             assert!(
-                self.bodies.iter().all(|b| b.srp_stage_inputs.is_none()),
-                "Rk4Coupled thermal integration is not yet supported with contact pairs; \
-                 use ThermalIntegrationOrder::FirstOrder on flat-plate SRP bodies \
+                self.bodies.iter().all(|b| b
+                    .flat_plate_state
+                    .as_ref()
+                    .is_none_or(|fps| fps.stage_inputs.is_none())),
+                "Derivative-class thermal integration is not yet supported with contact pairs; \
+                 use ThermalIntegrationOrder::Scheduled on flat-plate SRP bodies \
                  when contact pairs are active",
             );
             // Contact pair states must share the root inertial frame, since

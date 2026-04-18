@@ -578,3 +578,115 @@ fn tier3_bevy_srp_basic_varied_cr() {
     println!("SRP basic varied Cr parity");
     run_srp_basic_parity("srp_basic_varied_cr", make_single_plate(0.8, 0.1, 0.0));
 }
+
+// ── Derivative-class thermal parity (issue #114) ──
+//
+// Exercises the coupled `integrate_body_coupled` dispatch through the Bevy
+// adapter's `integration_system` and the `Simulation` runner's Stage 8.
+// Uses a 6-DOF vehicle so the orbital RK4 stages produce varying attitudes
+// and the per-stage SRP force diverges from a step-constant value,
+// actually exercising the fork.
+
+fn run_srp_deriv_parity(
+    label: &str,
+    order: jeod_sim::ThermalIntegrationOrder,
+    srp_plates: Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)>,
+) {
+    let sun_pos = DVec3::new(1.496e11, 0.0, 0.0);
+
+    // ── Bevy ──
+    let mut app = new_bevy_app(DT);
+    let planet = spawn_earth_source(&mut app);
+    let _sun = app
+        .world_mut()
+        .spawn((
+            Name::new("Sun"),
+            SunMarker,
+            TranslationalStateC(TranslationalState {
+                position: sun_pos,
+                velocity: DVec3::ZERO,
+            }),
+        ))
+        .id();
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(iss_trans()),
+            RotationalStateC(tumble_rot()),
+            MassPropertiesC(iss_mass()),
+            DynamicsConfigC(DynamicsConfig {
+                translational_dynamics: true,
+                rotational_dynamics: true,
+                three_dof: false,
+            }),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+            FlatPlateConfigC(jeod_sim::FlatPlateState {
+                plates: srp_plates.clone(),
+                temperatures: vec![270.0; srp_plates.len()],
+                t_pow4_cached: vec![270.0_f64.powi(4); srp_plates.len()],
+                integration_order: order,
+                ..Default::default()
+            }),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+    let bevy_state = read_sixdof(app.world(), vehicle);
+
+    // ── Simulation ──
+    let (mut sim, earth_idx) = new_sim_earth(DT);
+    let sun_idx = sim.add_source(
+        "Sun",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            sun_pos,
+            None,
+        ),
+    );
+    sim.sun_source = Some(sun_idx);
+
+    let mut body = new_sim_body_sixdof(earth_idx, false);
+    body.srp = Some(SrpModel::FlatPlate(jeod_sim::FlatPlateState {
+        plates: srp_plates.clone(),
+        temperatures: vec![270.0; srp_plates.len()],
+        t_pow4_cached: vec![270.0_f64.powi(4); srp_plates.len()],
+        integration_order: order,
+        ..Default::default()
+    }));
+    sim.add_body(body);
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    let sim_body = sim.body(0);
+    let sim_state = SixDofState {
+        trans: sim_body.trans,
+        rot: sim_body.rot.unwrap(),
+    };
+    assert_sixdof_eq(&format!("Bevy vs Sim ({label})"), &bevy_state, &sim_state);
+}
+
+#[test]
+fn tier3_bevy_srp_derivative_first_order() {
+    println!("SRP derivative first-order parity");
+    run_srp_deriv_parity(
+        "srp_derivative_first_order",
+        jeod_sim::ThermalIntegrationOrder::DerivativeFirstOrder,
+        make_single_plate(0.3, 0.3, 0.5),
+    );
+}
+
+#[test]
+fn tier3_bevy_srp_derivative_rk4() {
+    println!("SRP derivative RK4 parity");
+    run_srp_deriv_parity(
+        "srp_derivative_rk4",
+        jeod_sim::ThermalIntegrationOrder::DerivativeRk4,
+        make_single_plate(0.3, 0.3, 0.5),
+    );
+}

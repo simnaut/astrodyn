@@ -7,6 +7,33 @@ use jeod_interactions::{
 
 use crate::integrable::IntegrableObject;
 
+/// Step-constant SRP inputs cached at step start for the derivative-class
+/// thermal paths.
+///
+/// Populated by Stage 5 (interactions) when
+/// [`ThermalIntegrationOrder::DerivativeFirstOrder`] or
+/// [`ThermalIntegrationOrder::DerivativeRk4`] is selected; consumed by
+/// Stage 8 (integration)'s per-stage closure inside
+/// [`crate::integrate_body_coupled`]. `None` for
+/// [`ThermalIntegrationOrder::Scheduled`] — the Stage 5 Euler fast path
+/// remains active.
+///
+/// Shared by the standalone `Simulation` runner and the Bevy adapter so
+/// both drive the coupled integrator with identical step-start data.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FlatPlateStageInputs {
+    /// Unit flux direction from Sun to vehicle in inertial frame (step start).
+    pub flux_inertial_hat: DVec3,
+    /// Solar flux magnitude at vehicle distance (W/m²).
+    pub flux_mag: f64,
+    /// Shadow illumination factor from step-start shadow evaluation
+    /// (constant across RK4 stages — matches JEOD scheduled-class
+    /// shadow in SIM_3_ORBIT).
+    pub illum_factor: f64,
+    /// Center of gravity in structural frame.
+    pub center_grav: DVec3,
+}
+
 /// Which integrator drives plate temperatures, and at what scheduling
 /// class.
 ///
@@ -80,10 +107,16 @@ pub struct FlatPlateState {
     /// Same length as `plates`.
     pub t_pow4_cached: Vec<f64>,
     /// Which integrator drives the temperature ODE. Defaults to
-    /// [`ThermalIntegrationOrder::Rk4Coupled`] (JEOD's standard
-    /// derivative-class pattern); switch to [`ThermalIntegrationOrder::FirstOrder`]
-    /// for parity with JEOD's scheduled-class `SIM_3_ORBIT_1st_ORDER`.
+    /// [`ThermalIntegrationOrder::Scheduled`] (JEOD's SIM_3_ORBIT pattern —
+    /// scheduled-class `rad_pressure.update` + Euler T); switch to a
+    /// derivative-class mode to run SRP per RK4 stage through
+    /// [`crate::integrate_body_coupled`].
     pub integration_order: ThermalIntegrationOrder,
+    /// Step-start SRP inputs populated by the Stage-5 interactions code
+    /// when `integration_order` is derivative-class. `None` in
+    /// `Scheduled` mode. Consumed by the Stage-8 integration closure;
+    /// cleared at the start of the next step's Stage 5.
+    pub stage_inputs: Option<FlatPlateStageInputs>,
     /// Step-start temperature snapshot, populated by
     /// [`IntegrableObject::snapshot`] and read by
     /// [`IntegrableObject::advance_intermediate`] /
