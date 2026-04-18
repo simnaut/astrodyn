@@ -427,10 +427,17 @@ pub fn integration_system(
                             unreachable!("Scheduled bodies do not enter the coupled path")
                         }
                     };
+                    // `srp_result.torque` is structural-frame per
+                    // `FlatPlateSrpResult` docs; `constant_torque` is
+                    // body-frame (from `collect_and_resolve_forces`).
+                    // Rotate to body frame before summing so the coupled
+                    // integrator's rotational dynamics are correct when
+                    // `t_struct_body` != IDENTITY.
+                    let srp_torque_body = t_struct_body * srp_result.torque;
                     jeod_sim::CoupledStageEval {
                         gravity_accel,
                         non_grav_force: non_grav_non_srp_force + srp_force_inertial,
-                        torque: constant_torque + srp_result.torque,
+                        torque: constant_torque + srp_torque_body,
                         temp_dots,
                     }
                 },

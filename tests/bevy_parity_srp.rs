@@ -6,7 +6,7 @@ use bevy::prelude::*;
 use bevy_jeod::{
     AtmosphereModelR, DragConfigC, DynamicsConfigC, FlatPlateConfigC, GravityControlsC,
     GravitySourceC, GravityTorqueC, MassPropertiesC, RotationalStateC, ShadowBodyC,
-    SourceInertialPositionC, SunMarker, TranslationalStateC,
+    SourceInertialPositionC, StructuralTransformC, SunMarker, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
 use jeod_runner::{GravitySourceEntry, ShadowBody as RunnerShadowBody, SrpModel, VehicleConfig};
@@ -688,5 +688,151 @@ fn tier3_bevy_srp_derivative_rk4() {
         "srp_derivative_rk4",
         jeod_sim::ThermalIntegrationOrder::DerivativeRk4,
         make_single_plate(0.3, 0.3, 0.5),
+    );
+}
+
+/// Derivative-class SRP with a **non-identity `t_struct_body`** and an
+/// **offset plate** that produces a non-zero structural-frame torque.
+///
+/// Regression test for a bug caught in review where the coupled RK4 stage
+/// closure added `srp_result.torque` (structural frame) directly to
+/// `constant_torque` (body frame) inside `CoupledStageEval`. When
+/// `t_struct_body` is identity the bug is latent; a non-identity rotation
+/// exposes it, and the Bevy + Simulation consumers would both drift from
+/// the physically-correct rotational state. Both sides now rotate the SRP
+/// torque into body frame via `t_struct_body * srp_result.torque` before
+/// summing, so this test verifies Bevy parity under the rotated frame AND
+/// that the rotational state evolves (non-identity final quaternion +
+/// non-zero angular velocity change consistent with the applied torque).
+#[test]
+fn tier3_bevy_srp_derivative_rk4_with_rotated_struct_frame() {
+    println!("SRP derivative RK4 parity with non-identity t_struct_body");
+
+    // 90° rotation about body-Z maps structural X→body Y, structural
+    // Y→body -X. Any structural-frame SRP torque with an X component
+    // becomes a body-frame torque along Y.
+    let t_struct_body = DMat3::from_cols(
+        DVec3::new(0.0, 1.0, 0.0),
+        DVec3::new(-1.0, 0.0, 0.0),
+        DVec3::new(0.0, 0.0, 1.0),
+    );
+
+    // Plate offset along structural +Y (15 m away from CoM) with the
+    // normal pointing along structural +X, so SRP pressure along -X
+    // produces a torque about structural +Z via r × F ≠ 0.
+    let offset_plate = vec![(
+        FlatPlate {
+            area: 10.0,
+            normal: DVec3::X,
+            position: DVec3::new(0.0, 15.0, 0.0),
+        },
+        FlatPlateParams {
+            albedo: 0.3,
+            diffuse: 0.3,
+        },
+        FlatPlateThermal {
+            emissivity: 0.5,
+            heat_capacity_per_area: 50.0,
+            thermal_power_dump: 0.0,
+        },
+    )];
+
+    let sun_pos = DVec3::new(1.496e11, 0.0, 0.0);
+    let order = jeod_sim::ThermalIntegrationOrder::DerivativeRk4;
+
+    // ── Bevy ──
+    let mut app = new_bevy_app(DT);
+    let planet = spawn_earth_source(&mut app);
+    let _sun = app
+        .world_mut()
+        .spawn((
+            Name::new("Sun"),
+            SunMarker,
+            TranslationalStateC(TranslationalState {
+                position: sun_pos,
+                velocity: DVec3::ZERO,
+            }),
+        ))
+        .id();
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC(iss_trans()),
+            RotationalStateC(tumble_rot()),
+            MassPropertiesC(iss_mass()),
+            DynamicsConfigC(DynamicsConfig {
+                translational_dynamics: true,
+                rotational_dynamics: true,
+                three_dof: false,
+            }),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+            StructuralTransformC(t_struct_body),
+            FlatPlateConfigC(jeod_sim::FlatPlateState {
+                plates: offset_plate.clone(),
+                temperatures: vec![270.0],
+                t_pow4_cached: vec![270.0_f64.powi(4)],
+                integration_order: order,
+                ..Default::default()
+            }),
+        ))
+        .id();
+
+    step_bevy(&mut app, NUM_STEPS);
+    let bevy_state = read_sixdof(app.world(), vehicle);
+
+    // ── Simulation ──
+    let (mut sim, earth_idx) = new_sim_earth(DT);
+    let sun_idx = sim.add_source(
+        "Sun",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            sun_pos,
+            None,
+        ),
+    );
+    sim.sun_source = Some(sun_idx);
+
+    let mut body = new_sim_body_sixdof(earth_idx, false);
+    body.t_struct_body = t_struct_body;
+    body.srp = Some(SrpModel::FlatPlate(jeod_sim::FlatPlateState {
+        plates: offset_plate,
+        temperatures: vec![270.0],
+        t_pow4_cached: vec![270.0_f64.powi(4)],
+        integration_order: order,
+        ..Default::default()
+    }));
+    sim.add_body(body);
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS);
+
+    let sim_body = sim.body(0);
+    let sim_state = SixDofState {
+        trans: sim_body.trans,
+        rot: sim_body.rot.unwrap(),
+    };
+
+    // Bevy must agree with the Simulation runner under the rotated frame.
+    // If either consumer had the structural/body frame mismatch we'd see
+    // the rotational state diverge between the two.
+    assert_sixdof_eq(
+        "Bevy vs Sim (DerivativeRk4, rotated t_struct_body)",
+        &bevy_state,
+        &sim_state,
+    );
+
+    // And the test must actually exercise torque — if the rotational
+    // state didn't change at all, the scenario isn't pressuring the
+    // frame-conversion code path.
+    let ang_vel_change = (sim_state.rot.ang_vel_body - tumble_rot().ang_vel_body).length();
+    assert!(
+        ang_vel_change > 1e-12,
+        "Offset plate produced no detectable angular velocity change ({ang_vel_change:.3e}); \
+         the torque-handling code path may not be exercised.",
     );
 }
