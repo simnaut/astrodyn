@@ -4,7 +4,9 @@
 
 Rust reimplementation of [NASA JEOD](https://github.com/nasa/jeod) (JSC Engineering
 Orbital Dynamics, v5.4, 714 C++ source files) using Bevy ECS instead of NASA's Trick.
-See [STRATEGY.md](STRATEGY.md) for architecture and [PLAN.md](PLAN.md) for tasking.
+See [STRATEGY.md](STRATEGY.md) for architecture and phase summaries. The
+original phased implementation plan (Phases 1–7) closed in April 2026; ongoing
+work is tracked as GitHub issues.
 
 ### Environment Setup
 
