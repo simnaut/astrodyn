@@ -125,7 +125,7 @@ fn pipeline_earth_lighting_smoke() {
         },
         derived: DerivedStateConfig {
             earth_lighting: Some(EarthLightingConfig {
-                earth_radius: 6_378_137.0,
+                earth_radius: jeod_sim::EARTH.shadow_radius,
                 moon_radius: 1_737_400.0,
                 sun_radius: 6.96e8,
             }),

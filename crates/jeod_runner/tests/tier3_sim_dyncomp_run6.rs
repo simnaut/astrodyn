@@ -136,8 +136,8 @@ fn tier3_simulation_run6b_drag() {
     // Configure atmosphere with planet rotation lookup
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Met(met_model),
-        r_eq: 6_378_137.0,
-        r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
+        r_eq: jeod_sim::EARTH.shape.r_eq,
+        r_pol: jeod_sim::EARTH.shape.r_pol,
         planet_omega: OMEGA_EARTH,
     });
     sim.atmosphere_planet_source = Some(earth);
@@ -348,8 +348,8 @@ fn tier3_simulation_run6a_const_density_drag() {
 
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Met(met_model),
-        r_eq: 6_378_137.0,
-        r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
+        r_eq: jeod_sim::EARTH.shape.r_eq,
+        r_pol: jeod_sim::EARTH.shape.r_pol,
         planet_omega: OMEGA_EARTH,
     });
     sim.atmosphere_planet_source = Some(earth);

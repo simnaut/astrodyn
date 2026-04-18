@@ -23,8 +23,8 @@ use jeod_sim::{
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
-const GEO_R_EQ: f64 = 6_378_137.0;
-const GEO_R_POL: f64 = GEO_R_EQ * (1.0 - 1.0 / 298.257_223_563);
+const GEO_R_EQ: f64 = jeod_sim::EARTH.shape.r_eq;
+const GEO_R_POL: f64 = jeod_sim::EARTH.shape.r_pol;
 
 /// Derived-state verif directory (shared Modified_data/ lives here, not in SIM_NED/).
 const DERIVED_STATE_VERIF: &str = "models/dynamics/derived_state/verif";

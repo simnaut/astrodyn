@@ -20,8 +20,10 @@ use jeod_sim::{
     MassProperties, RotationalState, SixDofState, TranslationalState,
 };
 
-pub const MU_EARTH: f64 = 3.986_004_415e14;
-pub const MU_SUN: f64 = 1.327_124_40e20;
+/// Earth gravitational parameter (m^3/s^2) — JEOD `earth_GGM05C.cc` via presets.
+pub const MU_EARTH: f64 = jeod_sim::EARTH.shape.mu;
+/// Sun gravitational parameter (m^3/s^2) — JEOD `sun_spherical.cc` via presets.
+pub const MU_SUN: f64 = jeod_sim::SUN.shape.mu;
 pub const DT: f64 = 10.0;
 pub const NUM_STEPS: usize = 100;
 

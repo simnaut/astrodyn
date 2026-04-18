@@ -745,13 +745,13 @@ fn tier3_bevy_earth_moon_clem() {
     let initial_sun_pos = sun_initial_pos();
     let initial_moon_pos = moon_initial_pos();
 
-    let r_perigee = 6_378_137.0 + 400_000.0;
+    let r_perigee = jeod_sim::EARTH.shape.r_eq + 400_000.0;
     let v_perigee = 10_500.0;
     let clem_trans = TranslationalState {
         position: DVec3::new(r_perigee, 0.0, 0.0),
         velocity: DVec3::new(0.0, v_perigee, 0.0),
     };
-    let mu_moon = 4.902_800_066e12;
+    let mu_moon = jeod_sim::MOON.shape.mu;
 
     let cx_area = 5.0;
     let albedo = 0.3;
