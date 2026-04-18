@@ -882,7 +882,7 @@ PID_SHADOW_CALC=$LAST_BG_PID
 
 # Group 12: SIM_VER_DRAG (aerodynamic drag verification)
 # Phase 4b-C — requires its own trick-CP build
-# Covers ballistic (const/CD/BC) and flat-plate (specular/diffuse/mixed/calc_coef/orbiter) runs.
+# Covers ballistic (const/CD/BC) and flat-plate (specular/diffuse/mixed/calc_coef/torque/orbiter) runs.
 run_drag_group() {
     local sim_dir="models/interactions/aerodynamics/verif/SIM_VER_DRAG"
     local -a RUNS=(
