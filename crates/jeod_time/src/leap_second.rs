@@ -102,10 +102,37 @@ impl LeapSecondTable {
         let last = self.entries.len() - 1;
         // Before the first entry: JEOD uses val_vec[0], so return index 0.
         // Boundary at i=0 in the "TAI frame" is `when_vec[0] + val_vec[0]/86400`
-        // (no prior entry, so we use val_vec[0] itself).
+        // (no prior entry, so we use val_vec[0] itself). Mirror JEOD's
+        // operational one-time WARN when TAI precedes the leap-second table.
         let first_tai_boundary = self.entries[0].0 + self.entries[0].1 / SECONDS_PER_DAY;
         if tai_tjt < first_tai_boundary {
+            static WARNED_BEFORE_TAI: AtomicBool = AtomicBool::new(false);
+            if !WARNED_BEFORE_TAI.swap(true, Ordering::Relaxed) {
+                warn!(
+                    "TAI time precedes first leap second table boundary; \
+                     using first value ({} s)",
+                    self.entries[0].1
+                );
+            }
             return 0;
+        }
+        // Mirror JEOD's one-time WARN when TAI follows the last boundary.
+        // The last regime extends forward indefinitely, so we only emit the
+        // warning; the actual index still comes from the search below.
+        let last_tai_boundary = if last == 0 {
+            self.entries[0].0 + self.entries[0].1 / SECONDS_PER_DAY
+        } else {
+            self.entries[last].0 + self.entries[last - 1].1 / SECONDS_PER_DAY
+        };
+        if tai_tjt >= last_tai_boundary {
+            static WARNED_AFTER_TAI: AtomicBool = AtomicBool::new(false);
+            if !WARNED_AFTER_TAI.swap(true, Ordering::Relaxed) {
+                warn!(
+                    "TAI time follows last leap second table boundary; \
+                     using last value ({} s)",
+                    self.entries[last].1
+                );
+            }
         }
         // Search from the top down for the largest i with
         //   tai_tjt >= when_vec[i] + val_vec[i-1]/86400.
