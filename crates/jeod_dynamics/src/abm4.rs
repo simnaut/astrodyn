@@ -154,7 +154,10 @@ impl Abm4State {
 ///
 /// # Panics
 ///
-/// Panics on non-finite `dt`.
+/// Panics unless `dt` is finite and strictly positive. ABM4 maintains a
+/// multi-step history that would be silently corrupted by a zero-sized step
+/// (the history would rotate without any actual time advance), so callers
+/// must never invoke this for a no-op step.
 pub fn abm4_translational_step(
     state: &TranslationalState,
     accel_fn: impl Fn(&TranslationalState, f64) -> DVec3,
@@ -162,8 +165,8 @@ pub fn abm4_translational_step(
     abm_state: &mut Abm4State,
 ) -> TranslationalState {
     assert!(
-        dt.is_finite(),
-        "abm4_translational_step requires a finite dt, got {dt}"
+        dt.is_finite() && dt > 0.0,
+        "abm4_translational_step requires a finite positive dt, got {dt}"
     );
 
     if abm_state.is_priming() {
