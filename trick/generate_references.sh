@@ -890,7 +890,8 @@ run_drag_group() {
         "SET_test/RUN_aero_drag_const:drag_const:drag_const_drag.csv"
         "SET_test/RUN_aero_drag_CD:drag_cd:drag_cd_drag.csv"
         "SET_test/RUN_aero_drag_BC:drag_bc:drag_bc_drag.csv"
-        # Flat-plate runs — exercise each coefficient method in FlatPlateAeroFacet
+        # Flat-plate runs — exercise each coefficient method in FlatPlateAeroFacet,
+        # plus a centered-vs-offset pair to exercise the torque path.
         "SET_test/RUN_one_plate_accel_spec_max_coef:drag_one_plate_spec:drag_one_plate_spec_drag.csv"
         "SET_test/RUN_one_plate_accel_diff_max_coef:drag_one_plate_diff:drag_one_plate_diff_drag.csv"
         "SET_test/RUN_one_plate_accel_mixed_eps05_max_coef:drag_one_plate_mixed:drag_one_plate_mixed_drag.csv"

@@ -18,15 +18,8 @@
 //! - `RUN_one_plate_accel_calc_coef_eps00` — `CalcCoef{ε=0.0}` (two plates at origin)
 //! - `RUN_one_plate_accel_calc_coef_eps05` — `CalcCoef{ε=0.5}` (two plates at origin)
 //! - `RUN_one_plate_accel_calc_coef_eps1`  — `CalcCoef{ε=1.0}` (two plates at origin)
+//! - `RUN_one_plate_torque`                — `CalcCoef{ε=0.0}` (two plates offset to `z=1 m`)
 //! - `RUN_orbiter`                         — `CalcCoef{ε=0.0}` (6-plate shuttle orbiter)
-//!
-//! Not covered (requires JEOD's `calculate_drag_coef=False` pre-set coefficient
-//! path, which our flat-plate port currently does not expose):
-//! - `RUN_one_plate_torque` — uses hardcoded `drag_coef_norm/tang/spec/diff=5.0`
-//!   instead of computing coefficients from speed ratio and incidence. Our
-//!   `compute_single_facet` always computes coefficients. The reference CSV
-//!   (`drag_one_plate_torque_drag.csv`) is still generated for a future port
-//!   of the pre-set-coefficients path.
 
 mod sim_test_helpers;
 use sim_test_helpers::{load_drag_csv, test_data_path};
@@ -217,9 +210,9 @@ fn tier3_sim_drag_ver_flatplate_specular() {
     };
     let (force_err, torque_err, accel_err) = run_flat_plate_case(&case);
 
-    // Tolerances at 5% above observed max error. A one-time Docker regen will
-    // populate the CSV; these start at bit-level-equivalence-of-JEOD bounds
-    // and can be tightened once reference data is available.
+    // Tolerances set 5% above the observed max error against the checked-in
+    // reference CSVs, near bit-level-equivalence-of-JEOD bounds. They can be
+    // tightened further if future regenerated reference data reduces the maxima.
     assert!(
         force_err < 1.0e-13,
         "force_err {force_err:.3e} N exceeds 1.0e-13 N"
@@ -401,5 +394,36 @@ fn tier3_sim_drag_ver_flatplate_orbiter() {
     assert!(
         accel_err < 1.0e-11,
         "accel_err {accel_err:.3e} m/s^2 exceeds 1.0e-11 m/s^2"
+    );
+}
+
+// ── CalcCoef ε=0.0 with z_pos=1.0 (offset plates producing torque) ──
+//
+// `RUN_one_plate_torque` uses the default `two_sided_plate(z_pos=1.0)` config
+// (Calc_coef, ε=0.0, `calculate_drag_coef=True`) — same coefficient method as
+// `calc_coef_eps00`, just with both facets offset to z=1 m so symmetry breaks
+// and aero_torque is non-zero.
+#[test]
+fn tier3_sim_drag_ver_flatplate_torque() {
+    let case = FlatPlateCase {
+        test_name: "tier3_sim_drag_ver_flatplate_torque",
+        csv_label: "drag_one_plate_torque_drag.csv",
+        facets: two_sided_plate_facets(AeroCoeffMethod::calc_coef(0.0), 1.0),
+        center_grav: DVec3::ZERO,
+        mass: JEOD_MASS_ONE_PLATE,
+    };
+    let (force_err, torque_err, accel_err) = run_flat_plate_case(&case);
+
+    assert!(
+        force_err < 2.2e-12,
+        "force_err {force_err:.3e} N exceeds 2.2e-12 N"
+    );
+    assert!(
+        torque_err < 6.5e-13,
+        "torque_err {torque_err:.3e} N*m exceeds 6.5e-13 N*m"
+    );
+    assert!(
+        accel_err < 2.2e-12,
+        "accel_err {accel_err:.3e} m/s^2 exceeds 2.2e-12 m/s^2"
     );
 }
