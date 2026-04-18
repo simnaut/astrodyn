@@ -106,10 +106,23 @@ pub struct FlatPlateState {
     /// Cached T^4 per plate from previous step (for thermal emission).
     /// Same length as `plates`.
     pub t_pow4_cached: Vec<f64>,
-    /// Which integrator drives the temperature ODE. Defaults to
-    /// [`ThermalIntegrationOrder::Scheduled`] (JEOD's SIM_3_ORBIT pattern —
-    /// scheduled-class `rad_pressure.update` + Euler T); switch to a
-    /// derivative-class mode to run SRP per RK4 stage through
+    /// Which integrator drives the temperature ODE.
+    ///
+    /// Defaults to [`ThermalIntegrationOrder::Scheduled`], which matches
+    /// JEOD's scheduled-class `SIM_3_ORBIT` behavior (SRP force + Euler T
+    /// computed once per step).
+    ///
+    /// Use [`ThermalIntegrationOrder::DerivativeFirstOrder`] to match
+    /// JEOD's derivative-class `SIM_3_ORBIT_1st_ORDER`: SRP force is
+    /// recomputed per RK4 stage (varying with intermediate orbital
+    /// attitude) while T is integrated via ER7_Utils first-order from
+    /// the stage-1 derivative.
+    ///
+    /// Use [`ThermalIntegrationOrder::DerivativeRk4`] for tighter
+    /// per-stage SRP and thermal coupling; no current JEOD Tier 3
+    /// reference uses that mode.
+    ///
+    /// Both derivative-class modes run through
     /// [`crate::integrate_body_coupled`].
     pub integration_order: ThermalIntegrationOrder,
     /// Step-start SRP inputs populated by the Stage-5 interactions code

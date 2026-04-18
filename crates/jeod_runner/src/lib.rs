@@ -2037,15 +2037,19 @@ impl Simulation {
                     .as_ref()
                     .and_then(|fps| fps.stage_inputs.map(|si| (si, fps.integration_order)));
                 if let Some((srp_inputs, thermal_order)) = stage_inputs_and_order {
-                    // JEOD_INV: IN.32 — Rk4Coupled thermal: SRP force +
-                    // temp_dots recomputed at each RK4 stage from the
-                    // intermediate orbital + thermal state. Aero /
-                    // external / gravity-gradient torque are step-constant
-                    // (scheduled-class) and captured once from total_force.
+                    // JEOD_INV: IN.32 — derivative-class thermal: SRP force
+                    // (and temp_dots for DerivativeRk4) recomputed at each
+                    // RK4 stage from the intermediate orbital + thermal
+                    // state. Aero / external / gravity-gradient torque are
+                    // step-constant (scheduled-class) and captured once
+                    // from total_force.
                     assert!(
                         matches!(body.integrator, jeod_dynamics::IntegratorType::Rk4),
-                        "Rk4Coupled thermal integration requires RK4 integrator \
-                         (body {body_idx}); use FirstOrder or switch integrator.",
+                        "ThermalIntegrationOrder::{thermal_order:?} requires \
+                         jeod_dynamics::IntegratorType::Rk4 for body {body_idx}; \
+                         switch the body integrator to Rk4, or choose \
+                         ThermalIntegrationOrder::Scheduled to avoid the coupled \
+                         RK4 thermal path.",
                     );
                     let t_struct_body = body.t_struct_body;
                     let non_grav_non_srp_force = body.total_force.force;
@@ -2182,11 +2186,12 @@ impl Simulation {
                     .all(|b| b.rot.is_some() && b.mass.is_some()),
                 "contact pairs require 6-DOF (rotational state + mass) on all bodies"
             );
-            // Rk4Coupled thermal is not extended to the contact-coupled
-            // kernel. JEOD's `DynamicsIntegrationGroup` handles this case
-            // natively, but our `integrate_bodies_contact_coupled` has no
-            // per-stage thermal hook yet; opt such bodies into FirstOrder
-            // or disable contact pairs.
+            // Derivative-class thermal (DerivativeFirstOrder /
+            // DerivativeRk4) is not extended to the contact-coupled kernel.
+            // JEOD's `DynamicsIntegrationGroup` handles this case natively,
+            // but our `integrate_bodies_contact_coupled` has no per-stage
+            // SRP/thermal hook yet; opt such bodies into
+            // `ThermalIntegrationOrder::Scheduled` or disable contact pairs.
             assert!(
                 self.bodies.iter().all(|b| b
                     .flat_plate_state
