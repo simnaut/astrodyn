@@ -85,7 +85,7 @@ Closed with documented rationale; no further action feasible. Bridging the
 gap requires a new JEOD verification sim that propagates a vehicle through
 lighting transitions and logs the state at each step. If one appears
 upstream (or we decide to author and submit one), a propagating Tier 3 test
-can be added following the pattern of `crates/jeod_gravity/tests/tier3_spherical_harmonics.rs`.
+can be added following the pattern of `crates/jeod_runner/tests/tier3_sim_shadow_2a.rs`.
 
 ## References
 
