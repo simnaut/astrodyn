@@ -103,9 +103,10 @@ impl ContactShape {
 ///
 /// Port of JEOD `SpringPairInteraction` (`spring_pair_interaction.hh`).
 /// JEOD uses a single friction coefficient `mu`; we expose separate
-/// `mu_static` / `mu_kinetic` with a smooth transition around
-/// `slip_velocity`. To reproduce JEOD's behaviour set
-/// `mu_static == mu_kinetic == mu` and `slip_velocity = 0.0`.
+/// `mu_static` / `mu_kinetic` selected by a hard threshold at
+/// `slip_velocity` (static below, kinetic at and above). To reproduce
+/// JEOD's behaviour set `mu_static == mu_kinetic == mu` and
+/// `slip_velocity = 0.0`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ContactMaterial {
     /// Spring stiffness `k` (N/m). JEOD `spring_k`.
@@ -143,11 +144,15 @@ impl ContactMaterial {
         }
     }
 
-    /// Blend static and kinetic friction coefficients around the slip transition.
+    /// Select static vs. kinetic friction as a hard step at `slip_velocity`.
     ///
-    /// Returns `mu_static` below the band (`|v_t| < slip_velocity`) and
-    /// `mu_kinetic` above. When the two coefficients are equal, returns that
-    /// common value independent of speed.
+    /// Returns `mu_static` for `tangential_speed < slip_velocity` and
+    /// `mu_kinetic` otherwise. Produces a force discontinuity at the
+    /// threshold — callers that need a continuous transition should set
+    /// `mu_static == mu_kinetic`. When the two coefficients are equal, or
+    /// when `slip_velocity <= 0.0`, returns `mu_kinetic` independent of
+    /// speed (matches JEOD `SpringPairInteraction` which uses a single
+    /// `mu`).
     fn mu_at_speed(&self, tangential_speed: f64) -> f64 {
         if self.mu_static == self.mu_kinetic {
             return self.mu_kinetic;
@@ -250,6 +255,16 @@ pub fn compute_contact_force(
     rel_pos_a_wrt_b: DVec3,
     rel_vel_a_wrt_b: DVec3,
 ) -> Option<ContactForce> {
+    // JEOD stores spring/damper/friction on the `SpringPairInteraction`
+    // (the pair object), not per-facet, so both facets in a given contact
+    // must carry identical material parameters. We assert this rather
+    // than silently averaging or preferring one side: mismatched
+    // materials signal a configuration bug, not a physics input.
+    debug_assert_eq!(
+        facet_a.material, facet_b.material,
+        "contact facet materials must match (JEOD pairs a single SpringPairInteraction to a facet pair)",
+    );
+
     // 1. Resolve contact geometry into world-frame endpoints/centers.
     //    `a_ref`/`b_ref` are the facet reference positions in world coords.
     //    For a Line facet, the endpoints are the shape's start/end offset
@@ -502,7 +517,13 @@ fn closest_points_segment_segment(p1: DVec3, p2: DVec3, p3: DVec3, p4: DVec3) ->
     }
 
     if denom.abs() < eps {
-        // Parallel (or near-parallel): use the closest pair of endpoints.
+        // Parallel (or near-parallel): faithful port of JEOD
+        // `contact_utils_inline.hh:184-229`, which selects the minimum of
+        // the four endpoint-to-endpoint pair distances. Not the full
+        // geometric segment-to-segment minimum — a short segment adjacent
+        // to the middle of a long parallel segment will report an
+        // overestimated separation — but this matches JEOD exactly and
+        // JEOD's verification sims don't exercise that degenerate case.
         let d13 = p13.length();
         let d14 = (p1 - p4).length();
         let d23 = (p2 - p3).length();

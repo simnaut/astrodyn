@@ -59,7 +59,7 @@ pub use gravity::{
 };
 pub use integration::{
     integrate_bodies_contact_coupled, integrate_body, integrate_body_coupled, CoupledBodyInput,
-    CoupledStageEval,
+    CoupledIntegScratch, CoupledStageEval,
 };
 pub use interactions::{
     compute_cannonball_srp, compute_drag, compute_gravity_torque, evaluate_contact_pair,

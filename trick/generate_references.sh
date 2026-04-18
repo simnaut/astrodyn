@@ -1802,6 +1802,13 @@ run_contact_group() {
     for entry in "${RUNS[@]}"; do
         IFS=: read -r run_dir label required <<< "$entry"
         run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$CONTACT_SNIPPET" "$required" || fail=1
+        # JEOD declares `contact_torque` as trick_units(N/m) in
+        # contact_surface.hh — a typo for the correct N*m. Patch the CSV
+        # header so our reference data has physically correct units.
+        local out_file="$OUTPUT_DIR/$required"
+        if [ -f "$out_file" ]; then
+            sed -i '1s/contact_torque\(\[[0-2]\]\) {N\/m}/contact_torque\1 {N*m}/g' "$out_file"
+        fi
     done
     return $fail
 }
@@ -1833,6 +1840,12 @@ run_ground_contact_group() {
     for entry in "${RUNS[@]}"; do
         IFS=: read -r run_dir label required <<< "$entry"
         run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$CONTACT_SNIPPET" "$required" || fail=1
+        # See note in run_contact_group: JEOD's contact_surface.hh mislabels
+        # contact_torque units as N/m; correct to N*m in the CSV header.
+        local out_file="$OUTPUT_DIR/$required"
+        if [ -f "$out_file" ]; then
+            sed -i '1s/contact_torque\(\[[0-2]\]\) {N\/m}/contact_torque\1 {N*m}/g' "$out_file"
+        fi
     done
     return $fail
 }

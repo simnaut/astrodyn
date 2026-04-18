@@ -693,6 +693,10 @@ pub struct Simulation {
     /// derivative-class job. Only RK4 + 6-DOF is supported; adding a pair
     /// while a body uses non-RK4 or 3-DOF is a validation error.
     contact_pairs: Vec<ContactPairConfig>,
+    /// Preallocated scratch buffers for the coupled RK4 integrator. Retained
+    /// across steps so the inner loop is allocation-free once the body count
+    /// stabilizes.
+    coupled_integ_scratch: jeod_sim::integration::CoupledIntegScratch,
 }
 
 impl Simulation {
@@ -721,6 +725,7 @@ impl Simulation {
             ephemeris: None,
             mass_tree: None,
             contact_pairs: Vec::new(),
+            coupled_integ_scratch: jeod_sim::integration::CoupledIntegScratch::new(),
         }
     }
 
@@ -1953,21 +1958,31 @@ impl Simulation {
             // Extract immutable inputs we'll need inside the per-stage closures.
             let contact_pairs = self.contact_pairs.clone();
 
-            // Build coupled inputs. Gather per-body constant forces/torques
-            // (already accumulated in `total_force` for this step) and the
-            // mass and state references. We split the struct into 4 parallel
-            // vectors to satisfy the borrow checker: `CoupledBodyInput` needs
-            // separate &mut for trans / rot from the same SimBody.
-            //
-            // We use raw pointers to work around the split-borrow limitation:
-            // each SimBody has distinct trans/rot/mass fields, and bodies are
-            // a slice so the pointers remain valid across the function call.
+            // Gather per-body immutable data (t_struct_body, mass, constant
+            // forces/torques) BEFORE the unsafe &mut block below. Creating
+            // any shared reference into `bodies_mut` while the unsafe &muts
+            // are live would violate Rust's aliasing rules even for disjoint
+            // fields, so snapshot everything we need up front.
             let n_bodies = bodies_mut.len();
+            let t_struct_body_vec: Vec<DMat3> =
+                bodies_mut.iter().map(|b| b.t_struct_body).collect();
+            let mass_vec: Vec<MassProperties> = bodies_mut
+                .iter()
+                .map(|b| b.mass.expect("validated"))
+                .collect();
+            let non_grav_non_contact_vec: Vec<DVec3> =
+                bodies_mut.iter().map(|b| b.total_force.force).collect();
+            let non_contact_torque_vec: Vec<DVec3> =
+                bodies_mut.iter().map(|b| b.total_force.torque).collect();
+
+            // Build coupled inputs. `CoupledBodyInput` needs separate &mut
+            // for trans / rot from the same SimBody; raw pointers produce
+            // the split borrow that the checker can't infer.
             let mut inputs: Vec<CoupledBodyInput<'_>> = Vec::with_capacity(n_bodies);
-            // Safety: we produce exactly one &mut to each field of each
-            // SimBody, and the borrow checker can't see through the indexing.
-            // The references do not alias because each comes from a distinct
-            // SimBody (different array index).
+            // Safety: we produce exactly one &mut per disjoint field (trans
+            // and rot) per distinct SimBody; no shared refs into bodies_mut
+            // exist while these &muts are live (all immutable data was
+            // extracted above). `mass_vec` is a local copy, not a borrow.
             unsafe {
                 let ptr = bodies_mut.as_mut_ptr();
                 for i in 0..n_bodies {
@@ -1977,46 +1992,33 @@ impl Simulation {
                         .rot
                         .as_mut()
                         .expect("validated: 6-DOF required for contact-coupled path");
-                    let mass_ref: &MassProperties = (*body)
-                        .mass
-                        .as_ref()
-                        .expect("validated: mass required for contact-coupled path");
-                    // Extract constant non-contact force/torque. `total_force`
-                    // already includes gravity's acceleration-equivalent force
-                    // via frame_derivs; but because the coupled kernel
-                    // recomputes gravity itself inside `gravity_fn`, we must
-                    // pass it only the NON-GRAVITY portion of the total force.
-                    // `body.total_force.force` = non-grav forces (aero + SRP +
-                    // external) + NOT gravity (gravity is added via accel).
-                    // Verify that by reading `collect_and_resolve_forces`:
-                    // it returns `total.force = aero + srp` (no gravity).
-                    let non_grav_non_contact = (*body).total_force.force;
-                    let non_contact_torque = (*body).total_force.torque;
+                    // `total_force.force` = non-grav forces (aero + SRP +
+                    // external); gravity is reapplied inside the per-stage
+                    // gravity_fn and must NOT be included here.
                     inputs.push(CoupledBodyInput {
                         trans: trans_ref,
                         rot: rot_ref,
-                        mass: mass_ref,
-                        non_grav_non_contact_force: non_grav_non_contact,
-                        non_contact_torque_body: non_contact_torque,
+                        mass: &mass_vec[i],
+                        non_grav_non_contact_force: non_grav_non_contact_vec[i],
+                        non_contact_torque_body: non_contact_torque_vec[i],
                     });
                 }
             }
 
-            // Cache body t_struct_body matrices for facet transforms.
-            let t_struct_body_vec: Vec<DMat3> =
-                bodies_mut.iter().map(|b| b.t_struct_body).collect();
-            let mass_vec: Vec<MassProperties> = bodies_mut
-                .iter()
-                .map(|b| b.mass.expect("validated"))
-                .collect();
-
             integrate_bodies_contact_coupled(
                 &mut inputs,
+                &mut self.coupled_integ_scratch,
                 eval_body_gravity,
-                |stage_trans: &[TranslationalState], stage_rot: &[RotationalState]| {
+                |stage_trans: &[TranslationalState],
+                 stage_rot: &[RotationalState],
+                 out: &mut [(DVec3, DVec3)]| {
                     // Evaluate every registered contact pair at the stage states
-                    // and accumulate force/torque on each body.
-                    let mut out = vec![(DVec3::ZERO, DVec3::ZERO); n_bodies];
+                    // and accumulate force/torque on each body. `out` is
+                    // caller-owned scratch sized to n_bodies; zero it here
+                    // rather than allocating a fresh Vec.
+                    for slot in out.iter_mut() {
+                        *slot = (DVec3::ZERO, DVec3::ZERO);
+                    }
                     for pair in &contact_pairs {
                         if let Some(eval) = evaluate_contact_pair(
                             &pair.facet_a,
@@ -2036,7 +2038,6 @@ impl Simulation {
                             out[pair.body_b].1 += eval.torque_b_body;
                         }
                     }
-                    out
                 },
                 integ_dt,
             );
