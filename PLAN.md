@@ -897,7 +897,7 @@ of the existing implementation.
 - [x] **Earth lighting gap**: #49 closed with documented rationale (no propagating JEOD sim available). — `docs/earth_lighting_validation.md`.
 - [x] **Numerical catalog**: #6 closed with comprehensive catalog of irreducible differences. — `docs/numerical_differences.md` (5 catalogued differences).
 - [x] **STRATEGY.md current**: Section 8 reflects all phases through Phase 7.
-- [x] `cargo test --workspace` — all tests pass, no regressions — 822 tests.
+- [x] `cargo test --workspace` — all tests pass, no regressions — 846 tests at closure (Phase 6 + #87 contact dynamics port increased the total from Phase 6's 560).
 
 ---
 

@@ -1392,14 +1392,17 @@ parameter spaces, edge cases, and specialized scenarios.
 **Crates:** All — new reference data (Docker) and Tier 3 tests added.
 
 **Deliver:**
-- 10 new reference-data sims generated via the Docker pipeline: SIM_Relative,
+- 9 new reference-data sims generated via the Docker pipeline: SIM_Relative,
   SIM_Planetary, SIM_LIGHT_CIR, SIM_5_all_inclusive, SIM_MET,
-  SIM_7_time_reversal, SIM_orb_elem, SIM_mercury, SIM_LvlhRelative
+  SIM_7_time_reversal, SIM_orb_elem, SIM_mercury, SIM_LvlhRelative (derived-
+  state edge-case data was reused from Phase 4b)
 - Full `tier3_simulation_*` and `tier3_bevy_*` coverage for each category
   (69/69 simulation/Bevy pairs, 100%)
 - Feature-parity audit: 15/17 `jeod_sim` public functions have a Bevy system
-  counterpart; the 2 exceptions (`compute_relative_state`,
-  `integrate_body_coupled`) are by-design and documented
+  counterpart; the 2 by-design exceptions are
+  `compute_relative_state`/`compute_lvlh_relative_state` (on-demand utilities,
+  not per-entity systems — covered in parity tests) and `integrate_body_coupled`
+  (future-only coupled SRP thermal path)
 
 **Verify with (Tier 3):**
 - Earth-Moon multi-body: 0.93 m over 7 days (< 1 m target)
@@ -1440,8 +1443,8 @@ function port that surfaced during the audit.
   orchestrator they exercise
 
 **Verify with:**
-- `cargo nextest run --workspace`: 822 tests pass (plus slow `earth_moon` run
-  on main-push CI)
+- `cargo nextest run --workspace`: all tests pass (including the slow
+  `earth_moon` run on main-push CI)
 - `cargo clippy --workspace --tests -- -D warnings`: clean
 - Phase 7 exit-gate issues closed: #6, #49, #50, #60 (#13 already closed);
   DynManager multi-integrable-object work split into #114 as follow-up
