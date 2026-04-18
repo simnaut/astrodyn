@@ -320,9 +320,9 @@ pub struct ThermalPowerBalance {
 /// | Term          | Formula |
 /// |---------------|---------|
 /// | `Q_solar`     | `absorptivity_solar · solar_flux · max(0, -n·s) · area` |
-/// | `Q_albedo`    | `(1 − albedo) · earth_albedo_flux · max(0, -n·e) · area` |
+/// | `Q_albedo`    | `absorptivity_solar · earth_albedo_flux · max(0, -n·e) · area` |
 /// | `Q_ir`        | `emissivity_ir · earth_ir_flux · max(0, -n·e) · area` |
-/// | `Q_viewfactor`| `sum_j A_i·ε_i·σ·F_{ij}·(α_ij·T_j⁴ − T_i⁴)` |
+/// | `Q_viewfactor`| `sum_j A_i·ε_i·ε_j·σ·F_{ij}·(T_j⁴ − T_i⁴)` |
 /// | `Q_emitted`   | `ε_i · σ · T_i⁴ · area` |
 ///
 /// `s = env.sun_direction`, `e = env.earth_direction` (both unit vectors in
@@ -330,13 +330,23 @@ pub struct ThermalPowerBalance {
 /// The `max(0, -n·s)` term is the cosine of the angle between the facet's
 /// outward normal and the incoming flux, clamped at grazing.
 ///
-/// `α_ij` in the view-factor term is `facets[j].emissivity_ir`, i.e. the
-/// absorbing facet's IR absorptivity equals its emissivity by Kirchhoff's
-/// law. See JEOD `thermal_facet_rider.cc:97` and the standard radiative
-/// network formulation (Holman, *Heat Transfer*, 10th ed., §8-7).
+/// Earth albedo is Sun-reflected broadband solar radiation, so it is
+/// absorbed at the solar-band absorptivity (same coefficient as direct
+/// solar). The separate [`ThermalFacet::albedo`] field is retained for
+/// radiation-pressure reflectance modelling.
+///
+/// The view-factor coefficient `ε_j` is the absorbing facet's IR
+/// absorptivity, which equals its emissivity by Kirchhoff's law. See
+/// JEOD `thermal_facet_rider.cc:97` and the standard radiative network
+/// formulation (Holman, *Heat Transfer*, 10th ed., §8-7).
 ///
 /// # Panics
-/// Panics if any slice length differs from `facets.len()`.
+/// Panics if any slice length differs from `facets.len()`, or if
+/// [`ViewFactorMatrix`] is not square (`view_factors.rows()[i].len() !=
+/// view_factors.dim()` for any `i`). Callers are additionally expected to
+/// have passed the matrix through [`ViewFactorMatrix::validate`] for
+/// physical constraints (reciprocity, row-sum ≤ 1); this function does
+/// not re-check those to avoid O(N²) work on every step.
 pub fn compute_thermal_power_balance(
     facets: &[ThermalFacet],
     view_factors: &ViewFactorMatrix,
@@ -354,6 +364,14 @@ pub fn compute_thermal_power_balance(
         n,
         "view-factor matrix must be n-by-n where n = facets.len()"
     );
+    for (i, row) in view_factors.rows().iter().enumerate() {
+        assert_eq!(
+            row.len(),
+            n,
+            "view-factor matrix row {i} has length {} but matrix dim is {n}",
+            row.len()
+        );
+    }
 
     let mut temp_dots = vec![0.0_f64; n];
     let mut q_solar = vec![0.0_f64; n];
@@ -375,8 +393,10 @@ pub fn compute_thermal_power_balance(
         q_solar[i] = facet.absorptivity_solar * env.solar_flux * cos_sun * facet.area;
 
         // ── Earth albedo (reflected solar) ──
+        // Reflected solar is a solar-band flux, so it is absorbed at the
+        // same solar-band absorptivity as direct sunlight.
         let cos_earth = (-n_i.dot(env.earth_direction)).max(0.0);
-        q_albedo[i] = (1.0 - facet.albedo) * env.earth_albedo_flux * cos_earth * facet.area;
+        q_albedo[i] = facet.absorptivity_solar * env.earth_albedo_flux * cos_earth * facet.area;
 
         // ── Earth thermal IR ──
         // Earth IR is broadband thermal radiation, absorbed at the IR
@@ -572,12 +592,17 @@ mod tests {
             earth_albedo_flux: 300.0,
             earth_ir_flux: 0.0,
             sun_direction: DVec3::X,
-            earth_direction: -DVec3::Z, // Earth "below" (-Z): flux travels from -Z toward +Z
+            // earth_direction points *from Earth toward vehicle*, so e = -Z
+            // places the vehicle at -Z relative to Earth (Earth at +Z above
+            // the vehicle); the flux travels along -Z, from the source down
+            // to the vehicle.
+            earth_direction: -DVec3::Z,
         };
-        // Facet normal +Z: points away from Earth → -n·e = -n·(-Z) = n·Z = +1,
-        // so the facet *faces* Earth. Reverse it: normal −Z points into Earth,
-        // shadowed from Earth-reflected sunlight.
-        let night_normal = [-DVec3::Z]; // normal matches the flux direction
+        // A facet whose outward normal is along -Z points *away* from Earth
+        // (into deep space below). Its back is turned to the reflected
+        // solar flux, so it receives no albedo: -n·e = -(-Z)·(-Z) = -1,
+        // clamped to 0 by max(0, ·).
+        let night_normal = [-DVec3::Z];
         let balance = compute_thermal_power_balance(&[facet], &vf, &env, &night_normal);
         assert_eq!(
             balance.q_albedo[0], 0.0,
@@ -603,9 +628,10 @@ mod tests {
             earth_albedo_flux: 0.0,
             earth_ir_flux: 240.0,
             sun_direction: DVec3::X,
-            earth_direction: -DVec3::Z, // Earth below
+            // e = -Z: Earth at +Z (above), flux travels along -Z toward vehicle.
+            earth_direction: -DVec3::Z,
         };
-        // Normal pointing straight at Earth.
+        // Normal along +Z points straight at Earth: -n·e = -(+Z)·(-Z) = 1.
         let straight_down = [DVec3::Z];
         let b1 = compute_thermal_power_balance(&[facet], &vf, &env, &straight_down);
         // Normal at 60° off-nadir: dot product cos(60) = 0.5
