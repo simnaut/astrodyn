@@ -1,8 +1,8 @@
 use glam::{DMat3, DVec3};
 use jeod_dynamics::{MassProperties, RotationalState, TranslationalState};
 use jeod_interactions::{
-    compute_contact_force, compute_contact_geometry, AerodynamicForce, ContactFacet, DragConfig,
-    FlatPlate, FlatPlateParams, FlatPlateThermal,
+    compute_contact_force_from_geometry, compute_contact_geometry, AerodynamicForce, ContactFacet,
+    DragConfig, FlatPlate, FlatPlateParams, FlatPlateThermal,
 };
 
 /// Flat-plate SRP configuration with mutable thermal state.
@@ -292,7 +292,10 @@ pub fn evaluate_contact_pair(
     let rel_vel =
         (trans_a.velocity - trans_b.velocity) + omega_rel_inertial.cross(contact_arm_a_inertial);
 
-    let contact = compute_contact_force(&facet_a_world, &facet_b_world, rel_pos, rel_vel)?;
+    // Reuse the geometry from above — avoid repeating closest-point math
+    // inside the RK4 inner loop.
+    let contact =
+        compute_contact_force_from_geometry(&facet_a_world, &facet_b_world, &geom, rel_vel);
 
     // Force on A: inertial frame.
     let force_on_a = contact.force;

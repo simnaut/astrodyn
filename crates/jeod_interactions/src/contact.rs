@@ -322,6 +322,35 @@ pub fn compute_contact_force(
     rel_pos_a_wrt_b: DVec3,
     rel_vel_a_wrt_b: DVec3,
 ) -> Option<ContactForce> {
+    let geom = compute_contact_geometry(facet_a, facet_b, rel_pos_a_wrt_b)?;
+    Some(compute_contact_force_from_geometry(
+        facet_a,
+        facet_b,
+        &geom,
+        rel_vel_a_wrt_b,
+    ))
+}
+
+/// Apply the spring + damping + friction force law from a precomputed
+/// [`ContactGeometry`].
+///
+/// Use this overload when you've already called
+/// [`compute_contact_geometry`] (e.g., to build JEOD's
+/// `ω × subject_contact_point` rel-velocity term) and want to avoid the
+/// duplicate closest-point / penetration-depth pass that
+/// [`compute_contact_force`] would do internally. The geometry must
+/// correspond to the same `facet_a` / `facet_b` / `rel_pos` that produced
+/// it, and it must represent an in-contact state (`Some(..)` from
+/// `compute_contact_geometry`).
+///
+/// # Panics
+/// Same material-equality precondition as [`compute_contact_force`].
+pub fn compute_contact_force_from_geometry(
+    facet_a: &ContactFacet,
+    facet_b: &ContactFacet,
+    geom: &ContactGeometry,
+    rel_vel_a_wrt_b: DVec3,
+) -> ContactForce {
     // JEOD stores spring/damper/friction on the `SpringPairInteraction`
     // (the pair object), not per-facet, so both facets in a given contact
     // must carry identical material parameters. Enforce in all builds —
@@ -332,12 +361,7 @@ pub fn compute_contact_force(
         "contact facet materials must match (JEOD pairs a single SpringPairInteraction to a facet pair)",
     );
 
-    // Steps 1–4 live in `compute_contact_geometry` so callers that need
-    // the contact-point arm (to build `rel_vel`) can share the same
-    // closest-point math without duplicating it. Returns `None` if not
-    // interpenetrating.
-    let geom = compute_contact_geometry(facet_a, facet_b, rel_pos_a_wrt_b)?;
-    let ContactGeometry {
+    let &ContactGeometry {
         contact_point_on_a,
         contact_point_on_b,
         normal,
@@ -407,13 +431,13 @@ pub fn compute_contact_force(
         total -= tangent_hat * friction_mag;
     }
 
-    Some(ContactForce {
+    ContactForce {
         force: total,
         contact_point_on_a,
         contact_point_on_b,
         penetration_depth,
         normal,
-    })
+    }
 }
 
 // ─── Internal helpers ────────────────────────────────────────────────

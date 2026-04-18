@@ -95,12 +95,13 @@ pub use jeod_atmosphere::AtmosphereState;
 
 // jeod_interactions: config, result types, and computation functions
 pub use jeod_interactions::{
-    compute_contact_force, compute_contact_geometry, compute_earth_lighting,
-    compute_flat_plate_srp_thermal, compute_flat_plate_srp_thermal_conduction,
-    compute_shadow_fraction, solar_flux_at_distance, AerodynamicForce, ContactFacet, ContactForce,
-    ContactGeometry, ContactMaterial, ContactShape, DragConfig, EarthLightingState, FlatPlate,
-    FlatPlateParams, FlatPlateSrpResult, FlatPlateThermal, LightingBody, LightingParams,
-    RadiationForce, ThermalConductionMatrix, SOLAR_RADIUS, SPEED_OF_LIGHT,
+    compute_contact_force, compute_contact_force_from_geometry, compute_contact_geometry,
+    compute_earth_lighting, compute_flat_plate_srp_thermal,
+    compute_flat_plate_srp_thermal_conduction, compute_shadow_fraction, solar_flux_at_distance,
+    AerodynamicForce, ContactFacet, ContactForce, ContactGeometry, ContactMaterial, ContactShape,
+    DragConfig, EarthLightingState, FlatPlate, FlatPlateParams, FlatPlateSrpResult,
+    FlatPlateThermal, LightingBody, LightingParams, RadiationForce, ThermalConductionMatrix,
+    SOLAR_RADIUS, SPEED_OF_LIGHT,
 };
 
 // jeod_frames: reference frame state
