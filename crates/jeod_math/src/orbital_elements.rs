@@ -73,15 +73,17 @@ impl OrbitalElements {
         pos: DVec3,
         vel: DVec3,
     ) -> Result<OrbitalElements, OrbitalError> {
-        // JEOD_INV: OE.01 — mu must be positive
-        if mu <= 0.0 {
+        // JEOD_INV: OE.01 — mu must be finite and positive; NaN/±Inf would
+        // propagate through the element computations and produce silent NaNs.
+        if !mu.is_finite() || mu <= 0.0 {
             return Err(OrbitalError::InvalidMu(mu));
         }
 
         let r_mag = pos.length();
         let vel_mag = vel.length();
 
-        // JEOD_INV: OE.07 — position must be non-zero for orbit to be defined
+        // JEOD_INV: OE.07 — both position and velocity must be non-zero for the
+        // orbit to be defined; either being zero degenerates `h = r × v`.
         if r_mag < 1e-30 || vel_mag < 1e-30 {
             return Err(OrbitalError::DegenerateOrbit);
         }

@@ -347,8 +347,8 @@ Source: `../jeod/models/utils/orbital_elements/src/orbital_elements.cc`. Our por
 | OE.03 | `sin²ν + cos²ν ≈ 1` to tolerance 1e-6 in `to_cartesian` (`orbital_elements.cc:414-424`) | fatal | runtime | enforced (`orbital_elements.rs:301-304`) |
 | OE.04 | Eccentricity regime classification: `e < TOLERANCE` ⇒ circular branch; `|e−1| < parabolic-eps` ⇒ parabolic; otherwise elliptic or hyperbolic. Tolerances enforce a branch selection rather than fail (`orbital_elements.cc:560-597`) | structural | consistency | enforced (`orbital_elements.rs:141-142` and surrounding branch selection) |
 | OE.05 | Inclination regime classification: `i < TOLERANCE` or `i > π − TOLERANCE` ⇒ equatorial branch (`orbital_elements.cc:218`) | structural | consistency | enforced (`orbital_elements.rs:139-141`) |
-| OE.06 | Kepler-equation convergence (mean → eccentric anomaly) is required; non-convergence must fail rather than silently return (`orbital_elements.cc:650-660`) | fatal | runtime | enforced (Newton-Raphson in `orbital_elements.rs`; returns `OrbitalError::KeplerDidNotConverge` after 1000 iterations at 1e-14 tolerance) |
-| OE.07 | Initial position must be non-zero for `from_cartesian` (zero position makes the orbit undefined) | fatal | initialization | enforced (verified at test line 985: `OrbitalElements::from_cartesian(MU_EARTH, zero, vel).is_err()`) |
+| OE.06 | Kepler-equation convergence (mean → eccentric anomaly) is required; non-convergence must fail rather than silently return (`orbital_elements.cc:650-660`) | fatal | runtime | enforced (Newton-Raphson in `orbital_elements.rs`; returns `OrbitalError::KeplerConvergence` after 1000 iterations at 1e-14 tolerance) |
+| OE.07 | Initial position and velocity must both be non-zero for `from_cartesian` (either being zero makes `h = r × v` degenerate) | fatal | initialization | enforced (guard rejects either magnitude below 1e-30; verified at `orbital_elements.rs:83-87` and test `invalid_mu`) |
 
 ## Section PF: Planet-Fixed
 
@@ -395,7 +395,7 @@ Our port expresses body initialization as ECS components/events processed during
 |-----|-----------|-------------|----------|------------|
 | BA.01 | Subject body must be a DynBody, not a bare MassBody (`dyn_body_init.cc:70-81`) | fatal | initialization | structural (our body-init components only target entities with DynBody-equivalent components) |
 | BA.02 | Subject body must be registered with the dynamics manager before an action fires (`dyn_body_init.cc:85-94`) | fatal | initialization | structural (entities exist in the ECS world; registration is existence) |
-| BA.03 | Body-attachment actions require a non-null parent reference (`body_attach.cc:58-71`) | fatal | initialization | enforced (mass-tree attachment API returns `Result`; parent entity must be provided) |
+| BA.03 | Body-attachment actions require a non-null parent reference (`body_attach.cc:58-71`) | fatal | initialization | enforced (`MassTree::attach` takes a non-null `MassBodyId` by type; bad ids and self-attachment panic via asserts in `crates/jeod_dynamics/src/mass_body.rs`) |
 | BA.04 | Body cannot attach to itself, and attachments must not form a cycle in the mass tree (`mass_attach.cc:166-177`) | error | initialization | enforced (covered by MA.08 — cycle detection in `mass_body.rs`) |
 | BA.05 | Orbital initializer requires a valid planet with a registered gravity source (`dyn_body_init_orbit.cc:98-111`) | fatal | initialization | enforced (`body_init.rs` `InitialOrbit` requires `mu` and a reference body; startup system panics if missing) |
 | BA.06 | Orbit initialization frame must be an ephemeris-type frame (inertial, planet-centered) (`dyn_body_init_orbit.cc:135-145`) | fatal | initialization | structural (our API takes the integration frame directly; non-ephemeris frames cannot be constructed) |
