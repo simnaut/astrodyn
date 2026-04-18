@@ -101,8 +101,9 @@ fn build_three_vehicles() -> (MassTree, usize, usize, usize) {
 /// error should be < 1e-12 kg.
 const MASS_TOL: f64 = 1e-12;
 
-/// Compare our computed composite masses to the JEOD row and assert.
-fn assert_masses(row: &MassRow, v1: f64, v2: f64, v3: f64) {
+/// Compare our computed composite masses to the JEOD row, assert, and return
+/// the per-row max absolute delta across the three vehicles.
+fn assert_masses(row: &MassRow, v1: f64, v2: f64, v3: f64) -> f64 {
     let d1 = (row.veh1 - v1).abs();
     let d2 = (row.veh2 - v2).abs();
     let d3 = (row.veh3 - v3).abs();
@@ -124,6 +125,7 @@ fn assert_masses(row: &MassRow, v1: f64, v2: f64, v3: f64) {
         row.time,
         row.veh3
     );
+    d1.max(d2).max(d3)
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -143,7 +145,7 @@ fn tier3_sim_attach_detach_simple() {
 
     // Sanity: initial state at t=0 must match baseline masses.
     let t0 = &rows[0];
-    assert_masses(t0, 1.0, 2.0, 3.0);
+    let mut max_err = assert_masses(t0, 1.0, 2.0, 3.0);
 
     // Build tree and step through the recorded timeline, applying
     // attach/detach at their scheduled times.
@@ -186,7 +188,7 @@ fn tier3_sim_attach_detach_simple() {
         // JEOD's `update_mass_properties` runs at the dynamics rate
         // (DYNAMICS=0.01s), so by the log-cycle boundary the event's
         // effect is always visible. We compare directly.
-        assert_masses(row, m1, m2, m3);
+        max_err = max_err.max(assert_masses(row, m1, m2, m3));
     }
 
     let mut report = jeod_test_data::crossval::CrossvalReport::compute(
@@ -194,7 +196,7 @@ fn tier3_sim_attach_detach_simple() {
         &[],
         &[],
     );
-    report.add_extra("composite_mass_max_err", 0.0, "kg");
+    report.add_extra("composite_mass_max_err", max_err, "kg");
     report.write();
 }
 
