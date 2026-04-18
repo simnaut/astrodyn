@@ -1383,6 +1383,72 @@ pub fn euler_test_cases(jeod_root: &str) -> Vec<EulerTestCase>;
 - Tier 3 solid tides: ON vs OFF position delta matches JEOD delta to < 10%
 - Tier 4 automated regression suite with error budget tracking
 
+### Phase 6: Comprehensive JEOD Parity Validation
+
+**Goal:** Full-breadth cross-validation against every major JEOD verification
+sim category. No new physics — validates Phase 5 capabilities across broader
+parameter spaces, edge cases, and specialized scenarios.
+
+**Crates:** All — new reference data (Docker) and Tier 3 tests added.
+
+**Deliver:**
+- 9 new reference-data sims generated via the Docker pipeline: SIM_Relative,
+  SIM_Planetary, SIM_LIGHT_CIR, SIM_5_all_inclusive, SIM_MET,
+  SIM_7_time_reversal, SIM_orb_elem, SIM_mercury, SIM_LvlhRelative (derived-
+  state edge-case data was reused from Phase 4b)
+- Full `tier3_simulation_*` and `tier3_bevy_*` coverage for each category
+  (69/69 simulation/Bevy pairs, 100%)
+- Feature-parity audit: 15/17 `jeod_sim` public functions have a Bevy system
+  counterpart; the 2 by-design exceptions are
+  `compute_relative_state`/`compute_lvlh_relative_state` (on-demand utilities,
+  not per-entity systems — covered in parity tests) and `integrate_body_coupled`
+  (future-only coupled SRP thermal path)
+
+**Verify with (Tier 3):**
+- Earth-Moon multi-body: 0.93 m over 7 days (< 1 m target)
+- Mars orbit: 3.8 m over 3 hours (< 100 m target)
+- Relative dynamics: 8.0e-14 m over 100 s (< 1e-6 m target)
+- Planetary derived states (LEO/GEO/polar): 1.0 m over 24 h
+- Earth lighting: 1e-10 shadow geometry match across 10 geometries
+- Time scales: TAI/TT/TDB < 2e-6 s, GMST < 1e-4 s over 2 h
+- MET atmosphere: machine precision after TJT epoch fix
+- Comprehensive orbital elements: 7 orbit families to < 1e-6 per element
+- Mercury GR perihelion: 42.97 arcsec/century (~0.02% vs JEOD's ~43)
+- LVLH-relative: 2.1e-14 m (< 1e-6 m target)
+
+### Phase 7: Polish, Examples, and Hardening
+
+**Goal:** Close remaining open issues, harden the test suite, and document
+irreducible numerical differences vs JEOD. No new physics beyond one small
+function port that surfaced during the audit.
+
+**Crates:** Docs (`docs/`), tests (`crates/*/tests/`, `tests/`), and a new
+`jeod_dynamics::init_from_time_periapsis` function matching JEOD's
+`dyn_body_init_orbit.cc:295`.
+
+**Deliver:**
+- `docs/numerical_differences.md`: five catalogued irreducible differences
+  (GCC vs LLVM FP, DE421 Anise vs cspice, SRP thermal residual, host libm on
+  drag velocity schedule, geodetic longitude at poles)
+- `docs/earth_lighting_validation.md`: Tier 3 gap rationale and enumeration of
+  the 11 `tier3_bevy_earth_lighting_*` static-geometry tests (no propagating
+  JEOD sim ships in JEOD 5.4, so full trajectory cross-validation is not
+  possible upstream)
+- Test-suite audit: 41 fixes across 30 files; hardcoded planet constants
+  (`mu`, `R_earth`, rotation rate, shadow radius) replaced with
+  `jeod_sim::{EARTH, SUN, MOON}` presets; inline orbit-init math replaced
+  with the new `init_from_time_periapsis` port
+- Showcase examples (`apollo.rs`, `earth_moon.rs`, `mars_orbit.rs`) kept
+  under `crates/jeod_runner/examples/` with the `jeod_runner::Simulation`
+  orchestrator they exercise
+
+**Verify with:**
+- `cargo nextest run --workspace`: all tests pass (including the slow
+  `earth_moon` run on main-push CI)
+- `cargo clippy --workspace --tests -- -D warnings`: clean
+- Phase 7 exit-gate issues closed: #6, #49, #50, #60 (#13 already closed);
+  DynManager multi-integrable-object work split into #114 as follow-up
+
 ---
 
 ## 9. Key Architectural Decisions
