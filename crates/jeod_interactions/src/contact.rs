@@ -594,7 +594,19 @@ fn closest_points_segment_segment(p1: DVec3, p2: DVec3, p3: DVec3, p4: DVec3) ->
         return res;
     }
 
-    // General case.
+    // General case — faithful port of JEOD
+    // `contact_utils_inline.hh:263-299` (the softSurfer
+    // `dist_line_segments` implementation JEOD embeds, under the
+    // "Users of this code must verify correctness for their
+    // application" disclaimer). Both parameters are clamped to [0,1]
+    // independently; when the infinite-line solution has one out of
+    // [0,1] the closest point is at an endpoint on that segment and
+    // an interior projection on the other, and a more accurate
+    // algorithm would recompute the second parameter from the clamped
+    // endpoint. JEOD does not, and neither do we — matching the
+    // existing note on the parallel-case fallback above. JEOD's own
+    // SIM_contact verification cases don't exercise the mismatched-
+    // clamp degenerate case.
     let numer = d1343 * d4321 - d1321 * d4343;
     let ma = numer / denom;
     let mb = (d1343 + d4321 * ma) / d4343;
