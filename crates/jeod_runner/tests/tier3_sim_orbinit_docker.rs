@@ -349,7 +349,7 @@ fn tier3_orbinit_docker_run0401_sts_trans_state() {
     println!("  RUN_0401: pos_err={pos_err:.6e} m  vel_err={vel_err:.6e} m/s");
 
     // Direct Cartesian: expected to be bit-exact (both read from same input).
-    // The CSV has only 10-char precision for RUN_0401 inputs; allow 1 µm / µm/s.
+    // The CSV has only 10-char precision for RUN_0401 inputs; allow 1 µm / 1 nm/s.
     assert!(
         pos_err < 1.0e-6,
         "RUN_0401: position error {pos_err:.6e} m exceeds 1 µm tolerance"

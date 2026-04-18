@@ -208,7 +208,7 @@ pub fn load_trans_state(
 
     let mut position: Option<[f64; 3]> = None;
     let mut velocity: Option<[f64; 3]> = None;
-    let mut reference_frame = String::new();
+    let mut reference_frame: Option<String> = None;
 
     for line in content.lines() {
         if let Some(cap) = vec3_re.captures(line) {
@@ -232,15 +232,14 @@ pub fn load_trans_state(
             continue;
         }
         if let Some(cap) = frame_re.captures(line) {
-            reference_frame = cap[1].to_string();
+            reference_frame = Some(cap[1].to_string());
         }
     }
 
     TransStateData {
-        position: position
-            .unwrap_or_else(|| panic!("Missing position in {}", path.display())),
-        velocity: velocity
-            .unwrap_or_else(|| panic!("Missing velocity in {}", path.display())),
-        reference_frame,
+        position: position.unwrap_or_else(|| panic!("Missing position in {}", path.display())),
+        velocity: velocity.unwrap_or_else(|| panic!("Missing velocity in {}", path.display())),
+        reference_frame: reference_frame
+            .unwrap_or_else(|| panic!("Missing reference_ref_frame_name in {}", path.display())),
     }
 }
