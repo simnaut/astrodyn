@@ -193,9 +193,11 @@ fn composite_errors(tree: &MassTree, id: MassBodyId, reference: &PrintedBody) ->
 }
 
 /// Assert and track errors for a single body. Tolerances must be wide enough
-/// to absorb JEOD's 6-digit printf precision (%20lf) in `mass_print_body.cc`.
-/// JEOD writes only 6 significant figures; our doubles carry 16 — so the
-/// floor of the comparison is ~5e-7 per kg·m² element.
+/// to absorb JEOD's `%20lf` formatting in `mass_print_body.cc` — width 20 with
+/// the default `%f` precision of **6 digits after the decimal point** (not
+/// 6 significant figures). JEOD's printed reference values therefore lose
+/// precision relative to our doubles; for values near unity the comparison
+/// floor is on the order of ~5e-7 per kg·m² element.
 #[allow(clippy::too_many_arguments)]
 fn check_body(
     run: &str,

@@ -63,19 +63,40 @@ fn load_csv(filename: &str) -> Vec<MassRow> {
         .unwrap_or_else(|e| panic!("Failed to read {}: {e}", path.display()));
 
     let mut rows = Vec::new();
-    for line in content.lines().skip(1) {
-        let vals: Vec<f64> = line
-            .split(',')
-            .filter_map(|s| s.trim().parse().ok())
-            .collect();
-        if vals.len() >= 4 {
-            rows.push(MassRow {
-                time: vals[0],
-                veh1: vals[1],
-                veh2: vals[2],
-                veh3: vals[3],
-            });
+    // Parse each data row strictly: exactly 4 columns, each a valid f64.
+    // `filter_map(... .ok())` would silently drop malformed columns or rows
+    // and hide a corrupted reference CSV, so we assert the shape instead.
+    for (idx, line) in content.lines().skip(1).enumerate() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
         }
+        let fields: Vec<&str> = trimmed.split(',').map(str::trim).collect();
+        assert_eq!(
+            fields.len(),
+            4,
+            "CSV {} line {}: expected 4 columns, found {}: {:?}",
+            path.display(),
+            idx + 2,
+            fields.len(),
+            trimmed
+        );
+        let parse = |col: usize, name: &str| -> f64 {
+            fields[col].parse().unwrap_or_else(|e| {
+                panic!(
+                    "CSV {} line {}: invalid {name} value {:?}: {e}",
+                    path.display(),
+                    idx + 2,
+                    fields[col]
+                )
+            })
+        };
+        rows.push(MassRow {
+            time: parse(0, "time"),
+            veh1: parse(1, "veh1"),
+            veh2: parse(2, "veh2"),
+            veh3: parse(3, "veh3"),
+        });
     }
     assert!(
         !rows.is_empty(),
