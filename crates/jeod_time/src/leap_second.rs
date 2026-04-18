@@ -82,21 +82,40 @@ impl LeapSecondTable {
     }
 
     /// Find the index for a TAI TJT value.
-    /// The when_vec entries are UTC boundaries. For a given TAI, we subtract
-    /// the offset to get a UTC estimate, then find the correct bracket.
+    ///
+    /// `entries[i] = (when_vec[i], val_vec[i])` where `when_vec[i]` is a UTC
+    /// boundary in TJT and `val_vec[i]` is TAI-UTC (in seconds) applied AT and
+    /// AFTER that boundary. The TAI instant at which the i-th transition
+    /// occurs (UTC first reaches `when_vec[i]` using the previous offset
+    /// `val_vec[i-1]`) is `tai_boundary[i] = when_vec[i] + val_vec[i-1]/86400`.
+    ///
+    /// JEOD's `convert_a_to_b` updates the offset stepwise: it holds index
+    /// `i-1` until UTC (computed with that offset) reaches `when_vec[i]`,
+    /// then advances to index `i`. Equivalently, for a given TAI the offset
+    /// is `val_vec[i]` where `i` is the largest index with
+    /// `tai_tjt >= when_vec[i] + val_vec[i-1]/86400`. This matches JEOD's
+    /// "true_utc" convention where the leap second is counted as a real UTC
+    /// second: within the leap second, UTC rewinds by 1 s so the interval
+    /// `23:59:59..24:00:00` is traversed twice (once labelled 23:59:59, once
+    /// labelled 23:59:60).
     fn find_index_for_tai(&self, tai_tjt: f64) -> usize {
         let last = self.entries.len() - 1;
-        // Initial guess: use last known offset to estimate UTC
-        let mut offset = self.entries[last].1;
-        let mut utc_est = tai_tjt - offset / SECONDS_PER_DAY;
-
-        // Two iterations to converge (matches JEOD's approach)
-        for _ in 0..2 {
-            let idx = self.find_index_for_utc(utc_est);
-            offset = self.entries[idx].1;
-            utc_est = tai_tjt - offset / SECONDS_PER_DAY;
+        // Before the first entry: JEOD uses val_vec[0], so return index 0.
+        // Boundary at i=0 in the "TAI frame" is `when_vec[0] + val_vec[0]/86400`
+        // (no prior entry, so we use val_vec[0] itself).
+        let first_tai_boundary = self.entries[0].0 + self.entries[0].1 / SECONDS_PER_DAY;
+        if tai_tjt < first_tai_boundary {
+            return 0;
         }
-        self.find_index_for_utc(utc_est)
+        // Search from the top down for the largest i with
+        //   tai_tjt >= when_vec[i] + val_vec[i-1]/86400.
+        for i in (1..=last).rev() {
+            let tai_boundary_i = self.entries[i].0 + self.entries[i - 1].1 / SECONDS_PER_DAY;
+            if tai_tjt >= tai_boundary_i {
+                return i;
+            }
+        }
+        0
     }
 
     /// Find the index for a UTC TJT value using binary-style search.
@@ -296,5 +315,52 @@ mod tests {
                 (utc_back - utc_tjt).abs()
             );
         }
+    }
+
+    /// At the instant TAI reaches a leap-second boundary in TAI time
+    /// (`tai_tjt = when_vec[i] + val_vec[i-1]/86400`), JEOD's
+    /// `convert_a_to_b` updates the offset to `val_vec[i]`. Verify our
+    /// stateless lookup reproduces this (matches JEOD time_converter_tai_utc.cc
+    /// line 271 `while(utc >= next_when)`).
+    #[test]
+    fn tai_utc_at_tai_boundary_uses_post_leap_offset() {
+        let table = default_leap_second_table();
+        // 1999-01-01 UTC boundary: when_vec[22] = MJD 51179 = TJT 11179.
+        // TAI-UTC transitions 31 → 32 at this UTC boundary.
+        let when_i = 11179.0_f64;
+        let prev_val: f64 = 31.0;
+        // At TAI exactly when UTC reaches boundary with old offset applied:
+        let tai_at_boundary = when_i + prev_val / SECONDS_PER_DAY;
+        // JEOD updates offset here, so TAI-UTC at this TAI = 32 (post-leap).
+        assert_eq!(
+            table.tai_utc_at_tai_tjt(tai_at_boundary),
+            32.0,
+            "At TAI reaching a leap boundary, should use the post-leap offset"
+        );
+        // And just before (in TAI), should still be 31.
+        let before_boundary = tai_at_boundary - 1e-9;
+        assert_eq!(
+            table.tai_utc_at_tai_tjt(before_boundary),
+            31.0,
+            "Just before the TAI boundary, should still use pre-leap offset"
+        );
+    }
+
+    /// Exact reproduction of the SIM_4 RUN_JEOD2x row at t=86400 in
+    /// `tier3_sim_time_docker.rs`: TAI TJT = 11179.0003587963, JEOD UTC TJT =
+    /// 11178.99998842593. The boundary is crossed exactly at this TAI — JEOD
+    /// updates its internal state on crossing and reports the post-leap offset.
+    #[test]
+    fn tai_utc_matches_jeod_sim4_at_leap_crossing() {
+        let table = default_leap_second_table();
+        let tai_tjt = 11179.0003587963_f64;
+        let expected_utc_tjt = 11178.99998842593_f64;
+        let got = table.tai_to_utc_tjt(tai_tjt);
+        let err_sec = (got - expected_utc_tjt).abs() * SECONDS_PER_DAY;
+        assert!(
+            err_sec < 1e-6,
+            "SIM_4 leap crossing: got UTC TJT {got}, expected {expected_utc_tjt} \
+             (diff {err_sec:.4e} s)"
+        );
     }
 }

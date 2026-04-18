@@ -1746,6 +1746,281 @@ throttled_bg run_frame_switch_group
 PID_FRAME_SWITCH=$LAST_BG_PID
 
 # ════════════════════════════════════════════════════════════════════
+# JEOD time verification SIMs (1-6) for Tier 3 time cross-validation.
+# Consumed by crates/jeod_runner/tests/tier3_sim_time_docker.rs.
+#
+# Object-path convention differs between sims:
+#   SIM_1-4  use `jeod_time.time_manager` / `time_tai` / `time_utc` / ...
+#   SIM_5-6  use `jeod_time.manager` / `tai` / `utc` / ...
+# This mirrors the S_define declarations for each sim exactly — any
+# mismatch causes Trick's DRAscii to silently omit the variable.
+# ════════════════════════════════════════════════════════════════════
+
+# ── Snippet: SIM_1_dyn_only RUN_dyn (DynamicTime only) ──
+TIME_V1_SNIPPET='
+dr = trick.sim_services.DRAscii("time_v1")
+dr.set_cycle(1)
+dr.freq = trick.sim_services.DR_Always
+for v in [
+    "jeod_time.time_manager.dyn_time.seconds",
+]:
+    dr.add_variable(v)
+trick.add_data_record_group(dr)
+'
+
+run_time_v1_group() {
+    local sim_dir="models/environment/time/verif/SIM_1_dyn_only"
+    local -a RUNS=(
+        "SET_test/RUN_dyn:time_v1_dyn_only:time_v1_dyn_only_time_v1.csv"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_1_dyn_only group (all outputs exist) ==="
+        return 0
+    fi
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$TIME_V1_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+throttled_bg run_time_v1_group
+PID_TIME_V1=$LAST_BG_PID
+
+# ── Snippet: SIM_2_dyn_plus_STD RUN_initialize_by_value (TAI + Dyn) ──
+TIME_V2_SNIPPET='
+dr = trick.sim_services.DRAscii("time_v2")
+dr.set_cycle(1)
+dr.freq = trick.sim_services.DR_Always
+for v in [
+    "jeod_time.time_manager.dyn_time.seconds",
+    "jeod_time.time_tai.trunc_julian_time",
+    "jeod_time.time_tai.seconds",
+]:
+    dr.add_variable(v)
+trick.add_data_record_group(dr)
+'
+
+run_time_v2_group() {
+    local sim_dir="models/environment/time/verif/SIM_2_dyn_plus_STD"
+    local -a RUNS=(
+        "SET_test/RUN_initialize_by_value:time_v2_std:time_v2_std_time_v2.csv"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_2_dyn_plus_STD group (all outputs exist) ==="
+        return 0
+    fi
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$TIME_V2_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+throttled_bg run_time_v2_group
+PID_TIME_V2=$LAST_BG_PID
+
+# ── Snippet: SIM_3_dyn_plus_UDE RUN_init_by_ude (UDE + Dyn) ──
+TIME_V3_SNIPPET='
+dr = trick.sim_services.DRAscii("time_v3")
+dr.set_cycle(1)
+dr.freq = trick.sim_services.DR_Always
+for v in [
+    "jeod_time.time_manager.dyn_time.seconds",
+    "jeod_time.time_ude.seconds",
+]:
+    dr.add_variable(v)
+trick.add_data_record_group(dr)
+'
+
+run_time_v3_group() {
+    local sim_dir="models/environment/time/verif/SIM_3_dyn_plus_UDE"
+    local -a RUNS=(
+        "SET_test/RUN_init_by_ude:time_v3_ude:time_v3_ude_time_v3.csv"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_3_dyn_plus_UDE group (all outputs exist) ==="
+        return 0
+    fi
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$TIME_V3_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+throttled_bg run_time_v3_group
+PID_TIME_V3=$LAST_BG_PID
+
+# ── Snippet: SIM_4_common_usage RUN_JEOD2x (TAI + UTC + UT1 across leap sec) ──
+# Log every 60 s to keep the CSV small; run spans 86500 s, crossing the
+# 1999-01-01 leap second boundary.
+TIME_V4_SNIPPET='
+dr = trick.sim_services.DRAscii("time_v4")
+dr.set_cycle(60)
+dr.freq = trick.sim_services.DR_Always
+for v in [
+    "jeod_time.time_manager.dyn_time.seconds",
+    "jeod_time.time_tai.trunc_julian_time",
+    "jeod_time.time_tai.seconds",
+    "jeod_time.time_utc.trunc_julian_time",
+    "jeod_time.time_utc.seconds",
+    "jeod_time.time_ut1.trunc_julian_time",
+    "jeod_time.time_ut1.seconds",
+]:
+    dr.add_variable(v)
+trick.add_data_record_group(dr)
+'
+
+run_time_v4_group() {
+    local sim_dir="models/environment/time/verif/SIM_4_common_usage"
+    local -a RUNS=(
+        "SET_test/RUN_JEOD2x:time_v4_common:time_v4_common_time_v4.csv"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_4_common_usage group (all outputs exist) ==="
+        return 0
+    fi
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$TIME_V4_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+throttled_bg run_time_v4_group
+PID_TIME_V4=$LAST_BG_PID
+
+# ── Snippet: SIM_5_all_inclusive RUN_UDE_initialized (all 10+ scales + MET) ──
+# SIM_5 uses bare `manager`/`tai`/... (no `time_` prefix) per its S_define.
+TIME_V5_SNIPPET='
+dr = trick.sim_services.DRAscii("time_v5")
+dr.set_cycle(1)
+dr.freq = trick.sim_services.DR_Always
+for v in [
+    "jeod_time.manager.dyn_time.seconds",
+    "jeod_time.tai.trunc_julian_time",
+    "jeod_time.tai.seconds",
+    "jeod_time.utc.trunc_julian_time",
+    "jeod_time.utc.seconds",
+    "jeod_time.ut1.trunc_julian_time",
+    "jeod_time.ut1.seconds",
+    "jeod_time.tt.trunc_julian_time",
+    "jeod_time.tt.seconds",
+    "jeod_time.tdb.trunc_julian_time",
+    "jeod_time.tdb.seconds",
+    "jeod_time.gmst.seconds",
+    "jeod_time.gps.trunc_julian_time",
+    "jeod_time.gps.seconds",
+    "jeod_time.metveh1.seconds",
+    "jeod_time.metveh2.seconds",
+]:
+    dr.add_variable(v)
+trick.add_data_record_group(dr)
+'
+
+run_time_v5_group() {
+    local sim_dir="models/environment/time/verif/SIM_5_all_inclusive"
+    local -a RUNS=(
+        "SET_test/RUN_UDE_initialized:time_v5_all:time_v5_all_time_v5.csv"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_5_all_inclusive (UDE) group (all outputs exist) ==="
+        return 0
+    fi
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$TIME_V5_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+throttled_bg run_time_v5_group
+PID_TIME_V5=$LAST_BG_PID
+
+# ── Snippet: SIM_6_extension RUN_tai_initialized (TAI only; we skip the
+# user-defined "new" scale registered by the sim). Bare object paths. ──
+TIME_V6_SNIPPET='
+dr = trick.sim_services.DRAscii("time_v6")
+dr.set_cycle(1)
+dr.freq = trick.sim_services.DR_Always
+for v in [
+    "jeod_time.manager.dyn_time.seconds",
+    "jeod_time.tai.trunc_julian_time",
+    "jeod_time.tai.seconds",
+]:
+    dr.add_variable(v)
+trick.add_data_record_group(dr)
+'
+
+run_time_v6_group() {
+    local sim_dir="models/environment/time/verif/SIM_6_extension"
+    local -a RUNS=(
+        "SET_test/RUN_tai_initialized:time_v6_ext:time_v6_ext_time_v6.csv"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_6_extension group (all outputs exist) ==="
+        return 0
+    fi
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$TIME_V6_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+throttled_bg run_time_v6_group
+PID_TIME_V6=$LAST_BG_PID
+
+# ════════════════════════════════════════════════════════════════════
 # WAIT FOR ALL GROUPS
 # ════════════════════════════════════════════════════════════════════
 echo "=== Waiting for all sim groups to complete ==="
@@ -1784,6 +2059,13 @@ wait $PID_MARS           || { echo "WARN: SIM_Mars group had failures"; FAIL=1; 
 wait $PID_MERCURY        || { echo "WARN: SIM_mercury group had failures"; FAIL=1; }
 wait $PID_APOLLO         || { echo "WARN: SIM_Apollo group had failures"; FAIL=1; }
 wait $PID_FRAME_SWITCH   || { echo "WARN: SIM_verif_frame_switch group had failures"; FAIL=1; }
+# WS-R4: JEOD time verification SIMs 1-6
+wait $PID_TIME_V1        || { echo "WARN: SIM_1_dyn_only group had failures"; FAIL=1; }
+wait $PID_TIME_V2        || { echo "WARN: SIM_2_dyn_plus_STD group had failures"; FAIL=1; }
+wait $PID_TIME_V3        || { echo "WARN: SIM_3_dyn_plus_UDE group had failures"; FAIL=1; }
+wait $PID_TIME_V4        || { echo "WARN: SIM_4_common_usage group had failures"; FAIL=1; }
+wait $PID_TIME_V5        || { echo "WARN: SIM_5_all_inclusive UDE group had failures"; FAIL=1; }
+wait $PID_TIME_V6        || { echo "WARN: SIM_6_extension group had failures"; FAIL=1; }
 
 echo ""
 echo "=== Reference data generation complete ==="
