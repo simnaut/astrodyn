@@ -217,16 +217,26 @@ pub fn load_trans_state(
             let x: f64 = cap[3].parse().unwrap();
             let y: f64 = cap[4].parse().unwrap();
             let z: f64 = cap[5].parse().unwrap();
-            // "m" for position, "m/s" for velocity — no scale conversion needed.
-            assert!(
-                unit == "m" || unit == "m/s",
-                "Unexpected unit '{}' in {}",
-                unit,
-                path.display()
-            );
+            // Validate unit per field — no scale conversion needed for SI.
             match field {
-                "position" => position = Some([x, y, z]),
-                "velocity" => velocity = Some([x, y, z]),
+                "position" => {
+                    assert!(
+                        unit == "m",
+                        "Unexpected unit '{}' for position in {} (expected \"m\")",
+                        unit,
+                        path.display()
+                    );
+                    position = Some([x, y, z]);
+                }
+                "velocity" => {
+                    assert!(
+                        unit == "m/s",
+                        "Unexpected unit '{}' for velocity in {} (expected \"m/s\")",
+                        unit,
+                        path.display()
+                    );
+                    velocity = Some([x, y, z]);
+                }
                 _ => {}
             }
             continue;
