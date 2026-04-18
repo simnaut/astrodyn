@@ -45,6 +45,14 @@ pub struct IntegratorTypeC(pub jeod_sim::IntegratorType);
 #[derive(Component, Debug, Clone, Deref, DerefMut)]
 pub struct GaussJacksonStateC(pub jeod_sim::GaussJacksonState);
 
+/// Persistent Adams-Bashforth-Moulton 4 integrator state.
+///
+/// Required on entities using `IntegratorType::Abm4`. Created once with
+/// `Abm4State::new()` and maintained across steps. When absent,
+/// `integration_system` will panic if `IntegratorTypeC` is `Abm4`.
+#[derive(Component, Debug, Clone, Default, Deref, DerefMut)]
+pub struct Abm4StateC(pub jeod_sim::Abm4State);
+
 #[derive(Component, Debug, Clone)]
 #[require(GravityAccelerationC, TotalForceC)]
 pub struct GravityControlsC(pub GravityControls<Entity>);

@@ -810,8 +810,76 @@ run_euler_group() {
 throttled_bg run_euler_group
 PID_EULER=$LAST_BG_PID
 
-# Group 8: SIM_integ_test
-throttled_bg run_sim "models/utils/integration/verif/SIM_integ_test" "SET_test/RUN_rk4" "integ_rk4"
+# Group 8: SIM_integ_test — one build, many runs (sequential within group)
+# Runs the integrator verification sim with multiple integrator selections.
+# All runs reuse the same trick-CP executable; only the input.py changes.
+#
+# The orbit test (case 4 of 5) integrates a Kepler orbit with sma=6811.137 km,
+# e=0, omega=1.1231543952404041e-3 rad/s. JEOD logs `true_canon_state` (true
+# Kepler solution) and `prop_integ_state` (our integrator's output).
+# Stop time is 80000s, log_cycle = 200s → 401 points.
+#
+# Data is logged via DRAscii injected by INTEG_SNIPPET below.
+INTEG_SNIPPET='
+dr = trick.sim_services.DRAscii("integ_ASCII")
+dr.set_cycle(200)
+dr.freq = trick.sim_services.DR_Always
+for v in [
+    "test.orbit.prop_integ_state.position[0]",
+    "test.orbit.prop_integ_state.position[1]",
+    "test.orbit.prop_integ_state.position[2]",
+    "test.orbit.prop_integ_state.velocity[0]",
+    "test.orbit.prop_integ_state.velocity[1]",
+    "test.orbit.prop_integ_state.velocity[2]",
+    "test.orbit.true_canon_state.position[0]",
+    "test.orbit.true_canon_state.position[1]",
+    "test.orbit.true_canon_state.position[2]",
+    "test.orbit.true_canon_state.velocity[0]",
+    "test.orbit.true_canon_state.velocity[1]",
+    "test.orbit.true_canon_state.velocity[2]",
+    "test.orbit.rel_position_err_mag",
+    "test.orbit.rel_velocity_err_mag",
+    "test.orbit.rel_energy_error",
+]:
+    dr.add_variable(v)
+trick.add_data_record_group(dr, trick.DR_Buffer)
+'
+
+run_integ_test_group() {
+    local sim_dir="models/utils/integration/verif/SIM_integ_test"
+    # RUN_rk4 is also listed but uses the plain (non-ASCII) run — the existing
+    # integ_rk4 .trk logging remains in place. ABM4 and LSODE get ASCII CSVs
+    # with the orbit test trajectory so Tier 3 tests can compare against them.
+    local -a RUNS=(
+        "SET_test/RUN_abm4:integ_abm4:integ_abm4_integ.csv"
+        "SET_test/RUN_lsode:integ_lsode:integ_lsode_integ.csv"
+    )
+    local needs_build=0
+    if ! has_output "integ_rk4" ""; then
+        needs_build=1
+    fi
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_integ_test group (all outputs exist) ==="
+        return 0
+    fi
+    local fail=0
+    # RK4 keeps the original .trk-only logging.
+    run_sim "$sim_dir" "SET_test/RUN_rk4" "integ_rk4" || fail=1
+    # ABM4 and LSODE use ASCII logging for the orbit test.
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$INTEG_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+throttled_bg run_integ_test_group
 PID_INTEG=$LAST_BG_PID
 
 # Group 9: SIM_3_ORBIT (radiation pressure SRP verification)

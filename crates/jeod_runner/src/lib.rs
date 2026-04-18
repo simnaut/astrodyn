@@ -497,6 +497,7 @@ struct SimBody {
 
     // ── Integrator state ──
     gj_state: Option<jeod_dynamics::GaussJacksonState>,
+    abm4_state: Option<jeod_dynamics::Abm4State>,
 }
 
 impl SimBody {
@@ -578,6 +579,7 @@ impl SimBody {
             earth_lighting: None,
 
             gj_state: None,
+            abm4_state: None,
         }
     }
 
@@ -1055,6 +1057,13 @@ impl Simulation {
                 all_errors.push(ValidationError::GaussJacksonWith6Dof { body_idx });
             }
 
+            // ABM4 is translational-only (6-DOF not yet supported)
+            if matches!(body.integrator, jeod_dynamics::IntegratorType::Abm4)
+                && body.config.rotational_dynamics
+            {
+                all_errors.push(ValidationError::Abm4With6Dof { body_idx });
+            }
+
             // GaussJackson config validation — delegates to GaussJacksonConfig::check()
             // so the predicate is defined in one place.
             if let jeod_dynamics::IntegratorType::GaussJackson(ref config) = body.integrator {
@@ -1230,6 +1239,12 @@ impl Simulation {
                     }
                     Some(_) => {} // config matches, keep existing state
                 }
+            }
+            // Auto-initialize ABM4 state for bodies that need it.
+            if matches!(body.integrator, jeod_dynamics::IntegratorType::Abm4)
+                && body.abm4_state.is_none()
+            {
+                body.abm4_state = Some(jeod_dynamics::Abm4State::new());
             }
         }
         if !fatal.is_empty() {
@@ -1828,6 +1843,7 @@ impl Simulation {
                 self.time.time_scale_factor,
                 body.integrator,
                 body.gj_state.as_mut(),
+                body.abm4_state.as_mut(),
             );
         }
 
@@ -2012,19 +2028,21 @@ impl Simulation {
         }
         let remainder = target_time - self.time.simtime;
         if remainder > 0.001 {
-            // Fractional steps corrupt Gauss-Jackson history (the Störmer-Cowell
-            // coefficients and delinv accumulators assume constant dt).
-            let has_gj = self.bodies.iter().any(|b| {
+            // Fractional steps corrupt multi-step history arrays (GJ's
+            // Störmer-Cowell coefficients and delinv accumulators, ABM4's
+            // Adams history) — both methods assume constant dt.
+            let has_multistep = self.bodies.iter().any(|b| {
                 matches!(
                     b.integrator,
                     jeod_dynamics::IntegratorType::GaussJackson(..)
+                        | jeod_dynamics::IntegratorType::Abm4
                 )
             });
             assert!(
-                !has_gj,
+                !has_multistep,
                 "step_until() would take a fractional step ({remainder:.6}s vs dt={:.6}s). \
-                 GaussJackson requires constant dt. Ensure target_time is \
-                 an integer multiple of dt.",
+                 Multi-step integrators (GaussJackson, ABM4) require constant dt. \
+                 Ensure target_time is an integer multiple of dt.",
                 self.dt
             );
             self.step_internal(remainder);

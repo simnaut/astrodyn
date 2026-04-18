@@ -61,7 +61,9 @@ pub use integration::{integrate_body, integrate_body_coupled, CoupledStageEval};
 pub use interactions::{
     compute_cannonball_srp, compute_drag, compute_gravity_torque, FlatPlateState,
 };
-pub use jeod_dynamics::{GaussJacksonConfig, GaussJacksonState, IntegratorResult, IntegratorType};
+pub use jeod_dynamics::{
+    Abm4State, GaussJacksonConfig, GaussJacksonState, IntegratorResult, IntegratorType,
+};
 pub use pipeline::{PipelineStage, PIPELINE_ORDER};
 pub use planet_config::{PlanetConfig, EARTH, MARS, MOON, SUN};
 pub use rotation_model::RotationModel;

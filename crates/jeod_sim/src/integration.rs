@@ -29,9 +29,17 @@ use crate::interactions::FlatPlateState;
 /// - `dt`: simulation timestep in seconds (JEOD: `sim_dt`)
 /// - `time_scale_factor`: ratio of dynamic time to simulation time
 ///   (JEOD: `TimeDyn::scale_factor`). Applied uniformly to all integrators:
-///   RK4/RKF45 use `integ_dyndt = dt * time_scale_factor`, Gauss-Jackson
+///   RK4/RKF45/ABM4 use `integ_dyndt = dt * time_scale_factor`, Gauss-Jackson
 ///   uses `cycle_dyndt = dt * cycle_scale * time_scale_factor`.
 /// - `integrator`: integration method to use
+/// - `gj_state`: persistent Gauss-Jackson state, required (and only used)
+///   when `integrator == IntegratorType::GaussJackson`. Panics otherwise if
+///   absent. Caller retains one per body; see `Simulation::validate` /
+///   `GaussJacksonStateC` for the runner/Bevy wiring.
+/// - `abm4_state`: persistent ABM4 history, required (and only used) when
+///   `integrator == IntegratorType::Abm4`. Panics otherwise if absent. Caller
+///   retains one per body; see `Simulation::validate` / `Abm4StateC` for the
+///   runner/Bevy wiring.
 ///
 /// # Panics
 /// - Non-zero force without mass properties (JEOD_INV: MA.01)
@@ -53,6 +61,7 @@ pub fn integrate_body(
     time_scale_factor: f64,
     integrator: IntegratorType,
     gj_state: Option<&mut jeod_dynamics::GaussJacksonState>,
+    abm4_state: Option<&mut jeod_dynamics::Abm4State>,
 ) {
     // JEOD_INV: DB.07 — translational_dynamics gates integration
     if !config.translational_dynamics {
@@ -116,6 +125,12 @@ pub fn integrate_body(
                          Set rotational_dynamics=false for GJ bodies."
                     );
                 }
+                IntegratorType::Abm4 => {
+                    panic!(
+                        "ABM4 6-DOF integration not yet supported. \
+                         Set rotational_dynamics=false for ABM4 bodies."
+                    );
+                }
             };
             *trans = new_state.trans;
             *rot = new_state.rot;
@@ -139,6 +154,13 @@ pub fn integrate_body(
         }
         IntegratorType::Rkf45 => {
             *trans = jeod_dynamics::rkf45_translational_step(trans, accel, integ_dyndt);
+        }
+        IntegratorType::Abm4 => {
+            let abm = abm4_state.expect(
+                "ABM4 integrator requires a persistent Abm4State passed in via abm4_state. \
+                 Runner: call Simulation::validate(); Bevy: add Abm4StateC.",
+            );
+            *trans = jeod_dynamics::abm4_translational_step(trans, accel, integ_dyndt, abm);
         }
         IntegratorType::GaussJackson(cfg) => {
             let gj = gj_state.expect(
@@ -598,6 +620,7 @@ mod tests {
             dt,
             tsf,
             jeod_dynamics::IntegratorType::Rk4,
+            None,
             None,
         );
 
