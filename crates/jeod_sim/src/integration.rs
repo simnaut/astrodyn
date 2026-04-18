@@ -381,19 +381,24 @@ fn eval_stage(
             position: stage_pos[i],
             velocity: stage_vel[i],
         };
-        // Intermediate RK4 quaternions are not unit-length. JEOD's
+        // Build a NORMALIZED quaternion for `contact_eval` only: JEOD's
         // `left_quat_to_transformation` (and our port) assumes a
-        // normalized quaternion (see `JEOD_INV: RF.09`), so the per-stage
-        // stage_q must be renormalized before the contact closure builds
-        // rotation matrices from it — otherwise stage forces are
-        // evaluated with a slightly non-orthonormal attitude. Use
-        // `normalize_integ` (the integration-safe variant from
-        // `quat_norm.cc`) so we don't flip the scalar sign mid-flight.
-        let mut quaternion =
+        // normalized quaternion (see `JEOD_INV: RF.09`), so feeding it
+        // the raw RK4 intermediate would yield a slightly non-orthonormal
+        // rotation matrix in the contact closure. Using the
+        // integration-safe `normalize_integ` preserves the scalar sign.
+        //
+        // The `qdot = 0.5 · ω ⊗ q` derivative used below is computed from
+        // the *raw* stage quaternion, matching `rk4_sixdof_step` and
+        // `integrate_body_coupled`, which also do not renormalize at
+        // intermediate stages — renormalization only happens once at
+        // step end. The normalization here is strictly a boundary
+        // correction for the contact callback.
+        let mut normalized_quat =
             JeodQuat::new(stage_q[i][0], stage_q[i][1], stage_q[i][2], stage_q[i][3]);
-        jeod_dynamics::normalize_integ(&mut quaternion);
+        jeod_dynamics::normalize_integ(&mut normalized_quat);
         stage_rot_buf[i] = RotationalState {
-            quaternion,
+            quaternion: normalized_quat,
             ang_vel_body: stage_omega[i],
         };
     }
@@ -423,13 +428,16 @@ fn eval_stage(
                 )
             };
         let total_torque = body.non_contact_torque_body + contact_torque_body;
-        let rot_stage = &stage_rot_buf[i];
-        let qdot =
-            jeod_dynamics::compute_left_quat_deriv(&rot_stage.quaternion, rot_stage.ang_vel_body);
+        // qdot is computed from the *raw* stage quaternion (not the
+        // normalized copy in `stage_rot_buf`) to match the rest of the
+        // RK4 integration paths: intermediate stages are not
+        // renormalized — only the final combined quaternion is.
+        let raw_quat = JeodQuat::new(stage_q[i][0], stage_q[i][1], stage_q[i][2], stage_q[i][3]);
+        let qdot = jeod_dynamics::compute_left_quat_deriv(&raw_quat, stage_omega[i]);
         let alpha = jeod_dynamics::compute_rotational_acceleration(
             &body.mass.inertia,
             &body.mass.inverse_inertia,
-            rot_stage.ang_vel_body,
+            stage_omega[i],
             total_torque,
         );
         k_v[i] = stage_vel[i];
