@@ -13,7 +13,7 @@ use jeod_gravity::calc_spherical;
 use jeod_interactions::{
     compute_ballistic_drag, compute_flat_plate_srp_thermal, compute_gravity_torque,
     compute_shadow_fraction, solar_flux_at_distance, DragConfig, FlatPlate, FlatPlateParams,
-    FlatPlateThermal,
+    FlatPlateThermal, SOLAR_RADIUS,
 };
 use jeod_math::geodetic::cartesian_to_geodetic;
 use jeod_math::JeodQuat;
@@ -24,8 +24,6 @@ const MU_EARTH: f64 = jeod_planet::presets::EARTH.mu;
 const R_EARTH: f64 = jeod_planet::presets::EARTH.r_eq;
 /// Earth polar radius (m) — JEOD `earth.cc` via presets.
 const R_EARTH_POL: f64 = jeod_planet::presets::EARTH.r_pol;
-/// Sun effective radius (m) — used for penumbra geometry in shadow_fraction().
-const R_SUN: f64 = 6.98e8;
 
 /// MET-internal GMST formula (from JEOD atmos_MET_TME.cc, Jacchia's Almanac polynomial).
 ///
@@ -324,7 +322,8 @@ fn leo_eclipse_fraction() {
     };
 
     for _ in 0..steps {
-        let frac = compute_shadow_fraction(state.position, sun_pos, body_pos, R_EARTH, R_SUN);
+        let frac =
+            compute_shadow_fraction(state.position, sun_pos, body_pos, R_EARTH, SOLAR_RADIUS);
         if frac < 0.5 {
             shadow_count += 1;
         }
