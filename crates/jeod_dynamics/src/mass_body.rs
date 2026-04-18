@@ -177,6 +177,12 @@ impl MassTree {
         t_parent_this: DMat3,
     ) {
         let name_str: String = name.into();
+        // JEOD_INV: MA.10 — mass point names must be non-empty (mass.cc ~line 359)
+        assert!(
+            !name_str.is_empty(),
+            "mass point name must be non-empty (body '{}')",
+            self.nodes[body_id].name
+        );
         // JEOD_INV: MA.09 — mass point names must be unique per body (mass.cc:359-368)
         assert!(
             self.find_mass_point(body_id, &name_str).is_none(),
@@ -292,6 +298,8 @@ impl MassTree {
         offset: DVec3,
         t_parent_child: DMat3,
     ) {
+        // JEOD_INV: BA.03 — attachment requires non-null parent; the `parent_id` argument
+        // is `MassBodyId` (non-null by type); invalid IDs panic at the index site below.
         assert!(
             self.parent[child_id].is_none(),
             "child {} already attached to a parent",
@@ -301,6 +309,7 @@ impl MassTree {
 
         // JEOD_INV: MA.08 — no cycle in mass tree (arena-based, cycles impossible)
         // JEOD_INV: MA.19 — no same-tree attachment (cycle prevention)
+        // JEOD_INV: BA.04 — body-action attachment also forbids cycles (same check)
         // Prevent creation of cycles: walk up from parent_id to the root
         // and ensure we never encounter child_id. This matches JEOD's
         // attach_validate_parent() (mass_attach.cc:370-388): "the only invalid
@@ -970,6 +979,15 @@ mod tests {
     // -----------------------------------------------------------------------
     // 8. Named attachment points: attach_aligned
     // -----------------------------------------------------------------------
+
+    #[test]
+    #[should_panic(expected = "mass point name must be non-empty")]
+    fn add_mass_point_rejects_empty_name() {
+        // JEOD_INV: MA.10 — empty name must panic at add_mass_point
+        let mut tree = MassTree::new();
+        let pid = tree.add_root("parent".into(), MassProperties::new(10.0));
+        tree.add_mass_point(pid, "", DVec3::ZERO, DMat3::IDENTITY);
+    }
 
     #[test]
     fn attach_aligned_identity_points() {

@@ -739,7 +739,8 @@ pub fn integrate_body_coupled(
             );
             return;
         }
-        // JEOD_INV: DB.04
+        // JEOD_INV: DB.04 — rotational integration requires all three frames (composite/structure/core);
+        // here that maps to needing both RotationalState and MassProperties present together.
         panic!(
             "rotational_dynamics=true but RotationalState and/or MassProperties \
              missing. Provide these or set rotational_dynamics=false."

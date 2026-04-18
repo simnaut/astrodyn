@@ -87,6 +87,8 @@ pub fn compute_shadow_fraction(
     }
 
     // JEOD_INV: IN.13 — Shadow model: vehicle distance > 0 (returns 0.0 if r_mag2 <= 0)
+    // JEOD_INV: IN.26 — RadiationThirdBody degenerate distance: JEOD puts vehicle in total shadow and errors;
+    // we return 0.0 (same shadow-fraction result without erroring).
     // Compute the squared distance between vehicle and third body
     let r_mag2 = third_to_cg_inrtl.length_squared();
     if r_mag2 <= 0.0 {

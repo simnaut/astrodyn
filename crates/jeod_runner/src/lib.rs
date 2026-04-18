@@ -743,7 +743,7 @@ impl Simulation {
     /// # Panics
     /// * Either `body_a` or `body_b` is out of range for the registered bodies.
     /// * `body_a == body_b` — contact pair bodies must be distinct
-    ///   (JEOD_INV: IN.19, matching JEOD's `unique_pair` invariant).
+    ///   (JEOD_INV: IN.30, matching JEOD's `unique_pair` invariant).
     /// * `facet_a.material != facet_b.material`. JEOD parks the
     ///   spring/damper/friction parameters on a single `SpringPairInteraction`
     ///   per pair, so both facets must carry identical
@@ -766,7 +766,7 @@ impl Simulation {
             "register_contact_pair: body_b index {body_b} out of range ({} bodies)",
             self.bodies.len()
         );
-        // JEOD_INV: IN.19 — contact pair bodies must be distinct (JEOD `unique_pair`)
+        // JEOD_INV: IN.30 — contact pair bodies must be distinct (JEOD `unique_pair`)
         assert_ne!(
             body_a, body_b,
             "register_contact_pair: body A and body B must be distinct (got both = {body_a})"
@@ -2018,7 +2018,7 @@ impl Simulation {
             // ── Contact-coupled path: multi-body RK4 where contact forces
             //    are recomputed at each stage from all bodies' intermediate
             //    states (matching JEOD's `check_contact()` derivative job).
-            // JEOD_INV: IN.20 — contact evaluated at every derivative evaluation
+            // JEOD_INV: IN.31 — contact evaluated at every derivative evaluation
             //
             // Enforce preconditions: all bodies participating in contact
             // pairs must use RK4 + 6-DOF. We integrate ALL bodies through

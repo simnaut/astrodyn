@@ -207,6 +207,10 @@ impl FrameTree {
     /// 4. Result = negate(from_composed) composed with to_composed.
     ///
     /// This gives the state of `to` as seen from `from`.
+    // JEOD_INV: RF.01 — same-tree requirement: both FrameIds are arena indices into this
+    // single `FrameTree`, so `compute_relative_state` cannot be called across trees.
+    // JEOD_INV: RF.02 — predecessor validity: `find_common_ancestor` and `parent()` both
+    // bounds-check the arena; an invalid `FrameId` panics immediately.
     pub fn compute_relative_state(&self, from: FrameId, to: FrameId) -> RefFrameState {
         let ancestor = self.find_common_ancestor(from, to);
 

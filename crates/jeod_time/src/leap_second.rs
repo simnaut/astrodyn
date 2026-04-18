@@ -18,6 +18,8 @@ impl LeapSecondTable {
     /// Create a leap second table from (TJT, TAI-UTC seconds) pairs.
     /// Entries must be sorted by TJT.
     pub fn from_entries(entries: Vec<(f64, f64)>) -> Self {
+        // JEOD_INV: TM.39 — leap-second table must be non-empty and monotonic in TJT.
+        // JEOD's `when_vec` is assumed monotonic in `time_converter_tai_utc.cc`; we enforce at construction.
         assert!(!entries.is_empty(), "Leap second table must not be empty");
         assert!(
             entries.windows(2).all(|w| w[0].0 <= w[1].0),

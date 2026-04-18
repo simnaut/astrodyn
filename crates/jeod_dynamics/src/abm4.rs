@@ -169,6 +169,8 @@ pub fn abm4_translational_step(
     dt: f64,
     abm_state: &mut Abm4State,
 ) -> TranslationalState {
+    // JEOD_INV: IG.34 — step dt must be finite and strictly positive; a zero step would rotate
+    // ABM4's multi-step history without any actual time advance, silently corrupting the state.
     assert!(
         dt.is_finite() && dt > 0.0,
         "abm4_translational_step requires a finite positive dt, got {dt}"
