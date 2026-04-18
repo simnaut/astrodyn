@@ -85,6 +85,26 @@ pub enum ValidationError {
     /// Contact pairs are registered but a body lacks rotational state or mass
     /// properties. The contact-coupled path requires full 6-DOF on every body.
     ContactPairsRequire6Dof { body_idx: usize },
+    /// A contact pair references two bodies integrated in different frames.
+    /// The coupled RK4 contact evaluator consumes stage states directly,
+    /// so both bodies' states must be expressed in a common frame.
+    ContactPairFrameMismatch {
+        pair_idx: usize,
+        body_a: usize,
+        body_b: usize,
+        frame_a: usize,
+        frame_b: usize,
+    },
+    /// A contact pair's bodies are integrated in a non-root frame. The
+    /// coupled contact evaluator assumes coordinates in the root inertial
+    /// frame (contact forces and torques are computed without any per-step
+    /// frame transform).
+    ContactPairNonRootFrame {
+        pair_idx: usize,
+        body_idx: usize,
+        frame: usize,
+        root: usize,
+    },
 }
 
 impl std::fmt::Display for ValidationError {
@@ -312,6 +332,37 @@ impl std::fmt::Display for ValidationError {
                     "Body {body_idx}: contact pairs are registered but this body lacks \
                      rotational state or mass properties. The contact-coupled path \
                      requires full 6-DOF (rot + mass) on every body."
+                )
+            }
+            Self::ContactPairFrameMismatch {
+                pair_idx,
+                body_a,
+                body_b,
+                frame_a,
+                frame_b,
+            } => {
+                write!(
+                    f,
+                    "Contact pair {pair_idx}: bodies {body_a} and {body_b} are \
+                     integrated in different frames ({frame_a} != {frame_b}). \
+                     The coupled RK4 contact evaluator reads stage states \
+                     directly from each body, so both bodies must share the \
+                     same integration frame."
+                )
+            }
+            Self::ContactPairNonRootFrame {
+                pair_idx,
+                body_idx,
+                frame,
+                root,
+            } => {
+                write!(
+                    f,
+                    "Contact pair {pair_idx}: body {body_idx} is integrated in \
+                     frame {frame} but the coupled contact evaluator assumes \
+                     coordinates in the root inertial frame ({root}). Integrate \
+                     contact-participating bodies in the root inertial frame, \
+                     or transform stage states before contact evaluation."
                 )
             }
         }

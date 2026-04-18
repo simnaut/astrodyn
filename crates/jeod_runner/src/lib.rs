@@ -1300,6 +1300,35 @@ impl Simulation {
                     all_errors.push(ValidationError::ContactPairsRequire6Dof { body_idx });
                 }
             }
+
+            // The coupled RK4 contact path evaluates `stage_trans`/`stage_rot`
+            // directly, and those stage states are in each body's integration
+            // frame. For pair-level consistency (and to match the no-transform
+            // convention in `evaluate_contact_pair`), both bodies must share
+            // the same integration frame, and that frame must be the root
+            // inertial frame.
+            for (pair_idx, pair) in self.contact_pairs.iter().enumerate() {
+                let frame_a = self.bodies[pair.body_a].integ_frame_id;
+                let frame_b = self.bodies[pair.body_b].integ_frame_id;
+                if frame_a != frame_b {
+                    all_errors.push(ValidationError::ContactPairFrameMismatch {
+                        pair_idx,
+                        body_a: pair.body_a,
+                        body_b: pair.body_b,
+                        frame_a,
+                        frame_b,
+                    });
+                    continue;
+                }
+                if frame_a != self.root_frame_id {
+                    all_errors.push(ValidationError::ContactPairNonRootFrame {
+                        pair_idx,
+                        body_idx: pair.body_a,
+                        frame: frame_a,
+                        root: self.root_frame_id,
+                    });
+                }
+            }
         }
 
         // Separate warnings from fatal errors — warnings are logged, not returned.
@@ -1993,6 +2022,19 @@ impl Simulation {
                     .iter()
                     .all(|b| b.rot.is_some() && b.mass.is_some()),
                 "contact pairs require 6-DOF (rotational state + mass) on all bodies"
+            );
+            // Contact pair states must share the root inertial frame, since
+            // the coupled contact evaluator uses each body's stage state
+            // directly without any per-step frame transform. `validate()`
+            // catches this at config time; the assert is defense-in-depth
+            // for callers that skip validation.
+            assert!(
+                self.contact_pairs.iter().all(|p| {
+                    let fa = self.bodies[p.body_a].integ_frame_id;
+                    let fb = self.bodies[p.body_b].integ_frame_id;
+                    fa == fb && fa == self.root_frame_id
+                }),
+                "contact pair bodies must share the root inertial integration frame"
             );
 
             // `integ_dt` (dynamic timestep) is defined above the gravity
