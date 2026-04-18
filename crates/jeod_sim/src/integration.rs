@@ -5,6 +5,7 @@ use jeod_dynamics::{
 };
 use jeod_math::JeodQuat;
 
+use crate::integrable::IntegrableObject;
 use crate::interactions::FlatPlateState;
 
 /// Per-body state for multi-body coupled RK4 integration.
@@ -770,8 +771,8 @@ pub fn integrate_body_coupled(
 
     let pos0 = trans.position;
     let vel0 = trans.velocity;
-    let temps0: Vec<f64> = thermal.temperatures.clone();
-    let t_pow4_0: Vec<f64> = thermal.t_pow4_cached.clone();
+    // JEOD_INV: IN.32 — snapshot thermal state at step start before stage 1.
+    thermal.snapshot();
 
     // Stage 1: evaluate at current state
     let eval1 = stage_fn(trans, None, thermal);
@@ -782,7 +783,7 @@ pub fn integrate_body_coupled(
     );
     let k1_accel = compute_total_accel(&eval1, mass);
     let k1_v = vel0;
-    let k1_tdots = &eval1.temp_dots;
+    let k1_tdots = eval1.temp_dots.clone();
 
     // Stage 2: evaluate at t + dt/2 using k1
     let half_dt = integ_dyndt * 0.5;
@@ -790,7 +791,7 @@ pub fn integrate_body_coupled(
         position: pos0 + k1_v * half_dt,
         velocity: vel0 + k1_accel * half_dt,
     };
-    advance_thermal_intermediate(thermal, &temps0, &t_pow4_0, k1_tdots, half_dt);
+    thermal.advance_intermediate(&k1_tdots, half_dt);
     let eval2 = stage_fn(&s2_trans, None, thermal);
     debug_assert_eq!(
         eval2.temp_dots.len(),
@@ -806,7 +807,7 @@ pub fn integrate_body_coupled(
         position: pos0 + k2_v * half_dt,
         velocity: vel0 + k2_accel * half_dt,
     };
-    advance_thermal_intermediate(thermal, &temps0, &t_pow4_0, &k2_tdots, half_dt);
+    thermal.advance_intermediate(&k2_tdots, half_dt);
     let eval3 = stage_fn(&s3_trans, None, thermal);
     debug_assert_eq!(
         eval3.temp_dots.len(),
@@ -822,7 +823,7 @@ pub fn integrate_body_coupled(
         position: pos0 + k3_v * integ_dyndt,
         velocity: vel0 + k3_accel * integ_dyndt,
     };
-    advance_thermal_intermediate(thermal, &temps0, &t_pow4_0, &k3_tdots, integ_dyndt);
+    thermal.advance_intermediate(&k3_tdots, integ_dyndt);
     let eval4 = stage_fn(&s4_trans, None, thermal);
     debug_assert_eq!(
         eval4.temp_dots.len(),
@@ -837,16 +838,13 @@ pub fn integrate_body_coupled(
     trans.position = pos0 + (k1_v + k2_v * 2.0 + k3_v * 2.0 + k4_v) * sixth_dt;
     trans.velocity = vel0 + (k1_accel + k2_accel * 2.0 + k3_accel * 2.0 + k4_accel) * sixth_dt;
 
-    // Combine thermal state with overshoot clamping
-    thermal.finalize_rk4_temperatures(
-        &temps0,
-        &t_pow4_0,
-        k1_tdots,
+    // Combine thermal state with overshoot clamping.
+    thermal.finalize_rk4(
+        &k1_tdots,
         &k2_tdots,
         &k3_tdots,
         &eval4.temp_dots,
         integ_dyndt,
-        n_plates,
     );
 }
 
@@ -869,8 +867,8 @@ fn integrate_coupled_sixdof(
     let vel0 = trans.velocity;
     let q0 = rot.quaternion.data;
     let omega0 = rot.ang_vel_body;
-    let temps0: Vec<f64> = thermal.temperatures.clone();
-    let t_pow4_0: Vec<f64> = thermal.t_pow4_cached.clone();
+    // JEOD_INV: IN.32 — snapshot thermal state at step start before stage 1.
+    thermal.snapshot();
 
     let make_rot = |q: [f64; 4], omega: DVec3| RotationalState {
         quaternion: JeodQuat::new(q[0], q[1], q[2], q[3]),
@@ -910,7 +908,7 @@ fn integrate_coupled_sixdof(
     );
     let (k1_accel, k1_qdot, k1_alpha) = eval_rot_derivs(&eval1, rot);
     let k1_v = vel0;
-    let k1_tdots = &eval1.temp_dots;
+    let k1_tdots = eval1.temp_dots.clone();
 
     // Stage 2
     let half_dt = integ_dyndt * 0.5;
@@ -919,7 +917,7 @@ fn integrate_coupled_sixdof(
         velocity: vel0 + k1_accel * half_dt,
     };
     let s2_rot = make_rot(step_q(q0, k1_qdot, half_dt), omega0 + k1_alpha * half_dt);
-    advance_thermal_intermediate(thermal, &temps0, &t_pow4_0, k1_tdots, half_dt);
+    thermal.advance_intermediate(&k1_tdots, half_dt);
     let eval2 = stage_fn(&s2_trans, Some(&s2_rot), thermal);
     debug_assert_eq!(
         eval2.temp_dots.len(),
@@ -936,7 +934,7 @@ fn integrate_coupled_sixdof(
         velocity: vel0 + k2_accel * half_dt,
     };
     let s3_rot = make_rot(step_q(q0, k2_qdot, half_dt), omega0 + k2_alpha * half_dt);
-    advance_thermal_intermediate(thermal, &temps0, &t_pow4_0, &k2_tdots, half_dt);
+    thermal.advance_intermediate(&k2_tdots, half_dt);
     let eval3 = stage_fn(&s3_trans, Some(&s3_rot), thermal);
     debug_assert_eq!(
         eval3.temp_dots.len(),
@@ -956,7 +954,7 @@ fn integrate_coupled_sixdof(
         step_q(q0, k3_qdot, integ_dyndt),
         omega0 + k3_alpha * integ_dyndt,
     );
-    advance_thermal_intermediate(thermal, &temps0, &t_pow4_0, &k3_tdots, integ_dyndt);
+    thermal.advance_intermediate(&k3_tdots, integ_dyndt);
     let eval4 = stage_fn(&s4_trans, Some(&s4_rot), thermal);
     debug_assert_eq!(
         eval4.temp_dots.len(),
@@ -983,16 +981,13 @@ fn integrate_coupled_sixdof(
     rot.quaternion = JeodQuat::new(final_q[0], final_q[1], final_q[2], final_q[3]);
     jeod_dynamics::normalize_integ(&mut rot.quaternion);
 
-    // Combine thermal state with overshoot clamping
-    thermal.finalize_rk4_temperatures(
-        &temps0,
-        &t_pow4_0,
-        k1_tdots,
+    // Combine thermal state with overshoot clamping.
+    thermal.finalize_rk4(
+        &k1_tdots,
         &k2_tdots,
         &k3_tdots,
         &eval4.temp_dots,
         integ_dyndt,
-        n_plates,
     );
 }
 
@@ -1011,25 +1006,6 @@ fn compute_total_accel(eval: &CoupledStageEval, mass: Option<&MassProperties>) -
         );
     };
     eval.gravity_accel + non_grav_accel
-}
-
-/// Advance thermal state to an intermediate RK4 position.
-///
-/// Sets temperatures to `temps0 + k_tdots * h` and updates cached T^4.
-/// Used between RK4 stages so the next `stage_fn` call sees intermediate
-/// temperatures for thermal emission force coupling.
-fn advance_thermal_intermediate(
-    thermal: &mut FlatPlateState,
-    temps0: &[f64],
-    _t_pow4_0: &[f64],
-    k_tdots: &[f64],
-    h: f64,
-) {
-    for i in 0..thermal.temperatures.len() {
-        let t = (temps0[i] + k_tdots[i] * h).max(0.0);
-        thermal.temperatures[i] = t;
-        thermal.t_pow4_cached[i] = t * t * t * t;
-    }
 }
 
 #[cfg(test)]
@@ -1084,6 +1060,7 @@ mod tests {
             plates: vec![],
             temperatures: vec![],
             t_pow4_cached: vec![],
+            ..Default::default()
         };
         integrate_body_coupled(
             &config,

@@ -5,12 +5,28 @@ use jeod_interactions::{
     DragConfig, FlatPlate, FlatPlateParams, FlatPlateThermal,
 };
 
+use crate::integrable::IntegrableObject;
+
 /// Flat-plate SRP configuration with mutable thermal state.
 ///
 /// Bundles plate geometry/optical/thermal properties with per-plate temperature
 /// state. Used by both the `Simulation` runner and Bevy adapter so that
 /// temperature integration logic is shared.
-#[derive(Debug, Clone)]
+///
+/// Implements [`IntegrableObject`] so temperatures can integrate through the
+/// RK4 stage loop alongside orbital state (see
+/// [`crate::integrate_body_coupled`]). Construct with `..Default::default()`
+/// so the trait's snapshot scratch initializes empty:
+///
+/// ```ignore
+/// FlatPlateState {
+///     plates,
+///     temperatures: vec![300.0; n],
+///     t_pow4_cached: vec![300.0_f64.powi(4); n],
+///     ..Default::default()
+/// }
+/// ```
+#[derive(Debug, Clone, Default)]
 pub struct FlatPlateState {
     /// Per-plate geometry, optical, and thermal properties.
     pub plates: Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)>,
@@ -19,6 +35,16 @@ pub struct FlatPlateState {
     /// Cached T^4 per plate from previous step (for thermal emission).
     /// Same length as `plates`.
     pub t_pow4_cached: Vec<f64>,
+    /// Step-start temperature snapshot, populated by
+    /// [`IntegrableObject::snapshot`] and read by
+    /// [`IntegrableObject::advance_intermediate`] /
+    /// [`IntegrableObject::finalize_rk4`]. Managed by the RK4 kernel; do
+    /// not set manually.
+    #[doc(hidden)]
+    pub temps_snapshot: Vec<f64>,
+    /// Step-start T^4 snapshot; companion to `temps_snapshot`.
+    #[doc(hidden)]
+    pub t_pow4_snapshot: Vec<f64>,
 }
 
 impl FlatPlateState {
@@ -61,42 +87,83 @@ impl FlatPlateState {
     ///
     /// Combines k1–k4 temperature derivatives via the standard RK4 formula
     /// and applies JEOD overshoot clamping (thermal_integrable_object.cc:106-121).
-    /// Called by [`crate::integration::integrate_body_coupled`] after all four
-    /// stages have been evaluated.
+    /// Reads the step-start snapshots from `temps_snapshot` /
+    /// `t_pow4_snapshot`, which [`IntegrableObject::snapshot`] populated at
+    /// the start of the step.
     ///
-    /// This is the coupled-integration counterpart of [`Self::integrate_temperatures`]:
-    /// instead of deriving k2–k4 internally from k1's `power_absorb`, the four
-    /// derivatives were computed at intermediate orbital positions by the stage
-    /// closure.
-    #[allow(clippy::too_many_arguments)]
+    /// This is the coupled-integration counterpart of
+    /// [`Self::integrate_temperatures`]: instead of deriving k2–k4 internally
+    /// from k1's `power_absorb`, the four derivatives were computed at
+    /// intermediate orbital positions by the stage closure.
     pub fn finalize_rk4_temperatures(
         &mut self,
-        temps0: &[f64],
-        t_pow4_0: &[f64],
         k1_tdots: &[f64],
         k2_tdots: &[f64],
         k3_tdots: &[f64],
         k4_tdots: &[f64],
         dt: f64,
-        n_plates: usize,
     ) {
-        for i in 0..n_plates {
-            let (plate, _, thermal) = &self.plates[i];
+        let n = self.temperatures.len();
+        for i in 0..n {
+            let area = self.plates[i].0.area;
+            let emissivity = self.plates[i].2.emissivity;
+            let heat_capacity_per_area = self.plates[i].2.heat_capacity_per_area;
             let (new_temp, new_t_pow4) = jeod_interactions::integrate_plate_temperature_rk4(
-                temps0[i],
-                t_pow4_0[i],
+                self.temps_snapshot[i],
+                self.t_pow4_snapshot[i],
                 k1_tdots[i],
                 k2_tdots[i],
                 k3_tdots[i],
                 k4_tdots[i],
-                plate.area,
-                thermal.emissivity,
-                thermal.heat_capacity_per_area,
+                area,
+                emissivity,
+                heat_capacity_per_area,
                 dt,
             );
             self.temperatures[i] = new_temp;
             self.t_pow4_cached[i] = new_t_pow4;
         }
+    }
+}
+
+// JEOD_INV: IN.32 — IntegrableObject per-stage snapshot/advance/finalize protocol.
+// Port of JEOD er7_utils::IntegrableObject (trick_source/er7_utils/integration/
+// core/include/integrable_object.hh) as consumed by DynamicsIntegrationGroup.
+// FlatPlateState's temperature vector is the only sub-state that uses this
+// protocol today; orbital translational/rotational state is integrated
+// directly by the enclosing RK4 kernel.
+impl IntegrableObject for FlatPlateState {
+    fn n_states(&self) -> usize {
+        self.temperatures.len()
+    }
+
+    fn snapshot(&mut self) {
+        self.temps_snapshot.clear();
+        self.temps_snapshot.extend_from_slice(&self.temperatures);
+        self.t_pow4_snapshot.clear();
+        self.t_pow4_snapshot.extend_from_slice(&self.t_pow4_cached);
+    }
+
+    fn advance_intermediate(&mut self, deriv: &[f64], h: f64) {
+        debug_assert_eq!(
+            deriv.len(),
+            self.temperatures.len(),
+            "advance_intermediate derivative length must equal temperature count",
+        );
+        for ((t, t_pow4), (&t0, &d)) in self
+            .temperatures
+            .iter_mut()
+            .zip(self.t_pow4_cached.iter_mut())
+            .zip(self.temps_snapshot.iter().zip(deriv.iter()))
+        {
+            let new_t = (t0 + d * h).max(0.0);
+            *t = new_t;
+            *t_pow4 = new_t * new_t * new_t * new_t;
+        }
+    }
+
+    fn finalize_rk4(&mut self, k1: &[f64], k2: &[f64], k3: &[f64], k4: &[f64], dt: f64) {
+        self.finalize_rk4_temperatures(k1, k2, k3, k4, dt);
     }
 }
 

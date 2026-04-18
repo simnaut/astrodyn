@@ -38,6 +38,7 @@ pub mod atmosphere;
 pub mod derived;
 pub mod forces;
 pub mod gravity;
+pub mod integrable;
 pub mod integration;
 pub mod interactions;
 pub mod pipeline;
@@ -57,6 +58,7 @@ pub use gravity::{
     accumulate_gravity, accumulate_relativistic_corrections, ResolvedRelativisticSource,
     ResolvedSource,
 };
+pub use integrable::IntegrableObject;
 pub use integration::{
     integrate_bodies_contact_coupled, integrate_body, integrate_body_coupled, CoupledBodyInput,
     CoupledIntegScratch, CoupledStageEval,

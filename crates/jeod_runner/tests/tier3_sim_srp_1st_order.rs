@@ -217,6 +217,7 @@ fn tier3_srp_1st_order_trajectory() {
             plates,
             temperatures: vec![init_temp; num_plates],
             t_pow4_cached: vec![init_temp.powi(4); num_plates],
+            ..Default::default()
         })),
         shadow_body: Some(ShadowBody {
             source_idx: earth,

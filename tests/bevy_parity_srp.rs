@@ -105,6 +105,7 @@ fn tier3_bevy_full_stack_sixdof() {
                 plates: srp_plates.clone(),
                 temperatures: vec![270.0],
                 t_pow4_cached: vec![270.0_f64.powi(4)],
+                ..Default::default()
             }),
             GravityTorqueC::default(),
         ))
@@ -144,6 +145,7 @@ fn tier3_bevy_full_stack_sixdof() {
         plates: srp_plates,
         temperatures: vec![270.0],
         t_pow4_cached: vec![270.0_f64.powi(4)],
+        ..Default::default()
     }));
     body.compute_gravity_gradient = true;
     sim.add_body(body);
@@ -291,6 +293,7 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
                 plates: plates_data.clone(),
                 temperatures: vec![init_temp; num_plates],
                 t_pow4_cached: vec![init_temp.powi(4); num_plates],
+                ..Default::default()
             }),
         ))
         .id();
@@ -332,6 +335,7 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
             plates: plates_data,
             temperatures: vec![init_temp; num_plates],
             t_pow4_cached: vec![init_temp.powi(4); num_plates],
+            ..Default::default()
         })),
         shadow_body: Some(RunnerShadowBody {
             source_idx: earth_idx,
@@ -422,6 +426,7 @@ fn run_shadow_parity(label: &str, srp_plates: Vec<(FlatPlate, FlatPlateParams, F
                 plates: srp_plates.clone(),
                 temperatures: vec![270.0; srp_plates.len()],
                 t_pow4_cached: vec![270.0_f64.powi(4); srp_plates.len()],
+                ..Default::default()
             }),
         ))
         .id();
@@ -449,6 +454,7 @@ fn run_shadow_parity(label: &str, srp_plates: Vec<(FlatPlate, FlatPlateParams, F
         plates: srp_plates.clone(),
         temperatures: vec![270.0; srp_plates.len()],
         t_pow4_cached: vec![270.0_f64.powi(4); srp_plates.len()],
+        ..Default::default()
     }));
     body.shadow_body = Some(RunnerShadowBody {
         source_idx: earth_idx,
@@ -519,6 +525,7 @@ fn run_srp_basic_parity(
                 plates: srp_plates.clone(),
                 temperatures: vec![270.0; srp_plates.len()],
                 t_pow4_cached: vec![270.0_f64.powi(4); srp_plates.len()],
+                ..Default::default()
             }),
         ))
         .id();
@@ -546,6 +553,7 @@ fn run_srp_basic_parity(
         plates: srp_plates.clone(),
         temperatures: vec![270.0; srp_plates.len()],
         t_pow4_cached: vec![270.0_f64.powi(4); srp_plates.len()],
+        ..Default::default()
     }));
     sim.add_body(body);
     sim.validate().unwrap();
