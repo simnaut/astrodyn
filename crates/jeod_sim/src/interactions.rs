@@ -258,8 +258,15 @@ pub fn evaluate_contact_pair(
     // velocity of each body's contact point (v_cm + ω × r_contact_from_cm)
     // and differencing. We apply the full kinematic formula with each
     // body's own ω contribution, which is the physically correct expression.
-    let omega_a_inertial = rot_a.map_or(DVec3::ZERO, |r| t_inertial_body_a * r.ang_vel_body);
-    let omega_b_inertial = rot_b.map_or(DVec3::ZERO, |r| t_inertial_body_b * r.ang_vel_body);
+    // `t_inertial_body` is the inertial→body rotation (see
+    // `jeod_dynamics::compute_t_inertial_struct` docs), so going body→inertial
+    // requires the transpose: v_inertial = t_inertial_body.transpose() * v_body.
+    let omega_a_inertial = rot_a.map_or(DVec3::ZERO, |r| {
+        t_inertial_body_a.transpose() * r.ang_vel_body
+    });
+    let omega_b_inertial = rot_b.map_or(DVec3::ZERO, |r| {
+        t_inertial_body_b.transpose() * r.ang_vel_body
+    });
     // Arm from CoM to contact point requires the contact point, which
     // `compute_contact_force` returns. We iterate once to get an ω-free
     // estimate, then recompute once with ω×r corrections included — JEOD
@@ -285,9 +292,10 @@ pub fn evaluate_contact_pair(
     let torque_a_inertial = arm_a_inertial.cross(force_on_a);
     let torque_b_inertial = arm_b_inertial.cross(-force_on_a);
 
-    // Rotate inertial torques back to each body's body frame.
-    let torque_a_body = t_inertial_body_a.transpose() * torque_a_inertial;
-    let torque_b_body = t_inertial_body_b.transpose() * torque_b_inertial;
+    // Rotate inertial torques back to each body's body frame. `t_inertial_body`
+    // is inertial→body, so it applies directly: v_body = t_inertial_body * v_inertial.
+    let torque_a_body = t_inertial_body_a * torque_a_inertial;
+    let torque_b_body = t_inertial_body_b * torque_b_inertial;
 
     Some(ContactPairEval {
         force_on_a,

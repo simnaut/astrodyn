@@ -257,10 +257,10 @@ pub fn compute_contact_force(
 ) -> Option<ContactForce> {
     // JEOD stores spring/damper/friction on the `SpringPairInteraction`
     // (the pair object), not per-facet, so both facets in a given contact
-    // must carry identical material parameters. We assert this rather
-    // than silently averaging or preferring one side: mismatched
-    // materials signal a configuration bug, not a physics input.
-    debug_assert_eq!(
+    // must carry identical material parameters. Enforce in all builds —
+    // `debug_assert_eq!` would compile out in release and silently use
+    // `facet_a.material`, making results depend on A/B ordering.
+    assert_eq!(
         facet_a.material, facet_b.material,
         "contact facet materials must match (JEOD pairs a single SpringPairInteraction to a facet pair)",
     );

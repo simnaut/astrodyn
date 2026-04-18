@@ -1951,12 +1951,12 @@ impl Simulation {
             // Snapshot pre-integration state for post-step frame tree sync.
             let integ_dt = dt * self.time.time_scale_factor;
 
-            // Split `self.bodies` into per-body borrow components so we can
-            // pass distinct mutable references into `CoupledBodyInput`.
+            // Split disjoint `self` fields up front so we can keep mutable
+            // access to bodies (and to coupled_integ_scratch below) while
+            // borrowing contact pairs immutably — no per-step clone of the
+            // facet/material data.
+            let contact_pairs: &Vec<ContactPairConfig> = &self.contact_pairs;
             let bodies_mut = &mut self.bodies;
-
-            // Extract immutable inputs we'll need inside the per-stage closures.
-            let contact_pairs = self.contact_pairs.clone();
 
             // Gather per-body immutable data (t_struct_body, mass, constant
             // forces/torques) BEFORE the unsafe &mut block below. Creating
@@ -2019,7 +2019,7 @@ impl Simulation {
                     for slot in out.iter_mut() {
                         *slot = (DVec3::ZERO, DVec3::ZERO);
                     }
-                    for pair in &contact_pairs {
+                    for pair in contact_pairs {
                         if let Some(eval) = evaluate_contact_pair(
                             &pair.facet_a,
                             &pair.facet_b,
