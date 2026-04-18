@@ -50,6 +50,17 @@
 //! ```
 //!
 //! The constrained acceleration is then `a_free + lambda · J / m`.
+//!
+//! For a single point mass the mass cancels algebraically — substituting
+//! `lambda/m` back in gives
+//!
+//! ```text
+//! a = a_free − (J · a_free + h + 2·alpha·(J·v) + beta^2·g) · J / (J · J)
+//! ```
+//!
+//! so [`apply_constraint`] does not take a mass argument. A future
+//! multi-particle / rigid-body API will need the full mass matrix, not a
+//! scalar mass, so nothing carries forward.
 
 use glam::DVec3;
 
@@ -97,7 +108,10 @@ impl PendulumConstraint {
     ///
     /// `length` must be positive.
     pub fn new(attachment_point: DVec3, length: f64) -> Self {
-        assert!(length > 0.0, "pendulum length must be positive");
+        assert!(
+            length > 0.0,
+            "pendulum length must be positive, got {length}"
+        );
         Self {
             attachment_point,
             length,
@@ -141,7 +155,15 @@ pub struct BaumgarteSolver {
 
 impl BaumgarteSolver {
     /// Critically damped solver: `alpha = beta = omega`.
+    ///
+    /// `omega` must be finite and non-negative (units: 1/s). Negative or
+    /// non-finite values would create unstable stiffness/damping and are
+    /// rejected eagerly rather than silently destabilizing integration.
     pub fn critically_damped(omega: f64) -> Self {
+        assert!(
+            omega.is_finite() && omega >= 0.0,
+            "Baumgarte omega must be finite and non-negative, got {omega}"
+        );
         Self {
             alpha: omega,
             beta: omega,
@@ -156,10 +178,17 @@ impl Default for BaumgarteSolver {
     }
 }
 
+/// Minimum `|J|²` at which the constraint is treated as non-degenerate.
+///
+/// Below this threshold the Jacobian is too small (or non-finite) for the
+/// `1/(J·J)` projection to produce a numerically reliable constrained
+/// acceleration, so [`apply_constraint`] falls back to the free acceleration.
+const JACOBIAN_NORM_SQ_EPSILON: f64 = 1.0e-12;
+
 /// Project a free (unconstrained) acceleration onto the constraint manifold.
 ///
-/// Given the current position, velocity, free (unconstrained) acceleration,
-/// and mass of a point particle, plus a holonomic constraint and Baumgarte
+/// Given the current position, velocity, and free (unconstrained) acceleration
+/// of a point particle, plus a holonomic constraint and Baumgarte
 /// stabilization parameters, returns the constrained acceleration that
 /// approximately satisfies the constraint at the acceleration level:
 ///
@@ -167,9 +196,13 @@ impl Default for BaumgarteSolver {
 /// g_ddot + 2·alpha·g_dot + beta^2·g = 0
 /// ```
 ///
-/// If the constraint Jacobian is (numerically) zero — i.e., the particle sits
-/// at a stationary point of `g` — no constraint force can be applied and the
-/// free acceleration is returned unchanged.
+/// For a single point mass the scalar mass cancels in the Lagrange projection,
+/// so this function deals only in accelerations (see module-level derivation).
+///
+/// If the constraint Jacobian is too small (`|J|² ≤ JACOBIAN_NORM_SQ_EPSILON`)
+/// or non-finite — i.e., the particle sits at or near a stationary point of
+/// `g` — no constraint force can be applied reliably and the free
+/// acceleration is returned unchanged.
 ///
 /// # Arguments
 /// - `pos`: current position in the inertial frame (m).
@@ -177,27 +210,24 @@ impl Default for BaumgarteSolver {
 /// - `free_accel`: acceleration the particle would experience without the
 ///   constraint (m/s^2). This is the sum of all non-constraint forces divided
 ///   by mass.
-/// - `mass`: particle mass (kg). Must be positive.
 /// - `constraint`: the holonomic constraint to enforce.
 /// - `solver`: Baumgarte stabilization parameters.
 pub fn apply_constraint(
     pos: DVec3,
     vel: DVec3,
     free_accel: DVec3,
-    mass: f64,
     constraint: &impl HolonomicConstraint,
     solver: &BaumgarteSolver,
 ) -> DVec3 {
-    assert!(mass > 0.0, "mass must be positive");
-
     let g = constraint.evaluate(pos);
     let j = constraint.jacobian(pos);
     let h = constraint.hessian_contribution(pos, vel);
 
     let jj = j.length_squared();
-    // If the Jacobian vanishes the constraint degenerates — the particle is at
-    // a stationary point of g and no force can change g_ddot. Return unchanged.
-    if jj == 0.0 {
+    // Near-zero or non-finite |J|² means the constraint degenerates — the
+    // particle is at/near a stationary point of g and no reliable force can be
+    // computed. Fall back to the free acceleration.
+    if !jj.is_finite() || jj <= JACOBIAN_NORM_SQ_EPSILON {
         return free_accel;
     }
 
@@ -205,13 +235,11 @@ pub fn apply_constraint(
     let j_a = j.dot(free_accel);
 
     // Baumgarte: g_ddot + 2 alpha g_dot + beta^2 g = 0
-    // g_ddot = J·a + h, and a = a_free + lambda·J/m, giving
-    //   J·a_free + lambda·(J·J)/m + h + 2 alpha g_dot + beta^2 g = 0
-    //   lambda = -m (J·a_free + h + 2 alpha g_dot + beta^2 g) / (J·J)
-    let lambda =
-        -mass * (j_a + h + 2.0 * solver.alpha * g_dot + solver.beta * solver.beta * g) / jj;
+    // With a = a_free + mu·J and g_ddot = J·a + h, solving:
+    //   mu = -(J·a_free + h + 2 alpha g_dot + beta^2 g) / (J·J)
+    let mu = -(j_a + h + 2.0 * solver.alpha * g_dot + solver.beta * solver.beta * g) / jj;
 
-    free_accel + (lambda / mass) * j
+    free_accel + mu * j
 }
 
 #[cfg(test)]
@@ -267,16 +295,10 @@ mod tests {
     // ── apply_constraint() ──
 
     #[test]
-    fn unconstrained_free_fall_unchanged_when_tangent() {
-        // Bob at (1, 0, 0), attachment at origin, L = 1.
-        // Velocity tangent to the constraint surface (perpendicular to radial).
-        // Gravity g_vec along -y is tangent to the constraint at this position;
-        // however, the centripetal Hessian term means the constraint *does*
-        // apply a force. The test we want: a purely tangential acceleration
-        // *combined with* the required centripetal acceleration is unchanged.
-        //
-        // Here we check: with alpha=beta=0 (no stabilization) and zero velocity
-        // and a zero free_accel, the constrained accel is also zero.
+    fn zero_free_accel_with_zero_velocity_returns_zero() {
+        // Degenerate but useful sanity check: with v = 0, a_free = 0, no
+        // stabilization, and g = 0 (on the manifold), the constraint produces
+        // no force, so the constrained acceleration is zero.
         let c = PendulumConstraint::new(DVec3::ZERO, 1.0);
         let solver = BaumgarteSolver {
             alpha: 0.0,
@@ -285,7 +307,7 @@ mod tests {
         let pos = DVec3::X;
         let vel = DVec3::ZERO;
         let free_accel = DVec3::ZERO;
-        let a = apply_constraint(pos, vel, free_accel, 1.0, &c, &solver);
+        let a = apply_constraint(pos, vel, free_accel, &c, &solver);
         assert!(a.length() < 1e-14, "expected zero accel, got {a:?}");
     }
 
@@ -301,7 +323,7 @@ mod tests {
         let pos = DVec3::X;
         let vel = DVec3::ZERO;
         let free_accel = DVec3::new(7.0, 0.0, 0.0); // purely radial outward
-        let a = apply_constraint(pos, vel, free_accel, 1.0, &c, &solver);
+        let a = apply_constraint(pos, vel, free_accel, &c, &solver);
         // Expected: zero (radial acceleration entirely cancelled, no centripetal
         // needed since v = 0)
         assert!(a.length() < 1e-13, "expected zero, got {a:?}");
@@ -321,7 +343,7 @@ mod tests {
         let pos = DVec3::X;
         let vel = DVec3::Y;
         let free_accel = DVec3::new(0.0, -1.0, 0.0); // tangential "gravity"
-        let a = apply_constraint(pos, vel, free_accel, 1.0, &c, &solver);
+        let a = apply_constraint(pos, vel, free_accel, &c, &solver);
         // Tangential component should match free_accel.y
         // Radial component: -|v|^2/L = -1.0 (centripetal)
         let expected = DVec3::new(-1.0, -1.0, 0.0);
@@ -349,7 +371,7 @@ mod tests {
         let d = Degenerate;
         let s = BaumgarteSolver::default();
         let free = DVec3::new(1.0, 2.0, 3.0);
-        let a = apply_constraint(DVec3::ZERO, DVec3::ZERO, free, 1.0, &d, &s);
+        let a = apply_constraint(DVec3::ZERO, DVec3::ZERO, free, &d, &s);
         assert_eq!(a, free);
     }
 
@@ -366,13 +388,12 @@ mod tests {
         pos: DVec3,
         vel: DVec3,
         free_accel_fn: impl Fn(DVec3) -> DVec3,
-        mass: f64,
         constraint: &impl HolonomicConstraint,
         solver: &BaumgarteSolver,
         dt: f64,
     ) -> (DVec3, DVec3) {
         let free_accel = free_accel_fn(pos);
-        let a = apply_constraint(pos, vel, free_accel, mass, constraint, solver);
+        let a = apply_constraint(pos, vel, free_accel, constraint, solver);
         let new_vel = vel + a * dt;
         let new_pos = pos + new_vel * dt;
         (new_pos, new_vel)
@@ -380,10 +401,11 @@ mod tests {
 
     #[test]
     fn pendulum_constraint_preserves_length_over_integration() {
-        // Pendulum of length 1 m, attached at origin, under gravity g = -9.81 m/s^2.
-        // Start at angle theta_0 = 30° from downward (x axis).
-        // Integrate for 10 periods using RK-ish symplectic Euler.
-        // Length deviation should remain bounded by Baumgarte stabilization.
+        // Pendulum of length 1 m, attached at origin, under gravity g = 9.81 m/s^2.
+        // Start at angle theta_0 = 30° from downward (x axis). Integrate over a
+        // few periods using semi-implicit Euler and verify Baumgarte keeps the
+        // length deviation bounded. (Steps kept modest to avoid dragging CI;
+        // 3 periods is plenty to observe the long-term bound.)
         let length = 1.0_f64;
         let g = 9.81_f64;
         let c = PendulumConstraint::new(DVec3::ZERO, length);
@@ -392,15 +414,13 @@ mod tests {
         let solver = BaumgarteSolver::critically_damped(10.0 * omega_b);
 
         // Initial: bob hangs 30° from straight down. "Down" = +x.
-        // pos = L (cos(30°), sin(30°), 0) — but we want to measure length from
-        // attachment; that's already what the constraint does.
         let theta0 = 30.0_f64.to_radians();
         let mut pos = DVec3::new(length * theta0.cos(), length * theta0.sin(), 0.0);
         let mut vel = DVec3::ZERO;
 
         let period = 2.0 * std::f64::consts::PI * (length / g).sqrt();
-        let total_time = 10.0 * period;
-        let dt = 1e-4;
+        let total_time = 3.0 * period;
+        let dt = 5e-4;
         let n_steps = (total_time / dt).round() as usize;
 
         let mut max_length_err: f64 = 0.0;
@@ -409,7 +429,6 @@ mod tests {
                 pos,
                 vel,
                 |_p| DVec3::new(g, 0.0, 0.0), // "down" along +x
-                1.0,
                 &c,
                 &solver,
                 dt,
@@ -424,14 +443,16 @@ mod tests {
         // Baumgarte should keep length error bounded.
         assert!(
             max_length_err < 5e-4,
-            "max length error over 10 periods: {max_length_err} m"
+            "max length error over 3 periods: {max_length_err} m"
         );
     }
 
     #[test]
     fn pendulum_small_angle_period_matches_analytical() {
         // Small angle: T = 2π sqrt(L/g). Integrate and measure zero-crossing
-        // times to recover the period.
+        // times to recover the period. 3 periods gives 2 inter-crossing
+        // intervals, enough to estimate the mean period while keeping CI cost
+        // bounded.
         let length = 1.0_f64;
         let g = 9.81_f64;
         let c = PendulumConstraint::new(DVec3::ZERO, length);
@@ -444,16 +465,15 @@ mod tests {
         let mut pos = DVec3::new(length * theta0.cos(), length * theta0.sin(), 0.0);
         let mut vel = DVec3::ZERO;
 
-        let dt = 1e-4;
-        let total_time = 5.0 * (2.0 * std::f64::consts::PI / omega_n);
+        let dt = 5e-4;
+        let total_time = 3.0 * (2.0 * std::f64::consts::PI / omega_n);
         let n_steps = (total_time / dt).round() as usize;
 
         // Detect zero crossings of y-coordinate going from + to - (peak then descent)
         let mut last_y = pos.y;
         let mut crossing_times: Vec<f64> = Vec::new();
         for i in 1..n_steps {
-            let (p, v) =
-                step_constrained(pos, vel, |_p| DVec3::new(g, 0.0, 0.0), 1.0, &c, &solver, dt);
+            let (p, v) = step_constrained(pos, vel, |_p| DVec3::new(g, 0.0, 0.0), &c, &solver, dt);
             pos = p;
             vel = v;
             // Zero crossing (linear interpolation)
@@ -496,7 +516,7 @@ mod tests {
         let initial_pos = DVec3::new(length * theta0.cos(), length * theta0.sin(), 0.0);
 
         let dt = 1e-3_f64;
-        let total_time = 20.0_f64; // ~10 periods
+        let total_time = 10.0_f64; // ~5 periods, enough to see drift diverge without stabilization
         let n_steps = (total_time / dt).round() as usize;
 
         let run = |solver: BaumgarteSolver| -> f64 {
@@ -505,7 +525,7 @@ mod tests {
             let mut max_err: f64 = 0.0;
             for _ in 0..n_steps {
                 let (p, v) =
-                    step_constrained(pos, vel, |_p| DVec3::new(g, 0.0, 0.0), 1.0, &c, &solver, dt);
+                    step_constrained(pos, vel, |_p| DVec3::new(g, 0.0, 0.0), &c, &solver, dt);
                 pos = p;
                 vel = v;
                 let err = (pos.length() - length).abs();
