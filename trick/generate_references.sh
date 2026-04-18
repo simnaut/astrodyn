@@ -2012,7 +2012,10 @@ run_contact_group() {
         # header so our reference data has physically correct units.
         local out_file="$OUTPUT_DIR/$required"
         if [ -f "$out_file" ]; then
-            sed -i '1s/contact_torque\(\[[0-2]\]\) {N\/m}/contact_torque\1 {N*m}/g' "$out_file"
+            # Portable in-place edit (avoid GNU-only `sed -i`): rewrite to
+            # temp then replace atomically. Works under GNU and BSD sed.
+            sed '1s/contact_torque\(\[[0-2]\]\) {N\/m}/contact_torque\1 {N*m}/g' \
+                "$out_file" > "$out_file.tmp" && mv "$out_file.tmp" "$out_file"
         fi
     done
     return $fail
@@ -2049,7 +2052,10 @@ run_ground_contact_group() {
         # contact_torque units as N/m; correct to N*m in the CSV header.
         local out_file="$OUTPUT_DIR/$required"
         if [ -f "$out_file" ]; then
-            sed -i '1s/contact_torque\(\[[0-2]\]\) {N\/m}/contact_torque\1 {N*m}/g' "$out_file"
+            # Portable in-place edit (avoid GNU-only `sed -i`): rewrite to
+            # temp then replace atomically. Works under GNU and BSD sed.
+            sed '1s/contact_torque\(\[[0-2]\]\) {N\/m}/contact_torque\1 {N*m}/g' \
+                "$out_file" > "$out_file.tmp" && mv "$out_file.tmp" "$out_file"
         fi
     done
     return $fail

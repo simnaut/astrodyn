@@ -741,7 +741,9 @@ impl Simulation {
     /// acts on body B. Torques are accumulated about each body's CoM.
     ///
     /// # Panics
-    /// Panics if either body index is out of range.
+    /// * Either `body_a` or `body_b` is out of range for the registered bodies.
+    /// * `body_a == body_b` — contact pair bodies must be distinct
+    ///   (JEOD_INV: IN.19, matching JEOD's `unique_pair` invariant).
     pub fn register_contact_pair(
         &mut self,
         body_a: usize,
