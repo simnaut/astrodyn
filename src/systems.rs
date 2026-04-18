@@ -815,6 +815,21 @@ pub fn flat_plate_srp_system(
         srp_force.force = force_inertial;
         srp_force.torque = srp_result.torque;
 
+        // The Bevy adapter currently only implements scheduled-class
+        // thermal (Euler once per step). Derivative-class modes require
+        // forking the integration schedule, which the `Simulation` runner
+        // does but this adapter does not yet — fail loudly so callers
+        // don't silently get the wrong thermal behavior.
+        assert!(
+            matches!(
+                flat_config.integration_order,
+                jeod_sim::ThermalIntegrationOrder::Scheduled,
+            ),
+            "Bevy adapter supports only ThermalIntegrationOrder::Scheduled; \
+             use jeod_runner::Simulation for DerivativeFirstOrder / DerivativeRk4 \
+             (see issue #114 follow-up for Bevy parity)",
+        );
+
         // Integrate plate temperatures (forward Euler) — shared with Simulation runner
         if dt > 0.0 {
             flat_config.integrate_temperatures(&srp_result.temp_dots, dt);
