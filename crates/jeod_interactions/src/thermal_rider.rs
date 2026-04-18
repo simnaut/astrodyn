@@ -39,7 +39,7 @@ use crate::radiation_pressure::STEFAN_BOLTZMANN;
 /// surface-interaction optical properties (solar absorptivity,
 /// albedo/reflectance) used by radiative environmental heating. JEOD's
 /// `ThermalParams::thermal_power_dump` (internal heat source, W) is not
-/// modelled here — add it in a follow-up if a use case demands it.
+/// modeled here — add it in a follow-up if a use case demands it.
 ///
 /// Units follow JEOD: SI throughout. `mass * specific_heat` is the facet
 /// heat capacity `C = m·c_p` (J/K); the [`compute_thermal_power_balance`]
@@ -54,9 +54,10 @@ pub struct ThermalFacet {
     /// Solar absorptivity (0..=1). Fraction of incident solar flux absorbed
     /// when the facet is illuminated by the Sun (or Sun-reflected Earth albedo).
     pub absorptivity_solar: f64,
-    /// Bolometric albedo (0..=1). Fraction of incident solar flux *reflected*
-    /// by this facet — complement of `absorptivity_solar` for an opaque surface
-    /// (i.e. `absorptivity_solar + albedo ≈ 1`), exposed as a separate field so
+    /// Solar albedo / solar reflectance (0..=1). Fraction of incident
+    /// solar-band flux *reflected* by this facet — complement of
+    /// `absorptivity_solar` for an opaque surface (i.e.
+    /// `absorptivity_solar + albedo ≈ 1`), exposed as a separate field so
     /// partially transparent materials can be modeled.
     pub albedo: f64,
     /// Bulk thermal conductivity (W/(m·K)). Stored for use by conduction
