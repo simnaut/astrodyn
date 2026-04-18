@@ -138,11 +138,11 @@ fn tier3_bevy_tidal_sh4x4() {
         radius_primary: radius,
         tidal_bodies: vec![
             TidalBody {
-                mu: 4902.79980693169e9,
+                mu: jeod_sim::MOON.shape.mu,
                 position_inertial: moon_pos,
             },
             TidalBody {
-                mu: 1.327_124_40e20,
+                mu: jeod_sim::SUN.shape.mu,
                 position_inertial: sun_pos,
             },
         ],
