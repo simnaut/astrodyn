@@ -713,6 +713,10 @@ pub struct CoupledStageEval {
 /// - `stage_fn`: closure that evaluates derivatives at an intermediate state.
 ///   Called 4 times (once per RK4 stage). Must recompute gravity, SRP
 ///   force/torque, and thermal derivatives at the given intermediate state.
+///   The `f64` argument is `time_frac` — the fraction of `dt` elapsed at
+///   this stage (0.0 for stage 1, 0.5 for stages 2 and 3, 1.0 for stage 4),
+///   matching `integrate_body`'s gravity-closure convention so callers can
+///   reuse the same ephemeris-interpolation logic.
 /// - `thermal`: flat-plate thermal state (temperatures mutated in place)
 /// - `dt`: simulation timestep in seconds
 /// - `time_scale_factor`: ratio of dynamic time to simulation time
@@ -732,6 +736,7 @@ pub fn integrate_body_coupled(
         &TranslationalState,
         Option<&RotationalState>,
         &FlatPlateState,
+        f64,
     ) -> CoupledStageEval,
     thermal: &mut FlatPlateState,
     dt: f64,
@@ -774,8 +779,8 @@ pub fn integrate_body_coupled(
     // JEOD_INV: IN.32 — snapshot thermal state at step start before stage 1.
     thermal.snapshot();
 
-    // Stage 1: evaluate at current state
-    let eval1 = stage_fn(trans, None, thermal);
+    // Stage 1: evaluate at current state (time_frac = 0.0)
+    let eval1 = stage_fn(trans, None, thermal, 0.0);
     debug_assert_eq!(
         eval1.temp_dots.len(),
         n_plates,
@@ -792,7 +797,7 @@ pub fn integrate_body_coupled(
         velocity: vel0 + k1_accel * half_dt,
     };
     thermal.advance_intermediate(&k1_tdots, half_dt);
-    let eval2 = stage_fn(&s2_trans, None, thermal);
+    let eval2 = stage_fn(&s2_trans, None, thermal, 0.5);
     debug_assert_eq!(
         eval2.temp_dots.len(),
         n_plates,
@@ -808,7 +813,7 @@ pub fn integrate_body_coupled(
         velocity: vel0 + k2_accel * half_dt,
     };
     thermal.advance_intermediate(&k2_tdots, half_dt);
-    let eval3 = stage_fn(&s3_trans, None, thermal);
+    let eval3 = stage_fn(&s3_trans, None, thermal, 0.5);
     debug_assert_eq!(
         eval3.temp_dots.len(),
         n_plates,
@@ -824,7 +829,7 @@ pub fn integrate_body_coupled(
         velocity: vel0 + k3_accel * integ_dyndt,
     };
     thermal.advance_intermediate(&k3_tdots, integ_dyndt);
-    let eval4 = stage_fn(&s4_trans, None, thermal);
+    let eval4 = stage_fn(&s4_trans, None, thermal, 1.0);
     debug_assert_eq!(
         eval4.temp_dots.len(),
         n_plates,
@@ -858,6 +863,7 @@ fn integrate_coupled_sixdof(
         &TranslationalState,
         Option<&RotationalState>,
         &FlatPlateState,
+        f64,
     ) -> CoupledStageEval,
     thermal: &mut FlatPlateState,
     integ_dyndt: f64,
@@ -899,8 +905,8 @@ fn integrate_coupled_sixdof(
         (accel, k_qdot, k_alpha)
     };
 
-    // Stage 1
-    let eval1 = stage_fn(trans, Some(rot), thermal);
+    // Stage 1 (time_frac = 0.0)
+    let eval1 = stage_fn(trans, Some(rot), thermal, 0.0);
     debug_assert_eq!(
         eval1.temp_dots.len(),
         n_plates,
@@ -918,7 +924,7 @@ fn integrate_coupled_sixdof(
     };
     let s2_rot = make_rot(step_q(q0, k1_qdot, half_dt), omega0 + k1_alpha * half_dt);
     thermal.advance_intermediate(&k1_tdots, half_dt);
-    let eval2 = stage_fn(&s2_trans, Some(&s2_rot), thermal);
+    let eval2 = stage_fn(&s2_trans, Some(&s2_rot), thermal, 0.5);
     debug_assert_eq!(
         eval2.temp_dots.len(),
         n_plates,
@@ -935,7 +941,7 @@ fn integrate_coupled_sixdof(
     };
     let s3_rot = make_rot(step_q(q0, k2_qdot, half_dt), omega0 + k2_alpha * half_dt);
     thermal.advance_intermediate(&k2_tdots, half_dt);
-    let eval3 = stage_fn(&s3_trans, Some(&s3_rot), thermal);
+    let eval3 = stage_fn(&s3_trans, Some(&s3_rot), thermal, 0.5);
     debug_assert_eq!(
         eval3.temp_dots.len(),
         n_plates,
@@ -955,7 +961,7 @@ fn integrate_coupled_sixdof(
         omega0 + k3_alpha * integ_dyndt,
     );
     thermal.advance_intermediate(&k3_tdots, integ_dyndt);
-    let eval4 = stage_fn(&s4_trans, Some(&s4_rot), thermal);
+    let eval4 = stage_fn(&s4_trans, Some(&s4_rot), thermal, 1.0);
     debug_assert_eq!(
         eval4.temp_dots.len(),
         n_plates,
@@ -1067,7 +1073,7 @@ mod tests {
             &mut trans2,
             None,
             Some(&mass),
-            |inter_trans, _inter_rot, _inter_thermal| CoupledStageEval {
+            |inter_trans, _inter_rot, _inter_thermal, _time_frac| CoupledStageEval {
                 gravity_accel: {
                     let pos = inter_trans.position;
                     -mu / pos.length().powi(3) * pos

@@ -35,10 +35,11 @@ use jeod_sim::gravity::accumulate_gravity;
 use jeod_sim::integration::{integrate_bodies_contact_coupled, integrate_body, CoupledBodyInput};
 use jeod_sim::validation::ValidationError;
 use jeod_sim::{
-    evaluate_contact_pair, AerodynamicForce, AtmosphereState, ContactFacet, DragConfig,
-    DynamicsConfig, EulerSequence, FrameDerivatives, GeodeticState, GravityAcceleration,
-    GravityControls, GravitySource, JeodQuat, LvlhFrame, MassProperties, OrbitalElements,
-    PlanetConfig, RadiationForce, RotationalState, SimulationTime, TotalForce, TranslationalState,
+    evaluate_contact_pair, integrate_body_coupled, AerodynamicForce, AtmosphereState, ContactFacet,
+    CoupledStageEval, DragConfig, DynamicsConfig, EulerSequence, FrameDerivatives, GeodeticState,
+    GravityAcceleration, GravityControls, GravitySource, JeodQuat, LvlhFrame, MassProperties,
+    OrbitalElements, PlanetConfig, RadiationForce, RotationalState, SimulationTime, TotalForce,
+    TranslationalState,
 };
 
 pub mod builder;
@@ -466,6 +467,32 @@ pub struct VehicleOutput {
 // Internal body state (private — not part of public API)
 // ══════════════════════════════════════════════════════════════════════════════
 
+/// Step-constant SRP inputs cached in Stage 5 for the coupled Rk4 thermal
+/// path, then consumed in Stage 8's per-stage closure.
+///
+/// The shadow `illum_factor` and solar `flux_inertial_hat` are evaluated
+/// once at step start — JEOD's scheduled-class shadow evaluation in
+/// SIM_3_ORBIT. Per-stage plate-frame rotation of the flux happens inside
+/// the stage closure.
+// JEOD_INV: IN.32 — IntegrableObject per-stage protocol consumes these
+// cached step-constant inputs alongside the stage-dependent plate state.
+#[derive(Debug, Clone, Copy)]
+struct SrpStageInputs {
+    /// Unit flux direction from Sun to vehicle in inertial frame (step start).
+    flux_inertial_hat: DVec3,
+    /// Solar flux magnitude at vehicle distance (W/m²).
+    flux_mag: f64,
+    /// Shadow illumination factor from step-start shadow evaluation.
+    illum_factor: f64,
+    /// Center of gravity in structural frame.
+    center_grav: DVec3,
+    /// Which derivative-class order is in effect. `DerivativeFirstOrder`
+    /// captures stage-1 temp_dots and reuses them at stages 2-4 so the
+    /// RK4 combine collapses to Euler; `DerivativeRk4` uses true per-stage
+    /// derivatives.
+    order: jeod_sim::ThermalIntegrationOrder,
+}
+
 /// Internal per-body simulation state. Combines user config with bookkeeping
 /// and output fields. Not exposed publicly — users interact through
 /// [`VehicleConfig`] (input) and [`VehicleOutput`] (output).
@@ -501,6 +528,12 @@ struct SimBody {
     aero_force: Option<AerodynamicForce>,
     radiation_force: Option<RadiationForce>,
     gravity_torque: Option<DVec3>,
+    /// Cached SRP inputs for the Rk4-coupled thermal path. Populated in
+    /// Stage 5 (interactions) and consumed by the stage closure in Stage 8
+    /// (integration) when `flat_plate_state.integration_order ==
+    /// ThermalIntegrationOrder::Rk4Coupled`. `None` when SRP is off, too
+    /// close to the Sun, or the 1st-order (Euler) thermal path is in use.
+    srp_stage_inputs: Option<SrpStageInputs>,
 
     // ── Derived state config ──
     orbital_elements_source: Option<usize>,
@@ -580,6 +613,7 @@ impl SimBody {
             aero_force: None,
             radiation_force: None,
             gravity_torque: None,
+            srp_stage_inputs: None,
 
             orbital_elements_source: config.derived.orbital_elements_source,
             euler_sequence: config.derived.euler_sequence,
@@ -1717,6 +1751,7 @@ impl Simulation {
 
             // Solar radiation pressure (flat-plate)
             body.radiation_force = None;
+            body.srp_stage_inputs = None;
             if let Some(sun_position) = sun_pos {
                 if let Some(ref mut fps) = body.flat_plate_state {
                     // Flat-plate SRP with thermal emission
@@ -1727,7 +1762,8 @@ impl Simulation {
                         let flux_inertial_hat = sun_to_vehicle / distance;
                         let flux_mag = jeod_sim::solar_flux_at_distance(distance);
 
-                        // Shadow fraction
+                        // Shadow fraction (step-constant — matches JEOD's
+                        // scheduled-class shadow evaluation in SIM_3_ORBIT).
                         let illum_factor = body
                             .shadow_body
                             .map(|(idx, radius)| {
@@ -1748,28 +1784,50 @@ impl Simulation {
                             })
                             .unwrap_or(1.0);
 
-                        // Rotate flux direction to structural frame
-                        let flux_struct_hat = t_inertial_struct * flux_inertial_hat;
-
                         let center_grav = body.mass.as_ref().map_or(DVec3::ZERO, |m| m.position);
 
-                        let srp_result = jeod_sim::compute_flat_plate_srp_thermal(
-                            &fps.plates,
-                            &fps.t_pow4_cached,
-                            flux_struct_hat,
-                            flux_mag,
-                            center_grav,
-                            illum_factor,
-                        );
+                        match fps.integration_order {
+                            jeod_sim::ThermalIntegrationOrder::Scheduled => {
+                                // Scheduled-class: compute SRP force + Euler T
+                                // update once per step (JEOD SIM_3_ORBIT).
+                                let flux_struct_hat = t_inertial_struct * flux_inertial_hat;
+                                let srp_result = jeod_sim::compute_flat_plate_srp_thermal(
+                                    &fps.plates,
+                                    &fps.t_pow4_cached,
+                                    flux_struct_hat,
+                                    flux_mag,
+                                    center_grav,
+                                    illum_factor,
+                                );
 
-                        // Force: rotate from structural to inertial. Torque: stays structural.
-                        let force_inertial = t_inertial_struct.transpose() * srp_result.force;
-                        body.radiation_force = Some(RadiationForce {
-                            force: force_inertial,
-                            torque: srp_result.torque,
-                        });
+                                // Force: structural → inertial. Torque: stays structural.
+                                let force_inertial =
+                                    t_inertial_struct.transpose() * srp_result.force;
+                                body.radiation_force = Some(RadiationForce {
+                                    force: force_inertial,
+                                    torque: srp_result.torque,
+                                });
 
-                        fps.integrate_temperatures(&srp_result.temp_dots, dt);
+                                fps.integrate_temperatures(&srp_result.temp_dots, dt);
+                            }
+                            jeod_sim::ThermalIntegrationOrder::DerivativeFirstOrder
+                            | jeod_sim::ThermalIntegrationOrder::DerivativeRk4 => {
+                                // Derivative-class: SRP force (and optionally T)
+                                // recomputed per RK4 stage. Stash the step-start
+                                // inputs here; Stage 8 consumes them via
+                                // `integrate_body_coupled` below.
+                                body.srp_stage_inputs = Some(SrpStageInputs {
+                                    flux_inertial_hat,
+                                    flux_mag,
+                                    illum_factor,
+                                    center_grav,
+                                    order: fps.integration_order,
+                                });
+                                // `radiation_force` is left None here; Stage 8
+                                // writes a representative final-stage value so
+                                // `VehicleOutput` still reports SRP force.
+                            }
+                        }
                     }
                 } else if let Some((cx_area, albedo, diffuse)) = body.cannonball_srp {
                     let illum_factor = body
@@ -2004,24 +2062,131 @@ impl Simulation {
             // a &mut SimBody, and Rust's disjoint-field split borrow lets
             // the closure capture &body.gravity_controls while other
             // fields of `body` are borrowed mutably for the integrator.
+            let time_scale_factor = self.time.time_scale_factor;
             for (body_idx, body) in self.bodies.iter_mut().enumerate() {
-                let controls = &body.gravity_controls;
-                integrate_body(
-                    &body.config,
-                    &mut body.trans,
-                    body.rot.as_mut(),
-                    body.mass.as_ref(),
-                    |pos, vel, time_frac| {
-                        eval_body_gravity(controls, body_idx, pos, vel, time_frac)
-                    },
-                    body.total_force.force,
-                    body.total_force.torque,
-                    dt,
-                    self.time.time_scale_factor,
-                    body.integrator,
-                    body.gj_state.as_mut(),
-                    body.abm4_state.as_mut(),
-                );
+                if let Some(srp_inputs) = body.srp_stage_inputs {
+                    // JEOD_INV: IN.32 — Rk4Coupled thermal: SRP force +
+                    // temp_dots recomputed at each RK4 stage from the
+                    // intermediate orbital + thermal state. Aero /
+                    // external / gravity-gradient torque are step-constant
+                    // (scheduled-class) and captured once from total_force.
+                    assert!(
+                        matches!(body.integrator, jeod_dynamics::IntegratorType::Rk4),
+                        "Rk4Coupled thermal integration requires RK4 integrator \
+                         (body {body_idx}); use FirstOrder or switch integrator.",
+                    );
+                    let t_struct_body = body.t_struct_body;
+                    let non_grav_non_srp_force = body.total_force.force;
+                    let constant_torque = body.total_force.torque;
+                    let config = body.config;
+                    let controls = &body.gravity_controls;
+                    // Stash the final-stage SRP result so we can write a
+                    // representative `radiation_force` for `VehicleOutput`.
+                    let mut final_srp_inertial_force = DVec3::ZERO;
+                    let mut final_srp_torque = DVec3::ZERO;
+                    // For DerivativeFirstOrder: capture stage-1 temp_dots and
+                    // feed them back at stages 2-4, collapsing the RK4 thermal
+                    // combine to Euler (matches JEOD's ER7_Utils first-order
+                    // integrator behavior while still evaluating SRP per stage
+                    // for the orbital RK4).
+                    let mut k1_temp_dots: Option<Vec<f64>> = None;
+                    let mass_copy = body.mass;
+
+                    integrate_body_coupled(
+                        &config,
+                        &mut body.trans,
+                        body.rot.as_mut(),
+                        mass_copy.as_ref(),
+                        |stage_trans, stage_rot, stage_thermal, time_frac| {
+                            let gravity_accel = eval_body_gravity(
+                                controls,
+                                body_idx,
+                                stage_trans.position,
+                                stage_trans.velocity,
+                                time_frac,
+                            );
+                            let t_inertial_body = stage_rot.map_or(DMat3::IDENTITY, |r| {
+                                r.quaternion.left_quat_to_transformation()
+                            });
+                            let t_inertial_struct = jeod_sim::compute_t_inertial_struct(
+                                &t_struct_body,
+                                &t_inertial_body,
+                            );
+                            let flux_struct_hat = t_inertial_struct * srp_inputs.flux_inertial_hat;
+                            let srp_result = jeod_sim::compute_flat_plate_srp_thermal(
+                                &stage_thermal.plates,
+                                &stage_thermal.t_pow4_cached,
+                                flux_struct_hat,
+                                srp_inputs.flux_mag,
+                                srp_inputs.center_grav,
+                                srp_inputs.illum_factor,
+                            );
+                            let srp_force_inertial =
+                                t_inertial_struct.transpose() * srp_result.force;
+                            // Stage 4 (time_frac == 1.0) is the representative
+                            // final-state SRP — cached for writeback below.
+                            final_srp_inertial_force = srp_force_inertial;
+                            final_srp_torque = srp_result.torque;
+                            let temp_dots = match srp_inputs.order {
+                                jeod_sim::ThermalIntegrationOrder::DerivativeRk4 => {
+                                    srp_result.temp_dots
+                                }
+                                jeod_sim::ThermalIntegrationOrder::DerivativeFirstOrder => {
+                                    // Capture at stage 1 (time_frac == 0.0);
+                                    // reuse at stages 2-4 so RK4 combine
+                                    // collapses to Euler over k1.
+                                    if time_frac == 0.0 {
+                                        k1_temp_dots = Some(srp_result.temp_dots.clone());
+                                        srp_result.temp_dots
+                                    } else {
+                                        k1_temp_dots
+                                            .clone()
+                                            .expect("stage 1 runs before stages 2-4")
+                                    }
+                                }
+                                jeod_sim::ThermalIntegrationOrder::Scheduled => {
+                                    unreachable!(
+                                        "Scheduled thermal bodies do not enter the coupled path"
+                                    )
+                                }
+                            };
+                            CoupledStageEval {
+                                gravity_accel,
+                                non_grav_force: non_grav_non_srp_force + srp_force_inertial,
+                                torque: constant_torque + srp_result.torque,
+                                temp_dots,
+                            }
+                        },
+                        body.flat_plate_state
+                            .as_mut()
+                            .expect("srp_stage_inputs implies flat_plate_state"),
+                        dt,
+                        time_scale_factor,
+                    );
+
+                    body.radiation_force = Some(RadiationForce {
+                        force: final_srp_inertial_force,
+                        torque: final_srp_torque,
+                    });
+                } else {
+                    let controls = &body.gravity_controls;
+                    integrate_body(
+                        &body.config,
+                        &mut body.trans,
+                        body.rot.as_mut(),
+                        body.mass.as_ref(),
+                        |pos, vel, time_frac| {
+                            eval_body_gravity(controls, body_idx, pos, vel, time_frac)
+                        },
+                        body.total_force.force,
+                        body.total_force.torque,
+                        dt,
+                        time_scale_factor,
+                        body.integrator,
+                        body.gj_state.as_mut(),
+                        body.abm4_state.as_mut(),
+                    );
+                }
             }
         } else {
             // ── Contact-coupled path: multi-body RK4 where contact forces
@@ -2044,6 +2209,17 @@ impl Simulation {
                     .iter()
                     .all(|b| b.rot.is_some() && b.mass.is_some()),
                 "contact pairs require 6-DOF (rotational state + mass) on all bodies"
+            );
+            // Rk4Coupled thermal is not extended to the contact-coupled
+            // kernel. JEOD's `DynamicsIntegrationGroup` handles this case
+            // natively, but our `integrate_bodies_contact_coupled` has no
+            // per-stage thermal hook yet; opt such bodies into FirstOrder
+            // or disable contact pairs.
+            assert!(
+                self.bodies.iter().all(|b| b.srp_stage_inputs.is_none()),
+                "Rk4Coupled thermal integration is not yet supported with contact pairs; \
+                 use ThermalIntegrationOrder::FirstOrder on flat-plate SRP bodies \
+                 when contact pairs are active",
             );
             // Contact pair states must share the root inertial frame, since
             // the coupled contact evaluator uses each body's stage state
@@ -2376,6 +2552,18 @@ impl Simulation {
     /// plus any derived states that were configured.
     pub fn body(&self, idx: usize) -> VehicleOutput {
         self.bodies[idx].output()
+    }
+
+    /// Read the current per-plate temperatures (K) for a body's flat-plate
+    /// SRP configuration, or `None` if the body has no flat-plate SRP.
+    ///
+    /// Useful for unit tests and data recording; returns a reference so no
+    /// allocation is needed for the common steady-state case.
+    pub fn srp_plate_temperatures(&self, body_idx: usize) -> Option<&[f64]> {
+        self.bodies[body_idx]
+            .flat_plate_state
+            .as_ref()
+            .map(|fps| fps.temperatures.as_slice())
     }
 
     /// Set the externally applied force (inertial frame, N) for a body.

@@ -7,28 +7,48 @@ use jeod_interactions::{
 
 use crate::integrable::IntegrableObject;
 
-/// Which integrator drives plate temperatures.
+/// Which integrator drives plate temperatures, and at what scheduling
+/// class.
 ///
-/// JEOD offers two scheduling patterns for `ThermalIntegrableObject`:
-/// a "scheduled" `compute_temp_dot` job (the temperature derivative is
-/// evaluated once per step and held constant across RK4 stages —
-/// `radiation.sm` in SIM_3_ORBIT_1st_ORDER), or a full integrable-object
-/// ODE with derivatives recomputed at each stage (`radiation.sm` in
-/// SIM_3_ORBIT, the standard derivative-class integration).
+/// JEOD's `rad_pressure.update()` can be wired in three ways (observed in
+/// `models/interactions/radiation_pressure/verif/S_modules/*.sm`):
 ///
-/// Expressed as a flag so that Tier 3 tests can pick the scheduling
-/// pattern that matches their JEOD reference CSV.
+/// * **Scheduled** (`radiation.sm` — SIM_3_ORBIT): `rad_pressure.update` is
+///   a `("scheduled")` job that runs once per DYNAMICS interval, outside
+///   the integration loop. Temperature is advanced by first-order Euler
+///   over the full step, and the SRP force fed to the orbital integrator
+///   is step-constant.
+/// * **DerivativeFirstOrder** (`radiation_1st_order.sm` — SIM_3_ORBIT_1st_ORDER):
+///   `rad_pressure.update` is `("derivative")` and runs at every RK4
+///   derivative evaluation, so the SRP force varies with intermediate
+///   orbital position. The thermal integrator is ER7_Utils first-order —
+///   i.e., temperature is advanced using the step-start derivative only.
+/// * **DerivativeRk4** (no JEOD Tier 3 reference): `rad_pressure.update`
+///   runs per stage AND temperature integrates via full RK4 (all four
+///   derivatives). Not required to match any current JEOD reference CSV;
+///   exposed as an API option for mission-level missions that want the
+///   more accurate coupling going forward.
+///
+/// Default is [`ThermalIntegrationOrder::Scheduled`] — backward-compatible
+/// with the pre-Commit-3 runner behavior and matches the SIM_3_ORBIT
+/// reference without any opt-in.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ThermalIntegrationOrder {
-    /// Forward Euler with the step-start `temp_dot` (`k1`) only. Matches
-    /// JEOD's scheduled-class `compute_temp_dot` pattern as used in
-    /// `SIM_3_ORBIT_1st_ORDER`.
-    FirstOrder,
-    /// RK4 with per-stage derivative recomputation; temperature
-    /// integrates inside the orbital RK4 loop via [`IntegrableObject`].
-    /// Matches JEOD's standard `SIM_3_ORBIT` derivative-class pattern.
+    /// SRP force + Euler T update computed once per step (step-constant
+    /// SRP across RK4 stages). Matches JEOD's `(DYNAMICS, "scheduled")`
+    /// radiation module in SIM_3_ORBIT.
     #[default]
-    Rk4Coupled,
+    Scheduled,
+    /// SRP force recomputed per RK4 stage (varies with intermediate
+    /// orbital state); temperature advanced at step end using only the
+    /// stage-1 derivative. Matches JEOD's derivative-class + first-order
+    /// ER7_Utils integrator in SIM_3_ORBIT_1st_ORDER.
+    DerivativeFirstOrder,
+    /// SRP force and temperature both recomputed per RK4 stage; full RK4
+    /// thermal integration inside the orbital RK4 loop. No current JEOD
+    /// reference uses this pattern — provided for mission code that wants
+    /// the tighter coupling.
+    DerivativeRk4,
 }
 
 /// Flat-plate SRP configuration with mutable thermal state.
