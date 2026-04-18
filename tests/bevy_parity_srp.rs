@@ -57,9 +57,9 @@ fn tier3_bevy_full_stack_sixdof() {
     app.insert_resource(AtmosphereModelR {
         config: AtmosphereConfig {
             model: AtmosphereModel::Exponential(exp_atmos),
-            r_eq: 6_378_137.0,
-            r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
-            planet_omega: 7.292_115_146_706_388e-5,
+            r_eq: jeod_sim::planet_config::EARTH.shape.r_eq,
+            r_pol: jeod_sim::planet_config::EARTH.shape.r_pol,
+            planet_omega: jeod_sim::planet_config::EARTH.omega,
         },
         planet_entity: None,
     });
@@ -133,9 +133,9 @@ fn tier3_bevy_full_stack_sixdof() {
     sim.sun_source = Some(sun_idx);
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Exponential(exp_atmos),
-        r_eq: 6_378_137.0,
-        r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
-        planet_omega: 7.292_115_146_706_388e-5,
+        r_eq: jeod_sim::planet_config::EARTH.shape.r_eq,
+        r_pol: jeod_sim::planet_config::EARTH.shape.r_pol,
+        planet_omega: jeod_sim::planet_config::EARTH.omega,
     });
 
     let mut body = new_sim_body_sixdof(earth_idx, true);
@@ -254,7 +254,7 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
             SourceInertialPositionC::default(),
             TranslationalStateC::default(),
             ShadowBodyC {
-                radius: 6_378_137.0,
+                radius: jeod_sim::planet_config::EARTH.shadow_radius,
             },
         ))
         .id();
@@ -335,7 +335,7 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
         })),
         shadow_body: Some(RunnerShadowBody {
             source_idx: earth_idx,
-            radius: 6_378_137.0,
+            radius: jeod_sim::planet_config::EARTH.shadow_radius,
         }),
         ..Default::default()
     });

@@ -24,8 +24,8 @@ use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
 use jeod_sim::LeapSecondTable;
 
-const GEO_R_EQ: f64 = 6_378_137.0;
-const GEO_R_POL: f64 = GEO_R_EQ * (1.0 - 1.0 / 298.257_223_563);
+const GEO_R_EQ: f64 = jeod_sim::EARTH.shape.r_eq;
+const GEO_R_POL: f64 = jeod_sim::EARTH.shape.r_pol;
 /// Spherical Earth radius (JEOD uses r_eq for spherical model).
 const GEO_R_SPH: f64 = GEO_R_EQ;
 

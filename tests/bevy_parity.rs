@@ -21,7 +21,7 @@ use jeod_sim::{
     JeodQuat, MassProperties, RotationalState, SixDofState, TranslationalState,
 };
 
-const MU_EARTH: f64 = 3.986_004_415e14;
+const MU_EARTH: f64 = jeod_sim::EARTH.shape.mu;
 const DT: f64 = 10.0;
 const NUM_STEPS: usize = 100;
 

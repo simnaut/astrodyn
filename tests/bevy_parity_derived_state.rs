@@ -163,13 +163,7 @@ fn tier3_bevy_derived_states() {
 fn tier3_bevy_geodetic_derived_state() {
     println!("Scenario J: Geodetic derived state with RNP");
 
-    let earth_shape = PlanetShape {
-        name: "Earth",
-        mu: MU_EARTH,
-        r_eq: 6_378_137.0,
-        r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
-        flat_coeff: 1.0 / 298.257_223_563,
-    };
+    let earth_shape = jeod_sim::EARTH.shape;
 
     // ── Bevy ──
     let mut app = App::new();
@@ -429,7 +423,8 @@ fn tier3_bevy_polar_geodetic() {
         velocity: DVec3::new(0.0, 0.0, 7668.56),
     };
 
-    let r_sph = 6_378_137.0;
+    // Spherical-Earth shape: use the canonical r_eq for both axes (flat_coeff=0).
+    let r_sph = jeod_sim::EARTH.shape.r_eq;
     let earth_shape = PlanetShape {
         name: "Earth",
         mu: MU_EARTH,
@@ -915,15 +910,15 @@ fn run_ned_parity(label: &str, trans: TranslationalState, r_eq: f64, r_pol: f64)
 
 #[test]
 fn tier3_bevy_ned_sph_inc() {
-    let r_sph = 6_378_137.0;
+    let r_sph = jeod_sim::EARTH.shape.r_eq;
     run_ned_parity("ned_sph_inc", iss_trans(), r_sph, r_sph);
 }
 
 #[test]
 fn tier3_bevy_ned_sph_polar() {
-    let r_sph = 6_378_137.0;
+    let r_sph = jeod_sim::EARTH.shape.r_eq;
     let polar_trans = TranslationalState {
-        position: DVec3::new(6_778_137.0, 0.0, 0.0),
+        position: DVec3::new(jeod_sim::EARTH.shape.r_eq + 400_000.0, 0.0, 0.0),
         velocity: DVec3::new(0.0, 0.0, 7668.56),
     };
     run_ned_parity("ned_sph_polar", polar_trans, r_sph, r_sph);

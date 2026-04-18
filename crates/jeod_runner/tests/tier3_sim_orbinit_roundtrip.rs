@@ -17,11 +17,11 @@ use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
 use jeod_sim::{GravityControl, GravityControls, GravityModel, GravitySource, SimulationTime};
 use sim_test_helpers::state_from_elements;
 
-/// Earth gravitational parameter (m^3/s^2) -- GGM05C value.
-const MU_EARTH: f64 = 3.986_004_415e14;
+/// Earth gravitational parameter (m^3/s^2) — JEOD `earth_GGM05C.cc`.
+const MU_EARTH: f64 = jeod_sim::EARTH.shape.mu;
 
-/// Earth equatorial radius (m).
-const R_EARTH: f64 = 6_378_137.0;
+/// Earth equatorial radius (m) — JEOD `earth.cc`.
+const R_EARTH: f64 = jeod_sim::EARTH.shape.r_eq;
 
 /// Build a Simulation, propagate for approximately one full orbit (for bound
 /// orbits), recover orbital elements, and verify shape/orientation elements

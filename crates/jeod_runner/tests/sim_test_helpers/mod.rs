@@ -13,8 +13,9 @@ use std::path::Path;
 #[allow(unused_imports)] // Not all test binaries use dyncomp CSV loading
 pub use jeod_test_data::dyncomp_csv::{load_dyncomp_csv, DyncompRecord};
 
-/// Earth rotation rate (JEOD RNPJ2000 default).
-pub const OMEGA_EARTH: f64 = 7.292_115_146_706_388e-5;
+/// Earth rotation rate (JEOD RNPJ2000 default), sourced from
+/// `jeod_sim::planet_config::EARTH.omega`.
+pub const OMEGA_EARTH: f64 = jeod_sim::planet_config::EARTH.omega;
 
 /// Build `MassProperties` from parsed JEOD mass initialization data.
 ///

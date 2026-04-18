@@ -129,6 +129,66 @@ pub fn init_from_mean_anomaly(
     TranslationalState { position, velocity }
 }
 
+/// Initialize translational state from Keplerian orbital elements with the
+/// `SmaEccIncAscnodeArgperTimeperi` element set (time since periapsis).
+///
+/// Port of the `LocationTimePeri` branch of JEOD `DynBodyInitOrbit::apply()`
+/// at `models/dynamics/body_action/src/dyn_body_init_orbit.cc:293-295`:
+///
+/// ```cpp
+/// if (location == LocationTimePeri) {
+///     mean_anomaly = time_periapsis * std::sqrt(planet->grav_source->mu / semi_major_axis) / semi_major_axis;
+/// }
+/// ```
+///
+/// Converts `time_periapsis` (seconds elapsed since periapsis passage) to
+/// mean anomaly via `M = n · t_peri` where `n = sqrt(mu / a^3)`, then defers
+/// to [`init_from_mean_anomaly`].
+///
+/// # Arguments
+/// * `semi_major_axis` - Semi-major axis (m)
+/// * `eccentricity` - Orbital eccentricity
+/// * `inclination` - Inclination (rad)
+/// * `raan` - Right ascension of ascending node (rad)
+/// * `arg_periapsis` - Argument of periapsis (rad)
+/// * `time_periapsis` - Time elapsed **since** periapsis passage (s). JEOD
+///   convention: positive when t > t_peri (i.e., after periapsis).
+/// * `mu` - Gravitational parameter of central body (m^3/s^2)
+pub fn init_from_time_periapsis(
+    semi_major_axis: f64,
+    eccentricity: f64,
+    inclination: f64,
+    raan: f64,
+    arg_periapsis: f64,
+    time_periapsis: f64,
+    mu: f64,
+) -> TranslationalState {
+    assert!(
+        mu > 0.0,
+        "init_from_time_periapsis: mu must be positive, got {mu}"
+    );
+    assert!(
+        semi_major_axis > 0.0 && semi_major_axis.is_finite(),
+        "init_from_time_periapsis: semi_major_axis must be positive and finite, got {semi_major_axis}"
+    );
+
+    // JEOD dyn_body_init_orbit.cc:295 factorization:
+    //   mean_anomaly = t_peri * sqrt(mu / a) / a
+    // Algebraically equivalent to M = n*t with n = sqrt(mu/a^3), but matches
+    // JEOD's arithmetic order to minimize rounding differences in parity tests.
+    let mean_anomaly = time_periapsis * (mu / semi_major_axis).sqrt() / semi_major_axis;
+
+    init_from_mean_anomaly(
+        semi_major_axis,
+        eccentricity,
+        inclination,
+        raan,
+        arg_periapsis,
+        mean_anomaly,
+        mu,
+    )
+}
+
 /// Initialize translational state from LVLH-relative position and velocity.
 ///
 /// Computes the LVLH frame from a reference orbit state, then transforms the
@@ -305,21 +365,16 @@ mod tests {
             jeod_test_data::reference_state::load_reference_state(&root, "ISS", "inertial");
 
         // ISS set01 uses SmaEccIncAscnodeArgperTimeperi.
-        // Compute mean anomaly from time_periapsis: M = n * t_peri
-        let a = init.semi_major_axis;
-        let n = (EARTH_MU / (a * a * a)).sqrt();
         let t_peri = init
             .time_periapsis
             .expect("ISS set01 should have time_periapsis");
-        let mean_anomaly = n * t_peri;
-
-        let state = init_from_mean_anomaly(
+        let state = init_from_time_periapsis(
             init.semi_major_axis,
             init.eccentricity,
             init.inclination,
             init.ascending_node,
             init.arg_periapsis,
-            mean_anomaly,
+            t_peri,
             EARTH_MU,
         );
 

@@ -39,8 +39,8 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
     app.insert_resource(AtmosphereModelR {
         config: AtmosphereConfig {
             model: AtmosphereModel::Exponential(exp_atmos),
-            r_eq: 6_378_137.0,
-            r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
+            r_eq: jeod_sim::planet_config::EARTH.shape.r_eq,
+            r_pol: jeod_sim::planet_config::EARTH.shape.r_pol,
             planet_omega: 0.0,
         },
         planet_entity: None,
@@ -85,8 +85,8 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
     let earth_idx = sim.add_source("Earth", earth_entry);
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Exponential(exp_atmos),
-        r_eq: 6_378_137.0,
-        r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
+        r_eq: jeod_sim::planet_config::EARTH.shape.r_eq,
+        r_pol: jeod_sim::planet_config::EARTH.shape.r_pol,
         planet_omega: 0.0,
     });
 
@@ -127,8 +127,8 @@ fn tier3_bevy_constant_density_drag_sixdof() {
     app.insert_resource(AtmosphereModelR {
         config: AtmosphereConfig {
             model: AtmosphereModel::Exponential(exp_atmos),
-            r_eq: 6_378_137.0,
-            r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
+            r_eq: jeod_sim::planet_config::EARTH.shape.r_eq,
+            r_pol: jeod_sim::planet_config::EARTH.shape.r_pol,
             planet_omega: 0.0,
         },
         planet_entity: None,
@@ -173,8 +173,8 @@ fn tier3_bevy_constant_density_drag_sixdof() {
     let earth_idx = sim.add_source("Earth", earth_entry);
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Exponential(exp_atmos),
-        r_eq: 6_378_137.0,
-        r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
+        r_eq: jeod_sim::planet_config::EARTH.shape.r_eq,
+        r_pol: jeod_sim::planet_config::EARTH.shape.r_pol,
         planet_omega: 0.0,
     });
 
@@ -231,9 +231,9 @@ fn tier3_bevy_met_atmosphere_drag_sixdof() {
     app.insert_resource(AtmosphereModelR {
         config: AtmosphereConfig {
             model: AtmosphereModel::Met(met),
-            r_eq: 6_378_137.0,
-            r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
-            planet_omega: 7.292_115_146_706_388e-5,
+            r_eq: jeod_sim::planet_config::EARTH.shape.r_eq,
+            r_pol: jeod_sim::planet_config::EARTH.shape.r_pol,
+            planet_omega: jeod_sim::planet_config::EARTH.omega,
         },
         planet_entity: Some(planet),
     });
@@ -278,9 +278,9 @@ fn tier3_bevy_met_atmosphere_drag_sixdof() {
     );
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Met(met),
-        r_eq: 6_378_137.0,
-        r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
-        planet_omega: 7.292_115_146_706_388e-5,
+        r_eq: jeod_sim::planet_config::EARTH.shape.r_eq,
+        r_pol: jeod_sim::planet_config::EARTH.shape.r_pol,
+        planet_omega: jeod_sim::planet_config::EARTH.omega,
     });
     sim.atmosphere_planet_source = Some(earth_idx);
 
@@ -327,9 +327,9 @@ fn tier3_bevy_met_run5a() {
     app.insert_resource(AtmosphereModelR {
         config: AtmosphereConfig {
             model: AtmosphereModel::Met(met),
-            r_eq: 6_378_137.0,
-            r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
-            planet_omega: 7.292_115_146_706_388e-5,
+            r_eq: jeod_sim::planet_config::EARTH.shape.r_eq,
+            r_pol: jeod_sim::planet_config::EARTH.shape.r_pol,
+            planet_omega: jeod_sim::planet_config::EARTH.omega,
         },
         planet_entity: Some(planet),
     });
@@ -378,9 +378,9 @@ fn tier3_bevy_met_run5a() {
     );
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Met(met),
-        r_eq: 6_378_137.0,
-        r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
-        planet_omega: 7.292_115_146_706_388e-5,
+        r_eq: jeod_sim::planet_config::EARTH.shape.r_eq,
+        r_pol: jeod_sim::planet_config::EARTH.shape.r_pol,
+        planet_omega: jeod_sim::planet_config::EARTH.omega,
     });
     sim.atmosphere_planet_source = Some(earth_idx);
 
@@ -435,9 +435,9 @@ fn tier3_bevy_drag_run6b() {
     app.insert_resource(AtmosphereModelR {
         config: AtmosphereConfig {
             model: AtmosphereModel::Met(met),
-            r_eq: 6_378_137.0,
-            r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
-            planet_omega: 7.292_115_146_706_388e-5,
+            r_eq: jeod_sim::planet_config::EARTH.shape.r_eq,
+            r_pol: jeod_sim::planet_config::EARTH.shape.r_pol,
+            planet_omega: jeod_sim::planet_config::EARTH.omega,
         },
         planet_entity: Some(planet),
     });
@@ -482,9 +482,9 @@ fn tier3_bevy_drag_run6b() {
     );
     sim.atmosphere = Some(AtmosphereConfig {
         model: AtmosphereModel::Met(met),
-        r_eq: 6_378_137.0,
-        r_pol: 6_378_137.0 * (1.0 - 1.0 / 298.257_223_563),
-        planet_omega: 7.292_115_146_706_388e-5,
+        r_eq: jeod_sim::planet_config::EARTH.shape.r_eq,
+        r_pol: jeod_sim::planet_config::EARTH.shape.r_pol,
+        planet_omega: jeod_sim::planet_config::EARTH.omega,
     });
     sim.atmosphere_planet_source = Some(earth_idx);
 

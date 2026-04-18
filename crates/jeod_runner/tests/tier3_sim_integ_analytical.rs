@@ -17,7 +17,7 @@ use jeod_sim::{
 };
 
 /// Earth gravitational parameter (m^3/s^2) from JEOD earth_GGM05C.
-const MU_EARTH: f64 = 398_600.441_50e9;
+const MU_EARTH: f64 = jeod_sim::EARTH.shape.mu;
 
 /// Semi-major axis for ISS-like circular orbit (m).
 const SMA: f64 = 6_778_000.0;

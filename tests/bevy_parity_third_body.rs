@@ -237,7 +237,7 @@ fn run_3rd_body_parity(label: &str, trans: TranslationalState, include_moon: boo
         .id();
 
     let moon_entity = if let Some(moon_pos) = initial_moon_pos {
-        let mu_moon = 4.902_800_066e12;
+        let mu_moon = jeod_sim::MOON.shape.mu;
         Some(
             app.world_mut()
                 .spawn((
@@ -319,7 +319,7 @@ fn run_3rd_body_parity(label: &str, trans: TranslationalState, include_moon: boo
     sim.sun_source = Some(sun_idx);
 
     let moon_idx = if include_moon {
-        let mu_moon = 4.902_800_066e12;
+        let mu_moon = jeod_sim::MOON.shape.mu;
         let moon_pos = initial_moon_pos.unwrap();
         let idx = sim.add_source(
             "Moon",
@@ -561,7 +561,7 @@ fn tier3_bevy_mars_dawn() {
 fn tier3_bevy_mercury_relativistic() {
     println!("Mercury relativistic: Sun point-mass with PPN correction");
 
-    let mu_sun = 1.327_124_400_18e20;
+    let mu_sun = jeod_sim::SUN.shape.mu;
     let r_perihelion = 4.6e10;
     let v_perihelion = 5.898e4;
     let mercury_trans = TranslationalState {
@@ -647,7 +647,7 @@ fn tier3_bevy_mercury_relativistic() {
 fn tier3_bevy_relativistic_moving_source() {
     println!("Relativistic moving source: Sun with non-zero velocity");
 
-    let mu_sun = 1.327_124_400_18e20;
+    let mu_sun = jeod_sim::SUN.shape.mu;
     let r_perihelion = 4.6e10;
     let v_perihelion = 5.898e4;
     let mercury_trans = TranslationalState {
@@ -745,13 +745,13 @@ fn tier3_bevy_earth_moon_clem() {
     let initial_sun_pos = sun_initial_pos();
     let initial_moon_pos = moon_initial_pos();
 
-    let r_perigee = 6_378_137.0 + 400_000.0;
+    let r_perigee = jeod_sim::EARTH.shape.r_eq + 400_000.0;
     let v_perigee = 10_500.0;
     let clem_trans = TranslationalState {
         position: DVec3::new(r_perigee, 0.0, 0.0),
         velocity: DVec3::new(0.0, v_perigee, 0.0),
     };
-    let mu_moon = 4.902_800_066e12;
+    let mu_moon = jeod_sim::MOON.shape.mu;
 
     let cx_area = 5.0;
     let albedo = 0.3;

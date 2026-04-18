@@ -54,7 +54,7 @@ fn tier3_sim_earth_lighting_consistency() {
 // ── Earth lighting parity tests ──
 
 fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_pos: DVec3) {
-    let earth_r = 6_378_137.0;
+    let earth_r = jeod_sim::EARTH.shadow_radius;
     let moon_r = 1_737_400.0;
     let sun_r = 6.96e8;
 
@@ -267,7 +267,7 @@ fn tier3_bevy_earth_lighting_t10() {
 
 #[test]
 fn tier3_bevy_earth_lighting_pipeline() {
-    let earth_r = 6_378_137.0;
+    let earth_r = jeod_sim::EARTH.shadow_radius;
     let moon_r = 1_737_400.0;
     let sun_r = 6.96e8;
     let sun_pos = DVec3::new(1.496e11, 0.0, 0.0);

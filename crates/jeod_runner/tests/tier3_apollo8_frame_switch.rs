@@ -47,10 +47,14 @@ const TOTAL_TIME: f64 = 100.0;
 const SWITCH_DISTANCE: f64 = 66.1e6;
 
 // Gravitational parameters — match JEOD's spherical gravity data exactly:
-// earth_spherical.cc, moon_spherical.cc, sun_spherical.cc
-const MU_EARTH: f64 = 3.986_004_415e14;
+// earth_spherical.cc, moon_spherical.cc, sun_spherical.cc.
+// MU_EARTH and MU_SUN match their GGM05C/presets counterparts.
+// MU_MOON = 4902.801076e9 (moon_spherical.cc / moon_LP150Q.cc) deliberately
+// differs from jeod_sim::MOON.shape.mu = 4902.79980693169e9 (moon_GRAIL150.cc)
+// because this Apollo 8 test targets the spherical-gravity verification run.
+const MU_EARTH: f64 = jeod_sim::EARTH.shape.mu;
 const MU_MOON: f64 = 4.902_801_076e12;
-const MU_SUN: f64 = 1.327_124_40e20;
+const MU_SUN: f64 = jeod_sim::SUN.shape.mu;
 
 fn test_data_dir() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../test_data")
