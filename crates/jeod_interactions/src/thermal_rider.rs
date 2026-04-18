@@ -34,10 +34,12 @@ use crate::radiation_pressure::STEFAN_BOLTZMANN;
 
 /// Thermal and optical material properties for a single facet.
 ///
-/// Combines the material-dependent parameters from JEOD `ThermalParams`
-/// (emissivity, heat capacity, thermal power dump) with the surface-
-/// interaction optical properties (solar absorptivity, albedo/reflectance)
-/// used by radiative environmental heating.
+/// Combines the material-dependent parameters represented here from JEOD
+/// `ThermalParams` (emissivity, heat-capacity-related quantities) with the
+/// surface-interaction optical properties (solar absorptivity,
+/// albedo/reflectance) used by radiative environmental heating. JEOD's
+/// `ThermalParams::thermal_power_dump` (internal heat source, W) is not
+/// modelled here — add it in a follow-up if a use case demands it.
 ///
 /// Units follow JEOD: SI throughout. `mass * specific_heat` is the facet
 /// heat capacity `C = m·c_p` (J/K); the [`compute_thermal_power_balance`]
@@ -77,8 +79,8 @@ impl ThermalFacet {
         self.mass * self.specific_heat
     }
 
-    /// Stefan-Boltzmann radiative constant `A·ε·σ` (W/K⁴) used by the
-    /// temperature ODE and by view-factor exchange.
+    /// Stefan-Boltzmann radiative constant `A·ε·σ` (W/K⁴) used by this
+    /// module's temperature ODE for free-space thermal emission.
     #[inline]
     pub fn radiative_constant(&self) -> f64 {
         self.area * self.emissivity_ir * STEFAN_BOLTZMANN
