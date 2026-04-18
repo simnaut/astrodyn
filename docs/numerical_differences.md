@@ -38,10 +38,14 @@ in simnaut/bevy_jeod#6, the DE421 path in #27, and the SRP thermal residual in
 ## DE421 ephemeris interpolation (Anise vs JEOD DE4xx reader)
 
 - **Symptom / magnitude:** ~10 arcseconds directional offset on the Sun
-  vector, growing ~1.5e-4 rad/day in solar-beta tests; constant ~0.31 m
-  offset on Moon-centered state after Apollo frame switch; ~0.97 m position
-  over a 7-day Earth-Moon Clementine trajectory; ~2 m position drift on the
-  SIM_Tides 23-day case.
+  vector, with bounded solar-beta residuals at the
+  `tier3_sim_solar_beta_edge.rs` tolerances (1.892e-5 / 3.446e-5 rad);
+  the ~5e-5 to 1.5e-4 rad/day growth originally reported in #27 was
+  Phase 4b historical observation and no longer holds at current
+  tolerances. Also: constant ~0.31 m offset on Moon-centered state
+  after Apollo frame switch; ~0.97 m position over a 7-day Earth-Moon
+  Clementine trajectory; ~2 m position drift on the SIM_Tides 23-day
+  case.
 - **Where observed:** simnaut/bevy_jeod#27; commentary in
   `crates/jeod_runner/tests/tier3_sim_torque_simple.rs:20`,
   `tier3_apollo8_frame_switch.rs:334`, `tier3_sim_earth_moon.rs:261`,
@@ -50,11 +54,14 @@ in simnaut/bevy_jeod#6, the DE421 path in #27, and the SRP thermal residual in
 - **Root cause:** JEOD uses `cspice`-derived DE4xx Chebyshev evaluators
   linked into its C++ binary, and its default kernel is DE405. We use
   [Anise](https://github.com/nyx-space/anise), a pure-Rust SPICE reader
-  that evaluates the same Chebyshev polynomials on DE421 BSP kernels.
-  The Chebyshev coefficient streams are identical on the overlapping
-  span, but Anise vs cspice differ in recurrence formulation and
-  intermediate rounding, and DE421 vs DE405 introduces a second tiny
-  offset on tests that use DE421.
+  that loads either DE405 or DE421 BSP kernels and evaluates the same
+  Chebyshev polynomials. When both sides use the same kernel (e.g.
+  Apollo 8 with `de405.bsp`), the coefficient streams are identical on
+  the overlapping span and the residual reduces to Anise vs cspice
+  differences in recurrence formulation and intermediate rounding.
+  When one side uses DE405 and the other DE421 (e.g. Earth-Moon and
+  SIM_Tides, where we have no DE405 LE BSP), there is an additional
+  ephemeris-model mismatch on top of the interpolation difference.
 - **Why irreducible:** Eliminating the residual requires either porting
   JEOD's DE4xx reader to Rust (~200 lines of Chebyshev evaluation, tracked
   in #27 option A) or linking against cspice, which would contradict the
