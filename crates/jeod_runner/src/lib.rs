@@ -1875,63 +1875,68 @@ impl Simulation {
             })
             .collect();
 
-        // Extract gravity_controls into a separate vector so the gravity
-        // closure doesn't need to borrow self.bodies.
-        let per_body_gravity_controls: Vec<GravityControls<usize>> = self
-            .bodies
-            .iter()
-            .map(|b| b.gravity_controls.clone())
-            .collect();
-
         // Helper: evaluate gravity (Newtonian + relativistic) at an
-        // intermediate (pos, vel) for the given body index.
-        let eval_body_gravity =
-            |body_idx: usize, pos: DVec3, vel: DVec3, time_frac: f64| -> DVec3 {
-                let controls = &per_body_gravity_controls[body_idx];
-                let (integ_origin, integ_vel) = body_integ_origins[body_idx];
-                let origin = integ_origin + integ_vel * (time_frac * dt);
-                let sub_dt = if integ_vel != DVec3::ZERO {
-                    time_frac * dt
-                } else {
-                    0.0
-                };
-                let mut accel =
-                    accumulate_gravity(pos + origin, controls, origin, |source_id: usize| {
-                        let grav = gravity_data.get(source_id)?;
-                        let sfids = &source_frame_ids[source_id];
-                        let position =
-                            base_positions[source_id] + base_velocities[source_id] * sub_dt;
-                        let rotation = sfids
-                            .pfix
-                            .map(|pfix_id| &frame_tree.get(pfix_id).state.rot.t_parent_this);
-                        Some(jeod_sim::ResolvedSource {
-                            source: &grav.source,
-                            rotation,
-                            position,
-                            delta_c20: grav.delta_c20,
-                            has_delta_coeffs: grav.tidal_config.is_some(),
-                        })
-                    })
-                    .grav_accel;
-                let pos_eci = pos + origin;
-                let vel_eci = vel + integ_vel;
-                for &(mu, src_pos, src_vel, ref other) in &per_body_rel_data[body_idx] {
-                    accel += jeod_gravity::relativistic::compute_relativistic_correction(
-                        mu, src_pos, pos_eci, vel_eci, src_vel, other,
-                    );
-                }
-                accel
+        // intermediate (pos, vel) for the given body. Takes `controls` as
+        // a parameter so the non-contact path can borrow
+        // `&body.gravity_controls` directly (no per-step clone), while
+        // the contact-coupled path can pass slices of its cloned
+        // `per_body_gravity_controls` snapshot.
+        let eval_body_gravity = |controls: &GravityControls<usize>,
+                                 body_idx: usize,
+                                 pos: DVec3,
+                                 vel: DVec3,
+                                 time_frac: f64|
+         -> DVec3 {
+            let (integ_origin, integ_vel) = body_integ_origins[body_idx];
+            let origin = integ_origin + integ_vel * (time_frac * dt);
+            let sub_dt = if integ_vel != DVec3::ZERO {
+                time_frac * dt
+            } else {
+                0.0
             };
+            let mut accel =
+                accumulate_gravity(pos + origin, controls, origin, |source_id: usize| {
+                    let grav = gravity_data.get(source_id)?;
+                    let sfids = &source_frame_ids[source_id];
+                    let position = base_positions[source_id] + base_velocities[source_id] * sub_dt;
+                    let rotation = sfids
+                        .pfix
+                        .map(|pfix_id| &frame_tree.get(pfix_id).state.rot.t_parent_this);
+                    Some(jeod_sim::ResolvedSource {
+                        source: &grav.source,
+                        rotation,
+                        position,
+                        delta_c20: grav.delta_c20,
+                        has_delta_coeffs: grav.tidal_config.is_some(),
+                    })
+                })
+                .grav_accel;
+            let pos_eci = pos + origin;
+            let vel_eci = vel + integ_vel;
+            for &(mu, src_pos, src_vel, ref other) in &per_body_rel_data[body_idx] {
+                accel += jeod_gravity::relativistic::compute_relativistic_correction(
+                    mu, src_pos, pos_eci, vel_eci, src_vel, other,
+                );
+            }
+            accel
+        };
 
         if self.contact_pairs.is_empty() {
             // ── Standard path: per-body RK4 / GJ integration ──
+            // No clone of gravity_controls: the outer iter_mut gives us
+            // a &mut SimBody, and Rust's disjoint-field split borrow lets
+            // the closure capture &body.gravity_controls while other
+            // fields of `body` are borrowed mutably for the integrator.
             for (body_idx, body) in self.bodies.iter_mut().enumerate() {
+                let controls = &body.gravity_controls;
                 integrate_body(
                     &body.config,
                     &mut body.trans,
                     body.rot.as_mut(),
                     body.mass.as_ref(),
-                    |pos, vel, time_frac| eval_body_gravity(body_idx, pos, vel, time_frac),
+                    |pos, vel, time_frac| {
+                        eval_body_gravity(controls, body_idx, pos, vel, time_frac)
+                    },
                     body.total_force.force,
                     body.total_force.torque,
                     dt,
@@ -1974,10 +1979,13 @@ impl Simulation {
             let bodies_mut = &mut self.bodies;
 
             // Gather per-body immutable data (t_struct_body, mass, constant
-            // forces/torques) BEFORE the unsafe &mut block below. Creating
-            // any shared reference into `bodies_mut` while the unsafe &muts
-            // are live would violate Rust's aliasing rules even for disjoint
-            // fields, so snapshot everything we need up front.
+            // forces/torques, gravity_controls) BEFORE the unsafe &mut
+            // block below. Creating any shared reference into `bodies_mut`
+            // while the unsafe &muts are live would violate Rust's
+            // aliasing rules even for disjoint fields, so snapshot
+            // everything we need up front. Cloning `gravity_controls`
+            // happens here (and only here, since contact_pairs is
+            // non-empty) — the non-contact path above borrows directly.
             let n_bodies = bodies_mut.len();
             let t_struct_body_vec: Vec<DMat3> =
                 bodies_mut.iter().map(|b| b.t_struct_body).collect();
@@ -1989,6 +1997,10 @@ impl Simulation {
                 bodies_mut.iter().map(|b| b.total_force.force).collect();
             let non_contact_torque_vec: Vec<DVec3> =
                 bodies_mut.iter().map(|b| b.total_force.torque).collect();
+            let per_body_gravity_controls: Vec<GravityControls<usize>> = bodies_mut
+                .iter()
+                .map(|b| b.gravity_controls.clone())
+                .collect();
 
             // Build coupled inputs. `CoupledBodyInput` needs separate &mut
             // for trans / rot from the same SimBody; raw pointers produce
@@ -2023,7 +2035,15 @@ impl Simulation {
             integrate_bodies_contact_coupled(
                 &mut inputs,
                 &mut self.coupled_integ_scratch,
-                eval_body_gravity,
+                |body_idx: usize, pos: DVec3, vel: DVec3, time_frac: f64| {
+                    eval_body_gravity(
+                        &per_body_gravity_controls[body_idx],
+                        body_idx,
+                        pos,
+                        vel,
+                        time_frac,
+                    )
+                },
                 |stage_trans: &[TranslationalState],
                  stage_rot: &[RotationalState],
                  out: &mut [(DVec3, DVec3)]| {
