@@ -6,8 +6,9 @@ use jeod_math::JeodQuat;
 use jeod_math::OrbitalElements;
 use jeod_test_data::{euler_test, jeod_path, orbital_data, orbital_init, reference_state};
 
-/// Earth's gravitational parameter in m^3/s^2 (matches JEOD's value).
-const MU_EARTH: f64 = 3.986_004_415e14;
+/// Earth's gravitational parameter (m^3/s^2) from JEOD `earth_GGM05C.cc`.
+/// Sourced from `jeod_planet::presets::EARTH.mu` — the canonical constant.
+const MU_EARTH: f64 = jeod_planet::presets::EARTH.mu;
 
 // =========================================================================
 // Orbital elements: ISS reference data
@@ -43,25 +44,19 @@ fn validate_iss_orbital_elements_to_cartesian() {
     );
 
     // Build OrbitalElements from the init data.
-    // We need to compute true anomaly from time_periapsis.
-    // For this test, we use the JEOD-provided elements to compute Cartesian state
-    // and compare against the reference.
     //
-    // The init data uses SmaEccIncAscnodeArgperTimeperi set, which specifies
-    // time of periapsis passage. We need mean anomaly to convert elements -> Cartesian.
-    //
-    // From time_periapsis and orbital period, we can compute mean anomaly:
-    //   n = sqrt(mu / a^3)  (mean motion)
-    //   M = n * t_peri      (mean anomaly, but note t_peri is time SINCE periapsis)
+    // The init data uses SmaEccIncAscnodeArgperTimeperi, which specifies
+    // time elapsed SINCE periapsis passage. JEOD's
+    // `dyn_body_init_orbit.cc:295` converts this to mean anomaly as:
+    //   mean_anomaly = time_periapsis * sqrt(mu / a) / a
+    // which is algebraically identical to M = n·t_peri with n = sqrt(mu/a^3)
+    // but matches JEOD's arithmetic order for bit-parity with the port.
     let a = init.semi_major_axis;
-    let n = (MU_EARTH / (a * a * a)).sqrt();
-
-    // time_periapsis is the elapsed time since periapsis passage (seconds).
-    // Mean anomaly is simply M = n * t_peri (radians).
     let t_peri = init
         .time_periapsis
         .expect("ISS set01 should have time_periapsis");
-    let mean_anomaly = n * t_peri;
+    let mean_anomaly = t_peri * (MU_EARTH / a).sqrt() / a;
+    let n = (MU_EARTH / (a * a * a)).sqrt();
 
     let mut oe = OrbitalElements::default();
     oe.semi_major_axis = init.semi_major_axis;

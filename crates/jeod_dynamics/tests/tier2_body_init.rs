@@ -13,10 +13,14 @@
 //! The expected state comes from `reference_inertial_trans_state.py`, which
 //! contains the NASA JSC Flight Operations Directorate state vector.
 
-use jeod_dynamics::{init_from_mean_anomaly, init_from_orbital_elements, TranslationalState};
+use jeod_dynamics::{
+    init_from_mean_anomaly, init_from_orbital_elements, init_from_time_periapsis,
+    TranslationalState,
+};
 
-/// Earth gravitational parameter (m^3/s^2), matching JEOD's value.
-const EARTH_MU: f64 = 3.986_004_415e14;
+/// Earth gravitational parameter (m^3/s^2), from JEOD `earth_GGM05C.cc`.
+/// Sourced from `jeod_planet::presets::EARTH.mu`.
+const EARTH_MU: f64 = jeod_planet::presets::EARTH.mu;
 
 /// Load the JEOD path, panicking with a clear message if not available.
 fn jeod_root() -> std::path::PathBuf {
@@ -98,23 +102,19 @@ fn iss_set01_time_periapsis() {
     );
     let expected = load_iss_reference(&root);
 
-    // set01 provides time_periapsis — compute mean anomaly from it.
-    // M = n * t_peri, where n = sqrt(mu / a^3).
-    // JEOD convention: time_periapsis is time SINCE periapsis.
-    let a = init.semi_major_axis;
-    let n = (EARTH_MU / (a * a * a)).sqrt();
+    // set01 provides time_periapsis — use the dedicated ported function,
+    // which matches JEOD dyn_body_init_orbit.cc:295 exactly.
     let t_peri = init
         .time_periapsis
         .expect("ISS set01 must have time_periapsis");
-    let mean_anomaly = n * t_peri;
 
-    let computed = init_from_mean_anomaly(
+    let computed = init_from_time_periapsis(
         init.semi_major_axis,
         init.eccentricity,
         init.inclination,
         init.ascending_node,
         init.arg_periapsis,
-        mean_anomaly,
+        t_peri,
         EARTH_MU,
     );
 
@@ -254,23 +254,19 @@ fn iss_set10_true_anomaly() {
 fn iss_element_sets_cross_consistent() {
     let root = jeod_root();
 
-    // set01: time_periapsis -> mean anomaly -> Cartesian
+    // set01: time_periapsis -> mean anomaly -> Cartesian (via the ported helper).
     let init01 = jeod_test_data::orbital_init::load_orbital_init(
         &root,
         "ISS",
         "trans_Orbit_inertial_body_set01",
     );
-    let a = init01.semi_major_axis;
-    let n = (EARTH_MU / (a * a * a)).sqrt();
-    let t_peri = init01.time_periapsis.unwrap();
-    let mean_anomaly_01 = n * t_peri;
-    let state01 = init_from_mean_anomaly(
+    let state01 = init_from_time_periapsis(
         init01.semi_major_axis,
         init01.eccentricity,
         init01.inclination,
         init01.ascending_node,
         init01.arg_periapsis,
-        mean_anomaly_01,
+        init01.time_periapsis.unwrap(),
         EARTH_MU,
     );
 

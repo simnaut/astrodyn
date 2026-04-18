@@ -14,11 +14,11 @@ use jeod_sim::{
     SimulationTime, TranslationalState,
 };
 
-/// Standard gravitational parameter for Earth (m^3/s^2).
-const MU_EARTH: f64 = 3.986_004_418e14;
+/// Earth gravitational parameter (m^3/s^2) — JEOD `earth_GGM05C.cc`.
+const MU_EARTH: f64 = jeod_sim::EARTH.shape.mu;
 
-/// Earth mean equatorial radius (m).
-const R_EARTH: f64 = 6_378_137.0;
+/// Earth mean equatorial radius (m) — JEOD `earth.cc`.
+const R_EARTH: f64 = jeod_sim::EARTH.shape.r_eq;
 
 /// Compute specific orbital energy: E = v^2/2 - mu/r
 fn orbital_energy(pos: DVec3, vel: DVec3, mu: f64) -> f64 {

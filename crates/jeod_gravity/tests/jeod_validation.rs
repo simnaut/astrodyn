@@ -88,7 +88,13 @@ fn point_mass_reasonable_at_jeod_positions() {
     );
 
     let cases = load_gravity_test_cases(&root);
-    let mu_earth = 3.986_004_415e14;
+
+    // Load mu directly from JEOD GGM02C (the file JEOD's grav_geospherical
+    // test itself references). This matches `spherical_harmonics_40_test_vectors`
+    // below and avoids a literal duplicate of the JEOD-source value.
+    let ggm02c_path = root.join("models/environment/gravity/data/src/earth_GGM02C.cc");
+    let data = coefficients::load_from_jeod_cc(&ggm02c_path).expect("load GGM02C coefficients");
+    let mu_earth = data.mu;
 
     for case in &cases {
         let result = jeod_gravity::calc_spherical(mu_earth, case.position);

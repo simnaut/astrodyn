@@ -13,4 +13,5 @@ test-utils = []
 [dev-dependencies]
 jeod_test_data = { path = "../jeod_test_data" }
 jeod_ephemeris = { path = "../jeod_ephemeris" }
+jeod_planet = { path = "../jeod_planet" }
 

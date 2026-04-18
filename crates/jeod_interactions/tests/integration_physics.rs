@@ -18,10 +18,14 @@ use jeod_interactions::{
 use jeod_math::geodetic::cartesian_to_geodetic;
 use jeod_math::JeodQuat;
 
-const MU_EARTH: f64 = 3.986_004_415e14; // m^3/s^2
-const R_EARTH: f64 = 6_378_137.0; // m
-const R_EARTH_POL: f64 = R_EARTH * (1.0 - 1.0 / 298.257_223_563); // JEOD: r_eq * (1 - flat_coeff)
-const R_SUN: f64 = 6.98e8; // m
+/// Earth gravitational parameter (m^3/s^2) — JEOD `earth_GGM05C.cc`.
+const MU_EARTH: f64 = jeod_planet::presets::EARTH.mu;
+/// Earth mean equatorial radius (m) — JEOD `earth.cc`.
+const R_EARTH: f64 = jeod_planet::presets::EARTH.r_eq;
+/// Earth polar radius (m) — JEOD `earth.cc` via presets.
+const R_EARTH_POL: f64 = jeod_planet::presets::EARTH.r_pol;
+/// Sun effective radius (m) — used for penumbra geometry in shadow_fraction().
+const R_SUN: f64 = 6.98e8;
 
 /// MET-internal GMST formula (from JEOD atmos_MET_TME.cc, Jacchia's Almanac polynomial).
 ///

@@ -2354,6 +2354,7 @@ dependencies = [
  "jeod_frames",
  "jeod_gravity",
  "jeod_math",
+ "jeod_planet",
  "jeod_test_data",
 ]
 
@@ -2400,6 +2401,7 @@ dependencies = [
  "jeod_ephemeris",
  "jeod_gravity",
  "jeod_math",
+ "jeod_planet",
  "jeod_test_data",
  "jeod_time",
 ]
@@ -2410,6 +2412,7 @@ version = "0.1.0"
 dependencies = [
  "glam 0.30.10",
  "jeod_ephemeris",
+ "jeod_planet",
  "jeod_test_data",
  "thiserror 2.0.18",
 ]

@@ -39,14 +39,14 @@ use jeod_sim::{
     RotationalState, SimulationTime, TranslationalState,
 };
 
-/// Earth gravitational parameter (m^3/s^2).
-const MU_EARTH: f64 = 3.986_004_418e14;
-/// Earth mean equatorial radius (m).
-const R_EARTH: f64 = 6_378_137.0;
-/// Sun gravitational parameter (m^3/s^2).
-const MU_SUN: f64 = 1.327_124_400_18e20;
-/// Moon gravitational parameter (m^3/s^2).
-const MU_MOON: f64 = 4.902_800_066e12;
+/// Earth gravitational parameter (m^3/s^2) — JEOD `earth_GGM05C.cc`.
+const MU_EARTH: f64 = jeod_sim::EARTH.shape.mu;
+/// Earth mean equatorial radius (m) — JEOD `earth.cc`.
+const R_EARTH: f64 = jeod_sim::EARTH.shape.r_eq;
+/// Sun gravitational parameter (m^3/s^2) — JEOD `sun_spherical.cc`.
+const MU_SUN: f64 = jeod_sim::SUN.shape.mu;
+/// Moon gravitational parameter (m^3/s^2) — JEOD `moon_GRAIL150.cc`.
+const MU_MOON: f64 = jeod_sim::MOON.shape.mu;
 /// Typical Earth–Sun distance (m, ~1 AU).
 const R_EARTH_SUN: f64 = 1.495_978_707e11;
 /// Typical Earth–Moon distance (m).
