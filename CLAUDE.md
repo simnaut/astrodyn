@@ -212,7 +212,7 @@ cargo nextest run --workspace -E 'not test(tier3_)'           # unit + tier 2 (f
 cargo nextest run --workspace -E 'test(tier3_)'               # tier 3 only
 cargo nextest run -p jeod_math                                # single crate
 cargo nextest run -p jeod_gravity -E 'test(verif)'            # gravity verification only
-cargo nextest run -p jeod_dynamics --test tier3_jeod_trajectory  # single Tier 3 test
+cargo nextest run -p jeod_runner --test tier3_sim_dyncomp_run2  # single Tier 3 test
 ```
 
 Plain `cargo test` also works but runs tests serially per binary:
@@ -303,7 +303,7 @@ new sims to `generate_references.sh`. Set `FORCE=1` to regenerate everything.
 
 The container runs sims from the SIM root directory (not from SET_test/RUN_*/) because
 JEOD's `input.py` files use paths relative to the SIM root. Output CSVs land in
-`test_data/` and are consumed by `tier3_jeod_trajectory.rs`.
+`test_data/` and are consumed by `crates/jeod_runner/tests/tier3_sim_*.rs`.
 
 **Current results (Phase 1):** 0.4 m position error over 8 hours vs JEOD SIM_dyncomp
 RUN_2 (ISS orbit, spherical gravity, 28800s, 481 data points at 60s intervals).
@@ -311,7 +311,7 @@ RUN_2 (ISS orbit, spherical gravity, 28800s, 481 data points at 60s intervals).
 **Phase 2 Tier 3 tests** (require reference CSVs from Docker):
 - RUN_3A: 4x4 spherical harmonics gravity, 8-hour ISS orbit
 - RUN_3B: 8x8 spherical harmonics gravity, 8-hour ISS orbit
-- Test: `crates/jeod_gravity/tests/tier3_spherical_harmonics.rs`
+- Test: `crates/jeod_runner/tests/tier3_sim_dyncomp_run3.rs`
 
 CSV column layout for `log_state_ASCII.csv`:
 - Column 0: `sys.exec.out.time {s}`

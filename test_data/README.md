@@ -59,9 +59,9 @@ JEOD 5.4.
 
 | File | JEOD Run | Gravity model | Used by |
 |------|----------|---------------|---------|
-| `dyncomp_run2_state.csv` | RUN_2 | Spherical (point-mass) | `jeod_dynamics/tests/tier3_jeod_trajectory.rs` |
-| `dyncomp_run3a_state.csv` | RUN_3A | 4x4 spherical harmonics (GGM02C) | `jeod_gravity/tests/tier3_spherical_harmonics.rs` |
-| `dyncomp_run3b_state.csv` | RUN_3B | 8x8 spherical harmonics (GGM02C) | `jeod_gravity/tests/tier3_spherical_harmonics.rs` |
+| `dyncomp_run2_state.csv` | RUN_2 | Spherical (point-mass) | `jeod_runner/tests/tier3_sim_dyncomp_run2.rs` |
+| `dyncomp_run3a_state.csv` | RUN_3A | 4x4 spherical harmonics (GGM02C) | `jeod_runner/tests/tier3_sim_dyncomp_run3.rs` |
+| `dyncomp_run3b_state.csv` | RUN_3B | 8x8 spherical harmonics (GGM02C) | `jeod_runner/tests/tier3_sim_dyncomp_run3.rs` |
 
 Additional files generated but not currently consumed by tests:
 
