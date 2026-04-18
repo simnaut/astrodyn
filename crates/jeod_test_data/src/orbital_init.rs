@@ -159,3 +159,99 @@ fn convert_units(val: f64, unit: &str) -> f64 {
         other => panic!("Unknown unit: {}", other),
     }
 }
+
+/// Direct Cartesian translational-state initialization data from a JEOD
+/// `trans_TransState_*.py` file.
+///
+/// Parsed from files like:
+/// `models/dynamics/body_action/verif/SIM_orbinit/Modified_data/{vehicle}/trans_TransState_{frame}_body.py`
+///
+/// Contains position/velocity vectors with `trick.attach_units("m", [...])` and
+/// `trick.attach_units("m/s", [...])` wrappers.
+#[derive(Debug, Clone)]
+pub struct TransStateData {
+    pub position: [f64; 3], // meters
+    pub velocity: [f64; 3], // m/s
+    pub reference_frame: String,
+}
+
+/// Load a direct Cartesian translational-state init file.
+///
+/// # Arguments
+/// * `jeod_root` - Path to the JEOD source tree root.
+/// * `vehicle` - Vehicle directory name (e.g. `"STS_114"`).
+/// * `init_name` - Init file identifier without `.py` (e.g. `"trans_TransState_inertial_body"`).
+///
+/// # Panics
+/// Panics if the file cannot be read; if `position` or `velocity` entries are
+/// missing or have an unexpected unit (must be `"m"` and `"m/s"` respectively);
+/// or if `reference_ref_frame_name` is missing.
+pub fn load_trans_state(
+    jeod_root: &std::path::Path,
+    vehicle: &str,
+    init_name: &str,
+) -> TransStateData {
+    let path = jeod_root.join(format!(
+        "models/dynamics/body_action/verif/SIM_orbinit/Modified_data/{}/{}.py",
+        vehicle, init_name
+    ));
+    let content = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
+
+    // Match: .position = trick.attach_units( "m", [  x,  y,  z])
+    // Match: .velocity = trick.attach_units( "m/s", [  vx,  vy,  vz])
+    let vec3_re = Regex::new(
+        r#"\.(position|velocity)\s*=\s*trick\.attach_units\(\s*"([^"]+)"\s*,\s*\[\s*([-\d.eE+]+)\s*,\s*([-\d.eE+]+)\s*,\s*([-\d.eE+]+)\s*\]\s*\)"#,
+    )
+    .unwrap();
+
+    // Match: .reference_ref_frame_name = "Earth.inertial"
+    let frame_re = Regex::new(r#"\.reference_ref_frame_name\s*=\s*"([^"]+)""#).unwrap();
+
+    let mut position: Option<[f64; 3]> = None;
+    let mut velocity: Option<[f64; 3]> = None;
+    let mut reference_frame: Option<String> = None;
+
+    for line in content.lines() {
+        if let Some(cap) = vec3_re.captures(line) {
+            let field = &cap[1];
+            let unit = &cap[2];
+            let x: f64 = cap[3].parse().unwrap();
+            let y: f64 = cap[4].parse().unwrap();
+            let z: f64 = cap[5].parse().unwrap();
+            // Validate unit per field — no scale conversion needed for SI.
+            match field {
+                "position" => {
+                    assert!(
+                        unit == "m",
+                        "Unexpected unit '{}' for position in {} (expected \"m\")",
+                        unit,
+                        path.display()
+                    );
+                    position = Some([x, y, z]);
+                }
+                "velocity" => {
+                    assert!(
+                        unit == "m/s",
+                        "Unexpected unit '{}' for velocity in {} (expected \"m/s\")",
+                        unit,
+                        path.display()
+                    );
+                    velocity = Some([x, y, z]);
+                }
+                _ => {}
+            }
+            continue;
+        }
+        if let Some(cap) = frame_re.captures(line) {
+            reference_frame = Some(cap[1].to_string());
+        }
+    }
+
+    TransStateData {
+        position: position.unwrap_or_else(|| panic!("Missing position in {}", path.display())),
+        velocity: velocity.unwrap_or_else(|| panic!("Missing velocity in {}", path.display())),
+        reference_frame: reference_frame
+            .unwrap_or_else(|| panic!("Missing reference_ref_frame_name in {}", path.display())),
+    }
+}

@@ -250,8 +250,8 @@ pub fn force_collection_system(
 /// for proper multi-stage accuracy.
 ///
 /// The integration method is determined by the optional `IntegratorTypeC`
-/// component (RK4, RKF45, GaussJackson). When absent, RK4 is used.
-/// GaussJackson requires `GaussJacksonStateC` on the entity.
+/// component (RK4, RKF45, GaussJackson, Abm4). When absent, RK4 is used.
+/// GaussJackson requires `GaussJacksonStateC`; ABM4 requires `Abm4StateC`.
 #[allow(clippy::type_complexity)]
 pub fn integration_system(
     mut bodies: Query<(
@@ -264,6 +264,7 @@ pub fn integration_system(
         &TotalForceC,
         Option<&IntegratorTypeC>,
         Option<&mut GaussJacksonStateC>,
+        Option<&mut Abm4StateC>,
     )>,
     sources: Query<(
         &GravitySourceC,
@@ -291,6 +292,7 @@ pub fn integration_system(
         total_force,
         integrator,
         mut gj_state,
+        mut abm4_state,
     ) in &mut bodies
     {
         let integrator_type = integrator.map_or(jeod_sim::IntegratorType::Rk4, |c| c.0);
@@ -301,6 +303,14 @@ pub fn integration_system(
                  GaussJacksonStateC component is missing. Create the state \
                  from the same config used in IntegratorTypeC, e.g.: \
                  GaussJacksonStateC(GaussJacksonState::new(config))"
+            );
+        }
+        if matches!(integrator_type, jeod_sim::IntegratorType::Abm4) {
+            assert!(
+                abm4_state.is_some(),
+                "Entity {entity:?}: IntegratorTypeC is Abm4 but \
+                 Abm4StateC component is missing. Add \
+                 Abm4StateC(Abm4State::new()) to the entity."
             );
         }
         jeod_sim::integrate_body(
@@ -356,6 +366,7 @@ pub fn integration_system(
             sim_time.0.time_scale_factor,
             integrator_type,
             gj_state.as_mut().map(|g| &mut g.0),
+            abm4_state.as_mut().map(|a| &mut a.0),
         );
     }
 }

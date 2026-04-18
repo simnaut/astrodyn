@@ -11,6 +11,22 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
+/// Slice `content` by byte range, snapping endpoints to valid UTF-8 char
+/// boundaries. Needed because test source files can contain multi-byte chars
+/// (e.g. box-drawing `═`) and naive `&content[a..b]` with computed offsets
+/// (e.g. `name_pos ± N`) can panic if an endpoint lands inside a codepoint.
+fn slice_safe(content: &str, start: usize, end: usize) -> &str {
+    let mut s = start.min(content.len());
+    let mut e = end.min(content.len());
+    while s > 0 && !content.is_char_boundary(s) {
+        s -= 1;
+    }
+    while e < content.len() && !content.is_char_boundary(e) {
+        e += 1;
+    }
+    &content[s..e]
+}
+
 fn workspace_root() -> PathBuf {
     let mut dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     loop {
@@ -216,8 +232,8 @@ fn extract_source_tolerances(
         // Look in a window around the test name (the function body)
         // Go back to find function start and forward to find function end
         let search_start = name_pos.saturating_sub(3000);
-        let search_end = (name_pos + 5000).min(content.len());
-        let window = &content[search_start..search_end];
+        let search_end = name_pos + 5000;
+        let window = slice_safe(content, search_start, search_end);
 
         // Extract assert_position([...])
         if let Some(pos) = window.find("assert_position(") {
@@ -260,8 +276,8 @@ fn extract_source_tolerances(
             };
             // Search backwards from the test name for array literals in the same call
             let call_start = name_pos.saturating_sub(500);
-            let call_end = (name_pos + 200).min(content.len());
-            let call_window = &content[call_start..call_end];
+            let call_end = name_pos + 200;
+            let call_window = slice_safe(content, call_start, call_end);
 
             // Look for array literals that might be tolerance arguments
             let mut arrays: Vec<[f64; 3]> = Vec::new();
@@ -318,8 +334,8 @@ fn extract_extras_tolerances(
         // Search within ±3000 chars of the test name (covers the function body
         // for both inline tests and shared helpers)
         let window_start = name_pos.saturating_sub(3000);
-        let window_end = (name_pos + 5000).min(content.len());
-        let window = &content[window_start..window_end];
+        let window_end = name_pos + 5000;
+        let window = slice_safe(content, window_start, window_end);
 
         for extra in extras.iter_mut() {
             if extra.2.is_some() {
@@ -331,8 +347,7 @@ fn extract_extras_tolerances(
             // Find the add_extra call within the window
             if let Some(ae_pos) = window.find(&add_extra_pattern) {
                 // Look for assert within ~500 chars after the add_extra
-                let search_end = (ae_pos + 500).min(window.len());
-                let nearby = &window[ae_pos..search_end];
+                let nearby = slice_safe(window, ae_pos, ae_pos + 500);
 
                 for line in nearby.lines() {
                     if line.contains(&assert_pattern) && line.contains("assert!") {
@@ -362,8 +377,7 @@ fn extract_extras_tolerances(
             let assert_pattern = format!("\"{}\")", extra.0);
 
             if let Some(ae_pos) = content.find(&add_extra_pattern) {
-                let search_end = (ae_pos + 500).min(content.len());
-                let nearby = &content[ae_pos..search_end];
+                let nearby = slice_safe(content, ae_pos, ae_pos + 500);
                 for line in nearby.lines() {
                     if line.contains(&assert_pattern) && line.contains("assert!") {
                         if let Some(lt_pos) = line.rfind('<') {
