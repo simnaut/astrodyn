@@ -1950,6 +1950,119 @@ run_frame_switch_group() {
 throttled_bg run_frame_switch_group
 PID_FRAME_SWITCH=$LAST_BG_PID
 
+# Group 31: SIM_contact — free-space contact dynamics (5 scenarios)
+# ASCII snippet logs: time (implicit), veh{1,2} position/velocity,
+# contact force/torque on each vehicle, composite masses.
+# Matches JEOD Log_data/log_contact_data.py variables.
+CONTACT_SNIPPET='
+dr = trick.DRAscii("contact_state")
+dr.thisown = 0
+dr.set_cycle(0.05)
+dr.freq = trick.sim_services.DR_Always
+for i in range(3):
+    dr.add_variable(f"veh1_dyn.body.composite_body.state.trans.position[{i}]")
+for i in range(3):
+    dr.add_variable(f"veh1_dyn.body.composite_body.state.trans.velocity[{i}]")
+for i in range(3):
+    dr.add_variable(f"veh1_dyn.contact_surface.contact_force[{i}]")
+for i in range(3):
+    dr.add_variable(f"veh1_dyn.contact_surface.contact_torque[{i}]")
+for i in range(3):
+    dr.add_variable(f"veh2_dyn.body.composite_body.state.trans.position[{i}]")
+for i in range(3):
+    dr.add_variable(f"veh2_dyn.body.composite_body.state.trans.velocity[{i}]")
+for i in range(3):
+    dr.add_variable(f"veh2_dyn.contact_surface.contact_force[{i}]")
+for i in range(3):
+    dr.add_variable(f"veh2_dyn.contact_surface.contact_torque[{i}]")
+dr.add_variable("veh1_dyn.body.mass.composite_properties.mass")
+dr.add_variable("veh2_dyn.body.mass.composite_properties.mass")
+trick.add_data_record_group(dr)
+'
+
+run_contact_group() {
+    local sim_dir="models/interactions/contact/verif/SIM_contact"
+    local -a RUNS=(
+        "SET_test/RUN_point:contact_point:contact_point_contact_state.csv"
+        "SET_test/RUN_line:contact_line:contact_line_contact_state.csv"
+        "SET_test/RUN_line_point:contact_line_point:contact_line_point_contact_state.csv"
+        "SET_test/RUN_line_side_to_side:contact_line_side:contact_line_side_contact_state.csv"
+        "SET_test/RUN_point_off_center:contact_point_off_center:contact_point_off_center_contact_state.csv"
+    )
+
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_contact group (all outputs exist) ==="
+        return 0
+    fi
+
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$CONTACT_SNIPPET" "$required" || fail=1
+        # JEOD declares `contact_torque` as trick_units(N/m) in
+        # contact_surface.hh — a typo for the correct N*m. Patch the CSV
+        # header so our reference data has physically correct units.
+        local out_file="$OUTPUT_DIR/$required"
+        if [ -f "$out_file" ]; then
+            # Portable in-place edit (avoid GNU-only `sed -i`): rewrite to
+            # temp then replace atomically. Works under GNU and BSD sed.
+            sed '1s/contact_torque\(\[[0-2]\]\) {N\/m}/contact_torque\1 {N*m}/g' \
+                "$out_file" > "$out_file.tmp" && mv "$out_file.tmp" "$out_file"
+        fi
+    done
+    return $fail
+}
+throttled_bg run_contact_group
+PID_CONTACT=$LAST_BG_PID
+
+# Group 32: SIM_ground_contact — Earth-frame ground contact (1 scenario)
+# Shares the CONTACT_SNIPPET log variables; adds Earth central body.
+run_ground_contact_group() {
+    local sim_dir="models/interactions/contact/verif/SIM_ground_contact"
+    local -a RUNS=(
+        "SET_test/RUN_contact_ground:contact_ground:contact_ground_contact_state.csv"
+    )
+
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_ground_contact group (all outputs exist) ==="
+        return 0
+    fi
+
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$CONTACT_SNIPPET" "$required" || fail=1
+        # See note in run_contact_group: JEOD's contact_surface.hh mislabels
+        # contact_torque units as N/m; correct to N*m in the CSV header.
+        local out_file="$OUTPUT_DIR/$required"
+        if [ -f "$out_file" ]; then
+            # Portable in-place edit (avoid GNU-only `sed -i`): rewrite to
+            # temp then replace atomically. Works under GNU and BSD sed.
+            sed '1s/contact_torque\(\[[0-2]\]\) {N\/m}/contact_torque\1 {N*m}/g' \
+                "$out_file" > "$out_file.tmp" && mv "$out_file.tmp" "$out_file"
+        fi
+    done
+    return $fail
+}
+throttled_bg run_ground_contact_group
+PID_GROUND_CONTACT=$LAST_BG_PID
+
 # ════════════════════════════════════════════════════════════════════
 # JEOD time verification SIMs (1-6) for Tier 3 time cross-validation.
 # Consumed by crates/jeod_runner/tests/tier3_sim_time_docker.rs.
@@ -2266,6 +2379,8 @@ wait $PID_APOLLO         || { echo "WARN: SIM_Apollo group had failures"; FAIL=1
 wait $PID_ATTACH_MASS    || { echo "WARN: SIM_verif_attach_mass group had failures"; FAIL=1; }
 wait $PID_ATTACH_DETACH  || { echo "WARN: SIM_verif_attach_detach group had failures"; FAIL=1; }
 wait $PID_FRAME_SWITCH   || { echo "WARN: SIM_verif_frame_switch group had failures"; FAIL=1; }
+wait $PID_CONTACT        || { echo "WARN: SIM_contact group had failures"; FAIL=1; }
+wait $PID_GROUND_CONTACT || { echo "WARN: SIM_ground_contact group had failures"; FAIL=1; }
 # WS-R4: JEOD time verification SIMs 1-6
 wait $PID_TIME_V1        || { echo "WARN: SIM_1_dyn_only group had failures"; FAIL=1; }
 wait $PID_TIME_V2        || { echo "WARN: SIM_2_dyn_plus_STD group had failures"; FAIL=1; }

@@ -270,6 +270,8 @@ Our port wraps ANISE (`crates/jeod_ephemeris`, 243 lines: `ephemeris.rs` + `bodi
 | IN.27 | RadiationThirdBody: `process_third_body` must not run before initialization (`radiation_third_body.cc` invalid_setup_error) | fatal | runtime | n/a (no initialize/process state machine; shadow compute is a pure function of current state) |
 | IN.28 | `set_*_third_body_active` and `set_*_third_body_inactive` warn on no-op (already in target state) (`radiation_pressure.cc` two warn sites) | warn | runtime | n/a (no activate/deactivate state in our shadow body list) |
 | IN.29 | RadiationThirdBody activation lookup: name must resolve to an existing third body in the model; otherwise error (`radiation_pressure.cc` invalid_function_call, three sites) | error | runtime | n/a |
+| IN.30 | Contact pair bodies must be distinct (`unique_pair` in `contact.cc`) | fatal | initialization | enforced (`register_contact_pair` asserts `body_a != body_b`) |
+| IN.31 | Contact forces evaluated at every derivative evaluation (JEOD `check_contact` is a derivative-class job in `contact.sm`) | structural (Trick job scheduling) | runtime | enforced (`Simulation::step_internal` uses `integrate_bodies_contact_coupled` when contact pairs are registered, evaluating every pair at each RK4 stage) |
 
 ## Section DS: Derived States
 

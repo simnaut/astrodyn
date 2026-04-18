@@ -7,6 +7,456 @@ use jeod_math::JeodQuat;
 
 use crate::interactions::FlatPlateState;
 
+/// Per-body state for multi-body coupled RK4 integration.
+///
+/// Used by [`integrate_bodies_contact_coupled`] to pass per-body inputs through
+/// the RK4 stages. Each body's per-stage gravity acceleration is recomputed
+/// via `gravity_fn`; non-gravity (non-contact) force and body-frame torque are
+/// held constant across stages (matching JEOD where aero/SRP/gravity-torque
+/// are "scheduled" jobs evaluated once per step).
+pub struct CoupledBodyInput<'a> {
+    /// Translational state to advance (mutated in place).
+    pub trans: &'a mut TranslationalState,
+    /// Rotational state to advance (mutated in place). 6-DOF only.
+    pub rot: &'a mut RotationalState,
+    /// Mass properties.
+    pub mass: &'a MassProperties,
+    /// Constant non-gravity, non-contact inertial force over the step (aero,
+    /// SRP, external force). Added to gravity + contact in the accel function.
+    pub non_grav_non_contact_force: DVec3,
+    /// Constant body-frame torque from non-contact sources (gravity gradient,
+    /// SRP torque, aero torque, external torque).
+    pub non_contact_torque_body: DVec3,
+}
+
+/// Reusable scratch buffers for [`integrate_bodies_contact_coupled`].
+///
+/// Owned by the caller and reused across integration steps so the inner
+/// RK4 loop performs no heap allocations once the body count has
+/// stabilized. All fields are resized to `n_bodies` on entry and the
+/// backing storage is retained between calls.
+#[derive(Default)]
+pub struct CoupledIntegScratch {
+    // Initial-state snapshots (one per body).
+    pos0: Vec<DVec3>,
+    vel0: Vec<DVec3>,
+    q0: Vec<[f64; 4]>,
+    omega0: Vec<DVec3>,
+    // Per-stage intermediate state arrays (stage 0 is unused — stage 1
+    // reads directly from the snapshots above). Indices 1..=3 hold the
+    // inputs for stages 2, 3, 4 respectively.
+    stage_pos: [Vec<DVec3>; 4],
+    stage_vel: [Vec<DVec3>; 4],
+    stage_q: [Vec<[f64; 4]>; 4],
+    stage_omega: [Vec<DVec3>; 4],
+    // Per-stage derivatives (k1..k4).
+    k_v: [Vec<DVec3>; 4],
+    k_a: [Vec<DVec3>; 4],
+    k_qdot: [Vec<[f64; 4]>; 4],
+    k_alpha: [Vec<DVec3>; 4],
+    // Scratch for assembling TranslationalState / RotationalState slices
+    // consumed by `contact_eval`.
+    stage_trans: Vec<TranslationalState>,
+    stage_rot: Vec<RotationalState>,
+    // Scratch for per-body contact force/torque outputs populated by
+    // `contact_eval` each stage.
+    contact_out: Vec<(DVec3, DVec3)>,
+}
+
+impl CoupledIntegScratch {
+    /// Create a fresh scratch (all buffers empty; grow on first use).
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn resize(&mut self, n: usize) {
+        self.pos0.resize(n, DVec3::ZERO);
+        self.vel0.resize(n, DVec3::ZERO);
+        self.q0.resize(n, [0.0; 4]);
+        self.omega0.resize(n, DVec3::ZERO);
+        for buf in &mut self.stage_pos {
+            buf.resize(n, DVec3::ZERO);
+        }
+        for buf in &mut self.stage_vel {
+            buf.resize(n, DVec3::ZERO);
+        }
+        for buf in &mut self.stage_q {
+            buf.resize(n, [0.0; 4]);
+        }
+        for buf in &mut self.stage_omega {
+            buf.resize(n, DVec3::ZERO);
+        }
+        for buf in &mut self.k_v {
+            buf.resize(n, DVec3::ZERO);
+        }
+        for buf in &mut self.k_a {
+            buf.resize(n, DVec3::ZERO);
+        }
+        for buf in &mut self.k_qdot {
+            buf.resize(n, [0.0; 4]);
+        }
+        for buf in &mut self.k_alpha {
+            buf.resize(n, DVec3::ZERO);
+        }
+        self.stage_trans.resize(
+            n,
+            TranslationalState {
+                position: DVec3::ZERO,
+                velocity: DVec3::ZERO,
+            },
+        );
+        self.stage_rot.resize(
+            n,
+            RotationalState {
+                quaternion: JeodQuat::new(1.0, 0.0, 0.0, 0.0),
+                ang_vel_body: DVec3::ZERO,
+            },
+        );
+        self.contact_out.resize(n, (DVec3::ZERO, DVec3::ZERO));
+    }
+}
+
+/// Multi-body coupled RK4 step where contact forces between bodies are
+/// recomputed at each of the four stages.
+///
+/// This matches JEOD's `IntegLoop sim_integ_loop(DYNAMICS) dynamics, contact,
+/// veh1_dyn, veh2_dyn;` pattern where `contact.check_contact()` is a derivative
+/// class job — i.e., the contact force is evaluated at every derivative
+/// evaluation within the RK4 stages, not once per outer step.
+///
+/// - `bodies`: one per body, in the same indexing as used by `contact_eval`.
+/// - `scratch`: preallocated working buffers reused across calls; no
+///   allocations occur in the inner loop once the body count stabilizes.
+/// - `gravity_fn(body_idx, position, velocity, time_frac) -> accel`: per-body
+///   gravity at an intermediate state.
+/// - `contact_eval(stage_trans, stage_rot, out)`: given the intermediate
+///   states of ALL bodies at the current RK4 stage, populate `out[i]`
+///   with the inertial force and body-frame torque on body `i`.
+/// - `dt`: integration timestep in dynamic seconds (`sim_dt * time_scale_factor`).
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+pub fn integrate_bodies_contact_coupled(
+    bodies: &mut [CoupledBodyInput<'_>],
+    scratch: &mut CoupledIntegScratch,
+    mut gravity_fn: impl FnMut(usize, DVec3, DVec3, f64) -> DVec3,
+    mut contact_eval: impl FnMut(&[TranslationalState], &[RotationalState], &mut [(DVec3, DVec3)]),
+    dt: f64,
+) {
+    let n = bodies.len();
+    if n == 0 {
+        return;
+    }
+
+    scratch.resize(n);
+
+    // Snapshot initial states into reusable buffers.
+    for (i, body) in bodies.iter().enumerate() {
+        scratch.pos0[i] = body.trans.position;
+        scratch.vel0[i] = body.trans.velocity;
+        scratch.q0[i] = body.rot.quaternion.data;
+        scratch.omega0[i] = body.rot.ang_vel_body;
+    }
+
+    // Stage 1 (t=0): initial state is the snapshot itself.
+    eval_stage(
+        &scratch.pos0,
+        &scratch.vel0,
+        &scratch.q0,
+        &scratch.omega0,
+        0.0,
+        &mut gravity_fn,
+        &mut contact_eval,
+        bodies,
+        &mut scratch.stage_trans,
+        &mut scratch.stage_rot,
+        &mut scratch.contact_out,
+        &mut scratch.k_v[0],
+        &mut scratch.k_a[0],
+        &mut scratch.k_qdot[0],
+        &mut scratch.k_alpha[0],
+    );
+
+    // Build stage 2 state, then evaluate.
+    let half = dt * 0.5;
+    fill_stage_state(
+        n,
+        &scratch.pos0,
+        &scratch.vel0,
+        &scratch.q0,
+        &scratch.omega0,
+        &scratch.k_v[0],
+        &scratch.k_a[0],
+        &scratch.k_qdot[0],
+        &scratch.k_alpha[0],
+        half,
+        &mut scratch.stage_pos[1],
+        &mut scratch.stage_vel[1],
+        &mut scratch.stage_q[1],
+        &mut scratch.stage_omega[1],
+    );
+    eval_stage(
+        &scratch.stage_pos[1],
+        &scratch.stage_vel[1],
+        &scratch.stage_q[1],
+        &scratch.stage_omega[1],
+        0.5,
+        &mut gravity_fn,
+        &mut contact_eval,
+        bodies,
+        &mut scratch.stage_trans,
+        &mut scratch.stage_rot,
+        &mut scratch.contact_out,
+        &mut scratch.k_v[1],
+        &mut scratch.k_a[1],
+        &mut scratch.k_qdot[1],
+        &mut scratch.k_alpha[1],
+    );
+
+    // Build stage 3 state, then evaluate.
+    fill_stage_state(
+        n,
+        &scratch.pos0,
+        &scratch.vel0,
+        &scratch.q0,
+        &scratch.omega0,
+        &scratch.k_v[1],
+        &scratch.k_a[1],
+        &scratch.k_qdot[1],
+        &scratch.k_alpha[1],
+        half,
+        &mut scratch.stage_pos[2],
+        &mut scratch.stage_vel[2],
+        &mut scratch.stage_q[2],
+        &mut scratch.stage_omega[2],
+    );
+    eval_stage(
+        &scratch.stage_pos[2],
+        &scratch.stage_vel[2],
+        &scratch.stage_q[2],
+        &scratch.stage_omega[2],
+        0.5,
+        &mut gravity_fn,
+        &mut contact_eval,
+        bodies,
+        &mut scratch.stage_trans,
+        &mut scratch.stage_rot,
+        &mut scratch.contact_out,
+        &mut scratch.k_v[2],
+        &mut scratch.k_a[2],
+        &mut scratch.k_qdot[2],
+        &mut scratch.k_alpha[2],
+    );
+
+    // Build stage 4 state (full step using k3), then evaluate.
+    fill_stage_state(
+        n,
+        &scratch.pos0,
+        &scratch.vel0,
+        &scratch.q0,
+        &scratch.omega0,
+        &scratch.k_v[2],
+        &scratch.k_a[2],
+        &scratch.k_qdot[2],
+        &scratch.k_alpha[2],
+        dt,
+        &mut scratch.stage_pos[3],
+        &mut scratch.stage_vel[3],
+        &mut scratch.stage_q[3],
+        &mut scratch.stage_omega[3],
+    );
+    eval_stage(
+        &scratch.stage_pos[3],
+        &scratch.stage_vel[3],
+        &scratch.stage_q[3],
+        &scratch.stage_omega[3],
+        1.0,
+        &mut gravity_fn,
+        &mut contact_eval,
+        bodies,
+        &mut scratch.stage_trans,
+        &mut scratch.stage_rot,
+        &mut scratch.contact_out,
+        &mut scratch.k_v[3],
+        &mut scratch.k_a[3],
+        &mut scratch.k_qdot[3],
+        &mut scratch.k_alpha[3],
+    );
+
+    // Combine k1..k4 into the final state per body.
+    let sixth = dt / 6.0;
+    for (i, body) in bodies.iter_mut().enumerate() {
+        let (kv1, kv2, kv3, kv4) = (
+            scratch.k_v[0][i],
+            scratch.k_v[1][i],
+            scratch.k_v[2][i],
+            scratch.k_v[3][i],
+        );
+        let (ka1, ka2, ka3, ka4) = (
+            scratch.k_a[0][i],
+            scratch.k_a[1][i],
+            scratch.k_a[2][i],
+            scratch.k_a[3][i],
+        );
+        let (kal1, kal2, kal3, kal4) = (
+            scratch.k_alpha[0][i],
+            scratch.k_alpha[1][i],
+            scratch.k_alpha[2][i],
+            scratch.k_alpha[3][i],
+        );
+        let (kq1, kq2, kq3, kq4) = (
+            scratch.k_qdot[0][i],
+            scratch.k_qdot[1][i],
+            scratch.k_qdot[2][i],
+            scratch.k_qdot[3][i],
+        );
+
+        body.trans.position = scratch.pos0[i] + (kv1 + kv2 * 2.0 + kv3 * 2.0 + kv4) * sixth;
+        body.trans.velocity = scratch.vel0[i] + (ka1 + ka2 * 2.0 + ka3 * 2.0 + ka4) * sixth;
+        body.rot.ang_vel_body = scratch.omega0[i] + (kal1 + kal2 * 2.0 + kal3 * 2.0 + kal4) * sixth;
+        let q0_i = scratch.q0[i];
+        let qfinal = [
+            q0_i[0] + (kq1[0] + 2.0 * kq2[0] + 2.0 * kq3[0] + kq4[0]) * sixth,
+            q0_i[1] + (kq1[1] + 2.0 * kq2[1] + 2.0 * kq3[1] + kq4[1]) * sixth,
+            q0_i[2] + (kq1[2] + 2.0 * kq2[2] + 2.0 * kq3[2] + kq4[2]) * sixth,
+            q0_i[3] + (kq1[3] + 2.0 * kq2[3] + 2.0 * kq3[3] + kq4[3]) * sixth,
+        ];
+        body.rot.quaternion = JeodQuat::new(qfinal[0], qfinal[1], qfinal[2], qfinal[3]);
+        // JEOD_INV: DB.09 — quaternion normalized after every integration step
+        jeod_dynamics::normalize_integ(&mut body.rot.quaternion);
+    }
+}
+
+/// Populate one intermediate RK4 stage state from a base state and
+/// derivative step of size `h`, reusing caller-owned buffers.
+#[allow(clippy::too_many_arguments)]
+fn fill_stage_state(
+    n: usize,
+    pos0: &[DVec3],
+    vel0: &[DVec3],
+    q0: &[[f64; 4]],
+    omega0: &[DVec3],
+    k_v: &[DVec3],
+    k_a: &[DVec3],
+    k_qdot: &[[f64; 4]],
+    k_alpha: &[DVec3],
+    h: f64,
+    stage_pos: &mut [DVec3],
+    stage_vel: &mut [DVec3],
+    stage_q: &mut [[f64; 4]],
+    stage_omega: &mut [DVec3],
+) {
+    for i in 0..n {
+        stage_pos[i] = pos0[i] + k_v[i] * h;
+        stage_vel[i] = vel0[i] + k_a[i] * h;
+        stage_q[i] = step_q_arr(q0[i], k_qdot[i], h);
+        stage_omega[i] = omega0[i] + k_alpha[i] * h;
+    }
+}
+
+/// Evaluate per-body RK4 derivatives at a given stage state.
+///
+/// Writes outputs into the caller-owned `k_*` buffers instead of
+/// allocating. `stage_trans_buf` and `stage_rot_buf` are reused for
+/// assembling the input slices passed to `contact_eval`.
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+fn eval_stage(
+    stage_pos: &[DVec3],
+    stage_vel: &[DVec3],
+    stage_q: &[[f64; 4]],
+    stage_omega: &[DVec3],
+    time_frac: f64,
+    gravity_fn: &mut dyn FnMut(usize, DVec3, DVec3, f64) -> DVec3,
+    contact_eval: &mut dyn FnMut(&[TranslationalState], &[RotationalState], &mut [(DVec3, DVec3)]),
+    bodies: &[CoupledBodyInput<'_>],
+    stage_trans_buf: &mut [TranslationalState],
+    stage_rot_buf: &mut [RotationalState],
+    contact_out: &mut [(DVec3, DVec3)],
+    k_v: &mut [DVec3],
+    k_a: &mut [DVec3],
+    k_qdot: &mut [[f64; 4]],
+    k_alpha: &mut [DVec3],
+) {
+    let n = bodies.len();
+    for i in 0..n {
+        stage_trans_buf[i] = TranslationalState {
+            position: stage_pos[i],
+            velocity: stage_vel[i],
+        };
+        // Build a NORMALIZED quaternion for `contact_eval` only: JEOD's
+        // `left_quat_to_transformation` (and our port) assumes a
+        // normalized quaternion (see `JEOD_INV: RF.09`), so feeding it
+        // the raw RK4 intermediate would yield a slightly non-orthonormal
+        // rotation matrix in the contact closure. Using the
+        // integration-safe `normalize_integ` preserves the scalar sign.
+        //
+        // The `qdot = 0.5 · ω ⊗ q` derivative used below is computed from
+        // the *raw* stage quaternion, matching `rk4_sixdof_step` and
+        // `integrate_body_coupled`, which also do not renormalize at
+        // intermediate stages — renormalization only happens once at
+        // step end. The normalization here is strictly a boundary
+        // correction for the contact callback.
+        let mut normalized_quat =
+            JeodQuat::new(stage_q[i][0], stage_q[i][1], stage_q[i][2], stage_q[i][3]);
+        jeod_dynamics::normalize_integ(&mut normalized_quat);
+        stage_rot_buf[i] = RotationalState {
+            quaternion: normalized_quat,
+            ang_vel_body: stage_omega[i],
+        };
+    }
+
+    // Reset per-stage contact accumulators before handing off to the
+    // callback. The scratch buffer is reused across stages and steps;
+    // if a future `contact_eval` implementation only writes bodies that
+    // are in contact, stale entries from a prior stage would otherwise
+    // be silently applied.
+    for entry in contact_out.iter_mut() {
+        *entry = (DVec3::ZERO, DVec3::ZERO);
+    }
+
+    contact_eval(stage_trans_buf, stage_rot_buf, contact_out);
+
+    for (i, body) in bodies.iter().enumerate() {
+        let (contact_force, contact_torque_body) = contact_out[i];
+        let grav_accel = gravity_fn(i, stage_pos[i], stage_vel[i], time_frac);
+        let total_force = body.non_grav_non_contact_force + contact_force;
+        let accel = grav_accel
+            + if total_force == DVec3::ZERO {
+                DVec3::ZERO
+            } else {
+                jeod_dynamics::compute_translational_acceleration(
+                    total_force,
+                    body.mass.inverse_mass,
+                )
+            };
+        let total_torque = body.non_contact_torque_body + contact_torque_body;
+        // qdot is computed from the *raw* stage quaternion (not the
+        // normalized copy in `stage_rot_buf`) to match the rest of the
+        // RK4 integration paths: intermediate stages are not
+        // renormalized — only the final combined quaternion is.
+        let raw_quat = JeodQuat::new(stage_q[i][0], stage_q[i][1], stage_q[i][2], stage_q[i][3]);
+        let qdot = jeod_dynamics::compute_left_quat_deriv(&raw_quat, stage_omega[i]);
+        let alpha = jeod_dynamics::compute_rotational_acceleration(
+            &body.mass.inertia,
+            &body.mass.inverse_inertia,
+            stage_omega[i],
+            total_torque,
+        );
+        k_v[i] = stage_vel[i];
+        k_a[i] = accel;
+        k_qdot[i] = qdot;
+        k_alpha[i] = alpha;
+    }
+}
+
+#[inline]
+fn step_q_arr(q_base: [f64; 4], k_qdot: [f64; 4], h: f64) -> [f64; 4] {
+    [
+        q_base[0] + k_qdot[0] * h,
+        q_base[1] + k_qdot[1] * h,
+        q_base[2] + k_qdot[2] * h,
+        q_base[3] + k_qdot[3] * h,
+    ]
+}
+
 /// Integrate a single body's state forward by one timestep.
 ///
 /// Handles 6-DOF vs 3-DOF routing based on configuration flags and

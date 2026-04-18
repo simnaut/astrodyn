@@ -57,9 +57,13 @@ pub use gravity::{
     accumulate_gravity, accumulate_relativistic_corrections, ResolvedRelativisticSource,
     ResolvedSource,
 };
-pub use integration::{integrate_body, integrate_body_coupled, CoupledStageEval};
+pub use integration::{
+    integrate_bodies_contact_coupled, integrate_body, integrate_body_coupled, CoupledBodyInput,
+    CoupledIntegScratch, CoupledStageEval,
+};
 pub use interactions::{
-    compute_cannonball_srp, compute_drag, compute_gravity_torque, FlatPlateState,
+    compute_cannonball_srp, compute_drag, compute_gravity_torque, evaluate_contact_pair,
+    ContactPairEval, FlatPlateState,
 };
 pub use jeod_dynamics::{
     Abm4State, GaussJacksonConfig, GaussJacksonState, IntegratorResult, IntegratorType,
@@ -91,11 +95,13 @@ pub use jeod_atmosphere::AtmosphereState;
 
 // jeod_interactions: config, result types, and computation functions
 pub use jeod_interactions::{
+    compute_contact_force, compute_contact_force_from_geometry, compute_contact_geometry,
     compute_earth_lighting, compute_flat_plate_srp_thermal,
     compute_flat_plate_srp_thermal_conduction, compute_shadow_fraction, solar_flux_at_distance,
-    AerodynamicForce, DragConfig, EarthLightingState, FlatPlate, FlatPlateParams,
-    FlatPlateSrpResult, FlatPlateThermal, LightingBody, LightingParams, RadiationForce,
-    ThermalConductionMatrix, SOLAR_RADIUS, SPEED_OF_LIGHT,
+    AerodynamicForce, ContactFacet, ContactForce, ContactGeometry, ContactMaterial, ContactShape,
+    DragConfig, EarthLightingState, FlatPlate, FlatPlateParams, FlatPlateSrpResult,
+    FlatPlateThermal, LightingBody, LightingParams, RadiationForce, ThermalConductionMatrix,
+    SOLAR_RADIUS, SPEED_OF_LIGHT,
 };
 
 // jeod_frames: reference frame state
