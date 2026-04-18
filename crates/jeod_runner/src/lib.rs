@@ -1890,6 +1890,14 @@ impl Simulation {
             })
             .collect();
 
+        // Dynamic timestep: JEOD's `integ_dyndt = sim_dt * time_scale_factor`
+        // (`standard_integration_controls.cc:80-82`). Integrators step in
+        // dynamic time, so stage-time interpolations of the integration
+        // frame origin and source positions must scale by `integ_dt`, not
+        // by the raw `dt` — otherwise reversed/scaled time produces
+        // inconsistent gravity during coupled integration.
+        let integ_dt = dt * self.time.time_scale_factor;
+
         // Helper: evaluate gravity (Newtonian + relativistic) at an
         // intermediate (pos, vel) for the given body. Takes `controls` as
         // a parameter so the non-contact path can borrow
@@ -1903,9 +1911,10 @@ impl Simulation {
                                  time_frac: f64|
          -> DVec3 {
             let (integ_origin, integ_vel) = body_integ_origins[body_idx];
-            let origin = integ_origin + integ_vel * (time_frac * dt);
+            let stage_dt = time_frac * integ_dt;
+            let origin = integ_origin + integ_vel * stage_dt;
             let sub_dt = if integ_vel != DVec3::ZERO {
-                time_frac * dt
+                stage_dt
             } else {
                 0.0
             };
@@ -1984,8 +1993,8 @@ impl Simulation {
                 "contact pairs require 6-DOF (rotational state + mass) on all bodies"
             );
 
-            // Snapshot pre-integration state for post-step frame tree sync.
-            let integ_dt = dt * self.time.time_scale_factor;
+            // `integ_dt` (dynamic timestep) is defined above the gravity
+            // closure; reuse it here for the coupled integrator call.
 
             // Split disjoint `self` fields up front so we can keep mutable
             // access to bodies (and to coupled_integ_scratch below) while

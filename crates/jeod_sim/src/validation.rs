@@ -301,8 +301,9 @@ impl std::fmt::Display for ValidationError {
                     f,
                     "Body {body_idx}: contact pairs are registered but this body uses a \
                      non-RK4 integrator. The contact-coupled path drives all bodies through \
-                     a shared multi-body RK4 kernel; switch the integrator to RK4 or \
-                     deregister contact pairs."
+                     a shared multi-body RK4 kernel; switch the integrator to RK4, avoid \
+                     registering contact pairs for this simulation, or recreate the \
+                     simulation without contact pairs."
                 )
             }
             Self::ContactPairsRequire6Dof { body_idx } => {
