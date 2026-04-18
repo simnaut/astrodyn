@@ -152,7 +152,7 @@ fn tier3_sim_attach_detach_simple() {
     // once (trick.add_read scheduled events), so we use one-shot flags — a
     // simple `!attached` gate would re-fire attach after detach and mask any
     // asymmetry if `attach`/`detach` ever stopped being perfect inverses.
-    let (mut tree, v1, v2, _v3) = build_three_vehicles();
+    let (mut tree, v1, v2, v3) = build_three_vehicles();
     let mut attach_fired = false;
     let mut detach_fired = false;
 
@@ -186,8 +186,9 @@ fn tier3_sim_attach_detach_simple() {
 
         let m1 = tree.get(v1).composite_properties.mass;
         let m2 = tree.get(v2).composite_properties.mass;
-        // v3 is untouched throughout the simple run.
-        let m3 = 3.0;
+        // v3 is untouched by this run, but still queried each row so the
+        // assertion catches any cross-root contamination from attach/detach.
+        let m3 = tree.get(v3).composite_properties.mass;
 
         // JEOD's `update_mass_properties` runs at the dynamics rate
         // (DYNAMICS=0.01s), so by the log-cycle boundary the event's
