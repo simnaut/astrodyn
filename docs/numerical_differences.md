@@ -20,9 +20,8 @@ in simnaut/bevy_jeod#6, the DE421 path in #27, and the SRP thermal residual in
   on the composed `T_parent_this` RNP matrix; ~4.4e-8 rad attitude quaternion
   and ~3e-18 rad/s angular velocity.
 - **Where observed:** simnaut/bevy_jeod#6; tolerances in
-  `crates/jeod_runner/tests/tier3_sim_dyncomp_run2.rs:132` (point-mass),
-  `tier3_sim_dyncomp_run4.rs:289` (4×4 SH), `tier3_sim_dyncomp_run6.rs:227`
-  (8×8 SH), `tier3_sim_dyncomp_run9.rs:209` (6-DOF).
+  `crates/jeod_runner/tests/tier3_sim_dyncomp_run3.rs:189` (RUN_3A: 4×4 SH +
+  RNP) and `:201` (RUN_3B: 8×8 SH + RNP).
 - **Root cause:** Identical formulae, different toolchain. GCC may emit
   single-rounded `fma(a,b,c)` where LLVM emits a double-rounded `a*b + c`;
   compilers reorder commutative operations at the same `-O` level; and glibc
@@ -47,7 +46,7 @@ in simnaut/bevy_jeod#6, the DE421 path in #27, and the SRP thermal residual in
   `crates/jeod_runner/tests/tier3_sim_torque_simple.rs:20`,
   `tier3_apollo8_frame_switch.rs:334`, `tier3_sim_earth_moon.rs:261`,
   `tier3_sim_tide_verif.rs:281`, `tier3_sim_solar_beta_edge.rs`
-  (beta_tol 1.89e-5 / 3.45e-5 rad).
+  (beta_tol 1.892e-5 / 3.446e-5 rad).
 - **Root cause:** JEOD uses `cspice`-derived DE4xx Chebyshev evaluators
   linked into its C++ binary, and its default kernel is DE405. We use
   [Anise](https://github.com/nyx-space/anise), a pure-Rust SPICE reader
@@ -72,20 +71,26 @@ in simnaut/bevy_jeod#6, the DE421 path in #27, and the SRP thermal residual in
   `tier3_sim_srp_1st_order.rs:279`; closure rationale in
   simnaut/bevy_jeod#13; remaining convergence path tracked in #114
   (tasks 5.33 / 5.34, DynManager multi-integrable-object scheduling).
-- **Root cause:** JEOD integrates flat-plate temperatures as an
-  `ThermalIntegrableObject` that rides the same integration group as
-  orbital state, so plate `T` is updated at every RK4 stage and the
-  temperature ODE shares the integrator with `r`/`v`. Our pipeline
-  evaluates `temp_dot` once per step, treating plate temperature as a
-  scheduled constant across the four stages. Over a 23-day propagation
-  the per-step stage mismatch accumulates as a secular position error
-  via SRP force direction.
-- **Why irreducible until DynManager ODE scheduling lands:** Matching
-  JEOD requires adding plate temperatures to the RK4 state vector (6
-  additional states per vehicle) and scheduling them alongside orbital
-  state — the work captured in #114. The ~0.03 m residual meets the <5 m
-  Phase 5 budget and is the minimum achievable without porting the
-  integration group infrastructure.
+- **Root cause:** On standard SIM_3_ORBIT, JEOD's `radiation.sm`
+  scheduled-class path computes `temp_dot()` once per integration step
+  and holds that derivative constant across the RK4 stages; our Rust
+  port intentionally matches that behavior. The remaining ~0.034 m
+  residual is therefore not a per-stage-vs-per-step thermal scheduling
+  mismatch on this path, but the accumulated effect of smaller
+  irreducible numerical differences in the coupled SRP/thermal update
+  pipeline. By contrast, configs that use derivative-class / first-order
+  thermal integration (SIM_3_ORBIT_1st_ORDER) still expose the larger
+  scheduling-coupling gap discussed in #114, where JEOD advances plate
+  temperatures as part of the coupled ODE state via
+  `ThermalIntegrableObject`.
+- **Why irreducible:** For SIM_3_ORBIT, the port already matches JEOD's
+  scheduled-per-step thermal update, so the remaining ~0.03 m residual
+  meets the <5 m Phase 5 budget and is accepted as numerical noise
+  rather than a missing integrator feature. The DynManager
+  multi-integrable-object work in #114 remains relevant to derivative-
+  class / first-order SRP configurations, where matching JEOD requires
+  adding plate temperatures to the RK4 state vector and scheduling them
+  alongside orbital state.
 
 ## Host libm sin/cos on drag velocity schedule
 
