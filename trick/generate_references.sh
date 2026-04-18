@@ -1757,13 +1757,17 @@ run_attach_mass_group() {
             echo "--- Skipping ${label} (exists) ---"
             continue
         fi
+        local src="${run_dir}/mass.out"
+        # Clear any stale mass.out from a prior run so a silent sim failure
+        # (or a sim that doesn't regenerate the file) can't cause us to copy
+        # outdated data to the reference directory.
+        rm -f "$src"
         echo "--- Running ${label} (${run_dir}) ---"
         if ! "./${exe}" "${run_dir}/input.py" 2>&1 | tail -3; then
             echo "ERROR: Sim execution failed for ${label}"
             fail=1
             continue
         fi
-        local src="${run_dir}/mass.out"
         if [ ! -s "$src" ]; then
             echo "ERROR: ${src} was not produced"
             fail=1

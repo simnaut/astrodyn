@@ -148,9 +148,13 @@ fn tier3_sim_attach_detach_simple() {
     let mut max_err = assert_masses(t0, 1.0, 2.0, 3.0);
 
     // Build tree and step through the recorded timeline, applying
-    // attach/detach at their scheduled times.
+    // attach/detach at their scheduled times. JEOD fires each action exactly
+    // once (trick.add_read scheduled events), so we use one-shot flags — a
+    // simple `!attached` gate would re-fire attach after detach and mask any
+    // asymmetry if `attach`/`detach` ever stopped being perfect inverses.
     let (mut tree, v1, v2, _v3) = build_three_vehicles();
-    let mut attached = false;
+    let mut attach_fired = false;
+    let mut detach_fired = false;
 
     // JEOD's DRAscii samples at 0.5s starting from t=0. Events fire at
     // the beginning of the second (t=10.000 or t=20.000 exactly).
@@ -159,7 +163,7 @@ fn tier3_sim_attach_detach_simple() {
         // Apply events that are due by this row's timestamp. Tight
         // inequality keeps the event firing on the row at which JEOD's
         // trick.add_read(t, ...) executes.
-        if !attached && row.time >= SIMPLE_ATTACH_TIME {
+        if !attach_fired && row.time >= SIMPLE_ATTACH_TIME {
             // BodyAttachAligned: veh1.node12 ↔ veh2.node21. node12 lives at
             // (10, 0, 0) in veh1 struct; node21 at (0, 0, 0) in veh2 struct.
             // With node21's orientation being YPR(180°,0,0) (180° yaw), the
@@ -173,11 +177,11 @@ fn tier3_sim_attach_detach_simple() {
                 glam::DVec3::ZERO, // mass is pose-invariant
                 glam::DMat3::IDENTITY,
             );
-            attached = true;
+            attach_fired = true;
         }
-        if attached && row.time >= SIMPLE_DETACH_TIME {
+        if !detach_fired && row.time >= SIMPLE_DETACH_TIME {
             tree.detach(v1);
-            attached = false;
+            detach_fired = true;
         }
 
         let m1 = tree.get(v1).composite_properties.mass;

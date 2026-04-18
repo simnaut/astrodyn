@@ -166,9 +166,16 @@ fn child3_default() -> MassProperties {
 // Validation helpers
 // ════════════════════════════════════════════════════════════════════
 
-/// Absolute max element difference between our MassTree composite and the
-/// JEOD `PrintedBody`. Used both for tolerance assertions and for tracking
-/// the overall max error written to the cross-validation report.
+/// Scalar error metrics between our MassTree composite and the JEOD
+/// `PrintedBody`. Used both for tolerance assertions and for tracking the
+/// overall max error written to the cross-validation report. Returned as
+/// `(mass_err, com_err, inertia_err)` where:
+/// - `mass_err`: absolute difference in composite mass (kg).
+/// - `com_err`: Euclidean (L2) distance between CoM vectors (m).
+/// - `inertia_err`: max over the three matrix columns of the L2 distance
+///   between the column vectors (kg·m²). This aggregates a 3x3 matrix
+///   error into a single scalar while staying sensitive to any one column
+///   drifting — it is *not* a strict per-element max delta.
 fn composite_errors(tree: &MassTree, id: MassBodyId, reference: &PrintedBody) -> (f64, f64, f64) {
     let body = tree.get(id);
     let comp = &body.composite_properties;
