@@ -774,15 +774,15 @@ fn tier3_contact_point_off_center() {
     // 14 μm), RUN_point_off_center drifts from JEOD by ~2.7 cm in position
     // and ~5.7 mm/s in velocity after the stiff 0.5 s contact event, which
     // then accumulates over the 4.5 s free-flight tail. `evaluate_contact_pair`
-    // is now a faithful port of JEOD's `point_contact_pair.cc:83-84`
-    // relative-velocity formula (single-cross (ω_B − ω_A) × r_A_contact),
-    // and in this specific scenario the two bodies develop *equal, same-
-    // direction* angular velocities from Newton's-third-law torques on
-    // equal-mass, equal-inertia spheres, so ω_B − ω_A = 0 and the ω-term is
-    // zero identically — i.e., the rel_vel formula is not the source of
-    // the drift. The remaining gap likely originates in how JEOD's Trick
-    // integrator sub-steps the stiff contact event; investigating that is
-    // out of scope for this PR.
+    // is a faithful port of JEOD's `point_contact_pair.cc:83-84` rel_vel
+    // formula (single-cross (ω_B − ω_A) × r_A_contact), and both bodies
+    // develop equal, same-direction ω from Newton's-third-law torques on
+    // equal-mass, equal-inertia spheres ⇒ ω_rel = 0, so the rel_vel term is
+    // identically zero — the formula is not the source of the drift.
+    //
+    // The remaining gap likely stems from JEOD's Trick integrator sub-
+    // stepping the stiff contact event differently from our fixed
+    // four-stage RK4. See issue #117 for the investigation plan.
     assert!(
         max_pos_err < 3.0e-2,
         "veh{{1,2}} position error {max_pos_err:.3e} > 3 cm"
