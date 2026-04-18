@@ -307,6 +307,15 @@ pub fn compute_contact_geometry(
 ///   - `line_contact_pair.cc::in_contact`
 ///   - `line_point_contact_pair.cc::in_contact`
 ///   - `spring_pair_interaction.cc::calculate_forces` (force law)
+///
+/// # Panics
+/// Panics if `facet_a.material != facet_b.material`. JEOD pairs a single
+/// `SpringPairInteraction` to each facet pair, so both facets must carry
+/// identical stiffness / damping / friction parameters; mismatched
+/// materials indicate a configuration bug and are rejected loudly in both
+/// debug and release builds. Callers that build pairs through
+/// `Simulation::register_contact_pair` in `jeod_runner` get the same
+/// check at registration time.
 pub fn compute_contact_force(
     facet_a: &ContactFacet,
     facet_b: &ContactFacet,
