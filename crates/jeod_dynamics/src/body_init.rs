@@ -173,7 +173,7 @@ pub fn init_from_time_periapsis(
     // JEOD dyn_body_init_orbit.cc:295 factorization:
     //   mean_anomaly = t_peri * sqrt(mu / a) / a
     // Algebraically equivalent to M = n*t with n = sqrt(mu/a^3), but matches
-    // JEOD's arithmetic order so the f64 result is bit-identical.
+    // JEOD's arithmetic order to minimize rounding differences in parity tests.
     let mean_anomaly = time_periapsis * (mu / semi_major_axis).sqrt() / semi_major_axis;
 
     init_from_mean_anomaly(
