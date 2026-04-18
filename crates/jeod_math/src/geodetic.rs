@@ -37,6 +37,7 @@ pub struct SphericalState {
 /// * `r_eq` - Equatorial radius of the planet (m)
 pub fn cartesian_to_spherical(cart: DVec3, r_eq: f64) -> SphericalState {
     let r_local = cart.length();
+    // JEOD_INV: PF.01 — position must be far from planet center (r_local > r_eq · 1e-10)
     assert!(
         r_local > r_eq * 1e-10,
         "cartesian_to_spherical: position too close to planet center ({r_local} m)"
@@ -78,6 +79,7 @@ pub fn spherical_to_cartesian(sph: &SphericalState, r_eq: f64) -> DVec3 {
 /// * `r_eq` - Equatorial radius (m)
 /// * `r_pol` - Polar radius (m)
 pub fn cartesian_to_geodetic(cart: DVec3, r_eq: f64, r_pol: f64) -> GeodeticState {
+    // JEOD_INV: PF.02 — input must be NaN/Inf free
     // JEOD planet_fixed_posn.cc:155-162: check for NaN/Inf before proceeding.
     assert!(
         cart.x.is_finite() && cart.y.is_finite() && cart.z.is_finite(),
@@ -89,6 +91,7 @@ pub fn cartesian_to_geodetic(cart: DVec3, r_eq: f64, r_pol: f64) -> GeodeticStat
     let z_ellipse = cart.z;
     let r_ellipse = (x_ellipse_sq + z_ellipse * z_ellipse).sqrt();
 
+    // JEOD_INV: PF.01 — position must be far from planet center
     assert!(
         r_ellipse > r_eq * 1e-10,
         "cartesian_to_geodetic: position too close to planet center ({r_ellipse} m)"
@@ -96,6 +99,7 @@ pub fn cartesian_to_geodetic(cart: DVec3, r_eq: f64, r_pol: f64) -> GeodeticStat
 
     let (lat, alt) = get_elliptic_parameters(x_ellipse, z_ellipse, r_eq, r_pol);
 
+    // JEOD_INV: PF.03 — polar singularity: at x_ellipse==0, longitude is undefined
     let longitude = if x_ellipse != 0.0 {
         cart.y.atan2(cart.x)
     } else {
@@ -136,6 +140,7 @@ fn get_elliptic_parameters(r: f64, z: f64, r_eq: f64, r_pol: f64) -> (f64, f64) 
         let mut converged = false;
         for _ in 0..MAX_ITERATION_LIMIT {
             let d = 2.0 * ((y0 - w).cos() - c * (2.0 * y0).cos());
+            // JEOD_INV: PF.05 — Borkowski denominator must be non-zero
             // Not in JEOD: guard against degenerate denominator. JEOD divides
             // unconditionally; we assert because d==0 implies zero flattening
             // which should never reach this code path with a real ellipsoid.
@@ -150,6 +155,7 @@ fn get_elliptic_parameters(r: f64, z: f64, r_eq: f64, r_pol: f64) -> (f64, f64) 
             }
             y0 = y_val;
         }
+        // JEOD_INV: PF.04 — Borkowski iteration must converge to 1e-12 within MAX_ITERATION_LIMIT
         // Not in JEOD: JEOD silently uses the last iterate on non-convergence.
         // We assert because the Borkowski iteration is guaranteed to converge for
         // physically valid inputs and failure indicates a bug in the caller.

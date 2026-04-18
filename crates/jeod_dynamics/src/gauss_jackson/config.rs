@@ -84,12 +84,14 @@ impl GaussJacksonConfig {
         let mut errors = Vec::new();
         let is_valid_order = |o: usize| (2..=14).contains(&o) && o.is_multiple_of(2);
 
+        // JEOD_INV: IG.04 — initial_order must be even integer in [2, 14]
         if !is_valid_order(self.initial_order) {
             errors.push(format!(
                 "initial_order {} must be even, ≥ 2, ≤ 14",
                 self.initial_order
             ));
         }
+        // JEOD_INV: IG.05 — final_order must be even integer in [initial_order, 14]
         if !is_valid_order(self.final_order) {
             errors.push(format!(
                 "final_order {} must be even, ≥ 2, ≤ 14",
@@ -101,18 +103,24 @@ impl GaussJacksonConfig {
                 self.final_order, self.initial_order
             ));
         }
+        // JEOD_INV: IG.06 — ndoubling_steps ≤ 20
         if self.ndoubling_steps > 20 {
             errors.push(format!(
                 "ndoubling_steps {} must be ≤ 20",
                 self.ndoubling_steps
             ));
         }
+        // JEOD_INV: IG.07 — relative_tolerance finite and in [0, 1]
         if !self.relative_tolerance.is_finite() || !(0.0..=1.0).contains(&self.relative_tolerance) {
             errors.push(format!(
                 "relative_tolerance {} must be finite and in [0, 1]",
                 self.relative_tolerance
             ));
         }
+        // JEOD_INV: IG.08 — absolute_tolerance finite and ≥ 0.
+        // (JEOD's message mentions relative_tolerance here — that's a known
+        // message-string bug in `gauss_jackson_config.cc`; the actual variable
+        // checked is absolute_tolerance, which is what we validate.)
         if !self.absolute_tolerance.is_finite() || self.absolute_tolerance < 0.0 {
             errors.push(format!(
                 "absolute_tolerance {} must be finite and ≥ 0",

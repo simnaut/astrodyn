@@ -156,6 +156,7 @@ impl<SourceId> GravityControl<SourceId> {
         match &source.model {
             GravityModel::SphericalHarmonics(ref data) => {
                 // JEOD_INV: GV.04 — degree <= source degree
+                // JEOD_INV: GV.19 — source-side degree/order clamp (same check, catalogued separately)
                 assert!(
                     self.degree <= data.degree,
                     "Gravity field degree requested ({}) is greater than max gravity field degree ({}).",

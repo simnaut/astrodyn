@@ -292,6 +292,8 @@ impl MassTree {
         offset: DVec3,
         t_parent_child: DMat3,
     ) {
+        // JEOD_INV: BA.03 — attachment requires non-null parent; the `parent_id` argument
+        // is `MassBodyId` (non-null by type); invalid IDs panic at the index site below.
         assert!(
             self.parent[child_id].is_none(),
             "child {} already attached to a parent",
@@ -301,6 +303,7 @@ impl MassTree {
 
         // JEOD_INV: MA.08 — no cycle in mass tree (arena-based, cycles impossible)
         // JEOD_INV: MA.19 — no same-tree attachment (cycle prevention)
+        // JEOD_INV: BA.04 — body-action attachment also forbids cycles (same check)
         // Prevent creation of cycles: walk up from parent_id to the root
         // and ensure we never encounter child_id. This matches JEOD's
         // attach_validate_parent() (mass_attach.cc:370-388): "the only invalid

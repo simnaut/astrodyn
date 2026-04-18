@@ -32,6 +32,9 @@ pub struct UserDefinedEpoch {
 }
 
 impl UserDefinedEpoch {
+    // JEOD_INV: TM.25 — UDE is parameterised by a single parent-scale epoch value.
+    // JEOD allows a cascade (UDE-updates-from-UDE-with-epoch-in-UDE) and spends many
+    // invariants guarding that; we forbid it by API shape — one parent scale per UDE.
     /// Create a new UDE with epoch at the given parent time value.
     pub fn new(epoch_in_parent: f64) -> Self {
         Self {
@@ -63,7 +66,8 @@ impl UserDefinedEpoch {
         self.clock_minute = scratch.div_euclid(60.0) as i32;
         self.clock_second = scratch.rem_euclid(60.0);
 
-        // Clock resolution rounding (JEOD default: 1e-6)
+        // JEOD_INV: TM.38 — clock decomposition must carry correctly near 60s/60min/24h
+        // boundaries; JEOD's default clock_resolution = 1e-6 rounds up sub-microsecond residuals.
         let clock_resolution = 1e-6;
         if self.clock_second > 60.0 - clock_resolution {
             self.clock_second = 0.0;

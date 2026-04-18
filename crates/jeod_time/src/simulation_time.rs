@@ -65,6 +65,9 @@ pub struct SimulationTime {
 
 impl SimulationTime {
     // JEOD_INV: TM.07 — JEOD uses -1.0 sentinel; we call recompute_derived() at construction instead
+    // JEOD_INV: TM.21 — TAI↔UTC requires a leap-second table; `leap_table` is a mandatory arg (no override path).
+    // JEOD_INV: TM.31 — sim-start is specified by the mandatory `tai_tjt_at_epoch` parameter;
+    // calendar/decimal ambiguity does not exist in our API.
     /// Create a new SimulationTime starting at the given TAI TJT.
     ///
     /// # Arguments
@@ -122,6 +125,8 @@ impl SimulationTime {
     /// # Panics
     /// Panics if `sim_dt` is not finite or is negative.
     pub fn advance(&mut self, sim_dt: f64) {
+        // JEOD_INV: TM.40 — time advance inputs must be finite; JEOD relies on sim-input
+        // validity, we assert defensively so bad `dt` values fail loudly rather than poison the tree.
         assert!(
             sim_dt.is_finite() && sim_dt >= 0.0,
             "sim_dt must be finite and >= 0, got {sim_dt}"

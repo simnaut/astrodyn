@@ -63,6 +63,9 @@ impl Ephemeris {
         let target_frame = body_to_frame(target);
         let observer_frame = body_to_frame(observer);
 
+        // JEOD_INV: EP.14 — query epoch must lie within the loaded SPK segment range.
+        // JEOD_INV: EP.17 — body ephemeris must be available for the requested body.
+        // ANISE surfaces both as a translate error which we map into QueryError.
         let state = self
             .almanac
             .translate(target_frame, observer_frame, epoch, None)
@@ -183,6 +186,9 @@ fn body_to_frame(body: EphemerisBody) -> Frame {
 }
 
 /// Ephemeris errors.
+// JEOD_INV: EP.25 — ephemeris errors surface through two variants: LoadError for kernel
+// load failures (EP.11-13 aggregated), QueryError for out-of-range / missing-body / rotation
+// failures (EP.14, EP.17 aggregated). JEOD uses distinct message codes; we aggregate.
 #[derive(Debug, thiserror::Error)]
 pub enum EphemerisError {
     #[error("Failed to load ephemeris file: {0}")]
