@@ -387,6 +387,15 @@ fn eval_stage(
         };
     }
 
+    // Reset per-stage contact accumulators before handing off to the
+    // callback. The scratch buffer is reused across stages and steps;
+    // if a future `contact_eval` implementation only writes bodies that
+    // are in contact, stale entries from a prior stage would otherwise
+    // be silently applied.
+    for entry in contact_out.iter_mut() {
+        *entry = (DVec3::ZERO, DVec3::ZERO);
+    }
+
     contact_eval(stage_trans_buf, stage_rot_buf, contact_out);
 
     for (i, body) in bodies.iter().enumerate() {

@@ -33,8 +33,8 @@ use glam::{DMat3, DVec3};
 use jeod_interactions::{ContactFacet, ContactMaterial};
 use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
 use jeod_sim::{
-    GravityControls, GravityModel, GravitySource, JeodQuat, MassProperties, RotationalState,
-    SimulationTime, TranslationalState,
+    evaluate_contact_pair, GravityControls, GravityModel, GravitySource, JeodQuat, MassProperties,
+    RotationalState, SimulationTime, TranslationalState,
 };
 use sim_test_helpers::test_data_path;
 use std::path::Path;
@@ -205,8 +205,59 @@ fn jeod_steel() -> ContactMaterial {
     ContactMaterial::jeod_spring(JEOD_SPRING_K, JEOD_DAMPING_B, JEOD_MU)
 }
 
+/// Mass/inertia for the 100 kg point scenarios (`veh_mass_point.py`).
+fn point_mass_props() -> MassProperties {
+    MassProperties::with_inertia(
+        100.0,
+        DMat3::from_cols(
+            DVec3::new(40.0, 0.0, 0.0),
+            DVec3::new(0.0, 40.0, 0.0),
+            DVec3::new(0.0, 0.0, 40.0),
+        ),
+        DVec3::ZERO,
+    )
+}
+
+/// Mass/inertia for the 200 kg line/capsule scenarios (`veh_mass_line.py`).
+fn line_mass_props() -> MassProperties {
+    MassProperties::with_inertia(
+        200.0,
+        DMat3::from_cols(
+            DVec3::new(100.0, 0.0, 0.0),
+            DVec3::new(0.0, 116.6667, 0.0),
+            DVec3::new(0.0, 0.0, 116.6667),
+        ),
+        DVec3::ZERO,
+    )
+}
+
+// Tolerances for contact-force/torque comparisons. The evaluator is
+// re-run at logged (end-of-step) states — not at the RK4 stages JEOD
+// used during integration — so a small difference is expected. Values
+// are set at 5% above the observed maximum per CLAUDE.md policy.
+//
+// Head-on scenarios agree with JEOD essentially exactly (< 30 mN, < 1e-12 N*m);
+// the off-center oblique case has known state drift (~cm-scale) after
+// contact, so the tolerance for that scenario is larger (~5 N / ~5 N*m).
+const CONTACT_FORCE_TOL: f64 = 0.028; // N (head-on cases; observed max 26 mN)
+const CONTACT_TORQUE_TOL: f64 = 2.0e-13; // N*m (head-on; observed ~1.2e-13 machine noise)
+const POINT_OFF_CENTER_FORCE_TOL: f64 = 5.4; // N (observed 5.07 N due to ~5% oblique drift)
+const POINT_OFF_CENTER_TORQUE_TOL: f64 = 5.2; // N*m (observed 4.82 N*m due to ~5% oblique drift)
+
+/// Body state snapshot at a single checkpoint. Carries the full 6-DOF
+/// state (position, velocity, attitude, angular velocity) for each of
+/// the two bodies so tests can both compare trajectories AND re-evaluate
+/// contact force/torque at the logged state.
+#[derive(Debug, Clone, Copy)]
+struct CheckpointBodies {
+    veh1_trans: TranslationalState,
+    veh1_rot: RotationalState,
+    veh2_trans: TranslationalState,
+    veh2_rot: RotationalState,
+}
+
 /// Propagate two bodies with contact forces evaluated at each RK4 stage
-/// inside `Simulation::step()`. Returns per-step state snapshots at
+/// inside `Simulation::step()`. Returns per-step full-6-DOF snapshots at
 /// `LOG_CYCLE` intervals.
 ///
 /// `facet_a` and `facet_b` define the two contact facets — the shape
@@ -217,12 +268,11 @@ fn propagate_with_contact(
     facet_a: ContactFacet,
     facet_b: ContactFacet,
     checkpoints: &[f64],
-) -> Vec<(DVec3, DVec3, DVec3, DVec3)> {
+) -> Vec<CheckpointBodies> {
     // Register the contact pair so forces are computed at every RK4 stage
     // (matching JEOD's check_contact derivative-class job).
     sim.register_contact_pair(0, facet_a, 1, facet_b);
 
-    // Returns (pos1, vel1, pos2, vel2) at each checkpoint.
     let mut out = Vec::with_capacity(checkpoints.len());
     let mut cp_iter = checkpoints.iter().copied().peekable();
 
@@ -235,12 +285,12 @@ fn propagate_with_contact(
         let t = step as f64 * DT;
         if let Some(&cp) = cp_iter.peek() {
             if (t - cp).abs() <= 0.5 * DT {
-                out.push((
-                    b_a.trans.position,
-                    b_a.trans.velocity,
-                    b_b.trans.position,
-                    b_b.trans.velocity,
-                ));
+                out.push(CheckpointBodies {
+                    veh1_trans: b_a.trans,
+                    veh1_rot: b_a.rot.expect("6-DOF required for SIM_contact"),
+                    veh2_trans: b_b.trans,
+                    veh2_rot: b_b.rot.expect("6-DOF required for SIM_contact"),
+                });
                 cp_iter.next();
             }
         }
@@ -252,6 +302,101 @@ fn propagate_with_contact(
         sim.step_n(1);
     }
     out
+}
+
+/// Per-checkpoint assertion on contact force and torque against the JEOD
+/// CSV. JEOD logs `contact_surface.contact_force` in each body's
+/// *structural* frame; our [`evaluate_contact_pair`] returns
+/// `force_on_a` in the inertial frame and `torque_*_body` in each body's
+/// *body* frame. For all SIM_contact scenarios, `t_struct_body = I`
+/// (structure frame coincides with body frame), so we only need the
+/// body attitude to transform the inertial force back to the structural
+/// frame, and the logged torque can be compared to `torque_*_body`
+/// directly.
+///
+/// The contact evaluator is re-run at the logged (end-of-step) states,
+/// not the stage states JEOD used during integration, so a small
+/// mismatch is expected; tolerances are per-test and set 5 % above
+/// observed maxima per CLAUDE.md's cross-validation policy.
+#[allow(clippy::too_many_arguments)]
+fn assert_contact_force_torque(
+    label: &str,
+    facet_a: ContactFacet,
+    facet_b: ContactFacet,
+    mass_a: &MassProperties,
+    mass_b: &MassProperties,
+    ours: &[CheckpointBodies],
+    records: &[ContactRecord],
+    force_tol: f64,
+    torque_tol: f64,
+) {
+    assert_eq!(ours.len(), records.len());
+    let mut max_force_err_1 = 0.0_f64;
+    let mut max_force_err_2 = 0.0_f64;
+    let mut max_torque_err_1 = 0.0_f64;
+    let mut max_torque_err_2 = 0.0_f64;
+    let mut any_contact = false;
+    for (b, rec) in ours.iter().zip(records.iter()) {
+        let eval = evaluate_contact_pair(
+            &facet_a,
+            &facet_b,
+            &b.veh1_trans,
+            &b.veh2_trans,
+            Some(&b.veh1_rot),
+            Some(&b.veh2_rot),
+            DMat3::IDENTITY, // t_struct_body_a (SIM_contact: struct == body)
+            DMat3::IDENTITY, // t_struct_body_b
+            Some(mass_a),
+            Some(mass_b),
+        );
+        let (force_on_a_struct, torque_a_struct, force_on_b_struct, torque_b_struct) = match eval {
+            Some(ev) => {
+                any_contact = true;
+                // t_struct_body = I ⇒ t_inertial_struct = t_inertial_body.
+                let t_inertial_body_1 = b.veh1_rot.quaternion.left_quat_to_transformation();
+                let t_inertial_body_2 = b.veh2_rot.quaternion.left_quat_to_transformation();
+                let force_on_a_struct = t_inertial_body_1 * ev.force_on_a;
+                let force_on_b_struct = t_inertial_body_2 * (-ev.force_on_a);
+                (
+                    force_on_a_struct,
+                    ev.torque_a_body,
+                    force_on_b_struct,
+                    ev.torque_b_body,
+                )
+            }
+            None => (DVec3::ZERO, DVec3::ZERO, DVec3::ZERO, DVec3::ZERO),
+        };
+        max_force_err_1 = max_force_err_1.max((force_on_a_struct - rec.veh1_force).length());
+        max_force_err_2 = max_force_err_2.max((force_on_b_struct - rec.veh2_force).length());
+        max_torque_err_1 = max_torque_err_1.max((torque_a_struct - rec.veh1_torque).length());
+        max_torque_err_2 = max_torque_err_2.max((torque_b_struct - rec.veh2_torque).length());
+    }
+
+    println!(
+        "{label}: contact force err max = ({max_force_err_1:.3e}, {max_force_err_2:.3e}) N; \
+         torque err max = ({max_torque_err_1:.3e}, {max_torque_err_2:.3e}) N*m"
+    );
+
+    assert!(
+        any_contact,
+        "{label}: evaluate_contact_pair never reported contact — scenario never in contact?"
+    );
+    assert!(
+        max_force_err_1 < force_tol,
+        "{label}: veh1 force error {max_force_err_1:.3e} > tol {force_tol:.3e}"
+    );
+    assert!(
+        max_force_err_2 < force_tol,
+        "{label}: veh2 force error {max_force_err_2:.3e} > tol {force_tol:.3e}"
+    );
+    assert!(
+        max_torque_err_1 < torque_tol,
+        "{label}: veh1 torque error {max_torque_err_1:.3e} > tol {torque_tol:.3e}"
+    );
+    assert!(
+        max_torque_err_2 < torque_tol,
+        "{label}: veh2 torque error {max_torque_err_2:.3e} > tol {torque_tol:.3e}"
+    );
 }
 
 // ── Tier 3 tests ────────────────────────────────────────────────────
@@ -270,6 +415,7 @@ fn tier3_contact_point_pair() {
 
     // Point facet: sphere radius 1 m centered at body origin.
     let facet = ContactFacet::point(DVec3::ZERO, 1.0, jeod_steel());
+    let mass = point_mass_props();
 
     let mut sim = make_two_body_sim(100.0, DVec3::new(40.0, 40.0, 40.0));
     let checkpoints: Vec<f64> = records.iter().map(|r| r.time).collect();
@@ -281,10 +427,10 @@ fn tier3_contact_point_pair() {
     let mut max_vel_err_1 = 0.0_f64;
     let mut max_vel_err_2 = 0.0_f64;
     for (our, rec) in ours.iter().zip(records.iter()) {
-        max_pos_err_1 = max_pos_err_1.max((our.0 - rec.veh1_pos).length());
-        max_pos_err_2 = max_pos_err_2.max((our.2 - rec.veh2_pos).length());
-        max_vel_err_1 = max_vel_err_1.max((our.1 - rec.veh1_vel).length());
-        max_vel_err_2 = max_vel_err_2.max((our.3 - rec.veh2_vel).length());
+        max_pos_err_1 = max_pos_err_1.max((our.veh1_trans.position - rec.veh1_pos).length());
+        max_pos_err_2 = max_pos_err_2.max((our.veh2_trans.position - rec.veh2_pos).length());
+        max_vel_err_1 = max_vel_err_1.max((our.veh1_trans.velocity - rec.veh1_vel).length());
+        max_vel_err_2 = max_vel_err_2.max((our.veh2_trans.velocity - rec.veh2_vel).length());
     }
 
     println!("SIM_contact RUN_point:");
@@ -312,6 +458,18 @@ fn tier3_contact_point_pair() {
         max_vel_err_2 < 8.0e-6,
         "veh2 velocity error {max_vel_err_2:.3e} > 8 μm/s"
     );
+
+    assert_contact_force_torque(
+        "SIM_contact RUN_point",
+        facet,
+        facet,
+        &mass,
+        &mass,
+        &ours,
+        &records,
+        CONTACT_FORCE_TOL,
+        CONTACT_TORQUE_TOL,
+    );
 }
 
 /// RUN_line: two capsules (length 2 m, radius 1 m) aligned along x.
@@ -332,6 +490,7 @@ fn tier3_contact_line_pair() {
         jeod_steel(),
     );
 
+    let mass = line_mass_props();
     let mut sim = make_two_body_sim(200.0, DVec3::new(100.0, 116.6667, 116.6667));
     let checkpoints: Vec<f64> = records.iter().map(|r| r.time).collect();
     let ours = propagate_with_contact(&mut sim, facet, facet, &checkpoints);
@@ -340,10 +499,10 @@ fn tier3_contact_line_pair() {
     let mut max_pos_err = 0.0_f64;
     let mut max_vel_err = 0.0_f64;
     for (our, rec) in ours.iter().zip(records.iter()) {
-        max_pos_err = max_pos_err.max((our.0 - rec.veh1_pos).length());
-        max_pos_err = max_pos_err.max((our.2 - rec.veh2_pos).length());
-        max_vel_err = max_vel_err.max((our.1 - rec.veh1_vel).length());
-        max_vel_err = max_vel_err.max((our.3 - rec.veh2_vel).length());
+        max_pos_err = max_pos_err.max((our.veh1_trans.position - rec.veh1_pos).length());
+        max_pos_err = max_pos_err.max((our.veh2_trans.position - rec.veh2_pos).length());
+        max_vel_err = max_vel_err.max((our.veh1_trans.velocity - rec.veh1_vel).length());
+        max_vel_err = max_vel_err.max((our.veh2_trans.velocity - rec.veh2_vel).length());
     }
     println!("SIM_contact RUN_line: max pos={max_pos_err:.3e} m, max vel={max_vel_err:.3e} m/s");
 
@@ -351,6 +510,18 @@ fn tier3_contact_line_pair() {
     // ~11 μm. Tolerances set at 5% above observed per CLAUDE.md policy.
     assert!(max_pos_err < 1.2e-5, "position error {max_pos_err:.3e}");
     assert!(max_vel_err < 9.0e-6, "velocity error {max_vel_err:.3e}");
+
+    assert_contact_force_torque(
+        "SIM_contact RUN_line",
+        facet,
+        facet,
+        &mass,
+        &mass,
+        &ours,
+        &records,
+        CONTACT_FORCE_TOL,
+        CONTACT_TORQUE_TOL,
+    );
 }
 
 /// RUN_line_point: capsule (veh1) meets sphere (veh2) head-on. Same mass /
@@ -369,6 +540,7 @@ fn tier3_contact_line_point() {
         jeod_steel(),
     );
     let point_facet = ContactFacet::point(DVec3::ZERO, 1.0, jeod_steel());
+    let mass = line_mass_props();
 
     let mut sim = make_two_body_sim(200.0, DVec3::new(100.0, 116.6667, 116.6667));
     let checkpoints: Vec<f64> = records.iter().map(|r| r.time).collect();
@@ -378,10 +550,10 @@ fn tier3_contact_line_point() {
     let mut max_pos_err = 0.0_f64;
     let mut max_vel_err = 0.0_f64;
     for (our, rec) in ours.iter().zip(records.iter()) {
-        max_pos_err = max_pos_err.max((our.0 - rec.veh1_pos).length());
-        max_pos_err = max_pos_err.max((our.2 - rec.veh2_pos).length());
-        max_vel_err = max_vel_err.max((our.1 - rec.veh1_vel).length());
-        max_vel_err = max_vel_err.max((our.3 - rec.veh2_vel).length());
+        max_pos_err = max_pos_err.max((our.veh1_trans.position - rec.veh1_pos).length());
+        max_pos_err = max_pos_err.max((our.veh2_trans.position - rec.veh2_pos).length());
+        max_vel_err = max_vel_err.max((our.veh1_trans.velocity - rec.veh1_vel).length());
+        max_vel_err = max_vel_err.max((our.veh2_trans.velocity - rec.veh2_vel).length());
     }
     println!(
         "SIM_contact RUN_line_point: max pos={max_pos_err:.3e} m, max vel={max_vel_err:.3e} m/s"
@@ -391,6 +563,18 @@ fn tier3_contact_line_point() {
     // max ~10 μm. Tolerances at 5% above observed per CLAUDE.md policy.
     assert!(max_pos_err < 1.0e-5, "pos err {max_pos_err:.3e}");
     assert!(max_vel_err < 9.0e-6, "vel err {max_vel_err:.3e}");
+
+    assert_contact_force_torque(
+        "SIM_contact RUN_line_point",
+        line_facet,
+        point_facet,
+        &mass,
+        &mass,
+        &ours,
+        &records,
+        CONTACT_FORCE_TOL,
+        CONTACT_TORQUE_TOL,
+    );
 }
 
 /// RUN_line_side_to_side: two capsules rotated 90° relative to each other
@@ -414,16 +598,18 @@ fn tier3_contact_line_side_to_side() {
     );
 
     // JEOD Yaw_Pitch_Roll convention: apply yaw (about z), then pitch
-    // (about new y), then roll (about new x). For veh1 pitch=90°, the
-    // initial attitude is a +90° rotation about body y.
+    // (about new y), then roll (about new x). veh1 pitch=90° ⇒ +90° about y,
+    // veh2 roll=90° ⇒ +90° about x.
     //
-    // Using glam::DQuat::from_axis_angle at the boundary, then converting
-    // to the JEOD scalar-first convention for internal storage.
-    use glam::DQuat;
-    let q_veh1 = DQuat::from_axis_angle(DVec3::Y, 90.0_f64.to_radians());
-    let q_veh2 = DQuat::from_axis_angle(DVec3::X, 90.0_f64.to_radians());
-    let jeod_veh1 = JeodQuat::new(q_veh1.w, q_veh1.x, q_veh1.y, q_veh1.z);
-    let jeod_veh2 = JeodQuat::new(q_veh2.w, q_veh2.x, q_veh2.y, q_veh2.z);
+    // Must use `left_quat_from_eigen_rotation` rather than glam's
+    // `DQuat::from_axis_angle` + field copy: JEOD's left-quat convention
+    // stores the vector part as `-sin(θ/2)·axis` (note the minus sign),
+    // which `left_quat_from_eigen_rotation` applies. Using glam's
+    // positive-sine quaternion directly would store the opposite-sign
+    // attitude — invisible to pos/vel (line geometry is symmetric under
+    // the rotation flip) but it inverts forces in the structural frame.
+    let jeod_veh1 = JeodQuat::left_quat_from_eigen_rotation(90.0_f64.to_radians(), DVec3::Y);
+    let jeod_veh2 = JeodQuat::left_quat_from_eigen_rotation(90.0_f64.to_radians(), DVec3::X);
 
     // Build sim with non-identity initial rotations.
     let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
@@ -477,10 +663,10 @@ fn tier3_contact_line_side_to_side() {
     let mut max_pos_err = 0.0_f64;
     let mut max_vel_err = 0.0_f64;
     for (our, rec) in ours.iter().zip(records.iter()) {
-        max_pos_err = max_pos_err.max((our.0 - rec.veh1_pos).length());
-        max_pos_err = max_pos_err.max((our.2 - rec.veh2_pos).length());
-        max_vel_err = max_vel_err.max((our.1 - rec.veh1_vel).length());
-        max_vel_err = max_vel_err.max((our.3 - rec.veh2_vel).length());
+        max_pos_err = max_pos_err.max((our.veh1_trans.position - rec.veh1_pos).length());
+        max_pos_err = max_pos_err.max((our.veh2_trans.position - rec.veh2_pos).length());
+        max_vel_err = max_vel_err.max((our.veh1_trans.velocity - rec.veh1_vel).length());
+        max_vel_err = max_vel_err.max((our.veh2_trans.velocity - rec.veh2_vel).length());
     }
     println!(
         "SIM_contact RUN_line_side: max pos={max_pos_err:.3e} m, max vel={max_vel_err:.3e} m/s"
@@ -493,6 +679,18 @@ fn tier3_contact_line_side_to_side() {
     // above observed per CLAUDE.md policy.
     assert!(max_pos_err < 1.0e-5, "pos err {max_pos_err:.3e}");
     assert!(max_vel_err < 9.0e-6, "vel err {max_vel_err:.3e}");
+
+    assert_contact_force_torque(
+        "SIM_contact RUN_line_side",
+        facet,
+        facet,
+        &mass_props,
+        &mass_props,
+        &ours,
+        &records,
+        CONTACT_FORCE_TOL,
+        CONTACT_TORQUE_TOL,
+    );
 }
 
 /// RUN_point_off_center: same spheres as RUN_point but veh2 starts with a
@@ -563,28 +761,28 @@ fn tier3_contact_point_off_center() {
     let mut max_pos_err = 0.0_f64;
     let mut max_vel_err = 0.0_f64;
     for (our, rec) in ours.iter().zip(records.iter()) {
-        max_pos_err = max_pos_err.max((our.0 - rec.veh1_pos).length());
-        max_pos_err = max_pos_err.max((our.2 - rec.veh2_pos).length());
-        max_vel_err = max_vel_err.max((our.1 - rec.veh1_vel).length());
-        max_vel_err = max_vel_err.max((our.3 - rec.veh2_vel).length());
+        max_pos_err = max_pos_err.max((our.veh1_trans.position - rec.veh1_pos).length());
+        max_pos_err = max_pos_err.max((our.veh2_trans.position - rec.veh2_pos).length());
+        max_vel_err = max_vel_err.max((our.veh1_trans.velocity - rec.veh1_vel).length());
+        max_vel_err = max_vel_err.max((our.veh2_trans.velocity - rec.veh2_vel).length());
     }
     println!(
         "SIM_contact RUN_point_off_center: max pos={max_pos_err:.3e} m, max vel={max_vel_err:.3e} m/s"
     );
 
     // Oblique collision: unlike the head-on tests (which agree with JEOD to
-    // 14 μm), RUN_point_off_center involves tangential friction on a curved
-    // sphere surface where the contact point is offset from the CoM. JEOD's
-    // `point_contact_pair.cc` evaluates the relative velocity using the
-    // subject's own angular velocity × contact-point arm, NOT both bodies'
-    // contributions (a minor modeling shortcut). We faithfully apply the
-    // full ω × r kinematics on both bodies, giving a slightly different
-    // rotational response during the stiff 0.5 s contact event. The result
-    // is ~5% difference in the tangential momentum distribution, reflected
-    // in a final translational-position drift of ~2.7 cm over the 4.5 s
-    // free-flight tail of the run. This is documented behaviour — tightening
-    // requires reproducing JEOD's approximate ω-formula exactly, which
-    // would sacrifice physical correctness elsewhere.
+    // 14 μm), RUN_point_off_center drifts from JEOD by ~2.7 cm in position
+    // and ~5.7 mm/s in velocity after the stiff 0.5 s contact event, which
+    // then accumulates over the 4.5 s free-flight tail. `evaluate_contact_pair`
+    // is now a faithful port of JEOD's `point_contact_pair.cc:83-84`
+    // relative-velocity formula (single-cross (ω_B − ω_A) × r_A_contact),
+    // and in this specific scenario the two bodies develop *equal, same-
+    // direction* angular velocities from Newton's-third-law torques on
+    // equal-mass, equal-inertia spheres, so ω_B − ω_A = 0 and the ω-term is
+    // zero identically — i.e., the rel_vel formula is not the source of
+    // the drift. The remaining gap likely originates in how JEOD's Trick
+    // integrator sub-steps the stiff contact event; investigating that is
+    // out of scope for this PR.
     assert!(
         max_pos_err < 3.0e-2,
         "veh{{1,2}} position error {max_pos_err:.3e} > 3 cm"
@@ -592,6 +790,25 @@ fn tier3_contact_point_off_center() {
     assert!(
         max_vel_err < 6.0e-3,
         "veh{{1,2}} velocity error {max_vel_err:.3e} > 6 mm/s"
+    );
+
+    // Oblique friction differs from JEOD (~5 % in tangential momentum), so
+    // state drift during and after the contact event means our
+    // `evaluate_contact_pair` at a logged state is *not* at the same body
+    // configuration as JEOD's. Use looser tolerances that reflect the
+    // documented drift — the assertion still catches gross regressions
+    // (bad frame transforms, missing terms) without getting confused by
+    // the well-characterized tangential discrepancy.
+    assert_contact_force_torque(
+        "SIM_contact RUN_point_off_center",
+        facet,
+        facet,
+        &mass_props,
+        &mass_props,
+        &ours,
+        &records,
+        POINT_OFF_CENTER_FORCE_TOL,
+        POINT_OFF_CENTER_TORQUE_TOL,
     );
 }
 

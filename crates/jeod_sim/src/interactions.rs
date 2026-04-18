@@ -1,8 +1,8 @@
 use glam::{DMat3, DVec3};
 use jeod_dynamics::{MassProperties, RotationalState, TranslationalState};
 use jeod_interactions::{
-    compute_contact_force, AerodynamicForce, ContactFacet, DragConfig, FlatPlate, FlatPlateParams,
-    FlatPlateThermal,
+    compute_contact_force, compute_contact_geometry, AerodynamicForce, ContactFacet, DragConfig,
+    FlatPlate, FlatPlateParams, FlatPlateThermal,
 };
 
 /// Flat-plate SRP configuration with mutable thermal state.
@@ -252,32 +252,45 @@ pub fn evaluate_contact_pair(
     // Relative position of facet A wrt facet B's reference (inertial).
     let rel_pos = a_ref_inertial - b_ref_inertial;
 
-    // Relative velocity at the contact points, matching JEOD
+    // Compute the detection-only contact geometry first, so we can build
+    // JEOD's relative-velocity term using the actual contact point on A
+    // (not merely A's facet reference). Returns `None` if the pair isn't
+    // interpenetrating at this stage — in that case there's no force.
+    let geom = compute_contact_geometry(&facet_a_world, &facet_b_world, rel_pos)?;
+
+    // Arm from body A's CoM to the contact point on A's surface (inertial).
+    // This is JEOD's `subject_contact_point` expressed about the CoM
+    // (JEOD's facet `vehicle_point` and `composite_body` positions add up
+    // to the same thing: see `point_contact_facet::calculate_torque`).
+    let contact_arm_a_inertial = facet_a_offset_from_cm_inertial + geom.contact_point_on_a;
+
+    // Relative velocity at the contact point, faithful port of JEOD
     // `point_contact_pair.cc:83-84`:
-    //   rel_velocity = ω_target_wrt_subject × r_subject_contact − v_target_in_subject
     //
-    // In our inertial formulation this is equivalent to evaluating the
-    // velocity of each body's contact point (v_cm + ω × r_contact_from_cm)
-    // and differencing. We apply the full kinematic formula with each
-    // body's own ω contribution, which is the physically correct expression.
-    // `t_inertial_body` is the inertial→body rotation (see
-    // `jeod_dynamics::compute_t_inertial_struct` docs), so going body→inertial
-    // requires the transpose: v_inertial = t_inertial_body.transpose() * v_body.
+    //   rel_velocity = (ω_target − ω_subject) × r_subject_contact
+    //                  − (v_target − v_subject)
+    //
+    // i.e., a *single* cross product between the relative angular velocity
+    // and the SUBJECT's contact-point arm from the CoM (not a separate
+    // ω × r per body). An earlier version of this code used the textbook
+    // two-body kinematic formula `(v_A−v_B) + ω_A×r_A − ω_B×r_B`, which
+    // differs from JEOD when the contact point isn't at the same arm on
+    // both bodies (e.g., SIM_contact RUN_point_off_center) and produced a
+    // tangential-friction discrepancy of ~5 % during the contact event.
+    // Per project policy we match JEOD's formulation exactly.
+    //
+    // `t_inertial_body` is inertial→body (see
+    // `jeod_dynamics::compute_t_inertial_struct` docs), so going
+    // body→inertial requires the transpose.
     let omega_a_inertial = rot_a.map_or(DVec3::ZERO, |r| {
         t_inertial_body_a.transpose() * r.ang_vel_body
     });
     let omega_b_inertial = rot_b.map_or(DVec3::ZERO, |r| {
         t_inertial_body_b.transpose() * r.ang_vel_body
     });
-    // ω × r lever-arm contribution uses each body's facet-reference offset
-    // from its CoM (not the final contact point). JEOD does the same:
-    // `point_contact_pair.cc:83-84` crosses ω with `vehicle_point->position`,
-    // which is the facet reference, so we match that here in a single pass
-    // — no iteration needed, since the facet ref offset is attitude-driven
-    // and does not depend on the contact point returned by the force call.
-    let rel_vel = (trans_a.velocity - trans_b.velocity)
-        + omega_a_inertial.cross(facet_a_offset_from_cm_inertial)
-        - omega_b_inertial.cross(facet_b_offset_from_cm_inertial);
+    let omega_rel_inertial = omega_b_inertial - omega_a_inertial;
+    let rel_vel =
+        (trans_a.velocity - trans_b.velocity) + omega_rel_inertial.cross(contact_arm_a_inertial);
 
     let contact = compute_contact_force(&facet_a_world, &facet_b_world, rel_pos, rel_vel)?;
 

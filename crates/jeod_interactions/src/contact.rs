@@ -224,6 +224,64 @@ pub struct ContactForce {
     pub normal: DVec3,
 }
 
+/// Geometry-only output from a contact-pair detection pass.
+///
+/// Produced by [`compute_contact_geometry`] independently of the
+/// relative-velocity-dependent spring/damping/friction force law. Callers
+/// that need the contact-point arm to build `rel_vel` (matching JEOD's
+/// `subject_contact_point` term in `point_contact_pair.cc:83`) evaluate
+/// this first, then feed the result into [`compute_contact_force`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ContactGeometry {
+    /// Contact point on A, relative to facet A's shape reference (m).
+    pub contact_point_on_a: DVec3,
+    /// Contact point on B, relative to facet B's shape reference (m).
+    pub contact_point_on_b: DVec3,
+    /// Unit vector from B into A.
+    pub normal: DVec3,
+    /// Penetration depth (m). Positive when the surfaces interpenetrate.
+    pub penetration_depth: f64,
+}
+
+/// Compute the contact geometry (contact points, normal, penetration depth)
+/// between two facets without running the force law.
+///
+/// Returns `None` when the facets are not in contact. This is the
+/// detection + kinematics half of [`compute_contact_force`]; callers that
+/// need the contact point to assemble a velocity term (e.g., JEOD's
+/// `ω × subject_contact_point` relative-velocity arm) should call this
+/// first and then feed the relative velocity into `compute_contact_force`.
+pub fn compute_contact_geometry(
+    facet_a: &ContactFacet,
+    facet_b: &ContactFacet,
+    rel_pos_a_wrt_b: DVec3,
+) -> Option<ContactGeometry> {
+    let (a_ref, b_ref) = facet_world_refs(facet_a, facet_b, rel_pos_a_wrt_b);
+    let (p_a, p_b) = closest_points(facet_a, facet_b, a_ref, b_ref);
+    let sep = p_a - p_b;
+    let sep_len = sep.length();
+    let sum_radii = facet_a.shape.radius() + facet_b.shape.radius();
+    if sep_len >= sum_radii {
+        return None;
+    }
+    let normal = if sep_len < ZERO_SMALL {
+        DVec3::X
+    } else {
+        sep / sep_len
+    };
+    let contact_a_world = p_a - normal * facet_a.shape.radius();
+    let contact_b_world = p_b + normal * facet_b.shape.radius();
+    let contact_point_on_a = contact_a_world - a_ref;
+    let contact_point_on_b = contact_b_world - b_ref;
+    let penetration_depth = sum_radii - sep_len;
+    Some(ContactGeometry {
+        contact_point_on_a,
+        contact_point_on_b,
+        normal,
+        penetration_depth,
+    })
+}
+
 /// Compute the contact force between two facets.
 ///
 /// Returns `None` when the facets are not in contact. The inputs are:
@@ -265,74 +323,27 @@ pub fn compute_contact_force(
         "contact facet materials must match (JEOD pairs a single SpringPairInteraction to a facet pair)",
     );
 
-    // 1. Resolve contact geometry into world-frame endpoints/centers.
-    //    `a_ref`/`b_ref` are the facet reference positions in world coords.
-    //    For a Line facet, the endpoints are the shape's start/end offset
-    //    by the same rigid translation as the reference position.
-    let (a_ref, b_ref) = facet_world_refs(facet_a, facet_b, rel_pos_a_wrt_b);
+    // Steps 1–4 live in `compute_contact_geometry` so callers that need
+    // the contact-point arm (to build `rel_vel`) can share the same
+    // closest-point math without duplicating it. Returns `None` if not
+    // interpenetrating.
+    let geom = compute_contact_geometry(facet_a, facet_b, rel_pos_a_wrt_b)?;
+    let ContactGeometry {
+        contact_point_on_a,
+        contact_point_on_b,
+        normal,
+        penetration_depth,
+    } = geom;
 
-    // 2. Closest points between the two shapes.
-    let (p_a, p_b) = closest_points(facet_a, facet_b, a_ref, b_ref);
-
-    // 3. Penetration check: surfaces overlap when center distance is less
-    //    than the sum of the effective radii at the closest points.
-    //    For a Point or Line facet the effective radius is `radius()`.
-    let sep = p_a - p_b;
-    let sep_len = sep.length();
-    let sum_radii = facet_a.shape.radius() + facet_b.shape.radius();
-    if sep_len >= sum_radii {
-        return None;
-    }
-
-    // 4. Contact normal: unit vector from B into A, consistent with JEOD's
-    //    convention that `penetration_vector = target_contact_point -
-    //    subject_contact_point` points from subject into target. We use
-    //    the opposite convention internally (normal from B to A) so that
-    //    positive penetration produces a force pushing A away from B.
-    let normal = if sep_len < ZERO_SMALL {
-        // Degenerate centers overlap; fall back to an arbitrary axis.
-        // JEOD does not have a defined behaviour here; we pick +x to keep
-        // the result deterministic.
-        DVec3::X
-    } else {
-        sep / sep_len
-    };
-
-    // Contact points on each shape's surface along `normal`.
-    // `contact_point_on_a` is the closest point on A's surface to B, in
-    // world coords relative to a_ref: walk from the closest point p_a
-    // toward B by `radius_a` along -normal.
-    let contact_a_world = p_a - normal * facet_a.shape.radius();
-    let contact_b_world = p_b + normal * facet_b.shape.radius();
-    let contact_point_on_a = contact_a_world - a_ref;
-    let contact_point_on_b = contact_b_world - b_ref;
-
-    // Penetration depth: how far the two surfaces have overlapped.
-    //
     // Port of JEOD `spring_pair_interaction.cc:76`:
     //     force_on_subject = k * (target_contact_point - subject_contact_point)
     //
-    // JEOD's `penetration_vector` is the vector from the subject's
-    // surface point to the target's surface point. When the surfaces
-    // overlap, it points from outside-A toward B's surface (i.e.,
-    // from A's closest-to-B surface point into the overlap region,
-    // toward B). Scaling by `+k` then pushes the subject away from the
-    // target.
-    //
-    // We compute the force on **A** (taking A = JEOD's subject). The
-    // equivalent of JEOD's `penetration_vector` is:
-    //     penetration_vec = contact_b_world - contact_a_world
-    // which points from A's surface outward toward B's surface through
-    // the overlap zone. For the sphere-sphere case with A at +x of B,
-    // A's surface faces -x (toward B) and B's surface faces +x (toward A);
-    // with A at (1.8, 0, 0), radius 1, and B at origin, radius 1:
-    //     contact_a_world = (0.8, 0, 0)   ← A's leftmost point
-    //     contact_b_world = (1.0, 0, 0)   ← B's rightmost point
-    //     penetration_vec = (0.2, 0, 0)   ← from A's surface toward +x
-    // `+k · penetration_vec` yields a force on A along +x, pushing A
-    // away from B. ✓
-    let penetration_vec = contact_b_world - contact_a_world;
-    let penetration_depth = sum_radii - sep_len;
+    // `contact_b_world − contact_a_world` equals `penetration_depth · normal`
+    // (normal is the unit vector from B into A, pointing through the
+    // overlap zone into A), so a +k·penetration_vec force pushes A away
+    // from B. We use the `depth · normal` form since both terms are
+    // already available from `compute_contact_geometry`.
+    let penetration_vec = penetration_depth * normal;
 
     // 5. Spring force on A: repulsive, along `normal` (from B into A).
     let spring_force = if penetration_vec.length() < ZERO_SMALL {

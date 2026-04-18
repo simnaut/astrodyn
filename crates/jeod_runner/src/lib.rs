@@ -744,6 +744,11 @@ impl Simulation {
     /// * Either `body_a` or `body_b` is out of range for the registered bodies.
     /// * `body_a == body_b` — contact pair bodies must be distinct
     ///   (JEOD_INV: IN.19, matching JEOD's `unique_pair` invariant).
+    /// * `facet_a.material != facet_b.material`. JEOD parks the
+    ///   spring/damper/friction parameters on a single `SpringPairInteraction`
+    ///   per pair, so both facets must carry identical
+    ///   [`ContactMaterial`](jeod_interactions::ContactMaterial) values.
+    ///   Panic here instead of deferring until the first integrator step.
     pub fn register_contact_pair(
         &mut self,
         body_a: usize,
@@ -765,6 +770,14 @@ impl Simulation {
         assert_ne!(
             body_a, body_b,
             "register_contact_pair: body A and body B must be distinct (got both = {body_a})"
+        );
+        // JEOD pairs a single `SpringPairInteraction` to each facet pair, so
+        // both facets must carry identical material parameters. Enforce here
+        // rather than inside `compute_contact_force` at first step.
+        assert_eq!(
+            facet_a.material, facet_b.material,
+            "register_contact_pair: facet_a.material and facet_b.material must be equal \
+             (JEOD pairs a single SpringPairInteraction to each facet pair)"
         );
         self.contact_pairs.push(ContactPairConfig {
             body_a,
@@ -2116,13 +2129,11 @@ impl Simulation {
                 |stage_trans: &[TranslationalState],
                  stage_rot: &[RotationalState],
                  out: &mut [(DVec3, DVec3)]| {
-                    // Evaluate every registered contact pair at the stage states
-                    // and accumulate force/torque on each body. `out` is
-                    // caller-owned scratch sized to n_bodies; zero it here
-                    // rather than allocating a fresh Vec.
-                    for slot in out.iter_mut() {
-                        *slot = (DVec3::ZERO, DVec3::ZERO);
-                    }
+                    // Evaluate every registered contact pair at the stage
+                    // states and accumulate force/torque on each body. The
+                    // integrator (`eval_stage` in jeod_sim::integration)
+                    // zeroes `out` before calling us, so this closure just
+                    // accumulates.
                     for pair in contact_pairs {
                         if let Some(eval) = evaluate_contact_pair(
                             &pair.facet_a,
