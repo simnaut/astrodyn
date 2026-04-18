@@ -18,5 +18,4 @@ pub use shadow::*;
 pub use surface_model::{ArticulatedFacet, ArticulationState, SurfaceFacet, SurfaceShape};
 pub use thermal_rider::{
     compute_thermal_power_balance, ThermalEnvironment, ThermalFacet, ThermalPowerBalance,
-    ViewFactorError, ViewFactorMatrix,
 };
