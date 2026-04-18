@@ -205,31 +205,28 @@ fn catalog_file_references_exist() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut missing = Vec::new();
 
-    // Extract `path/to/file.rs` tokens from the status text (anything ending in `.rs`
-    // with no whitespace). Paths in backticks or bare are both accepted.
-    // Known roots under which to try resolving a bare filename.
-    let roots = [
-        "src",
-        "crates/jeod_atmosphere/src",
-        "crates/jeod_dynamics/src",
-        "crates/jeod_ephemeris/src",
-        "crates/jeod_frames/src",
-        "crates/jeod_gravity/src",
-        "crates/jeod_interactions/src",
-        "crates/jeod_math/src",
-        "crates/jeod_planet/src",
-        "crates/jeod_runner/src",
-        "crates/jeod_sim/src",
-        "crates/jeod_time/src",
-    ];
+    // Resolve bare filenames relative to the top-level crate `src/` and every
+    // workspace member under `crates/*/src`, discovered at runtime so adding a
+    // crate doesn't require touching this list.
+    let mut roots = vec![manifest_dir.join("src")];
+    let crates_dir = manifest_dir.join("crates");
+    if let Ok(entries) = fs::read_dir(&crates_dir) {
+        roots.extend(entries.filter_map(|entry| {
+            let entry = entry.ok()?;
+            let src_dir = entry.path().join("src");
+            src_dir.is_dir().then_some(src_dir)
+        }));
+    }
 
     for (tag, status) in &catalog {
         for token in extract_rs_paths(status) {
-            // Strip trailing `:NN` line suffix if present.
+            // Drop any `:...` suffix — line numbers (`:141`), ranges (`:141-142`),
+            // and function-name hints (`:add_mass_point`) all just annotate the
+            // file reference; none of them affect whether the file itself exists.
             let path_part = token.split(':').next().unwrap();
-            // Try the path as-written, then under each known root.
+            // Try the path as-written, then under each discovered source root.
             let candidates: Vec<_> = std::iter::once(manifest_dir.join(path_part))
-                .chain(roots.iter().map(|r| manifest_dir.join(r).join(path_part)))
+                .chain(roots.iter().map(|root| root.join(path_part)))
                 .collect();
             let exists = candidates.iter().any(|p| p.exists());
             if !exists {
@@ -269,8 +266,8 @@ fn extract_rs_paths(s: &str) -> Vec<String> {
 }
 
 /// Direction 5: each source tag site must have descriptive text on the same
-/// line or the next line — enforces the CLAUDE.md rule that tags must describe
-/// what the code does, not just appear.
+/// line or the immediately preceding comment line — enforces the CLAUDE.md
+/// rule that tags must describe what the code does, not just appear.
 #[test]
 fn source_tag_comments_are_nontrivial() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
