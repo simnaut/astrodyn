@@ -888,4 +888,60 @@ mod tests {
         assert_eq!(m.mu_at_speed(0.0), 0.3);
         assert_eq!(m.mu_at_speed(100.0), 0.3);
     }
+
+    #[test]
+    fn oblique_friction_scales_by_tangential_over_total_speed() {
+        // JEOD `spring_pair_interaction.cc:89-100` scales friction by
+        // `|v_tangential| / |v_total|` rather than a unit tangent, so an
+        // oblique relative velocity (non-zero normal + non-zero tangent)
+        // yields less friction than a pure-tangential one of the same
+        // tangential magnitude. This test compares the two configurations
+        // with damping disabled so |F_normal| is purely the spring force
+        // and depends only on penetration.
+        //
+        // Layout: both spheres radius 1, center distance 1.8 → penetration
+        // 0.2, stiffness 1000 → |F_spring| = 200 N along +x (from B into A).
+        // μ = 0.5.
+        let mat = ContactMaterial::jeod_spring(1000.0, 0.0, 0.5);
+        let a = ContactFacet::point(DVec3::ZERO, 1.0, mat);
+        let b = ContactFacet::point(DVec3::ZERO, 1.0, mat);
+        let rel_pos = DVec3::new(1.8, 0.0, 0.0);
+
+        // Case 1: pure tangential, |v_tang| = 1 m/s along +y.
+        //   friction_mag = μ·|F| · (1/1) = 0.5 · 200 · 1 = 100 N opposite +y.
+        let rel_vel_pure_tang = DVec3::new(0.0, 1.0, 0.0);
+        let res_tang =
+            compute_contact_force(&a, &b, rel_pos, rel_vel_pure_tang).expect("in contact");
+        assert!(
+            (res_tang.force.y + 100.0).abs() < 1e-9,
+            "pure-tangent friction y: {}",
+            res_tang.force.y
+        );
+
+        // Case 2: oblique. v_normal = -1 m/s (approach, along -x), v_tang
+        // = 1 m/s along +y. rel_vel = (-1, 1, 0). |v_total| = √2,
+        // |v_tang| = 1, speed ratio = 1/√2. Damping is zero so |F_normal|
+        // is still 200 N. Friction y-component = -μ·|F|·(1/√2) = -100/√2.
+        let rel_vel_oblique = DVec3::new(-1.0, 1.0, 0.0);
+        let res_ob = compute_contact_force(&a, &b, rel_pos, rel_vel_oblique).expect("in contact");
+        let expected_friction_y = -100.0 / 2.0_f64.sqrt();
+        assert!(
+            (res_ob.force.y - expected_friction_y).abs() < 1e-9,
+            "oblique friction y: {} (expected {})",
+            res_ob.force.y,
+            expected_friction_y,
+        );
+
+        // And it is *not* the naïve μ·|F_normal| that a unit-tangent
+        // formulation would give. This lock-in asserts that if someone
+        // regresses the scaling to unit tangent, this test fails.
+        let unit_tangent_friction_y = -100.0;
+        assert!(
+            (res_ob.force.y - unit_tangent_friction_y).abs() > 1.0,
+            "oblique friction should differ from unit-tangent result ({}) \
+             by more than 1 N; got {}",
+            unit_tangent_friction_y,
+            res_ob.force.y
+        );
+    }
 }

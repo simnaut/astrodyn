@@ -346,3 +346,155 @@ fn rotate_facet(facet: &ContactFacet, t_inertial_from_struct: &DMat3) -> Contact
         material: facet.material,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use jeod_interactions::ContactMaterial;
+    use jeod_math::JeodQuat;
+
+    // Two point facets at body origins, radius 1 each, with a material
+    // that has spring stiffness only (no damping or friction).
+    fn scenario_material(stiffness: f64, damping: f64, mu: f64) -> ContactMaterial {
+        ContactMaterial::jeod_spring(stiffness, damping, mu)
+    }
+
+    /// Covers the ω × r_contact_arm term in `evaluate_contact_pair`.
+    ///
+    /// Two equal-mass, equal-inertia spheres at rest translationally but
+    /// with a non-zero angular velocity on A only. The pair is at an
+    /// off-centre geometry (veh2 offset in +y), so `r_A_contact` has a
+    /// non-zero tangential component in the y direction. With
+    /// translational `v_rel = 0`, any non-zero friction force proves that
+    /// the `(ω_B − ω_A) × r_A_contact` kinematic term flowed through
+    /// into `rel_vel` (matching JEOD `point_contact_pair.cc:83`). This
+    /// locks the kinematic plumbing against regressions that Tier 3
+    /// doesn't catch (the SIM_contact scenarios produce ω_rel = 0 by
+    /// symmetry).
+    #[test]
+    fn evaluate_contact_pair_uses_omega_cross_contact_arm_in_rel_vel() {
+        // Identity attitudes and t_struct_body so all frames coincide
+        // with inertial — keeps the algebra inspectable.
+        let mat = scenario_material(1000.0, 0.0, 0.5);
+        let facet = jeod_interactions::ContactFacet::point(DVec3::ZERO, 1.0, mat);
+        let mass = MassProperties::with_inertia(
+            100.0,
+            DMat3::from_cols(
+                DVec3::new(40.0, 0.0, 0.0),
+                DVec3::new(0.0, 40.0, 0.0),
+                DVec3::new(0.0, 0.0, 40.0),
+            ),
+            DVec3::ZERO,
+        );
+
+        // veh1 at origin; veh2 at (1.8, 0.5, 0) — centres ~1.868 m apart,
+        // so spheres interpenetrate (sum of radii = 2). Contact point on
+        // A is ~radius · direction_from_A_to_B ≈ (0.964, 0.268, 0).
+        let trans_a = TranslationalState {
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+        };
+        let trans_b = TranslationalState {
+            position: DVec3::new(1.8, 0.5, 0.0),
+            velocity: DVec3::ZERO,
+        };
+
+        // Case 1: both ω = 0. v_rel = 0 ⇒ tangential slip = 0 ⇒ no
+        // friction (only normal spring force, so force ∥ normal).
+        let rot_zero = RotationalState {
+            quaternion: JeodQuat::identity(),
+            ang_vel_body: DVec3::ZERO,
+        };
+        let baseline = evaluate_contact_pair(
+            &facet,
+            &facet,
+            &trans_a,
+            &trans_b,
+            Some(&rot_zero),
+            Some(&rot_zero),
+            DMat3::IDENTITY,
+            DMat3::IDENTITY,
+            Some(&mass),
+            Some(&mass),
+        )
+        .expect("in contact");
+        // Force on A is along the (negated) approach direction — it is
+        // purely the spring force along `-u_from_A_to_B` (i.e., points
+        // away from B back toward A). Crucially, it lies in the
+        // plane-of-contact, not perpendicular to a tangent we would expect
+        // for friction.
+        let u_ab = DVec3::new(1.8, 0.5, 0.0).normalize();
+        let force_parallel_to_normal = baseline.force_on_a.dot(-u_ab);
+        assert!(
+            force_parallel_to_normal > 0.0 && baseline.force_on_a.cross(-u_ab).length() < 1e-9,
+            "baseline (ω=0) force should be purely along the normal; got {:?}",
+            baseline.force_on_a,
+        );
+
+        // Case 2: give veh1 a non-zero ω about +z; veh2 still at rest
+        // rotationally. rel_vel = (ω_B − ω_A) × r_A_contact
+        //                      = -(0,0,ω_z) × r_A_contact
+        // where r_A_contact ≈ radius · u_ab = (0.964, 0.268, 0).
+        // This is a purely tangential contribution (it lies in the plane
+        // perpendicular to r_A_contact, which is the contact-tangent
+        // plane at this point), so the evaluator should add a friction
+        // force perpendicular to `u_ab`.
+        let omega_z = 1.0_f64;
+        let rot_a_spinning = RotationalState {
+            quaternion: JeodQuat::identity(),
+            ang_vel_body: DVec3::new(0.0, 0.0, omega_z),
+        };
+        let spinning = evaluate_contact_pair(
+            &facet,
+            &facet,
+            &trans_a,
+            &trans_b,
+            Some(&rot_a_spinning),
+            Some(&rot_zero),
+            DMat3::IDENTITY,
+            DMat3::IDENTITY,
+            Some(&mass),
+            Some(&mass),
+        )
+        .expect("in contact");
+
+        // The normal component must be unchanged (same penetration, same
+        // normal v_rel): project onto the A→B direction. (The spring
+        // force on A is along −u_ab, so we expect baseline.force_on_a · −u_ab
+        // ≈ spinning.force_on_a · −u_ab.)
+        let normal_component_baseline = baseline.force_on_a.dot(-u_ab);
+        let normal_component_spinning = spinning.force_on_a.dot(-u_ab);
+        assert!(
+            (normal_component_baseline - normal_component_spinning).abs() < 1e-9,
+            "spinning case should have the same normal force; \
+             baseline={normal_component_baseline}, spinning={normal_component_spinning}",
+        );
+
+        // The friction force is the part of `spinning.force_on_a` tangent to
+        // the normal. It must be non-zero — the ω term is the only
+        // source of tangential slip in this scenario.
+        let tangent_component = spinning.force_on_a - normal_component_spinning * (-u_ab);
+        assert!(
+            tangent_component.length() > 1e-3,
+            "ω × r_arm kinematic term did not propagate into rel_vel: \
+             spinning force is still axial with tangent magnitude {}",
+            tangent_component.length(),
+        );
+
+        // And it must oppose the slip direction. rel_vel_a_wrt_b =
+        // (ω_B − ω_A) × r_A_contact ≈ -(0,0,1) × (0.964, 0.268, 0)
+        //   = (0.268, -0.964, 0). Friction direction is the negation of
+        // the tangential slip, so expect friction ∝ (-0.268, +0.964, 0)
+        // (projected onto the tangent plane).
+        let r_arm = 1.0 * u_ab;
+        let rel_vel = -DVec3::new(0.0, 0.0, omega_z).cross(r_arm);
+        // rel_vel is approximately tangent (normal dot ≈ 0 since ω ⊥ r).
+        let expected_tangent_dir = (-rel_vel).normalize();
+        let got_tangent_dir = tangent_component.normalize();
+        assert!(
+            got_tangent_dir.dot(expected_tangent_dir) > 0.99,
+            "friction direction should oppose ω-induced slip; \
+             expected {expected_tangent_dir:?}, got {got_tangent_dir:?}",
+        );
+    }
+}
