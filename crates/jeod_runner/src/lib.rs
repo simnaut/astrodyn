@@ -1334,9 +1334,18 @@ impl Simulation {
                     continue;
                 }
                 if frame_a != self.root_frame_id {
+                    // frame_a == frame_b at this point, so both bodies
+                    // share the same non-root frame. Emit one error per
+                    // body so debuggers see the full set.
                     all_errors.push(ValidationError::ContactPairNonRootFrame {
                         pair_idx,
                         body_idx: pair.body_a,
+                        frame: frame_a,
+                        root: self.root_frame_id,
+                    });
+                    all_errors.push(ValidationError::ContactPairNonRootFrame {
+                        pair_idx,
+                        body_idx: pair.body_b,
                         frame: frame_a,
                         root: self.root_frame_id,
                     });
