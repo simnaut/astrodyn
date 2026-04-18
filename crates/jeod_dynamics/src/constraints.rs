@@ -202,7 +202,13 @@ const JACOBIAN_NORM_SQ_EPSILON: f64 = 1.0e-12;
 /// If the constraint Jacobian is too small (`|J|² ≤ JACOBIAN_NORM_SQ_EPSILON`)
 /// or non-finite — i.e., the particle sits at or near a stationary point of
 /// `g` — no constraint force can be applied reliably and the free
-/// acceleration is returned unchanged.
+/// acceleration is returned unchanged. Non-finite values produced by the
+/// constraint impl or solver parameters (`g`, `h`, `alpha`, `beta`, …) are
+/// likewise filtered at the tail: if the resulting scalar `mu` isn't finite,
+/// we fall back to `free_accel` rather than poisoning the integrator.
+///
+/// `constraint` uses `+ ?Sized` so trait objects (`&dyn HolonomicConstraint`)
+/// work in addition to concrete types.
 ///
 /// # Arguments
 /// - `pos`: current position in the inertial frame (m).
@@ -212,11 +218,11 @@ const JACOBIAN_NORM_SQ_EPSILON: f64 = 1.0e-12;
 ///   by mass.
 /// - `constraint`: the holonomic constraint to enforce.
 /// - `solver`: Baumgarte stabilization parameters.
-pub fn apply_constraint(
+pub fn apply_constraint<C: HolonomicConstraint + ?Sized>(
     pos: DVec3,
     vel: DVec3,
     free_accel: DVec3,
-    constraint: &impl HolonomicConstraint,
+    constraint: &C,
     solver: &BaumgarteSolver,
 ) -> DVec3 {
     let g = constraint.evaluate(pos);
@@ -238,6 +244,14 @@ pub fn apply_constraint(
     // With a = a_free + mu·J and g_ddot = J·a + h, solving:
     //   mu = -(J·a_free + h + 2 alpha g_dot + beta^2 g) / (J·J)
     let mu = -(j_a + h + 2.0 * solver.alpha * g_dot + solver.beta * solver.beta * g) / jj;
+
+    // A single finiteness gate on `mu` absorbs NaN/Inf from any upstream source
+    // (constraint impl returning non-finite `g`/`h`/`J`, or a `BaumgarteSolver`
+    // built via struct literal with non-finite alpha/beta). We'd rather drop
+    // the constraint force for a tick than propagate NaN into the integrator.
+    if !mu.is_finite() {
+        return free_accel;
+    }
 
     free_accel + mu * j
 }
@@ -351,6 +365,62 @@ mod tests {
             (a - expected).length() < 1e-13,
             "expected {expected:?}, got {a:?}"
         );
+    }
+
+    #[test]
+    fn non_finite_constraint_outputs_fall_back_to_free_accel() {
+        // A pathological constraint that returns NaN for g should not poison
+        // the integrator — we expect a clean fallback to free_accel.
+        struct NaNConstraint;
+        impl HolonomicConstraint for NaNConstraint {
+            fn evaluate(&self, _pos: DVec3) -> f64 {
+                f64::NAN
+            }
+            fn jacobian(&self, pos: DVec3) -> DVec3 {
+                2.0 * pos
+            }
+            fn hessian_contribution(&self, _pos: DVec3, vel: DVec3) -> f64 {
+                2.0 * vel.length_squared()
+            }
+        }
+        let s = BaumgarteSolver::default();
+        let free = DVec3::new(1.0, 2.0, 3.0);
+        let a = apply_constraint(DVec3::X, DVec3::ZERO, free, &NaNConstraint, &s);
+        assert_eq!(a, free);
+        assert!(a.is_finite());
+    }
+
+    #[test]
+    fn non_finite_solver_params_fall_back_to_free_accel() {
+        // Struct-literal construction can bypass the critically_damped assert.
+        let c = PendulumConstraint::new(DVec3::ZERO, 1.0);
+        let bad = BaumgarteSolver {
+            alpha: f64::NAN,
+            beta: 1.0,
+        };
+        let free = DVec3::new(0.0, -9.81, 0.0);
+        let a = apply_constraint(DVec3::X, DVec3::Y, free, &c, &bad);
+        assert_eq!(a, free);
+    }
+
+    #[test]
+    fn accepts_trait_object_constraint() {
+        // Regression: signature uses `+ ?Sized` so `&dyn HolonomicConstraint`
+        // works in addition to concrete types.
+        let c = PendulumConstraint::new(DVec3::ZERO, 1.0);
+        let dyn_c: &dyn HolonomicConstraint = &c;
+        let solver = BaumgarteSolver {
+            alpha: 0.0,
+            beta: 0.0,
+        };
+        let a = apply_constraint(
+            DVec3::X,
+            DVec3::ZERO,
+            DVec3::new(7.0, 0.0, 0.0),
+            dyn_c,
+            &solver,
+        );
+        assert!(a.length() < 1e-13);
     }
 
     #[test]
