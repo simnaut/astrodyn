@@ -29,9 +29,17 @@ use crate::interactions::FlatPlateState;
 /// - `dt`: simulation timestep in seconds (JEOD: `sim_dt`)
 /// - `time_scale_factor`: ratio of dynamic time to simulation time
 ///   (JEOD: `TimeDyn::scale_factor`). Applied uniformly to all integrators:
-///   RK4/RKF45 use `integ_dyndt = dt * time_scale_factor`, Gauss-Jackson
+///   RK4/RKF45/ABM4 use `integ_dyndt = dt * time_scale_factor`, Gauss-Jackson
 ///   uses `cycle_dyndt = dt * cycle_scale * time_scale_factor`.
 /// - `integrator`: integration method to use
+/// - `gj_state`: persistent Gauss-Jackson state, required (and only used)
+///   when `integrator == IntegratorType::GaussJackson`. Panics otherwise if
+///   absent. Caller retains one per body; see `Simulation::validate` /
+///   `GaussJacksonStateC` for the runner/Bevy wiring.
+/// - `abm4_state`: persistent ABM4 history, required (and only used) when
+///   `integrator == IntegratorType::Abm4`. Panics otherwise if absent. Caller
+///   retains one per body; see `Simulation::validate` / `Abm4StateC` for the
+///   runner/Bevy wiring.
 ///
 /// # Panics
 /// - Non-zero force without mass properties (JEOD_INV: MA.01)

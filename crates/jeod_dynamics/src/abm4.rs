@@ -72,8 +72,11 @@ const HIST_LEN: usize = 4;
 /// priming proceeds. A `reset()` method clears the state back to unprimed.
 #[derive(Debug, Clone)]
 pub struct Abm4State {
-    /// Circular derivative history: `[f_n, f_{n-1}, f_{n-2}, f_{n-3}]` for each
-    /// of velocity (position derivative) and acceleration (velocity derivative).
+    /// Sliding-window derivative history: `[f_n, f_{n-1}, f_{n-2}, f_{n-3}]`
+    /// for each of velocity (position derivative) and acceleration (velocity
+    /// derivative). Each step, `rotate_history()` shifts all samples one slot
+    /// older and drops the oldest — there is no wraparound; the window always
+    /// holds the most recent `HIST_LEN` derivatives.
     ///
     /// Slot 0 is always the most recent value after `rotate_history()`.
     posdot_hist: [DVec3; HIST_LEN],
@@ -114,10 +117,12 @@ impl Abm4State {
         self.primed_steps < HIST_LEN - 1
     }
 
-    /// Shift the history buffers right by one slot (circular rotate).
+    /// Shift the history buffers right by one slot, dropping the oldest
+    /// sample (a sliding-window shift, not a wraparound rotation).
     ///
-    /// JEOD: `abm::rotate_history<4>(posdot_hist, veldot_hist)`.
-    /// After rotation, slot 0 is ready to receive the newest derivatives.
+    /// JEOD: `abm::rotate_history<4>(posdot_hist, veldot_hist)`. The JEOD
+    /// name says "rotate" but the operation discards the sample that falls
+    /// off the end; slot 0 is then ready to receive the newest derivatives.
     fn rotate_history(&mut self) {
         for j in (1..HIST_LEN).rev() {
             self.posdot_hist[j] = self.posdot_hist[j - 1];
@@ -140,8 +145,8 @@ impl Abm4State {
 /// During priming (the first 3 calls after `reset()` / construction) this uses
 /// RK4 to compute the step and stores the start-of-step derivatives in the
 /// history. Starting with the 4th call, the ABM4 predict/correct scheme is
-/// applied: one predictor pass, one mid-step acceleration evaluation at the
-/// predicted state, one corrector pass.
+/// applied: one predictor pass, one end-of-step acceleration evaluation at
+/// the predicted state (`time_frac = 1.0`), one corrector pass.
 ///
 /// The `accel_fn` signature matches the other integrators in this crate:
 /// `accel_fn(state, time_frac)` where `time_frac` is the fractional stage time
