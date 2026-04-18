@@ -149,7 +149,9 @@ pub struct ThermalPowerBalance {
     pub q_albedo: Vec<f64>,
     /// Absorbed Earth-IR power per facet (W).
     pub q_ir: Vec<f64>,
-    /// Stefan-Boltzmann emission power per facet (W). Always ≥ 0.
+    /// Stefan-Boltzmann emission power per facet (W). Non-negative for
+    /// physically valid inputs (non-negative `area` and `emissivity_ir`,
+    /// finite `temperature`).
     pub q_emitted: Vec<f64>,
 }
 
@@ -203,6 +205,16 @@ pub fn compute_thermal_power_balance(
         structural_normals.len(),
         n,
         "structural_normals length must match facets length"
+    );
+    debug_assert!(
+        (env.sun_direction.length_squared() - 1.0).abs() < 1e-6,
+        "env.sun_direction must be a unit vector (|s|² = {})",
+        env.sun_direction.length_squared()
+    );
+    debug_assert!(
+        (env.earth_direction.length_squared() - 1.0).abs() < 1e-6,
+        "env.earth_direction must be a unit vector (|e|² = {})",
+        env.earth_direction.length_squared()
     );
 
     let mut temp_dots = vec![0.0_f64; n];
