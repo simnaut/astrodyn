@@ -1777,7 +1777,132 @@ run_apollo_group() {
 throttled_bg run_apollo_group
 PID_APOLLO=$LAST_BG_PID
 
-# Group 30: SIM_verif_frame_switch (Apollo 8 frame switching)
+# Group 30: SIM_verif_attach_mass (mass-tree attach/detach via MassBody)
+# Initialization-only sim; each run prints `mass.out` (print_tree output).
+# We cover a variety of scenarios: simple attach, chained attach, detach
+# at runtime, reattach, and attach_aligned via named mass points.
+run_attach_mass_group() {
+    local sim_dir="models/dynamics/body_action/verif/SIM_verif_attach_mass"
+    local -a RUNS=(
+        # Simple MassBody.attach via explicit offset+rotation (Body inertia spec).
+        "SET_test/RUN_01:attach_mass_01"
+        "SET_test/RUN_02:attach_mass_02"
+        "SET_test/RUN_03:attach_mass_03"
+        "SET_test/RUN_04:attach_mass_04"
+        # Runtime detach (trick.add_read at t=1s, stop at t=2s).
+        "SET_test/RUN_10:attach_mass_10"
+        # Runtime reattach (trick.add_read at t=1s, stop at t=2s).
+        "SET_test/RUN_11:attach_mass_11"
+        # Named-point attach (pt_attach → BodyAttachAligned).
+        "SET_test/RUN_101:attach_mass_101"
+        "SET_test/RUN_102:attach_mass_102"
+    )
+
+    # Skip entire group if all .out files are already present.
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label <<< "$entry"
+        if ! has_output "$label" "${label}_mass.out"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_verif_attach_mass group (all outputs exist) ==="
+        return 0
+    fi
+
+    # Build once — all runs share the same S_define.
+    echo "=== Building SIM_verif_attach_mass ==="
+    cd "${JEOD_HOME}/${sim_dir}" || return 1
+    if ! ls S_main*.exe >/dev/null 2>&1; then
+        if ! trick-CP 2>&1 | tail -5; then
+            echo "ERROR: trick-CP failed for SIM_verif_attach_mass"
+            return 1
+        fi
+    fi
+
+    local exe
+    exe=$(ls S_main*.exe 2>/dev/null | head -1)
+    if [ -z "$exe" ]; then
+        echo "ERROR: No S_main executable found for SIM_verif_attach_mass"
+        return 1
+    fi
+
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label <<< "$entry"
+        local dest="${OUTPUT_DIR}/${label}_mass.out"
+        if [ -s "$dest" ] && [ "$FORCE" != "1" ]; then
+            echo "--- Skipping ${label} (exists) ---"
+            continue
+        fi
+        local src="${run_dir}/mass.out"
+        # Clear any stale mass.out from a prior run so a silent sim failure
+        # (or a sim that doesn't regenerate the file) can't cause us to copy
+        # outdated data to the reference directory.
+        rm -f "$src"
+        echo "--- Running ${label} (${run_dir}) ---"
+        if ! "./${exe}" "${run_dir}/input.py" 2>&1 | tail -3; then
+            echo "ERROR: Sim execution failed for ${label}"
+            fail=1
+            continue
+        fi
+        if [ ! -s "$src" ]; then
+            echo "ERROR: ${src} was not produced"
+            fail=1
+            continue
+        fi
+        cp "$src" "$dest"
+        echo "  -> ${dest}"
+    done
+    return $fail
+}
+throttled_bg run_attach_mass_group
+PID_ATTACH_MASS=$LAST_BG_PID
+
+# Group 31: SIM_verif_attach_detach (dyn-body attach/detach with propagation)
+# Inject ASCII logging for per-vehicle composite mass + state. The test
+# validates composite_mass evolution over time as attach/detach actions fire.
+ATTACH_DETACH_SNIPPET='
+dr = trick.sim_services.DRAscii("attach_detach_ASCII")
+dr.set_cycle(0.5)
+dr.freq = trick.sim_services.DR_Always
+for prefix in ["veh1", "veh2", "veh3"]:
+    dr.add_variable(f"{prefix}.dyn_body.mass.composite_properties.mass")
+trick.add_data_record_group(dr)
+'
+
+run_attach_detach_group() {
+    local sim_dir="models/dynamics/dyn_body/verif/SIM_verif_attach_detach"
+    local -a RUNS=(
+        "SET_test/RUN_simple_attach_detach:attach_detach_simple:attach_detach_simple_attach_detach.csv"
+        "SET_test/RUN_complex_attach_detach:attach_detach_complex:attach_detach_complex_attach_detach.csv"
+        "SET_test/RUN_compute_child_derivative:attach_detach_child_deriv:attach_detach_child_deriv_attach_detach.csv"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_verif_attach_detach group (all outputs exist) ==="
+        return 0
+    fi
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$ATTACH_DETACH_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+throttled_bg run_attach_detach_group
+PID_ATTACH_DETACH=$LAST_BG_PID
+
+# Group 32: SIM_verif_frame_switch (Apollo 8 frame switching)
 # Inject ASCII logging for 6-DOF state (translational + rotational).
 APOLLO8_SNIPPET='
 dr = trick.DRAscii("sixdof_state")
@@ -2138,6 +2263,8 @@ wait $PID_EARTH_MOON     || { echo "WARN: SIM_Earth_Moon group had failures"; FA
 wait $PID_MARS           || { echo "WARN: SIM_Mars group had failures"; FAIL=1; }
 wait $PID_MERCURY        || { echo "WARN: SIM_mercury group had failures"; FAIL=1; }
 wait $PID_APOLLO         || { echo "WARN: SIM_Apollo group had failures"; FAIL=1; }
+wait $PID_ATTACH_MASS    || { echo "WARN: SIM_verif_attach_mass group had failures"; FAIL=1; }
+wait $PID_ATTACH_DETACH  || { echo "WARN: SIM_verif_attach_detach group had failures"; FAIL=1; }
 wait $PID_FRAME_SWITCH   || { echo "WARN: SIM_verif_frame_switch group had failures"; FAIL=1; }
 # WS-R4: JEOD time verification SIMs 1-6
 wait $PID_TIME_V1        || { echo "WARN: SIM_1_dyn_only group had failures"; FAIL=1; }
