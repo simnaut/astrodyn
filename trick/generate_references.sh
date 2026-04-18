@@ -1877,7 +1877,7 @@ throttled_bg run_time_v3_group
 PID_TIME_V3=$LAST_BG_PID
 
 # ── Snippet: SIM_4_common_usage RUN_JEOD2x (TAI + UTC + UT1 across leap sec) ──
-# Log every 60 s to keep the CSV small; run spans 86500 s, crossing the
+# Log every 60 s to keep the CSV small; run spans 86460 s, crossing the
 # 1999-01-01 leap second boundary.
 TIME_V4_SNIPPET='
 dr = trick.sim_services.DRAscii("time_v4")

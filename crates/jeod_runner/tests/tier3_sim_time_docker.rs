@@ -1,7 +1,6 @@
 //! Tier 3: JEOD time verification SIMs cross-validation.
 //!
-//! Exercises the Rust `TimeManager` (and `SimulationTime` through
-//! `Simulation::step` where applicable) against JEOD-generated reference
+//! Exercises the Rust `TimeManager` against JEOD-generated reference
 //! CSVs from the six canonical time verification sims:
 //!
 //!   SIM_1_dyn_only       — DynamicTime only (no TAI)
@@ -295,9 +294,9 @@ fn tier3_time_v3_ude() {
 // ── SIM_4_common_usage ──────────────────────────────────────────────────────
 
 /// SIM_4 RUN_JEOD2x: TAI + UTC + UT1 initialized at 1998-12-31 00:00 UTC,
-/// running forward 86500 s — crossing the 1999-01-01 leap second. Verifies
-/// that our leap-second-aware UTC stays consistent with JEOD's and that
-/// TAI, UT1 stay exact.
+/// sampled at 60 s cadence through t = 86460 s, crossing the 1999-01-01
+/// leap-second boundary. Verifies that our leap-second-aware UTC stays
+/// consistent with JEOD's and that TAI, UT1 stay exact.
 #[test]
 fn tier3_time_v4_common() {
     let csv = test_data_path("time_v4_common_time_v4.csv");
