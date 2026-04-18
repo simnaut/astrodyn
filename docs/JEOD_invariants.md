@@ -77,7 +77,7 @@ grep the JEOD tree for the distinctive identifier in the invariant description
 | MA.07 | Derived quantities recomputed after mutation | structural | consistency | enforced (`mass_body.rs:241`, `mass.rs:79`; `recompute_derived()` updates `inverse_mass`/`inverse_inertia`, `mass_update_system` calls it each step) |
 | MA.08 | No cycle in mass tree | error | consistency | enforced (`mass_body.rs:164`) |
 | MA.09 | MassPoint names unique within body | fatal | initialization | enforced (`mass_body.rs:add_mass_point`) |
-| MA.10 | MassPoint names non-empty | fatal | initialization | deferred |
+| MA.10 | MassPoint names non-empty | fatal | initialization | enforced (`crates/jeod_dynamics/src/mass_body.rs` `add_mass_point`) |
 | MA.11 | core/composite attached to structure (internal tree) | structural | structural | deferred (Phase 5, three-frame model) |
 | MA.12 | core_wrt_composite has identity orientation | structural | structural | deferred (Phase 5) |
 | MA.13 | MassBody not copyable | structural | structural | n/a |
@@ -184,8 +184,8 @@ Our port's time scales are hardcoded fields on `SimulationTime` (crates/jeod_tim
 
 | Tag | Invariant | Enforcement | Category | Our Status |
 |-----|-----------|-------------|----------|------------|
-| RF.01 | `compute_relative_state` requires same tree | fatal | runtime | deferred (Phase 5) |
-| RF.02 | `compute_state_wrt_pred` requires valid predecessor | fatal | runtime | deferred (Phase 5) |
+| RF.01 | `compute_relative_state` requires same tree | fatal | runtime | structural (`crates/jeod_frames/src/frame_tree.rs` — one tree per `FrameTree`; both `FrameId` arguments are indices into the same arena, so same-tree is guaranteed by type) |
+| RF.02 | `compute_state_wrt_pred` requires valid predecessor | fatal | runtime | structural (`crates/jeod_frames/src/frame_tree.rs` — `parent()`/`get()` bounds-check `FrameId`; invalid ids panic) |
 | RF.03 | Quaternion normalized after every composition | structural | consistency | structural (normalized in `incr_right`, `negate`, and integration) |
 | RF.04 | T_parent_this recomputed after quaternion composition | structural | consistency | structural (T derived from normalized Q in both `incr_right` and `negate`) |
 | RF.05 | `ang_vel_products` recomputed after angular velocity change | structural | consistency | n/a (we don't cache products) |
@@ -235,7 +235,7 @@ Our port wraps ANISE (`crates/jeod_ephemeris`, 243 lines: `ephemeris.rs` + `bodi
 | AT.01 | `active` flag gates computation | flag-gate | runtime | structural (no atmosphere → no AtmosphericStateC) |
 | AT.02 | Atmosphere model pointer non-null for update | structural | runtime | structural (AtmosphereModelR resource checked) |
 | AT.03 | Planet-fixed position required for geodetic altitude | structural | runtime | enforced (`src/systems.rs` — panics if planet_entity set but PlanetFixedRotationC missing) |
-| AT.04 | Wind velocity computed as omega × position (co-rotation) | structural | runtime | enforced (`jeod_atmosphere/lib.rs` compute_corotation_wind, `src/systems.rs` atmosphere_update_system) |
+| AT.04 | Wind velocity computed as omega × position (co-rotation) | structural | runtime | enforced (`crates/jeod_atmosphere/src/lib.rs` compute_corotation_wind, `src/systems.rs` atmosphere_update_system) |
 
 ## Section IN: Interactions
 

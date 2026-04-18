@@ -178,7 +178,7 @@ impl<SourceId> GravityControl<SourceId> {
             }
         }
 
-        // JEOD_INV: GV.06 — order <= degree
+        // JEOD_INV: GV.06 — requested spherical-harmonics order must not exceed requested degree
         assert!(
             self.order <= self.degree,
             "Gravity field order ({}) is greater than gravity field degree ({}).",

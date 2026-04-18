@@ -177,6 +177,12 @@ impl MassTree {
         t_parent_this: DMat3,
     ) {
         let name_str: String = name.into();
+        // JEOD_INV: MA.10 — mass point names must be non-empty (mass.cc ~line 359)
+        assert!(
+            !name_str.is_empty(),
+            "mass point name must be non-empty (body '{}')",
+            self.nodes[body_id].name
+        );
         // JEOD_INV: MA.09 — mass point names must be unique per body (mass.cc:359-368)
         assert!(
             self.find_mass_point(body_id, &name_str).is_none(),
