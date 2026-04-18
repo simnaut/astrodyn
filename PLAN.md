@@ -892,12 +892,12 @@ of the existing implementation.
 
 ### Exit Criteria
 
-- [ ] **Examples**: `apollo.rs`, `earth_moon.rs`, and `mars_orbit.rs` compile and produce correct output. Each demonstrates a distinct physics capability (staging, lunar SH gravity, Mars rotation). #60 closed.
-- [ ] **Test audit**: No manual equations in test code that should be `jeod_*` function calls. No workarounds masking physics gaps. #50 closed.
-- [ ] **Earth lighting gap**: #49 closed with documented rationale (no propagating JEOD sim available).
-- [ ] **Numerical catalog**: #6 closed with comprehensive catalog of irreducible differences.
-- [ ] **STRATEGY.md current**: Section 8 reflects all phases through Phase 7.
-- [ ] `cargo test --workspace` — all tests pass, no regressions
+- [x] **Examples**: `apollo.rs`, `earth_moon.rs`, and `mars_orbit.rs` compile and produce correct output. Each demonstrates a distinct physics capability (staging, lunar SH gravity, Mars rotation). #60 closed. — Kept under `crates/jeod_runner/examples/` with the `jeod_runner::Simulation` orchestrator they exercise.
+- [x] **Test audit**: No manual equations in test code that should be `jeod_*` function calls. No workarounds masking physics gaps. #50 closed. — 41 fixes across 30 files; new `jeod_dynamics::init_from_time_periapsis` port; hardcoded constants replaced with `jeod_sim` presets.
+- [x] **Earth lighting gap**: #49 closed with documented rationale (no propagating JEOD sim available). — `docs/earth_lighting_validation.md`.
+- [x] **Numerical catalog**: #6 closed with comprehensive catalog of irreducible differences. — `docs/numerical_differences.md` (5 catalogued differences).
+- [x] **STRATEGY.md current**: Section 8 reflects all phases through Phase 7.
+- [x] `cargo test --workspace` — all tests pass, no regressions — 822 tests.
 
 ---
 
