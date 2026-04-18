@@ -139,13 +139,4 @@ Column conventions:
 
 ## Gap follow-ups
 
-These six sims exercise behavior we do not currently cover in Tier 3, but the underlying physics is implemented. They are candidates for future Tier 3 additions, not audit blockers:
-
-1. **SIM_ref_attach** — reference-frame attachment points (separate from mass attachment).
-2. **SIM_verif_shutdown** — explicit shutdown/teardown path; our Rust `Drop` handles it but no direct scenario.
-3. **SIM_removable_body_action** — add/remove body actions at runtime; our init model is one-shot.
-4. **SIM_csr_compare** — CSR vs GGM spherical-harmonics comparison; only relevant if we add multiple harmonic models.
-5. **SIM_contact** / **SIM_ground_contact** — contact mechanics not ported; scoped as Phase 5+.
-6. **SIM_prop_planet** — propagated-planet pattern not ported; scoped as Phase 5+.
-
-"partial" entries (LVLH init, RELKIN, dyncomp_structure, torque_compare_simple, SURFACE_MODEL) mean the physics is covered but the specific JEOD RUN configurations are not — closing these would add breadth, not new physics.
+The six "not covered" sims and five "partial" entries are tracked in [#99](https://github.com/simnaut/bevy_jeod/issues/99). The underlying physics is ported in every case, so these are breadth gaps, not correctness gaps.
