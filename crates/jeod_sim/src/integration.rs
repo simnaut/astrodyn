@@ -381,8 +381,19 @@ fn eval_stage(
             position: stage_pos[i],
             velocity: stage_vel[i],
         };
+        // Intermediate RK4 quaternions are not unit-length. JEOD's
+        // `left_quat_to_transformation` (and our port) assumes a
+        // normalized quaternion (see `JEOD_INV: RF.09`), so the per-stage
+        // stage_q must be renormalized before the contact closure builds
+        // rotation matrices from it — otherwise stage forces are
+        // evaluated with a slightly non-orthonormal attitude. Use
+        // `normalize_integ` (the integration-safe variant from
+        // `quat_norm.cc`) so we don't flip the scalar sign mid-flight.
+        let mut quaternion =
+            JeodQuat::new(stage_q[i][0], stage_q[i][1], stage_q[i][2], stage_q[i][3]);
+        jeod_dynamics::normalize_integ(&mut quaternion);
         stage_rot_buf[i] = RotationalState {
-            quaternion: JeodQuat::new(stage_q[i][0], stage_q[i][1], stage_q[i][2], stage_q[i][3]),
+            quaternion,
             ang_vel_body: stage_omega[i],
         };
     }
