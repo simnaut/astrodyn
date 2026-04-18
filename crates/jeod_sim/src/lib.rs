@@ -65,7 +65,7 @@ pub use integration::{
 };
 pub use interactions::{
     compute_cannonball_srp, compute_drag, compute_gravity_torque, evaluate_contact_pair,
-    ContactPairEval, FlatPlateState,
+    ContactPairEval, FlatPlateState, ThermalIntegrationOrder,
 };
 pub use jeod_dynamics::{
     Abm4State, GaussJacksonConfig, GaussJacksonState, IntegratorResult, IntegratorType,

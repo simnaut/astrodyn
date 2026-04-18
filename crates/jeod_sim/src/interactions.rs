@@ -7,6 +7,30 @@ use jeod_interactions::{
 
 use crate::integrable::IntegrableObject;
 
+/// Which integrator drives plate temperatures.
+///
+/// JEOD offers two scheduling patterns for `ThermalIntegrableObject`:
+/// a "scheduled" `compute_temp_dot` job (the temperature derivative is
+/// evaluated once per step and held constant across RK4 stages —
+/// `radiation.sm` in SIM_3_ORBIT_1st_ORDER), or a full integrable-object
+/// ODE with derivatives recomputed at each stage (`radiation.sm` in
+/// SIM_3_ORBIT, the standard derivative-class integration).
+///
+/// Expressed as a flag so that Tier 3 tests can pick the scheduling
+/// pattern that matches their JEOD reference CSV.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ThermalIntegrationOrder {
+    /// Forward Euler with the step-start `temp_dot` (`k1`) only. Matches
+    /// JEOD's scheduled-class `compute_temp_dot` pattern as used in
+    /// `SIM_3_ORBIT_1st_ORDER`.
+    FirstOrder,
+    /// RK4 with per-stage derivative recomputation; temperature
+    /// integrates inside the orbital RK4 loop via [`IntegrableObject`].
+    /// Matches JEOD's standard `SIM_3_ORBIT` derivative-class pattern.
+    #[default]
+    Rk4Coupled,
+}
+
 /// Flat-plate SRP configuration with mutable thermal state.
 ///
 /// Bundles plate geometry/optical/thermal properties with per-plate temperature
@@ -35,6 +59,11 @@ pub struct FlatPlateState {
     /// Cached T^4 per plate from previous step (for thermal emission).
     /// Same length as `plates`.
     pub t_pow4_cached: Vec<f64>,
+    /// Which integrator drives the temperature ODE. Defaults to
+    /// [`ThermalIntegrationOrder::Rk4Coupled`] (JEOD's standard
+    /// derivative-class pattern); switch to [`ThermalIntegrationOrder::FirstOrder`]
+    /// for parity with JEOD's scheduled-class `SIM_3_ORBIT_1st_ORDER`.
+    pub integration_order: ThermalIntegrationOrder,
     /// Step-start temperature snapshot, populated by
     /// [`IntegrableObject::snapshot`] and read by
     /// [`IntegrableObject::advance_intermediate`] /

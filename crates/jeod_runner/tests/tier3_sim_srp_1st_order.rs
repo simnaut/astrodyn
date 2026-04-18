@@ -19,7 +19,7 @@ use jeod_runner::{
 use jeod_sim::{
     Ephemeris, EphemerisBody, FlatPlate, FlatPlateParams, FlatPlateState, FlatPlateThermal,
     GravityControl, GravityControls, GravityModel, GravitySource, MassProperties, SimulationTime,
-    TranslationalState,
+    ThermalIntegrationOrder, TranslationalState,
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::Path;
@@ -217,6 +217,9 @@ fn tier3_srp_1st_order_trajectory() {
             plates,
             temperatures: vec![init_temp; num_plates],
             t_pow4_cached: vec![init_temp.powi(4); num_plates],
+            // JEOD SIM_3_ORBIT_1st_ORDER uses scheduled-class temp_dot
+            // (Forward Euler), so opt into that integration order here.
+            integration_order: ThermalIntegrationOrder::FirstOrder,
             ..Default::default()
         })),
         shadow_body: Some(ShadowBody {
