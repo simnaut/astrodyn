@@ -8,10 +8,11 @@
 //!   along the facet x-axis, of a given `length` and `radius`).
 //! * [`ContactMaterial`] corresponds to JEOD's `SpringPairInteraction`
 //!   parameters (`spring_k`, `damping_b`, `mu`) with Coulomb friction
-//!   extended to include separate static/kinetic coefficients and a
-//!   slip-velocity transition band. JEOD uses only a single friction
-//!   coefficient in `spring_pair_interaction.cc`; our model defaults
-//!   to the same behaviour when `mu_static == mu_kinetic`.
+//!   extended to include separate static/kinetic coefficients selected
+//!   by a hard slip-velocity threshold (no smooth blending — see
+//!   `mu_at_speed`). JEOD uses only a single friction coefficient in
+//!   `spring_pair_interaction.cc`; our model defaults to the same
+//!   behaviour when `mu_static == mu_kinetic`.
 //! * [`compute_contact_force`] combines pair-type detection (from
 //!   `point_contact_pair.cc`, `line_contact_pair.cc`,
 //!   `line_point_contact_pair.cc`) with the spring-damper-friction
@@ -286,14 +287,16 @@ pub fn compute_contact_geometry(
 ///
 /// Returns `None` when the facets are not in contact. The inputs are:
 ///
-/// * `facet_a`, `facet_b` — the two facets, with positions/orientations
-///   already expressed in a common inertial-aligned frame (not the body
-///   structural frame). That is, [`ContactShape`] positions are the
-///   facet reference points in world space, not in the body's
-///   structural frame.
-/// * `rel_pos_a_wrt_b` — the offset of facet A relative to facet B's
-///   reference. Used to assemble each facet's world-frame geometry from
-///   the per-facet shape data.
+/// * `facet_a`, `facet_b` — the two facets, with shape coordinates
+///   already expressed in a common inertial-aligned *orientation* frame
+///   (i.e., each facet's structural-frame shape has been rotated into
+///   the shared frame). The embedded [`ContactShape`] positions remain
+///   offsets relative to each facet's own reference point — they are
+///   *not* pre-translated to world-space facet-reference locations.
+/// * `rel_pos_a_wrt_b` — translation from facet B's reference point to
+///   facet A's reference point, in that same frame. Supplies the
+///   relative placement used (together with the per-facet shape data)
+///   to assemble world-frame geometry.
 /// * `rel_vel_a_wrt_b` — time derivative of the contact-point separation:
 ///   velocity of the contact point on A minus velocity of the contact
 ///   point on B, including angular-velocity contributions. This matches
