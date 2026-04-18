@@ -149,8 +149,8 @@ pub fn integrate_body(
         }
         IntegratorType::Abm4 => {
             let abm = abm4_state.expect(
-                "ABM4 integrator requires abm4_state. \
-                 Set SimBody::abm4_state or call Simulation::validate() first.",
+                "ABM4 integrator requires a persistent Abm4State passed in via abm4_state. \
+                 Runner: call Simulation::validate(); Bevy: add Abm4StateC.",
             );
             *trans = jeod_dynamics::abm4_translational_step(trans, accel, integ_dyndt, abm);
         }

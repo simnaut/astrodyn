@@ -17,7 +17,7 @@
 //! - **Predictor (Adams-Bashforth 4)** — explicit, uses 4 past derivative values:
 //!   `y_{n+1}^p = y_n + (h/24) * (55 f_n - 59 f_{n-1} + 37 f_{n-2} - 9 f_{n-3})`
 //!
-//! - **Corrector (Adams-Moulton 3)** — implicit, uses the predicted derivative:
+//! - **Corrector (3-step Adams-Moulton, order 4)** — implicit, uses the predicted derivative:
 //!   `y_{n+1}   = y_n + (h/24) * (9 f(y_{n+1}^p) + 19 f_n - 5 f_{n-1} + f_{n-2})`
 //!
 //! Per JEOD's implementation, the corrector is evaluated exactly once per step
