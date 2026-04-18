@@ -254,7 +254,9 @@ fn extract_rs_paths(s: &str) -> Vec<String> {
         c.is_whitespace() || c == '`' || c == '(' || c == ')' || c == ',' || c == ';'
     }) {
         let trimmed = raw.trim_end_matches('.');
-        // Must end in `.rs` or `.rs:NN`.
+        // Accept `foo.rs`, plus any `:`-separated annotation: line numbers
+        // (`foo.rs:141`), line ranges (`foo.rs:141-142`), and function-name
+        // hints (`foo.rs:add_mass_point`) are all treated as valid file refs.
         let stripped = trimmed.trim_start_matches('(');
         let candidate = stripped.trim_end_matches(['.', ')', ',']);
         let parts: Vec<&str> = candidate.split(':').collect();

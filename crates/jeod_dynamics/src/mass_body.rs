@@ -981,6 +981,15 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
+    #[should_panic(expected = "mass point name must be non-empty")]
+    fn add_mass_point_rejects_empty_name() {
+        // JEOD_INV: MA.10 — empty name must panic at add_mass_point
+        let mut tree = MassTree::new();
+        let pid = tree.add_root("parent".into(), MassProperties::new(10.0));
+        tree.add_mass_point(pid, "", DVec3::ZERO, DMat3::IDENTITY);
+    }
+
+    #[test]
     fn attach_aligned_identity_points() {
         // Two bodies with points at their origins, identity rotation.
         // After docking, child struct origin should be at parent point position

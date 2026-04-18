@@ -298,7 +298,7 @@ Source: `../jeod/models/utils/integration/` (core + `gauss_jackson/` + `lsode/`)
 | IG.06 | Gauss-Jackson `ndoubling_steps` ≤ 20 (`gauss_jackson_config.cc`) | error | initialization | enforced (`gauss_jackson/config.rs:104-109`) |
 | IG.07 | Gauss-Jackson `relative_tolerance` must be finite and in [0, 1] (`gauss_jackson_config.cc`) | error | initialization | enforced (`gauss_jackson/config.rs:110-115`) |
 | IG.08 | Gauss-Jackson `absolute_tolerance` must be finite and ≥ 0 (`gauss_jackson_config.cc` — JEOD compares `relative_tolerance` in the message but the variable checked is `absolute_tolerance`) | error | initialization | enforced (`gauss_jackson/config.rs:116-121`) |
-| IG.09 | Gauss-Jackson history_length ≤ order throughout priming (`gauss_jackson_state_machine.cc` internal invariant) | structural | consistency | enforced (`gauss_jackson/mod.rs:466` debug assert) |
+| IG.09 | Gauss-Jackson history_length ≤ order throughout priming (`gauss_jackson_state_machine.cc` internal invariant) | structural | consistency | enforced (`gauss_jackson/mod.rs:466` assert) |
 | IG.10 | Gauss-Jackson history_length must be odd when reducing order for bootstrap (`gauss_jackson_integration_controls.cc` internal) | structural | consistency | enforced (`gauss_jackson/mod.rs:675`) |
 | IG.11 | Gauss-Jackson integrator_constructor::create_integration_controls only accepts GaussJacksonIntegrationControls; failure is fatal (`gauss_jackson_integrator_constructor.cc`) | fatal | initialization | n/a (controls are a concrete struct, not a polymorphic downcast) |
 | IG.12 | Gauss-Jackson: state machine must not remain stuck in Reset state after a step (`gauss_jackson_state_machine.cc` equivalent) | fatal | runtime | enforced (`gauss_jackson/mod.rs:319` panic) |
