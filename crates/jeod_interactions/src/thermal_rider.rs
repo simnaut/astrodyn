@@ -95,11 +95,12 @@ impl ThermalFacet {
 /// unit direction in the structural frame pointing *from the source toward
 /// the vehicle* — i.e. the direction the flux is travelling.
 ///
-/// * `solar_flux` uses `sun_direction`.
-/// * `earth_albedo_flux` uses `earth_direction` (reflected sunlight reaches
-///   the vehicle from Earth below).
-/// * `earth_ir_flux` uses `earth_direction` (thermal IR also propagates
-///   from the planet outward).
+/// * `solar_flux` uses `sun_direction` (direct sunlight arrives from the
+///   Sun along `sun_direction`, Sun → vehicle).
+/// * `earth_albedo_flux` uses `earth_direction` (reflected sunlight arrives
+///   from Earth along `earth_direction`, Earth → vehicle).
+/// * `earth_ir_flux` uses `earth_direction` (thermal IR also arrives from
+///   Earth along `earth_direction`, Earth → vehicle).
 ///
 /// For orbital-mechanics use, the caller rotates the Sun- and Earth-relative
 /// directions from inertial (or ECEF) into the structural frame before
@@ -171,9 +172,13 @@ pub struct ThermalPowerBalance {
 /// | `Q_emitted`   | `ε_i · σ · T_i⁴ · area` |
 ///
 /// `s = env.sun_direction`, `e = env.earth_direction` (both unit vectors in
-/// the structural frame pointing *from the source toward the vehicle*).
-/// The `max(0, -n·s)` term is the cosine of the angle between the facet's
-/// outward normal and the incoming flux, clamped at grazing.
+/// the structural frame pointing *from the source toward the vehicle*),
+/// and each `n_i` in `structural_normals` is the facet's outward-pointing
+/// **unit** normal in the same frame. The `max(0, -n·s)` term is the
+/// cosine of the angle between the facet's outward normal and the incoming
+/// flux, clamped at grazing; it is only a cosine if the normals are unit
+/// vectors, so callers must normalize before passing them in. Debug
+/// builds assert this via `debug_assert!(n.length() ≈ 1)`.
 ///
 /// Earth albedo is Sun-reflected broadband solar radiation, so it is
 /// absorbed at the solar-band absorptivity (same coefficient as direct
@@ -208,6 +213,11 @@ pub fn compute_thermal_power_balance(
 
     for (i, facet) in facets.iter().enumerate() {
         let n_i = structural_normals[i];
+        debug_assert!(
+            (n_i.length_squared() - 1.0).abs() < 1e-6,
+            "structural_normals[{i}] must be a unit vector (|n|² = {})",
+            n_i.length_squared()
+        );
 
         // ── Direct solar absorption ──
         // cos θ_sun = -n · s   (s points Sun → vehicle, so a normal facing
