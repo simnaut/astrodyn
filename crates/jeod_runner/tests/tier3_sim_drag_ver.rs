@@ -112,11 +112,18 @@ fn run_ballistic_case(
         max_accel_err = max_accel_err.max((our_accel_mag - rec.accel_mag).abs());
     }
 
-    // Velocity schedule is pure arithmetic; disagreement signals a test bug.
+    // Sanity-check the velocity schedule separately from the drag computation.
+    // Our `jeod_inertial_vel` and JEOD's `rotate_vel` both reduce to libm
+    // `sin`/`cos` of the same f64 argument, so any disagreement reflects
+    // cross-platform libm divergence — bounded to a few ULPs of |v|≈7500 m/s.
+    // A tight threshold here ensures any future platform drift surfaces as a
+    // schedule-mismatch failure with a clear message, rather than leaking into
+    // the drag-force error (which would compare against the tight force
+    // tolerances below).
     assert!(
-        max_vel_sched_err < 1e-9,
+        max_vel_sched_err < 1.1e-12,
         "{test_name}: inertial velocity schedule disagrees with CSV by {max_vel_sched_err:.3e} m/s \
-         — check jeod_inertial_vel() against S_define::rotate_vel()"
+         — libm sin/cos divergence between JEOD's host and this host exceeds expected ULP bound"
     );
 
     let mut report = CrossvalReport::compute(test_name, &[], &[]);
@@ -126,7 +133,7 @@ fn run_ballistic_case(
     report.write();
 
     println!(
-        "{test_name}: {} samples | force_err={max_force_err:.3e} N | torque_err={max_torque_err:.3e} N*m | accel_err={max_accel_err:.3e} m/s^2",
+        "{test_name}: {} samples | vel_sched_err={max_vel_sched_err:.3e} m/s | force_err={max_force_err:.3e} N | torque_err={max_torque_err:.3e} N*m | accel_err={max_accel_err:.3e} m/s^2",
         records.len()
     );
 
