@@ -76,6 +76,13 @@ pub enum ValidationError {
     /// The root frame must remain at the origin; ephemeris position updates
     /// would be silently ignored.
     EphemerisOnRootSource { source_idx: usize },
+    /// Contact pairs are registered but a body uses a non-RK4 integrator.
+    /// The contact-coupled integration path only supports RK4 (all bodies
+    /// share one multi-body RK4 kernel when contact pairs are active).
+    ContactPairsRequireRk4 { body_idx: usize },
+    /// Contact pairs are registered but a body lacks rotational state or mass
+    /// properties. The contact-coupled path requires full 6-DOF on every body.
+    ContactPairsRequire6Dof { body_idx: usize },
 }
 
 impl std::fmt::Display for ValidationError {
@@ -277,6 +284,23 @@ impl std::fmt::Display for ValidationError {
                      is the root frame. The root frame must remain at the origin; \
                      ephemeris position updates would be silently ignored. Remove the \
                      ephemeris mapping for the central body source."
+                )
+            }
+            Self::ContactPairsRequireRk4 { body_idx } => {
+                write!(
+                    f,
+                    "Body {body_idx}: contact pairs are registered but this body uses a \
+                     non-RK4 integrator. The contact-coupled path drives all bodies through \
+                     a shared multi-body RK4 kernel; switch the integrator to RK4 or \
+                     deregister contact pairs."
+                )
+            }
+            Self::ContactPairsRequire6Dof { body_idx } => {
+                write!(
+                    f,
+                    "Body {body_idx}: contact pairs are registered but this body lacks \
+                     rotational state or mass properties. The contact-coupled path \
+                     requires full 6-DOF (rot + mass) on every body."
                 )
             }
         }

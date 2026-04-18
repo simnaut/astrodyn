@@ -1276,6 +1276,21 @@ impl Simulation {
             }
         }
 
+        // Contact pairs require the multi-body coupled RK4 path, which drives
+        // every body through the same kernel. Enforce RK4 + 6-DOF on all
+        // bodies (not just those that appear in a pair) so the field doc's
+        // "validation error" promise matches reality.
+        if !self.contact_pairs.is_empty() {
+            for (body_idx, body) in self.bodies.iter().enumerate() {
+                if !matches!(body.integrator, jeod_dynamics::IntegratorType::Rk4) {
+                    all_errors.push(ValidationError::ContactPairsRequireRk4 { body_idx });
+                }
+                if body.rot.is_none() || body.mass.is_none() {
+                    all_errors.push(ValidationError::ContactPairsRequire6Dof { body_idx });
+                }
+            }
+        }
+
         // Separate warnings from fatal errors — warnings are logged, not returned.
         let mut fatal = Vec::new();
         for error in all_errors {

@@ -216,14 +216,16 @@ pub fn evaluate_contact_pair(
     let t_inertial_body_b = rot_b.map_or(DMat3::IDENTITY, |r| {
         r.quaternion.left_quat_to_transformation()
     });
-    // t_inertial_struct = t_inertial_body * t_body_struct = t_inertial_body * t_struct_body^T
-    let t_struct_inertial_a =
+    // t_inertial_struct = t_struct_body^T * t_inertial_body (inertial → struct;
+    // see `compute_t_inertial_struct` in jeod_dynamics::forces).
+    let t_inertial_struct_a =
         jeod_dynamics::compute_t_inertial_struct(&t_struct_body_a, &t_inertial_body_a);
-    let t_struct_inertial_b =
+    let t_inertial_struct_b =
         jeod_dynamics::compute_t_inertial_struct(&t_struct_body_b, &t_inertial_body_b);
-    // Rotation from structural-frame vector to inertial-frame vector.
-    let t_inertial_from_struct_a = t_struct_inertial_a.transpose();
-    let t_inertial_from_struct_b = t_struct_inertial_b.transpose();
+    // Rotation from structural-frame vector to inertial-frame vector
+    // (i.e., struct → inertial), the inverse of `t_inertial_struct`.
+    let t_inertial_from_struct_a = t_inertial_struct_a.transpose();
+    let t_inertial_from_struct_b = t_inertial_struct_b.transpose();
 
     // Create facets whose endpoints are expressed in the inertial frame.
     // After this rotation, `facet.shape.reference_position()` for the new
@@ -267,12 +269,12 @@ pub fn evaluate_contact_pair(
     let omega_b_inertial = rot_b.map_or(DVec3::ZERO, |r| {
         t_inertial_body_b.transpose() * r.ang_vel_body
     });
-    // Arm from CoM to contact point requires the contact point, which
-    // `compute_contact_force` returns. We iterate once to get an ω-free
-    // estimate, then recompute once with ω×r corrections included — JEOD
-    // actually uses the facet reference position (not the contact point)
-    // for the ω cross product, so we match that by using the facet-ref
-    // offset here.
+    // ω × r lever-arm contribution uses each body's facet-reference offset
+    // from its CoM (not the final contact point). JEOD does the same:
+    // `point_contact_pair.cc:83-84` crosses ω with `vehicle_point->position`,
+    // which is the facet reference, so we match that here in a single pass
+    // — no iteration needed, since the facet ref offset is attitude-driven
+    // and does not depend on the contact point returned by the force call.
     let rel_vel = (trans_a.velocity - trans_b.velocity)
         + omega_a_inertial.cross(facet_a_offset_from_cm_inertial)
         - omega_b_inertial.cross(facet_b_offset_from_cm_inertial);
