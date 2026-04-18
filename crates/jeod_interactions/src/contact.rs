@@ -231,7 +231,10 @@ pub struct ContactForce {
 /// relative-velocity-dependent spring/damping/friction force law. Callers
 /// that need the contact-point arm to build `rel_vel` (matching JEOD's
 /// `subject_contact_point` term in `point_contact_pair.cc:83`) evaluate
-/// this first, then feed the result into [`compute_contact_force`].
+/// this first, then feed the result into
+/// [`compute_contact_force_from_geometry`] (not
+/// [`compute_contact_force`], which would recompute the geometry
+/// internally).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ContactGeometry {
     /// Contact point on A, relative to facet A's shape reference (m).

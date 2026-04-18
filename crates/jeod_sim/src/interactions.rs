@@ -194,6 +194,16 @@ pub struct ContactPairEval {
 /// - `mass_a`, `mass_b`: mass properties (for CoM offsets in the torque arm).
 ///
 /// Returns `None` if the facets are not in contact, else `Some(ContactPairEval)`.
+///
+/// # Panics
+/// Panics if `facet_a.material != facet_b.material`. JEOD pairs a single
+/// `SpringPairInteraction` to each facet pair, so both facets must carry
+/// identical stiffness / damping / friction parameters; this is enforced
+/// by the downstream
+/// [`jeod_interactions::compute_contact_force_from_geometry`] call and
+/// propagates out of `evaluate_contact_pair`. Callers that build pairs
+/// through `Simulation::register_contact_pair` in `jeod_runner` get the
+/// same check at registration time.
 #[allow(clippy::too_many_arguments)]
 pub fn evaluate_contact_pair(
     facet_a: &ContactFacet,
