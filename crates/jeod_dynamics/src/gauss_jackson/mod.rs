@@ -316,6 +316,8 @@ impl GaussJacksonState {
             }
 
             FsmState::Reset => {
+                // JEOD_INV: IG.12 — the state machine must not stay in Reset across an integrate()
+                // call; the bootstrap path is always expected to transition it out.
                 panic!("GaussJacksonState::integrate: stuck in Reset state");
             }
         }
@@ -463,6 +465,7 @@ impl GaussJacksonState {
     ///
     /// JEOD: `GaussJacksonIntegratorBase::edit_point(dt, acc, state)`.
     fn edit_point(&mut self, dt: f64, state: &mut TranslationalState) -> bool {
+        // JEOD_INV: IG.09 — history_length ≤ order is a structural precondition of `edit_point`
         assert!(self.history_length <= self.order);
 
         self.advance_edit_integration_constants(self.history_length);
@@ -672,6 +675,7 @@ impl GaussJacksonState {
     ///
     /// JEOD: `downsample_hist()`.
     fn downsample_hist(&mut self) {
+        // JEOD_INV: IG.10 — downsample requires an odd history_length so the midpoint survives
         assert!(self.history_length & 1 == 1); // Must be odd
         let new_len = self.history_length.div_ceil(2);
         self.pos_hist.downsample(new_len);

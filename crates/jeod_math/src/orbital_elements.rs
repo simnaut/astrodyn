@@ -73,13 +73,17 @@ impl OrbitalElements {
         pos: DVec3,
         vel: DVec3,
     ) -> Result<OrbitalElements, OrbitalError> {
-        if mu <= 0.0 {
+        // JEOD_INV: OE.01 — mu must be finite and positive; NaN/±Inf would
+        // propagate through the element computations and produce silent NaNs.
+        if !mu.is_finite() || mu <= 0.0 {
             return Err(OrbitalError::InvalidMu(mu));
         }
 
         let r_mag = pos.length();
         let vel_mag = vel.length();
 
+        // JEOD_INV: OE.07 — both position and velocity must be non-zero for the
+        // orbit to be defined; either being zero degenerates `h = r × v`.
         if r_mag < 1e-30 || vel_mag < 1e-30 {
             return Err(OrbitalError::DegenerateOrbit);
         }
@@ -136,6 +140,8 @@ impl OrbitalElements {
         // ---- Node vector ----
         let line_of_nodes = k_cross_h; // points toward ascending node
 
+        // JEOD_INV: OE.04 — circular regime uses e < TOLERANCE branch
+        // JEOD_INV: OE.05 — equatorial regime uses i < TOL || i > π-TOL branch
         // JEOD: (inclination < tolerance) || ((M_PI - tolerance) < inclination)
         #[allow(clippy::manual_range_contains)]
         let is_equatorial = incl < TOLERANCE || (PI - TOLERANCE) < incl;
@@ -287,6 +293,7 @@ impl OrbitalElements {
         }
 
         let p = self.semiparam;
+        // JEOD_INV: OE.02 — semi-parameter p must be positive for to_cartesian
         if p <= 0.0 || !p.is_finite() {
             return Err(OrbitalError::DegenerateOrbit);
         }
@@ -296,6 +303,7 @@ impl OrbitalElements {
         let sin_nu = nu.sin();
         let cos_nu = nu.cos();
 
+        // JEOD_INV: OE.03 — sin²ν + cos²ν must be within 1e-6 of 1
         // JEOD orbital_elements.cc:414-424: verify sin/cos consistency.
         let rss = (sin_nu * sin_nu + cos_nu * cos_nu).sqrt();
         assert!(
@@ -470,6 +478,7 @@ pub fn kep_eqtn_e(m: f64, e: f64) -> Result<f64, OrbitalError> {
         }
     }
 
+    // JEOD_INV: OE.06 — Kepler equation must converge; return error if it does not
     Err(OrbitalError::KeplerConvergence(MAX_ITER))
 }
 
@@ -505,6 +514,7 @@ pub fn kep_eqtn_h(m: f64, e: f64) -> Result<f64, OrbitalError> {
         }
     }
 
+    // JEOD_INV: OE.06 — Kepler equation must converge; return error if it does not
     Err(OrbitalError::KeplerConvergence(MAX_ITER))
 }
 

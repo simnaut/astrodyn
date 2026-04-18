@@ -34,6 +34,7 @@ pub fn init_from_orbital_elements(
     true_anomaly: f64,
     mu: f64,
 ) -> TranslationalState {
+    // JEOD_INV: BA.05 — orbit initializer requires a valid gravity source (mu > 0)
     // JEOD dyn_body_init_orbit.cc:101-111: validate mu before use.
     assert!(
         mu > 0.0,
@@ -92,6 +93,7 @@ pub fn init_from_mean_anomaly(
     mean_anomaly: f64,
     mu: f64,
 ) -> TranslationalState {
+    // JEOD_INV: BA.05 — orbit initializer requires a valid gravity source (mu > 0)
     // JEOD dyn_body_init_orbit.cc:101-111: validate mu before use.
     assert!(
         mu > 0.0,

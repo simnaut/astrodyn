@@ -83,8 +83,10 @@ impl JeodQuat {
     /// close to unit length.  Always forces scalar >= 0.
     pub fn normalize(&mut self) {
         let qmagsq = self.norm_sq();
+        // JEOD_INV: QT.03 — cannot normalize a zero quaternion
         assert!(qmagsq > 0.0, "cannot normalize a zero quaternion");
 
+        // JEOD_INV: QT.01 — fast Padé path near unit magnitude, sqrt path otherwise
         let fact = if (1.0 - qmagsq).abs() < NORM_LIMIT {
             // Near-unit: first-order Padé approximant  2 / (1 + ||q||²)
             2.0 / (1.0 + qmagsq)
@@ -96,7 +98,7 @@ impl JeodQuat {
             *d *= fact;
         }
 
-        // Force scalar non-negative (canonical hemisphere).
+        // JEOD_INV: QT.02 — canonical hemisphere: force scalar non-negative
         if self.data[0] < 0.0 {
             for d in self.data.iter_mut() {
                 *d = -*d;
