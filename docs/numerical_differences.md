@@ -5,8 +5,8 @@ Rust port and JEOD's C++ reference. These are not bugs — they result from
 building two independent implementations that share the same physics but
 evaluate it on different toolchains, libraries, and interpolation paths. The
 doc exists so a future engineer who sees, for example, a ~10 arcsecond Sun
-offset in a Tier 3 test recognises expected convergence noise rather than a
-regression. When a discrepancy can be traced to a formula, constant, or sign
+offset in a Tier 3 test recognises it as expected convergence noise rather
+than a regression. When a discrepancy can be traced to a formula, constant, or sign
 convention it is a bug and must be fixed (see `CLAUDE.md` "No Half-Baked
 Implementations"); only differences from the sources below should widen a
 tolerance. Root-cause analysis for the 8-hour trajectory residuals is captured
