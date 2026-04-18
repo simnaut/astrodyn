@@ -183,7 +183,9 @@ pub struct TransStateData {
 /// * `init_name` - Init file identifier without `.py` (e.g. `"trans_TransState_inertial_body"`).
 ///
 /// # Panics
-/// Panics if the file cannot be read or position/velocity cannot be parsed.
+/// Panics if the file cannot be read; if `position` or `velocity` entries are
+/// missing or have an unexpected unit (must be `"m"` and `"m/s"` respectively);
+/// or if `reference_ref_frame_name` is missing.
 pub fn load_trans_state(
     jeod_root: &std::path::Path,
     vehicle: &str,
