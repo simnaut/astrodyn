@@ -57,6 +57,7 @@ pub fn compute_orbital_elements(
 ///
 /// Converts the left-transformation quaternion to a rotation matrix, then
 /// decomposes it into Euler angles using the given sequence.
+#[allow(deprecated)]
 pub fn compute_body_euler_angles(rot: &RotationalState, sequence: EulerSequence) -> [f64; 3] {
     let t_parent_body = rot.quaternion.left_quat_to_transformation();
     jeod_math::compute_euler_angles_from_matrix(&t_parent_body, sequence)

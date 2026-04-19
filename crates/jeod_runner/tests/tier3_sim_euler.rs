@@ -3,6 +3,11 @@
 //! Uses the RUN_2 point-mass 6-DOF trajectory (which has quaternion data)
 //! to validate Euler angle computation through the Simulation pipeline.
 
+// `compute_euler_angles_from_matrix` is deprecated in favor of its typed
+// sibling; this Tier 3 test reads from JEOD's raw-`f64` matrix and keeps
+// the bare variant until the derived-state consumers migrate.
+#![allow(deprecated)]
+
 mod sim_test_helpers;
 use sim_test_helpers::*;
 
