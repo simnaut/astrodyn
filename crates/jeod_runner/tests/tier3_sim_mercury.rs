@@ -108,6 +108,8 @@ fn propagate_mercury_periapses(
         let r_dot = r.dot(v) / r.length();
 
         if step > 0 && prev_rdot < 0.0 && r_dot >= 0.0 {
+            // Phase 2 #104: from_cartesian deprecated; migration deferred to Phase 3+.
+            #[allow(deprecated)]
             if let Ok(e) = jeod_sim::OrbitalElements::from_cartesian(mu_sun, r, v) {
                 events.push(PeriapsisEvent {
                     time: sim_time,
@@ -211,6 +213,8 @@ fn detect_periapses_from_csv(path: &std::path::Path, mu: f64) -> Vec<PeriapsisEv
         let r_dot = pos.dot(vel) / pos.length();
 
         if prev_rdot < 0.0 && r_dot >= 0.0 {
+            // Phase 2 #104: from_cartesian deprecated; migration deferred to Phase 3+.
+            #[allow(deprecated)]
             if let Ok(e) = jeod_sim::OrbitalElements::from_cartesian(mu, pos, vel) {
                 events.push(PeriapsisEvent {
                     time,

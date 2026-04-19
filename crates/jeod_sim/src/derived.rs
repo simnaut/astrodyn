@@ -46,6 +46,10 @@ pub fn compute_orbital_elements(
     position: DVec3,
     velocity: DVec3,
 ) -> Result<OrbitalElements, OrbitalError> {
+    // Phase 2 #104: jeod_math::OrbitalElements::from_cartesian is deprecated in
+    // favor of from_cartesian_typed. Migration to the typed entry point is
+    // tracked for Phase 3+ — this call site retains the f64 API for now.
+    #[allow(deprecated)]
     OrbitalElements::from_cartesian(mu, position, velocity)
 }
 
