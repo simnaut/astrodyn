@@ -401,12 +401,20 @@ pub fn integration_system(
                     });
                     let t_inertial_struct =
                         jeod_sim::compute_t_inertial_struct(&t_struct_body, &t_inertial_body);
-                    let flux_struct_hat = t_inertial_struct * srp_inputs.flux_inertial_hat;
+                    // Per-stage flux recompute from intermediate vehicle
+                    // position — matches JEOD's derivative-class
+                    // `RadiationSource::calculate_flux`. Sun position is
+                    // step-constant (ephemeris is scheduled-class).
+                    let sun_to_vehicle = stage_trans.position - srp_inputs.sun_position;
+                    let distance = sun_to_vehicle.length().max(1.0);
+                    let stage_flux_inertial_hat = sun_to_vehicle / distance;
+                    let stage_flux_mag = jeod_sim::solar_flux_at_distance(distance);
+                    let flux_struct_hat = t_inertial_struct * stage_flux_inertial_hat;
                     let srp_result = jeod_sim::compute_flat_plate_srp_thermal(
                         &stage_thermal.plates,
                         &stage_thermal.t_pow4_cached,
                         flux_struct_hat,
-                        srp_inputs.flux_mag,
+                        stage_flux_mag,
                         srp_inputs.center_grav,
                         srp_inputs.illum_factor,
                     );
@@ -885,8 +893,8 @@ pub fn flat_plate_srp_system(
     time: Res<Time<Fixed>>,
 ) {
     let sun_state = match sun_query.single() {
-        Ok(s) => s,
-        Err(bevy::ecs::query::QuerySingleError::NoEntities(_)) => return,
+        Ok(s) => Some(s),
+        Err(bevy::ecs::query::QuerySingleError::NoEntities(_)) => None,
         Err(bevy::ecs::query::QuerySingleError::MultipleEntities(_)) => {
             panic!(
                 "Multiple entities with SunMarker found. In JEOD, RadiationPressure \
@@ -899,17 +907,24 @@ pub fn flat_plate_srp_system(
     let dt = time.delta_secs_f64();
 
     for (mut flat_config, state, rot, mass, struct_xform, mut srp_force) in &mut query {
-        // Clear any previous-step cached stage inputs; repopulated below
-        // for derivative-class modes.
+        // Clear per-step SRP state unconditionally (before the Sun check)
+        // so derivative-mode entities don't retain stale `stage_inputs` or
+        // force/torque if the Sun entity is removed between steps — which
+        // would otherwise incorrectly drive the coupled RK4 path. Mirrors
+        // the unconditional clearing in `jeod_runner::Simulation`.
         flat_config.stage_inputs = None;
+        srp_force.force = DVec3::ZERO;
+        srp_force.torque = DVec3::ZERO;
+
+        let Some(sun_state) = sun_state else {
+            continue;
+        };
 
         let sun_to_vehicle = state.position - sun_state.position;
         let distance = sun_to_vehicle.length();
         if distance < 1.0 {
-            // Too close to the Sun to compute flux: leave force/torque/
-            // stage_inputs at zero and continue.
-            srp_force.force = DVec3::ZERO;
-            srp_force.torque = DVec3::ZERO;
+            // Too close to the Sun to compute flux: force/torque/
+            // stage_inputs already zeroed above.
             continue;
         }
         let flux_inertial_hat = sun_to_vehicle / distance;
@@ -956,17 +971,14 @@ pub fn flat_plate_srp_system(
             | jeod_sim::ThermalIntegrationOrder::DerivativeRk4 => {
                 // Derivative-class: SRP force (and optionally T) recomputed
                 // per RK4 stage by the integration system. Cache the
-                // step-start inputs on the plate state here; leave
-                // `RadiationForceC` at zero — the integration system
+                // step-start inputs on the plate state here; `RadiationForceC`
+                // stays at the zero cleared above — the integration system
                 // writes a representative final-stage value.
                 flat_config.stage_inputs = Some(jeod_sim::FlatPlateStageInputs {
-                    flux_inertial_hat,
-                    flux_mag,
+                    sun_position: sun_state.position,
                     illum_factor,
                     center_grav,
                 });
-                srp_force.force = DVec3::ZERO;
-                srp_force.torque = DVec3::ZERO;
             }
         }
     }

@@ -1786,8 +1786,7 @@ impl Simulation {
                                 // inputs on the plate state; Stage 8 consumes
                                 // them via `integrate_body_coupled` below.
                                 fps.stage_inputs = Some(jeod_sim::FlatPlateStageInputs {
-                                    flux_inertial_hat,
-                                    flux_mag,
+                                    sun_position,
                                     illum_factor,
                                     center_grav,
                                 });
@@ -2088,12 +2087,20 @@ impl Simulation {
                                 &t_struct_body,
                                 &t_inertial_body,
                             );
-                            let flux_struct_hat = t_inertial_struct * srp_inputs.flux_inertial_hat;
+                            // Per-stage flux recompute from intermediate vehicle
+                            // position — matches JEOD's derivative-class
+                            // `RadiationSource::calculate_flux`. Sun position is
+                            // step-constant (ephemeris is scheduled-class).
+                            let sun_to_vehicle = stage_trans.position - srp_inputs.sun_position;
+                            let distance = sun_to_vehicle.length().max(1.0);
+                            let stage_flux_inertial_hat = sun_to_vehicle / distance;
+                            let stage_flux_mag = jeod_sim::solar_flux_at_distance(distance);
+                            let flux_struct_hat = t_inertial_struct * stage_flux_inertial_hat;
                             let srp_result = jeod_sim::compute_flat_plate_srp_thermal(
                                 &stage_thermal.plates,
                                 &stage_thermal.t_pow4_cached,
                                 flux_struct_hat,
-                                srp_inputs.flux_mag,
+                                stage_flux_mag,
                                 srp_inputs.center_grav,
                                 srp_inputs.illum_factor,
                             );

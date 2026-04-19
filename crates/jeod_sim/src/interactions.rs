@@ -22,13 +22,18 @@ use crate::integrable::IntegrableObject;
 /// both drive the coupled integrator with identical step-start data.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct FlatPlateStageInputs {
-    /// Unit flux direction from Sun to vehicle in inertial frame (step start).
-    pub flux_inertial_hat: DVec3,
-    /// Solar flux magnitude at vehicle distance (W/m²).
-    pub flux_mag: f64,
+    /// Sun position in inertial frame, captured at step start. The
+    /// coupled stage closure recomputes `sun_to_vehicle`,
+    /// `flux_inertial_hat`, and `flux_mag` per RK4 stage from this plus
+    /// the stage's `TranslationalState.position`, matching JEOD's
+    /// derivative-class `RadiationSource::calculate_flux` which reads
+    /// the intermediate vehicle structure frame at every call (see
+    /// `models/interactions/radiation_pressure/src/radiation_source.cc`).
+    pub sun_position: DVec3,
     /// Shadow illumination factor from step-start shadow evaluation
     /// (constant across RK4 stages — matches JEOD scheduled-class
-    /// shadow in SIM_3_ORBIT).
+    /// shadow in SIM_3_ORBIT; third-body frames are not propagated
+    /// between RK4 stages within JEOD either).
     pub illum_factor: f64,
     /// Center of gravity in structural frame.
     pub center_grav: DVec3,
