@@ -127,7 +127,7 @@ jobs:
       - name: Generate cross-validation report
         run: cargo run -p jeod_test_data --bin tier3_report
       - name: Enforce Tier 3 baseline invariance
-        run: cargo run -p jeod_test_data --bin tier3_baseline_diff
+        run: cargo run -p jeod_test_data --bin tier3_baseline_diff -- --allow-missing tier3_earth_moon_clem
       - name: Upload cross-validation report
         uses: actions/upload-artifact@v4
         with:

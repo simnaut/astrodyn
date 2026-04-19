@@ -17,12 +17,18 @@
 //! regime where we want the tightest guard).
 //!
 //! Usage:
-//!   cargo run -p jeod_test_data --bin tier3_baseline_diff
+//!   cargo run -p jeod_test_data --bin tier3_baseline_diff [--allow-missing NAME]...
+//!
+//! `--allow-missing` declares a baseline test that is *intentionally* absent
+//! from the current run (e.g. CI's fast Tier 3 lane excludes the 17-minute
+//! `tier3_earth_moon_clem` test). Repeatable. Names must match exactly.
+//! Baseline tests missing from the run that are NOT on the allow-list are
+//! hard failures — silently dropping a Tier 3 test is a regression.
 //!
 //! Prerequisite: `target/tier3_crossval/*.json` must exist (run
 //! `cargo nextest run --workspace -E 'test(tier3_)'` first).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -307,14 +313,20 @@ struct Violation {
 fn compare(
     baseline: &BTreeMap<String, TestRecord>,
     current: &BTreeMap<String, TestRecord>,
-) -> (Vec<Violation>, Vec<String>, Vec<String>) {
+    allow_missing: &BTreeSet<String>,
+) -> (Vec<Violation>, Vec<String>, Vec<String>, Vec<String>) {
     let mut violations = Vec::new();
     let mut missing_from_run = Vec::new();
+    let mut allowed_missing = Vec::new();
     let mut new_in_run = Vec::new();
 
     for (test, base_rec) in baseline {
         let Some(cur_rec) = current.get(test) else {
-            missing_from_run.push(test.clone());
+            if allow_missing.contains(test) {
+                allowed_missing.push(test.clone());
+            } else {
+                missing_from_run.push(test.clone());
+            }
             continue;
         };
         for (metric, base_val) in &base_rec.metrics {
@@ -383,7 +395,7 @@ fn compare(
         }
     }
 
-    (violations, missing_from_run, new_in_run)
+    (violations, missing_from_run, allowed_missing, new_in_run)
 }
 
 fn comp_label(c: Option<usize>) -> &'static str {
@@ -395,7 +407,37 @@ fn comp_label(c: Option<usize>) -> &'static str {
     }
 }
 
+fn parse_args() -> Result<BTreeSet<String>, String> {
+    let mut allow_missing = BTreeSet::new();
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--allow-missing" => match args.next() {
+                Some(name) => {
+                    allow_missing.insert(name);
+                }
+                None => return Err("--allow-missing requires a test name".to_string()),
+            },
+            other => {
+                return Err(format!(
+                    "unknown argument: {other}\n\
+                     usage: tier3_baseline_diff [--allow-missing NAME]..."
+                ));
+            }
+        }
+    }
+    Ok(allow_missing)
+}
+
 fn main() -> ExitCode {
+    let allow_missing = match parse_args() {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::from(2);
+        }
+    };
+
     let root = workspace_root();
     let baselines_path = root.join("test_data").join("baselines.json");
     let current_dir = root.join("target").join("tier3_crossval");
@@ -442,7 +484,31 @@ fn main() -> ExitCode {
         }
     }
 
-    let (violations, missing, new) = compare(&baselines, &current);
+    let (violations, missing, allowed, new) = compare(&baselines, &current, &allow_missing);
+
+    // Warn about unused allow-missing entries (typos, stale CI config).
+    let stale_allow: Vec<&String> = allow_missing
+        .iter()
+        .filter(|n| !baselines.contains_key(n.as_str()))
+        .collect();
+    if !stale_allow.is_empty() {
+        eprintln!("warning: --allow-missing names not present in baselines (typo?):");
+        for n in &stale_allow {
+            eprintln!("  ? {n}");
+        }
+        eprintln!();
+    }
+
+    if !allowed.is_empty() {
+        eprintln!(
+            "note: {} baseline tests allowed-missing from current run:",
+            allowed.len()
+        );
+        for t in &allowed {
+            eprintln!("  ~ {t}");
+        }
+        eprintln!();
+    }
 
     if !new.is_empty() {
         eprintln!(
@@ -460,8 +526,9 @@ fn main() -> ExitCode {
 
     if missing.is_empty() && violations.is_empty() {
         println!(
-            "baseline-diff: OK ({} baseline tests matched; {} new)",
-            baselines.len(),
+            "baseline-diff: OK ({} matched; {} allowed-missing; {} new)",
+            baselines.len() - allowed.len(),
+            allowed.len(),
             new.len()
         );
         return ExitCode::SUCCESS;
