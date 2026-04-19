@@ -10,11 +10,11 @@
 use crate::state::TranslationalState;
 use glam::{DMat3, DVec3};
 use jeod_math::OrbitalElements;
-use jeod_math::{geodetic_to_cartesian, mat3_from_rows, GeodeticState};
-// `compute_lvlh_frame` is deprecated pending Phase 3 migration of this module
-// to the typed `compute_lvlh_frame_typed` API.
+use jeod_math::{mat3_from_rows, GeodeticState};
+// `compute_lvlh_frame` and `geodetic_to_cartesian` are deprecated pending
+// Phase 3 migration of this module to the typed `_typed` APIs.
 #[allow(deprecated)]
-use jeod_math::compute_lvlh_frame;
+use jeod_math::{compute_lvlh_frame, geodetic_to_cartesian};
 
 /// Initialize translational state from Keplerian orbital elements (true anomaly).
 ///
@@ -253,6 +253,7 @@ pub fn init_from_ned(
     omega_planet: DVec3,
 ) -> TranslationalState {
     // Convert geodetic to PCPF cartesian
+    #[allow(deprecated)]
     let pcpf_pos = geodetic_to_cartesian(geodetic, r_eq, r_pol);
 
     // Compute NED-to-PCPF rotation at this geodetic location.

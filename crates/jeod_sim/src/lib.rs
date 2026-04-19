@@ -140,9 +140,9 @@ pub use jeod_math::JeodQuat;
 
 // jeod_math: derived state types
 #[allow(deprecated)]
-pub use jeod_math::compute_lvlh_frame;
+pub use jeod_math::{cartesian_to_geodetic, compute_lvlh_frame, geodetic_to_cartesian};
 pub use jeod_math::{
-    cartesian_to_geodetic, compute_euler_angles_from_matrix, compute_lvlh_frame_typed,
-    geodetic_to_cartesian, solar_beta_angle, EulerSequence, GeodeticState, LvlhFrame,
-    OrbitalElements, OrbitalError,
+    cartesian_to_geodetic_typed, compute_euler_angles_from_matrix, compute_lvlh_frame_typed,
+    geodetic_to_cartesian_typed, solar_beta_angle, EulerSequence, GeodeticState,
+    GeodeticStateTyped, LvlhFrame, OrbitalElements, OrbitalError,
 };

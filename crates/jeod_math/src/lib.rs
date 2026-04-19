@@ -24,7 +24,9 @@ pub use euler_angles::{
     compute_euler_angles_from_matrix, compute_matrix_from_euler_angles,
     compute_quaternion_from_euler_angles, EulerSequence, ALL_SEQUENCES,
 };
+#[allow(deprecated)]
 pub use geodetic::{cartesian_to_geodetic, geodetic_to_cartesian, GeodeticState};
+pub use geodetic::{cartesian_to_geodetic_typed, geodetic_to_cartesian_typed, GeodeticStateTyped};
 pub use jeod_quantities::{
     JeodQuat, Layout, LeftTransform, NormalizedQuat, Quat, RightTransform, ScalarFirst, ScalarLast,
     Transform,
