@@ -133,7 +133,8 @@ impl<From: TimeScale, To: TimeScale> TimeConverter<From, To> {
 /// TT − TAI offset in SI seconds (exactly +32.184 s per IAU 1991 resolution).
 pub const TAI_TO_TT_OFFSET_S: f64 = 32.184;
 
-/// GPS − TAI offset in SI seconds (exactly −19 s, fixed since 1980-01-06).
+/// TAI − GPS offset in SI seconds (exactly +19 s, fixed since 1980-01-06).
+/// Used with `to = from + offset`: `TAI = GPS + 19`, so `GPS_TO_TAI_OFFSET_S = +19`.
 pub const GPS_TO_TAI_OFFSET_S: f64 = 19.0;
 
 impl TimeConverter<TAI, TT> {

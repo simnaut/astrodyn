@@ -118,18 +118,27 @@ impl<T: Transform> Quat<ScalarLast, T> {
     }
 }
 
-// --- glam bridging (only for the scalar-last layout since that's glam's) ---
+// --- glam bridging ---
+//
+// `glam::DQuat` stores `[x, y, z, w]` and applies its rotations under the
+// left-transformation convention (`r' = q r q⁻¹`), which matches JEOD. The
+// bridging impls below are restricted to `LeftTransform` so converting
+// a `Quat<ScalarLast, RightTransform>` to/from `DQuat` is rejected at
+// compile time rather than silently mislabeled.
+//
+// Callers who genuinely hold a RightTransform quaternion should conjugate
+// explicitly (flip the sign of the vector part) before bridging.
 
-impl<T: Transform> Quat<ScalarLast, T> {
-    /// Interpret the quaternion as a `glam::DQuat`. Zero-cost: the layout is
-    /// `[x, y, z, w]` by construction.
+impl Quat<ScalarLast, LeftTransform> {
+    /// Interpret the quaternion as a `glam::DQuat`. Zero-cost: the layout
+    /// is `[x, y, z, w]` and the transformation convention matches glam.
     #[inline]
     pub fn to_glam(self) -> DQuat {
         DQuat::from_xyzw(self.data[0], self.data[1], self.data[2], self.data[3])
     }
 }
 
-impl<T: Transform> From<DQuat> for Quat<ScalarLast, T> {
+impl From<DQuat> for Quat<ScalarLast, LeftTransform> {
     #[inline]
     fn from(q: DQuat) -> Self {
         Self::from_array([q.x, q.y, q.z, q.w])

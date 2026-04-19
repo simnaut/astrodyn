@@ -3,388 +3,388 @@
   "note": "Tier 3 per-test, per-component max absolute errors. Frozen snapshot; see CLAUDE.md \"Baseline freeze\" policy.",
   "tests": {
     "tier3_apollo8_eci_integ": {
-      "position_m": [4.518032e-5, 3.631413e-5, 3.398955e-5],
-      "velocity_m_per_s": [9.124617e-7, 7.291409e-7, 6.806365e-7],
-      "quat_angle_rad": 0e0,
-      "ang_vel_rad_per_s": [0e0, 0e0, 0e0],
+      "position_m": [4.51803199999999998e-5, 3.63141300000000006e-5, 3.39895500000000005e-5],
+      "velocity_m_per_s": [9.12461700000000032e-7, 7.29140899999999959e-7, 6.80636500000000048e-7],
+      "quat_angle_rad": 0.00000000000000000e0,
+      "ang_vel_rad_per_s": [0.00000000000000000e0, 0.00000000000000000e0, 0.00000000000000000e0],
       "extras": []
     },
     "tier3_apollo_mass_tree": {
-      "extras": [{"name":"composite_mass","value":4.898757e-7,"unit":"kg"},{"name":"composite_com","value":4.586072e-7,"unit":"m"},{"name":"composite_inertia","value":5.960464e-7,"unit":"kg*m^2"}]
+      "extras": [{"name":"composite_mass","value":4.89875700000000009e-7,"unit":"kg"},{"name":"composite_com","value":4.58607200000000009e-7,"unit":"m"},{"name":"composite_inertia","value":5.96046399999999958e-7,"unit":"kg*m^2"}]
     },
     "tier3_earth_moon_clem": {
-      "position_m": [7.92267e-1, 3.152603e-1, 9.254903e-1],
-      "velocity_m_per_s": [4.118806e-4, 1.236043e-4, 3.790989e-4],
+      "position_m": [7.92267000000000055e-1, 3.15260299999999993e-1, 9.25490299999999988e-1],
+      "velocity_m_per_s": [4.11880599999999981e-4, 1.23604299999999998e-4, 3.79098900000000003e-4],
       "extras": []
     },
     "tier3_mars_dawn": {
-      "position_m": [3.811196e0, 8.754798e-1, 1.244367e0],
-      "velocity_m_per_s": [8.134289e-4, 4.211432e-4, 5.027424e-4],
+      "position_m": [3.81119599999999981e0, 8.75479800000000030e-1, 1.24436700000000000e0],
+      "velocity_m_per_s": [8.13428900000000028e-4, 4.21143199999999976e-4, 5.02742399999999952e-4],
       "extras": []
     },
     "tier3_planetary_geo": {
-      "position_m": [8.046627e-7, 4.582107e-7, 6.266418e-10],
-      "velocity_m_per_s": [3.342393e-11, 5.724132e-11, 3.175238e-14],
+      "position_m": [8.04662700000000007e-7, 4.58210700000000023e-7, 6.26641799999999973e-10],
+      "velocity_m_per_s": [3.34239299999999997e-11, 5.72413200000000003e-11, 3.17523799999999979e-14],
       "extras": []
     },
     "tier3_planetary_leo_ecc": {
-      "position_m": [1.091705e-5, 8.541712e-6, 9.307527e-9],
-      "velocity_m_per_s": [7.587914e-9, 1.053672e-8, 6.608936e-12],
+      "position_m": [1.09170500000000008e-5, 8.54171199999999937e-6, 9.30752699999999947e-9],
+      "velocity_m_per_s": [7.58791400000000056e-9, 1.05367200000000004e-8, 6.60893600000000002e-12],
       "extras": []
     },
     "tier3_planetary_leo_equ": {
-      "position_m": [2.05629e-5, 2.069361e-5, 1.733207e-8],
-      "velocity_m_per_s": [2.332455e-8, 2.341308e-8, 1.965068e-11],
+      "position_m": [2.05628999999999992e-5, 2.06936099999999985e-5, 1.73320699999999984e-8],
+      "velocity_m_per_s": [2.33245500000000009e-8, 2.34130800000000016e-8, 1.96506799999999996e-11],
       "extras": []
     },
     "tier3_planetary_leo_inc": {
-      "position_m": [3.599271e-6, 4.908972e-6, 3.539205e-6],
-      "velocity_m_per_s": [3.973184e-9, 5.529728e-9, 3.942802e-9],
+      "position_m": [3.59927099999999983e-6, 4.90897200000000000e-6, 3.53920499999999985e-6],
+      "velocity_m_per_s": [3.97318400000000016e-9, 5.52972799999999987e-9, 3.94280199999999988e-9],
       "extras": []
     },
     "tier3_planetary_leo_polar": {
-      "position_m": [3.298395e-6, 1.81946e-5, 1.872642e-5],
-      "velocity_m_per_s": [3.742088e-9, 2.064125e-8, 2.089516e-8],
+      "position_m": [3.29839500000000012e-6, 1.81946000000000003e-5, 1.87264199999999988e-5],
+      "velocity_m_per_s": [3.74208799999999962e-9, 2.06412499999999996e-8, 2.08951600000000009e-8],
       "extras": []
     },
     "tier3_reference_run10a_libration_period": {
-      "extras": [{"name":"period_error_pct","value":3.73657e-1,"unit":"%"}]
+      "extras": [{"name":"period_error_pct","value":3.73657000000000017e-1,"unit":"%"}]
     },
     "tier3_sim_attach_detach_simple": {
-      "extras": [{"name":"composite_mass_max_err","value":0e0,"unit":"kg"}]
+      "extras": [{"name":"composite_mass_max_err","value":0.00000000000000000e0,"unit":"kg"}]
     },
     "tier3_sim_attach_mass": {
-      "extras": [{"name":"composite_mass","value":0e0,"unit":"kg"},{"name":"composite_com","value":4.082156e-17,"unit":"m"},{"name":"composite_inertia","value":4e-7,"unit":"kg*m^2"}]
+      "extras": [{"name":"composite_mass","value":0.00000000000000000e0,"unit":"kg"},{"name":"composite_com","value":4.08215599999999996e-17,"unit":"m"},{"name":"composite_inertia","value":3.99999999999999982e-7,"unit":"kg*m^2"}]
     },
     "tier3_sim_drag_ver_bc": {
-      "extras": [{"name":"aero_force_err","value":2.637978e-18,"unit":"N"},{"name":"aero_torque_err","value":0e0,"unit":"N*m"},{"name":"accel_mag_err","value":2.602085e-18,"unit":"m/s^2"}]
+      "extras": [{"name":"aero_force_err","value":2.63797800000000009e-18,"unit":"N"},{"name":"aero_torque_err","value":0.00000000000000000e0,"unit":"N*m"},{"name":"accel_mag_err","value":2.60208499999999982e-18,"unit":"m/s^2"}]
     },
     "tier3_sim_drag_ver_cd": {
-      "extras": [{"name":"aero_force_err","value":2.168404e-18,"unit":"N"},{"name":"aero_torque_err","value":0e0,"unit":"N*m"},{"name":"accel_mag_err","value":1.734723e-18,"unit":"m/s^2"}]
+      "extras": [{"name":"aero_force_err","value":2.16840399999999993e-18,"unit":"N"},{"name":"aero_torque_err","value":0.00000000000000000e0,"unit":"N*m"},{"name":"accel_mag_err","value":1.73472300000000004e-18,"unit":"m/s^2"}]
     },
     "tier3_sim_drag_ver_flatplate_calc_eps00": {
-      "extras": [{"name":"aero_force_err","value":2.056959e-12,"unit":"N"},{"name":"aero_torque_err","value":0e0,"unit":"N*m"},{"name":"accel_mag_err","value":2.056451e-12,"unit":"m/s^2"}]
+      "extras": [{"name":"aero_force_err","value":2.05695899999999998e-12,"unit":"N"},{"name":"aero_torque_err","value":0.00000000000000000e0,"unit":"N*m"},{"name":"accel_mag_err","value":2.05645099999999996e-12,"unit":"m/s^2"}]
     },
     "tier3_sim_drag_ver_flatplate_calc_eps05": {
-      "extras": [{"name":"aero_force_err","value":1.3503e-12,"unit":"N"},{"name":"aero_torque_err","value":0e0,"unit":"N*m"},{"name":"accel_mag_err","value":1.349134e-12,"unit":"m/s^2"}]
+      "extras": [{"name":"aero_force_err","value":1.35030000000000001e-12,"unit":"N"},{"name":"aero_torque_err","value":0.00000000000000000e0,"unit":"N*m"},{"name":"accel_mag_err","value":1.34913400000000001e-12,"unit":"m/s^2"}]
     },
     "tier3_sim_drag_ver_flatplate_calc_eps1": {
-      "extras": [{"name":"aero_force_err","value":1.237368e-12,"unit":"N"},{"name":"aero_torque_err","value":0e0,"unit":"N*m"},{"name":"accel_mag_err","value":1.237368e-12,"unit":"m/s^2"}]
+      "extras": [{"name":"aero_force_err","value":1.23736800000000006e-12,"unit":"N"},{"name":"aero_torque_err","value":0.00000000000000000e0,"unit":"N*m"},{"name":"accel_mag_err","value":1.23736800000000006e-12,"unit":"m/s^2"}]
     },
     "tier3_sim_drag_ver_flatplate_diffuse": {
-      "extras": [{"name":"aero_force_err","value":2.142843e-20,"unit":"N"},{"name":"aero_torque_err","value":0e0,"unit":"N*m"},{"name":"accel_mag_err","value":2.032879e-20,"unit":"m/s^2"}]
+      "extras": [{"name":"aero_force_err","value":2.14284299999999994e-20,"unit":"N"},{"name":"aero_torque_err","value":0.00000000000000000e0,"unit":"N*m"},{"name":"accel_mag_err","value":2.03287900000000000e-20,"unit":"m/s^2"}]
     },
     "tier3_sim_drag_ver_flatplate_mixed": {
-      "extras": [{"name":"aero_force_err","value":2.793925e-20,"unit":"N"},{"name":"aero_torque_err","value":0e0,"unit":"N*m"},{"name":"accel_mag_err","value":4.065758e-20,"unit":"m/s^2"}]
+      "extras": [{"name":"aero_force_err","value":2.79392500000000009e-20,"unit":"N"},{"name":"aero_torque_err","value":0.00000000000000000e0,"unit":"N*m"},{"name":"accel_mag_err","value":4.06575800000000001e-20,"unit":"m/s^2"}]
     },
     "tier3_sim_drag_ver_flatplate_orbiter": {
-      "extras": [{"name":"aero_force_err","value":9.347926e-10,"unit":"N"},{"name":"aero_torque_err","value":1.180006e-9,"unit":"N*m"},{"name":"accel_mag_err","value":1.020617e-14,"unit":"m/s^2"}]
+      "extras": [{"name":"aero_force_err","value":9.34792600000000038e-10,"unit":"N"},{"name":"aero_torque_err","value":1.18000599999999991e-9,"unit":"N*m"},{"name":"accel_mag_err","value":1.02061699999999999e-14,"unit":"m/s^2"}]
     },
     "tier3_sim_drag_ver_flatplate_specular": {
-      "extras": [{"name":"aero_force_err","value":6.776264e-20,"unit":"N"},{"name":"aero_torque_err","value":0e0,"unit":"N*m"},{"name":"accel_mag_err","value":6.776264e-20,"unit":"m/s^2"}]
+      "extras": [{"name":"aero_force_err","value":6.77626399999999972e-20,"unit":"N"},{"name":"aero_torque_err","value":0.00000000000000000e0,"unit":"N*m"},{"name":"accel_mag_err","value":6.77626399999999972e-20,"unit":"m/s^2"}]
     },
     "tier3_sim_drag_ver_flatplate_torque": {
-      "extras": [{"name":"aero_force_err","value":2.056959e-12,"unit":"N"},{"name":"aero_torque_err","value":6.186842e-13,"unit":"N*m"},{"name":"accel_mag_err","value":2.056451e-12,"unit":"m/s^2"}]
+      "extras": [{"name":"aero_force_err","value":2.05695899999999998e-12,"unit":"N"},{"name":"aero_torque_err","value":6.18684200000000047e-13,"unit":"N*m"},{"name":"accel_mag_err","value":2.05645099999999996e-12,"unit":"m/s^2"}]
     },
     "tier3_simulation_drag_run6b": {
-      "position_m": [7.590876e-1, 1.060947e0, 8.518602e-1],
-      "velocity_m_per_s": [7.486293e-4, 1.194132e-3, 9.544923e-4],
+      "position_m": [7.59087599999999973e-1, 1.06094700000000008e0, 8.51860199999999956e-1],
+      "velocity_m_per_s": [7.48629299999999998e-4, 1.19413200000000009e-3, 9.54492300000000030e-4],
       "extras": []
     },
     "tier3_simulation_drag_run6b_rotated": {
-      "position_m": [7.590876e-1, 1.060947e0, 8.518602e-1],
-      "velocity_m_per_s": [7.486293e-4, 1.194132e-3, 9.544923e-4],
+      "position_m": [7.59087599999999973e-1, 1.06094700000000008e0, 8.51860199999999956e-1],
+      "velocity_m_per_s": [7.48629299999999998e-4, 1.19413200000000009e-3, 9.54492300000000030e-4],
       "extras": []
     },
     "tier3_simulation_euler": {
-      "quat_angle_rad": 4.214685e-8,
-      "ang_vel_rad_per_s": [2.493665e-18, 1.301043e-18, 7.589415e-19],
-      "extras": [{"name":"euler_roll","value":1.758038e-13,"unit":"rad"},{"name":"euler_pitch","value":8.260059e-14,"unit":"rad"},{"name":"euler_yaw","value":1.050271e-13,"unit":"rad"}]
+      "quat_angle_rad": 4.21468499999999987e-8,
+      "ang_vel_rad_per_s": [2.49366499999999982e-18, 1.30104300000000005e-18, 7.58941500000000023e-19],
+      "extras": [{"name":"euler_roll","value":1.75803799999999990e-13,"unit":"rad"},{"name":"euler_pitch","value":8.26005900000000038e-14,"unit":"rad"},{"name":"euler_yaw","value":1.05027100000000000e-13,"unit":"rad"}]
     },
     "tier3_simulation_euler_ecc": {
-      "quat_angle_rad": 0e0,
-      "extras": [{"name":"euler_roll","value":0e0,"unit":"rad"},{"name":"euler_pitch","value":0e0,"unit":"rad"},{"name":"euler_yaw","value":0e0,"unit":"rad"}]
+      "quat_angle_rad": 0.00000000000000000e0,
+      "extras": [{"name":"euler_roll","value":0.00000000000000000e0,"unit":"rad"},{"name":"euler_pitch","value":0.00000000000000000e0,"unit":"rad"},{"name":"euler_yaw","value":0.00000000000000000e0,"unit":"rad"}]
     },
     "tier3_simulation_euler_equ": {
-      "quat_angle_rad": 0e0,
-      "extras": [{"name":"euler_roll","value":0e0,"unit":"rad"},{"name":"euler_pitch","value":0e0,"unit":"rad"},{"name":"euler_yaw","value":0e0,"unit":"rad"}]
+      "quat_angle_rad": 0.00000000000000000e0,
+      "extras": [{"name":"euler_roll","value":0.00000000000000000e0,"unit":"rad"},{"name":"euler_pitch","value":0.00000000000000000e0,"unit":"rad"},{"name":"euler_yaw","value":0.00000000000000000e0,"unit":"rad"}]
     },
     "tier3_simulation_geodetic": {
-      "position_m": [3.599271e-6, 4.908972e-6, 3.539205e-6],
-      "velocity_m_per_s": [3.973184e-9, 5.529728e-9, 3.942802e-9],
-      "extras": [{"name":"altitude","value":8.51233e-4,"unit":"m"},{"name":"latitude","value":3.982369e-8,"unit":"rad"},{"name":"longitude","value":6.183679e-8,"unit":"rad"}]
+      "position_m": [3.59927099999999983e-6, 4.90897200000000000e-6, 3.53920499999999985e-6],
+      "velocity_m_per_s": [3.97318400000000016e-9, 5.52972799999999987e-9, 3.94280199999999988e-9],
+      "extras": [{"name":"altitude","value":8.51232999999999959e-4,"unit":"m"},{"name":"latitude","value":3.98236900000000002e-8,"unit":"rad"},{"name":"longitude","value":6.18367900000000056e-8,"unit":"rad"}]
     },
     "tier3_simulation_gj_dt10": {
-      "position_m": [9.861992e-1, 9.845695e-1, 0e0],
-      "velocity_m_per_s": [8.751316e-4, 8.75485e-4, 0e0],
+      "position_m": [9.86199200000000054e-1, 9.84569499999999986e-1, 0.00000000000000000e0],
+      "velocity_m_per_s": [8.75131600000000009e-4, 8.75484999999999957e-4, 0.00000000000000000e0],
       "extras": []
     },
     "tier3_simulation_gj_order12": {
-      "position_m": [1.850567e-4, 1.846611e-4, 0e0],
-      "velocity_m_per_s": [1.642576e-7, 1.645428e-7, 0e0],
+      "position_m": [1.85056700000000006e-4, 1.84661100000000006e-4, 0.00000000000000000e0],
+      "velocity_m_per_s": [1.64257599999999992e-7, 1.64542800000000009e-7, 0.00000000000000000e0],
       "extras": []
     },
     "tier3_simulation_gj_order4": {
-      "position_m": [3.676175e-5, 3.714341e-5, 0e0],
-      "velocity_m_per_s": [3.282528e-8, 3.270148e-8, 0e0],
+      "position_m": [3.67617500000000009e-5, 3.71434100000000015e-5, 0.00000000000000000e0],
+      "velocity_m_per_s": [3.28252800000000010e-8, 3.27014799999999970e-8, 0.00000000000000000e0],
       "extras": []
     },
     "tier3_simulation_gj_order8": {
-      "position_m": [1.258367e-4, 1.246376e-4, 0e0],
-      "velocity_m_per_s": [1.105691e-7, 1.111997e-7, 0e0],
+      "position_m": [1.25836699999999987e-4, 1.24637599999999994e-4, 0.00000000000000000e0],
+      "velocity_m_per_s": [1.10569099999999994e-7, 1.11199700000000000e-7, 0.00000000000000000e0],
       "extras": []
     },
     "tier3_simulation_lsode_abm4": {
-      "position_m": [3.4055e-4, 3.25971e-4, 2.151958e-4],
-      "velocity_m_per_s": [3.870171e-7, 3.553018e-7, 2.361918e-7],
+      "position_m": [3.40550000000000011e-4, 3.25970999999999986e-4, 2.15195800000000004e-4],
+      "velocity_m_per_s": [3.87017099999999996e-7, 3.55301799999999977e-7, 2.36191799999999991e-7],
       "extras": []
     },
     "tier3_simulation_lsode_default": {
-      "position_m": [9.484859e3, 9.129797e3, 6.02849e3],
-      "velocity_m_per_s": [1.082078e1, 9.908454e0, 6.580769e0],
+      "position_m": [9.48485900000000038e3, 9.12979700000000048e3, 6.02848999999999978e3],
+      "velocity_m_per_s": [1.08207799999999992e1, 9.90845400000000076e0, 6.58076900000000009e0],
       "extras": []
     },
     "tier3_simulation_lvlh": {
-      "position_m": [3.599271e-6, 4.908972e-6, 3.539205e-6],
-      "velocity_m_per_s": [3.973184e-9, 5.529728e-9, 3.942802e-9],
-      "extras": [{"name":"t_parent_this","value":7.303186e-13,"unit":""},{"name":"ang_vel","value":1.11456e-16,"unit":"rad/s"}]
+      "position_m": [3.59927099999999983e-6, 4.90897200000000000e-6, 3.53920499999999985e-6],
+      "velocity_m_per_s": [3.97318400000000016e-9, 5.52972799999999987e-9, 3.94280199999999988e-9],
+      "extras": [{"name":"t_parent_this","value":7.30318599999999961e-13,"unit":""},{"name":"ang_vel","value":1.11455999999999996e-16,"unit":"rad/s"}]
     },
     "tier3_simulation_lvlh_ecc": {
-      "position_m": [1.091705e-5, 8.541712e-6, 9.307527e-9],
-      "velocity_m_per_s": [7.587914e-9, 1.053672e-8, 6.608936e-12],
-      "extras": [{"name":"t_parent_this","value":1.608637e-12,"unit":""},{"name":"ang_vel","value":6.542076e-16,"unit":"rad/s"}]
+      "position_m": [1.09170500000000008e-5, 8.54171199999999937e-6, 9.30752699999999947e-9],
+      "velocity_m_per_s": [7.58791400000000056e-9, 1.05367200000000004e-8, 6.60893600000000002e-12],
+      "extras": [{"name":"t_parent_this","value":1.60863699999999998e-12,"unit":""},{"name":"ang_vel","value":6.54207599999999973e-16,"unit":"rad/s"}]
     },
     "tier3_simulation_lvlh_equ": {
-      "position_m": [2.05629e-5, 2.069361e-5, 1.733207e-8],
-      "velocity_m_per_s": [2.332455e-8, 2.341308e-8, 1.965068e-11],
-      "extras": [{"name":"t_parent_this","value":3.052998e-12,"unit":""},{"name":"ang_vel","value":1.400789e-16,"unit":"rad/s"}]
+      "position_m": [2.05628999999999992e-5, 2.06936099999999985e-5, 1.73320699999999984e-8],
+      "velocity_m_per_s": [2.33245500000000009e-8, 2.34130800000000016e-8, 1.96506799999999996e-11],
+      "extras": [{"name":"t_parent_this","value":3.05299800000000007e-12,"unit":""},{"name":"ang_vel","value":1.40078900000000001e-16,"unit":"rad/s"}]
     },
     "tier3_simulation_met_run5a": {
-      "position_m": [5.117618e-7, 7.976778e-7, 6.016344e-7],
-      "velocity_m_per_s": [4.931735e-10, 8.867573e-10, 7.00993e-10],
+      "position_m": [5.11761800000000042e-7, 7.97677800000000046e-7, 6.01634400000000047e-7],
+      "velocity_m_per_s": [4.93173500000000044e-10, 8.86757300000000015e-10, 7.00993000000000001e-10],
       "extras": []
     },
     "tier3_simulation_ned_polar": {
-      "position_m": [3.298395e-6, 1.81946e-5, 1.872642e-5],
-      "velocity_m_per_s": [3.742088e-9, 2.064125e-8, 2.089516e-8],
-      "extras": [{"name":"altitude","value":2.021248e-4,"unit":"m"},{"name":"latitude","value":1.0362e-8,"unit":"rad"},{"name":"longitude","value":3.189424e-5,"unit":"rad"}]
+      "position_m": [3.29839500000000012e-6, 1.81946000000000003e-5, 1.87264199999999988e-5],
+      "velocity_m_per_s": [3.74208799999999962e-9, 2.06412499999999996e-8, 2.08951600000000009e-8],
+      "extras": [{"name":"altitude","value":2.02124800000000007e-4,"unit":"m"},{"name":"latitude","value":1.03620000000000004e-8,"unit":"rad"},{"name":"longitude","value":3.18942399999999998e-5,"unit":"rad"}]
     },
     "tier3_simulation_ned_sph_inc": {
-      "position_m": [3.599271e-6, 4.908972e-6, 3.539205e-6],
-      "velocity_m_per_s": [3.973184e-9, 5.529728e-9, 3.942802e-9],
-      "extras": [{"name":"altitude","value":3.828318e-7,"unit":"m"},{"name":"latitude","value":3.981793e-8,"unit":"rad"},{"name":"longitude","value":6.183679e-8,"unit":"rad"}]
+      "position_m": [3.59927099999999983e-6, 4.90897200000000000e-6, 3.53920499999999985e-6],
+      "velocity_m_per_s": [3.97318400000000016e-9, 5.52972799999999987e-9, 3.94280199999999988e-9],
+      "extras": [{"name":"altitude","value":3.82831800000000012e-7,"unit":"m"},{"name":"latitude","value":3.98179299999999971e-8,"unit":"rad"},{"name":"longitude","value":6.18367900000000056e-8,"unit":"rad"}]
     },
     "tier3_simulation_ned_sph_polar": {
-      "position_m": [3.298395e-6, 1.81946e-5, 1.872642e-5],
-      "velocity_m_per_s": [3.742088e-9, 2.064125e-8, 2.089516e-8],
-      "extras": [{"name":"altitude","value":3.793393e-7,"unit":"m"},{"name":"latitude","value":1.031194e-8,"unit":"rad"},{"name":"longitude","value":3.189424e-5,"unit":"rad"}]
+      "position_m": [3.29839500000000012e-6, 1.81946000000000003e-5, 1.87264199999999988e-5],
+      "velocity_m_per_s": [3.74208799999999962e-9, 2.06412499999999996e-8, 2.08951600000000009e-8],
+      "extras": [{"name":"altitude","value":3.79339300000000009e-7,"unit":"m"},{"name":"latitude","value":1.03119400000000007e-8,"unit":"rad"},{"name":"longitude","value":3.18942399999999998e-5,"unit":"rad"}]
     },
     "tier3_simulation_orbelem": {
-      "position_m": [1.091705e-5, 8.541712e-6, 9.307527e-9],
-      "velocity_m_per_s": [7.587914e-9, 1.053672e-8, 6.608936e-12],
-      "extras": [{"name":"sma","value":5.047768e-7,"unit":"m"},{"name":"eccentricity","value":2.09277e-14,"unit":""},{"name":"inclination","value":3.22008e-17,"unit":"rad"},{"name":"arg_periapsis","value":4.013456e-14,"unit":"rad"},{"name":"long_asc_node","value":2.220446e-14,"unit":"rad"},{"name":"true_anom","value":1.638689e-12,"unit":"rad"},{"name":"mean_anom","value":7.400747e-13,"unit":"rad"}]
+      "position_m": [1.09170500000000008e-5, 8.54171199999999937e-6, 9.30752699999999947e-9],
+      "velocity_m_per_s": [7.58791400000000056e-9, 1.05367200000000004e-8, 6.60893600000000002e-12],
+      "extras": [{"name":"sma","value":5.04776800000000036e-7,"unit":"m"},{"name":"eccentricity","value":2.09276999999999996e-14,"unit":""},{"name":"inclination","value":3.22008000000000020e-17,"unit":"rad"},{"name":"arg_periapsis","value":4.01345600000000011e-14,"unit":"rad"},{"name":"long_asc_node","value":2.22044600000000011e-14,"unit":"rad"},{"name":"true_anom","value":1.63868899999999999e-12,"unit":"rad"},{"name":"mean_anom","value":7.40074699999999983e-13,"unit":"rad"}]
     },
     "tier3_simulation_run10a_gravity_torque": {
-      "position_m": [1.304084e-6, 2.050656e-6, 1.738284e-6],
-      "velocity_m_per_s": [1.377089e-9, 2.274305e-9, 1.726789e-9],
-      "quat_angle_rad": 7.195352e-5,
-      "ang_vel_rad_per_s": [0e0, 1.11569e-7, 8.858036e-8],
+      "position_m": [1.30408399999999991e-6, 2.05065600000000017e-6, 1.73828399999999992e-6],
+      "velocity_m_per_s": [1.37708899999999994e-9, 2.27430499999999983e-9, 1.72678900000000008e-9],
+      "quat_angle_rad": 7.19535200000000029e-5,
+      "ang_vel_rad_per_s": [0.00000000000000000e0, 1.11568999999999998e-7, 8.85803599999999987e-8],
       "extras": []
     },
     "tier3_simulation_run10c_gravity_torque_elliptical": {
-      "position_m": [5.117618e-7, 7.976778e-7, 6.016344e-7],
-      "velocity_m_per_s": [4.931735e-10, 8.867573e-10, 7.00993e-10],
-      "quat_angle_rad": 7.597446e-5,
-      "ang_vel_rad_per_s": [0e0, 1.183046e-7, 9.186244e-8],
+      "position_m": [5.11761800000000042e-7, 7.97677800000000046e-7, 6.01634400000000047e-7],
+      "velocity_m_per_s": [4.93173500000000044e-10, 8.86757300000000015e-10, 7.00993000000000001e-10],
+      "quat_angle_rad": 7.59744600000000065e-5,
+      "ang_vel_rad_per_s": [0.00000000000000000e0, 1.18304600000000004e-7, 9.18624400000000003e-8],
       "extras": []
     },
     "tier3_simulation_run10d_gravity_torque_elliptical_rate": {
-      "position_m": [5.117618e-7, 7.976778e-7, 6.016344e-7],
-      "velocity_m_per_s": [4.931735e-10, 8.867573e-10, 7.00993e-10],
-      "quat_angle_rad": 1.052975e-4,
-      "ang_vel_rad_per_s": [0e0, 1.7377e-7, 1.138897e-7],
+      "position_m": [5.11761800000000042e-7, 7.97677800000000046e-7, 6.01634400000000047e-7],
+      "velocity_m_per_s": [4.93173500000000044e-10, 8.86757300000000015e-10, 7.00993000000000001e-10],
+      "quat_angle_rad": 1.05297499999999999e-4,
+      "ang_vel_rad_per_s": [0.00000000000000000e0, 1.73770000000000000e-7, 1.13889700000000006e-7],
       "extras": []
     },
     "tier3_simulation_run2_3dof": {
-      "position_m": [1.304084e-6, 2.050656e-6, 1.738284e-6],
-      "velocity_m_per_s": [1.377089e-9, 2.274305e-9, 1.726789e-9],
+      "position_m": [1.30408399999999991e-6, 2.05065600000000017e-6, 1.73828399999999992e-6],
+      "velocity_m_per_s": [1.37708899999999994e-9, 2.27430499999999983e-9, 1.72678900000000008e-9],
       "extras": []
     },
     "tier3_simulation_run2_6dof": {
-      "position_m": [1.304084e-6, 2.050656e-6, 1.738284e-6],
-      "velocity_m_per_s": [1.377089e-9, 2.274305e-9, 1.726789e-9],
-      "quat_angle_rad": 4.214685e-8,
-      "ang_vel_rad_per_s": [2.493665e-18, 1.301043e-18, 7.589415e-19],
+      "position_m": [1.30408399999999991e-6, 2.05065600000000017e-6, 1.73828399999999992e-6],
+      "velocity_m_per_s": [1.37708899999999994e-9, 2.27430499999999983e-9, 1.72678900000000008e-9],
+      "quat_angle_rad": 4.21468499999999987e-8,
+      "ang_vel_rad_per_s": [2.49366499999999982e-18, 1.30104300000000005e-18, 7.58941500000000023e-19],
       "extras": []
     },
     "tier3_simulation_run2p_polar_motion": {
-      "position_m": [1.304084e-6, 2.050656e-6, 1.738284e-6],
-      "velocity_m_per_s": [1.377089e-9, 2.274305e-9, 1.726789e-9],
+      "position_m": [1.30408399999999991e-6, 2.05065600000000017e-6, 1.73828399999999992e-6],
+      "velocity_m_per_s": [1.37708899999999994e-9, 2.27430499999999983e-9, 1.72678900000000008e-9],
       "extras": []
     },
     "tier3_simulation_run3a_sh4x4": {
-      "position_m": [5.046699e-2, 1.279437e-1, 9.762894e-2],
-      "velocity_m_per_s": [5.857447e-5, 1.186332e-4, 1.180319e-4],
+      "position_m": [5.04669900000000032e-2, 1.27943699999999994e-1, 9.76289399999999974e-2],
+      "velocity_m_per_s": [5.85744699999999976e-5, 1.18633200000000001e-4, 1.18031900000000004e-4],
       "extras": []
     },
     "tier3_simulation_run3b_sh8x8": {
-      "position_m": [1.261038e-1, 2.190092e-1, 1.567328e-1],
-      "velocity_m_per_s": [1.407207e-4, 2.21787e-4, 1.801017e-4],
+      "position_m": [1.26103799999999988e-1, 2.19009199999999987e-1, 1.56732800000000005e-1],
+      "velocity_m_per_s": [1.40720699999999989e-4, 2.21787000000000010e-4, 1.80101699999999997e-4],
       "extras": []
     },
     "tier3_simulation_run4_3rd_body": {
-      "position_m": [1.565674e-3, 1.998357e-3, 1.929048e-3],
-      "velocity_m_per_s": [1.678174e-6, 1.982956e-6, 2.286183e-6],
-      "quat_angle_rad": 4.214685e-8,
-      "ang_vel_rad_per_s": [2.493665e-18, 1.301043e-18, 7.589415e-19],
+      "position_m": [1.56567399999999997e-3, 1.99835700000000008e-3, 1.92904800000000005e-3],
+      "velocity_m_per_s": [1.67817400000000000e-6, 1.98295599999999996e-6, 2.28618299999999998e-6],
+      "quat_angle_rad": 4.21468499999999987e-8,
+      "ang_vel_rad_per_s": [2.49366499999999982e-18, 1.30104300000000005e-18, 7.58941500000000023e-19],
       "extras": []
     },
     "tier3_simulation_run5b_atmosphere_mean": {
-      "position_m": [5.117618e-7, 7.976778e-7, 6.016344e-7],
-      "velocity_m_per_s": [4.931735e-10, 8.867573e-10, 7.00993e-10],
-      "quat_angle_rad": 4.214685e-8,
-      "ang_vel_rad_per_s": [3.361027e-18, 1.626303e-18, 1.057097e-18],
+      "position_m": [5.11761800000000042e-7, 7.97677800000000046e-7, 6.01634400000000047e-7],
+      "velocity_m_per_s": [4.93173500000000044e-10, 8.86757300000000015e-10, 7.00993000000000001e-10],
+      "quat_angle_rad": 4.21468499999999987e-8,
+      "ang_vel_rad_per_s": [3.36102699999999998e-18, 1.62630300000000004e-18, 1.05709700000000006e-18],
       "extras": []
     },
     "tier3_simulation_run5c_atmosphere_max": {
-      "position_m": [5.117618e-7, 7.976778e-7, 6.016344e-7],
-      "velocity_m_per_s": [4.931735e-10, 8.867573e-10, 7.00993e-10],
-      "quat_angle_rad": 4.214685e-8,
-      "ang_vel_rad_per_s": [3.361027e-18, 1.626303e-18, 1.057097e-18],
+      "position_m": [5.11761800000000042e-7, 7.97677800000000046e-7, 6.01634400000000047e-7],
+      "velocity_m_per_s": [4.93173500000000044e-10, 8.86757300000000015e-10, 7.00993000000000001e-10],
+      "quat_angle_rad": 4.21468499999999987e-8,
+      "ang_vel_rad_per_s": [3.36102699999999998e-18, 1.62630300000000004e-18, 1.05709700000000006e-18],
       "extras": []
     },
     "tier3_simulation_run6a_const_density_drag": {
-      "position_m": [4.157808e-4, 6.5137e-4, 5.070973e-4],
-      "velocity_m_per_s": [4.70596e-7, 7.124963e-7, 5.861554e-7],
-      "quat_angle_rad": 4.214685e-8,
-      "ang_vel_rad_per_s": [0e0, 0e0, 0e0],
+      "position_m": [4.15780799999999982e-4, 6.51369999999999966e-4, 5.07097299999999967e-4],
+      "velocity_m_per_s": [4.70595999999999988e-7, 7.12496299999999979e-7, 5.86155399999999992e-7],
+      "quat_angle_rad": 4.21468499999999987e-8,
+      "ang_vel_rad_per_s": [0.00000000000000000e0, 0.00000000000000000e0, 0.00000000000000000e0],
       "extras": []
     },
     "tier3_simulation_run6b_drag": {
-      "position_m": [7.590876e-1, 1.060947e0, 8.518602e-1],
-      "velocity_m_per_s": [7.486293e-4, 1.194132e-3, 9.544923e-4],
-      "quat_angle_rad": 4.214685e-8,
-      "ang_vel_rad_per_s": [0e0, 0e0, 0e0],
+      "position_m": [7.59087599999999973e-1, 1.06094700000000008e0, 8.51860199999999956e-1],
+      "velocity_m_per_s": [7.48629299999999998e-4, 1.19413200000000009e-3, 9.54492300000000030e-4],
+      "quat_angle_rad": 4.21468499999999987e-8,
+      "ang_vel_rad_per_s": [0.00000000000000000e0, 0.00000000000000000e0, 0.00000000000000000e0],
       "extras": []
     },
     "tier3_simulation_run7a": {
-      "position_m": [4.885537e-2, 1.253304e-1, 9.509643e-2],
-      "velocity_m_per_s": [5.75278e-5, 1.148362e-4, 1.15966e-4],
+      "position_m": [4.88553700000000021e-2, 1.25330400000000008e-1, 9.50964299999999957e-2],
+      "velocity_m_per_s": [5.75278000000000017e-5, 1.14836199999999997e-4, 1.15965999999999994e-4],
       "extras": []
     },
     "tier3_simulation_run7b": {
-      "position_m": [1.219087e-1, 2.142055e-1, 1.520824e-1],
-      "velocity_m_per_s": [1.377426e-4, 2.142579e-4, 1.767293e-4],
+      "position_m": [1.21908699999999995e-1, 2.14205499999999993e-1, 1.52082400000000006e-1],
+      "velocity_m_per_s": [1.37742600000000012e-4, 2.14257899999999987e-4, 1.76729300000000002e-4],
       "extras": []
     },
     "tier3_simulation_run7c": {
-      "position_m": [6.654953e-1, 9.882598e-1, 8.117137e-1],
-      "velocity_m_per_s": [6.723547e-4, 1.10034e-3, 9.109266e-4],
+      "position_m": [6.65495300000000012e-1, 9.88259800000000022e-1, 8.11713699999999982e-1],
+      "velocity_m_per_s": [6.72354700000000029e-4, 1.10034000000000000e-3, 9.10926600000000041e-4],
       "extras": []
     },
     "tier3_simulation_run7d": {
-      "position_m": [7.366604e-1, 1.072298e0, 8.682969e-1],
-      "velocity_m_per_s": [7.521539e-4, 1.198347e-3, 9.805374e-4],
+      "position_m": [7.36660399999999993e-1, 1.07229799999999997e0, 8.68296900000000038e-1],
+      "velocity_m_per_s": [7.52153899999999961e-4, 1.19834700000000000e-3, 9.80537399999999995e-4],
       "extras": []
     },
     "tier3_simulation_run9a_torque": {
-      "position_m": [1.304084e-6, 2.050656e-6, 1.738284e-6],
-      "velocity_m_per_s": [1.377089e-9, 2.274305e-9, 1.726789e-9],
-      "quat_angle_rad": 4.214685e-8,
-      "ang_vel_rad_per_s": [3.388132e-20, 4.235165e-21, 6.776264e-21],
+      "position_m": [1.30408399999999991e-6, 2.05065600000000017e-6, 1.73828399999999992e-6],
+      "velocity_m_per_s": [1.37708899999999994e-9, 2.27430499999999983e-9, 1.72678900000000008e-9],
+      "quat_angle_rad": 4.21468499999999987e-8,
+      "ang_vel_rad_per_s": [3.38813199999999986e-20, 4.23516499999999982e-21, 6.77626400000000062e-21],
       "extras": []
     },
     "tier3_simulation_run9c_force_torque": {
-      "position_m": [7.444271e-5, 1.162612e-4, 8.387904e-5],
-      "velocity_m_per_s": [8.28056e-8, 1.228855e-7, 1.029078e-7],
-      "quat_angle_rad": 4.214685e-8,
-      "ang_vel_rad_per_s": [3.388132e-20, 4.235165e-21, 6.776264e-21],
+      "position_m": [7.44427099999999986e-5, 1.16261200000000004e-4, 8.38790400000000039e-5],
+      "velocity_m_per_s": [8.28055999999999987e-8, 1.22885499999999992e-7, 1.02907800000000000e-7],
+      "quat_angle_rad": 4.21468499999999987e-8,
+      "ang_vel_rad_per_s": [3.38813199999999986e-20, 4.23516499999999982e-21, 6.77626400000000062e-21],
       "extras": []
     },
     "tier3_simulation_run9d_force_torque_rate": {
-      "position_m": [5.026444e-3, 7.861266e-3, 6.318404e-3],
-      "velocity_m_per_s": [5.629213e-6, 8.62444e-6, 6.928789e-6],
-      "quat_angle_rad": 4.214685e-8,
-      "ang_vel_rad_per_s": [1.572093e-18, 1.301043e-18, 5.963112e-19],
+      "position_m": [5.02644399999999970e-3, 7.86126600000000043e-3, 6.31840399999999969e-3],
+      "velocity_m_per_s": [5.62921299999999997e-6, 8.62443999999999937e-6, 6.92878900000000038e-6],
+      "quat_angle_rad": 4.21468499999999987e-8,
+      "ang_vel_rad_per_s": [1.57209300000000004e-18, 1.30104300000000005e-18, 5.96311200000000038e-19],
       "extras": []
     },
     "tier3_simulation_shadow_2a_annular": {
-      "extras": [{"name":"shadow_fraction","value":3.819018e-5,"unit":""},{"name":"shadow_mismatches","value":0e0,"unit":""}]
+      "extras": [{"name":"shadow_fraction","value":3.81901799999999976e-5,"unit":""},{"name":"shadow_mismatches","value":0.00000000000000000e0,"unit":""}]
     },
     "tier3_simulation_shadow_2a_cooling": {
-      "extras": [{"name":"shadow_fraction","value":0e0,"unit":""},{"name":"shadow_mismatches","value":0e0,"unit":""}]
+      "extras": [{"name":"shadow_fraction","value":0.00000000000000000e0,"unit":""},{"name":"shadow_mismatches","value":0.00000000000000000e0,"unit":""}]
     },
     "tier3_simulation_solar_beta": {
-      "position_m": [1.304084e-6, 2.050656e-6, 1.738284e-6],
-      "velocity_m_per_s": [1.377089e-9, 2.274305e-9, 1.726789e-9],
+      "position_m": [1.30408399999999991e-6, 2.05065600000000017e-6, 1.73828399999999992e-6],
+      "velocity_m_per_s": [1.37708899999999994e-9, 2.27430499999999983e-9, 1.72678900000000008e-9],
       "extras": []
     },
     "tier3_simulation_solar_beta_equ": {
-      "position_m": [1.279433e-4, 1.258097e-4, 0e0],
-      "velocity_m_per_s": [1.423099e-7, 1.44125e-7, 0e0],
-      "extras": [{"name":"beta","value":1.801512e-5,"unit":"rad"}]
+      "position_m": [1.27943300000000012e-4, 1.25809699999999996e-4, 0.00000000000000000e0],
+      "velocity_m_per_s": [1.42309899999999990e-7, 1.44125000000000002e-7, 0.00000000000000000e0],
+      "extras": [{"name":"beta","value":1.80151200000000011e-5,"unit":"rad"}]
     },
     "tier3_simulation_solar_beta_obliquity": {
-      "position_m": [9.365415e-1, 8.146839e-1, 3.233321e-1],
-      "velocity_m_per_s": [9.953047e-4, 9.825667e-4, 3.922077e-4],
-      "extras": [{"name":"beta","value":3.28184e-5,"unit":"rad"}]
+      "position_m": [9.36541500000000027e-1, 8.14683900000000016e-1, 3.23332100000000011e-1],
+      "velocity_m_per_s": [9.95304700000000046e-4, 9.82566700000000060e-4, 3.92207700000000016e-4],
+      "extras": [{"name":"beta","value":3.28183999999999974e-5,"unit":"rad"}]
     },
     "tier3_simulation_srp_flat_plate": {
-      "position_m": [3.25432e-2, 3.746371e-2, 1.503887e-2],
-      "velocity_m_per_s": [2.083585e-6, 1.878458e-6, 7.264819e-7],
+      "position_m": [3.25432000000000013e-2, 3.74637099999999973e-2, 1.50388699999999993e-2],
+      "velocity_m_per_s": [2.08358500000000006e-6, 1.87845800000000000e-6, 7.26481900000000041e-7],
       "extras": []
     },
     "tier3_simulation_tide_run01": {
-      "position_m": [6.492773e-3, 9.850911e-3, 6.71119e-3],
-      "velocity_m_per_s": [7.679143e-6, 1.021112e-5, 7.900142e-6],
+      "position_m": [6.49277300000000029e-3, 9.85091100000000039e-3, 6.71118999999999969e-3],
+      "velocity_m_per_s": [7.67914300000000001e-6, 1.02111199999999992e-5, 7.90014200000000070e-6],
       "extras": []
     },
     "tier3_srp_1st_order_trajectory": {
-      "position_m": [7.336668e1, 7.634384e1, 3.313474e1],
-      "velocity_m_per_s": [5.640582e-3, 4.924875e-3, 2.136479e-3],
+      "position_m": [7.33666800000000023e1, 7.63438400000000001e1, 3.31347400000000007e1],
+      "velocity_m_per_s": [5.64058199999999989e-3, 4.92487500000000043e-3, 2.13647900000000016e-3],
       "extras": []
     },
     "tier3_torque_simple_run01": {
-      "position_m": [5.097594e-6, 8.704606e-6, 9.525102e-6],
-      "velocity_m_per_s": [8.738425e-9, 7.504696e-9, 9.101313e-9],
-      "quat_angle_rad": 3.141472e0,
-      "ang_vel_rad_per_s": [2.140038e-3, 2.985749e-3, 4.760225e-4],
-      "extras": [{"name":"torque","value":0e0,"unit":"N*m"}]
+      "position_m": [5.09759400000000038e-6, 8.70460599999999938e-6, 9.52510200000000013e-6],
+      "velocity_m_per_s": [8.73842500000000004e-9, 7.50469600000000074e-9, 9.10131300000000042e-9],
+      "quat_angle_rad": 3.14147199999999982e0,
+      "ang_vel_rad_per_s": [2.14003799999999992e-3, 2.98574900000000022e-3, 4.76022499999999998e-4],
+      "extras": [{"name":"torque","value":0.00000000000000000e0,"unit":"N*m"}]
     },
     "tier3_torque_simple_run02": {
-      "position_m": [5.097594e-6, 8.704606e-6, 9.525102e-6],
-      "velocity_m_per_s": [8.738425e-9, 7.504696e-9, 9.101313e-9],
-      "quat_angle_rad": 3.575479e-2,
-      "ang_vel_rad_per_s": [4.085699e-5, 3.078332e-5, 2.560861e-6],
-      "extras": [{"name":"torque","value":0e0,"unit":"N*m"}]
+      "position_m": [5.09759400000000038e-6, 8.70460599999999938e-6, 9.52510200000000013e-6],
+      "velocity_m_per_s": [8.73842500000000004e-9, 7.50469600000000074e-9, 9.10131300000000042e-9],
+      "quat_angle_rad": 3.57547900000000016e-2,
+      "ang_vel_rad_per_s": [4.08569899999999979e-5, 3.07833200000000019e-5, 2.56086099999999989e-6],
+      "extras": [{"name":"torque","value":0.00000000000000000e0,"unit":"N*m"}]
     },
     "tier3_torque_simple_run03": {
-      "position_m": [5.097594e-6, 8.704606e-6, 9.525102e-6],
-      "velocity_m_per_s": [8.738425e-9, 7.504696e-9, 9.101313e-9],
-      "quat_angle_rad": 3.575479e-2,
-      "ang_vel_rad_per_s": [4.085699e-5, 3.078332e-5, 2.560861e-6],
-      "extras": [{"name":"torque","value":0e0,"unit":"N*m"}]
+      "position_m": [5.09759400000000038e-6, 8.70460599999999938e-6, 9.52510200000000013e-6],
+      "velocity_m_per_s": [8.73842500000000004e-9, 7.50469600000000074e-9, 9.10131300000000042e-9],
+      "quat_angle_rad": 3.57547900000000016e-2,
+      "ang_vel_rad_per_s": [4.08569899999999979e-5, 3.07833200000000019e-5, 2.56086099999999989e-6],
+      "extras": [{"name":"torque","value":0.00000000000000000e0,"unit":"N*m"}]
     },
     "tier3_torque_simple_run04": {
-      "position_m": [2.939746e-1, 4.612822e-1, 4.062317e-1],
-      "velocity_m_per_s": [3.380864e-4, 5.330711e-4, 3.914765e-4],
-      "quat_angle_rad": 3.141174e0,
-      "ang_vel_rad_per_s": [2.136765e-3, 3.034934e-3, 4.739924e-4],
-      "extras": [{"name":"torque","value":0e0,"unit":"N*m"}]
+      "position_m": [2.93974599999999975e-1, 4.61282199999999976e-1, 4.06231699999999973e-1],
+      "velocity_m_per_s": [3.38086400000000003e-4, 5.33071100000000013e-4, 3.91476499999999985e-4],
+      "quat_angle_rad": 3.14117399999999991e0,
+      "ang_vel_rad_per_s": [2.13676500000000011e-3, 3.03493399999999998e-3, 4.73992399999999985e-4],
+      "extras": [{"name":"torque","value":0.00000000000000000e0,"unit":"N*m"}]
     },
     "tier3_torque_simple_run05": {
-      "position_m": [2.939746e-1, 4.612822e-1, 4.062317e-1],
-      "velocity_m_per_s": [3.380864e-4, 5.330711e-4, 3.914765e-4],
-      "quat_angle_rad": 1.723056e-2,
-      "ang_vel_rad_per_s": [1.719936e-5, 1.344094e-5, 4.278566e-6],
-      "extras": [{"name":"torque","value":0e0,"unit":"N*m"}]
+      "position_m": [2.93974599999999975e-1, 4.61282199999999976e-1, 4.06231699999999973e-1],
+      "velocity_m_per_s": [3.38086400000000003e-4, 5.33071100000000013e-4, 3.91476499999999985e-4],
+      "quat_angle_rad": 1.72305599999999989e-2,
+      "ang_vel_rad_per_s": [1.71993600000000006e-5, 1.34409399999999998e-5, 4.27856600000000033e-6],
+      "extras": [{"name":"torque","value":0.00000000000000000e0,"unit":"N*m"}]
     },
     "tier3_torque_simple_run06": {
-      "position_m": [2.939746e-1, 4.612822e-1, 4.062317e-1],
-      "velocity_m_per_s": [3.380864e-4, 5.330711e-4, 3.914765e-4],
-      "quat_angle_rad": 5.942505e-1,
-      "ang_vel_rad_per_s": [5.424455e-4, 4.806425e-4, 1.665372e-4],
-      "extras": [{"name":"torque","value":0e0,"unit":"N*m"}]
+      "position_m": [2.93974599999999975e-1, 4.61282199999999976e-1, 4.06231699999999973e-1],
+      "velocity_m_per_s": [3.38086400000000003e-4, 5.33071100000000013e-4, 3.91476499999999985e-4],
+      "quat_angle_rad": 5.94250500000000015e-1,
+      "ang_vel_rad_per_s": [5.42445499999999968e-4, 4.80642499999999991e-4, 1.66537200000000009e-4],
+      "extras": [{"name":"torque","value":0.00000000000000000e0,"unit":"N*m"}]
     }
   }
 }

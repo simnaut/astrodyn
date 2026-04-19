@@ -1,7 +1,7 @@
 //! Generates a Markdown cross-validation error report from Tier 3 test results.
 //!
 //! Usage:
-//!   cargo run -p jeod_test_data --bin tier3_report [--freeze-baselines]
+//!   cargo run -p jeod_test_data --bin tier3_report -- [--freeze-baselines]
 //!
 //! Reads JSON files from `target/tier3_crossval/` (written by `CrossvalReport`
 //! during `cargo test`) and extracts tolerances from test source files.
@@ -829,12 +829,13 @@ fn write_opt_f64_json(out: &mut fs::File, key: &str, v: Option<f64>) {
     }
 }
 
-/// Format an f64 so the output is stable and round-trippable: finite numbers
-/// use Rust's `Display`; non-finite values map to null.
+/// Format an f64 for baseline serialization. Finite values use scientific
+/// notation with 17-digit precision — the minimum needed to round-trip an
+/// `f64` exactly — so baselines file contents survive re-serialization
+/// bit-identically. Non-finite values map to JSON `null`.
 fn fmt_f64(v: f64) -> String {
     if v.is_finite() {
-        // `{:e}`-style output matches what most tooling expects for error magnitudes.
-        format!("{v:e}")
+        format!("{v:.17e}")
     } else {
         "null".to_string()
     }

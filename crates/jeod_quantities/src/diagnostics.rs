@@ -22,6 +22,19 @@ use crate::time_scale::TimeScale;
 
 /// Fires when a user tries to add/subtract two frame-tagged vectors whose
 /// frames differ. Implemented only for matching frames.
+///
+/// The `Add`/`Sub` impls on [`Qty3`](crate::qty3::Qty3) carry a
+/// `(): CompatibleFrames<Fl, Fr>` bound, so a frame mismatch on `+`/`-`
+/// surfaces the custom message below rather than the generic
+/// `trait Add is not implemented` diagnostic.
+///
+/// ```compile_fail
+/// use jeod_quantities::prelude::*;
+/// use glam::DVec3;
+/// let a: Position<Inertial> = Qty3::from_raw_si(DVec3::new(1.0, 0.0, 0.0));
+/// let b: Position<Ecef> = Qty3::from_raw_si(DVec3::new(1.0, 0.0, 0.0));
+/// let _ = a + b; // ← frame mismatch, custom diagnostic fires
+/// ```
 #[diagnostic::on_unimplemented(
     message = "cannot combine values in frame `{FL}` with values in frame `{FR}`",
     label = "mismatched frame: {FL} vs {FR}",

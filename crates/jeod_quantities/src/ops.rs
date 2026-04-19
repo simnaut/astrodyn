@@ -15,32 +15,45 @@ use core::ops::{Add, Div, Mul, Neg, Sub};
 use uom::si::{Dimension, Quantity, ISQ, SI};
 use uom::typenum::{Diff, Integer, Sum};
 
+use crate::diagnostics::CompatibleFrames;
 use crate::frame::Frame;
 use crate::qty3::Qty3;
 
-// ---- Add / Sub / Neg (same dimension, same frame) ----
+// ---- Add / Sub / Neg ----
+//
+// `Add` and `Sub` are parameterized over distinct LHS/RHS frames and then
+// constrained by `(): CompatibleFrames<Fl, Fr>`, whose blanket impl only
+// covers `CompatibleFrames<F, F>`. When the frames mismatch, that bound
+// fails and the `#[diagnostic::on_unimplemented]` attribute on
+// `CompatibleFrames` surfaces the tailored error message.
 
-impl<D: ?Sized + Dimension, F: Frame> Add for Qty3<D, F>
+impl<D: ?Sized + Dimension, Fl: Frame, Fr: Frame> Add<Qty3<D, Fr>> for Qty3<D, Fl>
 where
+    (): CompatibleFrames<Fl, Fr>,
     Quantity<D, SI<f64>, f64>: Add<Output = Quantity<D, SI<f64>, f64>>,
 {
-    type Output = Self;
+    type Output = Qty3<D, Fl>;
 
     #[inline]
-    fn add(self, rhs: Self) -> Self::Output {
-        Qty3::new(self.x + rhs.x, self.y + rhs.y, self.z + rhs.z)
+    fn add(self, rhs: Qty3<D, Fr>) -> Self::Output {
+        // Fl = Fr at this impl site (enforced by the CompatibleFrames bound),
+        // but the compiler still sees two nominally-distinct types. Go through
+        // the raw-SI representation to sidestep that and keep this a safe,
+        // unsafe-code-free path.
+        Qty3::from_raw_si(self.raw_si() + rhs.raw_si())
     }
 }
 
-impl<D: ?Sized + Dimension, F: Frame> Sub for Qty3<D, F>
+impl<D: ?Sized + Dimension, Fl: Frame, Fr: Frame> Sub<Qty3<D, Fr>> for Qty3<D, Fl>
 where
+    (): CompatibleFrames<Fl, Fr>,
     Quantity<D, SI<f64>, f64>: Sub<Output = Quantity<D, SI<f64>, f64>>,
 {
-    type Output = Self;
+    type Output = Qty3<D, Fl>;
 
     #[inline]
-    fn sub(self, rhs: Self) -> Self::Output {
-        Qty3::new(self.x - rhs.x, self.y - rhs.y, self.z - rhs.z)
+    fn sub(self, rhs: Qty3<D, Fr>) -> Self::Output {
+        Qty3::from_raw_si(self.raw_si() - rhs.raw_si())
     }
 }
 

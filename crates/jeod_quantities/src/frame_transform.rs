@@ -28,11 +28,12 @@ pub struct FrameTransform<From: Frame, To: Frame> {
     _to: PhantomData<To>,
 }
 
-impl<From: Frame, To: Frame> FrameTransform<From, To> {
-    /// The identity transform (only well-typed when `From = To`, which Rust
-    /// enforces at call sites).
+impl<F: Frame> FrameTransform<F, F> {
+    /// The identity transform. Only defined when `From = To`, so
+    /// `FrameTransform::<A, B>::identity()` with `A ≠ B` fails to typecheck
+    /// rather than silently returning a `FrameTransform<A, A>`.
     #[inline]
-    pub fn identity() -> FrameTransform<From, From> {
+    pub fn identity() -> FrameTransform<F, F> {
         FrameTransform {
             quat: NormalizedQuat::new(JeodQuat::from_array([1.0, 0.0, 0.0, 0.0]))
                 .expect("identity quaternion is normalized"),
@@ -41,7 +42,9 @@ impl<From: Frame, To: Frame> FrameTransform<From, To> {
             _to: PhantomData,
         }
     }
+}
 
+impl<From: Frame, To: Frame> FrameTransform<From, To> {
     /// Build a `FrameTransform` from a normalized JEOD quaternion. The
     /// 3×3 rotation matrix is derived once and cached.
     #[inline]

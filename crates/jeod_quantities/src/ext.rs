@@ -16,9 +16,7 @@ use uom::si::{
     acceleration::{meter_per_second_squared, standard_gravity},
     angle::{degree, minute as arcminute, radian, second as arcsecond},
     angular_acceleration::radian_per_second_squared,
-    angular_velocity::{
-        degree_per_second, radian_per_second, revolution_per_minute as rpm_per_second,
-    },
+    angular_velocity::{degree_per_second, radian_per_second, revolution_per_minute},
     area::{square_kilometer, square_meter},
     f64::{
         Acceleration, Angle, AngularAcceleration, AngularVelocity, Area, Force, Frequency, Length,
@@ -278,7 +276,7 @@ impl F64Ext for f64 {
     }
     #[inline]
     fn rpm(self) -> AngularVelocity {
-        AngularVelocity::new::<rpm_per_second>(self)
+        AngularVelocity::new::<revolution_per_minute>(self)
     }
     #[inline]
     fn rad_per_s2(self) -> AngularAcceleration {

@@ -38,13 +38,22 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Measure cold workspace check time
         run: |
-          # Fresh build; timing excludes cache restoration.
+          # Ensure a fresh workspace build even if rust-cache restored target artifacts;
+          # the budget is meant to track cold compile time, not warm re-check time.
+          cargo clean
+          # Measure wall clock ourselves — cargo prints "in 1m 23s" once the time
+          # crosses 60s, so parsing "in Ns" from cargo output breaks right when
+          # we'd care. `date +%s` is robust regardless of cargo's format.
+          start=$(date +%s)
           cargo check --workspace --timings 2>&1 | tee check.log
-          # Extract the "Finished ... in Ns" line.
-          DURATION=$(grep -oE 'in [0-9.]+s' check.log | tail -1 | grep -oE '[0-9.]+')
+          end=$(date +%s)
+          DURATION=$((end - start))
           echo "cargo check --workspace took ${DURATION}s (budget: 300s envelope for Phase 0 of #101)"
           # Hard fail only if grossly over budget; Phase 0 is envelope-only.
-          python3 -c "import sys; d=float('$DURATION'); sys.exit(0 if d < 300 else 1)"
+          if [ "$DURATION" -ge 300 ]; then
+            echo "::error::compile-time budget exceeded: ${DURATION}s >= 300s"
+            exit 1
+          fi
 
   test:
     name: Test (unit + tier 2)

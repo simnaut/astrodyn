@@ -24,14 +24,15 @@ pub trait Planet: Sealed + 'static {
     const NAME: &'static str;
 }
 
-/// Compile-time vehicle tag used to parameterize body/structural frames.
+/// Compile-time vehicle tag used to parameterize vehicle-relative frames.
 ///
-/// In practice mission crates wire up empty marker structs per vehicle:
-/// `struct Iss;` then `impl Vehicle for Iss {}` — but the `impl Sealed for Iss`
-/// must live in `jeod_quantities`, which we accomplish below with a blanket-off
-/// pattern: a mission crate wanting a new vehicle tag calls the
-/// `define_vehicle!` macro (see below) which emits a `Sealed` impl guarded by
-/// a private marker trait we re-export.
+/// Sealed: only `jeod_quantities` can implement this trait.
+///
+/// Vehicle marker types are used with [`BodyFrame`], [`StructuralFrame`],
+/// [`Lvlh`], and [`Ned`]. Because `Vehicle` is sealed, downstream crates
+/// cannot define new vehicle tags — add them in `jeod_quantities`. (A
+/// future phase may relax this via a re-exported `define_vehicle!` macro
+/// that emits the sealed impl.)
 pub trait Vehicle: Sealed + 'static {
     const NAME: &'static str;
 }
