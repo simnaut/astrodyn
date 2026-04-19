@@ -2152,6 +2152,22 @@ impl Simulation {
                         force: final_srp_inertial_force,
                         torque: final_srp_torque,
                     });
+                    // Backfill `TotalForce` and `FrameDerivatives` with the
+                    // final-stage SRP contribution so downstream observers
+                    // reading these see SRP-inclusive values — matching the
+                    // Scheduled-mode invariant that `total_force` reflects
+                    // every applied force and `frame_derivs` the resulting
+                    // accelerations. In derivative modes this is a
+                    // "representative stage" (stage 4) snapshot, same as
+                    // `radiation_force` above.
+                    body.total_force.force += final_srp_inertial_force;
+                    let final_srp_torque_body = t_struct_body * final_srp_torque;
+                    body.total_force.torque += final_srp_torque_body;
+                    if let Some(mass) = body.mass {
+                        body.frame_derivs.trans_accel +=
+                            final_srp_inertial_force * mass.inverse_mass;
+                        body.frame_derivs.rot_accel += mass.inverse_inertia * final_srp_torque_body;
+                    }
                 } else {
                     let controls = &body.gravity_controls;
                     integrate_body(

@@ -240,36 +240,36 @@ impl IntegrableObject for FlatPlateState {
     }
 
     fn advance_intermediate(&mut self, deriv: &[f64], h: f64) {
-        // `zip()` truncates silently if any iterator is shorter — assert
-        // length parity across every backing vector so a mismatched
-        // snapshot or stale derivative fails fast rather than leaving the
-        // state partially updated.
+        // Length parity across every backing vector must hold in all
+        // builds: iterating with `zip()` truncates silently on mismatch
+        // and would leave the state partially updated. Use `assert_eq!`
+        // so release builds also fail fast, then index directly.
         let n = self.temperatures.len();
-        debug_assert_eq!(
+        assert_eq!(
             self.t_pow4_cached.len(),
             n,
             "t_pow4_cached length must equal temperatures length",
         );
-        debug_assert_eq!(
+        assert_eq!(
             self.temps_snapshot.len(),
             n,
             "temps_snapshot length must equal temperatures length; \
              call IntegrableObject::snapshot before advance_intermediate",
         );
-        debug_assert_eq!(
+        assert_eq!(
             deriv.len(),
             n,
             "advance_intermediate derivative length must equal temperature count",
         );
-        for ((t, t_pow4), (&t0, &d)) in self
-            .temperatures
-            .iter_mut()
-            .zip(self.t_pow4_cached.iter_mut())
-            .zip(self.temps_snapshot.iter().zip(deriv.iter()))
-        {
-            let new_t = (t0 + d * h).max(0.0);
-            *t = new_t;
-            *t_pow4 = new_t * new_t * new_t * new_t;
+        // `zip()` would truncate silently on length mismatch; the asserts
+        // above guarantee parity so this indexed loop is safe. Allow the
+        // range-loop lint because the alternative (nested `zip`s) is
+        // precisely the pattern we're trying to avoid.
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..n {
+            let new_t = (self.temps_snapshot[i] + deriv[i] * h).max(0.0);
+            self.temperatures[i] = new_t;
+            self.t_pow4_cached[i] = new_t * new_t * new_t * new_t;
         }
     }
 

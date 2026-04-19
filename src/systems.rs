@@ -261,13 +261,14 @@ pub fn integration_system(
         Option<&mut RotationalStateC>,
         Option<&MassPropertiesC>,
         &GravityControlsC,
-        &TotalForceC,
+        &mut TotalForceC,
         Option<&IntegratorTypeC>,
         Option<&mut GaussJacksonStateC>,
         Option<&mut Abm4StateC>,
         Option<&mut FlatPlateConfigC>,
         Option<&StructuralTransformC>,
         Option<&mut RadiationForceC>,
+        Option<&mut FrameDerivativesC>,
     )>,
     sources: Query<(
         &GravitySourceC,
@@ -334,13 +335,14 @@ pub fn integration_system(
         mut rot_state,
         mass,
         controls,
-        total_force,
+        mut total_force,
         integrator,
         mut gj_state,
         mut abm4_state,
         mut flat_config,
         struct_xform,
         mut srp_force,
+        mut frame_derivs,
     ) in &mut bodies
     {
         let integrator_type = integrator.map_or(jeod_sim::IntegratorType::Rk4, |c| c.0);
@@ -452,6 +454,21 @@ pub fn integration_system(
             if let Some(ref mut srp_force) = srp_force {
                 srp_force.force = final_srp_inertial_force;
                 srp_force.torque = final_srp_torque;
+            }
+
+            // Backfill `TotalForceC` and `FrameDerivativesC` with the
+            // final-stage SRP contribution so downstream observers see
+            // SRP-inclusive values, matching the Scheduled-mode invariant
+            // that `TotalForceC` / `FrameDerivativesC` reflect every
+            // applied force / resulting acceleration. In derivative modes
+            // this is a "representative stage" (stage 4) snapshot, same
+            // as `RadiationForceC` above.
+            total_force.force += final_srp_inertial_force;
+            let final_srp_torque_body = t_struct_body * final_srp_torque;
+            total_force.torque += final_srp_torque_body;
+            if let (Some(ref mut fd), Some(mass_p)) = (frame_derivs.as_mut(), mass_copy) {
+                fd.trans_accel += final_srp_inertial_force * mass_p.inverse_mass;
+                fd.rot_accel += mass_p.inverse_inertia * final_srp_torque_body;
             }
             continue;
         }
