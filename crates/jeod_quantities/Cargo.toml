@@ -1,0 +1,12 @@
+[package]
+name = "jeod_quantities"
+version = "0.1.0"
+edition = "2021"
+description = "Dimensional-analysis and phantom-tag types for bevy_jeod (frames, time scales, quaternions)"
+license = "Apache-2.0"
+
+[dependencies]
+glam = { workspace = true }
+uom = { workspace = true }
+typenum = { workspace = true }
+thiserror = { workspace = true }

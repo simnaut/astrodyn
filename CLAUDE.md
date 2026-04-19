@@ -261,6 +261,15 @@ When tightening tolerances after a code improvement: run the full test suite, in
 the JSON reports in `target/tier3_crossval/`, compute `error * 1.05` per component,
 and update the literal values in the test source.
 
+**Baseline freeze (Phase 0 of #101 onwards):** `test_data/baselines.json` records the
+Tier 3 per-test, per-component max absolute errors frozen at Phase 0 of the
+type-system refactor. Every refactor-only phase (0, 2–6, 9–10 of #101) must satisfy
+`max_error_new ≤ max(baseline · 1.0 + 1e-12 · magnitude, 1e-12)`. Baselines are not
+silently widened. Loosening requires a PR comment citing the physical justification.
+Regenerate with `cargo run -p jeod_test_data --bin tier3_report -- --freeze-baselines`
+after running the full Tier 3 suite; commit the updated `baselines.json` and
+`baselines.md` together.
+
 ### Test tiers and CI
 
 All Tier 3 test functions use the `tier3_` prefix, enabling cargo's name-based

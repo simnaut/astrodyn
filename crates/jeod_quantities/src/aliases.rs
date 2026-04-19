@@ -1,0 +1,39 @@
+//! Convenience aliases for common physical 3-vectors.
+//!
+//! All aliases default to the inertial frame; override with an explicit
+//! frame tag, e.g. `Velocity<Ecef>`.
+
+use uom::si::{
+    acceleration, angular_acceleration, angular_momentum, angular_velocity, force, jerk, length,
+    torque, velocity,
+};
+
+use crate::frame::Inertial;
+use crate::qty3::Qty3;
+
+/// Position in frame `F` (default: `Inertial`). Base SI unit: meters.
+pub type Position<F = Inertial> = Qty3<length::Dimension, F>;
+
+/// Velocity in frame `F`. Base SI unit: m/s.
+pub type Velocity<F = Inertial> = Qty3<velocity::Dimension, F>;
+
+/// Acceleration in frame `F`. Base SI unit: m/s².
+pub type Acceleration<F = Inertial> = Qty3<acceleration::Dimension, F>;
+
+/// Jerk (time derivative of acceleration) in frame `F`. Base SI unit: m/s³.
+pub type Jerk<F = Inertial> = Qty3<jerk::Dimension, F>;
+
+/// Force in frame `F`. Base SI unit: newtons.
+pub type Force<F = Inertial> = Qty3<force::Dimension, F>;
+
+/// Torque in frame `F`. Base SI unit: N·m.
+pub type Torque<F = Inertial> = Qty3<torque::Dimension, F>;
+
+/// Angular velocity in frame `F`. Base SI unit: rad/s.
+pub type AngularVelocity<F = Inertial> = Qty3<angular_velocity::Dimension, F>;
+
+/// Angular acceleration in frame `F`. Base SI unit: rad/s².
+pub type AngularAcceleration<F = Inertial> = Qty3<angular_acceleration::Dimension, F>;
+
+/// Angular momentum in frame `F`. Base SI unit: kg·m²/s.
+pub type AngularMomentum<F = Inertial> = Qty3<angular_momentum::Dimension, F>;

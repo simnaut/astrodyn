@@ -1,15 +1,26 @@
 //! Generates a Markdown cross-validation error report from Tier 3 test results.
 //!
 //! Usage:
-//!   cargo run -p jeod_test_data --bin tier3_report
+//!   cargo run -p jeod_test_data --bin tier3_report -- [--freeze-baselines]
 //!
 //! Reads JSON files from `target/tier3_crossval/` (written by `CrossvalReport`
 //! during `cargo test`) and extracts tolerances from test source files.
-//! Writes `target/tier3_report.md`.
+//!
+//! Always writes `target/tier3_report.md` (the rolling report).
+//!
+//! When `--freeze-baselines` is passed, also writes the frozen snapshots:
+//!   - `test_data/baselines.json` — per-test, per-component max-errors
+//!   - `test_data/baselines.md`   — human-readable mirror of the above
+//!
+//! These snapshots anchor the **physics-invariance policy** of GitHub issue
+//! #101's type-system refactor: every refactor-only phase must satisfy
+//! `max_error_new ≤ max(baseline · 1.0 + 1e-12 · magnitude, 1e-12)`.
 
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
+
+use jeod_test_data::crossval::json_escape;
 
 /// Slice `content` by byte range, snapping endpoints to valid UTF-8 char
 /// boundaries. Needed because test source files can contain multi-byte chars
@@ -412,6 +423,16 @@ fn f3_opt(v: Option<f64>) -> String {
 }
 
 fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let freeze_baselines = args.iter().any(|a| a == "--freeze-baselines");
+    for arg in &args {
+        if arg != "--freeze-baselines" {
+            eprintln!("unknown argument: {arg}");
+            eprintln!("usage: tier3_report [--freeze-baselines]");
+            std::process::exit(2);
+        }
+    }
+
     let root = workspace_root();
     let data_dir = root.join("target").join("tier3_crossval");
     let output_path = root.join("target").join("tier3_report.md");
@@ -732,6 +753,178 @@ fn main() {
     .unwrap();
 
     eprintln!("Wrote {}", output_path.display());
+
+    if freeze_baselines {
+        let baselines_dir = root.join("test_data");
+        fs::create_dir_all(&baselines_dir).expect("failed to create test_data/");
+        let json_path = baselines_dir.join("baselines.json");
+        let md_path = baselines_dir.join("baselines.md");
+        write_baselines_json(&json_path, &entries);
+        write_baselines_md(&md_path, &entries);
+        eprintln!("Wrote {}", json_path.display());
+        eprintln!("Wrote {}", md_path.display());
+    }
+}
+
+// ── Baseline serialization ──
+
+/// Write the frozen baseline snapshot in JSON. Hand-rolled serializer (no
+/// `serde` dep) because the schema is simple and the binary should stay
+/// lightweight.
+fn write_baselines_json(path: &std::path::Path, entries: &[TestResult]) {
+    let mut out = fs::File::create(path).expect("failed to create baselines.json");
+    writeln!(out, "{{").unwrap();
+    writeln!(out, "  \"schema_version\": 1,").unwrap();
+    writeln!(
+        out,
+        "  \"note\": \"Tier 3 per-test, per-component max absolute errors. Frozen snapshot; see CLAUDE.md \\\"Baseline freeze\\\" policy.\","
+    )
+    .unwrap();
+    writeln!(out, "  \"tests\": {{").unwrap();
+    for (i, e) in entries.iter().enumerate() {
+        let comma = if i + 1 < entries.len() { "," } else { "" };
+        writeln!(out, "    \"{}\": {{", json_escape(&e.test)).unwrap();
+        write_opt_vec3_json(&mut out, "position_m", e.position);
+        write_opt_vec3_json(&mut out, "velocity_m_per_s", e.velocity);
+        write_opt_vec3_json(&mut out, "acceleration_m_per_s2", e.acceleration);
+        write_opt_f64_json(&mut out, "quat_angle_rad", e.quat_angle);
+        write_opt_vec3_json(&mut out, "ang_vel_rad_per_s", e.ang_vel);
+        write_opt_vec3_json(&mut out, "ang_accel_rad_per_s2", e.ang_accel);
+        // extras
+        write!(out, "      \"extras\": [").unwrap();
+        for (j, (name, value, _tol, unit)) in e.extras.iter().enumerate() {
+            let csep = if j + 1 < e.extras.len() { "," } else { "" };
+            write!(
+                out,
+                "{{\"name\":\"{}\",\"value\":{},\"unit\":\"{}\"}}{}",
+                json_escape(name),
+                fmt_f64(*value),
+                json_escape(unit),
+                csep
+            )
+            .unwrap();
+        }
+        writeln!(out, "]").unwrap();
+        writeln!(out, "    }}{comma}").unwrap();
+    }
+    writeln!(out, "  }}").unwrap();
+    writeln!(out, "}}").unwrap();
+}
+
+fn write_opt_vec3_json(out: &mut fs::File, key: &str, v: Option<[f64; 3]>) {
+    if let Some([a, b, c]) = v {
+        writeln!(
+            out,
+            "      \"{}\": [{}, {}, {}],",
+            key,
+            fmt_f64(a),
+            fmt_f64(b),
+            fmt_f64(c)
+        )
+        .unwrap();
+    }
+}
+
+fn write_opt_f64_json(out: &mut fs::File, key: &str, v: Option<f64>) {
+    if let Some(x) = v {
+        writeln!(out, "      \"{}\": {},", key, fmt_f64(x)).unwrap();
+    }
+}
+
+/// Format an f64 for baseline serialization. Finite values use scientific
+/// notation with 17-digit precision — the minimum needed to round-trip an
+/// `f64` exactly — so baselines file contents survive re-serialization
+/// bit-identically. Non-finite values map to JSON `null`.
+fn fmt_f64(v: f64) -> String {
+    if v.is_finite() {
+        format!("{v:.17e}")
+    } else {
+        "null".to_string()
+    }
+}
+
+/// Write the human-readable mirror of the JSON baselines.
+fn write_baselines_md(path: &std::path::Path, entries: &[TestResult]) {
+    let mut out = fs::File::create(path).expect("failed to create baselines.md");
+    writeln!(out, "# Tier 3 Baselines (frozen)").unwrap();
+    writeln!(out).unwrap();
+    writeln!(
+        out,
+        "Per-test, per-component max absolute errors captured at the Phase 0 freeze point of"
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "GitHub issue #101. See `CLAUDE.md` §\"Baseline freeze\" for the invariance policy."
+    )
+    .unwrap();
+    writeln!(out).unwrap();
+    writeln!(out, "{} tests recorded.", entries.len()).unwrap();
+    writeln!(out).unwrap();
+
+    for e in entries {
+        writeln!(out, "## `{}`", e.test).unwrap();
+        writeln!(out).unwrap();
+        writeln!(out, "| Metric | X / value | Y | Z | Unit |").unwrap();
+        writeln!(out, "|--------|-----------|---|---|------|").unwrap();
+        if let Some([x, y, z]) = e.position {
+            writeln!(
+                out,
+                "| position | {} | {} | {} | m |",
+                fmt_f64(x),
+                fmt_f64(y),
+                fmt_f64(z)
+            )
+            .unwrap();
+        }
+        if let Some([x, y, z]) = e.velocity {
+            writeln!(
+                out,
+                "| velocity | {} | {} | {} | m/s |",
+                fmt_f64(x),
+                fmt_f64(y),
+                fmt_f64(z)
+            )
+            .unwrap();
+        }
+        if let Some([x, y, z]) = e.acceleration {
+            writeln!(
+                out,
+                "| acceleration | {} | {} | {} | m/s² |",
+                fmt_f64(x),
+                fmt_f64(y),
+                fmt_f64(z)
+            )
+            .unwrap();
+        }
+        if let Some(a) = e.quat_angle {
+            writeln!(out, "| quat_angle | {} |  |  | rad |", fmt_f64(a)).unwrap();
+        }
+        if let Some([x, y, z]) = e.ang_vel {
+            writeln!(
+                out,
+                "| ang_vel | {} | {} | {} | rad/s |",
+                fmt_f64(x),
+                fmt_f64(y),
+                fmt_f64(z)
+            )
+            .unwrap();
+        }
+        if let Some([x, y, z]) = e.ang_accel {
+            writeln!(
+                out,
+                "| ang_accel | {} | {} | {} | rad/s² |",
+                fmt_f64(x),
+                fmt_f64(y),
+                fmt_f64(z)
+            )
+            .unwrap();
+        }
+        for (name, value, _tol, unit) in &e.extras {
+            writeln!(out, "| {} | {} |  |  | {} |", name, fmt_f64(*value), unit).unwrap();
+        }
+        writeln!(out).unwrap();
+    }
 }
 
 /// Load all tier3 test source files.

@@ -19,6 +19,46 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --workspace --tests -- -D warnings
 
+  test-quantities:
+    name: Test (jeod_quantities)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@nextest
+      - run: cargo nextest run -p jeod_quantities
+
+  compile-time-budget:
+    name: Compile-time budget (envelope)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Measure cold workspace check time
+        run: |
+          # pipefail so a failed `cargo check` makes the step fail rather than
+          # being masked by `tee`'s exit code (GH Actions' default bash has
+          # neither pipefail nor errexit on by default).
+          set -eo pipefail
+          # Ensure a fresh workspace build even if rust-cache restored target artifacts;
+          # the budget is meant to track cold compile time, not warm re-check time.
+          cargo clean
+          # Measure wall clock ourselves — cargo prints "in 1m 23s" once the time
+          # crosses 60s, so parsing "in Ns" from cargo output breaks right when
+          # we'd care. `date +%s` is robust regardless of cargo's format.
+          start=$(date +%s)
+          cargo check --workspace --timings 2>&1 | tee check.log
+          end=$(date +%s)
+          DURATION=$((end - start))
+          echo "cargo check --workspace took ${DURATION}s (budget: 300s envelope for Phase 0 of #101)"
+          # Hard fail only if grossly over budget; Phase 0 is envelope-only.
+          if [ "$DURATION" -ge 300 ]; then
+            echo "::error::compile-time budget exceeded: ${DURATION}s >= 300s"
+            exit 1
+          fi
+
   test:
     name: Test (unit + tier 2)
     runs-on: ubuntu-latest

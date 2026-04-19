@@ -281,7 +281,10 @@ impl CrossvalReport {
     }
 }
 
-fn json_escape(s: &str) -> String {
+/// Escape a string for inclusion in a JSON literal. Pub so the `tier3_report`
+/// binary (and any other consumer) can produce valid JSON without re-rolling
+/// the escape rules.
+pub fn json_escape(s: &str) -> String {
     s.replace('\\', "\\\\")
         .replace('"', "\\\"")
         .replace('\n', "\\n")

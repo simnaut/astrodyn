@@ -17,6 +17,7 @@ jeod_runner = { path = "crates/jeod_runner" }
 [workspace]
 resolver = "2"
 members = [
+    "crates/jeod_quantities",
     "crates/jeod_math",
     "crates/jeod_dynamics",
     "crates/jeod_gravity",
@@ -41,6 +42,8 @@ bevy = { version = "0.18", default-features = false, features = [
 ] }
 log = "0.4"
 thiserror = "2"
+uom = { version = "0.38", default-features = false, features = ["f64", "si", "std"] }
+typenum = "1.20"
 
 # Optimize all code in dev/test builds — spherical harmonics evaluation
 # is ~20× slower at opt-level=0, making 7-day lunar orbit tests impractical.
