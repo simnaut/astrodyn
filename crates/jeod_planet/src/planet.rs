@@ -34,11 +34,62 @@ impl PlanetShape {
         let f = self.flat_coeff;
         2.0 * f - f * f
     }
+
+    /// Gravitational parameter as a typed `GravParam` (m³/s²).
+    ///
+    /// Additive typed accessor introduced by Phase 1 of the type-system
+    /// refactor (issue #101). Wraps the existing `mu` f64 field; the
+    /// underlying field is unchanged.
+    pub fn mu_typed(&self) -> jeod_quantities::dims::GravParam {
+        use jeod_quantities::ext::F64Ext;
+        self.mu.m3_per_s2()
+    }
+
+    /// Equatorial radius as a typed `uom::si::f64::Length` (meters).
+    ///
+    /// Additive typed accessor introduced by Phase 1 of the type-system
+    /// refactor (issue #101). Wraps the existing `r_eq` f64 field; the
+    /// underlying field is unchanged.
+    pub fn r_eq_typed(&self) -> uom::si::f64::Length {
+        use jeod_quantities::ext::F64Ext;
+        self.r_eq.m()
+    }
+
+    /// Polar radius as a typed `uom::si::f64::Length` (meters).
+    ///
+    /// Additive typed accessor introduced by Phase 1 of the type-system
+    /// refactor (issue #101). Wraps the existing `r_pol` f64 field; the
+    /// underlying field is unchanged.
+    pub fn r_pol_typed(&self) -> uom::si::f64::Length {
+        use jeod_quantities::ext::F64Ext;
+        self.r_pol.m()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::presets::*;
+
+    #[test]
+    fn earth_mu_typed_matches_f64_field() {
+        // `GravParam` stores value in base SI (m³/s²) via `.value`.
+        let mu = EARTH.mu_typed();
+        assert_eq!(mu.value, EARTH.mu);
+    }
+
+    #[test]
+    fn earth_r_eq_typed_matches_f64_field() {
+        use uom::si::length::meter;
+        let r_eq = EARTH.r_eq_typed();
+        assert_eq!(r_eq.get::<meter>(), EARTH.r_eq);
+    }
+
+    #[test]
+    fn earth_r_pol_typed_matches_f64_field() {
+        use uom::si::length::meter;
+        let r_pol = EARTH.r_pol_typed();
+        assert_eq!(r_pol.get::<meter>(), EARTH.r_pol);
+    }
 
     #[test]
     fn polar_radius_consistent_with_flattening() {
