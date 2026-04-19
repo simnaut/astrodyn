@@ -2486,6 +2486,7 @@ version = "0.1.0"
 dependencies = [
  "jeod_quantities",
  "log",
+ "uom",
 ]
 
 [[package]]

@@ -161,6 +161,60 @@ impl SimulationTime {
         self.tt_tjt() + 40_000.0 + 2_400_000.5
     }
 
+    // --- Typed accessors (Phase 1 #103) ------------------------------------
+    //
+    // Additive typed getters returning `SecondsSince<S>` for each time scale
+    // present as a pub f64 field. These delegate to the existing f64 fields
+    // (no recomputation) so behavior is bit-identical to the f64 API.
+    //
+    // Note: no typed getter for GMST is provided as `SecondsSince<GMST>` —
+    // the primary representation of GMST is an angle (see `gmst_angle()`).
+
+    /// TAI seconds since simulation start, as a typed quantity.
+    #[inline]
+    pub fn tai(&self) -> crate::SecondsSince<crate::TAI> {
+        crate::SecondsSince::from_seconds(self.tai_seconds)
+    }
+
+    /// UTC seconds since simulation start, as a typed quantity.
+    #[inline]
+    pub fn utc(&self) -> crate::SecondsSince<crate::UTC> {
+        crate::SecondsSince::from_seconds(self.utc_seconds)
+    }
+
+    /// UT1 seconds since simulation start, as a typed quantity.
+    #[inline]
+    pub fn ut1(&self) -> crate::SecondsSince<crate::UT1> {
+        crate::SecondsSince::from_seconds(self.ut1_seconds)
+    }
+
+    /// TT seconds since simulation start, as a typed quantity.
+    #[inline]
+    pub fn tt(&self) -> crate::SecondsSince<crate::TT> {
+        crate::SecondsSince::from_seconds(self.tt_seconds)
+    }
+
+    /// TDB seconds since simulation start, as a typed quantity.
+    #[inline]
+    pub fn tdb(&self) -> crate::SecondsSince<crate::TDB> {
+        crate::SecondsSince::from_seconds(self.tdb_seconds)
+    }
+
+    /// GPS seconds since simulation start, as a typed quantity.
+    #[inline]
+    pub fn gps(&self) -> crate::SecondsSince<crate::GPS> {
+        crate::SecondsSince::from_seconds(self.gps_seconds)
+    }
+
+    /// Greenwich Mean Sidereal Time as a typed angle.
+    ///
+    /// GMST is fundamentally an angle; the primary representation is radians
+    /// wrapped to `[0, 2π)`. Use this instead of a `SecondsSince<GMST>` getter.
+    #[inline]
+    pub fn gmst_angle(&self) -> uom::si::f64::Angle {
+        uom::si::f64::Angle::new::<uom::si::angle::radian>(self.gmst_radians)
+    }
+
     // JEOD_INV: TM.03 — time types updated in dependency order (TAI -> TT -> TDB -> UTC -> UT1 -> GMST)
     /// Recompute all derived time scales from TAI.
     fn recompute_derived(&mut self) {
@@ -333,6 +387,49 @@ mod tests {
             (sim.gps_seconds - 81.0).abs() < 1e-15,
             "GPS after 100s: expected 81.0, got {}",
             sim.gps_seconds
+        );
+    }
+
+    // --- Typed-accessor tests (Phase 1 #103) -------------------------------
+
+    #[test]
+    fn typed_getters_match_f64_fields() {
+        // Advance by a non-trivial duration to exercise each scale.
+        let mut sim = SimulationTime::at_j2000(default_leap_second_table());
+        sim.advance(1_000_000.0);
+
+        // Each typed getter round-trips back to the matching f64 field.
+        assert_eq!(sim.tai().as_seconds(), sim.tai_seconds);
+        assert_eq!(sim.utc().as_seconds(), sim.utc_seconds);
+        assert_eq!(sim.ut1().as_seconds(), sim.ut1_seconds);
+        assert_eq!(sim.tt().as_seconds(), sim.tt_seconds);
+        assert_eq!(sim.tdb().as_seconds(), sim.tdb_seconds);
+        assert_eq!(sim.gps().as_seconds(), sim.gps_seconds);
+
+        // `gmst_angle()` returns uom Angle; extracting radians must match.
+        use uom::si::angle::radian;
+        let gmst_rad = sim.gmst_angle().get::<radian>();
+        assert_eq!(gmst_rad, sim.gmst_radians);
+    }
+
+    #[test]
+    fn typed_tai_tt_roundtrip_via_simulation_time() {
+        // Read TAI out via the typed getter, convert to TT via the typed
+        // converter, convert back, and verify bit-identical (tolerance 1e-14 s)
+        // agreement with the original reading.
+        use crate::time_converter_tai_tt::{tai_to_tt_typed, tt_to_tai_typed};
+
+        let mut sim = SimulationTime::at_j2000(default_leap_second_table());
+        sim.advance(1_000_000.0);
+
+        let tai = sim.tai();
+        let tt = tai_to_tt_typed(tai);
+        let back = tt_to_tai_typed(tt);
+        let err = (back.as_seconds() - tai.as_seconds()).abs();
+        assert!(
+            err < 1e-14,
+            "TAI->TT->TAI typed roundtrip err={} (tolerance 1e-14 s)",
+            err
         );
     }
 }

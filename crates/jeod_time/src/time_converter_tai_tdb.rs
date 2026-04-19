@@ -1,5 +1,6 @@
 use crate::epoch::{J2000_TAI_TJT, TAI_TT_OFFSET};
 use crate::time_converter_tai_tt::tai_to_tt;
+use crate::{SecondsSince, TAI, TDB};
 use std::f64::consts::PI;
 
 /// Compute the TDB-TT offset in seconds at a given TAI truncated Julian time.
@@ -45,6 +46,25 @@ pub fn tdb_to_tai(tdb_seconds: f64, tai_tjt_initial: f64) -> f64 {
         }
     }
     tai
+}
+
+// --- Typed variants (Phase 1 #103) ------------------------------------------
+//
+// Additive typed siblings. They delegate to the f64 free functions so
+// behavior is bit-identical. `tai_tjt` is a scale-neutral truncated Julian
+// time anchor carried through untouched.
+
+/// Typed TAI → TDB converter (delegates to [`tai_to_tdb`]).
+///
+/// `tai_tjt` anchors the calendar date for the periodic TDB-TT offset; it is
+/// the same scalar the f64 free function takes (truncated Julian time in TAI).
+pub fn tai_to_tdb_typed(t: SecondsSince<TAI>, tai_tjt: f64) -> SecondsSince<TDB> {
+    SecondsSince::from_seconds(tai_to_tdb(t.as_seconds(), tai_tjt))
+}
+
+/// Typed TDB → TAI converter (delegates to [`tdb_to_tai`]).
+pub fn tdb_to_tai_typed(t: SecondsSince<TDB>, tai_tjt_initial: f64) -> SecondsSince<TAI> {
+    SecondsSince::from_seconds(tdb_to_tai(t.as_seconds(), tai_tjt_initial))
 }
 
 #[cfg(test)]
@@ -94,5 +114,27 @@ mod tests {
             back,
             (back - tai).abs()
         );
+    }
+
+    #[test]
+    fn tai_tdb_typed_matches_f64() {
+        let tai = 1_000_000.0_f64;
+        let tai_tjt = J2000_TAI_TJT + tai / 86400.0;
+        let tdb_typed = tai_to_tdb_typed(SecondsSince::<TAI>::from_seconds(tai), tai_tjt);
+        assert_eq!(tdb_typed.as_seconds(), tai_to_tdb(tai, tai_tjt));
+    }
+
+    #[test]
+    fn tai_tdb_typed_round_trip() {
+        // Non-trivial input, typed round-trip.
+        let tai_s = 1_000_000.0_f64;
+        let tai_tjt = J2000_TAI_TJT + tai_s / 86400.0;
+        let tai = SecondsSince::<TAI>::from_seconds(tai_s);
+        let tdb = tai_to_tdb_typed(tai, tai_tjt);
+        let back = tdb_to_tai_typed(tdb, tai_tjt);
+        let err = (back.as_seconds() - tai.as_seconds()).abs();
+        // Same 1e-10 bound the iterative f64 round-trip achieves; well below
+        // the 1e-14 TAI↔TT spec target (TDB adds ~ms-scale periodic noise).
+        assert!(err < 1e-10, "TAI->TDB->TAI typed round-trip err={}", err);
     }
 }
