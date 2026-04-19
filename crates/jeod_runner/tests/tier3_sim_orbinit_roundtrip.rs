@@ -86,6 +86,8 @@ fn roundtrip_via_simulation(
     sim.step_n(n_steps);
 
     let body = sim.body(0);
+    // Phase 2 #104: from_cartesian deprecated; migration deferred to Phase 3+.
+    #[allow(deprecated)]
     let oe_recovered =
         OrbitalElements::from_cartesian(MU_EARTH, body.trans.position, body.trans.velocity)
             .expect("from_cartesian failed after propagation");
@@ -217,6 +219,8 @@ fn tier3_orbinit_roundtrip_circular() {
     sim.step_n(n_steps);
 
     let body = sim.body(0);
+    // Phase 2 #104: from_cartesian deprecated; migration deferred to Phase 3+.
+    #[allow(deprecated)]
     let oe_recovered =
         OrbitalElements::from_cartesian(MU_EARTH, body.trans.position, body.trans.velocity)
             .expect("from_cartesian failed after propagation");
