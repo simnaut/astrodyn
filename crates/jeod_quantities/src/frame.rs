@@ -74,12 +74,19 @@ impl Frame for Ecef {
     const NAME: &'static str = "Ecef";
 }
 
+// NOTE on `NAME`: each frame's `NAME` const identifies the *frame kind*
+// (e.g. "BodyFrame") rather than the embedded planet/vehicle tag. This is
+// a `const &'static str`, so we can't splice `V::NAME` into it at compile
+// time. Callers that need a fully-qualified string (including the vehicle
+// or planet) should use `std::any::type_name::<F>()`, which `Qty3`'s
+// `Debug` impl does.
+
 /// Planet-fixed frame for any planet `P`. Rotates with that planet.
 #[derive(Debug, Clone, Copy)]
 pub struct PlanetFixed<P: Planet>(PhantomData<P>);
 impl<P: Planet> Sealed for PlanetFixed<P> {}
 impl<P: Planet> Frame for PlanetFixed<P> {
-    const NAME: &'static str = P::NAME;
+    const NAME: &'static str = "PlanetFixed";
 }
 
 /// Body (CoM-centered) frame of vehicle `V`. Rotates with the vehicle.
@@ -87,7 +94,7 @@ impl<P: Planet> Frame for PlanetFixed<P> {
 pub struct BodyFrame<V: Vehicle>(PhantomData<V>);
 impl<V: Vehicle> Sealed for BodyFrame<V> {}
 impl<V: Vehicle> Frame for BodyFrame<V> {
-    const NAME: &'static str = V::NAME;
+    const NAME: &'static str = "BodyFrame";
 }
 
 /// Structural (geometric-origin) frame of vehicle `V`. Rotates with vehicle.
@@ -95,7 +102,7 @@ impl<V: Vehicle> Frame for BodyFrame<V> {
 pub struct StructuralFrame<V: Vehicle>(PhantomData<V>);
 impl<V: Vehicle> Sealed for StructuralFrame<V> {}
 impl<V: Vehicle> Frame for StructuralFrame<V> {
-    const NAME: &'static str = V::NAME;
+    const NAME: &'static str = "StructuralFrame";
 }
 
 /// Local Vertical / Local Horizontal frame relative to chief vehicle `Chief`.
@@ -105,7 +112,7 @@ impl<V: Vehicle> Frame for StructuralFrame<V> {
 pub struct Lvlh<Chief: Vehicle>(PhantomData<Chief>);
 impl<C: Vehicle> Sealed for Lvlh<C> {}
 impl<C: Vehicle> Frame for Lvlh<C> {
-    const NAME: &'static str = C::NAME;
+    const NAME: &'static str = "Lvlh";
 }
 
 /// North-East-Down topocentric frame relative to chief vehicle `Chief`.
@@ -113,5 +120,5 @@ impl<C: Vehicle> Frame for Lvlh<C> {
 pub struct Ned<Chief: Vehicle>(PhantomData<Chief>);
 impl<C: Vehicle> Sealed for Ned<C> {}
 impl<C: Vehicle> Frame for Ned<C> {
-    const NAME: &'static str = C::NAME;
+    const NAME: &'static str = "Ned";
 }

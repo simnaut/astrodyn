@@ -94,10 +94,15 @@ impl<D: ?Sized + Dimension, F: Frame> Clone for Qty3<D, F> {
 
 impl<D: ?Sized + Dimension, F: Frame> core::fmt::Debug for Qty3<D, F> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        // `F::NAME` is the *kind* of the frame (e.g. "BodyFrame"). For
+        // vehicle- or planet-parameterized frames that alone can't
+        // distinguish `BodyFrame<Iss>` from `BodyFrame<Mir>`. Use
+        // `type_name::<F>()` so the output carries the full phantom tag
+        // — the cost is a single opaque string, no allocations.
         write!(
             f,
             "Qty3<{}>({}, {}, {})",
-            F::NAME,
+            core::any::type_name::<F>(),
             self.x.value,
             self.y.value,
             self.z.value

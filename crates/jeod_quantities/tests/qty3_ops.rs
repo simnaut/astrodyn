@@ -196,6 +196,13 @@ fn debug_format_mentions_frame() {
     let a = pos_ecef(1.0, 2.0, 3.0);
     let rendered = format!("{a:?}");
     assert!(rendered.contains("Ecef"), "got: {rendered}");
+    // Make sure the debug output is also distinct for Inertial — we use
+    // `type_name` so the fully-qualified path appears, which comfortably
+    // differs between `Ecef` and `Inertial`.
+    let b = pos_inertial(1.0, 2.0, 3.0);
+    let rendered_b = format!("{b:?}");
+    assert!(rendered_b.contains("Inertial"), "got: {rendered_b}");
+    assert_ne!(rendered, rendered_b);
 }
 
 #[test]

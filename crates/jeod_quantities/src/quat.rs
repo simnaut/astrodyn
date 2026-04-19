@@ -2,12 +2,16 @@
 //!
 //! JEOD canonically uses **scalar-first, left-transformation** quaternions
 //! `[q0, q1, q2, q3]` with `q0` scalar. `glam::DQuat` uses `[x, y, z, w]`
-//! with `w` scalar. Conversions happen at the boundary; see
-//! `jeod_math::JeodQuat::to_glam` / `from_glam`.
+//! with `w` scalar. This module lifts the *convention* to the type system so
+//! that code which expects a JEOD-layout, left-transformation quaternion
+//! cannot be handed a glam-layout or right-transformation one by mistake.
 //!
-//! This module lifts the *convention* to the type system so that code which
-//! expects a JEOD-layout, left-transformation quaternion cannot be handed a
-//! glam-layout or right-transformation one by mistake.
+//! The glam bridge lives in this crate, restricted to the one convention
+//! that matches glam (`ScalarLast` + `LeftTransform`). Convert from
+//! `JeodQuat` via `q.to_scalar_last().to_glam()` and back via
+//! `Quat::<ScalarLast, LeftTransform>::from(glam_q).to_scalar_first()`.
+//! `jeod_math::JeodQuat` still exposes convenience helpers for callers
+//! who are already working with that type at the JEOD↔Rust boundary.
 
 use core::marker::PhantomData;
 
