@@ -19,6 +19,33 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --workspace --tests -- -D warnings
 
+  test-quantities:
+    name: Test (jeod_quantities)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@nextest
+      - run: cargo nextest run -p jeod_quantities
+
+  compile-time-budget:
+    name: Compile-time budget (envelope)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Measure cold workspace check time
+        run: |
+          # Fresh build; timing excludes cache restoration.
+          cargo check --workspace --timings 2>&1 | tee check.log
+          # Extract the "Finished ... in Ns" line.
+          DURATION=$(grep -oE 'in [0-9.]+s' check.log | tail -1 | grep -oE '[0-9.]+')
+          echo "cargo check --workspace took ${DURATION}s (budget: 300s envelope for Phase 0 of #101)"
+          # Hard fail only if grossly over budget; Phase 0 is envelope-only.
+          python3 -c "import sys; d=float('$DURATION'); sys.exit(0 if d < 300 else 1)"
+
   test:
     name: Test (unit + tier 2)
     runs-on: ubuntu-latest
