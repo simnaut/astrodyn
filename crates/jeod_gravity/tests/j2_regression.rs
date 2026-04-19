@@ -58,9 +58,12 @@ fn j2_nodal_regression_rate() {
     }
 
     // Compute RAAN at start and end
+    // Phase 2 #104: from_cartesian is deprecated; migration deferred to Phase 3+.
+    #[allow(deprecated)]
     let elems_start =
         OrbitalElements::from_cartesian(mu, state_initial.position, state_initial.velocity)
             .unwrap();
+    #[allow(deprecated)]
     let elems_end = OrbitalElements::from_cartesian(mu, state.position, state.velocity).unwrap();
 
     let raan_start = elems_start.long_asc_node;

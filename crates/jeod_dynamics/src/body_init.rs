@@ -296,6 +296,9 @@ pub fn compute_ned_rotation(lat: f64, lon: f64) -> DMat3 {
 }
 
 #[cfg(test)]
+// Phase 2 #104: local tests call deprecated jeod_math OrbitalElements::from_cartesian.
+// Migration to from_cartesian_typed is deferred to Phase 3+.
+#[allow(deprecated)]
 mod tests {
     use super::*;
     use std::f64::consts::PI;

@@ -186,6 +186,8 @@ fn validate_orbital_roundtrip_5000_vectors() {
     let mut pass_count = 0;
 
     for (i, sv) in vectors.iter().enumerate() {
+        // Phase 2 #104: from_cartesian deprecated; migration deferred to Phase 3+.
+        #[allow(deprecated)]
         let elems = match OrbitalElements::from_cartesian(MU_EARTH, sv.position, sv.velocity) {
             Ok(e) => e,
             Err(e) => {
