@@ -20,6 +20,8 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
+use jeod_test_data::crossval::json_escape;
+
 /// Slice `content` by byte range, snapping endpoints to valid UTF-8 char
 /// boundaries. Needed because test source files can contain multi-byte chars
 /// (e.g. box-drawing `═`) and naive `&content[a..b]` with computed offsets
@@ -781,7 +783,7 @@ fn write_baselines_json(path: &std::path::Path, entries: &[TestResult]) {
     writeln!(out, "  \"tests\": {{").unwrap();
     for (i, e) in entries.iter().enumerate() {
         let comma = if i + 1 < entries.len() { "," } else { "" };
-        writeln!(out, "    \"{}\": {{", e.test).unwrap();
+        writeln!(out, "    \"{}\": {{", json_escape(&e.test)).unwrap();
         write_opt_vec3_json(&mut out, "position_m", e.position);
         write_opt_vec3_json(&mut out, "velocity_m_per_s", e.velocity);
         write_opt_vec3_json(&mut out, "acceleration_m_per_s2", e.acceleration);
@@ -795,9 +797,9 @@ fn write_baselines_json(path: &std::path::Path, entries: &[TestResult]) {
             write!(
                 out,
                 "{{\"name\":\"{}\",\"value\":{},\"unit\":\"{}\"}}{}",
-                name,
+                json_escape(name),
                 fmt_f64(*value),
-                unit,
+                json_escape(unit),
                 csep
             )
             .unwrap();
