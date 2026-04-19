@@ -61,11 +61,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let epoch_tdb_jd = time.tdb_julian_date();
 
     // Get Moon and Sun positions at epoch
+    // Phase 1 (#103): DVec3 accessor is deprecated; migration is Phase 3+ work.
+    #[allow(deprecated)]
     let (moon_pos, _) = ephemeris.get_state(
         jeod_sim::EphemerisBody::Moon,
         jeod_sim::EphemerisBody::Earth,
         epoch_tdb_jd,
     )?;
+    #[allow(deprecated)]
     let (sun_pos, _) = ephemeris.get_state(
         jeod_sim::EphemerisBody::Sun,
         jeod_sim::EphemerisBody::Earth,

@@ -68,6 +68,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let time = SimulationTime::new(EPOCH_TAI_TJT, jeod_sim::default_leap_second_table());
     let epoch_tdb_jd = time.tdb_julian_date();
 
+    // Phase 1 (#103): DVec3 accessor is deprecated; migration is Phase 3+ work.
+    #[allow(deprecated)]
     let (sun_pos, _) = ephemeris.get_state(
         jeod_sim::EphemerisBody::Sun,
         jeod_sim::EphemerisBody::Mars,

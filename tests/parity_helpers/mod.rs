@@ -346,6 +346,8 @@ fn de421_ephemeris() -> &'static Ephemeris {
 
 /// Helper: load initial Sun position from DE421 at J2000 (cached ephemeris).
 pub fn sun_initial_pos() -> DVec3 {
+    // Phase 1 (#103): DVec3 accessor is deprecated; migration is Phase 3+ work.
+    #[allow(deprecated)]
     let (pos, _vel) = de421_ephemeris()
         .get_earth_centered_state(EphemerisBody::Sun, J2000_JD)
         .expect("Sun state at J2000");
@@ -354,6 +356,8 @@ pub fn sun_initial_pos() -> DVec3 {
 
 /// Helper: load initial Moon position from DE421 at J2000 (cached ephemeris).
 pub fn moon_initial_pos() -> DVec3 {
+    // Phase 1 (#103): DVec3 accessor is deprecated; migration is Phase 3+ work.
+    #[allow(deprecated)]
     let (pos, _vel) = de421_ephemeris()
         .get_earth_centered_state(EphemerisBody::Moon, J2000_JD)
         .expect("Moon state at J2000");

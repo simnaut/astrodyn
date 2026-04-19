@@ -150,6 +150,8 @@ fn tier3_simulation_earth_moon_clem() {
 
     // Earth as 3rd-body with per-step ephemeris updates
     let epoch_tdb_jd = sim.time.tdb_julian_date();
+    // Phase 1 (#103): DVec3 accessor is deprecated; migration is Phase 3+ work.
+    #[allow(deprecated)]
     let (earth_pos_from_moon, _earth_vel) = ephemeris
         .get_state(EphemerisBody::Earth, EphemerisBody::Moon, epoch_tdb_jd)
         .expect("Earth-Moon state from DE421");
@@ -168,6 +170,8 @@ fn tier3_simulation_earth_moon_clem() {
     sim.set_source_ephemeris(earth, EphemerisBody::Earth, EphemerisBody::Moon);
 
     // Sun as 3rd-body with per-step ephemeris updates (also SRP source)
+    // Phase 1 (#103): DVec3 accessor is deprecated; migration is Phase 3+ work.
+    #[allow(deprecated)]
     let (sun_pos_from_moon, _) = ephemeris
         .get_state(EphemerisBody::Sun, EphemerisBody::Moon, epoch_tdb_jd)
         .expect("Sun-Moon state from DE421");

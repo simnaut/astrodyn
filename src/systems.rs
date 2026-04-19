@@ -114,6 +114,10 @@ pub fn ephemeris_update_system(
     };
     let tdb_jd = sim_time.tdb_julian_date();
     for (ephem_body, mut source_pos, source_vel, trans_state) in &mut query {
+        // Phase 1 (#103): the `DVec3` accessor is deprecated; migration
+        // to `get_state_typed` happens in Phase 3+ once downstream state
+        // storage is typed.
+        #[allow(deprecated)]
         let (pos, vel) = eph
             .get_state(ephem_body.target, ephem_body.observer, tdb_jd)
             .unwrap_or_else(|e| {

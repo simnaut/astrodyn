@@ -1552,6 +1552,10 @@ impl Simulation {
             let tdb_jd = self.time.tdb_julian_date();
             for i in 0..self.source_ephem_bodies.len() {
                 if let Some(Some((target, observer))) = self.source_ephem_bodies.get(i) {
+                    // Phase 1 (#103): the `DVec3` accessor is deprecated; migration
+                    // to `get_state_typed` happens in Phase 3+ once downstream state
+                    // storage is typed.
+                    #[allow(deprecated)]
                     let (pos, vel) =
                         eph.get_state(*target, *observer, tdb_jd)
                             .unwrap_or_else(|e| {
