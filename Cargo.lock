@@ -2358,6 +2358,7 @@ dependencies = [
  "jeod_math",
  "jeod_planet",
  "jeod_test_data",
+ "sha2",
 ]
 
 [[package]]
