@@ -60,7 +60,10 @@ pub fn compute_body_euler_angles(rot: &RotationalState, sequence: EulerSequence)
 
 /// Compute the LVLH (Local Vertical Local Horizontal) frame from translational state.
 ///
-/// Delegates to [`jeod_math::compute_lvlh_frame`].
+/// Delegates to [`jeod_math::compute_lvlh_frame`]. Phase 3+ will migrate this
+/// wrapper to the typed `compute_lvlh_frame_typed` API; for now we silence
+/// the local deprecation warning so Phase 2 stays scope-limited.
+#[allow(deprecated)]
 pub fn compute_body_lvlh_frame(position: DVec3, velocity: DVec3) -> LvlhFrame {
     jeod_math::compute_lvlh_frame(position, velocity)
 }

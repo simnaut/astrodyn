@@ -29,7 +29,9 @@ pub use jeod_quantities::{
     JeodQuat, Layout, LeftTransform, NormalizedQuat, Quat, RightTransform, ScalarFirst, ScalarLast,
     Transform,
 };
-pub use lvlh::{compute_lvlh_frame, LvlhFrame};
+#[allow(deprecated)]
+pub use lvlh::compute_lvlh_frame;
+pub use lvlh::{compute_lvlh_frame_typed, LvlhFrame};
 pub use orbital_elements::OrbitalElements;
 pub use solar_beta::solar_beta_angle;
 pub use types::*;
