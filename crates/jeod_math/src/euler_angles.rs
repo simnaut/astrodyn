@@ -198,7 +198,7 @@ pub fn compute_quaternion_from_euler_angles(angles: [f64; 3], sequence: EulerSeq
         let mut data = [0.0_f64; 4];
         data[0] = cosht;
         data[1 + axes[ii]] = -sinht; // data[1..4] maps to vector[0..3]
-        q[ii] = JeodQuat { data };
+        q[ii] = JeodQuat::from_array(data);
     }
 
     // Reverse-order product: q[2] * q[1], then that * q[0].

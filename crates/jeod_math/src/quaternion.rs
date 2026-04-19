@@ -1,320 +1,45 @@
-use crate::types::{mat3_from_rows, DMat3, DQuat, DVec3};
+//! JEOD quaternion glue: re-exports the unified
+//! [`jeod_quantities::JeodQuat`] type and keeps JEOD-specific constants and
+//! free helpers that don't belong in the generic quantities crate.
+//!
+//! All algebraic and conversion methods (`identity`, `new`, `scalar`,
+//! `vector`, `conjugate`, `multiply`, `normalize`, glam round-trips,
+//! axis-angle construction, left-transform ↔ matrix conversions, Rodrigues
+//! vector transform) are inherent methods on
+//! [`Quat<ScalarFirst, LeftTransform>`] defined in
+//! `jeod_quantities::quat`. This module is intentionally small — it exists
+//! so downstream crates can continue to say `jeod_math::JeodQuat` and
+//! `jeod_math::quaternion::NORM_LIMIT` after the Phase 2 unification.
 
-/// Scalar-first, left-transformation quaternion matching JEOD convention.
-///
-/// Layout: `[scalar, vx, vy, vz]`
-///
-/// For a rotation of angle theta about unit axis u-hat:
-///   scalar = cos(theta/2)
-///   vector = -sin(theta/2) * u-hat
-///
-/// A "left quaternion" transforms a vector as: v' = q * v * q_conj
-/// which is equivalent to the rotation matrix produced by
-/// `left_quat_to_transformation`.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct JeodQuat {
-    pub data: [f64; 4], // [scalar, vx, vy, vz]
-}
+pub use jeod_quantities::{
+    JeodQuat, Layout, LeftTransform, NormalizedQuat, Quat, RightTransform, ScalarFirst, ScalarLast,
+    Transform,
+};
 
 /// Threshold below which the fast renormalization (Padé approximant) path is used.
 /// From JEOD `models/utils/quaternion/src/quaternion_normalize.cc`.
+///
+/// The canonical [`JeodQuat::normalize`] (inherent method in
+/// `jeod_quantities::quat`) uses this same numeric value internally. The
+/// constant is re-exported here so JEOD-specific consumers (e.g.
+/// `jeod_dynamics::normalize_integ`, which must *not* flip the scalar sign
+/// during integration) can reach it under the expected path.
 pub const NORM_LIMIT: f64 = 2.107_342e-8;
-
-impl JeodQuat {
-    /// Identity quaternion: no rotation.
-    pub fn identity() -> Self {
-        Self {
-            data: [1.0, 0.0, 0.0, 0.0],
-        }
-    }
-
-    /// Construct from explicit components.
-    pub fn new(scalar: f64, vx: f64, vy: f64, vz: f64) -> Self {
-        Self {
-            data: [scalar, vx, vy, vz],
-        }
-    }
-
-    /// Scalar (real) part.
-    #[inline]
-    pub fn scalar(&self) -> f64 {
-        self.data[0]
-    }
-
-    /// Vector (imaginary) part.
-    #[inline]
-    pub fn vector(&self) -> DVec3 {
-        DVec3::new(self.data[1], self.data[2], self.data[3])
-    }
-
-    // ----------------------------------------------------------------
-    // Conversions to/from glam
-    // ----------------------------------------------------------------
-
-    /// Convert to a glam `DQuat`.
-    ///
-    /// glam stores `(x, y, z, w)` where w is the scalar.
-    pub fn to_glam(&self) -> DQuat {
-        DQuat::from_xyzw(self.data[1], self.data[2], self.data[3], self.data[0])
-    }
-
-    /// Create from a glam `DQuat`.
-    pub fn from_glam(q: DQuat) -> Self {
-        Self {
-            data: [q.w, q.x, q.y, q.z],
-        }
-    }
-
-    // ----------------------------------------------------------------
-    // Norm helpers
-    // ----------------------------------------------------------------
-
-    /// Squared norm of the quaternion.
-    pub fn norm_sq(&self) -> f64 {
-        self.data[0] * self.data[0]
-            + self.data[1] * self.data[1]
-            + self.data[2] * self.data[2]
-            + self.data[3] * self.data[3]
-    }
-
-    /// Normalize the quaternion in place.
-    ///
-    /// Uses JEOD's fast two-step approximation when the quaternion is already
-    /// close to unit length.  Always forces scalar >= 0.
-    pub fn normalize(&mut self) {
-        let qmagsq = self.norm_sq();
-        // JEOD_INV: QT.03 — cannot normalize a zero quaternion
-        assert!(qmagsq > 0.0, "cannot normalize a zero quaternion");
-
-        // JEOD_INV: QT.01 — fast Padé path near unit magnitude, sqrt path otherwise
-        let fact = if (1.0 - qmagsq).abs() < NORM_LIMIT {
-            // Near-unit: first-order Padé approximant  2 / (1 + ||q||²)
-            2.0 / (1.0 + qmagsq)
-        } else {
-            1.0 / qmagsq.sqrt()
-        };
-
-        for d in self.data.iter_mut() {
-            *d *= fact;
-        }
-
-        // JEOD_INV: QT.02 — canonical hemisphere: force scalar non-negative
-        if self.data[0] < 0.0 {
-            for d in self.data.iter_mut() {
-                *d = -*d;
-            }
-        }
-    }
-
-    // ----------------------------------------------------------------
-    // Algebraic operations
-    // ----------------------------------------------------------------
-
-    /// Quaternion conjugate: `[s, -v]`.
-    pub fn conjugate(&self) -> Self {
-        Self {
-            data: [self.data[0], -self.data[1], -self.data[2], -self.data[3]],
-        }
-    }
-
-    /// Quaternion product `self * other`.
-    ///
-    /// ```text
-    /// prod.scalar = s1*s2 - v1 . v2
-    /// prod.vector = s1*v2 + s2*v1 + v1 x v2
-    /// ```
-    pub fn multiply(&self, other: &Self) -> Self {
-        let s1 = self.scalar();
-        let v1 = self.vector();
-        let s2 = other.scalar();
-        let v2 = other.vector();
-
-        let ps = s1 * s2 - v1.dot(v2);
-        let pv = v2 * s1 + v1 * s2 + v1.cross(v2);
-
-        Self {
-            data: [ps, pv.x, pv.y, pv.z],
-        }
-    }
-
-    // ----------------------------------------------------------------
-    // Matrix <-> quaternion (left-transformation convention)
-    // ----------------------------------------------------------------
-
-    // JEOD_INV: RF.09 — assumes quaternion is normalized (caller must normalize after integration)
-    /// Build the 3x3 rotation (transformation) matrix from a left quaternion.
-    ///
-    /// Uses the half-angle formula from JEOD
-    /// `models/utils/quaternion/src/quaternion_to_matrix.cc`.
-    ///
-    /// ```text
-    /// cost  = 2*qs^2 - 1
-    /// T[i][i] = cost + 2*qv[i]^2
-    /// T[i][j] = 2*(qv[i]*qv[j] -/+ qs*qv[k])
-    /// ```
-    pub fn left_quat_to_transformation(&self) -> DMat3 {
-        let qs = self.data[0];
-        let qv = [self.data[1], self.data[2], self.data[3]];
-
-        let cost = 2.0 * qs * qs - 1.0;
-
-        // Diagonal
-        let t00 = cost + 2.0 * qv[0] * qv[0];
-        let t11 = cost + 2.0 * qv[1] * qv[1];
-        let t22 = cost + 2.0 * qv[2] * qv[2];
-
-        // Off-diagonal:
-        //   T[0][1] = 2*(qv0*qv1 - qs*qv2)
-        //   T[1][0] = 2*(qv1*qv0 + qs*qv2)
-        //   T[0][2] = 2*(qv0*qv2 + qs*qv1)
-        //   T[2][0] = 2*(qv2*qv0 - qs*qv1)
-        //   T[1][2] = 2*(qv1*qv2 - qs*qv0)
-        //   T[2][1] = 2*(qv2*qv1 + qs*qv0)
-        let t01 = 2.0 * (qv[0] * qv[1] - qs * qv[2]);
-        let t10 = 2.0 * (qv[1] * qv[0] + qs * qv[2]);
-        let t02 = 2.0 * (qv[0] * qv[2] + qs * qv[1]);
-        let t20 = 2.0 * (qv[2] * qv[0] - qs * qv[1]);
-        let t12 = 2.0 * (qv[1] * qv[2] - qs * qv[0]);
-        let t21 = 2.0 * (qv[2] * qv[1] + qs * qv[0]);
-
-        mat3_from_rows(
-            DVec3::new(t00, t01, t02),
-            DVec3::new(t10, t11, t12),
-            DVec3::new(t20, t21, t22),
-        )
-    }
-
-    /// Build a left quaternion from a transformation matrix.
-    ///
-    /// Robust method from JEOD
-    /// `models/utils/quaternion/src/quaternion_from_matrix.cc`:
-    /// selects among 4 extraction branches based on which of
-    /// {trace, T\[0\]\[0\], T\[1\]\[1\], T\[2\]\[2\]} is largest.
-    ///
-    /// `mat` is a glam `DMat3` (column-major). Access element T\[row\]\[col\]
-    /// via `mat.col(col)[row]`.
-    pub fn left_quat_from_transformation(mat: &DMat3) -> Self {
-        // Convenience macro: T[i][j] = mat.col(j)[i]
-        let t = |r: usize, c: usize| -> f64 { mat.col(c)[r] };
-
-        let tr = t(0, 0) + t(1, 1) + t(2, 2);
-
-        // Find maximum of (tr, T00, T11, T22)
-        let vals = [tr, t(0, 0), t(1, 1), t(2, 2)];
-        let max_idx = vals
-            .iter()
-            .enumerate()
-            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
-            .unwrap()
-            .0;
-
-        let mut q = [0.0_f64; 4];
-
-        // For the JEOD left-transformation matrix, the off-diagonal
-        // anti-symmetric part gives:
-        //   T[2][1] - T[1][2] =  4*qs*qv[0]
-        //   T[0][2] - T[2][0] =  4*qs*qv[1]
-        //   T[1][0] - T[0][1] =  4*qs*qv[2]
-        // The symmetric off-diagonal part gives:
-        //   T[0][1] + T[1][0] =  4*qv[0]*qv[1]
-        //   T[0][2] + T[2][0] =  4*qv[0]*qv[2]
-        //   T[1][2] + T[2][1] =  4*qv[1]*qv[2]
-        match max_idx {
-            0 => {
-                // tr dominates -> solve for qs first
-                q[0] = 0.5 * (1.0 + tr).sqrt();
-                let inv4qs = 0.25 / q[0];
-                q[1] = (t(2, 1) - t(1, 2)) * inv4qs;
-                q[2] = (t(0, 2) - t(2, 0)) * inv4qs;
-                q[3] = (t(1, 0) - t(0, 1)) * inv4qs;
-            }
-            1 => {
-                // T[0][0] dominates -> solve for qv[0] first
-                q[1] = 0.5 * (1.0 + 2.0 * t(0, 0) - tr).sqrt();
-                let inv4qv0 = 0.25 / q[1];
-                q[0] = (t(2, 1) - t(1, 2)) * inv4qv0;
-                q[2] = (t(0, 1) + t(1, 0)) * inv4qv0;
-                q[3] = (t(0, 2) + t(2, 0)) * inv4qv0;
-            }
-            2 => {
-                // T[1][1] dominates -> solve for qv[1] first
-                q[2] = 0.5 * (1.0 + 2.0 * t(1, 1) - tr).sqrt();
-                let inv4qv1 = 0.25 / q[2];
-                q[0] = (t(0, 2) - t(2, 0)) * inv4qv1;
-                q[1] = (t(0, 1) + t(1, 0)) * inv4qv1;
-                q[3] = (t(1, 2) + t(2, 1)) * inv4qv1;
-            }
-            3 => {
-                // T[2][2] dominates -> solve for qv[2] first
-                q[3] = 0.5 * (1.0 + 2.0 * t(2, 2) - tr).sqrt();
-                let inv4qv2 = 0.25 / q[3];
-                q[0] = (t(1, 0) - t(0, 1)) * inv4qv2;
-                q[1] = (t(0, 2) + t(2, 0)) * inv4qv2;
-                q[2] = (t(1, 2) + t(2, 1)) * inv4qv2;
-            }
-            _ => unreachable!(),
-        }
-
-        // Force scalar non-negative (canonical hemisphere)
-        if q[0] < 0.0 {
-            for v in q.iter_mut() {
-                *v = -*v;
-            }
-        }
-
-        let mut result = Self { data: q };
-        result.normalize();
-        result
-    }
-
-    // ----------------------------------------------------------------
-    // Vector transformation
-    // ----------------------------------------------------------------
-
-    /// Transform a vector using the quaternion without building a matrix.
-    ///
-    /// Rodrigues formula via quaternion:
-    /// ```text
-    /// t = 2 * (qv x v)
-    /// v' = v + qs*t + qv x t
-    /// ```
-    pub fn left_quat_transform(&self, v: DVec3) -> DVec3 {
-        let qs = self.scalar();
-        let qv = self.vector();
-
-        let qv_cross_v = qv.cross(v);
-        v + 2.0 * qs * qv_cross_v + 2.0 * qv.cross(qv_cross_v)
-    }
-
-    // ----------------------------------------------------------------
-    // Axis-angle construction
-    // ----------------------------------------------------------------
-
-    /// Construct a left-transform quaternion from an axis-angle rotation.
-    ///
-    /// JEOD convention: scalar = cos(theta/2),  vector = -sin(theta/2) * axis
-    ///
-    /// `axis` must be a unit vector.
-    pub fn left_quat_from_eigen_rotation(angle: f64, axis: DVec3) -> Self {
-        let half = angle * 0.5;
-        let s = half.cos();
-        let v = -half.sin() * axis;
-        let mut q = Self {
-            data: [s, v.x, v.y, v.z],
-        };
-        q.normalize();
-        q
-    }
-}
 
 // ====================================================================
 // Tests
 // ====================================================================
+//
+// These tests exercise the unified methods now defined in
+// `jeod_quantities::quat`. They stay here (rather than in jeod_quantities)
+// because they depend on `jeod_math::test_utils::approx_*` helpers and on
+// JEOD-parity edge cases that are owned by this crate.
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_utils::{approx_eq_f64, approx_eq_mat3, approx_eq_vec3};
+    use crate::types::{mat3_from_rows, DMat3, DVec3};
     use std::f64::consts::{FRAC_PI_2, FRAC_PI_4, PI, TAU};
 
     const TOL: f64 = 1e-12;
@@ -547,5 +272,14 @@ mod tests {
             q180_composed,
             q180_direct,
         );
+    }
+
+    // ---------------------------------------------------------------
+    // NORM_LIMIT parity: the jeod_math re-export must match the
+    // threshold the unified `normalize` uses internally.
+    // ---------------------------------------------------------------
+    #[test]
+    fn norm_limit_is_jeod_value() {
+        assert_eq!(NORM_LIMIT, 2.107_342e-8);
     }
 }
