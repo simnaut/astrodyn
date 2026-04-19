@@ -2424,6 +2424,7 @@ name = "jeod_planet"
 version = "0.1.0"
 dependencies = [
  "jeod_quantities",
+ "uom",
 ]
 
 [[package]]

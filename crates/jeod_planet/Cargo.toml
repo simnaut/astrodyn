@@ -5,3 +5,4 @@ edition = "2021"
 
 [dependencies]
 jeod_quantities = { path = "../jeod_quantities" }
+uom = { workspace = true }
