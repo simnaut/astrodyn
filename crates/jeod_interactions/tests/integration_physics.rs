@@ -15,6 +15,7 @@ use jeod_interactions::{
     compute_shadow_fraction, solar_flux_at_distance, DragConfig, FlatPlate, FlatPlateParams,
     FlatPlateThermal, SOLAR_RADIUS,
 };
+#[allow(deprecated)]
 use jeod_math::geodetic::cartesian_to_geodetic;
 use jeod_math::JeodQuat;
 
@@ -93,6 +94,7 @@ fn drag_causes_altitude_decay() {
                     -sin_g * s.position.x + cos_g * s.position.y,
                     s.position.z,
                 );
+                #[allow(deprecated)]
                 let geo = cartesian_to_geodetic(pfix, R_EARTH, R_EARTH_POL);
                 let atmos_state =
                     atmos.density(geo.altitude / 1000.0, geo.latitude, geo.longitude, tjt);

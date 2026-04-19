@@ -2417,6 +2417,7 @@ dependencies = [
  "jeod_quantities",
  "jeod_test_data",
  "thiserror 2.0.18",
+ "uom",
 ]
 
 [[package]]

@@ -85,6 +85,7 @@ pub fn compute_body_geodetic(
 ) -> GeodeticState {
     // Rotate inertial position to planet-fixed frame
     let pos_pfix = *t_inertial_pfix * position;
+    #[allow(deprecated)]
     jeod_math::cartesian_to_geodetic(pos_pfix, r_eq, r_pol)
 }
 
@@ -262,6 +263,7 @@ mod tests {
 
         // Verify against direct computation to lock down the convention
         let pos_pfix = t_inertial_pfix * pos_inertial;
+        #[allow(deprecated)]
         let expected = jeod_math::cartesian_to_geodetic(pos_pfix, R_EQ, R_POL);
         assert_eq!(geo, expected);
     }

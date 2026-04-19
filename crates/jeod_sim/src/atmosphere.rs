@@ -2,6 +2,7 @@ use glam::{DMat3, DVec3};
 use jeod_atmosphere::exponential::ExponentialAtmosphere;
 use jeod_atmosphere::met::MetAtmosphere;
 use jeod_atmosphere::AtmosphereState;
+#[allow(deprecated)]
 use jeod_math::geodetic::cartesian_to_geodetic;
 
 use crate::planet_config::PlanetConfig;
@@ -96,6 +97,7 @@ pub fn evaluate_atmosphere(
     };
 
     // Convert to geodetic coordinates
+    #[allow(deprecated)]
     let geodetic = cartesian_to_geodetic(pos_pfix, config.r_eq, config.r_pol);
 
     // Evaluate atmosphere model

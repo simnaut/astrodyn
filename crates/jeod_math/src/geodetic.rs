@@ -5,8 +5,24 @@
 //! - Cartesian (PCPF) <-> spherical (latitude, longitude, altitude)
 //!
 //! All coordinates are in the planet-centered planet-fixed (PCPF) frame.
+//!
+//! Two API flavors are provided:
+//! - The original `f64` variants (`cartesian_to_geodetic`, `geodetic_to_cartesian`)
+//!   operate on raw `DVec3` / `f64` and are retained for backward compatibility.
+//!   They are deprecated and slated for removal in Phase 10 of the type-system
+//!   refactor (#101).
+//! - The typed sibling variants (`cartesian_to_geodetic_typed`,
+//!   `geodetic_to_cartesian_typed`) accept/return `jeod_quantities` typed
+//!   quantities (`Position<PlanetFixed<P>>`, `Length`, `Angle`), giving
+//!   frame-tagged, unit-safe signatures.
 
 use glam::DVec3;
+use jeod_quantities::aliases::Position;
+use jeod_quantities::frame::{Planet, PlanetFixed};
+use jeod_quantities::qty3::Qty3;
+use uom::si::angle::radian;
+use uom::si::f64::{Angle, Length};
+use uom::si::length::meter;
 
 /// Maximum iterations for Borkowski's geodetic latitude solver.
 /// Matches JEOD `PlanetFixedPosition::Max_iteration_limit` (class-level constant).
@@ -18,6 +34,43 @@ pub struct GeodeticState {
     pub latitude: f64,  // rad, geodetic latitude
     pub longitude: f64, // rad, geodetic longitude
     pub altitude: f64,  // m, height above reference ellipsoid
+}
+
+/// Typed geodetic coordinates on a reference ellipsoid.
+///
+/// Companion to [`GeodeticState`] carrying `uom` dimensioned scalars so
+/// signatures expressed with this type are unit-safe.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct GeodeticStateTyped {
+    /// Geodetic latitude (positive north, range ±π/2).
+    pub latitude: Angle,
+    /// Geodetic longitude (positive east).
+    pub longitude: Angle,
+    /// Height above the reference ellipsoid.
+    pub altitude: Length,
+}
+
+impl GeodeticStateTyped {
+    /// Construct a typed state from an untyped [`GeodeticState`] assuming the
+    /// stored components are in radians/meters (their documented base units).
+    #[inline]
+    pub fn from_raw(state: GeodeticState) -> Self {
+        Self {
+            latitude: Angle::new::<radian>(state.latitude),
+            longitude: Angle::new::<radian>(state.longitude),
+            altitude: Length::new::<meter>(state.altitude),
+        }
+    }
+
+    /// Lower a typed state back to the raw [`GeodeticState`] (radians/meters).
+    #[inline]
+    pub fn into_raw(self) -> GeodeticState {
+        GeodeticState {
+            latitude: self.latitude.get::<radian>(),
+            longitude: self.longitude.get::<radian>(),
+            altitude: self.altitude.get::<meter>(),
+        }
+    }
 }
 
 /// Spherical coordinates relative to a spherical planet.
@@ -78,6 +131,11 @@ pub fn spherical_to_cartesian(sph: &SphericalState, r_eq: f64) -> DVec3 {
 /// * `cart` - Cartesian position in PCPF frame (m)
 /// * `r_eq` - Equatorial radius (m)
 /// * `r_pol` - Polar radius (m)
+#[doc(hidden)]
+#[deprecated(
+    since = "0.2.0-phase-3",
+    note = "use cartesian_to_geodetic_typed; f64 variant removed in Phase 10"
+)]
 pub fn cartesian_to_geodetic(cart: DVec3, r_eq: f64, r_pol: f64) -> GeodeticState {
     // JEOD_INV: PF.02 — input must be NaN/Inf free
     // JEOD planet_fixed_posn.cc:155-162: check for NaN/Inf before proceeding.
@@ -184,6 +242,11 @@ fn get_elliptic_parameters(r: f64, z: f64, r_eq: f64, r_pol: f64) -> (f64, f64) 
 /// * `geo` - Geodetic coordinates (latitude rad, longitude rad, altitude m)
 /// * `r_eq` - Equatorial radius (m)
 /// * `r_pol` - Polar radius (m)
+#[doc(hidden)]
+#[deprecated(
+    since = "0.2.0-phase-3",
+    note = "use geodetic_to_cartesian_typed; f64 variant removed in Phase 10"
+)]
 pub fn geodetic_to_cartesian(geo: &GeodeticState, r_eq: f64, r_pol: f64) -> DVec3 {
     let sin_lat = geo.latitude.sin();
     let cos_lat = geo.latitude.cos();
@@ -204,9 +267,48 @@ pub fn geodetic_to_cartesian(geo: &GeodeticState, r_eq: f64, r_pol: f64) -> DVec
     )
 }
 
+/// Typed sibling of [`cartesian_to_geodetic`]. Accepts a planet-fixed
+/// position and returns a dimensionally-typed [`GeodeticStateTyped`].
+///
+/// Bit-identical to [`cartesian_to_geodetic`] — this is a thin wrapper that
+/// unwraps `Position<PlanetFixed<P>>` to its SI `DVec3` representation,
+/// delegates to the f64 implementation, and re-wraps the scalar outputs.
+///
+/// The planet is carried only as a compile-time phantom tag on the input
+/// frame; the ellipsoid dimensions are supplied numerically via `r_eq` /
+/// `r_pol` (matching the existing f64 API). The geodetic representation is
+/// defined with respect to the body-fixed frame of the named planet.
+pub fn cartesian_to_geodetic_typed<P: Planet>(
+    pos: Position<PlanetFixed<P>>,
+    r_eq: Length,
+    r_pol: Length,
+) -> GeodeticStateTyped {
+    #[allow(deprecated)]
+    let raw = cartesian_to_geodetic(pos.raw_si(), r_eq.get::<meter>(), r_pol.get::<meter>());
+    GeodeticStateTyped::from_raw(raw)
+}
+
+/// Typed sibling of [`geodetic_to_cartesian`]. Returns a planet-fixed
+/// position parameterized by the planet tag `P`.
+///
+/// Bit-identical to [`geodetic_to_cartesian`].
+pub fn geodetic_to_cartesian_typed<P: Planet>(
+    state: GeodeticStateTyped,
+    r_eq: Length,
+    r_pol: Length,
+) -> Position<PlanetFixed<P>> {
+    let raw_state = state.into_raw();
+    #[allow(deprecated)]
+    let cart = geodetic_to_cartesian(&raw_state, r_eq.get::<meter>(), r_pol.get::<meter>());
+    Qty3::from_raw_si(cart)
+}
+
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
+    use jeod_quantities::ext::F64Ext;
+    use jeod_quantities::frame::Earth;
     use std::f64::consts::PI;
 
     const EARTH_R_EQ: f64 = 6_378_137.0; // WGS84 equatorial radius (m)
@@ -403,5 +505,88 @@ mod tests {
             assert!(lon_err < 1e-10, "{label}: longitude error = {lon_err}");
             assert!(alt_err < 1e-6, "{label}: altitude error = {alt_err} m");
         }
+    }
+
+    // =================================================================
+    // Typed API tests
+    // =================================================================
+
+    /// ISS altitude landmark: typed round-trip (geodetic -> cartesian -> geodetic)
+    /// must close to <1e-14 rad / <1e-9 m.
+    #[test]
+    fn typed_round_trip_iss_landmark() {
+        // ISS-like: 51.6° N, 30° E, 408 km above WGS84 ellipsoid.
+        let original = GeodeticStateTyped {
+            latitude: 51.6.deg(),
+            longitude: 30.0.deg(),
+            altitude: 408_000.0.m(),
+        };
+        let r_eq = EARTH_R_EQ.m();
+        let r_pol = EARTH_R_POL.m();
+
+        let cart: Position<PlanetFixed<Earth>> = geodetic_to_cartesian_typed(original, r_eq, r_pol);
+        let recovered = cartesian_to_geodetic_typed(cart, r_eq, r_pol);
+
+        let lat_err =
+            (recovered.latitude.get::<radian>() - original.latitude.get::<radian>()).abs();
+        let lon_err =
+            (recovered.longitude.get::<radian>() - original.longitude.get::<radian>()).abs();
+        let alt_err = (recovered.altitude.get::<meter>() - original.altitude.get::<meter>()).abs();
+
+        assert!(lat_err < 1e-14, "lat err = {lat_err}");
+        assert!(lon_err < 1e-14, "lon err = {lon_err}");
+        assert!(alt_err < 1e-9, "alt err = {alt_err} m");
+    }
+
+    /// The typed and f64 entry points must be bit-identical for the
+    /// underlying scalar components.
+    #[test]
+    fn typed_matches_f64_cartesian_to_geodetic() {
+        // Non-trivial position to exercise non-zero lat/lon/alt components.
+        let raw_pos = DVec3::new(4_500_000.0, -2_800_000.0, 3_700_000.0);
+        let pos: Position<PlanetFixed<Earth>> = Qty3::from_raw_si(raw_pos);
+
+        let f64_result = cartesian_to_geodetic(raw_pos, EARTH_R_EQ, EARTH_R_POL);
+        let typed_result = cartesian_to_geodetic_typed(pos, EARTH_R_EQ.m(), EARTH_R_POL.m());
+
+        // Bit-identical: same numerical operation, just unit-wrapped.
+        assert_eq!(typed_result.latitude.get::<radian>(), f64_result.latitude);
+        assert_eq!(typed_result.longitude.get::<radian>(), f64_result.longitude);
+        assert_eq!(typed_result.altitude.get::<meter>(), f64_result.altitude);
+    }
+
+    /// Dual of the previous test for `geodetic_to_cartesian`.
+    #[test]
+    fn typed_matches_f64_geodetic_to_cartesian() {
+        let raw = GeodeticState {
+            latitude: 0.9,
+            longitude: -0.5,
+            altitude: 408_000.0,
+        };
+        let typed = GeodeticStateTyped::from_raw(raw);
+
+        let f64_cart = geodetic_to_cartesian(&raw, EARTH_R_EQ, EARTH_R_POL);
+        let typed_cart: Position<PlanetFixed<Earth>> =
+            geodetic_to_cartesian_typed(typed, EARTH_R_EQ.m(), EARTH_R_POL.m());
+
+        let typed_raw = typed_cart.raw_si();
+        assert_eq!(typed_raw.x, f64_cart.x);
+        assert_eq!(typed_raw.y, f64_cart.y);
+        assert_eq!(typed_raw.z, f64_cart.z);
+    }
+
+    /// `GeodeticStateTyped::from_raw` / `into_raw` must be inverses.
+    #[test]
+    fn typed_raw_conversion_round_trip() {
+        let raw = GeodeticState {
+            latitude: 0.123_456_789,
+            longitude: -1.987_654_321,
+            altitude: 12_345.678,
+        };
+        let typed = GeodeticStateTyped::from_raw(raw);
+        let back = typed.into_raw();
+        assert_eq!(raw.latitude, back.latitude);
+        assert_eq!(raw.longitude, back.longitude);
+        assert_eq!(raw.altitude, back.altitude);
     }
 }
