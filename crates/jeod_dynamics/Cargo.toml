@@ -13,3 +13,4 @@ jeod_math = { path = "../jeod_math", features = ["test-utils"] }
 jeod_test_data = { path = "../jeod_test_data" }
 jeod_gravity = { path = "../jeod_gravity" }
 jeod_planet = { path = "../jeod_planet" }
+sha2 = "0.10"
