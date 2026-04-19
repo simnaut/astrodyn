@@ -1,3 +1,5 @@
+pub use jeod_quantities::prelude::*;
+
 pub mod exponential;
 pub mod met;
 
