@@ -1,4 +1,7 @@
+use crate::{SecondsSince, GMST};
 use std::f64::consts::PI;
+use uom::si::angle::radian;
+use uom::si::f64::Angle;
 
 /// Convert UT1 days since noon 2000-01-01 to Greenwich Mean Sidereal Time.
 ///
@@ -31,6 +34,27 @@ pub fn ut1_to_gmst_radians(du: f64) -> f64 {
     let gmst_days = ut1_to_gmst_days(du);
     let fractional = gmst_days - gmst_days.floor();
     fractional * 2.0 * PI
+}
+
+// --- Typed variants (Phase 1 #103) ------------------------------------------
+//
+// The GMST polynomial (Aoki et al. 1982) is parameterised by `du`, UT1 days
+// since J2000 noon — a scale-neutral scalar anchor rather than a
+// `SecondsSince<UT1>`. The typed wrappers therefore keep the `du: f64` input
+// and return typed output: a `uom::si::f64::Angle` for the wrapped radian
+// form (GMST's primary representation) and `SecondsSince<GMST>` for the
+// accumulated sidereal-seconds form.
+
+/// Typed UT1 → GMST accumulated sidereal seconds (delegates to
+/// [`ut1_to_gmst_seconds`]).
+pub fn ut1_to_gmst_seconds_typed(du: f64) -> SecondsSince<GMST> {
+    SecondsSince::from_seconds(ut1_to_gmst_seconds(du))
+}
+
+/// Typed UT1 → GMST angle wrapped to `[0, 2π)` (delegates to
+/// [`ut1_to_gmst_radians`]).
+pub fn ut1_to_gmst_angle(du: f64) -> Angle {
+    Angle::new::<radian>(ut1_to_gmst_radians(du))
 }
 
 #[cfg(test)]
@@ -83,6 +107,29 @@ mod tests {
                 (0.0..std::f64::consts::TAU).contains(&gmst_rad),
                 "GMST radians out of range: {} at days={}",
                 gmst_rad,
+                days
+            );
+        }
+    }
+
+    #[test]
+    fn ut1_gmst_typed_matches_f64() {
+        let du = 365.25_f64;
+        let typed_secs = ut1_to_gmst_seconds_typed(du);
+        assert_eq!(typed_secs.as_seconds(), ut1_to_gmst_seconds(du));
+
+        let typed_angle = ut1_to_gmst_angle(du);
+        assert_eq!(typed_angle.get::<radian>(), ut1_to_gmst_radians(du));
+    }
+
+    #[test]
+    fn ut1_gmst_typed_angle_is_bounded() {
+        for days in [-1000.0, 0.0, 365.25, 3652.5] {
+            let angle_rad = ut1_to_gmst_angle(days).get::<radian>();
+            assert!(
+                (0.0..std::f64::consts::TAU).contains(&angle_rad),
+                "typed GMST angle out of range: {} at days={}",
+                angle_rad,
                 days
             );
         }
