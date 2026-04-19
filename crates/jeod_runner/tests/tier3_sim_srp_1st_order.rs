@@ -19,7 +19,7 @@ use jeod_runner::{
 use jeod_sim::{
     Ephemeris, EphemerisBody, FlatPlate, FlatPlateParams, FlatPlateState, FlatPlateThermal,
     GravityControl, GravityControls, GravityModel, GravitySource, MassProperties, SimulationTime,
-    TranslationalState,
+    ThermalIntegrationOrder, TranslationalState,
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::Path;
@@ -217,6 +217,11 @@ fn tier3_srp_1st_order_trajectory() {
             plates,
             temperatures: vec![init_temp; num_plates],
             t_pow4_cached: vec![init_temp.powi(4); num_plates],
+            // JEOD SIM_3_ORBIT_1st_ORDER wires `rad_pressure.update` as a
+            // derivative-class job (per RK4 stage) with ER7_Utils
+            // first-order integrator on temperature. Match that here.
+            integration_order: ThermalIntegrationOrder::DerivativeFirstOrder,
+            ..Default::default()
         })),
         shadow_body: Some(ShadowBody {
             source_idx: earth,
@@ -276,5 +281,5 @@ fn tier3_srp_1st_order_trajectory() {
     let max_pos_error = report.max_position_component();
     println!("  Max position error: {:.6e} m", max_pos_error);
 
-    report.assert_position([8.296e1, 8.491e1, 3.686e1]);
+    report.assert_position([7.709e1, 8.021e1, 3.481e1]);
 }

@@ -5,12 +5,104 @@ use jeod_interactions::{
     DragConfig, FlatPlate, FlatPlateParams, FlatPlateThermal,
 };
 
+use crate::integrable::IntegrableObject;
+
+/// Step-constant SRP inputs cached at step start for the derivative-class
+/// thermal paths.
+///
+/// Populated by Stage 5 (interactions) when
+/// [`ThermalIntegrationOrder::DerivativeFirstOrder`] or
+/// [`ThermalIntegrationOrder::DerivativeRk4`] is selected; consumed by
+/// Stage 8 (integration)'s per-stage closure inside
+/// [`crate::integrate_body_coupled`]. `None` for
+/// [`ThermalIntegrationOrder::Scheduled`] — the Stage 5 Euler fast path
+/// remains active.
+///
+/// Shared by the standalone `Simulation` runner and the Bevy adapter so
+/// both drive the coupled integrator with identical step-start data.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FlatPlateStageInputs {
+    /// Sun position in inertial frame, captured at step start. The
+    /// coupled stage closure recomputes `sun_to_vehicle`,
+    /// `flux_inertial_hat`, and `flux_mag` per RK4 stage from this plus
+    /// the stage's `TranslationalState.position`, matching JEOD's
+    /// derivative-class `RadiationSource::calculate_flux` which reads
+    /// the intermediate vehicle structure frame at every call (see
+    /// `models/interactions/radiation_pressure/src/radiation_source.cc`).
+    pub sun_position: DVec3,
+    /// Shadow illumination factor from step-start shadow evaluation
+    /// (constant across RK4 stages — matches JEOD scheduled-class
+    /// shadow in SIM_3_ORBIT; third-body frames are not propagated
+    /// between RK4 stages within JEOD either).
+    pub illum_factor: f64,
+    /// Center of gravity in structural frame.
+    pub center_grav: DVec3,
+}
+
+/// Which integrator drives plate temperatures, and at what scheduling
+/// class.
+///
+/// JEOD's `rad_pressure.update()` can be wired in three ways (observed in
+/// `models/interactions/radiation_pressure/verif/S_modules/*.sm`):
+///
+/// * **Scheduled** (`radiation.sm` — SIM_3_ORBIT): `rad_pressure.update` is
+///   a `("scheduled")` job that runs once per DYNAMICS interval, outside
+///   the integration loop. Temperature is advanced by first-order Euler
+///   over the full step, and the SRP force fed to the orbital integrator
+///   is step-constant.
+/// * **DerivativeFirstOrder** (`radiation_1st_order.sm` — SIM_3_ORBIT_1st_ORDER):
+///   `rad_pressure.update` is `("derivative")` and runs at every RK4
+///   derivative evaluation, so the SRP force varies with intermediate
+///   orbital position. The thermal integrator is ER7_Utils first-order —
+///   i.e., temperature is advanced using the step-start derivative only.
+/// * **DerivativeRk4** (no JEOD Tier 3 reference): `rad_pressure.update`
+///   runs per stage AND temperature integrates via full RK4 (all four
+///   derivatives). Not required to match any current JEOD reference CSV;
+///   exposed as an API option for mission-level missions that want the
+///   more accurate coupling going forward.
+///
+/// Default is [`ThermalIntegrationOrder::Scheduled`] — backward-compatible
+/// with the pre-Commit-3 runner behavior and matches the SIM_3_ORBIT
+/// reference without any opt-in.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ThermalIntegrationOrder {
+    /// SRP force + Euler T update computed once per step (step-constant
+    /// SRP across RK4 stages). Matches JEOD's `(DYNAMICS, "scheduled")`
+    /// radiation module in SIM_3_ORBIT.
+    #[default]
+    Scheduled,
+    /// SRP force recomputed per RK4 stage (varies with intermediate
+    /// orbital state); temperature advanced at step end using only the
+    /// stage-1 derivative. Matches JEOD's derivative-class + first-order
+    /// ER7_Utils integrator in SIM_3_ORBIT_1st_ORDER.
+    DerivativeFirstOrder,
+    /// SRP force and temperature both recomputed per RK4 stage; full RK4
+    /// thermal integration inside the orbital RK4 loop. No current JEOD
+    /// reference uses this pattern — provided for mission code that wants
+    /// the tighter coupling.
+    DerivativeRk4,
+}
+
 /// Flat-plate SRP configuration with mutable thermal state.
 ///
 /// Bundles plate geometry/optical/thermal properties with per-plate temperature
 /// state. Used by both the `Simulation` runner and Bevy adapter so that
 /// temperature integration logic is shared.
-#[derive(Debug, Clone)]
+///
+/// Implements [`IntegrableObject`] so temperatures can integrate through the
+/// RK4 stage loop alongside orbital state (see
+/// [`crate::integrate_body_coupled`]). Construct with `..Default::default()`
+/// so the trait's snapshot scratch initializes empty:
+///
+/// ```ignore
+/// FlatPlateState {
+///     plates,
+///     temperatures: vec![300.0; n],
+///     t_pow4_cached: vec![300.0_f64.powi(4); n],
+///     ..Default::default()
+/// }
+/// ```
+#[derive(Debug, Clone, Default)]
 pub struct FlatPlateState {
     /// Per-plate geometry, optical, and thermal properties.
     pub plates: Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)>,
@@ -19,6 +111,40 @@ pub struct FlatPlateState {
     /// Cached T^4 per plate from previous step (for thermal emission).
     /// Same length as `plates`.
     pub t_pow4_cached: Vec<f64>,
+    /// Which integrator drives the temperature ODE.
+    ///
+    /// Defaults to [`ThermalIntegrationOrder::Scheduled`], which matches
+    /// JEOD's scheduled-class `SIM_3_ORBIT` behavior (SRP force + Euler T
+    /// computed once per step).
+    ///
+    /// Use [`ThermalIntegrationOrder::DerivativeFirstOrder`] to match
+    /// JEOD's derivative-class `SIM_3_ORBIT_1st_ORDER`: SRP force is
+    /// recomputed per RK4 stage (varying with intermediate orbital
+    /// attitude) while T is integrated via ER7_Utils first-order from
+    /// the stage-1 derivative.
+    ///
+    /// Use [`ThermalIntegrationOrder::DerivativeRk4`] for tighter
+    /// per-stage SRP and thermal coupling; no current JEOD Tier 3
+    /// reference uses that mode.
+    ///
+    /// Both derivative-class modes run through
+    /// [`crate::integrate_body_coupled`].
+    pub integration_order: ThermalIntegrationOrder,
+    /// Step-start SRP inputs populated by the Stage-5 interactions code
+    /// when `integration_order` is derivative-class. `None` in
+    /// `Scheduled` mode. Consumed by the Stage-8 integration closure;
+    /// cleared at the start of the next step's Stage 5.
+    pub stage_inputs: Option<FlatPlateStageInputs>,
+    /// Step-start temperature snapshot, populated by
+    /// [`IntegrableObject::snapshot`] and read by
+    /// [`IntegrableObject::advance_intermediate`] /
+    /// [`IntegrableObject::finalize_rk4`]. Managed by the RK4 kernel; do
+    /// not set manually.
+    #[doc(hidden)]
+    pub temps_snapshot: Vec<f64>,
+    /// Step-start T^4 snapshot; companion to `temps_snapshot`.
+    #[doc(hidden)]
+    pub t_pow4_snapshot: Vec<f64>,
 }
 
 impl FlatPlateState {
@@ -61,42 +187,99 @@ impl FlatPlateState {
     ///
     /// Combines k1–k4 temperature derivatives via the standard RK4 formula
     /// and applies JEOD overshoot clamping (thermal_integrable_object.cc:106-121).
-    /// Called by [`crate::integration::integrate_body_coupled`] after all four
-    /// stages have been evaluated.
+    /// Reads the step-start snapshots from `temps_snapshot` /
+    /// `t_pow4_snapshot`, which [`IntegrableObject::snapshot`] populated at
+    /// the start of the step.
     ///
-    /// This is the coupled-integration counterpart of [`Self::integrate_temperatures`]:
-    /// instead of deriving k2–k4 internally from k1's `power_absorb`, the four
-    /// derivatives were computed at intermediate orbital positions by the stage
-    /// closure.
-    #[allow(clippy::too_many_arguments)]
+    /// This is the coupled-integration counterpart of
+    /// [`Self::integrate_temperatures`]: instead of deriving k2–k4 internally
+    /// from k1's `power_absorb`, the four derivatives were computed at
+    /// intermediate orbital positions by the stage closure.
     pub fn finalize_rk4_temperatures(
         &mut self,
-        temps0: &[f64],
-        t_pow4_0: &[f64],
         k1_tdots: &[f64],
         k2_tdots: &[f64],
         k3_tdots: &[f64],
         k4_tdots: &[f64],
         dt: f64,
-        n_plates: usize,
     ) {
-        for i in 0..n_plates {
-            let (plate, _, thermal) = &self.plates[i];
+        let n = self.temperatures.len();
+        for i in 0..n {
+            let area = self.plates[i].0.area;
+            let emissivity = self.plates[i].2.emissivity;
+            let heat_capacity_per_area = self.plates[i].2.heat_capacity_per_area;
             let (new_temp, new_t_pow4) = jeod_interactions::integrate_plate_temperature_rk4(
-                temps0[i],
-                t_pow4_0[i],
+                self.temps_snapshot[i],
+                self.t_pow4_snapshot[i],
                 k1_tdots[i],
                 k2_tdots[i],
                 k3_tdots[i],
                 k4_tdots[i],
-                plate.area,
-                thermal.emissivity,
-                thermal.heat_capacity_per_area,
+                area,
+                emissivity,
+                heat_capacity_per_area,
                 dt,
             );
             self.temperatures[i] = new_temp;
             self.t_pow4_cached[i] = new_t_pow4;
         }
+    }
+}
+
+// JEOD_INV: IN.32 — IntegrableObject per-stage snapshot/advance/finalize protocol.
+// Port of JEOD er7_utils::IntegrableObject (trick_source/er7_utils/integration/
+// core/include/integrable_object.hh) as consumed by DynamicsIntegrationGroup.
+// FlatPlateState's temperature vector is the only sub-state that uses this
+// protocol today; orbital translational/rotational state is integrated
+// directly by the enclosing RK4 kernel.
+impl IntegrableObject for FlatPlateState {
+    fn n_states(&self) -> usize {
+        self.temperatures.len()
+    }
+
+    fn snapshot(&mut self) {
+        self.temps_snapshot.clear();
+        self.temps_snapshot.extend_from_slice(&self.temperatures);
+        self.t_pow4_snapshot.clear();
+        self.t_pow4_snapshot.extend_from_slice(&self.t_pow4_cached);
+    }
+
+    fn advance_intermediate(&mut self, deriv: &[f64], h: f64) {
+        // Length parity across every backing vector must hold in all
+        // builds: iterating with `zip()` truncates silently on mismatch
+        // and would leave the state partially updated. Use `assert_eq!`
+        // so release builds also fail fast, then index directly.
+        let n = self.temperatures.len();
+        assert_eq!(
+            self.t_pow4_cached.len(),
+            n,
+            "t_pow4_cached length must equal temperatures length",
+        );
+        assert_eq!(
+            self.temps_snapshot.len(),
+            n,
+            "temps_snapshot length must equal temperatures length; \
+             call IntegrableObject::snapshot before advance_intermediate",
+        );
+        assert_eq!(
+            deriv.len(),
+            n,
+            "advance_intermediate derivative length must equal temperature count",
+        );
+        // `zip()` would truncate silently on length mismatch; the asserts
+        // above guarantee parity so this indexed loop is safe. Allow the
+        // range-loop lint because the alternative (nested `zip`s) is
+        // precisely the pattern we're trying to avoid.
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..n {
+            let new_t = (self.temps_snapshot[i] + deriv[i] * h).max(0.0);
+            self.temperatures[i] = new_t;
+            self.t_pow4_cached[i] = new_t * new_t * new_t * new_t;
+        }
+    }
+
+    fn finalize_rk4(&mut self, k1: &[f64], k2: &[f64], k3: &[f64], k4: &[f64], dt: f64) {
+        self.finalize_rk4_temperatures(k1, k2, k3, k4, dt);
     }
 }
 

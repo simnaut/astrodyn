@@ -272,6 +272,7 @@ Our port wraps ANISE (`crates/jeod_ephemeris`, 243 lines: `ephemeris.rs` + `bodi
 | IN.29 | RadiationThirdBody activation lookup: name must resolve to an existing third body in the model; otherwise error (`radiation_pressure.cc` invalid_function_call, three sites) | error | runtime | n/a |
 | IN.30 | Contact pair bodies must be distinct (`unique_pair` in `contact.cc`) | fatal | initialization | enforced (`register_contact_pair` asserts `body_a != body_b`) |
 | IN.31 | Contact forces evaluated at every derivative evaluation (JEOD `check_contact` is a derivative-class job in `contact.sm`) | structural (Trick job scheduling) | runtime | enforced (`Simulation::step_internal` uses `integrate_bodies_contact_coupled` when contact pairs are registered, evaluating every pair at each RK4 stage) |
+| IN.32 | IntegrableObject per-step protocol: `snapshot` once at step start, `advance_intermediate` before stages 2–4, `finalize_rk4` after stage 4 — mirrors JEOD's `er7_utils::IntegrableObject` driven by `DynamicsIntegrationGroup` (`trick_source/er7_utils/integration/core/include/integrable_object.hh`; `models/dynamics/dyn_manager/src/dynamics_integration_group.cc`) | structural (trait contract) | runtime | enforced (`crates/jeod_sim/src/integrable.rs`; `FlatPlateState` impl in `interactions.rs`; invoked by `integrate_body_coupled`/`integrate_coupled_sixdof`) |
 
 ## Section DS: Derived States
 

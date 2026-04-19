@@ -146,6 +146,7 @@ fn run_srp_basic_test(csv_filename: &str, label: &str) {
             plates,
             temperatures: vec![init_temp; num_plates],
             t_pow4_cached: vec![init_temp.powi(4); num_plates],
+            ..Default::default()
         })),
         ..Default::default()
     });

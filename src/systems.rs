@@ -252,7 +252,7 @@ pub fn force_collection_system(
 /// The integration method is determined by the optional `IntegratorTypeC`
 /// component (RK4, RKF45, GaussJackson, Abm4). When absent, RK4 is used.
 /// GaussJackson requires `GaussJacksonStateC`; ABM4 requires `Abm4StateC`.
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn integration_system(
     mut bodies: Query<(
         Entity,
@@ -261,10 +261,14 @@ pub fn integration_system(
         Option<&mut RotationalStateC>,
         Option<&MassPropertiesC>,
         &GravityControlsC,
-        &TotalForceC,
+        &mut TotalForceC,
         Option<&IntegratorTypeC>,
         Option<&mut GaussJacksonStateC>,
         Option<&mut Abm4StateC>,
+        Option<&mut FlatPlateConfigC>,
+        Option<&StructuralTransformC>,
+        Option<&mut RadiationForceC>,
+        Option<&mut FrameDerivativesC>,
     )>,
     sources: Query<(
         &GravitySourceC,
@@ -282,6 +286,48 @@ pub fn integration_system(
         return;
     }
 
+    // Helper closure for gravity at an intermediate state — reused by both
+    // the standard and coupled dispatch branches.
+    let eval_gravity = |entity: Entity,
+                        controls: &GravityControlsC,
+                        pos: DVec3,
+                        vel: DVec3|
+     -> DVec3 {
+        let mut accel =
+            jeod_sim::accumulate_gravity(pos, &controls.0, DVec3::ZERO, |source_entity| {
+                match sources.get(source_entity) {
+                    Ok((s, r, p, _, tidal, tidal_config)) => Some(jeod_sim::ResolvedSource {
+                        source: &s.0,
+                        rotation: r.map(|r| &r.0),
+                        position: p.0,
+                        delta_c20: tidal.map_or(0.0, |t| t.0),
+                        has_delta_coeffs: tidal_config.is_some(),
+                    }),
+                    Err(_) => {
+                        panic!(
+                            "Entity {entity:?}: GravityControl references source \
+                         {source_entity:?} which does not exist or lacks \
+                         GravitySourceC + SourceInertialPositionC."
+                        );
+                    }
+                }
+            })
+            .grav_accel;
+
+        accel +=
+            jeod_sim::accumulate_relativistic_corrections(pos, vel, &controls.0, |source_entity| {
+                sources.get(source_entity).ok().map(|(s, _, p, v, _, _)| {
+                    jeod_sim::ResolvedRelativisticSource {
+                        mu: s.mu,
+                        position: p.0,
+                        velocity: v.map_or(DVec3::ZERO, |v| v.0),
+                    }
+                })
+            });
+
+        accel
+    };
+
     for (
         entity,
         config,
@@ -289,10 +335,14 @@ pub fn integration_system(
         mut rot_state,
         mass,
         controls,
-        total_force,
+        mut total_force,
         integrator,
         mut gj_state,
         mut abm4_state,
+        mut flat_config,
+        struct_xform,
+        mut srp_force,
+        mut frame_derivs,
     ) in &mut bodies
     {
         let integrator_type = integrator.map_or(jeod_sim::IntegratorType::Rk4, |c| c.0);
@@ -313,53 +363,131 @@ pub fn integration_system(
                  Abm4StateC(Abm4State::new()) to the entity."
             );
         }
+
+        // Derivative-class thermal fork: the SRP system cached step-start
+        // inputs into `flat_config.stage_inputs`. Recompute SRP force +
+        // temperature derivatives per RK4 stage through
+        // `integrate_body_coupled`. See `jeod_runner::Simulation::step_internal`
+        // for the sister implementation.
+        let stage_inputs_and_order = flat_config
+            .as_ref()
+            .and_then(|fc| fc.stage_inputs.map(|si| (si, fc.integration_order)));
+        if let Some((srp_inputs, thermal_order)) = stage_inputs_and_order {
+            assert!(
+                matches!(integrator_type, jeod_sim::IntegratorType::Rk4),
+                "Entity {entity:?}: derivative-class ThermalIntegrationOrder \
+                 requires RK4 integrator; use Scheduled or switch integrator.",
+            );
+            let t_struct_body = struct_xform.map_or(glam::DMat3::IDENTITY, |s| s.0);
+            let non_grav_non_srp_force = total_force.force;
+            let constant_torque = total_force.torque;
+            let mut final_srp_inertial_force = DVec3::ZERO;
+            let mut final_srp_torque = DVec3::ZERO;
+            let mut k1_temp_dots: Option<Vec<f64>> = None;
+            let mass_copy = mass.map(|m| m.0);
+            let thermal = flat_config
+                .as_mut()
+                .expect("stage_inputs_and_order => flat_config present");
+            jeod_sim::integrate_body_coupled(
+                config,
+                &mut state.0,
+                rot_state.as_mut().map(|r| &mut r.0),
+                mass_copy.as_ref(),
+                |stage_trans, stage_rot, stage_thermal, time_frac| {
+                    let gravity_accel =
+                        eval_gravity(entity, controls, stage_trans.position, stage_trans.velocity);
+                    let t_inertial_body = stage_rot.map_or(glam::DMat3::IDENTITY, |r| {
+                        r.quaternion.left_quat_to_transformation()
+                    });
+                    let t_inertial_struct =
+                        jeod_sim::compute_t_inertial_struct(&t_struct_body, &t_inertial_body);
+                    // Per-stage flux recompute from intermediate vehicle
+                    // position — matches JEOD's derivative-class
+                    // `RadiationSource::calculate_flux`. Sun position is
+                    // step-constant (ephemeris is scheduled-class).
+                    let sun_to_vehicle = stage_trans.position - srp_inputs.sun_position;
+                    let distance = sun_to_vehicle.length().max(1.0);
+                    let stage_flux_inertial_hat = sun_to_vehicle / distance;
+                    let stage_flux_mag = jeod_sim::solar_flux_at_distance(distance);
+                    let flux_struct_hat = t_inertial_struct * stage_flux_inertial_hat;
+                    let srp_result = jeod_sim::compute_flat_plate_srp_thermal(
+                        &stage_thermal.plates,
+                        &stage_thermal.t_pow4_cached,
+                        flux_struct_hat,
+                        stage_flux_mag,
+                        srp_inputs.center_grav,
+                        srp_inputs.illum_factor,
+                    );
+                    let srp_force_inertial = t_inertial_struct.transpose() * srp_result.force;
+                    final_srp_inertial_force = srp_force_inertial;
+                    final_srp_torque = srp_result.torque;
+                    let temp_dots = match thermal_order {
+                        jeod_sim::ThermalIntegrationOrder::DerivativeRk4 => srp_result.temp_dots,
+                        jeod_sim::ThermalIntegrationOrder::DerivativeFirstOrder => {
+                            if time_frac == 0.0 {
+                                k1_temp_dots = Some(srp_result.temp_dots.clone());
+                                srp_result.temp_dots
+                            } else {
+                                k1_temp_dots
+                                    .as_ref()
+                                    .expect("stage 1 runs before stages 2-4")
+                                    .clone()
+                            }
+                        }
+                        jeod_sim::ThermalIntegrationOrder::Scheduled => {
+                            unreachable!("Scheduled bodies do not enter the coupled path")
+                        }
+                    };
+                    // `srp_result.torque` is structural-frame per
+                    // `FlatPlateSrpResult` docs; `constant_torque` is
+                    // body-frame (from `collect_and_resolve_forces`).
+                    // Rotate to body frame before summing so the coupled
+                    // integrator's rotational dynamics are correct when
+                    // `t_struct_body` != IDENTITY.
+                    let srp_torque_body = t_struct_body * srp_result.torque;
+                    jeod_sim::CoupledStageEval {
+                        gravity_accel,
+                        non_grav_force: non_grav_non_srp_force + srp_force_inertial,
+                        torque: constant_torque + srp_torque_body,
+                        temp_dots,
+                    }
+                },
+                &mut thermal.0,
+                dt,
+                sim_time.0.time_scale_factor,
+            );
+
+            // Write representative `RadiationForceC` from stage 4 so
+            // `VehicleOutput`-equivalent observers still see the SRP force.
+            if let Some(ref mut srp_force) = srp_force {
+                srp_force.force = final_srp_inertial_force;
+                srp_force.torque = final_srp_torque;
+            }
+
+            // Backfill `TotalForceC` and `FrameDerivativesC` with the
+            // final-stage SRP contribution so downstream observers see
+            // SRP-inclusive values, matching the Scheduled-mode invariant
+            // that `TotalForceC` / `FrameDerivativesC` reflect every
+            // applied force / resulting acceleration. In derivative modes
+            // this is a "representative stage" (stage 4) snapshot, same
+            // as `RadiationForceC` above.
+            total_force.force += final_srp_inertial_force;
+            let final_srp_torque_body = t_struct_body * final_srp_torque;
+            total_force.torque += final_srp_torque_body;
+            if let (Some(ref mut fd), Some(mass_p)) = (frame_derivs.as_mut(), mass_copy) {
+                fd.trans_accel += final_srp_inertial_force * mass_p.inverse_mass;
+                fd.rot_accel += mass_p.inverse_inertia * final_srp_torque_body;
+            }
+            continue;
+        }
+
+        // Standard (Scheduled or no-SRP) path.
         jeod_sim::integrate_body(
             config,
             &mut state.0,
             rot_state.as_mut().map(|r| &mut r.0),
             mass.map(|m| &m.0),
-            |pos, vel, _time_frac| {
-                let mut accel =
-                    jeod_sim::accumulate_gravity(pos, &controls.0, DVec3::ZERO, |source_entity| {
-                        match sources.get(source_entity) {
-                            Ok((s, r, p, _, tidal, tidal_config)) => {
-                                Some(jeod_sim::ResolvedSource {
-                                    source: &s.0,
-                                    rotation: r.map(|r| &r.0),
-                                    position: p.0,
-                                    delta_c20: tidal.map_or(0.0, |t| t.0),
-                                    has_delta_coeffs: tidal_config.is_some(),
-                                })
-                            }
-                            Err(_) => {
-                                panic!(
-                                    "Entity {entity:?}: GravityControl references source \
-                                     {source_entity:?} which does not exist or lacks \
-                                     GravitySourceC + SourceInertialPositionC."
-                                );
-                            }
-                        }
-                    })
-                    .grav_accel;
-
-                // Relativistic correction at each integrator stage.
-                accel += jeod_sim::accumulate_relativistic_corrections(
-                    pos,
-                    vel,
-                    &controls.0,
-                    |source_entity| {
-                        sources.get(source_entity).ok().map(|(s, _, p, v, _, _)| {
-                            jeod_sim::ResolvedRelativisticSource {
-                                mu: s.mu,
-                                position: p.0,
-                                velocity: v.map_or(DVec3::ZERO, |v| v.0),
-                            }
-                        })
-                    },
-                );
-
-                accel
-            },
+            |pos, vel, _time_frac| eval_gravity(entity, controls, pos, vel),
             total_force.force,
             total_force.torque,
             dt,
@@ -765,8 +893,8 @@ pub fn flat_plate_srp_system(
     time: Res<Time<Fixed>>,
 ) {
     let sun_state = match sun_query.single() {
-        Ok(s) => s,
-        Err(bevy::ecs::query::QuerySingleError::NoEntities(_)) => return,
+        Ok(s) => Some(s),
+        Err(bevy::ecs::query::QuerySingleError::NoEntities(_)) => None,
         Err(bevy::ecs::query::QuerySingleError::MultipleEntities(_)) => {
             panic!(
                 "Multiple entities with SunMarker found. In JEOD, RadiationPressure \
@@ -779,45 +907,79 @@ pub fn flat_plate_srp_system(
     let dt = time.delta_secs_f64();
 
     for (mut flat_config, state, rot, mass, struct_xform, mut srp_force) in &mut query {
+        // Clear per-step SRP state unconditionally (before the Sun check)
+        // so derivative-mode entities don't retain stale `stage_inputs` or
+        // force/torque if the Sun entity is removed between steps — which
+        // would otherwise incorrectly drive the coupled RK4 path. Mirrors
+        // the unconditional clearing in `jeod_runner::Simulation`.
+        flat_config.stage_inputs = None;
+        srp_force.force = DVec3::ZERO;
+        srp_force.torque = DVec3::ZERO;
+
+        let Some(sun_state) = sun_state else {
+            continue;
+        };
+
         let sun_to_vehicle = state.position - sun_state.position;
         let distance = sun_to_vehicle.length();
         if distance < 1.0 {
+            // Too close to the Sun to compute flux: force/torque/
+            // stage_inputs already zeroed above.
             continue;
         }
         let flux_inertial_hat = sun_to_vehicle / distance;
         let flux_mag = jeod_sim::solar_flux_at_distance(distance);
 
-        // Shadow fraction
+        // Shadow fraction (step-constant; matches JEOD's scheduled-class
+        // shadow evaluation across all three integration orders).
         let illum_factor = compute_illum_factor(state.position, sun_state.position, &shadow_bodies);
-
-        // Rotate flux to structural frame
-        let t_inertial_body = rot.map_or(glam::DMat3::IDENTITY, |r| {
-            r.quaternion.left_quat_to_transformation()
-        });
-        let t_struct_body = struct_xform.map_or(glam::DMat3::IDENTITY, |s| s.0);
-        let t_inertial_struct =
-            jeod_sim::compute_t_inertial_struct(&t_struct_body, &t_inertial_body);
-        let flux_struct_hat = t_inertial_struct * flux_inertial_hat;
-
         let center_grav = mass.map_or(DVec3::ZERO, |m| m.position);
 
-        let srp_result = jeod_sim::compute_flat_plate_srp_thermal(
-            &flat_config.plates,
-            &flat_config.t_pow4_cached,
-            flux_struct_hat,
-            flux_mag,
-            center_grav,
-            illum_factor,
-        );
+        match flat_config.integration_order {
+            jeod_sim::ThermalIntegrationOrder::Scheduled => {
+                // Scheduled-class (SIM_3_ORBIT): SRP force + Euler T once
+                // per step. Force fed to the orbital integrator is
+                // step-constant.
+                let t_inertial_body = rot.map_or(glam::DMat3::IDENTITY, |r| {
+                    r.quaternion.left_quat_to_transformation()
+                });
+                let t_struct_body = struct_xform.map_or(glam::DMat3::IDENTITY, |s| s.0);
+                let t_inertial_struct =
+                    jeod_sim::compute_t_inertial_struct(&t_struct_body, &t_inertial_body);
+                let flux_struct_hat = t_inertial_struct * flux_inertial_hat;
 
-        // Force: rotate from structural to inertial. Torque: stays structural.
-        let force_inertial = t_inertial_struct.transpose() * srp_result.force;
-        srp_force.force = force_inertial;
-        srp_force.torque = srp_result.torque;
+                let srp_result = jeod_sim::compute_flat_plate_srp_thermal(
+                    &flat_config.plates,
+                    &flat_config.t_pow4_cached,
+                    flux_struct_hat,
+                    flux_mag,
+                    center_grav,
+                    illum_factor,
+                );
 
-        // Integrate plate temperatures (forward Euler) — shared with Simulation runner
-        if dt > 0.0 {
-            flat_config.integrate_temperatures(&srp_result.temp_dots, dt);
+                let force_inertial = t_inertial_struct.transpose() * srp_result.force;
+                srp_force.force = force_inertial;
+                srp_force.torque = srp_result.torque;
+
+                // Integrate plate temperatures (forward Euler) — shared with
+                // `Simulation` runner via `FlatPlateState::integrate_temperatures`.
+                if dt > 0.0 {
+                    flat_config.integrate_temperatures(&srp_result.temp_dots, dt);
+                }
+            }
+            jeod_sim::ThermalIntegrationOrder::DerivativeFirstOrder
+            | jeod_sim::ThermalIntegrationOrder::DerivativeRk4 => {
+                // Derivative-class: SRP force (and optionally T) recomputed
+                // per RK4 stage by the integration system. Cache the
+                // step-start inputs on the plate state here; `RadiationForceC`
+                // stays at the zero cleared above — the integration system
+                // writes a representative final-stage value.
+                flat_config.stage_inputs = Some(jeod_sim::FlatPlateStageInputs {
+                    sun_position: sun_state.position,
+                    illum_factor,
+                    center_grav,
+                });
+            }
         }
     }
 }
