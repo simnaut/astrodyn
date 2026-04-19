@@ -126,6 +126,8 @@ jobs:
         run: cargo nextest run --workspace -E 'test(tier3_) and not test(earth_moon)'
       - name: Generate cross-validation report
         run: cargo run -p jeod_test_data --bin tier3_report
+      - name: Enforce Tier 3 baseline invariance
+        run: cargo run -p jeod_test_data --bin tier3_baseline_diff
       - name: Upload cross-validation report
         uses: actions/upload-artifact@v4
         with:
@@ -170,6 +172,8 @@ jobs:
         run: cargo nextest run --workspace -E 'test(tier3_)'
       - name: Generate cross-validation report
         run: cargo run -p jeod_test_data --bin tier3_report
+      - name: Enforce Tier 3 baseline invariance
+        run: cargo run -p jeod_test_data --bin tier3_baseline_diff
       - name: Upload cross-validation report (full)
         uses: actions/upload-artifact@v4
         with:
