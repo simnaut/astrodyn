@@ -38,6 +38,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Measure cold workspace check time
         run: |
+          # pipefail so a failed `cargo check` makes the step fail rather than
+          # being masked by `tee`'s exit code (GH Actions' default bash has
+          # neither pipefail nor errexit on by default).
+          set -eo pipefail
           # Ensure a fresh workspace build even if rust-cache restored target artifacts;
           # the budget is meant to track cold compile time, not warm re-check time.
           cargo clean

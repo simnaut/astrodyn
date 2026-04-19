@@ -191,11 +191,14 @@ impl<L: Layout, T: Transform> NormalizedQuat<L, T> {
 
     /// Renormalize an arbitrary quaternion into this witness.
     ///
-    /// Returns `None` if the input has zero norm.
+    /// Returns `None` if the norm is not finite and strictly positive —
+    /// i.e. the input is all zeros, contains any NaN, or has components so
+    /// large that `‖q‖` overflows to infinity. All three cases would
+    /// otherwise produce a non-unit witness.
     #[inline]
     pub fn renormalize(q: Quat<L, T>) -> Option<Self> {
         let n = q.norm();
-        if n == 0.0 {
+        if !(n.is_finite() && n > 0.0) {
             return None;
         }
         let inv = 1.0 / n;

@@ -45,6 +45,25 @@ fn renormalize_rejects_zero() {
 }
 
 #[test]
+fn renormalize_rejects_nan_input() {
+    let q = JeodQuat::from_array([f64::NAN, 0.0, 0.0, 0.0]);
+    assert!(NormalizedQuat::renormalize(q).is_none());
+}
+
+#[test]
+fn renormalize_rejects_infinite_input() {
+    // ‖q‖² = inf² = inf, so √inf = inf, which fails the finite-and-positive check.
+    let q = JeodQuat::from_array([f64::INFINITY, 0.0, 0.0, 0.0]);
+    assert!(NormalizedQuat::renormalize(q).is_none());
+}
+
+#[test]
+fn renormalize_rejects_mixed_nan_components() {
+    let q = JeodQuat::from_array([1.0, f64::NAN, 0.0, 0.0]);
+    assert!(NormalizedQuat::renormalize(q).is_none());
+}
+
+#[test]
 fn custom_tolerance_accepts_near_unit() {
     // Norm slightly off: simulate tiny floating-point drift.
     let q = JeodQuat::from_array([1.0 + 1e-9, 0.0, 0.0, 0.0]);
