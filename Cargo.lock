@@ -2413,6 +2413,7 @@ dependencies = [
  "glam 0.30.10",
  "jeod_ephemeris",
  "jeod_planet",
+ "jeod_quantities",
  "jeod_test_data",
  "thiserror 2.0.18",
 ]
