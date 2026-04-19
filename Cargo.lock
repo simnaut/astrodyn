@@ -2478,6 +2478,7 @@ dependencies = [
  "glam 0.30.10",
  "jeod_quantities",
  "regex",
+ "uom",
 ]
 
 [[package]]

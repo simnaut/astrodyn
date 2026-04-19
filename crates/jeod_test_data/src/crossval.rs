@@ -6,8 +6,10 @@
 //! `target/tier3_crossval/<test_name>.json`.
 
 use glam::{DQuat, DVec3};
+use jeod_quantities::prelude::*;
 use std::io::Write;
 use std::path::PathBuf;
+use uom::si::f64::{Angle, AngularVelocity, Length, Velocity};
 
 fn output_dir() -> PathBuf {
     let mut dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -180,6 +182,26 @@ impl CrossvalReport {
     /// Quaternion angle error in radians (rotation-invariant).
     pub fn max_quat_angle(&self) -> f64 {
         self.quat_angle.unwrap_or(0.0)
+    }
+
+    /// Worst-component position error as a typed [`Length`] (meters).
+    pub fn max_position_typed(&self) -> Length {
+        self.max_position_component().m()
+    }
+
+    /// Worst-component velocity error as a typed [`Velocity`] (m/s).
+    pub fn max_velocity_typed(&self) -> Velocity {
+        self.max_velocity_component().m_per_s()
+    }
+
+    /// Worst-component angular velocity error as a typed [`AngularVelocity`] (rad/s).
+    pub fn max_ang_vel_typed(&self) -> AngularVelocity {
+        self.max_ang_vel_component().rad_per_s()
+    }
+
+    /// Quaternion angle error as a typed [`Angle`] (radians).
+    pub fn max_quat_angle_typed(&self) -> Angle {
+        self.max_quat_angle().rad()
     }
 
     /// Assert each position component is within its tolerance.
