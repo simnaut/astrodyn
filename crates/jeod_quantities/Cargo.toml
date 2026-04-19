@@ -10,3 +10,9 @@ glam = { workspace = true }
 uom = { workspace = true }
 typenum = { workspace = true }
 thiserror = { workspace = true }
+
+[features]
+# Exposes test-only phantom markers (e.g. `TestVehicle`) so downstream crates
+# can write frame-composition tests without needing to implement sealed
+# marker traits. Never enabled in production builds.
+test-utils = []

@@ -15,4 +15,7 @@ test-utils = []
 jeod_test_data = { path = "../jeod_test_data" }
 jeod_ephemeris = { path = "../jeod_ephemeris" }
 jeod_planet = { path = "../jeod_planet" }
+# `test-utils` exposes `jeod_quantities::frame::TestVehicle` for inline tests
+# that need a phantom vehicle tag (Vehicle is sealed in production).
+jeod_quantities = { path = "../jeod_quantities", features = ["test-utils"] }
 

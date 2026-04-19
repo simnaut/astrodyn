@@ -122,3 +122,24 @@ impl<C: Vehicle> Sealed for Ned<C> {}
 impl<C: Vehicle> Frame for Ned<C> {
     const NAME: &'static str = "Ned";
 }
+
+// --- Test-only vehicle marker ------------------------------------------------
+//
+// `Vehicle` is sealed, so downstream crates cannot mint their own phantom
+// tags. Tests that exercise vehicle-parameterized frames (`Lvlh`, `Ned`,
+// `BodyFrame`, `StructuralFrame`) need *some* tag to instantiate, so we
+// expose a single test-only vehicle behind the `test-utils` feature. It is
+// never compiled into production builds.
+
+/// A no-op vehicle phantom marker for use in downstream test harnesses.
+///
+/// Available only when the crate is built with `--features test-utils`.
+#[cfg(feature = "test-utils")]
+#[derive(Debug, Clone, Copy)]
+pub struct TestVehicle;
+#[cfg(feature = "test-utils")]
+impl Sealed for TestVehicle {}
+#[cfg(feature = "test-utils")]
+impl Vehicle for TestVehicle {
+    const NAME: &'static str = "TestVehicle";
+}

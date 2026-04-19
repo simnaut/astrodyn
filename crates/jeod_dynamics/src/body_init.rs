@@ -10,7 +10,11 @@
 use crate::state::TranslationalState;
 use glam::{DMat3, DVec3};
 use jeod_math::OrbitalElements;
-use jeod_math::{compute_lvlh_frame, geodetic_to_cartesian, mat3_from_rows, GeodeticState};
+use jeod_math::{geodetic_to_cartesian, mat3_from_rows, GeodeticState};
+// `compute_lvlh_frame` is deprecated pending Phase 3 migration of this module
+// to the typed `compute_lvlh_frame_typed` API.
+#[allow(deprecated)]
+use jeod_math::compute_lvlh_frame;
 
 /// Initialize translational state from Keplerian orbital elements (true anomaly).
 ///
@@ -205,6 +209,7 @@ pub fn init_from_lvlh(
     ref_position: DVec3,
     ref_velocity: DVec3,
 ) -> TranslationalState {
+    #[allow(deprecated)]
     let lvlh = compute_lvlh_frame(ref_position, ref_velocity);
 
     // t_parent_this transforms from inertial to LVLH.
@@ -461,6 +466,7 @@ mod tests {
         let state = init_from_lvlh(lvlh_offset_pos, lvlh_offset_vel, ref_pos, ref_vel);
 
         // Now compute the LVLH frame at the reference orbit and transform back
+        #[allow(deprecated)]
         let lvlh = compute_lvlh_frame(ref_pos, ref_vel);
         let t = lvlh.t_parent_this;
 
