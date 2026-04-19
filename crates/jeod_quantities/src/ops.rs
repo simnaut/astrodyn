@@ -340,7 +340,7 @@ impl<D: ?Sized + Dimension, F: Frame> Qty3<D, F> {
 // ---- Velocity × Time → Position (and Acceleration × Time → Velocity) ----
 //
 // These follow automatically from the generic `Mul<Quantity<_>>` impl above,
-// so no additional code is required here. See `tests/ops_cross_dim.rs` for
+// so no additional code is required here. See `tests/qty3_ops.rs` for
 // verification.
 
 #[cfg(test)]

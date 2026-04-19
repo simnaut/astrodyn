@@ -101,21 +101,31 @@ impl<From: Frame, To: Frame> FrameTransform<From, To> {
 /// Compose two transforms: `(A→B) ∘ (B→C) = A→C`.
 ///
 /// The compiler rejects compositions where the inner frames don't match.
+///
+/// Composition goes through the quaternion representation (the product of
+/// two unit quaternions is still unit to within rounding) and then re-derives
+/// the cached matrix from the normalized result. Composing the matrices
+/// directly and extracting a quaternion from a slightly non-orthonormal
+/// product would let `quat()` and `matrix()` drift apart over repeated
+/// compositions; this path keeps both cached forms bit-exactly in sync.
 impl<A: Frame, B: Frame, C: Frame> Mul<FrameTransform<B, C>> for FrameTransform<A, B> {
     type Output = FrameTransform<A, C>;
 
     #[inline]
     fn mul(self, rhs: FrameTransform<B, C>) -> Self::Output {
-        // Composition of rotations: output matrix = rhs · self gives
-        // (A→C)(v) = rhs(self(v)). We store the matrix that sends v_A to v_C.
-        let m = rhs.matrix * self.matrix;
-        // Derive the composed quaternion via matrix → quaternion round-trip.
-        let g = glam::DQuat::from_mat3(&m);
+        // Convert both inner quaternions to glam (scalar-last) for the
+        // product. In left-transformation convention applying `self` (A→B)
+        // and then `rhs` (B→C) yields A→C with quaternion `rhs · self`.
+        let s = self.quat.inner();
+        let r = rhs.quat.inner();
+        let q_self = glam::DQuat::from_xyzw(s.data[1], s.data[2], s.data[3], s.data[0]);
+        let q_rhs = glam::DQuat::from_xyzw(r.data[1], r.data[2], r.data[3], r.data[0]);
+        let g = (q_rhs * q_self).normalize();
         let composed = JeodQuat::from_array([g.w, g.x, g.y, g.z]);
         FrameTransform {
-            quat: NormalizedQuat::renormalize(composed)
-                .expect("composition of rotations yields a non-zero quaternion"),
-            matrix: m,
+            quat: NormalizedQuat::new(composed)
+                .expect("normalize() of a non-zero quaternion yields a unit quaternion"),
+            matrix: DMat3::from_quat(g),
             _from: PhantomData,
             _to: PhantomData,
         }

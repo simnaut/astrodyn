@@ -81,6 +81,49 @@ fn identity_composition_does_not_change_frame() {
 }
 
 #[test]
+fn compose_keeps_matrix_and_quat_in_sync() {
+    // Compose several non-trivial rotations and assert the resulting
+    // matrix matches DMat3::from_quat(inner) exactly. Prevents regressions
+    // of the "matrices composed, quat extracted from drifted matrix" bug.
+    let angle_a = core::f64::consts::FRAC_PI_3; // 60°
+    let angle_b = core::f64::consts::FRAC_PI_6; // 30°
+    let q_ab = NormalizedQuat::new(JeodQuat::from_array([
+        (angle_a / 2.0).cos(),
+        0.0,
+        0.0,
+        (angle_a / 2.0).sin(),
+    ]))
+    .unwrap();
+    let q_bc = NormalizedQuat::new(JeodQuat::from_array([
+        (angle_b / 2.0).cos(),
+        (angle_b / 2.0).sin(),
+        0.0,
+        0.0,
+    ]))
+    .unwrap();
+    let t_ab: FrameTransform<Inertial, Ecef> = FrameTransform::from_quat(q_ab);
+    let t_bc: FrameTransform<Ecef, Inertial> = FrameTransform::from_quat(q_bc);
+    let composed: FrameTransform<Inertial, Inertial> = t_ab * t_bc;
+
+    // Re-derive the cached matrix from the cached quaternion and compare.
+    let inner = composed.quat().inner();
+    let g = glam::DQuat::from_xyzw(inner.data[1], inner.data[2], inner.data[3], inner.data[0]);
+    let derived = glam::DMat3::from_quat(g);
+    let mat = composed.matrix();
+    let drift_cols = [
+        (mat.x_axis - derived.x_axis).length(),
+        (mat.y_axis - derived.y_axis).length(),
+        (mat.z_axis - derived.z_axis).length(),
+    ];
+    for (i, d) in drift_cols.iter().enumerate() {
+        assert!(
+            *d < 1e-15,
+            "matrix column {i} disagrees with DMat3::from_quat(quat): drift = {d}"
+        );
+    }
+}
+
+#[test]
 fn matrix_cache_consistent_with_quat_rotation() {
     let q = NormalizedQuat::new(JeodQuat::from_array([
         (core::f64::consts::FRAC_PI_4 / 2.0).cos(),
