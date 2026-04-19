@@ -26,6 +26,8 @@ use std::path::Path;
 const SIM_DYNCOMP: &str = "verif/SIM_dyncomp";
 
 fn earth_centered_position(body: EphemerisBody, tdb_jd: f64, ephemeris: &Ephemeris) -> DVec3 {
+    // Phase 1 (#103): DVec3 accessor is deprecated; migration is Phase 3+ work.
+    #[allow(deprecated)]
     let (pos, _) = ephemeris
         .get_earth_centered_state(body, tdb_jd)
         .expect("ephemeris query failed");

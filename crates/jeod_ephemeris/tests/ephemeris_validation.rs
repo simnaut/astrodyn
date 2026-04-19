@@ -3,6 +3,12 @@
 //! Requires `test_data/de421.bsp` to be present. Download with:
 //!   curl -Lo test_data/de421.bsp https://public-data.nyxspace.com/anise/de421.bsp
 
+// These validation tests still call the Phase-1-deprecated `DVec3` accessors
+// directly. Migrating them to the typed accessors is Phase 3+ work per
+// issue #101; keep the deprecated-lint suppression local so `-D warnings`
+// stays clean.
+#![allow(deprecated)]
+
 use jeod_ephemeris::{Ephemeris, EphemerisBody};
 use std::path::Path;
 
