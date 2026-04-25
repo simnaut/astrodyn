@@ -12,6 +12,10 @@
 //! where φ is the latitude of each tidal body in the planet-fixed frame.
 
 use glam::{DMat3, DVec3};
+use jeod_quantities::aliases::Position;
+use jeod_quantities::dims::GravParam;
+use jeod_quantities::frame::Inertial;
+use uom::si::f64::{Length, Ratio};
 
 /// Default Love number k2 for Earth solid body tides.
 ///
@@ -39,6 +43,58 @@ pub struct TidalBody {
     pub mu: f64,
     /// Position in the inertial frame (m). Updated each step from ephemeris.
     pub position_inertial: DVec3,
+}
+
+/// Typed sibling of [`TidalConfig`].
+///
+/// `mu_primary` and per-body `mu` carry the [`GravParam`] dimensional
+/// type. `radius_primary` carries [`Length`]. `k2` (a Love number,
+/// dimensionless) is wrapped in [`Ratio`] for type-system parity with
+/// other dimensionless physical quantities.
+#[derive(Debug, Clone)]
+pub struct TidalConfigTyped {
+    pub k2: Ratio,
+    pub mu_primary: GravParam,
+    pub radius_primary: Length,
+    pub tidal_bodies: Vec<TidalBodyTyped>,
+}
+
+/// Typed sibling of [`TidalBody`].
+///
+/// `position_inertial` carries the [`Position<Inertial>`] phantom tag.
+#[derive(Debug, Clone)]
+pub struct TidalBodyTyped {
+    pub mu: GravParam,
+    pub position_inertial: Position<Inertial>,
+}
+
+impl TidalConfigTyped {
+    /// Drop the dimensional annotations and emit the untyped storage form.
+    /// Numeric values (kg-derived units) are preserved exactly.
+    pub fn to_untyped(&self) -> TidalConfig {
+        TidalConfig {
+            k2: self.k2.value,
+            mu_primary: self.mu_primary.value,
+            radius_primary: self.radius_primary.value,
+            tidal_bodies: self
+                .tidal_bodies
+                .iter()
+                .map(|b| TidalBody {
+                    mu: b.mu.value,
+                    position_inertial: b.position_inertial.raw_si(),
+                })
+                .collect(),
+        }
+    }
+}
+
+/// Typed sibling of [`compute_delta_c20`].
+///
+/// Same numeric kernel — wraps the result in [`Ratio`] (the physical
+/// dimension of the C20 coefficient is dimensionless).
+pub fn compute_delta_c20_typed(config: &TidalConfigTyped, t_inertial_pfix: &DMat3) -> Ratio {
+    let raw = compute_delta_c20(&config.to_untyped(), t_inertial_pfix);
+    Ratio::new::<uom::si::ratio::ratio>(raw)
 }
 
 /// Compute the first-order tidal delta coefficient ΔC20.
@@ -149,5 +205,40 @@ mod tests {
 
         // At pole: 1.5*sin²(π/2) - 0.5 = 1.0, so F > 0 and ΔC20 > 0
         assert!(delta > 0.0, "ΔC20 should be positive at pole: {delta}");
+    }
+
+    /// Typed wrapper round-trips bit-identically to the untyped kernel.
+    #[test]
+    fn compute_delta_c20_typed_matches_untyped() {
+        use jeod_quantities::ext::F64Ext;
+        use uom::si::length::meter;
+        use uom::si::ratio::ratio;
+        let untyped = TidalConfig {
+            k2: EARTH_K2,
+            mu_primary: 3.986004415e14,
+            radius_primary: 6_378_137.0,
+            tidal_bodies: vec![TidalBody {
+                mu: 4902.79980693169e9,
+                position_inertial: DVec3::new(0.0, 0.0, 384_400_000.0),
+            }],
+        };
+
+        let typed = TidalConfigTyped {
+            k2: Ratio::new::<ratio>(untyped.k2),
+            mu_primary: untyped.mu_primary.m3_per_s2(),
+            radius_primary: Length::new::<meter>(untyped.radius_primary),
+            tidal_bodies: untyped
+                .tidal_bodies
+                .iter()
+                .map(|b| TidalBodyTyped {
+                    mu: b.mu.m3_per_s2(),
+                    position_inertial: Position::<Inertial>::from_raw_si(b.position_inertial),
+                })
+                .collect(),
+        };
+
+        let untyped_delta = compute_delta_c20(&untyped, &DMat3::IDENTITY);
+        let typed_delta = compute_delta_c20_typed(&typed, &DMat3::IDENTITY);
+        assert_eq!(typed_delta.value, untyped_delta);
     }
 }

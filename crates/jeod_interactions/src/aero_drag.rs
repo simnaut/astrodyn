@@ -11,6 +11,9 @@
 
 use glam::{DMat3, DVec3};
 use jeod_atmosphere::AtmosphereState;
+use jeod_quantities::aliases::{Force, Velocity};
+use jeod_quantities::frame::{Inertial, StructuralFrame, Vehicle};
+use uom::si::f64::{Area, MassDensity, Ratio};
 
 /// Vehicle drag configuration for the ballistic (default) model.
 ///
@@ -104,6 +107,224 @@ pub fn compute_ballistic_drag(
     AerodynamicForce {
         force,
         torque: DVec3::ZERO,
+    }
+}
+
+/// Typed sibling of [`DragConfig`].
+///
+/// `cd` carries [`Ratio`] (dimensionless physical quantity); `area`
+/// carries [`Area`] (m²); `constant_density` (optional) carries
+/// [`MassDensity`] (kg/m³).
+#[derive(Debug, Clone, Copy)]
+pub struct DragConfigTyped {
+    pub cd: Ratio,
+    pub area: Area,
+    pub constant_density: Option<MassDensity>,
+}
+
+impl DragConfigTyped {
+    /// Drop the dimensional annotations and emit the untyped storage form.
+    /// Numeric values are preserved exactly (cd dimensionless, area in
+    /// m², density in kg/m³).
+    pub fn to_untyped(&self) -> DragConfig {
+        DragConfig {
+            cd: self.cd.value,
+            area: self.area.value,
+            constant_density: self.constant_density.map(|d| d.value),
+        }
+    }
+
+    /// Wrap an untyped [`DragConfig`] as typed.
+    pub fn from_untyped_unchecked(c: &DragConfig) -> Self {
+        Self {
+            cd: Ratio::new::<uom::si::ratio::ratio>(c.cd),
+            area: Area::new::<uom::si::area::square_meter>(c.area),
+            constant_density: c
+                .constant_density
+                .map(MassDensity::new::<uom::si::mass_density::kilogram_per_cubic_meter>),
+        }
+    }
+}
+
+/// Typed sibling of [`AerodynamicForce`].
+///
+/// `force` carries [`Force<StructuralFrame<V>>`]; `torque` carries
+/// [`Torque<StructuralFrame<V>>`]. Mirrors the untyped struct's
+/// "structural/body frame" convention (the frame `t_inertial_struct`
+/// rotates inertial vectors *into*).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AerodynamicForceTyped<V: Vehicle> {
+    pub force: Force<StructuralFrame<V>>,
+    pub torque: jeod_quantities::aliases::Torque<StructuralFrame<V>>,
+}
+
+impl<V: Vehicle> Default for AerodynamicForceTyped<V> {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            force: Force::<StructuralFrame<V>>::zero(),
+            torque: jeod_quantities::aliases::Torque::<StructuralFrame<V>>::zero(),
+        }
+    }
+}
+
+impl<V: Vehicle> AerodynamicForceTyped<V> {
+    /// Drop the phantom and emit the untyped storage form.
+    #[inline]
+    pub fn to_untyped(&self) -> AerodynamicForce {
+        AerodynamicForce {
+            force: self.force.raw_si(),
+            torque: self.torque.raw_si(),
+        }
+    }
+
+    /// Wrap an untyped [`AerodynamicForce`] as typed. **The caller
+    /// asserts** the force/torque are expressed in `StructuralFrame<V>`
+    /// (which is what the untyped `compute_ballistic_drag` returns).
+    #[inline]
+    pub fn from_untyped_unchecked(a: &AerodynamicForce) -> Self {
+        Self {
+            force: Force::<StructuralFrame<V>>::from_raw_si(a.force),
+            torque: jeod_quantities::aliases::Torque::<StructuralFrame<V>>::from_raw_si(a.torque),
+        }
+    }
+}
+
+/// Typed sibling of [`compute_ballistic_drag`].
+///
+/// Same numeric kernel — wraps [`DragConfigTyped`] / typed
+/// [`Velocity<Inertial>`] inputs and unwraps to the existing
+/// implementation. Returns [`AerodynamicForceTyped<V>`] (with both
+/// force and torque) for surface parity with the untyped form. The
+/// torque is always zero for the ballistic model (force acts through
+/// the center of mass), but the field is preserved so the typed
+/// surface stays isomorphic with [`AerodynamicForce`].
+///
+/// Output frame is `StructuralFrame<V>` — the frame
+/// `t_inertial_struct` rotates inertial vectors *into*. Callers who
+/// need the force in the inertial integration frame must rotate via
+/// `t_inertial_struct.transpose()`; the typed signature makes the
+/// source frame explicit so that conversion is a deliberate step
+/// rather than a silent assumption.
+pub fn compute_ballistic_drag_typed<V: Vehicle>(
+    config: &DragConfigTyped,
+    atmos: &AtmosphereState,
+    inertial_velocity: Velocity<Inertial>,
+    t_inertial_struct: &DMat3,
+) -> AerodynamicForceTyped<V> {
+    let untyped = compute_ballistic_drag(
+        &config.to_untyped(),
+        atmos,
+        inertial_velocity.raw_si(),
+        t_inertial_struct,
+    );
+    AerodynamicForceTyped::<V>::from_untyped_unchecked(&untyped)
+}
+
+#[cfg(test)]
+mod typed_tests {
+    use super::*;
+    use uom::si::area::square_meter;
+    use uom::si::f64::{Area, MassDensity, Ratio};
+    use uom::si::mass_density::kilogram_per_cubic_meter;
+    use uom::si::ratio::ratio;
+
+    #[test]
+    fn drag_config_typed_round_trip() {
+        let untyped = DragConfig {
+            cd: 2.2,
+            area: 4.5,
+            constant_density: Some(1e-12),
+        };
+        let typed = DragConfigTyped::from_untyped_unchecked(&untyped);
+        let back = typed.to_untyped();
+        assert_eq!(back.cd, untyped.cd);
+        assert_eq!(back.area, untyped.area);
+        assert_eq!(back.constant_density, untyped.constant_density);
+    }
+
+    #[test]
+    fn drag_config_typed_constant_density_none() {
+        let untyped = DragConfig {
+            cd: 2.0,
+            area: 1.0,
+            constant_density: None,
+        };
+        let typed = DragConfigTyped::from_untyped_unchecked(&untyped);
+        assert!(typed.constant_density.is_none());
+    }
+
+    #[test]
+    fn drag_config_typed_constructed_directly() {
+        let typed = DragConfigTyped {
+            cd: Ratio::new::<ratio>(2.2),
+            area: Area::new::<square_meter>(4.5),
+            constant_density: Some(MassDensity::new::<kilogram_per_cubic_meter>(1e-12)),
+        };
+        let untyped = typed.to_untyped();
+        assert_eq!(untyped.cd, 2.2);
+        assert_eq!(untyped.area, 4.5);
+        assert_eq!(untyped.constant_density, Some(1e-12));
+    }
+
+    /// Typed wrapper round-trips bit-identically to the untyped kernel
+    /// for representative inputs, including a non-identity
+    /// `t_inertial_struct` and a non-zero atmospheric wind.
+    #[test]
+    fn compute_ballistic_drag_typed_matches_untyped() {
+        use jeod_quantities::ext::F64Ext;
+        use jeod_quantities::frame::TestVehicle;
+
+        let config = DragConfig {
+            cd: 2.2,
+            area: 4.5,
+            constant_density: None,
+        };
+        let atmos = AtmosphereState {
+            density: 1e-12,
+            wind: DVec3::new(0.0, 50.0, 0.0),
+            ..AtmosphereState::default()
+        };
+        let velocity = DVec3::new(7500.0, 0.0, 0.0);
+        // Non-identity rotation: 30° about Z.
+        let theta = std::f64::consts::FRAC_PI_6;
+        let (s, c) = theta.sin_cos();
+        let t_is = DMat3::from_cols(
+            DVec3::new(c, -s, 0.0),
+            DVec3::new(s, c, 0.0),
+            DVec3::new(0.0, 0.0, 1.0),
+        );
+
+        let untyped = compute_ballistic_drag(&config, &atmos, velocity, &t_is);
+        let typed = compute_ballistic_drag_typed::<TestVehicle>(
+            &DragConfigTyped::from_untyped_unchecked(&config),
+            &atmos,
+            Velocity::<Inertial>::from_raw_si(velocity),
+            &t_is,
+        );
+
+        // Bit-identity at every component of force and torque.
+        let typed_untyped = typed.to_untyped();
+        assert_eq!(typed_untyped.force, untyped.force);
+        assert_eq!(typed_untyped.torque, untyped.torque);
+        // The typed surface tags the result as StructuralFrame<V> —
+        // raw_si() recovers the same DVec3 the untyped function returned.
+        assert_eq!(typed.force.raw_si(), untyped.force);
+        // Validate the F64Ext-style construction path also reaches the
+        // same numeric output (using `.m2()` from F64Ext for area;
+        // Ratio is constructed directly since F64Ext doesn't yet
+        // have a bare `.ratio()` constructor).
+        let from_ext = compute_ballistic_drag_typed::<TestVehicle>(
+            &DragConfigTyped {
+                cd: Ratio::new::<ratio>(2.2),
+                area: 4.5_f64.m2(),
+                constant_density: None,
+            },
+            &atmos,
+            Velocity::<Inertial>::from_raw_si(velocity),
+            &t_is,
+        );
+        assert_eq!(from_ext.force.raw_si(), untyped.force);
     }
 }
 

@@ -25,6 +25,7 @@ pub mod dims;
 pub mod ext;
 pub mod frame;
 pub mod frame_transform;
+pub mod harmonic;
 pub mod inertia;
 pub mod ops;
 pub mod prelude;

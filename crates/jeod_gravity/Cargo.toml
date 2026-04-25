@@ -6,9 +6,11 @@ edition = "2021"
 [dependencies]
 jeod_math = { path = "../jeod_math" }
 jeod_dynamics = { path = "../jeod_dynamics" }
+jeod_quantities = { path = "../jeod_quantities" }
 glam = { workspace = true }
 log = { workspace = true }
 thiserror = { workspace = true }
+uom = { workspace = true }
 
 [dev-dependencies]
 jeod_test_data = { path = "../jeod_test_data" }

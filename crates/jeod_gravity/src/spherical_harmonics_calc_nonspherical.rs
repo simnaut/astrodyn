@@ -5,7 +5,12 @@
 //! rotate the result back to inertial.
 
 use glam::{DMat3, DVec3};
+use jeod_dynamics::forces::GravityAccelerationTyped;
 use jeod_dynamics::GravityAcceleration;
+use jeod_quantities::aliases::{HarmonicDegree, Position};
+use jeod_quantities::frame::{Planet, PlanetFixed};
+// `PlanetFixed<P>: Frame` follows from the blanket
+// `impl<P: Planet> Frame for PlanetFixed<P>` in jeod_quantities.
 
 use crate::spherical_harmonics_gravity_source::SphericalHarmonicsData;
 
@@ -479,4 +484,34 @@ pub fn calc_nonspherical_with_scratch(
         grav_grad: gradient,
         grav_pot: pot,
     }
+}
+
+/// Typed sibling of [`calc_nonspherical`].
+///
+/// Accepts a [`Position<PlanetFixed<P>>`] for the field-evaluation
+/// point, takes [`HarmonicDegree`] ordinal indices, and returns a
+/// [`GravityAccelerationTyped<PlanetFixed<P>>`] for the field at that
+/// point. The Gottlieb kernel is invoked through the existing
+/// untyped [`calc_nonspherical`] — no new arithmetic in the boundary —
+/// so the J2 regression hash and Tier 3 SH-using trajectories produce
+/// bit-identical output.
+pub fn calc_nonspherical_typed<P: Planet>(
+    data: &SphericalHarmonicsData,
+    posn_pf: Position<PlanetFixed<P>>,
+    degree: HarmonicDegree,
+    order: HarmonicDegree,
+    compute_gradient: bool,
+    gradient_degree: HarmonicDegree,
+    gradient_order: HarmonicDegree,
+) -> GravityAccelerationTyped<PlanetFixed<P>> {
+    let untyped = calc_nonspherical(
+        data,
+        posn_pf.raw_si(),
+        degree.get(),
+        order.get(),
+        compute_gradient,
+        gradient_degree.get(),
+        gradient_order.get(),
+    );
+    GravityAccelerationTyped::<PlanetFixed<P>>::from_untyped_unchecked(&untyped)
 }
