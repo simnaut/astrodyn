@@ -7,7 +7,7 @@
 //! parameterizations: Keplerian orbital elements, LVLH-relative state, or
 //! NED (North-East-Down) relative state.
 
-use crate::state::TranslationalState;
+use crate::state::{TranslationalState, TranslationalStateTyped};
 use glam::{DMat3, DVec3};
 use jeod_math::OrbitalElements;
 use jeod_math::{mat3_from_rows, GeodeticState};
@@ -15,6 +15,11 @@ use jeod_math::{mat3_from_rows, GeodeticState};
 // Phase 3 migration of this module to the typed `_typed` APIs.
 #[allow(deprecated)]
 use jeod_math::{compute_lvlh_frame, geodetic_to_cartesian};
+use jeod_quantities::dims::GravParam;
+use jeod_quantities::frame::Inertial;
+use uom::si::angle::radian;
+use uom::si::f64::{Angle, Length};
+use uom::si::length::meter;
 
 /// Initialize translational state from Keplerian orbital elements (true anomaly).
 ///
@@ -71,6 +76,35 @@ pub fn init_from_orbital_elements(
         .expect("init_from_orbital_elements: to_cartesian failed");
 
     TranslationalState { position, velocity }
+}
+
+/// Typed sibling of [`init_from_orbital_elements`].
+///
+/// Returns a [`TranslationalStateTyped<Inertial>`] — Phase 3 callers
+/// can pipe the result directly into typed propagation paths without
+/// hand-wrapping with `from_untyped_unchecked`. Numerically
+/// bit-identical to the untyped variant: the typed entry unwraps
+/// inputs to f64 base SI, calls the existing implementation, and
+/// re-wraps the output.
+pub fn init_from_orbital_elements_typed(
+    semi_major_axis: Length,
+    eccentricity: f64,
+    inclination: Angle,
+    raan: Angle,
+    arg_periapsis: Angle,
+    true_anomaly: Angle,
+    mu: GravParam,
+) -> TranslationalStateTyped<Inertial> {
+    let untyped = init_from_orbital_elements(
+        semi_major_axis.get::<meter>(),
+        eccentricity,
+        inclination.get::<radian>(),
+        raan.get::<radian>(),
+        arg_periapsis.get::<radian>(),
+        true_anomaly.get::<radian>(),
+        mu.value, // base SI: m³/s²
+    );
+    TranslationalStateTyped::<Inertial>::from_untyped_unchecked(&untyped)
 }
 
 /// Initialize translational state from Keplerian orbital elements (mean anomaly).
@@ -797,5 +831,36 @@ mod tests {
             "Offset magnitude: expected 1000 m, got {} m",
             delta
         );
+    }
+
+    #[test]
+    fn typed_orbital_init_matches_untyped_bit_for_bit() {
+        use jeod_quantities::ext::F64Ext;
+        use uom::si::angle::radian;
+        use uom::si::f64::{Angle, Length};
+        use uom::si::length::meter;
+
+        let alt = 400_000.0;
+        let r = EARTH_R_EQ + alt;
+        let a = r;
+        let e = 0.0;
+        let inc = 0.0;
+        let raan = 0.0;
+        let argp = 0.0;
+        let nu = 0.0;
+
+        let untyped = init_from_orbital_elements(a, e, inc, raan, argp, nu, EARTH_MU);
+        let typed = init_from_orbital_elements_typed(
+            Length::new::<meter>(a),
+            e,
+            Angle::new::<radian>(inc),
+            Angle::new::<radian>(raan),
+            Angle::new::<radian>(argp),
+            Angle::new::<radian>(nu),
+            EARTH_MU.m3_per_s2(),
+        );
+
+        assert_eq!(typed.position.raw_si(), untyped.position);
+        assert_eq!(typed.velocity.raw_si(), untyped.velocity);
     }
 }

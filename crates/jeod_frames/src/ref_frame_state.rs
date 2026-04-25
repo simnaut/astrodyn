@@ -1,5 +1,10 @@
+use core::marker::PhantomData;
+
 use glam::{DMat3, DVec3};
 use jeod_math::JeodQuat;
+use jeod_quantities::aliases::{AngularVelocity, Position, Velocity};
+use jeod_quantities::frame::Frame;
+use jeod_quantities::quat::{LeftTransform, NormalizedQuat, ScalarFirst};
 
 // JEOD_INV: RF.06 — position/velocity in parent coordinates (structural convention)
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -162,6 +167,230 @@ impl RefFrameState {
     pub fn incr_left(&mut self, s_ab: &RefFrameState) {
         let result = s_ab.incr_right(self);
         *self = result;
+    }
+}
+
+// ===========================================================================
+// Phase 3: typed siblings — `RefFrameStateTyped<Parent, Child>`
+//
+// Frame-tagged variants of the structs above. These are the surface that
+// Phase 3 callers in `jeod_dynamics`, `jeod_sim` and downstream should
+// adopt. The untyped `RefFrameState` remains as the storage type for the
+// frame-tree arena (heterogeneous parents/children forbid a single
+// generic instantiation), with `to_untyped()` / `from_untyped_unchecked()`
+// bridging the typed and untyped surfaces.
+//
+// The typed types delegate their numeric operations (`negate`,
+// `incr_right`) to the untyped implementation so the f64 / DVec3 path is
+// the single source of truth — bit-identical results, no risk of drift
+// between the two surfaces.
+// ===========================================================================
+
+/// Typed translational state in parent frame `P`. Equivalent to
+/// [`RefFrameTrans`] but the `position` and `velocity` 3-vectors carry
+/// the parent-frame phantom tag.
+// JEOD_INV: RF.06 — position/velocity in parent coordinates (structural convention)
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RefFrameTransTyped<P: Frame> {
+    /// Position of the child frame's origin in parent coordinates.
+    pub position: Position<P>,
+    /// Velocity of the child frame's origin in parent coordinates.
+    pub velocity: Velocity<P>,
+}
+
+impl<P: Frame> Default for RefFrameTransTyped<P> {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            position: Position::<P>::zero(),
+            velocity: Velocity::<P>::zero(),
+        }
+    }
+}
+
+/// Typed rotational state for the `P → C` axis transformation.
+///
+/// Fields are private to enforce JEOD_INV RF.04 (`q_parent_this` is
+/// canonical, `t_parent_this` is a derived cache that must stay
+/// in sync). Construct via [`Self::new`] (the cache is derived once
+/// from the witnessed quaternion); read via the accessor methods.
+// JEOD_INV: RF.07 — Q_parent_this is left-transformation quaternion (JEOD convention)
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RefFrameRotTyped<P: Frame, C: Frame> {
+    q_parent_this: NormalizedQuat<ScalarFirst, LeftTransform>,
+    t_parent_this: DMat3,
+    ang_vel_this: AngularVelocity<C>,
+    _p: PhantomData<P>,
+}
+
+impl<P: Frame, C: Frame> RefFrameRotTyped<P, C> {
+    /// Build from a JEOD-canonical quaternion plus angular velocity. The
+    /// 3×3 cached form is derived once at construction via the
+    /// witness-gated [`NormalizedQuat::left_quat_to_transformation`].
+    /// The unit-norm invariant is borne by `NormalizedQuat`.
+    #[inline]
+    pub fn new(
+        q_parent_this: NormalizedQuat<ScalarFirst, LeftTransform>,
+        ang_vel_this: AngularVelocity<C>,
+    ) -> Self {
+        // JEOD_INV: RF.04 — T_parent_this derived from quaternion (canonical source of truth)
+        let t_parent_this = q_parent_this.left_quat_to_transformation();
+        Self {
+            q_parent_this,
+            t_parent_this,
+            ang_vel_this,
+            _p: PhantomData,
+        }
+    }
+
+    /// Witnessed unit-norm left quaternion taking vectors from `P` to `C`.
+    #[inline]
+    pub fn q_parent_this(&self) -> NormalizedQuat<ScalarFirst, LeftTransform> {
+        self.q_parent_this
+    }
+
+    /// Cached 3×3 rotation form of [`Self::q_parent_this`]. Always
+    /// consistent with the quaternion at construction time
+    /// (RF.04 invariant).
+    #[inline]
+    pub fn t_parent_this(&self) -> DMat3 {
+        self.t_parent_this
+    }
+
+    /// Angular velocity of `C` relative to `P`, expressed in `C` coordinates.
+    #[inline]
+    pub fn ang_vel_this(&self) -> AngularVelocity<C> {
+        self.ang_vel_this
+    }
+}
+
+impl<F: Frame> Default for RefFrameRotTyped<F, F> {
+    /// Identity rotation (only defined when `Parent = Child`).
+    #[inline]
+    fn default() -> Self {
+        let q =
+            NormalizedQuat::new(JeodQuat::identity()).expect("identity quaternion is unit-norm");
+        Self {
+            q_parent_this: q,
+            t_parent_this: DMat3::IDENTITY,
+            ang_vel_this: AngularVelocity::<F>::zero(),
+            _p: PhantomData,
+        }
+    }
+}
+
+/// Typed reference-frame state describing the state of child frame `C`
+/// relative to parent frame `P`: position/velocity of `C`'s origin
+/// expressed in `P`, plus the `P → C` axis rotation. This matches the
+/// JEOD convention (`q_parent_this` is the `P → C` rotation; vectors
+/// `r_PC` and `v_PC` live in `P` coordinates).
+///
+/// `negate()` returns the reversed-direction state
+/// `RefFrameStateTyped<C, P>`; `incr_right()` composes with another
+/// typed state whose parent matches `Self::Child` to produce a new
+/// state spanning the union.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RefFrameStateTyped<P: Frame, C: Frame> {
+    pub trans: RefFrameTransTyped<P>,
+    pub rot: RefFrameRotTyped<P, C>,
+}
+
+impl<F: Frame> Default for RefFrameStateTyped<F, F> {
+    /// Identity state. Only defined when `Parent = Child`.
+    #[inline]
+    fn default() -> Self {
+        Self {
+            trans: RefFrameTransTyped::<F>::default(),
+            rot: RefFrameRotTyped::<F, F>::default(),
+        }
+    }
+}
+
+impl<P: Frame, C: Frame> RefFrameStateTyped<P, C> {
+    /// Build from typed translation and rotation pieces.
+    #[inline]
+    pub fn new(trans: RefFrameTransTyped<P>, rot: RefFrameRotTyped<P, C>) -> Self {
+        Self { trans, rot }
+    }
+
+    /// Drop the frame phantoms and emit an untyped [`RefFrameState`] —
+    /// the storage type used by the frame-tree arena. Numeric values are
+    /// unchanged.
+    pub fn to_untyped(&self) -> RefFrameState {
+        RefFrameState {
+            trans: RefFrameTrans {
+                position: self.trans.position.raw_si(),
+                velocity: self.trans.velocity.raw_si(),
+            },
+            rot: RefFrameRot {
+                q_parent_this: self.rot.q_parent_this.inner(),
+                t_parent_this: self.rot.t_parent_this,
+                ang_vel_this: self.rot.ang_vel_this.raw_si(),
+            },
+        }
+    }
+
+    /// Wrap an untyped [`RefFrameState`] as a typed one. **The caller
+    /// asserts** that the untyped state's parent and child frames are
+    /// `P` and `C` respectively — there is no runtime check. Used at
+    /// the frame-tree arena boundary where `RefFrameKind` discriminates
+    /// the runtime kind separately.
+    ///
+    /// The wrapped quaternion is checked against
+    /// [`NormalizedQuat::DEFAULT_TOLERANCE`]: panics if the source
+    /// quaternion's norm has drifted past 1e-12, which would indicate
+    /// a missing renormalization upstream.
+    ///
+    /// `t_parent_this` is **re-derived from `q_norm`** rather than
+    /// copied from the untyped state. JEOD's RF.04 invariant treats
+    /// the quaternion as the canonical source of truth and the matrix
+    /// as a cache; copying the cache without verification could
+    /// silently propagate a stale matrix into typed code if an
+    /// upstream caller mutated `q_parent_this` without recomputing
+    /// `t_parent_this`. The recompute cost is one witness-gated
+    /// `left_quat_to_transformation` (a handful of FLOPs).
+    pub fn from_untyped_unchecked(s: &RefFrameState) -> Self {
+        let q_norm = NormalizedQuat::new(s.rot.q_parent_this)
+            .unwrap_or_else(|err| panic!("RefFrameState quaternion is not unit-norm: {err}"));
+        Self {
+            trans: RefFrameTransTyped {
+                position: Position::<P>::from_raw_si(s.trans.position),
+                velocity: Velocity::<P>::from_raw_si(s.trans.velocity),
+            },
+            // RefFrameRotTyped::new derives `t_parent_this` from the
+            // witnessed quaternion via the witness-gated API
+            // (JEOD_INV: RF.04, canonical source of truth).
+            rot: RefFrameRotTyped::new(
+                q_norm,
+                AngularVelocity::<C>::from_raw_si(s.rot.ang_vel_this),
+            ),
+        }
+    }
+
+    /// Negate (invert) the typed state: `S_{P:C}` → `S_{C:P}`.
+    ///
+    /// Delegates to the untyped [`RefFrameState::negate`] so the f64
+    /// path remains the single source of truth — typed and untyped
+    /// surfaces are bit-identical at equal numeric inputs.
+    pub fn negate(&self) -> RefFrameStateTyped<C, P> {
+        let untyped_neg = RefFrameState::negate(&self.to_untyped());
+        // SAFETY of the unchecked conversion: the negated state, by
+        // construction, takes child → parent. RF.03 holds because
+        // `RefFrameState::negate` re-normalizes the conjugate before
+        // emitting the result (see `q_new.normalize()` upstream).
+        RefFrameStateTyped::<C, P>::from_untyped_unchecked(&untyped_neg)
+    }
+
+    /// Compose `self` (P → C) with `s_cd` (C → D) to yield (P → D).
+    ///
+    /// Frame parameters are checked at compile time: the inner
+    /// "C" must match between `Self::Child` and `s_cd`'s parent.
+    pub fn incr_right<D: Frame>(
+        &self,
+        s_cd: &RefFrameStateTyped<C, D>,
+    ) -> RefFrameStateTyped<P, D> {
+        let composed_untyped = self.to_untyped().incr_right(&s_cd.to_untyped());
+        RefFrameStateTyped::<P, D>::from_untyped_unchecked(&composed_untyped)
     }
 }
 
@@ -712,5 +941,179 @@ mod tests {
             approx_eq_vec3(s.rot.q_parent_this.vector(), DVec3::ZERO, TOL),
             "Default quaternion vector"
         );
+    }
+}
+
+#[cfg(test)]
+mod typed_tests {
+    //! Phase 3: tests for the typed `RefFrameStateTyped<P, C>` surface.
+    //!
+    //! Each test compares the typed implementation against the untyped
+    //! one to assert bit-identical numeric results. The typed surface
+    //! adds compile-time frame checking on top of the same f64 path.
+
+    use super::*;
+    use glam::{DMat3, DVec3};
+    use jeod_math::test_utils::{approx_eq_mat3, approx_eq_vec3};
+    use jeod_math::JeodQuat;
+    use jeod_quantities::frame::{Ecef, Inertial};
+    use std::f64::consts::FRAC_PI_2;
+
+    const TOL: f64 = 1e-12;
+
+    fn make_state(angle_z: f64, pos: DVec3, vel: DVec3, ang_vel: DVec3) -> RefFrameState {
+        let q = JeodQuat::left_quat_from_eigen_rotation(angle_z, DVec3::Z);
+        let t = q.left_quat_to_transformation();
+        RefFrameState {
+            trans: RefFrameTrans {
+                position: pos,
+                velocity: vel,
+            },
+            rot: RefFrameRot {
+                q_parent_this: q,
+                t_parent_this: t,
+                ang_vel_this: ang_vel,
+            },
+        }
+    }
+
+    #[test]
+    fn untyped_to_typed_round_trip_is_identity() {
+        let s = make_state(
+            0.7,
+            DVec3::new(1e6, 2e6, 3e6),
+            DVec3::new(100.0, 200.0, 300.0),
+            DVec3::new(0.01, 0.02, 0.03),
+        );
+        let typed = RefFrameStateTyped::<Inertial, Ecef>::from_untyped_unchecked(&s);
+        let back = typed.to_untyped();
+
+        assert_eq!(back.trans.position, s.trans.position);
+        assert_eq!(back.trans.velocity, s.trans.velocity);
+        assert_eq!(back.rot.q_parent_this, s.rot.q_parent_this);
+        assert_eq!(back.rot.t_parent_this, s.rot.t_parent_this);
+        assert_eq!(back.rot.ang_vel_this, s.rot.ang_vel_this);
+    }
+
+    #[test]
+    fn typed_negate_matches_untyped() {
+        let s = make_state(
+            1.2,
+            DVec3::new(5e6, -3e6, 1e6),
+            DVec3::new(500.0, -300.0, 100.0),
+            DVec3::new(0.05, -0.02, 0.01),
+        );
+        let typed = RefFrameStateTyped::<Inertial, Ecef>::from_untyped_unchecked(&s);
+        let typed_neg: RefFrameStateTyped<Ecef, Inertial> = typed.negate();
+        let untyped_neg = RefFrameState::negate(&s);
+
+        assert!(approx_eq_vec3(
+            typed_neg.trans.position.raw_si(),
+            untyped_neg.trans.position,
+            TOL
+        ));
+        assert!(approx_eq_vec3(
+            typed_neg.trans.velocity.raw_si(),
+            untyped_neg.trans.velocity,
+            TOL
+        ));
+        assert!(approx_eq_mat3(
+            &typed_neg.rot.t_parent_this,
+            &untyped_neg.rot.t_parent_this,
+            TOL
+        ));
+        assert!(approx_eq_vec3(
+            typed_neg.rot.ang_vel_this.raw_si(),
+            untyped_neg.rot.ang_vel_this,
+            TOL
+        ));
+    }
+
+    #[test]
+    fn typed_incr_right_matches_untyped() {
+        // Frame chain: Inertial → Ecef → Inertial (round-trip via two
+        // composed typed states; the type system requires the inner
+        // frame to match.)
+        let s_ie = make_state(
+            FRAC_PI_2,
+            DVec3::new(1000.0, 0.0, 0.0),
+            DVec3::new(10.0, 0.0, 0.0),
+            DVec3::new(0.0, 0.0, 0.1),
+        );
+        let s_ei = make_state(
+            -0.4,
+            DVec3::new(0.0, 500.0, 0.0),
+            DVec3::new(0.0, 5.0, 0.0),
+            DVec3::new(0.001, 0.0, 0.0),
+        );
+
+        let typed_ie = RefFrameStateTyped::<Inertial, Ecef>::from_untyped_unchecked(&s_ie);
+        let typed_ei = RefFrameStateTyped::<Ecef, Inertial>::from_untyped_unchecked(&s_ei);
+
+        let composed_typed: RefFrameStateTyped<Inertial, Inertial> = typed_ie.incr_right(&typed_ei);
+        let composed_untyped = s_ie.incr_right(&s_ei);
+
+        assert!(approx_eq_vec3(
+            composed_typed.trans.position.raw_si(),
+            composed_untyped.trans.position,
+            TOL
+        ));
+        assert!(approx_eq_vec3(
+            composed_typed.trans.velocity.raw_si(),
+            composed_untyped.trans.velocity,
+            TOL
+        ));
+        assert!(approx_eq_mat3(
+            &composed_typed.rot.t_parent_this,
+            &composed_untyped.rot.t_parent_this,
+            TOL
+        ));
+        assert!(approx_eq_vec3(
+            composed_typed.rot.ang_vel_this.raw_si(),
+            composed_untyped.rot.ang_vel_this,
+            TOL
+        ));
+    }
+
+    #[test]
+    fn typed_default_for_same_frame_is_identity() {
+        let id = RefFrameStateTyped::<Inertial, Inertial>::default();
+        let untyped = id.to_untyped();
+        assert_eq!(untyped.trans.position, DVec3::ZERO);
+        assert_eq!(untyped.trans.velocity, DVec3::ZERO);
+        assert_eq!(untyped.rot.t_parent_this, DMat3::IDENTITY);
+        assert_eq!(untyped.rot.ang_vel_this, DVec3::ZERO);
+    }
+
+    #[test]
+    fn typed_round_trip_through_negate_recovers_original() {
+        let s = make_state(
+            0.9,
+            DVec3::new(2e6, -1e6, 5e5),
+            DVec3::new(50.0, -25.0, 12.5),
+            DVec3::new(0.01, 0.0, 0.005),
+        );
+        let typed = RefFrameStateTyped::<Inertial, Ecef>::from_untyped_unchecked(&s);
+        let twice_negated = typed.negate().negate();
+
+        // Compose s with negate(s) — should produce identity (within TOL).
+        // Equivalently, double-negate should recover s. Compare via the
+        // untyped projections.
+        let s_back = twice_negated.to_untyped();
+        assert!(approx_eq_vec3(
+            s_back.trans.position,
+            s.trans.position,
+            1e-6
+        ));
+        assert!(approx_eq_vec3(
+            s_back.trans.velocity,
+            s.trans.velocity,
+            1e-6
+        ));
+        assert!(approx_eq_mat3(
+            &s_back.rot.t_parent_this,
+            &s.rot.t_parent_this,
+            1e-10
+        ));
     }
 }

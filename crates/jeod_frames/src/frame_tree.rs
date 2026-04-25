@@ -7,7 +7,8 @@
 //!
 //! This module is pure Rust with zero Bevy dependency.
 
-use crate::ref_frame_state::{RefFrameKind, RefFrameState};
+use crate::ref_frame_state::{RefFrameKind, RefFrameState, RefFrameStateTyped};
+use jeod_quantities::frame::Frame;
 
 /// Handle into the [`FrameTree`] arena.
 pub type FrameId = usize;
@@ -80,6 +81,39 @@ impl FrameTree {
         self.children.push(Vec::new());
         self.children[parent_id].push(id);
         id
+    }
+
+    /// Typed sibling of [`Self::add_child`] taking a frame-tagged
+    /// [`RefFrameStateTyped<P, C>`]. The arena's storage stays
+    /// untyped — heterogeneous parent/child frames preclude a single
+    /// generic instantiation across a `Vec<FrameNode>` — so the typed
+    /// state is converted via [`RefFrameStateTyped::to_untyped`] at the
+    /// boundary. The numeric values are preserved exactly.
+    ///
+    /// `kind` is supplied separately because the runtime kind
+    /// discriminant is not derivable from the compile-time frame
+    /// markers in `jeod_quantities::frame` without a workspace-wide
+    /// trait extension.
+    pub fn add_child_typed<P: Frame, C: Frame>(
+        &mut self,
+        parent_id: FrameId,
+        name: String,
+        kind: RefFrameKind,
+        state: RefFrameStateTyped<P, C>,
+    ) -> FrameId {
+        self.add_child(parent_id, name, kind, state.to_untyped())
+    }
+
+    /// Read the state at `id` as a typed [`RefFrameStateTyped<P, C>`].
+    ///
+    /// **The caller asserts** the parent and child frame markers match
+    /// the runtime kind of the stored frame — there is no compile- or
+    /// run-time check. Used at the typed-API boundary in `jeod_dynamics`
+    /// and `jeod_sim`. The wrapped quaternion is checked against the
+    /// `NormalizedQuat::DEFAULT_TOLERANCE`; a missed renormalization
+    /// upstream surfaces immediately.
+    pub fn get_state_typed<P: Frame, C: Frame>(&self, id: FrameId) -> RefFrameStateTyped<P, C> {
+        RefFrameStateTyped::<P, C>::from_untyped_unchecked(&self.nodes[id].state)
     }
 
     // -- accessors ----------------------------------------------------------
@@ -1228,5 +1262,61 @@ mod tests {
             &non_panicking.rot.t_parent_this,
             TOL
         ));
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 3: typed sugar over the untyped arena.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn add_child_typed_round_trips_through_storage() {
+        use jeod_quantities::frame::{Ecef, Inertial};
+
+        let mut tree = FrameTree::new();
+        let root = tree.add_root("inertial".into(), RefFrameKind::Inertial);
+
+        let untyped = make_state(
+            0.5,
+            DVec3::new(1e6, 2e6, 3e6),
+            DVec3::new(10.0, 20.0, 30.0),
+            DVec3::new(0.001, 0.002, 0.003),
+        );
+        let typed_in = RefFrameStateTyped::<Inertial, Ecef>::from_untyped_unchecked(&untyped);
+
+        let child = tree.add_child_typed(root, "ecef".into(), RefFrameKind::PlanetFixed, typed_in);
+
+        // Read back via the typed accessor and assert the underlying
+        // raw_si values match the original untyped input bit-identically.
+        let typed_out: RefFrameStateTyped<Inertial, Ecef> = tree.get_state_typed(child);
+        assert_eq!(typed_out.trans.position.raw_si(), untyped.trans.position);
+        assert_eq!(typed_out.trans.velocity.raw_si(), untyped.trans.velocity);
+        assert_eq!(typed_out.rot.t_parent_this(), untyped.rot.t_parent_this);
+        assert_eq!(
+            typed_out.rot.ang_vel_this().raw_si(),
+            untyped.rot.ang_vel_this
+        );
+    }
+
+    #[test]
+    fn add_child_typed_matches_untyped_storage() {
+        use jeod_quantities::frame::{Ecef, Inertial};
+
+        let mut tree_a = FrameTree::new();
+        let root_a = tree_a.add_root("inertial".into(), RefFrameKind::Inertial);
+        let mut tree_b = FrameTree::new();
+        let root_b = tree_b.add_root("inertial".into(), RefFrameKind::Inertial);
+
+        let untyped = make_state(
+            FRAC_PI_2,
+            DVec3::new(7e6, 0.0, 0.0),
+            DVec3::new(0.0, 7000.0, 0.0),
+            DVec3::new(0.0, 0.0, 7.292e-5),
+        );
+        let typed = RefFrameStateTyped::<Inertial, Ecef>::from_untyped_unchecked(&untyped);
+
+        let id_a = tree_a.add_child(root_a, "a".into(), RefFrameKind::PlanetFixed, untyped);
+        let id_b = tree_b.add_child_typed(root_b, "b".into(), RefFrameKind::PlanetFixed, typed);
+
+        assert_eq!(tree_a.get(id_a).state, tree_b.get(id_b).state);
     }
 }

@@ -1,4 +1,8 @@
+use core::marker::PhantomData;
+
 use glam::{DMat3, DVec3};
+use jeod_quantities::aliases::{Acceleration, Force, Torque};
+use jeod_quantities::frame::{BodyFrame, Frame, Inertial, Vehicle};
 
 /// Gravitational acceleration, gradient tensor, and potential for a body.
 ///
@@ -32,16 +36,163 @@ impl Default for GravityAcceleration {
     }
 }
 
+/// Typed sibling of [`GravityAcceleration`].
+///
+/// Only `grav_accel` carries a frame phantom; `grav_grad` (1/s², a
+/// gradient tensor) and `grav_pot` (m²/s², a scalar) remain DMat3 / f64.
+/// Their dimensions are not exposed as typed aliases in
+/// `jeod_quantities` because they are evaluated within a single frame
+/// and never composed across frames in the dynamics layer.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GravityAccelerationTyped<F: Frame = Inertial> {
+    pub grav_accel: Acceleration<F>,
+    pub grav_grad: DMat3,
+    pub grav_pot: f64,
+}
+
+impl<F: Frame> Default for GravityAccelerationTyped<F> {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            grav_accel: Acceleration::<F>::zero(),
+            grav_grad: DMat3::ZERO,
+            grav_pot: 0.0,
+        }
+    }
+}
+
+impl<F: Frame> GravityAccelerationTyped<F> {
+    /// Drop the phantom and emit the untyped storage form.
+    #[inline]
+    pub fn to_untyped(&self) -> GravityAcceleration {
+        GravityAcceleration {
+            grav_accel: self.grav_accel.raw_si(),
+            grav_grad: self.grav_grad,
+            grav_pot: self.grav_pot,
+        }
+    }
+
+    /// Wrap an untyped [`GravityAcceleration`] as typed. **The caller
+    /// asserts** the gravity acceleration is expressed in frame `F`.
+    #[inline]
+    pub fn from_untyped_unchecked(g: &GravityAcceleration) -> Self {
+        Self {
+            grav_accel: Acceleration::<F>::from_raw_si(g.grav_accel),
+            grav_grad: g.grav_grad,
+            grav_pot: g.grav_pot,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct TotalForce {
     pub force: DVec3,  // N, in integration frame
     pub torque: DVec3, // N*m, in body frame
 }
 
+/// Typed sibling of [`TotalForce`].
+///
+/// `force` carries the integration frame `F` (defaults to `Inertial`
+/// to match the existing untyped struct's "force in integration
+/// frame" convention); `torque` is in `BodyFrame<V>` (JEOD
+/// convention). The two type parameters are independent so a body
+/// integrating translation in one frame may carry torque about a
+/// separate body axis. `V` has no default because no production
+/// vehicle marker exists yet (Phase 5 territory).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TotalForceTyped<V: Vehicle, F: Frame = Inertial> {
+    pub force: Force<F>,
+    pub torque: Torque<BodyFrame<V>>,
+    _v: PhantomData<V>,
+}
+
+impl<V: Vehicle, F: Frame> Default for TotalForceTyped<V, F> {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            force: Force::<F>::zero(),
+            torque: Torque::<BodyFrame<V>>::zero(),
+            _v: PhantomData,
+        }
+    }
+}
+
+impl<V: Vehicle, F: Frame> TotalForceTyped<V, F> {
+    /// Drop the phantoms and emit the untyped storage form.
+    #[inline]
+    pub fn to_untyped(&self) -> TotalForce {
+        TotalForce {
+            force: self.force.raw_si(),
+            torque: self.torque.raw_si(),
+        }
+    }
+
+    /// Wrap an untyped [`TotalForce`] as typed. **The caller asserts**
+    /// the force is in `F` and the torque in `BodyFrame<V>`.
+    #[inline]
+    pub fn from_untyped_unchecked(t: &TotalForce) -> Self {
+        Self {
+            force: Force::<F>::from_raw_si(t.force),
+            torque: Torque::<BodyFrame<V>>::from_raw_si(t.torque),
+            _v: PhantomData,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct FrameDerivatives {
     pub trans_accel: DVec3, // m/s^2
     pub rot_accel: DVec3,   // rad/s^2
+}
+
+/// Typed sibling of [`FrameDerivatives`].
+///
+/// `trans_accel` carries the integration frame `F`; `rot_accel`
+/// carries the body frame for vehicle `V`. The two type parameters
+/// are independent — a body integrating translational state in one
+/// frame may carry rotational state about a body axis whose
+/// orientation is completely unrelated.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FrameDerivativesTyped<F: Frame, V: Vehicle> {
+    pub trans_accel: Acceleration<F>,
+    pub rot_accel: jeod_quantities::aliases::AngularAcceleration<BodyFrame<V>>,
+    _v: PhantomData<V>,
+}
+
+impl<F: Frame, V: Vehicle> Default for FrameDerivativesTyped<F, V> {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            trans_accel: Acceleration::<F>::zero(),
+            rot_accel: jeod_quantities::aliases::AngularAcceleration::<BodyFrame<V>>::zero(),
+            _v: PhantomData,
+        }
+    }
+}
+
+impl<F: Frame, V: Vehicle> FrameDerivativesTyped<F, V> {
+    /// Drop the frame phantoms and emit the untyped storage form.
+    #[inline]
+    pub fn to_untyped(&self) -> FrameDerivatives {
+        FrameDerivatives {
+            trans_accel: self.trans_accel.raw_si(),
+            rot_accel: self.rot_accel.raw_si(),
+        }
+    }
+
+    /// Wrap an untyped [`FrameDerivatives`] as typed. **The caller
+    /// asserts** the translational accel is in `F` and the rotational
+    /// accel is in `BodyFrame<V>`.
+    #[inline]
+    pub fn from_untyped_unchecked(d: &FrameDerivatives) -> Self {
+        Self {
+            trans_accel: Acceleration::<F>::from_raw_si(d.trans_accel),
+            rot_accel: jeod_quantities::aliases::AngularAcceleration::<BodyFrame<V>>::from_raw_si(
+                d.rot_accel,
+            ),
+            _v: PhantomData,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -399,5 +550,56 @@ mod tests {
         );
         // non_grav_accel = 100 * (1/50) = 2.0 in x
         assert!((fd.trans_accel - DVec3::new(2.0, 0.0, -9.81)).length() < 1e-12);
+    }
+
+    #[test]
+    fn typed_frame_derivatives_round_trip() {
+        use jeod_quantities::frame::{Inertial, TestVehicle};
+
+        let untyped = FrameDerivatives {
+            trans_accel: DVec3::new(1.0, 2.0, 3.0),
+            rot_accel: DVec3::new(0.1, 0.2, 0.3),
+        };
+        let typed =
+            FrameDerivativesTyped::<Inertial, TestVehicle>::from_untyped_unchecked(&untyped);
+        let back = typed.to_untyped();
+        assert_eq!(back, untyped);
+    }
+
+    #[test]
+    fn typed_total_force_round_trip() {
+        use jeod_quantities::frame::TestVehicle;
+
+        let untyped = TotalForce {
+            force: DVec3::new(100.0, 0.0, 0.0),
+            torque: DVec3::new(0.0, 0.5, 0.0),
+        };
+        // Use the F = Inertial default for the integration frame.
+        let typed = TotalForceTyped::<TestVehicle>::from_untyped_unchecked(&untyped);
+        let back = typed.to_untyped();
+        assert_eq!(back, untyped);
+    }
+
+    #[test]
+    fn typed_total_force_default_is_zero() {
+        use jeod_quantities::frame::TestVehicle;
+
+        let typed = TotalForceTyped::<TestVehicle>::default();
+        let back = typed.to_untyped();
+        assert_eq!(back, TotalForce::default());
+    }
+
+    #[test]
+    fn typed_gravity_acceleration_round_trip() {
+        use jeod_quantities::frame::Inertial;
+
+        let untyped = GravityAcceleration {
+            grav_accel: DVec3::new(0.0, 0.0, -9.81),
+            grav_grad: DMat3::IDENTITY * 1e-6,
+            grav_pot: 6.25e7,
+        };
+        let typed = GravityAccelerationTyped::<Inertial>::from_untyped_unchecked(&untyped);
+        let back = typed.to_untyped();
+        assert_eq!(back, untyped);
     }
 }

@@ -2357,8 +2357,10 @@ dependencies = [
  "jeod_gravity",
  "jeod_math",
  "jeod_planet",
+ "jeod_quantities",
  "jeod_test_data",
  "sha2",
+ "uom",
 ]
 
 [[package]]
@@ -2377,6 +2379,7 @@ version = "0.1.0"
 dependencies = [
  "glam 0.30.10",
  "jeod_math",
+ "jeod_quantities",
  "jeod_test_data",
  "jeod_time",
 ]
