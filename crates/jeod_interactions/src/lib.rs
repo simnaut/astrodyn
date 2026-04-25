@@ -17,7 +17,7 @@ pub use earth_lighting::{
     compute_earth_lighting, EarthLightingState, LightingBody, LightingParams,
 };
 pub use flat_plate_aero::*;
-pub use gravity_torque::compute_gravity_torque;
+pub use gravity_torque::{compute_gravity_torque, compute_gravity_torque_typed};
 pub use radiation_pressure::*;
 pub use shadow::*;
 pub use surface_model::{ArticulatedFacet, ArticulationState, SurfaceFacet, SurfaceShape};

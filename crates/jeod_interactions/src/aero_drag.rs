@@ -266,6 +266,66 @@ mod typed_tests {
         assert_eq!(untyped.area, 4.5);
         assert_eq!(untyped.constant_density, Some(1e-12));
     }
+
+    /// Typed wrapper round-trips bit-identically to the untyped kernel
+    /// for representative inputs, including a non-identity
+    /// `t_inertial_struct` and a non-zero atmospheric wind.
+    #[test]
+    fn compute_ballistic_drag_typed_matches_untyped() {
+        use jeod_quantities::ext::F64Ext;
+        use jeod_quantities::frame::TestVehicle;
+
+        let config = DragConfig {
+            cd: 2.2,
+            area: 4.5,
+            constant_density: None,
+        };
+        let atmos = AtmosphereState {
+            density: 1e-12,
+            wind: DVec3::new(0.0, 50.0, 0.0),
+            ..AtmosphereState::default()
+        };
+        let velocity = DVec3::new(7500.0, 0.0, 0.0);
+        // Non-identity rotation: 30° about Z.
+        let theta = std::f64::consts::FRAC_PI_6;
+        let (s, c) = theta.sin_cos();
+        let t_is = DMat3::from_cols(
+            DVec3::new(c, -s, 0.0),
+            DVec3::new(s, c, 0.0),
+            DVec3::new(0.0, 0.0, 1.0),
+        );
+
+        let untyped = compute_ballistic_drag(&config, &atmos, velocity, &t_is);
+        let typed = compute_ballistic_drag_typed::<TestVehicle>(
+            &DragConfigTyped::from_untyped_unchecked(&config),
+            &atmos,
+            Velocity::<Inertial>::from_raw_si(velocity),
+            &t_is,
+        );
+
+        // Bit-identity at every component of force and torque.
+        let typed_untyped = typed.to_untyped();
+        assert_eq!(typed_untyped.force, untyped.force);
+        assert_eq!(typed_untyped.torque, untyped.torque);
+        // The typed surface tags the result as StructuralFrame<V> —
+        // raw_si() recovers the same DVec3 the untyped function returned.
+        assert_eq!(typed.force.raw_si(), untyped.force);
+        // Validate the F64Ext-style construction path also reaches the
+        // same numeric output (using `.m2()` from F64Ext for area;
+        // Ratio is constructed directly since F64Ext doesn't yet
+        // have a bare `.ratio()` constructor).
+        let from_ext = compute_ballistic_drag_typed::<TestVehicle>(
+            &DragConfigTyped {
+                cd: Ratio::new::<ratio>(2.2),
+                area: 4.5_f64.m2(),
+                constant_density: None,
+            },
+            &atmos,
+            Velocity::<Inertial>::from_raw_si(velocity),
+            &t_is,
+        );
+        assert_eq!(from_ext.force.raw_si(), untyped.force);
+    }
 }
 
 #[cfg(test)]

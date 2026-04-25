@@ -29,6 +29,13 @@ pub struct GravitySourceTyped {
 impl GravitySourceTyped {
     /// Drop the dimension annotation and emit the untyped storage form.
     /// Numeric value (`m³/s²`) is preserved exactly.
+    ///
+    /// **Performance**: this clones [`GravityModel`], which for the
+    /// `SphericalHarmonics(Box<…>)` variant deep-clones the
+    /// coefficient and Gottlieb helper arrays (potentially MB-scale
+    /// for high-degree models). For one-shot conversions, prefer
+    /// [`Self::into_untyped`], which consumes `self` and moves the
+    /// boxed model.
     #[inline]
     pub fn to_untyped(&self) -> GravitySource {
         GravitySource {
@@ -37,8 +44,23 @@ impl GravitySourceTyped {
         }
     }
 
+    /// Consuming sibling of [`Self::to_untyped`]: moves the inner
+    /// [`GravityModel`] (including any `Box<SphericalHarmonicsData>`)
+    /// without cloning the coefficient arrays.
+    #[inline]
+    pub fn into_untyped(self) -> GravitySource {
+        GravitySource {
+            mu: self.mu.value,
+            model: self.model,
+        }
+    }
+
     /// Wrap an untyped [`GravitySource`] as typed. **The caller asserts**
     /// the `mu` field carries SI base units (m³/s²).
+    ///
+    /// Same performance caveat as [`Self::to_untyped`]: clones
+    /// `s.model`. Use [`Self::from_untyped`] for a consuming
+    /// conversion when `s` can be moved.
     #[inline]
     pub fn from_untyped_unchecked(s: &GravitySource) -> Self {
         Self {
@@ -48,6 +70,19 @@ impl GravitySourceTyped {
                 value: s.mu,
             },
             model: s.model.clone(),
+        }
+    }
+
+    /// Consuming sibling of [`Self::from_untyped_unchecked`].
+    #[inline]
+    pub fn from_untyped(s: GravitySource) -> Self {
+        Self {
+            mu: GravParam {
+                dimension: core::marker::PhantomData,
+                units: core::marker::PhantomData,
+                value: s.mu,
+            },
+            model: s.model,
         }
     }
 }

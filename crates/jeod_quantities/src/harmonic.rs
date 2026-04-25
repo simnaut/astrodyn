@@ -14,11 +14,12 @@
 //! the existing field types in `jeod_gravity::gravity_controls`. This
 //! keeps the migration churn-free at every call site.
 //!
-//! `HarmonicDegree` carries the `#[diagnostic::on_unimplemented]`
-//! attributes (via the `RequiresHarmonicDegree` marker trait) so a
-//! caller who tries to pass an `Angle` where a `HarmonicDegree` is
-//! expected gets a physics-language error message rather than the raw
-//! "expected `HarmonicDegree`, found `Angle`" trait-bound complaint.
+//! Cross-type confusion (passing an `Angle` or `Ratio` where a
+//! `HarmonicDegree` is expected) is already prevented by the standard
+//! Rust type-mismatch error, since `HarmonicDegree` is a distinct
+//! struct rather than a `uom` Quantity newtype. Wrap with
+//! `HarmonicDegree::new(n)` or `HarmonicDegree::from(n)` at call
+//! sites that have a raw `usize`.
 
 use core::fmt;
 
@@ -76,26 +77,6 @@ impl From<HarmonicDegree> for usize {
         value.0
     }
 }
-
-/// Diagnostic marker: a public API parameter that semantically expects
-/// a spherical-harmonic degree or order index implements this trait
-/// (via the blanket impl on [`HarmonicDegree`]). The
-/// `#[diagnostic::on_unimplemented]` attributes give callers a
-/// physics-language error if they pass an angular `Angle`,
-/// dimensionless `Ratio`, or raw `usize` where the typed surface
-/// expects a [`HarmonicDegree`].
-#[diagnostic::on_unimplemented(
-    message = "`{Self}` is not a `HarmonicDegree` (spherical-harmonic ordinal index)",
-    label = "expected `HarmonicDegree`, got `{Self}`",
-    note = "spherical-harmonic degree/order indices are unitless ordinals — \
-            they are *not* interchangeable with `uom::si::angle::Degree` \
-            (an angular measure) or `uom::si::ratio::Ratio` (a \
-            dimensionless quantity). Wrap with `HarmonicDegree::new(n)` \
-            or `HarmonicDegree::from(n)`."
-)]
-pub trait RequiresHarmonicDegree {}
-
-impl RequiresHarmonicDegree for HarmonicDegree {}
 
 #[cfg(test)]
 mod tests {
