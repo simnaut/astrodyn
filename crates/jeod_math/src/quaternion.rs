@@ -11,20 +11,11 @@
 //! so downstream crates can continue to say `jeod_math::JeodQuat` and
 //! `jeod_math::quaternion::NORM_LIMIT` after the Phase 2 unification.
 
+pub use jeod_quantities::quat::NORM_LIMIT;
 pub use jeod_quantities::{
     JeodQuat, Layout, LeftTransform, NormalizedQuat, Quat, RightTransform, ScalarFirst, ScalarLast,
     Transform,
 };
-
-/// Threshold below which the fast renormalization (Padé approximant) path is used.
-/// From JEOD `models/utils/quaternion/src/quaternion_normalize.cc`.
-///
-/// The canonical [`JeodQuat::normalize`] (inherent method in
-/// `jeod_quantities::quat`) uses this same numeric value internally. The
-/// constant is re-exported here so JEOD-specific consumers (e.g.
-/// `jeod_dynamics::normalize_integ`, which must *not* flip the scalar sign
-/// during integration) can reach it under the expected path.
-pub const NORM_LIMIT: f64 = 2.107_342e-8;
 
 // ====================================================================
 // Tests
@@ -275,8 +266,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // NORM_LIMIT parity: the jeod_math re-export must match the
-    // threshold the unified `normalize` uses internally.
+    // Pin the JEOD-source threshold value as a regression guard.
     // ---------------------------------------------------------------
     #[test]
     fn norm_limit_is_jeod_value() {

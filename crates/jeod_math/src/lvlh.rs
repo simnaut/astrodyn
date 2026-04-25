@@ -136,13 +136,13 @@ where
     let lvlh = compute_lvlh_frame(position.raw_si(), velocity.raw_si());
 
     // Convert the transformation matrix T_parent_this (inertial → LVLH) into
-    // a canonical JEOD left quaternion, then wrap in a `NormalizedQuat`
-    // witness. JEOD's `left_quat_from_transformation` extractor always returns
-    // a unit-norm result (it re-normalizes internally), but we renormalize
-    // defensively in case of rounding near the threshold.
+    // a canonical JEOD left quaternion. JEOD's `left_quat_from_transformation`
+    // extractor already re-normalizes internally, so we wrap the result with
+    // `NormalizedQuat::new` — that witnesses the existing unit norm without
+    // re-dividing by `‖q‖`, preserving bit-identity with the f64 surface.
     let q: JeodQuat = JeodQuat::left_quat_from_transformation(&lvlh.t_parent_this);
-    let q_norm = NormalizedQuat::renormalize(q)
-        .expect("LVLH rotation matrix yields a finite, non-zero quaternion");
+    let q_norm = NormalizedQuat::new(q)
+        .unwrap_or_else(|err| panic!("left_quat_from_transformation guarantees unit norm: {err}"));
     FrameTransform::<Inertial, Lvlh<Chief>>::from_quat(q_norm)
 }
 

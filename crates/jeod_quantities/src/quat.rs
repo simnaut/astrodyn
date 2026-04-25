@@ -227,19 +227,18 @@ impl<L: Layout, T: Transform> NormalizedQuat<L, T> {
 //
 // These impls live here (rather than in `jeod_math::quaternion`) because
 // inherent impls may only appear in the defining crate. See
-// `jeod_math::quaternion` for the `NORM_LIMIT` constant and the
-// JEOD-specific `normalize_integ` variant that preserves the scalar sign.
+// `jeod_math::quaternion` for the JEOD-specific `normalize_integ` variant
+// that preserves the scalar sign.
 // ============================================================================
 
 /// Threshold (as a scalar difference `1 - ‖q‖²`) below which the fast Padé
 /// renormalization path is used. JEOD source:
 /// `models/utils/quaternion/src/quaternion_normalize.cc`.
 ///
-/// Prefer the re-export at `jeod_math::quaternion::NORM_LIMIT`; this copy
-/// exists only because the inherent [`JeodQuat::normalize`] method lives in
-/// the defining crate (`jeod_quantities`), which must not depend upward on
-/// `jeod_math`.
-const JEOD_NORM_LIMIT: f64 = 2.107_342e-8;
+/// Single source of truth: `jeod_math::quaternion::NORM_LIMIT` re-exports
+/// this constant so JEOD-specific consumers can reach it under their
+/// expected path without duplicating the literal.
+pub const NORM_LIMIT: f64 = 2.107_342e-8;
 
 impl JeodQuat {
     /// Identity quaternion `[1, 0, 0, 0]`: no rotation.
@@ -332,7 +331,7 @@ impl JeodQuat {
         assert!(qmagsq > 0.0, "cannot normalize a zero quaternion");
 
         // JEOD_INV: QT.01 — fast Padé path near unit magnitude, sqrt path otherwise
-        let fact = if (1.0 - qmagsq).abs() < JEOD_NORM_LIMIT {
+        let fact = if (1.0 - qmagsq).abs() < NORM_LIMIT {
             // Near-unit: first-order Padé approximant  2 / (1 + ||q||²)
             2.0 / (1.0 + qmagsq)
         } else {
