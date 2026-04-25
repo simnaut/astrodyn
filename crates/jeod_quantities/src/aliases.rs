@@ -37,3 +37,8 @@ pub type AngularAcceleration<F = Inertial> = Qty3<angular_acceleration::Dimensio
 
 /// Angular momentum in frame `F`. Base SI unit: kg·m²/s.
 pub type AngularMomentum<F = Inertial> = Qty3<angular_momentum::Dimension, F>;
+
+// `InertiaTensor<F>` is a `DMat3` newtype rather than a `Qty3`, but it
+// belongs in the same conceptual namespace as the typed quantities — re-
+// export it here for `use jeod_quantities::aliases::*;` callers.
+pub use crate::inertia::InertiaTensor;

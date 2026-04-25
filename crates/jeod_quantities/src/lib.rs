@@ -25,6 +25,7 @@ pub mod dims;
 pub mod ext;
 pub mod frame;
 pub mod frame_transform;
+pub mod inertia;
 pub mod ops;
 pub mod prelude;
 pub mod qty3;
@@ -38,3 +39,4 @@ pub use frame_transform::*;
 pub use qty3::*;
 pub use quat::*;
 pub use time_scale::*;
+// `inertia::InertiaTensor` is re-exported via `aliases::*`.
