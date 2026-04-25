@@ -7,6 +7,11 @@
 //! Both use point-mass Earth gravity, RK4 at the SIM_Euler S_define step size, 24h duration.
 //! Euler angles are validated against JEOD's logged quaternion data.
 
+// `compute_euler_angles_from_matrix` is deprecated in favor of its typed
+// sibling; this Tier 3 test keeps the bare variant while the derived-state
+// consumers migrate.
+#![allow(deprecated)]
+
 mod sim_test_helpers;
 use sim_test_helpers::*;
 

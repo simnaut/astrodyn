@@ -451,6 +451,7 @@ fn validate_orbital_init_parser() {
 ///
 /// Exit criterion: 6/6 test vectors within 1e-12 rad.
 #[test]
+#[allow(deprecated)]
 fn validate_euler_angle_extraction_from_jeod_vectors() {
     use jeod_math::{compute_euler_angles_from_matrix, EulerSequence};
 
