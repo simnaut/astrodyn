@@ -12,6 +12,9 @@
 //! - Partial eclipse: cubic polynomial approximation of circular disk overlap
 
 use glam::DVec3;
+use jeod_quantities::aliases::Position;
+use jeod_quantities::frame::Inertial;
+use uom::si::f64::{Length, Ratio};
 
 /// Empirically-derived cubic polynomial approximation for the fractional area
 /// of a circular disk eclipsed by another circular disk, as a function of the
@@ -196,12 +199,12 @@ pub fn compute_shadow_fraction(
 /// and [`Length`] for the radii. Output is [`Ratio`] (illumination
 /// fraction is dimensionless, in `[0, 1]`).
 pub fn compute_shadow_fraction_typed(
-    vehicle_pos: jeod_quantities::aliases::Position<jeod_quantities::frame::Inertial>,
-    sun_pos: jeod_quantities::aliases::Position<jeod_quantities::frame::Inertial>,
-    body_pos: jeod_quantities::aliases::Position<jeod_quantities::frame::Inertial>,
-    body_radius: uom::si::f64::Length,
-    source_radius: uom::si::f64::Length,
-) -> uom::si::f64::Ratio {
+    vehicle_pos: Position<Inertial>,
+    sun_pos: Position<Inertial>,
+    body_pos: Position<Inertial>,
+    body_radius: Length,
+    source_radius: Length,
+) -> Ratio {
     let raw = compute_shadow_fraction(
         vehicle_pos.raw_si(),
         sun_pos.raw_si(),
@@ -209,7 +212,7 @@ pub fn compute_shadow_fraction_typed(
         body_radius.value,
         source_radius.value,
     );
-    uom::si::f64::Ratio::new::<uom::si::ratio::ratio>(raw)
+    Ratio::new::<uom::si::ratio::ratio>(raw)
 }
 
 #[cfg(test)]
@@ -405,5 +408,42 @@ mod tests {
             frac, 1.0,
             "Vehicle between source and body should be full sun"
         );
+    }
+
+    /// Typed wrapper round-trips bit-identically to the untyped kernel
+    /// for representative geometry (a partial-eclipse penumbra case
+    /// and a full-sun case).
+    #[test]
+    fn compute_shadow_fraction_typed_matches_untyped() {
+        use uom::si::length::meter;
+        // Vehicle deep in umbra: directly behind Earth from the Sun.
+        let sun = DVec3::new(-AU, 0.0, 0.0);
+        let body = DVec3::ZERO;
+        let vehicle = DVec3::new(7_000_000.0, 0.0, 0.0);
+
+        let untyped = compute_shadow_fraction(vehicle, sun, body, EARTH_RADIUS, SUN_RADIUS);
+        let typed = compute_shadow_fraction_typed(
+            Position::<Inertial>::from_raw_si(vehicle),
+            Position::<Inertial>::from_raw_si(sun),
+            Position::<Inertial>::from_raw_si(body),
+            Length::new::<meter>(EARTH_RADIUS),
+            Length::new::<meter>(SUN_RADIUS),
+        );
+        assert_eq!(typed.value, untyped);
+
+        // Vehicle between source and body (a Sun-side region).
+        let vehicle_sunny = DVec3::new(AU / 2.0, 0.0, 0.0);
+        let untyped_sunny =
+            compute_shadow_fraction(vehicle_sunny, sun, body, EARTH_RADIUS, SUN_RADIUS);
+        let typed_sunny = compute_shadow_fraction_typed(
+            Position::<Inertial>::from_raw_si(vehicle_sunny),
+            Position::<Inertial>::from_raw_si(sun),
+            Position::<Inertial>::from_raw_si(body),
+            Length::new::<meter>(EARTH_RADIUS),
+            Length::new::<meter>(SUN_RADIUS),
+        );
+        // What matters is the typed wrapper bit-matches the untyped
+        // kernel — not what numeric value either produces.
+        assert_eq!(typed_sunny.value, untyped_sunny);
     }
 }

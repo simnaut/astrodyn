@@ -8,6 +8,9 @@
 //! of light, r̂ is the Sun-to-vehicle unit vector.
 
 use glam::DVec3;
+use jeod_quantities::aliases::{Force, Position};
+use jeod_quantities::frame::Inertial;
+use uom::si::f64::{Area, Ratio};
 
 /// Solar luminosity in W (matching JEOD `radiation_source.hh`).
 pub const SOLAR_LUMINOSITY: f64 = 3.827e26;
@@ -438,13 +441,13 @@ pub fn compute_cannonball_srp(
 /// diffuse / illumination factors. Output is [`Force<Inertial>`].
 /// Same numeric kernel — bit-identical output for equal numeric input.
 pub fn compute_cannonball_srp_typed(
-    body_pos: jeod_quantities::aliases::Position<jeod_quantities::frame::Inertial>,
-    sun_pos: jeod_quantities::aliases::Position<jeod_quantities::frame::Inertial>,
-    cx_area: uom::si::f64::Area,
-    albedo: uom::si::f64::Ratio,
-    diffuse: uom::si::f64::Ratio,
-    illum_factor: uom::si::f64::Ratio,
-) -> jeod_quantities::aliases::Force<jeod_quantities::frame::Inertial> {
+    body_pos: Position<Inertial>,
+    sun_pos: Position<Inertial>,
+    cx_area: Area,
+    albedo: Ratio,
+    diffuse: Ratio,
+    illum_factor: Ratio,
+) -> Force<Inertial> {
     let force = compute_cannonball_srp(
         body_pos.raw_si(),
         sun_pos.raw_si(),
@@ -453,7 +456,7 @@ pub fn compute_cannonball_srp_typed(
         diffuse.value,
         illum_factor.value,
     );
-    jeod_quantities::aliases::Force::<jeod_quantities::frame::Inertial>::from_raw_si(force)
+    Force::<Inertial>::from_raw_si(force)
 }
 
 /// Integrate a single plate's temperature via Forward Euler with overshoot clamping.
@@ -569,6 +572,47 @@ pub fn solar_flux_at_distance(distance: f64) -> f64 {
 mod tests {
     use super::*;
     use std::f64::consts::PI;
+
+    /// Typed cannonball SRP wrapper round-trips bit-identically to the
+    /// untyped kernel for representative geometry (vehicle at 1 AU and
+    /// the early-return zero case).
+    #[test]
+    fn compute_cannonball_srp_typed_matches_untyped() {
+        use uom::si::area::square_meter;
+        use uom::si::ratio::ratio;
+        let au = 1.496e11;
+        let body = DVec3::new(au, 0.0, 0.0);
+        let sun = DVec3::ZERO;
+        let cx_area = 4.5;
+        let albedo = 0.3;
+        let diffuse = 0.5;
+        let illum = 1.0;
+
+        let untyped = compute_cannonball_srp(body, sun, cx_area, albedo, diffuse, illum);
+        let typed = compute_cannonball_srp_typed(
+            Position::<Inertial>::from_raw_si(body),
+            Position::<Inertial>::from_raw_si(sun),
+            Area::new::<square_meter>(cx_area),
+            Ratio::new::<ratio>(albedo),
+            Ratio::new::<ratio>(diffuse),
+            Ratio::new::<ratio>(illum),
+        );
+        assert_eq!(typed.raw_si(), untyped);
+
+        // Coincident body and sun → distance < 1.0 → returns zero.
+        let coincident = DVec3::new(0.5, 0.0, 0.0); // < 1 m
+        let untyped_zero = compute_cannonball_srp(coincident, sun, cx_area, albedo, diffuse, illum);
+        let typed_zero = compute_cannonball_srp_typed(
+            Position::<Inertial>::from_raw_si(coincident),
+            Position::<Inertial>::from_raw_si(sun),
+            Area::new::<square_meter>(cx_area),
+            Ratio::new::<ratio>(albedo),
+            Ratio::new::<ratio>(diffuse),
+            Ratio::new::<ratio>(illum),
+        );
+        assert_eq!(typed_zero.raw_si(), untyped_zero);
+        assert_eq!(typed_zero.raw_si(), DVec3::ZERO);
+    }
 
     /// Solar radiation pressure at 1 AU ≈ 4.56e-6 N/m² (Phase 4 exit criterion).
     #[test]

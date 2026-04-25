@@ -12,6 +12,8 @@
 //! (potentially non-diagonal) inertia tensor.
 
 use glam::{DMat3, DVec3};
+use jeod_quantities::aliases::{InertiaTensor, Torque};
+use jeod_quantities::frame::{BodyFrame, Vehicle};
 
 /// Compute gravity gradient torque on a rigid body.
 ///
@@ -75,16 +77,14 @@ pub fn compute_gravity_torque(grav_grad: &DMat3, t_parent_this: &DMat3, inertia:
 /// within a single frame), and the rotation matrix comes from
 /// upstream untyped storage. Numeric kernel is the existing untyped
 /// function — bit-identical output for equal numeric inputs.
-pub fn compute_gravity_torque_typed<V: jeod_quantities::frame::Vehicle>(
+pub fn compute_gravity_torque_typed<V: Vehicle>(
     grav_grad: &DMat3,
     t_parent_this: &DMat3,
-    inertia: jeod_quantities::aliases::InertiaTensor<jeod_quantities::frame::BodyFrame<V>>,
-) -> jeod_quantities::aliases::Torque<jeod_quantities::frame::BodyFrame<V>> {
+    inertia: InertiaTensor<BodyFrame<V>>,
+) -> Torque<BodyFrame<V>> {
     let inertia_dmat = inertia.as_dmat3();
     let untyped_torque = compute_gravity_torque(grav_grad, t_parent_this, &inertia_dmat);
-    jeod_quantities::aliases::Torque::<jeod_quantities::frame::BodyFrame<V>>::from_raw_si(
-        untyped_torque,
-    )
+    Torque::<BodyFrame<V>>::from_raw_si(untyped_torque)
 }
 
 #[cfg(test)]
@@ -276,5 +276,31 @@ mod tests {
             torque_large.length() > torque_small.length(),
             "Torque should increase with inertia asymmetry"
         );
+    }
+
+    /// Typed wrapper round-trips bit-identically to the untyped kernel.
+    #[test]
+    fn compute_gravity_torque_typed_matches_untyped() {
+        use jeod_quantities::frame::TestVehicle;
+
+        let mu = 3.986_004_415e14;
+        let r = 7_000_000.0;
+        let r3 = r * r * r;
+        let grad = DMat3::from_diagonal(DVec3::new(1.0, 1.0, -2.0)) * (mu / r3);
+        let theta: f64 = 0.4;
+        let c = theta.cos();
+        let s = theta.sin();
+        let t = DMat3::from_cols(
+            DVec3::new(c, 0.0, -s),
+            DVec3::new(0.0, 1.0, 0.0),
+            DVec3::new(s, 0.0, c),
+        );
+        let inertia_dmat = DMat3::from_diagonal(DVec3::new(800.0, 1200.0, 600.0));
+        let inertia_typed =
+            InertiaTensor::<BodyFrame<TestVehicle>>::from_dmat3_unchecked(inertia_dmat);
+
+        let untyped_torque = compute_gravity_torque(&grad, &t, &inertia_dmat);
+        let typed_torque = compute_gravity_torque_typed::<TestVehicle>(&grad, &t, inertia_typed);
+        assert_eq!(typed_torque.raw_si(), untyped_torque);
     }
 }

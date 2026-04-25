@@ -1,6 +1,7 @@
 use glam::DMat3;
 use glam::DVec3;
 use jeod_dynamics::GravityAcceleration;
+use jeod_quantities::aliases::HarmonicDegree;
 
 use crate::gravity_source::{GravityModel, GravitySource};
 use log::warn;
@@ -367,11 +368,11 @@ pub struct GravityControlTyped<SourceId = String> {
     pub source_name: SourceId,
     pub gradient: bool,
     pub spherical: bool,
-    pub degree: jeod_quantities::aliases::HarmonicDegree,
-    pub order: jeod_quantities::aliases::HarmonicDegree,
+    pub degree: HarmonicDegree,
+    pub order: HarmonicDegree,
     pub perturbing_only: bool,
-    pub gradient_degree: jeod_quantities::aliases::HarmonicDegree,
-    pub gradient_order: jeod_quantities::aliases::HarmonicDegree,
+    pub gradient_degree: HarmonicDegree,
+    pub gradient_order: HarmonicDegree,
     pub differential: bool,
     pub battin_method: bool,
     pub relativistic: bool,
@@ -384,11 +385,11 @@ impl<SourceId> GravityControlTyped<SourceId> {
             source_name,
             gradient,
             spherical: true,
-            degree: jeod_quantities::aliases::HarmonicDegree::default(),
-            order: jeod_quantities::aliases::HarmonicDegree::default(),
+            degree: HarmonicDegree::default(),
+            order: HarmonicDegree::default(),
             perturbing_only: false,
-            gradient_degree: jeod_quantities::aliases::HarmonicDegree::default(),
-            gradient_order: jeod_quantities::aliases::HarmonicDegree::default(),
+            gradient_degree: HarmonicDegree::default(),
+            gradient_order: HarmonicDegree::default(),
             differential: false,
             battin_method: false,
             relativistic: false,
@@ -398,8 +399,8 @@ impl<SourceId> GravityControlTyped<SourceId> {
     /// Non-spherical (spherical-harmonics) typed control.
     pub fn new_nonspherical(
         source_name: SourceId,
-        degree: jeod_quantities::aliases::HarmonicDegree,
-        order: jeod_quantities::aliases::HarmonicDegree,
+        degree: HarmonicDegree,
+        order: HarmonicDegree,
         gradient: bool,
     ) -> Self {
         Self {
@@ -409,8 +410,8 @@ impl<SourceId> GravityControlTyped<SourceId> {
             degree,
             order,
             perturbing_only: false,
-            gradient_degree: jeod_quantities::aliases::HarmonicDegree::default(),
-            gradient_order: jeod_quantities::aliases::HarmonicDegree::default(),
+            gradient_degree: HarmonicDegree::default(),
+            gradient_order: HarmonicDegree::default(),
             differential: false,
             battin_method: false,
             relativistic: false,
@@ -423,11 +424,11 @@ impl<SourceId> GravityControlTyped<SourceId> {
             source_name,
             gradient: false,
             spherical: true,
-            degree: jeod_quantities::aliases::HarmonicDegree::default(),
-            order: jeod_quantities::aliases::HarmonicDegree::default(),
+            degree: HarmonicDegree::default(),
+            order: HarmonicDegree::default(),
             perturbing_only: false,
-            gradient_degree: jeod_quantities::aliases::HarmonicDegree::default(),
-            gradient_order: jeod_quantities::aliases::HarmonicDegree::default(),
+            gradient_degree: HarmonicDegree::default(),
+            gradient_order: HarmonicDegree::default(),
             differential: true,
             battin_method: false,
             relativistic: false,
@@ -436,7 +437,7 @@ impl<SourceId> GravityControlTyped<SourceId> {
 }
 
 impl<SourceId: Clone> GravityControlTyped<SourceId> {
-    /// Validate this typed control against its (typed) gravity source.
+    /// Validate this typed control against its gravity source.
     ///
     /// Delegates to [`GravityControl::check_validity`] on the untyped
     /// projection — runtime-checked invariants (`GV.03`–`GV.11`)
@@ -451,12 +452,10 @@ impl<SourceId: Clone> GravityControlTyped<SourceId> {
         untyped.check_validity(source);
         // Reflect any auto-corrections back into the typed surface.
         self.spherical = untyped.spherical;
-        self.degree = jeod_quantities::aliases::HarmonicDegree::from(untyped.degree);
-        self.order = jeod_quantities::aliases::HarmonicDegree::from(untyped.order);
-        self.gradient_degree =
-            jeod_quantities::aliases::HarmonicDegree::from(untyped.gradient_degree);
-        self.gradient_order =
-            jeod_quantities::aliases::HarmonicDegree::from(untyped.gradient_order);
+        self.degree = HarmonicDegree::from(untyped.degree);
+        self.order = HarmonicDegree::from(untyped.order);
+        self.gradient_degree = HarmonicDegree::from(untyped.gradient_degree);
+        self.gradient_order = HarmonicDegree::from(untyped.gradient_order);
     }
 
     /// Drop the [`HarmonicDegree`] newtypes and emit the untyped
@@ -485,11 +484,11 @@ impl<SourceId: Clone> GravityControlTyped<SourceId> {
             source_name: c.source_name.clone(),
             gradient: c.gradient,
             spherical: c.spherical,
-            degree: jeod_quantities::aliases::HarmonicDegree::from(c.degree),
-            order: jeod_quantities::aliases::HarmonicDegree::from(c.order),
+            degree: HarmonicDegree::from(c.degree),
+            order: HarmonicDegree::from(c.order),
             perturbing_only: c.perturbing_only,
-            gradient_degree: jeod_quantities::aliases::HarmonicDegree::from(c.gradient_degree),
-            gradient_order: jeod_quantities::aliases::HarmonicDegree::from(c.gradient_order),
+            gradient_degree: HarmonicDegree::from(c.gradient_degree),
+            gradient_order: HarmonicDegree::from(c.gradient_order),
             differential: c.differential,
             battin_method: c.battin_method,
             relativistic: c.relativistic,

@@ -1,3 +1,6 @@
+use jeod_quantities::dims::GravParam;
+use uom::si::f64::Length;
+
 /// Spherical harmonics gravity model data.
 ///
 /// Holds the normalized gravity coefficients (Cnm, Snm) and precomputed
@@ -200,8 +203,8 @@ impl SphericalHarmonicsData {
     /// like [`super::tides::TidalConfigTyped`] or third-body
     /// differential-acceleration callers.
     #[inline]
-    pub fn mu_typed(&self) -> jeod_quantities::dims::GravParam {
-        jeod_quantities::dims::GravParam {
+    pub fn mu_typed(&self) -> GravParam {
+        GravParam {
             dimension: core::marker::PhantomData,
             units: core::marker::PhantomData,
             value: self.mu,
@@ -210,9 +213,9 @@ impl SphericalHarmonicsData {
 
     /// Typed accessor for the reference radius.
     ///
-    /// Returns [`uom::si::f64::Length`] (m).
+    /// Returns [`Length`] (m).
     #[inline]
-    pub fn radius_typed(&self) -> uom::si::f64::Length {
-        uom::si::f64::Length::new::<uom::si::length::meter>(self.radius)
+    pub fn radius_typed(&self) -> Length {
+        Length::new::<uom::si::length::meter>(self.radius)
     }
 }
