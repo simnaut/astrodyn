@@ -43,7 +43,7 @@ fn three_dof_rk4_round_trip() {
         .rk4()
         .build();
     assert_eq!(cfg.integrator, IntegratorType::Rk4);
-    assert!(cfg.mass.is_some());
+    assert_eq!(cfg.mass.mass, 420_000.0);
     assert!(cfg.rot.is_none());
     assert!(cfg.drag.is_none());
 }

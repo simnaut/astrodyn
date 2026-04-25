@@ -107,11 +107,16 @@ impl BuildState for Ready {}
 pub struct TypedVehicleConfig {
     /// Translational state in the inertial frame.
     pub trans: TranslationalStateTyped<Inertial>,
-    /// Optional rotational state (6-DOF when present).
+    /// Optional rotational state (6-DOF when present, `None` for 3-DOF
+    /// point-mass bodies).
     pub rot: Option<RotationalState>,
-    /// Optional mass properties (required for any non-zero force).
-    pub mass: Option<MassProperties>,
-    /// Selected integrator (default: RK4).
+    /// Mass properties. Always populated — the typestate path through
+    /// either [`VehicleBuilder::three_dof_point_mass`] or
+    /// [`VehicleBuilder::sixdof`] sets it before
+    /// [`VehicleBuilder::build`] is reachable.
+    pub mass: MassProperties,
+    /// Selected integrator (chosen explicitly via the typestate
+    /// transition through [`HasIntegrator`]).
     pub integrator: IntegratorType,
     /// Per-body gravity controls.
     pub gravity_controls: GravityControls<usize>,
@@ -312,7 +317,7 @@ impl VehicleBuilder<Ready> {
                 .trans
                 .expect("typestate guarantees translational state"),
             rot: self.rot,
-            mass: self.mass,
+            mass: self.mass.expect("typestate guarantees mass"),
             integrator: self.integrator.expect("typestate guarantees integrator"),
             gravity_controls: self.gravity_controls,
             drag: self.drag,
@@ -352,7 +357,7 @@ mod tests {
             .rk4()
             .build();
         assert_eq!(cfg.integrator, IntegratorType::Rk4);
-        assert!(cfg.mass.is_some());
+        assert_eq!(cfg.mass.mass, 420_000.0);
         assert!(cfg.rot.is_none());
     }
 
@@ -378,6 +383,6 @@ mod tests {
             .rk4()
             .build();
         assert!(cfg.rot.is_some());
-        assert!(cfg.mass.is_some());
+        assert_eq!(cfg.mass.mass, 420_000.0);
     }
 }
