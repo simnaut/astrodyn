@@ -42,3 +42,8 @@ pub type AngularMomentum<F = Inertial> = Qty3<angular_momentum::Dimension, F>;
 // belongs in the same conceptual namespace as the typed quantities — re-
 // export it here for `use jeod_quantities::aliases::*;` callers.
 pub use crate::inertia::InertiaTensor;
+
+// Spherical-harmonic ordinal index (a `usize` newtype that the type
+// checker keeps distinct from angular `Degree` and dimensionless
+// `Ratio`).
+pub use crate::harmonic::HarmonicDegree;
