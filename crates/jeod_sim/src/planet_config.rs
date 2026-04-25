@@ -6,6 +6,9 @@
 
 use crate::RotationModel;
 use jeod_planet::PlanetShape;
+use jeod_quantities::dims::GravParam;
+use jeod_quantities::ext::F64Ext;
+use uom::si::f64::{AngularVelocity, Length};
 
 /// Complete planet configuration for simulation setup.
 ///
@@ -27,6 +30,30 @@ pub struct PlanetConfig {
     /// Body radius (m) for SRP eclipse (shadow) computation.
     /// Typically the mean equatorial radius.
     pub shadow_radius: f64,
+}
+
+impl PlanetConfig {
+    /// Typed accessor: gravitational parameter as [`GravParam`]
+    /// (m³/s²). Delegates to [`PlanetShape::mu_typed`] so the
+    /// unit-wrapping lives in one place.
+    #[inline]
+    pub fn mu_typed(&self) -> GravParam {
+        self.shape.mu_typed()
+    }
+
+    /// Typed accessor: sidereal angular velocity as
+    /// [`uom::si::f64::AngularVelocity`] (rad/s).
+    #[inline]
+    pub fn omega_typed(&self) -> AngularVelocity {
+        self.omega.rad_per_s()
+    }
+
+    /// Typed accessor: SRP shadow body radius as [`Length`] (meters).
+    #[inline]
+    pub fn shadow_radius_typed(&self) -> Length {
+        use uom::si::length::meter;
+        Length::new::<meter>(self.shadow_radius)
+    }
 }
 
 /// Earth — WGS84 ellipsoid, IAU 2000A precession-nutation rotation.

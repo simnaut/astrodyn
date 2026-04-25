@@ -1,9 +1,13 @@
 use glam::DVec3;
+use jeod_dynamics::state::TranslationalStateTyped;
 use jeod_dynamics::{
     DynamicsConfig, IntegratorType, MassProperties, RotationalState, SixDofState,
     TranslationalState,
 };
 use jeod_math::JeodQuat;
+use jeod_quantities::aliases::{Acceleration, Force, Position, Torque, Velocity};
+use jeod_quantities::frame::{BodyFrame, Inertial, Vehicle};
+use uom::si::f64::Time;
 
 use crate::integrable::IntegrableObject;
 use crate::interactions::FlatPlateState;
@@ -1000,6 +1004,68 @@ fn integrate_coupled_sixdof(
         &eval4.temp_dots,
         integ_dyndt,
     );
+}
+
+/// Typed sibling of [`integrate_body`].
+///
+/// Identical kernel — wraps the entry boundary so callers pass typed
+/// quantities. The `trans` parameter takes a mutable
+/// [`TranslationalStateTyped<Inertial>`] so the inertial-frame
+/// constraint is enforced at compile time; the wrapper unwraps to the
+/// raw kernel storage on entry and writes the integrated state back
+/// at exit. The `gravity_fn` closure is also typed: it receives an
+/// intermediate position / velocity in [`Inertial`] and returns an
+/// [`Acceleration<Inertial>`]. No new arithmetic — only `.raw_si()` /
+/// `from_raw_si` at the edges.
+///
+/// `dt` becomes [`uom::si::f64::Time`]. The dimensionless
+/// `time_scale_factor` (JEOD's `TimeDyn::scale_factor`) stays an
+/// `f64` ratio per Phase 5's design note (#107).
+///
+/// Per-vehicle frame phantom `V` ties the torque to
+/// [`BodyFrame<V>`]; the body's translational state must be in
+/// [`Inertial`] (enforced by the [`TranslationalStateTyped<Inertial>`]
+/// parameter type).
+#[allow(clippy::too_many_arguments)]
+pub fn integrate_body_typed<V: Vehicle>(
+    config: &DynamicsConfig,
+    trans: &mut TranslationalStateTyped<Inertial>,
+    rot: Option<&mut RotationalState>,
+    mass: Option<&MassProperties>,
+    gravity_fn: impl Fn(Position<Inertial>, Velocity<Inertial>, f64) -> Acceleration<Inertial>,
+    non_grav_force: Force<Inertial>,
+    torque: Torque<BodyFrame<V>>,
+    dt: Time,
+    time_scale_factor: f64,
+    integrator: IntegratorType,
+    gj_state: Option<&mut jeod_dynamics::GaussJacksonState>,
+    abm4_state: Option<&mut jeod_dynamics::Abm4State>,
+) {
+    use uom::si::time::second;
+    let raw_gravity_fn = |pos: DVec3, vel: DVec3, time_frac: f64| -> DVec3 {
+        gravity_fn(
+            Position::<Inertial>::from_raw_si(pos),
+            Velocity::<Inertial>::from_raw_si(vel),
+            time_frac,
+        )
+        .raw_si()
+    };
+    let mut raw_trans = trans.to_untyped();
+    integrate_body(
+        config,
+        &mut raw_trans,
+        rot,
+        mass,
+        raw_gravity_fn,
+        non_grav_force.raw_si(),
+        torque.raw_si(),
+        dt.get::<second>(),
+        time_scale_factor,
+        integrator,
+        gj_state,
+        abm4_state,
+    );
+    *trans = TranslationalStateTyped::<Inertial>::from_untyped_unchecked(&raw_trans);
 }
 
 /// Compute total translational acceleration from a stage evaluation.

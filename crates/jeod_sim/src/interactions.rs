@@ -1,9 +1,13 @@
 use glam::{DMat3, DVec3};
 use jeod_dynamics::{MassProperties, RotationalState, TranslationalState};
 use jeod_interactions::{
-    compute_contact_force_from_geometry, compute_contact_geometry, AerodynamicForce, ContactFacet,
-    DragConfig, FlatPlate, FlatPlateParams, FlatPlateThermal,
+    compute_contact_force_from_geometry, compute_contact_geometry, AerodynamicForce,
+    AerodynamicForceTyped, ContactFacet, DragConfig, DragConfigTyped, FlatPlate, FlatPlateParams,
+    FlatPlateThermal,
 };
+use jeod_quantities::aliases::{Force, InertiaTensor, Position, Torque, Velocity};
+use jeod_quantities::frame::{BodyFrame, Inertial, Vehicle};
+use uom::si::f64::{Area, Ratio};
 
 use crate::integrable::IntegrableObject;
 
@@ -513,6 +517,117 @@ pub fn evaluate_contact_pair(
         torque_a_body,
         torque_b_body,
     })
+}
+
+/// Typed sibling of [`compute_drag`].
+///
+/// Identical kernel — wraps with [`DragConfigTyped`] / typed
+/// [`Velocity<Inertial>`] inputs and returns
+/// [`AerodynamicForceTyped<V>`].
+pub fn compute_drag_typed<V: Vehicle>(
+    drag_config: &DragConfigTyped,
+    atmos: &jeod_atmosphere::AtmosphereState,
+    velocity: Velocity<Inertial>,
+    rot: Option<&RotationalState>,
+    t_struct_body: DMat3,
+) -> AerodynamicForceTyped<V> {
+    let raw = compute_drag(
+        &drag_config.to_untyped(),
+        atmos,
+        velocity.raw_si(),
+        rot,
+        t_struct_body,
+    );
+    AerodynamicForceTyped::<V>::from_untyped_unchecked(&raw)
+}
+
+/// Typed sibling of [`compute_gravity_torque`].
+///
+/// Returns the gravity gradient torque in [`BodyFrame<V>`].
+pub fn compute_gravity_torque_typed<V: Vehicle>(
+    grav_grad: &DMat3,
+    rot: &RotationalState,
+    inertia: InertiaTensor<BodyFrame<V>>,
+) -> Torque<BodyFrame<V>> {
+    let inertia_dmat = inertia.as_dmat3();
+    let raw = compute_gravity_torque(grav_grad, rot, &inertia_dmat);
+    Torque::<BodyFrame<V>>::from_raw_si(raw)
+}
+
+/// Typed sibling of [`compute_cannonball_srp`].
+///
+/// Identical kernel — wraps positions and uom dimensionless ratios.
+/// Returns the cannonball SRP force in [`Inertial`].
+pub fn compute_cannonball_srp_typed(
+    body_pos: Position<Inertial>,
+    sun_pos: Position<Inertial>,
+    cx_area: Area,
+    albedo: Ratio,
+    diffuse: Ratio,
+    illum_factor: Ratio,
+) -> Force<Inertial> {
+    use uom::si::area::square_meter;
+    use uom::si::ratio::ratio;
+    let raw = compute_cannonball_srp(
+        body_pos.raw_si(),
+        sun_pos.raw_si(),
+        cx_area.get::<square_meter>(),
+        albedo.get::<ratio>(),
+        diffuse.get::<ratio>(),
+        illum_factor.get::<ratio>(),
+    );
+    Force::<Inertial>::from_raw_si(raw)
+}
+
+/// Step-constant SRP inputs (typed sibling of [`FlatPlateStageInputs`]).
+///
+/// Same role and lifetime; sun position becomes [`Position<Inertial>`],
+/// the dimensionless illumination factor becomes [`Ratio`], and the
+/// structural-frame center of gravity stays [`DVec3`] (the structural
+/// frame is per-vehicle and `FlatPlateState` does not carry a `V`
+/// phantom).
+#[derive(Debug, Clone, Copy)]
+pub struct FlatPlateStageInputsTyped {
+    pub sun_position: Position<Inertial>,
+    pub illum_factor: Ratio,
+    pub center_grav: DVec3,
+}
+
+impl Default for FlatPlateStageInputsTyped {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            sun_position: Position::<Inertial>::zero(),
+            illum_factor: Ratio::default(),
+            center_grav: DVec3::ZERO,
+        }
+    }
+}
+
+impl FlatPlateStageInputsTyped {
+    /// Drop the wrappers and emit the existing untyped storage form.
+    #[inline]
+    pub fn to_untyped(&self) -> FlatPlateStageInputs {
+        use uom::si::ratio::ratio;
+        FlatPlateStageInputs {
+            sun_position: self.sun_position.raw_si(),
+            illum_factor: self.illum_factor.get::<ratio>(),
+            center_grav: self.center_grav,
+        }
+    }
+
+    /// Wrap an untyped [`FlatPlateStageInputs`] as typed. **The caller
+    /// asserts** the sun position is in `Inertial` and the illumination
+    /// factor is dimensionless.
+    #[inline]
+    pub fn from_untyped_unchecked(s: &FlatPlateStageInputs) -> Self {
+        use uom::si::ratio::ratio;
+        Self {
+            sun_position: Position::<Inertial>::from_raw_si(s.sun_position),
+            illum_factor: Ratio::new::<ratio>(s.illum_factor),
+            center_grav: s.center_grav,
+        }
+    }
 }
 
 /// Transform a contact facet's shape endpoints from structural to inertial
