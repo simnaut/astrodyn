@@ -41,6 +41,61 @@ pub struct TidalBody {
     pub position_inertial: DVec3,
 }
 
+/// Typed sibling of [`TidalConfig`].
+///
+/// `mu_primary` and per-body `mu` carry the [`GravParam`] dimensional
+/// type. `radius_primary` carries [`Length`]. `k2` (a Love number,
+/// dimensionless) is wrapped in `Ratio` for type-system parity with
+/// other dimensionless physical quantities.
+#[derive(Debug, Clone)]
+pub struct TidalConfigTyped {
+    pub k2: uom::si::f64::Ratio,
+    pub mu_primary: jeod_quantities::dims::GravParam,
+    pub radius_primary: uom::si::f64::Length,
+    pub tidal_bodies: Vec<TidalBodyTyped>,
+}
+
+/// Typed sibling of [`TidalBody`].
+///
+/// `position_inertial` carries the [`Position<Inertial>`] phantom tag.
+#[derive(Debug, Clone)]
+pub struct TidalBodyTyped {
+    pub mu: jeod_quantities::dims::GravParam,
+    pub position_inertial: jeod_quantities::aliases::Position<jeod_quantities::frame::Inertial>,
+}
+
+impl TidalConfigTyped {
+    /// Drop the dimensional annotations and emit the untyped storage form.
+    /// Numeric values (kg-derived units) are preserved exactly.
+    pub fn to_untyped(&self) -> TidalConfig {
+        TidalConfig {
+            k2: self.k2.value,
+            mu_primary: self.mu_primary.value,
+            radius_primary: self.radius_primary.value,
+            tidal_bodies: self
+                .tidal_bodies
+                .iter()
+                .map(|b| TidalBody {
+                    mu: b.mu.value,
+                    position_inertial: b.position_inertial.raw_si(),
+                })
+                .collect(),
+        }
+    }
+}
+
+/// Typed sibling of [`compute_delta_c20`].
+///
+/// Same numeric kernel — wraps the result in `Ratio` (the physical
+/// dimension of the C20 coefficient is dimensionless).
+pub fn compute_delta_c20_typed(
+    config: &TidalConfigTyped,
+    t_inertial_pfix: &DMat3,
+) -> uom::si::f64::Ratio {
+    let raw = compute_delta_c20(&config.to_untyped(), t_inertial_pfix);
+    uom::si::f64::Ratio::new::<uom::si::ratio::ratio>(raw)
+}
+
 /// Compute the first-order tidal delta coefficient ΔC20.
 ///
 /// Port of JEOD `spherical_harmonics_solid_body_tides.cc:69-91`.

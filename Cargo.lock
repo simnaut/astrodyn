@@ -2392,10 +2392,12 @@ dependencies = [
  "jeod_dynamics",
  "jeod_frames",
  "jeod_math",
+ "jeod_quantities",
  "jeod_test_data",
  "jeod_time",
  "log",
  "thiserror 2.0.18",
+ "uom",
 ]
 
 [[package]]

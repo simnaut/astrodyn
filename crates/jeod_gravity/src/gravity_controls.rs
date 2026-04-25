@@ -348,6 +348,137 @@ impl<SourceId> GravityControl<SourceId> {
     }
 }
 
+/// Typed sibling of [`GravityControl<SourceId>`].
+///
+/// Field-for-field parity with the untyped form, except the four
+/// spherical-harmonic ordinals (`degree`, `order`, `gradient_degree`,
+/// `gradient_order`) carry the [`HarmonicDegree`] newtype so the
+/// compiler distinguishes them from angular `Angle` or dimensionless
+/// `Ratio`.
+///
+/// Cross-field invariants like `degree <= source.degree` (JEOD
+/// `GV.03`–`GV.11`) remain runtime-checked via
+/// [`Self::check_validity`] / [`GravityControl::check_validity`] —
+/// the type system can prove ordinals are distinct kinds, not that
+/// one specific ordinal is bounded by another's runtime value.
+#[derive(Debug, Clone)]
+pub struct GravityControlTyped<SourceId = String> {
+    pub source_name: SourceId,
+    pub gradient: bool,
+    pub spherical: bool,
+    pub degree: jeod_quantities::aliases::HarmonicDegree,
+    pub order: jeod_quantities::aliases::HarmonicDegree,
+    pub perturbing_only: bool,
+    pub gradient_degree: jeod_quantities::aliases::HarmonicDegree,
+    pub gradient_order: jeod_quantities::aliases::HarmonicDegree,
+    pub differential: bool,
+    pub battin_method: bool,
+    pub relativistic: bool,
+}
+
+impl<SourceId> GravityControlTyped<SourceId> {
+    /// Spherical (point-mass) typed control.
+    pub fn new_spherical(source_name: SourceId, gradient: bool) -> Self {
+        Self {
+            source_name,
+            gradient,
+            spherical: true,
+            degree: jeod_quantities::aliases::HarmonicDegree::default(),
+            order: jeod_quantities::aliases::HarmonicDegree::default(),
+            perturbing_only: false,
+            gradient_degree: jeod_quantities::aliases::HarmonicDegree::default(),
+            gradient_order: jeod_quantities::aliases::HarmonicDegree::default(),
+            differential: false,
+            battin_method: false,
+            relativistic: false,
+        }
+    }
+
+    /// Non-spherical (spherical-harmonics) typed control.
+    pub fn new_nonspherical(
+        source_name: SourceId,
+        degree: jeod_quantities::aliases::HarmonicDegree,
+        order: jeod_quantities::aliases::HarmonicDegree,
+        gradient: bool,
+    ) -> Self {
+        Self {
+            source_name,
+            gradient,
+            spherical: false,
+            degree,
+            order,
+            perturbing_only: false,
+            gradient_degree: jeod_quantities::aliases::HarmonicDegree::default(),
+            gradient_order: jeod_quantities::aliases::HarmonicDegree::default(),
+            differential: false,
+            battin_method: false,
+            relativistic: false,
+        }
+    }
+
+    /// Third-body (point-mass + differential) typed control.
+    pub fn new_third_body(source_name: SourceId) -> Self {
+        Self {
+            source_name,
+            gradient: false,
+            spherical: true,
+            degree: jeod_quantities::aliases::HarmonicDegree::default(),
+            order: jeod_quantities::aliases::HarmonicDegree::default(),
+            perturbing_only: false,
+            gradient_degree: jeod_quantities::aliases::HarmonicDegree::default(),
+            gradient_order: jeod_quantities::aliases::HarmonicDegree::default(),
+            differential: true,
+            battin_method: false,
+            relativistic: false,
+        }
+    }
+}
+
+impl<SourceId: Clone> GravityControlTyped<SourceId> {
+    /// Drop the [`HarmonicDegree`] newtypes and emit the untyped
+    /// storage form. Cross-field invariants (GV.03–GV.11) remain
+    /// runtime-checked via the resulting
+    /// [`GravityControl::check_validity`].
+    pub fn to_untyped(&self) -> GravityControl<SourceId> {
+        GravityControl {
+            source_name: self.source_name.clone(),
+            gradient: self.gradient,
+            spherical: self.spherical,
+            degree: self.degree.get(),
+            order: self.order.get(),
+            perturbing_only: self.perturbing_only,
+            gradient_degree: self.gradient_degree.get(),
+            gradient_order: self.gradient_order.get(),
+            differential: self.differential,
+            battin_method: self.battin_method,
+            relativistic: self.relativistic,
+        }
+    }
+
+    /// Wrap an untyped [`GravityControl`] as typed. Lossless conversion.
+    pub fn from_untyped_unchecked(c: &GravityControl<SourceId>) -> Self {
+        Self {
+            source_name: c.source_name.clone(),
+            gradient: c.gradient,
+            spherical: c.spherical,
+            degree: jeod_quantities::aliases::HarmonicDegree::from(c.degree),
+            order: jeod_quantities::aliases::HarmonicDegree::from(c.order),
+            perturbing_only: c.perturbing_only,
+            gradient_degree: jeod_quantities::aliases::HarmonicDegree::from(c.gradient_degree),
+            gradient_order: jeod_quantities::aliases::HarmonicDegree::from(c.gradient_order),
+            differential: c.differential,
+            battin_method: c.battin_method,
+            relativistic: c.relativistic,
+        }
+    }
+}
+
+impl<SourceId: Default> Default for GravityControlTyped<SourceId> {
+    fn default() -> Self {
+        Self::new_spherical(SourceId::default(), false)
+    }
+}
+
 impl<SourceId: Default> Default for GravityControl<SourceId> {
     fn default() -> Self {
         Self::new_spherical(SourceId::default(), false)

@@ -191,4 +191,28 @@ impl SphericalHarmonicsData {
             self.beta[ii] = ((2.0 * ii_f + 1.0) / (2.0 * ii_f - 3.0)).sqrt() * (ii_f - 1.0) / ii_f;
         }
     }
+
+    /// Typed accessor for the gravitational parameter μ.
+    ///
+    /// Returns [`GravParam`] (m³/s²) — the same numeric value as the
+    /// public `mu` field, just with the dimensional annotation
+    /// attached. Useful when handing the source's μ to typed APIs
+    /// like [`super::tides::TidalConfigTyped`] or third-body
+    /// differential-acceleration callers.
+    #[inline]
+    pub fn mu_typed(&self) -> jeod_quantities::dims::GravParam {
+        jeod_quantities::dims::GravParam {
+            dimension: core::marker::PhantomData,
+            units: core::marker::PhantomData,
+            value: self.mu,
+        }
+    }
+
+    /// Typed accessor for the reference radius.
+    ///
+    /// Returns [`uom::si::f64::Length`] (m).
+    #[inline]
+    pub fn radius_typed(&self) -> uom::si::f64::Length {
+        uom::si::f64::Length::new::<uom::si::length::meter>(self.radius)
+    }
 }
