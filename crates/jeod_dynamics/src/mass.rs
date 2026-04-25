@@ -1,4 +1,10 @@
+use core::marker::PhantomData;
+
 use glam::{DMat3, DVec3};
+use jeod_quantities::aliases::{InertiaTensor, Position};
+use jeod_quantities::frame::{BodyFrame, StructuralFrame, Vehicle};
+use uom::si::f64::Mass;
+use uom::si::mass::kilogram;
 
 /// Default tolerance for [`MassProperties::validate_consistency`].
 ///
@@ -127,6 +133,146 @@ impl MassProperties {
     }
 }
 
+/// Typed sibling of [`MassProperties`] parameterized by a vehicle marker
+/// `V`. Mass becomes a `uom::si::f64::Mass`, inertia is wrapped in
+/// [`InertiaTensor<BodyFrame<V>>`], and the center-of-mass position
+/// carries the `StructuralFrame<V>` phantom tag.
+///
+/// `inverse_mass` and `inverse_inertia` remain untyped (`f64` and
+/// `DMat3`): they are the integrator-hot-path caches for `F = m·a`
+/// resolution. The dimension is `1/M` and `1/(M·L²)` respectively —
+/// `jeod_quantities` does not expose a typed `Inverse<Mass>` alias and
+/// adding one would be churn for no enforced invariant beyond the f64
+/// path's own unit consistency.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MassPropertiesTyped<V: Vehicle> {
+    /// Total mass.
+    pub mass: Mass,
+    /// Precomputed `1 / mass` in `kg⁻¹` (caller maintains consistency
+    /// via [`Self::recompute_derived`]).
+    pub inverse_mass: f64,
+    /// Inertia tensor about the body-frame axes through the center of mass.
+    pub inertia: InertiaTensor<BodyFrame<V>>,
+    /// Precomputed `inertia⁻¹`. Maintained consistent with `inertia` via
+    /// [`Self::recompute_derived`].
+    pub inverse_inertia: DMat3,
+    /// Center of mass in the structural frame.
+    pub center_of_mass: Position<StructuralFrame<V>>,
+    /// See [`MassProperties::dirty`].
+    pub dirty: bool,
+    _v: PhantomData<V>,
+}
+
+impl<V: Vehicle> MassPropertiesTyped<V> {
+    /// Point-mass constructor with placeholder spherical inertia
+    /// (`I = m · I_{3×3}`) — see [`MassProperties::new`] for the same
+    /// caveat about translational-only validity.
+    // JEOD_INV: MA.02 — mass > 0 for meaningful dynamics
+    pub fn new(mass: Mass) -> Self {
+        let m = mass.get::<kilogram>();
+        assert!(m > 0.0, "mass must be positive, got {m}");
+        Self {
+            mass,
+            inverse_mass: 1.0 / m,
+            inertia: InertiaTensor::<BodyFrame<V>>::from_dmat3_unchecked(DMat3::IDENTITY * m),
+            inverse_inertia: DMat3::IDENTITY / m,
+            center_of_mass: Position::<StructuralFrame<V>>::zero(),
+            dirty: false,
+            _v: PhantomData,
+        }
+    }
+
+    /// Constructor with explicit inertia and center-of-mass position.
+    // JEOD_INV: MA.02 — mass > 0 for meaningful dynamics
+    // JEOD_INV: MA.04 — inverse_inertia computed from inertia
+    // JEOD_INV: DB.23 — inverse_inertia always computed
+    pub fn with_inertia(
+        mass: Mass,
+        inertia: InertiaTensor<BodyFrame<V>>,
+        center_of_mass: Position<StructuralFrame<V>>,
+    ) -> Self {
+        let m = mass.get::<kilogram>();
+        assert!(m > 0.0, "mass must be positive, got {m}");
+        let inertia_dmat = inertia.as_dmat3();
+        let det = inertia_dmat.determinant();
+        assert!(
+            det.abs() > 1e-30,
+            "inertia tensor is singular or near-singular (det={det:.2e}); \
+             inverse will produce inf/NaN"
+        );
+        Self {
+            mass,
+            inverse_mass: 1.0 / m,
+            inertia,
+            inverse_inertia: inertia_dmat.inverse(),
+            center_of_mass,
+            dirty: false,
+            _v: PhantomData,
+        }
+    }
+
+    /// Drop the phantoms and emit the untyped storage form. Numeric
+    /// values (kg, kg·m², m) are preserved exactly.
+    pub fn to_untyped(&self) -> MassProperties {
+        MassProperties {
+            mass: self.mass.get::<kilogram>(),
+            inverse_mass: self.inverse_mass,
+            inertia: self.inertia.as_dmat3(),
+            inverse_inertia: self.inverse_inertia,
+            position: self.center_of_mass.raw_si(),
+            dirty: self.dirty,
+        }
+    }
+
+    /// Wrap an untyped [`MassProperties`] as typed for vehicle `V`.
+    /// **The caller asserts** the inertia is in `BodyFrame<V>` and the
+    /// position is in `StructuralFrame<V>`.
+    pub fn from_untyped_unchecked(mp: &MassProperties) -> Self {
+        Self {
+            mass: Mass::new::<kilogram>(mp.mass),
+            inverse_mass: mp.inverse_mass,
+            inertia: InertiaTensor::<BodyFrame<V>>::from_dmat3_unchecked(mp.inertia),
+            inverse_inertia: mp.inverse_inertia,
+            center_of_mass: Position::<StructuralFrame<V>>::from_raw_si(mp.position),
+            dirty: mp.dirty,
+            _v: PhantomData,
+        }
+    }
+
+    /// Recompute `inverse_mass` and `inverse_inertia`.
+    // JEOD_INV: MA.03 — inverse_mass = 1/mass (recomputed)
+    // JEOD_INV: MA.04 — inverse_inertia consistent with inertia (recomputed)
+    // JEOD_INV: MA.07 — derived quantities recomputed after mutation
+    pub fn recompute_derived(&mut self) {
+        if !self.dirty {
+            return;
+        }
+        self.dirty = false;
+        let m = self.mass.get::<kilogram>();
+        assert!(m > 0.0, "mass must be positive, got {m}");
+        self.inverse_mass = 1.0 / m;
+        let inertia_dmat = self.inertia.as_dmat3();
+        let det = inertia_dmat.determinant();
+        assert!(
+            det.abs() > 1e-30,
+            "inertia tensor is singular or near-singular (det={det:.2e}); \
+             inverse will produce inf/NaN"
+        );
+        self.inverse_inertia = inertia_dmat.inverse();
+    }
+
+    /// JEOD MA.04 invariant check: `inertia · inverse_inertia ≈ I`.
+    // JEOD_INV: MA.04 — inverse_inertia consistent with inertia
+    pub fn validate_consistency(&self, tol: f64) {
+        let product = self.inertia.as_dmat3() * self.inverse_inertia;
+        assert!(
+            (product - DMat3::IDENTITY).abs_diff_eq(DMat3::ZERO, tol),
+            "MassPropertiesTyped: inertia and inverse_inertia inconsistent \
+             (I·I⁻¹ != identity to {tol:.0e})"
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -218,5 +364,68 @@ mod tests {
         // Verify consistency
         mp.validate_consistency(1e-6);
         assert!((mp.inverse_mass - 0.1).abs() < 1e-15);
+    }
+
+    // ---- typed MassPropertiesTyped<V> ----------------------------------
+
+    #[test]
+    fn typed_point_mass_round_trips_to_untyped() {
+        use jeod_quantities::frame::TestVehicle;
+
+        let typed = MassPropertiesTyped::<TestVehicle>::new(Mass::new::<kilogram>(10.0));
+        let untyped = typed.to_untyped();
+
+        assert_eq!(untyped.mass, 10.0);
+        assert_eq!(untyped.inverse_mass, 0.1);
+        assert_eq!(untyped.inertia, DMat3::IDENTITY * 10.0);
+        assert_eq!(untyped.inverse_inertia, DMat3::IDENTITY / 10.0);
+        assert_eq!(untyped.position, DVec3::ZERO);
+    }
+
+    #[test]
+    fn typed_with_inertia_matches_untyped() {
+        use jeod_quantities::frame::TestVehicle;
+
+        let m = 5.0;
+        let i = DMat3::from_diagonal(DVec3::new(50.0, 60.0, 70.0));
+        let pos = DVec3::new(0.1, 0.2, 0.3);
+
+        let typed = MassPropertiesTyped::<TestVehicle>::with_inertia(
+            Mass::new::<kilogram>(m),
+            InertiaTensor::<BodyFrame<TestVehicle>>::from_dmat3_unchecked(i),
+            Position::<StructuralFrame<TestVehicle>>::from_raw_si(pos),
+        );
+        let untyped = MassProperties::with_inertia(m, i, pos);
+
+        assert_eq!(typed.to_untyped(), untyped);
+    }
+
+    #[test]
+    fn typed_round_trip_through_from_untyped_unchecked() {
+        use jeod_quantities::frame::TestVehicle;
+
+        let untyped = MassProperties::with_inertia(
+            7.5,
+            DMat3::from_diagonal(DVec3::new(40.0, 50.0, 60.0)),
+            DVec3::new(0.0, 0.05, 0.0),
+        );
+        let typed = MassPropertiesTyped::<TestVehicle>::from_untyped_unchecked(&untyped);
+        let back = typed.to_untyped();
+
+        assert_eq!(back, untyped);
+    }
+
+    #[test]
+    fn typed_validate_consistency_passes() {
+        use jeod_quantities::frame::TestVehicle;
+
+        let typed = MassPropertiesTyped::<TestVehicle>::with_inertia(
+            Mass::new::<kilogram>(10.0),
+            InertiaTensor::<BodyFrame<TestVehicle>>::from_dmat3_unchecked(DMat3::from_diagonal(
+                DVec3::new(100.0, 200.0, 300.0),
+            )),
+            Position::<StructuralFrame<TestVehicle>>::zero(),
+        );
+        typed.validate_consistency(1e-6);
     }
 }

@@ -2360,6 +2360,7 @@ dependencies = [
  "jeod_quantities",
  "jeod_test_data",
  "sha2",
+ "uom",
 ]
 
 [[package]]
