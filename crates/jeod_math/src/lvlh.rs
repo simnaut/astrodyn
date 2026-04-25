@@ -11,6 +11,11 @@
 
 use glam::{DMat3, DVec3};
 
+use jeod_quantities::aliases::{Position, Velocity};
+use jeod_quantities::frame::{Inertial, Lvlh, Vehicle};
+use jeod_quantities::frame_transform::FrameTransform;
+use jeod_quantities::quat::{JeodQuat, NormalizedQuat};
+
 /// LVLH frame state: rotation matrix, angular velocity, and origin position/velocity.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LvlhFrame {
@@ -46,6 +51,11 @@ impl Default for LvlhFrame {
 ///
 /// # Panics
 /// Panics if position or angular momentum magnitude is zero.
+#[doc(hidden)]
+#[deprecated(
+    since = "0.2.0-phase-3",
+    note = "use compute_lvlh_frame_typed; f64 variant removed in Phase 10"
+)]
 pub fn compute_lvlh_frame(position: DVec3, velocity: DVec3) -> LvlhFrame {
     // Compute angular momentum vector: h = r × v
     let angmom = position.cross(velocity);
@@ -94,7 +104,50 @@ pub fn compute_lvlh_frame(position: DVec3, velocity: DVec3) -> LvlhFrame {
     }
 }
 
+/// Typed sibling of [`compute_lvlh_frame`]: returns a `FrameTransform` from
+/// the planet-centered inertial frame to the chief vehicle's LVLH frame.
+///
+/// Delegates to the f64-based computation, then wraps the resulting rotation
+/// matrix (`T_parent_this` — inertial → LVLH, rows are LVLH axes in the
+/// inertial frame) as a canonical JEOD scalar-first, left-transformation
+/// quaternion inside the `FrameTransform`.
+///
+/// Angular velocity, origin position, and origin velocity produced by the
+/// underlying LVLH computation are discarded here — this function returns
+/// only the frame orientation. Callers that need those auxiliary quantities
+/// should continue to use the (deprecated) f64 API until Phase 3+ migrates
+/// the full `LvlhFrame` struct to typed quantities.
+///
+/// # Arguments
+/// * `position` - Chief vehicle position in the planet-centered inertial frame.
+/// * `velocity` - Chief vehicle velocity in the planet-centered inertial frame.
+///
+/// # Panics
+/// Panics if position or angular momentum magnitude is zero (radial trajectory).
+pub fn compute_lvlh_frame_typed<Chief>(
+    position: Position<Inertial>,
+    velocity: Velocity<Inertial>,
+) -> FrameTransform<Inertial, Lvlh<Chief>>
+where
+    Chief: Vehicle,
+{
+    // Delegate to the f64-based port so physics stays in one place.
+    #[allow(deprecated)]
+    let lvlh = compute_lvlh_frame(position.raw_si(), velocity.raw_si());
+
+    // Convert the transformation matrix T_parent_this (inertial → LVLH) into
+    // a canonical JEOD left quaternion. JEOD's `left_quat_from_transformation`
+    // extractor already re-normalizes internally, so we wrap the result with
+    // `NormalizedQuat::new` — that witnesses the existing unit norm without
+    // re-dividing by `‖q‖`, preserving bit-identity with the f64 surface.
+    let q: JeodQuat = JeodQuat::left_quat_from_transformation(&lvlh.t_parent_this);
+    let q_norm = NormalizedQuat::new(q)
+        .unwrap_or_else(|err| panic!("left_quat_from_transformation guarantees unit norm: {err}"));
+    FrameTransform::<Inertial, Lvlh<Chief>>::from_quat(q_norm)
+}
+
 #[cfg(test)]
+#[allow(deprecated)] // existing f64 tests still exercise the deprecated API
 mod tests {
     use super::*;
 
@@ -217,5 +270,50 @@ mod tests {
         assert!(z_hat.x.abs() < 1e-14);
         assert!((z_hat.y + 1.0).abs() < 1e-14);
         assert!(z_hat.z.abs() < 1e-14);
+    }
+
+    // Re-alias the sealed-but-test-only chief marker from `jeod_quantities`.
+    // `Vehicle` is sealed, so we can't implement it here — the `test-utils`
+    // feature on `jeod_quantities` (dev-dep in our Cargo.toml) opens up
+    // `TestVehicle` specifically for tests like this.
+    use jeod_quantities::frame::TestVehicle as IssChief;
+
+    #[test]
+    fn typed_lvlh_matches_f64_port() {
+        // ISS-like inclined state in planet-centered inertial coordinates.
+        let r = 6_778_137.0; // ~ r_eq + 400 km
+        let v = (EARTH_MU / r).sqrt();
+        let inc = 51.6_f64.to_radians();
+
+        let position_raw = DVec3::new(r, 0.0, 0.0);
+        let velocity_raw = DVec3::new(0.0, v * inc.cos(), v * inc.sin());
+
+        // f64 baseline: derive the JEOD canonical quaternion from the old
+        // rotation-matrix output via the same extractor the typed variant uses.
+        let lvlh_f64 = compute_lvlh_frame(position_raw, velocity_raw);
+        let q_f64 = JeodQuat::left_quat_from_transformation(&lvlh_f64.t_parent_this);
+
+        // Typed sibling: build Position/Velocity and call compute_lvlh_frame_typed.
+        let position = Position::<Inertial>::from_raw_si(position_raw);
+        let velocity = Velocity::<Inertial>::from_raw_si(velocity_raw);
+        let xform = compute_lvlh_frame_typed::<IssChief>(position, velocity);
+
+        // Quaternion components must match bit-exactly — same extractor, same
+        // input matrix, same renormalization code path.
+        let q_typed = xform.quat().inner();
+        assert_eq!(
+            q_typed.data, q_f64.data,
+            "typed and f64 quaternion components must be bit-identical"
+        );
+
+        // Matrix cached inside the FrameTransform must round-trip through the
+        // quaternion → matrix derivation without drifting from orthonormality.
+        let m = xform.matrix();
+        let should_be_identity = m * m.transpose();
+        let diff = should_be_identity - DMat3::IDENTITY;
+        assert!(diff.x_axis.length() < 1e-14);
+        assert!(diff.y_axis.length() < 1e-14);
+        assert!(diff.z_axis.length() < 1e-14);
+        assert!((m.determinant() - 1.0).abs() < 1e-14);
     }
 }

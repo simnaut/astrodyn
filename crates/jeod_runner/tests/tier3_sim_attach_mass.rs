@@ -26,6 +26,11 @@
 //! `crates/jeod_dynamics/tests/tier3_mass_attach_detach.rs` with direct
 //! JEOD cross-validation.
 
+// `compute_matrix_from_euler_angles` is deprecated in favor of its typed
+// sibling; this Tier 3 test is kept on the bare-`f64` surface until the
+// downstream mass-attach fixtures migrate to `uom` `Angle`s.
+#![allow(deprecated)]
+
 use glam::{DMat3, DVec3};
 use jeod_dynamics::{MassBodyId, MassProperties, MassTree};
 use jeod_math::euler_angles::{compute_matrix_from_euler_angles, EulerSequence};

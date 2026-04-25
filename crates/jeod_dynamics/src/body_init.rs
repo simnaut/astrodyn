@@ -10,7 +10,11 @@
 use crate::state::TranslationalState;
 use glam::{DMat3, DVec3};
 use jeod_math::OrbitalElements;
-use jeod_math::{compute_lvlh_frame, geodetic_to_cartesian, mat3_from_rows, GeodeticState};
+use jeod_math::{mat3_from_rows, GeodeticState};
+// `compute_lvlh_frame` and `geodetic_to_cartesian` are deprecated pending
+// Phase 3 migration of this module to the typed `_typed` APIs.
+#[allow(deprecated)]
+use jeod_math::{compute_lvlh_frame, geodetic_to_cartesian};
 
 /// Initialize translational state from Keplerian orbital elements (true anomaly).
 ///
@@ -205,6 +209,7 @@ pub fn init_from_lvlh(
     ref_position: DVec3,
     ref_velocity: DVec3,
 ) -> TranslationalState {
+    #[allow(deprecated)]
     let lvlh = compute_lvlh_frame(ref_position, ref_velocity);
 
     // t_parent_this transforms from inertial to LVLH.
@@ -248,6 +253,7 @@ pub fn init_from_ned(
     omega_planet: DVec3,
 ) -> TranslationalState {
     // Convert geodetic to PCPF cartesian
+    #[allow(deprecated)]
     let pcpf_pos = geodetic_to_cartesian(geodetic, r_eq, r_pol);
 
     // Compute NED-to-PCPF rotation at this geodetic location.
@@ -296,6 +302,9 @@ pub fn compute_ned_rotation(lat: f64, lon: f64) -> DMat3 {
 }
 
 #[cfg(test)]
+// Phase 2 #104: local tests call deprecated jeod_math OrbitalElements::from_cartesian.
+// Migration to from_cartesian_typed is deferred to Phase 3+.
+#[allow(deprecated)]
 mod tests {
     use super::*;
     use std::f64::consts::PI;
@@ -458,6 +467,7 @@ mod tests {
         let state = init_from_lvlh(lvlh_offset_pos, lvlh_offset_vel, ref_pos, ref_vel);
 
         // Now compute the LVLH frame at the reference orbit and transform back
+        #[allow(deprecated)]
         let lvlh = compute_lvlh_frame(ref_pos, ref_vel);
         let t = lvlh.t_parent_this;
 

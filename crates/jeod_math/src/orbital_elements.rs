@@ -68,6 +68,11 @@ impl OrbitalElements {
     /// * `mu`  - gravitational parameter (units consistent with pos/vel, e.g. m^3/s^2)
     /// * `pos` - position vector
     /// * `vel` - velocity vector
+    #[doc(hidden)]
+    #[deprecated(
+        since = "0.2.0-phase-3",
+        note = "use from_cartesian_typed; f64 variant removed in Phase 10"
+    )]
     pub fn from_cartesian(
         mu: f64,
         pos: DVec3,
@@ -279,6 +284,25 @@ impl OrbitalElements {
         oe.nu_to_anomalies();
 
         Ok(oe)
+    }
+
+    /// Typed variant of [`from_cartesian`](Self::from_cartesian).
+    ///
+    /// Accepts dimensionally-typed inputs:
+    /// * `mu` — gravitational parameter in SI base units (m³/s²)
+    /// * `pos` — inertial-frame position in meters
+    /// * `vel` — inertial-frame velocity in m/s
+    ///
+    /// Output fields on [`OrbitalElements`] remain raw `f64` in SI base units
+    /// for this PR; typing the outputs is tracked separately in issue #104.
+    pub fn from_cartesian_typed(
+        mu: jeod_quantities::dims::GravParam,
+        pos: jeod_quantities::aliases::Position<jeod_quantities::frame::Inertial>,
+        vel: jeod_quantities::aliases::Velocity<jeod_quantities::frame::Inertial>,
+    ) -> Result<OrbitalElements, OrbitalError> {
+        // Extract SI base values and delegate to the existing f64 implementation.
+        #[allow(deprecated)]
+        Self::from_cartesian(mu.value, pos.raw_si(), vel.raw_si())
     }
 
     // ----------------------------------------------------------------
@@ -536,6 +560,7 @@ pub fn kep_eqtn_b(m: f64) -> f64 {
 // ====================================================================
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
     use crate::types::DVec3;
@@ -1076,5 +1101,89 @@ mod tests {
             oe.true_anom,
             nu_diff
         );
+    }
+
+    // ---------------------------------------------------------------
+    // Typed API: from_cartesian_typed
+    // ---------------------------------------------------------------
+    //
+    // These tests exercise the dimensionally-typed entry point. SI base
+    // units are required: m, m/s, m³/s². JEOD's Earth GM constant converted
+    // to SI from earth_GGM05C.cc:40 (398_600.441_50 km³/s² -> 3.986004415e14
+    // m³/s²).
+    #[test]
+    fn from_cartesian_typed_iss_like() {
+        use jeod_quantities::aliases::{Position, Velocity};
+        use jeod_quantities::ext::F64Ext;
+        use jeod_quantities::frame::Inertial;
+        use jeod_quantities::qty3::Qty3;
+
+        // ISS-ish: 408 km altitude circular orbit, SI units.
+        let mu_si: jeod_quantities::dims::GravParam = 3.986_004_415e14_f64.m3_per_s2();
+        let r = 6_779_000.0_f64; // m (~6371 + 408 km)
+        let v = (3.986_004_415e14_f64 / r).sqrt(); // m/s
+
+        // Qty3::from_raw_si wraps a DVec3 of SI-base-unit values in the
+        // typed frame-tagged envelope without any unit conversion.
+        let pos: Position<Inertial> = Qty3::from_raw_si(DVec3::new(r, 0.0, 0.0));
+        let vel: Velocity<Inertial> = Qty3::from_raw_si(DVec3::new(0.0, v, 0.0));
+
+        let oe = OrbitalElements::from_cartesian_typed(mu_si, pos, vel).unwrap();
+
+        // ISS-like semi-major axis falls in the 6.5e6 - 7.2e6 m band.
+        assert!(
+            oe.semi_major_axis > 6.5e6 && oe.semi_major_axis < 7.2e6,
+            "semi_major_axis {} out of ISS range [6.5e6, 7.2e6]",
+            oe.semi_major_axis
+        );
+        // Circular orbit has near-zero eccentricity.
+        assert!(
+            oe.e_mag < 1e-10,
+            "eccentricity should be ~0 for circular orbit, got {}",
+            oe.e_mag
+        );
+        // r_mag matches the input radius in meters.
+        assert!(
+            (oe.r_mag - r).abs() < 1e-6,
+            "r_mag should be ~{r}, got {}",
+            oe.r_mag
+        );
+    }
+
+    #[test]
+    fn from_cartesian_typed_matches_raw_bit_for_bit() {
+        use jeod_quantities::aliases::{Position, Velocity};
+        use jeod_quantities::ext::F64Ext;
+        use jeod_quantities::frame::Inertial;
+        use jeod_quantities::qty3::Qty3;
+
+        let mu_si: jeod_quantities::dims::GravParam = 3.986_004_415e14_f64.m3_per_s2();
+        // Mildly eccentric, slightly inclined ISS-ish state in SI units.
+        let pos_raw = DVec3::new(6_779_000.0, 0.0, 0.0);
+        let vel_raw = DVec3::new(0.0, 7_000.0, 1_500.0);
+
+        let pos: Position<Inertial> = Qty3::from_raw_si(pos_raw);
+        let vel: Velocity<Inertial> = Qty3::from_raw_si(vel_raw);
+
+        let oe_typed = OrbitalElements::from_cartesian_typed(mu_si, pos, vel).unwrap();
+        let oe_raw = OrbitalElements::from_cartesian(mu_si.value, pos_raw, vel_raw).unwrap();
+
+        // Bit-identical delegation: typed wrapper extracts SI values and calls
+        // the raw implementation — no intermediate arithmetic, so every field
+        // must match exactly.
+        assert_eq!(oe_typed.semi_major_axis, oe_raw.semi_major_axis);
+        assert_eq!(oe_typed.semiparam, oe_raw.semiparam);
+        assert_eq!(oe_typed.e_mag, oe_raw.e_mag);
+        assert_eq!(oe_typed.inclination, oe_raw.inclination);
+        assert_eq!(oe_typed.arg_periapsis, oe_raw.arg_periapsis);
+        assert_eq!(oe_typed.long_asc_node, oe_raw.long_asc_node);
+        assert_eq!(oe_typed.true_anom, oe_raw.true_anom);
+        assert_eq!(oe_typed.mean_anom, oe_raw.mean_anom);
+        assert_eq!(oe_typed.orbital_anom, oe_raw.orbital_anom);
+        assert_eq!(oe_typed.mean_motion, oe_raw.mean_motion);
+        assert_eq!(oe_typed.r_mag, oe_raw.r_mag);
+        assert_eq!(oe_typed.vel_mag, oe_raw.vel_mag);
+        assert_eq!(oe_typed.orb_energy, oe_raw.orb_energy);
+        assert_eq!(oe_typed.orb_ang_momentum, oe_raw.orb_ang_momentum);
     }
 }

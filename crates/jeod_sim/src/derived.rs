@@ -46,6 +46,10 @@ pub fn compute_orbital_elements(
     position: DVec3,
     velocity: DVec3,
 ) -> Result<OrbitalElements, OrbitalError> {
+    // Phase 2 #104: jeod_math::OrbitalElements::from_cartesian is deprecated in
+    // favor of from_cartesian_typed. Migration to the typed entry point is
+    // tracked for Phase 3+ — this call site retains the f64 API for now.
+    #[allow(deprecated)]
     OrbitalElements::from_cartesian(mu, position, velocity)
 }
 
@@ -53,6 +57,7 @@ pub fn compute_orbital_elements(
 ///
 /// Converts the left-transformation quaternion to a rotation matrix, then
 /// decomposes it into Euler angles using the given sequence.
+#[allow(deprecated)]
 pub fn compute_body_euler_angles(rot: &RotationalState, sequence: EulerSequence) -> [f64; 3] {
     let t_parent_body = rot.quaternion.left_quat_to_transformation();
     jeod_math::compute_euler_angles_from_matrix(&t_parent_body, sequence)
@@ -60,7 +65,10 @@ pub fn compute_body_euler_angles(rot: &RotationalState, sequence: EulerSequence)
 
 /// Compute the LVLH (Local Vertical Local Horizontal) frame from translational state.
 ///
-/// Delegates to [`jeod_math::compute_lvlh_frame`].
+/// Delegates to [`jeod_math::compute_lvlh_frame`]. Phase 3+ will migrate this
+/// wrapper to the typed `compute_lvlh_frame_typed` API; for now we silence
+/// the local deprecation warning so Phase 2 stays scope-limited.
+#[allow(deprecated)]
 pub fn compute_body_lvlh_frame(position: DVec3, velocity: DVec3) -> LvlhFrame {
     jeod_math::compute_lvlh_frame(position, velocity)
 }
@@ -78,6 +86,7 @@ pub fn compute_body_geodetic(
 ) -> GeodeticState {
     // Rotate inertial position to planet-fixed frame
     let pos_pfix = *t_inertial_pfix * position;
+    #[allow(deprecated)]
     jeod_math::cartesian_to_geodetic(pos_pfix, r_eq, r_pol)
 }
 
@@ -106,6 +115,7 @@ pub fn compute_body_solar_beta(position: DVec3, velocity: DVec3, sun_position: D
     );
 
     let sun_dir = rel_sun.normalize();
+    #[allow(deprecated)]
     jeod_math::solar_beta_angle(h, sun_dir)
 }
 
@@ -255,6 +265,7 @@ mod tests {
 
         // Verify against direct computation to lock down the convention
         let pos_pfix = t_inertial_pfix * pos_inertial;
+        #[allow(deprecated)]
         let expected = jeod_math::cartesian_to_geodetic(pos_pfix, R_EQ, R_POL);
         assert_eq!(geo, expected);
     }

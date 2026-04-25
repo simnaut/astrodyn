@@ -3,10 +3,22 @@
 //! Faithful port of JEOD `models/utils/orientation/src/euler_angles.cc`.
 //! Supports all 12 Euler rotation sequences (6 Tait-Bryan / aerodynamic,
 //! 6 proper Euler / astronomical).
+//!
+//! Two parallel surfaces are exposed:
+//! * the historical bare-`f64` entry points (radians, deprecated), and
+//! * the typed sibling APIs that accept/return `uom::si::f64::Angle` and
+//!   hand out a [`NormalizedQuat`] witness for the quaternion builder so
+//!   downstream code can bind the unit-norm precondition at the type level.
+//!
+//! The two surfaces share their numeric implementation, so the typed
+//! variants are bit-identical to the bare-`f64` ones at equal inputs.
 
 use crate::quaternion::JeodQuat;
 use crate::types::DMat3;
+use jeod_quantities::quat::{LeftTransform, NormalizedQuat, ScalarFirst};
 use std::f64::consts::{FRAC_PI_2, PI};
+use uom::si::angle::radian;
+use uom::si::f64::Angle;
 
 // ---------------------------------------------------------------------------
 // EulerSequence enum
@@ -174,15 +186,15 @@ fn t(trans: &DMat3, row: usize, col: usize) -> f64 {
 }
 
 // ---------------------------------------------------------------------------
-// Public API
+// Shared implementations (private). Both the bare-`f64` and typed public
+// entry points dispatch to these helpers so the two surfaces remain
+// bit-identical at equal numeric inputs.
 // ---------------------------------------------------------------------------
 
-/// Build a left-transformation quaternion from Euler angles.
-///
-/// Port of `euler_angles.cc:121-153`.
-/// Constructs three simple quaternions (one per rotation axis) and multiplies
-/// in reverse order: `result = q[2] * q[1] * q[0]`, then normalizes.
-pub fn compute_quaternion_from_euler_angles(angles: [f64; 3], sequence: EulerSequence) -> JeodQuat {
+fn compute_quaternion_from_euler_angles_impl(
+    angles: [f64; 3],
+    sequence: EulerSequence,
+) -> JeodQuat {
     let info = &EULER_INFO[sequence as usize];
     let axes = &info.indices;
 
@@ -198,7 +210,7 @@ pub fn compute_quaternion_from_euler_angles(angles: [f64; 3], sequence: EulerSeq
         let mut data = [0.0_f64; 4];
         data[0] = cosht;
         data[1 + axes[ii]] = -sinht; // data[1..4] maps to vector[0..3]
-        q[ii] = JeodQuat { data };
+        q[ii] = JeodQuat::from_array(data);
     }
 
     // Reverse-order product: q[2] * q[1], then that * q[0].
@@ -208,12 +220,7 @@ pub fn compute_quaternion_from_euler_angles(angles: [f64; 3], sequence: EulerSeq
     result
 }
 
-/// Build a left-transformation matrix from Euler angles.
-///
-/// Port of `euler_angles.cc:164-218`.
-/// Constructs three elementary rotation matrices and multiplies in reverse
-/// order: `result = m[2] * m[1] * m[0]`.
-pub fn compute_matrix_from_euler_angles(angles: [f64; 3], sequence: EulerSequence) -> DMat3 {
+fn compute_matrix_from_euler_angles_impl(angles: [f64; 3], sequence: EulerSequence) -> DMat3 {
     let info = &EULER_INFO[sequence as usize];
     let axes = &info.indices;
 
@@ -270,11 +277,7 @@ pub fn compute_matrix_from_euler_angles(angles: [f64; 3], sequence: EulerSequenc
     m21 * m0
 }
 
-/// Extract Euler angles from a left-transformation matrix.
-///
-/// Port of `euler_angles.cc:297-464`.
-/// Returns `[phi, theta, psi]` in radians.
-pub fn compute_euler_angles_from_matrix(trans: &DMat3, sequence: EulerSequence) -> [f64; 3] {
+fn compute_euler_angles_from_matrix_impl(trans: &DMat3, sequence: EulerSequence) -> [f64; 3] {
     let info = &EULER_INFO[sequence as usize];
 
     // Extract theta_val: trans[info.indices[2]][info.indices[0]]
@@ -363,15 +366,152 @@ pub fn compute_euler_angles_from_matrix(trans: &DMat3, sequence: EulerSequence) 
     [phi, theta, psi]
 }
 
+// ---------------------------------------------------------------------------
+// Public API — bare-`f64` surface (deprecated, removed in Phase 10 of #101).
+// ---------------------------------------------------------------------------
+
+/// Build a left-transformation quaternion from Euler angles (radians).
+///
+/// Port of `euler_angles.cc:121-153`. Constructs three simple quaternions
+/// (one per rotation axis) and multiplies in reverse order:
+/// `result = q[2] * q[1] * q[0]`, then normalizes.
+///
+/// **Deprecated:** use [`compute_quaternion_from_euler_angles_typed`], which
+/// accepts `uom` `Angle`s and returns a [`NormalizedQuat`] witness.
+#[doc(hidden)]
+#[deprecated(
+    since = "0.2.0-phase-3",
+    note = "use compute_quaternion_from_euler_angles_typed; f64 variant removed in Phase 10"
+)]
+pub fn compute_quaternion_from_euler_angles(angles: [f64; 3], sequence: EulerSequence) -> JeodQuat {
+    compute_quaternion_from_euler_angles_impl(angles, sequence)
+}
+
+/// Build a left-transformation matrix from Euler angles (radians).
+///
+/// Port of `euler_angles.cc:164-218`. Constructs three elementary rotation
+/// matrices and multiplies in reverse order: `result = m[2] * m[1] * m[0]`.
+///
+/// **Deprecated:** use [`compute_matrix_from_euler_angles_typed`], which
+/// accepts `uom` `Angle`s.
+#[doc(hidden)]
+#[deprecated(
+    since = "0.2.0-phase-3",
+    note = "use compute_matrix_from_euler_angles_typed; f64 variant removed in Phase 10"
+)]
+pub fn compute_matrix_from_euler_angles(angles: [f64; 3], sequence: EulerSequence) -> DMat3 {
+    compute_matrix_from_euler_angles_impl(angles, sequence)
+}
+
+/// Extract Euler angles (radians) from a left-transformation matrix.
+///
+/// Port of `euler_angles.cc:297-464`. Returns `[phi, theta, psi]` in radians.
+///
+/// **Deprecated:** use [`compute_euler_angles_from_matrix_typed`], which
+/// returns `uom` `Angle`s.
+#[doc(hidden)]
+#[deprecated(
+    since = "0.2.0-phase-3",
+    note = "use compute_euler_angles_from_matrix_typed; f64 variant removed in Phase 10"
+)]
+pub fn compute_euler_angles_from_matrix(trans: &DMat3, sequence: EulerSequence) -> [f64; 3] {
+    compute_euler_angles_from_matrix_impl(trans, sequence)
+}
+
+// ---------------------------------------------------------------------------
+// Public API — typed surface (uom `Angle`s + `NormalizedQuat` witness).
+// ---------------------------------------------------------------------------
+
+/// Typed sibling of [`compute_quaternion_from_euler_angles`].
+///
+/// Accepts a triple of `uom::si::f64::Angle` values and returns a
+/// [`NormalizedQuat`] witness of the resulting left-transformation
+/// quaternion. The inner [`JeodQuat`] is bit-identical to the value
+/// returned by the bare-`f64` variant when the same angles are supplied in
+/// radians, so both surfaces agree on every representable input.
+///
+/// The underlying `compute_quaternion_from_euler_angles_impl` applies
+/// JEOD's Padé-based `normalize()` before returning, so the witness is
+/// constructed via [`NormalizedQuat::new`]: the norm is checked against
+/// `NormalizedQuat::DEFAULT_TOLERANCE` (1e-12), which is comfortably
+/// wider than floating-point round-off on a post-normalization quaternion.
+/// Panics only if that tolerance is violated — i.e. if the underlying
+/// normalization routine is itself broken.
+pub fn compute_quaternion_from_euler_angles_typed(
+    angles: [Angle; 3],
+    sequence: EulerSequence,
+) -> NormalizedQuat<ScalarFirst, LeftTransform> {
+    let radians = [
+        angles[0].get::<radian>(),
+        angles[1].get::<radian>(),
+        angles[2].get::<radian>(),
+    ];
+    let q = compute_quaternion_from_euler_angles_impl(radians, sequence);
+    NormalizedQuat::new(q).unwrap_or_else(|err| {
+        panic!("compute_quaternion_from_euler_angles_impl returns a normalized quaternion: {err}")
+    })
+}
+
+/// Typed sibling of [`compute_matrix_from_euler_angles`].
+///
+/// Accepts a triple of `uom::si::f64::Angle` values and returns the raw
+/// `DMat3` transformation matrix. Bit-identical to the bare-`f64` variant
+/// given the same angles (in radians).
+pub fn compute_matrix_from_euler_angles_typed(
+    angles: [Angle; 3],
+    sequence: EulerSequence,
+) -> DMat3 {
+    let radians = [
+        angles[0].get::<radian>(),
+        angles[1].get::<radian>(),
+        angles[2].get::<radian>(),
+    ];
+    compute_matrix_from_euler_angles_impl(radians, sequence)
+}
+
+/// Typed sibling of [`compute_euler_angles_from_matrix`].
+///
+/// Returns a triple of `uom::si::f64::Angle` values carrying the radian
+/// results of the JEOD extraction algorithm. Bit-identical numerically to
+/// the bare-`f64` variant.
+pub fn compute_euler_angles_from_matrix_typed(
+    trans: &DMat3,
+    sequence: EulerSequence,
+) -> [Angle; 3] {
+    let [phi, theta, psi] = compute_euler_angles_from_matrix_impl(trans, sequence);
+    [
+        Angle::new::<radian>(phi),
+        Angle::new::<radian>(theta),
+        Angle::new::<radian>(psi),
+    ]
+}
+
+/// Build a left-transformation matrix from a witnessed unit-norm quaternion.
+///
+/// Preferred entry point for new callers: gates the unit-norm precondition
+/// at the type level instead of relying on callers remembering to
+/// renormalize after integration. Delegates to
+/// [`NormalizedQuat::left_quat_to_transformation`], which applies the JEOD
+/// `quaternion_to_matrix.cc` formula on the witnessed payload.
+pub fn quaternion_to_matrix_normalized(q: NormalizedQuat<ScalarFirst, LeftTransform>) -> DMat3 {
+    q.left_quat_to_transformation()
+}
+
 // ===========================================================================
 // Tests
 // ===========================================================================
 
 #[cfg(test)]
 mod tests {
+    // Existing tests intentionally exercise the bare-`f64` public surface so
+    // the deprecated and typed entry points stay covered together through
+    // the Phase 10 removal.
+    #![allow(deprecated)]
+
     use super::*;
     use crate::test_utils::{approx_eq_f64, approx_eq_mat3};
     use glam::DVec3;
+    use uom::si::angle::radian;
 
     const TOL: f64 = 1e-14;
 
@@ -689,6 +829,168 @@ mod tests {
                 approx_eq_mat3(&t, &reconstructed, 1e-14),
                 "JEOD matrix round-trip for {seq:?} exceeds 1e-14: diff = {:.4e}",
                 max_mat_diff(&t, &reconstructed),
+            );
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // Typed API (uom `Angle` + NormalizedQuat witness)
+    // -------------------------------------------------------------------
+
+    /// Build a `[Angle; 3]` from three radian values without cluttering
+    /// the assertion tests.
+    fn angles_rad(phi: f64, theta: f64, psi: f64) -> [Angle; 3] {
+        [
+            Angle::new::<radian>(phi),
+            Angle::new::<radian>(theta),
+            Angle::new::<radian>(psi),
+        ]
+    }
+
+    /// A non-trivial angle triple per `EulerSequence`. All chosen to stay
+    /// away from 0°, ±90°, ±180° so the extraction algorithm's gimbal-lock
+    /// branch is avoided and the raw radian angles round-trip cleanly.
+    fn non_trivial_angles_for(seq: EulerSequence) -> [f64; 3] {
+        if EULER_INFO[seq as usize].is_aerodynamics_sequence {
+            // Aero sequences fully round-trip angles for non-singular theta.
+            [0.3_f64, 0.4, 0.5]
+        } else {
+            // Astro (proper-Euler) sequences have theta in (0, pi). Pick
+            // angles well clear of both ends.
+            [0.3_f64, 0.9, 0.5]
+        }
+    }
+
+    #[test]
+    fn typed_roundtrip_all_sequences() {
+        for &seq in &ALL_SEQUENCES {
+            let raw = non_trivial_angles_for(seq);
+            let typed_in = angles_rad(raw[0], raw[1], raw[2]);
+
+            let mat = compute_matrix_from_euler_angles_typed(typed_in, seq);
+            let extracted = compute_euler_angles_from_matrix_typed(&mat, seq);
+
+            // Aero sequences recover the exact input angles; astro sequences
+            // are allowed to drift as long as the matrix reconstructs.
+            if EULER_INFO[seq as usize].is_aerodynamics_sequence {
+                for i in 0..3 {
+                    let err = (extracted[i] - typed_in[i]).get::<radian>().abs();
+                    assert!(
+                        err < 1e-13,
+                        "typed roundtrip {seq:?}: angle[{i}] err = {err:.4e} rad"
+                    );
+                }
+            }
+
+            let mat2 = compute_matrix_from_euler_angles_typed(extracted, seq);
+            assert!(
+                approx_eq_mat3(&mat, &mat2, 1e-13),
+                "typed roundtrip matrix mismatch for {seq:?}: diff = {:.4e}",
+                {
+                    let mut d = 0.0_f64;
+                    for c in 0..3 {
+                        for r in 0..3 {
+                            d = d.max((mat.col(c)[r] - mat2.col(c)[r]).abs());
+                        }
+                    }
+                    d
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn typed_matrix_bit_identical_to_f64() {
+        // The typed path must produce exactly the same DMat3 as the
+        // bare-`f64` path for every sequence, given equal numeric inputs.
+        for &seq in &ALL_SEQUENCES {
+            let raw = non_trivial_angles_for(seq);
+            let typed = angles_rad(raw[0], raw[1], raw[2]);
+
+            let mat_typed = compute_matrix_from_euler_angles_typed(typed, seq);
+            let mat_f64 = compute_matrix_from_euler_angles(
+                [
+                    typed[0].get::<radian>(),
+                    typed[1].get::<radian>(),
+                    typed[2].get::<radian>(),
+                ],
+                seq,
+            );
+
+            for c in 0..3 {
+                for r in 0..3 {
+                    assert_eq!(
+                        mat_typed.col(c)[r].to_bits(),
+                        mat_f64.col(c)[r].to_bits(),
+                        "{seq:?}: matrix element [{r}][{c}] differs bit-wise",
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn typed_angles_bit_identical_to_f64() {
+        // Extract both via typed and f64 from the same matrix and check
+        // the resulting angle triples are bit-identical.
+        for &seq in &ALL_SEQUENCES {
+            let raw = non_trivial_angles_for(seq);
+            let mat = compute_matrix_from_euler_angles(raw, seq);
+
+            let from_typed = compute_euler_angles_from_matrix_typed(&mat, seq);
+            let from_f64 = compute_euler_angles_from_matrix(&mat, seq);
+
+            for i in 0..3 {
+                assert_eq!(
+                    from_typed[i].get::<radian>().to_bits(),
+                    from_f64[i].to_bits(),
+                    "{seq:?}: angle[{i}] differs bit-wise",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn typed_quaternion_bit_identical_to_f64() {
+        // The typed quaternion builder must return a NormalizedQuat whose
+        // inner JeodQuat is bit-identical to the f64 variant's output.
+        for &seq in &ALL_SEQUENCES {
+            let raw = non_trivial_angles_for(seq);
+            let typed = angles_rad(raw[0], raw[1], raw[2]);
+
+            let q_typed = compute_quaternion_from_euler_angles_typed(typed, seq);
+            let q_f64 = compute_quaternion_from_euler_angles(raw, seq);
+
+            let inner = q_typed.inner();
+            for i in 0..4 {
+                assert_eq!(
+                    inner.data[i].to_bits(),
+                    q_f64.data[i].to_bits(),
+                    "{seq:?}: quaternion data[{i}] differs bit-wise",
+                );
+            }
+
+            // The NormalizedQuat witness implies unit norm; sanity-check
+            // this rather than leave it implicit.
+            assert!((inner.norm() - 1.0).abs() < 1e-14);
+        }
+    }
+
+    #[test]
+    fn quaternion_to_matrix_normalized_matches_f64_matrix() {
+        // The new matrix-conversion entry point gated on NormalizedQuat
+        // must agree with the bare-`f64` matrix constructor.
+        for &seq in &ALL_SEQUENCES {
+            let raw = non_trivial_angles_for(seq);
+            let typed = angles_rad(raw[0], raw[1], raw[2]);
+
+            let q = compute_quaternion_from_euler_angles_typed(typed, seq);
+            let mat_from_quat = quaternion_to_matrix_normalized(q);
+            let mat_direct = compute_matrix_from_euler_angles_typed(typed, seq);
+
+            assert!(
+                approx_eq_mat3(&mat_from_quat, &mat_direct, 1e-14),
+                "{seq:?}: NormalizedQuat-gated matrix disagrees with typed Euler->matrix",
             );
         }
     }

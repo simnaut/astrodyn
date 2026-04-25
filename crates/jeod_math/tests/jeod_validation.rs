@@ -186,6 +186,8 @@ fn validate_orbital_roundtrip_5000_vectors() {
     let mut pass_count = 0;
 
     for (i, sv) in vectors.iter().enumerate() {
+        // Phase 2 #104: from_cartesian deprecated; migration deferred to Phase 3+.
+        #[allow(deprecated)]
         let elems = match OrbitalElements::from_cartesian(MU_EARTH, sv.position, sv.velocity) {
             Ok(e) => e,
             Err(e) => {
@@ -449,6 +451,7 @@ fn validate_orbital_init_parser() {
 ///
 /// Exit criterion: 6/6 test vectors within 1e-12 rad.
 #[test]
+#[allow(deprecated)]
 fn validate_euler_angle_extraction_from_jeod_vectors() {
     use jeod_math::{compute_euler_angles_from_matrix, EulerSequence};
 

@@ -139,8 +139,13 @@ pub use jeod_planet::PlanetShape;
 pub use jeod_math::JeodQuat;
 
 // jeod_math: derived state types
+#[allow(deprecated)]
 pub use jeod_math::{
     cartesian_to_geodetic, compute_euler_angles_from_matrix, compute_lvlh_frame,
-    geodetic_to_cartesian, solar_beta_angle, EulerSequence, GeodeticState, LvlhFrame,
-    OrbitalElements, OrbitalError,
+    geodetic_to_cartesian, solar_beta_angle,
+};
+pub use jeod_math::{
+    cartesian_to_geodetic_typed, compute_euler_angles_from_matrix_typed, compute_lvlh_frame_typed,
+    geodetic_to_cartesian_typed, solar_beta_angle_typed, EulerSequence, GeodeticState,
+    GeodeticStateTyped, LvlhFrame, OrbitalElements, OrbitalError,
 };

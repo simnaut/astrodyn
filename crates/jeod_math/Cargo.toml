@@ -4,8 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+jeod_quantities = { path = "../jeod_quantities" }
 glam = { workspace = true }
 thiserror = { workspace = true }
+uom = { workspace = true }
 
 [features]
 test-utils = []
@@ -14,4 +16,7 @@ test-utils = []
 jeod_test_data = { path = "../jeod_test_data" }
 jeod_ephemeris = { path = "../jeod_ephemeris" }
 jeod_planet = { path = "../jeod_planet" }
+# `test-utils` exposes `jeod_quantities::frame::TestVehicle` for inline tests
+# that need a phantom vehicle tag (Vehicle is sealed in production).
+jeod_quantities = { path = "../jeod_quantities", features = ["test-utils"] }
 
