@@ -447,8 +447,9 @@ pub fn compute_quaternion_from_euler_angles_typed(
         angles[2].get::<radian>(),
     ];
     let q = compute_quaternion_from_euler_angles_impl(radians, sequence);
-    NormalizedQuat::new(q)
-        .expect("compute_quaternion_from_euler_angles_impl returns a normalized quaternion")
+    NormalizedQuat::new(q).unwrap_or_else(|err| {
+        panic!("compute_quaternion_from_euler_angles_impl returns a normalized quaternion: {err}")
+    })
 }
 
 /// Typed sibling of [`compute_matrix_from_euler_angles`].
@@ -473,8 +474,11 @@ pub fn compute_matrix_from_euler_angles_typed(
 /// Returns a triple of `uom::si::f64::Angle` values carrying the radian
 /// results of the JEOD extraction algorithm. Bit-identical numerically to
 /// the bare-`f64` variant.
-pub fn compute_euler_angles_from_matrix_typed(trans: DMat3, sequence: EulerSequence) -> [Angle; 3] {
-    let [phi, theta, psi] = compute_euler_angles_from_matrix_impl(&trans, sequence);
+pub fn compute_euler_angles_from_matrix_typed(
+    trans: &DMat3,
+    sequence: EulerSequence,
+) -> [Angle; 3] {
+    let [phi, theta, psi] = compute_euler_angles_from_matrix_impl(trans, sequence);
     [
         Angle::new::<radian>(phi),
         Angle::new::<radian>(theta),
@@ -864,7 +868,7 @@ mod tests {
             let typed_in = angles_rad(raw[0], raw[1], raw[2]);
 
             let mat = compute_matrix_from_euler_angles_typed(typed_in, seq);
-            let extracted = compute_euler_angles_from_matrix_typed(mat, seq);
+            let extracted = compute_euler_angles_from_matrix_typed(&mat, seq);
 
             // Aero sequences recover the exact input angles; astro sequences
             // are allowed to drift as long as the matrix reconstructs.
@@ -933,7 +937,7 @@ mod tests {
             let raw = non_trivial_angles_for(seq);
             let mat = compute_matrix_from_euler_angles(raw, seq);
 
-            let from_typed = compute_euler_angles_from_matrix_typed(mat, seq);
+            let from_typed = compute_euler_angles_from_matrix_typed(&mat, seq);
             let from_f64 = compute_euler_angles_from_matrix(&mat, seq);
 
             for i in 0..3 {
