@@ -6,7 +6,7 @@
 //! `target/tier3_crossval/<test_name>.json`.
 
 use glam::{DQuat, DVec3};
-use jeod_quantities::prelude::*;
+use jeod_quantities::ext::F64Ext;
 use std::io::Write;
 use std::path::PathBuf;
 use uom::si::f64::{Angle, AngularVelocity, Length, Velocity};
