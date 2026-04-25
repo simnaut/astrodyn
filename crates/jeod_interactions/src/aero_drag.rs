@@ -141,7 +141,7 @@ impl DragConfigTyped {
             area: Area::new::<uom::si::area::square_meter>(c.area),
             constant_density: c
                 .constant_density
-                .map(|d| MassDensity::new::<uom::si::mass_density::kilogram_per_cubic_meter>(d)),
+                .map(MassDensity::new::<uom::si::mass_density::kilogram_per_cubic_meter>),
         }
     }
 }
