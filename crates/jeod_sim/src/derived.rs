@@ -115,6 +115,7 @@ pub fn compute_body_solar_beta(position: DVec3, velocity: DVec3, sun_position: D
     );
 
     let sun_dir = rel_sun.normalize();
+    #[allow(deprecated)]
     jeod_math::solar_beta_angle(h, sun_dir)
 }
 

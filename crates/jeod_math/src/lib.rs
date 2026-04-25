@@ -41,5 +41,7 @@ pub use jeod_quantities::{
 pub use lvlh::compute_lvlh_frame;
 pub use lvlh::{compute_lvlh_frame_typed, LvlhFrame};
 pub use orbital_elements::OrbitalElements;
+#[allow(deprecated)]
 pub use solar_beta::solar_beta_angle;
+pub use solar_beta::solar_beta_angle_typed;
 pub use types::*;

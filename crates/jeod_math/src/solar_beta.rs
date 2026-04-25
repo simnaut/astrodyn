@@ -11,6 +11,10 @@
 //! When β = ±90°, the Sun is perpendicular to the orbital plane.
 
 use glam::DVec3;
+use jeod_quantities::dims::SpecificAngMomDim;
+use jeod_quantities::prelude::{Inertial, Position, Qty3};
+use uom::si::angle::radian;
+use uom::si::f64::Angle;
 
 /// Compute the solar beta angle.
 ///
@@ -21,6 +25,11 @@ use glam::DVec3;
 /// # Returns
 /// Solar beta angle in radians, in range [-π/2, π/2].
 /// Positive when the Sun is on the same side as the angular momentum vector.
+#[doc(hidden)]
+#[deprecated(
+    since = "0.2.0-phase-3",
+    note = "use solar_beta_angle_typed; f64 variant removed in Phase 10"
+)]
 pub fn solar_beta_angle(orbit_ang_momentum: DVec3, sun_direction: DVec3) -> f64 {
     assert!(
         orbit_ang_momentum.length_squared() > 0.0,
@@ -41,9 +50,37 @@ pub fn solar_beta_angle(orbit_ang_momentum: DVec3, sun_direction: DVec3) -> f64 
     dot.asin()
 }
 
+/// Typed counterpart of [`solar_beta_angle`].
+///
+/// Computes the solar beta angle from a frame-tagged specific angular
+/// momentum vector (r × v, m²/s) and an inertial-frame sun direction
+/// vector (interpreted as meters; only direction matters, so a unit
+/// vector or a full position difference are both acceptable).
+///
+/// # Arguments
+/// * `orbit_ang_momentum` - Specific orbital angular momentum `h = r × v`
+///   in the inertial frame (does not need to be unit)
+/// * `sun_direction` - Direction toward the Sun in the inertial frame
+///   (does not need to be unit)
+///
+/// # Returns
+/// Solar beta angle as a typed `Angle`, in range [-π/2, π/2].
+/// Positive when the Sun is on the same side as the angular momentum
+/// vector.
+pub fn solar_beta_angle_typed(
+    orbit_ang_momentum: Qty3<SpecificAngMomDim, Inertial>,
+    sun_direction: Position<Inertial>,
+) -> Angle {
+    #[allow(deprecated)]
+    let beta = solar_beta_angle(orbit_ang_momentum.raw_si(), sun_direction.raw_si());
+    Angle::new::<radian>(beta)
+}
+
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
+    use jeod_quantities::prelude::Vec3Ext;
     use std::f64::consts::PI;
 
     #[test]
@@ -99,5 +136,79 @@ mod tests {
         let beta = solar_beta_angle(h, sun);
         // Beta should be small (sun nearly in orbit plane at equinox)
         assert!(beta.abs() < 1e-14);
+    }
+
+    // --- Typed-variant tests (Phase 2 #104) --------------------------------
+
+    /// Wrap a raw `DVec3` as a frame-tagged, dimensioned specific
+    /// angular-momentum vector in the inertial frame.
+    fn h_in<F: jeod_quantities::frame::Frame>(v: DVec3) -> Qty3<SpecificAngMomDim, F> {
+        Qty3::from_raw_si(v)
+    }
+
+    #[test]
+    fn typed_bounded_in_pi_over_two() {
+        // Beta is always in [-π/2, π/2]; sweep a handful of inertial sun
+        // directions around an ISS-like orbit normal and verify the
+        // returned typed angle stays within that bound (plus a small
+        // floating-point slop).
+        let inc = 51.6_f64.to_radians();
+        let h = h_in::<Inertial>(DVec3::new(0.0, -inc.sin(), inc.cos()));
+        for (sx, sy, sz) in [
+            (1.0, 0.0, 0.0),
+            (0.0, 1.0, 0.0),
+            (0.0, 0.0, 1.0),
+            (1.0, 1.0, 1.0),
+            (-1.0, 2.0, -0.5),
+            (0.0, 0.0, -1.0),
+        ] {
+            let sun = DVec3::new(sx, sy, sz).m_at::<Inertial>();
+            let beta = solar_beta_angle_typed(h, sun);
+            let rad = beta.get::<radian>();
+            assert!(
+                rad.abs() <= PI / 2.0 + 1e-15,
+                "beta out of range: {rad} for sun=({sx},{sy},{sz})"
+            );
+        }
+    }
+
+    #[test]
+    fn typed_iss_like_orbit() {
+        // Mirror of `iss_like_orbit` but through the typed API. Tolerance
+        // matches the f64 test exactly.
+        let inc = 51.6_f64.to_radians();
+        let h_raw = DVec3::new(0.0, -inc.sin(), inc.cos());
+        let sun_raw = DVec3::new(1.0, 0.0, 0.0);
+
+        let beta = solar_beta_angle_typed(h_in::<Inertial>(h_raw), sun_raw.m_at::<Inertial>());
+        assert!(beta.get::<radian>().abs() < 1e-14);
+    }
+
+    #[test]
+    fn typed_bit_identical_to_f64() {
+        // The typed variant must delegate verbatim to the f64 variant.
+        // Check a range of non-trivial inputs (orthogonal, oblique, nearly
+        // aligned, negative, unnormalized) and assert bit-exact equality
+        // between `solar_beta_angle_typed(...).get::<radian>()` and
+        // `solar_beta_angle(...)`.
+        let cases: &[(DVec3, DVec3)] = &[
+            (DVec3::new(0.0, 0.0, 1.0), DVec3::new(1.0, 0.0, 0.0)),
+            (DVec3::new(0.0, 0.0, 1.0), DVec3::new(0.0, 0.0, 1.0)),
+            (DVec3::new(0.0, 0.0, 1.0), DVec3::new(0.0, 0.0, -1.0)),
+            (DVec3::new(0.0, 0.0, 1.0), DVec3::new(1.0, 0.0, 1.0)),
+            (DVec3::new(0.0, 0.0, 1e10), DVec3::new(1e8, 0.0, 0.0)),
+            (DVec3::new(1.0, 2.0, 3.0), DVec3::new(-0.5, 0.25, 0.75)),
+            (DVec3::new(-1.0, 4.0, -2.0), DVec3::new(7.0, -3.0, 1.0)),
+        ];
+
+        for &(h, sun) in cases {
+            let f64_result = solar_beta_angle(h, sun);
+            let typed_result = solar_beta_angle_typed(h_in::<Inertial>(h), sun.m_at::<Inertial>());
+            assert_eq!(
+                typed_result.get::<radian>(),
+                f64_result,
+                "typed != f64 for h={h:?} sun={sun:?}"
+            );
+        }
     }
 }
