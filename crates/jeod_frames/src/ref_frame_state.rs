@@ -208,40 +208,59 @@ impl<P: Frame> Default for RefFrameTransTyped<P> {
     }
 }
 
-/// Typed rotational state for the `Parent → Child` axis transformation.
+/// Typed rotational state for the `P → C` axis transformation.
 ///
-/// `q_parent_this` is witnessed unit-norm; `t_parent_this` is the cached
-/// 3×3 form, kept in sync at construction time. `ang_vel_this` is in
-/// child-frame coordinates (JEOD convention).
+/// Fields are private to enforce JEOD_INV RF.04 (`q_parent_this` is
+/// canonical, `t_parent_this` is a derived cache that must stay
+/// in sync). Construct via [`Self::new`] (the cache is derived once
+/// from the witnessed quaternion); read via the accessor methods.
 // JEOD_INV: RF.07 — Q_parent_this is left-transformation quaternion (JEOD convention)
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RefFrameRotTyped<P: Frame, C: Frame> {
-    /// Left-transformation quaternion taking vectors expressed in `P` to `C`.
-    pub q_parent_this: NormalizedQuat<ScalarFirst, LeftTransform>,
-    /// Cached 3×3 rotation form of `q_parent_this`.
-    pub t_parent_this: DMat3,
-    /// Angular velocity of `C` relative to `P`, expressed in `C` coordinates.
-    pub ang_vel_this: AngularVelocity<C>,
+    q_parent_this: NormalizedQuat<ScalarFirst, LeftTransform>,
+    t_parent_this: DMat3,
+    ang_vel_this: AngularVelocity<C>,
     _p: PhantomData<P>,
 }
 
 impl<P: Frame, C: Frame> RefFrameRotTyped<P, C> {
     /// Build from a JEOD-canonical quaternion plus angular velocity. The
-    /// 3×3 cached form is derived once at construction. The unit-norm
-    /// invariant is borne by `NormalizedQuat`.
+    /// 3×3 cached form is derived once at construction via the
+    /// witness-gated [`NormalizedQuat::left_quat_to_transformation`].
+    /// The unit-norm invariant is borne by `NormalizedQuat`.
     #[inline]
     pub fn new(
         q_parent_this: NormalizedQuat<ScalarFirst, LeftTransform>,
         ang_vel_this: AngularVelocity<C>,
     ) -> Self {
         // JEOD_INV: RF.04 — T_parent_this derived from quaternion (canonical source of truth)
-        let t_parent_this = q_parent_this.inner().left_quat_to_transformation();
+        let t_parent_this = q_parent_this.left_quat_to_transformation();
         Self {
             q_parent_this,
             t_parent_this,
             ang_vel_this,
             _p: PhantomData,
         }
+    }
+
+    /// Witnessed unit-norm left quaternion taking vectors from `P` to `C`.
+    #[inline]
+    pub fn q_parent_this(&self) -> NormalizedQuat<ScalarFirst, LeftTransform> {
+        self.q_parent_this
+    }
+
+    /// Cached 3×3 rotation form of [`Self::q_parent_this`]. Always
+    /// consistent with the quaternion at construction time
+    /// (RF.04 invariant).
+    #[inline]
+    pub fn t_parent_this(&self) -> DMat3 {
+        self.t_parent_this
+    }
+
+    /// Angular velocity of `C` relative to `P`, expressed in `C` coordinates.
+    #[inline]
+    pub fn ang_vel_this(&self) -> AngularVelocity<C> {
+        self.ang_vel_this
     }
 }
 
@@ -260,11 +279,16 @@ impl<F: Frame> Default for RefFrameRotTyped<F, F> {
     }
 }
 
-/// Typed reference-frame state: combined translation + rotation taking
-/// child frame `C` to its parent frame `P`. `negate()` returns the
-/// reversed transform `RefFrameStateTyped<C, P>`; `incr_right()` composes
-/// with another typed state whose parent matches `Self::Child` to produce
-/// a new state spanning the union.
+/// Typed reference-frame state describing the state of child frame `C`
+/// relative to parent frame `P`: position/velocity of `C`'s origin
+/// expressed in `P`, plus the `P → C` axis rotation. This matches the
+/// JEOD convention (`q_parent_this` is the `P → C` rotation; vectors
+/// `r_PC` and `v_PC` live in `P` coordinates).
+///
+/// `negate()` returns the reversed-direction state
+/// `RefFrameStateTyped<C, P>`; `incr_right()` composes with another
+/// typed state whose parent matches `Self::Child` to produce a new
+/// state spanning the union.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RefFrameStateTyped<P: Frame, C: Frame> {
     pub trans: RefFrameTransTyped<P>,
@@ -323,24 +347,23 @@ impl<P: Frame, C: Frame> RefFrameStateTyped<P, C> {
     /// as a cache; copying the cache without verification could
     /// silently propagate a stale matrix into typed code if an
     /// upstream caller mutated `q_parent_this` without recomputing
-    /// `t_parent_this`. The recompute cost is one
+    /// `t_parent_this`. The recompute cost is one witness-gated
     /// `left_quat_to_transformation` (a handful of FLOPs).
     pub fn from_untyped_unchecked(s: &RefFrameState) -> Self {
         let q_norm = NormalizedQuat::new(s.rot.q_parent_this)
             .unwrap_or_else(|err| panic!("RefFrameState quaternion is not unit-norm: {err}"));
-        // JEOD_INV: RF.04 — derive T from Q (canonical source of truth)
-        let t_parent_this = q_norm.inner().left_quat_to_transformation();
         Self {
             trans: RefFrameTransTyped {
                 position: Position::<P>::from_raw_si(s.trans.position),
                 velocity: Velocity::<P>::from_raw_si(s.trans.velocity),
             },
-            rot: RefFrameRotTyped {
-                q_parent_this: q_norm,
-                t_parent_this,
-                ang_vel_this: AngularVelocity::<C>::from_raw_si(s.rot.ang_vel_this),
-                _p: PhantomData,
-            },
+            // RefFrameRotTyped::new derives `t_parent_this` from the
+            // witnessed quaternion via the witness-gated API
+            // (JEOD_INV: RF.04, canonical source of truth).
+            rot: RefFrameRotTyped::new(
+                q_norm,
+                AngularVelocity::<C>::from_raw_si(s.rot.ang_vel_this),
+            ),
         }
     }
 

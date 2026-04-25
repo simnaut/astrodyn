@@ -78,7 +78,7 @@ impl<V: Vehicle> RotationalStateTyped<V> {
     }
 
     /// Drop the phantom and emit the untyped storage form. Numeric
-    /// values (radians for the quaternion, rad/s for the angular
+    /// values (unitless quaternion components, rad/s for the angular
     /// velocity) are preserved exactly.
     #[inline]
     pub fn to_untyped(&self) -> RotationalState {

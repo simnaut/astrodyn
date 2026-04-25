@@ -1290,9 +1290,9 @@ mod tests {
         let typed_out: RefFrameStateTyped<Inertial, Ecef> = tree.get_state_typed(child);
         assert_eq!(typed_out.trans.position.raw_si(), untyped.trans.position);
         assert_eq!(typed_out.trans.velocity.raw_si(), untyped.trans.velocity);
-        assert_eq!(typed_out.rot.t_parent_this, untyped.rot.t_parent_this);
+        assert_eq!(typed_out.rot.t_parent_this(), untyped.rot.t_parent_this);
         assert_eq!(
-            typed_out.rot.ang_vel_this.raw_si(),
+            typed_out.rot.ang_vel_this().raw_si(),
             untyped.rot.ang_vel_this
         );
     }
