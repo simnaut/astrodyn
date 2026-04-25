@@ -109,6 +109,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Earth: 3rd-body perturbation with per-step ephemeris
+    // Phase 1 (#103): DVec3 accessor is deprecated; migration is Phase 3+ work.
+    #[allow(deprecated)]
     let (earth_pos, _) =
         ephemeris.get_state(EphemerisBody::Earth, EphemerisBody::Moon, epoch_tdb_jd)?;
     let earth = sim.add_source(
@@ -125,6 +127,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     sim.set_source_ephemeris(earth, EphemerisBody::Earth, EphemerisBody::Moon);
 
     // Sun: 3rd-body + SRP source with per-step ephemeris
+    // Phase 1 (#103): DVec3 accessor is deprecated; migration is Phase 3+ work.
+    #[allow(deprecated)]
     let (sun_pos, _) =
         ephemeris.get_state(EphemerisBody::Sun, EphemerisBody::Moon, epoch_tdb_jd)?;
     let sun = sim.add_source(

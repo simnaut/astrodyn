@@ -4,4 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+jeod_quantities = { path = "../jeod_quantities" }
 log = { workspace = true }
+uom = { workspace = true }

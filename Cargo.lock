@@ -2344,6 +2344,8 @@ name = "jeod_atmosphere"
 version = "0.1.0"
 dependencies = [
  "glam 0.30.10",
+ "jeod_quantities",
+ "uom",
 ]
 
 [[package]]
@@ -2364,6 +2366,7 @@ version = "0.1.0"
 dependencies = [
  "anise",
  "glam 0.30.10",
+ "jeod_quantities",
  "thiserror 2.0.18",
 ]
 
@@ -2420,6 +2423,10 @@ dependencies = [
 [[package]]
 name = "jeod_planet"
 version = "0.1.0"
+dependencies = [
+ "jeod_quantities",
+ "uom",
+]
 
 [[package]]
 name = "jeod_quantities"
@@ -2471,14 +2478,18 @@ name = "jeod_test_data"
 version = "0.1.0"
 dependencies = [
  "glam 0.30.10",
+ "jeod_quantities",
  "regex",
+ "uom",
 ]
 
 [[package]]
 name = "jeod_time"
 version = "0.1.0"
 dependencies = [
+ "jeod_quantities",
  "log",
+ "uom",
 ]
 
 [[package]]

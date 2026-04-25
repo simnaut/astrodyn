@@ -1,3 +1,5 @@
+pub use jeod_quantities::prelude::*;
+
 pub mod epoch;
 pub mod leap_second;
 pub mod simulation_time;

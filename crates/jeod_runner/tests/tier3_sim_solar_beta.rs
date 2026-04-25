@@ -94,6 +94,8 @@ fn tier3_simulation_solar_beta() {
     // by tier3_sim_dyncomp_run4 and tier3_sim_torque_simple.
     // J2000.0 = JD 2451545.0
     let j2000_jd = 2_451_545.0;
+    // Phase 1 (#103): DVec3 accessor is deprecated; migration is Phase 3+ work.
+    #[allow(deprecated)]
     let (initial_sun, _) = ephemeris
         .get_earth_centered_state(EphemerisBody::Sun, j2000_jd)
         .expect("Sun position at J2000");
@@ -144,6 +146,8 @@ fn tier3_simulation_solar_beta() {
     for record in &trajectory[1..] {
         // Update Sun position from ephemeris
         let tdb_jd = j2000_jd + record.time / 86_400.0;
+        // Phase 1 (#103): DVec3 accessor is deprecated; migration is Phase 3+ work.
+        #[allow(deprecated)]
         let (sun_pos, _) = ephemeris
             .get_earth_centered_state(EphemerisBody::Sun, tdb_jd)
             .expect("Sun position query");

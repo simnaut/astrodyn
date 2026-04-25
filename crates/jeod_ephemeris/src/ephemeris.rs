@@ -5,6 +5,7 @@ use anise::constants::frames::*;
 use anise::constants::orientations::J2000;
 use anise::prelude::*;
 use glam::DVec3;
+use jeod_quantities::prelude::{Inertial, Position, Vec3Ext, Velocity};
 
 use crate::bodies::EphemerisBody;
 
@@ -51,6 +52,11 @@ impl Ephemeris {
     /// Get state of `target` relative to `observer` at a given TDB Julian Date.
     ///
     /// Returns `(position_m, velocity_m_per_s)` in J2000 ICRF.
+    #[doc(hidden)]
+    #[deprecated(
+        since = "0.2.0-phase-1",
+        note = "use get_state_typed / get_earth_centered_state_typed; this f64 variant is removed in Phase 10"
+    )]
     pub fn get_state(
         &self,
         target: EphemerisBody,
@@ -89,12 +95,49 @@ impl Ephemeris {
     /// Get Earth-centered state of `target` at a given TDB Julian Date.
     ///
     /// Returns `(position_m, velocity_m_per_s)` relative to Earth center in J2000 ICRF.
+    #[doc(hidden)]
+    #[deprecated(
+        since = "0.2.0-phase-1",
+        note = "use get_state_typed / get_earth_centered_state_typed; this f64 variant is removed in Phase 10"
+    )]
     pub fn get_earth_centered_state(
         &self,
         target: EphemerisBody,
         tdb_jd: f64,
     ) -> Result<(DVec3, DVec3), EphemerisError> {
+        #[allow(deprecated)]
         self.get_state(target, EphemerisBody::Earth, tdb_jd)
+    }
+
+    /// Get state of `target` relative to `observer` at a given TDB Julian Date,
+    /// returning frame-tagged, dimensioned quantities in the J2000 (ICRF-aligned)
+    /// inertial frame.
+    ///
+    /// This is the typed counterpart to [`Self::get_state`]; the underlying
+    /// ANISE translate call is unchanged, the returned values are simply wrapped
+    /// as `Position<Inertial>` / `Velocity<Inertial>` in SI base units
+    /// (meters, m/s).
+    pub fn get_state_typed(
+        &self,
+        target: EphemerisBody,
+        observer: EphemerisBody,
+        tdb_jd: f64,
+    ) -> Result<(Position<Inertial>, Velocity<Inertial>), EphemerisError> {
+        #[allow(deprecated)]
+        let (pos_m, vel_m_s) = self.get_state(target, observer, tdb_jd)?;
+        Ok((pos_m.m_at::<Inertial>(), vel_m_s.m_per_s_at::<Inertial>()))
+    }
+
+    /// Earth-centered variant of [`Self::get_state_typed`].
+    ///
+    /// Returns `(Position<Inertial>, Velocity<Inertial>)` relative to Earth
+    /// center in J2000 ICRF (meters, m/s).
+    pub fn get_earth_centered_state_typed(
+        &self,
+        target: EphemerisBody,
+        tdb_jd: f64,
+    ) -> Result<(Position<Inertial>, Velocity<Inertial>), EphemerisError> {
+        self.get_state_typed(target, EphemerisBody::Earth, tdb_jd)
     }
 
     /// Get the rotation matrix from J2000 inertial to a body's body-fixed frame.
@@ -195,4 +238,65 @@ pub enum EphemerisError {
     LoadError(String),
     #[error("Ephemeris query failed: {0}")]
     QueryError(String),
+}
+
+#[cfg(test)]
+mod typed_accessor_tests {
+    //! Bit-identical equivalence between the deprecated `DVec3` accessors and
+    //! their typed siblings. Uses the committed `de421.bsp` kernel in
+    //! `test_data/`; the test will panic with a descriptive message if the
+    //! kernel is missing (no graceful skip — see project policy).
+    //!
+    //! We compare via `raw_si()` because the typed accessors return SI base
+    //! units (meters, m/s), so a matching `raw_si()` DVec3 is also bit-exact
+    //! in the intended unit.
+    use super::*;
+    use std::path::PathBuf;
+
+    const J2000_TDB_JD: f64 = 2_451_545.0;
+
+    fn load_de421() -> Ephemeris {
+        // crates/jeod_ephemeris -> workspace root -> test_data/de421.bsp
+        let path: PathBuf = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(std::path::Path::parent)
+            .expect("workspace root")
+            .join("test_data/de421.bsp");
+        assert!(
+            path.exists(),
+            "DE421.bsp not found at {}. Download with: curl -Lo test_data/de421.bsp https://public-data.nyxspace.com/anise/de421.bsp",
+            path.display(),
+        );
+        Ephemeris::from_bsp(&path).expect("load DE421.bsp")
+    }
+
+    #[test]
+    fn get_state_typed_is_bit_identical_to_get_state() {
+        let ephem = load_de421();
+        #[allow(deprecated)]
+        let (pos_dvec, vel_dvec) = ephem
+            .get_state(EphemerisBody::Moon, EphemerisBody::Earth, J2000_TDB_JD)
+            .expect("query Moon state");
+        let (pos_t, vel_t) = ephem
+            .get_state_typed(EphemerisBody::Moon, EphemerisBody::Earth, J2000_TDB_JD)
+            .expect("query Moon state (typed)");
+
+        assert_eq!(pos_t.raw_si(), pos_dvec);
+        assert_eq!(vel_t.raw_si(), vel_dvec);
+    }
+
+    #[test]
+    fn get_earth_centered_state_typed_is_bit_identical() {
+        let ephem = load_de421();
+        #[allow(deprecated)]
+        let (pos_dvec, vel_dvec) = ephem
+            .get_earth_centered_state(EphemerisBody::Sun, J2000_TDB_JD)
+            .expect("query Sun state");
+        let (pos_t, vel_t) = ephem
+            .get_earth_centered_state_typed(EphemerisBody::Sun, J2000_TDB_JD)
+            .expect("query Sun state (typed)");
+
+        assert_eq!(pos_t.raw_si(), pos_dvec);
+        assert_eq!(vel_t.raw_si(), vel_dvec);
+    }
 }

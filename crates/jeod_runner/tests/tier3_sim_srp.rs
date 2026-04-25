@@ -92,6 +92,8 @@ fn srp_plates() -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
 
 fn srp_sun_position(sim_time: f64, epoch_tdb_jd: f64, ephemeris: &Ephemeris) -> DVec3 {
     let tdb_jd = epoch_tdb_jd + sim_time / 86400.0;
+    // Phase 1 (#103): DVec3 accessor is deprecated; migration is Phase 3+ work.
+    #[allow(deprecated)]
     let (sun_pos, _) = ephemeris
         .get_earth_centered_state(EphemerisBody::Sun, tdb_jd)
         .expect("Sun position query failed");
