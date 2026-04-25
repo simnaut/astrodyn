@@ -148,25 +148,28 @@ impl DragConfigTyped {
 ///
 /// Same numeric kernel — wraps [`DragConfigTyped`] / typed
 /// [`Velocity<Inertial>`] inputs and unwraps to the existing
-/// implementation. Output is [`Force<Inertial>`] (the structural-
-/// frame force from the f64 path is reinterpreted as an inertial-
-/// frame force here for consistency with `TotalForceTyped`'s
-/// integration-frame convention; the actual frame the force is
-/// expressed in matches what the untyped function returns —
-/// callers must rotate themselves if they need a different frame).
-pub fn compute_ballistic_drag_typed(
+/// implementation. Output is **`Force<StructuralFrame<V>>`** because
+/// [`compute_ballistic_drag`] returns the drag force in the vehicle's
+/// structural/body frame (the frame `t_inertial_struct` rotates
+/// *into*). Callers who need the force in the inertial integration
+/// frame must rotate via the inverse `t_inertial_struct.transpose()`
+/// — the typed signature makes the source frame explicit so this
+/// conversion is a deliberate step rather than a silent assumption.
+pub fn compute_ballistic_drag_typed<V: jeod_quantities::frame::Vehicle>(
     config: &DragConfigTyped,
     atmos: &AtmosphereState,
     inertial_velocity: jeod_quantities::aliases::Velocity<jeod_quantities::frame::Inertial>,
     t_inertial_struct: &DMat3,
-) -> jeod_quantities::aliases::Force<jeod_quantities::frame::Inertial> {
+) -> jeod_quantities::aliases::Force<jeod_quantities::frame::StructuralFrame<V>> {
     let untyped = compute_ballistic_drag(
         &config.to_untyped(),
         atmos,
         inertial_velocity.raw_si(),
         t_inertial_struct,
     );
-    jeod_quantities::aliases::Force::<jeod_quantities::frame::Inertial>::from_raw_si(untyped.force)
+    jeod_quantities::aliases::Force::<jeod_quantities::frame::StructuralFrame<V>>::from_raw_si(
+        untyped.force,
+    )
 }
 
 #[cfg(test)]

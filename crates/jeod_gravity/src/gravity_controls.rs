@@ -358,9 +358,10 @@ impl<SourceId> GravityControl<SourceId> {
 ///
 /// Cross-field invariants like `degree <= source.degree` (JEOD
 /// `GV.03`–`GV.11`) remain runtime-checked via
-/// [`Self::check_validity`] / [`GravityControl::check_validity`] —
-/// the type system can prove ordinals are distinct kinds, not that
-/// one specific ordinal is bounded by another's runtime value.
+/// [`GravityControlTyped::check_validity`] (which delegates to the
+/// untyped [`GravityControl::check_validity`]) — the type system
+/// can prove ordinals are distinct kinds, not that one specific
+/// ordinal is bounded by another's runtime value.
 #[derive(Debug, Clone)]
 pub struct GravityControlTyped<SourceId = String> {
     pub source_name: SourceId,
@@ -435,6 +436,29 @@ impl<SourceId> GravityControlTyped<SourceId> {
 }
 
 impl<SourceId: Clone> GravityControlTyped<SourceId> {
+    /// Validate this typed control against its (typed) gravity source.
+    ///
+    /// Delegates to [`GravityControl::check_validity`] on the untyped
+    /// projection — runtime-checked invariants (`GV.03`–`GV.11`)
+    /// stay in the canonical f64 path. Mutations the validator
+    /// performs (e.g., auto-correcting `degree == 0` to
+    /// `spherical = true`, clamping out-of-range gradient_degree /
+    /// gradient_order) are reflected back into `self` via the
+    /// `HarmonicDegree` newtypes.
+    // JEOD_INV: GV.03 — check_validity() called on degree/order mutation
+    pub fn check_validity(&mut self, source: &GravitySource) {
+        let mut untyped = self.to_untyped();
+        untyped.check_validity(source);
+        // Reflect any auto-corrections back into the typed surface.
+        self.spherical = untyped.spherical;
+        self.degree = jeod_quantities::aliases::HarmonicDegree::from(untyped.degree);
+        self.order = jeod_quantities::aliases::HarmonicDegree::from(untyped.order);
+        self.gradient_degree =
+            jeod_quantities::aliases::HarmonicDegree::from(untyped.gradient_degree);
+        self.gradient_order =
+            jeod_quantities::aliases::HarmonicDegree::from(untyped.gradient_order);
+    }
+
     /// Drop the [`HarmonicDegree`] newtypes and emit the untyped
     /// storage form. Cross-field invariants (GV.03–GV.11) remain
     /// runtime-checked via the resulting

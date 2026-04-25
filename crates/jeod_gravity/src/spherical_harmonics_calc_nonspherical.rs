@@ -9,6 +9,8 @@ use jeod_dynamics::forces::GravityAccelerationTyped;
 use jeod_dynamics::GravityAcceleration;
 use jeod_quantities::aliases::{HarmonicDegree, Position};
 use jeod_quantities::frame::{Planet, PlanetFixed};
+// `PlanetFixed<P>: Frame` follows from the blanket
+// `impl<P: Planet> Frame for PlanetFixed<P>` in jeod_quantities.
 
 use crate::spherical_harmonics_gravity_source::SphericalHarmonicsData;
 
@@ -493,7 +495,7 @@ pub fn calc_nonspherical_with_scratch(
 /// untyped [`calc_nonspherical`] — no new arithmetic in the boundary —
 /// so the J2 regression hash and Tier 3 SH-using trajectories produce
 /// bit-identical output.
-pub fn calc_nonspherical_typed<P: Planet + jeod_quantities::frame::Frame>(
+pub fn calc_nonspherical_typed<P: Planet>(
     data: &SphericalHarmonicsData,
     posn_pf: Position<PlanetFixed<P>>,
     degree: HarmonicDegree,
