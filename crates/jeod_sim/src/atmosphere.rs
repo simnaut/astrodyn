@@ -4,6 +4,8 @@ use jeod_atmosphere::met::MetAtmosphere;
 use jeod_atmosphere::AtmosphereState;
 #[allow(deprecated)]
 use jeod_math::geodetic::cartesian_to_geodetic;
+use jeod_quantities::aliases::Position;
+use jeod_quantities::frame::Inertial;
 
 use crate::planet_config::PlanetConfig;
 
@@ -131,4 +133,20 @@ pub fn evaluate_atmosphere(
         pressure: result.pressure,
         wind,
     }
+}
+
+/// Typed sibling of [`evaluate_atmosphere`].
+///
+/// Identical kernel — accepts a typed `Position<Inertial>` for the
+/// vehicle position. The returned [`AtmosphereState`] keeps its raw
+/// fields (`density: f64`, `wind: DVec3`, …) since `AtmosphereState`
+/// itself exposes `_typed` accessors (`density_typed`, `wind_typed`,
+/// …) for callers who want quantity types at the consumption site.
+pub fn evaluate_atmosphere_typed(
+    config: &AtmosphereConfig,
+    position: Position<Inertial>,
+    t_inertial_pfix: Option<&DMat3>,
+    tai_tjt: Option<f64>,
+) -> AtmosphereState {
+    evaluate_atmosphere(config, position.raw_si(), t_inertial_pfix, tai_tjt)
 }

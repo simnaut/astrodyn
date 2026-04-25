@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+jeod_quantities = { path = "../jeod_quantities" }
 jeod_math = { path = "../jeod_math" }
 jeod_dynamics = { path = "../jeod_dynamics" }
 jeod_gravity = { path = "../jeod_gravity" }
@@ -15,6 +16,7 @@ jeod_ephemeris = { path = "../jeod_ephemeris" }
 jeod_planet = { path = "../jeod_planet" }
 glam = { workspace = true }
 log = { workspace = true }
+uom = { workspace = true }
 
 [dev-dependencies]
 jeod_test_data = { path = "../jeod_test_data" }

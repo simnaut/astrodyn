@@ -1,8 +1,10 @@
 use glam::{DMat3, DVec3};
+use jeod_dynamics::forces::{FrameDerivativesTyped, GravityAccelerationTyped, TotalForceTyped};
 use jeod_dynamics::{
     ForceContributions, FrameDerivatives, MassProperties, RotationalState, TotalForce,
 };
 use jeod_interactions::{AerodynamicForce, RadiationForce};
+use jeod_quantities::frame::{Inertial, Vehicle};
 
 /// Collect all interaction forces and torques, resolve frame transforms,
 /// and compute frame derivatives.
@@ -105,4 +107,42 @@ pub fn collect_and_resolve_forces(
     };
 
     (collected, derivs)
+}
+
+/// Typed sibling of [`collect_and_resolve_forces`].
+///
+/// Identical kernel — entry boundary takes
+/// [`GravityAccelerationTyped<Inertial>`] for the gravity
+/// acceleration, exit boundary returns
+/// [`TotalForceTyped<V, Inertial>`] / [`FrameDerivativesTyped<Inertial,
+/// V>`]. The aerodynamic / radiation / gravity-torque / rotation-state /
+/// mass inputs remain untyped because Phase 3 left those struct
+/// surfaces untyped at their `jeod_dynamics` / `jeod_interactions`
+/// home crates.
+#[allow(clippy::too_many_arguments)]
+pub fn collect_and_resolve_forces_typed<V: Vehicle>(
+    aero: Option<&AerodynamicForce>,
+    srp: Option<&RadiationForce>,
+    gravity_torque: Option<DVec3>,
+    rot_state: Option<&RotationalState>,
+    t_struct_body: DMat3,
+    mass: Option<&MassProperties>,
+    gravity_accel: GravityAccelerationTyped<Inertial>,
+) -> (
+    TotalForceTyped<V, Inertial>,
+    FrameDerivativesTyped<Inertial, V>,
+) {
+    let (force, derivs) = collect_and_resolve_forces(
+        aero,
+        srp,
+        gravity_torque,
+        rot_state,
+        t_struct_body,
+        mass,
+        gravity_accel.grav_accel.raw_si(),
+    );
+    (
+        TotalForceTyped::<V, Inertial>::from_untyped_unchecked(&force),
+        FrameDerivativesTyped::<Inertial, V>::from_untyped_unchecked(&derivs),
+    )
 }

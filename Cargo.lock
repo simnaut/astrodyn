@@ -2478,9 +2478,11 @@ dependencies = [
  "jeod_interactions",
  "jeod_math",
  "jeod_planet",
+ "jeod_quantities",
  "jeod_test_data",
  "jeod_time",
  "log",
+ "uom",
 ]
 
 [[package]]

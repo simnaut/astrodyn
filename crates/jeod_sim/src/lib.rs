@@ -45,27 +45,31 @@ pub mod pipeline;
 pub mod planet_config;
 pub mod rotation_model;
 pub mod validation;
+pub mod vehicle_builder;
 
 // ── Orchestration functions ──
-pub use atmosphere::{evaluate_atmosphere, AtmosphereConfig, AtmosphereModel};
+pub use atmosphere::{
+    evaluate_atmosphere, evaluate_atmosphere_typed, AtmosphereConfig, AtmosphereModel,
+};
 pub use derived::{
     compute_body_euler_angles, compute_body_geodetic, compute_body_lvlh_frame,
     compute_body_solar_beta, compute_lvlh_relative_state, compute_orbital_elements,
-    compute_relative_state, LvlhRelativeState, RelativeState,
+    compute_orbital_elements_typed, compute_relative_state, LvlhRelativeState, RelativeState,
 };
-pub use forces::collect_and_resolve_forces;
+pub use forces::{collect_and_resolve_forces, collect_and_resolve_forces_typed};
 pub use gravity::{
-    accumulate_gravity, accumulate_relativistic_corrections, ResolvedRelativisticSource,
-    ResolvedSource,
+    accumulate_gravity, accumulate_gravity_typed, accumulate_relativistic_corrections,
+    accumulate_relativistic_corrections_typed, ResolvedRelativisticSource, ResolvedSource,
 };
 pub use integrable::IntegrableObject;
 pub use integration::{
-    integrate_bodies_contact_coupled, integrate_body, integrate_body_coupled, CoupledBodyInput,
-    CoupledIntegScratch, CoupledStageEval,
+    integrate_bodies_contact_coupled, integrate_body, integrate_body_coupled, integrate_body_typed,
+    CoupledBodyInput, CoupledIntegScratch, CoupledStageEval,
 };
 pub use interactions::{
-    compute_cannonball_srp, compute_drag, compute_gravity_torque, evaluate_contact_pair,
-    ContactPairEval, FlatPlateStageInputs, FlatPlateState, ThermalIntegrationOrder,
+    compute_cannonball_srp, compute_cannonball_srp_typed, compute_drag, compute_drag_typed,
+    compute_gravity_torque, compute_gravity_torque_typed, evaluate_contact_pair, ContactPairEval,
+    FlatPlateStageInputs, FlatPlateStageInputsTyped, FlatPlateState, ThermalIntegrationOrder,
 };
 pub use jeod_dynamics::{
     Abm4State, GaussJacksonConfig, GaussJacksonState, IntegratorResult, IntegratorType,
@@ -74,6 +78,9 @@ pub use pipeline::{PipelineStage, PIPELINE_ORDER};
 pub use planet_config::{PlanetConfig, EARTH, MARS, MOON, SUN};
 pub use rotation_model::RotationModel;
 pub use validation::{validate_body, ValidationError};
+pub use vehicle_builder::{
+    BuildState, HasIntegrator, NeedsMass, NeedsState, Ready, TypedVehicleConfig, VehicleBuilder,
+};
 
 // ── Re-exports from jeod_* crates ──
 // ECS adapters depend only on jeod_sim — these re-exports provide all the

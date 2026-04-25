@@ -8,6 +8,9 @@ use glam::{DMat3, DQuat, DVec3};
 
 use crate::{EulerSequence, GeodeticState, LvlhFrame, OrbitalElements, RotationalState};
 use jeod_math::OrbitalError;
+use jeod_quantities::aliases::{Position, Velocity};
+use jeod_quantities::dims::GravParam;
+use jeod_quantities::frame::Inertial;
 
 /// Relative state between two bodies.
 ///
@@ -206,6 +209,20 @@ pub fn compute_lvlh_relative_state(
         position: pos_lvlh,
         velocity: vel_lvlh,
     }
+}
+
+/// Typed sibling of [`compute_orbital_elements`].
+///
+/// Delegates to [`OrbitalElements::from_cartesian_typed`] (the typed
+/// entry point added by Phase 2). Identical numerics — the typed
+/// kernel itself extracts SI base values and calls the same f64
+/// implementation.
+pub fn compute_orbital_elements_typed(
+    mu: GravParam,
+    position: Position<Inertial>,
+    velocity: Velocity<Inertial>,
+) -> Result<OrbitalElements, OrbitalError> {
+    OrbitalElements::from_cartesian_typed(mu, position, velocity)
 }
 
 #[cfg(test)]
