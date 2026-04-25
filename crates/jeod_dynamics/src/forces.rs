@@ -44,6 +44,66 @@ pub struct FrameDerivatives {
     pub rot_accel: DVec3,   // rad/s^2
 }
 
+/// Typed sibling of [`FrameDerivatives`].
+///
+/// `trans_accel` carries the integration frame `F`; `rot_accel`
+/// carries the body frame for vehicle `V`. The two type parameters
+/// are independent — a body integrating translational state in one
+/// frame may carry rotational state about a body axis whose
+/// orientation is completely unrelated.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FrameDerivativesTyped<
+    F: jeod_quantities::frame::Frame,
+    V: jeod_quantities::frame::Vehicle,
+> {
+    pub trans_accel: jeod_quantities::aliases::Acceleration<F>,
+    pub rot_accel:
+        jeod_quantities::aliases::AngularAcceleration<jeod_quantities::frame::BodyFrame<V>>,
+    _v: core::marker::PhantomData<V>,
+}
+
+impl<F: jeod_quantities::frame::Frame, V: jeod_quantities::frame::Vehicle> Default
+    for FrameDerivativesTyped<F, V>
+{
+    #[inline]
+    fn default() -> Self {
+        Self {
+            trans_accel: jeod_quantities::aliases::Acceleration::<F>::zero(),
+            rot_accel: jeod_quantities::aliases::AngularAcceleration::<
+                jeod_quantities::frame::BodyFrame<V>,
+            >::zero(),
+            _v: core::marker::PhantomData,
+        }
+    }
+}
+
+impl<F: jeod_quantities::frame::Frame, V: jeod_quantities::frame::Vehicle>
+    FrameDerivativesTyped<F, V>
+{
+    /// Drop the frame phantoms and emit the untyped storage form.
+    #[inline]
+    pub fn to_untyped(&self) -> FrameDerivatives {
+        FrameDerivatives {
+            trans_accel: self.trans_accel.raw_si(),
+            rot_accel: self.rot_accel.raw_si(),
+        }
+    }
+
+    /// Wrap an untyped [`FrameDerivatives`] as typed. **The caller
+    /// asserts** the translational accel is in `F` and the rotational
+    /// accel is in `BodyFrame<V>`.
+    #[inline]
+    pub fn from_untyped_unchecked(d: &FrameDerivatives) -> Self {
+        Self {
+            trans_accel: jeod_quantities::aliases::Acceleration::<F>::from_raw_si(d.trans_accel),
+            rot_accel: jeod_quantities::aliases::AngularAcceleration::<
+                jeod_quantities::frame::BodyFrame<V>,
+            >::from_raw_si(d.rot_accel),
+            _v: core::marker::PhantomData,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DynamicsConfig {
     pub translational_dynamics: bool,
@@ -399,5 +459,19 @@ mod tests {
         );
         // non_grav_accel = 100 * (1/50) = 2.0 in x
         assert!((fd.trans_accel - DVec3::new(2.0, 0.0, -9.81)).length() < 1e-12);
+    }
+
+    #[test]
+    fn typed_frame_derivatives_round_trip() {
+        use jeod_quantities::frame::{Inertial, TestVehicle};
+
+        let untyped = FrameDerivatives {
+            trans_accel: DVec3::new(1.0, 2.0, 3.0),
+            rot_accel: DVec3::new(0.1, 0.2, 0.3),
+        };
+        let typed =
+            FrameDerivativesTyped::<Inertial, TestVehicle>::from_untyped_unchecked(&untyped);
+        let back = typed.to_untyped();
+        assert_eq!(back, untyped);
     }
 }

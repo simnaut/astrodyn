@@ -6,10 +6,12 @@ edition = "2021"
 [dependencies]
 jeod_frames = { path = "../jeod_frames" }
 jeod_math = { path = "../jeod_math" }
+jeod_quantities = { path = "../jeod_quantities" }
 glam = { workspace = true }
 
 [dev-dependencies]
 jeod_math = { path = "../jeod_math", features = ["test-utils"] }
+jeod_quantities = { path = "../jeod_quantities", features = ["test-utils"] }
 jeod_test_data = { path = "../jeod_test_data" }
 jeod_gravity = { path = "../jeod_gravity" }
 jeod_planet = { path = "../jeod_planet" }

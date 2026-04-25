@@ -1,7 +1,12 @@
+use core::marker::PhantomData;
+
 use crate::state::TranslationalState;
 use glam::{DMat3, DVec3};
 use jeod_math::quaternion::NORM_LIMIT;
 use jeod_math::JeodQuat;
+use jeod_quantities::aliases::AngularVelocity;
+use jeod_quantities::frame::{BodyFrame, Vehicle};
+use jeod_quantities::quat::{LeftTransform, NormalizedQuat, ScalarFirst};
 
 /// Rotational state of a rigid body.
 ///
@@ -30,6 +35,74 @@ impl Default for RotationalState {
 pub struct SixDofState {
     pub trans: TranslationalState,
     pub rot: RotationalState,
+}
+
+/// Typed sibling of [`RotationalState`] parameterized by a vehicle marker
+/// `V`. The quaternion is a witnessed unit-norm
+/// [`NormalizedQuat<ScalarFirst, LeftTransform>`] (JEOD canonical), and
+/// angular velocity carries the `BodyFrame<V>` phantom tag.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RotationalStateTyped<V: Vehicle> {
+    /// Inertial → body left-transformation quaternion (witnessed unit-norm).
+    pub q_inertial_body: NormalizedQuat<ScalarFirst, LeftTransform>,
+    /// Angular velocity in `BodyFrame<V>`.
+    pub ang_vel_body: AngularVelocity<BodyFrame<V>>,
+    _v: PhantomData<V>,
+}
+
+impl<V: Vehicle> Default for RotationalStateTyped<V> {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            q_inertial_body: NormalizedQuat::new(JeodQuat::identity())
+                .expect("identity quaternion is unit-norm"),
+            ang_vel_body: AngularVelocity::<BodyFrame<V>>::zero(),
+            _v: PhantomData,
+        }
+    }
+}
+
+impl<V: Vehicle> RotationalStateTyped<V> {
+    /// Construct from a witnessed unit-norm quaternion plus typed angular
+    /// velocity.
+    #[inline]
+    pub fn new(
+        q_inertial_body: NormalizedQuat<ScalarFirst, LeftTransform>,
+        ang_vel_body: AngularVelocity<BodyFrame<V>>,
+    ) -> Self {
+        Self {
+            q_inertial_body,
+            ang_vel_body,
+            _v: PhantomData,
+        }
+    }
+
+    /// Drop the phantom and emit the untyped storage form. Numeric
+    /// values (radians for the quaternion, rad/s for the angular
+    /// velocity) are preserved exactly.
+    #[inline]
+    pub fn to_untyped(&self) -> RotationalState {
+        RotationalState {
+            quaternion: self.q_inertial_body.inner(),
+            ang_vel_body: self.ang_vel_body.raw_si(),
+        }
+    }
+
+    /// Wrap an untyped [`RotationalState`] as typed for vehicle `V`.
+    /// **The caller asserts** the angular velocity is expressed in
+    /// `BodyFrame<V>`. The inner quaternion is checked against
+    /// [`NormalizedQuat::DEFAULT_TOLERANCE`]: panics if it has drifted
+    /// more than 1e-12 from unit norm, indicating an upstream
+    /// re-normalization was missed.
+    pub fn from_untyped_unchecked(s: &RotationalState) -> Self {
+        let q = NormalizedQuat::new(s.quaternion)
+            .unwrap_or_else(|err| panic!("RotationalState quaternion is not unit-norm: {err}"));
+        Self {
+            q_inertial_body: q,
+            ang_vel_body: AngularVelocity::<BodyFrame<V>>::from_raw_si(s.ang_vel_body),
+            _v: PhantomData,
+        }
+    }
 }
 
 /// Compute rotational acceleration from Euler's rigid-body equation.
@@ -383,5 +456,31 @@ mod tests {
             "vx should be 0.8, got {}",
             q.data[1],
         );
+    }
+
+    #[test]
+    fn typed_rotational_state_round_trips() {
+        use jeod_quantities::frame::TestVehicle;
+
+        let untyped = RotationalState {
+            quaternion: JeodQuat::left_quat_from_eigen_rotation(0.7, DVec3::Z),
+            ang_vel_body: DVec3::new(0.01, 0.02, 0.03),
+        };
+
+        let typed = RotationalStateTyped::<TestVehicle>::from_untyped_unchecked(&untyped);
+        let back = typed.to_untyped();
+
+        assert_eq!(back.quaternion, untyped.quaternion);
+        assert_eq!(back.ang_vel_body, untyped.ang_vel_body);
+    }
+
+    #[test]
+    fn typed_rotational_default_is_identity() {
+        use jeod_quantities::frame::TestVehicle;
+
+        let s = RotationalStateTyped::<TestVehicle>::default();
+        let untyped = s.to_untyped();
+        assert_eq!(untyped.quaternion, JeodQuat::identity());
+        assert_eq!(untyped.ang_vel_body, DVec3::ZERO);
     }
 }

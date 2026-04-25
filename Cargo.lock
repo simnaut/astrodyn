@@ -2357,6 +2357,7 @@ dependencies = [
  "jeod_gravity",
  "jeod_math",
  "jeod_planet",
+ "jeod_quantities",
  "jeod_test_data",
  "sha2",
 ]
