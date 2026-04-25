@@ -316,9 +316,20 @@ impl<P: Frame, C: Frame> RefFrameStateTyped<P, C> {
     /// [`NormalizedQuat::DEFAULT_TOLERANCE`]: panics if the source
     /// quaternion's norm has drifted past 1e-12, which would indicate
     /// a missing renormalization upstream.
+    ///
+    /// `t_parent_this` is **re-derived from `q_norm`** rather than
+    /// copied from the untyped state. JEOD's RF.04 invariant treats
+    /// the quaternion as the canonical source of truth and the matrix
+    /// as a cache; copying the cache without verification could
+    /// silently propagate a stale matrix into typed code if an
+    /// upstream caller mutated `q_parent_this` without recomputing
+    /// `t_parent_this`. The recompute cost is one
+    /// `left_quat_to_transformation` (a handful of FLOPs).
     pub fn from_untyped_unchecked(s: &RefFrameState) -> Self {
         let q_norm = NormalizedQuat::new(s.rot.q_parent_this)
             .unwrap_or_else(|err| panic!("RefFrameState quaternion is not unit-norm: {err}"));
+        // JEOD_INV: RF.04 — derive T from Q (canonical source of truth)
+        let t_parent_this = q_norm.inner().left_quat_to_transformation();
         Self {
             trans: RefFrameTransTyped {
                 position: Position::<P>::from_raw_si(s.trans.position),
@@ -326,7 +337,7 @@ impl<P: Frame, C: Frame> RefFrameStateTyped<P, C> {
             },
             rot: RefFrameRotTyped {
                 q_parent_this: q_norm,
-                t_parent_this: s.rot.t_parent_this,
+                t_parent_this,
                 ang_vel_this: AngularVelocity::<C>::from_raw_si(s.rot.ang_vel_this),
                 _p: PhantomData,
             },

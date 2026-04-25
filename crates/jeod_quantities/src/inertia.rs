@@ -4,8 +4,15 @@
 //! inertia (dimension `M·L²`, base SI unit `kg·m²`) about the mass body's
 //! axes. This module wraps that storage with a phantom frame parameter so
 //! `InertiaTensor<BodyFrame<V>>` and `InertiaTensor<StructuralFrame<V>>`
-//! are distinct types and cannot be combined without an explicit
-//! [`Self::transform`].
+//! are distinct types — `Add` requires both operands to share the same
+//! `F`, so cross-frame additions fail to compile.
+//!
+//! [`InertiaTensor::transform`] is the **numeric** similarity transform
+//! `T^T · I · T`; it does **not** change the frame phantom. To re-express
+//! an inertia tensor in a different frame, callers must explicitly retag
+//! after rotating: `InertiaTensor::<NewFrame>::from_dmat3_unchecked(
+//! original.transform(&rot).as_dmat3())`. A safer typed-`FrameTransform`
+//! wrapper is left for a follow-up phase.
 //!
 //! Storage is `DMat3` (no `uom` integration) — the dimension is a phantom
 //! annotation. Callers feed in / read out raw `DMat3` values whose entries
@@ -23,6 +30,20 @@ use crate::frame::Frame;
 /// Symmetric in physically-meaningful instances, but the type does not
 /// enforce symmetry — composition via [`Self::transform`] preserves it
 /// when the input is symmetric and the rotation is proper.
+///
+/// # Frame-mismatch is a compile error
+///
+/// Adding inertia tensors expressed in different compile-time frames
+/// fails to typecheck rather than silently mis-summing them:
+///
+/// ```compile_fail
+/// use jeod_quantities::frame::{Ecef, Inertial};
+/// use jeod_quantities::inertia::InertiaTensor;
+///
+/// let a = InertiaTensor::<Inertial>::from_principal(1.0, 1.0, 1.0);
+/// let b = InertiaTensor::<Ecef>::from_principal(1.0, 1.0, 1.0);
+/// let _bad = a + b; // Add is only impl'd for matching frames
+/// ```
 #[repr(transparent)]
 pub struct InertiaTensor<F: Frame> {
     value: DMat3,
@@ -84,18 +105,16 @@ impl<F: Frame> InertiaTensor<F> {
         Self::from_dmat3_unchecked(self.value.transpose())
     }
 
-    /// Re-express this inertia tensor in a sibling frame related to `F`
-    /// by the rotation matrix `rot` (interpreted as `T_parent_this`):
-    /// returns `T^T · I · T`.
+    /// Numeric similarity transform `T^T · I · T`. Matches JEOD's
+    /// `transpose_transform_matrix` usage in `mass_properties.cc` for
+    /// composing child inertia about a parent structural frame's axes.
     ///
-    /// Matches JEOD's `transpose_transform_matrix` usage in
-    /// `mass_properties.cc` for composing child inertia about a parent
-    /// structural frame.
-    ///
-    /// The frame parameter is intentionally unchanged — frame-changing
-    /// rotation must go through a higher-level wrapper (e.g. a typed
-    /// `FrameTransform`) so the tag is updated coherently. This method
-    /// is the kernel; callers in the dynamics layer wrap it.
+    /// **The frame phantom `F` is intentionally unchanged.** This is
+    /// the numeric kernel; frame-changing must go through an explicit
+    /// retag (`InertiaTensor::<NewFrame>::from_dmat3_unchecked(...)`)
+    /// or a future typed `FrameTransform`-style wrapper that updates
+    /// the phantom coherently. Calling `transform` alone does not
+    /// re-express the tensor in a different compile-time frame.
     #[inline]
     pub fn transform(&self, rot: &DMat3) -> Self {
         Self::from_dmat3_unchecked(rot.transpose() * self.value * *rot)

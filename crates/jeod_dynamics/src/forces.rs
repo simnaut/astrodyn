@@ -92,18 +92,21 @@ pub struct TotalForce {
 
 /// Typed sibling of [`TotalForce`].
 ///
-/// `force` carries the integration frame `F` (default `Inertial`);
-/// `torque` is in `BodyFrame<V>` (JEOD convention). The two type
-/// parameters are independent so a body integrating translation in
-/// one frame may carry torque about a separate body axis.
+/// `force` carries the integration frame `F` (defaults to `Inertial`
+/// to match the existing untyped struct's "force in integration
+/// frame" convention); `torque` is in `BodyFrame<V>` (JEOD
+/// convention). The two type parameters are independent so a body
+/// integrating translation in one frame may carry torque about a
+/// separate body axis. `V` has no default because no production
+/// vehicle marker exists yet (Phase 5 territory).
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct TotalForceTyped<F: Frame, V: Vehicle> {
+pub struct TotalForceTyped<V: Vehicle, F: Frame = Inertial> {
     pub force: Force<F>,
     pub torque: Torque<BodyFrame<V>>,
     _v: PhantomData<V>,
 }
 
-impl<F: Frame, V: Vehicle> Default for TotalForceTyped<F, V> {
+impl<V: Vehicle, F: Frame> Default for TotalForceTyped<V, F> {
     #[inline]
     fn default() -> Self {
         Self {
@@ -114,7 +117,7 @@ impl<F: Frame, V: Vehicle> Default for TotalForceTyped<F, V> {
     }
 }
 
-impl<F: Frame, V: Vehicle> TotalForceTyped<F, V> {
+impl<V: Vehicle, F: Frame> TotalForceTyped<V, F> {
     /// Drop the phantoms and emit the untyped storage form.
     #[inline]
     pub fn to_untyped(&self) -> TotalForce {
@@ -565,22 +568,23 @@ mod tests {
 
     #[test]
     fn typed_total_force_round_trip() {
-        use jeod_quantities::frame::{Inertial, TestVehicle};
+        use jeod_quantities::frame::TestVehicle;
 
         let untyped = TotalForce {
             force: DVec3::new(100.0, 0.0, 0.0),
             torque: DVec3::new(0.0, 0.5, 0.0),
         };
-        let typed = TotalForceTyped::<Inertial, TestVehicle>::from_untyped_unchecked(&untyped);
+        // Use the F = Inertial default for the integration frame.
+        let typed = TotalForceTyped::<TestVehicle>::from_untyped_unchecked(&untyped);
         let back = typed.to_untyped();
         assert_eq!(back, untyped);
     }
 
     #[test]
     fn typed_total_force_default_is_zero() {
-        use jeod_quantities::frame::{Inertial, TestVehicle};
+        use jeod_quantities::frame::TestVehicle;
 
-        let typed = TotalForceTyped::<Inertial, TestVehicle>::default();
+        let typed = TotalForceTyped::<TestVehicle>::default();
         let back = typed.to_untyped();
         assert_eq!(back, TotalForce::default());
     }

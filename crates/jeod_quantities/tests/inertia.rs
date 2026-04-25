@@ -122,12 +122,10 @@ fn default_is_zero() {
 }
 
 // `InertiaTensor<Ecef> + InertiaTensor<Inertial>` must NOT compile —
-// frame mismatch is a type error. We assert this via a `compile_fail`
-// pattern using a doctest in the inertia module rather than a separate
-// trybuild harness, to keep the integration test fast.
-//
-// Compile-fail surface is also covered by the `Frame` trait being
-// sealed; this test only confirms the same-frame happy path.
+// frame mismatch is a type error. The compile-fail case is asserted
+// via a `compile_fail` doctest on `InertiaTensor` itself (see
+// `crates/jeod_quantities/src/inertia.rs`); this test confirms the
+// same-frame happy path.
 #[test]
 fn add_within_same_frame_compiles() {
     let a = InertiaTensor::<Ecef>::from_principal(1.0, 1.0, 1.0);
