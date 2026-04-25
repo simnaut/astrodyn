@@ -1,4 +1,5 @@
 use glam::DVec3;
+use jeod_dynamics::state::TranslationalStateTyped;
 use jeod_dynamics::{
     DynamicsConfig, IntegratorType, MassProperties, RotationalState, SixDofState,
     TranslationalState,
@@ -1008,13 +1009,14 @@ fn integrate_coupled_sixdof(
 /// Typed sibling of [`integrate_body`].
 ///
 /// Identical kernel — wraps the entry boundary so callers pass typed
-/// quantities. The `gravity_fn` closure is also typed: it receives an
+/// quantities. The `trans` parameter takes a mutable
+/// [`TranslationalStateTyped<Inertial>`] so the inertial-frame
+/// constraint is enforced at compile time; the wrapper unwraps to the
+/// raw kernel storage on entry and writes the integrated state back
+/// at exit. The `gravity_fn` closure is also typed: it receives an
 /// intermediate position / velocity in [`Inertial`] and returns an
-/// [`Acceleration<Inertial>`]. The wrapper translates raw `DVec3`
-/// inputs from the kernel into typed quantities for the closure and
-/// translates the typed result back into a raw `DVec3` for the kernel
-/// — no new arithmetic, just `.raw_si()` / `from_raw_si` at the
-/// edges.
+/// [`Acceleration<Inertial>`]. No new arithmetic — only `.raw_si()` /
+/// `from_raw_si` at the edges.
 ///
 /// `dt` becomes [`uom::si::f64::Time`]. The dimensionless
 /// `time_scale_factor` (JEOD's `TimeDyn::scale_factor`) stays an
@@ -1022,11 +1024,12 @@ fn integrate_coupled_sixdof(
 ///
 /// Per-vehicle frame phantom `V` ties the torque to
 /// [`BodyFrame<V>`]; the body's translational state must be in
-/// [`Inertial`] (see [`TranslationalState`] / Phase 3 typing).
+/// [`Inertial`] (enforced by the [`TranslationalStateTyped<Inertial>`]
+/// parameter type).
 #[allow(clippy::too_many_arguments)]
 pub fn integrate_body_typed<V: Vehicle>(
     config: &DynamicsConfig,
-    trans: &mut TranslationalState,
+    trans: &mut TranslationalStateTyped<Inertial>,
     rot: Option<&mut RotationalState>,
     mass: Option<&MassProperties>,
     gravity_fn: impl Fn(Position<Inertial>, Velocity<Inertial>, f64) -> Acceleration<Inertial>,
@@ -1047,9 +1050,10 @@ pub fn integrate_body_typed<V: Vehicle>(
         )
         .raw_si()
     };
+    let mut raw_trans = trans.to_untyped();
     integrate_body(
         config,
-        trans,
+        &mut raw_trans,
         rot,
         mass,
         raw_gravity_fn,
@@ -1061,6 +1065,7 @@ pub fn integrate_body_typed<V: Vehicle>(
         gj_state,
         abm4_state,
     );
+    *trans = TranslationalStateTyped::<Inertial>::from_untyped_unchecked(&raw_trans);
 }
 
 /// Compute total translational acceleration from a stage evaluation.

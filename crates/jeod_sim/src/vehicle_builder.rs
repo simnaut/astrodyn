@@ -10,7 +10,9 @@
 //! will add the conversion from [`TypedVehicleConfig`] into the
 //! `jeod_runner` simulation pipeline; until then the typestate builder
 //! exists alongside the existing runtime `jeod_runner::VehicleBuilder`,
-//! which remains the way to construct a [`Simulation`](`jeod_runner`).
+//! which remains the way to construct a `jeod_runner::Simulation`
+//! (no rustdoc intra-link — `jeod_sim` does not depend on
+//! `jeod_runner`, so the path can't be resolved here).
 //!
 //! # Compile-time gating
 //!

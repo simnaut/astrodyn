@@ -34,10 +34,11 @@ pub struct PlanetConfig {
 
 impl PlanetConfig {
     /// Typed accessor: gravitational parameter as [`GravParam`]
-    /// (m³/s²). Same numeric value as `self.shape.mu`.
+    /// (m³/s²). Delegates to [`PlanetShape::mu_typed`] so the
+    /// unit-wrapping lives in one place.
     #[inline]
     pub fn mu_typed(&self) -> GravParam {
-        self.shape.mu.m3_per_s2()
+        self.shape.mu_typed()
     }
 
     /// Typed accessor: sidereal angular velocity as

@@ -116,9 +116,12 @@ pub fn collect_and_resolve_forces(
 /// acceleration, exit boundary returns
 /// [`TotalForceTyped<V, Inertial>`] / [`FrameDerivativesTyped<Inertial,
 /// V>`]. The aerodynamic / radiation / gravity-torque / rotation-state /
-/// mass inputs remain untyped because Phase 3 left those struct
-/// surfaces untyped at their `jeod_dynamics` / `jeod_interactions`
-/// home crates.
+/// mass inputs remain untyped here because this orchestration
+/// boundary has not yet been migrated to consume the typed
+/// interaction / state structs end-to-end (typed variants like
+/// `AerodynamicForceTyped`, `DragConfigTyped`,
+/// `RotationalStateTyped` already exist upstream from Phases 3–4 and
+/// will thread through in a follow-up).
 #[allow(clippy::too_many_arguments)]
 pub fn collect_and_resolve_forces_typed<V: Vehicle>(
     aero: Option<&AerodynamicForce>,
