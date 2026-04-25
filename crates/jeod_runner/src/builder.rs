@@ -1,23 +1,28 @@
 //! Builder patterns for ergonomic simulation configuration.
 //!
-//! [`VehicleBuilder`] provides a fluent API for constructing [`VehicleConfig`],
-//! grouping related concerns (state, gravity, interactions, derived states) and
-//! auto-deriving `DynamicsConfig` from what's configured.
+//! [`VehicleBuilder`] provides a fluent API for constructing
+//! [`VehicleConfig`], grouping related concerns (state, gravity,
+//! interactions, derived states) and auto-deriving `DynamicsConfig`
+//! from what's configured.
 //!
-//! [`SimulationBuilder`] wraps [`Simulation`] construction with auto-validation
-//! on `build()`.
+//! Phase 6 of #101 relocated `SimulationBuilder` and the per-vehicle
+//! configuration types ([`VehicleConfig`], [`SrpModel`], …) into
+//! `jeod_sim` so they can be shared between the standalone runner and
+//! the future Bevy adapter. This module retains the runtime fluent
+//! [`VehicleBuilder`] and adds the runner-specific terminal methods
+//! (`SimulationBuilder::build` / `build_unchecked`) via the
+//! [`SimulationBuilderExt`] trait.
 
 use glam::{DMat3, DVec3};
 
+use jeod_sim::simulation_builder::SimulationBuilder;
 use jeod_sim::{
-    DragConfig, EulerSequence, GravityControl, GravityControls, MassProperties, PlanetConfig,
-    RotationalState, SimulationTime, TranslationalState,
+    DerivedStateConfig, DragConfig, EarthLightingConfig, EulerSequence, FrameSwitchConfig,
+    GeodeticConfig, GravityControl, GravityControls, MassProperties, PlanetConfig, RotationalState,
+    ShadowBody, SimulationTime, SrpModel, TranslationalState, VehicleConfig,
 };
 
-use crate::{
-    DerivedStateConfig, EarthLightingConfig, FrameSwitchConfig, GeodeticConfig, GravitySourceEntry,
-    ShadowBody, Simulation, SrpModel, VehicleConfig,
-};
+use crate::Simulation;
 
 // ══════════════════════════════════════════════════════════════════════════════
 // VehicleBuilder
@@ -30,7 +35,7 @@ use crate::{
 /// use jeod_runner::VehicleConfig;
 /// use jeod_sim::{EARTH, GravityControl};
 ///
-/// let vehicle = VehicleConfig::builder(initial_trans)
+/// let vehicle = VehicleBuilder::new(initial_trans)
 ///     .sixdof(rotation, mass)
 ///     .gravity(GravityControl::new_spherical(earth_idx, false))
 ///     .drag(DragConfig { cd: 2.2, area: 1000.0, constant_density: None })
@@ -56,9 +61,14 @@ pub struct VehicleBuilder {
     frame_switches: Vec<FrameSwitchConfig>,
 }
 
-impl VehicleConfig {
+impl VehicleBuilder {
     /// Start building a vehicle at the given initial translational state.
-    pub fn builder(trans: TranslationalState) -> VehicleBuilder {
+    ///
+    /// (Phase 6 of #101: replaces the previous
+    /// `VehicleConfig::builder(trans)` constructor — the orphan rule
+    /// prevents an inherent `impl VehicleConfig` here now that
+    /// `VehicleConfig` lives in `jeod_sim`.)
+    pub fn new(trans: TranslationalState) -> VehicleBuilder {
         VehicleBuilder {
             trans,
             rot: None,
@@ -77,9 +87,7 @@ impl VehicleConfig {
             frame_switches: Vec::new(),
         }
     }
-}
 
-impl VehicleBuilder {
     // ── Core state ──
 
     /// Set rotational state (enables 6-DOF dynamics).
@@ -276,237 +284,74 @@ impl VehicleBuilder {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// SimulationBuilder
+// Simulation construction from a relocated `jeod_sim::SimulationBuilder`
 // ══════════════════════════════════════════════════════════════════════════════
-
-/// Fluent builder for [`Simulation`].
-///
-/// # Example
-/// ```ignore
-/// use jeod_runner::Simulation;
-/// use jeod_sim::{SimulationTime, EARTH, AtmosphereModel};
-///
-/// let mut builder = Simulation::builder(time, 10.0);
-/// let earth = builder.add_source("Earth", GravitySourceEntry::central_body(&EARTH));
-/// builder.add_body(VehicleConfig::builder(trans).gravity(ctrl).build());
-/// let mut sim = builder.build()?;
-/// ```
-/// A pending mass-tree attachment, resolved during [`SimulationBuilder::build`].
-struct MassTreeAttachment {
-    /// Body index of the child.
-    child_idx: usize,
-    /// Body index of the parent.
-    parent_idx: usize,
-    /// Child structural origin in parent's structural frame (m).
-    offset: DVec3,
-    /// Rotation from parent structural frame to child structural frame.
-    t_parent_child: DMat3,
-}
-
-pub struct SimulationBuilder {
-    time: SimulationTime,
-    dt: f64,
-    atmosphere: Option<jeod_sim::AtmosphereConfig>,
-    atmosphere_planet_source: Option<usize>,
-    ephemeris: Option<jeod_sim::Ephemeris>,
-    polar_motion: Option<(f64, f64)>,
-    sun_source: Option<usize>,
-    moon_source: Option<usize>,
-    sources: Vec<(String, GravitySourceEntry)>,
-    source_ephem_bodies: Vec<Option<(jeod_sim::EphemerisBody, jeod_sim::EphemerisBody)>>,
-    bodies: Vec<VehicleConfig>,
-    /// Body names for mass tree registration (index matches `bodies`).
-    mass_tree_names: Vec<Option<String>>,
-    /// Pending attachments, resolved during `build()`.
-    mass_tree_attachments: Vec<MassTreeAttachment>,
-}
+//
+// `SimulationBuilder` itself lives in `jeod_sim` (Phase 6 of #101 relocated it
+// so the same scenario library serves the standalone runner and the future
+// Bevy adapter without duplication). Materializing a builder into a runtime
+// `Simulation` is runner-specific and lives here, both as an inherent
+// constructor (`Simulation::from_builder`) and as an extension trait
+// (`SimulationBuilderExt::build`) so call sites read identically to the
+// pre-relocation API.
 
 impl Simulation {
     /// Start building a simulation with the given time and timestep.
+    ///
+    /// Convenience wrapper around `SimulationBuilder::new` that mirrors the
+    /// pre-relocation `Simulation::builder(time, dt)` API.
     pub fn builder(time: SimulationTime, dt: f64) -> SimulationBuilder {
-        SimulationBuilder {
+        SimulationBuilder::new(time, dt)
+    }
+
+    /// Materialize a [`SimulationBuilder`] into a runtime [`Simulation`]
+    /// without running validation. Use for tests that intentionally
+    /// exercise invalid configurations.
+    pub fn from_builder_unchecked(builder: SimulationBuilder) -> Self {
+        let SimulationBuilder {
             time,
             dt,
-            atmosphere: None,
-            atmosphere_planet_source: None,
-            ephemeris: None,
-            polar_motion: None,
-            sun_source: None,
-            moon_source: None,
-            sources: Vec::new(),
-            source_ephem_bodies: Vec::new(),
-            bodies: Vec::new(),
-            mass_tree_names: Vec::new(),
-            mass_tree_attachments: Vec::new(),
-        }
-    }
-}
+            atmosphere,
+            atmosphere_planet_source,
+            ephemeris,
+            polar_motion,
+            sun_source,
+            moon_source,
+            sources,
+            source_ephem_bodies,
+            bodies,
+            mass_tree_names,
+            mass_tree_attachments,
+        } = builder;
 
-impl SimulationBuilder {
-    // ── Global config (fluent, consumes self) ──
+        let mut sim = Simulation::new(time, dt);
+        sim.atmosphere = atmosphere;
+        sim.atmosphere_planet_source = atmosphere_planet_source;
+        sim.ephemeris = ephemeris;
+        sim.polar_motion = polar_motion;
+        sim.sun_source = sun_source;
+        sim.moon_source = moon_source;
 
-    /// Set atmosphere configuration with explicit planet source index.
-    pub fn atmosphere(mut self, config: jeod_sim::AtmosphereConfig, planet_source: usize) -> Self {
-        self.atmosphere = Some(config);
-        self.atmosphere_planet_source = Some(planet_source);
-        self
-    }
-
-    /// Set atmosphere configuration from a [`PlanetConfig`] preset.
-    pub fn atmosphere_from_planet(
-        mut self,
-        model: jeod_sim::AtmosphereModel,
-        planet: &PlanetConfig,
-        planet_source: usize,
-    ) -> Self {
-        self.atmosphere = Some(jeod_sim::AtmosphereConfig::from_planet(model, planet));
-        self.atmosphere_planet_source = Some(planet_source);
-        self
-    }
-
-    /// Set ephemeris data (DE421/DE430) for per-step source position updates.
-    pub fn ephemeris(mut self, eph: jeod_sim::Ephemeris) -> Self {
-        self.ephemeris = Some(eph);
-        self
-    }
-
-    /// Set polar motion parameters (xp, yp) in radians.
-    pub fn polar_motion(mut self, xp: f64, yp: f64) -> Self {
-        self.polar_motion = Some((xp, yp));
-        self
-    }
-
-    /// Mark a source as the Sun (for SRP, solar beta, earth lighting).
-    pub fn sun(mut self, idx: usize) -> Self {
-        self.sun_source = Some(idx);
-        self
-    }
-
-    /// Mark a source as the Moon (for earth lighting).
-    pub fn moon(mut self, idx: usize) -> Self {
-        self.moon_source = Some(idx);
-        self
-    }
-
-    // ── Sources and bodies (&mut self for index returns) ──
-
-    /// Add a gravity source with a name for the frame tree. Returns its index.
-    pub fn add_source(&mut self, name: impl Into<String>, entry: GravitySourceEntry) -> usize {
-        let idx = self.sources.len();
-        self.sources.push((name.into(), entry));
-        self.source_ephem_bodies.push(None);
-        idx
-    }
-
-    /// Configure ephemeris-based position updates for a source.
-    pub fn set_source_ephemeris(
-        &mut self,
-        idx: usize,
-        target: jeod_sim::EphemerisBody,
-        observer: jeod_sim::EphemerisBody,
-    ) -> &mut Self {
-        self.source_ephem_bodies[idx] = Some((target, observer));
-        self
-    }
-
-    /// Add a vehicle. Returns its index.
-    pub fn add_body(&mut self, config: VehicleConfig) -> usize {
-        let idx = self.bodies.len();
-        self.bodies.push(config);
-        self.mass_tree_names.push(None);
-        idx
-    }
-
-    /// Register a body in the mass tree with the given name.
-    ///
-    /// Must be called after [`add_body`](Self::add_body). Bodies registered in
-    /// the tree can be connected via [`attach_bodies`](Self::attach_bodies).
-    ///
-    /// # Panics
-    /// Panics if the body does not define mass properties.
-    pub fn register_in_mass_tree(&mut self, body_idx: usize, name: impl Into<String>) -> &mut Self {
-        assert!(
-            self.bodies[body_idx].mass.is_some(),
-            "register_in_mass_tree: body {body_idx} has no mass properties"
-        );
-        self.mass_tree_names[body_idx] = Some(name.into());
-        self
-    }
-
-    /// Declare a mass-tree attachment between two bodies.
-    ///
-    /// Both bodies must be registered via [`register_in_mass_tree`](Self::register_in_mass_tree).
-    /// The attachment is resolved during [`build`](Self::build).
-    ///
-    /// # Panics
-    /// Panics if either body has not been registered in the mass tree.
-    pub fn attach_bodies(
-        &mut self,
-        child_idx: usize,
-        parent_idx: usize,
-        offset: DVec3,
-        t_parent_child: DMat3,
-    ) -> &mut Self {
-        assert!(
-            self.mass_tree_names[child_idx].is_some(),
-            "attach_bodies: child body {child_idx} not registered in mass tree"
-        );
-        assert!(
-            self.mass_tree_names[parent_idx].is_some(),
-            "attach_bodies: parent body {parent_idx} not registered in mass tree"
-        );
-        self.mass_tree_attachments.push(MassTreeAttachment {
-            child_idx,
-            parent_idx,
-            offset,
-            t_parent_child,
-        });
-        self
-    }
-
-    // ── Build ──
-
-    /// Build and validate the simulation.
-    ///
-    /// Returns `Err` if validation fails (e.g., missing prerequisites,
-    /// invalid source indices, force producers without mass).
-    pub fn build(self) -> Result<Simulation, Vec<jeod_sim::ValidationError>> {
-        let mut sim = self.build_unchecked();
-        sim.validate()?;
-        Ok(sim)
-    }
-
-    /// Build without validation. Use for tests that intentionally exercise
-    /// invalid configurations.
-    pub fn build_unchecked(self) -> Simulation {
-        let mut sim = Simulation::new(self.time, self.dt);
-        sim.atmosphere = self.atmosphere;
-        sim.atmosphere_planet_source = self.atmosphere_planet_source;
-        sim.ephemeris = self.ephemeris;
-        sim.polar_motion = self.polar_motion;
-        sim.sun_source = self.sun_source;
-        sim.moon_source = self.moon_source;
-
-        for (i, (name, source)) in self.sources.into_iter().enumerate() {
+        for (i, (name, source)) in sources.into_iter().enumerate() {
             sim.add_source(name, source);
-            if let Some(Some((target, observer))) = self.source_ephem_bodies.get(i) {
+            if let Some(Some((target, observer))) = source_ephem_bodies.get(i) {
                 sim.set_source_ephemeris(i, *target, *observer);
             }
         }
 
-        for body in self.bodies {
+        for body in bodies {
             sim.add_body(body);
         }
 
         // Wire up mass tree if any bodies were registered.
-        let has_tree = self.mass_tree_names.iter().any(|n| n.is_some());
+        let has_tree = mass_tree_names.iter().any(|n| n.is_some());
         if has_tree {
-            for (idx, name) in self.mass_tree_names.into_iter().enumerate() {
+            for (idx, name) in mass_tree_names.into_iter().enumerate() {
                 if let Some(name) = name {
                     sim.add_body_to_tree(idx, name);
                 }
             }
-            for att in self.mass_tree_attachments {
+            for att in mass_tree_attachments {
                 sim.attach(
                     att.child_idx,
                     att.parent_idx,
@@ -517,5 +362,41 @@ impl SimulationBuilder {
         }
 
         sim
+    }
+
+    /// Materialize a [`SimulationBuilder`] into a runtime [`Simulation`]
+    /// and run validation. Returns `Err` on validation failure.
+    pub fn from_builder(
+        builder: SimulationBuilder,
+    ) -> Result<Self, Vec<jeod_sim::ValidationError>> {
+        let mut sim = Self::from_builder_unchecked(builder);
+        sim.validate()?;
+        Ok(sim)
+    }
+}
+
+/// Extension trait providing terminal `.build()` / `.build_unchecked()`
+/// methods on the relocated [`jeod_sim::SimulationBuilder`].
+///
+/// Mission code typically imports this via `jeod_runner::prelude::*` so
+/// `scenarios::iss_leo().build()?` reads naturally. Callers that prefer
+/// the explicit form can use [`Simulation::from_builder`] directly.
+pub trait SimulationBuilderExt: Sized {
+    /// Build and validate the simulation. Returns `Err` on validation
+    /// failure.
+    fn build(self) -> Result<Simulation, Vec<jeod_sim::ValidationError>>;
+
+    /// Build without validation. Use only for tests that intentionally
+    /// exercise invalid configurations.
+    fn build_unchecked(self) -> Simulation;
+}
+
+impl SimulationBuilderExt for SimulationBuilder {
+    fn build(self) -> Result<Simulation, Vec<jeod_sim::ValidationError>> {
+        Simulation::from_builder(self)
+    }
+
+    fn build_unchecked(self) -> Simulation {
+        Simulation::from_builder_unchecked(self)
     }
 }
