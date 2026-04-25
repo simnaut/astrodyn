@@ -431,6 +431,31 @@ pub fn compute_cannonball_srp(
     flux_hat * force_mag
 }
 
+/// Typed sibling of [`compute_cannonball_srp`].
+///
+/// Inputs are typed [`Position<Inertial>`] for body and sun, [`Area`]
+/// for the cross-section, and [`Ratio`] for the dimensionless albedo /
+/// diffuse / illumination factors. Output is [`Force<Inertial>`].
+/// Same numeric kernel — bit-identical output for equal numeric input.
+pub fn compute_cannonball_srp_typed(
+    body_pos: jeod_quantities::aliases::Position<jeod_quantities::frame::Inertial>,
+    sun_pos: jeod_quantities::aliases::Position<jeod_quantities::frame::Inertial>,
+    cx_area: uom::si::f64::Area,
+    albedo: uom::si::f64::Ratio,
+    diffuse: uom::si::f64::Ratio,
+    illum_factor: uom::si::f64::Ratio,
+) -> jeod_quantities::aliases::Force<jeod_quantities::frame::Inertial> {
+    let force = compute_cannonball_srp(
+        body_pos.raw_si(),
+        sun_pos.raw_si(),
+        cx_area.value,
+        albedo.value,
+        diffuse.value,
+        illum_factor.value,
+    );
+    jeod_quantities::aliases::Force::<jeod_quantities::frame::Inertial>::from_raw_si(force)
+}
+
 /// Integrate a single plate's temperature via Forward Euler with overshoot clamping.
 ///
 /// Port of JEOD `ThermalIntegrableObject::integrate()` (thermal_integrable_object.cc:98-124).

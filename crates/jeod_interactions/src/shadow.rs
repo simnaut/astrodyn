@@ -190,6 +190,28 @@ pub fn compute_shadow_fraction(
     result.clamp(0.0, 1.0)
 }
 
+/// Typed sibling of [`compute_shadow_fraction`].
+///
+/// Inputs are typed [`Position<Inertial>`] for vehicle / sun / body,
+/// and [`Length`] for the radii. Output is [`Ratio`] (illumination
+/// fraction is dimensionless, in `[0, 1]`).
+pub fn compute_shadow_fraction_typed(
+    vehicle_pos: jeod_quantities::aliases::Position<jeod_quantities::frame::Inertial>,
+    sun_pos: jeod_quantities::aliases::Position<jeod_quantities::frame::Inertial>,
+    body_pos: jeod_quantities::aliases::Position<jeod_quantities::frame::Inertial>,
+    body_radius: uom::si::f64::Length,
+    source_radius: uom::si::f64::Length,
+) -> uom::si::f64::Ratio {
+    let raw = compute_shadow_fraction(
+        vehicle_pos.raw_si(),
+        sun_pos.raw_si(),
+        body_pos.raw_si(),
+        body_radius.value,
+        source_radius.value,
+    );
+    uom::si::f64::Ratio::new::<uom::si::ratio::ratio>(raw)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

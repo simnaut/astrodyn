@@ -107,6 +107,115 @@ pub fn compute_ballistic_drag(
     }
 }
 
+/// Typed sibling of [`DragConfig`].
+///
+/// `cd` carries [`uom::si::f64::Ratio`] (dimensionless physical
+/// quantity); `area` carries [`uom::si::f64::Area`] (m²);
+/// `constant_density` (optional) carries [`uom::si::f64::MassDensity`]
+/// (kg/m³).
+#[derive(Debug, Clone, Copy)]
+pub struct DragConfigTyped {
+    pub cd: uom::si::f64::Ratio,
+    pub area: uom::si::f64::Area,
+    pub constant_density: Option<uom::si::f64::MassDensity>,
+}
+
+impl DragConfigTyped {
+    /// Drop the dimensional annotations and emit the untyped storage form.
+    /// Numeric values are preserved exactly (cd dimensionless, area in
+    /// m², density in kg/m³).
+    pub fn to_untyped(&self) -> DragConfig {
+        DragConfig {
+            cd: self.cd.value,
+            area: self.area.value,
+            constant_density: self.constant_density.map(|d| d.value),
+        }
+    }
+
+    /// Wrap an untyped [`DragConfig`] as typed.
+    pub fn from_untyped_unchecked(c: &DragConfig) -> Self {
+        Self {
+            cd: uom::si::f64::Ratio::new::<uom::si::ratio::ratio>(c.cd),
+            area: uom::si::f64::Area::new::<uom::si::area::square_meter>(c.area),
+            constant_density: c.constant_density.map(|d| {
+                uom::si::f64::MassDensity::new::<uom::si::mass_density::kilogram_per_cubic_meter>(d)
+            }),
+        }
+    }
+}
+
+/// Typed sibling of [`compute_ballistic_drag`].
+///
+/// Same numeric kernel — wraps [`DragConfigTyped`] / typed
+/// [`Velocity<Inertial>`] inputs and unwraps to the existing
+/// implementation. Output is [`Force<Inertial>`] (the structural-
+/// frame force from the f64 path is reinterpreted as an inertial-
+/// frame force here for consistency with `TotalForceTyped`'s
+/// integration-frame convention; the actual frame the force is
+/// expressed in matches what the untyped function returns —
+/// callers must rotate themselves if they need a different frame).
+pub fn compute_ballistic_drag_typed(
+    config: &DragConfigTyped,
+    atmos: &AtmosphereState,
+    inertial_velocity: jeod_quantities::aliases::Velocity<jeod_quantities::frame::Inertial>,
+    t_inertial_struct: &DMat3,
+) -> jeod_quantities::aliases::Force<jeod_quantities::frame::Inertial> {
+    let untyped = compute_ballistic_drag(
+        &config.to_untyped(),
+        atmos,
+        inertial_velocity.raw_si(),
+        t_inertial_struct,
+    );
+    jeod_quantities::aliases::Force::<jeod_quantities::frame::Inertial>::from_raw_si(untyped.force)
+}
+
+#[cfg(test)]
+mod typed_tests {
+    use super::*;
+    use uom::si::area::square_meter;
+    use uom::si::f64::{Area, MassDensity, Ratio};
+    use uom::si::mass_density::kilogram_per_cubic_meter;
+    use uom::si::ratio::ratio;
+
+    #[test]
+    fn drag_config_typed_round_trip() {
+        let untyped = DragConfig {
+            cd: 2.2,
+            area: 4.5,
+            constant_density: Some(1e-12),
+        };
+        let typed = DragConfigTyped::from_untyped_unchecked(&untyped);
+        let back = typed.to_untyped();
+        assert_eq!(back.cd, untyped.cd);
+        assert_eq!(back.area, untyped.area);
+        assert_eq!(back.constant_density, untyped.constant_density);
+    }
+
+    #[test]
+    fn drag_config_typed_constant_density_none() {
+        let untyped = DragConfig {
+            cd: 2.0,
+            area: 1.0,
+            constant_density: None,
+        };
+        let typed = DragConfigTyped::from_untyped_unchecked(&untyped);
+        assert!(typed.constant_density.is_none());
+    }
+
+    #[test]
+    fn drag_config_typed_constructed_directly() {
+        let typed = DragConfigTyped {
+            cd: Ratio::new::<ratio>(2.2),
+            area: Area::new::<square_meter>(4.5),
+            constant_density: Some(MassDensity::new::<kilogram_per_cubic_meter>(1e-12)),
+        };
+        let untyped = typed.to_untyped();
+        assert_eq!(untyped.cd, 2.2);
+        assert_eq!(untyped.area, 4.5);
+        assert_eq!(untyped.constant_density, Some(1e-12));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

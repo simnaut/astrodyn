@@ -66,6 +66,27 @@ pub fn compute_gravity_torque(grav_grad: &DMat3, t_parent_this: &DMat3, inertia:
     DVec3::new(tx, ty, tz)
 }
 
+/// Typed sibling of [`compute_gravity_torque`].
+///
+/// Accepts a typed [`InertiaTensor<BodyFrame<V>>`] from Phase 0 and
+/// returns [`Torque<BodyFrame<V>>`]. The gradient tensor and
+/// inertial→body rotation stay as raw `DMat3`: gradients don't have
+/// a typed alias in `jeod_quantities` (a 1/s² 3×3 tensor evaluated
+/// within a single frame), and the rotation matrix comes from
+/// upstream untyped storage. Numeric kernel is the existing untyped
+/// function — bit-identical output for equal numeric inputs.
+pub fn compute_gravity_torque_typed<V: jeod_quantities::frame::Vehicle>(
+    grav_grad: &DMat3,
+    t_parent_this: &DMat3,
+    inertia: jeod_quantities::aliases::InertiaTensor<jeod_quantities::frame::BodyFrame<V>>,
+) -> jeod_quantities::aliases::Torque<jeod_quantities::frame::BodyFrame<V>> {
+    let inertia_dmat = inertia.as_dmat3();
+    let untyped_torque = compute_gravity_torque(grav_grad, t_parent_this, &inertia_dmat);
+    jeod_quantities::aliases::Torque::<jeod_quantities::frame::BodyFrame<V>>::from_raw_si(
+        untyped_torque,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
