@@ -174,7 +174,7 @@ impl Plugin for JeodPlugin {
 /// # Example
 ///
 /// ```ignore
-/// use bevy_jeod::{JeodPlugin, VehicleBuilderBevyExt};
+/// use bevy_jeod::{JeodPlugin, VehicleConfigBevyExt};
 /// use jeod_sim::recipes::{earth, orbital_elements};
 /// use jeod_sim::{GravityControl, VehicleBuilder};
 /// use jeod_quantities::ext::F64Ext;
@@ -192,41 +192,75 @@ impl Plugin for JeodPlugin {
 /// }
 /// ```
 pub trait VehicleConfigBevyExt {
-    /// Spawn a Bevy entity carrying every component implied by this
+    /// Spawn a Bevy entity carrying the core components implied by this
     /// vehicle configuration.
     ///
-    /// `source_entities` resolves each `usize` index in the config's
-    /// `gravity_controls` (and shadow / orbital-elements / geodetic /
-    /// integ-source references) to the corresponding ECS [`Entity`].
+    /// Currently inserts: translational state, optional rotational state,
+    /// optional mass properties, dynamics config, gravity controls,
+    /// integrator type, structural transform, optional external force /
+    /// torque, and (when `compute_gravity_gradient`) a default gravity
+    /// torque component. `source_entities` resolves each `usize` index in
+    /// `gravity_controls` to the corresponding ECS [`Entity`].
+    ///
+    /// Not yet wired (callers must insert these manually): drag, SRP
+    /// (flat-plate / cannonball), shadow body, derived-state requests
+    /// (orbital elements, Euler, LVLH, geodetic, solar beta, earth
+    /// lighting), `integ_source`, and frame switches. These are tracked
+    /// for future expansion of `spawn_bevy`.
+    ///
+    /// Panics if any `GravityControl::source_name` index is out of bounds
+    /// in `source_entities`.
     ///
     /// Returns the spawned vehicle entity ID.
     fn spawn_bevy(self, commands: &mut Commands, source_entities: &[Entity]) -> Entity;
 }
 
+/// Resolve a `usize` source index against the caller-supplied entity
+/// table, panicking with a descriptive error when the index is out of
+/// bounds. Centralizes the error message so every site in
+/// [`VehicleConfigBevyExt::spawn_bevy`] that translates a source index
+/// produces the same actionable diagnostic.
+fn resolve_source_entity(source_entities: &[Entity], idx: usize, what: &str) -> Entity {
+    *source_entities.get(idx).unwrap_or_else(|| {
+        panic!(
+            "spawn_bevy: {what} references source index {idx} but only {len} source \
+             entities were provided. Spawn all gravity sources before calling spawn_bevy.",
+            what = what,
+            idx = idx,
+            len = source_entities.len()
+        )
+    })
+}
+
 impl VehicleConfigBevyExt for jeod_sim::VehicleConfig {
     fn spawn_bevy(self, commands: &mut Commands, source_entities: &[Entity]) -> Entity {
         // Translate `GravityControls<usize>` to `GravityControls<Entity>`
-        // by retagging the source identifier on each control. The
-        // `From<&GravityControl<A>> for GravityControl<B>` analog
-        // doesn't exist, so we build by field-by-field copy.
+        // by retagging the source identifier on each control. Every
+        // other field — including `differential`, `battin_method`,
+        // `relativistic`, etc. — is preserved by struct-update syntax
+        // so future additions to `GravityControl` automatically carry
+        // through.
         let entity_controls = jeod_sim::GravityControls::<Entity> {
             controls: self
                 .gravity_controls
                 .controls
                 .into_iter()
                 .map(|c| {
-                    let mut nc = jeod_sim::GravityControl::new_spherical(
-                        source_entities[c.source_name],
-                        c.gradient,
-                    );
-                    nc.spherical = c.spherical;
-                    nc.degree = c.degree;
-                    nc.order = c.order;
-                    nc.perturbing_only = c.perturbing_only;
-                    nc.gradient_degree = c.gradient_degree;
-                    nc.gradient_order = c.gradient_order;
-                    nc.relativistic = c.relativistic;
-                    nc
+                    let source_entity =
+                        resolve_source_entity(source_entities, c.source_name, "GravityControl");
+                    jeod_sim::GravityControl::<Entity> {
+                        source_name: source_entity,
+                        gradient: c.gradient,
+                        spherical: c.spherical,
+                        degree: c.degree,
+                        order: c.order,
+                        perturbing_only: c.perturbing_only,
+                        gradient_degree: c.gradient_degree,
+                        gradient_order: c.gradient_order,
+                        differential: c.differential,
+                        battin_method: c.battin_method,
+                        relativistic: c.relativistic,
+                    }
                 })
                 .collect(),
         };
