@@ -40,12 +40,10 @@ const LOG_INTERVAL: f64 = 60.0;
 
 /// Compute Earth-centered position and velocity of a body from DE421 ephemeris.
 fn earth_centered_state(body: EphemerisBody, tdb_jd: f64, ephemeris: &Ephemeris) -> (DVec3, DVec3) {
-    // Phase 1 (#103): DVec3 accessor is deprecated; migration is Phase 3+ work.
-    #[allow(deprecated)]
-    let out = ephemeris
-        .get_earth_centered_state(body, tdb_jd)
+    let (pos, vel) = ephemeris
+        .get_earth_centered_state_typed(body, tdb_jd)
         .expect("ephemeris query failed");
-    out
+    (pos.raw_si(), vel.raw_si())
 }
 
 /// Build a `Simulation` with ISS-like orbit, Earth central, Sun + Moon third-body.

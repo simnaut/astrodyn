@@ -137,11 +137,10 @@ fn run_solar_beta_test(
     );
 
     // Sun source — position from DE421 at epoch
-    // Phase 1 (#103): DVec3 accessor is deprecated; migration is Phase 3+ work.
-    #[allow(deprecated)]
-    let (initial_sun, _) = ephemeris
-        .get_earth_centered_state(EphemerisBody::Sun, EPOCH_TDB_JD)
+    let (initial_sun_typed, _) = ephemeris
+        .get_earth_centered_state_typed(EphemerisBody::Sun, EPOCH_TDB_JD)
         .expect("Sun position at epoch");
+    let initial_sun = initial_sun_typed.raw_si();
     let sun = sim.add_source(
         "Sun",
         GravitySourceEntry {

@@ -47,17 +47,20 @@ pub struct LvlhRelativeState {
 
 /// Compute orbital elements from translational state.
 ///
-/// Delegates to [`OrbitalElements::from_cartesian`].
+/// Delegates to [`OrbitalElements::from_cartesian_typed`] via the
+/// `jeod_quantities::ext` lifters; bit-identical to the deprecated f64
+/// path that this wrapper used before Phase 10.
 pub fn compute_orbital_elements(
     mu: f64,
     position: DVec3,
     velocity: DVec3,
 ) -> Result<OrbitalElements, OrbitalError> {
-    // Phase 2 #104: jeod_math::OrbitalElements::from_cartesian is deprecated in
-    // favor of from_cartesian_typed. Migration to the typed entry point is
-    // tracked for Phase 3+ — this call site retains the f64 API for now.
-    #[allow(deprecated)]
-    OrbitalElements::from_cartesian(mu, position, velocity)
+    use jeod_quantities::ext::{F64Ext, Vec3Ext};
+    OrbitalElements::from_cartesian_typed(
+        F64Ext::m3_per_s2(mu),
+        position.m_at::<Inertial>(),
+        velocity.m_per_s_at::<Inertial>(),
+    )
 }
 
 /// Compute Euler angles from body attitude.

@@ -64,16 +64,15 @@ impl OrbitalElements {
     /// Compute classical orbital elements from Cartesian position and velocity
     /// in an inertial frame.
     ///
+    /// Internal numeric kernel shared by [`Self::from_cartesian_typed`].
+    /// Kept module-private after the Phase 10 purge of the bare-`f64`
+    /// public surface — new callers should use the typed sibling.
+    ///
     /// # Arguments
     /// * `mu`  - gravitational parameter (units consistent with pos/vel, e.g. m^3/s^2)
     /// * `pos` - position vector
     /// * `vel` - velocity vector
-    #[doc(hidden)]
-    #[deprecated(
-        since = "0.2.0-phase-3",
-        note = "use from_cartesian_typed; f64 variant removed in Phase 10"
-    )]
-    pub fn from_cartesian(
+    pub(crate) fn from_cartesian_impl(
         mu: f64,
         pos: DVec3,
         vel: DVec3,
@@ -300,9 +299,8 @@ impl OrbitalElements {
         pos: jeod_quantities::aliases::Position<jeod_quantities::frame::Inertial>,
         vel: jeod_quantities::aliases::Velocity<jeod_quantities::frame::Inertial>,
     ) -> Result<OrbitalElements, OrbitalError> {
-        // Extract SI base values and delegate to the existing f64 implementation.
-        #[allow(deprecated)]
-        Self::from_cartesian(mu.value, pos.raw_si(), vel.raw_si())
+        // Extract SI base values and delegate to the shared kernel.
+        Self::from_cartesian_impl(mu.value, pos.raw_si(), vel.raw_si())
     }
 
     // ----------------------------------------------------------------
@@ -560,10 +558,24 @@ pub fn kep_eqtn_b(m: f64) -> f64 {
 // ====================================================================
 
 #[cfg(test)]
-#[allow(deprecated)]
 mod tests {
     use super::*;
     use crate::types::DVec3;
+
+    /// Compact test-only wrapper preserving the previous f64 call shape.
+    /// Delegates straight to the shared kernel — the bare-`f64` public
+    /// `from_cartesian` was removed in Phase 10; tests still need to
+    /// exercise the f64 entry points to lock down regressions before the
+    /// typed API matured.
+    impl OrbitalElements {
+        pub(super) fn from_cartesian(
+            mu: f64,
+            pos: DVec3,
+            vel: DVec3,
+        ) -> Result<OrbitalElements, OrbitalError> {
+            Self::from_cartesian_impl(mu, pos, vel)
+        }
+    }
 
     const MU_EARTH: f64 = 398_600.441_50; // km^3/s^2, JEOD earth_GGM05C.cc:40
 

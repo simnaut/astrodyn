@@ -367,56 +367,9 @@ fn compute_euler_angles_from_matrix_impl(trans: &DMat3, sequence: EulerSequence)
 }
 
 // ---------------------------------------------------------------------------
-// Public API — bare-`f64` surface (deprecated, removed in Phase 10 of #101).
-// ---------------------------------------------------------------------------
-
-/// Build a left-transformation quaternion from Euler angles (radians).
-///
-/// Port of `euler_angles.cc:121-153`. Constructs three simple quaternions
-/// (one per rotation axis) and multiplies in reverse order:
-/// `result = q[2] * q[1] * q[0]`, then normalizes.
-///
-/// **Deprecated:** use [`compute_quaternion_from_euler_angles_typed`], which
-/// accepts `uom` `Angle`s and returns a [`NormalizedQuat`] witness.
-#[doc(hidden)]
-#[deprecated(
-    since = "0.2.0-phase-3",
-    note = "use compute_quaternion_from_euler_angles_typed; f64 variant removed in Phase 10"
-)]
-pub fn compute_quaternion_from_euler_angles(angles: [f64; 3], sequence: EulerSequence) -> JeodQuat {
-    compute_quaternion_from_euler_angles_impl(angles, sequence)
-}
-
-/// Build a left-transformation matrix from Euler angles (radians).
-///
-/// Port of `euler_angles.cc:164-218`. Constructs three elementary rotation
-/// matrices and multiplies in reverse order: `result = m[2] * m[1] * m[0]`.
-///
-/// **Deprecated:** use [`compute_matrix_from_euler_angles_typed`], which
-/// accepts `uom` `Angle`s.
-#[doc(hidden)]
-#[deprecated(
-    since = "0.2.0-phase-3",
-    note = "use compute_matrix_from_euler_angles_typed; f64 variant removed in Phase 10"
-)]
-pub fn compute_matrix_from_euler_angles(angles: [f64; 3], sequence: EulerSequence) -> DMat3 {
-    compute_matrix_from_euler_angles_impl(angles, sequence)
-}
-
-/// Extract Euler angles (radians) from a left-transformation matrix.
-///
-/// Port of `euler_angles.cc:297-464`. Returns `[phi, theta, psi]` in radians.
-///
-/// **Deprecated:** use [`compute_euler_angles_from_matrix_typed`], which
-/// returns `uom` `Angle`s.
-#[doc(hidden)]
-#[deprecated(
-    since = "0.2.0-phase-3",
-    note = "use compute_euler_angles_from_matrix_typed; f64 variant removed in Phase 10"
-)]
-pub fn compute_euler_angles_from_matrix(trans: &DMat3, sequence: EulerSequence) -> [f64; 3] {
-    compute_euler_angles_from_matrix_impl(trans, sequence)
-}
+// Public API — typed-only surface; bare-`f64` variants were removed in
+// Phase 10 of #101. The underlying `_impl` kernels remain module-private
+// for the typed siblings and the in-module test suite.
 
 // ---------------------------------------------------------------------------
 // Public API — typed surface (uom `Angle`s + `NormalizedQuat` witness).
@@ -503,15 +456,15 @@ pub fn quaternion_to_matrix_normalized(q: NormalizedQuat<ScalarFirst, LeftTransf
 
 #[cfg(test)]
 mod tests {
-    // Existing tests intentionally exercise the bare-`f64` public surface so
-    // the deprecated and typed entry points stay covered together through
-    // the Phase 10 removal.
-    #![allow(deprecated)]
-
     use super::*;
     use crate::test_utils::{approx_eq_f64, approx_eq_mat3};
     use glam::DVec3;
     use uom::si::angle::radian;
+    // Test aliases so the existing test bodies keep their compact f64 call
+    // sites after the Phase 10 purge of the bare-`f64` public surface.
+    use compute_euler_angles_from_matrix_impl as compute_euler_angles_from_matrix;
+    use compute_matrix_from_euler_angles_impl as compute_matrix_from_euler_angles;
+    use compute_quaternion_from_euler_angles_impl as compute_quaternion_from_euler_angles;
 
     const TOL: f64 = 1e-14;
 

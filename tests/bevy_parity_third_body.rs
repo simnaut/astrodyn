@@ -450,11 +450,10 @@ fn tier3_bevy_mars_dawn() {
     };
 
     let eph_init = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
-    // Phase 1 (#103): DVec3 accessor is deprecated; migration is Phase 3+ work.
-    #[allow(deprecated)]
-    let (sun_rel_mars, _) = eph_init
-        .get_state(EphemerisBody::Sun, EphemerisBody::Mars, J2000_JD)
+    let (sun_rel_mars_typed, _) = eph_init
+        .get_state_typed(EphemerisBody::Sun, EphemerisBody::Mars, J2000_JD)
         .expect("Sun wrt Mars at J2000");
+    let sun_rel_mars = sun_rel_mars_typed.raw_si();
 
     let eph_bevy = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
     let mut app = new_bevy_app(DT);

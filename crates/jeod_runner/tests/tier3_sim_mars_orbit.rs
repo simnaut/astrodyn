@@ -101,15 +101,14 @@ fn tier3_simulation_mars_dawn() {
     let bsp_path = test_data_path("de421.bsp");
     let ephemeris = jeod_sim::Ephemeris::from_bsp(&bsp_path).expect("load DE421");
     let epoch_tdb_jd = time.tdb_julian_date();
-    // Phase 1 (#103): DVec3 accessor is deprecated; migration is Phase 3+ work.
-    #[allow(deprecated)]
-    let (sun_pos_from_mars, _sun_vel) = ephemeris
-        .get_state(
+    let (sun_pos_typed, _sun_vel) = ephemeris
+        .get_state_typed(
             jeod_sim::EphemerisBody::Sun,
             jeod_sim::EphemerisBody::Mars,
             epoch_tdb_jd,
         )
         .expect("Sun-Mars state from DE421");
+    let sun_pos_from_mars = sun_pos_typed.raw_si();
 
     // JEOD SIM_Mars uses RK4 at 1 Hz (DYNAMICS = 1.0 in S_define).
     // Error is insensitive to dt (dt=1 and dt=10 give same result); use 10s for speed.

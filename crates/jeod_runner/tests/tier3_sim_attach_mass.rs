@@ -26,14 +26,23 @@
 //! `crates/jeod_dynamics/tests/tier3_mass_attach_detach.rs` with direct
 //! JEOD cross-validation.
 
-// `compute_matrix_from_euler_angles` is deprecated in favor of its typed
-// sibling; this Tier 3 test is kept on the bare-`f64` surface until the
-// downstream mass-attach fixtures migrate to `uom` `Angle`s.
-#![allow(deprecated)]
-
 use glam::{DMat3, DVec3};
 use jeod_dynamics::{MassBodyId, MassProperties, MassTree};
-use jeod_math::euler_angles::{compute_matrix_from_euler_angles, EulerSequence};
+use jeod_math::euler_angles::{compute_matrix_from_euler_angles_typed, EulerSequence};
+use uom::si::angle::radian;
+use uom::si::f64::Angle;
+
+/// Compact f64 wrapper that mirrors the pre-Phase-10 bare-`f64` surface.
+/// Lifts the radian inputs into `uom` `Angle`s and forwards to the typed
+/// kernel — bit-identical numerics.
+fn compute_matrix_from_euler_angles(angles: [f64; 3], sequence: EulerSequence) -> DMat3 {
+    let typed = [
+        Angle::new::<radian>(angles[0]),
+        Angle::new::<radian>(angles[1]),
+        Angle::new::<radian>(angles[2]),
+    ];
+    compute_matrix_from_euler_angles_typed(typed, sequence)
+}
 use jeod_test_data::apollo_mass_tree::{parse_print_tree, PrintedBody, PrintedTree};
 use jeod_test_data::crossval::CrossvalReport;
 

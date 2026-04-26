@@ -36,6 +36,26 @@ pub struct GeodeticState {
     pub altitude: f64,  // m, height above reference ellipsoid
 }
 
+impl GeodeticState {
+    /// Convert raw planet-fixed Cartesian coordinates to geodetic state.
+    ///
+    /// Planet-agnostic entry point that retains the f64 surface for
+    /// callers (e.g., NED initializers) where the planet phantom is not
+    /// available at the call site. Bit-identical numerics to
+    /// [`cartesian_to_geodetic_typed`].
+    pub fn from_planet_fixed(cart: DVec3, r_eq: f64, r_pol: f64) -> Self {
+        cartesian_to_geodetic_impl(cart, r_eq, r_pol)
+    }
+
+    /// Convert this geodetic state back to raw planet-fixed Cartesian.
+    ///
+    /// Planet-agnostic entry point with the same usage pattern as
+    /// [`Self::from_planet_fixed`].
+    pub fn to_planet_fixed(&self, r_eq: f64, r_pol: f64) -> DVec3 {
+        geodetic_to_cartesian_impl(self, r_eq, r_pol)
+    }
+}
+
 /// Typed geodetic coordinates on a reference ellipsoid.
 ///
 /// Companion to [`GeodeticState`] carrying `uom` dimensioned scalars so
@@ -127,16 +147,15 @@ pub fn spherical_to_cartesian(sph: &SphericalState, r_eq: f64) -> DVec3 {
 ///
 /// Uses Borkowski's iterative method for the latitude/altitude computation.
 ///
+/// Internal numeric kernel shared by [`cartesian_to_geodetic_typed`]; new
+/// callers should use the typed sibling. Kept module-private after the
+/// Phase 10 purge of the bare-`f64` public surface.
+///
 /// # Arguments
 /// * `cart` - Cartesian position in PCPF frame (m)
 /// * `r_eq` - Equatorial radius (m)
 /// * `r_pol` - Polar radius (m)
-#[doc(hidden)]
-#[deprecated(
-    since = "0.2.0-phase-3",
-    note = "use cartesian_to_geodetic_typed; f64 variant removed in Phase 10"
-)]
-pub fn cartesian_to_geodetic(cart: DVec3, r_eq: f64, r_pol: f64) -> GeodeticState {
+pub(crate) fn cartesian_to_geodetic_impl(cart: DVec3, r_eq: f64, r_pol: f64) -> GeodeticState {
     // JEOD_INV: PF.02 — input must be NaN/Inf free
     // JEOD planet_fixed_posn.cc:155-162: check for NaN/Inf before proceeding.
     assert!(
@@ -238,16 +257,15 @@ fn get_elliptic_parameters(r: f64, z: f64, r_eq: f64, r_pol: f64) -> (f64, f64) 
 ///
 /// Port of JEOD `PlanetFixedPosition::ellip_to_cart()`.
 ///
+/// Internal numeric kernel shared by [`geodetic_to_cartesian_typed`]; new
+/// callers should use the typed sibling. Kept module-private after the
+/// Phase 10 purge of the bare-`f64` public surface.
+///
 /// # Arguments
 /// * `geo` - Geodetic coordinates (latitude rad, longitude rad, altitude m)
 /// * `r_eq` - Equatorial radius (m)
 /// * `r_pol` - Polar radius (m)
-#[doc(hidden)]
-#[deprecated(
-    since = "0.2.0-phase-3",
-    note = "use geodetic_to_cartesian_typed; f64 variant removed in Phase 10"
-)]
-pub fn geodetic_to_cartesian(geo: &GeodeticState, r_eq: f64, r_pol: f64) -> DVec3 {
+pub(crate) fn geodetic_to_cartesian_impl(geo: &GeodeticState, r_eq: f64, r_pol: f64) -> DVec3 {
     let sin_lat = geo.latitude.sin();
     let cos_lat = geo.latitude.cos();
 
@@ -283,8 +301,7 @@ pub fn cartesian_to_geodetic_typed<P: Planet>(
     r_eq: Length,
     r_pol: Length,
 ) -> GeodeticStateTyped {
-    #[allow(deprecated)]
-    let raw = cartesian_to_geodetic(pos.raw_si(), r_eq.get::<meter>(), r_pol.get::<meter>());
+    let raw = cartesian_to_geodetic_impl(pos.raw_si(), r_eq.get::<meter>(), r_pol.get::<meter>());
     GeodeticStateTyped::from_raw(raw)
 }
 
@@ -298,18 +315,20 @@ pub fn geodetic_to_cartesian_typed<P: Planet>(
     r_pol: Length,
 ) -> Position<PlanetFixed<P>> {
     let raw_state = state.into_raw();
-    #[allow(deprecated)]
-    let cart = geodetic_to_cartesian(&raw_state, r_eq.get::<meter>(), r_pol.get::<meter>());
+    let cart = geodetic_to_cartesian_impl(&raw_state, r_eq.get::<meter>(), r_pol.get::<meter>());
     Qty3::from_raw_si(cart)
 }
 
 #[cfg(test)]
-#[allow(deprecated)]
 mod tests {
     use super::*;
     use jeod_quantities::ext::F64Ext;
     use jeod_quantities::frame::Earth;
     use std::f64::consts::PI;
+    // Test aliases so the existing f64 test bodies keep their compact
+    // call sites after the Phase 10 purge of the bare-`f64` public surface.
+    use cartesian_to_geodetic_impl as cartesian_to_geodetic;
+    use geodetic_to_cartesian_impl as geodetic_to_cartesian;
 
     const EARTH_R_EQ: f64 = 6_378_137.0; // WGS84 equatorial radius (m)
     const EARTH_R_POL: f64 = EARTH_R_EQ * (1.0 - 1.0 / 298.257_223_563); // JEOD: r_eq * (1 - flat_coeff)

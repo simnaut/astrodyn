@@ -57,14 +57,22 @@ fn j2_nodal_regression_rate() {
         state = rk4_translational_step(&state, accel_fn, dt);
     }
 
-    // Compute RAAN at start and end
-    // Phase 2 #104: from_cartesian is deprecated; migration deferred to Phase 3+.
-    #[allow(deprecated)]
-    let elems_start =
-        OrbitalElements::from_cartesian(mu, state_initial.position, state_initial.velocity)
-            .unwrap();
-    #[allow(deprecated)]
-    let elems_end = OrbitalElements::from_cartesian(mu, state.position, state.velocity).unwrap();
+    // Compute RAAN at start and end via the typed sibling.
+    use jeod_quantities::ext::{F64Ext, Vec3Ext};
+    use jeod_quantities::frame::Inertial;
+    let mu_typed = F64Ext::m3_per_s2(mu);
+    let elems_start = OrbitalElements::from_cartesian_typed(
+        mu_typed,
+        state_initial.position.m_at::<Inertial>(),
+        state_initial.velocity.m_per_s_at::<Inertial>(),
+    )
+    .unwrap();
+    let elems_end = OrbitalElements::from_cartesian_typed(
+        mu_typed,
+        state.position.m_at::<Inertial>(),
+        state.velocity.m_per_s_at::<Inertial>(),
+    )
+    .unwrap();
 
     let raan_start = elems_start.long_asc_node;
     let raan_end = elems_end.long_asc_node;

@@ -72,12 +72,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Earth and Sun as 3rd-body point-mass perturbations (positions
     // overwritten each step by the ephemeris stage).
-    #[allow(deprecated)]
-    let (earth_pos, _) =
-        ephemeris.get_state(EphemerisBody::Earth, EphemerisBody::Moon, epoch_tdb_jd)?;
-    #[allow(deprecated)]
-    let (sun_pos, _) =
-        ephemeris.get_state(EphemerisBody::Sun, EphemerisBody::Moon, epoch_tdb_jd)?;
+    let (earth_pos_typed, _) =
+        ephemeris.get_state_typed(EphemerisBody::Earth, EphemerisBody::Moon, epoch_tdb_jd)?;
+    let earth_pos = earth_pos_typed.raw_si();
+    let (sun_pos_typed, _) =
+        ephemeris.get_state_typed(EphemerisBody::Sun, EphemerisBody::Moon, epoch_tdb_jd)?;
+    let sun_pos = sun_pos_typed.raw_si();
 
     let mut sb = SimulationBuilder::new(time, DT);
     let moon = sb.add_source("Moon", moon_source);
