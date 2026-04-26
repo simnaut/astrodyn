@@ -328,7 +328,7 @@ fn rnp_component_comparison() {
         max_theta_gast_err,
     );
 
-    let mut report = CrossvalReport::compute("tier3_rnp_component_comparison", &[], &[]);
+    let mut report = CrossvalReport::compute("rnp_component_comparison", &[], &[]);
     report.add_extra("precession", max_p_err, "");
     assert!(max_p_err < 2.05e-18, "precession");
     report.add_extra("nutation", max_n_err, "");
