@@ -56,6 +56,23 @@ planet_marker!(Moon, "Moon");
 planet_marker!(Sun, "Sun");
 planet_marker!(Mars, "Mars");
 
+/// Phantom marker for "this entity's own planet" — used by ECS adapters
+/// whose per-entity components carry `PlanetFixed<P>` phantoms but whose
+/// planet identity is determined at runtime by the entity itself.
+///
+/// Planet-side analog of [`SelfRef`] (which serves the same role for
+/// `Vehicle`-parameterized frames). Use when wrapping a per-entity
+/// rotation Component such as `PlanetFixedRotationC` whose Bevy entity
+/// already carries a `PlanetC` discriminator — the typed `FrameTransform`
+/// inside the Component encodes the *direction* (Inertial → PlanetFixed)
+/// while the planet identity stays at the entity level.
+#[derive(Debug, Clone, Copy)]
+pub struct SelfPlanet;
+impl Sealed for SelfPlanet {}
+impl Planet for SelfPlanet {
+    const NAME: &'static str = "SelfPlanet";
+}
+
 // --- Frame markers ------------------------------------------------------------
 
 /// Quasi-inertial (ICRF / J2000 Earth-centered inertial) frame.
