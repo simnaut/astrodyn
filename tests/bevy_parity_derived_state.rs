@@ -143,7 +143,7 @@ fn tier3_bevy_derived_states() {
         assert_bits_eq(
             "Bevy vs Sim Euler",
             &format!("angle[{i}]"),
-            bevy_euler[i],
+            bevy_euler[i].value,
             sim_euler[i],
         );
     }
@@ -398,7 +398,7 @@ fn tier3_bevy_eccentric_derived_states() {
         assert_bits_eq(
             "Bevy vs Sim Euler (ecc)",
             &format!("angle[{i}]"),
-            bevy_euler[i],
+            bevy_euler[i].value,
             sim_euler[i],
         );
     }
@@ -710,7 +710,7 @@ fn run_euler_parity(label: &str, trans: TranslationalState, sequence: EulerSeque
         assert_bits_eq(
             &format!("Bevy vs Sim Euler ({label})"),
             &format!("angle[{i}]"),
-            bevy_euler[i],
+            bevy_euler[i].value,
             sim_euler[i],
         );
     }
