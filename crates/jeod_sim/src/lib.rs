@@ -43,6 +43,7 @@ pub mod integration;
 pub mod interactions;
 pub mod pipeline;
 pub mod planet_config;
+pub mod recipes;
 pub mod rotation_model;
 pub mod simulation_builder;
 pub mod sources;
