@@ -178,8 +178,8 @@ pub use uom::si::f64::{Angle, Ratio};
 /// Convenience constructor — wrap a raw f64 (radians) as a typed
 /// [`Angle`].
 ///
-/// Mirrors `jeod_quantities::ext::F64Ext::radians(f)` but exists at
-/// the `jeod_sim` boundary so ECS adapters don't need to import
+/// Mirrors `jeod_quantities::ext::F64Ext::rad(f)` but exists at the
+/// `jeod_sim` boundary so ECS adapters don't need to import
 /// `jeod_quantities` (or `uom::si::angle::radian`) directly.
 #[inline]
 pub fn radians(value: f64) -> Angle {

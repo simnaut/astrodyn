@@ -682,13 +682,15 @@ pub fn aero_drag_system(
     for (drag_config, atmos, state, rot, struct_xform, mut aero_force) in &mut query {
         let t_struct_body = struct_xform.map_or(glam::DMat3::IDENTITY, |s| s.0);
 
-        // Typed sibling: lift `state.velocity` and `drag_config` into
-        // `Velocity<Inertial>` / `DragConfigTyped`. Result carries
-        // `StructuralFrame<SelfRef>` phantoms, which the structural-frame
-        // `AerodynamicForceC` unwraps via `.raw_si()` for storage.
-        let drag_typed = jeod_sim::DragConfigTyped::from_untyped_unchecked(&drag_config.0);
+        // `DragConfigC` already wraps `DragConfigTyped` — the dimensional
+        // lift happened once at insertion (`DragConfigC::from_untyped`),
+        // so the system reads the typed value directly with no per-tick
+        // unchecked conversion. `Velocity<Inertial>` is lifted here at
+        // the kernel boundary; the result carries `StructuralFrame<SelfRef>`
+        // phantoms, which the structural-frame `AerodynamicForceC` unwraps
+        // via `.raw_si()` for storage.
         let result = jeod_sim::compute_drag_typed::<SelfRef>(
-            &drag_typed,
+            &drag_config.0,
             atmos,
             Velocity::<Inertial>::from_raw_si(state.velocity),
             Some(&rot.0),

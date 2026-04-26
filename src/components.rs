@@ -1,9 +1,9 @@
 use bevy::prelude::*;
 use glam::DVec3;
 use jeod_sim::{
-    Angle, BodyFrame, DragConfig, DynamicsConfig, FrameDerivatives, GravityAcceleration,
-    GravityControls, GravitySource, Inertial, MassProperties, PlanetShape, Position, Ratio,
-    RotationalState, SelfRef, Torque, TotalForce, TranslationalState, Velocity,
+    Angle, BodyFrame, DragConfig, DragConfigTyped, DynamicsConfig, FrameDerivatives,
+    GravityAcceleration, GravityControls, GravitySource, Inertial, MassProperties, PlanetShape,
+    Position, Ratio, RotationalState, SelfRef, Torque, TotalForce, TranslationalState, Velocity,
 };
 
 // ── Dynamics ──
@@ -173,8 +173,14 @@ pub struct TidalConfigC(pub jeod_sim::TidalConfig);
 /// integration systems. Defaults to zero (no tidal effect).
 ///
 /// Wrapped as a [`Ratio`] (dimensionless) so the value carries unit
-/// metadata at the type level — matching `compute_delta_c20_typed`'s
-/// return type.
+/// metadata at the type level for type discipline at the Bevy boundary.
+/// The current pipeline still stores [`jeod_sim::TidalConfig`] (untyped)
+/// in [`TidalConfigC`] and `tidal_update_system` calls the untyped
+/// `compute_delta_c20`, then wraps the `f64` result via
+/// [`jeod_sim::dimensionless`] for storage here. Migrating
+/// [`TidalConfigC`] to wrap [`jeod_sim::TidalConfigTyped`] (so the
+/// system can call [`jeod_sim::compute_delta_c20_typed`] directly) is
+/// tracked as Phase 10/11 work in #112.
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
 pub struct TidalDeltaC20C(pub Ratio);
 
@@ -182,10 +188,40 @@ pub struct TidalDeltaC20C(pub Ratio);
 
 /// Vehicle drag configuration (Cd, area).
 ///
+/// Wraps [`DragConfigTyped`] (typed sibling of [`DragConfig`]) so the
+/// untyped → typed conversion happens **once at insertion**, not per tick
+/// in `aero_drag_system`. Convenience constructors `from_untyped` /
+/// `new` are provided for callers building from raw `f64` fields.
+///
 /// Auto-inserts [`AtmosphericStateC`] and [`AerodynamicForceC`] when added.
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut)]
 #[require(AtmosphericStateC, AerodynamicForceC)]
-pub struct DragConfigC(pub DragConfig);
+pub struct DragConfigC(pub DragConfigTyped);
+
+impl DragConfigC {
+    /// Wrap an untyped [`DragConfig`] as a typed Bevy component.
+    ///
+    /// The dimensional lift (`f64` → `Ratio`/`Area`/`MassDensity`) happens
+    /// here at insertion. After that, the wrapped value is already typed
+    /// for the lifetime of the component, eliminating per-tick
+    /// `from_untyped_unchecked` calls in `aero_drag_system`.
+    #[inline]
+    pub fn from_untyped(config: &DragConfig) -> Self {
+        Self(DragConfigTyped::from_untyped_unchecked(config))
+    }
+}
+
+impl From<DragConfig> for DragConfigC {
+    fn from(config: DragConfig) -> Self {
+        Self::from_untyped(&config)
+    }
+}
+
+impl From<DragConfigTyped> for DragConfigC {
+    fn from(config: DragConfigTyped) -> Self {
+        Self(config)
+    }
+}
 
 /// Flat-plate SRP configuration with thermal state.
 ///

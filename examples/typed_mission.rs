@@ -22,7 +22,6 @@ use bevy_jeod::{
 };
 use jeod_sim::recipes::{constants, earth, orbital_elements, vehicle};
 use jeod_sim::{F64Ext, GravityControl, VehicleBuilder};
-use uom::si::length::meter;
 
 #[derive(Resource)]
 struct StepCounter(usize);
@@ -84,14 +83,11 @@ fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
     println!("Bevy JEOD typed-mission example");
     println!("===============================");
     println!("Spawned satellite via VehicleBuilder + spawn_bevy.");
-    println!(
-        "Earth radius: {:.0} m",
-        constants::r_eq_earth().get::<meter>()
-    );
-    println!(
-        "Vehicle mass: {:.0} kg",
-        vehicle::iss_mass().get::<uom::si::mass::kilogram>()
-    );
+    // `Length::value` and `Mass::value` are SI base units (m, kg) by uom
+    // convention — equivalent to `.get::<meter>()` / `.get::<kilogram>()`
+    // but without importing uom unit types directly.
+    println!("Earth radius: {:.0} m", constants::r_eq_earth().value);
+    println!("Vehicle mass: {:.0} kg", vehicle::iss_mass().value);
 }
 
 fn log_orbit(
@@ -134,10 +130,12 @@ fn log_orbit(
 // `F64Ext` is brought in scope above so downstream calls like
 // `1.5.ms()`, `42.0.kg()` work for mission code that wants typed
 // constructions. The example itself uses recipe presets, but the
-// import demonstrates the available surface.
+// import demonstrates the available surface — mission authors should
+// consume units via this facade instead of importing `uom::si::*`
+// directly.
 #[allow(dead_code)]
 fn _showcase_f64_ext() {
-    let _: uom::si::f64::Mass = 420_000.0.kg();
-    let _: uom::si::f64::Length = 6_378_137.0.m();
-    let _: uom::si::f64::Angle = 51.6_f64.deg();
+    let _mass = 420_000.0.kg();
+    let _radius = 6_378_137.0.m();
+    let _inclination = 51.6_f64.deg();
 }

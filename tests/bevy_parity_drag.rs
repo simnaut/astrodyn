@@ -70,7 +70,7 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            DragConfigC(drag_config),
+            DragConfigC::from_untyped(&drag_config),
         ))
         .id();
 
@@ -158,7 +158,7 @@ fn tier3_bevy_constant_density_drag_sixdof() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            DragConfigC(drag_config),
+            DragConfigC::from_untyped(&drag_config),
         ))
         .id();
 
@@ -252,7 +252,7 @@ fn tier3_bevy_met_atmosphere_drag_sixdof() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            DragConfigC(drag_config),
+            DragConfigC::from_untyped(&drag_config),
         ))
         .id();
 
@@ -348,7 +348,7 @@ fn tier3_bevy_met_run5a() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            DragConfigC(DragConfig {
+            DragConfigC::from_untyped(&DragConfig {
                 cd: 2.2,
                 area: 1000.0,
                 constant_density: None,
@@ -456,7 +456,7 @@ fn tier3_bevy_drag_run6b() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            DragConfigC(drag_config),
+            DragConfigC::from_untyped(&drag_config),
         ))
         .id();
 
