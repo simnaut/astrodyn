@@ -43,9 +43,13 @@ pub mod integration;
 pub mod interactions;
 pub mod pipeline;
 pub mod planet_config;
+pub mod recipes;
 pub mod rotation_model;
+pub mod simulation_builder;
+pub mod sources;
 pub mod validation;
 pub mod vehicle_builder;
+pub mod vehicle_config;
 
 // ── Orchestration functions ──
 pub use atmosphere::{
@@ -77,9 +81,15 @@ pub use jeod_dynamics::{
 pub use pipeline::{PipelineStage, PIPELINE_ORDER};
 pub use planet_config::{PlanetConfig, EARTH, MARS, MOON, SUN};
 pub use rotation_model::RotationModel;
+pub use simulation_builder::{MassTreeAttachment, SimulationBuilder};
+pub use sources::GravitySourceEntry;
 pub use validation::{validate_body, ValidationError};
 pub use vehicle_builder::{
-    BuildState, HasIntegrator, NeedsMass, NeedsState, Ready, TypedVehicleConfig, VehicleBuilder,
+    BuildState, HasIntegrator, NeedsMass, NeedsState, Ready, VehicleBuilder,
+};
+pub use vehicle_config::{
+    DerivedStateConfig, EarthLightingConfig, FrameSwitchConfig, GeodeticConfig, ShadowBody,
+    SrpModel, SwitchSense, VehicleConfig,
 };
 
 // ── Re-exports from jeod_* crates ──

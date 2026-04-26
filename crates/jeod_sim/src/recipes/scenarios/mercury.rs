@@ -1,0 +1,42 @@
+//! Mercury / GR-perihelion-advance scenario.
+//!
+//! ```
+//! use jeod_sim::recipes::scenarios;
+//! let sb = scenarios::mercury_relativistic();
+//! assert_eq!(sb.bodies.len(), 1);
+//! ```
+
+use glam::DVec3;
+use jeod_gravity::GravityControl;
+
+use crate::recipes::{epoch, sun};
+use crate::vehicle_builder::VehicleBuilder;
+use crate::SimulationBuilder;
+
+/// Mercury orbit around the Sun with GR (Schwarzschild) corrections
+/// enabled — used to measure perihelion advance over many orbits.
+///
+/// 100 s step. Initial state matches Mercury at perihelion.
+pub fn mercury_relativistic() -> SimulationBuilder {
+    let mut sb = SimulationBuilder::new(epoch::j2000(), 100.0);
+    let sun_idx = sb.add_source("Sun", sun::point_mass());
+
+    // Mercury at perihelion (~46 Gm from Sun, ~58.98 km/s).
+    use jeod_dynamics::TranslationalState;
+    let trans = TranslationalState {
+        position: DVec3::new(46.0e9, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 58_980.0, 0.0),
+    };
+
+    let mut ctrl = GravityControl::new_spherical(sun_idx, false);
+    ctrl.relativistic = true;
+
+    let vehicle = VehicleBuilder::new()
+        .with_state(trans)
+        .three_dof_point_mass(uom::si::f64::Mass::new::<uom::si::mass::kilogram>(3.301e23))
+        .rk4()
+        .gravity(ctrl)
+        .build();
+    sb.add_body(vehicle);
+    sb
+}

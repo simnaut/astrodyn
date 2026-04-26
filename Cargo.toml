@@ -13,6 +13,12 @@ glam = { workspace = true }
 jeod_test_data = { path = "crates/jeod_test_data" }
 jeod_sim = { path = "crates/jeod_sim" }
 jeod_runner = { path = "crates/jeod_runner" }
+# Examples consume `recipes::orbital_elements` and convert into the
+# Bevy components, which requires the typed orbital-init helper plus
+# uom unit constructors.
+jeod_dynamics = { path = "crates/jeod_dynamics" }
+jeod_quantities = { path = "crates/jeod_quantities" }
+uom = { workspace = true }
 
 [workspace]
 resolver = "2"

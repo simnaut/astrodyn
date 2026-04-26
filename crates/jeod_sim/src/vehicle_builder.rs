@@ -5,14 +5,12 @@
 //! that "forgot to set translational state" or "forgot to choose an
 //! integrator" become **compile errors** instead of runtime panics.
 //!
-//! The output of [`VehicleBuilder::build`] is a [`TypedVehicleConfig`],
-//! a typed companion of `jeod_runner::VehicleConfig`. Phase 6 of #101
-//! will add the conversion from [`TypedVehicleConfig`] into the
-//! `jeod_runner` simulation pipeline; until then the typestate builder
-//! exists alongside the existing runtime `jeod_runner::VehicleBuilder`,
-//! which remains the way to construct a `jeod_runner::Simulation`
-//! (no rustdoc intra-link — `jeod_sim` does not depend on
-//! `jeod_runner`, so the path can't be resolved here).
+//! The output of [`VehicleBuilder::build`] is a [`VehicleConfig`] —
+//! the same descriptor that `SimulationBuilder::add_body` accepts and
+//! that `Simulation::body` carries through the runner's step loop.
+//! Phase 6 of #101 consolidated the runtime fluent
+//! `jeod_runner::VehicleBuilder` into this typestate builder, so every
+//! method that builder offered is available here in the `Ready` impl.
 //!
 //! # Compile-time gating
 //!
@@ -40,19 +38,26 @@
 
 use core::marker::PhantomData;
 
+use glam::{DMat3, DVec3};
+
 use jeod_dynamics::body_init::init_from_orbital_elements_typed;
 use jeod_dynamics::state::TranslationalStateTyped;
 use jeod_dynamics::{
     GaussJacksonConfig, IntegratorType, MassProperties, RotationalState, TranslationalState,
 };
 use jeod_gravity::{GravityControl, GravityControls};
-use jeod_interactions::DragConfigTyped;
-use jeod_math::OrbitalElements;
+use jeod_interactions::DragConfig;
+use jeod_math::{EulerSequence, OrbitalElements};
 use jeod_quantities::dims::GravParam;
 use jeod_quantities::frame::Inertial;
 use uom::si::f64::{Angle, Length, Mass};
 
 use crate::interactions::FlatPlateState;
+use crate::planet_config::PlanetConfig;
+use crate::vehicle_config::{
+    DerivedStateConfig, EarthLightingConfig, FrameSwitchConfig, GeodeticConfig, ShadowBody,
+    SrpModel, VehicleConfig,
+};
 
 mod sealed {
     pub trait Sealed {}
@@ -94,38 +99,6 @@ impl BuildState for NeedsMass {}
 impl BuildState for HasIntegrator {}
 impl BuildState for Ready {}
 
-/// Typed companion of `jeod_runner::VehicleConfig` produced by
-/// [`VehicleBuilder::build`].
-///
-/// Phase 5 deliverable. Phase 6 (#108) will provide the conversion
-/// into the existing `jeod_runner` pipeline. The fields below cover
-/// only the typestate-tracked configuration; mission features that
-/// stayed in `jeod_runner` (shadow body, frame switches, mass tree,
-/// derived states, earth lighting, …) are still configured through
-/// `jeod_runner::VehicleBuilder`.
-#[derive(Clone, Debug)]
-pub struct TypedVehicleConfig {
-    /// Translational state in the inertial frame.
-    pub trans: TranslationalStateTyped<Inertial>,
-    /// Optional rotational state (6-DOF when present, `None` for 3-DOF
-    /// point-mass bodies).
-    pub rot: Option<RotationalState>,
-    /// Mass properties. Always populated — the typestate path through
-    /// either [`VehicleBuilder::three_dof_point_mass`] or
-    /// [`VehicleBuilder::sixdof`] sets it before
-    /// [`VehicleBuilder::build`] is reachable.
-    pub mass: MassProperties,
-    /// Selected integrator (chosen explicitly via the typestate
-    /// transition through [`HasIntegrator`]).
-    pub integrator: IntegratorType,
-    /// Per-body gravity controls.
-    pub gravity_controls: GravityControls<usize>,
-    /// Optional aerodynamic drag configuration (typed).
-    pub drag: Option<DragConfigTyped>,
-    /// Optional flat-plate solar-radiation-pressure state.
-    pub flat_plate_srp: Option<FlatPlateState>,
-}
-
 /// Typestate vehicle builder. The `S: BuildState` parameter advances
 /// through [`NeedsState`] → [`NeedsMass`] → [`HasIntegrator`] →
 /// [`Ready`] as required configuration is supplied. Methods that
@@ -136,14 +109,29 @@ pub struct TypedVehicleConfig {
 /// `three_dof_point_mass`/`sixdof` →
 /// `rk4`/`rkf45`/`gauss_jackson`/`with_integrator` → `build`. See
 /// module-level docs for examples.
+///
+/// Phase 6 of #101 consolidated this typestate builder with the runtime
+/// fluent builder previously in `jeod_runner::builder`: every method that
+/// builder offered is now in the `Ready` impl block here, plus the
+/// compile-time gating from Phase 5. `build()` returns the full
+/// [`VehicleConfig`] (the type that goes into `SimulationBuilder::add_body`
+/// and through `Simulation`).
 pub struct VehicleBuilder<S: BuildState = NeedsState> {
     trans: Option<TranslationalStateTyped<Inertial>>,
     rot: Option<RotationalState>,
     mass: Option<MassProperties>,
     integrator: Option<IntegratorType>,
+    t_struct_body: DMat3,
     gravity_controls: GravityControls<usize>,
-    drag: Option<DragConfigTyped>,
-    flat_plate_srp: Option<FlatPlateState>,
+    compute_gravity_gradient: bool,
+    drag: Option<DragConfig>,
+    srp: Option<SrpModel>,
+    shadow_body: Option<ShadowBody>,
+    derived: DerivedStateConfig,
+    external_force: DVec3,
+    external_torque: DVec3,
+    integ_source: Option<usize>,
+    frame_switches: Vec<FrameSwitchConfig>,
     _state: PhantomData<S>,
 }
 
@@ -153,38 +141,74 @@ impl Default for VehicleBuilder<NeedsState> {
     }
 }
 
+impl<S: BuildState> VehicleBuilder<S> {
+    fn empty() -> VehicleBuilder<NeedsState> {
+        VehicleBuilder {
+            trans: None,
+            rot: None,
+            mass: None,
+            integrator: None,
+            t_struct_body: DMat3::IDENTITY,
+            gravity_controls: GravityControls::default(),
+            compute_gravity_gradient: false,
+            drag: None,
+            srp: None,
+            shadow_body: None,
+            derived: DerivedStateConfig::default(),
+            external_force: DVec3::ZERO,
+            external_torque: DVec3::ZERO,
+            integ_source: None,
+            frame_switches: Vec::new(),
+            _state: PhantomData,
+        }
+    }
+
+    fn transition<T: BuildState>(self) -> VehicleBuilder<T> {
+        VehicleBuilder {
+            trans: self.trans,
+            rot: self.rot,
+            mass: self.mass,
+            integrator: self.integrator,
+            t_struct_body: self.t_struct_body,
+            gravity_controls: self.gravity_controls,
+            compute_gravity_gradient: self.compute_gravity_gradient,
+            drag: self.drag,
+            srp: self.srp,
+            shadow_body: self.shadow_body,
+            derived: self.derived,
+            external_force: self.external_force,
+            external_torque: self.external_torque,
+            integ_source: self.integ_source,
+            frame_switches: self.frame_switches,
+            _state: PhantomData,
+        }
+    }
+}
+
 impl VehicleBuilder<NeedsState> {
     /// Create a fresh builder. The compiler will require
     /// `.with_translational(...)` or `.from_orbital_elements(...)`
     /// before any mass / integrator method becomes available.
     pub fn new() -> Self {
-        Self {
-            trans: None,
-            rot: None,
-            mass: None,
-            integrator: None,
-            gravity_controls: GravityControls::default(),
-            drag: None,
-            flat_plate_srp: None,
-            _state: PhantomData,
-        }
+        Self::empty()
     }
 
     /// Set the initial translational state (typed).
     pub fn with_translational(
-        self,
+        mut self,
         s: TranslationalStateTyped<Inertial>,
     ) -> VehicleBuilder<NeedsMass> {
-        VehicleBuilder {
-            trans: Some(s),
-            rot: self.rot,
-            mass: self.mass,
-            integrator: self.integrator,
-            gravity_controls: self.gravity_controls,
-            drag: self.drag,
-            flat_plate_srp: self.flat_plate_srp,
-            _state: PhantomData,
-        }
+        self.trans = Some(s);
+        self.transition()
+    }
+
+    /// Set the initial translational state from an untyped
+    /// [`TranslationalState`]. Convenience for call sites that haven't
+    /// migrated to typed quantities yet.
+    pub fn with_state(self, s: TranslationalState) -> VehicleBuilder<NeedsMass> {
+        self.with_translational(TranslationalStateTyped::<Inertial>::from_untyped_unchecked(
+            &s,
+        ))
     }
 
     /// Set the initial translational state from Keplerian orbital
@@ -218,38 +242,22 @@ impl VehicleBuilder<NeedsMass> {
     /// Configure as 3-DoF point mass with the given total mass. No
     /// rotational state, no inertia tensor — the most common
     /// translational-only orbital case.
-    pub fn three_dof_point_mass(self, mass: Mass) -> VehicleBuilder<HasIntegrator> {
+    pub fn three_dof_point_mass(mut self, mass: Mass) -> VehicleBuilder<HasIntegrator> {
         use uom::si::mass::kilogram;
-        let mass_props = MassProperties::new(mass.get::<kilogram>());
-        VehicleBuilder {
-            trans: self.trans,
-            rot: self.rot,
-            mass: Some(mass_props),
-            integrator: self.integrator,
-            gravity_controls: self.gravity_controls,
-            drag: self.drag,
-            flat_plate_srp: self.flat_plate_srp,
-            _state: PhantomData,
-        }
+        self.mass = Some(MassProperties::new(mass.get::<kilogram>()));
+        self.transition()
     }
 
     /// Configure as full 6-DoF body with the given rotational state and
     /// mass properties (including inertia tensor).
     pub fn sixdof(
-        self,
+        mut self,
         rot: RotationalState,
         mass: MassProperties,
     ) -> VehicleBuilder<HasIntegrator> {
-        VehicleBuilder {
-            trans: self.trans,
-            rot: Some(rot),
-            mass: Some(mass),
-            integrator: self.integrator,
-            gravity_controls: self.gravity_controls,
-            drag: self.drag,
-            flat_plate_srp: self.flat_plate_srp,
-            _state: PhantomData,
-        }
+        self.rot = Some(rot);
+        self.mass = Some(mass);
+        self.transition()
     }
 }
 
@@ -271,21 +279,15 @@ impl VehicleBuilder<HasIntegrator> {
 
     /// Use a caller-supplied integrator (Adams-Bashforth-Moulton,
     /// Gauss-Jackson with custom config, etc.).
-    pub fn with_integrator(self, integrator: IntegratorType) -> VehicleBuilder<Ready> {
-        VehicleBuilder {
-            trans: self.trans,
-            rot: self.rot,
-            mass: self.mass,
-            integrator: Some(integrator),
-            gravity_controls: self.gravity_controls,
-            drag: self.drag,
-            flat_plate_srp: self.flat_plate_srp,
-            _state: PhantomData,
-        }
+    pub fn with_integrator(mut self, integrator: IntegratorType) -> VehicleBuilder<Ready> {
+        self.integrator = Some(integrator);
+        self.transition()
     }
 }
 
 impl VehicleBuilder<Ready> {
+    // ── Gravity ──
+
     /// Append a gravity control. May be called multiple times to add
     /// additional sources (point-mass third bodies, spherical-harmonics
     /// central body, …).
@@ -294,8 +296,16 @@ impl VehicleBuilder<Ready> {
         self
     }
 
-    /// Configure aerodynamic drag (typed: Cd, area, optional density override).
-    pub fn drag(mut self, cfg: DragConfigTyped) -> Self {
+    /// Enable gravity gradient computation (needed for gravity torque).
+    pub fn gravity_gradient(mut self) -> Self {
+        self.compute_gravity_gradient = true;
+        self
+    }
+
+    // ── Interactions ──
+
+    /// Configure aerodynamic drag (Cd, area, optional density override).
+    pub fn drag(mut self, cfg: DragConfig) -> Self {
         self.drag = Some(cfg);
         self
     }
@@ -303,37 +313,159 @@ impl VehicleBuilder<Ready> {
     /// Configure flat-plate solar radiation pressure with the given
     /// per-plate state (geometry, optical, thermal).
     pub fn flat_plate_srp(mut self, state: FlatPlateState) -> Self {
-        self.flat_plate_srp = Some(state);
+        self.srp = Some(SrpModel::FlatPlate(state));
         self
     }
 
-    /// Build the typed vehicle configuration. The unwraps below are
-    /// safe because every required field was set during a state
-    /// transition; if any required field is `None` the typestate
-    /// would not have advanced to [`Ready`].
-    pub fn build(self) -> TypedVehicleConfig {
-        TypedVehicleConfig {
+    /// Configure cannonball solar radiation pressure.
+    pub fn cannonball_srp(mut self, cx_area: f64, albedo: f64, diffuse: f64) -> Self {
+        self.srp = Some(SrpModel::Cannonball {
+            cx_area,
+            albedo,
+            diffuse,
+        });
+        self
+    }
+
+    /// Set the shadow-casting body for SRP eclipse computation. Uses
+    /// [`PlanetConfig::shadow_radius`] for consistent radius.
+    pub fn shadow(mut self, source_idx: usize, planet: &PlanetConfig) -> Self {
+        self.shadow_body = Some(ShadowBody {
+            source_idx,
+            radius: planet.shadow_radius,
+        });
+        self
+    }
+
+    /// Set the shadow-casting body with explicit radius.
+    pub fn shadow_with_radius(mut self, source_idx: usize, radius: f64) -> Self {
+        self.shadow_body = Some(ShadowBody { source_idx, radius });
+        self
+    }
+
+    // ── Frame transforms / external loads ──
+
+    /// Set the structural-to-body frame rotation (default: identity).
+    pub fn structural_transform(mut self, t: DMat3) -> Self {
+        self.t_struct_body = t;
+        self
+    }
+
+    /// Set initial external force (inertial frame, N).
+    pub fn external_force(mut self, f: DVec3) -> Self {
+        self.external_force = f;
+        self
+    }
+
+    /// Set initial external torque (body frame, N·m).
+    pub fn external_torque(mut self, t: DVec3) -> Self {
+        self.external_torque = t;
+        self
+    }
+
+    // ── Frame switching ──
+
+    /// Set the initial integration source (default: simulation root /
+    /// central body). `source_idx` is the index returned by
+    /// `SimulationBuilder::add_source()`.
+    pub fn integ_source(mut self, source_idx: usize) -> Self {
+        self.integ_source = Some(source_idx);
+        self
+    }
+
+    /// Set distance-based frame switch triggers.
+    pub fn frame_switches(mut self, switches: Vec<FrameSwitchConfig>) -> Self {
+        self.frame_switches = switches;
+        self
+    }
+
+    // ── Derived states ──
+
+    /// Compute orbital elements relative to the given gravity source.
+    pub fn orbital_elements(mut self, source_idx: usize) -> Self {
+        self.derived.orbital_elements_source = Some(source_idx);
+        self
+    }
+
+    /// Compute Euler angles with the given decomposition sequence.
+    pub fn euler_angles(mut self, sequence: EulerSequence) -> Self {
+        self.derived.euler_sequence = Some(sequence);
+        self
+    }
+
+    /// Compute LVLH frame each step.
+    pub fn lvlh(mut self) -> Self {
+        self.derived.lvlh = true;
+        self
+    }
+
+    /// Compute geodetic state. Uses [`PlanetConfig`] for consistent radii.
+    pub fn geodetic(mut self, source_idx: usize, planet: &PlanetConfig) -> Self {
+        self.derived.geodetic = Some(GeodeticConfig {
+            source_idx,
+            r_eq: planet.shape.r_eq,
+            r_pol: planet.shape.r_pol,
+        });
+        self
+    }
+
+    /// Compute solar beta angle. Requires `sun_source` on the simulation.
+    pub fn solar_beta(mut self) -> Self {
+        self.derived.solar_beta = true;
+        self
+    }
+
+    /// Compute earth lighting. Uses [`PlanetConfig`] presets for radii.
+    /// Requires `sun_source` and `moon_source` on the simulation.
+    pub fn earth_lighting(
+        mut self,
+        earth: &PlanetConfig,
+        moon: &PlanetConfig,
+        sun: &PlanetConfig,
+    ) -> Self {
+        self.derived.earth_lighting = Some(EarthLightingConfig {
+            earth_radius: earth.shape.r_eq,
+            moon_radius: moon.shape.r_eq,
+            sun_radius: sun.shape.r_eq,
+        });
+        self
+    }
+
+    // ── Build ──
+
+    /// Build the [`VehicleConfig`]. The unwraps below are safe because
+    /// every required field was set during a state transition; if any
+    /// required field were `None`, the typestate would not have
+    /// advanced to [`Ready`].
+    pub fn build(self) -> VehicleConfig {
+        VehicleConfig {
             trans: self
                 .trans
-                .expect("typestate guarantees translational state"),
+                .expect("typestate guarantees translational state")
+                .to_untyped(),
             rot: self.rot,
-            mass: self.mass.expect("typestate guarantees mass"),
+            // Mass is `Option<MassProperties>` in the storage type
+            // (so direct struct-literal construction stays
+            // ergonomic), but the typestate path through either
+            // `three_dof_point_mass` or `sixdof` always populates it
+            // before `Ready`. Unwrap-and-rewrap so an internal
+            // typestate bug surfaces here rather than as a silent
+            // `mass = None` that fails later in validation or
+            // physics.
+            mass: Some(self.mass.expect("typestate guarantees mass")),
             integrator: self.integrator.expect("typestate guarantees integrator"),
+            t_struct_body: self.t_struct_body,
             gravity_controls: self.gravity_controls,
+            compute_gravity_gradient: self.compute_gravity_gradient,
             drag: self.drag,
-            flat_plate_srp: self.flat_plate_srp,
+            srp: self.srp,
+            shadow_body: self.shadow_body,
+            derived: self.derived,
+            external_force: self.external_force,
+            external_torque: self.external_torque,
+            integ_source: self.integ_source,
+            frame_switches: self.frame_switches,
         }
-    }
-}
-
-impl TypedVehicleConfig {
-    /// Drop the frame phantoms and emit an untyped
-    /// [`TranslationalState`]. Convenience for callers that need to
-    /// hand the typed config to APIs not yet migrated to typed
-    /// states. **The caller asserts** the translational state is
-    /// expressed in `Inertial`.
-    pub fn trans_untyped(&self) -> TranslationalState {
-        self.trans.to_untyped()
     }
 }
 
@@ -342,47 +474,72 @@ mod tests {
     use super::*;
     use jeod_quantities::ext::F64Ext;
 
+    fn iss_trans() -> TranslationalStateTyped<Inertial> {
+        TranslationalStateTyped::<Inertial>::from_untyped_unchecked(&TranslationalState {
+            position: DVec3::new(7_000_000.0, 0.0, 0.0),
+            velocity: DVec3::new(0.0, 7_500.0, 0.0),
+        })
+    }
+
     /// Happy path: 3-DoF point mass advances through every stage and
-    /// `.build()` returns a populated [`TypedVehicleConfig`].
+    /// `.build()` returns a populated [`VehicleConfig`].
     #[test]
     fn three_dof_happy_path() {
-        let trans =
-            TranslationalStateTyped::<Inertial>::from_untyped_unchecked(&TranslationalState {
-                position: glam::DVec3::new(7_000_000.0, 0.0, 0.0),
-                velocity: glam::DVec3::new(0.0, 7_500.0, 0.0),
-            });
         let cfg = VehicleBuilder::new()
-            .with_translational(trans)
+            .with_translational(iss_trans())
             .three_dof_point_mass(420_000.0.kg())
             .rk4()
             .build();
         assert_eq!(cfg.integrator, IntegratorType::Rk4);
-        assert_eq!(cfg.mass.mass, 420_000.0);
+        assert_eq!(cfg.mass.expect("mass set by typestate").mass, 420_000.0);
         assert!(cfg.rot.is_none());
     }
 
-    /// 6-DoF path produces a config with both rotational state and
-    /// mass populated.
+    /// 6-DoF path produces a config with both rotational state and mass
+    /// populated.
     #[test]
     fn six_dof_happy_path() {
         use jeod_math::JeodQuat;
-        let trans =
-            TranslationalStateTyped::<Inertial>::from_untyped_unchecked(&TranslationalState {
-                position: glam::DVec3::new(7_000_000.0, 0.0, 0.0),
-                velocity: glam::DVec3::new(0.0, 7_500.0, 0.0),
-            });
         let rot = RotationalState {
             quaternion: JeodQuat::identity(),
-            ang_vel_body: glam::DVec3::ZERO,
+            ang_vel_body: DVec3::ZERO,
         };
-        let inertia = glam::DMat3::IDENTITY * 100.0;
-        let mass = MassProperties::with_inertia(420_000.0, inertia, glam::DVec3::ZERO);
+        let inertia = DMat3::IDENTITY * 100.0;
+        let mass = MassProperties::with_inertia(420_000.0, inertia, DVec3::ZERO);
         let cfg = VehicleBuilder::new()
-            .with_translational(trans)
+            .with_translational(iss_trans())
             .sixdof(rot, mass)
             .rk4()
             .build();
         assert!(cfg.rot.is_some());
-        assert_eq!(cfg.mass.mass, 420_000.0);
+        assert_eq!(cfg.mass.expect("mass set by typestate").mass, 420_000.0);
+    }
+
+    /// Ready-state methods (drag, gravity gradient, derived states, etc.)
+    /// are reachable after the typestate completes, mirroring the runtime
+    /// fluent builder's surface absorbed in Phase 6.
+    #[test]
+    fn ready_state_full_surface() {
+        use jeod_interactions::DragConfig;
+        let cfg = VehicleBuilder::new()
+            .with_state(TranslationalState {
+                position: DVec3::new(7_000_000.0, 0.0, 0.0),
+                velocity: DVec3::new(0.0, 7_500.0, 0.0),
+            })
+            .three_dof_point_mass(1_000.0.kg())
+            .rk4()
+            .gravity_gradient()
+            .drag(DragConfig {
+                cd: 2.2,
+                area: 1.0,
+                constant_density: None,
+            })
+            .lvlh()
+            .solar_beta()
+            .build();
+        assert!(cfg.compute_gravity_gradient);
+        assert!(cfg.drag.is_some());
+        assert!(cfg.derived.lvlh);
+        assert!(cfg.derived.solar_beta);
     }
 }

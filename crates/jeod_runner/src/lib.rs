@@ -38,7 +38,7 @@ use jeod_sim::{
     evaluate_contact_pair, integrate_body_coupled, AerodynamicForce, AtmosphereState, ContactFacet,
     CoupledStageEval, DragConfig, DynamicsConfig, EulerSequence, FrameDerivatives, GeodeticState,
     GravityAcceleration, GravityControls, GravitySource, JeodQuat, LvlhFrame, MassProperties,
-    OrbitalElements, PlanetConfig, RadiationForce, RotationalState, SimulationTime, TotalForce,
+    OrbitalElements, RadiationForce, RotationalState, SimulationTime, TotalForce,
     TranslationalState,
 };
 
@@ -48,44 +48,21 @@ pub mod builder;
 pub use jeod_sim;
 pub use jeod_sim::RotationModel;
 
-// Re-export builder types for ergonomic use.
-pub use builder::{SimulationBuilder, VehicleBuilder};
+// Re-export the runner-side terminal-method extension trait from `builder`.
+pub use builder::SimulationBuilderExt;
+
+// Re-exports of types relocated from jeod_runner to jeod_sim in Phase 6 of
+// #101. External consumers of `jeod_runner::{VehicleConfig,GravitySourceEntry,
+// SrpModel,...}` continue to compile via these re-exports; the canonical
+// definitions now live in `jeod_sim`. Phase 10 will remove the re-exports.
+pub use jeod_sim::{
+    DerivedStateConfig, EarthLightingConfig, FrameSwitchConfig, GeodeticConfig, GravitySourceEntry,
+    MassTreeAttachment, ShadowBody, SimulationBuilder, SrpModel, SwitchSense, VehicleBuilder,
+    VehicleConfig,
+};
 
 // Re-export FrameId for downstream API.
 pub use jeod_frames::FrameId;
-
-// ══════════════════════════════════════════════════════════════════════════════
-// Integration frame switching
-// ══════════════════════════════════════════════════════════════════════════════
-
-/// Trigger condition for a frame switch.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SwitchSense {
-    /// Switch when the body approaches the target frame origin.
-    OnApproach,
-    /// Switch when the body departs from the current frame origin.
-    OnDeparture,
-}
-
-/// Configuration for a distance-based integration frame switch.
-///
-/// Port of JEOD's `DynBodyFrameSwitch` body action. When triggered, the
-/// body's integration frame is reparented to the target source's inertial
-/// frame in the frame tree, and gravity controls are flipped to make the
-/// target source non-differential (central body).
-#[derive(Debug, Clone)]
-pub struct FrameSwitchConfig {
-    /// Index of the gravity source whose inertial frame to switch to.
-    /// On switch, this source becomes non-differential and all others become
-    /// differential, matching JEOD's `GravityInteraction::set_integ_frame()`.
-    pub target_source: usize,
-    /// Whether to switch on approach or departure.
-    pub switch_sense: SwitchSense,
-    /// Distance threshold (meters).
-    pub switch_distance: f64,
-    /// Whether this switch is active.
-    pub active: bool,
-}
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Contact pair
@@ -146,291 +123,6 @@ struct GravityData {
     /// `ang_vel_this`. Sourced from `PlanetConfig::omega` at setup time.
     /// JEOD sets this as `[0, 0, planet_omega]` in `planet_rnp.cc`.
     planet_omega: f64,
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// Gravity source
-// ══════════════════════════════════════════════════════════════════════════════
-
-/// Entry in the gravity source table.
-///
-/// Gravity sources are referenced by index (`usize`) from body gravity controls.
-pub struct GravitySourceEntry {
-    /// Physical gravity source (mu, model).
-    pub source: GravitySource,
-    /// Position in the inertial frame (m). For Earth-centered sims, Earth is at origin.
-    pub position: DVec3,
-    /// Velocity in the inertial frame (m/s). Required for relativistic corrections.
-    /// Zero for stationary sources (e.g., central body at origin).
-    pub velocity: DVec3,
-    /// Inertial-to-planet-fixed rotation matrix. Updated each step when
-    /// `rotation_model` is not `None`. If `None`, no rotation is applied
-    /// (point-mass only).
-    pub t_inertial_pfix: Option<DMat3>,
-    /// Rotation model for updating `t_inertial_pfix` each step.
-    pub rotation_model: RotationModel,
-    /// Tidal ΔC20 to add to the base C20 coefficient before spherical harmonics
-    /// evaluation. Updated each step by the environment stage if tidal effects
-    /// are configured. Zero when no tides.
-    pub delta_c20: f64,
-    /// Tidal configuration. When `Some`, the simulation computes ΔC20 each step.
-    pub tidal_config: Option<jeod_gravity::tides::TidalConfig>,
-    /// Sidereal angular velocity (rad/s) for the planet-fixed frame's
-    /// `ang_vel_this`. Sourced from [`PlanetConfig::omega`]. Set to 0.0
-    /// for sources without a rotation model.
-    pub planet_omega: f64,
-    /// Whether this is the central body (uses the root frame in the tree).
-    /// Set automatically by [`central_body`](Self::central_body) and
-    /// [`central_body_sh`](Self::central_body_sh).
-    pub central: bool,
-}
-
-impl GravitySourceEntry {
-    /// Create a new gravity source entry without tidal effects.
-    ///
-    /// `rotation_model` defaults to `None`. Set it explicitly after construction
-    /// (or use struct literal syntax) to enable per-step rotation updates.
-    pub fn new(source: GravitySource, position: DVec3, t_inertial_pfix: Option<DMat3>) -> Self {
-        Self {
-            source,
-            position,
-            velocity: DVec3::ZERO,
-            t_inertial_pfix,
-            rotation_model: RotationModel::None,
-            planet_omega: 0.0,
-            delta_c20: 0.0,
-            tidal_config: None,
-            central: false,
-        }
-    }
-
-    /// Central body at the origin with point-mass gravity and rotation from a
-    /// [`PlanetConfig`] preset.
-    ///
-    /// Sets rotation model and initial identity rotation matrix (if the planet
-    /// has a rotation model). Position and velocity are zero (central body).
-    pub fn central_body(planet: &PlanetConfig) -> Self {
-        Self {
-            source: GravitySource {
-                mu: planet.shape.mu,
-                model: jeod_sim::GravityModel::PointMass,
-            },
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
-            t_inertial_pfix: if planet.rotation_model != RotationModel::None {
-                Some(DMat3::IDENTITY)
-            } else {
-                None
-            },
-            rotation_model: planet.rotation_model,
-            planet_omega: planet.omega,
-            delta_c20: 0.0,
-            tidal_config: None,
-            central: true,
-        }
-    }
-
-    /// Central body at the origin with spherical harmonics gravity and rotation
-    /// from a [`PlanetConfig`] preset.
-    ///
-    /// Uses `mu` from the spherical harmonics data (which may differ slightly
-    /// from the planet preset's geodetic mu).
-    pub fn central_body_sh(
-        planet: &PlanetConfig,
-        sh_data: jeod_gravity::SphericalHarmonicsData,
-    ) -> Self {
-        Self {
-            source: GravitySource {
-                mu: sh_data.mu,
-                model: jeod_sim::GravityModel::SphericalHarmonics(Box::new(sh_data)),
-            },
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
-            t_inertial_pfix: if planet.rotation_model != RotationModel::None {
-                Some(DMat3::IDENTITY)
-            } else {
-                None
-            },
-            rotation_model: planet.rotation_model,
-            planet_omega: planet.omega,
-            delta_c20: 0.0,
-            tidal_config: None,
-            central: true,
-        }
-    }
-
-    /// Third body (perturbation source) at a given position.
-    ///
-    /// Point-mass only, no rotation. Typical use: Sun or Moon as a third-body
-    /// perturbation in Earth-centered integration.
-    pub fn third_body(planet: &PlanetConfig, position: DVec3) -> Self {
-        Self {
-            source: GravitySource {
-                mu: planet.shape.mu,
-                model: jeod_sim::GravityModel::PointMass,
-            },
-            position,
-            velocity: DVec3::ZERO,
-            t_inertial_pfix: None,
-            rotation_model: RotationModel::None,
-            planet_omega: 0.0,
-            delta_c20: 0.0,
-            tidal_config: None,
-            central: false,
-        }
-    }
-
-    /// Add tidal configuration (builder-style, consumes and returns self).
-    pub fn with_tidal(mut self, config: jeod_gravity::tides::TidalConfig) -> Self {
-        self.tidal_config = Some(config);
-        self
-    }
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// Vehicle configuration (public, user-facing)
-// ══════════════════════════════════════════════════════════════════════════════
-
-/// Solar radiation pressure model — mutually exclusive variants.
-#[derive(Debug, Clone)]
-pub enum SrpModel {
-    /// Per-plate modeling with thermal emission.
-    FlatPlate(jeod_sim::FlatPlateState),
-    /// Simple cannonball model.
-    Cannonball {
-        /// Effective cross-section area (m²).
-        cx_area: f64,
-        /// Surface albedo.
-        albedo: f64,
-        /// Diffuse reflection fraction.
-        diffuse: f64,
-    },
-}
-
-/// Shadow-casting body for SRP eclipse computation.
-#[derive(Debug, Clone, Copy)]
-pub struct ShadowBody {
-    /// Index into the gravity source table.
-    pub source_idx: usize,
-    /// Body radius (m) for eclipse geometry.
-    pub radius: f64,
-}
-
-/// Geodetic computation configuration.
-#[derive(Debug, Clone, Copy)]
-pub struct GeodeticConfig {
-    /// Gravity source index (must have `t_inertial_pfix` for planet-fixed rotation).
-    pub source_idx: usize,
-    /// Equatorial radius (m).
-    pub r_eq: f64,
-    /// Polar radius (m).
-    pub r_pol: f64,
-}
-
-/// Earth lighting computation configuration.
-#[derive(Debug, Clone, Copy)]
-pub struct EarthLightingConfig {
-    /// Earth mean radius (m) for eclipse geometry.
-    pub earth_radius: f64,
-    /// Moon mean radius (m) for eclipse geometry.
-    pub moon_radius: f64,
-    /// Sun mean radius (m) for eclipse geometry.
-    pub sun_radius: f64,
-}
-
-/// All derived-state requests for a vehicle, grouped in one place.
-#[derive(Debug, Clone, Default)]
-pub struct DerivedStateConfig {
-    /// Gravity source index for orbital elements. `None` = skip.
-    pub orbital_elements_source: Option<usize>,
-    /// Euler angle decomposition sequence. `None` = skip.
-    pub euler_sequence: Option<EulerSequence>,
-    /// Whether to compute LVLH frame each step.
-    pub lvlh: bool,
-    /// Geodetic computation config. `None` = skip.
-    pub geodetic: Option<GeodeticConfig>,
-    /// Whether to compute solar beta angle. Requires `sun_source` on Simulation.
-    pub solar_beta: bool,
-    /// Earth lighting config. Requires `sun_source` and `moon_source`.
-    pub earth_lighting: Option<EarthLightingConfig>,
-}
-
-/// User-facing vehicle configuration.
-///
-/// Passed to [`Simulation::add_body`] to create a simulated vehicle.
-/// Contains initial state plus all physics configuration. No output fields —
-/// results are accessed via [`Simulation::body`] which returns [`VehicleOutput`].
-///
-/// Use the builder ([`VehicleConfig::builder`]) for ergonomic construction, or
-/// struct literal syntax with `..Default::default()` for direct access.
-pub struct VehicleConfig {
-    // ── Initial state ──
-    /// Translational state: position and velocity in the inertial frame.
-    pub trans: TranslationalState,
-    /// Rotational state: quaternion and angular velocity. `None` for 3-DOF bodies.
-    pub rot: Option<RotationalState>,
-    /// Mass properties. `None` for massless test particles (gravity-only).
-    pub mass: Option<MassProperties>,
-
-    // ── Dynamics ──
-    /// Integration method. Defaults to `IntegratorType::Rk4`.
-    pub integrator: jeod_dynamics::IntegratorType,
-    /// Structural-to-body rotation matrix. `DMat3::IDENTITY` when structure = body.
-    pub t_struct_body: DMat3,
-
-    // ── Gravity ──
-    /// Gravity controls referencing sources by index.
-    pub gravity_controls: GravityControls<usize>,
-    /// Whether to compute gravity gradient (needed for gravity torque).
-    pub compute_gravity_gradient: bool,
-
-    // ── Interactions ──
-    /// Drag configuration. `None` disables drag.
-    pub drag: Option<DragConfig>,
-    /// Solar radiation pressure model. `None` disables SRP.
-    pub srp: Option<SrpModel>,
-    /// Shadow-casting body for SRP eclipse. `None` = full illumination.
-    pub shadow_body: Option<ShadowBody>,
-
-    // ── Derived state requests ──
-    /// Derived state computation requests.
-    pub derived: DerivedStateConfig,
-
-    // ── External loads ──
-    /// External force in the inertial frame (N). Defaults to zero.
-    pub external_force: DVec3,
-    /// External torque in the body frame (N·m). Defaults to zero.
-    pub external_torque: DVec3,
-
-    // ── Frame switching ──
-    /// Gravity source whose inertial frame is used for integration.
-    /// `None` means the root frame (Earth.inertial). `Some(idx)` means
-    /// the inertial frame of the source at that index.
-    pub integ_source: Option<usize>,
-    /// Distance-based frame switch triggers.
-    pub frame_switches: Vec<FrameSwitchConfig>,
-}
-
-impl Default for VehicleConfig {
-    fn default() -> Self {
-        Self {
-            trans: TranslationalState::default(),
-            rot: None,
-            mass: None,
-            integrator: jeod_dynamics::IntegratorType::default(),
-            t_struct_body: DMat3::IDENTITY,
-            gravity_controls: GravityControls::default(),
-            compute_gravity_gradient: false,
-            drag: None,
-            srp: None,
-            shadow_body: None,
-            derived: DerivedStateConfig::default(),
-            external_force: DVec3::ZERO,
-            external_torque: DVec3::ZERO,
-            integ_source: None,
-            frame_switches: Vec::new(),
-        }
-    }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

@@ -19,14 +19,12 @@ use jeod_dynamics::{
     GaussJacksonConfig, IntegratorType, MassProperties, RotationalState, TranslationalState,
 };
 use jeod_gravity::GravityControl;
-use jeod_interactions::DragConfigTyped;
+use jeod_interactions::DragConfig;
 use jeod_math::{JeodQuat, OrbitalElements};
 use jeod_quantities::ext::F64Ext;
 use jeod_quantities::frame::Inertial;
-use jeod_sim::vehicle_builder::{TypedVehicleConfig, VehicleBuilder};
-use uom::si::area::square_meter;
-use uom::si::f64::Area;
-use uom::si::ratio::ratio;
+use jeod_sim::vehicle_builder::VehicleBuilder;
+use jeod_sim::vehicle_config::VehicleConfig;
 
 fn iss_trans() -> TranslationalStateTyped<Inertial> {
     TranslationalStateTyped::<Inertial>::from_untyped_unchecked(&TranslationalState {
@@ -37,13 +35,13 @@ fn iss_trans() -> TranslationalStateTyped<Inertial> {
 
 #[test]
 fn three_dof_rk4_round_trip() {
-    let cfg: TypedVehicleConfig = VehicleBuilder::new()
+    let cfg: VehicleConfig = VehicleBuilder::new()
         .with_translational(iss_trans())
         .three_dof_point_mass(420_000.0.kg())
         .rk4()
         .build();
     assert_eq!(cfg.integrator, IntegratorType::Rk4);
-    assert_eq!(cfg.mass.mass, 420_000.0);
+    assert_eq!(cfg.mass.expect("mass set by typestate").mass, 420_000.0);
     assert!(cfg.rot.is_none());
     assert!(cfg.drag.is_none());
 }
@@ -55,9 +53,9 @@ fn six_dof_rkf45_with_options() {
         ang_vel_body: DVec3::ZERO,
     };
     let mass = MassProperties::with_inertia(420_000.0, DMat3::IDENTITY * 1.0e6, DVec3::ZERO);
-    let drag = DragConfigTyped {
-        cd: 2.2.unitless(),
-        area: Area::new::<square_meter>(40.0),
+    let drag = DragConfig {
+        cd: 2.2,
+        area: 40.0,
         constant_density: None,
     };
     let cfg = VehicleBuilder::new()
@@ -70,11 +68,7 @@ fn six_dof_rkf45_with_options() {
     assert_eq!(cfg.integrator, IntegratorType::Rkf45);
     assert!(cfg.rot.is_some());
     assert_eq!(cfg.gravity_controls.controls.len(), 1);
-    assert!(cfg.drag.is_some());
-    assert_eq!(
-        cfg.drag.as_ref().unwrap().cd.get::<ratio>(),
-        drag.cd.get::<ratio>()
-    );
+    assert_eq!(cfg.drag.as_ref().unwrap().cd, 2.2);
 }
 
 #[test]
@@ -100,12 +94,12 @@ fn from_orbital_elements_round_trip() {
         .rk4()
         .build();
 
-    // The reconstructed translational state must round-trip the
-    // original to within numerical tolerance — `from_orbital_elements`
-    // delegates to `init_from_orbital_elements_typed` which itself
-    // delegates to the bit-identical f64 implementation.
-    let pos_err = (cfg.trans_untyped().position - iss_trans().position.raw_si()).length();
-    let vel_err = (cfg.trans_untyped().velocity - iss_trans().velocity.raw_si()).length();
+    // The reconstructed translational state must round-trip the original
+    // to within numerical tolerance — `from_orbital_elements` delegates
+    // to `init_from_orbital_elements_typed`, itself delegating to the
+    // bit-identical f64 implementation.
+    let pos_err = (cfg.trans.position - iss_trans().position.raw_si()).length();
+    let vel_err = (cfg.trans.velocity - iss_trans().velocity.raw_si()).length();
     assert!(pos_err < 1.0e-6, "position round-trip error: {pos_err}");
     assert!(vel_err < 1.0e-9, "velocity round-trip error: {vel_err}");
 }
