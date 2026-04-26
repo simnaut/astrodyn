@@ -143,6 +143,12 @@ pub enum ExtrasComparator {
     /// Euler-from-matrix conversion (self-consistency check of our Euler
     /// extractor against the JEOD-quaternion reference).
     Euler,
+    /// Same Euler self-consistency check as [`Self::Euler`] but reading
+    /// the reference quaternion from a [`CsvReference::Dyncomp`]
+    /// `composite_body.quaternion` row rather than a SIM_Euler CSV. Used
+    /// by SIM_Euler runs that drive themselves from the SIM_dyncomp
+    /// RUN_2 trajectory.
+    DyncompEuler,
 }
 
 impl Default for Tolerances {

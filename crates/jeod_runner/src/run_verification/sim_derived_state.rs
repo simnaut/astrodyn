@@ -518,17 +518,13 @@ pub fn euler_run2() -> VerificationCase {
             velocity_m_s: [0.0; 3],
             quat_angle_rad: 4.426e-8,
             ang_vel_rad_s: [0.0; 3],
-            extras: &[],
+            extras: &[
+                ("euler_roll", 1.846e-13),
+                ("euler_pitch", 8.674e-14),
+                ("euler_yaw", 1.103e-13),
+            ],
         },
-        // RUN_2's CSV is `Dyncomp` not `Euler`, and its quaternion column
-        // is `composite_body.quaternion`. The Euler-vs-quat self-
-        // consistency assertion from the legacy test fires inside the
-        // body of `tier3_simulation_euler` itself; here we keep
-        // `extras: None` so we surface the rotational tracking via
-        // `quat_angle_rad`. The legacy 1.846e-13/8.674e-14/1.103e-13
-        // angle-component asserts can be re-enabled once ExtrasComparator
-        // grows a `Dyncomp + Euler-XYZ` variant.
-        extras: None,
+        extras: Some(ExtrasComparator::DyncompEuler),
     }
 }
 

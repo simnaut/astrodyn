@@ -437,7 +437,7 @@ impl ExtrasAccumulator {
                 ("latitude", 0.0, "rad"),
                 ("longitude", 0.0, "rad"),
             ],
-            ExtrasComparator::Euler => vec![
+            ExtrasComparator::Euler | ExtrasComparator::DyncompEuler => vec![
                 ("euler_roll", 0.0, "rad"),
                 ("euler_pitch", 0.0, "rad"),
                 ("euler_yaw", 0.0, "rad"),
@@ -515,31 +515,20 @@ impl ExtrasAccumulator {
             }
             (ExtrasComparator::Euler, CsvRecords::Euler(recs)) => {
                 let r = &recs[idx];
-                let euler = body.euler_angles.unwrap_or_else(|| {
-                    panic!("{case_name}: euler_angles not computed at idx {idx}")
-                });
-                // Reconstruct the JEOD-side reference Euler from the
-                // logged quaternion via our own port — this is a self-
-                // consistency check of our Euler extractor against the
-                // JEOD-quaternion reference (not against JEOD's logged
-                // Euler columns, since JEOD logs all 6×2×3 sequences but
-                // our DerivedState only computes one).
                 let jeod_q = jeod_sim::JeodQuat::new(
                     r.quaternion[0],
                     r.quaternion[1],
                     r.quaternion[2],
                     r.quaternion[3],
                 );
-                #[allow(deprecated)]
-                let jeod_t = jeod_q.left_quat_to_transformation();
-                #[allow(deprecated)]
-                let jeod_euler = jeod_math::compute_euler_angles_from_matrix(
-                    &jeod_t,
-                    jeod_sim::EulerSequence::XYZ,
-                );
-                self.update_max("euler_roll", angle_diff(euler[0], jeod_euler[0]));
-                self.update_max("euler_pitch", angle_diff(euler[1], jeod_euler[1]));
-                self.update_max("euler_yaw", angle_diff(euler[2], jeod_euler[2]));
+                self.observe_euler_from_quat(body, &jeod_q, idx, case_name);
+            }
+            (ExtrasComparator::DyncompEuler, CsvRecords::Dyncomp(recs)) => {
+                let r = &recs[idx];
+                // composite_body.quaternion is glam-DQuat (xyzw) here.
+                let q = r.composite_body.quaternion;
+                let jeod_q = jeod_sim::JeodQuat::new(q.w, q.x, q.y, q.z);
+                self.observe_euler_from_quat(body, &jeod_q, idx, case_name);
             }
             (kind, recs) => panic!(
                 "{case_name}: ExtrasComparator {kind:?} requires the matching \
@@ -547,6 +536,34 @@ impl ExtrasAccumulator {
                 recs.len()
             ),
         }
+    }
+
+    /// Shared Euler-from-quaternion self-consistency observer used by
+    /// both [`ExtrasComparator::Euler`] (SIM_Euler CSVs) and
+    /// [`ExtrasComparator::DyncompEuler`] (SIM_dyncomp `composite_body`).
+    /// Reconstructs JEOD's reference Euler triple from the logged
+    /// quaternion via our own port — this is a self-consistency check
+    /// of our Euler extractor against the JEOD-quaternion reference,
+    /// not a comparison against JEOD's logged Euler columns (JEOD logs
+    /// all 6 × 2 × 3 sequences but our DerivedState only computes one).
+    fn observe_euler_from_quat(
+        &mut self,
+        body: &VehicleOutput,
+        jeod_q: &jeod_sim::JeodQuat,
+        idx: usize,
+        case_name: &str,
+    ) {
+        let euler = body
+            .euler_angles
+            .unwrap_or_else(|| panic!("{case_name}: euler_angles not computed at idx {idx}"));
+        #[allow(deprecated)]
+        let jeod_t = jeod_q.left_quat_to_transformation();
+        #[allow(deprecated)]
+        let jeod_euler =
+            jeod_math::compute_euler_angles_from_matrix(&jeod_t, jeod_sim::EulerSequence::XYZ);
+        self.update_max("euler_roll", angle_diff(euler[0], jeod_euler[0]));
+        self.update_max("euler_pitch", angle_diff(euler[1], jeod_euler[1]));
+        self.update_max("euler_yaw", angle_diff(euler[2], jeod_euler[2]));
     }
 
     fn assert_against(&self, tol: &[(&'static str, f64)], case_name: &str) {
