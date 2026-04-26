@@ -88,8 +88,13 @@ pub fn tidal_update_system(
     mut query: Query<(&TidalConfigC, &PlanetFixedRotationC, &mut TidalDeltaC20C)>,
 ) {
     for (config, rotation, mut delta) in &mut query {
-        let raw = jeod_sim::compute_delta_c20(&config.0, &rotation.0);
-        delta.0 = jeod_sim::dimensionless(raw);
+        // `TidalConfigC` already wraps `TidalConfigTyped` — the dimensional
+        // lift happened once at insertion (`TidalConfigC::from_untyped`),
+        // so the system reads the typed value directly with no per-tick
+        // `Vec` allocation or per-body f64 → typed conversion.
+        // `compute_delta_c20_typed` returns `Ratio`, matching
+        // `TidalDeltaC20C`'s storage type.
+        delta.0 = jeod_sim::compute_delta_c20_typed(&config.0, &rotation.0);
     }
 }
 
@@ -117,25 +122,27 @@ pub fn ephemeris_update_system(
     };
     let tdb_jd = sim_time.tdb_julian_date();
     for (ephem_body, mut source_pos, source_vel, trans_state) in &mut query {
-        // Phase 1 (#103): the `DVec3` accessor is deprecated; migration
-        // to `get_state_typed` happens in Phase 3+ once downstream state
-        // storage is typed.
-        #[allow(deprecated)]
-        let (pos, vel) = eph
-            .get_state(ephem_body.target, ephem_body.observer, tdb_jd)
+        // Typed sibling: returns `(Position<Inertial>, Velocity<Inertial>)`
+        // directly, matching the typed component storage. Bit-identical to
+        // the deprecated f64 path — the kernel itself extracts SI base
+        // values from ANISE and re-wraps them.
+        let (pos_typed, vel_typed) = eph
+            .get_state_typed(ephem_body.target, ephem_body.observer, tdb_jd)
             .unwrap_or_else(|e| {
                 panic!(
                     "Ephemeris lookup failed for {:?} wrt {:?} at TDB JD {tdb_jd}: {e}",
                     ephem_body.target, ephem_body.observer,
                 )
             });
-        source_pos.0 = Position::<Inertial>::from_raw_si(pos);
+        source_pos.0 = pos_typed;
         if let Some(mut sv) = source_vel {
-            sv.0 = Velocity::<Inertial>::from_raw_si(vel);
+            sv.0 = vel_typed;
         }
         if let Some(mut ts) = trans_state {
-            ts.0.position = pos;
-            ts.0.velocity = vel;
+            // `TranslationalState` still stores raw `DVec3`; drop the typed
+            // phantoms at the boundary.
+            ts.0.position = pos_typed.raw_si();
+            ts.0.velocity = vel_typed.raw_si();
         }
     }
 }
@@ -792,14 +799,9 @@ pub fn euler_angles_system(
 ) {
     for (rot_opt, config, mut angles) in &mut query {
         if let Some(rot) = rot_opt {
-            let raw = jeod_sim::compute_body_euler_angles(&rot.0, config.sequence);
-            // Wrap each raw radian value as a typed `Angle`. Numerics
-            // are bit-identical to the f64 path.
-            angles.0 = [
-                jeod_sim::radians(raw[0]),
-                jeod_sim::radians(raw[1]),
-                jeod_sim::radians(raw[2]),
-            ];
+            // Typed sibling: returns `[Angle; 3]` directly, matching
+            // `EulerAnglesC` storage. Bit-identical numerics.
+            angles.0 = jeod_sim::compute_body_euler_angles_typed(&rot.0, config.sequence);
         } else {
             angles.0 = Default::default();
         }
@@ -813,7 +815,12 @@ pub fn euler_angles_system(
 /// Placed in `JeodSet::DerivedState`.
 pub fn lvlh_system(mut query: Query<(&TranslationalStateC, &mut LvlhFrameC)>) {
     for (state, mut lvlh) in &mut query {
-        lvlh.0 = jeod_sim::compute_body_lvlh_frame(state.position, state.velocity);
+        // Typed sibling: lift the raw position/velocity into typed inertial
+        // quantities at the call site. Bit-identical numerics — the kernel
+        // unwraps via `.raw_si()` immediately.
+        let pos = Position::<Inertial>::from_raw_si(state.position);
+        let vel = Velocity::<Inertial>::from_raw_si(state.velocity);
+        lvlh.0 = jeod_sim::compute_body_lvlh_frame_typed(pos, vel);
     }
 }
 
@@ -829,8 +836,14 @@ pub fn geodetic_system(
             geodetic.0 = Default::default();
             continue;
         };
+        // Typed sibling: lift inertial position and ellipsoid radii into
+        // typed quantities at the call site. The kernel unwraps via
+        // `.raw_si()` / `.get::<meter>()` immediately — bit-identical
+        // numerics to the f64 path.
+        use jeod_sim::F64Ext;
+        let pos = Position::<Inertial>::from_raw_si(state.position);
         geodetic.0 =
-            jeod_sim::compute_body_geodetic(state.position, &rot.0, planet.r_eq, planet.r_pol);
+            jeod_sim::compute_body_geodetic_typed(pos, &rot.0, planet.r_eq.m(), planet.r_pol.m());
     }
 }
 
@@ -860,8 +873,16 @@ pub fn solar_beta_system(
         }
     };
     for (state, mut beta) in &mut query {
-        beta.0 =
-            jeod_sim::compute_body_solar_beta(state.position, state.velocity, sun_state.position);
+        // Typed sibling: lift inertial position/velocity/sun position into
+        // typed quantities at the call site. The kernel returns a typed
+        // `Angle`; unwrap to radians for the (still f64) `SolarBetaC`
+        // storage. Bit-identical to the f64 path. `Angle.value` reads the
+        // SI base value (radian), matching `Angle::get::<radian>()` —
+        // f64-equality is preserved.
+        let pos = Position::<Inertial>::from_raw_si(state.position);
+        let vel = Velocity::<Inertial>::from_raw_si(state.velocity);
+        let sun = Position::<Inertial>::from_raw_si(sun_state.position);
+        beta.0 = jeod_sim::compute_body_solar_beta_typed(pos, vel, sun).value;
     }
 }
 

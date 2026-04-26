@@ -13,8 +13,7 @@
 //! - order 12, dt=1s
 //! - order 8, dt=10s
 
-mod sim_test_helpers;
-use sim_test_helpers::*;
+use jeod_test_data::tier3_csv::{load_gj_csv, test_data_path};
 
 use glam::DVec3;
 use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};

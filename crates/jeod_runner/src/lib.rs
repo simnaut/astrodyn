@@ -1249,18 +1249,15 @@ impl Simulation {
             let tdb_jd = self.time.tdb_julian_date();
             for i in 0..self.source_ephem_bodies.len() {
                 if let Some(Some((target, observer))) = self.source_ephem_bodies.get(i) {
-                    // Phase 1 (#103): the `DVec3` accessor is deprecated; migration
-                    // to `get_state_typed` happens in Phase 3+ once downstream state
-                    // storage is typed.
-                    #[allow(deprecated)]
-                    let (pos, vel) =
-                        eph.get_state(*target, *observer, tdb_jd)
-                            .unwrap_or_else(|e| {
-                                panic!(
-                                    "Ephemeris lookup failed for source {i} \
+                    let (pos_typed, vel_typed) = eph
+                        .get_state_typed(*target, *observer, tdb_jd)
+                        .unwrap_or_else(|e| {
+                            panic!(
+                                "Ephemeris lookup failed for source {i} \
                                  ({target:?} wrt {observer:?}) at TDB JD {tdb_jd}: {e}"
-                                )
-                            });
+                            )
+                        });
+                    let (pos, vel) = (pos_typed.raw_si(), vel_typed.raw_si());
                     // Root-mapped sources cannot consume ephemeris position updates:
                     // the root frame must remain identity, so accepting such a
                     // mapping would silently ignore `pos` and yield an incorrect

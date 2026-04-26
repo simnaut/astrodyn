@@ -18,6 +18,11 @@ use uom::si::f64::Angle;
 
 /// Compute the solar beta angle.
 ///
+/// Internal numeric kernel shared by [`solar_beta_angle_typed`]. New
+/// callers should use the typed sibling; this `_impl` is kept
+/// module-private after the Phase 10 purge of the bare-`f64` public
+/// surface.
+///
 /// # Arguments
 /// * `orbit_ang_momentum` - Orbital angular momentum vector (r × v), does not need to be unit
 /// * `sun_direction` - Direction vector toward the Sun, does not need to be unit
@@ -25,12 +30,7 @@ use uom::si::f64::Angle;
 /// # Returns
 /// Solar beta angle in radians, in range [-π/2, π/2].
 /// Positive when the Sun is on the same side as the angular momentum vector.
-#[doc(hidden)]
-#[deprecated(
-    since = "0.2.0-phase-3",
-    note = "use solar_beta_angle_typed; f64 variant removed in Phase 10"
-)]
-pub fn solar_beta_angle(orbit_ang_momentum: DVec3, sun_direction: DVec3) -> f64 {
+pub(crate) fn solar_beta_angle_impl(orbit_ang_momentum: DVec3, sun_direction: DVec3) -> f64 {
     assert!(
         orbit_ang_momentum.length_squared() > 0.0,
         "orbit_ang_momentum must be non-zero"
@@ -71,17 +71,19 @@ pub fn solar_beta_angle_typed(
     orbit_ang_momentum: Qty3<SpecificAngMomDim, Inertial>,
     sun_direction: Position<Inertial>,
 ) -> Angle {
-    #[allow(deprecated)]
-    let beta = solar_beta_angle(orbit_ang_momentum.raw_si(), sun_direction.raw_si());
+    let beta = solar_beta_angle_impl(orbit_ang_momentum.raw_si(), sun_direction.raw_si());
     Angle::new::<radian>(beta)
 }
 
 #[cfg(test)]
-#[allow(deprecated)]
 mod tests {
     use super::*;
     use jeod_quantities::prelude::Vec3Ext;
     use std::f64::consts::PI;
+    // Test alias so the existing f64 test bodies keep their compact
+    // `solar_beta_angle` call sites after the Phase 10 purge of the
+    // bare-`f64` public surface.
+    use solar_beta_angle_impl as solar_beta_angle;
 
     #[test]
     fn sun_in_orbit_plane() {

@@ -65,11 +65,10 @@ fn pipeline_earth_lighting_smoke() {
 
     // Sun from DE421
     let j2000_jd = 2_451_545.0;
-    // Phase 1 (#103): DVec3 accessor is deprecated; migration is Phase 3+ work.
-    #[allow(deprecated)]
-    let (initial_sun, _) = ephemeris
-        .get_earth_centered_state(EphemerisBody::Sun, j2000_jd)
+    let (initial_sun_typed, _) = ephemeris
+        .get_earth_centered_state_typed(EphemerisBody::Sun, j2000_jd)
         .expect("Sun position at J2000");
+    let initial_sun = initial_sun_typed.raw_si();
     let sun = sim.add_source(
         "Sun",
         GravitySourceEntry {
@@ -91,11 +90,10 @@ fn pipeline_earth_lighting_smoke() {
     sim.sun_source = Some(sun);
 
     // Moon from DE421
-    // Phase 1 (#103): DVec3 accessor is deprecated; migration is Phase 3+ work.
-    #[allow(deprecated)]
-    let (initial_moon, _) = ephemeris
-        .get_earth_centered_state(EphemerisBody::Moon, j2000_jd)
+    let (initial_moon_typed, _) = ephemeris
+        .get_earth_centered_state_typed(EphemerisBody::Moon, j2000_jd)
         .expect("Moon position at J2000");
+    let initial_moon = initial_moon_typed.raw_si();
     let moon = sim.add_source(
         "Moon",
         GravitySourceEntry {

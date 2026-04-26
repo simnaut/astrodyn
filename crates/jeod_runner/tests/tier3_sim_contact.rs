@@ -27,7 +27,7 @@
 //! Tests **must panic** (not skip) when reference CSVs are absent, per
 //! `CLAUDE.md`. The panic message includes the exact Docker command.
 
-mod sim_test_helpers;
+use jeod_test_data::tier3_csv::test_data_path;
 
 use glam::{DMat3, DVec3};
 use jeod_interactions::{ContactFacet, ContactMaterial};
@@ -36,7 +36,6 @@ use jeod_sim::{
     evaluate_contact_pair, GravityControls, GravityModel, GravitySource, JeodQuat, MassProperties,
     RotationalState, SimulationTime, TranslationalState,
 };
-use sim_test_helpers::test_data_path;
 use std::path::Path;
 
 // ── Shared JEOD material constants ──────────────────────────────────

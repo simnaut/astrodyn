@@ -32,8 +32,7 @@
 //!   follow-on task; the reference CSV (`drag_const_drag.csv`) is generated
 //!   and retained for that work.
 
-mod sim_test_helpers;
-use sim_test_helpers::{load_drag_csv, test_data_path};
+use jeod_test_data::tier3_csv::{load_drag_csv, test_data_path};
 
 use glam::{DMat3, DVec3};
 use jeod_atmosphere::AtmosphereState;

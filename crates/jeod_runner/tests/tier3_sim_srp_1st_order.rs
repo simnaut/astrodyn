@@ -9,8 +9,7 @@
 //! diverge due to integrator order differences, causing small force deviations
 //! that accumulate over the ~23-day trajectory.
 
-mod sim_test_helpers;
-use sim_test_helpers::*;
+use jeod_test_data::tier3_csv::{load_srp_trajectory, test_data_path};
 
 use glam::{DMat3, DVec3};
 use jeod_runner::{
@@ -100,12 +99,10 @@ fn srp_plates() -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
 fn srp_sun_position(sim_time: f64, epoch_tai_tjt: f64, ephemeris: &Ephemeris) -> DVec3 {
     let sim_days = sim_time / 86400.0;
     let tdb_jd = (epoch_tai_tjt + sim_days) + 40000.0 + 2_400_000.5;
-    // Phase 1 (#103): DVec3 accessor is deprecated; migration is Phase 3+ work.
-    #[allow(deprecated)]
     let (sun_pos, _) = ephemeris
-        .get_earth_centered_state(EphemerisBody::Sun, tdb_jd)
+        .get_earth_centered_state_typed(EphemerisBody::Sun, tdb_jd)
         .expect("Sun position query failed");
-    sun_pos
+    sun_pos.raw_si()
 }
 
 // non-recipe: 1st-order SRP scenario loads JEOD reference trajectory from

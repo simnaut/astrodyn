@@ -41,9 +41,37 @@ impl Default for LvlhFrame {
     }
 }
 
+impl LvlhFrame {
+    /// Build a complete `LvlhFrame` (rotation, angular velocity, origin
+    /// position/velocity) from typed inertial position and velocity.
+    ///
+    /// This is the typed entry point for callers that need the full
+    /// struct, including the auxiliary fields that
+    /// [`compute_lvlh_frame_typed`] discards.
+    ///
+    /// Bit-identical numerics to [`compute_lvlh_frame_typed`] — both share
+    /// the [`compute_lvlh_frame_impl`] kernel.
+    ///
+    /// # Panics
+    /// Panics if position or angular momentum magnitude is zero.
+    pub fn compute(position: Position<Inertial>, velocity: Velocity<Inertial>) -> Self {
+        compute_lvlh_frame_impl(position.raw_si(), velocity.raw_si())
+    }
+}
+
 /// Compute the LVLH frame from position and velocity in a planet-centered inertial frame.
 ///
 /// Port of JEOD `LvlhFrame::compute_lvlh_frame()` (lvlh_frame.cc:247-285).
+///
+/// Numeric kernel shared by the typed [`compute_lvlh_frame_typed`] entry
+/// point and the [`LvlhFrame::compute`] full-state constructor (used when
+/// the auxiliary fields — angular velocity, origin position/velocity —
+/// are needed in addition to the orientation that the typed sibling
+/// returns).
+///
+/// New callers that only need the inertial→LVLH orientation should use
+/// [`compute_lvlh_frame_typed`]; callers that need the full struct should
+/// use [`LvlhFrame::compute`].
 ///
 /// # Arguments
 /// * `position` - Vehicle position in planet-centered inertial frame (m)
@@ -51,12 +79,7 @@ impl Default for LvlhFrame {
 ///
 /// # Panics
 /// Panics if position or angular momentum magnitude is zero.
-#[doc(hidden)]
-#[deprecated(
-    since = "0.2.0-phase-3",
-    note = "use compute_lvlh_frame_typed; f64 variant removed in Phase 10"
-)]
-pub fn compute_lvlh_frame(position: DVec3, velocity: DVec3) -> LvlhFrame {
+fn compute_lvlh_frame_impl(position: DVec3, velocity: DVec3) -> LvlhFrame {
     // Compute angular momentum vector: h = r × v
     let angmom = position.cross(velocity);
     let hmag = angmom.length();
@@ -131,9 +154,8 @@ pub fn compute_lvlh_frame_typed<Chief>(
 where
     Chief: Vehicle,
 {
-    // Delegate to the f64-based port so physics stays in one place.
-    #[allow(deprecated)]
-    let lvlh = compute_lvlh_frame(position.raw_si(), velocity.raw_si());
+    // Delegate to the shared kernel so physics stays in one place.
+    let lvlh = compute_lvlh_frame_impl(position.raw_si(), velocity.raw_si());
 
     // Convert the transformation matrix T_parent_this (inertial → LVLH) into
     // a canonical JEOD left quaternion. JEOD's `left_quat_from_transformation`
@@ -147,9 +169,11 @@ where
 }
 
 #[cfg(test)]
-#[allow(deprecated)] // existing f64 tests still exercise the deprecated API
 mod tests {
     use super::*;
+    // Test alias so the existing test bodies keep their compact `compute_lvlh_frame`
+    // call sites after the Phase 10 purge of the bare-`f64` public surface.
+    use compute_lvlh_frame_impl as compute_lvlh_frame;
 
     const EARTH_MU: f64 = 3.986_004_415e14; // m^3/s^2
 

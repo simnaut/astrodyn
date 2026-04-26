@@ -19,8 +19,6 @@
 //!   that sim: uniform F/m translation, tau/I rotation, and independence
 //!   of the two when the force is applied at the center of mass.
 
-mod sim_test_helpers;
-
 use glam::{DMat3, DVec3};
 use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
 use jeod_sim::{

@@ -17,7 +17,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --check
-      - run: cargo clippy --workspace --tests -- -D warnings
+      - run: cargo clippy --workspace --tests --examples -- -D warnings -D deprecated
+      - name: Escape-hatch grep guard
+        run: scripts/check_no_escape_hatches.sh
 
   test-quantities:
     name: Test (jeod_quantities)

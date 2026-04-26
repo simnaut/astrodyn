@@ -49,20 +49,20 @@ impl Ephemeris {
             .describe(Some(true), Some(true), None, None, None, None, None, None);
     }
 
-    /// Get state of `target` relative to `observer` at a given TDB Julian Date.
+    /// Get state of `target` relative to `observer` at a given TDB Julian Date,
+    /// returning frame-tagged, dimensioned quantities in the J2000 (ICRF-aligned)
+    /// inertial frame.
     ///
-    /// Returns `(position_m, velocity_m_per_s)` in J2000 ICRF.
-    #[doc(hidden)]
-    #[deprecated(
-        since = "0.2.0-phase-1",
-        note = "use get_state_typed / get_earth_centered_state_typed; this f64 variant is removed in Phase 10"
-    )]
-    pub fn get_state(
+    /// Internal kernel below extracts SI base units from ANISE; this typed
+    /// entry point wraps as `Position<Inertial>` / `Velocity<Inertial>`. The
+    /// pre-Phase-10 bare-`f64` `get_state` was removed; use `.raw_si()` on
+    /// the returned values when an unwrapped `DVec3` is needed.
+    pub fn get_state_typed(
         &self,
         target: EphemerisBody,
         observer: EphemerisBody,
         tdb_jd: f64,
-    ) -> Result<(DVec3, DVec3), EphemerisError> {
+    ) -> Result<(Position<Inertial>, Velocity<Inertial>), EphemerisError> {
         // Convert JD to seconds since J2000.0 TDB: (jd - 2451545.0) * 86400.0
         let tdb_s_since_j2000 = (tdb_jd - 2_451_545.0) * 86_400.0;
         let epoch = Epoch::from_tdb_seconds(tdb_s_since_j2000);
@@ -89,42 +89,6 @@ impl Ephemeris {
             state.velocity_km_s.z * 1000.0,
         );
 
-        Ok((pos_m, vel_m_s))
-    }
-
-    /// Get Earth-centered state of `target` at a given TDB Julian Date.
-    ///
-    /// Returns `(position_m, velocity_m_per_s)` relative to Earth center in J2000 ICRF.
-    #[doc(hidden)]
-    #[deprecated(
-        since = "0.2.0-phase-1",
-        note = "use get_state_typed / get_earth_centered_state_typed; this f64 variant is removed in Phase 10"
-    )]
-    pub fn get_earth_centered_state(
-        &self,
-        target: EphemerisBody,
-        tdb_jd: f64,
-    ) -> Result<(DVec3, DVec3), EphemerisError> {
-        #[allow(deprecated)]
-        self.get_state(target, EphemerisBody::Earth, tdb_jd)
-    }
-
-    /// Get state of `target` relative to `observer` at a given TDB Julian Date,
-    /// returning frame-tagged, dimensioned quantities in the J2000 (ICRF-aligned)
-    /// inertial frame.
-    ///
-    /// This is the typed counterpart to [`Self::get_state`]; the underlying
-    /// ANISE translate call is unchanged, the returned values are simply wrapped
-    /// as `Position<Inertial>` / `Velocity<Inertial>` in SI base units
-    /// (meters, m/s).
-    pub fn get_state_typed(
-        &self,
-        target: EphemerisBody,
-        observer: EphemerisBody,
-        tdb_jd: f64,
-    ) -> Result<(Position<Inertial>, Velocity<Inertial>), EphemerisError> {
-        #[allow(deprecated)]
-        let (pos_m, vel_m_s) = self.get_state(target, observer, tdb_jd)?;
         Ok((pos_m.m_at::<Inertial>(), vel_m_s.m_per_s_at::<Inertial>()))
     }
 
@@ -242,14 +206,10 @@ pub enum EphemerisError {
 
 #[cfg(test)]
 mod typed_accessor_tests {
-    //! Bit-identical equivalence between the deprecated `DVec3` accessors and
-    //! their typed siblings. Uses the committed `de421.bsp` kernel in
-    //! `test_data/`; the test will panic with a descriptive message if the
-    //! kernel is missing (no graceful skip — see project policy).
-    //!
-    //! We compare via `raw_si()` because the typed accessors return SI base
-    //! units (meters, m/s), so a matching `raw_si()` DVec3 is also bit-exact
-    //! in the intended unit.
+    //! Smoke tests for the typed accessors using the committed `de421.bsp`
+    //! kernel in `test_data/`; the test will panic with a descriptive
+    //! message if the kernel is missing (no graceful skip — see project
+    //! policy).
     use super::*;
     use std::path::PathBuf;
 
@@ -271,32 +231,35 @@ mod typed_accessor_tests {
     }
 
     #[test]
-    fn get_state_typed_is_bit_identical_to_get_state() {
+    fn get_state_typed_smoke_test_moon_at_j2000() {
         let ephem = load_de421();
-        #[allow(deprecated)]
-        let (pos_dvec, vel_dvec) = ephem
-            .get_state(EphemerisBody::Moon, EphemerisBody::Earth, J2000_TDB_JD)
-            .expect("query Moon state");
         let (pos_t, vel_t) = ephem
             .get_state_typed(EphemerisBody::Moon, EphemerisBody::Earth, J2000_TDB_JD)
             .expect("query Moon state (typed)");
-
-        assert_eq!(pos_t.raw_si(), pos_dvec);
-        assert_eq!(vel_t.raw_si(), vel_dvec);
+        // Earth-Moon distance at J2000 ≈ 4.024e8 m; speed ≈ 1.02 km/s.
+        let r_km = pos_t.raw_si().length() / 1000.0;
+        let v_km_s = vel_t.raw_si().length() / 1000.0;
+        assert!(
+            (r_km - 402_449.0).abs() < 1.0,
+            "Earth-Moon distance: {r_km:.1} km",
+        );
+        assert!(
+            (v_km_s - 1.02).abs() < 0.1,
+            "Moon orbital speed: {v_km_s:.4} km/s",
+        );
     }
 
     #[test]
-    fn get_earth_centered_state_typed_is_bit_identical() {
+    fn get_earth_centered_state_typed_smoke_test_sun_at_j2000() {
         let ephem = load_de421();
-        #[allow(deprecated)]
-        let (pos_dvec, vel_dvec) = ephem
-            .get_earth_centered_state(EphemerisBody::Sun, J2000_TDB_JD)
-            .expect("query Sun state");
-        let (pos_t, vel_t) = ephem
+        let (pos_t, _vel_t) = ephem
             .get_earth_centered_state_typed(EphemerisBody::Sun, J2000_TDB_JD)
             .expect("query Sun state (typed)");
-
-        assert_eq!(pos_t.raw_si(), pos_dvec);
-        assert_eq!(vel_t.raw_si(), vel_dvec);
+        // Earth-Sun distance at J2000 ≈ 0.9833 AU (perihelion-adjacent).
+        let r_au = pos_t.raw_si().length() / 1.496e11;
+        assert!(
+            (r_au - 0.9833).abs() < 0.01,
+            "Earth-Sun distance: {r_au} AU"
+        );
     }
 }

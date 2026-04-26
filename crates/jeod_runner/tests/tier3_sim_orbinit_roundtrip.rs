@@ -84,11 +84,13 @@ fn roundtrip_via_simulation(
     sim.step_n(n_steps);
 
     let body = sim.body(0);
-    // Phase 2 #104: from_cartesian deprecated; migration deferred to Phase 3+.
-    #[allow(deprecated)]
-    let oe_recovered =
-        OrbitalElements::from_cartesian(MU_EARTH, body.trans.position, body.trans.velocity)
-            .expect("from_cartesian failed after propagation");
+    use jeod_sim::{F64Ext, Inertial, Vec3Ext};
+    let oe_recovered = OrbitalElements::from_cartesian_typed(
+        F64Ext::m3_per_s2(MU_EARTH),
+        body.trans.position.m_at::<Inertial>(),
+        body.trans.velocity.m_per_s_at::<Inertial>(),
+    )
+    .expect("from_cartesian_typed failed after propagation");
 
     println!("  {label}: recovered elements after {n_steps} steps");
     println!(
@@ -217,11 +219,13 @@ fn tier3_orbinit_roundtrip_circular() {
     sim.step_n(n_steps);
 
     let body = sim.body(0);
-    // Phase 2 #104: from_cartesian deprecated; migration deferred to Phase 3+.
-    #[allow(deprecated)]
-    let oe_recovered =
-        OrbitalElements::from_cartesian(MU_EARTH, body.trans.position, body.trans.velocity)
-            .expect("from_cartesian failed after propagation");
+    use jeod_sim::{F64Ext, Inertial, Vec3Ext};
+    let oe_recovered = OrbitalElements::from_cartesian_typed(
+        F64Ext::m3_per_s2(MU_EARTH),
+        body.trans.position.m_at::<Inertial>(),
+        body.trans.velocity.m_per_s_at::<Inertial>(),
+    )
+    .expect("from_cartesian_typed failed after propagation");
 
     // Specific energy: E = v^2/2 - mu/r = -mu/(2a), branch-independent
     let energy_now =

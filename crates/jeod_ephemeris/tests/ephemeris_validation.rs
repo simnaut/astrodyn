@@ -3,12 +3,6 @@
 //! Requires `test_data/de421.bsp` to be present. Download with:
 //!   curl -Lo test_data/de421.bsp https://public-data.nyxspace.com/anise/de421.bsp
 
-// These validation tests still call the Phase-1-deprecated `DVec3` accessors
-// directly. Migrating them to the typed accessors is Phase 3+ work per
-// issue #101; keep the deprecated-lint suppression local so `-D warnings`
-// stays clean.
-#![allow(deprecated)]
-
 use jeod_ephemeris::{Ephemeris, EphemerisBody};
 use std::path::Path;
 
@@ -35,9 +29,10 @@ const J2000_TDB_JD: f64 = 2_451_545.0;
 #[test]
 fn earth_moon_distance_at_j2000() {
     let ephem = load_de421();
-    let (pos_m, _vel) = ephem
-        .get_earth_centered_state(EphemerisBody::Moon, J2000_TDB_JD)
+    let (pos_typed, _vel) = ephem
+        .get_earth_centered_state_typed(EphemerisBody::Moon, J2000_TDB_JD)
         .expect("Failed to query Moon state");
+    let pos_m = pos_typed.raw_si();
 
     let distance_km = pos_m.length() / 1000.0;
     eprintln!("  Earth-Moon distance at J2000: {:.1} km", distance_km);
@@ -60,9 +55,10 @@ fn sun_direction_at_vernal_equinox_2000() {
     // Vernal equinox 2000: 2000-03-20 07:35 UTC ≈ JD 2451623.816
     let equinox_jd = 2_451_623.816;
 
-    let (pos_m, _vel) = ephem
-        .get_earth_centered_state(EphemerisBody::Sun, equinox_jd)
+    let (pos_typed, _vel) = ephem
+        .get_earth_centered_state_typed(EphemerisBody::Sun, equinox_jd)
         .expect("Failed to query Sun state");
+    let pos_m = pos_typed.raw_si();
 
     // Right ascension = atan2(y, x)
     let ra_rad = pos_m.y.atan2(pos_m.x);
@@ -91,9 +87,10 @@ fn sun_direction_at_vernal_equinox_2000() {
 #[test]
 fn sun_earth_distance_at_j2000() {
     let ephem = load_de421();
-    let (pos_m, _vel) = ephem
-        .get_earth_centered_state(EphemerisBody::Sun, J2000_TDB_JD)
+    let (pos_typed, _vel) = ephem
+        .get_earth_centered_state_typed(EphemerisBody::Sun, J2000_TDB_JD)
         .expect("Failed to query Sun state");
+    let pos_m = pos_typed.raw_si();
 
     let distance_au = pos_m.length() / 1.496e11;
     eprintln!("  Sun-Earth distance at J2000: {:.4} AU", distance_au);
@@ -111,9 +108,10 @@ fn sun_earth_distance_at_j2000() {
 #[test]
 fn moon_velocity_at_j2000() {
     let ephem = load_de421();
-    let (_pos, vel) = ephem
-        .get_earth_centered_state(EphemerisBody::Moon, J2000_TDB_JD)
+    let (_pos, vel_typed) = ephem
+        .get_earth_centered_state_typed(EphemerisBody::Moon, J2000_TDB_JD)
         .expect("Failed to query Moon state");
+    let vel = vel_typed.raw_si();
 
     let speed_km_s = vel.length() / 1000.0;
     eprintln!("  Moon velocity at J2000: {:.4} km/s", speed_km_s);
@@ -129,9 +127,10 @@ fn moon_velocity_at_j2000() {
 #[test]
 fn mars_distance_at_j2000() {
     let ephem = load_de421();
-    let (pos_m, _vel) = ephem
-        .get_earth_centered_state(EphemerisBody::Mars, J2000_TDB_JD)
+    let (pos_typed, _vel) = ephem
+        .get_earth_centered_state_typed(EphemerisBody::Mars, J2000_TDB_JD)
         .expect("Failed to query Mars state");
+    let pos_m = pos_typed.raw_si();
 
     let distance_au = pos_m.length() / 1.496e11;
     eprintln!("  Earth-Mars distance at J2000: {:.4} AU", distance_au);
@@ -147,9 +146,10 @@ fn mars_distance_at_j2000() {
 #[test]
 fn sun_velocity_at_j2000() {
     let ephem = load_de421();
-    let (_pos, vel) = ephem
-        .get_earth_centered_state(EphemerisBody::Sun, J2000_TDB_JD)
+    let (_pos, vel_typed) = ephem
+        .get_earth_centered_state_typed(EphemerisBody::Sun, J2000_TDB_JD)
         .expect("Failed to query Sun state");
+    let vel = vel_typed.raw_si();
 
     let speed_km_s = vel.length() / 1000.0;
     eprintln!("  Sun velocity at J2000: {:.4} km/s", speed_km_s);

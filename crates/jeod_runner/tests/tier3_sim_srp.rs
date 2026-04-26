@@ -2,8 +2,7 @@
 //!
 //! Flat-plate SRP + conical Earth shadow, GEO orbit, ~23 days.
 
-mod sim_test_helpers;
-use sim_test_helpers::*;
+use jeod_test_data::tier3_csv::{load_srp_trajectory, test_data_path};
 
 use glam::{DMat3, DVec3};
 use jeod_runner::{
@@ -92,12 +91,10 @@ fn srp_plates() -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
 
 fn srp_sun_position(sim_time: f64, epoch_tdb_jd: f64, ephemeris: &Ephemeris) -> DVec3 {
     let tdb_jd = epoch_tdb_jd + sim_time / 86400.0;
-    // Phase 1 (#103): DVec3 accessor is deprecated; migration is Phase 3+ work.
-    #[allow(deprecated)]
     let (sun_pos, _) = ephemeris
-        .get_earth_centered_state(EphemerisBody::Sun, tdb_jd)
+        .get_earth_centered_state_typed(EphemerisBody::Sun, tdb_jd)
         .expect("Sun position query failed");
-    sun_pos
+    sun_pos.raw_si()
 }
 
 /// Precomputed Sun position table for efficient per-step interpolation.

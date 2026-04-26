@@ -186,12 +186,16 @@ fn validate_orbital_roundtrip_5000_vectors() {
     let mut pass_count = 0;
 
     for (i, sv) in vectors.iter().enumerate() {
-        // Phase 2 #104: from_cartesian deprecated; migration deferred to Phase 3+.
-        #[allow(deprecated)]
-        let elems = match OrbitalElements::from_cartesian(MU_EARTH, sv.position, sv.velocity) {
+        use jeod_quantities::ext::{F64Ext, Vec3Ext};
+        use jeod_quantities::frame::Inertial;
+        let elems = match OrbitalElements::from_cartesian_typed(
+            F64Ext::m3_per_s2(MU_EARTH),
+            sv.position.m_at::<Inertial>(),
+            sv.velocity.m_per_s_at::<Inertial>(),
+        ) {
             Ok(e) => e,
             Err(e) => {
-                eprintln!("Vector {}: from_cartesian failed: {}", i, e);
+                eprintln!("Vector {}: from_cartesian_typed failed: {}", i, e);
                 continue;
             }
         };
@@ -451,9 +455,9 @@ fn validate_orbital_init_parser() {
 ///
 /// Exit criterion: 6/6 test vectors within 1e-12 rad.
 #[test]
-#[allow(deprecated)]
 fn validate_euler_angle_extraction_from_jeod_vectors() {
-    use jeod_math::{compute_euler_angles_from_matrix, EulerSequence};
+    use jeod_math::{compute_euler_angles_from_matrix_typed, EulerSequence};
+    use uom::si::angle::radian;
 
     let root = jeod_path();
     assert!(
@@ -481,7 +485,12 @@ fn validate_euler_angle_extraction_from_jeod_vectors() {
 
         // JEOD test uses Roll-Pitch-Yaw = XYZ sequence
         // ref_body_angles: Euler angles of T_parent_this
-        let ref_body = compute_euler_angles_from_matrix(&mat, EulerSequence::XYZ);
+        let ref_body_typed = compute_euler_angles_from_matrix_typed(&mat, EulerSequence::XYZ);
+        let ref_body = [
+            ref_body_typed[0].get::<radian>(),
+            ref_body_typed[1].get::<radian>(),
+            ref_body_typed[2].get::<radian>(),
+        ];
         let expected_ref_body = [
             case.ref_body_angles_deg[0] * deg2rad,
             case.ref_body_angles_deg[1] * deg2rad,
@@ -503,7 +512,12 @@ fn validate_euler_angle_extraction_from_jeod_vectors() {
 
         // body_ref_angles: Euler angles of T_parent_this^T (transposed matrix)
         let mat_t = mat.transpose();
-        let body_ref = compute_euler_angles_from_matrix(&mat_t, EulerSequence::XYZ);
+        let body_ref_typed = compute_euler_angles_from_matrix_typed(&mat_t, EulerSequence::XYZ);
+        let body_ref = [
+            body_ref_typed[0].get::<radian>(),
+            body_ref_typed[1].get::<radian>(),
+            body_ref_typed[2].get::<radian>(),
+        ];
         let expected_body_ref = [
             case.body_ref_angles_deg[0] * deg2rad,
             case.body_ref_angles_deg[1] * deg2rad,

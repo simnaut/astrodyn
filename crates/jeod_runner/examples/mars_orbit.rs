@@ -44,9 +44,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let epoch_tdb_jd = time.tdb_julian_date();
 
     let ephemeris = jeod_sim::Ephemeris::from_bsp(&bsp_path)?;
-    #[allow(deprecated)]
-    let (sun_pos, _) =
-        ephemeris.get_state(EphemerisBody::Sun, EphemerisBody::Mars, epoch_tdb_jd)?;
+    let (sun_pos_typed, _) =
+        ephemeris.get_state_typed(EphemerisBody::Sun, EphemerisBody::Mars, epoch_tdb_jd)?;
+    let sun_pos = sun_pos_typed.raw_si();
 
     // Mars central body with MRO110B2 SH gravity (verification reference data).
     let mars_source = reference_data::mars_mro110b2();

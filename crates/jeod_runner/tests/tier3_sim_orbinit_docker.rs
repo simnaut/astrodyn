@@ -24,8 +24,7 @@
 //! The SIM disables polar motion (`earth.rnp.enable_polar = False`).
 //! Gravity uses `earth_GGM05C` with `mu = 3.9860044150e14 m^3/s^2`.
 
-mod sim_test_helpers;
-use sim_test_helpers::*;
+use jeod_test_data::tier3_csv::{load_orbinit_csv, test_data_path};
 
 use glam::{DMat3, DVec3};
 use jeod_dynamics::init_from_mean_anomaly;

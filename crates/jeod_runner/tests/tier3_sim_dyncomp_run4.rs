@@ -16,8 +16,7 @@
 //! All simulation parameters (epoch, step size, mu values, mass) are loaded
 //! from the JEOD source files rather than hardcoded, per issue #44.
 
-mod sim_test_helpers;
-use sim_test_helpers::*;
+use jeod_test_data::tier3_csv::{load_dyncomp_csv, test_data_path};
 
 use glam::DVec3;
 use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
@@ -33,12 +32,10 @@ const SIM_DYNCOMP: &str = "verif/SIM_dyncomp";
 
 /// Compute Earth-centered position of a body from DE421 ephemeris.
 fn earth_centered_position(body: EphemerisBody, tdb_jd: f64, ephemeris: &Ephemeris) -> DVec3 {
-    // Phase 1 (#103): DVec3 accessor is deprecated; migration is Phase 3+ work.
-    #[allow(deprecated)]
     let (pos, _) = ephemeris
-        .get_earth_centered_state(body, tdb_jd)
+        .get_earth_centered_state_typed(body, tdb_jd)
         .expect("ephemeris query failed");
-    pos
+    pos.raw_si()
 }
 
 #[test]

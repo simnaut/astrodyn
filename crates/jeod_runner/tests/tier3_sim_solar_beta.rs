@@ -8,8 +8,7 @@
 //! The Sun source is used solely for solar beta direction, not gravitational
 //! perturbation. For 3rd-body gravity validation, see `tier3_sim_dyncomp_run4`.
 
-mod sim_test_helpers;
-use sim_test_helpers::*;
+use jeod_test_data::tier3_csv::{load_dyncomp_csv, test_data_path};
 
 use glam::DVec3;
 use jeod_runner::{
@@ -94,11 +93,10 @@ fn tier3_simulation_solar_beta() {
     // by tier3_sim_dyncomp_run4 and tier3_sim_torque_simple.
     // J2000.0 = JD 2451545.0
     let j2000_jd = 2_451_545.0;
-    // Phase 1 (#103): DVec3 accessor is deprecated; migration is Phase 3+ work.
-    #[allow(deprecated)]
-    let (initial_sun, _) = ephemeris
-        .get_earth_centered_state(EphemerisBody::Sun, j2000_jd)
+    let (initial_sun_typed, _) = ephemeris
+        .get_earth_centered_state_typed(EphemerisBody::Sun, j2000_jd)
         .expect("Sun position at J2000");
+    let initial_sun = initial_sun_typed.raw_si();
     let sun = sim.add_source(
         "Sun",
         GravitySourceEntry {
@@ -146,11 +144,10 @@ fn tier3_simulation_solar_beta() {
     for record in &trajectory[1..] {
         // Update Sun position from ephemeris
         let tdb_jd = j2000_jd + record.time / 86_400.0;
-        // Phase 1 (#103): DVec3 accessor is deprecated; migration is Phase 3+ work.
-        #[allow(deprecated)]
-        let (sun_pos, _) = ephemeris
-            .get_earth_centered_state(EphemerisBody::Sun, tdb_jd)
+        let (sun_pos_typed, _) = ephemeris
+            .get_earth_centered_state_typed(EphemerisBody::Sun, tdb_jd)
             .expect("Sun position query");
+        let sun_pos = sun_pos_typed.raw_si();
         sim.set_source_position(sun, sun_pos);
 
         sim.step_until(record.time);

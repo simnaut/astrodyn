@@ -9,13 +9,9 @@
 
 use crate::state::{TranslationalState, TranslationalStateTyped};
 use glam::{DMat3, DVec3};
-use jeod_math::OrbitalElements;
-use jeod_math::{mat3_from_rows, GeodeticState};
-// `compute_lvlh_frame` and `geodetic_to_cartesian` are deprecated pending
-// Phase 3 migration of this module to the typed `_typed` APIs.
-#[allow(deprecated)]
-use jeod_math::{compute_lvlh_frame, geodetic_to_cartesian};
+use jeod_math::{mat3_from_rows, GeodeticState, OrbitalElements};
 use jeod_quantities::dims::GravParam;
+use jeod_quantities::ext::Vec3Ext;
 use jeod_quantities::frame::Inertial;
 use uom::si::angle::radian;
 use uom::si::f64::{Angle, Length};
@@ -243,8 +239,13 @@ pub fn init_from_lvlh(
     ref_position: DVec3,
     ref_velocity: DVec3,
 ) -> TranslationalState {
-    #[allow(deprecated)]
-    let lvlh = compute_lvlh_frame(ref_position, ref_velocity);
+    // Typed entry: lift inertial inputs and use `LvlhFrame::compute`,
+    // which returns the full struct (orientation + angular velocity +
+    // origin state). Bit-identical to the deprecated f64 path.
+    let lvlh = jeod_math::LvlhFrame::compute(
+        ref_position.m_at::<Inertial>(),
+        ref_velocity.m_per_s_at::<Inertial>(),
+    );
 
     // t_parent_this transforms from inertial to LVLH.
     // Its transpose transforms from LVLH to inertial.
@@ -286,9 +287,10 @@ pub fn init_from_ned(
     t_eci_pcpf: &DMat3,
     omega_planet: DVec3,
 ) -> TranslationalState {
-    // Convert geodetic to PCPF cartesian
-    #[allow(deprecated)]
-    let pcpf_pos = geodetic_to_cartesian(geodetic, r_eq, r_pol);
+    // Convert geodetic to PCPF cartesian via the planet-agnostic
+    // `GeodeticState::to_planet_fixed`; bit-identical to the deprecated
+    // `geodetic_to_cartesian` removed in Phase 10.
+    let pcpf_pos = geodetic.to_planet_fixed(r_eq, r_pol);
 
     // Compute NED-to-PCPF rotation at this geodetic location.
     // t_pcpf_ned transforms vectors from PCPF to NED, so its transpose
@@ -336,9 +338,6 @@ pub fn compute_ned_rotation(lat: f64, lon: f64) -> DMat3 {
 }
 
 #[cfg(test)]
-// Phase 2 #104: local tests call deprecated jeod_math OrbitalElements::from_cartesian.
-// Migration to from_cartesian_typed is deferred to Phase 3+.
-#[allow(deprecated)]
 mod tests {
     use super::*;
     use std::f64::consts::PI;
@@ -501,8 +500,10 @@ mod tests {
         let state = init_from_lvlh(lvlh_offset_pos, lvlh_offset_vel, ref_pos, ref_vel);
 
         // Now compute the LVLH frame at the reference orbit and transform back
-        #[allow(deprecated)]
-        let lvlh = compute_lvlh_frame(ref_pos, ref_vel);
+        let lvlh = jeod_math::LvlhFrame::compute(
+            ref_pos.m_at::<Inertial>(),
+            ref_vel.m_per_s_at::<Inertial>(),
+        );
         let t = lvlh.t_parent_this;
 
         // Recover LVLH-relative position and velocity
@@ -587,9 +588,13 @@ mod tests {
         // Initialize from elements
         let state = init_from_orbital_elements(a, e, inc, raan, argp, nu, EARTH_MU);
 
-        // Convert back to orbital elements
-        let oe = OrbitalElements::from_cartesian(EARTH_MU, state.position, state.velocity)
-            .expect("from_cartesian failed");
+        // Convert back to orbital elements via the typed sibling.
+        let oe = OrbitalElements::from_cartesian_typed(
+            jeod_quantities::ext::F64Ext::m3_per_s2(EARTH_MU),
+            state.position.m_at::<Inertial>(),
+            state.velocity.m_per_s_at::<Inertial>(),
+        )
+        .expect("from_cartesian_typed failed");
 
         // Compare recovered elements against originals
         assert!(

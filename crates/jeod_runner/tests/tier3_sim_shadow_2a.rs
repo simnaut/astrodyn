@@ -9,8 +9,7 @@
 //! The full trajectory SRP+shadow test is `tier3_sim_srp.rs` (SIM_3_ORBIT).
 //! This test validates the shadow geometry computation specifically.
 
-mod sim_test_helpers;
-use sim_test_helpers::*;
+use jeod_test_data::tier3_csv::{load_shadow_calc_csv, test_data_path};
 
 use glam::DVec3;
 use jeod_runner::{
@@ -94,11 +93,10 @@ fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str, frac_
 
     // Sun from DE421 (query in TDB JD, not TAI JD)
     let tdb_jd = sim.time.tdb_julian_date();
-    // Phase 1 (#103): DVec3 accessor is deprecated; migration is Phase 3+ work.
-    #[allow(deprecated)]
-    let (initial_sun, _) = ephemeris
-        .get_earth_centered_state(EphemerisBody::Sun, tdb_jd)
+    let (initial_sun_typed, _) = ephemeris
+        .get_earth_centered_state_typed(EphemerisBody::Sun, tdb_jd)
         .expect("Sun position at epoch");
+    let initial_sun = initial_sun_typed.raw_si();
     let sun = sim.add_source(
         "Sun",
         GravitySourceEntry {

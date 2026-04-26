@@ -4,8 +4,8 @@
 //! `orbital_elements_source` configured, steps once to trigger derived-state
 //! computation, and compares orbital elements against JEOD reference.
 
-mod sim_test_helpers;
-use sim_test_helpers::*;
+use jeod_sim::recipes::helpers::state_helpers::angle_diff;
+use jeod_test_data::tier3_csv::test_data_path;
 
 use glam::DVec3;
 use jeod_runner::{

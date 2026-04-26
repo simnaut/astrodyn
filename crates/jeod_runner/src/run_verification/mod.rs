@@ -601,17 +601,27 @@ impl ExtrasAccumulator {
         idx: usize,
         case_name: &str,
     ) {
+        use uom::si::angle::radian;
         let euler = body
             .euler_angles
             .unwrap_or_else(|| panic!("{case_name}: euler_angles not computed at idx {idx}"));
-        #[allow(deprecated)]
         let jeod_t = jeod_q.left_quat_to_transformation();
-        #[allow(deprecated)]
-        let jeod_euler =
-            jeod_math::compute_euler_angles_from_matrix(&jeod_t, jeod_sim::EulerSequence::XYZ);
-        self.update_max("euler_roll", angle_diff(euler[0], jeod_euler[0]));
-        self.update_max("euler_pitch", angle_diff(euler[1], jeod_euler[1]));
-        self.update_max("euler_yaw", angle_diff(euler[2], jeod_euler[2]));
+        let jeod_euler = jeod_math::compute_euler_angles_from_matrix_typed(
+            &jeod_t,
+            jeod_sim::EulerSequence::XYZ,
+        );
+        self.update_max(
+            "euler_roll",
+            angle_diff(euler[0], jeod_euler[0].get::<radian>()),
+        );
+        self.update_max(
+            "euler_pitch",
+            angle_diff(euler[1], jeod_euler[1].get::<radian>()),
+        );
+        self.update_max(
+            "euler_yaw",
+            angle_diff(euler[2], jeod_euler[2].get::<radian>()),
+        );
     }
 
     fn assert_against(&self, tol: &[(&'static str, f64)], case_name: &str) {

@@ -12,8 +12,7 @@
 //! - SRP: cannonball (cx_area=2.1432 m², albedo=1.0, diffuse=0.27)
 //! - No drag, no gravity torque
 
-mod sim_test_helpers;
-use sim_test_helpers::*;
+use jeod_test_data::tier3_csv::test_data_path;
 
 use glam::DVec3;
 use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, SrpModel, VehicleConfig};
@@ -150,11 +149,10 @@ fn tier3_simulation_earth_moon_clem() {
 
     // Earth as 3rd-body with per-step ephemeris updates
     let epoch_tdb_jd = sim.time.tdb_julian_date();
-    // Phase 1 (#103): DVec3 accessor is deprecated; migration is Phase 3+ work.
-    #[allow(deprecated)]
-    let (earth_pos_from_moon, _earth_vel) = ephemeris
-        .get_state(EphemerisBody::Earth, EphemerisBody::Moon, epoch_tdb_jd)
+    let (earth_pos_typed, _earth_vel) = ephemeris
+        .get_state_typed(EphemerisBody::Earth, EphemerisBody::Moon, epoch_tdb_jd)
         .expect("Earth-Moon state from DE421");
+    let earth_pos_from_moon = earth_pos_typed.raw_si();
 
     let earth = sim.add_source(
         "Earth",
@@ -170,11 +168,10 @@ fn tier3_simulation_earth_moon_clem() {
     sim.set_source_ephemeris(earth, EphemerisBody::Earth, EphemerisBody::Moon);
 
     // Sun as 3rd-body with per-step ephemeris updates (also SRP source)
-    // Phase 1 (#103): DVec3 accessor is deprecated; migration is Phase 3+ work.
-    #[allow(deprecated)]
-    let (sun_pos_from_moon, _) = ephemeris
-        .get_state(EphemerisBody::Sun, EphemerisBody::Moon, epoch_tdb_jd)
+    let (sun_pos_typed, _) = ephemeris
+        .get_state_typed(EphemerisBody::Sun, EphemerisBody::Moon, epoch_tdb_jd)
         .expect("Sun-Moon state from DE421");
+    let sun_pos_from_moon = sun_pos_typed.raw_si();
     let sun = sim.add_source(
         "Sun",
         GravitySourceEntry::new(
