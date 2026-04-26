@@ -1,13 +1,13 @@
 //! `VerificationCase` constructors for the SIM_dyncomp Tier 3 family.
 //!
 //! Each constructor returns a fully-populated
-//! [`VerificationCase`](jeod_sim::recipes::verification::VerificationCase)
+//! [`jeod_sim::recipes::verification::VerificationCase`]
 //! whose scenario closure loads its initial conditions from JEOD source
 //! files (Modified_data/*.py, S_define, gravity coefficient files, plus
 //! the t=0 row of the matching reference CSV — all "JEOD source data"
 //! per CLAUDE.md). The scenario builds a [`SimulationBuilder`] that the
 //! `run_and_assert` machinery materializes into a runtime
-//! [`Simulation`](crate::Simulation).
+//! [`crate::Simulation`].
 
 use std::path::PathBuf;
 
@@ -834,7 +834,7 @@ pub fn run6b_drag_aero_traj() -> VerificationCase {
     }
 }
 
-/// SIM_dyncomp RUN_6B with a 15° rotation about [1,1,1]/√3 applied to
+/// SIM_dyncomp RUN_6B with a 15° rotation about `[1,1,1]/√3` applied to
 /// the structural-to-body transform. Should match the identity case
 /// since ballistic drag on a sphere is rotation-invariant.
 pub fn run6b_drag_rotated_struct() -> VerificationCase {

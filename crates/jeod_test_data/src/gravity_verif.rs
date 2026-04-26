@@ -4,10 +4,10 @@ use glam::{DMat3, DVec3};
 ///
 /// Parsed from `models/environment/gravity/verif/unit_tests/grav_geospherical/data/verif_out.txt`.
 /// Each line contains 18 space-separated fields:
-///   CaseNum Degree Order PerturbOnly GradActive Pos[3] Potential Accel[3] Gradient[6]
+///   `CaseNum Degree Order PerturbOnly GradActive Pos[3] Potential Accel[3] Gradient[6]`.
 ///
 /// The gradient is stored as the upper triangle of a symmetric 3x3 matrix:
-///   [0,0], [0,1], [0,2], [1,1], [1,2], [2,2]
+///   `[0,0], [0,1], [0,2], [1,1], [1,2], [2,2]`.
 #[derive(Debug, Clone)]
 pub struct GravityTestCase {
     pub case_num: usize,

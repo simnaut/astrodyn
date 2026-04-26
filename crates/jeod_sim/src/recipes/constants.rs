@@ -1,8 +1,22 @@
 //! Typed physical constants used by recipes.
 //!
 //! Every constant carries its dimension via `uom`, so mission code that
-//! mixes `MU_GGM05C` with a length quantity gets a compile error rather
+//! mixes a `GravParam` with a length quantity gets a compile error rather
 //! than a unit mismatch at runtime.
+//!
+//! # Example
+//!
+//! ```
+//! use jeod_quantities::prelude::*;
+//! use jeod_sim::recipes::constants::{mu_ggm05c, r_eq_earth};
+//!
+//! let mu = mu_ggm05c();
+//! let r = r_eq_earth();
+//!
+//! // Circular-orbit speed at the equator: v = sqrt(mu / r).
+//! let v_circ_squared = mu.value / r.value;
+//! assert!(v_circ_squared > 0.0);
+//! ```
 
 use jeod_quantities::dims::GravParam;
 use jeod_quantities::ext::F64Ext;

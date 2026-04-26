@@ -92,7 +92,7 @@ pub fn rk4_translational_step(
 }
 
 /// Advance a 6-DOF state by one RK4 step, integrating 13 variables simultaneously:
-/// position[3], velocity[3], quaternion[4], angular velocity[3].
+/// `position[3]`, `velocity[3]`, `quaternion[4]`, `angular velocity[3]`.
 ///
 /// The `accel_fn` computes translational acceleration from the current 6-DOF state.
 /// The `torque_fn` computes body-frame external torque from the current 6-DOF state.

@@ -1,7 +1,7 @@
 //! Bevy-vs-Simulation parity tests: point-mass gravity, planetary orbits,
 //! basic 6-DOF, orbinit cross-consistency, and timescale parity.
 
-mod parity_helpers;
+mod common;
 
 use bevy::prelude::*;
 use bevy_jeod::{
@@ -14,7 +14,7 @@ use jeod_sim::{
     RotationalState, SixDofState, TranslationalState,
 };
 
-use parity_helpers::*;
+use common::*;
 
 // ── Scenario A: Point-mass 6-DOF ──
 

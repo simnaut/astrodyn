@@ -16,13 +16,13 @@
 //! [`reference_data`] submodule for JEOD-source-dependent loaders
 //! (gravity coefficient files, etc.). Phase 7 expands [`CsvReference`]
 //! into a tagged enum that names the per-CSV layout and provides one
-//! constructor per Tier 3 case in [`sim_dyncomp`] (and follow-on
+//! constructor per Tier 3 case in `sim_dyncomp` (and follow-on
 //! family modules).
 //!
 //! `run_and_assert` itself is implemented by `jeod_runner` via an
 //! extension trait, since materializing a [`SimulationBuilder`] into a
-//! runtime [`Simulation`] is runner-specific. The runner-side trait
-//! also dispatches on the [`CsvReference`] variant, calling the
+//! runtime `jeod_runner::Simulation` is runner-specific. The runner-side
+//! trait also dispatches on the [`CsvReference`] variant, calling the
 //! matching loader from `jeod_test_data::tier3_csv`.
 
 pub mod reference_data;
@@ -81,7 +81,7 @@ pub enum CsvReference {
     /// 80-column SIM_dyncomp state CSV consumed as a 3-DOF reference:
     /// position/velocity only — quaternion and ang_vel columns are
     /// dropped at the `jeod_test_data::crossval::StateLog` layer. Use
-    /// this for scenarios that build a [`VehicleConfig`] without `rot`,
+    /// this for scenarios that build a `jeod_runner::VehicleConfig` without `rot`,
     /// so per-step compares don't synthesize spurious rotational
     /// reference values from CSV columns the simulation never produces.
     Dyncomp3Dof(&'static str),
@@ -230,8 +230,8 @@ impl Default for Tolerances {
 /// Phase 6 shipped the type; Phase 7+ populates `verification::*`
 /// constructors that produce one of these per existing Tier 3 test.
 /// `run_and_assert` is provided by `jeod_runner::run_verification`
-/// because materializing the scenario into a runtime [`Simulation`]
-/// is runner-specific.
+/// because materializing the scenario into a runtime
+/// `jeod_runner::Simulation` is runner-specific.
 #[derive(Clone, Debug)]
 pub struct VerificationCase {
     /// Unique name used for `target/tier3_crossval/{name}.json` reports.

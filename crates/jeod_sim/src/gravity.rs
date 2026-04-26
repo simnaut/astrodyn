@@ -283,8 +283,7 @@ pub fn accumulate_gravity_typed<'a, S: Copy + std::fmt::Debug>(
 /// Typed sibling of [`accumulate_relativistic_corrections`].
 ///
 /// Same kernel; entry/exit boundary types are
-/// [`Position<Inertial>`] / [`Velocity<Inertial>`] /
-/// [`Acceleration<Inertial>`].
+/// `Position<Inertial>` / `Velocity<Inertial>` / `Acceleration<Inertial>`.
 pub fn accumulate_relativistic_corrections_typed<S: Copy + std::fmt::Debug + PartialEq>(
     body_position: Position<Inertial>,
     body_velocity: jeod_quantities::aliases::Velocity<Inertial>,

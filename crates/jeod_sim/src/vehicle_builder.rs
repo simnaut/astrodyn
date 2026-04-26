@@ -215,7 +215,7 @@ impl VehicleBuilder<NeedsState> {
     /// elements and the central-body gravitational parameter.
     ///
     /// Delegates to
-    /// [`init_from_orbital_elements_typed`](jeod_dynamics::body_init::init_from_orbital_elements_typed).
+    /// [`jeod_dynamics::body_init::init_from_orbital_elements_typed`].
     /// The angles in `oe` are interpreted in radians, the semi-major
     /// axis in meters, and `mu` carries its `GravParam` dimension.
     pub fn from_orbital_elements(

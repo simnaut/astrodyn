@@ -285,10 +285,11 @@ pub(crate) fn geodetic_to_cartesian_impl(geo: &GeodeticState, r_eq: f64, r_pol: 
     )
 }
 
-/// Typed sibling of [`cartesian_to_geodetic`]. Accepts a planet-fixed
-/// position and returns a dimensionally-typed [`GeodeticStateTyped`].
+/// Typed sibling for the file-private `cartesian_to_geodetic_impl` kernel.
+/// Accepts a planet-fixed position and returns a dimensionally-typed
+/// [`GeodeticStateTyped`].
 ///
-/// Bit-identical to [`cartesian_to_geodetic`] — this is a thin wrapper that
+/// Bit-identical to the kernel — this is a thin wrapper that
 /// unwraps `Position<PlanetFixed<P>>` to its SI `DVec3` representation,
 /// delegates to the f64 implementation, and re-wraps the scalar outputs.
 ///
@@ -305,10 +306,10 @@ pub fn cartesian_to_geodetic_typed<P: Planet>(
     GeodeticStateTyped::from_raw(raw)
 }
 
-/// Typed sibling of [`geodetic_to_cartesian`]. Returns a planet-fixed
-/// position parameterized by the planet tag `P`.
+/// Typed sibling for the file-private `geodetic_to_cartesian_impl` kernel.
+/// Returns a planet-fixed position parameterized by the planet tag `P`.
 ///
-/// Bit-identical to [`geodetic_to_cartesian`].
+/// Bit-identical to the kernel.
 pub fn geodetic_to_cartesian_typed<P: Planet>(
     state: GeodeticStateTyped,
     r_eq: Length,

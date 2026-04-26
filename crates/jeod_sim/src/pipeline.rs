@@ -2,7 +2,7 @@
 ///
 /// JEOD's simulation loop runs these stages in strict order every timestep.
 /// ECS adapters must schedule their systems to respect this ordering.
-/// The [`Simulation`](crate::Simulation) struct runs them internally in `step()`.
+/// The `jeod_runner::Simulation` struct runs them internally in `step()`.
 ///
 /// Ordering dependencies:
 /// - **Time** must be current before frame transforms (GMST, TT for RNP).

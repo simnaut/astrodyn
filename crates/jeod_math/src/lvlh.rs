@@ -50,7 +50,7 @@ impl LvlhFrame {
     /// [`compute_lvlh_frame_typed`] discards.
     ///
     /// Bit-identical numerics to [`compute_lvlh_frame_typed`] — both share
-    /// the [`compute_lvlh_frame_impl`] kernel.
+    /// the same `compute_lvlh_frame_impl` kernel.
     ///
     /// # Panics
     /// Panics if position or angular momentum magnitude is zero.
@@ -127,7 +127,7 @@ fn compute_lvlh_frame_impl(position: DVec3, velocity: DVec3) -> LvlhFrame {
     }
 }
 
-/// Typed sibling of [`compute_lvlh_frame`]: returns a `FrameTransform` from
+/// Typed sibling for `compute_lvlh_frame_impl`: returns a `FrameTransform` from
 /// the planet-centered inertial frame to the chief vehicle's LVLH frame.
 ///
 /// Delegates to the f64-based computation, then wraps the resulting rotation

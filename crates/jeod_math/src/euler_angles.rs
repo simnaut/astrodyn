@@ -375,12 +375,13 @@ fn compute_euler_angles_from_matrix_impl(trans: &DMat3, sequence: EulerSequence)
 // Public API — typed surface (uom `Angle`s + `NormalizedQuat` witness).
 // ---------------------------------------------------------------------------
 
-/// Typed sibling of [`compute_quaternion_from_euler_angles`].
+/// Typed sibling for the file-private `compute_quaternion_from_euler_angles_impl`
+/// kernel.
 ///
 /// Accepts a triple of `uom::si::f64::Angle` values and returns a
 /// [`NormalizedQuat`] witness of the resulting left-transformation
 /// quaternion. The inner [`JeodQuat`] is bit-identical to the value
-/// returned by the bare-`f64` variant when the same angles are supplied in
+/// returned by the kernel when the same angles are supplied in
 /// radians, so both surfaces agree on every representable input.
 ///
 /// The underlying `compute_quaternion_from_euler_angles_impl` applies
@@ -405,10 +406,11 @@ pub fn compute_quaternion_from_euler_angles_typed(
     })
 }
 
-/// Typed sibling of [`compute_matrix_from_euler_angles`].
+/// Typed sibling for the file-private `compute_matrix_from_euler_angles_impl`
+/// kernel.
 ///
 /// Accepts a triple of `uom::si::f64::Angle` values and returns the raw
-/// `DMat3` transformation matrix. Bit-identical to the bare-`f64` variant
+/// `DMat3` transformation matrix. Bit-identical to the kernel
 /// given the same angles (in radians).
 pub fn compute_matrix_from_euler_angles_typed(
     angles: [Angle; 3],
@@ -422,11 +424,12 @@ pub fn compute_matrix_from_euler_angles_typed(
     compute_matrix_from_euler_angles_impl(radians, sequence)
 }
 
-/// Typed sibling of [`compute_euler_angles_from_matrix`].
+/// Typed sibling for the file-private `compute_euler_angles_from_matrix_impl`
+/// kernel.
 ///
 /// Returns a triple of `uom::si::f64::Angle` values carrying the radian
 /// results of the JEOD extraction algorithm. Bit-identical numerically to
-/// the bare-`f64` variant.
+/// the kernel.
 pub fn compute_euler_angles_from_matrix_typed(
     trans: &DMat3,
     sequence: EulerSequence,

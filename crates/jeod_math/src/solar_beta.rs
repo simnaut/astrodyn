@@ -50,7 +50,7 @@ pub(crate) fn solar_beta_angle_impl(orbit_ang_momentum: DVec3, sun_direction: DV
     dot.asin()
 }
 
-/// Typed counterpart of [`solar_beta_angle`].
+/// Typed counterpart of `solar_beta_angle_impl` (the file-private kernel above).
 ///
 /// Computes the solar beta angle from a frame-tagged specific angular
 /// momentum vector (r × v, m²/s) and an inertial-frame sun direction

@@ -1,8 +1,8 @@
 //! Phase 7 of #101 — `run_and_assert` machinery for Tier 3 verification.
 //!
-//! [`VerificationCase`](jeod_sim::recipes::verification::VerificationCase)
+//! [`jeod_sim::recipes::verification::VerificationCase`]
 //! lives in `jeod_sim` as adapter-neutral data. Materializing the scenario
-//! into a runtime [`Simulation`](crate::Simulation), loading the reference
+//! into a runtime [`crate::Simulation`], loading the reference
 //! CSV, propagating, and asserting tolerances is runner-specific — it
 //! lives here as the [`VerificationCaseExt`] trait.
 //!
@@ -71,7 +71,7 @@ impl CsvRecords {
 /// asserts its tolerances.
 pub trait VerificationCaseExt {
     /// Build the scenario, load the reference CSV, propagate via
-    /// [`Simulation::step_until`] up to the case's `duration`, and
+    /// [`crate::Simulation::step_until`] up to the case's `duration`, and
     /// assert tolerances on the resulting [`CrossvalReport`]. Panics on
     /// any tolerance breach.
     fn run_and_assert(&self);

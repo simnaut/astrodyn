@@ -63,15 +63,15 @@ pub struct EphemerisR(pub jeod_sim::Ephemeris);
 
 /// Bevy resource wrapping `MassTree` for multi-body vehicles.
 ///
-/// Shared by all entities that have [`MassBodyIdC`](components::MassBodyIdC).
-/// The `staging_system` processes [`AttachEvent`](components::AttachEvent) and
-/// [`DetachEvent`](components::DetachEvent) to modify the tree and sync
+/// Shared by all entities that have [`components::MassBodyIdC`].
+/// The `staging_system` processes [`components::AttachEvent`] and
+/// [`components::DetachEvent`] to modify the tree and sync
 /// composite mass properties back to affected entities.
 ///
 /// This resource is not inserted automatically by [`JeodPlugin`]. Applications
 /// that use staging must insert `MassTreeR` before sending
-/// [`AttachEvent`](components::AttachEvent) or
-/// [`DetachEvent`](components::DetachEvent). If the resource is absent, staging
+/// [`components::AttachEvent`] or
+/// [`components::DetachEvent`]. If the resource is absent, staging
 /// events are silently drained.
 #[derive(Resource, Deref, DerefMut)]
 pub struct MassTreeR(pub jeod_sim::MassTree);

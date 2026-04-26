@@ -17,9 +17,9 @@ pub struct SphericalHarmonicsData {
     pub radius: f64,
     /// Gravitational parameter (m^3/s^2).
     pub mu: f64,
-    /// Normalized cosine coefficients: cnm[n][m] for n=0..degree, m=0..n.
+    /// Normalized cosine coefficients: `cnm[n][m]` for n=0..degree, m=0..n.
     pub cnm: Vec<Vec<f64>>,
-    /// Normalized sine coefficients: snm[n][m] for n=0..degree, m=0..n.
+    /// Normalized sine coefficients: `snm[n][m]` for n=0..degree, m=0..n.
     pub snm: Vec<Vec<f64>>,
     /// Whether C20 is tide-free.
     pub tide_free: bool,

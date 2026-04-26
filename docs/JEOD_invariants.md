@@ -6,6 +6,19 @@ with `// JEOD_INV: DB.03` comments. To find the JEOD source for any invariant,
 grep the JEOD tree for the distinctive identifier in the invariant description
 (function name, field name, error message text, etc.).
 
+> **Phase 11 audit (#113, 2026-04-26)** — All 68 rows with Category=`runtime`
+> were audited end-to-end against post-refactor enforcement sites in `crates/`
+> and `src/`. The catalog is current: invariants whose violations are now
+> made unrepresentable by the type system (frame mismatches, time-scale
+> mismatches, `NormalizedQuat` witness, typed entry points) are already
+> classified `structural` or `n/a`; invariants that remain genuine runtime
+> checks (NaN/finite guards, table-bounds checks, convergence checks,
+> flag-gated config) are correctly classified `enforced` or `partial`. No
+> reclassifications were needed at Phase 11; future invariants follow the
+> same structural-vs-runtime decision tree on addition. See
+> `docs/type_system.md` for the type-system architecture and
+> `STRATEGY.md` §8 for the refactor history.
+
 **Categories:**
 - `initialization` — checked during `initialize_simulation()` or model init
 - `runtime` — checked on every relevant call during simulation

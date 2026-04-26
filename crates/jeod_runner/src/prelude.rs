@@ -5,10 +5,10 @@
 //! ```
 //!
 //! Brings into scope the runner-side extension traits:
-//! - [`SimulationBuilderExt`](crate::SimulationBuilderExt) — terminal
+//! - [`crate::SimulationBuilderExt`] — terminal
 //!   `.build()` / `.build_unchecked()` on
 //!   [`jeod_sim::SimulationBuilder`].
-//! - [`VerificationCaseExt`](crate::VerificationCaseExt) — terminal
+//! - [`crate::VerificationCaseExt`] — terminal
 //!   `.run_and_assert()` on
 //!   [`jeod_sim::recipes::verification::VerificationCase`].
 

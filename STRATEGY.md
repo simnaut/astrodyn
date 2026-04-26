@@ -752,6 +752,15 @@ bevy_jeod/                               # workspace root
 
 **Dependency graph:**
 ```
+                     jeod_quantities
+                  (uom + phantom tags + Qty3<D, F> +
+                   NormalizedQuat + FrameTransform<From, To>)
+                            ^
+                            |
+                  ──────────┴──────────
+                  | every jeod_* crate |
+                  ─────────────────────
+                            |
 jeod_math  <── jeod_dynamics  <── jeod_interactions
    ^              ^                      |
    |              |                      v
@@ -769,6 +778,11 @@ jeod_frames  jeod_ephemeris    jeod_planet
               v
      bevy_jeod (src/) — unified Bevy glue (thin, delegates to jeod_sim)
 ```
+
+`jeod_quantities` (added in #101 Phase 0) sits at the bottom of the DAG. Every
+other `jeod_*` crate depends on it for typed quantities, phantom frame/time-scale
+tags, and the `F64Ext` facade. See §8 "Phase 8: Type-System Refactor" and
+`docs/type_system.md` for the architecture and rationale.
 
 ### Three-Layer Architecture
 
@@ -1448,6 +1462,76 @@ function port that surfaced during the audit.
 - `cargo clippy --workspace --tests -- -D warnings`: clean
 - Phase 7 exit-gate issues closed: #6, #49, #50, #60 (#13 already closed);
   DynManager multi-integrable-object work split into #114 as follow-up
+
+### Phase 8: Type-System Refactor (#101)
+
+**Goal:** Shift correctness guarantees from runtime/documentation into the type
+system. Mission-crate code never sees `DVec3`, `PhantomData`, or
+`uom::si::f64::Length::new::<kilometer>` — it composes typed building blocks and
+gets compiler errors in physics language when conventions are violated.
+
+**Context:** The original Phase 1–7 plan closed in April 2026. Phase 8 is the
+type-system refactor (issue #101), planned and shipped April 2026 across 12
+sub-issues #102–#113. It is additive to the original plan: physics is unchanged
+(Tier 3 baselines frozen at Phase 0 and held to within `1e-12 · magnitude`
+through every refactor-only phase).
+
+**Architectural outcome — three-layer facade:**
+
+```
+┌──────────────────────────────────────────────────────────┐
+│ Facade  (bevy_jeod::prelude, jeod_sim::recipes)          │
+│   F64Ext: 400.0.km(), 51.6.deg(), 420_000.0.kg()         │
+│   Concrete Component wrappers (no visible generics)      │
+│   Custom #[diagnostic::on_unimplemented] messages        │
+├──────────────────────────────────────────────────────────┤
+│ Typed jeod_* siblings                                     │
+│   Position<F: Frame>, SecondsSince<S: TimeScale>,        │
+│   Quat<L, T>, NormalizedQuat, FrameTransform<From, To>   │
+├──────────────────────────────────────────────────────────┤
+│ jeod_quantities (bottom of dep graph)                    │
+│   uom re-exports, Qty3<D, F>, phantom frames/scales,     │
+│   NormalizedQuat witness, F64Ext / Vec3Ext / Array3Ext   │
+└──────────────────────────────────────────────────────────┘
+```
+
+**Phase summary table:**
+
+| Phase | Issue | PR | Scope |
+|------:|------:|----:|-------|
+| 0 | #102 | #126 | `jeod_quantities` crate, `F64Ext`, custom diagnostics, `baselines.json` capture |
+| 1 | #103 | #130–#134 | Migrate leaf crates: `jeod_time`, `jeod_planet`, `jeod_atmosphere`, `jeod_ephemeris`, `jeod_test_data` |
+| 2 | #104 | #129, #135–#140 | Migrate `jeod_math` (commitment-point gate) |
+| 3 | #105 | #141 | Migrate `jeod_frames` + `jeod_dynamics` typed siblings |
+| 4 | #106 | #142 | Migrate `jeod_gravity` + `jeod_interactions` typed siblings |
+| 5 | #107 | #143 | Migrate `jeod_sim` public API + typestate `VehicleBuilder` |
+| 6 | #108 | #145 | Migrate `jeod_runner` + introduce `jeod_sim::recipes` (`building_blocks`/`scenarios`/`verification`) |
+| 7 | #109 | #147 | Tier 3 wave A: VerificationCase one-liners + ExtrasComparator dispatch |
+| 8 | #110 | #146 | Tier 3 wave B: archetype-B classification + `recipes::helpers/` infrastructure |
+| 9 | #111 | #148 | Migrate root package + Bevy integration: typed Components + 5/20 systems |
+| 10 | #112 | #149 | Purge deprecated APIs + complete typed-sibling coverage + retire `sim_test_helpers` |
+| 11 | #113 | (this PR) | Documentation, CI polish, compile-time budget enforcement |
+
+**Acceptance:** mission code reads like physics — `let altitude = 400.0.km()` —
+and the compiler rejects frame mismatches, scalar-vs-vector quaternion confusion,
+and unit-dimensional errors at compile time. See `docs/type_system.md` for the
+contributor primer and `examples/typed_mission.rs` for the canonical worked
+example.
+
+**Deferred items (tracked separately):**
+
+| Topic | Tracker |
+|-------|--------:|
+| Session types for integrator stage ordering (design spike) | #150 |
+| Capability tokens vs Bevy SystemSets (design spike) | #151 |
+| Branded `Simulation<'sim>` lifetimes (design spike) | #152 |
+| Docker CSV regeneration pipeline modernization | #153 |
+| Bevy `Reflect` impls for `uom`-backed types | #154 |
+| Type-erase `FrameTransform`-shaped Bevy Components | #155 |
+| `pre_step` hook on `VerificationCaseExt` | #156 |
+| `EvaluationCase` recipe shape for non-propagating tests | #157 |
+| Const-generic dimensional analysis | obviated by `uom` adoption (Phase 0) |
+| Spherical harmonics evaluation performance | tracked under #65 |
 
 ---
 

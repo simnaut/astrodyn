@@ -22,7 +22,7 @@ pub struct MassProperties {
     pub position: DVec3,        // m, in structural frame
     /// Set to `true` after mutating `mass` or `inertia` to trigger
     /// recomputation of `inverse_mass` and `inverse_inertia` on the next
-    /// call to [`recompute_derived`]. Constructors leave this `false`
+    /// call to [`Self::recompute_derived`]. Constructors leave this `false`
     /// (derived quantities are already computed).
     pub dirty: bool,
 }

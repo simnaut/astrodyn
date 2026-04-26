@@ -1,6 +1,6 @@
 //! Bevy-vs-Simulation parity tests: drag (exponential, constant-density, MET atmosphere).
 
-mod parity_helpers;
+mod common;
 
 use bevy::prelude::*;
 use bevy_jeod::{
@@ -15,7 +15,7 @@ use jeod_sim::{
     GeoIndexType, GravityControl, GravityControls, MetAtmosphere, SixDofState,
 };
 
-use parity_helpers::*;
+use common::*;
 
 // ── Scenario B: Exponential atmosphere + drag, 6-DOF ──
 

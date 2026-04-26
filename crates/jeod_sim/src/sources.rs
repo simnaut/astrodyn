@@ -1,7 +1,7 @@
 //! Gravity source registry entries.
 //!
 //! [`GravitySourceEntry`] is the user-facing description of a single gravity
-//! source (Earth, Moon, Sun, …) consumed by [`SimulationBuilder::add_source`]
+//! source (Earth, Moon, Sun, …) consumed by [`SimulationBuilder::add_source`](crate::SimulationBuilder::add_source)
 //! and ECS adapters. Phase 6 of #101 relocated this type out of `jeod_runner`
 //! so the runner and the future Bevy adapter share one description.
 

@@ -40,85 +40,203 @@ use crate::qty3::Qty3;
 ///
 /// Every method returns a `uom` scalar quantity; dimensional analysis then
 /// takes over at the call site.
+///
+/// # Example
+///
+/// ```
+/// use jeod_quantities::prelude::*;
+///
+/// let altitude = 400.0.km();          // Length
+/// let inclination = 51.6.deg();        // Angle
+/// let mass = 420_000.0.kg();           // Mass
+/// let dt = 60.0.s();                   // Time
+/// let g = 9.81.m_per_s2();             // Acceleration
+/// let mu = 3.986_004_418e14.m3_per_s2(); // GravParam (Earth)
+/// ```
 pub trait F64Ext: Copy {
     // --- Length ---
+    /// Length in meters.
+    ///
+    /// # Example
+    /// ```
+    /// # use jeod_quantities::prelude::*;
+    /// let r = 6_378_000.0.m();
+    /// ```
     fn m(self) -> Length;
+    /// Length in kilometers.
+    ///
+    /// # Example
+    /// ```
+    /// # use jeod_quantities::prelude::*;
+    /// let altitude = 400.0.km();
+    /// ```
     fn km(self) -> Length;
+    /// Length in centimeters.
     fn cm(self) -> Length;
+    /// Length in millimeters.
     fn mm(self) -> Length;
+    /// Length in feet.
     fn ft(self) -> Length;
+    /// Length in statute miles.
     fn mi(self) -> Length;
+    /// Length in nautical miles.
     fn nmi(self) -> Length;
 
     // --- Velocity ---
+    /// Velocity in meters per second.
+    ///
+    /// # Example
+    /// ```
+    /// # use jeod_quantities::prelude::*;
+    /// let v_circular = 7_660.0.m_per_s();
+    /// ```
     fn m_per_s(self) -> Velocity;
+    /// Velocity in kilometers per second.
     fn km_per_s(self) -> Velocity;
+    /// Velocity in kilometers per hour.
     fn km_per_h(self) -> Velocity;
+    /// Velocity in miles per hour.
     fn mph(self) -> Velocity;
 
     // --- Acceleration ---
+    /// Acceleration in m/s².
+    ///
+    /// # Example
+    /// ```
+    /// # use jeod_quantities::prelude::*;
+    /// let g = 9.81.m_per_s2();
+    /// ```
     fn m_per_s2(self) -> Acceleration;
+    /// Acceleration in km/s² (scaled to m/s² internally).
     fn km_per_s2(self) -> Acceleration;
+    /// Acceleration in standard gravities (1 g ≈ 9.80665 m/s²).
     fn g(self) -> Acceleration;
 
     // --- Mass ---
+    /// Mass in kilograms.
+    ///
+    /// # Example
+    /// ```
+    /// # use jeod_quantities::prelude::*;
+    /// let iss_mass = 420_000.0.kg();
+    /// ```
     fn kg(self) -> Mass;
+    /// Mass in grams. Suffixed `_mass` to disambiguate from `g` (acceleration).
     fn g_mass(self) -> Mass;
+    /// Mass in metric tons (1000 kg).
     fn tonnes(self) -> Mass;
+    /// Mass in pounds.
     fn lb(self) -> Mass;
 
     // --- Angle ---
+    /// Angle in radians.
+    ///
+    /// # Example
+    /// ```
+    /// # use jeod_quantities::prelude::*;
+    /// let half_pi = std::f64::consts::FRAC_PI_2.rad();
+    /// ```
     fn rad(self) -> Angle;
+    /// Angle in degrees.
+    ///
+    /// # Example
+    /// ```
+    /// # use jeod_quantities::prelude::*;
+    /// let inclination = 51.6.deg();
+    /// ```
     fn deg(self) -> Angle;
+    /// Angle in arcminutes (1/60 degree).
     fn arcmin(self) -> Angle;
+    /// Angle in arcseconds (1/3600 degree).
     fn arcsec(self) -> Angle;
 
     // --- Time ---
+    /// Time in seconds.
+    ///
+    /// # Example
+    /// ```
+    /// # use jeod_quantities::prelude::*;
+    /// let dt = 60.0.s();
+    /// ```
     fn s(self) -> Time;
+    /// Time in milliseconds.
     fn ms(self) -> Time;
+    /// Time in microseconds.
     fn us(self) -> Time;
+    /// Time in minutes (60 s).
     fn min(self) -> Time;
+    /// Time in hours.
     fn hours(self) -> Time;
+    /// Time in days (86_400 s).
     fn days(self) -> Time;
+    /// Time in weeks (7 days).
     fn weeks(self) -> Time;
+    /// Time in Julian years (365.25 days, per `uom`).
     fn years(self) -> Time;
 
     // --- Force ---
+    /// Force in newtons.
     fn n(self) -> Force;
     /// kilonewtons (N × 1000). Spelled `kn` per the public facade list.
     fn kn(self) -> Force;
+    /// Torque in newton-meters.
     fn n_m(self) -> Torque;
+    /// Torque in pound-force-feet.
     fn ft_lb(self) -> Torque;
 
     // --- Angular velocity / acceleration ---
+    /// Angular velocity in radians per second.
     fn rad_per_s(self) -> AngularVelocity;
+    /// Angular velocity in degrees per second.
     fn deg_per_s(self) -> AngularVelocity;
+    /// Angular velocity in revolutions per minute.
     fn rpm(self) -> AngularVelocity;
+    /// Angular acceleration in radians per second².
     fn rad_per_s2(self) -> AngularAcceleration;
 
     // --- Gravitational parameter ---
+    /// Gravitational parameter μ in m³/s².
+    ///
+    /// # Example
+    /// ```
+    /// # use jeod_quantities::prelude::*;
+    /// let mu_earth = 3.986_004_418e14.m3_per_s2();
+    /// ```
     fn m3_per_s2(self) -> GravParam;
+    /// Gravitational parameter μ in km³/s² (scaled to m³/s² internally).
     fn km3_per_s2(self) -> GravParam;
 
     // --- Specific angular momentum / energy ---
+    /// Specific angular momentum in m²/s.
     fn m2_per_s(self) -> SpecificAngMom;
+    /// Specific angular momentum in km²/s (scaled to m²/s internally).
     fn km2_per_s(self) -> SpecificAngMom;
+    /// Specific energy in m²/s².
     fn m2_per_s2(self) -> SpecificEnergy;
+    /// Specific energy in km²/s² (scaled to m²/s² internally).
     fn km2_per_s2(self) -> SpecificEnergy;
 
     // --- Mass flow rate ---
+    /// Mass flow rate in kg/s.
     fn kg_per_s(self) -> MassFlowRate;
 
     // --- Frequency ---
+    /// Frequency in hertz.
     fn hz(self) -> Frequency;
+    /// Frequency in kilohertz.
     fn khz(self) -> Frequency;
 
     // --- Area ---
+    /// Area in square meters.
     fn m2(self) -> Area;
+    /// Area in square kilometers.
     fn km2(self) -> Area;
 
     // --- Unitless ratios ---
+    /// Dimensionless ratio. Use for unit-cancelled quantities like
+    /// reflectivity coefficients.
     fn unitless(self) -> Ratio;
+    /// Percentage; the value is divided by 100 to produce the ratio.
     fn percent(self) -> Ratio;
 }
 
@@ -371,6 +489,16 @@ impl F64Ext for f64 {
 }
 
 /// Extension trait on `glam::DVec3` producing frame-tagged 3-vectors.
+///
+/// # Example
+///
+/// ```
+/// use glam::DVec3;
+/// use jeod_quantities::prelude::*;
+///
+/// let r: Position<Inertial> = DVec3::new(7_000_000.0, 0.0, 0.0).m_at::<Inertial>();
+/// let v: Velocity<Inertial> = DVec3::new(0.0, 7_546.0, 0.0).m_per_s_at::<Inertial>();
+/// ```
 pub trait Vec3Ext: Copy {
     /// Interpret as meters (position) in frame `F`.
     fn m_at<F: Frame>(self) -> crate::aliases::Position<F>;
@@ -421,6 +549,16 @@ impl Vec3Ext for DVec3 {
 
 /// Extension trait on `[f64; 3]` (raw component arrays from CSVs or JEOD
 /// initial conditions) producing frame-tagged 3-vectors.
+///
+/// # Example
+///
+/// ```
+/// use jeod_quantities::prelude::*;
+///
+/// // Loaded from a JEOD CSV row, [m, m, m].
+/// let row: [f64; 3] = [7_000_000.0, 0.0, 0.0];
+/// let r: Position<Inertial> = row.m_at::<Inertial>();
+/// ```
 pub trait Array3Ext: Copy {
     fn m_at<F: Frame>(self) -> crate::aliases::Position<F>;
     fn km_at<F: Frame>(self) -> crate::aliases::Position<F>;

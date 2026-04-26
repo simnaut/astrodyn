@@ -1,6 +1,6 @@
 //! Bevy-vs-Simulation parity tests: SRP (flat-plate, shadow, cannonball).
 
-mod parity_helpers;
+mod common;
 
 use bevy::prelude::*;
 use bevy_jeod::{
@@ -16,7 +16,7 @@ use jeod_sim::{
     GravitySource, MassProperties, SixDofState, TranslationalState,
 };
 
-use parity_helpers::*;
+use common::*;
 
 // ── Scenario E: Full stack — drag + SRP + gravity torque ──
 
