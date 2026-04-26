@@ -113,7 +113,7 @@ const PLANETARY_TOLS: Tolerances = Tolerances {
 /// LEO inclined orbit derived-state regression.
 pub fn leo_inc() -> VerificationCase {
     VerificationCase {
-        name: "tier3_planetary_leo_inc",
+        name: "tier3_simulation_planetary_leo_inc",
         scenario: build_leo_inc,
         reference: CsvReference::OrbInit("planetary_leo_inc_planetary.csv"),
         duration: Time::new::<second>(86400.0),
@@ -125,7 +125,7 @@ pub fn leo_inc() -> VerificationCase {
 /// LEO polar orbit derived-state regression.
 pub fn leo_polar() -> VerificationCase {
     VerificationCase {
-        name: "tier3_planetary_leo_polar",
+        name: "tier3_simulation_planetary_leo_polar",
         scenario: build_leo_polar,
         reference: CsvReference::OrbInit("planetary_leo_polar_planetary.csv"),
         duration: Time::new::<second>(86400.0),
@@ -137,7 +137,7 @@ pub fn leo_polar() -> VerificationCase {
 /// LEO eccentric orbit derived-state regression.
 pub fn leo_ecc() -> VerificationCase {
     VerificationCase {
-        name: "tier3_planetary_leo_ecc",
+        name: "tier3_simulation_planetary_leo_ecc",
         scenario: build_leo_ecc,
         reference: CsvReference::OrbInit("planetary_leo_ecc_planetary.csv"),
         duration: Time::new::<second>(86400.0),
@@ -149,7 +149,7 @@ pub fn leo_ecc() -> VerificationCase {
 /// LEO equatorial orbit derived-state regression (RAAN singular).
 pub fn leo_equ() -> VerificationCase {
     VerificationCase {
-        name: "tier3_planetary_leo_equ",
+        name: "tier3_simulation_planetary_leo_equ",
         scenario: build_leo_equ,
         reference: CsvReference::OrbInit("planetary_leo_equ_planetary.csv"),
         duration: Time::new::<second>(86400.0),
@@ -161,7 +161,7 @@ pub fn leo_equ() -> VerificationCase {
 /// GEO orbit derived-state regression.
 pub fn geo() -> VerificationCase {
     VerificationCase {
-        name: "tier3_planetary_geo",
+        name: "tier3_simulation_planetary_geo",
         scenario: build_geo,
         reference: CsvReference::OrbInit("planetary_geo_planetary.csv"),
         duration: Time::new::<second>(86400.0),

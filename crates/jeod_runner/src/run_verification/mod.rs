@@ -33,6 +33,7 @@ pub mod sim_polar_motion;
 use jeod_sim::recipes::verification::{CsvReference, ExtrasComparator, VerificationCase};
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use jeod_test_data::tier3_csv;
+use uom::si::time::second;
 
 use crate::builder::SimulationBuilderExt;
 use crate::VehicleOutput;
@@ -108,11 +109,18 @@ impl VerificationCaseExt for VerificationCase {
             typed_records.len()
         );
 
-        // 3. Propagate, sampling at each non-initial reference time.
+        // 3. Propagate, sampling at each non-initial reference time up
+        //    to the case's `duration` (a value of 0.0 or negative means
+        //    "use full CSV"; a value greater than the last record's
+        //    time runs to the end without extrapolation).
+        let duration_s = self.duration.get::<second>();
         let mut our_states = Vec::with_capacity(ref_states.len() - 1);
         let mut sampled_refs = Vec::with_capacity(ref_states.len() - 1);
         let mut extras_acc = self.extras.as_ref().map(ExtrasAccumulator::new);
         for (idx, record) in ref_states.iter().enumerate().skip(1) {
+            if duration_s > 0.0 && record.time > duration_s {
+                break;
+            }
             sim.step_until(record.time);
             let body = sim.body(0);
             if let Some(acc) = extras_acc.as_mut() {
@@ -193,12 +201,29 @@ fn load_reference(
     // we hand back. For variants without an extras comparator we keep
     // a parallel `Times` vec so length-checks line up cheaply.
     match csv {
-        CsvReference::Dyncomp(_) => {
+        CsvReference::Dyncomp3Dof(_) => {
+            // 3-DOF: scenario builds a body without `rot`, so our
+            // snapshot's quaternion/ang_vel are `None`. Build the
+            // reference StateLog with `None` too — feeding the CSV's
+            // logged quaternion/ang_vel here would compare apples to
+            // oranges (and `CrossvalReport` per-step compare would mix
+            // `Some` against `None`).
             let records = load_dyncomp_csv(path);
-            // 6-DOF tests want quaternion + ang_vel; 3-DOF tests only
-            // compare position/velocity. We always populate the 6-DOF
-            // shape — `assert_quat_angle` / `assert_ang_vel` are gated
-            // by tolerances above.
+            let states: Vec<StateLog> = records
+                .iter()
+                .map(|r| StateLog {
+                    time: r.time,
+                    position: Some(r.composite_body.position),
+                    velocity: Some(r.composite_body.velocity),
+                    ..Default::default()
+                })
+                .collect();
+            (states, CsvRecords::Dyncomp(records))
+        }
+        CsvReference::Dyncomp6Dof(_) => {
+            // 6-DOF: scenario builds a body with `rot`, so populate
+            // quaternion + ang_vel on the reference StateLog as well.
+            let records = load_dyncomp_csv(path);
             let states: Vec<StateLog> = records.iter().map(dyncomp_to_state_log_6dof).collect();
             (states, CsvRecords::Dyncomp(records))
         }

@@ -511,7 +511,7 @@ pub fn euler_run2() -> VerificationCase {
     VerificationCase {
         name: "tier3_simulation_euler",
         scenario: build_euler_run2,
-        reference: CsvReference::Dyncomp("dyncomp_run2_state.csv"),
+        reference: CsvReference::Dyncomp6Dof("dyncomp_run2_state.csv"),
         duration: Time::new::<second>(28800.0),
         tolerances: Tolerances {
             position_m: [0.0; 3], // 6-DOF rotational test; pos/vel asserts skipped

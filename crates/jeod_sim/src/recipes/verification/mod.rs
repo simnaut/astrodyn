@@ -40,9 +40,19 @@ use crate::SimulationBuilder;
 /// pick the right loader.
 #[derive(Clone, Debug)]
 pub enum CsvReference {
-    /// 80-column SIM_dyncomp state CSV (composite_body, core_body,
-    /// structure frames, plus derivatives).
-    Dyncomp(&'static str),
+    /// 80-column SIM_dyncomp state CSV consumed as a 3-DOF reference:
+    /// position/velocity only — quaternion and ang_vel columns are
+    /// dropped at the [`StateLog`](jeod_test_data::crossval::StateLog)
+    /// layer. Use this for scenarios that build a [`VehicleConfig`]
+    /// without `rot`, so per-step compares don't synthesize spurious
+    /// rotational reference values from CSV columns the simulation
+    /// never produces.
+    Dyncomp3Dof(&'static str),
+    /// 80-column SIM_dyncomp state CSV consumed as a 6-DOF reference:
+    /// position/velocity *plus* `composite_body.quaternion` and
+    /// `composite_body.ang_vel` are populated on the reference
+    /// [`StateLog`](jeod_test_data::crossval::StateLog).
+    Dyncomp6Dof(&'static str),
     /// 21+-column SIM_OrbElem CSV (classical elements + state).
     Orbelem(&'static str),
     /// 17+-column SIM_LVLH CSV (T_parent_this + ang_vel_mag + state).
@@ -77,7 +87,8 @@ impl CsvReference {
     /// Returns the underlying file name (relative to `test_data/`).
     pub fn file_name(&self) -> &'static str {
         match self {
-            CsvReference::Dyncomp(s)
+            CsvReference::Dyncomp3Dof(s)
+            | CsvReference::Dyncomp6Dof(s)
             | CsvReference::Orbelem(s)
             | CsvReference::Lvlh(s)
             | CsvReference::Ned(s)
@@ -144,7 +155,7 @@ pub enum ExtrasComparator {
     /// extractor against the JEOD-quaternion reference).
     Euler,
     /// Same Euler self-consistency check as [`Self::Euler`] but reading
-    /// the reference quaternion from a [`CsvReference::Dyncomp`]
+    /// the reference quaternion from a [`CsvReference::Dyncomp6Dof`]
     /// `composite_body.quaternion` row rather than a SIM_Euler CSV. Used
     /// by SIM_Euler runs that drive themselves from the SIM_dyncomp
     /// RUN_2 trajectory.
@@ -182,7 +193,11 @@ pub struct VerificationCase {
     /// Reference CSV produced by the corresponding JEOD verification
     /// simulation.
     pub reference: CsvReference,
-    /// Total propagation duration.
+    /// Total propagation duration. The runner truncates iteration over
+    /// the reference CSV to records with `record.time <= duration`.
+    /// `Time::new::<second>(0.0)` (or any value `<= 0.0`) means *use the
+    /// full CSV*. If `duration` exceeds the last record's time the loop
+    /// simply runs to the end (no extrapolation).
     pub duration: Time,
     /// Per-component tolerances for the cross-validation report.
     pub tolerances: Tolerances,

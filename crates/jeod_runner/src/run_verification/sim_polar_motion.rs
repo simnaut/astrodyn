@@ -94,7 +94,7 @@ pub fn run2p_polar_motion() -> VerificationCase {
     VerificationCase {
         name: "tier3_simulation_run2p_polar_motion",
         scenario: build_run2p_polar_motion,
-        reference: CsvReference::Dyncomp("dyncomp_run2p_state.csv"),
+        reference: CsvReference::Dyncomp3Dof("dyncomp_run2p_state.csv"),
         duration: Time::new::<second>(28800.0),
         tolerances: Tolerances {
             position_m: [1.37e-6, 2.154e-6, 1.826e-6],

@@ -161,7 +161,7 @@ pub fn run2_3dof() -> VerificationCase {
     VerificationCase {
         name: "tier3_simulation_run2_3dof",
         scenario: build_run2_3dof,
-        reference: CsvReference::Dyncomp("dyncomp_run2_state.csv"),
+        reference: CsvReference::Dyncomp3Dof("dyncomp_run2_state.csv"),
         duration: Time::new::<second>(28800.0),
         tolerances: Tolerances {
             position_m: [1.37e-6, 2.154e-6, 1.826e-6],
@@ -179,7 +179,7 @@ pub fn run2_6dof() -> VerificationCase {
     VerificationCase {
         name: "tier3_simulation_run2_6dof",
         scenario: build_run2_6dof,
-        reference: CsvReference::Dyncomp("dyncomp_run2_state.csv"),
+        reference: CsvReference::Dyncomp6Dof("dyncomp_run2_state.csv"),
         duration: Time::new::<second>(28800.0),
         tolerances: Tolerances {
             position_m: [1.37e-6, 2.154e-6, 1.826e-6],
@@ -366,7 +366,7 @@ pub fn run3a_sh4x4() -> VerificationCase {
     VerificationCase {
         name: "tier3_simulation_run3a_sh4x4",
         scenario: build_run3a,
-        reference: CsvReference::Dyncomp("dyncomp_run3a_state.csv"),
+        reference: CsvReference::Dyncomp3Dof("dyncomp_run3a_state.csv"),
         duration: Time::new::<second>(28800.0),
         tolerances: Tolerances {
             position_m: [5.3e-2, 1.344e-1, 1.026e-1],
@@ -384,7 +384,7 @@ pub fn run3b_sh8x8() -> VerificationCase {
     VerificationCase {
         name: "tier3_simulation_run3b_sh8x8",
         scenario: build_run3b,
-        reference: CsvReference::Dyncomp("dyncomp_run3b_state.csv"),
+        reference: CsvReference::Dyncomp3Dof("dyncomp_run3b_state.csv"),
         duration: Time::new::<second>(28800.0),
         tolerances: Tolerances {
             position_m: [1.325e-1, 2.3e-1, 1.646e-1],
@@ -446,7 +446,7 @@ pub fn run5b_atmosphere_mean() -> VerificationCase {
     VerificationCase {
         name: "tier3_simulation_run5b_atmosphere_mean",
         scenario: build_run5b,
-        reference: CsvReference::Dyncomp("dyncomp_run5b_state.csv"),
+        reference: CsvReference::Dyncomp6Dof("dyncomp_run5b_state.csv"),
         duration: Time::new::<second>(28800.0),
         tolerances: Tolerances {
             position_m: [5.374e-7, 8.376e-7, 6.318e-7],
@@ -465,7 +465,7 @@ pub fn run5c_atmosphere_max() -> VerificationCase {
     VerificationCase {
         name: "tier3_simulation_run5c_atmosphere_max",
         scenario: build_run5c,
-        reference: CsvReference::Dyncomp("dyncomp_run5c_state.csv"),
+        reference: CsvReference::Dyncomp6Dof("dyncomp_run5c_state.csv"),
         duration: Time::new::<second>(28800.0),
         tolerances: Tolerances {
             position_m: [5.374e-7, 8.376e-7, 6.318e-7],
@@ -559,7 +559,7 @@ pub fn run6a_const_density_drag() -> VerificationCase {
     VerificationCase {
         name: "tier3_simulation_run6a_const_density_drag",
         scenario: build_run6a,
-        reference: CsvReference::Dyncomp("dyncomp_run6a_state.csv"),
+        reference: CsvReference::Dyncomp6Dof("dyncomp_run6a_state.csv"),
         duration: Time::new::<second>(28800.0),
         tolerances: Tolerances {
             position_m: [4.366e-4, 6.84e-4, 5.325e-4],
@@ -577,7 +577,7 @@ pub fn run6b_drag() -> VerificationCase {
     VerificationCase {
         name: "tier3_simulation_run6b_drag",
         scenario: build_run6b,
-        reference: CsvReference::Dyncomp("dyncomp_run6b_state.csv"),
+        reference: CsvReference::Dyncomp6Dof("dyncomp_run6b_state.csv"),
         duration: Time::new::<second>(28800.0),
         tolerances: Tolerances {
             position_m: [7.971e-1, 1.114, 8.945e-1],
@@ -675,7 +675,7 @@ pub fn run10a_gravity_torque() -> VerificationCase {
     VerificationCase {
         name: "tier3_simulation_run10a_gravity_torque",
         scenario: build_run10a,
-        reference: CsvReference::Dyncomp("dyncomp_run10a_state.csv"),
+        reference: CsvReference::Dyncomp6Dof("dyncomp_run10a_state.csv"),
         duration: Time::new::<second>(28800.0),
         tolerances: Tolerances {
             position_m: [1.37e-6, 2.154e-6, 1.826e-6],
@@ -694,7 +694,7 @@ pub fn run10c_gravity_torque_elliptical() -> VerificationCase {
     VerificationCase {
         name: "tier3_simulation_run10c_gravity_torque_elliptical",
         scenario: build_run10c,
-        reference: CsvReference::Dyncomp("dyncomp_run10c_state.csv"),
+        reference: CsvReference::Dyncomp6Dof("dyncomp_run10c_state.csv"),
         duration: Time::new::<second>(28800.0),
         tolerances: Tolerances {
             position_m: [5.374e-7, 8.376e-7, 6.318e-7],
@@ -913,7 +913,7 @@ pub fn run10d_gravity_torque_elliptical_rate() -> VerificationCase {
     VerificationCase {
         name: "tier3_simulation_run10d_gravity_torque_elliptical_rate",
         scenario: build_run10d,
-        reference: CsvReference::Dyncomp("dyncomp_run10d_state.csv"),
+        reference: CsvReference::Dyncomp6Dof("dyncomp_run10d_state.csv"),
         duration: Time::new::<second>(28800.0),
         tolerances: Tolerances {
             position_m: [5.374e-7, 8.376e-7, 6.318e-7],
