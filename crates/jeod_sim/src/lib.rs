@@ -152,6 +152,21 @@ pub use jeod_gravity::relativistic;
 // jeod_planet: planet shape
 pub use jeod_planet::PlanetShape;
 
+// jeod_quantities: typed-quantity foundation. ECS adapters (e.g. the
+// `bevy_jeod` root crate) consume these types via `jeod_sim` to
+// preserve the "single dependency" invariant.
+pub use jeod_quantities::aliases::{
+    Acceleration, AngularAcceleration, AngularMomentum, AngularVelocity, Force, Jerk, Position,
+    Torque, Velocity,
+};
+pub use jeod_quantities::frame::{
+    BodyFrame, Earth, Ecef, Frame, Inertial, Lvlh, Mars, Moon, Ned, Planet, PlanetFixed, SelfRef,
+    StructuralFrame, Sun, Vehicle,
+};
+pub use jeod_quantities::frame_transform::FrameTransform;
+pub use jeod_quantities::inertia::InertiaTensor;
+pub use jeod_quantities::qty3::Qty3;
+
 // jeod_math: quaternion type (used in RotationalState)
 pub use jeod_math::JeodQuat;
 
