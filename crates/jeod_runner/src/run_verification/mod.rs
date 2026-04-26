@@ -26,6 +26,8 @@
 //! ```
 
 pub mod sim_dyncomp;
+pub mod sim_planetary;
+pub mod sim_polar_motion;
 
 use jeod_sim::recipes::verification::{CsvReference, VerificationCase};
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
