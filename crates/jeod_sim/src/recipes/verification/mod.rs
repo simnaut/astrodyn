@@ -74,16 +74,15 @@ pub struct InitialConditions {
 pub enum CsvReference {
     /// 80-column SIM_dyncomp state CSV consumed as a 3-DOF reference:
     /// position/velocity only — quaternion and ang_vel columns are
-    /// dropped at the [`StateLog`](jeod_test_data::crossval::StateLog)
-    /// layer. Use this for scenarios that build a [`VehicleConfig`]
-    /// without `rot`, so per-step compares don't synthesize spurious
-    /// rotational reference values from CSV columns the simulation
-    /// never produces.
+    /// dropped at the `jeod_test_data::crossval::StateLog` layer. Use
+    /// this for scenarios that build a [`VehicleConfig`] without `rot`,
+    /// so per-step compares don't synthesize spurious rotational
+    /// reference values from CSV columns the simulation never produces.
     Dyncomp3Dof(&'static str),
     /// 80-column SIM_dyncomp state CSV consumed as a 6-DOF reference:
     /// position/velocity *plus* `composite_body.quaternion` and
     /// `composite_body.ang_vel` are populated on the reference
-    /// [`StateLog`](jeod_test_data::crossval::StateLog).
+    /// `jeod_test_data::crossval::StateLog`.
     Dyncomp6Dof(&'static str),
     /// 21+-column SIM_OrbElem CSV (classical elements + state).
     Orbelem(&'static str),
@@ -161,8 +160,8 @@ pub struct Tolerances {
 ///
 /// Each variant tags a family-specific extractor that pairs a
 /// [`crate::recipes::verification::CsvReference`]'s typed record at
-/// step *k* with the [`VehicleOutput`](jeod_runner::VehicleOutput) at
-/// the same step, yielding `(name, abs_error)` pairs the runner
+/// step *k* with the runner-side `jeod_runner::VehicleOutput` at the
+/// same step, yielding `(name, abs_error)` pairs the runner
 /// accumulates as max errors and asserts against
 /// [`Tolerances::extras`].
 ///
