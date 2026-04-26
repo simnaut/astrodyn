@@ -10,12 +10,17 @@ jeod_gravity = { path = "../jeod_gravity" }
 jeod_time = { path = "../jeod_time" }
 jeod_frames = { path = "../jeod_frames" }
 jeod_interactions = { path = "../jeod_interactions" }
+jeod_math = { path = "../jeod_math" }
+# `jeod_test_data` powers `run_verification::*` (Tier 3 verification-case
+# machinery). It is lightweight (regex + glam + uom) and pulls in no physics
+# crates, so promoting it from a dev-dep to a regular dep keeps the public
+# `VerificationCaseExt` reachable from any consumer of `jeod_runner`.
+jeod_test_data = { path = "../jeod_test_data" }
 glam = { workspace = true }
 log = { workspace = true }
+uom = { workspace = true }
 
 [dev-dependencies]
-jeod_test_data = { path = "../jeod_test_data" }
-jeod_math = { path = "../jeod_math" }
 jeod_atmosphere = { path = "../jeod_atmosphere" }
 
 [[example]]

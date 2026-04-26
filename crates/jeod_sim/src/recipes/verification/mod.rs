@@ -11,32 +11,141 @@
 //! }
 //! ```
 //!
-//! Phase 6 ships only the scaffold: the [`VerificationCase`] /
+//! Phase 6 shipped only the scaffold: the [`VerificationCase`] /
 //! [`Tolerances`] / [`CsvReference`] types and the
 //! [`reference_data`] submodule for JEOD-source-dependent loaders
-//! (gravity coefficient files, etc.). Concrete `verification::*`
-//! constructors live in Phase 7/8.
+//! (gravity coefficient files, etc.). Phase 7 expands [`CsvReference`]
+//! into a tagged enum that names the per-CSV layout and provides one
+//! constructor per Tier 3 case in [`sim_dyncomp`] (and follow-on
+//! family modules).
 //!
 //! `run_and_assert` itself is implemented by `jeod_runner` via an
 //! extension trait, since materializing a [`SimulationBuilder`] into a
-//! runtime [`Simulation`] is runner-specific.
+//! runtime [`Simulation`] is runner-specific. The runner-side trait
+//! also dispatches on the [`CsvReference`] variant, calling the
+//! matching loader from `jeod_test_data::tier3_csv`.
 
 pub mod reference_data;
 
+use glam::{DQuat, DVec3};
 use uom::si::f64::Time;
 
 use crate::SimulationBuilder;
 
+/// Initial conditions extracted from the t=0 row of a reference CSV and
+/// passed to a scenario constructor by `run_and_assert`. This lets the
+/// runner parse each reference CSV exactly once: it loads the full
+/// trajectory, hands the t=0 record here to build the scenario, and
+/// reuses the rest of the trajectory for the per-step comparison.
+///
+/// All variants use raw `glam` types so this struct stays adapter-
+/// neutral (no dependency on `jeod_test_data` from `jeod_sim` outside
+/// of dev-deps).
+///
+/// **Quaternion convention.** `glam::DQuat` is laid out as `(x, y, z, w)`
+/// where `w` is the scalar component. JEOD's convention is scalar-first
+/// `[q0, q1, q2, q3]` where `q0` is the scalar. A JEOD quaternion
+/// `[q0, q1, q2, q3]` therefore maps to
+/// `DQuat { x: q1, y: q2, z: q3, w: q0 }`. Scenarios that need a
+/// [`crate::JeodQuat`] convert via `JeodQuat::from_glam`.
+#[derive(Clone, Debug, Default)]
+pub struct InitialConditions {
+    /// Reference time (seconds since the sim epoch). Always populated.
+    pub time: f64,
+    /// Inertial position. Always populated for the variants used by
+    /// migrated Tier 3 cases.
+    pub position: DVec3,
+    /// Inertial velocity. Always populated for the variants used by
+    /// migrated Tier 3 cases.
+    pub velocity: DVec3,
+    /// Body-frame attitude quaternion in `glam::DQuat` layout
+    /// `(x, y, z, w)` where `w` is the scalar. JEOD's scalar-first
+    /// convention `[q0, q1, q2, q3]` (with `q0` scalar) maps to
+    /// `DQuat { x: q1, y: q2, z: q3, w: q0 }`. `Some` for 6-DOF cases,
+    /// `None` for 3-DOF (point-mass translational-only) scenarios.
+    pub quaternion: Option<DQuat>,
+    /// Body-frame angular velocity. `Some` for 6-DOF cases, `None` for
+    /// 3-DOF.
+    pub ang_vel: Option<DVec3>,
+}
+
 /// A reference-CSV file used by a Tier 3 verification case.
 ///
-/// Phase 6 keeps this as a thin wrapper around a file path; Phase 7
-/// will extend it with column-layout descriptors as the Tier 3 wave
-/// fills out.
+/// Each variant tags a distinct column layout produced by one of JEOD's
+/// `log_state_ASCII` configurations. The wrapped `&'static str` is the
+/// file name relative to the workspace `test_data/` directory. The
+/// runner-side `run_and_assert` machinery dispatches on the variant to
+/// pick the right loader.
 #[derive(Clone, Debug)]
-pub struct CsvReference {
-    /// Path to the CSV file, relative to the repository's `test_data/`
-    /// directory.
-    pub path: &'static str,
+pub enum CsvReference {
+    /// 80-column SIM_dyncomp state CSV consumed as a 3-DOF reference:
+    /// position/velocity only — quaternion and ang_vel columns are
+    /// dropped at the `jeod_test_data::crossval::StateLog` layer. Use
+    /// this for scenarios that build a [`VehicleConfig`] without `rot`,
+    /// so per-step compares don't synthesize spurious rotational
+    /// reference values from CSV columns the simulation never produces.
+    Dyncomp3Dof(&'static str),
+    /// 80-column SIM_dyncomp state CSV consumed as a 6-DOF reference:
+    /// position/velocity *plus* `composite_body.quaternion` and
+    /// `composite_body.ang_vel` are populated on the reference
+    /// `jeod_test_data::crossval::StateLog`.
+    Dyncomp6Dof(&'static str),
+    /// 21+-column SIM_OrbElem CSV (classical elements + state).
+    Orbelem(&'static str),
+    /// 17+-column SIM_LVLH CSV (T_parent_this + ang_vel_mag + state).
+    Lvlh(&'static str),
+    /// 16+-column SIM_NED CSV (geodetic + spherical altitudes/lat/lon
+    /// + state).
+    Ned(&'static str),
+    /// 7-column SIM_3_ORBIT SRP CSV (time + pos + vel).
+    Srp(&'static str),
+    /// 9-column SIM_1_BASIC SRP CSV (force, torque, flux, temperature).
+    SrpBasic(&'static str),
+    /// 11-column SIM_VER_DRAG CSV (aero force/torque + inertial vel +
+    /// accel mag).
+    Drag(&'static str),
+    /// 56-column SIM_Euler CSV (36 angles + state + T + quat).
+    Euler(&'static str),
+    /// 8-column SIM_SolarBeta CSV (time + beta + interleaved pos/vel).
+    SolarBeta(&'static str),
+    /// 11-column SIM_2A_SHADOW_CALC CSV.
+    Shadow(&'static str),
+    /// 26-column SIM_torque_compare_simple CSV.
+    TorqueSimple(&'static str),
+    /// 9-column atmosphere-trajectory CSV (state + density + temp).
+    AtmosTraj(&'static str),
+    /// 14-column aero-trajectory CSV (state + aero force/torque + density).
+    AeroTraj(&'static str),
+    /// 7-column trajectory CSV with schema `time + pos[3] + vel[3]`.
+    /// Used by any sim whose `log_state_ASCII` config emits exactly the
+    /// composite-body inertial state (no rotation matrix, quaternion, or
+    /// angular velocity columns). Originating sims include `SIM_orbinit`,
+    /// `SIM_GJ_test`, and `SIM_Planetary` — the variant is generic over
+    /// the schema, not specific to any one of them.
+    OrbInit(&'static str),
+}
+
+impl CsvReference {
+    /// Returns the underlying file name (relative to `test_data/`).
+    pub fn file_name(&self) -> &'static str {
+        match self {
+            CsvReference::Dyncomp3Dof(s)
+            | CsvReference::Dyncomp6Dof(s)
+            | CsvReference::Orbelem(s)
+            | CsvReference::Lvlh(s)
+            | CsvReference::Ned(s)
+            | CsvReference::Srp(s)
+            | CsvReference::SrpBasic(s)
+            | CsvReference::Drag(s)
+            | CsvReference::Euler(s)
+            | CsvReference::SolarBeta(s)
+            | CsvReference::Shadow(s)
+            | CsvReference::TorqueSimple(s)
+            | CsvReference::AtmosTraj(s)
+            | CsvReference::AeroTraj(s)
+            | CsvReference::OrbInit(s) => s,
+        }
+    }
 }
 
 /// Per-component tolerances for trajectory cross-validation.
@@ -46,6 +155,16 @@ pub struct CsvReference {
 /// `quat_angle_rad`, `ang_vel_rad_s` per axis. `extras` lets a Tier 3
 /// case attach scenario-specific tolerances (e.g., the GR perihelion-
 /// advance arc-second-per-century check on the Mercury case).
+///
+/// **Skip semantics.** A whole metric group is skipped only when *all*
+/// of its component tolerances are zero (`position_m: [0.0; 3]`,
+/// `velocity_m_s: [0.0; 3]`, scalar `quat_angle_rad == 0.0`,
+/// `ang_vel_rad_s: [0.0; 3]`). This is the pattern used by 3-DOF cases
+/// to opt out of rotational assertions. A non-zero entry alongside a
+/// zero entry in the same array does *not* skip the zero axis — the
+/// runner still asserts `error_axis < 0.0` on it, which always fails.
+/// Mixing zero and non-zero entries within a single array is therefore
+/// almost always a configuration mistake.
 #[derive(Clone, Debug)]
 pub struct Tolerances {
     pub position_m: [f64; 3],
@@ -53,6 +172,43 @@ pub struct Tolerances {
     pub quat_angle_rad: f64,
     pub ang_vel_rad_s: [f64; 3],
     pub extras: &'static [(&'static str, f64)],
+}
+
+/// Per-family extras comparator dispatched by `run_and_assert`.
+///
+/// Each variant tags a family-specific extractor that pairs a
+/// [`crate::recipes::verification::CsvReference`]'s typed record at
+/// step *k* with the runner-side `jeod_runner::VehicleOutput` at the
+/// same step, yielding `(name, abs_error)` pairs the runner
+/// accumulates as max errors and asserts against
+/// [`Tolerances::extras`].
+///
+/// The runner-side dispatch lives in `jeod_runner::run_verification`
+/// (it has access to typed records and `VehicleOutput`); this enum is
+/// adapter-neutral so `VerificationCase` itself stays in `jeod_sim`.
+#[derive(Clone, Debug)]
+pub enum ExtrasComparator {
+    /// Classical orbital elements: 7 extras (sma, eccentricity, inclination,
+    /// arg_periapsis, long_asc_node, true_anom, mean_anom).
+    Orbelem,
+    /// LVLH frame: 2 extras (`t_parent_this` matrix-element max error,
+    /// `ang_vel` magnitude error).
+    Lvlh,
+    /// Geodetic state: 3 extras (`altitude`, `latitude`, `longitude`).
+    /// `spherical=true` compares against the spherical-Earth columns;
+    /// `false` (default) compares against ellipsoidal columns.
+    Ned { spherical: bool },
+    /// Euler angles: 3 extras (`euler_roll`, `euler_pitch`, `euler_yaw`)
+    /// computed against JEOD's logged quaternion via our own port of the
+    /// Euler-from-matrix conversion (self-consistency check of our Euler
+    /// extractor against the JEOD-quaternion reference).
+    Euler,
+    /// Same Euler self-consistency check as [`Self::Euler`] but reading
+    /// the reference quaternion from a [`CsvReference::Dyncomp6Dof`]
+    /// `composite_body.quaternion` row rather than a SIM_Euler CSV. Used
+    /// by SIM_Euler runs that drive themselves from the SIM_dyncomp
+    /// RUN_2 trajectory.
+    DyncompEuler,
 }
 
 impl Default for Tolerances {
@@ -71,7 +227,7 @@ impl Default for Tolerances {
 
 /// A single Tier 3 verification case.
 ///
-/// Phase 6 ships the type; Phase 7/8 populates `verification::*`
+/// Phase 6 shipped the type; Phase 7+ populates `verification::*`
 /// constructors that produce one of these per existing Tier 3 test.
 /// `run_and_assert` is provided by `jeod_runner::run_verification`
 /// because materializing the scenario into a runtime [`Simulation`]
@@ -80,14 +236,26 @@ impl Default for Tolerances {
 pub struct VerificationCase {
     /// Unique name used for `target/tier3_crossval/{name}.json` reports.
     pub name: &'static str,
-    /// Scenario constructor. The fn pointer stays adapter-neutral so
-    /// the runner and (Phase 9) Bevy adapter consume the same scenario.
-    pub scenario: fn() -> SimulationBuilder,
+    /// Scenario constructor. Receives the t=0 [`InitialConditions`]
+    /// extracted from `reference` so the scenario does not need to
+    /// re-parse the reference CSV. The fn pointer stays adapter-neutral
+    /// so the runner and (Phase 9) Bevy adapter consume the same
+    /// scenario.
+    pub scenario: fn(&InitialConditions) -> SimulationBuilder,
     /// Reference CSV produced by the corresponding JEOD verification
     /// simulation.
     pub reference: CsvReference,
-    /// Total propagation duration.
+    /// Total propagation duration. The runner truncates iteration over
+    /// the reference CSV to records with `record.time <= duration`.
+    /// `Time::new::<second>(0.0)` (or any value `<= 0.0`) means *use the
+    /// full CSV*. If `duration` exceeds the last record's time the loop
+    /// simply runs to the end (no extrapolation).
     pub duration: Time,
     /// Per-component tolerances for the cross-validation report.
     pub tolerances: Tolerances,
+    /// Optional per-family extras comparator. When `Some`, the runner
+    /// computes the family's `(name, error)` pairs alongside the state
+    /// log and asserts each against the matching entry in
+    /// [`Tolerances::extras`].
+    pub extras: Option<ExtrasComparator>,
 }

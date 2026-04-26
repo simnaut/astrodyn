@@ -43,6 +43,8 @@ use jeod_sim::{
 };
 
 pub mod builder;
+pub mod prelude;
+pub mod run_verification;
 
 // Re-export jeod_sim so downstream tests can access types through either path.
 pub use jeod_sim;
@@ -50,6 +52,9 @@ pub use jeod_sim::RotationModel;
 
 // Re-export the runner-side terminal-method extension trait from `builder`.
 pub use builder::SimulationBuilderExt;
+
+// Re-export the Phase-7 Tier 3 verification-case extension trait.
+pub use run_verification::VerificationCaseExt;
 
 // Re-exports of types relocated from jeod_runner to jeod_sim in Phase 6 of
 // #101. External consumers of `jeod_runner::{VehicleConfig,GravitySourceEntry,

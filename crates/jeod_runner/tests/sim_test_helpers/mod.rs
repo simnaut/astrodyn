@@ -5,7 +5,7 @@
 
 #![allow(dead_code)]
 
-use glam::{DMat3, DQuat, DVec3};
+use glam::{DMat3, DVec3};
 use jeod_math::OrbitalElements;
 use jeod_sim::{JeodQuat, MassProperties, TranslationalState};
 use std::path::Path;
@@ -39,12 +39,6 @@ pub fn quaternion_angle_error(q1: &JeodQuat, q2: &JeodQuat) -> f64 {
     2.0 * dot.min(1.0).acos()
 }
 
-/// Angle error between two glam `DQuat` values (radians).
-pub fn dquat_angle_error(a: DQuat, b: DQuat) -> f64 {
-    let dot = a.dot(b).abs();
-    2.0 * dot.min(1.0).acos()
-}
-
 pub fn test_data_path(filename: &str) -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../test_data")
@@ -52,138 +46,14 @@ pub fn test_data_path(filename: &str) -> std::path::PathBuf {
 }
 
 // ── Derived-state CSV loaders ──
-
-#[derive(Debug)]
-pub struct OrbElemRecord {
-    pub time: f64,
-    pub semi_major_axis: f64,
-    pub e_mag: f64,
-    pub inclination: f64,
-    pub arg_periapsis: f64,
-    pub long_asc_node: f64,
-    pub true_anom: f64,
-    pub mean_anom: f64,
-    pub position: DVec3,
-    pub velocity: DVec3,
-}
-
-pub fn load_orbelem_csv(path: &Path) -> Vec<OrbElemRecord> {
-    let content = read_csv(path, "SIM_OrbElem");
-    let mut records = Vec::new();
-    for (i, line) in content.lines().enumerate() {
-        if i == 0 || line.trim().is_empty() {
-            continue;
-        }
-        let f: Vec<&str> = line.split(',').collect();
-        assert!(
-            f.len() >= 21,
-            "line {}: expected >=21 columns, got {}",
-            i + 1,
-            f.len()
-        );
-        let p = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
-        records.push(OrbElemRecord {
-            time: p(0),
-            semi_major_axis: p(1),
-            e_mag: p(3),
-            inclination: p(4),
-            arg_periapsis: p(5),
-            long_asc_node: p(6),
-            true_anom: p(9),
-            mean_anom: p(10),
-            position: DVec3::new(p(15), p(16), p(17)),
-            velocity: DVec3::new(p(18), p(19), p(20)),
-        });
-    }
-    records
-}
-
-#[derive(Debug)]
-pub struct LvlhRecord {
-    pub time: f64,
-    pub t_parent_this: DMat3,
-    pub ang_vel_mag: f64,
-    pub position: DVec3,
-    pub velocity: DVec3,
-}
-
-pub fn load_lvlh_csv(path: &Path) -> Vec<LvlhRecord> {
-    let content = read_csv(path, "SIM_LVLH");
-    let mut records = Vec::new();
-    for (i, line) in content.lines().enumerate() {
-        if i == 0 || line.trim().is_empty() {
-            continue;
-        }
-        let f: Vec<&str> = line.split(',').collect();
-        assert!(
-            f.len() >= 17,
-            "line {}: expected >=17 columns, got {}",
-            i + 1,
-            f.len()
-        );
-        let p = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
-        // JEOD row-major T[row][col] → glam column-major
-        let t_parent_this = DMat3::from_cols(
-            DVec3::new(p(1), p(4), p(7)),
-            DVec3::new(p(2), p(5), p(8)),
-            DVec3::new(p(3), p(6), p(9)),
-        );
-        records.push(LvlhRecord {
-            time: p(0),
-            t_parent_this,
-            ang_vel_mag: p(10),
-            position: DVec3::new(p(11), p(13), p(15)),
-            velocity: DVec3::new(p(12), p(14), p(16)),
-        });
-    }
-    records
-}
-
-#[derive(Debug)]
-pub struct NedRecord {
-    pub time: f64,
-    pub ellip_altitude: f64,
-    pub ellip_latitude: f64,
-    pub ellip_longitude: f64,
-    pub sphere_altitude: f64,
-    pub sphere_latitude: f64,
-    pub sphere_longitude: f64,
-    pub position: DVec3,
-    pub velocity: DVec3,
-}
-
-pub fn load_ned_csv(path: &Path) -> Vec<NedRecord> {
-    let content = read_csv(path, "SIM_NED");
-    let mut records = Vec::new();
-    for (i, line) in content.lines().enumerate() {
-        if i == 0 || line.trim().is_empty() {
-            continue;
-        }
-        let f: Vec<&str> = line.split(',').collect();
-        assert!(
-            f.len() >= 16,
-            "line {}: expected >=16 columns, got {}",
-            i + 1,
-            f.len()
-        );
-        let p = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
-        // CSV columns: 0=time, 1-3=cart_coords, 4=ellip_alt, 5=sphere_alt,
-        // 6=ellip_lat, 7=sphere_lat, 8=ellip_lon, 9=sphere_lon,
-        // 10-15=pos/vel interleaved
-        records.push(NedRecord {
-            time: p(0),
-            ellip_altitude: p(4),
-            ellip_latitude: p(6),
-            ellip_longitude: p(8),
-            sphere_altitude: p(5),
-            sphere_latitude: p(7),
-            sphere_longitude: p(9),
-            position: DVec3::new(p(10), p(12), p(14)),
-            velocity: DVec3::new(p(11), p(13), p(15)),
-        });
-    }
-    records
-}
+//
+// `load_orbelem_csv`, `load_lvlh_csv`, `load_ned_csv`, `load_euler_csv`,
+// `load_atmos_traj_csv`, and `load_aero_traj_csv` previously lived here
+// but moved to `jeod_test_data::tier3_csv` when Phase 7 introduced
+// `VerificationCaseExt::run_and_assert`. Tests that still parse these
+// CSV layouts (orbelem_comprehensive, etc.) should import directly
+// from `jeod_test_data::tier3_csv`. Loaders kept here are used only by
+// tests that haven't migrated to `run_and_assert` yet.
 
 #[derive(Debug)]
 pub struct SrpRecord {
@@ -492,62 +362,6 @@ pub fn load_gj_csv(path: &Path) -> Vec<OrbInitRecord> {
     records
 }
 
-// ── Euler CSV loader (56 columns: time + 36 angles + 6 pos/vel + 9 T + 4 quat) ──
-
-#[derive(Debug)]
-pub struct EulerRecord {
-    pub time: f64,
-    /// 6 sequences x 2 forms (ref_body, body_ref) x 3 angles = 36 values.
-    /// Layout: [seq0_ref_body[3], seq0_body_ref[3], seq1_ref_body[3], ...]
-    pub angles: [f64; 36],
-    pub position: DVec3,
-    pub velocity: DVec3,
-    pub t_parent_this: DMat3,
-    pub quaternion: JeodQuat,
-}
-
-pub fn load_euler_csv(path: &Path) -> Vec<EulerRecord> {
-    let content = read_csv(path, "SIM_Euler");
-    let mut records = Vec::new();
-    for (i, line) in content.lines().enumerate() {
-        if i == 0 || line.trim().is_empty() {
-            continue;
-        }
-        let f: Vec<&str> = line.split(',').collect();
-        assert!(
-            f.len() >= 56,
-            "line {}: expected >=56 columns, got {}",
-            i + 1,
-            f.len()
-        );
-        let p = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
-        let mut angles = [0.0_f64; 36];
-        for (j, angle) in angles.iter_mut().enumerate() {
-            *angle = p(1 + j);
-        }
-        // Cols 37-42: position[3], velocity[3]
-        let position = DVec3::new(p(37), p(38), p(39));
-        let velocity = DVec3::new(p(40), p(41), p(42));
-        // Cols 43-51: T_parent_this row-major T[row][col]
-        let t_parent_this = DMat3::from_cols(
-            DVec3::new(p(43), p(46), p(49)),
-            DVec3::new(p(44), p(47), p(50)),
-            DVec3::new(p(45), p(48), p(51)),
-        );
-        // Cols 52-54: Q.vector[0..2], Col 55: Q.scalar
-        let quaternion = JeodQuat::new(p(55), p(52), p(53), p(54));
-        records.push(EulerRecord {
-            time: p(0),
-            angles,
-            position,
-            velocity,
-            t_parent_this,
-            quaternion,
-        });
-    }
-    records
-}
-
 // ── SolarBeta CSV loader (8 columns: time + beta + 3×(pos,vel) interleaved) ──
 
 #[derive(Debug)]
@@ -579,82 +393,6 @@ pub fn load_solar_beta_csv(path: &Path) -> Vec<SolarBetaRecord> {
             solar_beta: p(1),
             position: DVec3::new(p(2), p(4), p(6)),
             velocity: DVec3::new(p(3), p(5), p(7)),
-        });
-    }
-    records
-}
-
-// ── SIM_dyncomp atmosphere trajectory CSV loader (9 columns) ──
-
-#[derive(Debug)]
-pub struct AtmosTrajRecord {
-    pub time: f64,
-    pub position: DVec3,
-    pub velocity: DVec3,
-    pub density: f64,
-    pub temperature: f64,
-}
-
-pub fn load_atmos_traj_csv(path: &Path) -> Vec<AtmosTrajRecord> {
-    let content = read_csv(path, "SIM_dyncomp (atmos_traj)");
-    let mut records = Vec::new();
-    for (i, line) in content.lines().enumerate() {
-        if i == 0 || line.trim().is_empty() {
-            continue;
-        }
-        let f: Vec<&str> = line.split(',').collect();
-        assert!(
-            f.len() >= 9,
-            "line {}: expected >=9 columns, got {}",
-            i + 1,
-            f.len()
-        );
-        let p = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
-        records.push(AtmosTrajRecord {
-            time: p(0),
-            position: DVec3::new(p(1), p(2), p(3)),
-            velocity: DVec3::new(p(4), p(5), p(6)),
-            density: p(7),
-            temperature: p(8),
-        });
-    }
-    records
-}
-
-// ── SIM_dyncomp aero trajectory CSV loader (14 columns) ──
-
-#[derive(Debug)]
-pub struct AeroTrajRecord {
-    pub time: f64,
-    pub position: DVec3,
-    pub velocity: DVec3,
-    pub aero_force: DVec3,
-    pub aero_torque: DVec3,
-    pub density: f64,
-}
-
-pub fn load_aero_traj_csv(path: &Path) -> Vec<AeroTrajRecord> {
-    let content = read_csv(path, "SIM_dyncomp (aero_traj)");
-    let mut records = Vec::new();
-    for (i, line) in content.lines().enumerate() {
-        if i == 0 || line.trim().is_empty() {
-            continue;
-        }
-        let f: Vec<&str> = line.split(',').collect();
-        assert!(
-            f.len() >= 14,
-            "line {}: expected >=14 columns, got {}",
-            i + 1,
-            f.len()
-        );
-        let p = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
-        records.push(AeroTrajRecord {
-            time: p(0),
-            position: DVec3::new(p(1), p(2), p(3)),
-            velocity: DVec3::new(p(4), p(5), p(6)),
-            aero_force: DVec3::new(p(7), p(8), p(9)),
-            aero_torque: DVec3::new(p(10), p(11), p(12)),
-            density: p(13),
         });
     }
     records
