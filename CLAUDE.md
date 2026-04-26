@@ -308,7 +308,21 @@ CI filtering picks it up automatically.
 ## Generating Tier 3 Reference Data (Docker)
 
 JEOD verification sims run inside a Rocky 9 container with Trick 25 + JEOD 5.4.
-Trick is cloned at `../trick`, JEOD at `../jeod`.
+Trick is cloned at `../trick`, JEOD at `../jeod`. See
+[`docs/tier3_regeneration.md`](docs/tier3_regeneration.md) for the full
+workflow, troubleshooting, and "adding a new sim" recipe.
+
+The canonical wrapper is the `xtask` binary (requires the
+`.cargo/config.toml.example` alias copied into `.cargo/config.toml`):
+
+```bash
+cargo xtask regenerate-tier3            # incremental — skips existing CSVs
+cargo xtask regenerate-tier3 --force    # regenerate everything
+cargo xtask regenerate-tier3 --build    # force rebuild jeod-trick first
+```
+
+For environments without cargo (or for explicit reference), the equivalent
+direct Docker invocation is:
 
 ```bash
 # Build container (context is parent dir so trick/ and jeod/ are accessible)

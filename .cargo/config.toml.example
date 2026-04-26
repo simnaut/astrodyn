@@ -3,3 +3,14 @@
 [env]
 JEOD_HOME = { value = "../jeod", relative = true }
 TRICK_HOME = { value = "../trick", relative = true }
+
+# `cargo xtask <subcommand>` — workspace dev tooling. The xtask crate
+# wraps the Trick / JEOD reference-CSV regeneration Docker invocation
+# so contributors don't need to remember the bind-mount flags.
+#
+#   cargo xtask regenerate-tier3            # incremental regeneration
+#   cargo xtask regenerate-tier3 --force    # regenerate everything
+#   cargo xtask regenerate-tier3 --build    # force rebuild image first
+#   cargo xtask --help                      # print full help
+[alias]
+xtask = "run --quiet --package xtask --"

@@ -36,6 +36,7 @@ members = [
     "crates/jeod_test_data",
     "crates/jeod_sim",
     "crates/jeod_runner",
+    "xtask",
 ]
 
 [workspace.dependencies]
