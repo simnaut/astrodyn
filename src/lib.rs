@@ -158,3 +158,115 @@ impl Plugin for JeodPlugin {
         );
     }
 }
+
+// ── Bevy spawn helpers for the typestate VehicleBuilder ──
+
+/// Bevy-side terminal for [`jeod_sim::VehicleBuilder`].
+///
+/// `VehicleBuilder<Ready>::build()` returns a [`jeod_sim::VehicleConfig`]
+/// that the standalone `jeod_runner::Simulation` consumes via
+/// `SimulationBuilder::add_body`. This trait provides the parallel
+/// terminal for Bevy: given a runtime mapping from gravity-source indices
+/// (the `usize`-indexed [`GravityControl`](jeod_sim::GravityControl)s in
+/// the built config) to ECS [`Entity`]s, it spawns the vehicle entity
+/// with all the required JEOD components attached.
+///
+/// # Example
+///
+/// ```ignore
+/// use bevy_jeod::{JeodPlugin, VehicleBuilderBevyExt};
+/// use jeod_sim::recipes::{earth, orbital_elements};
+/// use jeod_sim::{GravityControl, VehicleBuilder};
+/// use jeod_quantities::ext::F64Ext;
+///
+/// fn setup(mut commands: Commands) {
+///     let earth = commands.spawn(/* gravity-source bundle */).id();
+///     let cfg = VehicleBuilder::new()
+///         .from_orbital_elements(orbital_elements::iss(), earth::point_mass().mu_typed())
+///         .three_dof_point_mass(420_000.0.kg())
+///         .rk4()
+///         .gravity(GravityControl::new_spherical(0_usize, false))
+///         .build();
+///     // Resolve source-index 0 to the earth entity.
+///     cfg.spawn_bevy(&mut commands, &[earth]);
+/// }
+/// ```
+pub trait VehicleConfigBevyExt {
+    /// Spawn a Bevy entity carrying every component implied by this
+    /// vehicle configuration.
+    ///
+    /// `source_entities` resolves each `usize` index in the config's
+    /// `gravity_controls` (and shadow / orbital-elements / geodetic /
+    /// integ-source references) to the corresponding ECS [`Entity`].
+    ///
+    /// Returns the spawned vehicle entity ID.
+    fn spawn_bevy(self, commands: &mut Commands, source_entities: &[Entity]) -> Entity;
+}
+
+impl VehicleConfigBevyExt for jeod_sim::VehicleConfig {
+    fn spawn_bevy(self, commands: &mut Commands, source_entities: &[Entity]) -> Entity {
+        // Translate `GravityControls<usize>` to `GravityControls<Entity>`
+        // by retagging the source identifier on each control. The
+        // `From<&GravityControl<A>> for GravityControl<B>` analog
+        // doesn't exist, so we build by field-by-field copy.
+        let entity_controls = jeod_sim::GravityControls::<Entity> {
+            controls: self
+                .gravity_controls
+                .controls
+                .into_iter()
+                .map(|c| {
+                    let mut nc = jeod_sim::GravityControl::new_spherical(
+                        source_entities[c.source_name],
+                        c.gradient,
+                    );
+                    nc.spherical = c.spherical;
+                    nc.degree = c.degree;
+                    nc.order = c.order;
+                    nc.perturbing_only = c.perturbing_only;
+                    nc.gradient_degree = c.gradient_degree;
+                    nc.gradient_order = c.gradient_order;
+                    nc.relativistic = c.relativistic;
+                    nc
+                })
+                .collect(),
+        };
+
+        let dynamics_config = jeod_sim::DynamicsConfig {
+            translational_dynamics: true,
+            rotational_dynamics: self.rot.is_some(),
+            three_dof: self.rot.is_none(),
+        };
+
+        let mut entity = commands.spawn((
+            components::TranslationalStateC(self.trans),
+            components::DynamicsConfigC(dynamics_config),
+            components::GravityControlsC(entity_controls),
+            components::IntegratorTypeC(self.integrator),
+            components::StructuralTransformC(self.t_struct_body),
+        ));
+        if let Some(rot) = self.rot {
+            entity.insert(components::RotationalStateC(rot));
+        }
+        if let Some(mass) = self.mass {
+            entity.insert(components::MassPropertiesC(mass));
+        }
+        if self.external_force != glam::DVec3::ZERO {
+            entity.insert(components::ExternalForceC(jeod_sim::Force::<
+                jeod_sim::Inertial,
+            >::from_raw_si(
+                self.external_force
+            )));
+        }
+        if self.external_torque != glam::DVec3::ZERO {
+            entity.insert(components::ExternalTorqueC(jeod_sim::Torque::<
+                jeod_sim::BodyFrame<jeod_sim::SelfRef>,
+            >::from_raw_si(
+                self.external_torque
+            )));
+        }
+        if self.compute_gravity_gradient {
+            entity.insert(components::GravityTorqueC::default());
+        }
+        entity.id()
+    }
+}
