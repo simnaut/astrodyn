@@ -9,8 +9,12 @@ use glam::{DMat3, DQuat, DVec3};
 use crate::{EulerSequence, GeodeticState, LvlhFrame, OrbitalElements, RotationalState};
 use jeod_math::OrbitalError;
 use jeod_quantities::aliases::{Position, Velocity};
-use jeod_quantities::dims::GravParam;
+use jeod_quantities::dims::{GravParam, SpecificAngMomDim};
 use jeod_quantities::frame::Inertial;
+use jeod_quantities::qty3::Qty3;
+use uom::si::angle::radian;
+use uom::si::f64::{Angle, Length};
+use uom::si::length::meter;
 
 /// Relative state between two bodies.
 ///
@@ -59,38 +63,42 @@ pub fn compute_orbital_elements(
 /// Compute Euler angles from body attitude.
 ///
 /// Converts the left-transformation quaternion to a rotation matrix, then
-/// decomposes it into Euler angles using the given sequence.
-#[allow(deprecated)]
+/// decomposes it into Euler angles using the given sequence. Delegates to
+/// [`jeod_math::compute_euler_angles_from_matrix_typed`] and unwraps the
+/// typed result to radians for f64 storage; bit-identical numerics.
 pub fn compute_body_euler_angles(rot: &RotationalState, sequence: EulerSequence) -> [f64; 3] {
     let t_parent_body = rot.quaternion.left_quat_to_transformation();
-    jeod_math::compute_euler_angles_from_matrix(&t_parent_body, sequence)
+    let typed = jeod_math::compute_euler_angles_from_matrix_typed(&t_parent_body, sequence);
+    [
+        typed[0].get::<radian>(),
+        typed[1].get::<radian>(),
+        typed[2].get::<radian>(),
+    ]
 }
 
 /// Compute the LVLH (Local Vertical Local Horizontal) frame from translational state.
 ///
-/// Delegates to [`jeod_math::compute_lvlh_frame`]. Phase 3+ will migrate this
-/// wrapper to the typed `compute_lvlh_frame_typed` API; for now we silence
-/// the local deprecation warning so Phase 2 stays scope-limited.
-#[allow(deprecated)]
+/// Shares the JEOD `LvlhFrame::compute_lvlh_frame()` port with the typed
+/// sibling [`compute_body_lvlh_frame_typed`]; bit-identical numerics.
 pub fn compute_body_lvlh_frame(position: DVec3, velocity: DVec3) -> LvlhFrame {
-    jeod_math::compute_lvlh_frame(position, velocity)
+    compute_body_lvlh_frame_inner(position, velocity)
 }
 
 /// Compute geodetic state (latitude, longitude, altitude) from inertial position.
 ///
 /// Rotates the inertial position into the planet-fixed frame using the given
 /// transformation matrix, then converts to geodetic coordinates on the reference
-/// ellipsoid defined by `r_eq` and `r_pol`.
+/// ellipsoid defined by `r_eq` and `r_pol`. Shares the JEOD Borkowski iteration
+/// port with the typed sibling [`compute_body_geodetic_typed`]; bit-identical
+/// numerics.
 pub fn compute_body_geodetic(
     position: DVec3,
     t_inertial_pfix: &DMat3,
     r_eq: f64,
     r_pol: f64,
 ) -> GeodeticState {
-    // Rotate inertial position to planet-fixed frame
     let pos_pfix = *t_inertial_pfix * position;
-    #[allow(deprecated)]
-    jeod_math::cartesian_to_geodetic(pos_pfix, r_eq, r_pol)
+    compute_body_geodetic_inner(pos_pfix, r_eq, r_pol)
 }
 
 /// Compute the solar beta angle (angle between orbit plane and Sun direction).
@@ -117,9 +125,12 @@ pub fn compute_body_solar_beta(position: DVec3, velocity: DVec3, sun_position: D
          solar beta angle is undefined"
     );
 
-    let sun_dir = rel_sun.normalize();
-    #[allow(deprecated)]
-    jeod_math::solar_beta_angle(h, sun_dir)
+    // Delegate to the typed kernel (which clamps & normalizes internally) and
+    // unwrap the typed `Angle` to radians for f64 storage. Bit-identical to
+    // the historical f64 path.
+    let h_typed = Qty3::<SpecificAngMomDim, Inertial>::from_raw_si(h);
+    let sun_typed = Position::<Inertial>::from_raw_si(rel_sun);
+    jeod_math::solar_beta_angle_typed(h_typed, sun_typed).get::<radian>()
 }
 
 /// Compute the relative state between two bodies.
@@ -225,6 +236,221 @@ pub fn compute_orbital_elements_typed(
     OrbitalElements::from_cartesian_typed(mu, position, velocity)
 }
 
+/// Typed sibling of [`compute_body_euler_angles`].
+///
+/// Returns Euler angles as a triple of typed [`Angle`]s (radians) using the
+/// same JEOD extraction algorithm as the f64 surface. Bit-identical numerics.
+pub fn compute_body_euler_angles_typed(
+    rot: &RotationalState,
+    sequence: EulerSequence,
+) -> [Angle; 3] {
+    let t_parent_body = rot.quaternion.left_quat_to_transformation();
+    jeod_math::compute_euler_angles_from_matrix_typed(&t_parent_body, sequence)
+}
+
+/// Typed sibling of [`compute_body_lvlh_frame`].
+///
+/// Accepts inertial-frame typed position/velocity and returns the same
+/// [`LvlhFrame`] as the f64 surface. Bit-identical numerics — this wrapper
+/// only lifts the inputs through the typed boundary.
+pub fn compute_body_lvlh_frame_typed(
+    position: Position<Inertial>,
+    velocity: Velocity<Inertial>,
+) -> LvlhFrame {
+    compute_body_lvlh_frame_inner(position.raw_si(), velocity.raw_si())
+}
+
+/// Internal LVLH kernel shared by the f64 and typed entry points.
+///
+/// Inlined port of JEOD `LvlhFrame::compute_lvlh_frame()` so the typed
+/// surface is independent of the deprecated f64 path.
+fn compute_body_lvlh_frame_inner(position: DVec3, velocity: DVec3) -> LvlhFrame {
+    // Compute angular momentum vector: h = r × v
+    let angmom = position.cross(velocity);
+    let hmag = angmom.length();
+    let rmagsq = position.length_squared();
+    let rmag = rmagsq.sqrt();
+
+    assert!(
+        rmag > 0.0,
+        "compute_body_lvlh_frame: position magnitude is zero"
+    );
+    assert!(
+        hmag > 0.0,
+        "compute_body_lvlh_frame: angular momentum is zero (radial trajectory)"
+    );
+
+    let wmag = hmag / rmagsq;
+
+    let z_hat = -position / rmag;
+    let y_hat = -angmom / hmag;
+    let x_hat = y_hat.cross(z_hat).normalize();
+
+    let t_parent_this = DMat3::from_cols(
+        DVec3::new(x_hat.x, y_hat.x, z_hat.x),
+        DVec3::new(x_hat.y, y_hat.y, z_hat.y),
+        DVec3::new(x_hat.z, y_hat.z, z_hat.z),
+    );
+
+    let ang_vel_this = DVec3::new(0.0, -wmag, 0.0);
+
+    LvlhFrame {
+        t_parent_this,
+        ang_vel_this,
+        position,
+        velocity,
+    }
+}
+
+/// Typed sibling of [`compute_body_geodetic`].
+///
+/// Accepts a typed inertial position and ellipsoid radii, applies the
+/// inertial-to-planet-fixed rotation, then runs the JEOD Borkowski
+/// iteration. Returns the f64 [`GeodeticState`] used by Bevy components;
+/// bit-identical to the f64 surface.
+pub fn compute_body_geodetic_typed(
+    position: Position<Inertial>,
+    t_inertial_pfix: &DMat3,
+    r_eq: Length,
+    r_pol: Length,
+) -> GeodeticState {
+    let pos_pfix = *t_inertial_pfix * position.raw_si();
+    compute_body_geodetic_inner(pos_pfix, r_eq.get::<meter>(), r_pol.get::<meter>())
+}
+
+/// Internal geodetic kernel shared by the f64 and typed entry points.
+///
+/// Inlined port of JEOD `PlanetFixedPosition::cart_to_ellip()` so the typed
+/// surface is independent of the deprecated f64 path.
+fn compute_body_geodetic_inner(pos_pfix: DVec3, r_eq: f64, r_pol: f64) -> GeodeticState {
+    // JEOD_INV: PF.02 — input must be NaN/Inf free (planet_fixed_posn.cc:155-162)
+    assert!(
+        pos_pfix.x.is_finite() && pos_pfix.y.is_finite() && pos_pfix.z.is_finite(),
+        "compute_body_geodetic_inner: input contains NaN or Inf ({pos_pfix:?})"
+    );
+
+    let x_ellipse_sq = pos_pfix.x * pos_pfix.x + pos_pfix.y * pos_pfix.y;
+    let x_ellipse = x_ellipse_sq.sqrt();
+    let z_ellipse = pos_pfix.z;
+    let r_ellipse = (x_ellipse_sq + z_ellipse * z_ellipse).sqrt();
+
+    // JEOD_INV: PF.01 — position must be far from planet center
+    assert!(
+        r_ellipse > r_eq * 1e-10,
+        "compute_body_geodetic_inner: position too close to planet center ({r_ellipse} m)"
+    );
+
+    let (lat, alt) = borkowski_lat_alt(x_ellipse, z_ellipse, r_eq, r_pol);
+
+    // JEOD_INV: PF.03 — polar singularity: at x_ellipse==0, longitude is undefined
+    let longitude = if x_ellipse != 0.0 {
+        pos_pfix.y.atan2(pos_pfix.x)
+    } else {
+        // Directly over the pole — JEOD leaves longitude unchanged; we use 0.0.
+        0.0
+    };
+
+    GeodeticState {
+        latitude: lat,
+        longitude,
+        altitude: alt,
+    }
+}
+
+/// Borkowski's iterative method for geodetic latitude and altitude.
+///
+/// Port of JEOD `PlanetFixedPosition::get_elliptic_parameters()`.
+///
+/// Reference: Borkowski, K.M., "Accurate Algorithms To Transform Geocentric
+/// To Geodetic Coordinates", Bull. Géod., 63 (1989), pp. 50-56.
+fn borkowski_lat_alt(r: f64, z: f64, r_eq: f64, r_pol: f64) -> (f64, f64) {
+    const MAX_ITERATION_LIMIT: usize = 10;
+    let a = r_eq;
+    let b = r_pol;
+
+    let (lat, y);
+    if r > 0.0 {
+        let y0_init = (a * z / (b * r)).atan();
+        let ar = a * r;
+        let bz = b * z;
+        let w = (bz / ar).atan();
+        let c = (a * a - b * b) / (ar * ar + bz * bz).sqrt();
+
+        let mut y0 = y0_init;
+        let mut y_val = y0;
+        let mut converged = false;
+        for _ in 0..MAX_ITERATION_LIMIT {
+            let d = 2.0 * ((y0 - w).cos() - c * (2.0 * y0).cos());
+            // JEOD_INV: PF.05 — Borkowski denominator must be non-zero
+            assert!(
+                d.abs() > f64::EPSILON,
+                "geodetic iteration: denominator near zero (d={d})"
+            );
+            y_val = y0 - (2.0 * (y0 - w).sin() - c * (2.0 * y0).sin()) / d;
+            if (y_val - y0).abs() < 1.0e-12 {
+                converged = true;
+                break;
+            }
+            y0 = y_val;
+        }
+        // JEOD_INV: PF.04 — Borkowski iteration must converge to 1e-12 within MAX_ITERATION_LIMIT
+        assert!(
+            converged,
+            "geodetic iteration did not converge after {MAX_ITERATION_LIMIT} iterations"
+        );
+        y = y_val;
+        lat = (a * y.sin() / (b * y.cos())).atan();
+    } else {
+        // Directly over pole: lat = ±π/2
+        y = 0.5 * z * std::f64::consts::PI / z.abs();
+        lat = y;
+    }
+
+    let alt = (r - a * y.cos()) * lat.cos() + (z - b * y.sin()) * lat.sin();
+    (lat, alt)
+}
+
+/// Typed sibling of [`compute_body_solar_beta`].
+///
+/// Accepts inertial-frame typed position/velocity/sun position and returns
+/// the solar beta angle as a typed [`Angle`]. Bit-identical to the f64
+/// surface — this wrapper computes `h = r × v` and delegates to the typed
+/// `solar_beta_angle_typed` kernel.
+///
+/// # Panics
+///
+/// Panics if the orbital angular momentum `h = r × v` is zero (degenerate
+/// orbit) or if the Sun position coincides with the body position.
+pub fn compute_body_solar_beta_typed(
+    position: Position<Inertial>,
+    velocity: Velocity<Inertial>,
+    sun_position: Position<Inertial>,
+) -> Angle {
+    let pos = position.raw_si();
+    let vel = velocity.raw_si();
+    let sun = sun_position.raw_si();
+    let h = pos.cross(vel);
+    let rel_sun = sun - pos;
+
+    assert!(
+        h.length_squared() > 0.0,
+        "compute_body_solar_beta_typed: orbital angular momentum is zero; \
+         solar beta angle is undefined"
+    );
+    assert!(
+        rel_sun.length_squared() > 0.0,
+        "compute_body_solar_beta_typed: sun_position coincides with position; \
+         solar beta angle is undefined"
+    );
+
+    // Construct typed angular-momentum and unit-direction quantities for the
+    // typed kernel. The kernel normalizes internally — direction-only inputs
+    // are accepted, so the unnormalized `rel_sun` works as a Position<Inertial>.
+    let h_typed = Qty3::<SpecificAngMomDim, Inertial>::from_raw_si(h);
+    let sun_typed = Position::<Inertial>::from_raw_si(rel_sun);
+    jeod_math::solar_beta_angle_typed(h_typed, sun_typed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -282,8 +508,7 @@ mod tests {
 
         // Verify against direct computation to lock down the convention
         let pos_pfix = t_inertial_pfix * pos_inertial;
-        #[allow(deprecated)]
-        let expected = jeod_math::cartesian_to_geodetic(pos_pfix, R_EQ, R_POL);
+        let expected = compute_body_geodetic_inner(pos_pfix, R_EQ, R_POL);
         assert_eq!(geo, expected);
     }
 }
