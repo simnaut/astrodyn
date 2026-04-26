@@ -1,8 +1,9 @@
 use bevy::prelude::*;
 use glam::DVec3;
 use jeod_sim::{
-    DragConfig, DynamicsConfig, FrameDerivatives, GravityAcceleration, GravityControls,
-    GravitySource, MassProperties, PlanetShape, RotationalState, TotalForce, TranslationalState,
+    Angle, BodyFrame, DragConfig, DragConfigTyped, DynamicsConfig, FrameDerivatives,
+    GravityAcceleration, GravityControls, GravitySource, Inertial, MassProperties, PlanetShape,
+    Position, Ratio, RotationalState, SelfRef, Torque, TotalForce, TranslationalState, Velocity,
 };
 
 // ── Dynamics ──
@@ -60,34 +61,34 @@ pub struct GravityControlsC(pub GravityControls<Entity>);
 #[derive(Component, Debug, Clone, Deref, DerefMut)]
 pub struct GravitySourceC(pub GravitySource);
 
-/// Inertial-frame position of a gravity source (m).
+/// Inertial-frame position of a gravity source.
 ///
 /// For the central body (e.g., Earth in an Earth-centered sim), this is
-/// typically `DVec3::ZERO`. For third bodies (Sun, Moon), this value should
-/// be provided and maintained by the application's ephemeris/update logic.
-/// Used by the gravity computation to apply differential (third-body)
-/// acceleration corrections.
+/// typically `Position::<Inertial>::zero()`. For third bodies (Sun, Moon),
+/// this value should be provided and maintained by the application's
+/// ephemeris/update logic. Used by the gravity computation to apply
+/// differential (third-body) acceleration corrections.
 ///
 /// Required on all gravity source entities. The gravity systems will panic
 /// if a source entity referenced by a `GravityControlsC` is missing this
 /// component.
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
-pub struct SourceInertialPositionC(pub DVec3);
+pub struct SourceInertialPositionC(pub Position<Inertial>);
 
-/// Inertial-frame velocity of a gravity source (m/s).
+/// Inertial-frame velocity of a gravity source.
 ///
 /// Optional component. For the central body (e.g., Earth in an Earth-centered
-/// sim), this is typically `DVec3::ZERO`. For third bodies (Sun, Moon), attach
-/// this component alongside [`EphemerisBodyC`] and the `ephemeris_update_system`
-/// will populate it each step. When absent, relativistic corrections fall back
-/// to zero source velocity.
+/// sim), this is typically `Velocity::<Inertial>::zero()`. For third bodies
+/// (Sun, Moon), attach this component alongside [`EphemerisBodyC`] and the
+/// `ephemeris_update_system` will populate it each step. When absent,
+/// relativistic corrections fall back to zero source velocity.
 ///
 /// Used by the gravity and integration systems to provide source velocity to
 /// the relativistic correction computation. Stored separately from
 /// `TranslationalStateC` to avoid Bevy query conflicts (the body's
 /// `TranslationalStateC` is already mutably queried by the integration system).
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
-pub struct SourceInertialVelocityC(pub DVec3);
+pub struct SourceInertialVelocityC(pub Velocity<Inertial>);
 
 /// Aerodynamic force and torque in the **structural** frame (N, N*m).
 ///
@@ -113,12 +114,12 @@ pub struct RadiationForceC {
     pub torque: DVec3,
 }
 
-/// Gravity gradient torque in the body frame (N*m).
+/// Gravity gradient torque in the body frame (N·m).
 ///
 /// Written by the gravity torque system.
 /// Read by `force_collection_system` as `Option<&GravityTorqueC>`.
-#[derive(Component, Debug, Clone, Copy, Default)]
-pub struct GravityTorqueC(pub DVec3);
+#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
+pub struct GravityTorqueC(pub Torque<BodyFrame<SelfRef>>);
 
 // JEOD_INV: AT.01 — active flag gates computation (presence of AtmosphericStateC = active)
 /// Atmospheric state at the vehicle's position.
@@ -169,18 +170,58 @@ pub struct TidalConfigC(pub jeod_sim::TidalConfig);
 /// Computed tidal ΔC20 for a gravity source entity.
 ///
 /// Written by `tidal_update_system`. Read by gravity computation and
-/// integration systems. Defaults to 0.0 (no tidal effect).
+/// integration systems. Defaults to zero (no tidal effect).
+///
+/// Wrapped as a [`Ratio`] (dimensionless) so the value carries unit
+/// metadata at the type level for type discipline at the Bevy boundary.
+/// The current pipeline still stores [`jeod_sim::TidalConfig`] (untyped)
+/// in [`TidalConfigC`] and `tidal_update_system` calls the untyped
+/// `compute_delta_c20`, then wraps the `f64` result via
+/// [`jeod_sim::dimensionless`] for storage here. Migrating
+/// [`TidalConfigC`] to wrap [`jeod_sim::TidalConfigTyped`] (so the
+/// system can call [`jeod_sim::compute_delta_c20_typed`] directly) is
+/// tracked as Phase 10/11 work in #112.
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
-pub struct TidalDeltaC20C(pub f64);
+pub struct TidalDeltaC20C(pub Ratio);
 
 // ── Interactions ──
 
 /// Vehicle drag configuration (Cd, area).
 ///
+/// Wraps [`DragConfigTyped`] (typed sibling of [`DragConfig`]) so the
+/// untyped → typed conversion happens **once at insertion**, not per tick
+/// in `aero_drag_system`. Convenience constructors `from_untyped` /
+/// `new` are provided for callers building from raw `f64` fields.
+///
 /// Auto-inserts [`AtmosphericStateC`] and [`AerodynamicForceC`] when added.
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut)]
 #[require(AtmosphericStateC, AerodynamicForceC)]
-pub struct DragConfigC(pub DragConfig);
+pub struct DragConfigC(pub DragConfigTyped);
+
+impl DragConfigC {
+    /// Wrap an untyped [`DragConfig`] as a typed Bevy component.
+    ///
+    /// The dimensional lift (`f64` → `Ratio`/`Area`/`MassDensity`) happens
+    /// here at insertion. After that, the wrapped value is already typed
+    /// for the lifetime of the component, eliminating per-tick
+    /// `from_untyped_unchecked` calls in `aero_drag_system`.
+    #[inline]
+    pub fn from_untyped(config: &DragConfig) -> Self {
+        Self(DragConfigTyped::from_untyped_unchecked(config))
+    }
+}
+
+impl From<DragConfig> for DragConfigC {
+    fn from(config: DragConfig) -> Self {
+        Self::from_untyped(&config)
+    }
+}
+
+impl From<DragConfigTyped> for DragConfigC {
+    fn from(config: DragConfigTyped) -> Self {
+        Self(config)
+    }
+}
 
 /// Flat-plate SRP configuration with thermal state.
 ///
@@ -306,9 +347,10 @@ pub struct OrbitalElementsC(pub jeod_sim::OrbitalElements);
 /// Euler angles `[phi, theta, psi]` computed each step.
 ///
 /// Written by `euler_angles_system` for entities that also have
-/// `EulerAnglesConfigC`.
+/// `EulerAnglesConfigC`. Each component is a [`Angle`] (uom radian-backed
+/// scalar) so consumers don't have to remember the radian convention.
 #[derive(Component, Debug, Clone, Copy, Default)]
-pub struct EulerAnglesC(pub [f64; 3]);
+pub struct EulerAnglesC(pub [Angle; 3]);
 
 /// LVLH (Local Vertical Local Horizontal) frame computed each step.
 ///
@@ -355,23 +397,23 @@ pub struct EarthLightingStateC(pub jeod_sim::EarthLightingState);
 
 // ── External Loads ──
 
-/// External force in the **inertial** frame (N).
+/// External force in the **inertial** frame.
 ///
 /// Added to `TotalForceC.force` each step after force collection.
 /// Matches `SimBody.external_force` in `jeod_sim::Simulation`.
 ///
 /// Mutate between steps to implement time-scheduled force injection.
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
-pub struct ExternalForceC(pub DVec3);
+pub struct ExternalForceC(pub jeod_sim::Force<Inertial>);
 
-/// External torque in the **body** frame (N·m).
+/// External torque in the **body** frame.
 ///
 /// Added to `TotalForceC.torque` each step after force collection.
 /// Matches `SimBody.external_torque` in `jeod_sim::Simulation`.
 ///
 /// Mutate between steps to implement time-scheduled torque injection.
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
-pub struct ExternalTorqueC(pub DVec3);
+pub struct ExternalTorqueC(pub Torque<BodyFrame<SelfRef>>);
 
 // ── Mass Tree (Staging) ──
 

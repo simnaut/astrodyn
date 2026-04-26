@@ -100,7 +100,7 @@ fn tier3_bevy_full_stack_sixdof() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, true)],
             }),
-            DragConfigC(drag_config),
+            DragConfigC::from_untyped(&drag_config),
             FlatPlateConfigC(jeod_sim::FlatPlateState {
                 plates: srp_plates.clone(),
                 temperatures: vec![270.0],

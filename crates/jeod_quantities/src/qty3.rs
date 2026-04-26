@@ -118,3 +118,13 @@ impl<D: ?Sized + Dimension, F: Frame> PartialEq for Qty3<D, F> {
             && self.z.value == other.z.value
     }
 }
+
+/// `Default` returns the zero vector of dimension `D` in frame `F`. Manual
+/// impl rather than derive, because `derive(Default)` would demand
+/// `D: Default` (it isn't a real value, just a phantom dimension).
+impl<D: ?Sized + Dimension, F: Frame> Default for Qty3<D, F> {
+    #[inline]
+    fn default() -> Self {
+        Self::zero()
+    }
+}

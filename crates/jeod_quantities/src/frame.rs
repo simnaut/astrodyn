@@ -123,13 +123,41 @@ impl<C: Vehicle> Frame for Ned<C> {
     const NAME: &'static str = "Ned";
 }
 
-// --- Test-only vehicle marker ------------------------------------------------
+// --- Self-referential vehicle marker ----------------------------------------
 //
 // `Vehicle` is sealed, so downstream crates cannot mint their own phantom
-// tags. Tests that exercise vehicle-parameterized frames (`Lvlh`, `Ned`,
-// `BodyFrame`, `StructuralFrame`) need *some* tag to instantiate, so we
-// expose a single test-only vehicle behind the `test-utils` feature. It is
-// never compiled into production builds.
+// tags. The Bevy adapter (and any other ECS adapter) needs *some* tag to
+// instantiate vehicle-parameterized frames (`BodyFrame`, `StructuralFrame`)
+// on per-entity components. `SelfRef` is the canonical "this entity's own
+// vehicle frame" tag — it stands in for the (compile-time-unknown) entity
+// without leaking generics into user-facing `Query`s.
+//
+// Distinct from `TestVehicle`: `SelfRef` is part of the production API
+// surface (always compiled in), while `TestVehicle` is feature-gated for
+// test harnesses only.
+
+/// Phantom marker for "this entity's own vehicle frame" — used by ECS
+/// adapters whose per-entity components carry frame phantoms but whose
+/// vehicle identity is determined at runtime by the entity itself.
+///
+/// Use with [`BodyFrame`], [`StructuralFrame`], [`Lvlh`], [`Ned`], or any
+/// `Vehicle`-parameterized type when the runtime entity *is* the vehicle.
+/// Never appears in user-facing `Query`s — components wrap concrete
+/// monomorphizations like `Position<Inertial>` or
+/// `Torque<BodyFrame<SelfRef>>`, so the user sees only the wrapper newtype.
+#[derive(Debug, Clone, Copy)]
+pub struct SelfRef;
+impl Sealed for SelfRef {}
+impl Vehicle for SelfRef {
+    const NAME: &'static str = "SelfRef";
+}
+
+// --- Test-only vehicle marker ------------------------------------------------
+//
+// Tests that exercise vehicle-parameterized frames (`Lvlh`, `Ned`,
+// `BodyFrame`, `StructuralFrame`) sometimes need *another* tag distinct
+// from `SelfRef`, so we expose a single test-only vehicle behind the
+// `test-utils` feature. It is never compiled into production builds.
 
 /// A no-op vehicle phantom marker for use in downstream test harnesses.
 ///

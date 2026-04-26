@@ -104,7 +104,9 @@ pub use jeod_dynamics::{
 };
 
 // jeod_gravity: source definitions, controls, and tides
-pub use jeod_gravity::tides::{compute_delta_c20, TidalBody, TidalConfig, EARTH_K2};
+pub use jeod_gravity::tides::{
+    compute_delta_c20, compute_delta_c20_typed, TidalBody, TidalConfig, TidalConfigTyped, EARTH_K2,
+};
 pub use jeod_gravity::{GravityControl, GravityControls, GravityModel, GravitySource};
 
 // jeod_atmosphere: state output and model types
@@ -117,10 +119,10 @@ pub use jeod_interactions::{
     compute_contact_force, compute_contact_force_from_geometry, compute_contact_geometry,
     compute_earth_lighting, compute_flat_plate_srp_thermal,
     compute_flat_plate_srp_thermal_conduction, compute_shadow_fraction, solar_flux_at_distance,
-    AerodynamicForce, ContactFacet, ContactForce, ContactGeometry, ContactMaterial, ContactShape,
-    DragConfig, EarthLightingState, FlatPlate, FlatPlateParams, FlatPlateSrpResult,
-    FlatPlateThermal, LightingBody, LightingParams, RadiationForce, ThermalConductionMatrix,
-    SOLAR_RADIUS, SPEED_OF_LIGHT,
+    AerodynamicForce, AerodynamicForceTyped, ContactFacet, ContactForce, ContactGeometry,
+    ContactMaterial, ContactShape, DragConfig, DragConfigTyped, EarthLightingState, FlatPlate,
+    FlatPlateParams, FlatPlateSrpResult, FlatPlateThermal, LightingBody, LightingParams,
+    RadiationForce, ThermalConductionMatrix, SOLAR_RADIUS, SPEED_OF_LIGHT,
 };
 
 // jeod_frames: reference frame state
@@ -151,6 +153,45 @@ pub use jeod_gravity::relativistic;
 
 // jeod_planet: planet shape
 pub use jeod_planet::PlanetShape;
+
+// jeod_quantities: typed-quantity foundation. ECS adapters (e.g. the
+// `bevy_jeod` root crate) consume these types via `jeod_sim` to
+// preserve the "single dependency" invariant.
+pub use jeod_quantities::aliases::{
+    Acceleration, AngularAcceleration, AngularMomentum, AngularVelocity, Force, Jerk, Position,
+    Torque, Velocity,
+};
+pub use jeod_quantities::dims::{GravParam, MassFlowRate, SpecificAngMom, SpecificEnergy};
+pub use jeod_quantities::ext::{Array3Ext, F64Ext, Vec3Ext};
+pub use jeod_quantities::frame::{
+    BodyFrame, Earth, Ecef, Frame, Inertial, Lvlh, Mars, Moon, Ned, Planet, PlanetFixed, SelfRef,
+    StructuralFrame, Sun, Vehicle,
+};
+pub use jeod_quantities::frame_transform::FrameTransform;
+pub use jeod_quantities::inertia::InertiaTensor;
+pub use jeod_quantities::qty3::Qty3;
+
+// uom scalar quantities used directly by the Bevy adapter for typed
+// component fields (`Angle` for Euler angles, `Ratio` for tidal ΔC20).
+pub use uom::si::f64::{Angle, Ratio};
+
+/// Convenience constructor — wrap a raw f64 (radians) as a typed
+/// [`Angle`].
+///
+/// Mirrors `jeod_quantities::ext::F64Ext::rad(f)` but exists at the
+/// `jeod_sim` boundary so ECS adapters don't need to import
+/// `jeod_quantities` (or `uom::si::angle::radian`) directly.
+#[inline]
+pub fn radians(value: f64) -> Angle {
+    Angle::new::<uom::si::angle::radian>(value)
+}
+
+/// Convenience constructor — wrap a raw f64 (dimensionless) as a typed
+/// [`Ratio`].
+#[inline]
+pub fn dimensionless(value: f64) -> Ratio {
+    Ratio::new::<uom::si::ratio::ratio>(value)
+}
 
 // jeod_math: quaternion type (used in RotationalState)
 pub use jeod_math::JeodQuat;
