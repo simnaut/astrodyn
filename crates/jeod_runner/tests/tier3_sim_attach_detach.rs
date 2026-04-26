@@ -160,6 +160,10 @@ fn assert_masses(row: &MassRow, v1: f64, v2: f64, v3: f64) -> f64 {
 const SIMPLE_ATTACH_TIME: f64 = 10.0;
 const SIMPLE_DETACH_TIME: f64 = 20.0;
 
+// non-recipe: SIM_verif_attach_detach exercises a placeholder mass-tree
+// (1/2/3 kg) directly through `MassTree::{attach,detach}`, not the full
+// simulation pipeline. Apollo masses don't apply; the event count is two,
+// so a one-shot flag pair is shorter than `EventSchedule`.
 #[test]
 fn tier3_sim_attach_detach_simple() {
     let rows = load_csv("attach_detach_simple_attach_detach.csv");
@@ -233,6 +237,8 @@ fn tier3_sim_attach_detach_simple() {
 /// Verify the CSV for the complex run is present and has correct t=0 state.
 /// Full mass-tree validation is deferred — `attach_to` auto-reroots the
 /// attaching body's root, which our `MassTree::attach` does not yet model.
+// non-recipe: t=0 sanity check on the same placeholder mass tree as
+// `tier3_sim_attach_detach_simple`.
 #[test]
 fn tier3_sim_attach_detach_complex_t0() {
     let rows = load_csv("attach_detach_complex_attach_detach.csv");
@@ -240,6 +246,7 @@ fn tier3_sim_attach_detach_complex_t0() {
 }
 
 /// Same sanity check for the compute_child_derivative run.
+// non-recipe: same placeholder mass tree as the simple/complex runs.
 #[test]
 fn tier3_sim_attach_detach_child_derivative_t0() {
     let rows = load_csv("attach_detach_child_deriv_attach_detach.csv");
