@@ -3,7 +3,18 @@
 Per-test, per-component max absolute errors captured at the Phase 0 freeze point of
 GitHub issue #101. See `CLAUDE.md` §"Baseline freeze" for the invariance policy.
 
-76 tests recorded.
+77 tests recorded.
+
+## `rnp_component_comparison`
+
+| Metric | X / value | Y | Z | Unit |
+|--------|-----------|---|---|------|
+| precession | 1.95156399999999993e-18 |  |  |  |
+| nutation | 1.55176399999999995e-18 |  |  |  |
+| gast_rotation | 1.95587699999999991e-11 |  |  |  |
+| composed_T | 1.95512500000000007e-11 |  |  |  |
+| equa_equinoxes | 2.12607699999999994e-14 |  |  | s |
+| theta_gast | 2.00013300000000008e-11 |  |  | rad |
 
 ## `tier3_apollo8_eci_integ`
 
