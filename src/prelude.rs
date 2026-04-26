@@ -37,6 +37,6 @@ pub use crate::{
 // only on `jeod_sim` + `bevy`).
 pub use jeod_sim::{
     Array3Ext, BodyFrame, Ecef, F64Ext, Frame, FrameTransform, GravityControl, Inertial, JeodQuat,
-    Lvlh, Ned, Planet, PlanetFixed, Qty3, SelfRef, StructuralFrame, Vec3Ext, Vehicle,
+    Lvlh, Ned, Planet, PlanetFixed, Qty3, SelfPlanet, SelfRef, StructuralFrame, Vec3Ext, Vehicle,
     VehicleBuilder, VehicleConfig,
 };

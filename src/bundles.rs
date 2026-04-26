@@ -5,7 +5,7 @@
 //! components directly.
 
 use bevy::prelude::*;
-use jeod_sim::{GravityModel, GravitySource, PlanetConfig};
+use jeod_sim::{FrameTransform, GravityModel, GravitySource, PlanetConfig};
 
 use crate::components::*;
 
@@ -42,7 +42,7 @@ impl PlanetBundle {
             source: GravitySourceC(source),
             position: SourceInertialPositionC::default(),
             trans: TranslationalStateC::default(),
-            rotation: PlanetFixedRotationC(glam::DMat3::IDENTITY),
+            rotation: PlanetFixedRotationC(FrameTransform::from_matrix(glam::DMat3::IDENTITY)),
             rotation_model: RotationModelC(config.rotation_model),
             shape: PlanetC(config.shape),
         }

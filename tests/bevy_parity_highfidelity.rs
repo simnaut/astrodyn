@@ -56,7 +56,7 @@ fn tier3_bevy_sh4x4_rnp() {
             GravitySourceC(sh_source.clone()),
             SourceInertialPositionC::default(),
             TranslationalStateC::default(),
-            PlanetFixedRotationC(DMat3::IDENTITY),
+            PlanetFixedRotationC(jeod_sim::FrameTransform::from_matrix(DMat3::IDENTITY)),
         ))
         .id();
 
@@ -166,7 +166,7 @@ fn tier3_bevy_tidal_sh4x4() {
             GravitySourceC(sh_source.clone()),
             SourceInertialPositionC::default(),
             TranslationalStateC::default(),
-            PlanetFixedRotationC(DMat3::IDENTITY),
+            PlanetFixedRotationC(jeod_sim::FrameTransform::from_matrix(DMat3::IDENTITY)),
             TidalConfigC::from_untyped(&tidal_config),
         ))
         .id();

@@ -2,8 +2,9 @@ use bevy::prelude::*;
 use glam::DVec3;
 use jeod_sim::{
     Angle, BodyFrame, DragConfig, DragConfigTyped, DynamicsConfig, FrameDerivatives,
-    GravityAcceleration, GravityControls, GravitySource, Inertial, MassProperties, PlanetShape,
-    Position, Ratio, RotationalState, SelfRef, Torque, TotalForce, TranslationalState, Velocity,
+    FrameTransform, GravityAcceleration, GravityControls, GravitySource, Inertial, MassProperties,
+    PlanetFixed, PlanetShape, Position, Ratio, RotationalState, SelfPlanet, SelfRef,
+    StructuralFrame, Torque, TotalForce, TranslationalState, Velocity,
 };
 
 // ── Dynamics ──
@@ -128,9 +129,15 @@ pub struct GravityTorqueC(pub Torque<BodyFrame<SelfRef>>);
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
 pub struct AtmosphericStateC(pub jeod_sim::AtmosphereState);
 
-/// Rotation matrix from structural frame to body (composite_body) frame.
+/// Typed structural→body rotation for a vehicle entity.
 ///
-/// Matches JEOD `mass.composite_properties.T_parent_this` where parent=structure.
+/// Stores the rotation that maps structural-frame vectors into body-frame
+/// vectors (matches JEOD `mass.composite_properties.T_parent_this` where
+/// parent=structure). The `FrameTransform`'s phantom `<StructuralFrame<SelfRef>,
+/// BodyFrame<SelfRef>>` parameters encode the *direction* — `SelfRef` is the
+/// wildcard `Vehicle` marker indicating "this entity's vehicle"; the actual
+/// vehicle identity stays at the entity level via Bevy queries.
+///
 /// Default is identity (structural frame = body frame), which is correct for
 /// single-body vehicles with `eigen_angle=0`.
 ///
@@ -140,22 +147,29 @@ pub struct AtmosphericStateC(pub jeod_sim::AtmosphereState);
 // JEOD_INV: DB.28 — forces collected in structural frame, rotated to inertial at root
 // JEOD_INV: DB.29 — torques collected in structural frame, rotated to body at root
 #[derive(Component, Debug, Clone, Copy)]
-pub struct StructuralTransformC(pub glam::DMat3);
+pub struct StructuralTransformC(pub FrameTransform<StructuralFrame<SelfRef>, BodyFrame<SelfRef>>);
 
 impl Default for StructuralTransformC {
     fn default() -> Self {
-        Self(glam::DMat3::IDENTITY)
+        Self(FrameTransform::from_matrix(glam::DMat3::IDENTITY))
     }
 }
 
-/// Inertial-to-planet-fixed rotation matrix for a gravity source entity.
+/// Typed inertial→planet-fixed rotation for a gravity source entity.
+///
+/// Stores the rotation that maps inertial-frame vectors into the planet-fixed
+/// frame of the source. The `FrameTransform`'s phantom `<Inertial,
+/// PlanetFixed<SelfPlanet>>` parameters encode the *direction* — `SelfPlanet`
+/// is the wildcard `Planet` marker indicating "this entity's planet"; the
+/// actual planet identity stays at the entity level via the existing
+/// `PlanetC` discriminator.
 ///
 /// When present on a gravity source entity, `gravity_computation_system` and
-/// `integration_system` use this matrix instead of `DMat3::IDENTITY` to rotate
-/// the spacecraft position into the body-fixed frame before evaluating
+/// `integration_system` use this rotation instead of `DMat3::IDENTITY` to
+/// rotate the spacecraft position into the body-fixed frame before evaluating
 /// spherical-harmonic gravity.
-#[derive(Component, Debug, Clone, Copy, Deref, DerefMut)]
-pub struct PlanetFixedRotationC(pub glam::DMat3);
+#[derive(Component, Debug, Clone, Copy)]
+pub struct PlanetFixedRotationC(pub FrameTransform<Inertial, PlanetFixed<SelfPlanet>>);
 
 /// Tidal configuration for a gravity source entity.
 ///

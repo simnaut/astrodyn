@@ -224,7 +224,7 @@ fn tier3_bevy_met_atmosphere_drag_sixdof() {
             GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),
             TranslationalStateC::default(),
-            PlanetFixedRotationC(DMat3::IDENTITY),
+            PlanetFixedRotationC(jeod_sim::FrameTransform::from_matrix(DMat3::IDENTITY)),
         ))
         .id();
 
@@ -320,7 +320,7 @@ fn tier3_bevy_met_run5a() {
             GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),
             TranslationalStateC::default(),
-            PlanetFixedRotationC(DMat3::IDENTITY),
+            PlanetFixedRotationC(jeod_sim::FrameTransform::from_matrix(DMat3::IDENTITY)),
         ))
         .id();
 
@@ -428,7 +428,7 @@ fn tier3_bevy_drag_run6b() {
             GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),
             TranslationalStateC::default(),
-            PlanetFixedRotationC(DMat3::IDENTITY),
+            PlanetFixedRotationC(jeod_sim::FrameTransform::from_matrix(DMat3::IDENTITY)),
         ))
         .id();
 

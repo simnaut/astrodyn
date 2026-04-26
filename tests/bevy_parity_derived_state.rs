@@ -177,7 +177,7 @@ fn tier3_bevy_geodetic_derived_state() {
             GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),
             TranslationalStateC::default(),
-            PlanetFixedRotationC(DMat3::IDENTITY),
+            PlanetFixedRotationC(jeod_sim::FrameTransform::from_matrix(DMat3::IDENTITY)),
             PlanetC(earth_shape),
         ))
         .id();
@@ -446,7 +446,7 @@ fn tier3_bevy_polar_geodetic() {
             GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),
             TranslationalStateC::default(),
-            PlanetFixedRotationC(DMat3::IDENTITY),
+            PlanetFixedRotationC(jeod_sim::FrameTransform::from_matrix(DMat3::IDENTITY)),
             PlanetC(earth_shape),
         ))
         .id();
@@ -834,7 +834,7 @@ fn run_ned_parity(label: &str, trans: TranslationalState, r_eq: f64, r_pol: f64)
             GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),
             TranslationalStateC::default(),
-            PlanetFixedRotationC(DMat3::IDENTITY),
+            PlanetFixedRotationC(jeod_sim::FrameTransform::from_matrix(DMat3::IDENTITY)),
             PlanetC(earth_shape),
         ))
         .id();
