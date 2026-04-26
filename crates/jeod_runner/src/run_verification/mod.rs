@@ -146,8 +146,11 @@ impl VerificationCaseExt for VerificationCase {
         }
         report.write();
 
-        // 5. Assert tolerances. A 0.0 component means "skip this axis"
-        //    (e.g., 3-DOF cases have no rotational state).
+        // 5. Assert tolerances. A whole metric group is skipped only
+        //    when every component tolerance in the group is zero — used
+        //    by 3-DOF cases to opt out of rotational assertions. A
+        //    non-zero entry alongside zeros in the same array still
+        //    asserts every axis (the zeros require exact match).
         let tols = &self.tolerances;
         if tols.position_m.iter().any(|t| *t > 0.0) {
             report.assert_position(tols.position_m);

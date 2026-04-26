@@ -42,9 +42,12 @@ use crate::SimulationBuilder;
 /// neutral (no dependency on `jeod_test_data` from `jeod_sim` outside
 /// of dev-deps).
 ///
-/// `quaternion` is the JEOD `[q0, q1, q2, q3]` vector packed into a
-/// `glam::DQuat` (xyzw). Scenarios that need a [`crate::JeodQuat`]
-/// convert via `JeodQuat::from_glam`.
+/// **Quaternion convention.** `glam::DQuat` is laid out as `(x, y, z, w)`
+/// where `w` is the scalar component. JEOD's convention is scalar-first
+/// `[q0, q1, q2, q3]` where `q0` is the scalar. A JEOD quaternion
+/// `[q0, q1, q2, q3]` therefore maps to
+/// `DQuat { x: q1, y: q2, z: q3, w: q0 }`. Scenarios that need a
+/// [`crate::JeodQuat`] convert via `JeodQuat::from_glam`.
 #[derive(Clone, Debug, Default)]
 pub struct InitialConditions {
     /// Reference time (seconds since the sim epoch). Always populated.
@@ -55,8 +58,11 @@ pub struct InitialConditions {
     /// Inertial velocity. Always populated for the variants used by
     /// migrated Tier 3 cases.
     pub velocity: DVec3,
-    /// Body-frame attitude quaternion. `Some` for 6-DOF cases, `None`
-    /// for 3-DOF (point-mass translational-only) cases.
+    /// Body-frame attitude quaternion in `glam::DQuat` layout
+    /// `(x, y, z, w)` where `w` is the scalar. JEOD's scalar-first
+    /// convention `[q0, q1, q2, q3]` (with `q0` scalar) maps to
+    /// `DQuat { x: q1, y: q2, z: q3, w: q0 }`. `Some` for 6-DOF cases,
+    /// `None` for 3-DOF (point-mass translational-only) scenarios.
     pub quaternion: Option<DQuat>,
     /// Body-frame angular velocity. `Some` for 6-DOF cases, `None` for
     /// 3-DOF.
@@ -110,7 +116,12 @@ pub enum CsvReference {
     AtmosTraj(&'static str),
     /// 14-column aero-trajectory CSV (state + aero force/torque + density).
     AeroTraj(&'static str),
-    /// 7-column SIM_orbinit / SIM_GJ_test CSV (time + pos + vel).
+    /// 7-column trajectory CSV with schema `time + pos[3] + vel[3]`.
+    /// Used by any sim whose `log_state_ASCII` config emits exactly the
+    /// composite-body inertial state (no rotation matrix, quaternion, or
+    /// angular velocity columns). Originating sims include `SIM_orbinit`,
+    /// `SIM_GJ_test`, and `SIM_Planetary` — the variant is generic over
+    /// the schema, not specific to any one of them.
     OrbInit(&'static str),
 }
 
@@ -145,8 +156,15 @@ impl CsvReference {
 /// case attach scenario-specific tolerances (e.g., the GR perihelion-
 /// advance arc-second-per-century check on the Mercury case).
 ///
-/// A tolerance of `0.0` means *skip the assertion for that component*
-/// — used for 3-DOF cases that have no rotational state.
+/// **Skip semantics.** A whole metric group is skipped only when *all*
+/// of its component tolerances are zero (`position_m: [0.0; 3]`,
+/// `velocity_m_s: [0.0; 3]`, scalar `quat_angle_rad == 0.0`,
+/// `ang_vel_rad_s: [0.0; 3]`). This is the pattern used by 3-DOF cases
+/// to opt out of rotational assertions. A non-zero entry alongside a
+/// zero entry in the same array does *not* skip the zero axis — the
+/// runner still asserts `error_axis < 0.0` on it, which always fails.
+/// Mixing zero and non-zero entries within a single array is therefore
+/// almost always a configuration mistake.
 #[derive(Clone, Debug)]
 pub struct Tolerances {
     pub position_m: [f64; 3],
