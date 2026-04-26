@@ -3,16 +3,29 @@
 //! Uses `Simulation::step()` with `external_force` / `external_torque` fields
 //! for time-scheduled force injection. All parameters loaded from JEOD sources.
 
-mod sim_test_helpers;
-use sim_test_helpers::*;
-
-use glam::DVec3;
+use glam::{DMat3, DVec3};
 use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
 use jeod_sim::{
-    GravityControl, GravityControls, GravityModel, GravitySource, JeodQuat, RotationalState,
-    SimulationTime, TranslationalState,
+    GravityControl, GravityControls, GravityModel, GravitySource, JeodQuat, MassProperties,
+    RotationalState, SimulationTime, TranslationalState,
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
+use jeod_test_data::mass_data::MassInitData;
+use jeod_test_data::tier3_csv::{load_dyncomp_csv, test_data_path};
+
+/// Build [`MassProperties`] from parsed JEOD mass-init data (test-only helper).
+///
+/// Inlined here because `MassProperties` lives in `jeod_dynamics` (a real
+/// dep of `jeod_test_data` would create a cycle), and the helper is used
+/// only by Tier 3 mass-fixture tests.
+fn mass_props_from_init(init: &MassInitData) -> MassProperties {
+    let inertia = DMat3::from_cols(
+        DVec3::new(init.inertia[0][0], init.inertia[1][0], init.inertia[2][0]),
+        DVec3::new(init.inertia[0][1], init.inertia[1][1], init.inertia[2][1]),
+        DVec3::new(init.inertia[0][2], init.inertia[1][2], init.inertia[2][2]),
+    );
+    MassProperties::with_inertia(init.mass, inertia, DVec3::from_slice(&init.position))
+}
 
 /// SIM_dyncomp root directory (relative to JEOD_HOME).
 const SIM_DYNCOMP: &str = "verif/SIM_dyncomp";

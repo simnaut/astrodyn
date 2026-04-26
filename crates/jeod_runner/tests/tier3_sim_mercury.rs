@@ -9,8 +9,7 @@
 //! 2. `tier3_mercury_perihelion_advance_rate` — measures ~43 arcsec/century from our code
 //! 3. `tier3_mercury_jeod_advance_rate` — validates JEOD CSVs (requires 774 MB files)
 
-mod sim_test_helpers;
-use sim_test_helpers::test_data_path;
+use jeod_test_data::tier3_csv::test_data_path;
 
 use glam::DVec3;
 use jeod_runner::{GravitySourceEntry, Simulation, VehicleConfig};

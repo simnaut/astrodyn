@@ -4,8 +4,7 @@
 //! rotation model and Sun 3rd-body gravity.
 //! Achieved parity: ~3.8 m position error over 3 hours.
 
-mod sim_test_helpers;
-use sim_test_helpers::*;
+use jeod_test_data::tier3_csv::test_data_path;
 
 use glam::{DMat3, DVec3};
 use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};

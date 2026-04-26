@@ -2,8 +2,7 @@
 //!
 //! Flat-plate SRP + conical Earth shadow, GEO orbit, ~23 days.
 
-mod sim_test_helpers;
-use sim_test_helpers::*;
+use jeod_test_data::tier3_csv::{load_srp_trajectory, test_data_path};
 
 use glam::{DMat3, DVec3};
 use jeod_runner::{

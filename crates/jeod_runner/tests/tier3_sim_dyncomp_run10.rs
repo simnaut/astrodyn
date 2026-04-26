@@ -9,8 +9,7 @@
 //! (`tier3_reference_run10a_libration_period`) is archetype B (custom peak
 //! analysis on the JEOD CSV) and remains in this file.
 
-mod sim_test_helpers;
-use sim_test_helpers::*;
+use jeod_test_data::tier3_csv::{load_dyncomp_csv, test_data_path};
 
 use jeod_runner::prelude::*;
 use jeod_runner::run_verification::sim_dyncomp;

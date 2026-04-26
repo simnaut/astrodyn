@@ -17,9 +17,6 @@
 //! Simulation parameters (epoch, step size, mu values) are loaded from the JEOD
 //! source files rather than hardcoded, per issue #44.
 
-mod sim_test_helpers;
-use sim_test_helpers::*;
-
 use glam::{DMat3, DVec3};
 use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
 use jeod_sim::{
@@ -28,7 +25,12 @@ use jeod_sim::{
     MetAtmosphere, RotationalState, SimulationTime, TranslationalState,
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
+use jeod_test_data::tier3_csv::{load_dyncomp_csv, test_data_path};
 use std::path::Path;
+
+/// Earth rotation rate (JEOD RNPJ2000 default), sourced from
+/// `jeod_sim::planet_config::EARTH.omega`.
+const OMEGA_EARTH: f64 = jeod_sim::planet_config::EARTH.omega;
 
 /// SIM_dyncomp root directory (relative to JEOD_HOME).
 const SIM_DYNCOMP: &str = "verif/SIM_dyncomp";

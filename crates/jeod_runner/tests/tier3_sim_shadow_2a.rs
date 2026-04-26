@@ -9,8 +9,7 @@
 //! The full trajectory SRP+shadow test is `tier3_sim_srp.rs` (SIM_3_ORBIT).
 //! This test validates the shadow geometry computation specifically.
 
-mod sim_test_helpers;
-use sim_test_helpers::*;
+use jeod_test_data::tier3_csv::{load_shadow_calc_csv, test_data_path};
 
 use glam::DVec3;
 use jeod_runner::{

@@ -16,8 +16,7 @@
 //! All simulation parameters (epoch, step size, mu values, mass) are loaded
 //! from the JEOD source files rather than hardcoded, per issue #44.
 
-mod sim_test_helpers;
-use sim_test_helpers::*;
+use jeod_test_data::tier3_csv::{load_dyncomp_csv, test_data_path};
 
 use glam::DVec3;
 use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};

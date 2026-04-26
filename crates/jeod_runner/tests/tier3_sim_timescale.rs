@@ -4,8 +4,7 @@
 //! data over 2 hours at 60s intervals, using `Simulation::step()` to advance
 //! time through the full pipeline.
 
-mod sim_test_helpers;
-use sim_test_helpers::*;
+use jeod_test_data::tier3_csv::test_data_path;
 
 use jeod_runner::Simulation;
 use jeod_sim::SimulationTime;

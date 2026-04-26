@@ -21,17 +21,22 @@
 //! between Anise and JEOD's native reader (~10 arcsecond Sun direction offset,
 //! see simnaut/bevy_jeod#27).
 
-mod sim_test_helpers;
-use sim_test_helpers::*;
-
 use glam::{DMat3, DVec3};
 use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
+use jeod_sim::recipes::helpers::state_helpers::jeodquat_angle_error;
 use jeod_sim::{
     Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel, GravitySource,
     MassProperties, RotationalState, SimulationTime, TranslationalState,
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
+use jeod_test_data::tier3_csv::{load_torque_simple_csv, test_data_path, TorqueSimpleRecord};
 use std::path::Path;
+
+/// Backwards-compat alias for the JEODQuat angular-error helper used in
+/// this file.
+fn quaternion_angle_error(q1: &jeod_sim::JeodQuat, q2: &jeod_sim::JeodQuat) -> f64 {
+    jeodquat_angle_error(q1, q2)
+}
 
 /// SIM_dyncomp root directory (relative to JEOD_HOME).
 const SIM_DYNCOMP: &str = "verif/SIM_dyncomp";
@@ -252,7 +257,12 @@ fn build_simulation(
             velocity: init.velocity,
         },
         rot: Some(RotationalState {
-            quaternion: init.quaternion,
+            quaternion: jeod_sim::JeodQuat::new(
+                init.quaternion[0],
+                init.quaternion[1],
+                init.quaternion[2],
+                init.quaternion[3],
+            ),
             ang_vel_body: init.ang_vel,
         }),
         mass: Some(iss_mass_props()),
@@ -350,11 +360,17 @@ fn run_propagation_test(
             ..Default::default()
         };
 
+        let record_quat = jeod_sim::JeodQuat::new(
+            record.quaternion[0],
+            record.quaternion[1],
+            record.quaternion[2],
+            record.quaternion[3],
+        );
         if let Some(ref rot) = body.rot {
             our_log.quaternion = Some(rot.quaternion.to_glam());
             our_log.ang_vel = Some(rot.ang_vel_body);
         }
-        ref_log.quaternion = Some(record.quaternion.to_glam());
+        ref_log.quaternion = Some(record_quat.to_glam());
         ref_log.ang_vel = Some(record.ang_vel);
 
         our_states.push(our_log);
@@ -368,7 +384,7 @@ fn run_propagation_test(
 
         // Log every 1000s
         let quat_error = if let Some(ref rot) = body.rot {
-            quaternion_angle_error(&rot.quaternion, &record.quaternion)
+            quaternion_angle_error(&rot.quaternion, &record_quat)
         } else {
             0.0
         };
@@ -428,8 +444,7 @@ fn run_propagation_test(
 // non-diagonal inertia tensor with off-CoM offset that the
 // `recipes::vehicle::iss_mass()` scalar can't represent. CSV t=0 also
 // supplies position/velocity/quaternion/ang_vel. Helper math
-// (`quaternion_angle_error`) is provided by `sim_test_helpers` as a
-// thin wrapper that delegates to
+// (`quaternion_angle_error`) is a thin wrapper that delegates to
 // `recipes::helpers::state_helpers::jeodquat_angle_error`.
 #[test]
 fn tier3_torque_simple_run01() {

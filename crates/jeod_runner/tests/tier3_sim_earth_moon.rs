@@ -12,8 +12,7 @@
 //! - SRP: cannonball (cx_area=2.1432 m², albedo=1.0, diffuse=0.27)
 //! - No drag, no gravity torque
 
-mod sim_test_helpers;
-use sim_test_helpers::*;
+use jeod_test_data::tier3_csv::test_data_path;
 
 use glam::DVec3;
 use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, SrpModel, VehicleConfig};

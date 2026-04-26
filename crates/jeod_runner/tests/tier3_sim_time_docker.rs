@@ -19,8 +19,7 @@
 //! `tier3_sim_timescale.rs`; here we cover the complementary
 //! `RUN_UDE_initialized` variant plus all the other SIM_1..6 sims.
 
-mod sim_test_helpers;
-use sim_test_helpers::test_data_path;
+use jeod_test_data::tier3_csv::test_data_path;
 
 use jeod_time::leap_second::default_leap_second_table;
 use jeod_time::{TimeManager, TimeScaleId};

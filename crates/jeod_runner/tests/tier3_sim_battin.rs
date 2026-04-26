@@ -15,16 +15,25 @@
 //! direct subtraction and one using Battin's method, then asserts the
 //! trajectories agree to within floating-point rounding tolerance.
 
-mod sim_test_helpers;
-use sim_test_helpers::*;
-
-use glam::DVec3;
+use glam::{DMat3, DVec3};
 use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
 use jeod_sim::{
     Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel, GravitySource,
-    RotationalState, SimulationTime, TranslationalState,
+    MassProperties, RotationalState, SimulationTime, TranslationalState,
 };
+use jeod_test_data::mass_data::MassInitData;
+use jeod_test_data::tier3_csv::{load_dyncomp_csv, test_data_path};
 use std::path::Path;
+
+/// Build [`MassProperties`] from parsed JEOD mass-init data (test-only helper).
+fn mass_props_from_init(init: &MassInitData) -> MassProperties {
+    let inertia = DMat3::from_cols(
+        DVec3::new(init.inertia[0][0], init.inertia[1][0], init.inertia[2][0]),
+        DVec3::new(init.inertia[0][1], init.inertia[1][1], init.inertia[2][1]),
+        DVec3::new(init.inertia[0][2], init.inertia[1][2], init.inertia[2][2]),
+    );
+    MassProperties::with_inertia(init.mass, inertia, DVec3::from_slice(&init.position))
+}
 
 /// SIM_dyncomp root directory (relative to JEOD_HOME).
 const SIM_DYNCOMP: &str = "verif/SIM_dyncomp";

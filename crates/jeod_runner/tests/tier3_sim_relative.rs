@@ -4,8 +4,7 @@
 //! The sim is purely kinematic (no gravity) — two bodies are propagated force-free
 //! through `Simulation::step()`, and relative state is computed at each checkpoint.
 
-mod sim_test_helpers;
-use sim_test_helpers::*;
+use jeod_test_data::tier3_csv::test_data_path;
 
 use glam::DVec3;
 use jeod_math::JeodQuat;

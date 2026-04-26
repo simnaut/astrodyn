@@ -21,8 +21,7 @@
 //! - `RUN_one_plate_torque`                — `CalcCoef{ε=0.0}` (two plates offset to `z=1 m`)
 //! - `RUN_orbiter`                         — `CalcCoef{ε=0.0}` (6-plate shuttle orbiter)
 
-mod sim_test_helpers;
-use sim_test_helpers::{load_drag_csv, test_data_path};
+use jeod_test_data::tier3_csv::{load_drag_csv, test_data_path};
 
 use glam::DVec3;
 use jeod_interactions::{compute_flat_plate_aero, AeroCoeffMethod, AeroFacet, AeroGasParams};

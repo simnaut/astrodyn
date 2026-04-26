@@ -48,8 +48,7 @@
 //! `lsode_first_order_ode_integrator` remain as future work. See
 //! `crates/jeod_dynamics/src/abm4.rs` for the doc rationale.
 
-mod sim_test_helpers;
-use sim_test_helpers::*;
+use jeod_test_data::tier3_csv::test_data_path;
 
 use glam::DVec3;
 use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
