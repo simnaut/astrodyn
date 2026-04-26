@@ -55,6 +55,12 @@ pub fn apollo_csm_mass() -> Mass {
     30_000.0.kg()
 }
 
+/// Apollo Lunar Module mass (~14.7 t fueled / lunar-descent
+/// configuration).
+pub fn apollo_lm_mass() -> Mass {
+    14_700.0.kg()
+}
+
 /// 6-DoF rigid sphere mass properties: total mass `mass`, uniform
 /// inertia `I = (2/5) m r²` along all body axes, CoM at structural
 /// origin. Inputs are typed so call sites stay unit-safe ergonomically:
