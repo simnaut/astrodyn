@@ -163,9 +163,42 @@ pub struct PlanetFixedRotationC(pub glam::DMat3);
 /// the `tidal_update_system` computes ΔC20 each step and writes it to
 /// `TidalDeltaC20C`. The application is responsible for updating
 /// `tidal_bodies[].position_inertial` each step from ephemeris data.
+///
+/// Wraps [`jeod_sim::TidalConfigTyped`] (typed sibling of
+/// [`jeod_sim::TidalConfig`]) so the untyped → typed conversion happens
+/// **once at insertion**, not per tick in `tidal_update_system`. This
+/// eliminates the per-frame `TidalConfigTyped::from_untyped` allocation
+/// (Vec collect + per-body f64 → typed boxing). Convenience constructors
+/// `from_untyped` / `From` impls are provided for callers building from
+/// the untyped struct.
 #[derive(Component, Debug, Clone, Deref, DerefMut)]
 #[require(TidalDeltaC20C)]
-pub struct TidalConfigC(pub jeod_sim::TidalConfig);
+pub struct TidalConfigC(pub jeod_sim::TidalConfigTyped);
+
+impl TidalConfigC {
+    /// Wrap an untyped [`jeod_sim::TidalConfig`] as a typed Bevy component.
+    ///
+    /// The dimensional lift (`f64` → `Ratio`/`GravParam`/`Length`/`Position`)
+    /// happens here at insertion. After that, the wrapped value is already
+    /// typed for the lifetime of the component, eliminating per-tick
+    /// `from_untyped` calls in `tidal_update_system`.
+    #[inline]
+    pub fn from_untyped(config: &jeod_sim::TidalConfig) -> Self {
+        Self(jeod_sim::TidalConfigTyped::from_untyped(config))
+    }
+}
+
+impl From<jeod_sim::TidalConfig> for TidalConfigC {
+    fn from(config: jeod_sim::TidalConfig) -> Self {
+        Self::from_untyped(&config)
+    }
+}
+
+impl From<jeod_sim::TidalConfigTyped> for TidalConfigC {
+    fn from(config: jeod_sim::TidalConfigTyped) -> Self {
+        Self(config)
+    }
+}
 
 /// Computed tidal ΔC20 for a gravity source entity.
 ///
@@ -173,14 +206,8 @@ pub struct TidalConfigC(pub jeod_sim::TidalConfig);
 /// integration systems. Defaults to zero (no tidal effect).
 ///
 /// Wrapped as a [`Ratio`] (dimensionless) so the value carries unit
-/// metadata at the type level for type discipline at the Bevy boundary.
-/// The current pipeline still stores [`jeod_sim::TidalConfig`] (untyped)
-/// in [`TidalConfigC`] and `tidal_update_system` calls the untyped
-/// `compute_delta_c20`, then wraps the `f64` result via
-/// [`jeod_sim::dimensionless`] for storage here. Migrating
-/// [`TidalConfigC`] to wrap [`jeod_sim::TidalConfigTyped`] (so the
-/// system can call [`jeod_sim::compute_delta_c20_typed`] directly) is
-/// tracked as Phase 10/11 work in #112.
+/// metadata at the type level — matching `compute_delta_c20_typed`'s
+/// return type.
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut)]
 pub struct TidalDeltaC20C(pub Ratio);
 

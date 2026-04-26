@@ -6,7 +6,7 @@
 # the public API surface but stays callable. Outside of legitimate
 # typed-construction primitives at module boundaries (e.g.,
 # `from_dvec3_unchecked`, which uses `_unchecked` per established Rust
-# convention rather than `_doc(hidden)`), neither marker should appear in
+# convention rather than `#[doc(hidden)]`), neither marker should appear in
 # `crates/` or `src/`.
 #
 # Allowed exceptions: lines containing `// allowed:` are exempt. Use

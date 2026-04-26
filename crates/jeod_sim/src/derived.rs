@@ -81,19 +81,24 @@ pub fn compute_body_euler_angles(rot: &RotationalState, sequence: EulerSequence)
 
 /// Compute the LVLH (Local Vertical Local Horizontal) frame from translational state.
 ///
-/// Shares the JEOD `LvlhFrame::compute_lvlh_frame()` port with the typed
-/// sibling [`compute_body_lvlh_frame_typed`]; bit-identical numerics.
+/// Delegates to [`jeod_math::LvlhFrame::compute`], which owns the single
+/// JEOD `LvlhFrame::compute_lvlh_frame()` port. Bit-identical numerics to
+/// the typed sibling [`compute_body_lvlh_frame_typed`].
 pub fn compute_body_lvlh_frame(position: DVec3, velocity: DVec3) -> LvlhFrame {
-    compute_body_lvlh_frame_inner(position, velocity)
+    use jeod_quantities::ext::Vec3Ext;
+    LvlhFrame::compute(
+        position.m_at::<Inertial>(),
+        velocity.m_per_s_at::<Inertial>(),
+    )
 }
 
 /// Compute geodetic state (latitude, longitude, altitude) from inertial position.
 ///
 /// Rotates the inertial position into the planet-fixed frame using the given
-/// transformation matrix, then converts to geodetic coordinates on the reference
-/// ellipsoid defined by `r_eq` and `r_pol`. Shares the JEOD Borkowski iteration
-/// port with the typed sibling [`compute_body_geodetic_typed`]; bit-identical
-/// numerics.
+/// transformation matrix, then delegates to
+/// [`jeod_math::GeodeticState::from_planet_fixed`] (sole owner of the JEOD
+/// Borkowski iteration kernel). Bit-identical numerics to the typed sibling
+/// [`compute_body_geodetic_typed`].
 pub fn compute_body_geodetic(
     position: DVec3,
     t_inertial_pfix: &DMat3,
@@ -101,7 +106,7 @@ pub fn compute_body_geodetic(
     r_pol: f64,
 ) -> GeodeticState {
     let pos_pfix = *t_inertial_pfix * position;
-    compute_body_geodetic_inner(pos_pfix, r_eq, r_pol)
+    GeodeticState::from_planet_fixed(pos_pfix, r_eq, r_pol)
 }
 
 /// Compute the solar beta angle (angle between orbit plane and Sun direction).
@@ -254,63 +259,24 @@ pub fn compute_body_euler_angles_typed(
 /// Typed sibling of [`compute_body_lvlh_frame`].
 ///
 /// Accepts inertial-frame typed position/velocity and returns the same
-/// [`LvlhFrame`] as the f64 surface. Bit-identical numerics — this wrapper
-/// only lifts the inputs through the typed boundary.
+/// [`LvlhFrame`] as the f64 surface. Delegates to
+/// [`jeod_math::LvlhFrame::compute`], which owns the single JEOD
+/// `LvlhFrame::compute_lvlh_frame()` port — keeping one source of truth
+/// for the kernel.
 pub fn compute_body_lvlh_frame_typed(
     position: Position<Inertial>,
     velocity: Velocity<Inertial>,
 ) -> LvlhFrame {
-    compute_body_lvlh_frame_inner(position.raw_si(), velocity.raw_si())
-}
-
-/// Internal LVLH kernel shared by the f64 and typed entry points.
-///
-/// Inlined port of JEOD `LvlhFrame::compute_lvlh_frame()` so the typed
-/// surface is independent of the deprecated f64 path.
-fn compute_body_lvlh_frame_inner(position: DVec3, velocity: DVec3) -> LvlhFrame {
-    // Compute angular momentum vector: h = r × v
-    let angmom = position.cross(velocity);
-    let hmag = angmom.length();
-    let rmagsq = position.length_squared();
-    let rmag = rmagsq.sqrt();
-
-    assert!(
-        rmag > 0.0,
-        "compute_body_lvlh_frame: position magnitude is zero"
-    );
-    assert!(
-        hmag > 0.0,
-        "compute_body_lvlh_frame: angular momentum is zero (radial trajectory)"
-    );
-
-    let wmag = hmag / rmagsq;
-
-    let z_hat = -position / rmag;
-    let y_hat = -angmom / hmag;
-    let x_hat = y_hat.cross(z_hat).normalize();
-
-    let t_parent_this = DMat3::from_cols(
-        DVec3::new(x_hat.x, y_hat.x, z_hat.x),
-        DVec3::new(x_hat.y, y_hat.y, z_hat.y),
-        DVec3::new(x_hat.z, y_hat.z, z_hat.z),
-    );
-
-    let ang_vel_this = DVec3::new(0.0, -wmag, 0.0);
-
-    LvlhFrame {
-        t_parent_this,
-        ang_vel_this,
-        position,
-        velocity,
-    }
+    LvlhFrame::compute(position, velocity)
 }
 
 /// Typed sibling of [`compute_body_geodetic`].
 ///
 /// Accepts a typed inertial position and ellipsoid radii, applies the
-/// inertial-to-planet-fixed rotation, then runs the JEOD Borkowski
-/// iteration. Returns the f64 [`GeodeticState`] used by Bevy components;
-/// bit-identical to the f64 surface.
+/// inertial-to-planet-fixed rotation, then delegates to
+/// [`jeod_math::GeodeticState::from_planet_fixed`] (sole owner of the JEOD
+/// Borkowski iteration kernel). Returns the f64 [`GeodeticState`] used by
+/// Bevy components; bit-identical to the f64 surface.
 pub fn compute_body_geodetic_typed(
     position: Position<Inertial>,
     t_inertial_pfix: &DMat3,
@@ -318,99 +284,7 @@ pub fn compute_body_geodetic_typed(
     r_pol: Length,
 ) -> GeodeticState {
     let pos_pfix = *t_inertial_pfix * position.raw_si();
-    compute_body_geodetic_inner(pos_pfix, r_eq.get::<meter>(), r_pol.get::<meter>())
-}
-
-/// Internal geodetic kernel shared by the f64 and typed entry points.
-///
-/// Inlined port of JEOD `PlanetFixedPosition::cart_to_ellip()` so the typed
-/// surface is independent of the deprecated f64 path.
-fn compute_body_geodetic_inner(pos_pfix: DVec3, r_eq: f64, r_pol: f64) -> GeodeticState {
-    // JEOD_INV: PF.02 — input must be NaN/Inf free (planet_fixed_posn.cc:155-162)
-    assert!(
-        pos_pfix.x.is_finite() && pos_pfix.y.is_finite() && pos_pfix.z.is_finite(),
-        "compute_body_geodetic_inner: input contains NaN or Inf ({pos_pfix:?})"
-    );
-
-    let x_ellipse_sq = pos_pfix.x * pos_pfix.x + pos_pfix.y * pos_pfix.y;
-    let x_ellipse = x_ellipse_sq.sqrt();
-    let z_ellipse = pos_pfix.z;
-    let r_ellipse = (x_ellipse_sq + z_ellipse * z_ellipse).sqrt();
-
-    // JEOD_INV: PF.01 — position must be far from planet center
-    assert!(
-        r_ellipse > r_eq * 1e-10,
-        "compute_body_geodetic_inner: position too close to planet center ({r_ellipse} m)"
-    );
-
-    let (lat, alt) = borkowski_lat_alt(x_ellipse, z_ellipse, r_eq, r_pol);
-
-    // JEOD_INV: PF.03 — polar singularity: at x_ellipse==0, longitude is undefined
-    let longitude = if x_ellipse != 0.0 {
-        pos_pfix.y.atan2(pos_pfix.x)
-    } else {
-        // Directly over the pole — JEOD leaves longitude unchanged; we use 0.0.
-        0.0
-    };
-
-    GeodeticState {
-        latitude: lat,
-        longitude,
-        altitude: alt,
-    }
-}
-
-/// Borkowski's iterative method for geodetic latitude and altitude.
-///
-/// Port of JEOD `PlanetFixedPosition::get_elliptic_parameters()`.
-///
-/// Reference: Borkowski, K.M., "Accurate Algorithms To Transform Geocentric
-/// To Geodetic Coordinates", Bull. Géod., 63 (1989), pp. 50-56.
-fn borkowski_lat_alt(r: f64, z: f64, r_eq: f64, r_pol: f64) -> (f64, f64) {
-    const MAX_ITERATION_LIMIT: usize = 10;
-    let a = r_eq;
-    let b = r_pol;
-
-    let (lat, y);
-    if r > 0.0 {
-        let y0_init = (a * z / (b * r)).atan();
-        let ar = a * r;
-        let bz = b * z;
-        let w = (bz / ar).atan();
-        let c = (a * a - b * b) / (ar * ar + bz * bz).sqrt();
-
-        let mut y0 = y0_init;
-        let mut y_val = y0;
-        let mut converged = false;
-        for _ in 0..MAX_ITERATION_LIMIT {
-            let d = 2.0 * ((y0 - w).cos() - c * (2.0 * y0).cos());
-            // JEOD_INV: PF.05 — Borkowski denominator must be non-zero
-            assert!(
-                d.abs() > f64::EPSILON,
-                "geodetic iteration: denominator near zero (d={d})"
-            );
-            y_val = y0 - (2.0 * (y0 - w).sin() - c * (2.0 * y0).sin()) / d;
-            if (y_val - y0).abs() < 1.0e-12 {
-                converged = true;
-                break;
-            }
-            y0 = y_val;
-        }
-        // JEOD_INV: PF.04 — Borkowski iteration must converge to 1e-12 within MAX_ITERATION_LIMIT
-        assert!(
-            converged,
-            "geodetic iteration did not converge after {MAX_ITERATION_LIMIT} iterations"
-        );
-        y = y_val;
-        lat = (a * y.sin() / (b * y.cos())).atan();
-    } else {
-        // Directly over pole: lat = ±π/2
-        y = 0.5 * z * std::f64::consts::PI / z.abs();
-        lat = y;
-    }
-
-    let alt = (r - a * y.cos()) * lat.cos() + (z - b * y.sin()) * lat.sin();
-    (lat, alt)
+    GeodeticState::from_planet_fixed(pos_pfix, r_eq.get::<meter>(), r_pol.get::<meter>())
 }
 
 /// Typed sibling of [`compute_body_solar_beta`].
@@ -511,7 +385,7 @@ mod tests {
 
         // Verify against direct computation to lock down the convention
         let pos_pfix = t_inertial_pfix * pos_inertial;
-        let expected = compute_body_geodetic_inner(pos_pfix, R_EQ, R_POL);
+        let expected = GeodeticState::from_planet_fixed(pos_pfix, R_EQ, R_POL);
         assert_eq!(geo, expected);
     }
 }

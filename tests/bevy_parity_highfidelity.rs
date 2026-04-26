@@ -167,7 +167,7 @@ fn tier3_bevy_tidal_sh4x4() {
             SourceInertialPositionC::default(),
             TranslationalStateC::default(),
             PlanetFixedRotationC(DMat3::IDENTITY),
-            TidalConfigC(tidal_config.clone()),
+            TidalConfigC::from_untyped(&tidal_config),
         ))
         .id();
 

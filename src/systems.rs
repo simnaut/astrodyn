@@ -88,14 +88,13 @@ pub fn tidal_update_system(
     mut query: Query<(&TidalConfigC, &PlanetFixedRotationC, &mut TidalDeltaC20C)>,
 ) {
     for (config, rotation, mut delta) in &mut query {
-        // Typed sibling: lift the stored `TidalConfig` into `TidalConfigTyped`
-        // at the call site so `compute_delta_c20_typed` can return `Ratio`
-        // directly (matches `TidalDeltaC20C`'s storage type — no
-        // `dimensionless()` wrapper needed). The typed kernel internally
-        // calls the same numeric path as the untyped version, so the result
-        // is bit-identical to the deprecated f64 path.
-        let typed_config = jeod_sim::TidalConfigTyped::from_untyped(&config.0);
-        delta.0 = jeod_sim::compute_delta_c20_typed(&typed_config, &rotation.0);
+        // `TidalConfigC` already wraps `TidalConfigTyped` — the dimensional
+        // lift happened once at insertion (`TidalConfigC::from_untyped`),
+        // so the system reads the typed value directly with no per-tick
+        // `Vec` allocation or per-body f64 → typed conversion.
+        // `compute_delta_c20_typed` returns `Ratio`, matching
+        // `TidalDeltaC20C`'s storage type.
+        delta.0 = jeod_sim::compute_delta_c20_typed(&config.0, &rotation.0);
     }
 }
 
