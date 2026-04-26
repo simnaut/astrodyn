@@ -697,6 +697,85 @@ pub fn run10c_gravity_torque_elliptical() -> VerificationCase {
     }
 }
 
+// ── RUN_5A: MET atmosphere validation (drag off, atmosphere live) ─────────
+
+fn build_run5a_met() -> SimulationBuilder {
+    let jeod = jeod_root();
+    let sim_dir = jeod.join(SIM_DYNCOMP);
+    let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+    let mu_earth = jeod_sim::coefficients::load_mu_from_jeod_cc(
+        &jeod.join("models/environment/gravity/data/src/earth_GGM05C.cc"),
+    )
+    .expect("load Earth mu");
+    let mass_props = iss_mass_properties();
+    let csv_path = test_data_path("dyncomp_run5a_atmos_atmos_traj.csv");
+    assert!(
+        csv_path.exists(),
+        "Atmosphere trajectory CSV not found at {}.\n\
+         Generate with Docker (see CLAUDE.md).",
+        csv_path.display()
+    );
+    let records = jeod_test_data::tier3_csv::load_atmos_traj_csv(&csv_path);
+    assert!(records.len() > 100, "Expected >100 records");
+    let init = &records[0];
+
+    // RUN_5A: minimum solar activity (F10.7 = 70, Ap = 0)
+    let met_model = MetAtmosphere {
+        f10: 70.0,
+        f10b: 70.0,
+        geo_index: 0.0,
+        geo_index_type: met_atmosphere::GeoIndexType::Ap,
+    };
+
+    let mut sb = SimulationBuilder::new(dyncomp_time(), dt);
+    let earth = sb.add_source("Earth", earth_pm_with_rnp(mu_earth));
+    sb = sb.atmosphere(
+        AtmosphereConfig {
+            model: AtmosphereModel::Met(met_model),
+            r_eq: EARTH.shape.r_eq,
+            r_pol: EARTH.shape.r_pol,
+            planet_omega: OMEGA_EARTH,
+        },
+        earth,
+    );
+    sb.add_body(VehicleConfig {
+        trans: TranslationalState {
+            position: init.position,
+            velocity: init.velocity,
+        },
+        rot: Some(RotationalState {
+            quaternion: JeodQuat::identity(),
+            ang_vel_body: DVec3::ZERO,
+        }),
+        mass: Some(mass_props),
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth, true)],
+        },
+        ..Default::default()
+    });
+    sb
+}
+
+/// SIM_dyncomp RUN_5A — MET atmosphere live (minimum solar activity),
+/// drag off, ISS mass with identity attitude. Validates atmosphere
+/// pipeline matches JEOD reference trajectory (atmosphere has no
+/// dynamic effect since drag is off).
+pub fn run5a_met() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_simulation_met_run5a",
+        scenario: build_run5a_met,
+        reference: CsvReference::AtmosTraj("dyncomp_run5a_atmos_atmos_traj.csv"),
+        duration: Time::new::<second>(28800.0),
+        tolerances: Tolerances {
+            position_m: [2.5e-6, 2.5e-6, 2.5e-6],
+            velocity_m_s: [0.0; 3], // verbatim from existing test (no velocity assert)
+            quat_angle_rad: 0.0,
+            ang_vel_rad_s: [0.0; 3],
+            extras: &[],
+        },
+    }
+}
+
 /// SIM_dyncomp RUN_10D — gravity-gradient torque, elliptical orbit,
 /// non-zero initial body rate.
 pub fn run10d_gravity_torque_elliptical_rate() -> VerificationCase {
