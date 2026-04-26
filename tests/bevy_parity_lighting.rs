@@ -1,6 +1,6 @@
 //! Bevy-vs-Simulation parity tests: earth lighting.
 
-mod parity_helpers;
+mod common;
 
 use bevy::prelude::*;
 use bevy_jeod::{
@@ -11,7 +11,7 @@ use glam::DVec3;
 use jeod_runner::{DerivedStateConfig, EarthLightingConfig, GravitySourceEntry, VehicleConfig};
 use jeod_sim::{GravityControl, GravityControls, GravityModel, GravitySource, TranslationalState};
 
-use parity_helpers::*;
+use common::*;
 
 // ── Scenario S: Earth lighting consistency ──
 

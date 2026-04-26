@@ -1,6 +1,6 @@
 //! Bevy-vs-Simulation parity tests: gravity gradient torque and external torque.
 
-mod parity_helpers;
+mod common;
 
 use bevy::prelude::*;
 use bevy_jeod::{
@@ -14,7 +14,7 @@ use jeod_sim::{
     MassProperties, RotationalState, SixDofState, TranslationalState,
 };
 
-use parity_helpers::*;
+use common::*;
 
 // ── Scenario D: Gravity gradient torque, 6-DOF ──
 

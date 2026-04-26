@@ -1,7 +1,14 @@
 //! Shared helpers for Bevy-vs-Simulation parity tests.
 //!
-//! Provides common initial conditions, assertion functions, and setup utilities
-//! used across all parity test categories.
+//! Provides common initial conditions, assertion functions, and setup
+//! utilities used across all `bevy_parity_*.rs` test categories. Consumers
+//! `mod common;` then `use common::*;`.
+//!
+//! Renamed from `tests/parity_helpers/mod.rs` to `tests/common/mod.rs` in
+//! Phase 11 of #101 — the contents are pure test infrastructure (Bevy
+//! `App` setup, bit-identical assertion macros, DE421 ephemeris caching);
+//! they are deliberately not promoted to `jeod_sim::recipes::helpers`,
+//! which is reserved for cross-crate-reusable propagation utilities.
 
 // Each integration test file includes this module independently, so not all
 // items are used in every compilation unit. Suppress dead_code warnings.

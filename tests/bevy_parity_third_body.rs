@@ -1,7 +1,7 @@
 //! Bevy-vs-Simulation parity tests: third-body gravity, Mars, Mercury relativistic,
 //! Clementine, solar beta with DE421 ephemeris.
 
-mod parity_helpers;
+mod common;
 
 use bevy::prelude::*;
 use bevy_jeod::{
@@ -16,7 +16,7 @@ use jeod_sim::{
     GravitySource, MassProperties, SixDofState, TranslationalState,
 };
 
-use parity_helpers::*;
+use common::*;
 
 // ── Solar beta with DE421 ephemeris ──
 

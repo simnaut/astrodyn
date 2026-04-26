@@ -1,7 +1,7 @@
 //! Bevy-vs-Simulation parity tests: high-fidelity physics (spherical harmonics,
 //! tidal effects, polar motion, Gauss-Jackson integrator).
 
-mod parity_helpers;
+mod common;
 
 use bevy::prelude::*;
 use bevy_jeod::{
@@ -15,7 +15,7 @@ use jeod_sim::{
     GravitySource, IntegratorType, TidalBody, TidalConfig, TranslationalState,
 };
 
-use parity_helpers::*;
+use common::*;
 
 // ── Scenario F: Spherical harmonics 4x4 + RNP (requires JEOD_HOME) ──
 

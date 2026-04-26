@@ -1,7 +1,7 @@
 //! Bevy-vs-Simulation parity tests: derived states (orbital elements, Euler angles,
 //! LVLH frame, geodetic, solar beta).
 
-mod parity_helpers;
+mod common;
 
 use bevy::prelude::*;
 use bevy_jeod::{
@@ -19,7 +19,7 @@ use jeod_sim::{
     PlanetShape, SixDofState, TranslationalState,
 };
 
-use parity_helpers::*;
+use common::*;
 
 // ── Scenario I: Derived states (orbital elements, Euler, LVLH, solar beta) ──
 

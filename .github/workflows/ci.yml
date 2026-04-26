@@ -31,6 +31,20 @@ jobs:
       - uses: taiki-e/install-action@nextest
       - run: cargo nextest run -p jeod_quantities
 
+  docs-enforce:
+    name: Docs (rustdoc -D warnings + doctests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build workspace docs (no deps, deny warnings)
+        run: cargo doc --workspace --no-deps --quiet
+        env:
+          RUSTDOCFLAGS: -D warnings
+      - name: Run workspace doctests
+        run: cargo test --doc --workspace
+
   compile-time-budget:
     name: Compile-time budget (envelope)
     runs-on: ubuntu-latest
