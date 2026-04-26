@@ -143,11 +143,13 @@ pub struct FlatPlateState {
     /// [`IntegrableObject::snapshot`] and read by
     /// [`IntegrableObject::advance_intermediate`] /
     /// [`IntegrableObject::finalize_rk4`]. Managed by the RK4 kernel; do
-    /// not set manually.
-    #[doc(hidden)]
+    /// not set manually. Hidden from rustdoc to discourage direct access
+    /// while still allowing struct-update syntax (`..Default::default()`)
+    /// at call sites that build `FlatPlateState` literals.
+    #[doc(hidden)] // allowed: RK4 kernel scratch; pub for ..Default::default() access only
     pub temps_snapshot: Vec<f64>,
     /// Step-start T^4 snapshot; companion to `temps_snapshot`.
-    #[doc(hidden)]
+    #[doc(hidden)] // allowed: RK4 kernel scratch; pub for ..Default::default() access only
     pub t_pow4_snapshot: Vec<f64>,
 }
 
