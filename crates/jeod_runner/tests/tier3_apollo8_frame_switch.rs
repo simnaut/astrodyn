@@ -261,6 +261,11 @@ fn load_reference_sixdof(filename: &str) -> Vec<RefState> {
     states
 }
 
+// non-recipe: SIM_verif_frame_switch uses the Apollo 8 trans-lunar-coast
+// state vector (Dec 23 1968 19:38 UTC) with vehicle.py-specific inertia in
+// slug-ft² and CoM offset in inches. This is materially different from
+// `scenarios::apollo_translunar()` (J2000 epoch, 200 km parking orbit,
+// generic CSM mass) — substituting would change what's being verified.
 #[test]
 fn tier3_apollo8_eci_integ() {
     let (mut sim, body_idx, _moon) = build_apollo8_sim(false);
@@ -310,6 +315,9 @@ fn tier3_apollo8_eci_integ() {
 /// Cross-validate the frame-switch simulation against JEOD's reference data.
 /// JEOD logs position in the current integration frame: ECI before the switch,
 /// Moon-centered after.
+// non-recipe: same Apollo 8 trans-lunar coast state as
+// `tier3_apollo8_eci_integ`; setup is identical except for
+// `enable_frame_switch=true`.
 #[test]
 fn tier3_apollo8_frame_switch() {
     let (mut sim, body_idx, _moon) = build_apollo8_sim(true);
