@@ -114,6 +114,37 @@ pub struct Tolerances {
     pub extras: &'static [(&'static str, f64)],
 }
 
+/// Per-family extras comparator dispatched by `run_and_assert`.
+///
+/// Each variant tags a family-specific extractor that pairs a
+/// [`crate::recipes::verification::CsvReference`]'s typed record at
+/// step *k* with the [`VehicleOutput`](jeod_runner::VehicleOutput) at
+/// the same step, yielding `(name, abs_error)` pairs the runner
+/// accumulates as max errors and asserts against
+/// [`Tolerances::extras`].
+///
+/// The runner-side dispatch lives in `jeod_runner::run_verification`
+/// (it has access to typed records and `VehicleOutput`); this enum is
+/// adapter-neutral so `VerificationCase` itself stays in `jeod_sim`.
+#[derive(Clone, Debug)]
+pub enum ExtrasComparator {
+    /// Classical orbital elements: 7 extras (sma, eccentricity, inclination,
+    /// arg_periapsis, long_asc_node, true_anom, mean_anom).
+    Orbelem,
+    /// LVLH frame: 2 extras (`t_parent_this` matrix-element max error,
+    /// `ang_vel` magnitude error).
+    Lvlh,
+    /// Geodetic state: 3 extras (`altitude`, `latitude`, `longitude`).
+    /// `spherical=true` compares against the spherical-Earth columns;
+    /// `false` (default) compares against ellipsoidal columns.
+    Ned { spherical: bool },
+    /// Euler angles: 3 extras (`euler_roll`, `euler_pitch`, `euler_yaw`)
+    /// computed against JEOD's logged quaternion via our own port of the
+    /// Euler-from-matrix conversion (self-consistency check of our Euler
+    /// extractor against the JEOD-quaternion reference).
+    Euler,
+}
+
 impl Default for Tolerances {
     /// Default tolerances broad enough to spot a regression while not
     /// rejecting bit-stable runs. Concrete cases tighten these.
@@ -149,4 +180,9 @@ pub struct VerificationCase {
     pub duration: Time,
     /// Per-component tolerances for the cross-validation report.
     pub tolerances: Tolerances,
+    /// Optional per-family extras comparator. When `Some`, the runner
+    /// computes the family's `(name, error)` pairs alongside the state
+    /// log and asserts each against the matching entry in
+    /// [`Tolerances::extras`].
+    pub extras: Option<ExtrasComparator>,
 }

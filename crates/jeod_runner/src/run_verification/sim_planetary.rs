@@ -118,6 +118,7 @@ pub fn leo_inc() -> VerificationCase {
         reference: CsvReference::OrbInit("planetary_leo_inc_planetary.csv"),
         duration: Time::new::<second>(86400.0),
         tolerances: PLANETARY_TOLS,
+        extras: None,
     }
 }
 
@@ -129,6 +130,7 @@ pub fn leo_polar() -> VerificationCase {
         reference: CsvReference::OrbInit("planetary_leo_polar_planetary.csv"),
         duration: Time::new::<second>(86400.0),
         tolerances: PLANETARY_TOLS,
+        extras: None,
     }
 }
 
@@ -140,6 +142,7 @@ pub fn leo_ecc() -> VerificationCase {
         reference: CsvReference::OrbInit("planetary_leo_ecc_planetary.csv"),
         duration: Time::new::<second>(86400.0),
         tolerances: PLANETARY_TOLS,
+        extras: None,
     }
 }
 
@@ -151,6 +154,7 @@ pub fn leo_equ() -> VerificationCase {
         reference: CsvReference::OrbInit("planetary_leo_equ_planetary.csv"),
         duration: Time::new::<second>(86400.0),
         tolerances: PLANETARY_TOLS,
+        extras: None,
     }
 }
 
@@ -162,5 +166,6 @@ pub fn geo() -> VerificationCase {
         reference: CsvReference::OrbInit("planetary_geo_planetary.csv"),
         duration: Time::new::<second>(86400.0),
         tolerances: PLANETARY_TOLS,
+        extras: None,
     }
 }

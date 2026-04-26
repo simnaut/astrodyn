@@ -170,6 +170,7 @@ pub fn run2_3dof() -> VerificationCase {
             ang_vel_rad_s: [0.0; 3],
             extras: &[],
         },
+        extras: None,
     }
 }
 
@@ -187,6 +188,7 @@ pub fn run2_6dof() -> VerificationCase {
             ang_vel_rad_s: [2.619e-18, 1.367e-18, 7.969e-19],
             extras: &[],
         },
+        extras: None,
     }
 }
 
@@ -373,6 +375,7 @@ pub fn run3a_sh4x4() -> VerificationCase {
             ang_vel_rad_s: [0.0; 3],
             extras: &[],
         },
+        extras: None,
     }
 }
 
@@ -390,6 +393,7 @@ pub fn run3b_sh8x8() -> VerificationCase {
             ang_vel_rad_s: [0.0; 3],
             extras: &[],
         },
+        extras: None,
     }
 }
 
@@ -451,6 +455,7 @@ pub fn run5b_atmosphere_mean() -> VerificationCase {
             ang_vel_rad_s: [0.0; 3],
             extras: &[],
         },
+        extras: None,
     }
 }
 
@@ -469,6 +474,7 @@ pub fn run5c_atmosphere_max() -> VerificationCase {
             ang_vel_rad_s: [0.0; 3],
             extras: &[],
         },
+        extras: None,
     }
 }
 
@@ -562,6 +568,7 @@ pub fn run6a_const_density_drag() -> VerificationCase {
             ang_vel_rad_s: [0.0; 3],
             extras: &[],
         },
+        extras: None,
     }
 }
 
@@ -579,6 +586,7 @@ pub fn run6b_drag() -> VerificationCase {
             ang_vel_rad_s: [0.0; 3],
             extras: &[],
         },
+        extras: None,
     }
 }
 
@@ -676,6 +684,7 @@ pub fn run10a_gravity_torque() -> VerificationCase {
             ang_vel_rad_s: [1e-15, 1.172e-7, 9.301e-8],
             extras: &[],
         },
+        extras: None,
     }
 }
 
@@ -694,6 +703,7 @@ pub fn run10c_gravity_torque_elliptical() -> VerificationCase {
             ang_vel_rad_s: [1e-15, 1.243e-7, 9.646e-8],
             extras: &[],
         },
+        extras: None,
     }
 }
 
@@ -773,6 +783,7 @@ pub fn run5a_met() -> VerificationCase {
             ang_vel_rad_s: [0.0; 3],
             extras: &[],
         },
+        extras: None,
     }
 }
 
@@ -791,5 +802,6 @@ pub fn run10d_gravity_torque_elliptical_rate() -> VerificationCase {
             ang_vel_rad_s: [1e-15, 1.825e-7, 1.196e-7],
             extras: &[],
         },
+        extras: None,
     }
 }

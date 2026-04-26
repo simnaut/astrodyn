@@ -103,5 +103,6 @@ pub fn run2p_polar_motion() -> VerificationCase {
             ang_vel_rad_s: [0.0; 3],
             extras: &[],
         },
+        extras: None,
     }
 }
