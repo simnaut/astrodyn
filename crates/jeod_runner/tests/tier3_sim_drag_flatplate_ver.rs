@@ -199,8 +199,8 @@ fn run_flat_plate_case(case: &FlatPlateCase) -> (f64, f64, f64) {
 
 // ── Specular (ε=1.0, `coef_method=Specular`) ──
 
-// non-recipe (all 8 tests in this file): SIM_VER_DRAG flatplate scenarios
-// drive bespoke Cd/area/incidence/epsilon parameters from JEOD's input.py
+// non-recipe: all 8 tests in this file drive SIM_VER_DRAG flatplate scenarios
+// with bespoke Cd/area/incidence/epsilon parameters from JEOD's input.py
 // fixtures and compare via `load_drag_csv`. The setups are the assertion
 // content, not a recipe input.
 #[test]

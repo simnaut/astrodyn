@@ -425,7 +425,7 @@ fn run_propagation_test(
 
 // -- Individual test functions --
 
-// non-recipe (all 6 runs): SIM_torque_compare_simple seeds ISS mass props
+// non-recipe: all 6 runs of SIM_torque_compare_simple seed ISS mass props
 // from JEOD `Modified_data/mass.py` (set_mass_iss) — a complete
 // non-diagonal inertia tensor with off-CoM offset that the
 // `recipes::vehicle::iss_mass()` scalar can't represent. CSV t=0 also

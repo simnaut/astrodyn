@@ -89,12 +89,17 @@ where
         if det.observe(r, v) {
             let pos_typed = Position::<Inertial>::from_raw_si(r);
             let vel_typed = Velocity::<Inertial>::from_raw_si(v);
-            if let Ok(oe) = OrbitalElements::from_cartesian_typed(mu_typed, pos_typed, vel_typed) {
-                events.push(PeriapsisEvent {
-                    time: t,
-                    long_perihelion: oe.arg_periapsis + oe.long_asc_node,
+            let oe = OrbitalElements::from_cartesian_typed(mu_typed, pos_typed, vel_typed)
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "periapsis_detection: from_cartesian_typed failed at t={t}, \
+                         position={r:?}, velocity={v:?}: {e:?}"
+                    )
                 });
-            }
+            events.push(PeriapsisEvent {
+                time: t,
+                long_perihelion: oe.arg_periapsis + oe.long_asc_node,
+            });
         }
     }
     events

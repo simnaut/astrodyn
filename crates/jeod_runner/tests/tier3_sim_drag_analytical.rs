@@ -118,7 +118,7 @@ fn iss_circular_state() -> (DVec3, DVec3) {
 /// Drag removes kinetic energy from the orbit, causing the total specific
 /// energy to become more negative. This is the most fundamental property
 /// of atmospheric drag.
-// non-recipe (all 6 tests in this file): equatorial 400 km circular orbit
+// non-recipe: all 6 tests in this file run an equatorial 400 km circular orbit
 // with various Cd / area / density combinations to verify analytical drag
 // laws (energy loss, altitude decay, density scaling, area scaling, no-drag
 // at zero density, corotation wind). Geometry and drag parameters are the
