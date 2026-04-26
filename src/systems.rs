@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use glam::DVec3;
-use jeod_sim::{BodyFrame, Inertial, Position, Ratio, SelfRef, Torque, Velocity};
+use jeod_sim::{BodyFrame, Inertial, Position, Ratio, SelfRef, Velocity};
 
 use crate::components::*;
 use crate::AtmosphereModelR;
@@ -301,19 +301,20 @@ pub fn integration_system(
     }
 
     // Helper closure for gravity at an intermediate state — reused by both
-    // the standard and coupled dispatch branches. Source-side typed
-    // `Position<Inertial>` / `Velocity<Inertial>` / `Ratio` are
-    // unwrapped to raw f64/DVec3 at the boundary because the
-    // `accumulate_gravity` / `accumulate_relativistic_corrections`
-    // kernels still take raw types.
-    let eval_gravity = |entity: Entity,
-                        controls: &GravityControlsC,
-                        pos: DVec3,
-                        vel: DVec3|
-     -> DVec3 {
-        let mut accel =
-            jeod_sim::accumulate_gravity(pos, &controls.0, DVec3::ZERO, |source_entity| {
-                match sources.get(source_entity) {
+    // the standard and coupled dispatch branches. The integrator passes
+    // raw `DVec3` per-stage states (the integrator internals are not
+    // yet typed); we wrap into `Position<Inertial>` / `Velocity<Inertial>`
+    // for the typed `*_typed` kernels and unwrap before returning.
+    let eval_gravity =
+        |entity: Entity, controls: &GravityControlsC, pos: DVec3, vel: DVec3| -> DVec3 {
+            let typed_pos = Position::<Inertial>::from_raw_si(pos);
+            let typed_vel = Velocity::<Inertial>::from_raw_si(vel);
+
+            let typed_accel = jeod_sim::accumulate_gravity_typed(
+                typed_pos,
+                &controls.0,
+                Position::<Inertial>::zero(),
+                |source_entity| match sources.get(source_entity) {
                     Ok((s, r, p, _, tidal, tidal_config)) => Some(jeod_sim::ResolvedSource {
                         source: &s.0,
                         rotation: r.map(|r| &r.0),
@@ -328,23 +329,28 @@ pub fn integration_system(
                          GravitySourceC + SourceInertialPositionC."
                         );
                     }
-                }
-            })
-            .grav_accel;
+                },
+            );
+            let mut accel = typed_accel.grav_accel.raw_si();
 
-        accel +=
-            jeod_sim::accumulate_relativistic_corrections(pos, vel, &controls.0, |source_entity| {
-                sources.get(source_entity).ok().map(|(s, _, p, v, _, _)| {
-                    jeod_sim::ResolvedRelativisticSource {
-                        mu: s.mu,
-                        position: p.0.raw_si(),
-                        velocity: v.map_or(DVec3::ZERO, |v| v.0.raw_si()),
-                    }
-                })
-            });
+            let rel = jeod_sim::accumulate_relativistic_corrections_typed(
+                typed_pos,
+                typed_vel,
+                &controls.0,
+                |source_entity| {
+                    sources.get(source_entity).ok().map(|(s, _, p, v, _, _)| {
+                        jeod_sim::ResolvedRelativisticSource {
+                            mu: s.mu,
+                            position: p.0.raw_si(),
+                            velocity: v.map_or(DVec3::ZERO, |v| v.0.raw_si()),
+                        }
+                    })
+                },
+            );
+            accel += rel.raw_si();
 
-        accel
-    };
+            accel
+        };
 
     for (
         entity,
@@ -544,10 +550,18 @@ pub fn gravity_computation_system(
     )>,
 ) {
     for (entity, state, controls, mut accel) in &mut bodies {
-        accel.0 = jeod_sim::accumulate_gravity(
-            state.position,
+        // Typed entry: lift `state.position` (raw DVec3) into the typed
+        // `Position<Inertial>` and call the typed sibling. The kernel
+        // numerics are bit-identical; the typed boundary lets the
+        // compiler check that the inertial-frame phantom matches the
+        // gravity source phantoms.
+        let body_pos = Position::<Inertial>::from_raw_si(state.position);
+        let body_vel = Velocity::<Inertial>::from_raw_si(state.velocity);
+
+        let typed_accel = jeod_sim::accumulate_gravity_typed(
+            body_pos,
             &controls.0,
-            DVec3::ZERO,
+            Position::<Inertial>::zero(),
             |source_entity| match sources.get(source_entity) {
                 Ok((source, rot, pos, _, tidal, tidal_config)) => {
                     Some(jeod_sim::ResolvedSource {
@@ -569,12 +583,13 @@ pub fn gravity_computation_system(
                 }
             },
         );
+        accel.0 = typed_accel.to_untyped();
 
         // Apply relativistic (post-Newtonian PPN) corrections after Newtonian
         // gravity, matching Simulation::step() stage 4b ordering.
-        accel.grav_accel += jeod_sim::accumulate_relativistic_corrections(
-            state.position,
-            state.velocity,
+        let rel_accel = jeod_sim::accumulate_relativistic_corrections_typed(
+            body_pos,
+            body_vel,
             &controls.0,
             |source_entity| {
                 sources.get(source_entity).ok().map(|(s, _, p, v, _, _)| {
@@ -586,6 +601,7 @@ pub fn gravity_computation_system(
                 })
             },
         );
+        accel.grav_accel += rel_accel.raw_si();
     }
 }
 
@@ -665,16 +681,21 @@ pub fn aero_drag_system(
     for (drag_config, atmos, state, rot, struct_xform, mut aero_force) in &mut query {
         let t_struct_body = struct_xform.map_or(glam::DMat3::IDENTITY, |s| s.0);
 
-        let result = jeod_sim::compute_drag(
-            &drag_config.0,
+        // Typed sibling: lift `state.velocity` and `drag_config` into
+        // `Velocity<Inertial>` / `DragConfigTyped`. Result carries
+        // `StructuralFrame<SelfRef>` phantoms, which the structural-frame
+        // `AerodynamicForceC` unwraps via `.raw_si()` for storage.
+        let drag_typed = jeod_sim::DragConfigTyped::from_untyped_unchecked(&drag_config.0);
+        let result = jeod_sim::compute_drag_typed::<SelfRef>(
+            &drag_typed,
             atmos,
-            state.velocity,
+            Velocity::<Inertial>::from_raw_si(state.velocity),
             Some(&rot.0),
             t_struct_body,
         );
 
-        aero_force.force = result.force;
-        aero_force.torque = result.torque;
+        aero_force.force = result.force.raw_si();
+        aero_force.torque = result.torque.raw_si();
     }
 }
 
@@ -692,11 +713,17 @@ pub fn gravity_torque_system(
     )>,
 ) {
     for (grav, rot, mass, mut torque) in &mut query {
-        // `compute_gravity_torque` returns a raw `DVec3` body-frame
-        // torque; wrap into the typed `Torque<BodyFrame<SelfRef>>`
-        // component before storing.
-        let raw = jeod_sim::compute_gravity_torque(&grav.grav_grad, &rot.0, &mass.inertia);
-        torque.0 = Torque::<BodyFrame<SelfRef>>::from_raw_si(raw);
+        // Typed sibling: lift `MassProperties.inertia` into a typed
+        // `InertiaTensor<BodyFrame<SelfRef>>` so the function signature
+        // expresses the body-frame phantom; the kernel numerics are
+        // bit-identical.
+        let inertia_typed =
+            jeod_sim::InertiaTensor::<BodyFrame<SelfRef>>::from_dmat3_unchecked(mass.inertia);
+        torque.0 = jeod_sim::compute_gravity_torque_typed::<SelfRef>(
+            &grav.grav_grad,
+            &rot.0,
+            inertia_typed,
+        );
     }
 }
 
@@ -738,7 +765,12 @@ pub fn orbital_elements_system(
             elements.0 = Default::default();
             continue;
         };
-        match jeod_sim::compute_orbital_elements(source.mu, state.position, state.velocity) {
+        // Typed sibling: lift `mu` / `position` / `velocity` into the
+        // typed scalars and 3-vectors. Bit-identical numerics.
+        let mu_typed = jeod_sim::F64Ext::m3_per_s2(source.mu);
+        let pos_typed = Position::<Inertial>::from_raw_si(state.position);
+        let vel_typed = Velocity::<Inertial>::from_raw_si(state.velocity);
+        match jeod_sim::compute_orbital_elements_typed(mu_typed, pos_typed, vel_typed) {
             Ok(oe) => elements.0 = oe,
             Err(_) => elements.0 = Default::default(),
         }

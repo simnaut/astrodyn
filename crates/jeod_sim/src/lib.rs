@@ -119,10 +119,10 @@ pub use jeod_interactions::{
     compute_contact_force, compute_contact_force_from_geometry, compute_contact_geometry,
     compute_earth_lighting, compute_flat_plate_srp_thermal,
     compute_flat_plate_srp_thermal_conduction, compute_shadow_fraction, solar_flux_at_distance,
-    AerodynamicForce, ContactFacet, ContactForce, ContactGeometry, ContactMaterial, ContactShape,
-    DragConfig, EarthLightingState, FlatPlate, FlatPlateParams, FlatPlateSrpResult,
-    FlatPlateThermal, LightingBody, LightingParams, RadiationForce, ThermalConductionMatrix,
-    SOLAR_RADIUS, SPEED_OF_LIGHT,
+    AerodynamicForce, AerodynamicForceTyped, ContactFacet, ContactForce, ContactGeometry,
+    ContactMaterial, ContactShape, DragConfig, DragConfigTyped, EarthLightingState, FlatPlate,
+    FlatPlateParams, FlatPlateSrpResult, FlatPlateThermal, LightingBody, LightingParams,
+    RadiationForce, ThermalConductionMatrix, SOLAR_RADIUS, SPEED_OF_LIGHT,
 };
 
 // jeod_frames: reference frame state
@@ -161,6 +161,8 @@ pub use jeod_quantities::aliases::{
     Acceleration, AngularAcceleration, AngularMomentum, AngularVelocity, Force, Jerk, Position,
     Torque, Velocity,
 };
+pub use jeod_quantities::dims::{GravParam, MassFlowRate, SpecificAngMom, SpecificEnergy};
+pub use jeod_quantities::ext::{Array3Ext, F64Ext, Vec3Ext};
 pub use jeod_quantities::frame::{
     BodyFrame, Earth, Ecef, Frame, Inertial, Lvlh, Mars, Moon, Ned, Planet, PlanetFixed, SelfRef,
     StructuralFrame, Sun, Vehicle,
