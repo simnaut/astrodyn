@@ -14,13 +14,11 @@
 //!
 //! No Docker reference data required.
 
-mod sim_test_helpers;
-use sim_test_helpers::*;
-
 use glam::DVec3;
 use jeod_runner::{
     DerivedStateConfig, GravitySourceEntry, RotationModel, Simulation, VehicleConfig,
 };
+use jeod_sim::recipes::helpers::state_helpers::max_mat_diff;
 use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, SimulationTime,
     TranslationalState,
