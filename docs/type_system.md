@@ -116,30 +116,65 @@ JEOD-internal physics uses `Quat<ScalarFirst, LeftTransform>`. Conversion to
 
 ## 4. Adding a new frame / time scale / quantity
 
+The `Frame` and `TimeScale` traits are **sealed** (`Sealed + 'static`) and
+require a `const NAME: &'static str`. New tags must be added inside the
+`jeod_quantities` crate so the `Sealed` bound can be satisfied. External
+crates cannot add new frame/time-scale tags — this is intentional, so the
+catalog of valid frames/scales is a finite, auditable set.
+
 ### A new frame tag
 
-1. Add the marker type to `crates/jeod_quantities/src/frame.rs`:
-   ```rust
-   pub struct MyFrame;
-   impl Frame for MyFrame {}
-   ```
-2. Re-export from `prelude.rs` if it should be visible to mission code.
-3. Add a `FrameTransform<MyFrame, Existing>` (and inverse) constructor where
+Add the marker to `crates/jeod_quantities/src/frame.rs`:
+
+```rust
+// Inside crate jeod_quantities:
+use crate::sealed::Sealed;
+
+#[derive(Debug, Clone, Copy)]
+pub struct MyFrame;
+impl Sealed for MyFrame {}
+impl Frame for MyFrame {
+    const NAME: &'static str = "MyFrame";
+}
+```
+
+Then:
+
+1. Re-export from `prelude.rs` (and from `jeod_sim::lib.rs` so the root
+   `bevy_jeod::prelude` picks it up via `jeod_sim`'s re-export chain).
+2. Add a `FrameTransform<MyFrame, Existing>` (and inverse) constructor where
    appropriate — typically in the crate that owns the physics translating
    between the frames.
-4. Add a tier-1 unit test verifying the transform round-trips.
+3. Add a tier-1 unit test verifying the transform round-trips.
+
+For a parametric frame (planet- or vehicle-tagged), use the
+`PlanetFixed<P>` / `BodyFrame<V>` patterns already in `frame.rs` as
+templates — they wrap a `PhantomData<P>` and impl `Sealed`/`Frame` with a
+generic bound. Note that `const NAME` cannot splice `V::NAME` (it must be
+a `&'static str` literal); callers that need the fully-qualified name use
+`std::any::type_name::<F>()`, which is what `Qty3`'s `Debug` impl does.
 
 ### A new time scale
 
-1. Add the marker to `crates/jeod_quantities/src/time_scale.rs`:
-   ```rust
-   pub struct MyScale;
-   impl TimeScale for MyScale {}
-   ```
-2. Define `TimeConverter::<MyScale, From>` and the inverse with the actual
+Add to `crates/jeod_quantities/src/time_scale.rs`:
+
+```rust
+use crate::sealed::Sealed;
+
+#[derive(Debug, Clone, Copy)]
+pub struct MyScale;
+impl Sealed for MyScale {}
+impl TimeScale for MyScale {
+    const NAME: &'static str = "MyScale";
+}
+```
+
+Then:
+
+1. Define `TimeConverter::<MyScale, From>` and the inverse with the actual
    physics in `jeod_time::time_<myscale>`.
-3. Re-export from `prelude.rs`.
-4. Add tier-1 round-trip + tier-2 reference-vector tests.
+2. Re-export from `prelude.rs`.
+3. Add tier-1 round-trip + tier-2 reference-vector tests.
 
 ### A new dimensional quantity
 
@@ -228,25 +263,40 @@ physics language, the `note:` suggesting the corrective API.
 The type system has two documented escape hatches. Both are deliberate; both
 require justification in the PR description that introduces a use.
 
-### `_unchecked` constructors
+### Raw / `_unchecked` constructors
 
-`Qty3::from_raw_si_unchecked(DVec3)`, `NormalizedQuat::from_raw_unchecked(DQuat)`,
-etc. These bypass the typed constructor's validation (e.g., normalization).
-They follow Rust convention: the `_unchecked` suffix is grep-able and
-recognizable. Use only when:
+The crate provides constructors that bypass invariant validation when the
+caller has external proof that the invariant holds. They follow two
+conventions depending on the invariant:
 
-- Constructing a typed quantity from a value that is *known* by construction
-  to satisfy the invariant (e.g., reading the t=0 row of a JEOD reference
-  CSV that has already been validated upstream).
-- The validating constructor would be redundant or measurably impact a hot
-  path.
+- **Trusted SI-unit boundary**: `Qty3::from_raw_si(DVec3)` accepts a raw
+  `glam::DVec3` interpreted in SI base units. There is no separate
+  `_unchecked` variant — the choice of *which frame phantom* to attach is
+  the caller's responsibility, and the only "unchecked" aspect is that
+  the SI interpretation is taken on faith. Use at JEOD-CSV / `glam`
+  boundary code (e.g., reading the t=0 row of a reference CSV).
+- **Genuine `_unchecked` skip**: `InertiaTensor::from_dmat3_unchecked(DMat3)`
+  bypasses the symmetry check that `InertiaTensor::from_dmat3` enforces.
+  Use only when the symmetry of the source matrix is guaranteed by
+  construction (e.g., rotating a verified-symmetric tensor through an
+  orthogonal change-of-basis: `R^T · I · R` preserves symmetry up to
+  floating-point noise).
+
+For quaternion validity, use `NormalizedQuat::new(q)?` (which validates the
+norm against `NormalizedQuat::DEFAULT_TOLERANCE = 1e-12` and returns
+`Err(NotNormalized)` if it fails) or `NormalizedQuat::renormalize(q)`
+(which forces `|q| = 1` and returns `Option`). There is no
+`from_raw_unchecked` variant; callers that need the witness without a
+runtime check should renormalize.
 
 ### `// allowed:` comments
 
 The escape-hatch CI guard (`scripts/check_no_escape_hatches.sh`) refuses
 `#[doc(hidden)]` and the `tag_as_inertial!` macro in `crates/` and `src/`
-unless the line carries a `// allowed: <reason>` opt-out comment. Each
-exemption is reviewed at PR time.
+unless the line carries a `// allowed: <reason>` opt-out comment. (The
+`tag_as_inertial!` macro itself does not currently exist — the script
+greps defensively to keep the door closed against future re-introduction.)
+Each `// allowed:` exemption is reviewed at PR time.
 
 If a future contributor needs to bypass the type system at a public surface,
 the answer is almost always to extend the type system to express the missing

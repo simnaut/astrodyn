@@ -21,11 +21,8 @@
 use std::time::Duration;
 
 use bevy::prelude::*;
-use bevy_jeod::{
-    GravitySourceC, JeodPlugin, SourceInertialPositionC, TranslationalStateC, VehicleConfigBevyExt,
-};
-use jeod_sim::recipes::{earth, orbital_elements, vehicle};
-use jeod_sim::{F64Ext, GravityControl, VehicleBuilder};
+use bevy_jeod::prelude::*;
+use bevy_jeod::recipes::{earth, orbital_elements, vehicle};
 
 #[derive(Resource)]
 struct VehicleEntity(Entity);

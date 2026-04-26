@@ -435,14 +435,14 @@ use bevy_jeod::prelude::*;        // JeodPlugin, typed Components, JeodSet
 use bevy_jeod::recipes::*;        // earth, orbital_elements, vehicle, scenarios
 ```
 
-**Compose a vehicle** with the typestate `VehicleBuilder`. The compiler refuses
-`.three_dof_point_mass(...)` until a state is set, refuses `.rk4()` until mass
-is set, refuses `.build()` until an integrator is chosen.
+**Compose a vehicle** with the typestate `VehicleBuilder` (re-exported by
+`bevy_jeod::prelude`). The compiler refuses `.three_dof_point_mass(...)`
+until a state is set, refuses `.rk4()` until mass is set, refuses `.build()`
+until an integrator is chosen.
 
 ```rust
-use jeod_sim::{F64Ext, GravityControl, VehicleBuilder};
-use jeod_sim::recipes::{earth, orbital_elements, vehicle};
-
+// `VehicleBuilder`, `GravityControl`, and `F64Ext` come from `bevy_jeod::prelude`.
+// `earth`, `orbital_elements`, `vehicle` come from `bevy_jeod::recipes`.
 let mu = earth::point_mass().source.mu.m3_per_s2();
 let cfg = VehicleBuilder::new()
     .from_orbital_elements(orbital_elements::iss(), mu)
