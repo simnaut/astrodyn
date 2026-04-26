@@ -283,7 +283,9 @@ impl VehicleConfigBevyExt for jeod_sim::VehicleConfig {
             components::DynamicsConfigC(dynamics_config),
             components::GravityControlsC(entity_controls),
             components::IntegratorTypeC(self.integrator),
-            components::StructuralTransformC(self.t_struct_body),
+            components::StructuralTransformC(jeod_sim::FrameTransform::from_matrix(
+                self.t_struct_body,
+            )),
         ));
         if let Some(rot) = self.rot {
             entity.insert(components::RotationalStateC(rot));

@@ -166,8 +166,8 @@ pub use jeod_quantities::aliases::{
 pub use jeod_quantities::dims::{GravParam, MassFlowRate, SpecificAngMom, SpecificEnergy};
 pub use jeod_quantities::ext::{Array3Ext, F64Ext, Vec3Ext};
 pub use jeod_quantities::frame::{
-    BodyFrame, Earth, Ecef, Frame, Inertial, Lvlh, Mars, Moon, Ned, Planet, PlanetFixed, SelfRef,
-    StructuralFrame, Sun, Vehicle,
+    BodyFrame, Earth, Ecef, Frame, Inertial, Lvlh, Mars, Moon, Ned, Planet, PlanetFixed,
+    SelfPlanet, SelfRef, StructuralFrame, Sun, Vehicle,
 };
 pub use jeod_quantities::frame_transform::FrameTransform;
 pub use jeod_quantities::inertia::InertiaTensor;

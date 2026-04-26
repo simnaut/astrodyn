@@ -469,7 +469,7 @@ fn tier3_bevy_mars_dawn() {
             }),
             SourceInertialPositionC::default(),
             TranslationalStateC::default(),
-            PlanetFixedRotationC(DMat3::IDENTITY),
+            PlanetFixedRotationC(jeod_sim::FrameTransform::from_matrix(DMat3::IDENTITY)),
             RotationModelC(RotationModel::MarsIAU),
         ))
         .id();

@@ -769,7 +769,7 @@ fn tier3_bevy_srp_derivative_rk4_with_rotated_struct_frame() {
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),
-            StructuralTransformC(t_struct_body),
+            StructuralTransformC(jeod_sim::FrameTransform::from_matrix(t_struct_body)),
             FlatPlateConfigC(jeod_sim::FlatPlateState {
                 plates: offset_plate.clone(),
                 temperatures: vec![270.0],

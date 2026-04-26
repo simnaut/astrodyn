@@ -96,6 +96,72 @@ impl<From: Frame, To: Frame> FrameTransform<From, To> {
     pub const fn matrix(&self) -> DMat3 {
         self.matrix
     }
+
+    /// Borrowing accessor for the cached matrix. Parallels [`Self::matrix`]
+    /// (which copies by value); prefer this in tight loops or when passing
+    /// the matrix to a function that takes `&DMat3`.
+    #[inline]
+    pub const fn matrix_ref(&self) -> &DMat3 {
+        &self.matrix
+    }
+
+    /// Construct from a raw rotation matrix. The matrix is stored as-is
+    /// (bit-identical to the input); the cached quaternion is derived via
+    /// `DQuat::from_mat3`.
+    ///
+    /// The caller must pass a proper orthonormal rotation matrix —
+    /// `debug_assert!`s check `det ≈ 1.0` and `M·Mᵀ ≈ I`. Production
+    /// behaviour on a non-rotation matrix is unspecified (`from_mat3`
+    /// produces an arbitrary quaternion; subsequent `.apply()` calls
+    /// continue to use the original matrix and remain bit-identical to a
+    /// raw `M * v` multiply).
+    ///
+    /// **Use when** the matrix is the source of truth — e.g., RNP / Mars /
+    /// Moon / DE421 rotation kernels — and round-tripping through
+    /// [`Self::from_quat`] would introduce floating-point drift in the
+    /// stored matrix.
+    ///
+    /// **Bit-stability invariant**: `from_matrix(M).matrix_ref() == &M`
+    /// exactly. The quaternion derivation does not influence the stored
+    /// matrix.
+    #[inline]
+    pub fn from_matrix(matrix: DMat3) -> Self {
+        // Orthonormality checks are debug-only — the cached quaternion is
+        // already an approximation when the input isn't a perfect rotation,
+        // and we'd rather catch the bug in tests than impose a release-mode
+        // cost on every per-step rotation update.
+        debug_assert!(
+            (matrix.determinant() - 1.0).abs() < 1.0e-9,
+            "FrameTransform::from_matrix: input must have determinant ≈ 1.0 \
+             (got {})",
+            matrix.determinant()
+        );
+        debug_assert!(
+            {
+                let drift = (matrix * matrix.transpose() - DMat3::IDENTITY)
+                    .to_cols_array()
+                    .iter()
+                    .map(|x| x.abs())
+                    .fold(0.0_f64, f64::max);
+                drift < 1.0e-9
+            },
+            "FrameTransform::from_matrix: input must be orthonormal (M·Mᵀ ≈ I)"
+        );
+
+        // Derive the JEOD-canonical (scalar-first, left-transform) quaternion
+        // from the matrix. `glam::DQuat::from_mat3` returns a scalar-last
+        // quaternion; we re-pack into JEOD layout.
+        let g = glam::DQuat::from_mat3(&matrix);
+        let jeod = JeodQuat::from_array([g.w, g.x, g.y, g.z]);
+        let quat = NormalizedQuat::renormalize(jeod)
+            .expect("DQuat::from_mat3 of a non-zero matrix yields a non-zero quaternion");
+        Self {
+            quat,
+            matrix,
+            _from: PhantomData,
+            _to: PhantomData,
+        }
+    }
 }
 
 /// Compose two transforms: `(A→B) ∘ (B→C) = A→C`.
@@ -129,5 +195,76 @@ impl<A: Frame, B: Frame, C: Frame> Mul<FrameTransform<B, C>> for FrameTransform<
             _from: PhantomData,
             _to: PhantomData,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::frame::{Ecef, Inertial};
+
+    /// `from_matrix(M).matrix_ref() == &M` exactly (bit-identical).
+    /// The quaternion derivation does not influence the stored matrix —
+    /// this is the load-bearing invariant of the Strategy 5 Component
+    /// erasure (#155): rotation matrices entering via Components must
+    /// emerge bit-identical when read back.
+    #[test]
+    fn from_matrix_preserves_input_bit_exact() {
+        // Use a non-trivial rotation (45° about Y) so any quaternion
+        // round-trip would surface as a few-ULP drift.
+        let theta = core::f64::consts::FRAC_PI_4;
+        let m = DMat3::from_cols(
+            DVec3::new(theta.cos(), 0.0, -theta.sin()),
+            DVec3::new(0.0, 1.0, 0.0),
+            DVec3::new(theta.sin(), 0.0, theta.cos()),
+        );
+        let t: FrameTransform<Inertial, Ecef> = FrameTransform::from_matrix(m);
+        assert_eq!(
+            *t.matrix_ref(),
+            m,
+            "matrix not bit-preserved by from_matrix"
+        );
+        assert_eq!(t.matrix(), m, "matrix() must agree with matrix_ref()");
+    }
+
+    /// Identity input round-trips through `from_matrix` cleanly and the
+    /// derived quaternion is the identity unit quaternion.
+    #[test]
+    fn from_matrix_identity_round_trip() {
+        let t: FrameTransform<Inertial, Inertial> = FrameTransform::from_matrix(DMat3::IDENTITY);
+        assert_eq!(*t.matrix_ref(), DMat3::IDENTITY);
+        // The cached quaternion should be near-identity (q0 ≈ 1, qi ≈ 0).
+        let q = t.quat().inner();
+        assert!((q.data[0].abs() - 1.0).abs() < 1.0e-12);
+        assert!(q.data[1].abs() < 1.0e-12);
+        assert!(q.data[2].abs() < 1.0e-12);
+        assert!(q.data[3].abs() < 1.0e-12);
+    }
+
+    /// `apply()` after `from_matrix` produces the same vector as a raw
+    /// `M * v` multiply — confirms `apply()` reads from the stored matrix,
+    /// not from the derived quaternion.
+    #[test]
+    fn apply_after_from_matrix_matches_raw_multiply() {
+        let theta: f64 = 0.37; // arbitrary non-special angle
+        let m = DMat3::from_cols(
+            DVec3::new(theta.cos(), theta.sin(), 0.0),
+            DVec3::new(-theta.sin(), theta.cos(), 0.0),
+            DVec3::new(0.0, 0.0, 1.0),
+        );
+        let t: FrameTransform<Inertial, Ecef> = FrameTransform::from_matrix(m);
+        let v_raw = DVec3::new(1.0, 2.0, 3.0);
+        let v_in: Qty3<uom::si::length::Dimension, Inertial> = Qty3::from_raw_si(v_raw);
+        let v_out = t.apply(v_in);
+        assert_eq!(v_out.raw_si(), m * v_raw);
+    }
+
+    /// `debug_assert!` panic on a non-orthonormal input (in debug builds).
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "determinant")]
+    fn from_matrix_rejects_non_unit_determinant() {
+        let m = DMat3::from_diagonal(DVec3::new(2.0, 1.0, 1.0)); // det = 2
+        let _: FrameTransform<Inertial, Ecef> = FrameTransform::from_matrix(m);
     }
 }

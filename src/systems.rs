@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use glam::DVec3;
-use jeod_sim::{BodyFrame, Inertial, Position, SelfRef, Velocity};
+use jeod_sim::{BodyFrame, Inertial, Position, SelfPlanet, SelfRef, Velocity};
 
 use crate::components::*;
 use crate::AtmosphereModelR;
@@ -38,8 +38,13 @@ pub fn planet_fixed_rotation_system(
     mut query: Query<(&mut PlanetFixedRotationC, Option<&RotationModelC>)>,
 ) {
     let polar_params = polar.map(|p| (p.xp, p.yp));
-    // Lazy-compute Earth RNP only if needed (most common case).
-    let mut earth_rotation: Option<glam::DMat3> = Option::None;
+    // Lazy-compute Earth RNP only if needed (most common case). Cache the
+    // already-typed `FrameTransform` rather than the bare matrix so the
+    // expensive `from_matrix` work (matrix→quat extraction + renormalization)
+    // happens once per tick total, not once per EarthRNP entity per tick —
+    // all EarthRNP entities share the same rotation each step.
+    type EarthRot = jeod_sim::FrameTransform<jeod_sim::Inertial, jeod_sim::PlanetFixed<SelfPlanet>>;
+    let mut earth_rotation: Option<EarthRot> = Option::None;
     for (mut rot, model) in &mut query {
         let default_model = jeod_sim::RotationModel::EarthRNP;
         let rotation_model = model.map_or(&default_model, |m| &m.0);
@@ -47,10 +52,12 @@ pub fn planet_fixed_rotation_system(
             jeod_sim::RotationModel::None => {}
             jeod_sim::RotationModel::EarthRNP => {
                 let rotation = *earth_rotation.get_or_insert_with(|| {
-                    jeod_sim::compute_t_parent_this_from_tjt_with_polar(
-                        sim_time.gmst_seconds,
-                        sim_time.tt_tjt(),
-                        polar_params,
+                    jeod_sim::FrameTransform::from_matrix(
+                        jeod_sim::compute_t_parent_this_from_tjt_with_polar(
+                            sim_time.gmst_seconds,
+                            sim_time.tt_tjt(),
+                            polar_params,
+                        ),
                     )
                 });
                 rot.0 = rotation;
@@ -58,22 +65,27 @@ pub fn planet_fixed_rotation_system(
             jeod_sim::RotationModel::MarsIAU => {
                 let tt_s_since_j2000 =
                     (sim_time.tt_tjt() - jeod_sim::J2000_TT_TJT) * jeod_sim::SECONDS_PER_DAY;
-                rot.0 = jeod_sim::rotation_mars::compute_mars_rotation(tt_s_since_j2000);
+                rot.0 = jeod_sim::FrameTransform::from_matrix(
+                    jeod_sim::rotation_mars::compute_mars_rotation(tt_s_since_j2000),
+                );
             }
             jeod_sim::RotationModel::MoonIAU => {
                 let tdb_jd = sim_time.tdb_julian_date();
                 let tdb_s_since_j2000 =
                     (tdb_jd - jeod_sim::J2000_TT_JD) * jeod_sim::SECONDS_PER_DAY;
-                rot.0 = jeod_sim::rotation_moon::compute_moon_rotation(tdb_s_since_j2000);
+                rot.0 = jeod_sim::FrameTransform::from_matrix(
+                    jeod_sim::rotation_moon::compute_moon_rotation(tdb_s_since_j2000),
+                );
             }
             jeod_sim::RotationModel::MoonDE421 => {
                 let eph = ephemeris
                     .as_ref()
                     .expect("MoonDE421 rotation requires EphemerisR resource with BPC loaded.");
                 let tdb_jd = sim_time.tdb_julian_date();
-                rot.0 = eph
-                    .get_body_rotation(jeod_sim::EphemerisBody::Moon, tdb_jd)
-                    .expect("Moon DE421 BPC rotation query failed");
+                rot.0 = jeod_sim::FrameTransform::from_matrix(
+                    eph.get_body_rotation(jeod_sim::EphemerisBody::Moon, tdb_jd)
+                        .expect("Moon DE421 BPC rotation query failed"),
+                );
             }
         }
     }
@@ -94,7 +106,7 @@ pub fn tidal_update_system(
         // `Vec` allocation or per-body f64 → typed conversion.
         // `compute_delta_c20_typed` returns `Ratio`, matching
         // `TidalDeltaC20C`'s storage type.
-        delta.0 = jeod_sim::compute_delta_c20_typed(&config.0, &rotation.0);
+        delta.0 = jeod_sim::compute_delta_c20_typed(&config.0, rotation.0.matrix_ref());
     }
 }
 
@@ -205,7 +217,7 @@ pub fn force_collection_system(
         ext_torque,
     ) in &mut query
     {
-        let t_struct_body = struct_xform.map_or(glam::DMat3::IDENTITY, |s| s.0);
+        let t_struct_body = struct_xform.map_or(glam::DMat3::IDENTITY, |s| *s.0.matrix_ref());
         let grav_accel = grav.map_or(DVec3::ZERO, |g| g.grav_accel);
 
         // Map Bevy component references to jeod_interactions types for jeod_sim.
@@ -325,7 +337,7 @@ pub fn integration_system(
                 |source_entity| match sources.get(source_entity) {
                     Ok((s, r, p, _, tidal, tidal_config)) => Some(jeod_sim::ResolvedSource {
                         source: &s.0,
-                        rotation: r.map(|r| &r.0),
+                        rotation: r.map(|r| r.0.matrix_ref()),
                         position: p.0.raw_si(),
                         delta_c20: tidal.map_or(0.0, |t| t.0.value),
                         has_delta_coeffs: tidal_config.is_some(),
@@ -410,7 +422,7 @@ pub fn integration_system(
                 "Entity {entity:?}: derivative-class ThermalIntegrationOrder \
                  requires RK4 integrator; use Scheduled or switch integrator.",
             );
-            let t_struct_body = struct_xform.map_or(glam::DMat3::IDENTITY, |s| s.0);
+            let t_struct_body = struct_xform.map_or(glam::DMat3::IDENTITY, |s| *s.0.matrix_ref());
             let non_grav_non_srp_force = total_force.force;
             let constant_torque = total_force.torque;
             let mut final_srp_inertial_force = DVec3::ZERO;
@@ -574,7 +586,7 @@ pub fn gravity_computation_system(
                 Ok((source, rot, pos, _, tidal, tidal_config)) => {
                     Some(jeod_sim::ResolvedSource {
                         source: &source.0,
-                        rotation: rot.map(|r| &r.0),
+                        rotation: rot.map(|r| r.0.matrix_ref()),
                         position: pos.0.raw_si(),
                         delta_c20: tidal.map_or(0.0, |t| t.0.value),
                         // JEOD gates on n_deltacoeffs > 0 (tidal config
@@ -642,7 +654,7 @@ pub fn atmosphere_update_system(
                  the planet entity or set planet_entity to None for spherical fallback."
             );
         };
-        Some(r.0)
+        Some(*r.0.matrix_ref())
     } else {
         None
     };
@@ -687,7 +699,7 @@ pub fn aero_drag_system(
     )>,
 ) {
     for (drag_config, atmos, state, rot, struct_xform, mut aero_force) in &mut query {
-        let t_struct_body = struct_xform.map_or(glam::DMat3::IDENTITY, |s| s.0);
+        let t_struct_body = struct_xform.map_or(glam::DMat3::IDENTITY, |s| *s.0.matrix_ref());
 
         // `DragConfigC` already wraps `DragConfigTyped` — the dimensional
         // lift happened once at insertion (`DragConfigC::from_untyped`),
@@ -842,8 +854,12 @@ pub fn geodetic_system(
         // numerics to the f64 path.
         use jeod_sim::F64Ext;
         let pos = Position::<Inertial>::from_raw_si(state.position);
-        geodetic.0 =
-            jeod_sim::compute_body_geodetic_typed(pos, &rot.0, planet.r_eq.m(), planet.r_pol.m());
+        geodetic.0 = jeod_sim::compute_body_geodetic_typed(
+            pos,
+            rot.0.matrix_ref(),
+            planet.r_eq.m(),
+            planet.r_pol.m(),
+        );
     }
 }
 
@@ -1028,7 +1044,8 @@ pub fn flat_plate_srp_system(
                 let t_inertial_body = rot.map_or(glam::DMat3::IDENTITY, |r| {
                     r.quaternion.left_quat_to_transformation()
                 });
-                let t_struct_body = struct_xform.map_or(glam::DMat3::IDENTITY, |s| s.0);
+                let t_struct_body =
+                    struct_xform.map_or(glam::DMat3::IDENTITY, |s| *s.0.matrix_ref());
                 let t_inertial_struct =
                     jeod_sim::compute_t_inertial_struct(&t_struct_body, &t_inertial_body);
                 let flux_struct_hat = t_inertial_struct * flux_inertial_hat;
