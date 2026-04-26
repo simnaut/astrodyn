@@ -100,9 +100,30 @@ The three verification tiers:
 ## Precision
 
 Use `f64` everywhere. Do NOT use Bevy's `Transform`/`GlobalTransform` (f32).
-Use `glam::DVec3`, `glam::DQuat`, `glam::DMat3` for 3D types.
 Spherical harmonics coefficients use `Vec<Vec<f64>>`. `nalgebra` is available
 transitively via `anise` but not used directly.
+
+After the type-system refactor (#101), there are two layers to choose between:
+
+- **Public/mission-crate code** uses typed quantities from `jeod_quantities`:
+  `Position<F: Frame>`, `Velocity<F>`, `Acceleration<F>`, `SecondsSince<S: TimeScale>`,
+  `Quat<L, T>`, `NormalizedQuat`, `FrameTransform<From, To>`, and the `F64Ext`
+  facade (`400.0.km()`, `51.6.deg()`, `420_000.0.kg()`). Mission code never sees
+  `DVec3`/`DQuat`/`DMat3` or `PhantomData`. The compiler rejects cross-frame
+  mismatches, scalar-vs-vector quaternion confusion, and unit-dimensional errors
+  at compile time. Custom `#[diagnostic::on_unimplemented]` messages render
+  errors in physics language (e.g., *"expected `Position<Inertial>`, found
+  `Position<Ecef>` — apply a `FrameTransform<Ecef, Inertial>` first"*).
+
+- **Internal physics-crate kernels** (the inside of `jeod_*` `*_typed` functions
+  and the underlying `_inner`/`_impl` math) use raw `glam::DVec3`/`DQuat`/`DMat3`
+  for arithmetic density. The typed siblings call `.raw_si()` at the boundary
+  to drop into the kernel and re-wrap on exit. This keeps numerics fast and the
+  public surface typed.
+
+See `docs/type_system.md` for the contributor primer (phantom-tag pattern,
+adding a new frame/scale/quantity, reading compiler errors, escape hatches)
+and `examples/typed_mission.rs` for the canonical worked example.
 
 ## Quaternion Convention
 
@@ -396,6 +417,53 @@ against NASA flight data. The bug was hidden for multiple commits because a brok
 `jeod_path()` caused the validation test to silently skip. Reading
 `models/dynamics/body_action/src/dyn_body_init_orbit.cc` would have given the correct
 formula immediately.
+
+## Building a Mission Crate
+
+A "mission crate" is a downstream crate that depends on `bevy_jeod` to model a
+specific scenario (an Earth-orbit constellation, a Mars approach, a station-
+keeping study). After the type-system refactor (#101), mission code reads like
+physics: typed building blocks compose via the typestate `VehicleBuilder`,
+units flow through the `F64Ext` facade, and the compiler rejects frame/unit
+mismatches before they become silent numerical bugs.
+
+**Imports**: a mission crate needs only the prelude and the recipes module.
+
+```rust
+use bevy::prelude::*;
+use bevy_jeod::prelude::*;        // JeodPlugin, typed Components, JeodSet
+use bevy_jeod::recipes::*;        // earth, orbital_elements, vehicle, scenarios
+```
+
+**Compose a vehicle** with the typestate `VehicleBuilder`. The compiler refuses
+`.three_dof_point_mass(...)` until a state is set, refuses `.rk4()` until mass
+is set, refuses `.build()` until an integrator is chosen.
+
+```rust
+use jeod_sim::{F64Ext, GravityControl, VehicleBuilder};
+use jeod_sim::recipes::{earth, orbital_elements, vehicle};
+
+let mu = earth::point_mass().source.mu.m3_per_s2();
+let cfg = VehicleBuilder::new()
+    .from_orbital_elements(orbital_elements::iss(), mu)
+    .three_dof_point_mass(vehicle::iss_mass())
+    .rk4()
+    .gravity(GravityControl::new_spherical(0_usize, false))
+    .build();
+let vehicle_entity = cfg.spawn_bevy(&mut commands, &[earth_entity]);
+```
+
+**Compiler errors as physics**: passing a `Position<Ecef>` where
+`Position<Inertial>` is required produces a custom diagnostic in physics
+language pointing to the missing `FrameTransform<Ecef, Inertial>` step, not a
+PhantomData type-mismatch wall.
+
+**Reference**:
+- Canonical worked example: `examples/typed_mission.rs`.
+- Contributor primer (phantom tags, adding new dimensions, escape hatches):
+  `docs/type_system.md`.
+- Architecture and phase history: `STRATEGY.md` §8 "Phase 8: Type-System
+  Refactor".
 
 ## Common Pitfalls
 
