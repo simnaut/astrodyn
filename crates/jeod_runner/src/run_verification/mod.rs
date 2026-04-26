@@ -29,6 +29,7 @@ pub mod sim_derived_state;
 pub mod sim_dyncomp;
 pub mod sim_planetary;
 pub mod sim_polar_motion;
+pub mod sim_solar_beta;
 
 use glam::DVec3;
 use jeod_sim::recipes::verification::{
