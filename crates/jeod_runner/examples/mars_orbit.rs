@@ -25,7 +25,7 @@ use jeod_sim::{
 
 // Dawn spacecraft initial state at Mars (from JEOD SIM_Mars RUN_dawn, t=0).
 // Mars-centered inertial frame.
-const INIT_POS: DVec3 = DVec3::new(11_563_355.6802, -14_356_668.8977, 6_293_704.6169);
+const INIT_POS: DVec3 = DVec3::new(11_563_355.680_2, -14_356_668.897_7, 6_293_704.616_9);
 const INIT_VEL: DVec3 = DVec3::new(-2273.1078, 2380.1324, -22.911);
 
 // Epoch: 2009-02-17 23:00:00 UTC (TAI-UTC = 34 s)

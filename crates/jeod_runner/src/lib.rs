@@ -48,8 +48,8 @@ pub mod builder;
 pub use jeod_sim;
 pub use jeod_sim::RotationModel;
 
-// Re-export builder types for ergonomic use.
-pub use builder::VehicleBuilder;
+// Re-export the runner-side terminal-method extension trait from `builder`.
+pub use builder::SimulationBuilderExt;
 
 // Re-exports of types relocated from jeod_runner to jeod_sim in Phase 6 of
 // #101. External consumers of `jeod_runner::{VehicleConfig,GravitySourceEntry,
@@ -57,7 +57,8 @@ pub use builder::VehicleBuilder;
 // definitions now live in `jeod_sim`. Phase 10 will remove the re-exports.
 pub use jeod_sim::{
     DerivedStateConfig, EarthLightingConfig, FrameSwitchConfig, GeodeticConfig, GravitySourceEntry,
-    MassTreeAttachment, ShadowBody, SimulationBuilder, SrpModel, SwitchSense, VehicleConfig,
+    MassTreeAttachment, ShadowBody, SimulationBuilder, SrpModel, SwitchSense, VehicleBuilder,
+    VehicleConfig,
 };
 
 // Re-export FrameId for downstream API.

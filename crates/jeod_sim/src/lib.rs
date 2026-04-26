@@ -84,7 +84,7 @@ pub use simulation_builder::{MassTreeAttachment, SimulationBuilder};
 pub use sources::GravitySourceEntry;
 pub use validation::{validate_body, ValidationError};
 pub use vehicle_builder::{
-    BuildState, HasIntegrator, NeedsMass, NeedsState, Ready, TypedVehicleConfig, VehicleBuilder,
+    BuildState, HasIntegrator, NeedsMass, NeedsState, Ready, VehicleBuilder,
 };
 pub use vehicle_config::{
     DerivedStateConfig, EarthLightingConfig, FrameSwitchConfig, GeodeticConfig, ShadowBody,
