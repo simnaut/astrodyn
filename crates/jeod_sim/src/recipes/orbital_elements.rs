@@ -115,7 +115,7 @@ pub fn apollo_parking() -> OrbitalElements {
 /// Geostationary radius (42164 km) at non-zero inclination.
 ///
 /// Specifically `geo_inclined(0.rad())` matches
-/// [`geostationary`](Self::geostationary). Pass the desired inclination
+/// [`geostationary`]. Pass the desired inclination
 /// (e.g. `0.1.rad()` for an inclined-GEO study) and the function
 /// returns the orbital elements of a circular orbit at that
 /// inclination, with the line of nodes along the +x axis.

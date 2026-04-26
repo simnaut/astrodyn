@@ -67,26 +67,29 @@ impl PeriapsisDetector {
 
 /// Sweep an iterator of `(time, position, velocity)` samples and
 /// return all detected periapsis events. The orbital elements are
-/// computed at the post-crossing sample via `OrbitalElements::from_cartesian`,
-/// giving longitude of perihelion `arg_periapsis + long_asc_node`.
+/// computed at the post-crossing sample via
+/// `OrbitalElements::from_cartesian_typed`, giving longitude of
+/// perihelion `arg_periapsis + long_asc_node`.
 ///
 /// Used by `tier3_sim_mercury` for both the in-memory sim trace and
 /// the JEOD CSV trace (they share this loop body).
-#[allow(deprecated)]
 pub fn detect_periapsis_passages<I>(samples: I, mu: f64) -> Vec<PeriapsisEvent>
 where
     I: IntoIterator<Item = (f64, DVec3, DVec3)>,
 {
     use jeod_math::OrbitalElements;
+    use jeod_quantities::aliases::{Position, Velocity};
+    use jeod_quantities::ext::F64Ext;
+    use jeod_quantities::frame::Inertial;
+
+    let mu_typed = mu.m3_per_s2();
     let mut det = PeriapsisDetector::new();
     let mut events = Vec::new();
     for (t, r, v) in samples {
         if det.observe(r, v) {
-            // `from_cartesian` is the deprecated untyped path; the
-            // typed migration is tracked separately in #104. Honour
-            // existing call-site behaviour — we want bit-identical
-            // output across the refactor.
-            if let Ok(oe) = OrbitalElements::from_cartesian(mu, r, v) {
+            let pos_typed = Position::<Inertial>::from_raw_si(r);
+            let vel_typed = Velocity::<Inertial>::from_raw_si(v);
+            if let Ok(oe) = OrbitalElements::from_cartesian_typed(mu_typed, pos_typed, vel_typed) {
                 events.push(PeriapsisEvent {
                     time: t,
                     long_perihelion: oe.arg_periapsis + oe.long_asc_node,

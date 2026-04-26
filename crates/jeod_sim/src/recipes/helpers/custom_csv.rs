@@ -48,9 +48,12 @@ pub fn read_lines(path: &Path, sim_label: &str) -> Vec<Vec<f64>> {
             .enumerate()
             .map(|(col, s)| {
                 let token = s.trim();
+                // 1-based column number to match editor / grep output
+                // conventions (`enumerate()` is 0-based).
+                let col_no = col + 1;
                 token.parse::<f64>().unwrap_or_else(|e| {
                     panic!(
-                        "CSV parse error at {path_display}:{line_no}:{col} \
+                        "CSV parse error at {path_display}:{line_no}:{col_no} \
                          (sim {sim_label}): {token:?} — {e}"
                     )
                 })
