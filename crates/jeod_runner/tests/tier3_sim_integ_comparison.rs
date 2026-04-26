@@ -5,9 +5,19 @@
 //!
 //! Scenario: ISS-like circular orbit (a = 6778 km), point-mass Earth gravity,
 //! dt = 10s, propagate for 1 orbit (~5550s, ~92.5 min). 3-DOF (translational only).
+//!
+//! Phase 8 #110 migrated the energy bookkeeping to
+//! `recipes::helpers::energy_conservation` and the integrator-agreement
+//! summary to `recipes::helpers::integrator_agreement`. The custom
+//! propagation loop is unchanged — only setup constants and metric
+//! helpers move into the recipes layer.
 
 use glam::DVec3;
 use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
+use jeod_sim::recipes::helpers::energy_conservation::{
+    specific_orbital_energy, KeplerEnergyMonitor,
+};
+use jeod_sim::recipes::helpers::integrator_agreement::integrator_divergence;
 use jeod_sim::{
     GaussJacksonConfig, GravityControl, GravityControls, GravityModel, GravitySource,
     IntegratorType, SimulationTime, TranslationalState,
@@ -37,11 +47,6 @@ fn init_position() -> DVec3 {
 /// Initial velocity: [0, v_circ, 0] m/s.
 fn init_velocity() -> DVec3 {
     DVec3::new(0.0, circular_velocity(), 0.0)
-}
-
-/// Compute specific orbital energy: E = v^2/2 - mu/r.
-fn specific_energy(pos: DVec3, vel: DVec3) -> f64 {
-    0.5 * vel.length_squared() - MU_EARTH / pos.length()
 }
 
 /// Create a simulation with a single body using the given integrator type.
@@ -97,21 +102,24 @@ fn propagate_one_orbit(integrator: IntegratorType, dt: f64) -> (DVec3, DVec3, f6
          steps = {n_steps}"
     );
     let mut sim = make_sim(integrator, adjusted_dt);
-    let e0 = specific_energy(init_position(), init_velocity());
-
-    let mut max_rel_energy_err = 0.0_f64;
+    let mut monitor = KeplerEnergyMonitor::new(init_position(), init_velocity(), MU_EARTH);
+    // Sanity: the monitor's initial energy must match the inlined formula.
+    let e0 = specific_orbital_energy(init_position(), init_velocity(), MU_EARTH);
+    debug_assert!((monitor.initial_energy() - e0).abs() < 1e-12);
 
     for i in 1..=n_steps {
         let t = (i as f64) * adjusted_dt;
         sim.step_until(t);
         let body = sim.body(0);
-        let e = specific_energy(body.trans.position, body.trans.velocity);
-        let rel_err = ((e - e0) / e0).abs();
-        max_rel_energy_err = max_rel_energy_err.max(rel_err);
+        monitor.observe(body.trans.position, body.trans.velocity);
     }
 
     let body = sim.body(0);
-    (body.trans.position, body.trans.velocity, max_rel_energy_err)
+    (
+        body.trans.position,
+        body.trans.velocity,
+        monitor.max_relative_error(),
+    )
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -169,8 +177,7 @@ fn tier3_integ_rk4_vs_rkf45_agreement() {
     let (pos_rk4, vel_rk4, _) = propagate_one_orbit(IntegratorType::Rk4, dt);
     let (pos_rkf, vel_rkf, _) = propagate_one_orbit(IntegratorType::Rkf45, dt);
 
-    let pos_diff = (pos_rk4 - pos_rkf).length();
-    let vel_diff = (vel_rk4 - vel_rkf).length();
+    let (pos_diff, vel_diff) = integrator_divergence(pos_rk4, vel_rk4, pos_rkf, vel_rkf);
     println!("RK4 vs RKF45 after 1 orbit: pos_diff={pos_diff:.6e} m, vel_diff={vel_diff:.6e} m/s");
 
     // Both are single-step Runge-Kutta methods with dt=10s on a smooth orbit.
@@ -194,8 +201,7 @@ fn tier3_integ_rk4_vs_gj_agreement() {
         dt,
     );
 
-    let pos_diff = (pos_rk4 - pos_gj).length();
-    let vel_diff = (vel_rk4 - vel_gj).length();
+    let (pos_diff, vel_diff) = integrator_divergence(pos_rk4, vel_rk4, pos_gj, vel_gj);
     println!("RK4 vs GJ-8 after 1 orbit: pos_diff={pos_diff:.6e} m, vel_diff={vel_diff:.6e} m/s");
 
     // RK4 and GJ-8 should agree reasonably well for smooth circular orbit.
