@@ -11,15 +11,19 @@
 //! }
 //! ```
 //!
-//! Phase 6 ships only the scaffold: the [`VerificationCase`] /
+//! Phase 6 shipped only the scaffold: the [`VerificationCase`] /
 //! [`Tolerances`] / [`CsvReference`] types and the
 //! [`reference_data`] submodule for JEOD-source-dependent loaders
-//! (gravity coefficient files, etc.). Concrete `verification::*`
-//! constructors live in Phase 7/8.
+//! (gravity coefficient files, etc.). Phase 7 expands [`CsvReference`]
+//! into a tagged enum that names the per-CSV layout and provides one
+//! constructor per Tier 3 case in [`sim_dyncomp`] (and follow-on
+//! family modules).
 //!
 //! `run_and_assert` itself is implemented by `jeod_runner` via an
 //! extension trait, since materializing a [`SimulationBuilder`] into a
-//! runtime [`Simulation`] is runner-specific.
+//! runtime [`Simulation`] is runner-specific. The runner-side trait
+//! also dispatches on the [`CsvReference`] variant, calling the
+//! matching loader from `jeod_test_data::tier3_csv`.
 
 pub mod reference_data;
 
@@ -29,14 +33,66 @@ use crate::SimulationBuilder;
 
 /// A reference-CSV file used by a Tier 3 verification case.
 ///
-/// Phase 6 keeps this as a thin wrapper around a file path; Phase 7
-/// will extend it with column-layout descriptors as the Tier 3 wave
-/// fills out.
+/// Each variant tags a distinct column layout produced by one of JEOD's
+/// `log_state_ASCII` configurations. The wrapped `&'static str` is the
+/// file name relative to the workspace `test_data/` directory. The
+/// runner-side `run_and_assert` machinery dispatches on the variant to
+/// pick the right loader.
 #[derive(Clone, Debug)]
-pub struct CsvReference {
-    /// Path to the CSV file, relative to the repository's `test_data/`
-    /// directory.
-    pub path: &'static str,
+pub enum CsvReference {
+    /// 80-column SIM_dyncomp state CSV (composite_body, core_body,
+    /// structure frames, plus derivatives).
+    Dyncomp(&'static str),
+    /// 21+-column SIM_OrbElem CSV (classical elements + state).
+    Orbelem(&'static str),
+    /// 17+-column SIM_LVLH CSV (T_parent_this + ang_vel_mag + state).
+    Lvlh(&'static str),
+    /// 16+-column SIM_NED CSV (geodetic + spherical altitudes/lat/lon
+    /// + state).
+    Ned(&'static str),
+    /// 7-column SIM_3_ORBIT SRP CSV (time + pos + vel).
+    Srp(&'static str),
+    /// 9-column SIM_1_BASIC SRP CSV (force, torque, flux, temperature).
+    SrpBasic(&'static str),
+    /// 11-column SIM_VER_DRAG CSV (aero force/torque + inertial vel +
+    /// accel mag).
+    Drag(&'static str),
+    /// 56-column SIM_Euler CSV (36 angles + state + T + quat).
+    Euler(&'static str),
+    /// 8-column SIM_SolarBeta CSV (time + beta + interleaved pos/vel).
+    SolarBeta(&'static str),
+    /// 11-column SIM_2A_SHADOW_CALC CSV.
+    Shadow(&'static str),
+    /// 26-column SIM_torque_compare_simple CSV.
+    TorqueSimple(&'static str),
+    /// 9-column atmosphere-trajectory CSV (state + density + temp).
+    AtmosTraj(&'static str),
+    /// 14-column aero-trajectory CSV (state + aero force/torque + density).
+    AeroTraj(&'static str),
+    /// 7-column SIM_orbinit / SIM_GJ_test CSV (time + pos + vel).
+    OrbInit(&'static str),
+}
+
+impl CsvReference {
+    /// Returns the underlying file name (relative to `test_data/`).
+    pub fn file_name(&self) -> &'static str {
+        match self {
+            CsvReference::Dyncomp(s)
+            | CsvReference::Orbelem(s)
+            | CsvReference::Lvlh(s)
+            | CsvReference::Ned(s)
+            | CsvReference::Srp(s)
+            | CsvReference::SrpBasic(s)
+            | CsvReference::Drag(s)
+            | CsvReference::Euler(s)
+            | CsvReference::SolarBeta(s)
+            | CsvReference::Shadow(s)
+            | CsvReference::TorqueSimple(s)
+            | CsvReference::AtmosTraj(s)
+            | CsvReference::AeroTraj(s)
+            | CsvReference::OrbInit(s) => s,
+        }
+    }
 }
 
 /// Per-component tolerances for trajectory cross-validation.
@@ -46,6 +102,9 @@ pub struct CsvReference {
 /// `quat_angle_rad`, `ang_vel_rad_s` per axis. `extras` lets a Tier 3
 /// case attach scenario-specific tolerances (e.g., the GR perihelion-
 /// advance arc-second-per-century check on the Mercury case).
+///
+/// A tolerance of `0.0` means *skip the assertion for that component*
+/// — used for 3-DOF cases that have no rotational state.
 #[derive(Clone, Debug)]
 pub struct Tolerances {
     pub position_m: [f64; 3],
@@ -71,7 +130,7 @@ impl Default for Tolerances {
 
 /// A single Tier 3 verification case.
 ///
-/// Phase 6 ships the type; Phase 7/8 populates `verification::*`
+/// Phase 6 shipped the type; Phase 7+ populates `verification::*`
 /// constructors that produce one of these per existing Tier 3 test.
 /// `run_and_assert` is provided by `jeod_runner::run_verification`
 /// because materializing the scenario into a runtime [`Simulation`]

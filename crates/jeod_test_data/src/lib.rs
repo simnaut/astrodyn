@@ -12,6 +12,7 @@ pub mod orbital_data;
 pub mod orbital_init;
 pub mod reference_state;
 pub mod s_define;
+pub mod tier3_csv;
 pub mod time_config;
 
 /// Get the JEOD root path from environment variables.
