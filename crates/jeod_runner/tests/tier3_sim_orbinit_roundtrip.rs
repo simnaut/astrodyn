@@ -9,13 +9,11 @@
 //! Cartesian-to-element recovery -- ensuring no information is lost
 //! or corrupted through the pipeline.
 
-mod sim_test_helpers;
-
 use glam::DVec3;
 use jeod_math::OrbitalElements;
 use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
+use jeod_sim::recipes::helpers::state_helpers::state_from_elements;
 use jeod_sim::{GravityControl, GravityControls, GravityModel, GravitySource, SimulationTime};
-use sim_test_helpers::state_from_elements;
 
 /// Earth gravitational parameter (m^3/s^2) — JEOD `earth_GGM05C.cc`.
 const MU_EARTH: f64 = jeod_sim::EARTH.shape.mu;
@@ -152,7 +150,7 @@ fn roundtrip_via_simulation(
     }
 }
 
-use sim_test_helpers::angle_diff;
+use jeod_sim::recipes::helpers::state_helpers::angle_diff;
 
 // ======================================================================
 // Circular LEO round-trip
