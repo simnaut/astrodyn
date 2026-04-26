@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use glam::DVec3;
-use jeod_sim::{BodyFrame, Inertial, Position, SelfRef, Velocity};
+use jeod_sim::{BodyFrame, Inertial, Position, SelfPlanet, SelfRef, Velocity};
 
 use crate::components::*;
 use crate::AtmosphereModelR;
@@ -38,8 +38,13 @@ pub fn planet_fixed_rotation_system(
     mut query: Query<(&mut PlanetFixedRotationC, Option<&RotationModelC>)>,
 ) {
     let polar_params = polar.map(|p| (p.xp, p.yp));
-    // Lazy-compute Earth RNP only if needed (most common case).
-    let mut earth_rotation: Option<glam::DMat3> = Option::None;
+    // Lazy-compute Earth RNP only if needed (most common case). Cache the
+    // already-typed `FrameTransform` rather than the bare matrix so the
+    // expensive `from_matrix` work (matrix→quat extraction + renormalization)
+    // happens once per tick total, not once per EarthRNP entity per tick —
+    // all EarthRNP entities share the same rotation each step.
+    type EarthRot = jeod_sim::FrameTransform<jeod_sim::Inertial, jeod_sim::PlanetFixed<SelfPlanet>>;
+    let mut earth_rotation: Option<EarthRot> = Option::None;
     for (mut rot, model) in &mut query {
         let default_model = jeod_sim::RotationModel::EarthRNP;
         let rotation_model = model.map_or(&default_model, |m| &m.0);
@@ -47,13 +52,15 @@ pub fn planet_fixed_rotation_system(
             jeod_sim::RotationModel::None => {}
             jeod_sim::RotationModel::EarthRNP => {
                 let rotation = *earth_rotation.get_or_insert_with(|| {
-                    jeod_sim::compute_t_parent_this_from_tjt_with_polar(
-                        sim_time.gmst_seconds,
-                        sim_time.tt_tjt(),
-                        polar_params,
+                    jeod_sim::FrameTransform::from_matrix(
+                        jeod_sim::compute_t_parent_this_from_tjt_with_polar(
+                            sim_time.gmst_seconds,
+                            sim_time.tt_tjt(),
+                            polar_params,
+                        ),
                     )
                 });
-                rot.0 = jeod_sim::FrameTransform::from_matrix(rotation);
+                rot.0 = rotation;
             }
             jeod_sim::RotationModel::MarsIAU => {
                 let tt_s_since_j2000 =
