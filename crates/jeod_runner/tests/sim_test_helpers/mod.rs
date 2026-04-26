@@ -1,17 +1,39 @@
 //! Shared helpers for jeod_sim Tier 3 tests.
 //!
-//! Provides CSV parsing for SIM_dyncomp and derived-state trajectory data,
-//! quaternion error computation, and test data path resolution.
+//! Phase 8 of #101 hoisted the propagation utilities (state-error
+//! metrics, energy conservation, periapsis detection, integrator
+//! agreement, attach/detach scheduling, force/torque profiles, custom
+//! CSV reader, parametric orbinit cases) into
+//! [`jeod_sim::recipes::helpers`]. Phase 7 owns the typed CSV loaders
+//! in [`jeod_test_data::tier3_csv`] (with `jeod_test_data::dyncomp_csv`
+//! as its initial entry). What remains in this file is:
+//!
+//! - Tests-only glue that depends on `jeod_test_data` types
+//!   ([`mass_props_from_init`]).
+//! - Schema-specific CSV loaders not yet absorbed by either Phase
+//!   (`load_orbelem_csv`, `load_lvlh_csv`, `load_ned_csv`,
+//!   `load_srp_trajectory`, …) — these stay until Phase 7's loader
+//!   catalogue lands or until Phase 10's cleanup.
+//! - The `test_data_path` resolver and `OMEGA_EARTH` re-export.
+//!
+//! Most tests will eventually import directly from
+//! `jeod_sim::recipes::helpers::*`; for backward compatibility this
+//! module re-exports the hoisted helpers under their original names so
+//! the migration can proceed file-by-file without flag-day churn.
 
-#![allow(dead_code)]
+#![allow(dead_code, unused_imports)]
 
 use glam::{DMat3, DVec3};
-use jeod_math::OrbitalElements;
-use jeod_sim::{JeodQuat, MassProperties, TranslationalState};
+use jeod_sim::{JeodQuat, MassProperties};
 use std::path::Path;
 
 #[allow(unused_imports)] // Not all test binaries use dyncomp CSV loading
 pub use jeod_test_data::dyncomp_csv::{load_dyncomp_csv, DyncompRecord};
+
+// Re-exports from the recipes layer (Phase 8 hoist).
+pub use jeod_sim::recipes::helpers::state_helpers::{
+    angle_diff, dquat_angle_error, max_mat_diff, state_from_elements,
+};
 
 /// Earth rotation rate (JEOD RNPJ2000 default), sourced from
 /// `jeod_sim::planet_config::EARTH.omega`.
@@ -21,6 +43,10 @@ pub const OMEGA_EARTH: f64 = jeod_sim::planet_config::EARTH.omega;
 ///
 /// Converts the row-major `[[f64; 3]; 3]` inertia tensor to glam `DMat3`
 /// (column-major) and passes through mass and CoM position.
+///
+/// Stays here (rather than `recipes::helpers`) because it depends on
+/// `jeod_test_data::mass_data::MassInitData`, which is test-data
+/// plumbing — not a recipe.
 pub fn mass_props_from_init(init: &jeod_test_data::mass_data::MassInitData) -> MassProperties {
     let inertia = DMat3::from_cols(
         DVec3::new(init.inertia[0][0], init.inertia[1][0], init.inertia[2][0]),
@@ -30,13 +56,10 @@ pub fn mass_props_from_init(init: &jeod_test_data::mass_data::MassInitData) -> M
     MassProperties::with_inertia(init.mass, inertia, DVec3::from_slice(&init.position))
 }
 
+/// Quaternion angular error (back-compat alias for callers that
+/// haven't migrated to `recipes::helpers::state_helpers::jeodquat_angle_error`).
 pub fn quaternion_angle_error(q1: &JeodQuat, q2: &JeodQuat) -> f64 {
-    let dot = (q1.scalar() * q2.scalar()
-        + q1.vector().x * q2.vector().x
-        + q1.vector().y * q2.vector().y
-        + q1.vector().z * q2.vector().z)
-        .abs();
-    2.0 * dot.min(1.0).acos()
+    jeod_sim::recipes::helpers::state_helpers::jeodquat_angle_error(q1, q2)
 }
 
 pub fn test_data_path(filename: &str) -> std::path::PathBuf {
@@ -136,61 +159,9 @@ pub fn load_torque_simple_csv(path: &Path) -> Vec<TorqueSimpleRecord> {
     records
 }
 
-/// Initialize a [`TranslationalState`] from classical orbital elements.
-/// Works for all eccentricities including e >= 1 (hyperbolic).
-pub fn state_from_elements(
-    a: f64,
-    e: f64,
-    i: f64,
-    raan: f64,
-    argp: f64,
-    nu: f64,
-    mu: f64,
-) -> TranslationalState {
-    let mut oe = OrbitalElements::default();
-    oe.semi_major_axis = a;
-    oe.e_mag = e;
-    oe.inclination = i;
-    oe.long_asc_node = raan;
-    oe.arg_periapsis = argp;
-    oe.true_anom = nu;
-
-    if e < 1.0 {
-        oe.semiparam = a * (1.0 - e * e);
-    } else {
-        // Hyperbolic: a is negative, p = a(1 - e^2) = |a|(e^2 - 1)
-        oe.semiparam = a.abs() * (e * e - 1.0);
-    }
-    oe.nu_to_anomalies();
-
-    let (position, velocity) = oe.to_cartesian(mu).expect("to_cartesian failed");
-    TranslationalState { position, velocity }
-}
-
-/// Compute angular difference accounting for wraparound at 2π.
-pub fn angle_diff(a: f64, b: f64) -> f64 {
-    let tau = 2.0 * std::f64::consts::PI;
-    let mut d = (a - b) % tau;
-    if d > std::f64::consts::PI {
-        d -= tau;
-    }
-    if d < -std::f64::consts::PI {
-        d += tau;
-    }
-    d.abs()
-}
-
-/// Max absolute element-wise difference between two 3×3 matrices.
-pub fn max_mat_diff(a: &DMat3, b: &DMat3) -> f64 {
-    let mut max_d = 0.0_f64;
-    for c in 0..3 {
-        for r in 0..3 {
-            let d = (a.col(c)[r] - b.col(c)[r]).abs();
-            max_d = max_d.max(d);
-        }
-    }
-    max_d
-}
+// Phase 8 #110: `state_from_elements`, `angle_diff`, and `max_mat_diff`
+// moved to `jeod_sim::recipes::helpers::state_helpers` and are re-
+// exported from this module's preamble.
 
 // ── SIM_VER_DRAG CSV loader (11 columns) ──
 

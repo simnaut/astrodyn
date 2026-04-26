@@ -174,11 +174,14 @@ fn run_srp_basic_test(csv_filename: &str, label: &str) {
     );
 }
 
+// non-recipe: SIM_1_BASIC SRP scenarios load JEOD facet/surface fixtures
+// from the verification SIM and compare via `load_srp_basic_csv`.
 #[test]
 fn tier3_simulation_srp_basic_default() {
     run_srp_basic_test("srp_basic_srp_basic.csv", "RUN_basic (default surface)");
 }
 
+// non-recipe: same SRP setup, varied surface reflection coefficients.
 #[test]
 fn tier3_simulation_srp_basic_varied_cr() {
     run_srp_basic_test(

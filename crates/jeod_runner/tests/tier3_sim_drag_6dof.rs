@@ -4,10 +4,9 @@
 //! `Simulation::step()`, verifying that drag interacts correctly with the
 //! attitude state. All tests use analytical verification.
 
-mod sim_test_helpers;
-
 use glam::{DMat3, DVec3};
 use jeod_runner::{GravitySourceEntry, Simulation, VehicleConfig};
+use jeod_sim::recipes::helpers::energy_conservation::specific_orbital_energy;
 use jeod_sim::{
     AtmosphereConfig, AtmosphereModel, DragConfig, ExponentialAtmosphere, GravityControl,
     GravityControls, GravityModel, GravitySource, JeodQuat, MassProperties, RotationalState,
@@ -19,11 +18,6 @@ const MU_EARTH: f64 = jeod_sim::EARTH.shape.mu;
 
 /// Earth mean equatorial radius (m) — JEOD `earth.cc`.
 const R_EARTH: f64 = jeod_sim::EARTH.shape.r_eq;
-
-/// Compute specific orbital energy: E = v^2/2 - mu/r
-fn orbital_energy(pos: DVec3, vel: DVec3, mu: f64) -> f64 {
-    0.5 * vel.length_squared() - mu / pos.length()
-}
 
 /// Create a 6-DOF simulation with point-mass gravity and constant-density drag.
 #[allow(clippy::too_many_arguments)]
@@ -111,6 +105,9 @@ fn make_6dof_drag_sim(
 /// the drag magnitude. The force always opposes the relative velocity
 /// regardless of body orientation. This test verifies that a spinning body
 /// still experiences proper orbital energy dissipation.
+// non-recipe: 1 t mass + ballistic Cd·A on a 400 km equatorial circular
+// orbit; the geometry is bespoke and the drag config (Cd=2.2, area=10,
+// constant density 1e-12) drives the assertion content.
 #[test]
 fn tier3_drag_with_rotation_energy_loss() {
     let r = R_EARTH + 400_000.0;
@@ -138,7 +135,7 @@ fn tier3_drag_with_rotation_energy_loss() {
         pos, vel, mass, inertia, quat, ang_vel, cd, area, density, dt,
     );
 
-    let e_initial = orbital_energy(pos, vel, MU_EARTH);
+    let e_initial = specific_orbital_energy(pos, vel, MU_EARTH);
 
     // Propagate for 1 orbit
     let period = 2.0 * std::f64::consts::PI * (r.powi(3) / MU_EARTH).sqrt();
@@ -146,7 +143,7 @@ fn tier3_drag_with_rotation_energy_loss() {
     sim.step_n(n_steps);
 
     let body = sim.body(0);
-    let e_final = orbital_energy(body.trans.position, body.trans.velocity, MU_EARTH);
+    let e_final = specific_orbital_energy(body.trans.position, body.trans.velocity, MU_EARTH);
 
     println!("  Initial energy: {e_initial:.6e} J/kg");
     println!("  Final energy:   {e_final:.6e} J/kg");
@@ -189,6 +186,8 @@ fn tier3_drag_with_rotation_energy_loss() {
 /// attitudes but same translational state should experience the same
 /// translational trajectory. The force direction changes in the body frame,
 /// but in the inertial frame it is always anti-velocity.
+// non-recipe: same drag setup as `tier3_drag_with_rotation_energy_loss`,
+// run twice with different attitudes to verify ballistic-drag invariance.
 #[test]
 fn tier3_drag_attitude_invariance_ballistic() {
     let r = R_EARTH + 400_000.0;

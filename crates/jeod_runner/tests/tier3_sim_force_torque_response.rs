@@ -108,6 +108,11 @@ fn make_free_body_6dof(mass: f64, inertia: DMat3, dt: f64) -> Simulation {
 /// After applying F for T seconds starting from rest:
 ///   v(T) = F*T/m
 ///   x(T) = 0.5 * F*T^2/m
+// non-recipe: SIM_force_torque uses 100 kg test masses and diag(10,20,20)
+// inertia for closed-form verification of F=m·a and τ=I·α. Analytical
+// constants don't match any recipe vehicle preset, and the constant-input
+// pattern is shorter than `force_torque_profiles::step_input` because
+// the on/off times here are step-count expressions, not test parameters.
 #[test]
 fn tier3_force_constant_acceleration() {
     let mass = 100.0; // kg
@@ -151,6 +156,7 @@ fn tier3_force_constant_acceleration() {
 ///   theta(T) = 0.5 * tau*T^2/I
 /// For an initially aligned body, after 10 s with tau_x=1 N·m and I_x=10:
 ///   omega_x = 1 rad/s, theta_x = 5 rad.
+// non-recipe: same analytical-mass setup as `tier3_force_constant_acceleration`.
 #[test]
 fn tier3_torque_constant_angular_acceleration() {
     let mass = 100.0;
@@ -203,6 +209,7 @@ fn tier3_torque_constant_angular_acceleration() {
 /// torque is applied on the body, translation and rotation are decoupled:
 ///   linear motion follows v = F*t/m regardless of torque
 ///   angular motion follows omega = tau*t/I regardless of force
+// non-recipe: same analytical-mass setup as `tier3_force_constant_acceleration`.
 #[test]
 fn tier3_force_and_torque_decoupled() {
     let mass = 100.0;
@@ -289,6 +296,9 @@ fn tier3_force_and_torque_decoupled() {
 /// decelerating; analytically, the final displacement is twice the position
 /// reached at `t = half_duration`. A symmetric triangle of acceleration is
 /// enough to assert that the body behaves linearly.
+// non-recipe: symmetric ±F impulse sequence verifies linearity; the
+// schedule is two `set_body_external_force` calls bracketing a
+// `step_n` count, simpler than instantiating a profile struct.
 #[test]
 fn tier3_force_symmetric_impulse_returns_to_rest() {
     let mass = 100.0;

@@ -10,15 +10,14 @@
 //! - Radius constancy for circular orbits
 //! - Periapsis/apoapsis radius bounds for elliptic orbits
 
-mod sim_test_helpers;
-
 use glam::DVec3;
 use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
+use jeod_sim::recipes::helpers::energy_conservation::specific_orbital_energy;
+use jeod_sim::recipes::helpers::state_helpers::state_from_elements;
 use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, SimulationTime,
     TranslationalState,
 };
-use sim_test_helpers::state_from_elements;
 
 /// Earth gravitational parameter (m^3/s^2) — JEOD `earth_GGM05C.cc`.
 const MU_EARTH: f64 = jeod_sim::EARTH.shape.mu;
@@ -62,9 +61,12 @@ fn build_sim(trans: TranslationalState, dt: f64) -> Simulation {
     sim
 }
 
-/// Compute specific orbital energy: E = v^2/2 - mu/r.
+/// Specific orbital energy delegate that resolves to
+/// [`recipes::helpers::energy_conservation::specific_orbital_energy`]. Kept
+/// as a local alias so the bespoke conservation loop reads as it did
+/// pre-Phase 8.
 fn specific_energy(pos: DVec3, vel: DVec3, mu: f64) -> f64 {
-    vel.length_squared() / 2.0 - mu / pos.length()
+    specific_orbital_energy(pos, vel, mu)
 }
 
 /// Compute specific angular momentum magnitude: |h| = |r x v|.

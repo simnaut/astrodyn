@@ -108,6 +108,9 @@ fn srp_sun_position(sim_time: f64, epoch_tai_tjt: f64, ephemeris: &Ephemeris) ->
     sun_pos
 }
 
+// non-recipe: 1st-order SRP scenario loads JEOD reference trajectory from
+// the SIM_dyncomp SRP RUN and compares position. The Sun ephemeris and
+// surface model are bespoke to the JEOD setup.
 #[test]
 fn tier3_srp_1st_order_trajectory() {
     let jeod_root = jeod_test_data::jeod_path();

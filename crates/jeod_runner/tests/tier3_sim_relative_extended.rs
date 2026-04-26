@@ -82,6 +82,8 @@ fn add_orbital_body(sim: &mut Simulation, earth: usize, trans: TranslationalStat
     });
 }
 
+// non-recipe: bespoke geometry — two vehicles on the same circular orbit
+// with a small along-track Δν offset. No recipe preset captures this pair.
 #[test]
 fn tier3_relative_two_coorbiting_vehicles() {
     // Two vehicles on the same 400 km circular equatorial orbit, separated by
@@ -174,6 +176,8 @@ fn tier3_relative_two_coorbiting_vehicles() {
     );
 }
 
+// non-recipe: chief circular + deputy ellipse with apoapsis at 1.05·r_chief;
+// hand-crafted Hohmann-shape geometry not in `recipes::orbital_elements`.
 #[test]
 fn tier3_relative_hohmann_transfer_geometry() {
     // Chief in circular orbit at 400 km; deputy in a coplanar ellipse whose
@@ -257,6 +261,7 @@ fn tier3_relative_hohmann_transfer_geometry() {
     );
 }
 
+// non-recipe: two-body 90° phase-difference geometry; setup is the assertion.
 #[test]
 fn tier3_relative_same_orbit_phase_difference() {
     // Two vehicles in the same circular orbit, 90° apart in true anomaly.
@@ -325,6 +330,8 @@ fn tier3_relative_same_orbit_phase_difference() {
     );
 }
 
+// non-recipe: chief equatorial vs deputy at +1° inclination — bespoke
+// cross-track geometry test.
 #[test]
 fn tier3_relative_different_inclinations() {
     // Chief on equatorial circular orbit; deputy on the same circular orbit
@@ -386,6 +393,8 @@ fn tier3_relative_different_inclinations() {
     );
 }
 
+// non-recipe: two orbits at different radii to verify r_AB = -r_BA symmetry;
+// the geometry is the test.
 #[test]
 fn tier3_relative_round_trip_frames() {
     // When neither body has a rotational state, the relative-state operator

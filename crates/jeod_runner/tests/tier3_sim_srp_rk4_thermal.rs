@@ -105,6 +105,9 @@ fn run_with_order(order: ThermalIntegrationOrder) -> (f64, DVec3) {
     (t, pos)
 }
 
+// non-recipe: SRP thermal integration scenarios; the same orbit run three
+// times with `ThermalIntegrationOrder::{Scheduled,DerivativeFirstOrder,DerivativeRk4}`.
+// Test content is comparing the three modes, no recipe input applies.
 #[test]
 fn tier3_srp_rk4_thermal_differs_from_scheduled() {
     let (t_sched, p_sched) = run_with_order(ThermalIntegrationOrder::Scheduled);

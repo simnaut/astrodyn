@@ -145,6 +145,8 @@ fn run_ballistic_case(
 /// JEOD computes `force = -0.5·ρ·v²·Cd·A · v̂_rel` in the structural frame.
 /// With identity T_inertial_struct, density 1e-12 kg/m³, and |v|=7500 m/s:
 ///   |force| = 0.5·1e-12·7500²·2·100 = 0.005625 N (accel_mag at t=0).
+// non-recipe: SIM_VER_DRAG bit-exact match — Cd=2, area=100 sphere, no
+// recipe preset matches the JEOD-injection geometry.
 #[test]
 fn tier3_sim_drag_ver_cd() {
     let drag = DragConfig {
@@ -182,6 +184,8 @@ fn tier3_sim_drag_ver_cd() {
 ///
 /// The two JEOD CSVs (`drag_cd_drag.csv`, `drag_bc_drag.csv`) differ only at
 /// the ~16th significant digit, confirming this equivalence.
+// non-recipe: same as `tier3_sim_drag_ver_cd` but using BC instead of CD —
+// algebraic equivalence is the test content.
 #[test]
 fn tier3_sim_drag_ver_bc() {
     let drag = DragConfig {

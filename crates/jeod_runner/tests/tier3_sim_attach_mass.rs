@@ -623,6 +623,10 @@ fn validate_run<S: AsRef<str>>(
 // Tier 3 test: iterates every run, asserts tolerances, emits report
 // ════════════════════════════════════════════════════════════════════
 
+// non-recipe: SIM_verif_attach_mass uses 1 kg JEOD test-fixture bodies
+// (parent_default/child{1,2,3}_default) ported from
+// `Modified_data/*.py`; not Apollo-class. The whole test runs against
+// `MassTree::print_tree` parity, not the full simulation pipeline.
 #[test]
 fn tier3_sim_attach_mass() {
     let mut errors = MaxErrors::new();

@@ -72,6 +72,10 @@ fn load_reversal_csv(path: &std::path::Path) -> Vec<ReversalRecord> {
 
 /// RUN_1: spherical Earth gravity, forward 60,000 s + reverse 60,000 s.
 /// Validates both time and trajectory against JEOD reference.
+// non-recipe: SIM_7_time_reversal seeds from a JEOD CSV t=0 record (TAI TJT,
+// position, velocity, attitude derived from LVLH+pitch). The bespoke piece
+// is the negative-`time_scale_factor` flip at the reversal index — verified
+// here as part of the simulation pipeline.
 #[test]
 fn tier3_sim_time_reversal_run1() {
     let mu_earth_gemt1 = load_mu_earth_gemt1();
@@ -250,11 +254,13 @@ fn run_reversal_time_only(label: &str, csv_name: &str) {
     );
 }
 
+// non-recipe: time-only round trip; TAI seconds are read from CSV.
 #[test]
 fn tier3_sim_time_reversal_run3a() {
     run_reversal_time_only("reversal_run3a", "reversal_run3a_reversal.csv");
 }
 
+// non-recipe: time-only round trip; TAI seconds are read from CSV.
 #[test]
 fn tier3_sim_time_reversal_run8b() {
     run_reversal_time_only("reversal_run8b", "reversal_run8b_reversal.csv");

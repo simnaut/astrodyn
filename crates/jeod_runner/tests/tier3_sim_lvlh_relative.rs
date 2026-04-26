@@ -147,11 +147,15 @@ fn run_lvlhrel_scenario(label: &str, csv_name: &str) {
     );
 }
 
+// non-recipe: SIM_LvlhRelative seeds two bodies from JEOD CSV t=0 records;
+// no `recipes::*` preset matches the bespoke 19-column schema. LVLH error
+// metric is `(a - b).length()`, too small to abstract.
 #[test]
 fn tier3_simulation_lvlhrel_test0() {
     run_lvlhrel_scenario("lvlhrel_test0", "lvlhrel_test0_lvlhrel.csv");
 }
 
+// non-recipe: same shape as `tier3_simulation_lvlhrel_test0`.
 #[test]
 fn tier3_simulation_lvlhrel_test1() {
     run_lvlhrel_scenario("lvlhrel_test1", "lvlhrel_test1_lvlhrel.csv");

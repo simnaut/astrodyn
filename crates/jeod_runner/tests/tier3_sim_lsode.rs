@@ -255,6 +255,10 @@ fn run_integ_test(
 /// on both sides, the trajectories agree to sub-millimeter scale — any
 /// drift reflects floating-point reduction order differences, not algorithm
 /// divergence.
+// non-recipe: SIM_integ_test derives μ from sma/mean-motion (computed in
+// `compute_mu`), uses CSV t=0 prop_integ_state as IC (deterministically
+// rotated), and applies `time_scale_factor`. None of these match a recipe
+// preset; cross-validation math is owned by `CrossvalReport`.
 #[test]
 fn tier3_simulation_lsode_abm4() {
     // Observed max-component errors over 14 orbits (80000 s sim time):
@@ -281,6 +285,7 @@ fn tier3_simulation_lsode_abm4() {
 /// which is the expected order-4 vs order-~12 truncation difference. This
 /// test documents that drift rather than asserting agreement between
 /// dissimilar integrators.
+// non-recipe: same derived μ + CSV-rotated IC as `tier3_simulation_lsode_abm4`.
 #[test]
 fn tier3_simulation_lsode_default() {
     // Observed max-component errors (ABM4 vs LSODE reference, 14 orbits):

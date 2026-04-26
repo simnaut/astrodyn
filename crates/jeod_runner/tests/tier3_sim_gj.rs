@@ -145,6 +145,9 @@ fn run_gj_test(
     report.assert_velocity(vel_tol);
 }
 
+// non-recipe: SIM_GJ_test uses an artificial μ (5.76e14) and CSV t=0 initial
+// conditions; no `recipes::*` building block matches. Helper math for
+// integrator agreement / state error is owned by `CrossvalReport`.
 #[test]
 fn tier3_simulation_gj_order8() {
     // Baseline: GJ order 8, dt=1s.
@@ -160,6 +163,7 @@ fn tier3_simulation_gj_order8() {
     );
 }
 
+// non-recipe: same artificial μ as `tier3_simulation_gj_order8`.
 #[test]
 fn tier3_simulation_gj_order4() {
     // GJ order 4, dt=1s.
@@ -175,6 +179,7 @@ fn tier3_simulation_gj_order4() {
     );
 }
 
+// non-recipe: same artificial μ as `tier3_simulation_gj_order8`.
 #[test]
 fn tier3_simulation_gj_order12() {
     // GJ order 12, dt=1s.
@@ -190,6 +195,8 @@ fn tier3_simulation_gj_order12() {
     );
 }
 
+// non-recipe: same artificial μ as `tier3_simulation_gj_order8`; effective
+// dt scaled via `time_scale_factor`.
 #[test]
 fn tier3_simulation_gj_dt10() {
     // GJ order 8, effective dt=10s. Coarser timestep → larger truncation error.

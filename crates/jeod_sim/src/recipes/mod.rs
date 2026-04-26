@@ -40,6 +40,7 @@ pub mod atmosphere;
 pub mod constants;
 pub mod earth;
 pub mod epoch;
+pub mod helpers;
 pub mod mars;
 pub mod moon;
 pub mod orbital_elements;

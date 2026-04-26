@@ -30,10 +30,9 @@
 //!   Related to RUN_8B (LVLH rate) attitude propagation: spin about the
 //!   major principal axis is stable (intermediate-axis theorem).
 
-mod sim_test_helpers;
-
 use glam::{DMat3, DVec3};
 use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
+use jeod_sim::recipes::helpers::energy_conservation::specific_orbital_energy;
 use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, JeodQuat, MassProperties,
     RotationalState, SimulationTime, TranslationalState,
@@ -80,11 +79,6 @@ fn iss_circular_state() -> (DVec3, DVec3) {
     (DVec3::new(r, 0.0, 0.0), DVec3::new(0.0, v, 0.0))
 }
 
-/// Specific orbital energy: v^2/2 - mu/r.
-fn orbital_energy(pos: DVec3, vel: DVec3, mu: f64) -> f64 {
-    0.5 * vel.length_squared() - mu / pos.length()
-}
-
 /// Build a 3-DOF point-mass orbit simulation (pure Kepler).
 fn make_kepler_sim(pos: DVec3, vel: DVec3, mass: f64, dt: f64) -> Simulation {
     let mut sim = Simulation::new(
@@ -121,7 +115,7 @@ fn tier3_dyncomp_point_mass_3dof_conservation() {
     let dt = 10.0;
     let mut sim = make_kepler_sim(pos, vel, 1000.0, dt);
 
-    let e0 = orbital_energy(pos, vel, MU_EARTH);
+    let e0 = specific_orbital_energy(pos, vel, MU_EARTH);
     let h0 = pos.cross(vel);
 
     // Propagate for 3 orbits.
@@ -130,7 +124,7 @@ fn tier3_dyncomp_point_mass_3dof_conservation() {
     sim.step_n(n_steps);
 
     let body = sim.body(0);
-    let e1 = orbital_energy(body.trans.position, body.trans.velocity, MU_EARTH);
+    let e1 = specific_orbital_energy(body.trans.position, body.trans.velocity, MU_EARTH);
     let h1 = body.trans.position.cross(body.trans.velocity);
 
     let de = (e1 - e0).abs() / e0.abs();
@@ -227,7 +221,7 @@ fn tier3_dyncomp_point_mass_plus_thirdbody_conservation() {
 
     sim.validate().unwrap();
 
-    let e0 = orbital_energy(pos, vel, MU_EARTH);
+    let e0 = specific_orbital_energy(pos, vel, MU_EARTH);
     let h0 = pos.cross(vel);
 
     // Integrate for one orbit.
@@ -236,7 +230,7 @@ fn tier3_dyncomp_point_mass_plus_thirdbody_conservation() {
     sim.step_n(n_steps);
 
     let body = sim.body(0);
-    let e1 = orbital_energy(body.trans.position, body.trans.velocity, MU_EARTH);
+    let e1 = specific_orbital_energy(body.trans.position, body.trans.velocity, MU_EARTH);
     let h1 = body.trans.position.cross(body.trans.velocity);
 
     // Orbital energy about Earth should remain bounded (~third-body magnitude
@@ -332,7 +326,7 @@ fn tier3_dyncomp_drag_point_mass_monotonic_decay() {
     for _ in 0..5 {
         sim.step_n(steps_per_orbit);
         let body = sim.body(0);
-        let e = orbital_energy(body.trans.position, body.trans.velocity, MU_EARTH);
+        let e = specific_orbital_energy(body.trans.position, body.trans.velocity, MU_EARTH);
         let a = -MU_EARTH / (2.0 * e);
         sma_samples.push(a);
     }
