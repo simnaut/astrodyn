@@ -30,15 +30,28 @@ pub mod sim_dyncomp;
 pub mod sim_planetary;
 pub mod sim_polar_motion;
 
+use glam::DVec3;
 use jeod_sim::recipes::verification::{
-    CsvReference, ExtrasComparator, InitialConditions, VerificationCase,
+    CsvReference, ExtrasComparator, InitialConditions, SimContext, VerificationCase,
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use jeod_test_data::tier3_csv;
 use uom::si::time::second;
 
 use crate::builder::SimulationBuilderExt;
-use crate::VehicleOutput;
+use crate::{Simulation, VehicleOutput};
+
+/// Forward `SimContext` to the runtime simulation so `pre_step` closures
+/// stored on a `VerificationCase` can drive source ephemeris updates
+/// without depending on the `jeod_runner` crate directly.
+impl SimContext for Simulation {
+    fn set_source_position(&mut self, source_idx: usize, position: DVec3) {
+        Simulation::set_source_position(self, source_idx, position);
+    }
+    fn set_source_state(&mut self, source_idx: usize, position: DVec3, velocity: DVec3) {
+        Simulation::set_source_state(self, source_idx, position, velocity);
+    }
+}
 
 /// Per-family typed records held alongside the [`StateLog`] vec so
 /// extras comparators can read columns the generic state log drops
@@ -116,6 +129,12 @@ impl VerificationCaseExt for VerificationCase {
             .build()
             .unwrap_or_else(|e| panic!("scenario `{}` failed validation: {e:?}", self.name));
 
+        // 2b. If the case carries a pre-step factory, invoke it now so
+        //     the resulting closure can capture run-once state (a
+        //     loaded DE421 ephemeris, J2000 JD, source indices) the
+        //     per-step body would otherwise re-derive on every call.
+        let mut pre_step = self.pre_step.map(|builder| builder(&init));
+
         // 3. Propagate, sampling at each non-initial reference time up
         //    to the case's `duration` (a value of 0.0 or negative means
         //    "use full CSV"; a value greater than the last record's
@@ -127,6 +146,12 @@ impl VerificationCaseExt for VerificationCase {
         for (idx, record) in ref_states.iter().enumerate().skip(1) {
             if duration_s > 0.0 && record.time > duration_s {
                 break;
+            }
+            // Run the pre-step hook (e.g. ephemeris source-position
+            // update) before propagation, so the simulation sees
+            // up-to-date inputs for this step.
+            if let Some(hook) = pre_step.as_mut() {
+                hook(&mut sim, record.time);
             }
             sim.step_until(record.time);
             let body = sim.body(0);

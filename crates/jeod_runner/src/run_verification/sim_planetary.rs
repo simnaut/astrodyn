@@ -89,6 +89,7 @@ pub fn leo_inc() -> VerificationCase {
         duration: Time::new::<second>(86400.0),
         tolerances: PLANETARY_TOLS,
         extras: None,
+        pre_step: None,
     }
 }
 
@@ -101,6 +102,7 @@ pub fn leo_polar() -> VerificationCase {
         duration: Time::new::<second>(86400.0),
         tolerances: PLANETARY_TOLS,
         extras: None,
+        pre_step: None,
     }
 }
 
@@ -113,6 +115,7 @@ pub fn leo_ecc() -> VerificationCase {
         duration: Time::new::<second>(86400.0),
         tolerances: PLANETARY_TOLS,
         extras: None,
+        pre_step: None,
     }
 }
 
@@ -125,6 +128,7 @@ pub fn leo_equ() -> VerificationCase {
         duration: Time::new::<second>(86400.0),
         tolerances: PLANETARY_TOLS,
         extras: None,
+        pre_step: None,
     }
 }
 
@@ -137,5 +141,6 @@ pub fn geo() -> VerificationCase {
         duration: Time::new::<second>(86400.0),
         tolerances: PLANETARY_TOLS,
         extras: None,
+        pre_step: None,
     }
 }

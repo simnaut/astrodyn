@@ -172,6 +172,7 @@ pub fn run2_3dof() -> VerificationCase {
             extras: &[],
         },
         extras: None,
+        pre_step: None,
     }
 }
 
@@ -190,6 +191,7 @@ pub fn run2_6dof() -> VerificationCase {
             extras: &[],
         },
         extras: None,
+        pre_step: None,
     }
 }
 
@@ -371,6 +373,7 @@ pub fn run3a_sh4x4() -> VerificationCase {
             extras: &[],
         },
         extras: None,
+        pre_step: None,
     }
 }
 
@@ -389,6 +392,7 @@ pub fn run3b_sh8x8() -> VerificationCase {
             extras: &[],
         },
         extras: None,
+        pre_step: None,
     }
 }
 
@@ -443,6 +447,7 @@ pub fn run5b_atmosphere_mean() -> VerificationCase {
             extras: &[],
         },
         extras: None,
+        pre_step: None,
     }
 }
 
@@ -462,6 +467,7 @@ pub fn run5c_atmosphere_max() -> VerificationCase {
             extras: &[],
         },
         extras: None,
+        pre_step: None,
     }
 }
 
@@ -554,6 +560,7 @@ pub fn run6a_const_density_drag() -> VerificationCase {
             extras: &[],
         },
         extras: None,
+        pre_step: None,
     }
 }
 
@@ -572,6 +579,7 @@ pub fn run6b_drag() -> VerificationCase {
             extras: &[],
         },
         extras: None,
+        pre_step: None,
     }
 }
 
@@ -662,6 +670,7 @@ pub fn run10a_gravity_torque() -> VerificationCase {
             extras: &[],
         },
         extras: None,
+        pre_step: None,
     }
 }
 
@@ -681,6 +690,7 @@ pub fn run10c_gravity_torque_elliptical() -> VerificationCase {
             extras: &[],
         },
         extras: None,
+        pre_step: None,
     }
 }
 
@@ -748,6 +758,7 @@ pub fn run5a_met() -> VerificationCase {
             extras: &[],
         },
         extras: None,
+        pre_step: None,
     }
 }
 
@@ -831,6 +842,7 @@ pub fn run6b_drag_aero_traj() -> VerificationCase {
             extras: &[],
         },
         extras: None,
+        pre_step: None,
     }
 }
 
@@ -851,6 +863,7 @@ pub fn run6b_drag_rotated_struct() -> VerificationCase {
             extras: &[],
         },
         extras: None,
+        pre_step: None,
     }
 }
 
@@ -870,5 +883,6 @@ pub fn run10d_gravity_torque_elliptical_rate() -> VerificationCase {
             extras: &[],
         },
         extras: None,
+        pre_step: None,
     }
 }

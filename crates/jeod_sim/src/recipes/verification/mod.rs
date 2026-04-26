@@ -32,6 +32,36 @@ use uom::si::f64::Time;
 
 use crate::SimulationBuilder;
 
+/// Adapter-neutral interface for the operations a `pre_step` hook needs.
+///
+/// Implemented by `jeod_runner::Simulation` (and any future ECS adapter
+/// that materializes a `VerificationCase`). Lets a `pre_step` closure
+/// inject state into the running simulation between reference-CSV time
+/// steps without depending on the `jeod_runner` crate.
+pub trait SimContext {
+    /// Set the inertial position of source `source_idx`.
+    fn set_source_position(&mut self, source_idx: usize, position: DVec3);
+    /// Set the inertial position and velocity of source `source_idx`.
+    fn set_source_state(&mut self, source_idx: usize, position: DVec3, velocity: DVec3);
+}
+
+/// Closure type produced by a [`PreStepBuilder`]. Invoked once per
+/// reference-CSV time step, before the simulation propagates.
+///
+/// The `time` argument is the reference record's time in seconds since
+/// the simulation epoch. Closures that need a TDB Julian date should
+/// derive it as `j2000_jd + time / 86_400.0` (assuming a J2000 epoch),
+/// or capture the epoch's JD when they're constructed by their
+/// [`PreStepBuilder`].
+pub type PreStepClosure = Box<dyn FnMut(&mut dyn SimContext, f64) + Send>;
+
+/// Factory for a [`PreStepClosure`]. Invoked once at the start of
+/// `run_and_assert` with the t=0 [`InitialConditions`], so the closure
+/// it returns can capture state (a loaded ephemeris, J2000 JD, source
+/// indices, …) that the per-step body would otherwise re-derive on every
+/// call.
+pub type PreStepBuilder = fn(&InitialConditions) -> PreStepClosure;
+
 /// Initial conditions extracted from the t=0 row of a reference CSV and
 /// passed to a scenario constructor by `run_and_assert`. This lets the
 /// runner parse each reference CSV exactly once: it loads the full
@@ -258,4 +288,15 @@ pub struct VerificationCase {
     /// log and asserts each against the matching entry in
     /// [`Tolerances::extras`].
     pub extras: Option<ExtrasComparator>,
+    /// Optional pre-step hook factory. When `Some`, the runner calls the
+    /// factory once at the start of `run_and_assert` (with the t=0
+    /// [`InitialConditions`]) to obtain a [`PreStepClosure`], then
+    /// invokes that closure before each `sim.step_until(record.time)`
+    /// call. Use this to inject per-step state — most commonly source
+    /// ephemeris updates — into the running simulation.
+    ///
+    /// The factory pattern lets the closure capture run-once state (a
+    /// loaded DE421 ephemeris, J2000 JD, source indices) that the
+    /// per-step body would otherwise re-derive on every call.
+    pub pre_step: Option<PreStepBuilder>,
 }
