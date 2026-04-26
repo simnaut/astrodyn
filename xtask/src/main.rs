@@ -1,0 +1,244 @@
+//! `cargo xtask <subcommand>` — workspace dev tooling.
+//!
+//! Currently the only subcommand is `regenerate-tier3`, a thin wrapper
+//! around the Trick / JEOD reference-CSV regeneration Docker invocation.
+//! Mission authors and contributors who don't routinely write
+//! `docker run -v ... -v ... jeod-trick` invocations can use this to
+//! refresh `test_data/*.csv` from the underlying JEOD verification sims.
+//!
+//! Background: the regeneration Docker image (`jeod-trick`) is built
+//! from `trick/Dockerfile` against the parent directory (so `trick/`
+//! and `jeod/` siblings are accessible). It runs `generate_references.sh`
+//! inside the container and writes CSVs to a bind-mounted `/output`. The
+//! script is itself bind-mounted at runtime (not baked into the image)
+//! so iterating on the script doesn't require an image rebuild.
+//!
+//! See `docs/tier3_regeneration.md` for the canonical workflow, the
+//! incremental-vs-force semantics, and how to add a new sim.
+
+use std::env;
+use std::path::{Path, PathBuf};
+use std::process::{exit, Command};
+
+const HELP: &str = "\
+Usage: cargo xtask <subcommand> [args]
+
+Subcommands:
+    regenerate-tier3        Regenerate Tier 3 reference CSVs via the
+                            jeod-trick Docker image. Incremental by
+                            default; pass --force to regenerate all.
+
+regenerate-tier3 options:
+    --force                 Set FORCE=1 in the container so all sims
+                            regenerate even if their CSV already exists.
+    --build                 Force rebuild of the jeod-trick image
+                            before running.
+    --output <path>         Override the host output directory
+                            (default: ./test_data).
+    --image <tag>           Override the Docker image tag
+                            (default: jeod-trick).
+    --max-parallel <n>      Cap concurrent trick-CP builds via
+                            MAX_PARALLEL=<n> in the container. Lower if
+                            you hit OOM (each build is ~1–2 GB).
+                            Default: 4 (script default).
+    -h, --help              Print this help.
+";
+
+fn main() {
+    let mut args = env::args().skip(1);
+    let Some(subcmd) = args.next() else {
+        eprintln!("{HELP}");
+        exit(2);
+    };
+
+    match subcmd.as_str() {
+        "-h" | "--help" | "help" => {
+            println!("{HELP}");
+        }
+        "regenerate-tier3" => {
+            regenerate_tier3(args.collect());
+        }
+        other => {
+            eprintln!("xtask: unknown subcommand `{other}`\n\n{HELP}");
+            exit(2);
+        }
+    }
+}
+
+struct RegenerateArgs {
+    force: bool,
+    build_image: bool,
+    output: PathBuf,
+    image: String,
+    max_parallel: Option<u32>,
+}
+
+impl RegenerateArgs {
+    fn parse(argv: Vec<String>) -> Self {
+        let mut a = Self {
+            force: false,
+            build_image: false,
+            output: PathBuf::from("test_data"),
+            image: "jeod-trick".to_string(),
+            max_parallel: None,
+        };
+        let mut iter = argv.into_iter();
+        while let Some(arg) = iter.next() {
+            match arg.as_str() {
+                "--force" => a.force = true,
+                "--build" => a.build_image = true,
+                "--output" => {
+                    a.output = PathBuf::from(iter.next().unwrap_or_else(|| {
+                        eprintln!("regenerate-tier3: --output needs a value");
+                        exit(2);
+                    }));
+                }
+                "--image" => {
+                    a.image = iter.next().unwrap_or_else(|| {
+                        eprintln!("regenerate-tier3: --image needs a value");
+                        exit(2);
+                    });
+                }
+                "--max-parallel" => {
+                    let raw = iter.next().unwrap_or_else(|| {
+                        eprintln!("regenerate-tier3: --max-parallel needs a value");
+                        exit(2);
+                    });
+                    a.max_parallel = Some(raw.parse().unwrap_or_else(|e| {
+                        eprintln!("regenerate-tier3: --max-parallel `{raw}` is not a positive integer: {e}");
+                        exit(2);
+                    }));
+                }
+                "-h" | "--help" => {
+                    println!("{HELP}");
+                    exit(0);
+                }
+                other => {
+                    eprintln!("regenerate-tier3: unknown arg `{other}`\n\n{HELP}");
+                    exit(2);
+                }
+            }
+        }
+        a
+    }
+}
+
+fn regenerate_tier3(argv: Vec<String>) {
+    let args = RegenerateArgs::parse(argv);
+
+    // Workspace root = directory containing the workspace Cargo.toml.
+    // CARGO_MANIFEST_DIR points at xtask/, so go up one level.
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("xtask Cargo.toml has a parent")
+        .to_path_buf();
+
+    let output_abs = if args.output.is_absolute() {
+        args.output.clone()
+    } else {
+        workspace_root.join(&args.output)
+    };
+    std::fs::create_dir_all(&output_abs).unwrap_or_else(|e| {
+        eprintln!(
+            "regenerate-tier3: cannot create output dir {}: {e}",
+            output_abs.display()
+        );
+        exit(1);
+    });
+
+    let dockerfile = workspace_root.join("trick/Dockerfile");
+    let script = workspace_root.join("trick/generate_references.sh");
+    assert_paths_exist(&[&dockerfile, &script]);
+
+    if args.build_image {
+        run_build(&workspace_root, &dockerfile, &args.image);
+    } else if !image_exists(&args.image) {
+        eprintln!(
+            "regenerate-tier3: image `{}` not found; building it now (use --build to force rebuild)",
+            args.image
+        );
+        run_build(&workspace_root, &dockerfile, &args.image);
+    }
+
+    run_regenerate(
+        &output_abs,
+        &script,
+        &args.image,
+        args.force,
+        args.max_parallel,
+    );
+}
+
+fn assert_paths_exist(paths: &[&Path]) {
+    for p in paths {
+        if !p.exists() {
+            eprintln!("regenerate-tier3: required path missing: {}", p.display());
+            exit(1);
+        }
+    }
+}
+
+fn image_exists(tag: &str) -> bool {
+    let out = Command::new("docker")
+        .args(["image", "inspect", tag])
+        .output();
+    matches!(out, Ok(o) if o.status.success())
+}
+
+fn run_build(workspace_root: &Path, dockerfile: &Path, tag: &str) {
+    // The Docker build context is the *parent* of the workspace root,
+    // so that both `trick/` and `jeod/` siblings can be COPYed into the
+    // image. This matches the convention in the Dockerfile header.
+    let build_context = workspace_root
+        .parent()
+        .expect("workspace root has a parent");
+    eprintln!(
+        "regenerate-tier3: building image `{tag}` from {} (context: {})",
+        dockerfile.display(),
+        build_context.display()
+    );
+    let status = Command::new("docker")
+        .arg("build")
+        .arg("-f")
+        .arg(dockerfile)
+        .arg("-t")
+        .arg(tag)
+        .arg(build_context)
+        .status()
+        .expect("failed to spawn `docker build` — is the docker CLI installed and on PATH?");
+    if !status.success() {
+        eprintln!("regenerate-tier3: docker build failed");
+        exit(1);
+    }
+}
+
+fn run_regenerate(output: &Path, script: &Path, tag: &str, force: bool, max_parallel: Option<u32>) {
+    let mut cmd = Command::new("docker");
+    cmd.arg("run").arg("--rm");
+    if force {
+        cmd.args(["-e", "FORCE=1"]);
+    }
+    if let Some(n) = max_parallel {
+        cmd.arg("-e").arg(format!("MAX_PARALLEL={n}"));
+    }
+    cmd.arg("-v").arg(format!("{}:/output", output.display()));
+    cmd.arg("-v")
+        .arg(format!("{}:/generate_references.sh:ro", script.display()));
+    cmd.arg(tag);
+
+    eprintln!(
+        "regenerate-tier3: regenerating into {} (force={force}, max_parallel={})",
+        output.display(),
+        max_parallel
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| "default".into())
+    );
+    let status = cmd
+        .status()
+        .expect("failed to spawn `docker run` — is the docker CLI installed and on PATH?");
+    if !status.success() {
+        eprintln!("regenerate-tier3: docker run failed");
+        exit(1);
+    }
+    eprintln!("regenerate-tier3: done.");
+}
