@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use glam::DVec3;
-use jeod_sim::{BodyFrame, Inertial, Position, Ratio, SelfRef, Velocity};
+use jeod_sim::{BodyFrame, Inertial, Position, SelfRef, Velocity};
 
 use crate::components::*;
 use crate::AtmosphereModelR;
@@ -88,7 +88,7 @@ pub fn tidal_update_system(
 ) {
     for (config, rotation, mut delta) in &mut query {
         let raw = jeod_sim::compute_delta_c20(&config.0, &rotation.0);
-        delta.0 = Ratio::new::<uom::si::ratio::ratio>(raw);
+        delta.0 = jeod_sim::dimensionless(raw);
     }
 }
 
@@ -793,9 +793,9 @@ pub fn euler_angles_system(
             // Wrap each raw radian value as a typed `Angle`. Numerics
             // are bit-identical to the f64 path.
             angles.0 = [
-                jeod_sim::Angle::new::<uom::si::angle::radian>(raw[0]),
-                jeod_sim::Angle::new::<uom::si::angle::radian>(raw[1]),
-                jeod_sim::Angle::new::<uom::si::angle::radian>(raw[2]),
+                jeod_sim::radians(raw[0]),
+                jeod_sim::radians(raw[1]),
+                jeod_sim::radians(raw[2]),
             ];
         } else {
             angles.0 = Default::default();

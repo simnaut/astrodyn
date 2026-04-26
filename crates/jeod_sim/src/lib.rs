@@ -175,6 +175,24 @@ pub use jeod_quantities::qty3::Qty3;
 // component fields (`Angle` for Euler angles, `Ratio` for tidal ΔC20).
 pub use uom::si::f64::{Angle, Ratio};
 
+/// Convenience constructor — wrap a raw f64 (radians) as a typed
+/// [`Angle`].
+///
+/// Mirrors `jeod_quantities::ext::F64Ext::radians(f)` but exists at
+/// the `jeod_sim` boundary so ECS adapters don't need to import
+/// `jeod_quantities` (or `uom::si::angle::radian`) directly.
+#[inline]
+pub fn radians(value: f64) -> Angle {
+    Angle::new::<uom::si::angle::radian>(value)
+}
+
+/// Convenience constructor — wrap a raw f64 (dimensionless) as a typed
+/// [`Ratio`].
+#[inline]
+pub fn dimensionless(value: f64) -> Ratio {
+    Ratio::new::<uom::si::ratio::ratio>(value)
+}
+
 // jeod_math: quaternion type (used in RotationalState)
 pub use jeod_math::JeodQuat;
 
