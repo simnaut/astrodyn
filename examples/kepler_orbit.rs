@@ -55,8 +55,12 @@ struct StepCounter(usize);
 fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
     time.set_relative_speed_f64(1e6);
 
-    // Earth gravity source from the recipe library — same primitive
-    // the standalone runner consumes via `recipes::earth::point_mass`.
+    // Earth gravity source. The Bevy adapter consumes only the
+    // `GravitySource` (mu + model) from the recipe entry; the rest of
+    // the standalone-runner `GravitySourceEntry` (rotation model,
+    // pfix transform, …) is wired by Bevy systems separately. Phase 9
+    // will add a `commands.spawn_scenario(s)` extension that hides
+    // this conversion.
     let earth_recipe = earth::point_mass();
     let earth = commands
         .spawn((
@@ -66,10 +70,11 @@ fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
         ))
         .id();
 
-    // Convert the typed orbital elements / mass into the runtime
-    // `TranslationalState` Bevy components consume. Phase 9 will
-    // introduce a `commands.spawn_scenario(s)` extension that hides
-    // this conversion.
+    // Pull the orbital-elements preset (`OrbitalElements` carries plain
+    // `f64` SI fields — JEOD-faithful but not yet `uom`-typed) and
+    // initialize a typed `TranslationalState` via the typed orbit-init
+    // helper. Phase 9 will introduce a `commands.spawn_scenario(s)`
+    // extension that hides this conversion.
     let oe = orbital_elements::iss();
     let trans_typed = init_from_orbital_elements_typed(
         Length::new::<meter>(oe.semi_major_axis),

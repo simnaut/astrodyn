@@ -127,10 +127,11 @@ pub struct DerivedStateConfig {
 
 /// User-facing vehicle configuration.
 ///
-/// Passed to `SimulationBuilder::add_body` to create a simulated vehicle.
-/// Contains initial state plus all physics configuration. No output fields —
-/// results are accessed via `Simulation::body` which returns
-/// `jeod_runner::VehicleOutput`.
+/// Passed to `SimulationBuilder::add_body` to create a simulated
+/// vehicle. Contains initial state plus all physics configuration.
+/// `VehicleConfig` is adapter-neutral: it has no output fields, and
+/// results are read back via the adapter's own output view (the
+/// standalone runner exposes one; the Bevy adapter reads components).
 pub struct VehicleConfig {
     // ── Initial state ──
     /// Translational state: position and velocity in the inertial frame.

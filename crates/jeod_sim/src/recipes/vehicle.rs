@@ -33,9 +33,14 @@ pub fn sts114_mass() -> Mass {
     109_000.0.kg()
 }
 
-/// Clementine probe mass (~227 kg, dry).
+/// Clementine probe wet mass at lunar arrival (424 kg).
+///
+/// Matches the JEOD `SIM_Earth_Moon` reference simulation mass; the
+/// `tier3_sim_earth_moon` Tier 3 case asserts against this value. SRP
+/// acceleration scales with mass so missions cross-validating against
+/// JEOD must use 424 kg, not the 227 kg dry mass.
 pub fn clementine_mass() -> Mass {
-    227.0.kg()
+    424.0.kg()
 }
 
 /// Dawn spacecraft mass at Mars arrival (~1217 kg total).

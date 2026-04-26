@@ -9,7 +9,7 @@
 use glam::DVec3;
 use jeod_gravity::GravityControl;
 
-use crate::recipes::{constants, epoch, mars, sun, vehicle};
+use crate::recipes::{epoch, mars, sun, vehicle};
 use crate::vehicle_builder::VehicleBuilder;
 use crate::SimulationBuilder;
 
@@ -44,7 +44,5 @@ pub fn mars_orbit() -> SimulationBuilder {
         .gravity(GravityControl::new_third_body(sun_idx))
         .build();
     sb.add_body(vehicle);
-
-    let _ = constants::mu_mars(); // touch the constant so doctest sees it referenced
     sb
 }

@@ -62,7 +62,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         position: init_pos,
         velocity: init_vel,
     };
-    sb.bodies[0].mass = Some(MassProperties::new(MASS_CSM + MASS_SIVB));
+    // Initialize the body with CSM-only mass; the S-IVB is added separately
+    // below as a child in the mass tree, and `add_body_to_tree` will snapshot
+    // the body's current mass into the tree node. Initializing with
+    // CSM+S-IVB here would double-count the S-IVB once it's attached.
+    sb.bodies[0].mass = Some(MassProperties::new(MASS_CSM));
     // Wire DE421 ephemeris on the Moon/Sun sources (indices from the scenario).
     sb.set_source_ephemeris(1, EphemerisBody::Moon, EphemerisBody::Earth);
     sb.set_source_ephemeris(2, EphemerisBody::Sun, EphemerisBody::Earth);

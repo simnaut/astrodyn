@@ -5,7 +5,8 @@
 //! - Earth and Sun as 3rd-body point-mass perturbations
 //! - DE421 ephemeris for per-step source position updates
 //! - Moon libration rotation from DE421 BPC data
-//! - Cannonball solar radiation pressure with Moon shadow
+//! - Cannonball solar radiation pressure (no shadow body — illumination
+//!   stays at 1.0; matches the original example's behaviour)
 //!
 //! This example consumes
 //! [`recipes::verification::reference_data`](jeod_sim::recipes::verification::reference_data),

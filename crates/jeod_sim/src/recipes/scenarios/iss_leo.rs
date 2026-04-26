@@ -73,6 +73,5 @@ pub fn iss_leo_drag() -> SimulationBuilder {
         })
         .build();
     sb.add_body(vehicle);
-    let _ = vehicle::iss_mass(); // recipe `vehicle::iss_mass` referenced in docs
     sb
 }

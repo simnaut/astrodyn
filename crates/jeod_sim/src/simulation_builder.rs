@@ -140,12 +140,24 @@ impl SimulationBuilder {
     }
 
     /// Configure ephemeris-based position updates for a source.
+    ///
+    /// # Panics
+    /// Panics if `idx` is not a valid source index (i.e., greater than or
+    /// equal to the number of sources added so far). Mirrors
+    /// `Simulation::set_source_ephemeris` so callers see the same
+    /// diagnostic regardless of which surface they hit first.
     pub fn set_source_ephemeris(
         &mut self,
         idx: usize,
         target: EphemerisBody,
         observer: EphemerisBody,
     ) -> &mut Self {
+        assert!(
+            idx < self.source_ephem_bodies.len(),
+            "set_source_ephemeris: source index {idx} out of range \
+             ({} sources added)",
+            self.source_ephem_bodies.len()
+        );
         self.source_ephem_bodies[idx] = Some((target, observer));
         self
     }
