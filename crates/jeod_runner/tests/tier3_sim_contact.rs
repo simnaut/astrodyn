@@ -401,6 +401,10 @@ fn assert_contact_force_torque(
 
 // ── Tier 3 tests ────────────────────────────────────────────────────
 
+// non-recipe (all 6 contact tests): SIM_contact uses 1 m / 100 kg test
+// spheres, lines, and ground geometries with bespoke contact pairs and
+// initial velocities. The geometries themselves are the test content; no
+// recipe vehicle preset matches.
 /// RUN_point: two 1 m radius spheres, 100 kg each. veh2 at (12,0,0) with
 /// v=(-2,0,0). Contact starts when the centers are 2 m apart (t ≈ 5 s).
 #[test]

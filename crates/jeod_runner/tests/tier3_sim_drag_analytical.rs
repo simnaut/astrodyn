@@ -7,27 +7,24 @@
 //! All tests use point-mass gravity with constant atmospheric density to isolate
 //! drag effects from atmosphere model complexity.
 
-mod sim_test_helpers;
-use sim_test_helpers::*;
-
 use glam::DVec3;
 use jeod_runner::{GravitySourceEntry, Simulation, VehicleConfig};
+use jeod_sim::recipes::helpers::energy_conservation::specific_orbital_energy;
 use jeod_sim::{
     AtmosphereConfig, AtmosphereModel, DragConfig, ExponentialAtmosphere, GravityControl,
     GravityControls, GravityModel, GravitySource, JeodQuat, MassProperties, RotationalState,
     SimulationTime, TranslationalState,
 };
 
+/// Earth rotation rate (JEOD RNPJ2000 default), sourced from
+/// `jeod_sim::planet_config::EARTH.omega`.
+const OMEGA_EARTH: f64 = jeod_sim::planet_config::EARTH.omega;
+
 /// Earth gravitational parameter (m^3/s^2) — JEOD `earth_GGM05C.cc`.
 const MU_EARTH: f64 = jeod_sim::EARTH.shape.mu;
 
 /// Earth mean equatorial radius (m) — JEOD `earth.cc`.
 const R_EARTH: f64 = jeod_sim::EARTH.shape.r_eq;
-
-/// Compute specific orbital energy: E = v^2/2 - mu/r
-fn orbital_energy(pos: DVec3, vel: DVec3, mu: f64) -> f64 {
-    0.5 * vel.length_squared() - mu / pos.length()
-}
 
 /// Compute semi-major axis from specific energy: a = -mu / (2*E)
 fn semi_major_axis_from_energy(energy: f64, mu: f64) -> f64 {
@@ -121,6 +118,11 @@ fn iss_circular_state() -> (DVec3, DVec3) {
 /// Drag removes kinetic energy from the orbit, causing the total specific
 /// energy to become more negative. This is the most fundamental property
 /// of atmospheric drag.
+// non-recipe (all 6 tests in this file): equatorial 400 km circular orbit
+// with various Cd / area / density combinations to verify analytical drag
+// laws (energy loss, altitude decay, density scaling, area scaling, no-drag
+// at zero density, corotation wind). Geometry and drag parameters are the
+// assertion content, not a recipe input.
 #[test]
 fn tier3_drag_constant_density_energy_loss() {
     let (pos, vel) = iss_circular_state();
@@ -132,7 +134,7 @@ fn tier3_drag_constant_density_energy_loss() {
 
     let mut sim = make_drag_sim(pos, vel, mass, cd, area, density, dt);
 
-    let e_initial = orbital_energy(pos, vel, MU_EARTH);
+    let e_initial = specific_orbital_energy(pos, vel, MU_EARTH);
 
     // Propagate for 1 orbit (~92 min at 400 km)
     let period = 2.0 * std::f64::consts::PI * ((R_EARTH + 400_000.0).powi(3) / MU_EARTH).sqrt();
@@ -140,7 +142,7 @@ fn tier3_drag_constant_density_energy_loss() {
     sim.step_n(n_steps);
 
     let body = sim.body(0);
-    let e_final = orbital_energy(body.trans.position, body.trans.velocity, MU_EARTH);
+    let e_final = specific_orbital_energy(body.trans.position, body.trans.velocity, MU_EARTH);
 
     println!("  Initial energy: {e_initial:.6e} J/kg");
     println!("  Final energy:   {e_final:.6e} J/kg");
@@ -179,7 +181,7 @@ fn tier3_drag_altitude_decay() {
 
     let mut sim = make_drag_sim(pos, vel, mass, cd, area, density, dt);
 
-    let a_initial = semi_major_axis_from_energy(orbital_energy(pos, vel, MU_EARTH), MU_EARTH);
+    let a_initial = semi_major_axis_from_energy(specific_orbital_energy(pos, vel, MU_EARTH), MU_EARTH);
 
     // Propagate for 2 orbits
     let period = 2.0 * std::f64::consts::PI * (a_initial.powi(3) / MU_EARTH).sqrt();
@@ -188,7 +190,7 @@ fn tier3_drag_altitude_decay() {
 
     let body = sim.body(0);
     let a_final = semi_major_axis_from_energy(
-        orbital_energy(body.trans.position, body.trans.velocity, MU_EARTH),
+        specific_orbital_energy(body.trans.position, body.trans.velocity, MU_EARTH),
         MU_EARTH,
     );
 
@@ -231,7 +233,7 @@ fn tier3_drag_higher_density_faster_decay() {
     let area = 10.0;
     let dt = 10.0;
 
-    let e_initial = orbital_energy(pos, vel, MU_EARTH);
+    let e_initial = specific_orbital_energy(pos, vel, MU_EARTH);
     let period = 2.0 * std::f64::consts::PI * ((R_EARTH + 400_000.0).powi(3) / MU_EARTH).sqrt();
     let n_steps = (period / dt) as usize;
 
@@ -241,7 +243,7 @@ fn tier3_drag_higher_density_faster_decay() {
     sim_low.step_n(n_steps);
     let body_low = sim_low.body(0);
     let e_loss_low =
-        e_initial - orbital_energy(body_low.trans.position, body_low.trans.velocity, MU_EARTH);
+        e_initial - specific_orbital_energy(body_low.trans.position, body_low.trans.velocity, MU_EARTH);
 
     // Case 2: high density (10x)
     let density_high = 1e-11;
@@ -249,7 +251,7 @@ fn tier3_drag_higher_density_faster_decay() {
     sim_high.step_n(n_steps);
     let body_high = sim_high.body(0);
     let e_loss_high =
-        e_initial - orbital_energy(body_high.trans.position, body_high.trans.velocity, MU_EARTH);
+        e_initial - specific_orbital_energy(body_high.trans.position, body_high.trans.velocity, MU_EARTH);
 
     let density_ratio = density_high / density_low;
     let loss_ratio = e_loss_high / e_loss_low;
@@ -279,7 +281,7 @@ fn tier3_drag_larger_area_faster_decay() {
     let density = 1e-12;
     let dt = 10.0;
 
-    let e_initial = orbital_energy(pos, vel, MU_EARTH);
+    let e_initial = specific_orbital_energy(pos, vel, MU_EARTH);
     let period = 2.0 * std::f64::consts::PI * ((R_EARTH + 400_000.0).powi(3) / MU_EARTH).sqrt();
     let n_steps = (period / dt) as usize;
 
@@ -289,7 +291,7 @@ fn tier3_drag_larger_area_faster_decay() {
     sim_small.step_n(n_steps);
     let body_small = sim_small.body(0);
     let e_loss_small = e_initial
-        - orbital_energy(
+        - specific_orbital_energy(
             body_small.trans.position,
             body_small.trans.velocity,
             MU_EARTH,
@@ -301,7 +303,7 @@ fn tier3_drag_larger_area_faster_decay() {
     sim_large.step_n(n_steps);
     let body_large = sim_large.body(0);
     let e_loss_large = e_initial
-        - orbital_energy(
+        - specific_orbital_energy(
             body_large.trans.position,
             body_large.trans.velocity,
             MU_EARTH,
@@ -335,7 +337,7 @@ fn tier3_drag_no_drag_at_zero_density() {
 
     let mut sim = make_drag_sim(pos, vel, mass, cd, area, density, dt);
 
-    let e_initial = orbital_energy(pos, vel, MU_EARTH);
+    let e_initial = specific_orbital_energy(pos, vel, MU_EARTH);
     let h_initial = pos.cross(vel).length(); // specific angular momentum
 
     // Propagate for 1 orbit
@@ -344,7 +346,7 @@ fn tier3_drag_no_drag_at_zero_density() {
     sim.step_n(n_steps);
 
     let body = sim.body(0);
-    let e_final = orbital_energy(body.trans.position, body.trans.velocity, MU_EARTH);
+    let e_final = specific_orbital_energy(body.trans.position, body.trans.velocity, MU_EARTH);
     let h_final = body.trans.position.cross(body.trans.velocity).length();
 
     let de = (e_final - e_initial).abs();
@@ -394,7 +396,7 @@ fn tier3_drag_corotation_wind_effect() {
     // Use ExponentialAtmosphere with a density that we'll override via
     // constant_density anyway.
 
-    let e_initial = orbital_energy(DVec3::new(r, 0.0, 0.0), DVec3::new(0.0, v, 0.0), MU_EARTH);
+    let e_initial = specific_orbital_energy(DVec3::new(r, 0.0, 0.0), DVec3::new(0.0, v, 0.0), MU_EARTH);
 
     // Prograde: velocity in +Y when position is +X (same as Earth rotation)
     let pos = DVec3::new(r, 0.0, 0.0);
@@ -409,7 +411,7 @@ fn tier3_drag_corotation_wind_effect() {
     sim_pro.step_n(n_steps);
     let body_pro = sim_pro.body(0);
     let e_loss_pro =
-        e_initial - orbital_energy(body_pro.trans.position, body_pro.trans.velocity, MU_EARTH);
+        e_initial - specific_orbital_energy(body_pro.trans.position, body_pro.trans.velocity, MU_EARTH);
 
     // Retrograde orbit with co-rotation wind
     let mut sim_retro = make_drag_sim_with_wind(pos, vel_retrograde, mass, cd, area, density, dt);
@@ -417,7 +419,7 @@ fn tier3_drag_corotation_wind_effect() {
     let body_retro = sim_retro.body(0);
     // For retrograde, initial energy is the same magnitude
     let e_loss_retro = e_initial
-        - orbital_energy(
+        - specific_orbital_energy(
             body_retro.trans.position,
             body_retro.trans.velocity,
             MU_EARTH,

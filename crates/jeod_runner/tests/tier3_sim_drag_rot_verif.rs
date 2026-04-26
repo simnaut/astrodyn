@@ -13,6 +13,8 @@
 use jeod_runner::prelude::*;
 use jeod_runner::run_verification::sim_dyncomp;
 
+// non-recipe: SIM_dyncomp RUN_6B with structural-to-body rotation; the test
+// content is the rotation-frame invariance, not a recipe vehicle.
 #[test]
 fn tier3_simulation_drag_run6b_rotated() {
     sim_dyncomp::run6b_drag_rotated_struct().run_and_assert();
