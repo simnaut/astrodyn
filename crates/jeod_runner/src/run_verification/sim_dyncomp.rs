@@ -787,6 +787,126 @@ pub fn run5a_met() -> VerificationCase {
     }
 }
 
+// ── RUN_6B aero-trajectory variants (sphere + drag, position+velocity only) ─
+
+/// Build a RUN_6B-style sphere/drag scenario reading initial conditions
+/// from an aero-trajectory CSV (`dyncomp_run6b_aero_aero_traj.csv` or the
+/// rotated-frame variant). Uses `MassProperties::new(1.0)` (1 kg sphere
+/// with no explicit inertia) per JEOD's RUN_6B sphere replacement.
+fn build_run6b_aero_traj(csv_name: &'static str, t_struct_body: DMat3) -> SimulationBuilder {
+    let jeod = jeod_root();
+    let sim_dir = jeod.join(SIM_DYNCOMP);
+    let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+    let mu_earth = jeod_sim::coefficients::load_mu_from_jeod_cc(
+        &jeod.join("models/environment/gravity/data/src/earth_GGM05C.cc"),
+    )
+    .expect("load Earth mu");
+
+    let csv_path = test_data_path(csv_name);
+    assert!(
+        csv_path.exists(),
+        "Aero-trajectory CSV not found at {}.\n\
+         Generate with Docker (see CLAUDE.md).",
+        csv_path.display()
+    );
+    let records = jeod_test_data::tier3_csv::load_aero_traj_csv(&csv_path);
+    assert!(records.len() > 100, "{csv_name}: too few records");
+    let init = &records[0];
+
+    let mut sb = SimulationBuilder::new(dyncomp_time(), dt);
+    let earth = sb.add_source("Earth", earth_pm_with_rnp(mu_earth));
+    sb = sb.atmosphere(
+        AtmosphereConfig {
+            model: AtmosphereModel::Met(met_solar_mean()),
+            r_eq: EARTH.shape.r_eq,
+            r_pol: EARTH.shape.r_pol,
+            planet_omega: OMEGA_EARTH,
+        },
+        earth,
+    );
+    sb.add_body(VehicleConfig {
+        trans: TranslationalState {
+            position: init.position,
+            velocity: init.velocity,
+        },
+        rot: Some(RotationalState {
+            quaternion: JeodQuat::identity(),
+            ang_vel_body: DVec3::ZERO,
+        }),
+        mass: Some(MassProperties::new(1.0)),
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth, false)],
+        },
+        drag: Some(DragConfig {
+            cd: 0.02,
+            area: 1.0,
+            constant_density: None,
+        }),
+        t_struct_body,
+        ..Default::default()
+    });
+    sb
+}
+
+fn build_run6b_aero_identity() -> SimulationBuilder {
+    build_run6b_aero_traj("dyncomp_run6b_aero_aero_traj.csv", DMat3::IDENTITY)
+}
+
+fn build_run6b_aero_rotated() -> SimulationBuilder {
+    // 15° rotation about [1,1,1]/√3 — matches DYNCOMP_AERO_ROT_SNIPPET in
+    // generate_references.sh. For ballistic drag on a sphere the inertial
+    // force is rotation-invariant, so the trajectory must match the
+    // identity case; any divergence indicates a frame-transform bug.
+    let eigen_angle = 15.0_f64.to_radians();
+    let eigen_axis = DVec3::new(1.0, 1.0, 1.0).normalize();
+    let q_struct_body = JeodQuat::left_quat_from_eigen_rotation(eigen_angle, eigen_axis);
+    build_run6b_aero_traj(
+        "dyncomp_run6b_rot_aero_traj.csv",
+        q_struct_body.left_quat_to_transformation(),
+    )
+}
+
+/// SIM_dyncomp RUN_6B — sphere + drag, identity structural frame.
+/// Validates the drag pipeline against the aero-trajectory CSV
+/// (position+velocity only; aero_force is not exposed on
+/// `VehicleOutput`).
+pub fn run6b_drag_aero_traj() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_simulation_drag_run6b",
+        scenario: build_run6b_aero_identity,
+        reference: CsvReference::AeroTraj("dyncomp_run6b_aero_aero_traj.csv"),
+        duration: Time::new::<second>(28800.0),
+        tolerances: Tolerances {
+            position_m: [1.12, 1.12, 1.12],
+            velocity_m_s: [1.254e-3, 1.254e-3, 1.254e-3],
+            quat_angle_rad: 0.0,
+            ang_vel_rad_s: [0.0; 3],
+            extras: &[],
+        },
+        extras: None,
+    }
+}
+
+/// SIM_dyncomp RUN_6B with a 15° rotation about [1,1,1]/√3 applied to
+/// the structural-to-body transform. Should match the identity case
+/// since ballistic drag on a sphere is rotation-invariant.
+pub fn run6b_drag_rotated_struct() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_simulation_drag_run6b_rotated",
+        scenario: build_run6b_aero_rotated,
+        reference: CsvReference::AeroTraj("dyncomp_run6b_rot_aero_traj.csv"),
+        duration: Time::new::<second>(28800.0),
+        tolerances: Tolerances {
+            position_m: [0.798, 1.114, 0.895],
+            velocity_m_s: [7.861e-4, 1.254e-3, 1.003e-3],
+            quat_angle_rad: 0.0,
+            ang_vel_rad_s: [0.0; 3],
+            extras: &[],
+        },
+        extras: None,
+    }
+}
+
 /// SIM_dyncomp RUN_10D — gravity-gradient torque, elliptical orbit,
 /// non-zero initial body rate.
 pub fn run10d_gravity_torque_elliptical_rate() -> VerificationCase {
