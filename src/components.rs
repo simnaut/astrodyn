@@ -11,31 +11,31 @@ use jeod_sim::{
 
 // JEOD_INV: DB.24 — default integrated_frame is composite_body (we integrate composite_body state)
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Default, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct TranslationalStateC(pub TranslationalState);
 
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct RotationalStateC(pub RotationalState);
 
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct MassPropertiesC(pub MassProperties);
 
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Default, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct GravityAccelerationC(pub GravityAcceleration);
 
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Default, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct TotalForceC(pub TotalForce);
 
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Default, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct FrameDerivativesC(pub FrameDerivatives);
 
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 #[require(FrameDerivativesC)]
 pub struct DynamicsConfigC(pub DynamicsConfig);
 
@@ -44,7 +44,7 @@ pub struct DynamicsConfigC(pub DynamicsConfig);
 /// When present on a dynamic body entity, the integration system dispatches
 /// to the specified method. When absent, `IntegratorType::Rk4` is used.
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct IntegratorTypeC(pub jeod_sim::IntegratorType);
 
 /// Persistent Gauss-Jackson (Störmer-Cowell) integrator state.
@@ -53,7 +53,7 @@ pub struct IntegratorTypeC(pub jeod_sim::IntegratorType);
 /// with `GaussJacksonState::new(config)` and maintained across steps.
 /// When absent, `integration_system` will panic if `IntegratorTypeC` is GJ.
 #[derive(Component, Debug, Clone, Deref, DerefMut, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct GaussJacksonStateC(pub jeod_sim::GaussJacksonState);
 
 /// Persistent Adams-Bashforth-Moulton 4 integrator state.
@@ -62,16 +62,16 @@ pub struct GaussJacksonStateC(pub jeod_sim::GaussJacksonState);
 /// `Abm4State::new()` and maintained across steps. When absent,
 /// `integration_system` will panic if `IntegratorTypeC` is `Abm4`.
 #[derive(Component, Debug, Clone, Default, Deref, DerefMut, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct Abm4StateC(pub jeod_sim::Abm4State);
 
 #[derive(Component, Debug, Clone, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 #[require(GravityAccelerationC, TotalForceC)]
 pub struct GravityControlsC(pub GravityControls<Entity>);
 
 #[derive(Component, Debug, Clone, Deref, DerefMut, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct GravitySourceC(pub GravitySource);
 
 /// Inertial-frame position of a gravity source.
@@ -86,7 +86,7 @@ pub struct GravitySourceC(pub GravitySource);
 /// if a source entity referenced by a `GravityControlsC` is missing this
 /// component.
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct SourceInertialPositionC(pub Position<Inertial>);
 
 /// Inertial-frame velocity of a gravity source.
@@ -102,7 +102,7 @@ pub struct SourceInertialPositionC(pub Position<Inertial>);
 /// `TranslationalStateC` to avoid Bevy query conflicts (the body's
 /// `TranslationalStateC` is already mutably queried by the integration system).
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct SourceInertialVelocityC(pub Velocity<Inertial>);
 
 /// Aerodynamic force and torque in the **structural** frame (N, N*m).
@@ -111,7 +111,7 @@ pub struct SourceInertialVelocityC(pub Velocity<Inertial>);
 /// `force_collection_system` rotates force to inertial and torque to body
 /// via `StructuralTransformC`.
 #[derive(Component, Debug, Clone, Copy, Default, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct AerodynamicForceC {
     pub force: DVec3,
     pub torque: DVec3,
@@ -125,7 +125,7 @@ pub struct AerodynamicForceC {
 /// Written by `flat_plate_srp_system`.
 /// `force_collection_system` rotates torque to body via `StructuralTransformC`.
 #[derive(Component, Debug, Clone, Copy, Default, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct RadiationForceC {
     pub force: DVec3,
     pub torque: DVec3,
@@ -136,7 +136,7 @@ pub struct RadiationForceC {
 /// Written by the gravity torque system.
 /// Read by `force_collection_system` as `Option<&GravityTorqueC>`.
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct GravityTorqueC(pub Torque<BodyFrame<SelfRef>>);
 
 // JEOD_INV: AT.01 — active flag gates computation (presence of AtmosphericStateC = active)
@@ -144,7 +144,7 @@ pub struct GravityTorqueC(pub Torque<BodyFrame<SelfRef>>);
 ///
 /// Written by the atmosphere system. Read by the aerodynamic drag system.
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct AtmosphericStateC(pub jeod_sim::AtmosphereState);
 
 /// Typed structural→body rotation for a vehicle entity.
@@ -165,7 +165,7 @@ pub struct AtmosphericStateC(pub jeod_sim::AtmosphereState);
 // JEOD_INV: DB.28 — forces collected in structural frame, rotated to inertial at root
 // JEOD_INV: DB.29 — torques collected in structural frame, rotated to body at root
 #[derive(Component, Debug, Clone, Copy, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct StructuralTransformC(pub FrameTransform<StructuralFrame<SelfRef>, BodyFrame<SelfRef>>);
 
 impl Default for StructuralTransformC {
@@ -188,7 +188,7 @@ impl Default for StructuralTransformC {
 /// rotate the spacecraft position into the body-fixed frame before evaluating
 /// spherical-harmonic gravity.
 #[derive(Component, Debug, Clone, Copy, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct PlanetFixedRotationC(pub FrameTransform<Inertial, PlanetFixed<SelfPlanet>>);
 
 /// Tidal configuration for a gravity source entity.
@@ -206,7 +206,7 @@ pub struct PlanetFixedRotationC(pub FrameTransform<Inertial, PlanetFixed<SelfPla
 /// `from_untyped` / `From` impls are provided for callers building from
 /// the untyped struct.
 #[derive(Component, Debug, Clone, Deref, DerefMut, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 #[require(TidalDeltaC20C)]
 pub struct TidalConfigC(pub jeod_sim::TidalConfigTyped);
 
@@ -244,7 +244,7 @@ impl From<jeod_sim::TidalConfigTyped> for TidalConfigC {
 /// metadata at the type level — matching `compute_delta_c20_typed`'s
 /// return type.
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct TidalDeltaC20C(pub Ratio);
 
 // ── Interactions ──
@@ -258,7 +258,7 @@ pub struct TidalDeltaC20C(pub Ratio);
 ///
 /// Auto-inserts [`AtmosphericStateC`] and [`AerodynamicForceC`] when added.
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 #[require(AtmosphericStateC, AerodynamicForceC)]
 pub struct DragConfigC(pub DragConfigTyped);
 
@@ -294,7 +294,7 @@ impl From<DragConfigTyped> for DragConfigC {
 ///
 /// Auto-inserts [`RadiationForceC`] when added.
 #[derive(Component, Debug, Clone, Deref, DerefMut, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 #[require(RadiationForceC)]
 pub struct FlatPlateConfigC(pub jeod_sim::FlatPlateState);
 
@@ -304,7 +304,7 @@ pub struct FlatPlateConfigC(pub jeod_sim::FlatPlateState);
 /// and computes the illumination factor for SRP. Place on any planet
 /// entity along with `TranslationalStateC`.
 #[derive(Component, Debug, Clone, Copy, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct ShadowBodyC {
     /// Body radius (m) for conical shadow computation.
     pub radius: f64,
@@ -317,7 +317,7 @@ pub struct ShadowBodyC {
 /// computation based on this value. When absent, `EarthRNP` is assumed
 /// for backward compatibility.
 #[derive(Component, Debug, Clone, Deref, DerefMut, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct RotationModelC(pub jeod_sim::RotationModel);
 
 /// Ephemeris body mapping for automatic position updates from DE4xx.
@@ -326,7 +326,7 @@ pub struct RotationModelC(pub jeod_sim::RotationModel);
 /// queries the `EphemerisR` resource each step to update the entity's
 /// `SourceInertialPositionC` (and optionally `TranslationalStateC`).
 #[derive(Component, Debug, Clone, Copy, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct EphemerisBodyC {
     /// The body this source represents (e.g., `EphemerisBody::Sun`).
     pub target: jeod_sim::EphemerisBody,
@@ -344,7 +344,7 @@ pub struct EphemerisBodyC {
 ///
 /// Auto-inserts [`RadiationForceC`] when added.
 #[derive(Component, Debug, Clone, Copy, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 #[require(RadiationForceC)]
 pub struct CannonballSrpC {
     /// Cross-section area * Cr (m²).
@@ -357,19 +357,19 @@ pub struct CannonballSrpC {
 
 /// Marker component for the Sun entity (used by SRP system to find Sun position).
 #[derive(Component, Reflect, Default, Clone, Copy, Debug)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct SunMarker;
 
 /// Marker component for the Moon entity (used by earth lighting system).
 #[derive(Component, Reflect, Default, Clone, Copy, Debug)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct MoonMarker;
 
 // ── Planet ──
 
 /// Bevy component wrapping `PlanetShape`.
 #[derive(Component, Debug, Clone, Deref, DerefMut, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct PlanetC(pub PlanetShape);
 
 // ── Derived State Configuration ──
@@ -380,7 +380,7 @@ pub struct PlanetC(pub PlanetShape);
 /// Presence of this component + `OrbitalElementsC` on an entity enables
 /// per-step orbital elements computation in `JeodSet::DerivedState`.
 #[derive(Component, Debug, Clone, Copy, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 #[require(OrbitalElementsC)]
 pub struct OrbitalElementsConfigC {
     pub gravity_source: Entity,
@@ -391,7 +391,7 @@ pub struct OrbitalElementsConfigC {
 /// Presence of this component + `EulerAnglesC` on an entity enables
 /// per-step Euler angle computation in `JeodSet::DerivedState`.
 #[derive(Component, Debug, Clone, Copy, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 #[require(EulerAnglesC)]
 pub struct EulerAnglesConfigC {
     pub sequence: jeod_sim::EulerSequence,
@@ -404,7 +404,7 @@ pub struct EulerAnglesConfigC {
 /// Presence of this component + `GeodeticStateC` on an entity enables
 /// per-step geodetic computation in `JeodSet::DerivedState`.
 #[derive(Component, Debug, Clone, Copy, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 #[require(GeodeticStateC)]
 pub struct GeodeticConfigC {
     pub planet: Entity,
@@ -417,7 +417,7 @@ pub struct GeodeticConfigC {
 /// Written by `orbital_elements_system` for entities that also have
 /// `OrbitalElementsConfigC`.
 #[derive(Component, Debug, Clone, Default, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct OrbitalElementsC(pub jeod_sim::OrbitalElements);
 
 /// Euler angles `[phi, theta, psi]` computed each step.
@@ -426,7 +426,7 @@ pub struct OrbitalElementsC(pub jeod_sim::OrbitalElements);
 /// `EulerAnglesConfigC`. Each component is a [`Angle`] (uom radian-backed
 /// scalar) so consumers don't have to remember the radian convention.
 #[derive(Component, Debug, Clone, Copy, Default, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct EulerAnglesC(pub [Angle; 3]);
 
 /// LVLH (Local Vertical Local Horizontal) frame computed each step.
@@ -434,14 +434,14 @@ pub struct EulerAnglesC(pub [Angle; 3]);
 /// Presence of this component alone enables computation — no separate
 /// config component needed (only requires translational state).
 #[derive(Component, Debug, Clone, Copy, Default, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct LvlhFrameC(pub jeod_sim::LvlhFrame);
 
 /// Geodetic state (latitude, longitude, altitude) computed each step.
 ///
 /// Written by `geodetic_system` for entities that also have `GeodeticConfigC`.
 #[derive(Component, Debug, Clone, Copy, Default, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct GeodeticStateC(pub jeod_sim::GeodeticState);
 
 /// Solar beta angle (radians) computed each step.
@@ -449,7 +449,7 @@ pub struct GeodeticStateC(pub jeod_sim::GeodeticState);
 /// Presence of this component alone enables computation — requires a
 /// `SunMarker` entity to exist in the world.
 #[derive(Component, Debug, Clone, Copy, Default, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct SolarBetaC(pub f64);
 
 /// Configuration for Earth lighting (eclipse/albedo) computation.
@@ -458,7 +458,7 @@ pub struct SolarBetaC(pub f64);
 /// Presence of this component + `EarthLightingStateC` on an entity enables
 /// per-step earth lighting computation in `JeodSet::DerivedState`.
 #[derive(Component, Debug, Clone, Copy, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 #[require(EarthLightingStateC)]
 pub struct EarthLightingConfigC {
     /// Earth equatorial radius (m).
@@ -474,7 +474,7 @@ pub struct EarthLightingConfigC {
 /// Written by `earth_lighting_system` for entities that also have
 /// `EarthLightingConfigC`.
 #[derive(Component, Debug, Clone, Default, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct EarthLightingStateC(pub jeod_sim::EarthLightingState);
 
 // ── External Loads ──
@@ -486,7 +486,7 @@ pub struct EarthLightingStateC(pub jeod_sim::EarthLightingState);
 ///
 /// Mutate between steps to implement time-scheduled force injection.
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct ExternalForceC(pub jeod_sim::Force<Inertial>);
 
 /// External torque in the **body** frame.
@@ -496,7 +496,7 @@ pub struct ExternalForceC(pub jeod_sim::Force<Inertial>);
 ///
 /// Mutate between steps to implement time-scheduled torque injection.
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct ExternalTorqueC(pub Torque<BodyFrame<SelfRef>>);
 
 // ── Mass Tree (Staging) ──
@@ -507,7 +507,7 @@ pub struct ExternalTorqueC(pub Torque<BodyFrame<SelfRef>>);
 /// attach/detach events are processed, the entity's [`MassPropertiesC`]
 /// is synced from the tree's composite properties.
 #[derive(Component, Debug, Clone, Copy, Reflect)]
-#[reflect(opaque)]
+#[reflect(opaque, Component)]
 pub struct MassBodyIdC(pub jeod_sim::MassBodyId);
 
 /// Message: attach a child body to a parent in the mass tree.
