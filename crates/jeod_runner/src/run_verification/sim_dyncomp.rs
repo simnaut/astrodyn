@@ -13,14 +13,15 @@ use std::path::PathBuf;
 
 use glam::{DMat3, DVec3};
 use jeod_sim::met_atmosphere;
-use jeod_sim::recipes::verification::{CsvReference, Tolerances, VerificationCase};
+use jeod_sim::recipes::verification::{
+    CsvReference, InitialConditions, Tolerances, VerificationCase,
+};
 use jeod_sim::{
     coefficients::load_from_jeod_cc, default_leap_second_table, AtmosphereConfig, AtmosphereModel,
     DragConfig, GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry,
     JeodQuat, MassProperties, MetAtmosphere, RotationModel, RotationalState, SimulationBuilder,
     SimulationTime, TranslationalState, VehicleConfig, EARTH,
 };
-use jeod_test_data::tier3_csv::test_data_path;
 use uom::si::f64::Time;
 use uom::si::time::second;
 
@@ -38,19 +39,6 @@ fn jeod_root() -> PathBuf {
         r.display()
     );
     r
-}
-
-fn dyncomp_csv(name: &str) -> Vec<jeod_test_data::dyncomp_csv::DyncompRecord> {
-    let path = test_data_path(name);
-    assert!(
-        path.exists(),
-        "JEOD reference not found at {}.\n\
-         Generate with: docker run --rm -v $(pwd)/test_data:/output -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro jeod-trick",
-        path.display()
-    );
-    let records = jeod_test_data::dyncomp_csv::load_dyncomp_csv(&path);
-    assert!(records.len() > 100, "{}: too few records", name);
-    records
 }
 
 fn point_mass_earth_source(mu: f64) -> GravitySourceEntry {
@@ -72,24 +60,45 @@ fn point_mass_earth_source(mu: f64) -> GravitySourceEntry {
 
 // ── RUN_2: Point-mass 3-DOF / 6-DOF ────────────────────────────────────────
 
-fn build_run2_3dof() -> SimulationBuilder {
+/// Translational state from the t=0 [`InitialConditions`] passed by
+/// `run_and_assert`. Centralises the common builder pattern shared by
+/// every dyncomp scenario.
+fn trans_from(init: &InitialConditions) -> TranslationalState {
+    TranslationalState {
+        position: init.position,
+        velocity: init.velocity,
+    }
+}
+
+/// Rotational state from a 6-DOF [`InitialConditions`]. Panics with a
+/// descriptive error if either field is `None` (a 3-DOF init was passed
+/// to a 6-DOF scenario constructor).
+fn rot_from(init: &InitialConditions, case: &str) -> RotationalState {
+    let q = init
+        .quaternion
+        .unwrap_or_else(|| panic!("{case}: 6-DOF scenario expected init.quaternion"));
+    let w = init
+        .ang_vel
+        .unwrap_or_else(|| panic!("{case}: 6-DOF scenario expected init.ang_vel"));
+    RotationalState {
+        quaternion: JeodQuat::from_glam(q),
+        ang_vel_body: w,
+    }
+}
+
+fn build_run2_3dof(init: &InitialConditions) -> SimulationBuilder {
     let jeod = jeod_root();
     let sim_dir = jeod.join(SIM_DYNCOMP);
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
     let earth_grav =
         load_from_jeod_cc(&jeod.join("models/environment/gravity/data/src/earth_GGM05C.cc"))
             .expect("load Earth gravity");
-    let trajectory = dyncomp_csv("dyncomp_run2_state.csv");
-    let init = &trajectory[0];
 
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, dt);
     let earth = sb.add_source("Earth", point_mass_earth_source(earth_grav.mu));
     sb.add_body(VehicleConfig {
-        trans: TranslationalState {
-            position: init.composite_body.position,
-            velocity: init.composite_body.velocity,
-        },
+        trans: trans_from(init),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
         },
@@ -98,7 +107,7 @@ fn build_run2_3dof() -> SimulationBuilder {
     sb
 }
 
-fn build_run2_6dof() -> SimulationBuilder {
+fn build_run2_6dof(init: &InitialConditions) -> SimulationBuilder {
     let jeod = jeod_root();
     let sim_dir = jeod.join(SIM_DYNCOMP);
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
@@ -109,8 +118,6 @@ fn build_run2_6dof() -> SimulationBuilder {
         &sim_dir.join("Modified_data/mass.py"),
         Some("set_mass_iss"),
     );
-    let trajectory = dyncomp_csv("dyncomp_run2_state.csv");
-    let init = &trajectory[0];
 
     let inertia = DMat3::from_cols(
         DVec3::new(
@@ -139,14 +146,8 @@ fn build_run2_6dof() -> SimulationBuilder {
     let mut sb = SimulationBuilder::new(time, dt);
     let earth = sb.add_source("Earth", point_mass_earth_source(earth_grav.mu));
     sb.add_body(VehicleConfig {
-        trans: TranslationalState {
-            position: init.composite_body.position,
-            velocity: init.composite_body.velocity,
-        },
-        rot: Some(RotationalState {
-            quaternion: JeodQuat::from_glam(init.composite_body.quaternion),
-            ang_vel_body: init.composite_body.ang_vel,
-        }),
+        trans: trans_from(init),
+        rot: Some(rot_from(init, "run2_6dof")),
         mass: Some(mass_props),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
@@ -316,7 +317,7 @@ fn earth_pm_with_rnp(mu: f64) -> GravitySourceEntry {
 
 // ── RUN_3A / RUN_3B: spherical-harmonics gravity (4x4 / 8x8) + RNP ─────────
 
-fn build_run3_3dof(run_dir: &str, csv_name: &str) -> SimulationBuilder {
+fn build_run3_3dof(init: &InitialConditions, run_dir: &str) -> SimulationBuilder {
     let jeod = jeod_root();
     let sim_dir = jeod.join(SIM_DYNCOMP);
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
@@ -330,16 +331,10 @@ fn build_run3_3dof(run_dir: &str, csv_name: &str) -> SimulationBuilder {
     let grav_file_refs: Vec<&std::path::Path> = grav_files.iter().map(|p| p.as_path()).collect();
     let grav_cfg = jeod_test_data::gravity_control::load_gravity_control(&grav_file_refs);
 
-    let trajectory = dyncomp_csv(csv_name);
-    let init = &trajectory[0];
-
     let mut sb = SimulationBuilder::new(dyncomp_time(), dt);
     let earth = sb.add_source("Earth", earth_sh_with_rnp());
     sb.add_body(VehicleConfig {
-        trans: TranslationalState {
-            position: init.composite_body.position,
-            velocity: init.composite_body.velocity,
-        },
+        trans: trans_from(init),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_nonspherical(
                 earth,
@@ -353,12 +348,12 @@ fn build_run3_3dof(run_dir: &str, csv_name: &str) -> SimulationBuilder {
     sb
 }
 
-fn build_run3a() -> SimulationBuilder {
-    build_run3_3dof("RUN_3A", "dyncomp_run3a_state.csv")
+fn build_run3a(init: &InitialConditions) -> SimulationBuilder {
+    build_run3_3dof(init, "RUN_3A")
 }
 
-fn build_run3b() -> SimulationBuilder {
-    build_run3_3dof("RUN_3B", "dyncomp_run3b_state.csv")
+fn build_run3b(init: &InitialConditions) -> SimulationBuilder {
+    build_run3_3dof(init, "RUN_3B")
 }
 
 /// SIM_dyncomp RUN_3A — 4×4 spherical-harmonics gravity + RNP rotation.
@@ -399,7 +394,7 @@ pub fn run3b_sh8x8() -> VerificationCase {
 
 // ── RUN_5B / RUN_5C: elliptical, no drag, gradient=true ────────────────────
 
-fn build_run5(csv_name: &str) -> SimulationBuilder {
+fn build_run5(init: &InitialConditions, case: &str) -> SimulationBuilder {
     let jeod = jeod_root();
     let sim_dir = jeod.join(SIM_DYNCOMP);
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
@@ -408,21 +403,13 @@ fn build_run5(csv_name: &str) -> SimulationBuilder {
     )
     .expect("load Earth mu");
     let mass_props = iss_mass_properties();
-    let trajectory = dyncomp_csv(csv_name);
-    let init = &trajectory[0];
 
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, dt);
     let earth = sb.add_source("Earth", point_mass_earth_source(mu_earth));
     sb.add_body(VehicleConfig {
-        trans: TranslationalState {
-            position: init.composite_body.position,
-            velocity: init.composite_body.velocity,
-        },
-        rot: Some(RotationalState {
-            quaternion: JeodQuat::from_glam(init.composite_body.quaternion),
-            ang_vel_body: init.composite_body.ang_vel,
-        }),
+        trans: trans_from(init),
+        rot: Some(rot_from(init, case)),
         mass: Some(mass_props),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, true)], // gradient=true
@@ -432,12 +419,12 @@ fn build_run5(csv_name: &str) -> SimulationBuilder {
     sb
 }
 
-fn build_run5b() -> SimulationBuilder {
-    build_run5("dyncomp_run5b_state.csv")
+fn build_run5b(init: &InitialConditions) -> SimulationBuilder {
+    build_run5(init, "run5b")
 }
 
-fn build_run5c() -> SimulationBuilder {
-    build_run5("dyncomp_run5c_state.csv")
+fn build_run5c(init: &InitialConditions) -> SimulationBuilder {
+    build_run5(init, "run5c")
 }
 
 /// SIM_dyncomp RUN_5B — elliptical orbit, point-mass + gravity gradient,
@@ -489,7 +476,11 @@ fn met_solar_mean() -> MetAtmosphere {
     }
 }
 
-fn build_run6_drag(csv_name: &str, drag_config: DragConfig) -> SimulationBuilder {
+fn build_run6_drag(
+    init: &InitialConditions,
+    case: &str,
+    drag_config: DragConfig,
+) -> SimulationBuilder {
     let jeod = jeod_root();
     let sim_dir = jeod.join(SIM_DYNCOMP);
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
@@ -497,8 +488,6 @@ fn build_run6_drag(csv_name: &str, drag_config: DragConfig) -> SimulationBuilder
         load_from_jeod_cc(&jeod.join("models/environment/gravity/data/src/earth_GGM05C.cc"))
             .expect("load Earth gravity");
     let mass_props = sphere_mass_properties();
-    let trajectory = dyncomp_csv(csv_name);
-    let init = &trajectory[0];
 
     let mut sb = SimulationBuilder::new(dyncomp_time(), dt);
     let earth = sb.add_source("Earth", earth_pm_with_rnp(earth_grav.mu));
@@ -512,14 +501,8 @@ fn build_run6_drag(csv_name: &str, drag_config: DragConfig) -> SimulationBuilder
         earth,
     );
     sb.add_body(VehicleConfig {
-        trans: TranslationalState {
-            position: init.composite_body.position,
-            velocity: init.composite_body.velocity,
-        },
-        rot: Some(RotationalState {
-            quaternion: JeodQuat::from_glam(init.composite_body.quaternion),
-            ang_vel_body: init.composite_body.ang_vel,
-        }),
+        trans: trans_from(init),
+        rot: Some(rot_from(init, case)),
         mass: Some(mass_props),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],
@@ -530,9 +513,10 @@ fn build_run6_drag(csv_name: &str, drag_config: DragConfig) -> SimulationBuilder
     sb
 }
 
-fn build_run6a() -> SimulationBuilder {
+fn build_run6a(init: &InitialConditions) -> SimulationBuilder {
     build_run6_drag(
-        "dyncomp_run6a_state.csv",
+        init,
+        "run6a",
         DragConfig {
             cd: 0.02,
             area: 1.0,
@@ -541,9 +525,10 @@ fn build_run6a() -> SimulationBuilder {
     )
 }
 
-fn build_run6b() -> SimulationBuilder {
+fn build_run6b(init: &InitialConditions) -> SimulationBuilder {
     build_run6_drag(
-        "dyncomp_run6b_state.csv",
+        init,
+        "run6b",
         DragConfig {
             cd: 0.02,
             area: 1.0,
@@ -623,7 +608,7 @@ fn cylinder_mass_properties() -> MassProperties {
     )
 }
 
-fn build_run10(csv_name: &str) -> SimulationBuilder {
+fn build_run10(init: &InitialConditions, case: &str) -> SimulationBuilder {
     let jeod = jeod_root();
     let sim_dir = jeod.join(SIM_DYNCOMP);
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
@@ -631,21 +616,13 @@ fn build_run10(csv_name: &str) -> SimulationBuilder {
         load_from_jeod_cc(&jeod.join("models/environment/gravity/data/src/earth_GGM05C.cc"))
             .expect("load Earth gravity");
     let mass_props = cylinder_mass_properties();
-    let trajectory = dyncomp_csv(csv_name);
-    let init = &trajectory[0];
 
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, dt);
     let earth = sb.add_source("Earth", point_mass_earth_source(earth_grav.mu));
     sb.add_body(VehicleConfig {
-        trans: TranslationalState {
-            position: init.composite_body.position,
-            velocity: init.composite_body.velocity,
-        },
-        rot: Some(RotationalState {
-            quaternion: JeodQuat::from_glam(init.composite_body.quaternion),
-            ang_vel_body: init.composite_body.ang_vel,
-        }),
+        trans: trans_from(init),
+        rot: Some(rot_from(init, case)),
         mass: Some(mass_props),
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, true)], // gradient=true
@@ -656,16 +633,16 @@ fn build_run10(csv_name: &str) -> SimulationBuilder {
     sb
 }
 
-fn build_run10a() -> SimulationBuilder {
-    build_run10("dyncomp_run10a_state.csv")
+fn build_run10a(init: &InitialConditions) -> SimulationBuilder {
+    build_run10(init, "run10a")
 }
 
-fn build_run10c() -> SimulationBuilder {
-    build_run10("dyncomp_run10c_state.csv")
+fn build_run10c(init: &InitialConditions) -> SimulationBuilder {
+    build_run10(init, "run10c")
 }
 
-fn build_run10d() -> SimulationBuilder {
-    build_run10("dyncomp_run10d_state.csv")
+fn build_run10d(init: &InitialConditions) -> SimulationBuilder {
+    build_run10(init, "run10d")
 }
 
 /// SIM_dyncomp RUN_10A — gravity-gradient torque, cylinder mass, 6-DOF.
@@ -709,7 +686,7 @@ pub fn run10c_gravity_torque_elliptical() -> VerificationCase {
 
 // ── RUN_5A: MET atmosphere validation (drag off, atmosphere live) ─────────
 
-fn build_run5a_met() -> SimulationBuilder {
+fn build_run5a_met(init: &InitialConditions) -> SimulationBuilder {
     let jeod = jeod_root();
     let sim_dir = jeod.join(SIM_DYNCOMP);
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
@@ -718,16 +695,6 @@ fn build_run5a_met() -> SimulationBuilder {
     )
     .expect("load Earth mu");
     let mass_props = iss_mass_properties();
-    let csv_path = test_data_path("dyncomp_run5a_atmos_atmos_traj.csv");
-    assert!(
-        csv_path.exists(),
-        "Atmosphere trajectory CSV not found at {}.\n\
-         Generate with Docker (see CLAUDE.md).",
-        csv_path.display()
-    );
-    let records = jeod_test_data::tier3_csv::load_atmos_traj_csv(&csv_path);
-    assert!(records.len() > 100, "Expected >100 records");
-    let init = &records[0];
 
     // RUN_5A: minimum solar activity (F10.7 = 70, Ap = 0)
     let met_model = MetAtmosphere {
@@ -749,10 +716,7 @@ fn build_run5a_met() -> SimulationBuilder {
         earth,
     );
     sb.add_body(VehicleConfig {
-        trans: TranslationalState {
-            position: init.position,
-            velocity: init.velocity,
-        },
+        trans: trans_from(init),
         rot: Some(RotationalState {
             quaternion: JeodQuat::identity(),
             ang_vel_body: DVec3::ZERO,
@@ -793,7 +757,7 @@ pub fn run5a_met() -> VerificationCase {
 /// from an aero-trajectory CSV (`dyncomp_run6b_aero_aero_traj.csv` or the
 /// rotated-frame variant). Uses `MassProperties::new(1.0)` (1 kg sphere
 /// with no explicit inertia) per JEOD's RUN_6B sphere replacement.
-fn build_run6b_aero_traj(csv_name: &'static str, t_struct_body: DMat3) -> SimulationBuilder {
+fn build_run6b_aero_traj(init: &InitialConditions, t_struct_body: DMat3) -> SimulationBuilder {
     let jeod = jeod_root();
     let sim_dir = jeod.join(SIM_DYNCOMP);
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
@@ -801,17 +765,6 @@ fn build_run6b_aero_traj(csv_name: &'static str, t_struct_body: DMat3) -> Simula
         &jeod.join("models/environment/gravity/data/src/earth_GGM05C.cc"),
     )
     .expect("load Earth mu");
-
-    let csv_path = test_data_path(csv_name);
-    assert!(
-        csv_path.exists(),
-        "Aero-trajectory CSV not found at {}.\n\
-         Generate with Docker (see CLAUDE.md).",
-        csv_path.display()
-    );
-    let records = jeod_test_data::tier3_csv::load_aero_traj_csv(&csv_path);
-    assert!(records.len() > 100, "{csv_name}: too few records");
-    let init = &records[0];
 
     let mut sb = SimulationBuilder::new(dyncomp_time(), dt);
     let earth = sb.add_source("Earth", earth_pm_with_rnp(mu_earth));
@@ -825,10 +778,7 @@ fn build_run6b_aero_traj(csv_name: &'static str, t_struct_body: DMat3) -> Simula
         earth,
     );
     sb.add_body(VehicleConfig {
-        trans: TranslationalState {
-            position: init.position,
-            velocity: init.velocity,
-        },
+        trans: trans_from(init),
         rot: Some(RotationalState {
             quaternion: JeodQuat::identity(),
             ang_vel_body: DVec3::ZERO,
@@ -848,11 +798,11 @@ fn build_run6b_aero_traj(csv_name: &'static str, t_struct_body: DMat3) -> Simula
     sb
 }
 
-fn build_run6b_aero_identity() -> SimulationBuilder {
-    build_run6b_aero_traj("dyncomp_run6b_aero_aero_traj.csv", DMat3::IDENTITY)
+fn build_run6b_aero_identity(init: &InitialConditions) -> SimulationBuilder {
+    build_run6b_aero_traj(init, DMat3::IDENTITY)
 }
 
-fn build_run6b_aero_rotated() -> SimulationBuilder {
+fn build_run6b_aero_rotated(init: &InitialConditions) -> SimulationBuilder {
     // 15° rotation about [1,1,1]/√3 — matches DYNCOMP_AERO_ROT_SNIPPET in
     // generate_references.sh. For ballistic drag on a sphere the inertial
     // force is rotation-invariant, so the trajectory must match the
@@ -860,10 +810,7 @@ fn build_run6b_aero_rotated() -> SimulationBuilder {
     let eigen_angle = 15.0_f64.to_radians();
     let eigen_axis = DVec3::new(1.0, 1.0, 1.0).normalize();
     let q_struct_body = JeodQuat::left_quat_from_eigen_rotation(eigen_angle, eigen_axis);
-    build_run6b_aero_traj(
-        "dyncomp_run6b_rot_aero_traj.csv",
-        q_struct_body.left_quat_to_transformation(),
-    )
+    build_run6b_aero_traj(init, q_struct_body.left_quat_to_transformation())
 }
 
 /// SIM_dyncomp RUN_6B — sphere + drag, identity structural frame.

@@ -13,12 +13,13 @@
 //! Modified_data file.
 
 use glam::DVec3;
-use jeod_sim::recipes::verification::{CsvReference, Tolerances, VerificationCase};
+use jeod_sim::recipes::verification::{
+    CsvReference, InitialConditions, Tolerances, VerificationCase,
+};
 use jeod_sim::{
     default_leap_second_table, GravityControl, GravityControls, GravityModel, GravitySource,
     GravitySourceEntry, SimulationBuilder, SimulationTime, TranslationalState, VehicleConfig,
 };
-use jeod_test_data::tier3_csv::{load_orbinit_csv, test_data_path};
 use uom::si::f64::Time;
 use uom::si::time::second;
 
@@ -37,22 +38,11 @@ fn load_mu_earth() -> f64 {
     .expect("load Earth mu from GGM05C")
 }
 
-fn build_planetary(csv_name: &str) -> SimulationBuilder {
+fn build_planetary(init: &InitialConditions) -> SimulationBuilder {
     let jeod_root = jeod_test_data::jeod_path();
     let dt =
         jeod_test_data::s_define::load_dynamics_dt(&jeod_root.join(SIM_PLANETARY).join("S_define"));
     let mu_earth = load_mu_earth();
-
-    let csv_path = test_data_path(csv_name);
-    assert!(
-        csv_path.exists(),
-        "JEOD reference not found at {}.\n\
-         Generate with Docker (see CLAUDE.md).",
-        csv_path.display()
-    );
-    let ref_records = load_orbinit_csv(&csv_path);
-    assert!(!ref_records.is_empty(), "{}: no reference data", csv_name);
-    let init = &ref_records[0];
 
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, dt);
@@ -82,26 +72,6 @@ fn build_planetary(csv_name: &str) -> SimulationBuilder {
     sb
 }
 
-fn build_leo_inc() -> SimulationBuilder {
-    build_planetary("planetary_leo_inc_planetary.csv")
-}
-
-fn build_leo_polar() -> SimulationBuilder {
-    build_planetary("planetary_leo_polar_planetary.csv")
-}
-
-fn build_leo_ecc() -> SimulationBuilder {
-    build_planetary("planetary_leo_ecc_planetary.csv")
-}
-
-fn build_leo_equ() -> SimulationBuilder {
-    build_planetary("planetary_leo_equ_planetary.csv")
-}
-
-fn build_geo() -> SimulationBuilder {
-    build_planetary("planetary_geo_planetary.csv")
-}
-
 const PLANETARY_TOLS: Tolerances = Tolerances {
     position_m: [1.0, 1.0, 1.0],
     velocity_m_s: [0.001, 0.001, 0.001],
@@ -114,7 +84,7 @@ const PLANETARY_TOLS: Tolerances = Tolerances {
 pub fn leo_inc() -> VerificationCase {
     VerificationCase {
         name: "tier3_simulation_planetary_leo_inc",
-        scenario: build_leo_inc,
+        scenario: build_planetary,
         reference: CsvReference::OrbInit("planetary_leo_inc_planetary.csv"),
         duration: Time::new::<second>(86400.0),
         tolerances: PLANETARY_TOLS,
@@ -126,7 +96,7 @@ pub fn leo_inc() -> VerificationCase {
 pub fn leo_polar() -> VerificationCase {
     VerificationCase {
         name: "tier3_simulation_planetary_leo_polar",
-        scenario: build_leo_polar,
+        scenario: build_planetary,
         reference: CsvReference::OrbInit("planetary_leo_polar_planetary.csv"),
         duration: Time::new::<second>(86400.0),
         tolerances: PLANETARY_TOLS,
@@ -138,7 +108,7 @@ pub fn leo_polar() -> VerificationCase {
 pub fn leo_ecc() -> VerificationCase {
     VerificationCase {
         name: "tier3_simulation_planetary_leo_ecc",
-        scenario: build_leo_ecc,
+        scenario: build_planetary,
         reference: CsvReference::OrbInit("planetary_leo_ecc_planetary.csv"),
         duration: Time::new::<second>(86400.0),
         tolerances: PLANETARY_TOLS,
@@ -150,7 +120,7 @@ pub fn leo_ecc() -> VerificationCase {
 pub fn leo_equ() -> VerificationCase {
     VerificationCase {
         name: "tier3_simulation_planetary_leo_equ",
-        scenario: build_leo_equ,
+        scenario: build_planetary,
         reference: CsvReference::OrbInit("planetary_leo_equ_planetary.csv"),
         duration: Time::new::<second>(86400.0),
         tolerances: PLANETARY_TOLS,
@@ -162,7 +132,7 @@ pub fn leo_equ() -> VerificationCase {
 pub fn geo() -> VerificationCase {
     VerificationCase {
         name: "tier3_simulation_planetary_geo",
-        scenario: build_geo,
+        scenario: build_planetary,
         reference: CsvReference::OrbInit("planetary_geo_planetary.csv"),
         duration: Time::new::<second>(86400.0),
         tolerances: PLANETARY_TOLS,

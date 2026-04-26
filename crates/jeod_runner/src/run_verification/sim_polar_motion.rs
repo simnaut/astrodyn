@@ -8,13 +8,14 @@
 //! propagation.
 
 use glam::DVec3;
-use jeod_sim::recipes::verification::{CsvReference, Tolerances, VerificationCase};
+use jeod_sim::recipes::verification::{
+    CsvReference, InitialConditions, Tolerances, VerificationCase,
+};
 use jeod_sim::{
     default_leap_second_table, GravityControl, GravityControls, GravityModel, GravitySource,
     GravitySourceEntry, RotationModel, SimulationBuilder, SimulationTime, TranslationalState,
     VehicleConfig,
 };
-use jeod_test_data::tier3_csv::test_data_path;
 use uom::si::f64::Time;
 use uom::si::time::second;
 
@@ -26,7 +27,7 @@ const ARCSEC_TO_RAD: f64 = 4.848_136_811_095_36e-6;
 const XP_ARCSEC: f64 = 0.06806;
 const YP_ARCSEC: f64 = 0.24156;
 
-fn build_run2p_polar_motion() -> SimulationBuilder {
+fn build_run2p_polar_motion(init: &InitialConditions) -> SimulationBuilder {
     let jeod_root = jeod_test_data::jeod_path();
     assert!(
         jeod_root.exists(),
@@ -38,17 +39,6 @@ fn build_run2p_polar_motion() -> SimulationBuilder {
         &jeod_root.join("models/environment/gravity/data/src/earth_GGM05C.cc"),
     )
     .expect("load Earth mu from GGM05C");
-
-    let csv_path = test_data_path("dyncomp_run2p_state.csv");
-    assert!(
-        csv_path.exists(),
-        "JEOD reference not found at {}.\n\
-         Generate with: docker run --rm -v $(pwd)/test_data:/output -v $(pwd)/trick/generate_references.sh:/generate_references.sh:ro jeod-trick",
-        csv_path.display()
-    );
-    let trajectory = jeod_test_data::dyncomp_csv::load_dyncomp_csv(&csv_path);
-    assert!(trajectory.len() > 100);
-    let init = &trajectory[0];
 
     let dt =
         jeod_test_data::s_define::load_dynamics_dt(&jeod_root.join("verif/SIM_dyncomp/S_define"));
@@ -76,8 +66,8 @@ fn build_run2p_polar_motion() -> SimulationBuilder {
     );
     sb.add_body(VehicleConfig {
         trans: TranslationalState {
-            position: init.composite_body.position,
-            velocity: init.composite_body.velocity,
+            position: init.position,
+            velocity: init.velocity,
         },
         gravity_controls: GravityControls {
             controls: vec![GravityControl::new_spherical(earth, false)],

@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use glam::{DMat3, DVec3};
 use jeod_sim::recipes::verification::{
-    CsvReference, ExtrasComparator, Tolerances, VerificationCase,
+    CsvReference, ExtrasComparator, InitialConditions, Tolerances, VerificationCase,
 };
 use jeod_sim::{
     coefficients, default_leap_second_table, DerivedStateConfig, EulerSequence, GeodeticConfig,
@@ -19,7 +19,6 @@ use jeod_sim::{
     MassProperties, RotationModel, RotationalState, SimulationBuilder, SimulationTime,
     TranslationalState, VehicleConfig, EARTH,
 };
-use jeod_test_data::tier3_csv::{self, test_data_path};
 use uom::si::f64::Time;
 use uom::si::time::second;
 
@@ -85,16 +84,11 @@ fn point_mass_earth(mu: f64, with_rnp: bool) -> GravitySourceEntry {
 
 // ── SIM_OrbElem ────────────────────────────────────────────────────────────
 
-fn build_orbelem_ecc() -> SimulationBuilder {
+fn build_orbelem_ecc(init: &InitialConditions) -> SimulationBuilder {
     let jeod = jeod_root();
     let mu = load_mu_earth();
     let dt =
         jeod_test_data::s_define::load_dynamics_dt(&jeod.join(SIM_ORBELEM_DIR).join("S_define"));
-
-    let csv_path = test_data_path("orbelem_ecc_orbelem.csv");
-    let records = tier3_csv::load_orbelem_csv(&csv_path);
-    assert!(records.len() > 100, "orbelem_ecc: too few records");
-    let init = &records[0];
 
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, dt);
@@ -145,15 +139,10 @@ pub fn orbelem_ecc() -> VerificationCase {
 
 // ── SIM_LVLH ───────────────────────────────────────────────────────────────
 
-fn build_lvlh(csv_name: &'static str) -> SimulationBuilder {
+fn build_lvlh(init: &InitialConditions) -> SimulationBuilder {
     let jeod = jeod_root();
     let mu = load_mu_earth();
     let dt = jeod_test_data::s_define::load_dynamics_dt(&jeod.join(SIM_LVLH_DIR).join("S_define"));
-
-    let csv_path = test_data_path(csv_name);
-    let records = tier3_csv::load_lvlh_csv(&csv_path);
-    assert!(records.len() > 100, "{csv_name}: too few records");
-    let init = &records[0];
 
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, dt);
@@ -175,23 +164,11 @@ fn build_lvlh(csv_name: &'static str) -> SimulationBuilder {
     sb
 }
 
-fn build_lvlh_inc() -> SimulationBuilder {
-    build_lvlh("lvlh_inc_lvlh.csv")
-}
-
-fn build_lvlh_ecc() -> SimulationBuilder {
-    build_lvlh("lvlh_ecc_lvlh.csv")
-}
-
-fn build_lvlh_equ() -> SimulationBuilder {
-    build_lvlh("lvlh_equ_lvlh.csv")
-}
-
 /// SIM_LVLH RUN_inc — inclined LEO (i=45°), 24h, point-mass.
 pub fn lvlh_inc() -> VerificationCase {
     VerificationCase {
         name: "tier3_simulation_lvlh",
-        scenario: build_lvlh_inc,
+        scenario: build_lvlh,
         reference: CsvReference::Lvlh("lvlh_inc_lvlh.csv"),
         duration: Time::new::<second>(86400.0),
         tolerances: Tolerances {
@@ -209,7 +186,7 @@ pub fn lvlh_inc() -> VerificationCase {
 pub fn lvlh_ecc() -> VerificationCase {
     VerificationCase {
         name: "tier3_simulation_lvlh_ecc",
-        scenario: build_lvlh_ecc,
+        scenario: build_lvlh,
         reference: CsvReference::Lvlh("lvlh_ecc_lvlh.csv"),
         duration: Time::new::<second>(86400.0),
         tolerances: Tolerances {
@@ -227,7 +204,7 @@ pub fn lvlh_ecc() -> VerificationCase {
 pub fn lvlh_equ() -> VerificationCase {
     VerificationCase {
         name: "tier3_simulation_lvlh_equ",
-        scenario: build_lvlh_equ,
+        scenario: build_lvlh,
         reference: CsvReference::Lvlh("lvlh_equ_lvlh.csv"),
         duration: Time::new::<second>(86400.0),
         tolerances: Tolerances {
@@ -257,15 +234,10 @@ fn ned_time() -> SimulationTime {
     time
 }
 
-fn build_ned(csv_name: &'static str, spherical: bool) -> SimulationBuilder {
+fn build_ned(init: &InitialConditions, spherical: bool) -> SimulationBuilder {
     let jeod = jeod_root();
     let mu = load_mu_earth();
     let dt = jeod_test_data::s_define::load_dynamics_dt(&jeod.join(SIM_NED_DIR).join("S_define"));
-
-    let csv_path = test_data_path(csv_name);
-    let records = tier3_csv::load_ned_csv(&csv_path);
-    assert!(records.len() > 100, "{csv_name}: too few records");
-    let init = &records[0];
 
     let mut sb = SimulationBuilder::new(ned_time(), dt);
     let earth = sb.add_source("Earth", point_mass_earth(mu, true));
@@ -297,24 +269,18 @@ fn build_ned(csv_name: &'static str, spherical: bool) -> SimulationBuilder {
     sb
 }
 
-fn build_ned_ell_inc() -> SimulationBuilder {
-    build_ned("ned_ell_inc_ned.csv", false)
+fn build_ned_ell(init: &InitialConditions) -> SimulationBuilder {
+    build_ned(init, false)
 }
-fn build_ned_ell_polar() -> SimulationBuilder {
-    build_ned("ned_ell_polar_ned.csv", false)
-}
-fn build_ned_sph_inc() -> SimulationBuilder {
-    build_ned("ned_sph_inc_ned.csv", true)
-}
-fn build_ned_sph_polar() -> SimulationBuilder {
-    build_ned("ned_sph_polar_ned.csv", true)
+fn build_ned_sph(init: &InitialConditions) -> SimulationBuilder {
+    build_ned(init, true)
 }
 
 /// SIM_NED RUN_ell_inc — ellipsoidal Earth, inclined orbit, 24h.
 pub fn ned_ell_inc() -> VerificationCase {
     VerificationCase {
         name: "tier3_simulation_geodetic",
-        scenario: build_ned_ell_inc,
+        scenario: build_ned_ell,
         reference: CsvReference::Ned("ned_ell_inc_ned.csv"),
         duration: Time::new::<second>(86400.0),
         tolerances: Tolerances {
@@ -338,7 +304,7 @@ pub fn ned_ell_inc() -> VerificationCase {
 pub fn ned_ell_polar() -> VerificationCase {
     VerificationCase {
         name: "tier3_simulation_ned_polar",
-        scenario: build_ned_ell_polar,
+        scenario: build_ned_ell,
         reference: CsvReference::Ned("ned_ell_polar_ned.csv"),
         duration: Time::new::<second>(86400.0),
         tolerances: Tolerances {
@@ -360,7 +326,7 @@ pub fn ned_ell_polar() -> VerificationCase {
 pub fn ned_sph_inc() -> VerificationCase {
     VerificationCase {
         name: "tier3_simulation_ned_sph_inc",
-        scenario: build_ned_sph_inc,
+        scenario: build_ned_sph,
         reference: CsvReference::Ned("ned_sph_inc_ned.csv"),
         duration: Time::new::<second>(86400.0),
         tolerances: Tolerances {
@@ -382,7 +348,7 @@ pub fn ned_sph_inc() -> VerificationCase {
 pub fn ned_sph_polar() -> VerificationCase {
     VerificationCase {
         name: "tier3_simulation_ned_sph_polar",
-        scenario: build_ned_sph_polar,
+        scenario: build_ned_sph,
         reference: CsvReference::Ned("ned_sph_polar_ned.csv"),
         duration: Time::new::<second>(86400.0),
         tolerances: Tolerances {
@@ -414,7 +380,7 @@ fn iss_euler_mass_properties() -> MassProperties {
     MassProperties::with_inertia(400_000.0, inertia, DVec3::new(-3.0, -1.5, 4.0))
 }
 
-fn build_euler_run2() -> SimulationBuilder {
+fn build_euler_run2(init: &InitialConditions) -> SimulationBuilder {
     let jeod = jeod_root();
     let mu = load_mu_earth();
     // SIM_Euler reuses the SIM_dyncomp S_define dt (1s). The Euler
@@ -423,25 +389,24 @@ fn build_euler_run2() -> SimulationBuilder {
     // existing test reads.
     let dt = jeod_test_data::s_define::load_dynamics_dt(&jeod.join("verif/SIM_dyncomp/S_define"));
 
-    let csv_path = test_data_path("dyncomp_run2_state.csv");
-    let trajectory = jeod_test_data::dyncomp_csv::load_dyncomp_csv(&csv_path);
-    assert!(
-        trajectory.len() > 100,
-        "dyncomp_run2_state: too few records"
-    );
-    let init = &trajectory[0];
+    let q = init
+        .quaternion
+        .expect("euler_run2: 6-DOF init must include quaternion");
+    let w = init
+        .ang_vel
+        .expect("euler_run2: 6-DOF init must include ang_vel");
 
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, dt);
     let earth = sb.add_source("Earth", point_mass_earth(mu, false));
     sb.add_body(VehicleConfig {
         trans: TranslationalState {
-            position: init.composite_body.position,
-            velocity: init.composite_body.velocity,
+            position: init.position,
+            velocity: init.velocity,
         },
         rot: Some(RotationalState {
-            quaternion: JeodQuat::from_glam(init.composite_body.quaternion),
-            ang_vel_body: init.composite_body.ang_vel,
+            quaternion: JeodQuat::from_glam(q),
+            ang_vel_body: w,
         }),
         mass: Some(iss_euler_mass_properties()),
         gravity_controls: GravityControls {
@@ -456,22 +421,18 @@ fn build_euler_run2() -> SimulationBuilder {
     sb
 }
 
-fn build_euler_edge(csv_name: &'static str) -> SimulationBuilder {
+fn build_euler_edge(init: &InitialConditions) -> SimulationBuilder {
     let jeod = jeod_root();
     let mu = load_mu_earth();
     let dt = jeod_test_data::s_define::load_dynamics_dt(&jeod.join(SIM_EULER_DIR).join("S_define"));
 
-    let csv_path = test_data_path(csv_name);
-    let records = tier3_csv::load_euler_csv(&csv_path);
-    assert!(records.len() > 100, "{csv_name}: too few records");
-    let init = &records[0];
-
-    let init_quat = JeodQuat::new(
-        init.quaternion[0],
-        init.quaternion[1],
-        init.quaternion[2],
-        init.quaternion[3],
-    );
+    // SIM_Euler edge cases (ecc / equ) load the reference quaternion
+    // from the CSV row at t=0 and force ang_vel = 0 — the JEOD verif
+    // sim drives those runs from a static attitude.
+    let init_q = init
+        .quaternion
+        .expect("euler_edge: SIM_Euler reference must populate quaternion at t=0");
+    let init_quat = JeodQuat::from_glam(init_q);
 
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, dt);
@@ -496,14 +457,6 @@ fn build_euler_edge(csv_name: &'static str) -> SimulationBuilder {
         ..Default::default()
     });
     sb
-}
-
-fn build_euler_ecc() -> SimulationBuilder {
-    build_euler_edge("euler_ecc_euler.csv")
-}
-
-fn build_euler_equ() -> SimulationBuilder {
-    build_euler_edge("euler_equ_euler.csv")
 }
 
 /// SIM_Euler reusing dyncomp RUN_2 — point-mass + ISS mass, 8h.
@@ -532,7 +485,7 @@ pub fn euler_run2() -> VerificationCase {
 pub fn euler_ecc() -> VerificationCase {
     VerificationCase {
         name: "tier3_simulation_euler_ecc",
-        scenario: build_euler_ecc,
+        scenario: build_euler_edge,
         reference: CsvReference::Euler("euler_ecc_euler.csv"),
         duration: Time::new::<second>(86400.0),
         tolerances: Tolerances {
@@ -554,7 +507,7 @@ pub fn euler_ecc() -> VerificationCase {
 pub fn euler_equ() -> VerificationCase {
     VerificationCase {
         name: "tier3_simulation_euler_equ",
-        scenario: build_euler_equ,
+        scenario: build_euler_edge,
         reference: CsvReference::Euler("euler_equ_euler.csv"),
         duration: Time::new::<second>(86400.0),
         tolerances: Tolerances {

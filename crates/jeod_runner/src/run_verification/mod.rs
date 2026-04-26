@@ -30,7 +30,9 @@ pub mod sim_dyncomp;
 pub mod sim_planetary;
 pub mod sim_polar_motion;
 
-use jeod_sim::recipes::verification::{CsvReference, ExtrasComparator, VerificationCase};
+use jeod_sim::recipes::verification::{
+    CsvReference, ExtrasComparator, InitialConditions, VerificationCase,
+};
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use jeod_test_data::tier3_csv;
 use uom::si::time::second;
@@ -77,13 +79,9 @@ pub trait VerificationCaseExt {
 
 impl VerificationCaseExt for VerificationCase {
     fn run_and_assert(&self) {
-        // 1. Build the scenario into a runtime Simulation.
-        let mut sim = (self.scenario)()
-            .build()
-            .unwrap_or_else(|e| panic!("scenario `{}` failed validation: {e:?}", self.name));
-
-        // 2. Load the reference CSV into time-aligned StateLogs and
-        //    optionally typed records the extras comparator can read.
+        // 1. Load the reference CSV exactly once — the t=0 row supplies
+        //    the scenario's initial conditions, the rest drives the
+        //    per-step comparison loop.
         let ref_path = tier3_csv::test_data_path(self.reference.file_name());
         assert!(
             ref_path.exists(),
@@ -108,6 +106,15 @@ impl VerificationCaseExt for VerificationCase {
             ref_states.len(),
             typed_records.len()
         );
+
+        // 2. Build the scenario from the t=0 record into a runtime
+        //    Simulation. The scenario constructor consumes the
+        //    `InitialConditions` derived from the StateLog, so it does
+        //    not need to re-parse the reference CSV.
+        let init = initial_conditions_from(&ref_states[0]);
+        let mut sim = (self.scenario)(&init)
+            .build()
+            .unwrap_or_else(|e| panic!("scenario `{}` failed validation: {e:?}", self.name));
 
         // 3. Propagate, sampling at each non-initial reference time up
         //    to the case's `duration` (a value of 0.0 or negative means
@@ -164,6 +171,19 @@ impl VerificationCaseExt for VerificationCase {
                 tols.extras
             );
         }
+    }
+}
+
+/// Project the t=0 [`StateLog`] from the reference CSV into the
+/// adapter-neutral [`InitialConditions`] passed to scenario builders.
+/// Scenarios consume this rather than re-parsing the CSV themselves.
+fn initial_conditions_from(t0: &StateLog) -> InitialConditions {
+    InitialConditions {
+        time: t0.time,
+        position: t0.position.unwrap_or_default(),
+        velocity: t0.velocity.unwrap_or_default(),
+        quaternion: t0.quaternion,
+        ang_vel: t0.ang_vel,
     }
 }
 

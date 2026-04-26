@@ -27,9 +27,41 @@
 
 pub mod reference_data;
 
+use glam::{DQuat, DVec3};
 use uom::si::f64::Time;
 
 use crate::SimulationBuilder;
+
+/// Initial conditions extracted from the t=0 row of a reference CSV and
+/// passed to a scenario constructor by `run_and_assert`. This lets the
+/// runner parse each reference CSV exactly once: it loads the full
+/// trajectory, hands the t=0 record here to build the scenario, and
+/// reuses the rest of the trajectory for the per-step comparison.
+///
+/// All variants use raw `glam` types so this struct stays adapter-
+/// neutral (no dependency on `jeod_test_data` from `jeod_sim` outside
+/// of dev-deps).
+///
+/// `quaternion` is the JEOD `[q0, q1, q2, q3]` vector packed into a
+/// `glam::DQuat` (xyzw). Scenarios that need a [`crate::JeodQuat`]
+/// convert via `JeodQuat::from_glam`.
+#[derive(Clone, Debug, Default)]
+pub struct InitialConditions {
+    /// Reference time (seconds since the sim epoch). Always populated.
+    pub time: f64,
+    /// Inertial position. Always populated for the variants used by
+    /// migrated Tier 3 cases.
+    pub position: DVec3,
+    /// Inertial velocity. Always populated for the variants used by
+    /// migrated Tier 3 cases.
+    pub velocity: DVec3,
+    /// Body-frame attitude quaternion. `Some` for 6-DOF cases, `None`
+    /// for 3-DOF (point-mass translational-only) cases.
+    pub quaternion: Option<DQuat>,
+    /// Body-frame angular velocity. `Some` for 6-DOF cases, `None` for
+    /// 3-DOF.
+    pub ang_vel: Option<DVec3>,
+}
 
 /// A reference-CSV file used by a Tier 3 verification case.
 ///
@@ -187,9 +219,12 @@ impl Default for Tolerances {
 pub struct VerificationCase {
     /// Unique name used for `target/tier3_crossval/{name}.json` reports.
     pub name: &'static str,
-    /// Scenario constructor. The fn pointer stays adapter-neutral so
-    /// the runner and (Phase 9) Bevy adapter consume the same scenario.
-    pub scenario: fn() -> SimulationBuilder,
+    /// Scenario constructor. Receives the t=0 [`InitialConditions`]
+    /// extracted from `reference` so the scenario does not need to
+    /// re-parse the reference CSV. The fn pointer stays adapter-neutral
+    /// so the runner and (Phase 9) Bevy adapter consume the same
+    /// scenario.
+    pub scenario: fn(&InitialConditions) -> SimulationBuilder,
     /// Reference CSV produced by the corresponding JEOD verification
     /// simulation.
     pub reference: CsvReference,
