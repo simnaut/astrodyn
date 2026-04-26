@@ -120,7 +120,7 @@ pub fn validate_jeod_invariants(
         assert!(
             delta.is_some(),
             "Entity {entity:?}: TidalConfigC is present but TidalDeltaC20C is missing. \
-             Add TidalDeltaC20C(0.0) to the entity so tidal_update_system can write ΔC20."
+             Add TidalDeltaC20C::default() to the entity so tidal_update_system can write ΔC20."
         );
         assert!(
             rotation.is_some(),

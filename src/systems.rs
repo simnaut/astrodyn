@@ -82,7 +82,8 @@ pub fn planet_fixed_rotation_system(
 /// Computes tidal ΔC20 for each gravity source that has a `TidalConfigC`.
 ///
 /// Runs after `planet_fixed_rotation_system` so the rotation matrix is current.
-/// Sources without `TidalConfigC` keep their default `TidalDeltaC20C(0.0)`.
+/// Sources without `TidalConfigC` keep their default `TidalDeltaC20C::default()`
+/// (a zero-valued [`jeod_sim::Ratio`]).
 pub fn tidal_update_system(
     mut query: Query<(&TidalConfigC, &PlanetFixedRotationC, &mut TidalDeltaC20C)>,
 ) {

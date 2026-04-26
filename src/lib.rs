@@ -175,14 +175,14 @@ impl Plugin for JeodPlugin {
 ///
 /// ```ignore
 /// use bevy_jeod::{JeodPlugin, VehicleConfigBevyExt};
-/// use jeod_sim::recipes::{earth, orbital_elements};
+/// use jeod_sim::recipes::{constants, orbital_elements};
 /// use jeod_sim::{GravityControl, VehicleBuilder};
 /// use jeod_quantities::ext::F64Ext;
 ///
 /// fn setup(mut commands: Commands) {
 ///     let earth = commands.spawn(/* gravity-source bundle */).id();
 ///     let cfg = VehicleBuilder::new()
-///         .from_orbital_elements(orbital_elements::iss(), earth::point_mass().mu_typed())
+///         .from_orbital_elements(orbital_elements::iss(), constants::mu_ggm05c())
 ///         .three_dof_point_mass(420_000.0.kg())
 ///         .rk4()
 ///         .gravity(GravityControl::new_spherical(0_usize, false))
@@ -235,11 +235,16 @@ fn resolve_source_entity(source_entities: &[Entity], idx: usize, what: &str) -> 
 impl VehicleConfigBevyExt for jeod_sim::VehicleConfig {
     fn spawn_bevy(self, commands: &mut Commands, source_entities: &[Entity]) -> Entity {
         // Translate `GravityControls<usize>` to `GravityControls<Entity>`
-        // by retagging the source identifier on each control. Every
-        // other field — including `differential`, `battin_method`,
-        // `relativistic`, etc. — is preserved by struct-update syntax
-        // so future additions to `GravityControl` automatically carry
-        // through.
+        // by retagging the source identifier on each control. Struct-update
+        // syntax (`..c`) cannot be used here because the source-id type
+        // parameter changes (`GravityControl<usize>` → `GravityControl<Entity>`
+        // are distinct types), so every field must be enumerated explicitly.
+        //
+        // Maintenance contract: when a new field is added to `GravityControl`
+        // upstream, add a matching `field: c.field` line below — otherwise
+        // the new field is silently dropped (defaulted to whatever the
+        // struct literal yields without it, which fails to compile if all
+        // fields are non-default — keeping us honest).
         let entity_controls = jeod_sim::GravityControls::<Entity> {
             controls: self
                 .gravity_controls
