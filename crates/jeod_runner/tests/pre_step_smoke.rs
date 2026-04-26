@@ -11,8 +11,11 @@
 //! 3. The closure dispatches through the `SimContext` trait into
 //!    `Simulation::set_source_position`.
 //!
-//! The `tier3_` prefix is omitted deliberately — this is plumbing, not
-//! a Tier 3 cross-validation case.
+//! Carries the `tier3_` prefix because the trailing
+//! `sim_dyncomp::run2_3dof().run_and_assert()` sanity check loads
+//! `verif/SIM_dyncomp/S_define` from the JEOD checkout — which is
+//! sparse-checked-out only by the Tier 3 CI job, not the unit + tier 2
+//! job. Cargo's name-based filter routes this into the right place.
 
 use glam::DVec3;
 use jeod_runner::run_verification::sim_dyncomp;
@@ -99,7 +102,7 @@ fn build_pre_step(_init: &InitialConditions) -> PreStepClosure {
 }
 
 #[test]
-fn pre_step_smoke_drives_source_position_through_simcontext() {
+fn tier3_pre_step_smoke_drives_source_position_through_simcontext() {
     // Reuse RUN_2's reference CSV solely so `run_and_assert` has a real
     // trajectory to step against. Position/velocity tolerances are very
     // loose — this smoke test cares about pre_step plumbing, not
