@@ -1,14 +1,13 @@
-//! Standalone batch Kepler propagation using `jeod_runner` (no Bevy).
+//! Standalone batch Kepler propagation using the recipes module.
 //!
-//! Propagates a circular LEO orbit for 10 periods with the `Simulation`
-//! runner, printing eccentricity and energy drift at regular intervals.
+//! Propagates a circular LEO orbit for 10 periods, printing eccentricity
+//! and energy drift at regular intervals. Uses
+//! [`scenarios::iss_leo`](jeod_sim::recipes::scenarios::iss_leo) as the
+//! starting scenario.
 
 use glam::DVec3;
-use jeod_runner::{GravitySourceEntry, Simulation, VehicleConfig};
-use jeod_sim::{
-    default_leap_second_table, GravityControl, GravityControls, GravityModel, GravitySource,
-    SimulationTime, TranslationalState,
-};
+use jeod_runner::SimulationBuilderExt;
+use jeod_sim::recipes::{constants, scenarios};
 
 fn specific_energy(mu: f64, position: DVec3, velocity: DVec3) -> f64 {
     0.5 * velocity.length_squared() - mu / position.length()
@@ -21,49 +20,23 @@ fn eccentricity(mu: f64, position: DVec3, velocity: DVec3) -> f64 {
 }
 
 fn main() {
-    let mu_earth: f64 = 3.986_004_415e14; // m^3/s^2
-    let r0: f64 = 6_778_137.0; // m (400 km altitude)
-    let v0 = (mu_earth / r0).sqrt(); // circular velocity
+    let mu_earth = constants::mu_ggm05c().value;
 
-    let state0 = TranslationalState {
-        position: DVec3::new(r0, 0.0, 0.0),
-        velocity: DVec3::new(0.0, v0, 0.0),
-    };
+    // 10 orbits of an ISS-altitude circular LEO. The recipe defaults to
+    // a 60 s step (good enough for verification accuracy); override to
+    // 10 s here so the energy-drift demo passes its <1e-8 threshold.
+    let mut sb = scenarios::iss_leo();
+    sb.dt = 10.0;
+    let mut sim = sb.build().expect("iss_leo() must validate");
 
-    let dt = 10.0; // seconds
+    let r0 = sim.body(0).trans.position.length();
     let period = 2.0 * std::f64::consts::PI * (r0.powi(3) / mu_earth).sqrt();
     let n_orbits = 10;
+    let dt = sim.dt;
     let steps = (n_orbits as f64 * period / dt).ceil() as usize;
 
-    let initial_energy = specific_energy(mu_earth, state0.position, state0.velocity);
-
-    let time = SimulationTime::at_j2000(default_leap_second_table());
-    let mut sim = Simulation::new(time, dt);
-    let earth_idx = sim.add_source(
-        "Earth",
-        GravitySourceEntry {
-            source: GravitySource {
-                mu: mu_earth,
-                model: GravityModel::PointMass,
-            },
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
-            t_inertial_pfix: None,
-            delta_c20: 0.0,
-            rotation_model: jeod_sim::RotationModel::default(),
-            tidal_config: None,
-            planet_omega: 0.0,
-            central: true,
-        },
-    );
-    let body_idx = sim.add_body(VehicleConfig {
-        trans: state0,
-        gravity_controls: GravityControls {
-            controls: vec![GravityControl::new_spherical(earth_idx, false)],
-        },
-        ..Default::default()
-    });
-    sim.validate().expect("valid batch propagation setup");
+    let initial = sim.body(0).trans;
+    let initial_energy = specific_energy(mu_earth, initial.position, initial.velocity);
 
     println!("Batch Kepler Orbit Propagation (no Bevy)");
     println!("=========================================");
@@ -79,31 +52,28 @@ fn main() {
         if step > 0 {
             sim.step();
         }
-
         if step % report_interval == 0 || step == steps {
-            let state = sim.body(body_idx).trans;
-            let energy = specific_energy(mu_earth, state.position, state.velocity);
-            let energy_drift = energy - initial_energy;
-            let alt_km = (state.position.length() - 6_378_137.0) / 1000.0;
-            let e_mag = eccentricity(mu_earth, state.position, state.velocity);
-
+            let s = sim.body(0).trans;
+            let energy = specific_energy(mu_earth, s.position, s.velocity);
+            let drift = energy - initial_energy;
+            let alt_km = (s.position.length() - 6_378_137.0) / 1000.0;
+            let e_mag = eccentricity(mu_earth, s.position, s.velocity);
             println!(
                 "t={:8.0}s  alt={:7.1}km  e={:.2e}  energy_drift={:.2e} J/kg",
                 step as f64 * dt,
                 alt_km,
                 e_mag,
-                energy_drift
+                drift
             );
         }
     }
 
-    let final_state = sim.body(body_idx).trans;
+    let final_state = sim.body(0).trans;
     let final_energy = specific_energy(mu_earth, final_state.position, final_state.velocity);
     let drift = (final_energy - initial_energy).abs();
+    let relative_drift = drift / final_energy.abs();
     println!();
     println!("Final energy drift: {:.2e} J/kg", drift);
-    let specific_energy = final_energy.abs();
-    let relative_drift = drift / specific_energy;
     println!("Relative energy drift: {:.2e}", relative_drift);
     if relative_drift < 1e-8 {
         println!("PASS: Energy conservation excellent (relative drift < 1e-8)");
