@@ -7,6 +7,11 @@ edition = "2021"
 jeod_sim = { path = "crates/jeod_sim" }
 glam = { workspace = true }
 bevy = { workspace = true }
+# `uom` provides scalar quantity types (`Angle`, `Ratio`) used by typed
+# Component fields; the `Qty3` 3-vector types come from `jeod_quantities`
+# transitively via `jeod_sim`. Adding `uom` directly avoids forcing
+# users to thread `jeod_quantities` themselves.
+uom = { workspace = true }
 
 [dev-dependencies]
 glam = { workspace = true }

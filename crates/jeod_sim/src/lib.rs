@@ -104,7 +104,9 @@ pub use jeod_dynamics::{
 };
 
 // jeod_gravity: source definitions, controls, and tides
-pub use jeod_gravity::tides::{compute_delta_c20, TidalBody, TidalConfig, EARTH_K2};
+pub use jeod_gravity::tides::{
+    compute_delta_c20, compute_delta_c20_typed, TidalBody, TidalConfig, TidalConfigTyped, EARTH_K2,
+};
 pub use jeod_gravity::{GravityControl, GravityControls, GravityModel, GravitySource};
 
 // jeod_atmosphere: state output and model types
@@ -166,6 +168,10 @@ pub use jeod_quantities::frame::{
 pub use jeod_quantities::frame_transform::FrameTransform;
 pub use jeod_quantities::inertia::InertiaTensor;
 pub use jeod_quantities::qty3::Qty3;
+
+// uom scalar quantities used directly by the Bevy adapter for typed
+// component fields (`Angle` for Euler angles, `Ratio` for tidal ΔC20).
+pub use uom::si::f64::{Angle, Ratio};
 
 // jeod_math: quaternion type (used in RotationalState)
 pub use jeod_math::JeodQuat;

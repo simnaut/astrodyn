@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use glam::DVec3;
+use jeod_sim::{BodyFrame, Inertial, Position, Ratio, SelfRef, Torque, Velocity};
 
 use crate::components::*;
 use crate::AtmosphereModelR;
@@ -86,7 +87,8 @@ pub fn tidal_update_system(
     mut query: Query<(&TidalConfigC, &PlanetFixedRotationC, &mut TidalDeltaC20C)>,
 ) {
     for (config, rotation, mut delta) in &mut query {
-        delta.0 = jeod_sim::compute_delta_c20(&config.0, &rotation.0);
+        let raw = jeod_sim::compute_delta_c20(&config.0, &rotation.0);
+        delta.0 = Ratio::new::<uom::si::ratio::ratio>(raw);
     }
 }
 
@@ -126,9 +128,9 @@ pub fn ephemeris_update_system(
                     ephem_body.target, ephem_body.observer,
                 )
             });
-        source_pos.0 = pos;
+        source_pos.0 = Position::<Inertial>::from_raw_si(pos);
         if let Some(mut sv) = source_vel {
-            sv.0 = vel;
+            sv.0 = Velocity::<Inertial>::from_raw_si(vel);
         }
         if let Some(mut ts) = trans_state {
             ts.0.position = pos;
@@ -207,7 +209,11 @@ pub fn force_collection_system(
             force: s.force,
             torque: s.torque,
         });
-        let gravity_torque_val = grav_torque.map(|gt| gt.0);
+        // GravityTorqueC stores `Torque<BodyFrame<SelfRef>>`; the
+        // untyped `collect_and_resolve_forces` boundary still expects a
+        // raw `DVec3` in the body frame — drop the phantom at the call
+        // site only.
+        let gravity_torque_val = grav_torque.map(|gt| gt.0.raw_si());
 
         let (collected, mut frame_derivs) = jeod_sim::collect_and_resolve_forces(
             aero_ref.as_ref(),
@@ -223,20 +229,24 @@ pub fn force_collection_system(
         total.torque = collected.torque;
 
         // Apply external force/torque (set by caller between steps).
-        // Matches simulation.rs:846-855 logic.
+        // Matches simulation.rs:846-855 logic. ExternalForceC and
+        // ExternalTorqueC carry typed phantoms (Inertial / BodyFrame);
+        // drop them at the untyped TotalForce boundary.
         if let Some(ef) = ext_force {
-            if ef.0 != DVec3::ZERO {
-                total.force += ef.0;
+            let ef_raw = ef.0.raw_si();
+            if ef_raw != DVec3::ZERO {
+                total.force += ef_raw;
                 if let Some(mass) = mass {
-                    frame_derivs.trans_accel += ef.0 * mass.inverse_mass;
+                    frame_derivs.trans_accel += ef_raw * mass.inverse_mass;
                 }
             }
         }
         if let Some(et) = ext_torque {
-            if et.0 != DVec3::ZERO {
-                total.torque += et.0;
+            let et_raw = et.0.raw_si();
+            if et_raw != DVec3::ZERO {
+                total.torque += et_raw;
                 if let Some(mass) = mass {
-                    frame_derivs.rot_accel += mass.inverse_inertia * et.0;
+                    frame_derivs.rot_accel += mass.inverse_inertia * et_raw;
                 }
             }
         }
@@ -291,7 +301,11 @@ pub fn integration_system(
     }
 
     // Helper closure for gravity at an intermediate state — reused by both
-    // the standard and coupled dispatch branches.
+    // the standard and coupled dispatch branches. Source-side typed
+    // `Position<Inertial>` / `Velocity<Inertial>` / `Ratio` are
+    // unwrapped to raw f64/DVec3 at the boundary because the
+    // `accumulate_gravity` / `accumulate_relativistic_corrections`
+    // kernels still take raw types.
     let eval_gravity = |entity: Entity,
                         controls: &GravityControlsC,
                         pos: DVec3,
@@ -303,8 +317,8 @@ pub fn integration_system(
                     Ok((s, r, p, _, tidal, tidal_config)) => Some(jeod_sim::ResolvedSource {
                         source: &s.0,
                         rotation: r.map(|r| &r.0),
-                        position: p.0,
-                        delta_c20: tidal.map_or(0.0, |t| t.0),
+                        position: p.0.raw_si(),
+                        delta_c20: tidal.map_or(0.0, |t| t.0.value),
                         has_delta_coeffs: tidal_config.is_some(),
                     }),
                     Err(_) => {
@@ -323,8 +337,8 @@ pub fn integration_system(
                 sources.get(source_entity).ok().map(|(s, _, p, v, _, _)| {
                     jeod_sim::ResolvedRelativisticSource {
                         mu: s.mu,
-                        position: p.0,
-                        velocity: v.map_or(DVec3::ZERO, |v| v.0),
+                        position: p.0.raw_si(),
+                        velocity: v.map_or(DVec3::ZERO, |v| v.0.raw_si()),
                     }
                 })
             });
@@ -539,8 +553,8 @@ pub fn gravity_computation_system(
                     Some(jeod_sim::ResolvedSource {
                         source: &source.0,
                         rotation: rot.map(|r| &r.0),
-                        position: pos.0,
-                        delta_c20: tidal.map_or(0.0, |t| t.0),
+                        position: pos.0.raw_si(),
+                        delta_c20: tidal.map_or(0.0, |t| t.0.value),
                         // JEOD gates on n_deltacoeffs > 0 (tidal config
                         // present), not on whether ΔC20 component exists.
                         has_delta_coeffs: tidal_config.is_some(),
@@ -566,8 +580,8 @@ pub fn gravity_computation_system(
                 sources.get(source_entity).ok().map(|(s, _, p, v, _, _)| {
                     jeod_sim::ResolvedRelativisticSource {
                         mu: s.mu,
-                        position: p.0,
-                        velocity: v.map_or(DVec3::ZERO, |v| v.0),
+                        position: p.0.raw_si(),
+                        velocity: v.map_or(DVec3::ZERO, |v| v.0.raw_si()),
                     }
                 })
             },
@@ -678,7 +692,11 @@ pub fn gravity_torque_system(
     )>,
 ) {
     for (grav, rot, mass, mut torque) in &mut query {
-        torque.0 = jeod_sim::compute_gravity_torque(&grav.grav_grad, &rot.0, &mass.inertia);
+        // `compute_gravity_torque` returns a raw `DVec3` body-frame
+        // torque; wrap into the typed `Torque<BodyFrame<SelfRef>>`
+        // component before storing.
+        let raw = jeod_sim::compute_gravity_torque(&grav.grav_grad, &rot.0, &mass.inertia);
+        torque.0 = Torque::<BodyFrame<SelfRef>>::from_raw_si(raw);
     }
 }
 
@@ -739,7 +757,14 @@ pub fn euler_angles_system(
 ) {
     for (rot_opt, config, mut angles) in &mut query {
         if let Some(rot) = rot_opt {
-            angles.0 = jeod_sim::compute_body_euler_angles(&rot.0, config.sequence);
+            let raw = jeod_sim::compute_body_euler_angles(&rot.0, config.sequence);
+            // Wrap each raw radian value as a typed `Angle`. Numerics
+            // are bit-identical to the f64 path.
+            angles.0 = [
+                jeod_sim::Angle::new::<uom::si::angle::radian>(raw[0]),
+                jeod_sim::Angle::new::<uom::si::angle::radian>(raw[1]),
+                jeod_sim::Angle::new::<uom::si::angle::radian>(raw[2]),
+            ];
         } else {
             angles.0 = Default::default();
         }
