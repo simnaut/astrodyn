@@ -165,6 +165,9 @@ fn run_relative_scenario(label: &str, csv_name: &str) {
     );
 }
 
+// non-recipe: SIM_Relative seeds two bodies (rot+trans) from a 57-column
+// JEOD CSV with no equivalent recipe preset. Error metric is `(a-b).length()`,
+// too small to abstract.
 #[test]
 fn tier3_simulation_relative_ab_rot_ab_trans() {
     run_relative_scenario(
@@ -173,6 +176,7 @@ fn tier3_simulation_relative_ab_rot_ab_trans() {
     );
 }
 
+// non-recipe: same shape as `tier3_simulation_relative_ab_rot_ab_trans`.
 #[test]
 fn tier3_simulation_relative_no_rot_ab_trans() {
     run_relative_scenario(
@@ -181,6 +185,7 @@ fn tier3_simulation_relative_no_rot_ab_trans() {
     );
 }
 
+// non-recipe: same shape as `tier3_simulation_relative_ab_rot_ab_trans`.
 #[test]
 fn tier3_simulation_relative_a_rot_no_trans() {
     run_relative_scenario(
