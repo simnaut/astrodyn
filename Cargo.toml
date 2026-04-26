@@ -7,6 +7,7 @@ edition = "2021"
 jeod_sim = { path = "crates/jeod_sim" }
 glam = { workspace = true }
 bevy = { workspace = true }
+bevy_reflect = { workspace = true }
 
 [dev-dependencies]
 glam = { workspace = true }
@@ -47,6 +48,7 @@ bevy = { version = "0.18", default-features = false, features = [
     "std",
     "multi_threaded",
 ] }
+bevy_reflect = { version = "0.18", default-features = false }
 log = "0.4"
 thiserror = "2"
 uom = { version = "0.38", default-features = false, features = ["f64", "si", "std"] }

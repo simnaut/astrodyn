@@ -102,6 +102,11 @@ impl Plugin for JeodPlugin {
         // ── Resources ──
         app.init_resource::<SimulationTimeR>();
 
+        // ── Typed-Component reflection (#154) ──
+        // Centralized in `register_jeod_component_types` so the smoke
+        // test and any other consumer registers exactly the same set.
+        register_jeod_component_types(app);
+
         // ── Events ──
         app.add_message::<AttachEvent>();
         app.add_message::<DetachEvent>();
@@ -159,6 +164,78 @@ impl Plugin for JeodPlugin {
             ),
         );
     }
+}
+
+/// Register every `Reflect`-derived Component from
+/// [`crate::components`] in the `App`'s `TypeRegistry`.
+///
+/// `JeodPlugin::build` calls this; downstream consumers that don't use
+/// `JeodPlugin` (e.g. test harnesses, custom adapters that compose only
+/// a subset of systems) can call it directly to populate the same
+/// registry. Tests use this through the same entry point so the list
+/// can't drift between production and verification.
+///
+/// Inner `jeod_*` types are `#[reflect(opaque)]` so the Component
+/// appears as a leaf with its type name. Field-level introspection of
+/// `Position<Inertial>`, `RotationalState`, etc. would require
+/// propagating `Reflect` into the source crates and is out of scope
+/// here.
+pub fn register_jeod_component_types(app: &mut App) {
+    // Dynamics state
+    app.register_type::<components::TranslationalStateC>();
+    app.register_type::<components::RotationalStateC>();
+    app.register_type::<components::MassPropertiesC>();
+    app.register_type::<components::GravityAccelerationC>();
+    app.register_type::<components::TotalForceC>();
+    app.register_type::<components::FrameDerivativesC>();
+    // Dynamics config + integrator state
+    app.register_type::<components::DynamicsConfigC>();
+    app.register_type::<components::IntegratorTypeC>();
+    app.register_type::<components::GaussJacksonStateC>();
+    app.register_type::<components::Abm4StateC>();
+    // Gravity
+    app.register_type::<components::GravityControlsC>();
+    app.register_type::<components::GravitySourceC>();
+    app.register_type::<components::SourceInertialPositionC>();
+    app.register_type::<components::SourceInertialVelocityC>();
+    // Interactions
+    app.register_type::<components::AerodynamicForceC>();
+    app.register_type::<components::RadiationForceC>();
+    app.register_type::<components::GravityTorqueC>();
+    app.register_type::<components::AtmosphericStateC>();
+    // Frame transforms
+    app.register_type::<components::StructuralTransformC>();
+    app.register_type::<components::PlanetFixedRotationC>();
+    // Tidal
+    app.register_type::<components::TidalConfigC>();
+    app.register_type::<components::TidalDeltaC20C>();
+    // Drag / SRP
+    app.register_type::<components::DragConfigC>();
+    app.register_type::<components::FlatPlateConfigC>();
+    app.register_type::<components::CannonballSrpC>();
+    app.register_type::<components::ShadowBodyC>();
+    // External loads
+    app.register_type::<components::ExternalForceC>();
+    app.register_type::<components::ExternalTorqueC>();
+    // Body / planet identity + ephemeris
+    app.register_type::<components::MassBodyIdC>();
+    app.register_type::<components::PlanetC>();
+    app.register_type::<components::RotationModelC>();
+    app.register_type::<components::EphemerisBodyC>();
+    app.register_type::<components::SunMarker>();
+    app.register_type::<components::MoonMarker>();
+    // Derived-state config
+    app.register_type::<components::OrbitalElementsConfigC>();
+    app.register_type::<components::EulerAnglesConfigC>();
+    app.register_type::<components::GeodeticConfigC>();
+    app.register_type::<components::EarthLightingConfigC>();
+    // Derived-state output
+    app.register_type::<components::OrbitalElementsC>();
+    app.register_type::<components::EulerAnglesC>();
+    app.register_type::<components::LvlhFrameC>();
+    app.register_type::<components::GeodeticStateC>();
+    app.register_type::<components::SolarBetaC>();
+    app.register_type::<components::EarthLightingStateC>();
 }
 
 // ── Bevy spawn helpers for the typestate VehicleBuilder ──
