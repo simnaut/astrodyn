@@ -444,7 +444,15 @@ impl VehicleBuilder<Ready> {
                 .expect("typestate guarantees translational state")
                 .to_untyped(),
             rot: self.rot,
-            mass: self.mass,
+            // Mass is `Option<MassProperties>` in the storage type
+            // (so direct struct-literal construction stays
+            // ergonomic), but the typestate path through either
+            // `three_dof_point_mass` or `sixdof` always populates it
+            // before `Ready`. Unwrap-and-rewrap so an internal
+            // typestate bug surfaces here rather than as a silent
+            // `mass = None` that fails later in validation or
+            // physics.
+            mass: Some(self.mass.expect("typestate guarantees mass")),
             integrator: self.integrator.expect("typestate guarantees integrator"),
             t_struct_body: self.t_struct_body,
             gravity_controls: self.gravity_controls,
