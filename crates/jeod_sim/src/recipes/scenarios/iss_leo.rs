@@ -16,7 +16,7 @@ use crate::SimulationBuilder;
 /// 3-DOF point-mass ISS-like LEO with Earth point-mass gravity.
 ///
 /// Uses the ISS reference orbital elements
-/// ([`orbital_elements::iss`](crate::recipes::orbital_elements::iss))
+/// ([`crate::recipes::orbital_elements::iss`])
 /// initialized via the typestate vehicle builder. Step size is 60 s,
 /// epoch is J2000.
 pub fn iss_leo() -> SimulationBuilder {

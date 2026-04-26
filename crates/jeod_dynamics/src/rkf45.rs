@@ -128,8 +128,8 @@ pub fn rkf45_translational_step(
 
 /// Advance a 6-DOF state by one RKF45 step (5th-order result).
 ///
-/// Integrates 13 variables simultaneously: position[3], velocity[3],
-/// quaternion[4], angular velocity[3]. Uses 6 derivative evaluations.
+/// Integrates 13 variables simultaneously: `position[3]`, `velocity[3]`,
+/// `quaternion[4]`, `angular velocity[3]`. Uses 6 derivative evaluations.
 pub fn rkf45_sixdof_step(
     state: &SixDofState,
     accel_fn: impl Fn(&SixDofState, f64) -> DVec3,
@@ -548,8 +548,8 @@ pub fn rkf45_adaptive_translational_step(
 
 /// Advance a 6-DOF state by one adaptive RKF45 step.
 ///
-/// Integrates 13 variables (position[3], velocity[3], quaternion[4],
-/// angular velocity[3]) with embedded error estimation and step size control.
+/// Integrates 13 variables (`position[3]`, `velocity[3]`, `quaternion[4]`,
+/// `angular velocity[3]`) with embedded error estimation and step size control.
 /// The error estimate uses the max over position and velocity component errors.
 pub fn rkf45_adaptive_sixdof_step(
     state: &SixDofState,

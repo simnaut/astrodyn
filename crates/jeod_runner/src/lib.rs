@@ -403,7 +403,8 @@ impl Simulation {
     /// Create a new simulation with the given initial time and timestep.
     ///
     /// Creates a frame tree whose root is initially named "Earth.inertial"
-    /// and may be renamed when a central source is added via [`add_source`].
+    /// and may be renamed when a central source is added via
+    /// [`Self::add_source`].
     /// All positions are relative to this root frame regardless of its name.
     pub fn new(time: SimulationTime, dt: f64) -> Self {
         let mut frame_tree = FrameTree::new();

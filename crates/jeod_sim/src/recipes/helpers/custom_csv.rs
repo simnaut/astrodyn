@@ -1,6 +1,6 @@
 //! Schema-flexible CSV reader for ad-hoc test formats.
 //!
-//! The typed CSV catalogue lives in [`jeod_test_data::tier3_csv`] (and
+//! The typed CSV catalogue lives in `jeod_test_data::tier3_csv` (and
 //! its predecessor `jeod_test_data::dyncomp_csv`); those loaders own
 //! the standard JEOD reference logs (`SIM_dyncomp`, `SIM_LVLH`, …).
 //! This module provides the one-off / line-by-line escape hatch for

@@ -112,7 +112,7 @@ pub fn compute_body_geodetic(
 /// Compute the solar beta angle (angle between orbit plane and Sun direction).
 ///
 /// Computes the orbital angular momentum vector `h = r × v`, then delegates
-/// to [`jeod_math::solar_beta_angle`].
+/// to [`jeod_math::solar_beta_angle_typed`].
 ///
 /// # Panics
 ///

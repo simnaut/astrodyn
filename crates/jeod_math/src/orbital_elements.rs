@@ -14,19 +14,19 @@ pub struct OrbitalElements {
     pub semiparam: f64,
     /// Eccentricity.
     pub e_mag: f64,
-    /// Inclination [rad].
+    /// Inclination (rad).
     pub inclination: f64,
-    /// Argument of periapsis [rad].
+    /// Argument of periapsis (rad).
     pub arg_periapsis: f64,
-    /// Longitude of ascending node [rad].
+    /// Longitude of ascending node (rad).
     pub long_asc_node: f64,
-    /// True anomaly [rad].
+    /// True anomaly (rad).
     pub true_anom: f64,
-    /// Mean anomaly [rad].
+    /// Mean anomaly (rad).
     pub mean_anom: f64,
-    /// Orbital (eccentric / hyperbolic / parabolic) anomaly [rad].
+    /// Orbital (eccentric / hyperbolic / parabolic) anomaly (rad).
     pub orbital_anom: f64,
-    /// Mean motion [rad/s].
+    /// Mean motion (rad/s).
     pub mean_motion: f64,
     /// Position magnitude.
     pub r_mag: f64,
@@ -285,7 +285,7 @@ impl OrbitalElements {
         Ok(oe)
     }
 
-    /// Typed variant of [`from_cartesian`](Self::from_cartesian).
+    /// Typed variant of `from_cartesian` (the file-private kernel below).
     ///
     /// Accepts dimensionally-typed inputs:
     /// * `mu` — gravitational parameter in SI base units (m³/s²)

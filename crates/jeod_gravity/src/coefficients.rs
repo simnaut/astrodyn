@@ -146,8 +146,8 @@ pub fn load_from_jeod_cc(path: &std::path::Path) -> Result<SphericalHarmonicsDat
 ///
 /// Format: degree(u32), order(u32), radius(f64), mu(f64),
 ///         tide_free(u8), tide_free_delta(f64),
-///         then for each n=0..degree: cnm[n][0..n] as f64,
-///         then for each n=0..degree: snm[n][0..n] as f64.
+///         then for each n=0..degree: `cnm[n][0..n]` as f64,
+///         then for each n=0..degree: `snm[n][0..n]` as f64.
 pub fn save_binary(
     data: &SphericalHarmonicsData,
     path: &std::path::Path,

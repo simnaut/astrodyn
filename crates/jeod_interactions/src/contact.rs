@@ -116,11 +116,11 @@ pub struct ContactMaterial {
     pub damping: f64,
     /// Coulomb static friction coefficient (dimensionless).
     ///
-    /// Applies when the tangential slip speed is below [`slip_velocity`].
+    /// Applies when the tangential slip speed is below [`Self::slip_velocity`].
     pub mu_static: f64,
     /// Coulomb kinetic friction coefficient (dimensionless).
     ///
-    /// Applies when the tangential slip speed is above [`slip_velocity`].
+    /// Applies when the tangential slip speed is above [`Self::slip_velocity`].
     pub mu_kinetic: f64,
     /// Tangential speed below which static friction applies (m/s).
     ///

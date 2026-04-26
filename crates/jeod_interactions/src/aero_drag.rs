@@ -148,8 +148,8 @@ impl DragConfigTyped {
 
 /// Typed sibling of [`AerodynamicForce`].
 ///
-/// `force` carries [`Force<StructuralFrame<V>>`]; `torque` carries
-/// [`Torque<StructuralFrame<V>>`]. Mirrors the untyped struct's
+/// `force` carries `Force<StructuralFrame<V>>`; `torque` carries
+/// `Torque<StructuralFrame<V>>`. Mirrors the untyped struct's
 /// "structural/body frame" convention (the frame `t_inertial_struct`
 /// rotates inertial vectors *into*).
 #[derive(Debug, Clone, Copy, PartialEq)]

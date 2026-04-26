@@ -203,8 +203,8 @@ impl TimeManager {
     /// Retrieve the value of a specific time scale in seconds.
     ///
     /// For MET, panics if MET has not been registered. Use
-    /// [`get_met_seconds`] for an `Option`-returning variant.
-    /// For UDE scales, use [`get_ude_seconds`] with an explicit index.
+    /// [`Self::get_met_seconds`] for an `Option`-returning variant.
+    /// For UDE scales, use [`Self::get_ude_seconds`] with an explicit index.
     pub fn get_seconds(&self, scale: TimeScaleId) -> f64 {
         match scale {
             TimeScaleId::TAI => self.tai_seconds,
