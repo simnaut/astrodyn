@@ -14,7 +14,9 @@
 
 use jeod_dynamics::MassProperties;
 use jeod_quantities::ext::F64Ext;
-use uom::si::f64::Mass;
+use uom::si::f64::{Length, Mass};
+use uom::si::length::meter;
+use uom::si::mass::kilogram;
 
 /// ISS-class mass (~420 t) as a typed [`Mass`].
 pub fn iss_mass() -> Mass {
@@ -53,10 +55,14 @@ pub fn apollo_csm_mass() -> Mass {
     30_000.0.kg()
 }
 
-/// 6-DoF rigid sphere mass properties: total mass `m`, uniform inertia
-/// `I = (2/5) m r²` along all body axes, CoM at structural origin.
-pub fn rigid_sphere(mass_kg: f64, radius_m: f64) -> MassProperties {
-    let i = 0.4 * mass_kg * radius_m * radius_m;
+/// 6-DoF rigid sphere mass properties: total mass `mass`, uniform
+/// inertia `I = (2/5) m r²` along all body axes, CoM at structural
+/// origin. Inputs are typed so call sites stay unit-safe ergonomically:
+/// `vehicle::rigid_sphere(420_000.0.kg(), 5.0.m())`.
+pub fn rigid_sphere(mass: Mass, radius: Length) -> MassProperties {
+    let m = mass.get::<kilogram>();
+    let r = radius.get::<meter>();
+    let i = 0.4 * m * r * r;
     let inertia = glam::DMat3::from_diagonal(glam::DVec3::new(i, i, i));
-    MassProperties::with_inertia(mass_kg, inertia, glam::DVec3::ZERO)
+    MassProperties::with_inertia(m, inertia, glam::DVec3::ZERO)
 }

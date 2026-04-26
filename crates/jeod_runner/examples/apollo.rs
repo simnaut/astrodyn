@@ -20,7 +20,7 @@ use std::path::Path;
 use glam::{DMat3, DVec3};
 use jeod_dynamics::MassProperties;
 use jeod_runner::SimulationBuilderExt;
-use jeod_sim::recipes::scenarios;
+use jeod_sim::recipes::scenarios::{self, apollo};
 use jeod_sim::{EphemerisBody, TranslationalState};
 
 const MU_EARTH: f64 = 3.986_004_418e14;
@@ -67,9 +67,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // the body's current mass into the tree node. Initializing with
     // CSM+S-IVB here would double-count the S-IVB once it's attached.
     sb.bodies[0].mass = Some(MassProperties::new(MASS_CSM));
-    // Wire DE421 ephemeris on the Moon/Sun sources (indices from the scenario).
-    sb.set_source_ephemeris(1, EphemerisBody::Moon, EphemerisBody::Earth);
-    sb.set_source_ephemeris(2, EphemerisBody::Sun, EphemerisBody::Earth);
+    // Wire DE421 ephemeris on the Moon/Sun sources (indices exposed by
+    // the scenario as named constants — robust against any future
+    // reordering inside `apollo_translunar`).
+    sb.set_source_ephemeris(apollo::MOON_IDX, EphemerisBody::Moon, EphemerisBody::Earth);
+    sb.set_source_ephemeris(apollo::SUN_IDX, EphemerisBody::Sun, EphemerisBody::Earth);
     sb = sb.ephemeris(ephemeris);
 
     let mut sim = sb.build().expect("apollo scenario must validate");
@@ -144,7 +146,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let body = sim.body(0);
             let pos = body.trans.position;
             let vel = body.trans.velocity;
-            let moon_pos = sim.source_position(1);
+            let moon_pos = sim.source_position(apollo::MOON_IDX);
             let alt_km = (pos.length() - R_EARTH) / 1000.0;
             let dist_moon_km = (pos - moon_pos).length() / 1000.0;
             let speed = vel.length();
@@ -168,7 +170,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let final_body = sim.body(0);
-    let final_moon_dist = (final_body.trans.position - sim.source_position(1)).length();
+    let final_moon_dist =
+        (final_body.trans.position - sim.source_position(apollo::MOON_IDX)).length();
     println!();
     println!(
         "Final distance to Moon: {:.0} km after {:.1} days",

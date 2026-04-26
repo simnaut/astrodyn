@@ -176,8 +176,15 @@ impl SimulationBuilder {
     /// the tree can be connected via [`attach_bodies`](Self::attach_bodies).
     ///
     /// # Panics
-    /// Panics if the body does not define mass properties.
+    /// - `body_idx` is out of range for the bodies added so far.
+    /// - The body does not define mass properties.
     pub fn register_in_mass_tree(&mut self, body_idx: usize, name: impl Into<String>) -> &mut Self {
+        assert!(
+            body_idx < self.bodies.len(),
+            "register_in_mass_tree: body index {body_idx} out of range \
+             ({} bodies added)",
+            self.bodies.len()
+        );
         assert!(
             self.bodies[body_idx].mass.is_some(),
             "register_in_mass_tree: body {body_idx} has no mass properties"
@@ -193,7 +200,9 @@ impl SimulationBuilder {
     /// The attachment is resolved when the consumer materializes the builder.
     ///
     /// # Panics
-    /// Panics if either body has not been registered in the mass tree.
+    /// - `child_idx` or `parent_idx` is out of range for the bodies
+    ///   added so far.
+    /// - Either body has not been registered in the mass tree.
     pub fn attach_bodies(
         &mut self,
         child_idx: usize,
@@ -201,6 +210,18 @@ impl SimulationBuilder {
         offset: DVec3,
         t_parent_child: DMat3,
     ) -> &mut Self {
+        assert!(
+            child_idx < self.bodies.len(),
+            "attach_bodies: child body index {child_idx} out of range \
+             ({} bodies added)",
+            self.bodies.len()
+        );
+        assert!(
+            parent_idx < self.bodies.len(),
+            "attach_bodies: parent body index {parent_idx} out of range \
+             ({} bodies added)",
+            self.bodies.len()
+        );
         assert!(
             self.mass_tree_names[child_idx].is_some(),
             "attach_bodies: child body {child_idx} not registered in mass tree"

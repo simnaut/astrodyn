@@ -32,6 +32,14 @@ use uom::si::mass::kilogram;
 
 const MU_EARTH: f64 = 3.986_004_415e14;
 
+/// Earth equatorial radius from `recipes::constants::r_eq_earth()`.
+/// Used to compute the printed altitude — keeps the example aligned
+/// with the rest of the recipe-based examples if the constant ever
+/// changes.
+fn r_eq_earth_m() -> f64 {
+    constants::r_eq_earth().get::<meter>()
+}
+
 fn eccentricity(mu: f64, position: DVec3, velocity: DVec3) -> f64 {
     let h = position.cross(velocity);
     let e_vec = velocity.cross(h) / mu - position.normalize();
@@ -107,7 +115,7 @@ fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
     println!("==============================");
     println!(
         "Initial altitude: {:.1} km",
-        (trans.position.length() - 6_378_137.0) / 1000.0
+        (trans.position.length() - r_eq_earth_m()) / 1000.0
     );
 }
 
@@ -126,7 +134,7 @@ fn print_state(
         }
         if counter.0.is_multiple_of(100) || counter.0 <= 1 {
             let v = state.velocity.length();
-            let alt_km = (state.position.length() - 6_378_137.0) / 1000.0;
+            let alt_km = (state.position.length() - r_eq_earth_m()) / 1000.0;
             let e_mag = eccentricity(MU_EARTH, state.position, state.velocity);
             println!(
                 "step={:5}  t={:8.0}s  alt={:7.1}km  v={:.1}m/s  e={:.2e}",
