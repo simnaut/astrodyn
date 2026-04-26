@@ -102,6 +102,40 @@ impl Plugin for JeodPlugin {
         // ── Resources ──
         app.init_resource::<SimulationTimeR>();
 
+        // ── Typed-Component reflection (#154) ──
+        // Register every typed Component so Bevy editor / scene
+        // serialization can identify them. Inner `jeod_*` types are
+        // marked `#[reflect(opaque)]` (see `src/components.rs`) so the
+        // Component appears as a leaf with its type name; field-level
+        // introspection requires propagating `Reflect` into the source
+        // crates and is out of scope here.
+        app.register_type::<components::TranslationalStateC>();
+        app.register_type::<components::RotationalStateC>();
+        app.register_type::<components::MassPropertiesC>();
+        app.register_type::<components::GravityAccelerationC>();
+        app.register_type::<components::TotalForceC>();
+        app.register_type::<components::FrameDerivativesC>();
+        app.register_type::<components::DynamicsConfigC>();
+        app.register_type::<components::IntegratorTypeC>();
+        app.register_type::<components::GaussJacksonStateC>();
+        app.register_type::<components::Abm4StateC>();
+        app.register_type::<components::GravityControlsC>();
+        app.register_type::<components::GravitySourceC>();
+        app.register_type::<components::SourceInertialPositionC>();
+        app.register_type::<components::SourceInertialVelocityC>();
+        app.register_type::<components::AerodynamicForceC>();
+        app.register_type::<components::RadiationForceC>();
+        app.register_type::<components::GravityTorqueC>();
+        app.register_type::<components::AtmosphericStateC>();
+        app.register_type::<components::StructuralTransformC>();
+        app.register_type::<components::PlanetFixedRotationC>();
+        app.register_type::<components::TidalConfigC>();
+        app.register_type::<components::TidalDeltaC20C>();
+        app.register_type::<components::DragConfigC>();
+        app.register_type::<components::FlatPlateConfigC>();
+        app.register_type::<components::SunMarker>();
+        app.register_type::<components::MoonMarker>();
+
         // ── Events ──
         app.add_message::<AttachEvent>();
         app.add_message::<DetachEvent>();

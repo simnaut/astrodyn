@@ -654,6 +654,7 @@ name = "bevy_jeod"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bevy_reflect",
  "glam 0.30.10",
  "jeod_dynamics",
  "jeod_quantities",
