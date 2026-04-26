@@ -425,6 +425,13 @@ fn run_propagation_test(
 
 // -- Individual test functions --
 
+// non-recipe (all 6 runs): SIM_torque_compare_simple seeds ISS mass props
+// from JEOD `Modified_data/mass.py` (set_mass_iss) — a complete
+// non-diagonal inertia tensor with off-CoM offset that the
+// `recipes::vehicle::iss_mass()` scalar can't represent. CSV t=0 also
+// supplies position/velocity/quaternion/ang_vel. Helper math
+// (`quaternion_angle_error`) is hoisted via `sim_test_helpers`'s
+// re-export of `recipes::helpers::state_helpers::jeodquat_angle_error`.
 #[test]
 fn tier3_torque_simple_run01() {
     run_propagation_test(
