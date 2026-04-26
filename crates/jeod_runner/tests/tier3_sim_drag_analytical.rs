@@ -181,7 +181,8 @@ fn tier3_drag_altitude_decay() {
 
     let mut sim = make_drag_sim(pos, vel, mass, cd, area, density, dt);
 
-    let a_initial = semi_major_axis_from_energy(specific_orbital_energy(pos, vel, MU_EARTH), MU_EARTH);
+    let a_initial =
+        semi_major_axis_from_energy(specific_orbital_energy(pos, vel, MU_EARTH), MU_EARTH);
 
     // Propagate for 2 orbits
     let period = 2.0 * std::f64::consts::PI * (a_initial.powi(3) / MU_EARTH).sqrt();
@@ -242,16 +243,16 @@ fn tier3_drag_higher_density_faster_decay() {
     let mut sim_low = make_drag_sim(pos, vel, mass, cd, area, density_low, dt);
     sim_low.step_n(n_steps);
     let body_low = sim_low.body(0);
-    let e_loss_low =
-        e_initial - specific_orbital_energy(body_low.trans.position, body_low.trans.velocity, MU_EARTH);
+    let e_loss_low = e_initial
+        - specific_orbital_energy(body_low.trans.position, body_low.trans.velocity, MU_EARTH);
 
     // Case 2: high density (10x)
     let density_high = 1e-11;
     let mut sim_high = make_drag_sim(pos, vel, mass, cd, area, density_high, dt);
     sim_high.step_n(n_steps);
     let body_high = sim_high.body(0);
-    let e_loss_high =
-        e_initial - specific_orbital_energy(body_high.trans.position, body_high.trans.velocity, MU_EARTH);
+    let e_loss_high = e_initial
+        - specific_orbital_energy(body_high.trans.position, body_high.trans.velocity, MU_EARTH);
 
     let density_ratio = density_high / density_low;
     let loss_ratio = e_loss_high / e_loss_low;
@@ -396,7 +397,8 @@ fn tier3_drag_corotation_wind_effect() {
     // Use ExponentialAtmosphere with a density that we'll override via
     // constant_density anyway.
 
-    let e_initial = specific_orbital_energy(DVec3::new(r, 0.0, 0.0), DVec3::new(0.0, v, 0.0), MU_EARTH);
+    let e_initial =
+        specific_orbital_energy(DVec3::new(r, 0.0, 0.0), DVec3::new(0.0, v, 0.0), MU_EARTH);
 
     // Prograde: velocity in +Y when position is +X (same as Earth rotation)
     let pos = DVec3::new(r, 0.0, 0.0);
@@ -410,8 +412,8 @@ fn tier3_drag_corotation_wind_effect() {
     let mut sim_pro = make_drag_sim_with_wind(pos, vel_prograde, mass, cd, area, density, dt);
     sim_pro.step_n(n_steps);
     let body_pro = sim_pro.body(0);
-    let e_loss_pro =
-        e_initial - specific_orbital_energy(body_pro.trans.position, body_pro.trans.velocity, MU_EARTH);
+    let e_loss_pro = e_initial
+        - specific_orbital_energy(body_pro.trans.position, body_pro.trans.velocity, MU_EARTH);
 
     // Retrograde orbit with co-rotation wind
     let mut sim_retro = make_drag_sim_with_wind(pos, vel_retrograde, mass, cd, area, density, dt);
