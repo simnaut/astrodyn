@@ -19,13 +19,9 @@ use jeod_quantities::frame::Inertial;
 
 use super::constants::{mu_ggm05c, mu_mars, mu_sun};
 
-fn from_pos_vel(pos: glam::DVec3, vel: glam::DVec3) -> OrbitalElements {
-    from_pos_vel_with_mu(pos, vel, mu_ggm05c())
-}
-
-/// Compute classical orbital elements for the given μ. Used by the
-/// non-geocentric presets ([`mercury_perihelion`], [`mars_dawn_orbit`])
-/// where Earth's μ is the wrong central body.
+/// Compute classical orbital elements for the given μ. Every preset
+/// in this module funnels through here so the velocity computation
+/// (when present) and the conversion share a single μ value.
 fn from_pos_vel_with_mu(pos: glam::DVec3, vel: glam::DVec3, mu: GravParam) -> OrbitalElements {
     let p = Position::<Inertial>::from_raw_si(pos);
     let v = Velocity::<Inertial>::from_raw_si(vel);
@@ -46,12 +42,23 @@ pub fn iss() -> OrbitalElements {
     leo_400km_circular_iss_inclination()
 }
 
+/// Build a circular orbit of radius `r` and inclination `inc` (radians)
+/// for a body whose gravitational parameter is `mu`. Used by the
+/// circular-orbit presets so that the velocity computation and the
+/// `from_pos_vel_with_mu` call share a single source of truth for μ —
+/// mismatching them silently breaks the circular-orbit invariant.
+fn circular_orbit_with_mu(r: f64, inc: f64, mu: GravParam) -> OrbitalElements {
+    let v = (mu.value / r).sqrt();
+    from_pos_vel_with_mu(
+        glam::DVec3::new(r, 0.0, 0.0),
+        glam::DVec3::new(0.0, v * inc.cos(), v * inc.sin()),
+        mu,
+    )
+}
+
 /// Geostationary circular orbit at 42164 km, inclination 0°.
 pub fn geostationary() -> OrbitalElements {
-    let r = 42_164_172.0_f64;
-    let mu = 3.986_004_415e14_f64;
-    let v = (mu / r).sqrt();
-    from_pos_vel(glam::DVec3::new(r, 0.0, 0.0), glam::DVec3::new(0.0, v, 0.0))
+    circular_orbit_with_mu(42_164_172.0_f64, 0.0, mu_ggm05c())
 }
 
 /// 400 km circular LEO at 51.6° inclination — the simplest ISS-like
@@ -59,27 +66,13 @@ pub fn geostationary() -> OrbitalElements {
 /// reference state).
 pub fn leo_400km_circular_iss_inclination() -> OrbitalElements {
     let r_eq = 6_378_137.0_f64;
-    let r = r_eq + 400_000.0;
-    let mu = 3.986_004_415e14_f64;
-    let v = (mu / r).sqrt();
-    let inc = 51.6_f64.to_radians();
-    from_pos_vel(
-        glam::DVec3::new(r, 0.0, 0.0),
-        glam::DVec3::new(0.0, v * inc.cos(), v * inc.sin()),
-    )
+    circular_orbit_with_mu(r_eq + 400_000.0, 51.6_f64.to_radians(), mu_ggm05c())
 }
 
 /// Polar circular LEO at 600 km altitude.
 pub fn leo_polar_600km() -> OrbitalElements {
     let r_eq = 6_378_137.0_f64;
-    let r = r_eq + 600_000.0;
-    let mu = 3.986_004_415e14_f64;
-    let v = (mu / r).sqrt();
-    let inc = 90.0_f64.to_radians();
-    from_pos_vel(
-        glam::DVec3::new(r, 0.0, 0.0),
-        glam::DVec3::new(0.0, v * inc.cos(), v * inc.sin()),
-    )
+    circular_orbit_with_mu(r_eq + 600_000.0, 90.0_f64.to_radians(), mu_ggm05c())
 }
 
 // ── Heliocentric / planetary presets ─────────────────────────────────
@@ -116,14 +109,7 @@ pub fn mars_dawn_orbit() -> OrbitalElements {
 /// trans-lunar burn.
 pub fn apollo_parking() -> OrbitalElements {
     let r_eq = 6_378_137.0_f64;
-    let r = r_eq + 185_000.0;
-    let mu = 3.986_004_415e14_f64;
-    let v = (mu / r).sqrt();
-    let inc = 32.5_f64.to_radians();
-    from_pos_vel(
-        glam::DVec3::new(r, 0.0, 0.0),
-        glam::DVec3::new(0.0, v * inc.cos(), v * inc.sin()),
-    )
+    circular_orbit_with_mu(r_eq + 185_000.0, 32.5_f64.to_radians(), mu_ggm05c())
 }
 
 /// Geostationary radius (42164 km) at non-zero inclination.
@@ -135,14 +121,7 @@ pub fn apollo_parking() -> OrbitalElements {
 /// inclination, with the line of nodes along the +x axis.
 pub fn geo_inclined(inclination: uom::si::f64::Angle) -> OrbitalElements {
     use uom::si::angle::radian;
-    let r = 42_164_172.0_f64;
-    let mu = 3.986_004_415e14_f64;
-    let v = (mu / r).sqrt();
-    let inc = inclination.get::<radian>();
-    from_pos_vel(
-        glam::DVec3::new(r, 0.0, 0.0),
-        glam::DVec3::new(0.0, v * inc.cos(), v * inc.sin()),
-    )
+    circular_orbit_with_mu(42_164_172.0_f64, inclination.get::<radian>(), mu_ggm05c())
 }
 
 #[cfg(test)]

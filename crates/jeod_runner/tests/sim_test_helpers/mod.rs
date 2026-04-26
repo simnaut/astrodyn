@@ -5,8 +5,8 @@
 //! agreement, attach/detach scheduling, force/torque profiles, custom
 //! CSV reader, parametric orbinit cases) into
 //! [`jeod_sim::recipes::helpers`]. Phase 7 owns the typed CSV loaders
-//! in `jeod_sim::recipes::verification::csv_loader`. What remains in
-//! this file is:
+//! in [`jeod_test_data::tier3_csv`] (with `jeod_test_data::dyncomp_csv`
+//! as its initial entry). What remains in this file is:
 //!
 //! - Tests-only glue that depends on `jeod_test_data` types
 //!   ([`mass_props_from_init`]).

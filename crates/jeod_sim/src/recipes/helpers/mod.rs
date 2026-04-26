@@ -9,10 +9,10 @@
 //!
 //! These are **propagation utilities** only — schema-flexible CSV
 //! readers (which are reference-data plumbing, not propagation) live
-//! in [`recipes::verification::csv_loader`](super::verification) and
-//! are owned by Phase 7. Tests that don't fit a standard scenario but
-//! share these mid-loop bookkeeping patterns reach for the
-//! corresponding submodule below.
+//! in [`jeod_test_data::tier3_csv`] (the typed Phase 7 catalogue, with
+//! `dyncomp_csv` as its current entry). Tests that don't fit a
+//! standard scenario but share these mid-loop bookkeeping patterns
+//! reach for the corresponding submodule below.
 //!
 //! Submodules:
 //!
@@ -33,8 +33,8 @@
 //! - [`attach_detach_helpers`]: time-stamped mass-tree event schedule
 //!   wrapper for attach / detach tests.
 //! - [`custom_csv`]: schema-flexible CSV reader for ad-hoc test
-//!   formats that don't yet have a dedicated loader in
-//!   `verification::csv_loader`.
+//!   formats that don't yet have a dedicated typed loader in
+//!   [`jeod_test_data::tier3_csv`].
 
 pub mod attach_detach_helpers;
 pub mod custom_csv;
