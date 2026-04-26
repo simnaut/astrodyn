@@ -134,6 +134,7 @@ pub fn orbelem_ecc() -> VerificationCase {
             ],
         },
         extras: Some(ExtrasComparator::Orbelem),
+        pre_step: None,
     }
 }
 
@@ -179,6 +180,7 @@ pub fn lvlh_inc() -> VerificationCase {
             extras: &[("t_parent_this", 1.42e-11), ("ang_vel", 3.68e-16)],
         },
         extras: Some(ExtrasComparator::Lvlh),
+        pre_step: None,
     }
 }
 
@@ -197,6 +199,7 @@ pub fn lvlh_ecc() -> VerificationCase {
             extras: &[("t_parent_this", 9.71e-12), ("ang_vel", 4.81e-15)],
         },
         extras: Some(ExtrasComparator::Lvlh),
+        pre_step: None,
     }
 }
 
@@ -215,6 +218,7 @@ pub fn lvlh_equ() -> VerificationCase {
             extras: &[("t_parent_this", 2.192e-11), ("ang_vel", 4.704e-16)],
         },
         extras: Some(ExtrasComparator::Lvlh),
+        pre_step: None,
     }
 }
 
@@ -295,6 +299,7 @@ pub fn ned_ell_inc() -> VerificationCase {
             ],
         },
         extras: Some(ExtrasComparator::Ned { spherical: false }),
+        pre_step: None,
     }
 }
 
@@ -319,6 +324,7 @@ pub fn ned_ell_polar() -> VerificationCase {
             ],
         },
         extras: Some(ExtrasComparator::Ned { spherical: false }),
+        pre_step: None,
     }
 }
 
@@ -341,6 +347,7 @@ pub fn ned_sph_inc() -> VerificationCase {
             ],
         },
         extras: Some(ExtrasComparator::Ned { spherical: true }),
+        pre_step: None,
     }
 }
 
@@ -363,6 +370,7 @@ pub fn ned_sph_polar() -> VerificationCase {
             ],
         },
         extras: Some(ExtrasComparator::Ned { spherical: true }),
+        pre_step: None,
     }
 }
 
@@ -478,6 +486,7 @@ pub fn euler_run2() -> VerificationCase {
             ],
         },
         extras: Some(ExtrasComparator::DyncompEuler),
+        pre_step: None,
     }
 }
 
@@ -500,6 +509,7 @@ pub fn euler_ecc() -> VerificationCase {
             ],
         },
         extras: Some(ExtrasComparator::Euler),
+        pre_step: None,
     }
 }
 
@@ -522,5 +532,6 @@ pub fn euler_equ() -> VerificationCase {
             ],
         },
         extras: Some(ExtrasComparator::Euler),
+        pre_step: None,
     }
 }

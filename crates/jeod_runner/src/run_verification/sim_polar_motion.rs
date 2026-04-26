@@ -94,5 +94,6 @@ pub fn run2p_polar_motion() -> VerificationCase {
             extras: &[],
         },
         extras: None,
+        pre_step: None,
     }
 }
