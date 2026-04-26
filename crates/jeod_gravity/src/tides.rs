@@ -86,6 +86,29 @@ impl TidalConfigTyped {
                 .collect(),
         }
     }
+
+    /// Lift an untyped [`TidalConfig`] into the typed surface.
+    ///
+    /// The numeric values are reinterpreted as their SI-base-unit counterparts
+    /// (k2 dimensionless, mu in m³/s², radius in m, body positions in m). This
+    /// is the inverse of [`Self::to_untyped`] up to the absence of phantom
+    /// frame information on input.
+    pub fn from_untyped(config: &TidalConfig) -> Self {
+        use jeod_quantities::ext::{F64Ext, Vec3Ext};
+        Self {
+            k2: Ratio::new::<uom::si::ratio::ratio>(config.k2),
+            mu_primary: F64Ext::m3_per_s2(config.mu_primary),
+            radius_primary: Length::new::<uom::si::length::meter>(config.radius_primary),
+            tidal_bodies: config
+                .tidal_bodies
+                .iter()
+                .map(|b| TidalBodyTyped {
+                    mu: F64Ext::m3_per_s2(b.mu),
+                    position_inertial: b.position_inertial.m_at::<Inertial>(),
+                })
+                .collect(),
+        }
+    }
 }
 
 /// Typed sibling of [`compute_delta_c20`].
