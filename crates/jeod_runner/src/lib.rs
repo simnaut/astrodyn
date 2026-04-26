@@ -42,9 +42,12 @@ use jeod_sim::{
     TranslationalState,
 };
 
+pub mod branded;
 pub mod builder;
 pub mod prelude;
 pub mod run_verification;
+
+pub use branded::{BodyIdx, BrandedSimulation, SourceIdx};
 
 // Re-export jeod_sim so downstream tests can access types through either path.
 pub use jeod_sim;
