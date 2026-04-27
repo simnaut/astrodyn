@@ -239,12 +239,13 @@ impl Vehicle for TestVehicle {
 //
 // The seal traits `VehicleSealed` and `PlanetSealed` are re-exported via
 // `$crate::__macro_support` so the macros can satisfy the bounds from
-// downstream call sites. The other four seals — `FrameSealed`,
-// `TimeScaleSealed`, and `QuatSealed` (which gates `Layout` + `Transform`)
-// — are *not* re-exported, so `Frame`, `TimeScale`, `Layout`, and
-// `Transform` remain type-system-sealed and downstream code cannot impl
-// them at all. Direct `impl Vehicle for X` outside the macro is
-// technically possible but unsupported.
+// downstream call sites. The other three seal traits — `FrameSealed`,
+// `TimeScaleSealed`, and `QuatSealed` (which gates both `Layout` and
+// `Transform`) — are *not* re-exported, so the four public traits they
+// guard (`Frame`, `TimeScale`, `Layout`, `Transform`) remain
+// type-system-sealed and downstream code cannot impl them at all.
+// Direct `impl Vehicle for X` outside the macro is technically possible
+// but unsupported.
 //
 // Per-instance names (`"Iss"`, `"Soyuz"`, …) come from `stringify!($name)`.
 // `Frame::NAME` cannot splice `V::NAME` (it is a `&'static str` const, not
