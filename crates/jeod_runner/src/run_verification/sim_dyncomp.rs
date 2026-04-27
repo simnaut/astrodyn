@@ -14,13 +14,13 @@ use std::path::PathBuf;
 use glam::{DMat3, DVec3};
 use jeod_sim::met_atmosphere;
 use jeod_sim::recipes::verification::{
-    CsvReference, InitialConditions, Tolerances, VerificationCase,
+    CsvReference, InitialConditions, PreStepClosure, Tolerances, VerificationCase,
 };
 use jeod_sim::{
     coefficients::load_from_jeod_cc, default_leap_second_table, AtmosphereConfig, AtmosphereModel,
-    DragConfig, GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry,
-    JeodQuat, MassProperties, MetAtmosphere, RotationModel, RotationalState, SimulationBuilder,
-    SimulationTime, TranslationalState, VehicleConfig, EARTH,
+    DragConfig, Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel,
+    GravitySource, GravitySourceEntry, JeodQuat, MassProperties, MetAtmosphere, RotationModel,
+    RotationalState, SimulationBuilder, SimulationTime, TranslationalState, VehicleConfig, EARTH,
 };
 use uom::si::f64::Time;
 use uom::si::time::second;
@@ -393,6 +393,378 @@ pub fn run3b_sh8x8() -> VerificationCase {
         },
         extras: None,
         pre_step: None,
+    }
+}
+
+// ── RUN_4: spherical Earth + Sun/Moon third-body (DE421) ──────────────────
+
+/// Path to the bundled DE421 BSP kernel that drives Sun/Moon position
+/// updates for third-body and tidal scenarios. Panics with the expected
+/// path if missing — the file is committed to `test_data/` per CLAUDE.md.
+fn bsp_path() -> PathBuf {
+    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../test_data/de421.bsp");
+    assert!(p.exists(), "DE421 ephemeris not found at {}", p.display());
+    p
+}
+
+/// Index of the Sun gravity source inside the RUN_4 scenario. The
+/// scenario builder `debug_assert!`s this against the actual returned
+/// index so a future reorder doesn't silently desync the `pre_step`
+/// hook from the source registry.
+const RUN4_SUN_IDX: usize = 1;
+/// Index of the Moon gravity source inside the RUN_4 scenario.
+const RUN4_MOON_IDX: usize = 2;
+
+fn third_body_source(mu: f64, initial_pos: DVec3) -> GravitySourceEntry {
+    GravitySourceEntry {
+        source: GravitySource {
+            mu,
+            model: GravityModel::PointMass,
+        },
+        position: initial_pos,
+        velocity: DVec3::ZERO,
+        t_inertial_pfix: None,
+        delta_c20: 0.0,
+        rotation_model: RotationModel::default(),
+        tidal_config: None,
+        planet_omega: 0.0,
+        central: false,
+    }
+}
+
+fn build_run4_3rd_body(init: &InitialConditions) -> SimulationBuilder {
+    let jeod = jeod_root();
+    let sim_dir = jeod.join(SIM_DYNCOMP);
+    let grav_data_dir = jeod.join("models/environment/gravity/data/src");
+    let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+
+    let earth_grav =
+        load_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc")).expect("load Earth gravity");
+    let mu_sun =
+        jeod_sim::coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("sun_spherical.cc"))
+            .expect("load Sun mu");
+    let mu_moon =
+        jeod_sim::coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("moon_GRAIL150.cc"))
+            .expect("load Moon mu");
+
+    // Initial Sun/Moon positions at the dyncomp epoch — re-queried each
+    // step by the `pre_step` hook below.
+    let time = dyncomp_time();
+    let epoch_tdb_jd = time.tdb_julian_date();
+    let ephemeris = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
+    let (sun_t0, _) = ephemeris
+        .get_earth_centered_state_typed(EphemerisBody::Sun, epoch_tdb_jd)
+        .expect("Sun position at epoch");
+    let (moon_t0, _) = ephemeris
+        .get_earth_centered_state_typed(EphemerisBody::Moon, epoch_tdb_jd)
+        .expect("Moon position at epoch");
+
+    let mut sb = SimulationBuilder::new(time, dt);
+    let earth = sb.add_source("Earth", point_mass_earth_source(earth_grav.mu));
+    let sun = sb.add_source("Sun", third_body_source(mu_sun, sun_t0.raw_si()));
+    let moon = sb.add_source("Moon", third_body_source(mu_moon, moon_t0.raw_si()));
+    debug_assert_eq!(
+        sun, RUN4_SUN_IDX,
+        "Sun source index drift: run4_pre_step assumes Sun is at \
+         RUN4_SUN_IDX={RUN4_SUN_IDX}, but add_source returned {sun}."
+    );
+    debug_assert_eq!(
+        moon, RUN4_MOON_IDX,
+        "Moon source index drift: run4_pre_step assumes Moon is at \
+         RUN4_MOON_IDX={RUN4_MOON_IDX}, but add_source returned {moon}."
+    );
+
+    sb.add_body(VehicleConfig {
+        trans: trans_from(init),
+        rot: Some(rot_from(init, "run4_3rd_body")),
+        mass: Some(iss_mass_properties()),
+        gravity_controls: GravityControls {
+            controls: vec![
+                GravityControl::new_spherical(earth, false),
+                GravityControl::new_third_body(sun),
+                GravityControl::new_third_body(moon),
+            ],
+        },
+        ..Default::default()
+    });
+    sb
+}
+
+/// Pre-step factory for RUN_4: capture a DE421 ephemeris + the
+/// epoch-anchored TDB JD once, then update Sun/Moon source positions to
+/// the upcoming step's TDB before `step_until`. Mirrors the bespoke
+/// test's per-record loop exactly so baselines stay bit-stable.
+fn run4_pre_step(_init: &InitialConditions) -> PreStepClosure {
+    let ephemeris = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
+    let epoch_tdb_jd = dyncomp_time().tdb_julian_date();
+    Box::new(move |sim, time_s: f64| {
+        let target_tdb_jd = epoch_tdb_jd + time_s / 86_400.0;
+        let (sun_pos, _) = ephemeris
+            .get_earth_centered_state_typed(EphemerisBody::Sun, target_tdb_jd)
+            .expect("Sun position query");
+        let (moon_pos, _) = ephemeris
+            .get_earth_centered_state_typed(EphemerisBody::Moon, target_tdb_jd)
+            .expect("Moon position query");
+        sim.set_source_position(RUN4_SUN_IDX, sun_pos.raw_si());
+        sim.set_source_position(RUN4_MOON_IDX, moon_pos.raw_si());
+    })
+}
+
+/// SIM_dyncomp RUN_4 — spherical Earth + Sun/Moon third-body
+/// gravity. Validates differential 3rd-body acceleration with DE421.
+pub fn run4_3rd_body() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_simulation_run4_3rd_body",
+        scenario: build_run4_3rd_body,
+        reference: CsvReference::Dyncomp6Dof("dyncomp_run4_state.csv"),
+        duration: Time::new::<second>(28800.0),
+        tolerances: Tolerances {
+            // Inherited from the bespoke assertion (5 % above observed).
+            position_m: [1.644e-3, 2.098e-3, 2.025e-3],
+            velocity_m_s: [1.762e-6, 2.082e-6, 2.400e-6],
+            quat_angle_rad: 4.426e-8,
+            ang_vel_rad_s: [2.619e-18, 1.367e-18, 7.969e-19],
+            extras: &[],
+        },
+        extras: None,
+        pre_step: Some(run4_pre_step),
+    }
+}
+
+// ── RUN_7A–7D: SH gravity + Sun/Moon third-body (± MET drag) ──────────────
+
+const RUN7_SUN_IDX: usize = 1;
+const RUN7_MOON_IDX: usize = 2;
+
+fn build_run7(
+    init: &InitialConditions,
+    run_dir: &str,
+    with_drag: bool,
+    case: &str,
+) -> SimulationBuilder {
+    let jeod = jeod_root();
+    let sim_dir = jeod.join(SIM_DYNCOMP);
+    let grav_data_dir = jeod.join("models/environment/gravity/data/src");
+    let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
+
+    // Gravity controls degree/order from RUN input chain (RUN_7A is always
+    // in the chain; RUN_7B/7D add an 8x8 override; 7C/7D add their own
+    // input.py for drag wiring without gravity changes).
+    let mut grav_files: Vec<PathBuf> = vec![sim_dir.join("Modified_data/grav_controls.py")];
+    grav_files.push(sim_dir.join("SET_test/RUN_7A/input.py"));
+    if run_dir == "RUN_7B" || run_dir == "RUN_7D" {
+        grav_files.push(sim_dir.join("SET_test/RUN_7B/input.py"));
+    }
+    if run_dir == "RUN_7C" || run_dir == "RUN_7D" {
+        grav_files.push(sim_dir.join(format!("SET_test/{run_dir}/input.py")));
+    }
+    let grav_file_refs: Vec<&std::path::Path> = grav_files.iter().map(|p| p.as_path()).collect();
+    let grav_cfg = jeod_test_data::gravity_control::load_gravity_control(&grav_file_refs);
+
+    let earth_grav =
+        load_from_jeod_cc(&grav_data_dir.join("earth_GGM02C.cc")).expect("load Earth GGM02C");
+    let mu_sun =
+        jeod_sim::coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("sun_spherical.cc"))
+            .expect("load Sun mu");
+    let mu_moon =
+        jeod_sim::coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("moon_GRAIL150.cc"))
+            .expect("load Moon mu");
+
+    let time = dyncomp_time();
+    let epoch_tdb_jd = time.tdb_julian_date();
+    let ephemeris = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
+    let (sun_t0, _) = ephemeris
+        .get_earth_centered_state_typed(EphemerisBody::Sun, epoch_tdb_jd)
+        .expect("Sun at epoch");
+    let (moon_t0, _) = ephemeris
+        .get_earth_centered_state_typed(EphemerisBody::Moon, epoch_tdb_jd)
+        .expect("Moon at epoch");
+
+    let mut sb = SimulationBuilder::new(time, dt);
+    let earth = sb.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: earth_grav.mu,
+                model: GravityModel::SphericalHarmonics(Box::new(earth_grav)),
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: Some(DMat3::IDENTITY),
+            delta_c20: 0.0,
+            rotation_model: RotationModel::EarthRNP,
+            tidal_config: None,
+            planet_omega: OMEGA_EARTH,
+            central: true,
+        },
+    );
+    let sun = sb.add_source("Sun", third_body_source(mu_sun, sun_t0.raw_si()));
+    let moon = sb.add_source("Moon", third_body_source(mu_moon, moon_t0.raw_si()));
+    debug_assert_eq!(sun, RUN7_SUN_IDX);
+    debug_assert_eq!(moon, RUN7_MOON_IDX);
+
+    if with_drag {
+        let met_model = MetAtmosphere {
+            f10: 128.8,
+            f10b: 128.8,
+            geo_index: 15.7,
+            geo_index_type: met_atmosphere::GeoIndexType::Ap,
+        };
+        sb = sb.atmosphere(
+            AtmosphereConfig {
+                model: AtmosphereModel::Met(met_model),
+                r_eq: EARTH.shape.r_eq,
+                r_pol: EARTH.shape.r_pol,
+                planet_omega: OMEGA_EARTH,
+            },
+            earth,
+        );
+    }
+
+    let drag = if with_drag {
+        Some(DragConfig {
+            cd: 0.02,
+            area: 1.0,
+            constant_density: None,
+        })
+    } else {
+        None
+    };
+
+    // Drag requires a RotationalState (JEOD_INV: IN.15). 7A/7B (no drag)
+    // run as 3-DOF; 7C/7D (drag) carry the reference quaternion.
+    let rot = if with_drag {
+        Some(rot_from(init, case))
+    } else {
+        None
+    };
+
+    sb.add_body(VehicleConfig {
+        trans: trans_from(init),
+        rot,
+        mass: Some(sphere_mass_properties()),
+        gravity_controls: GravityControls {
+            controls: vec![
+                GravityControl::new_nonspherical(
+                    earth,
+                    grav_cfg.degree,
+                    grav_cfg.order,
+                    grav_cfg.gradient,
+                ),
+                GravityControl::new_third_body(sun),
+                GravityControl::new_third_body(moon),
+            ],
+        },
+        drag,
+        ..Default::default()
+    });
+    sb
+}
+
+fn build_run7a(init: &InitialConditions) -> SimulationBuilder {
+    build_run7(init, "RUN_7A", false, "run7a")
+}
+fn build_run7b(init: &InitialConditions) -> SimulationBuilder {
+    build_run7(init, "RUN_7B", false, "run7b")
+}
+fn build_run7c(init: &InitialConditions) -> SimulationBuilder {
+    build_run7(init, "RUN_7C", true, "run7c")
+}
+fn build_run7d(init: &InitialConditions) -> SimulationBuilder {
+    build_run7(init, "RUN_7D", true, "run7d")
+}
+
+/// Pre-step factory for RUN_7*: capture DE421 + epoch TDB once, push
+/// Sun/Moon positions to the upcoming step's TDB before `step_until`.
+fn run7_pre_step(_init: &InitialConditions) -> PreStepClosure {
+    let ephemeris = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
+    let epoch_tdb_jd = dyncomp_time().tdb_julian_date();
+    Box::new(move |sim, time_s: f64| {
+        let target_tdb_jd = epoch_tdb_jd + time_s / 86_400.0;
+        let (sun_pos, _) = ephemeris
+            .get_earth_centered_state_typed(EphemerisBody::Sun, target_tdb_jd)
+            .expect("Sun");
+        let (moon_pos, _) = ephemeris
+            .get_earth_centered_state_typed(EphemerisBody::Moon, target_tdb_jd)
+            .expect("Moon");
+        sim.set_source_position(RUN7_SUN_IDX, sun_pos.raw_si());
+        sim.set_source_position(RUN7_MOON_IDX, moon_pos.raw_si());
+    })
+}
+
+/// SIM_dyncomp RUN_7A — 4×4 SH + Sun/Moon, no drag.
+pub fn run7a_sh4x4_3rd_body() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_simulation_run7a",
+        scenario: build_run7a,
+        reference: CsvReference::Dyncomp3Dof("dyncomp_run7a_state.csv"),
+        duration: Time::new::<second>(28800.0),
+        tolerances: Tolerances {
+            position_m: [5.13e-2, 1.316e-1, 9.986e-2],
+            velocity_m_s: [6.041e-5, 1.206e-4, 1.218e-4],
+            quat_angle_rad: 0.0,
+            ang_vel_rad_s: [0.0; 3],
+            extras: &[],
+        },
+        extras: None,
+        pre_step: Some(run7_pre_step),
+    }
+}
+
+/// SIM_dyncomp RUN_7B — 8×8 SH + Sun/Moon, no drag.
+pub fn run7b_sh8x8_3rd_body() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_simulation_run7b",
+        scenario: build_run7b,
+        reference: CsvReference::Dyncomp3Dof("dyncomp_run7b_state.csv"),
+        duration: Time::new::<second>(28800.0),
+        tolerances: Tolerances {
+            position_m: [1.28e-1, 2.25e-1, 1.597e-1],
+            velocity_m_s: [1.447e-4, 2.25e-4, 1.856e-4],
+            quat_angle_rad: 0.0,
+            ang_vel_rad_s: [0.0; 3],
+            extras: &[],
+        },
+        extras: None,
+        pre_step: Some(run7_pre_step),
+    }
+}
+
+/// SIM_dyncomp RUN_7C — 4×4 SH + Sun/Moon + MET drag.
+pub fn run7c_sh4x4_3rd_body_drag() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_simulation_run7c",
+        scenario: build_run7c,
+        reference: CsvReference::Dyncomp6Dof("dyncomp_run7c_state.csv"),
+        duration: Time::new::<second>(28800.0),
+        tolerances: Tolerances {
+            position_m: [6.988e-1, 1.038, 8.523e-1],
+            velocity_m_s: [7.06e-4, 1.156e-3, 9.565e-4],
+            quat_angle_rad: 0.0,
+            ang_vel_rad_s: [0.0; 3],
+            extras: &[],
+        },
+        extras: None,
+        pre_step: Some(run7_pre_step),
+    }
+}
+
+/// SIM_dyncomp RUN_7D — 8×8 SH + Sun/Moon + MET drag.
+pub fn run7d_sh8x8_3rd_body_drag() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_simulation_run7d",
+        scenario: build_run7d,
+        reference: CsvReference::Dyncomp6Dof("dyncomp_run7d_state.csv"),
+        duration: Time::new::<second>(28800.0),
+        tolerances: Tolerances {
+            position_m: [7.735e-1, 1.126, 9.118e-1],
+            velocity_m_s: [7.898e-4, 1.259e-3, 1.03e-3],
+            quat_angle_rad: 0.0,
+            ang_vel_rad_s: [0.0; 3],
+            extras: &[],
+        },
+        extras: None,
+        pre_step: Some(run7_pre_step),
     }
 }
 
