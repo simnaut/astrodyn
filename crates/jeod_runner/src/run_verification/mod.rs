@@ -611,9 +611,10 @@ impl ExtrasAccumulator {
                 let beta = body
                     .solar_beta
                     .unwrap_or_else(|| panic!("{case_name}: solar_beta not computed at idx {idx}"));
-                // Beta is a signed angle in [-π/2, π/2] in JEOD; circular
-                // diff handles wrap-around at the edges of that range.
-                self.update_max("beta", angle_diff(beta, r.solar_beta));
+                // Solar beta is constrained to [-π/2, π/2] in JEOD, so
+                // wrap-around isn't a real concern — plain absolute
+                // difference matches what the bespoke test asserted on.
+                self.update_max("beta", (beta - r.solar_beta).abs());
             }
             (kind, recs) => panic!(
                 "{case_name}: ExtrasComparator {kind:?} requires the matching \
