@@ -52,6 +52,14 @@ pub(crate) struct StateMachine {
     cycle_start_time: f64,
     bootstrap_edit_redo_needed: bool,
 
+    // ── Convergence diagnostics ──
+    /// Cumulative count of `BootstrapEdit` iterations that exceeded
+    /// `max_correction_iterations` without converging. Each occurrence
+    /// means the FSM accepted a non-converged correction and proceeded
+    /// to the next phase. Matches JEOD's behavior; surfaced here so
+    /// callers can log a warning instead of silently continuing.
+    bootstrap_unconverged_iterations: u32,
+
     // Flags (set by perform_step, read by integrator)
     at_downsample: bool,
     at_reinitialize: bool,
@@ -96,6 +104,7 @@ impl StateMachine {
             cycle_scale: 1.0 / tour_count as f64,
             cycle_start_time: 0.0,
             bootstrap_edit_redo_needed: false,
+            bootstrap_unconverged_iterations: 0,
             at_downsample: false,
             at_reinitialize: false,
             at_order_change: false,
@@ -150,14 +159,31 @@ impl StateMachine {
     /// Tell the state machine that the edit did not pass convergence.
     /// Only requests a redo if another iteration is still allowed; otherwise
     /// no redo is requested and the edit proceeds with the non-converged
-    /// result.
+    /// result, incrementing
+    /// [`bootstrap_unconverged_iterations`](Self::bootstrap_unconverged_iterations)
+    /// so callers can surface a warning.
     ///
     /// JEOD: `GaussJacksonStateMachine::set_bootstrap_edit_redo_needed()`.
     pub fn set_bootstrap_edit_redo_needed(&mut self) {
         assert_eq!(self.fsm_state, FsmState::BootstrapEdit);
         if self.correction_iterations < self.max_correction_iterations {
             self.bootstrap_edit_redo_needed = true;
+        } else {
+            // JEOD_INV: IG.36 — non-converged bootstrap edit accepted; counter
+            // surfaces this to callers (matches JEOD's MessageHandler::error
+            // semantics, which we don't have a direct equivalent for).
+            self.bootstrap_unconverged_iterations =
+                self.bootstrap_unconverged_iterations.saturating_add(1);
         }
+    }
+
+    /// Cumulative count of `BootstrapEdit` iterations that hit
+    /// `max_correction_iterations` without converging. A non-zero value
+    /// indicates the integrator accepted a non-converged edit and
+    /// continued — long missions where small bootstrap error compounds
+    /// should log a warning the first time this is observed.
+    pub fn bootstrap_unconverged_iterations(&self) -> u32 {
+        self.bootstrap_unconverged_iterations
     }
 
     /// Reset the state machine.

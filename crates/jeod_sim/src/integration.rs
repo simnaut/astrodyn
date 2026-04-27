@@ -649,6 +649,7 @@ pub fn integrate_body(
                     .saturating_mul(tour_count)
                     .clamp(100, 10_000_000) // hard cap: prevent runaway loops
             };
+            let unconverged_before = gj.bootstrap_unconverged_iterations();
             let mut completed = false;
             for _ in 0..max_stages {
                 let acc = gravity_fn(trans.position, trans.velocity, 0.0) + non_grav_accel;
@@ -663,6 +664,15 @@ pub fn integrate_body(
                     completed = true;
                     break;
                 }
+            }
+            let unconverged_after = gj.bootstrap_unconverged_iterations();
+            if unconverged_after > unconverged_before && unconverged_before == 0 {
+                log::warn!(
+                    "GaussJackson bootstrap edit accepted a non-converged correction \
+                     ({unconverged_after} iteration(s) total — JEOD-faithful behavior, \
+                     but long missions where bootstrap error compounds may want to \
+                     review the integration setup)."
+                );
             }
             assert!(
                 completed,
