@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 pub mod bundles;
 pub mod components;
 pub mod prelude;

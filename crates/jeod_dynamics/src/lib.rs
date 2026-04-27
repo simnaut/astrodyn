@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 pub mod abm4;
 pub mod body_init;
 pub mod constraints;

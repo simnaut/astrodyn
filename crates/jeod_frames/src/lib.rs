@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 pub mod data_nutation_j2000;
 pub mod frame_tree;
 pub mod nutation_j2000;

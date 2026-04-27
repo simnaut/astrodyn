@@ -34,6 +34,8 @@
 //! See [`PipelineStage`] and [`PIPELINE_ORDER`] for the canonical stage
 //! execution order that any adapter must respect.
 
+#![forbid(unsafe_code)]
+
 pub mod atmosphere;
 pub mod derived;
 pub mod forces;
