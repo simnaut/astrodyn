@@ -2,12 +2,12 @@
 //!
 //! Propagates a circular LEO orbit for 10 periods, printing eccentricity
 //! and energy drift at regular intervals. Uses
-//! [`scenarios::iss_leo`](jeod_sim::recipes::scenarios::iss_leo) as the
+//! [`Mission::iss_leo`](jeod_sim::recipes::Mission::iss_leo) as the
 //! starting scenario.
 
 use glam::DVec3;
 use jeod_runner::SimulationBuilderExt;
-use jeod_sim::recipes::{constants, scenarios};
+use jeod_sim::recipes::{constants, Mission};
 
 fn specific_energy(mu: f64, position: DVec3, velocity: DVec3) -> f64 {
     0.5 * velocity.length_squared() - mu / position.length()
@@ -25,9 +25,9 @@ fn main() {
     // 10 orbits of an ISS-altitude circular LEO. The recipe defaults to
     // a 60 s step (good enough for verification accuracy); override to
     // 10 s here so the energy-drift demo passes its <1e-8 threshold.
-    let mut sb = scenarios::iss_leo();
+    let mut sb = Mission::iss_leo().into_builder();
     sb.dt = 10.0;
-    let mut sim = sb.build().expect("iss_leo() must validate");
+    let mut sim = sb.build().expect("iss_leo must validate");
 
     let r0 = sim.body(0).trans.position.length();
     let period = 2.0 * std::f64::consts::PI * (r0.powi(3) / mu_earth).sqrt();

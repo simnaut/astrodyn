@@ -2,11 +2,11 @@
 //!
 //! Propagates an ISS-like orbit (400 km, i=51.6 deg) with the MET
 //! atmosphere model and shows altitude decay over 24 hours. Uses
-//! [`scenarios::iss_leo_drag`](jeod_sim::recipes::scenarios::iss_leo_drag).
+//! [`Mission::iss_leo_drag`](jeod_sim::recipes::Mission::iss_leo_drag).
 
 use glam::DVec3;
 use jeod_runner::SimulationBuilderExt;
-use jeod_sim::recipes::{constants, scenarios};
+use jeod_sim::recipes::{constants, Mission};
 
 fn specific_energy(mu: f64, position: DVec3, velocity: DVec3) -> f64 {
     0.5 * velocity.length_squared() - mu / position.length()
@@ -26,9 +26,10 @@ fn main() {
     let mu_earth = constants::mu_ggm05c().value;
     let r_eq = 6_378_137.0;
 
-    let mut sim = scenarios::iss_leo_drag()
+    let mut sim = Mission::iss_leo_drag()
+        .into_builder()
         .build()
-        .expect("iss_leo_drag() must validate");
+        .expect("iss_leo_drag must validate");
     let body_idx = 0;
 
     let initial = sim.body(body_idx).trans;

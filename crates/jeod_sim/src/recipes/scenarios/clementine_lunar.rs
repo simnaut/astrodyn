@@ -1,8 +1,8 @@
 //! Clementine 1994 lunar-orbit scenario.
 //!
 //! ```
-//! use jeod_sim::recipes::scenarios;
-//! let sb = scenarios::clementine_lunar();
+//! use jeod_sim::recipes::Mission;
+//! let sb = Mission::clementine_lunar().into_builder();
 //! // Three sources: Moon (central), Earth (third-body), Sun (third-body / SRP).
 //! assert_eq!(sb.sources.len(), 3);
 //! ```

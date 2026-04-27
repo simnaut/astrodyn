@@ -1,7 +1,7 @@
 //! Apollo trans-lunar injection: multi-body gravity, staging, impulsive maneuver.
 //!
 //! Demonstrates a recipe-aware pattern: starts from
-//! [`scenarios::apollo_translunar`](jeod_sim::recipes::scenarios::apollo_translunar)
+//! [`Mission::apollo_translunar`](jeod_sim::recipes::Mission::apollo_translunar)
 //! for the simulation shape (Earth + Moon + Sun point-mass gravity),
 //! then layers mission-specific maneuvers — TLI impulsive Δv, stage
 //! separation via mass tree, parking-orbit override — directly on the
@@ -20,7 +20,8 @@ use std::path::Path;
 use glam::{DMat3, DVec3};
 use jeod_dynamics::MassProperties;
 use jeod_runner::SimulationBuilderExt;
-use jeod_sim::recipes::scenarios::{self, apollo};
+use jeod_sim::recipes::scenarios::apollo;
+use jeod_sim::recipes::Mission;
 use jeod_sim::{EphemerisBody, TranslationalState};
 
 const MU_EARTH: f64 = 3.986_004_418e14;
@@ -55,7 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let init_pos = DVec3::new(r_park, 0.0, 0.0);
     let init_vel = DVec3::new(0.0, v_circ * inc.cos(), v_circ * inc.sin());
 
-    let mut sb = scenarios::apollo_translunar();
+    let mut sb = Mission::apollo_translunar().into_builder();
     sb.dt = DT;
     // Override the scenario's default vehicle state with the parking-orbit IC.
     sb.bodies[0].trans = TranslationalState {

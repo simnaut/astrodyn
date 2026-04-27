@@ -1,8 +1,8 @@
 //! ISS-class LEO scenarios.
 //!
 //! ```
-//! use jeod_sim::recipes::scenarios;
-//! let sb = scenarios::iss_leo();
+//! use jeod_sim::recipes::Mission;
+//! let sb = Mission::iss_leo().into_builder();
 //! assert_eq!(sb.bodies.len(), 1);
 //! assert_eq!(sb.sources.len(), 1);
 //! ```
