@@ -8,6 +8,7 @@ jeod_frames = { path = "../jeod_frames" }
 jeod_math = { path = "../jeod_math" }
 jeod_quantities = { path = "../jeod_quantities" }
 glam = { workspace = true }
+log = { workspace = true }
 uom = { workspace = true }
 
 [dev-dependencies]

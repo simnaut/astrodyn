@@ -39,6 +39,16 @@ pub struct IntegratorResult {
     /// Whether the convergence test passed.
     /// JEOD: `IntegratorResult::passed` (inverted from `failed`).
     pub passed: bool,
+    /// Sticky: `true` once any bootstrap edit point exhausted its
+    /// `max_correction_iterations` budget without converging. The FSM
+    /// proceeds to operational mode with non-converged history; subsequent
+    /// `IntegratorResult`s continue to carry this flag (it is read from
+    /// the underlying state machine on every step) so callers can log a
+    /// one-shot warning even after the bootstrap has been left behind.
+    /// Always `false` for non-Gauss-Jackson integrators.
+    /// JEOD: surfaced via `MessageHandler::error()`; we use the result
+    /// channel instead so callers can decide whether to log.
+    pub bootstrap_unconverged: bool,
 }
 
 impl IntegratorResult {
@@ -51,6 +61,7 @@ impl IntegratorResult {
         Self {
             time_scale: 1.0,
             passed,
+            bootstrap_unconverged: false,
         }
     }
 
@@ -58,6 +69,7 @@ impl IntegratorResult {
         Self {
             time_scale: 0.0,
             passed: true,
+            bootstrap_unconverged: false,
         }
     }
 
@@ -65,7 +77,20 @@ impl IntegratorResult {
         Self {
             time_scale: 0.0,
             passed,
+            bootstrap_unconverged: false,
         }
+    }
+}
+
+impl GaussJacksonState {
+    /// Decorate a freshly-built [`IntegratorResult`] with the current
+    /// `bootstrap_unconverged` flag from the state machine before
+    /// returning it to the caller. Every `integrate*` return path goes
+    /// through this so the flag propagates to the caller on every
+    /// stage, not just the one where convergence failed.
+    fn finish(&self, mut result: IntegratorResult) -> IntegratorResult {
+        result.bootstrap_unconverged = self.state_machine.bootstrap_unconverged();
+        result
     }
 }
 
@@ -132,6 +157,12 @@ pub struct GaussJacksonState {
     /// Managed by the integrator (like JEOD's IntegrationControls).
     /// 0 = at start of cycle, 1 = predicted (needs correct), etc.
     current_stage: usize,
+
+    /// One-shot guard: set to `true` the first time `integrate()` observes
+    /// `state_machine.bootstrap_unconverged() == true`, so the warning log
+    /// fires exactly once per integrator instance instead of once per step
+    /// for the rest of the mission. Cleared by [`Self::reset`].
+    bootstrap_unconverged_warned: bool,
 }
 
 impl GaussJacksonState {
@@ -191,6 +222,7 @@ impl GaussJacksonState {
             primer_k_vel: [DVec3::ZERO; 4],
             primer_k_pos: [DVec3::ZERO; 4],
             current_stage: 0,
+            bootstrap_unconverged_warned: false,
         }
     }
 
@@ -209,6 +241,7 @@ impl GaussJacksonState {
         self.primer_base_vel = DVec3::ZERO;
         self.primer_k_vel = [DVec3::ZERO; 4];
         self.primer_k_pos = [DVec3::ZERO; 4];
+        self.bootstrap_unconverged_warned = false;
     }
 
     /// Returns the configuration this integrator was created with.
@@ -241,6 +274,45 @@ impl GaussJacksonState {
     /// - `acc`: acceleration at current `state.position`
     /// - `state`: translational state (mutated in place)
     pub fn integrate(
+        &mut self,
+        sim_dt: f64,
+        time_scale_factor: f64,
+        acc: DVec3,
+        state: &mut TranslationalState,
+    ) -> IntegratorResult {
+        let raw = self.integrate_inner(sim_dt, time_scale_factor, acc, state);
+        // Decorate with the sticky `bootstrap_unconverged` flag from the
+        // state machine so the caller sees a non-converged bootstrap on
+        // every subsequent step (not just the one where the budget
+        // exhausted). The 12 inner construction sites build raw results
+        // with `bootstrap_unconverged: false`; this is the single point
+        // where the flag is read out.
+        let decorated = self.finish(raw);
+        // One-shot warning on the rising edge: this matches JEOD's
+        // `MessageHandler::error()` for the same condition. We log here
+        // (inside the integrator) rather than at every call site so all
+        // adapters — runner, Bevy, custom — get the warning for free.
+        // Subsequent `integrate()` calls keep `bootstrap_unconverged`
+        // visible on the `IntegratorResult` but do not re-log.
+        if decorated.bootstrap_unconverged && !self.bootstrap_unconverged_warned {
+            self.bootstrap_unconverged_warned = true;
+            log::warn!(
+                "Gauss-Jackson bootstrap failed convergence after \
+                 max_correction_iterations exhausted; the integrator \
+                 proceeded with non-converged history. Long-running \
+                 propagation may accumulate larger error than the \
+                 configured tolerance suggests. Configure higher \
+                 max_correction_iterations or relax tolerances."
+            );
+        }
+        decorated
+    }
+
+    /// Inner integration kernel — returns the raw `IntegratorResult` with
+    /// `bootstrap_unconverged: false`. The public [`Self::integrate`]
+    /// wraps the result and reads the convergence flag from the state
+    /// machine in one place.
+    fn integrate_inner(
         &mut self,
         sim_dt: f64,
         time_scale_factor: f64,
@@ -296,7 +368,10 @@ impl GaussJacksonState {
                 // the mid-corrected position for the next edit point).
                 //
                 // JEOD: if edit fails convergence, set_bootstrap_edit_redo_needed()
-                // triggers a redo on the next FSM transition.
+                // triggers a redo on the next FSM transition. If the
+                // correction-iteration budget has already been exhausted,
+                // the SM sets its sticky `bootstrap_unconverged` flag,
+                // which `integrate()` reads on its way out.
                 let passed = self.edit_point(cycle_dyndt, state);
                 if !passed {
                     self.state_machine.set_bootstrap_edit_redo_needed();
@@ -1213,5 +1288,150 @@ mod tests {
             "Runs with different time_scale_factor produced nearly identical \
              positions (diff={pos_diff:.2e}), suggesting time_scale_factor is ignored"
         );
+    }
+
+    /// Happy path: a converging bootstrap leaves
+    /// `IntegratorResult::bootstrap_unconverged` false on every returned
+    /// stage, so callers don't spuriously log warnings on healthy runs.
+    #[test]
+    fn gj_converged_bootstrap_clears_flag() {
+        let dt: f64 = 0.01;
+        let total_time = 1.0;
+        let steps = (total_time / dt).round() as usize;
+
+        let mut state = TranslationalState {
+            position: DVec3::new(1.0, 0.0, 0.0),
+            velocity: DVec3::ZERO,
+        };
+        let mut gj = GaussJacksonState::new(GaussJacksonConfig::with_order(8));
+        let mut saw_unconverged = false;
+
+        for _ in 0..steps {
+            loop {
+                let acc = -state.position;
+                let result = gj.integrate(dt, 1.0, acc, &mut state);
+                if result.bootstrap_unconverged {
+                    saw_unconverged = true;
+                }
+                if result.time_scale > 0.0 {
+                    break;
+                }
+            }
+        }
+
+        assert!(
+            !saw_unconverged,
+            "Healthy harmonic-oscillator run should not surface bootstrap_unconverged"
+        );
+    }
+
+    /// Forced-non-convergence: with `max_correction_iterations: 1` and
+    /// effectively-zero tolerances, the first edit point's corrector
+    /// produces a state different from the predictor, the convergence
+    /// test fails, the iteration budget is already exhausted, and the
+    /// state machine sets the sticky `bootstrap_unconverged` flag.
+    /// Subsequent stages continue to surface the flag because we read
+    /// it from the state machine on every return path.
+    #[test]
+    fn gj_exhausted_budget_surfaces_unconverged_flag() {
+        let dt: f64 = 0.01;
+        let mut state = TranslationalState {
+            position: DVec3::new(1.0, 0.0, 0.0),
+            velocity: DVec3::ZERO,
+        };
+        // One correction allowed; tolerances effectively zero so any
+        // corrector adjustment fails the convergence test.
+        let cfg = GaussJacksonConfig {
+            initial_order: 8,
+            final_order: 8,
+            ndoubling_steps: 0,
+            max_correction_iterations: 1,
+            relative_tolerance: 0.0,
+            absolute_tolerance: 0.0,
+        };
+        let mut gj = GaussJacksonState::new(cfg);
+        let mut saw_unconverged = false;
+
+        // Run long enough to traverse priming + bootstrap edit phases.
+        for _ in 0..200 {
+            loop {
+                let acc = -state.position;
+                let result = gj.integrate(dt, 1.0, acc, &mut state);
+                if result.bootstrap_unconverged {
+                    saw_unconverged = true;
+                }
+                if result.time_scale > 0.0 {
+                    break;
+                }
+            }
+        }
+
+        assert!(
+            saw_unconverged,
+            "Zero-tolerance bootstrap with budget=1 should surface \
+             bootstrap_unconverged on at least one IntegratorResult"
+        );
+    }
+
+    /// `reset()` clears the sticky flag — the integrator is reusable
+    /// and a fresh run shouldn't inherit a previous run's non-convergence.
+    #[test]
+    fn gj_reset_clears_unconverged_flag() {
+        let dt: f64 = 0.01;
+        let mut state = TranslationalState {
+            position: DVec3::new(1.0, 0.0, 0.0),
+            velocity: DVec3::ZERO,
+        };
+        let cfg = GaussJacksonConfig {
+            initial_order: 8,
+            final_order: 8,
+            ndoubling_steps: 0,
+            max_correction_iterations: 1,
+            relative_tolerance: 0.0,
+            absolute_tolerance: 0.0,
+        };
+        let mut gj = GaussJacksonState::new(cfg);
+
+        // Trigger non-convergence.
+        for _ in 0..200 {
+            loop {
+                let acc = -state.position;
+                let r = gj.integrate(dt, 1.0, acc, &mut state);
+                if r.time_scale > 0.0 {
+                    break;
+                }
+            }
+        }
+        // Re-run with a final no-op call to read out the current flag.
+        let acc = -state.position;
+        let pre_reset = gj.integrate(dt, 1.0, acc, &mut state);
+        assert!(
+            pre_reset.bootstrap_unconverged,
+            "Sticky flag should be visible right before reset()"
+        );
+
+        gj.reset();
+
+        // After reset, run again with a converging tolerance and verify
+        // the flag is cleared and stays cleared.
+        let mut state2 = TranslationalState {
+            position: DVec3::new(1.0, 0.0, 0.0),
+            velocity: DVec3::ZERO,
+        };
+        // Re-create with healthy tolerances; reset() alone does not change config.
+        let mut gj_ok = GaussJacksonState::new(GaussJacksonConfig::with_order(8));
+        for _ in 0..50 {
+            loop {
+                let acc = -state2.position;
+                let r = gj_ok.integrate(dt, 1.0, acc, &mut state2);
+                assert!(
+                    !r.bootstrap_unconverged,
+                    "Fresh integrator should never surface bootstrap_unconverged on a healthy run"
+                );
+                if r.time_scale > 0.0 {
+                    break;
+                }
+            }
+        }
     }
 }

@@ -51,6 +51,15 @@ pub(crate) struct StateMachine {
     cycle_scale: f64,
     cycle_start_time: f64,
     bootstrap_edit_redo_needed: bool,
+    /// Sticky flag: set when an edit point fails to converge AND the
+    /// correction-iteration budget has already been exhausted (so the FSM
+    /// proceeds to operational mode with a non-converged history). Once
+    /// set, it stays set for the lifetime of this `StateMachine` (or
+    /// until `reset()`), so callers can detect a non-clean bootstrap
+    /// after the fact even if many converged steps follow.
+    /// Matches the JEOD `MessageHandler::error()` path that the C++
+    /// integrator uses to surface the same condition.
+    bootstrap_unconverged: bool,
 
     // Flags (set by perform_step, read by integrator)
     at_downsample: bool,
@@ -96,6 +105,7 @@ impl StateMachine {
             cycle_scale: 1.0 / tour_count as f64,
             cycle_start_time: 0.0,
             bootstrap_edit_redo_needed: false,
+            bootstrap_unconverged: false,
             at_downsample: false,
             at_reinitialize: false,
             at_order_change: false,
@@ -145,18 +155,36 @@ impl StateMachine {
         self.history_length
     }
 
+    /// Sticky flag: `true` if any bootstrap edit point failed to converge
+    /// after the `max_correction_iterations` budget was exhausted. Once
+    /// set, it stays set for the lifetime of this state machine (or
+    /// until `reset()`). Surface to callers via
+    /// `IntegratorResult::bootstrap_unconverged` so the runner / Bevy
+    /// adapter can log a one-shot warning.
+    pub fn bootstrap_unconverged(&self) -> bool {
+        self.bootstrap_unconverged
+    }
+
     // ── Mutators ──
 
     /// Tell the state machine that the edit did not pass convergence.
     /// Only requests a redo if another iteration is still allowed; otherwise
     /// no redo is requested and the edit proceeds with the non-converged
-    /// result.
+    /// result, but the `bootstrap_unconverged` sticky flag is set so the
+    /// caller can surface the condition via `IntegratorResult`.
     ///
     /// JEOD: `GaussJacksonStateMachine::set_bootstrap_edit_redo_needed()`.
+    /// JEOD logs the budget-exhausted case via `MessageHandler::error()`;
+    /// we record it on the state machine and surface it through
+    /// `IntegratorResult` instead.
     pub fn set_bootstrap_edit_redo_needed(&mut self) {
         assert_eq!(self.fsm_state, FsmState::BootstrapEdit);
         if self.correction_iterations < self.max_correction_iterations {
             self.bootstrap_edit_redo_needed = true;
+        } else {
+            // Budget exhausted; bootstrap will proceed with non-converged
+            // result. Sticky so subsequent callers see the condition.
+            self.bootstrap_unconverged = true;
         }
     }
 
@@ -176,6 +204,10 @@ impl StateMachine {
         self.scale_factor = self.tour_count;
         self.cycle_scale = 1.0 / self.tour_count as f64;
         self.cycle_start_time = 0.0;
+
+        self.bootstrap_edit_redo_needed = false;
+        self.bootstrap_unconverged = false;
+        self.correction_iterations = 0;
 
         self.at_downsample = false;
         self.at_reinitialize = false;
