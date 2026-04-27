@@ -1985,11 +1985,12 @@ impl Simulation {
             let bodies_mut = &mut self.bodies;
 
             // Gather per-body immutable data (t_struct_body, mass, constant
-            // forces/torques, gravity_controls) BEFORE the unsafe &mut
-            // block below. Creating any shared reference into `bodies_mut`
-            // while the unsafe &muts are live would violate Rust's
-            // aliasing rules even for disjoint fields, so snapshot
-            // everything we need up front. Cloning `gravity_controls`
+            // forces/torques, gravity_controls) BEFORE the per-body
+            // `iter_mut()` projection below builds the `CoupledBodyInput`
+            // vector. Once that vector is live, holding any shared borrow
+            // into `bodies_mut` (even for a disjoint field on a different
+            // body) would conflict with the &mut field projections, so
+            // snapshot everything up front. Cloning `gravity_controls`
             // happens here (and only here, since contact_pairs is
             // non-empty) — the non-contact path above borrows directly.
             let t_struct_body_vec: Vec<DMat3> =
