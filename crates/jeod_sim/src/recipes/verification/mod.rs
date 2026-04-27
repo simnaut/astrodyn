@@ -239,6 +239,12 @@ pub enum ExtrasComparator {
     /// by SIM_Euler runs that drive themselves from the SIM_dyncomp
     /// RUN_2 trajectory.
     DyncompEuler,
+    /// Solar beta angle: 1 extra (`solar_beta`) comparing
+    /// `body.solar_beta` against the matching column in JEOD's
+    /// SIM_SolarBeta reference CSV. Pairs with [`CsvReference::SolarBeta`].
+    /// Use circular `angle_diff` for the metric since beta wraps modulo
+    /// 2π.
+    SolarBeta,
 }
 
 impl Default for Tolerances {
