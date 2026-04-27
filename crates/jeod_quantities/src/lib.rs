@@ -82,15 +82,21 @@ pub use time_scale::*;
 // `inertia::InertiaTensor` is re-exported via `aliases::*`.
 
 /// Internal re-exports used by the `define_vehicle!` / `define_planet!`
-/// macros to satisfy the sealed-trait bound at the downstream call site.
+/// macros to satisfy the per-domain sealed-trait bound at the downstream
+/// call site.
+///
+/// Only `VehicleSealed` and `PlanetSealed` are re-exported. The other
+/// three seal traits (`FrameSealed`, `TimeScaleSealed`, `QuatSealed`)
+/// stay private to the crate, so `Frame`, `TimeScale`, `Layout`, and
+/// `Transform` remain sealed at the type-system level — downstream code
+/// cannot impl them at all.
 ///
 /// **Do not import items from this module directly.** It exists only so
-/// that macro expansions can reference `$crate::__macro_support::Sealed`
-/// without making the `sealed` module itself `pub`. Direct use bypasses
-/// the sealed pattern and breaks the project's frame/vehicle/planet
-/// catalog invariant.
+/// that macro expansions can satisfy the seal bounds. A direct
+/// `impl VehicleSealed for X` outside the `define_vehicle!` macro is
+/// technically possible but unsupported and may break in any release.
 #[doc(hidden)] // allowed: macro infrastructure for define_vehicle!/define_planet!
 pub mod __macro_support {
     pub use crate::frame::{Planet, Vehicle};
-    pub use crate::sealed::Sealed;
+    pub use crate::sealed::{PlanetSealed, VehicleSealed};
 }

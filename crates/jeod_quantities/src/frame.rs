@@ -18,35 +18,57 @@
 
 use core::marker::PhantomData;
 
-use crate::sealed::Sealed;
+use crate::sealed::{FrameSealed, PlanetSealed, VehicleSealed};
 
 /// Compile-time reference frame tag.
 ///
-/// Sealed: only `jeod_quantities` can implement this trait.
-pub trait Frame: Sealed + 'static {
+/// Sealed at the type-system level: only `jeod_quantities` can implement
+/// this trait. The seal trait `FrameSealed` is private to this crate, so
+/// downstream code cannot satisfy the supertrait bound.
+///
+/// # The seal is type-system enforced
+///
+/// Unlike [`Vehicle`] and [`Planet`] (which expose their seal traits via
+/// `__macro_support` so the `define_*!` macros work cross-crate),
+/// `Frame`'s seal is fully closed. Downstream code cannot impl `Frame`
+/// even by reaching into the macro infrastructure:
+///
+/// ```compile_fail
+/// // `FrameSealed` is private to jeod_quantities and is NOT re-exported
+/// // via __macro_support, so the supertrait bound cannot be satisfied
+/// // from outside the crate.
+/// struct EvilFrame;
+/// impl jeod_quantities::Frame for EvilFrame {
+///     const NAME: &'static str = "Evil";
+/// }
+/// ```
+pub trait Frame: FrameSealed + 'static {
     /// Human-readable name for error messages and debug output.
     const NAME: &'static str;
 }
 
 /// Compile-time planet tag used to parameterize planet-fixed frames.
 ///
-/// Sealed: only `jeod_quantities` can implement this trait directly.
-/// Downstream crates extend the catalog via the
-/// [`define_planet!`](crate::define_planet) macro.
-pub trait Planet: Sealed + 'static {
+/// Convention-sealed: the seal trait `PlanetSealed` is re-exported via
+/// the crate's `__macro_support` module so [`define_planet!`](crate::define_planet)
+/// can satisfy the bound from downstream call sites. Direct
+/// `impl Planet for X` outside the macro is technically possible but
+/// unsupported. Use the macro.
+pub trait Planet: PlanetSealed + 'static {
     const NAME: &'static str;
 }
 
 /// Compile-time vehicle tag used to parameterize vehicle-relative frames.
 ///
-/// Sealed: only `jeod_quantities` can implement this trait directly.
-/// Downstream crates extend the catalog via the
-/// [`define_vehicle!`](crate::define_vehicle) macro, which generates
-/// the sealed impl from inside this crate so the seal is preserved.
+/// Convention-sealed: the seal trait `VehicleSealed` is re-exported via
+/// the crate's `__macro_support` module so [`define_vehicle!`](crate::define_vehicle)
+/// can satisfy the bound from downstream call sites. Direct
+/// `impl Vehicle for X` outside the macro is technically possible but
+/// unsupported. Use the macro.
 ///
 /// Vehicle marker types are used with [`BodyFrame`], [`StructuralFrame`],
 /// [`Lvlh`], and [`Ned`].
-pub trait Vehicle: Sealed + 'static {
+pub trait Vehicle: VehicleSealed + 'static {
     const NAME: &'static str;
 }
 
@@ -57,7 +79,7 @@ macro_rules! planet_marker {
         #[doc = concat!("Planet marker for ", $human, ".")]
         #[derive(Debug, Clone, Copy)]
         pub struct $name;
-        impl Sealed for $name {}
+        impl PlanetSealed for $name {}
         impl Planet for $name {
             const NAME: &'static str = $human;
         }
@@ -81,7 +103,7 @@ planet_marker!(Mars, "Mars");
 /// while the planet identity stays at the entity level.
 #[derive(Debug, Clone, Copy)]
 pub struct SelfPlanet;
-impl Sealed for SelfPlanet {}
+impl PlanetSealed for SelfPlanet {}
 impl Planet for SelfPlanet {
     const NAME: &'static str = "SelfPlanet";
 }
@@ -91,7 +113,7 @@ impl Planet for SelfPlanet {
 /// Quasi-inertial (ICRF / J2000 Earth-centered inertial) frame.
 #[derive(Debug, Clone, Copy)]
 pub struct Inertial;
-impl Sealed for Inertial {}
+impl FrameSealed for Inertial {}
 impl Frame for Inertial {
     const NAME: &'static str = "Inertial";
 }
@@ -99,7 +121,7 @@ impl Frame for Inertial {
 /// Earth-centered Earth-fixed frame (ITRF-like). Rotates with Earth.
 #[derive(Debug, Clone, Copy)]
 pub struct Ecef;
-impl Sealed for Ecef {}
+impl FrameSealed for Ecef {}
 impl Frame for Ecef {
     const NAME: &'static str = "Ecef";
 }
@@ -114,7 +136,7 @@ impl Frame for Ecef {
 /// Planet-fixed frame for any planet `P`. Rotates with that planet.
 #[derive(Debug, Clone, Copy)]
 pub struct PlanetFixed<P: Planet>(PhantomData<P>);
-impl<P: Planet> Sealed for PlanetFixed<P> {}
+impl<P: Planet> FrameSealed for PlanetFixed<P> {}
 impl<P: Planet> Frame for PlanetFixed<P> {
     const NAME: &'static str = "PlanetFixed";
 }
@@ -122,7 +144,7 @@ impl<P: Planet> Frame for PlanetFixed<P> {
 /// Body (CoM-centered) frame of vehicle `V`. Rotates with the vehicle.
 #[derive(Debug, Clone, Copy)]
 pub struct BodyFrame<V: Vehicle>(PhantomData<V>);
-impl<V: Vehicle> Sealed for BodyFrame<V> {}
+impl<V: Vehicle> FrameSealed for BodyFrame<V> {}
 impl<V: Vehicle> Frame for BodyFrame<V> {
     const NAME: &'static str = "BodyFrame";
 }
@@ -130,7 +152,7 @@ impl<V: Vehicle> Frame for BodyFrame<V> {
 /// Structural (geometric-origin) frame of vehicle `V`. Rotates with vehicle.
 #[derive(Debug, Clone, Copy)]
 pub struct StructuralFrame<V: Vehicle>(PhantomData<V>);
-impl<V: Vehicle> Sealed for StructuralFrame<V> {}
+impl<V: Vehicle> FrameSealed for StructuralFrame<V> {}
 impl<V: Vehicle> Frame for StructuralFrame<V> {
     const NAME: &'static str = "StructuralFrame";
 }
@@ -140,7 +162,7 @@ impl<V: Vehicle> Frame for StructuralFrame<V> {
 /// the right-handed triad (approximately along-track in near-circular orbits).
 #[derive(Debug, Clone, Copy)]
 pub struct Lvlh<Chief: Vehicle>(PhantomData<Chief>);
-impl<C: Vehicle> Sealed for Lvlh<C> {}
+impl<C: Vehicle> FrameSealed for Lvlh<C> {}
 impl<C: Vehicle> Frame for Lvlh<C> {
     const NAME: &'static str = "Lvlh";
 }
@@ -148,7 +170,7 @@ impl<C: Vehicle> Frame for Lvlh<C> {
 /// North-East-Down topocentric frame relative to chief vehicle `Chief`.
 #[derive(Debug, Clone, Copy)]
 pub struct Ned<Chief: Vehicle>(PhantomData<Chief>);
-impl<C: Vehicle> Sealed for Ned<C> {}
+impl<C: Vehicle> FrameSealed for Ned<C> {}
 impl<C: Vehicle> Frame for Ned<C> {
     const NAME: &'static str = "Ned";
 }
@@ -177,7 +199,7 @@ impl<C: Vehicle> Frame for Ned<C> {
 /// `Torque<BodyFrame<SelfRef>>`, so the user sees only the wrapper newtype.
 #[derive(Debug, Clone, Copy)]
 pub struct SelfRef;
-impl Sealed for SelfRef {}
+impl VehicleSealed for SelfRef {}
 impl Vehicle for SelfRef {
     const NAME: &'static str = "SelfRef";
 }
@@ -196,7 +218,7 @@ impl Vehicle for SelfRef {
 #[derive(Debug, Clone, Copy)]
 pub struct TestVehicle;
 #[cfg(feature = "test-utils")]
-impl Sealed for TestVehicle {}
+impl VehicleSealed for TestVehicle {}
 #[cfg(feature = "test-utils")]
 impl Vehicle for TestVehicle {
     const NAME: &'static str = "TestVehicle";
@@ -211,12 +233,18 @@ impl Vehicle for TestVehicle {
 // scenarios (e.g., a Mars sample-return mission carrying state in both
 // Mars-fixed and Earth-fixed frames).
 //
-// These macros generate the marker struct + sealed impl + trait impl in
-// one statement. They are the **only** way for a downstream crate to add
-// a `Vehicle` or `Planet` marker; direct `impl Vehicle for X {}` cannot
-// satisfy the `Sealed` bound because `Sealed` is private to this crate.
-// The macro reaches `Sealed` via the `$crate::__macro_support` re-export
-// so the seal is preserved even though the impl is generated downstream.
+// These macros generate the marker struct + per-domain sealed impl +
+// trait impl in one statement. They are the canonical way for a
+// downstream crate to add a `Vehicle` or `Planet` marker.
+//
+// The seal traits `VehicleSealed` and `PlanetSealed` are re-exported via
+// `$crate::__macro_support` so the macros can satisfy the bounds from
+// downstream call sites. The other four seals — `FrameSealed`,
+// `TimeScaleSealed`, and `QuatSealed` (which gates `Layout` + `Transform`)
+// — are *not* re-exported, so `Frame`, `TimeScale`, `Layout`, and
+// `Transform` remain type-system-sealed and downstream code cannot impl
+// them at all. Direct `impl Vehicle for X` outside the macro is
+// technically possible but unsupported.
 //
 // Per-instance names (`"Iss"`, `"Soyuz"`, …) come from `stringify!($name)`.
 // `Frame::NAME` cannot splice `V::NAME` (it is a `&'static str` const, not
@@ -262,17 +290,22 @@ impl Vehicle for TestVehicle {
 ///
 /// # Sealing
 ///
-/// Downstream crates cannot write `impl Vehicle for X {}` directly; the
-/// `Vehicle` trait has a `Sealed` super-bound and `Sealed` is private to
-/// `jeod_quantities`. This macro is the only way to extend the `Vehicle`
-/// catalog. The macro body uses the crate's `__macro_support` re-export
-/// to satisfy the bound from a downstream call site.
+/// `Vehicle` has a `VehicleSealed` super-bound. The seal trait is
+/// re-exported via `__macro_support` so this macro can satisfy it from
+/// a downstream call site. The other sealed-trait domains
+/// (`FrameSealed`, `TimeScaleSealed`, `QuatSealed`) are not re-exported,
+/// so `Frame`, `TimeScale`, `Layout`, and `Transform` remain
+/// type-system-sealed.
+///
+/// Direct `impl Vehicle for X {}` outside this macro is technically
+/// possible (the seal trait is reachable) but is unsupported and may
+/// break in any release. Use the macro.
 #[macro_export]
 macro_rules! define_vehicle {
     ($name:ident) => {
         #[derive(Debug, Clone, Copy)]
         pub struct $name;
-        impl $crate::__macro_support::Sealed for $name {}
+        impl $crate::__macro_support::VehicleSealed for $name {}
         impl $crate::__macro_support::Vehicle for $name {
             const NAME: &'static str = stringify!($name);
         }
@@ -299,14 +332,17 @@ macro_rules! define_vehicle {
 ///
 /// # Sealing
 ///
-/// Same sealing pattern as [`define_vehicle!`]: downstream crates cannot
-/// impl `Planet` directly, only via this macro.
+/// Same per-domain seal as [`define_vehicle!`]: `Planet`'s super-bound
+/// `PlanetSealed` is re-exported via `__macro_support` so this macro
+/// can satisfy it from a downstream call site. Direct
+/// `impl Planet for X {}` outside this macro is technically possible
+/// but unsupported. Use the macro.
 #[macro_export]
 macro_rules! define_planet {
     ($name:ident) => {
         #[derive(Debug, Clone, Copy)]
         pub struct $name;
-        impl $crate::__macro_support::Sealed for $name {}
+        impl $crate::__macro_support::PlanetSealed for $name {}
         impl $crate::__macro_support::Planet for $name {
             const NAME: &'static str = stringify!($name);
         }
