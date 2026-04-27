@@ -5,8 +5,7 @@
 //! ```
 //!
 //! Brings into scope the runner-side extension traits:
-//! - [`crate::SimulationBuilderExt`] — terminal
-//!   `.build()` / `.build_unchecked()` on
+//! - [`crate::SimulationBuilderExt`] — terminal `.build()` on
 //!   [`jeod_sim::SimulationBuilder`].
 //! - [`crate::VerificationCaseExt`] — terminal
 //!   `.run_and_assert()` on

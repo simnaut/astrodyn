@@ -334,6 +334,27 @@ impl SimBody {
 /// functions (`accumulate_gravity`, `evaluate_atmosphere`, etc.) directly
 /// from their system functions.
 ///
+/// # Public API conventions
+///
+/// The methods on `Simulation` group into four families:
+///
+/// - **Source registry** (`add_source`, `set_source_*`, `source_*`) — gravity
+///   sources, ephemeris, planet rotation, tides.
+/// - **Body registry** (`add_body`, `body`, `set_body_*`) — dynamic vehicles.
+/// - **Mass tree** (`add_body_to_tree`, `attach`, `detach`,
+///   `sync_body_mass_from_tree`) — multi-body composites.
+/// - **Lifecycle** (`validate`, `step`, `step_n`, `step_until`, `set_dt`,
+///   `elapsed`).
+///
+/// # Error handling
+///
+/// `validate()` is the only `Result`-returning method, and it batches all
+/// configuration errors at startup. Every other method panics on misuse with
+/// a method-name-prefixed message (e.g.
+/// `"set_source_position: source index 7 out of range"`). Out-of-range
+/// indices, configuration conflicts, and numerical preconditions are
+/// programmer errors, not runtime conditions.
+///
 /// # Example
 /// ```ignore
 /// let mut sim = Simulation::new(time, 10.0);
