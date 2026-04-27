@@ -221,7 +221,7 @@ impl GaussJacksonState {
         matches!(self.fsm_state, FsmState::Reset | FsmState::Priming)
     }
 
-    /// Cumulative count of `BootstrapEdit` iterations that hit
+    /// Cumulative count of `BootstrapEdit` iterations that reached
     /// `max_correction_iterations` without converging. A non-zero value
     /// means the integrator silently accepted a non-converged correction
     /// and proceeded. JEOD's behavior under this condition is matched
