@@ -50,12 +50,21 @@ pub trait SimContext {
     /// `tidal_body_idx` is out of range — these are programmer errors,
     /// not runtime conditions, since the recipe wires the tidal
     /// config at construction time.
+    ///
+    /// The default implementation panics with an explicit
+    /// "tidal bodies not supported" message so existing `SimContext`
+    /// implementors stay source-compatible. Adapters that wire
+    /// tidal-body state into a `Simulation`-equivalent should
+    /// override this.
     fn set_tidal_body_position(
         &mut self,
         source_idx: usize,
         tidal_body_idx: usize,
         position: DVec3,
-    );
+    ) {
+        let _ = (source_idx, tidal_body_idx, position);
+        panic!("tidal bodies not supported by this SimContext implementation");
+    }
 }
 
 /// Closure type produced by a [`PreStepBuilder`]. Invoked once per

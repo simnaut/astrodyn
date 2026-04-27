@@ -67,6 +67,12 @@ impl SimContext for Simulation {
                  wire `tidal_config: Some(...)` on the GravitySourceEntry."
             )
         });
+        let tidal_bodies_len = cfg.tidal_bodies.len();
+        assert!(
+            tidal_body_idx < tidal_bodies_len,
+            "set_tidal_body_position: source {source_idx} tidal_body_idx {tidal_body_idx} \
+             out of bounds; tidal_bodies.len() = {tidal_bodies_len}"
+        );
         cfg.tidal_bodies[tidal_body_idx].position_inertial = position;
     }
 }
