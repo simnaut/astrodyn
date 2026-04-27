@@ -426,4 +426,49 @@ mod tests {
         let a = pos_inertial(3.0, 4.0, 0.0);
         assert!((a.magnitude().value - 5.0).abs() < 1e-12);
     }
+
+    /// `length()` is a name-only alias for [`Qty3::magnitude`] so mission
+    /// code can use the same name on raw `DVec3` and typed `Qty3`. The
+    /// scalar value must match `magnitude()` and the expected Euclidean
+    /// norm bit-for-bit.
+    #[test]
+    fn length_matches_magnitude_and_euclidean_norm() {
+        let a = pos_inertial(3.0, 4.0, 0.0);
+        assert_eq!(a.length().value, a.magnitude().value);
+        assert_eq!(a.length().value, 5.0);
+
+        let b = pos_inertial(1.0, 2.0, 2.0);
+        assert_eq!(b.length().value, b.magnitude().value);
+        assert_eq!(b.length().value, 3.0);
+    }
+
+    /// `a += b` and `a -= b` must produce the same value as `a + b` and
+    /// `a - b` respectively (regression for the `AddAssign`/`SubAssign`
+    /// impls added in PR #184).
+    #[test]
+    fn add_assign_sub_assign_match_add_sub() {
+        let a0 = pos_inertial(1.0, 2.0, 3.0);
+        let b = pos_inertial(4.0, 5.0, 6.0);
+
+        let mut a = a0;
+        a += b;
+        assert_eq!(a.raw_si(), (a0 + b).raw_si());
+
+        let mut a = a0;
+        a -= b;
+        assert_eq!(a.raw_si(), (a0 - b).raw_si());
+    }
+
+    /// `+=` accumulator pattern across multiple frames the user marked
+    /// compatible (here, same `Inertial`/`Inertial` to keep the test
+    /// minimal — the cross-frame `CompatibleFrames` pairs are exercised
+    /// by their own dedicated frame-arithmetic tests).
+    #[test]
+    fn add_assign_accumulator() {
+        let mut total = pos_inertial(0.0, 0.0, 0.0);
+        for i in 1..=4 {
+            total += pos_inertial(i as f64, 0.0, 0.0);
+        }
+        assert_eq!(total.raw_si(), glam::DVec3::new(10.0, 0.0, 0.0));
+    }
 }

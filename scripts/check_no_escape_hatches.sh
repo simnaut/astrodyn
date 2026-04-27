@@ -42,7 +42,7 @@ set -euo pipefail
 marker_matches=$(grep -rEn '#\[doc\(hidden\)\]|tag_as_inertial!' crates/ src/ \
   | grep -v '// allowed:' || true)
 
-# ── Category 2: typed-quantity bypass constructors (banned in src/systems.rs only) ──
+# ── Category 2: typed-quantity bypass constructors (banned across src/**) ──
 # `crates/**` is fully exempt — the typed siblings and their internal
 # `_unchecked` bridges all live there by construction.
 # `src/components.rs` is exempt — Bevy components' `From<Untyped>` impls
@@ -50,31 +50,47 @@ marker_matches=$(grep -rEn '#\[doc\(hidden\)\]|tag_as_inertial!' crates/ src/ \
 # of jeod_dynamics's `from_untyped_unchecked`.
 # `src/lib.rs` is exempt — `spawn_bevy` performs insertion-time lifts
 # from `VehicleConfig` (still untyped in jeod_sim) to typed components.
-# Annotations document each per-step bypass in `src/systems.rs`. The
-# annotation may be on the same line as the bypass *or* on the
-# immediately-preceding line (multi-line generic patterns like
-# `TypedX::<...>::from_untyped_unchecked(\n  arg\n)` can't fit a
-# trailing comment on the matched line).
+# All other files under `src/**` are policed.
 #
-# Implementation: awk reads systems.rs, tracks whether a preceding
-# comment block (contiguous `//`-prefixed lines, allowing blank lines
-# between them) contained `// allowed:`. Reports any matching line
-# that has neither inline nor preceding `// allowed:` annotation.
-bypass_matches=$(awk '
-    # Track contiguous comment / blank context. Any `// allowed:` in
-    # the trailing comment block applies to the next non-comment line.
-    /\/\/ allowed:/ { prev_allowed = 1; next }
-    /^[[:space:]]*\/\// { next }   # comment line, dont reset
-    /^[[:space:]]*$/ { next }      # blank line, dont reset
+# Annotations document each per-step bypass. The annotation may be:
+# - inline on the same line as the bypass (`from_raw_si(...) // allowed: …`); or
+# - on a pure-comment line *immediately preceding* the bypass (with blank
+#   or other comment lines allowed between them) — needed for multi-line
+#   generic patterns like `TypedX::<...>::from_untyped_unchecked(\n …\n)`
+#   that can't fit a trailing comment on the matched line.
+#
+# The awk script distinguishes these: only `// allowed:` on a
+# pure-comment line propagates to the next bypass match. An inline
+# `// allowed:` on a code line annotates **only that line** — it does
+# not exempt subsequent unrelated lines.
+src_files_to_scan=$(find src/ -name "*.rs" -type f \
+    -not -path 'src/components.rs' \
+    -not -path 'src/lib.rs' \
+    | sort)
+
+bypass_matches=$(echo "$src_files_to_scan" | xargs awk '
+    FNR == 1 { prev_allowed = 0 }
+    # Pure-comment line with `// allowed:` propagates to the next
+    # non-comment, non-blank line. (Code lines are handled by the
+    # bypass-rule below; an inline `// allowed:` self-annotates and
+    # never propagates.)
+    /^[[:space:]]*\/\/.*allowed:/ { prev_allowed = 1; next }
+    # Pure-comment line without `// allowed:`: keep prev_allowed as-is
+    # so a `// allowed:` further up still applies through the comment
+    # block.
+    /^[[:space:]]*\/\// { next }
+    # Blank: keep prev_allowed as-is.
+    /^[[:space:]]*$/ { next }
     /from_untyped_unchecked|from_dmat3_unchecked|from_raw_si/ {
         if (prev_allowed) { prev_allowed = 0; next }
         if ($0 ~ /\/\/ allowed:/) { prev_allowed = 0; next }
-        printf "src/systems.rs:%d: %s\n", NR, $0
+        printf "%s:%d: %s\n", FILENAME, FNR, $0
         prev_allowed = 0
         next
     }
+    # Any other code line resets the propagating-allowed state.
     { prev_allowed = 0 }
-' src/systems.rs)
+')
 
 failed=0
 
@@ -85,15 +101,18 @@ if [ -n "$marker_matches" ]; then
 fi
 
 if [ -n "$bypass_matches" ]; then
-    echo "FAIL: typed-quantity bypass constructors in the Bevy adapter (src/)" >&2
-    echo "  (from_untyped_unchecked / from_dmat3_unchecked / from_raw_si)" >&2
+    echo "FAIL: typed-quantity bypass constructors in the Bevy adapter" >&2
+    echo "  (scanned: src/**, except the canonical boundary modules" >&2
+    echo "   src/components.rs and src/lib.rs)" >&2
+    echo "  Banned: from_untyped_unchecked / from_dmat3_unchecked / from_raw_si" >&2
     echo "  These constructors mint a typed value from raw storage without" >&2
     echo "  checking the caller's frame phantom. The Bevy adapter must use" >&2
     echo "  the typed APIs (Position<Inertial>, etc.) directly via the" >&2
     echo "  components, not lift raw storage per step." >&2
     echo "  See issue #172 (audit finding H1) for context." >&2
     echo "  If you have a documented boundary case, annotate the line with" >&2
-    echo "  '// allowed: <reason>'." >&2
+    echo "  '// allowed: <reason>' (inline) or place '// allowed: <reason>'" >&2
+    echo "  on a pure-comment line immediately preceding the bypass." >&2
     echo "$bypass_matches" >&2
     failed=1
 fi

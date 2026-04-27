@@ -33,8 +33,10 @@ pub struct TranslationalStateC(pub TranslationalStateTyped<Inertial>);
 
 impl TranslationalStateC {
     /// Wrap an untyped [`TranslationalState`] as the typed Bevy
-    /// Component. The frame is asserted to be `Inertial` — the only
-    /// integration frame the Bevy adapter currently supports.
+    /// Component. The caller asserts the frame is `Inertial` — the only
+    /// integration frame the Bevy adapter currently supports. No
+    /// runtime check is performed; the conversion is a zero-cost
+    /// type-tag attachment.
     #[inline]
     pub fn from_untyped(state: TranslationalState) -> Self {
         Self(TranslationalStateTyped::<Inertial>::from_untyped_unchecked(
@@ -84,8 +86,11 @@ pub struct MassPropertiesC(pub MassPropertiesTyped<SelfRef>);
 
 impl MassPropertiesC {
     /// Wrap an untyped [`MassProperties`] as the typed Bevy Component.
-    /// The inertia tensor is asserted to be in `BodyFrame<SelfRef>`
+    /// The caller asserts the inertia tensor is in `BodyFrame<SelfRef>`
     /// and the center-of-mass position in `StructuralFrame<SelfRef>`.
+    /// No runtime check is performed; the conversion is a zero-cost
+    /// type-tag attachment via `MassPropertiesTyped::from_untyped_unchecked`
+    /// (and `InertiaTensor::from_dmat3_unchecked` internally).
     #[inline]
     pub fn from_untyped(mp: MassProperties) -> Self {
         Self(MassPropertiesTyped::<SelfRef>::from_untyped_unchecked(&mp))
