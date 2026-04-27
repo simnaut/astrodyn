@@ -221,6 +221,17 @@ impl GaussJacksonState {
         matches!(self.fsm_state, FsmState::Reset | FsmState::Priming)
     }
 
+    /// Cumulative count of `BootstrapEdit` iterations that reached
+    /// `max_correction_iterations` without converging. A non-zero value
+    /// means the integrator silently accepted a non-converged correction
+    /// and proceeded. JEOD's behavior under this condition is matched
+    /// (non-fatal); callers who want a louder signal — e.g. long
+    /// missions where small bootstrap error compounds — should poll
+    /// this and `log::warn!` the first time it transitions from 0.
+    pub fn bootstrap_unconverged_iterations(&self) -> u32 {
+        self.state_machine.bootstrap_unconverged_iterations()
+    }
+
     /// Drive one stage of integration.
     ///
     /// Combines JEOD's `GaussJacksonIntegrationControls::integrate()` (stage

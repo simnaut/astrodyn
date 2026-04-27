@@ -52,6 +52,14 @@ pub(crate) struct StateMachine {
     cycle_start_time: f64,
     bootstrap_edit_redo_needed: bool,
 
+    // ── Convergence diagnostics ──
+    /// Cumulative count of `BootstrapEdit` iterations that reached
+    /// `max_correction_iterations` without converging. Each occurrence
+    /// means the FSM accepted a non-converged correction and proceeded
+    /// to the next phase. Matches JEOD's behavior; surfaced here so
+    /// callers can log a warning instead of silently continuing.
+    bootstrap_unconverged_iterations: u32,
+
     // Flags (set by perform_step, read by integrator)
     at_downsample: bool,
     at_reinitialize: bool,
@@ -96,6 +104,7 @@ impl StateMachine {
             cycle_scale: 1.0 / tour_count as f64,
             cycle_start_time: 0.0,
             bootstrap_edit_redo_needed: false,
+            bootstrap_unconverged_iterations: 0,
             at_downsample: false,
             at_reinitialize: false,
             at_order_change: false,
@@ -148,16 +157,34 @@ impl StateMachine {
     // ── Mutators ──
 
     /// Tell the state machine that the edit did not pass convergence.
-    /// Only requests a redo if another iteration is still allowed; otherwise
+    /// Only requests a redo if another iteration is still allowed
+    /// (`correction_iterations < max_correction_iterations`); otherwise
     /// no redo is requested and the edit proceeds with the non-converged
-    /// result.
+    /// result, incrementing
+    /// [`bootstrap_unconverged_iterations`](Self::bootstrap_unconverged_iterations)
+    /// so callers can surface a warning.
     ///
     /// JEOD: `GaussJacksonStateMachine::set_bootstrap_edit_redo_needed()`.
     pub fn set_bootstrap_edit_redo_needed(&mut self) {
         assert_eq!(self.fsm_state, FsmState::BootstrapEdit);
         if self.correction_iterations < self.max_correction_iterations {
             self.bootstrap_edit_redo_needed = true;
+        } else {
+            // JEOD_INV: IG.36 — non-converged bootstrap edit accepted; counter
+            // surfaces this to callers (matches JEOD's MessageHandler::error
+            // semantics, which we don't have a direct equivalent for).
+            self.bootstrap_unconverged_iterations =
+                self.bootstrap_unconverged_iterations.saturating_add(1);
         }
+    }
+
+    /// Cumulative count of `BootstrapEdit` iterations that reached
+    /// `max_correction_iterations` without converging. A non-zero value
+    /// indicates the integrator accepted a non-converged edit and
+    /// continued — long missions where small bootstrap error compounds
+    /// should log a warning the first time this is observed.
+    pub fn bootstrap_unconverged_iterations(&self) -> u32 {
+        self.bootstrap_unconverged_iterations
     }
 
     /// Reset the state machine.
@@ -354,6 +381,44 @@ mod tests {
         assert_eq!(sm.fsm_state(), FsmState::BootstrapEdit);
         sm.perform_step(); // history_length=5 == history_size → Operational
         assert_eq!(sm.fsm_state(), FsmState::Operational);
+    }
+
+    #[test]
+    fn bootstrap_unconverged_counter_increments_at_max_and_survives_reset() {
+        // max_correction_iterations = 1: after exit_priming sets
+        // correction_iterations = 1, the very next failed edit hits
+        // `1 < 1 == false` and accepts the non-converged edit.
+        let config = GaussJacksonConfig {
+            initial_order: 4,
+            final_order: 4,
+            ndoubling_steps: 0,
+            max_correction_iterations: 1,
+            ..Default::default()
+        };
+        let mut sm = StateMachine::configure(&config);
+
+        // Drive into BootstrapEdit (Reset → Priming → BootstrapEdit). With
+        // initial=final=4 and ndoubling=0, history_size = order+1 = 5.
+        for _ in 0..5 {
+            sm.perform_step();
+        }
+        assert_eq!(sm.fsm_state(), FsmState::BootstrapEdit);
+        assert_eq!(sm.bootstrap_unconverged_iterations(), 0);
+
+        // Force a non-converged edit. correction_iterations is at 1 (set
+        // by exit_priming), max is 1, so 1 < 1 is false → counter ticks.
+        sm.set_bootstrap_edit_redo_needed();
+        assert_eq!(sm.bootstrap_unconverged_iterations(), 1);
+        assert!(
+            !sm.bootstrap_edit_redo_needed,
+            "redo must NOT be requested when at the iteration cap"
+        );
+
+        // Counter must persist across reset() — long missions span
+        // multiple bootstrap-reset cycles, and the cumulative history is
+        // exactly the diagnostic the audit asked for.
+        sm.reset();
+        assert_eq!(sm.bootstrap_unconverged_iterations(), 1);
     }
 
     #[test]

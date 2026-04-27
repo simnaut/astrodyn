@@ -341,6 +341,7 @@ Source: `../jeod/models/utils/integration/` (core + `gauss_jackson/` + `lsode/`)
 | IG.33 | IntegrationGroup::remove_integrable_object: entry must exist (`jeod_integration_group.cc`) | error | runtime | n/a (no runtime integration-group membership; bodies are Bevy entities) |
 | IG.34 | Integrator step `dt` must be finite and strictly positive; zero-step silently rotates multi-step history (ABM4) (no JEOD equivalent — JEOD relies on Trick scheduler) | runtime | runtime | enforced (`abm4.rs:172`; `integration.rs` asserts dt non-zero in stepping paths) |
 | IG.35 | Integrator state: position and velocity must remain finite across stages (structural JEOD assumption — never asserted in production; verified by test harness) | structural | consistency | n/a (JEOD does not assert; neither do we — unit tests exercise the shape) |
+| IG.36 | Gauss-Jackson `BootstrapEdit` accepts a non-converged correction once `correction_iterations >= max_correction_iterations` and proceeds (`gauss_jackson_integration_controls.cc` — JEOD logs via `MessageHandler::error`, non-fatal) | warn | runtime | enforced (`gauss_jackson/state_machine.rs` increments `bootstrap_unconverged_iterations`; `integration.rs` `log::warn!`s on first occurrence) |
 
 ## Section QT: Quaternion
 
