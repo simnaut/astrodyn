@@ -228,14 +228,13 @@ impl<SourceId> GravityControl<SourceId> {
     ///
     /// This is **purely config-based** — it does not consult the source.
     /// For the runtime question "will this control actually compute SH
-    /// terms against `source`?", use [`Self::requires_planet_fixed_rotation`]
-    /// or inspect the per-step `effective_orders` clamping directly.
+    /// terms against `source`?", use [`Self::requires_planet_fixed_rotation`].
     /// Examples where `is_nonspherical()` returns true but the runtime
     /// path collapses to spherical:
-    /// - source is `GravityModel::PointMass` (no SH data → eff_degree = 0)
-    /// - clamped degree drops to 0 against a low-degree source
-    /// - configured degree is 1 (Gottlieb returns zero perturbation for
-    ///   degree < 2, so the effective-orders clamp collapses it to 0)
+    /// - source is `GravityModel::PointMass` (no SH data → effective degree = 0)
+    /// - the configured degree exceeds the source degree (clamped down to 0)
+    /// - the configured degree is 1 (Gottlieb returns zero perturbation for
+    ///   degree < 2, so the per-step clamp collapses it to 0)
     pub fn is_nonspherical(&self) -> bool {
         !self.spherical && self.degree > 0
     }
