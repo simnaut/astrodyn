@@ -64,7 +64,7 @@ fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_p
     app.world_mut().spawn((
         Name::new("Sun"),
         SunMarker,
-        TranslationalStateC(TranslationalState {
+        TranslationalStateC::from(TranslationalState {
             position: sun_pos,
             velocity: DVec3::ZERO,
         }),
@@ -72,7 +72,7 @@ fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_p
     app.world_mut().spawn((
         Name::new("Moon"),
         MoonMarker,
-        TranslationalStateC(TranslationalState {
+        TranslationalStateC::from(TranslationalState {
             position: moon_pos,
             velocity: DVec3::ZERO,
         }),
@@ -81,7 +81,7 @@ fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_p
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(TranslationalState {
+            TranslationalStateC::from(TranslationalState {
                 position: veh_pos,
                 velocity: DVec3::new(0.0, 7668.56, 0.0),
             }),
@@ -278,7 +278,7 @@ fn tier3_bevy_earth_lighting_pipeline() {
     app.world_mut().spawn((
         Name::new("Sun"),
         SunMarker,
-        TranslationalStateC(TranslationalState {
+        TranslationalStateC::from(TranslationalState {
             position: sun_pos,
             velocity: DVec3::ZERO,
         }),
@@ -286,7 +286,7 @@ fn tier3_bevy_earth_lighting_pipeline() {
     app.world_mut().spawn((
         Name::new("Moon"),
         MoonMarker,
-        TranslationalStateC(TranslationalState {
+        TranslationalStateC::from(TranslationalState {
             position: moon_pos,
             velocity: DVec3::ZERO,
         }),
@@ -295,7 +295,7 @@ fn tier3_bevy_earth_lighting_pipeline() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(iss_trans()),
+            TranslationalStateC::from(iss_trans()),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],

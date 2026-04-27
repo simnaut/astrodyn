@@ -44,8 +44,18 @@ pub fn iss_trans() -> TranslationalState {
 }
 
 pub fn tumble_rot() -> RotationalState {
+    // Deliberately non-trivial tumble (axis ≠ basis, ω with mixed
+    // signs) so attitude propagation exercises off-diagonal RNP terms.
+    // Pre-#172 H1 the quaternion was deliberately *not* unit-norm to
+    // exercise the integrator's renormalize-after-step path; the
+    // migration to typed `RotationalStateC` (which carries a
+    // `NormalizedQuat` witness) requires a normalized input at the
+    // ECS surface. The integrator's renormalize behavior is still
+    // tested by `rotational::tests::*` in jeod_dynamics.
+    let mut q = jeod_sim::JeodQuat::new(0.5_f64.sqrt(), 0.5, 0.0, 0.5_f64.sqrt() - 0.5);
+    q.normalize();
     RotationalState {
-        quaternion: jeod_sim::JeodQuat::new(0.5_f64.sqrt(), 0.5, 0.0, 0.5_f64.sqrt() - 0.5),
+        quaternion: q,
         ang_vel_body: DVec3::new(0.001, -0.0005, 0.001),
     }
 }
@@ -90,13 +100,25 @@ pub fn step_bevy_dt(app: &mut App, n: usize, dt: f64) {
 
 pub fn read_sixdof(world: &World, entity: Entity) -> SixDofState {
     SixDofState {
-        trans: world.get::<TranslationalStateC>(entity).unwrap().0,
-        rot: world.get::<RotationalStateC>(entity).unwrap().0,
+        trans: world
+            .get::<TranslationalStateC>(entity)
+            .unwrap()
+            .0
+            .to_untyped(),
+        rot: world
+            .get::<RotationalStateC>(entity)
+            .unwrap()
+            .0
+            .to_untyped(),
     }
 }
 
 pub fn read_trans(world: &World, entity: Entity) -> TranslationalState {
-    world.get::<TranslationalStateC>(entity).unwrap().0
+    world
+        .get::<TranslationalStateC>(entity)
+        .unwrap()
+        .0
+        .to_untyped()
 }
 
 /// Assert two f64 values are bit-identical.

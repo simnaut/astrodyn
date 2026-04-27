@@ -41,9 +41,9 @@ fn tier3_bevy_point_mass_sixdof() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(iss_trans()),
-            RotationalStateC(tumble_rot()),
-            MassPropertiesC(iss_mass()),
+            TranslationalStateC::from(iss_trans()),
+            RotationalStateC::from(tumble_rot()),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -87,7 +87,7 @@ fn run_planetary_parity(label: &str, trans: TranslationalState) {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(trans),
+            TranslationalStateC::from(trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
@@ -169,9 +169,9 @@ fn tier3_bevy_run2_6dof() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(iss_trans()),
-            RotationalStateC(tumble_rot()),
-            MassPropertiesC(iss_mass()),
+            TranslationalStateC::from(iss_trans()),
+            RotationalStateC::from(tumble_rot()),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -242,7 +242,7 @@ fn tier3_bevy_orbinit_cross_consistency() {
         let vehicle = app
             .world_mut()
             .spawn((
-                TranslationalStateC(*trans),
+                TranslationalStateC::from(*trans),
                 DynamicsConfigC::default(),
                 GravityControlsC(GravityControls {
                     controls: vec![GravityControl::new_spherical(planet, false)],
@@ -674,9 +674,9 @@ fn run_atmosphere_parity(label: &str, trans: TranslationalState) {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(trans),
-            RotationalStateC(tumble_rot()),
-            MassPropertiesC(iss_mass()),
+            TranslationalStateC::from(trans),
+            RotationalStateC::from(tumble_rot()),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,

@@ -63,7 +63,7 @@ fn tier3_bevy_sh4x4_rnp() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(iss_trans()),
+            TranslationalStateC::from(iss_trans()),
             DynamicsConfigC(jeod_sim::DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: false,
@@ -174,7 +174,7 @@ fn tier3_bevy_tidal_sh4x4() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(iss_trans()),
+            TranslationalStateC::from(iss_trans()),
             DynamicsConfigC(jeod_sim::DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: false,
@@ -240,7 +240,7 @@ fn tier3_bevy_run2p_polar_motion() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(iss_trans()),
+            TranslationalStateC::from(iss_trans()),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
@@ -306,7 +306,7 @@ fn run_gj_parity(label: &str, config: GaussJacksonConfig, dt: f64, n_steps: usiz
         .world_mut()
         .spawn((
             DynamicsConfigC::default(),
-            TranslationalStateC(gj_trans),
+            TranslationalStateC::from(gj_trans),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),

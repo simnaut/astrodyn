@@ -10,7 +10,7 @@
 //! - `.magnitude()` returns the scalar magnitude of dimension `D`.
 
 use core::marker::PhantomData;
-use core::ops::{Add, Div, Mul, Neg, Sub};
+use core::ops::{Add, AddAssign, Div, Mul, Neg, Sub, SubAssign};
 
 use uom::si::{Dimension, Quantity, ISQ, SI};
 use uom::typenum::{Diff, Integer, Sum};
@@ -66,6 +66,42 @@ where
     #[inline]
     fn neg(self) -> Self::Output {
         Qty3::new(-self.x, -self.y, -self.z)
+    }
+}
+
+// ---- AddAssign / SubAssign ----
+//
+// Same frame-compatibility check as `Add` / `Sub`. Required so the
+// idiomatic `total.force += contribution` accumulator pattern works on
+// typed components without first dropping to `raw_si()`. Without these,
+// systems would either revert to the raw representation or write the
+// less-readable `total.force = total.force + ...` form.
+
+impl<D: ?Sized + Dimension, Fl: Frame, Fr: Frame> AddAssign<Qty3<D, Fr>> for Qty3<D, Fl>
+where
+    (): CompatibleFrames<Fl, Fr>,
+    Quantity<D, SI<f64>, f64>: Add<Output = Quantity<D, SI<f64>, f64>>,
+{
+    #[inline]
+    fn add_assign(&mut self, rhs: Qty3<D, Fr>) {
+        // Same frame-bound trick as `Add` — go through raw_si to bypass
+        // the nominal Fl/Fr type distinction the compiler still sees.
+        let lhs = self.raw_si();
+        let rhs = rhs.raw_si();
+        *self = Qty3::from_raw_si(lhs + rhs);
+    }
+}
+
+impl<D: ?Sized + Dimension, Fl: Frame, Fr: Frame> SubAssign<Qty3<D, Fr>> for Qty3<D, Fl>
+where
+    (): CompatibleFrames<Fl, Fr>,
+    Quantity<D, SI<f64>, f64>: Sub<Output = Quantity<D, SI<f64>, f64>>,
+{
+    #[inline]
+    fn sub_assign(&mut self, rhs: Qty3<D, Fr>) {
+        let lhs = self.raw_si();
+        let rhs = rhs.raw_si();
+        *self = Qty3::from_raw_si(lhs - rhs);
     }
 }
 
@@ -335,6 +371,14 @@ impl<D: ?Sized + Dimension, F: Frame> Qty3<D, F> {
             value: raw,
         }
     }
+
+    /// Alias for [`Self::magnitude`] matching `glam::DVec3::length`.
+    /// Mission code that switches between raw `DVec3` and typed `Qty3`
+    /// can use the same name on either side.
+    #[inline]
+    pub fn length(&self) -> Quantity<D, SI<f64>, f64> {
+        self.magnitude()
+    }
 }
 
 // ---- Velocity × Time → Position (and Acceleration × Time → Velocity) ----
@@ -381,5 +425,49 @@ mod tests {
     fn magnitude_is_euclidean() {
         let a = pos_inertial(3.0, 4.0, 0.0);
         assert!((a.magnitude().value - 5.0).abs() < 1e-12);
+    }
+
+    /// `length()` is a name-only alias for [`Qty3::magnitude`] so mission
+    /// code can use the same name on raw `DVec3` and typed `Qty3`. The
+    /// scalar value must match `magnitude()` and the expected Euclidean
+    /// norm bit-for-bit.
+    #[test]
+    fn length_matches_magnitude_and_euclidean_norm() {
+        let a = pos_inertial(3.0, 4.0, 0.0);
+        assert_eq!(a.length().value, a.magnitude().value);
+        assert_eq!(a.length().value, 5.0);
+
+        let b = pos_inertial(1.0, 2.0, 2.0);
+        assert_eq!(b.length().value, b.magnitude().value);
+        assert_eq!(b.length().value, 3.0);
+    }
+
+    /// `a += b` and `a -= b` must produce the same value as `a + b` and
+    /// `a - b` respectively.
+    #[test]
+    fn add_assign_sub_assign_match_add_sub() {
+        let a0 = pos_inertial(1.0, 2.0, 3.0);
+        let b = pos_inertial(4.0, 5.0, 6.0);
+
+        let mut a = a0;
+        a += b;
+        assert_eq!(a.raw_si(), (a0 + b).raw_si());
+
+        let mut a = a0;
+        a -= b;
+        assert_eq!(a.raw_si(), (a0 - b).raw_si());
+    }
+
+    /// `+=` accumulator pattern across multiple frames the user marked
+    /// compatible (here, same `Inertial`/`Inertial` to keep the test
+    /// minimal — the cross-frame `CompatibleFrames` pairs are exercised
+    /// by their own dedicated frame-arithmetic tests).
+    #[test]
+    fn add_assign_accumulator() {
+        let mut total = pos_inertial(0.0, 0.0, 0.0);
+        for i in 1..=4 {
+            total += pos_inertial(i as f64, 0.0, 0.0);
+        }
+        assert_eq!(total.raw_si(), glam::DVec3::new(10.0, 0.0, 0.0));
     }
 }

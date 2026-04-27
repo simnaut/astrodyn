@@ -1,6 +1,9 @@
 use bevy::prelude::*;
 use glam::DVec3;
-use jeod_sim::{BodyFrame, Inertial, Position, SelfPlanet, SelfRef, Velocity};
+use jeod_sim::{
+    Acceleration, AngularAcceleration, BodyFrame, Force, Inertial, Position, SelfPlanet, SelfRef,
+    Torque, Velocity,
+};
 
 use crate::components::*;
 use crate::AtmosphereModelR;
@@ -151,10 +154,12 @@ pub fn ephemeris_update_system(
             sv.0 = vel_typed;
         }
         if let Some(mut ts) = trans_state {
-            // `TranslationalState` still stores raw `DVec3`; drop the typed
-            // phantoms at the boundary.
-            ts.0.position = pos_typed.raw_si();
-            ts.0.velocity = vel_typed.raw_si();
+            // TranslationalStateC now wraps TranslationalStateTyped<Inertial>;
+            // assign the typed values directly. The frame phantom is
+            // checked at the type level — pos_typed is Position<Inertial>
+            // by construction, matching the storage's Inertial frame.
+            ts.0.position = pos_typed;
+            ts.0.velocity = vel_typed;
         }
     }
 }
@@ -218,7 +223,12 @@ pub fn force_collection_system(
     ) in &mut query
     {
         let t_struct_body = struct_xform.map_or(glam::DMat3::IDENTITY, |s| *s.0.matrix_ref());
-        let grav_accel = grav.map_or(DVec3::ZERO, |g| g.grav_accel);
+        // `GravityAccelerationC` stores `Acceleration<Inertial>`; the
+        // existing `collect_and_resolve_forces` kernel takes a raw
+        // `DVec3`, so drop the phantom here. The kernel's frame
+        // contract (gravity in inertial) matches the component's
+        // phantom by construction.
+        let grav_accel = grav.map_or(DVec3::ZERO, |g| g.grav_accel.raw_si());
 
         // Map Bevy component references to jeod_interactions types for jeod_sim.
         let aero_ref = aero.map(|a| jeod_sim::AerodynamicForce {
@@ -235,44 +245,75 @@ pub fn force_collection_system(
         // site only.
         let gravity_torque_val = grav_torque.map(|gt| gt.0.raw_si());
 
-        let (collected, mut frame_derivs) = jeod_sim::collect_and_resolve_forces(
+        // RotationalStateC and MassPropertiesC now wrap typed siblings;
+        // convert to untyped at the kernel boundary. (The kernel
+        // signature still takes the untyped form. Migrating the kernel
+        // signature itself is out of scope for #172 H1; the win here
+        // is at the ECS surface where mission code interacts.)
+        let rot_untyped = rot_state.map(|r| r.0.to_untyped());
+        let mass_untyped = mass.map(|m| m.0.to_untyped());
+
+        let (collected, frame_derivs_raw) = jeod_sim::collect_and_resolve_forces(
             aero_ref.as_ref(),
             srp_ref.as_ref(),
             gravity_torque_val,
-            rot_state.map(|r| &r.0),
+            rot_untyped.as_ref(),
             t_struct_body,
-            mass.map(|m| &m.0),
+            mass_untyped.as_ref(),
             grav_accel,
         );
 
-        total.force = collected.force;
-        total.torque = collected.torque;
+        // The kernel returns untyped TotalForce / FrameDerivatives;
+        // re-wrap as the component's typed form. The `Inertial` and
+        // `BodyFrame<SelfRef>` phantoms match the kernel's documented
+        // frame contracts (force inertial, torque body).
+        // allowed: typed↔untyped kernel boundary; the kernel signature in
+        // jeod_sim is still untyped, so re-wrapping is the canonical
+        // adapter pattern (analogous to the From<Untyped> impls in
+        // src/components.rs).
+        total.0 = jeod_sim::TotalForceTyped::<jeod_sim::SelfRef, Inertial>::from_untyped_unchecked(
+            &collected,
+        );
+        let mut frame_derivs =
+            // allowed: typed↔untyped kernel boundary, see TotalForceTyped comment above
+            jeod_sim::FrameDerivativesTyped::<Inertial, jeod_sim::SelfRef>::from_untyped_unchecked(
+                &frame_derivs_raw,
+            );
 
         // Apply external force/torque (set by caller between steps).
         // Matches simulation.rs:846-855 logic. ExternalForceC and
-        // ExternalTorqueC carry typed phantoms (Inertial / BodyFrame);
-        // drop them at the untyped TotalForce boundary.
+        // ExternalTorqueC carry typed phantoms; the totals are typed
+        // too, so the accumulator stays in typed land throughout.
         if let Some(ef) = ext_force {
-            let ef_raw = ef.0.raw_si();
-            if ef_raw != DVec3::ZERO {
-                total.force += ef_raw;
+            if ef.0.raw_si() != DVec3::ZERO {
+                total.0.force += ef.0;
                 if let Some(mass) = mass {
-                    frame_derivs.trans_accel += ef_raw * mass.inverse_mass;
+                    // `Force<Inertial> / Mass → Acceleration<Inertial>`
+                    // is the typed identity here; we go through raw_si
+                    // for the scalar inverse_mass multiply (it's an
+                    // untyped f64 by design — see jeod_dynamics::mass
+                    // doc on why inverse_mass stays untyped).
+                    let accel_contrib = ef.0.raw_si() * mass.0.inverse_mass;
+                    frame_derivs.trans_accel +=
+                        // allowed: scalar inverse_mass is untyped by design; rewrap.
+                        Acceleration::<Inertial>::from_raw_si(accel_contrib);
                 }
             }
         }
         if let Some(et) = ext_torque {
-            let et_raw = et.0.raw_si();
-            if et_raw != DVec3::ZERO {
-                total.torque += et_raw;
+            if et.0.raw_si() != DVec3::ZERO {
+                total.0.torque += et.0;
                 if let Some(mass) = mass {
-                    frame_derivs.rot_accel += mass.inverse_inertia * et_raw;
+                    let alpha_contrib = mass.0.inverse_inertia * et.0.raw_si();
+                    frame_derivs.rot_accel +=
+                        // allowed: same untyped inverse_inertia boundary as above.
+                        AngularAcceleration::<BodyFrame<SelfRef>>::from_raw_si(alpha_contrib);
                 }
             }
         }
 
         if let Some(mut derivs) = derivs {
-            **derivs = frame_derivs;
+            derivs.0 = frame_derivs;
         }
     }
 }
@@ -327,8 +368,21 @@ pub fn integration_system(
     // for the typed `*_typed` kernels and unwrap before returning.
     let eval_gravity =
         |entity: Entity, controls: &GravityControlsC, pos: DVec3, vel: DVec3| -> DVec3 {
-            let typed_pos = Position::<Inertial>::from_raw_si(pos);
-            let typed_vel = Velocity::<Inertial>::from_raw_si(vel);
+            // The standard `integrate_body` (and `integrate_body_coupled`
+            // for the thermal-SRP path) accept a `gravity_fn` closure
+            // that receives raw `DVec3` per-stage state. The Bevy adapter
+            // is no longer the source of these untyped values — the
+            // typed Components (`TranslationalStateC` etc.) store frame
+            // phantoms — but the integrator kernel API itself still
+            // takes untyped intermediate states. A typed-sibling
+            // `integrate_body_typed` exists for the standard path and
+            // could be used to eliminate these two lifts; the coupled
+            // path has no typed sibling yet, so this closure stays
+            // generic across both. These two lifts are inside `jeod_sim`
+            // boundary territory, not at the Bevy ECS surface that #172
+            // H1 was specifically about.
+            let typed_pos = Position::<Inertial>::from_raw_si(pos); // allowed: #172 H1 integrator-kernel boundary (jeod_sim, not the ECS surface)
+            let typed_vel = Velocity::<Inertial>::from_raw_si(vel); // allowed: #172 H1 integrator-kernel boundary
 
             let typed_accel = jeod_sim::accumulate_gravity_typed(
                 typed_pos,
@@ -423,20 +477,28 @@ pub fn integration_system(
                  requires RK4 integrator; use Scheduled or switch integrator.",
             );
             let t_struct_body = struct_xform.map_or(glam::DMat3::IDENTITY, |s| *s.0.matrix_ref());
-            let non_grav_non_srp_force = total_force.force;
-            let constant_torque = total_force.torque;
+            // Drop typed phantoms at the kernel boundary. `total_force`
+            // accumulators are typed (`Force<Inertial>` / `Torque<BodyFrame>`);
+            // the integrator API still consumes raw `DVec3`.
+            let non_grav_non_srp_force = total_force.force.raw_si();
+            let constant_torque = total_force.torque.raw_si();
             let mut final_srp_inertial_force = DVec3::ZERO;
             let mut final_srp_torque = DVec3::ZERO;
             let mut k1_temp_dots: Option<Vec<f64>> = None;
-            let mass_copy = mass.map(|m| m.0);
+            // Convert typed state to the untyped form the kernel wants.
+            // After `integrate_body_coupled` mutates the untyped copies
+            // we re-wrap as typed for storage.
+            let mass_copy_untyped = mass.map(|m| m.0.to_untyped());
+            let mut state_untyped = state.0.to_untyped();
+            let mut rot_state_untyped = rot_state.as_ref().map(|r| r.0.to_untyped());
             let thermal = flat_config
                 .as_mut()
                 .expect("stage_inputs_and_order => flat_config present");
             jeod_sim::integrate_body_coupled(
                 config,
-                &mut state.0,
-                rot_state.as_mut().map(|r| &mut r.0),
-                mass_copy.as_ref(),
+                &mut state_untyped,
+                rot_state_untyped.as_mut(),
+                mass_copy_untyped.as_ref(),
                 |stage_trans, stage_rot, stage_thermal, time_frac| {
                     let gravity_accel =
                         eval_gravity(entity, controls, stage_trans.position, stage_trans.velocity);
@@ -501,6 +563,20 @@ pub fn integration_system(
                 sim_time.0.time_scale_factor,
             );
 
+            // Re-wrap kernel-mutated untyped state back into typed
+            // components. The frame phantoms are unchanged (the typed
+            // storage's `Inertial` / `BodyFrame<SelfRef>` are the same
+            // frames the kernel was operating in).
+            // allowed: typed↔untyped kernel boundary (integrate_body_coupled
+            // signature is untyped); analogous to From<Untyped> impls.
+            state.0 = jeod_sim::TranslationalStateTyped::<Inertial>::from_untyped_unchecked(
+                &state_untyped,
+            );
+            if let (Some(rs), Some(ru)) = (rot_state.as_mut(), rot_state_untyped) {
+                // allowed: same typed↔untyped kernel boundary as above.
+                rs.0 = jeod_sim::RotationalStateTyped::<SelfRef>::from_untyped_unchecked(&ru);
+            }
+
             // Write representative `RadiationForceC` from stage 4 so
             // `VehicleOutput`-equivalent observers still see the SRP force.
             if let Some(ref mut srp_force) = srp_force {
@@ -515,31 +591,55 @@ pub fn integration_system(
             // applied force / resulting acceleration. In derivative modes
             // this is a "representative stage" (stage 4) snapshot, same
             // as `RadiationForceC` above.
-            total_force.force += final_srp_inertial_force;
+            // allowed: SRP kernel returns DVec3; re-wrap into the typed
+            // accumulators (`Force<Inertial>` / `Torque<BodyFrame<SelfRef>>`).
+            total_force.force += Force::<Inertial>::from_raw_si(final_srp_inertial_force);
             let final_srp_torque_body = t_struct_body * final_srp_torque;
-            total_force.torque += final_srp_torque_body;
-            if let (Some(ref mut fd), Some(mass_p)) = (frame_derivs.as_mut(), mass_copy) {
-                fd.trans_accel += final_srp_inertial_force * mass_p.inverse_mass;
-                fd.rot_accel += mass_p.inverse_inertia * final_srp_torque_body;
+            // allowed: same SRP-kernel boundary.
+            total_force.torque += Torque::<BodyFrame<SelfRef>>::from_raw_si(final_srp_torque_body);
+            if let (Some(ref mut fd), Some(mass_p)) = (frame_derivs.as_mut(), mass_copy_untyped) {
+                // allowed: typed↔untyped acceleration accumulator boundary.
+                fd.trans_accel += Acceleration::<Inertial>::from_raw_si(
+                    final_srp_inertial_force * mass_p.inverse_mass,
+                );
+                // allowed: typed↔untyped angular-acceleration boundary.
+                fd.rot_accel += AngularAcceleration::<BodyFrame<SelfRef>>::from_raw_si(
+                    mass_p.inverse_inertia * final_srp_torque_body,
+                );
             }
             continue;
         }
 
-        // Standard (Scheduled or no-SRP) path.
+        // Standard (Scheduled or no-SRP) path. Same typed↔untyped
+        // bridging as the coupled path: extract untyped at entry,
+        // re-wrap typed at exit.
+        let mut state_untyped = state.0.to_untyped();
+        let mut rot_state_untyped = rot_state.as_ref().map(|r| r.0.to_untyped());
+        let mass_untyped = mass.map(|m| m.0.to_untyped());
         jeod_sim::integrate_body(
             config,
-            &mut state.0,
-            rot_state.as_mut().map(|r| &mut r.0),
-            mass.map(|m| &m.0),
+            &mut state_untyped,
+            rot_state_untyped.as_mut(),
+            mass_untyped.as_ref(),
             |pos, vel, _time_frac| eval_gravity(entity, controls, pos, vel),
-            total_force.force,
-            total_force.torque,
+            total_force.force.raw_si(),
+            total_force.torque.raw_si(),
             dt,
             sim_time.0.time_scale_factor,
             integrator_type,
             gj_state.as_mut().map(|g| &mut g.0),
             abm4_state.as_mut().map(|a| &mut a.0),
         );
+        // Re-wrap kernel-mutated state back into typed components;
+        // integrate_body signature is untyped, so re-wrapping is the
+        // canonical adapter step (analogous to From<Untyped> impls).
+        state.0 =
+            // allowed: typed↔untyped kernel boundary
+            jeod_sim::TranslationalStateTyped::<Inertial>::from_untyped_unchecked(&state_untyped);
+        if let (Some(rs), Some(ru)) = (rot_state.as_mut(), rot_state_untyped) {
+            // allowed: typed↔untyped kernel boundary
+            rs.0 = jeod_sim::RotationalStateTyped::<SelfRef>::from_untyped_unchecked(&ru);
+        }
     }
 }
 
@@ -570,13 +670,12 @@ pub fn gravity_computation_system(
     )>,
 ) {
     for (entity, state, controls, mut accel) in &mut bodies {
-        // Typed entry: lift `state.position` (raw DVec3) into the typed
-        // `Position<Inertial>` and call the typed sibling. The kernel
-        // numerics are bit-identical; the typed boundary lets the
-        // compiler check that the inertial-frame phantom matches the
-        // gravity source phantoms.
-        let body_pos = Position::<Inertial>::from_raw_si(state.position);
-        let body_vel = Velocity::<Inertial>::from_raw_si(state.velocity);
+        // TranslationalStateC stores typed Position<Inertial> /
+        // Velocity<Inertial> directly — read them with no per-step lift.
+        // (Pre-#172-H1 the system extracted raw DVec3 here and called
+        // `from_raw_si` to mint typed values; that bypass is gone.)
+        let body_pos = state.position;
+        let body_vel = state.velocity;
 
         let typed_accel = jeod_sim::accumulate_gravity_typed(
             body_pos,
@@ -603,7 +702,7 @@ pub fn gravity_computation_system(
                 }
             },
         );
-        accel.0 = typed_accel.to_untyped();
+        accel.0 = typed_accel;
 
         // Apply relativistic (post-Newtonian PPN) corrections after Newtonian
         // gravity, matching Simulation::step() stage 4b ordering.
@@ -621,7 +720,7 @@ pub fn gravity_computation_system(
                 })
             },
         );
-        accel.grav_accel += rel_accel.raw_si();
+        accel.grav_accel += rel_accel;
     }
 }
 
@@ -674,7 +773,7 @@ pub fn atmosphere_update_system(
         }
         **atmos = jeod_sim::evaluate_atmosphere(
             &model.config,
-            state.position,
+            state.position.raw_si(),
             t_inertial_pfix.as_ref(),
             tai_tjt,
         );
@@ -701,18 +800,18 @@ pub fn aero_drag_system(
     for (drag_config, atmos, state, rot, struct_xform, mut aero_force) in &mut query {
         let t_struct_body = struct_xform.map_or(glam::DMat3::IDENTITY, |s| *s.0.matrix_ref());
 
-        // `DragConfigC` already wraps `DragConfigTyped` — the dimensional
-        // lift happened once at insertion (`DragConfigC::from_untyped`),
-        // so the system reads the typed value directly with no per-tick
-        // unchecked conversion. `Velocity<Inertial>` is lifted here at
-        // the kernel boundary; the result carries `StructuralFrame<SelfRef>`
-        // phantoms, which the structural-frame `AerodynamicForceC` unwraps
-        // via `.raw_si()` for storage.
+        // `DragConfigC` and `TranslationalStateC` both store typed values;
+        // the system reads them directly. The result carries
+        // `StructuralFrame<SelfRef>` phantoms, which the structural-frame
+        // `AerodynamicForceC` unwraps via `.raw_si()` for storage (the
+        // structural-frame Component still uses raw DVec3; that's the
+        // remaining boundary inside the H1 migration).
+        let rot_untyped = rot.0.to_untyped();
         let result = jeod_sim::compute_drag_typed::<SelfRef>(
             &drag_config.0,
             atmos,
-            Velocity::<Inertial>::from_raw_si(state.velocity),
-            Some(&rot.0),
+            state.velocity,
+            Some(&rot_untyped),
             t_struct_body,
         );
 
@@ -735,16 +834,14 @@ pub fn gravity_torque_system(
     )>,
 ) {
     for (grav, rot, mass, mut torque) in &mut query {
-        // Typed sibling: lift `MassProperties.inertia` into a typed
-        // `InertiaTensor<BodyFrame<SelfRef>>` so the function signature
-        // expresses the body-frame phantom; the kernel numerics are
-        // bit-identical.
-        let inertia_typed =
-            jeod_sim::InertiaTensor::<BodyFrame<SelfRef>>::from_dmat3_unchecked(mass.inertia);
+        // MassPropertiesC stores `InertiaTensor<BodyFrame<SelfRef>>`
+        // directly; read it without lifting. Same for the rotational
+        // state — it's already typed.
+        let rot_untyped = rot.0.to_untyped();
         torque.0 = jeod_sim::compute_gravity_torque_typed::<SelfRef>(
             &grav.grav_grad,
-            &rot.0,
-            inertia_typed,
+            &rot_untyped,
+            mass.0.inertia,
         );
     }
 }
@@ -760,7 +857,7 @@ fn compute_illum_factor(
         let factor = jeod_sim::compute_shadow_fraction(
             vehicle_pos,
             sun_pos,
-            body_state.position,
+            body_state.position.raw_si(),
             shadow.radius,
             jeod_sim::SOLAR_RADIUS,
         );
@@ -787,12 +884,9 @@ pub fn orbital_elements_system(
             elements.0 = Default::default();
             continue;
         };
-        // Typed sibling: lift `mu` / `position` / `velocity` into the
-        // typed scalars and 3-vectors. Bit-identical numerics.
+        // Position and velocity are already typed in TranslationalStateC.
         let mu_typed = jeod_sim::F64Ext::m3_per_s2(source.mu);
-        let pos_typed = Position::<Inertial>::from_raw_si(state.position);
-        let vel_typed = Velocity::<Inertial>::from_raw_si(state.velocity);
-        match jeod_sim::compute_orbital_elements_typed(mu_typed, pos_typed, vel_typed) {
+        match jeod_sim::compute_orbital_elements_typed(mu_typed, state.position, state.velocity) {
             Ok(oe) => elements.0 = oe,
             Err(_) => elements.0 = Default::default(),
         }
@@ -811,9 +905,11 @@ pub fn euler_angles_system(
 ) {
     for (rot_opt, config, mut angles) in &mut query {
         if let Some(rot) = rot_opt {
-            // Typed sibling: returns `[Angle; 3]` directly, matching
-            // `EulerAnglesC` storage. Bit-identical numerics.
-            angles.0 = jeod_sim::compute_body_euler_angles_typed(&rot.0, config.sequence);
+            // The "_typed" function takes untyped input but returns
+            // typed `[Angle; 3]` (the typed-output naming convention
+            // documented in jeod_sim::derived). Convert at the call.
+            let rot_untyped = rot.0.to_untyped();
+            angles.0 = jeod_sim::compute_body_euler_angles_typed(&rot_untyped, config.sequence);
         } else {
             angles.0 = Default::default();
         }
@@ -827,12 +923,9 @@ pub fn euler_angles_system(
 /// Placed in `JeodSet::DerivedState`.
 pub fn lvlh_system(mut query: Query<(&TranslationalStateC, &mut LvlhFrameC)>) {
     for (state, mut lvlh) in &mut query {
-        // Typed sibling: lift the raw position/velocity into typed inertial
-        // quantities at the call site. Bit-identical numerics — the kernel
-        // unwraps via `.raw_si()` immediately.
-        let pos = Position::<Inertial>::from_raw_si(state.position);
-        let vel = Velocity::<Inertial>::from_raw_si(state.velocity);
-        lvlh.0 = jeod_sim::compute_body_lvlh_frame_typed(pos, vel);
+        // Typed throughout — TranslationalStateC stores the typed values
+        // and `compute_body_lvlh_frame_typed` consumes them directly.
+        lvlh.0 = jeod_sim::compute_body_lvlh_frame_typed(state.position, state.velocity);
     }
 }
 
@@ -848,14 +941,12 @@ pub fn geodetic_system(
             geodetic.0 = Default::default();
             continue;
         };
-        // Typed sibling: lift inertial position and ellipsoid radii into
-        // typed quantities at the call site. The kernel unwraps via
-        // `.raw_si()` / `.get::<meter>()` immediately — bit-identical
-        // numerics to the f64 path.
+        // Position is already typed; only the ellipsoid radii lift
+        // remains, which is the typed-units boundary on planet shape
+        // (a config-time conversion, not a per-step bypass).
         use jeod_sim::F64Ext;
-        let pos = Position::<Inertial>::from_raw_si(state.position);
         geodetic.0 = jeod_sim::compute_body_geodetic_typed(
-            pos,
+            state.position,
             rot.0.matrix_ref(),
             planet.r_eq.m(),
             planet.r_pol.m(),
@@ -889,16 +980,16 @@ pub fn solar_beta_system(
         }
     };
     for (state, mut beta) in &mut query {
-        // Typed sibling: lift inertial position/velocity/sun position into
-        // typed quantities at the call site. The kernel returns a typed
-        // `Angle`; unwrap to radians for the (still f64) `SolarBetaC`
-        // storage. Bit-identical to the f64 path. `Angle.value` reads the
-        // SI base value (radian), matching `Angle::get::<radian>()` —
-        // f64-equality is preserved.
-        let pos = Position::<Inertial>::from_raw_si(state.position);
-        let vel = Velocity::<Inertial>::from_raw_si(state.velocity);
-        let sun = Position::<Inertial>::from_raw_si(sun_state.position);
-        beta.0 = jeod_sim::compute_body_solar_beta_typed(pos, vel, sun).value;
+        // Typed throughout — the kernel returns a typed `Angle`; unwrap
+        // to radians for the (still f64) `SolarBetaC` storage.
+        // `Angle.value` reads the SI base value (radian), matching
+        // `Angle::get::<radian>()` — f64-equality is preserved.
+        beta.0 = jeod_sim::compute_body_solar_beta_typed(
+            state.position,
+            state.velocity,
+            sun_state.position,
+        )
+        .value;
     }
 }
 
@@ -954,9 +1045,9 @@ pub fn earth_lighting_system(
     };
     for (state, config, mut lighting) in &mut query {
         lighting.0 = jeod_sim::compute_earth_lighting(
-            state.position,
-            sun_state.position,
-            moon_state.position,
+            state.position.raw_si(),
+            sun_state.position.raw_si(),
+            moon_state.position.raw_si(),
             config.sun_radius,
             config.earth_radius,
             config.moon_radius,
@@ -1021,7 +1112,13 @@ pub fn flat_plate_srp_system(
             continue;
         };
 
-        let sun_to_vehicle = state.position - sun_state.position;
+        // The SRP kernel (`compute_flat_plate_srp_thermal`) and shadow
+        // helpers all consume raw DVec3. Extract once at the top so the
+        // rest of the body matches the kernel's untyped surface.
+        let pos_raw = state.position.raw_si();
+        let sun_pos_raw = sun_state.position.raw_si();
+
+        let sun_to_vehicle = pos_raw - sun_pos_raw;
         let distance = sun_to_vehicle.length();
         if distance < 1.0 {
             // Too close to the Sun to compute flux: force/torque/
@@ -1033,8 +1130,8 @@ pub fn flat_plate_srp_system(
 
         // Shadow fraction (step-constant; matches JEOD's scheduled-class
         // shadow evaluation across all three integration orders).
-        let illum_factor = compute_illum_factor(state.position, sun_state.position, &shadow_bodies);
-        let center_grav = mass.map_or(DVec3::ZERO, |m| m.position);
+        let illum_factor = compute_illum_factor(pos_raw, sun_pos_raw, &shadow_bodies);
+        let center_grav = mass.map_or(DVec3::ZERO, |m| m.0.center_of_mass.raw_si());
 
         match flat_config.integration_order {
             jeod_sim::ThermalIntegrationOrder::Scheduled => {
@@ -1042,7 +1139,7 @@ pub fn flat_plate_srp_system(
                 // per step. Force fed to the orbital integrator is
                 // step-constant.
                 let t_inertial_body = rot.map_or(glam::DMat3::IDENTITY, |r| {
-                    r.quaternion.left_quat_to_transformation()
+                    r.0.q_inertial_body.left_quat_to_transformation()
                 });
                 let t_struct_body =
                     struct_xform.map_or(glam::DMat3::IDENTITY, |s| *s.0.matrix_ref());
@@ -1077,7 +1174,7 @@ pub fn flat_plate_srp_system(
                 // stays at the zero cleared above — the integration system
                 // writes a representative final-stage value.
                 flat_config.stage_inputs = Some(jeod_sim::FlatPlateStageInputs {
-                    sun_position: sun_state.position,
+                    sun_position: sun_pos_raw,
                     illum_factor,
                     center_grav,
                 });
@@ -1116,11 +1213,13 @@ pub fn cannonball_srp_system(
     };
 
     for (config, state, mut srp_force) in &mut query {
-        let illum_factor = compute_illum_factor(state.position, sun_state.position, &shadow_bodies);
+        let pos_raw = state.position.raw_si();
+        let sun_pos_raw = sun_state.position.raw_si();
+        let illum_factor = compute_illum_factor(pos_raw, sun_pos_raw, &shadow_bodies);
 
         srp_force.force = jeod_sim::compute_cannonball_srp(
-            state.position,
-            sun_state.position,
+            pos_raw,
+            sun_pos_raw,
             config.cx_area,
             config.albedo,
             config.diffuse,
@@ -1209,7 +1308,7 @@ pub fn staging_system(
 
         for (body_id, mut mass) in &mut bodies {
             if sync_ids.binary_search(&body_id.0).is_ok() {
-                *mass = MassPropertiesC(tree.get(body_id.0).composite_properties);
+                *mass = MassPropertiesC::from(tree.get(body_id.0).composite_properties);
             }
         }
     }

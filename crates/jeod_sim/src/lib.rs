@@ -107,6 +107,14 @@ pub use jeod_dynamics::{
     TotalForce, TranslationalState, INERTIA_CONSISTENCY_TOL,
 };
 
+// jeod_dynamics typed siblings (used by Bevy components after #172 H1
+// migration so the ECS storage layer carries frame phantoms rather
+// than re-lifting raw DVec3 every step).
+pub use jeod_dynamics::forces::{FrameDerivativesTyped, GravityAccelerationTyped, TotalForceTyped};
+pub use jeod_dynamics::mass::MassPropertiesTyped;
+pub use jeod_dynamics::rotational::RotationalStateTyped;
+pub use jeod_dynamics::state::TranslationalStateTyped;
+
 // jeod_gravity: source definitions, controls, and tides
 pub use jeod_gravity::tides::{
     compute_delta_c20, compute_delta_c20_typed, TidalBody, TidalConfig, TidalConfigTyped, EARTH_K2,

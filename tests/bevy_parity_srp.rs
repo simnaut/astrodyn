@@ -79,7 +79,7 @@ fn tier3_bevy_full_stack_sixdof() {
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC(TranslationalState {
+            TranslationalStateC::from(TranslationalState {
                 position: sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -89,9 +89,9 @@ fn tier3_bevy_full_stack_sixdof() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(iss_trans()),
-            RotationalStateC(tumble_rot()),
-            MassPropertiesC(iss_mass()),
+            TranslationalStateC::from(iss_trans()),
+            RotationalStateC::from(tumble_rot()),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -266,7 +266,7 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC(TranslationalState {
+            TranslationalStateC::from(TranslationalState {
                 position: sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -276,11 +276,11 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(TranslationalState {
+            TranslationalStateC::from(TranslationalState {
                 position: vehicle_pos,
                 velocity: vehicle_vel,
             }),
-            MassPropertiesC(mass),
+            MassPropertiesC::from(mass),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: false,
@@ -401,7 +401,7 @@ fn run_shadow_parity(label: &str, srp_plates: Vec<(FlatPlate, FlatPlateParams, F
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC(TranslationalState {
+            TranslationalStateC::from(TranslationalState {
                 position: sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -411,9 +411,9 @@ fn run_shadow_parity(label: &str, srp_plates: Vec<(FlatPlate, FlatPlateParams, F
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(iss_trans()),
-            RotationalStateC(tumble_rot()),
-            MassPropertiesC(iss_mass()),
+            TranslationalStateC::from(iss_trans()),
+            RotationalStateC::from(tumble_rot()),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -500,7 +500,7 @@ fn run_srp_basic_parity(
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC(TranslationalState {
+            TranslationalStateC::from(TranslationalState {
                 position: sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -510,9 +510,9 @@ fn run_srp_basic_parity(
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(iss_trans()),
-            RotationalStateC(tumble_rot()),
-            MassPropertiesC(iss_mass()),
+            TranslationalStateC::from(iss_trans()),
+            RotationalStateC::from(tumble_rot()),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -602,7 +602,7 @@ fn run_srp_deriv_parity(
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC(TranslationalState {
+            TranslationalStateC::from(TranslationalState {
                 position: sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -612,9 +612,9 @@ fn run_srp_deriv_parity(
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(iss_trans()),
-            RotationalStateC(tumble_rot()),
-            MassPropertiesC(iss_mass()),
+            TranslationalStateC::from(iss_trans()),
+            RotationalStateC::from(tumble_rot()),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -748,7 +748,7 @@ fn tier3_bevy_srp_derivative_rk4_with_rotated_struct_frame() {
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC(TranslationalState {
+            TranslationalStateC::from(TranslationalState {
                 position: sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -758,9 +758,9 @@ fn tier3_bevy_srp_derivative_rk4_with_rotated_struct_frame() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(iss_trans()),
-            RotationalStateC(tumble_rot()),
-            MassPropertiesC(iss_mass()),
+            TranslationalStateC::from(iss_trans()),
+            RotationalStateC::from(tumble_rot()),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,

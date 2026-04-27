@@ -41,9 +41,9 @@ fn tier3_bevy_gravity_torque_sixdof() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(iss_trans()),
-            RotationalStateC(tumble_rot()),
-            MassPropertiesC(iss_mass()),
+            TranslationalStateC::from(iss_trans()),
+            RotationalStateC::from(tumble_rot()),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -222,9 +222,9 @@ fn run_gravity_torque_parity(label: &str, trans: TranslationalState, rot: Rotati
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(trans),
-            RotationalStateC(rot),
-            MassPropertiesC(iss_mass()),
+            TranslationalStateC::from(trans),
+            RotationalStateC::from(rot),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -269,9 +269,15 @@ fn tier3_bevy_run10c_gravity_torque_elliptical() {
         position: DVec3::new(6_778_137.0, 0.0, 0.0),
         velocity: DVec3::new(0.0, 9500.0, 0.0),
     };
-    let rot = RotationalState {
-        quaternion: JeodQuat::new(0.5_f64.sqrt(), 0.5, 0.0, 0.5_f64.sqrt() - 0.5),
-        ang_vel_body: DVec3::ZERO,
+    let rot = {
+        // Normalize the deliberately-non-trivial quaternion at the
+        // test boundary: typed `RotationalStateC` requires unit-norm.
+        let mut q = JeodQuat::new(0.5_f64.sqrt(), 0.5, 0.0, 0.5_f64.sqrt() - 0.5);
+        q.normalize();
+        RotationalState {
+            quaternion: q,
+            ang_vel_body: DVec3::ZERO,
+        }
     };
     run_gravity_torque_parity("run10c_grav_torque_ecc", ecc_trans, rot);
 }
@@ -306,17 +312,22 @@ fn run_external_parity(
     let mut app = new_bevy_app(dt);
     let planet = spawn_earth_source(&mut app);
 
-    let rot = RotationalState {
-        quaternion: JeodQuat::new(0.5_f64.sqrt(), 0.5, 0.0, 0.5_f64.sqrt() - 0.5),
-        ang_vel_body: init_ang_vel,
+    let rot = {
+        // Normalize at boundary; see comment above on tumble quat.
+        let mut q = JeodQuat::new(0.5_f64.sqrt(), 0.5, 0.0, 0.5_f64.sqrt() - 0.5);
+        q.normalize();
+        RotationalState {
+            quaternion: q,
+            ang_vel_body: init_ang_vel,
+        }
     };
 
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(iss_trans()),
-            RotationalStateC(rot),
-            MassPropertiesC(iss_mass()),
+            TranslationalStateC::from(iss_trans()),
+            RotationalStateC::from(rot),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
