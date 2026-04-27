@@ -1,15 +1,20 @@
-//! `VerificationCase` constructors for SIM_3_ORBIT_1st_ORDER solar-radiation
-//! pressure verification.
+//! `VerificationCase` constructors for the SIM_3_ORBIT solar-radiation
+//! pressure verification family.
 //!
-//! The default SIM_3_ORBIT bespoke test updates the Sun position
-//! every integration step (1 s) via a pre-built `SunTable`; the
-//! per-record `pre_step` hook can't reproduce that update frequency
-//! bit-stably, so only the 1st-order variant (which updates Sun at
-//! record boundaries) is migrated to a recipe here.
+//! Two variants share the 6-flat-plate vehicle and conical Earth
+//! shadow model, differing only in the JEOD reference sim and the
+//! consequent thermal integrator order:
 //!
-//! The pre-step hook updates the (mu = 0) Sun source position from
-//! DE421 before each `step_until`, mirroring the bespoke loop's
-//! update timing exactly so baselines stay bit-stable.
+//! - [`srp_orbit_trajectory`] (default `SIM_3_ORBIT`): JEOD updates the
+//!   Sun every integration step (1 s). The recipe wires the
+//!   simulation's auto-ephemeris path
+//!   (`SimulationBuilder::ephemeris` + `set_source_ephemeris`) so the
+//!   Sun source is refreshed from DE421 before every internal step,
+//!   matching JEOD's update frequency without needing a per-step hook.
+//! - [`srp_1st_order_trajectory`] (`SIM_3_ORBIT_1st_ORDER`): JEOD
+//!   updates Sun at record boundaries; uses the per-record `pre_step`
+//!   factory to push the Sun position forward by one record before
+//!   each `step_until`.
 
 use std::path::PathBuf;
 
@@ -27,6 +32,7 @@ use jeod_sim::{
 use uom::si::f64::Time;
 use uom::si::time::second;
 
+const SIM_3_ORBIT: &str = "models/interactions/radiation_pressure/verif/SIM_3_ORBIT";
 const SIM_3_ORBIT_1ST: &str = "models/interactions/radiation_pressure/verif/SIM_3_ORBIT_1st_ORDER";
 
 const SRP_MASS: f64 = 300.0;
@@ -182,10 +188,22 @@ fn srp_time(modified_data_dir: &str) -> SimulationTime {
     SimulationTime::new(cfg.tai_tjt(), default_leap_second_table())
 }
 
+/// Selects how the Sun source position is refreshed during stepping.
+#[derive(Clone, Copy)]
+enum SunUpdate {
+    /// Per-record `pre_step` hook (matches `SIM_3_ORBIT_1st_ORDER`).
+    PreStepHook,
+    /// Per-internal-step auto-ephemeris via
+    /// `SimulationBuilder::ephemeris` plus `set_source_ephemeris`.
+    /// Matches `SIM_3_ORBIT`'s 1 s Sun refresh.
+    AutoEphemeris,
+}
+
 fn build_srp(
     init: &InitialConditions,
     sim_subdir: &'static str,
     integration_order: ThermalIntegrationOrder,
+    sun_update: SunUpdate,
 ) -> SimulationBuilder {
     let jeod = jeod_root();
     let sim_dir = jeod.join(sim_subdir);
@@ -209,6 +227,14 @@ fn build_srp(
          but add_source returned {sun}."
     );
     sb = sb.sun(sun);
+
+    if let SunUpdate::AutoEphemeris = sun_update {
+        // Attach DE421 + register the Sun source to it. The simulation
+        // will refresh the Sun position from DE421 every internal step,
+        // matching JEOD's per-step Sun update without needing a hook.
+        sb.set_source_ephemeris(sun, EphemerisBody::Sun, EphemerisBody::Earth);
+        sb = sb.ephemeris(ephemeris);
+    }
 
     let plates = srp_plates();
     let num_plates = plates.len();
@@ -247,6 +273,16 @@ fn build_srp_1st_order(init: &InitialConditions) -> SimulationBuilder {
         init,
         SIM_3_ORBIT_1ST,
         ThermalIntegrationOrder::DerivativeFirstOrder,
+        SunUpdate::PreStepHook,
+    )
+}
+
+fn build_srp_orbit(init: &InitialConditions) -> SimulationBuilder {
+    build_srp(
+        init,
+        SIM_3_ORBIT,
+        ThermalIntegrationOrder::default(),
+        SunUpdate::AutoEphemeris,
     )
 }
 
@@ -288,5 +324,31 @@ pub fn srp_1st_order_trajectory() -> VerificationCase {
         },
         extras: None,
         pre_step: Some(srp_1st_order_pre_step),
+    }
+}
+
+/// SIM_3_ORBIT — flat-plate SRP + conical Earth shadow, GEO orbit,
+/// ~23 days. Sun position auto-refreshed from DE421 every internal
+/// step (matches JEOD's 1 s Sun cadence) via the simulation's
+/// auto-ephemeris path; no `pre_step` hook needed.
+pub fn srp_orbit_trajectory() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_simulation_srp_flat_plate",
+        scenario: build_srp_orbit,
+        reference: CsvReference::Srp("srp_orbit_radiation_srp_orbit.csv"),
+        duration: Time::new::<second>(0.0),
+        tolerances: Tolerances {
+            // Inherited verbatim from the bespoke assertion. Auto-ephemeris
+            // queries DE421 directly each step (vs the bespoke 100 s
+            // interpolation table); errors come in at or below the
+            // bespoke baseline.
+            position_m: [0.034, 0.040, 0.016],
+            velocity_m_s: [0.0; 3],
+            quat_angle_rad: 0.0,
+            ang_vel_rad_s: [0.0; 3],
+            extras: &[],
+        },
+        extras: None,
+        pre_step: None,
     }
 }

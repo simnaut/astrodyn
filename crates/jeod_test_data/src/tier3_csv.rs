@@ -597,6 +597,42 @@ pub fn load_gj_csv(path: &Path) -> Vec<OrbInitRecord> {
     records
 }
 
+// ── SIM_tide_verif CSV (8 columns: time + pos[3] + vel[3] + dC20) ──────────
+
+#[derive(Debug)]
+pub struct TideRecord {
+    pub time: f64,
+    pub position: DVec3,
+    pub velocity: DVec3,
+    /// Tidal ΔC20 correction logged by JEOD's SIM_tide_verif.
+    pub delta_c20: f64,
+}
+
+pub fn load_tide_csv(path: &Path) -> Vec<TideRecord> {
+    let content = read_csv(path, "SIM_tide_verif");
+    let mut records = Vec::new();
+    for (i, line) in content.lines().enumerate() {
+        if i == 0 || line.trim().is_empty() {
+            continue;
+        }
+        let f: Vec<&str> = line.split(',').collect();
+        assert!(
+            f.len() >= 8,
+            "line {}: expected >=8 columns, got {}",
+            i + 1,
+            f.len()
+        );
+        let p = |idx: usize| -> f64 { f[idx].trim().parse().unwrap() };
+        records.push(TideRecord {
+            time: p(0),
+            position: DVec3::new(p(1), p(2), p(3)),
+            velocity: DVec3::new(p(4), p(5), p(6)),
+            delta_c20: p(7),
+        });
+    }
+    records
+}
+
 // ── Dyncomp helpers ────────────────────────────────────────────────────────
 
 /// Convert a [`DyncompRecord`] into a [`StateLog`] using its `composite_body`

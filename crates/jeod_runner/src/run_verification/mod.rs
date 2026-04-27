@@ -31,6 +31,7 @@ pub mod sim_planetary;
 pub mod sim_polar_motion;
 pub mod sim_solar_beta;
 pub mod sim_srp;
+pub mod sim_tide_verif;
 pub mod sim_torque_simple;
 
 use glam::DVec3;
@@ -54,6 +55,26 @@ impl SimContext for Simulation {
     fn set_source_state(&mut self, source_idx: usize, position: DVec3, velocity: DVec3) {
         Simulation::set_source_state(self, source_idx, position, velocity);
     }
+    fn set_tidal_body_position(
+        &mut self,
+        source_idx: usize,
+        tidal_body_idx: usize,
+        position: DVec3,
+    ) {
+        let cfg = self.source_tidal_config_mut(source_idx).unwrap_or_else(|| {
+            panic!(
+                "set_tidal_body_position: source {source_idx} has no tidal config; \
+                 wire `tidal_config: Some(...)` on the GravitySourceEntry."
+            )
+        });
+        let tidal_bodies_len = cfg.tidal_bodies.len();
+        assert!(
+            tidal_body_idx < tidal_bodies_len,
+            "set_tidal_body_position: source {source_idx} tidal_body_idx {tidal_body_idx} \
+             out of bounds; tidal_bodies.len() = {tidal_bodies_len}"
+        );
+        cfg.tidal_bodies[tidal_body_idx].position_inertial = position;
+    }
 }
 
 /// Per-family typed records held alongside the [`StateLog`] vec so
@@ -66,6 +87,7 @@ enum CsvRecords {
     Ned(Vec<tier3_csv::NedRecord>),
     Euler(Vec<tier3_csv::EulerRecord>),
     SolarBeta(Vec<tier3_csv::SolarBetaRecord>),
+    Tide(Vec<tier3_csv::TideRecord>),
     /// Variants without family-specific extras keep only the per-step
     /// time so [`StateLog`]-based assertions still align.
     Times(Vec<f64>),
@@ -80,6 +102,7 @@ impl CsvRecords {
             Self::Ned(v) => v.len(),
             Self::Euler(v) => v.len(),
             Self::SolarBeta(v) => v.len(),
+            Self::Tide(v) => v.len(),
             Self::Times(v) => v.len(),
         }
     }
@@ -161,7 +184,7 @@ impl VerificationCaseExt for VerificationCase {
             sim.step_until(record.time);
             let body = sim.body(0);
             if let Some(acc) = extras_acc.as_mut() {
-                acc.observe(&body, &typed_records, idx, self.name);
+                acc.observe(&body, &sim, &typed_records, idx, self.name);
             }
             our_states.push(snapshot_from(&body, record));
             sampled_refs.push(record.clone());
@@ -490,6 +513,24 @@ fn load_reference(
             let times = states.iter().map(|s| s.time).collect();
             (states, CsvRecords::Times(times))
         }
+        CsvReference::Tide(_) => {
+            let records = load_tide_csv(path);
+            let states = records
+                .iter()
+                .map(|r| StateLog {
+                    time: r.time,
+                    position: Some(r.position),
+                    velocity: Some(r.velocity),
+                    ..Default::default()
+                })
+                .collect::<Vec<_>>();
+            let typed = if matches!(extras, Some(ExtrasComparator::TideDc20 { .. })) {
+                CsvRecords::Tide(records)
+            } else {
+                CsvRecords::Times(states.iter().map(|s| s.time).collect())
+            };
+            (states, typed)
+        }
     }
 }
 
@@ -531,6 +572,7 @@ impl ExtrasAccumulator {
                 ("euler_yaw", 0.0, "rad"),
             ],
             ExtrasComparator::SolarBeta => vec![("beta", 0.0, "rad")],
+            ExtrasComparator::TideDc20 { .. } => vec![("dc20", 0.0, "")],
         };
         Self {
             kind: kind.clone(),
@@ -552,7 +594,14 @@ impl ExtrasAccumulator {
         panic!("ExtrasAccumulator: unknown metric `{name}`");
     }
 
-    fn observe(&mut self, body: &VehicleOutput, records: &CsvRecords, idx: usize, case_name: &str) {
+    fn observe(
+        &mut self,
+        body: &VehicleOutput,
+        sim: &Simulation,
+        records: &CsvRecords,
+        idx: usize,
+        case_name: &str,
+    ) {
         match (&self.kind, records) {
             (ExtrasComparator::Orbelem, CsvRecords::Orbelem(recs)) => {
                 let r = &recs[idx];
@@ -628,6 +677,15 @@ impl ExtrasAccumulator {
                 // wrap-around isn't a real concern — plain absolute
                 // difference matches what the bespoke test asserted on.
                 self.update_max("beta", (beta - r.solar_beta).abs());
+            }
+            (ExtrasComparator::TideDc20 { earth_source_idx }, CsvRecords::Tide(recs)) => {
+                let r = &recs[idx];
+                // dC20 is per-source (not per-body), so we read it from
+                // the simulation directly. The earth source index lives
+                // on the comparator so the recipe can name the
+                // tidal-host source explicitly.
+                let our_dc20 = sim.source_delta_c20(*earth_source_idx);
+                self.update_max("dc20", (our_dc20 - r.delta_c20).abs());
             }
             (kind, recs) => panic!(
                 "{case_name}: ExtrasComparator {kind:?} requires the matching \

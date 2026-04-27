@@ -43,6 +43,28 @@ pub trait SimContext {
     fn set_source_position(&mut self, source_idx: usize, position: DVec3);
     /// Set the inertial position and velocity of source `source_idx`.
     fn set_source_state(&mut self, source_idx: usize, position: DVec3, velocity: DVec3);
+    /// Update the inertial position of one tidal body inside source
+    /// `source_idx`'s tidal configuration. Used by tide-validation
+    /// hooks that drive Sun/Moon positions for the tidal ΔC20 each
+    /// step. Panics if `source_idx` lacks a tidal config or
+    /// `tidal_body_idx` is out of range — these are programmer errors,
+    /// not runtime conditions, since the recipe wires the tidal
+    /// config at construction time.
+    ///
+    /// The default implementation panics with an explicit
+    /// "tidal bodies not supported" message so existing `SimContext`
+    /// implementors stay source-compatible. Adapters that wire
+    /// tidal-body state into a `Simulation`-equivalent should
+    /// override this.
+    fn set_tidal_body_position(
+        &mut self,
+        source_idx: usize,
+        tidal_body_idx: usize,
+        position: DVec3,
+    ) {
+        let _ = (source_idx, tidal_body_idx, position);
+        panic!("tidal bodies not supported by this SimContext implementation");
+    }
 }
 
 /// Closure type produced by a [`PreStepBuilder`]. Invoked once per
@@ -153,6 +175,8 @@ pub enum CsvReference {
     /// `SIM_GJ_test`, and `SIM_Planetary` — the variant is generic over
     /// the schema, not specific to any one of them.
     OrbInit(&'static str),
+    /// 8-column SIM_tide_verif CSV (time + pos + vel + dC20).
+    Tide(&'static str),
 }
 
 impl CsvReference {
@@ -173,7 +197,8 @@ impl CsvReference {
             | CsvReference::TorqueSimple(s)
             | CsvReference::AtmosTraj(s)
             | CsvReference::AeroTraj(s)
-            | CsvReference::OrbInit(s) => s,
+            | CsvReference::OrbInit(s)
+            | CsvReference::Tide(s) => s,
         }
     }
 }
@@ -246,6 +271,13 @@ pub enum ExtrasComparator {
     /// `jeod_math::solar_beta_angle_*`, so the metric is a plain
     /// absolute difference (no angular wrap-around to handle).
     SolarBeta,
+    /// Solid-body tidal ΔC20: 1 extra (`dc20`) comparing the
+    /// simulation's per-step ΔC20 (sourced from
+    /// `Simulation::source_delta_c20(earth_source_idx)`) against the
+    /// `dC20` column logged by JEOD's SIM_tide_verif. Pairs with
+    /// [`CsvReference::Tide`]. The recipe carries the Earth source
+    /// index because dC20 is per-source, not per-body.
+    TideDc20 { earth_source_idx: usize },
 }
 
 /// A single Tier 3 verification case.
