@@ -348,9 +348,11 @@ impl SimBody {
 ///
 /// # Error handling
 ///
-/// `validate()` is the only `Result`-returning method, and it batches all
-/// configuration errors at startup. Every other method panics on misuse with
-/// a method-name-prefixed message (e.g.
+/// Among the runtime instance methods on `Simulation`, `validate()` is the
+/// only `Result`-returning method, and it batches configuration errors at
+/// startup. Constructors that run validation (`Simulation::from_builder` and
+/// the `.build()` extension trait) also return `Result`. Every other runtime
+/// method panics on misuse with a method-name-prefixed message (e.g.
 /// `"set_source_position: source index 7 out of range"`). Out-of-range
 /// indices, configuration conflicts, and numerical preconditions are
 /// programmer errors, not runtime conditions.
