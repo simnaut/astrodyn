@@ -222,10 +222,34 @@ impl<SourceId> GravityControl<SourceId> {
         }
     }
 
-    /// Returns true if this control requires non-spherical (spherical harmonics)
-    /// computation, i.e. `spherical` is false and degree > 0.
+    /// Returns true if this control's *configuration* selects non-spherical
+    /// (spherical-harmonics) computation, i.e. `spherical` is false and
+    /// `degree > 0`.
+    ///
+    /// This is **purely config-based** — it does not consult the source.
+    /// For the runtime question "will this control actually compute SH
+    /// terms against `source`?", use [`Self::requires_planet_fixed_rotation`]
+    /// or inspect [`Self::effective_orders`] directly. Examples where
+    /// `is_nonspherical()` returns true but the runtime path collapses to
+    /// spherical:
+    /// - source is `GravityModel::PointMass` (no SH data → eff_degree = 0)
+    /// - clamped degree drops to 0 against a low-degree source
+    /// - configured degree is 1 (Gottlieb returns zero perturbation for
+    ///   degree < 2, so [`Self::effective_orders`] collapses it to 0)
     pub fn is_nonspherical(&self) -> bool {
         !self.spherical && self.degree > 0
+    }
+
+    /// Returns true if evaluating this control against `source` will require
+    /// the planet-fixed rotation matrix (i.e., the runtime path is genuinely
+    /// non-spherical after clamping). Mirrors the gate in
+    /// [`Self::evaluate_inner`].
+    ///
+    /// Use this for pre-flight checks (e.g., "does this source need a
+    /// rotation model wired up?") instead of [`Self::is_nonspherical`],
+    /// which is config-only and would over-approximate the requirement.
+    pub fn requires_planet_fixed_rotation(&self, source: &GravitySource) -> bool {
+        self.effective_orders(source).0 > 0
     }
 
     /// Compute the effective `(degree, order, gradient_degree, gradient_order)`
@@ -265,7 +289,16 @@ impl<SourceId> GravityControl<SourceId> {
             // branch.
             GravityModel::PointMass => return (0, 0, 0, 0),
         };
-        let degree = self.degree.min(src_degree);
+        let mut degree = self.degree.min(src_degree);
+        // Gottlieb early-returns zero perturbation for degree < 2 (see
+        // `calc_nonspherical_with_scratch`), so a configured degree of 1
+        // produces no SH contribution. Collapse to 0 here so the runtime
+        // predicate `eff_degree > 0` aligns with "the SH path actually does
+        // work," and so the planet-fixed rotation matrix is not required
+        // for a control whose computation degenerates to point-mass anyway.
+        if degree == 1 {
+            degree = 0;
+        }
         // GV.06: order ≤ degree; GV.05: order ≤ source order
         let order = self.order.min(src_order).min(degree);
         // GV.08: gradient_degree ≤ degree
@@ -716,5 +749,82 @@ mod tests {
         let rot = DMat3::IDENTITY;
         let result = ctrl.evaluate(&src, pos, Some(&rot), 0.0, false);
         assert!(result.grav_accel.is_finite());
+    }
+
+    /// `degree == 1` is meaningless for spherical harmonics: Gottlieb
+    /// returns zero perturbation for `degree < 2`. `effective_orders`
+    /// collapses such a control to all-zeros so the runtime path takes
+    /// the spherical branch and does not require the planet-fixed
+    /// rotation matrix.
+    #[test]
+    fn effective_orders_collapses_degree_one_to_zero() {
+        let src = dummy_sh_source(8, 8);
+        let ctrl = GravityControl::<usize> {
+            spherical: false,
+            degree: 1,
+            order: 1,
+            ..GravityControl::new_spherical(0, false)
+        };
+        assert_eq!(ctrl.effective_orders(&src), (0, 0, 0, 0));
+    }
+
+    /// `requires_planet_fixed_rotation` returns false when the runtime
+    /// path collapses to spherical (`PointMass` source, `degree=0`,
+    /// `degree=1`), even if `is_nonspherical()` is true. Pre-flight
+    /// checks must use this method, not `is_nonspherical()`.
+    #[test]
+    fn requires_rotation_false_when_runtime_collapses() {
+        let sh = dummy_sh_source(8, 8);
+        let pm = GravitySource {
+            mu: 3.986_004_415e14,
+            model: GravityModel::PointMass,
+        };
+        let degree_one = GravityControl::<usize> {
+            spherical: false,
+            degree: 1,
+            order: 1,
+            ..GravityControl::new_spherical(0, false)
+        };
+        let against_pm = GravityControl::<usize> {
+            spherical: false,
+            degree: 8,
+            order: 8,
+            ..GravityControl::new_spherical(0, false)
+        };
+        assert!(degree_one.is_nonspherical()); // config says yes
+        assert!(!degree_one.requires_planet_fixed_rotation(&sh)); // runtime says no
+        assert!(against_pm.is_nonspherical()); // config says yes
+        assert!(!against_pm.requires_planet_fixed_rotation(&pm)); // runtime says no
+
+        let real_sh = GravityControl::<usize> {
+            spherical: false,
+            degree: 4,
+            order: 4,
+            ..GravityControl::new_spherical(0, false)
+        };
+        assert!(real_sh.requires_planet_fixed_rotation(&sh));
+    }
+
+    /// Regression test for the degree-1 panic (review feedback on PR #182):
+    /// a non-spherical control with `degree=1` against a SH source no
+    /// longer panics when `t_inertial_pfix` is `None`, because
+    /// `effective_orders` collapses degree=1 to 0 (Gottlieb produces zero
+    /// perturbation for degree < 2 anyway).
+    #[test]
+    fn evaluate_degree_one_does_not_require_rotation() {
+        let src = dummy_sh_source(8, 8);
+        let ctrl = GravityControl::<usize> {
+            spherical: false,
+            degree: 1,
+            order: 1,
+            ..GravityControl::new_spherical(0, false)
+        };
+        let pos = DVec3::new(7_000_000.0, 0.0, 0.0);
+        // No rotation matrix supplied; would have panicked previously.
+        let result = ctrl.evaluate(&src, pos, None, 0.0, false);
+        // Should match point-mass gravity from the source (the SH branch
+        // contributes zero for degree < 2 and `perturbing_only` is false).
+        assert!(result.grav_accel.is_finite());
+        assert!(result.grav_accel.length() > 0.0);
     }
 }
