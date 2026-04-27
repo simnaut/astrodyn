@@ -63,6 +63,7 @@ enum CsvRecords {
     Lvlh(Vec<tier3_csv::LvlhRecord>),
     Ned(Vec<tier3_csv::NedRecord>),
     Euler(Vec<tier3_csv::EulerRecord>),
+    SolarBeta(Vec<tier3_csv::SolarBetaRecord>),
     /// Variants without family-specific extras keep only the per-step
     /// time so [`StateLog`]-based assertions still align.
     Times(Vec<f64>),
@@ -76,6 +77,7 @@ impl CsvRecords {
             Self::Lvlh(v) => v.len(),
             Self::Ned(v) => v.len(),
             Self::Euler(v) => v.len(),
+            Self::SolarBeta(v) => v.len(),
             Self::Times(v) => v.len(),
         }
     }
@@ -403,8 +405,7 @@ fn load_reference(
                     ..Default::default()
                 })
                 .collect::<Vec<_>>();
-            let times = states.iter().map(|s| s.time).collect();
-            (states, CsvRecords::Times(times))
+            (states, CsvRecords::SolarBeta(records))
         }
         CsvReference::Shadow(_) => {
             let records = load_shadow_calc_csv(path);
@@ -516,6 +517,7 @@ impl ExtrasAccumulator {
                 ("euler_pitch", 0.0, "rad"),
                 ("euler_yaw", 0.0, "rad"),
             ],
+            ExtrasComparator::SolarBeta => vec![("beta", 0.0, "rad")],
         };
         Self {
             kind: kind.clone(),
@@ -603,6 +605,16 @@ impl ExtrasAccumulator {
                 let q = r.composite_body.quaternion;
                 let jeod_q = jeod_sim::JeodQuat::new(q.w, q.x, q.y, q.z);
                 self.observe_euler_from_quat(body, &jeod_q, idx, case_name);
+            }
+            (ExtrasComparator::SolarBeta, CsvRecords::SolarBeta(recs)) => {
+                let r = &recs[idx];
+                let beta = body
+                    .solar_beta
+                    .unwrap_or_else(|| panic!("{case_name}: solar_beta not computed at idx {idx}"));
+                // Solar beta is constrained to [-π/2, π/2] in JEOD, so
+                // wrap-around isn't a real concern — plain absolute
+                // difference matches what the bespoke test asserted on.
+                self.update_max("beta", (beta - r.solar_beta).abs());
             }
             (kind, recs) => panic!(
                 "{case_name}: ExtrasComparator {kind:?} requires the matching \

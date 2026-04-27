@@ -27,7 +27,7 @@ use std::path::PathBuf;
 
 use glam::DVec3;
 use jeod_sim::recipes::verification::{
-    CsvReference, InitialConditions, PreStepClosure, Tolerances, VerificationCase,
+    CsvReference, ExtrasComparator, InitialConditions, PreStepClosure, Tolerances, VerificationCase,
 };
 use jeod_sim::{
     coefficients, default_leap_second_table, DerivedStateConfig, Ephemeris, EphemerisBody,
@@ -197,5 +197,187 @@ pub fn solar_beta_run2() -> VerificationCase {
         },
         extras: None,
         pre_step: Some(solar_beta_pre_step),
+    }
+}
+
+// ── SIM_SolarBeta edge cases (#169) ───────────────────────────────────────
+//
+// Both edge cases run from JEOD's SIM_SolarBeta epoch (1991-01-01 UTC) and
+// validate `body.solar_beta` against the matching reference CSV column via
+// `ExtrasComparator::SolarBeta`. The migrated scenarios use
+// `SimulationBuilder::ephemeris` + `set_source_ephemeris` + `.sun(idx)` so
+// the simulation auto-updates the Sun source position each step from the
+// attached DE421 ephemeris — no `pre_step` hook needed for these.
+
+const SIM_SOLAR_BETA_DIR: &str = "models/dynamics/derived_state/verif/SIM_SolarBeta";
+
+/// SIM_SolarBeta epoch JD: 1991-01-01 00:00:00 UTC = JD 2_448_257.5
+/// (with TAI-UTC = 26 s, TT = TAI + 32.184 s → TDB JD baseline below).
+const SIM_SOLAR_BETA_EPOCH_TDB_JD: f64 = 2_448_257.5 + 58.184 / 86_400.0;
+
+/// SIM_SolarBeta epoch as TAI TJT (the form `SimulationTime::new` consumes).
+/// = MJD(TAI) − 40000 = (JD + TAI-UTC/86400 − 2_400_000.5) − 40000.
+const SIM_SOLAR_BETA_EPOCH_TAI_TJT: f64 = 2_448_257.5 + 26.0 / 86_400.0 - 2_400_000.5 - 40_000.0;
+
+fn sim_solar_beta_time() -> SimulationTime {
+    let jeod = jeod_root();
+    let mut time = SimulationTime::new(SIM_SOLAR_BETA_EPOCH_TAI_TJT, default_leap_second_table());
+    let time_cfg = jeod_test_data::time_config::load_time_config(
+        &jeod
+            .join(SIM_SOLAR_BETA_DIR)
+            .join("Modified_data/date_and_time.py"),
+    );
+    if let Some(ut1_tai) = time_cfg.ut1_tai_offset() {
+        time.set_ut1_tai_offset(ut1_tai);
+    }
+    time
+}
+
+fn sim_solar_beta_dt() -> f64 {
+    let jeod = jeod_root();
+    jeod_test_data::s_define::load_dynamics_dt(&jeod.join(SIM_SOLAR_BETA_DIR).join("S_define"))
+}
+
+fn build_solar_beta_equ(init: &InitialConditions) -> SimulationBuilder {
+    let jeod = jeod_root();
+    let mu_earth = coefficients::load_mu_from_jeod_cc(
+        &jeod.join("models/environment/gravity/data/src/earth_GGM05C.cc"),
+    )
+    .expect("load Earth mu");
+
+    let ephemeris = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
+    let (sun_t0, _) = ephemeris
+        .get_earth_centered_state_typed(EphemerisBody::Sun, SIM_SOLAR_BETA_EPOCH_TDB_JD)
+        .expect("Sun position at SIM_SolarBeta epoch");
+
+    let mut sb = SimulationBuilder::new(sim_solar_beta_time(), sim_solar_beta_dt());
+    sb = sb.ephemeris(ephemeris);
+    let earth = sb.add_source("Earth", earth_point_mass(mu_earth));
+    let sun = sb.add_source("Sun", sun_zero_mu(sun_t0.raw_si()));
+    sb.set_source_ephemeris(sun, EphemerisBody::Sun, EphemerisBody::Earth);
+    sb = sb.sun(sun);
+    sb.add_body(VehicleConfig {
+        trans: TranslationalState {
+            position: init.position,
+            velocity: init.velocity,
+        },
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth, false)],
+        },
+        derived: DerivedStateConfig {
+            solar_beta: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+    sb
+}
+
+/// SIM_SolarBeta RUN_incl_0 — equatorial orbit (i=0), point-mass gravity.
+/// Validates `body.solar_beta` against JEOD's logged beta column via
+/// `ExtrasComparator::SolarBeta`. Sun position is auto-updated by the
+/// simulation each step (no `pre_step` needed) because the source is
+/// attached to the ephemeris via `set_source_ephemeris`.
+pub fn solar_beta_equ() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_simulation_solar_beta_equ",
+        scenario: build_solar_beta_equ,
+        reference: CsvReference::SolarBeta("solarbeta_incl_0_solarbeta.csv"),
+        duration: Time::new::<second>(0.0), // run full CSV
+        tolerances: Tolerances {
+            // The original bespoke test asserted only beta tolerance;
+            // position/velocity/quat/ang_vel are skipped (all zero per
+            // recipe semantics).
+            position_m: [0.0; 3],
+            velocity_m_s: [0.0; 3],
+            quat_angle_rad: 0.0,
+            ang_vel_rad_s: [0.0; 3],
+            // 1.892e-5 rad inherited from the bespoke assertion.
+            extras: &[("beta", 1.892e-5)],
+        },
+        extras: Some(ExtrasComparator::SolarBeta),
+        pre_step: None,
+    }
+}
+
+fn build_solar_beta_obliquity(init: &InitialConditions) -> SimulationBuilder {
+    let jeod = jeod_root();
+    let grav_data_dir = jeod.join("models/environment/gravity/data/src");
+    let sh_data = coefficients::load_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc"))
+        .expect("load Earth GGM05C");
+    let mu_earth = sh_data.mu;
+
+    let ephemeris = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
+    let (sun_t0, _) = ephemeris
+        .get_earth_centered_state_typed(EphemerisBody::Sun, SIM_SOLAR_BETA_EPOCH_TDB_JD)
+        .expect("Sun position at SIM_SolarBeta epoch");
+
+    let time = sim_solar_beta_time();
+    // For SH gravity, initialize t_inertial_pfix to the correct RNP
+    // rotation at the epoch (not IDENTITY). IDENTITY is only valid near
+    // J2000; at 1991 the precession/nutation offset is significant.
+    let initial_rotation =
+        jeod_sim::compute_t_parent_this_from_tjt_with_polar(time.gmst_seconds, time.tt_tjt(), None);
+
+    let mut sb = SimulationBuilder::new(time, sim_solar_beta_dt());
+    sb = sb.ephemeris(ephemeris);
+
+    let earth = sb.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: mu_earth,
+                model: GravityModel::SphericalHarmonics(Box::new(sh_data)),
+            },
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+            t_inertial_pfix: Some(initial_rotation),
+            delta_c20: 0.0,
+            rotation_model: RotationModel::EarthRNP,
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: true,
+        },
+    );
+    let sun = sb.add_source("Sun", sun_zero_mu(sun_t0.raw_si()));
+    sb.set_source_ephemeris(sun, EphemerisBody::Sun, EphemerisBody::Earth);
+    sb = sb.sun(sun);
+    sb.add_body(VehicleConfig {
+        trans: TranslationalState {
+            position: init.position,
+            velocity: init.velocity,
+        },
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_nonspherical(earth, 8, 8, false)],
+        },
+        derived: DerivedStateConfig {
+            solar_beta: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+    sb
+}
+
+/// SIM_SolarBeta RUN_incl_23_4 — Earth-obliquity inclination (23.44°),
+/// 8×8 spherical harmonics gravity. Captures J2 RAAN drift that
+/// changes the orbital plane orientation vs Sun, directly affecting
+/// solar beta.
+pub fn solar_beta_obliquity() -> VerificationCase {
+    VerificationCase {
+        name: "tier3_simulation_solar_beta_obliquity",
+        scenario: build_solar_beta_obliquity,
+        reference: CsvReference::SolarBeta("solarbeta_incl_23_4_solarbeta.csv"),
+        duration: Time::new::<second>(0.0),
+        tolerances: Tolerances {
+            position_m: [0.0; 3],
+            velocity_m_s: [0.0; 3],
+            quat_angle_rad: 0.0,
+            ang_vel_rad_s: [0.0; 3],
+            // 3.446e-5 rad inherited from the bespoke assertion.
+            extras: &[("beta", 3.446e-5)],
+        },
+        extras: Some(ExtrasComparator::SolarBeta),
+        pre_step: None,
     }
 }
