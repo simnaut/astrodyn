@@ -327,8 +327,14 @@ pub fn integration_system(
     // for the typed `*_typed` kernels and unwrap before returning.
     let eval_gravity =
         |entity: Entity, controls: &GravityControlsC, pos: DVec3, vel: DVec3| -> DVec3 {
-            let typed_pos = Position::<Inertial>::from_raw_si(pos);
-            let typed_vel = Velocity::<Inertial>::from_raw_si(vel);
+            // The integrator core hands intermediate (pos, vel) as raw
+            // DVec3 — it doesn't yet carry phantoms through every stage.
+            // Migrating the integrator's intermediate-state APIs to
+            // typed values is tracked as #172 H1 follow-up; once done,
+            // these lifts disappear and the closure receives
+            // `Position<Inertial>` / `Velocity<Inertial>` directly.
+            let typed_pos = Position::<Inertial>::from_raw_si(pos); // allowed: #172 H1 integrator-stage boundary, see comment above
+            let typed_vel = Velocity::<Inertial>::from_raw_si(vel); // allowed: #172 H1 integrator-stage boundary
 
             let typed_accel = jeod_sim::accumulate_gravity_typed(
                 typed_pos,
@@ -574,9 +580,12 @@ pub fn gravity_computation_system(
         // `Position<Inertial>` and call the typed sibling. The kernel
         // numerics are bit-identical; the typed boundary lets the
         // compiler check that the inertial-frame phantom matches the
-        // gravity source phantoms.
-        let body_pos = Position::<Inertial>::from_raw_si(state.position);
-        let body_vel = Velocity::<Inertial>::from_raw_si(state.velocity);
+        // gravity source phantoms. Per-step component lifts marked
+        // `// allowed:` are tracked under #172 H1 — they go away when
+        // TranslationalStateC is migrated to wrap
+        // TranslationalStateTyped<Inertial> directly.
+        let body_pos = Position::<Inertial>::from_raw_si(state.position); // allowed: #172 H1 per-step component lift
+        let body_vel = Velocity::<Inertial>::from_raw_si(state.velocity); // allowed: #172 H1 per-step component lift
 
         let typed_accel = jeod_sim::accumulate_gravity_typed(
             body_pos,
@@ -711,7 +720,7 @@ pub fn aero_drag_system(
         let result = jeod_sim::compute_drag_typed::<SelfRef>(
             &drag_config.0,
             atmos,
-            Velocity::<Inertial>::from_raw_si(state.velocity),
+            Velocity::<Inertial>::from_raw_si(state.velocity), // allowed: per-step component lift; #172 H1 follow-up migrates TranslationalStateC to typed storage
             Some(&rot.0),
             t_struct_body,
         );
@@ -738,9 +747,12 @@ pub fn gravity_torque_system(
         // Typed sibling: lift `MassProperties.inertia` into a typed
         // `InertiaTensor<BodyFrame<SelfRef>>` so the function signature
         // expresses the body-frame phantom; the kernel numerics are
-        // bit-identical.
+        // bit-identical. MassPropertiesC currently wraps untyped
+        // MassProperties; #172 H1 follow-up migrates it to
+        // MassPropertiesTyped<SelfRef> so the inertia tensor is already
+        // typed at storage time.
         let inertia_typed =
-            jeod_sim::InertiaTensor::<BodyFrame<SelfRef>>::from_dmat3_unchecked(mass.inertia);
+            jeod_sim::InertiaTensor::<BodyFrame<SelfRef>>::from_dmat3_unchecked(mass.inertia); // allowed: #172 H1 per-step component lift
         torque.0 = jeod_sim::compute_gravity_torque_typed::<SelfRef>(
             &grav.grav_grad,
             &rot.0,
@@ -790,8 +802,8 @@ pub fn orbital_elements_system(
         // Typed sibling: lift `mu` / `position` / `velocity` into the
         // typed scalars and 3-vectors. Bit-identical numerics.
         let mu_typed = jeod_sim::F64Ext::m3_per_s2(source.mu);
-        let pos_typed = Position::<Inertial>::from_raw_si(state.position);
-        let vel_typed = Velocity::<Inertial>::from_raw_si(state.velocity);
+        let pos_typed = Position::<Inertial>::from_raw_si(state.position); // allowed: #172 H1 per-step component lift
+        let vel_typed = Velocity::<Inertial>::from_raw_si(state.velocity); // allowed: #172 H1 per-step component lift
         match jeod_sim::compute_orbital_elements_typed(mu_typed, pos_typed, vel_typed) {
             Ok(oe) => elements.0 = oe,
             Err(_) => elements.0 = Default::default(),
@@ -830,8 +842,8 @@ pub fn lvlh_system(mut query: Query<(&TranslationalStateC, &mut LvlhFrameC)>) {
         // Typed sibling: lift the raw position/velocity into typed inertial
         // quantities at the call site. Bit-identical numerics — the kernel
         // unwraps via `.raw_si()` immediately.
-        let pos = Position::<Inertial>::from_raw_si(state.position);
-        let vel = Velocity::<Inertial>::from_raw_si(state.velocity);
+        let pos = Position::<Inertial>::from_raw_si(state.position); // allowed: #172 H1 per-step component lift
+        let vel = Velocity::<Inertial>::from_raw_si(state.velocity); // allowed: #172 H1 per-step component lift
         lvlh.0 = jeod_sim::compute_body_lvlh_frame_typed(pos, vel);
     }
 }
@@ -853,7 +865,7 @@ pub fn geodetic_system(
         // `.raw_si()` / `.get::<meter>()` immediately — bit-identical
         // numerics to the f64 path.
         use jeod_sim::F64Ext;
-        let pos = Position::<Inertial>::from_raw_si(state.position);
+        let pos = Position::<Inertial>::from_raw_si(state.position); // allowed: #172 H1 per-step component lift
         geodetic.0 = jeod_sim::compute_body_geodetic_typed(
             pos,
             rot.0.matrix_ref(),
@@ -895,9 +907,9 @@ pub fn solar_beta_system(
         // storage. Bit-identical to the f64 path. `Angle.value` reads the
         // SI base value (radian), matching `Angle::get::<radian>()` —
         // f64-equality is preserved.
-        let pos = Position::<Inertial>::from_raw_si(state.position);
-        let vel = Velocity::<Inertial>::from_raw_si(state.velocity);
-        let sun = Position::<Inertial>::from_raw_si(sun_state.position);
+        let pos = Position::<Inertial>::from_raw_si(state.position); // allowed: #172 H1 per-step component lift
+        let vel = Velocity::<Inertial>::from_raw_si(state.velocity); // allowed: #172 H1 per-step component lift
+        let sun = Position::<Inertial>::from_raw_si(sun_state.position); // allowed: #172 H1 per-step component lift
         beta.0 = jeod_sim::compute_body_solar_beta_typed(pos, vel, sun).value;
     }
 }

@@ -268,10 +268,15 @@ impl DragConfigC {
     /// The dimensional lift (`f64` → `Ratio`/`Area`/`MassDensity`) happens
     /// here at insertion. After that, the wrapped value is already typed
     /// for the lifetime of the component, eliminating per-tick
-    /// `from_untyped_unchecked` calls in `aero_drag_system`.
+    /// per-tick unchecked conversions in `aero_drag_system`. Per #172 H1,
+    /// this is the documented insertion-time boundary: DragConfig has no
+    /// spatial fields (Cd / area / optional density override only), so
+    /// the lift here is the JEOD-CSV-style boundary the audit carves out.
+    /// The component then stores DragConfigTyped for the rest of its
+    /// lifetime; no per-step re-minting occurs.
     #[inline]
     pub fn from_untyped(config: &DragConfig) -> Self {
-        Self(DragConfigTyped::from_untyped_unchecked(config))
+        Self(DragConfigTyped::from_untyped_unchecked(config)) // allowed: #172 H1 insertion-time boundary, see docstring
     }
 }
 

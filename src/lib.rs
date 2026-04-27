@@ -371,18 +371,18 @@ impl VehicleConfigBevyExt for jeod_sim::VehicleConfig {
             entity.insert(components::MassPropertiesC(mass));
         }
         if self.external_force != glam::DVec3::ZERO {
-            entity.insert(components::ExternalForceC(jeod_sim::Force::<
-                jeod_sim::Inertial,
-            >::from_raw_si(
-                self.external_force
-            )));
+            // `VehicleConfig.external_force` is still untyped DVec3 in
+            // the runtime fluent builder API; #172 H1 follow-up will
+            // migrate VehicleConfig to typed external_force/torque so
+            // this lift becomes a direct move.
+            let f = jeod_sim::Force::<jeod_sim::Inertial>::from_raw_si(self.external_force); // allowed: #172 H1 insertion-time boundary
+            entity.insert(components::ExternalForceC(f));
         }
         if self.external_torque != glam::DVec3::ZERO {
-            entity.insert(components::ExternalTorqueC(jeod_sim::Torque::<
-                jeod_sim::BodyFrame<jeod_sim::SelfRef>,
-            >::from_raw_si(
-                self.external_torque
-            )));
+            let t = jeod_sim::Torque::<jeod_sim::BodyFrame<jeod_sim::SelfRef>>::from_raw_si(
+                self.external_torque,
+            ); // allowed: #172 H1 insertion-time boundary
+            entity.insert(components::ExternalTorqueC(t));
         }
         if self.compute_gravity_gradient {
             entity.insert(components::GravityTorqueC::default());
