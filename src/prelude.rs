@@ -40,3 +40,7 @@ pub use jeod_sim::{
     Lvlh, Ned, Planet, PlanetFixed, Qty3, SelfPlanet, SelfRef, StructuralFrame, Vec3Ext, Vehicle,
     VehicleBuilder, VehicleConfig,
 };
+// Mission-crate macros for defining additional `Vehicle` / `Planet`
+// markers. Re-exported so `use bevy_jeod::prelude::*;` brings them into
+// scope alongside the typed-quantity API.
+pub use jeod_sim::{define_planet, define_vehicle};

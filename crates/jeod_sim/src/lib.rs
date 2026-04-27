@@ -171,9 +171,15 @@ pub use jeod_quantities::frame::{
     BodyFrame, Earth, Ecef, Frame, Inertial, Lvlh, Mars, Moon, Ned, Planet, PlanetFixed,
     SelfPlanet, SelfRef, StructuralFrame, Sun, Vehicle,
 };
+// Macros that mint downstream `Vehicle`/`Planet` markers. Re-exported so
+// mission crates depending only on `jeod_sim` don't need a direct
+// `jeod_quantities` line in their `Cargo.toml`. The macro body resolves
+// `$crate` to `jeod_quantities` regardless of where the macro is
+// invoked from, so the sealed-trait bound is satisfied transparently.
 pub use jeod_quantities::frame_transform::FrameTransform;
 pub use jeod_quantities::inertia::InertiaTensor;
 pub use jeod_quantities::qty3::Qty3;
+pub use jeod_quantities::{define_planet, define_vehicle};
 
 // uom scalar quantities used directly by the Bevy adapter for typed
 // component fields (`Angle` for Euler angles, `Ratio` for tidal ΔC20).

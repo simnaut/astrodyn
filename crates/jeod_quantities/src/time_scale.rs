@@ -10,10 +10,26 @@ use core::marker::PhantomData;
 use uom::si::f64::Time;
 use uom::si::time::second;
 
-use crate::sealed::Sealed;
+use crate::sealed::TimeScaleSealed;
 
-/// Compile-time time-scale tag. Sealed.
-pub trait TimeScale: Sealed + 'static {
+/// Compile-time time-scale tag.
+///
+/// Sealed at the type-system level: only `jeod_quantities` can impl
+/// this trait (the seal trait `TimeScaleSealed` is private to the
+/// crate). Adding a new time scale requires editing this file.
+///
+/// # The seal is type-system enforced
+///
+/// `TimeScaleSealed` is not re-exported via `__macro_support`, so
+/// downstream code cannot impl `TimeScale` at all:
+///
+/// ```compile_fail
+/// struct EvilScale;
+/// impl jeod_quantities::TimeScale for EvilScale {
+///     const NAME: &'static str = "Evil";
+/// }
+/// ```
+pub trait TimeScale: TimeScaleSealed + 'static {
     /// Human-readable name (e.g. "TAI", "TT").
     const NAME: &'static str;
 }
@@ -23,7 +39,7 @@ macro_rules! time_scale_marker {
         #[doc = $doc]
         #[derive(Debug, Clone, Copy)]
         pub struct $name;
-        impl Sealed for $name {}
+        impl TimeScaleSealed for $name {}
         impl TimeScale for $name {
             const NAME: &'static str = $human;
         }

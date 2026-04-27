@@ -116,23 +116,75 @@ JEOD-internal physics uses `Quat<ScalarFirst, LeftTransform>`. Conversion to
 
 ## 4. Adding a new frame / time scale / quantity
 
-The `Frame` and `TimeScale` traits are **sealed** (`Sealed + 'static`) and
-require a `const NAME: &'static str`. New tags must be added inside the
-`jeod_quantities` crate so the `Sealed` bound can be satisfied. External
-crates cannot add new frame/time-scale tags — this is intentional, so the
-catalog of valid frames/scales is a finite, auditable set.
+The seal is **per-domain**, not a single shared `Sealed`. Each public
+marker trait has its own seal trait private to `jeod_quantities`:
 
-### A new frame tag
+| Public trait | Seal trait | Re-exported via `__macro_support`? |
+|--------------|------------|-----------------------------------|
+| `Frame` | `FrameSealed` | No — closed at the type-system level |
+| `TimeScale` | `TimeScaleSealed` | No — closed at the type-system level |
+| `Layout`, `Transform` | `QuatSealed` | No — closed at the type-system level |
+| `Vehicle` | `VehicleSealed` | **Yes** — so `define_vehicle!` works downstream |
+| `Planet` | `PlanetSealed` | **Yes** — so `define_planet!` works downstream |
 
-Add the marker to `crates/jeod_quantities/src/frame.rs`:
+This split intentionally opens the `Vehicle` / `Planet` catalogs to
+downstream extension via the `define_*!` macros, while keeping `Frame`,
+`TimeScale`, `Layout`, and `Transform` fully closed — downstream code
+cannot impl them at all (the seal trait is unreachable). All five
+public traits require `const NAME: &'static str`.
+
+### A new vehicle or planet marker (downstream extensible)
+
+Mission crates that model multiple vehicles (e.g., a chief + deputy
+formation, or the ISS plus a visiting Soyuz) need distinct
+compile-time `Vehicle` markers so `Position<BodyFrame<Iss>>` and
+`Position<BodyFrame<Soyuz>>` are type-distinct. Use the
+[`define_vehicle!`] / [`define_planet!`] macros, which are the only
+way to extend the `Vehicle` / `Planet` catalog from outside
+`jeod_quantities`:
+
+```rust
+use bevy_jeod::prelude::*;
+
+define_vehicle!(Iss);
+define_vehicle!(Soyuz);
+define_planet!(Pluto);
+
+// Each generates a zero-sized marker type with a sealed `Vehicle`
+// (or `Planet`) impl.
+let _iss_pos: Position<BodyFrame<Iss>> = Qty3::zero();
+let _soyuz_pos: Position<BodyFrame<Soyuz>> = Qty3::zero();
+// `Position<BodyFrame<Iss>> + Position<BodyFrame<Soyuz>>` is a
+// compile error with the standard frame-mismatch diagnostic.
+```
+
+The macros generate `pub struct $name;`, the per-domain sealed impl
+(`VehicleSealed` or `PlanetSealed`), and the `Vehicle` / `Planet` impl
+with `const NAME: &'static str = stringify!($name)`. The seal traits
+for these two domains are re-exported via `jeod_quantities::__macro_support`
+so the macros can satisfy them at downstream call sites. Direct
+`impl Vehicle for X {}` outside the macro is technically possible but
+unsupported — use the macro.
+
+`Frame::NAME` is still the *kind* (`"BodyFrame"`, `"PlanetFixed"`),
+not the per-vehicle identifier — `const &'static str` cannot splice
+`V::NAME` at compile time. For diagnostics that need the fully-qualified
+name (e.g., `Iss` rather than `BodyFrame`), use
+`std::any::type_name::<F>()`, which `Qty3`'s `Debug` impl already does.
+
+### A new frame *kind* (in-crate only)
+
+Adding a new frame kind (something on par with `Inertial` / `Ecef` /
+`BodyFrame`, not a per-vehicle parameter) requires editing
+`crates/jeod_quantities/src/frame.rs`:
 
 ```rust
 // Inside crate jeod_quantities:
-use crate::sealed::Sealed;
+use crate::sealed::FrameSealed;
 
 #[derive(Debug, Clone, Copy)]
 pub struct MyFrame;
-impl Sealed for MyFrame {}
+impl FrameSealed for MyFrame {}
 impl Frame for MyFrame {
     const NAME: &'static str = "MyFrame";
 }
@@ -147,23 +199,24 @@ Then:
    between the frames.
 3. Add a tier-1 unit test verifying the transform round-trips.
 
-For a parametric frame (planet- or vehicle-tagged), use the
+For a parametric frame kind (planet- or vehicle-tagged), use the
 `PlanetFixed<P>` / `BodyFrame<V>` patterns already in `frame.rs` as
-templates — they wrap a `PhantomData<P>` and impl `Sealed`/`Frame` with a
-generic bound. Note that `const NAME` cannot splice `V::NAME` (it must be
-a `&'static str` literal); callers that need the fully-qualified name use
-`std::any::type_name::<F>()`, which is what `Qty3`'s `Debug` impl does.
+templates — they wrap a `PhantomData<P>` and impl `FrameSealed` /
+`Frame` with a generic bound.
+
+[`define_vehicle!`]: https://docs.rs/jeod_quantities/latest/jeod_quantities/macro.define_vehicle.html
+[`define_planet!`]: https://docs.rs/jeod_quantities/latest/jeod_quantities/macro.define_planet.html
 
 ### A new time scale
 
 Add to `crates/jeod_quantities/src/time_scale.rs`:
 
 ```rust
-use crate::sealed::Sealed;
+use crate::sealed::TimeScaleSealed;
 
 #[derive(Debug, Clone, Copy)]
 pub struct MyScale;
-impl Sealed for MyScale {}
+impl TimeScaleSealed for MyScale {}
 impl TimeScale for MyScale {
     const NAME: &'static str = "MyScale";
 }

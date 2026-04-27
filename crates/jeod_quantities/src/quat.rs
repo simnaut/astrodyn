@@ -17,17 +17,20 @@ use core::marker::PhantomData;
 
 use glam::{DMat3, DQuat, DVec3};
 
-use crate::sealed::Sealed;
+use crate::sealed::QuatSealed;
 
 /// Compile-time quaternion storage layout marker.
-pub trait Layout: Sealed + 'static {
+///
+/// Sealed at the type-system level: only `jeod_quantities` can impl
+/// this trait (the seal trait `QuatSealed` is private to the crate).
+pub trait Layout: QuatSealed + 'static {
     const NAME: &'static str;
 }
 
 /// Storage layout `[q0, q1, q2, q3]` where `q0` is the scalar part (JEOD).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ScalarFirst;
-impl Sealed for ScalarFirst {}
+impl QuatSealed for ScalarFirst {}
 impl Layout for ScalarFirst {
     const NAME: &'static str = "ScalarFirst";
 }
@@ -35,20 +38,23 @@ impl Layout for ScalarFirst {
 /// Storage layout `[x, y, z, w]` where `w` is the scalar part (glam).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ScalarLast;
-impl Sealed for ScalarLast {}
+impl QuatSealed for ScalarLast {}
 impl Layout for ScalarLast {
     const NAME: &'static str = "ScalarLast";
 }
 
 /// Compile-time quaternion transformation convention marker.
-pub trait Transform: Sealed + 'static {
+///
+/// Sealed at the type-system level: only `jeod_quantities` can impl
+/// this trait (the seal trait `QuatSealed` is private to the crate).
+pub trait Transform: QuatSealed + 'static {
     const NAME: &'static str;
 }
 
 /// `r' = q r q⁻¹` — the JEOD convention.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LeftTransform;
-impl Sealed for LeftTransform {}
+impl QuatSealed for LeftTransform {}
 impl Transform for LeftTransform {
     const NAME: &'static str = "LeftTransform";
 }
@@ -56,7 +62,7 @@ impl Transform for LeftTransform {
 /// `r' = q⁻¹ r q` — the opposite of JEOD; common in many textbooks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RightTransform;
-impl Sealed for RightTransform {}
+impl QuatSealed for RightTransform {}
 impl Transform for RightTransform {
     const NAME: &'static str = "RightTransform";
 }
