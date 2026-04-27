@@ -222,10 +222,93 @@ impl<SourceId> GravityControl<SourceId> {
         }
     }
 
-    /// Returns true if this control requires non-spherical (spherical harmonics)
-    /// computation, i.e. `spherical` is false and degree > 0.
+    /// Returns true if this control's *configuration* selects non-spherical
+    /// (spherical-harmonics) computation, i.e. `spherical` is false and
+    /// `degree > 0`.
+    ///
+    /// This is **purely config-based** — it does not consult the source.
+    /// For the runtime question "will this control actually compute SH
+    /// terms against `source`?", use [`Self::requires_planet_fixed_rotation`].
+    /// Examples where `is_nonspherical()` returns true but the runtime
+    /// path collapses to spherical:
+    /// - source is `GravityModel::PointMass` (no SH data → effective degree = 0)
+    /// - the configured degree exceeds the source degree (clamped down to 0)
+    /// - the configured degree is 1 (Gottlieb returns zero perturbation for
+    ///   degree < 2, so the per-step clamp collapses it to 0)
     pub fn is_nonspherical(&self) -> bool {
         !self.spherical && self.degree > 0
+    }
+
+    /// Returns true if evaluating this control against `source` will require
+    /// the planet-fixed rotation matrix (i.e., the runtime path is genuinely
+    /// non-spherical after clamping). Mirrors the gate inside `evaluate`'s
+    /// dispatch.
+    ///
+    /// Use this for pre-flight checks (e.g., "does this source need a
+    /// rotation model wired up?") instead of [`Self::is_nonspherical`],
+    /// which is config-only and would over-approximate the requirement.
+    pub fn requires_planet_fixed_rotation(&self, source: &GravitySource) -> bool {
+        self.effective_orders(source).0 > 0
+    }
+
+    /// Compute the effective `(degree, order, gradient_degree, gradient_order)`
+    /// quadruple after clamping to the source's bounds. Does not mutate `self`.
+    ///
+    /// This is the per-step variant of [`Self::check_validity`]: where
+    /// `check_validity` is a startup gate that mutates `self` and panics on
+    /// out-of-range degree/order (matching JEOD's "fatal" classification
+    /// for GV.04 / GV.05 / GV.06 at initialization), `effective_orders`
+    /// is the runtime path used by [`Self::evaluate_inner`] on every
+    /// step. It clamps gracefully instead of panicking so a control that
+    /// was constructed outside the validation pipeline (or mutated
+    /// mid-mission) doesn't crash deep inside the spherical-harmonics
+    /// kernel.
+    ///
+    /// Returns `(0, 0, 0, 0)` for spherical controls, point-mass sources,
+    /// or any case where the request collapses to point-mass gravity
+    /// (e.g., `spherical=false` against a `GravityModel::PointMass`).
+    /// Callers see the spherical branch in [`Self::evaluate_inner`] when
+    /// the returned degree is 0.
+    // JEOD_INV: GV.04 — degree clamped to source degree (per-step path)
+    // JEOD_INV: GV.05 — order clamped to source order
+    // JEOD_INV: GV.06 — order clamped to degree
+    // JEOD_INV: GV.08 — gradient_degree clamped to degree
+    // JEOD_INV: GV.09 — gradient_degree=1 collapses to 0
+    // JEOD_INV: GV.10 — gradient_order clamped to gradient_degree
+    // JEOD_INV: GV.11 — gradient_order clamped to order
+    fn effective_orders(&self, source: &GravitySource) -> (usize, usize, usize, usize) {
+        if self.spherical {
+            return (0, 0, 0, 0);
+        }
+        let (src_degree, src_order) = match &source.model {
+            GravityModel::SphericalHarmonics(data) => (data.degree, data.order),
+            // JEOD_INV: GV.07 — non-spherical against point-mass collapses
+            // to spherical at startup; here we mirror by returning the
+            // zero quadruple so `evaluate_inner` takes the spherical
+            // branch.
+            GravityModel::PointMass => return (0, 0, 0, 0),
+        };
+        let mut degree = self.degree.min(src_degree);
+        // Gottlieb early-returns zero perturbation for degree < 2 (see
+        // `calc_nonspherical_with_scratch`), so a configured degree of 1
+        // produces no SH contribution. Collapse to 0 here so the runtime
+        // predicate `eff_degree > 0` aligns with "the SH path actually does
+        // work," and so the planet-fixed rotation matrix is not required
+        // for a control whose computation degenerates to point-mass anyway.
+        if degree == 1 {
+            degree = 0;
+        }
+        // GV.06: order ≤ degree; GV.05: order ≤ source order
+        let order = self.order.min(src_order).min(degree);
+        // GV.08: gradient_degree ≤ degree
+        let mut gradient_degree = self.gradient_degree.min(degree);
+        // GV.09: gradient_degree of exactly 1 is meaningless; collapse to 0
+        if gradient_degree == 1 {
+            gradient_degree = 0;
+        }
+        // GV.10: gradient_order ≤ gradient_degree; GV.11: gradient_order ≤ order
+        let gradient_order = self.gradient_order.min(gradient_degree).min(order);
+        (degree, order, gradient_degree, gradient_order)
     }
 
     /// Evaluate this gravity control for a single source at the given position.
@@ -295,6 +378,16 @@ impl<SourceId> GravityControl<SourceId> {
     }
 
     /// Shared dispatch for [`evaluate`] and [`evaluate_accel_only`].
+    ///
+    /// All four spherical-harmonic ordinals (`degree`, `order`,
+    /// `gradient_degree`, `gradient_order`) are clamped to the source's
+    /// bounds via [`Self::effective_orders`] before reaching the
+    /// `gravitation` kernel. This makes the per-step path safe against
+    /// controls that were constructed outside the validation pipeline
+    /// or mutated mid-mission — the kernel never sees an out-of-range
+    /// request that would panic deep inside the spherical-harmonics
+    /// recurrence. For already-validated controls (the common case),
+    /// the clamp is a no-op and Tier 3 baselines stay bit-identical.
     // JEOD_INV: GV.13 — gravity source must have inertial frame (planet-fixed rotation required for non-spherical)
     // JEOD_INV: GV.17 — active nonspherical controls subscribe to planet-fixed frame
     #[allow(clippy::too_many_arguments)]
@@ -304,30 +397,42 @@ impl<SourceId> GravityControl<SourceId> {
         position: DVec3,
         t_inertial_pfix: Option<&DMat3>,
         compute_gradient: bool,
-        gradient_degree: usize,
-        gradient_order: usize,
+        gradient_degree_request: usize,
+        gradient_order_request: usize,
         delta_c20: f64,
         has_delta_coeffs: bool,
     ) -> GravityAcceleration {
-        if self.is_nonspherical() {
+        let (eff_degree, eff_order, mut eff_grad_degree, mut eff_grad_order) =
+            self.effective_orders(source);
+        // The caller may pass an explicit `gradient_degree_request` /
+        // `gradient_order_request` — `evaluate_accel_only` passes 0/0 to
+        // skip the gradient. Honor the caller's request *capped* by the
+        // already-clamped ordinals.
+        eff_grad_degree = eff_grad_degree.min(gradient_degree_request);
+        eff_grad_order = eff_grad_order
+            .min(gradient_order_request)
+            .min(eff_grad_degree);
+
+        if eff_degree > 0 {
+            // Non-spherical path: requires the planet-fixed rotation.
             let rot = t_inertial_pfix.unwrap_or_else(|| {
                 panic!(
                     "Non-spherical gravity (degree={}/order={}) requires planet-fixed \
                      rotation matrix. In JEOD, the planet-fixed frame is always \
                      subscribed for non-spherical gravity.",
-                    self.degree, self.order
+                    eff_degree, eff_order
                 )
             });
             crate::gravitation(
                 source,
                 position,
                 rot,
-                self.degree,
-                self.order,
+                eff_degree,
+                eff_order,
                 self.perturbing_only,
                 compute_gradient,
-                gradient_degree,
-                gradient_order,
+                eff_grad_degree,
+                eff_grad_order,
                 delta_c20,
                 has_delta_coeffs,
             )
@@ -340,8 +445,8 @@ impl<SourceId> GravityControl<SourceId> {
                 0,
                 self.perturbing_only,
                 compute_gradient,
-                gradient_degree,
-                gradient_order,
+                eff_grad_degree,
+                eff_grad_order,
                 0.0,   // point-mass: no SH coefficients to modify
                 false, // point-mass: no delta coefficients
             )
@@ -505,5 +610,220 @@ impl<SourceId: Default> Default for GravityControlTyped<SourceId> {
 impl<SourceId: Default> Default for GravityControl<SourceId> {
     fn default() -> Self {
         Self::new_spherical(SourceId::default(), false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::spherical_harmonics_gravity_source::SphericalHarmonicsData;
+
+    /// Build an in-memory spherical-harmonics source with all zero
+    /// coefficients (degenerate, but sufficient for exercising the
+    /// degree/order clamping logic — the actual numeric values don't
+    /// matter; we're checking that the kernel runs without panicking
+    /// and returns a finite acceleration). The coefficient arrays
+    /// follow the triangular `cnm[n].len() == n + 1` shape that
+    /// `SphericalHarmonicsData::new` expects.
+    fn dummy_sh_source(degree: usize, order: usize) -> GravitySource {
+        let mu = 3.986_004_415e14;
+        let radius = 6_378_137.0;
+        let cnm: Vec<Vec<f64>> = (0..=degree).map(|n| vec![0.0_f64; n + 1]).collect();
+        let snm: Vec<Vec<f64>> = (0..=degree).map(|n| vec![0.0_f64; n + 1]).collect();
+        let data = SphericalHarmonicsData::new(degree, order, radius, mu, cnm, snm, true, 0.0);
+        GravitySource {
+            mu,
+            model: GravityModel::SphericalHarmonics(Box::new(data)),
+        }
+    }
+
+    /// `effective_orders` for a spherical control returns all zeros
+    /// regardless of the source's degree.
+    #[test]
+    fn effective_orders_spherical_returns_zeros() {
+        let src = dummy_sh_source(8, 8);
+        let ctrl = GravityControl::<usize>::new_spherical(0, false);
+        assert_eq!(ctrl.effective_orders(&src), (0, 0, 0, 0));
+    }
+
+    /// `effective_orders` against a `PointMass` source collapses any
+    /// non-spherical request to zeros (mirrors GV.07 startup auto-correct).
+    #[test]
+    fn effective_orders_against_point_mass_collapses_to_zero() {
+        let src = GravitySource {
+            mu: 3.986_004_415e14,
+            model: GravityModel::PointMass,
+        };
+        let ctrl = GravityControl::<usize> {
+            spherical: false,
+            degree: 8,
+            order: 8,
+            ..GravityControl::new_spherical(0, false)
+        };
+        assert_eq!(ctrl.effective_orders(&src), (0, 0, 0, 0));
+    }
+
+    /// Out-of-range degree/order are clamped down to the source's bounds
+    /// and to each other (GV.04, GV.05, GV.06).
+    #[test]
+    fn effective_orders_clamps_degree_order_to_source() {
+        let src = dummy_sh_source(8, 8);
+        let ctrl = GravityControl::<usize> {
+            spherical: false,
+            degree: 100,
+            order: 100,
+            ..GravityControl::new_spherical(0, false)
+        };
+        assert_eq!(ctrl.effective_orders(&src), (8, 8, 0, 0));
+    }
+
+    /// Order > degree clamps order down to degree (GV.06).
+    #[test]
+    fn effective_orders_clamps_order_to_degree() {
+        let src = dummy_sh_source(8, 8);
+        let ctrl = GravityControl::<usize> {
+            spherical: false,
+            degree: 4,
+            order: 8,
+            ..GravityControl::new_spherical(0, false)
+        };
+        assert_eq!(ctrl.effective_orders(&src), (4, 4, 0, 0));
+    }
+
+    /// Gradient ordinals are clamped: `gradient_degree=1` collapses to
+    /// 0 (GV.09), `gradient_order ≤ gradient_degree` (GV.10), and
+    /// `gradient_order ≤ order` (GV.11).
+    #[test]
+    fn effective_orders_clamps_gradient_ordinals() {
+        let src = dummy_sh_source(8, 6);
+        let ctrl = GravityControl::<usize> {
+            spherical: false,
+            degree: 8,
+            order: 4,
+            gradient: true,
+            gradient_degree: 1, // → collapses to 0
+            gradient_order: 5,  // > gradient_degree, > order → clamped
+            ..GravityControl::new_spherical(0, false)
+        };
+        // After clamping: degree=8, order=4 (≤ src.order=6), gradient_degree=0, gradient_order=0.
+        assert_eq!(ctrl.effective_orders(&src), (8, 4, 0, 0));
+    }
+
+    /// Regression test for H4: a control with out-of-range
+    /// `gradient_degree` constructed without going through `check_validity`
+    /// previously panicked deep inside `gravitation`. After the fix,
+    /// `evaluate_inner` clamps gracefully and returns a finite acceleration.
+    #[test]
+    fn evaluate_does_not_panic_on_out_of_range_gradient_degree() {
+        let src = dummy_sh_source(4, 4);
+        let ctrl = GravityControl::<usize> {
+            spherical: false,
+            degree: 4,
+            order: 4,
+            gradient: true,
+            gradient_degree: 100, // wildly out of range
+            gradient_order: 100,
+            ..GravityControl::new_spherical(0, false)
+        };
+        let pos = DVec3::new(7_000_000.0, 0.0, 0.0);
+        let rot = DMat3::IDENTITY;
+        // No panic; the kernel sees clamped (gradient_degree, gradient_order)=(4, 4).
+        let result = ctrl.evaluate(&src, pos, Some(&rot), 0.0, false);
+        assert!(result.grav_accel.is_finite());
+    }
+
+    /// Regression test for H4: a control with out-of-range `degree` /
+    /// `order` against a real spherical-harmonics source no longer
+    /// panics deep in `calc_nonspherical`.
+    #[test]
+    fn evaluate_does_not_panic_on_out_of_range_degree() {
+        let src = dummy_sh_source(4, 4);
+        let ctrl = GravityControl::<usize> {
+            spherical: false,
+            degree: 100,
+            order: 100,
+            ..GravityControl::new_spherical(0, false)
+        };
+        let pos = DVec3::new(7_000_000.0, 0.0, 0.0);
+        let rot = DMat3::IDENTITY;
+        let result = ctrl.evaluate(&src, pos, Some(&rot), 0.0, false);
+        assert!(result.grav_accel.is_finite());
+    }
+
+    /// `degree == 1` is meaningless for spherical harmonics: Gottlieb
+    /// returns zero perturbation for `degree < 2`. `effective_orders`
+    /// collapses such a control to all-zeros so the runtime path takes
+    /// the spherical branch and does not require the planet-fixed
+    /// rotation matrix.
+    #[test]
+    fn effective_orders_collapses_degree_one_to_zero() {
+        let src = dummy_sh_source(8, 8);
+        let ctrl = GravityControl::<usize> {
+            spherical: false,
+            degree: 1,
+            order: 1,
+            ..GravityControl::new_spherical(0, false)
+        };
+        assert_eq!(ctrl.effective_orders(&src), (0, 0, 0, 0));
+    }
+
+    /// `requires_planet_fixed_rotation` returns false when the runtime
+    /// path collapses to spherical (`PointMass` source, `degree=0`,
+    /// `degree=1`), even if `is_nonspherical()` is true. Pre-flight
+    /// checks must use this method, not `is_nonspherical()`.
+    #[test]
+    fn requires_rotation_false_when_runtime_collapses() {
+        let sh = dummy_sh_source(8, 8);
+        let pm = GravitySource {
+            mu: 3.986_004_415e14,
+            model: GravityModel::PointMass,
+        };
+        let degree_one = GravityControl::<usize> {
+            spherical: false,
+            degree: 1,
+            order: 1,
+            ..GravityControl::new_spherical(0, false)
+        };
+        let against_pm = GravityControl::<usize> {
+            spherical: false,
+            degree: 8,
+            order: 8,
+            ..GravityControl::new_spherical(0, false)
+        };
+        assert!(degree_one.is_nonspherical()); // config says yes
+        assert!(!degree_one.requires_planet_fixed_rotation(&sh)); // runtime says no
+        assert!(against_pm.is_nonspherical()); // config says yes
+        assert!(!against_pm.requires_planet_fixed_rotation(&pm)); // runtime says no
+
+        let real_sh = GravityControl::<usize> {
+            spherical: false,
+            degree: 4,
+            order: 4,
+            ..GravityControl::new_spherical(0, false)
+        };
+        assert!(real_sh.requires_planet_fixed_rotation(&sh));
+    }
+
+    /// Regression test for the degree-1 panic (review feedback on PR #182):
+    /// a non-spherical control with `degree=1` against a SH source no
+    /// longer panics when `t_inertial_pfix` is `None`, because
+    /// `effective_orders` collapses degree=1 to 0 (Gottlieb produces zero
+    /// perturbation for degree < 2 anyway).
+    #[test]
+    fn evaluate_degree_one_does_not_require_rotation() {
+        let src = dummy_sh_source(8, 8);
+        let ctrl = GravityControl::<usize> {
+            spherical: false,
+            degree: 1,
+            order: 1,
+            ..GravityControl::new_spherical(0, false)
+        };
+        let pos = DVec3::new(7_000_000.0, 0.0, 0.0);
+        // No rotation matrix supplied; would have panicked previously.
+        let result = ctrl.evaluate(&src, pos, None, 0.0, false);
+        // Should match point-mass gravity from the source (the SH branch
+        // contributes zero for degree < 2 and `perturbing_only` is false).
+        assert!(result.grav_accel.is_finite());
+        assert!(result.grav_accel.length() > 0.0);
     }
 }

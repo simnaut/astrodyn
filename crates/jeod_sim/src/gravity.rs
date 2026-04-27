@@ -77,8 +77,13 @@ pub fn accumulate_gravity<'a, S: Copy + std::fmt::Debug>(
             );
         });
 
-        // Pre-check: non-spherical gravity requires planet-fixed rotation
-        if ctrl.is_nonspherical() && resolved.rotation.is_none() {
+        // Pre-check: only panic if non-spherical evaluation against this
+        // *specific source* will actually require the rotation (i.e.,
+        // `effective_orders().0 >= 2`). `is_nonspherical()` is config-only
+        // and over-approximates: a control with `degree=1` or one paired
+        // with a `PointMass` source collapses to spherical at runtime and
+        // doesn't need rotation.
+        if ctrl.requires_planet_fixed_rotation(resolved.source) && resolved.rotation.is_none() {
             panic!(
                 "Non-spherical GravityControl (degree={}, order={}) references \
                  source {:?} which has no planet-fixed rotation matrix.",
