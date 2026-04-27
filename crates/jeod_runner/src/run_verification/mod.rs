@@ -31,6 +31,7 @@ pub mod sim_planetary;
 pub mod sim_polar_motion;
 pub mod sim_solar_beta;
 pub mod sim_srp;
+pub mod sim_torque_simple;
 
 use glam::DVec3;
 use jeod_sim::recipes::verification::{
@@ -425,12 +426,23 @@ fn load_reference(
             let records = load_torque_simple_csv(path);
             let states = records
                 .iter()
-                .map(|r| StateLog {
-                    time: r.time,
-                    position: Some(r.position),
-                    velocity: Some(r.velocity),
-                    ang_vel: Some(r.ang_vel),
-                    ..Default::default()
+                .map(|r| {
+                    // CSV stores JEOD scalar-first `[q0, q1, q2, q3]`; glam
+                    // expects xyzw, so reorder to `[q1, q2, q3, q0]`.
+                    let q = glam::DQuat::from_xyzw(
+                        r.quaternion[1],
+                        r.quaternion[2],
+                        r.quaternion[3],
+                        r.quaternion[0],
+                    );
+                    StateLog {
+                        time: r.time,
+                        position: Some(r.position),
+                        velocity: Some(r.velocity),
+                        ang_vel: Some(r.ang_vel),
+                        quaternion: Some(q),
+                        ..Default::default()
+                    }
                 })
                 .collect::<Vec<_>>();
             let times = states.iter().map(|s| s.time).collect();

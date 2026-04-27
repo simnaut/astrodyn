@@ -3,7 +3,14 @@
 Per-test, per-component max absolute errors captured at the Phase 0 freeze point of
 GitHub issue #101. See `CLAUDE.md` §"Baseline freeze" for the invariance policy.
 
-76 tests recorded.
+82 tests recorded.
+
+## `pre_step_smoke`
+
+| Metric | X / value | Y | Z | Unit |
+|--------|-----------|---|---|------|
+| position | 2.66554900000000013e-3 | 1.61812800000000007e-1 | 3.81644900000000023e-2 | m |
+| velocity | 1.05109499999999994e-4 | 1.42593799999999997e-5 | 1.27807700000000013e-4 | m/s |
 
 ## `tier3_apollo8_eci_integ`
 
@@ -35,6 +42,41 @@ GitHub issue #101. See `CLAUDE.md` §"Baseline freeze" for the invariance policy
 |--------|-----------|---|---|------|
 | position | 3.81119599999999981e0 | 8.75479800000000030e-1 | 1.24436700000000000e0 | m |
 | velocity | 8.13428900000000028e-4 | 4.21143199999999976e-4 | 5.02742399999999952e-4 | m/s |
+
+## `tier3_planetary_geo`
+
+| Metric | X / value | Y | Z | Unit |
+|--------|-----------|---|---|------|
+| position | 8.04662700000000007e-7 | 4.58210700000000023e-7 | 6.26641799999999973e-10 | m |
+| velocity | 3.34239299999999997e-11 | 5.72413200000000003e-11 | 3.17523799999999979e-14 | m/s |
+
+## `tier3_planetary_leo_ecc`
+
+| Metric | X / value | Y | Z | Unit |
+|--------|-----------|---|---|------|
+| position | 1.09170500000000008e-5 | 8.54171199999999937e-6 | 9.30752699999999947e-9 | m |
+| velocity | 7.58791400000000056e-9 | 1.05367200000000004e-8 | 6.60893600000000002e-12 | m/s |
+
+## `tier3_planetary_leo_equ`
+
+| Metric | X / value | Y | Z | Unit |
+|--------|-----------|---|---|------|
+| position | 2.05628999999999992e-5 | 2.06936099999999985e-5 | 1.73320699999999984e-8 | m |
+| velocity | 2.33245500000000009e-8 | 2.34130800000000016e-8 | 1.96506799999999996e-11 | m/s |
+
+## `tier3_planetary_leo_inc`
+
+| Metric | X / value | Y | Z | Unit |
+|--------|-----------|---|---|------|
+| position | 3.59927099999999983e-6 | 4.90897200000000000e-6 | 3.53920499999999985e-6 | m |
+| velocity | 3.97318400000000016e-9 | 5.52972799999999987e-9 | 3.94280199999999988e-9 | m/s |
+
+## `tier3_planetary_leo_polar`
+
+| Metric | X / value | Y | Z | Unit |
+|--------|-----------|---|---|------|
+| position | 3.29839500000000012e-6 | 1.81946000000000003e-5 | 1.87264199999999988e-5 | m |
+| velocity | 3.74208799999999962e-9 | 2.06412499999999996e-8 | 2.08951600000000009e-8 | m/s |
 
 ## `tier3_reference_run10a_libration_period`
 
@@ -154,6 +196,8 @@ GitHub issue #101. See `CLAUDE.md` §"Baseline freeze" for the invariance policy
 
 | Metric | X / value | Y | Z | Unit |
 |--------|-----------|---|---|------|
+| position | 1.30408399999999991e-6 | 2.05065600000000017e-6 | 1.73828399999999992e-6 | m |
+| velocity | 1.37708899999999994e-9 | 2.27430499999999983e-9 | 1.72678900000000008e-9 | m/s |
 | quat_angle | 4.21468499999999987e-8 |  |  | rad |
 | ang_vel | 2.49366499999999982e-18 | 1.30104300000000005e-18 | 7.58941500000000023e-19 | rad/s |
 | euler_roll | 1.75803799999999990e-13 |  |  | rad |
@@ -164,6 +208,8 @@ GitHub issue #101. See `CLAUDE.md` §"Baseline freeze" for the invariance policy
 
 | Metric | X / value | Y | Z | Unit |
 |--------|-----------|---|---|------|
+| position | 1.20441800000000000e7 | 5.06524800000000000e6 | 2.04946200000000000e7 | m |
+| velocity | 1.22617099999999991e4 | 2.66749399999999987e4 | 1.13744899999999998e4 | m/s |
 | quat_angle | 0.00000000000000000e0 |  |  | rad |
 | euler_roll | 0.00000000000000000e0 |  |  | rad |
 | euler_pitch | 0.00000000000000000e0 |  |  | rad |
@@ -173,6 +219,8 @@ GitHub issue #101. See `CLAUDE.md` §"Baseline freeze" for the invariance policy
 
 | Metric | X / value | Y | Z | Unit |
 |--------|-----------|---|---|------|
+| position | 8.41585800000000000e6 | 7.49220099999999977e5 | 1.33820200000000000e7 | m |
+| velocity | 5.39853700000000026e4 | 4.63148899999999994e4 | 3.79612200000000012e4 | m/s |
 | quat_angle | 0.00000000000000000e0 |  |  | rad |
 | euler_roll | 0.00000000000000000e0 |  |  | rad |
 | euler_pitch | 0.00000000000000000e0 |  |  | rad |
@@ -472,6 +520,8 @@ GitHub issue #101. See `CLAUDE.md` §"Baseline freeze" for the invariance policy
 |--------|-----------|---|---|------|
 | position | 6.65495300000000012e-1 | 9.88259800000000022e-1 | 8.11713699999999982e-1 | m |
 | velocity | 6.72354700000000029e-4 | 1.10034000000000000e-3 | 9.10926600000000041e-4 | m/s |
+| quat_angle | 4.21468499999999987e-8 |  |  | rad |
+| ang_vel | 0.00000000000000000e0 | 0.00000000000000000e0 | 0.00000000000000000e0 | rad/s |
 
 ## `tier3_simulation_run7d`
 
@@ -479,6 +529,8 @@ GitHub issue #101. See `CLAUDE.md` §"Baseline freeze" for the invariance policy
 |--------|-----------|---|---|------|
 | position | 7.36660399999999993e-1 | 1.07229799999999997e0 | 8.68296900000000038e-1 | m |
 | velocity | 7.52153899999999961e-4 | 1.19834700000000000e-3 | 9.80537399999999995e-4 | m/s |
+| quat_angle | 4.21468499999999987e-8 |  |  | rad |
+| ang_vel | 0.00000000000000000e0 | 0.00000000000000000e0 | 0.00000000000000000e0 | rad/s |
 
 ## `tier3_simulation_run9a_torque`
 
@@ -573,7 +625,6 @@ GitHub issue #101. See `CLAUDE.md` §"Baseline freeze" for the invariance policy
 | velocity | 8.73842500000000004e-9 | 7.50469600000000074e-9 | 9.10131300000000042e-9 | m/s |
 | quat_angle | 3.14147199999999982e0 |  |  | rad |
 | ang_vel | 2.14003799999999992e-3 | 2.98574900000000022e-3 | 4.76022499999999998e-4 | rad/s |
-| torque | 0.00000000000000000e0 |  |  | N*m |
 
 ## `tier3_torque_simple_run02`
 
@@ -583,7 +634,6 @@ GitHub issue #101. See `CLAUDE.md` §"Baseline freeze" for the invariance policy
 | velocity | 8.73842500000000004e-9 | 7.50469600000000074e-9 | 9.10131300000000042e-9 | m/s |
 | quat_angle | 3.57547900000000016e-2 |  |  | rad |
 | ang_vel | 4.08569899999999979e-5 | 3.07833200000000019e-5 | 2.56086099999999989e-6 | rad/s |
-| torque | 0.00000000000000000e0 |  |  | N*m |
 
 ## `tier3_torque_simple_run03`
 
@@ -593,7 +643,6 @@ GitHub issue #101. See `CLAUDE.md` §"Baseline freeze" for the invariance policy
 | velocity | 8.73842500000000004e-9 | 7.50469600000000074e-9 | 9.10131300000000042e-9 | m/s |
 | quat_angle | 3.57547900000000016e-2 |  |  | rad |
 | ang_vel | 4.08569899999999979e-5 | 3.07833200000000019e-5 | 2.56086099999999989e-6 | rad/s |
-| torque | 0.00000000000000000e0 |  |  | N*m |
 
 ## `tier3_torque_simple_run04`
 
@@ -603,7 +652,6 @@ GitHub issue #101. See `CLAUDE.md` §"Baseline freeze" for the invariance policy
 | velocity | 3.38086400000000003e-4 | 5.33071100000000013e-4 | 3.91476499999999985e-4 | m/s |
 | quat_angle | 3.14117399999999991e0 |  |  | rad |
 | ang_vel | 2.13676500000000011e-3 | 3.03493399999999998e-3 | 4.73992399999999985e-4 | rad/s |
-| torque | 0.00000000000000000e0 |  |  | N*m |
 
 ## `tier3_torque_simple_run05`
 
@@ -613,7 +661,6 @@ GitHub issue #101. See `CLAUDE.md` §"Baseline freeze" for the invariance policy
 | velocity | 3.38086400000000003e-4 | 5.33071100000000013e-4 | 3.91476499999999985e-4 | m/s |
 | quat_angle | 1.72305599999999989e-2 |  |  | rad |
 | ang_vel | 1.71993600000000006e-5 | 1.34409399999999998e-5 | 4.27856600000000033e-6 | rad/s |
-| torque | 0.00000000000000000e0 |  |  | N*m |
 
 ## `tier3_torque_simple_run06`
 
@@ -623,5 +670,4 @@ GitHub issue #101. See `CLAUDE.md` §"Baseline freeze" for the invariance policy
 | velocity | 3.38086400000000003e-4 | 5.33071100000000013e-4 | 3.91476499999999985e-4 | m/s |
 | quat_angle | 5.94250500000000015e-1 |  |  | rad |
 | ang_vel | 5.42445499999999968e-4 | 4.80642499999999991e-4 | 1.66537200000000009e-4 | rad/s |
-| torque | 0.00000000000000000e0 |  |  | N*m |
 
