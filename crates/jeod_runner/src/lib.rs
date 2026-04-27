@@ -348,14 +348,15 @@ impl SimBody {
 ///
 /// # Error handling
 ///
-/// Among the runtime instance methods on `Simulation`, `validate()` is the
-/// only `Result`-returning method, and it batches configuration errors at
-/// startup. Constructors that run validation (`Simulation::from_builder` and
-/// the `.build()` extension trait) also return `Result`. Every other runtime
-/// method panics on misuse with a method-name-prefixed message (e.g.
-/// `"set_source_position: source index 7 out of range"`). Out-of-range
-/// indices, configuration conflicts, and numerical preconditions are
-/// programmer errors, not runtime conditions.
+/// Validation can happen either at construction time or after mutation.
+/// Builder-based constructors that validate configuration
+/// (`Simulation::from_builder` and `SimulationBuilderExt::build`) return
+/// `Result`. After construction, `validate()` is the only `Result`-returning
+/// instance method on `Simulation`; it batches configuration errors before
+/// stepping. Other runtime methods panic on misuse with a method-name-prefixed
+/// message (e.g. `"set_source_position: source index 7 out of range"`).
+/// Out-of-range indices, configuration conflicts, and numerical
+/// preconditions are programmer errors, not runtime conditions.
 ///
 /// # Example
 /// ```ignore
@@ -731,7 +732,7 @@ impl Simulation {
         let fid = self.source_frame_ids[source_idx].inertial;
         assert_ne!(
             fid, self.root_frame_id,
-            "Cannot set position of the root (central body) source"
+            "set_source_position: cannot set position of the root (central body) source"
         );
         self.frame_tree.get_mut(fid).state.trans.position = position;
     }
@@ -750,7 +751,7 @@ impl Simulation {
         let fid = self.source_frame_ids[source_idx].inertial;
         assert_ne!(
             fid, self.root_frame_id,
-            "Cannot set state of the root (central body) source"
+            "set_source_state: cannot set state of the root (central body) source"
         );
         let node = self.frame_tree.get_mut(fid);
         node.state.trans.position = position;
@@ -2412,11 +2413,11 @@ impl Simulation {
     ) {
         let child_id = self.bodies[child_idx]
             .mass_body_id
-            .expect("child not in mass tree");
+            .expect("attach: child body not in mass tree");
         let parent_id = self.bodies[parent_idx]
             .mass_body_id
-            .expect("parent not in mass tree");
-        let tree = self.mass_tree.as_mut().expect("no mass tree");
+            .expect("attach: parent body not in mass tree");
+        let tree = self.mass_tree.as_mut().expect("attach: no mass tree");
         tree.attach(child_id, parent_id, offset, t_parent_child);
         // Sync parent's composite mass from tree
         self.bodies[parent_idx].mass = Some(tree.get(parent_id).composite_properties);
@@ -2432,11 +2433,11 @@ impl Simulation {
     pub fn detach(&mut self, child_idx: usize) {
         let child_id = self.bodies[child_idx]
             .mass_body_id
-            .expect("child not in mass tree");
-        let tree = self.mass_tree.as_mut().expect("no mass tree");
+            .expect("detach: child body not in mass tree");
+        let tree = self.mass_tree.as_mut().expect("detach: no mass tree");
         let parent_id = tree
             .parent(child_id)
-            .expect("detach called on body with no parent in tree");
+            .expect("detach: child body has no parent in tree");
         tree.detach(child_id);
         // Sync both bodies' mass from tree
         self.bodies[child_idx].mass = Some(tree.get(child_id).composite_properties);
