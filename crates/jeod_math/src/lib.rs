@@ -6,6 +6,8 @@
 //! LeftTransform>` type alias), and all algebraic/conversion methods live
 //! on that unified type so there is only one quaternion in the workspace.
 
+#![forbid(unsafe_code)]
+
 pub use jeod_quantities::prelude::*;
 
 pub mod error;

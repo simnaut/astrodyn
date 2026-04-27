@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 pub use jeod_quantities::prelude::*;
 
 pub mod planet;

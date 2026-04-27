@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 pub mod aero_drag;
 pub mod contact;
 pub mod earth_lighting;

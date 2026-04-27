@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 pub mod coefficients;
 pub mod compute;
 pub mod gravity_controls;

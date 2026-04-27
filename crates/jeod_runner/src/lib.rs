@@ -26,6 +26,8 @@
 //! println!("{:?}", output.trans.position);
 //! ```
 
+#![forbid(unsafe_code)]
+
 use glam::{DMat3, DVec3};
 
 use jeod_frames::{FrameTree, RefFrameKind, RefFrameRot, RefFrameState, RefFrameTrans};
@@ -1990,7 +1992,6 @@ impl Simulation {
             // everything we need up front. Cloning `gravity_controls`
             // happens here (and only here, since contact_pairs is
             // non-empty) — the non-contact path above borrows directly.
-            let n_bodies = bodies_mut.len();
             let t_struct_body_vec: Vec<DMat3> =
                 bodies_mut.iter().map(|b| b.t_struct_body).collect();
             let mass_vec: Vec<MassProperties> = bodies_mut
@@ -2007,34 +2008,36 @@ impl Simulation {
                 .collect();
 
             // Build coupled inputs. `CoupledBodyInput` needs separate &mut
-            // for trans / rot from the same SimBody; raw pointers produce
-            // the split borrow that the checker can't infer.
-            let mut inputs: Vec<CoupledBodyInput<'_>> = Vec::with_capacity(n_bodies);
-            // Safety: we produce exactly one &mut per disjoint field (trans
-            // and rot) per distinct SimBody; no shared refs into bodies_mut
-            // exist while these &muts are live (all immutable data was
-            // extracted above). `mass_vec` is a local copy, not a borrow.
-            unsafe {
-                let ptr = bodies_mut.as_mut_ptr();
-                for i in 0..n_bodies {
-                    let body: *mut SimBody = ptr.add(i);
-                    let trans_ref: &mut TranslationalState = &mut (*body).trans;
-                    let rot_ref: &mut RotationalState = (*body)
+            // borrows for `trans` and `rot.as_mut()` on each `SimBody`. The
+            // borrow checker accepts this when both come out of a single
+            // `iter_mut()` chain — each closure invocation receives a
+            // distinct `&mut SimBody` (the iterator hands them out one at
+            // a time), and disjoint-field projection within that body
+            // produces the two split mutable borrows.
+            //
+            // Earlier revisions used raw pointers in an `unsafe` block to
+            // simulate the same effect, but the immutable-snapshot
+            // pattern above (mass_vec, non_grav_*_vec, …) means no
+            // shared borrow into `bodies_mut` is held while the &muts
+            // are live, so the safe projection compiles cleanly.
+            //
+            // The `expect`s match the validated invariants — the
+            // contact-coupled path requires 6-DOF + 3-component mass on
+            // every body (enforced by `Self::validate`).
+            let mut inputs: Vec<CoupledBodyInput<'_>> = bodies_mut
+                .iter_mut()
+                .enumerate()
+                .map(|(i, body)| CoupledBodyInput {
+                    trans: &mut body.trans,
+                    rot: body
                         .rot
                         .as_mut()
-                        .expect("validated: 6-DOF required for contact-coupled path");
-                    // `total_force.force` = non-grav forces (aero + SRP +
-                    // external); gravity is reapplied inside the per-stage
-                    // gravity_fn and must NOT be included here.
-                    inputs.push(CoupledBodyInput {
-                        trans: trans_ref,
-                        rot: rot_ref,
-                        mass: &mass_vec[i],
-                        non_grav_non_contact_force: non_grav_non_contact_vec[i],
-                        non_contact_torque_body: non_contact_torque_vec[i],
-                    });
-                }
-            }
+                        .expect("validated: 6-DOF required for contact-coupled path"),
+                    mass: &mass_vec[i],
+                    non_grav_non_contact_force: non_grav_non_contact_vec[i],
+                    non_contact_torque_body: non_contact_torque_vec[i],
+                })
+                .collect();
 
             integrate_bodies_contact_coupled(
                 &mut inputs,
