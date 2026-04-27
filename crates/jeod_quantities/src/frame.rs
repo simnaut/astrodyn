@@ -4,8 +4,17 @@
 //! names. We lift that distinction to compile time: `Position<Inertial>` and
 //! `Position<Ecef>` are distinct types and cannot be added.
 //!
-//! Downstream crates cannot define new frames — the `Frame` trait is sealed.
-//! To add a frame, define it here.
+//! ## Extension model
+//!
+//! - **Frame *kinds*** (`Inertial`, `Ecef`, `BodyFrame<V>`, …) are sealed
+//!   to this crate. Adding a new kind requires editing this file.
+//! - **Vehicle and Planet *parameter* tags** (the `V` in `BodyFrame<V>`,
+//!   the `P` in `PlanetFixed<P>`) are extensible from downstream crates
+//!   via the [`define_vehicle!`](crate::define_vehicle) and
+//!   [`define_planet!`](crate::define_planet) macros, defined at the
+//!   bottom of this file. Mission crates that model multiple vehicles
+//!   should use those macros so each vehicle gets a distinct
+//!   compile-time identity.
 
 use core::marker::PhantomData;
 
@@ -20,19 +29,23 @@ pub trait Frame: Sealed + 'static {
 }
 
 /// Compile-time planet tag used to parameterize planet-fixed frames.
+///
+/// Sealed: only `jeod_quantities` can implement this trait directly.
+/// Downstream crates extend the catalog via the
+/// [`define_planet!`](crate::define_planet) macro.
 pub trait Planet: Sealed + 'static {
     const NAME: &'static str;
 }
 
 /// Compile-time vehicle tag used to parameterize vehicle-relative frames.
 ///
-/// Sealed: only `jeod_quantities` can implement this trait.
+/// Sealed: only `jeod_quantities` can implement this trait directly.
+/// Downstream crates extend the catalog via the
+/// [`define_vehicle!`](crate::define_vehicle) macro, which generates
+/// the sealed impl from inside this crate so the seal is preserved.
 ///
 /// Vehicle marker types are used with [`BodyFrame`], [`StructuralFrame`],
-/// [`Lvlh`], and [`Ned`]. Because `Vehicle` is sealed, downstream crates
-/// cannot define new vehicle tags — add them in `jeod_quantities`. (A
-/// future phase may relax this via a re-exported `define_vehicle!` macro
-/// that emits the sealed impl.)
+/// [`Lvlh`], and [`Ned`].
 pub trait Vehicle: Sealed + 'static {
     const NAME: &'static str;
 }
@@ -187,4 +200,158 @@ impl Sealed for TestVehicle {}
 #[cfg(feature = "test-utils")]
 impl Vehicle for TestVehicle {
     const NAME: &'static str = "TestVehicle";
+}
+
+// --- Macros for downstream marker types --------------------------------------
+//
+// Mission crates that model multiple vehicles (e.g., a chief + deputy
+// formation, a tug + payload, the ISS plus a visiting Soyuz) need
+// distinct compile-time `Vehicle` markers so `BodyFrame<Iss>` and
+// `BodyFrame<Soyuz>` are type-distinct. The same applies to multi-planet
+// scenarios (e.g., a Mars sample-return mission carrying state in both
+// Mars-fixed and Earth-fixed frames).
+//
+// These macros generate the marker struct + sealed impl + trait impl in
+// one statement. They are the **only** way for a downstream crate to add
+// a `Vehicle` or `Planet` marker; direct `impl Vehicle for X {}` cannot
+// satisfy the `Sealed` bound because `Sealed` is private to this crate.
+// The macro reaches `Sealed` via the `$crate::__macro_support` re-export
+// so the seal is preserved even though the impl is generated downstream.
+//
+// Per-instance names (`"Iss"`, `"Soyuz"`, …) come from `stringify!($name)`.
+// `Frame::NAME` cannot splice `V::NAME` (it is a `&'static str` const, not
+// a `const fn`); callers that need a fully-qualified name should use
+// `std::any::type_name::<F>()`, which is what `Qty3`'s `Debug` impl does.
+
+/// Define a new compile-time `Vehicle` marker type.
+///
+/// Generates `pub struct $name;` plus the sealed `Vehicle` impl. The
+/// resulting type is zero-sized and `Copy`. After `define_vehicle!(Iss);`
+/// you can use `BodyFrame<Iss>`, `StructuralFrame<Iss>`, `Lvlh<Iss>`, and
+/// `Ned<Iss>` as distinct frame phantoms.
+///
+/// # Example
+///
+/// ```
+/// use jeod_quantities::define_vehicle;
+/// use jeod_quantities::prelude::*;
+///
+/// define_vehicle!(Iss);
+/// define_vehicle!(Soyuz);
+///
+/// // Position<BodyFrame<Iss>> and Position<BodyFrame<Soyuz>> are distinct
+/// // types — adding one to the other is a compile error.
+/// let _iss_pos: Position<BodyFrame<Iss>> = Qty3::zero();
+/// let _soyuz_pos: Position<BodyFrame<Soyuz>> = Qty3::zero();
+/// ```
+///
+/// # Frame mismatches are caught at compile time
+///
+/// ```compile_fail
+/// use jeod_quantities::define_vehicle;
+/// use jeod_quantities::prelude::*;
+///
+/// define_vehicle!(Iss);
+/// define_vehicle!(Soyuz);
+///
+/// let iss: Position<BodyFrame<Iss>> = Qty3::zero();
+/// let soyuz: Position<BodyFrame<Soyuz>> = Qty3::zero();
+/// // Mixing frames is a compile error with a physics-language diagnostic:
+/// let _bad = iss + soyuz;
+/// ```
+///
+/// # Sealing
+///
+/// Downstream crates cannot write `impl Vehicle for X {}` directly; the
+/// `Vehicle` trait has a `Sealed` super-bound and `Sealed` is private to
+/// `jeod_quantities`. This macro is the only way to extend the `Vehicle`
+/// catalog. The macro body uses the crate's `__macro_support` re-export
+/// to satisfy the bound from a downstream call site.
+#[macro_export]
+macro_rules! define_vehicle {
+    ($name:ident) => {
+        #[derive(Debug, Clone, Copy)]
+        pub struct $name;
+        impl $crate::__macro_support::Sealed for $name {}
+        impl $crate::__macro_support::Vehicle for $name {
+            const NAME: &'static str = stringify!($name);
+        }
+    };
+}
+
+/// Define a new compile-time `Planet` marker type.
+///
+/// Generates `pub struct $name;` plus the sealed `Planet` impl. The
+/// resulting type is zero-sized and `Copy`. After `define_planet!(Pluto);`
+/// you can use `PlanetFixed<Pluto>` as a distinct frame phantom.
+///
+/// # Example
+///
+/// ```
+/// use jeod_quantities::define_planet;
+/// use jeod_quantities::prelude::*;
+///
+/// define_planet!(Pluto);
+///
+/// // PlanetFixed<Pluto> is a distinct frame from PlanetFixed<Earth>.
+/// let _pluto_fixed: Position<PlanetFixed<Pluto>> = Qty3::zero();
+/// ```
+///
+/// # Sealing
+///
+/// Same sealing pattern as [`define_vehicle!`]: downstream crates cannot
+/// impl `Planet` directly, only via this macro.
+#[macro_export]
+macro_rules! define_planet {
+    ($name:ident) => {
+        #[derive(Debug, Clone, Copy)]
+        pub struct $name;
+        impl $crate::__macro_support::Sealed for $name {}
+        impl $crate::__macro_support::Planet for $name {
+            const NAME: &'static str = stringify!($name);
+        }
+    };
+}
+
+#[cfg(test)]
+mod macro_tests {
+    use crate::aliases::Position;
+    use crate::frame::{BodyFrame, PlanetFixed};
+    use crate::qty3::Qty3;
+
+    // Use the macros from inside this crate; they expand to
+    // `$crate::__macro_support::*` which resolves to
+    // `crate::__macro_support::*` here.
+    crate::define_vehicle!(Iss);
+    crate::define_vehicle!(Soyuz);
+    crate::define_planet!(Pluto);
+
+    #[test]
+    fn distinct_vehicle_phantoms_construct_and_default() {
+        let iss: Position<BodyFrame<Iss>> = Qty3::zero();
+        let soyuz: Position<BodyFrame<Soyuz>> = Qty3::zero();
+        // Both are valid Position values in their respective frames.
+        // Mixing them is a compile error — see the trybuild-style
+        // compile_fail doctests on the macros themselves.
+        assert_eq!(iss.raw_si(), glam::DVec3::ZERO);
+        assert_eq!(soyuz.raw_si(), glam::DVec3::ZERO);
+    }
+
+    #[test]
+    fn distinct_planet_phantom_constructs() {
+        let pluto: Position<PlanetFixed<Pluto>> = Qty3::zero();
+        assert_eq!(pluto.raw_si(), glam::DVec3::ZERO);
+    }
+
+    #[test]
+    fn vehicle_name_carries_through_typename() {
+        // `Frame::NAME` is the kind ("BodyFrame"); the per-vehicle
+        // identifier is recoverable via `type_name`. This is the
+        // documented escape hatch for diagnostics.
+        let n = std::any::type_name::<Iss>();
+        assert!(
+            n.ends_with("Iss"),
+            "expected type_name to end in Iss, got {n}"
+        );
+    }
 }

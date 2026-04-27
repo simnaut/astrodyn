@@ -80,3 +80,17 @@ pub use qty3::*;
 pub use quat::*;
 pub use time_scale::*;
 // `inertia::InertiaTensor` is re-exported via `aliases::*`.
+
+/// Internal re-exports used by the `define_vehicle!` / `define_planet!`
+/// macros to satisfy the sealed-trait bound at the downstream call site.
+///
+/// **Do not import items from this module directly.** It exists only so
+/// that macro expansions can reference `$crate::__macro_support::Sealed`
+/// without making the `sealed` module itself `pub`. Direct use bypasses
+/// the sealed pattern and breaks the project's frame/vehicle/planet
+/// catalog invariant.
+#[doc(hidden)] // allowed: macro infrastructure for define_vehicle!/define_planet!
+pub mod __macro_support {
+    pub use crate::frame::{Planet, Vehicle};
+    pub use crate::sealed::Sealed;
+}
