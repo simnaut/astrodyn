@@ -248,20 +248,6 @@ pub enum ExtrasComparator {
     SolarBeta,
 }
 
-impl Default for Tolerances {
-    /// Default tolerances broad enough to spot a regression while not
-    /// rejecting bit-stable runs. Concrete cases tighten these.
-    fn default() -> Self {
-        Self {
-            position_m: [1.0, 1.0, 1.0],
-            velocity_m_s: [1.0e-3, 1.0e-3, 1.0e-3],
-            quat_angle_rad: 1.0e-6,
-            ang_vel_rad_s: [1.0e-9, 1.0e-9, 1.0e-9],
-            extras: &[],
-        }
-    }
-}
-
 /// A single Tier 3 verification case.
 ///
 /// Phase 6 shipped the type; Phase 7+ populates `verification::*`

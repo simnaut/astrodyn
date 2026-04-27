@@ -369,8 +369,11 @@ impl GaussJacksonState {
         acc: DVec3,
         state: &mut TranslationalState,
     ) -> IntegratorResult {
+        let offset = self
+            .history_length
+            .checked_sub(self.order + 1)
+            .expect("integrate_bootstrap_step called before bootstrap primed history");
         let hist_len = self.history_length as isize;
-        let offset = (hist_len - (self.order as isize + 1)) as usize;
 
         let passed = self.integrate_gj(
             cycle_dyndt,

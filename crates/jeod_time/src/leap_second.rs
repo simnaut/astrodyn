@@ -100,6 +100,10 @@ impl LeapSecondTable {
     /// second: within the leap second, UTC rewinds by 1 s so the interval
     /// `23:59:59..24:00:00` is traversed twice (once labelled 23:59:59, once
     /// labelled 23:59:60).
+    ///
+    /// O(n) over the leap-second table (28 entries today, growing by 0–1 per
+    /// year). Fine for occasional UTC↔TAI conversions; do not call in tight
+    /// integrator inner loops — cache the result if you need it per step.
     fn find_index_for_tai(&self, tai_tjt: f64) -> usize {
         let last = self.entries.len() - 1;
         // Before the first entry: JEOD uses val_vec[0], so return index 0.
