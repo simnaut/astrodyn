@@ -109,8 +109,10 @@ fn log_orbit(
             continue;
         }
         if counter.0 == 1 || counter.0.is_multiple_of(100) {
-            let r_km = state.position.length() / 1000.0;
-            let v = state.velocity.length();
+            // `state.position.length()` returns a typed `Length`; `.value`
+            // reads the SI base (meters). Same for velocity.
+            let r_km: f64 = state.position.length().value / 1000.0;
+            let v: f64 = state.velocity.length().value;
             println!(
                 "step={:5}  t={:8.0}s  |r|={:8.1}km  |v|={:.1}m/s",
                 counter.0,

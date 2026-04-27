@@ -102,8 +102,8 @@ fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
 
     commands.spawn((
         Name::new("Satellite"),
-        TranslationalStateC(trans),
-        MassPropertiesC(MassProperties::new(mass_kg)),
+        TranslationalStateC::from(trans),
+        MassPropertiesC::from(MassProperties::new(mass_kg)),
         GravityAccelerationC::default(),
         TotalForceC::default(),
         FrameDerivativesC::default(),
@@ -133,9 +133,12 @@ fn print_state(
             continue;
         }
         if counter.0.is_multiple_of(100) || counter.0 <= 1 {
-            let v = state.velocity.length();
-            let alt_km = (state.position.length() - r_eq_earth_m()) / 1000.0;
-            let e_mag = eccentricity(MU_EARTH, state.position, state.velocity);
+            // `state.position` / `state.velocity` are typed; `.length().value`
+            // reads the SI base. The `eccentricity` helper still takes
+            // raw `DVec3`, so drop the phantom there too.
+            let v: f64 = state.velocity.length().value;
+            let alt_km: f64 = (state.position.length().value - r_eq_earth_m()) / 1000.0;
+            let e_mag = eccentricity(MU_EARTH, state.position.raw_si(), state.velocity.raw_si());
             println!(
                 "step={:5}  t={:8.0}s  alt={:7.1}km  v={:.1}m/s  e={:.2e}",
                 counter.0,

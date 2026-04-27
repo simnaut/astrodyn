@@ -39,13 +39,25 @@ fn step_bevy(app: &mut App, n: usize) {
 
 fn read_sixdof(world: &World, entity: Entity) -> SixDofState {
     SixDofState {
-        trans: world.get::<TranslationalStateC>(entity).unwrap().0,
-        rot: world.get::<RotationalStateC>(entity).unwrap().0,
+        trans: world
+            .get::<TranslationalStateC>(entity)
+            .unwrap()
+            .0
+            .to_untyped(),
+        rot: world
+            .get::<RotationalStateC>(entity)
+            .unwrap()
+            .0
+            .to_untyped(),
     }
 }
 
 fn read_trans(world: &World, entity: Entity) -> TranslationalState {
-    world.get::<TranslationalStateC>(entity).unwrap().0
+    world
+        .get::<TranslationalStateC>(entity)
+        .unwrap()
+        .0
+        .to_untyped()
 }
 
 fn assert_bits_eq(label: &str, component: &str, a: f64, b: f64) {
@@ -133,9 +145,9 @@ fn run_relative_parity(
     let veh_a = app
         .world_mut()
         .spawn((
-            TranslationalStateC(trans_a),
-            RotationalStateC(rot_a),
-            MassPropertiesC(dummy_mass),
+            TranslationalStateC::from(trans_a),
+            RotationalStateC::from(rot_a),
+            MassPropertiesC::from(dummy_mass),
             DynamicsConfigC(config_6dof),
             GravityControlsC(GravityControls::<Entity> { controls: vec![] }),
         ))
@@ -144,9 +156,9 @@ fn run_relative_parity(
     let veh_b = app
         .world_mut()
         .spawn((
-            TranslationalStateC(trans_b),
-            RotationalStateC(rot_b),
-            MassPropertiesC(dummy_mass),
+            TranslationalStateC::from(trans_b),
+            RotationalStateC::from(rot_b),
+            MassPropertiesC::from(dummy_mass),
             DynamicsConfigC(config_6dof),
             GravityControlsC(GravityControls::<Entity> { controls: vec![] }),
         ))
@@ -224,7 +236,11 @@ fn tier3_bevy_relative_ab_rot_ab_trans() {
         velocity: DVec3::new(0.0, 7668.56, 0.0),
     };
     let rot_a = RotationalState {
-        quaternion: JeodQuat::new(0.5_f64.sqrt(), 0.5, 0.0, 0.5_f64.sqrt() - 0.5),
+        quaternion: {
+            let mut q = JeodQuat::new(0.5_f64.sqrt(), 0.5, 0.0, 0.5_f64.sqrt() - 0.5);
+            q.normalize();
+            q
+        },
         ang_vel_body: DVec3::new(0.001, -0.0005, 0.001),
     };
     let trans_b = TranslationalState {
@@ -262,7 +278,11 @@ fn tier3_bevy_relative_a_rot_no_trans() {
         velocity: DVec3::new(0.0, 7668.56, 0.0),
     };
     let rot_a = RotationalState {
-        quaternion: JeodQuat::new(0.5_f64.sqrt(), 0.5, 0.0, 0.5_f64.sqrt() - 0.5),
+        quaternion: {
+            let mut q = JeodQuat::new(0.5_f64.sqrt(), 0.5, 0.0, 0.5_f64.sqrt() - 0.5);
+            q.normalize();
+            q
+        },
         ang_vel_body: DVec3::new(0.001, -0.0005, 0.001),
     };
     let rot_b = RotationalState {
@@ -284,7 +304,7 @@ fn run_lvlhrel_parity(label: &str, ref_trans: TranslationalState, subj_trans: Tr
     let ref_veh = app
         .world_mut()
         .spawn((
-            TranslationalStateC(ref_trans),
+            TranslationalStateC::from(ref_trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls::<Entity> { controls: vec![] }),
         ))
@@ -293,7 +313,7 @@ fn run_lvlhrel_parity(label: &str, ref_trans: TranslationalState, subj_trans: Tr
     let subj_veh = app
         .world_mut()
         .spawn((
-            TranslationalStateC(subj_trans),
+            TranslationalStateC::from(subj_trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls::<Entity> { controls: vec![] }),
         ))

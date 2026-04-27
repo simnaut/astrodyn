@@ -47,7 +47,7 @@ fn tier3_bevy_derived_states() {
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC(TranslationalState {
+            TranslationalStateC::from(TranslationalState {
                 position: sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -57,9 +57,9 @@ fn tier3_bevy_derived_states() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(iss_trans()),
-            RotationalStateC(tumble_rot()),
-            MassPropertiesC(iss_mass()),
+            TranslationalStateC::from(iss_trans()),
+            RotationalStateC::from(tumble_rot()),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -185,7 +185,7 @@ fn tier3_bevy_geodetic_derived_state() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(iss_trans()),
+            TranslationalStateC::from(iss_trans()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: false,
@@ -299,7 +299,7 @@ fn tier3_bevy_eccentric_derived_states() {
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC(TranslationalState {
+            TranslationalStateC::from(TranslationalState {
                 position: sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -309,9 +309,9 @@ fn tier3_bevy_eccentric_derived_states() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(ecc_trans),
-            RotationalStateC(tumble_rot()),
-            MassPropertiesC(iss_mass()),
+            TranslationalStateC::from(ecc_trans),
+            RotationalStateC::from(tumble_rot()),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -454,7 +454,7 @@ fn tier3_bevy_polar_geodetic() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(polar_trans),
+            TranslationalStateC::from(polar_trans),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: false,
@@ -562,7 +562,7 @@ fn tier3_bevy_equatorial_solar_beta() {
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC(TranslationalState {
+            TranslationalStateC::from(TranslationalState {
                 position: sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -572,9 +572,9 @@ fn tier3_bevy_equatorial_solar_beta() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(iss_trans()),
-            RotationalStateC(tumble_rot()),
-            MassPropertiesC(iss_mass()),
+            TranslationalStateC::from(iss_trans()),
+            RotationalStateC::from(tumble_rot()),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -652,7 +652,7 @@ fn run_euler_parity(label: &str, trans: TranslationalState, sequence: EulerSeque
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC(TranslationalState {
+            TranslationalStateC::from(TranslationalState {
                 position: sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -662,9 +662,9 @@ fn run_euler_parity(label: &str, trans: TranslationalState, sequence: EulerSeque
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(trans),
-            RotationalStateC(tumble_rot()),
-            MassPropertiesC(iss_mass()),
+            TranslationalStateC::from(trans),
+            RotationalStateC::from(tumble_rot()),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -749,7 +749,7 @@ fn run_lvlh_parity(label: &str, trans: TranslationalState) {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(trans),
+            TranslationalStateC::from(trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
@@ -842,7 +842,7 @@ fn run_ned_parity(label: &str, trans: TranslationalState, r_eq: f64, r_pol: f64)
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(trans),
+            TranslationalStateC::from(trans),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: false,
@@ -935,7 +935,7 @@ fn run_orbelem_parity(label: &str, trans: TranslationalState) {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(trans),
+            TranslationalStateC::from(trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
@@ -1053,7 +1053,7 @@ fn tier3_bevy_orbelem() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(ecc_trans),
+            TranslationalStateC::from(ecc_trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
@@ -1109,7 +1109,7 @@ fn tier3_bevy_solar_beta() {
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC(TranslationalState {
+            TranslationalStateC::from(TranslationalState {
                 position: sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -1119,7 +1119,7 @@ fn tier3_bevy_solar_beta() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(inc_trans),
+            TranslationalStateC::from(inc_trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],

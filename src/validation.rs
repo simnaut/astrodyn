@@ -153,14 +153,20 @@ pub fn validate_jeod_invariants(
             )
         });
 
-        // Delegate structural validation to jeod_sim
+        // Delegate structural validation to jeod_sim. The kernel
+        // signature still consumes the untyped forms; convert at the
+        // boundary. (Per-step calls in this validation system are rare
+        // — runs once at startup — so the per-call conversion cost is
+        // negligible compared to the typed-storage win.)
+        let mass_untyped = mass.map(|m| m.0.to_untyped());
+        let trans_untyped = trans_state.map(|t| t.0.to_untyped());
         let errors = jeod_sim::validate_body(
             config,
             &controls.0,
             grav_accel.is_some(),
-            mass.map(|m| &m.0),
+            mass_untyped.as_ref(),
             rot_state.is_some(),
-            trans_state.map(|t| &t.0),
+            trans_untyped.as_ref(),
             |source_entity| sources.get(source_entity).ok().map(|(_, source)| &source.0),
             plate_counts,
         );

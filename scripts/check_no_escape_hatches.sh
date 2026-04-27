@@ -42,13 +42,39 @@ set -euo pipefail
 marker_matches=$(grep -rEn '#\[doc\(hidden\)\]|tag_as_inertial!' crates/ src/ \
   | grep -v '// allowed:' || true)
 
-# ── Category 2: typed-quantity bypass constructors (banned in src/ only) ──
+# ── Category 2: typed-quantity bypass constructors (banned in src/systems.rs only) ──
 # `crates/**` is fully exempt — the typed siblings and their internal
 # `_unchecked` bridges all live there by construction.
-bypass_matches=$(grep -rEn 'from_untyped_unchecked|from_dmat3_unchecked|from_raw_si' \
-                       src/ \
-    | grep -v '// allowed:' \
-    || true)
+# `src/components.rs` is exempt — Bevy components' `From<Untyped>` impls
+# are the canonical insertion-time boundary; each one is the analogue
+# of jeod_dynamics's `from_untyped_unchecked`.
+# `src/lib.rs` is exempt — `spawn_bevy` performs insertion-time lifts
+# from `VehicleConfig` (still untyped in jeod_sim) to typed components.
+# Annotations document each per-step bypass in `src/systems.rs`. The
+# annotation may be on the same line as the bypass *or* on the
+# immediately-preceding line (multi-line generic patterns like
+# `TypedX::<...>::from_untyped_unchecked(\n  arg\n)` can't fit a
+# trailing comment on the matched line).
+#
+# Implementation: awk reads systems.rs, tracks whether a preceding
+# comment block (contiguous `//`-prefixed lines, allowing blank lines
+# between them) contained `// allowed:`. Reports any matching line
+# that has neither inline nor preceding `// allowed:` annotation.
+bypass_matches=$(awk '
+    # Track contiguous comment / blank context. Any `// allowed:` in
+    # the trailing comment block applies to the next non-comment line.
+    /\/\/ allowed:/ { prev_allowed = 1; next }
+    /^[[:space:]]*\/\// { next }   # comment line, dont reset
+    /^[[:space:]]*$/ { next }      # blank line, dont reset
+    /from_untyped_unchecked|from_dmat3_unchecked|from_raw_si/ {
+        if (prev_allowed) { prev_allowed = 0; next }
+        if ($0 ~ /\/\/ allowed:/) { prev_allowed = 0; next }
+        printf "src/systems.rs:%d: %s\n", NR, $0
+        prev_allowed = 0
+        next
+    }
+    { prev_allowed = 0 }
+' src/systems.rs)
 
 failed=0
 

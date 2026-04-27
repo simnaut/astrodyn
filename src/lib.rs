@@ -356,7 +356,7 @@ impl VehicleConfigBevyExt for jeod_sim::VehicleConfig {
         };
 
         let mut entity = commands.spawn((
-            components::TranslationalStateC(self.trans),
+            components::TranslationalStateC::from(self.trans),
             components::DynamicsConfigC(dynamics_config),
             components::GravityControlsC(entity_controls),
             components::IntegratorTypeC(self.integrator),
@@ -365,23 +365,26 @@ impl VehicleConfigBevyExt for jeod_sim::VehicleConfig {
             )),
         ));
         if let Some(rot) = self.rot {
-            entity.insert(components::RotationalStateC(rot));
+            entity.insert(components::RotationalStateC::from(rot));
         }
         if let Some(mass) = self.mass {
-            entity.insert(components::MassPropertiesC(mass));
+            entity.insert(components::MassPropertiesC::from(mass));
         }
         if self.external_force != glam::DVec3::ZERO {
-            // `VehicleConfig.external_force` is still untyped DVec3 in
-            // the runtime fluent builder API; #172 H1 follow-up will
-            // migrate VehicleConfig to typed external_force/torque so
-            // this lift becomes a direct move.
-            let f = jeod_sim::Force::<jeod_sim::Inertial>::from_raw_si(self.external_force); // allowed: #172 H1 insertion-time boundary
+            // `VehicleConfig.external_force` is still an untyped
+            // `DVec3` field on the `jeod_sim` runtime fluent builder
+            // API. The Bevy `ExternalForceC` is typed (`Force<Inertial>`),
+            // so this is a one-time insertion-time lift — not a per-step
+            // bypass. Migrating `VehicleConfig` itself to typed external
+            // fields is a deeper refactor inside `jeod_sim`; out of
+            // scope for the Bevy-adapter boundary that #172 H1 targets.
+            let f = jeod_sim::Force::<jeod_sim::Inertial>::from_raw_si(self.external_force); // allowed: #172 H1 insertion-time boundary (VehicleConfig still untyped)
             entity.insert(components::ExternalForceC(f));
         }
         if self.external_torque != glam::DVec3::ZERO {
             let t = jeod_sim::Torque::<jeod_sim::BodyFrame<jeod_sim::SelfRef>>::from_raw_si(
                 self.external_torque,
-            ); // allowed: #172 H1 insertion-time boundary
+            ); // allowed: #172 H1 insertion-time boundary (VehicleConfig still untyped)
             entity.insert(components::ExternalTorqueC(t));
         }
         if self.compute_gravity_gradient {

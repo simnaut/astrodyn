@@ -86,7 +86,7 @@ impl SunBundle {
         Self {
             name: Name::new("Sun"),
             marker: SunMarker,
-            trans: TranslationalStateC(state),
+            trans: TranslationalStateC::from(state),
         }
     }
 }
@@ -114,7 +114,7 @@ impl MoonBundle {
         Self {
             name: Name::new("Moon"),
             marker: MoonMarker,
-            trans: TranslationalStateC(state),
+            trans: TranslationalStateC::from(state),
         }
     }
 }

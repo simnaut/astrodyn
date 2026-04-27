@@ -74,7 +74,7 @@ fn build_app() -> (App, Entity, Entity) {
                 model: GravityModel::PointMass,
             }),
             SourceInertialPositionC::default(),
-            TranslationalStateC(TranslationalState::default()),
+            TranslationalStateC::from(TranslationalState::default()),
         ))
         .id();
 
@@ -87,9 +87,9 @@ fn build_app() -> (App, Entity, Entity) {
         .world_mut()
         .spawn((
             Name::new("Vehicle"),
-            TranslationalStateC(initial_trans()),
-            RotationalStateC(initial_rot()),
-            MassPropertiesC(mass_props()),
+            TranslationalStateC::from(initial_trans()),
+            RotationalStateC::from(initial_rot()),
+            MassPropertiesC::from(mass_props()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -116,8 +116,8 @@ fn run_bevy_steps(app: &mut App, vehicle: Entity) -> SixDofState {
     let trans = world.get::<TranslationalStateC>(vehicle).unwrap();
     let rot = world.get::<RotationalStateC>(vehicle).unwrap();
     SixDofState {
-        trans: trans.0,
-        rot: rot.0,
+        trans: trans.0.to_untyped(),
+        rot: rot.0.to_untyped(),
     }
 }
 
@@ -234,7 +234,7 @@ fn tier3_bevy_rkf45_matches_simulation_bit_identical() {
                 model: GravityModel::PointMass,
             }),
             SourceInertialPositionC::default(),
-            TranslationalStateC(TranslationalState::default()),
+            TranslationalStateC::from(TranslationalState::default()),
         ))
         .id();
 
@@ -246,9 +246,9 @@ fn tier3_bevy_rkf45_matches_simulation_bit_identical() {
         .world_mut()
         .spawn((
             Name::new("Vehicle"),
-            TranslationalStateC(initial_trans()),
-            RotationalStateC(initial_rot()),
-            MassPropertiesC(mass_props()),
+            TranslationalStateC::from(initial_trans()),
+            RotationalStateC::from(initial_rot()),
+            MassPropertiesC::from(mass_props()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,

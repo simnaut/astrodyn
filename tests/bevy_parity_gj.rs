@@ -44,7 +44,11 @@ fn step_bevy(app: &mut App, n: usize, dt: f64) {
 }
 
 fn read_trans(world: &World, entity: Entity) -> TranslationalState {
-    world.get::<TranslationalStateC>(entity).unwrap().0
+    world
+        .get::<TranslationalStateC>(entity)
+        .unwrap()
+        .0
+        .to_untyped()
 }
 
 fn assert_bits_eq(label: &str, component: &str, a: f64, b: f64) {
@@ -119,7 +123,7 @@ fn run_gj_parity(
         .world_mut()
         .spawn((
             DynamicsConfigC::default(),
-            TranslationalStateC(trans),
+            TranslationalStateC::from(trans),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
             }),

@@ -2,37 +2,135 @@ use bevy::prelude::*;
 use glam::DVec3;
 use jeod_sim::{
     Angle, BodyFrame, DragConfig, DragConfigTyped, DynamicsConfig, FrameDerivatives,
-    FrameTransform, GravityAcceleration, GravityControls, GravitySource, Inertial, MassProperties,
-    PlanetFixed, PlanetShape, Position, Ratio, RotationalState, SelfPlanet, SelfRef,
-    StructuralFrame, Torque, TotalForce, TranslationalState, Velocity,
+    FrameDerivativesTyped, FrameTransform, GravityAcceleration, GravityAccelerationTyped,
+    GravityControls, GravitySource, Inertial, MassProperties, MassPropertiesTyped, PlanetFixed,
+    PlanetShape, Position, Ratio, RotationalState, RotationalStateTyped, SelfPlanet, SelfRef,
+    StructuralFrame, Torque, TotalForce, TotalForceTyped, TranslationalState,
+    TranslationalStateTyped, Velocity,
 };
 
 // ── Dynamics ──
+//
+// Spatial Components wrap the **typed siblings** from `jeod_dynamics`,
+// not the raw untyped storage. The frame phantoms (`Inertial`,
+// `BodyFrame<SelfRef>`, `StructuralFrame<SelfRef>`) are baked into the
+// component at the type level, so systems read typed values directly
+// without the per-step `from_raw_si` lifts that the audit's #172 H1
+// flagged as the load-bearing failure mode of the typed-quantity
+// facade. Mission code that mutates `c.0.position` directly via raw
+// `DVec3` is now a compile error — the typed accessor `Position<Inertial>`
+// surfaces the convention as a type, not just a comment.
+//
+// `From<Untyped>` impls are provided on every spatial Component so
+// existing test/example code that constructs `TranslationalStateC(state)`
+// from an untyped `TranslationalState` switches to
+// `TranslationalStateC::from(state)` without other changes.
 
 // JEOD_INV: DB.24 — default integrated_frame is composite_body (we integrate composite_body state)
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Default, Reflect)]
 #[reflect(opaque, Component)]
-pub struct TranslationalStateC(pub TranslationalState);
+pub struct TranslationalStateC(pub TranslationalStateTyped<Inertial>);
+
+impl TranslationalStateC {
+    /// Wrap an untyped [`TranslationalState`] as the typed Bevy
+    /// Component. The frame is asserted to be `Inertial` — the only
+    /// integration frame the Bevy adapter currently supports.
+    #[inline]
+    pub fn from_untyped(state: TranslationalState) -> Self {
+        Self(TranslationalStateTyped::<Inertial>::from_untyped_unchecked(
+            &state,
+        ))
+    }
+}
+
+impl From<TranslationalState> for TranslationalStateC {
+    #[inline]
+    fn from(state: TranslationalState) -> Self {
+        Self::from_untyped(state)
+    }
+}
 
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
 #[reflect(opaque, Component)]
-pub struct RotationalStateC(pub RotationalState);
+pub struct RotationalStateC(pub RotationalStateTyped<SelfRef>);
+
+impl RotationalStateC {
+    /// Wrap an untyped [`RotationalState`] as the typed Bevy Component.
+    /// The vehicle phantom is `SelfRef` (the Bevy adapter's wildcard
+    /// "this entity's vehicle" tag). Panics if the quaternion is not
+    /// unit-norm within `NormalizedQuat::DEFAULT_TOLERANCE` (1e-12) —
+    /// the typed `RotationalStateTyped` carries a `NormalizedQuat`
+    /// witness, so callers must pass a normalized input. Use
+    /// `JeodQuat::normalize()` (or construct via the orbital-init
+    /// helpers, which guarantee unit-norm) before constructing.
+    #[inline]
+    pub fn from_untyped(state: RotationalState) -> Self {
+        Self(RotationalStateTyped::<SelfRef>::from_untyped_unchecked(
+            &state,
+        ))
+    }
+}
+
+impl From<RotationalState> for RotationalStateC {
+    #[inline]
+    fn from(state: RotationalState) -> Self {
+        Self::from_untyped(state)
+    }
+}
 
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
 #[reflect(opaque, Component)]
-pub struct MassPropertiesC(pub MassProperties);
+pub struct MassPropertiesC(pub MassPropertiesTyped<SelfRef>);
+
+impl MassPropertiesC {
+    /// Wrap an untyped [`MassProperties`] as the typed Bevy Component.
+    /// The inertia tensor is asserted to be in `BodyFrame<SelfRef>`
+    /// and the center-of-mass position in `StructuralFrame<SelfRef>`.
+    #[inline]
+    pub fn from_untyped(mp: MassProperties) -> Self {
+        Self(MassPropertiesTyped::<SelfRef>::from_untyped_unchecked(&mp))
+    }
+}
+
+impl From<MassProperties> for MassPropertiesC {
+    #[inline]
+    fn from(mp: MassProperties) -> Self {
+        Self::from_untyped(mp)
+    }
+}
 
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Default, Reflect)]
 #[reflect(opaque, Component)]
-pub struct GravityAccelerationC(pub GravityAcceleration);
+pub struct GravityAccelerationC(pub GravityAccelerationTyped<Inertial>);
+
+impl From<GravityAcceleration> for GravityAccelerationC {
+    #[inline]
+    fn from(g: GravityAcceleration) -> Self {
+        Self(GravityAccelerationTyped::<Inertial>::from_untyped_unchecked(&g))
+    }
+}
 
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Default, Reflect)]
 #[reflect(opaque, Component)]
-pub struct TotalForceC(pub TotalForce);
+pub struct TotalForceC(pub TotalForceTyped<SelfRef, Inertial>);
+
+impl From<TotalForce> for TotalForceC {
+    #[inline]
+    fn from(t: TotalForce) -> Self {
+        Self(TotalForceTyped::<SelfRef, Inertial>::from_untyped_unchecked(&t))
+    }
+}
 
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Default, Reflect)]
 #[reflect(opaque, Component)]
-pub struct FrameDerivativesC(pub FrameDerivatives);
+pub struct FrameDerivativesC(pub FrameDerivativesTyped<Inertial, SelfRef>);
+
+impl From<FrameDerivatives> for FrameDerivativesC {
+    #[inline]
+    fn from(d: FrameDerivatives) -> Self {
+        Self(FrameDerivativesTyped::<Inertial, SelfRef>::from_untyped_unchecked(&d))
+    }
+}
 
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
 #[reflect(opaque, Component)]

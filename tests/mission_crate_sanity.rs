@@ -80,8 +80,11 @@ fn mission_crate_sanity_iss_one_hour() {
         .world()
         .get::<TranslationalStateC>(vehicle)
         .expect("vehicle has TranslationalStateC after propagation");
-    let r_mag = state.position.length();
-    let v_mag = state.velocity.length();
+    // `state.position` / `state.velocity` are typed; `.length()` returns
+    // a `Quantity` (Length / Velocity). Drop to f64 SI base for the
+    // numeric range checks below.
+    let r_mag: f64 = state.position.length().value;
+    let v_mag: f64 = state.velocity.length().value;
 
     // ISS reference orbit: ~408 km altitude → r ≈ 6.778 Mm.
     // Energy conservation under point-mass gravity holds r within a

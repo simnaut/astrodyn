@@ -10,7 +10,7 @@
 //! - `.magnitude()` returns the scalar magnitude of dimension `D`.
 
 use core::marker::PhantomData;
-use core::ops::{Add, Div, Mul, Neg, Sub};
+use core::ops::{Add, AddAssign, Div, Mul, Neg, Sub, SubAssign};
 
 use uom::si::{Dimension, Quantity, ISQ, SI};
 use uom::typenum::{Diff, Integer, Sum};
@@ -66,6 +66,42 @@ where
     #[inline]
     fn neg(self) -> Self::Output {
         Qty3::new(-self.x, -self.y, -self.z)
+    }
+}
+
+// ---- AddAssign / SubAssign ----
+//
+// Same frame-compatibility check as `Add` / `Sub`. Required so the
+// idiomatic `total.force += contribution` accumulator pattern works on
+// typed components without first dropping to `raw_si()`. Without these,
+// systems would either revert to the raw representation or write the
+// less-readable `total.force = total.force + ...` form.
+
+impl<D: ?Sized + Dimension, Fl: Frame, Fr: Frame> AddAssign<Qty3<D, Fr>> for Qty3<D, Fl>
+where
+    (): CompatibleFrames<Fl, Fr>,
+    Quantity<D, SI<f64>, f64>: Add<Output = Quantity<D, SI<f64>, f64>>,
+{
+    #[inline]
+    fn add_assign(&mut self, rhs: Qty3<D, Fr>) {
+        // Same frame-bound trick as `Add` — go through raw_si to bypass
+        // the nominal Fl/Fr type distinction the compiler still sees.
+        let lhs = self.raw_si();
+        let rhs = rhs.raw_si();
+        *self = Qty3::from_raw_si(lhs + rhs);
+    }
+}
+
+impl<D: ?Sized + Dimension, Fl: Frame, Fr: Frame> SubAssign<Qty3<D, Fr>> for Qty3<D, Fl>
+where
+    (): CompatibleFrames<Fl, Fr>,
+    Quantity<D, SI<f64>, f64>: Sub<Output = Quantity<D, SI<f64>, f64>>,
+{
+    #[inline]
+    fn sub_assign(&mut self, rhs: Qty3<D, Fr>) {
+        let lhs = self.raw_si();
+        let rhs = rhs.raw_si();
+        *self = Qty3::from_raw_si(lhs - rhs);
     }
 }
 
@@ -334,6 +370,14 @@ impl<D: ?Sized + Dimension, F: Frame> Qty3<D, F> {
             units: PhantomData,
             value: raw,
         }
+    }
+
+    /// Alias for [`Self::magnitude`] matching `glam::DVec3::length`.
+    /// Mission code that switches between raw `DVec3` and typed `Qty3`
+    /// can use the same name on either side.
+    #[inline]
+    pub fn length(&self) -> Quantity<D, SI<f64>, f64> {
+        self.magnitude()
     }
 }
 

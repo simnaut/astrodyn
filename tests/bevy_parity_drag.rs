@@ -59,9 +59,9 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(iss_trans()),
-            RotationalStateC(tumble_rot()),
-            MassPropertiesC(iss_mass()),
+            TranslationalStateC::from(iss_trans()),
+            RotationalStateC::from(tumble_rot()),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -147,9 +147,9 @@ fn tier3_bevy_constant_density_drag_sixdof() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(iss_trans()),
-            RotationalStateC(tumble_rot()),
-            MassPropertiesC(iss_mass()),
+            TranslationalStateC::from(iss_trans()),
+            RotationalStateC::from(tumble_rot()),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -241,9 +241,9 @@ fn tier3_bevy_met_atmosphere_drag_sixdof() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(iss_trans()),
-            RotationalStateC(tumble_rot()),
-            MassPropertiesC(iss_mass()),
+            TranslationalStateC::from(iss_trans()),
+            RotationalStateC::from(tumble_rot()),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -337,9 +337,9 @@ fn tier3_bevy_met_run5a() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(iss_trans()),
-            RotationalStateC(tumble_rot()),
-            MassPropertiesC(iss_mass()),
+            TranslationalStateC::from(iss_trans()),
+            RotationalStateC::from(tumble_rot()),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
@@ -445,9 +445,9 @@ fn tier3_bevy_drag_run6b() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC(iss_trans()),
-            RotationalStateC(tumble_rot()),
-            MassPropertiesC(iss_mass()),
+            TranslationalStateC::from(iss_trans()),
+            RotationalStateC::from(tumble_rot()),
+            MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: true,
