@@ -2,7 +2,8 @@
 //!
 //! ```
 //! use jeod_sim::recipes::scenarios::apollo;
-//! let sb = apollo::apollo_translunar();
+//! use jeod_sim::recipes::Mission;
+//! let sb = Mission::apollo_translunar().into_builder();
 //! assert_eq!(sb.sources.len(), 3);
 //! assert_eq!(apollo::EARTH_IDX, 0);
 //! assert_eq!(apollo::MOON_IDX, 1);

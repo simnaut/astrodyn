@@ -1,13 +1,14 @@
-//! Pre-composed [`SimulationBuilder`](crate::SimulationBuilder)s for
-//! common reference scenarios.
+//! Per-scenario `SimulationBuilder` constructors.
 //!
-//! Each scenario function returns a fully-configured builder. Mission
-//! code adds an adapter-specific terminal step:
+//! These submodules host the per-scenario physics setup. The user-facing
+//! catalog is [`crate::recipes::Mission`] — mission code should construct
+//! scenarios as `Mission::iss_leo().into_builder()` rather than calling
+//! into these submodules directly.
 //!
 //! ```ignore
 //! use jeod_runner::SimulationBuilderExt;
-//! use jeod_sim::recipes::scenarios;
-//! let sim = scenarios::iss_leo().build()?;
+//! use jeod_sim::recipes::Mission;
+//! let sim = Mission::iss_leo().into_builder().build()?;
 //! ```
 //!
 //! Scenarios that mirror JEOD verification simulations (Tier 3
@@ -26,11 +27,3 @@ pub mod geostationary;
 pub mod iss_leo;
 pub mod mars_orbit;
 pub mod mercury;
-
-pub use apollo::apollo_translunar;
-pub use clementine_lunar::clementine_lunar;
-pub use earth_moon::earth_moon_translunar;
-pub use geostationary::geo;
-pub use iss_leo::{iss_leo, iss_leo_drag};
-pub use mars_orbit::mars_orbit;
-pub use mercury::mercury_relativistic;

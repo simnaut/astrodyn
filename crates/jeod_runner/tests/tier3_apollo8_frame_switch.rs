@@ -264,7 +264,7 @@ fn load_reference_sixdof(filename: &str) -> Vec<RefState> {
 // non-recipe: SIM_verif_frame_switch uses the Apollo 8 trans-lunar-coast
 // state vector (Dec 23 1968 19:38 UTC) with vehicle.py-specific inertia in
 // slug-ft² and CoM offset in inches. This is materially different from
-// `scenarios::apollo_translunar()` (J2000 epoch, 200 km parking orbit,
+// `Mission::apollo_translunar()` (J2000 epoch, 200 km parking orbit,
 // generic CSM mass) — substituting would change what's being verified.
 #[test]
 fn tier3_apollo8_eci_integ() {

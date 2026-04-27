@@ -1,8 +1,8 @@
 //! Mercury / GR-perihelion-advance scenario.
 //!
 //! ```
-//! use jeod_sim::recipes::scenarios;
-//! let sb = scenarios::mercury_relativistic();
+//! use jeod_sim::recipes::Mission;
+//! let sb = Mission::mercury_relativistic().into_builder();
 //! assert_eq!(sb.bodies.len(), 1);
 //! ```
 

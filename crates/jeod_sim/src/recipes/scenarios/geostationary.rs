@@ -1,8 +1,8 @@
 //! Geostationary orbit scenario.
 //!
 //! ```
-//! use jeod_sim::recipes::scenarios;
-//! let sb = scenarios::geo();
+//! use jeod_sim::recipes::Mission;
+//! let sb = Mission::geo().into_builder();
 //! assert_eq!(sb.bodies.len(), 1);
 //! ```
 

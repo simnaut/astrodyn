@@ -9,7 +9,7 @@
 //!
 //! - [`Simulation::from_builder`] — inherent constructor on `Simulation`.
 //! - [`SimulationBuilderExt::build`] — extension trait that lets
-//!   `scenarios::iss_leo().build()?` keep its fluent ergonomics.
+//!   `Mission::iss_leo().into_builder().build()?` read naturally.
 
 use jeod_sim::simulation_builder::SimulationBuilder;
 
@@ -84,7 +84,7 @@ impl Simulation {
 ///
 /// Mission code typically imports this via `jeod_runner::prelude::*` (or
 /// directly via `use jeod_runner::SimulationBuilderExt;`) so
-/// `scenarios::iss_leo().build()?` reads naturally. Callers that prefer the
+/// `Mission::iss_leo().into_builder().build()?` reads naturally. Callers that prefer the
 /// explicit form can use [`Simulation::from_builder`] directly.
 pub trait SimulationBuilderExt: Sized {
     /// Build and validate the simulation. Returns `Err` on validation

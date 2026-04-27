@@ -8,10 +8,12 @@
 //!   [`atmosphere`], [`epoch`], [`vehicle`], [`orbital_elements`],
 //!   [`constants`]): named typed primitives that mission code combines
 //!   freely.
-//! - **Scenarios** ([`scenarios`]): pre-composed
-//!   [`SimulationBuilder`](crate::SimulationBuilder)s for common
-//!   reference setups (`scenarios::iss_leo()`,
-//!   `scenarios::clementine_lunar()`, …). Each scenario is the
+//! - **Missions** ([`Mission`]): first-class catalog of pre-composed
+//!   reference scenarios. `Mission::iss_leo()`,
+//!   `Mission::clementine_lunar()`, … each return a typed `Mission`
+//!   that materializes into a
+//!   [`SimulationBuilder`](crate::SimulationBuilder) via
+//!   [`into_builder`](Mission::into_builder). Each scenario is the
 //!   smallest composition of building blocks plus vehicle config that
 //!   matches a JEOD verification simulation.
 //! - **Verification** ([`verification`]):
@@ -24,12 +26,12 @@
 //! ```ignore
 //! // Standalone runner
 //! use jeod_runner::SimulationBuilderExt;          // .build() terminal
-//! use jeod_sim::recipes::scenarios;
-//! let sim = scenarios::iss_leo().build()?;
+//! use jeod_sim::recipes::Mission;
+//! let sim = Mission::iss_leo().into_builder().build()?;
 //!
 //! // Bevy adapter (Phase 9)
 //! use bevy_jeod::prelude::*;                      // .spawn() terminal
-//! commands.spawn_scenario(scenarios::iss_leo());
+//! commands.spawn_scenario(Mission::iss_leo().into_builder());
 //! ```
 //!
 //! Recipes that depend on JEOD source data (`$JEOD_HOME/...`) panic
@@ -42,9 +44,12 @@ pub mod earth;
 pub mod epoch;
 pub mod helpers;
 pub mod mars;
+pub mod mission;
 pub mod moon;
 pub mod orbital_elements;
 pub mod scenarios;
 pub mod sun;
 pub mod vehicle;
 pub mod verification;
+
+pub use mission::Mission;

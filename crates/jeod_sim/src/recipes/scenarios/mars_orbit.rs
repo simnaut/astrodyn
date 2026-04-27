@@ -1,8 +1,8 @@
 //! Mars-orbit scenario.
 //!
 //! ```
-//! use jeod_sim::recipes::scenarios;
-//! let sb = scenarios::mars_orbit();
+//! use jeod_sim::recipes::Mission;
+//! let sb = Mission::mars_orbit().into_builder();
 //! assert_eq!(sb.sources.len(), 2);
 //! ```
 
