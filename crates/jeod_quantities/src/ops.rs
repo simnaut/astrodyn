@@ -443,8 +443,7 @@ mod tests {
     }
 
     /// `a += b` and `a -= b` must produce the same value as `a + b` and
-    /// `a - b` respectively (regression for the `AddAssign`/`SubAssign`
-    /// impls added in PR #184).
+    /// `a - b` respectively.
     #[test]
     fn add_assign_sub_assign_match_add_sub() {
         let a0 = pos_inertial(1.0, 2.0, 3.0);
