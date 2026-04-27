@@ -16,7 +16,7 @@
 //! Override the epoch:
 //! ```
 //! use jeod_sim::recipes::{epoch, Mission};
-//! let sb = Mission::iss_leo().with_time(epoch::j2000()).into_builder();
+//! let sb = Mission::iss_leo().with_time(epoch::clementine_1994()).into_builder();
 //! ```
 
 use crate::recipes::scenarios;
