@@ -31,7 +31,7 @@ use jeod_sim::{
     coefficients, default_leap_second_table, Ephemeris, EphemerisBody, GravityControl,
     GravityControls, GravityModel, GravitySource, GravitySourceEntry, MassProperties,
     RotationModel, RotationalState, SimulationBuilder, SimulationTime, TranslationalState,
-    VehicleConfig, EARTH,
+    VehicleConfig,
 };
 use uom::si::f64::Time;
 use uom::si::time::second;
@@ -187,8 +187,14 @@ fn build_torque_simple(init: &InitialConditions, cfg: RunConfig) -> SimulationBu
     );
     let sun = sb.add_source("Sun", third_body(mu_sun, sun_t0.raw_si()));
     let moon = sb.add_source("Moon", third_body(mu_moon, moon_t0.raw_si()));
-    debug_assert_eq!(sun, SUN_IDX);
-    debug_assert_eq!(moon, MOON_IDX);
+    debug_assert_eq!(
+        sun, SUN_IDX,
+        "Sun source index drifted; update SUN_IDX or keep add_source order in sync with pre_step"
+    );
+    debug_assert_eq!(
+        moon, MOON_IDX,
+        "Moon source index drifted; update MOON_IDX or keep add_source order in sync with pre_step"
+    );
 
     let mut earth_ctrl = if cfg.earth_nonspherical {
         GravityControl::new_nonspherical(earth, 20, 20, cfg.earth_gradient)
@@ -226,9 +232,6 @@ fn build_torque_simple(init: &InitialConditions, cfg: RunConfig) -> SimulationBu
         ..Default::default()
     });
 
-    // Earth used by the recipe but not surfaced; quiet the unused-value
-    // warning without changing the source-add order.
-    let _ = EARTH;
     sb
 }
 
