@@ -104,6 +104,10 @@ files. See [`CLAUDE.md`](CLAUDE.md) for the full build and test workflow.
 
 ## Documentation
 
+The [project wiki](https://github.com/simnaut/bevy_jeod/wiki) hosts the
+JEOD↔bevy_jeod capability matrix, per-SIM coverage map, and pre-release
+audit findings. The repo carries the source-coupled docs:
+
 - [`STRATEGY.md`](STRATEGY.md) — architecture and phase history.
 - [`docs/type_system.md`](docs/type_system.md) — typed quantities,
   phantom-tag pattern, adding new dimensions.
