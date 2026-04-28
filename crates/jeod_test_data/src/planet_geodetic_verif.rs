@@ -3,7 +3,7 @@
 //! Parses the three explicit test points defined in
 //! `models/utils/planet_fixed/planet_fixed_posn/verif/SIM_PFIXPOSN_VERIF/SET_test/RUN_pfixposn_test/input.py`.
 //!
-//! The JEOD SIM exercises [`PlanetFixedPosition`] using the WGS84 default
+//! The JEOD SIM exercises `PlanetFixedPosition` using the WGS84 default
 //! Earth shape (`r_eq = 6378.137 km`, `flat_inv = 298.257223563`, set in
 //! `environment/planet/data/include/earth.hh`). It triggers three
 //! `add_read` snapshots:
@@ -163,11 +163,12 @@ mod tests {
     #[test]
     fn loads_three_cases_from_jeod_source() {
         let root = jeod_path();
-        if !root.exists() {
-            // Loader is exercised by the Tier 2 test harness; this guard
-            // mirrors the convention used by other jeod_test_data loaders.
-            return;
-        }
+        assert!(
+            root.exists(),
+            "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH \
+             (see CLAUDE.md \"Environment Setup\").",
+            root.display(),
+        );
         let cases = load_planet_fixed_verif_cases(&root);
         assert_eq!(cases.len(), 3, "SIM_PFIXPOSN_VERIF defines three reads");
 

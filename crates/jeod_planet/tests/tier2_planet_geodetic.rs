@@ -158,9 +158,29 @@ fn tier2_planet_geodetic_round_trip_sim_pfixposn_seeds() {
                 max.record_cart(err_sph, err_geo);
 
                 // Also confirm: a second forward into the same lat/lon/alt
-                // is bit-stable (the iteration converged).
+                // is convergent — the iterative `cartesian_to_geodetic`
+                // solver returns the same lat/lon/alt (within the kernel's
+                // own tolerance) when re-fed its own Cartesian output.
+                // We compare on a tolerance, not bit-exact, because the
+                // second pass starts from `back_geo` which already carries
+                // ULP-level round-trip error from pass one. Tolerances
+                // mirror those used in `jeod_math/src/geodetic.rs` tests.
                 let (back2, geo2) = geodetic_round_trip(back_geo);
-                assert_eq!(geo2, geo, "case {idx} (cart): geodetic not idempotent");
+                let dlat = (geo2.latitude - geo.latitude).abs();
+                let dlon = (geo2.longitude - geo.longitude).abs();
+                let dalt = (geo2.altitude - geo.altitude).abs();
+                assert!(
+                    dlat < 1e-12,
+                    "case {idx} (cart): geodetic lat not idempotent (Δ = {dlat:.3e} rad)",
+                );
+                assert!(
+                    dlon < 1e-12,
+                    "case {idx} (cart): geodetic lon not idempotent (Δ = {dlon:.3e} rad)",
+                );
+                assert!(
+                    dalt < 1e-6,
+                    "case {idx} (cart): geodetic alt not idempotent (Δ = {dalt:.3e} m)",
+                );
                 assert!(
                     (back2 - back_geo).length() < 1e-6,
                     "case {idx} (cart): second round-trip drifted",
