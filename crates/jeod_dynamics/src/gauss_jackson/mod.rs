@@ -255,12 +255,12 @@ impl GaussJacksonState {
         // arguments must be finite and non-negative for the predictor /
         // corrector arithmetic to remain meaningful.
         assert!(
-            sim_dt.is_finite(),
-            "GaussJackson::integrate requires a finite sim_dt, got {sim_dt}"
+            sim_dt.is_finite() && sim_dt >= 0.0,
+            "GaussJackson::integrate requires a finite, non-negative sim_dt, got {sim_dt}"
         );
         assert!(
-            time_scale_factor.is_finite(),
-            "GaussJackson::integrate requires a finite time_scale_factor, got {time_scale_factor}"
+            time_scale_factor.is_finite() && time_scale_factor >= 0.0,
+            "GaussJackson::integrate requires a finite, non-negative time_scale_factor, got {time_scale_factor}"
         );
         self.current_stage += 1;
         let stage = self.current_stage;

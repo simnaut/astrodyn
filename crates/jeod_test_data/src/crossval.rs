@@ -28,6 +28,11 @@ fn output_dir() -> PathBuf {
 /// Estimate the reference trajectory's nominal sample cadence as the median
 /// gap between consecutive timestamps. Falls back to `1.0` for trajectories
 /// shorter than two samples (alignment is trivial in that case anyway).
+///
+/// For an odd number of gaps the median is the unique middle element. For an
+/// even number it is the mean of the two middle elements — picking the
+/// upper-middle naively would bias toward the larger gap and loosen the
+/// alignment tolerance for non-uniform sampling.
 fn reference_timestep(reference: &[StateLog]) -> f64 {
     if reference.len() < 2 {
         return 1.0;
@@ -37,8 +42,14 @@ fn reference_timestep(reference: &[StateLog]) -> f64 {
         .map(|w| (w[1].time - w[0].time).abs())
         .collect();
     gaps.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let mid = gaps.len() / 2;
-    gaps[mid].max(f64::EPSILON)
+    let n = gaps.len();
+    let median = if n % 2 == 1 {
+        gaps[n / 2]
+    } else {
+        // Average of the two middle elements.
+        (gaps[n / 2 - 1] + gaps[n / 2]) * 0.5
+    };
+    median.max(f64::EPSILON)
 }
 
 /// A single state snapshot at one timestep.
