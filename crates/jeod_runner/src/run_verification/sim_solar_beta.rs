@@ -215,12 +215,12 @@ const SIM_SOLAR_BETA_DIR: &str = "models/dynamics/derived_state/verif/SIM_SolarB
 // (TT JD passed to ephemeris queries as a TDB approximation, TAI TJT for
 // SimulationTime::new) are computed from one canonical UTC anchor + the
 // 1991 TAI-UTC offset so a future change in either applies to both
-// consumers automatically.
+// consumers automatically. The TT-TAI offset is shared with the
+// `jeod_time` epoch module so the time arithmetic here cannot drift from
+// the canonical definition.
 const SIM_SOLAR_BETA_EPOCH_UTC_JD: f64 = 2_448_257.5;
 /// TAI-UTC offset at 1991-01-01 (seconds).
 const SIM_SOLAR_BETA_TAI_UTC_S: f64 = 26.0;
-/// TT − TAI offset (constant; defined by the IAU TT redefinition).
-const SIM_SOLAR_BETA_TT_TAI_S: f64 = 32.184;
 
 /// SIM_SolarBeta epoch in **TT JD**, passed to
 /// [`Ephemeris::get_earth_centered_state_typed`] as a TDB approximation.
@@ -239,9 +239,10 @@ const SIM_SOLAR_BETA_TT_TAI_S: f64 = 32.184;
 ///   physical-correctness improvement and refreeze if desired; this
 ///   constant is kept stable for now.
 ///
-/// Computed as JD(TT) = JD(UTC) + (TAI-UTC + TT-TAI) / 86 400.
+/// Computed as JD(TT) = JD(UTC) + (TAI-UTC + TT-TAI) / 86 400, where
+/// TT-TAI is the canonical [`jeod_time::TAI_TT_OFFSET`] (= 32.184 s).
 const SIM_SOLAR_BETA_EPOCH_TT_JD: f64 =
-    SIM_SOLAR_BETA_EPOCH_UTC_JD + (SIM_SOLAR_BETA_TAI_UTC_S + SIM_SOLAR_BETA_TT_TAI_S) / 86_400.0;
+    SIM_SOLAR_BETA_EPOCH_UTC_JD + (SIM_SOLAR_BETA_TAI_UTC_S + jeod_time::TAI_TT_OFFSET) / 86_400.0;
 
 /// SIM_SolarBeta epoch as TAI TJT (the form `SimulationTime::new` consumes).
 /// = MJD(TAI) − 40 000 = (JD(UTC) + TAI-UTC/86 400 − 2 400 000.5) − 40 000.
