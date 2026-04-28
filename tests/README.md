@@ -1,9 +1,10 @@
 # Tests
 
-This directory holds workspace-root integration tests. Per-crate unit tests
-live under each crate's own `tests/` directory. This README documents the
-naming conventions, the three-tier verification model, and the
-`CrossvalReport` / baseline workflows used by Tier 3 tests.
+This directory holds workspace-root integration tests. Per-crate integration
+tests live under each crate's own `tests/` directory; per-crate unit tests
+live alongside the code they exercise in `#[cfg(test)] mod tests`. This
+README documents the naming conventions, the three-tier verification model,
+and the `CrossvalReport` / baseline workflows used by Tier 3 tests.
 
 For tolerance mechanics and CI lane definitions, see CLAUDE.md
 "Cross-validation tolerances" and "Test tiers and CI" — this file does not
@@ -21,8 +22,9 @@ Match exactly:
   against a JEOD Trick CSV. The function-name prefix is the hook for CI's
   slow lane (`cargo nextest run -E 'test(tier3_)'`). E.g.
   `crates/jeod_runner/tests/tier3_apollo8_frame_switch.rs`.
-- `bevy_parity_*.rs` (workspace root) — Bevy adapter must reproduce the
-  pure-Rust `jeod_sim` numbers bit-for-bit.
+- `bevy_parity*.rs` (workspace root) — Bevy adapter must reproduce the
+  pure-Rust `jeod_sim` numbers bit-for-bit. Includes the umbrella
+  `bevy_parity.rs` and per-feature files like `bevy_parity_drag.rs`.
 - `integration_*.rs` and other workspace-root files
   (`mission_crate_sanity.rs`, `validation_added_trigger.rs`,
   `invariant_coverage.rs`) — cross-crate behavior.
