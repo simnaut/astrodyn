@@ -348,6 +348,8 @@ filtering. CI (`.github/workflows/ci.yml`) uses this:
 When adding new Tier 3 tests, always prefix the function name with `tier3_` so
 CI filtering picks it up automatically.
 
+See `tests/README.md` for tier conventions and the tolerance/baseline workflow.
+
 ## Generating Tier 3 Reference Data (Docker)
 
 JEOD verification sims run inside a Rocky 9 container with Trick 25 + JEOD 5.4.
