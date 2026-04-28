@@ -242,6 +242,8 @@ fn tier3_simulation_earth_moon_clem() {
             time: record.time,
             position: Some(body.trans.position),
             velocity: Some(body.trans.velocity),
+            acceleration: Some(body.trans_accel),
+            ang_accel: body.rot_accel,
             ..Default::default()
         });
     }
