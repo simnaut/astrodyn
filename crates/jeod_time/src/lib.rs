@@ -28,8 +28,9 @@
 //!   one of JEOD's `TimeConverter_*` classes. GMST in particular drives
 //!   Earth's body-fixed rotation in `jeod_frames`.
 //!
-//! JEOD source: `models/environment/time/` and `models/environment/time/
-//! data/`. Pure Rust, zero Bevy dependency.
+//! JEOD source: `models/environment/time/` (and the
+//! `models/environment/time/data/` subdirectory for `Leap_Second.dat`). Pure
+//! Rust, zero Bevy dependency.
 
 #![forbid(unsafe_code)]
 

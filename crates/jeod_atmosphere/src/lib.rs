@@ -32,8 +32,9 @@
 //! [`AtmosphereState`] exposes typed accessors (`density_typed`,
 //! `temperature_typed`, `pressure_typed`, `wind_typed`) that wrap the raw
 //! `f64`/`DVec3` fields in `uom`/`jeod_quantities` SI types for use across
-//! frame-tagged public APIs. JEOD source paths used: `models/environment/
-//! atmosphere/MET/` and the broader atmosphere model directory.
+//! frame-tagged public APIs. JEOD source paths used:
+//! `models/environment/atmosphere/MET/` and the broader
+//! `models/environment/atmosphere/` model directory.
 
 #![forbid(unsafe_code)]
 
