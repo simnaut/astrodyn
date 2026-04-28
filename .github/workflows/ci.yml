@@ -98,8 +98,7 @@ jobs:
             models/environment/time/data \
             models/dynamics/body_action/verif/SIM_orbinit/Modified_data \
             models/dynamics/derived_state/verif/unit_tests \
-            models/utils/orbital_elements/verif/SIM_orb_elem/Modified_data \
-            models/utils/planet_fixed/planet_fixed_posn/verif/SIM_PFIXPOSN_VERIF
+            models/utils/orbital_elements/verif/SIM_orb_elem/Modified_data
           git checkout
       - uses: taiki-e/install-action@nextest
       - name: Run tests (skip Tier 3 trajectory validation)
@@ -134,7 +133,6 @@ jobs:
             models/interactions/radiation_pressure/verif/SIM_2A_SHADOW_CALC \
             models/environment/time/verif/SIM_7_time_reversal \
             models/utils/orbital_elements/verif/SIM_orb_elem/Modified_data \
-            models/utils/planet_fixed/planet_fixed_posn/verif/SIM_PFIXPOSN_VERIF \
             verif/SIM_dyncomp
           git checkout
       - uses: taiki-e/install-action@nextest
@@ -181,7 +179,6 @@ jobs:
             models/interactions/radiation_pressure/verif/SIM_2A_SHADOW_CALC \
             models/environment/time/verif/SIM_7_time_reversal \
             models/utils/orbital_elements/verif/SIM_orb_elem/Modified_data \
-            models/utils/planet_fixed/planet_fixed_posn/verif/SIM_PFIXPOSN_VERIF \
             verif/SIM_dyncomp
           git checkout
       - uses: taiki-e/install-action@nextest

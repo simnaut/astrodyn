@@ -57,10 +57,7 @@ use jeod_quantities::aliases::Position;
 use jeod_quantities::ext::F64Ext;
 use jeod_quantities::frame::{Earth, PlanetFixed};
 use jeod_quantities::qty3::Qty3;
-use jeod_test_data::{
-    jeod_path,
-    planet_geodetic_verif::{load_planet_fixed_verif_cases, PlanetFixedSeed},
-};
+use jeod_test_data::planet_geodetic_verif::{load_planet_fixed_verif_cases, PlanetFixedSeed};
 use uom::si::angle::radian;
 use uom::si::length::meter;
 
@@ -125,23 +122,11 @@ fn wrap_lon_diff(a: f64, b: f64) -> f64 {
     d.abs()
 }
 
-fn assert_jeod_source_present() -> std::path::PathBuf {
-    let root = jeod_path();
-    assert!(
-        root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH to the JEOD checkout \
-         (see CLAUDE.md \"Environment Setup\").",
-        root.display(),
-    );
-    root
-}
-
 /// Cartesian-closure for every seed plus angle-space closure where the
 /// seed angles live inside the principal range.
 #[test]
 fn tier2_planet_geodetic_round_trip_sim_pfixposn_seeds() {
-    let root = assert_jeod_source_present();
-    let cases = load_planet_fixed_verif_cases(&root);
+    let cases = load_planet_fixed_verif_cases();
     assert_eq!(cases.len(), 3, "SIM_PFIXPOSN_VERIF has three seeds");
 
     let mut max = MaxErrors::default();

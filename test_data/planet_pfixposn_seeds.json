@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "source": "models/utils/planet_fixed/planet_fixed_posn/verif/SIM_PFIXPOSN_VERIF/SET_test/RUN_pfixposn_test/input.py",
+  "jeod_version": "5.4",
+  "note": "PlanetFixedPosition verification seeds. Regenerate with: cargo run -p jeod_test_data --bin extract_planet_pfixposn -- --jeod-home $JEOD_HOME",
+  "cases": [
+    {"kind": "cartesian",  "read_time": 1.0, "cart_m":   [6778136.3, 0.0, 0.0]},
+    {"kind": "spherical",  "read_time": 2.0, "altitude_m": 1000.0, "latitude_rad": 3.1416, "longitude_rad": 1.0},
+    {"kind": "elliptical", "read_time": 3.0, "altitude_m": 500.0,  "latitude_rad": 1.0,    "longitude_rad": 3.1416}
+  ]
+}
