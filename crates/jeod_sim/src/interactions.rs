@@ -98,8 +98,7 @@ pub enum ThermalIntegrationOrder {
 /// [`crate::integrate_body_coupled`]). Construct with `..Default::default()`
 /// so the trait's snapshot scratch initializes empty:
 ///
-/// // reason: pattern fragment — `plates` and `n` are placeholders for
-/// // mission-specific values; the snippet documents the construction shape.
+/// // reason: pattern fragment — `plates` and `n` are placeholders for mission-specific values; the snippet documents the construction shape.
 /// ```ignore
 /// FlatPlateState {
 ///     plates,

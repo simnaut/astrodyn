@@ -5,9 +5,7 @@
 //! scenarios as `Mission::iss_leo().into_builder()` rather than calling
 //! into these submodules directly.
 //!
-//! // reason: doctest references the downstream `jeod_runner` adapter
-//! // crate, which jeod_sim cannot depend on without a circular workspace
-//! // dependency.
+//! // reason: doctest references the downstream `jeod_runner` adapter crate, which jeod_sim cannot depend on without a circular workspace dependency.
 //! ```ignore
 //! use jeod_runner::SimulationBuilderExt;
 //! use jeod_sim::recipes::Mission;
