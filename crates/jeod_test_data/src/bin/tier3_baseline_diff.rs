@@ -17,13 +17,19 @@
 //! regime where we want the tightest guard).
 //!
 //! Usage:
-//!   cargo run -p jeod_test_data --bin tier3_baseline_diff [--allow-missing NAME]...
+//!   cargo run -p jeod_test_data --bin tier3_baseline_diff \
+//!       [--allow-missing NAME]... [--allow-missing-from FILE]
 //!
 //! `--allow-missing` declares a baseline test that is *intentionally* absent
 //! from the current run (e.g. CI's fast Tier 3 lane excludes the 17-minute
 //! `tier3_earth_moon_clem` test). Repeatable. Names must match exactly.
 //! Baseline tests missing from the run that are NOT on the allow-list are
 //! hard failures — silently dropping a Tier 3 test is a regression.
+//!
+//! `--allow-missing-from FILE` reads test names from a config file (one name
+//! per line, `#` and blank lines ignored). Combines additively with
+//! `--allow-missing` flags. Both PR and main CI read from the same config
+//! file so the slow-test list has a single source of truth.
 //!
 //! Prerequisite: `target/tier3_crossval/*.json` must exist (run
 //! `cargo nextest run --workspace -E 'test(tier3_)'` first).
@@ -418,15 +424,36 @@ fn parse_args() -> Result<BTreeSet<String>, String> {
                 }
                 None => return Err("--allow-missing requires a test name".to_string()),
             },
+            "--allow-missing-from" => match args.next() {
+                Some(path) => {
+                    load_allow_missing_file(&path, &mut allow_missing)?;
+                }
+                None => {
+                    return Err("--allow-missing-from requires a file path".to_string());
+                }
+            },
             other => {
                 return Err(format!(
                     "unknown argument: {other}\n\
-                     usage: tier3_baseline_diff [--allow-missing NAME]..."
+                     usage: tier3_baseline_diff \\\n\
+                            [--allow-missing NAME]... [--allow-missing-from FILE]"
                 ));
             }
         }
     }
     Ok(allow_missing)
+}
+
+fn load_allow_missing_file(path: &str, allow_missing: &mut BTreeSet<String>) -> Result<(), String> {
+    let raw = fs::read_to_string(path)
+        .map_err(|e| format!("--allow-missing-from: cannot read {path}: {e}"))?;
+    for line in raw.lines() {
+        let trimmed = line.split('#').next().unwrap_or("").trim();
+        if !trimmed.is_empty() {
+            allow_missing.insert(trimmed.to_string());
+        }
+    }
+    Ok(())
 }
 
 fn main() -> ExitCode {

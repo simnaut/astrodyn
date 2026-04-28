@@ -25,6 +25,22 @@ fn output_dir() -> PathBuf {
     dir.join("target").join("tier3_crossval")
 }
 
+/// Estimate the reference trajectory's nominal sample cadence as the median
+/// gap between consecutive timestamps. Falls back to `1.0` for trajectories
+/// shorter than two samples (alignment is trivial in that case anyway).
+fn reference_timestep(reference: &[StateLog]) -> f64 {
+    if reference.len() < 2 {
+        return 1.0;
+    }
+    let mut gaps: Vec<f64> = reference
+        .windows(2)
+        .map(|w| (w[1].time - w[0].time).abs())
+        .collect();
+    gaps.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let mid = gaps.len() / 2;
+    gaps[mid].max(f64::EPSILON)
+}
+
 /// A single state snapshot at one timestep.
 #[derive(Clone, Default)]
 pub struct StateLog {
@@ -70,12 +86,18 @@ impl CrossvalReport {
             reference.len()
         );
 
-        // Verify time alignment
+        // Verify time alignment. Tolerance scales with the reference's own
+        // sample cadence so sub-100 ms cadences (drag at 1 s, contact at
+        // 0.01 s) still get a tight check; reference rows that drift by more
+        // than 10 % of the reference timestep would silently fall onto an
+        // adjacent sample under a flat tolerance.
+        let ref_step = reference_timestep(reference);
+        let alignment_tolerance = 0.1 * ref_step;
         for (i, (a, b)) in ours.iter().zip(reference.iter()).enumerate() {
             let dt = (a.time - b.time).abs();
             assert!(
-                dt < 0.1,
-                "Time mismatch at index {i}: ours={:.3}s, ref={:.3}s (delta={dt:.6e}s)",
+                dt < alignment_tolerance,
+                "Time mismatch at index {i}: ours={:.3}s, ref={:.3}s (delta={dt:.6e}s, tol={alignment_tolerance:.6e}s)",
                 a.time,
                 b.time
             );

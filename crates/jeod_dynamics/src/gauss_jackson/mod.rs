@@ -42,11 +42,6 @@ pub struct IntegratorResult {
 }
 
 impl IntegratorResult {
-    #[allow(dead_code)]
-    fn needs_another_stage(self) -> bool {
-        self.time_scale == 0.0
-    }
-
     fn complete(passed: bool) -> Self {
         Self {
             time_scale: 1.0,
@@ -82,7 +77,8 @@ pub struct GaussJacksonState {
     // ── Coefficients (JEOD: owned by IntegrationControls) ──
     coeff: GaussJacksonCoeffs,
     state_machine: StateMachine,
-    #[allow(dead_code)]
+    // Read externally via the `config()` accessor for restart-detection in
+    // jeod_runner / jeod_sim integration glue.
     config: GaussJacksonConfig,
 
     // ── Two-state fields ──
@@ -112,8 +108,6 @@ pub struct GaussJacksonState {
     order: usize,
     /// Current number of history points
     history_length: usize,
-    #[allow(dead_code)]
-    max_history_size: usize,
     initial_order: usize,
 
     // ── Tolerances ──
@@ -182,7 +176,6 @@ impl GaussJacksonState {
             fsm_state: FsmState::Reset,
             order: initial_order,
             history_length: 0,
-            max_history_size,
             initial_order,
             relative_tolerance,
             absolute_tolerance,
@@ -258,6 +251,17 @@ impl GaussJacksonState {
         acc: DVec3,
         state: &mut TranslationalState,
     ) -> IntegratorResult {
+        // Gauss-Jackson does not support time-reversed propagation; both
+        // arguments must be finite and non-negative for the predictor /
+        // corrector arithmetic to remain meaningful.
+        assert!(
+            sim_dt.is_finite(),
+            "GaussJackson::integrate requires a finite sim_dt, got {sim_dt}"
+        );
+        assert!(
+            time_scale_factor.is_finite(),
+            "GaussJackson::integrate requires a finite time_scale_factor, got {time_scale_factor}"
+        );
         self.current_stage += 1;
         let stage = self.current_stage;
 

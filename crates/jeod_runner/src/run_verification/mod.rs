@@ -35,6 +35,7 @@ pub mod sim_tide_verif;
 pub mod sim_torque_simple;
 
 use glam::DVec3;
+use jeod_sim::recipes::helpers::{angle_diff, angle_diff_restricted, max_mat_diff};
 use jeod_sim::recipes::verification::{
     CsvReference, ExtrasComparator, InitialConditions, SimContext, VerificationCase,
 };
@@ -674,9 +675,14 @@ impl ExtrasAccumulator {
                     .solar_beta
                     .unwrap_or_else(|| panic!("{case_name}: solar_beta not computed at idx {idx}"));
                 // Solar beta is constrained to [-π/2, π/2] in JEOD, so
-                // wrap-around isn't a real concern — plain absolute
-                // difference matches what the bespoke test asserted on.
-                self.update_max("beta", (beta - r.solar_beta).abs());
+                // wrap-around isn't possible. `angle_diff_restricted`
+                // documents and `debug_assert`s that bound — keeping
+                // the comparator on the same helper family as the
+                // other angular metrics in this file.
+                self.update_max(
+                    "beta",
+                    angle_diff_restricted(beta, r.solar_beta, std::f64::consts::FRAC_PI_2),
+                );
             }
             (ExtrasComparator::TideDc20 { earth_source_idx }, CsvRecords::Tide(recs)) => {
                 let r = &recs[idx];
@@ -758,29 +764,4 @@ impl ExtrasAccumulator {
             }
         }
     }
-}
-
-/// Compute angular difference accounting for wraparound at 2π.
-fn angle_diff(a: f64, b: f64) -> f64 {
-    let tau = 2.0 * std::f64::consts::PI;
-    let mut d = (a - b) % tau;
-    if d > std::f64::consts::PI {
-        d -= tau;
-    }
-    if d < -std::f64::consts::PI {
-        d += tau;
-    }
-    d.abs()
-}
-
-/// Max absolute element-wise difference between two 3×3 matrices.
-fn max_mat_diff(a: &glam::DMat3, b: &glam::DMat3) -> f64 {
-    let mut max_d = 0.0_f64;
-    for c in 0..3 {
-        for r in 0..3 {
-            let d = (a.col(c)[r] - b.col(c)[r]).abs();
-            max_d = max_d.max(d);
-        }
-    }
-    max_d
 }

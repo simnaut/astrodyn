@@ -53,5 +53,6 @@ pub use integrator_agreement::{integrator_divergence, IntegratorAgreement};
 pub use orbinit_case::OrbInitCase;
 pub use periapsis_detection::{detect_periapsis_passages, PeriapsisEvent};
 pub use state_helpers::{
-    angle_diff, dquat_angle_error, jeodquat_angle_error, max_mat_diff, state_from_elements,
+    angle_diff, angle_diff_restricted, dquat_angle_error, jeodquat_angle_error, max_mat_diff,
+    state_from_elements,
 };

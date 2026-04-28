@@ -67,11 +67,19 @@ const B45: f64 = -1.0 / 5.0;
 ///
 /// Uses 6 derivative evaluations to compute the 5th-order (b5) solution.
 /// The `accel_fn` is called 6 times at intermediate states.
+///
+/// `dt` may be negative for time-reversed integration (used by the JEOD
+/// `SIM_7_time_reversal` cross-validation suite). It must be finite — `NaN`
+/// or infinite `dt` indicates upstream corruption and is asserted away.
 pub fn rkf45_translational_step(
     state: &TranslationalState,
     accel_fn: impl Fn(&TranslationalState, f64) -> DVec3,
     dt: f64,
 ) -> TranslationalState {
+    assert!(
+        dt.is_finite(),
+        "rkf45_translational_step requires a finite dt, got {dt}"
+    );
     let pos0 = state.position;
     let vel0 = state.velocity;
 
@@ -130,6 +138,8 @@ pub fn rkf45_translational_step(
 ///
 /// Integrates 13 variables simultaneously: `position[3]`, `velocity[3]`,
 /// `quaternion[4]`, `angular velocity[3]`. Uses 6 derivative evaluations.
+///
+/// `dt` may be negative for time-reversed integration. It must be finite.
 pub fn rkf45_sixdof_step(
     state: &SixDofState,
     accel_fn: impl Fn(&SixDofState, f64) -> DVec3,
@@ -137,6 +147,10 @@ pub fn rkf45_sixdof_step(
     mass_props: &MassProperties,
     dt: f64,
 ) -> SixDofState {
+    assert!(
+        dt.is_finite(),
+        "rkf45_sixdof_step requires a finite dt, got {dt}"
+    );
     let pos0 = state.trans.position;
     let vel0 = state.trans.velocity;
     let q0 = state.rot.quaternion.data;

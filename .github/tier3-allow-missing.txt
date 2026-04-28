@@ -1,0 +1,13 @@
+# Tier 3 tests allowed to be missing from a baseline-diff run.
+#
+# Lines starting with '#' and blank lines are ignored. One test name per line.
+# Used by both `test-tier3` (PR CI) and `test-tier3-full` (main CI) so they
+# share a single source of truth — see the `tier3_baseline_diff` binary's
+# `--allow-missing-from` flag.
+#
+# A test belongs here when it is *intentionally* excluded from a CI lane
+# (e.g. the ~17 min `earth_moon` suite is run only on push-to-main). Stale
+# entries (names that the run actually does cover) print a warning but do
+# not fail the build.
+
+tier3_earth_moon_clem

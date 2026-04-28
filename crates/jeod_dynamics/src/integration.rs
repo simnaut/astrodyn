@@ -50,11 +50,18 @@ pub enum IntegratorType {
 /// The `accel_fn` computes acceleration from the current state. It is called
 /// 4 times (once per RK4 stage) at intermediate positions, enabling correct
 /// multi-stage integration even when forces depend on position (e.g., gravity).
+///
+/// `dt` may be negative for time-reversed integration (used by JEOD's
+/// `SIM_7_time_reversal` cross-validation). It must be finite.
 pub fn rk4_translational_step(
     state: &TranslationalState,
     accel_fn: impl Fn(&TranslationalState, f64) -> DVec3,
     dt: f64,
 ) -> TranslationalState {
+    assert!(
+        dt.is_finite(),
+        "rk4_translational_step requires a finite dt, got {dt}"
+    );
     // Stage 1: evaluate at current state
     let k1_a = accel_fn(state, 0.0);
     let k1_v = state.velocity;
@@ -103,6 +110,18 @@ pub fn rk4_translational_step(
 ///
 /// After the final RK4 combination, the quaternion is renormalized using
 /// `normalize_integ` (without forcing scalar non-negative).
+///
+/// # Quaternion drift across stages
+///
+/// The four `qdot` evaluations stack additively on `q0` with stage weights, then
+/// `normalize_integ` runs once at the end. Intermediate stages 2 / 3 / 4 use the
+/// un-normalized quaternion when evaluating Euler's equation and torques.
+///
+/// For the dt regime our Tier 3 suite exercises (60 s LEO, 300 s GEO, 100–200 s
+/// translunar, with `|ω| ≲ 1 rad/s`), per-stage drift of `|q| − 1` stays below
+/// `1e-4`. Post-step normalization absorbs that drift while preserving JEOD
+/// parity. Callers integrating fast tumblers or with much larger dt should
+/// renormalize between stages 2 and 3.
 pub fn rk4_sixdof_step(
     state: &SixDofState,
     accel_fn: impl Fn(&SixDofState, f64) -> DVec3,
@@ -110,6 +129,10 @@ pub fn rk4_sixdof_step(
     mass_props: &MassProperties,
     dt: f64,
 ) -> SixDofState {
+    assert!(
+        dt.is_finite(),
+        "rk4_sixdof_step requires a finite dt, got {dt}"
+    );
     // Extract initial flat state: [pos(3), vel(3), quat(4), omega(3)]
     let pos0 = state.trans.position;
     let vel0 = state.trans.velocity;
