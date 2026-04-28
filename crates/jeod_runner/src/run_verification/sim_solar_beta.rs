@@ -211,13 +211,43 @@ pub fn solar_beta_run2() -> VerificationCase {
 
 const SIM_SOLAR_BETA_DIR: &str = "models/dynamics/derived_state/verif/SIM_SolarBeta";
 
-/// SIM_SolarBeta epoch JD: 1991-01-01 00:00:00 UTC = JD 2_448_257.5
-/// (with TAI-UTC = 26 s, TT = TAI + 32.184 s → TDB JD baseline below).
-const SIM_SOLAR_BETA_EPOCH_TDB_JD: f64 = 2_448_257.5 + 58.184 / 86_400.0;
+// SIM_SolarBeta epoch is 1991-01-01 00:00:00 UTC. The two derived forms
+// (TT JD passed to ephemeris queries as a TDB approximation, TAI TJT for
+// SimulationTime::new) are computed from one canonical UTC anchor + the
+// 1991 TAI-UTC offset so a future change in either applies to both
+// consumers automatically. The TT-TAI offset is shared with the
+// `jeod_time` epoch module so the time arithmetic here cannot drift from
+// the canonical definition.
+const SIM_SOLAR_BETA_EPOCH_UTC_JD: f64 = 2_448_257.5;
+/// TAI-UTC offset at 1991-01-01 (seconds).
+const SIM_SOLAR_BETA_TAI_UTC_S: f64 = 26.0;
+
+/// SIM_SolarBeta epoch in **TT JD**, passed to
+/// [`Ephemeris::get_earth_centered_state_typed`] as a TDB approximation.
+///
+/// `Ephemeris::get_earth_centered_state_typed` documents its argument as
+/// TDB JD. We pass TT JD here because:
+/// * The TT−TDB periodic offset at 1991-01-01 00:00:00 UTC is ≈ 1.6 ms
+///   (peak ~1.6 ms, varies by season). Sun's apparent motion against the
+///   celestial sphere is ~30 km/s, so a 1.6 ms offset shifts the
+///   Earth-centered Sun position by ≲ 50 m — well under this test's beta
+///   tolerance (≈ 50 m / 1.5e11 m → 3.3e-10 rad, vs the asserted
+///   1.892e-5 rad).
+/// * Tier 3 baselines are frozen with this TT-as-TDB value; switching to
+///   true TDB via [`SimulationTime::tdb_julian_date`] would shift the
+///   baselines by the magnitudes above. A future PR can make that
+///   physical-correctness improvement and refreeze if desired; this
+///   constant is kept stable for now.
+///
+/// Computed as JD(TT) = JD(UTC) + (TAI-UTC + TT-TAI) / 86 400, where
+/// TT-TAI is the canonical [`jeod_time::TAI_TT_OFFSET`] (= 32.184 s).
+const SIM_SOLAR_BETA_EPOCH_TT_JD: f64 =
+    SIM_SOLAR_BETA_EPOCH_UTC_JD + (SIM_SOLAR_BETA_TAI_UTC_S + jeod_time::TAI_TT_OFFSET) / 86_400.0;
 
 /// SIM_SolarBeta epoch as TAI TJT (the form `SimulationTime::new` consumes).
-/// = MJD(TAI) − 40000 = (JD + TAI-UTC/86400 − 2_400_000.5) − 40000.
-const SIM_SOLAR_BETA_EPOCH_TAI_TJT: f64 = 2_448_257.5 + 26.0 / 86_400.0 - 2_400_000.5 - 40_000.0;
+/// = MJD(TAI) − 40 000 = (JD(UTC) + TAI-UTC/86 400 − 2 400 000.5) − 40 000.
+const SIM_SOLAR_BETA_EPOCH_TAI_TJT: f64 =
+    SIM_SOLAR_BETA_EPOCH_UTC_JD + SIM_SOLAR_BETA_TAI_UTC_S / 86_400.0 - 2_400_000.5 - 40_000.0;
 
 fn sim_solar_beta_time() -> SimulationTime {
     let jeod = jeod_root();
@@ -247,7 +277,7 @@ fn build_solar_beta_equ(init: &InitialConditions) -> SimulationBuilder {
 
     let ephemeris = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
     let (sun_t0, _) = ephemeris
-        .get_earth_centered_state_typed(EphemerisBody::Sun, SIM_SOLAR_BETA_EPOCH_TDB_JD)
+        .get_earth_centered_state_typed(EphemerisBody::Sun, SIM_SOLAR_BETA_EPOCH_TT_JD)
         .expect("Sun position at SIM_SolarBeta epoch");
 
     let mut sb = SimulationBuilder::new(sim_solar_beta_time(), sim_solar_beta_dt());
@@ -309,7 +339,7 @@ fn build_solar_beta_obliquity(init: &InitialConditions) -> SimulationBuilder {
 
     let ephemeris = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
     let (sun_t0, _) = ephemeris
-        .get_earth_centered_state_typed(EphemerisBody::Sun, SIM_SOLAR_BETA_EPOCH_TDB_JD)
+        .get_earth_centered_state_typed(EphemerisBody::Sun, SIM_SOLAR_BETA_EPOCH_TT_JD)
         .expect("Sun position at SIM_SolarBeta epoch");
 
     let time = sim_solar_beta_time();
