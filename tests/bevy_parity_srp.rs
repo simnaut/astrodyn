@@ -40,7 +40,9 @@ fn tier3_bevy_full_stack_sixdof() {
             diffuse: 0.0,
         },
         FlatPlateThermal {
-            emissivity: 0.0,
+            // Emissivity must be > 0 (JEOD_INV: IN.33). Both sides of the
+            // parity comparison use the same value, so parity holds.
+            emissivity: 1.0,
             heat_capacity_per_area: 50.0,
             thermal_power_dump: 0.0,
         },

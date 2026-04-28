@@ -164,7 +164,10 @@ fn srp_changes_eccentricity() {
             diffuse: 0.0,
         },
         FlatPlateThermal {
-            emissivity: 0.0,
+            // Emissivity must be > 0 (JEOD_INV: IN.33). The test's eccentricity
+            // assertion is loose enough to tolerate the constant thermal-emission
+            // force component this introduces.
+            emissivity: 1.0,
             heat_capacity_per_area: 50.0,
             thermal_power_dump: 0.0,
         },

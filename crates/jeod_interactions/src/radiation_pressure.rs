@@ -98,6 +98,19 @@ pub fn compute_flat_plate_srp(
     center_grav: DVec3,
     illum_factor: f64,
 ) -> RadiationForce {
+    // JEOD_INV: IN.33 — surface_area must be > 0
+    // (port of thermal_facet_rider.cc:129-136 surface_area > 0 check, applied
+    // here for the geometry input as well so non-thermal SRP fails fast on
+    // the same misconfiguration).
+    for (i, (plate, _)) in plates.iter().enumerate() {
+        assert!(
+            plate.area > 0.0,
+            "FlatPlate.area must be > 0 (got {} for plate index {}); set a positive area in m^2",
+            plate.area,
+            i,
+        );
+    }
+
     if illum_factor <= 0.0 || flux_mag <= 0.0 {
         return RadiationForce::default();
     }
@@ -298,6 +311,25 @@ pub fn compute_flat_plate_srp_thermal_conduction(
 ) -> FlatPlateSrpResult {
     let n = plates.len();
     assert_eq!(n, t_pow4_cached.len());
+
+    // JEOD_INV: IN.33 — emissivity > 0 and surface_area > 0
+    // (port of thermal_facet_rider.cc:109-136 fatal-bound checks; we panic
+    // immediately on misconfiguration instead of computing nonsensical
+    // thermal radiation).
+    for (i, (plate, _, thermal)) in plates.iter().enumerate() {
+        assert!(
+            plate.area > 0.0,
+            "FlatPlate.area must be > 0 (got {} for plate index {}); set a positive area in m^2",
+            plate.area,
+            i,
+        );
+        assert!(
+            thermal.emissivity > 0.0,
+            "FlatPlateThermal.emissivity must be > 0 (got {} for plate index {}); set a positive emissivity in (0, 1]",
+            thermal.emissivity,
+            i,
+        );
+    }
 
     let effective_flux = if illum_factor > 0.0 && flux_mag > 0.0 {
         flux_mag * illum_factor
