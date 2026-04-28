@@ -162,7 +162,7 @@ fn run_srp_basic_test(csv_filename: &str, label: &str) {
     // Note: radiation_force is not exposed on VehicleOutput; force/torque
     // comparison is validated at the integration level through trajectory tests.
     for rec in records.iter().skip(1) {
-        sim.step_until(rec.time);
+        sim.step_until(rec.time).expect("step_until failed");
     }
 
     // Verify the simulation completed without error.

@@ -175,7 +175,7 @@ fn tier3_simulation_mars_dawn() {
     }];
 
     for (i, record) in ref_states[1..].iter().enumerate() {
-        sim.step_until(record.time);
+        sim.step_until(record.time).expect("step_until failed");
         let body = sim.body(0);
         if i < 3 || i == ref_states.len() - 2 {
             let err = (body.trans.position - record.position.unwrap()).length();

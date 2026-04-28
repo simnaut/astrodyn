@@ -57,7 +57,7 @@ fn main() {
     let print_interval = steps / 24;
 
     for step in 0..steps {
-        sim.step();
+        sim.step().expect("step failed");
         let sim_time = (step + 1) as f64 * dt;
         if (step + 1) % print_interval == 0 {
             let time_h = sim_time / 3600.0;

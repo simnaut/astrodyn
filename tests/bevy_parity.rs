@@ -149,7 +149,7 @@ fn run_simulation_steps() -> SixDofState {
     });
 
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let body = sim.body(0);
     SixDofState {
@@ -288,7 +288,7 @@ fn tier3_bevy_rkf45_matches_simulation_bit_identical() {
     });
 
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let body = sim.body(0);
     let sim_state = SixDofState {

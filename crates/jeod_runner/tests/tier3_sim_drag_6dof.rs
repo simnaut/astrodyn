@@ -140,7 +140,7 @@ fn tier3_drag_with_rotation_energy_loss() {
     // Propagate for 1 orbit
     let period = 2.0 * std::f64::consts::PI * (r.powi(3) / MU_EARTH).sqrt();
     let n_steps = (period / dt) as usize;
-    sim.step_n(n_steps);
+    sim.step_n(n_steps).expect("step_n failed");
 
     let body = sim.body(0);
     let e_final = specific_orbital_energy(body.trans.position, body.trans.velocity, MU_EARTH);
@@ -224,8 +224,8 @@ fn tier3_drag_attitude_invariance_ballistic() {
     // Propagate for 1 orbit
     let period = 2.0 * std::f64::consts::PI * (r.powi(3) / MU_EARTH).sqrt();
     let n_steps = (period / dt) as usize;
-    sim1.step_n(n_steps);
-    sim2.step_n(n_steps);
+    sim1.step_n(n_steps).expect("step_n failed");
+    sim2.step_n(n_steps).expect("step_n failed");
 
     let body1 = sim1.body(0);
     let body2 = sim2.body(0);

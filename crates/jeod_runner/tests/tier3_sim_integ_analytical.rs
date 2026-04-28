@@ -121,7 +121,7 @@ fn compare_analytical(integrator: IntegratorType, dt: f64) -> AnalyticalResult {
 
     for i in 1..=n_steps {
         let t = (i as f64) * dt;
-        sim.step_until(t);
+        sim.step_until(t).expect("step_until failed");
         let body = sim.body(0);
 
         let pos_err = (body.trans.position - analytical_position(t)).length();

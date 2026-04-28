@@ -181,7 +181,8 @@ impl VerificationCaseExt for VerificationCase {
             if let Some(hook) = pre_step.as_mut() {
                 hook(&mut sim, record.time);
             }
-            sim.step_until(record.time);
+            sim.step_until(record.time)
+                .unwrap_or_else(|e| panic!("{}: step_until failed: {e}", self.name));
             let body = sim.body(0);
             if let Some(acc) = extras_acc.as_mut() {
                 acc.observe(&body, &sim, &typed_records, idx, self.name);

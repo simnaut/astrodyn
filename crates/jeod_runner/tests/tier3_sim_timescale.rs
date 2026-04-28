@@ -92,7 +92,7 @@ fn tier3_simulation_timescale_tdb() {
 
     for (i, rec) in records.iter().enumerate() {
         if i > 0 {
-            sim.step();
+            sim.step().expect("step failed");
         }
 
         let tai_err = (sim.time.tai_tjt - rec.tai_tjt).abs() * SECONDS_PER_DAY;

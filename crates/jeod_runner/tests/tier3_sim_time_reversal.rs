@@ -162,7 +162,7 @@ fn tier3_sim_time_reversal_run1() {
             sim.time.time_scale_factor = -1.0;
         }
 
-        sim.step_until(rec.time);
+        sim.step_until(rec.time).expect("step_until failed");
 
         let body = sim.body(0);
         let pos_err = (body.trans.position - rec.position).length();

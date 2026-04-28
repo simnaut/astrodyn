@@ -99,7 +99,7 @@ fn propagate_mercury_periapses(
     let mut sim_time = 0.0_f64;
 
     for step in 0..steps {
-        sim.step();
+        sim.step().expect("step failed");
         sim_time += dt;
         let body = sim.body(0);
         let r = body.trans.position;
@@ -284,7 +284,7 @@ fn tier3_simulation_mercury_relativistic_effect() {
     });
     sim_n.validate().unwrap();
     let steps = (total_time / dt) as usize;
-    sim_n.step_n(steps);
+    sim_n.step_n(steps).expect("step_n failed");
     let newton_final = sim_n.body(0).trans.position;
 
     // Relativistic run
@@ -314,7 +314,7 @@ fn tier3_simulation_mercury_relativistic_effect() {
         ..Default::default()
     });
     sim_r.validate().unwrap();
-    sim_r.step_n(steps);
+    sim_r.step_n(steps).expect("step_n failed");
     let gr_final = sim_r.body(0).trans.position;
 
     // The two trajectories should diverge due to GR

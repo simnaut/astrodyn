@@ -99,7 +99,7 @@ fn tier3_bevy_solar_beta_equ() {
         ..Default::default()
     });
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let sim_beta = sim.body(0).solar_beta.expect("solar beta computed");
     assert_bits_eq("Bevy vs Sim", "solar_beta_equ", bevy_beta, sim_beta);
@@ -192,7 +192,7 @@ fn tier3_bevy_solar_beta_obliquity() {
         ..Default::default()
     });
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let sim_beta = sim.body(0).solar_beta.expect("solar beta computed");
     assert_bits_eq("Bevy vs Sim", "solar_beta_obliquity", bevy_beta, sim_beta);
@@ -372,7 +372,7 @@ fn run_3rd_body_parity(label: &str, trans: TranslationalState, include_moon: boo
         ..Default::default()
     });
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     if sixdof {
         let bevy_state = read_sixdof(app.world(), vehicle);
@@ -560,7 +560,7 @@ fn tier3_bevy_mars_dawn() {
         ..Default::default()
     });
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     assert_trans_eq("Bevy vs Sim (mars_dawn)", &bevy_trans, &sim.body(0).trans);
     println!("  Mars dawn: bit-identical");
@@ -637,7 +637,7 @@ fn tier3_bevy_mercury_relativistic() {
         ..Default::default()
     });
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     assert_trans_eq(
         "Bevy vs Sim (mercury_relativistic)",
@@ -738,7 +738,7 @@ fn tier3_bevy_relativistic_moving_source() {
         ..Default::default()
     });
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     assert_trans_eq(
         "Bevy vs Sim (relativistic_moving_source)",
@@ -910,7 +910,7 @@ fn tier3_bevy_earth_moon_clem() {
         ..Default::default()
     });
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     assert_trans_eq(
         "Bevy vs Sim (earth_moon_clem)",

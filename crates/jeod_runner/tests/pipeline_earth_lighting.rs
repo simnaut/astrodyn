@@ -144,7 +144,7 @@ fn pipeline_earth_lighting_smoke() {
     let mut shadow_count = 0;
 
     for _ in 0..num_steps {
-        sim.step();
+        sim.step().expect("step failed");
 
         let body = sim.body(0);
         let lighting = body

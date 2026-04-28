@@ -120,7 +120,7 @@ fn tier3_force_constant_acceleration() {
 
     let mut sim = make_free_body_3dof(mass, dt);
     sim.set_body_external_force(0, force);
-    sim.step_n((t_total / dt) as usize);
+    sim.step_n((t_total / dt) as usize).expect("step_n failed");
 
     let body = sim.body(0);
 
@@ -172,7 +172,7 @@ fn tier3_torque_constant_angular_acceleration() {
 
     let mut sim = make_free_body_6dof(mass, inertia, dt);
     sim.set_body_external_torque(0, tau);
-    sim.step_n((t_total / dt) as usize);
+    sim.step_n((t_total / dt) as usize).expect("step_n failed");
 
     let body = sim.body(0);
     let omega = body.rot.as_ref().unwrap().ang_vel_body;
@@ -227,14 +227,18 @@ fn tier3_force_and_torque_decoupled() {
     // Case A: only force.
     let mut sim_a = make_free_body_6dof(mass, inertia, dt);
     sim_a.set_body_external_force(0, force);
-    sim_a.step_n((t_total / dt) as usize);
+    sim_a
+        .step_n((t_total / dt) as usize)
+        .expect("step_n failed");
     let v_a = sim_a.body(0).trans.velocity;
     let omega_a = sim_a.body(0).rot.as_ref().unwrap().ang_vel_body;
 
     // Case B: only torque.
     let mut sim_b = make_free_body_6dof(mass, inertia, dt);
     sim_b.set_body_external_torque(0, tau);
-    sim_b.step_n((t_total / dt) as usize);
+    sim_b
+        .step_n((t_total / dt) as usize)
+        .expect("step_n failed");
     let v_b = sim_b.body(0).trans.velocity;
     let omega_b = sim_b.body(0).rot.as_ref().unwrap().ang_vel_body;
 
@@ -242,7 +246,9 @@ fn tier3_force_and_torque_decoupled() {
     let mut sim_c = make_free_body_6dof(mass, inertia, dt);
     sim_c.set_body_external_force(0, force);
     sim_c.set_body_external_torque(0, tau);
-    sim_c.step_n((t_total / dt) as usize);
+    sim_c
+        .step_n((t_total / dt) as usize)
+        .expect("step_n failed");
     let v_c = sim_c.body(0).trans.velocity;
     let omega_c = sim_c.body(0).rot.as_ref().unwrap().ang_vel_body;
 
@@ -306,11 +312,13 @@ fn tier3_force_symmetric_impulse_returns_to_rest() {
 
     let mut sim = make_free_body_3dof(mass, dt);
     sim.set_body_external_force(0, force);
-    sim.step_n((half_duration / dt) as usize);
+    sim.step_n((half_duration / dt) as usize)
+        .expect("step_n failed");
     let v_mid = sim.body(0).trans.velocity;
 
     sim.set_body_external_force(0, -force);
-    sim.step_n((half_duration / dt) as usize);
+    sim.step_n((half_duration / dt) as usize)
+        .expect("step_n failed");
     let v_end = sim.body(0).trans.velocity;
     let x_end = sim.body(0).trans.position;
 

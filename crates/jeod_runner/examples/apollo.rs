@@ -142,7 +142,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "---"
             );
         }
-        sim.step();
+        sim.step().expect("step failed");
         if step % steps_per_print == 0 {
             let body = sim.body(0);
             let pos = body.trans.position;

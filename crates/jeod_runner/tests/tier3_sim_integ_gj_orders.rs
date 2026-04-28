@@ -92,7 +92,7 @@ fn gj_energy_error(order: usize) -> f64 {
 
     let mut max_rel_err = 0.0_f64;
     for _ in 1..=n_steps {
-        sim.step();
+        sim.step().expect("step failed");
         let body = sim.body(0);
         let e = specific_energy(body.trans.position, body.trans.velocity);
         let rel_err = ((e - e0) / e0).abs();

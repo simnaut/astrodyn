@@ -160,7 +160,7 @@ fn run_gj_parity(
         ..Default::default()
     });
     sim.validate().unwrap();
-    sim.step_n(n_steps);
+    sim.step_n(n_steps).expect("step_n failed");
 
     let sim_trans = sim.body(0).trans;
     assert_trans_eq(label, &bevy_trans, &sim_trans);

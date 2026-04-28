@@ -114,7 +114,7 @@ fn verify_conservation(
     let mut max_r = r0;
 
     for step in 1..=n_steps {
-        sim.step();
+        sim.step().expect("step failed");
         let body = sim.body(0);
         let energy_now = specific_energy(body.trans.position, body.trans.velocity, MU_EARTH);
         let h_now = specific_ang_momentum(body.trans.position, body.trans.velocity);
@@ -344,7 +344,7 @@ fn tier3_orbinit_equatorial() {
     let mut eq_sim = build_sim(trans, dt);
     let mut max_z_frac = 0.0_f64;
     for _ in 0..n_steps {
-        eq_sim.step();
+        eq_sim.step().expect("step failed");
         let body = eq_sim.body(0);
         let z_frac = body.trans.position.z.abs() / body.trans.position.length();
         max_z_frac = max_z_frac.max(z_frac);
@@ -385,7 +385,7 @@ fn tier3_orbinit_polar() {
     // track the maximum |z|/r ratio across steps.
     let mut max_z_frac = 0.0_f64;
     for _ in 0..n_steps {
-        sim.step();
+        sim.step().expect("step failed");
         let body = sim.body(0);
         let z_frac = body.trans.position.z.abs() / body.trans.position.length();
         max_z_frac = max_z_frac.max(z_frac);

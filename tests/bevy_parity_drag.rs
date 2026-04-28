@@ -94,7 +94,7 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
     body.drag = Some(drag_config);
     sim.add_body(body);
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let body = sim.body(0);
     let sim_state = SixDofState {
@@ -182,7 +182,7 @@ fn tier3_bevy_constant_density_drag_sixdof() {
     body.drag = Some(drag_config);
     sim.add_body(body);
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let body = sim.body(0);
     let sim_state = SixDofState {
@@ -288,7 +288,7 @@ fn tier3_bevy_met_atmosphere_drag_sixdof() {
     body.drag = Some(drag_config);
     sim.add_body(body);
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let body = sim.body(0);
     let sim_state = SixDofState {
@@ -392,7 +392,7 @@ fn tier3_bevy_met_run5a() {
     });
     sim.add_body(body);
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let sim_body = sim.body(0);
     let sim_state = SixDofState {
@@ -492,7 +492,7 @@ fn tier3_bevy_drag_run6b() {
     body.drag = Some(drag_config);
     sim.add_body(body);
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let sim_body = sim.body(0);
     let sim_state = SixDofState {

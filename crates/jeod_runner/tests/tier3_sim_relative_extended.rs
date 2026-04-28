@@ -132,7 +132,7 @@ fn tier3_relative_two_coorbiting_vehicles() {
 
     for step in 1..=n_steps {
         let t = step as f64 * dt;
-        sim.step_until(t);
+        sim.step_until(t).expect("step_until failed");
 
         let chief = sim.body(0);
         let deputy = sim.body(1);
@@ -238,7 +238,7 @@ fn tier3_relative_hohmann_transfer_geometry() {
 
     for step in 1..=n_steps {
         let t = step as f64 * dt;
-        sim.step_until(t);
+        sim.step_until(t).expect("step_until failed");
 
         let chief = sim.body(0);
         let deputy = sim.body(1);
@@ -315,7 +315,7 @@ fn tier3_relative_same_orbit_phase_difference() {
     let n_steps = (2.0 * period / dt) as usize;
     for step in 1..=n_steps {
         let t = step as f64 * dt;
-        sim.step_until(t);
+        sim.step_until(t).expect("step_until failed");
         let a = sim.body(0);
         let b = sim.body(1);
         let rel = compute_relative_state(&a.trans, None, &b.trans, None);
@@ -376,7 +376,7 @@ fn tier3_relative_different_inclinations() {
     let mut max_abs_z = 0.0_f64; // inertial Z separation (cross-track)
     for step in 1..=n_steps {
         let t = step as f64 * dt;
-        sim.step_until(t);
+        sim.step_until(t).expect("step_until failed");
 
         let chief = sim.body(0);
         let deputy = sim.body(1);
@@ -437,7 +437,7 @@ fn tier3_relative_round_trip_frames() {
 
     for step in 1..=n_steps {
         let t = step as f64 * dt;
-        sim.step_until(t);
+        sim.step_until(t).expect("step_until failed");
 
         let a = sim.body(0);
         let b = sim.body(1);

@@ -161,7 +161,7 @@ fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str, frac_
     for (i, record) in records.iter().enumerate() {
         // Advance time + ephemeris before comparing (skip for t=0)
         if i > 0 {
-            sim.step();
+            sim.step().expect("step failed");
         }
 
         // Set prescribed position (matching JEOD's non-integrated motion)

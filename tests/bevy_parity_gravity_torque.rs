@@ -70,7 +70,7 @@ fn tier3_bevy_gravity_torque_sixdof() {
     body.compute_gravity_gradient = true;
     sim.add_body(body);
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let body = sim.body(0);
     let sim_state = SixDofState {
@@ -193,7 +193,7 @@ fn tier3_bevy_external_torque_per_body() {
             DVec3::ZERO
         };
         sim.set_body_external_torque(0, torque);
-        sim.step();
+        sim.step().expect("step failed");
     }
 
     let state_a = SixDofState {
@@ -253,7 +253,7 @@ fn run_gravity_torque_parity(label: &str, trans: TranslationalState, rot: Rotati
         ..Default::default()
     });
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let sim_body = sim.body(0);
     let sim_state = SixDofState {
@@ -372,7 +372,7 @@ fn run_external_parity(
             .resource_mut::<Time<Fixed>>()
             .advance_by(std::time::Duration::from_secs_f64(dt));
         app.world_mut().run_schedule(FixedUpdate);
-        sim.step();
+        sim.step().expect("step failed");
     }
 
     let bevy_state = read_sixdof(app.world(), vehicle);
