@@ -12,16 +12,19 @@
 //!   sample_index, density (kg/m^3), temperature (K),
 //!   altitude (m), latitude (rad), longitude (rad)
 //!
-//! All rows share the same epoch (`time_utc` is frozen at t=0), the same
-//! solar-activity inputs (`f10=f10b=230`, `geo_index=20.30`, type=Ap), and
-//! the same lat/lon for each RUN.
+//! All rows share the same epoch (`time_utc` is frozen at t=0) and the same
+//! solar-activity inputs (`f10=f10b=230`, `geo_index=20.30`, type=Ap). RUNs
+//! T01 and T02 hold lat/lon constant and sweep altitude; RUN T03 sweeps
+//! longitude (and toggles altitude between 650.0 km and 649.9999 km).
 //!
-//! Note: the first sample of each run is a duplicate from Trick's
+//! Note: in RUN T01 and RUN T02 the first sample is a duplicate from Trick's
 //! initialization step (sample 0 == sample 1). That is a quirk of the JEOD
-//! sim's `add_read` time-tagged reset pattern, not of our model.
+//! sim's `add_read` time-tagged reset pattern, not of our model. We detect
+//! this dynamically (rather than hard-coding a skip) so RUN T03 — whose row
+//! 0 differs from row 1 — is fully exercised.
 
 use jeod_atmosphere::met::{GeoIndexType, MetAtmosphere};
-use jeod_test_data::{atmosphere_verif::load_met_run_csv, jeod_path};
+use jeod_test_data::{atmosphere_verif::load_met_run_csv, tier3_csv::test_data_path};
 
 /// Common solar-activity configuration used by every `SIM_MET` RUN.
 /// Matches `models/environment/atmosphere/MET/verif/SIM_MET/SET_test/input_core.py`.
@@ -51,23 +54,7 @@ const SIM_MET_DEFAULT_TJT: f64 = 11544.0 + 5508.0 / 86400.0;
 const SIM_MET_T01_TJT: f64 = 9718.0 + 1.0 / 86400.0;
 
 fn run_csv_test(label: &str, csv_name: &str, tjt: f64, density_tol: f64, temperature_tol: f64) {
-    let root = jeod_path();
-    assert!(
-        root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
-        root.display()
-    );
-    let test_data_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(|p| p.parent())
-        .expect("workspace root")
-        .join("test_data");
-    assert!(
-        test_data_dir.exists(),
-        "test_data directory not found at {}",
-        test_data_dir.display()
-    );
-    let csv_path = test_data_dir.join(csv_name);
+    let csv_path = test_data_path(csv_name);
     let rows = load_met_run_csv(&csv_path);
     assert!(
         rows.len() >= 3,
@@ -81,10 +68,18 @@ fn run_csv_test(label: &str, csv_name: &str, tjt: f64, density_tol: f64, tempera
     let mut max_density_relerr = 0.0_f64;
     let mut max_temp_abserr = 0.0_f64;
 
-    // Skip sample 0 — it duplicates sample 1 (Trick's add_read replays the
-    // initial input at t=0, so the first two timestamps are identical).
-    // This is a sim-side artifact, not a model property.
-    for row in rows.iter().skip(1) {
+    // Drop Trick's initialization artifact only when present: in RUN T01 and
+    // RUN T02 the sim's `add_read` replays the initial input at t=0, so row 0
+    // duplicates row 1 (same altitude/lat/lon and identical density/temp). In
+    // RUN T03 the first read is a real sample distinct from row 1, so we keep
+    // it. Detect by exact equality of the geodetic position fields.
+    let r0 = &rows[0];
+    let r1 = &rows[1];
+    let skip_first = r0.altitude_m == r1.altitude_m
+        && r0.latitude_rad == r1.latitude_rad
+        && r0.longitude_rad == r1.longitude_rad;
+    let start = if skip_first { 1 } else { 0 };
+    for row in rows.iter().skip(start) {
         let alt_km = row.altitude_m / 1000.0;
         let state = atmos.density(alt_km, row.latitude_rad, row.longitude_rad, tjt);
 
@@ -114,7 +109,15 @@ fn run_csv_test(label: &str, csv_name: &str, tjt: f64, density_tol: f64, tempera
 /// ceiling so the diffusion-equation branch dominates).
 #[test]
 fn tier2_atmosphere_met_run_t01_low_altitude_sweep() {
-    // Tolerances set per CLAUDE.md "Tolerance policy" (max observed err * 1.05).
+    // Tier 2 against bit-exact JEOD reference: observed errors sit at the
+    // f64 noise floor (rel-density ≈ 3e-16, temperature ≈ 6e-14 K). The 1e-12
+    // floor is intentionally fixed — not the Tier 3 "max × 1.05" policy from
+    // CLAUDE.md, which only governs trajectory cross-validation reports
+    // (`CrossvalReport`). Tier 2 vector-match tests assert bit-equality up to
+    // arithmetic ordering, so the threshold lives slightly above the highest
+    // plausible noise (~ULP × dominant magnitude) and well below any physical
+    // significance. Loosening this would silently mask a real algorithmic
+    // divergence from the JEOD MET kernel.
     run_csv_test(
         "tier2_atmosphere_met_run_t01_low_altitude_sweep",
         "met_t01_met.csv",
