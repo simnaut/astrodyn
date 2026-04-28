@@ -32,10 +32,12 @@ const LOG_INTERVAL: f64 = 60.0;
 /// Propagate one Battin/direct cross-compare run for `DURATION`,
 /// sampling position+velocity every `LOG_INTERVAL`.
 fn propagate(battin: bool, init: &InitialConditions) -> (Vec<DVec3>, Vec<DVec3>) {
-    let mut sim = sim_dyncomp::build_battin_3rd_body(init, battin)
+    let scenario = sim_dyncomp::build_battin_3rd_body(init, battin);
+    let mut pre_step = sim_dyncomp::battin_pre_step(scenario.sun_idx, scenario.moon_idx);
+    let mut sim = scenario
+        .builder
         .build()
         .expect("scenario validation failed");
-    let mut pre_step = sim_dyncomp::battin_pre_step(init);
 
     let n_points = (DURATION / LOG_INTERVAL) as usize;
     let mut positions = Vec::with_capacity(n_points);

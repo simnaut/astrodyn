@@ -533,22 +533,29 @@ pub fn run4_3rd_body() -> VerificationCase {
 
 // ── Battin's method vs direct subtraction (third-body cross-compare) ──────
 
-/// Index of the Sun gravity source inside the Battin cross-compare
-/// scenario.
-const BATTIN_SUN_IDX: usize = 1;
-/// Index of the Moon gravity source inside the Battin cross-compare
-/// scenario.
-const BATTIN_MOON_IDX: usize = 2;
-
 /// Step size for the Battin cross-compare scenario.
 ///
 /// SIM_dyncomp's S_define specifies `DYNAMICS = 0.03125` s (32 Hz). The
 /// cross-compare doesn't validate against a JEOD CSV, so it uses a
 /// coarser 10 s step that still resolves the fp-rounding divergence
 /// between the two methods (~5 digits lost in direct subtraction of
-/// LEO + Sun accelerations) without paying for ~921 600 inner RK4
-/// stages over 8 hours.
+/// LEO + Sun accelerations) without paying for ~921 600 integration
+/// steps over 8 hours.
 const BATTIN_DT: f64 = 10.0;
+
+/// Output of [`build_battin_3rd_body`]: the configured simulation
+/// builder plus the runtime source indices for Sun and Moon, captured
+/// from `add_source` so [`battin_pre_step`] can update the right
+/// entries without depending on registration order being stable
+/// across future edits.
+pub struct BattinScenario {
+    /// Configured simulation builder, ready for `.build()`.
+    pub builder: SimulationBuilder,
+    /// Source index for Sun (third-body).
+    pub sun_idx: usize,
+    /// Source index for Moon (third-body).
+    pub moon_idx: usize,
+}
 
 fn third_body_source_with_state(mu: f64, position: DVec3, velocity: DVec3) -> GravitySourceEntry {
     GravitySourceEntry {
@@ -576,8 +583,9 @@ fn third_body_source_with_state(mu: f64, position: DVec3, velocity: DVec3) -> Gr
 /// reformulation produces the same trajectory as direct subtraction up
 /// to fp rounding. There is no JEOD CSV reference for the comparison —
 /// it is internal between the two sibling sims — so this returns a
-/// [`SimulationBuilder`] directly rather than a [`VerificationCase`].
-pub fn build_battin_3rd_body(init: &InitialConditions, battin: bool) -> SimulationBuilder {
+/// [`BattinScenario`] (builder + source indices) rather than a
+/// [`VerificationCase`].
+pub fn build_battin_3rd_body(init: &InitialConditions, battin: bool) -> BattinScenario {
     let jeod = jeod_root();
     let grav_data_dir = jeod.join("models/environment/gravity/data/src");
 
@@ -604,28 +612,18 @@ pub fn build_battin_3rd_body(init: &InitialConditions, battin: bool) -> Simulati
 
     let mut sb = SimulationBuilder::new(time, BATTIN_DT);
     let earth = sb.add_source("Earth", point_mass_earth_source(earth_grav.mu));
-    let sun = sb.add_source(
+    let sun_idx = sb.add_source(
         "Sun",
         third_body_source_with_state(mu_sun, sun_pos_t0.raw_si(), sun_vel_t0.raw_si()),
     );
-    let moon = sb.add_source(
+    let moon_idx = sb.add_source(
         "Moon",
         third_body_source_with_state(mu_moon, moon_pos_t0.raw_si(), moon_vel_t0.raw_si()),
     );
-    debug_assert_eq!(
-        sun, BATTIN_SUN_IDX,
-        "Sun source index drift: battin_pre_step assumes Sun is at \
-         BATTIN_SUN_IDX={BATTIN_SUN_IDX}, but add_source returned {sun}."
-    );
-    debug_assert_eq!(
-        moon, BATTIN_MOON_IDX,
-        "Moon source index drift: battin_pre_step assumes Moon is at \
-         BATTIN_MOON_IDX={BATTIN_MOON_IDX}, but add_source returned {moon}."
-    );
 
-    let mut sun_control = GravityControl::new_third_body(sun);
+    let mut sun_control = GravityControl::new_third_body(sun_idx);
     sun_control.battin_method = battin;
-    let mut moon_control = GravityControl::new_third_body(moon);
+    let mut moon_control = GravityControl::new_third_body(moon_idx);
     moon_control.battin_method = battin;
 
     sb.add_body(VehicleConfig {
@@ -641,7 +639,11 @@ pub fn build_battin_3rd_body(init: &InitialConditions, battin: bool) -> Simulati
         },
         ..Default::default()
     });
-    sb
+    BattinScenario {
+        builder: sb,
+        sun_idx,
+        moon_idx,
+    }
 }
 
 /// Pre-step factory for the Battin cross-compare scenario: capture a
@@ -649,13 +651,19 @@ pub fn build_battin_3rd_body(init: &InitialConditions, battin: bool) -> Simulati
 /// Sun and Moon source position+velocity to the upcoming step's TDB
 /// before `step_until`.
 ///
+/// `sun_idx` and `moon_idx` come from the [`BattinScenario`] returned
+/// by [`build_battin_3rd_body`] — capturing them at construction time
+/// (rather than relying on hard-coded constants validated by
+/// `debug_assert!`) prevents a future source-registration reorder from
+/// silently updating the wrong entries in release builds.
+///
 /// Sets state (position **and** velocity), not just position, to match
 /// the bespoke pre-recipe test exactly so the cross-compare baselines
 /// stay bit-stable. Velocity does not affect third-body point-mass
 /// gravity, but propagating it explicitly preserves the original
 /// behavior with no reasoning required about which fields the gravity
 /// pipeline reads.
-pub fn battin_pre_step(_init: &InitialConditions) -> PreStepClosure {
+pub fn battin_pre_step(sun_idx: usize, moon_idx: usize) -> PreStepClosure {
     let ephemeris = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
     let epoch_tdb_jd = dyncomp_time().tdb_julian_date();
     Box::new(move |sim, time_s: f64| {
@@ -666,8 +674,8 @@ pub fn battin_pre_step(_init: &InitialConditions) -> PreStepClosure {
         let (moon_pos, moon_vel) = ephemeris
             .get_earth_centered_state_typed(EphemerisBody::Moon, target_tdb_jd)
             .expect("Moon state query");
-        sim.set_source_state(BATTIN_SUN_IDX, sun_pos.raw_si(), sun_vel.raw_si());
-        sim.set_source_state(BATTIN_MOON_IDX, moon_pos.raw_si(), moon_vel.raw_si());
+        sim.set_source_state(sun_idx, sun_pos.raw_si(), sun_vel.raw_si());
+        sim.set_source_state(moon_idx, moon_pos.raw_si(), moon_vel.raw_si());
     })
 }
 
