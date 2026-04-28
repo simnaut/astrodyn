@@ -13,8 +13,9 @@
 //! script is itself bind-mounted at runtime (not baked into the image)
 //! so iterating on the script doesn't require an image rebuild.
 //!
-//! See `docs/tier3_regeneration.md` for the canonical workflow, the
-//! incremental-vs-force semantics, and how to add a new sim.
+//! See the Tier3-Regeneration wiki page
+//! (<https://github.com/simnaut/bevy_jeod/wiki/Tier3-Regeneration>) for the
+//! canonical workflow, the incremental-vs-force semantics, and how to add a new sim.
 
 use std::env;
 use std::path::{Path, PathBuf};

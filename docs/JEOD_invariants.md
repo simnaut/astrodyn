@@ -16,8 +16,8 @@ grep the JEOD tree for the distinctive identifier in the invariant description
 > flag-gated config) are correctly classified `enforced` or `partial`. No
 > reclassifications were needed at Phase 11; future invariants follow the
 > same structural-vs-runtime decision tree on addition. See
-> `docs/type_system.md` for the type-system architecture and
-> `STRATEGY.md` §8 for the refactor history.
+> the [Type-System wiki page](https://github.com/simnaut/bevy_jeod/wiki/Type-System) for the type-system architecture and
+> the [Strategy wiki page](https://github.com/simnaut/bevy_jeod/wiki/Strategy) §8 for the refactor history.
 
 **Categories:**
 - `initialization` — checked during `initialize_simulation()` or model init

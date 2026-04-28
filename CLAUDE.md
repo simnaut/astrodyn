@@ -4,9 +4,9 @@
 
 Rust reimplementation of [NASA JEOD](https://github.com/nasa/jeod) (JSC Engineering
 Orbital Dynamics, v5.4, 714 C++ source files) using Bevy ECS instead of NASA's Trick.
-See [STRATEGY.md](STRATEGY.md) for architecture and phase summaries. The
-original phased implementation plan (Phases 1–7) closed in April 2026; ongoing
-work is tracked as GitHub issues.
+See the [Strategy wiki page](https://github.com/simnaut/bevy_jeod/wiki/Strategy)
+for architecture and phase summaries. The original phased implementation plan
+(Phases 1–7) closed in April 2026; ongoing work is tracked as GitHub issues.
 
 ### Environment Setup
 
@@ -164,7 +164,7 @@ After the type-system refactor (#101), there are two layers to choose between:
   to drop into the kernel and re-wrap on exit. This keeps numerics fast and the
   public surface typed.
 
-See `docs/type_system.md` for the contributor primer (phantom-tag pattern,
+See the [Type-System wiki page](https://github.com/simnaut/bevy_jeod/wiki/Type-System) for the contributor primer (phantom-tag pattern,
 adding a new frame/scale/quantity, reading compiler errors, escape hatches)
 and `examples/typed_mission.rs` for the canonical worked example.
 
@@ -352,8 +352,8 @@ CI filtering picks it up automatically.
 
 JEOD verification sims run inside a Rocky 9 container with Trick 25 + JEOD 5.4.
 Trick is cloned at `../trick`, JEOD at `../jeod`. See
-[`docs/tier3_regeneration.md`](docs/tier3_regeneration.md) for the full
-workflow, troubleshooting, and "adding a new sim" recipe.
+the [Tier3-Regeneration wiki page](https://github.com/simnaut/bevy_jeod/wiki/Tier3-Regeneration)
+for the full workflow, troubleshooting, and "adding a new sim" recipe.
 
 The canonical wrapper is the `xtask` binary (requires the
 `.cargo/config.toml.example` alias copied into `.cargo/config.toml`):
@@ -518,9 +518,10 @@ PhantomData type-mismatch wall.
 **Reference**:
 - Canonical worked example: `examples/typed_mission.rs`.
 - Contributor primer (phantom tags, adding new dimensions, escape hatches):
-  `docs/type_system.md`.
-- Architecture and phase history: `STRATEGY.md` §8 "Phase 8: Type-System
-  Refactor".
+  [Type-System wiki page](https://github.com/simnaut/bevy_jeod/wiki/Type-System).
+- Architecture and phase history:
+  [Strategy wiki page](https://github.com/simnaut/bevy_jeod/wiki/Strategy)
+  §8 "Phase 8: Type-System Refactor".
 
 ## Common Pitfalls
 
