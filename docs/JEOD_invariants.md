@@ -109,7 +109,7 @@ grep the JEOD tree for the distinctive identifier in the invariant description
 |-----|-----------|-------------|----------|------------|
 | DM.01 | At most one GravityManager registered | error | structural | n/a (no GravityManager singleton in ECS) |
 | DM.02 | GravityManager registered before `initialized=true` | error | ordering | n/a |
-| DM.03 | `initialized` flag set last in init sequence | structural | initialization | partial (validation system uses `Local<bool>` for one-shot) |
+| DM.03 | `initialized` flag set last in init sequence | structural | initialization | partial (validation system fires on `Added<GravityControlsC>` so bodies spawned mid-simulation are validated on the next tick) |
 | DM.04 | Init order: ephemerides → gravity controls → frame ownership → activate → update → gravity state → integ groups → dyn bodies | structural | ordering | partial (system set ordering: TimeUpdate → Ephemeris → Environment → ...) |
 | DM.05 | All required states initialized before first integration | fatal | initialization | partial (`validation.rs` warns on zero state) |
 | DM.06 | DynBody name unique across all bodies | error | structural | n/a (ECS entity IDs are unique) |
