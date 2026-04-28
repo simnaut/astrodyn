@@ -28,8 +28,25 @@ use crate::SimulationTime;
 /// Construct one via [`Mission::iss_leo`] / [`Mission::apollo_translunar`] /
 /// etc., optionally compose with [`with_time`](Self::with_time), then
 /// finalize with [`into_builder`](Self::into_builder).
+///
+/// # Builder-fn contract
+///
+/// `builder_fn` is a bare function pointer that *must be infallible*. Every
+/// scenario currently in this catalog is hand-coded against compile-time
+/// constants (`recipes::scenarios::*`), so panics there indicate a bug in
+/// the scenario code rather than a runtime / I/O failure mode the caller
+/// can recover from.
+///
+/// If a future scenario needs fallible setup (dynamic asset loading, network
+/// fetch, user-supplied configuration), promote `builder_fn` to
+/// `fn() -> Result<SimulationBuilder, MissionBuildError>` then — and embed
+/// the mission name in the error so panics from `into_builder` still
+/// identify which mission failed. Today's contract is "stay infallible";
+/// the bare-fn surface is deliberate.
 pub struct Mission {
     description: &'static str,
+    /// Infallible scenario constructor. Panicking from this fn is a bug
+    /// in the scenario, not an expected runtime path.
     builder_fn: fn() -> SimulationBuilder,
     time_override: Option<SimulationTime>,
 }
@@ -37,6 +54,9 @@ pub struct Mission {
 impl Mission {
     /// 3-DOF point-mass ISS-like LEO with Earth point-mass gravity.
     /// Epoch J2000, 60 s timestep.
+    ///
+    /// See [`scenarios::iss_leo::iss_leo`] for the underlying setup
+    /// (orbital elements, mass, integrator).
     pub fn iss_leo() -> Self {
         Self {
             description: "ISS-class LEO; 3-DOF point-mass Earth gravity at J2000.",
@@ -47,6 +67,9 @@ impl Mission {
 
     /// ISS-like LEO with atmospheric drag (MET solar-mean atmosphere) and
     /// 6-DOF identity attitude. 60 s timestep.
+    ///
+    /// See [`scenarios::iss_leo::iss_leo_drag`] for the underlying setup
+    /// (atmosphere model, drag coefficient, ballistic frontal area).
     pub fn iss_leo_drag() -> Self {
         Self {
             description: "ISS-class LEO with MET solar-mean drag; 6-DOF identity attitude.",
@@ -56,6 +79,9 @@ impl Mission {
     }
 
     /// Apollo translunar trajectory with multi-body Earth + Moon + Sun.
+    ///
+    /// See [`scenarios::apollo::apollo_translunar`] for the underlying setup
+    /// (initial state, source geometry, integration frame).
     pub fn apollo_translunar() -> Self {
         Self {
             description: "Apollo translunar trajectory; Earth + Moon + Sun gravity.",
@@ -65,6 +91,10 @@ impl Mission {
     }
 
     /// Earth-Moon translunar reference orbit using DE421 ephemerides.
+    ///
+    /// See [`scenarios::earth_moon::earth_moon_translunar`] for the
+    /// underlying setup. Aliased to
+    /// [`scenarios::clementine_lunar::clementine_lunar`] today.
     pub fn earth_moon_translunar() -> Self {
         Self {
             description: "Earth-Moon translunar trajectory; DE421 ephemeris.",
@@ -74,6 +104,9 @@ impl Mission {
     }
 
     /// Geostationary equatorial orbit at sidereal rate.
+    ///
+    /// See [`scenarios::geostationary::geo`] for the underlying setup
+    /// (orbital elements, integrator, 300 s timestep).
     pub fn geo() -> Self {
         Self {
             description: "Geostationary equatorial orbit at sidereal rate.",
@@ -83,6 +116,9 @@ impl Mission {
     }
 
     /// Clementine lunar mission setup at the 1994 launch epoch.
+    ///
+    /// See [`scenarios::clementine_lunar::clementine_lunar`] for the
+    /// underlying setup (DE421 ephemerides, multi-body gravity).
     pub fn clementine_lunar() -> Self {
         Self {
             description: "Clementine lunar mission; 1994 launch epoch.",
@@ -92,6 +128,9 @@ impl Mission {
     }
 
     /// Mars-centered orbit with Sun perturbation; Dawn 2009 epoch.
+    ///
+    /// See [`scenarios::mars_orbit::mars_orbit`] for the underlying setup
+    /// (Mars + Sun gravity sources, ephemeris attachment).
     pub fn mars_orbit() -> Self {
         Self {
             description: "Mars-centered orbit; Sun perturbation, Dawn 2009 epoch.",
@@ -101,6 +140,9 @@ impl Mission {
     }
 
     /// Heliocentric Mercury orbit with PPN relativistic corrections.
+    ///
+    /// See [`scenarios::mercury::mercury_relativistic`] for the underlying
+    /// setup (initial state, PPN parameters, GR perihelion-advance test).
     pub fn mercury_relativistic() -> Self {
         Self {
             description: "Mercury heliocentric orbit; PPN relativistic corrections.",
