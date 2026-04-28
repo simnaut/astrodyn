@@ -81,14 +81,22 @@ pub fn planet_fixed_rotation_system(
                 );
             }
             jeod_sim::RotationModel::MoonDE421 => {
-                let eph = ephemeris
-                    .as_ref()
-                    .expect("MoonDE421 rotation requires EphemerisR resource with BPC loaded.");
-                let tdb_jd = sim_time.tdb_julian_date();
-                rot.0 = jeod_sim::FrameTransform::from_matrix(
-                    eph.get_body_rotation(jeod_sim::EphemerisBody::Moon, tdb_jd)
-                        .expect("Moon DE421 BPC rotation query failed"),
+                let eph = ephemeris.as_ref().expect(
+                    "RotationModel::MoonDE421 requires the EphemerisR resource with a BPC \
+                     loaded. Insert EphemerisR before stepping the simulation, or switch the \
+                     body to RotationModel::MoonIAU.",
                 );
+                let tdb_jd = sim_time.tdb_julian_date();
+                let matrix = eph
+                    .get_body_rotation(jeod_sim::EphemerisBody::Moon, tdb_jd)
+                    .unwrap_or_else(|err| {
+                        panic!(
+                            "Moon DE421 BPC rotation query failed at TDB JD {tdb_jd}: {err:?}. \
+                             The loaded BPC kernel does not cover this epoch; load a kernel \
+                             whose coverage includes the simulation epoch."
+                        )
+                    });
+                rot.0 = jeod_sim::FrameTransform::from_matrix(matrix);
             }
         }
     }
@@ -1265,12 +1273,24 @@ pub fn staging_system(
     for evt in attach_events.read() {
         let child_id = bodies
             .get(evt.child)
-            .expect("AttachEvent child entity missing MassBodyIdC or MassPropertiesC")
+            .unwrap_or_else(|_| {
+                panic!(
+                    "AttachEvent.child = {:?} is not a mass body — entity is missing MassBodyIdC \
+                 and/or MassPropertiesC. Spawn the body via the mass-tree API before attaching.",
+                    evt.child
+                )
+            })
             .0
              .0;
         let parent_id = bodies
             .get(evt.parent)
-            .expect("AttachEvent parent entity missing MassBodyIdC or MassPropertiesC")
+            .unwrap_or_else(|_| {
+                panic!(
+                    "AttachEvent.parent = {:?} is not a mass body — entity is missing MassBodyIdC \
+                 and/or MassPropertiesC. Spawn the parent via the mass-tree API before attaching.",
+                    evt.parent
+                )
+            })
             .0
              .0;
         tree.attach(child_id, parent_id, evt.offset, evt.t_parent_child);
@@ -1281,7 +1301,13 @@ pub fn staging_system(
     for evt in detach_events.read() {
         let child_id = bodies
             .get(evt.child)
-            .expect("DetachEvent child entity missing MassBodyIdC or MassPropertiesC")
+            .unwrap_or_else(|_| {
+                panic!(
+                    "DetachEvent.child = {:?} is not a mass body — entity is missing MassBodyIdC \
+                 and/or MassPropertiesC.",
+                    evt.child
+                )
+            })
             .0
              .0;
         if let Some(parent_id) = tree.parent(child_id) {

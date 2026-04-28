@@ -16,6 +16,8 @@
 use jeod_interactions::earth_lighting::calc_lighting_params;
 use std::path::Path;
 
+/// JEOD lighting CSV record. Mirrors the full CSV column layout; only the
+/// subset relevant to each assertion is read.
 #[allow(dead_code)]
 struct LightingRecord {
     time: f64,

@@ -97,6 +97,49 @@ The three verification tiers:
   through `Simulation::step()`, compare against JEOD Trick simulation output over
   hours/days
 
+## Fail Loudly (non-negotiable)
+
+Physics simulations have no graceful-degradation mode. A trajectory that
+silently propagates with a missing rotation matrix, an uninitialized mass,
+or a misconfigured gravity source is not "approximately right" — it is
+*wrong*, and downstream consumers (mission planners, GN&C developers,
+analysts) will treat the wrong answer as correct because nothing failed.
+The consequences range from wasted engineering time to mission-critical
+errors. Therefore:
+
+- **Misconfigurations and invalid physics must panic immediately.** A
+  vehicle configured for `MoonDE421` rotation without `EphemerisR`
+  loaded, an `AttachEvent` referencing an entity that isn't a mass body,
+  a gravity source with a non-positive `mu`, or a quaternion that drifts
+  past `NaN` — all of these must fail loudly with a diagnostic message
+  that names the misconfiguration and tells the caller how to fix it. Do
+  not `warn!` and continue; do not return a default; do not skip the
+  step. Surface the failure at the point of detection.
+- **Use `assert!` (and `assert_eq!`/`assert_ne!`), not `debug_assert!`.**
+  Invariants that protect physics correctness must hold in release
+  builds, where most simulation runs actually execute. `debug_assert!`
+  is silently a no-op under `--release` and gives a false sense of
+  safety. Reserve `debug_assert!` for invariants that are *purely
+  expensive performance checks* with no correctness consequence — those
+  are rare in this codebase.
+- **Diagnostic messages name the broken assumption.** A panic message
+  like `"unwrap on None"` is useless to a mission engineer. Write
+  messages that state which invariant was violated, which input
+  triggered it, and what the caller should change. The two patterns to
+  use are `expect("<noun phrase>: <what to fix>")` and
+  `unwrap_or_else(|err| panic!("<context with values>: {err:?}. <how to
+  fix>"))`.
+- **The exception**: deeply internal invariants that are unreachable by
+  construction may keep terse `expect()` messages — e.g.
+  `expect("stage 1 runs before stages 2-4")` inside a kernel that
+  already proved the precondition holds. These are documentation for
+  the next reader, not user-facing diagnostics.
+
+This rule is not in tension with the *No Half-Baked Implementations*
+rule above — it is its operational corollary. A test or implementation
+that compiles and runs but silently produces wrong physics is the
+half-baked failure mode the previous section forbids.
+
 ## Precision
 
 Use `f64` everywhere. Do NOT use Bevy's `Transform`/`GlobalTransform` (f32).

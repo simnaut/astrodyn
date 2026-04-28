@@ -134,7 +134,7 @@ fn log_orbit(
 // constructions. The example itself uses recipe presets, but the
 // import demonstrates the available surface — mission authors should
 // consume units via this facade instead of importing `uom::si::*`
-// directly.
+// directly. This function is documentation-only; never called.
 #[allow(dead_code)]
 fn _showcase_f64_ext() {
     let _mass = 420_000.0.kg();

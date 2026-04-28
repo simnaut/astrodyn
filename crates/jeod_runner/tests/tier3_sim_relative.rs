@@ -13,6 +13,8 @@ use jeod_sim::{
     compute_relative_state, MassProperties, RotationalState, SimulationTime, TranslationalState,
 };
 
+/// SIM_Relative CSV record. Mirrors the full column layout; not every
+/// field is consumed by every assertion.
 #[allow(dead_code)]
 struct RelativeRecord {
     time: f64,

@@ -76,7 +76,8 @@ fn max_matrix_error(a: &DMat3, b: &DMat3) -> f64 {
     max_err
 }
 
-/// JEOD RNP CSV record at one timestep.
+/// JEOD RNP CSV record at one timestep. Mirrors the CSV column layout;
+/// not every field is consumed by every assertion.
 #[allow(dead_code)]
 struct RnpRecord {
     time: f64,

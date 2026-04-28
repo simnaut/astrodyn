@@ -1,9 +1,14 @@
 [package]
 name = "jeod_time"
-version = "0.1.0"
-edition = "2021"
+description = "Time scales (TAI/UTC/UT1/TDB/TT/GMST) and converters for bevy_jeod"
+keywords = ["time", "timescale", "tai", "utc", "aerospace"]
+categories = ["science", "aerospace", "date-and-time"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
-jeod_quantities = { path = "../jeod_quantities" }
+jeod_quantities = { path = "../jeod_quantities", version = "0.1.0" }
 log = { workspace = true }
 uom = { workspace = true }

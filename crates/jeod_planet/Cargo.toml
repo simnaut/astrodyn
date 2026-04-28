@@ -1,8 +1,13 @@
 [package]
 name = "jeod_planet"
-version = "0.1.0"
-edition = "2021"
+description = "Planet definitions and presets (Earth, Moon, Sun, Mars) for bevy_jeod"
+keywords = ["planet", "ephemeris", "orbital-mechanics", "aerospace"]
+categories = ["science", "aerospace"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
-jeod_quantities = { path = "../jeod_quantities" }
+jeod_quantities = { path = "../jeod_quantities", version = "0.1.0" }
 uom = { workspace = true }

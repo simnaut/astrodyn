@@ -1,22 +1,27 @@
 [package]
 name = "jeod_sim"
-version = "0.1.0"
-edition = "2021"
+description = "Pipeline orchestration, VehicleBuilder, and recipes — single API surface for ECS adapters"
+keywords = ["orbital-mechanics", "simulation", "aerospace", "ecs", "physics"]
+categories = ["science", "aerospace", "simulation"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
-jeod_quantities = { path = "../jeod_quantities" }
-jeod_math = { path = "../jeod_math" }
-jeod_dynamics = { path = "../jeod_dynamics" }
-jeod_gravity = { path = "../jeod_gravity" }
-jeod_time = { path = "../jeod_time" }
-jeod_frames = { path = "../jeod_frames" }
-jeod_atmosphere = { path = "../jeod_atmosphere" }
-jeod_interactions = { path = "../jeod_interactions" }
-jeod_ephemeris = { path = "../jeod_ephemeris" }
-jeod_planet = { path = "../jeod_planet" }
+jeod_quantities = { path = "../jeod_quantities", version = "0.1.0" }
+jeod_math = { path = "../jeod_math", version = "0.1.0" }
+jeod_dynamics = { path = "../jeod_dynamics", version = "0.1.0" }
+jeod_gravity = { path = "../jeod_gravity", version = "0.1.0" }
+jeod_time = { path = "../jeod_time", version = "0.1.0" }
+jeod_frames = { path = "../jeod_frames", version = "0.1.0" }
+jeod_atmosphere = { path = "../jeod_atmosphere", version = "0.1.0" }
+jeod_interactions = { path = "../jeod_interactions", version = "0.1.0" }
+jeod_ephemeris = { path = "../jeod_ephemeris", version = "0.1.0" }
+jeod_planet = { path = "../jeod_planet", version = "0.1.0" }
 glam = { workspace = true }
 log = { workspace = true }
 uom = { workspace = true }
 
 [dev-dependencies]
-jeod_test_data = { path = "../jeod_test_data" }
+jeod_test_data = { path = "../jeod_test_data", version = "0.1.0" }

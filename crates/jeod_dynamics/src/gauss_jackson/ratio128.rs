@@ -64,6 +64,8 @@ impl Ratio128 {
 
     /// Construct from unsigned numerator and denominator with sign.
     /// JEOD: `Ratio128(unsigned long long num_in, unsigned long long den_in, int sign_in)`.
+    /// Faithful port of the JEOD constructor; currently exercised only by
+    /// the unit tests in this module.
     #[allow(dead_code)]
     pub fn new(num: u128, den: u128, sign: i8) -> Self {
         assert!(den != 0, "Ratio128: zero denominator");

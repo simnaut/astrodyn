@@ -1,19 +1,24 @@
 [package]
 name = "jeod_dynamics"
-version = "0.1.0"
-edition = "2021"
+description = "Rigid-body dynamics, integrators (RK4, RKF45, GJ, ABM4), mass tree, and body initialization"
+keywords = ["orbital-mechanics", "dynamics", "integrator", "aerospace", "simulation"]
+categories = ["science", "aerospace", "simulation"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
-jeod_frames = { path = "../jeod_frames" }
-jeod_math = { path = "../jeod_math" }
-jeod_quantities = { path = "../jeod_quantities" }
+jeod_frames = { path = "../jeod_frames", version = "0.1.0" }
+jeod_math = { path = "../jeod_math", version = "0.1.0" }
+jeod_quantities = { path = "../jeod_quantities", version = "0.1.0" }
 glam = { workspace = true }
 uom = { workspace = true }
 
 [dev-dependencies]
-jeod_math = { path = "../jeod_math", features = ["test-utils"] }
-jeod_quantities = { path = "../jeod_quantities", features = ["test-utils"] }
-jeod_test_data = { path = "../jeod_test_data" }
-jeod_gravity = { path = "../jeod_gravity" }
-jeod_planet = { path = "../jeod_planet" }
+jeod_math = { path = "../jeod_math", version = "0.1.0", features = ["test-utils"] }
+jeod_quantities = { path = "../jeod_quantities", version = "0.1.0", features = ["test-utils"] }
+jeod_test_data = { path = "../jeod_test_data", version = "0.1.0" }
+jeod_gravity = { path = "../jeod_gravity", version = "0.1.0" }
+jeod_planet = { path = "../jeod_planet", version = "0.1.0" }
 sha2 = "0.10"
