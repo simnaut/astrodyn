@@ -194,14 +194,19 @@ impl<'sim> BrandedSimulation<'sim> {
     // ── Pass-through forwarders for the common non-index methods ──
 
     /// Advance the simulation by one timestep.
-    pub fn step(&mut self) {
-        self.inner.step();
+    pub fn step(&mut self) -> Result<(), crate::StepError> {
+        self.inner.step()
     }
 
-    /// Advance until the simulation time reaches `target_time` (whole
-    /// `dt` increments only — fractional residuals panic).
-    pub fn step_until(&mut self, target_time: f64) {
-        self.inner.step_until(target_time);
+    /// Advance until the simulation time reaches `target_time`.
+    ///
+    /// If the underlying integrator supports it, this may take a final
+    /// fractional step to hit `target_time` exactly. A fractional residual
+    /// only panics when such a step is required for an integrator that
+    /// does not support it (e.g. multi-step `GaussJackson` / `Abm4`,
+    /// whose history arrays assume constant dt).
+    pub fn step_until(&mut self, target_time: f64) -> Result<(), crate::StepError> {
+        self.inner.step_until(target_time)
     }
 
     /// Run JEOD invariant validation on the current sim state.

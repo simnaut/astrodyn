@@ -122,7 +122,7 @@ fn tier3_bevy_derived_states() {
     sim.add_body(body);
 
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let sim_body = sim.body(0);
     let sim_state = SixDofState {
@@ -239,7 +239,7 @@ fn tier3_bevy_geodetic_derived_state() {
     sim.add_body(body);
 
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let sim_body = sim.body(0);
     assert_trans_eq("Bevy vs Sim (geodetic)", &bevy_trans, &sim_body.trans);
@@ -380,7 +380,7 @@ fn tier3_bevy_eccentric_derived_states() {
         ..Default::default()
     });
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let sim_body = sim.body(0);
     let sim_state = SixDofState {
@@ -507,7 +507,7 @@ fn tier3_bevy_polar_geodetic() {
     });
 
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let sim_body = sim.body(0);
     assert_trans_eq("Bevy vs Sim (polar geodetic)", &bevy_trans, &sim_body.trans);
@@ -625,7 +625,7 @@ fn tier3_bevy_equatorial_solar_beta() {
         ..Default::default()
     });
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let sim_body = sim.body(0);
     let sim_state = SixDofState {
@@ -696,7 +696,7 @@ fn run_euler_parity(label: &str, trans: TranslationalState, sequence: EulerSeque
         ..Default::default()
     });
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let sim_body = sim.body(0);
     let sim_state = SixDofState {
@@ -775,7 +775,7 @@ fn run_lvlh_parity(label: &str, trans: TranslationalState) {
         ..Default::default()
     });
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let sim_body = sim.body(0);
     assert_trans_eq(
@@ -892,7 +892,7 @@ fn run_ned_parity(label: &str, trans: TranslationalState, r_eq: f64, r_pol: f64)
         ..Default::default()
     });
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let sim_body = sim.body(0);
     assert_trans_eq(
@@ -967,7 +967,7 @@ fn run_orbelem_parity(label: &str, trans: TranslationalState) {
         ..Default::default()
     });
     sim.validate().unwrap();
-    sim.step();
+    sim.step().expect("step failed");
 
     let sim_output = sim.body(0);
     let sim_oe = sim_output.orbital_elements.as_ref().expect("OE computed");
@@ -1085,7 +1085,7 @@ fn tier3_bevy_orbelem() {
         ..Default::default()
     });
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let sim_output = sim.body(0);
     let sim_oe = sim_output.orbital_elements.as_ref().expect("OE computed");
@@ -1157,7 +1157,7 @@ fn tier3_bevy_solar_beta() {
         ..Default::default()
     });
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let sim_beta = sim.body(0).solar_beta.expect("solar beta computed");
     assert_bits_eq("Bevy vs Sim", "solar_beta", bevy_beta, sim_beta);

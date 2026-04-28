@@ -139,7 +139,7 @@ fn tier3_drag_constant_density_energy_loss() {
     // Propagate for 1 orbit (~92 min at 400 km)
     let period = 2.0 * std::f64::consts::PI * ((R_EARTH + 400_000.0).powi(3) / MU_EARTH).sqrt();
     let n_steps = (period / dt) as usize;
-    sim.step_n(n_steps);
+    sim.step_n(n_steps).expect("step_n failed");
 
     let body = sim.body(0);
     let e_final = specific_orbital_energy(body.trans.position, body.trans.velocity, MU_EARTH);
@@ -187,7 +187,7 @@ fn tier3_drag_altitude_decay() {
     // Propagate for 2 orbits
     let period = 2.0 * std::f64::consts::PI * (a_initial.powi(3) / MU_EARTH).sqrt();
     let n_steps = (2.0 * period / dt) as usize;
-    sim.step_n(n_steps);
+    sim.step_n(n_steps).expect("step_n failed");
 
     let body = sim.body(0);
     let a_final = semi_major_axis_from_energy(
@@ -241,7 +241,7 @@ fn tier3_drag_higher_density_faster_decay() {
     // Case 1: low density
     let density_low = 1e-12;
     let mut sim_low = make_drag_sim(pos, vel, mass, cd, area, density_low, dt);
-    sim_low.step_n(n_steps);
+    sim_low.step_n(n_steps).expect("step_n failed");
     let body_low = sim_low.body(0);
     let e_loss_low = e_initial
         - specific_orbital_energy(body_low.trans.position, body_low.trans.velocity, MU_EARTH);
@@ -249,7 +249,7 @@ fn tier3_drag_higher_density_faster_decay() {
     // Case 2: high density (10x)
     let density_high = 1e-11;
     let mut sim_high = make_drag_sim(pos, vel, mass, cd, area, density_high, dt);
-    sim_high.step_n(n_steps);
+    sim_high.step_n(n_steps).expect("step_n failed");
     let body_high = sim_high.body(0);
     let e_loss_high = e_initial
         - specific_orbital_energy(body_high.trans.position, body_high.trans.velocity, MU_EARTH);
@@ -289,7 +289,7 @@ fn tier3_drag_larger_area_faster_decay() {
     // Case 1: small area
     let area_small = 5.0;
     let mut sim_small = make_drag_sim(pos, vel, mass, cd, area_small, density, dt);
-    sim_small.step_n(n_steps);
+    sim_small.step_n(n_steps).expect("step_n failed");
     let body_small = sim_small.body(0);
     let e_loss_small = e_initial
         - specific_orbital_energy(
@@ -301,7 +301,7 @@ fn tier3_drag_larger_area_faster_decay() {
     // Case 2: large area (4x)
     let area_large = 20.0;
     let mut sim_large = make_drag_sim(pos, vel, mass, cd, area_large, density, dt);
-    sim_large.step_n(n_steps);
+    sim_large.step_n(n_steps).expect("step_n failed");
     let body_large = sim_large.body(0);
     let e_loss_large = e_initial
         - specific_orbital_energy(
@@ -344,7 +344,7 @@ fn tier3_drag_no_drag_at_zero_density() {
     // Propagate for 1 orbit
     let period = 2.0 * std::f64::consts::PI * ((R_EARTH + 400_000.0).powi(3) / MU_EARTH).sqrt();
     let n_steps = (period / dt) as usize;
-    sim.step_n(n_steps);
+    sim.step_n(n_steps).expect("step_n failed");
 
     let body = sim.body(0);
     let e_final = specific_orbital_energy(body.trans.position, body.trans.velocity, MU_EARTH);
@@ -410,14 +410,14 @@ fn tier3_drag_corotation_wind_effect() {
 
     // Prograde orbit with co-rotation wind
     let mut sim_pro = make_drag_sim_with_wind(pos, vel_prograde, mass, cd, area, density, dt);
-    sim_pro.step_n(n_steps);
+    sim_pro.step_n(n_steps).expect("step_n failed");
     let body_pro = sim_pro.body(0);
     let e_loss_pro = e_initial
         - specific_orbital_energy(body_pro.trans.position, body_pro.trans.velocity, MU_EARTH);
 
     // Retrograde orbit with co-rotation wind
     let mut sim_retro = make_drag_sim_with_wind(pos, vel_retrograde, mass, cd, area, density, dt);
-    sim_retro.step_n(n_steps);
+    sim_retro.step_n(n_steps).expect("step_n failed");
     let body_retro = sim_retro.body(0);
     // For retrograde, initial energy is the same magnitude
     let e_loss_retro = e_initial

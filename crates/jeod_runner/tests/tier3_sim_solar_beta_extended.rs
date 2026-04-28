@@ -138,7 +138,8 @@ fn tier3_solar_beta_equatorial_at_equinox() {
 
     let mut max_beta = 0.0_f64;
     for step in 1..=n_steps {
-        sim.step_until(step as f64 * 10.0);
+        sim.step_until(step as f64 * 10.0)
+            .expect("step_until failed");
         let beta = sim.body(0).solar_beta.expect("solar beta not computed");
         max_beta = max_beta.max(beta.abs());
     }
@@ -181,7 +182,7 @@ fn tier3_solar_beta_polar_orbit() {
     for (sun_pos, expected_deg) in cases {
         let mut sim = build_solar_beta_sim(mu_earth, 10.0, sun_pos, body);
         sim.validate().unwrap();
-        sim.step_until(10.0); // derived state is populated after first step
+        sim.step_until(10.0).expect("step_until failed"); // derived state is populated after first step
         let beta = sim.body(0).solar_beta.expect("solar beta not computed");
         let expected = expected_deg.to_radians();
         assert!(
@@ -220,7 +221,7 @@ fn tier3_solar_beta_iss_orbit() {
         let mut sim =
             build_solar_beta_sim(mu_earth, 10.0, DVec3::new(SUN_DISTANCE_M, 0.0, 0.0), body);
         sim.validate().unwrap();
-        sim.step_until(10.0);
+        sim.step_until(10.0).expect("step_until failed");
         let beta = sim.body(0).solar_beta.expect("solar beta not computed");
         assert!(
             beta.abs() < 1e-4,
@@ -233,7 +234,7 @@ fn tier3_solar_beta_iss_orbit() {
         let mut sim =
             build_solar_beta_sim(mu_earth, 10.0, DVec3::new(0.0, 0.0, SUN_DISTANCE_M), body);
         sim.validate().unwrap();
-        sim.step_until(10.0);
+        sim.step_until(10.0).expect("step_until failed");
         let beta = sim.body(0).solar_beta.expect("solar beta not computed");
         let expected = std::f64::consts::FRAC_PI_2 - inc;
         assert!(
@@ -248,7 +249,7 @@ fn tier3_solar_beta_iss_orbit() {
         let mut sim =
             build_solar_beta_sim(mu_earth, 10.0, DVec3::new(0.0, -SUN_DISTANCE_M, 0.0), body);
         sim.validate().unwrap();
-        sim.step_until(10.0);
+        sim.step_until(10.0).expect("step_until failed");
         let beta = sim.body(0).solar_beta.expect("solar beta not computed");
         assert!(
             (beta - inc).abs() < 1e-4,
@@ -278,7 +279,7 @@ fn tier3_solar_beta_sun_in_orbital_plane() {
     // Sun along +X lies in the plane since +X · (orbit normal) = 0.
     let mut sim = build_solar_beta_sim(mu_earth, 10.0, DVec3::new(SUN_DISTANCE_M, 0.0, 0.0), body);
     sim.validate().unwrap();
-    sim.step_until(10.0);
+    sim.step_until(10.0).expect("step_until failed");
     let beta = sim.body(0).solar_beta.expect("solar beta not computed");
     assert!(
         beta.abs() < 1e-4,
@@ -301,7 +302,7 @@ fn tier3_solar_beta_sun_perpendicular_to_plane() {
 
     let mut sim = build_solar_beta_sim(mu_earth, 10.0, DVec3::new(0.0, 0.0, SUN_DISTANCE_M), body);
     sim.validate().unwrap();
-    sim.step_until(10.0);
+    sim.step_until(10.0).expect("step_until failed");
     let beta = sim.body(0).solar_beta.expect("solar beta not computed");
 
     let pi_2 = std::f64::consts::FRAC_PI_2;
@@ -352,7 +353,8 @@ fn tier3_solar_beta_bounded() {
     let pi_2 = std::f64::consts::FRAC_PI_2;
     let mut max_abs_beta = 0.0_f64;
     for step in 1..=n_steps {
-        sim.step_until(step as f64 * 10.0);
+        sim.step_until(step as f64 * 10.0)
+            .expect("step_until failed");
         let beta = sim.body(0).solar_beta.expect("solar beta not computed");
         // Absolute bound from the asin definition.
         assert!(

@@ -98,7 +98,7 @@ fn tier3_simulation_orbinit_cross_consistency() {
         sim.validate().unwrap();
 
         // Step once to exercise the full pipeline
-        sim.step();
+        sim.step().expect("step failed");
 
         // Read back the body state after one step (confirms pipeline ran)
         let body = sim.body(0);

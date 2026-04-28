@@ -131,7 +131,7 @@ fn run_relative_scenario(label: &str, csv_name: &str) {
 
     // Step through remaining records
     for rec in &records[1..] {
-        sim.step_until(rec.time);
+        sim.step_until(rec.time).expect("step_until failed");
 
         let a = sim.body(0);
         let b = sim.body(1);

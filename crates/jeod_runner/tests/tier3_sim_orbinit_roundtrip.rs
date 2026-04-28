@@ -81,7 +81,7 @@ fn roundtrip_via_simulation(
     });
 
     sim.validate().unwrap();
-    sim.step_n(n_steps);
+    sim.step_n(n_steps).expect("step_n failed");
 
     let body = sim.body(0);
     use jeod_sim::{F64Ext, Inertial, Vec3Ext};
@@ -216,7 +216,7 @@ fn tier3_orbinit_roundtrip_circular() {
     let energy_0 =
         body0.trans.velocity.length_squared() / 2.0 - MU_EARTH / body0.trans.position.length();
 
-    sim.step_n(n_steps);
+    sim.step_n(n_steps).expect("step_n failed");
 
     let body = sim.body(0);
     use jeod_sim::{F64Ext, Inertial, Vec3Ext};

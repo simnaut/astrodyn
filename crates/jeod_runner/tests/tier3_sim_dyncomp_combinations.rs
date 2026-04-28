@@ -121,7 +121,7 @@ fn tier3_dyncomp_point_mass_3dof_conservation() {
     // Propagate for 3 orbits.
     let period = 2.0 * std::f64::consts::PI * ((R_EARTH + 400_000.0).powi(3) / MU_EARTH).sqrt();
     let n_steps = (3.0 * period / dt) as usize;
-    sim.step_n(n_steps);
+    sim.step_n(n_steps).expect("step_n failed");
 
     let body = sim.body(0);
     let e1 = specific_orbital_energy(body.trans.position, body.trans.velocity, MU_EARTH);
@@ -227,7 +227,7 @@ fn tier3_dyncomp_point_mass_plus_thirdbody_conservation() {
     // Integrate for one orbit.
     let period = 2.0 * std::f64::consts::PI * ((R_EARTH + 400_000.0).powi(3) / MU_EARTH).sqrt();
     let n_steps = (period / dt) as usize;
-    sim.step_n(n_steps);
+    sim.step_n(n_steps).expect("step_n failed");
 
     let body = sim.body(0);
     let e1 = specific_orbital_energy(body.trans.position, body.trans.velocity, MU_EARTH);
@@ -324,7 +324,7 @@ fn tier3_dyncomp_drag_point_mass_monotonic_decay() {
 
     let mut sma_samples = Vec::new();
     for _ in 0..5 {
-        sim.step_n(steps_per_orbit);
+        sim.step_n(steps_per_orbit).expect("step_n failed");
         let body = sim.body(0);
         let e = specific_orbital_energy(body.trans.position, body.trans.velocity, MU_EARTH);
         let a = -MU_EARTH / (2.0 * e);
@@ -409,7 +409,7 @@ fn tier3_dyncomp_6dof_rigid_body_invariance() {
     let h_inertial_0 = t0.transpose() * h_body0;
 
     // Propagate for 60 seconds.
-    sim.step_n((60.0 / dt) as usize);
+    sim.step_n((60.0 / dt) as usize).expect("step_n failed");
 
     let body = sim.body(0);
     let q1 = body.rot.as_ref().unwrap().quaternion;
@@ -462,7 +462,8 @@ fn tier3_dyncomp_external_force_impulse_response() {
 
     // Apply force for force_duration seconds.
     sim.set_body_external_force(0, force_inertial);
-    sim.step_n((force_duration / dt) as usize);
+    sim.step_n((force_duration / dt) as usize)
+        .expect("step_n failed");
     sim.set_body_external_force(0, DVec3::ZERO);
 
     let v_after = sim.body(0).trans.velocity;
@@ -474,7 +475,9 @@ fn tier3_dyncomp_external_force_impulse_response() {
     let mut ref_sim = make_kepler_sim(pos, vel0, mass, dt);
     // Advance the reference simulation by the same elapsed time as the force
     // window started at t=0 and lasted `force_duration`.
-    ref_sim.step_n((force_duration / dt) as usize);
+    ref_sim
+        .step_n((force_duration / dt) as usize)
+        .expect("step_n failed");
     let v_reference = ref_sim.body(0).trans.velocity;
 
     let force_delta_v = v_after - v_reference;
@@ -557,7 +560,8 @@ fn tier3_dyncomp_external_torque_impulse_response() {
 
     // Apply torque window.
     sim.set_body_external_torque(0, torque_body);
-    sim.step_n((torque_duration / dt) as usize);
+    sim.step_n((torque_duration / dt) as usize)
+        .expect("step_n failed");
     sim.set_body_external_torque(0, DVec3::ZERO);
 
     let omega_after = sim.body(0).rot.as_ref().unwrap().ang_vel_body;
@@ -643,7 +647,7 @@ fn tier3_dyncomp_attitude_stability_major_axis() {
     // Propagate 60 s and sample omega regularly.
     let mut max_perp = 0.0_f64;
     for _ in 0..600 {
-        sim.step_n(1);
+        sim.step_n(1).expect("step_n failed");
         let omega = sim.body(0).rot.as_ref().unwrap().ang_vel_body;
         let perp = (omega.x.powi(2) + omega.y.powi(2)).sqrt();
         if perp > max_perp {

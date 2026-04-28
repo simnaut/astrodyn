@@ -298,7 +298,7 @@ fn propagate_with_contact(
             break;
         }
 
-        sim.step_n(1);
+        sim.step_n(1).expect("step_n failed");
     }
     out
 }

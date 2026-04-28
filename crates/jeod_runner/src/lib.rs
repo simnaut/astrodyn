@@ -46,10 +46,12 @@ use jeod_sim::{
 
 pub mod branded;
 pub mod builder;
+pub mod error;
 pub mod prelude;
 pub mod run_verification;
 
 pub use branded::{BodyIdx, BrandedSimulation, SourceIdx};
+pub use error::StepError;
 
 // Re-export jeod_sim so downstream tests can access types through either path.
 pub use jeod_sim;
@@ -1145,8 +1147,8 @@ impl Simulation {
     /// 7. Force collection and frame derivative computation
     /// 8. State integration (RK4, with sub-stage tree updates)
     /// 9. Derived state computation
-    pub fn step(&mut self) {
-        self.step_internal(self.dt);
+    pub fn step(&mut self) -> Result<(), StepError> {
+        self.step_internal(self.dt)
     }
 
     /// Get the position and velocity of a frame relative to the root inertial frame.
@@ -1182,7 +1184,7 @@ impl Simulation {
 
     /// Internal step with explicit dt (avoids temporary mutation of `self.dt`
     /// in `step_until`).
-    fn step_internal(&mut self, dt: f64) {
+    fn step_internal(&mut self, dt: f64) -> Result<(), StepError> {
         // ── 1. Time update ──
         self.time.advance(dt);
 
@@ -1281,12 +1283,13 @@ impl Simulation {
                 if let Some(Some((target, observer))) = self.source_ephem_bodies.get(i) {
                     let (pos_typed, vel_typed) = eph
                         .get_state_typed(*target, *observer, tdb_jd)
-                        .unwrap_or_else(|e| {
-                            panic!(
-                                "Ephemeris lookup failed for source {i} \
-                                 ({target:?} wrt {observer:?}) at TDB JD {tdb_jd}: {e}"
-                            )
-                        });
+                        .map_err(|e| StepError::EphemerisLookup {
+                            source_idx: i,
+                            target: *target,
+                            observer: *observer,
+                            tdb_jd,
+                            message: e.to_string(),
+                        })?;
                     let (pos, vel) = (pos_typed.raw_si(), vel_typed.raw_si());
                     // Root-mapped sources cannot consume ephemeris position updates:
                     // the root frame must remain identity, so accepting such a
@@ -2107,17 +2110,15 @@ impl Simulation {
                 if !sw.active {
                     continue;
                 }
+                let num_sources = self.source_frame_ids.len();
                 let target_fid = self
                     .source_frame_ids
                     .get(sw.target_source)
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "frame switch evaluation: target_source {} out of range; \
-                             {} source(s) configured. Run validate() before step().",
-                            sw.target_source,
-                            self.source_frame_ids.len()
-                        )
-                    })
+                    .ok_or(StepError::FrameSwitchTargetMissing {
+                        body_idx,
+                        target_source: sw.target_source,
+                        num_sources,
+                    })?
                     .inertial;
                 let (target_origin, _) = self.frame_origin(target_fid);
                 let (current_origin, _) = self.frame_origin(self.bodies[body_idx].integ_frame_id);
@@ -2246,22 +2247,24 @@ impl Simulation {
                 }
             }
         }
+        Ok(())
     }
 
     /// Advance the simulation by `n` timesteps.
-    pub fn step_n(&mut self, n: usize) {
+    pub fn step_n(&mut self, n: usize) -> Result<(), StepError> {
         for _ in 0..n {
-            self.step();
+            self.step()?;
         }
+        Ok(())
     }
 
     /// Advance the simulation until `target_time` (in simulation seconds).
     ///
     /// Steps at `self.dt` until the remaining time is less than `dt`,
     /// then takes a final fractional step if the remainder exceeds 1 ms.
-    pub fn step_until(&mut self, target_time: f64) {
+    pub fn step_until(&mut self, target_time: f64) -> Result<(), StepError> {
         while self.time.simtime + self.dt <= target_time + 0.001 {
-            self.step();
+            self.step()?;
         }
         let remainder = target_time - self.time.simtime;
         if remainder > 0.001 {
@@ -2282,8 +2285,9 @@ impl Simulation {
                  Ensure target_time is an integer multiple of dt.",
                 self.dt
             );
-            self.step_internal(remainder);
+            self.step_internal(remainder)?;
         }
+        Ok(())
     }
 
     // JEOD_INV: DS.01 — derived state config immutable after init; read-only access only

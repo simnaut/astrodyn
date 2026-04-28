@@ -95,7 +95,7 @@ fn run_with_order(order: ThermalIntegrationOrder) -> (f64, DVec3) {
     sim.validate().unwrap();
     // 20 steps at dt=10s.
     for _ in 0..20 {
-        sim.step();
+        sim.step().expect("step failed");
     }
 
     let t = sim

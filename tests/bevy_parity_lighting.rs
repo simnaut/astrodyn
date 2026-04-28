@@ -151,7 +151,7 @@ fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_p
         ..Default::default()
     });
     sim.validate().unwrap();
-    sim.step();
+    sim.step().expect("step failed");
 
     let sim_body = sim.body(0);
     let sim_lighting = sim_body
@@ -360,7 +360,7 @@ fn tier3_bevy_earth_lighting_pipeline() {
         ..Default::default()
     });
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let sim_body = sim.body(0);
     assert_trans_eq(

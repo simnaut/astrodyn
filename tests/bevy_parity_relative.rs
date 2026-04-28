@@ -190,7 +190,7 @@ fn run_relative_parity(
         ..Default::default()
     });
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let sim_a_state = SixDofState {
         trans: sim.body(0).trans,
@@ -341,7 +341,7 @@ fn run_lvlhrel_parity(label: &str, ref_trans: TranslationalState, subj_trans: Tr
         ..Default::default()
     });
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let sim_ref = sim.body(0).trans;
     let sim_subj = sim.body(1).trans;

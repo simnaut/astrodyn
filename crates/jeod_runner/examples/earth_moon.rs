@@ -122,7 +122,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let steps_per_print = (print_interval / DT).round() as usize;
 
     for step in 1..=total_steps {
-        sim.step();
+        sim.step().expect("step failed");
         if step % steps_per_print == 0 {
             let body = sim.body(0);
             let pos = body.trans.position;

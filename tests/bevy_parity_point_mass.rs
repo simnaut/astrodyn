@@ -66,7 +66,7 @@ fn tier3_bevy_point_mass_sixdof() {
     let earth_idx = sim.add_source("Earth", earth_entry);
     sim.add_body(new_sim_body_sixdof(earth_idx, false));
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let body = sim.body(0);
     let sim_state = SixDofState {
@@ -108,7 +108,7 @@ fn run_planetary_parity(label: &str, trans: TranslationalState) {
         ..Default::default()
     });
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     assert_trans_eq(
         &format!("Bevy vs Sim ({label})"),
@@ -190,7 +190,7 @@ fn tier3_bevy_run2_6dof() {
     let (mut sim, earth_idx) = new_sim_earth(DT);
     sim.add_body(new_sim_body_sixdof(earth_idx, false));
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let sim_body = sim.body(0);
     let sim_state = SixDofState {
@@ -261,7 +261,7 @@ fn tier3_bevy_orbinit_cross_consistency() {
             ..Default::default()
         });
         sim.validate().unwrap();
-        sim.step();
+        sim.step().expect("step failed");
         assert_trans_eq(
             &format!("Bevy vs Sim (orbinit {label})"),
             &bevy_trans,
@@ -287,7 +287,7 @@ fn tier3_bevy_timescale_tdb() {
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, dt);
     sim.validate().unwrap();
-    sim.step_n(n_steps);
+    sim.step_n(n_steps).expect("step_n failed");
 
     assert_bits_eq(
         "Bevy vs Sim",
@@ -341,7 +341,7 @@ fn tier3_sim_time_reversal_round_trip() {
     let initial_pos = sim.body(0).trans.position;
     let initial_vel = sim.body(0).trans.velocity;
 
-    sim.step_n(50);
+    sim.step_n(50).expect("step_n failed");
     let mid_pos = sim.body(0).trans.position;
     assert!(
         (mid_pos - initial_pos).length() > 1.0,
@@ -349,7 +349,7 @@ fn tier3_sim_time_reversal_round_trip() {
     );
 
     sim.time.time_scale_factor = -1.0;
-    sim.step_n(50);
+    sim.step_n(50).expect("step_n failed");
     let final_pos = sim.body(0).trans.position;
     let final_vel = sim.body(0).trans.velocity;
 
@@ -412,7 +412,7 @@ fn tier3_sim_relative_state_consistency() {
     });
 
     sim.validate().unwrap();
-    sim.step_n(10);
+    sim.step_n(10).expect("step_n failed");
 
     let a = sim.body(0);
     let b = sim.body(1);
@@ -537,7 +537,7 @@ fn tier3_sim_mars_rotation_dispatch() {
     });
 
     sim.validate().unwrap();
-    sim.step_n(10);
+    sim.step_n(10).expect("step_n failed");
 
     let rot = sim.source_pfix_rotation(mars).unwrap();
     assert!(
@@ -607,7 +607,7 @@ fn tier3_sim_multi_source_rotation() {
     });
 
     sim.validate().unwrap();
-    sim.step_n(10);
+    sim.step_n(10).expect("step_n failed");
 
     let earth_rot = sim.source_pfix_rotation(earth).unwrap();
     let mars_rot = sim.source_pfix_rotation(mars).unwrap();
@@ -703,7 +703,7 @@ fn run_atmosphere_parity(label: &str, trans: TranslationalState) {
         ..Default::default()
     });
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let sim_body = sim.body(0);
     let sim_state = SixDofState {

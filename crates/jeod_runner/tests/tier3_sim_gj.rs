@@ -112,7 +112,7 @@ fn run_gj_test(
 
     let mut our_states = Vec::with_capacity(trajectory.len() - 1);
     for record in &trajectory[1..] {
-        sim.step_until(record.time);
+        sim.step_until(record.time).expect("step_until failed");
         let body = sim.body(0);
         our_states.push(StateLog {
             time: record.time,

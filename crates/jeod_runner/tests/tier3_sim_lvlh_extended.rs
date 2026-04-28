@@ -108,7 +108,7 @@ fn tier3_lvlh_retrograde_orbit() {
         },
     );
     sim_prograde.validate().unwrap();
-    sim_prograde.step_until(dt);
+    sim_prograde.step_until(dt).expect("step_until failed");
     let lvlh_p = sim_prograde
         .body(0)
         .lvlh_frame
@@ -125,7 +125,7 @@ fn tier3_lvlh_retrograde_orbit() {
         },
     );
     sim_retro.validate().unwrap();
-    sim_retro.step_until(dt);
+    sim_retro.step_until(dt).expect("step_until failed");
     let lvlh_r = sim_retro
         .body(0)
         .lvlh_frame
@@ -199,7 +199,7 @@ fn tier3_lvlh_eccentric_orbit() {
     let mut omega_at_min_r = 0.0_f64;
     let mut omega_at_max_r = 0.0_f64;
     for step in 1..=n_steps {
-        sim.step_until(step as f64 * dt);
+        sim.step_until(step as f64 * dt).expect("step_until failed");
         let body = sim.body(0);
         let r = body.trans.position.length();
         let lvlh = body.lvlh_frame.expect("LVLH not computed");
@@ -282,7 +282,8 @@ fn tier3_lvlh_periodicity() {
             .t_parent_this;
 
     // Propagate exactly one orbital period.
-    sim.step_until(n_steps as f64 * dt);
+    sim.step_until(n_steps as f64 * dt)
+        .expect("step_until failed");
     let lvlh_final = sim
         .body(0)
         .lvlh_frame

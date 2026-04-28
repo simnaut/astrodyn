@@ -166,7 +166,7 @@ fn verify_orbit_family(csv_name: &str, label: &str, skip_degenerate_scalars: boo
     sim.validate().unwrap();
 
     // Step once to trigger derived-state computation (stage 9)
-    sim.step();
+    sim.step().expect("step failed");
 
     let output = sim.body(0);
     let oe = output

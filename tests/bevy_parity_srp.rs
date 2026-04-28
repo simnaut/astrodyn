@@ -150,7 +150,7 @@ fn tier3_bevy_full_stack_sixdof() {
     body.compute_gravity_gradient = true;
     sim.add_body(body);
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let body = sim.body(0);
     let sim_state = SixDofState {
@@ -345,7 +345,7 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
     });
 
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let sim_state = sim.body(0).trans;
 
@@ -462,7 +462,7 @@ fn run_shadow_parity(label: &str, srp_plates: Vec<(FlatPlate, FlatPlateParams, F
     });
     sim.add_body(body);
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let sim_body = sim.body(0);
     let sim_state = SixDofState {
@@ -557,7 +557,7 @@ fn run_srp_basic_parity(
     }));
     sim.add_body(body);
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let sim_body = sim.body(0);
     let sim_state = SixDofState {
@@ -661,7 +661,7 @@ fn run_srp_deriv_parity(
     }));
     sim.add_body(body);
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let sim_body = sim.body(0);
     let sim_state = SixDofState {
@@ -809,7 +809,7 @@ fn tier3_bevy_srp_derivative_rk4_with_rotated_struct_frame() {
     }));
     sim.add_body(body);
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let sim_body = sim.body(0);
     let sim_state = SixDofState {

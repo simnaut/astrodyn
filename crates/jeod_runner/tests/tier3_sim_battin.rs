@@ -228,7 +228,7 @@ fn propagate(
             earth_centered_state(EphemerisBody::Moon, target_tdb_jd, ephemeris);
         sim.set_source_state(moon_source, moon_pos, moon_vel);
 
-        sim.step_until(target_time);
+        sim.step_until(target_time).expect("step_until failed");
 
         let body = sim.body(0);
         times.push(target_time);

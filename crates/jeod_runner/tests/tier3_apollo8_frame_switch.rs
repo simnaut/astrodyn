@@ -277,7 +277,7 @@ fn tier3_apollo8_eci_integ() {
     let mut ref_log = Vec::with_capacity(steps);
 
     for step in 0..steps {
-        sim.step();
+        sim.step().expect("step failed");
 
         let ref_idx = step + 1;
         if ref_idx < ref_states.len() {
@@ -329,7 +329,7 @@ fn tier3_apollo8_frame_switch() {
     let mut max_err_moon = 0.0_f64;
 
     for step in 0..steps {
-        sim.step();
+        sim.step().expect("step failed");
         let ref_idx = step + 1;
         if ref_idx >= ref_positions.len() {
             break;

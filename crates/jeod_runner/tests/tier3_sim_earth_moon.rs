@@ -223,7 +223,7 @@ fn tier3_simulation_earth_moon_clem() {
     }];
 
     for (i, record) in ref_states[1..].iter().enumerate() {
-        sim.step_until(record.time);
+        sim.step_until(record.time).expect("step_until failed");
         let body = sim.body(0);
         if i == 0 {
             let jeod_pos = record.position.unwrap();

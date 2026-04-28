@@ -109,7 +109,7 @@ fn propagate_one_orbit(integrator: IntegratorType, dt: f64) -> (DVec3, DVec3, f6
 
     for i in 1..=n_steps {
         let t = (i as f64) * adjusted_dt;
-        sim.step_until(t);
+        sim.step_until(t).expect("step_until failed");
         let body = sim.body(0);
         monitor.observe(body.trans.position, body.trans.velocity);
     }
@@ -222,7 +222,7 @@ fn tier3_integ_rk4_vs_gj_agreement() {
 /// Propagate for a fixed duration and return the final position.
 fn propagate_fixed_time(integrator: IntegratorType, dt: f64, duration: f64) -> DVec3 {
     let mut sim = make_sim(integrator, dt);
-    sim.step_until(duration);
+    sim.step_until(duration).expect("step_until failed");
     sim.body(0).trans.position
 }
 

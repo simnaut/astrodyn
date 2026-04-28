@@ -50,7 +50,7 @@ fn main() {
 
     for step in 0..=steps {
         if step > 0 {
-            sim.step();
+            sim.step().expect("step failed");
         }
         if step % report_interval == 0 || step == steps {
             let s = sim.body(0).trans;

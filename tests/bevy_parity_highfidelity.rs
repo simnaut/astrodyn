@@ -105,7 +105,7 @@ fn tier3_bevy_sh4x4_rnp() {
     });
 
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let sim_state = sim.body(0).trans;
 
@@ -216,7 +216,7 @@ fn tier3_bevy_tidal_sh4x4() {
     });
 
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     let sim_state = sim.body(0).trans;
 
@@ -266,7 +266,7 @@ fn tier3_bevy_run2p_polar_motion() {
         ..Default::default()
     });
     sim.validate().unwrap();
-    sim.step_n(NUM_STEPS);
+    sim.step_n(NUM_STEPS).expect("step_n failed");
 
     assert_trans_eq(
         "Bevy vs Sim (polar motion)",
@@ -341,7 +341,7 @@ fn run_gj_parity(label: &str, config: GaussJacksonConfig, dt: f64, n_steps: usiz
         ..Default::default()
     });
     sim.validate().unwrap();
-    sim.step_n(n_steps);
+    sim.step_n(n_steps).expect("step_n failed");
 
     let sim_trans = sim.body(0).trans;
 

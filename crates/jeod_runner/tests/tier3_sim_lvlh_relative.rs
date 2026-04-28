@@ -111,7 +111,7 @@ fn run_lvlhrel_scenario(label: &str, csv_name: &str) {
 
     // Step through remaining records
     for rec in &records[1..] {
-        sim.step_until(rec.time);
+        sim.step_until(rec.time).expect("step_until failed");
 
         let ref_body = sim.body(0);
         let subj_body = sim.body(1);

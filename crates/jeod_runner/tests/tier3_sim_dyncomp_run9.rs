@@ -137,7 +137,7 @@ where
         let (force, torque) = force_torque_fn(sim.elapsed(), &quat);
         sim.set_body_external_force(0, force);
         sim.set_body_external_torque(0, torque);
-        sim.step();
+        sim.step().expect("step failed");
     }
     // Fractional remainder
     let remainder = target_time - sim.elapsed();
@@ -147,7 +147,7 @@ where
         sim.set_body_external_force(0, force);
         sim.set_body_external_torque(0, torque);
         sim.set_dt(remainder);
-        sim.step();
+        sim.step().expect("step failed");
         sim.set_dt(dt);
     }
 }
