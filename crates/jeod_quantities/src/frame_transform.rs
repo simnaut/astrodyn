@@ -124,6 +124,10 @@ impl<From: Frame, To: Frame> FrameTransform<From, To> {
     /// **Bit-stability invariant**: `from_matrix(M).matrix_ref() == &M`
     /// exactly. The quaternion derivation does not influence the stored
     /// matrix.
+    ///
+    /// Prefer [`from_matrix_validated`](Self::from_matrix_validated) when
+    /// the input is unverified (e.g. user-supplied YAML, network protocol)
+    /// and you need a typed error rather than a `debug_assert!` panic.
     #[inline]
     pub fn from_matrix(matrix: DMat3) -> Self {
         // Orthonormality checks are debug-only — the cached quaternion is
@@ -162,7 +166,72 @@ impl<From: Frame, To: Frame> FrameTransform<From, To> {
             _to: PhantomData,
         }
     }
+
+    /// Construct from a raw rotation matrix, returning an error if the
+    /// matrix is not a proper orthonormal rotation. Same bit-stability
+    /// invariant as [`from_matrix`](Self::from_matrix).
+    ///
+    /// Prefer this over `from_matrix` when the input is unvalidated
+    /// (file I/O, RPC, user-supplied configuration). For per-step rotation
+    /// updates from JEOD CSV / DE421 / RNP kernels, `from_matrix` keeps
+    /// the runtime check off the hot path.
+    #[inline]
+    pub fn from_matrix_validated(matrix: DMat3) -> Result<Self, FrameTransformError> {
+        let det = matrix.determinant();
+        if (det - 1.0).abs() >= 1.0e-9 {
+            return Err(FrameTransformError::DeterminantNotOne { determinant: det });
+        }
+        let drift = (matrix * matrix.transpose() - DMat3::IDENTITY)
+            .to_cols_array()
+            .iter()
+            .map(|x| x.abs())
+            .fold(0.0_f64, f64::max);
+        if drift >= 1.0e-9 {
+            return Err(FrameTransformError::NotOrthonormal { drift });
+        }
+        let g = glam::DQuat::from_mat3(&matrix);
+        let jeod = JeodQuat::from_array([g.w, g.x, g.y, g.z]);
+        let quat = NormalizedQuat::renormalize(jeod).ok_or(FrameTransformError::ZeroQuaternion)?;
+        Ok(Self {
+            quat,
+            matrix,
+            _from: PhantomData,
+            _to: PhantomData,
+        })
+    }
 }
+
+/// Reasons [`FrameTransform::from_matrix_validated`] can reject an input.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum FrameTransformError {
+    /// Determinant is not within `1e-9` of `1.0`. A reflection
+    /// (`det ≈ -1`) or a scaling (`|det| ≠ 1`) lands here.
+    DeterminantNotOne { determinant: f64 },
+    /// `M · Mᵀ` differs from identity by more than `1e-9` in any element.
+    NotOrthonormal { drift: f64 },
+    /// `glam::DQuat::from_mat3` produced a zero quaternion (degenerate input).
+    ZeroQuaternion,
+}
+
+impl core::fmt::Display for FrameTransformError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::DeterminantNotOne { determinant } => write!(
+                f,
+                "FrameTransform: input matrix determinant {determinant} not within 1e-9 of 1.0"
+            ),
+            Self::NotOrthonormal { drift } => write!(
+                f,
+                "FrameTransform: input matrix not orthonormal — max |M·Mᵀ - I| = {drift}"
+            ),
+            Self::ZeroQuaternion => {
+                f.write_str("FrameTransform: input matrix degenerate — derived quaternion is zero")
+            }
+        }
+    }
+}
+
+impl core::error::Error for FrameTransformError {}
 
 /// Compose two transforms: `(A→B) ∘ (B→C) = A→C`.
 ///
@@ -266,5 +335,50 @@ mod tests {
     fn from_matrix_rejects_non_unit_determinant() {
         let m = DMat3::from_diagonal(DVec3::new(2.0, 1.0, 1.0)); // det = 2
         let _: FrameTransform<Inertial, Ecef> = FrameTransform::from_matrix(m);
+    }
+
+    /// `from_matrix_validated` accepts a proper rotation and round-trips
+    /// the matrix bit-exactly (same invariant as `from_matrix`).
+    #[test]
+    fn from_matrix_validated_accepts_rotation() {
+        let theta: f64 = 0.7;
+        let m = DMat3::from_cols(
+            DVec3::new(theta.cos(), theta.sin(), 0.0),
+            DVec3::new(-theta.sin(), theta.cos(), 0.0),
+            DVec3::new(0.0, 0.0, 1.0),
+        );
+        let t: FrameTransform<Inertial, Ecef> =
+            FrameTransform::from_matrix_validated(m).expect("rotation should validate");
+        assert_eq!(t.matrix_ref(), &m);
+    }
+
+    /// `from_matrix_validated` rejects a scaling matrix with a typed
+    /// `DeterminantNotOne` error rather than panicking.
+    #[test]
+    fn from_matrix_validated_rejects_scaling() {
+        let m = DMat3::from_diagonal(DVec3::new(2.0, 1.0, 1.0));
+        let err = FrameTransform::<Inertial, Ecef>::from_matrix_validated(m)
+            .expect_err("scaling should reject");
+        match err {
+            FrameTransformError::DeterminantNotOne { determinant } => {
+                assert!((determinant - 2.0).abs() < 1e-12);
+            }
+            other => panic!("expected DeterminantNotOne, got {other:?}"),
+        }
+    }
+
+    /// `from_matrix_validated` rejects a near-orthonormal but skewed matrix
+    /// with `NotOrthonormal` (det ≈ 1 but `M·Mᵀ ≠ I`).
+    #[test]
+    fn from_matrix_validated_rejects_non_orthonormal() {
+        // Shear: det = 1 but M*M^T != I. cols (1,a,0), (0,1,0), (0,0,1)
+        let m = DMat3::from_cols(
+            DVec3::new(1.0, 0.1, 0.0),
+            DVec3::new(0.0, 1.0, 0.0),
+            DVec3::new(0.0, 0.0, 1.0),
+        );
+        let err = FrameTransform::<Inertial, Ecef>::from_matrix_validated(m)
+            .expect_err("shear should reject");
+        assert!(matches!(err, FrameTransformError::NotOrthonormal { .. }));
     }
 }

@@ -315,38 +315,20 @@ fn resolve_source_entity(source_entities: &[Entity], idx: usize, what: &str) -> 
 
 impl VehicleConfigBevyExt for jeod_sim::VehicleConfig {
     fn spawn_bevy(self, commands: &mut Commands, source_entities: &[Entity]) -> Entity {
-        // Translate `GravityControls<usize>` to `GravityControls<Entity>`
-        // by retagging the source identifier on each control. Struct-update
-        // syntax (`..c`) cannot be used here because the source-id type
-        // parameter changes (`GravityControl<usize>` → `GravityControl<Entity>`
-        // are distinct types), so every field must be enumerated explicitly.
-        //
-        // Maintenance contract: when a new field is added to `GravityControl`
-        // upstream, add a matching `field: c.field` line below — otherwise
-        // the new field is silently dropped (defaulted to whatever the
-        // struct literal yields without it, which fails to compile if all
-        // fields are non-default — keeping us honest).
+        // Translate `GravityControls<usize>` to `GravityControls<Entity>` by
+        // retagging the source identifier on each control via the
+        // `GravityControl::retag_source` helper. The field list lives in
+        // exactly one place (`jeod_gravity::gravity_controls`), so adding a
+        // new field there does not require touching this site.
         let entity_controls = jeod_sim::GravityControls::<Entity> {
             controls: self
                 .gravity_controls
                 .controls
                 .into_iter()
                 .map(|c| {
-                    let source_entity =
-                        resolve_source_entity(source_entities, c.source_name, "GravityControl");
-                    jeod_sim::GravityControl::<Entity> {
-                        source_name: source_entity,
-                        gradient: c.gradient,
-                        spherical: c.spherical,
-                        degree: c.degree,
-                        order: c.order,
-                        perturbing_only: c.perturbing_only,
-                        gradient_degree: c.gradient_degree,
-                        gradient_order: c.gradient_order,
-                        differential: c.differential,
-                        battin_method: c.battin_method,
-                        relativistic: c.relativistic,
-                    }
+                    c.retag_source(|idx| {
+                        resolve_source_entity(source_entities, idx, "GravityControl")
+                    })
                 })
                 .collect(),
         };
