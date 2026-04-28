@@ -198,8 +198,13 @@ impl<'sim> BrandedSimulation<'sim> {
         self.inner.step()
     }
 
-    /// Advance until the simulation time reaches `target_time` (whole
-    /// `dt` increments only — fractional residuals panic).
+    /// Advance until the simulation time reaches `target_time`.
+    ///
+    /// If the underlying integrator supports it, this may take a final
+    /// fractional step to hit `target_time` exactly. A fractional residual
+    /// only panics when such a step is required for an integrator that
+    /// does not support it (e.g. multi-step `GaussJackson` / `Abm4`,
+    /// whose history arrays assume constant dt).
     pub fn step_until(&mut self, target_time: f64) -> Result<(), crate::StepError> {
         self.inner.step_until(target_time)
     }

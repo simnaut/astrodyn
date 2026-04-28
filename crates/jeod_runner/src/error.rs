@@ -42,6 +42,38 @@ use jeod_sim::EphemerisBody;
 /// `step_internal` on the relevant failure paths). Inspect via pattern
 /// match. Implements [`core::error::Error`] so it composes with `?` and
 /// the rest of the standard error-handling ecosystem.
+///
+/// # Reading the carried context
+///
+/// All variant fields are part of the public surface (an enum variant's
+/// fields inherit the enum's visibility, so no per-field `pub` qualifier
+/// is needed or accepted by the language). Downstream recovery logic can
+/// destructure freely:
+///
+/// ```ignore
+/// use jeod_runner::StepError;
+///
+/// fn handle(err: StepError) {
+///     match err {
+///         StepError::EphemerisLookup {
+///             source_idx,
+///             tdb_jd,
+///             ..
+///         } => {
+///             eprintln!("source {source_idx} missing at TDB JD {tdb_jd}");
+///         }
+///         StepError::FrameSwitchTargetMissing {
+///             body_idx,
+///             target_source,
+///             num_sources,
+///         } => {
+///             eprintln!(
+///                 "body {body_idx}: target {target_source} >= {num_sources}"
+///             );
+///         }
+///     }
+/// }
+/// ```
 #[derive(Debug, Clone)]
 pub enum StepError {
     /// DE4xx ephemeris lookup failed for a source whose position is
