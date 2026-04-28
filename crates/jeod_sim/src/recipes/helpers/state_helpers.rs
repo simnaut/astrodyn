@@ -41,15 +41,15 @@ pub fn angle_diff(a: f64, b: f64) -> f64 {
 }
 
 /// Angular difference for angles known to lie within `[-max_magnitude, max_magnitude]`,
-/// where wrap-around at 2π cannot occur. `debug_assert`s the bound on both inputs and
-/// returns plain `(a - b).abs()`.
+/// where wrap-around at 2π cannot occur. Asserts the bound on both inputs (in
+/// release builds too) and returns plain `(a - b).abs()`.
 ///
 /// Use this when a metric's domain is guaranteed bounded (e.g. solar beta is
 /// constrained to `[-π/2, π/2]` in JEOD). It documents the bound, catches a
-/// violated assumption in debug builds, and avoids the temptation to "simplify"
+/// violated assumption in any build, and avoids the temptation to "simplify"
 /// to `.abs()` somewhere else and lose the wrap-around invariant.
 pub fn angle_diff_restricted(a: f64, b: f64, max_magnitude: f64) -> f64 {
-    debug_assert!(
+    assert!(
         a.abs() <= max_magnitude && b.abs() <= max_magnitude,
         "angle_diff_restricted: input outside [-{max_magnitude}, {max_magnitude}] (a={a}, b={b})"
     );
@@ -140,8 +140,7 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "angle_diff_restricted")]
-    #[cfg(debug_assertions)]
-    fn angle_diff_restricted_bound_violation_panics_in_debug() {
+    fn angle_diff_restricted_bound_violation_panics() {
         let half_pi = std::f64::consts::FRAC_PI_2;
         let _ = angle_diff_restricted(half_pi + 0.1, 0.0, half_pi);
     }

@@ -6,8 +6,10 @@
 # `--allow-missing-from` flag.
 #
 # A test belongs here when it is *intentionally* excluded from a CI lane
-# (e.g. the ~17 min `earth_moon` suite is run only on push-to-main). Stale
-# entries (names that the run actually does cover) print a warning but do
-# not fail the build.
+# (e.g. the ~17 min `earth_moon` suite is run only on push-to-main).
+# Names listed here that don't appear in `test_data/baselines.json` print a
+# typo warning but do not fail the build. A name listed here that *did* run
+# is silently accepted (no warning, no failure) — the run still gets the
+# baseline check via the regular path.
 
 tier3_earth_moon_clem

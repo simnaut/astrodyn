@@ -27,6 +27,12 @@ pub enum IntegratorType {
     /// Requires persistent `GaussJacksonState` across steps. The state must
     /// be stored externally (in `SimBody` or as a Bevy component) and passed
     /// to the integration function.
+    ///
+    /// **Forward-time only.** Multi-step methods cannot be run with a
+    /// negative `sim_dt` or `time_scale_factor`; callers that need
+    /// reverse-time integration must select [`IntegratorType::Rk4`] or
+    /// [`IntegratorType::Rkf45`] instead. `GaussJacksonState::integrate`
+    /// asserts both arguments are finite and non-negative on entry.
     GaussJackson(crate::gauss_jackson::config::GaussJacksonConfig),
     /// Adams-Bashforth-Moulton 4th-order (PECE scheme, fixed step).
     ///

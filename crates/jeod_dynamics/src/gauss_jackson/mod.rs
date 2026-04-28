@@ -238,12 +238,24 @@ impl GaussJacksonState {
     /// - BootstrapStep/Operational: 2 calls per step (predict, correct)
     ///
     /// # Arguments
-    /// - `sim_dt`: simulation timestep (JEOD: `sim_dt` passed to integration controls)
-    /// - `time_scale_factor`: ratio of dynamic time to simulation time
-    ///   (JEOD: `TimeDyn::scale_factor`, read via `TimeInterface::get_time_scale_factor()`).
-    ///   1.0 for real-time, >1.0 for fast-forward.
+    /// - `sim_dt`: simulation timestep, finite and non-negative (JEOD:
+    ///   `sim_dt` passed to integration controls).
+    /// - `time_scale_factor`: ratio of dynamic time to simulation time,
+    ///   finite and non-negative (JEOD: `TimeDyn::scale_factor`, read via
+    ///   `TimeInterface::get_time_scale_factor()`). 1.0 for real-time,
+    ///   >1.0 for fast-forward.
     /// - `acc`: acceleration at current `state.position`
     /// - `state`: translational state (mutated in place)
+    ///
+    /// # Time-reversal not supported
+    ///
+    /// Gauss-Jackson is a multi-step predictor-corrector keyed off
+    /// constant `cycle_dyndt = sim_dt * cycle_scale * time_scale_factor`,
+    /// so a negative `sim_dt` or `time_scale_factor` would corrupt the
+    /// Störmer-Cowell history without an obvious failure mode. Callers
+    /// that need reverse-time integration (e.g. JEOD's `SIM_7_time_reversal`)
+    /// must use a single-step integrator (RK4 / RKF45 supports `dt < 0`).
+    /// Both arguments are asserted finite and non-negative on entry.
     pub fn integrate(
         &mut self,
         sim_dt: f64,
