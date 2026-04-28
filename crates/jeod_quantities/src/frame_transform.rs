@@ -175,8 +175,19 @@ impl<From: Frame, To: Frame> FrameTransform<From, To> {
     /// (file I/O, RPC, user-supplied configuration). For per-step rotation
     /// updates from JEOD CSV / DE421 / RNP kernels, `from_matrix` keeps
     /// the runtime check off the hot path.
+    ///
+    /// Non-finite inputs (any `NaN` or `±∞` element) are rejected up front
+    /// with [`FrameTransformError::NonFinite`] — the determinant /
+    /// orthonormality checks downstream both silently accept `NaN` (via
+    /// `(NaN - 1.0).abs() >= eps == false` and `f64::max(0.0, NaN) == 0.0`),
+    /// so the explicit guard is what keeps a `NaN` matrix from reaching
+    /// `DQuat::from_mat3`.
     #[inline]
     pub fn from_matrix_validated(matrix: DMat3) -> Result<Self, FrameTransformError> {
+        let cols = matrix.to_cols_array();
+        if !cols.iter().all(|x| x.is_finite()) {
+            return Err(FrameTransformError::NonFinite);
+        }
         let det = matrix.determinant();
         if (det - 1.0).abs() >= 1.0e-9 {
             return Err(FrameTransformError::DeterminantNotOne { determinant: det });
@@ -204,6 +215,10 @@ impl<From: Frame, To: Frame> FrameTransform<From, To> {
 /// Reasons [`FrameTransform::from_matrix_validated`] can reject an input.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FrameTransformError {
+    /// Input contains a `NaN` or infinite element. The determinant /
+    /// orthonormality checks downstream do not reject `NaN` reliably, so
+    /// this is checked first.
+    NonFinite,
     /// Determinant is not within `1e-9` of `1.0`. A reflection
     /// (`det ≈ -1`) or a scaling (`|det| ≠ 1`) lands here.
     DeterminantNotOne { determinant: f64 },
@@ -216,6 +231,9 @@ pub enum FrameTransformError {
 impl core::fmt::Display for FrameTransformError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
+            Self::NonFinite => {
+                f.write_str("FrameTransform: input matrix has a NaN or infinite element")
+            }
             Self::DeterminantNotOne { determinant } => write!(
                 f,
                 "FrameTransform: input matrix determinant {determinant} not within 1e-9 of 1.0"
@@ -380,5 +398,30 @@ mod tests {
         let err = FrameTransform::<Inertial, Ecef>::from_matrix_validated(m)
             .expect_err("shear should reject");
         assert!(matches!(err, FrameTransformError::NotOrthonormal { .. }));
+    }
+
+    /// `from_matrix_validated` rejects a matrix with NaN elements via the
+    /// explicit `NonFinite` guard. The downstream determinant /
+    /// orthonormality checks both silently accept NaN — `(NaN-1).abs() >=
+    /// eps` is `false` and `f64::max(0.0, NaN) == 0.0` — so the explicit
+    /// pre-check is what keeps a NaN matrix from reaching `from_mat3`.
+    #[test]
+    fn from_matrix_validated_rejects_nan() {
+        let mut m = DMat3::IDENTITY;
+        m.x_axis.x = f64::NAN;
+        let err = FrameTransform::<Inertial, Ecef>::from_matrix_validated(m)
+            .expect_err("NaN matrix must reject");
+        assert!(matches!(err, FrameTransformError::NonFinite));
+    }
+
+    /// `from_matrix_validated` rejects a matrix with infinite elements via
+    /// the same `NonFinite` guard.
+    #[test]
+    fn from_matrix_validated_rejects_infinite() {
+        let mut m = DMat3::IDENTITY;
+        m.y_axis.z = f64::INFINITY;
+        let err = FrameTransform::<Inertial, Ecef>::from_matrix_validated(m)
+            .expect_err("infinite matrix must reject");
+        assert!(matches!(err, FrameTransformError::NonFinite));
     }
 }
