@@ -164,10 +164,11 @@ fn srp_changes_eccentricity() {
             diffuse: 0.0,
         },
         FlatPlateThermal {
-            // Emissivity must be > 0 (JEOD_INV: IN.33). The test's eccentricity
-            // assertion is loose enough to tolerate the constant thermal-emission
-            // force component this introduces.
-            emissivity: 1.0,
+            // Emissivity must be > 0 (JEOD_INV: IN.33), but this test asserts
+            // SRP-driven eccentricity change rather than thermal recoil. Use
+            // the smallest positive emissivity so the thermal-emission term is
+            // numerically absent while still exercising the thermal SRP API.
+            emissivity: f64::EPSILON,
             heat_capacity_per_area: 50.0,
             thermal_power_dump: 0.0,
         },

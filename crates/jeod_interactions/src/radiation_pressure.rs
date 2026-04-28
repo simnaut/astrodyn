@@ -98,19 +98,6 @@ pub fn compute_flat_plate_srp(
     center_grav: DVec3,
     illum_factor: f64,
 ) -> RadiationForce {
-    // JEOD_INV: IN.33 — surface_area must be > 0
-    // (port of thermal_facet_rider.cc:129-136 surface_area > 0 check, applied
-    // here for the geometry input as well so non-thermal SRP fails fast on
-    // the same misconfiguration).
-    for (i, (plate, _)) in plates.iter().enumerate() {
-        assert!(
-            plate.area > 0.0,
-            "FlatPlate.area must be > 0 (got {} for plate index {}); set a positive area in m^2",
-            plate.area,
-            i,
-        );
-    }
-
     if illum_factor <= 0.0 || flux_mag <= 0.0 {
         return RadiationForce::default();
     }
@@ -119,7 +106,18 @@ pub fn compute_flat_plate_srp(
     let mut total_force = DVec3::ZERO;
     let mut total_torque = DVec3::ZERO;
 
-    for (plate, params) in plates {
+    for (i, (plate, params)) in plates.iter().enumerate() {
+        // JEOD_INV: IN.33 — surface_area must be > 0 (port of
+        // thermal_facet_rider.cc:129-136 surface_area > 0 check, applied here
+        // for the geometry input so non-thermal SRP fails fast on the same
+        // misconfiguration). Folded into the main loop instead of a separate
+        // pre-pass to keep the per-plate hot-path cost a single comparison.
+        assert!(
+            plate.area > 0.0,
+            "FlatPlate.area must be > 0 (got {} for plate index {}); set a positive area in m^2",
+            plate.area,
+            i,
+        );
         // sin_theta = -(normal · flux_hat): cosine of angle between plate normal
         // and the incoming flux direction. Positive when plate faces the source.
         // JEOD flat_plate_radiation_facet.cc line 89
@@ -312,25 +310,6 @@ pub fn compute_flat_plate_srp_thermal_conduction(
     let n = plates.len();
     assert_eq!(n, t_pow4_cached.len());
 
-    // JEOD_INV: IN.33 — emissivity > 0 and surface_area > 0
-    // (port of thermal_facet_rider.cc:109-136 fatal-bound checks; we panic
-    // immediately on misconfiguration instead of computing nonsensical
-    // thermal radiation).
-    for (i, (plate, _, thermal)) in plates.iter().enumerate() {
-        assert!(
-            plate.area > 0.0,
-            "FlatPlate.area must be > 0 (got {} for plate index {}); set a positive area in m^2",
-            plate.area,
-            i,
-        );
-        assert!(
-            thermal.emissivity > 0.0,
-            "FlatPlateThermal.emissivity must be > 0 (got {} for plate index {}); set a positive emissivity in (0, 1]",
-            thermal.emissivity,
-            i,
-        );
-    }
-
     let effective_flux = if illum_factor > 0.0 && flux_mag > 0.0 {
         flux_mag * illum_factor
     } else {
@@ -345,6 +324,24 @@ pub fn compute_flat_plate_srp_thermal_conduction(
 
     // Solar absorption power per plate.
     for (i, (plate, params, thermal)) in plates.iter().enumerate() {
+        // JEOD_INV: IN.33 — emissivity > 0 and surface_area > 0 (port of
+        // thermal_facet_rider.cc:109-136 fatal-bound checks; we panic
+        // immediately on misconfiguration instead of computing nonsensical
+        // thermal radiation). Folded into the main loop instead of a
+        // separate pre-pass to keep the per-plate hot-path cost two
+        // comparisons.
+        assert!(
+            plate.area > 0.0,
+            "FlatPlate.area must be > 0 (got {} for plate index {}); set a positive area in m^2",
+            plate.area,
+            i,
+        );
+        assert!(
+            thermal.emissivity > 0.0,
+            "FlatPlateThermal.emissivity must be > 0 (got {} for plate index {})",
+            thermal.emissivity,
+            i,
+        );
         let sin_theta = -plate.normal.dot(flux_struct_hat);
         let illuminated = sin_theta > 0.0 && effective_flux > 0.0;
 
