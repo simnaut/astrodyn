@@ -28,7 +28,8 @@
 //! Mission-crate code consumes the facade layer and never sees `PhantomData`
 //! or `uom::si::*` paths. Internal physics kernels drop down to raw
 //! `glam::DVec3`/`f64` for arithmetic density via `.raw_si()` and re-wrap on
-//! exit. See `docs/type_system.md` and `STRATEGY.md` §8 for architecture.
+//! exit. See the Type-System and Strategy wiki pages
+//! (<https://github.com/simnaut/bevy_jeod/wiki>) for architecture.
 //!
 //! ## What this crate provides
 //!

@@ -11,8 +11,8 @@ ephemerides — as pure Rust crates, then exposes them through a thin Bevy
 adapter so they slot into any Bevy app.
 
 **Status:** pre-1.0. Tier 3 cross-validated against JEOD Trick simulations
-(see [`docs/tier3_regeneration.md`](docs/tier3_regeneration.md)). API may
-change before 1.0.
+(see the [Tier3-Regeneration wiki page](https://github.com/simnaut/bevy_jeod/wiki/Tier3-Regeneration)).
+API may change before 1.0.
 
 ## Architecture
 
@@ -27,8 +27,9 @@ Three layers, separated by hard dependency rules:
   delegate to `jeod_sim`, plugin registration. Depends only on
   `jeod_sim` + `bevy`.
 
-See [`STRATEGY.md`](STRATEGY.md) for architecture detail and
-[`docs/type_system.md`](docs/type_system.md) for the typed-quantity layer.
+See the [Strategy](https://github.com/simnaut/bevy_jeod/wiki/Strategy)
+and [Type-System](https://github.com/simnaut/bevy_jeod/wiki/Type-System)
+wiki pages for architecture detail and the typed-quantity layer.
 
 ## Quick start
 
@@ -104,17 +105,19 @@ files. See [`CLAUDE.md`](CLAUDE.md) for the full build and test workflow.
 
 ## Documentation
 
-The [project wiki](https://github.com/simnaut/bevy_jeod/wiki) hosts the
-JEOD↔bevy_jeod capability matrix, per-SIM coverage map, and pre-release
-audit findings. The repo carries the source-coupled docs:
+Most docs live on the [project wiki](https://github.com/simnaut/bevy_jeod/wiki):
+architecture and phase history ([Strategy](https://github.com/simnaut/bevy_jeod/wiki/Strategy)),
+typed-quantity primer ([Type-System](https://github.com/simnaut/bevy_jeod/wiki/Type-System)),
+Tier 3 regeneration recipe ([Tier3-Regeneration](https://github.com/simnaut/bevy_jeod/wiki/Tier3-Regeneration)),
+the JEOD↔bevy_jeod [capability matrix](https://github.com/simnaut/bevy_jeod/wiki/JEOD-Capability-Matrix),
+[per-SIM coverage map](https://github.com/simnaut/bevy_jeod/wiki/JEOD-Sim-Coverage),
+and [audit findings](https://github.com/simnaut/bevy_jeod/wiki/Audit-Findings).
 
-- [`STRATEGY.md`](STRATEGY.md) — architecture and phase history.
-- [`docs/type_system.md`](docs/type_system.md) — typed quantities,
-  phantom-tag pattern, adding new dimensions.
-- [`docs/JEOD_invariants.md`](docs/JEOD_invariants.md) — catalog of JEOD
-  C++ invariants and where each is enforced in our Rust port.
-- [`docs/tier3_regeneration.md`](docs/tier3_regeneration.md) — regenerating
-  Tier 3 reference CSVs in Docker.
+The one exception that stays in the repo is
+[`docs/JEOD_invariants.md`](docs/JEOD_invariants.md) — the catalog of JEOD
+C++ invariants and where each is enforced in our Rust port. It lives next
+to the code because tags like `// JEOD_INV: XX.YY` in source are
+consistency-checked against the catalog.
 
 ## License
 
