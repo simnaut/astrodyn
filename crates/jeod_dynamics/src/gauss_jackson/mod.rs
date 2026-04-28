@@ -42,11 +42,6 @@ pub struct IntegratorResult {
 }
 
 impl IntegratorResult {
-    #[allow(dead_code)]
-    fn needs_another_stage(self) -> bool {
-        self.time_scale == 0.0
-    }
-
     fn complete(passed: bool) -> Self {
         Self {
             time_scale: 1.0,
@@ -82,7 +77,8 @@ pub struct GaussJacksonState {
     // ── Coefficients (JEOD: owned by IntegrationControls) ──
     coeff: GaussJacksonCoeffs,
     state_machine: StateMachine,
-    #[allow(dead_code)]
+    // Read externally via the `config()` accessor for restart-detection in
+    // jeod_runner / jeod_sim integration glue.
     config: GaussJacksonConfig,
 
     // ── Two-state fields ──
@@ -112,8 +108,6 @@ pub struct GaussJacksonState {
     order: usize,
     /// Current number of history points
     history_length: usize,
-    #[allow(dead_code)]
-    max_history_size: usize,
     initial_order: usize,
 
     // ── Tolerances ──
@@ -182,7 +176,6 @@ impl GaussJacksonState {
             fsm_state: FsmState::Reset,
             order: initial_order,
             history_length: 0,
-            max_history_size,
             initial_order,
             relative_tolerance,
             absolute_tolerance,
@@ -245,12 +238,24 @@ impl GaussJacksonState {
     /// - BootstrapStep/Operational: 2 calls per step (predict, correct)
     ///
     /// # Arguments
-    /// - `sim_dt`: simulation timestep (JEOD: `sim_dt` passed to integration controls)
-    /// - `time_scale_factor`: ratio of dynamic time to simulation time
-    ///   (JEOD: `TimeDyn::scale_factor`, read via `TimeInterface::get_time_scale_factor()`).
-    ///   1.0 for real-time, >1.0 for fast-forward.
+    /// - `sim_dt`: simulation timestep, finite and non-negative (JEOD:
+    ///   `sim_dt` passed to integration controls).
+    /// - `time_scale_factor`: ratio of dynamic time to simulation time,
+    ///   finite and non-negative (JEOD: `TimeDyn::scale_factor`, read via
+    ///   `TimeInterface::get_time_scale_factor()`). 1.0 for real-time,
+    ///   >1.0 for fast-forward.
     /// - `acc`: acceleration at current `state.position`
     /// - `state`: translational state (mutated in place)
+    ///
+    /// # Time-reversal not supported
+    ///
+    /// Gauss-Jackson is a multi-step predictor-corrector keyed off
+    /// constant `cycle_dyndt = sim_dt * cycle_scale * time_scale_factor`,
+    /// so a negative `sim_dt` or `time_scale_factor` would corrupt the
+    /// Störmer-Cowell history without an obvious failure mode. Callers
+    /// that need reverse-time integration (e.g. JEOD's `SIM_7_time_reversal`)
+    /// must use a single-step integrator (RK4 / RKF45 supports `dt < 0`).
+    /// Both arguments are asserted finite and non-negative on entry.
     pub fn integrate(
         &mut self,
         sim_dt: f64,
@@ -258,6 +263,17 @@ impl GaussJacksonState {
         acc: DVec3,
         state: &mut TranslationalState,
     ) -> IntegratorResult {
+        // Gauss-Jackson does not support time-reversed propagation; both
+        // arguments must be finite and non-negative for the predictor /
+        // corrector arithmetic to remain meaningful.
+        assert!(
+            sim_dt.is_finite() && sim_dt >= 0.0,
+            "GaussJackson::integrate requires a finite, non-negative sim_dt, got {sim_dt}"
+        );
+        assert!(
+            time_scale_factor.is_finite() && time_scale_factor >= 0.0,
+            "GaussJackson::integrate requires a finite, non-negative time_scale_factor, got {time_scale_factor}"
+        );
         self.current_stage += 1;
         let stage = self.current_stage;
 

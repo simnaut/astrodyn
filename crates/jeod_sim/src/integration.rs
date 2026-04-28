@@ -871,6 +871,17 @@ pub fn integrate_body_coupled(
 }
 
 /// 6-DOF coupled RK4: translational + rotational + thermal.
+///
+/// # Quaternion drift across stages
+///
+/// As in [`jeod_dynamics::integration::rk4_sixdof_step`], the four RK4 stages
+/// stack `qdot` increments on the un-normalized stage quaternions and run a
+/// single `normalize_integ` after the final combination. For the dt regime our
+/// Tier 3 suite exercises (60 s LEO, 300 s GEO, 100–200 s translunar, with
+/// `|ω| ≲ 1 rad/s`), per-stage `|q| − 1` drift stays below `1e-4` and post-step
+/// normalization absorbs it while preserving JEOD parity. Callers integrating
+/// fast tumblers or with much larger dt should renormalize between stages 2
+/// and 3.
 #[allow(clippy::too_many_arguments)]
 fn integrate_coupled_sixdof(
     trans: &mut TranslationalState,

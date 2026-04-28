@@ -32,18 +32,6 @@ impl TwoDArray {
         self.rows = vec![vec![0.0; ncols]; nrows];
     }
 
-    /// Get row `n` as a slice.
-    #[allow(dead_code)]
-    pub fn row(&self, n: usize) -> &[f64] {
-        &self.rows[n]
-    }
-
-    /// Get row `n` as a mutable slice.
-    #[allow(dead_code)]
-    pub fn row_mut(&mut self, n: usize) -> &mut [f64] {
-        &mut self.rows[n]
-    }
-
     /// Copy a DVec3 into row `n`.
     pub fn set_dvec3(&mut self, n: usize, v: DVec3) {
         let row = &mut self.rows[n];
@@ -56,23 +44,6 @@ impl TwoDArray {
     pub fn get_dvec3(&self, n: usize) -> DVec3 {
         let row = &self.rows[n];
         DVec3::new(row[0], row[1], row[2])
-    }
-
-    /// Copy `src` slice into row `n`.
-    #[allow(dead_code)]
-    pub fn copy_to_row(&mut self, n: usize, src: &[f64]) {
-        self.rows[n][..self.cols].copy_from_slice(&src[..self.cols]);
-    }
-
-    /// Copy row `src_row` to row `dst_row`.
-    #[allow(dead_code)]
-    pub fn copy_row(&mut self, src_row: usize, dst_row: usize) {
-        if src_row == dst_row {
-            return;
-        }
-        // Split borrow: clone the source, then copy into dest.
-        let src = self.rows[src_row].clone();
-        self.rows[dst_row][..self.cols].copy_from_slice(&src[..self.cols]);
     }
 
     /// Rotate rows 0..=limit downward.
@@ -122,12 +93,6 @@ pub(crate) struct OffsetRows<'a> {
 }
 
 impl<'a> OffsetRows<'a> {
-    /// Get row at relative index `i` (= absolute index `offset + i`).
-    #[allow(dead_code)]
-    pub fn row(&self, i: usize) -> &[f64] {
-        self.array.row(self.offset + i)
-    }
-
     pub fn get_dvec3(&self, i: usize) -> DVec3 {
         self.array.get_dvec3(self.offset + i)
     }

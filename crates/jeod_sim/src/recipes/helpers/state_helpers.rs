@@ -40,6 +40,22 @@ pub fn angle_diff(a: f64, b: f64) -> f64 {
     d.abs()
 }
 
+/// Angular difference for angles known to lie within `[-max_magnitude, max_magnitude]`,
+/// where wrap-around at 2π cannot occur. Asserts the bound on both inputs (in
+/// release builds too) and returns plain `(a - b).abs()`.
+///
+/// Use this when a metric's domain is guaranteed bounded (e.g. solar beta is
+/// constrained to `[-π/2, π/2]` in JEOD). It documents the bound, catches a
+/// violated assumption in any build, and avoids the temptation to "simplify"
+/// to `.abs()` somewhere else and lose the wrap-around invariant.
+pub fn angle_diff_restricted(a: f64, b: f64, max_magnitude: f64) -> f64 {
+    assert!(
+        a.abs() <= max_magnitude && b.abs() <= max_magnitude,
+        "angle_diff_restricted: input outside [-{max_magnitude}, {max_magnitude}] (a={a}, b={b})"
+    );
+    (a - b).abs()
+}
+
 /// Max absolute element-wise difference between two 3×3 matrices.
 pub fn max_mat_diff(a: &DMat3, b: &DMat3) -> f64 {
     let mut max_d = 0.0_f64;
@@ -107,6 +123,26 @@ mod tests {
         let tau = 2.0 * std::f64::consts::PI;
         assert!(angle_diff(0.1, tau - 0.1) < 0.21);
         assert!(angle_diff(0.0, 0.0).abs() < 1e-15);
+    }
+
+    #[test]
+    fn angle_diff_restricted_identity_zero() {
+        let half_pi = std::f64::consts::FRAC_PI_2;
+        assert!(angle_diff_restricted(0.0, 0.0, half_pi).abs() < 1e-15);
+    }
+
+    #[test]
+    fn angle_diff_restricted_full_range() {
+        let half_pi = std::f64::consts::FRAC_PI_2;
+        let d = angle_diff_restricted(half_pi, -half_pi, half_pi);
+        assert!((d - std::f64::consts::PI).abs() < 1e-15);
+    }
+
+    #[test]
+    #[should_panic(expected = "angle_diff_restricted")]
+    fn angle_diff_restricted_bound_violation_panics() {
+        let half_pi = std::f64::consts::FRAC_PI_2;
+        let _ = angle_diff_restricted(half_pi + 0.1, 0.0, half_pi);
     }
 
     #[test]

@@ -33,8 +33,6 @@ pub(crate) struct StateMachine {
     // Configuration (set once by configure())
     initial_order: usize,
     final_order: usize,
-    #[allow(dead_code)]
-    ndoubling_steps: usize,
     max_correction_iterations: usize,
     max_history_size: usize,
     tour_count: usize,
@@ -88,7 +86,6 @@ impl StateMachine {
         let mut sm = Self {
             initial_order,
             final_order,
-            ndoubling_steps,
             max_correction_iterations,
             max_history_size,
             tour_count,
@@ -147,11 +144,6 @@ impl StateMachine {
     /// JEOD: `GaussJacksonStateMachine::get_cycle_scale()`.
     pub fn cycle_scale(&self) -> f64 {
         self.cycle_scale
-    }
-
-    #[allow(dead_code)]
-    pub fn history_length(&self) -> usize {
-        self.history_length
     }
 
     // ── Mutators ──
