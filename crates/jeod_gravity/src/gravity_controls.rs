@@ -121,6 +121,31 @@ impl<SourceId> GravityControl<SourceId> {
         }
     }
 
+    /// Re-tag the source identifier through a mapper, producing a fresh
+    /// [`GravityControl<T>`] with all other fields copied verbatim.
+    ///
+    /// Used by ECS adapters that translate `GravityControl<usize>` (recipe-side
+    /// source-table index) to `GravityControl<Entity>` (Bevy entity handle)
+    /// without enumerating the field list at every call site.
+    ///
+    /// Adding a new field to `GravityControl` requires updating only this
+    /// constructor; ECS adapters are unaffected.
+    pub fn retag_source<T>(self, mapper: impl FnOnce(SourceId) -> T) -> GravityControl<T> {
+        GravityControl {
+            source_name: mapper(self.source_name),
+            gradient: self.gradient,
+            spherical: self.spherical,
+            degree: self.degree,
+            order: self.order,
+            perturbing_only: self.perturbing_only,
+            gradient_degree: self.gradient_degree,
+            gradient_order: self.gradient_order,
+            differential: self.differential,
+            battin_method: self.battin_method,
+            relativistic: self.relativistic,
+        }
+    }
+
     /// Validate this control against its gravity source, matching JEOD's
     /// `SphericalHarmonicsGravityControls::check_validity()`.
     ///
@@ -635,6 +660,33 @@ mod tests {
             mu,
             model: GravityModel::SphericalHarmonics(Box::new(data)),
         }
+    }
+
+    /// `retag_source` returns a `GravityControl<T>` whose `source_name`
+    /// is the mapped value and every other field is bit-identical.
+    #[test]
+    fn retag_source_preserves_all_fields() {
+        let mut original = GravityControl::<usize>::new_nonspherical(7, 8, 4, true);
+        original.perturbing_only = true;
+        original.gradient_degree = 6;
+        original.gradient_order = 3;
+        original.differential = true;
+        original.battin_method = true;
+        original.relativistic = true;
+
+        let retagged: GravityControl<&'static str> = original.clone().retag_source(|_| "Earth");
+
+        assert_eq!(retagged.source_name, "Earth");
+        assert_eq!(retagged.gradient, original.gradient);
+        assert_eq!(retagged.spherical, original.spherical);
+        assert_eq!(retagged.degree, original.degree);
+        assert_eq!(retagged.order, original.order);
+        assert_eq!(retagged.perturbing_only, original.perturbing_only);
+        assert_eq!(retagged.gradient_degree, original.gradient_degree);
+        assert_eq!(retagged.gradient_order, original.gradient_order);
+        assert_eq!(retagged.differential, original.differential);
+        assert_eq!(retagged.battin_method, original.battin_method);
+        assert_eq!(retagged.relativistic, original.relativistic);
     }
 
     /// `effective_orders` for a spherical control returns all zeros
