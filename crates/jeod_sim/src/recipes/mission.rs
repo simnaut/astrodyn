@@ -40,8 +40,8 @@ use crate::SimulationTime;
 /// If a future scenario needs fallible setup (dynamic asset loading, network
 /// fetch, user-supplied configuration), promote `builder_fn` to
 /// `fn() -> Result<SimulationBuilder, MissionBuildError>` then — and embed
-/// the mission name in the error so panics from `into_builder` still
-/// identify which mission failed. Today's contract is "stay infallible";
+/// the mission name in the error so the error returned from `into_builder`
+/// identifies which mission failed. Today's contract is "stay infallible";
 /// the bare-fn surface is deliberate.
 pub struct Mission {
     description: &'static str,
