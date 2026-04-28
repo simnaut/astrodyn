@@ -40,7 +40,9 @@ fn tier3_bevy_full_stack_sixdof() {
             diffuse: 0.0,
         },
         FlatPlateThermal {
-            emissivity: 0.0,
+            // Emissivity must be > 0 (JEOD_INV: IN.33). Both sides of the
+            // parity comparison use the same value, so parity holds.
+            emissivity: 1.0,
             heat_capacity_per_area: 50.0,
             thermal_power_dump: 0.0,
         },
@@ -475,7 +477,9 @@ fn run_shadow_parity(label: &str, srp_plates: Vec<(FlatPlate, FlatPlateParams, F
 #[test]
 fn tier3_bevy_shadow_2a_annular() {
     println!("Shadow 2a annular parity");
-    run_shadow_parity("shadow_2a_annular", make_single_plate(0.0, 0.0, 0.0));
+    // Emissivity must be > 0 (JEOD_INV: IN.33). Both sides use the same
+    // value, so parity holds; the test asserts shadow geometry, not thermal.
+    run_shadow_parity("shadow_2a_annular", make_single_plate(0.0, 0.0, 0.5));
 }
 
 #[test]
@@ -570,13 +574,15 @@ fn run_srp_basic_parity(
 #[test]
 fn tier3_bevy_srp_basic_default() {
     println!("SRP basic default parity");
-    run_srp_basic_parity("srp_basic_default", make_single_plate(0.3, 0.3, 0.0));
+    // Emissivity must be > 0 (JEOD_INV: IN.33). Parity test: both sides match.
+    run_srp_basic_parity("srp_basic_default", make_single_plate(0.3, 0.3, 0.5));
 }
 
 #[test]
 fn tier3_bevy_srp_basic_varied_cr() {
     println!("SRP basic varied Cr parity");
-    run_srp_basic_parity("srp_basic_varied_cr", make_single_plate(0.8, 0.1, 0.0));
+    // Emissivity must be > 0 (JEOD_INV: IN.33). Parity test: both sides match.
+    run_srp_basic_parity("srp_basic_varied_cr", make_single_plate(0.8, 0.1, 0.5));
 }
 
 // ── Derivative-class thermal parity (issue #114) ──
