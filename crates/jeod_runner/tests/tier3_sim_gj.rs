@@ -118,6 +118,8 @@ fn run_gj_test(
             time: record.time,
             position: Some(body.trans.position),
             velocity: Some(body.trans.velocity),
+            acceleration: Some(body.trans_accel),
+            ang_accel: body.rot_accel,
             ..Default::default()
         });
     }

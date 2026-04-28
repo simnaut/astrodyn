@@ -153,6 +153,14 @@ pub struct VehicleOutput {
     pub integ_frame_id: FrameId,
     /// Current rotational state (quaternion, angular velocity). `None` for 3-DOF.
     pub rot: Option<RotationalState>,
+    /// Total translational acceleration in the integration frame (m/s²) at the
+    /// end of the last `step()`. Sum of gravity and non-gravity contributions —
+    /// mirrors JEOD's `derivs.trans_accel`. Zero before the first `step()`.
+    pub trans_accel: DVec3,
+    /// Total rotational acceleration in the body frame (rad/s²) at the end of
+    /// the last `step()` — mirrors JEOD's `derivs.rot_accel`. `None` for 3-DOF
+    /// bodies; zero before the first `step()`.
+    pub rot_accel: Option<DVec3>,
     /// Orbital elements from the latest step.
     pub orbital_elements: Option<OrbitalElements>,
     /// Euler angles `[phi, theta, psi]` from the latest step.
@@ -317,6 +325,8 @@ impl SimBody {
             trans: self.trans,
             integ_frame_id: self.integ_frame_id,
             rot: self.rot,
+            trans_accel: self.frame_derivs.trans_accel,
+            rot_accel: self.rot.map(|_| self.frame_derivs.rot_accel),
             orbital_elements: self.orbital_elements.clone(),
             euler_angles: self.euler_angles,
             lvlh_frame: self.lvlh_frame,

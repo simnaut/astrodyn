@@ -222,6 +222,37 @@ struct RefState {
     ang_vel_body: DVec3,
 }
 
+/// Load `derivs.trans_accel` from the V_1 CSV in row order. Aligned 1:1
+/// with [`load_reference_sixdof`] when both CSVs come from the same Trick
+/// run, so callers can index by the same loop counter.
+///
+/// Columns 11–13 (1-indexed) of `*_V_1_State.csv` are
+/// `derivs.trans_accel[0..2]`.
+fn load_reference_v1_trans_accel(filename: &str) -> Vec<DVec3> {
+    let path = test_data_dir().join(filename);
+    assert!(
+        path.exists(),
+        "Apollo 8 V_1 reference data not found at {}. \
+         Generate it with: docker run ... trick/generate_references.sh",
+        path.display()
+    );
+
+    let content = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {e}", path.display()));
+
+    let mut accel = Vec::new();
+    for line in content.lines().skip(1) {
+        let vals: Vec<f64> = line
+            .split(',')
+            .filter_map(|s| s.trim().parse().ok())
+            .collect();
+        if vals.len() >= 13 {
+            accel.push(DVec3::new(vals[10], vals[11], vals[12]));
+        }
+    }
+    accel
+}
+
 /// Load reference CSV in 6-DOF interleaved format.
 ///
 /// Columns: time, pos[0], vel[0], pos[1], vel[1], pos[2], vel[2],
@@ -271,6 +302,14 @@ fn tier3_apollo8_eci_integ() {
     let (mut sim, body_idx, _moon) = build_apollo8_sim(false);
 
     let ref_states = load_reference_sixdof("apollo8_eci_sixdof_state.csv");
+    let ref_trans_accel = load_reference_v1_trans_accel("apollo8_eci_V_1_State.csv");
+    assert_eq!(
+        ref_states.len(),
+        ref_trans_accel.len(),
+        "sixdof and V_1 CSVs disagree on row count: {} vs {}",
+        ref_states.len(),
+        ref_trans_accel.len()
+    );
 
     let steps = (TOTAL_TIME / DT).round() as usize;
     let mut our_log = Vec::with_capacity(steps);
@@ -288,17 +327,19 @@ fn tier3_apollo8_eci_integ() {
                 time: r.time,
                 position: Some(body.trans.position),
                 velocity: Some(body.trans.velocity),
+                acceleration: Some(body.trans_accel),
                 quaternion: body.rot.as_ref().map(|rot| rot.quaternion.to_glam()),
                 ang_vel: body.rot.as_ref().map(|rot| rot.ang_vel_body),
-                ..Default::default()
+                ang_accel: body.rot_accel,
             });
             ref_log.push(StateLog {
                 time: r.time,
                 position: Some(r.position),
                 velocity: Some(r.velocity),
+                acceleration: Some(ref_trans_accel[ref_idx]),
                 quaternion: Some(r.quaternion),
                 ang_vel: Some(r.ang_vel_body),
-                ..Default::default()
+                ang_accel: None,
             });
         }
     }

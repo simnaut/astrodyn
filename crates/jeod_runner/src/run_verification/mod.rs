@@ -253,10 +253,10 @@ fn snapshot_from(body: &VehicleOutput, ref_record: &StateLog) -> StateLog {
         time: ref_record.time,
         position: Some(body.trans.position),
         velocity: Some(body.trans.velocity),
-        acceleration: None,
+        acceleration: Some(body.trans_accel),
         quaternion: body.rot.as_ref().map(|r| r.quaternion.to_glam()),
         ang_vel: body.rot.as_ref().map(|r| r.ang_vel_body),
-        ang_accel: None,
+        ang_accel: body.rot_accel,
     }
 }
 

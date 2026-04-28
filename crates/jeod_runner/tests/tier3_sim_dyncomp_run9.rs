@@ -11,7 +11,7 @@ use jeod_sim::{
 };
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use jeod_test_data::mass_data::MassInitData;
-use jeod_test_data::tier3_csv::{load_dyncomp_csv, test_data_path};
+use jeod_test_data::tier3_csv::{dyncomp_to_state_log_6dof, load_dyncomp_csv, test_data_path};
 
 /// Build [`MassProperties`] from parsed JEOD mass-init data (test-only helper).
 ///
@@ -180,23 +180,16 @@ fn tier3_simulation_run9a_torque() {
             time: record.time,
             position: Some(body.trans.position),
             velocity: Some(body.trans.velocity),
+            acceleration: Some(body.trans_accel),
             quaternion: Some(body.rot.as_ref().unwrap().quaternion.to_glam()),
             ang_vel: Some(body.rot.as_ref().unwrap().ang_vel_body),
-            ..Default::default()
+            ang_accel: body.rot_accel,
         });
     }
 
     let ref_states: Vec<StateLog> = trajectory[1..]
         .iter()
-        .map(|r| StateLog {
-            time: r.time,
-            position: Some(r.composite_body.position),
-            velocity: Some(r.composite_body.velocity),
-            acceleration: r.derivs.as_ref().map(|d| d.trans_accel),
-            quaternion: Some(r.composite_body.quaternion),
-            ang_vel: Some(r.composite_body.ang_vel),
-            ang_accel: r.derivs.as_ref().map(|d| d.rot_accel),
-        })
+        .map(dyncomp_to_state_log_6dof)
         .collect();
 
     let report = CrossvalReport::compute("tier3_simulation_run9a_torque", &our_states, &ref_states);
@@ -251,23 +244,16 @@ fn tier3_simulation_run9c_force_torque() {
             time: record.time,
             position: Some(body.trans.position),
             velocity: Some(body.trans.velocity),
+            acceleration: Some(body.trans_accel),
             quaternion: Some(body.rot.as_ref().unwrap().quaternion.to_glam()),
             ang_vel: Some(body.rot.as_ref().unwrap().ang_vel_body),
-            ..Default::default()
+            ang_accel: body.rot_accel,
         });
     }
 
     let ref_states: Vec<StateLog> = trajectory[1..]
         .iter()
-        .map(|r| StateLog {
-            time: r.time,
-            position: Some(r.composite_body.position),
-            velocity: Some(r.composite_body.velocity),
-            acceleration: r.derivs.as_ref().map(|d| d.trans_accel),
-            quaternion: Some(r.composite_body.quaternion),
-            ang_vel: Some(r.composite_body.ang_vel),
-            ang_accel: r.derivs.as_ref().map(|d| d.rot_accel),
-        })
+        .map(dyncomp_to_state_log_6dof)
         .collect();
 
     let report = CrossvalReport::compute(
@@ -328,23 +314,16 @@ fn tier3_simulation_run9d_force_torque_rate() {
             time: record.time,
             position: Some(body.trans.position),
             velocity: Some(body.trans.velocity),
+            acceleration: Some(body.trans_accel),
             quaternion: Some(body.rot.as_ref().unwrap().quaternion.to_glam()),
             ang_vel: Some(body.rot.as_ref().unwrap().ang_vel_body),
-            ..Default::default()
+            ang_accel: body.rot_accel,
         });
     }
 
     let ref_states: Vec<StateLog> = trajectory[1..]
         .iter()
-        .map(|r| StateLog {
-            time: r.time,
-            position: Some(r.composite_body.position),
-            velocity: Some(r.composite_body.velocity),
-            acceleration: r.derivs.as_ref().map(|d| d.trans_accel),
-            quaternion: Some(r.composite_body.quaternion),
-            ang_vel: Some(r.composite_body.ang_vel),
-            ang_accel: r.derivs.as_ref().map(|d| d.rot_accel),
-        })
+        .map(dyncomp_to_state_log_6dof)
         .collect();
 
     let report = CrossvalReport::compute(
