@@ -152,4 +152,105 @@ mod tests {
             assert!(e > 0.0 && e < 1.0, "{}: e={}", planet.name, e);
         }
     }
+
+    // -----------------------------------------------------------------
+    // PR6 (#219): basic accessor coverage. The pre-existing tests above
+    // cover typed accessors and aggregate sanity; the cases below pin
+    // the field-level semantics of `PlanetShape` for a hand-constructed
+    // value, so that downstream callers can rely on the struct surface
+    // without depending on the `presets` module.
+    // -----------------------------------------------------------------
+
+    use crate::planet::PlanetShape;
+
+    /// Hand-built minimal planet, so the test does not depend on preset
+    /// constants (which are exercised separately).
+    const TEST_SHAPE: PlanetShape = PlanetShape {
+        name: "Testopia",
+        mu: 1.5e14,
+        r_eq: 6_400_000.0,
+        r_pol: 6_400_000.0 * (1.0 - 1.0 / 300.0),
+        flat_coeff: 1.0 / 300.0,
+    };
+
+    #[test]
+    fn shape_struct_field_access_round_trip() {
+        // The struct has no methods that mutate state — direct field
+        // access must return the literal we stored.
+        assert_eq!(TEST_SHAPE.name, "Testopia");
+        assert_eq!(TEST_SHAPE.mu, 1.5e14);
+        assert_eq!(TEST_SHAPE.r_eq, 6_400_000.0);
+        assert_eq!(TEST_SHAPE.flat_coeff, 1.0 / 300.0);
+    }
+
+    #[test]
+    fn radius_accessors_distinct_and_consistent() {
+        // r_eq > r_pol for any oblate body (f > 0). The const above has
+        // flat_coeff = 1/300 > 0, so the relation must hold for every
+        // preset and our hand-built shape. We reach for the values via
+        // a non-const accessor expression so clippy doesn't fold the
+        // comparison to a literal.
+        for planet in [TEST_SHAPE, EARTH, MOON, SUN, MARS] {
+            assert!(
+                planet.r_eq > planet.r_pol,
+                "{}: r_eq={} not > r_pol={}",
+                planet.name,
+                planet.r_eq,
+                planet.r_pol
+            );
+            let derived_pol = planet.r_eq * (1.0 - planet.flat_coeff);
+            let err = (derived_pol - planet.r_pol).abs();
+            assert!(
+                err < 1.0,
+                "{}: r_pol drifted by {err} m from r_eq*(1-f)",
+                planet.name
+            );
+        }
+    }
+
+    #[test]
+    fn flattening_inverse_round_trip() {
+        // flat_inv() must invert flat_coeff exactly (within f64 ULP).
+        let f = TEST_SHAPE.flat_coeff;
+        let inv = TEST_SHAPE.flat_inv();
+        assert!(
+            (inv * f - 1.0).abs() < 1e-14,
+            "flat_inv({f}) * f != 1: got {}",
+            inv * f
+        );
+    }
+
+    #[test]
+    fn mu_accessor_matches_typed_and_preserves_value() {
+        // The typed getter must round-trip the raw f64 mu without loss.
+        // GravParam stores its value in base SI (m³/s²).
+        for planet in [TEST_SHAPE, EARTH, MOON, SUN, MARS] {
+            assert_eq!(planet.mu_typed().value, planet.mu);
+        }
+    }
+
+    #[test]
+    fn eccentricity_squared_matches_definition() {
+        // e_ellip_sq = 2f - f^2; e_ellipsoid is its sqrt.
+        for planet in [TEST_SHAPE, EARTH, MOON, SUN, MARS] {
+            let f = planet.flat_coeff;
+            let expected = 2.0 * f - f * f;
+            assert!((planet.e_ellip_sq() - expected).abs() < 1e-15);
+            let e = planet.e_ellipsoid();
+            assert!((e * e - planet.e_ellip_sq()).abs() < 1e-15);
+        }
+    }
+
+    #[test]
+    fn shape_struct_is_copy() {
+        // The Copy bound matters for ergonomic use as a const — assert
+        // it implicitly via a copy through a function boundary.
+        fn take_by_value(s: PlanetShape) -> f64 {
+            s.r_eq
+        }
+        let s = TEST_SHAPE;
+        assert_eq!(take_by_value(s), TEST_SHAPE.r_eq);
+        // Verify the original is still usable post-copy.
+        assert_eq!(s.name, "Testopia");
+    }
 }
