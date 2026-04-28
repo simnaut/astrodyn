@@ -1,3 +1,40 @@
+//! Neutral-atmosphere density, temperature, pressure, and wind models.
+//!
+//! Pure-Rust port of JEOD's atmosphere models from
+//! `models/environment/atmosphere/`. All evaluations are framed by the
+//! [`AtmosphereState`] return type — density (kg/m^3), temperature (K),
+//! pressure (Pa), and inertial-frame wind velocity (m/s). The crate has zero
+//! Bevy dependency; orchestration lives in `jeod_sim`.
+//!
+//! ## Models
+//!
+//! - [`exponential`] — `rho = rho_0 * exp(-(h - h_0) / H)`. A simple,
+//!   single-parameter scale-height model intended as a fallback and as a
+//!   sanity-check baseline for tests. Not physically accurate above ~100 km
+//!   where diffusive equilibrium takes over.
+//! - [`met`] — Marshall Engineering Thermosphere model. Faithful port of
+//!   JEOD's MET implementation, which is built on the Jacchia 1970/1971
+//!   thermosphere papers (SAO Special Reports No. 313 and 332). MET combines
+//!   temperature-profile integration via Gauss quadrature with seasonal-
+//!   latitude density corrections and is the production model for LEO drag.
+//!
+//! ## Co-rotation wind
+//!
+//! [`compute_corotation_wind`] (and its typed sibling
+//! [`compute_corotation_wind_typed`]) implement JEOD's
+//! `WindVelocity::update_wind()` for a planet whose angular velocity points
+//! along the inertial Z axis: `wind = omega × r`. Aerodynamic drag computes
+//! its relative velocity against this co-rotating wind, not against the bare
+//! inertial frame.
+//!
+//! ## Typed quantities
+//!
+//! [`AtmosphereState`] exposes typed accessors (`density_typed`,
+//! `temperature_typed`, `pressure_typed`, `wind_typed`) that wrap the raw
+//! `f64`/`DVec3` fields in `uom`/`jeod_quantities` SI types for use across
+//! frame-tagged public APIs. JEOD source paths used: `models/environment/
+//! atmosphere/MET/` and the broader atmosphere model directory.
+
 #![forbid(unsafe_code)]
 
 pub use jeod_quantities::prelude::*;

@@ -1,10 +1,54 @@
 //! `jeod_math` — JEOD-faithful math kernels.
 //!
+//! Pure-Rust port of the standalone math utilities under JEOD
+//! `models/utils/`: quaternions, Euler angles, orbital elements, geodetic
+//! coordinates, the LVLH frame, the solar beta angle, and the small but
+//! load-bearing collection of vector/matrix helpers that mirror JEOD's
+//! `Vector3`/`Matrix3x3` inline functions.
+//!
 //! Phase 2 of the type-system refactor (#104) unifies the quaternion type
-//! with [`jeod_quantities`]. `JeodQuat` is now a re-export of
+//! with `jeod_quantities`. [`JeodQuat`] is now a re-export of
 //! `jeod_quantities::JeodQuat` (the canonical `Quat<ScalarFirst,
 //! LeftTransform>` type alias), and all algebraic/conversion methods live
 //! on that unified type so there is only one quaternion in the workspace.
+//! [`Quat`], [`NormalizedQuat`], the [`Layout`] tags ([`ScalarFirst`],
+//! [`ScalarLast`]) and the [`Transform`] tags ([`LeftTransform`],
+//! [`RightTransform`]) are re-exported so kernel code can name its inputs
+//! at the JEOD convention without reaching into upstream crates directly.
+//!
+//! ## Public surface
+//!
+//! - [`orbital_elements::OrbitalElements`] — Cartesian↔Keplerian conversion
+//!   ported from `models/utils/orbital_elements/src/orbital_elements.cc`.
+//!   Holds semi-major axis, eccentricity, inclination, RAAN, argument of
+//!   periapsis, and the three anomalies (true, mean, orbital), plus
+//!   energy/angular-momentum diagnostics.
+//! - [`euler_angles`] — port of JEOD `models/utils/orientation/`:
+//!   [`EulerSequence`], [`ALL_SEQUENCES`], and the
+//!   `compute_*_typed`/`quaternion_to_matrix_normalized` helpers.
+//! - [`geodetic`] — port of `models/utils/planet_fixed/`:
+//!   [`cartesian_to_geodetic_typed`], [`geodetic_to_cartesian_typed`],
+//!   [`GeodeticState`], [`GeodeticStateTyped`].
+//! - [`lvlh`] — port of `models/utils/lvlh_frame/`:
+//!   [`compute_lvlh_frame_typed`], [`LvlhFrame`].
+//! - [`solar_beta::solar_beta_angle_typed`] — solar beta angle for an
+//!   orbit, used in eclipse-fraction and thermal calculations.
+//! - [`quaternion`] — JEOD-convention quaternion algebra on the unified
+//!   [`JeodQuat`] type.
+//!
+//! ## Vector / matrix helpers
+//!
+//! [`types`] re-exports `glam`'s [`DMat3`] / [`DQuat`] / [`DVec3`] and adds
+//! the [`mat3_from_rows`] constructor (JEOD source is row-major while
+//! `glam` is column-major, so this lets ports read top-to-bottom against
+//! the C++ source) plus the inline `Vector3::*` / `Matrix3x3::*` operators
+//! ported from `models/utils/math/include/vector3_inline.hh` and
+//! `matrix3x3_inline.hh` (e.g., `vector3_transform`,
+//! `vector3_transform_transpose`, `matrix3x3_transform_matrix`,
+//! `matrix3x3_transpose_transform_matrix`,
+//! `matrix3x3_product_transpose_transpose`).
+//!
+//! Pure Rust, zero Bevy dependency.
 
 #![forbid(unsafe_code)]
 
