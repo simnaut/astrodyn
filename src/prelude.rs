@@ -10,7 +10,7 @@
 //! scenario-composition catalogue (`earth::point_mass()`,
 //! `orbital_elements::iss()`, `vehicle::iss_mass()`, …).
 //!
-//! ```ignore
+//! ```
 //! use bevy::prelude::*;
 //! use bevy_jeod::prelude::*;
 //! use bevy_jeod::recipes::*;
@@ -21,6 +21,7 @@
 //!     .rk4()
 //!     .gravity(GravityControl::new_spherical(0_usize, false))
 //!     .build();
+//! assert!(cfg.mass.is_some());
 //! ```
 
 pub use crate::{

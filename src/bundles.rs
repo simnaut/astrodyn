@@ -15,11 +15,14 @@ use crate::components::*;
 /// rotation, and geodetic computation.
 ///
 /// # Example
-/// ```ignore
+/// ```
+/// use bevy::prelude::*;
 /// use bevy_jeod::PlanetBundle;
 /// use jeod_sim::EARTH;
 ///
-/// let earth = commands.spawn(PlanetBundle::point_mass("Earth", &EARTH)).id();
+/// let mut world = World::new();
+/// let earth = world.spawn(PlanetBundle::point_mass("Earth", &EARTH)).id();
+/// assert!(world.get_entity(earth).is_ok());
 /// ```
 #[derive(Bundle)]
 pub struct PlanetBundle {
@@ -69,10 +72,14 @@ impl PlanetBundle {
 /// by SRP and solar-beta systems.
 ///
 /// # Example
-/// ```ignore
+/// ```
+/// use bevy::prelude::*;
 /// use bevy_jeod::SunBundle;
+/// use jeod_sim::TranslationalState;
 ///
-/// commands.spawn(SunBundle::new(sun_state));
+/// let mut world = World::new();
+/// let sun = world.spawn(SunBundle::new(TranslationalState::default())).id();
+/// assert!(world.get_entity(sun).is_ok());
 /// ```
 #[derive(Bundle)]
 pub struct SunBundle {
@@ -97,10 +104,14 @@ impl SunBundle {
 /// by the earth lighting system.
 ///
 /// # Example
-/// ```ignore
+/// ```
+/// use bevy::prelude::*;
 /// use bevy_jeod::MoonBundle;
+/// use jeod_sim::TranslationalState;
 ///
-/// commands.spawn(MoonBundle::new(moon_state));
+/// let mut world = World::new();
+/// let moon = world.spawn(MoonBundle::new(TranslationalState::default())).id();
+/// assert!(world.get_entity(moon).is_ok());
 /// ```
 #[derive(Bundle)]
 pub struct MoonBundle {

@@ -26,6 +26,14 @@ use crate::SimulationBuilder;
 /// `jeod_sim::recipes::verification::reference_data::moon_lp150q()` and
 /// adds a non-spherical control. That's appropriate only for Tier 3
 /// cross-validation (it requires `$JEOD_HOME`).
+///
+/// ```
+/// use jeod_sim::recipes::scenarios::clementine_lunar;
+/// let sb = clementine_lunar::clementine_lunar();
+/// // Moon (central) + Earth (third-body) + Sun (third-body / SRP).
+/// assert_eq!(sb.sources.len(), 3);
+/// assert_eq!(sb.bodies.len(), 1);
+/// ```
 pub fn clementine_lunar() -> SimulationBuilder {
     let mut sb = SimulationBuilder::new(epoch::clementine_1994(), 1.0);
 

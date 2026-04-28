@@ -12,20 +12,27 @@
 //!
 //! This module ships the **opt-in** branded API:
 //!
-//! ```ignore
-//! use jeod_runner::{Simulation, SourceIdx};
+//! ```
+//! use jeod_runner::Simulation;
+//! use jeod_sim::{default_leap_second_table, F64Ext, SimulationTime};
+//! use jeod_sim::recipes::{earth, orbital_elements, vehicle};
+//! use jeod_sim::{GravityControl, VehicleBuilder};
 //!
-//! Simulation::run(time, dt, |mut sim| {
-//!     // `sim` has type `BrandedSimulation<'sim>` where `'sim` is fresh
-//!     // per `run` call (HRTB). Indices returned from `sim.add_source` /
-//!     // `sim.add_body` carry the matching `'sim` lifetime.
-//!     let earth: SourceIdx<'_> = sim.add_source("Earth", earth_entry);
-//!     let satellite = sim.add_body(vehicle_config);
-//!     for _ in 0..n_steps {
-//!         sim.step();
-//!     }
-//!     let final_pos = sim.body(satellite).trans.position;
+//! let time = SimulationTime::at_j2000(default_leap_second_table());
+//! let final_pos_x = Simulation::run(time, 60.0, |mut sim| {
+//!     // `sim` has type `BrandedSimulation<'sim>`; `earth_idx` carries
+//!     // the matching `'sim` lifetime so it cannot escape this closure.
+//!     let earth_idx = sim.add_source("Earth", earth::point_mass());
+//!     let cfg = VehicleBuilder::new()
+//!         .from_orbital_elements(orbital_elements::iss(), earth::point_mass().source.mu.m3_per_s2())
+//!         .three_dof_point_mass(vehicle::iss_mass())
+//!         .rk4()
+//!         .gravity(GravityControl::new_spherical(earth_idx.into_raw(), false))
+//!         .build();
+//!     let sat = sim.add_body(cfg);
+//!     sim.body(sat).trans.position.x
 //! });
+//! assert!(final_pos_x.abs() > 6_000_000.0);
 //! ```
 //!
 //! Two `Simulation::run` calls produce indices with **different** `'sim`
@@ -264,16 +271,28 @@ impl Simulation {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```
     /// use jeod_runner::Simulation;
-    /// use jeod_sim::SimulationTime;
+    /// use jeod_sim::{default_leap_second_table, F64Ext, SimulationTime};
+    /// use jeod_sim::recipes::{earth, orbital_elements, vehicle};
+    /// use jeod_sim::{GravityControl, VehicleBuilder};
     ///
-    /// Simulation::run(SimulationTime::at_j2000(/* ... */), 60.0, |mut sim| {
-    ///     let earth = sim.add_source("Earth", earth_entry);
-    ///     let satellite = sim.add_body(vehicle_config);
-    ///     sim.step();
-    ///     let final_pos = sim.body(satellite).trans.position;
+    /// let time = SimulationTime::at_j2000(default_leap_second_table());
+    /// let r = Simulation::run(time, 60.0, |mut sim| {
+    ///     let earth_idx = sim.add_source("Earth", earth::point_mass());
+    ///     let cfg = VehicleBuilder::new()
+    ///         .from_orbital_elements(
+    ///             orbital_elements::iss(),
+    ///             earth::point_mass().source.mu.m3_per_s2(),
+    ///         )
+    ///         .three_dof_point_mass(vehicle::iss_mass())
+    ///         .rk4()
+    ///         .gravity(GravityControl::new_spherical(earth_idx.into_raw(), false))
+    ///         .build();
+    ///     let sat = sim.add_body(cfg);
+    ///     sim.body(sat).trans.position.length()
     /// });
+    /// assert!(r > 6_000_000.0);
     /// ```
     pub fn run<F, R>(time: SimulationTime, dt: f64, f: F) -> R
     where

@@ -36,6 +36,14 @@ pub const SUN_IDX: usize = 2;
 /// The example then layers stage separation and an impulsive
 /// trans-lunar Δv burn on top of this scenario as inline maneuvers —
 /// those are mission-code-specific and not baked into the scenario.
+///
+/// ```
+/// use jeod_sim::recipes::scenarios::apollo;
+/// let sb = apollo::apollo_translunar();
+/// // Earth + Moon + Sun gravity sources.
+/// assert_eq!(sb.sources.len(), 3);
+/// assert_eq!(sb.bodies.len(), 1);
+/// ```
 pub fn apollo_translunar() -> SimulationBuilder {
     let mut sb = SimulationBuilder::new(epoch::j2000(), 60.0);
     let earth_idx = sb.add_source("Earth", earth::point_mass());

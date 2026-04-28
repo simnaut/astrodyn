@@ -38,6 +38,13 @@ fn from_pos_vel_with_mu(pos: glam::DVec3, vel: glam::DVec3, mu: GravParam) -> Or
 /// reference state vector (with all of Earth's perturbations baked in)
 /// constructs it directly from a CSV / Python preset; that's a Tier 3
 /// concern, not a recipe.
+///
+/// ```
+/// use jeod_sim::recipes::orbital_elements;
+/// let oe = orbital_elements::iss();
+/// assert!(oe.semi_major_axis > 6_700_000.0);
+/// assert!(oe.e_mag < 1e-6);
+/// ```
 pub fn iss() -> OrbitalElements {
     leo_400km_circular_iss_inclination()
 }
@@ -57,6 +64,13 @@ fn circular_orbit_with_mu(r: f64, inc: f64, mu: GravParam) -> OrbitalElements {
 }
 
 /// Geostationary circular orbit at 42164 km, inclination 0°.
+///
+/// ```
+/// use jeod_sim::recipes::orbital_elements;
+/// let oe = orbital_elements::geostationary();
+/// assert!((oe.semi_major_axis - 42_164_172.0).abs() < 1.0);
+/// assert!(oe.inclination.abs() < 1e-12);
+/// ```
 pub fn geostationary() -> OrbitalElements {
     circular_orbit_with_mu(42_164_172.0_f64, 0.0, mu_ggm05c())
 }
@@ -64,12 +78,26 @@ pub fn geostationary() -> OrbitalElements {
 /// 400 km circular LEO at 51.6° inclination — the simplest ISS-like
 /// orbit (analytic closed-form, vs. [`iss`] which is from the JEOD
 /// reference state).
+///
+/// ```
+/// use jeod_sim::recipes::orbital_elements;
+/// let oe = orbital_elements::leo_400km_circular_iss_inclination();
+/// assert!((oe.inclination - 51.6_f64.to_radians()).abs() < 1e-12);
+/// assert!(oe.e_mag < 1e-6);
+/// ```
 pub fn leo_400km_circular_iss_inclination() -> OrbitalElements {
     let r_eq = 6_378_137.0_f64;
     circular_orbit_with_mu(r_eq + 400_000.0, 51.6_f64.to_radians(), mu_ggm05c())
 }
 
 /// Polar circular LEO at 600 km altitude.
+///
+/// ```
+/// use jeod_sim::recipes::orbital_elements;
+/// let oe = orbital_elements::leo_polar_600km();
+/// assert!((oe.inclination - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+/// assert!(oe.semi_major_axis > 6_900_000.0 && oe.semi_major_axis < 7_000_000.0);
+/// ```
 pub fn leo_polar_600km() -> OrbitalElements {
     let r_eq = 6_378_137.0_f64;
     circular_orbit_with_mu(r_eq + 600_000.0, 90.0_f64.to_radians(), mu_ggm05c())
@@ -83,6 +111,13 @@ pub fn leo_polar_600km() -> OrbitalElements {
 /// ~58.98 km/s perpendicular. Matches the inlined initial state used
 /// by the GR perihelion-advance test (`tier3_sim_mercury`) and the
 /// existing `scenarios::mercury_relativistic` setup.
+///
+/// ```
+/// use jeod_sim::recipes::orbital_elements;
+/// let oe = orbital_elements::mercury_perihelion();
+/// // Mercury's eccentricity is ~0.2 — definitely non-circular.
+/// assert!(oe.e_mag > 0.1 && oe.e_mag < 0.3);
+/// ```
 pub fn mercury_perihelion() -> OrbitalElements {
     from_pos_vel_with_mu(
         glam::DVec3::new(46.0e9, 0.0, 0.0),
@@ -95,6 +130,13 @@ pub fn mercury_perihelion() -> OrbitalElements {
 /// inertial). Constants match `scenarios::mars_orbit` exactly so a
 /// custom-loop test can pull the same starting state without
 /// duplicating the literal vectors.
+///
+/// ```
+/// use jeod_sim::recipes::orbital_elements;
+/// let oe = orbital_elements::mars_dawn_orbit();
+/// // Dawn arrives at Mars on a hyperbolic flyby trajectory.
+/// assert!(oe.e_mag > 1.0);
+/// ```
 pub fn mars_dawn_orbit() -> OrbitalElements {
     from_pos_vel_with_mu(
         glam::DVec3::new(11_563_355.680_2, -14_356_668.897_7, 6_293_704.616_9),
@@ -107,6 +149,13 @@ pub fn mars_dawn_orbit() -> OrbitalElements {
 ///
 /// Used by Earth-orbit Apollo tests as the starting state before the
 /// trans-lunar burn.
+///
+/// ```
+/// use jeod_sim::recipes::orbital_elements;
+/// let oe = orbital_elements::apollo_parking();
+/// assert!((oe.inclination - 32.5_f64.to_radians()).abs() < 1e-12);
+/// assert!(oe.e_mag < 1e-6);
+/// ```
 pub fn apollo_parking() -> OrbitalElements {
     let r_eq = 6_378_137.0_f64;
     circular_orbit_with_mu(r_eq + 185_000.0, 32.5_f64.to_radians(), mu_ggm05c())
@@ -119,6 +168,14 @@ pub fn apollo_parking() -> OrbitalElements {
 /// (e.g. `0.1.rad()` for an inclined-GEO study) and the function
 /// returns the orbital elements of a circular orbit at that
 /// inclination, with the line of nodes along the +x axis.
+///
+/// ```
+/// use jeod_quantities::ext::F64Ext;
+/// use jeod_sim::recipes::orbital_elements;
+/// let oe = orbital_elements::geo_inclined(0.1_f64.rad());
+/// assert!((oe.inclination - 0.1).abs() < 1e-12);
+/// assert!((oe.semi_major_axis - 42_164_172.0).abs() < 1.0);
+/// ```
 pub fn geo_inclined(inclination: uom::si::f64::Angle) -> OrbitalElements {
     use uom::si::angle::radian;
     circular_orbit_with_mu(42_164_172.0_f64, inclination.get::<radian>(), mu_ggm05c())

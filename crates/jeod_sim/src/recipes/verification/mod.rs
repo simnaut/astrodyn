@@ -4,6 +4,8 @@
 //! CSV path, propagation duration, and per-component tolerances into a
 //! single declarative unit. Tier 3 tests in Phase 7/8 collapse to:
 //!
+//! // reason: `run_and_assert` is defined by `jeod_runner::VerificationCaseExt`,
+//! // which jeod_sim cannot depend on without a circular workspace dependency.
 //! ```ignore
 //! #[test]
 //! fn tier3_dyncomp_run2_3dof() {

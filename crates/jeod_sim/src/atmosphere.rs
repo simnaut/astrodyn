@@ -47,7 +47,7 @@ impl AtmosphereConfig {
     /// constants aren't scattered across multiple configuration sites.
     ///
     /// # Example
-    /// ```ignore
+    /// ```
     /// use jeod_sim::{AtmosphereConfig, AtmosphereModel, EARTH};
     /// use jeod_atmosphere::exponential::ExponentialAtmosphere;
     ///
@@ -55,6 +55,7 @@ impl AtmosphereConfig {
     ///     AtmosphereModel::Exponential(ExponentialAtmosphere::default()),
     ///     &EARTH,
     /// );
+    /// assert_eq!(config.r_eq, EARTH.shape.r_eq);
     /// ```
     pub fn from_planet(model: AtmosphereModel, planet: &PlanetConfig) -> Self {
         Self {

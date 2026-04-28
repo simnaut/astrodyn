@@ -8,22 +8,14 @@
 //! functions from `jeod_sim` directly instead.
 //!
 //! # Example
-//! ```ignore
-//! use jeod_runner::{Simulation, VehicleConfig, GravitySourceEntry};
-//! use jeod_sim::{SimulationTime, EARTH};
+//! ```
+//! use jeod_runner::SimulationBuilderExt;
+//! use jeod_sim::recipes::Mission;
 //!
-//! let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
-//! let mut sim = Simulation::new(time, 10.0);
-//! let earth = sim.add_source(GravitySourceEntry::central_body(&EARTH));
-//! let vehicle = sim.add_body(VehicleConfig {
-//!     trans: initial_state,
-//!     gravity_controls: controls,
-//!     ..Default::default()
-//! });
-//! sim.validate().unwrap();
-//! sim.step_n(100);
-//! let output = sim.body(vehicle);
-//! println!("{:?}", output.trans.position);
+//! let mut sim = Mission::iss_leo().into_builder().build().unwrap();
+//! sim.step_n(10);
+//! let output = sim.body(0);
+//! assert!(output.trans.position.length() > 6_000_000.0);
 //! ```
 
 #![forbid(unsafe_code)]
@@ -373,17 +365,14 @@ impl SimBody {
 /// preconditions are programmer errors, not runtime conditions.
 ///
 /// # Example
-/// ```ignore
-/// let mut sim = Simulation::new(time, 10.0);
-/// let earth = sim.add_source("Earth", GravitySourceEntry::central_body(&EARTH));
-/// let vehicle = sim.add_body(VehicleConfig {
-///     trans: initial_state,
-///     gravity_controls: controls,
-///     ..Default::default()
-/// });
-/// sim.validate().unwrap();
-/// sim.step_n(100);
-/// let output = sim.body(vehicle);
+/// ```
+/// use jeod_runner::SimulationBuilderExt;
+/// use jeod_sim::recipes::Mission;
+///
+/// let mut sim = Mission::iss_leo().into_builder().build().unwrap();
+/// sim.step_n(10);
+/// let output = sim.body(0);
+/// assert!(output.trans.position.length() > 6_000_000.0);
 /// ```
 pub struct Simulation {
     /// Simulation time (TAI, UTC, TDB, GMST, etc.).

@@ -15,6 +15,9 @@
 //! ([`sim_dyncomp`], etc.). Each test in `jeod_runner/tests/tier3_*.rs`
 //! collapses to a one-liner of the form:
 //!
+//! // reason: snippet declares a `#[test]` and depends on a JEOD reference
+//! // CSV being present on disk; the Tier 3 test files in
+//! // `crates/jeod_runner/tests/tier3_*.rs` are the runnable forms.
 //! ```ignore
 //! use jeod_runner::prelude::*;
 //! use jeod_runner::run_verification::sim_dyncomp;

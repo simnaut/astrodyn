@@ -23,6 +23,9 @@
 //!
 //! Mission code consumes recipes through whichever adapter it targets:
 //!
+//! // reason: doctest references downstream adapter crates (jeod_runner,
+//! // bevy_jeod) that jeod_sim cannot depend on without a circular
+//! // workspace dependency.
 //! ```ignore
 //! // Standalone runner
 //! use jeod_runner::SimulationBuilderExt;          // .build() terminal

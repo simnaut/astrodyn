@@ -14,6 +14,14 @@ use crate::SimulationBuilder;
 
 /// Geostationary point-mass satellite at 42164 km, 0° inclination.
 /// Earth point-mass gravity, RK4, J2000 epoch, 300 s step.
+///
+/// ```
+/// use jeod_sim::recipes::scenarios::geostationary;
+/// let sb = geostationary::geo();
+/// assert_eq!(sb.sources.len(), 1);
+/// assert_eq!(sb.bodies.len(), 1);
+/// assert_eq!(sb.dt, 300.0);
+/// ```
 pub fn geo() -> SimulationBuilder {
     let mut sb = SimulationBuilder::new(epoch::j2000(), 300.0);
     let earth_idx = sb.add_source("Earth", earth::point_mass());

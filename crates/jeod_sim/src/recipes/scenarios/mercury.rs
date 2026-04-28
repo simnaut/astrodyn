@@ -17,6 +17,14 @@ use crate::SimulationBuilder;
 /// enabled — used to measure perihelion advance over many orbits.
 ///
 /// 100 s step. Initial state matches Mercury at perihelion.
+///
+/// ```
+/// use jeod_sim::recipes::scenarios::mercury;
+/// let sb = mercury::mercury_relativistic();
+/// assert_eq!(sb.sources.len(), 1);
+/// assert_eq!(sb.bodies.len(), 1);
+/// assert_eq!(sb.dt, 100.0);
+/// ```
 pub fn mercury_relativistic() -> SimulationBuilder {
     let mut sb = SimulationBuilder::new(epoch::j2000(), 100.0);
     let sun_idx = sb.add_source("Sun", sun::point_mass());

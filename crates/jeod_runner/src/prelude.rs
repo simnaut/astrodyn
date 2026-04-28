@@ -1,6 +1,6 @@
 //! Glob-import prelude for runner-side ergonomics.
 //!
-//! ```ignore
+//! ```
 //! use jeod_runner::prelude::*;
 //! ```
 //!
