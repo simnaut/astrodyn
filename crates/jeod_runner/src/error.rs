@@ -1,14 +1,36 @@
-//! Error type returned by [`Simulation::step`] and [`Simulation::step_until`].
+//! Error type returned by stepping methods on [`Simulation`](crate::Simulation).
 //!
-//! Per #172 L2, mission-runtime conditions inside `step_internal` (ephemeris
-//! lookup failure, frame-switch target out of range) propagate as a typed
-//! `StepError` rather than aborting the process via `panic!`. This lets
-//! mission programmes catch the failure (Monte Carlo, batch propagation,
-//! resilient long-running services) without resorting to `catch_unwind`.
+//! [`Simulation::step`](crate::Simulation::step),
+//! [`Simulation::step_n`](crate::Simulation::step_n), and
+//! [`Simulation::step_until`](crate::Simulation::step_until) all return
+//! `Result<(), StepError>`. Per #172 L2, mission-runtime conditions inside
+//! `step_internal` (ephemeris lookup failure, frame-switch target out of
+//! range) propagate as a typed `StepError` rather than aborting the process
+//! via `panic!`. This lets mission programmes catch the failure (Monte
+//! Carlo, batch propagation, resilient long-running services) without
+//! resorting to `catch_unwind`.
 //!
 //! Programmer / configuration errors (bad source index passed to an
 //! accessor method, typestate violations) remain `panic!`s — they signal a
 //! bug in the calling code and recovering from them is not meaningful.
+//!
+//! # State semantics on `Err`
+//!
+//! When a stepping method returns `Err`, the simulation has been
+//! **partially advanced** for the failing step. Specifically:
+//!
+//! - [`StepError::EphemerisLookup`] fires after time has advanced but
+//!   before integration runs, so simulation time is ahead by `dt` while
+//!   body states are still at the previous step.
+//! - [`StepError::FrameSwitchTargetMissing`] fires after both time advance
+//!   and integration, but before derived-state computation. Body states
+//!   correspond to the new time but derived states (orbital elements,
+//!   Euler angles, …) lag by one step.
+//!
+//! Either way the state is **not safe to step from again**. Mission code
+//! that wants to recover should reconstruct the simulation from a saved
+//! checkpoint (or from a fresh `SimulationBuilder`) rather than retry the
+//! failing step.
 
 use core::fmt;
 
@@ -37,10 +59,11 @@ pub enum StepError {
         /// Underlying error message from the ephemeris kernel.
         message: String,
     },
-    /// A body's [`crate::FrameSwitch`] referenced a `target_source`
-    /// index that doesn't correspond to any registered gravity source.
-    /// Typically a mid-mission edit hazard caught at step time when
-    /// `Simulation::validate` wasn't re-run after the change.
+    /// A body's [`FrameSwitchConfig`](jeod_sim::FrameSwitchConfig)
+    /// referenced a `target_source` index that doesn't correspond to any
+    /// registered gravity source. Typically a mid-mission edit hazard
+    /// caught at step time when [`Simulation::validate`](crate::Simulation::validate)
+    /// wasn't re-run after the change.
     FrameSwitchTargetMissing {
         /// Index of the body whose frame switch contains the bad target.
         body_idx: usize,
@@ -73,7 +96,9 @@ impl fmt::Display for StepError {
                 f,
                 "frame switch evaluation: body {body_idx} references target_source \
                  {target_source} but only {num_sources} source(s) are configured. \
-                 Run validate() before step()."
+                 Re-run Simulation::validate() before stepping; if a frame switch \
+                 was added or edited mid-mission, also check the body's \
+                 frame_switches list."
             ),
         }
     }
