@@ -1,17 +1,35 @@
-//! Validate gravity computations against JEOD's grav_geospherical test data.
+//! Tier 2: `grav_geospherical` reference vectors.
+//!
+//! Validates `jeod_gravity` against the 40 static test cases shipped in
+//! `models/environment/gravity/verif/unit_tests/grav_geospherical/data/verif_out.txt`
+//! from the JEOD source tree. Each case maps a planet-fixed position
+//! (degree=order=20 spherical harmonics evaluation; 33 cases full gravity,
+//! 7 cases harmonics-perturbation only) to JEOD's expected acceleration,
+//! potential, and gradient.
+//!
+//! These tests exercise `calc_spherical` / `calc_nonspherical` directly
+//! against reference vectors — they do *not* propagate a trajectory.
+//! Tier 3 trajectory cross-validation against propagating JEOD sims lives
+//! in `crates/jeod_runner/tests/tier3_*`.
 //!
 //! Requires the JEOD source tree (via `JEOD_HOME` or `JEOD_PATH` env var).
-//!
-//! The 40 cases in verif_out.txt use degree=20, order=20 spherical harmonics.
-//! 33 cases have perturbOnly=0 (total gravity), 7 have perturbOnly=1
-//! (harmonics perturbation only, i.e. total minus point-mass).
 
-use glam::DVec3;
-use jeod_gravity::coefficients;
-use jeod_test_data::{gravity_verif::load_gravity_test_cases, jeod_path};
+use glam::{DMat3, DVec3};
+use jeod_gravity::{coefficients, SphericalHarmonicsData};
+use jeod_test_data::{
+    gravity_verif::{load_gravity_test_cases, GravityTestCase},
+    jeod_path,
+};
+use std::path::{Path, PathBuf};
+
+/// Path to the GGM02C coefficient source file in the JEOD tree (the file
+/// JEOD's `grav_geospherical` test itself references).
+fn ggm02c_path(root: &Path) -> PathBuf {
+    root.join("models/environment/gravity/data/src/earth_GGM02C.cc")
+}
 
 #[test]
-fn load_gravity_test_data() {
+fn tier2_grav_geospherical_loader() {
     let root = jeod_path();
     assert!(
         root.exists(),
@@ -40,7 +58,7 @@ fn load_gravity_test_data() {
         );
     }
 
-    // Verify the perturbOnly distribution
+    // Verify the perturbOnly distribution.
     let perturb_count = cases.iter().filter(|c| c.perturb_only).count();
     let full_count = cases.iter().filter(|c| !c.perturb_only).count();
     assert!(perturb_count > 0, "Expected some perturbOnly cases");
@@ -49,7 +67,7 @@ fn load_gravity_test_data() {
 }
 
 #[test]
-fn jeod_gravity_data_laplace_equation() {
+fn tier2_grav_geospherical_laplace() {
     let root = jeod_path();
     assert!(
         root.exists(),
@@ -79,7 +97,7 @@ fn jeod_gravity_data_laplace_equation() {
 }
 
 #[test]
-fn point_mass_reasonable_at_jeod_positions() {
+fn tier2_grav_geospherical_point_mass_sanity() {
     let root = jeod_path();
     assert!(
         root.exists(),
@@ -90,10 +108,10 @@ fn point_mass_reasonable_at_jeod_positions() {
     let cases = load_gravity_test_cases(&root);
 
     // Load mu directly from JEOD GGM02C (the file JEOD's grav_geospherical
-    // test itself references). This matches `spherical_harmonics_40_test_vectors`
+    // test itself references). This matches `tier2_grav_geospherical_full_validation`
     // below and avoids a literal duplicate of the JEOD-source value.
-    let ggm02c_path = root.join("models/environment/gravity/data/src/earth_GGM02C.cc");
-    let data = coefficients::load_from_jeod_cc(&ggm02c_path).expect("load GGM02C coefficients");
+    let data =
+        coefficients::load_from_jeod_cc(&ggm02c_path(&root)).expect("load GGM02C coefficients");
     let mu_earth = data.mu;
 
     for case in &cases {
@@ -139,7 +157,7 @@ fn point_mass_reasonable_at_jeod_positions() {
 }
 
 #[test]
-fn gradient_symmetry_in_jeod_data() {
+fn tier2_grav_geospherical_gradient_symmetry() {
     let root = jeod_path();
     assert!(
         root.exists(),
@@ -175,30 +193,67 @@ fn gradient_symmetry_in_jeod_data() {
     }
 }
 
+/// Evaluate a single `grav_geospherical` case through the Gottlieb algorithm,
+/// returning `(acceleration, potential, gradient)` in the same convention
+/// as the JEOD reference vector for the case.
+///
+/// For `perturb_only=false` cases the result combines the point-mass and
+/// non-spherical contributions; for `perturb_only=true` cases only the
+/// non-spherical sum is returned. Both `calc_spherical` and `calc_nonspherical`
+/// use JEOD's `+mu/r` potential convention, so the sums are direct.
+fn evaluate_case(data: &SphericalHarmonicsData, case: &GravityTestCase) -> (DVec3, f64, DMat3) {
+    let degree = case.degree;
+    let order = case.order;
+    let grad_active = case.grad_active;
+
+    // The Gottlieb algorithm computes harmonics from n=2..degree.
+    // The sums are initialized to zero (perturbing-only mode).
+    let sh_result = jeod_gravity::calc_nonspherical(
+        data,
+        case.position,
+        degree,
+        order,
+        grad_active,
+        if grad_active { degree } else { 0 },
+        if grad_active { order } else { 0 },
+    );
+
+    if case.perturb_only {
+        (
+            sh_result.grav_accel,
+            sh_result.grav_pot,
+            sh_result.grav_grad,
+        )
+    } else {
+        let pm = jeod_gravity::calc_spherical(data.mu, case.position);
+        (
+            sh_result.grav_accel + pm.grav_accel,
+            sh_result.grav_pot + pm.grav_pot,
+            if grad_active {
+                sh_result.grav_grad + pm.grav_grad
+            } else {
+                sh_result.grav_grad
+            },
+        )
+    }
+}
+
 /// Run all 40 gravity test vectors through the Gottlieb algorithm.
 ///
-/// Loads earth_GGM02C coefficients (same as JEOD's grav_geospherical test)
-/// and compares acceleration, potential, and gradient against the reference data.
-///
-/// The JEOD test uses identity planet-fixed rotation, so the test positions
-/// are directly in planet-fixed coordinates.
-///
-/// For perturb_only=false cases: result = nonspherical(n=2..degree) + point_mass
-/// For perturb_only=true cases: result = nonspherical(n=2..degree) only
+/// Loads `earth_GGM02C` coefficients (same as JEOD's `grav_geospherical` test)
+/// and compares acceleration, potential, and gradient against the reference
+/// data. The JEOD test uses identity planet-fixed rotation, so the test
+/// positions are directly in planet-fixed coordinates.
 #[test]
-fn spherical_harmonics_40_test_vectors() {
+fn tier2_grav_geospherical_full_validation() {
     let root = jeod_path();
     assert!(root.exists(), "JEOD source not found at {}", root.display());
 
-    // Load GGM02C (the test was built against GGM02C, not GGM05C)
-    let ggm02c_path = root.join("models/environment/gravity/data/src/earth_GGM02C.cc");
-    assert!(
-        ggm02c_path.exists(),
-        "GGM02C not found at {}",
-        ggm02c_path.display()
-    );
-    let mut data = coefficients::load_from_jeod_cc(&ggm02c_path).expect("load GGM02C coefficients");
-    // JEOD test overrides tide_free = true (main.cc line 95)
+    // Load GGM02C (the test was built against GGM02C, not GGM05C).
+    let path = ggm02c_path(&root);
+    assert!(path.exists(), "GGM02C not found at {}", path.display());
+    let mut data = coefficients::load_from_jeod_cc(&path).expect("load GGM02C coefficients");
+    // JEOD test overrides tide_free = true (main.cc line 95).
     data.tide_free = true;
 
     let cases = load_gravity_test_cases(&root);
@@ -216,54 +271,17 @@ fn spherical_harmonics_40_test_vectors() {
     let mut passed = 0;
 
     for case in &cases {
-        let degree = case.degree;
-        let order = case.order;
-        let grad_active = case.grad_active;
-        let perturb_only = case.perturb_only;
+        let (accel, potential, gradient) = evaluate_case(&data, case);
 
-        // The Gottlieb algorithm computes harmonics from n=2..degree.
-        // The sums are initialized to zero (perturbing-only mode).
-        let sh_result = jeod_gravity::calc_nonspherical(
-            &data,
-            case.position,
-            degree,
-            order,
-            grad_active,
-            if grad_active { degree } else { 0 },
-            if grad_active { order } else { 0 },
-        );
-
-        // For full gravity (perturb_only=false), add point-mass contribution.
-        // Both calc_spherical and calc_nonspherical use JEOD's +mu/r potential
-        // convention, so we sum directly.
-        let (accel, potential, gradient) = if perturb_only {
-            (
-                sh_result.grav_accel,
-                sh_result.grav_pot,
-                sh_result.grav_grad,
-            )
-        } else {
-            let pm = jeod_gravity::calc_spherical(data.mu, case.position);
-            (
-                sh_result.grav_accel + pm.grav_accel,
-                sh_result.grav_pot + pm.grav_pot,
-                if grad_active {
-                    sh_result.grav_grad + pm.grav_grad
-                } else {
-                    sh_result.grav_grad
-                },
-            )
-        };
-
-        // Check acceleration
+        // Check acceleration magnitude (full vector error, used for reporting).
         let accel_err = (accel - case.acceleration).length();
         max_accel_err = max_accel_err.max(accel_err);
 
-        // Check potential
+        // Check potential.
         let pot_err = (potential - case.potential).abs();
         max_pot_err = max_pot_err.max(pot_err);
 
-        // Check per-component acceleration
+        // Per-component acceleration tolerance.
         let ax_err = (accel.x - case.acceleration.x).abs();
         let ay_err = (accel.y - case.acceleration.y).abs();
         let az_err = (accel.z - case.acceleration.z).abs();
@@ -282,8 +300,8 @@ fn spherical_harmonics_40_test_vectors() {
             pot_tol,
         );
 
-        // Check gradient if active
-        if grad_active {
+        // Gradient tolerance (only when active).
+        if case.grad_active {
             let expected = case.gradient;
             for i in 0..3 {
                 for j in 0..3 {
@@ -311,20 +329,25 @@ fn spherical_harmonics_40_test_vectors() {
     eprintln!("  Max gradient error: {:.6e} 1/s^2", max_grad_err);
 }
 
-/// Surface gravity sanity check with GGM02C (if available).
+/// Surface-gravity sanity check at GGM02C's equatorial and polar radii.
+///
+/// Not part of the 40-vector reference set, but uses the same JEOD-source
+/// coefficient file and serves as a coarse end-to-end check that
+/// `calc_nonspherical + calc_spherical` reproduces the textbook ~9.78 /
+/// ~9.83 m/s^2 surface accelerations.
 #[test]
-fn surface_gravity_ggm02c() {
+fn tier2_grav_geospherical_surface_gravity_ggm02c() {
     let root = jeod_path();
     assert!(root.exists());
-    let ggm02c_path = root.join("models/environment/gravity/data/src/earth_GGM02C.cc");
+    let path = ggm02c_path(&root);
     assert!(
-        ggm02c_path.exists(),
+        path.exists(),
         "GGM02C not found at {}. Requires JEOD source.",
-        ggm02c_path.display()
+        path.display()
     );
-    let data = coefficients::load_from_jeod_cc(&ggm02c_path).expect("load GGM02C coefficients");
+    let data = coefficients::load_from_jeod_cc(&path).expect("load GGM02C coefficients");
 
-    // Equatorial surface
+    // Equatorial surface.
     let pos_eq = DVec3::new(data.radius, 0.0, 0.0);
     let result_eq =
         jeod_gravity::calc_nonspherical(&data, pos_eq, data.degree, data.order, false, 0, 0);
@@ -336,7 +359,7 @@ fn surface_gravity_ggm02c() {
         g_eq
     );
 
-    // Polar surface
+    // Polar surface.
     let r_pol = data.radius * (1.0 - 1.0 / 298.257223563);
     let pos_pol = DVec3::new(0.0, 0.0, r_pol);
     let result_pol =
