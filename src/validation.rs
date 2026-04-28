@@ -20,17 +20,29 @@ use crate::components::{
 
 /// Validates JEOD invariants on dynamic body entities.
 ///
-/// Triggered by [`Added<GravityControlsC>`]: the system body short-circuits
-/// to a no-op on ticks where no new bodies have been spawned, and runs
-/// the full validation pass otherwise. This means bodies attached to the
-/// app at build time are validated on the first `FixedUpdate` tick, and
-/// bodies added later (e.g. by a staging system or a runtime spawn event)
-/// are validated on the next tick after they appear.
+/// Triggered by [`Added<GravityControlsC>`] on the body query: the system
+/// short-circuits to a no-op on ticks where no body with
+/// `GravityControlsC` has been newly attached. When the trigger fires,
+/// the system runs the validation pass below; bodies attached to the app
+/// at build time are validated on the first `FixedUpdate` tick, and
+/// bodies spawned later (staging, hot-attach, runtime spawn events) are
+/// validated on the tick following their insertion.
 ///
-/// Global checks (marker counts, tidal pairing, SRP mutual exclusion) are
-/// idempotent and re-run on every trigger; the per-body invariant checks
-/// run for *all* bodies with `GravityControlsC` so that a late-added body
-/// can still catch invariants involving inter-body relationships.
+/// Two scopes participate:
+///
+/// * **Global state checks** (Sun/Moon marker counts, tidal-config pairing
+///   on gravity sources) iterate the *unfiltered* `derived_state_markers`
+///   and `tidal_sources` queries, so they re-evaluate the entire world's
+///   marker/source set on every trigger. Adding a stray second
+///   `SunMarker` mid-mission is therefore caught the next tick a body
+///   with `GravityControlsC` is added.
+/// * **Per-body invariant checks** (SRP mutual exclusion, the full
+///   `jeod_sim::validate_body` pass, gravity-control `check_validity`
+///   auto-corrections) iterate the `Added`-filtered `bodies` query, so
+///   they validate only newly-attached bodies. Existing bodies were
+///   validated on the tick they first appeared, and the per-body
+///   invariants do not depend on inter-body state, so re-running them
+///   for unchanged bodies would be wasteful.
 ///
 /// Delegates per-body checks to [`jeod_sim::validate_body`] and applies
 /// gravity control auto-corrections via `check_validity()`.

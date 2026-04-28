@@ -202,9 +202,9 @@ impl FlatPlateState {
     ///
     /// Combines k1–k4 temperature derivatives via the standard RK4 formula
     /// and applies JEOD overshoot clamping (thermal_integrable_object.cc:106-121).
-    /// Reads the step-start snapshots from `temps_snapshot` /
-    /// `t_pow4_snapshot`, which [`IntegrableObject::snapshot`] populated at
-    /// the start of the step.
+    /// Reads the step-start snapshots from `scratch.temps_snapshot` /
+    /// `scratch.t_pow4_snapshot`, which [`IntegrableObject::snapshot`]
+    /// populated at the start of the step.
     ///
     /// This is the coupled-integration counterpart of
     /// [`Self::integrate_temperatures`]: instead of deriving k2–k4 internally

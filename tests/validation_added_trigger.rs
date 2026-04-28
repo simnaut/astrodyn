@@ -10,18 +10,17 @@
 //!      vehicle attached at startup.
 //!   2. Running several `FixedUpdate` ticks so the startup body has been
 //!      validated and `Added` is no longer set on it.
-//!   3. Spawning a *second* vehicle whose `GravityControlsC` references a
-//!      bogus source index. The validation system must catch this on the
-//!      next tick and panic — proving the late-add validation path runs.
+//!   3. Spawning a *second* vehicle after those ticks whose
+//!      `GravityControlsC` still references source index `0` (which
+//!      resolves to Earth), but is intentionally invalid for that source.
 //!
-//! The bogus reference is a deliberate trip wire: the inner `validate_body`
-//! call doesn't itself reach the gravity-control auto-correction step (which
-//! would silently skip an unresolved entity), but `check_validity` *does*
-//! get called for every control, and a bad source index makes
-//! `sources.get(...)` return Err — so the auto-correction is skipped but
-//! the per-step gravity computation in `gravity_computation_system` will
-//! eventually panic on a missing source. We capture the panic via
-//! `std::panic::catch_unwind` to keep the test deterministic.
+//! The deliberate trip wire is `GravityControl::new_nonspherical(0, 4, 4,
+//! false)` against a `PointMass` Earth source. When the late-added body is
+//! picked up by the `Added<GravityControlsC>` validation path on the next
+//! tick, `check_validity()` rejects that configuration and panics. That
+//! panic is what proves validation is being rerun for newly-added bodies,
+//! rather than the body slipping past validation after startup. We capture
+//! the panic via `std::panic::catch_unwind` to keep the test deterministic.
 
 use std::panic::AssertUnwindSafe;
 use std::time::Duration;
@@ -78,33 +77,25 @@ fn build_app() -> (App, Entity) {
 fn validation_fires_for_body_added_after_startup() {
     let (mut app, earth) = build_app();
 
-    // Add a *second* vehicle mid-simulation. This time give it a
-    // non-spherical GravityControl with a non-existent source name. The
-    // `validate_body` kernel does not panic on this (the `sources.get()`
-    // closure simply returns `None` for an unresolved source, which
-    // validate_body interprets as "skip"), but `check_validity` clamps
-    // degree/order — and the integration step that follows will fail to
-    // find the source. We assert that the validation system *runs* (which
-    // we measure by observing the gravity-control's `degree`/`order` got
-    // clamped at the second tick); a stale `has_run` gate would skip this
-    // mutation and the assertion below would fail.
+    // Add a *second* vehicle mid-simulation. Give it a non-spherical
+    // GravityControl targeting the existing Earth source, even though
+    // Earth is configured as a point-mass model. When this body is
+    // inserted, `Added<GravityControlsC>` should cause validation to run
+    // on the next `FixedUpdate`. That validation panics immediately
+    // because non-spherical gravity is only supported for
+    // `SphericalHarmonics` sources; if the old `Local<bool>` gate were
+    // still suppressing validation after startup, the schedule would
+    // complete without error and the assertion below would fail.
 
     let earth_mu = earth::point_mass().source.mu;
     let bogus_cfg = VehicleBuilder::new()
         .from_orbital_elements(orbital_elements::iss(), earth_mu.m3_per_s2())
         .three_dof_point_mass(vehicle::iss_mass())
         .rk4()
-        // Request a degree that exceeds the source's degree (point-mass
-        // = degree 0). validation's `check_validity` should catch this
-        // and either panic or auto-correct depending on the request.
-        .gravity({
-            let mut g = GravityControl::new_nonspherical(0_usize, 4, 4, false);
-            // Request degree=4 against a point-mass source. `check_validity`
-            // panics with "Non-spherical gravity (spherical=false) is only
-            // supported for SphericalHarmonics gravity models."
-            g.degree = 4;
-            g
-        })
+        // Request degree=4 against a point-mass source. `check_validity`
+        // panics with "Non-spherical gravity (spherical=false) is only
+        // supported for SphericalHarmonics gravity models."
+        .gravity(GravityControl::new_nonspherical(0_usize, 4, 4, false))
         .build();
 
     let mut commands_state = bevy::ecs::system::SystemState::<Commands>::new(app.world_mut());
