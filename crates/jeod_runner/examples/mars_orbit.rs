@@ -31,6 +31,23 @@ const DT: f64 = 10.0;
 const DURATION: f64 = 10_800.0;
 const R_MARS_EQ: f64 = 3_396_190.0;
 
+/// Parse `--steps N` from CLI args; fall back to `default` when absent.
+/// Panics with a clear message on a malformed value (per fail-loudly policy).
+fn parse_steps_arg(default: usize) -> usize {
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
+        if arg == "--steps" {
+            let val = args
+                .next()
+                .expect("--steps requires a value, e.g. --steps 10");
+            return val
+                .parse::<usize>()
+                .unwrap_or_else(|err| panic!("--steps value {val:?} is not a usize: {err}"));
+        }
+    }
+    default
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let data_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data");
     let bsp_path = data_dir.join("de421.bsp");
@@ -84,7 +101,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", "-".repeat(62));
 
     let print_interval = 900.0;
-    let total_steps = (DURATION / DT).round() as usize;
+    let total_steps = parse_steps_arg((DURATION / DT).round() as usize);
     let steps_per_print = (print_interval / DT).round() as usize;
 
     for step in 1..=total_steps {

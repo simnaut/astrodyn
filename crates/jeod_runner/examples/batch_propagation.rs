@@ -19,6 +19,23 @@ fn eccentricity(mu: f64, position: DVec3, velocity: DVec3) -> f64 {
     e_vec.length()
 }
 
+/// Parse `--steps N` from CLI args; fall back to `default` when absent.
+/// Panics with a clear message on a malformed value (per fail-loudly policy).
+fn parse_steps_arg(default: usize) -> usize {
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
+        if arg == "--steps" {
+            let val = args
+                .next()
+                .expect("--steps requires a value, e.g. --steps 10");
+            return val
+                .parse::<usize>()
+                .unwrap_or_else(|err| panic!("--steps value {val:?} is not a usize: {err}"));
+        }
+    }
+    default
+}
+
 fn main() {
     let mu_earth = constants::mu_ggm05c().value;
 
@@ -33,7 +50,7 @@ fn main() {
     let period = 2.0 * std::f64::consts::PI * (r0.powi(3) / mu_earth).sqrt();
     let n_orbits = 10;
     let dt = sim.dt;
-    let steps = (n_orbits as f64 * period / dt).ceil() as usize;
+    let steps = parse_steps_arg((n_orbits as f64 * period / dt).ceil() as usize);
 
     let initial = sim.body(0).trans;
     let initial_energy = specific_energy(mu_earth, initial.position, initial.velocity);

@@ -38,6 +38,23 @@ const PARKING_ORBITS: f64 = 2.5;
 const DT: f64 = 60.0;
 const TOTAL_DURATION: f64 = 3.0 * 86_400.0;
 
+/// Parse `--steps N` from CLI args; fall back to `default` when absent.
+/// Panics with a clear message on a malformed value (per fail-loudly policy).
+fn parse_steps_arg(default: usize) -> usize {
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
+        if arg == "--steps" {
+            let val = args
+                .next()
+                .expect("--steps requires a value, e.g. --steps 10");
+            return val
+                .parse::<usize>()
+                .unwrap_or_else(|err| panic!("--steps value {val:?} is not a usize: {err}"));
+        }
+    }
+    default
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Override scenario state with Apollo parking orbit, attach DE421
     // ephemeris, then build.
@@ -106,7 +123,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     println!("{}", "-".repeat(76));
 
-    let total_steps = (TOTAL_DURATION / DT).round() as usize;
+    let total_steps = parse_steps_arg((TOTAL_DURATION / DT).round() as usize);
     let print_interval = 7_200.0;
     let steps_per_print = (print_interval / DT).round() as usize;
     let mut tli_applied = false;

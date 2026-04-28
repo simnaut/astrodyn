@@ -32,6 +32,26 @@ use uom::si::mass::kilogram;
 
 const MU_EARTH: f64 = 3.986_004_415e14;
 
+/// Default step count: ~one ISS orbit at dt=10s.
+const DEFAULT_STEPS: usize = 560;
+
+/// Parse `--steps N` from CLI args; default to [`DEFAULT_STEPS`] when absent.
+/// Panics with a clear message on a malformed value (per fail-loudly policy).
+fn parse_steps_arg() -> usize {
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
+        if arg == "--steps" {
+            let val = args
+                .next()
+                .expect("--steps requires a value, e.g. --steps 10");
+            return val
+                .parse::<usize>()
+                .unwrap_or_else(|err| panic!("--steps value {val:?} is not a usize: {err}"));
+        }
+    }
+    DEFAULT_STEPS
+}
+
 /// Earth equatorial radius from `recipes::constants::r_eq_earth()`.
 /// Used to compute the printed altitude — keeps the example aligned
 /// with the rest of the recipe-based examples if the constant ever
@@ -47,6 +67,7 @@ fn eccentricity(mu: f64, position: DVec3, velocity: DVec3) -> f64 {
 }
 
 fn main() {
+    let max_steps = parse_steps_arg();
     App::new()
         .add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(Duration::from_millis(0))))
         .insert_resource(Time::<Fixed>::from_seconds(10.0))
@@ -54,11 +75,15 @@ fn main() {
         .add_systems(Startup, setup)
         .add_systems(FixedUpdate, print_state.after(JeodSet::Integration))
         .insert_resource(StepCounter(0))
+        .insert_resource(MaxSteps(max_steps))
         .run();
 }
 
 #[derive(Resource)]
 struct StepCounter(usize);
+
+#[derive(Resource)]
+struct MaxSteps(usize);
 
 fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
     time.set_relative_speed_f64(1e6);
@@ -122,9 +147,10 @@ fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
 fn print_state(
     query: Query<(&Name, &TranslationalStateC)>,
     mut counter: ResMut<StepCounter>,
+    max_steps: Res<MaxSteps>,
     mut exit: MessageWriter<AppExit>,
 ) {
-    if counter.0 >= 560 {
+    if counter.0 >= max_steps.0 {
         return;
     }
     counter.0 += 1;
@@ -148,8 +174,8 @@ fn print_state(
                 e_mag
             );
         }
-        if counter.0 >= 560 {
-            println!("Completed ~1 orbit. Exiting.");
+        if counter.0 >= max_steps.0 {
+            println!("Completed {} steps. Exiting.", max_steps.0);
             exit.write(AppExit::Success);
             return;
         }
