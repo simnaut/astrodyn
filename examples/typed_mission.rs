@@ -34,6 +34,8 @@ const DEFAULT_STEPS: usize = 560;
 
 /// Parse `--steps N` from CLI args; default to [`DEFAULT_STEPS`] when absent.
 /// Panics with a clear message on a malformed value (per fail-loudly policy).
+/// Rejects `0` because `MaxSteps(0)` would make `log_orbit` early-return on
+/// every tick without ever writing `AppExit` — the app would hang forever.
 fn parse_steps_arg() -> usize {
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -41,9 +43,16 @@ fn parse_steps_arg() -> usize {
             let val = args
                 .next()
                 .expect("--steps requires a value, e.g. --steps 10");
-            return val
-                .parse::<usize>()
+            let n: usize = val
+                .parse()
                 .unwrap_or_else(|err| panic!("--steps value {val:?} is not a usize: {err}"));
+            assert!(
+                n >= 1,
+                "--steps must be >= 1; got {n}. The example exits after writing \
+                 AppExit on step >= max_steps; with max_steps == 0 the app would \
+                 hang forever. Pass at least --steps 1.",
+            );
+            return n;
         }
     }
     DEFAULT_STEPS

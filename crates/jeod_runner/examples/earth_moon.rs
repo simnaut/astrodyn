@@ -121,10 +121,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut sim = sb.build().expect("earth_moon scenario must validate");
 
-    println!(
-        "Clementine lunar orbit — {:.0}-day propagation",
-        DURATION / 86_400.0
-    );
+    let print_interval = 7_200.0;
+    let total_steps = parse_steps_arg((DURATION / DT).round() as usize);
+    let steps_per_print = (print_interval / DT).round() as usize;
+    // Derive the printed duration from `total_steps * DT` so headings stay
+    // accurate when `--steps` overrides the nominal 1-day run length.
+    let elapsed_days = total_steps as f64 * DT / 86_400.0;
+
+    println!("Clementine lunar orbit — {elapsed_days:.2}-day propagation");
     println!("  Moon: LP150Q 60×60 SH | Earth + Sun 3rd-body | Cannonball SRP");
     println!("  Integrator: RK4 at dt={DT} s");
     println!();
@@ -133,10 +137,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Time (h)", "Alt (km)", "Speed (m/s)", "Period (h)", "Ecc"
     );
     println!("{}", "-".repeat(62));
-
-    let print_interval = 7_200.0;
-    let total_steps = parse_steps_arg((DURATION / DT).round() as usize);
-    let steps_per_print = (print_interval / DT).round() as usize;
 
     for step in 1..=total_steps {
         sim.step().expect("step failed");
@@ -161,9 +161,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!();
     let final_body = sim.body(0);
     let final_alt = (final_body.trans.position.length() - R_MOON) / 1000.0;
-    println!(
-        "Final altitude: {final_alt:.1} km after {:.1} days",
-        DURATION / 86_400.0
-    );
+    println!("Final altitude: {final_alt:.1} km after {elapsed_days:.2} days");
     Ok(())
 }

@@ -105,7 +105,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tli_time = PARKING_ORBITS * parking_period;
     let separation_time = tli_time + 600.0;
 
-    println!("Apollo trans-lunar injection — 3-day trajectory");
+    let total_steps = parse_steps_arg((TOTAL_DURATION / DT).round() as usize);
+    let print_interval = 7_200.0;
+    let steps_per_print = (print_interval / DT).round() as usize;
+    // Derive the printed duration from `total_steps * DT` so headings/summary
+    // stay accurate when `--steps` overrides the nominal 3-day run length.
+    let elapsed_days = total_steps as f64 * DT / 86_400.0;
+
+    println!("Apollo trans-lunar injection — {elapsed_days:.2}-day trajectory");
     println!(
         "  Parking orbit: {:.0} km circular, {INCLINATION_DEG}° inclination",
         PARKING_ALT / 1000.0
@@ -122,10 +129,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Time (h)", "Alt (km)", "Dist Moon", "Speed (m/s)", "Mass (kg)", "Phase"
     );
     println!("{}", "-".repeat(76));
-
-    let total_steps = parse_steps_arg((TOTAL_DURATION / DT).round() as usize);
-    let print_interval = 7_200.0;
-    let steps_per_print = (print_interval / DT).round() as usize;
     let mut tli_applied = false;
     let mut separated = false;
 
@@ -192,9 +195,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         (final_body.trans.position - sim.source_position(apollo::MOON_IDX)).length();
     println!();
     println!(
-        "Final distance to Moon: {:.0} km after {:.1} days",
+        "Final distance to Moon: {:.0} km after {elapsed_days:.2} days",
         final_moon_dist / 1000.0,
-        TOTAL_DURATION / 86_400.0
     );
     Ok(())
 }

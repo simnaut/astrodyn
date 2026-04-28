@@ -126,9 +126,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!();
     let final_body = sim.body(0);
     let final_alt = (final_body.trans.position.length() - R_MARS_EQ) / 1000.0;
-    println!(
-        "Final altitude: {final_alt:.1} km after {:.0} minutes",
-        DURATION / 60.0
-    );
+    // Derive elapsed time from `total_steps * DT` so the summary stays
+    // accurate when `--steps` overrides the nominal duration.
+    let elapsed_min = total_steps as f64 * DT / 60.0;
+    println!("Final altitude: {final_alt:.1} km after {elapsed_min:.1} minutes");
     Ok(())
 }

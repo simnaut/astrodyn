@@ -48,9 +48,12 @@ fn main() {
 
     let r0 = sim.body(0).trans.position.length();
     let period = 2.0 * std::f64::consts::PI * (r0.powi(3) / mu_earth).sqrt();
-    let n_orbits = 10;
+    let nominal_orbits = 10;
     let dt = sim.dt;
-    let steps = parse_steps_arg((n_orbits as f64 * period / dt).ceil() as usize);
+    let steps = parse_steps_arg((nominal_orbits as f64 * period / dt).ceil() as usize);
+    // Derive the actual orbit count from `steps * dt / period` so the heading
+    // stays accurate when `--steps` overrides the nominal 10-orbit length.
+    let actual_orbits = steps as f64 * dt / period;
 
     let initial = sim.body(0).trans;
     let initial_energy = specific_energy(mu_earth, initial.position, initial.velocity);
@@ -58,9 +61,9 @@ fn main() {
     println!("Batch Kepler Orbit Propagation (no Bevy)");
     println!("=========================================");
     println!("Initial altitude: {:.1} km", (r0 - 6_378_137.0) / 1000.0);
-    println!("Orbital period:   {:.1} s", period);
-    println!("Timestep:         {:.1} s", dt);
-    println!("Propagating for:  {} orbits ({} steps)", n_orbits, steps);
+    println!("Orbital period:   {period:.1} s");
+    println!("Timestep:         {dt:.1} s");
+    println!("Propagating for:  {actual_orbits:.2} orbits ({steps} steps)");
     println!();
 
     let report_interval = (steps / 10).max(1);

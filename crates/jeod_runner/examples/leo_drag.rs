@@ -96,7 +96,11 @@ fn main() {
     let final_e = eccentricity(mu_earth, final_state.position, final_state.velocity);
     let sma_decay = initial_a - final_a;
 
+    // Derive elapsed time from `steps * dt` so the summary stays accurate
+    // when `--steps` overrides the nominal 24-hour run length.
+    let elapsed_h = steps as f64 * dt / 3600.0;
+
     println!();
     println!("Final: a={:.3} km, e={:.6}", final_a / 1000.0, final_e);
-    println!("SMA decay: {:.1} m over 24h", sma_decay);
+    println!("SMA decay: {sma_decay:.1} m over {elapsed_h:.2}h");
 }
