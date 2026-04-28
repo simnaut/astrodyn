@@ -3,7 +3,12 @@
 //! Delegates to [`jeod_sim::validate_body`] for the per-body invariant checks,
 //! wrapping results with Bevy entity context and panicking on errors.
 //!
-//! This system runs once at the start of the first `FixedUpdate` tick.
+//! This system fires whenever a body with [`GravityControlsC`] is added —
+//! once per startup tick (covering the bodies spawned at app build) and
+//! again when bodies are spawned mid-mission (staging, dynamic constellation
+//! growth). Bodies added without `GravityControlsC` are not validated; this
+//! matches JEOD's `DynManager` which only invariants bodies that participate
+//! in integration.
 
 use bevy::prelude::*;
 
@@ -13,30 +18,53 @@ use crate::components::{
     SunMarker, TidalConfigC, TidalDeltaC20C, TranslationalStateC,
 };
 
-/// Validates JEOD invariants on all dynamic body entities.
+/// Validates JEOD invariants on dynamic body entities.
 ///
-/// Runs once at startup (first `FixedUpdate` tick), matching JEOD's
-/// `DynManager::initialize_simulation()` which validates all bodies
-/// before the first integration step.
+/// Triggered by [`Added<GravityControlsC>`] on the body query: the system
+/// short-circuits to a no-op on ticks where no body with
+/// `GravityControlsC` has been newly attached. When the trigger fires,
+/// the system runs the validation pass below; bodies attached to the app
+/// at build time are validated on the first `FixedUpdate` tick, and
+/// bodies spawned later (staging, hot-attach, runtime spawn events) are
+/// validated on the tick following their insertion.
+///
+/// Two scopes participate:
+///
+/// * **Global state checks** (Sun/Moon marker counts, tidal-config pairing
+///   on gravity sources) iterate the *unfiltered* `derived_state_markers`
+///   and `tidal_sources` queries, so they re-evaluate the entire world's
+///   marker/source set on every trigger. Adding a stray second
+///   `SunMarker` mid-mission is therefore caught the next tick a body
+///   with `GravityControlsC` is added.
+/// * **Per-body invariant checks** (SRP mutual exclusion, the full
+///   `jeod_sim::validate_body` pass, gravity-control `check_validity`
+///   auto-corrections) iterate the `Added`-filtered `bodies` query, so
+///   they validate only newly-attached bodies. Existing bodies were
+///   validated on the tick they first appeared, and the per-body
+///   invariants do not depend on inter-body state, so re-running them
+///   for unchanged bodies would be wasteful.
 ///
 /// Delegates per-body checks to [`jeod_sim::validate_body`] and applies
 /// gravity control auto-corrections via `check_validity()`.
 ///
 /// # Panics
 /// Panics with a descriptive message for any violated invariant.
-// JEOD_INV: DM.03 — one-shot validation gate (Local<bool>); does not block integration like JEOD's initialized flag
+// JEOD_INV: DM.03 — `Added<GravityControlsC>` filter on the body query fires on every body addition; bodies added mid-simulation are validated on the following tick
 #[allow(clippy::type_complexity)]
 pub fn validate_jeod_invariants(
-    mut bodies: Query<(
-        Entity,
-        &DynamicsConfigC,
-        &mut GravityControlsC,
-        Option<&GravityAccelerationC>,
-        Option<&MassPropertiesC>,
-        Option<&RotationalStateC>,
-        Option<&TranslationalStateC>,
-        Option<&FlatPlateConfigC>,
-    )>,
+    mut bodies: Query<
+        (
+            Entity,
+            &DynamicsConfigC,
+            &mut GravityControlsC,
+            Option<&GravityAccelerationC>,
+            Option<&MassPropertiesC>,
+            Option<&RotationalStateC>,
+            Option<&TranslationalStateC>,
+            Option<&FlatPlateConfigC>,
+        ),
+        Added<GravityControlsC>,
+    >,
     sources: Query<(Entity, &GravitySourceC)>,
     tidal_sources: Query<(
         Entity,
@@ -53,12 +81,13 @@ pub fn validate_jeod_invariants(
         Option<&MoonMarker>,
         Option<&TranslationalStateC>,
     )>,
-    mut has_run: Local<bool>,
 ) {
-    if *has_run {
+    if bodies.is_empty() {
+        // No body with `GravityControlsC` has appeared this tick — nothing
+        // new to validate. Existing bodies were validated on the tick they
+        // were spawned and the work is otherwise idempotent.
         return;
     }
-    *has_run = true;
 
     // Validate derived-state marker prerequisites.
     // Matches Simulation::validate() which errors on missing sun_source/moon_source.

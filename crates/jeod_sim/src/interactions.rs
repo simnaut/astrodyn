@@ -139,18 +139,27 @@ pub struct FlatPlateState {
     /// `Scheduled` mode. Consumed by the Stage-8 integration closure;
     /// cleared at the start of the next step's Stage 5.
     pub stage_inputs: Option<FlatPlateStageInputs>,
-    /// Step-start temperature snapshot, populated by
-    /// [`IntegrableObject::snapshot`] and read by
+    /// RK4 kernel scratch: step-start temperature and T^4 snapshots.
+    ///
+    /// Populated by [`IntegrableObject::snapshot`] and consumed by
     /// [`IntegrableObject::advance_intermediate`] /
-    /// [`IntegrableObject::finalize_rk4`]. Managed by the RK4 kernel; do
-    /// not set manually. Hidden from rustdoc to discourage direct access
-    /// while still allowing struct-update syntax (`..Default::default()`)
-    /// at call sites that build `FlatPlateState` literals.
-    #[doc(hidden)] // allowed: RK4 kernel scratch; pub for ..Default::default() access only
-    pub temps_snapshot: Vec<f64>,
-    /// Step-start T^4 snapshot; companion to `temps_snapshot`.
-    #[doc(hidden)] // allowed: RK4 kernel scratch; pub for ..Default::default() access only
-    pub t_pow4_snapshot: Vec<f64>,
+    /// [`IntegrableObject::finalize_rk4`]. Inner fields are crate-private
+    /// so external callers cannot accidentally corrupt mid-step RK4
+    /// state. The field itself is `pub` so struct-update syntax
+    /// (`FlatPlateState { plates, ..Default::default() }`) keeps working
+    /// at literal sites — those callers receive a default-constructed
+    /// `FlatPlateScratch` they can hold but not mutate.
+    pub scratch: FlatPlateScratch,
+}
+
+/// Step-start RK4 snapshot vectors for [`FlatPlateState`].
+///
+/// Inner storage is private. Construct via `Default::default()`; mutate
+/// only through `IntegrableObject::snapshot` (called by the RK4 kernel).
+#[derive(Debug, Clone, Default)]
+pub struct FlatPlateScratch {
+    temps_snapshot: Vec<f64>,
+    t_pow4_snapshot: Vec<f64>,
 }
 
 impl FlatPlateState {
@@ -193,9 +202,9 @@ impl FlatPlateState {
     ///
     /// Combines k1–k4 temperature derivatives via the standard RK4 formula
     /// and applies JEOD overshoot clamping (thermal_integrable_object.cc:106-121).
-    /// Reads the step-start snapshots from `temps_snapshot` /
-    /// `t_pow4_snapshot`, which [`IntegrableObject::snapshot`] populated at
-    /// the start of the step.
+    /// Reads the step-start snapshots from `scratch.temps_snapshot` /
+    /// `scratch.t_pow4_snapshot`, which [`IntegrableObject::snapshot`]
+    /// populated at the start of the step.
     ///
     /// This is the coupled-integration counterpart of
     /// [`Self::integrate_temperatures`]: instead of deriving k2–k4 internally
@@ -215,8 +224,8 @@ impl FlatPlateState {
             let emissivity = self.plates[i].2.emissivity;
             let heat_capacity_per_area = self.plates[i].2.heat_capacity_per_area;
             let (new_temp, new_t_pow4) = jeod_interactions::integrate_plate_temperature_rk4(
-                self.temps_snapshot[i],
-                self.t_pow4_snapshot[i],
+                self.scratch.temps_snapshot[i],
+                self.scratch.t_pow4_snapshot[i],
                 k1_tdots[i],
                 k2_tdots[i],
                 k3_tdots[i],
@@ -244,10 +253,14 @@ impl IntegrableObject for FlatPlateState {
     }
 
     fn snapshot(&mut self) {
-        self.temps_snapshot.clear();
-        self.temps_snapshot.extend_from_slice(&self.temperatures);
-        self.t_pow4_snapshot.clear();
-        self.t_pow4_snapshot.extend_from_slice(&self.t_pow4_cached);
+        self.scratch.temps_snapshot.clear();
+        self.scratch
+            .temps_snapshot
+            .extend_from_slice(&self.temperatures);
+        self.scratch.t_pow4_snapshot.clear();
+        self.scratch
+            .t_pow4_snapshot
+            .extend_from_slice(&self.t_pow4_cached);
     }
 
     fn advance_intermediate(&mut self, deriv: &[f64], h: f64) {
@@ -262,7 +275,7 @@ impl IntegrableObject for FlatPlateState {
             "t_pow4_cached length must equal temperatures length",
         );
         assert_eq!(
-            self.temps_snapshot.len(),
+            self.scratch.temps_snapshot.len(),
             n,
             "temps_snapshot length must equal temperatures length; \
              call IntegrableObject::snapshot before advance_intermediate",
@@ -278,7 +291,7 @@ impl IntegrableObject for FlatPlateState {
         // precisely the pattern we're trying to avoid.
         #[allow(clippy::needless_range_loop)]
         for i in 0..n {
-            let new_t = (self.temps_snapshot[i] + deriv[i] * h).max(0.0);
+            let new_t = (self.scratch.temps_snapshot[i] + deriv[i] * h).max(0.0);
             self.temperatures[i] = new_t;
             self.t_pow4_cached[i] = new_t * new_t * new_t * new_t;
         }
