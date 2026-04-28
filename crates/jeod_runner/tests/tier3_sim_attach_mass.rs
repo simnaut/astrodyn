@@ -116,26 +116,6 @@ fn mass_struct_cg_spec(mass: f64, position: DVec3, inertia_struct: DMat3) -> Mas
     MassProperties::with_inertia(mass, inertia_struct, position)
 }
 
-/// Build `MassProperties` using JEOD's `Spec` inertia spec: the inertia is
-/// given in a user-specified frame about a user-specified origin. Shift to
-/// CoM via `inertia_offset` and rotate by `inertia_orientation`.
-///
-/// JEOD's `Matrix3x3::transform_matrix(trans, mat, prod)` computes
-/// `prod = trans * mat * trans^T` (matrix3x3_inline.hh:510).
-#[allow(dead_code)]
-fn mass_spec_spec(
-    mass: f64,
-    position: DVec3,
-    inertia_user: DMat3,
-    inertia_offset: DVec3,
-    inertia_orientation: DMat3,
-) -> MassProperties {
-    let offset_inertia = point_mass_inertia(mass, inertia_offset);
-    let shifted = inertia_user - offset_inertia;
-    let body_inertia = inertia_orientation * shifted * inertia_orientation.transpose();
-    MassProperties::with_inertia(mass, body_inertia, position)
-}
-
 // ════════════════════════════════════════════════════════════════════
 // Baseline mass bodies (ported from JEOD Modified_data/*.py)
 // ════════════════════════════════════════════════════════════════════
@@ -166,7 +146,6 @@ fn child2_default() -> MassProperties {
 }
 
 /// `child3_mass_default()`: Body spec, diag(0.3333, 0.4167, 0.0833) about CoM.
-#[allow(dead_code)]
 fn child3_default() -> MassProperties {
     let inertia = DMat3::from_cols(
         DVec3::new(0.33333333, 0.0, 0.0),

@@ -318,6 +318,7 @@ impl Simulation {
 ///     sim_b.set_source_position(idx_a, DVec3::ZERO);
 /// });
 /// ```
+// Anchor for the compile_fail doctest above; never called at runtime.
 #[allow(dead_code)]
 fn _doc_compile_fail_marker() {}
 

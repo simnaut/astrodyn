@@ -1,24 +1,30 @@
 [package]
 name = "bevy_jeod"
-version = "0.1.0"
-edition = "2021"
+description = "Bevy ECS adapter for the JEOD orbital-dynamics port"
+keywords = ["bevy", "orbital-mechanics", "simulation", "aerospace", "jeod"]
+categories = ["science", "simulation", "aerospace"]
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
-jeod_sim = { path = "crates/jeod_sim" }
+jeod_sim = { path = "crates/jeod_sim", version = "0.1.0" }
 glam = { workspace = true }
 bevy = { workspace = true }
 bevy_reflect = { workspace = true }
 
 [dev-dependencies]
 glam = { workspace = true }
-jeod_test_data = { path = "crates/jeod_test_data" }
-jeod_sim = { path = "crates/jeod_sim" }
-jeod_runner = { path = "crates/jeod_runner" }
+jeod_test_data = { path = "crates/jeod_test_data", version = "0.1.0" }
+jeod_sim = { path = "crates/jeod_sim", version = "0.1.0" }
+jeod_runner = { path = "crates/jeod_runner", version = "0.1.0" }
 # Examples consume `recipes::orbital_elements` and convert into the
 # Bevy components, which requires the typed orbital-init helper plus
 # uom unit constructors.
-jeod_dynamics = { path = "crates/jeod_dynamics" }
-jeod_quantities = { path = "crates/jeod_quantities" }
+jeod_dynamics = { path = "crates/jeod_dynamics", version = "0.1.0" }
+jeod_quantities = { path = "crates/jeod_quantities", version = "0.1.0" }
 uom = { workspace = true }
 
 [workspace]
@@ -39,6 +45,12 @@ members = [
     "crates/jeod_runner",
     "xtask",
 ]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/simnaut/bevy_jeod"
 
 [workspace.dependencies]
 glam = { version = "0.30", features = ["std"] }

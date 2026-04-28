@@ -11,6 +11,8 @@ use jeod_sim::SimulationTime;
 
 const SECONDS_PER_DAY: f64 = 86400.0;
 
+/// SIM_5_all_inclusive timescale CSV record. Mirrors the full column
+/// layout; not every field is consumed by every assertion.
 #[allow(dead_code)]
 struct TimescaleRecord {
     time: f64,

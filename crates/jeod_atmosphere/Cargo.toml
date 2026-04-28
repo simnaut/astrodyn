@@ -1,9 +1,14 @@
 [package]
 name = "jeod_atmosphere"
-version = "0.1.0"
-edition = "2021"
+description = "Atmospheric density models (exponential, MET) for bevy_jeod"
+keywords = ["atmosphere", "drag", "orbital-mechanics", "aerospace"]
+categories = ["science", "aerospace"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
-jeod_quantities = { path = "../jeod_quantities" }
+jeod_quantities = { path = "../jeod_quantities", version = "0.1.0" }
 glam = { workspace = true }
 uom = { workspace = true }

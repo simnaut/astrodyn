@@ -1,10 +1,15 @@
 [package]
 name = "jeod_ephemeris"
-version = "0.1.0"
-edition = "2021"
+description = "DE4xx binary ephemeris reader and body positions for bevy_jeod"
+keywords = ["ephemeris", "de440", "spice", "orbital-mechanics", "aerospace"]
+categories = ["science", "aerospace"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
-jeod_quantities = { path = "../jeod_quantities" }
+jeod_quantities = { path = "../jeod_quantities", version = "0.1.0" }
 anise = "0.9"
 glam = { workspace = true }
 thiserror = { workspace = true }

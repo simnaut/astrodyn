@@ -1,9 +1,12 @@
 [package]
 name = "jeod_quantities"
-version = "0.1.0"
-edition = "2021"
-description = "Dimensional-analysis and phantom-tag types for bevy_jeod (frames, time scales, quaternions)"
-license = "Apache-2.0"
+description = "Phantom-tagged typed quantities (Position, Velocity, ...) for orbital dynamics"
+keywords = ["orbital-mechanics", "physics", "type-system", "aerospace"]
+categories = ["science", "aerospace", "data-structures"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
 glam = { workspace = true }

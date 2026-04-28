@@ -1,14 +1,19 @@
 [package]
 name = "jeod_frames"
-version = "0.1.0"
-edition = "2021"
+description = "Reference frame tree and Earth rotation (RNP, nutation, precession) for bevy_jeod"
+keywords = ["reference-frame", "earth-rotation", "orbital-mechanics", "aerospace", "geodesy"]
+categories = ["science", "aerospace"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
-jeod_math = { path = "../jeod_math" }
-jeod_quantities = { path = "../jeod_quantities" }
+jeod_math = { path = "../jeod_math", version = "0.1.0" }
+jeod_quantities = { path = "../jeod_quantities", version = "0.1.0" }
 glam = { workspace = true }
 
 [dev-dependencies]
-jeod_math = { path = "../jeod_math", features = ["test-utils"] }
-jeod_test_data = { path = "../jeod_test_data" }
-jeod_time = { path = "../jeod_time" }
+jeod_math = { path = "../jeod_math", version = "0.1.0", features = ["test-utils"] }
+jeod_test_data = { path = "../jeod_test_data", version = "0.1.0" }
+jeod_time = { path = "../jeod_time", version = "0.1.0" }
