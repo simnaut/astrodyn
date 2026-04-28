@@ -1,3 +1,7 @@
+//! Gravity stage: per-body gravity accumulation across multiple sources
+//! (point-mass, spherical-harmonics with optional tides, plus optional
+//! relativistic post-Newtonian corrections).
+
 use glam::{DMat3, DVec3};
 use jeod_dynamics::forces::GravityAccelerationTyped;
 use jeod_dynamics::GravityAcceleration;

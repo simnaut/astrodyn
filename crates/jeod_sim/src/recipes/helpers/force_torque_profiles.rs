@@ -20,12 +20,16 @@ pub fn step_input(amplitude: DVec3, t_on: f64, t: f64) -> DVec3 {
 /// onwards, linear interpolation in between.
 #[derive(Debug, Clone, Copy)]
 pub struct RampInput {
+    /// Final amplitude reached at `t_on + duration`.
     pub amplitude: DVec3,
+    /// Time the ramp begins (s).
     pub t_on: f64,
+    /// Ramp duration (s).
     pub duration: f64,
 }
 
 impl RampInput {
+    /// Evaluate the ramp at simulation time `t` (s).
     pub fn evaluate(&self, t: f64) -> DVec3 {
         if t < self.t_on {
             DVec3::ZERO
@@ -42,12 +46,16 @@ impl RampInput {
 /// `t >= t_on`, zero before.
 #[derive(Debug, Clone, Copy)]
 pub struct SinusoidInput {
+    /// Sinusoid amplitude.
     pub amplitude: DVec3,
+    /// Frequency (Hz).
     pub frequency_hz: f64,
+    /// Time the sinusoid begins (s); zero before this time.
     pub t_on: f64,
 }
 
 impl SinusoidInput {
+    /// Evaluate the sinusoid at simulation time `t` (s).
     pub fn evaluate(&self, t: f64) -> DVec3 {
         if t < self.t_on {
             return DVec3::ZERO;

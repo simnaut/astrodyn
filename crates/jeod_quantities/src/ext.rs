@@ -560,9 +560,13 @@ impl Vec3Ext for DVec3 {
 /// let r: Position<Inertial> = row.m_at::<Inertial>();
 /// ```
 pub trait Array3Ext: Copy {
+    /// Interpret `self` as a position in metres tagged with frame `F`.
     fn m_at<F: Frame>(self) -> crate::aliases::Position<F>;
+    /// Interpret `self` as a position in kilometres tagged with frame `F`.
     fn km_at<F: Frame>(self) -> crate::aliases::Position<F>;
+    /// Interpret `self` as a velocity in m/s tagged with frame `F`.
     fn m_per_s_at<F: Frame>(self) -> crate::aliases::Velocity<F>;
+    /// Interpret `self` as a velocity in km/s tagged with frame `F`.
     fn km_per_s_at<F: Frame>(self) -> crate::aliases::Velocity<F>;
 }
 

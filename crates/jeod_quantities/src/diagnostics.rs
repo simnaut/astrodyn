@@ -51,6 +51,7 @@ impl<F: Frame> CompatibleFrames<F, F> for () {}
     note = "use `.m()`, `.km()`, `.cm()`, `.mm()`, `.ft()`, `.mi()`, or `.nmi()` to produce a `Length`"
 )]
 pub trait IntoLength {
+    /// Lift `self` into a typed [`Length`].
     fn into_length(self) -> Length;
 }
 
@@ -68,6 +69,7 @@ impl IntoLength for Length {
     note = "use `.rad()`, `.deg()`, `.arcmin()`, or `.arcsec()` to produce an `Angle`"
 )]
 pub trait IntoAngle {
+    /// Lift `self` into a typed [`Angle`].
     fn into_angle(self) -> Angle;
 }
 
@@ -85,6 +87,7 @@ impl IntoAngle for Angle {
     note = "use `.m3_per_s2()` or `.km3_per_s2()` to produce a `GravParam`"
 )]
 pub trait IntoGravParam {
+    /// Lift `self` into a typed [`GravParam`] (m³/s²).
     fn into_grav_param(self) -> GravParam;
 }
 
@@ -159,5 +162,7 @@ impl InertialOnly<crate::frame::Inertial> for () {}
     note = "use `.dot(other)` for scalar product (returns a scalar) or `.cross(other)` for vector product (returns a `Qty3`)"
 )]
 pub trait NoVectorVectorMul<D1, D2, F: Frame> {
+    /// Marker method — never called; exists only so the trait carries
+    /// its three type parameters into the compiler diagnostic.
     fn _do_not_call(&self) -> PhantomData<(D1, D2, F)>;
 }

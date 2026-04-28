@@ -222,10 +222,20 @@ impl CsvReference {
 /// almost always a configuration mistake.
 #[derive(Clone, Debug)]
 pub struct Tolerances {
+    /// Per-axis position tolerance (m). All-zero opts out of the
+    /// position assertion entirely.
     pub position_m: [f64; 3],
+    /// Per-axis velocity tolerance (m/s). All-zero opts out of the
+    /// velocity assertion entirely.
     pub velocity_m_s: [f64; 3],
+    /// Scalar quaternion-angle tolerance (rad). Zero opts out of the
+    /// attitude assertion entirely.
     pub quat_angle_rad: f64,
+    /// Per-axis angular-velocity tolerance (rad/s). All-zero opts out of
+    /// the angular-velocity assertion entirely.
     pub ang_vel_rad_s: [f64; 3],
+    /// Family-specific extras: `(name, abs-tolerance)` pairs that the
+    /// runner asserts against `report.add_extra(name, ...)` outputs.
     pub extras: &'static [(&'static str, f64)],
 }
 
@@ -252,7 +262,11 @@ pub enum ExtrasComparator {
     /// Geodetic state: 3 extras (`altitude`, `latitude`, `longitude`).
     /// `spherical=true` compares against the spherical-Earth columns;
     /// `false` (default) compares against ellipsoidal columns.
-    Ned { spherical: bool },
+    Ned {
+        /// `true` compares against the spherical-Earth NED columns;
+        /// `false` (default) compares against the ellipsoidal columns.
+        spherical: bool,
+    },
     /// Euler angles: 3 extras (`euler_roll`, `euler_pitch`, `euler_yaw`)
     /// computed against JEOD's logged quaternion via our own port of the
     /// Euler-from-matrix conversion (self-consistency check of our Euler
@@ -277,7 +291,11 @@ pub enum ExtrasComparator {
     /// `dC20` column logged by JEOD's SIM_tide_verif. Pairs with
     /// [`CsvReference::Tide`]. The recipe carries the Earth source
     /// index because dC20 is per-source, not per-body.
-    TideDc20 { earth_source_idx: usize },
+    TideDc20 {
+        /// Index (in the simulation's source table) of the Earth source
+        /// whose ΔC20 series the comparator will sample.
+        earth_source_idx: usize,
+    },
 }
 
 /// A single Tier 3 verification case.

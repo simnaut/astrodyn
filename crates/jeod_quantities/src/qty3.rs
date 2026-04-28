@@ -15,8 +15,11 @@ use crate::frame::Frame;
 /// unit tests for the static size/align assertions.
 #[repr(C)]
 pub struct Qty3<D: ?Sized + Dimension, F: Frame> {
+    /// X component, dimension `D`, in SI base units.
     pub x: Quantity<D, SI<f64>, f64>,
+    /// Y component, dimension `D`, in SI base units.
     pub y: Quantity<D, SI<f64>, f64>,
+    /// Z component, dimension `D`, in SI base units.
     pub z: Quantity<D, SI<f64>, f64>,
     _f: PhantomData<F>,
 }

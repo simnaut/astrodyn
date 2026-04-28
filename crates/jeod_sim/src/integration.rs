@@ -1,3 +1,8 @@
+//! Integration stage: stepping per-body translational + rotational state
+//! by one timestep using the configured integrator (RK4, ABM4, or
+//! Gauss-Jackson). Includes the contact-coupled multi-body RK4 entry
+//! points used when contact pairs are registered.
+
 use glam::DVec3;
 use jeod_dynamics::state::TranslationalStateTyped;
 use jeod_dynamics::{

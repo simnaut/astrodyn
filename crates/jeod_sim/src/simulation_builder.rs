@@ -45,16 +45,29 @@ pub struct MassTreeAttachment {
 ///
 /// See module docs for the consumer-side terminal methods.
 pub struct SimulationBuilder {
+    /// Initial simulation time.
     pub time: SimulationTime,
+    /// Fixed integrator timestep in seconds.
     pub dt: f64,
+    /// Optional atmosphere configuration (model + radii + wind).
     pub atmosphere: Option<AtmosphereConfig>,
+    /// Source index of the planet whose rotation drives geodetic conversion
+    /// for atmospheric evaluation. `None` when [`Self::atmosphere`] is `None`.
     pub atmosphere_planet_source: Option<usize>,
+    /// Optional DE4xx ephemeris used to update source positions per step.
     pub ephemeris: Option<Ephemeris>,
+    /// Optional polar-motion `(xp, yp)` in radians applied to Earth rotation.
     pub polar_motion: Option<(f64, f64)>,
+    /// Source index of the Sun, when needed for SRP / solar beta / lighting.
     pub sun_source: Option<usize>,
+    /// Source index of the Moon, when needed for Earth lighting.
     pub moon_source: Option<usize>,
+    /// Gravity sources keyed by name in declaration order.
     pub sources: Vec<(String, GravitySourceEntry)>,
+    /// Per-source `(body, parent)` ephemeris bodies; index matches
+    /// [`Self::sources`]. `None` for sources that do not move via DE4xx.
     pub source_ephem_bodies: Vec<Option<(EphemerisBody, EphemerisBody)>>,
+    /// Vehicles in declaration order. Body index = position in this vec.
     pub bodies: Vec<VehicleConfig>,
     /// Body names for mass tree registration (index matches `bodies`).
     pub mass_tree_names: Vec<Option<String>>,

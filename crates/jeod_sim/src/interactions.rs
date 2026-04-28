@@ -1,3 +1,7 @@
+//! Interaction stage: the per-body force / torque computations between
+//! the gravity and force-collection stages — drag, flat-plate and
+//! cannonball SRP, gravity-gradient torque, and contact pairs.
+
 use glam::{DMat3, DVec3};
 use jeod_dynamics::{MassProperties, RotationalState, TranslationalState};
 use jeod_interactions::{
@@ -603,8 +607,11 @@ pub fn compute_cannonball_srp_typed(
 /// phantom).
 #[derive(Debug, Clone, Copy)]
 pub struct FlatPlateStageInputsTyped {
+    /// Sun position in the inertial frame.
     pub sun_position: Position<Inertial>,
+    /// Dimensionless illumination factor (0–1) accounting for shadow.
     pub illum_factor: Ratio,
+    /// Body center of gravity in the structural frame (m).
     pub center_grav: DVec3,
 }
 

@@ -1,3 +1,9 @@
+//! Canonical pipeline stage ordering shared by every JEOD adapter.
+//!
+//! Adapters that schedule per-stage system calls (the Bevy plugin, the
+//! standalone runner, batch tools) all consult [`PIPELINE_ORDER`] for the
+//! authoritative sequence so the order cannot drift between adapters.
+
 /// Pipeline stages mirroring JEOD's init/update ordering.
 ///
 /// JEOD's simulation loop runs these stages in strict order every timestep.

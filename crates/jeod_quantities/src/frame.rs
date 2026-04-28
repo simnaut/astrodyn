@@ -55,6 +55,7 @@ pub trait Frame: FrameSealed + 'static {
 /// `impl Planet for X` outside the macro is technically possible but
 /// unsupported. Use the macro.
 pub trait Planet: PlanetSealed + 'static {
+    /// Human-readable name for error messages and debug output.
     const NAME: &'static str;
 }
 
@@ -69,6 +70,7 @@ pub trait Planet: PlanetSealed + 'static {
 /// Vehicle marker types are used with [`BodyFrame`], [`StructuralFrame`],
 /// [`Lvlh`], and [`Ned`].
 pub trait Vehicle: VehicleSealed + 'static {
+    /// Human-readable name for error messages and debug output.
     const NAME: &'static str;
 }
 

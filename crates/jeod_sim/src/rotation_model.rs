@@ -1,3 +1,7 @@
+//! Rotation-model selector that drives a planet's per-step
+//! `T_inertial→pfix` update (Earth RNP, Mars principal-axis, lunar DE421
+//! libration, or static identity).
+
 /// Rotation model for a gravity source's planet-fixed frame.
 ///
 /// Determines how `t_inertial_pfix` is updated each step. Each planet has its

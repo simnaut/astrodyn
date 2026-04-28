@@ -14,12 +14,16 @@ use jeod_math::OrbitalElements;
 /// why test code (not this struct) owns tolerance values.
 #[derive(Debug, Clone)]
 pub struct OrbInitCase {
+    /// Test-case identifier used in assertion messages.
     pub label: &'static str,
+    /// Starting Keplerian orbital elements.
     pub elements: OrbitalElements,
+    /// Position roundtrip tolerance in metres for the assertion.
     pub position_tol_m: f64,
 }
 
 impl OrbInitCase {
+    /// Build a case from its label, elements, and position tolerance.
     pub fn new(label: &'static str, elements: OrbitalElements, position_tol_m: f64) -> Self {
         Self {
             label,

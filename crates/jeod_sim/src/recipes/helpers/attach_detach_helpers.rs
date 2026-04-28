@@ -16,6 +16,7 @@ pub struct AttachDetachEvent<E> {
 }
 
 impl<E> AttachDetachEvent<E> {
+    /// Build an event firing at `time` (s) carrying the user tag `event`.
     pub fn new(time: f64, event: E) -> Self {
         Self { time, event }
     }
