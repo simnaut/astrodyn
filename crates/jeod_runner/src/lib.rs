@@ -41,6 +41,7 @@ pub mod branded;
 pub mod builder;
 pub mod error;
 pub mod prelude;
+#[cfg(feature = "verification")]
 pub mod run_verification;
 
 pub use branded::{BodyIdx, BrandedSimulation, SourceIdx};
@@ -54,6 +55,7 @@ pub use jeod_sim::RotationModel;
 pub use builder::SimulationBuilderExt;
 
 // Re-export the Phase-7 Tier 3 verification-case extension trait.
+#[cfg(feature = "verification")]
 pub use run_verification::VerificationCaseExt;
 
 // Re-exports of types relocated from jeod_runner to jeod_sim in Phase 6 of

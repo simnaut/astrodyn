@@ -22,7 +22,6 @@ use jeod_sim::{
     GravitySourceEntry, JeodQuat, MassProperties, MetAtmosphere, RotationModel, RotationalState,
     SimulationBuilder, SimulationTime, TranslationalState, VehicleConfig, EARTH,
 };
-use jeod_test_data::jeod_cc::load_from_jeod_cc;
 use uom::si::f64::Time;
 use uom::si::time::second;
 
@@ -91,13 +90,12 @@ fn build_run2_3dof(init: &InitialConditions) -> SimulationBuilder {
     let jeod = jeod_root();
     let sim_dir = jeod.join(SIM_DYNCOMP);
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
-    let earth_grav =
-        load_from_jeod_cc(&jeod.join("models/environment/gravity/data/src/earth_GGM05C.cc"))
-            .expect("load Earth gravity");
+    // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
+    let earth_mu = jeod_test_data::gravity_fixtures::load_ggm05c().mu;
 
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, dt);
-    let earth = sb.add_source("Earth", point_mass_earth_source(earth_grav.mu));
+    let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
     sb.add_body(VehicleConfig {
         trans: trans_from(init),
         gravity_controls: GravityControls {
@@ -112,9 +110,8 @@ fn build_run2_6dof(init: &InitialConditions) -> SimulationBuilder {
     let jeod = jeod_root();
     let sim_dir = jeod.join(SIM_DYNCOMP);
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
-    let earth_grav =
-        load_from_jeod_cc(&jeod.join("models/environment/gravity/data/src/earth_GGM05C.cc"))
-            .expect("load Earth gravity");
+    // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
+    let earth_mu = jeod_test_data::gravity_fixtures::load_ggm05c().mu;
     let mass_init = jeod_test_data::mass_data::load_mass_from_file(
         &sim_dir.join("Modified_data/mass.py"),
         Some("set_mass_iss"),
@@ -145,7 +142,7 @@ fn build_run2_6dof(init: &InitialConditions) -> SimulationBuilder {
 
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, dt);
-    let earth = sb.add_source("Earth", point_mass_earth_source(earth_grav.mu));
+    let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
     sb.add_body(VehicleConfig {
         trans: trans_from(init),
         rot: Some(rot_from(init, "run2_6dof")),
@@ -279,10 +276,8 @@ fn dyncomp_time() -> SimulationTime {
 /// with the EarthRNP rotation model so the planet-fixed frame updates each
 /// step. Used by the RUN_3A / RUN_3B / RUN_5* / RUN_6* configurations.
 fn earth_sh_with_rnp() -> GravitySourceEntry {
-    let jeod = jeod_root();
-    let sh_data =
-        load_from_jeod_cc(&jeod.join("models/environment/gravity/data/src/earth_GGM02C.cc"))
-            .expect("load GGM02C");
+    // GGM02C SH coefficients from the committed fixture (Wave 1 of #232).
+    let sh_data = jeod_test_data::gravity_fixtures::load_ggm02c();
     GravitySourceEntry {
         source: GravitySource {
             mu: sh_data.mu,
@@ -439,11 +434,10 @@ fn build_run4_3rd_body(init: &InitialConditions) -> SimulationBuilder {
     let grav_data_dir = jeod.join("models/environment/gravity/data/src");
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
 
-    let earth_grav =
-        load_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc")).expect("load Earth gravity");
-    let mu_sun =
-        jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("sun_spherical.cc"))
-            .expect("load Sun mu");
+    // Earth GGM05C mu and Sun mu from committed fixtures (Wave 1 of #232);
+    // Moon GRAIL150 has no fixture yet, loaded from JEOD source.
+    let earth_mu = jeod_test_data::gravity_fixtures::load_ggm05c().mu;
+    let mu_sun = jeod_test_data::mars_fixtures::load_sun_spherical_mu();
     let mu_moon =
         jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("moon_GRAIL150.cc"))
             .expect("load Moon mu");
@@ -461,7 +455,7 @@ fn build_run4_3rd_body(init: &InitialConditions) -> SimulationBuilder {
         .expect("Moon position at epoch");
 
     let mut sb = SimulationBuilder::new(time, dt);
-    let earth = sb.add_source("Earth", point_mass_earth_source(earth_grav.mu));
+    let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
     let sun = sb.add_source("Sun", third_body_source(mu_sun, sun_t0.raw_si()));
     let moon = sb.add_source("Moon", third_body_source(mu_moon, moon_t0.raw_si()));
     debug_assert_eq!(
@@ -590,11 +584,10 @@ pub fn build_battin_3rd_body(init: &InitialConditions, battin: bool) -> BattinSc
     let jeod = jeod_root();
     let grav_data_dir = jeod.join("models/environment/gravity/data/src");
 
-    let earth_grav =
-        load_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc")).expect("load Earth gravity");
-    let mu_sun =
-        jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("sun_spherical.cc"))
-            .expect("load Sun mu");
+    // Earth GGM05C mu and Sun mu from committed fixtures (Wave 1 of #232);
+    // Moon GRAIL150 has no fixture yet, loaded from JEOD source.
+    let earth_mu = jeod_test_data::gravity_fixtures::load_ggm05c().mu;
+    let mu_sun = jeod_test_data::mars_fixtures::load_sun_spherical_mu();
     let mu_moon =
         jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("moon_GRAIL150.cc"))
             .expect("load Moon mu");
@@ -612,7 +605,7 @@ pub fn build_battin_3rd_body(init: &InitialConditions, battin: bool) -> BattinSc
         .expect("Moon state at epoch");
 
     let mut sb = SimulationBuilder::new(time, BATTIN_DT);
-    let earth = sb.add_source("Earth", point_mass_earth_source(earth_grav.mu));
+    let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
     let sun_idx = sb.add_source(
         "Sun",
         third_body_source_with_state(mu_sun, sun_pos_t0.raw_si(), sun_vel_t0.raw_si()),
@@ -710,11 +703,10 @@ fn build_run7(
     let grav_file_refs: Vec<&std::path::Path> = grav_files.iter().map(|p| p.as_path()).collect();
     let grav_cfg = jeod_test_data::gravity_control::load_gravity_control(&grav_file_refs);
 
-    let earth_grav =
-        load_from_jeod_cc(&grav_data_dir.join("earth_GGM02C.cc")).expect("load Earth GGM02C");
-    let mu_sun =
-        jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("sun_spherical.cc"))
-            .expect("load Sun mu");
+    // Earth GGM02C SH and Sun mu from committed fixtures (Wave 1 of #232);
+    // Moon GRAIL150 has no fixture yet, loaded from JEOD source.
+    let earth_grav = jeod_test_data::gravity_fixtures::load_ggm02c();
+    let mu_sun = jeod_test_data::mars_fixtures::load_sun_spherical_mu();
     let mu_moon =
         jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("moon_GRAIL150.cc"))
             .expect("load Moon mu");
@@ -923,10 +915,8 @@ fn build_run5(init: &InitialConditions, case: &str) -> SimulationBuilder {
     let jeod = jeod_root();
     let sim_dir = jeod.join(SIM_DYNCOMP);
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
-    let mu_earth = jeod_test_data::jeod_cc::load_mu_from_jeod_cc(
-        &jeod.join("models/environment/gravity/data/src/earth_GGM05C.cc"),
-    )
-    .expect("load Earth mu");
+    // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
+    let mu_earth = jeod_test_data::gravity_fixtures::load_ggm05c().mu;
     let mass_props = iss_mass_properties();
 
     let time = SimulationTime::at_j2000(default_leap_second_table());
@@ -1011,13 +1001,12 @@ fn build_run6_drag(
     let jeod = jeod_root();
     let sim_dir = jeod.join(SIM_DYNCOMP);
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
-    let earth_grav =
-        load_from_jeod_cc(&jeod.join("models/environment/gravity/data/src/earth_GGM05C.cc"))
-            .expect("load Earth gravity");
+    // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
+    let earth_mu = jeod_test_data::gravity_fixtures::load_ggm05c().mu;
     let mass_props = sphere_mass_properties();
 
     let mut sb = SimulationBuilder::new(dyncomp_time(), dt);
-    let earth = sb.add_source("Earth", earth_pm_with_rnp(earth_grav.mu));
+    let earth = sb.add_source("Earth", earth_pm_with_rnp(earth_mu));
     sb = sb.atmosphere(
         AtmosphereConfig {
             model: AtmosphereModel::Met(met_solar_mean()),
@@ -1141,14 +1130,13 @@ fn build_run10(init: &InitialConditions, case: &str) -> SimulationBuilder {
     let jeod = jeod_root();
     let sim_dir = jeod.join(SIM_DYNCOMP);
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
-    let earth_grav =
-        load_from_jeod_cc(&jeod.join("models/environment/gravity/data/src/earth_GGM05C.cc"))
-            .expect("load Earth gravity");
+    // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
+    let earth_mu = jeod_test_data::gravity_fixtures::load_ggm05c().mu;
     let mass_props = cylinder_mass_properties();
 
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, dt);
-    let earth = sb.add_source("Earth", point_mass_earth_source(earth_grav.mu));
+    let earth = sb.add_source("Earth", point_mass_earth_source(earth_mu));
     sb.add_body(VehicleConfig {
         trans: trans_from(init),
         rot: Some(rot_from(init, case)),
@@ -1221,10 +1209,8 @@ fn build_run5a_met(init: &InitialConditions) -> SimulationBuilder {
     let jeod = jeod_root();
     let sim_dir = jeod.join(SIM_DYNCOMP);
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
-    let mu_earth = jeod_test_data::jeod_cc::load_mu_from_jeod_cc(
-        &jeod.join("models/environment/gravity/data/src/earth_GGM05C.cc"),
-    )
-    .expect("load Earth mu");
+    // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
+    let mu_earth = jeod_test_data::gravity_fixtures::load_ggm05c().mu;
     let mass_props = iss_mass_properties();
 
     // RUN_5A: minimum solar activity (F10.7 = 70, Ap = 0)
@@ -1293,10 +1279,8 @@ fn build_run6b_aero_traj(init: &InitialConditions, t_struct_body: DMat3) -> Simu
     let jeod = jeod_root();
     let sim_dir = jeod.join(SIM_DYNCOMP);
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
-    let mu_earth = jeod_test_data::jeod_cc::load_mu_from_jeod_cc(
-        &jeod.join("models/environment/gravity/data/src/earth_GGM05C.cc"),
-    )
-    .expect("load Earth mu");
+    // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
+    let mu_earth = jeod_test_data::gravity_fixtures::load_ggm05c().mu;
 
     let mut sb = SimulationBuilder::new(dyncomp_time(), dt);
     let earth = sb.add_source("Earth", earth_pm_with_rnp(mu_earth));

@@ -19,7 +19,6 @@ use jeod_sim::{
     RotationModel, RotationalState, SimulationBuilder, SimulationTime, TranslationalState,
     VehicleConfig, EARTH,
 };
-use jeod_test_data::jeod_cc as coefficients;
 use uom::si::f64::Time;
 use uom::si::time::second;
 
@@ -47,11 +46,11 @@ fn jeod_root() -> PathBuf {
 }
 
 fn load_mu_earth() -> f64 {
-    let jeod = jeod_root();
-    coefficients::load_mu_from_jeod_cc(
-        &jeod.join("models/environment/gravity/data/src/earth_GGM05C.cc"),
-    )
-    .expect("load Earth mu from GGM05C")
+    // Earth mu sourced from the committed `test_data/gravity/ggm05c.bin`
+    // fixture (Wave 1 of #232). Matches the value in JEOD's
+    // `models/environment/gravity/data/src/earth_GGM05C.cc` exactly so
+    // baselines stay bit-stable.
+    jeod_test_data::gravity_fixtures::load_ggm05c().mu
 }
 
 fn point_mass_earth(mu: f64, with_rnp: bool) -> GravitySourceEntry {

@@ -35,10 +35,8 @@ fn build_run2p_polar_motion(init: &InitialConditions) -> SimulationBuilder {
         jeod_root.display()
     );
 
-    let mu_earth = jeod_test_data::jeod_cc::load_mu_from_jeod_cc(
-        &jeod_root.join("models/environment/gravity/data/src/earth_GGM05C.cc"),
-    )
-    .expect("load Earth mu from GGM05C");
+    // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
+    let mu_earth = jeod_test_data::gravity_fixtures::load_ggm05c().mu;
 
     let dt =
         jeod_test_data::s_define::load_dynamics_dt(&jeod_root.join("verif/SIM_dyncomp/S_define"));

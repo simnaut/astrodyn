@@ -28,7 +28,6 @@ use jeod_sim::{
     GravitySourceEntry, MassProperties, RotationModel, ShadowBody, SimulationBuilder,
     SimulationTime, SrpModel, ThermalIntegrationOrder, TranslationalState, VehicleConfig, EARTH,
 };
-use jeod_test_data::jeod_cc::load_mu_from_jeod_cc;
 use uom::si::f64::Time;
 use uom::si::time::second;
 
@@ -207,11 +206,10 @@ fn build_srp(
 ) -> SimulationBuilder {
     let jeod = jeod_root();
     let sim_dir = jeod.join(sim_subdir);
-    let grav_data_dir = jeod.join("models/environment/gravity/data/src");
 
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
-    let earth_mu =
-        load_mu_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc")).expect("load Earth mu");
+    // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
+    let earth_mu = jeod_test_data::gravity_fixtures::load_ggm05c().mu;
 
     let time = srp_time(sim_subdir);
     let epoch_tai_tjt = time.tai_tjt_at_epoch;
