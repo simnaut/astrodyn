@@ -17,16 +17,10 @@
 use glam::{DMat3, DVec3};
 use jeod_gravity::SphericalHarmonicsData;
 use jeod_test_data::{
+    gravity_fixtures,
     gravity_verif::{load_gravity_test_cases, GravityTestCase},
-    jeod_cc, jeod_path,
+    jeod_path,
 };
-use std::path::{Path, PathBuf};
-
-/// Path to the GGM02C coefficient source file in the JEOD tree (the file
-/// JEOD's `grav_geospherical` test itself references).
-fn ggm02c_path(root: &Path) -> PathBuf {
-    root.join("models/environment/gravity/data/src/earth_GGM02C.cc")
-}
 
 #[test]
 fn tier2_grav_geospherical_loader() {
@@ -107,10 +101,11 @@ fn tier2_grav_geospherical_point_mass_sanity() {
 
     let cases = load_gravity_test_cases(&root);
 
-    // Load mu directly from JEOD GGM02C (the file JEOD's grav_geospherical
-    // test itself references). This matches `tier2_grav_geospherical_full_validation`
-    // below and avoids a literal duplicate of the JEOD-source value.
-    let data = jeod_cc::load_from_jeod_cc(&ggm02c_path(&root)).expect("load GGM02C coefficients");
+    // Load mu directly from the committed GGM02C fixture (the file JEOD's
+    // grav_geospherical test itself references). This matches
+    // `tier2_grav_geospherical_full_validation` below and avoids a literal
+    // duplicate of the JEOD-source value.
+    let data = gravity_fixtures::load_ggm02c();
     let mu_earth = data.mu;
 
     for case in &cases {
@@ -248,10 +243,9 @@ fn tier2_grav_geospherical_full_validation() {
     let root = jeod_path();
     assert!(root.exists(), "JEOD source not found at {}", root.display());
 
-    // Load GGM02C (the test was built against GGM02C, not GGM05C).
-    let path = ggm02c_path(&root);
-    assert!(path.exists(), "GGM02C not found at {}", path.display());
-    let mut data = jeod_cc::load_from_jeod_cc(&path).expect("load GGM02C coefficients");
+    // Load GGM02C from the committed fixture (the test was built against
+    // GGM02C, not GGM05C).
+    let mut data = gravity_fixtures::load_ggm02c();
     // JEOD test overrides tide_free = true (main.cc line 95).
     data.tide_free = true;
 
@@ -336,15 +330,7 @@ fn tier2_grav_geospherical_full_validation() {
 /// ~9.83 m/s^2 surface accelerations.
 #[test]
 fn tier2_grav_geospherical_surface_gravity_ggm02c() {
-    let root = jeod_path();
-    assert!(root.exists());
-    let path = ggm02c_path(&root);
-    assert!(
-        path.exists(),
-        "GGM02C not found at {}. Requires JEOD source.",
-        path.display()
-    );
-    let data = jeod_cc::load_from_jeod_cc(&path).expect("load GGM02C coefficients");
+    let data = gravity_fixtures::load_ggm02c();
 
     // Equatorial surface.
     let pos_eq = DVec3::new(data.radius, 0.0, 0.0);

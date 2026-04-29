@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "label": "ggm02c",
+  "source_file": "models/environment/gravity/data/src/earth_GGM02C.cc",
+  "source_file_bytes": 3199905,
+  "binary_file": "ggm02c.bin",
+  "binary_file_bytes": 324857,
+  "degree": 200,
+  "order": 200,
+  "radius_m": 6378136.3,
+  "mu_m3_per_s2": 398600441500000.0,
+  "tide_free": false,
+  "tide_free_delta": 4.173e-9,
+  "generated_by": "cargo run -p jeod_test_data --bin extract_grav_coeffs",
+  "note": "Regenerate after a JEOD upgrade or coefficient-file change. The .bin file uses the jeod_gravity::coefficients::save_binary format (magic JEOD, version 1)."
+}

@@ -5,21 +5,18 @@
 //!   dΩ/dt = -3nJ₂R²cos(i) / (2p²)
 //! where n=mean motion, J₂=1.0826e-3, R=equatorial radius, p=semi-latus rectum.
 //!
-//! Requires JEOD_HOME for GGM02C coefficients.
+//! Reads GGM02C coefficients from the committed fixture
+//! (`test_data/gravity/ggm02c.bin`) — does not require `JEOD_HOME`.
 
 use glam::DVec3;
 use jeod_dynamics::{rk4_translational_step, TranslationalState};
 use jeod_math::OrbitalElements;
-use jeod_test_data::{jeod_cc, jeod_path};
+use jeod_test_data::gravity_fixtures;
 use std::f64::consts::PI;
 
 #[test]
 fn j2_nodal_regression_rate() {
-    let root = jeod_path();
-    assert!(root.exists(), "JEOD source not found");
-
-    let ggm02c_path = root.join("models/environment/gravity/data/src/earth_GGM02C.cc");
-    let sh_data = jeod_cc::load_from_jeod_cc(&ggm02c_path).expect("load GGM02C coefficients");
+    let sh_data = gravity_fixtures::load_ggm02c();
     let mu = sh_data.mu;
     let r_eq = sh_data.radius;
 
