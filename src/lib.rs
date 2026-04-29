@@ -83,6 +83,14 @@ pub struct EphemerisR(pub jeod_sim::Ephemeris);
 pub struct MassTreeR(pub jeod_sim::MassTree);
 
 /// Unified JEOD plugin — registers all pipeline systems and schedule sets.
+///
+/// All systems are registered on Bevy's `FixedUpdate` schedule, which
+/// acts as a single JEOD-style integration group: every body matched by
+/// the integrating systems advances together at the schedule's shared
+/// `dt`. Multi-stage integrators (RK4, etc.) loop internally inside
+/// [`JeodSet::Integration`] — they do *not* trigger multiple schedule
+/// passes. See the [`sets`] module docs for the full mapping and the
+/// recipe for scenarios that need separate integration groups.
 pub struct JeodPlugin;
 
 impl Plugin for JeodPlugin {
