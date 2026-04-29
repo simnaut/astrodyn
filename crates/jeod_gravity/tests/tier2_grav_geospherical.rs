@@ -12,7 +12,7 @@
 //! Tier 3 trajectory cross-validation against propagating JEOD sims lives
 //! in `crates/jeod_runner/tests/tier3_*`.
 //!
-//! Requires the JEOD source tree (via `JEOD_HOME` or `JEOD_PATH` env var).
+//! Requires the JEOD source tree (via `JEOD_HOME` env var).
 
 use glam::{DMat3, DVec3};
 use jeod_gravity::SphericalHarmonicsData;
@@ -27,7 +27,7 @@ fn tier2_grav_geospherical_loader() {
     let root = jeod_path();
     assert!(
         root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        "JEOD source not found at {}. Set JEOD_HOME.",
         root.display()
     );
 
@@ -65,7 +65,7 @@ fn tier2_grav_geospherical_laplace() {
     let root = jeod_path();
     assert!(
         root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        "JEOD source not found at {}. Set JEOD_HOME.",
         root.display()
     );
 
@@ -95,7 +95,7 @@ fn tier2_grav_geospherical_point_mass_sanity() {
     let root = jeod_path();
     assert!(
         root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        "JEOD source not found at {}. Set JEOD_HOME.",
         root.display()
     );
 
@@ -155,7 +155,7 @@ fn tier2_grav_geospherical_gradient_symmetry() {
     let root = jeod_path();
     assert!(
         root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        "JEOD source not found at {}. Set JEOD_HOME.",
         root.display()
     );
 

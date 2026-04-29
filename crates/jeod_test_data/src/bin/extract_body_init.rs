@@ -1,7 +1,7 @@
 //! Extract JEOD `Modified_data/*.py` body-initialization vectors into
 //! committed fixtures under `test_data/body_init/<vehicle>.json`.
 //!
-//! This is a **regen-only** path: it reads `$JEOD_HOME` (or `$JEOD_PATH`,
+//! This is a **regen-only** path: it reads `$JEOD_HOME` (or
 //! or an explicit `--jeod-home <PATH>` argument), parses the body-init
 //! Python files for each scenario, and writes the JSON consumed by
 //! `jeod_test_data::reference_state::*` and
@@ -81,7 +81,7 @@ fn main() {
     let jeod_root = resolve_jeod_root(&args).unwrap_or_else(|| {
         eprintln!(
             "extract_body_init: JEOD source not found.\n\
-             Pass `--jeod-home <PATH>` or set JEOD_HOME / JEOD_PATH \
+             Pass `--jeod-home <PATH>` or set JEOD_HOME \
              (see CLAUDE.md \"Environment Setup\")."
         );
         std::process::exit(2);
@@ -167,9 +167,6 @@ fn resolve_jeod_root(args: &[String]) -> Option<std::path::PathBuf> {
         if let Some(p) = args.get(idx + 1) {
             return Some(std::path::PathBuf::from(p));
         }
-    }
-    if let Ok(p) = std::env::var("JEOD_PATH") {
-        return Some(std::path::PathBuf::from(p));
     }
     if let Ok(p) = std::env::var("JEOD_HOME") {
         return Some(std::path::PathBuf::from(p));

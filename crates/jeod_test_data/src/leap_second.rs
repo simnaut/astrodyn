@@ -60,7 +60,7 @@ mod tests {
         let root = jeod_path();
         if !root.exists() {
             panic!(
-                "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+                "JEOD source not found at {}. Set JEOD_HOME.",
                 root.display()
             );
         }

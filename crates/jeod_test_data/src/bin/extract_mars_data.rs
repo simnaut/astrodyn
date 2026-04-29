@@ -1,13 +1,13 @@
 //! Extract Mars, Sun, and Moon gravity fixtures from a JEOD source
 //! checkout into `test_data/gravity/`.
 //!
-//! This is a **regen-only** path: it reads `$JEOD_HOME` (or `$JEOD_PATH`,
+//! This is a **regen-only** path: it reads `$JEOD_HOME` (or
 //! or an explicit `--jeod-home <PATH>` argument), parses
 //! `models/environment/gravity/data/src/mars_MRO110B2.cc`,
 //! `models/environment/gravity/data/src/sun_spherical.cc`, and
 //! `models/environment/gravity/data/src/moon_LP150Q.cc`, and writes the
 //! committed binary blobs and JSON metadata sidecars consumed by
-//! `jeod_test_data::mars_fixtures`.
+//! `jeod_test_data::gravity_fixtures`.
 //!
 //! Run after a JEOD upgrade or whenever the source data changes:
 //!
@@ -47,14 +47,14 @@ fn main() {
     let jeod_root = resolve_jeod_root(&args).unwrap_or_else(|| {
         eprintln!(
             "extract_mars_data: JEOD source not found.\n\
-             Pass `--jeod-home <PATH>` or set JEOD_HOME / JEOD_PATH \
+             Pass `--jeod-home <PATH>` or set JEOD_HOME \
              (see CLAUDE.md \"Environment Setup\")."
         );
         std::process::exit(2);
     });
     assert!(
         jeod_root.exists(),
-        "JEOD source root {} does not exist. Set JEOD_HOME / JEOD_PATH \
+        "JEOD source root {} does not exist. Set JEOD_HOME \
          to a valid JEOD checkout.",
         jeod_root.display(),
     );
@@ -246,9 +246,6 @@ fn resolve_jeod_root(args: &[String]) -> Option<PathBuf> {
         if let Some(p) = args.get(idx + 1) {
             return Some(PathBuf::from(p));
         }
-    }
-    if let Ok(p) = std::env::var("JEOD_PATH") {
-        return Some(PathBuf::from(p));
     }
     if let Ok(p) = std::env::var("JEOD_HOME") {
         return Some(PathBuf::from(p));

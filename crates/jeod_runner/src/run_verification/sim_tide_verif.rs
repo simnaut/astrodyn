@@ -40,7 +40,7 @@ fn jeod_root() -> PathBuf {
     let r = jeod_test_data::jeod_path();
     assert!(
         r.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        "JEOD source not found at {}. Set JEOD_HOME.",
         r.display()
     );
     r
@@ -93,7 +93,7 @@ fn build_tide_run01(init: &InitialConditions) -> SimulationBuilder {
     let earth_grav = jeod_test_data::gravity_fixtures::load_ggm05c();
     let earth_mu = earth_grav.mu;
     let earth_radius = earth_grav.radius;
-    let mu_sun = jeod_test_data::mars_fixtures::load_sun_spherical_mu();
+    let mu_sun = jeod_test_data::gravity_fixtures::load_sun_spherical_mu();
     let mu_moon =
         jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("moon_GRAIL150.cc"))
             .expect("load Moon mu");

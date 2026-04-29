@@ -1,14 +1,11 @@
 //! Validate orbital elements and quaternion math against JEOD verification data.
 //!
-//! The body-init tests (ISS reference state and orbital_init parser) read
-//! from the committed `test_data/body_init/iss.json` fixture and run without
-//! `$JEOD_HOME`. The orbital_data (5001-vector roundtrip) and euler_test
-//! tests still read JEOD source directly via `jeod_path()` and require
-//! `$JEOD_HOME` / `$JEOD_PATH`; their migration is tracked separately.
+//! All callers read from committed fixtures under `test_data/`; no test in
+//! this module requires `$JEOD_HOME` to be set.
 
 use jeod_math::JeodQuat;
 use jeod_math::OrbitalElements;
-use jeod_test_data::{euler_test, jeod_path, orbital_data, orbital_init, reference_state};
+use jeod_test_data::{euler_test, orbital_data, orbital_init, reference_state};
 
 /// Earth's gravitational parameter (m^3/s^2) from JEOD `earth_GGM05C.cc`.
 /// Sourced from `jeod_planet::presets::EARTH.mu` — the canonical constant.
@@ -161,14 +158,7 @@ fn validate_iss_reference_state_parsing() {
 
 #[test]
 fn validate_orbital_roundtrip_5000_vectors() {
-    let root = jeod_path();
-    assert!(
-        root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
-        root.display()
-    );
-
-    let vectors = orbital_data::load_orbital_test_vectors(&root);
+    let vectors = orbital_data::load_orbital_test_vectors();
     assert!(
         vectors.len() >= 100,
         "Expected at least 100 orbital test vectors, got {}",
@@ -239,14 +229,7 @@ fn validate_orbital_roundtrip_5000_vectors() {
 
 #[test]
 fn validate_orbital_data_parser() {
-    let root = jeod_path();
-    assert!(
-        root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
-        root.display()
-    );
-
-    let vectors = orbital_data::load_orbital_test_vectors(&root);
+    let vectors = orbital_data::load_orbital_test_vectors();
 
     // The file should have 5001 vectors
     assert_eq!(
@@ -292,14 +275,7 @@ fn validate_orbital_data_parser() {
 
 #[test]
 fn validate_euler_matrix_from_jeod() {
-    let root = jeod_path();
-    assert!(
-        root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
-        root.display()
-    );
-
-    let cases = euler_test::load_euler_test_cases(&root);
+    let cases = euler_test::load_euler_test_cases();
     assert!(!cases.is_empty(), "Expected at least one Euler test case");
 
     for (i, case) in cases.iter().enumerate() {
@@ -448,14 +424,7 @@ fn validate_euler_angle_extraction_from_jeod_vectors() {
     use jeod_math::{compute_euler_angles_from_matrix_typed, EulerSequence};
     use uom::si::angle::radian;
 
-    let root = jeod_path();
-    assert!(
-        root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
-        root.display()
-    );
-
-    let cases = euler_test::load_euler_test_cases(&root);
+    let cases = euler_test::load_euler_test_cases();
     assert!(
         !cases.is_empty(),
         "Expected at least one Euler test case from euler_derived_state_ut.cc"

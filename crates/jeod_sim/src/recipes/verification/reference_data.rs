@@ -1,7 +1,7 @@
 //! Loaders for JEOD reference data used by Tier 3 verification cases.
 //!
 //! Functions here read files from a JEOD source checkout
-//! (`$JEOD_HOME` or `$JEOD_PATH`) and panic with the exact
+//! (`$JEOD_HOME`) and panic with the exact
 //! environment / file path if the data is missing — consistent with
 //! `feedback_no_graceful_skip.md`. Tests must never silently skip.
 //!
@@ -45,7 +45,7 @@ fn load_grav_cc(file: &str) -> SphericalHarmonicsData {
     load_from_jeod_cc(&path).unwrap_or_else(|e| {
         panic!(
             "{file}: failed to load {} ({e}). \
-             Set JEOD_HOME or JEOD_PATH to the JEOD source checkout.",
+             Set JEOD_HOME to the JEOD source checkout.",
             path.display()
         )
     })
@@ -56,10 +56,10 @@ fn jeod_grav_data(file: &str) -> PathBuf {
     // JEOD-source resolver in this workspace) instead of the previous
     // duplicate copy that lived here. Wave 2 of #232 collapsed the two
     // helpers into one. `jeod_test_data::jeod_path()` prefers
-    // `JEOD_PATH` over `JEOD_HOME` and returns a sentinel path when
+    // over `JEOD_HOME` and returns a sentinel path when
     // neither is set; downstream callers (e.g. `load_grav_cc`) surface
     // the resulting I/O error from `load_from_jeod_cc`'s `Result` via
-    // `unwrap_or_else`, panicking with a "Set JEOD_HOME or JEOD_PATH"
+    // `unwrap_or_else`, panicking with a "Set JEOD_HOME"
     // diagnostic identical in spirit to the original behaviour.
     jeod_test_data::jeod_path()
         .join("models/environment/gravity/data/src")

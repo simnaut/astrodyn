@@ -19,7 +19,7 @@ use jeod_sim::{
 };
 
 fn load_mu_sun() -> f64 {
-    jeod_test_data::mars_fixtures::load_sun_spherical_mu()
+    jeod_test_data::gravity_fixtures::load_sun_spherical_mu()
 }
 
 /// Mercury at perihelion (approximate J2000 elements).

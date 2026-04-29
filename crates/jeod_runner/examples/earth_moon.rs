@@ -10,7 +10,7 @@
 //!
 //! This example consumes
 //! [`recipes::verification::reference_data`](jeod_sim::recipes::verification::reference_data),
-//! which loads JEOD source files (`$JEOD_HOME` or `$JEOD_PATH`) for the
+//! which loads JEOD source files (`$JEOD_HOME`) for the
 //! Moon LP150Q gravity model and `test_data/de421.bsp` /
 //! `test_data/moon_pa_de421_1900-2050.bpc` for ephemeris and Moon
 //! libration. Mission code that wants high-fidelity gravity / ephemeris

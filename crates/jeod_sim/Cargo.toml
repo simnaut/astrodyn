@@ -10,7 +10,7 @@ repository.workspace = true
 
 [features]
 # `jeod-source` exposes verification helpers that read from a JEOD source
-# checkout (`$JEOD_HOME` / `$JEOD_PATH`) — currently the
+# checkout (`$JEOD_HOME`) — currently the
 # `recipes::verification::reference_data` loaders that parse `.cc`
 # gravity files via `jeod_test_data::jeod_cc`. Off by default so
 # downstream mission crates don't pull `jeod_test_data` (a dev-flavored

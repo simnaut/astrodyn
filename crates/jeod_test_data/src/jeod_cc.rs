@@ -1,11 +1,11 @@
 //! JEOD C++ source file parsers for gravity coefficient files.
 //!
 //! These parsers exist exclusively to populate test fixtures and Tier 3
-//! verification data from a JEOD source checkout (`$JEOD_HOME` /
-//! `$JEOD_PATH`). Production gravity code in `jeod_gravity` consumes the
-//! compact binary format (`load_binary` / `load_binary_from_bytes`)
-//! produced by `save_binary`, which is generated from these parsers as a
-//! one-time test-data step.
+//! verification data from a JEOD source checkout (`$JEOD_HOME`).
+//! Production gravity code in `jeod_gravity` consumes the compact binary
+//! format (`load_binary` / `load_binary_from_bytes`) produced by
+//! `save_binary`, which is generated from these parsers as a one-time
+//! test-data step.
 //!
 //! Parsing JEOD's `.cc` files is therefore a *test/data* concern, not a
 //! production capability — keeping it here preserves the principle that

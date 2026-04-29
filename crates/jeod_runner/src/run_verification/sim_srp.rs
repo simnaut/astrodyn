@@ -46,7 +46,7 @@ fn jeod_root() -> PathBuf {
     let r = jeod_test_data::jeod_path();
     assert!(
         r.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        "JEOD source not found at {}. Set JEOD_HOME.",
         r.display()
     );
     r

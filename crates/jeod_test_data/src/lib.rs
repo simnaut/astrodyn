@@ -46,11 +46,12 @@
 //!
 //! ## Environment
 //!
-//! Every parser that resolves JEOD source paths goes through
-//! [`jeod_path`], which checks `JEOD_PATH` first and then `JEOD_HOME`
-//! (the standard JEOD/Trick convention). [`trick_path`] does the same
-//! for `TRICK_HOME`. Tests that need JEOD source data assert (panic)
-//! when neither variable is set; they never skip silently.
+//! [`jeod_path`] resolves `$JEOD_HOME` (the standard JEOD/Trick
+//! convention used by NASA's upstream tooling). [`trick_path`] does the
+//! same for `$TRICK_HOME`. The runtime test path no longer reads JEOD
+//! source — committed fixtures cover every callsite that runs under
+//! `cargo test`. Only the regen binaries under `src/bin/extract_*.rs`
+//! still resolve `$JEOD_HOME`, and they fail loudly when it isn't set.
 
 #![forbid(unsafe_code)]
 
@@ -63,11 +64,10 @@ pub mod crossval;
 pub mod dyncomp_csv;
 pub mod euler_test;
 pub mod gravity_control;
-pub mod gravity_fixtures; // populated by issue #234
+pub mod gravity_fixtures;
 pub mod gravity_verif;
 pub mod jeod_cc;
 pub mod leap_second;
-pub mod mars_fixtures; // populated by issue #236
 pub mod mass_data;
 pub mod orbital_data;
 pub mod orbital_init;
@@ -77,18 +77,21 @@ pub mod s_define;
 pub mod tier3_csv;
 pub mod time_config;
 
-/// Get the JEOD root path from environment variables.
+/// Get the JEOD root path from `$JEOD_HOME`.
 ///
-/// Checks `JEOD_PATH` first, then `JEOD_HOME` (standard JEOD/Trick convention).
-/// Returns a path that may or may not exist — callers should check `.exists()`.
+/// `JEOD_HOME` is the standard convention used by NASA's upstream
+/// JEOD/Trick tooling. Returns a sentinel path (`"JEOD_HOME_not_set"`)
+/// when the variable isn't set; callers should check `.exists()` and
+/// panic with a fail-loudly diagnostic if they need JEOD source.
+///
+/// This helper is **regen-only**: nothing under `cargo test` should call
+/// it any more. Test fixtures are pre-extracted and committed under
+/// `test_data/`.
 pub fn jeod_path() -> std::path::PathBuf {
-    if let Ok(p) = std::env::var("JEOD_PATH") {
-        return std::path::PathBuf::from(p);
-    }
     if let Ok(p) = std::env::var("JEOD_HOME") {
         return std::path::PathBuf::from(p);
     }
-    std::path::PathBuf::from("JEOD_PATH_or_JEOD_HOME_not_set")
+    std::path::PathBuf::from("JEOD_HOME_not_set")
 }
 
 /// Get the Trick root path from the `TRICK_HOME` environment variable.

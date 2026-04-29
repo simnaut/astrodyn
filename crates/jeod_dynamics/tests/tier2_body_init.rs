@@ -3,7 +3,7 @@
 //!
 //! Inputs come from the committed `test_data/body_init/iss.json` fixture
 //! (regenerated via `cargo run -p jeod_test_data --bin extract_body_init`),
-//! so this test no longer requires `JEOD_HOME` / `JEOD_PATH` at runtime.
+//! so this test no longer requires `JEOD_HOME` at runtime.
 //!
 //! Tests exercise three JEOD element set parameterizations, all describing
 //! the same ISS orbit at STS-114 MET 001:19:30:59.000:

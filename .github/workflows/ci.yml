@@ -93,28 +93,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Sparse checkout JEOD reference data
-        run: |
-          JEOD_TAG=jeod_v5.4.0
-          JEOD_SHA=27893108bbde8bb162b3213a30d57af89acd1c76
-          git clone --no-checkout --depth 1 --branch "$JEOD_TAG" \
-            https://github.com/nasa/jeod.git ../jeod
-          cd ../jeod
-          # Verify immutable tag hasn't moved
-          [ "$(git rev-parse HEAD)" = "$JEOD_SHA" ] || \
-            { echo "FATAL: $JEOD_TAG resolved to $(git rev-parse HEAD), expected $JEOD_SHA"; exit 1; }
-          git sparse-checkout set \
-            models/environment/gravity/data \
-            models/environment/gravity/verif/unit_tests/grav_geospherical/data \
-            models/environment/time/data \
-            models/dynamics/body_action/verif/SIM_orbinit/Modified_data \
-            models/dynamics/derived_state/verif/unit_tests \
-            models/utils/orbital_elements/verif/SIM_orb_elem/Modified_data
-          git checkout
       - uses: taiki-e/install-action@nextest
+      - name: Verify JEOD env vars are unset (regression fence)
+        run: |
+          if [ -n "${JEOD_HOME:-}" ] || [ -n "${JEOD_PATH:-}" ]; then
+            echo "FATAL: JEOD_HOME / JEOD_PATH must be unset for the standalone-repo CI fence" >&2
+            exit 1
+          fi
       - name: Run tests (skip Tier 3 trajectory validation)
-        env:
-          JEOD_HOME: ${{ github.workspace }}/../jeod
         run: cargo nextest run --workspace -E 'not test(tier3_)'
 
   test-tier3:
@@ -124,32 +110,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Sparse checkout JEOD reference data
-        run: |
-          JEOD_TAG=jeod_v5.4.0
-          JEOD_SHA=27893108bbde8bb162b3213a30d57af89acd1c76
-          git clone --no-checkout --depth 1 --branch "$JEOD_TAG" \
-            https://github.com/nasa/jeod.git ../jeod
-          cd ../jeod
-          [ "$(git rev-parse HEAD)" = "$JEOD_SHA" ] || \
-            { echo "FATAL: $JEOD_TAG resolved to $(git rev-parse HEAD), expected $JEOD_SHA"; exit 1; }
-          git sparse-checkout set \
-            models/environment/gravity/data \
-            models/environment/gravity/verif/unit_tests/grav_geospherical/data \
-            models/environment/time/data \
-            models/dynamics/body_action/verif/SIM_orbinit/Modified_data \
-            models/dynamics/derived_state/verif \
-            models/interactions/radiation_pressure/verif/SIM_3_ORBIT \
-            models/interactions/radiation_pressure/verif/SIM_3_ORBIT_1st_ORDER \
-            models/interactions/radiation_pressure/verif/SIM_2A_SHADOW_CALC \
-            models/environment/time/verif/SIM_7_time_reversal \
-            models/utils/orbital_elements/verif/SIM_orb_elem/Modified_data \
-            verif/SIM_dyncomp
-          git checkout
       - uses: taiki-e/install-action@nextest
+      - name: Verify JEOD env vars are unset (regression fence)
+        run: |
+          if [ -n "${JEOD_HOME:-}" ] || [ -n "${JEOD_PATH:-}" ]; then
+            echo "FATAL: JEOD_HOME / JEOD_PATH must be unset for the standalone-repo CI fence" >&2
+            exit 1
+          fi
       - name: Run Tier 3 tests (exclude earth_moon ~17 min)
-        env:
-          JEOD_HOME: ${{ github.workspace }}/../jeod
         run: cargo nextest run --workspace -E 'test(tier3_) and not test(earth_moon)'
       - name: Generate cross-validation report
         run: cargo run -p jeod_test_data --bin tier3_report
@@ -170,32 +138,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Sparse checkout JEOD reference data
-        run: |
-          JEOD_TAG=jeod_v5.4.0
-          JEOD_SHA=27893108bbde8bb162b3213a30d57af89acd1c76
-          git clone --no-checkout --depth 1 --branch "$JEOD_TAG" \
-            https://github.com/nasa/jeod.git ../jeod
-          cd ../jeod
-          [ "$(git rev-parse HEAD)" = "$JEOD_SHA" ] || \
-            { echo "FATAL: $JEOD_TAG resolved to $(git rev-parse HEAD), expected $JEOD_SHA"; exit 1; }
-          git sparse-checkout set \
-            models/environment/gravity/data \
-            models/environment/gravity/verif/unit_tests/grav_geospherical/data \
-            models/environment/time/data \
-            models/dynamics/body_action/verif/SIM_orbinit/Modified_data \
-            models/dynamics/derived_state/verif \
-            models/interactions/radiation_pressure/verif/SIM_3_ORBIT \
-            models/interactions/radiation_pressure/verif/SIM_3_ORBIT_1st_ORDER \
-            models/interactions/radiation_pressure/verif/SIM_2A_SHADOW_CALC \
-            models/environment/time/verif/SIM_7_time_reversal \
-            models/utils/orbital_elements/verif/SIM_orb_elem/Modified_data \
-            verif/SIM_dyncomp
-          git checkout
       - uses: taiki-e/install-action@nextest
+      - name: Verify JEOD env vars are unset (regression fence)
+        run: |
+          if [ -n "${JEOD_HOME:-}" ] || [ -n "${JEOD_PATH:-}" ]; then
+            echo "FATAL: JEOD_HOME / JEOD_PATH must be unset for the standalone-repo CI fence" >&2
+            exit 1
+          fi
       - name: Run all Tier 3 tests (including earth_moon)
-        env:
-          JEOD_HOME: ${{ github.workspace }}/../jeod
         run: cargo nextest run --workspace -E 'test(tier3_)'
       - name: Generate cross-validation report
         run: cargo run -p jeod_test_data --bin tier3_report

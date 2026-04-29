@@ -100,8 +100,11 @@ cargo nextest run --workspace -E 'not test(tier3_)'   # fast: Tier 1 + 2
 cargo nextest run --workspace -E 'test(tier3_)'       # Tier 3
 ```
 
-Set `JEOD_HOME` to a JEOD source checkout for tests that load JEOD data
-files. See [`CLAUDE.md`](CLAUDE.md) for the full build and test workflow.
+`cargo test --workspace` works on a fresh clone without `$JEOD_HOME` —
+all reference data is committed under `test_data/`. `JEOD_HOME` is only
+required when regenerating fixtures via the `extract_*` binaries under
+`crates/jeod_test_data/src/bin/`. See [`CLAUDE.md`](CLAUDE.md) for the
+full build / test / regen workflow.
 
 ## Documentation
 
