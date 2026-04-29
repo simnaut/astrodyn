@@ -16,16 +16,7 @@ use jeod_sim::{
 };
 
 fn load_mu_earth_gemt1() -> f64 {
-    let jeod_root = jeod_test_data::jeod_path();
-    assert!(
-        jeod_root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
-        jeod_root.display()
-    );
-    jeod_test_data::jeod_cc::load_mu_from_jeod_cc(
-        &jeod_root.join("models/environment/gravity/data/src/earth_GEMT1.cc"),
-    )
-    .expect("load Earth mu from GEMT1")
+    jeod_test_data::gravity_fixtures::load_gemt1().mu
 }
 
 #[allow(dead_code)] // position/velocity used by run1, not by time-only run3a/run8b
@@ -85,15 +76,9 @@ fn tier3_sim_time_reversal_run1() {
     let init = &records[0];
 
     // Epoch: 2007-11-20 00:00:00 UTC. TAI TJT from CSV.
-    let jeod_root = jeod_test_data::jeod_path();
-    assert!(
-        jeod_root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
-        jeod_root.display()
-    );
-    let dt = jeod_test_data::s_define::load_dynamics_dt(
-        &jeod_root.join("models/environment/time/verif/SIM_7_time_reversal/S_define"),
-    );
+    // Dynamics timestep: 0.03125 s (32 Hz) per
+    // models/environment/time/verif/SIM_7_time_reversal/S_define `#define DYNAMICS`.
+    let dt = 0.03125_f64;
 
     let leap_table = jeod_sim::default_leap_second_table();
     let time = SimulationTime::new(init.tai_tjt, leap_table);

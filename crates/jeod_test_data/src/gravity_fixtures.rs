@@ -72,3 +72,12 @@ pub fn load_ggm02c() -> SphericalHarmonicsData {
 pub fn load_ggm05c() -> SphericalHarmonicsData {
     load_fixture("ggm05c")
 }
+
+/// Load the GEM-T1 Earth gravity coefficient set (degree=order=36).
+///
+/// Equivalent to parsing `models/environment/gravity/data/src/earth_GEMT1.cc`
+/// from a JEOD checkout — but reads the committed binary fixture instead.
+/// Used by `SIM_7_time_reversal` Tier 3 tests.
+pub fn load_gemt1() -> SphericalHarmonicsData {
+    load_fixture("gemt1")
+}

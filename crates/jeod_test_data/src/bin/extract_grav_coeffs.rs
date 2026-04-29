@@ -43,6 +43,10 @@ const SOURCES: &[Source] = &[
         cc_filename: "earth_GGM05C.cc",
         label: "ggm05c",
     },
+    Source {
+        cc_filename: "earth_GEMT1.cc",
+        label: "gemt1",
+    },
 ];
 
 fn main() {

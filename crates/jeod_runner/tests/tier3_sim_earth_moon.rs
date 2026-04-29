@@ -23,29 +23,11 @@ use jeod_sim::{
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
 fn load_mu_earth() -> f64 {
-    let jeod_root = jeod_test_data::jeod_path();
-    assert!(
-        jeod_root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
-        jeod_root.display()
-    );
-    jeod_test_data::jeod_cc::load_mu_from_jeod_cc(
-        &jeod_root.join("models/environment/gravity/data/src/earth_GGM05C.cc"),
-    )
-    .expect("load Earth mu from GGM05C")
+    jeod_test_data::gravity_fixtures::load_ggm05c().mu
 }
 
 fn load_mu_sun() -> f64 {
-    let jeod_root = jeod_test_data::jeod_path();
-    assert!(
-        jeod_root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
-        jeod_root.display()
-    );
-    jeod_test_data::jeod_cc::load_mu_from_jeod_cc(
-        &jeod_root.join("models/environment/gravity/data/src/sun_spherical.cc"),
-    )
-    .expect("load Sun mu from sun_spherical")
+    jeod_test_data::mars_fixtures::load_sun_spherical_mu()
 }
 
 /// Load a state CSV with interleaved columns: time, pos[0], vel[0], pos[1], vel[1], pos[2], vel[2].
@@ -116,10 +98,7 @@ fn tier3_simulation_earth_moon_clem() {
     let mut sim = Simulation::new(time, 0.03125); // 32 Hz, matching JEOD S_define
 
     // Load LP150Q spherical harmonics for Moon (matching JEOD's SIM_Earth_Moon)
-    let jeod_root = jeod_test_data::jeod_path();
-    let lp150q_path = jeod_root.join("models/environment/gravity/data/src/moon_LP150Q.cc");
-    let sh_data =
-        jeod_test_data::jeod_cc::load_from_jeod_cc(&lp150q_path).expect("load LP150Q coefficients");
+    let sh_data = jeod_test_data::mars_fixtures::load_moon_lp150q();
     let moon_mu = sh_data.mu;
 
     // Moon rotation from DE421 BPC libration data, updated per step.

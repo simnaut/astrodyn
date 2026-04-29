@@ -19,16 +19,7 @@ use jeod_sim::{
 };
 
 fn load_mu_sun() -> f64 {
-    let jeod_root = jeod_test_data::jeod_path();
-    assert!(
-        jeod_root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
-        jeod_root.display()
-    );
-    jeod_test_data::jeod_cc::load_mu_from_jeod_cc(
-        &jeod_root.join("models/environment/gravity/data/src/sun_spherical.cc"),
-    )
-    .expect("load Sun mu from sun_spherical")
+    jeod_test_data::mars_fixtures::load_sun_spherical_mu()
 }
 
 /// Mercury at perihelion (approximate J2000 elements).

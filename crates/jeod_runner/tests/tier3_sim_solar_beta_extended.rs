@@ -30,16 +30,7 @@ use jeod_sim::{
 };
 
 fn load_mu_earth() -> f64 {
-    let jeod_root = jeod_test_data::jeod_path();
-    assert!(
-        jeod_root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
-        jeod_root.display()
-    );
-    jeod_test_data::jeod_cc::load_mu_from_jeod_cc(
-        &jeod_root.join("models/environment/gravity/data/src/earth_GGM05C.cc"),
-    )
-    .expect("load Earth mu from GGM05C")
+    jeod_test_data::gravity_fixtures::load_ggm05c().mu
 }
 
 /// Sun at a cartoon distance in the +X direction produces `sun_direction = +X`

@@ -91,7 +91,6 @@ fn compute_t_inertial_pfix_at_orbinit_epoch() -> DMat3 {
 /// (no ω×r term — JEOD `dyn_body_init_orbit.cc:331-332` rotates position and
 /// velocity as pure 3-vectors).
 fn assert_orbinit_match(
-    jeod_root: &std::path::Path,
     vehicle: &str,
     init_name: &str,
     csv_filename: &str,
@@ -99,10 +98,7 @@ fn assert_orbinit_match(
     pos_tol: f64,
     vel_tol: f64,
 ) {
-    let grav_data_dir = jeod_root.join("models/environment/gravity/data/src");
-    let mu_earth =
-        jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc"))
-            .expect("load Earth mu from earth_GGM05C.cc");
+    let mu_earth = jeod_test_data::gravity_fixtures::load_ggm05c().mu;
 
     // Load JEOD orbital elements input from the committed body_init fixture
     // (originally extracted from Modified_data/<vehicle>/<init_name>.py).
@@ -198,18 +194,10 @@ fn assert_orbinit_match(
 
 #[test]
 fn tier3_orbinit_docker_run0001_iss_inertial() {
-    let jeod_root = jeod_test_data::jeod_path();
-    assert!(
-        jeod_root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
-        jeod_root.display()
-    );
-
     // RUN_0001: ISS, SmaEccIncAscnodeArgperTimeperi, reference=Earth.inertial.
     // No frame rotation required — our output is already in inertial.
     // Observed: pos=3.76e-9 m, vel=3.43e-12 m/s (5% above → listed).
     assert_orbinit_match(
-        &jeod_root,
         "ISS",
         "trans_Orbit_inertial_body_set01",
         "orbinit_0001_orbinit.csv",
@@ -225,16 +213,8 @@ fn tier3_orbinit_docker_run0001_iss_inertial() {
 
 #[test]
 fn tier3_orbinit_docker_run0101_sts_inertial() {
-    let jeod_root = jeod_test_data::jeod_path();
-    assert!(
-        jeod_root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
-        jeod_root.display()
-    );
-
     // Observed: pos=1.04e-9 m, vel=1.83e-12 m/s (5% above → listed).
     assert_orbinit_match(
-        &jeod_root,
         "STS_114",
         "trans_Orbit_inertial_body_set01",
         "orbinit_0101_orbinit.csv",
@@ -250,19 +230,11 @@ fn tier3_orbinit_docker_run0101_sts_inertial() {
 
 #[test]
 fn tier3_orbinit_docker_run0201_iss_pfix() {
-    let jeod_root = jeod_test_data::jeod_path();
-    assert!(
-        jeod_root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
-        jeod_root.display()
-    );
-
     // RUN_0201: ISS pfix set01. Requires RNP rotation at the SIM epoch.
     // Observed: pos=1.51e-5 m, vel=1.17e-8 m/s (5% above → listed).
     // The residual reflects tiny differences between our RNP series and
     // JEOD's over the ~11 000 km Earth rotation arm from 2005-07-28.
     assert_orbinit_match(
-        &jeod_root,
         "ISS",
         "trans_Orbit_pfix_body_set01",
         "orbinit_0201_orbinit.csv",
@@ -278,16 +250,8 @@ fn tier3_orbinit_docker_run0201_iss_pfix() {
 
 #[test]
 fn tier3_orbinit_docker_run0301_sts_pfix() {
-    let jeod_root = jeod_test_data::jeod_path();
-    assert!(
-        jeod_root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
-        jeod_root.display()
-    );
-
     // Observed: pos=1.51e-5 m, vel=1.17e-8 m/s (5% above → listed).
     assert_orbinit_match(
-        &jeod_root,
         "STS_114",
         "trans_Orbit_pfix_body_set01",
         "orbinit_0301_orbinit.csv",

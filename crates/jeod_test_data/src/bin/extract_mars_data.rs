@@ -1,10 +1,11 @@
-//! Extract Mars and Sun gravity fixtures from a JEOD source checkout into
-//! `test_data/gravity/`.
+//! Extract Mars, Sun, and Moon gravity fixtures from a JEOD source
+//! checkout into `test_data/gravity/`.
 //!
 //! This is a **regen-only** path: it reads `$JEOD_HOME` (or `$JEOD_PATH`,
 //! or an explicit `--jeod-home <PATH>` argument), parses
-//! `models/environment/gravity/data/src/mars_MRO110B2.cc` and
-//! `models/environment/gravity/data/src/sun_spherical.cc`, and writes the
+//! `models/environment/gravity/data/src/mars_MRO110B2.cc`,
+//! `models/environment/gravity/data/src/sun_spherical.cc`, and
+//! `models/environment/gravity/data/src/moon_LP150Q.cc`, and writes the
 //! committed binary blobs and JSON metadata sidecars consumed by
 //! `jeod_test_data::mars_fixtures`.
 //!
@@ -27,6 +28,10 @@
 //!   binary loader uniformly. Only `mu` and `radius` are physically
 //!   meaningful.
 //! - `test_data/gravity/sun_spherical.json` — metadata sidecar.
+//! - `test_data/gravity/moon_lp150q.bin` — Moon LP150Q SH coefficients
+//!   (150×150, ~180 KB) in the production binary format. Used by Tier 3
+//!   tests covering Earth–Moon dynamics.
+//! - `test_data/gravity/moon_lp150q.json` — metadata sidecar.
 //!
 //! The binary prints each destination path on success.
 
@@ -63,6 +68,44 @@ fn main() {
 
     extract_mars(&jeod_root, &jeod_rev, &out_dir);
     extract_sun(&jeod_root, &jeod_rev, &out_dir);
+    extract_moon_lp150q(&jeod_root, &jeod_rev, &out_dir);
+}
+
+fn extract_moon_lp150q(jeod_root: &Path, jeod_rev: &str, out_dir: &Path) {
+    let rel = "models/environment/gravity/data/src/moon_LP150Q.cc";
+    let src_path = jeod_root.join(rel);
+    let data = load_from_jeod_cc(&src_path).unwrap_or_else(|e| {
+        panic!(
+            "Failed to parse Moon LP150Q SH data from {}: {e:?}. \
+             Ensure $JEOD_HOME points at a valid JEOD checkout containing this file.",
+            src_path.display()
+        );
+    });
+
+    let bin_path = out_dir.join("moon_lp150q.bin");
+    save_binary(&data, &bin_path)
+        .unwrap_or_else(|e| panic!("Cannot write {}: {e}", bin_path.display()));
+
+    let meta_path = out_dir.join("moon_lp150q.json");
+    write_metadata(
+        &meta_path,
+        rel,
+        jeod_rev,
+        Some(data.degree),
+        Some(data.order),
+        data.mu,
+        data.radius,
+        Some(data.tide_free),
+        Some(data.tide_free_delta),
+        "Moon LP150Q (Lunar Prospector) spherical harmonics gravity coefficients (degree=order=150).",
+    );
+
+    println!(
+        "wrote {} ({} bytes) and {}",
+        bin_path.display(),
+        std::fs::metadata(&bin_path).map(|m| m.len()).unwrap_or(0),
+        meta_path.display(),
+    );
 }
 
 fn extract_mars(jeod_root: &Path, jeod_rev: &str, out_dir: &Path) {

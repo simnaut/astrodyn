@@ -21,13 +21,6 @@ use std::path::Path;
 
 #[test]
 fn pipeline_earth_lighting_smoke() {
-    let jeod_root = jeod_test_data::jeod_path();
-    assert!(
-        jeod_root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
-        jeod_root.display()
-    );
-
     let bsp_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data/de421.bsp");
     assert!(
         bsp_path.exists(),
@@ -36,10 +29,7 @@ fn pipeline_earth_lighting_smoke() {
     );
     let ephemeris = Ephemeris::from_bsp(&bsp_path).expect("load DE421");
 
-    let grav_data_dir = jeod_root.join("models/environment/gravity/data/src");
-    let mu_earth =
-        jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc"))
-            .expect("load Earth mu");
+    let mu_earth = jeod_test_data::gravity_fixtures::load_ggm05c().mu;
 
     let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, 60.0);
