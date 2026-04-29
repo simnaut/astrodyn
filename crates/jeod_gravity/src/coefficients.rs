@@ -14,7 +14,7 @@ use crate::spherical_harmonics_gravity_source::SphericalHarmonicsData;
 
 /// Errors from loading a binary spherical-harmonics coefficient blob.
 #[derive(Debug, thiserror::Error)]
-pub enum BinaryLoadError {
+pub enum CoeffLoadError {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
     #[error("invalid binary format: {0}")]
@@ -57,19 +57,19 @@ pub fn save_binary(
 }
 
 /// Load coefficients from the compact binary format.
-pub fn load_binary(path: &std::path::Path) -> Result<SphericalHarmonicsData, BinaryLoadError> {
+pub fn load_binary(path: &std::path::Path) -> Result<SphericalHarmonicsData, CoeffLoadError> {
     let buf = std::fs::read(path)?;
     load_binary_from_bytes(&buf)
 }
 
 /// Load coefficients from binary bytes (for embedded data).
-pub fn load_binary_from_bytes(buf: &[u8]) -> Result<SphericalHarmonicsData, BinaryLoadError> {
+pub fn load_binary_from_bytes(buf: &[u8]) -> Result<SphericalHarmonicsData, CoeffLoadError> {
     let mut pos = 0;
 
     // Bounds-checked read helpers (prevent panics on truncated/corrupted files)
-    let read_u32 = |pos: &mut usize| -> Result<u32, BinaryLoadError> {
+    let read_u32 = |pos: &mut usize| -> Result<u32, CoeffLoadError> {
         if *pos + 4 > buf.len() {
-            return Err(BinaryLoadError::InvalidFormat(format!(
+            return Err(CoeffLoadError::InvalidFormat(format!(
                 "truncated binary file at offset {}",
                 *pos
             )));
@@ -78,9 +78,9 @@ pub fn load_binary_from_bytes(buf: &[u8]) -> Result<SphericalHarmonicsData, Bina
         *pos += 4;
         Ok(val)
     };
-    let read_f64 = |pos: &mut usize| -> Result<f64, BinaryLoadError> {
+    let read_f64 = |pos: &mut usize| -> Result<f64, CoeffLoadError> {
         if *pos + 8 > buf.len() {
-            return Err(BinaryLoadError::InvalidFormat(format!(
+            return Err(CoeffLoadError::InvalidFormat(format!(
                 "truncated binary file at offset {}",
                 *pos
             )));
@@ -89,9 +89,9 @@ pub fn load_binary_from_bytes(buf: &[u8]) -> Result<SphericalHarmonicsData, Bina
         *pos += 8;
         Ok(val)
     };
-    let read_u8 = |pos: &mut usize| -> Result<u8, BinaryLoadError> {
+    let read_u8 = |pos: &mut usize| -> Result<u8, CoeffLoadError> {
         if *pos >= buf.len() {
-            return Err(BinaryLoadError::InvalidFormat(format!(
+            return Err(CoeffLoadError::InvalidFormat(format!(
                 "truncated binary file at offset {}",
                 *pos
             )));
@@ -103,19 +103,19 @@ pub fn load_binary_from_bytes(buf: &[u8]) -> Result<SphericalHarmonicsData, Bina
 
     // Magic number
     if buf.len() < 8 {
-        return Err(BinaryLoadError::InvalidFormat(
+        return Err(CoeffLoadError::InvalidFormat(
             "binary coefficient file too short".into(),
         ));
     }
     if &buf[0..4] != b"JEOD" {
-        return Err(BinaryLoadError::InvalidFormat(
+        return Err(CoeffLoadError::InvalidFormat(
             "invalid magic in binary coefficient file".into(),
         ));
     }
     pos += 4;
     let version = read_u32(&mut pos)?;
     if version != 1 {
-        return Err(BinaryLoadError::InvalidFormat(format!(
+        return Err(CoeffLoadError::InvalidFormat(format!(
             "unsupported binary coefficient version {version}"
         )));
     }
@@ -125,12 +125,12 @@ pub fn load_binary_from_bytes(buf: &[u8]) -> Result<SphericalHarmonicsData, Bina
 
     // Sanity checks to prevent unbounded memory allocation
     if degree > 10000 {
-        return Err(BinaryLoadError::InvalidFormat(format!(
+        return Err(CoeffLoadError::InvalidFormat(format!(
             "degree {degree} exceeds maximum supported (10000)"
         )));
     }
     if order > degree {
-        return Err(BinaryLoadError::InvalidFormat(format!(
+        return Err(CoeffLoadError::InvalidFormat(format!(
             "order ({order}) exceeds degree ({degree})"
         )));
     }
@@ -142,7 +142,7 @@ pub fn load_binary_from_bytes(buf: &[u8]) -> Result<SphericalHarmonicsData, Bina
     let num_coeffs = (degree + 1) * (degree + 2) / 2;
     let expected_size = 41 + 2 * num_coeffs * 8;
     if buf.len() < expected_size {
-        return Err(BinaryLoadError::InvalidFormat(format!(
+        return Err(CoeffLoadError::InvalidFormat(format!(
             "binary file too short for degree {degree}: need {expected_size} bytes, have {}",
             buf.len()
         )));
