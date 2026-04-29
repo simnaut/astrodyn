@@ -12,6 +12,12 @@ use crate::SimulationBuilder;
 /// Trans-lunar coast with Earth, Moon, and Sun. See
 /// [`clementine_lunar`](super::clementine_lunar::clementine_lunar) for
 /// the underlying setup.
+///
+/// ```
+/// use jeod_sim::recipes::scenarios::earth_moon;
+/// let sb = earth_moon::earth_moon_translunar();
+/// assert_eq!(sb.sources.len(), 3);
+/// ```
 pub fn earth_moon_translunar() -> SimulationBuilder {
     super::clementine_lunar::clementine_lunar()
 }

@@ -19,6 +19,13 @@ use crate::SimulationBuilder;
 /// ([`crate::recipes::orbital_elements::iss`])
 /// initialized via the typestate vehicle builder. Step size is 60 s,
 /// epoch is J2000.
+///
+/// ```
+/// use jeod_sim::recipes::scenarios::iss_leo;
+/// let sb = iss_leo::iss_leo();
+/// assert_eq!(sb.bodies.len(), 1);
+/// assert_eq!(sb.sources.len(), 1);
+/// ```
 pub fn iss_leo() -> SimulationBuilder {
     let mut sb = SimulationBuilder::new(epoch::j2000(), 60.0);
     let earth_idx = sb.add_source("Earth", earth::point_mass());
@@ -38,6 +45,13 @@ pub fn iss_leo() -> SimulationBuilder {
 /// identity attitude (drag requires a rotational state for the
 /// inertial → structural frame transform — see JEOD_INV: IN.15).
 /// Demonstrates 24-hour altitude decay under solar-mean conditions.
+///
+/// ```
+/// use jeod_sim::recipes::scenarios::iss_leo;
+/// let sb = iss_leo::iss_leo_drag();
+/// assert_eq!(sb.bodies.len(), 1);
+/// assert!(sb.atmosphere.is_some());
+/// ```
 pub fn iss_leo_drag() -> SimulationBuilder {
     use crate::recipes::atmosphere;
     use jeod_dynamics::{MassProperties, RotationalState};

@@ -23,6 +23,14 @@ use crate::SimulationBuilder;
 /// accuracy substitutes the central-body source with
 /// `verification::reference_data::mars_mro110b2()` and adds a
 /// non-spherical [`GravityControl`].
+///
+/// ```
+/// use jeod_sim::recipes::scenarios::mars_orbit;
+/// let sb = mars_orbit::mars_orbit();
+/// // Mars central + Sun third-body.
+/// assert_eq!(sb.sources.len(), 2);
+/// assert_eq!(sb.dt, 10.0);
+/// ```
 pub fn mars_orbit() -> SimulationBuilder {
     let mut sb = SimulationBuilder::new(epoch::dawn_mars_2009(), 10.0);
     let mars_idx = sb.add_source("Mars", mars::point_mass());

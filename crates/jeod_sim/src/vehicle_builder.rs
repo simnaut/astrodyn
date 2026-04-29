@@ -24,16 +24,18 @@
 //!
 //! # Happy path
 //!
-//! ```ignore
+//! ```
 //! use jeod_sim::vehicle_builder::VehicleBuilder;
+//! use jeod_sim::recipes::orbital_elements;
 //! use jeod_sim::EARTH;
 //! use jeod_quantities::ext::F64Ext;
 //!
 //! let cfg = VehicleBuilder::new()
-//!     .from_orbital_elements(elems, EARTH.mu_typed())
+//!     .from_orbital_elements(orbital_elements::iss(), EARTH.mu_typed())
 //!     .three_dof_point_mass(420_000.0.kg())
 //!     .rk4()
 //!     .build();
+//! assert!(cfg.mass.is_some());
 //! ```
 
 use core::marker::PhantomData;

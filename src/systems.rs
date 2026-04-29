@@ -1247,13 +1247,25 @@ pub fn cannonball_srp_system(
 /// messages to have any effect.
 ///
 /// # Example
-/// ```ignore
+/// ```
+/// use bevy::prelude::*;
+/// use bevy_jeod::DetachEvent;
+///
+/// // A user-defined system that emits a DetachEvent for a known booster
+/// // entity (e.g. one cached in a Resource).
+/// #[derive(Resource)]
+/// struct Booster(Entity);
+///
 /// fn detach_booster(
-///     mut detach_messages: bevy::ecs::message::MessageWriter<crate::DetachEvent>,
-///     booster_entity: Entity,
+///     booster: Res<Booster>,
+///     mut detach_messages: bevy::ecs::message::MessageWriter<DetachEvent>,
 /// ) {
-///     detach_messages.write(crate::DetachEvent { child: booster_entity });
+///     detach_messages.write(DetachEvent { child: booster.0 });
 /// }
+///
+/// let mut app = App::new();
+/// app.add_message::<DetachEvent>();
+/// app.add_systems(Update, detach_booster);
 /// ```
 pub fn staging_system(
     tree: Option<ResMut<crate::MassTreeR>>,

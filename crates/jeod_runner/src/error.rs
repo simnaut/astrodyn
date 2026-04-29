@@ -50,7 +50,7 @@ use jeod_sim::EphemerisBody;
 /// is needed or accepted by the language). Downstream recovery logic can
 /// destructure freely:
 ///
-/// ```ignore
+/// ```
 /// use jeod_runner::StepError;
 ///
 /// fn handle(err: StepError) {

@@ -254,23 +254,24 @@ pub fn register_jeod_component_types(app: &mut App) {
 ///
 /// # Example
 ///
-/// ```ignore
-/// use bevy_jeod::{JeodPlugin, VehicleConfigBevyExt};
-/// use jeod_sim::recipes::{constants, orbital_elements};
-/// use jeod_sim::{GravityControl, VehicleBuilder};
-/// use jeod_quantities::ext::F64Ext;
+/// ```
+/// use bevy::prelude::*;
+/// use bevy_jeod::{PlanetBundle, VehicleConfigBevyExt};
+/// use jeod_sim::recipes::{constants, orbital_elements, vehicle};
+/// use jeod_sim::{GravityControl, VehicleBuilder, EARTH};
 ///
-/// fn setup(mut commands: Commands) {
-///     let earth = commands.spawn(/* gravity-source bundle */).id();
+/// let mut app = App::new();
+/// app.add_systems(Startup, |mut commands: Commands| {
+///     let earth = commands.spawn(PlanetBundle::point_mass("Earth", &EARTH)).id();
 ///     let cfg = VehicleBuilder::new()
 ///         .from_orbital_elements(orbital_elements::iss(), constants::mu_ggm05c())
-///         .three_dof_point_mass(420_000.0.kg())
+///         .three_dof_point_mass(vehicle::iss_mass())
 ///         .rk4()
 ///         .gravity(GravityControl::new_spherical(0_usize, false))
 ///         .build();
-///     // Resolve source-index 0 to the earth entity.
 ///     cfg.spawn_bevy(&mut commands, &[earth]);
-/// }
+/// });
+/// app.update();
 /// ```
 pub trait VehicleConfigBevyExt {
     /// Spawn a Bevy entity carrying the core components implied by this
