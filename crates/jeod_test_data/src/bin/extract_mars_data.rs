@@ -1,8 +1,7 @@
 //! Extract Mars, Sun, and Moon gravity fixtures from a JEOD source
 //! checkout into `test_data/gravity/`.
 //!
-//! This is a **regen-only** path: it reads `$JEOD_HOME` (or
-//! or an explicit `--jeod-home <PATH>` argument), parses
+//! This is a **regen-only** path: it reads `$JEOD_HOME` or an explicit `--jeod-home <PATH>` argument, parses
 //! `models/environment/gravity/data/src/mars_MRO110B2.cc`,
 //! `models/environment/gravity/data/src/sun_spherical.cc`, and
 //! `models/environment/gravity/data/src/moon_LP150Q.cc`, and writes the

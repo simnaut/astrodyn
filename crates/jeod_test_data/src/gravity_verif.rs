@@ -21,16 +21,35 @@ pub struct GravityTestCase {
     pub gradient: DMat3, // full symmetric matrix
 }
 
-/// Load all gravity test cases from JEOD's verification output file.
+/// Load all gravity test cases from the committed
+/// `test_data/gravity/grav_geospherical_verif_out.txt` fixture.
+///
+/// The fixture is a verbatim copy of JEOD's
+/// `models/environment/gravity/verif/unit_tests/grav_geospherical/data/verif_out.txt`
+/// (40 lines, plain text, diff-friendly). Refresh it via the
+/// `extract_jeod_validation` binary after a JEOD upgrade.
 ///
 /// # Panics
-/// Panics if the file cannot be read or contains malformed data.
-pub fn load_gravity_test_cases(jeod_root: &std::path::Path) -> Vec<GravityTestCase> {
-    let path = jeod_root
-        .join("models/environment/gravity/verif/unit_tests/grav_geospherical/data/verif_out.txt");
-    let content = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
+/// Panics with a fail-loudly diagnostic if the fixture is missing or
+/// malformed; the message includes the regen command.
+pub fn load_gravity_test_cases() -> Vec<GravityTestCase> {
+    let path = crate::tier3_csv::test_data_path("gravity/grav_geospherical_verif_out.txt");
+    let content = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+        panic!(
+            "Cannot read {}: {e}. Regenerate with: cargo run -p jeod_test_data \
+             --bin extract_jeod_validation",
+            path.display(),
+        )
+    });
+    parse_gravity_test_cases_text(&content)
+}
 
+/// Parse the line-oriented `verif_out.txt` content into [`GravityTestCase`]s.
+///
+/// Used by both [`load_gravity_test_cases`] (committed fixture) and
+/// the regen binary (`extract_jeod_validation`) when verifying that
+/// JEOD upstream still matches the committed fixture.
+pub fn parse_gravity_test_cases_text(content: &str) -> Vec<GravityTestCase> {
     let mut cases = Vec::new();
     for line in content.lines() {
         let line = line.trim();

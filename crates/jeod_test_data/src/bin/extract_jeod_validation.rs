@@ -8,6 +8,10 @@
 //! - `models/dynamics/derived_state/verif/unit_tests/euler_derived_state_ut.cc`
 //!   → `test_data/jeod_validation/euler_cases.json` (deduplicated 1-case
 //!   dataset).
+//! - `models/environment/gravity/verif/unit_tests/grav_geospherical/data/verif_out.txt`
+//!   → verbatim copy at `test_data/gravity/grav_geospherical_verif_out.txt`
+//!   (40 lines, plain text; consumed by
+//!   `jeod_test_data::gravity_verif::load_gravity_test_cases`).
 //!
 //! Run after a JEOD upgrade or whenever the source data changes:
 //!
@@ -48,6 +52,24 @@ fn main() {
 
     extract_orbital_vectors(&jeod_root, &out_dir);
     extract_euler_cases(&jeod_root, &out_dir);
+    extract_grav_geospherical_verif_out(&jeod_root, &workspace_root().join("test_data/gravity"));
+}
+
+fn extract_grav_geospherical_verif_out(jeod_root: &Path, out_dir: &Path) {
+    let rel = "models/environment/gravity/verif/unit_tests/grav_geospherical/data/verif_out.txt";
+    let src = jeod_root.join(rel);
+    std::fs::create_dir_all(out_dir)
+        .unwrap_or_else(|e| panic!("Cannot create {}: {e}", out_dir.display()));
+    let dst = out_dir.join("grav_geospherical_verif_out.txt");
+    std::fs::copy(&src, &dst)
+        .unwrap_or_else(|e| panic!("Cannot copy {} -> {}: {e}", src.display(), dst.display()));
+    let bytes = std::fs::metadata(&dst).map(|m| m.len()).unwrap_or(0);
+    println!(
+        "  {} -> {} ({} bytes; verbatim copy)",
+        rel,
+        dst.display(),
+        bytes
+    );
 }
 
 fn extract_orbital_vectors(jeod_root: &Path, out_dir: &Path) {

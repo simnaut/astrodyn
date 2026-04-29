@@ -12,26 +12,19 @@
 //! Tier 3 trajectory cross-validation against propagating JEOD sims lives
 //! in `crates/jeod_runner/tests/tier3_*`.
 //!
-//! Requires the JEOD source tree (via `JEOD_HOME` env var).
+//! Reads from committed fixtures under `test_data/gravity/`; runs without
+//! `$JEOD_HOME` set.
 
 use glam::{DMat3, DVec3};
 use jeod_gravity::SphericalHarmonicsData;
 use jeod_test_data::{
     gravity_fixtures,
     gravity_verif::{load_gravity_test_cases, GravityTestCase},
-    jeod_path,
 };
 
 #[test]
 fn tier2_grav_geospherical_loader() {
-    let root = jeod_path();
-    assert!(
-        root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME.",
-        root.display()
-    );
-
-    let cases = load_gravity_test_cases(&root);
+    let cases = load_gravity_test_cases();
     assert!(!cases.is_empty(), "Expected at least one gravity test case");
     assert_eq!(
         cases.len(),
@@ -62,14 +55,7 @@ fn tier2_grav_geospherical_loader() {
 
 #[test]
 fn tier2_grav_geospherical_laplace() {
-    let root = jeod_path();
-    assert!(
-        root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME.",
-        root.display()
-    );
-
-    let cases = load_gravity_test_cases(&root);
+    let cases = load_gravity_test_cases();
 
     // For all cases with grad_active=true, the gravity gradient tensor
     // should satisfy Laplace's equation: trace(G) ~ 0 outside the body.
@@ -92,14 +78,7 @@ fn tier2_grav_geospherical_laplace() {
 
 #[test]
 fn tier2_grav_geospherical_point_mass_sanity() {
-    let root = jeod_path();
-    assert!(
-        root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME.",
-        root.display()
-    );
-
-    let cases = load_gravity_test_cases(&root);
+    let cases = load_gravity_test_cases();
 
     // Load mu directly from the committed GGM02C fixture (the file JEOD's
     // grav_geospherical test itself references). This matches
@@ -152,14 +131,7 @@ fn tier2_grav_geospherical_point_mass_sanity() {
 
 #[test]
 fn tier2_grav_geospherical_gradient_symmetry() {
-    let root = jeod_path();
-    assert!(
-        root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME.",
-        root.display()
-    );
-
-    let cases = load_gravity_test_cases(&root);
+    let cases = load_gravity_test_cases();
 
     for case in &cases {
         if !case.grad_active {
@@ -240,16 +212,13 @@ fn evaluate_case(data: &SphericalHarmonicsData, case: &GravityTestCase) -> (DVec
 /// positions are directly in planet-fixed coordinates.
 #[test]
 fn tier2_grav_geospherical_full_validation() {
-    let root = jeod_path();
-    assert!(root.exists(), "JEOD source not found at {}", root.display());
-
     // Load GGM02C from the committed fixture (the test was built against
     // GGM02C, not GGM05C).
     let mut data = gravity_fixtures::load_ggm02c();
     // JEOD test overrides tide_free = true (main.cc line 95).
     data.tide_free = true;
 
-    let cases = load_gravity_test_cases(&root);
+    let cases = load_gravity_test_cases();
     assert_eq!(cases.len(), 40);
 
     // JEOD's own regression tolerances: accel 1e-14, potential 100000, gradient 1e-20.

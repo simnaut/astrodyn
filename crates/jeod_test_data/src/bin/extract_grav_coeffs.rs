@@ -1,8 +1,7 @@
 //! Extract spherical-harmonics gravity coefficients from a JEOD source
 //! checkout into committed binary fixtures.
 //!
-//! This is a **regen-only** path: it reads `$JEOD_HOME` (or
-//! or an explicit `--jeod-home <PATH>` argument), parses each
+//! This is a **regen-only** path: it reads `$JEOD_HOME` or an explicit `--jeod-home <PATH>` argument, parses each
 //! `models/environment/gravity/data/src/earth_GGM*.cc` file via
 //! [`jeod_test_data::jeod_cc::load_from_jeod_cc`], and writes
 //! `test_data/gravity/{ggm02c,ggm05c}.bin` using the production

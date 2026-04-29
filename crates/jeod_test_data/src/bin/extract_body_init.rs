@@ -1,8 +1,7 @@
 //! Extract JEOD `Modified_data/*.py` body-initialization vectors into
 //! committed fixtures under `test_data/body_init/<vehicle>.json`.
 //!
-//! This is a **regen-only** path: it reads `$JEOD_HOME` (or
-//! or an explicit `--jeod-home <PATH>` argument), parses the body-init
+//! This is a **regen-only** path: it reads `$JEOD_HOME` or an explicit `--jeod-home <PATH>` argument, parses the body-init
 //! Python files for each scenario, and writes the JSON consumed by
 //! `jeod_test_data::reference_state::*` and
 //! `jeod_test_data::orbital_init::*` at runtime.

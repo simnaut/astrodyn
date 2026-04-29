@@ -1,8 +1,7 @@
 //! Extract `SIM_PFIXPOSN_VERIF` seeds from a JEOD source checkout into
 //! `test_data/planet_pfixposn_seeds.json`.
 //!
-//! This is a **regen-only** path: it reads `$JEOD_HOME` (or
-//! or an explicit `--jeod-home <PATH>` argument), parses the
+//! This is a **regen-only** path: it reads `$JEOD_HOME` or an explicit `--jeod-home <PATH>` argument, parses the
 //! three `add_read` blocks from
 //! `models/utils/planet_fixed/planet_fixed_posn/verif/SIM_PFIXPOSN_VERIF/SET_test/RUN_pfixposn_test/input.py`,
 //! and writes the committed JSON consumed by
