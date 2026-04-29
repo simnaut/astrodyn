@@ -1,3 +1,8 @@
+//! Atmosphere stage: configuration and the per-body
+//! [`evaluate_atmosphere`] / [`evaluate_atmosphere_typed`] orchestration
+//! that converts inertial position to geodetic coordinates and queries
+//! the configured density / temperature / wind model.
+
 use glam::{DMat3, DVec3};
 use jeod_atmosphere::exponential::ExponentialAtmosphere;
 use jeod_atmosphere::met::MetAtmosphere;

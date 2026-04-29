@@ -24,6 +24,7 @@ use crate::sealed::QuatSealed;
 /// Sealed at the type-system level: only `jeod_quantities` can impl
 /// this trait (the seal trait `QuatSealed` is private to the crate).
 pub trait Layout: QuatSealed + 'static {
+    /// Human-readable name (`"ScalarFirst"` or `"ScalarLast"`).
     const NAME: &'static str;
 }
 
@@ -48,6 +49,7 @@ impl Layout for ScalarLast {
 /// Sealed at the type-system level: only `jeod_quantities` can impl
 /// this trait (the seal trait `QuatSealed` is private to the crate).
 pub trait Transform: QuatSealed + 'static {
+    /// Human-readable name (`"LeftTransform"` or `"RightTransform"`).
     const NAME: &'static str;
 }
 
@@ -160,8 +162,11 @@ impl From<DQuat> for Quat<ScalarLast, LeftTransform> {
 #[derive(Debug, thiserror::Error)]
 #[error("quaternion norm {norm} deviates from 1 by {deviation:.3e}, which exceeds tolerance {tolerance:.3e}")]
 pub struct NotNormalized {
+    /// Measured Euclidean norm of the offending quaternion.
     pub norm: f64,
+    /// Absolute deviation `|norm − 1|`.
     pub deviation: f64,
+    /// Tolerance against which `deviation` was checked.
     pub tolerance: f64,
 }
 

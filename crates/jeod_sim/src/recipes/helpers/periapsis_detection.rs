@@ -39,6 +39,9 @@ impl Default for PeriapsisDetector {
 }
 
 impl PeriapsisDetector {
+    /// Construct a fresh detector. The first sample seeds the previous
+    /// radial-rate value; periapsis crossings are reported from the
+    /// second sample onwards.
     pub fn new() -> Self {
         Self {
             prev_rdot: 0.0,

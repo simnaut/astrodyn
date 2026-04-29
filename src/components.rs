@@ -1,3 +1,8 @@
+//! Bevy `Component` newtypes wrapping `jeod_sim` typed siblings (state,
+//! mass, gravity controls, interactions, derived states). Each component
+//! is `#[reflect(opaque, Component)]` so it appears in Bevy's type
+//! registry as a leaf of its `jeod_*` inner type.
+
 use bevy::prelude::*;
 use glam::DVec3;
 use jeod_sim::{
@@ -26,6 +31,10 @@ use jeod_sim::{
 // from an untyped `TranslationalState` switches to
 // `TranslationalStateC::from(state)` without other changes.
 
+/// Inertial translational state (position, velocity, acceleration) for
+/// the body being integrated. Wraps the typed
+/// [`TranslationalStateTyped<Inertial>`] sibling so frame is enforced
+/// at the type level.
 // JEOD_INV: DB.24 — default integrated_frame is composite_body (we integrate composite_body state)
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Default, Reflect)]
 #[reflect(opaque, Component)]
@@ -52,6 +61,8 @@ impl From<TranslationalState> for TranslationalStateC {
     }
 }
 
+/// Rotational state (attitude quaternion + body-frame angular
+/// velocity / acceleration) for the body being integrated.
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
 #[reflect(opaque, Component)]
 pub struct RotationalStateC(pub RotationalStateTyped<SelfRef>);
@@ -80,6 +91,9 @@ impl From<RotationalState> for RotationalStateC {
     }
 }
 
+/// Body mass, center of mass, and inertia tensor (with cached
+/// inverses). Required on any entity that produces a force or torque
+/// requiring acceleration conversion.
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
 #[reflect(opaque, Component)]
 pub struct MassPropertiesC(pub MassPropertiesTyped<SelfRef>);
@@ -104,6 +118,9 @@ impl From<MassProperties> for MassPropertiesC {
     }
 }
 
+/// Per-step gravitational acceleration accumulator, populated by
+/// `gravity_computation_system` and consumed by
+/// `force_collection_system`.
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Default, Reflect)]
 #[reflect(opaque, Component)]
 pub struct GravityAccelerationC(pub GravityAccelerationTyped<Inertial>);
@@ -115,6 +132,9 @@ impl From<GravityAcceleration> for GravityAccelerationC {
     }
 }
 
+/// Per-step accumulator of structure-frame forces / torques
+/// resolved into the inertial frame; consumed by the integration
+/// system.
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Default, Reflect)]
 #[reflect(opaque, Component)]
 pub struct TotalForceC(pub TotalForceTyped<SelfRef, Inertial>);
@@ -126,6 +146,8 @@ impl From<TotalForce> for TotalForceC {
     }
 }
 
+/// Linear and angular accelerations passed to the integrator each
+/// stage. Populated by `force_collection_system`.
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Default, Reflect)]
 #[reflect(opaque, Component)]
 pub struct FrameDerivativesC(pub FrameDerivativesTyped<Inertial, SelfRef>);
@@ -137,6 +159,8 @@ impl From<FrameDerivatives> for FrameDerivativesC {
     }
 }
 
+/// Per-body dynamics flags (translational on, rotational on, three-DOF
+/// override). Required on every dynamic body.
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
 #[reflect(opaque, Component)]
 #[require(FrameDerivativesC)]
@@ -168,11 +192,17 @@ pub struct GaussJacksonStateC(pub jeod_sim::GaussJacksonState);
 #[reflect(opaque, Component)]
 pub struct Abm4StateC(pub jeod_sim::Abm4State);
 
+/// Per-body list of gravity controls keyed by source [`Entity`]. Each
+/// control selects the model (point-mass / spherical-harmonics) and
+/// which body it represents (central, third, etc.).
 #[derive(Component, Debug, Clone, Reflect)]
 #[reflect(opaque, Component)]
 #[require(GravityAccelerationC, TotalForceC)]
 pub struct GravityControlsC(pub GravityControls<Entity>);
 
+/// Gravity source attached to a planet entity (mu plus optional
+/// spherical-harmonics coefficients). Queried by gravity controls
+/// targeting this entity.
 #[derive(Component, Debug, Clone, Deref, DerefMut, Reflect)]
 #[reflect(opaque, Component)]
 pub struct GravitySourceC(pub GravitySource);
@@ -216,7 +246,9 @@ pub struct SourceInertialVelocityC(pub Velocity<Inertial>);
 #[derive(Component, Debug, Clone, Copy, Default, Reflect)]
 #[reflect(opaque, Component)]
 pub struct AerodynamicForceC {
+    /// Force in the body structural frame (N).
     pub force: DVec3,
+    /// Torque about the body structural origin (N·m).
     pub torque: DVec3,
 }
 
@@ -230,7 +262,9 @@ pub struct AerodynamicForceC {
 #[derive(Component, Debug, Clone, Copy, Default, Reflect)]
 #[reflect(opaque, Component)]
 pub struct RadiationForceC {
+    /// Force in the body structural frame (N).
     pub force: DVec3,
+    /// Torque about the body structural origin (N·m).
     pub torque: DVec3,
 }
 
@@ -491,6 +525,7 @@ pub struct PlanetC(pub PlanetShape);
 #[reflect(opaque, Component)]
 #[require(OrbitalElementsC)]
 pub struct OrbitalElementsConfigC {
+    /// Gravity source entity supplying `mu` for the conversion.
     pub gravity_source: Entity,
 }
 
@@ -502,6 +537,7 @@ pub struct OrbitalElementsConfigC {
 #[reflect(opaque, Component)]
 #[require(EulerAnglesC)]
 pub struct EulerAnglesConfigC {
+    /// Euler-angle decomposition convention (e.g., 3-2-1 yaw/pitch/roll).
     pub sequence: jeod_sim::EulerSequence,
 }
 
@@ -515,6 +551,8 @@ pub struct EulerAnglesConfigC {
 #[reflect(opaque, Component)]
 #[require(GeodeticStateC)]
 pub struct GeodeticConfigC {
+    /// Planet entity supplying ellipsoid radii (`PlanetC`) and
+    /// `T_inertial→pfix` (`PlanetFixedRotationC`).
     pub planet: Entity,
 }
 

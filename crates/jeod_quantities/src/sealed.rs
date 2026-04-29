@@ -18,8 +18,24 @@
 //! - `PlanetSealed`: gates `Planet` impls. Same treatment as
 //!   `VehicleSealed`.
 
+/// Sealed-trait bound for [`crate::frame::Frame`] impls. Closed —
+/// downstream crates cannot impl this trait, so they cannot impl
+/// `Frame` either.
 pub trait FrameSealed {}
+/// Sealed-trait bound for [`crate::frame::Vehicle`] impls. Re-exported
+/// via `__macro_support` so the `define_vehicle!` macro can satisfy
+/// the bound from downstream call sites. Convention-sealed: only the
+/// macro should produce impls.
 pub trait VehicleSealed {}
+/// Sealed-trait bound for [`crate::frame::Planet`] impls. Re-exported
+/// via `__macro_support` so the `define_planet!` macro can satisfy the
+/// bound from downstream call sites. Convention-sealed: only the macro
+/// should produce impls.
 pub trait PlanetSealed {}
+/// Sealed-trait bound for [`crate::time_scale::TimeScale`] impls.
+/// Closed — downstream crates cannot impl this trait.
 pub trait TimeScaleSealed {}
+/// Sealed-trait bound for [`crate::quat::Layout`] and
+/// [`crate::quat::Transform`] impls. Closed — the four standing
+/// quaternion conventions are exhaustive.
 pub trait QuatSealed {}

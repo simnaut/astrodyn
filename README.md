@@ -39,7 +39,7 @@ bevy = "0.18"
 bevy_jeod = "0.1"
 ```
 
-```rust
+```rust,no_run
 use bevy::prelude::*;
 use bevy_jeod::prelude::*;
 use bevy_jeod::recipes::{earth, orbital_elements, vehicle};

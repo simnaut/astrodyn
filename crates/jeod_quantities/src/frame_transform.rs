@@ -221,9 +221,15 @@ pub enum FrameTransformError {
     NonFinite,
     /// Determinant is not within `1e-9` of `1.0`. A reflection
     /// (`det ≈ -1`) or a scaling (`|det| ≠ 1`) lands here.
-    DeterminantNotOne { determinant: f64 },
+    DeterminantNotOne {
+        /// The offending determinant value.
+        determinant: f64,
+    },
     /// `M · Mᵀ` differs from identity by more than `1e-9` in any element.
-    NotOrthonormal { drift: f64 },
+    NotOrthonormal {
+        /// Maximum element-wise drift of `M·Mᵀ` from the identity.
+        drift: f64,
+    },
     /// `glam::DQuat::from_mat3` produced a zero quaternion (degenerate input).
     ZeroQuaternion,
 }

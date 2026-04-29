@@ -19,6 +19,7 @@
 //! ```
 
 #![forbid(unsafe_code)]
+#![warn(missing_docs)]
 
 use glam::{DMat3, DVec3};
 

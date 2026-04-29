@@ -1,3 +1,10 @@
+//! Per-body and whole-scenario validation: cross-checks vehicle
+//! configuration, gravity / atmosphere / SRP wiring, integrator
+//! compatibility, and contact-pair consistency. Adapters call
+//! [`validate_body`] before stepping; misconfigurations surface as
+//! [`ValidationError`] variants instead of silently producing bad
+//! physics.
+
 use jeod_dynamics::{DynamicsConfig, MassProperties, TranslationalState};
 use jeod_gravity::{GravityControls, GravitySource};
 
@@ -6,6 +13,12 @@ use jeod_gravity::{GravityControls, GravitySource};
 /// Returned by [`validate_body`] instead of panicking, so callers can decide
 /// how to handle errors. The Bevy adapter wraps these and panics with entity
 /// context; standalone users can log or handle gracefully.
+///
+/// Each variant carries diagnostic context (offending indices, lengths,
+/// detail strings) intended for the [`Display`](std::fmt::Display) impl. The
+/// per-field `usize` payloads are self-explanatory in that context, so the
+/// `#[allow(missing_docs)]` is applied at the enum level.
+#[allow(missing_docs)]
 #[derive(Debug, Clone)]
 pub enum ValidationError {
     /// `GravityControls` present but no gravity acceleration storage.

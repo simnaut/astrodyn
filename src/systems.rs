@@ -1,3 +1,8 @@
+//! Bevy `Systems` that delegate per-body work to `jeod_sim` per-body
+//! orchestration functions. Each system queries the relevant components,
+//! calls into `jeod_sim`, and writes the result back. No physics
+//! algorithms live here.
+
 use bevy::prelude::*;
 use glam::DVec3;
 use jeod_sim::{
@@ -11,6 +16,9 @@ use crate::SimulationTimeR;
 
 // ── Time ──
 
+/// Advance every JEOD-tracked time scale by the Bevy `Time<Fixed>` delta
+/// each step (TAI/UTC/UT1/TDB/TT/GMST). Runs in
+/// [`JeodSet::TimeUpdate`](crate::JeodSet::TimeUpdate).
 // JEOD_INV: TM.03 — time types updated in dependency order (delegates to SimulationTime::advance)
 pub fn time_advance_system(mut sim_time: ResMut<SimulationTimeR>, time: Res<Time<Fixed>>) {
     let dt = time.delta_secs_f64();

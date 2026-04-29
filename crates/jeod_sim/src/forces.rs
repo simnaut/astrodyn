@@ -1,3 +1,7 @@
+//! Force-collection stage: composes per-body external + interaction +
+//! gravity contributions into the integrator's `FrameDerivatives` (linear
+//! and angular accelerations expressed in the integration frame).
+
 use glam::{DMat3, DVec3};
 use jeod_dynamics::forces::{FrameDerivativesTyped, GravityAccelerationTyped, TotalForceTyped};
 use jeod_dynamics::{

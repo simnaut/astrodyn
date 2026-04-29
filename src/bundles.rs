@@ -26,12 +26,20 @@ use crate::components::*;
 /// ```
 #[derive(Bundle)]
 pub struct PlanetBundle {
+    /// Bevy `Name` used for debug output.
     pub name: Name,
+    /// Gravity source (point-mass or spherical-harmonics).
     pub source: GravitySourceC,
+    /// Inertial-frame position of the source (m).
     pub position: SourceInertialPositionC,
+    /// Translational state used by per-step systems.
     pub trans: TranslationalStateC,
+    /// `T_inertial→pfix` rotation, updated each step by
+    /// `planet_fixed_rotation_system` per the chosen [`RotationModelC`].
     pub rotation: PlanetFixedRotationC,
+    /// Selector that drives [`Self::rotation`] each step.
     pub rotation_model: RotationModelC,
+    /// Planet shape (radii, mu, flattening).
     pub shape: PlanetC,
 }
 
@@ -83,12 +91,16 @@ impl PlanetBundle {
 /// ```
 #[derive(Bundle)]
 pub struct SunBundle {
+    /// Bevy `Name`, defaults to `"Sun"`.
     pub name: Name,
+    /// Discriminator queried by SRP / solar-beta / lighting systems.
     pub marker: SunMarker,
+    /// Inertial position used by the same systems.
     pub trans: TranslationalStateC,
 }
 
 impl SunBundle {
+    /// Build a Sun bundle from an inertial translational state.
     pub fn new(state: jeod_sim::TranslationalState) -> Self {
         Self {
             name: Name::new("Sun"),
@@ -115,12 +127,16 @@ impl SunBundle {
 /// ```
 #[derive(Bundle)]
 pub struct MoonBundle {
+    /// Bevy `Name`, defaults to `"Moon"`.
     pub name: Name,
+    /// Discriminator queried by the earth-lighting system.
     pub marker: MoonMarker,
+    /// Inertial position used by the earth-lighting system.
     pub trans: TranslationalStateC,
 }
 
 impl MoonBundle {
+    /// Build a Moon bundle from an inertial translational state.
     pub fn new(state: jeod_sim::TranslationalState) -> Self {
         Self {
             name: Name::new("Moon"),

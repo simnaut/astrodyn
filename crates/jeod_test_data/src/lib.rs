@@ -1,3 +1,57 @@
+//! Shared test-only fixtures, parsers, and verification helpers for the
+//! `bevy_jeod` workspace.
+//!
+//! This crate is the single home for code that reads JEOD source files
+//! (Modified_data Python, S_define text, gravity coefficient C++ headers,
+//! `Leap_Second.dat`, `verif_out.txt`) and Trick CSV/`.bsp` outputs. Every
+//! other crate in the workspace consumes those parsed fixtures through this
+//! crate so the parsing logic exists in exactly one place. Production code
+//! (`jeod_*`, `jeod_sim`, `bevy_jeod`) never depends on this crate — only
+//! tests, examples, and the cross-validation report binaries do.
+//!
+//! ## Top-level modules
+//!
+//! - [`crossval`] — `CrossvalReport` builder used by Tier 3 trajectory tests
+//!   to compute and assert per-component max errors against JEOD CSVs.
+//! - [`gravity_verif`] — parser for JEOD's
+//!   `grav_geospherical/data/verif_out.txt` (40 acceleration / gradient /
+//!   potential test vectors).
+//! - [`tier3_csv`] — generic loader for `log_state_ASCII.csv` Trick logs
+//!   produced by `verif/SIM_*` runs (time, position, velocity, attitude,
+//!   angular velocity columns).
+//! - [`dyncomp_csv`] — typed helpers around the `SIM_dyncomp` family of
+//!   reference CSVs used by the ISS-orbit Tier 3 tests.
+//! - [`apollo_mass_tree`] — fixture wiring for the multi-body Apollo
+//!   `MassTree` used by attach/detach staging tests.
+//! - [`euler_test`] — six-case rotation-matrix → Euler-angle table lifted
+//!   from `euler_derived_state_ut.cc`.
+//! - [`leap_second`], [`time_config`] — JEOD `Leap_Second.dat` and
+//!   time-scale configuration parsers.
+//! - [`mass_data`], [`orbital_data`], [`orbital_init`], [`reference_state`],
+//!   [`s_define`], [`gravity_control`] — Modified_data Python and S_define
+//!   parsers that turn `trick.attach_units(...)` literals into typed Rust
+//!   values.
+//!
+//! ## Binaries
+//!
+//! Two helper binaries live in `src/bin/`:
+//!
+//! - `tier3_report` — runs the full Tier 3 suite, scrapes per-test
+//!   tolerance literals from test source, and emits JSON / Markdown
+//!   cross-validation reports plus an optional baseline freeze
+//!   (`--freeze-baselines`).
+//! - `tier3_baseline_diff` — diffs a fresh report against
+//!   `test_data/baselines.json` to detect baseline drift on
+//!   refactor-only PRs.
+//!
+//! ## Environment
+//!
+//! Every parser that resolves JEOD source paths goes through
+//! [`jeod_path`], which checks `JEOD_PATH` first and then `JEOD_HOME`
+//! (the standard JEOD/Trick convention). [`trick_path`] does the same
+//! for `TRICK_HOME`. Tests that need JEOD source data assert (panic)
+//! when neither variable is set; they never skip silently.
+
 #![forbid(unsafe_code)]
 
 pub use jeod_quantities::prelude::*;

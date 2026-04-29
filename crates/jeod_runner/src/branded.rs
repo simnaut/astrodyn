@@ -108,6 +108,9 @@ pub struct BodyIdx<'sim> {
 }
 
 impl BodyIdx<'_> {
+    /// Strip the `'sim` brand and return the raw `usize` body index that
+    /// `Simulation` uses internally. The result outlives the brand and
+    /// can no longer be checked against the originating `Simulation`.
     #[inline]
     pub fn into_raw(self) -> usize {
         self.raw
