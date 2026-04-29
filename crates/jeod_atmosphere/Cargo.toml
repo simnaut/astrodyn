@@ -12,3 +12,6 @@ repository.workspace = true
 jeod_quantities = { path = "../jeod_quantities", version = "0.1.0" }
 glam = { workspace = true }
 uom = { workspace = true }
+
+[dev-dependencies]
+jeod_test_data = { path = "../jeod_test_data", version = "0.1.0" }
