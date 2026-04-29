@@ -22,6 +22,23 @@ fn eccentricity(mu: f64, position: DVec3, velocity: DVec3) -> f64 {
     e_vec.length()
 }
 
+/// Parse `--steps N` from CLI args; fall back to `default` when absent.
+/// Panics with a clear message on a malformed value (per fail-loudly policy).
+fn parse_steps_arg(default: usize) -> usize {
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
+        if arg == "--steps" {
+            let val = args
+                .next()
+                .expect("--steps requires a value, e.g. --steps 10");
+            return val
+                .parse::<usize>()
+                .unwrap_or_else(|err| panic!("--steps value {val:?} is not a usize: {err}"));
+        }
+    }
+    default
+}
+
 fn main() {
     let mu_earth = constants::mu_ggm05c().value;
     let r_eq = 6_378_137.0;
@@ -53,8 +70,10 @@ fn main() {
 
     let dt = sim.dt;
     let total_time = 86_400.0;
-    let steps = (total_time / dt) as usize;
-    let print_interval = steps / 24;
+    let steps = parse_steps_arg((total_time / dt) as usize);
+    // Guard against `steps < 24` (e.g. CI smoke `--steps 10`) producing a
+    // zero divisor in `step % print_interval`.
+    let print_interval = (steps / 24).max(1);
 
     for step in 0..steps {
         sim.step().expect("step failed");
@@ -77,7 +96,11 @@ fn main() {
     let final_e = eccentricity(mu_earth, final_state.position, final_state.velocity);
     let sma_decay = initial_a - final_a;
 
+    // Derive elapsed time from `steps * dt` so the summary stays accurate
+    // when `--steps` overrides the nominal 24-hour run length.
+    let elapsed_h = steps as f64 * dt / 3600.0;
+
     println!();
     println!("Final: a={:.3} km, e={:.6}", final_a / 1000.0, final_e);
-    println!("SMA decay: {:.1} m over 24h", sma_decay);
+    println!("SMA decay: {sma_decay:.1} m over {elapsed_h:.2}h");
 }

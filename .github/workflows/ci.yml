@@ -21,6 +21,17 @@ jobs:
       - name: Escape-hatch grep guard
         run: scripts/check_no_escape_hatches.sh
 
+  test-examples:
+    name: Smoke run examples
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo run --example kepler_orbit -- --steps 10
+      - run: cargo run --example typed_mission -- --steps 10
+
   test-quantities:
     name: Test (jeod_quantities)
     runs-on: ubuntu-latest
