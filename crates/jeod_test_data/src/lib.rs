@@ -58,12 +58,16 @@ pub use jeod_quantities::prelude::*;
 
 pub mod apollo_mass_tree;
 pub mod atmosphere_verif;
+pub mod body_init_fixtures; // populated by issue #235
 pub mod crossval;
 pub mod dyncomp_csv;
 pub mod euler_test;
 pub mod gravity_control;
+pub mod gravity_fixtures; // populated by issue #234
 pub mod gravity_verif;
+pub mod jeod_cc;
 pub mod leap_second;
+pub mod mars_fixtures; // populated by issue #236
 pub mod mass_data;
 pub mod orbital_data;
 pub mod orbital_init;

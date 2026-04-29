@@ -26,6 +26,7 @@
 //! trait also dispatches on the [`CsvReference`] variant, calling the
 //! matching loader from `jeod_test_data::tier3_csv`.
 
+#[cfg(feature = "jeod-source")]
 pub mod reference_data;
 
 use glam::{DQuat, DVec3};

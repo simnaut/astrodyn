@@ -21,7 +21,7 @@ fn load_mu_sun() -> f64 {
         "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
         jeod_root.display()
     );
-    jeod_sim::coefficients::load_mu_from_jeod_cc(
+    jeod_test_data::jeod_cc::load_mu_from_jeod_cc(
         &jeod_root.join("models/environment/gravity/data/src/sun_spherical.cc"),
     )
     .expect("load Sun mu from sun_spherical")
@@ -83,7 +83,7 @@ fn tier3_simulation_mars_dawn() {
     let jeod_root = jeod_test_data::jeod_path();
     let mro_path = jeod_root.join("models/environment/gravity/data/src/mars_MRO110B2.cc");
     let sh_data =
-        jeod_sim::coefficients::load_from_jeod_cc(&mro_path).expect("load MRO110B2 coefficients");
+        jeod_test_data::jeod_cc::load_from_jeod_cc(&mro_path).expect("load MRO110B2 coefficients");
     let mars_mu = sh_data.mu;
 
     // Dawn epoch: 2009-02-17 23:00:00 UTC

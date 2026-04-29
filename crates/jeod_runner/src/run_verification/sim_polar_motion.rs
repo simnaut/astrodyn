@@ -35,7 +35,7 @@ fn build_run2p_polar_motion(init: &InitialConditions) -> SimulationBuilder {
         jeod_root.display()
     );
 
-    let mu_earth = jeod_sim::coefficients::load_mu_from_jeod_cc(
+    let mu_earth = jeod_test_data::jeod_cc::load_mu_from_jeod_cc(
         &jeod_root.join("models/environment/gravity/data/src/earth_GGM05C.cc"),
     )
     .expect("load Earth mu from GGM05C");

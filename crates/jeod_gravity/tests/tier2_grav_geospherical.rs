@@ -15,10 +15,10 @@
 //! Requires the JEOD source tree (via `JEOD_HOME` or `JEOD_PATH` env var).
 
 use glam::{DMat3, DVec3};
-use jeod_gravity::{coefficients, SphericalHarmonicsData};
+use jeod_gravity::SphericalHarmonicsData;
 use jeod_test_data::{
     gravity_verif::{load_gravity_test_cases, GravityTestCase},
-    jeod_path,
+    jeod_cc, jeod_path,
 };
 use std::path::{Path, PathBuf};
 
@@ -110,8 +110,7 @@ fn tier2_grav_geospherical_point_mass_sanity() {
     // Load mu directly from JEOD GGM02C (the file JEOD's grav_geospherical
     // test itself references). This matches `tier2_grav_geospherical_full_validation`
     // below and avoids a literal duplicate of the JEOD-source value.
-    let data =
-        coefficients::load_from_jeod_cc(&ggm02c_path(&root)).expect("load GGM02C coefficients");
+    let data = jeod_cc::load_from_jeod_cc(&ggm02c_path(&root)).expect("load GGM02C coefficients");
     let mu_earth = data.mu;
 
     for case in &cases {
@@ -252,7 +251,7 @@ fn tier2_grav_geospherical_full_validation() {
     // Load GGM02C (the test was built against GGM02C, not GGM05C).
     let path = ggm02c_path(&root);
     assert!(path.exists(), "GGM02C not found at {}", path.display());
-    let mut data = coefficients::load_from_jeod_cc(&path).expect("load GGM02C coefficients");
+    let mut data = jeod_cc::load_from_jeod_cc(&path).expect("load GGM02C coefficients");
     // JEOD test overrides tide_free = true (main.cc line 95).
     data.tide_free = true;
 
@@ -345,7 +344,7 @@ fn tier2_grav_geospherical_surface_gravity_ggm02c() {
         "GGM02C not found at {}. Requires JEOD source.",
         path.display()
     );
-    let data = coefficients::load_from_jeod_cc(&path).expect("load GGM02C coefficients");
+    let data = jeod_cc::load_from_jeod_cc(&path).expect("load GGM02C coefficients");
 
     // Equatorial surface.
     let pos_eq = DVec3::new(data.radius, 0.0, 0.0);

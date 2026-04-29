@@ -70,7 +70,7 @@ fn setup_run9(
 
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
     let mu_earth =
-        jeod_sim::coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc"))
+        jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc"))
             .expect("load Earth mu");
 
     let mass_init = jeod_test_data::mass_data::load_mass_from_file(

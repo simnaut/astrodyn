@@ -22,11 +22,11 @@ use jeod_sim::recipes::verification::{
     CsvReference, ExtrasComparator, InitialConditions, PreStepClosure, Tolerances, VerificationCase,
 };
 use jeod_sim::{
-    coefficients::load_from_jeod_cc, default_leap_second_table, Ephemeris, EphemerisBody,
-    GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry, JeodQuat,
-    MassProperties, RotationModel, RotationalState, SimulationBuilder, SimulationTime,
-    TranslationalState, VehicleConfig,
+    default_leap_second_table, Ephemeris, EphemerisBody, GravityControl, GravityControls,
+    GravityModel, GravitySource, GravitySourceEntry, JeodQuat, MassProperties, RotationModel,
+    RotationalState, SimulationBuilder, SimulationTime, TranslationalState, VehicleConfig,
 };
+use jeod_test_data::jeod_cc::load_from_jeod_cc;
 use uom::si::f64::Time;
 use uom::si::time::second;
 
@@ -94,10 +94,10 @@ fn build_tide_run01(init: &InitialConditions) -> SimulationBuilder {
     let earth_mu = earth_grav.mu;
     let earth_radius = earth_grav.radius;
     let mu_sun =
-        jeod_sim::coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("sun_spherical.cc"))
+        jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("sun_spherical.cc"))
             .expect("load Sun mu");
     let mu_moon =
-        jeod_sim::coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("moon_GRAIL150.cc"))
+        jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("moon_GRAIL150.cc"))
             .expect("load Moon mu");
 
     let time = dyncomp_time();

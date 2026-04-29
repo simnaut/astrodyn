@@ -9,7 +9,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-jeod_sim = { path = "../jeod_sim", version = "0.1.0" }
+jeod_sim = { path = "../jeod_sim", version = "0.1.0", features = ["jeod-source"] }
 jeod_dynamics = { path = "../jeod_dynamics", version = "0.1.0" }
 jeod_gravity = { path = "../jeod_gravity", version = "0.1.0" }
 jeod_time = { path = "../jeod_time", version = "0.1.0" }

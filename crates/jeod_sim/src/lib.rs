@@ -160,7 +160,10 @@ pub use jeod_frames::rotation_moon;
 // jeod_ephemeris: ephemeris data
 pub use jeod_ephemeris::{Ephemeris, EphemerisBody};
 
-// jeod_gravity: coefficient loading (for test/data infrastructure)
+// jeod_gravity: binary coefficient loading. The JEOD `.cc` source-file
+// parser (`load_from_jeod_cc`, `load_mu_from_jeod_cc`) lives in the
+// dev/test crate `jeod_test_data::jeod_cc` — production gravity does
+// not parse JEOD source.
 pub use jeod_gravity::coefficients;
 pub use jeod_gravity::relativistic;
 

@@ -14,11 +14,12 @@ use jeod_sim::recipes::verification::{
     CsvReference, ExtrasComparator, InitialConditions, Tolerances, VerificationCase,
 };
 use jeod_sim::{
-    coefficients, default_leap_second_table, DerivedStateConfig, EulerSequence, GeodeticConfig,
-    GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry, JeodQuat,
-    MassProperties, RotationModel, RotationalState, SimulationBuilder, SimulationTime,
-    TranslationalState, VehicleConfig, EARTH,
+    default_leap_second_table, DerivedStateConfig, EulerSequence, GeodeticConfig, GravityControl,
+    GravityControls, GravityModel, GravitySource, GravitySourceEntry, JeodQuat, MassProperties,
+    RotationModel, RotationalState, SimulationBuilder, SimulationTime, TranslationalState,
+    VehicleConfig, EARTH,
 };
+use jeod_test_data::jeod_cc as coefficients;
 use uom::si::f64::Time;
 use uom::si::time::second;
 

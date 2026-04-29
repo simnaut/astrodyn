@@ -9,9 +9,8 @@
 
 use glam::DVec3;
 use jeod_dynamics::{rk4_translational_step, TranslationalState};
-use jeod_gravity::coefficients;
 use jeod_math::OrbitalElements;
-use jeod_test_data::jeod_path;
+use jeod_test_data::{jeod_cc, jeod_path};
 use std::f64::consts::PI;
 
 #[test]
@@ -20,7 +19,7 @@ fn j2_nodal_regression_rate() {
     assert!(root.exists(), "JEOD source not found");
 
     let ggm02c_path = root.join("models/environment/gravity/data/src/earth_GGM02C.cc");
-    let sh_data = coefficients::load_from_jeod_cc(&ggm02c_path).expect("load GGM02C coefficients");
+    let sh_data = jeod_cc::load_from_jeod_cc(&ggm02c_path).expect("load GGM02C coefficients");
     let mu = sh_data.mu;
     let r_eq = sh_data.radius;
 

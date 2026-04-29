@@ -15,8 +15,8 @@
 
 use std::path::{Path, PathBuf};
 
-use jeod_gravity::coefficients::load_from_jeod_cc;
 use jeod_gravity::SphericalHarmonicsData;
+use jeod_test_data::jeod_cc::load_from_jeod_cc;
 
 use crate::sources::GravitySourceEntry;
 use crate::{EARTH, MARS, MOON};
