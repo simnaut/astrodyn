@@ -53,6 +53,12 @@ jobs:
   deploy:
     name: Deploy to GitHub Pages
     needs: build
+    # Guard: only main can publish to the live Pages site. `workflow_dispatch`
+    # lets a user pick a non-main branch from the Actions UI, and we don't
+    # want a feature branch to overwrite the published docs with stale
+    # output. The build job above still runs on any branch (useful as a
+    # smoke test); only the deploy step is gated.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
