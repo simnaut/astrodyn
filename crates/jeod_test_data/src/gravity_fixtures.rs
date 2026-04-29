@@ -55,7 +55,7 @@ fn load_fixture(label: &str) -> SphericalHarmonicsData {
     })
 }
 
-/// Load the GGM02C Earth gravity coefficient set (degree=order=160).
+/// Load the GGM02C Earth gravity coefficient set (degree=order=200).
 ///
 /// Equivalent to parsing `models/environment/gravity/data/src/earth_GGM02C.cc`
 /// from a JEOD checkout — but reads the committed binary fixture instead, so
