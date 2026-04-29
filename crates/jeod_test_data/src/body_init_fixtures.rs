@@ -112,12 +112,14 @@ pub struct BodyInitBundle {
 
 /// Load a vehicle's body-init bundle from `test_data/body_init/<vehicle>.json`.
 ///
-/// The result is cached per process; calls after the first are constant-time
-/// `Arc`-clone equivalents (an internal `OnceLock` per vehicle).
+/// The result is cached per process via an internal `OnceLock` per vehicle;
+/// calls after the first are constant-time and return the same shared
+/// `&'static` reference.
 ///
 /// # Panics
-/// Panics if the fixture is missing or malformed; the message names the
-/// regen command per CLAUDE.md "Fail Loudly".
+/// Panics if the fixture is missing or malformed, or if the parsed bundle's
+/// `vehicle` field does not match the requested vehicle. The message names
+/// the regen command per CLAUDE.md "Fail Loudly".
 pub fn load_vehicle_bundle(vehicle: &str) -> &'static BodyInitBundle {
     let cache = bundle_cache(vehicle);
     cache.get_or_init(|| {
@@ -130,13 +132,24 @@ pub fn load_vehicle_bundle(vehicle: &str) -> &'static BodyInitBundle {
                 path.display(),
             )
         });
-        parse_bundle_json(&content).unwrap_or_else(|e| {
+        let bundle = parse_bundle_json(&content).unwrap_or_else(|e| {
             panic!(
                 "Malformed body-init fixture {}: {e}. Regenerate with: \
                  cargo run -p jeod_test_data --bin extract_body_init -- --jeod-home $JEOD_HOME",
                 path.display(),
             )
-        })
+        });
+        assert_eq!(
+            bundle.vehicle,
+            vehicle,
+            "body-init fixture {} contains vehicle {:?} but {:?} was requested. \
+             Regenerate with: cargo run -p jeod_test_data --bin extract_body_init -- \
+             --jeod-home $JEOD_HOME",
+            path.display(),
+            bundle.vehicle,
+            vehicle,
+        );
+        bundle
     })
 }
 
@@ -156,9 +169,24 @@ fn bundle_cache(vehicle: &str) -> &'static OnceLock<BodyInitBundle> {
     }
 }
 
+/// Schema version this code understands. Bumped whenever the on-disk
+/// JSON shape changes in a way the parser cannot accept.
+const EXPECTED_SCHEMA_VERSION: u64 = 1;
+
 /// Hand-rolled JSON parser for a body-init bundle. Mirrors the
 /// no-`serde_json` style of `planet_geodetic_verif.rs`.
 pub(crate) fn parse_bundle_json(s: &str) -> Result<BodyInitBundle, String> {
+    let schema_version = parse_num_field(s, "schema_version")
+        .ok_or_else(|| "missing top-level \"schema_version\" key".to_string())?
+        as u64;
+    if schema_version != EXPECTED_SCHEMA_VERSION {
+        return Err(format!(
+            "unsupported schema_version {schema_version}; this build expects \
+             {EXPECTED_SCHEMA_VERSION}. Regenerate with: cargo run -p jeod_test_data \
+             --bin extract_body_init -- --jeod-home $JEOD_HOME"
+        ));
+    }
+
     let vehicle = parse_str_field(s, "vehicle")
         .ok_or_else(|| "missing top-level \"vehicle\" key".to_string())?;
 
@@ -486,11 +514,27 @@ mod tests {
 
     #[test]
     fn parses_null_reference_inertial() {
-        let json = r#"{"vehicle": "X", "reference_inertial": null,
+        let json = r#"{"schema_version": 1, "vehicle": "X", "reference_inertial": null,
 "orbital_inits": [], "trans_states": []}"#;
         let b = parse_bundle_json(json).unwrap();
         assert!(b.reference_inertial.is_none());
         assert!(b.orbital_inits.is_empty());
         assert!(b.trans_states.is_empty());
+    }
+
+    #[test]
+    fn rejects_missing_schema_version() {
+        let json = r#"{"vehicle": "X", "reference_inertial": null,
+"orbital_inits": [], "trans_states": []}"#;
+        let err = parse_bundle_json(json).unwrap_err();
+        assert!(err.contains("schema_version"), "got: {err}");
+    }
+
+    #[test]
+    fn rejects_unknown_schema_version() {
+        let json = r#"{"schema_version": 999, "vehicle": "X", "reference_inertial": null,
+"orbital_inits": [], "trans_states": []}"#;
+        let err = parse_bundle_json(json).unwrap_err();
+        assert!(err.contains("unsupported schema_version 999"), "got: {err}");
     }
 }

@@ -27,9 +27,11 @@
 //!   `trans_TransState_inertial_body.py`        — direct Cartesian (STS_114 only)
 //!
 //! Scenarios extracted: `ISS`, `STS_114`. Each scenario writes a single
-//! `test_data/body_init/<vehicle>.json` containing every record above
-//! that exists in the JEOD source tree (missing files are skipped without
-//! erroring — not every vehicle defines every record).
+//! `test_data/body_init/<vehicle>.json`. The `reference_inertial` and
+//! `trans_state` files listed in `SCENARIOS` are required and the binary
+//! errors loudly if they are missing (per CLAUDE.md "Fail Loudly"); the
+//! per-orbit `set01/set02/set10/pfix_set01` files are optional and skipped
+//! when absent (not every vehicle defines every orbit form).
 //!
 //! The schema follows the no-`serde_json` style used elsewhere in this
 //! crate (see `planet_geodetic_verif.rs`); the JSON is hand-written and
@@ -211,7 +213,6 @@ fn write_bundle(out: &mut std::fs::File, bundle: &ScenarioBundle) {
         bundle.vehicle,
     )
     .unwrap();
-    writeln!(out, "  \"jeod_version\": \"5.4\",").unwrap();
     writeln!(
         out,
         "  \"note\": \"Body initialization vectors. Regenerate with: cargo run -p jeod_test_data \

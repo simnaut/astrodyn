@@ -110,15 +110,15 @@ pub fn parse_reference_state_py(
 
     let mut arrays: Vec<[f64; 3]> = Vec::new();
     for cap in array_re.captures_iter(content) {
-        let x: f64 = cap[1].parse().map_err(|e| {
-            BodyInitFixtureError::malformed(format!("parse position component: {e}"))
-        })?;
-        let y: f64 = cap[2].parse().map_err(|e| {
-            BodyInitFixtureError::malformed(format!("parse position component: {e}"))
-        })?;
-        let z: f64 = cap[3].parse().map_err(|e| {
-            BodyInitFixtureError::malformed(format!("parse position component: {e}"))
-        })?;
+        let x: f64 = cap[1]
+            .parse()
+            .map_err(|e| BodyInitFixtureError::malformed(format!("parse array component: {e}")))?;
+        let y: f64 = cap[2]
+            .parse()
+            .map_err(|e| BodyInitFixtureError::malformed(format!("parse array component: {e}")))?;
+        let z: f64 = cap[3]
+            .parse()
+            .map_err(|e| BodyInitFixtureError::malformed(format!("parse array component: {e}")))?;
         arrays.push([x, y, z]);
     }
 
