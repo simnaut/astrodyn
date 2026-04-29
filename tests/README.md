@@ -99,12 +99,18 @@ and the regex format the report binary uses to extract literals.
 
 ## Baseline-freeze workflow
 
-`test_data/baselines.json` records frozen per-test, per-component max
-errors. Refactor-only PRs must satisfy:
+`test_data/baselines.json` records the per-test, per-component Tier 3 max
+absolute errors. The snapshot was frozen at Phase 0 of the type-system
+refactor (#101) and every refactor-only phase since (0, 2–6, 9–10) is
+gated on it: a refactor-only PR must not regress past
 
 ```text
-max_error_new <= max(baseline * 1.0 + 1e-12 * |baseline|, 1e-12)
+max_error_new <= max(baseline * 1.0 + 1e-12 * |magnitude|, 1e-12)
 ```
+
+Baselines are **not silently widened**. Loosening a baseline requires a
+PR comment citing the physical justification — a code change that
+legitimately moves the error, not a tolerance papering over a regression.
 
 The check is automated by `crates/jeod_test_data/src/bin/tier3_baseline_diff.rs`:
 
@@ -124,8 +130,13 @@ When a physics change legitimately moves errors, document the reason in
 the PR body and refreeze:
 
 ```bash
+# Run the full Tier 3 suite first (including earth_moon)
+cargo nextest run --workspace -E 'test(tier3_)'
+
+# Refreeze the snapshot
 cargo run -p jeod_test_data --bin tier3_report -- --freeze-baselines
 ```
 
 Commit the updated `test_data/baselines.json` and `test_data/baselines.md`
-together. See CLAUDE.md "Baseline freeze" for the full policy.
+together — `baselines.md` is the human-readable companion produced by the
+same binary.
