@@ -25,21 +25,10 @@ Copy `.cargo/config.toml.example` to `.cargo/config.toml` and set `JEOD_HOME`
 and `TRICK_HOME` to your local checkouts. Cargo resolves `relative = true`
 paths from the workspace root.
 
-`JEOD_HOME` (or `JEOD_PATH`) points at a JEOD source checkout. The bulk
-of `cargo test` runs without it — Tier 1, Bevy parity, and most of Tier 2
-read committed fixtures under `test_data/` (per the #232 migration). It
-is required for:
-
-- All Tier 3 trajectory tests (`tier3_*`) — initial conditions still come
-  from `Modified_data/*.py`.
-- The data-regeneration binaries (`crates/jeod_test_data/src/bin/extract_*.rs`,
-  `cargo xtask regenerate-tier3`).
-- A small set of Tier 2 / validation tests pending migration — see
-  `tests/README.md` "When you need `JEOD_HOME`" for the current list.
-
-Without `JEOD_HOME`, those tests panic with a descriptive error; the
-rest of the suite runs unaffected. CI fences this in the
-`test-no-jeod-home` job.
+`JEOD_HOME` (or `JEOD_PATH`) is required for any test that loads JEOD source
+files (gravity coefficients, mass data, S_define parameters). Without it,
+unit tests and Bevy parity tests pass but Tier 3 cross-validation tests
+that reference JEOD data will panic with a descriptive error.
 
 ## Three-Layer Architecture (non-negotiable)
 
@@ -295,17 +284,14 @@ cargo nextest run -p jeod_runner --test tier3_sim_dyncomp_run2  # single Tier 3 
 Plain `cargo test` also works but runs tests serially per binary:
 
 ```bash
-cargo test --workspace                          # all tests (needs JEOD_HOME for Tier 3 + holdouts)
-cargo test --workspace -- --skip tier3_         # unit + tier 2 (most tests run without JEOD_HOME)
+cargo test --workspace                          # all tests (needs JEOD_HOME or JEOD_PATH)
+cargo test --workspace -- --skip tier3_         # unit + tier 2
 JEOD_HOME=../jeod cargo test                    # explicit path
 ```
 
-`JEOD_HOME` (or `JEOD_PATH`) points at the JEOD source checkout and
-follows the standard JEOD/Trick convention. It is required only for
-Tier 3 tests, the `extract_*` regeneration binaries, and the small
-holdout list in `tests/README.md` "When you need `JEOD_HOME`" — the
-bulk of the suite runs without it (CI fences this in
-`test-no-jeod-home`).
+Set `JEOD_HOME` (or `JEOD_PATH`) to the JEOD source checkout.
+`JEOD_HOME` and `TRICK_HOME` follow the standard JEOD/Trick environment
+variable conventions.
 
 **Before every commit**, run the same checks CI runs:
 

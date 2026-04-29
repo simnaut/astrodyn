@@ -100,13 +100,8 @@ cargo nextest run --workspace -E 'not test(tier3_)'   # fast: Tier 1 + 2
 cargo nextest run --workspace -E 'test(tier3_)'       # Tier 3
 ```
 
-`JEOD_HOME` (or `JEOD_PATH`) points at a JEOD source checkout. The bulk
-of `cargo test` runs without it — Tier 1 and most of Tier 2 read
-committed fixtures under `test_data/`. It is required for Tier 3
-trajectory tests, the `extract_*` regeneration binaries, and a small
-set of Tier 2 / validation tests pending migration (see
-[`tests/README.md`](tests/README.md) "When you need `JEOD_HOME`").
-See [`CLAUDE.md`](CLAUDE.md) for the full build and test workflow.
+Set `JEOD_HOME` to a JEOD source checkout for tests that load JEOD data
+files. See [`CLAUDE.md`](CLAUDE.md) for the full build and test workflow.
 
 ## Documentation
 
