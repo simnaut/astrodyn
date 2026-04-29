@@ -81,6 +81,23 @@ pub mod time_config;
 ///
 /// Checks `JEOD_PATH` first, then `JEOD_HOME` (standard JEOD/Trick convention).
 /// Returns a path that may or may not exist — callers should check `.exists()`.
+///
+/// # When this is needed
+///
+/// Most of the workspace runs without `JEOD_HOME`/`JEOD_PATH` thanks to the
+/// committed fixtures under `test_data/` (see #232 wave migrations). The
+/// remaining live-source readers are:
+///
+/// - The data-regeneration binaries under
+///   `crates/jeod_test_data/src/bin/extract_*.rs` and the
+///   `cargo xtask regenerate-tier3` workflow.
+/// - All `tier3_*` trajectory tests (their initial conditions still come
+///   from JEOD `Modified_data/*.py` files).
+/// - A small set of Tier 2 / validation tests pending migration — tracked
+///   in `tests/README.md` "When you need `JEOD_HOME`".
+///
+/// Prefer a committed fixture under `test_data/` over a new caller of
+/// this function whenever the data source is small and stable.
 pub fn jeod_path() -> std::path::PathBuf {
     if let Ok(p) = std::env::var("JEOD_PATH") {
         return std::path::PathBuf::from(p);

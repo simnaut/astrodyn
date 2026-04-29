@@ -10,6 +10,37 @@ For tolerance mechanics and CI lane definitions, see CLAUDE.md
 "Cross-validation tolerances" and "Test tiers and CI" — this file does not
 duplicate those sections.
 
+## When you need `JEOD_HOME`
+
+Most of the suite runs without a JEOD source checkout, thanks to the
+committed fixtures under `test_data/` (the #232 migration waves). Only
+these targets require `JEOD_HOME` (or `JEOD_PATH`) today:
+
+- **Tier 3 trajectory tests** — every `tier3_*` test reads its initial
+  conditions from `Modified_data/*.py` files in JEOD source.
+- **Data-regeneration binaries** —
+  `crates/jeod_test_data/src/bin/extract_*.rs` and
+  `cargo xtask regenerate-tier3`.
+- **Tier 2 / validation holdouts pending migration** (the residual set;
+  fence on these in CI is the `test-no-jeod-home` job in
+  `.github/workflows/ci.yml` — when one migrates, drop its
+  `not test(...)` clause):
+  - `crates/jeod_gravity/tests/tier2_grav_geospherical.rs` — reads
+    `models/environment/gravity/verif/.../verif_out.txt`.
+  - `crates/jeod_math/tests/jeod_validation.rs` — `validate_euler_*`
+    and `validate_orbital_data_parser` /
+    `validate_orbital_roundtrip_5000_vectors` read JEOD `.cc` reference
+    vectors directly.
+  - `crates/jeod_test_data/src/{leap_second.rs,mass_data.rs}` unit
+    tests (`leap_second_parser_spot_check`,
+    `mass_parser_iss_spot_check`) read `Leap_Second.dat` and the
+    ISS mass `.py`.
+
+Adding a new test that reads JEOD source live is a deliberate choice:
+prefer committing the data under `test_data/` whenever the source is
+small and stable. The `jeod_test_data::jeod_path()` rustdoc sketches
+the same guidance.
+
 ## Naming conventions
 
 Test discovery and CI filtering rely on filename and function-name prefixes.

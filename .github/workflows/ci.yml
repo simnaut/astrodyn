@@ -86,6 +86,33 @@ jobs:
             exit 1
           fi
 
+  test-no-jeod-home:
+    # Fences regression on the bulk of unit + Tier 2 tests being independent
+    # of a live JEOD source checkout (#232 / #239). Runs the suite with
+    # JEOD_HOME and JEOD_PATH explicitly absent, excluding the small set of
+    # tests still pending migration to committed fixtures (see
+    # tests/README.md "When you need JEOD_HOME"). When a holdout migrates,
+    # remove its `not test(...)` clause below.
+    name: Test (no JEOD_HOME)
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@nextest
+      - name: Run unit + Tier 2 tests with JEOD_HOME absent
+        run: |
+          cargo nextest run --workspace -E '
+            not test(tier3_)
+            and not test(tier2_grav_geospherical)
+            and not test(validate_euler)
+            and not test(validate_orbital_data)
+            and not test(validate_orbital_roundtrip)
+            and not test(leap_second_parser_spot_check)
+            and not test(mass_parser_iss_spot_check)
+          '
+
   test:
     name: Test (unit + tier 2)
     runs-on: ubuntu-latest
