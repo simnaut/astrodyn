@@ -23,12 +23,12 @@ use jeod_sim::recipes::verification::{
     CsvReference, InitialConditions, PreStepClosure, Tolerances, VerificationCase,
 };
 use jeod_sim::{
-    coefficients::load_mu_from_jeod_cc, default_leap_second_table, Ephemeris, EphemerisBody,
-    FlatPlate, FlatPlateParams, FlatPlateState, FlatPlateThermal, GravityControl, GravityControls,
-    GravityModel, GravitySource, GravitySourceEntry, MassProperties, RotationModel, ShadowBody,
-    SimulationBuilder, SimulationTime, SrpModel, ThermalIntegrationOrder, TranslationalState,
-    VehicleConfig, EARTH,
+    default_leap_second_table, Ephemeris, EphemerisBody, FlatPlate, FlatPlateParams,
+    FlatPlateState, FlatPlateThermal, GravityControl, GravityControls, GravityModel, GravitySource,
+    GravitySourceEntry, MassProperties, RotationModel, ShadowBody, SimulationBuilder,
+    SimulationTime, SrpModel, ThermalIntegrationOrder, TranslationalState, VehicleConfig, EARTH,
 };
+use jeod_test_data::jeod_cc::load_mu_from_jeod_cc;
 use uom::si::f64::Time;
 use uom::si::time::second;
 

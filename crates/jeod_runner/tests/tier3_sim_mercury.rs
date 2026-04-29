@@ -25,7 +25,7 @@ fn load_mu_sun() -> f64 {
         "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
         jeod_root.display()
     );
-    jeod_sim::coefficients::load_mu_from_jeod_cc(
+    jeod_test_data::jeod_cc::load_mu_from_jeod_cc(
         &jeod_root.join("models/environment/gravity/data/src/sun_spherical.cc"),
     )
     .expect("load Sun mu from sun_spherical")

@@ -28,11 +28,11 @@ use jeod_sim::recipes::verification::{
     CsvReference, InitialConditions, PreStepClosure, Tolerances, VerificationCase,
 };
 use jeod_sim::{
-    coefficients, default_leap_second_table, Ephemeris, EphemerisBody, GravityControl,
-    GravityControls, GravityModel, GravitySource, GravitySourceEntry, MassProperties,
-    RotationModel, RotationalState, SimulationBuilder, SimulationTime, TranslationalState,
-    VehicleConfig,
+    default_leap_second_table, Ephemeris, EphemerisBody, GravityControl, GravityControls,
+    GravityModel, GravitySource, GravitySourceEntry, MassProperties, RotationModel,
+    RotationalState, SimulationBuilder, SimulationTime, TranslationalState, VehicleConfig,
 };
+use jeod_test_data::jeod_cc as coefficients;
 use uom::si::f64::Time;
 use uom::si::time::second;
 

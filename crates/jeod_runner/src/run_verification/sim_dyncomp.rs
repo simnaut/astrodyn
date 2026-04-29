@@ -17,11 +17,12 @@ use jeod_sim::recipes::verification::{
     CsvReference, InitialConditions, PreStepClosure, Tolerances, VerificationCase,
 };
 use jeod_sim::{
-    coefficients::load_from_jeod_cc, default_leap_second_table, AtmosphereConfig, AtmosphereModel,
-    DragConfig, Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel,
-    GravitySource, GravitySourceEntry, JeodQuat, MassProperties, MetAtmosphere, RotationModel,
-    RotationalState, SimulationBuilder, SimulationTime, TranslationalState, VehicleConfig, EARTH,
+    default_leap_second_table, AtmosphereConfig, AtmosphereModel, DragConfig, Ephemeris,
+    EphemerisBody, GravityControl, GravityControls, GravityModel, GravitySource,
+    GravitySourceEntry, JeodQuat, MassProperties, MetAtmosphere, RotationModel, RotationalState,
+    SimulationBuilder, SimulationTime, TranslationalState, VehicleConfig, EARTH,
 };
+use jeod_test_data::jeod_cc::load_from_jeod_cc;
 use uom::si::f64::Time;
 use uom::si::time::second;
 
@@ -441,10 +442,10 @@ fn build_run4_3rd_body(init: &InitialConditions) -> SimulationBuilder {
     let earth_grav =
         load_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc")).expect("load Earth gravity");
     let mu_sun =
-        jeod_sim::coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("sun_spherical.cc"))
+        jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("sun_spherical.cc"))
             .expect("load Sun mu");
     let mu_moon =
-        jeod_sim::coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("moon_GRAIL150.cc"))
+        jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("moon_GRAIL150.cc"))
             .expect("load Moon mu");
 
     // Initial Sun/Moon positions at the dyncomp epoch — re-queried each
@@ -592,10 +593,10 @@ pub fn build_battin_3rd_body(init: &InitialConditions, battin: bool) -> BattinSc
     let earth_grav =
         load_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc")).expect("load Earth gravity");
     let mu_sun =
-        jeod_sim::coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("sun_spherical.cc"))
+        jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("sun_spherical.cc"))
             .expect("load Sun mu");
     let mu_moon =
-        jeod_sim::coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("moon_GRAIL150.cc"))
+        jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("moon_GRAIL150.cc"))
             .expect("load Moon mu");
 
     // Initial Sun/Moon state at the dyncomp epoch — refreshed each step
@@ -712,10 +713,10 @@ fn build_run7(
     let earth_grav =
         load_from_jeod_cc(&grav_data_dir.join("earth_GGM02C.cc")).expect("load Earth GGM02C");
     let mu_sun =
-        jeod_sim::coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("sun_spherical.cc"))
+        jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("sun_spherical.cc"))
             .expect("load Sun mu");
     let mu_moon =
-        jeod_sim::coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("moon_GRAIL150.cc"))
+        jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("moon_GRAIL150.cc"))
             .expect("load Moon mu");
 
     let time = dyncomp_time();
@@ -922,7 +923,7 @@ fn build_run5(init: &InitialConditions, case: &str) -> SimulationBuilder {
     let jeod = jeod_root();
     let sim_dir = jeod.join(SIM_DYNCOMP);
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
-    let mu_earth = jeod_sim::coefficients::load_mu_from_jeod_cc(
+    let mu_earth = jeod_test_data::jeod_cc::load_mu_from_jeod_cc(
         &jeod.join("models/environment/gravity/data/src/earth_GGM05C.cc"),
     )
     .expect("load Earth mu");
@@ -1220,7 +1221,7 @@ fn build_run5a_met(init: &InitialConditions) -> SimulationBuilder {
     let jeod = jeod_root();
     let sim_dir = jeod.join(SIM_DYNCOMP);
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
-    let mu_earth = jeod_sim::coefficients::load_mu_from_jeod_cc(
+    let mu_earth = jeod_test_data::jeod_cc::load_mu_from_jeod_cc(
         &jeod.join("models/environment/gravity/data/src/earth_GGM05C.cc"),
     )
     .expect("load Earth mu");
@@ -1292,7 +1293,7 @@ fn build_run6b_aero_traj(init: &InitialConditions, t_struct_body: DMat3) -> Simu
     let jeod = jeod_root();
     let sim_dir = jeod.join(SIM_DYNCOMP);
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
-    let mu_earth = jeod_sim::coefficients::load_mu_from_jeod_cc(
+    let mu_earth = jeod_test_data::jeod_cc::load_mu_from_jeod_cc(
         &jeod.join("models/environment/gravity/data/src/earth_GGM05C.cc"),
     )
     .expect("load Earth mu");

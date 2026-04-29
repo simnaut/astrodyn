@@ -26,7 +26,18 @@
 //! trait also dispatches on the [`CsvReference`] variant, calling the
 //! matching loader from `jeod_test_data::tier3_csv`.
 
+#[cfg(feature = "jeod-source")]
+#[path = "reference_data.rs"]
 pub mod reference_data;
+
+/// Stub `reference_data` module used when JEOD-source-backed loaders are
+/// unavailable.
+///
+/// Keeps the public `verification::reference_data` path present for
+/// rustdoc and intra-doc links in builds that do not enable the
+/// `jeod-source` feature.
+#[cfg(not(feature = "jeod-source"))]
+pub mod reference_data {}
 
 use glam::{DQuat, DVec3};
 use uom::si::f64::Time;

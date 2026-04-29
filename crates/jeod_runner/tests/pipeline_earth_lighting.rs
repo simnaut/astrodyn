@@ -38,7 +38,7 @@ fn pipeline_earth_lighting_smoke() {
 
     let grav_data_dir = jeod_root.join("models/environment/gravity/data/src");
     let mu_earth =
-        jeod_sim::coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc"))
+        jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc"))
             .expect("load Earth mu");
 
     let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());

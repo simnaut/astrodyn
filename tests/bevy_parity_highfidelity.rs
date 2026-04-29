@@ -35,7 +35,7 @@ fn tier3_bevy_sh4x4_rnp() {
         "GGM02C coefficients not found at {}",
         ggm02c_path.display()
     );
-    let sh_data = jeod_sim::coefficients::load_from_jeod_cc(&ggm02c_path).expect("load GGM02C");
+    let sh_data = jeod_test_data::jeod_cc::load_from_jeod_cc(&ggm02c_path).expect("load GGM02C");
     let mu = sh_data.mu;
 
     let sh_source = GravitySource {
@@ -125,7 +125,7 @@ fn tier3_bevy_tidal_sh4x4() {
         "GGM02C coefficients not found at {}",
         ggm02c_path.display()
     );
-    let sh_data = jeod_sim::coefficients::load_from_jeod_cc(&ggm02c_path).expect("load GGM02C");
+    let sh_data = jeod_test_data::jeod_cc::load_from_jeod_cc(&ggm02c_path).expect("load GGM02C");
     let mu = sh_data.mu;
     let radius = sh_data.radius;
 

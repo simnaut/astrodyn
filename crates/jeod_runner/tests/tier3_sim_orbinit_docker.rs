@@ -101,7 +101,7 @@ fn assert_orbinit_match(
 ) {
     let grav_data_dir = jeod_root.join("models/environment/gravity/data/src");
     let mu_earth =
-        jeod_sim::coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc"))
+        jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc"))
             .expect("load Earth mu from earth_GGM05C.cc");
 
     // Load JEOD orbital elements input (from input.py -> Modified_data/*.py).

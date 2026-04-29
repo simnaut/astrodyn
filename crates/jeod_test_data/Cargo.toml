@@ -10,6 +10,12 @@ repository.workspace = true
 
 [dependencies]
 jeod_quantities = { path = "../jeod_quantities", version = "0.1.0" }
+# `jeod_gravity` is a one-way dep here so the `jeod_cc` parser can return
+# `SphericalHarmonicsData`. `jeod_gravity` itself does NOT depend on
+# `jeod_test_data` (would be a cycle); the production crate is unaware
+# the parser exists.
+jeod_gravity = { path = "../jeod_gravity", version = "0.1.0" }
 glam = { workspace = true }
 regex = "1"
+thiserror = { workspace = true }
 uom = { workspace = true }

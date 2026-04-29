@@ -29,7 +29,7 @@ fn load_mu_earth() -> f64 {
         "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
         jeod_root.display()
     );
-    jeod_sim::coefficients::load_mu_from_jeod_cc(
+    jeod_test_data::jeod_cc::load_mu_from_jeod_cc(
         &jeod_root.join("models/environment/gravity/data/src/earth_GGM05C.cc"),
     )
     .expect("load Earth mu from GGM05C")
@@ -42,7 +42,7 @@ fn load_mu_sun() -> f64 {
         "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
         jeod_root.display()
     );
-    jeod_sim::coefficients::load_mu_from_jeod_cc(
+    jeod_test_data::jeod_cc::load_mu_from_jeod_cc(
         &jeod_root.join("models/environment/gravity/data/src/sun_spherical.cc"),
     )
     .expect("load Sun mu from sun_spherical")
@@ -119,7 +119,7 @@ fn tier3_simulation_earth_moon_clem() {
     let jeod_root = jeod_test_data::jeod_path();
     let lp150q_path = jeod_root.join("models/environment/gravity/data/src/moon_LP150Q.cc");
     let sh_data =
-        jeod_sim::coefficients::load_from_jeod_cc(&lp150q_path).expect("load LP150Q coefficients");
+        jeod_test_data::jeod_cc::load_from_jeod_cc(&lp150q_path).expect("load LP150Q coefficients");
     let moon_mu = sh_data.mu;
 
     // Moon rotation from DE421 BPC libration data, updated per step.
