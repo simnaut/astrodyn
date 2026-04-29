@@ -1,3 +1,37 @@
+//! Time scales, leap seconds, calendar dates, and the time manager.
+//!
+//! Pure-Rust port of JEOD's `models/environment/time/`. The crate models the
+//! standard astronomical and engineering time scales (TAI, UTC, UT1, TT,
+//! TDB, GPS, GMST), the leap-second table that ties UTC to TAI, and the
+//! per-simulation user-defined epoch (UDE) and mission-elapsed time (MET)
+//! that mission code typically logs against.
+//!
+//! ## Public surface
+//!
+//! - [`TimeManager`] and [`TimeScaleId`] — the orchestrator that owns the
+//!   currently registered time scales and answers conversions between
+//!   them. Mirrors JEOD's `TimeManager`.
+//! - [`SimulationTime`] — the resource the integration loop advances each
+//!   step; downstream consumers (gravity, ephemeris, atmosphere) read from
+//!   it rather than tracking their own clocks.
+//! - [`DynamicTime`] — the dynamics-frame time state passed through the
+//!   integrator.
+//! - [`LeapSecondTable`] — parser/lookup for JEOD's
+//!   `models/environment/time/data/Leap_Second.dat`. Required for any
+//!   simulation that hits a UTC↔TAI conversion.
+//! - **Calendar / epoch types**: [`CalendarDate`] and [`UTC_EPOCH_TAI_TJT`]
+//!   from [`time_utc`], [`UserDefinedEpoch`] from [`time_ude`],
+//!   [`MissionElapsedTime`] from [`time_met`], [`GpsTimeComponents`] and
+//!   [`TAI_GPS_OFFSET`] from [`time_gps`], plus the [`epoch`] module.
+//! - **Per-pair time converters**: [`time_converter_tai_tdb`],
+//!   [`time_converter_tai_tt`], and [`time_converter_ut1_gmst`] each port
+//!   one of JEOD's `TimeConverter_*` classes. GMST in particular drives
+//!   Earth's body-fixed rotation in `jeod_frames`.
+//!
+//! JEOD source: `models/environment/time/` (and the
+//! `models/environment/time/data/` subdirectory for `Leap_Second.dat`). Pure
+//! Rust, zero Bevy dependency.
+
 #![forbid(unsafe_code)]
 
 pub use jeod_quantities::prelude::*;

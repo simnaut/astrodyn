@@ -1,3 +1,33 @@
+//! Rigid-body dynamics: state, mass properties, forces, and integration.
+//!
+//! This crate is the JEOD-faithful port of the dynamics half of
+//! `models/dynamics/`. It owns the per-vehicle state types
+//! ([`TranslationalState`], [`RotationalState`], [`SixDofState`]), the rigid-
+//! body mass model ([`MassProperties`], [`MassBody`], [`MassPoint`],
+//! [`MassTree`], [`point_mass_inertia`]), the force-collection pipeline
+//! ([`collect_forces`], [`ForceContributions`], [`TotalForce`],
+//! [`GravityAcceleration`], [`compute_translational_acceleration`],
+//! [`compute_translational_derivatives`], [`compute_frame_derivatives`],
+//! [`compute_t_inertial_struct`]), and a battery of integrators
+//! ([`rk4_translational_step`], [`rk4_sixdof_step`], adaptive RKF4(5) in
+//! [`rkf45`], multistep [`abm4`]/Adams–Bashforth–Moulton, and
+//! [`gauss_jackson`]).
+//!
+//! Initial-condition machinery in [`body_init`] mirrors JEOD's
+//! `BodyAction` subclasses: [`init_from_orbital_elements`],
+//! [`init_from_mean_anomaly`], [`init_from_time_periapsis`],
+//! [`init_from_lvlh`], [`init_from_ned`], and [`compute_ned_rotation`].
+//! Frame propagation lives in [`propagation`]: [`propagate_body_frames`],
+//! [`propagate_forward`], [`propagate_reverse`]. Holonomic constraints
+//! ([`HolonomicConstraint`], [`PendulumConstraint`], [`BaumgarteSolver`],
+//! [`apply_constraint`]) port the constraint-stabilization layer used by
+//! tethers and articulated structures.
+//!
+//! JEOD source: `models/dynamics/dyn_body/`, `models/dynamics/mass/`,
+//! `models/dynamics/body_action/`, and `models/utils/integration/`. Pure
+//! Rust, zero Bevy dependency — orchestration lives in `jeod_sim` and ECS
+//! wiring lives in the `bevy_jeod` root crate.
+
 #![forbid(unsafe_code)]
 
 pub mod abm4;
