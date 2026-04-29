@@ -32,7 +32,6 @@ use jeod_sim::{
     GravityModel, GravitySource, GravitySourceEntry, MassProperties, RotationModel,
     RotationalState, SimulationBuilder, SimulationTime, TranslationalState, VehicleConfig,
 };
-use jeod_test_data::jeod_cc as coefficients;
 use uom::si::f64::Time;
 use uom::si::time::second;
 
@@ -132,12 +131,13 @@ fn build_torque_simple(init: &InitialConditions, cfg: RunConfig) -> SimulationBu
     let grav_data_dir = jeod.join("models/environment/gravity/data/src");
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
 
-    let earth_grav = coefficients::load_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc"))
-        .expect("load Earth GGM05C");
-    let mu_sun = coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("sun_spherical.cc"))
-        .expect("load Sun mu");
-    let mu_moon = coefficients::load_mu_from_jeod_cc(&grav_data_dir.join("moon_GRAIL150.cc"))
-        .expect("load Moon mu");
+    // Earth GGM05C SH and Sun mu from committed fixtures (Wave 1 of #232);
+    // Moon GRAIL150 has no fixture yet, loaded from JEOD source.
+    let earth_grav = jeod_test_data::gravity_fixtures::load_ggm05c();
+    let mu_sun = jeod_test_data::mars_fixtures::load_sun_spherical_mu();
+    let mu_moon =
+        jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("moon_GRAIL150.cc"))
+            .expect("load Moon mu");
 
     let needs_pfix = cfg.earth_nonspherical || cfg.gradient_degree > 0;
     let earth_source = if needs_pfix {

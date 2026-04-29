@@ -13,7 +13,7 @@
 //! rotation data as standalone Rust assets is tracked as a separate
 //! follow-up issue.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use jeod_gravity::SphericalHarmonicsData;
 use jeod_test_data::jeod_cc::load_from_jeod_cc;
@@ -52,25 +52,16 @@ fn load_grav_cc(file: &str) -> SphericalHarmonicsData {
 }
 
 fn jeod_grav_data(file: &str) -> PathBuf {
-    jeod_path()
+    // Routes through `jeod_test_data::jeod_path()` (the canonical
+    // JEOD-source resolver in this workspace) instead of the previous
+    // duplicate copy that lived here. Wave 2 of #232 collapsed the two
+    // helpers into one. `jeod_test_data::jeod_path()` prefers
+    // `JEOD_PATH` over `JEOD_HOME` and returns a sentinel path when
+    // neither is set; downstream callers (e.g. `load_grav_cc`) surface
+    // the resulting I/O error from `load_from_jeod_cc`'s `Result` via
+    // `unwrap_or_else`, panicking with a "Set JEOD_HOME or JEOD_PATH"
+    // diagnostic identical in spirit to the original behaviour.
+    jeod_test_data::jeod_path()
         .join("models/environment/gravity/data/src")
         .join(file)
-}
-
-/// Resolve `$JEOD_HOME` or `$JEOD_PATH`. Panics with a helpful message
-/// if neither is set — verification cases require JEOD source data and
-/// must not silently skip.
-pub fn jeod_path() -> PathBuf {
-    if let Ok(p) = std::env::var("JEOD_HOME") {
-        Path::new(&p).to_path_buf()
-    } else if let Ok(p) = std::env::var("JEOD_PATH") {
-        Path::new(&p).to_path_buf()
-    } else {
-        panic!(
-            "JEOD_HOME / JEOD_PATH not set. Verification reference loaders \
-             require a JEOD source checkout. Clone https://github.com/nasa/jeod \
-             alongside this repo and set JEOD_HOME=../jeod (or copy \
-             .cargo/config.toml.example to .cargo/config.toml)."
-        )
-    }
 }

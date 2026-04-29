@@ -26,20 +26,17 @@ use uom::si::time::second;
 const SIM_PLANETARY: &str = "models/dynamics/derived_state/verif/SIM_Planetary";
 
 fn load_mu_earth() -> f64 {
+    // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
+    jeod_test_data::gravity_fixtures::load_ggm05c().mu
+}
+
+fn build_planetary(init: &InitialConditions) -> SimulationBuilder {
     let jeod_root = jeod_test_data::jeod_path();
     assert!(
         jeod_root.exists(),
         "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
         jeod_root.display()
     );
-    jeod_test_data::jeod_cc::load_mu_from_jeod_cc(
-        &jeod_root.join("models/environment/gravity/data/src/earth_GGM05C.cc"),
-    )
-    .expect("load Earth mu from GGM05C")
-}
-
-fn build_planetary(init: &InitialConditions) -> SimulationBuilder {
-    let jeod_root = jeod_test_data::jeod_path();
     let dt =
         jeod_test_data::s_define::load_dynamics_dt(&jeod_root.join(SIM_PLANETARY).join("S_define"));
     let mu_earth = load_mu_earth();

@@ -34,7 +34,6 @@ use jeod_sim::{
     GravityControls, GravityModel, GravitySource, GravitySourceEntry, RotationModel,
     SimulationBuilder, SimulationTime, TranslationalState, VehicleConfig,
 };
-use jeod_test_data::jeod_cc as coefficients;
 use uom::si::f64::Time;
 use uom::si::time::second;
 
@@ -75,11 +74,8 @@ fn bsp_path() -> PathBuf {
 }
 
 fn load_mu_earth() -> f64 {
-    let jeod = jeod_root();
-    coefficients::load_mu_from_jeod_cc(
-        &jeod.join("models/environment/gravity/data/src/earth_GGM05C.cc"),
-    )
-    .expect("load Earth mu from GGM05C")
+    // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
+    jeod_test_data::gravity_fixtures::load_ggm05c().mu
 }
 
 fn earth_point_mass(mu: f64) -> GravitySourceEntry {
@@ -270,11 +266,8 @@ fn sim_solar_beta_dt() -> f64 {
 }
 
 fn build_solar_beta_equ(init: &InitialConditions) -> SimulationBuilder {
-    let jeod = jeod_root();
-    let mu_earth = coefficients::load_mu_from_jeod_cc(
-        &jeod.join("models/environment/gravity/data/src/earth_GGM05C.cc"),
-    )
-    .expect("load Earth mu");
+    // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
+    let mu_earth = jeod_test_data::gravity_fixtures::load_ggm05c().mu;
 
     let ephemeris = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");
     let (sun_t0, _) = ephemeris
@@ -332,10 +325,8 @@ pub fn solar_beta_equ() -> VerificationCase {
 }
 
 fn build_solar_beta_obliquity(init: &InitialConditions) -> SimulationBuilder {
-    let jeod = jeod_root();
-    let grav_data_dir = jeod.join("models/environment/gravity/data/src");
-    let sh_data = coefficients::load_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc"))
-        .expect("load Earth GGM05C");
+    // Earth GGM05C SH from the committed fixture (Wave 1 of #232).
+    let sh_data = jeod_test_data::gravity_fixtures::load_ggm05c();
     let mu_earth = sh_data.mu;
 
     let ephemeris = Ephemeris::from_bsp(&bsp_path()).expect("load DE421");

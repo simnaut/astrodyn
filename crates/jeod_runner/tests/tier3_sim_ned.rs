@@ -1,3 +1,5 @@
+#![cfg(feature = "verification")]
+
 //! Tier 3: SIM_NED cross-validation (derived_state/verif/SIM_NED)
 //!
 //! Matches the JEOD SIM_NED configuration:

@@ -1,3 +1,5 @@
+#![cfg(feature = "verification")]
+
 //! Smoke test for the `VerificationCase::pre_step` factory hook (#156).
 //!
 //! Builds a minimal `VerificationCase` whose pre-step closure stamps the

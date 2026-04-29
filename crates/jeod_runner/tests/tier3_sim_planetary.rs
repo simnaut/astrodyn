@@ -1,3 +1,5 @@
+#![cfg(feature = "verification")]
+
 //! Tier 3: SIM_Planetary — derived state trajectory in 5 orbit regimes.
 //!
 //! Validates Simulation trajectory against JEOD SIM_Planetary reference CSVs

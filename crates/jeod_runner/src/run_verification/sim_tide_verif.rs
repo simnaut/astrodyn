@@ -26,7 +26,6 @@ use jeod_sim::{
     GravityModel, GravitySource, GravitySourceEntry, JeodQuat, MassProperties, RotationModel,
     RotationalState, SimulationBuilder, SimulationTime, TranslationalState, VehicleConfig,
 };
-use jeod_test_data::jeod_cc::load_from_jeod_cc;
 use uom::si::f64::Time;
 use uom::si::time::second;
 
@@ -89,13 +88,12 @@ fn build_tide_run01(init: &InitialConditions) -> SimulationBuilder {
     let grav_data_dir = jeod.join("models/environment/gravity/data/src");
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
 
-    let earth_grav =
-        load_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc")).expect("load Earth GGM05C");
+    // Earth GGM05C SH and Sun mu from committed fixtures (Wave 1 of #232);
+    // Moon GRAIL150 has no fixture yet, loaded from JEOD source.
+    let earth_grav = jeod_test_data::gravity_fixtures::load_ggm05c();
     let earth_mu = earth_grav.mu;
     let earth_radius = earth_grav.radius;
-    let mu_sun =
-        jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("sun_spherical.cc"))
-            .expect("load Sun mu");
+    let mu_sun = jeod_test_data::mars_fixtures::load_sun_spherical_mu();
     let mu_moon =
         jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("moon_GRAIL150.cc"))
             .expect("load Moon mu");

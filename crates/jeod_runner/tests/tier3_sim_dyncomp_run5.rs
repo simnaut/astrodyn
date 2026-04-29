@@ -1,3 +1,5 @@
+#![cfg(feature = "verification")]
+
 //! Tier 3: SIM_dyncomp RUN_5B/5C — Elliptical orbit, 6-DOF (ISS mass)
 //!
 //! JEOD labels these "atmosphere comparison" runs, but drag is disabled

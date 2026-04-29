@@ -1,3 +1,5 @@
+#![cfg(feature = "verification")]
+
 //! Tier 3: Battin's method vs direct subtraction for third-body gravity
 //!
 //! Verifies that Battin's method for differential (third-body) gravity
