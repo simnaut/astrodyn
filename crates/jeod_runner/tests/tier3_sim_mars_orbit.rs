@@ -15,16 +15,7 @@ use jeod_sim::{
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
 fn load_mu_sun() -> f64 {
-    let jeod_root = jeod_test_data::jeod_path();
-    assert!(
-        jeod_root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
-        jeod_root.display()
-    );
-    jeod_test_data::jeod_cc::load_mu_from_jeod_cc(
-        &jeod_root.join("models/environment/gravity/data/src/sun_spherical.cc"),
-    )
-    .expect("load Sun mu from sun_spherical")
+    jeod_test_data::mars_fixtures::load_sun_spherical_mu()
 }
 
 /// Load a state CSV with interleaved columns: time, pos[0], vel[0], pos[1], vel[1], pos[2], vel[2].
@@ -79,11 +70,8 @@ fn tier3_simulation_mars_dawn() {
     let init_pos = init.position.unwrap();
     let init_vel = init.velocity.unwrap();
 
-    // Load MRO110B2 spherical harmonics coefficients
-    let jeod_root = jeod_test_data::jeod_path();
-    let mro_path = jeod_root.join("models/environment/gravity/data/src/mars_MRO110B2.cc");
-    let sh_data =
-        jeod_test_data::jeod_cc::load_from_jeod_cc(&mro_path).expect("load MRO110B2 coefficients");
+    // Load MRO110B2 spherical harmonics coefficients from the committed fixture.
+    let sh_data = jeod_test_data::mars_fixtures::load_mars_mro110b2();
     let mars_mu = sh_data.mu;
 
     // Dawn epoch: 2009-02-17 23:00:00 UTC

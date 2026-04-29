@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "source": "models/environment/gravity/data/src/mars_MRO110B2.cc",
+  "jeod_rev": "27893108bbde8bb162b3213a30d57af89acd1c76",
+  "degree": 110,
+  "order": 110,
+  "mu_m3_per_s2": 42828374527000.0,
+  "radius_m": 3396000.0,
+  "tide_free": true,
+  "tide_free_delta": 0.0,
+  "regen_command": "cargo run -p jeod_test_data --bin extract_mars_data",
+  "note": "Mars MRO110B2 spherical harmonics gravity coefficients (degree=order=110)."
+}
