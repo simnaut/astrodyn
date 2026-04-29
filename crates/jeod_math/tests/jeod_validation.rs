@@ -1,6 +1,10 @@
 //! Validate orbital elements and quaternion math against JEOD verification data.
 //!
-//! Requires the JEOD source tree (via `JEOD_HOME` or `JEOD_PATH` env var).
+//! The body-init tests (ISS reference state and orbital_init parser) read
+//! from the committed `test_data/body_init/iss.json` fixture and run without
+//! `$JEOD_HOME`. The orbital_data (5001-vector roundtrip) and euler_test
+//! tests still read JEOD source directly via `jeod_path()` and require
+//! `$JEOD_HOME` / `$JEOD_PATH`; their migration is tracked separately.
 
 use jeod_math::JeodQuat;
 use jeod_math::OrbitalElements;
@@ -16,15 +20,10 @@ const MU_EARTH: f64 = jeod_planet::presets::EARTH.mu;
 
 #[test]
 fn validate_iss_orbital_elements_to_cartesian() {
-    let root = jeod_path();
-    assert!(
-        root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
-        root.display()
-    );
-
-    let init = orbital_init::load_orbital_init(&root, "ISS", "trans_Orbit_inertial_body_set01");
-    let expected = reference_state::load_reference_state(&root, "ISS", "inertial");
+    // Inputs come from the committed `test_data/body_init/iss.json` fixture,
+    // not `$JEOD_HOME` at runtime.
+    let init = orbital_init::load_orbital_init("ISS", "trans_Orbit_inertial_body_set01");
+    let expected = reference_state::load_reference_state("ISS", "inertial");
 
     // Verify parsed values are sensible
     assert!(
@@ -109,14 +108,9 @@ fn validate_iss_orbital_elements_to_cartesian() {
 
 #[test]
 fn validate_iss_reference_state_parsing() {
-    let root = jeod_path();
-    assert!(
-        root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
-        root.display()
-    );
-
-    let state = reference_state::load_reference_state(&root, "ISS", "inertial");
+    // Inputs come from the committed `test_data/body_init/iss.json` fixture,
+    // not `$JEOD_HOME` at runtime.
+    let state = reference_state::load_reference_state("ISS", "inertial");
 
     // Cross-check against known values from the file
     assert!(
@@ -393,14 +387,9 @@ fn validate_euler_matrix_from_jeod() {
 
 #[test]
 fn validate_orbital_init_parser() {
-    let root = jeod_path();
-    assert!(
-        root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
-        root.display()
-    );
-
-    let init = orbital_init::load_orbital_init(&root, "ISS", "trans_Orbit_inertial_body_set01");
+    // Inputs come from the committed `test_data/body_init/iss.json` fixture,
+    // not `$JEOD_HOME` at runtime.
+    let init = orbital_init::load_orbital_init("ISS", "trans_Orbit_inertial_body_set01");
 
     // Cross-check parsed values against known file contents
     let deg2rad = std::f64::consts::PI / 180.0;

@@ -1,12 +1,34 @@
+//! Orbital-element and direct-Cartesian initialization records.
+//!
+//! Originally extracted from JEOD `Modified_data/<vehicle>/`
+//! `trans_Orbit_*_body_*.py` and `trans_TransState_*_body.py` (in
+//! `models/dynamics/body_action/verif/SIM_orbinit/`), the records are now
+//! committed to `test_data/body_init/<vehicle>.json` and read back here
+//! without touching the JEOD source tree at runtime.
+//!
+//! Regenerate with:
+//!
+//! ```bash
+//! cargo run -p jeod_test_data --bin extract_body_init -- \
+//!     --jeod-home $JEOD_HOME
+//! ```
+//!
+//! The Python parsers still live here (`parse_orbital_init_py`,
+//! `parse_trans_state_py`) and are invoked exclusively by the regen
+//! binary; runtime test paths never call them.
+
 use regex::Regex;
 use std::f64::consts::PI;
 
-/// Orbital element initialization data from a JEOD Trick input file.
+use crate::body_init_fixtures::{
+    load_vehicle_bundle, BodyInitFixtureError, OrbitalInitRecord, TransStateRecord,
+};
+
+/// Orbital element initialization data, originally from a JEOD Trick input file.
 ///
-/// Parsed from files like:
+/// JEOD source files like
 /// `models/dynamics/body_action/verif/SIM_orbinit/Modified_data/{vehicle}/trans_Orbit_{frame}_body_{init_name}.py`
-///
-/// These files contain Python assignments in two forms:
+/// contain Python assignments in two forms:
 /// - `key = trick.attach_units("unit", value)` (with unit conversion)
 /// - `key = value` (bare numeric)
 ///
@@ -28,28 +50,57 @@ pub struct OrbitalInitData {
     pub reference_frame: String,
 }
 
-/// Load orbital element initialization data from a JEOD Trick input file.
+/// Load orbital element initialization data from the committed
+/// `test_data/body_init/<vehicle>.json` fixture.
 ///
 /// # Arguments
-/// * `jeod_root` - Path to the JEOD source tree root.
-/// * `vehicle` - Vehicle directory name (e.g. `"ISS"`).
-/// * `init_name` - Init file identifier (e.g. `"trans_Orbit_inertial_body_set01"`).
+/// * `vehicle` - Vehicle directory name (e.g. `"ISS"`, `"STS_114"`).
+/// * `init_name` - Init file identifier without `.py`
+///   (e.g. `"trans_Orbit_inertial_body_set01"`).
 ///
 /// # Panics
-/// Panics if the file cannot be read, or required fields (semi_major_axis, eccentricity,
-/// inclination, ascending_node, arg_periapsis) are missing.
-pub fn load_orbital_init(
-    jeod_root: &std::path::Path,
-    vehicle: &str,
-    init_name: &str,
-) -> OrbitalInitData {
-    let path = jeod_root.join(format!(
-        "models/dynamics/body_action/verif/SIM_orbinit/Modified_data/{}/{}.py",
-        vehicle, init_name
-    ));
-    let content = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
+/// Panics if the fixture is missing, malformed, or doesn't contain the
+/// requested `init_name`. The panic message names the regen command per
+/// the CLAUDE.md "Fail Loudly" rule.
+pub fn load_orbital_init(vehicle: &str, init_name: &str) -> OrbitalInitData {
+    let bundle = load_vehicle_bundle(vehicle);
+    let rec = bundle
+        .orbital_inits
+        .iter()
+        .find(|r| r.name == init_name)
+        .unwrap_or_else(|| {
+            panic!(
+                "body_init fixture for {vehicle} is missing orbital_init {init_name:?}. \
+                 Add the scenario to extract_body_init.rs SCENARIOS and regenerate with: \
+                 cargo run -p jeod_test_data --bin extract_body_init -- --jeod-home $JEOD_HOME"
+            )
+        });
+    OrbitalInitData::from(rec)
+}
 
+impl From<&OrbitalInitRecord> for OrbitalInitData {
+    fn from(rec: &OrbitalInitRecord) -> Self {
+        OrbitalInitData {
+            semi_major_axis: rec.semi_major_axis,
+            eccentricity: rec.eccentricity,
+            inclination: rec.inclination,
+            ascending_node: rec.ascending_node,
+            arg_periapsis: rec.arg_periapsis,
+            time_periapsis: rec.time_periapsis,
+            mean_anomaly: rec.mean_anomaly,
+            true_anomaly: rec.true_anomaly,
+            planet_name: rec.planet_name.clone(),
+            reference_frame: rec.reference_frame.clone(),
+        }
+    }
+}
+
+/// Parse the body of a JEOD `trans_Orbit_*_body_*.py` file into an
+/// [`OrbitalInitRecord`] (the canonical JSON-serializable form).
+///
+/// Regen-only path: the runtime [`load_orbital_init`] reads the committed
+/// fixture and never invokes this parser.
+pub fn parse_orbital_init_py(content: &str) -> Result<OrbitalInitRecord, BodyInitFixtureError> {
     // Match: key = trick.attach_units( "unit", value)
     let units_re =
         Regex::new(r#"\.(\w+)\s*=\s*trick\.attach_units\(\s*"(\w+)"\s*,\s*([-\d.eE+]+)\s*\)"#)
@@ -80,9 +131,11 @@ pub fn load_orbital_init(
         if let Some(cap) = units_re.captures(line) {
             let key = &cap[1];
             let unit = &cap[2];
-            let raw_val: f64 = cap[3].parse().unwrap();
+            let raw_val: f64 = cap[3]
+                .parse()
+                .map_err(|e| BodyInitFixtureError::malformed(format!("parse {key}: {e}")))?;
 
-            let val = convert_units(raw_val, unit);
+            let val = convert_units(raw_val, unit)?;
 
             match key {
                 "semi_major_axis" => semi_major_axis = Some(val),
@@ -101,7 +154,9 @@ pub fn load_orbital_init(
         // Try bare value pattern
         if let Some(cap) = bare_re.captures(line) {
             let key = &cap[1];
-            let val: f64 = cap[2].parse().unwrap();
+            let val: f64 = cap[2]
+                .parse()
+                .map_err(|e| BodyInitFixtureError::malformed(format!("parse {key}: {e}")))?;
 
             match key {
                 "semi_major_axis" => semi_major_axis = Some(val * 1000.0), // assume km
@@ -129,44 +184,47 @@ pub fn load_orbital_init(
         }
     }
 
-    OrbitalInitData {
-        semi_major_axis: semi_major_axis
-            .unwrap_or_else(|| panic!("Missing semi_major_axis in {}", path.display())),
+    Ok(OrbitalInitRecord {
+        name: String::new(), // filled in by extract_body_init
+        semi_major_axis: semi_major_axis.ok_or_else(|| {
+            BodyInitFixtureError::malformed("missing semi_major_axis".to_string())
+        })?,
         eccentricity: eccentricity
-            .unwrap_or_else(|| panic!("Missing eccentricity in {}", path.display())),
+            .ok_or_else(|| BodyInitFixtureError::malformed("missing eccentricity".to_string()))?,
         inclination: inclination
-            .unwrap_or_else(|| panic!("Missing inclination in {}", path.display())),
+            .ok_or_else(|| BodyInitFixtureError::malformed("missing inclination".to_string()))?,
         ascending_node: ascending_node
-            .unwrap_or_else(|| panic!("Missing ascending_node in {}", path.display())),
+            .ok_or_else(|| BodyInitFixtureError::malformed("missing ascending_node".to_string()))?,
         arg_periapsis: arg_periapsis
-            .unwrap_or_else(|| panic!("Missing arg_periapsis in {}", path.display())),
+            .ok_or_else(|| BodyInitFixtureError::malformed("missing arg_periapsis".to_string()))?,
         time_periapsis,
         mean_anomaly,
         true_anomaly,
         planet_name,
         reference_frame,
-    }
+    })
 }
 
 /// Convert a raw value from the given unit string to SI (meters, radians, seconds).
-fn convert_units(val: f64, unit: &str) -> f64 {
+fn convert_units(val: f64, unit: &str) -> Result<f64, BodyInitFixtureError> {
     match unit {
-        "degree" => val * PI / 180.0,
-        "km" => val * 1000.0,
-        "s" => val,
-        "m" => val,
-        "rad" => val,
-        other => panic!("Unknown unit: {}", other),
+        "degree" => Ok(val * PI / 180.0),
+        "km" => Ok(val * 1000.0),
+        "s" => Ok(val),
+        "m" => Ok(val),
+        "rad" => Ok(val),
+        other => Err(BodyInitFixtureError::malformed(format!(
+            "unknown unit: {other:?}"
+        ))),
     }
 }
 
-/// Direct Cartesian translational-state initialization data from a JEOD
-/// `trans_TransState_*.py` file.
+/// Direct Cartesian translational-state initialization data, originally from a
+/// JEOD `trans_TransState_*.py` file.
 ///
-/// Parsed from files like:
+/// JEOD source files like
 /// `models/dynamics/body_action/verif/SIM_orbinit/Modified_data/{vehicle}/trans_TransState_{frame}_body.py`
-///
-/// Contains position/velocity vectors with `trick.attach_units("m", [...])` and
+/// contain position/velocity vectors with `trick.attach_units("m", [...])` and
 /// `trick.attach_units("m/s", [...])` wrappers.
 #[derive(Debug, Clone)]
 pub struct TransStateData {
@@ -175,29 +233,43 @@ pub struct TransStateData {
     pub reference_frame: String,
 }
 
-/// Load a direct Cartesian translational-state init file.
+/// Load a direct Cartesian translational-state init record from the
+/// committed `test_data/body_init/<vehicle>.json` fixture.
 ///
 /// # Arguments
-/// * `jeod_root` - Path to the JEOD source tree root.
 /// * `vehicle` - Vehicle directory name (e.g. `"STS_114"`).
-/// * `init_name` - Init file identifier without `.py` (e.g. `"trans_TransState_inertial_body"`).
+/// * `init_name` - Init file identifier without `.py`
+///   (e.g. `"trans_TransState_inertial_body"`).
 ///
 /// # Panics
-/// Panics if the file cannot be read; if `position` or `velocity` entries are
-/// missing or have an unexpected unit (must be `"m"` and `"m/s"` respectively);
-/// or if `reference_ref_frame_name` is missing.
-pub fn load_trans_state(
-    jeod_root: &std::path::Path,
-    vehicle: &str,
-    init_name: &str,
-) -> TransStateData {
-    let path = jeod_root.join(format!(
-        "models/dynamics/body_action/verif/SIM_orbinit/Modified_data/{}/{}.py",
-        vehicle, init_name
-    ));
-    let content = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
+/// Panics if the fixture is missing, malformed, or doesn't contain the
+/// requested `init_name`. The panic message names the regen command.
+pub fn load_trans_state(vehicle: &str, init_name: &str) -> TransStateData {
+    let bundle = load_vehicle_bundle(vehicle);
+    let rec = bundle
+        .trans_states
+        .iter()
+        .find(|r| r.name == init_name)
+        .unwrap_or_else(|| {
+            panic!(
+                "body_init fixture for {vehicle} is missing trans_state {init_name:?}. \
+                 Add the scenario to extract_body_init.rs SCENARIOS and regenerate with: \
+                 cargo run -p jeod_test_data --bin extract_body_init -- --jeod-home $JEOD_HOME"
+            )
+        });
+    TransStateData {
+        position: rec.position,
+        velocity: rec.velocity,
+        reference_frame: rec.reference_frame.clone(),
+    }
+}
 
+/// Parse the body of a JEOD `trans_TransState_*.py` file into a
+/// [`TransStateRecord`].
+///
+/// Regen-only path: the runtime [`load_trans_state`] reads the committed
+/// fixture and never invokes this parser.
+pub fn parse_trans_state_py(content: &str) -> Result<TransStateRecord, BodyInitFixtureError> {
     // Match: .position = trick.attach_units( "m", [  x,  y,  z])
     // Match: .velocity = trick.attach_units( "m/s", [  vx,  vy,  vz])
     let vec3_re = Regex::new(
@@ -216,27 +288,31 @@ pub fn load_trans_state(
         if let Some(cap) = vec3_re.captures(line) {
             let field = &cap[1];
             let unit = &cap[2];
-            let x: f64 = cap[3].parse().unwrap();
-            let y: f64 = cap[4].parse().unwrap();
-            let z: f64 = cap[5].parse().unwrap();
+            let x: f64 = cap[3]
+                .parse()
+                .map_err(|e| BodyInitFixtureError::malformed(format!("parse {field}.x: {e}")))?;
+            let y: f64 = cap[4]
+                .parse()
+                .map_err(|e| BodyInitFixtureError::malformed(format!("parse {field}.y: {e}")))?;
+            let z: f64 = cap[5]
+                .parse()
+                .map_err(|e| BodyInitFixtureError::malformed(format!("parse {field}.z: {e}")))?;
             // Validate unit per field — no scale conversion needed for SI.
             match field {
                 "position" => {
-                    assert!(
-                        unit == "m",
-                        "Unexpected unit '{}' for position in {} (expected \"m\")",
-                        unit,
-                        path.display()
-                    );
+                    if unit != "m" {
+                        return Err(BodyInitFixtureError::malformed(format!(
+                            "unexpected unit {unit:?} for position (expected \"m\")"
+                        )));
+                    }
                     position = Some([x, y, z]);
                 }
                 "velocity" => {
-                    assert!(
-                        unit == "m/s",
-                        "Unexpected unit '{}' for velocity in {} (expected \"m/s\")",
-                        unit,
-                        path.display()
-                    );
+                    if unit != "m/s" {
+                        return Err(BodyInitFixtureError::malformed(format!(
+                            "unexpected unit {unit:?} for velocity (expected \"m/s\")"
+                        )));
+                    }
                     velocity = Some([x, y, z]);
                 }
                 _ => {}
@@ -248,10 +324,64 @@ pub fn load_trans_state(
         }
     }
 
-    TransStateData {
-        position: position.unwrap_or_else(|| panic!("Missing position in {}", path.display())),
-        velocity: velocity.unwrap_or_else(|| panic!("Missing velocity in {}", path.display())),
-        reference_frame: reference_frame
-            .unwrap_or_else(|| panic!("Missing reference_ref_frame_name in {}", path.display())),
+    Ok(TransStateRecord {
+        name: String::new(), // filled in by extract_body_init
+        position: position
+            .ok_or_else(|| BodyInitFixtureError::malformed("missing position".to_string()))?,
+        velocity: velocity
+            .ok_or_else(|| BodyInitFixtureError::malformed("missing velocity".to_string()))?,
+        reference_frame: reference_frame.ok_or_else(|| {
+            BodyInitFixtureError::malformed("missing reference_ref_frame_name".to_string())
+        })?,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_orbital_init_py_attach_units() {
+        let py = r#"
+vehicle.set01.subject.semi_major_axis = trick.attach_units("km", 6732.90120152)
+vehicle.set01.subject.eccentricity   = trick.attach_units("rad", 0.00129073350)
+vehicle.set01.subject.inclination    = trick.attach_units("degree", 51.670450765)
+vehicle.set01.subject.ascending_node = trick.attach_units("degree", 49.708417385)
+vehicle.set01.subject.arg_periapsis  = trick.attach_units("degree", 100.582445989)
+vehicle.set01.subject.time_periapsis = trick.attach_units("s", 4581.96167293)
+vehicle.set01.subject.planet_name    = "Earth"
+vehicle.set01.subject.orbit_frame_name = "Earth.inertial"
+"#;
+        let rec = parse_orbital_init_py(py).unwrap();
+        assert!((rec.semi_major_axis - 6_732_901.201_52).abs() < 1e-6);
+        assert!((rec.eccentricity - 0.00129073350).abs() < 1e-12);
+        let deg2rad = PI / 180.0;
+        assert!((rec.inclination - 51.670450765 * deg2rad).abs() < 1e-12);
+        assert_eq!(rec.planet_name, "Earth");
+        assert_eq!(rec.reference_frame, "Earth.inertial");
+        assert!((rec.time_periapsis.unwrap() - 4581.96167293).abs() < 1e-9);
+    }
+
+    #[test]
+    fn parse_trans_state_py_attach_units() {
+        let py = r#"
+sts114.trans.subject.position = trick.attach_units("m", [1.0e6, 2.0e6, 3.0e6])
+sts114.trans.subject.velocity = trick.attach_units("m/s", [-1.0, 2.0, -3.0])
+sts114.trans.subject.reference_ref_frame_name = "Earth.inertial"
+"#;
+        let rec = parse_trans_state_py(py).unwrap();
+        assert_eq!(rec.position, [1.0e6, 2.0e6, 3.0e6]);
+        assert_eq!(rec.velocity, [-1.0, 2.0, -3.0]);
+        assert_eq!(rec.reference_frame, "Earth.inertial");
+    }
+
+    #[test]
+    fn parse_trans_state_py_rejects_wrong_units() {
+        let py = r#"sts114.trans.subject.position = trick.attach_units("km", [1.0, 2.0, 3.0])
+sts114.trans.subject.velocity = trick.attach_units("m/s", [-1.0, 2.0, -3.0])
+sts114.trans.subject.reference_ref_frame_name = "Earth.inertial"
+"#;
+        let err = parse_trans_state_py(py).unwrap_err();
+        assert!(format!("{err}").contains("position"));
     }
 }

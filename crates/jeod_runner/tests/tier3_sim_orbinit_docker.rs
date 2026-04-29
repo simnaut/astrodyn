@@ -104,8 +104,9 @@ fn assert_orbinit_match(
         jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc"))
             .expect("load Earth mu from earth_GGM05C.cc");
 
-    // Load JEOD orbital elements input (from input.py -> Modified_data/*.py).
-    let init = jeod_test_data::orbital_init::load_orbital_init(jeod_root, vehicle, init_name);
+    // Load JEOD orbital elements input from the committed body_init fixture
+    // (originally extracted from Modified_data/<vehicle>/<init_name>.py).
+    let init = jeod_test_data::orbital_init::load_orbital_init(vehicle, init_name);
 
     // JEOD input.py for set01 uses time_periapsis (M = n * t_peri).
     let t_peri = init
@@ -302,21 +303,12 @@ fn tier3_orbinit_docker_run0301_sts_pfix() {
 
 #[test]
 fn tier3_orbinit_docker_run0401_sts_trans_state() {
-    let jeod_root = jeod_test_data::jeod_path();
-    assert!(
-        jeod_root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
-        jeod_root.display()
-    );
-
     // RUN_0401 uses DynBodyInitTransState (direct Cartesian input in inertial).
     // The JEOD input.py sets position and velocity directly; initialization
-    // should be a pass-through to the body state.
-    let trans = jeod_test_data::orbital_init::load_trans_state(
-        &jeod_root,
-        "STS_114",
-        "trans_TransState_inertial_body",
-    );
+    // should be a pass-through to the body state. Inputs come from the
+    // committed `test_data/body_init/sts_114.json` fixture.
+    let trans =
+        jeod_test_data::orbital_init::load_trans_state("STS_114", "trans_TransState_inertial_body");
     let expected = TranslationalState {
         position: DVec3::from_array(trans.position),
         velocity: DVec3::from_array(trans.velocity),

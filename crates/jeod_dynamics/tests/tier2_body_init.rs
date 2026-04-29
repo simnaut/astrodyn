@@ -1,7 +1,9 @@
 //! Tier 2: Validate body initialization from orbital elements against
 //! ISS reference state from JEOD verification data.
 //!
-//! Requires JEOD_HOME (or JEOD_PATH) set to the JEOD source checkout.
+//! Inputs come from the committed `test_data/body_init/iss.json` fixture
+//! (regenerated via `cargo run -p jeod_test_data --bin extract_body_init`),
+//! so this test no longer requires `JEOD_HOME` / `JEOD_PATH` at runtime.
 //!
 //! Tests exercise three JEOD element set parameterizations, all describing
 //! the same ISS orbit at STS-114 MET 001:19:30:59.000:
@@ -22,21 +24,9 @@ use jeod_dynamics::{
 /// Sourced from `jeod_planet::presets::EARTH.mu`.
 const EARTH_MU: f64 = jeod_planet::presets::EARTH.mu;
 
-/// Load the JEOD path, panicking with a clear message if not available.
-fn jeod_root() -> std::path::PathBuf {
-    let root = jeod_test_data::jeod_path();
-    assert!(
-        root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH \
-         to the JEOD source checkout (e.g. ../jeod).",
-        root.display()
-    );
-    root
-}
-
 /// Load the ISS inertial reference state (position + velocity in ECI).
-fn load_iss_reference(root: &std::path::Path) -> TranslationalState {
-    let ref_state = jeod_test_data::reference_state::load_reference_state(root, "ISS", "inertial");
+fn load_iss_reference() -> TranslationalState {
+    let ref_state = jeod_test_data::reference_state::load_reference_state("ISS", "inertial");
     TranslationalState {
         position: ref_state.position,
         velocity: ref_state.velocity,
@@ -94,13 +84,9 @@ fn print_comparison(
 
 #[test]
 fn iss_set01_time_periapsis() {
-    let root = jeod_root();
-    let init = jeod_test_data::orbital_init::load_orbital_init(
-        &root,
-        "ISS",
-        "trans_Orbit_inertial_body_set01",
-    );
-    let expected = load_iss_reference(&root);
+    let init =
+        jeod_test_data::orbital_init::load_orbital_init("ISS", "trans_Orbit_inertial_body_set01");
+    let expected = load_iss_reference();
 
     // set01 provides time_periapsis — use the dedicated ported function,
     // which matches JEOD dyn_body_init_orbit.cc:295 exactly.
@@ -149,13 +135,9 @@ fn iss_set01_time_periapsis() {
 
 #[test]
 fn iss_set02_mean_anomaly() {
-    let root = jeod_root();
-    let init = jeod_test_data::orbital_init::load_orbital_init(
-        &root,
-        "ISS",
-        "trans_Orbit_inertial_body_set02",
-    );
-    let expected = load_iss_reference(&root);
+    let init =
+        jeod_test_data::orbital_init::load_orbital_init("ISS", "trans_Orbit_inertial_body_set02");
+    let expected = load_iss_reference();
 
     let mean_anomaly = init.mean_anomaly.expect("ISS set02 must have mean_anomaly");
 
@@ -200,13 +182,9 @@ fn iss_set02_mean_anomaly() {
 
 #[test]
 fn iss_set10_true_anomaly() {
-    let root = jeod_root();
-    let init = jeod_test_data::orbital_init::load_orbital_init(
-        &root,
-        "ISS",
-        "trans_Orbit_inertial_body_set10",
-    );
-    let expected = load_iss_reference(&root);
+    let init =
+        jeod_test_data::orbital_init::load_orbital_init("ISS", "trans_Orbit_inertial_body_set10");
+    let expected = load_iss_reference();
 
     let true_anomaly = init.true_anomaly.expect("ISS set10 must have true_anomaly");
 
@@ -252,14 +230,9 @@ fn iss_set10_true_anomaly() {
 
 #[test]
 fn iss_element_sets_cross_consistent() {
-    let root = jeod_root();
-
     // set01: time_periapsis -> mean anomaly -> Cartesian (via the ported helper).
-    let init01 = jeod_test_data::orbital_init::load_orbital_init(
-        &root,
-        "ISS",
-        "trans_Orbit_inertial_body_set01",
-    );
+    let init01 =
+        jeod_test_data::orbital_init::load_orbital_init("ISS", "trans_Orbit_inertial_body_set01");
     let state01 = init_from_time_periapsis(
         init01.semi_major_axis,
         init01.eccentricity,
@@ -271,11 +244,8 @@ fn iss_element_sets_cross_consistent() {
     );
 
     // set02: mean anomaly (directly) -> Cartesian
-    let init02 = jeod_test_data::orbital_init::load_orbital_init(
-        &root,
-        "ISS",
-        "trans_Orbit_inertial_body_set02",
-    );
+    let init02 =
+        jeod_test_data::orbital_init::load_orbital_init("ISS", "trans_Orbit_inertial_body_set02");
     let state02 = init_from_mean_anomaly(
         init02.semi_major_axis,
         init02.eccentricity,
@@ -287,11 +257,8 @@ fn iss_element_sets_cross_consistent() {
     );
 
     // set10: true anomaly (directly) -> Cartesian
-    let init10 = jeod_test_data::orbital_init::load_orbital_init(
-        &root,
-        "ISS",
-        "trans_Orbit_inertial_body_set10",
-    );
+    let init10 =
+        jeod_test_data::orbital_init::load_orbital_init("ISS", "trans_Orbit_inertial_body_set10");
     let state10 = init_from_orbital_elements(
         init10.semi_major_axis,
         init10.eccentricity,
