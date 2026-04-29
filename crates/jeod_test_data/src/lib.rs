@@ -67,6 +67,7 @@ pub mod leap_second;
 pub mod mass_data;
 pub mod orbital_data;
 pub mod orbital_init;
+pub mod planet_geodetic_verif;
 pub mod reference_state;
 pub mod s_define;
 pub mod tier3_csv;
