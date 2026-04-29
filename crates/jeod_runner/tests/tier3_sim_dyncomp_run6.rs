@@ -1,3 +1,5 @@
+#![cfg(feature = "verification")]
+
 //! Tier 3: SIM_dyncomp RUN_6A/6B — Drag (constant density and MET atmosphere)
 //!
 //! All simulation parameters (epoch, step size, mu, mass) are loaded from JEOD

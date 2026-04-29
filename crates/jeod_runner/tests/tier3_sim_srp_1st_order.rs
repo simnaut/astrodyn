@@ -1,3 +1,5 @@
+#![cfg(feature = "verification")]
+
 //! Tier 3: SIM_3_ORBIT_1st_ORDER cross-validation.
 //!
 //! Migrated from a 287-line bespoke per-step ephemeris-update loop to

@@ -1,3 +1,5 @@
+#![cfg(feature = "verification")]
+
 //! Tier 3: SIM_dyncomp RUN_10A/10C/10D — Gravity gradient torque
 //!
 //! All simulation parameters (mu, step size, mass) are loaded from JEOD source

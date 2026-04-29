@@ -1,3 +1,5 @@
+#![cfg(feature = "verification")]
+
 //! Tier 3: SIM_LVLH cross-validation (derived_state/verif/SIM_LVLH)
 //!
 //! Point-mass gravity, 400 km circular LEO (i=45 deg), 24h.

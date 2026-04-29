@@ -55,9 +55,11 @@ fn jeod_grav_data(file: &str) -> PathBuf {
     // Routes through `jeod_test_data::jeod_path()` (the canonical
     // JEOD-source resolver in this workspace) instead of the previous
     // duplicate copy that lived here. Wave 2 of #232 collapsed the two
-    // helpers into one. The canonical resolver returns a sentinel path
-    // when neither `JEOD_PATH` nor `JEOD_HOME` is set; the subsequent
-    // `load_from_jeod_cc` panics with a "Set JEOD_HOME or JEOD_PATH"
+    // helpers into one. `jeod_test_data::jeod_path()` prefers
+    // `JEOD_PATH` over `JEOD_HOME` and returns a sentinel path when
+    // neither is set; downstream callers (e.g. `load_grav_cc`) surface
+    // the resulting I/O error from `load_from_jeod_cc`'s `Result` via
+    // `unwrap_or_else`, panicking with a "Set JEOD_HOME or JEOD_PATH"
     // diagnostic identical in spirit to the original behaviour.
     jeod_test_data::jeod_path()
         .join("models/environment/gravity/data/src")

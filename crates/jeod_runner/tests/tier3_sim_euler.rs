@@ -1,3 +1,5 @@
+#![cfg(feature = "verification")]
+
 //! Tier 3: SIM_Euler cross-validation (derived_state/verif/SIM_Euler)
 //!
 //! Uses the RUN_2 point-mass 6-DOF trajectory (which has quaternion data)

@@ -1,3 +1,5 @@
+#![cfg(feature = "verification")]
+
 //! Tier 3: SIM_dyncomp RUN_7A–7D — Spherical harmonics + Sun/Moon
 //! third-body (± drag).
 //!

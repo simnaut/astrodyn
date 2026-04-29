@@ -53,3 +53,16 @@ path = "examples/batch_propagation.rs"
 [[example]]
 name = "leo_drag"
 path = "examples/leo_drag.rs"
+
+# Examples that consume the JEOD-source-backed verification reference data
+# (`jeod_sim::recipes::verification::reference_data::*`) require the same
+# `verification` feature that gates the rest of `run_verification`.
+[[example]]
+name = "earth_moon"
+path = "examples/earth_moon.rs"
+required-features = ["verification"]
+
+[[example]]
+name = "mars_orbit"
+path = "examples/mars_orbit.rs"
+required-features = ["verification"]

@@ -1,3 +1,5 @@
+#![cfg(feature = "verification")]
+
 //! Tier 3: SIM_dyncomp RUN_4 — Spherical Earth + Sun/Moon third-body.
 //!
 //! Migrated from a 280-line bespoke per-step ephemeris-update loop to
