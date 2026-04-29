@@ -1,17 +1,30 @@
+//! ISS / STS-114 reference translational-state vectors.
+//!
+//! Originally extracted from JEOD `Modified_data/<vehicle>/`
+//! `reference_inertial_trans_state.py` (e.g.
+//! `models/dynamics/body_action/verif/SIM_orbinit/Modified_data/ISS/reference_inertial_trans_state.py`),
+//! the reference state is now committed to
+//! `test_data/body_init/<vehicle>.json` and read back here without
+//! touching the JEOD source tree at runtime.
+//!
+//! Regenerate with:
+//!
+//! ```bash
+//! cargo run -p jeod_test_data --bin extract_body_init -- \
+//!     --jeod-home $JEOD_HOME
+//! ```
+//!
+//! The Python parser still lives here (`parse_reference_state_py`) and is
+//! invoked exclusively by the regen binary; runtime test paths never
+//! call it.
+
 use glam::DVec3;
 use jeod_quantities::prelude::*;
 use regex::Regex;
 
-/// ISS reference translational state from JEOD verification data.
-///
-/// Parsed from files like:
-/// `models/dynamics/body_action/verif/SIM_orbinit/Modified_data/{vehicle}/reference_{frame}_trans_state.py`
-///
-/// These files contain Python assignments of the form:
-/// ```python
-///   vehicle_reference.expected_state.trans.position  = [      1244540.53,   5655938.85,   3425643.22]
-///   vehicle_reference.expected_state.trans.velocity  = [    -6003.833051, -1469.496044,  4590.511776]
-/// ```
+use crate::body_init_fixtures::{load_vehicle_bundle, BodyInitFixtureError, ReferenceStateRecord};
+
+/// ISS / STS-114 reference translational state from JEOD verification data.
 ///
 /// Frame: inertial (ICRF) — JEOD's `reference_inertial_trans_state.py` files
 /// specify the state in the inertial frame. Use [`ReferenceState::position_typed`]
@@ -40,49 +53,86 @@ impl ReferenceState {
     }
 }
 
-/// Load an ISS reference translational state from JEOD's verification data.
+/// Load a vehicle's reference translational state from the committed
+/// `test_data/body_init/<vehicle>.json` fixture.
 ///
 /// # Arguments
-/// * `jeod_root` - Path to the JEOD source tree root.
-/// * `vehicle` - Vehicle directory name (e.g. `"ISS"`).
-/// * `frame` - Reference frame name used in filename (e.g. `"inertial"`).
+/// * `vehicle` - Vehicle directory name (e.g. `"ISS"`, `"STS_114"`).
+/// * `frame` - Reference frame name. Only `"inertial"` is currently
+///   committed; other values will panic with a clear regen-command
+///   message.
 ///
 /// # Panics
-/// Panics if the file cannot be read or does not contain at least two 3-element arrays
-/// (position and velocity).
-pub fn load_reference_state(
-    jeod_root: &std::path::Path,
-    vehicle: &str,
-    frame: &str,
-) -> ReferenceState {
-    let path = jeod_root.join(format!(
-        "models/dynamics/body_action/verif/SIM_orbinit/Modified_data/{}/reference_{}_trans_state.py",
-        vehicle, frame
-    ));
-    let content = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
+/// Panics if the fixture is missing, malformed, or doesn't include the
+/// requested frame. The panic message names the regen command per the
+/// CLAUDE.md "Fail Loudly" rule.
+pub fn load_reference_state(vehicle: &str, frame: &str) -> ReferenceState {
+    let bundle = load_vehicle_bundle(vehicle);
+    match frame {
+        "inertial" => match &bundle.reference_inertial {
+            Some(state) => ReferenceState {
+                position: DVec3::new(state.position[0], state.position[1], state.position[2]),
+                velocity: DVec3::new(state.velocity[0], state.velocity[1], state.velocity[2]),
+            },
+            None => panic!(
+                "body_init fixture for {vehicle} is missing `reference_inertial`. \
+                 Regenerate with: cargo run -p jeod_test_data --bin extract_body_init \
+                 -- --jeod-home $JEOD_HOME"
+            ),
+        },
+        other => panic!(
+            "load_reference_state: only \"inertial\" frame is committed (got {other:?} \
+             for vehicle {vehicle}). Add the new frame to extract_body_init.rs and \
+             regenerate the fixture."
+        ),
+    }
+}
 
+/// Parse `reference_inertial_trans_state.py` content into a
+/// [`ReferenceStateRecord`] suitable for JSON serialization.
+///
+/// This is the regen-only path: the runtime [`load_reference_state`] reads
+/// the committed fixture and never invokes this parser.
+///
+/// JEOD's `reference_*_trans_state.py` files contain Python assignments of
+/// the form:
+/// ```python
+///   vehicle_reference.expected_state.trans.position  = [      1244540.53,   5655938.85,   3425643.22]
+///   vehicle_reference.expected_state.trans.velocity  = [    -6003.833051, -1469.496044,  4590.511776]
+/// ```
+///
+/// Returns the first two 3-element arrays found, interpreted as `(position, velocity)`.
+pub fn parse_reference_state_py(
+    content: &str,
+) -> Result<ReferenceStateRecord, BodyInitFixtureError> {
     let array_re =
         Regex::new(r"\[\s*([-\d.eE+]+)\s*,\s*([-\d.eE+]+)\s*,\s*([-\d.eE+]+)\s*\]").unwrap();
 
-    let mut arrays: Vec<DVec3> = Vec::new();
-    for cap in array_re.captures_iter(&content) {
-        let x: f64 = cap[1].parse().unwrap();
-        let y: f64 = cap[2].parse().unwrap();
-        let z: f64 = cap[3].parse().unwrap();
-        arrays.push(DVec3::new(x, y, z));
+    let mut arrays: Vec<[f64; 3]> = Vec::new();
+    for cap in array_re.captures_iter(content) {
+        let x: f64 = cap[1].parse().map_err(|e| {
+            BodyInitFixtureError::malformed(format!("parse position component: {e}"))
+        })?;
+        let y: f64 = cap[2].parse().map_err(|e| {
+            BodyInitFixtureError::malformed(format!("parse position component: {e}"))
+        })?;
+        let z: f64 = cap[3].parse().map_err(|e| {
+            BodyInitFixtureError::malformed(format!("parse position component: {e}"))
+        })?;
+        arrays.push([x, y, z]);
     }
 
-    assert!(
-        arrays.len() >= 2,
-        "Expected at least 2 arrays (position, velocity) in {}",
-        path.display()
-    );
+    if arrays.len() < 2 {
+        return Err(BodyInitFixtureError::malformed(format!(
+            "expected at least 2 arrays (position, velocity), got {}",
+            arrays.len()
+        )));
+    }
 
-    ReferenceState {
+    Ok(ReferenceStateRecord {
         position: arrays[0],
         velocity: arrays[1],
-    }
+    })
 }
 
 #[cfg(test)]
@@ -134,5 +184,21 @@ mod tests {
         let v = state.velocity_typed();
         assert_eq!(p.raw_si(), state.position);
         assert_eq!(v.raw_si(), state.velocity);
+    }
+
+    #[test]
+    fn parse_reference_state_py_picks_first_two_arrays() {
+        let py = "vehicle_reference.expected_state.trans.position  = [1.0, 2.0, 3.0]\n\
+                  vehicle_reference.expected_state.trans.velocity  = [4.0, 5.0, 6.0]\n";
+        let rec = parse_reference_state_py(py).unwrap();
+        assert_eq!(rec.position, [1.0, 2.0, 3.0]);
+        assert_eq!(rec.velocity, [4.0, 5.0, 6.0]);
+    }
+
+    #[test]
+    fn parse_reference_state_py_rejects_too_few_arrays() {
+        let py = "x = [1.0, 2.0, 3.0]";
+        let err = parse_reference_state_py(py).unwrap_err();
+        assert!(format!("{err}").contains("at least 2 arrays"));
     }
 }

@@ -391,20 +391,14 @@ mod tests {
 
     #[test]
     fn iss_reference_state_from_elements() {
-        let root = jeod_test_data::jeod_path();
-        assert!(
-            root.exists(),
-            "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
-            root.display()
-        );
-
+        // Inputs come from the committed `test_data/body_init/iss.json`
+        // fixture (regenerated via the `extract_body_init` binary), not
+        // `$JEOD_HOME` at runtime.
         let init = jeod_test_data::orbital_init::load_orbital_init(
-            &root,
             "ISS",
             "trans_Orbit_inertial_body_set01",
         );
-        let expected =
-            jeod_test_data::reference_state::load_reference_state(&root, "ISS", "inertial");
+        let expected = jeod_test_data::reference_state::load_reference_state("ISS", "inertial");
 
         // ISS set01 uses SmaEccIncAscnodeArgperTimeperi.
         let t_peri = init
