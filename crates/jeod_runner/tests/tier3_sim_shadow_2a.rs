@@ -22,20 +22,10 @@ use jeod_sim::{
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::Path;
 
-/// SIM_2A_SHADOW_CALC directory relative to JEOD root.
-const SIM_2A: &str = "models/interactions/radiation_pressure/verif/SIM_2A_SHADOW_CALC";
-
 /// Earth equatorial radius for shadow geometry (from JEOD planet/data/src/earth.cc).
 const R_EARTH: f64 = jeod_sim::EARTH.shadow_radius;
 
 fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str, frac_tol: f64) {
-    let jeod_root = jeod_test_data::jeod_path();
-    assert!(
-        jeod_root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
-        jeod_root.display()
-    );
-
     let csv_path = test_data_path(csv_filename);
     assert!(
         csv_path.exists(),
@@ -53,11 +43,19 @@ fn run_shadow_comparison(csv_filename: &str, label: &str, test_name: &str, frac_
     );
     let ephemeris = Ephemeris::from_bsp(&bsp_path).expect("load DE421");
 
-    // Load epoch from JEOD time config
-    let sim_dir = jeod_root.join(SIM_2A);
-    let time_cfg = jeod_test_data::time_config::load_time_config(
-        &sim_dir.join("Modified_data/date_and_time.py"),
-    );
+    // Epoch from models/interactions/radiation_pressure/verif/SIM_2A_SHADOW_CALC/Modified_data/date_and_time.py:
+    // jeod_time.time_tai.set_date_and_time(1998, 12, 1, 0, 0, 31.0)  # i.e. UTC = 0:00:00
+    let time_cfg = jeod_test_data::time_config::TimeConfig {
+        initializer: jeod_test_data::time_config::TimeInitializer::Tai,
+        utc_year: 1998,
+        utc_month: 12,
+        utc_day: 1,
+        utc_hour: 0,
+        utc_minute: 0,
+        utc_second: 31.0,
+        tai_utc_override: None,
+        tai_to_ut1_override: None,
+    };
     let epoch_tjt = time_cfg.tai_tjt();
 
     let records = load_shadow_calc_csv(&csv_path);

@@ -20,17 +20,7 @@ use jeod_sim::{
 
 #[test]
 fn tier3_simulation_orbinit_cross_consistency() {
-    let jeod_root = jeod_test_data::jeod_path();
-    assert!(
-        jeod_root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
-        jeod_root.display()
-    );
-
-    let grav_data_dir = jeod_root.join("models/environment/gravity/data/src");
-    let mu_earth =
-        jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc"))
-            .expect("load Earth mu");
+    let mu_earth = jeod_test_data::gravity_fixtures::load_ggm05c().mu;
 
     let runs: Vec<(&str, &str)> = vec![
         ("orbinit_0101_orbinit.csv", "RUN_0101 (STS-114 inertial OE)"),

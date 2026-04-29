@@ -1,14 +1,15 @@
-//! Mars and Sun gravity fixtures committed under `test_data/gravity/`.
+//! Mars, Sun, and Moon gravity fixtures committed under `test_data/gravity/`.
 //!
-//! Tier 3 tests (e.g. `tier3_sim_mars_orbit`) read pre-extracted binary
-//! coefficient blobs and JSON metadata sidecars instead of parsing JEOD's
-//! `.cc` source files at test time. This decouples the test suite from
-//! `$JEOD_HOME` / `$JEOD_PATH`, so unit and Tier 3 tests run in CI without
-//! a JEOD checkout.
+//! Tier 3 tests (e.g. `tier3_sim_mars_orbit`, `tier3_simulation_earth_moon_clem`)
+//! read pre-extracted binary coefficient blobs and JSON metadata sidecars
+//! instead of parsing JEOD's `.cc` source files at test time. This decouples
+//! the test suite from `$JEOD_HOME` / `$JEOD_PATH`, so unit and Tier 3 tests
+//! run in CI without a JEOD checkout.
 //!
 //! The fixtures themselves are produced by the `extract_mars_data` binary
-//! from a JEOD source tree (parser lives in [`crate::jeod_cc`]). Regen
-//! after a JEOD upgrade with:
+//! from a JEOD source tree (parser lives in [`crate::jeod_cc`]). Despite the
+//! binary's historical name, it now also extracts the Moon LP150Q
+//! coefficients used by `SIM_Earth_Moon`. Regen after a JEOD upgrade with:
 //!
 //! ```bash
 //! cargo run -p jeod_test_data --bin extract_mars_data
@@ -25,6 +26,9 @@
 //!   degree=1 SH with all-zero coefficients (only `mu` and `radius` are
 //!   physically meaningful).
 //! - `test_data/gravity/sun_spherical.json` — Sun metadata sidecar.
+//! - `test_data/gravity/moon_lp150q.bin` — Moon Lunar-Prospector LP150Q
+//!   spherical harmonics (degree=order=150) for `SIM_Earth_Moon`.
+//! - `test_data/gravity/moon_lp150q.json` — Moon metadata sidecar.
 
 use std::path::{Path, PathBuf};
 
@@ -90,6 +94,26 @@ pub fn load_sun_spherical() -> SphericalHarmonicsData {
     load_binary(&path).unwrap_or_else(|err| {
         panic!(
             "Sun spherical fixture missing or unreadable at {}: {err:?}. {REGEN_HINT}",
+            path.display(),
+        );
+    })
+}
+
+/// Load Moon LP150Q (Lunar Prospector) spherical harmonics coefficients
+/// (degree=order=150).
+///
+/// Reads `test_data/gravity/moon_lp150q.bin`, which is produced from
+/// JEOD's `models/environment/gravity/data/src/moon_LP150Q.cc` by the
+/// `extract_mars_data` binary. Used by `SIM_Earth_Moon RUN_clem` and any
+/// other Moon-centred non-spherical-gravity Tier 3 test.
+///
+/// Panics with a fail-loudly diagnostic if the fixture is missing or
+/// corrupt; the message includes the regen command.
+pub fn load_moon_lp150q() -> SphericalHarmonicsData {
+    let path = fixture_path("moon_lp150q.bin");
+    load_binary(&path).unwrap_or_else(|err| {
+        panic!(
+            "Moon LP150Q fixture missing or unreadable at {}: {err:?}. {REGEN_HINT}",
             path.display(),
         );
     })

@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "label": "gemt1",
+  "source_file": "models/environment/gravity/data/src/earth_GEMT1.cc",
+  "source_file_bytes": 113300,
+  "binary_file": "gemt1.bin",
+  "binary_file_bytes": 11289,
+  "degree": 36,
+  "order": 36,
+  "radius_m": 6378137.0,
+  "mu_m3_per_s2": 398600436000000.0,
+  "tide_free": true,
+  "tide_free_delta": 0.0,
+  "generated_by": "cargo run -p jeod_test_data --bin extract_grav_coeffs",
+  "note": "Regenerate after a JEOD upgrade or coefficient-file change. The .bin file uses the jeod_gravity::coefficients::save_binary format (magic JEOD, version 1)."
+}

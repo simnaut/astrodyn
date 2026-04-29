@@ -27,9 +27,6 @@ fn mass_props_from_init(init: &MassInitData) -> MassProperties {
     MassProperties::with_inertia(init.mass, inertia, DVec3::from_slice(&init.position))
 }
 
-/// SIM_dyncomp root directory (relative to JEOD_HOME).
-const SIM_DYNCOMP: &str = "verif/SIM_dyncomp";
-
 /// Torque window: [1000, 2000) seconds.
 const TORQUE_START: f64 = 1000.0;
 const TORQUE_END: f64 = 2000.0;
@@ -49,13 +46,6 @@ fn setup_run9(
     Vec<jeod_test_data::dyncomp_csv::DyncompRecord>,
     f64,
 ) {
-    let jeod_root = jeod_test_data::jeod_path();
-    assert!(
-        jeod_root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
-        jeod_root.display()
-    );
-
     let csv_path = test_data_path(csv_name);
     assert!(
         csv_path.exists(),
@@ -65,18 +55,22 @@ fn setup_run9(
         csv_path.display()
     );
 
-    let sim_dir = jeod_root.join(SIM_DYNCOMP);
-    let grav_data_dir = jeod_root.join("models/environment/gravity/data/src");
+    // Dynamics timestep: 0.03125 s (32 Hz) per
+    // verif/SIM_dyncomp/S_define `#define DYNAMICS`.
+    let dt = 0.03125_f64;
+    let mu_earth = jeod_test_data::gravity_fixtures::load_ggm05c().mu;
 
-    let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
-    let mu_earth =
-        jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("earth_GGM05C.cc"))
-            .expect("load Earth mu");
-
-    let mass_init = jeod_test_data::mass_data::load_mass_from_file(
-        &sim_dir.join("Modified_data/mass.py"),
-        Some("set_mass_iss"),
-    );
+    // ISS mass properties from
+    // verif/SIM_dyncomp/Modified_data/mass.py `def set_mass_iss()`.
+    let mass_init = MassInitData {
+        mass: 400_000.0,
+        position: [-3.0, -1.5, 4.0],
+        inertia: [
+            [1.02e+8, -6.96e+6, -5.48e+6],
+            [-6.96e+6, 0.91e+8, 5.90e+5],
+            [-5.48e+6, 5.90e+5, 1.64e+8],
+        ],
+    };
     let mass_props = mass_props_from_init(&mass_init);
 
     let trajectory = load_dyncomp_csv(&csv_path);
