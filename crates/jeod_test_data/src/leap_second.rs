@@ -12,17 +12,33 @@ pub struct LeapSecondEntry {
     pub tai_utc: f64,
 }
 
-/// Load the leap second table from JEOD's `Leap_Second.dat`.
+/// Load the leap second table from the committed
+/// `test_data/time/Leap_Second.dat` fixture.
 ///
-/// File location: `models/environment/time/data/Leap_Second.dat`
+/// The fixture is a verbatim copy of JEOD's
+/// `models/environment/time/data/Leap_Second.dat`. Refresh after a JEOD
+/// upgrade via `cargo run -p jeod_test_data --bin extract_jeod_validation`.
 ///
 /// # Panics
-/// Panics if the file cannot be read or contains malformed data.
-pub fn load_leap_second_table(jeod_root: &std::path::Path) -> Vec<LeapSecondEntry> {
-    let path = jeod_root.join("models/environment/time/data/Leap_Second.dat");
-    let content = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
+/// Panics if the fixture is missing or malformed; the message includes
+/// the regen command.
+pub fn load_leap_second_table() -> Vec<LeapSecondEntry> {
+    let path = crate::tier3_csv::test_data_path("time/Leap_Second.dat");
+    let content = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+        panic!(
+            "Cannot read {}: {e}. Regenerate with: cargo run -p jeod_test_data \
+             --bin extract_jeod_validation",
+            path.display(),
+        )
+    });
+    parse_leap_second_table(&content, &path)
+}
 
+/// Parse the line-oriented `Leap_Second.dat` content into entries.
+///
+/// Used by [`load_leap_second_table`] (committed fixture); kept public
+/// in case the regen binary needs to verify a fresh JEOD copy.
+pub fn parse_leap_second_table(content: &str, source: &std::path::Path) -> Vec<LeapSecondEntry> {
     let mut entries = Vec::new();
     for (line_num, line) in content.lines().enumerate() {
         let line = line.trim();
@@ -33,7 +49,7 @@ pub fn load_leap_second_table(jeod_root: &std::path::Path) -> Vec<LeapSecondEntr
         if fields.len() < 5 {
             panic!(
                 "{}:{}: expected at least 5 fields, got {}: {:?}",
-                path.display(),
+                source.display(),
                 line_num + 1,
                 fields.len(),
                 line
@@ -53,18 +69,10 @@ pub fn load_leap_second_table(jeod_root: &std::path::Path) -> Vec<LeapSecondEntr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::jeod_path;
 
     #[test]
     fn leap_second_parser_spot_check() {
-        let root = jeod_path();
-        if !root.exists() {
-            panic!(
-                "JEOD source not found at {}. Set JEOD_HOME.",
-                root.display()
-            );
-        }
-        let entries = load_leap_second_table(&root);
+        let entries = load_leap_second_table();
         assert_eq!(entries.len(), 28, "Expected 28 leap second entries");
 
         // First entry: 1972-01-01, MJD 41317, TAI-UTC = 10

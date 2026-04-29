@@ -12,6 +12,12 @@
 //!   → verbatim copy at `test_data/gravity/grav_geospherical_verif_out.txt`
 //!   (40 lines, plain text; consumed by
 //!   `jeod_test_data::gravity_verif::load_gravity_test_cases`).
+//! - `models/environment/time/data/Leap_Second.dat`
+//!   → verbatim copy at `test_data/time/Leap_Second.dat` (consumed by
+//!   `jeod_test_data::leap_second::load_leap_second_table`).
+//! - `models/dynamics/body_action/verif/SIM_orbinit/Modified_data/ISS/mass.py`
+//!   → verbatim copy at `test_data/body_init/iss_mass.py` (consumed by
+//!   `jeod_test_data::mass_data::load_mass_data`).
 //!
 //! Run after a JEOD upgrade or whenever the source data changes:
 //!
@@ -52,7 +58,35 @@ fn main() {
 
     extract_orbital_vectors(&jeod_root, &out_dir);
     extract_euler_cases(&jeod_root, &out_dir);
-    extract_grav_geospherical_verif_out(&jeod_root, &workspace_root().join("test_data/gravity"));
+    let test_data = workspace_root().join("test_data");
+    extract_grav_geospherical_verif_out(&jeod_root, &test_data.join("gravity"));
+    copy_verbatim(
+        &jeod_root,
+        "models/environment/time/data/Leap_Second.dat",
+        &test_data.join("time").join("Leap_Second.dat"),
+    );
+    copy_verbatim(
+        &jeod_root,
+        "models/dynamics/body_action/verif/SIM_orbinit/Modified_data/ISS/mass.py",
+        &test_data.join("body_init").join("iss_mass.py"),
+    );
+}
+
+fn copy_verbatim(jeod_root: &Path, rel: &str, dst: &Path) {
+    let src = jeod_root.join(rel);
+    if let Some(parent) = dst.parent() {
+        std::fs::create_dir_all(parent)
+            .unwrap_or_else(|e| panic!("Cannot create {}: {e}", parent.display()));
+    }
+    std::fs::copy(&src, dst)
+        .unwrap_or_else(|e| panic!("Cannot copy {} -> {}: {e}", src.display(), dst.display()));
+    let bytes = std::fs::metadata(dst).map(|m| m.len()).unwrap_or(0);
+    println!(
+        "  {} -> {} ({} bytes; verbatim copy)",
+        rel,
+        dst.display(),
+        bytes
+    );
 }
 
 fn extract_grav_geospherical_verif_out(jeod_root: &Path, out_dir: &Path) {
