@@ -10,33 +10,22 @@ for architecture and phase summaries. The original phased implementation plan
 
 ### Environment Setup
 
-`cargo build --workspace && cargo nextest run --workspace -E 'not test(tier3_)'`
-works on a fresh clone of this repo with no JEOD checkout — the unit and
-Tier 2 tests read from committed fixtures under `test_data/`. CI's "Test
-(unit + tier 2)" job verifies this with a regression fence that asserts
-`JEOD_HOME` and `JEOD_PATH` are both unset before running.
+`cargo build --workspace && cargo nextest run --workspace` works on a
+fresh clone of this repo with no JEOD checkout — every test (unit,
+Tier 2, **and Tier 3**) reads from committed fixtures under
+`test_data/`. CI's "Test (unit + tier 2)" and Tier 3 jobs each include
+a regression fence that asserts `JEOD_HOME` and `JEOD_PATH` are both
+unset before running.
 
-**Tier 3 trajectory tests still need JEOD source.** The
-`run_verification/sim_*.rs` rigs that build Tier 3 verification cases
-have many `jeod_root()` callers (Moon GRAIL150 SH, S_define `#define
-DYNAMICS` parsing, ISS / STS-114 mass.py loading, etc.). Migrating each
-of those to a committed fixture is a sizeable follow-on; for now,
-running Tier 3 tests requires `$JEOD_HOME` to point at a NASA JEOD
-checkout. CI's Tier 3 jobs sparse-checkout the relevant subtrees and
-set `JEOD_HOME` accordingly.
+You only need `$JEOD_HOME` when **regenerating fixtures** after a JEOD
+upgrade. The `extract_*` binaries under `crates/jeod_test_data/src/bin/`
+parse JEOD source into the binary fixtures committed under
+`test_data/gravity/`; the verbatim mirror under `test_data/jeod_inputs/`
+is refreshed via the `cp` recipe in
+`test_data/jeod_inputs/README.md`. Both flows accept either
+`$JEOD_HOME` or `--jeod-home <PATH>`.
 
-You also need `$JEOD_HOME` when:
-
-1. Regenerating fixtures after a JEOD upgrade — invoked through the
-   `extract_*` binaries under `crates/jeod_test_data/src/bin/` (e.g.
-   `cargo run -p jeod_test_data --bin extract_grav_coeffs`).
-2. Building / running the verification rigs in
-   `crates/jeod_runner/src/run_verification/sim_*.rs`, which are gated
-   behind the default-on `verification` cargo feature on `jeod_runner`.
-   Production library consumers can opt out with `--no-default-features`
-   to drop the JEOD-source dependency entirely.
-
-When you do need it:
+For the Docker reference-CSV regen (Tier 3 baselines):
 
 ```bash
 cd /home/user/git   # or wherever your repos live
@@ -45,11 +34,13 @@ git clone https://github.com/nasa/trick.git
 
 export JEOD_HOME=$(pwd)/jeod
 export TRICK_HOME=$(pwd)/trick
+
+cargo xtask regenerate-tier3
 ```
 
-`JEOD_HOME` is the standard NASA convention; the older `JEOD_PATH` alias
-was retired in #239. The Trick container path (`$TRICK_HOME`) is unaffected
-and still required for the Docker reference-CSV regen flow.
+`JEOD_HOME` is the standard NASA convention; the older `JEOD_PATH`
+alias was retired in #239. `$TRICK_HOME` is required only by the
+Docker reference-CSV regen flow.
 
 ## Three-Layer Architecture (non-negotiable)
 
@@ -309,14 +300,14 @@ cargo test --workspace                          # all tests
 cargo test --workspace -- --skip tier3_         # unit + tier 2
 ```
 
-The unit + Tier 2 suite (`cargo nextest run --workspace -E 'not test(tier3_)'`)
-runs without `$JEOD_HOME` set. The Tier 3 trajectory tests still need
-`$JEOD_HOME` because `run_verification/sim_*.rs` has un-migrated
-`jeod_root()` callers (Moon GRAIL150, S_define `#define DYNAMICS`,
-ISS `mass.py`, etc.) — see #249 for the migration TODO. The regen
-binaries (`extract_*`) also need `$JEOD_HOME`. `TRICK_HOME` follows
-the standard Trick environment convention and is required by the
-Docker reference-CSV regen flow.
+All three test tiers (`cargo nextest run --workspace`) run without
+`$JEOD_HOME` set — `run_verification/sim_*.rs` reads everything from
+the committed mirror under `test_data/jeod_inputs/` plus the parsed
+gravity binaries under `test_data/gravity/`. The regen binaries
+(`extract_*`) and the Docker reference-CSV flow are the only paths
+that still need `$JEOD_HOME`. `TRICK_HOME` follows the standard Trick
+environment convention and is required only by the Docker
+reference-CSV regen flow.
 
 **Before every commit**, run the same checks CI runs:
 

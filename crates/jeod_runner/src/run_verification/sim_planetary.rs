@@ -31,14 +31,9 @@ fn load_mu_earth() -> f64 {
 }
 
 fn build_planetary(init: &InitialConditions) -> SimulationBuilder {
-    let jeod_root = jeod_test_data::jeod_path();
-    assert!(
-        jeod_root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME.",
-        jeod_root.display()
+    let dt = jeod_test_data::s_define::load_dynamics_dt(
+        &jeod_test_data::jeod_inputs::path(SIM_PLANETARY).join("S_define"),
     );
-    let dt =
-        jeod_test_data::s_define::load_dynamics_dt(&jeod_root.join(SIM_PLANETARY).join("S_define"));
     let mu_earth = load_mu_earth();
 
     let time = SimulationTime::at_j2000(default_leap_second_table());

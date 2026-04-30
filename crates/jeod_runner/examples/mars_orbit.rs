@@ -2,14 +2,16 @@
 //!
 //! Verification-style example exercising:
 //! - Mars MRO110B2 110×110 spherical harmonics gravity (loaded from
-//!   `$JEOD_HOME` via [`recipes::verification::reference_data`])
+//!   the committed `test_data/gravity/mars_mro110b2.bin` fixture via
+//!   [`recipes::verification::reference_data`])
 //! - Mars IAU rotation model
 //! - Sun as 3rd-body perturbation with DE421 ephemeris
 //!   (`test_data/de421.bsp`)
 //!
-//! Mission code that wants high-fidelity gravity / ephemeris without a
-//! JEOD checkout is tracked in #144; until that lands the example is
-//! verification-grade by necessity.
+//! No JEOD checkout is required — both the gravity binary and the DE421
+//! ephemeris are committed under `test_data/`. Mission code that wants a
+//! lighter point-mass-only Mars source can use `recipes::mars::point_mass()`
+//! instead.
 //!
 //! ```bash
 //! cargo run -p jeod_runner --example mars_orbit

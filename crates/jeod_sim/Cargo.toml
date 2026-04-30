@@ -9,13 +9,17 @@ license.workspace = true
 repository.workspace = true
 
 [features]
-# `jeod-source` exposes verification helpers that read from a JEOD source
-# checkout (`$JEOD_HOME`) — currently the
-# `recipes::verification::reference_data` loaders that parse `.cc`
-# gravity files via `jeod_test_data::jeod_cc`. Off by default so
-# downstream mission crates don't pull `jeod_test_data` (a dev-flavored
-# crate) into their production build. Verification rigs in
-# `jeod_runner` enable this feature.
+# `jeod-source` exposes the verification gravity recipes
+# (`recipes::verification::reference_data::{earth_ggm05c, moon_lp150q,
+# mars_mro110b2}`) that load committed binary fixtures from
+# `test_data/gravity/` via `jeod_test_data::gravity_fixtures`. Off by
+# default so downstream mission crates don't pull `jeod_test_data`
+# (a dev-flavored crate) into their production build. Verification
+# rigs in `jeod_runner` enable this feature.
+#
+# (Pre #249: this feature also gated live JEOD-source readers that
+# resolved `$JEOD_HOME`. After #249 those callers were migrated to
+# committed fixtures and the runtime path no longer reads JEOD source.)
 jeod-source = ["dep:jeod_test_data"]
 
 [dependencies]
@@ -30,9 +34,10 @@ jeod_interactions = { path = "../jeod_interactions", version = "0.1.0" }
 jeod_ephemeris = { path = "../jeod_ephemeris", version = "0.1.0" }
 jeod_planet = { path = "../jeod_planet", version = "0.1.0" }
 # Optional: only pulled in when the `jeod-source` feature is enabled.
-# Used by `recipes::verification::reference_data` for parsing JEOD `.cc`
-# coefficient files. `jeod_test_data` is the dev/test-data crate; this
-# is the single non-dev consumer.
+# Used by `recipes::verification::reference_data` to load committed
+# gravity-coefficient binaries via `jeod_test_data::gravity_fixtures`.
+# `jeod_test_data` is the dev/test-data crate; this is the single
+# non-dev consumer.
 jeod_test_data = { path = "../jeod_test_data", version = "0.1.0", optional = true }
 glam = { workspace = true }
 log = { workspace = true }

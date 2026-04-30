@@ -1,67 +1,52 @@
-//! Loaders for JEOD reference data used by Tier 3 verification cases.
+//! High-fidelity gravity-source recipes backed by committed test
+//! fixtures.
 //!
-//! Functions here read files from a JEOD source checkout
-//! (`$JEOD_HOME`) and panic with the exact
-//! environment / file path if the data is missing — consistent with
-//! `feedback_no_graceful_skip.md`. Tests must never silently skip.
+//! Functions here build [`GravitySourceEntry`] values populated with
+//! spherical-harmonics coefficient sets loaded from
+//! `test_data/gravity/*.bin` (regenerable via the `extract_*` binaries
+//! under [`jeod_test_data::bin`](../../../../jeod_test_data/index.html)).
+//! No JEOD checkout is required at runtime — these recipes work on a
+//! fresh clone with `$JEOD_HOME` unset.
 //!
-//! **Mission code should not call these.** The `bevy_jeod` Rust port
-//! is meant to function independently of JEOD source. Use the
-//! point-mass building blocks in [`earth`](super::super::earth),
-//! [`moon`](super::super::moon), [`mars`](super::super::mars) for
-//! mission scenarios. Restoring high-fidelity gravity / ephemeris /
-//! rotation data as standalone Rust assets is tracked as a separate
-//! follow-up issue.
+//! **Mission code should still prefer the lighter point-mass building
+//! blocks** in [`earth`](super::super::earth),
+//! [`moon`](super::super::moon), [`mars`](super::super::mars) when
+//! mission accuracy doesn't require the SH model. These verification
+//! recipes exist to keep examples and Tier 3 rigs that *want*
+//! NASA-grade gravity coupled to the same upstream coefficient sets
+//! JEOD ships with.
 
-use std::path::PathBuf;
-
-use jeod_gravity::SphericalHarmonicsData;
-use jeod_test_data::jeod_cc::load_from_jeod_cc;
+use jeod_test_data::gravity_fixtures;
 
 use crate::sources::GravitySourceEntry;
 use crate::{EARTH, MARS, MOON};
 
-/// Earth with the GGM05C spherical-harmonics gravity field.
+/// Earth with the GGM05C spherical-harmonics gravity field
+/// (degree=order=360).
 ///
-/// Loads `models/environment/gravity/data/src/earth_GGM05C.cc` from
-/// `$JEOD_HOME`. Mission code selects the per-vehicle degree/order via
-/// [`GravityControl::new_nonspherical`](jeod_gravity::GravityControl::new_nonspherical).
+/// Reads `test_data/gravity/ggm05c.bin`, the committed mirror of
+/// `models/environment/gravity/data/src/earth_GGM05C.cc` (regenerable
+/// via `cargo run -p jeod_test_data --bin extract_grav_coeffs`).
 pub fn earth_ggm05c() -> GravitySourceEntry {
-    GravitySourceEntry::central_body_sh(&EARTH, load_grav_cc("earth_GGM05C.cc"))
+    GravitySourceEntry::central_body_sh(&EARTH, gravity_fixtures::load_ggm05c())
 }
 
-/// Moon with the LP150Q spherical-harmonics gravity field.
+/// Moon with the LP150Q spherical-harmonics gravity field
+/// (degree=order=150).
+///
+/// Reads `test_data/gravity/moon_lp150q.bin`, the committed mirror of
+/// `models/environment/gravity/data/src/moon_LP150Q.cc` (regenerable
+/// via `cargo run -p jeod_test_data --bin extract_mars_data`).
 pub fn moon_lp150q() -> GravitySourceEntry {
-    GravitySourceEntry::central_body_sh(&MOON, load_grav_cc("moon_LP150Q.cc"))
+    GravitySourceEntry::central_body_sh(&MOON, gravity_fixtures::load_moon_lp150q())
 }
 
-/// Mars with the MRO110B2 spherical-harmonics gravity field.
+/// Mars with the MRO110B2 spherical-harmonics gravity field
+/// (degree=order=110).
+///
+/// Reads `test_data/gravity/mars_mro110b2.bin`, the committed mirror of
+/// `models/environment/gravity/data/src/mars_MRO110B2.cc` (regenerable
+/// via `cargo run -p jeod_test_data --bin extract_mars_data`).
 pub fn mars_mro110b2() -> GravitySourceEntry {
-    GravitySourceEntry::central_body_sh(&MARS, load_grav_cc("mars_MRO110B2.cc"))
-}
-
-fn load_grav_cc(file: &str) -> SphericalHarmonicsData {
-    let path = jeod_grav_data(file);
-    load_from_jeod_cc(&path).unwrap_or_else(|e| {
-        panic!(
-            "{file}: failed to load {} ({e}). \
-             Set JEOD_HOME to the JEOD source checkout.",
-            path.display()
-        )
-    })
-}
-
-fn jeod_grav_data(file: &str) -> PathBuf {
-    // Routes through `jeod_test_data::jeod_path()` (the canonical
-    // JEOD-source resolver in this workspace) instead of the previous
-    // duplicate copy that lived here. Wave 2 of #232 collapsed the two
-    // helpers into one; `jeod_test_data::jeod_path()` reads only
-    // `$JEOD_HOME` and returns a sentinel path when it isn't set.
-    // Downstream callers (e.g. `load_grav_cc`) surface the resulting
-    // I/O error from `load_from_jeod_cc`'s `Result` via
-    // `unwrap_or_else`, panicking with a "Set JEOD_HOME" diagnostic
-    // identical in spirit to the original behaviour.
-    jeod_test_data::jeod_path()
-        .join("models/environment/gravity/data/src")
-        .join(file)
+    GravitySourceEntry::central_body_sh(&MARS, gravity_fixtures::load_mars_mro110b2())
 }

@@ -15,7 +15,7 @@
 //! ## Coverage
 //!
 //! - **Earth**: [`load_ggm02c`], [`load_ggm05c`], [`load_gemt1`].
-//! - **Moon**: [`load_moon_lp150q`].
+//! - **Moon**: [`load_moon_lp150q`], [`load_moon_grail150`] / [`load_moon_grail150_mu`].
 //! - **Mars**: [`load_mars_mro110b2`].
 //! - **Sun**: [`load_sun_spherical`] / [`load_sun_spherical_mu`]
 //!   (point-mass; encoded as a degree-1 zero-coefficient SH so the
@@ -68,7 +68,9 @@ fn load_fixture(label: &str) -> SphericalHarmonicsData {
     jeod_gravity::coefficients::load_binary(&path).unwrap_or_else(|e| {
         let regen_bin = match label {
             "ggm02c" | "ggm05c" | "gemt1" => "extract_grav_coeffs",
-            "mars_mro110b2" | "moon_lp150q" | "sun_spherical" => "extract_mars_data",
+            "mars_mro110b2" | "moon_lp150q" | "moon_grail150" | "sun_spherical" => {
+                "extract_mars_data"
+            }
             _ => "extract_grav_coeffs",
         };
         panic!(
@@ -123,6 +125,26 @@ pub fn load_mars_mro110b2() -> SphericalHarmonicsData {
 /// (regenerable via `extract_mars_data`). Used by `SIM_Earth_Moon`.
 pub fn load_moon_lp150q() -> SphericalHarmonicsData {
     load_fixture("moon_lp150q")
+}
+
+/// Load Moon GRAIL150 spherical harmonics coefficients (degree=order=150).
+///
+/// Equivalent to parsing `models/environment/gravity/data/src/moon_GRAIL150.cc`
+/// from a JEOD checkout — but reads the committed binary fixture
+/// (regenerable via `extract_mars_data`). The GRAIL field is the newer
+/// JEOD default for the Moon and is used by SIM_dyncomp's third-body
+/// Moon source as well as the gravity-gradient torque rigs
+/// (`SIM_torque_compare_simple`, `SIM_tide_verif`).
+pub fn load_moon_grail150() -> SphericalHarmonicsData {
+    load_fixture("moon_grail150")
+}
+
+/// Load the Moon GRAIL150 gravitational parameter (mu, m³/s²).
+///
+/// Convenience for callers that only need `mu` for a third-body
+/// point-mass approximation (most Tier 3 dyncomp scenarios).
+pub fn load_moon_grail150_mu() -> f64 {
+    load_moon_grail150().mu
 }
 
 /// Load the full Sun point-mass record (mu and reference radius).

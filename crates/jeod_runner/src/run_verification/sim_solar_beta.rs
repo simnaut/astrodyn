@@ -57,16 +57,6 @@ const J2000_JD: f64 = 2_451_545.0;
 /// actual returned index at construction time.
 const SUN_SOURCE_IDX: usize = 1;
 
-fn jeod_root() -> PathBuf {
-    let r = jeod_test_data::jeod_path();
-    assert!(
-        r.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME.",
-        r.display()
-    );
-    r
-}
-
 fn bsp_path() -> PathBuf {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../test_data/de421.bsp");
     assert!(p.exists(), "DE421 ephemeris not found at {}", p.display());
@@ -115,10 +105,10 @@ fn sun_zero_mu(initial_pos: DVec3) -> GravitySourceEntry {
 }
 
 fn build_solar_beta_run2(init: &InitialConditions) -> SimulationBuilder {
-    let jeod = jeod_root();
     let mu_earth = load_mu_earth();
-    let dt =
-        jeod_test_data::s_define::load_dynamics_dt(&jeod.join(SIM_DYNCOMP_DIR).join("S_define"));
+    let dt = jeod_test_data::s_define::load_dynamics_dt(
+        &jeod_test_data::jeod_inputs::path(SIM_DYNCOMP_DIR).join("S_define"),
+    );
 
     // Load DE421 once for the t=0 sun position. The pre_step factory
     // below loads its own ephemeris instance for per-step queries.
@@ -247,11 +237,9 @@ const SIM_SOLAR_BETA_EPOCH_TAI_TJT: f64 =
     SIM_SOLAR_BETA_EPOCH_UTC_JD + SIM_SOLAR_BETA_TAI_UTC_S / 86_400.0 - 2_400_000.5 - 40_000.0;
 
 fn sim_solar_beta_time() -> SimulationTime {
-    let jeod = jeod_root();
     let mut time = SimulationTime::new(SIM_SOLAR_BETA_EPOCH_TAI_TJT, default_leap_second_table());
     let time_cfg = jeod_test_data::time_config::load_time_config(
-        &jeod
-            .join(SIM_SOLAR_BETA_DIR)
+        &jeod_test_data::jeod_inputs::path(SIM_SOLAR_BETA_DIR)
             .join("Modified_data/date_and_time.py"),
     );
     if let Some(ut1_tai) = time_cfg.ut1_tai_offset() {
@@ -261,8 +249,9 @@ fn sim_solar_beta_time() -> SimulationTime {
 }
 
 fn sim_solar_beta_dt() -> f64 {
-    let jeod = jeod_root();
-    jeod_test_data::s_define::load_dynamics_dt(&jeod.join(SIM_SOLAR_BETA_DIR).join("S_define"))
+    jeod_test_data::s_define::load_dynamics_dt(
+        &jeod_test_data::jeod_inputs::path(SIM_SOLAR_BETA_DIR).join("S_define"),
+    )
 }
 
 fn build_solar_beta_equ(init: &InitialConditions) -> SimulationBuilder {
