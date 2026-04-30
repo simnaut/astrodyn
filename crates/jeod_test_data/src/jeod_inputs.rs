@@ -24,20 +24,32 @@
 //! fixtures are added by copying from `$JEOD_HOME` into the mirror
 //! directory and committing the result.
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 /// Resolve a JEOD-relative path against the committed
 /// `test_data/jeod_inputs/` mirror.
 ///
-/// `relative` is the JEOD-source-relative path
+/// `relative` must be a JEOD-source-relative path
 /// (e.g. `"verif/SIM_dyncomp/S_define"` or
 /// `"models/dynamics/derived_state/verif/SIM_NED/Modified_data/date_and_time.py"`).
-/// Panics with a fail-loudly diagnostic if the resolved path does not
-/// exist — committed fixtures must always be present.
+/// Panics if `relative` is absolute or contains a `..` segment — the
+/// resolved path must stay rooted under `test_data/jeod_inputs/`.
+/// Also panics if the resolved path does not exist; committed fixtures
+/// must always be present.
 pub fn path(relative: &str) -> PathBuf {
-    let p = workspace_root()
-        .join("test_data/jeod_inputs")
-        .join(relative);
+    let rel = Path::new(relative);
+    assert!(
+        rel.is_relative(),
+        "JEOD input path must be JEOD-source-relative, got absolute path: {relative}"
+    );
+    assert!(
+        !rel.components()
+            .any(|c| matches!(c, Component::ParentDir | Component::RootDir)),
+        "JEOD input path must stay rooted under test_data/jeod_inputs/; \
+         '..' / root segments are rejected: {relative}"
+    );
+
+    let p = workspace_root().join("test_data/jeod_inputs").join(rel);
     assert!(
         p.exists(),
         "JEOD input fixture not found at {}. \
@@ -82,5 +94,17 @@ mod tests {
             "expected committed S_define at {}",
             p.display()
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "must be JEOD-source-relative, got absolute path")]
+    fn rejects_absolute_path() {
+        let _ = path("/etc/passwd");
+    }
+
+    #[test]
+    #[should_panic(expected = "'..' / root segments are rejected")]
+    fn rejects_parent_dir_traversal() {
+        let _ = path("verif/SIM_dyncomp/../../../etc/passwd");
     }
 }
