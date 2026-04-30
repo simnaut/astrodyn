@@ -48,10 +48,14 @@
 //!
 //! [`jeod_path`] resolves `$JEOD_HOME` (the standard JEOD/Trick
 //! convention used by NASA's upstream tooling). [`trick_path`] does the
-//! same for `$TRICK_HOME`. The runtime test path no longer reads JEOD
-//! source — committed fixtures cover every callsite that runs under
-//! `cargo test`. Only the regen binaries under `src/bin/extract_*.rs`
-//! still resolve `$JEOD_HOME`, and they fail loudly when it isn't set.
+//! same for `$TRICK_HOME`.
+//!
+//! The unit + Tier 2 surface no longer reads JEOD source at runtime —
+//! committed fixtures cover every callsite that runs under
+//! `cargo nextest run --workspace -E 'not test(tier3_)'`. The Tier 3
+//! verification rigs (`jeod_runner::run_verification::sim_*`) and the
+//! regen binaries under `src/bin/extract_*.rs` still resolve
+//! `$JEOD_HOME`; #249 tracks the remaining `sim_*.rs` migration.
 
 #![forbid(unsafe_code)]
 
@@ -84,9 +88,19 @@ pub mod time_config;
 /// when the variable isn't set; callers should check `.exists()` and
 /// panic with a fail-loudly diagnostic if they need JEOD source.
 ///
-/// This helper is **regen-only**: nothing under `cargo test` should call
-/// it any more. Test fixtures are pre-extracted and committed under
-/// `test_data/`.
+/// This helper has two remaining production callers:
+///
+/// 1. The regen binaries under `src/bin/extract_*.rs` (always need
+///    `$JEOD_HOME` to pull source data).
+/// 2. The Tier 3 verification rigs under
+///    `jeod_runner::run_verification::sim_*.rs` — those still resolve
+///    `$JEOD_HOME` for sim-specific S_define dt parsing, ISS
+///    `mass.py`, Moon GRAIL150 SH, etc. Migration of those callers to
+///    committed fixtures is tracked in #249; once that lands the
+///    runtime path drops `jeod_path()` entirely.
+///
+/// Unit + Tier 2 tests (everything matched by `not test(tier3_)`) read
+/// from committed fixtures and never call this helper.
 pub fn jeod_path() -> std::path::PathBuf {
     if let Ok(p) = std::env::var("JEOD_HOME") {
         return std::path::PathBuf::from(p);

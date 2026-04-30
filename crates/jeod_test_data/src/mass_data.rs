@@ -11,9 +11,14 @@ pub struct MassInitData {
     pub inertia: [[f64; 3]; 3],
 }
 
-/// Load mass initialization data from a JEOD mass.py file.
+/// Load mass initialization data for a vehicle from the committed
+/// `test_data/body_init/<vehicle>_mass.py` fixture.
 ///
-/// File location: `models/dynamics/body_action/verif/SIM_orbinit/Modified_data/{vehicle}/mass.py`
+/// Each fixture is a verbatim copy of JEOD's
+/// `models/dynamics/body_action/verif/SIM_orbinit/Modified_data/{vehicle}/mass.py`,
+/// kept in plain Python so reviewers can diff against upstream. Refresh
+/// after a JEOD upgrade via
+/// `cargo run -p jeod_test_data --bin extract_jeod_validation`.
 ///
 /// Parses Python assignments of the form:
 /// - `properties.mass = 100000.0`
@@ -21,7 +26,8 @@ pub struct MassInitData {
 /// - `properties.inertia[0] = [ 7e12, 0.0, 0.0]`
 ///
 /// # Panics
-/// Panics if the file cannot be read or required fields are missing.
+/// Panics with a fail-loudly diagnostic if the fixture is missing or
+/// required fields are absent; the message includes the regen command.
 pub fn load_mass_data(vehicle: &str) -> MassInitData {
     let filename = format!("body_init/{}_mass.py", vehicle.to_ascii_lowercase());
     let path = crate::tier3_csv::test_data_path(&filename);

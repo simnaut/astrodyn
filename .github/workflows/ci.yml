@@ -136,6 +136,12 @@ jobs:
             verif/SIM_dyncomp
           git checkout
       - uses: taiki-e/install-action@nextest
+      - name: Verify JEOD_PATH is unset (alias retired in #239)
+        run: |
+          if [ -n "${JEOD_PATH:-}" ]; then
+            echo "FATAL: JEOD_PATH is retired; only JEOD_HOME is supported" >&2
+            exit 1
+          fi
       - name: Run Tier 3 tests (exclude earth_moon ~17 min)
         env:
           JEOD_HOME: ${{ github.workspace }}/../jeod
@@ -182,6 +188,12 @@ jobs:
             verif/SIM_dyncomp
           git checkout
       - uses: taiki-e/install-action@nextest
+      - name: Verify JEOD_PATH is unset (alias retired in #239)
+        run: |
+          if [ -n "${JEOD_PATH:-}" ]; then
+            echo "FATAL: JEOD_PATH is retired; only JEOD_HOME is supported" >&2
+            exit 1
+          fi
       - name: Run all Tier 3 tests (including earth_moon)
         env:
           JEOD_HOME: ${{ github.workspace }}/../jeod

@@ -309,10 +309,14 @@ cargo test --workspace                          # all tests
 cargo test --workspace -- --skip tier3_         # unit + tier 2
 ```
 
-The full test suite runs without `$JEOD_HOME` set; only the regen
-binaries (`extract_*`) and the verification rigs need it. `TRICK_HOME`
-follows the standard Trick environment convention and is required by
-the Docker reference-CSV regen flow.
+The unit + Tier 2 suite (`cargo nextest run --workspace -E 'not test(tier3_)'`)
+runs without `$JEOD_HOME` set. The Tier 3 trajectory tests still need
+`$JEOD_HOME` because `run_verification/sim_*.rs` has un-migrated
+`jeod_root()` callers (Moon GRAIL150, S_define `#define DYNAMICS`,
+ISS `mass.py`, etc.) — see #249 for the migration TODO. The regen
+binaries (`extract_*`) also need `$JEOD_HOME`. `TRICK_HOME` follows
+the standard Trick environment convention and is required by the
+Docker reference-CSV regen flow.
 
 **Before every commit**, run the same checks CI runs:
 

@@ -52,6 +52,11 @@ pub fn load_orbital_test_vectors() -> Vec<CartesianStateVector> {
 ///
 /// Public for the regen binary's roundtrip self-check; runtime callers
 /// should use [`load_orbital_test_vectors`].
+///
+/// The header `count` is validated against the blob length using
+/// checked arithmetic so a corrupt/hostile header that overflows
+/// `usize::MAX / 48` reports a structured error instead of panicking
+/// inside the multiplication.
 pub fn parse_orbital_vectors_bin(bytes: &[u8]) -> Result<Vec<CartesianStateVector>, String> {
     if bytes.len() < 4 {
         return Err(format!(
@@ -60,8 +65,14 @@ pub fn parse_orbital_vectors_bin(bytes: &[u8]) -> Result<Vec<CartesianStateVecto
         ));
     }
     let count = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
-    let payload_bytes = count * 6 * 8;
-    if bytes.len() != 4 + payload_bytes {
+    // Bytes per vector = 6 components × 8-byte f64.
+    let payload_bytes = count
+        .checked_mul(48)
+        .ok_or_else(|| format!("header count {count} overflows usize when × 48"))?;
+    let expected_total = payload_bytes
+        .checked_add(4)
+        .ok_or_else(|| format!("header count {count} overflows usize at +4"))?;
+    if bytes.len() != expected_total {
         return Err(format!(
             "header says {count} vectors ({payload_bytes} bytes) but body is {}",
             bytes.len() - 4,

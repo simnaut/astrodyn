@@ -100,9 +100,10 @@ cargo nextest run --workspace -E 'not test(tier3_)'   # fast: Tier 1 + 2
 cargo nextest run --workspace -E 'test(tier3_)'       # Tier 3
 ```
 
-`cargo test --workspace -E 'not test(tier3_)'` works on a fresh clone
-without `$JEOD_HOME` — unit and Tier 2 reference data is committed
-under `test_data/`. The Tier 3 trajectory tests still need a sibling
+`cargo nextest run --workspace -E 'not test(tier3_)'` (or
+`cargo test --workspace -- --skip tier3_` on plain cargo) works on a
+fresh clone without `$JEOD_HOME` — unit and Tier 2 reference data is
+committed under `test_data/`. The Tier 3 trajectory tests still need a sibling
 `../jeod` checkout because the `run_verification/sim_*.rs` rigs they
 build on still load JEOD source for things like Moon SH coefficients
 and S_define dt parsing (migration of those to committed fixtures is
