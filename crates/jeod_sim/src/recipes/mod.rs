@@ -52,9 +52,9 @@ pub mod vehicle;
 /// only with this repository, so downstream mission code should not
 /// depend on this surface.
 ///
-/// Hidden from published rustdoc (`#[doc(hidden)]`) so that rendered
-/// docs surface only the mission-facing recipes.
-#[doc(hidden)]
+/// Hidden from rendered rustdoc so the published page surfaces only
+/// the mission-facing recipes.
+#[doc(hidden)] // allowed: workspace-internal Tier 3 scaffolding; see module docs and #249
 pub mod verification;
 
 pub use mission::Mission;

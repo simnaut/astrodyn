@@ -8,9 +8,9 @@
 //! are not packaged with the crate — calling these recipes from a
 //! downstream workspace will panic at runtime when the loader can't
 //! find the binaries. The whole `verification` submodule is therefore
-//! `#[doc(hidden)]`; the only consumers are `jeod_runner`'s Tier 3
-//! rigs and the in-repo examples that cross-validate against JEOD's
-//! reference data.
+//! hidden from rendered rustdoc; the only consumers are `jeod_runner`'s
+//! Tier 3 rigs and the in-repo examples that cross-validate against
+//! JEOD's reference data.
 //!
 //! Mission code should use the point-mass building blocks in
 //! [`earth`](super::super::earth), [`moon`](super::super::moon),

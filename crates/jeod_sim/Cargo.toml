@@ -17,8 +17,8 @@ repository.workspace = true
 # are not packaged with the crate, so the recipes only work in-repo —
 # enabling this feature from a downstream workspace will panic at
 # runtime when the loader can't find the binaries. The corresponding
-# Rust module is also `#[doc(hidden)]` so it doesn't leak into
-# published rustdoc. `jeod_runner`'s `run_verification` rigs and the
+# Rust module is also hidden from rendered rustdoc so it doesn't leak
+# into the published page. `jeod_runner`'s `run_verification` rigs and the
 # in-repo examples are the only intended consumers; mission code
 # should not enable this feature.
 jeod-source = ["dep:jeod_test_data"]
