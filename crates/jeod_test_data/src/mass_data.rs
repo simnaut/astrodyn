@@ -11,9 +11,14 @@ pub struct MassInitData {
     pub inertia: [[f64; 3]; 3],
 }
 
-/// Load mass initialization data from a JEOD mass.py file.
+/// Load mass initialization data for a vehicle from the committed
+/// `test_data/body_init/<vehicle>_mass.py` fixture.
 ///
-/// File location: `models/dynamics/body_action/verif/SIM_orbinit/Modified_data/{vehicle}/mass.py`
+/// Each fixture is a verbatim copy of JEOD's
+/// `models/dynamics/body_action/verif/SIM_orbinit/Modified_data/{vehicle}/mass.py`,
+/// kept in plain Python so reviewers can diff against upstream. Refresh
+/// after a JEOD upgrade via
+/// `cargo run -p jeod_test_data --bin extract_jeod_validation`.
 ///
 /// Parses Python assignments of the form:
 /// - `properties.mass = 100000.0`
@@ -21,14 +26,18 @@ pub struct MassInitData {
 /// - `properties.inertia[0] = [ 7e12, 0.0, 0.0]`
 ///
 /// # Panics
-/// Panics if the file cannot be read or required fields are missing.
-pub fn load_mass_data(jeod_root: &std::path::Path, vehicle: &str) -> MassInitData {
-    let path = jeod_root.join(format!(
-        "models/dynamics/body_action/verif/SIM_orbinit/Modified_data/{}/mass.py",
-        vehicle
-    ));
-    let content = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
+/// Panics with a fail-loudly diagnostic if the fixture is missing or
+/// required fields are absent; the message includes the regen command.
+pub fn load_mass_data(vehicle: &str) -> MassInitData {
+    let filename = format!("body_init/{}_mass.py", vehicle.to_ascii_lowercase());
+    let path = crate::tier3_csv::test_data_path(&filename);
+    let content = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+        panic!(
+            "Cannot read {}: {e}. Regenerate with: cargo run -p jeod_test_data \
+             --bin extract_jeod_validation",
+            path.display(),
+        )
+    });
 
     let mass_re = Regex::new(r"\.properties\.mass\s*=\s*([-\d.eE+]+)").unwrap();
     let pos_re =
@@ -212,18 +221,10 @@ fn parse_mass_content(content: &str, source: &std::path::Path) -> MassInitData {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::jeod_path;
 
     #[test]
     fn mass_parser_iss_spot_check() {
-        let root = jeod_path();
-        if !root.exists() {
-            panic!(
-                "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
-                root.display()
-            );
-        }
-        let data = load_mass_data(&root, "ISS");
+        let data = load_mass_data("ISS");
         assert_eq!(data.mass, 100000.0, "ISS mass should be 100000 kg");
         assert_eq!(data.position[0], -10.201, "ISS CoM x");
         assert_eq!(data.position[1], 0.206, "ISS CoM y");

@@ -46,11 +46,16 @@
 //!
 //! ## Environment
 //!
-//! Every parser that resolves JEOD source paths goes through
-//! [`jeod_path`], which checks `JEOD_PATH` first and then `JEOD_HOME`
-//! (the standard JEOD/Trick convention). [`trick_path`] does the same
-//! for `TRICK_HOME`. Tests that need JEOD source data assert (panic)
-//! when neither variable is set; they never skip silently.
+//! [`jeod_path`] resolves `$JEOD_HOME` (the standard JEOD/Trick
+//! convention used by NASA's upstream tooling). [`trick_path`] does the
+//! same for `$TRICK_HOME`.
+//!
+//! The unit + Tier 2 surface no longer reads JEOD source at runtime —
+//! committed fixtures cover every callsite that runs under
+//! `cargo nextest run --workspace -E 'not test(tier3_)'`. The Tier 3
+//! verification rigs (`jeod_runner::run_verification::sim_*`) and the
+//! regen binaries under `src/bin/extract_*.rs` still resolve
+//! `$JEOD_HOME`; #249 tracks the remaining `sim_*.rs` migration.
 
 #![forbid(unsafe_code)]
 
@@ -63,11 +68,10 @@ pub mod crossval;
 pub mod dyncomp_csv;
 pub mod euler_test;
 pub mod gravity_control;
-pub mod gravity_fixtures; // populated by issue #234
+pub mod gravity_fixtures;
 pub mod gravity_verif;
 pub mod jeod_cc;
 pub mod leap_second;
-pub mod mars_fixtures; // populated by issue #236
 pub mod mass_data;
 pub mod orbital_data;
 pub mod orbital_init;
@@ -77,18 +81,31 @@ pub mod s_define;
 pub mod tier3_csv;
 pub mod time_config;
 
-/// Get the JEOD root path from environment variables.
+/// Get the JEOD root path from `$JEOD_HOME`.
 ///
-/// Checks `JEOD_PATH` first, then `JEOD_HOME` (standard JEOD/Trick convention).
-/// Returns a path that may or may not exist — callers should check `.exists()`.
+/// `JEOD_HOME` is the standard convention used by NASA's upstream
+/// JEOD/Trick tooling. Returns a sentinel path (`"JEOD_HOME_not_set"`)
+/// when the variable isn't set; callers should check `.exists()` and
+/// panic with a fail-loudly diagnostic if they need JEOD source.
+///
+/// This helper has two remaining production callers:
+///
+/// 1. The regen binaries under `src/bin/extract_*.rs` (always need
+///    `$JEOD_HOME` to pull source data).
+/// 2. The Tier 3 verification rigs under
+///    `jeod_runner::run_verification::sim_*.rs` — those still resolve
+///    `$JEOD_HOME` for sim-specific S_define dt parsing, ISS
+///    `mass.py`, Moon GRAIL150 SH, etc. Migration of those callers to
+///    committed fixtures is tracked in #249; once that lands the
+///    runtime path drops `jeod_path()` entirely.
+///
+/// Unit + Tier 2 tests (everything matched by `not test(tier3_)`) read
+/// from committed fixtures and never call this helper.
 pub fn jeod_path() -> std::path::PathBuf {
-    if let Ok(p) = std::env::var("JEOD_PATH") {
-        return std::path::PathBuf::from(p);
-    }
     if let Ok(p) = std::env::var("JEOD_HOME") {
         return std::path::PathBuf::from(p);
     }
-    std::path::PathBuf::from("JEOD_PATH_or_JEOD_HOME_not_set")
+    std::path::PathBuf::from("JEOD_HOME_not_set")
 }
 
 /// Get the Trick root path from the `TRICK_HOME` environment variable.

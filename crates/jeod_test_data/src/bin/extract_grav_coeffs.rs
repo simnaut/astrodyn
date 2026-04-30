@@ -1,8 +1,7 @@
 //! Extract spherical-harmonics gravity coefficients from a JEOD source
 //! checkout into committed binary fixtures.
 //!
-//! This is a **regen-only** path: it reads `$JEOD_HOME` (or `$JEOD_PATH`,
-//! or an explicit `--jeod-home <PATH>` argument), parses each
+//! This is a **regen-only** path: it reads `$JEOD_HOME` or an explicit `--jeod-home <PATH>` argument, parses each
 //! `models/environment/gravity/data/src/earth_GGM*.cc` file via
 //! [`jeod_test_data::jeod_cc::load_from_jeod_cc`], and writes
 //! `test_data/gravity/{ggm02c,ggm05c}.bin` using the production
@@ -54,7 +53,7 @@ fn main() {
     let jeod_root = resolve_jeod_root(&args).unwrap_or_else(|| {
         eprintln!(
             "extract_grav_coeffs: JEOD source not found.\n\
-             Pass `--jeod-home <PATH>` or set JEOD_HOME / JEOD_PATH \
+             Pass `--jeod-home <PATH>` or set JEOD_HOME \
              (see CLAUDE.md \"Environment Setup\")."
         );
         std::process::exit(2);
@@ -133,9 +132,6 @@ fn resolve_jeod_root(args: &[String]) -> Option<PathBuf> {
         if let Some(p) = args.get(idx + 1) {
             return Some(PathBuf::from(p));
         }
-    }
-    if let Ok(p) = std::env::var("JEOD_PATH") {
-        return Some(PathBuf::from(p));
     }
     if let Ok(p) = std::env::var("JEOD_HOME") {
         return Some(PathBuf::from(p));

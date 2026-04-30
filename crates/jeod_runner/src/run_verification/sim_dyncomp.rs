@@ -35,7 +35,7 @@ fn jeod_root() -> PathBuf {
     let r = jeod_test_data::jeod_path();
     assert!(
         r.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        "JEOD source not found at {}. Set JEOD_HOME.",
         r.display()
     );
     r
@@ -437,7 +437,7 @@ fn build_run4_3rd_body(init: &InitialConditions) -> SimulationBuilder {
     // Earth GGM05C mu and Sun mu from committed fixtures (Wave 1 of #232);
     // Moon GRAIL150 has no fixture yet, loaded from JEOD source.
     let earth_mu = jeod_test_data::gravity_fixtures::load_ggm05c().mu;
-    let mu_sun = jeod_test_data::mars_fixtures::load_sun_spherical_mu();
+    let mu_sun = jeod_test_data::gravity_fixtures::load_sun_spherical_mu();
     let mu_moon =
         jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("moon_GRAIL150.cc"))
             .expect("load Moon mu");
@@ -587,7 +587,7 @@ pub fn build_battin_3rd_body(init: &InitialConditions, battin: bool) -> BattinSc
     // Earth GGM05C mu and Sun mu from committed fixtures (Wave 1 of #232);
     // Moon GRAIL150 has no fixture yet, loaded from JEOD source.
     let earth_mu = jeod_test_data::gravity_fixtures::load_ggm05c().mu;
-    let mu_sun = jeod_test_data::mars_fixtures::load_sun_spherical_mu();
+    let mu_sun = jeod_test_data::gravity_fixtures::load_sun_spherical_mu();
     let mu_moon =
         jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("moon_GRAIL150.cc"))
             .expect("load Moon mu");
@@ -706,7 +706,7 @@ fn build_run7(
     // Earth GGM02C SH and Sun mu from committed fixtures (Wave 1 of #232);
     // Moon GRAIL150 has no fixture yet, loaded from JEOD source.
     let earth_grav = jeod_test_data::gravity_fixtures::load_ggm02c();
-    let mu_sun = jeod_test_data::mars_fixtures::load_sun_spherical_mu();
+    let mu_sun = jeod_test_data::gravity_fixtures::load_sun_spherical_mu();
     let mu_moon =
         jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("moon_GRAIL150.cc"))
             .expect("load Moon mu");

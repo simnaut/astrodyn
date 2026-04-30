@@ -15,7 +15,7 @@ use jeod_sim::{
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
 fn load_mu_sun() -> f64 {
-    jeod_test_data::mars_fixtures::load_sun_spherical_mu()
+    jeod_test_data::gravity_fixtures::load_sun_spherical_mu()
 }
 
 /// Load a state CSV with interleaved columns: time, pos[0], vel[0], pos[1], vel[1], pos[2], vel[2].
@@ -71,7 +71,7 @@ fn tier3_simulation_mars_dawn() {
     let init_vel = init.velocity.unwrap();
 
     // Load MRO110B2 spherical harmonics coefficients from the committed fixture.
-    let sh_data = jeod_test_data::mars_fixtures::load_mars_mro110b2();
+    let sh_data = jeod_test_data::gravity_fixtures::load_mars_mro110b2();
     let mars_mu = sh_data.mu;
 
     // Dawn epoch: 2009-02-17 23:00:00 UTC

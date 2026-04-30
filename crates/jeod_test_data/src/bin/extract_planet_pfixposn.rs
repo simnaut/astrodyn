@@ -1,8 +1,7 @@
 //! Extract `SIM_PFIXPOSN_VERIF` seeds from a JEOD source checkout into
 //! `test_data/planet_pfixposn_seeds.json`.
 //!
-//! This is a **regen-only** path: it reads `$JEOD_HOME` (or
-//! `$JEOD_PATH`, or an explicit `--jeod-home <PATH>` argument), parses the
+//! This is a **regen-only** path: it reads `$JEOD_HOME` or an explicit `--jeod-home <PATH>` argument, parses the
 //! three `add_read` blocks from
 //! `models/utils/planet_fixed/planet_fixed_posn/verif/SIM_PFIXPOSN_VERIF/SET_test/RUN_pfixposn_test/input.py`,
 //! and writes the committed JSON consumed by
@@ -26,7 +25,7 @@ fn main() {
     let jeod_root = resolve_jeod_root(&args).unwrap_or_else(|| {
         eprintln!(
             "extract_planet_pfixposn: JEOD source not found.\n\
-             Pass `--jeod-home <PATH>` or set JEOD_HOME / JEOD_PATH \
+             Pass `--jeod-home <PATH>` or set JEOD_HOME \
              (see CLAUDE.md \"Environment Setup\")."
         );
         std::process::exit(2);
@@ -64,9 +63,6 @@ fn resolve_jeod_root(args: &[String]) -> Option<std::path::PathBuf> {
         if let Some(p) = args.get(idx + 1) {
             return Some(std::path::PathBuf::from(p));
         }
-    }
-    if let Ok(p) = std::env::var("JEOD_PATH") {
-        return Some(std::path::PathBuf::from(p));
     }
     if let Ok(p) = std::env::var("JEOD_HOME") {
         return Some(std::path::PathBuf::from(p));

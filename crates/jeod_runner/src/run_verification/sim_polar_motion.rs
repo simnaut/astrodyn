@@ -31,7 +31,7 @@ fn build_run2p_polar_motion(init: &InitialConditions) -> SimulationBuilder {
     let jeod_root = jeod_test_data::jeod_path();
     assert!(
         jeod_root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME or JEOD_PATH.",
+        "JEOD source not found at {}. Set JEOD_HOME.",
         jeod_root.display()
     );
 
