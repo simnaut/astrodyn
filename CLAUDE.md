@@ -10,14 +10,22 @@ for architecture and phase summaries. The original phased implementation plan
 
 ### Environment Setup
 
-`cargo build --workspace && cargo nextest run --workspace` works on a fresh
-clone of this repo with no JEOD checkout — every test, including Tier 3
-trajectory cross-validation, reads from committed fixtures under
-`test_data/`. CI runs the full suite with `JEOD_HOME` and `JEOD_PATH`
-explicitly unset (see `.github/workflows/ci.yml` "Verify JEOD env vars
-are unset" steps).
+`cargo build --workspace && cargo nextest run --workspace -E 'not test(tier3_)'`
+works on a fresh clone of this repo with no JEOD checkout — the unit and
+Tier 2 tests read from committed fixtures under `test_data/`. CI's "Test
+(unit + tier 2)" job verifies this with a regression fence that asserts
+`JEOD_HOME` and `JEOD_PATH` are both unset before running.
 
-You only need `$JEOD_HOME` (and a sibling `../jeod` checkout) when:
+**Tier 3 trajectory tests still need JEOD source.** The
+`run_verification/sim_*.rs` rigs that build Tier 3 verification cases
+have many `jeod_root()` callers (Moon GRAIL150 SH, S_define `#define
+DYNAMICS` parsing, ISS / STS-114 mass.py loading, etc.). Migrating each
+of those to a committed fixture is a sizeable follow-on; for now,
+running Tier 3 tests requires `$JEOD_HOME` to point at a NASA JEOD
+checkout. CI's Tier 3 jobs sparse-checkout the relevant subtrees and
+set `JEOD_HOME` accordingly.
+
+You also need `$JEOD_HOME` when:
 
 1. Regenerating fixtures after a JEOD upgrade — invoked through the
    `extract_*` binaries under `crates/jeod_test_data/src/bin/` (e.g.
