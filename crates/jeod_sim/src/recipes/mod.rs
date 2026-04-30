@@ -1,8 +1,8 @@
-//! Named building blocks, scenarios, and verification cases.
+//! Named building blocks and pre-composed mission scenarios.
 //!
 //! Phase 6 of #101 introduces this module as the user-facing entry
 //! point for typed scenario construction. Recipes are organized in
-//! three layers:
+//! two layers:
 //!
 //! - **Building blocks** ([`earth`], [`moon`], [`sun`], [`mars`],
 //!   [`atmosphere`], [`epoch`], [`vehicle`], [`orbital_elements`],
@@ -13,13 +13,7 @@
 //!   `Mission::clementine_lunar()`, … each return a typed `Mission`
 //!   that materializes into a
 //!   [`SimulationBuilder`](crate::SimulationBuilder) via
-//!   [`into_builder`](Mission::into_builder). Each scenario is the
-//!   smallest composition of building blocks plus vehicle config that
-//!   matches a JEOD verification simulation.
-//! - **Verification** ([`verification`]):
-//!   [`VerificationCase`](verification::VerificationCase) bundles a
-//!   scenario with reference-CSV data and tolerances. Phase 7/8 will
-//!   populate the catalog of cases; Phase 6 ships the scaffold.
+//!   [`into_builder`](Mission::into_builder).
 //!
 //! Mission code consumes recipes through whichever adapter it targets:
 //!
@@ -34,10 +28,6 @@
 //! use bevy_jeod::prelude::*;                      // .spawn() terminal
 //! commands.spawn_scenario(Mission::iss_leo().into_builder());
 //! ```
-//!
-//! Recipes that depend on JEOD source data (`$JEOD_HOME/...`) panic
-//! at construction with the exact `cargo run` / Docker command if the
-//! data is missing — see `feedback_no_graceful_skip.md`.
 
 pub mod atmosphere;
 pub mod constants;
@@ -51,6 +41,20 @@ pub mod orbital_elements;
 pub mod scenarios;
 pub mod sun;
 pub mod vehicle;
+
+/// Tier 3 cross-validation scaffolding (workspace-internal).
+///
+/// Contains [`VerificationCase`](verification::VerificationCase) and
+/// the SH-gravity recipes that back it
+/// (`verification::reference_data::*`). Consumed by `jeod_runner`'s
+/// `run_verification` rigs and the workspace-internal examples; these
+/// types reach into committed test data under `test_data/` that ships
+/// only with this repository, so downstream mission code should not
+/// depend on this surface.
+///
+/// Hidden from published rustdoc (`#[doc(hidden)]`) so that rendered
+/// docs surface only the mission-facing recipes.
+#[doc(hidden)]
 pub mod verification;
 
 pub use mission::Mission;

@@ -1,20 +1,27 @@
 //! High-fidelity gravity-source recipes backed by committed test
-//! fixtures.
+//! fixtures **(workspace-internal — not for downstream mission code).**
 //!
 //! Functions here build [`GravitySourceEntry`] values populated with
 //! spherical-harmonics coefficient sets loaded from
-//! `test_data/gravity/*.bin` (regenerable via the `extract_*` binaries
-//! under [`jeod_test_data::bin`](../../../../jeod_test_data/index.html)).
-//! No JEOD checkout is required at runtime — these recipes work on a
-//! fresh clone with `$JEOD_HOME` unset.
+//! `test_data/gravity/*.bin` via `jeod_test_data::gravity_fixtures`.
+//! Those fixtures live at the workspace root of *this repository* and
+//! are not packaged with the crate — calling these recipes from a
+//! downstream workspace will panic at runtime when the loader can't
+//! find the binaries. The whole `verification` submodule is therefore
+//! `#[doc(hidden)]`; the only consumers are `jeod_runner`'s Tier 3
+//! rigs and the in-repo examples that cross-validate against JEOD's
+//! reference data.
 //!
-//! **Mission code should still prefer the lighter point-mass building
-//! blocks** in [`earth`](super::super::earth),
-//! [`moon`](super::super::moon), [`mars`](super::super::mars) when
-//! mission accuracy doesn't require the SH model. These verification
-//! recipes exist to keep examples and Tier 3 rigs that *want*
-//! NASA-grade gravity coupled to the same upstream coefficient sets
-//! JEOD ships with.
+//! Mission code should use the point-mass building blocks in
+//! [`earth`](super::super::earth), [`moon`](super::super::moon),
+//! [`mars`](super::super::mars), or supply its own
+//! [`SphericalHarmonicsData`](jeod_gravity::SphericalHarmonicsData) if
+//! a higher-fidelity field is needed.
+//!
+//! Fixtures here are regenerable via the `extract_*` binaries under
+//! `jeod_test_data` (`cargo run -p jeod_test_data --bin
+//! extract_grav_coeffs` for Earth fields, `extract_mars_data` for
+//! Moon/Mars/Sun).
 
 use jeod_test_data::gravity_fixtures;
 
