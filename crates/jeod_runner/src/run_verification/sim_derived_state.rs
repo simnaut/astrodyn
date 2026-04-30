@@ -7,8 +7,6 @@
 //! `DerivedStateConfig` flag is enabled and which CSV columns the
 //! extras comparator reads.
 
-use std::path::PathBuf;
-
 use glam::{DMat3, DVec3};
 use jeod_sim::recipes::verification::{
     CsvReference, ExtrasComparator, InitialConditions, Tolerances, VerificationCase,
@@ -34,16 +32,6 @@ const SIM_EULER_DIR: &str = "models/dynamics/derived_state/verif/SIM_Euler";
 /// rather than a sim config file — keep this constant in sync if the
 /// upstream verif sim's epoch ever changes.
 const NED_UT1_TAI_S: f64 = -25.381_221_5;
-
-fn jeod_root() -> PathBuf {
-    let r = jeod_test_data::jeod_path();
-    assert!(
-        r.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME.",
-        r.display()
-    );
-    r
-}
 
 fn load_mu_earth() -> f64 {
     // Earth mu sourced from the committed `test_data/gravity/ggm05c.bin`
@@ -85,10 +73,10 @@ fn point_mass_earth(mu: f64, with_rnp: bool) -> GravitySourceEntry {
 // ── SIM_OrbElem ────────────────────────────────────────────────────────────
 
 fn build_orbelem_ecc(init: &InitialConditions) -> SimulationBuilder {
-    let jeod = jeod_root();
     let mu = load_mu_earth();
-    let dt =
-        jeod_test_data::s_define::load_dynamics_dt(&jeod.join(SIM_ORBELEM_DIR).join("S_define"));
+    let dt = jeod_test_data::s_define::load_dynamics_dt(
+        &jeod_test_data::jeod_inputs::path(SIM_ORBELEM_DIR).join("S_define"),
+    );
 
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, dt);
@@ -141,9 +129,10 @@ pub fn orbelem_ecc() -> VerificationCase {
 // ── SIM_LVLH ───────────────────────────────────────────────────────────────
 
 fn build_lvlh(init: &InitialConditions) -> SimulationBuilder {
-    let jeod = jeod_root();
     let mu = load_mu_earth();
-    let dt = jeod_test_data::s_define::load_dynamics_dt(&jeod.join(SIM_LVLH_DIR).join("S_define"));
+    let dt = jeod_test_data::s_define::load_dynamics_dt(
+        &jeod_test_data::jeod_inputs::path(SIM_LVLH_DIR).join("S_define"),
+    );
 
     let time = SimulationTime::at_j2000(default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, dt);
@@ -225,8 +214,7 @@ pub fn lvlh_equ() -> VerificationCase {
 // ── SIM_NED ────────────────────────────────────────────────────────────────
 
 fn ned_time() -> SimulationTime {
-    let jeod = jeod_root();
-    let verif_dir = jeod.join(DERIVED_STATE_VERIF);
+    let verif_dir = jeod_test_data::jeod_inputs::path(DERIVED_STATE_VERIF);
     let time_cfg = jeod_test_data::time_config::load_time_config(
         &verif_dir.join("Modified_data/date_and_time.py"),
     );
@@ -239,9 +227,10 @@ fn ned_time() -> SimulationTime {
 }
 
 fn build_ned(init: &InitialConditions, spherical: bool) -> SimulationBuilder {
-    let jeod = jeod_root();
     let mu = load_mu_earth();
-    let dt = jeod_test_data::s_define::load_dynamics_dt(&jeod.join(SIM_NED_DIR).join("S_define"));
+    let dt = jeod_test_data::s_define::load_dynamics_dt(
+        &jeod_test_data::jeod_inputs::path(SIM_NED_DIR).join("S_define"),
+    );
 
     let mut sb = SimulationBuilder::new(ned_time(), dt);
     let earth = sb.add_source("Earth", point_mass_earth(mu, true));
@@ -389,13 +378,14 @@ fn iss_euler_mass_properties() -> MassProperties {
 }
 
 fn build_euler_run2(init: &InitialConditions) -> SimulationBuilder {
-    let jeod = jeod_root();
     let mu = load_mu_earth();
     // SIM_Euler reuses the SIM_dyncomp S_define dt (1s). The Euler
     // verif sim shares its time/integrator config with the dyncomp
     // RUN_2 trajectory it's driven from, so we read the same file the
     // existing test reads.
-    let dt = jeod_test_data::s_define::load_dynamics_dt(&jeod.join("verif/SIM_dyncomp/S_define"));
+    let dt = jeod_test_data::s_define::load_dynamics_dt(&jeod_test_data::jeod_inputs::path(
+        "verif/SIM_dyncomp/S_define",
+    ));
 
     let q = init
         .quaternion
@@ -430,9 +420,10 @@ fn build_euler_run2(init: &InitialConditions) -> SimulationBuilder {
 }
 
 fn build_euler_edge(init: &InitialConditions) -> SimulationBuilder {
-    let jeod = jeod_root();
     let mu = load_mu_earth();
-    let dt = jeod_test_data::s_define::load_dynamics_dt(&jeod.join(SIM_EULER_DIR).join("S_define"));
+    let dt = jeod_test_data::s_define::load_dynamics_dt(
+        &jeod_test_data::jeod_inputs::path(SIM_EULER_DIR).join("S_define"),
+    );
 
     // SIM_Euler edge cases (ecc / equ) load the reference quaternion
     // from the CSV row at t=0 and force ang_vel = 0 — the JEOD verif

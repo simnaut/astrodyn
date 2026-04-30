@@ -28,18 +28,12 @@ const XP_ARCSEC: f64 = 0.06806;
 const YP_ARCSEC: f64 = 0.24156;
 
 fn build_run2p_polar_motion(init: &InitialConditions) -> SimulationBuilder {
-    let jeod_root = jeod_test_data::jeod_path();
-    assert!(
-        jeod_root.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME.",
-        jeod_root.display()
-    );
-
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
     let mu_earth = jeod_test_data::gravity_fixtures::load_ggm05c().mu;
 
-    let dt =
-        jeod_test_data::s_define::load_dynamics_dt(&jeod_root.join("verif/SIM_dyncomp/S_define"));
+    let dt = jeod_test_data::s_define::load_dynamics_dt(&jeod_test_data::jeod_inputs::path(
+        "verif/SIM_dyncomp/S_define",
+    ));
     let time = SimulationTime::at_j2000(default_leap_second_table());
 
     let mut sb = SimulationBuilder::new(time, dt);

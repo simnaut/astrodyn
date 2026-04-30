@@ -10,12 +10,11 @@
 //!
 //! This example consumes
 //! [`recipes::verification::reference_data`](jeod_sim::recipes::verification::reference_data),
-//! which loads JEOD source files (`$JEOD_HOME`) for the
-//! Moon LP150Q gravity model and `test_data/de421.bsp` /
-//! `test_data/moon_pa_de421_1900-2050.bpc` for ephemeris and Moon
-//! libration. Mission code that wants high-fidelity gravity / ephemeris
-//! without a JEOD checkout is tracked in #144; until that lands the
-//! example is verification-grade by necessity.
+//! which reads the committed `test_data/gravity/moon_lp150q.bin`
+//! fixture for the Moon LP150Q gravity model. DE421 ephemeris and Moon
+//! libration come from the committed `test_data/de421.bsp` and
+//! `test_data/moon_pa_de421_1900-2050.bpc`. No JEOD checkout is
+//! required to run the example.
 //!
 //! ```bash
 //! cargo run -p jeod_runner --example earth_moon

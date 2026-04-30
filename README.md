@@ -100,17 +100,13 @@ cargo nextest run --workspace -E 'not test(tier3_)'   # fast: Tier 1 + 2
 cargo nextest run --workspace -E 'test(tier3_)'       # Tier 3
 ```
 
-`cargo nextest run --workspace -E 'not test(tier3_)'` (or
-`cargo test --workspace -- --skip tier3_` on plain cargo) works on a
-fresh clone without `$JEOD_HOME` — unit and Tier 2 reference data is
-committed under `test_data/`. The Tier 3 trajectory tests still need a sibling
-`../jeod` checkout because the `run_verification/sim_*.rs` rigs they
-build on still load JEOD source for things like Moon SH coefficients
-and S_define dt parsing (migration of those to committed fixtures is
-follow-on work). `JEOD_HOME` is also required when regenerating
-fixtures via the `extract_*` binaries under
-`crates/jeod_test_data/src/bin/`. See [`CLAUDE.md`](CLAUDE.md) for the
-full build / test / regen workflow.
+`cargo nextest run --workspace` works on a fresh clone without
+`$JEOD_HOME` — every tier (unit, Tier 2, Tier 3) reads from committed
+fixtures under `test_data/`. `$JEOD_HOME` is required only when
+regenerating those fixtures via the `extract_*` binaries under
+`crates/jeod_test_data/src/bin/` or refreshing the verbatim mirror at
+`test_data/jeod_inputs/`. See [`CLAUDE.md`](CLAUDE.md) for the full
+build / test / regen workflow.
 
 ## Documentation
 

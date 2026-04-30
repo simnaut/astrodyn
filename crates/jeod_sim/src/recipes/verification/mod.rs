@@ -1,3 +1,12 @@
+// The `recipes::verification` module is hidden from rendered rustdoc
+// (declared in `recipes/mod.rs`) — the entire submodule is
+// workspace-internal Tier 3 scaffolding that downstream mission code
+// should not consume. Intra-doc links inside this file therefore
+// aren't surfaced anywhere; allow the broken-link lint so we don't
+// have to chase resolution that rustdoc suppresses for hidden
+// modules.
+#![allow(rustdoc::broken_intra_doc_links)]
+
 //! Verification-case scaffolding.
 //!
 //! [`VerificationCase`] bundles a scenario constructor, a reference

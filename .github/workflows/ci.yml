@@ -110,41 +110,19 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Sparse checkout JEOD reference data
-        # Tier 3 tests still need JEOD source for run_verification/sim_*.rs
-        # callers that haven't been migrated to committed fixtures
-        # (Moon GRAIL150 SH, SIM_*/S_define dt parsing, ISS mass.py, etc.).
-        # These migrations are tracked as a follow-on to #232; the unit +
-        # tier 2 job above already runs without $JEOD_HOME.
-        run: |
-          JEOD_TAG=jeod_v5.4.0
-          JEOD_SHA=27893108bbde8bb162b3213a30d57af89acd1c76
-          git clone --no-checkout --depth 1 --branch "$JEOD_TAG" \
-            https://github.com/nasa/jeod.git ../jeod
-          cd ../jeod
-          [ "$(git rev-parse HEAD)" = "$JEOD_SHA" ] || \
-            { echo "FATAL: $JEOD_TAG resolved to $(git rev-parse HEAD), expected $JEOD_SHA"; exit 1; }
-          git sparse-checkout set \
-            models/environment/gravity/data \
-            models/environment/time/data \
-            models/dynamics/body_action/verif/SIM_orbinit/Modified_data \
-            models/dynamics/derived_state/verif \
-            models/interactions/radiation_pressure/verif/SIM_3_ORBIT \
-            models/interactions/radiation_pressure/verif/SIM_3_ORBIT_1st_ORDER \
-            models/interactions/radiation_pressure/verif/SIM_2A_SHADOW_CALC \
-            models/environment/time/verif/SIM_7_time_reversal \
-            verif/SIM_dyncomp
-          git checkout
       - uses: taiki-e/install-action@nextest
-      - name: Verify JEOD_PATH is unset (alias retired in #239)
+      - name: Verify JEOD env vars are unset (regression fence)
+        # #249/#239 finished migrating the run_verification/sim_*.rs
+        # rigs to committed fixtures under test_data/jeod_inputs/ and
+        # test_data/gravity/. Tier 3 now runs without a JEOD checkout;
+        # this fence catches any regression that re-introduces a
+        # $JEOD_HOME read on the runtime path.
         run: |
-          if [ -n "${JEOD_PATH:-}" ]; then
-            echo "FATAL: JEOD_PATH is retired; only JEOD_HOME is supported" >&2
+          if [ -n "${JEOD_HOME:-}" ] || [ -n "${JEOD_PATH:-}" ]; then
+            echo "FATAL: JEOD_HOME / JEOD_PATH must be unset for Tier 3 (#249/#239)" >&2
             exit 1
           fi
       - name: Run Tier 3 tests (exclude earth_moon ~17 min)
-        env:
-          JEOD_HOME: ${{ github.workspace }}/../jeod
         run: cargo nextest run --workspace -E 'test(tier3_) and not test(earth_moon)'
       - name: Generate cross-validation report
         run: cargo run -p jeod_test_data --bin tier3_report
@@ -165,38 +143,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Sparse checkout JEOD reference data
-        # Same rationale as test-tier3 above: Tier 3 still needs JEOD
-        # source for the un-migrated run_verification/sim_*.rs callers.
-        run: |
-          JEOD_TAG=jeod_v5.4.0
-          JEOD_SHA=27893108bbde8bb162b3213a30d57af89acd1c76
-          git clone --no-checkout --depth 1 --branch "$JEOD_TAG" \
-            https://github.com/nasa/jeod.git ../jeod
-          cd ../jeod
-          [ "$(git rev-parse HEAD)" = "$JEOD_SHA" ] || \
-            { echo "FATAL: $JEOD_TAG resolved to $(git rev-parse HEAD), expected $JEOD_SHA"; exit 1; }
-          git sparse-checkout set \
-            models/environment/gravity/data \
-            models/environment/time/data \
-            models/dynamics/body_action/verif/SIM_orbinit/Modified_data \
-            models/dynamics/derived_state/verif \
-            models/interactions/radiation_pressure/verif/SIM_3_ORBIT \
-            models/interactions/radiation_pressure/verif/SIM_3_ORBIT_1st_ORDER \
-            models/interactions/radiation_pressure/verif/SIM_2A_SHADOW_CALC \
-            models/environment/time/verif/SIM_7_time_reversal \
-            verif/SIM_dyncomp
-          git checkout
       - uses: taiki-e/install-action@nextest
-      - name: Verify JEOD_PATH is unset (alias retired in #239)
+      - name: Verify JEOD env vars are unset (regression fence)
         run: |
-          if [ -n "${JEOD_PATH:-}" ]; then
-            echo "FATAL: JEOD_PATH is retired; only JEOD_HOME is supported" >&2
+          if [ -n "${JEOD_HOME:-}" ] || [ -n "${JEOD_PATH:-}" ]; then
+            echo "FATAL: JEOD_HOME / JEOD_PATH must be unset for Tier 3 (#249/#239)" >&2
             exit 1
           fi
       - name: Run all Tier 3 tests (including earth_moon)
-        env:
-          JEOD_HOME: ${{ github.workspace }}/../jeod
         run: cargo nextest run --workspace -E 'test(tier3_)'
       - name: Generate cross-validation report
         run: cargo run -p jeod_test_data --bin tier3_report

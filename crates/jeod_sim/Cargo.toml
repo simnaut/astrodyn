@@ -9,14 +9,26 @@ license.workspace = true
 repository.workspace = true
 
 [features]
-# `jeod-source` exposes verification helpers that read from a JEOD source
-# checkout (`$JEOD_HOME`) — currently the
-# `recipes::verification::reference_data` loaders that parse `.cc`
-# gravity files via `jeod_test_data::jeod_cc`. Off by default so
-# downstream mission crates don't pull `jeod_test_data` (a dev-flavored
-# crate) into their production build. Verification rigs in
-# `jeod_runner` enable this feature.
+# `jeod-source` is workspace-internal: it exposes the
+# `recipes::verification` Tier 3 cross-validation scaffolding (gravity
+# recipes backed by `test_data/gravity/*.bin` plus the
+# `VerificationCase` / `Tolerances` / `CsvReference` types). The
+# fixture binaries live at the workspace root of *this repository* and
+# are not packaged with the crate, so the recipes only work in-repo —
+# enabling this feature from a downstream workspace will panic at
+# runtime when the loader can't find the binaries. The corresponding
+# Rust module is also hidden from rendered rustdoc so it doesn't leak
+# into the published page. `jeod_runner`'s `run_verification` rigs and the
+# in-repo examples are the only intended consumers; mission code
+# should not enable this feature.
 jeod-source = ["dep:jeod_test_data"]
+
+# Hide the workspace-internal `jeod-source` feature from docs.rs builds
+# so the published documentation surfaces only the mission-facing
+# recipes.
+[package.metadata.docs.rs]
+no-default-features = true
+features = []
 
 [dependencies]
 jeod_quantities = { path = "../jeod_quantities", version = "0.1.0" }
@@ -30,9 +42,10 @@ jeod_interactions = { path = "../jeod_interactions", version = "0.1.0" }
 jeod_ephemeris = { path = "../jeod_ephemeris", version = "0.1.0" }
 jeod_planet = { path = "../jeod_planet", version = "0.1.0" }
 # Optional: only pulled in when the `jeod-source` feature is enabled.
-# Used by `recipes::verification::reference_data` for parsing JEOD `.cc`
-# coefficient files. `jeod_test_data` is the dev/test-data crate; this
-# is the single non-dev consumer.
+# Used by `recipes::verification::reference_data` to load committed
+# gravity-coefficient binaries via `jeod_test_data::gravity_fixtures`.
+# `jeod_test_data` is the dev/test-data crate; this is the single
+# non-dev consumer.
 jeod_test_data = { path = "../jeod_test_data", version = "0.1.0", optional = true }
 glam = { workspace = true }
 log = { workspace = true }

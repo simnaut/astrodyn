@@ -42,16 +42,6 @@ const INITIAL_PLATE_TEMP_K: f64 = 270.0;
 /// reorder can't silently desync `srp_pre_step` from the registry.
 const SRP_SUN_IDX: usize = 1;
 
-fn jeod_root() -> PathBuf {
-    let r = jeod_test_data::jeod_path();
-    assert!(
-        r.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME.",
-        r.display()
-    );
-    r
-}
-
 fn bsp_path() -> PathBuf {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../test_data/de421.bsp");
     assert!(p.exists(), "DE421 ephemeris not found at {}", p.display());
@@ -178,10 +168,8 @@ fn sun_zero_mu(initial_pos: DVec3) -> GravitySourceEntry {
 }
 
 fn srp_time(modified_data_dir: &str) -> SimulationTime {
-    let jeod = jeod_root();
     let cfg = jeod_test_data::time_config::load_time_config(
-        &jeod
-            .join(modified_data_dir)
+        &jeod_test_data::jeod_inputs::path(modified_data_dir)
             .join("Modified_data/date_and_time.py"),
     );
     SimulationTime::new(cfg.tai_tjt(), default_leap_second_table())
@@ -204,8 +192,7 @@ fn build_srp(
     integration_order: ThermalIntegrationOrder,
     sun_update: SunUpdate,
 ) -> SimulationBuilder {
-    let jeod = jeod_root();
-    let sim_dir = jeod.join(sim_subdir);
+    let sim_dir = jeod_test_data::jeod_inputs::path(sim_subdir);
 
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).

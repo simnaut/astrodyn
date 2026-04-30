@@ -31,16 +31,6 @@ const SIM_DYNCOMP: &str = "verif/SIM_dyncomp";
 /// [`PlanetConfig::omega`](jeod_sim::PlanetConfig).
 const OMEGA_EARTH: f64 = jeod_sim::planet_config::EARTH.omega;
 
-fn jeod_root() -> PathBuf {
-    let r = jeod_test_data::jeod_path();
-    assert!(
-        r.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME.",
-        r.display()
-    );
-    r
-}
-
 fn point_mass_earth_source(mu: f64) -> GravitySourceEntry {
     GravitySourceEntry {
         source: GravitySource {
@@ -87,8 +77,7 @@ fn rot_from(init: &InitialConditions, case: &str) -> RotationalState {
 }
 
 fn build_run2_3dof(init: &InitialConditions) -> SimulationBuilder {
-    let jeod = jeod_root();
-    let sim_dir = jeod.join(SIM_DYNCOMP);
+    let sim_dir = jeod_test_data::jeod_inputs::path(SIM_DYNCOMP);
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
     let earth_mu = jeod_test_data::gravity_fixtures::load_ggm05c().mu;
@@ -107,8 +96,7 @@ fn build_run2_3dof(init: &InitialConditions) -> SimulationBuilder {
 }
 
 fn build_run2_6dof(init: &InitialConditions) -> SimulationBuilder {
-    let jeod = jeod_root();
-    let sim_dir = jeod.join(SIM_DYNCOMP);
+    let sim_dir = jeod_test_data::jeod_inputs::path(SIM_DYNCOMP);
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
     let earth_mu = jeod_test_data::gravity_fixtures::load_ggm05c().mu;
@@ -196,8 +184,7 @@ pub fn run2_6dof() -> VerificationCase {
 // ── Shared helpers used by RUN_3+ (SH gravity, RNP rotation, time/UT1) ─────
 
 fn iss_mass_properties() -> MassProperties {
-    let jeod = jeod_root();
-    let sim_dir = jeod.join(SIM_DYNCOMP);
+    let sim_dir = jeod_test_data::jeod_inputs::path(SIM_DYNCOMP);
     let mass_init = jeod_test_data::mass_data::load_mass_from_file(
         &sim_dir.join("Modified_data/mass.py"),
         Some("set_mass_iss"),
@@ -227,8 +214,7 @@ fn iss_mass_properties() -> MassProperties {
 }
 
 fn sphere_mass_properties() -> MassProperties {
-    let jeod = jeod_root();
-    let sim_dir = jeod.join(SIM_DYNCOMP);
+    let sim_dir = jeod_test_data::jeod_inputs::path(SIM_DYNCOMP);
     let mass_init = jeod_test_data::mass_data::load_mass_from_file(
         &sim_dir.join("Modified_data/mass.py"),
         Some("set_mass_sphere"),
@@ -260,8 +246,7 @@ fn sphere_mass_properties() -> MassProperties {
 /// Simulation time anchored at the SIM_dyncomp epoch (parsed from
 /// `Modified_data/time.py`), with the UT1-TAI offset applied.
 fn dyncomp_time() -> SimulationTime {
-    let jeod = jeod_root();
-    let sim_dir = jeod.join(SIM_DYNCOMP);
+    let sim_dir = jeod_test_data::jeod_inputs::path(SIM_DYNCOMP);
     let time_cfg =
         jeod_test_data::time_config::load_time_config(&sim_dir.join("Modified_data/time.py"));
     let mut time = SimulationTime::new(time_cfg.tai_tjt(), default_leap_second_table());
@@ -316,8 +301,7 @@ fn earth_pm_with_rnp(mu: f64) -> GravitySourceEntry {
 // ── RUN_3A / RUN_3B: spherical-harmonics gravity (4x4 / 8x8) + RNP ─────────
 
 fn build_run3_3dof(init: &InitialConditions, run_dir: &str) -> SimulationBuilder {
-    let jeod = jeod_root();
-    let sim_dir = jeod.join(SIM_DYNCOMP);
+    let sim_dir = jeod_test_data::jeod_inputs::path(SIM_DYNCOMP);
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
 
     // Gravity controls degree/order from RUN input chain.
@@ -429,18 +413,14 @@ fn third_body_source(mu: f64, initial_pos: DVec3) -> GravitySourceEntry {
 }
 
 fn build_run4_3rd_body(init: &InitialConditions) -> SimulationBuilder {
-    let jeod = jeod_root();
-    let sim_dir = jeod.join(SIM_DYNCOMP);
-    let grav_data_dir = jeod.join("models/environment/gravity/data/src");
+    let sim_dir = jeod_test_data::jeod_inputs::path(SIM_DYNCOMP);
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
 
-    // Earth GGM05C mu and Sun mu from committed fixtures (Wave 1 of #232);
-    // Moon GRAIL150 has no fixture yet, loaded from JEOD source.
+    // Earth GGM05C mu, Sun mu, and Moon GRAIL150 mu all from committed
+    // gravity fixtures (#249).
     let earth_mu = jeod_test_data::gravity_fixtures::load_ggm05c().mu;
     let mu_sun = jeod_test_data::gravity_fixtures::load_sun_spherical_mu();
-    let mu_moon =
-        jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("moon_GRAIL150.cc"))
-            .expect("load Moon mu");
+    let mu_moon = jeod_test_data::gravity_fixtures::load_moon_grail150_mu();
 
     // Initial Sun/Moon positions at the dyncomp epoch — re-queried each
     // step by the `pre_step` hook below.
@@ -581,16 +561,11 @@ fn third_body_source_with_state(mu: f64, position: DVec3, velocity: DVec3) -> Gr
 /// [`BattinScenario`] (builder + source indices) rather than a
 /// [`VerificationCase`].
 pub fn build_battin_3rd_body(init: &InitialConditions, battin: bool) -> BattinScenario {
-    let jeod = jeod_root();
-    let grav_data_dir = jeod.join("models/environment/gravity/data/src");
-
-    // Earth GGM05C mu and Sun mu from committed fixtures (Wave 1 of #232);
-    // Moon GRAIL150 has no fixture yet, loaded from JEOD source.
+    // Earth GGM05C mu, Sun mu, and Moon GRAIL150 mu all from committed
+    // gravity fixtures (#249).
     let earth_mu = jeod_test_data::gravity_fixtures::load_ggm05c().mu;
     let mu_sun = jeod_test_data::gravity_fixtures::load_sun_spherical_mu();
-    let mu_moon =
-        jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("moon_GRAIL150.cc"))
-            .expect("load Moon mu");
+    let mu_moon = jeod_test_data::gravity_fixtures::load_moon_grail150_mu();
 
     // Initial Sun/Moon state at the dyncomp epoch — refreshed each step
     // by the `pre_step` hook returned from [`battin_pre_step`].
@@ -684,9 +659,7 @@ fn build_run7(
     with_drag: bool,
     case: &str,
 ) -> SimulationBuilder {
-    let jeod = jeod_root();
-    let sim_dir = jeod.join(SIM_DYNCOMP);
-    let grav_data_dir = jeod.join("models/environment/gravity/data/src");
+    let sim_dir = jeod_test_data::jeod_inputs::path(SIM_DYNCOMP);
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
 
     // Gravity controls degree/order from RUN input chain (RUN_7A is always
@@ -703,13 +676,11 @@ fn build_run7(
     let grav_file_refs: Vec<&std::path::Path> = grav_files.iter().map(|p| p.as_path()).collect();
     let grav_cfg = jeod_test_data::gravity_control::load_gravity_control(&grav_file_refs);
 
-    // Earth GGM02C SH and Sun mu from committed fixtures (Wave 1 of #232);
-    // Moon GRAIL150 has no fixture yet, loaded from JEOD source.
+    // Earth GGM02C SH, Sun mu, and Moon GRAIL150 mu all from committed
+    // gravity fixtures (#249).
     let earth_grav = jeod_test_data::gravity_fixtures::load_ggm02c();
     let mu_sun = jeod_test_data::gravity_fixtures::load_sun_spherical_mu();
-    let mu_moon =
-        jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("moon_GRAIL150.cc"))
-            .expect("load Moon mu");
+    let mu_moon = jeod_test_data::gravity_fixtures::load_moon_grail150_mu();
 
     let time = dyncomp_time();
     let epoch_tdb_jd = time.tdb_julian_date();
@@ -912,8 +883,7 @@ pub fn run7d_sh8x8_3rd_body_drag() -> VerificationCase {
 // ── RUN_5B / RUN_5C: elliptical, no drag, gradient=true ────────────────────
 
 fn build_run5(init: &InitialConditions, case: &str) -> SimulationBuilder {
-    let jeod = jeod_root();
-    let sim_dir = jeod.join(SIM_DYNCOMP);
+    let sim_dir = jeod_test_data::jeod_inputs::path(SIM_DYNCOMP);
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
     let mu_earth = jeod_test_data::gravity_fixtures::load_ggm05c().mu;
@@ -998,8 +968,7 @@ fn build_run6_drag(
     case: &str,
     drag_config: DragConfig,
 ) -> SimulationBuilder {
-    let jeod = jeod_root();
-    let sim_dir = jeod.join(SIM_DYNCOMP);
+    let sim_dir = jeod_test_data::jeod_inputs::path(SIM_DYNCOMP);
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
     let earth_mu = jeod_test_data::gravity_fixtures::load_ggm05c().mu;
@@ -1096,8 +1065,7 @@ pub fn run6b_drag() -> VerificationCase {
 // ── RUN_10A / RUN_10C / RUN_10D: gravity-gradient torque ───────────────────
 
 fn cylinder_mass_properties() -> MassProperties {
-    let jeod = jeod_root();
-    let sim_dir = jeod.join(SIM_DYNCOMP);
+    let sim_dir = jeod_test_data::jeod_inputs::path(SIM_DYNCOMP);
     let mass_init = jeod_test_data::mass_data::load_mass_from_file(
         &sim_dir.join("Modified_data/mass.py"),
         Some("set_mass_cylinder"),
@@ -1127,8 +1095,7 @@ fn cylinder_mass_properties() -> MassProperties {
 }
 
 fn build_run10(init: &InitialConditions, case: &str) -> SimulationBuilder {
-    let jeod = jeod_root();
-    let sim_dir = jeod.join(SIM_DYNCOMP);
+    let sim_dir = jeod_test_data::jeod_inputs::path(SIM_DYNCOMP);
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
     let earth_mu = jeod_test_data::gravity_fixtures::load_ggm05c().mu;
@@ -1206,8 +1173,7 @@ pub fn run10c_gravity_torque_elliptical() -> VerificationCase {
 // ── RUN_5A: MET atmosphere validation (drag off, atmosphere live) ─────────
 
 fn build_run5a_met(init: &InitialConditions) -> SimulationBuilder {
-    let jeod = jeod_root();
-    let sim_dir = jeod.join(SIM_DYNCOMP);
+    let sim_dir = jeod_test_data::jeod_inputs::path(SIM_DYNCOMP);
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
     let mu_earth = jeod_test_data::gravity_fixtures::load_ggm05c().mu;
@@ -1276,8 +1242,7 @@ pub fn run5a_met() -> VerificationCase {
 /// rotated-frame variant). Uses `MassProperties::new(1.0)` (1 kg sphere
 /// with no explicit inertia) per JEOD's RUN_6B sphere replacement.
 fn build_run6b_aero_traj(init: &InitialConditions, t_struct_body: DMat3) -> SimulationBuilder {
-    let jeod = jeod_root();
-    let sim_dir = jeod.join(SIM_DYNCOMP);
+    let sim_dir = jeod_test_data::jeod_inputs::path(SIM_DYNCOMP);
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
     // Earth mu from the committed GGM05C fixture (Wave 1 of #232).
     let mu_earth = jeod_test_data::gravity_fixtures::load_ggm05c().mu;

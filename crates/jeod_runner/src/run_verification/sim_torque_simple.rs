@@ -41,16 +41,6 @@ const OMEGA_EARTH: f64 = jeod_sim::planet_config::EARTH.omega;
 const SUN_IDX: usize = 1;
 const MOON_IDX: usize = 2;
 
-fn jeod_root() -> PathBuf {
-    let r = jeod_test_data::jeod_path();
-    assert!(
-        r.exists(),
-        "JEOD source not found at {}. Set JEOD_HOME.",
-        r.display()
-    );
-    r
-}
-
 fn bsp_path() -> PathBuf {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../test_data/de421.bsp");
     assert!(p.exists(), "DE421 ephemeris not found at {}", p.display());
@@ -58,9 +48,8 @@ fn bsp_path() -> PathBuf {
 }
 
 fn dyncomp_time() -> SimulationTime {
-    let jeod = jeod_root();
     let time_cfg = jeod_test_data::time_config::load_time_config(
-        &jeod.join(SIM_DYNCOMP).join("Modified_data/time.py"),
+        &jeod_test_data::jeod_inputs::path(SIM_DYNCOMP).join("Modified_data/time.py"),
     );
     let mut time = SimulationTime::new(time_cfg.tai_tjt(), default_leap_second_table());
     let ut1_tai_offset = time_cfg
@@ -71,9 +60,8 @@ fn dyncomp_time() -> SimulationTime {
 }
 
 fn iss_mass_props() -> MassProperties {
-    let jeod = jeod_root();
     let mass_init = jeod_test_data::mass_data::load_mass_from_file(
-        &jeod.join(SIM_DYNCOMP).join("Modified_data/mass.py"),
+        &jeod_test_data::jeod_inputs::path(SIM_DYNCOMP).join("Modified_data/mass.py"),
         Some("set_mass_iss"),
     );
     let inertia = DMat3::from_cols(
@@ -126,18 +114,14 @@ fn third_body(mu: f64, initial_pos: DVec3) -> GravitySourceEntry {
 }
 
 fn build_torque_simple(init: &InitialConditions, cfg: RunConfig) -> SimulationBuilder {
-    let jeod = jeod_root();
-    let sim_dir = jeod.join(SIM_DYNCOMP);
-    let grav_data_dir = jeod.join("models/environment/gravity/data/src");
+    let sim_dir = jeod_test_data::jeod_inputs::path(SIM_DYNCOMP);
     let dt = jeod_test_data::s_define::load_dynamics_dt(&sim_dir.join("S_define"));
 
-    // Earth GGM05C SH and Sun mu from committed fixtures (Wave 1 of #232);
-    // Moon GRAIL150 has no fixture yet, loaded from JEOD source.
+    // Earth GGM05C SH, Sun mu, and Moon GRAIL150 mu all from committed
+    // gravity fixtures (#249).
     let earth_grav = jeod_test_data::gravity_fixtures::load_ggm05c();
     let mu_sun = jeod_test_data::gravity_fixtures::load_sun_spherical_mu();
-    let mu_moon =
-        jeod_test_data::jeod_cc::load_mu_from_jeod_cc(&grav_data_dir.join("moon_GRAIL150.cc"))
-            .expect("load Moon mu");
+    let mu_moon = jeod_test_data::gravity_fixtures::load_moon_grail150_mu();
 
     let needs_pfix = cfg.earth_nonspherical || cfg.gradient_degree > 0;
     let earth_source = if needs_pfix {
