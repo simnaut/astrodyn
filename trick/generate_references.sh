@@ -171,19 +171,16 @@ run_sim() {
     echo ""
 }
 
-# ── Helper: run a sim with an injected DRAscii logger for CSV output. ──
-# Creates a temporary wrapper input that exec's the original and adds ASCII logging.
-run_sim_with_ascii() {
+# ── Helper: build sim, run with injected DRAscii wrapper, collect CSVs. ──
+# No skip-check — caller is responsible for deciding whether to invoke this.
+# Used by both run_sim_with_ascii (which adds the standard skip-check) and
+# run_apollo_group (which has a multi-output skip-check and additional .out
+# collection that wraps this core).
+_run_sim_with_ascii_impl() {
     local sim_dir="$1"
     local run_dir="$2"
     local label="$3"
     local ascii_snippet="$4"  # Python code to create DRAscii logger
-    local required="${5:-}"   # optional: specific file to check (e.g. label_snippet.csv)
-
-    if has_output "$label" "$required"; then
-        echo "--- Skipping ${label} (output exists in ${OUTPUT_DIR}) ---"
-        return 0
-    fi
 
     echo "--- Building ${label} ---"
     cd "${JEOD_HOME}/${sim_dir}" || return 1
@@ -233,6 +230,24 @@ PYEOF
         cp "$csv_file" "$dest"
         echo "  -> ${dest}"
     done < <(find "${run_dir}" -name "*.csv" ! -name "_init_log.csv" -print0 2>/dev/null)
+}
+
+# ── Helper: run a sim with an injected DRAscii logger for CSV output. ──
+# Creates a temporary wrapper input that exec's the original and adds ASCII
+# logging. Skips if the requested output already exists in $OUTPUT_DIR.
+run_sim_with_ascii() {
+    local sim_dir="$1"
+    local run_dir="$2"
+    local label="$3"
+    local ascii_snippet="$4"  # Python code to create DRAscii logger
+    local required="${5:-}"   # optional: specific file to check (e.g. label_snippet.csv)
+
+    if has_output "$label" "$required"; then
+        echo "--- Skipping ${label} (output exists in ${OUTPUT_DIR}) ---"
+        return 0
+    fi
+
+    _run_sim_with_ascii_impl "$sim_dir" "$run_dir" "$label" "$ascii_snippet" || return 1
     echo ""
 }
 
@@ -1768,6 +1783,7 @@ run_apollo_group() {
     local sim_dir="sims/SIM_Apollo"
     local label="apollo"
     local run_dir="SET_test/RUN_test"
+    local trajectory_csv="${label}_trajectory.csv"
 
     # All required outputs: trajectory CSV + every .out file the input.py
     # writes. If any is missing we re-run the sim once to regenerate the
@@ -1792,7 +1808,7 @@ run_apollo_group() {
     )
 
     local need_run=0
-    if ! has_output "$label" "${label}_trajectory.csv"; then
+    if ! has_output "$label" "$trajectory_csv"; then
         need_run=1
     fi
     if [ "$need_run" = "0" ]; then
@@ -1808,52 +1824,13 @@ run_apollo_group() {
         return 0
     fi
 
-    echo "--- Building SIM_Apollo ---"
-    cd "${JEOD_HOME}/${sim_dir}" || return 1
+    # Build, run with ASCII wrapper, and collect the trajectory CSV. Reuses
+    # the same wrapper-generation + CSV-canonicalization path as every other
+    # ASCII-logged sim.
+    _run_sim_with_ascii_impl "$sim_dir" "$run_dir" "$label" "$APOLLO_SNIPPET" || return 1
 
-    if ! ls S_main*.exe >/dev/null 2>&1; then
-        if ! trick-CP 2>&1 | tail -5; then
-            echo "ERROR: trick-CP failed for SIM_Apollo"
-            return 1
-        fi
-    fi
-
-    echo "--- Running SIM_Apollo (with ASCII trajectory logging) ---"
-    local wrapper="${run_dir}/input_ascii_wrapper.py"
-    cat > "$wrapper" << PYEOF
-import sys, os
-exec(compile(open("${run_dir}/input.py", "rb").read(), "${run_dir}/input.py", "exec"))
-${APOLLO_SNIPPET}
-PYEOF
-
-    local exe
-    exe=$(ls S_main*.exe 2>/dev/null | head -1)
-    if [ -z "$exe" ]; then
-        echo "ERROR: No S_main executable found for SIM_Apollo"
-        rm -f "$wrapper"
-        return 1
-    fi
-
-    if ! "./${exe}" "${wrapper}" 2>&1 | tail -3; then
-        echo "ERROR: SIM_Apollo execution failed"
-        rm -f "$wrapper"
-        return 1
-    fi
-    rm -f "$wrapper"
-
-    # Collect the ASCII trajectory CSV.
-    echo "--- Collecting SIM_Apollo trajectory CSV ---"
-    while IFS= read -r -d '' csv_file; do
-        local base
-        base=$(basename "$csv_file" .csv)
-        local canonical
-        canonical=$(echo "$base" | sed -e 's/^log_//' -e 's/_[Aa][Ss][Cc][Ii][Ii]$//')
-        local dest="${OUTPUT_DIR}/${label}_${canonical}.csv"
-        cp "$csv_file" "$dest"
-        echo "  -> ${dest}"
-    done < <(find "${run_dir}" -name "*.csv" ! -name "_init_log.csv" -print0 2>/dev/null)
-
-    # Collect .out files (mass tree printouts) from the RUN directory.
+    # Collect .out files (mass tree printouts) from the RUN directory —
+    # SIM_Apollo-specific extra on top of the shared CSV path.
     echo "--- Collecting SIM_Apollo mass tree output ---"
     while IFS= read -r -d '' out_file; do
         local base
@@ -1862,6 +1839,28 @@ PYEOF
         cp "$out_file" "$dest"
         echo "  -> ${dest}"
     done < <(find "${run_dir}" -name "*.out" -print0 2>/dev/null)
+
+    # Validate every expected output is present and non-empty before
+    # declaring success. Trick's DRAscii silently drops unregistered
+    # variables and the sim can return 0 even if the data recorder failed
+    # to register, so a passing exit status is not enough — assert each
+    # expected file directly.
+    local missing=()
+    if [ ! -s "${OUTPUT_DIR}/${trajectory_csv}" ]; then
+        missing+=("${trajectory_csv}")
+    fi
+    for out in "${out_files[@]}"; do
+        if [ ! -s "${OUTPUT_DIR}/${label}_${out}" ]; then
+            missing+=("${label}_${out}")
+        fi
+    done
+    if [ "${#missing[@]}" -gt 0 ]; then
+        echo "ERROR: SIM_Apollo run completed but expected outputs are missing or empty:"
+        for f in "${missing[@]}"; do
+            echo "  - ${OUTPUT_DIR}/${f}"
+        done
+        return 1
+    fi
     echo ""
 }
 throttled_bg run_apollo_group
