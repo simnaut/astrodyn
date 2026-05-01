@@ -2395,6 +2395,102 @@ impl Simulation {
         self.bodies[idx].output()
     }
 
+    /// Adjust an integrated body's `trans` from a `core_body` inertial
+    /// state to the corresponding `composite_body` inertial state,
+    /// using the current mass tree's `core_wrt_composite` offset.
+    ///
+    /// JEOD's integration variable is `composite_body`; at init time,
+    /// however, callers often have JEOD-published values that were
+    /// logged from `core_body` (as in our `tier3_sim_apollo_trajectory`
+    /// reference CSV). Use this once after the mass tree has reached
+    /// its initial topology to flip the interpretation.
+    ///
+    /// `body.rot` is unchanged — composite and core share body axes
+    /// (see `body_core_inertial` for the full convention).
+    ///
+    /// # Panics
+    /// Panics if the body is not registered in the mass tree, or has
+    /// no rotational state.
+    pub fn convert_body_trans_core_to_composite(&mut self, idx: usize) {
+        let cw_inertial;
+        let dvel_inertial;
+        {
+            let body = &self.bodies[idx];
+            let mass_body_id = body.mass_body_id.expect(
+                "convert_body_trans_core_to_composite: body is not registered in the mass tree",
+            );
+            let tree = self
+                .mass_tree
+                .as_ref()
+                .expect("convert_body_trans_core_to_composite: no mass tree configured");
+            let node = tree.get(mass_body_id);
+            let cw_struct = node.core_wrt_composite.position;
+            let t_struct_to_body = node.composite_properties.t_parent_this;
+            let cw_body = t_struct_to_body * cw_struct;
+            let body_rot = body
+                .rot
+                .expect("convert_body_trans_core_to_composite: 6-DOF body required");
+            let t_inertial_to_body = body_rot.quaternion.left_quat_to_transformation();
+            let t_body_to_inertial = t_inertial_to_body.transpose();
+            cw_inertial = t_body_to_inertial * cw_body;
+            dvel_inertial = t_body_to_inertial * body_rot.ang_vel_body.cross(cw_body);
+        }
+        // composite = core − cw_inertial; subtract the rigid-body
+        // ω × r contribution on velocity.
+        self.bodies[idx].trans.position -= cw_inertial;
+        self.bodies[idx].trans.velocity -= dvel_inertial;
+    }
+
+    /// Derive the integrated body's `core_body` inertial position +
+    /// velocity from its `composite_body` integration state and the
+    /// current mass tree.
+    ///
+    /// JEOD integrates `composite_body` (matching
+    /// `DynamicsIntegrationGroup::gravitation()` and
+    /// `DynBody::trans_integ()`), so during stages 1–6 of the JEOD
+    /// integration loop `body.trans` represents the composite. The
+    /// `core_body` frame is the per-body CoM, derived via the mass
+    /// tree's `core_wrt_composite` offset rotated to inertial.
+    ///
+    /// In our mass tree `composite_properties.t_parent_this` is left
+    /// equal to `core_properties.t_parent_this` (set per-body at init,
+    /// not re-derived for the merged composite), so composite and core
+    /// share body axes — only position and velocity differ. Returns
+    /// `(position, velocity)` in the body's integration-frame inertial
+    /// coordinates (same frame as `body.trans`).
+    ///
+    /// # Panics
+    /// Panics if the body is not registered in the mass tree, or if
+    /// the body has no rotational state (6-DOF required to derive the
+    /// kinematic offset).
+    pub fn body_core_inertial(&self, idx: usize) -> (DVec3, DVec3) {
+        let body = &self.bodies[idx];
+        let mass_body_id = body
+            .mass_body_id
+            .expect("body_core_inertial: body is not registered in the mass tree");
+        let tree = self
+            .mass_tree
+            .as_ref()
+            .expect("body_core_inertial: no mass tree configured");
+        let node = tree.get(mass_body_id);
+        let core_wrt_composite_struct = node.core_wrt_composite.position;
+        // Struct → composite-body rotation (composite shares core's body axes).
+        let t_struct_to_body = node.composite_properties.t_parent_this;
+        let cw_body = t_struct_to_body * core_wrt_composite_struct;
+        // Body → inertial via T_inertial_to_body⁻¹ = T_inertial_to_body.transpose().
+        let body_rot = body.rot.expect("body_core_inertial: 6-DOF body required");
+        let t_inertial_to_body = body_rot.quaternion.left_quat_to_transformation();
+        let t_body_to_inertial = t_inertial_to_body.transpose();
+        let cw_inertial = t_body_to_inertial * cw_body;
+        let core_position = body.trans.position + cw_inertial;
+        // v_core = v_composite + ω × r (in inertial frame). ω in body
+        // frame is body.rot.ang_vel_body; rotate the cross-product to
+        // inertial.
+        let omega_body = body_rot.ang_vel_body;
+        let core_velocity = body.trans.velocity + t_body_to_inertial * omega_body.cross(cw_body);
+        (core_position, core_velocity)
+    }
+
     /// Read the current per-plate temperatures (K) for a body's flat-plate
     /// SRP configuration, or `None` if the body has no flat-plate SRP.
     ///
@@ -2616,14 +2712,16 @@ impl Simulation {
         let parent_is_integrated = integrated_mass_body_id == Some(tree_root_id);
 
         // Pre-detach inertial composite_body state of the parent.
+        // body.trans / body.rot represent the integrated body's
+        // composite_body inertial state (matching JEOD's integration
+        // variable; see `attach_subtree_aligned` and the "Integration
+        // target" note on `Simulation`).
         let parent_composite_state: RefFrameState = if parent_is_integrated {
-            // Convert integrated body's core_body state to composite_body.
-            let core_wrt_composite_pre = tree.get(tree_root_id).core_wrt_composite;
             let body_trans = self.bodies[integrated_body_idx].trans;
             let body_rot = self.bodies[integrated_body_idx]
                 .rot
                 .expect("detach_subtree: 6-DOF integrated body required");
-            let core_state = RefFrameState {
+            RefFrameState {
                 trans: RefFrameTrans {
                     position: body_trans.position,
                     velocity: body_trans.velocity,
@@ -2633,16 +2731,7 @@ impl Simulation {
                     t_parent_this: body_rot.quaternion.left_quat_to_transformation(),
                     ang_vel_this: body_rot.ang_vel_body,
                 },
-            };
-            // JEOD's `core_wrt_composite.position` is in body frame —
-            // the mass tree stores the struct-frame difference, so
-            // apply T_struct_to_body before feeding to propagate_reverse.
-            let t_struct_to_body = tree.get(tree_root_id).composite_properties.t_parent_this;
-            let core_wrt_composite_body = MassPointState {
-                position: t_struct_to_body * core_wrt_composite_pre.position,
-                t_parent_this: core_wrt_composite_pre.t_parent_this,
-            };
-            jeod_dynamics::propagate_reverse(&core_state, &core_wrt_composite_body)
+            }
         } else {
             // Parent is itself a detached subtree.
             let detached = self
@@ -2713,8 +2802,34 @@ impl Simulation {
         let parent_post_composite_props = tree.get(tree_root_id).composite_properties;
 
         if parent_is_integrated {
-            // Sync integrated body's mass; its core_body inertial state
-            // (body.trans/body.rot) is unchanged across detach.
+            // body.trans/body.rot are the integrated composite_body
+            // state. JEOD's detach handler preserves core_body
+            // (Pos_Vel_Att_Rate source = core_body) and rederives the
+            // post-detach composite from it. The composite-CoM offset
+            // in the parent's struct frame shifts when the subtree
+            // leaves, so the inertial composite_body position +
+            // velocity must shift by the corresponding kinematic
+            // offset. Rotation/ang_vel are unchanged because
+            // composite_properties.t_parent_this == core_properties
+            // .t_parent_this throughout (see mass tree recompute).
+            let cm_delta_struct =
+                parent_post_composite_props.position - parent_pre_composite_props.position;
+            // composite_properties.t_parent_this is the struct→body
+            // rotation; compose with body.rot's t_parent_this to map
+            // struct → inertial.
+            let t_struct_to_body = parent_pre_composite_props.t_parent_this;
+            let cm_delta_body = t_struct_to_body * cm_delta_struct;
+            let t_inertial_to_body = parent_composite_state.rot.t_parent_this;
+            let cm_delta_inertial = t_inertial_to_body.transpose() * cm_delta_body;
+            // Velocity offset from rigid-body rotation: ω × Δr in body
+            // frame, then rotated to inertial.
+            let omega_body = parent_composite_state.rot.ang_vel_this;
+            let dvel_inertial = t_inertial_to_body.transpose() * omega_body.cross(cm_delta_body);
+            self.bodies[integrated_body_idx].trans = TranslationalState {
+                position: parent_composite_state.trans.position + cm_delta_inertial,
+                velocity: parent_composite_state.trans.velocity + dvel_inertial,
+            };
+            // body.rot unchanged — composite/core share body axes.
             self.bodies[integrated_body_idx].mass = Some(parent_post_composite_props);
         } else {
             // Parent is a detached subtree — update its tracked
@@ -2762,15 +2877,18 @@ impl Simulation {
     /// JEOD's [`combine_states_at_attach`] momentum-conservation
     /// algorithm.
     ///
-    /// The integrated body's `body.trans` / `body.rot` are interpreted
-    /// as the *core_body* frame of the integrated body (i.e. the CoM
-    /// of the body alone, not the whole-tree composite). The subtree
-    /// state from [`Simulation::detached_subtrees`] is treated as the
-    /// subtree's *composite_body* frame. After the algorithm runs, the
-    /// new whole-tree composite state is computed; the integrated
-    /// body's `trans` / `rot` are re-derived as the new core_body
-    /// inertial state (so callers can keep comparing `body.trans`
-    /// against a JEOD `core_body` reference CSV).
+    /// The integrated body's `body.trans` / `body.rot` represent the
+    /// *composite_body* inertial state of the whole mass tree rooted
+    /// at the integrated body — i.e. the integration variable that
+    /// JEOD's `DynamicsIntegrationGroup::gravitation()` evaluates
+    /// gravity at and that `DynBody::trans_integ()` integrates. The
+    /// subtree state from [`Simulation::detached_subtrees`] is the
+    /// subtree's composite_body frame. After the algorithm runs, the
+    /// integrated body's `trans` / `rot` are set to the new combined
+    /// composite_body inertial state.
+    ///
+    /// To compare against JEOD's logged core_body, derive core via
+    /// [`Simulation::body_core_inertial`].
     ///
     /// # Panics
     /// Panics if the integrated body has no rotational state, no mass
@@ -2801,12 +2919,13 @@ impl Simulation {
         // Pre-attach subtree composite mass props.
         let subtree_composite_props = tree.get(subtree_root_id).composite_properties;
 
-        // Read the integrated body's pre-attach core state.
+        // Read the integrated body's pre-attach composite_body state
+        // directly from body.trans/body.rot (post-refactor convention).
         let body_trans = self.bodies[integrated_body_idx].trans;
         let body_rot = self.bodies[integrated_body_idx]
             .rot
             .expect("attach_subtree_aligned: 6-DOF body required");
-        let core_state_pre = RefFrameState {
+        let parent_composite_pre = RefFrameState {
             trans: RefFrameTrans {
                 position: body_trans.position,
                 velocity: body_trans.velocity,
@@ -2817,9 +2936,7 @@ impl Simulation {
                 ang_vel_this: body_rot.ang_vel_body,
             },
         };
-        // (parent_composite_pre is recomputed below using the
-        // body-frame core_wrt_composite — the struct-frame variant is
-        // not used in this method.)
+        let _ = core_wrt_composite_pre; // unused under composite-body convention
 
         // Pull the subtree's free-flight composite state from the map.
         let subtree_state = self
@@ -2838,25 +2955,12 @@ impl Simulation {
         tree_mut.attach_aligned(subtree_root_id, subtree_point, parent_id, parent_point);
         // Read post-attach composite props.
         let combined_composite_props = tree_mut.get(integrated_mass_body_id).composite_properties;
-        let core_wrt_composite_post = tree_mut.get(integrated_mass_body_id).core_wrt_composite;
 
-        // JEOD's `MassProperties::T_parent_this` carries the struct→body
-        // rotation (set during init, never updated by the mass tree).
-        // The combine algorithm needs `T_inertial_to_struct`, which we
-        // get by folding in `T_struct_to_body`:
-        //   T_inertial_to_struct = T_struct_to_body · T_inertial_to_body
-        // Similarly, `core_wrt_composite.position` is in body frame in
-        // JEOD; the mass tree stores the struct-frame difference, so
-        // we apply `T_struct_to_body` before feeding it to the
-        // body-frame propagator.
+        // The combine algorithm needs `T_inertial_to_struct`, which is
+        // T_struct_to_body · T_inertial_to_body. composite_properties
+        // .t_parent_this is the struct→body rotation (set per-body at
+        // init, never updated by the mass tree).
         let t_struct_to_body = parent_pre_composite_props.t_parent_this;
-        let core_wrt_composite_body = MassPointState {
-            position: t_struct_to_body * core_wrt_composite_pre.position,
-            t_parent_this: core_wrt_composite_pre.t_parent_this,
-        };
-        // Re-derive parent_composite_pre using JEOD's body-frame offset.
-        let parent_composite_pre =
-            jeod_dynamics::propagate_reverse(&core_state_pre, &core_wrt_composite_body);
         let parent_t_inertial_struct = t_struct_to_body * parent_composite_pre.rot.t_parent_this;
 
         // Run the JEOD combine algorithm.
@@ -2870,24 +2974,17 @@ impl Simulation {
             orig_parent_cm_struct,
         });
 
-        // Convert the new composite_body state forward through the new
-        // core_wrt_composite offset (rotated to body frame) to recover
-        // the new core_body inertial state, and write it back to the body.
-        let core_wrt_composite_post_body = MassPointState {
-            position: t_struct_to_body * core_wrt_composite_post.position,
-            t_parent_this: core_wrt_composite_post.t_parent_this,
-        };
-        let new_core_state = jeod_dynamics::propagate_forward(
-            &combined.composite_state,
-            &core_wrt_composite_post_body,
-        );
+        // The new whole-tree composite state is the integration target —
+        // matches JEOD's `composite_body` post-attach (the source for
+        // `Vel_Rate` per `set_state_source_internal` at the end of
+        // `DynBody::attach_update_properties`).
         self.bodies[integrated_body_idx].trans = TranslationalState {
-            position: new_core_state.trans.position,
-            velocity: new_core_state.trans.velocity,
+            position: combined.composite_state.trans.position,
+            velocity: combined.composite_state.trans.velocity,
         };
         self.bodies[integrated_body_idx].rot = Some(RotationalState {
-            quaternion: new_core_state.rot.q_parent_this,
-            ang_vel_body: new_core_state.rot.ang_vel_this,
+            quaternion: combined.composite_state.rot.q_parent_this,
+            ang_vel_body: combined.composite_state.rot.ang_vel_this,
         });
         self.bodies[integrated_body_idx].mass = Some(combined_composite_props);
     }
