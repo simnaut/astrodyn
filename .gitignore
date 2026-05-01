@@ -6,4 +6,8 @@ test_data/*.trk
 # Mercury CSVs are ~774 MB each (600-year sim at 1-hour intervals)
 test_data/mercury_newtonian_mercury.csv
 test_data/mercury_relativistic_mercury.csv
+# Apollo high-cadence ground truth (18 MB, used by `--ignored`
+# diagnostic test `attach_with_jeod_truth`; regenerate via
+# `cargo xtask regenerate-tier3 --force`)
+test_data/apollo_attach_truth.csv
 .claude/scheduled_tasks.lock

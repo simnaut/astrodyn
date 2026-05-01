@@ -2963,6 +2963,112 @@ impl Simulation {
         let t_struct_to_body = parent_pre_composite_props.t_parent_this;
         let parent_t_inertial_struct = t_struct_to_body * parent_composite_pre.rot.t_parent_this;
 
+        // APOLLO_TRACE diagnostic: dump every input to combine_states_at_attach
+        // so we can diff against JEOD ground truth. Gated by env var so the
+        // regular test path is unaffected. (See #248 attach-bug investigation.)
+        if std::env::var("APOLLO_TRACE").is_ok() {
+            eprintln!("=== ATTACH TRACE (integrated body {integrated_body_idx} → subtree {subtree_root_id:?}) ===");
+            eprintln!("  PARENT COMPOSITE (= our body.trans/body.rot):");
+            eprintln!(
+                "    pos    = [{:.10e} {:.10e} {:.10e}]",
+                parent_composite_pre.trans.position.x,
+                parent_composite_pre.trans.position.y,
+                parent_composite_pre.trans.position.z
+            );
+            eprintln!(
+                "    vel    = [{:.10e} {:.10e} {:.10e}]",
+                parent_composite_pre.trans.velocity.x,
+                parent_composite_pre.trans.velocity.y,
+                parent_composite_pre.trans.velocity.z
+            );
+            eprintln!(
+                "    q      = [{:.10e} {:.10e} {:.10e} {:.10e}]",
+                parent_composite_pre.rot.q_parent_this.scalar(),
+                parent_composite_pre.rot.q_parent_this.vector().x,
+                parent_composite_pre.rot.q_parent_this.vector().y,
+                parent_composite_pre.rot.q_parent_this.vector().z
+            );
+            eprintln!(
+                "    ω_body = [{:.10e} {:.10e} {:.10e}]",
+                parent_composite_pre.rot.ang_vel_this.x,
+                parent_composite_pre.rot.ang_vel_this.y,
+                parent_composite_pre.rot.ang_vel_this.z
+            );
+            eprintln!("  CHILD COMPOSITE (= detached_subtrees[{subtree_root_id:?}]):");
+            eprintln!(
+                "    pos    = [{:.10e} {:.10e} {:.10e}]",
+                child_composite.trans.position.x,
+                child_composite.trans.position.y,
+                child_composite.trans.position.z
+            );
+            eprintln!(
+                "    vel    = [{:.10e} {:.10e} {:.10e}]",
+                child_composite.trans.velocity.x,
+                child_composite.trans.velocity.y,
+                child_composite.trans.velocity.z
+            );
+            eprintln!(
+                "    q      = [{:.10e} {:.10e} {:.10e} {:.10e}]",
+                child_composite.rot.q_parent_this.scalar(),
+                child_composite.rot.q_parent_this.vector().x,
+                child_composite.rot.q_parent_this.vector().y,
+                child_composite.rot.q_parent_this.vector().z
+            );
+            eprintln!(
+                "    ω_body = [{:.10e} {:.10e} {:.10e}]",
+                child_composite.rot.ang_vel_this.x,
+                child_composite.rot.ang_vel_this.y,
+                child_composite.rot.ang_vel_this.z
+            );
+            eprintln!("  PARENT MASS (pre-attach):");
+            eprintln!("    mass={:.10e}", parent_pre_composite_props.mass);
+            eprintln!(
+                "    pos_struct=[{:.10e} {:.10e} {:.10e}]",
+                parent_pre_composite_props.position.x,
+                parent_pre_composite_props.position.y,
+                parent_pre_composite_props.position.z
+            );
+            eprintln!(
+                "    inertia.diag=[{:.10e} {:.10e} {:.10e}]",
+                parent_pre_composite_props.inertia.x_axis.x,
+                parent_pre_composite_props.inertia.y_axis.y,
+                parent_pre_composite_props.inertia.z_axis.z
+            );
+            eprintln!("  CHILD MASS (pre-attach):");
+            eprintln!("    mass={:.10e}", subtree_composite_props.mass);
+            eprintln!(
+                "    pos_struct=[{:.10e} {:.10e} {:.10e}]",
+                subtree_composite_props.position.x,
+                subtree_composite_props.position.y,
+                subtree_composite_props.position.z
+            );
+            eprintln!(
+                "    inertia.diag=[{:.10e} {:.10e} {:.10e}]",
+                subtree_composite_props.inertia.x_axis.x,
+                subtree_composite_props.inertia.y_axis.y,
+                subtree_composite_props.inertia.z_axis.z
+            );
+            eprintln!("  COMBINED MASS (post-attach):");
+            eprintln!("    mass={:.10e}", combined_composite_props.mass);
+            eprintln!(
+                "    pos_struct=[{:.10e} {:.10e} {:.10e}]",
+                combined_composite_props.position.x,
+                combined_composite_props.position.y,
+                combined_composite_props.position.z
+            );
+            eprintln!(
+                "    inertia.diag=[{:.10e} {:.10e} {:.10e}]",
+                combined_composite_props.inertia.x_axis.x,
+                combined_composite_props.inertia.y_axis.y,
+                combined_composite_props.inertia.z_axis.z
+            );
+            eprintln!(
+                "  orig_parent_cm_struct=[{:.10e} {:.10e} {:.10e}]",
+                orig_parent_cm_struct.x, orig_parent_cm_struct.y, orig_parent_cm_struct.z
+            );
+            eprintln!("=== end ATTACH TRACE ===");
+        }
+
         // Run the JEOD combine algorithm.
         let combined = combine_states_at_attach(AttachCombineInputs {
             parent_composite: parent_composite_pre,
@@ -2987,6 +3093,18 @@ impl Simulation {
             ang_vel_body: combined.composite_state.rot.ang_vel_this,
         });
         self.bodies[integrated_body_idx].mass = Some(combined_composite_props);
+
+        if std::env::var("APOLLO_TRACE").is_ok() {
+            eprintln!(
+                "  COMBINE OUTPUT: pos=[{:.4e} {:.4e} {:.4e}] ω_body=[{:.6e} {:.6e} {:.6e}]",
+                combined.composite_state.trans.position.x,
+                combined.composite_state.trans.position.y,
+                combined.composite_state.trans.position.z,
+                combined.composite_state.rot.ang_vel_this.x,
+                combined.composite_state.rot.ang_vel_this.y,
+                combined.composite_state.rot.ang_vel_this.z
+            );
+        }
     }
 
     /// Advance every entry in [`Simulation::detached_subtrees`] by `dt`

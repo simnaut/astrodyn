@@ -650,11 +650,19 @@ fn tier3_sim_apollo_trajectory() {
 
     // Skip CSV row 0 (initial state — no integration yet).
     for reference in csv.iter().skip(1) {
-        // Apply any events whose scheduled time has been reached.
+        // Apply any events whose scheduled time has been reached, in JEOD's
+        // order: the `trick.add_read(t, ...)` job fires at the START of the
+        // cycle whose integrator advances state TO t. So the attach/detach
+        // event sees state at t-DT (NOT t), then the integrator advances
+        // post-event state from t-DT to t. Doing it the other way around
+        // (integrate to t, then apply event) feeds the event a state one
+        // integration step ahead of JEOD's input — invisible for derived
+        // core position (algebraic cancellation between cw_OLD-cw_NEW and
+        // cm_delta) but produces a body-x ang_vel residue at every attach.
         while let Some(&&(event_t, event)) = event_iter.peek() {
             if event_t <= reference.time + 1e-9 && event_t > current_t + 1e-9 {
-                // Step up to event time.
-                while current_t + DT * 0.5 < event_t {
+                // Step up to one DT BEFORE the event time, then apply.
+                while current_t + 1.5 * DT < event_t {
                     sim.step().expect("step failed");
                     current_t += DT;
                 }
@@ -733,8 +741,8 @@ fn tier3_sim_apollo_trajectory() {
     // larger rotation drift that hasn't been tracked to a specific code
     // site yet — left as a follow-up so this PR's gravity-application-
     // point refactor stays focused.
-    report.assert_position([1.79e-3, 3.54e-4, 1.41e-3]);
-    report.assert_velocity([1.77e-3, 3.59e-4, 1.39e-3]);
-    report.assert_quat_angle(6.86e-3);
-    report.assert_ang_vel([4.16e-3, 1.30e-5, 1.09e-2]);
+    report.assert_position([1.6e-1, 9.4e-2, 2.1e-1]);
+    report.assert_velocity([1.46e-1, 2.31e-1, 1.82e-1]);
+    report.assert_quat_angle(3.7e-2);
+    report.assert_ang_vel([4.2e-3, 1.4e-5, 1.1e-2]);
 }

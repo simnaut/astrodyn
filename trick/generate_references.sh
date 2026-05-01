@@ -1777,6 +1777,37 @@ for i in range(3):
 for i in range(3):
     dr.add_variable(f"cm_dyn.dyn_body.core_body.state.rot.ang_vel_this[{i}]")
 trick.add_data_record_group(dr)
+
+# Ground-truth recorder for the t=6 attach algorithm investigation
+# (see #248). Captures, at 1 ms cadence, every input that flows into
+# JEODs DynBody::attach_child momentum-conservation algorithm for both
+# cm_dyn (parent/integrated body) and lm_dyn (child subtree). The Rust
+# port jeod_dynamics::attach::combine_states_at_attach is replayed
+# against these values to confirm whether the algorithm matches JEOD
+# given JEODs exact inputs.
+dr2 = trick.DRAscii("attach_truth")
+dr2.thisown = 0
+dr2.set_cycle(0.001)
+dr2.freq = trick.sim_services.DR_Always
+for veh in ("cm_dyn", "lm_dyn"):
+    for i in range(3):
+        dr2.add_variable(f"{veh}.dyn_body.composite_body.state.trans.position[{i}]")
+        dr2.add_variable(f"{veh}.dyn_body.composite_body.state.trans.velocity[{i}]")
+    dr2.add_variable(f"{veh}.dyn_body.composite_body.state.rot.Q_parent_this.scalar")
+    for i in range(3):
+        dr2.add_variable(f"{veh}.dyn_body.composite_body.state.rot.Q_parent_this.vector[{i}]")
+    for i in range(3):
+        dr2.add_variable(f"{veh}.dyn_body.composite_body.state.rot.ang_vel_this[{i}]")
+    dr2.add_variable(f"{veh}.dyn_body.mass.composite_properties.mass")
+    for i in range(3):
+        dr2.add_variable(f"{veh}.dyn_body.mass.composite_properties.position[{i}]")
+    for i in range(3):
+        for j in range(3):
+            dr2.add_variable(f"{veh}.dyn_body.mass.composite_properties.inertia[{i}][{j}]")
+    for i in range(3):
+        for j in range(3):
+            dr2.add_variable(f"{veh}.dyn_body.mass.composite_properties.T_parent_this[{i}][{j}]")
+trick.add_data_record_group(dr2)
 '
 
 run_apollo_group() {
