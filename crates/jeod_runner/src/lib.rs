@@ -2634,7 +2634,15 @@ impl Simulation {
                     ang_vel_this: body_rot.ang_vel_body,
                 },
             };
-            jeod_dynamics::propagate_reverse(&core_state, &core_wrt_composite_pre)
+            // JEOD's `core_wrt_composite.position` is in body frame —
+            // the mass tree stores the struct-frame difference, so
+            // apply T_struct_to_body before feeding to propagate_reverse.
+            let t_struct_to_body = tree.get(tree_root_id).composite_properties.t_parent_this;
+            let core_wrt_composite_body = MassPointState {
+                position: t_struct_to_body * core_wrt_composite_pre.position,
+                t_parent_this: core_wrt_composite_pre.t_parent_this,
+            };
+            jeod_dynamics::propagate_reverse(&core_state, &core_wrt_composite_body)
         } else {
             // Parent is itself a detached subtree.
             let detached = self
@@ -2671,13 +2679,27 @@ impl Simulation {
         for next_id in chain {
             let next_node = tree.get(next_id);
             let current_node = tree.get(current_node_id);
-            // Offset from current body's composite-CoM to next body's
-            // composite-CoM, in current's struct frame.
+            // Body-aware step:
+            //   offset_in_current_body = T_current_struct_to_body
+            //                          · (next.composite_wrt_pstr.position
+            //                             − current.composite_properties.position)
+            //   T_current_body_to_next_body = T_next_struct_to_body
+            //                               · next.structure_point.t_parent_this
+            //                               · T_current_body_to_struct
+            // For axis-aligned bodies (struct == body) this collapses to
+            // the simple struct-frame difference and the bare structure_point
+            // rotation.
+            let t_current_struct_to_body = current_node.composite_properties.t_parent_this;
+            let t_next_struct_to_body = next_node.composite_properties.t_parent_this;
             let offset_struct =
                 next_node.composite_wrt_pstr.position - current_node.composite_properties.position;
+            let offset_in_current_body = t_current_struct_to_body * offset_struct;
+            let t_current_body_to_next_body = t_next_struct_to_body
+                * next_node.structure_point.t_parent_this
+                * t_current_struct_to_body.transpose();
             let rel = MassPointState {
-                position: offset_struct,
-                t_parent_this: next_node.composite_wrt_pstr.t_parent_this,
+                position: offset_in_current_body,
+                t_parent_this: t_current_body_to_next_body,
             };
             current_state = jeod_dynamics::propagate_forward(&current_state, &rel);
             current_node_id = next_id;
@@ -2699,17 +2721,20 @@ impl Simulation {
             // composite-body state to reflect the new (smaller) composite.
             // The parent's struct origin in inertial is unchanged (rigid
             // body); only the composite-CoM has moved within the struct
-            // frame, so:
-            //   new_composite_inertial = old_composite_inertial
-            //                          + R · (new_cm − old_cm)_struct
-            //   new_composite_velocity_inertial = old_composite_velocity
-            //                          + R · (ω × (new_cm − old_cm))_struct
+            // frame. Convert the struct-frame CoM-delta to inertial via
+            // T_struct_to_inertial = T_struct_to_body · T_inertial_to_body.
             let cm_delta_struct =
                 parent_post_composite_props.position - parent_pre_composite_props.position;
-            let r_struct_to_inertial = parent_composite_state.rot.t_parent_this.transpose();
+            let t_struct_to_body = parent_pre_composite_props.t_parent_this;
+            let t_inertial_struct = t_struct_to_body * parent_composite_state.rot.t_parent_this;
+            let r_struct_to_inertial = t_inertial_struct.transpose();
             let cm_delta_inertial = r_struct_to_inertial * cm_delta_struct;
+            // Velocity contribution from rotation: ω × Δr expressed in
+            // body frame, then rotated to inertial.
             let w_body = parent_composite_state.rot.ang_vel_this;
-            let dvel_inertial = r_struct_to_inertial * w_body.cross(cm_delta_struct);
+            let cm_delta_body = t_struct_to_body * cm_delta_struct;
+            let dvel_inertial =
+                parent_composite_state.rot.t_parent_this.transpose() * w_body.cross(cm_delta_body);
             let updated = DetachedSubtreeState {
                 composite_position: parent_composite_state.trans.position + cm_delta_inertial,
                 composite_velocity: parent_composite_state.trans.velocity + dvel_inertial,
@@ -2792,9 +2817,9 @@ impl Simulation {
                 ang_vel_this: body_rot.ang_vel_body,
             },
         };
-        // Convert core → composite for the JEOD algorithm.
-        let parent_composite_pre =
-            jeod_dynamics::propagate_reverse(&core_state_pre, &core_wrt_composite_pre);
+        // (parent_composite_pre is recomputed below using the
+        // body-frame core_wrt_composite — the struct-frame variant is
+        // not used in this method.)
 
         // Pull the subtree's free-flight composite state from the map.
         let subtree_state = self
@@ -2815,13 +2840,30 @@ impl Simulation {
         let combined_composite_props = tree_mut.get(integrated_mass_body_id).composite_properties;
         let core_wrt_composite_post = tree_mut.get(integrated_mass_body_id).core_wrt_composite;
 
+        // JEOD's `MassProperties::T_parent_this` carries the struct→body
+        // rotation (set during init, never updated by the mass tree).
+        // The combine algorithm needs `T_inertial_to_struct`, which we
+        // get by folding in `T_struct_to_body`:
+        //   T_inertial_to_struct = T_struct_to_body · T_inertial_to_body
+        // Similarly, `core_wrt_composite.position` is in body frame in
+        // JEOD; the mass tree stores the struct-frame difference, so
+        // we apply `T_struct_to_body` before feeding it to the
+        // body-frame propagator.
+        let t_struct_to_body = parent_pre_composite_props.t_parent_this;
+        let core_wrt_composite_body = MassPointState {
+            position: t_struct_to_body * core_wrt_composite_pre.position,
+            t_parent_this: core_wrt_composite_pre.t_parent_this,
+        };
+        // Re-derive parent_composite_pre using JEOD's body-frame offset.
+        let parent_composite_pre =
+            jeod_dynamics::propagate_reverse(&core_state_pre, &core_wrt_composite_body);
+        let parent_t_inertial_struct = t_struct_to_body * parent_composite_pre.rot.t_parent_this;
+
         // Run the JEOD combine algorithm.
         let combined = combine_states_at_attach(AttachCombineInputs {
             parent_composite: parent_composite_pre,
             parent_mass: parent_pre_composite_props,
-            // For our axis-aligned-stack assumption, struct = composite,
-            // so T_inertial_to_struct equals the body-frame T_parent_this.
-            parent_t_inertial_struct: parent_composite_pre.rot.t_parent_this,
+            parent_t_inertial_struct,
             child_composite,
             child_mass: subtree_composite_props,
             combined_mass: combined_composite_props,
@@ -2829,10 +2871,16 @@ impl Simulation {
         });
 
         // Convert the new composite_body state forward through the new
-        // core_wrt_composite offset to recover the new core_body
-        // inertial state, and write it back to the body.
-        let new_core_state =
-            jeod_dynamics::propagate_forward(&combined.composite_state, &core_wrt_composite_post);
+        // core_wrt_composite offset (rotated to body frame) to recover
+        // the new core_body inertial state, and write it back to the body.
+        let core_wrt_composite_post_body = MassPointState {
+            position: t_struct_to_body * core_wrt_composite_post.position,
+            t_parent_this: core_wrt_composite_post.t_parent_this,
+        };
+        let new_core_state = jeod_dynamics::propagate_forward(
+            &combined.composite_state,
+            &core_wrt_composite_post_body,
+        );
         self.bodies[integrated_body_idx].trans = TranslationalState {
             position: new_core_state.trans.position,
             velocity: new_core_state.trans.velocity,
