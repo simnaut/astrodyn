@@ -1727,16 +1727,84 @@ run_mercury_group() {
 throttled_bg run_mercury_group
 PID_MERCURY=$LAST_BG_PID
 
-# Group 29: SIM_Apollo (mass tree attach/detach)
-# This sim produces .out text files (mass tree printouts), not CSVs.
+# Group 29: SIM_Apollo — mass-tree attach/detach over a 12-second LEO trajectory.
+# Produces both .out files (mass tree printouts via print_tree) and a
+# trajectory CSV (DRAscii of the active vehicle cm_dyn). The trajectory is
+# non-trivial because cm_dyn's composite mass and CoM jump 11 times as
+# stages attach and detach.
+APOLLO_SNIPPET='
+# JEOD input.py bug fix: set_vehicle_grav_controls is only called for
+# les_dyn, but after launch_stack assembly cm_dyn is the integration
+# root. cm_dyns grav_interaction.controls list is therefore empty and
+# the integrated stack experiences essentially no gravity — the
+# trajectory recorded without this fix is unphysical (mostly ballistic).
+# Replicate the LES setup sequence on cm_dyn (set_vehicle_grav_controls
+# wires earth/moon/sun controls; set_vehicle_sv_at_earth re-applies the
+# 8x8 degree/order JEOD evidently intends).
+set_vehicle_grav_controls(cm_dyn)
+set_vehicle_sv_at_earth(cm_dyn, earth)
+
+# Log core_body rather than composite_body. JEODs detach handler resets
+# the integrated-state source to core_body and propagates derived states
+# from it; composite_body therefore has discrete inertial jumps at every
+# attach/detach event, while core_body is preserved across them. core_body
+# is the natural comparison point for an integrated trajectory.
+dr = trick.DRAscii("trajectory")
+dr.thisown = 0
+dr.set_cycle(0.1)
+dr.freq = trick.sim_services.DR_Always
+for i in range(3):
+    dr.add_variable(f"cm_dyn.dyn_body.core_body.state.trans.position[{i}]")
+    dr.add_variable(f"cm_dyn.dyn_body.core_body.state.trans.velocity[{i}]")
+dr.add_variable("cm_dyn.dyn_body.core_body.state.rot.Q_parent_this.scalar")
+for i in range(3):
+    dr.add_variable(f"cm_dyn.dyn_body.core_body.state.rot.Q_parent_this.vector[{i}]")
+for i in range(3):
+    dr.add_variable(f"cm_dyn.dyn_body.core_body.state.rot.ang_vel_this[{i}]")
+trick.add_data_record_group(dr)
+'
+
 run_apollo_group() {
     local sim_dir="sims/SIM_Apollo"
     local label="apollo"
     local run_dir="SET_test/RUN_test"
 
-    # Check for existing output (use a representative file).
-    if has_output "$label" "apollo_Full_Stack.out"; then
-        echo "=== Skipping SIM_Apollo (output exists) ==="
+    # All required outputs: trajectory CSV + every .out file the input.py
+    # writes. If any is missing we re-run the sim once to regenerate the
+    # full set (build is shared, so the cost is one trick-CP at most).
+    local out_files=(
+        "Initialization.out"
+        "Full_Stack.out"
+        "1st_Stage_Sep.out"
+        "2nd_Stage_Sep.out"
+        "LES_Jettison.out"
+        "3rd_Stage_Sep.out"
+        "LEM_Sep.out"
+        "Trans_Lunar.out"
+        "Lunar_Orbit.out"
+        "LM_Descent.out"
+        "Lunar_Rendezvous.out"
+        "LM_Ascent.out"
+        "Apollo.out"
+        "Entry.out"
+        "Final.out"
+        "Return.out"
+    )
+
+    local need_run=0
+    if ! has_output "$label" "${label}_trajectory.csv"; then
+        need_run=1
+    fi
+    if [ "$need_run" = "0" ]; then
+        for out in "${out_files[@]}"; do
+            if [ ! -s "${OUTPUT_DIR}/${label}_${out}" ]; then
+                need_run=1
+                break
+            fi
+        done
+    fi
+    if [ "$need_run" = "0" ] && [ "$FORCE" != "1" ]; then
+        echo "=== Skipping SIM_Apollo (all outputs exist) ==="
         return 0
     fi
 
@@ -1750,18 +1818,40 @@ run_apollo_group() {
         fi
     fi
 
-    echo "--- Running SIM_Apollo ---"
+    echo "--- Running SIM_Apollo (with ASCII trajectory logging) ---"
+    local wrapper="${run_dir}/input_ascii_wrapper.py"
+    cat > "$wrapper" << PYEOF
+import sys, os
+exec(compile(open("${run_dir}/input.py", "rb").read(), "${run_dir}/input.py", "exec"))
+${APOLLO_SNIPPET}
+PYEOF
+
     local exe
     exe=$(ls S_main*.exe 2>/dev/null | head -1)
     if [ -z "$exe" ]; then
         echo "ERROR: No S_main executable found for SIM_Apollo"
+        rm -f "$wrapper"
         return 1
     fi
 
-    if ! "./${exe}" "${run_dir}/input.py" 2>&1 | tail -3; then
+    if ! "./${exe}" "${wrapper}" 2>&1 | tail -3; then
         echo "ERROR: SIM_Apollo execution failed"
+        rm -f "$wrapper"
         return 1
     fi
+    rm -f "$wrapper"
+
+    # Collect the ASCII trajectory CSV.
+    echo "--- Collecting SIM_Apollo trajectory CSV ---"
+    while IFS= read -r -d '' csv_file; do
+        local base
+        base=$(basename "$csv_file" .csv)
+        local canonical
+        canonical=$(echo "$base" | sed -e 's/^log_//' -e 's/_[Aa][Ss][Cc][Ii][Ii]$//')
+        local dest="${OUTPUT_DIR}/${label}_${canonical}.csv"
+        cp "$csv_file" "$dest"
+        echo "  -> ${dest}"
+    done < <(find "${run_dir}" -name "*.csv" ! -name "_init_log.csv" -print0 2>/dev/null)
 
     # Collect .out files (mass tree printouts) from the RUN directory.
     echo "--- Collecting SIM_Apollo mass tree output ---"
