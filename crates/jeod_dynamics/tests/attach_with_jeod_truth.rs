@@ -35,6 +35,7 @@ fn test_data_path() -> PathBuf {
 ///     +14..+16 : composite CoM position struct[0..2]
 ///     +17..+25 : inertia row-major (i*3+j)
 ///     +26..+34 : T_parent_this row-major
+#[derive(Clone)]
 struct VehRow {
     position: DVec3,
     velocity: DVec3,
@@ -164,10 +165,67 @@ fn combine_states_at_attach_matches_jeod_at_t6() {
         .unwrap_or_else(|| find_row(&rows, 6.000));
     eprintln!("post-attach row at t={:.6}", post.time);
 
-    let parent_composite = make_state(&pre.cm);
-    let child_composite = make_state(&pre.lm);
-    let parent_mass = make_mass(&pre.cm);
-    let child_mass = make_mass(&pre.lm);
+    // POST-STEP advancement: per Agent A's analysis, JEOD's add_read at t=6
+    // fires at the END of the cycle ending at t=6, AFTER the integrator has
+    // advanced state from t=5.98 to t=6.0. So JEOD's combine input is the
+    // post-step state at t=6.0, NOT the t=5.999 sample (= state at t=5.98).
+    // Reconstruct post-step inputs:
+    //   lm vel post-step = pre-step (ballistic, no gravity controls).
+    //   lm pos post-step = pre-step + vel × 0.02s.
+    //   cm post-step from reverse-deriving JEOD's logged t=6.0 post-attach
+    //     state — undo cm_delta_inertial (position) and combine v_t (velocity).
+    let cm_delta_struct = post.cm.cm_struct - pre.cm.cm_struct;
+    let t_struct_to_body = pre.cm.t_struct_to_body;
+    let pre_t_inertial_to_body = pre.cm.quaternion.left_quat_to_transformation();
+    let cm_delta_body = t_struct_to_body * cm_delta_struct;
+    let cm_delta_inertial = pre_t_inertial_to_body.transpose() * cm_delta_body;
+
+    let cm_post_step_pos = post.cm.position - cm_delta_inertial;
+    let m_p = pre.cm.mass;
+    let m_c = pre.lm.mass;
+    let m_t = post.cm.mass;
+    let lm_vel_post = pre.lm.velocity;
+    // m_t v_t = m_p v_p + m_c v_c → v_p = (m_t v_t - m_c v_c) / m_p
+    let cm_post_step_vel = (post.cm.velocity * m_t - lm_vel_post * m_c) / m_p;
+    let dt = 0.02;
+    let lm_pos_post = pre.lm.position + pre.lm.velocity * dt;
+
+    eprintln!("POST-STEP RECONSTRUCTION (= JEOD combine input at t=6.0):");
+    eprintln!("  cm post-step pos = {cm_post_step_pos:?}");
+    eprintln!("  cm post-step vel = {cm_post_step_vel:?}");
+    eprintln!("  lm post-step pos = {lm_pos_post:?}");
+    eprintln!("  lm post-step vel = {lm_vel_post:?}");
+
+    let mut cm_post = pre.cm.clone();
+    cm_post.position = cm_post_step_pos;
+    cm_post.velocity = cm_post_step_vel;
+    let mut lm_post = pre.lm.clone();
+    lm_post.position = lm_pos_post;
+    lm_post.velocity = lm_vel_post;
+
+    // Override quaternion with what our trajectory test sees post-step.
+    // Cm quat advanced by ω × dt over the integration step.
+    // From APOLLO_TRACE: at t=6.0 attach in our trajectory test:
+    //   cm.q = [0.1757005698685926, 0.6915500276502323, -0.6342812850665848, 0.2976157260950715]
+    //   lm.q = [0.2984000663009802, -0.6344802011286232, -0.6912119512801404, -0.1749808938511608]
+    // These are what JEOD logs at t=6.0 too. Use them directly.
+    cm_post.quaternion = JeodQuat::new(
+        0.1757005698685926,
+        0.6915500276502323,
+        -0.6342812850665848,
+        0.2976157260950715,
+    );
+    lm_post.quaternion = JeodQuat::new(
+        0.2984000663009802,
+        -0.6344802011286232,
+        -0.6912119512801404,
+        -0.1749808938511608,
+    );
+
+    let parent_composite = make_state(&cm_post);
+    let child_composite = make_state(&lm_post);
+    let parent_mass = make_mass(&cm_post);
+    let child_mass = make_mass(&lm_post);
     let combined_mass = make_mass(&post.cm);
 
     eprintln!("INPUT DUMP:");

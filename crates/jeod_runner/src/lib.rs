@@ -2859,6 +2859,15 @@ impl Simulation {
             self.detached_subtrees.insert(tree_root_id, updated);
         }
 
+        if std::env::var("APOLLO_TRACE").is_ok() {
+            eprintln!(
+                "DETACH: subtree {subtree_root_id:?} state stored:\n  pos={:?}\n  vel={:?}\n  ω={:?}",
+                subtree_state.trans.position,
+                subtree_state.trans.velocity,
+                subtree_state.rot.ang_vel_this
+            );
+        }
+
         // Insert the new subtree's state into the detached map.
         let prior = self.detached_subtrees.insert(
             subtree_root_id,

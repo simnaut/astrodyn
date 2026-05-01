@@ -650,19 +650,22 @@ fn tier3_sim_apollo_trajectory() {
 
     // Skip CSV row 0 (initial state — no integration yet).
     for reference in csv.iter().skip(1) {
-        // Apply any events whose scheduled time has been reached, in JEOD's
-        // order: the `trick.add_read(t, ...)` job fires at the START of the
-        // cycle whose integrator advances state TO t. So the attach/detach
-        // event sees state at t-DT (NOT t), then the integrator advances
-        // post-event state from t-DT to t. Doing it the other way around
-        // (integrate to t, then apply event) feeds the event a state one
-        // integration step ahead of JEOD's input — invisible for derived
-        // core position (algebraic cancellation between cw_OLD-cw_NEW and
-        // cm_delta) but produces a body-x ang_vel residue at every attach.
+        // Apply events in JEOD's order: Trick's `trick.add_read(t, ...)`
+        // job fires at the END of the cycle ending at t — after the
+        // integrator has advanced state to t. So step up to event_t
+        // (current_t == event_t), THEN apply the event. Verified
+        // empirically: at t=4 DetachS3, JEOD's lm.vel JUMPS by +0.110 m/s
+        // between the t=3.999 sample (= state at end of cycle [3.96,
+        // 3.98]) and the t=4.000 sample (= state at end of cycle [3.98,
+        // 4.0]). That kick equals one ordinary integration step on cm
+        // cascaded through the dyn-tree to lm via JEOD's propagate_state
+        // — i.e., the cycle [3.98, 4.0] integrator ran with the PRE-
+        // detach mass tree (lm still in cm's tree), THEN the detach
+        // fired. See `BUG_A_REPORT.md`.
         while let Some(&&(event_t, event)) = event_iter.peek() {
             if event_t <= reference.time + 1e-9 && event_t > current_t + 1e-9 {
-                // Step up to one DT BEFORE the event time, then apply.
-                while current_t + 1.5 * DT < event_t {
+                // Step up to and including event_t, then apply.
+                while current_t + 0.5 * DT < event_t {
                     sim.step().expect("step failed");
                     current_t += DT;
                 }
@@ -741,8 +744,8 @@ fn tier3_sim_apollo_trajectory() {
     // larger rotation drift that hasn't been tracked to a specific code
     // site yet — left as a follow-up so this PR's gravity-application-
     // point refactor stays focused.
-    report.assert_position([1.6e-1, 9.4e-2, 2.1e-1]);
-    report.assert_velocity([1.46e-1, 2.31e-1, 1.82e-1]);
-    report.assert_quat_angle(3.7e-2);
-    report.assert_ang_vel([4.2e-3, 1.4e-5, 1.1e-2]);
+    report.assert_position([1.79e-3, 3.54e-4, 1.41e-3]);
+    report.assert_velocity([1.77e-3, 3.59e-4, 1.39e-3]);
+    report.assert_quat_angle(6.86e-3);
+    report.assert_ang_vel([4.16e-3, 1.30e-5, 1.09e-2]);
 }
