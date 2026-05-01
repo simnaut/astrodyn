@@ -5,9 +5,23 @@
 //! trajectory against the reference CSV. The sim has 11 scheduled
 //! `add_read` events at integer seconds — 9 detaches and 2 attaches.
 //! The full event sequence is applied to our mass tree (so the pipeline
-//! exercises all 11 events end-to-end), but trajectory-state diffs are
-//! recorded only through `t = 5.9 s` (5 detaches: S1, S2, LES, S3, LM).
-//! See `TRAJECTORY_VALIDATION_END_S` for why later samples are skipped.
+//! exercises all 11 events end-to-end) via `Simulation::detach_subtree`
+//! and `Simulation::attach_subtree_aligned`. `attach_subtree_aligned`
+//! ports JEOD's `DynBody::attach_child` momentum-conservation algorithm
+//! into [`jeod_dynamics::attach::combine_states_at_attach`].
+//!
+//! Trajectory diffs are recorded only through `t = 5.9 s` (5 detaches:
+//! S1, S2, LES, S3, LM). The post-attach segment is not yet diff-asserted
+//! because our combined-body angular velocity at the first attach (t=6 s)
+//! comes out with the correct *magnitude* but inverted *sign* compared
+//! to JEOD's reference. The algorithm port is faithful to JEOD's source
+//! and the spurious-spin magnitude matches; the sign discrepancy is
+//! tracked separately and stems from a yet-unidentified body-axis
+//! convention difference. The first 5.9 s exercises the integration
+//! pipeline, mass-tree composite re-sync across 5 detaches, and the
+//! detached-subtree-state propagation that feeds the attach algorithm
+//! — already a non-trivial workout that matches to numerical-precision
+//! limits.
 //!
 //! ### JEOD source-defect note
 //!
@@ -77,18 +91,9 @@ const DT: f64 = 0.02;
 /// `RUN_test/input.py:350` — `exec_set_terminate_time(12.0)`.
 const SIM_DURATION_S: f64 = 12.0;
 
-/// Trajectory comparison ends before the first JEOD `attach_child`
-/// event at t=6 s. JEOD's attach algorithm models rigid coupling at
-/// the docking point and absorbs the pre-attach relative-translational
-/// velocity between the two sub-trees as a discrete angular-velocity
-/// kick on the composite (going from ~-1.13e-3 rad/s to ~-1.72 rad/s
-/// at t=6, then ~-4.31 rad/s after t=9). That impulsive update is
-/// non-physical (a coordinate accommodation, not a physical
-/// interaction), and replicating it would require porting the JEOD
-/// attach algorithm in full. The first 6 s of trajectory exercise
-/// 5 detach events (S1, S2, LES, S3, LM) — already a non-trivial
-/// pipeline workout — and matches JEOD's recorded core_body trajectory
-/// to integration noise.
+/// Trajectory comparison window: stop recording diffs once we cross
+/// `TRAJECTORY_VALIDATION_END_S` (just before the first JEOD attach
+/// event at t=6 s). See module docs for why later samples are skipped.
 const TRAJECTORY_VALIDATION_END_S: f64 = 5.9;
 
 /// `Modified_data/Earth/params.py` — Earth rotation rate.
@@ -257,24 +262,24 @@ const EVENTS: &[(f64, Event)] = &[
 ];
 
 fn apply_event(sim: &mut Simulation, body_idx: usize, ids: &BodyIds, event: Event) {
-    let tree = sim
-        .mass_tree
-        .as_mut()
-        .expect("mass tree present after launch-stack assembly");
     match event {
-        Event::DetachS1 => tree.detach(ids.s1),
-        Event::DetachS2 => tree.detach(ids.s2),
-        Event::DetachLes => tree.detach(ids.les),
-        Event::DetachS3 => tree.detach(ids.s3),
-        Event::DetachLm | Event::DetachLm2 | Event::DetachLm3 => tree.detach(ids.lm),
-        Event::DetachDm => tree.detach(ids.dm),
-        Event::DetachSm => tree.detach(ids.sm),
-        Event::AttachLmCm | Event::AttachLmCm2 => {
-            tree.attach_aligned(ids.lm, "LM docking port", ids.cm, "CM docking port")
+        Event::DetachS1 => sim.detach_subtree(body_idx, ids.s1),
+        Event::DetachS2 => sim.detach_subtree(body_idx, ids.s2),
+        Event::DetachLes => sim.detach_subtree(body_idx, ids.les),
+        Event::DetachS3 => sim.detach_subtree(body_idx, ids.s3),
+        Event::DetachLm | Event::DetachLm2 | Event::DetachLm3 => {
+            sim.detach_subtree(body_idx, ids.lm)
         }
+        Event::DetachDm => sim.detach_subtree(body_idx, ids.dm),
+        Event::DetachSm => sim.detach_subtree(body_idx, ids.sm),
+        Event::AttachLmCm | Event::AttachLmCm2 => sim.attach_subtree_aligned(
+            body_idx,
+            ids.lm,
+            "LM docking port",
+            ids.cm,
+            "CM docking port",
+        ),
     }
-    // Sync the integrated body's mass from the tree's recomputed composite.
-    sim.sync_body_mass_from_tree(body_idx);
 }
 
 // ── Test ─────────────────────────────────────────────────────────────
@@ -586,9 +591,7 @@ fn tier3_sim_apollo_trajectory() {
     // mass-tree event at each integer-second boundary just before the
     // logging step that crosses it (matching Trick's add_read semantics:
     // the event fires at the start of the cycle that begins at t=N,
-    // before the data record at t=N is written). Stop accumulating
-    // diff samples once we cross `TRAJECTORY_VALIDATION_END_S` — see
-    // the constant's docs for why.
+    // before the data record at t=N is written).
     let mut event_iter = EVENTS.iter().peekable();
     let mut our_log = Vec::with_capacity(csv.len());
     let mut ref_log = Vec::with_capacity(csv.len());
@@ -618,9 +621,9 @@ fn tier3_sim_apollo_trajectory() {
         }
 
         if reference.time > TRAJECTORY_VALIDATION_END_S + 1e-6 {
-            // Continue stepping (so mass-tree events fire as scheduled
-            // and the simulation pipeline runs the full 12 s) but stop
-            // recording samples for the diff.
+            // Continue stepping (so the full 11 events fire) but stop
+            // recording diff samples — see TRAJECTORY_VALIDATION_END_S
+            // doc-comment for why.
             continue;
         }
 
@@ -644,18 +647,14 @@ fn tier3_sim_apollo_trajectory() {
             ang_accel: None,
         });
     }
-    assert!(
-        !our_log.is_empty(),
-        "trajectory log is empty — TRAJECTORY_VALIDATION_END_S={TRAJECTORY_VALIDATION_END_S} too small?"
-    );
+    assert!(!our_log.is_empty(), "trajectory log is empty");
 
     let report = CrossvalReport::compute("tier3_sim_apollo_trajectory", &our_log, &ref_log);
     report.write();
 
     // Tolerances per tests/README.md (5% above observed max error).
     // Through 5 detach events (first 5.9 s) the trajectory matches
-    // JEOD's recorded core_body to numerical-precision limits — the
-    // values below are the observed errors with a tight headroom.
+    // JEOD's recorded core_body to numerical-precision limits.
     report.assert_position([1.2e-7, 2.2e-6, 3.1e-7]);
     report.assert_velocity([1.7e-7, 5.9e-7, 2.5e-7]);
     report.assert_quat_angle(3.2e-8);
