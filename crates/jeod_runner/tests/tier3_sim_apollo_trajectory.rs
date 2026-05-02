@@ -25,7 +25,7 @@
 //! that previously produced "larger rotation drift" before the
 //! `composite_body`-integration refactor (commit `bd279c2`) and the
 //! `step_ballistic` quaternion-multiply-order fix (routed through
-//! `jeod_dynamics::advance_left_quat_body_rate`).
+//! `BodyAttitude::advance_under_body_rate` after issue #252).
 //!
 //! ### JEOD source-defect note
 //!
@@ -735,9 +735,10 @@ fn tier3_sim_apollo_trajectory() {
     // composite ang_vel matches JEOD's logged −1.7207 rad/s exactly),
     // the t=9 LM re-attach, and the t=10 LM detach. The closed-form
     // quaternion advance for detached subtrees routes through
-    // `jeod_dynamics::advance_left_quat_body_rate` (issue #248 / PR
-    // #251); fixing the multiply order on `step_ballistic` removed the
-    // 1.708 mrad/s S3-attitude drift that had been lever-armed up to
+    // `BodyAttitude::advance_under_body_rate` (issue #248 / PR #251 +
+    // issue #252); fixing the multiply order on `step_ballistic`
+    // removed the 1.708 mrad/s S3-attitude drift that had been
+    // lever-armed up to
     // 16 mm at LM during the t=4 → t=5 free-fly. Residuals over the
     // full 12 s are now:
     //   - position:    ~7 µm / component

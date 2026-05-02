@@ -51,11 +51,46 @@ stages, re-exports all types; zero Bevy dependency). Bevy wiring lives in the
 that delegate to `jeod_sim` functions, plugin registration).
 
 The root package depends **only** on `jeod_sim` + `bevy` — never on `jeod_*`
-crates directly. This makes `jeod_sim` the single API surface for any ECS adapter.
+crates directly. This makes `jeod_sim` the single API surface for any consumer
+(ECS adapter or otherwise).
 
 Never put physics algorithms directly in a Bevy system function. The system queries
 components, then calls a `jeod_sim` function. This keeps physics portable to other
 ECS frameworks, WASM, or standalone batch computation.
+
+### `bevy_jeod` vs `jeod_runner`: two parallel consumers of `jeod_sim`
+
+The titular simulation environment is **`bevy_jeod`** (this root crate +
+`src/`). It is the production target — Bevy ECS is the chosen runtime for
+mission code, and the ECS world is the single source of truth for all
+state.
+
+**`jeod_runner` is a parallel non-Bevy consumer of `jeod_sim`**, not a
+dependency of `bevy_jeod`. It exists because the `jeod_*` and `jeod_sim`
+crates have **zero Bevy dependency** by design (the layer rule above), so
+they can be exercised directly from a plain Rust binary that owns its own
+state. `jeod_runner` provides that owned-state harness for:
+
+- **Tier 3 cross-validation tests** (`crates/jeod_runner/tests/tier3_*.rs`)
+  — propagating from JEOD initial conditions and comparing against
+  Trick reference CSVs without standing up a Bevy `App`.
+- **Batch propagation, scripting, and offline studies** that don't need
+  ECS scheduling, parallelism, or Bevy plugins.
+
+`jeod_runner` and `bevy_jeod` sit *next to* each other in the dep graph —
+both depend on `jeod_sim` (and the wider `jeod_*` family); neither
+depends on the other. Any improvement that lands in `jeod_*` or
+`jeod_sim` (typed quantities, phantom-frame discipline, witness-gated
+constructors like `BodyAttitude<V>`, …) benefits both consumers
+identically. Any guarantee that lives only in `jeod_runner`'s
+`simulation/` submodule is, by construction, **not** available to Bevy
+mission code — so type-system work that targets a class of bugs
+(rather than a runner-internal helper) belongs in `jeod_quantities` or
+`jeod_dynamics`, not in `jeod_runner`.
+
+Mission crates that target the production runtime depend on
+`bevy_jeod` (and transitively `jeod_sim`). They never depend on
+`jeod_runner`.
 
 ## Computational Independence (non-negotiable)
 

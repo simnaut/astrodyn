@@ -2,6 +2,7 @@
 //! crates typically need without `PhantomData` or `uom::si::*` noise.
 
 pub use crate::aliases::*;
+pub use crate::body_attitude::BodyAttitude;
 pub use crate::dims::{GravParam, MassFlowRate, SpecificAngMom, SpecificEnergy};
 pub use crate::ext::{Array3Ext, F64Ext, Vec3Ext};
 pub use crate::frame::{

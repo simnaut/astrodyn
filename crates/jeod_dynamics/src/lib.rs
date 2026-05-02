@@ -70,8 +70,8 @@ pub use rkf45::{
     rkf45_translational_step, AdaptiveConfig, AdaptiveResult,
 };
 pub use rotational::{
-    advance_left_quat_body_rate, compute_left_quat_deriv, compute_rotational_acceleration,
-    normalize_integ, RotationalState, SixDofState,
+    compute_left_quat_deriv, compute_rotational_acceleration, normalize_integ, RotationalState,
+    SixDofState,
 };
 pub use state::TranslationalState;
 pub use subtree::DetachedSubtreeState;
