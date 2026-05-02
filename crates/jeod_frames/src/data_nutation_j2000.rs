@@ -7,8 +7,8 @@
 //! Reference: Mulcihy, David D. and Bond, Victor R., *"The RNP Routine
 //! for the Standard Epoch J2000"*, NASA:JSC-24574, September 1990.
 //!
-//! 106 terms of the IAU 1980 Theory of Nutation. Each array is indexed
-//! `0..[NUM_NUTATION_COEFFS]`.
+//! 106 terms of the IAU 1980 Theory of Nutation — each array has length
+//! [`NUM_NUTATION_COEFFS`] and is indexed `0..NUM_NUTATION_COEFFS`.
 //!
 //! The five fundamental-argument multiplier arrays
 //! ([`L_COEFFS`], [`M_COEFFS`], [`F_COEFFS`], [`D_COEFFS`],

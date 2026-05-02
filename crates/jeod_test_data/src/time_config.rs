@@ -42,7 +42,8 @@ pub struct TimeConfig {
     pub utc_minute: u32,
     /// Seconds of minute, in `[0.0, 61.0)`. The standard range is
     /// `[0.0, 60.0)`; values in `[60.0, 61.0)` are reserved for the
-    /// smeared second during a positive UTC leap second.
+    /// positive UTC leap second (`23:59:60` and any fractional second
+    /// within it).
     pub utc_second: f64,
     /// Override `TAI − UTC` in seconds, when JEOD's input forces a value.
     pub tai_utc_override: Option<f64>,

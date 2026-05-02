@@ -28,8 +28,9 @@ pub struct CalendarDate {
     /// Minute of hour, 0–59.
     pub minute: i32,
     /// Second of minute, in `[0.0, 61.0)`. The standard range is
-    /// `[0.0, 60.0)`; the half-open extension up to `61.0` is reserved
-    /// for the smeared second during a positive UTC leap second.
+    /// `[0.0, 60.0)`; values in `[60.0, 61.0)` are reserved for the
+    /// positive UTC leap second (`23:59:60` and any fractional second
+    /// within it).
     pub second: f64,
 }
 
