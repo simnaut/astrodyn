@@ -1155,7 +1155,9 @@ pub fn flat_plate_srp_system(
                 // per step. Force fed to the orbital integrator is
                 // step-constant.
                 let t_inertial_body = rot.map_or(glam::DMat3::IDENTITY, |r| {
-                    r.0.q_inertial_body.left_quat_to_transformation()
+                    r.0.q_inertial_body
+                        .as_witness()
+                        .left_quat_to_transformation()
                 });
                 let t_struct_body =
                     struct_xform.map_or(glam::DMat3::IDENTITY, |s| *s.0.matrix_ref());

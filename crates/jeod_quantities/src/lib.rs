@@ -61,6 +61,7 @@
 mod sealed;
 
 pub mod aliases;
+pub mod body_attitude;
 pub mod diagnostics;
 pub mod dims;
 pub mod ext;
@@ -75,6 +76,7 @@ pub mod quat;
 pub mod time_scale;
 
 pub use aliases::*;
+pub use body_attitude::BodyAttitude;
 pub use dims::*;
 pub use frame::*;
 pub use frame_transform::*;

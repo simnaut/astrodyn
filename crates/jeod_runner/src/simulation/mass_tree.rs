@@ -306,7 +306,9 @@ impl Simulation {
             let updated = DetachedSubtreeState {
                 composite_position: parent_composite_state.trans.position + cm_delta_inertial,
                 composite_velocity: parent_composite_state.trans.velocity + dvel_inertial,
-                composite_attitude: parent_composite_state.rot.q_parent_this,
+                composite_attitude: DetachedSubtreeState::attitude_from_raw_jeod_quat(
+                    parent_composite_state.rot.q_parent_this,
+                ),
                 composite_ang_vel_body: parent_composite_state.rot.ang_vel_this,
             };
             self.detached_subtrees.insert(tree_root_id, updated);

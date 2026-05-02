@@ -5,8 +5,9 @@ use glam::{DMat3, DVec3};
 use jeod_math::quaternion::NORM_LIMIT;
 use jeod_math::JeodQuat;
 use jeod_quantities::aliases::AngularVelocity;
+use jeod_quantities::body_attitude::BodyAttitude;
 use jeod_quantities::frame::{BodyFrame, Vehicle};
-use jeod_quantities::quat::{LeftTransform, NormalizedQuat, ScalarFirst};
+use jeod_quantities::quat::NormalizedQuat;
 
 /// Rotational state of a rigid body.
 ///
@@ -38,13 +39,15 @@ pub struct SixDofState {
 }
 
 /// Typed sibling of [`RotationalState`] parameterized by a vehicle marker
-/// `V`. The quaternion is a witnessed unit-norm
-/// [`NormalizedQuat<ScalarFirst, LeftTransform>`] (JEOD canonical), and
-/// angular velocity carries the `BodyFrame<V>` phantom tag.
+/// `V`. The attitude is a [`BodyAttitude<V>`] — the wrapper owns the
+/// JEOD left-multiply convention so callers cannot integrate via raw
+/// `multiply` and accidentally swap operand order (issue #252).
+/// Angular velocity carries the `BodyFrame<V>` phantom tag.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RotationalStateTyped<V: Vehicle> {
-    /// Inertial → body left-transformation quaternion (witnessed unit-norm).
-    pub q_inertial_body: NormalizedQuat<ScalarFirst, LeftTransform>,
+    /// Inertial → body attitude (typed wrapper around a witnessed
+    /// scalar-first / left-transformation quaternion).
+    pub q_inertial_body: BodyAttitude<V>,
     /// Angular velocity in `BodyFrame<V>`.
     pub ang_vel_body: AngularVelocity<BodyFrame<V>>,
     _v: PhantomData<V>,
@@ -54,8 +57,7 @@ impl<V: Vehicle> Default for RotationalStateTyped<V> {
     #[inline]
     fn default() -> Self {
         Self {
-            q_inertial_body: NormalizedQuat::new(JeodQuat::identity())
-                .expect("identity quaternion is unit-norm"),
+            q_inertial_body: BodyAttitude::identity(),
             ang_vel_body: AngularVelocity::<BodyFrame<V>>::zero(),
             _v: PhantomData,
         }
@@ -63,11 +65,11 @@ impl<V: Vehicle> Default for RotationalStateTyped<V> {
 }
 
 impl<V: Vehicle> RotationalStateTyped<V> {
-    /// Construct from a witnessed unit-norm quaternion plus typed angular
+    /// Construct from a typed [`BodyAttitude`] plus typed angular
     /// velocity.
     #[inline]
     pub fn new(
-        q_inertial_body: NormalizedQuat<ScalarFirst, LeftTransform>,
+        q_inertial_body: BodyAttitude<V>,
         ang_vel_body: AngularVelocity<BodyFrame<V>>,
     ) -> Self {
         Self {
@@ -83,7 +85,7 @@ impl<V: Vehicle> RotationalStateTyped<V> {
     #[inline]
     pub fn to_untyped(&self) -> RotationalState {
         RotationalState {
-            quaternion: self.q_inertial_body.inner(),
+            quaternion: self.q_inertial_body.to_jeod_quat(),
             ang_vel_body: self.ang_vel_body.raw_si(),
         }
     }
@@ -98,7 +100,7 @@ impl<V: Vehicle> RotationalStateTyped<V> {
         let q = NormalizedQuat::new(s.quaternion)
             .unwrap_or_else(|err| panic!("RotationalState quaternion is not unit-norm: {err}"));
         Self {
-            q_inertial_body: q,
+            q_inertial_body: BodyAttitude::from_witness(q),
             ang_vel_body: AngularVelocity::<BodyFrame<V>>::from_raw_si(s.ang_vel_body),
             _v: PhantomData,
         }
@@ -171,83 +173,6 @@ pub fn compute_left_quat_deriv(q: &JeodQuat, ang_vel: DVec3) -> [f64; 4] {
     let qdot_v = qs * mhang_vel + mhang_vel.cross(qv);
 
     [qdot_s, qdot_v.x, qdot_v.y, qdot_v.z]
-}
-
-/// Closed-form advance of a JEOD left-quat under **constant body-frame
-/// angular velocity** over `dt` seconds. Returns the new quaternion,
-/// re-normalized via [`normalize_integ`] so the caller doesn't have to.
-///
-/// Use this for ballistic / torque-free rotation (or any context where
-/// `ang_vel_body` is constant over the step). For variable-ω integration
-/// (RK4, Gauss-Jackson, etc.), feed [`compute_left_quat_deriv`] into the
-/// integrator's quaternion stage instead.
-///
-/// # JEOD convention — and why this helper exists
-///
-/// JEOD's `compute_left_quat_deriv` (`jeod/models/utils/quaternion/include
-/// /quat_inline.hh:466`) defines the time derivative of a left-quat
-/// `q_parent_this` (inertial → body) under body-frame ω as
-///
-/// ```text
-/// q̇ = -½ (ω ⊗ q)            // ω LEFT-multiplied by q
-/// ```
-///
-/// The closed-form integral over a constant-ω step is therefore
-///
-/// ```text
-/// q(t+dt) = exp(-½ ω·dt) ⊗ q(t)
-///         = (cos(½|ω|dt), -ω̂ sin(½|ω|dt))  ⊗  q(t)    // LEFT-multiply
-/// ```
-///
-/// The multiply order is **non-commutative** with respect to `q(t)`. An
-/// earlier ad-hoc implementation in `DetachedSubtreeState::step_ballistic`
-/// used `q ⊗ dq` (right-multiply). For a non-identity initial pose this
-/// introduces a per-step error of order `θ · |q.vector × ω̂|` (the
-/// commutator), which on SIM_Apollo's detached S3 subtree produced an
-/// exact 1.708 mrad/s attitude drift, lever-armed up to 16 mm at LM. See
-/// the `tier3_sim_apollo_lm_state_vs_truth` diagnostic and
-/// [#248](https://github.com/simnaut/bevy_jeod/issues/248).
-///
-/// The bug fooled the type system because both operands of `multiply`
-/// have identical types (`Quat<ScalarFirst, LeftTransform>`) — the
-/// type system catches transform-handedness mismatches but cannot
-/// discriminate `a ⊗ b` from `b ⊗ a`. Routing every body-rate
-/// quaternion advance through this single helper is the structural
-/// mitigation: callers can't get the multiply order wrong because they
-/// don't write the multiply.
-///
-/// # Numerical behavior
-///
-/// - For `|ω| == 0` returns `q` unchanged (no normalization). Important
-///   so that bodies at rest don't accumulate float roundoff.
-/// - For non-zero `ω` the half-angle is computed via
-///   `(|ω|·dt)/2` and `sin/cos` of that scalar — robust for any
-///   angular speed, but most accurate when `|ω|·dt < ~π` (one rotation
-///   per step). For SIM_Apollo's 0.001 rad/s scales the half-angle is
-///   ~10⁻⁵, well in the linear regime.
-/// - The output is re-normalized via [`normalize_integ`] (no canonical
-///   hemisphere flip — see that function's docs for why).
-pub fn advance_left_quat_body_rate(q: JeodQuat, ang_vel_body: DVec3, dt: f64) -> JeodQuat {
-    let omega_norm = ang_vel_body.length();
-    if omega_norm == 0.0 {
-        return q;
-    }
-    let half_angle = omega_norm * dt * 0.5;
-    let s = half_angle.sin() / omega_norm;
-    let c = half_angle.cos();
-    // dq = exp(-½ [0, ω] dt) = (cos(θ/2), -ω̂ sin(θ/2)) — same convention
-    // as `JeodQuat::left_quat_from_eigen_rotation(|ω|·dt, ω̂)`. Built
-    // inline to skip the redundant `normalize` inside that constructor;
-    // we normalize the final product below.
-    let dq = JeodQuat::new(
-        c,
-        -ang_vel_body.x * s,
-        -ang_vel_body.y * s,
-        -ang_vel_body.z * s,
-    );
-    let mut q_new = dq.multiply(&q);
-    normalize_integ(&mut q_new);
-    q_new
 }
 
 /// Normalize a quaternion without forcing scalar non-negative.
@@ -561,104 +486,12 @@ mod tests {
         assert_eq!(untyped.ang_vel_body, DVec3::ZERO);
     }
 
-    // ---------------------------------------------------------------
-    // advance_left_quat_body_rate tests
-    // ---------------------------------------------------------------
-
-    /// Zero ω returns the input unchanged (and does not normalize, so
-    /// callers can rely on this for bodies at rest).
-    #[test]
-    fn advance_left_quat_zero_omega_is_identity() {
-        let q_in =
-            JeodQuat::left_quat_from_eigen_rotation(0.7, DVec3::new(1.0, 2.0, 3.0).normalize());
-        let q_out = advance_left_quat_body_rate(q_in, DVec3::ZERO, 0.5);
-        assert_eq!(q_out.scalar(), q_in.scalar());
-        assert_eq!(q_out.vector(), q_in.vector());
-    }
-
-    /// Starting from identity, one step under body-frame ω advances by
-    /// exactly `left_quat_from_eigen_rotation(|ω|·dt, ω̂)`. With identity
-    /// init, left- and right-multiply are equivalent — this asserts the
-    /// rotation magnitude/direction, not the multiply order.
-    #[test]
-    fn advance_left_quat_from_identity_matches_eigen_rotation() {
-        let omega = DVec3::Y * 0.001_134_454_274_550_824;
-        let dt = 0.02;
-        let q_out = advance_left_quat_body_rate(JeodQuat::identity(), omega, dt);
-        let expected =
-            JeodQuat::left_quat_from_eigen_rotation(omega.length() * dt, omega.normalize());
-        assert!((q_out.scalar() - expected.scalar()).abs() < 1e-15);
-        assert!((q_out.vector() - expected.vector()).length() < 1e-15);
-    }
-
-    /// **Discriminating test**: with a non-identity initial quaternion,
-    /// `advance_left_quat_body_rate` must produce `dq ⊗ q` (left-multiply,
-    /// matching JEOD's `q̇ = -½ ω ⊗ q`), and crucially `q ⊗ dq` (the
-    /// pre-fix bug) gives a measurably different output. This is the
-    /// regression test for the SIM_Apollo S3 1.708 mrad/s drift bug
-    /// caught by `tier3_sim_apollo_lm_state_vs_truth`.
-    #[test]
-    fn advance_left_quat_uses_left_multiply_not_right() {
-        let q_init = JeodQuat::left_quat_from_eigen_rotation(0.5, DVec3::Z);
-        let omega = DVec3::Y * 0.001_134_454_274_550_824;
-        let dt = 0.02;
-
-        let q_out = advance_left_quat_body_rate(q_init, omega, dt);
-
-        // Closed-form expected: dq ⊗ q_init (LEFT-multiply).
-        let theta = omega.length() * dt;
-        let dq = JeodQuat::left_quat_from_eigen_rotation(theta, omega.normalize());
-        let mut expected_left = dq.multiply(&q_init);
-        normalize_integ(&mut expected_left);
-
-        // The buggy alternative: q_init ⊗ dq (RIGHT-multiply).
-        let mut expected_right = q_init.multiply(&dq);
-        normalize_integ(&mut expected_right);
-
-        // The helper must match left-multiply…
-        let left_diff = (q_out.scalar() - expected_left.scalar()).abs()
-            + (q_out.vector() - expected_left.vector()).length();
-        assert!(
-            left_diff < 1e-15,
-            "advance_left_quat_body_rate diverges from JEOD's left-multiply convention: \
-             |Δleft| = {left_diff:e}"
-        );
-
-        // …and the right-multiply alternative must produce a measurably
-        // different output, so this test actually discriminates the bug.
-        let right_diff = (q_out.scalar() - expected_right.scalar()).abs()
-            + (q_out.vector() - expected_right.vector()).length();
-        assert!(
-            right_diff > 1e-9,
-            "right-multiply produced ~the same output as left-multiply for this test \
-             case — pick a less symmetric q_init or ω so the test discriminates: \
-             |Δright| = {right_diff:e}"
-        );
-    }
-
-    /// Many small steps and one big step over the same total time give
-    /// (nearly) the same answer, since `advance_left_quat_body_rate` is
-    /// closed-form for constant ω. Roundoff over 100 steps is ~1e-13.
-    #[test]
-    fn advance_left_quat_many_steps_match_one_big_step() {
-        let q_init =
-            JeodQuat::left_quat_from_eigen_rotation(0.7, DVec3::new(1.0, 2.0, 3.0).normalize());
-        let omega = DVec3::new(0.05, -0.03, 0.07); // arbitrary body rate
-        let total_dt = 1.0;
-        let n = 100_usize;
-        let small_dt = total_dt / n as f64;
-
-        let mut q_iter = q_init;
-        for _ in 0..n {
-            q_iter = advance_left_quat_body_rate(q_iter, omega, small_dt);
-        }
-        let q_one_shot = advance_left_quat_body_rate(q_init, omega, total_dt);
-
-        let diff = (q_iter.scalar() - q_one_shot.scalar()).abs()
-            + (q_iter.vector() - q_one_shot.vector()).length();
-        assert!(
-            diff < 1e-12,
-            "iterated stepping diverges from one-shot beyond float roundoff: |Δ| = {diff:e}"
-        );
-    }
+    // The constant-ω attitude advance helper that used to live here
+    // (`advance_left_quat_body_rate`) was promoted into a typed
+    // sibling, [`jeod_quantities::body_attitude::BodyAttitude::advance_under_body_rate`],
+    // as part of issue #252. The runtime regression test
+    // `advance_left_quat_uses_left_multiply_not_right` was likewise
+    // moved there; the type-level guarantee that no caller can write
+    // the wrong multiply at all is exercised by the compile-fail
+    // doctests on `BodyAttitude` itself.
 }
