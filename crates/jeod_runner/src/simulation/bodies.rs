@@ -123,7 +123,6 @@ impl Simulation {
         idx
     }
 
-    /// Read-only access to the reference frame tree.
     // JEOD_INV: DS.01 — derived state config immutable after init; read-only access only
     /// Get the current output state of a body by index.
     ///

@@ -9,7 +9,7 @@ use bevy_jeod::{
     SourceInertialPositionC, StructuralTransformC, SunMarker, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
-use jeod_sim::ShadowBody as RunnerShadowBody;
+use jeod_sim::ShadowBody;
 use jeod_sim::{
     AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig, ExponentialAtmosphere,
     FlatPlate, FlatPlateParams, FlatPlateThermal, GravityControl, GravityControls, GravityModel,
@@ -340,7 +340,7 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
             t_pow4_cached: vec![init_temp.powi(4); num_plates],
             ..Default::default()
         })),
-        shadow_body: Some(RunnerShadowBody {
+        shadow_body: Some(ShadowBody {
             source_idx: earth_idx,
             radius: jeod_sim::planet_config::EARTH.shadow_radius,
         }),
@@ -459,7 +459,7 @@ fn run_shadow_parity(label: &str, srp_plates: Vec<(FlatPlate, FlatPlateParams, F
         t_pow4_cached: vec![270.0_f64.powi(4); srp_plates.len()],
         ..Default::default()
     }));
-    body.shadow_body = Some(RunnerShadowBody {
+    body.shadow_body = Some(ShadowBody {
         source_idx: earth_idx,
         radius: 6_371_000.0,
     });
