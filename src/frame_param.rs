@@ -15,7 +15,7 @@
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use glam::DVec3;
-use jeod_sim::{RefFrameRot, RefFrameState, RefFrameTrans};
+use jeod_sim::{FrameStorage, RefFrameRot, RefFrameState, RefFrameTrans};
 
 use crate::components::{FrameAngVelC, FrameRotC, FrameTransC};
 
@@ -54,89 +54,31 @@ impl<'w, 's> RelativeFrameState<'w, 's> {
         self.relative_state(from, to).trans.position
     }
 
-    /// Full [`RefFrameState`] of `to` relative to `from`.
-    /// Mirrors `FrameTree::compute_relative_state(from, to)`.
+    /// Full [`RefFrameState`] of `to` relative to `from`. Delegates
+    /// to the storage-agnostic
+    /// [`jeod_sim::frame_compute_relative_state_via_storage`]
+    /// algorithm via this `SystemParam`'s [`FrameStorage`] impl —
+    /// the same code path the runner's arena uses, so the algorithm
+    /// is single-sourced.
     pub fn relative_state(&self, from: Entity, to: Entity) -> RefFrameState {
-        if from == to {
-            return RefFrameState::default();
-        }
-        let ancestor = self.common_ancestor(from, to).unwrap_or_else(|| {
+        jeod_sim::frame_compute_relative_state_via_storage(self, from, to)
+    }
+}
+
+// `FrameStorage` impl: lets the storage-agnostic algorithms in
+// `jeod_frames::frame_storage` operate over the ECS hierarchy + the
+// new frame-state components. Issue #268 trait-experiment.
+impl<'w, 's> FrameStorage for RelativeFrameState<'w, 's> {
+    type Id = Entity;
+
+    fn parent(&self, id: Entity) -> Option<Entity> {
+        self.parents.get(id).ok().map(|child_of| child_of.parent())
+    }
+
+    fn state(&self, id: Entity) -> RefFrameState {
+        let (trans, rot, ang_vel) = self.states.get(id).unwrap_or_else(|err| {
             panic!(
-                "RelativeFrameState::relative_state: frames {from:?} and {to:?} \
-                 do not share a common ancestor in the ECS hierarchy. Spawn both \
-                 under the same root frame entity."
-            )
-        });
-        let state_from = self.compose_to_ancestor(from, ancestor);
-        let state_to = self.compose_to_ancestor(to, ancestor);
-        let from_negated = RefFrameState::negate(&state_from);
-        from_negated.incr_right(&state_to)
-    }
-
-    fn common_ancestor(&self, a: Entity, b: Entity) -> Option<Entity> {
-        let mut da = self.depth(a);
-        let mut db = self.depth(b);
-        let mut ca = a;
-        let mut cb = b;
-        while da > db {
-            ca = self.parent_of(ca)?;
-            da -= 1;
-        }
-        while db > da {
-            cb = self.parent_of(cb)?;
-            db -= 1;
-        }
-        while ca != cb {
-            ca = self.parent_of(ca)?;
-            cb = self.parent_of(cb)?;
-        }
-        Some(ca)
-    }
-
-    fn depth(&self, entity: Entity) -> usize {
-        let mut d = 0;
-        let mut current = entity;
-        while let Some(parent) = self.parent_of(current) {
-            d += 1;
-            current = parent;
-        }
-        d
-    }
-
-    fn parent_of(&self, entity: Entity) -> Option<Entity> {
-        self.parents
-            .get(entity)
-            .ok()
-            .map(|child_of| child_of.parent())
-    }
-
-    /// Compose states from `id` up to `ancestor`, returning the state
-    /// of `id` relative to `ancestor`. Mirrors
-    /// `FrameTree::compose_to_ancestor`.
-    fn compose_to_ancestor(&self, id: Entity, ancestor: Entity) -> RefFrameState {
-        if id == ancestor {
-            return RefFrameState::default();
-        }
-        let mut composed = self.state_of(id);
-        let mut current = id;
-        while let Some(parent_entity) = self.parent_of(current) {
-            if parent_entity == ancestor {
-                return composed;
-            }
-            composed.incr_left(&self.state_of(parent_entity));
-            current = parent_entity;
-        }
-        panic!(
-            "RelativeFrameState::compose_to_ancestor: frame {id:?} is not a \
-             descendant of ancestor {ancestor:?} in the ECS hierarchy. \
-             Common-ancestor walk should have caught this."
-        );
-    }
-
-    fn state_of(&self, entity: Entity) -> RefFrameState {
-        let (trans, rot, ang_vel) = self.states.get(entity).unwrap_or_else(|err| {
-            panic!(
-                "RelativeFrameState::state_of: frame entity {entity:?} is missing \
+                "RelativeFrameState::state: frame entity {id:?} is missing \
                  FrameTransC / FrameRotC / FrameAngVelC components ({err:?}). \
                  Frame entities must be spawned with all three (or use the \
                  register_*_frames_system path that inserts them)."
