@@ -6,11 +6,11 @@
 use bevy::prelude::*;
 use glam::DVec3;
 use jeod_sim::{
-    Angle, BodyFrame, DragConfig, DragConfigTyped, DynamicsConfig, FrameDerivatives,
-    FrameDerivativesTyped, FrameTransform, GravityAcceleration, GravityAccelerationTyped,
-    GravityControls, GravitySource, MassProperties, MassPropertiesTyped, PlanetFixed, PlanetShape,
-    Position, Ratio, RootInertial, RotationalState, RotationalStateTyped, SelfPlanet, SelfRef,
-    StructuralFrame, Torque, TotalForce, TotalForceTyped, TranslationalState,
+    Angle, AngularVelocity, BodyFrame, DragConfig, DragConfigTyped, DynamicsConfig,
+    FrameDerivatives, FrameDerivativesTyped, FrameTransform, GravityAcceleration,
+    GravityAccelerationTyped, GravityControls, GravitySource, MassProperties, MassPropertiesTyped,
+    PlanetFixed, PlanetShape, Position, Ratio, RootInertial, RotationalState, RotationalStateTyped,
+    SelfPlanet, SelfRef, StructuralFrame, Torque, TotalForce, TotalForceTyped, TranslationalState,
     TranslationalStateTyped, Velocity,
 };
 
@@ -31,10 +31,32 @@ use jeod_sim::{
 // from an untyped `TranslationalState` switches to
 // `TranslationalStateC::from(state)` without other changes.
 
-/// RootInertial translational state (position, velocity, acceleration) for
-/// the body being integrated. Wraps the typed
-/// [`TranslationalStateTyped<RootInertial>`] sibling so frame is enforced
-/// at the type level.
+/// Translational state (position, velocity) for the body being
+/// integrated. Wraps the typed [`TranslationalStateTyped<RootInertial>`]
+/// sibling so the frame phantom is enforced at the type level.
+///
+/// **Type-level imprecision for non-root integration (tracked in
+/// #263, Section A):** the `<RootInertial>` phantom describes the
+/// root-integrated case faithfully (where the body's integration
+/// frame *is* root inertial). For bodies with [`IntegSourceC`]
+/// pointing at a non-root source (issue #71 item 4), the stored
+/// position/velocity are in that source's inertial-frame coordinates
+/// — numerically integ-frame-relative, not absolute root-inertial.
+/// This matches `jeod_runner::SimBody.trans` (which uses
+/// `TranslationalStateTyped<IntegrationFrame>` per #255 to make this
+/// distinction type-visible); the Bevy adapter inherits the runner's
+/// older `<RootInertial>` typing until #263's Bevy-component-
+/// genericity decision lands (`TranslationalStateC<P>` or formal
+/// non-generic + relabel-at-boundary). Until then, downstream Bevy
+/// systems that read `TranslationalStateC` as if it were absolute
+/// inertial (geodetic conversion against a different planet, solar
+/// beta, SRP relative to a Sun position not in the integ frame)
+/// produce the wrong result for non-root bodies — the gravity and
+/// integration code in this crate compensate via [`IntegFrameIdC`]
+/// and `frame_origin_typed`, but derived-state systems do not yet.
+/// Mission code that uses non-root integration should configure
+/// derived states relative to the same integ source, or accept the
+/// limitation.
 // JEOD_INV: DB.24 — default integrated_frame is composite_body (we integrate composite_body state)
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Default, Reflect)]
 #[reflect(opaque, Component)]
@@ -42,10 +64,12 @@ pub struct TranslationalStateC(pub TranslationalStateTyped<RootInertial>);
 
 impl TranslationalStateC {
     /// Wrap an untyped [`TranslationalState`] as the typed Bevy
-    /// Component. The caller asserts the frame is `RootInertial` — the only
-    /// integration frame the Bevy adapter currently supports. No
-    /// runtime check is performed; the conversion is a zero-cost
-    /// type-tag attachment.
+    /// Component. The caller asserts the frame is `RootInertial` — the
+    /// only integration frame the Bevy adapter currently surfaces at
+    /// the type level. (For `IntegSourceC(Some(...))` bodies the value
+    /// is integ-frame-relative; see the struct doc above for the
+    /// caveat.) No runtime check is performed; the conversion is a
+    /// zero-cost type-tag attachment.
     #[inline]
     pub fn from_untyped(state: TranslationalState) -> Self {
         Self(TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(&state))
@@ -325,6 +349,135 @@ impl Default for StructuralTransformC {
 #[derive(Component, Debug, Clone, Copy, Reflect)]
 #[reflect(opaque, Component)]
 pub struct PlanetFixedRotationC(pub FrameTransform<RootInertial, PlanetFixed<SelfPlanet>>);
+
+/// Sidereal rotation rate (rad/s) used by `planet_fixed_rotation_system`
+/// to populate [`PlanetAngularVelocityC`] each step. Sourced from
+/// [`jeod_sim::PlanetConfig::omega`] at insertion (e.g. from
+/// [`PlanetBundle::from_config`](crate::PlanetBundle::from_config)).
+///
+/// Issue #71 item 1: without this, velocity composition through
+/// planet-fixed frames silently uses zero angular velocity, producing
+/// the wrong NED-relative or geodetic velocity.
+#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
+#[reflect(opaque, Component)]
+pub struct PlanetOmegaC(pub f64);
+
+/// Frame-tree node ID for a gravity source entity.
+///
+/// Inserted by `register_source_frames_system` (a `Startup` system in
+/// [`JeodPlugin`](crate::JeodPlugin)) for every entity that carries
+/// [`GravitySourceC`] but no [`SourceFrameIdC`] yet. Once present, it
+/// pins the source to a specific node in [`crate::FrameTreeR`] so
+/// helpers like [`crate::SourceMutator`] can mutate the right node.
+///
+/// Issue #71 items 2 and 5.
+#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
+#[reflect(opaque, Component)]
+pub struct SourceFrameIdC(pub jeod_sim::FrameId);
+
+/// Optional frame-tree node ID for a gravity source's planet-fixed
+/// (pfix) child frame. Populated alongside [`SourceFrameIdC`] for
+/// sources that carry [`PlanetFixedRotationC`] — the same gate
+/// `planet_fixed_rotation_system` filters on. When `PlanetFixedRotationC`
+/// is present and [`RotationModelC`] is omitted, the registration falls
+/// back to [`RotationModel::EarthRNP`](jeod_sim::RotationModel::EarthRNP).
+/// A non-`None` [`RotationModelC`] alone does *not* trigger pfix
+/// creation; without `PlanetFixedRotationC` the source is treated as
+/// non-rotating and gets no pfix child.
+#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
+#[reflect(opaque, Component)]
+pub struct SourcePfixFrameIdC(pub jeod_sim::FrameId);
+
+/// Hidden component that stashes a previously-allocated pfix frame ID
+/// on a source whose [`RotationModelC`] just toggled to
+/// [`RotationModel::None`](jeod_sim::RotationModel::None). The
+/// `SourcePfixFrameIdC` is removed at the same time so consumers
+/// branching on the public component's presence correctly see "no
+/// planet-fixed frame", but the underlying [`jeod_sim::FrameTree`]
+/// node is kept alive — renamed to a sentinel so
+/// [`jeod_sim::FrameTree::find_by_name`] won't shadow a live
+/// `<name>.pfix` lookup — so the next toggle back to a rotating
+/// model can reuse it instead of allocating a fresh node.
+///
+/// Without reuse, every `None → rotating → None → rotating …` cycle
+/// would leak an additional `<name>.pfix` node into the frame tree
+/// (which has no removal API since arena indices are stable) and let
+/// `find_by_name` return the stale orphan instead of the live frame.
+#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
+#[reflect(opaque, Component)]
+pub struct RetiredPfixFrameIdC(pub jeod_sim::FrameId);
+
+/// Frame-tree node ID for a vehicle entity. Inserted by
+/// `register_body_frames_system` (a `Startup` system in
+/// [`JeodPlugin`](crate::JeodPlugin)) for every entity that carries
+/// [`TranslationalStateC`] but no [`BodyFrameIdC`] yet. Issue #71 item 2.
+#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
+#[reflect(opaque, Component)]
+pub struct BodyFrameIdC(pub jeod_sim::FrameId);
+
+/// Frame-tree node ID of a vehicle's current integration frame
+/// (initially the source-inertial frame named by [`IntegSourceC`], or
+/// the root inertial frame when [`IntegSourceC`] is `None` / absent).
+/// Updated in place by `frame_switch_system` after a triggered
+/// [`FrameSwitchesC`] entry. Issue #71 item 4.
+#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
+#[reflect(opaque, Component)]
+pub struct IntegFrameIdC(pub jeod_sim::FrameId);
+
+/// Optional initial integration-frame source for a body (issue #71
+/// item 4). Mirrors [`jeod_sim::VehicleConfig::integ_source`]: when set
+/// to `Some(planet_entity)`, the body integrates in that source's
+/// inertial frame; when `None` (or the component is absent), the body
+/// integrates in the root inertial frame (the Bevy default).
+///
+/// Consumed at body-frame registration by `register_body_frames_system`
+/// to set [`IntegFrameIdC`], and indirectly by `gravity_computation_system`
+/// and `integration_system`, which read [`IntegFrameIdC`] to compose
+/// per-body integration-frame origins. After a successful frame switch
+/// the live integration frame lives in [`IntegFrameIdC`] (which the
+/// `frame_switch_system` updates in place); [`IntegSourceC`] is the
+/// configuration-time intent only and is intentionally not mutated by
+/// the switch.
+///
+/// **Non-root caveat (issue #263).** When `Some(...)`, the body's
+/// [`TranslationalStateC`] is integ-frame-relative but still typed
+/// `<RootInertial>` — issue #263 Section A.1, and see the
+/// [`TranslationalStateC`] docstring for the full explanation.
+/// Derived-state consumers that read the state as absolute
+/// root-inertial (geodetic vs. another planet, solar-beta, SRP
+/// relative to a Sun position not in the integ frame) will silently
+/// produce wrong answers. Until #263 closes, mission code should
+/// either avoid non-root integration or restrict derived states to
+/// ones evaluated in the same source's frame.
+#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
+#[reflect(opaque, Component)]
+pub struct IntegSourceC(pub Option<Entity>);
+
+/// Distance-based integration-frame switches for a body (issue #71
+/// items 3 + Phase C4).
+///
+/// Each entry triggers a reparent + gravity-controls flip when the body
+/// crosses the configured distance. The Bevy adapter uses
+/// `FrameSwitchConfig<Entity>` so `target_source` references a gravity
+/// source by ECS entity rather than by registration index — matching
+/// `GravityControlsC`'s `Entity`-keyed semantics. Read by
+/// [`crate::frame_switch_system`]; the system delegates to the lifted
+/// generic [`jeod_sim::evaluate_and_apply_frame_switch`].
+#[derive(Component, Debug, Clone, Default, Deref, DerefMut, Reflect)]
+#[reflect(opaque, Component)]
+pub struct FrameSwitchesC(pub Vec<jeod_sim::FrameSwitchConfig<Entity>>);
+
+/// Angular velocity of the planet-fixed frame relative to its inertial
+/// parent, expressed in pfix coordinates. Computed each step by
+/// `planet_fixed_rotation_system` as `[0, 0, omega]` matching JEOD's
+/// `planet_rnp.cc`.
+///
+/// The `AngularVelocity<PlanetFixed<SelfPlanet>>` phantom indicates "in
+/// the pfix frame of this entity's planet"; the planet identity stays
+/// at the entity level via [`PlanetC`].
+#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
+#[reflect(opaque, Component)]
+pub struct PlanetAngularVelocityC(pub AngularVelocity<PlanetFixed<SelfPlanet>>);
 
 /// Tidal configuration for a gravity source entity.
 ///

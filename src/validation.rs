@@ -13,10 +13,50 @@
 use bevy::prelude::*;
 
 use crate::components::{
-    CannonballSrpC, DynamicsConfigC, EarthLightingConfigC, FlatPlateConfigC, GravityAccelerationC,
-    GravityControlsC, GravitySourceC, MassPropertiesC, MoonMarker, RotationalStateC, SolarBetaC,
-    SunMarker, TidalConfigC, TidalDeltaC20C, TranslationalStateC,
+    CannonballSrpC, DragConfigC, DynamicsConfigC, EarthLightingConfigC, EulerAnglesConfigC,
+    FlatPlateConfigC, FrameSwitchesC, GeodeticConfigC, GravityAccelerationC, GravityControlsC,
+    GravitySourceC, IntegFrameIdC, LvlhFrameC, MassPropertiesC, MoonMarker, OrbitalElementsConfigC,
+    RotationalStateC, SolarBetaC, SourceFrameIdC, SunMarker, TidalConfigC, TidalDeltaC20C,
+    TranslationalStateC,
 };
+use crate::{FrameTreeR, RootFrameIdR};
+
+/// In `jeod_runner` the central body's inertial frame *is* the root
+/// frame (the runner renames the root to `<central>.inertial`), so
+/// `body.integ_frame_id != root_frame_id` cleanly distinguishes
+/// "central" from "third body". The Bevy adapter instead registers
+/// every gravity source — including whatever the mission treats as
+/// central — as a child of a generic root inertial frame, so a
+/// perfectly normal Earth-centered body with `IntegSourceC(Some(earth))`
+/// is one level below root and would trip the "non-root integration"
+/// check despite being numerically root-equivalent.
+///
+/// This helper folds the Bevy topology back onto the runner's
+/// semantics: a frame counts as root-equivalent when it is the root
+/// itself, or when it is a direct child of root whose stored state is
+/// identity (zero position/velocity, identity rotation, zero angular
+/// velocity). The check is evaluated against the validation-tick
+/// snapshot of the frame tree — sources whose state is non-zero at
+/// startup (Moon at 384 Mm, ephemeris-driven bodies at their epoch
+/// position) correctly remain "non-root" and continue to surface the
+/// drag/SRP/etc. warning the non-root check is meant to catch.
+fn is_root_equivalent(
+    frame_tree: &jeod_sim::FrameTree,
+    fid: jeod_sim::FrameId,
+    root_fid: jeod_sim::FrameId,
+) -> bool {
+    if fid == root_fid {
+        return true;
+    }
+    if frame_tree.parent(fid) != Some(root_fid) {
+        return false;
+    }
+    let state = &frame_tree.get(fid).state;
+    state.trans.position == glam::DVec3::ZERO
+        && state.trans.velocity == glam::DVec3::ZERO
+        && state.rot.t_parent_this == glam::DMat3::IDENTITY
+        && state.rot.ang_vel_this == glam::DVec3::ZERO
+}
 
 /// Validates JEOD invariants on dynamic body entities.
 ///
@@ -50,7 +90,7 @@ use crate::components::{
 /// # Panics
 /// Panics with a descriptive message for any violated invariant.
 // JEOD_INV: DM.03 — `Added<GravityControlsC>` filter on the body query fires on every body addition; bodies added mid-simulation are validated on the following tick
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn validate_jeod_invariants(
     mut bodies: Query<
         (
@@ -80,6 +120,33 @@ pub fn validate_jeod_invariants(
         Option<&SunMarker>,
         Option<&MoonMarker>,
         Option<&TranslationalStateC>,
+    )>,
+    // Frame-tree state for non-root validation. PR #260 round-8 fixup:
+    // mirrors `Simulation::validate()`'s frame-switch + non-root checks
+    // (`crates/jeod_runner/src/simulation/validate.rs:129-184`) so the
+    // typed `VehicleBuilder` API (which now plumbs `integ_source` and
+    // `frame_switches` through `spawn_bevy`) doesn't silently land
+    // bodies in misconfigured non-root setups.
+    body_frame_state: Query<(Option<&IntegFrameIdC>, Option<&FrameSwitchesC>)>,
+    source_frames: Query<&SourceFrameIdC>,
+    root_fid: Option<Res<RootFrameIdR>>,
+    // Needed by `is_root_equivalent` to fold Bevy's "every source is a
+    // child of root" topology back onto the runner's "central body's
+    // inertial == root" semantics.
+    frame_tree: Option<Res<FrameTreeR>>,
+    // Root-dependent features. Presence of any of these on a body that
+    // integrates in (or switches into) a non-root frame produces a
+    // warning — the underlying systems consume root-inertial state.
+    #[allow(clippy::type_complexity)] root_dependent_features: Query<(
+        Has<DragConfigC>,
+        Has<FlatPlateConfigC>,
+        Has<CannonballSrpC>,
+        Has<OrbitalElementsConfigC>,
+        Has<EulerAnglesConfigC>,
+        Has<GeodeticConfigC>,
+        Has<LvlhFrameC>,
+        Has<SolarBetaC>,
+        Has<EarthLightingConfigC>,
     )>,
 ) {
     if bodies.is_empty() {
@@ -205,6 +272,118 @@ pub fn validate_jeod_invariants(
                 bevy::log::warn!("Entity {entity:?}: {error}");
             } else {
                 panic!("Entity {entity:?}: {error}");
+            }
+        }
+
+        // ── Frame-switch + non-root frame validation ──
+        // Mirrors `Simulation::validate()` checks at
+        // `crates/jeod_runner/src/simulation/validate.rs:129-184` (PR #260
+        // round-8 fixup): every active `FrameSwitchConfig.target_source`
+        // must (a) be a registered gravity source and (b) appear in the
+        // body's `gravity_controls` so the post-switch differential flip
+        // leaves a non-differential central body. Bodies whose
+        // integration frame is non-root, or which have an active switch
+        // into a non-root frame, also warn when carrying root-dependent
+        // features (drag, SRP, orbital elements, etc.).
+        let (integ_frame, switches) = body_frame_state.get(entity).unwrap_or((None, None));
+        let root_fid_value = root_fid.as_ref().map(|r| r.0);
+        let frame_tree_ref = frame_tree.as_ref().map(|r| &r.0);
+        // Use `is_root_equivalent` instead of raw FrameId equality so
+        // Earth-centered bodies with `IntegSourceC(Some(earth))`
+        // (Earth.inertial sits one level below the generic root with
+        // identity state) don't trip the warning. See helper doc.
+        let non_root_integ = match (integ_frame, root_fid_value, frame_tree_ref) {
+            (Some(ifc), Some(root), Some(ft)) => !is_root_equivalent(ft, ifc.0, root),
+            _ => false,
+        };
+        let mut non_root_switch = false;
+        if let Some(switches) = switches {
+            for sw in &switches.0 {
+                if !sw.active {
+                    continue;
+                }
+                // (a) target_source must be a registered gravity source
+                // (Bevy analog of runner's `target >= num_sources` check —
+                // here a missing `SourceFrameIdC` is the failure mode).
+                let target_fid = match source_frames.get(sw.target_source) {
+                    Ok(s) => Some(s.0),
+                    Err(_) => {
+                        panic!(
+                            "Entity {entity:?}: FrameSwitchConfig.target_source = {target:?} \
+                             is not a registered gravity source (no SourceFrameIdC). \
+                             Spawn the source with PlanetBundle (or attach GravitySourceC + \
+                             SourceInertialPositionC) before adding the body.",
+                            target = sw.target_source,
+                        );
+                    }
+                };
+                // (b) target_source must appear in the body's
+                // gravity_controls — without it, the post-switch
+                // `differential = true` flip leaves no central body and
+                // the body integrates under the wrong gravity model.
+                if !controls
+                    .0
+                    .controls
+                    .iter()
+                    .any(|c| c.source_name == sw.target_source)
+                {
+                    panic!(
+                        "Entity {entity:?}: FrameSwitchConfig.target_source = {target:?} \
+                         is not in the body's GravityControlsC. The post-switch gravity \
+                         reclassification needs the target source to have a GravityControl \
+                         entry (it becomes the non-differential central body). Add \
+                         GravityControl::new_spherical({target:?}, ...) to the body's \
+                         controls before configuring the switch.",
+                        target = sw.target_source,
+                    );
+                }
+                // Same root-equivalence adjustment as `non_root_integ`
+                // above — switching back to the central body in Bevy
+                // still produces a `target_fid` one level below root,
+                // but with identity state, so it is numerically
+                // root-equivalent and must not trip the warning.
+                if let (Some(tf), Some(root), Some(ft)) =
+                    (target_fid, root_fid_value, frame_tree_ref)
+                {
+                    if !is_root_equivalent(ft, tf, root) {
+                        non_root_switch = true;
+                    }
+                }
+            }
+        }
+        if non_root_integ || non_root_switch {
+            let (
+                has_drag,
+                has_flat,
+                has_cannonball,
+                has_orbital,
+                has_euler,
+                has_geodetic,
+                has_lvlh,
+                has_solar_beta,
+                has_earth_lighting,
+            ) = root_dependent_features.get(entity).unwrap_or_default();
+            let has_root_dependent = has_drag
+                || has_flat
+                || has_cannonball
+                || has_orbital
+                || has_euler
+                || has_geodetic
+                || has_lvlh
+                || has_solar_beta
+                || has_earth_lighting;
+            if has_root_dependent {
+                bevy::log::warn!(
+                    "Entity {entity:?}: non-root integration frame (or active \
+                     frame switch into a non-root frame) with features that \
+                     assume root-inertial coordinates (drag={has_drag}, \
+                     flat_plate_srp={has_flat}, cannonball_srp={has_cannonball}, \
+                     orbital_elements={has_orbital}, euler={has_euler}, \
+                     geodetic={has_geodetic}, lvlh={has_lvlh}, \
+                     solar_beta={has_solar_beta}, earth_lighting={has_earth_lighting}). \
+                     These derived states assume the simulation's central-body inertial \
+                     frame and will produce incorrect results in other frames.",
+                );
             }
         }
 

@@ -7,12 +7,14 @@ pub mod components;
 pub mod prelude;
 pub mod recipes;
 pub mod sets;
+pub mod source_mutator;
 pub mod systems;
 pub mod validation;
 
 pub use bundles::*;
 pub use components::*;
 pub use sets::*;
+pub use source_mutator::SourceMutator;
 pub use systems::*;
 
 use bevy::prelude::*;
@@ -82,6 +84,48 @@ pub struct EphemerisR(pub jeod_sim::Ephemeris);
 #[derive(Resource, Deref, DerefMut)]
 pub struct MassTreeR(pub jeod_sim::MassTree);
 
+/// Bevy resource wrapping the simulation's [`jeod_sim::FrameTree`].
+///
+/// Mirrors `jeod_runner::Simulation::frame_tree`. Inserted at startup by
+/// [`JeodPlugin`] with a single root inertial frame node; mission code or
+/// recipes can register additional frame nodes (source inertials, pfix
+/// frames, body frames) during entity spawning.
+///
+/// Issue #71: this resource is the data structure that the lifted
+/// `jeod_sim::{frame_orchestration, source_state}` helpers operate on,
+/// so the Bevy adapter can consume the same orchestration code as
+/// `jeod_runner` instead of re-implementing it.
+#[derive(Resource, Deref, DerefMut)]
+pub struct FrameTreeR(pub jeod_sim::FrameTree);
+
+impl FrameTreeR {
+    /// Create a new frame tree pre-populated with a permanent
+    /// `root.inertial` root frame. Unlike `jeod_runner::Simulation::new`
+    /// (which renames the root to `<central>.inertial` when a central
+    /// body is registered), the Bevy adapter keeps a generic root and
+    /// registers every gravity source as its child — see
+    /// `register_source_frames_system` for the divergence rationale.
+    /// Returns the resource and the root inertial [`jeod_sim::FrameId`].
+    pub fn new() -> (Self, jeod_sim::FrameId) {
+        let mut tree = jeod_sim::FrameTree::new();
+        let root = tree.add_root("root.inertial".into(), jeod_sim::RefFrameKind::Inertial);
+        (Self(tree), root)
+    }
+}
+
+impl Default for FrameTreeR {
+    fn default() -> Self {
+        Self::new().0
+    }
+}
+
+/// Bevy resource carrying the [`jeod_sim::FrameId`] of the root inertial
+/// frame inside [`FrameTreeR`]. Used by source-mutation helpers and
+/// (forthcoming) frame-switch and non-root integration systems to
+/// distinguish the root from non-root sources.
+#[derive(Resource, Debug, Clone, Copy, Deref, DerefMut)]
+pub struct RootFrameIdR(pub jeod_sim::FrameId);
+
 /// Unified JEOD plugin — registers all pipeline systems and schedule sets.
 pub struct JeodPlugin;
 
@@ -105,6 +149,94 @@ impl Plugin for JeodPlugin {
 
         // ── Resources ──
         app.init_resource::<SimulationTimeR>();
+        // Frame tree + root: only seed when the caller hasn't pre-installed
+        // them. Mission code that wants to pre-seed extra root-level
+        // frames (or a custom root name) inserts both `FrameTreeR` and
+        // `RootFrameIdR` *before* adding `JeodPlugin`; the plugin then
+        // preserves them. Inserting either alone is rejected — they
+        // describe the same tree and must stay consistent.
+        match (
+            app.world().contains_resource::<FrameTreeR>(),
+            app.world().contains_resource::<RootFrameIdR>(),
+        ) {
+            (false, false) => {
+                let (frame_tree, root_id) = FrameTreeR::new();
+                app.insert_resource(frame_tree);
+                app.insert_resource(RootFrameIdR(root_id));
+            }
+            (true, true) => {
+                // Caller pre-installed both; verify that the supplied
+                // `RootFrameIdR` actually points at a root of the
+                // supplied `FrameTreeR`. PR #260 round-10 review
+                // fixup: the docs encourage pre-seeding custom trees,
+                // but a mismatched pair (e.g. a stale `FrameId` from a
+                // different tree, or an interior frame mistakenly
+                // labelled as the root) would silently attach
+                // sources/bodies under the wrong node, panic later in
+                // unrelated systems, or silently corrupt
+                // frame-relative state. Catch it here per the
+                // "Fail Loudly" rule — the diagnostic names the
+                // broken assumption and tells the caller how to fix
+                // it.
+                let frame_tree = app.world().resource::<FrameTreeR>();
+                let root_id = app.world().resource::<RootFrameIdR>().0;
+                assert!(
+                    root_id < frame_tree.0.len(),
+                    "JeodPlugin: pre-installed RootFrameIdR ({root_id}) is out of \
+                     range for the pre-installed FrameTreeR (len={tree_len}). The \
+                     two resources must describe the same tree — likely you \
+                     inserted a stale FrameId from a different FrameTree. Build \
+                     both together via FrameTreeR::new() (which returns the \
+                     matching root id) and insert them as a pair.",
+                    tree_len = frame_tree.0.len(),
+                );
+                assert!(
+                    frame_tree.0.parent(root_id).is_none(),
+                    "JeodPlugin: pre-installed RootFrameIdR ({root_id}, name \
+                     {root_name:?}) is not a root of the pre-installed \
+                     FrameTreeR — it has parent {parent:?}. Source and body \
+                     registration would attach children under the wrong node. \
+                     Pass the FrameId returned by FrameTreeR::new() (or by \
+                     FrameTree::add_root for a custom-rooted tree).",
+                    root_name = frame_tree.0.get(root_id).name,
+                    parent = frame_tree.0.parent(root_id),
+                );
+                // The plugin assumes the root is inertial: source / body
+                // registration uses `RefFrameKind::Inertial` for source
+                // children, `frame_origin(..., root, ...)` math composes
+                // root-relative positions, and the typed Bevy components
+                // (`TranslationalStateC<RootInertial>`, `Position<RootInertial>`)
+                // are all type-tagged for an inertial root. Accepting a
+                // pre-installed `RootFrameIdR` that points to a
+                // `PlanetFixed` / `Body` node would let all that math run
+                // against a non-inertial root and silently produce wrong
+                // physics. PR #260 reviewer-flagged gap.
+                let root_kind = frame_tree.0.get(root_id).kind;
+                assert!(
+                    matches!(root_kind, jeod_sim::RefFrameKind::Inertial),
+                    "JeodPlugin: pre-installed RootFrameIdR ({root_id}, name \
+                     {root_name:?}) points to a frame of kind {root_kind:?}, \
+                     but the rest of the plugin assumes the root is \
+                     inertial. Source/body registration and \
+                     `frame_origin(..., root, ...)` math (and the typed \
+                     `<RootInertial>` Bevy components) all run as if the \
+                     root is non-rotating. Pass a frame created via \
+                     FrameTree::add_root(..., RefFrameKind::Inertial), or \
+                     use FrameTreeR::new() which seeds an inertial root.",
+                    root_name = frame_tree.0.get(root_id).name,
+                );
+            }
+            (true, false) => panic!(
+                "JeodPlugin: FrameTreeR was pre-installed but RootFrameIdR was not. \
+                 Insert both together (e.g. via FrameTreeR::new()) before adding JeodPlugin, \
+                 or insert neither and let the plugin create them.",
+            ),
+            (false, true) => panic!(
+                "JeodPlugin: RootFrameIdR was pre-installed but FrameTreeR was not. \
+                 Insert both together (e.g. via FrameTreeR::new()) before adding JeodPlugin, \
+                 or insert neither and let the plugin create them.",
+            ),
+        }
 
         // ── Typed-Component reflection (#154) ──
         // Centralized in `register_jeod_component_types` so the smoke
@@ -116,14 +248,110 @@ impl Plugin for JeodPlugin {
         app.add_message::<DetachEvent>();
 
         // ── Systems ──
+        // Source-frame registration runs at Startup to populate FrameTreeR
+        // with every spawned source, and again before each FixedUpdate's
+        // EphemerisUpdate to catch late-spawned sources. The latter
+        // filters by `Without<SourceFrameIdC>` so already-registered
+        // sources are skipped — registering is one-time per source.
+        // Body-frame registration follows so bodies can resolve
+        // `IntegSourceC(Some(source_entity))` against an already-registered
+        // source. Issue #71 items 2, 4, 5.
+        //
+        // Registration is wired into three schedules so it catches every
+        // spawn surface (PR #260 round-3 R3 fixup):
+        //   - Startup: initial spawns before any tick.
+        //   - PreUpdate: catches entities spawned during the previous
+        //     frame's `Update` / `PostUpdate`. They are registered before
+        //     the *next* frame's `Update` runs. Same-frame spawn-and-
+        //     mutate inside one `Update` (spawn + `SourceMutator` call in
+        //     consecutive systems of the same frame) is *not* supported
+        //     by this scheduling, since `Update` runs after `PreUpdate`;
+        //     callers needing that pattern must add a manual
+        //     registration call in `Update` with explicit ordering.
+        //   - Before `JeodSet::EphemerisUpdate` (FixedUpdate): catches
+        //     entities spawned between fixed ticks before they hit the
+        //     ephemeris / rotation / integration pipeline.
+        // Each pass is a no-op for already-registered entities (the
+        // `Without<SourceFrameIdC>` / `Without<BodyFrameIdC>` filters
+        // make repeated runs cost a single query iteration).
+        // `register_pfix_frames_system` covers a rare but real case
+        // (round-9 fixup): a source spawned without `PlanetFixedRotationC`
+        // that gains it after the initial registration. The main
+        // `register_source_frames_system` filters by
+        // `Without<SourceFrameIdC>` so it can't observe that mutation;
+        // the dedicated pfix pass uses `Without<SourcePfixFrameIdC>` +
+        // `With<PlanetFixedRotationC>` instead.
+        app.add_systems(
+            Startup,
+            (
+                systems::register_source_frames_system,
+                systems::register_pfix_frames_system.after(systems::register_source_frames_system),
+                systems::register_body_frames_system.after(systems::register_pfix_frames_system),
+            ),
+        );
+        app.add_systems(
+            PreUpdate,
+            (
+                systems::register_source_frames_system,
+                systems::register_pfix_frames_system.after(systems::register_source_frames_system),
+                systems::register_body_frames_system.after(systems::register_pfix_frames_system),
+            ),
+        );
+        // Frame-tree despawn cleanup: rename + reset orphan nodes so
+        // `find_by_name` lookups don't shadow a future re-spawn of the
+        // same name and stale state can't leak through frame-tree
+        // queries. PR #260 reviewer-flagged gap; see the module-level
+        // comment in `src/systems.rs` ("Frame-tree despawn cleanup")
+        // for the why.
+        app.add_observer(systems::on_source_frame_despawn);
+        app.add_observer(systems::on_source_pfix_frame_despawn);
+        app.add_observer(systems::on_retired_pfix_frame_despawn);
+        app.add_observer(systems::on_body_frame_despawn);
         // Split into two add_systems calls to stay within Bevy's tuple size limit.
         app.add_systems(
             FixedUpdate,
             (
-                // Validation runs first — matches JEOD's initialize_simulation()
-                validation::validate_jeod_invariants.before(JeodSet::TimeUpdate),
                 // Time advance
                 systems::time_advance_system.in_set(JeodSet::TimeUpdate),
+                // Catch dynamically-spawned sources before they hit
+                // `planet_fixed_rotation_system` / `ephemeris_update_system`.
+                systems::register_source_frames_system.before(JeodSet::EphemerisUpdate),
+                // Late-attached `PlanetFixedRotationC` → pfix child node
+                // (round-9 fixup; see `register_pfix_frames_system` doc).
+                systems::register_pfix_frames_system
+                    .after(systems::register_source_frames_system)
+                    .before(JeodSet::EphemerisUpdate),
+                // Catch dynamically-spawned bodies (after source registration so
+                // any IntegSourceC reference resolves to a registered source).
+                systems::register_body_frames_system
+                    .after(systems::register_pfix_frames_system)
+                    .before(JeodSet::EphemerisUpdate),
+                // Validation runs *after* registration but before any
+                // pipeline consumer touches the new components. The
+                // frame-switch / non-root checks read `SourceFrameIdC`
+                // and `IntegFrameIdC`, both inserted by the `register_*`
+                // systems above. Pinning validation to
+                // `before(JeodSet::TimeUpdate)` would panic with "not
+                // a registered gravity source" on the first tick after
+                // a between-tick spawn, even though the same
+                // `FixedUpdate` would have registered the entity a few
+                // systems later. Slotting validation after the
+                // registration trio (and still before
+                // `JeodSet::EphemerisUpdate`, where the gravity /
+                // ephemeris / pfix consumers live) preserves the
+                // "validate before consumers" intent without racing
+                // the frame-tree wiring.
+                validation::validate_jeod_invariants
+                    .after(systems::register_body_frames_system)
+                    .before(JeodSet::EphemerisUpdate),
+                // After ephemeris_update_system writes new source position /
+                // velocity, mirror the values into FrameTreeR so frame-tree
+                // consumers (compute_relative_state, frame_origin) see the
+                // latest state. PR #260 review fixup.
+                systems::sync_source_to_frame_system
+                    .in_set(JeodSet::EphemerisUpdate)
+                    .after(systems::ephemeris_update_system)
+                    .after(systems::planet_fixed_rotation_system),
                 // Planet-fixed rotation (RNP)
                 systems::planet_fixed_rotation_system.in_set(JeodSet::EphemerisUpdate),
                 // Ephemeris position updates (DE4xx)
@@ -158,6 +386,17 @@ impl Plugin for JeodPlugin {
                 // Force collection and integration
                 systems::force_collection_system.in_set(JeodSet::ForceCollection),
                 systems::integration_system.in_set(JeodSet::Integration),
+                // After integration, sync the body's typed state into its
+                // FrameTreeR node so frame-switch evaluation sees current
+                // distances. Issue #71 item 2.
+                systems::sync_body_to_frame_system
+                    .in_set(JeodSet::Integration)
+                    .after(systems::integration_system),
+                // Evaluate distance-based frame switches and reparent the
+                // body in the frame tree on trigger. Issue #71 item 3.
+                systems::frame_switch_system
+                    .in_set(JeodSet::Integration)
+                    .after(systems::sync_body_to_frame_system),
                 // Derived states
                 systems::orbital_elements_system.in_set(JeodSet::DerivedState),
                 systems::euler_angles_system.in_set(JeodSet::DerivedState),
@@ -210,6 +449,15 @@ pub fn register_jeod_component_types(app: &mut App) {
     // Frame transforms
     app.register_type::<components::StructuralTransformC>();
     app.register_type::<components::PlanetFixedRotationC>();
+    app.register_type::<components::PlanetOmegaC>();
+    app.register_type::<components::PlanetAngularVelocityC>();
+    app.register_type::<components::SourceFrameIdC>();
+    app.register_type::<components::SourcePfixFrameIdC>();
+    app.register_type::<components::RetiredPfixFrameIdC>();
+    app.register_type::<components::IntegSourceC>();
+    app.register_type::<components::FrameSwitchesC>();
+    app.register_type::<components::BodyFrameIdC>();
+    app.register_type::<components::IntegFrameIdC>();
     // Tidal
     app.register_type::<components::TidalConfigC>();
     app.register_type::<components::TidalDeltaC20C>();
@@ -286,14 +534,29 @@ pub trait VehicleConfigBevyExt {
     /// torque component. `source_entities` resolves each `usize` index in
     /// `gravity_controls` to the corresponding ECS [`Entity`].
     ///
+    /// Wired in PR #260: `integ_source` (translated to
+    /// [`components::IntegSourceC`] when `Some`) and `frame_switches`
+    /// (translated to [`components::FrameSwitchesC`] when non-empty),
+    /// retagging each `usize` source index to the matching ECS
+    /// [`Entity`] from `source_entities`.
+    ///
     /// Not yet wired (callers must insert these manually): drag, SRP
     /// (flat-plate / cannonball), shadow body, derived-state requests
     /// (orbital elements, Euler, LVLH, geodetic, solar beta, earth
-    /// lighting), `integ_source`, and frame switches. These are tracked
-    /// for future expansion of `spawn_bevy`.
+    /// lighting). These are tracked for future expansion of
+    /// `spawn_bevy`.
     ///
-    /// Panics if any `GravityControl::source_name` index is out of bounds
-    /// in `source_entities`.
+    /// # Panics
+    ///
+    /// Panics if any of the following `usize` source indices is out of
+    /// bounds in `source_entities`:
+    ///
+    /// - any `GravityControl::source_name` in `gravity_controls.controls`
+    /// - the `integ_source` value (when `Some`)
+    /// - any `FrameSwitchConfig::target_source` in `frame_switches`
+    ///
+    /// All three panics share the same diagnostic shape, telling the
+    /// caller to spawn all gravity sources before invoking `spawn_bevy`.
     ///
     /// Returns the spawned vehicle entity ID.
     fn spawn_bevy(self, commands: &mut Commands, source_entities: &[Entity]) -> Entity;
@@ -376,6 +639,37 @@ impl VehicleConfigBevyExt for jeod_sim::VehicleConfig {
         }
         if self.compute_gravity_gradient {
             entity.insert(components::GravityTorqueC::default());
+        }
+        // Non-root integration: translate the `usize` source index to
+        // the matching ECS Entity so `register_body_frames_system` can
+        // resolve the body's integration frame against `FrameTreeR`.
+        // `IntegSourceC(None)` is the implicit default (root), so we
+        // only insert when the builder set a non-default integ source.
+        if let Some(idx) = self.integ_source {
+            let src = resolve_source_entity(source_entities, idx, "integ_source");
+            entity.insert(components::IntegSourceC(Some(src)));
+        }
+        // Frame switches: translate each `FrameSwitchConfig<usize>` to
+        // `FrameSwitchConfig<Entity>` by retagging `target_source`. The
+        // bevy adapter's `frame_switch_system` reads
+        // `FrameSwitchConfig<Entity>` directly. Skip the insertion when
+        // the builder didn't configure any switches.
+        if !self.frame_switches.is_empty() {
+            let entity_switches: Vec<jeod_sim::FrameSwitchConfig<Entity>> = self
+                .frame_switches
+                .into_iter()
+                .map(|sw| jeod_sim::FrameSwitchConfig::<Entity> {
+                    target_source: resolve_source_entity(
+                        source_entities,
+                        sw.target_source,
+                        "FrameSwitchConfig::target_source",
+                    ),
+                    switch_sense: sw.switch_sense,
+                    switch_distance: sw.switch_distance,
+                    active: sw.active,
+                })
+                .collect();
+            entity.insert(components::FrameSwitchesC(entity_switches));
         }
         entity.id()
     }
