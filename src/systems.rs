@@ -18,11 +18,20 @@ use crate::SimulationTimeR;
 // ── Frame-tree source registration ──
 
 /// Auto-register every gravity-source entity (carrying [`GravitySourceC`])
-/// into [`FrameTreeR`] at startup, then insert [`SourceFrameIdC`] (and,
-/// for sources with a non-`None` [`RotationModelC`],
-/// [`SourcePfixFrameIdC`]) on the entity. Sources are added as children
-/// of the existing root inertial frame; their initial position comes
-/// from [`SourceInertialPositionC`] (default zero).
+/// into [`FrameTreeR`] at startup, then insert [`SourceFrameIdC`] on
+/// the entity. Sources are added as children of the existing root
+/// inertial frame; their initial position comes from
+/// [`SourceInertialPositionC`] and (when present) initial velocity from
+/// [`SourceInertialVelocityC`].
+///
+/// A [`SourcePfixFrameIdC`] is additionally inserted iff the source
+/// also carries [`PlanetFixedRotationC`] — that's the indicator
+/// `planet_fixed_rotation_system` filters on; without it the source
+/// never rotates and a pfix node would be a permanent identity that
+/// `source_pfix_rotation()` would mis-report as `Some(identity)`. When
+/// `PlanetFixedRotationC` is present and `RotationModelC` is omitted,
+/// the same `EarthRNP` default applies as in
+/// `planet_fixed_rotation_system`.
 ///
 /// This is the Bevy analog of `jeod_runner::Simulation::add_source` —
 /// it makes the lifted source-mutation helpers (issue #71 item 5)
@@ -112,29 +121,49 @@ pub fn register_source_frames_system(
 /// its [`FrameTreeR`] inertial frame node each step. Mirrors
 /// `jeod_runner::Simulation::update_ephemeris`'s post-DE4xx writeback to
 /// the frame tree — required so frame-tree consumers
-/// (`compute_relative_state`, `frame_origin`, frame-switch evaluation)
-/// see the current source state rather than the registration-time
-/// snapshot.
+/// Sync each gravity source's typed state from the ECS components into
+/// its [`FrameTreeR`] inertial frame node each step. Mirrors
+/// `jeod_runner::Simulation::update_ephemeris`'s post-DE4xx writeback
+/// to the frame tree — required so frame-tree consumers
+/// (`compute_relative_state`, `frame_origin`, frame-switch evaluation,
+/// per-stage source interpolation in [`integration_system`]) see the
+/// current source state rather than the registration-time snapshot.
+///
+/// Velocity source-of-truth precedence (PR #260 round-3 review fixup):
+///
+/// 1. [`SourceInertialVelocityC`] when present — the explicit
+///    per-source velocity component.
+/// 2. Otherwise [`TranslationalStateC`]'s velocity —
+///    `ephemeris_update_system` populates it for ephemeris-driven
+///    sources that don't carry the standalone velocity component
+///    (Sun / Moon entities used by SRP / earth-lighting are typically
+///    spawned this way via `SunBundle` / `MoonBundle`).
+/// 3. Otherwise leave the frame-tree node's velocity unchanged.
+///
+/// Round 2 only consulted `SourceInertialVelocityC`, which left
+/// ephemeris-only sources stuck at zero velocity in the frame tree.
 ///
 /// Runs in `JeodSet::EphemerisUpdate` after `ephemeris_update_system`
-/// (which writes `SourceInertialPositionC` / `SourceInertialVelocityC`
-/// from DE4xx) so the FrameTreeR sync sees the latest values.
-/// (Phase B PR #260 review fixup; closes the parity gap that
-/// `register_source_frames_system` only initialized the node and
-/// nothing kept it in sync.)
+/// (which writes the ECS components from DE4xx) so the FrameTreeR sync
+/// sees the latest values.
+#[allow(clippy::type_complexity)]
 pub fn sync_source_to_frame_system(
     mut frame_tree: ResMut<FrameTreeR>,
     sources: Query<(
         &SourceFrameIdC,
         &SourceInertialPositionC,
         Option<&SourceInertialVelocityC>,
+        Option<&TranslationalStateC>,
     )>,
 ) {
-    for (fid, pos, vel) in &sources {
+    for (fid, pos, vel, trans) in &sources {
         let node = frame_tree.0.get_mut(fid.0);
         node.state.trans.position = pos.0.raw_si();
-        if let Some(v) = vel {
-            node.state.trans.velocity = v.0.raw_si();
+        let velocity = vel
+            .map(|v| v.0.raw_si())
+            .or_else(|| trans.map(|t| t.0.velocity.raw_si()));
+        if let Some(v) = velocity {
+            node.state.trans.velocity = v;
         }
     }
 }
@@ -755,14 +784,25 @@ pub fn integration_system(
         Option<&mut FrameDerivativesC>,
         Option<&IntegFrameIdC>,
     )>,
-    sources: Query<(
-        &GravitySourceC,
-        Option<&PlanetFixedRotationC>,
-        &SourceInertialPositionC,
-        Option<&SourceInertialVelocityC>,
-        Option<&TidalDeltaC20C>,
-        Option<&TidalConfigC>,
-    )>,
+    sources: Query<
+        (
+            &GravitySourceC,
+            Option<&PlanetFixedRotationC>,
+            &SourceInertialPositionC,
+            Option<&SourceInertialVelocityC>,
+            Option<&TidalDeltaC20C>,
+            Option<&TidalConfigC>,
+            // Fallback velocity source for ephemeris-driven sources (Sun /
+            // Moon via SunBundle / MoonBundle) that don't carry
+            // SourceInertialVelocityC. PR #260 round-3 review.
+            Option<&TranslationalStateC>,
+        ),
+        // Static disjointness vs. the `bodies` query's `&mut
+        // TranslationalStateC`: no integrated body is also a gravity
+        // source. Without this filter Bevy can't prove the queries
+        // don't alias and panics with `assert_component_access_compatibility`.
+        Without<DynamicsConfigC>,
+    >,
     time: Res<Time<Fixed>>,
     sim_time: Res<SimulationTimeR>,
 ) {
@@ -819,15 +859,29 @@ pub fn integration_system(
         let typed_abs_vel = Velocity::<Inertial>::from_raw_si(vel + integ_origin_vel); // allowed: integrator-kernel boundary
         let typed_origin = Position::<Inertial>::from_raw_si(stage_origin_pos); // allowed: integrator-kernel boundary
 
+        // Helper: resolve a source's effective velocity, falling back to
+        // `TranslationalStateC.velocity` when the explicit
+        // `SourceInertialVelocityC` component is absent. PR #260 round-3
+        // fix — without the fallback, ephemeris-driven Sun/Moon sources
+        // (spawned via SunBundle/MoonBundle, which include
+        // `TranslationalStateC` but not `SourceInertialVelocityC`) get
+        // treated as stationary at every RK sub-stage.
+        let source_vel =
+            |v: Option<&SourceInertialVelocityC>, ts: Option<&TranslationalStateC>| -> DVec3 {
+                v.map(|v| v.0.raw_si())
+                    .or_else(|| ts.map(|t| t.0.velocity.raw_si()))
+                    .unwrap_or(DVec3::ZERO)
+            };
+
         let typed_accel = jeod_sim::accumulate_gravity_typed(
             typed_abs_pos,
             &controls.0,
             typed_origin,
             |source_entity| match sources.get(source_entity) {
-                Ok((s, r, p, v, tidal, tidal_config)) => {
+                Ok((s, r, p, v, tidal, tidal_config, ts)) => {
                     let base_pos = p.0.raw_si();
                     let stage_pos = if sub_dt != 0.0 {
-                        base_pos + v.map_or(DVec3::ZERO, |v| v.0.raw_si()) * sub_dt
+                        base_pos + source_vel(v, ts) * sub_dt
                     } else {
                         base_pos
                     };
@@ -855,19 +909,23 @@ pub fn integration_system(
             typed_abs_vel,
             &controls.0,
             |source_entity| {
-                sources.get(source_entity).ok().map(|(s, _, p, v, _, _)| {
-                    let base_pos = p.0.raw_si();
-                    let stage_pos = if sub_dt != 0.0 {
-                        base_pos + v.map_or(DVec3::ZERO, |v| v.0.raw_si()) * sub_dt
-                    } else {
-                        base_pos
-                    };
-                    jeod_sim::ResolvedRelativisticSource {
-                        mu: s.mu,
-                        position: stage_pos,
-                        velocity: v.map_or(DVec3::ZERO, |v| v.0.raw_si()),
-                    }
-                })
+                sources
+                    .get(source_entity)
+                    .ok()
+                    .map(|(s, _, p, v, _, _, ts)| {
+                        let velocity = source_vel(v, ts);
+                        let base_pos = p.0.raw_si();
+                        let stage_pos = if sub_dt != 0.0 {
+                            base_pos + velocity * sub_dt
+                        } else {
+                            base_pos
+                        };
+                        jeod_sim::ResolvedRelativisticSource {
+                            mu: s.mu,
+                            position: stage_pos,
+                            velocity,
+                        }
+                    })
             },
         );
         accel += rel.raw_si();
@@ -1154,6 +1212,9 @@ pub fn gravity_computation_system(
         Option<&SourceInertialVelocityC>,
         Option<&TidalDeltaC20C>,
         Option<&TidalConfigC>,
+        // Fallback velocity source for ephemeris-driven sources that
+        // don't carry SourceInertialVelocityC. PR #260 round-3.
+        Option<&TranslationalStateC>,
     )>,
 ) {
     for (entity, state, controls, mut accel, integ_frame) in &mut bodies {
@@ -1181,7 +1242,7 @@ pub fn gravity_computation_system(
             &controls.0,
             integ_origin,
             |source_entity| match sources.get(source_entity) {
-                Ok((source, rot, pos, _, tidal, tidal_config)) => {
+                Ok((source, rot, pos, _, tidal, tidal_config, _)) => {
                     Some(jeod_sim::ResolvedSource {
                         source: &source.0,
                         rotation: rot.map(|r| r.0.matrix_ref()),
@@ -1217,13 +1278,23 @@ pub fn gravity_computation_system(
             abs_body_vel,
             &controls.0,
             |source_entity| {
-                sources.get(source_entity).ok().map(|(s, _, p, v, _, _)| {
-                    jeod_sim::ResolvedRelativisticSource {
-                        mu: s.mu,
-                        position: p.0.raw_si(),
-                        velocity: v.map_or(DVec3::ZERO, |v| v.0.raw_si()),
-                    }
-                })
+                sources
+                    .get(source_entity)
+                    .ok()
+                    .map(|(s, _, p, v, _, _, ts)| {
+                        // Fall back to TranslationalStateC.velocity when
+                        // SourceInertialVelocityC is absent — same precedence
+                        // as `sync_source_to_frame_system`. PR #260 round-3.
+                        let velocity = v
+                            .map(|v| v.0.raw_si())
+                            .or_else(|| ts.map(|t| t.0.velocity.raw_si()))
+                            .unwrap_or(DVec3::ZERO);
+                        jeod_sim::ResolvedRelativisticSource {
+                            mu: s.mu,
+                            position: p.0.raw_si(),
+                            velocity,
+                        }
+                    })
             },
         );
         accel.grav_accel += rel_accel;

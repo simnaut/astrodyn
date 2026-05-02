@@ -247,3 +247,138 @@ fn tier3_bevy_frame_switch_earth_to_moon_matches_simulation() {
         );
     }
 }
+
+#[test]
+fn tier3_bevy_frame_switch_on_departure_matches_simulation() {
+    // PR #260 round-3 T5 fixup: cover the `OnDeparture` predicate in the
+    // shared generic helper. The `OnApproach` test above triggers a
+    // switch when the body comes within `SWITCH_RADIUS` of the Moon;
+    // this test triggers when the body departs beyond a threshold from
+    // its *current* integration frame's origin (the body's
+    // `trans.position` magnitude exceeds `switch_distance`). Without
+    // this case, a regression in the OnDeparture predicate or its
+    // reparent/apply path inside `evaluate_and_apply_frame_switch`
+    // would still pass the suite.
+    //
+    // Scenario: same Earth-orbit launch toward Moon; the switch
+    // threshold is the body's distance from Earth (current integ
+    // frame). Once the body's position magnitude exceeds the threshold,
+    // the switch triggers and reparents to Moon — bit-identical
+    // outcome between Bevy and `jeod_runner`.
+    let departure_threshold = 1.0e7;
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.add_plugins(JeodPlugin);
+
+    let earth = app
+        .world_mut()
+        .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+        .id();
+    let moon = app
+        .world_mut()
+        .spawn(PlanetBundle::point_mass("Moon", &MOON))
+        .id();
+
+    let switches: Vec<FrameSwitchConfig<Entity>> = vec![FrameSwitchConfig {
+        target_source: moon,
+        switch_sense: SwitchSense::OnDeparture,
+        switch_distance: departure_threshold,
+        active: true,
+    }];
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            Name::new("EarthDeparture"),
+            TranslationalStateC::from(initial_trans()),
+            RotationalStateC::from(initial_rot()),
+            MassPropertiesC::from(vehicle_mass()),
+            DynamicsConfigC(DynamicsConfig {
+                translational_dynamics: true,
+                rotational_dynamics: true,
+                three_dof: false,
+            }),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(earth, false), {
+                    let mut c = GravityControl::new_spherical(moon, false);
+                    c.differential = true;
+                    c
+                }],
+            }),
+            FrameSwitchesC(switches),
+        ))
+        .id();
+    app.world_mut().run_schedule(Startup);
+    let sys = app
+        .world_mut()
+        .register_system(move |mut m: SourceMutator| {
+            m.set_source_position(moon, MOON_OFFSET);
+        });
+    app.world_mut().run_system(sys).unwrap();
+
+    let moon_fid = app.world().get::<SourceFrameIdC>(moon).unwrap().0;
+
+    for _ in 0..NUM_STEPS {
+        app.world_mut()
+            .resource_mut::<Time<Fixed>>()
+            .advance_by(Duration::from_secs_f64(DT));
+        app.world_mut().run_schedule(FixedUpdate);
+    }
+
+    let bevy_trans = app
+        .world()
+        .get::<TranslationalStateC>(vehicle)
+        .unwrap()
+        .0
+        .to_untyped();
+    let bevy_integ_fid = app.world().get::<IntegFrameIdC>(vehicle).unwrap().0;
+    assert_eq!(
+        bevy_integ_fid, moon_fid,
+        "OnDeparture switch should land in Moon.inertial"
+    );
+
+    // ── jeod_runner ──
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sim = Simulation::new(time, DT);
+    let _earth_idx = sim.add_source("Earth", GravitySourceEntry::central_body(&EARTH));
+    let moon_idx = sim.add_source("Moon", GravitySourceEntry::third_body(&MOON, MOON_OFFSET));
+    sim.add_body(VehicleConfig {
+        trans: initial_trans(),
+        rot: Some(initial_rot()),
+        mass: Some(vehicle_mass()),
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(0_usize, false), {
+                let mut c = GravityControl::new_spherical(moon_idx, false);
+                c.differential = true;
+                c
+            }],
+        },
+        frame_switches: vec![FrameSwitchConfig {
+            target_source: moon_idx,
+            switch_sense: SwitchSense::OnDeparture,
+            switch_distance: departure_threshold,
+            active: true,
+        }],
+        ..Default::default()
+    });
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS).expect("step_n failed");
+    let sim_body = sim.body(0);
+
+    for i in 0..3 {
+        assert_bits_eq(
+            "Bevy vs Sim OnDeparture position",
+            &format!("[{i}]"),
+            bevy_trans.position[i],
+            sim_body.trans.position[i],
+        );
+        assert_bits_eq(
+            "Bevy vs Sim OnDeparture velocity",
+            &format!("[{i}]"),
+            bevy_trans.velocity[i],
+            sim_body.trans.velocity[i],
+        );
+    }
+}

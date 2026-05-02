@@ -99,11 +99,13 @@ pub struct MassTreeR(pub jeod_sim::MassTree);
 pub struct FrameTreeR(pub jeod_sim::FrameTree);
 
 impl FrameTreeR {
-    /// Create a new frame tree pre-populated with the root inertial frame
-    /// (matching `jeod_runner::Simulation::new`'s "Earth.inertial" root —
-    /// the name is generic and may be renamed by central-body source
-    /// registration). Returns the resource and the root inertial
-    /// [`jeod_sim::FrameId`].
+    /// Create a new frame tree pre-populated with a permanent
+    /// `root.inertial` root frame. Unlike `jeod_runner::Simulation::new`
+    /// (which renames the root to `<central>.inertial` when a central
+    /// body is registered), the Bevy adapter keeps a generic root and
+    /// registers every gravity source as its child — see
+    /// `register_source_frames_system` for the divergence rationale.
+    /// Returns the resource and the root inertial [`jeod_sim::FrameId`].
     pub fn new() -> (Self, jeod_sim::FrameId) {
         let mut tree = jeod_sim::FrameTree::new();
         let root = tree.add_root("root.inertial".into(), jeod_sim::RefFrameKind::Inertial);

@@ -202,6 +202,127 @@ fn tier3_bevy_integ_source_lunar_orbit_matches_simulation() {
 }
 
 #[test]
+fn tier3_bevy_integ_source_moving_moon_matches_simulation() {
+    // PR #260 round-3 N3 fixup: cover the moving-integ-frame path.
+    // The lunar-orbit test above keeps Moon velocity at zero, so the
+    // per-stage `integ_origin + integ_origin_vel * stage_dt` and source
+    // interpolation in `integration_system::eval_gravity` never fire.
+    // This test sets a non-zero Moon velocity (orbital speed at the
+    // configured Earth–Moon offset) so each RK sub-stage exercises the
+    // moving-frame code path. A regression in either the integ-origin
+    // interpolation or the source-position interpolation would diverge
+    // from `jeod_runner` here.
+    let moon_vel = DVec3::new(0.0, 1024.0, 0.0); // ~lunar orbital speed
+
+    // ── Bevy ──
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.add_plugins(JeodPlugin);
+
+    let _earth = app
+        .world_mut()
+        .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+        .id();
+    let moon = app
+        .world_mut()
+        .spawn(PlanetBundle::point_mass("Moon", &MOON))
+        .id();
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            Name::new("Lunar"),
+            TranslationalStateC::from(lunar_initial_trans()),
+            RotationalStateC::from(initial_rot()),
+            MassPropertiesC::from(vehicle_mass()),
+            DynamicsConfigC(DynamicsConfig {
+                translational_dynamics: true,
+                rotational_dynamics: true,
+                three_dof: false,
+            }),
+            GravityControlsC(GravityControls {
+                controls: vec![
+                    {
+                        let mut c = GravityControl::new_spherical(_earth, false);
+                        c.differential = true;
+                        c
+                    },
+                    GravityControl::new_spherical(moon, false),
+                ],
+            }),
+            IntegSourceC(Some(moon)),
+        ))
+        .id();
+    app.world_mut().run_schedule(Startup);
+
+    // Set Moon's inertial position AND velocity. SourceMutator
+    // auto-inserts SourceInertialVelocityC since PlanetBundle didn't.
+    let sys = app
+        .world_mut()
+        .register_system(move |mut m: SourceMutator| {
+            m.set_source_state(moon, MOON_OFFSET, moon_vel);
+        });
+    app.world_mut().run_system(sys).unwrap();
+
+    for _ in 0..NUM_STEPS {
+        app.world_mut()
+            .resource_mut::<Time<Fixed>>()
+            .advance_by(Duration::from_secs_f64(DT));
+        app.world_mut().run_schedule(FixedUpdate);
+    }
+
+    let bevy_state = SixDofState {
+        trans: app
+            .world()
+            .get::<TranslationalStateC>(vehicle)
+            .unwrap()
+            .0
+            .to_untyped(),
+        rot: app
+            .world()
+            .get::<RotationalStateC>(vehicle)
+            .unwrap()
+            .0
+            .to_untyped(),
+    };
+
+    // ── jeod_runner ──
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sim = Simulation::new(time, DT);
+    let _earth_idx = sim.add_source("Earth", GravitySourceEntry::central_body(&EARTH));
+    let moon_idx = sim.add_source("Moon", GravitySourceEntry::third_body(&MOON, MOON_OFFSET));
+    sim.set_source_state(moon_idx, MOON_OFFSET, moon_vel);
+
+    sim.add_body(VehicleConfig {
+        trans: lunar_initial_trans(),
+        rot: Some(initial_rot()),
+        mass: Some(vehicle_mass()),
+        gravity_controls: GravityControls {
+            controls: vec![
+                {
+                    let mut c = GravityControl::new_spherical(0_usize, false);
+                    c.differential = true;
+                    c
+                },
+                GravityControl::new_spherical(moon_idx, false),
+            ],
+        },
+        integ_source: Some(moon_idx),
+        ..Default::default()
+    });
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS).expect("step_n failed");
+    let body = sim.body(0);
+    let sim_state = SixDofState {
+        trans: body.trans,
+        rot: body.rot.unwrap(),
+    };
+
+    assert_sixdof_bit_identical("Bevy moving integ_source vs Sim", &bevy_state, &sim_state);
+}
+
+#[test]
 fn tier3_bevy_integ_source_root_matches_legacy_no_op() {
     // Sanity: with `IntegSourceC` absent (the legacy default), behavior
     // is unchanged — bodies integrate in root, integ_origin = 0, and

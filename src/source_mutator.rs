@@ -52,6 +52,18 @@ use crate::{FrameTreeR, RootFrameIdR};
 /// `PlanetBundle::point_mass` doesn't include
 /// [`SourceInertialVelocityC`] by default; without auto-insert,
 /// `set_source_state` would silently no-op on the velocity write.)
+///
+/// **Divergence from `jeod_runner`**: the runner's
+/// `set_source_position` / `set_source_state` reject mutations of the
+/// *root* source (the central body, since the root frame must stay
+/// identity). The Bevy adapter never maps any source to the root
+/// (`register_source_frames_system` always adds sources as children),
+/// so the runtime "cannot retarget the root" panic only fires for
+/// entities that manually attach `SourceFrameIdC(root_id)` (which the
+/// `bevy_parity_source_mutation` panic test exercises). In a normal
+/// Bevy app, every gravity source — including whichever you treat as
+/// the central body — is freely mutable. Mission code that needs a
+/// pinned origin should not call this mutator on that entity.
 #[derive(SystemParam)]
 pub struct SourceMutator<'w, 's> {
     /// The simulation frame tree resource.

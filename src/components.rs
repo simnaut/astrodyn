@@ -396,11 +396,18 @@ pub struct IntegFrameIdC(pub jeod_sim::FrameId);
 
 /// Optional initial integration-frame source for a body (issue #71
 /// item 4). Mirrors [`jeod_sim::VehicleConfig::integ_source`]: when set
-/// to `Some(planet_entity)`, the body is configured to integrate in
-/// that source's inertial frame; when `None`, the body integrates in
-/// the root inertial frame (the current Bevy default). Read by the
-/// (forthcoming) non-root integration support; today this is purely a
-/// declarative configuration component.
+/// to `Some(planet_entity)`, the body integrates in that source's
+/// inertial frame; when `None` (or the component is absent), the body
+/// integrates in the root inertial frame (the Bevy default).
+///
+/// Consumed at body-frame registration by `register_body_frames_system`
+/// to set [`IntegFrameIdC`], and indirectly by `gravity_computation_system`
+/// and `integration_system`, which read [`IntegFrameIdC`] to compose
+/// per-body integration-frame origins. After a successful frame switch
+/// the live integration frame lives in [`IntegFrameIdC`] (which the
+/// `frame_switch_system` updates in place); [`IntegSourceC`] is the
+/// configuration-time intent only and is intentionally not mutated by
+/// the switch.
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
 #[reflect(opaque, Component)]
 pub struct IntegSourceC(pub Option<Entity>);

@@ -75,10 +75,15 @@ fn tier3_bevy_source_mutator_set_state_matches_runner() {
     let mut app = build_app();
     app.world_mut()
         .spawn(PlanetBundle::point_mass("Earth", &EARTH));
+    // Spawn the Moon WITHOUT `SourceInertialVelocityC` so the test
+    // exercises `SourceMutator::set_source_state`'s auto-insert path
+    // (PR #260 round-3 fixup): `PlanetBundle::point_mass` doesn't
+    // include the velocity component, and the auto-insert is the
+    // contract that prevents the silent-no-op footgun. Asserting the
+    // post-mutation velocity below confirms the component was inserted.
     let moon_entity = app
         .world_mut()
         .spawn(PlanetBundle::point_mass("Moon", &MOON))
-        .insert(SourceInertialVelocityC::default())
         .id();
     // Force the Startup schedule to run once so register_source_frames_system fires.
     app.world_mut().run_schedule(Startup);
