@@ -831,7 +831,7 @@ fn tier3_contact_point_off_center() {
 ///
 /// JEOD source: `verif/SIM_ground_contact/SET_test/RUN_contact_ground/input.py`
 /// + `Modified_data/{ground/{ground_facet,pair_interaction},vehicle/sv_earth}.py`.
-fn make_ground_contact_sim() -> Simulation {
+fn make_ground_contact_sim() -> (Simulation, usize) {
     let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
 
@@ -902,7 +902,7 @@ fn make_ground_contact_sim() -> Simulation {
     assert_eq!(veh2, 1);
 
     sim.validate().unwrap();
-    sim
+    (sim, earth_idx)
 }
 
 /// Ground-contact material: JEOD `Modified_data/ground/pair_interaction.py`
@@ -998,7 +998,7 @@ fn tier3_contact_ground() {
     let records = load_contact_csv(&csv_path);
     assert!(!records.is_empty(), "expected at least one CSV record");
 
-    let mut sim = make_ground_contact_sim();
+    let (mut sim, earth_idx) = make_ground_contact_sim();
     let earth_radius = jeod_sim::EARTH.shape.r_eq;
     let mat = ground_steel();
     let terrain = Arc::new(SphericalTerrain::new(earth_radius));
@@ -1011,8 +1011,8 @@ fn tier3_contact_ground() {
         mat,
     );
     let veh2_facet = ContactFacet::point(DVec3::ZERO, 1.0, mat);
-    sim.register_ground_contact_pair(0, veh1_facet, ground.clone(), 0);
-    sim.register_ground_contact_pair(1, veh2_facet, ground, 0);
+    sim.register_ground_contact_pair(0, veh1_facet, ground.clone(), earth_idx);
+    sim.register_ground_contact_pair(1, veh2_facet, ground, earth_idx);
 
     // Step at the SIM_contact native rate (DT = 0.01 s) and snapshot at
     // each CSV checkpoint (LOG_CYCLE = 0.05 s).

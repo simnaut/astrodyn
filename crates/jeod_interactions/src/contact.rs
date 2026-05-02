@@ -665,11 +665,16 @@ pub enum Phase {
 /// impulsive `Δv = (1/6) · k · R · dt / m ≈ 93 km/s` at step 1, with
 /// no force at any subsequent stage or step.
 ///
+/// # Degenerate inputs
+/// A zero-length [`ContactShape::Line`] (`start == end`) is treated as
+/// a point at the segment midpoint by `surface_contact_point_line` —
+/// no panic. Our public `ContactFacet::line` constructor doesn't
+/// validate against degenerate input, so this is the documented
+/// behaviour rather than a precondition.
+///
 /// # Panics
-/// Panics if `vehicle_facet.shape` is the [`ContactShape::Line`] zero
-/// length variant (degenerate, never produced by our public constructors)
-/// or if `ground_facet.active` is false (invalid registration). Material
-/// equality is enforced one level up — by
+/// Panics if `ground_facet.active` is false (invalid registration).
+/// Material equality is enforced one level up — by
 /// `jeod_sim::evaluate_ground_contact_pair` or by
 /// `Simulation::register_ground_contact_pair` in `jeod_runner`.
 pub fn compute_ground_contact_geometry(

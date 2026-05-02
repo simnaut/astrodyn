@@ -447,9 +447,30 @@ impl Simulation {
             // the pfix rotation cancels in the ground-point computation
             // and we may pass identity, but other Terrain implementations
             // would need this matrix.
+            //
+            // Defense-in-depth: ground contact's terrain query assumes
+            // the planet center is at the inertial origin
+            // (`compute_ground_contact_geometry` projects
+            // `vehicle_pos_inertial` directly into pfix without any
+            // planet-translation subtraction). `validate()` catches
+            // non-central planets via
+            // `ValidationError::GroundContactNonCentralPlanet`, but
+            // assert here too in case a caller skips validation.
             let ground_t_inertial_pfix: DMat3 =
                 if let Some(planet_idx) = self.ground_contact_planet_source {
-                    if let Some(pfix_id) = self.source_frame_ids[planet_idx].pfix {
+                    let sfids = &self.source_frame_ids[planet_idx];
+                    assert_eq!(
+                        sfids.inertial, self.root_frame_id,
+                        "ground contact requires the planet source's inertial frame to be \
+                         the root frame (`compute_ground_contact_geometry` projects \
+                         vehicle inertial position into pfix as if the planet center \
+                         were at the inertial origin); planet_source={planet_idx} has \
+                         inertial frame {} but root is {}. Use a central planet for \
+                         ground contact, or call `Simulation::validate()` to surface \
+                         this as a configuration error before stepping.",
+                        sfids.inertial, self.root_frame_id
+                    );
+                    if let Some(pfix_id) = sfids.pfix {
                         self.frame_tree.get(pfix_id).state.rot.t_parent_this
                     } else {
                         DMat3::IDENTITY
