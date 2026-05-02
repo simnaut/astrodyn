@@ -42,9 +42,9 @@ for the layered-architecture rules.
 
 ## See also
 
-- [Project README](../../README.md) and
-  [`CLAUDE.md`](../../CLAUDE.md) — workspace-level architecture.
-- [`examples/typed_mission.rs`](../../examples/typed_mission.rs) —
+- [Project README](https://github.com/simnaut/bevy_jeod/blob/main/README.md) and
+  [`CLAUDE.md`](https://github.com/simnaut/bevy_jeod/blob/main/CLAUDE.md) — workspace-level architecture.
+- [`examples/typed_mission.rs`](https://github.com/simnaut/bevy_jeod/blob/main/examples/typed_mission.rs) —
   canonical worked example.
 - Rendered rustdoc:
   <https://simnaut.github.io/bevy_jeod/jeod_sim/>

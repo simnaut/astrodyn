@@ -53,7 +53,7 @@ down to raw `glam::DVec3` / `f64` for arithmetic density via
 - [Type-System wiki page](https://github.com/simnaut/bevy_jeod/wiki/Type-System)
   — contributor primer (phantom-tag pattern, adding a new
   frame/scale/quantity, escape hatches).
-- [Project README](../../README.md) and
-  [`CLAUDE.md`](../../CLAUDE.md) — workspace-level architecture.
+- [Project README](https://github.com/simnaut/bevy_jeod/blob/main/README.md) and
+  [`CLAUDE.md`](https://github.com/simnaut/bevy_jeod/blob/main/CLAUDE.md) — workspace-level architecture.
 - Rendered rustdoc:
   <https://simnaut.github.io/bevy_jeod/jeod_quantities/>

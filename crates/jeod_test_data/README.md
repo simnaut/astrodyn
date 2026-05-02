@@ -43,8 +43,8 @@ parse JEOD source themselves.
 
 ## See also
 
-- [Project README](../../README.md) and
-  [`CLAUDE.md`](../../CLAUDE.md) — Tier 1 / 2 / 3 conventions, fixture
+- [Project README](https://github.com/simnaut/bevy_jeod/blob/main/README.md) and
+  [`CLAUDE.md`](https://github.com/simnaut/bevy_jeod/blob/main/CLAUDE.md) — Tier 1 / 2 / 3 conventions, fixture
   layout, regen workflow.
 - Rendered rustdoc:
   <https://simnaut.github.io/bevy_jeod/jeod_test_data/>

@@ -47,9 +47,9 @@ jeod_math, jeod_frames, jeod_quantities
 
 ## See also
 
-- [`docs/JEOD_invariants.md`](../../docs/JEOD_invariants.md) — `DB.*`,
+- [`docs/JEOD_invariants.md`](https://github.com/simnaut/bevy_jeod/blob/main/docs/JEOD_invariants.md) — `DB.*`,
   `MS.*`, `IN.*`, `RK.*`, `AB.*`, `GJ.*` invariants.
-- [Project README](../../README.md) and
-  [`CLAUDE.md`](../../CLAUDE.md) — workspace-level architecture.
+- [Project README](https://github.com/simnaut/bevy_jeod/blob/main/README.md) and
+  [`CLAUDE.md`](https://github.com/simnaut/bevy_jeod/blob/main/CLAUDE.md) — workspace-level architecture.
 - Rendered rustdoc:
   <https://simnaut.github.io/bevy_jeod/jeod_dynamics/>

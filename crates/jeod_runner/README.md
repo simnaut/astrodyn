@@ -35,8 +35,8 @@ Bevy runtime depends on `bevy_jeod`, never on `jeod_runner`.
 
 ## See also
 
-- [Project README](../../README.md) and
-  [`CLAUDE.md`](../../CLAUDE.md) — workspace-level architecture, Tier
+- [Project README](https://github.com/simnaut/bevy_jeod/blob/main/README.md) and
+  [`CLAUDE.md`](https://github.com/simnaut/bevy_jeod/blob/main/CLAUDE.md) — workspace-level architecture, Tier
   conventions, regen workflow.
 - Rendered rustdoc:
   <https://simnaut.github.io/bevy_jeod/jeod_runner/>

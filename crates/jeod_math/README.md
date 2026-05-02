@@ -54,10 +54,10 @@ Bevy dependency. After Phase 2 (#104) of the type-system refactor,
 
 ## See also
 
-- [`docs/JEOD_invariants.md`](../../docs/JEOD_invariants.md) — `OE.*`,
+- [`docs/JEOD_invariants.md`](https://github.com/simnaut/bevy_jeod/blob/main/docs/JEOD_invariants.md) — `OE.*`,
   `QT.*`, `EU.*`, `GD.*` invariants this crate enforces.
-- [Project README](../../README.md) and
-  [`CLAUDE.md`](../../CLAUDE.md) — workspace-level architecture and
+- [Project README](https://github.com/simnaut/bevy_jeod/blob/main/README.md) and
+  [`CLAUDE.md`](https://github.com/simnaut/bevy_jeod/blob/main/CLAUDE.md) — workspace-level architecture and
   conventions.
 - Rendered rustdoc:
   <https://simnaut.github.io/bevy_jeod/jeod_math/>
