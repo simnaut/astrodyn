@@ -100,16 +100,17 @@ impl Simulation {
     ///
     /// # Panics
     /// * `body_a` is out of range for the registered bodies.
+    /// * `body_a` lacks a `RotationalState` or [`MassProperties`]
+    ///   (ground contact requires 6-DOF + mass — checked here so the
+    ///   coupled-RK4 path can rely on it without re-checking per stage).
     /// * `vehicle_facet.material != ground_facet.material` (JEOD pairs a
     ///   single `SpringPairInteraction` per facet pair).
     /// * `ground_facet.active == false` (JEOD_INV: IN.35).
     /// * `ground_facet.alt_offset` is not finite (JEOD_INV: IN.36).
-    /// * `vehicle_facet.shape` is `Ground` (vehicle facets must be
-    ///   `Point` or `Line` — there is no `Ground` variant on
-    ///   `ContactShape`, so this is enforced structurally; the pattern
-    ///   match below is exhaustive).
-    /// * A previous ground-contact pair was registered with a different
-    ///   `planet_source`.
+    /// * `planet_source` is out of range for the registered gravity
+    ///   sources, or differs from a previously-registered ground-contact
+    ///   pair's `planet_source` (all ground pairs must share one
+    ///   `pfix` rotation).
     pub fn register_ground_contact_pair(
         &mut self,
         body_a: usize,
@@ -142,10 +143,6 @@ impl Simulation {
             "register_ground_contact_pair: ground_facet.alt_offset must be finite, got {}",
             ground_facet.alt_offset
         );
-        // Vehicle-side shape check: the contact_point algebra in
-        // `compute_ground_contact_geometry` only handles Point and Line.
-        // A GroundFacet on the vehicle side is structurally rejected (no
-        // such variant on ContactShape).
         assert!(
             planet_source < self.gravity_data.len(),
             "register_ground_contact_pair: planet_source index {planet_source} out of range \
@@ -170,14 +167,18 @@ impl Simulation {
         // (b) at registration time we may not have a planet rotation
         // model yet — the runtime path uses the live pfix matrix.
         let body = &self.bodies[body_a];
-        let body_rot = body
-            .rot
-            .as_ref()
-            .expect("register_ground_contact_pair requires 6-DOF body");
-        let body_mass = body
-            .mass
-            .as_ref()
-            .expect("register_ground_contact_pair requires body mass properties");
+        let body_rot = body.rot.as_ref().unwrap_or_else(|| {
+            panic!(
+                "register_ground_contact_pair: body_a={body_a} has no RotationalState; \
+                 ground contact requires 6-DOF (set `rot: Some(...)` on the VehicleConfig)"
+            )
+        });
+        let body_mass = body.mass.as_ref().unwrap_or_else(|| {
+            panic!(
+                "register_ground_contact_pair: body_a={body_a} has no MassProperties; \
+                 set `mass: Some(...)` on the VehicleConfig"
+            )
+        });
         let pending_initial_impulse = evaluate_ground_contact_pair(
             &vehicle_facet,
             &ground_facet,

@@ -629,9 +629,11 @@ pub enum Phase {
 /// The returned [`ContactGeometry`] expresses contact points and the
 /// normal in the **body frame** of the vehicle. Callers (e.g.
 /// [`evaluate_ground_contact_pair`](crate::contact::compute_ground_contact_geometry))
-/// rotate them to inertial as needed. `contact_point_on_b` is set to the
-/// body-frame ground point (treated as the "B side" reference for the
-/// shared force law).
+/// rotate them to inertial as needed. `contact_point_on_b` is set to
+/// `DVec3::ZERO`: the synthesized ground "facet" the downstream force
+/// law uses has its shape reference at the body-frame ground point
+/// itself, so the contact-point-relative-to-shape-reference offset is
+/// the zero vector.
 ///
 /// # JEOD initialization-state semantics
 ///
@@ -1459,7 +1461,7 @@ mod tests {
         let (p2, n2) = t.ground_point_pfix(v2);
         let r_p2 = p2.length();
         assert!((r_p2 - 6378137.0).abs() < 1e-6);
-        assert!(n2.length() - 1.0 < 1e-12);
+        assert!((n2.length() - 1.0).abs() < 1e-12);
     }
 
     #[test]

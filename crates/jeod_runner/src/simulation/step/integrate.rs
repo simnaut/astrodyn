@@ -16,7 +16,7 @@ use jeod_sim::{
     TranslationalState,
 };
 
-use super::super::types::{ContactPairConfig, GroundContactImpulse, GroundContactPairConfig};
+use super::super::types::{ContactPairConfig, GroundContactPairConfig};
 use super::super::Simulation;
 use crate::error::StepError;
 
@@ -452,16 +452,16 @@ impl Simulation {
             // facet/material data.
             let contact_pairs: &Vec<ContactPairConfig> = &self.contact_pairs;
             let ground_contact_pairs: &Vec<GroundContactPairConfig> = &self.ground_contact_pairs;
-            // Drain pending init impulses into Cell-wrapped slots so the
-            // RK4 stage closure can `.take()` them on the first invocation
-            // (stage 1) and find `None` thereafter — JEOD's
-            // `ContactSurface::collect_forces_torques` semantics where
-            // `facet.force` is zeroed after the first stage's collection.
-            let pending_init_impulses: Vec<std::cell::Cell<Option<GroundContactImpulse>>> = self
-                .ground_contact_pairs
-                .iter()
-                .map(|p| std::cell::Cell::new(p.pending_initial_impulse))
-                .collect();
+            // Stage-1 gate for JEOD's pre-propagation init impulse:
+            // mirrors `ContactSurface::collect_forces_torques` zeroing
+            // `facet.force` after stage 1's collection. The closure
+            // applies impulses on the first call and the gate flips to
+            // `true`, so stages 2-4 see no init force. Cell<bool> instead
+            // of Vec<Cell<Option<…>>> to keep the per-step path
+            // allocation-free (the impulses themselves are stored on
+            // each `GroundContactPairConfig` and cleared after the
+            // integrator returns).
+            let init_impulses_drained = std::cell::Cell::new(false);
             let bodies_mut = &mut self.bodies;
 
             // Gather per-body immutable data (t_struct_body, mass, constant
@@ -566,10 +566,13 @@ impl Simulation {
                     // evaluate the SteadyState path which produces no
                     // contact for above-surface vehicles — matching
                     // JEOD's runtime check_contact_ground behaviour.
-                    for (i, pair) in ground_contact_pairs.iter().enumerate() {
-                        if let Some(impulse) = pending_init_impulses[i].take() {
-                            out[pair.body_a].0 += impulse.force_inertial;
-                            out[pair.body_a].1 += impulse.torque_body;
+                    let drain_now = !init_impulses_drained.replace(true);
+                    for pair in ground_contact_pairs {
+                        if drain_now {
+                            if let Some(impulse) = pair.pending_initial_impulse {
+                                out[pair.body_a].0 += impulse.force_inertial;
+                                out[pair.body_a].1 += impulse.torque_body;
+                            }
                         }
                         if let Some(eval) = evaluate_ground_contact_pair(
                             &pair.vehicle_facet,
