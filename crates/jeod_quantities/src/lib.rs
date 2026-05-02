@@ -58,10 +58,13 @@
 //!   `#[diagnostic::on_unimplemented]` message pointing at
 //!   `FrameTransform`. Wired via the
 //!   [`diagnostics::CompatibleFrames`]`<Fl, Fr>` bound in [`ops`].
-//! - **Time-scale separation** — `SecondsSince<S>` has no `Add`/`Sub` impl
-//!   across distinct scales; the only way to combine scales is via
-//!   `TimeConverter::apply`. Cross-scale arithmetic is structurally
-//!   impossible.
+//! - **Time-scale separation** — `SecondsSince<S>` has no `Add`/`Sub`
+//!   impl across distinct scales, so direct arithmetic between (e.g.)
+//!   `SecondsSince<TAI>` and `SecondsSince<TT>` is rejected. The intended
+//!   way to combine scales is via `TimeConverter::apply`. The raw
+//!   `SecondsSince::from_seconds` / `as_seconds` boundaries can still
+//!   relabel an `f64` across scales without applying the offset — see
+//!   "Where the guards stop" below.
 //! - **Quaternion convention separation** — layout (`ScalarFirst` vs
 //!   `ScalarLast`), transform convention (`LeftTransform` vs
 //!   `RightTransform`), and normalization status are distinct phantom
@@ -101,13 +104,30 @@
 //!
 //! ### Where the guards stop
 //!
-//! [`Qty3::raw_si`] and [`Qty3::from_raw_si`] are the documented escape
-//! hatches into raw `glam::DVec3`. Inside the `_inner` / `_impl` kernels
-//! of `jeod_*` crates that operate on `f64` / `DVec3`, the dimensional
-//! and frame guards are absent by design — that's where arithmetic
-//! density lives. Unit slips *inside* a kernel (m vs ft) are caught only
-//! at the `F64Ext` ingestion boundary; once you've called `.raw_si()` the
-//! caller is responsible for keeping things in SI base units.
+//! The crate has several public raw-value boundaries where the
+//! type-system guards end and the caller takes responsibility for
+//! correctness:
+//!
+//! - [`Qty3::raw_si`] / [`Qty3::from_raw_si`] — into and out of raw
+//!   `glam::DVec3` (frame tag and dimension are erased on `raw_si`,
+//!   reattached without check on `from_raw_si`).
+//! - `SecondsSince::from_seconds` / `as_seconds` — into and out of raw
+//!   `f64` seconds (time-scale tag is erased on `as_seconds`, reattached
+//!   without check on `from_seconds`, which is how a `TAI` reading can
+//!   be relabeled as `TT` without applying the 32.184 s offset).
+//! - `JeodQuat::from_array` — accepts a raw `[f64; 4]` without
+//!   normalization or convention checks. Use `NormalizedQuat::new(q)?`
+//!   to recover the unit-norm witness.
+//! - `FrameTransform::from_matrix` — accepts a raw `DMat3` without
+//!   checking orthogonality. The validating sibling is
+//!   `FrameTransform::from_matrix_validated`.
+//!
+//! These boundaries are deliberate: inside the `_inner` / `_impl`
+//! kernels of `jeod_*` crates the math runs on `f64` / `DVec3` /
+//! `DMat3` for arithmetic density. Unit, frame, time-scale, and
+//! quaternion-convention slips inside a kernel are caught only at the
+//! `F64Ext` and typed-API ingestion boundary — once you've crossed into
+//! a raw representation the caller is responsible.
 //!
 //! See the [Type-System wiki page] for the contributor primer (phantom-tag
 //! pattern, adding a new frame/scale/quantity, reading compiler errors,
