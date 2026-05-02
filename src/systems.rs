@@ -121,10 +121,6 @@ pub fn register_source_frames_system(
 /// its [`FrameTreeR`] inertial frame node each step. Mirrors
 /// `jeod_runner::Simulation::update_ephemeris`'s post-DE4xx writeback to
 /// the frame tree — required so frame-tree consumers
-/// Sync each gravity source's typed state from the ECS components into
-/// its [`FrameTreeR`] inertial frame node each step. Mirrors
-/// `jeod_runner::Simulation::update_ephemeris`'s post-DE4xx writeback
-/// to the frame tree — required so frame-tree consumers
 /// (`compute_relative_state`, `frame_origin`, frame-switch evaluation,
 /// per-stage source interpolation in [`integration_system`]) see the
 /// current source state rather than the registration-time snapshot.
