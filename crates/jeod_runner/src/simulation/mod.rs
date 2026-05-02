@@ -155,13 +155,18 @@ pub struct Simulation {
     /// across steps so the inner loop is allocation-free once the body count
     /// stabilizes.
     coupled_integ_scratch: jeod_sim::integration::CoupledIntegScratch,
-    /// `true` once `step_internal` has run at least once. Used to enforce
-    /// JEOD's S_define-level invariant that contact-pair registration is
-    /// `P_BODY("initialization")` / `P_DYN("initialization")`-only — i.e.,
-    /// runs before integration starts. JEOD enforces this structurally via
-    /// Trick job phasing; we mirror it with a runtime guard since our API
-    /// surface lets callers invoke `register_*_contact_pair` at any time
-    /// (JEOD_INV: IN.38).
+    /// `true` once `step_internal` has run at least once. Used by
+    /// `register_contact_pair` / `register_ground_contact_pair` to reject
+    /// late registration: the runner stashes a `Phase::Initialization`
+    /// impulse in `pending_initial_impulse` against `t=0` body state at
+    /// registration time, so a mid-run call would inject a spurious
+    /// impulse independent of vehicle altitude. JEOD itself does not
+    /// enforce this — `Contact::register_contact` is a public method
+    /// with no init-state guard — but JEOD's `SIM_ground_contact` S_define
+    /// wires registration only at `P_BODY/P_DYN("initialization")`
+    /// (`sv_dyn.sm:130-133`, `contact.sm:70-72`), which is consistent
+    /// with the constraint. This guard is a port-specific safety check,
+    /// not a JEOD invariant.
     pub(crate) has_stepped: bool,
 }
 

@@ -68,9 +68,8 @@ impl Simulation {
     /// Internal step with explicit dt (avoids temporary mutation of `self.dt`
     /// in `step_until`).
     fn step_internal(&mut self, dt: f64) -> Result<(), StepError> {
-        // JEOD_INV: IN.38 — flip `has_stepped` once the first integration
-        // begins so subsequent `register_*_contact_pair` calls panic
-        // (matches JEOD's S_define `P_BODY/P_DYN("initialization")` phasing).
+        // Flip `has_stepped` so subsequent `register_*_contact_pair`
+        // calls panic. See `Simulation::has_stepped`.
         self.has_stepped = true;
 
         // ── 1. Time update ──
