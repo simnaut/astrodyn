@@ -21,8 +21,9 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 use bevy_jeod::{
-    GravitySourceC, JeodPlugin, PlanetAngularVelocityC, PlanetBundle, PlanetFixedRotationC,
-    PlanetOmegaC, RotationModelC, SourceInertialPositionC,
+    FrameTreeR, GravitySourceC, JeodPlugin, PlanetAngularVelocityC, PlanetBundle,
+    PlanetFixedRotationC, PlanetOmegaC, RotationModelC, SourceInertialPositionC,
+    SourcePfixFrameIdC,
 };
 use glam::DVec3;
 use jeod_runner::{RotationModel, Simulation};
@@ -90,6 +91,19 @@ fn sim_pfix_ang_vel(sim: &Simulation, name: &str) -> DVec3 {
     frame_tree.get(pfix_id).state.rot.ang_vel_this
 }
 
+/// Read the FrameTreeR pfix node's `ang_vel_this` for a Bevy planet
+/// entity. Asserts the pfix-node-of-truth is in sync with the ECS
+/// `PlanetAngularVelocityC` component (PR #260 review fixup).
+fn bevy_pfix_node_ang_vel(app: &App, planet: Entity) -> DVec3 {
+    let pfix_fid = app
+        .world()
+        .get::<SourcePfixFrameIdC>(planet)
+        .expect("planet entity is missing SourcePfixFrameIdC")
+        .0;
+    let frame_tree = app.world().resource::<FrameTreeR>();
+    frame_tree.0.get(pfix_fid).state.rot.ang_vel_this
+}
+
 #[test]
 fn tier3_bevy_planet_ang_vel_earth_rnp() {
     let (mut app, planet) = build_planet_app("Earth", &EARTH);
@@ -109,6 +123,15 @@ fn tier3_bevy_planet_ang_vel_earth_rnp() {
     let sim = build_sim("Earth", &EARTH);
     let sim_ang_vel = sim_pfix_ang_vel(&sim, "Earth");
     assert_dvec3_bits_eq("Bevy vs Sim Earth pfix ang_vel", bevy_ang_vel, sim_ang_vel);
+
+    // FrameTreeR pfix node must match too — frame-tree consumers rely
+    // on this (compute_relative_state through pfix). PR #260 review.
+    let bevy_node_ang_vel = bevy_pfix_node_ang_vel(&app, planet);
+    assert_dvec3_bits_eq(
+        "Bevy FrameTreeR Earth pfix-node ang_vel vs Sim",
+        bevy_node_ang_vel,
+        sim_ang_vel,
+    );
 }
 
 #[test]
@@ -129,6 +152,13 @@ fn tier3_bevy_planet_ang_vel_mars_iau() {
     let sim = build_sim("Mars", &MARS);
     let sim_ang_vel = sim_pfix_ang_vel(&sim, "Mars");
     assert_dvec3_bits_eq("Bevy vs Sim Mars pfix ang_vel", bevy_ang_vel, sim_ang_vel);
+
+    let bevy_node_ang_vel = bevy_pfix_node_ang_vel(&app, planet);
+    assert_dvec3_bits_eq(
+        "Bevy FrameTreeR Mars pfix-node ang_vel vs Sim",
+        bevy_node_ang_vel,
+        sim_ang_vel,
+    );
 }
 
 #[test]
@@ -149,6 +179,13 @@ fn tier3_bevy_planet_ang_vel_moon_iau() {
     let sim = build_sim("Moon", &MOON);
     let sim_ang_vel = sim_pfix_ang_vel(&sim, "Moon");
     assert_dvec3_bits_eq("Bevy vs Sim Moon pfix ang_vel", bevy_ang_vel, sim_ang_vel);
+
+    let bevy_node_ang_vel = bevy_pfix_node_ang_vel(&app, planet);
+    assert_dvec3_bits_eq(
+        "Bevy FrameTreeR Moon pfix-node ang_vel vs Sim",
+        bevy_node_ang_vel,
+        sim_ang_vel,
+    );
 }
 
 #[test]

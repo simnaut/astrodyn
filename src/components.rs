@@ -31,10 +31,27 @@ use jeod_sim::{
 // from an untyped `TranslationalState` switches to
 // `TranslationalStateC::from(state)` without other changes.
 
-/// Inertial translational state (position, velocity, acceleration) for
-/// the body being integrated. Wraps the typed
+/// Translational state (position, velocity) for the body being
+/// integrated, in the body's **integration frame**. Wraps the typed
 /// [`TranslationalStateTyped<Inertial>`] sibling so frame is enforced
 /// at the type level.
+///
+/// **Frame caveat for non-root integration (issue #71 item 4):** the
+/// `<Inertial>` phantom marks the *kind* of frame (always inertial,
+/// because integration frames are non-rotating by JEOD convention),
+/// not its *origin*. For bodies with [`IntegSourceC`] pointing at a
+/// non-root source, position and velocity are expressed in that
+/// source's inertial frame coordinates — i.e. relative to the source's
+/// origin, not absolute inertial. This matches `jeod_runner`'s
+/// semantics. Downstream Bevy systems that interpret this as absolute
+/// inertial (geodetic conversion against a different planet, solar
+/// beta, SRP relative to a Sun position not in the integ frame) will
+/// produce the wrong result for non-root bodies — the gravity and
+/// integration code in this crate compensate via [`IntegFrameIdC`] +
+/// `frame_origin_typed`, but derived-state systems do not yet.
+/// Mission code that uses non-root integration should configure
+/// derived states relative to the same integ source, or accept the
+/// limitation.
 // JEOD_INV: DB.24 — default integrated_frame is composite_body (we integrate composite_body state)
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Default, Reflect)]
 #[reflect(opaque, Component)]

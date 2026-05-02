@@ -94,9 +94,13 @@ pub fn set_source_position(
 }
 
 /// Set position and velocity of a gravity source relative to the root
-/// inertial frame on the frame tree. Returns the assigned velocity so
-/// callers can keep parallel structures (e.g. relativistic-correction
-/// state) in sync.
+/// inertial frame on the frame tree. Callers that maintain parallel
+/// structures (e.g. relativistic-correction state, or ECS components
+/// like `SourceInertialVelocityC` in the Bevy adapter) should sync
+/// those structures themselves with the same `velocity` argument they
+/// passed in — `jeod_runner::Simulation::set_source_state` does this
+/// for `gravity_data[idx].velocity`, and the Bevy adapter's
+/// `SourceMutator` does it for `SourceInertialVelocityC`.
 ///
 /// Prefer this over [`set_source_position`] when velocity is also
 /// available, to keep position and velocity consistent.

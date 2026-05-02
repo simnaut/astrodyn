@@ -196,6 +196,14 @@ impl Plugin for JeodPlugin {
                 systems::register_body_frames_system
                     .after(systems::register_source_frames_system)
                     .before(JeodSet::EphemerisUpdate),
+                // After ephemeris_update_system writes new source position /
+                // velocity, mirror the values into FrameTreeR so frame-tree
+                // consumers (compute_relative_state, frame_origin) see the
+                // latest state. PR #260 review fixup.
+                systems::sync_source_to_frame_system
+                    .in_set(JeodSet::EphemerisUpdate)
+                    .after(systems::ephemeris_update_system)
+                    .after(systems::planet_fixed_rotation_system),
                 // Planet-fixed rotation (RNP)
                 systems::planet_fixed_rotation_system.in_set(JeodSet::EphemerisUpdate),
                 // Ephemeris position updates (DE4xx)

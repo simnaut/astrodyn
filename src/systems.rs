@@ -46,23 +46,32 @@ pub fn register_source_frames_system(
             Entity,
             Option<&Name>,
             &SourceInertialPositionC,
+            Option<&SourceInertialVelocityC>,
             Option<&RotationModelC>,
         ),
         (With<GravitySourceC>, Without<SourceFrameIdC>),
     >,
 ) {
-    for (entity, name, pos, rotation_model) in &sources {
+    for (entity, name, pos, vel, rotation_model) in &sources {
         let label = name
             .map(|n| n.as_str().to_string())
             .unwrap_or_else(|| format!("source{:?}", entity));
+        // Initialize the source frame node from the entity's current
+        // typed state. Reading both Position and (optional) Velocity
+        // lets sources that already carry a non-zero
+        // `SourceInertialVelocityC` start with the right velocity in the
+        // tree; sources without the velocity component get zero, matching
+        // their ECS state. (Phase B PR #260 review fixup.)
+        let init_pos = pos.0.raw_si();
+        let init_vel = vel.map_or(glam::DVec3::ZERO, |v| v.0.raw_si());
         let inertial_id = frame_tree.0.add_child(
             root.0,
             format!("{label}.inertial"),
             jeod_sim::RefFrameKind::Inertial,
             jeod_sim::RefFrameState {
                 trans: jeod_sim::RefFrameTrans {
-                    position: pos.0.raw_si(),
-                    velocity: glam::DVec3::ZERO,
+                    position: init_pos,
+                    velocity: init_vel,
                 },
                 rot: jeod_sim::RefFrameRot::default(),
             },
@@ -70,16 +79,53 @@ pub fn register_source_frames_system(
         let mut entity_cmds = commands.entity(entity);
         entity_cmds.insert(SourceFrameIdC(inertial_id));
 
-        if let Some(model) = rotation_model {
-            if !matches!(model.0, jeod_sim::RotationModel::None) {
-                let pfix_id = frame_tree.0.add_child(
-                    inertial_id,
-                    format!("{label}.pfix"),
-                    jeod_sim::RefFrameKind::PlanetFixed,
-                    jeod_sim::RefFrameState::default(),
-                );
-                entity_cmds.insert(SourcePfixFrameIdC(pfix_id));
-            }
+        // Default to `EarthRNP` when `RotationModelC` is absent — this
+        // matches `planet_fixed_rotation_system`'s default. Without this,
+        // sources spawned without `RotationModelC` would rotate per-step
+        // (the system creates a rotation) but lack a pfix frame node,
+        // making FrameTreeR inconsistent with the per-step writes.
+        let default_model = jeod_sim::RotationModel::EarthRNP;
+        let model_value = rotation_model.map_or(default_model, |m| m.0);
+        if !matches!(model_value, jeod_sim::RotationModel::None) {
+            let pfix_id = frame_tree.0.add_child(
+                inertial_id,
+                format!("{label}.pfix"),
+                jeod_sim::RefFrameKind::PlanetFixed,
+                jeod_sim::RefFrameState::default(),
+            );
+            entity_cmds.insert(SourcePfixFrameIdC(pfix_id));
+        }
+    }
+}
+
+/// Sync each gravity source's typed state from the ECS components
+/// (`SourceInertialPositionC` + optional `SourceInertialVelocityC`) into
+/// its [`FrameTreeR`] inertial frame node each step. Mirrors
+/// `jeod_runner::Simulation::update_ephemeris`'s post-DE4xx writeback to
+/// the frame tree — required so frame-tree consumers
+/// (`compute_relative_state`, `frame_origin`, frame-switch evaluation)
+/// see the current source state rather than the registration-time
+/// snapshot.
+///
+/// Runs in `JeodSet::EphemerisUpdate` after `ephemeris_update_system`
+/// (which writes `SourceInertialPositionC` / `SourceInertialVelocityC`
+/// from DE4xx) so the FrameTreeR sync sees the latest values.
+/// (Phase B PR #260 review fixup; closes the parity gap that
+/// `register_source_frames_system` only initialized the node and
+/// nothing kept it in sync.)
+pub fn sync_source_to_frame_system(
+    mut frame_tree: ResMut<FrameTreeR>,
+    sources: Query<(
+        &SourceFrameIdC,
+        &SourceInertialPositionC,
+        Option<&SourceInertialVelocityC>,
+    )>,
+) {
+    for (fid, pos, vel) in &sources {
+        let node = frame_tree.0.get_mut(fid.0);
+        node.state.trans.position = pos.0.raw_si();
+        if let Some(v) = vel {
+            node.state.trans.velocity = v.0.raw_si();
         }
     }
 }
@@ -319,11 +365,13 @@ pub fn planet_fixed_rotation_system(
     sim_time: Res<SimulationTimeR>,
     polar: Option<Res<crate::PolarMotionR>>,
     ephemeris: Option<Res<crate::EphemerisR>>,
+    mut frame_tree: ResMut<FrameTreeR>,
     mut query: Query<(
         &mut PlanetFixedRotationC,
         Option<&RotationModelC>,
         Option<&PlanetOmegaC>,
         Option<&mut PlanetAngularVelocityC>,
+        Option<&SourcePfixFrameIdC>,
     )>,
 ) {
     let polar_params = polar.map(|p| (p.xp, p.yp));
@@ -334,40 +382,46 @@ pub fn planet_fixed_rotation_system(
     // all EarthRNP entities share the same rotation each step.
     type EarthRot = jeod_sim::FrameTransform<jeod_sim::Inertial, jeod_sim::PlanetFixed<SelfPlanet>>;
     let mut earth_rotation: Option<EarthRot> = Option::None;
-    for (mut rot, model, omega, ang_vel) in &mut query {
+    let mut earth_rotation_raw: Option<glam::DMat3> = Option::None;
+    for (mut rot, model, omega, ang_vel, pfix_fid) in &mut query {
         let default_model = jeod_sim::RotationModel::EarthRNP;
         let rotation_model = model.map_or(&default_model, |m| &m.0);
         // Track whether we wrote a rotation this tick — controls
-        // `PlanetAngularVelocityC` mirror writes (issue #71 item 1).
+        // `PlanetAngularVelocityC` and FrameTreeR pfix-node writes.
         let rotated = !matches!(rotation_model, jeod_sim::RotationModel::None);
+        // Capture the raw DMat3 too so we can sync the FrameTreeR pfix node
+        // via the lifted `sync_pfix_rotation` helper (which takes the matrix
+        // and the planet omega — same data the rotation matrix carries).
+        let mut raw_matrix: Option<glam::DMat3> = None;
         match rotation_model {
             jeod_sim::RotationModel::None => {}
             jeod_sim::RotationModel::EarthRNP => {
-                let rotation = *earth_rotation.get_or_insert_with(|| {
-                    jeod_sim::FrameTransform::from_matrix(
-                        jeod_sim::compute_t_parent_this_from_tjt_with_polar(
-                            sim_time.gmst_seconds,
-                            sim_time.tt_tjt(),
-                            polar_params,
-                        ),
+                let mat = *earth_rotation_raw.get_or_insert_with(|| {
+                    jeod_sim::compute_t_parent_this_from_tjt_with_polar(
+                        sim_time.gmst_seconds,
+                        sim_time.tt_tjt(),
+                        polar_params,
                     )
                 });
+                let rotation = *earth_rotation
+                    .get_or_insert_with(|| jeod_sim::FrameTransform::from_matrix(mat));
                 rot.0 = rotation;
+                raw_matrix = Some(mat);
             }
             jeod_sim::RotationModel::MarsIAU => {
                 let tt_s_since_j2000 =
                     (sim_time.tt_tjt() - jeod_sim::J2000_TT_TJT) * jeod_sim::SECONDS_PER_DAY;
-                rot.0 = jeod_sim::FrameTransform::from_matrix(
-                    jeod_sim::rotation_mars::compute_mars_rotation(tt_s_since_j2000),
-                );
+                let mat = jeod_sim::rotation_mars::compute_mars_rotation(tt_s_since_j2000);
+                rot.0 = jeod_sim::FrameTransform::from_matrix(mat);
+                raw_matrix = Some(mat);
             }
             jeod_sim::RotationModel::MoonIAU => {
                 let tdb_jd = sim_time.tdb_julian_date();
                 let tdb_s_since_j2000 =
                     (tdb_jd - jeod_sim::J2000_TT_JD) * jeod_sim::SECONDS_PER_DAY;
-                rot.0 = jeod_sim::FrameTransform::from_matrix(
-                    jeod_sim::rotation_moon::compute_moon_rotation(tdb_s_since_j2000),
-                );
+                let mat = jeod_sim::rotation_moon::compute_moon_rotation(tdb_s_since_j2000);
+                rot.0 = jeod_sim::FrameTransform::from_matrix(mat);
+                raw_matrix = Some(mat);
             }
             jeod_sim::RotationModel::MoonDE421 => {
                 let eph = ephemeris.as_ref().expect(
@@ -376,7 +430,7 @@ pub fn planet_fixed_rotation_system(
                      body to RotationModel::MoonIAU.",
                 );
                 let tdb_jd = sim_time.tdb_julian_date();
-                let matrix = eph
+                let mat = eph
                     .get_body_rotation(jeod_sim::EphemerisBody::Moon, tdb_jd)
                     .unwrap_or_else(|err| {
                         panic!(
@@ -385,24 +439,38 @@ pub fn planet_fixed_rotation_system(
                              whose coverage includes the simulation epoch."
                         )
                     });
-                rot.0 = jeod_sim::FrameTransform::from_matrix(matrix);
+                rot.0 = jeod_sim::FrameTransform::from_matrix(mat);
+                raw_matrix = Some(mat);
             }
         }
 
         // ── Planet angular velocity ──
         // JEOD `planet_rnp.cc` writes `ang_vel_this = [0, 0, planet_omega]`
-        // on the pfix frame node. Mirror that here so velocity composition
-        // through pfix (NED-relative velocity, geodetic velocity) reads
-        // the correct rate. Issue #71 item 1.
+        // on the pfix frame node. Mirror that on (a) the `PlanetAngularVelocityC`
+        // ECS component and (b) the FrameTreeR pfix node so velocity
+        // composition both via the typed component and via the lifted
+        // `compute_relative_state` reads the correct rate. Issue #71 item 1
+        // + Copilot review (PR #260): the pfix-node sync via
+        // `jeod_sim::sync_pfix_rotation` is what closes the frame-tree
+        // half of the gap.
         if rotated {
-            if let (Some(omega), Some(mut ang_vel)) = (omega, ang_vel) {
+            let omega_value = omega.map(|o| o.0).unwrap_or(0.0);
+            if let Some(mut ang_vel_c) = ang_vel {
                 // Mint `AngularVelocity<PlanetFixed<SelfPlanet>>` from the
                 // scalar `PlanetOmegaC`. JEOD's `planet_rnp.cc` writes
                 // [0, 0, omega] in the pfix frame; this is the typed-API
                 // boundary for that scalar → typed-vector lift.
                 type PlanetAngVel = jeod_sim::AngularVelocity<jeod_sim::PlanetFixed<SelfPlanet>>;
-                let raw = glam::DVec3::new(0.0, 0.0, omega.0);
-                ang_vel.0 = PlanetAngVel::from_raw_si(raw); // allowed: scalar omega → typed AngularVelocity boundary
+                let raw = glam::DVec3::new(0.0, 0.0, omega_value);
+                ang_vel_c.0 = PlanetAngVel::from_raw_si(raw); // allowed: scalar omega → typed AngularVelocity boundary
+            }
+            // Sync the FrameTreeR pfix node from the same data via the
+            // lifted helper. This is what `jeod_runner` does in
+            // `update_ephemeris`; the Bevy adapter previously skipped it,
+            // so frame-tree consumers (`compute_relative_state` through
+            // pfix) saw stale identity rotation and zero angular velocity.
+            if let (Some(matrix), Some(pfix_fid)) = (raw_matrix, pfix_fid) {
+                jeod_sim::sync_pfix_rotation(&mut frame_tree.0, pfix_fid.0, matrix, omega_value);
             }
         }
     }

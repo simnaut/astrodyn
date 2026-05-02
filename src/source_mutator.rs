@@ -2,11 +2,16 @@
 //!
 //! `jeod_runner::Simulation` exposes `set_source_position`,
 //! `set_source_state`, and `set_source_ephemeris` for runtime gravity-source
-//! retargeting. The Bevy adapter mirrors that surface via the
+//! retargeting. The Bevy adapter mirrors **the frame-tree-touching
+//! mutators** (`set_source_position`, `set_source_state`) via the
 //! [`SourceMutator`] system parameter, which wraps the lifted helpers in
 //! [`jeod_sim::source_state`] and additionally syncs the legacy ECS
 //! components ([`SourceInertialPositionC`] / [`SourceInertialVelocityC`])
-//! so existing systems observe the mutation.
+//! so existing systems observe the mutation. `set_source_ephemeris` is
+//! intentionally not mirrored: it records a `(target, observer)` mapping
+//! on a runner-private vector with no frame-tree mutation; the Bevy
+//! adapter expresses the same intent via the
+//! [`crate::components::EphemerisBodyC`] component.
 //!
 //! ```ignore
 //! use bevy::prelude::*;
@@ -39,7 +44,14 @@ use crate::{FrameTreeR, RootFrameIdR};
 /// The mutator updates **both** the frame-tree node and the legacy ECS
 /// components (`SourceInertialPositionC`, `SourceInertialVelocityC`,
 /// `TranslationalStateC`) so any system observing those components sees
-/// the change immediately.
+/// the change immediately. If a source entity lacks
+/// [`SourceInertialVelocityC`] when [`Self::set_source_state`] is called
+/// with a non-zero velocity, the component is auto-inserted so the
+/// gravity / PPN code that reads it sees the new value on the next
+/// step. (Closes a footgun raised in PR #260 review:
+/// `PlanetBundle::point_mass` doesn't include
+/// [`SourceInertialVelocityC`] by default; without auto-insert,
+/// `set_source_state` would silently no-op on the velocity write.)
 #[derive(SystemParam)]
 pub struct SourceMutator<'w, 's> {
     /// The simulation frame tree resource.
@@ -47,6 +59,9 @@ pub struct SourceMutator<'w, 's> {
     /// Root inertial frame ID (used to refuse mutation of the root-mapped
     /// central source — matches `jeod_runner::Simulation::set_source_position`).
     pub root: Res<'w, RootFrameIdR>,
+    /// Commands for auto-inserting [`SourceInertialVelocityC`] on sources
+    /// that lack it when [`Self::set_source_state`] is called.
+    commands: Commands<'w, 's>,
     frame_ids: Query<'w, 's, &'static SourceFrameIdC>,
     positions: Query<'w, 's, &'static mut SourceInertialPositionC>,
     velocities: Query<'w, 's, &'static mut SourceInertialVelocityC>,
@@ -121,8 +136,17 @@ impl SourceMutator<'_, '_> {
         if let Ok(mut pos_c) = self.positions.get_mut(source) {
             pos_c.0 = typed_pos;
         }
-        if let Ok(mut vc) = self.velocities.get_mut(source) {
-            vc.0 = typed_vel;
+        // Auto-insert SourceInertialVelocityC if the source doesn't carry
+        // one — `PlanetBundle::point_mass` doesn't include it by default,
+        // and without auto-insert the velocity write would silently no-op
+        // (footgun raised in PR #260 review).
+        match self.velocities.get_mut(source) {
+            Ok(mut vc) => vc.0 = typed_vel,
+            Err(_) => {
+                self.commands
+                    .entity(source)
+                    .insert(SourceInertialVelocityC(typed_vel));
+            }
         }
         if let Ok(mut ts) = self.translational.get_mut(source) {
             ts.0.position = typed_pos;
