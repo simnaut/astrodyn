@@ -48,11 +48,12 @@ pub fn register_source_frames_system(
             &SourceInertialPositionC,
             Option<&SourceInertialVelocityC>,
             Option<&RotationModelC>,
+            Option<&PlanetFixedRotationC>,
         ),
         (With<GravitySourceC>, Without<SourceFrameIdC>),
     >,
 ) {
-    for (entity, name, pos, vel, rotation_model) in &sources {
+    for (entity, name, pos, vel, rotation_model, pfix_rot) in &sources {
         let label = name
             .map(|n| n.as_str().to_string())
             .unwrap_or_else(|| format!("source{:?}", entity));
@@ -79,21 +80,29 @@ pub fn register_source_frames_system(
         let mut entity_cmds = commands.entity(entity);
         entity_cmds.insert(SourceFrameIdC(inertial_id));
 
-        // Default to `EarthRNP` when `RotationModelC` is absent — this
-        // matches `planet_fixed_rotation_system`'s default. Without this,
-        // sources spawned without `RotationModelC` would rotate per-step
-        // (the system creates a rotation) but lack a pfix frame node,
-        // making FrameTreeR inconsistent with the per-step writes.
-        let default_model = jeod_sim::RotationModel::EarthRNP;
-        let model_value = rotation_model.map_or(default_model, |m| m.0);
-        if !matches!(model_value, jeod_sim::RotationModel::None) {
-            let pfix_id = frame_tree.0.add_child(
-                inertial_id,
-                format!("{label}.pfix"),
-                jeod_sim::RefFrameKind::PlanetFixed,
-                jeod_sim::RefFrameState::default(),
-            );
-            entity_cmds.insert(SourcePfixFrameIdC(pfix_id));
+        // Create a pfix child frame only if this source actually rotates.
+        // The presence of `PlanetFixedRotationC` is the indicator —
+        // `planet_fixed_rotation_system` queries `&mut PlanetFixedRotationC`,
+        // so an entity without it never rotates, and a pfix node would be
+        // a permanent identity that `source_pfix_rotation()` would
+        // mis-report as `Some(identity)` instead of `None`. Plain
+        // point-mass sources spawned without `PlanetFixedRotationC` get no
+        // pfix node, matching `jeod_runner` for the same case (PR #260
+        // round-2 review fixup). When rotation IS present and
+        // `RotationModelC` is omitted, the EarthRNP default applies —
+        // same default as `planet_fixed_rotation_system`.
+        if pfix_rot.is_some() {
+            let default_model = jeod_sim::RotationModel::EarthRNP;
+            let model_value = rotation_model.map_or(default_model, |m| m.0);
+            if !matches!(model_value, jeod_sim::RotationModel::None) {
+                let pfix_id = frame_tree.0.add_child(
+                    inertial_id,
+                    format!("{label}.pfix"),
+                    jeod_sim::RefFrameKind::PlanetFixed,
+                    jeod_sim::RefFrameState::default(),
+                );
+                entity_cmds.insert(SourcePfixFrameIdC(pfix_id));
+            }
         }
     }
 }
@@ -454,7 +463,23 @@ pub fn planet_fixed_rotation_system(
         // `jeod_sim::sync_pfix_rotation` is what closes the frame-tree
         // half of the gap.
         if rotated {
-            let omega_value = omega.map(|o| o.0).unwrap_or(0.0);
+            // Falling back to `0.0` for a rotating planet (`RotationModelC`
+            // present but `PlanetOmegaC` absent) silently misreports the
+            // pfix angular velocity as zero, which leaves issue #71 item 1
+            // broken for manual-spawn call sites that include
+            // `PlanetFixedRotationC` + `RotationModelC` but not
+            // `PlanetOmegaC`. Map the rotation model to the canonical
+            // `PlanetConfig::omega` when the explicit override is absent
+            // (PR #260 round-2 review fixup).
+            let default_omega = match rotation_model {
+                jeod_sim::RotationModel::None => 0.0,
+                jeod_sim::RotationModel::EarthRNP => jeod_sim::EARTH.omega,
+                jeod_sim::RotationModel::MarsIAU => jeod_sim::MARS.omega,
+                jeod_sim::RotationModel::MoonIAU | jeod_sim::RotationModel::MoonDE421 => {
+                    jeod_sim::MOON.omega
+                }
+            };
+            let omega_value = omega.map(|o| o.0).unwrap_or(default_omega);
             if let Some(mut ang_vel_c) = ang_vel {
                 // Mint `AngularVelocity<PlanetFixed<SelfPlanet>>` from the
                 // scalar `PlanetOmegaC`. JEOD's `planet_rnp.cc` writes
@@ -745,6 +770,10 @@ pub fn integration_system(
     if dt == 0.0 {
         return;
     }
+    // Dynamic timestep matches `jeod_runner::run_integration`'s
+    // `integ_dt = sim_dt * time_scale_factor` so reversed/scaled time
+    // produces consistent gravity at RK sub-stages.
+    let integ_dt = dt * sim_time.0.time_scale_factor;
 
     // Helper closure for gravity at an intermediate state — reused by both
     // the standard and coupled dispatch branches. The integrator passes
@@ -753,53 +782,63 @@ pub fn integration_system(
     // for the typed `*_typed` kernels and unwrap before returning.
     //
     // `integ_origin_pos` / `integ_origin_vel` are the per-body integration
-    // frame's translational state (relative to root). For root-integrated
-    // bodies both are zero — the original behavior. For non-root bodies,
-    // `pos + integ_origin_pos` is the absolute inertial position used by
-    // the gravity field; `integ_origin_pos` itself is passed to
-    // `accumulate_gravity_typed` so the differential-gravity correction
-    // subtracts the integ frame's own acceleration toward each source.
-    // Issue #71 item 4.
+    // frame's translational state (relative to root) at step start. For
+    // root-integrated bodies both are zero — the original behavior. For
+    // non-root bodies the integ frame may itself be moving, so each
+    // RK sub-stage advances the origin linearly by `time_frac * integ_dt`,
+    // matching `jeod_runner::run_integration`. Source positions are
+    // similarly interpolated when the integ frame moves, so the gravity
+    // field stays consistent across stages. Issue #71 item 4 (PR #260
+    // round-2 review fixup for moving integ frames).
     let eval_gravity = |entity: Entity,
                         controls: &GravityControlsC,
                         pos: DVec3,
                         vel: DVec3,
                         integ_origin_pos: DVec3,
-                        integ_origin_vel: DVec3|
+                        integ_origin_vel: DVec3,
+                        time_frac: f64|
      -> DVec3 {
+        // Per-stage interpolation of the integration frame's origin and
+        // each source's position, mirroring jeod_runner's pattern in
+        // `step/integrate.rs:172-184`. `sub_dt` is gated on the integ
+        // frame actually moving so root-integrated bodies stay
+        // bit-identical to the pre-N3 path.
+        let stage_dt = time_frac * integ_dt;
+        let stage_origin_pos = integ_origin_pos + integ_origin_vel * stage_dt;
+        let sub_dt = if integ_origin_vel != DVec3::ZERO {
+            stage_dt
+        } else {
+            0.0
+        };
         // The standard `integrate_body` (and `integrate_body_coupled`
         // for the thermal-SRP path) accept a `gravity_fn` closure
-        // that receives raw `DVec3` per-stage state. The Bevy adapter
-        // is no longer the source of these untyped values — the
-        // typed Components (`TranslationalStateC` etc.) store frame
-        // phantoms — but the integrator kernel API itself still
-        // takes untyped intermediate states. A typed-sibling
-        // `integrate_body_typed` exists for the standard path and
-        // could be used to eliminate these two lifts; the coupled
-        // path has no typed sibling yet, so this closure stays
-        // generic across both. These two lifts are inside `jeod_sim`
-        // boundary territory, not at the Bevy ECS surface that #172
-        // H1 was specifically about.
-        // For non-root integration the closure receives `pos`/`vel` in
-        // integ-frame coordinates; lift to absolute inertial coords for
-        // both Newtonian gravity (via `body_pos = pos + integ_origin`)
-        // and PPN corrections (which depend on |r_body - r_source|).
-        let typed_abs_pos = Position::<Inertial>::from_raw_si(pos + integ_origin_pos); // allowed: integrator-kernel boundary
+        // that receives raw `DVec3` per-stage state. These lifts are
+        // inside `jeod_sim` boundary territory, not at the Bevy ECS
+        // surface that #172 H1 was specifically about.
+        let typed_abs_pos = Position::<Inertial>::from_raw_si(pos + stage_origin_pos); // allowed: integrator-kernel boundary
         let typed_abs_vel = Velocity::<Inertial>::from_raw_si(vel + integ_origin_vel); // allowed: integrator-kernel boundary
-        let typed_origin = Position::<Inertial>::from_raw_si(integ_origin_pos); // allowed: integrator-kernel boundary
+        let typed_origin = Position::<Inertial>::from_raw_si(stage_origin_pos); // allowed: integrator-kernel boundary
 
         let typed_accel = jeod_sim::accumulate_gravity_typed(
             typed_abs_pos,
             &controls.0,
             typed_origin,
             |source_entity| match sources.get(source_entity) {
-                Ok((s, r, p, _, tidal, tidal_config)) => Some(jeod_sim::ResolvedSource {
-                    source: &s.0,
-                    rotation: r.map(|r| r.0.matrix_ref()),
-                    position: p.0.raw_si(),
-                    delta_c20: tidal.map_or(0.0, |t| t.0.value),
-                    has_delta_coeffs: tidal_config.is_some(),
-                }),
+                Ok((s, r, p, v, tidal, tidal_config)) => {
+                    let base_pos = p.0.raw_si();
+                    let stage_pos = if sub_dt != 0.0 {
+                        base_pos + v.map_or(DVec3::ZERO, |v| v.0.raw_si()) * sub_dt
+                    } else {
+                        base_pos
+                    };
+                    Some(jeod_sim::ResolvedSource {
+                        source: &s.0,
+                        rotation: r.map(|r| r.0.matrix_ref()),
+                        position: stage_pos,
+                        delta_c20: tidal.map_or(0.0, |t| t.0.value),
+                        has_delta_coeffs: tidal_config.is_some(),
+                    })
+                }
                 Err(_) => {
                     panic!(
                         "Entity {entity:?}: GravityControl references source \
@@ -817,9 +856,15 @@ pub fn integration_system(
             &controls.0,
             |source_entity| {
                 sources.get(source_entity).ok().map(|(s, _, p, v, _, _)| {
+                    let base_pos = p.0.raw_si();
+                    let stage_pos = if sub_dt != 0.0 {
+                        base_pos + v.map_or(DVec3::ZERO, |v| v.0.raw_si()) * sub_dt
+                    } else {
+                        base_pos
+                    };
                     jeod_sim::ResolvedRelativisticSource {
                         mu: s.mu,
-                        position: p.0.raw_si(),
+                        position: stage_pos,
                         velocity: v.map_or(DVec3::ZERO, |v| v.0.raw_si()),
                     }
                 })
@@ -920,6 +965,7 @@ pub fn integration_system(
                         stage_trans.velocity,
                         integ_origin_pos,
                         integ_origin_vel,
+                        time_frac,
                     );
                     let t_inertial_body = stage_rot.map_or(glam::DMat3::IDENTITY, |r| {
                         r.quaternion.left_quat_to_transformation()
@@ -1040,7 +1086,7 @@ pub fn integration_system(
             &mut state_untyped,
             rot_state_untyped.as_mut(),
             mass_untyped.as_ref(),
-            |pos, vel, _time_frac| {
+            |pos, vel, time_frac| {
                 eval_gravity(
                     entity,
                     controls,
@@ -1048,6 +1094,7 @@ pub fn integration_system(
                     vel,
                     integ_origin_pos,
                     integ_origin_vel,
+                    time_frac,
                 )
             },
             total_force.force.raw_si(),
