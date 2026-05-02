@@ -183,6 +183,18 @@ pub struct VehicleConfig {
     /// Gravity source whose inertial frame is used for integration.
     /// `None` means the root frame (Earth.inertial). `Some(idx)` means
     /// the inertial frame of the source at that index.
+    ///
+    /// **Non-root caveat (issue #263).** When `Some(...)`, the
+    /// integrated translational state is integ-frame-relative rather
+    /// than root-inertial, but downstream Bevy storage
+    /// (`TranslationalStateC<RootInertial>`) is still tagged
+    /// `RootInertial` — issue #263 Section A.1. Derived-state
+    /// consumers that read the state as absolute root-inertial
+    /// (geodetic vs. another planet, solar-beta, SRP relative to a Sun
+    /// position not in the integ frame) will silently produce wrong
+    /// answers. Until #263 closes, mission code should either avoid
+    /// non-root integration or restrict derived states to ones
+    /// evaluated in the same source's frame.
     pub integ_source: Option<usize>,
     /// Distance-based frame switch triggers.
     pub frame_switches: Vec<FrameSwitchConfig>,

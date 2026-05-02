@@ -201,6 +201,30 @@ impl Plugin for JeodPlugin {
                     root_name = frame_tree.0.get(root_id).name,
                     parent = frame_tree.0.parent(root_id),
                 );
+                // The plugin assumes the root is inertial: source / body
+                // registration uses `RefFrameKind::Inertial` for source
+                // children, `frame_origin(..., root, ...)` math composes
+                // root-relative positions, and the typed Bevy components
+                // (`TranslationalStateC<RootInertial>`, `Position<RootInertial>`)
+                // are all type-tagged for an inertial root. Accepting a
+                // pre-installed `RootFrameIdR` that points to a
+                // `PlanetFixed` / `Body` node would let all that math run
+                // against a non-inertial root and silently produce wrong
+                // physics. PR #260 reviewer-flagged gap.
+                let root_kind = frame_tree.0.get(root_id).kind;
+                assert!(
+                    matches!(root_kind, jeod_sim::RefFrameKind::Inertial),
+                    "JeodPlugin: pre-installed RootFrameIdR ({root_id}, name \
+                     {root_name:?}) points to a frame of kind {root_kind:?}, \
+                     but the rest of the plugin assumes the root is \
+                     inertial. Source/body registration and \
+                     `frame_origin(..., root, ...)` math (and the typed \
+                     `<RootInertial>` Bevy components) all run as if the \
+                     root is non-rotating. Pass a frame created via \
+                     FrameTree::add_root(..., RefFrameKind::Inertial), or \
+                     use FrameTreeR::new() which seeds an inertial root.",
+                    root_name = frame_tree.0.get(root_id).name,
+                );
             }
             (true, false) => panic!(
                 "JeodPlugin: FrameTreeR was pre-installed but RootFrameIdR was not. \
@@ -273,6 +297,16 @@ impl Plugin for JeodPlugin {
                 systems::register_body_frames_system.after(systems::register_pfix_frames_system),
             ),
         );
+        // Frame-tree despawn cleanup: rename + reset orphan nodes so
+        // `find_by_name` lookups don't shadow a future re-spawn of the
+        // same name and stale state can't leak through frame-tree
+        // queries. PR #260 reviewer-flagged gap; see the module-level
+        // comment in `src/systems.rs` ("Frame-tree despawn cleanup")
+        // for the why.
+        app.add_observer(systems::on_source_frame_despawn);
+        app.add_observer(systems::on_source_pfix_frame_despawn);
+        app.add_observer(systems::on_retired_pfix_frame_despawn);
+        app.add_observer(systems::on_body_frame_despawn);
         // Split into two add_systems calls to stay within Bevy's tuple size limit.
         app.add_systems(
             FixedUpdate,

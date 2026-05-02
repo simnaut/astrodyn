@@ -5,7 +5,7 @@
 //! wrong node, panic later in unrelated systems, or corrupt
 //! frame-relative state.
 //!
-//! These tests exercise the four invalid-pair shapes that the plugin
+//! These tests exercise the five invalid-pair shapes that the plugin
 //! must reject loudly:
 //!
 //! 1. `FrameTreeR` pre-installed without `RootFrameIdR`.
@@ -13,11 +13,14 @@
 //! 3. `RootFrameIdR` is out of range for `FrameTreeR` (stale id from a
 //!    different tree).
 //! 4. `RootFrameIdR` points at an interior (non-root) frame.
+//! 5. `RootFrameIdR` points at a non-`Inertial` root (e.g. a
+//!    `PlanetFixed` or `Body` frame as the tree root). The rest of
+//!    the plugin assumes the root is non-rotating.
 //!
 //! And the happy paths:
 //!
-//! 5. Neither pre-installed: plugin seeds both itself.
-//! 6. Both pre-installed and consistent: plugin preserves them.
+//! 6. Neither pre-installed: plugin seeds both itself.
+//! 7. Both pre-installed and consistent: plugin preserves them.
 
 use bevy::prelude::*;
 use bevy_jeod::{FrameTreeR, JeodPlugin, RootFrameIdR};
@@ -72,6 +75,23 @@ fn jeod_plugin_rejects_interior_node_as_root_id() {
     );
     app.insert_resource(frame_tree);
     app.insert_resource(RootFrameIdR(interior));
+    app.add_plugins(JeodPlugin);
+}
+
+#[test]
+#[should_panic(expected = "the rest of the plugin assumes the root is")]
+fn jeod_plugin_rejects_non_inertial_root_kind() {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    // Build a tree whose root is `PlanetFixed` rather than `Inertial`.
+    // Source / body registration uses `RefFrameKind::Inertial` for new
+    // children of root and the typed Bevy components are tagged
+    // `<RootInertial>` — accepting this would let downstream math run
+    // against a rotating root and produce silently-wrong physics.
+    let mut frame_tree = jeod_sim::FrameTree::new();
+    let root = frame_tree.add_root("custom.pfix".into(), jeod_sim::RefFrameKind::PlanetFixed);
+    app.insert_resource(FrameTreeR(frame_tree));
+    app.insert_resource(RootFrameIdR(root));
     app.add_plugins(JeodPlugin);
 }
 

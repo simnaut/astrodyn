@@ -438,6 +438,17 @@ pub struct IntegFrameIdC(pub jeod_sim::FrameId);
 /// `frame_switch_system` updates in place); [`IntegSourceC`] is the
 /// configuration-time intent only and is intentionally not mutated by
 /// the switch.
+///
+/// **Non-root caveat (issue #263).** When `Some(...)`, the body's
+/// [`TranslationalStateC`] is integ-frame-relative but still typed
+/// `<RootInertial>` — issue #263 Section A.1, and see the
+/// [`TranslationalStateC`] docstring for the full explanation.
+/// Derived-state consumers that read the state as absolute
+/// root-inertial (geodetic vs. another planet, solar-beta, SRP
+/// relative to a Sun position not in the integ frame) will silently
+/// produce wrong answers. Until #263 closes, mission code should
+/// either avoid non-root integration or restrict derived states to
+/// ones evaluated in the same source's frame.
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
 #[reflect(opaque, Component)]
 pub struct IntegSourceC(pub Option<Entity>);

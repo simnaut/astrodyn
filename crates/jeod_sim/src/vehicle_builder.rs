@@ -368,6 +368,18 @@ impl VehicleBuilder<Ready> {
     /// Set the initial integration source (default: simulation root /
     /// central body). `source_idx` is the index returned by
     /// `SimulationBuilder::add_source()`.
+    ///
+    /// **Non-root caveat (issue #263).** Setting this to a non-root
+    /// source means the integrated translational state is
+    /// integ-frame-relative rather than root-inertial, but downstream
+    /// Bevy storage (`TranslationalStateC<RootInertial>`) is still
+    /// tagged `RootInertial` — issue #263 Section A.1. Derived-state
+    /// consumers that read the state as absolute root-inertial
+    /// (geodetic vs. another planet, solar-beta, SRP relative to a Sun
+    /// position not in the integ frame) will silently produce wrong
+    /// answers. Until #263 closes, mission code should either avoid
+    /// non-root integration or restrict derived states to ones
+    /// evaluated in the same source's frame.
     pub fn integ_source(mut self, source_idx: usize) -> Self {
         self.integ_source = Some(source_idx);
         self

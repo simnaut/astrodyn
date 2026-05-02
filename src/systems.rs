@@ -324,6 +324,99 @@ pub fn register_body_frames_system(
     }
 }
 
+// ── Frame-tree despawn cleanup ──
+//
+// `FrameTree` is append-only — `jeod_frames` does not expose a
+// `remove` operation because arena indices (`FrameId`s) are stable
+// handles that other state may hold. When an entity carrying a
+// `*FrameIdC` despawns, its frame-tree node would otherwise sit
+// in the arena indefinitely with the original name, eventually
+// shadowing a future re-spawn of the same name via
+// [`jeod_sim::FrameTree::find_by_name`] and growing memory
+// monotonically. PR #260 reviewer-flagged gap.
+//
+// The observers below adopt the same "logical retirement" pattern
+// `planet_fixed_rotation_system` already uses for the rotation-toggle
+// case (`src/systems.rs:660`): rename the orphan node to a sentinel
+// (`<original>.despawned`) and reset its state to identity. The
+// arena slot is not freed (no API for that), but the canonical name
+// is no longer findable, the state can no longer leak through stale
+// `frame_origin` queries, and `find_by_name` will correctly resolve
+// a future re-spawn of the same name.
+//
+// We use [`Despawn`] (not [`Remove`]) so component-only removals
+// — notably `planet_fixed_rotation_system`'s toggle-to-`None` path
+// that does `commands.entity(e).remove::<SourcePfixFrameIdC>()` —
+// don't double-fire and corrupt the existing `.retired` rename.
+// Each observer cleans up only its own node; ordering across the
+// per-component `Despawn` triggers is therefore irrelevant.
+//
+// Out of scope (tracked in #268): a body whose
+// [`IntegSourceC`]'s source entity is despawned remains alive but
+// integrates against a now-retired frame. The Bevy-native
+// ECS-hierarchy redesign will close this naturally; until then,
+// mission code is responsible for despawning dependent bodies.
+fn retire_frame_node(tree: &mut jeod_sim::FrameTree, fid: jeod_sim::FrameId) {
+    let node = tree.get_mut(fid);
+    if !node.name.ends_with(".despawned") {
+        node.name = format!("{}.despawned", node.name);
+    }
+    node.state = jeod_sim::RefFrameState::default();
+}
+
+/// On entity despawn, retire the source's inertial frame node so its
+/// canonical name is no longer findable via
+/// [`jeod_sim::FrameTree::find_by_name`] and any stale
+/// `frame_origin` query returns identity.
+pub fn on_source_frame_despawn(
+    trigger: On<Despawn, SourceFrameIdC>,
+    sources: Query<&SourceFrameIdC>,
+    mut frame_tree: ResMut<FrameTreeR>,
+) {
+    if let Ok(fid) = sources.get(trigger.entity) {
+        retire_frame_node(&mut frame_tree.0, fid.0);
+    }
+}
+
+/// On entity despawn, retire the source's planet-fixed (pfix) frame
+/// node. Independent of [`on_source_frame_despawn`] so the per-component
+/// `Despawn` order doesn't matter.
+pub fn on_source_pfix_frame_despawn(
+    trigger: On<Despawn, SourcePfixFrameIdC>,
+    sources: Query<&SourcePfixFrameIdC>,
+    mut frame_tree: ResMut<FrameTreeR>,
+) {
+    if let Ok(fid) = sources.get(trigger.entity) {
+        retire_frame_node(&mut frame_tree.0, fid.0);
+    }
+}
+
+/// On entity despawn, retire the orphan pfix node stashed in
+/// [`RetiredPfixFrameIdC`] (left over from a `RotationModel::None`
+/// toggle that wasn't followed by a re-toggle before despawn).
+/// Without this the `.retired` orphan stays findable as a stale
+/// node in the arena.
+pub fn on_retired_pfix_frame_despawn(
+    trigger: On<Despawn, RetiredPfixFrameIdC>,
+    sources: Query<&RetiredPfixFrameIdC>,
+    mut frame_tree: ResMut<FrameTreeR>,
+) {
+    if let Ok(fid) = sources.get(trigger.entity) {
+        retire_frame_node(&mut frame_tree.0, fid.0);
+    }
+}
+
+/// On entity despawn, retire the body's frame node.
+pub fn on_body_frame_despawn(
+    trigger: On<Despawn, BodyFrameIdC>,
+    bodies: Query<&BodyFrameIdC>,
+    mut frame_tree: ResMut<FrameTreeR>,
+) {
+    if let Ok(fid) = bodies.get(trigger.entity) {
+        retire_frame_node(&mut frame_tree.0, fid.0);
+    }
+}
+
 /// Sync each vehicle's [`TranslationalStateC`] into its
 /// [`BodyFrameIdC`] node in [`FrameTreeR`]. Mirrors
 /// `jeod_runner::Simulation::step_internal`'s post-integration sync
