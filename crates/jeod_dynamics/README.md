@@ -39,7 +39,13 @@ jeod_math, jeod_frames, jeod_quantities
 ## JEOD conventions
 
 - Translational state is stored in the **integration frame** (typically
-  J2000 ECI), absolute (not parent-frame-relative).
+  J2000 ECI), absolute (not parent-frame-relative). Typed clients use
+  `TranslationalStateTyped<F>`; the runner pins
+  `F = jeod_quantities::IntegrationFrame` so consumers requiring
+  root-inertial coordinates (gravity, SRP, solar beta, earth lighting)
+  must apply the integration-origin shift via
+  `body.trans.to_inertial(&integ_origin)` — a compile error otherwise.
+  See issue #255 / `RF.10` in `docs/JEOD_invariants.md`.
 - Quaternions are scalar-first left-transformation
   (`jeod_math::JeodQuat`).
 - `inverse_mass` and `inverse_inertia` are pre-computed once per step

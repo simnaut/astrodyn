@@ -215,6 +215,27 @@ See the [Type-System wiki page](https://github.com/simnaut/bevy_jeod/wiki/Type-S
 adding a new frame/scale/quantity, reading compiler errors, escape hatches)
 and `examples/typed_mission.rs` for the canonical worked example.
 
+### Inertial-frame phantoms (#255 / RF.10)
+
+There are three kind-distinct inertial-flavor phantoms:
+
+- `RootInertial` — the simulation's root inertial frame. Required by
+  consumers that mix body state with root-inertial source positions
+  (gravity, relativistic corrections, SRP, solar beta, earth lighting).
+- `PlanetInertial<P: Planet>` — a particular planet's inertial frame.
+  Required by planet-centered consumers (atmosphere, drag velocity,
+  LVLH, geodetic, orbital elements). In realistic configs the body's
+  integration frame *is* `PlanetInertial<P>` for the body's planet.
+- `IntegrationFrame` — a body's integration frame. Stored on
+  `SimBody.trans` so the compiler refuses to silently pass
+  integration-frame state where root-inertial is required. The only
+  safe transition is `body.trans.to_inertial(&integ_origin)` (the
+  `IntegOrigin` shift) — applied at *shift sites* only.
+
+`docs/JEOD_invariants.md` row `RF.10` enumerates which sites are
+structurally guarded vs convention-only and why each consumer falls
+into one or the other.
+
 ## Quaternion Convention
 
 JEOD uses **scalar-first, left-transformation** quaternions: `[q0, q1, q2, q3]`

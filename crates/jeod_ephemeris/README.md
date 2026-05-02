@@ -20,7 +20,7 @@ jeod_sim         (orchestration, recipes, single API surface)
    ↓
 jeod_ephemeris   ←  this crate (pure Rust, zero Bevy)
    ↓
-jeod_quantities  (Position<Inertial>, Velocity<Inertial>, frame tags)
+jeod_quantities  (Position<RootInertial>, Velocity<RootInertial>, frame tags)
 ```
 
 `jeod_ephemeris` is part of the `jeod_*` physics layer — pure Rust with no
