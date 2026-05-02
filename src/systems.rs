@@ -50,6 +50,8 @@ pub fn register_source_frames_system(
     mut commands: Commands,
     mut frame_tree: ResMut<FrameTreeR>,
     root: Res<crate::RootFrameIdR>,
+    // Issue #268 prototype: also spawn ECS frame entities under this root.
+    root_frame_entity: Res<crate::RootFrameEntityR>,
     sources: Query<
         (
             Entity,
@@ -86,8 +88,28 @@ pub fn register_source_frames_system(
                 rot: jeod_sim::RefFrameRot::default(),
             },
         );
-        let mut entity_cmds = commands.entity(entity);
-        entity_cmds.insert(SourceFrameIdC(inertial_id));
+
+        // Issue #268 prototype: spawn the source's ECS frame entity
+        // parented under the root frame entity. Both arena `FrameId`
+        // and ECS `Entity` describe the same logical inertial frame
+        // until consumers migrate off the arena.
+        let source_frame_entity = commands
+            .spawn((
+                Name::new(format!("{label}.frame.inertial")),
+                InertialFrameMarker,
+                FrameTransC {
+                    position: init_pos,
+                    velocity: init_vel,
+                },
+                FrameRotC::default(),
+                FrameAngVelC::default(),
+                ChildOf(root_frame_entity.0),
+            ))
+            .id();
+        commands.entity(entity).insert((
+            SourceFrameIdC(inertial_id),
+            FrameEntityC(source_frame_entity),
+        ));
 
         // Create a pfix child frame only if this source actually rotates.
         // The presence of `PlanetFixedRotationC` is the indicator —
@@ -110,7 +132,20 @@ pub fn register_source_frames_system(
                     jeod_sim::RefFrameKind::PlanetFixed,
                     jeod_sim::RefFrameState::default(),
                 );
-                entity_cmds.insert(SourcePfixFrameIdC(pfix_id));
+                let pfix_frame_entity = commands
+                    .spawn((
+                        Name::new(format!("{label}.frame.pfix")),
+                        PlanetFixedFrameMarker,
+                        FrameTransC::default(),
+                        FrameRotC::default(),
+                        FrameAngVelC::default(),
+                        ChildOf(source_frame_entity),
+                    ))
+                    .id();
+                commands.entity(entity).insert((
+                    SourcePfixFrameIdC(pfix_id),
+                    PfixFrameEntityC(pfix_frame_entity),
+                ));
             }
         }
     }
@@ -148,6 +183,9 @@ pub fn register_pfix_frames_system(
             Entity,
             Option<&Name>,
             &SourceFrameIdC,
+            // Issue #268 prototype: read the source's frame entity so
+            // the spawned pfix frame entity can ChildOf-link under it.
+            Option<&FrameEntityC>,
             Option<&RotationModelC>,
             Option<&RetiredPfixFrameIdC>,
         ),
@@ -158,7 +196,7 @@ pub fn register_pfix_frames_system(
         ),
     >,
 ) {
-    for (entity, name, source_fid, rotation_model, retired) in &sources {
+    for (entity, name, source_fid, source_frame_entity, rotation_model, retired) in &sources {
         let default_model = jeod_sim::RotationModel::EarthRNP;
         let model_value = rotation_model.map_or(default_model, |m| m.0);
         if matches!(model_value, jeod_sim::RotationModel::None) {
@@ -187,7 +225,30 @@ pub fn register_pfix_frames_system(
                 jeod_sim::RefFrameState::default(),
             )
         };
-        commands.entity(entity).insert(SourcePfixFrameIdC(pfix_id));
+
+        // Issue #268 prototype: spawn pfix frame entity under the
+        // source's frame entity (when present). Skip the late-pfix
+        // ECS spawn if FrameEntityC is missing — that's a source that
+        // was registered before the prototype components landed; the
+        // arena pfix is still updated above for backward compat.
+        if let Some(parent_frame) = source_frame_entity {
+            let pfix_frame_entity = commands
+                .spawn((
+                    Name::new(format!("{label}.frame.pfix")),
+                    PlanetFixedFrameMarker,
+                    FrameTransC::default(),
+                    FrameRotC::default(),
+                    FrameAngVelC::default(),
+                    ChildOf(parent_frame.0),
+                ))
+                .id();
+            commands.entity(entity).insert((
+                SourcePfixFrameIdC(pfix_id),
+                PfixFrameEntityC(pfix_frame_entity),
+            ));
+        } else {
+            commands.entity(entity).insert(SourcePfixFrameIdC(pfix_id));
+        }
     }
 }
 
@@ -225,16 +286,34 @@ pub fn sync_source_to_frame_system(
         &SourceInertialPositionC,
         Option<&SourceInertialVelocityC>,
         Option<&TranslationalStateC>,
+        // Issue #268 prototype: dual-write target.
+        Option<&FrameEntityC>,
     )>,
+    mut frame_states: Query<&mut FrameTransC>,
 ) {
-    for (fid, pos, vel, trans) in &sources {
-        let node = frame_tree.0.get_mut(fid.0);
-        node.state.trans.position = pos.0.raw_si();
+    for (fid, pos, vel, trans, frame_entity) in &sources {
+        let position = pos.0.raw_si();
         let velocity = vel
             .map(|v| v.0.raw_si())
             .or_else(|| trans.map(|t| t.0.velocity.raw_si()));
+
+        // Arena write (existing path).
+        let node = frame_tree.0.get_mut(fid.0);
+        node.state.trans.position = position;
         if let Some(v) = velocity {
             node.state.trans.velocity = v;
+        }
+
+        // Issue #268 prototype: ECS dual-write to the source's frame
+        // entity. Skip silently if the source was registered before
+        // the prototype components landed (no FrameEntityC).
+        if let Some(fe) = frame_entity {
+            if let Ok(mut frame_trans) = frame_states.get_mut(fe.0) {
+                frame_trans.position = position;
+                if let Some(v) = velocity {
+                    frame_trans.velocity = v;
+                }
+            }
         }
     }
 }
@@ -261,7 +340,10 @@ pub fn register_body_frames_system(
     mut commands: Commands,
     mut frame_tree: ResMut<FrameTreeR>,
     root: Res<crate::RootFrameIdR>,
-    sources: Query<&SourceFrameIdC>,
+    // Issue #268 prototype: the ECS-side root frame entity, used as
+    // the body's frame parent when no IntegSourceC is supplied.
+    root_frame_entity: Res<crate::RootFrameEntityR>,
+    sources: Query<(&SourceFrameIdC, Option<&FrameEntityC>)>,
     bodies: Query<
         (
             Entity,
@@ -282,10 +364,11 @@ pub fn register_body_frames_system(
             .unwrap_or_else(|| format!("body{:?}", entity));
 
         // Resolve the integration frame ID. Default: root inertial.
-        let integ_frame_id = match integ_source.and_then(|c| c.0) {
+        // Issue #268 prototype: also resolve the integ frame ECS entity.
+        let (integ_frame_id, integ_frame_entity) = match integ_source.and_then(|c| c.0) {
             Some(source_entity) => sources
                 .get(source_entity)
-                .map(|c| c.0)
+                .map(|(fid, fent)| (fid.0, fent.map(|f| f.0)))
                 .unwrap_or_else(|err| {
                     panic!(
                         "register_body_frames_system: body {entity:?} has \
@@ -296,7 +379,7 @@ pub fn register_body_frames_system(
                          Underlying error: {err:?}"
                     )
                 }),
-            None => root.0,
+            None => (root.0, Some(root_frame_entity.0)),
         };
 
         // Body frame node carries the body's current state relative to its
@@ -305,10 +388,12 @@ pub fn register_body_frames_system(
         // bodies the body's TranslationalStateC is interpreted as
         // already in integ-frame coordinates (mission code is
         // responsible for supplying state in the integ-frame).
+        let init_pos = trans.0.position.raw_si();
+        let init_vel = trans.0.velocity.raw_si();
         let body_state = jeod_sim::RefFrameState {
             trans: jeod_sim::RefFrameTrans {
-                position: trans.0.position.raw_si(),
-                velocity: trans.0.velocity.raw_si(),
+                position: init_pos,
+                velocity: init_vel,
             },
             rot: jeod_sim::RefFrameRot::default(),
         };
@@ -318,9 +403,41 @@ pub fn register_body_frames_system(
             jeod_sim::RefFrameKind::Body,
             body_state,
         );
-        commands
-            .entity(entity)
-            .insert((BodyFrameIdC(body_fid), IntegFrameIdC(integ_frame_id)));
+
+        // Issue #268 prototype: spawn body frame entity parented under
+        // its integ frame's ECS entity. Tag the integ frame entity
+        // with `IntegrationFrameMarker` if not already (idempotent
+        // insert via Commands). Skip the ECS spawn if we couldn't
+        // resolve an integ frame entity (e.g. a source registered
+        // before the prototype components landed); the arena body
+        // node is still added above for backward compat.
+        if let Some(parent_frame_entity) = integ_frame_entity {
+            commands
+                .entity(parent_frame_entity)
+                .insert(IntegrationFrameMarker);
+            let body_frame_entity = commands
+                .spawn((
+                    Name::new(format!("{label}.frame.body")),
+                    BodyFrameMarker,
+                    FrameTransC {
+                        position: init_pos,
+                        velocity: init_vel,
+                    },
+                    FrameRotC::default(),
+                    FrameAngVelC::default(),
+                    ChildOf(parent_frame_entity),
+                ))
+                .id();
+            commands.entity(entity).insert((
+                BodyFrameIdC(body_fid),
+                IntegFrameIdC(integ_frame_id),
+                FrameEntityC(body_frame_entity),
+            ));
+        } else {
+            commands
+                .entity(entity)
+                .insert((BodyFrameIdC(body_fid), IntegFrameIdC(integ_frame_id)));
+        }
     }
 }
 
@@ -427,12 +544,32 @@ pub fn on_body_frame_despawn(
 /// before `frame_switch_system`. Issue #71 item 2.
 pub fn sync_body_to_frame_system(
     mut frame_tree: ResMut<FrameTreeR>,
-    bodies: Query<(&TranslationalStateC, &BodyFrameIdC)>,
+    bodies: Query<(
+        &TranslationalStateC,
+        &BodyFrameIdC,
+        // Issue #268 prototype: dual-write target.
+        Option<&FrameEntityC>,
+    )>,
+    mut frame_states: Query<&mut FrameTransC>,
 ) {
-    for (trans, body_fid) in &bodies {
+    for (trans, body_fid, frame_entity) in &bodies {
+        let position = trans.0.position.raw_si();
+        let velocity = trans.0.velocity.raw_si();
+
+        // Arena write (existing path).
         let node = frame_tree.0.get_mut(body_fid.0);
-        node.state.trans.position = trans.0.position.raw_si();
-        node.state.trans.velocity = trans.0.velocity.raw_si();
+        node.state.trans.position = position;
+        node.state.trans.velocity = velocity;
+
+        // Issue #268 prototype: ECS dual-write to the body's frame
+        // entity. Skip silently if the body was registered before
+        // the prototype components landed (no FrameEntityC).
+        if let Some(fe) = frame_entity {
+            if let Ok(mut frame_trans) = frame_states.get_mut(fe.0) {
+                frame_trans.position = position;
+                frame_trans.velocity = velocity;
+            }
+        }
     }
 }
 
@@ -562,7 +699,7 @@ pub fn time_advance_system(mut sim_time: ResMut<SimulationTimeR>, time: Res<Time
 ///
 /// Earth RNP is lazy-computed once per step and reused across all `EarthRNP`
 /// entities.
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn planet_fixed_rotation_system(
     mut commands: Commands,
     sim_time: Res<SimulationTimeR>,
@@ -576,7 +713,11 @@ pub fn planet_fixed_rotation_system(
         Option<&PlanetOmegaC>,
         Option<&mut PlanetAngularVelocityC>,
         Option<&SourcePfixFrameIdC>,
+        // Issue #268 prototype: dual-write target for pfix frame entity.
+        Option<&PfixFrameEntityC>,
     )>,
+    mut frame_rots: Query<&mut FrameRotC>,
+    mut frame_ang_vels: Query<&mut FrameAngVelC>,
 ) {
     let polar_params = polar.map(|p| (p.xp, p.yp));
     // Lazy-compute Earth RNP only if needed (most common case). Cache the
@@ -588,7 +729,7 @@ pub fn planet_fixed_rotation_system(
         jeod_sim::FrameTransform<jeod_sim::RootInertial, jeod_sim::PlanetFixed<SelfPlanet>>;
     let mut earth_rotation: Option<EarthRot> = Option::None;
     let mut earth_rotation_raw: Option<glam::DMat3> = Option::None;
-    for (entity, mut rot, model, omega, ang_vel, pfix_fid) in &mut query {
+    for (entity, mut rot, model, omega, ang_vel, pfix_fid, pfix_frame_entity) in &mut query {
         let default_model = jeod_sim::RotationModel::EarthRNP;
         let rotation_model = model.map_or(&default_model, |m| &m.0);
         // Track whether we wrote a rotation this tick — controls
@@ -699,6 +840,18 @@ pub fn planet_fixed_rotation_system(
             // pfix) saw stale identity rotation and zero angular velocity.
             if let (Some(matrix), Some(pfix_fid)) = (raw_matrix, pfix_fid) {
                 jeod_sim::sync_pfix_rotation(&mut frame_tree.0, pfix_fid.0, matrix, omega_value);
+                // Issue #268 prototype: ECS dual-write to the pfix
+                // frame entity. Same data, different storage.
+                if let Some(pfix_fe) = pfix_frame_entity {
+                    if let Ok(mut frame_rot) = frame_rots.get_mut(pfix_fe.0) {
+                        frame_rot.q_parent_this =
+                            jeod_sim::JeodQuat::left_quat_from_transformation(&matrix);
+                        frame_rot.t_parent_this = matrix;
+                    }
+                    if let Ok(mut frame_av) = frame_ang_vels.get_mut(pfix_fe.0) {
+                        frame_av.0 = glam::DVec3::new(0.0, 0.0, omega_value);
+                    }
+                }
             }
         } else {
             // `RotationModel::None`: actively clear the rotation matrix,
@@ -730,6 +883,17 @@ pub fn planet_fixed_rotation_system(
                     glam::DMat3::IDENTITY,
                     0.0,
                 );
+                // Issue #268 prototype: ECS dual-write — clear the
+                // pfix frame entity's state to identity so any new
+                // SystemParam reader sees the same identity-clear.
+                if let Some(pfix_fe) = pfix_frame_entity {
+                    if let Ok(mut frame_rot) = frame_rots.get_mut(pfix_fe.0) {
+                        *frame_rot = FrameRotC::default();
+                    }
+                    if let Ok(mut frame_av) = frame_ang_vels.get_mut(pfix_fe.0) {
+                        frame_av.0 = glam::DVec3::ZERO;
+                    }
+                }
                 // Clearing the pfix node's matrix/omega isn't enough
                 // on its own — consumers that branch on the *presence*
                 // of `SourcePfixFrameIdC` would keep treating the

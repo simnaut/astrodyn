@@ -4,6 +4,7 @@
 
 pub mod bundles;
 pub mod components;
+pub mod frame_param;
 pub mod prelude;
 pub mod recipes;
 pub mod sets;
@@ -126,6 +127,16 @@ impl Default for FrameTreeR {
 #[derive(Resource, Debug, Clone, Copy, Deref, DerefMut)]
 pub struct RootFrameIdR(pub jeod_sim::FrameId);
 
+/// Bevy resource holding the [`Entity`] of the root frame entity in
+/// the ECS-native frame hierarchy. Mirrors [`RootFrameIdR`] in the
+/// entity-as-frame world: the same logical root frame, expressed
+/// once as an arena `FrameId` and once as a Bevy Entity. Spawned by
+/// [`JeodPlugin::build`] before any source/body registration so the
+/// registration systems can `ChildOf`-link their frame entities to
+/// it. Issue #268 prototype.
+#[derive(Resource, Debug, Clone, Copy, Deref, DerefMut)]
+pub struct RootFrameEntityR(pub Entity);
+
 /// Unified JEOD plugin — registers all pipeline systems and schedule sets.
 pub struct JeodPlugin;
 
@@ -237,6 +248,23 @@ impl Plugin for JeodPlugin {
                  or insert neither and let the plugin create them.",
             ),
         }
+
+        // ── Issue #268 prototype: ECS-native root frame entity ──
+        // Spawn the root frame entity that mirrors the arena's root
+        // frame node. Source / body registration `ChildOf`-links its
+        // frame entities under this one, so the ECS hierarchy and the
+        // arena describe the same logical frame tree in parallel.
+        let root_frame_entity = app
+            .world_mut()
+            .spawn((
+                Name::new("root.frame"),
+                components::InertialFrameMarker,
+                components::FrameTransC::default(),
+                components::FrameRotC::default(),
+                components::FrameAngVelC::default(),
+            ))
+            .id();
+        app.insert_resource(RootFrameEntityR(root_frame_entity));
 
         // ── Typed-Component reflection (#154) ──
         // Centralized in `register_jeod_component_types` so the smoke
@@ -458,6 +486,16 @@ pub fn register_jeod_component_types(app: &mut App) {
     app.register_type::<components::FrameSwitchesC>();
     app.register_type::<components::BodyFrameIdC>();
     app.register_type::<components::IntegFrameIdC>();
+    // Issue #268 prototype: frames-as-entities components.
+    app.register_type::<components::FrameTransC>();
+    app.register_type::<components::FrameRotC>();
+    app.register_type::<components::FrameAngVelC>();
+    app.register_type::<components::InertialFrameMarker>();
+    app.register_type::<components::PlanetFixedFrameMarker>();
+    app.register_type::<components::BodyFrameMarker>();
+    app.register_type::<components::IntegrationFrameMarker>();
+    app.register_type::<components::FrameEntityC>();
+    app.register_type::<components::PfixFrameEntityC>();
     // Tidal
     app.register_type::<components::TidalConfigC>();
     app.register_type::<components::TidalDeltaC20C>();
