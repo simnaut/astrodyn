@@ -591,6 +591,9 @@ pub fn planet_fixed_rotation_system(
             // so frame-tree queries would still report a rotating
             // planet-fixed frame even though the source is configured
             // as non-rotating. PR #260 round-9 review fixup.
+            // allowed: explicit identity clear when rotation model toggles to None;
+            // the RootInertial → PlanetFixed<SelfPlanet> phantoms are correct by
+            // construction (same shape as the rotating-branch from_matrix sites).
             rot.0 = jeod_sim::FrameTransform::from_matrix(glam::DMat3::IDENTITY);
             if let Some(mut ang_vel_c) = ang_vel {
                 type PlanetAngVel = jeod_sim::AngularVelocity<jeod_sim::PlanetFixed<SelfPlanet>>;
