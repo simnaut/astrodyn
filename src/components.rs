@@ -6,12 +6,12 @@
 use bevy::prelude::*;
 use glam::DVec3;
 use jeod_sim::{
-    Angle, BodyFrame, DragConfig, DragConfigTyped, DynamicsConfig, FrameDerivatives,
-    FrameDerivativesTyped, FrameTransform, GravityAcceleration, GravityAccelerationTyped,
-    GravityControls, GravitySource, Inertial, MassProperties, MassPropertiesTyped, PlanetFixed,
-    PlanetShape, Position, Ratio, RotationalState, RotationalStateTyped, SelfPlanet, SelfRef,
-    StructuralFrame, Torque, TotalForce, TotalForceTyped, TranslationalState,
-    TranslationalStateTyped, Velocity,
+    Angle, AngularVelocity, BodyFrame, DragConfig, DragConfigTyped, DynamicsConfig,
+    FrameDerivatives, FrameDerivativesTyped, FrameTransform, GravityAcceleration,
+    GravityAccelerationTyped, GravityControls, GravitySource, Inertial, MassProperties,
+    MassPropertiesTyped, PlanetFixed, PlanetShape, Position, Ratio, RotationalState,
+    RotationalStateTyped, SelfPlanet, SelfRef, StructuralFrame, Torque, TotalForce,
+    TotalForceTyped, TranslationalState, TranslationalStateTyped, Velocity,
 };
 
 // ── Dynamics ──
@@ -327,6 +327,30 @@ impl Default for StructuralTransformC {
 #[derive(Component, Debug, Clone, Copy, Reflect)]
 #[reflect(opaque, Component)]
 pub struct PlanetFixedRotationC(pub FrameTransform<Inertial, PlanetFixed<SelfPlanet>>);
+
+/// Sidereal rotation rate (rad/s) used by `planet_fixed_rotation_system`
+/// to populate [`PlanetAngularVelocityC`] each step. Sourced from
+/// [`jeod_sim::PlanetConfig::omega`] at insertion (e.g. from
+/// [`PlanetBundle::from_config`](crate::PlanetBundle::from_config)).
+///
+/// Issue #71 item 1: without this, velocity composition through
+/// planet-fixed frames silently uses zero angular velocity, producing
+/// the wrong NED-relative or geodetic velocity.
+#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
+#[reflect(opaque, Component)]
+pub struct PlanetOmegaC(pub f64);
+
+/// Angular velocity of the planet-fixed frame relative to its inertial
+/// parent, expressed in pfix coordinates. Computed each step by
+/// `planet_fixed_rotation_system` as `[0, 0, omega]` matching JEOD's
+/// `planet_rnp.cc`.
+///
+/// The `AngularVelocity<PlanetFixed<SelfPlanet>>` phantom indicates "in
+/// the pfix frame of this entity's planet"; the planet identity stays
+/// at the entity level via [`PlanetC`].
+#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
+#[reflect(opaque, Component)]
+pub struct PlanetAngularVelocityC(pub AngularVelocity<PlanetFixed<SelfPlanet>>);
 
 /// Tidal configuration for a gravity source entity.
 ///

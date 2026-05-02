@@ -42,11 +42,17 @@ pub fn time_advance_system(mut sim_time: ResMut<SimulationTimeR>, time: Res<Time
 ///
 /// Earth RNP is lazy-computed once per step and reused across all `EarthRNP`
 /// entities.
+#[allow(clippy::type_complexity)]
 pub fn planet_fixed_rotation_system(
     sim_time: Res<SimulationTimeR>,
     polar: Option<Res<crate::PolarMotionR>>,
     ephemeris: Option<Res<crate::EphemerisR>>,
-    mut query: Query<(&mut PlanetFixedRotationC, Option<&RotationModelC>)>,
+    mut query: Query<(
+        &mut PlanetFixedRotationC,
+        Option<&RotationModelC>,
+        Option<&PlanetOmegaC>,
+        Option<&mut PlanetAngularVelocityC>,
+    )>,
 ) {
     let polar_params = polar.map(|p| (p.xp, p.yp));
     // Lazy-compute Earth RNP only if needed (most common case). Cache the
@@ -56,9 +62,12 @@ pub fn planet_fixed_rotation_system(
     // all EarthRNP entities share the same rotation each step.
     type EarthRot = jeod_sim::FrameTransform<jeod_sim::Inertial, jeod_sim::PlanetFixed<SelfPlanet>>;
     let mut earth_rotation: Option<EarthRot> = Option::None;
-    for (mut rot, model) in &mut query {
+    for (mut rot, model, omega, ang_vel) in &mut query {
         let default_model = jeod_sim::RotationModel::EarthRNP;
         let rotation_model = model.map_or(&default_model, |m| &m.0);
+        // Track whether we wrote a rotation this tick — controls
+        // `PlanetAngularVelocityC` mirror writes (issue #71 item 1).
+        let rotated = !matches!(rotation_model, jeod_sim::RotationModel::None);
         match rotation_model {
             jeod_sim::RotationModel::None => {}
             jeod_sim::RotationModel::EarthRNP => {
@@ -105,6 +114,20 @@ pub fn planet_fixed_rotation_system(
                         )
                     });
                 rot.0 = jeod_sim::FrameTransform::from_matrix(matrix);
+            }
+        }
+
+        // ── Planet angular velocity ──
+        // JEOD `planet_rnp.cc` writes `ang_vel_this = [0, 0, planet_omega]`
+        // on the pfix frame node. Mirror that here so velocity composition
+        // through pfix (NED-relative velocity, geodetic velocity) reads
+        // the correct rate. Issue #71 item 1.
+        if rotated {
+            if let (Some(omega), Some(mut ang_vel)) = (omega, ang_vel) {
+                ang_vel.0 =
+                    jeod_sim::AngularVelocity::<jeod_sim::PlanetFixed<SelfPlanet>>::from_raw_si(
+                        glam::DVec3::new(0.0, 0.0, omega.0),
+                    );
             }
         }
     }

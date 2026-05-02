@@ -37,6 +37,12 @@ pub struct PlanetBundle {
     /// `T_inertial→pfix` rotation, updated each step by
     /// `planet_fixed_rotation_system` per the chosen [`RotationModelC`].
     pub rotation: PlanetFixedRotationC,
+    /// Sidereal rotation rate sourced from [`PlanetConfig::omega`].
+    /// Drives [`PlanetAngularVelocityC`] each step (issue #71 item 1).
+    pub omega: PlanetOmegaC,
+    /// Angular velocity of the pfix frame relative to inertial, in pfix
+    /// coordinates. Written each step by `planet_fixed_rotation_system`.
+    pub ang_vel: PlanetAngularVelocityC,
     /// Selector that drives [`Self::rotation`] each step.
     pub rotation_model: RotationModelC,
     /// Planet shape (radii, mu, flattening).
@@ -54,6 +60,8 @@ impl PlanetBundle {
             position: SourceInertialPositionC::default(),
             trans: TranslationalStateC::default(),
             rotation: PlanetFixedRotationC(FrameTransform::from_matrix(glam::DMat3::IDENTITY)),
+            omega: PlanetOmegaC(config.omega),
+            ang_vel: PlanetAngularVelocityC::default(),
             rotation_model: RotationModelC(config.rotation_model),
             shape: PlanetC(config.shape),
         }

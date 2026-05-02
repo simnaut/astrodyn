@@ -210,6 +210,8 @@ pub fn register_jeod_component_types(app: &mut App) {
     // Frame transforms
     app.register_type::<components::StructuralTransformC>();
     app.register_type::<components::PlanetFixedRotationC>();
+    app.register_type::<components::PlanetOmegaC>();
+    app.register_type::<components::PlanetAngularVelocityC>();
     // Tidal
     app.register_type::<components::TidalConfigC>();
     app.register_type::<components::TidalDeltaC20C>();
