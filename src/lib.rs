@@ -165,7 +165,42 @@ impl Plugin for JeodPlugin {
                 app.insert_resource(RootFrameIdR(root_id));
             }
             (true, true) => {
-                // Caller pre-installed both; leave untouched.
+                // Caller pre-installed both; verify that the supplied
+                // `RootFrameIdR` actually points at a root of the
+                // supplied `FrameTreeR`. PR #260 round-10 review
+                // fixup: the docs encourage pre-seeding custom trees,
+                // but a mismatched pair (e.g. a stale `FrameId` from a
+                // different tree, or an interior frame mistakenly
+                // labelled as the root) would silently attach
+                // sources/bodies under the wrong node, panic later in
+                // unrelated systems, or silently corrupt
+                // frame-relative state. Catch it here per the
+                // "Fail Loudly" rule — the diagnostic names the
+                // broken assumption and tells the caller how to fix
+                // it.
+                let frame_tree = app.world().resource::<FrameTreeR>();
+                let root_id = app.world().resource::<RootFrameIdR>().0;
+                assert!(
+                    root_id < frame_tree.0.len(),
+                    "JeodPlugin: pre-installed RootFrameIdR ({root_id}) is out of \
+                     range for the pre-installed FrameTreeR (len={tree_len}). The \
+                     two resources must describe the same tree — likely you \
+                     inserted a stale FrameId from a different FrameTree. Build \
+                     both together via FrameTreeR::new() (which returns the \
+                     matching root id) and insert them as a pair.",
+                    tree_len = frame_tree.0.len(),
+                );
+                assert!(
+                    frame_tree.0.parent(root_id).is_none(),
+                    "JeodPlugin: pre-installed RootFrameIdR ({root_id}, name \
+                     {root_name:?}) is not a root of the pre-installed \
+                     FrameTreeR — it has parent {parent:?}. Source and body \
+                     registration would attach children under the wrong node. \
+                     Pass the FrameId returned by FrameTreeR::new() (or by \
+                     FrameTree::add_root for a custom-rooted tree).",
+                    root_name = frame_tree.0.get(root_id).name,
+                    parent = frame_tree.0.parent(root_id),
+                );
             }
             (true, false) => panic!(
                 "JeodPlugin: FrameTreeR was pre-installed but RootFrameIdR was not. \

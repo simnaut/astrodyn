@@ -447,11 +447,13 @@ pub fn time_advance_system(mut sim_time: ResMut<SimulationTimeR>, time: Res<Time
 /// entities.
 #[allow(clippy::type_complexity)]
 pub fn planet_fixed_rotation_system(
+    mut commands: Commands,
     sim_time: Res<SimulationTimeR>,
     polar: Option<Res<crate::PolarMotionR>>,
     ephemeris: Option<Res<crate::EphemerisR>>,
     mut frame_tree: ResMut<FrameTreeR>,
     mut query: Query<(
+        Entity,
         &mut PlanetFixedRotationC,
         Option<&RotationModelC>,
         Option<&PlanetOmegaC>,
@@ -469,7 +471,7 @@ pub fn planet_fixed_rotation_system(
         jeod_sim::FrameTransform<jeod_sim::RootInertial, jeod_sim::PlanetFixed<SelfPlanet>>;
     let mut earth_rotation: Option<EarthRot> = Option::None;
     let mut earth_rotation_raw: Option<glam::DMat3> = Option::None;
-    for (mut rot, model, omega, ang_vel, pfix_fid) in &mut query {
+    for (entity, mut rot, model, omega, ang_vel, pfix_fid) in &mut query {
         let default_model = jeod_sim::RotationModel::EarthRNP;
         let rotation_model = model.map_or(&default_model, |m| &m.0);
         // Track whether we wrote a rotation this tick — controls
@@ -600,12 +602,36 @@ pub fn planet_fixed_rotation_system(
                 ang_vel_c.0 = PlanetAngVel::from_raw_si(glam::DVec3::ZERO); // allowed: zero-omega clear → typed AngularVelocity boundary
             }
             if let Some(pfix_fid) = pfix_fid {
+                // Sync the pfix node to identity / zero so any consumer
+                // still holding the FrameId reads a consistent state on
+                // the toggle tick (before the component removal below
+                // takes effect — Commands buffer until the next sync
+                // point).
                 jeod_sim::sync_pfix_rotation(
                     &mut frame_tree.0,
                     pfix_fid.0,
                     glam::DMat3::IDENTITY,
                     0.0,
                 );
+                // PR #260 round-10 review fixup: clearing the pfix
+                // node's matrix/omega isn't enough on its own — the
+                // entity still carries `SourcePfixFrameIdC`, so any
+                // consumer that branches on the *presence* of the
+                // component (rather than reading the cleared values)
+                // would keep treating the source as rotating-capable
+                // and reintroduce the `Some(identity)` vs `None`
+                // ambiguity that the registration code (R9.2) just
+                // fixed. Mirror the registration symmetry: the
+                // round-9 `register_pfix_frames_system` inserts the
+                // component when a source gains a non-`None` rotation
+                // model after registration; this branch removes it
+                // when the model toggles back to `None`. (The orphan
+                // tree node remains since `FrameTree` has no remove
+                // API; nothing references it once the component is
+                // gone, and a subsequent toggle back to a rotating
+                // model lets `register_pfix_frames_system` allocate a
+                // fresh node.)
+                commands.entity(entity).remove::<SourcePfixFrameIdC>();
             }
         }
     }

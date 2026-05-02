@@ -229,3 +229,50 @@ fn tier3_bevy_planet_ang_vel_rotation_none_leaves_default() {
         DVec3::ZERO,
     );
 }
+
+/// PR #260 round-10 review fixup: toggling a source's `RotationModelC`
+/// from a rotating model to `None` at runtime must remove the
+/// `SourcePfixFrameIdC` component, not just clear the pfix node to
+/// identity. Otherwise consumers that branch on the *presence* of the
+/// component would still treat the source as rotating-capable.
+///
+/// Mirrors the round-9 registration symmetry: `register_pfix_frames_system`
+/// inserts the component when a source gains a non-`None` rotation model
+/// after registration; this test verifies the inverse.
+#[test]
+fn tier3_bevy_rotation_none_toggle_removes_pfix_component() {
+    let (mut app, planet) = build_planet_app("Earth", &EARTH);
+    // Step once with the default `EarthRNP` model so registration runs
+    // and `SourcePfixFrameIdC` is inserted.
+    step_bevy_once(&mut app);
+    assert!(
+        app.world().get::<SourcePfixFrameIdC>(planet).is_some(),
+        "EarthRNP source must carry SourcePfixFrameIdC after registration"
+    );
+
+    // Toggle to `RotationModel::None` and step again. The clear branch
+    // in `planet_fixed_rotation_system` should remove the component so
+    // the source matches the "no pfix node" case from registration.
+    app.world_mut()
+        .entity_mut(planet)
+        .insert(RotationModelC(RotationModel::None));
+    step_bevy_once(&mut app);
+    assert!(
+        app.world().get::<SourcePfixFrameIdC>(planet).is_none(),
+        "toggling RotationModel to None must remove SourcePfixFrameIdC; \
+         leaving it in place reintroduces the Some(identity) vs None \
+         ambiguity that round-9 registration fixed"
+    );
+
+    // Toggling back to `EarthRNP` must reinstate the component on the
+    // next registration pass — proves the inverse symmetry holds.
+    app.world_mut()
+        .entity_mut(planet)
+        .insert(RotationModelC(RotationModel::EarthRNP));
+    step_bevy_once(&mut app);
+    assert!(
+        app.world().get::<SourcePfixFrameIdC>(planet).is_some(),
+        "toggling back to EarthRNP must reinstate SourcePfixFrameIdC \
+         via register_pfix_frames_system"
+    );
+}
