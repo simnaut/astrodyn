@@ -283,20 +283,26 @@ impl Simulation {
                             // `RadiationSource::calculate_flux`. Sun position is
                             // step-constant (ephemeris is scheduled-class).
                             //
-                            // JEOD_INV: RF.10 — `stage_trans.position` is in
-                            // the body's integration frame, but
-                            // `srp_inputs.sun_position` is root-inertial. Shift
-                            // the stage position to root inertial before
-                            // subtracting (same offset arithmetic as
-                            // `eval_body_gravity` above so stage-time
-                            // interpolation of the integ-frame origin is
-                            // applied consistently). For root-integrated
-                            // bodies the offset is zero (bit-identical).
-                            let stage_integ_origin = body_integ_origins[body_idx].position.raw_si()
-                                + body_integ_origins[body_idx].velocity.raw_si()
-                                    * (time_frac * integ_dt);
-                            let stage_pos_root = stage_trans.position + stage_integ_origin;
-                            let sun_to_vehicle = stage_pos_root - srp_inputs.sun_position;
+                            // JEOD_INV: RF.10 — `stage_trans.position` is the
+                            // integrator's intermediate `DVec3` in the body's
+                            // integration frame; `srp_inputs.sun_position` is
+                            // typed `Position<RootInertial>`. The structural
+                            // guard refuses `stage_trans.position
+                            // - srp_inputs.sun_position` (DVec3 -
+                            // Position<RootInertial>) at compile time — the
+                            // bug shape that slipped past review on PR #258.
+                            // Lift the integration-frame `DVec3` to typed,
+                            // then call `IntegOrigin::shift_position_at_stage`
+                            // for the stage-time interpolation matching
+                            // `eval_body_gravity`.
+                            let p_integ =
+                                Position::<IntegrationFrame>::from_raw_si(stage_trans.position);
+                            let stage_pos_root: Position<jeod_sim::RootInertial> =
+                                body_integ_origins[body_idx]
+                                    .shift_position_at_stage(p_integ, time_frac * integ_dt);
+                            let sun_to_vehicle: Position<jeod_sim::RootInertial> =
+                                stage_pos_root - srp_inputs.sun_position;
+                            let sun_to_vehicle = sun_to_vehicle.raw_si();
                             let distance = sun_to_vehicle.length().max(1.0);
                             let stage_flux_inertial_hat = sun_to_vehicle / distance;
                             let stage_flux_mag = jeod_sim::solar_flux_at_distance(distance);

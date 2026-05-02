@@ -85,6 +85,10 @@ impl Simulation {
                 fps.stage_inputs = None;
             }
             if let Some(sun_position_typed) = sun_pos {
+                // Local raw alias for the legacy DVec3-arg consumers
+                // (`compute_shadow_fraction`, `compute_cannonball_srp`,
+                // `compute_flat_plate_srp_thermal`). The typed value
+                // remains in scope for the structural guards below.
                 let sun_position = sun_position_typed.raw_si();
                 if let Some(ref mut fps) = body.flat_plate_state {
                     // Flat-plate SRP with thermal emission. Typed
@@ -156,7 +160,15 @@ impl Simulation {
                                 // inputs on the plate state; Stage 8 consumes
                                 // them via `integrate_body_coupled` below.
                                 fps.stage_inputs = Some(jeod_sim::FlatPlateStageInputs {
-                                    sun_position,
+                                    // Typed `sun_position` carries the
+                                    // RootInertial frame phantom into the
+                                    // RK4 derivative closure, where it
+                                    // can only be subtracted from a
+                                    // typed `Position<RootInertial>` —
+                                    // structurally refusing the bug
+                                    // shape `stage_trans.position
+                                    // - sun_position` as DVec3-DVec3.
+                                    sun_position: sun_position_typed,
                                     illum_factor,
                                     center_grav,
                                 });

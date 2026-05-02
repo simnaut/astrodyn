@@ -529,7 +529,25 @@ pub fn integration_system(
                     // position — matches JEOD's derivative-class
                     // `RadiationSource::calculate_flux`. Sun position is
                     // step-constant (ephemeris is scheduled-class).
-                    let sun_to_vehicle = stage_trans.position - srp_inputs.sun_position;
+                    //
+                    // RF.10: `srp_inputs.sun_position` is typed
+                    // `Position<RootInertial>` so the structural guard
+                    // refuses subtracting a raw `DVec3` from it. The Bevy
+                    // adapter's bodies integrate in root (documented; the
+                    // `TranslationalStateC` storage carries
+                    // `<RootInertial>`), so labeling stage_trans.position
+                    // as root-inertial is the documented assumption — not
+                    // a lie. The relabel is the typed-quantity boundary
+                    // analog of `TranslationalStateC::from_untyped`.
+                    use jeod_sim::{Position, RootInertial};
+                    let stage_pos_root: Position<RootInertial> =
+                        // allowed: documented Bevy-adapter boundary — bodies
+                        // integrate in root. Same shape as TranslationalStateC's
+                        // From<Untyped> impl. RF.10.
+                        Position::<RootInertial>::from_raw_si(stage_trans.position);
+                    let sun_to_vehicle: Position<RootInertial> =
+                        stage_pos_root - srp_inputs.sun_position;
+                    let sun_to_vehicle = sun_to_vehicle.raw_si();
                     let distance = sun_to_vehicle.length().max(1.0);
                     let stage_flux_inertial_hat = sun_to_vehicle / distance;
                     let stage_flux_mag = jeod_sim::solar_flux_at_distance(distance);
@@ -1224,7 +1242,10 @@ pub fn flat_plate_srp_system(
                 // stays at the zero cleared above — the integration system
                 // writes a representative final-stage value.
                 flat_config.stage_inputs = Some(jeod_sim::FlatPlateStageInputs {
-                    sun_position: sun_pos_raw,
+                    // `sun_state.position` is the typed component value;
+                    // pass it directly so the typed phantom carries into
+                    // the RK4 derivative closure (RF.10 structural guard).
+                    sun_position: sun_state.position,
                     illum_factor,
                     center_grav,
                 });

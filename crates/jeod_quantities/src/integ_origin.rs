@@ -61,6 +61,26 @@ impl IntegOrigin {
     pub fn shift_velocity(&self, v: Velocity<IntegrationFrame>) -> Velocity<RootInertial> {
         Velocity::<RootInertial>::from_raw_si(v.raw_si() + self.velocity.raw_si())
     }
+
+    /// Stage-time-interpolated shift to root inertial.
+    ///
+    /// Used inside RK4 derivative closures where the intermediate
+    /// position is sampled at `time_frac * dt` into the step. The
+    /// integration-frame origin itself moves under its own velocity, so
+    /// the stage-time shift is `origin.position + origin.velocity *
+    /// stage_dt` (linear interpolation; matches the arithmetic used by
+    /// the runner's gravity stage closure, RF.10). For
+    /// integration-frames at rest in root, this collapses to the
+    /// step-constant `shift_position`.
+    #[inline]
+    pub fn shift_position_at_stage(
+        &self,
+        p: Position<IntegrationFrame>,
+        stage_dt: f64,
+    ) -> Position<RootInertial> {
+        let stage_origin = self.position.raw_si() + self.velocity.raw_si() * stage_dt;
+        Position::<RootInertial>::from_raw_si(p.raw_si() + stage_origin)
+    }
 }
 
 #[cfg(test)]
