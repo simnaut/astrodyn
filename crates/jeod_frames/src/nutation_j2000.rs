@@ -2,7 +2,7 @@
 //!
 //! Faithful port of JEOD's `nutation_j2000.cc` with IAU 1980 model (106 terms).
 //!
-//! Reference: Mulcihy & Bond, "The RNP Routine for the Standard Epoch J2000",
+//! Reference: Mulcahy & Bond, "The RNP Routine for the Standard Epoch J2000",
 //! NASA JSC-24574, September 1990.
 
 // Constants ported verbatim from JEOD — suppress excessive precision warnings.
@@ -33,7 +33,7 @@ pub fn nutation(time: f64) -> NutationResult {
     let time2 = time * time;
     let time3 = time2 * time;
 
-    // Fundamental arguments in degrees (Mulcihy & Bond, JSC-24574)
+    // Fundamental arguments in degrees (Mulcahy & Bond, JSC-24574)
     let l = 134.9629813888889
         + 477198.8673980555 * time
         + 0.008697222222222223 * time2

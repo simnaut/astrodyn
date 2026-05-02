@@ -4,7 +4,7 @@
 //! [`models/environment/RNP/RNPJ2000/data/src/data_nutation_j2000.cc`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/environment/RNP/RNPJ2000/data/src/data_nutation_j2000.cc)
 //! in JEOD v5.4.0.
 //!
-//! Reference: Mulcihy, David D. and Bond, Victor R., *"The RNP Routine
+//! Reference: Mulcahy, David D. and Bond, Victor R., *"The RNP Routine
 //! for the Standard Epoch J2000"*, NASA:JSC-24574, September 1990.
 //!
 //! 106 terms of the IAU 1980 Theory of Nutation — each array has length
