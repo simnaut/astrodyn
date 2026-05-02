@@ -340,6 +340,47 @@ pub struct PlanetFixedRotationC(pub FrameTransform<Inertial, PlanetFixed<SelfPla
 #[reflect(opaque, Component)]
 pub struct PlanetOmegaC(pub f64);
 
+/// Frame-tree node ID for a gravity source entity.
+///
+/// Inserted by `register_source_frames_system` (a `Startup` system in
+/// [`JeodPlugin`](crate::JeodPlugin)) for every entity that carries
+/// [`GravitySourceC`] but no [`SourceFrameIdC`] yet. Once present, it
+/// pins the source to a specific node in [`crate::FrameTreeR`] so
+/// helpers like [`crate::SourceMutator`] can mutate the right node.
+///
+/// Issue #71 items 2 and 5.
+#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
+#[reflect(opaque, Component)]
+pub struct SourceFrameIdC(pub jeod_sim::FrameId);
+
+/// Optional frame-tree node ID for a gravity source's planet-fixed
+/// (pfix) child frame. Populated alongside [`SourceFrameIdC`] for
+/// sources that have a non-`None` [`RotationModelC`].
+#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
+#[reflect(opaque, Component)]
+pub struct SourcePfixFrameIdC(pub jeod_sim::FrameId);
+
+/// Optional initial integration-frame source for a body (issue #71
+/// item 4). Mirrors [`jeod_sim::VehicleConfig::integ_source`]: when set
+/// to `Some(planet_entity)`, the body is configured to integrate in
+/// that source's inertial frame; when `None`, the body integrates in
+/// the root inertial frame (the current Bevy default). Read by the
+/// (forthcoming) non-root integration support; today this is purely a
+/// declarative configuration component.
+#[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
+#[reflect(opaque, Component)]
+pub struct IntegSourceC(pub Option<Entity>);
+
+/// Distance-based integration-frame switches for a body (issue #71
+/// item 3). Mirrors [`jeod_sim::VehicleConfig::frame_switches`]: each
+/// entry triggers a reparent + gravity-controls flip when the body
+/// crosses the configured distance. Read by the (forthcoming)
+/// `frame_switch_system`; today this is purely a declarative
+/// configuration component.
+#[derive(Component, Debug, Clone, Default, Deref, DerefMut, Reflect)]
+#[reflect(opaque, Component)]
+pub struct FrameSwitchesC(pub Vec<jeod_sim::FrameSwitchConfig>);
+
 /// Angular velocity of the planet-fixed frame relative to its inertial
 /// parent, expressed in pfix coordinates. Computed each step by
 /// `planet_fixed_rotation_system` as `[0, 0, omega]` matching JEOD's

@@ -7,12 +7,14 @@ pub mod components;
 pub mod prelude;
 pub mod recipes;
 pub mod sets;
+pub mod source_mutator;
 pub mod systems;
 pub mod validation;
 
 pub use bundles::*;
 pub use components::*;
 pub use sets::*;
+pub use source_mutator::SourceMutator;
 pub use systems::*;
 
 use bevy::prelude::*;
@@ -82,6 +84,46 @@ pub struct EphemerisR(pub jeod_sim::Ephemeris);
 #[derive(Resource, Deref, DerefMut)]
 pub struct MassTreeR(pub jeod_sim::MassTree);
 
+/// Bevy resource wrapping the simulation's [`jeod_sim::FrameTree`].
+///
+/// Mirrors `jeod_runner::Simulation::frame_tree`. Inserted at startup by
+/// [`JeodPlugin`] with a single root inertial frame node; mission code or
+/// recipes can register additional frame nodes (source inertials, pfix
+/// frames, body frames) during entity spawning.
+///
+/// Issue #71: this resource is the data structure that the lifted
+/// `jeod_sim::{frame_orchestration, source_state}` helpers operate on,
+/// so the Bevy adapter can consume the same orchestration code as
+/// `jeod_runner` instead of re-implementing it.
+#[derive(Resource, Deref, DerefMut)]
+pub struct FrameTreeR(pub jeod_sim::FrameTree);
+
+impl FrameTreeR {
+    /// Create a new frame tree pre-populated with the root inertial frame
+    /// (matching `jeod_runner::Simulation::new`'s "Earth.inertial" root —
+    /// the name is generic and may be renamed by central-body source
+    /// registration). Returns the resource and the root inertial
+    /// [`jeod_sim::FrameId`].
+    pub fn new() -> (Self, jeod_sim::FrameId) {
+        let mut tree = jeod_sim::FrameTree::new();
+        let root = tree.add_root("root.inertial".into(), jeod_sim::RefFrameKind::Inertial);
+        (Self(tree), root)
+    }
+}
+
+impl Default for FrameTreeR {
+    fn default() -> Self {
+        Self::new().0
+    }
+}
+
+/// Bevy resource carrying the [`jeod_sim::FrameId`] of the root inertial
+/// frame inside [`FrameTreeR`]. Used by source-mutation helpers and
+/// (forthcoming) frame-switch and non-root integration systems to
+/// distinguish the root from non-root sources.
+#[derive(Resource, Debug, Clone, Copy, Deref, DerefMut)]
+pub struct RootFrameIdR(pub jeod_sim::FrameId);
+
 /// Unified JEOD plugin — registers all pipeline systems and schedule sets.
 pub struct JeodPlugin;
 
@@ -105,6 +147,13 @@ impl Plugin for JeodPlugin {
 
         // ── Resources ──
         app.init_resource::<SimulationTimeR>();
+        // Frame tree resource: created with a single root inertial node so
+        // source-mutation helpers and frame-tree consumers can rely on a
+        // valid root immediately. Mission code adds source-inertial / pfix
+        // / body frame nodes as entities are spawned.
+        let (frame_tree, root_id) = FrameTreeR::new();
+        app.insert_resource(frame_tree);
+        app.insert_resource(RootFrameIdR(root_id));
 
         // ── Typed-Component reflection (#154) ──
         // Centralized in `register_jeod_component_types` so the smoke
@@ -116,6 +165,13 @@ impl Plugin for JeodPlugin {
         app.add_message::<DetachEvent>();
 
         // ── Systems ──
+        // Source-frame registration runs at Startup to populate FrameTreeR
+        // with every spawned source, and again before each FixedUpdate's
+        // EphemerisUpdate to catch late-spawned sources. The latter
+        // filters by `Without<SourceFrameIdC>` so already-registered
+        // sources are skipped — registering is one-time per source.
+        // Issue #71 item 5: gives `SourceMutator` a frame-tree node to mutate.
+        app.add_systems(Startup, systems::register_source_frames_system);
         // Split into two add_systems calls to stay within Bevy's tuple size limit.
         app.add_systems(
             FixedUpdate,
@@ -124,6 +180,9 @@ impl Plugin for JeodPlugin {
                 validation::validate_jeod_invariants.before(JeodSet::TimeUpdate),
                 // Time advance
                 systems::time_advance_system.in_set(JeodSet::TimeUpdate),
+                // Catch dynamically-spawned sources before they hit
+                // `planet_fixed_rotation_system` / `ephemeris_update_system`.
+                systems::register_source_frames_system.before(JeodSet::EphemerisUpdate),
                 // Planet-fixed rotation (RNP)
                 systems::planet_fixed_rotation_system.in_set(JeodSet::EphemerisUpdate),
                 // Ephemeris position updates (DE4xx)
@@ -212,6 +271,10 @@ pub fn register_jeod_component_types(app: &mut App) {
     app.register_type::<components::PlanetFixedRotationC>();
     app.register_type::<components::PlanetOmegaC>();
     app.register_type::<components::PlanetAngularVelocityC>();
+    app.register_type::<components::SourceFrameIdC>();
+    app.register_type::<components::SourcePfixFrameIdC>();
+    app.register_type::<components::IntegSourceC>();
+    app.register_type::<components::FrameSwitchesC>();
     // Tidal
     app.register_type::<components::TidalConfigC>();
     app.register_type::<components::TidalDeltaC20C>();

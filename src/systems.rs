@@ -12,7 +12,77 @@ use jeod_sim::{
 
 use crate::components::*;
 use crate::AtmosphereModelR;
+use crate::FrameTreeR;
 use crate::SimulationTimeR;
+
+// ── Frame-tree source registration ──
+
+/// Auto-register every gravity-source entity (carrying [`GravitySourceC`])
+/// into [`FrameTreeR`] at startup, then insert [`SourceFrameIdC`] (and,
+/// for sources with a non-`None` [`RotationModelC`],
+/// [`SourcePfixFrameIdC`]) on the entity. Sources are added as children
+/// of the existing root inertial frame; their initial position comes
+/// from [`SourceInertialPositionC`] (default zero).
+///
+/// This is the Bevy analog of `jeod_runner::Simulation::add_source` —
+/// it makes the lifted source-mutation helpers (issue #71 item 5)
+/// usable directly via [`crate::SourceMutator`].
+///
+/// **Divergence from jeod_runner**: every source becomes a child of
+/// the root frame, including the central body. `jeod_runner` renames
+/// the root frame to "<central>.inertial" and reuses it. The Bevy
+/// adapter keeps a generic root and treats all sources uniformly so
+/// the registration order doesn't matter and so adding a body in a
+/// non-Earth-central simulation doesn't require special-casing
+/// "central" sources. Frame-switch parity (issue #71 items 2-4) lives
+/// at the orchestration layer, where this divergence is invisible.
+#[allow(clippy::type_complexity)]
+pub fn register_source_frames_system(
+    mut commands: Commands,
+    mut frame_tree: ResMut<FrameTreeR>,
+    root: Res<crate::RootFrameIdR>,
+    sources: Query<
+        (
+            Entity,
+            Option<&Name>,
+            &SourceInertialPositionC,
+            Option<&RotationModelC>,
+        ),
+        (With<GravitySourceC>, Without<SourceFrameIdC>),
+    >,
+) {
+    for (entity, name, pos, rotation_model) in &sources {
+        let label = name
+            .map(|n| n.as_str().to_string())
+            .unwrap_or_else(|| format!("source{:?}", entity));
+        let inertial_id = frame_tree.0.add_child(
+            root.0,
+            format!("{label}.inertial"),
+            jeod_sim::RefFrameKind::Inertial,
+            jeod_sim::RefFrameState {
+                trans: jeod_sim::RefFrameTrans {
+                    position: pos.0.raw_si(),
+                    velocity: glam::DVec3::ZERO,
+                },
+                rot: jeod_sim::RefFrameRot::default(),
+            },
+        );
+        let mut entity_cmds = commands.entity(entity);
+        entity_cmds.insert(SourceFrameIdC(inertial_id));
+
+        if let Some(model) = rotation_model {
+            if !matches!(model.0, jeod_sim::RotationModel::None) {
+                let pfix_id = frame_tree.0.add_child(
+                    inertial_id,
+                    format!("{label}.pfix"),
+                    jeod_sim::RefFrameKind::PlanetFixed,
+                    jeod_sim::RefFrameState::default(),
+                );
+                entity_cmds.insert(SourcePfixFrameIdC(pfix_id));
+            }
+        }
+    }
+}
 
 // ── Time ──
 
