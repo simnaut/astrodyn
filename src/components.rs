@@ -377,7 +377,13 @@ pub struct SourceFrameIdC(pub jeod_sim::FrameId);
 
 /// Optional frame-tree node ID for a gravity source's planet-fixed
 /// (pfix) child frame. Populated alongside [`SourceFrameIdC`] for
-/// sources that have a non-`None` [`RotationModelC`].
+/// sources that carry [`PlanetFixedRotationC`] — the same gate
+/// `planet_fixed_rotation_system` filters on. When `PlanetFixedRotationC`
+/// is present and [`RotationModelC`] is omitted, the registration falls
+/// back to [`RotationModel::EarthRNP`](jeod_sim::RotationModel::EarthRNP).
+/// A non-`None` [`RotationModelC`] alone does *not* trigger pfix
+/// creation; without `PlanetFixedRotationC` the source is treated as
+/// non-rotating and gets no pfix child.
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
 #[reflect(opaque, Component)]
 pub struct SourcePfixFrameIdC(pub jeod_sim::FrameId);

@@ -179,9 +179,14 @@ impl Plugin for JeodPlugin {
         // Registration is wired into three schedules so it catches every
         // spawn surface (PR #260 round-3 R3 fixup):
         //   - Startup: initial spawns before any tick.
-        //   - PreUpdate: catches Update-spawned entities so subsequent
-        //     Update systems that call `SourceMutator` or read
-        //     `IntegFrameIdC` on the same frame see the registered IDs.
+        //   - PreUpdate: catches entities spawned during the previous
+        //     frame's `Update` / `PostUpdate`. They are registered before
+        //     the *next* frame's `Update` runs. Same-frame spawn-and-
+        //     mutate inside one `Update` (spawn + `SourceMutator` call in
+        //     consecutive systems of the same frame) is *not* supported
+        //     by this scheduling, since `Update` runs after `PreUpdate`;
+        //     callers needing that pattern must add a manual
+        //     registration call in `Update` with explicit ordering.
         //   - Before `JeodSet::EphemerisUpdate` (FixedUpdate): catches
         //     entities spawned between fixed ticks before they hit the
         //     ephemeris / rotation / integration pipeline.

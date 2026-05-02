@@ -15,11 +15,15 @@
 //!
 //! ```ignore
 //! use bevy::prelude::*;
-//! use bevy_jeod::SourceMutator;
+//! use bevy_jeod::{components::GravitySourceC, SourceMutator};
 //! use glam::DVec3;
 //!
-//! fn retarget_sun(mut mutator: SourceMutator, sun: Single<Entity, With<bevy_jeod::SunMarker>>) {
-//!     mutator.set_source_state(*sun, DVec3::new(1.5e11, 0.0, 0.0), DVec3::ZERO);
+//! // Targets a gravity-source entity (e.g. one spawned via `PlanetBundle`
+//! // or with an explicit `GravitySourceC` + `SourceInertialPositionC`).
+//! // `SunBundle` / `SunMarker` entities are *not* gravity sources and do
+//! // not carry `SourceFrameIdC`; calling the mutator on one panics.
+//! fn retarget(mut mutator: SourceMutator, planet: Single<Entity, With<GravitySourceC>>) {
+//!     mutator.set_source_state(*planet, DVec3::new(1.5e11, 0.0, 0.0), DVec3::ZERO);
 //! }
 //! ```
 //!
