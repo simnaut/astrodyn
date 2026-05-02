@@ -284,11 +284,11 @@ pub fn force_collection_system(
         // re-wrap as the component's typed form. The `RootInertial` and
         // `BodyFrame<SelfRef>` phantoms match the kernel's documented
         // frame contracts (force inertial, torque body).
-        // allowed: typed↔untyped kernel boundary; the kernel signature in
-        // jeod_sim is still untyped, so re-wrapping is the canonical
-        // adapter pattern (analogous to the From<Untyped> impls in
-        // src/components.rs).
         total.0 =
+            // allowed: typed↔untyped kernel boundary; the kernel signature in
+            // jeod_sim is still untyped, so re-wrapping is the canonical
+            // adapter pattern (analogous to the From<Untyped> impls in
+            // src/components.rs).
             jeod_sim::TotalForceTyped::<jeod_sim::SelfRef, RootInertial>::from_untyped_unchecked(
                 &collected,
             );
@@ -830,6 +830,8 @@ pub fn aero_drag_system(
         // expects `Velocity<PlanetInertial<P>>`; relabel via from_raw_si is
         // bit-identical and asserts the Earth-orbit assumption.
         use jeod_sim::{Earth, PlanetInertial, Velocity};
+        // allowed: RootInertial → PlanetInertial<Earth> relabel for the
+        // typed sibling; bit-identical (no arithmetic). Documented at #255.
         let drag_velocity = Velocity::<PlanetInertial<Earth>>::from_raw_si(state.velocity.raw_si());
         let result = jeod_sim::compute_drag_typed::<Earth, SelfRef>(
             &drag_config.0,
@@ -914,7 +916,10 @@ pub fn orbital_elements_system(
         // bit-identical relabel that asserts the documented assumption.
         use jeod_sim::{Earth, PlanetInertial, Position, Velocity};
         let mu_typed = jeod_sim::F64Ext::m3_per_s2(source.mu);
+        // allowed: RootInertial → PlanetInertial<Earth> relabel for the
+        // typed sibling; bit-identical (no arithmetic). Documented at #255.
         let pos = Position::<PlanetInertial<Earth>>::from_raw_si(state.position.raw_si());
+        // allowed: same relabel as `pos` above.
         let vel = Velocity::<PlanetInertial<Earth>>::from_raw_si(state.velocity.raw_si());
         match jeod_sim::compute_orbital_elements_typed::<Earth>(mu_typed, pos, vel) {
             Ok(oe) => elements.0 = oe,
@@ -959,7 +964,10 @@ pub fn lvlh_system(mut query: Query<(&TranslationalStateC, &mut LvlhFrameC)>) {
         // `from_raw_si` is bit-identical and asserts the documented
         // assumption that root coincides with Earth.inertial here.
         use jeod_sim::{Earth, PlanetInertial};
+        // allowed: RootInertial → PlanetInertial<Earth> relabel for the
+        // typed sibling; bit-identical (no arithmetic). Documented at #255.
         let pos = jeod_sim::Position::<PlanetInertial<Earth>>::from_raw_si(state.position.raw_si());
+        // allowed: same relabel as `pos` above.
         let vel = jeod_sim::Velocity::<PlanetInertial<Earth>>::from_raw_si(state.velocity.raw_si());
         lvlh.0 = jeod_sim::compute_body_lvlh_frame_typed::<Earth>(pos, vel);
     }
@@ -982,6 +990,8 @@ pub fn geodetic_system(
         // (a config-time conversion, not a per-step bypass).
         use jeod_sim::F64Ext;
         use jeod_sim::{Earth, PlanetInertial};
+        // allowed: RootInertial → PlanetInertial<Earth> relabel for the
+        // typed sibling; bit-identical (no arithmetic). Documented at #255.
         let pos = jeod_sim::Position::<PlanetInertial<Earth>>::from_raw_si(state.position.raw_si());
         geodetic.0 = jeod_sim::compute_body_geodetic_typed::<Earth>(
             pos,
