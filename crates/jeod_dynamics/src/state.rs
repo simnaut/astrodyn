@@ -1,6 +1,7 @@
 use glam::DVec3;
 use jeod_quantities::aliases::{Position, Velocity};
-use jeod_quantities::frame::{Frame, Inertial};
+use jeod_quantities::frame::{Frame, IntegrationFrame, RootInertial};
+use jeod_quantities::integ_origin::IntegOrigin;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct TranslationalState {
@@ -30,7 +31,7 @@ impl TranslationalState {
 /// to match the existing untyped storage convention; override with an
 /// explicit frame tag for non-inertial integrations.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct TranslationalStateTyped<F: Frame = Inertial> {
+pub struct TranslationalStateTyped<F: Frame = RootInertial> {
     /// Position in frame `F`.
     pub position: Position<F>,
     /// Velocity in frame `F`.
@@ -81,6 +82,28 @@ impl<F: Frame> TranslationalStateTyped<F> {
     }
 }
 
+impl TranslationalStateTyped<IntegrationFrame> {
+    /// Shift this integration-frame state to root-inertial by adding the
+    /// integration-frame origin's offset (position and velocity, in
+    /// root-inertial coordinates).
+    ///
+    /// This is the only safe path from `IntegrationFrame` to `RootInertial`
+    /// for translational state. Forgetting the shift produces a compile
+    /// error rather than silently-wrong physics for any vehicle whose
+    /// integration frame is not the root frame (issue #255).
+    // JEOD_INV: RF.10 — integration-frame state must be shifted to
+    // root-inertial via the integration-origin offset before use by
+    // root-inertial consumers (gravity, atmosphere, SRP, drag, orbital
+    // elements, geodetic, LVLH, solar beta, earth lighting).
+    #[inline]
+    pub fn to_inertial(&self, o: &IntegOrigin) -> TranslationalStateTyped<RootInertial> {
+        TranslationalStateTyped {
+            position: o.shift_position(self.position),
+            velocity: o.shift_velocity(self.velocity),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -115,25 +138,62 @@ mod tests {
             position: DVec3::new(7e6, 0.0, 0.0),
             velocity: DVec3::new(0.0, 7500.0, 0.0),
         };
-        let typed = TranslationalStateTyped::<Inertial>::from_untyped_unchecked(&untyped);
+        let typed = TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(&untyped);
         let back = typed.to_untyped();
         assert_eq!(back, untyped);
     }
 
     #[test]
     fn typed_default_is_likely_uninitialized() {
-        let s = TranslationalStateTyped::<Inertial>::default();
+        let s = TranslationalStateTyped::<RootInertial>::default();
         assert!(s.is_likely_uninitialized());
     }
 
     #[test]
     fn typed_inertial_and_ecef_are_distinct_types() {
-        // Compile-time check that `TranslationalStateTyped<Inertial>` and
+        // Compile-time check that `TranslationalStateTyped<RootInertial>` and
         // `TranslationalStateTyped<Ecef>` are not assignable to one another;
         // we only verify the same-frame case compiles here.
-        let s_inertial = TranslationalStateTyped::<Inertial>::default();
+        let s_inertial = TranslationalStateTyped::<RootInertial>::default();
         let s_ecef = TranslationalStateTyped::<Ecef>::default();
         assert!(s_inertial.is_likely_uninitialized());
         assert!(s_ecef.is_likely_uninitialized());
+    }
+
+    #[test]
+    fn to_inertial_with_zero_origin_is_bit_identical() {
+        let s_integ = TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
+            &TranslationalState {
+                position: DVec3::new(7e6, 0.0, 0.0),
+                velocity: DVec3::new(0.0, 7500.0, 0.0),
+            },
+        );
+        let o = IntegOrigin::zero();
+        let s_inertial = s_integ.to_inertial(&o);
+        assert_eq!(s_inertial.position.raw_si(), DVec3::new(7e6, 0.0, 0.0));
+        assert_eq!(s_inertial.velocity.raw_si(), DVec3::new(0.0, 7500.0, 0.0));
+    }
+
+    #[test]
+    fn to_inertial_with_nonzero_origin_adds_offset() {
+        let s_integ = TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
+            &TranslationalState {
+                position: DVec3::new(7e6, 0.0, 0.0),
+                velocity: DVec3::new(0.0, 7500.0, 0.0),
+            },
+        );
+        let o = IntegOrigin {
+            position: Position::<RootInertial>::from_raw_si(DVec3::new(1.5e11, 0.0, 0.0)),
+            velocity: Velocity::<RootInertial>::from_raw_si(DVec3::new(0.0, 30_000.0, 0.0)),
+        };
+        let s_inertial = s_integ.to_inertial(&o);
+        assert_eq!(
+            s_inertial.position.raw_si(),
+            DVec3::new(1.5e11 + 7e6, 0.0, 0.0)
+        );
+        assert_eq!(
+            s_inertial.velocity.raw_si(),
+            DVec3::new(0.0, 30_000.0 + 7500.0, 0.0)
+        );
     }
 }

@@ -496,8 +496,8 @@ impl F64Ext for f64 {
 /// use glam::DVec3;
 /// use jeod_quantities::prelude::*;
 ///
-/// let r: Position<Inertial> = DVec3::new(7_000_000.0, 0.0, 0.0).m_at::<Inertial>();
-/// let v: Velocity<Inertial> = DVec3::new(0.0, 7_546.0, 0.0).m_per_s_at::<Inertial>();
+/// let r: Position<RootInertial> = DVec3::new(7_000_000.0, 0.0, 0.0).m_at::<RootInertial>();
+/// let v: Velocity<RootInertial> = DVec3::new(0.0, 7_546.0, 0.0).m_per_s_at::<RootInertial>();
 /// ```
 pub trait Vec3Ext: Copy {
     /// Interpret as meters (position) in frame `F`.
@@ -557,7 +557,7 @@ impl Vec3Ext for DVec3 {
 ///
 /// // Loaded from a JEOD CSV row, [m, m, m].
 /// let row: [f64; 3] = [7_000_000.0, 0.0, 0.0];
-/// let r: Position<Inertial> = row.m_at::<Inertial>();
+/// let r: Position<RootInertial> = row.m_at::<RootInertial>();
 /// ```
 pub trait Array3Ext: Copy {
     /// Interpret `self` as a position in metres tagged with frame `F`.

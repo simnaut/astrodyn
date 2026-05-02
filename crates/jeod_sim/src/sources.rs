@@ -22,7 +22,7 @@ pub struct GravitySourceEntry {
     /// Velocity in the inertial frame (m/s). Required for relativistic corrections.
     /// Zero for stationary sources (e.g., central body at origin).
     pub velocity: DVec3,
-    /// Inertial-to-planet-fixed rotation matrix. Updated each step when
+    /// RootInertial-to-planet-fixed rotation matrix. Updated each step when
     /// `rotation_model` is not `None`. If `None`, no rotation is applied
     /// (point-mass only).
     pub t_inertial_pfix: Option<DMat3>,

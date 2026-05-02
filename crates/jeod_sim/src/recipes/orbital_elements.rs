@@ -15,7 +15,7 @@
 use jeod_math::OrbitalElements;
 use jeod_quantities::aliases::{Position, Velocity};
 use jeod_quantities::dims::GravParam;
-use jeod_quantities::frame::Inertial;
+use jeod_quantities::frame::{Earth, PlanetInertial};
 
 use super::constants::{mu_ggm05c, mu_mars, mu_sun};
 
@@ -23,9 +23,9 @@ use super::constants::{mu_ggm05c, mu_mars, mu_sun};
 /// in this module funnels through here so the velocity computation
 /// (when present) and the conversion share a single μ value.
 fn from_pos_vel_with_mu(pos: glam::DVec3, vel: glam::DVec3, mu: GravParam) -> OrbitalElements {
-    let p = Position::<Inertial>::from_raw_si(pos);
-    let v = Velocity::<Inertial>::from_raw_si(vel);
-    OrbitalElements::from_cartesian_typed(mu, p, v)
+    let p = Position::<PlanetInertial<Earth>>::from_raw_si(pos);
+    let v = Velocity::<PlanetInertial<Earth>>::from_raw_si(vel);
+    OrbitalElements::from_cartesian_typed::<Earth>(mu, p, v)
         .expect("preset state vector must produce well-defined orbital elements")
 }
 

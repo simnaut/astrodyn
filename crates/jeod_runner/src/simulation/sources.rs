@@ -54,7 +54,7 @@ impl Simulation {
             self.frame_tree.add_child(
                 self.root_frame_id,
                 inertial_name,
-                RefFrameKind::Inertial,
+                RefFrameKind::RootInertial,
                 RefFrameState {
                     trans: RefFrameTrans {
                         position: entry.position,

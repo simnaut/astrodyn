@@ -54,7 +54,7 @@ pub struct RefFrameInfo {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RefFrameKind {
-    Inertial,
+    RootInertial,
     PlanetFixed,
     Body,
 }
@@ -956,7 +956,7 @@ mod typed_tests {
     use glam::{DMat3, DVec3};
     use jeod_math::test_utils::{approx_eq_mat3, approx_eq_vec3};
     use jeod_math::JeodQuat;
-    use jeod_quantities::frame::{Ecef, Inertial};
+    use jeod_quantities::frame::{Ecef, RootInertial};
     use std::f64::consts::FRAC_PI_2;
 
     const TOL: f64 = 1e-12;
@@ -985,7 +985,7 @@ mod typed_tests {
             DVec3::new(100.0, 200.0, 300.0),
             DVec3::new(0.01, 0.02, 0.03),
         );
-        let typed = RefFrameStateTyped::<Inertial, Ecef>::from_untyped_unchecked(&s);
+        let typed = RefFrameStateTyped::<RootInertial, Ecef>::from_untyped_unchecked(&s);
         let back = typed.to_untyped();
 
         assert_eq!(back.trans.position, s.trans.position);
@@ -1003,8 +1003,8 @@ mod typed_tests {
             DVec3::new(500.0, -300.0, 100.0),
             DVec3::new(0.05, -0.02, 0.01),
         );
-        let typed = RefFrameStateTyped::<Inertial, Ecef>::from_untyped_unchecked(&s);
-        let typed_neg: RefFrameStateTyped<Ecef, Inertial> = typed.negate();
+        let typed = RefFrameStateTyped::<RootInertial, Ecef>::from_untyped_unchecked(&s);
+        let typed_neg: RefFrameStateTyped<Ecef, RootInertial> = typed.negate();
         let untyped_neg = RefFrameState::negate(&s);
 
         assert!(approx_eq_vec3(
@@ -1031,7 +1031,7 @@ mod typed_tests {
 
     #[test]
     fn typed_incr_right_matches_untyped() {
-        // Frame chain: Inertial → Ecef → Inertial (round-trip via two
+        // Frame chain: RootInertial → Ecef → RootInertial (round-trip via two
         // composed typed states; the type system requires the inner
         // frame to match.)
         let s_ie = make_state(
@@ -1047,10 +1047,11 @@ mod typed_tests {
             DVec3::new(0.001, 0.0, 0.0),
         );
 
-        let typed_ie = RefFrameStateTyped::<Inertial, Ecef>::from_untyped_unchecked(&s_ie);
-        let typed_ei = RefFrameStateTyped::<Ecef, Inertial>::from_untyped_unchecked(&s_ei);
+        let typed_ie = RefFrameStateTyped::<RootInertial, Ecef>::from_untyped_unchecked(&s_ie);
+        let typed_ei = RefFrameStateTyped::<Ecef, RootInertial>::from_untyped_unchecked(&s_ei);
 
-        let composed_typed: RefFrameStateTyped<Inertial, Inertial> = typed_ie.incr_right(&typed_ei);
+        let composed_typed: RefFrameStateTyped<RootInertial, RootInertial> =
+            typed_ie.incr_right(&typed_ei);
         let composed_untyped = s_ie.incr_right(&s_ei);
 
         assert!(approx_eq_vec3(
@@ -1077,7 +1078,7 @@ mod typed_tests {
 
     #[test]
     fn typed_default_for_same_frame_is_identity() {
-        let id = RefFrameStateTyped::<Inertial, Inertial>::default();
+        let id = RefFrameStateTyped::<RootInertial, RootInertial>::default();
         let untyped = id.to_untyped();
         assert_eq!(untyped.trans.position, DVec3::ZERO);
         assert_eq!(untyped.trans.velocity, DVec3::ZERO);
@@ -1093,7 +1094,7 @@ mod typed_tests {
             DVec3::new(50.0, -25.0, 12.5),
             DVec3::new(0.01, 0.0, 0.005),
         );
-        let typed = RefFrameStateTyped::<Inertial, Ecef>::from_untyped_unchecked(&s);
+        let typed = RefFrameStateTyped::<RootInertial, Ecef>::from_untyped_unchecked(&s);
         let twice_negated = typed.negate().negate();
 
         // Compose s with negate(s) — should produce identity (within TOL).

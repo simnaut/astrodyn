@@ -11,8 +11,9 @@ use jeod_sim::forces::collect_and_resolve_forces;
 use jeod_sim::gravity::accumulate_gravity;
 use jeod_sim::integration::{integrate_bodies_contact_coupled, integrate_body, CoupledBodyInput};
 use jeod_sim::{
-    evaluate_contact_pair, integrate_body_coupled, CoupledStageEval, GravityControls,
-    MassProperties, RadiationForce, RotationalState, SwitchSense, TranslationalState,
+    evaluate_contact_pair, integrate_body_coupled, CoupledStageEval, GravityControls, IntegOrigin,
+    IntegrationFrame, MassProperties, Position, RadiationForce, RotationalState, SwitchSense,
+    TranslationalState, TranslationalStateTyped, Velocity,
 };
 
 use super::super::types::ContactPairConfig;
@@ -25,7 +26,7 @@ impl Simulation {
     pub(super) fn run_integration(
         &mut self,
         dt: f64,
-        body_integ_origins: &[(DVec3, DVec3)],
+        body_integ_origins: &[IntegOrigin],
     ) -> Result<(), StepError> {
         // ── 7. Force collection ──
         for body in &mut self.bodies {
@@ -168,7 +169,8 @@ impl Simulation {
                                  vel: DVec3,
                                  time_frac: f64|
          -> DVec3 {
-            let (integ_origin, integ_vel) = body_integ_origins[body_idx];
+            let integ_origin = body_integ_origins[body_idx].position.raw_si();
+            let integ_vel = body_integ_origins[body_idx].velocity.raw_si();
             let stage_dt = time_frac * integ_dt;
             let origin = integ_origin + integ_vel * stage_dt;
             let sub_dt = if integ_vel != DVec3::ZERO {
@@ -176,6 +178,10 @@ impl Simulation {
             } else {
                 0.0
             };
+            // `pos` arrives in integration-frame coordinates from the
+            // integrator's stage state; shift to root inertial here per
+            // RF.10 before passing to gravity. Equivalent to today's
+            // `pos + origin` arithmetic, just routed through `IntegOrigin`.
             let mut accel =
                 accumulate_gravity(pos + origin, controls, origin, |source_id: usize| {
                     let grav = gravity_data.get(source_id)?;
@@ -247,9 +253,14 @@ impl Simulation {
                     let mut k1_temp_dots: Option<Vec<f64>> = None;
                     let mass_copy = body.mass;
 
+                    // Round-trip body.trans through the untyped form for the
+                    // frame-agnostic integrator interface; restore the
+                    // IntegrationFrame phantom on writeback. Numerics are
+                    // bit-identical (no shift, only a phantom drop/restore).
+                    let mut trans_untyped = body.trans.to_untyped();
                     integrate_body_coupled(
                         &config,
-                        &mut body.trans,
+                        &mut trans_untyped,
                         body.rot.as_mut(),
                         mass_copy.as_ref(),
                         |stage_trans, stage_rot, stage_thermal, time_frac| {
@@ -334,6 +345,10 @@ impl Simulation {
                         dt,
                         time_scale_factor,
                     );
+                    body.trans =
+                        TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
+                            &trans_untyped,
+                        );
 
                     body.radiation_force = Some(RadiationForce {
                         force: final_srp_inertial_force,
@@ -357,9 +372,12 @@ impl Simulation {
                     }
                 } else {
                     let controls = &body.gravity_controls;
+                    // Round-trip body.trans through the untyped form for the
+                    // integrator interface (see comment above; same pattern).
+                    let mut trans_untyped = body.trans.to_untyped();
                     integrate_body(
                         &body.config,
-                        &mut body.trans,
+                        &mut trans_untyped,
                         body.rot.as_mut(),
                         body.mass.as_ref(),
                         |pos, vel, time_frac| {
@@ -373,6 +391,10 @@ impl Simulation {
                         body.gj_state.as_mut(),
                         body.abm4_state.as_mut(),
                     );
+                    body.trans =
+                        TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
+                            &trans_untyped,
+                        );
                 }
             }
         } else {
@@ -477,15 +499,26 @@ impl Simulation {
             // The `expect`s match the validated invariants — the
             // contact-coupled path requires 6-DOF + 3-component mass on
             // every body (enforced by `Self::validate`).
-            let mut inputs: Vec<CoupledBodyInput<'_>> = bodies_mut
+            // Snapshot typed states into an untyped Vec for the
+            // frame-agnostic integrator interface; restore phantoms after
+            // integration. Same pattern as the single-body path above.
+            let mut trans_untyped_vec: Vec<TranslationalState> =
+                bodies_mut.iter().map(|b| b.trans.to_untyped()).collect();
+            let rot_refs: Vec<&mut RotationalState> = bodies_mut
                 .iter_mut()
-                .enumerate()
-                .map(|(i, body)| CoupledBodyInput {
-                    trans: &mut body.trans,
-                    rot: body
-                        .rot
+                .map(|b| {
+                    b.rot
                         .as_mut()
-                        .expect("validated: 6-DOF required for contact-coupled path"),
+                        .expect("validated: 6-DOF required for contact-coupled path")
+                })
+                .collect();
+            let mut inputs: Vec<CoupledBodyInput<'_>> = trans_untyped_vec
+                .iter_mut()
+                .zip(rot_refs)
+                .enumerate()
+                .map(|(i, (trans, rot))| CoupledBodyInput {
+                    trans,
+                    rot,
                     mass: &mass_vec[i],
                     non_grav_non_contact_force: non_grav_non_contact_vec[i],
                     non_contact_torque_body: non_contact_torque_vec[i],
@@ -534,13 +567,22 @@ impl Simulation {
                 },
                 integ_dt,
             );
+
+            // Drop the &mut borrows held by `inputs` before writing back
+            // through the same SimBody slots.
+            drop(inputs);
+            for (i, body) in self.bodies.iter_mut().enumerate() {
+                body.trans = TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
+                    &trans_untyped_vec[i],
+                );
+            }
         }
 
         // Sync body positions back to frame tree after integration.
         for body in &self.bodies {
             let node = self.frame_tree.get_mut(body.body_frame_id);
-            node.state.trans.position = body.trans.position;
-            node.state.trans.velocity = body.trans.velocity;
+            node.state.trans.position = body.trans.position.raw_si();
+            node.state.trans.velocity = body.trans.velocity.raw_si();
         }
 
         // ── 8b. Frame switch (body actions) ──
@@ -571,7 +613,7 @@ impl Simulation {
                     .inertial;
                 let (target_origin, _) = self.frame_origin(target_fid);
                 let (current_origin, _) = self.frame_origin(self.bodies[body_idx].integ_frame_id);
-                let body_pos_eci = self.bodies[body_idx].trans.position + current_origin;
+                let body_pos_eci = self.bodies[body_idx].trans.position.raw_si() + current_origin;
                 let threshold_sq = sw.switch_distance * sw.switch_distance;
 
                 // JEOD dyn_body_frame_switch.cc:173-182:
@@ -582,7 +624,12 @@ impl Simulation {
                         (body_pos_eci - target_origin).length_squared() < threshold_sq
                     }
                     SwitchSense::OnDeparture => {
-                        self.bodies[body_idx].trans.position.length_squared() > threshold_sq
+                        self.bodies[body_idx]
+                            .trans
+                            .position
+                            .raw_si()
+                            .length_squared()
+                            > threshold_sq
                     }
                 };
                 if triggered {
@@ -600,8 +647,10 @@ impl Simulation {
                 // Reparent body frame in tree (preserves absolute state).
                 self.frame_tree.reparent(body_fid, new_integ_fid);
                 let new_state = self.frame_tree.get(body_fid).state;
-                self.bodies[body_idx].trans.position = new_state.trans.position;
-                self.bodies[body_idx].trans.velocity = new_state.trans.velocity;
+                self.bodies[body_idx].trans.position =
+                    Position::<IntegrationFrame>::from_raw_si(new_state.trans.position);
+                self.bodies[body_idx].trans.velocity =
+                    Velocity::<IntegrationFrame>::from_raw_si(new_state.trans.velocity);
                 self.bodies[body_idx].integ_frame_id = new_integ_fid;
 
                 // Flip gravity controls: target source becomes non-differential

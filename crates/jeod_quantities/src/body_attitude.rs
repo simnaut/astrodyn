@@ -34,7 +34,7 @@ use crate::frame::{BodyFrame, Vehicle};
 use crate::frame_transform::FrameTransform;
 use crate::quat::{JeodQuat, LeftTransform, NormalizedQuat, ScalarFirst, NORM_LIMIT};
 
-/// Inertial → body attitude of vehicle `V`, witnessed unit-norm and
+/// RootInertial → body attitude of vehicle `V`, witnessed unit-norm and
 /// scalar-first / left-transformation (JEOD canonical).
 ///
 /// The phantom `V` makes "this is the attitude of vehicle V"

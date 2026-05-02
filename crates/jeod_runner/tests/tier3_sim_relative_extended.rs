@@ -145,7 +145,7 @@ fn tier3_relative_two_coorbiting_vehicles() {
             .max((rel.position.y * rel.position.y + rel.position.z * rel.position.z).sqrt());
     }
 
-    // Inertial separation stays very close to the 100 m initial chord.
+    // RootInertial separation stays very close to the 100 m initial chord.
     assert!(
         (max_sep - 100.0).abs() < 0.01,
         "co-orbiting max inertial separation {max_sep} m drifted from 100 m"

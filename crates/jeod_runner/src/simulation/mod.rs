@@ -153,7 +153,8 @@ impl Simulation {
     /// All positions are relative to this root frame regardless of its name.
     pub fn new(time: SimulationTime, dt: f64) -> Self {
         let mut frame_tree = FrameTree::new();
-        let root_frame_id = frame_tree.add_root("Earth.inertial".into(), RefFrameKind::Inertial);
+        let root_frame_id =
+            frame_tree.add_root("Earth.inertial".into(), RefFrameKind::RootInertial);
         Self {
             time,
             bodies: Vec::new(),

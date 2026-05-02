@@ -202,8 +202,8 @@ After the type-system refactor (#101), there are two layers to choose between:
   `DVec3`/`DQuat`/`DMat3` or `PhantomData`. The compiler rejects cross-frame
   mismatches, scalar-vs-vector quaternion confusion, and unit-dimensional errors
   at compile time. Custom `#[diagnostic::on_unimplemented]` messages render
-  errors in physics language (e.g., *"expected `Position<Inertial>`, found
-  `Position<Ecef>` — apply a `FrameTransform<Ecef, Inertial>` first"*).
+  errors in physics language (e.g., *"expected `Position<RootInertial>`, found
+  `Position<Ecef>` — apply a `FrameTransform<Ecef, RootInertial>` first"*).
 
 - **Internal physics-crate kernels** (the inside of `jeod_*` `*_typed` functions
   and the underlying `_inner`/`_impl` math) use raw `glam::DVec3`/`DQuat`/`DMat3`
@@ -558,8 +558,8 @@ let vehicle_entity = cfg.spawn_bevy(&mut commands, &[earth_entity]);
 ```
 
 **Compiler errors as physics**: passing a `Position<Ecef>` where
-`Position<Inertial>` is required produces a custom diagnostic in physics
-language pointing to the missing `FrameTransform<Ecef, Inertial>` step, not a
+`Position<RootInertial>` is required produces a custom diagnostic in physics
+language pointing to the missing `FrameTransform<Ecef, RootInertial>` step, not a
 PhantomData type-mismatch wall.
 
 **Reference**:

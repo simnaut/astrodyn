@@ -129,9 +129,9 @@ fn ratio_percent_is_0_01() {
 
 #[test]
 fn vec3_ext_m_at_produces_position_inertial() {
-    let v = glam::DVec3::new(7_000_000.0, 0.0, 0.0).m_at::<Inertial>();
+    let v = glam::DVec3::new(7_000_000.0, 0.0, 0.0).m_at::<RootInertial>();
     // Compile-time check: assign to a typed slot.
-    let p: Position<Inertial> = v;
+    let p: Position<RootInertial> = v;
     assert_eq!(p.raw_si().x, 7_000_000.0);
 }
 
@@ -144,6 +144,6 @@ fn vec3_ext_km_at_scales_by_1000() {
 
 #[test]
 fn array3_ext_km_at_scales_by_1000() {
-    let v: Position<Inertial> = [7000.0, 0.0, 0.0].km_at::<Inertial>();
+    let v: Position<RootInertial> = [7000.0, 0.0, 0.0].km_at::<RootInertial>();
     assert!((v.raw_si().x - 7_000_000.0).abs() < 1e-6);
 }

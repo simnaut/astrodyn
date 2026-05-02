@@ -294,7 +294,7 @@ impl<A: Frame, B: Frame, C: Frame> Mul<FrameTransform<B, C>> for FrameTransform<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::frame::{Ecef, Inertial};
+    use crate::frame::{Ecef, RootInertial};
 
     /// `from_matrix(M).matrix_ref() == &M` exactly (bit-identical).
     /// The quaternion derivation does not influence the stored matrix —
@@ -311,7 +311,7 @@ mod tests {
             DVec3::new(0.0, 1.0, 0.0),
             DVec3::new(theta.sin(), 0.0, theta.cos()),
         );
-        let t: FrameTransform<Inertial, Ecef> = FrameTransform::from_matrix(m);
+        let t: FrameTransform<RootInertial, Ecef> = FrameTransform::from_matrix(m);
         assert_eq!(
             *t.matrix_ref(),
             m,
@@ -324,7 +324,8 @@ mod tests {
     /// derived quaternion is the identity unit quaternion.
     #[test]
     fn from_matrix_identity_round_trip() {
-        let t: FrameTransform<Inertial, Inertial> = FrameTransform::from_matrix(DMat3::IDENTITY);
+        let t: FrameTransform<RootInertial, RootInertial> =
+            FrameTransform::from_matrix(DMat3::IDENTITY);
         assert_eq!(*t.matrix_ref(), DMat3::IDENTITY);
         // The cached quaternion should be near-identity (q0 ≈ 1, qi ≈ 0).
         let q = t.quat().inner();
@@ -345,9 +346,9 @@ mod tests {
             DVec3::new(-theta.sin(), theta.cos(), 0.0),
             DVec3::new(0.0, 0.0, 1.0),
         );
-        let t: FrameTransform<Inertial, Ecef> = FrameTransform::from_matrix(m);
+        let t: FrameTransform<RootInertial, Ecef> = FrameTransform::from_matrix(m);
         let v_raw = DVec3::new(1.0, 2.0, 3.0);
-        let v_in: Qty3<uom::si::length::Dimension, Inertial> = Qty3::from_raw_si(v_raw);
+        let v_in: Qty3<uom::si::length::Dimension, RootInertial> = Qty3::from_raw_si(v_raw);
         let v_out = t.apply(v_in);
         assert_eq!(v_out.raw_si(), m * v_raw);
     }
@@ -358,7 +359,7 @@ mod tests {
     #[should_panic(expected = "determinant")]
     fn from_matrix_rejects_non_unit_determinant() {
         let m = DMat3::from_diagonal(DVec3::new(2.0, 1.0, 1.0)); // det = 2
-        let _: FrameTransform<Inertial, Ecef> = FrameTransform::from_matrix(m);
+        let _: FrameTransform<RootInertial, Ecef> = FrameTransform::from_matrix(m);
     }
 
     /// `from_matrix_validated` accepts a proper rotation and round-trips
@@ -371,7 +372,7 @@ mod tests {
             DVec3::new(-theta.sin(), theta.cos(), 0.0),
             DVec3::new(0.0, 0.0, 1.0),
         );
-        let t: FrameTransform<Inertial, Ecef> =
+        let t: FrameTransform<RootInertial, Ecef> =
             FrameTransform::from_matrix_validated(m).expect("rotation should validate");
         assert_eq!(t.matrix_ref(), &m);
     }
@@ -381,7 +382,7 @@ mod tests {
     #[test]
     fn from_matrix_validated_rejects_scaling() {
         let m = DMat3::from_diagonal(DVec3::new(2.0, 1.0, 1.0));
-        let err = FrameTransform::<Inertial, Ecef>::from_matrix_validated(m)
+        let err = FrameTransform::<RootInertial, Ecef>::from_matrix_validated(m)
             .expect_err("scaling should reject");
         match err {
             FrameTransformError::DeterminantNotOne { determinant } => {
@@ -401,7 +402,7 @@ mod tests {
             DVec3::new(0.0, 1.0, 0.0),
             DVec3::new(0.0, 0.0, 1.0),
         );
-        let err = FrameTransform::<Inertial, Ecef>::from_matrix_validated(m)
+        let err = FrameTransform::<RootInertial, Ecef>::from_matrix_validated(m)
             .expect_err("shear should reject");
         assert!(matches!(err, FrameTransformError::NotOrthonormal { .. }));
     }
@@ -415,7 +416,7 @@ mod tests {
     fn from_matrix_validated_rejects_nan() {
         let mut m = DMat3::IDENTITY;
         m.x_axis.x = f64::NAN;
-        let err = FrameTransform::<Inertial, Ecef>::from_matrix_validated(m)
+        let err = FrameTransform::<RootInertial, Ecef>::from_matrix_validated(m)
             .expect_err("NaN matrix must reject");
         assert!(matches!(err, FrameTransformError::NonFinite));
     }
@@ -426,7 +427,7 @@ mod tests {
     fn from_matrix_validated_rejects_infinite() {
         let mut m = DMat3::IDENTITY;
         m.y_axis.z = f64::INFINITY;
-        let err = FrameTransform::<Inertial, Ecef>::from_matrix_validated(m)
+        let err = FrameTransform::<RootInertial, Ecef>::from_matrix_validated(m)
             .expect_err("infinite matrix must reject");
         assert!(matches!(err, FrameTransformError::NonFinite));
     }

@@ -10,7 +10,7 @@ use jeod_interactions::{
     FlatPlateThermal,
 };
 use jeod_quantities::aliases::{Force, InertiaTensor, Position, Torque, Velocity};
-use jeod_quantities::frame::{BodyFrame, Inertial, Vehicle};
+use jeod_quantities::frame::{BodyFrame, RootInertial, Vehicle};
 use uom::si::f64::{Area, Ratio};
 
 use crate::integrable::IntegrableObject;
@@ -541,13 +541,14 @@ pub fn evaluate_contact_pair(
 
 /// Typed sibling of [`compute_drag`].
 ///
-/// Identical kernel — wraps with [`DragConfigTyped`] / typed
-/// [`Velocity<Inertial>`] inputs and returns
-/// [`AerodynamicForceTyped<V>`].
-pub fn compute_drag_typed<V: Vehicle>(
+/// Generic over the atmosphere planet `P`: drag uses the vehicle's
+/// velocity in the planet's inertial frame (matching the corotation
+/// wind in `atmos.wind`), so the typed velocity argument is
+/// `Velocity<PlanetInertial<P>>` — not root-inertial. RF.10.
+pub fn compute_drag_typed<P: jeod_quantities::frame::Planet, V: Vehicle>(
     drag_config: &DragConfigTyped,
     atmos: &jeod_atmosphere::AtmosphereState,
-    velocity: Velocity<Inertial>,
+    velocity: Velocity<jeod_quantities::frame::PlanetInertial<P>>,
     rot: Option<&RotationalState>,
     t_struct_body: DMat3,
 ) -> AerodynamicForceTyped<V> {
@@ -577,15 +578,15 @@ pub fn compute_gravity_torque_typed<V: Vehicle>(
 /// Typed sibling of [`compute_cannonball_srp`].
 ///
 /// Identical kernel — wraps positions and uom dimensionless ratios.
-/// Returns the cannonball SRP force in [`Inertial`].
+/// Returns the cannonball SRP force in [`RootInertial`].
 pub fn compute_cannonball_srp_typed(
-    body_pos: Position<Inertial>,
-    sun_pos: Position<Inertial>,
+    body_pos: Position<RootInertial>,
+    sun_pos: Position<RootInertial>,
     cx_area: Area,
     albedo: Ratio,
     diffuse: Ratio,
     illum_factor: Ratio,
-) -> Force<Inertial> {
+) -> Force<RootInertial> {
     use uom::si::area::square_meter;
     use uom::si::ratio::ratio;
     let raw = compute_cannonball_srp(
@@ -596,12 +597,12 @@ pub fn compute_cannonball_srp_typed(
         diffuse.get::<ratio>(),
         illum_factor.get::<ratio>(),
     );
-    Force::<Inertial>::from_raw_si(raw)
+    Force::<RootInertial>::from_raw_si(raw)
 }
 
 /// Step-constant SRP inputs (typed sibling of [`FlatPlateStageInputs`]).
 ///
-/// Same role and lifetime; sun position becomes [`Position<Inertial>`],
+/// Same role and lifetime; sun position becomes [`Position<RootInertial>`],
 /// the dimensionless illumination factor becomes [`Ratio`], and the
 /// structural-frame center of gravity stays [`DVec3`] (the structural
 /// frame is per-vehicle and `FlatPlateState` does not carry a `V`
@@ -609,7 +610,7 @@ pub fn compute_cannonball_srp_typed(
 #[derive(Debug, Clone, Copy)]
 pub struct FlatPlateStageInputsTyped {
     /// Sun position in the inertial frame.
-    pub sun_position: Position<Inertial>,
+    pub sun_position: Position<RootInertial>,
     /// Dimensionless illumination factor (0–1) accounting for shadow.
     pub illum_factor: Ratio,
     /// Body center of gravity in the structural frame (m).
@@ -620,7 +621,7 @@ impl Default for FlatPlateStageInputsTyped {
     #[inline]
     fn default() -> Self {
         Self {
-            sun_position: Position::<Inertial>::zero(),
+            sun_position: Position::<RootInertial>::zero(),
             illum_factor: Ratio::default(),
             center_grav: DVec3::ZERO,
         }
@@ -640,13 +641,13 @@ impl FlatPlateStageInputsTyped {
     }
 
     /// Wrap an untyped [`FlatPlateStageInputs`] as typed. **The caller
-    /// asserts** the sun position is in `Inertial` and the illumination
+    /// asserts** the sun position is in `RootInertial` and the illumination
     /// factor is dimensionless.
     #[inline]
     pub fn from_untyped_unchecked(s: &FlatPlateStageInputs) -> Self {
         use uom::si::ratio::ratio;
         Self {
-            sun_position: Position::<Inertial>::from_raw_si(s.sun_position),
+            sun_position: Position::<RootInertial>::from_raw_si(s.sun_position),
             illum_factor: Ratio::new::<ratio>(s.illum_factor),
             center_grav: s.center_grav,
         }

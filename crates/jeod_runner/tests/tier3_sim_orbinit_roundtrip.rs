@@ -85,11 +85,15 @@ fn roundtrip_via_simulation(
     sim.step_n(n_steps).expect("step_n failed");
 
     let body = sim.body(0);
-    use jeod_sim::{F64Ext, Inertial, Vec3Ext};
-    let oe_recovered = OrbitalElements::from_cartesian_typed(
+    use jeod_sim::{F64Ext, PlanetInertial, Vec3Ext};
+    let oe_recovered = OrbitalElements::from_cartesian_typed::<jeod_sim::Earth>(
         F64Ext::m3_per_s2(MU_EARTH),
-        body.trans.position.m_at::<Inertial>(),
-        body.trans.velocity.m_per_s_at::<Inertial>(),
+        body.trans
+            .position
+            .m_at::<PlanetInertial<jeod_sim::Earth>>(),
+        body.trans
+            .velocity
+            .m_per_s_at::<PlanetInertial<jeod_sim::Earth>>(),
     )
     .expect("from_cartesian_typed failed after propagation");
 
@@ -220,11 +224,15 @@ fn tier3_orbinit_roundtrip_circular() {
     sim.step_n(n_steps).expect("step_n failed");
 
     let body = sim.body(0);
-    use jeod_sim::{F64Ext, Inertial, Vec3Ext};
-    let oe_recovered = OrbitalElements::from_cartesian_typed(
+    use jeod_sim::{F64Ext, PlanetInertial, Vec3Ext};
+    let oe_recovered = OrbitalElements::from_cartesian_typed::<jeod_sim::Earth>(
         F64Ext::m3_per_s2(MU_EARTH),
-        body.trans.position.m_at::<Inertial>(),
-        body.trans.velocity.m_per_s_at::<Inertial>(),
+        body.trans
+            .position
+            .m_at::<PlanetInertial<jeod_sim::Earth>>(),
+        body.trans
+            .velocity
+            .m_per_s_at::<PlanetInertial<jeod_sim::Earth>>(),
     )
     .expect("from_cartesian_typed failed after propagation");
 

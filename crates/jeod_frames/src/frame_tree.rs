@@ -430,7 +430,7 @@ mod tests {
     #[test]
     fn single_root() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = tree.add_root("root".into(), RefFrameKind::RootInertial);
 
         assert!(tree.parent(root).is_none(), "root should have no parent");
         assert!(
@@ -440,7 +440,7 @@ mod tests {
 
         let node = tree.get(root);
         assert_eq!(node.name, "root");
-        assert_eq!(node.kind, RefFrameKind::Inertial);
+        assert_eq!(node.kind, RefFrameKind::RootInertial);
         assert_eq!(node.state.trans.position, DVec3::ZERO);
         assert_eq!(node.state.trans.velocity, DVec3::ZERO);
         assert_eq!(node.state.rot.t_parent_this, DMat3::IDENTITY);
@@ -453,7 +453,7 @@ mod tests {
     #[test]
     fn parent_child_links() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = tree.add_root("root".into(), RefFrameKind::RootInertial);
 
         let child_state = make_state(
             0.5,
@@ -485,7 +485,7 @@ mod tests {
     #[test]
     fn relative_state_to_self() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = tree.add_root("root".into(), RefFrameKind::RootInertial);
 
         let child_state = make_state(
             1.0,
@@ -523,7 +523,7 @@ mod tests {
     #[test]
     fn relative_state_parent_child() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = tree.add_root("root".into(), RefFrameKind::RootInertial);
 
         let child_state = make_state(
             0.5,
@@ -568,7 +568,7 @@ mod tests {
     #[test]
     fn relative_state_child_parent() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = tree.add_root("root".into(), RefFrameKind::RootInertial);
 
         let child_state = make_state(
             0.5,
@@ -610,7 +610,7 @@ mod tests {
     #[test]
     fn three_level_tree() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = tree.add_root("root".into(), RefFrameKind::RootInertial);
 
         let state_a = make_state(
             FRAC_PI_2,
@@ -661,7 +661,7 @@ mod tests {
     #[test]
     fn sibling_relative_state() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = tree.add_root("root".into(), RefFrameKind::RootInertial);
 
         let state_a = make_state(
             0.3,
@@ -721,7 +721,7 @@ mod tests {
     #[test]
     fn four_level_tree_relative_state_precision() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = tree.add_root("root".into(), RefFrameKind::RootInertial);
 
         // Use moderate values to avoid floating-point precision loss
         // from large position magnitudes.
@@ -907,11 +907,11 @@ mod tests {
     #[test]
     fn find_by_name() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("Earth.inertial".into(), RefFrameKind::Inertial);
+        let root = tree.add_root("Earth.inertial".into(), RefFrameKind::RootInertial);
         let moon = tree.add_child(
             root,
             "Moon.inertial".into(),
-            RefFrameKind::Inertial,
+            RefFrameKind::RootInertial,
             RefFrameState::default(),
         );
 
@@ -926,7 +926,7 @@ mod tests {
     #[test]
     fn is_descendant_of() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = tree.add_root("root".into(), RefFrameKind::RootInertial);
         let a = tree.add_child(
             root,
             "A".into(),
@@ -956,7 +956,7 @@ mod tests {
     #[test]
     fn reparent_preserves_absolute_state() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = tree.add_root("root".into(), RefFrameKind::RootInertial);
 
         // Two children of root with distinct states.
         let state_a = make_state(
@@ -1038,7 +1038,7 @@ mod tests {
     #[should_panic(expected = "would create a cycle")]
     fn reparent_cycle_panics() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = tree.add_root("root".into(), RefFrameKind::RootInertial);
         let a = tree.add_child(
             root,
             "A".into(),
@@ -1058,7 +1058,7 @@ mod tests {
     #[should_panic(expected = "cannot reparent root frames")]
     fn reparent_root_panics() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = tree.add_root("root".into(), RefFrameKind::RootInertial);
         let a = tree.add_child(
             root,
             "A".into(),
@@ -1076,14 +1076,14 @@ mod tests {
     #[test]
     fn common_ancestor_same_frame() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = tree.add_root("root".into(), RefFrameKind::RootInertial);
         assert_eq!(tree.common_ancestor(root, root), Some(root));
     }
 
     #[test]
     fn common_ancestor_parent_child() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = tree.add_root("root".into(), RefFrameKind::RootInertial);
         let child = tree.add_child(
             root,
             "child".into(),
@@ -1097,7 +1097,7 @@ mod tests {
     #[test]
     fn common_ancestor_siblings() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = tree.add_root("root".into(), RefFrameKind::RootInertial);
         let a = tree.add_child(
             root,
             "A".into(),
@@ -1116,8 +1116,8 @@ mod tests {
     #[test]
     fn common_ancestor_unrelated_trees() {
         let mut tree = FrameTree::new();
-        let root_a = tree.add_root("root_a".into(), RefFrameKind::Inertial);
-        let root_b = tree.add_root("root_b".into(), RefFrameKind::Inertial);
+        let root_a = tree.add_root("root_a".into(), RefFrameKind::RootInertial);
+        let root_b = tree.add_root("root_b".into(), RefFrameKind::RootInertial);
         assert_eq!(tree.common_ancestor(root_a, root_b), None);
     }
 
@@ -1131,7 +1131,7 @@ mod tests {
         //     │   └── E
         //     └── F
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = tree.add_root("root".into(), RefFrameKind::RootInertial);
         let a = tree.add_child(
             root,
             "A".into(),
@@ -1161,7 +1161,7 @@ mod tests {
     #[test]
     fn depth_computation() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = tree.add_root("root".into(), RefFrameKind::RootInertial);
         let a = tree.add_child(
             root,
             "A".into(),
@@ -1183,7 +1183,7 @@ mod tests {
     #[test]
     fn path_to_ancestor_basic() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = tree.add_root("root".into(), RefFrameKind::RootInertial);
         let a = tree.add_child(
             root,
             "A".into(),
@@ -1201,7 +1201,7 @@ mod tests {
     #[test]
     fn path_to_ancestor_not_an_ancestor() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = tree.add_root("root".into(), RefFrameKind::RootInertial);
         let a = tree.add_child(
             root,
             "A".into(),
@@ -1225,15 +1225,15 @@ mod tests {
     #[test]
     fn try_compute_relative_state_returns_none_for_disconnected() {
         let mut tree = FrameTree::new();
-        let root_a = tree.add_root("root_a".into(), RefFrameKind::Inertial);
-        let root_b = tree.add_root("root_b".into(), RefFrameKind::Inertial);
+        let root_a = tree.add_root("root_a".into(), RefFrameKind::RootInertial);
+        let root_b = tree.add_root("root_b".into(), RefFrameKind::RootInertial);
         assert!(tree.try_compute_relative_state(root_a, root_b).is_none());
     }
 
     #[test]
     fn try_compute_relative_state_matches_panicking_variant() {
         let mut tree = FrameTree::new();
-        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let root = tree.add_root("root".into(), RefFrameKind::RootInertial);
         let child_state = make_state(
             0.3,
             DVec3::new(1e6, 2e6, 3e6),
@@ -1270,10 +1270,10 @@ mod tests {
 
     #[test]
     fn add_child_typed_round_trips_through_storage() {
-        use jeod_quantities::frame::{Ecef, Inertial};
+        use jeod_quantities::frame::{Ecef, RootInertial};
 
         let mut tree = FrameTree::new();
-        let root = tree.add_root("inertial".into(), RefFrameKind::Inertial);
+        let root = tree.add_root("inertial".into(), RefFrameKind::RootInertial);
 
         let untyped = make_state(
             0.5,
@@ -1281,13 +1281,13 @@ mod tests {
             DVec3::new(10.0, 20.0, 30.0),
             DVec3::new(0.001, 0.002, 0.003),
         );
-        let typed_in = RefFrameStateTyped::<Inertial, Ecef>::from_untyped_unchecked(&untyped);
+        let typed_in = RefFrameStateTyped::<RootInertial, Ecef>::from_untyped_unchecked(&untyped);
 
         let child = tree.add_child_typed(root, "ecef".into(), RefFrameKind::PlanetFixed, typed_in);
 
         // Read back via the typed accessor and assert the underlying
         // raw_si values match the original untyped input bit-identically.
-        let typed_out: RefFrameStateTyped<Inertial, Ecef> = tree.get_state_typed(child);
+        let typed_out: RefFrameStateTyped<RootInertial, Ecef> = tree.get_state_typed(child);
         assert_eq!(typed_out.trans.position.raw_si(), untyped.trans.position);
         assert_eq!(typed_out.trans.velocity.raw_si(), untyped.trans.velocity);
         assert_eq!(typed_out.rot.t_parent_this(), untyped.rot.t_parent_this);
@@ -1299,12 +1299,12 @@ mod tests {
 
     #[test]
     fn add_child_typed_matches_untyped_storage() {
-        use jeod_quantities::frame::{Ecef, Inertial};
+        use jeod_quantities::frame::{Ecef, RootInertial};
 
         let mut tree_a = FrameTree::new();
-        let root_a = tree_a.add_root("inertial".into(), RefFrameKind::Inertial);
+        let root_a = tree_a.add_root("inertial".into(), RefFrameKind::RootInertial);
         let mut tree_b = FrameTree::new();
-        let root_b = tree_b.add_root("inertial".into(), RefFrameKind::Inertial);
+        let root_b = tree_b.add_root("inertial".into(), RefFrameKind::RootInertial);
 
         let untyped = make_state(
             FRAC_PI_2,
@@ -1312,7 +1312,7 @@ mod tests {
             DVec3::new(0.0, 7000.0, 0.0),
             DVec3::new(0.0, 0.0, 7.292e-5),
         );
-        let typed = RefFrameStateTyped::<Inertial, Ecef>::from_untyped_unchecked(&untyped);
+        let typed = RefFrameStateTyped::<RootInertial, Ecef>::from_untyped_unchecked(&untyped);
 
         let id_a = tree_a.add_child(root_a, "a".into(), RefFrameKind::PlanetFixed, untyped);
         let id_b = tree_b.add_child_typed(root_b, "b".into(), RefFrameKind::PlanetFixed, typed);

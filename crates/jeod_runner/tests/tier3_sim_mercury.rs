@@ -99,11 +99,11 @@ fn propagate_mercury_periapses(
         let r_dot = r.dot(v) / r.length();
 
         if step > 0 && prev_rdot < 0.0 && r_dot >= 0.0 {
-            use jeod_sim::{F64Ext, Inertial, Vec3Ext};
-            if let Ok(e) = jeod_sim::OrbitalElements::from_cartesian_typed(
+            use jeod_sim::{F64Ext, PlanetInertial, Vec3Ext};
+            if let Ok(e) = jeod_sim::OrbitalElements::from_cartesian_typed::<jeod_sim::Earth>(
                 F64Ext::m3_per_s2(mu_sun),
-                r.m_at::<Inertial>(),
-                v.m_per_s_at::<Inertial>(),
+                r.m_at::<PlanetInertial<jeod_sim::Earth>>(),
+                v.m_per_s_at::<PlanetInertial<jeod_sim::Earth>>(),
             ) {
                 events.push(PeriapsisEvent {
                     time: sim_time,
@@ -207,11 +207,11 @@ fn detect_periapses_from_csv(path: &std::path::Path, mu: f64) -> Vec<PeriapsisEv
         let r_dot = pos.dot(vel) / pos.length();
 
         if prev_rdot < 0.0 && r_dot >= 0.0 {
-            use jeod_sim::{F64Ext, Inertial, Vec3Ext};
-            if let Ok(e) = jeod_sim::OrbitalElements::from_cartesian_typed(
+            use jeod_sim::{F64Ext, PlanetInertial, Vec3Ext};
+            if let Ok(e) = jeod_sim::OrbitalElements::from_cartesian_typed::<jeod_sim::Earth>(
                 F64Ext::m3_per_s2(mu),
-                pos.m_at::<Inertial>(),
-                vel.m_per_s_at::<Inertial>(),
+                pos.m_at::<PlanetInertial<jeod_sim::Earth>>(),
+                vel.m_per_s_at::<PlanetInertial<jeod_sim::Earth>>(),
             ) {
                 events.push(PeriapsisEvent {
                     time,

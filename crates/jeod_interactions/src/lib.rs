@@ -56,7 +56,8 @@ pub use contact::{
     ContactFacet, ContactForce, ContactGeometry, ContactMaterial, ContactShape,
 };
 pub use earth_lighting::{
-    compute_earth_lighting, EarthLightingState, LightingBody, LightingParams,
+    compute_earth_lighting, compute_earth_lighting_typed, EarthLightingState, LightingBody,
+    LightingParams,
 };
 pub use flat_plate_aero::*;
 pub use gravity_torque::{compute_gravity_torque, compute_gravity_torque_typed};

@@ -2,7 +2,7 @@ use core::marker::PhantomData;
 
 use glam::{DMat3, DVec3};
 use jeod_quantities::aliases::{Acceleration, Force, Torque};
-use jeod_quantities::frame::{BodyFrame, Frame, Inertial, Vehicle};
+use jeod_quantities::frame::{BodyFrame, Frame, RootInertial, Vehicle};
 
 /// Gravitational acceleration, gradient tensor, and potential for a body.
 ///
@@ -44,7 +44,7 @@ impl Default for GravityAcceleration {
 /// `jeod_quantities` because they are evaluated within a single frame
 /// and never composed across frames in the dynamics layer.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct GravityAccelerationTyped<F: Frame = Inertial> {
+pub struct GravityAccelerationTyped<F: Frame = RootInertial> {
     pub grav_accel: Acceleration<F>,
     pub grav_grad: DMat3,
     pub grav_pot: f64,
@@ -92,7 +92,7 @@ pub struct TotalForce {
 
 /// Typed sibling of [`TotalForce`].
 ///
-/// `force` carries the integration frame `F` (defaults to `Inertial`
+/// `force` carries the integration frame `F` (defaults to `RootInertial`
 /// to match the existing untyped struct's "force in integration
 /// frame" convention); `torque` is in `BodyFrame<V>` (JEOD
 /// convention). The two type parameters are independent so a body
@@ -100,7 +100,7 @@ pub struct TotalForce {
 /// separate body axis. `V` has no default because no production
 /// vehicle marker exists yet (Phase 5 territory).
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct TotalForceTyped<V: Vehicle, F: Frame = Inertial> {
+pub struct TotalForceTyped<V: Vehicle, F: Frame = RootInertial> {
     pub force: Force<F>,
     pub torque: Torque<BodyFrame<V>>,
     _v: PhantomData<V>,
@@ -554,14 +554,14 @@ mod tests {
 
     #[test]
     fn typed_frame_derivatives_round_trip() {
-        use jeod_quantities::frame::{Inertial, TestVehicle};
+        use jeod_quantities::frame::{RootInertial, TestVehicle};
 
         let untyped = FrameDerivatives {
             trans_accel: DVec3::new(1.0, 2.0, 3.0),
             rot_accel: DVec3::new(0.1, 0.2, 0.3),
         };
         let typed =
-            FrameDerivativesTyped::<Inertial, TestVehicle>::from_untyped_unchecked(&untyped);
+            FrameDerivativesTyped::<RootInertial, TestVehicle>::from_untyped_unchecked(&untyped);
         let back = typed.to_untyped();
         assert_eq!(back, untyped);
     }
@@ -574,7 +574,7 @@ mod tests {
             force: DVec3::new(100.0, 0.0, 0.0),
             torque: DVec3::new(0.0, 0.5, 0.0),
         };
-        // Use the F = Inertial default for the integration frame.
+        // Use the F = RootInertial default for the integration frame.
         let typed = TotalForceTyped::<TestVehicle>::from_untyped_unchecked(&untyped);
         let back = typed.to_untyped();
         assert_eq!(back, untyped);
@@ -591,14 +591,14 @@ mod tests {
 
     #[test]
     fn typed_gravity_acceleration_round_trip() {
-        use jeod_quantities::frame::Inertial;
+        use jeod_quantities::frame::RootInertial;
 
         let untyped = GravityAcceleration {
             grav_accel: DVec3::new(0.0, 0.0, -9.81),
             grav_grad: DMat3::IDENTITY * 1e-6,
             grav_pot: 6.25e7,
         };
-        let typed = GravityAccelerationTyped::<Inertial>::from_untyped_unchecked(&untyped);
+        let typed = GravityAccelerationTyped::<RootInertial>::from_untyped_unchecked(&untyped);
         let back = typed.to_untyped();
         assert_eq!(back, untyped);
     }

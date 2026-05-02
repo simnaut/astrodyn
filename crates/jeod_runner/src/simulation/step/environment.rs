@@ -8,16 +8,17 @@ use glam::DVec3;
 
 use jeod_sim::atmosphere::evaluate_atmosphere;
 use jeod_sim::gravity::accumulate_gravity;
+use jeod_sim::IntegOrigin;
 
 use super::super::Simulation;
 
 impl Simulation {
     /// Stages 4 + 4b + 5 — gravity (Newtonian and post-Newtonian
     /// relativistic) plus atmosphere evaluation. `body_integ_origins`
-    /// is the per-body integration-frame origin (position + velocity)
-    /// resolved against the root frame; it is also reused by stage 8
-    /// integration, so the caller pre-computes it once.
-    pub(super) fn update_environment(&mut self, body_integ_origins: &[(DVec3, DVec3)]) {
+    /// is the per-body integration-frame origin resolved against the
+    /// root inertial frame; it is also reused by stage 8 integration,
+    /// so the caller pre-computes it once.
+    pub(super) fn update_environment(&mut self, body_integ_origins: &[IntegOrigin]) {
         // ── 4. Environment — gravity ──
         // Helper: resolve source to gravity data via frame tree.
         let gravity_data = &self.gravity_data;
@@ -45,12 +46,17 @@ impl Simulation {
             })
         };
 
+        // JEOD_INV: RF.10 — shift body position from integration frame to
+        // root inertial before passing to gravity / relativistic / atmosphere
+        // consumers. `IntegOrigin::zero()` is a no-op (bit-identical) when
+        // the body integrates in the root frame.
         for (body_idx, body) in self.bodies.iter_mut().enumerate() {
-            let integ_origin = body_integ_origins[body_idx].0;
+            let o = &body_integ_origins[body_idx];
+            let inertial_state = body.trans.to_inertial(o);
             body.gravity_accel = accumulate_gravity(
-                body.trans.position + integ_origin,
+                inertial_state.position.raw_si(),
                 &body.gravity_controls,
-                integ_origin,
+                o.position.raw_si(),
                 resolve_source,
             );
         }
@@ -78,11 +84,13 @@ impl Simulation {
                 })
             };
 
+        // JEOD_INV: RF.10 — relativistic correction needs both position and
+        // velocity in root inertial coordinates.
         for (body_idx, body) in self.bodies.iter_mut().enumerate() {
-            let (origin, origin_vel) = body_integ_origins[body_idx];
+            let inertial_state = body.trans.to_inertial(&body_integ_origins[body_idx]);
             body.gravity_accel.grav_accel += jeod_sim::accumulate_relativistic_corrections(
-                body.trans.position + origin,
-                body.trans.velocity + origin_vel,
+                inertial_state.position.raw_si(),
+                inertial_state.velocity.raw_si(),
                 &body.gravity_controls,
                 resolve_rel_source,
             );
@@ -97,11 +105,23 @@ impl Simulation {
                 .map(|pfix_id| &self.frame_tree.get(pfix_id).state.rot.t_parent_this);
             let tai_tjt = Some(self.time.tai_tjt);
 
+            // RF.10 NOTE: atmosphere is *not* in the shift class.
+            // `evaluate_atmosphere` rotates by `t_pfix` (the atmosphere
+            // planet's `inertial → pfix` rotation) and computes geodetic
+            // altitude relative to that planet's center. The required
+            // input frame is *the atmosphere planet's inertial frame*,
+            // not the root inertial frame. In every realistic config the
+            // body's integration frame already is that planet's inertial
+            // frame (e.g., body integrates in `Earth.inertial`,
+            // atmosphere planet = Earth). So `body.trans.position`
+            // (integration-frame coords) is the correct input. Adding
+            // `body_integ_origins[idx].position` would shift to root and
+            // produce wrong altitude for any non-root-integrated body.
             for body in &mut self.bodies {
                 if body.atmospheric_state.is_some() {
                     body.atmospheric_state = Some(evaluate_atmosphere(
                         atmos_config,
-                        body.trans.position,
+                        body.trans.position.raw_si(),
                         t_pfix,
                         tai_tjt,
                     ));

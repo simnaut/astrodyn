@@ -361,7 +361,7 @@ fn run_external_parity(
         let (force, torque) = force_torque_fn(t, dt, &quat);
 
         let mut ext_f = app.world_mut().get_mut::<ExternalForceC>(vehicle).unwrap();
-        ext_f.0 = jeod_sim::Force::<jeod_sim::Inertial>::from_raw_si(force);
+        ext_f.0 = jeod_sim::Force::<jeod_sim::RootInertial>::from_raw_si(force);
         let mut ext_t = app.world_mut().get_mut::<ExternalTorqueC>(vehicle).unwrap();
         ext_t.0 = jeod_sim::Torque::<jeod_sim::BodyFrame<jeod_sim::SelfRef>>::from_raw_si(torque);
 

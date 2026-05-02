@@ -428,7 +428,7 @@ fn tier3_dyncomp_6dof_rigid_body_invariance() {
 
     assert!(
         dh_rel < 1.0e-6,
-        "Inertial H not conserved: relative error {dh_rel:.3e}"
+        "RootInertial H not conserved: relative error {dh_rel:.3e}"
     );
     assert!(
         mag_rel < 1.0e-6,
