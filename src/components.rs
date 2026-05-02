@@ -389,14 +389,18 @@ pub struct IntegFrameIdC(pub jeod_sim::FrameId);
 pub struct IntegSourceC(pub Option<Entity>);
 
 /// Distance-based integration-frame switches for a body (issue #71
-/// item 3). Mirrors [`jeod_sim::VehicleConfig::frame_switches`]: each
-/// entry triggers a reparent + gravity-controls flip when the body
-/// crosses the configured distance. Read by the (forthcoming)
-/// `frame_switch_system`; today this is purely a declarative
-/// configuration component.
+/// items 3 + Phase C4).
+///
+/// Each entry triggers a reparent + gravity-controls flip when the body
+/// crosses the configured distance. The Bevy adapter uses
+/// `FrameSwitchConfig<Entity>` so `target_source` references a gravity
+/// source by ECS entity rather than by registration index — matching
+/// `GravityControlsC`'s `Entity`-keyed semantics. Read by
+/// [`crate::frame_switch_system`]; the system delegates to the lifted
+/// generic [`jeod_sim::evaluate_and_apply_frame_switch`].
 #[derive(Component, Debug, Clone, Default, Deref, DerefMut, Reflect)]
 #[reflect(opaque, Component)]
-pub struct FrameSwitchesC(pub Vec<jeod_sim::FrameSwitchConfig>);
+pub struct FrameSwitchesC(pub Vec<jeod_sim::FrameSwitchConfig<Entity>>);
 
 /// Angular velocity of the planet-fixed frame relative to its inertial
 /// parent, expressed in pfix coordinates. Computed each step by

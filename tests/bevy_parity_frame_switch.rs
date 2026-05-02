@@ -88,15 +88,10 @@ fn tier3_bevy_frame_switch_earth_to_moon_matches_simulation() {
         .insert(SourceInertialVelocityC::default())
         .id();
 
-    // FrameSwitchConfig.target_source is still `usize` per jeod_sim's
-    // current API; the bridge in `frame_switch_system` synthesizes a
-    // parallel `&[SourceFrameIds]` from the source-entity query in
-    // registration order. To make the index reproducible, register
-    // sources in the order Earth=0, Moon=1; the test asserts that
-    // ordering by spawning Earth before Moon above and using
-    // target_source=1 here.
-    let switches = vec![FrameSwitchConfig {
-        target_source: 1,
+    // Phase C4: `FrameSwitchConfig<Entity>` — the Bevy adapter references
+    // gravity sources by their ECS entity, no usize bridge.
+    let switches: Vec<FrameSwitchConfig<Entity>> = vec![FrameSwitchConfig {
+        target_source: moon,
         switch_sense: SwitchSense::OnApproach,
         switch_distance: SWITCH_RADIUS,
         active: true,

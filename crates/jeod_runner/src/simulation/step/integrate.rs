@@ -552,8 +552,12 @@ impl Simulation {
         // The lifted helper in `jeod_sim::frame_orchestration` performs the
         // distance check, reparent, state copy-out, and gravity-controls
         // flip — same logic that previously lived inline here, now shared
-        // with ECS adapters (issue #71).
-        // Use index-based loop to avoid borrow conflict with self.frame_tree.
+        // with ECS adapters (issue #71). Phase C made the helper generic
+        // over the source-id type via a closure-based source lookup; the
+        // runner uses the default `usize` instantiation.
+        let inertial_fids: Vec<jeod_frames::FrameId> =
+            self.source_frame_ids.iter().map(|sf| sf.inertial).collect();
+        let num_sources = inertial_fids.len();
         let root_frame_id = self.root_frame_id;
         for body_idx in 0..self.bodies.len() {
             let body = &mut self.bodies[body_idx];
@@ -565,7 +569,8 @@ impl Simulation {
                 &mut body.trans,
                 &mut body.frame_switches,
                 &mut body.gravity_controls,
-                &self.source_frame_ids,
+                |idx| inertial_fids.get(*idx).copied(),
+                num_sources,
                 body_idx,
             )
             .map_err(

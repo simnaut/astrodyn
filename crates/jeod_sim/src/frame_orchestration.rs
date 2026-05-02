@@ -12,7 +12,6 @@ use glam::{DMat3, DVec3};
 use jeod_frames::{FrameId, FrameTree};
 use jeod_math::JeodQuat;
 
-use crate::source_frames::SourceFrameIds;
 use crate::vehicle_config::{FrameSwitchConfig, SwitchSense};
 use crate::GravityControls;
 use crate::TranslationalState;
@@ -54,14 +53,20 @@ pub fn frame_origin(
 }
 
 /// Error returned by [`evaluate_and_apply_frame_switch`] when a configured
-/// switch references an out-of-range source index.
+/// switch references a source identifier that the caller-supplied
+/// `resolve_source` closure couldn't map to a frame.
+///
+/// Generic over `SourceId` so the runner (`SourceId = usize`) and the
+/// Bevy adapter (`SourceId = Entity`) both surface meaningful diagnostics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FrameSwitchTargetMissing {
+pub struct FrameSwitchTargetMissing<SourceId = usize> {
     /// Index of the body whose `frame_switches` referenced the missing target.
     pub body_idx: usize,
-    /// Source index requested by the switch.
-    pub target_source: usize,
-    /// Number of sources currently registered.
+    /// Source identifier requested by the switch.
+    pub target_source: SourceId,
+    /// Number of sources currently registered (for diagnostics; the
+    /// caller passes this in since the closure-based source lookup
+    /// doesn't expose a count).
     pub num_sources: usize,
 }
 
@@ -75,21 +80,33 @@ pub struct FrameSwitchTargetMissing {
 /// integration so the body integrates in its current frame for this step
 /// and transforms to the new frame for the next step.
 ///
+/// Generic over the source identifier type used by [`FrameSwitchConfig`]
+/// and [`GravityControls`] — `usize` for `jeod_runner` (sources indexed by
+/// registration order), `bevy::ecs::entity::Entity` for the Bevy adapter
+/// (sources identified by ECS entity). The caller supplies a
+/// `resolve_source` closure that maps a `SourceId` to its inertial
+/// [`FrameId`] in the frame tree.
+///
 /// Returns `Ok(true)` if a switch fired, `Ok(false)` if no switch triggered,
-/// or `Err(FrameSwitchTargetMissing)` if a configured target source is out
-/// of range.
+/// or `Err(FrameSwitchTargetMissing)` if a configured target source could
+/// not be resolved.
 #[allow(clippy::too_many_arguments)]
-pub fn evaluate_and_apply_frame_switch(
+pub fn evaluate_and_apply_frame_switch<SourceId, F>(
     frame_tree: &mut FrameTree,
     root_frame_id: FrameId,
     body_frame_id: FrameId,
     integ_frame_id: &mut FrameId,
     trans: &mut TranslationalState,
-    frame_switches: &mut [FrameSwitchConfig],
-    gravity_controls: &mut GravityControls<usize>,
-    source_frame_ids: &[SourceFrameIds],
+    frame_switches: &mut [FrameSwitchConfig<SourceId>],
+    gravity_controls: &mut GravityControls<SourceId>,
+    resolve_source: F,
+    num_sources: usize,
     body_idx: usize,
-) -> Result<bool, FrameSwitchTargetMissing> {
+) -> Result<bool, FrameSwitchTargetMissing<SourceId>>
+where
+    SourceId: Clone + PartialEq,
+    F: Fn(&SourceId) -> Option<FrameId>,
+{
     if frame_switches.is_empty() {
         return Ok(false);
     }
@@ -99,15 +116,12 @@ pub fn evaluate_and_apply_frame_switch(
         if !sw.active {
             continue;
         }
-        let num_sources = source_frame_ids.len();
-        let target_fid = source_frame_ids
-            .get(sw.target_source)
-            .ok_or(FrameSwitchTargetMissing {
+        let target_fid =
+            resolve_source(&sw.target_source).ok_or_else(|| FrameSwitchTargetMissing {
                 body_idx,
-                target_source: sw.target_source,
+                target_source: sw.target_source.clone(),
                 num_sources,
-            })?
-            .inertial;
+            })?;
         let (target_origin, _) = frame_origin(frame_tree, root_frame_id, target_fid);
         let (current_origin, _) = frame_origin(frame_tree, root_frame_id, *integ_frame_id);
         let body_pos_eci = trans.position + current_origin;
@@ -132,11 +146,16 @@ pub fn evaluate_and_apply_frame_switch(
         return Ok(false);
     };
 
-    let target_source = frame_switches[idx].target_source;
+    let target_source = frame_switches[idx].target_source.clone();
     frame_switches[idx].active = false;
 
-    // Bounds already validated above when building target_fid.
-    let new_integ_fid = source_frame_ids[target_source].inertial;
+    // Resolve again — the closure was already proven to return Some for
+    // this target above, so unwrap is safe (and a re-failure here would
+    // be a caller-side data race we want to surface).
+    let new_integ_fid = resolve_source(&target_source).expect(
+        "evaluate_and_apply_frame_switch: target source resolved during evaluation \
+         but failed during application — caller-side mutation between lookups",
+    );
 
     // Reparent body frame in tree (preserves absolute state).
     frame_tree.reparent(body_frame_id, new_integ_fid);

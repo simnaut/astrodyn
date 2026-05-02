@@ -202,12 +202,15 @@ pub fn sync_body_to_frame_system(
 /// JEOD reference: `dyn_body_frame_switch.cc:173-182`. The Bevy adapter
 /// borrows the same logic via the lifted helper, so behavior is
 /// bit-identical to `jeod_runner::Simulation` for the same scenario.
+///
+/// Phase C4: `FrameSwitchConfig<Entity>` and `GravityControls<Entity>`
+/// flow into the generic helper directly via a closure-based source
+/// lookup; there is no longer a `usize`-keyed bridge.
 #[allow(clippy::type_complexity)]
 pub fn frame_switch_system(
     mut frame_tree: ResMut<FrameTreeR>,
     root: Res<crate::RootFrameIdR>,
     sources: Query<&SourceFrameIdC>,
-    integ_sources: Query<&IntegSourceC>,
     mut bodies: Query<(
         Entity,
         &mut TranslationalStateC,
@@ -217,26 +220,8 @@ pub fn frame_switch_system(
         &mut GravityControlsC,
     )>,
 ) {
-    // Frame-switch evaluation refers to gravity sources by index in a
-    // `&[SourceFrameIds]` slice (the lifted helper's signature mirrors
-    // `jeod_runner`'s usize-indexed source registry). The Bevy ECS
-    // identifies sources by `Entity`, while `FrameSwitchConfig`
-    // (re-exported from `jeod_sim`) still carries `target_source: usize`
-    // because Phase C will introduce a typed `Entity`-based variant.
-    // Bridge: build a `SourceFrameIds` slice with one entry per
-    // `usize` index referenced by any active switch, plus translate the
-    // panic message to ECS terms when the index is out of range.
-    //
-    // Mission code today is expected to use indices in the order
-    // sources are spawned; after Phase C lands, this bridge becomes
-    // direct entity lookup.
-    let source_frame_ids: Vec<jeod_sim::SourceFrameIds> = sources
-        .iter()
-        .map(|c| jeod_sim::SourceFrameIds {
-            inertial: c.0,
-            pfix: None,
-        })
-        .collect();
+    // Snapshot the count of registered sources for error diagnostics.
+    let num_sources = sources.iter().count();
 
     for (body_entity, mut trans, body_fid, mut integ_fid, mut switches, mut gravity_controls) in
         &mut bodies
@@ -244,46 +229,14 @@ pub fn frame_switch_system(
         if switches.0.is_empty() {
             continue;
         }
-        // Translate TranslationalStateC into a raw mutable struct the
-        // lifted helper can write to in place; the lift cost is one
-        // (DVec3 read, DVec3 read) plus one (DVec3 write, DVec3 write)
-        // and only fires when a switch triggers — single-pass per body
-        // per step.
+        // Translate TranslationalStateC into a raw struct the lifted
+        // helper can write in place. The (DVec3 read × 2) + (DVec3 write × 2)
+        // cost only fires when a switch actually triggers.
         let mut raw_trans = jeod_sim::TranslationalState {
             position: trans.0.position.raw_si(),
             velocity: trans.0.velocity.raw_si(),
         };
         let body_idx = body_entity.index().index() as usize;
-
-        // Bridge: the runner-style helper takes `GravityControls<usize>`
-        // because `FrameSwitchConfig.target_source` is still `usize`.
-        // The Bevy adapter's `GravityControlsC` is `GravityControls<Entity>`,
-        // so we synthesize a parallel `GravityControls<usize>`, run the
-        // helper, then map any flipped `differential` flags back. This
-        // is the cost of `target_source: usize` outliving the migration
-        // to entity-based references; a typed Phase C variant will let
-        // the helper take `GravityControls<Entity>` directly.
-        let mut bridge_controls = jeod_sim::GravityControls {
-            controls: gravity_controls
-                .0
-                .controls
-                .iter()
-                .enumerate()
-                .map(|(i, ctrl)| jeod_sim::GravityControl {
-                    source_name: i,
-                    spherical: ctrl.spherical,
-                    degree: ctrl.degree,
-                    order: ctrl.order,
-                    perturbing_only: ctrl.perturbing_only,
-                    differential: ctrl.differential,
-                    gradient: ctrl.gradient,
-                    gradient_degree: ctrl.gradient_degree,
-                    gradient_order: ctrl.gradient_order,
-                    battin_method: ctrl.battin_method,
-                    relativistic: ctrl.relativistic,
-                })
-                .collect(),
-        };
 
         let switched = jeod_sim::evaluate_and_apply_frame_switch(
             &mut frame_tree.0,
@@ -292,18 +245,25 @@ pub fn frame_switch_system(
             &mut integ_fid.0,
             &mut raw_trans,
             &mut switches.0,
-            &mut bridge_controls,
-            &source_frame_ids,
+            &mut gravity_controls.0,
+            // Closure: maps a target `Entity` to its source-inertial
+            // FrameId in the tree. Returns `None` if the entity isn't a
+            // registered source — the helper turns that into
+            // `FrameSwitchTargetMissing`.
+            |entity| sources.get(*entity).ok().map(|c| c.0),
+            num_sources,
             body_idx,
         )
         .unwrap_or_else(|err| {
             panic!(
                 "frame_switch_system: body {body_entity:?} switch evaluation failed: \
-                 target source index {} out of range ({} sources registered). \
-                 FrameSwitchConfig.target_source still uses usize indexing into the \
-                 source registration order; verify your switch refers to a registered \
-                 source. (Phase C will replace this with Entity-based references.)",
-                err.target_source, err.num_sources,
+                 target source {target:?} is not a registered gravity source \
+                 ({num} source entit{plural} currently registered). Spawn the source \
+                 via PlanetBundle (which inserts SourceFrameIdC) before referencing \
+                 it from a FrameSwitchConfig.",
+                target = err.target_source,
+                num = err.num_sources,
+                plural = if err.num_sources == 1 { "y" } else { "ies" },
             )
         });
 
@@ -312,21 +272,11 @@ pub fn frame_switch_system(
                 jeod_sim::Position::<jeod_sim::Inertial>::from_raw_si(raw_trans.position);
             trans.0.velocity =
                 jeod_sim::Velocity::<jeod_sim::Inertial>::from_raw_si(raw_trans.velocity);
-            // Mirror the differential flips back from the bridge.
-            for (ctrl, bridge_ctrl) in gravity_controls
-                .0
-                .controls
-                .iter_mut()
-                .zip(bridge_controls.controls.iter())
-            {
-                ctrl.differential = bridge_ctrl.differential;
-            }
-            // `IntegSourceC` is the *initial* configuration; after a switch
-            // it no longer reflects the current integration frame. The
-            // truth is in `IntegFrameIdC` (already updated in place).
-            // Preserve the original `IntegSourceC` so callers can still
-            // see the configured intent.
-            let _ = integ_sources.get(body_entity);
+            // `IntegFrameIdC` was updated in place by the helper;
+            // `GravityControlsC.0` had its `differential` flags flipped
+            // in place using `Entity` equality. `IntegSourceC` (the
+            // config-time intent) is intentionally untouched — the
+            // live truth lives in `IntegFrameIdC`.
         }
     }
 }

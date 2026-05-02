@@ -35,12 +35,20 @@ pub enum SwitchSense {
 /// body's integration frame is reparented to the target source's inertial
 /// frame in the frame tree, and gravity controls are flipped to make the
 /// target source non-differential (central body).
+///
+/// Generic over `SourceId` to mirror [`jeod_gravity::GravityControls`]:
+/// `jeod_runner::Simulation` uses the default `SourceId = usize` (sources
+/// are identified by their registration order); the Bevy adapter uses
+/// `SourceId = bevy::ecs::entity::Entity` (sources are identified by
+/// their ECS entity). The lifted
+/// [`crate::evaluate_and_apply_frame_switch`] helper is generic over the
+/// same type so both consumers share one implementation.
 #[derive(Debug, Clone)]
-pub struct FrameSwitchConfig {
-    /// Index of the gravity source whose inertial frame to switch to.
+pub struct FrameSwitchConfig<SourceId = usize> {
+    /// Identifier of the gravity source whose inertial frame to switch to.
     /// On switch, this source becomes non-differential and all others become
     /// differential, matching JEOD's `GravityInteraction::set_integ_frame()`.
-    pub target_source: usize,
+    pub target_source: SourceId,
     /// Whether to switch on approach or departure.
     pub switch_sense: SwitchSense,
     /// Distance threshold (meters).
