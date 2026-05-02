@@ -170,9 +170,9 @@ fn combine_states_at_attach_matches_jeod_at_t6() {
 
     // parent_t_inertial_struct: T_inertial_to_struct = T_body_to_struct *
     // T_inertial_to_body = T_struct_to_body.transpose() * T_inertial_to_body.
-    // (This is the strictly-correct formula. The runner's
-    // `attach_subtree_aligned` uses `t_struct_to_body * t_inertial_to_body`
-    // which is numerically identical for yaw_180 but wrong in general.)
+    // This is what the runner's `attach_subtree_aligned` uses too, via
+    // `jeod_dynamics::compute_t_inertial_struct`. Computed inline here
+    // so this test stays self-contained against the algorithm input.
     let parent_t_inertial_struct =
         parent_mass.t_parent_this.transpose() * parent_composite.rot.t_parent_this;
 

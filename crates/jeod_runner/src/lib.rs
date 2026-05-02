@@ -88,7 +88,9 @@ pub struct DetachedSubtreeState {
     pub composite_position: DVec3,
     /// Inertial velocity of the subtree's composite CoM.
     pub composite_velocity: DVec3,
-    /// Body-to-inertial rotation (`q_parent_this`).
+    /// Inertial-to-body rotation (`q_parent_this`, JEOD scalar-first
+    /// left-quat convention — same orientation semantics as
+    /// `RotationalState::quaternion`).
     pub composite_attitude: JeodQuat,
     /// Angular velocity in the subtree's body frame.
     pub composite_ang_vel_body: DVec3,
@@ -2769,10 +2771,11 @@ impl Simulation {
     /// is updated to reflect the loss of mass (the parent's
     /// composite-CoM in inertial shifts when its mass distribution
     /// changes — even though the underlying structure point doesn't
-    /// move). If the parent is the integrated body, the body's
-    /// `body.trans` (= core_body inertial) is preserved across the
-    /// detach (rigid body) and only the body's mass is re-synced from
-    /// the recomputed composite.
+    /// move). If the parent is the integrated body, `body.trans`
+    /// (the integrated `composite_body` inertial state, post-`bd279c2`)
+    /// is shifted by the inertial-frame composite-CoM delta so it
+    /// continues to track the new (smaller) composite, and the body's
+    /// mass is re-synced from the recomputed composite_properties.
     ///
     /// # Panics
     /// Panics if no mass tree is configured, the subtree id is not in

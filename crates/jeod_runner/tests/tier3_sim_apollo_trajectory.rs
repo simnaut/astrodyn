@@ -1,4 +1,4 @@
-//! Tier 3: SIM_Apollo trajectory cross-validation through 5 detaches + 1 attach.
+//! Tier 3: SIM_Apollo trajectory cross-validation through 9 detaches + 2 attaches.
 //!
 //! Reproduces JEOD's `sims/SIM_Apollo/SET_test/RUN_test` 12-second
 //! initialization-only sim and cross-validates `cm_dyn`'s `core_body`
