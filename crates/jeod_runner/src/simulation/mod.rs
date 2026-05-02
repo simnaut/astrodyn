@@ -4,7 +4,8 @@
 //! reopening `impl Simulation { ... }`:
 //!
 //! - [`types`] — supporting structs (`SimBody`, `VehicleOutput`,
-//!   `ContactPairConfig`, `SourceFrameIds`, `GravityData`).
+//!   `ContactPairConfig`, `GravityData`).
+//!   `SourceFrameIds` lives in `jeod_sim::source_frames` (issue #71).
 //! - [`sources`] — gravity-source registration and accessors.
 //! - [`bodies`] — body lifecycle, accessors, setters, contact-pair
 //!   registration.
@@ -30,9 +31,9 @@ use std::collections::HashMap;
 use jeod_dynamics::MassBodyId;
 use jeod_frames::{FrameId, FrameTree, RefFrameKind};
 use jeod_sim::atmosphere::AtmosphereConfig;
-use jeod_sim::SimulationTime;
+use jeod_sim::{SimulationTime, SourceFrameIds};
 
-use crate::simulation::types::{GravityData, SimBody, SourceFrameIds};
+use crate::simulation::types::{GravityData, SimBody};
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Simulation

@@ -8,9 +8,13 @@
 use glam::{DMat3, DVec3};
 
 use jeod_frames::{FrameId, FrameTree, RefFrameKind, RefFrameRot, RefFrameState, RefFrameTrans};
-use jeod_sim::{GravitySourceEntry, JeodQuat, RotationModel};
+use jeod_sim::{
+    set_source_position as sim_set_source_position, set_source_state as sim_set_source_state,
+    source_pfix_rotation as sim_source_pfix_rotation, source_position as sim_source_position,
+    GravitySourceEntry, JeodQuat, RotationModel, SourceFrameIds,
+};
 
-use super::types::{GravityData, SourceFrameIds};
+use super::types::GravityData;
 use super::Simulation;
 
 impl Simulation {
@@ -165,28 +169,23 @@ impl Simulation {
     /// Get the current position of a gravity source relative to the root
     /// inertial frame. Returns `DVec3::ZERO` for the root-mapped central source.
     pub fn source_position(&self, source_idx: usize) -> DVec3 {
-        let fid = self.source_frame(source_idx);
-        if fid == self.root_frame_id {
-            DVec3::ZERO
-        } else {
-            self.frame_tree.get(fid).state.trans.position
-        }
+        sim_source_position(
+            &self.frame_tree,
+            &self.source_frame_ids,
+            self.root_frame_id,
+            source_idx,
+        )
     }
 
     /// Set the position of a gravity source relative to the root inertial frame.
     pub fn set_source_position(&mut self, source_idx: usize, position: DVec3) {
-        assert!(
-            source_idx < self.source_frame_ids.len(),
-            "set_source_position: source index {source_idx} out of range; \
-             {} source(s) configured",
-            self.source_frame_ids.len()
+        sim_set_source_position(
+            &mut self.frame_tree,
+            &self.source_frame_ids,
+            self.root_frame_id,
+            source_idx,
+            position,
         );
-        let fid = self.source_frame_ids[source_idx].inertial;
-        assert_ne!(
-            fid, self.root_frame_id,
-            "set_source_position: cannot set position of the root (central body) source"
-        );
-        self.frame_tree.get_mut(fid).state.trans.position = position;
     }
 
     /// Set the position and velocity of a gravity source relative to the root inertial frame.
@@ -194,38 +193,24 @@ impl Simulation {
     /// Prefer this over [`set_source_position`](Simulation::set_source_position)
     /// when velocity is also available, to keep position and velocity consistent.
     pub fn set_source_state(&mut self, source_idx: usize, position: DVec3, velocity: DVec3) {
-        assert!(
-            source_idx < self.source_frame_ids.len(),
-            "set_source_state: source index {source_idx} out of range; \
-             {} source(s) configured",
-            self.source_frame_ids.len()
+        sim_set_source_state(
+            &mut self.frame_tree,
+            &self.source_frame_ids,
+            self.root_frame_id,
+            source_idx,
+            position,
+            velocity,
         );
-        let fid = self.source_frame_ids[source_idx].inertial;
-        assert_ne!(
-            fid, self.root_frame_id,
-            "set_source_state: cannot set state of the root (central body) source"
-        );
-        let node = self.frame_tree.get_mut(fid);
-        node.state.trans.position = position;
-        node.state.trans.velocity = velocity;
         // Keep gravity_data velocity in sync for relativistic corrections (PPN).
+        // Bounds already validated inside `sim_set_source_state` — `gravity_data`
+        // is parallel to `source_frame_ids`, so the same index is in range.
         self.gravity_data[source_idx].velocity = velocity;
     }
 
     /// Get the planet-fixed rotation matrix for a gravity source. Returns `None`
     /// if the source has no rotation model (no pfix frame).
     pub fn source_pfix_rotation(&self, source_idx: usize) -> Option<DMat3> {
-        self.source_frame_ids
-            .get(source_idx)
-            .unwrap_or_else(|| {
-                panic!(
-                    "source_pfix_rotation: source index {source_idx} out of range; \
-                     {} source(s) configured",
-                    self.source_frame_ids.len()
-                )
-            })
-            .pfix
-            .map(|pfix_id| self.frame_tree.get(pfix_id).state.rot.t_parent_this)
+        sim_source_pfix_rotation(&self.frame_tree, &self.source_frame_ids, source_idx)
     }
 
     /// Get mutable access to a source's tidal configuration.

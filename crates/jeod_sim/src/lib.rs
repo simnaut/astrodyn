@@ -40,6 +40,7 @@
 pub mod atmosphere;
 pub mod derived;
 pub mod forces;
+pub mod frame_orchestration;
 pub mod gravity;
 pub mod integrable;
 pub mod integration;
@@ -49,6 +50,8 @@ pub mod planet_config;
 pub mod recipes;
 pub mod rotation_model;
 pub mod simulation_builder;
+pub mod source_frames;
+pub mod source_state;
 pub mod sources;
 pub mod validation;
 pub mod vehicle_builder;
@@ -66,6 +69,9 @@ pub use derived::{
     LvlhRelativeState, RelativeState,
 };
 pub use forces::{collect_and_resolve_forces, collect_and_resolve_forces_typed};
+pub use frame_orchestration::{
+    evaluate_and_apply_frame_switch, frame_origin, sync_pfix_rotation, FrameSwitchTargetMissing,
+};
 pub use gravity::{
     accumulate_gravity, accumulate_gravity_typed, accumulate_relativistic_corrections,
     accumulate_relativistic_corrections_typed, ResolvedRelativisticSource, ResolvedSource,
@@ -87,6 +93,10 @@ pub use pipeline::{PipelineStage, PIPELINE_ORDER};
 pub use planet_config::{PlanetConfig, EARTH, MARS, MOON, SUN};
 pub use rotation_model::RotationModel;
 pub use simulation_builder::{MassTreeAttachment, SimulationBuilder};
+pub use source_frames::SourceFrameIds;
+pub use source_state::{
+    set_source_position, set_source_state, source_frame_id, source_pfix_rotation, source_position,
+};
 pub use sources::GravitySourceEntry;
 pub use validation::{validate_body, ValidationError};
 pub use vehicle_builder::{
@@ -138,8 +148,21 @@ pub use jeod_interactions::{
     RadiationForce, ThermalConductionMatrix, SOLAR_RADIUS, SPEED_OF_LIGHT,
 };
 
-// jeod_frames: reference frame state
-pub use jeod_frames::RefFrameState;
+// jeod_frames: reference frame state and arena-based frame tree.
+// `FrameTree`/`FrameId`/`FrameNode`/`RefFrameKind` are re-exported here so
+// every consumer of `jeod_sim` (`jeod_runner`, `bevy_jeod`, mission crates)
+// can build and walk the frame hierarchy without depending on `jeod_frames`
+// directly. Issue #71 — without this re-export, frame-tree orchestration
+// is bottled up inside `jeod_runner::Simulation` and unavailable to the
+// Bevy adapter.
+//
+// `RefFrameRot`/`RefFrameTrans` are the per-link state structs callers
+// need when constructing or reading frame nodes; `RefFrameStateTyped` is
+// the typed sibling for Phase C of issue #71.
+pub use jeod_frames::{
+    FrameId, FrameNode, FrameTree, RefFrameKind, RefFrameRot, RefFrameState, RefFrameStateTyped,
+    RefFrameTrans,
+};
 
 // jeod_time: simulation time, leap seconds, epoch constants, and time scale network
 pub use jeod_time::{

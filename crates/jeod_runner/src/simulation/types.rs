@@ -3,11 +3,14 @@
 //! - Public surface declared here: [`VehicleOutput`],
 //!   [`ContactPairConfig`] (re-exported through `simulation::mod` and
 //!   `crate::lib` for API stability).
-//! - Crate-internal: [`SimBody`], [`SourceFrameIds`], [`GravityData`].
+//! - Crate-internal: [`SimBody`], [`GravityData`].
 //!
-//! `DetachedSubtreeState` lives in `jeod_dynamics::subtree` (issue #253
-//! Task C) — pure rigid-body kinematics, no `Simulation` dependency. It
-//! is re-exported from `simulation::mod` so consumers reach it via
+//! `SourceFrameIds` was lifted to `jeod_sim::source_frames` (issue #71)
+//! so the Bevy adapter can build source frames against the same
+//! structure `jeod_runner` uses. `DetachedSubtreeState` lives in
+//! `jeod_dynamics::subtree` (issue #253 Task C) — pure rigid-body
+//! kinematics, no `Simulation` dependency. It is re-exported from
+//! `simulation::mod` so consumers reach it via
 //! `jeod_runner::DetachedSubtreeState` regardless.
 
 use glam::{DMat3, DVec3};
@@ -38,14 +41,6 @@ pub struct ContactPairConfig {
     pub body_b: usize,
     /// Facet on body B (shape positions in B's structural frame).
     pub facet_b: ContactFacet,
-}
-
-/// Maps a gravity source to its frame tree nodes.
-pub(crate) struct SourceFrameIds {
-    /// Inertial frame for this source (e.g., "Earth.inertial").
-    pub inertial: FrameId,
-    /// Planet-fixed frame (e.g., "Earth.pfix"), if the source has a rotation model.
-    pub pfix: Option<FrameId>,
 }
 
 /// Gravity-specific data associated with a source (decoupled from frame tree).

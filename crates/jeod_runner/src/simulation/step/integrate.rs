@@ -8,11 +8,12 @@
 use glam::{DMat3, DVec3};
 
 use jeod_sim::forces::collect_and_resolve_forces;
+use jeod_sim::frame_orchestration::{evaluate_and_apply_frame_switch, FrameSwitchTargetMissing};
 use jeod_sim::gravity::accumulate_gravity;
 use jeod_sim::integration::{integrate_bodies_contact_coupled, integrate_body, CoupledBodyInput};
 use jeod_sim::{
     evaluate_contact_pair, integrate_body_coupled, CoupledStageEval, GravityControls,
-    MassProperties, RadiationForce, RotationalState, SwitchSense, TranslationalState,
+    MassProperties, RadiationForce, RotationalState, TranslationalState,
 };
 
 use super::super::types::ContactPairConfig;
@@ -548,68 +549,36 @@ impl Simulation {
         // DynBodyFrameSwitch is a body action evaluated post-integration.
         // The body has already been integrated in its current frame for this
         // step; the switch transforms to the new frame for the NEXT step.
-        // Uses frame tree reparenting for structural correctness.
+        // The lifted helper in `jeod_sim::frame_orchestration` performs the
+        // distance check, reparent, state copy-out, and gravity-controls
+        // flip — same logic that previously lived inline here, now shared
+        // with ECS adapters (issue #71).
         // Use index-based loop to avoid borrow conflict with self.frame_tree.
+        let root_frame_id = self.root_frame_id;
         for body_idx in 0..self.bodies.len() {
-            if self.bodies[body_idx].frame_switches.is_empty() {
-                continue;
-            }
-            let mut switch_idx = None;
-            for (idx, sw) in self.bodies[body_idx].frame_switches.iter().enumerate() {
-                if !sw.active {
-                    continue;
-                }
-                let num_sources = self.source_frame_ids.len();
-                let target_fid = self
-                    .source_frame_ids
-                    .get(sw.target_source)
-                    .ok_or(StepError::FrameSwitchTargetMissing {
-                        body_idx,
-                        target_source: sw.target_source,
-                        num_sources,
-                    })?
-                    .inertial;
-                let (target_origin, _) = self.frame_origin(target_fid);
-                let (current_origin, _) = self.frame_origin(self.bodies[body_idx].integ_frame_id);
-                let body_pos_eci = self.bodies[body_idx].trans.position + current_origin;
-                let threshold_sq = sw.switch_distance * sw.switch_distance;
-
-                // JEOD dyn_body_frame_switch.cc:173-182:
-                // OnApproach: compute_position_from(*integ_frame) → distance to target
-                // OnDeparture: state.trans.position magnitude → distance from current origin
-                let triggered = match sw.switch_sense {
-                    SwitchSense::OnApproach => {
-                        (body_pos_eci - target_origin).length_squared() < threshold_sq
-                    }
-                    SwitchSense::OnDeparture => {
-                        self.bodies[body_idx].trans.position.length_squared() > threshold_sq
-                    }
-                };
-                if triggered {
-                    switch_idx = Some(idx);
-                    break;
-                }
-            }
-            if let Some(idx) = switch_idx {
-                let target_source = self.bodies[body_idx].frame_switches[idx].target_source;
-                self.bodies[body_idx].frame_switches[idx].active = false;
-
-                let new_integ_fid = self.source_frame_ids[target_source].inertial; // bounds already checked above
-                let body_fid = self.bodies[body_idx].body_frame_id;
-
-                // Reparent body frame in tree (preserves absolute state).
-                self.frame_tree.reparent(body_fid, new_integ_fid);
-                let new_state = self.frame_tree.get(body_fid).state;
-                self.bodies[body_idx].trans.position = new_state.trans.position;
-                self.bodies[body_idx].trans.velocity = new_state.trans.velocity;
-                self.bodies[body_idx].integ_frame_id = new_integ_fid;
-
-                // Flip gravity controls: target source becomes non-differential
-                // (central body), all others become differential.
-                for ctrl in &mut self.bodies[body_idx].gravity_controls.controls {
-                    ctrl.differential = ctrl.source_name != target_source;
-                }
-            }
+            let body = &mut self.bodies[body_idx];
+            evaluate_and_apply_frame_switch(
+                &mut self.frame_tree,
+                root_frame_id,
+                body.body_frame_id,
+                &mut body.integ_frame_id,
+                &mut body.trans,
+                &mut body.frame_switches,
+                &mut body.gravity_controls,
+                &self.source_frame_ids,
+                body_idx,
+            )
+            .map_err(
+                |FrameSwitchTargetMissing {
+                     body_idx,
+                     target_source,
+                     num_sources,
+                 }| StepError::FrameSwitchTargetMissing {
+                    body_idx,
+                    target_source,
+                    num_sources,
+                },
+            )?;
         }
 
         Ok(())
