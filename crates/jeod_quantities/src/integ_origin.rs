@@ -29,6 +29,57 @@ use crate::frame::{IntegrationFrame, RootInertial};
 /// Construct from the runner's frame-tree state. `IntegOrigin::zero()` is
 /// used when the body integrates in the root frame, so the shift is a
 /// no-op.
+///
+/// # RF.10 structural guard
+///
+/// `Position<IntegrationFrame>` and `Position<RootInertial>` are
+/// kind-distinct frames: the only Sub/Add impls require
+/// `CompatibleFrames<F, F>`, so subtracting one from the other is a
+/// compile error. The reviewer-flagged bug shape from PR #258 — mixing
+/// integration-frame body state with root-inertial source positions —
+/// cannot recur silently.
+///
+/// **`Position<IntegrationFrame> - Position<RootInertial>` does not compile:**
+///
+/// ```compile_fail
+/// use jeod_quantities::prelude::*;
+/// let body: Position<IntegrationFrame> = Position::zero();
+/// let sun: Position<RootInertial> = Position::zero();
+/// // Frames mismatch — `CompatibleFrames<IntegrationFrame, RootInertial>` unimplemented:
+/// let _bug = body - sun;
+/// ```
+///
+/// **Adding them does not compile either:**
+///
+/// ```compile_fail
+/// use jeod_quantities::prelude::*;
+/// let body: Position<IntegrationFrame> = Position::zero();
+/// let sun: Position<RootInertial> = Position::zero();
+/// let _bug = body + sun;
+/// ```
+///
+/// **Cross-assignment refuses:**
+///
+/// ```compile_fail
+/// use jeod_quantities::prelude::*;
+/// let body: Position<IntegrationFrame> = Position::zero();
+/// let _bug: Position<RootInertial> = body;   // not the same type
+/// ```
+///
+/// The only way through is the typed shift —
+/// [`shift_position`](IntegOrigin::shift_position) for step-constant or
+/// [`shift_position_at_stage`](IntegOrigin::shift_position_at_stage)
+/// for stage-time-interpolated:
+///
+/// ```
+/// use jeod_quantities::prelude::*;
+/// let o = IntegOrigin::zero();
+/// let body: Position<IntegrationFrame> = Position::zero();
+/// let body_root: Position<RootInertial> = o.shift_position(body);
+/// let sun: Position<RootInertial> = Position::zero();
+/// let sun_to_vehicle: Position<RootInertial> = body_root - sun;   // OK
+/// # let _ = sun_to_vehicle;
+/// ```
 #[derive(Debug, Clone, Copy, Default)]
 pub struct IntegOrigin {
     /// Position of the integration-frame origin in root-inertial coordinates.

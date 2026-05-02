@@ -28,6 +28,52 @@ use crate::integrable::IntegrableObject;
 ///
 /// Shared by the standalone `Simulation` runner and the Bevy adapter so
 /// both drive the coupled integrator with identical step-start data.
+///
+/// # RF.10 structural guard
+///
+/// The original buggy expression that slipped past the type system on
+/// PR #258 was
+///
+/// ```text
+/// let sun_to_vehicle = stage_trans.position - srp_inputs.sun_position;
+/// ```
+///
+/// where `stage_trans.position` is the integrator's `DVec3` in the
+/// body's integration frame and `srp_inputs.sun_position` was *also*
+/// `DVec3`. After typing `sun_position` as
+/// [`Position<RootInertial>`](Position), the same expression no longer
+/// typechecks. A future contributor cannot reintroduce the bug.
+///
+/// **`DVec3 - Position<RootInertial>` does not compile:**
+///
+/// ```compile_fail
+/// use jeod_sim::FlatPlateStageInputs;
+/// use glam::DVec3;
+///
+/// let inputs = FlatPlateStageInputs::default();
+/// let stage_pos: DVec3 = DVec3::new(7.0e6, 0.0, 0.0); // raw integration-frame
+/// // No `Sub<Position<RootInertial>>` impl for `DVec3`:
+/// let _bug = stage_pos - inputs.sun_position;
+/// ```
+///
+/// **Building the field from a raw `DVec3` does not compile either** —
+/// the only way to populate it is with a typed `Position<RootInertial>`
+/// (e.g. `Position::<RootInertial>::from_raw_si(...)` at a documented
+/// boundary, or by passing through a structural shift like
+/// [`IntegOrigin::shift_position`](jeod_quantities::IntegOrigin::shift_position)):
+///
+/// ```compile_fail
+/// use jeod_sim::FlatPlateStageInputs;
+/// use glam::DVec3;
+///
+/// let raw_sun: DVec3 = DVec3::new(1.5e11, 0.0, 0.0);
+/// // Field is typed; raw DVec3 doesn't typecheck:
+/// let _bug = FlatPlateStageInputs {
+///     sun_position: raw_sun,
+///     illum_factor: 1.0,
+///     center_grav: DVec3::ZERO,
+/// };
+/// ```
 #[derive(Debug, Clone, Copy, Default)]
 pub struct FlatPlateStageInputs {
     /// Sun position in the simulation's root inertial frame, captured at
