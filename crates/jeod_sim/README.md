@@ -39,6 +39,14 @@ for the layered-architecture rules.
 - Per-stage pipeline functions (`accumulate_gravity`,
   `validate_body`, …) that mirror the `JeodSet` schedule slot the
   Bevy adapter exposes.
+- Frame-tree orchestration helpers shared by `bevy_jeod` and
+  `jeod_runner`: `SourceFrameIds` (root + per-source frame IDs),
+  `sync_pfix_rotation` (writes a planet-fixed child's rotation +
+  angular velocity into a `FrameTree`),
+  `evaluate_and_apply_frame_switch::<SourceId, F>` (generic
+  on-approach/on-departure switch driver), and the source-state
+  mutators `set_source_position` / `set_source_state`. Lifted out
+  of `jeod_runner` in #71 so both consumers share one implementation.
 
 ## See also
 
