@@ -13,8 +13,8 @@
 //!   `dt`. Every entity matched by the integrating system's query
 //!   shares that `dt` by construction — no per-body bookkeeping.
 //! - The seven [`JeodSet`] stages below run once per tick, in the order
-//!   declared, mirroring JEOD's init/update pipeline (force collection
-//!   feeds integration feeds derived state).
+//!   declared, mirroring JEOD's init/update pipeline (force collection →
+//!   integration → derived state).
 //! - **Multi-stage integrators (RK4, etc.) are an inner loop inside
 //!   [`JeodSet::Integration`], not multiple schedule passes.** A four-
 //!   stage RK4 evaluates four sub-steps within the integration system

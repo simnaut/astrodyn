@@ -86,6 +86,7 @@ pub struct SourceMutator<'w, 's> {
     velocities: Query<'w, 's, &'static mut SourceInertialVelocityC>,
     translational: Query<'w, 's, &'static mut TranslationalStateC>,
     central: Query<'w, 's, (), With<CentralSourceMarker>>,
+    names: Query<'w, 's, &'static Name>,
 }
 
 impl SourceMutator<'_, '_> {
@@ -107,8 +108,13 @@ impl SourceMutator<'_, '_> {
     ///   if `SourceFrameIdC(root_id)` is attached manually — Bevy's
     ///   `register_source_frames_system` never maps a source to root.)
     pub fn set_source_position(&mut self, source: Entity, position: DVec3) {
-        self.assert_not_central(source, "set_source_position");
+        // Verify the entity is a registered gravity source first; that's
+        // the more fundamental misconfiguration to surface (a non-source
+        // entity carrying CentralSourceMarker hits the SourceFrameIdC
+        // panic before the marker panic, which is the diagnostic ordering
+        // a debugging user actually wants — PR #267 review).
         let fid = self.fetch_frame_id(source, "set_source_position");
+        self.assert_not_central(source, "set_source_position");
         let source_frames = [SourceFrameIds {
             inertial: fid,
             pfix: None,
@@ -142,8 +148,8 @@ impl SourceMutator<'_, '_> {
     /// - `source` carries [`CentralSourceMarker`].
     /// - `source` maps to the root frame.
     pub fn set_source_state(&mut self, source: Entity, position: DVec3, velocity: DVec3) {
-        self.assert_not_central(source, "set_source_state");
         let fid = self.fetch_frame_id(source, "set_source_state");
+        self.assert_not_central(source, "set_source_state");
         let source_frames = [SourceFrameIds {
             inertial: fid,
             pfix: None,
@@ -186,12 +192,23 @@ impl SourceMutator<'_, '_> {
     fn assert_not_central(&self, source: Entity, method: &str) {
         if self.central.get(source).is_ok() {
             panic!(
-                "SourceMutator::{method}: entity {source:?} carries \
-                 CentralSourceMarker — the central body's state is \
-                 pinned by convention. Remove the marker (or target a \
-                 different gravity source) if retargeting the central \
-                 body is really intended."
+                "SourceMutator::{method}: {label} carries CentralSourceMarker \
+                 — the central body's state is pinned by convention. Remove \
+                 the marker (or target a different gravity source) if \
+                 retargeting the central body is really intended.",
+                label = self.entity_label(source),
             );
+        }
+    }
+
+    /// Format a user-facing label for `entity` — `"Earth (Entity {…})"` if a
+    /// `Name` component is present, falling back to the raw `Entity` debug
+    /// form. Used by the panic-formatting helpers so diagnostics name the
+    /// gravity source the way mission code spelled it (PR #267 review).
+    fn entity_label(&self, entity: Entity) -> String {
+        match self.names.get(entity) {
+            Ok(name) => format!("{name} ({entity:?})"),
+            Err(_) => format!("{entity:?}"),
         }
     }
 
@@ -201,11 +218,12 @@ impl SourceMutator<'_, '_> {
             .map(|c| c.0)
             .unwrap_or_else(|err| {
                 panic!(
-                    "SourceMutator::{method}: entity {source:?} is not a registered \
+                    "SourceMutator::{method}: {label} is not a registered \
                  gravity source (missing SourceFrameIdC). Spawn it via PlanetBundle \
                  (or insert GravitySourceC + SourceInertialPositionC) and let \
                  `register_source_frames_system` register the frame node before \
-                 mutating it. Underlying error: {err:?}"
+                 mutating it. Underlying error: {err:?}",
+                    label = self.entity_label(source),
                 )
             })
     }
