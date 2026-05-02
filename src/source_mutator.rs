@@ -37,7 +37,8 @@ use glam::DVec3;
 use jeod_sim::{set_source_position, set_source_state, FrameId, SourceFrameIds};
 
 use crate::components::{
-    SourceFrameIdC, SourceInertialPositionC, SourceInertialVelocityC, TranslationalStateC,
+    CentralSourceMarker, SourceFrameIdC, SourceInertialPositionC, SourceInertialVelocityC,
+    TranslationalStateC,
 };
 use crate::{FrameTreeR, RootFrameIdR};
 
@@ -57,17 +58,19 @@ use crate::{FrameTreeR, RootFrameIdR};
 /// [`SourceInertialVelocityC`] by default; without auto-insert,
 /// `set_source_state` would silently no-op on the velocity write.)
 ///
-/// **Divergence from `jeod_runner`**: the runner's
-/// `set_source_position` / `set_source_state` reject mutations of the
-/// *root* source (the central body, since the root frame must stay
-/// identity). The Bevy adapter never maps any source to the root
+/// **Central-body protection**: `jeod_runner::Simulation` rejects
+/// mutations of the *root* source (the central body, since the root
+/// frame must stay identity) via `assert_ne!(fid, root_frame_id, …)`.
+/// The Bevy adapter never maps any source to the root
 /// (`register_source_frames_system` always adds sources as children),
-/// so the runtime "cannot retarget the root" panic only fires for
-/// entities that manually attach `SourceFrameIdC(root_id)` (which the
-/// `bevy_parity_source_mutation` panic test exercises). In a normal
-/// Bevy app, every gravity source — including whichever you treat as
-/// the central body — is freely mutable. Mission code that needs a
-/// pinned origin should not call this mutator on that entity.
+/// so that structural-root assertion only fires for entities that
+/// manually attach `SourceFrameIdC(root_id)`. To restore the
+/// user-facing protection in a normal Bevy app, attach
+/// [`CentralSourceMarker`] to the gravity-source entity that mission
+/// code treats as the pinned origin (e.g. Earth in an Earth-centered
+/// scenario). The mutator panics if the target entity carries the
+/// marker — same outcome as `jeod_runner`'s root-source rejection,
+/// just opt-in.
 #[derive(SystemParam)]
 pub struct SourceMutator<'w, 's> {
     /// The simulation frame tree resource.
@@ -82,6 +85,8 @@ pub struct SourceMutator<'w, 's> {
     positions: Query<'w, 's, &'static mut SourceInertialPositionC>,
     velocities: Query<'w, 's, &'static mut SourceInertialVelocityC>,
     translational: Query<'w, 's, &'static mut TranslationalStateC>,
+    central: Query<'w, 's, (), With<CentralSourceMarker>>,
+    names: Query<'w, 's, &'static Name>,
 }
 
 impl SourceMutator<'_, '_> {
@@ -94,10 +99,22 @@ impl SourceMutator<'_, '_> {
     /// - `source` does not carry a [`SourceFrameIdC`] (i.e. it isn't a
     ///   registered gravity source — spawn it via [`crate::PlanetBundle`]
     ///   so `register_source_frames_system` registers it).
-    /// - `source` maps to the root frame (central body): the root frame
-    ///   must remain identity, so its position cannot be retargeted.
+    /// - `source` carries [`CentralSourceMarker`]: mission code has opted
+    ///   that entity into central-body protection (mirrors
+    ///   `jeod_runner::Simulation::set_source_position`'s root-source
+    ///   rejection).
+    /// - `source` maps to the root frame: the root frame must remain
+    ///   identity, so its position cannot be retargeted. (Only reachable
+    ///   if `SourceFrameIdC(root_id)` is attached manually — Bevy's
+    ///   `register_source_frames_system` never maps a source to root.)
     pub fn set_source_position(&mut self, source: Entity, position: DVec3) {
+        // Verify the entity is a registered gravity source first; that's
+        // the more fundamental misconfiguration to surface (a non-source
+        // entity carrying CentralSourceMarker hits the SourceFrameIdC
+        // panic before the marker panic, which is the diagnostic ordering
+        // a debugging user actually wants — PR #267 review).
         let fid = self.fetch_frame_id(source, "set_source_position");
+        self.assert_not_central(source, "set_source_position");
         let source_frames = [SourceFrameIds {
             inertial: fid,
             pfix: None,
@@ -128,9 +145,11 @@ impl SourceMutator<'_, '_> {
     /// # Panics
     ///
     /// - `source` does not carry a [`SourceFrameIdC`].
+    /// - `source` carries [`CentralSourceMarker`].
     /// - `source` maps to the root frame.
     pub fn set_source_state(&mut self, source: Entity, position: DVec3, velocity: DVec3) {
         let fid = self.fetch_frame_id(source, "set_source_state");
+        self.assert_not_central(source, "set_source_state");
         let source_frames = [SourceFrameIds {
             inertial: fid,
             pfix: None,
@@ -170,17 +189,41 @@ impl SourceMutator<'_, '_> {
         }
     }
 
+    fn assert_not_central(&self, source: Entity, method: &str) {
+        if self.central.get(source).is_ok() {
+            panic!(
+                "SourceMutator::{method}: {label} carries CentralSourceMarker \
+                 — the central body's state is pinned by convention. Remove \
+                 the marker (or target a different gravity source) if \
+                 retargeting the central body is really intended.",
+                label = self.entity_label(source),
+            );
+        }
+    }
+
+    /// Format a user-facing label for `entity` — `"Earth (Entity {…})"` if a
+    /// `Name` component is present, falling back to the raw `Entity` debug
+    /// form. Used by the panic-formatting helpers so diagnostics name the
+    /// gravity source the way mission code spelled it (PR #267 review).
+    fn entity_label(&self, entity: Entity) -> String {
+        match self.names.get(entity) {
+            Ok(name) => format!("{name} ({entity:?})"),
+            Err(_) => format!("{entity:?}"),
+        }
+    }
+
     fn fetch_frame_id(&self, source: Entity, method: &str) -> FrameId {
         self.frame_ids
             .get(source)
             .map(|c| c.0)
             .unwrap_or_else(|err| {
                 panic!(
-                    "SourceMutator::{method}: entity {source:?} is not a registered \
+                    "SourceMutator::{method}: {label} is not a registered \
                  gravity source (missing SourceFrameIdC). Spawn it via PlanetBundle \
                  (or insert GravitySourceC + SourceInertialPositionC) and let \
                  `register_source_frames_system` register the frame node before \
-                 mutating it. Underlying error: {err:?}"
+                 mutating it. Underlying error: {err:?}",
+                    label = self.entity_label(source),
                 )
             })
     }

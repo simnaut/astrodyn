@@ -21,13 +21,16 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 use bevy_jeod::{
-    FrameTreeR, GravitySourceC, JeodPlugin, PlanetAngularVelocityC, PlanetBundle,
+    EphemerisR, FrameTreeR, GravitySourceC, JeodPlugin, PlanetAngularVelocityC, PlanetBundle,
     PlanetFixedRotationC, PlanetOmegaC, RotationModelC, SourceInertialPositionC,
     SourcePfixFrameIdC,
 };
 use glam::DVec3;
 use jeod_runner::{RotationModel, Simulation};
-use jeod_sim::{GravityModel, GravitySource, GravitySourceEntry, PlanetConfig, EARTH, MARS, MOON};
+use jeod_sim::{
+    Ephemeris, GravityModel, GravitySource, GravitySourceEntry, PlanetConfig, EARTH, MARS, MOON,
+};
+use jeod_test_data::tier3_csv::test_data_path;
 
 const DT: f64 = 60.0;
 
@@ -354,5 +357,79 @@ fn tier3_bevy_rotation_none_toggle_removes_pfix_component() {
         app.world().get::<SourcePfixFrameIdC>(planet).unwrap().0,
         original_pfix_id,
         "the same pfix FrameId must be reused across every toggle cycle"
+    );
+}
+
+#[test]
+fn tier3_bevy_planet_ang_vel_moon_de421() {
+    // MoonDE421 is the only RotationModel branch whose Bevy ↔ runner
+    // end-to-end path was previously uncovered (issue #265). Mirror the
+    // MoonIAU test, additionally inserting `EphemerisR` with the BPC
+    // kernel that `planet_fixed_rotation_system`'s MoonDE421 branch
+    // requires. The kernel `moon_pa_de421_1900-2050.bpc` is already
+    // committed to `test_data/` (used by `tier3_simulation_earth_moon_clem`),
+    // so no new fixture commit is needed.
+    let bsp = test_data_path("de421.bsp");
+    let bpc = test_data_path("moon_pa_de421_1900-2050.bpc");
+
+    // ── Bevy ──
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.add_plugins(JeodPlugin);
+    let mut eph = Ephemeris::from_bsp(&bsp).expect("DE421 BSP load");
+    eph.load_bpc(&bpc).expect("Moon DE421 BPC load");
+    app.insert_resource(EphemerisR(eph));
+    let planet = app
+        .world_mut()
+        .spawn(PlanetBundle::point_mass("Moon", &MOON))
+        .id();
+    // Override the bundle's default `RotationModelC(MoonIAU)` (copied
+    // from `MOON.rotation_model`) with `MoonDE421`. Inserting after
+    // spawn replaces the bundle's component cleanly.
+    app.world_mut()
+        .entity_mut(planet)
+        .insert(RotationModelC(RotationModel::MoonDE421));
+    step_bevy_once(&mut app);
+
+    let bevy_ang_vel = app
+        .world()
+        .get::<PlanetAngularVelocityC>(planet)
+        .unwrap()
+        .0
+        .raw_si();
+    let expected = DVec3::new(0.0, 0.0, MOON.omega);
+    assert_dvec3_bits_eq(
+        "Bevy Moon DE421 ang_vel vs PlanetConfig",
+        bevy_ang_vel,
+        expected,
+    );
+
+    // ── jeod_runner ──
+    // `central_body(&MOON)` copies `MOON.rotation_model` (= MoonIAU);
+    // override after construction to switch the branch to MoonDE421.
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sim = Simulation::new(time, DT);
+    let mut entry = GravitySourceEntry::central_body(&MOON);
+    entry.rotation_model = RotationModel::MoonDE421;
+    sim.add_source("Moon", entry);
+    let mut sim_eph = Ephemeris::from_bsp(&bsp).expect("DE421 BSP load (sim)");
+    sim_eph.load_bpc(&bpc).expect("Moon DE421 BPC load (sim)");
+    sim.ephemeris = Some(sim_eph);
+    sim.validate().unwrap();
+    sim.step().expect("step failed");
+
+    let sim_ang_vel = sim_pfix_ang_vel(&sim, "Moon");
+    assert_dvec3_bits_eq(
+        "Bevy vs Sim Moon DE421 pfix ang_vel",
+        bevy_ang_vel,
+        sim_ang_vel,
+    );
+
+    let bevy_node_ang_vel = bevy_pfix_node_ang_vel(&app, planet);
+    assert_dvec3_bits_eq(
+        "Bevy FrameTreeR Moon DE421 pfix-node ang_vel vs Sim",
+        bevy_node_ang_vel,
+        sim_ang_vel,
     );
 }
