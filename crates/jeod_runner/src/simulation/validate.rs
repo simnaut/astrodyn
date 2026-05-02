@@ -282,6 +282,43 @@ impl Simulation {
             }
         }
 
+        // Ground-contact pairs: same coupled-RK4 path as inter-body
+        // contact, plus a central-planet requirement because
+        // `compute_ground_contact_geometry` projects the vehicle's
+        // inertial position into pfix coords assuming the planet center
+        // is at the inertial origin. Validate body in root frame +
+        // planet is central.
+        if !self.ground_contact_pairs.is_empty() {
+            for (body_idx, body) in self.bodies.iter().enumerate() {
+                if !matches!(body.integrator, jeod_dynamics::IntegratorType::Rk4) {
+                    all_errors.push(ValidationError::ContactPairsRequireRk4 { body_idx });
+                }
+                if body.rot.is_none() || body.mass.is_none() {
+                    all_errors.push(ValidationError::ContactPairsRequire6Dof { body_idx });
+                }
+            }
+            for (pair_idx, pair) in self.ground_contact_pairs.iter().enumerate() {
+                let frame = self.bodies[pair.body_a].integ_frame_id;
+                if frame != self.root_frame_id {
+                    all_errors.push(ValidationError::GroundContactPairNonRootFrame {
+                        pair_idx,
+                        body_idx: pair.body_a,
+                        frame,
+                        root: self.root_frame_id,
+                    });
+                }
+                if let Some(planet_source) = self.ground_contact_planet_source {
+                    let sfids = &self.source_frame_ids[planet_source];
+                    if sfids.inertial != self.root_frame_id {
+                        all_errors.push(ValidationError::GroundContactNonCentralPlanet {
+                            pair_idx,
+                            planet_source,
+                        });
+                    }
+                }
+            }
+        }
+
         // Separate warnings from fatal errors — warnings are logged, not returned.
         let mut fatal = Vec::new();
         for error in all_errors {

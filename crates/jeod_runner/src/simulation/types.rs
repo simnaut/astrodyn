@@ -57,13 +57,22 @@ pub struct GroundContactPairConfig {
     pub vehicle_facet: ContactFacet,
     /// Ground facet (terrain, alt_offset, material).
     pub ground_facet: GroundFacet,
-    /// JEOD initialization-time impulse, computed at registration via the
-    /// pre-propagation ground-contact evaluation. Consumed at stage 1 of
-    /// the first integration step (RK4 weight 1/6) and zeroed thereafter
-    /// — mirrors `ContactSurface::collect_forces_torques` clearing
-    /// `facet.force` after stage 1 in JEOD. `None` when registration
-    /// found no contact (vehicle with non-zero altitude initially), or
-    /// after the first step has consumed it.
+    /// JEOD initialization-time impulse, computed at registration via
+    /// the `Phase::Initialization` evaluator (`facet_pos_body == 0`).
+    /// Consumed at stage 1 of the first integration step (RK4 weight
+    /// 1/6) and cleared to `None` thereafter — mirrors
+    /// `ContactSurface::collect_forces_torques` zeroing `facet.force`
+    /// after stage 1 in JEOD.
+    ///
+    /// Note that the init-phase evaluator essentially always reports
+    /// contact for any realistic planet radius (because `|rel_state|`
+    /// is O(1–2 m) — the facet's body-frame surface extent — while
+    /// `|ground|` is O(R)). So this field is `Some(...)` for every
+    /// successfully registered pair on initialization, regardless of
+    /// the vehicle's actual altitude; the impulsive launch JEOD's CSV
+    /// records is precisely this initialization-state effect. The
+    /// field becomes `None` only after the first integration step
+    /// consumes it.
     pub pending_initial_impulse: Option<GroundContactImpulse>,
 }
 

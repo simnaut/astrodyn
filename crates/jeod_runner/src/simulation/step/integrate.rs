@@ -419,11 +419,11 @@ impl Simulation {
             // Contact pair states must share the root inertial frame, since
             // the coupled contact evaluator uses each body's stage state
             // directly without any per-step frame transform. `validate()`
-            // catches this at config time; the assert is defense-in-depth
-            // for callers that skip validation. Ground-contact pairs are
-            // single-body — their body just needs to live in the root
-            // frame, which `register_ground_contact_pair` does not yet
-            // enforce explicitly but is documented in `validate.rs`.
+            // catches this at config time (both for inter-body
+            // `contact_pairs` and for `ground_contact_pairs` —
+            // `ValidationError::ContactPairNonRootFrame` /
+            // `GroundContactPairNonRootFrame`); the asserts here are
+            // defense-in-depth for callers that skip validation.
             assert!(
                 self.contact_pairs.iter().all(|p| {
                     let fa = self.bodies[p.body_a].integ_frame_id;

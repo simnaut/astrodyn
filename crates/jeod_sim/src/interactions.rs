@@ -612,12 +612,32 @@ pub fn evaluate_ground_contact_pair(
         phase,
     )?;
 
+    // CoM-to-contact arm in body frame. `geom.contact_point_on_a` is
+    // contact point relative to the facet's *shape reference*; the
+    // shape reference is at structural offset
+    // `shape.reference_position()` from the structural origin, which is
+    // at CoM offset `mass.position` from the body's CoM. The full
+    // CoM-to-contact arm threads both terms through `t_struct_body_a`
+    // to land in body-frame coords. We compute it before the contact
+    // force eval so the same arm feeds both `rel_vel_body` and the
+    // torque calculation below.
+    let r_cm_struct = mass_a.position;
+    let facet_offset_from_cm_body =
+        t_struct_body_a * (vehicle_facet.shape.reference_position() - r_cm_struct);
+    let arm_body = facet_offset_from_cm_body + geom.contact_point_on_a;
+
     // JEOD's relative-velocity term. `point_ground_interaction.cc:87-93`:
     //   rel_velocity = ω_body × subject_contact_point + T_inertial_body * v_inertial
     // The `// TODO: worry about planetary rotation` comment in JEOD
-    // indicates the pfix-frame ground velocity is omitted; we mirror that.
+    // indicates the pfix-frame ground velocity is omitted; we mirror
+    // that. JEOD's `subject_contact_point` arm is from the body CoM
+    // to the contact point on the surface — we use the CoM-to-contact
+    // arm assembled above (NOT `geom.contact_point_on_a`, which is
+    // relative to the facet shape reference and would give wrong
+    // damping/friction whenever `mass.position != 0` or the facet
+    // reference is offset).
     let v_inertial_in_body = t_inertial_body_a * trans_a.velocity;
-    let rel_vel_body = rot_a.ang_vel_body.cross(geom.contact_point_on_a) + v_inertial_in_body;
+    let rel_vel_body = rot_a.ang_vel_body.cross(arm_body) + v_inertial_in_body;
 
     // Synthesize a "ground" ContactFacet so we can reuse the existing
     // force law (which takes two facets to enforce material equality).
@@ -638,19 +658,8 @@ pub fn evaluate_ground_contact_pair(
     // computed in body frame). Rotate to inertial for the integrator.
     let force_on_a_inertial = t_inertial_body_a.transpose() * contact.force;
 
-    // Torque arm: from the body's CoM to the contact point on the
-    // vehicle surface, in body frame. `contact.contact_point_on_a` is
-    // already relative to the facet's shape reference; the facet's
-    // shape reference is at structural offset `shape.reference_position()`
-    // from the structural origin, which is at CoM offset `mass.position`
-    // from the body's CoM. Mirror evaluate_contact_pair's arm
-    // computation but in body frame.
-    let r_cm_struct = mass_a.position;
-    let facet_offset_from_cm_body =
-        t_struct_body_a * (vehicle_facet.shape.reference_position() - r_cm_struct);
-    let arm_body = facet_offset_from_cm_body + contact.contact_point_on_a;
-    // Force is in body frame (contact.force comes from a body-frame
-    // geometry); torque = arm × force in body frame.
+    // Torque = arm × force in body frame, using the same CoM-to-contact
+    // arm assembled above for consistency with the ω×r term.
     let torque_a_body = arm_body.cross(contact.force);
 
     Some(GroundContactPairEval {
