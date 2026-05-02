@@ -88,13 +88,17 @@ impl TranslationalStateTyped<IntegrationFrame> {
     /// root-inertial coordinates).
     ///
     /// This is the only safe path from `IntegrationFrame` to `RootInertial`
-    /// for translational state. Forgetting the shift produces a compile
-    /// error rather than silently-wrong physics for any vehicle whose
-    /// integration frame is not the root frame (issue #255).
-    // JEOD_INV: RF.10 — integration-frame state must be shifted to
-    // root-inertial via the integration-origin offset before use by
-    // root-inertial consumers (gravity, atmosphere, SRP, drag, orbital
-    // elements, geodetic, LVLH, solar beta, earth lighting).
+    /// for translational state. Forgetting the shift at a root-inertial
+    /// consumer produces a compile error rather than silently-wrong
+    /// physics for any vehicle whose integration frame is not the root
+    /// frame (issue #255).
+    // JEOD_INV: RF.10 — apply this shift only at *shift sites* (gravity,
+    // relativistic, SRP, solar beta, earth lighting — the consumers that
+    // mix body state with root-inertial source positions). Do NOT use it
+    // for atmosphere / drag / LVLH / geodetic / orbital elements: those
+    // are non-shift sites that operate within a single planet's inertial
+    // frame, which equals the body's integration frame in realistic
+    // configs, so `body.trans.position` is already the correct input.
     #[inline]
     pub fn to_inertial(&self, o: &IntegOrigin) -> TranslationalStateTyped<RootInertial> {
         TranslationalStateTyped {

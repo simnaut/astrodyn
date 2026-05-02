@@ -47,9 +47,10 @@ impl Simulation {
         };
 
         // JEOD_INV: RF.10 — shift body position from integration frame to
-        // root inertial before passing to gravity / relativistic / atmosphere
-        // consumers. `IntegOrigin::zero()` is a no-op (bit-identical) when
-        // the body integrates in the root frame.
+        // root inertial before passing to gravity / relativistic
+        // consumers. (Atmosphere is a non-shift site — see the atmosphere
+        // block below.) `IntegOrigin::zero()` is a no-op (bit-identical)
+        // when the body integrates in the root frame.
         for (body_idx, body) in self.bodies.iter_mut().enumerate() {
             let o = &body_integ_origins[body_idx];
             let inertial_state = body.trans.to_inertial(o);

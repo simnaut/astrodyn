@@ -3,12 +3,22 @@
 //! `Position<IntegrationFrame>` lives in a body's integration frame — a
 //! non-rotating frame whose origin generally differs from the root
 //! inertial origin (e.g. integrating a vehicle in `Earth.inertial` when
-//! the root frame is `SSB.inertial`). Consumers that require
-//! root-inertial coordinates (gravity, atmosphere, SRP, drag, orbital
-//! elements, geodetic, LVLH, solar beta, earth lighting) must apply this
-//! shift first.
+//! the root frame is `SSB.inertial`).
 //!
-//! See issue #255 for the bug class that motivated this module.
+//! Apply this shift only when the consumer requires root-inertial
+//! coordinates — i.e. when it mixes body state with root-inertial source
+//! positions (Sun, Moon, gravity sources). Those *shift sites* are:
+//! gravity, relativistic corrections, SRP, solar beta, earth lighting.
+//!
+//! Do **not** shift for atmosphere, drag velocity, LVLH, geodetic, or
+//! orbital elements: those operate within a single planet's inertial
+//! frame, which is *the body's integration frame* in realistic configs,
+//! so `body.trans.position` is already the correct input. They take
+//! [`Position<PlanetInertial<P>>`](crate::frame::PlanetInertial) at the
+//! typed-sibling API.
+//!
+//! See issue #255 / `RF.10` in `docs/JEOD_invariants.md` for the
+//! shift-vs-no-shift split that motivated this module.
 
 use crate::aliases::{Position, Velocity};
 use crate::frame::{IntegrationFrame, RootInertial};

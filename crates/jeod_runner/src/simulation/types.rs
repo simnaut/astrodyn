@@ -117,11 +117,18 @@ pub(crate) struct SimBody {
     /// Translational state in this body's integration frame.
     ///
     /// `IntegrationFrame` is *kind-distinct* from `RootInertial` so that
-    /// consumers requiring root-inertial coordinates (gravity, atmosphere,
-    /// SRP, drag, orbital elements, geodetic, LVLH, solar beta, earth
-    /// lighting) cannot silently take the integration-frame value — they
-    /// must call `body.trans.to_inertial(&integ_origin)` first. See
-    /// issue #255 and `JEOD_invariants.md` RF.10.
+    /// root-inertial consumers (gravity, relativistic, SRP, solar beta,
+    /// earth lighting — the *shift sites*, which mix body state with
+    /// root-inertial source positions for Sun, Moon, or gravity sources)
+    /// cannot silently take the integration-frame value — they must call
+    /// `body.trans.to_inertial(&integ_origin)` first. Planet-inertial
+    /// consumers (atmosphere, drag velocity, LVLH, geodetic, orbital
+    /// elements — *non-shift sites*, which operate within a single
+    /// planet's inertial frame) take `body.trans.position.raw_si()`
+    /// directly: the body's integration frame is that planet's inertial
+    /// frame in realistic configs, so applying the shift would change the
+    /// planet-relative coordinates and produce wrong physics. See
+    /// issue #255 and `JEOD_invariants.md` RF.10 for the split.
     pub trans: TranslationalStateTyped<IntegrationFrame>,
     pub rot: Option<RotationalState>,
     pub mass: Option<MassProperties>,

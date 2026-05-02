@@ -179,15 +179,24 @@ impl Frame for Ecef {
 /// origin generally differs from the root inertial origin.
 ///
 /// `IntegrationFrame` is *kind-distinct* from [`RootInertial`] so that APIs
-/// requiring root-inertial coordinates (gravity, atmosphere, SRP, drag,
-/// orbital elements, geodetic, LVLH, solar beta, earth lighting) refuse
-/// `Position<IntegrationFrame>` at compile time. The only safe transition
-/// from `Position<IntegrationFrame>` to `Position<RootInertial>` is the
-/// integration-origin shift, exposed via
+/// requiring root-inertial coordinates refuse `Position<IntegrationFrame>`
+/// at compile time. **Root-inertial consumers** (the "shift sites" — they
+/// mix body state with root-inertial source positions for Sun, Moon, or
+/// gravity sources): gravity, relativistic corrections, SRP, solar beta,
+/// earth lighting. **Planet-inertial consumers** (the "non-shift sites"
+/// — they operate within a single planet's inertial frame, which equals
+/// the body's integration frame in realistic configs): atmosphere, drag
+/// velocity, LVLH, geodetic, orbital elements; these take
+/// [`PlanetInertial<P>`] inputs and must NOT receive a root-inertial
+/// shift, since shifting would change the planet-relative coordinates.
+///
+/// The only safe transition from `Position<IntegrationFrame>` to
+/// `Position<RootInertial>` is the integration-origin shift, exposed via
 /// [`IntegOrigin::shift_position`](crate::integ_origin::IntegOrigin::shift_position)
 /// and the `to_inertial` method on the typed translational-state wrapper
 /// in `jeod_dynamics`. There is no implicit `From`/`Into` — forgetting
-/// the shift is the bug class this phantom catches (issue #255).
+/// the shift at a root-inertial consumer is the bug class this phantom
+/// catches (issue #255 / `RF.10` in `docs/JEOD_invariants.md`).
 ///
 /// For all sims that integrate in the root frame, the shift is by
 /// `IntegOrigin::zero()` and is a no-op (bit-identical numerics).
