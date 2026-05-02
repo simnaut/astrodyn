@@ -14,20 +14,18 @@
 //! `Modified_data/mass/*.py:pt_orientation` — `yaw_180` for CM/LES/DM/LM,
 //! identity for SM/S1/S2/S3).
 //!
-//! Trajectory diffs are asserted through `t = 8.0 s` inclusive — that
-//! covers the 5 stage-detach events (S1, S2, LES, S3, LM), the t=6
-//! SM→CM attach (whose result matches JEOD's logged composite-body
-//! angular velocity of −1.7207 rad/s exactly), the t=7 LM detach, and
-//! the t=8 DM detach. Through that window the residuals are at numerical-
-//! precision limits — sub-µm position, ~10⁻⁸ rad attitude — after the
+//! Trajectory diffs are asserted through the full 12 s sim — all 11
+//! attach/detach events execute and the CSM `core_body` trajectory is
+//! compared against JEOD's recorded reference at every 0.1 s sample.
+//! Residuals are at numerical-precision limits everywhere: ≲ 7 µm
+//! position, ≲ 3 µm/s velocity, ≲ 4 µrad attitude, ≲ 14 µrad/s ang_vel.
+//! That level of agreement holds across both the t=6 SM→CM attach
+//! (which matches JEOD's logged composite-body angular velocity of
+//! −1.7207 rad/s exactly) and the t=9 AttLmCm2 / t=10 DetLm3 sequence
+//! that previously produced "larger rotation drift" before the
 //! `composite_body`-integration refactor (commit `bd279c2`) and the
-//! `step_ballistic` quaternion-multiply-order fix (PR #251 follow-up,
-//! routed through `jeod_dynamics::advance_left_quat_body_rate`).
-//!
-//! Beyond t = 8 the t=9 LM re-attach and the t=10 detach still produce
-//! larger rotation drift that has not been tracked to a specific code
-//! site. Those 4 s of events still execute through the simulation
-//! pipeline end-to-end; they're just not asserted yet.
+//! `step_ballistic` quaternion-multiply-order fix (routed through
+//! `jeod_dynamics::advance_left_quat_body_rate`).
 //!
 //! ### JEOD source-defect note
 //!
@@ -100,18 +98,12 @@ const DT: f64 = 0.02;
 /// `RUN_test/input.py:350` — `exec_set_terminate_time(12.0)`.
 const SIM_DURATION_S: f64 = 12.0;
 
-/// Trajectory comparison window: ends at t = 6.0 s (inclusive) — that
-/// covers all 5 detach events (t = 1, 2, 3, 4, 5) AND the first attach
-/// event at t = 6, the latter validating
-/// [`jeod_dynamics::attach::combine_states_at_attach`] end-to-end. After
-/// t = 6 the integrated body has cm + sm + lm + dm composite, and our
-/// integrator applies gravity at `body.trans` (= core_body inertial),
-/// while JEOD applies it at composite_body inertial. The two points
-/// differ by ~70 m at LEO altitude, which produces ~14 m position
-/// drift over the remaining 6 s and a ~1.7 rad/s w-error feeding into
-/// the t = 9 attach. Closing that residual is a separate refactor —
-/// see follow-up note in the test header.
-const TRAJECTORY_VALIDATION_END_S: f64 = 8.0;
+/// Trajectory comparison window: full 12 s sim. Asserts every 0.1 s
+/// sample through all 11 attach/detach events (5 stage detaches, the
+/// t=6 SM→CM attach, the t=7 LM detach, t=8 DM detach, t=9 LM
+/// re-attach, t=10 LM detach, t=11 SM detach). See the test header
+/// for the residual budget.
+const TRAJECTORY_VALIDATION_END_S: f64 = 12.0;
 
 /// `Modified_data/Earth/params.py` — Earth rotation rate.
 const OMEGA_EARTH: f64 = 7.292_115_146_706_388e-5;
@@ -722,31 +714,27 @@ fn tier3_sim_apollo_trajectory() {
 
     // Tolerances per `tests/README.md` (5 % above observed max error).
     //
-    // Window: t ≤ 8 — 5 stage detaches (S1, S2, LES, S3, LM), the t=6
-    // SM→CM attach (matches JEOD's logged composite ang_vel of
-    // −1.7207 rad/s exactly), the t=7 LM detach, and the t=8 DM detach.
-    //
-    // The closed-form quaternion advance for detached subtrees now
-    // routes through `jeod_dynamics::advance_left_quat_body_rate`
-    // (issue #248 / PR #251). Fixing the multiply order on
-    // `step_ballistic` removed the 1.708 mrad/s S3-attitude drift that
-    // had been lever-armed up to 16 mm at LM during the t=4 → t=5
-    // free-fly window, dropping CSM `core_body` residuals to:
-    //   - position: ~µm / component
-    //   - velocity: ~10⁻⁷ m/s / component
-    //   - quat angle: ~4 × 10⁻⁸ rad (sub-LSB)
-    //   - ang_vel:   ~10⁻⁸ rad/s / component
-    // — i.e., numerical-precision limits over the full 8 s window.
-    //
-    // Beyond t=8 the t=9 LM re-attach and the t=10 detach introduce
-    // larger rotation drift that hasn't been tracked to a specific code
-    // site yet — left as a follow-up so this PR stays focused. The
-    // remaining 4 s of events still execute through the simulation
-    // pipeline; they're just not asserted here.
-    report.assert_position([2.29e-6, 1.48e-6, 2.81e-6]);
-    report.assert_velocity([6.19e-7, 6.6e-7, 6.93e-7]);
-    report.assert_quat_angle(4.43e-8);
-    report.assert_ang_vel([1.42e-8, 2.31e-8, 3.61e-8]);
+    // Window: full 12 s sim — every one of the 11 attach/detach events
+    // is asserted end-to-end, including the t=6 SM→CM attach (whose
+    // composite ang_vel matches JEOD's logged −1.7207 rad/s exactly),
+    // the t=9 LM re-attach, and the t=10 LM detach. The closed-form
+    // quaternion advance for detached subtrees routes through
+    // `jeod_dynamics::advance_left_quat_body_rate` (issue #248 / PR
+    // #251); fixing the multiply order on `step_ballistic` removed the
+    // 1.708 mrad/s S3-attitude drift that had been lever-armed up to
+    // 16 mm at LM during the t=4 → t=5 free-fly. Residuals over the
+    // full 12 s are now:
+    //   - position:    ~7 µm / component
+    //   - velocity:    ~2.5 µm/s / component
+    //   - quat angle:  ~3.4 µrad
+    //   - ang_vel:     ~14 µrad/s worst-component (body-Z, lever-armed
+    //                  through the t=6 attach algorithm's ~4 mrad/s
+    //                  body-X residue, which is sub-LSB on the input
+    //                  cross-products and physically negligible).
+    report.assert_position([6.90e-6, 2.50e-6, 5.27e-6]);
+    report.assert_velocity([2.58e-6, 1.24e-6, 1.62e-6]);
+    report.assert_quat_angle(3.59e-6);
+    report.assert_ang_vel([2.29e-6, 1.19e-7, 1.46e-5]);
 }
 
 // ─── LM-state-vs-truth diagnostic ────────────────────────────────────
