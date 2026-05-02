@@ -19,10 +19,18 @@ use jeod_gravity::SphericalHarmonicsData;
 /// Errors from parsing a JEOD C++ gravity data file.
 #[derive(Debug, thiserror::Error)]
 pub enum CoeffLoadError {
+    /// Underlying I/O failure when reading the `.cc` source file.
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
+    /// Expected field (e.g. `mu`, `radius`, a `Cnm` row) was missing
+    /// from the parsed source file.
     #[error("missing field '{field}' in {path}")]
-    MissingField { field: &'static str, path: String },
+    MissingField {
+        /// Name of the expected field that was not found.
+        field: &'static str,
+        /// Source-file path that was being parsed.
+        path: String,
+    },
 }
 
 /// Load only the gravitational parameter (mu) from a JEOD C++ gravity data file.

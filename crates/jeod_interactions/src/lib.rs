@@ -39,6 +39,7 @@
 //! zero Bevy dependency.
 
 #![forbid(unsafe_code)]
+#![deny(missing_docs)]
 
 pub mod aero_drag;
 pub mod contact;

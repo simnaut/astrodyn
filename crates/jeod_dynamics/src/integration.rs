@@ -1,3 +1,13 @@
+//! Integration-method dispatch and the per-method translational /
+//! rotational step kernels.
+//!
+//! Mirrors JEOD's
+//! [`models/utils/integration/`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/utils/integration/)
+//! integration manager (v5.4.0). RK4, RKF45, Adams-Bashforth-Moulton 4
+//! (ABM4), and Gauss-Jackson 8 are dispatched through the
+//! `IntegrationMethod` enum below; multi-stage methods run as an inner
+//! loop within a single `FixedUpdate` tick.
+
 use crate::mass::MassProperties;
 use crate::rotational::*;
 use crate::state::TranslationalState;

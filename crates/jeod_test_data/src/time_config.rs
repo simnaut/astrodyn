@@ -1,3 +1,11 @@
+//! Parser for JEOD Trick time-initializer input files.
+//!
+//! Reads `Modified_data/time.py` / `Modified_data/date_and_time.py`
+//! files like
+//! [`verif/SIM_dyncomp/Modified_data/date_n_time/date_and_time.py`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/verif/SIM_dyncomp/Modified_data/date_n_time/date_and_time.py)
+//! and produces the `(scale, calendar-date)` pair the Tier 3 harness
+//! feeds into `jeod_time::SimulationTime` at sim startup.
+
 use regex::Regex;
 use std::path::Path;
 
@@ -22,13 +30,21 @@ pub enum TimeInitializer {
 pub struct TimeConfig {
     /// Which time scale the parsed date refers to.
     pub initializer: TimeInitializer,
+    /// Calendar year.
     pub utc_year: i32,
+    /// Calendar month (1–12).
     pub utc_month: u32,
+    /// Calendar day of month (1–31).
     pub utc_day: u32,
+    /// Hour of day (0–23).
     pub utc_hour: u32,
+    /// Minute of hour (0–59).
     pub utc_minute: u32,
+    /// Seconds of minute (`0.0..60.0`, or `< 61.0` during a leap second).
     pub utc_second: f64,
+    /// Override `TAI − UTC` in seconds, when JEOD's input forces a value.
     pub tai_utc_override: Option<f64>,
+    /// Override `UT1 − TAI` in seconds, when JEOD's input forces a value.
     pub tai_to_ut1_override: Option<f64>,
 }
 

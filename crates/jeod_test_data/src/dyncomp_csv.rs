@@ -22,28 +22,42 @@ use std::path::Path;
 /// State of a single JEOD reference frame at one timestep.
 #[derive(Debug, Clone)]
 pub struct FrameState {
+    /// Position in metres, in the parent frame.
     pub position: DVec3,
+    /// Velocity in m/s, in the parent frame.
     pub velocity: DVec3,
+    /// Angular velocity in rad/s, in this frame's coordinates.
     pub ang_vel: DVec3,
+    /// `T_parent_this` rotation matrix (parent → this).
     pub t_parent_this: DMat3,
+    /// Attitude quaternion (parent → this), JEOD scalar-first
+    /// left-transformation convention.
     pub quaternion: DQuat,
 }
 
 /// Frame derivatives at one timestep.
 #[derive(Debug, Clone)]
 pub struct FrameDerivs {
+    /// Non-gravitational acceleration in m/s².
     pub non_grav_accel: DVec3,
+    /// Translational acceleration in m/s².
     pub trans_accel: DVec3,
+    /// Rotational (angular) acceleration in rad/s².
     pub rot_accel: DVec3,
 }
 
 /// One row from the 80-column SIM_dyncomp state CSV.
 #[derive(Debug, Clone)]
 pub struct DyncompRecord {
+    /// Sample time in seconds since simulation t=0.
     pub time: f64,
+    /// Composite-body frame state (CoM of the assembled vehicle).
     pub composite_body: FrameState,
+    /// Core-body frame state (CoM of the core body alone).
     pub core_body: FrameState,
+    /// Structural-frame state (geometric origin).
     pub structure: FrameState,
+    /// Frame-derivatives block, when present in the CSV.
     pub derivs: Option<FrameDerivs>,
 }
 

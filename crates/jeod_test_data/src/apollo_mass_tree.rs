@@ -12,6 +12,7 @@ use glam::{DMat3, DVec3};
 /// One body's printed mass properties.
 #[derive(Debug, Clone)]
 pub struct PrintedBody {
+    /// Body identifier as printed in the JEOD mass-tree dump.
     pub name: String,
     /// Structural offset in parent's structural frame (m).
     pub structure_offset: DVec3,
@@ -34,6 +35,7 @@ pub struct PrintedBody {
 /// A complete mass tree printout (one or more bodies).
 #[derive(Debug, Clone)]
 pub struct PrintedTree {
+    /// Per-body entries in printed order.
     pub bodies: Vec<PrintedBody>,
 }
 
