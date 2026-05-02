@@ -26,11 +26,20 @@ use super::constants::{mu_ggm05c, mu_mars, mu_sun};
 ///
 /// Generic over `P: Planet` so callers pin their actual gravitating
 /// body — Earth-orbit presets use `<Earth>`, the Mercury heliocentric
-/// preset uses `<Sun>`, the Mars-arrival preset uses `<Mars>`. The
-/// phantom is currently informational (`OrbitalElements` carries no
-/// frame in its output), but the typed inputs document the intended
-/// frame and prevent a future caller from silently mismatching mu and
-/// the position frame.
+/// preset uses `<Sun>`, the Mars-arrival preset uses `<Mars>`.
+///
+/// What the phantom enforces vs. doesn't:
+///
+/// - **Enforces** that the position and velocity wrappers agree on
+///   frame at the call site (a `Position<PlanetInertial<Earth>>` next
+///   to a `Velocity<PlanetInertial<Sun>>` is a compile error).
+/// - **Does NOT enforce** that `mu` matches `P`. `GravParam` carries no
+///   planet phantom, so `from_pos_vel_with_mu::<Earth>(mu_sun(), …)`
+///   would compile cleanly. That gap is by-convention here and tracked
+///   in #263 (frame-blind `GravParam` / `OrbitalElements`).
+/// - The output `OrbitalElements` is itself frame-blind — downstream
+///   consumers cannot tell from the type whether they hold Earth- or
+///   Mars-centered elements.
 fn from_pos_vel_with_mu<P: Planet>(
     pos: glam::DVec3,
     vel: glam::DVec3,
