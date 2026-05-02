@@ -1040,21 +1040,29 @@ pub fn integration_system(
                     // `RadiationSource::calculate_flux`. Sun position is
                     // step-constant (ephemeris is scheduled-class).
                     //
-                    // RF.10: `srp_inputs.sun_position` is typed
-                    // `Position<RootInertial>` so the structural guard
-                    // refuses subtracting a raw `DVec3` from it. The Bevy
-                    // adapter's bodies integrate in root (documented; the
-                    // `TranslationalStateC` storage carries
-                    // `<RootInertial>`), so labeling stage_trans.position
-                    // as root-inertial is the documented assumption — not
-                    // a lie. The relabel is the typed-quantity boundary
-                    // analog of `TranslationalStateC::from_untyped`.
+                    // RF.10: `stage_trans.position` is the integrator's
+                    // intermediate `DVec3` in the body's *integration*
+                    // frame, which equals root inertial only when
+                    // `IntegFrameIdC == root`. For `IntegFrameIdC != root`
+                    // (issue #71 item 4) we shift via the per-stage origin
+                    // before differencing against `srp_inputs.sun_position`
+                    // (which is typed `Position<RootInertial>`). Mirrors
+                    // `jeod_runner::run_integration`'s coupled SRP path
+                    // (`crates/jeod_runner/src/simulation/step/integrate.rs:299-305`).
                     use jeod_sim::{Position, RootInertial};
+                    let stage_dt = time_frac * integ_dt;
+                    let stage_origin = if integ_origin_vel != DVec3::ZERO {
+                        integ_origin_pos + integ_origin_vel * stage_dt
+                    } else {
+                        integ_origin_pos
+                    };
                     let stage_pos_root: Position<RootInertial> =
-                        // allowed: documented Bevy-adapter boundary — bodies
-                        // integrate in root. Same shape as TranslationalStateC's
-                        // From<Untyped> impl. RF.10.
-                        Position::<RootInertial>::from_raw_si(stage_trans.position);
+                        // allowed: typed-API boundary — `stage_trans.position`
+                        // arrives as the integrator's untyped intermediate
+                        // DVec3; `stage_pos_root` is the root-inertial value
+                        // after the integ-origin shift, ready for the typed
+                        // `srp_inputs.sun_position` subtraction.
+                        Position::<RootInertial>::from_raw_si(stage_trans.position + stage_origin);
                     let sun_to_vehicle: Position<RootInertial> =
                         stage_pos_root - srp_inputs.sun_position;
                     let sun_to_vehicle = sun_to_vehicle.raw_si();

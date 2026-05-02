@@ -412,11 +412,17 @@ pub trait VehicleConfigBevyExt {
     /// torque component. `source_entities` resolves each `usize` index in
     /// `gravity_controls` to the corresponding ECS [`Entity`].
     ///
+    /// Wired in PR #260: `integ_source` (translated to
+    /// [`components::IntegSourceC`] when `Some`) and `frame_switches`
+    /// (translated to [`components::FrameSwitchesC`] when non-empty),
+    /// retagging each `usize` source index to the matching ECS
+    /// [`Entity`] from `source_entities`.
+    ///
     /// Not yet wired (callers must insert these manually): drag, SRP
     /// (flat-plate / cannonball), shadow body, derived-state requests
     /// (orbital elements, Euler, LVLH, geodetic, solar beta, earth
-    /// lighting), `integ_source`, and frame switches. These are tracked
-    /// for future expansion of `spawn_bevy`.
+    /// lighting). These are tracked for future expansion of
+    /// `spawn_bevy`.
     ///
     /// Panics if any `GravityControl::source_name` index is out of bounds
     /// in `source_entities`.
@@ -502,6 +508,37 @@ impl VehicleConfigBevyExt for jeod_sim::VehicleConfig {
         }
         if self.compute_gravity_gradient {
             entity.insert(components::GravityTorqueC::default());
+        }
+        // Non-root integration: translate the `usize` source index to
+        // the matching ECS Entity so `register_body_frames_system` can
+        // resolve the body's integration frame against `FrameTreeR`.
+        // `IntegSourceC(None)` is the implicit default (root), so we
+        // only insert when the builder set a non-default integ source.
+        if let Some(idx) = self.integ_source {
+            let src = resolve_source_entity(source_entities, idx, "integ_source");
+            entity.insert(components::IntegSourceC(Some(src)));
+        }
+        // Frame switches: translate each `FrameSwitchConfig<usize>` to
+        // `FrameSwitchConfig<Entity>` by retagging `target_source`. The
+        // bevy adapter's `frame_switch_system` reads
+        // `FrameSwitchConfig<Entity>` directly. Skip the insertion when
+        // the builder didn't configure any switches.
+        if !self.frame_switches.is_empty() {
+            let entity_switches: Vec<jeod_sim::FrameSwitchConfig<Entity>> = self
+                .frame_switches
+                .into_iter()
+                .map(|sw| jeod_sim::FrameSwitchConfig::<Entity> {
+                    target_source: resolve_source_entity(
+                        source_entities,
+                        sw.target_source,
+                        "FrameSwitchConfig::target_source",
+                    ),
+                    switch_sense: sw.switch_sense,
+                    switch_distance: sw.switch_distance,
+                    active: sw.active,
+                })
+                .collect();
+            entity.insert(components::FrameSwitchesC(entity_switches));
         }
         entity.id()
     }
