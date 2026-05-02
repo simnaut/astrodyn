@@ -11,9 +11,10 @@
 
 use glam::DVec3;
 use jeod_math::OrbitalElements;
-use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
+use jeod_runner::{RotationModel, Simulation};
 use jeod_sim::recipes::helpers::state_helpers::state_from_elements;
 use jeod_sim::{GravityControl, GravityControls, GravityModel, GravitySource, SimulationTime};
+use jeod_sim::{GravitySourceEntry, VehicleConfig};
 
 /// Earth gravitational parameter (m^3/s^2) — JEOD `earth_GGM05C.cc`.
 const MU_EARTH: f64 = jeod_sim::EARTH.shape.mu;

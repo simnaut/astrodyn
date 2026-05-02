@@ -8,7 +8,8 @@ use jeod_test_data::tier3_csv::test_data_path;
 
 use glam::DVec3;
 use jeod_math::JeodQuat;
-use jeod_runner::{Simulation, VehicleConfig};
+use jeod_runner::Simulation;
+use jeod_sim::VehicleConfig;
 use jeod_sim::{
     compute_relative_state, MassProperties, RotationalState, SimulationTime, TranslationalState,
 };

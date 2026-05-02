@@ -8,7 +8,7 @@ use bevy_jeod::{
     SunMarker, TranslationalStateC,
 };
 use glam::DVec3;
-use jeod_runner::{DerivedStateConfig, EarthLightingConfig, GravitySourceEntry, VehicleConfig};
+use jeod_sim::{DerivedStateConfig, EarthLightingConfig, GravitySourceEntry, VehicleConfig};
 use jeod_sim::{GravityControl, GravityControls, GravityModel, GravitySource, TranslationalState};
 
 use common::*;

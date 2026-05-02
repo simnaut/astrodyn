@@ -12,13 +12,12 @@
 use jeod_test_data::tier3_csv::{load_shadow_calc_csv, test_data_path};
 
 use glam::DVec3;
-use jeod_runner::{
-    GravitySourceEntry, RotationModel, ShadowBody, Simulation, SrpModel, VehicleConfig,
-};
+use jeod_runner::{RotationModel, Simulation};
 use jeod_sim::{
     compute_shadow_fraction, solar_flux_at_distance, Ephemeris, EphemerisBody, GravityModel,
     GravitySource, SimulationTime, TranslationalState, SOLAR_RADIUS,
 };
+use jeod_sim::{GravitySourceEntry, ShadowBody, SrpModel, VehicleConfig};
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::Path;
 

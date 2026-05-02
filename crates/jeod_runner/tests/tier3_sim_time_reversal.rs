@@ -9,11 +9,12 @@
 use jeod_test_data::tier3_csv::test_data_path;
 
 use glam::DVec3;
-use jeod_runner::{GravitySourceEntry, Simulation, VehicleConfig};
+use jeod_runner::Simulation;
 use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, MassProperties, RotationalState,
     SimulationTime, TranslationalState,
 };
+use jeod_sim::{GravitySourceEntry, VehicleConfig};
 
 fn load_mu_earth_gemt1() -> f64 {
     jeod_test_data::gravity_fixtures::load_gemt1().mu

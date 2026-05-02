@@ -31,11 +31,12 @@ use jeod_test_data::tier3_csv::test_data_path;
 
 use glam::{DMat3, DVec3};
 use jeod_interactions::{ContactFacet, ContactMaterial};
-use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
+use jeod_runner::{RotationModel, Simulation};
 use jeod_sim::{
     evaluate_contact_pair, GravityControls, GravityModel, GravitySource, JeodQuat, MassProperties,
     RotationalState, SimulationTime, TranslationalState,
 };
+use jeod_sim::{GravitySourceEntry, VehicleConfig};
 use std::path::Path;
 
 // ── Shared JEOD material constants ──────────────────────────────────

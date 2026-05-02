@@ -9,11 +9,12 @@ use bevy_jeod::{
     PlanetFixedRotationC, PolarMotionR, SourceInertialPositionC, TidalConfigC, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
-use jeod_runner::{GravitySourceEntry, RotationModel, VehicleConfig};
+use jeod_runner::RotationModel;
 use jeod_sim::{
     GaussJacksonConfig, GaussJacksonState, GravityControl, GravityControls, GravityModel,
     GravitySource, IntegratorType, TidalBody, TidalConfig, TranslationalState,
 };
+use jeod_sim::{GravitySourceEntry, VehicleConfig};
 
 use common::*;
 

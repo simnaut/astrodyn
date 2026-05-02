@@ -12,11 +12,12 @@
 use jeod_test_data::tier3_csv::{load_orbinit_csv, test_data_path};
 
 use glam::DVec3;
-use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
+use jeod_runner::{RotationModel, Simulation};
 use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, SimulationTime,
     TranslationalState,
 };
+use jeod_sim::{GravitySourceEntry, VehicleConfig};
 
 #[test]
 fn tier3_simulation_orbinit_cross_consistency() {

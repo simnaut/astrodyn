@@ -15,11 +15,12 @@
 use jeod_test_data::tier3_csv::test_data_path;
 
 use glam::DVec3;
-use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, SrpModel, VehicleConfig};
+use jeod_runner::{RotationModel, Simulation};
 use jeod_sim::{
     Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel, GravitySource,
     SimulationTime, TranslationalState,
 };
+use jeod_sim::{GravitySourceEntry, SrpModel, VehicleConfig};
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
 fn load_mu_earth() -> f64 {

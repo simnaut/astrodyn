@@ -69,15 +69,14 @@
 use glam::{DMat3, DVec3};
 use jeod_dynamics::{MassBodyId, MassProperties, MassTree};
 use jeod_math::JeodQuat;
-use jeod_runner::{
-    GravitySourceEntry, RotationModel, Simulation, SimulationBuilderExt, VehicleConfig,
-};
+use jeod_runner::{RotationModel, Simulation, SimulationBuilderExt};
 use jeod_sim::met_atmosphere::GeoIndexType;
 use jeod_sim::{
     AtmosphereConfig, AtmosphereModel, GravityControl, GravityControls, GravityModel,
     GravitySource, MetAtmosphere, RotationalState, SimulationBuilder, SimulationTime,
     TranslationalState, EARTH,
 };
+use jeod_sim::{GravitySourceEntry, VehicleConfig};
 use jeod_test_data::apollo_truth::{
     load_apollo_attach_truth, nearest_truth_at, ApolloTruthError, ApolloTruthRow,
 };

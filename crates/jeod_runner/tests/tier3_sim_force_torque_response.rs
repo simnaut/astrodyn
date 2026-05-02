@@ -20,11 +20,12 @@
 //!   of the two when the force is applied at the center of mass.
 
 use glam::{DMat3, DVec3};
-use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
+use jeod_runner::{RotationModel, Simulation};
 use jeod_sim::{
     GravityControls, GravityModel, GravitySource, JeodQuat, MassProperties, RotationalState,
     SimulationTime, TranslationalState,
 };
+use jeod_sim::{GravitySourceEntry, VehicleConfig};
 
 /// A negligible gravity source kept in the frame tree but not referenced by
 /// any body.  Simulation requires a root frame; using `central: true` with

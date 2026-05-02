@@ -7,11 +7,12 @@
 use jeod_test_data::tier3_csv::test_data_path;
 
 use glam::{DMat3, DVec3};
-use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
+use jeod_runner::{RotationModel, Simulation};
 use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, SimulationTime,
     TranslationalState,
 };
+use jeod_sim::{GravitySourceEntry, VehicleConfig};
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
 fn load_mu_sun() -> f64 {

@@ -21,11 +21,12 @@ use bevy_jeod::{
     GravitySourceC, JeodPlugin, RotationalStateC, SourceInertialPositionC, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
-use jeod_runner::{GravitySourceEntry, Simulation, VehicleConfig};
+use jeod_runner::Simulation;
 use jeod_sim::{
     Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel, GravitySource,
     MassProperties, RotationalState, SixDofState, TranslationalState,
 };
+use jeod_sim::{GravitySourceEntry, VehicleConfig};
 
 /// Earth gravitational parameter (m^3/s^2) — JEOD `earth_GGM05C.cc` via presets.
 pub const MU_EARTH: f64 = jeod_sim::EARTH.shape.mu;

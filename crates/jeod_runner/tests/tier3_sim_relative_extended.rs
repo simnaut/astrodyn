@@ -22,13 +22,12 @@
 //! No Docker reference data required. Earth mu is read from JEOD source.
 
 use glam::DVec3;
-use jeod_runner::{
-    DerivedStateConfig, GravitySourceEntry, RotationModel, Simulation, VehicleConfig,
-};
+use jeod_runner::{RotationModel, Simulation};
 use jeod_sim::{
     compute_lvlh_relative_state, compute_relative_state, GravityControl, GravityControls,
     GravityModel, GravitySource, SimulationTime, TranslationalState,
 };
+use jeod_sim::{DerivedStateConfig, GravitySourceEntry, VehicleConfig};
 
 fn load_mu_earth() -> f64 {
     jeod_test_data::gravity_fixtures::load_ggm05c().mu

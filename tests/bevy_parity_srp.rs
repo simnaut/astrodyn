@@ -9,12 +9,13 @@ use bevy_jeod::{
     SourceInertialPositionC, StructuralTransformC, SunMarker, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
-use jeod_runner::{GravitySourceEntry, ShadowBody as RunnerShadowBody, SrpModel, VehicleConfig};
+use jeod_sim::ShadowBody as RunnerShadowBody;
 use jeod_sim::{
     AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig, ExponentialAtmosphere,
     FlatPlate, FlatPlateParams, FlatPlateThermal, GravityControl, GravityControls, GravityModel,
     GravitySource, MassProperties, SixDofState, TranslationalState,
 };
+use jeod_sim::{GravitySourceEntry, SrpModel, VehicleConfig};
 
 use common::*;
 
