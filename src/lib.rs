@@ -149,13 +149,35 @@ impl Plugin for JeodPlugin {
 
         // ── Resources ──
         app.init_resource::<SimulationTimeR>();
-        // Frame tree resource: created with a single root inertial node so
-        // source-mutation helpers and frame-tree consumers can rely on a
-        // valid root immediately. Mission code adds source-inertial / pfix
-        // / body frame nodes as entities are spawned.
-        let (frame_tree, root_id) = FrameTreeR::new();
-        app.insert_resource(frame_tree);
-        app.insert_resource(RootFrameIdR(root_id));
+        // Frame tree + root: only seed when the caller hasn't pre-installed
+        // them. Mission code that wants to pre-seed extra root-level
+        // frames (or a custom root name) inserts both `FrameTreeR` and
+        // `RootFrameIdR` *before* adding `JeodPlugin`; the plugin then
+        // preserves them. Inserting either alone is rejected — they
+        // describe the same tree and must stay consistent.
+        match (
+            app.world().contains_resource::<FrameTreeR>(),
+            app.world().contains_resource::<RootFrameIdR>(),
+        ) {
+            (false, false) => {
+                let (frame_tree, root_id) = FrameTreeR::new();
+                app.insert_resource(frame_tree);
+                app.insert_resource(RootFrameIdR(root_id));
+            }
+            (true, true) => {
+                // Caller pre-installed both; leave untouched.
+            }
+            (true, false) => panic!(
+                "JeodPlugin: FrameTreeR was pre-installed but RootFrameIdR was not. \
+                 Insert both together (e.g. via FrameTreeR::new()) before adding JeodPlugin, \
+                 or insert neither and let the plugin create them.",
+            ),
+            (false, true) => panic!(
+                "JeodPlugin: RootFrameIdR was pre-installed but FrameTreeR was not. \
+                 Insert both together (e.g. via FrameTreeR::new()) before adding JeodPlugin, \
+                 or insert neither and let the plugin create them.",
+            ),
+        }
 
         // ── Typed-Component reflection (#154) ──
         // Centralized in `register_jeod_component_types` so the smoke
