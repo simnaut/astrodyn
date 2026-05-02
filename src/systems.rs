@@ -30,7 +30,7 @@ use crate::SimulationTimeR;
 ///
 /// **Divergence from jeod_runner**: every source becomes a child of
 /// the root frame, including the central body. `jeod_runner` renames
-/// the root frame to "<central>.inertial" and reuses it. The Bevy
+/// the root frame to `<central>.inertial` and reuses it. The Bevy
 /// adapter keeps a generic root and treats all sources uniformly so
 /// the registration order doesn't matter and so adding a body in a
 /// non-Earth-central simulation doesn't require special-casing
@@ -268,10 +268,15 @@ pub fn frame_switch_system(
         });
 
         if switched {
-            trans.0.position =
-                jeod_sim::Position::<jeod_sim::Inertial>::from_raw_si(raw_trans.position);
-            trans.0.velocity =
-                jeod_sim::Velocity::<jeod_sim::Inertial>::from_raw_si(raw_trans.velocity);
+            // Re-wrap raw mutated state from the lifted helper (which
+            // takes an untyped `TranslationalState`); boundary analogous
+            // to `integrate_body`'s untyped kernel API.
+            let pos_typed =
+                jeod_sim::Position::<jeod_sim::Inertial>::from_raw_si(raw_trans.position); // allowed: lifted-helper boundary
+            let vel_typed =
+                jeod_sim::Velocity::<jeod_sim::Inertial>::from_raw_si(raw_trans.velocity); // allowed: lifted-helper boundary
+            trans.0.position = pos_typed;
+            trans.0.velocity = vel_typed;
             // `IntegFrameIdC` was updated in place by the helper;
             // `GravityControlsC.0` had its `differential` flags flipped
             // in place using `Entity` equality. `IntegSourceC` (the
@@ -391,10 +396,13 @@ pub fn planet_fixed_rotation_system(
         // the correct rate. Issue #71 item 1.
         if rotated {
             if let (Some(omega), Some(mut ang_vel)) = (omega, ang_vel) {
-                ang_vel.0 =
-                    jeod_sim::AngularVelocity::<jeod_sim::PlanetFixed<SelfPlanet>>::from_raw_si(
-                        glam::DVec3::new(0.0, 0.0, omega.0),
-                    );
+                // Mint `AngularVelocity<PlanetFixed<SelfPlanet>>` from the
+                // scalar `PlanetOmegaC`. JEOD's `planet_rnp.cc` writes
+                // [0, 0, omega] in the pfix frame; this is the typed-API
+                // boundary for that scalar → typed-vector lift.
+                type PlanetAngVel = jeod_sim::AngularVelocity<jeod_sim::PlanetFixed<SelfPlanet>>;
+                let raw = glam::DVec3::new(0.0, 0.0, omega.0);
+                ang_vel.0 = PlanetAngVel::from_raw_si(raw); // allowed: scalar omega → typed AngularVelocity boundary
             }
         }
     }
@@ -710,7 +718,7 @@ pub fn integration_system(
         // and PPN corrections (which depend on |r_body - r_source|).
         let typed_abs_pos = Position::<Inertial>::from_raw_si(pos + integ_origin_pos); // allowed: integrator-kernel boundary
         let typed_abs_vel = Velocity::<Inertial>::from_raw_si(vel + integ_origin_vel); // allowed: integrator-kernel boundary
-        let typed_origin = Position::<Inertial>::from_raw_si(integ_origin_pos);
+        let typed_origin = Position::<Inertial>::from_raw_si(integ_origin_pos); // allowed: integrator-kernel boundary
 
         let typed_accel = jeod_sim::accumulate_gravity_typed(
             typed_abs_pos,

@@ -79,7 +79,10 @@ impl SourceMutator<'_, '_> {
             position,
         );
 
-        let typed_pos = jeod_sim::Position::<jeod_sim::Inertial>::from_raw_si(position);
+        // SourceMutator's public API takes a raw user-supplied DVec3
+        // (mirroring `jeod_runner::Simulation::set_source_position`);
+        // this is the typed-API boundary for the user → ECS conversion.
+        let typed_pos = jeod_sim::Position::<jeod_sim::Inertial>::from_raw_si(position); // allowed: user-DVec3 → typed boundary
         if let Ok(mut pos_c) = self.positions.get_mut(source) {
             pos_c.0 = typed_pos;
         }
@@ -110,8 +113,11 @@ impl SourceMutator<'_, '_> {
             velocity,
         );
 
-        let typed_pos = jeod_sim::Position::<jeod_sim::Inertial>::from_raw_si(position);
-        let typed_vel = jeod_sim::Velocity::<jeod_sim::Inertial>::from_raw_si(velocity);
+        // SourceMutator's public API takes raw user-supplied DVec3s
+        // (mirroring `jeod_runner::Simulation::set_source_state`);
+        // this is the typed-API boundary for the user → ECS conversion.
+        let typed_pos = jeod_sim::Position::<jeod_sim::Inertial>::from_raw_si(position); // allowed: user-DVec3 → typed boundary
+        let typed_vel = jeod_sim::Velocity::<jeod_sim::Inertial>::from_raw_si(velocity); // allowed: user-DVec3 → typed boundary
         if let Ok(mut pos_c) = self.positions.get_mut(source) {
             pos_c.0 = typed_pos;
         }
