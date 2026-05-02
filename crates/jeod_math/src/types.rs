@@ -1,3 +1,15 @@
+//! Vector / matrix helpers ported from
+//! [`models/utils/math/include/vector3_inline.hh`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/utils/math/include/vector3_inline.hh)
+//! and
+//! [`models/utils/math/include/matrix3x3_inline.hh`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/utils/math/include/matrix3x3_inline.hh)
+//! in JEOD v5.4.0.
+//!
+//! JEOD source is row-major while `glam` is column-major; the
+//! [`mat3_from_rows`] helper lets a port read top-to-bottom against the
+//! C++ source and still produce a correct `glam::DMat3`. The other
+//! helpers wrap the inline `Vector3::*` / `Matrix3x3::*` operators so
+//! kernel code can name them at the JEOD convention.
+
 pub use glam::{DMat3, DQuat, DVec3};
 
 /// Construct a `DMat3` from three row vectors.

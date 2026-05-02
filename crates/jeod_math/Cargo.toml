@@ -1,12 +1,16 @@
 [package]
 name = "jeod_math"
 description = "Quaternion, Euler, geodetic, orbital-element, and LVLH math kernels for bevy_jeod"
+readme = "README.md"
 keywords = ["orbital-mechanics", "math", "quaternion", "geodetic", "aerospace"]
 categories = ["science", "aerospace", "mathematics"]
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
 
 [dependencies]
 jeod_quantities = { path = "../jeod_quantities", version = "0.1.0" }

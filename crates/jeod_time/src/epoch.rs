@@ -1,3 +1,11 @@
+//! Standard astronomical epochs and JD ↔ MJD ↔ TJT conversions.
+//!
+//! Matches JEOD's epoch definitions in
+//! [`models/environment/time/include/`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/environment/time/include/)
+//! (v5.4.0). The Truncated Julian Time (`TJT = MJD - 40000`) is JEOD's
+//! preferred internal time variable because it loses the leading
+//! `4.0e4` decimal digits that hurt `f64` precision in long sims.
+
 /// J2000.0 epoch as Julian Date: 2000-01-01 12:00:00 TT.
 pub const J2000_TT_JD: f64 = 2_451_545.0;
 

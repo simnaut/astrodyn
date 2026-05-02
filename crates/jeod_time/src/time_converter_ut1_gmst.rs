@@ -1,3 +1,10 @@
+//! UT1 → GMST conversion (Greenwich Mean Sidereal Time).
+//!
+//! Ports
+//! [`models/environment/time/src/time_converter_ut1_gmst.cc`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/environment/time/src/time_converter_ut1_gmst.cc)
+//! from JEOD v5.4.0. GMST drives Earth's body-fixed rotation in
+//! [`jeod_frames`](https://docs.rs/jeod_frames).
+
 use crate::{SecondsSince, GMST};
 use std::f64::consts::PI;
 use uom::si::angle::radian;

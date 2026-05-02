@@ -1,12 +1,16 @@
 [package]
 name = "jeod_ephemeris"
 description = "DE4xx binary ephemeris reader and body positions for bevy_jeod"
+readme = "README.md"
 keywords = ["ephemeris", "de440", "spice", "orbital-mechanics", "aerospace"]
 categories = ["science", "aerospace"]
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
 
 [dependencies]
 jeod_quantities = { path = "../jeod_quantities", version = "0.1.0" }

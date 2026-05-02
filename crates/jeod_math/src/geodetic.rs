@@ -31,9 +31,12 @@ const MAX_ITERATION_LIMIT: usize = 10;
 /// Geodetic coordinates on a reference ellipsoid.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct GeodeticState {
-    pub latitude: f64,  // rad, geodetic latitude
-    pub longitude: f64, // rad, geodetic longitude
-    pub altitude: f64,  // m, height above reference ellipsoid
+    /// Geodetic latitude in radians (positive north, range `±π/2`).
+    pub latitude: f64,
+    /// Geodetic longitude in radians (positive east).
+    pub longitude: f64,
+    /// Height above the reference ellipsoid, in meters.
+    pub altitude: f64,
 }
 
 impl GeodeticState {
@@ -96,9 +99,12 @@ impl GeodeticStateTyped {
 /// Spherical coordinates relative to a spherical planet.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SphericalState {
-    pub latitude: f64,  // rad, geocentric latitude
-    pub longitude: f64, // rad, longitude
-    pub altitude: f64,  // m, height above mean equatorial radius
+    /// Geocentric latitude in radians.
+    pub latitude: f64,
+    /// Longitude in radians (positive east).
+    pub longitude: f64,
+    /// Height above the mean equatorial radius, in meters.
+    pub altitude: f64,
 }
 
 /// Convert Cartesian PCPF coordinates to spherical coordinates.
