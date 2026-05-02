@@ -9,8 +9,10 @@
 //! `bevy_jeod`, not a layer above it; both consume `jeod_sim`.
 
 use glam::{DMat3, DVec3};
-use jeod_frames::{FrameId, FrameTree};
+use jeod_frames::{FrameId, FrameTree, RefFrameStateTyped};
 use jeod_math::JeodQuat;
+use jeod_quantities::aliases::{Position, Velocity};
+use jeod_quantities::frame::Frame;
 
 use crate::vehicle_config::{FrameSwitchConfig, SwitchSense};
 use crate::GravityControls;
@@ -50,6 +52,109 @@ pub fn frame_origin(
     }
     let state = frame_tree.compute_relative_state(root_frame_id, frame_id);
     (state.trans.position, state.trans.velocity)
+}
+
+/// Typed sibling of [`frame_origin`] returning the frame's position and
+/// velocity already wrapped as `Position<F>` / `Velocity<F>`. The frame
+/// marker `F` is the **root frame's** marker (the result expresses the
+/// query frame's origin in root-relative coordinates) — caller asserts
+/// the root is `F`. For the Bevy adapter and `jeod_runner` today, the
+/// root is by construction inertial, so callers pass `F = Inertial`.
+///
+/// Phase C5 of issue #71: lets consumers compute the integration-frame
+/// origin without re-lifting raw `DVec3` through `from_raw_si` at the
+/// hot-path boundary.
+pub fn frame_origin_typed<F: Frame>(
+    frame_tree: &FrameTree,
+    root_frame_id: FrameId,
+    frame_id: FrameId,
+) -> (Position<F>, Velocity<F>) {
+    let (pos_raw, vel_raw) = frame_origin(frame_tree, root_frame_id, frame_id);
+    (
+        Position::<F>::from_raw_si(pos_raw),
+        Velocity::<F>::from_raw_si(vel_raw),
+    )
+}
+
+/// Typed sibling of [`FrameTree::compute_relative_state`] returning a
+/// [`RefFrameStateTyped<From, To>`]. The caller asserts the supplied
+/// frame IDs correspond to frames whose markers are `From` and `To` —
+/// the arena is heterogeneous and stores untyped `RefFrameState` per
+/// node, so this is a `from_untyped_unchecked` boundary lift.
+///
+/// Phase C5 of issue #71.
+pub fn compute_relative_state_typed<From: Frame, To: Frame>(
+    frame_tree: &FrameTree,
+    from: FrameId,
+    to: FrameId,
+) -> RefFrameStateTyped<From, To> {
+    let untyped = frame_tree.compute_relative_state(from, to);
+    RefFrameStateTyped::<From, To>::from_untyped_unchecked(&untyped)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use jeod_frames::{RefFrameKind, RefFrameRot, RefFrameState, RefFrameTrans};
+    use jeod_quantities::frame::{Ecef, Inertial};
+
+    #[test]
+    fn frame_origin_typed_matches_untyped() {
+        let mut tree = FrameTree::new();
+        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let child = tree.add_child(
+            root,
+            "child".into(),
+            RefFrameKind::Inertial,
+            RefFrameState {
+                trans: RefFrameTrans {
+                    position: DVec3::new(1.0e7, 2.0e7, 3.0e7),
+                    velocity: DVec3::new(100.0, 200.0, 300.0),
+                },
+                rot: RefFrameRot::default(),
+            },
+        );
+
+        let (untyped_pos, untyped_vel) = frame_origin(&tree, root, child);
+        let (typed_pos, typed_vel) = frame_origin_typed::<Inertial>(&tree, root, child);
+
+        assert_eq!(typed_pos.raw_si(), untyped_pos);
+        assert_eq!(typed_vel.raw_si(), untyped_vel);
+    }
+
+    #[test]
+    fn frame_origin_typed_root_is_zero() {
+        let mut tree = FrameTree::new();
+        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let (typed_pos, typed_vel) = frame_origin_typed::<Inertial>(&tree, root, root);
+        assert_eq!(typed_pos.raw_si(), DVec3::ZERO);
+        assert_eq!(typed_vel.raw_si(), DVec3::ZERO);
+    }
+
+    #[test]
+    fn compute_relative_state_typed_matches_untyped() {
+        let mut tree = FrameTree::new();
+        let root = tree.add_root("root".into(), RefFrameKind::Inertial);
+        let child = tree.add_child(
+            root,
+            "ecef".into(),
+            RefFrameKind::PlanetFixed,
+            RefFrameState {
+                trans: RefFrameTrans {
+                    position: DVec3::new(1.0, 2.0, 3.0),
+                    velocity: DVec3::new(0.1, 0.2, 0.3),
+                },
+                rot: RefFrameRot::default(),
+            },
+        );
+
+        let untyped = tree.compute_relative_state(root, child);
+        let typed = compute_relative_state_typed::<Inertial, Ecef>(&tree, root, child);
+
+        assert_eq!(typed.trans.position.raw_si(), untyped.trans.position);
+        assert_eq!(typed.trans.velocity.raw_si(), untyped.trans.velocity);
+        assert_eq!(typed.rot.t_parent_this(), untyped.rot.t_parent_this);
+    }
 }
 
 /// Error returned by [`evaluate_and_apply_frame_switch`] when a configured

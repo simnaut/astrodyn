@@ -70,7 +70,8 @@ pub use derived::{
 };
 pub use forces::{collect_and_resolve_forces, collect_and_resolve_forces_typed};
 pub use frame_orchestration::{
-    evaluate_and_apply_frame_switch, frame_origin, sync_pfix_rotation, FrameSwitchTargetMissing,
+    compute_relative_state_typed, evaluate_and_apply_frame_switch, frame_origin,
+    frame_origin_typed, sync_pfix_rotation, FrameSwitchTargetMissing,
 };
 pub use gravity::{
     accumulate_gravity, accumulate_gravity_typed, accumulate_relativistic_corrections,

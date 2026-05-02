@@ -1042,13 +1042,16 @@ pub fn gravity_computation_system(
         let body_vel = state.velocity;
 
         // Integration-frame origin (relative to root). Zero for
-        // root-integrated bodies. Issue #71 item 4.
-        let integ_origin_raw = match integ_frame {
-            Some(c) if c.0 != root.0 => jeod_sim::frame_origin(&frame_tree.0, root.0, c.0).0,
-            _ => DVec3::ZERO,
+        // root-integrated bodies. Issue #71 item 4 + Phase C5: typed
+        // `frame_origin_typed::<Inertial>` returns `Position<Inertial>`
+        // directly, so no `from_raw_si` lift is needed at the boundary.
+        let (integ_origin, integ_origin_vel) = match integ_frame {
+            Some(c) if c.0 != root.0 => {
+                jeod_sim::frame_origin_typed::<Inertial>(&frame_tree.0, root.0, c.0)
+            }
+            _ => (Position::<Inertial>::zero(), Velocity::<Inertial>::zero()),
         };
-        let integ_origin = Position::<Inertial>::from_raw_si(integ_origin_raw);
-        let abs_pos = Position::<Inertial>::from_raw_si(body_pos.raw_si() + integ_origin_raw);
+        let abs_pos = body_pos + integ_origin;
 
         let typed_accel = jeod_sim::accumulate_gravity_typed(
             abs_pos,
@@ -1082,12 +1085,10 @@ pub fn gravity_computation_system(
         // on |r_body - r_source| and v_body in inertial frame, so for
         // non-root-integrated bodies we lift `body_pos`/`body_vel` from
         // integ-frame coords into absolute inertial coords first.
-        let (integ_origin_pos, integ_origin_vel) = match integ_frame {
-            Some(c) if c.0 != root.0 => jeod_sim::frame_origin(&frame_tree.0, root.0, c.0),
-            _ => (DVec3::ZERO, DVec3::ZERO),
-        };
-        let abs_body_pos = Position::<Inertial>::from_raw_si(body_pos.raw_si() + integ_origin_pos);
-        let abs_body_vel = Velocity::<Inertial>::from_raw_si(body_vel.raw_si() + integ_origin_vel);
+        // Reuse the typed origin computed above: (integ_origin,
+        // integ_origin_vel) are already Position/Velocity<Inertial>.
+        let abs_body_pos = body_pos + integ_origin;
+        let abs_body_vel = body_vel + integ_origin_vel;
         let rel_accel = jeod_sim::accumulate_relativistic_corrections_typed(
             abs_body_pos,
             abs_body_vel,
