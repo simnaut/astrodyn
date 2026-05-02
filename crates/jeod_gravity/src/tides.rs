@@ -14,7 +14,7 @@
 use glam::{DMat3, DVec3};
 use jeod_quantities::aliases::Position;
 use jeod_quantities::dims::GravParam;
-use jeod_quantities::frame::Inertial;
+use jeod_quantities::frame::RootInertial;
 use uom::si::f64::{Length, Ratio};
 
 /// Default Love number k2 for Earth solid body tides.
@@ -65,13 +65,13 @@ pub struct TidalConfigTyped {
 
 /// Typed sibling of [`TidalBody`].
 ///
-/// `position_inertial` carries the [`Position<Inertial>`] phantom tag.
+/// `position_inertial` carries the [`Position<RootInertial>`] phantom tag.
 #[derive(Debug, Clone)]
 pub struct TidalBodyTyped {
     /// Gravitational parameter μ of the perturber.
     pub mu: GravParam,
-    /// Position of the perturber in the inertial frame.
-    pub position_inertial: Position<Inertial>,
+    /// Position of the perturber in the simulation's root inertial frame.
+    pub position_inertial: Position<RootInertial>,
 }
 
 impl TidalConfigTyped {
@@ -110,7 +110,7 @@ impl TidalConfigTyped {
                 .iter()
                 .map(|b| TidalBodyTyped {
                     mu: F64Ext::m3_per_s2(b.mu),
-                    position_inertial: b.position_inertial.m_at::<Inertial>(),
+                    position_inertial: b.position_inertial.m_at::<RootInertial>(),
                 })
                 .collect(),
         }
@@ -261,7 +261,7 @@ mod tests {
                 .iter()
                 .map(|b| TidalBodyTyped {
                     mu: b.mu.m3_per_s2(),
-                    position_inertial: Position::<Inertial>::from_raw_si(b.position_inertial),
+                    position_inertial: Position::<RootInertial>::from_raw_si(b.position_inertial),
                 })
                 .collect(),
         };

@@ -47,8 +47,8 @@ fn point_mass_earth(mu: f64, with_rnp: bool) -> GravitySourceEntry {
             mu,
             model: GravityModel::PointMass,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
+        position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+        velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
         // `t_inertial_pfix: Some(IDENTITY)` triggers the RNP update each
         // step, which the geodetic conversion needs. Other derived
         // states don't need it, so leave it `None` to match the JEOD

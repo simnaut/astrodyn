@@ -132,7 +132,7 @@ fn run_simulation_steps() -> SixDofState {
             mu: MU_EARTH,
             model: GravityModel::PointMass,
         },
-        DVec3::ZERO,
+        jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
         None,
     );
     earth_entry.central = true;
@@ -270,7 +270,7 @@ fn tier3_bevy_rkf45_matches_simulation_bit_identical() {
             mu: MU_EARTH,
             model: GravityModel::PointMass,
         },
-        DVec3::ZERO,
+        jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
         None,
     );
     earth_entry.central = true;

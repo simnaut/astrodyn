@@ -187,7 +187,11 @@ pub fn assert_trans_eq(label: &str, a: &TranslationalState, b: &TranslationalSta
 pub fn new_sim_earth(dt: f64) -> (Simulation, usize) {
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, dt);
-    let mut earth_entry = GravitySourceEntry::new(earth_source(), DVec3::ZERO, None);
+    let mut earth_entry = GravitySourceEntry::new(
+        earth_source(),
+        jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+        None,
+    );
     earth_entry.central = true;
     let earth_idx = sim.add_source("Earth", earth_entry);
     (sim, earth_idx)

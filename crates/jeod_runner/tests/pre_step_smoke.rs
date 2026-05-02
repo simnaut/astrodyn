@@ -96,8 +96,8 @@ fn scenario(init: &InitialConditions) -> SimulationBuilder {
         "Earth",
         GravitySourceEntry {
             source: earth_grav,
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: None,
             delta_c20: 0.0,
             rotation_model: RotationModel::default(),
@@ -113,8 +113,8 @@ fn scenario(init: &InitialConditions) -> SimulationBuilder {
                 mu: 0.0, // direction-only, not gravitating
                 model: GravityModel::PointMass,
             },
-            position: pretend_sun_position(0.0),
-            velocity: DVec3::ZERO,
+            position: jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(pretend_sun_position(0.0)),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: None,
             delta_c20: 0.0,
             rotation_model: RotationModel::default(),

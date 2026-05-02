@@ -9,6 +9,8 @@
 //! Earth albedo lighting uses a crude cosine approximation (not a JEOD port).
 
 use glam::DVec3;
+use jeod_quantities::aliases::Position;
+use jeod_quantities::frame::RootInertial;
 use std::f64::consts::PI;
 
 const EPSILON: f64 = 1.0e-12;
@@ -231,6 +233,33 @@ pub fn compute_earth_lighting(
             lighting: earth_albedo_lighting,
         },
     }
+}
+
+/// Typed sibling of [`compute_earth_lighting`].
+///
+/// Takes `Position<RootInertial>` for vehicle / sun / moon positions
+/// (root-inertial coordinates). Bit-identical kernel — wraps the
+/// untyped function via `.raw_si()` at the boundary. The structural
+/// guarantee is at the call site: passing a body's
+/// `Position<IntegrationFrame>` directly is a compile error, forcing
+/// the caller through `IntegOrigin::shift_position` first (RF.10).
+#[allow(clippy::too_many_arguments)]
+pub fn compute_earth_lighting_typed(
+    pos_veh: Position<RootInertial>,
+    pos_sun: Position<RootInertial>,
+    pos_moon: Position<RootInertial>,
+    sun_radius: f64,
+    earth_radius: f64,
+    moon_radius: f64,
+) -> EarthLightingState {
+    compute_earth_lighting(
+        pos_veh.raw_si(),
+        pos_sun.raw_si(),
+        pos_moon.raw_si(),
+        sun_radius,
+        earth_radius,
+        moon_radius,
+    )
 }
 
 /// Compute the observation angle between two directions from the observer.

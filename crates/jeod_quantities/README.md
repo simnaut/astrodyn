@@ -34,8 +34,17 @@ down to raw `glam::DVec3` / `f64` for arithmetic density via
 
 ## Public surface
 
-- Reference-frame and time-scale phantom markers (`Inertial`, `Ecef`,
-  `PlanetFixed<P>`, `BodyFrame<V>`, `Lvlh<Chief>`, `TAI`, `TT`, …).
+- Reference-frame phantom markers — three kind-distinct inertial
+  flavors plus rotating / vehicle frames:
+  - `RootInertial` — the simulation's unique root inertial frame.
+  - `PlanetInertial<P: Planet>` — a particular planet's inertial frame
+    (centered on `P`'s CoM, non-rotating).
+  - `IntegrationFrame` — a body's integration frame; only convertible
+    to `RootInertial` via the `IntegOrigin` shift API (issue #255 /
+    `RF.10`).
+  - Plus `Ecef`, `PlanetFixed<P>`, `BodyFrame<V>`, `StructuralFrame<V>`,
+    `Lvlh<Chief>`, `Ned<Chief>`.
+- Time-scale phantom markers (`TAI`, `TT`, `TDB`, `UT1`, `UTC`, …).
 - `uom`-backed componentwise 3-vectors `Qty3<D, F>` with aliases
   `Position<F>`, `Velocity<F>`, `Acceleration<F>`, `Force<F>`,
   `Torque<F>`, …

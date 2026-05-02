@@ -9,7 +9,7 @@
 
 use glam::DVec3;
 use jeod_quantities::aliases::{Force, Position};
-use jeod_quantities::frame::Inertial;
+use jeod_quantities::frame::RootInertial;
 use uom::si::f64::{Area, Ratio};
 
 /// Solar luminosity in W (matching JEOD `radiation_source.hh`).
@@ -465,18 +465,18 @@ pub fn compute_cannonball_srp(
 
 /// Typed sibling of [`compute_cannonball_srp`].
 ///
-/// Inputs are typed [`Position<Inertial>`] for body and sun, [`Area`]
+/// Inputs are typed [`Position<RootInertial>`] for body and sun, [`Area`]
 /// for the cross-section, and [`Ratio`] for the dimensionless albedo /
-/// diffuse / illumination factors. Output is [`Force<Inertial>`].
+/// diffuse / illumination factors. Output is [`Force<RootInertial>`].
 /// Same numeric kernel — bit-identical output for equal numeric input.
 pub fn compute_cannonball_srp_typed(
-    body_pos: Position<Inertial>,
-    sun_pos: Position<Inertial>,
+    body_pos: Position<RootInertial>,
+    sun_pos: Position<RootInertial>,
     cx_area: Area,
     albedo: Ratio,
     diffuse: Ratio,
     illum_factor: Ratio,
-) -> Force<Inertial> {
+) -> Force<RootInertial> {
     let force = compute_cannonball_srp(
         body_pos.raw_si(),
         sun_pos.raw_si(),
@@ -485,7 +485,7 @@ pub fn compute_cannonball_srp_typed(
         diffuse.value,
         illum_factor.value,
     );
-    Force::<Inertial>::from_raw_si(force)
+    Force::<RootInertial>::from_raw_si(force)
 }
 
 /// Integrate a single plate's temperature via Forward Euler with overshoot clamping.
@@ -619,8 +619,8 @@ mod tests {
 
         let untyped = compute_cannonball_srp(body, sun, cx_area, albedo, diffuse, illum);
         let typed = compute_cannonball_srp_typed(
-            Position::<Inertial>::from_raw_si(body),
-            Position::<Inertial>::from_raw_si(sun),
+            Position::<RootInertial>::from_raw_si(body),
+            Position::<RootInertial>::from_raw_si(sun),
             Area::new::<square_meter>(cx_area),
             Ratio::new::<ratio>(albedo),
             Ratio::new::<ratio>(diffuse),
@@ -632,8 +632,8 @@ mod tests {
         let coincident = DVec3::new(0.5, 0.0, 0.0); // < 1 m
         let untyped_zero = compute_cannonball_srp(coincident, sun, cx_area, albedo, diffuse, illum);
         let typed_zero = compute_cannonball_srp_typed(
-            Position::<Inertial>::from_raw_si(coincident),
-            Position::<Inertial>::from_raw_si(sun),
+            Position::<RootInertial>::from_raw_si(coincident),
+            Position::<RootInertial>::from_raw_si(sun),
             Area::new::<square_meter>(cx_area),
             Ratio::new::<ratio>(albedo),
             Ratio::new::<ratio>(diffuse),

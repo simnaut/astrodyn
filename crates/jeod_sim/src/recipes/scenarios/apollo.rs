@@ -11,6 +11,7 @@
 
 use glam::DVec3;
 use jeod_gravity::GravityControl;
+use jeod_quantities::ext::Vec3Ext;
 
 use crate::recipes::{constants, earth, epoch, moon, sun, vehicle};
 use crate::vehicle_builder::VehicleBuilder;
@@ -50,9 +51,19 @@ pub fn apollo_translunar() -> SimulationBuilder {
     debug_assert_eq!(earth_idx, EARTH_IDX);
     // Moon and Sun positions are overwritten each step by the
     // ephemeris stage; the seed values here are immaterial.
-    let moon_idx = sb.add_source("Moon", moon::third_body(DVec3::new(3.85e8, 0.0, 0.0)));
+    let moon_idx = sb.add_source(
+        "Moon",
+        moon::third_body(
+            DVec3::new(3.85e8, 0.0, 0.0).m_at::<jeod_quantities::frame::RootInertial>(),
+        ),
+    );
     debug_assert_eq!(moon_idx, MOON_IDX);
-    let sun_idx = sb.add_source("Sun", sun::third_body(DVec3::new(1.496e11, 0.0, 0.0)));
+    let sun_idx = sb.add_source(
+        "Sun",
+        sun::third_body(
+            DVec3::new(1.496e11, 0.0, 0.0).m_at::<jeod_quantities::frame::RootInertial>(),
+        ),
+    );
     debug_assert_eq!(sun_idx, SUN_IDX);
     sb = sb.sun(sun_idx).moon(moon_idx);
 

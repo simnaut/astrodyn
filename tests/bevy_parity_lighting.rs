@@ -114,7 +114,7 @@ fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_p
                 mu: 0.0,
                 model: GravityModel::PointMass,
             },
-            sun_pos,
+            jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(sun_pos),
             None,
         ),
     );
@@ -125,7 +125,7 @@ fn run_earth_lighting_parity(label: &str, veh_pos: DVec3, sun_pos: DVec3, moon_p
                 mu: 0.0,
                 model: GravityModel::PointMass,
             },
-            moon_pos,
+            jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(moon_pos),
             None,
         ),
     );
@@ -326,7 +326,7 @@ fn tier3_bevy_earth_lighting_pipeline() {
                 mu: 0.0,
                 model: GravityModel::PointMass,
             },
-            sun_pos,
+            jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(sun_pos),
             None,
         ),
     );
@@ -337,7 +337,7 @@ fn tier3_bevy_earth_lighting_pipeline() {
                 mu: 0.0,
                 model: GravityModel::PointMass,
             },
-            moon_pos,
+            jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(moon_pos),
             None,
         ),
     );

@@ -17,8 +17,9 @@ use jeod_frames::FrameId;
 use jeod_sim::{
     AerodynamicForce, AtmosphereState, ContactFacet, DragConfig, DynamicsConfig, EulerSequence,
     FrameDerivatives, FrameSwitchConfig, GeodeticState, GravityAcceleration, GravityControls,
-    GravitySource, LvlhFrame, MassProperties, OrbitalElements, RadiationForce, RotationModel,
-    RotationalState, SrpModel, TotalForce, TranslationalState, VehicleConfig,
+    GravitySource, IntegrationFrame, LvlhFrame, MassProperties, OrbitalElements, RadiationForce,
+    RotationModel, RotationalState, SrpModel, TotalForce, TranslationalState,
+    TranslationalStateTyped, VehicleConfig,
 };
 
 /// Registration of a contact interaction between two bodies.
@@ -42,7 +43,9 @@ pub struct ContactPairConfig {
 
 /// Maps a gravity source to its frame tree nodes.
 pub(crate) struct SourceFrameIds {
-    /// Inertial frame for this source (e.g., "Earth.inertial").
+    /// Inertial frame node for this source (e.g., `"Earth.inertial"`).
+    /// Equals `root_frame_id` when the source is central; otherwise it is
+    /// a non-central child of the root.
     pub inertial: FrameId,
     /// Planet-fixed frame (e.g., "Earth.pfix"), if the source has a rotation model.
     pub pfix: Option<FrameId>,
@@ -113,7 +116,22 @@ pub struct VehicleOutput {
 /// [`VehicleConfig`] (input) and [`VehicleOutput`] (output).
 pub(crate) struct SimBody {
     // ── Config (from VehicleConfig) ──
-    pub trans: TranslationalState,
+    /// Translational state in this body's integration frame.
+    ///
+    /// `IntegrationFrame` is *kind-distinct* from `RootInertial` so that
+    /// root-inertial consumers (gravity, relativistic, SRP, solar beta,
+    /// earth lighting — the *shift sites*, which mix body state with
+    /// root-inertial source positions for Sun, Moon, or gravity sources)
+    /// cannot silently take the integration-frame value — they must call
+    /// `body.trans.to_inertial(&integ_origin)` first. Planet-inertial
+    /// consumers (atmosphere, drag velocity, LVLH, geodetic, orbital
+    /// elements — *non-shift sites*, which operate within a single
+    /// planet's inertial frame) take `body.trans.position.raw_si()`
+    /// directly: the body's integration frame is that planet's inertial
+    /// frame in realistic configs, so applying the shift would change the
+    /// planet-relative coordinates and produce wrong physics. See
+    /// issue #255 and `JEOD_invariants.md` RF.10 for the split.
+    pub trans: TranslationalStateTyped<IntegrationFrame>,
     pub rot: Option<RotationalState>,
     pub mass: Option<MassProperties>,
     /// If this body participates in a mass tree, its node ID.
@@ -199,7 +217,12 @@ impl SimBody {
         };
 
         Self {
-            trans: config.trans,
+            // VehicleConfig::trans is documented as integration-frame; wrap
+            // the untyped storage with the IntegrationFrame phantom so
+            // root-inertial consumers must shift via `to_inertial`. See #255.
+            trans: TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
+                &config.trans,
+            ),
             rot: config.rot,
             mass: config.mass,
             mass_body_id: None,
@@ -255,7 +278,10 @@ impl SimBody {
     /// Create a VehicleOutput view of the current state.
     pub(crate) fn output(&self) -> VehicleOutput {
         VehicleOutput {
-            trans: self.trans,
+            // VehicleOutput::trans is the public, untyped integration-frame
+            // storage form. Drop the IntegrationFrame phantom at the API
+            // boundary; the values are bit-identical.
+            trans: self.trans.to_untyped(),
             integ_frame_id: self.integ_frame_id,
             rot: self.rot,
             trans_accel: self.frame_derivs.trans_accel,

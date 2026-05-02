@@ -61,8 +61,8 @@ fn add_earth_point_mass(sim: &mut Simulation) -> usize {
                 mu: MU_EARTH,
                 model: GravityModel::PointMass,
             },
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: None,
             delta_c20: 0.0,
             rotation_model: RotationModel::None,
@@ -174,8 +174,12 @@ fn tier3_dyncomp_point_mass_plus_thirdbody_conservation() {
                 model: GravityModel::PointMass,
             },
             // Sun ~23.4° out of the equator (ecliptic obliquity).
-            position: DVec3::new(R_EARTH_SUN * 0.9175, 0.0, R_EARTH_SUN * 0.3977),
-            velocity: DVec3::ZERO,
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(DVec3::new(
+                R_EARTH_SUN * 0.9175,
+                0.0,
+                R_EARTH_SUN * 0.3977,
+            )),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: None,
             delta_c20: 0.0,
             rotation_model: RotationModel::None,
@@ -192,8 +196,12 @@ fn tier3_dyncomp_point_mass_plus_thirdbody_conservation() {
                 model: GravityModel::PointMass,
             },
             // Moon ~5° off the ecliptic — put it off the XY plane too.
-            position: DVec3::new(0.0, R_EARTH_MOON * 0.9063, R_EARTH_MOON * 0.4226),
-            velocity: DVec3::ZERO,
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(DVec3::new(
+                0.0,
+                R_EARTH_MOON * 0.9063,
+                R_EARTH_MOON * 0.4226,
+            )),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: None,
             delta_c20: 0.0,
             rotation_model: RotationModel::None,
@@ -428,7 +436,7 @@ fn tier3_dyncomp_6dof_rigid_body_invariance() {
 
     assert!(
         dh_rel < 1.0e-6,
-        "Inertial H not conserved: relative error {dh_rel:.3e}"
+        "RootInertial H not conserved: relative error {dh_rel:.3e}"
     );
     assert!(
         mag_rel < 1.0e-6,

@@ -51,7 +51,7 @@ use jeod_gravity::{GravityControl, GravityControls};
 use jeod_interactions::DragConfig;
 use jeod_math::{EulerSequence, OrbitalElements};
 use jeod_quantities::dims::GravParam;
-use jeod_quantities::frame::Inertial;
+use jeod_quantities::frame::RootInertial;
 use uom::si::f64::{Angle, Length, Mass};
 
 use crate::interactions::FlatPlateState;
@@ -119,7 +119,7 @@ impl BuildState for Ready {}
 /// [`VehicleConfig`] (the type that goes into `SimulationBuilder::add_body`
 /// and through `Simulation`).
 pub struct VehicleBuilder<S: BuildState = NeedsState> {
-    trans: Option<TranslationalStateTyped<Inertial>>,
+    trans: Option<TranslationalStateTyped<RootInertial>>,
     rot: Option<RotationalState>,
     mass: Option<MassProperties>,
     integrator: Option<IntegratorType>,
@@ -198,7 +198,7 @@ impl VehicleBuilder<NeedsState> {
     /// Set the initial translational state (typed).
     pub fn with_translational(
         mut self,
-        s: TranslationalStateTyped<Inertial>,
+        s: TranslationalStateTyped<RootInertial>,
     ) -> VehicleBuilder<NeedsMass> {
         self.trans = Some(s);
         self.transition()
@@ -208,9 +208,7 @@ impl VehicleBuilder<NeedsState> {
     /// [`TranslationalState`]. Convenience for call sites that haven't
     /// migrated to typed quantities yet.
     pub fn with_state(self, s: TranslationalState) -> VehicleBuilder<NeedsMass> {
-        self.with_translational(TranslationalStateTyped::<Inertial>::from_untyped_unchecked(
-            &s,
-        ))
+        self.with_translational(TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(&s))
     }
 
     /// Set the initial translational state from Keplerian orbital
@@ -476,8 +474,8 @@ mod tests {
     use super::*;
     use jeod_quantities::ext::F64Ext;
 
-    fn iss_trans() -> TranslationalStateTyped<Inertial> {
-        TranslationalStateTyped::<Inertial>::from_untyped_unchecked(&TranslationalState {
+    fn iss_trans() -> TranslationalStateTyped<RootInertial> {
+        TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(&TranslationalState {
             position: DVec3::new(7_000_000.0, 0.0, 0.0),
             velocity: DVec3::new(0.0, 7_500.0, 0.0),
         })

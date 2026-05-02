@@ -171,11 +171,11 @@ fn validate_orbital_roundtrip_5000_vectors() {
 
     for (i, sv) in vectors.iter().enumerate() {
         use jeod_quantities::ext::{F64Ext, Vec3Ext};
-        use jeod_quantities::frame::Inertial;
+        use jeod_quantities::frame::{Earth, PlanetInertial};
         let elems = match OrbitalElements::from_cartesian_typed(
             F64Ext::m3_per_s2(MU_EARTH),
-            sv.position.m_at::<Inertial>(),
-            sv.velocity.m_per_s_at::<Inertial>(),
+            sv.position.m_at::<PlanetInertial<Earth>>(),
+            sv.velocity.m_per_s_at::<PlanetInertial<Earth>>(),
         ) {
             Ok(e) => e,
             Err(e) => {

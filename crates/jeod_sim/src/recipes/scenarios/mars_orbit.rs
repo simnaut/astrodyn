@@ -8,6 +8,7 @@
 
 use glam::DVec3;
 use jeod_gravity::GravityControl;
+use jeod_quantities::ext::Vec3Ext;
 
 use crate::recipes::{epoch, mars, sun, vehicle};
 use crate::vehicle_builder::VehicleBuilder;
@@ -34,7 +35,12 @@ use crate::SimulationBuilder;
 pub fn mars_orbit() -> SimulationBuilder {
     let mut sb = SimulationBuilder::new(epoch::dawn_mars_2009(), 10.0);
     let mars_idx = sb.add_source("Mars", mars::point_mass());
-    let sun_idx = sb.add_source("Sun", sun::third_body(DVec3::new(2.27e11, 0.0, 0.0)));
+    let sun_idx = sb.add_source(
+        "Sun",
+        sun::third_body(
+            DVec3::new(2.27e11, 0.0, 0.0).m_at::<jeod_quantities::frame::RootInertial>(),
+        ),
+    );
     sb = sb.sun(sun_idx);
 
     // Dawn initial state at Mars (Mars-centered inertial frame).

@@ -12,7 +12,7 @@
 use glam::{DMat3, DVec3};
 
 use jeod_quantities::aliases::{Position, Velocity};
-use jeod_quantities::frame::{Inertial, Lvlh, Vehicle};
+use jeod_quantities::frame::{Lvlh, Planet, PlanetInertial, Vehicle};
 use jeod_quantities::frame_transform::FrameTransform;
 use jeod_quantities::quat::{JeodQuat, NormalizedQuat};
 
@@ -54,7 +54,10 @@ impl LvlhFrame {
     ///
     /// # Panics
     /// Panics if position or angular momentum magnitude is zero.
-    pub fn compute(position: Position<Inertial>, velocity: Velocity<Inertial>) -> Self {
+    pub fn compute<P: Planet>(
+        position: Position<PlanetInertial<P>>,
+        velocity: Velocity<PlanetInertial<P>>,
+    ) -> Self {
         compute_lvlh_frame_impl(position.raw_si(), velocity.raw_si())
     }
 }
@@ -147,11 +150,12 @@ fn compute_lvlh_frame_impl(position: DVec3, velocity: DVec3) -> LvlhFrame {
 ///
 /// # Panics
 /// Panics if position or angular momentum magnitude is zero (radial trajectory).
-pub fn compute_lvlh_frame_typed<Chief>(
-    position: Position<Inertial>,
-    velocity: Velocity<Inertial>,
-) -> FrameTransform<Inertial, Lvlh<Chief>>
+pub fn compute_lvlh_frame_typed<P, Chief>(
+    position: Position<PlanetInertial<P>>,
+    velocity: Velocity<PlanetInertial<P>>,
+) -> FrameTransform<PlanetInertial<P>, Lvlh<Chief>>
 where
+    P: Planet,
     Chief: Vehicle,
 {
     // Delegate to the shared kernel so physics stays in one place.
@@ -165,7 +169,7 @@ where
     let q: JeodQuat = JeodQuat::left_quat_from_transformation(&lvlh.t_parent_this);
     let q_norm = NormalizedQuat::new(q)
         .unwrap_or_else(|err| panic!("left_quat_from_transformation guarantees unit norm: {err}"));
-    FrameTransform::<Inertial, Lvlh<Chief>>::from_quat(q_norm)
+    FrameTransform::<PlanetInertial<P>, Lvlh<Chief>>::from_quat(q_norm)
 }
 
 #[cfg(test)]
@@ -318,9 +322,12 @@ mod tests {
         let q_f64 = JeodQuat::left_quat_from_transformation(&lvlh_f64.t_parent_this);
 
         // Typed sibling: build Position/Velocity and call compute_lvlh_frame_typed.
-        let position = Position::<Inertial>::from_raw_si(position_raw);
-        let velocity = Velocity::<Inertial>::from_raw_si(velocity_raw);
-        let xform = compute_lvlh_frame_typed::<IssChief>(position, velocity);
+        let position =
+            Position::<PlanetInertial<jeod_quantities::frame::Earth>>::from_raw_si(position_raw);
+        let velocity =
+            Velocity::<PlanetInertial<jeod_quantities::frame::Earth>>::from_raw_si(velocity_raw);
+        let xform =
+            compute_lvlh_frame_typed::<jeod_quantities::frame::Earth, IssChief>(position, velocity);
 
         // Quaternion components must match bit-exactly — same extractor, same
         // input matrix, same renormalization code path.

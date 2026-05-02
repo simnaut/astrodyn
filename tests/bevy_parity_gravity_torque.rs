@@ -62,7 +62,11 @@ fn tier3_bevy_gravity_torque_sixdof() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let mut earth_entry = GravitySourceEntry::new(earth_source(), DVec3::ZERO, None);
+    let mut earth_entry = GravitySourceEntry::new(
+        earth_source(),
+        jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+        None,
+    );
     earth_entry.central = true;
     let earth_idx = sim.add_source("Earth", earth_entry);
 
@@ -172,7 +176,11 @@ fn tier3_bevy_external_torque_per_body() {
     // Path B: Simulation::step() pipeline with set_body_external_torque
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, step_dt);
-    let mut earth_entry = GravitySourceEntry::new(earth_src, DVec3::ZERO, None);
+    let mut earth_entry = GravitySourceEntry::new(
+        earth_src,
+        jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+        None,
+    );
     earth_entry.central = true;
     let earth_idx = sim.add_source("Earth", earth_entry);
     sim.add_body(VehicleConfig {
@@ -361,7 +369,7 @@ fn run_external_parity(
         let (force, torque) = force_torque_fn(t, dt, &quat);
 
         let mut ext_f = app.world_mut().get_mut::<ExternalForceC>(vehicle).unwrap();
-        ext_f.0 = jeod_sim::Force::<jeod_sim::Inertial>::from_raw_si(force);
+        ext_f.0 = jeod_sim::Force::<jeod_sim::RootInertial>::from_raw_si(force);
         let mut ext_t = app.world_mut().get_mut::<ExternalTorqueC>(vehicle).unwrap();
         ext_t.0 = jeod_sim::Torque::<jeod_sim::BodyFrame<jeod_sim::SelfRef>>::from_raw_si(torque);
 

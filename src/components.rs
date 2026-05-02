@@ -8,8 +8,8 @@ use glam::DVec3;
 use jeod_sim::{
     Angle, BodyFrame, DragConfig, DragConfigTyped, DynamicsConfig, FrameDerivatives,
     FrameDerivativesTyped, FrameTransform, GravityAcceleration, GravityAccelerationTyped,
-    GravityControls, GravitySource, Inertial, MassProperties, MassPropertiesTyped, PlanetFixed,
-    PlanetShape, Position, Ratio, RotationalState, RotationalStateTyped, SelfPlanet, SelfRef,
+    GravityControls, GravitySource, MassProperties, MassPropertiesTyped, PlanetFixed, PlanetShape,
+    Position, Ratio, RootInertial, RotationalState, RotationalStateTyped, SelfPlanet, SelfRef,
     StructuralFrame, Torque, TotalForce, TotalForceTyped, TranslationalState,
     TranslationalStateTyped, Velocity,
 };
@@ -17,13 +17,13 @@ use jeod_sim::{
 // ── Dynamics ──
 //
 // Spatial Components wrap the **typed siblings** from `jeod_dynamics`,
-// not the raw untyped storage. The frame phantoms (`Inertial`,
+// not the raw untyped storage. The frame phantoms (`RootInertial`,
 // `BodyFrame<SelfRef>`, `StructuralFrame<SelfRef>`) are baked into the
 // component at the type level, so systems read typed values directly
 // without the per-step `from_raw_si` lifts that the audit's #172 H1
 // flagged as the load-bearing failure mode of the typed-quantity
 // facade. Mission code that mutates `c.0.position` directly via raw
-// `DVec3` is now a compile error — the typed accessor `Position<Inertial>`
+// `DVec3` is now a compile error — the typed accessor `Position<RootInertial>`
 // surfaces the convention as a type, not just a comment.
 //
 // `From<Untyped>` impls are provided on every spatial Component so
@@ -31,26 +31,24 @@ use jeod_sim::{
 // from an untyped `TranslationalState` switches to
 // `TranslationalStateC::from(state)` without other changes.
 
-/// Inertial translational state (position, velocity, acceleration) for
+/// RootInertial translational state (position, velocity, acceleration) for
 /// the body being integrated. Wraps the typed
-/// [`TranslationalStateTyped<Inertial>`] sibling so frame is enforced
+/// [`TranslationalStateTyped<RootInertial>`] sibling so frame is enforced
 /// at the type level.
 // JEOD_INV: DB.24 — default integrated_frame is composite_body (we integrate composite_body state)
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Default, Reflect)]
 #[reflect(opaque, Component)]
-pub struct TranslationalStateC(pub TranslationalStateTyped<Inertial>);
+pub struct TranslationalStateC(pub TranslationalStateTyped<RootInertial>);
 
 impl TranslationalStateC {
     /// Wrap an untyped [`TranslationalState`] as the typed Bevy
-    /// Component. The caller asserts the frame is `Inertial` — the only
+    /// Component. The caller asserts the frame is `RootInertial` — the only
     /// integration frame the Bevy adapter currently supports. No
     /// runtime check is performed; the conversion is a zero-cost
     /// type-tag attachment.
     #[inline]
     pub fn from_untyped(state: TranslationalState) -> Self {
-        Self(TranslationalStateTyped::<Inertial>::from_untyped_unchecked(
-            &state,
-        ))
+        Self(TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(&state))
     }
 }
 
@@ -123,12 +121,12 @@ impl From<MassProperties> for MassPropertiesC {
 /// `force_collection_system`.
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Default, Reflect)]
 #[reflect(opaque, Component)]
-pub struct GravityAccelerationC(pub GravityAccelerationTyped<Inertial>);
+pub struct GravityAccelerationC(pub GravityAccelerationTyped<RootInertial>);
 
 impl From<GravityAcceleration> for GravityAccelerationC {
     #[inline]
     fn from(g: GravityAcceleration) -> Self {
-        Self(GravityAccelerationTyped::<Inertial>::from_untyped_unchecked(&g))
+        Self(GravityAccelerationTyped::<RootInertial>::from_untyped_unchecked(&g))
     }
 }
 
@@ -137,12 +135,12 @@ impl From<GravityAcceleration> for GravityAccelerationC {
 /// system.
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Default, Reflect)]
 #[reflect(opaque, Component)]
-pub struct TotalForceC(pub TotalForceTyped<SelfRef, Inertial>);
+pub struct TotalForceC(pub TotalForceTyped<SelfRef, RootInertial>);
 
 impl From<TotalForce> for TotalForceC {
     #[inline]
     fn from(t: TotalForce) -> Self {
-        Self(TotalForceTyped::<SelfRef, Inertial>::from_untyped_unchecked(&t))
+        Self(TotalForceTyped::<SelfRef, RootInertial>::from_untyped_unchecked(&t))
     }
 }
 
@@ -150,12 +148,12 @@ impl From<TotalForce> for TotalForceC {
 /// stage. Populated by `force_collection_system`.
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Default, Reflect)]
 #[reflect(opaque, Component)]
-pub struct FrameDerivativesC(pub FrameDerivativesTyped<Inertial, SelfRef>);
+pub struct FrameDerivativesC(pub FrameDerivativesTyped<RootInertial, SelfRef>);
 
 impl From<FrameDerivatives> for FrameDerivativesC {
     #[inline]
     fn from(d: FrameDerivatives) -> Self {
-        Self(FrameDerivativesTyped::<Inertial, SelfRef>::from_untyped_unchecked(&d))
+        Self(FrameDerivativesTyped::<RootInertial, SelfRef>::from_untyped_unchecked(&d))
     }
 }
 
@@ -207,10 +205,10 @@ pub struct GravityControlsC(pub GravityControls<Entity>);
 #[reflect(opaque, Component)]
 pub struct GravitySourceC(pub GravitySource);
 
-/// Inertial-frame position of a gravity source.
+/// RootInertial-frame position of a gravity source.
 ///
 /// For the central body (e.g., Earth in an Earth-centered sim), this is
-/// typically `Position::<Inertial>::zero()`. For third bodies (Sun, Moon),
+/// typically `Position::<RootInertial>::zero()`. For third bodies (Sun, Moon),
 /// this value should be provided and maintained by the application's
 /// ephemeris/update logic. Used by the gravity computation to apply
 /// differential (third-body) acceleration corrections.
@@ -220,12 +218,12 @@ pub struct GravitySourceC(pub GravitySource);
 /// component.
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
 #[reflect(opaque, Component)]
-pub struct SourceInertialPositionC(pub Position<Inertial>);
+pub struct SourceInertialPositionC(pub Position<RootInertial>);
 
-/// Inertial-frame velocity of a gravity source.
+/// RootInertial-frame velocity of a gravity source.
 ///
 /// Optional component. For the central body (e.g., Earth in an Earth-centered
-/// sim), this is typically `Velocity::<Inertial>::zero()`. For third bodies
+/// sim), this is typically `Velocity::<RootInertial>::zero()`. For third bodies
 /// (Sun, Moon), attach this component alongside [`EphemerisBodyC`] and the
 /// `ephemeris_update_system` will populate it each step. When absent,
 /// relativistic corrections fall back to zero source velocity.
@@ -236,7 +234,7 @@ pub struct SourceInertialPositionC(pub Position<Inertial>);
 /// `TranslationalStateC` is already mutably queried by the integration system).
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
 #[reflect(opaque, Component)]
-pub struct SourceInertialVelocityC(pub Velocity<Inertial>);
+pub struct SourceInertialVelocityC(pub Velocity<RootInertial>);
 
 /// Aerodynamic force and torque in the **structural** frame (N, N*m).
 ///
@@ -314,7 +312,7 @@ impl Default for StructuralTransformC {
 /// Typed inertial→planet-fixed rotation for a gravity source entity.
 ///
 /// Stores the rotation that maps inertial-frame vectors into the planet-fixed
-/// frame of the source. The `FrameTransform`'s phantom `<Inertial,
+/// frame of the source. The `FrameTransform`'s phantom `<RootInertial,
 /// PlanetFixed<SelfPlanet>>` parameters encode the *direction* — `SelfPlanet`
 /// is the wildcard `Planet` marker indicating "this entity's planet"; the
 /// actual planet identity stays at the entity level via the existing
@@ -326,7 +324,7 @@ impl Default for StructuralTransformC {
 /// spherical-harmonic gravity.
 #[derive(Component, Debug, Clone, Copy, Reflect)]
 #[reflect(opaque, Component)]
-pub struct PlanetFixedRotationC(pub FrameTransform<Inertial, PlanetFixed<SelfPlanet>>);
+pub struct PlanetFixedRotationC(pub FrameTransform<RootInertial, PlanetFixed<SelfPlanet>>);
 
 /// Tidal configuration for a gravity source entity.
 ///
@@ -633,7 +631,7 @@ pub struct EarthLightingStateC(pub jeod_sim::EarthLightingState);
 /// Mutate between steps to implement time-scheduled force injection.
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
 #[reflect(opaque, Component)]
-pub struct ExternalForceC(pub jeod_sim::Force<Inertial>);
+pub struct ExternalForceC(pub jeod_sim::Force<RootInertial>);
 
 /// External torque in the **body** frame.
 ///

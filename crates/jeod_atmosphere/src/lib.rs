@@ -97,10 +97,17 @@ impl AtmosphereState {
     }
 
     /// Typed accessor: wind velocity as a frame-tagged
-    /// `Velocity<Inertial>` (m/s).
+    /// `Velocity<PlanetInertial<P>>` (m/s) where `P` is the atmosphere
+    /// planet (caller-supplied at the type level).
+    ///
+    /// The wind is the planet's corotation velocity in the planet's
+    /// inertial frame, so the natural type is `PlanetInertial<P>` —
+    /// not the simulation's root inertial. Callers that have a
+    /// root-integrated body where root coincides with `P.inertial`
+    /// can apply the bit-identical relabel via `from_raw_si`.
     #[inline]
-    pub fn wind_typed(&self) -> Velocity<Inertial> {
-        self.wind.m_per_s_at::<Inertial>()
+    pub fn wind_typed<P: Planet>(&self) -> Velocity<PlanetInertial<P>> {
+        self.wind.m_per_s_at::<PlanetInertial<P>>()
     }
 }
 
@@ -123,17 +130,20 @@ pub fn compute_corotation_wind(omega: f64, inertial_pos: DVec3) -> DVec3 {
 
 /// Typed variant of [`compute_corotation_wind`].
 ///
-/// Wraps the same computation with dimension-typed inputs/outputs. Delegates
-/// to the raw f64/DVec3 implementation internally so behavior is bit-identical.
+/// Generic over the atmosphere planet `P`: wind is the planet's
+/// corotation velocity in the planet's own inertial frame, so both
+/// position and velocity carry the `PlanetInertial<P>` phantom rather
+/// than `RootInertial`. Bit-identical kernel — wraps the raw
+/// computation via `.raw_si()` at the boundary.
 #[inline]
-pub fn compute_corotation_wind_typed(
+pub fn compute_corotation_wind_typed<P: Planet>(
     omega: uom::si::f64::AngularVelocity,
-    pos: Position<Inertial>,
-) -> Velocity<Inertial> {
+    pos: Position<PlanetInertial<P>>,
+) -> Velocity<PlanetInertial<P>> {
     use uom::si::angular_velocity::radian_per_second;
     let w = omega.get::<radian_per_second>();
     let p = pos.raw_si();
-    compute_corotation_wind(w, p).m_per_s_at::<Inertial>()
+    compute_corotation_wind(w, p).m_per_s_at::<PlanetInertial<P>>()
 }
 
 #[cfg(test)]
@@ -192,7 +202,7 @@ mod tests {
         );
         assert_eq!(state.temperature_typed().get::<kelvin>(), state.temperature);
         assert_eq!(state.pressure_typed().get::<pascal>(), state.pressure);
-        assert_eq!(state.wind_typed().raw_si(), state.wind);
+        assert_eq!(state.wind_typed::<Earth>().raw_si(), state.wind);
     }
 
     #[test]
@@ -201,7 +211,7 @@ mod tests {
         assert_eq!(state.density_typed().get::<kilogram_per_cubic_meter>(), 0.0);
         assert_eq!(state.temperature_typed().get::<kelvin>(), 0.0);
         assert_eq!(state.pressure_typed().get::<pascal>(), 0.0);
-        assert_eq!(state.wind_typed().raw_si(), DVec3::ZERO);
+        assert_eq!(state.wind_typed::<Earth>().raw_si(), DVec3::ZERO);
     }
 
     #[test]
@@ -209,8 +219,10 @@ mod tests {
         let omega_raw = 7.292115146706388e-5;
         let pos_raw = DVec3::new(7.0e6, 3.0e6, 1.0e6);
 
-        let typed_out =
-            compute_corotation_wind_typed(omega_raw.rad_per_s(), pos_raw.m_at::<Inertial>());
+        let typed_out = compute_corotation_wind_typed::<Earth>(
+            omega_raw.rad_per_s(),
+            pos_raw.m_at::<PlanetInertial<Earth>>(),
+        );
         let raw_out = compute_corotation_wind(omega_raw, pos_raw);
 
         // Typed path must be bit-identical to the raw f64 path.
@@ -219,8 +231,8 @@ mod tests {
 
     #[test]
     fn corotation_wind_typed_zero_omega() {
-        let pos = DVec3::new(7e6, 3e6, 1e6).m_at::<Inertial>();
-        let wind = compute_corotation_wind_typed(0.0.rad_per_s(), pos);
+        let pos = DVec3::new(7e6, 3e6, 1e6).m_at::<PlanetInertial<Earth>>();
+        let wind = compute_corotation_wind_typed::<Earth>(0.0.rad_per_s(), pos);
         assert_eq!(wind.raw_si(), DVec3::ZERO);
     }
 }

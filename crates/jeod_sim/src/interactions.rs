@@ -10,7 +10,7 @@ use jeod_interactions::{
     FlatPlateThermal,
 };
 use jeod_quantities::aliases::{Force, InertiaTensor, Position, Torque, Velocity};
-use jeod_quantities::frame::{BodyFrame, Inertial, Vehicle};
+use jeod_quantities::frame::{BodyFrame, RootInertial, Vehicle};
 use uom::si::f64::{Area, Ratio};
 
 use crate::integrable::IntegrableObject;
@@ -28,16 +28,66 @@ use crate::integrable::IntegrableObject;
 ///
 /// Shared by the standalone `Simulation` runner and the Bevy adapter so
 /// both drive the coupled integrator with identical step-start data.
+///
+/// # RF.10 structural guard
+///
+/// The original buggy expression that slipped past the type system on
+/// PR #258 was
+///
+/// ```text
+/// let sun_to_vehicle = stage_trans.position - srp_inputs.sun_position;
+/// ```
+///
+/// where `stage_trans.position` is the integrator's `DVec3` in the
+/// body's integration frame and `srp_inputs.sun_position` was *also*
+/// `DVec3`. After typing `sun_position` as
+/// [`Position<RootInertial>`](Position), the same expression no longer
+/// typechecks. A future contributor cannot reintroduce the bug.
+///
+/// **`DVec3 - Position<RootInertial>` does not compile:**
+///
+/// ```compile_fail
+/// use jeod_sim::FlatPlateStageInputs;
+/// use glam::DVec3;
+///
+/// let inputs = FlatPlateStageInputs::default();
+/// let stage_pos: DVec3 = DVec3::new(7.0e6, 0.0, 0.0); // raw integration-frame
+/// // No `Sub<Position<RootInertial>>` impl for `DVec3`:
+/// let _bug = stage_pos - inputs.sun_position;
+/// ```
+///
+/// **Building the field from a raw `DVec3` does not compile either** —
+/// the only way to populate it is with a typed `Position<RootInertial>`
+/// (e.g. `Position::<RootInertial>::from_raw_si(...)` at a documented
+/// boundary, or by passing through a structural shift like
+/// [`IntegOrigin::shift_position`](jeod_quantities::IntegOrigin::shift_position)):
+///
+/// ```compile_fail
+/// use jeod_sim::FlatPlateStageInputs;
+/// use glam::DVec3;
+///
+/// let raw_sun: DVec3 = DVec3::new(1.5e11, 0.0, 0.0);
+/// // Field is typed; raw DVec3 doesn't typecheck:
+/// let _bug = FlatPlateStageInputs {
+///     sun_position: raw_sun,
+///     illum_factor: 1.0,
+///     center_grav: DVec3::ZERO,
+/// };
+/// ```
 #[derive(Debug, Clone, Copy, Default)]
 pub struct FlatPlateStageInputs {
-    /// Sun position in inertial frame, captured at step start. The
-    /// coupled stage closure recomputes `sun_to_vehicle`,
-    /// `flux_inertial_hat`, and `flux_mag` per RK4 stage from this plus
-    /// the stage's `TranslationalState.position`, matching JEOD's
-    /// derivative-class `RadiationSource::calculate_flux` which reads
-    /// the intermediate vehicle structure frame at every call (see
+    /// Sun position in the simulation's root inertial frame, captured at
+    /// step start. Typed so the closure inside `integrate_body_coupled`
+    /// cannot subtract it from a raw integration-frame `DVec3` — the
+    /// `Position<RootInertial> - DVec3` mismatch refuses to compile and
+    /// forces the caller to lift the stage's `TranslationalState.position`
+    /// through a typed shift first (RF.10).
+    ///
+    /// Matches JEOD's derivative-class `RadiationSource::calculate_flux`
+    /// which reads the intermediate vehicle structure frame at every
+    /// call (see
     /// `models/interactions/radiation_pressure/src/radiation_source.cc`).
-    pub sun_position: DVec3,
+    pub sun_position: Position<RootInertial>,
     /// Shadow illumination factor from step-start shadow evaluation
     /// (constant across RK4 stages — matches JEOD scheduled-class
     /// shadow in SIM_3_ORBIT; third-body frames are not propagated
@@ -541,13 +591,14 @@ pub fn evaluate_contact_pair(
 
 /// Typed sibling of [`compute_drag`].
 ///
-/// Identical kernel — wraps with [`DragConfigTyped`] / typed
-/// [`Velocity<Inertial>`] inputs and returns
-/// [`AerodynamicForceTyped<V>`].
-pub fn compute_drag_typed<V: Vehicle>(
+/// Generic over the atmosphere planet `P`: drag uses the vehicle's
+/// velocity in the planet's inertial frame (matching the corotation
+/// wind in `atmos.wind`), so the typed velocity argument is
+/// `Velocity<PlanetInertial<P>>` — not root-inertial. RF.10.
+pub fn compute_drag_typed<P: jeod_quantities::frame::Planet, V: Vehicle>(
     drag_config: &DragConfigTyped,
     atmos: &jeod_atmosphere::AtmosphereState,
-    velocity: Velocity<Inertial>,
+    velocity: Velocity<jeod_quantities::frame::PlanetInertial<P>>,
     rot: Option<&RotationalState>,
     t_struct_body: DMat3,
 ) -> AerodynamicForceTyped<V> {
@@ -577,15 +628,15 @@ pub fn compute_gravity_torque_typed<V: Vehicle>(
 /// Typed sibling of [`compute_cannonball_srp`].
 ///
 /// Identical kernel — wraps positions and uom dimensionless ratios.
-/// Returns the cannonball SRP force in [`Inertial`].
+/// Returns the cannonball SRP force in [`RootInertial`].
 pub fn compute_cannonball_srp_typed(
-    body_pos: Position<Inertial>,
-    sun_pos: Position<Inertial>,
+    body_pos: Position<RootInertial>,
+    sun_pos: Position<RootInertial>,
     cx_area: Area,
     albedo: Ratio,
     diffuse: Ratio,
     illum_factor: Ratio,
-) -> Force<Inertial> {
+) -> Force<RootInertial> {
     use uom::si::area::square_meter;
     use uom::si::ratio::ratio;
     let raw = compute_cannonball_srp(
@@ -596,61 +647,7 @@ pub fn compute_cannonball_srp_typed(
         diffuse.get::<ratio>(),
         illum_factor.get::<ratio>(),
     );
-    Force::<Inertial>::from_raw_si(raw)
-}
-
-/// Step-constant SRP inputs (typed sibling of [`FlatPlateStageInputs`]).
-///
-/// Same role and lifetime; sun position becomes [`Position<Inertial>`],
-/// the dimensionless illumination factor becomes [`Ratio`], and the
-/// structural-frame center of gravity stays [`DVec3`] (the structural
-/// frame is per-vehicle and `FlatPlateState` does not carry a `V`
-/// phantom).
-#[derive(Debug, Clone, Copy)]
-pub struct FlatPlateStageInputsTyped {
-    /// Sun position in the inertial frame.
-    pub sun_position: Position<Inertial>,
-    /// Dimensionless illumination factor (0–1) accounting for shadow.
-    pub illum_factor: Ratio,
-    /// Body center of gravity in the structural frame (m).
-    pub center_grav: DVec3,
-}
-
-impl Default for FlatPlateStageInputsTyped {
-    #[inline]
-    fn default() -> Self {
-        Self {
-            sun_position: Position::<Inertial>::zero(),
-            illum_factor: Ratio::default(),
-            center_grav: DVec3::ZERO,
-        }
-    }
-}
-
-impl FlatPlateStageInputsTyped {
-    /// Drop the wrappers and emit the existing untyped storage form.
-    #[inline]
-    pub fn to_untyped(&self) -> FlatPlateStageInputs {
-        use uom::si::ratio::ratio;
-        FlatPlateStageInputs {
-            sun_position: self.sun_position.raw_si(),
-            illum_factor: self.illum_factor.get::<ratio>(),
-            center_grav: self.center_grav,
-        }
-    }
-
-    /// Wrap an untyped [`FlatPlateStageInputs`] as typed. **The caller
-    /// asserts** the sun position is in `Inertial` and the illumination
-    /// factor is dimensionless.
-    #[inline]
-    pub fn from_untyped_unchecked(s: &FlatPlateStageInputs) -> Self {
-        use uom::si::ratio::ratio;
-        Self {
-            sun_position: Position::<Inertial>::from_raw_si(s.sun_position),
-            illum_factor: Ratio::new::<ratio>(s.illum_factor),
-            center_grav: s.center_grav,
-        }
-    }
+    Force::<RootInertial>::from_raw_si(raw)
 }
 
 /// Transform a contact facet's shape endpoints from structural to inertial

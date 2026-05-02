@@ -56,7 +56,7 @@ pub struct SixDofState {
 /// Angular velocity carries the `BodyFrame<V>` phantom tag.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RotationalStateTyped<V: Vehicle> {
-    /// Inertial → body attitude (typed wrapper around a witnessed
+    /// RootInertial → body attitude (typed wrapper around a witnessed
     /// scalar-first / left-transformation quaternion).
     pub q_inertial_body: BodyAttitude<V>,
     /// Angular velocity in `BodyFrame<V>`.
@@ -139,7 +139,7 @@ pub fn compute_rotational_acceleration(
     // Angular momentum: L = I * omega
     let ang_mom = *inertia * ang_vel;
 
-    // Inertial (gyroscopic) torque: omega x L
+    // RootInertial (gyroscopic) torque: omega x L
     let inertial_torq = ang_vel.cross(ang_mom);
 
     // Net body-frame torque: external minus gyroscopic

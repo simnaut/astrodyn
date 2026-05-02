@@ -11,7 +11,7 @@ use glam::{DMat3, DVec3};
 
 use jeod_dynamics::{combine_states_at_attach, AttachCombineInputs, MassBodyId, MassPointState};
 use jeod_frames::{RefFrameRot, RefFrameState, RefFrameTrans};
-use jeod_sim::{RotationalState, TranslationalState};
+use jeod_sim::{IntegrationFrame, RotationalState, TranslationalState, TranslationalStateTyped};
 
 use jeod_dynamics::DetachedSubtreeState;
 
@@ -167,8 +167,8 @@ impl Simulation {
                 .expect("detach_subtree: 6-DOF integrated body required");
             RefFrameState {
                 trans: RefFrameTrans {
-                    position: body_trans.position,
-                    velocity: body_trans.velocity,
+                    position: body_trans.position.raw_si(),
+                    velocity: body_trans.velocity.raw_si(),
                 },
                 rot: RefFrameRot {
                     q_parent_this: body_rot.quaternion,
@@ -268,10 +268,13 @@ impl Simulation {
             // frame, then rotated to inertial.
             let omega_body = parent_composite_state.rot.ang_vel_this;
             let dvel_inertial = t_inertial_to_body.transpose() * omega_body.cross(cm_delta_body);
-            self.bodies[integrated_body_idx].trans = TranslationalState {
-                position: parent_composite_state.trans.position + cm_delta_inertial,
-                velocity: parent_composite_state.trans.velocity + dvel_inertial,
-            };
+            self.bodies[integrated_body_idx].trans =
+                TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
+                    &TranslationalState {
+                        position: parent_composite_state.trans.position + cm_delta_inertial,
+                        velocity: parent_composite_state.trans.velocity + dvel_inertial,
+                    },
+                );
             // body.rot unchanged — composite/core share body axes.
             self.bodies[integrated_body_idx].mass = Some(parent_post_composite_props);
         } else {
@@ -391,8 +394,8 @@ impl Simulation {
             .expect("attach_subtree_aligned: 6-DOF body required");
         let parent_composite_pre = RefFrameState {
             trans: RefFrameTrans {
-                position: body_trans.position,
-                velocity: body_trans.velocity,
+                position: body_trans.position.raw_si(),
+                velocity: body_trans.velocity.raw_si(),
             },
             rot: RefFrameRot {
                 q_parent_this: body_rot.quaternion,
@@ -562,10 +565,13 @@ impl Simulation {
         // matches JEOD's `composite_body` post-attach (the source for
         // `Vel_Rate` per `set_state_source_internal` at the end of
         // `DynBody::attach_update_properties`).
-        self.bodies[integrated_body_idx].trans = TranslationalState {
-            position: combined.composite_state.trans.position,
-            velocity: combined.composite_state.trans.velocity,
-        };
+        self.bodies[integrated_body_idx].trans =
+            TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
+                &TranslationalState {
+                    position: combined.composite_state.trans.position,
+                    velocity: combined.composite_state.trans.velocity,
+                },
+            );
         self.bodies[integrated_body_idx].rot = Some(RotationalState {
             quaternion: combined.composite_state.rot.q_parent_this,
             ang_vel_body: combined.composite_state.rot.ang_vel_this,

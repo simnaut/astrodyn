@@ -17,7 +17,7 @@ use anise::constants::frames::*;
 use anise::constants::orientations::J2000;
 use anise::prelude::*;
 use glam::DVec3;
-use jeod_quantities::prelude::{Inertial, Position, Vec3Ext, Velocity};
+use jeod_quantities::prelude::{Position, RootInertial, Vec3Ext, Velocity};
 
 use crate::bodies::EphemerisBody;
 
@@ -66,7 +66,7 @@ impl Ephemeris {
     /// inertial frame.
     ///
     /// Internal kernel below extracts SI base units from ANISE; this typed
-    /// entry point wraps as `Position<Inertial>` / `Velocity<Inertial>`. The
+    /// entry point wraps as `Position<RootInertial>` / `Velocity<RootInertial>`. The
     /// pre-Phase-10 bare-`f64` `get_state` was removed; use `.raw_si()` on
     /// the returned values when an unwrapped `DVec3` is needed.
     pub fn get_state_typed(
@@ -74,7 +74,7 @@ impl Ephemeris {
         target: EphemerisBody,
         observer: EphemerisBody,
         tdb_jd: f64,
-    ) -> Result<(Position<Inertial>, Velocity<Inertial>), EphemerisError> {
+    ) -> Result<(Position<RootInertial>, Velocity<RootInertial>), EphemerisError> {
         // Convert JD to seconds since J2000.0 TDB: (jd - 2451545.0) * 86400.0
         let tdb_s_since_j2000 = (tdb_jd - 2_451_545.0) * 86_400.0;
         let epoch = Epoch::from_tdb_seconds(tdb_s_since_j2000);
@@ -101,18 +101,21 @@ impl Ephemeris {
             state.velocity_km_s.z * 1000.0,
         );
 
-        Ok((pos_m.m_at::<Inertial>(), vel_m_s.m_per_s_at::<Inertial>()))
+        Ok((
+            pos_m.m_at::<RootInertial>(),
+            vel_m_s.m_per_s_at::<RootInertial>(),
+        ))
     }
 
     /// Earth-centered variant of [`Self::get_state_typed`].
     ///
-    /// Returns `(Position<Inertial>, Velocity<Inertial>)` relative to Earth
+    /// Returns `(Position<RootInertial>, Velocity<RootInertial>)` relative to Earth
     /// center in J2000 ICRF (meters, m/s).
     pub fn get_earth_centered_state_typed(
         &self,
         target: EphemerisBody,
         tdb_jd: f64,
-    ) -> Result<(Position<Inertial>, Velocity<Inertial>), EphemerisError> {
+    ) -> Result<(Position<RootInertial>, Velocity<RootInertial>), EphemerisError> {
         self.get_state_typed(target, EphemerisBody::Earth, tdb_jd)
     }
 

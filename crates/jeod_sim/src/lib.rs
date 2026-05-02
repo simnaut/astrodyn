@@ -78,7 +78,7 @@ pub use integration::{
 pub use interactions::{
     compute_cannonball_srp, compute_cannonball_srp_typed, compute_drag, compute_drag_typed,
     compute_gravity_torque, compute_gravity_torque_typed, evaluate_contact_pair, ContactPairEval,
-    FlatPlateStageInputs, FlatPlateStageInputsTyped, FlatPlateState, ThermalIntegrationOrder,
+    FlatPlateStageInputs, FlatPlateState, ThermalIntegrationOrder,
 };
 pub use jeod_dynamics::{
     Abm4State, GaussJacksonConfig, GaussJacksonState, IntegratorResult, IntegratorType,
@@ -130,7 +130,7 @@ pub use jeod_atmosphere::AtmosphereState;
 // jeod_interactions: config, result types, and computation functions
 pub use jeod_interactions::{
     compute_contact_force, compute_contact_force_from_geometry, compute_contact_geometry,
-    compute_earth_lighting, compute_flat_plate_srp_thermal,
+    compute_earth_lighting, compute_earth_lighting_typed, compute_flat_plate_srp_thermal,
     compute_flat_plate_srp_thermal_conduction, compute_shadow_fraction, solar_flux_at_distance,
     AerodynamicForce, AerodynamicForceTyped, ContactFacet, ContactForce, ContactGeometry,
     ContactMaterial, ContactShape, DragConfig, DragConfigTyped, EarthLightingState, FlatPlate,
@@ -180,9 +180,10 @@ pub use jeod_quantities::aliases::{
 pub use jeod_quantities::dims::{GravParam, MassFlowRate, SpecificAngMom, SpecificEnergy};
 pub use jeod_quantities::ext::{Array3Ext, F64Ext, Vec3Ext};
 pub use jeod_quantities::frame::{
-    BodyFrame, Earth, Ecef, Frame, Inertial, Lvlh, Mars, Moon, Ned, Planet, PlanetFixed,
-    SelfPlanet, SelfRef, StructuralFrame, Sun, Vehicle,
+    BodyFrame, Earth, Ecef, Frame, IntegrationFrame, Lvlh, Mars, Moon, Ned, Planet, PlanetFixed,
+    PlanetInertial, RootInertial, SelfPlanet, SelfRef, StructuralFrame, Sun, Vehicle,
 };
+pub use jeod_quantities::integ_origin::IntegOrigin;
 // Macros that mint downstream `Vehicle`/`Planet` markers. Re-exported so
 // mission crates depending only on `jeod_sim` don't need a direct
 // `jeod_quantities` line in their `Cargo.toml`. The macro body resolves

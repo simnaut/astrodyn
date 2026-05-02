@@ -22,12 +22,12 @@ use jeod_gravity::GravityControl;
 use jeod_interactions::DragConfig;
 use jeod_math::{JeodQuat, OrbitalElements};
 use jeod_quantities::ext::F64Ext;
-use jeod_quantities::frame::Inertial;
 use jeod_sim::vehicle_builder::VehicleBuilder;
 use jeod_sim::vehicle_config::VehicleConfig;
+use jeod_sim::{Earth, PlanetInertial, Position, RootInertial, Velocity};
 
-fn iss_trans() -> TranslationalStateTyped<Inertial> {
-    TranslationalStateTyped::<Inertial>::from_untyped_unchecked(&TranslationalState {
+fn iss_trans() -> TranslationalStateTyped<RootInertial> {
+    TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(&TranslationalState {
         position: DVec3::new(6_778_000.0, 0.0, 0.0),
         velocity: DVec3::new(0.0, 7_672.0, 0.0),
     })
@@ -84,9 +84,14 @@ fn gauss_jackson_integrator_selection() {
 #[test]
 fn from_orbital_elements_round_trip() {
     let earth_mu = 3.986_004_415e14_f64.m3_per_s2();
-    let oe =
-        OrbitalElements::from_cartesian_typed(earth_mu, iss_trans().position, iss_trans().velocity)
-            .expect("ISS-class state has well-defined orbital elements");
+    // The Bevy/builder API stores state in `RootInertial` (current sims have
+    // root=Earth.inertial); orbital elements are computed in
+    // `PlanetInertial<Earth>` — the planet of the gravitating body. Relabel
+    // (bit-identical) at the call site.
+    let pos = Position::<PlanetInertial<Earth>>::from_raw_si(iss_trans().position.raw_si());
+    let vel = Velocity::<PlanetInertial<Earth>>::from_raw_si(iss_trans().velocity.raw_si());
+    let oe = OrbitalElements::from_cartesian_typed::<Earth>(earth_mu, pos, vel)
+        .expect("ISS-class state has well-defined orbital elements");
 
     let cfg = VehicleBuilder::new()
         .from_orbital_elements(oe.clone(), earth_mu)
