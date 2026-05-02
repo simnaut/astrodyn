@@ -557,8 +557,9 @@ pub struct GroundContactPairEval {
 /// vehicle (inertial) and the body-frame torque about the vehicle's CoM.
 ///
 /// Mirrors [`evaluate_contact_pair`] but for a vehicle facet contacting
-/// a [`GroundFacet`] anchored on a planet. Composition:
-/// [`compute_ground_contact_geometry`] (port of
+/// a [`jeod_interactions::GroundFacet`] anchored on a planet.
+/// Composition:
+/// [`jeod_interactions::compute_ground_contact_geometry`] (port of
 /// `point_ground_interaction.cc::in_contact` /
 /// `line_ground_interaction.cc::in_contact`) followed by
 /// [`compute_contact_force_from_geometry`] (port of
@@ -566,15 +567,17 @@ pub struct GroundContactPairEval {
 ///
 /// Arguments:
 /// - `vehicle_facet` — vehicle-side facet in the body's structural frame.
-/// - `ground_facet` — ground-side facet anchored on a planet via [`Terrain`].
+/// - `ground_facet` — ground-side facet anchored on a planet via
+///   [`jeod_interactions::Terrain`].
 /// - `trans_a` — translational state of the vehicle (inertial).
 /// - `rot_a` — rotational state of the vehicle.
 /// - `t_struct_body_a` — structural→body rotation.
 /// - `mass_a` — mass properties (for the torque arm and CoM offset).
 /// - `t_inertial_pfix` — inertial→planet-fixed rotation. For
-///   [`SphericalTerrain`] the pfix rotation cancels in the ground-point
-///   computation, so callers may pass [`DMat3::IDENTITY`]. Other terrain
-///   shapes (e.g., DEM) require the actual pfix rotation.
+///   [`jeod_interactions::SphericalTerrain`] the pfix rotation cancels
+///   in the ground-point computation, so callers may pass
+///   [`DMat3::IDENTITY`]. Other terrain shapes (e.g., DEM) require the
+///   actual pfix rotation.
 ///
 /// Returns `None` if the vehicle is not in contact with the ground.
 ///

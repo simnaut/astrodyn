@@ -658,7 +658,7 @@ pub enum Phase {
 /// or if `ground_facet.active` is false (invalid registration). Material
 /// equality is enforced one level up in
 /// [`evaluate_ground_contact_pair`](crate::contact::compute_ground_contact_geometry)
-/// or via [`Simulation::register_ground_contact_pair`] in `jeod_runner`.
+/// or via `Simulation::register_ground_contact_pair` in `jeod_runner`.
 pub fn compute_ground_contact_geometry(
     vehicle_facet: &ContactFacet,
     ground_facet: &GroundFacet,
