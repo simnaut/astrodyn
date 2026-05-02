@@ -1,9 +1,14 @@
 //! Supporting types for [`super::Simulation`].
 //!
-//! - Public surface: [`DetachedSubtreeState`], [`VehicleOutput`],
+//! - Public surface declared here: [`VehicleOutput`],
 //!   [`ContactPairConfig`] (re-exported through `simulation::mod` and
 //!   `crate::lib` for API stability).
 //! - Crate-internal: [`SimBody`], [`SourceFrameIds`], [`GravityData`].
+//!
+//! `DetachedSubtreeState` lives in `jeod_dynamics::subtree` (issue #253
+//! Task C) — pure rigid-body kinematics, no `Simulation` dependency. It
+//! is re-exported from `simulation::mod` so consumers reach it via
+//! `jeod_runner::DetachedSubtreeState` regardless.
 
 use glam::{DMat3, DVec3};
 
