@@ -6,7 +6,7 @@
 //!
 //! Strips Trick's `trick.attach_units("kg", …)` / `trick.attach_units("kg*m2", …)`
 //! wrappers per the parsability tier 2 documented in the project
-//! [`CLAUDE.md`](../../CLAUDE.md).
+//! [`CLAUDE.md`](https://github.com/simnaut/bevy_jeod/blob/main/CLAUDE.md#jeod-verification-data).
 
 use regex::Regex;
 
