@@ -31,19 +31,31 @@ use uom::si::f64::Angle;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(usize)]
 pub enum EulerSequence {
-    // Tait-Bryan (aerodynamic)
+    // ── Tait-Bryan (aerodynamic) ────────────────────────────────────
+    /// Tait-Bryan XYZ: roll → pitch → yaw about body X, Y, Z.
     XYZ = 0,
+    /// Tait-Bryan XZY.
     XZY = 1,
+    /// Tait-Bryan YZX.
     YZX = 2,
+    /// Tait-Bryan YXZ.
     YXZ = 3,
+    /// Tait-Bryan ZXY.
     ZXY = 4,
+    /// Tait-Bryan ZYX (yaw → pitch → roll).
     ZYX = 5,
-    // Proper Euler (astronomical)
+    // ── Proper Euler (astronomical) ─────────────────────────────────
+    /// Proper-Euler XYX (first and third rotations share the X axis).
     XYX = 6,
+    /// Proper-Euler XZX.
     XZX = 7,
+    /// Proper-Euler YZY.
     YZY = 8,
+    /// Proper-Euler YXY.
     YXY = 9,
+    /// Proper-Euler ZXZ — classical astronomical sequence.
     ZXZ = 10,
+    /// Proper-Euler ZYZ.
     ZYZ = 11,
 }
 

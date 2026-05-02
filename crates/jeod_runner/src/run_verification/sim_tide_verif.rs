@@ -14,6 +14,7 @@
 //! call, mirroring the bespoke loop's update pattern exactly so
 //! baselines stay bit-stable.
 
+use jeod_sim::Vec3Ext;
 use std::path::PathBuf;
 
 use glam::{DMat3, DVec3};
@@ -60,8 +61,8 @@ fn third_body(mu: f64, initial_pos: DVec3) -> GravitySourceEntry {
             mu,
             model: GravityModel::PointMass,
         },
-        position: initial_pos,
-        velocity: DVec3::ZERO,
+        position: initial_pos.m_at::<jeod_sim::RootInertial>(),
+        velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
         t_inertial_pfix: None,
         delta_c20: 0.0,
         rotation_model: RotationModel::default(),
@@ -122,8 +123,8 @@ fn build_tide_run01(init: &InitialConditions) -> SimulationBuilder {
                 mu: earth_mu,
                 model: GravityModel::SphericalHarmonics(Box::new(earth_grav)),
             },
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: Some(DMat3::IDENTITY),
             rotation_model: RotationModel::EarthRNP,
             delta_c20: 0.0,

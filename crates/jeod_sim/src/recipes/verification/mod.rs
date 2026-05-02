@@ -125,10 +125,10 @@ pub type PreStepBuilder = fn(&InitialConditions) -> PreStepClosure;
 pub struct InitialConditions {
     /// Reference time (seconds since the sim epoch). Always populated.
     pub time: f64,
-    /// Inertial position. Always populated for the variants used by
+    /// RootInertial position. Always populated for the variants used by
     /// migrated Tier 3 cases.
     pub position: DVec3,
-    /// Inertial velocity. Always populated for the variants used by
+    /// RootInertial velocity. Always populated for the variants used by
     /// migrated Tier 3 cases.
     pub velocity: DVec3,
     /// Body-frame attitude quaternion in `glam::DQuat` layout

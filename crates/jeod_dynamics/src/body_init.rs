@@ -12,7 +12,7 @@ use glam::{DMat3, DVec3};
 use jeod_math::{mat3_from_rows, GeodeticState, OrbitalElements};
 use jeod_quantities::dims::GravParam;
 use jeod_quantities::ext::Vec3Ext;
-use jeod_quantities::frame::Inertial;
+use jeod_quantities::frame::RootInertial;
 use uom::si::angle::radian;
 use uom::si::f64::{Angle, Length};
 use uom::si::length::meter;
@@ -76,7 +76,7 @@ pub fn init_from_orbital_elements(
 
 /// Typed sibling of [`init_from_orbital_elements`].
 ///
-/// Returns a [`TranslationalStateTyped<Inertial>`] — Phase 3 callers
+/// Returns a [`TranslationalStateTyped<RootInertial>`] — Phase 3 callers
 /// can pipe the result directly into typed propagation paths without
 /// hand-wrapping with `from_untyped_unchecked`. Numerically
 /// bit-identical to the untyped variant: the typed entry unwraps
@@ -90,7 +90,7 @@ pub fn init_from_orbital_elements_typed(
     arg_periapsis: Angle,
     true_anomaly: Angle,
     mu: GravParam,
-) -> TranslationalStateTyped<Inertial> {
+) -> TranslationalStateTyped<RootInertial> {
     let untyped = init_from_orbital_elements(
         semi_major_axis.get::<meter>(),
         eccentricity,
@@ -100,7 +100,7 @@ pub fn init_from_orbital_elements_typed(
         true_anomaly.get::<radian>(),
         mu.value, // base SI: m³/s²
     );
-    TranslationalStateTyped::<Inertial>::from_untyped_unchecked(&untyped)
+    TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(&untyped)
 }
 
 /// Initialize translational state from Keplerian orbital elements (mean anomaly).
@@ -242,9 +242,13 @@ pub fn init_from_lvlh(
     // Typed entry: lift inertial inputs and use `LvlhFrame::compute`,
     // which returns the full struct (orientation + angular velocity +
     // origin state). Bit-identical to the deprecated f64 path.
+    // LVLH is computed in the central body's planet-inertial frame.
+    // Earth here is the documented assumption; non-Earth init paths use
+    // their own constructors. Bit-identical to the prior code.
+    use jeod_quantities::frame::{Earth, PlanetInertial};
     let lvlh = jeod_math::LvlhFrame::compute(
-        ref_position.m_at::<Inertial>(),
-        ref_velocity.m_per_s_at::<Inertial>(),
+        ref_position.m_at::<PlanetInertial<Earth>>(),
+        ref_velocity.m_per_s_at::<PlanetInertial<Earth>>(),
     );
 
     // t_parent_this transforms from inertial to LVLH.
@@ -494,9 +498,10 @@ mod tests {
         let state = init_from_lvlh(lvlh_offset_pos, lvlh_offset_vel, ref_pos, ref_vel);
 
         // Now compute the LVLH frame at the reference orbit and transform back
+        use jeod_quantities::frame::{Earth, PlanetInertial};
         let lvlh = jeod_math::LvlhFrame::compute(
-            ref_pos.m_at::<Inertial>(),
-            ref_vel.m_per_s_at::<Inertial>(),
+            ref_pos.m_at::<PlanetInertial<Earth>>(),
+            ref_vel.m_per_s_at::<PlanetInertial<Earth>>(),
         );
         let t = lvlh.t_parent_this;
 
@@ -583,10 +588,11 @@ mod tests {
         let state = init_from_orbital_elements(a, e, inc, raan, argp, nu, EARTH_MU);
 
         // Convert back to orbital elements via the typed sibling.
-        let oe = OrbitalElements::from_cartesian_typed(
+        use jeod_quantities::frame::{Earth, PlanetInertial};
+        let oe = OrbitalElements::from_cartesian_typed::<Earth>(
             jeod_quantities::ext::F64Ext::m3_per_s2(EARTH_MU),
-            state.position.m_at::<Inertial>(),
-            state.velocity.m_per_s_at::<Inertial>(),
+            state.position.m_at::<PlanetInertial<Earth>>(),
+            state.velocity.m_per_s_at::<PlanetInertial<Earth>>(),
         )
         .expect("from_cartesian_typed failed");
 

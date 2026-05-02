@@ -22,6 +22,7 @@
 
 use glam::DVec3;
 use jeod_runner::{RotationModel, Simulation};
+use jeod_sim::Vec3Ext;
 use jeod_sim::{DerivedStateConfig, GravitySourceEntry, VehicleConfig};
 use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, SimulationTime,
@@ -59,8 +60,8 @@ fn build_solar_beta_sim(
                 mu: mu_earth,
                 model: GravityModel::PointMass,
             },
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: None,
             delta_c20: 0.0,
             rotation_model: RotationModel::default(),
@@ -77,8 +78,8 @@ fn build_solar_beta_sim(
                 mu: 0.0,
                 model: GravityModel::PointMass,
             },
-            position: sun_position,
-            velocity: DVec3::ZERO,
+            position: sun_position.m_at::<jeod_sim::RootInertial>(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: None,
             delta_c20: 0.0,
             rotation_model: RotationModel::default(),

@@ -7,7 +7,7 @@ use jeod_dynamics::forces::GravityAccelerationTyped;
 use jeod_dynamics::GravityAcceleration;
 use jeod_gravity::{GravityControls, GravitySource};
 use jeod_quantities::aliases::{Acceleration, Position};
-use jeod_quantities::frame::Inertial;
+use jeod_quantities::frame::RootInertial;
 
 /// Information about a gravity source resolved from a source identifier.
 ///
@@ -271,41 +271,41 @@ pub fn accumulate_relativistic_corrections<S: Copy + std::fmt::Debug + PartialEq
 ///
 /// Identical numerics — wraps the untyped kernel by extracting the SI
 /// values via [`Position::raw_si`] at entry and reconstructing the typed
-/// [`GravityAccelerationTyped<Inertial>`] at exit. The `source_lookup`
+/// [`GravityAccelerationTyped<RootInertial>`] at exit. The `source_lookup`
 /// closure still returns the existing untyped [`ResolvedSource`].
 // JEOD_INV: GV.12 — gravity source must exist for control
 pub fn accumulate_gravity_typed<'a, S: Copy + std::fmt::Debug>(
-    position: Position<Inertial>,
+    position: Position<RootInertial>,
     controls: &GravityControls<S>,
-    integration_origin: Position<Inertial>,
+    integration_origin: Position<RootInertial>,
     source_lookup: impl Fn(S) -> Option<ResolvedSource<'a>>,
-) -> GravityAccelerationTyped<Inertial> {
+) -> GravityAccelerationTyped<RootInertial> {
     let raw = accumulate_gravity(
         position.raw_si(),
         controls,
         integration_origin.raw_si(),
         source_lookup,
     );
-    GravityAccelerationTyped::<Inertial>::from_untyped_unchecked(&raw)
+    GravityAccelerationTyped::<RootInertial>::from_untyped_unchecked(&raw)
 }
 
 /// Typed sibling of [`accumulate_relativistic_corrections`].
 ///
 /// Same kernel; entry/exit boundary types are
-/// `Position<Inertial>` / `Velocity<Inertial>` / `Acceleration<Inertial>`.
+/// `Position<RootInertial>` / `Velocity<RootInertial>` / `Acceleration<RootInertial>`.
 pub fn accumulate_relativistic_corrections_typed<S: Copy + std::fmt::Debug + PartialEq>(
-    body_position: Position<Inertial>,
-    body_velocity: jeod_quantities::aliases::Velocity<Inertial>,
+    body_position: Position<RootInertial>,
+    body_velocity: jeod_quantities::aliases::Velocity<RootInertial>,
     controls: &GravityControls<S>,
     source_lookup: impl Fn(S) -> Option<ResolvedRelativisticSource>,
-) -> Acceleration<Inertial> {
+) -> Acceleration<RootInertial> {
     let raw = accumulate_relativistic_corrections(
         body_position.raw_si(),
         body_velocity.raw_si(),
         controls,
         source_lookup,
     );
-    Acceleration::<Inertial>::from_raw_si(raw)
+    Acceleration::<RootInertial>::from_raw_si(raw)
 }
 
 #[cfg(test)]

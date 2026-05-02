@@ -390,12 +390,12 @@ impl<D: ?Sized + Dimension, F: Frame> Qty3<D, F> {
 #[cfg(test)]
 mod tests {
     use crate::aliases::*;
-    use crate::frame::Inertial;
+    use crate::frame::RootInertial;
     use uom::si::f64::Length;
     use uom::si::length::meter;
 
-    fn pos_inertial(x: f64, y: f64, z: f64) -> Position<Inertial> {
-        Position::<Inertial>::new(
+    fn pos_inertial(x: f64, y: f64, z: f64) -> Position<RootInertial> {
+        Position::<RootInertial>::new(
             Length::new::<meter>(x),
             Length::new::<meter>(y),
             Length::new::<meter>(z),
@@ -459,7 +459,7 @@ mod tests {
     }
 
     /// `+=` accumulator pattern across multiple frames the user marked
-    /// compatible (here, same `Inertial`/`Inertial` to keep the test
+    /// compatible (here, same `RootInertial`/`RootInertial` to keep the test
     /// minimal — the cross-frame `CompatibleFrames` pairs are exercised
     /// by their own dedicated frame-arithmetic tests).
     #[test]

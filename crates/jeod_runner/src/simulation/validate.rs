@@ -28,13 +28,14 @@ impl Simulation {
                     fps.t_pow4_cached.len(),
                 )
             });
+            let trans_untyped = body.trans.to_untyped();
             let errors = jeod_sim::validate_body(
                 &body.config,
                 &body.gravity_controls,
                 true, // SimBody always has gravity_accel field
                 body.mass.as_ref(),
                 body.rot.is_some(),
-                Some(&body.trans),
+                Some(&trans_untyped),
                 |source_id: usize| self.gravity_data.get(source_id).map(|g| &g.source),
                 plate_counts,
             );

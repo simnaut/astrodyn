@@ -4,7 +4,7 @@
 //! [`JeodSet`] schedule sets, the [`VehicleConfigBevyExt`] terminal that
 //! materializes a [`jeod_sim::VehicleConfig`] onto a Bevy entity, and the
 //! [`F64Ext`] / [`Vec3Ext`] / [`Array3Ext`] facade traits so mission code
-//! can write `400.0.km()` and `DVec3::new(...).m_at::<Inertial>()`.
+//! can write `400.0.km()` and `DVec3::new(...).m_at::<RootInertial>()`.
 //!
 //! Pair with [`crate::recipes`] (`use bevy_jeod::recipes::*;`) for the
 //! scenario-composition catalogue (`earth::point_mass()`,
@@ -37,9 +37,9 @@ pub use crate::{
 // (per CLAUDE.md "Three-Layer Architecture": the root package depends
 // only on `jeod_sim` + `bevy`).
 pub use jeod_sim::{
-    Array3Ext, BodyFrame, Ecef, F64Ext, Frame, FrameTransform, GravityControl, Inertial, JeodQuat,
-    Lvlh, Ned, Planet, PlanetFixed, Qty3, SelfPlanet, SelfRef, StructuralFrame, Vec3Ext, Vehicle,
-    VehicleBuilder, VehicleConfig,
+    Array3Ext, BodyFrame, Ecef, F64Ext, Frame, FrameTransform, GravityControl, JeodQuat, Lvlh, Ned,
+    Planet, PlanetFixed, Qty3, RootInertial, SelfPlanet, SelfRef, StructuralFrame, Vec3Ext,
+    Vehicle, VehicleBuilder, VehicleConfig,
 };
 // Mission-crate macros for defining additional `Vehicle` / `Planet`
 // markers. Re-exported so `use bevy_jeod::prelude::*;` brings them into

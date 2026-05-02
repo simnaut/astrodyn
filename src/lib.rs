@@ -181,7 +181,7 @@ impl Plugin for JeodPlugin {
 ///
 /// Inner `jeod_*` types are `#[reflect(opaque)]` so the Component
 /// appears as a leaf with its type name. Field-level introspection of
-/// `Position<Inertial>`, `RotationalState`, etc. would require
+/// `Position<RootInertial>`, `RotationalState`, etc. would require
 /// propagating `Reflect` into the source crates and is out of scope
 /// here.
 pub fn register_jeod_component_types(app: &mut App) {
@@ -360,12 +360,12 @@ impl VehicleConfigBevyExt for jeod_sim::VehicleConfig {
         if self.external_force != glam::DVec3::ZERO {
             // `VehicleConfig.external_force` is still an untyped
             // `DVec3` field on the `jeod_sim` runtime fluent builder
-            // API. The Bevy `ExternalForceC` is typed (`Force<Inertial>`),
+            // API. The Bevy `ExternalForceC` is typed (`Force<RootInertial>`),
             // so this is a one-time insertion-time lift — not a per-step
             // bypass. Migrating `VehicleConfig` itself to typed external
             // fields is a deeper refactor inside `jeod_sim`; out of
             // scope for the Bevy-adapter boundary that #172 H1 targets.
-            let f = jeod_sim::Force::<jeod_sim::Inertial>::from_raw_si(self.external_force); // allowed: #172 H1 insertion-time boundary (VehicleConfig still untyped)
+            let f = jeod_sim::Force::<jeod_sim::RootInertial>::from_raw_si(self.external_force); // allowed: #172 H1 insertion-time boundary (VehicleConfig still untyped)
             entity.insert(components::ExternalForceC(f));
         }
         if self.external_torque != glam::DVec3::ZERO {

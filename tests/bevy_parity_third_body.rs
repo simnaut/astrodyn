@@ -45,7 +45,7 @@ fn tier3_bevy_solar_beta_equ() {
                 position: initial_sun_pos,
                 velocity: DVec3::ZERO,
             }),
-            SourceInertialPositionC(jeod_sim::Position::<jeod_sim::Inertial>::from_raw_si(
+            SourceInertialPositionC(jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(
                 initial_sun_pos,
             )),
             EphemerisBodyC {
@@ -80,7 +80,7 @@ fn tier3_bevy_solar_beta_equ() {
                 mu: 0.0,
                 model: GravityModel::PointMass,
             },
-            initial_sun_pos,
+            jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(initial_sun_pos),
             None,
         ),
     );
@@ -138,7 +138,7 @@ fn tier3_bevy_solar_beta_obliquity() {
                 position: initial_sun_pos,
                 velocity: DVec3::ZERO,
             }),
-            SourceInertialPositionC(jeod_sim::Position::<jeod_sim::Inertial>::from_raw_si(
+            SourceInertialPositionC(jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(
                 initial_sun_pos,
             )),
             EphemerisBodyC {
@@ -173,7 +173,7 @@ fn tier3_bevy_solar_beta_obliquity() {
                 mu: 0.0,
                 model: GravityModel::PointMass,
             },
-            initial_sun_pos,
+            jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(initial_sun_pos),
             None,
         ),
     );
@@ -233,7 +233,7 @@ fn run_3rd_body_parity(label: &str, trans: TranslationalState, include_moon: boo
                 position: initial_sun_pos,
                 velocity: DVec3::ZERO,
             }),
-            SourceInertialPositionC(jeod_sim::Position::<jeod_sim::Inertial>::from_raw_si(
+            SourceInertialPositionC(jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(
                 initial_sun_pos,
             )),
             EphemerisBodyC {
@@ -258,9 +258,9 @@ fn run_3rd_body_parity(label: &str, trans: TranslationalState, include_moon: boo
                         position: moon_pos,
                         velocity: DVec3::ZERO,
                     }),
-                    SourceInertialPositionC(jeod_sim::Position::<jeod_sim::Inertial>::from_raw_si(
-                        moon_pos,
-                    )),
+                    SourceInertialPositionC(
+                        jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(moon_pos),
+                    ),
                     EphemerisBodyC {
                         target: EphemerisBody::Moon,
                         observer: EphemerisBody::Earth,
@@ -320,7 +320,7 @@ fn run_3rd_body_parity(label: &str, trans: TranslationalState, include_moon: boo
                 mu: MU_SUN,
                 model: GravityModel::PointMass,
             },
-            initial_sun_pos,
+            jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(initial_sun_pos),
             None,
         ),
     );
@@ -337,7 +337,7 @@ fn run_3rd_body_parity(label: &str, trans: TranslationalState, include_moon: boo
                     mu: mu_moon,
                     model: GravityModel::PointMass,
                 },
-                moon_pos,
+                jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(moon_pos),
                 None,
             ),
         );
@@ -488,7 +488,7 @@ fn tier3_bevy_mars_dawn() {
                 position: sun_rel_mars,
                 velocity: DVec3::ZERO,
             }),
-            SourceInertialPositionC(jeod_sim::Position::<jeod_sim::Inertial>::from_raw_si(
+            SourceInertialPositionC(jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(
                 sun_rel_mars,
             )),
             EphemerisBodyC {
@@ -525,8 +525,8 @@ fn tier3_bevy_mars_dawn() {
                 mu: mu_mars,
                 model: GravityModel::PointMass,
             },
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: Some(DMat3::IDENTITY),
             delta_c20: 0.0,
             rotation_model: RotationModel::MarsIAU,
@@ -542,7 +542,7 @@ fn tier3_bevy_mars_dawn() {
                 mu: MU_SUN,
                 model: GravityModel::PointMass,
             },
-            sun_rel_mars,
+            jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(sun_rel_mars),
             None,
         ),
     );
@@ -621,7 +621,7 @@ fn tier3_bevy_mercury_relativistic() {
             mu: mu_sun,
             model: GravityModel::PointMass,
         },
-        DVec3::ZERO,
+        jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
         None,
     );
     sun_entry.central = true;
@@ -683,7 +683,7 @@ fn tier3_bevy_relativistic_moving_source() {
                 model: GravityModel::PointMass,
             }),
             SourceInertialPositionC::default(),
-            SourceInertialVelocityC(jeod_sim::Velocity::<jeod_sim::Inertial>::from_raw_si(
+            SourceInertialVelocityC(jeod_sim::Velocity::<jeod_sim::RootInertial>::from_raw_si(
                 source_velocity,
             )),
             TranslationalStateC::default(),
@@ -717,8 +717,8 @@ fn tier3_bevy_relativistic_moving_source() {
                 mu: mu_sun,
                 model: GravityModel::PointMass,
             },
-            position: DVec3::ZERO,
-            velocity: source_velocity,
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Vec3Ext::m_per_s_at::<jeod_sim::RootInertial>(source_velocity),
             t_inertial_pfix: None,
             delta_c20: 0.0,
             rotation_model: RotationModel::None,
@@ -795,7 +795,7 @@ fn tier3_bevy_earth_moon_clem() {
                 position: initial_sun_pos,
                 velocity: DVec3::ZERO,
             }),
-            SourceInertialPositionC(jeod_sim::Position::<jeod_sim::Inertial>::from_raw_si(
+            SourceInertialPositionC(jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(
                 initial_sun_pos,
             )),
             EphemerisBodyC {
@@ -818,7 +818,7 @@ fn tier3_bevy_earth_moon_clem() {
                 position: initial_moon_pos,
                 velocity: DVec3::ZERO,
             }),
-            SourceInertialPositionC(jeod_sim::Position::<jeod_sim::Inertial>::from_raw_si(
+            SourceInertialPositionC(jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(
                 initial_moon_pos,
             )),
             EphemerisBodyC {
@@ -866,7 +866,7 @@ fn tier3_bevy_earth_moon_clem() {
                 mu: MU_SUN,
                 model: GravityModel::PointMass,
             },
-            initial_sun_pos,
+            jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(initial_sun_pos),
             None,
         ),
     );
@@ -880,7 +880,7 @@ fn tier3_bevy_earth_moon_clem() {
                 mu: mu_moon,
                 model: GravityModel::PointMass,
             },
-            initial_moon_pos,
+            jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(initial_moon_pos),
             None,
         ),
     );

@@ -21,6 +21,7 @@
 //! angular velocity) still validates the integrator and gradient
 //! torque indirectly through their effect on attitude.
 
+use jeod_sim::Vec3Ext;
 use std::path::PathBuf;
 
 use glam::{DMat3, DVec3};
@@ -102,8 +103,8 @@ fn third_body(mu: f64, initial_pos: DVec3) -> GravitySourceEntry {
             mu,
             model: GravityModel::PointMass,
         },
-        position: initial_pos,
-        velocity: DVec3::ZERO,
+        position: initial_pos.m_at::<jeod_sim::RootInertial>(),
+        velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
         t_inertial_pfix: None,
         delta_c20: 0.0,
         rotation_model: RotationModel::default(),
@@ -151,8 +152,8 @@ fn build_torque_simple(init: &InitialConditions, cfg: RunConfig) -> SimulationBu
         "Earth",
         GravitySourceEntry {
             source: earth_source,
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: if needs_pfix {
                 Some(DMat3::IDENTITY)
             } else {

@@ -1,12 +1,16 @@
 [package]
 name = "jeod_interactions"
 description = "Aerodynamic drag, SRP, gravity-gradient torque, shadow, and contact for bevy_jeod"
+readme = "README.md"
 keywords = ["drag", "srp", "gravity-gradient", "orbital-mechanics", "aerospace"]
 categories = ["science", "aerospace"]
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
 
 [dependencies]
 glam = { workspace = true }

@@ -25,11 +25,11 @@ use jeod_quantities::quat::NormalizedQuat;
 /// in the simulation's integration frame (typically Earth.inertial).
 #[derive(Debug, Clone, Copy)]
 pub struct DetachedSubtreeState {
-    /// Inertial position of the subtree's composite CoM.
+    /// RootInertial position of the subtree's composite CoM.
     pub composite_position: DVec3,
-    /// Inertial velocity of the subtree's composite CoM.
+    /// RootInertial velocity of the subtree's composite CoM.
     pub composite_velocity: DVec3,
-    /// Inertial-to-body attitude. Wrapped in [`BodyAttitude`] so the
+    /// RootInertial-to-body attitude. Wrapped in [`BodyAttitude`] so the
     /// JEOD left-multiply integration convention (`q̇ = -½(ω ⊗ q)`) is
     /// type-enforced — there is no public `multiply` to swap operand
     /// order on. See issue #252.

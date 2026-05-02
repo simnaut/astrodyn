@@ -17,6 +17,8 @@ pub fn point_mass() -> GravitySourceEntry {
 }
 
 /// Sun as a third-body perturbation source at the given inertial position.
-pub fn third_body(position: glam::DVec3) -> GravitySourceEntry {
+pub fn third_body(
+    position: jeod_quantities::aliases::Position<jeod_quantities::frame::RootInertial>,
+) -> GravitySourceEntry {
     GravitySourceEntry::third_body(&SUN, position)
 }

@@ -11,7 +11,7 @@
 //! - [`Ephemeris`] — owns an `anise::Almanac` and answers position/velocity
 //!   queries from `.bsp` files (e.g., `de421.bsp`, `de440.bsp`). All vectors
 //!   are returned in J2000 ICRF, in meters and m/s, wrapped as
-//!   `Position<Inertial>` / `Velocity<Inertial>` from `jeod_quantities`.
+//!   `Position<RootInertial>` / `Velocity<RootInertial>` from `jeod_quantities`.
 //! - [`EphemerisBody`] — the body-identifier enum that maps JEOD's
 //!   `EphemerisBody` constants to `anise`'s NAIF integer IDs (Sun, Moon,
 //!   Earth, the planets and barycenters needed by Tier 3 tests).
@@ -27,6 +27,7 @@
 //! Pure Rust, zero Bevy dependency.
 
 #![forbid(unsafe_code)]
+#![deny(missing_docs)]
 
 pub use jeod_quantities::prelude::*;
 

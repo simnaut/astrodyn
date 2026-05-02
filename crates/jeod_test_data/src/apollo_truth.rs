@@ -55,11 +55,11 @@ use jeod_math::JeodQuat;
 /// composite-body rotation).
 #[derive(Clone, Debug)]
 pub struct VehState {
-    /// Inertial position of the composite CoM (m).
+    /// RootInertial position of the composite CoM (m).
     pub position: DVec3,
-    /// Inertial velocity of the composite CoM (m/s).
+    /// RootInertial velocity of the composite CoM (m/s).
     pub velocity: DVec3,
-    /// Inertial → body rotation, scalar-first JEOD convention.
+    /// RootInertial → body rotation, scalar-first JEOD convention.
     pub quaternion: JeodQuat,
     /// Body-frame angular velocity (rad/s).
     pub ang_vel_body: DVec3,

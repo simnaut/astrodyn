@@ -26,6 +26,7 @@
 use glam::DVec3;
 
 use jeod_frames::FrameId;
+use jeod_sim::{IntegOrigin, Position, Velocity};
 
 use super::Simulation;
 use crate::error::StepError;
@@ -79,22 +80,32 @@ impl Simulation {
             }
         }
 
-        // Precompute frame origins from the tree for all body integration frames.
-        let body_integ_origins: Vec<(DVec3, DVec3)> = self
+        // Precompute frame origins from the tree for all body integration
+        // frames. The typed `IntegOrigin` is the only safe path from
+        // `Position<IntegrationFrame>` to `Position<RootInertial>` — see #255 /
+        // RF.10. Returns `IntegOrigin::zero()` when the body integrates in
+        // the root frame (the bit-identical no-shift case).
+        let body_integ_origins: Vec<IntegOrigin> = self
             .bodies
             .iter()
-            .map(|b| self.frame_origin(b.integ_frame_id))
+            .map(|b| {
+                let (p, v) = self.frame_origin(b.integ_frame_id);
+                IntegOrigin {
+                    position: Position::from_raw_si(p),
+                    velocity: Velocity::from_raw_si(v),
+                }
+            })
             .collect();
 
         self.update_environment(&body_integ_origins);
 
         // ── 6. Interactions — drag, SRP, gravity torque ──
-        let (sun_pos, moon_pos) = self.compute_interactions(dt);
+        let (sun_pos, moon_pos) = self.compute_interactions(dt, &body_integ_origins);
 
         self.run_integration(dt, &body_integ_origins)?;
 
         // ── 9. Derived states ──
-        self.compute_derived_states(sun_pos, moon_pos);
+        self.compute_derived_states(sun_pos, moon_pos, &body_integ_origins);
 
         // Advance any free-flying detached subtrees ballistically. This
         // matches JEOD's behavior for tree roots whose grav_interaction

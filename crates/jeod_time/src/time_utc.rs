@@ -17,11 +17,20 @@ pub const UTC_EPOCH_TAI_TJT: f64 = 11_544.499_257_129_63;
 /// Matches JEOD's `TimeStandard` calendar fields.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CalendarDate {
+    /// Gregorian year (e.g., `2025`).
     pub year: i32,
+    /// Calendar month, 1–12.
     pub month: i32,
+    /// Day of month, 1–31.
     pub day: i32,
+    /// Hour of day, 0–23.
     pub hour: i32,
+    /// Minute of hour, 0–59.
     pub minute: i32,
+    /// Second of minute, in `[0.0, 61.0)`. The standard range is
+    /// `[0.0, 60.0)`; values in `[60.0, 61.0)` are reserved for the
+    /// positive UTC leap second (`23:59:60` and any fractional second
+    /// within it).
     pub second: f64,
 }
 

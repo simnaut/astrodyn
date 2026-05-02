@@ -8,7 +8,7 @@ use jeod_dynamics::{
     ForceContributions, FrameDerivatives, MassProperties, RotationalState, TotalForce,
 };
 use jeod_interactions::{AerodynamicForce, RadiationForce};
-use jeod_quantities::frame::{Inertial, Vehicle};
+use jeod_quantities::frame::{RootInertial, Vehicle};
 
 /// Collect all interaction forces and torques, resolve frame transforms,
 /// and compute frame derivatives.
@@ -116,9 +116,9 @@ pub fn collect_and_resolve_forces(
 /// Typed sibling of [`collect_and_resolve_forces`].
 ///
 /// Identical kernel — entry boundary takes
-/// [`GravityAccelerationTyped<Inertial>`] for the gravity
+/// [`GravityAccelerationTyped<RootInertial>`] for the gravity
 /// acceleration, exit boundary returns
-/// [`TotalForceTyped<V, Inertial>`] / [`FrameDerivativesTyped<Inertial,
+/// [`TotalForceTyped<V, RootInertial>`] / [`FrameDerivativesTyped<RootInertial,
 /// V>`]. The aerodynamic / radiation / gravity-torque / rotation-state /
 /// mass inputs remain untyped here because this orchestration
 /// boundary has not yet been migrated to consume the typed
@@ -134,10 +134,10 @@ pub fn collect_and_resolve_forces_typed<V: Vehicle>(
     rot_state: Option<&RotationalState>,
     t_struct_body: DMat3,
     mass: Option<&MassProperties>,
-    gravity_accel: GravityAccelerationTyped<Inertial>,
+    gravity_accel: GravityAccelerationTyped<RootInertial>,
 ) -> (
-    TotalForceTyped<V, Inertial>,
-    FrameDerivativesTyped<Inertial, V>,
+    TotalForceTyped<V, RootInertial>,
+    FrameDerivativesTyped<RootInertial, V>,
 ) {
     let (force, derivs) = collect_and_resolve_forces(
         aero,
@@ -149,7 +149,7 @@ pub fn collect_and_resolve_forces_typed<V: Vehicle>(
         gravity_accel.grav_accel.raw_si(),
     );
     (
-        TotalForceTyped::<V, Inertial>::from_untyped_unchecked(&force),
-        FrameDerivativesTyped::<Inertial, V>::from_untyped_unchecked(&derivs),
+        TotalForceTyped::<V, RootInertial>::from_untyped_unchecked(&force),
+        FrameDerivativesTyped::<RootInertial, V>::from_untyped_unchecked(&derivs),
     )
 }

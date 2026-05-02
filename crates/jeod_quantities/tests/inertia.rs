@@ -20,8 +20,8 @@ fn approx_mat_eq(a: DMat3, b: DMat3, tol: f64) -> bool {
 
 #[test]
 fn from_components_is_symmetric_and_diagonal_matches_principal() {
-    let i_full = InertiaTensor::<Inertial>::from_components(1.0, 2.0, 3.0, 0.0, 0.0, 0.0);
-    let i_diag = InertiaTensor::<Inertial>::from_principal(1.0, 2.0, 3.0);
+    let i_full = InertiaTensor::<RootInertial>::from_components(1.0, 2.0, 3.0, 0.0, 0.0, 0.0);
+    let i_diag = InertiaTensor::<RootInertial>::from_principal(1.0, 2.0, 3.0);
     assert_eq!(i_full, i_diag);
 }
 
@@ -29,7 +29,7 @@ fn from_components_is_symmetric_and_diagonal_matches_principal() {
 fn rotation_preserves_trace() {
     // Trace of an inertia tensor is rotation-invariant. Cook a
     // non-trivial rotation (45° about (1,1,1)/√3) and verify.
-    let i = InertiaTensor::<Inertial>::from_components(2.0, 3.0, 5.0, 0.1, 0.2, 0.3);
+    let i = InertiaTensor::<RootInertial>::from_components(2.0, 3.0, 5.0, 0.1, 0.2, 0.3);
     let axis = DVec3::new(1.0, 1.0, 1.0).normalize();
     let rot = DMat3::from_axis_angle(axis, std::f64::consts::FRAC_PI_4);
 
@@ -53,7 +53,7 @@ fn rotation_preserves_trace() {
 
 #[test]
 fn rotation_round_trip_recovers_original() {
-    let i = InertiaTensor::<Inertial>::from_components(2.0, 3.0, 5.0, 0.1, 0.2, 0.3);
+    let i = InertiaTensor::<RootInertial>::from_components(2.0, 3.0, 5.0, 0.1, 0.2, 0.3);
     let axis = DVec3::new(1.0, 0.5, -0.3).normalize();
     let rot = DMat3::from_axis_angle(axis, 0.7);
     let rot_inv = rot.transpose();
@@ -84,9 +84,9 @@ fn parallel_axis_addition_matches_steiner() {
         DVec3::new(d.x * d.z, d.y * d.z, d.z * d.z),
     );
     let offset_contribution =
-        InertiaTensor::<Inertial>::from_dmat3_unchecked(m * (DMat3::IDENTITY * d_sq - outer));
+        InertiaTensor::<RootInertial>::from_dmat3_unchecked(m * (DMat3::IDENTITY * d_sq - outer));
 
-    let i_com = InertiaTensor::<Inertial>::from_principal(2.0, 3.0, 4.0);
+    let i_com = InertiaTensor::<RootInertial>::from_principal(2.0, 3.0, 4.0);
     let i_about_parent = i_com + offset_contribution;
 
     // Spot check: the (0,0) entry should be Ixx + m·(dy² + dz²).
@@ -101,8 +101,8 @@ fn parallel_axis_addition_matches_steiner() {
 
 #[test]
 fn scalar_mul_is_distributive() {
-    let a = InertiaTensor::<Inertial>::from_principal(1.0, 2.0, 3.0);
-    let b = InertiaTensor::<Inertial>::from_principal(4.0, 5.0, 6.0);
+    let a = InertiaTensor::<RootInertial>::from_principal(1.0, 2.0, 3.0);
+    let b = InertiaTensor::<RootInertial>::from_principal(4.0, 5.0, 6.0);
     let lhs = (a + b) * 2.0;
     let rhs = a * 2.0 + b * 2.0;
     assert_eq!(lhs, rhs);
@@ -110,18 +110,18 @@ fn scalar_mul_is_distributive() {
 
 #[test]
 fn neg_then_add_is_zero() {
-    let i = InertiaTensor::<Inertial>::from_components(1.0, 2.0, 3.0, 0.4, 0.5, 0.6);
+    let i = InertiaTensor::<RootInertial>::from_components(1.0, 2.0, 3.0, 0.4, 0.5, 0.6);
     let z = i + (-i);
-    assert_eq!(z, InertiaTensor::<Inertial>::zero());
+    assert_eq!(z, InertiaTensor::<RootInertial>::zero());
 }
 
 #[test]
 fn default_is_zero() {
-    let z: InertiaTensor<Inertial> = Default::default();
-    assert_eq!(z, InertiaTensor::<Inertial>::zero());
+    let z: InertiaTensor<RootInertial> = Default::default();
+    assert_eq!(z, InertiaTensor::<RootInertial>::zero());
 }
 
-// `InertiaTensor<Ecef> + InertiaTensor<Inertial>` must NOT compile —
+// `InertiaTensor<Ecef> + InertiaTensor<RootInertial>` must NOT compile —
 // frame mismatch is a type error. The compile-fail case is asserted
 // via a `compile_fail` doctest on `InertiaTensor` itself (see
 // `crates/jeod_quantities/src/inertia.rs`); this test confirms the

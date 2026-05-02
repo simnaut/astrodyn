@@ -13,7 +13,8 @@ use glam::DVec3;
 use jeod_dynamics::{MassBodyId, MassPointState};
 use jeod_frames::{RefFrameKind, RefFrameRot, RefFrameState, RefFrameTrans};
 use jeod_sim::{
-    evaluate_ground_contact_pair, ContactFacet, GroundFacet, MassProperties, Phase, VehicleConfig,
+    evaluate_ground_contact_pair, ContactFacet, GroundFacet, IntegrationFrame, MassProperties,
+    Phase, Position, VehicleConfig, Velocity,
 };
 
 use super::types::{
@@ -189,10 +190,13 @@ impl Simulation {
                  set `mass: Some(...)` on the VehicleConfig"
             )
         });
+        // `body.trans` is `TranslationalStateTyped<IntegrationFrame>` after
+        // #258; `evaluate_ground_contact_pair` takes the untyped form.
+        let trans_untyped = body.trans.to_untyped();
         let pending_initial_impulse = evaluate_ground_contact_pair(
             &vehicle_facet,
             &ground_facet,
-            &body.trans,
+            &trans_untyped,
             body_rot,
             body.t_struct_body,
             body_mass,
@@ -248,6 +252,9 @@ impl Simulation {
             RefFrameKind::Body,
             RefFrameState {
                 trans: RefFrameTrans {
+                    // VehicleConfig::trans is integration-frame; the frame
+                    // tree node lives in the parent (integration) frame, so
+                    // values copy directly with no shift.
                     position: config.trans.position,
                     velocity: config.trans.velocity,
                 },
@@ -310,9 +317,13 @@ impl Simulation {
             dvel_inertial = t_body_to_inertial * body_rot.ang_vel_body.cross(cw_body);
         }
         // composite = core − cw_inertial; subtract the rigid-body
-        // ω × r contribution on velocity.
-        self.bodies[idx].trans.position -= cw_inertial;
-        self.bodies[idx].trans.velocity -= dvel_inertial;
+        // ω × r contribution on velocity. All values stay in the body's
+        // integration frame.
+        let trans = &mut self.bodies[idx].trans;
+        trans.position =
+            Position::<IntegrationFrame>::from_raw_si(trans.position.raw_si() - cw_inertial);
+        trans.velocity =
+            Velocity::<IntegrationFrame>::from_raw_si(trans.velocity.raw_si() - dvel_inertial);
     }
 
     /// Derive the integrated body's `core_body` inertial position +
@@ -356,12 +367,13 @@ impl Simulation {
         let t_inertial_to_body = body_rot.quaternion.left_quat_to_transformation();
         let t_body_to_inertial = t_inertial_to_body.transpose();
         let cw_inertial = t_body_to_inertial * cw_body;
-        let core_position = body.trans.position + cw_inertial;
+        let core_position = body.trans.position.raw_si() + cw_inertial;
         // v_core = v_composite + ω × r (in inertial frame). ω in body
         // frame is body.rot.ang_vel_body; rotate the cross-product to
         // inertial.
         let omega_body = body_rot.ang_vel_body;
-        let core_velocity = body.trans.velocity + t_body_to_inertial * omega_body.cross(cw_body);
+        let core_velocity =
+            body.trans.velocity.raw_si() + t_body_to_inertial * omega_body.cross(cw_body);
         (core_position, core_velocity)
     }
 
@@ -409,8 +421,8 @@ impl Simulation {
             );
             RefFrameState {
                 trans: RefFrameTrans {
-                    position: body.trans.position,
-                    velocity: body.trans.velocity,
+                    position: body.trans.position.raw_si(),
+                    velocity: body.trans.velocity.raw_si(),
                 },
                 rot: RefFrameRot {
                     q_parent_this: body_rot.quaternion,
@@ -493,7 +505,7 @@ impl Simulation {
     /// Used for prescribed-motion tests where position is set externally
     /// at each timestep (e.g., SIM_2A_SHADOW_CALC).
     pub fn set_body_position(&mut self, idx: usize, position: DVec3) {
-        self.bodies[idx].trans.position = position;
+        self.bodies[idx].trans.position = Position::<IntegrationFrame>::from_raw_si(position);
         let fid = self.bodies[idx].body_frame_id;
         self.frame_tree.get_mut(fid).state.trans.position = position;
     }
@@ -502,7 +514,7 @@ impl Simulation {
     ///
     /// Used for impulsive maneuvers (e.g., Apollo TLI delta-V).
     pub fn set_body_velocity(&mut self, idx: usize, velocity: DVec3) {
-        self.bodies[idx].trans.velocity = velocity;
+        self.bodies[idx].trans.velocity = Velocity::<IntegrationFrame>::from_raw_si(velocity);
         let fid = self.bodies[idx].body_frame_id;
         self.frame_tree.get_mut(fid).state.trans.velocity = velocity;
     }

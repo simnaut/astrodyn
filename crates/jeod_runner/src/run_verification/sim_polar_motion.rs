@@ -7,7 +7,6 @@
 //! validates that enabling the feature does not break point-mass
 //! propagation.
 
-use glam::DVec3;
 use jeod_sim::recipes::verification::{
     CsvReference, InitialConditions, Tolerances, VerificationCase,
 };
@@ -46,8 +45,8 @@ fn build_run2p_polar_motion(init: &InitialConditions) -> SimulationBuilder {
                 mu: mu_earth,
                 model: GravityModel::PointMass,
             },
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: None,
             delta_c20: 0.0,
             rotation_model: RotationModel::default(),

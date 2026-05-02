@@ -116,8 +116,8 @@ fn tier3_simulation_earth_moon_clem() {
                 mu: moon_mu,
                 model: GravityModel::SphericalHarmonics(Box::new(sh_data)),
             },
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: Some(moon_rotation),
             rotation_model: RotationModel::MoonDE421,
             delta_c20: 0.0,
@@ -141,7 +141,7 @@ fn tier3_simulation_earth_moon_clem() {
                 mu: mu_earth,
                 model: GravityModel::PointMass,
             },
-            earth_pos_from_moon,
+            jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(earth_pos_from_moon),
             None,
         ),
     );
@@ -159,7 +159,7 @@ fn tier3_simulation_earth_moon_clem() {
                 mu: mu_sun,
                 model: GravityModel::PointMass,
             },
-            sun_pos_from_moon,
+            jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(sun_pos_from_moon),
             None,
         ),
     );

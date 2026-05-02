@@ -9,7 +9,7 @@ use jeod_atmosphere::met::MetAtmosphere;
 use jeod_atmosphere::AtmosphereState;
 use jeod_math::GeodeticState;
 use jeod_quantities::aliases::Position;
-use jeod_quantities::frame::Inertial;
+use jeod_quantities::frame::{Planet, PlanetInertial};
 
 use crate::planet_config::PlanetConfig;
 
@@ -143,14 +143,20 @@ pub fn evaluate_atmosphere(
 
 /// Typed sibling of [`evaluate_atmosphere`].
 ///
-/// Identical kernel — accepts a typed `Position<Inertial>` for the
-/// vehicle position. The returned [`AtmosphereState`] keeps its raw
-/// fields (`density: f64`, `wind: DVec3`, …) since `AtmosphereState`
-/// itself exposes `_typed` accessors (`density_typed`, `wind_typed`,
-/// …) for callers who want quantity types at the consumption site.
-pub fn evaluate_atmosphere_typed(
+/// Generic over the atmosphere planet `P`: accepts the vehicle position
+/// in the planet's own inertial frame (`Position<PlanetInertial<P>>`),
+/// not in the simulation's root inertial frame. This is the structural
+/// distinction enforced by RF.10 — atmosphere geodetic altitude is
+/// computed against the planet's center, so the input must be
+/// planet-centered. Callers with a body in the planet's integration
+/// frame should relabel via `from_raw_si` (bit-identical).
+///
+/// Bit-identical kernel — wraps the raw f64 implementation via
+/// `.raw_si()` at the boundary. The returned [`AtmosphereState`]
+/// keeps raw fields; use `wind_typed::<P>()` for typed wind.
+pub fn evaluate_atmosphere_typed<P: Planet>(
     config: &AtmosphereConfig,
-    position: Position<Inertial>,
+    position: Position<PlanetInertial<P>>,
     t_inertial_pfix: Option<&DMat3>,
     tai_tjt: Option<f64>,
 ) -> AtmosphereState {

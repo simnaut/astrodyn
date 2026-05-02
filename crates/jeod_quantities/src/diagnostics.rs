@@ -2,7 +2,7 @@
 //!
 //! The attribute is stable in Rust ≥ 1.78. The patterns below are expected
 //! to fire when mission-crate code tries to use an operation that is not
-//! implementable between the supplied types (e.g. adding `Position<Inertial>`
+//! implementable between the supplied types (e.g. adding `Position<RootInertial>`
 //! to `Position<Ecef>`) and instead of the default terse "trait `Add` is not
 //! implemented for ..." we give a hint in physics language.
 //!
@@ -31,7 +31,7 @@ use crate::time_scale::TimeScale;
 /// ```compile_fail
 /// use jeod_quantities::prelude::*;
 /// use glam::DVec3;
-/// let a: Position<Inertial> = Qty3::from_raw_si(DVec3::new(1.0, 0.0, 0.0));
+/// let a: Position<RootInertial> = Qty3::from_raw_si(DVec3::new(1.0, 0.0, 0.0));
 /// let b: Position<Ecef> = Qty3::from_raw_si(DVec3::new(1.0, 0.0, 0.0));
 /// let _ = a + b; // ← frame mismatch, custom diagnostic fires
 /// ```
@@ -147,11 +147,11 @@ impl<L: Layout, T: Transform> RequiresNormalizedQuat for NormalizedQuat<L, T> {}
 #[diagnostic::on_unimplemented(
     message = "this operation needs an inertial-frame quantity; got one in the rotating frame `{F}`",
     label = "non-inertial frame `{F}`",
-    note = "rotate into Inertial via `FrameTransform<{F}, Inertial>::apply(...)`; remember to add the frame rotation velocity for derivatives"
+    note = "rotate into RootInertial via `FrameTransform<{F}, RootInertial>::apply(...)`; remember to add the frame rotation velocity for derivatives"
 )]
 pub trait InertialOnly<F: Frame> {}
 
-impl InertialOnly<crate::frame::Inertial> for () {}
+impl InertialOnly<crate::frame::RootInertial> for () {}
 
 /// Fires when user code tries `Position * Position` or `Velocity * Velocity`
 /// (an accidental componentwise multiply). There's no meaningful vector

@@ -1,3 +1,15 @@
+//! Canonical [`PlanetShape`] constants matching the
+//! per-body data files under
+//! [`models/environment/planet/data/src/`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/environment/planet/data/src/)
+//! in JEOD v5.4.0.
+//!
+//! Each preset combines the shape parameters from `<body>.cc` with the
+//! gravitational parameter from the corresponding `<body>_<model>.cc`
+//! gravity-coefficient file, so a downstream caller can pull a single
+//! `PlanetShape` constant rather than reconstructing the values
+//! field-by-field. Source-line citations live on the per-constant
+//! definitions below.
+
 use crate::planet::PlanetShape;
 
 /// Earth (WGS84 ellipsoid).

@@ -33,7 +33,7 @@
 //!
 //! ## What this crate provides
 //!
-//! - Reference-frame and time-scale phantom markers (`Inertial`, `Ecef`,
+//! - Reference-frame and time-scale phantom markers (`RootInertial`, `Ecef`,
 //!   `PlanetFixed<P>`, `BodyFrame<V>`, `Lvlh<Chief>`, `TAI`, `TT`, …)
 //! - `uom`-backed componentwise 3-vectors `Qty3<D, F>` with aliases
 //!   `Position<F>`, `Velocity<F>`, `Acceleration<F>`, `Force<F>`, `Torque<F>`, …
@@ -56,7 +56,7 @@
 //! ```
 
 #![forbid(unsafe_code)]
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 
 mod sealed;
 
@@ -69,6 +69,7 @@ pub mod frame;
 pub mod frame_transform;
 pub mod harmonic;
 pub mod inertia;
+pub mod integ_origin;
 pub mod ops;
 pub mod prelude;
 pub mod qty3;
@@ -80,6 +81,7 @@ pub use body_attitude::BodyAttitude;
 pub use dims::*;
 pub use frame::*;
 pub use frame_transform::*;
+pub use integ_origin::IntegOrigin;
 pub use qty3::*;
 pub use quat::*;
 pub use time_scale::*;

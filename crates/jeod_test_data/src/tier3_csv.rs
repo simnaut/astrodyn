@@ -51,20 +51,32 @@ fn read_csv(path: &Path, sim_name: &str) -> String {
 
 // ── SIM_OrbElem CSV (21+ columns) ──────────────────────────────────────────
 
+/// One row from the SIM_OrbElem 21-column reference CSV.
 #[derive(Debug)]
 pub struct OrbElemRecord {
+    /// Sample time in seconds since simulation t=0.
     pub time: f64,
+    /// Semi-major axis in metres.
     pub semi_major_axis: f64,
+    /// Eccentricity magnitude.
     pub e_mag: f64,
+    /// Inclination in radians.
     pub inclination: f64,
+    /// Argument of periapsis in radians.
     pub arg_periapsis: f64,
+    /// Longitude of ascending node in radians.
     pub long_asc_node: f64,
+    /// True anomaly in radians.
     pub true_anom: f64,
+    /// Mean anomaly in radians.
     pub mean_anom: f64,
+    /// Cartesian position in metres.
     pub position: DVec3,
+    /// Cartesian velocity in m/s.
     pub velocity: DVec3,
 }
 
+/// Parse a SIM_OrbElem CSV at `path` into [`OrbElemRecord`] rows.
 pub fn load_orbelem_csv(path: &Path) -> Vec<OrbElemRecord> {
     let content = read_csv(path, "SIM_OrbElem");
     let mut records = Vec::new();
@@ -98,15 +110,22 @@ pub fn load_orbelem_csv(path: &Path) -> Vec<OrbElemRecord> {
 
 // ── SIM_LVLH CSV (17+ columns) ─────────────────────────────────────────────
 
+/// One row from a SIM_LVLH 17-column reference CSV.
 #[derive(Debug)]
 pub struct LvlhRecord {
+    /// Sample time in seconds since simulation t=0.
     pub time: f64,
+    /// LVLH parent-to-this rotation matrix.
     pub t_parent_this: DMat3,
+    /// Magnitude of the LVLH angular velocity in rad/s.
     pub ang_vel_mag: f64,
+    /// Body position in metres.
     pub position: DVec3,
+    /// Body velocity in m/s.
     pub velocity: DVec3,
 }
 
+/// Parse a SIM_LVLH CSV at `path` into [`LvlhRecord`] rows.
 pub fn load_lvlh_csv(path: &Path) -> Vec<LvlhRecord> {
     let content = read_csv(path, "SIM_LVLH");
     let mut records = Vec::new();
@@ -140,19 +159,30 @@ pub fn load_lvlh_csv(path: &Path) -> Vec<LvlhRecord> {
 
 // ── SIM_NED CSV (16+ columns) ──────────────────────────────────────────────
 
+/// One row from a SIM_NED 16-column reference CSV.
 #[derive(Debug)]
 pub struct NedRecord {
+    /// Sample time in seconds.
     pub time: f64,
+    /// Geodetic altitude in metres.
     pub ellip_altitude: f64,
+    /// Geodetic latitude in radians.
     pub ellip_latitude: f64,
+    /// Geodetic longitude in radians.
     pub ellip_longitude: f64,
+    /// Spherical altitude in metres.
     pub sphere_altitude: f64,
+    /// Geocentric latitude in radians.
     pub sphere_latitude: f64,
+    /// Spherical longitude in radians.
     pub sphere_longitude: f64,
+    /// Body position in metres.
     pub position: DVec3,
+    /// Body velocity in m/s.
     pub velocity: DVec3,
 }
 
+/// Parse a SIM_NED CSV at `path` into [`NedRecord`] rows.
 pub fn load_ned_csv(path: &Path) -> Vec<NedRecord> {
     let content = read_csv(path, "SIM_NED");
     let mut records = Vec::new();
@@ -185,13 +215,18 @@ pub fn load_ned_csv(path: &Path) -> Vec<NedRecord> {
 
 // ── SrpRecord (7 columns: time + pos[3] + vel[3]) ──────────────────────────
 
+/// One row from a SIM_3_ORBIT SRP-trajectory CSV (7 columns).
 #[derive(Debug)]
 pub struct SrpRecord {
+    /// Sample time in seconds.
     pub time: f64,
+    /// Body position in metres.
     pub position: DVec3,
+    /// Body velocity in m/s.
     pub velocity: DVec3,
 }
 
+/// Parse a SIM_3_ORBIT SRP-trajectory CSV at `path`.
 pub fn load_srp_trajectory(path: &Path) -> Vec<SrpRecord> {
     let content = read_csv(path, "SIM_3_ORBIT");
     let mut records = Vec::new();
@@ -218,15 +253,22 @@ pub fn load_srp_trajectory(path: &Path) -> Vec<SrpRecord> {
 
 // ── SIM_1_BASIC SRP CSV (9 columns) ────────────────────────────────────────
 
+/// One row from a SIM_1_BASIC SRP CSV (9 columns).
 #[derive(Debug)]
 pub struct SrpBasicRecord {
+    /// Sample time in seconds.
     pub time: f64,
+    /// SRP force in newtons.
     pub force: DVec3,
+    /// SRP torque in N·m.
     pub torque: DVec3,
+    /// Solar-flux magnitude in W/m².
     pub flux_mag: f64,
+    /// Surface temperature in K.
     pub temperature: f64,
 }
 
+/// Parse a SIM_1_BASIC SRP CSV at `path`.
 pub fn load_srp_basic_csv(path: &Path) -> Vec<SrpBasicRecord> {
     let content = read_csv(path, "SIM_1_BASIC");
     let mut records = Vec::new();
@@ -255,15 +297,22 @@ pub fn load_srp_basic_csv(path: &Path) -> Vec<SrpBasicRecord> {
 
 // ── SIM_VER_DRAG CSV (11 columns) ──────────────────────────────────────────
 
+/// One row from a SIM_VER_DRAG CSV (11 columns).
 #[derive(Debug)]
 pub struct DragRecord {
+    /// Sample time in seconds.
     pub time: f64,
+    /// Aerodynamic force in newtons.
     pub aero_force: DVec3,
+    /// Aerodynamic torque in N·m.
     pub aero_torque: DVec3,
+    /// Inertial velocity in m/s.
     pub inertial_vel: DVec3,
+    /// Aerodynamic-acceleration magnitude in m/s².
     pub accel_mag: f64,
 }
 
+/// Parse a SIM_VER_DRAG CSV at `path`.
 pub fn load_drag_csv(path: &Path) -> Vec<DragRecord> {
     let content = read_csv(path, "SIM_VER_DRAG");
     let mut records = Vec::new();
@@ -292,17 +341,24 @@ pub fn load_drag_csv(path: &Path) -> Vec<DragRecord> {
 
 // ── SIM_Euler CSV (56 columns: time + 36 angles + 6 pos/vel + 9 T + 4 quat) ─
 
+/// One row from a SIM_Euler CSV (56 columns).
 #[derive(Debug)]
 pub struct EulerRecord {
+    /// Sample time in seconds.
     pub time: f64,
+    /// 36 Euler-angle samples (12 sequences × 3 angles).
     pub angles: [f64; 36],
+    /// Body position in metres.
     pub position: DVec3,
+    /// Body velocity in m/s.
     pub velocity: DVec3,
+    /// Parent-to-this rotation matrix.
     pub t_parent_this: DMat3,
     /// JEOD scalar-first: `[q0_scalar, q1, q2, q3]`.
     pub quaternion: [f64; 4],
 }
 
+/// Parse a SIM_Euler CSV at `path` into [`EulerRecord`] rows.
 pub fn load_euler_csv(path: &Path) -> Vec<EulerRecord> {
     let content = read_csv(path, "SIM_Euler");
     let mut records = Vec::new();
@@ -345,14 +401,20 @@ pub fn load_euler_csv(path: &Path) -> Vec<EulerRecord> {
 
 // ── SIM_SolarBeta CSV (8 columns) ──────────────────────────────────────────
 
+/// One row from a SIM_SolarBeta CSV (8 columns).
 #[derive(Debug)]
 pub struct SolarBetaRecord {
+    /// Sample time in seconds.
     pub time: f64,
+    /// Solar beta angle in radians.
     pub solar_beta: f64,
+    /// Body position in metres.
     pub position: DVec3,
+    /// Body velocity in m/s.
     pub velocity: DVec3,
 }
 
+/// Parse a SIM_SolarBeta CSV at `path`.
 pub fn load_solar_beta_csv(path: &Path) -> Vec<SolarBetaRecord> {
     let content = read_csv(path, "SIM_SolarBeta");
     let mut records = Vec::new();
@@ -380,15 +442,22 @@ pub fn load_solar_beta_csv(path: &Path) -> Vec<SolarBetaRecord> {
 
 // ── SIM_2A_SHADOW_CALC CSV (11 columns) ────────────────────────────────────
 
+/// One row from a SIM_2A_SHADOW_CALC CSV (11 columns).
 #[derive(Debug)]
 pub struct ShadowCalcRecord {
+    /// Sample time in seconds.
     pub time: f64,
+    /// Body position in metres.
     pub position: DVec3,
+    /// Solar-flux magnitude in W/m².
     pub flux_mag: f64,
+    /// SRP force in newtons.
     pub force: DVec3,
+    /// SRP torque in N·m.
     pub torque: DVec3,
 }
 
+/// Parse a SIM_2A_SHADOW_CALC CSV at `path`.
 pub fn load_shadow_calc_csv(path: &Path) -> Vec<ShadowCalcRecord> {
     let content = read_csv(path, "SIM_2A_SHADOW_CALC");
     let mut records = Vec::new();
@@ -417,18 +486,26 @@ pub fn load_shadow_calc_csv(path: &Path) -> Vec<ShadowCalcRecord> {
 
 // ── SIM_torque_compare_simple CSV (26 columns) ─────────────────────────────
 
+/// One row from a SIM_torque_compare_simple CSV (26 columns).
 #[derive(Debug)]
 pub struct TorqueSimpleRecord {
+    /// Sample time in seconds.
     pub time: f64,
+    /// Body position in metres.
     pub position: DVec3,
+    /// Body velocity in m/s.
     pub velocity: DVec3,
+    /// Body angular velocity in rad/s.
     pub ang_vel: DVec3,
+    /// Parent-to-this rotation matrix.
     pub t_parent_this: DMat3,
     /// JEOD scalar-first: `[q0_scalar, q1, q2, q3]`.
     pub quaternion: [f64; 4],
+    /// Gravity-gradient torque in N·m.
     pub gravity_torque: DVec3,
 }
 
+/// Parse a SIM_torque_compare_simple CSV at `path`.
 pub fn load_torque_simple_csv(path: &Path) -> Vec<TorqueSimpleRecord> {
     let content = read_csv(path, "SIM_torque_compare_simple");
     let mut records = Vec::new();
@@ -465,15 +542,22 @@ pub fn load_torque_simple_csv(path: &Path) -> Vec<TorqueSimpleRecord> {
 
 // ── SIM_dyncomp atmosphere trajectory (9 columns) ──────────────────────────
 
+/// One row from a SIM_dyncomp atmosphere-trajectory CSV (9 columns).
 #[derive(Debug)]
 pub struct AtmosTrajRecord {
+    /// Sample time in seconds.
     pub time: f64,
+    /// Body position in metres.
     pub position: DVec3,
+    /// Body velocity in m/s.
     pub velocity: DVec3,
+    /// Atmospheric density in kg/m³.
     pub density: f64,
+    /// Atmospheric temperature in K.
     pub temperature: f64,
 }
 
+/// Parse a SIM_dyncomp atmosphere-trajectory CSV at `path`.
 pub fn load_atmos_traj_csv(path: &Path) -> Vec<AtmosTrajRecord> {
     let content = read_csv(path, "SIM_dyncomp (atmos_traj)");
     let mut records = Vec::new();
@@ -502,16 +586,24 @@ pub fn load_atmos_traj_csv(path: &Path) -> Vec<AtmosTrajRecord> {
 
 // ── SIM_dyncomp aero trajectory (14 columns) ───────────────────────────────
 
+/// One row from a SIM_dyncomp aero-trajectory CSV (14 columns).
 #[derive(Debug)]
 pub struct AeroTrajRecord {
+    /// Sample time in seconds.
     pub time: f64,
+    /// Body position in metres.
     pub position: DVec3,
+    /// Body velocity in m/s.
     pub velocity: DVec3,
+    /// Aerodynamic force in newtons.
     pub aero_force: DVec3,
+    /// Aerodynamic torque in N·m.
     pub aero_torque: DVec3,
+    /// Atmospheric density in kg/m³.
     pub density: f64,
 }
 
+/// Parse a SIM_dyncomp aero-trajectory CSV at `path`.
 pub fn load_aero_traj_csv(path: &Path) -> Vec<AeroTrajRecord> {
     let content = read_csv(path, "SIM_dyncomp (aero_traj)");
     let mut records = Vec::new();
@@ -541,13 +633,18 @@ pub fn load_aero_traj_csv(path: &Path) -> Vec<AeroTrajRecord> {
 
 // ── SIM_orbinit CSV (7 columns: time + pos[3] + vel[3]) ───────────────────
 
+/// One row from a SIM_orbinit CSV (7 columns: time + pos + vel).
 #[derive(Debug)]
 pub struct OrbInitRecord {
+    /// Sample time in seconds.
     pub time: f64,
+    /// Body position in metres.
     pub position: DVec3,
+    /// Body velocity in m/s.
     pub velocity: DVec3,
 }
 
+/// Parse a SIM_orbinit CSV at `path`.
 pub fn load_orbinit_csv(path: &Path) -> Vec<OrbInitRecord> {
     let content = read_csv(path, "SIM_orbinit");
     let mut records = Vec::new();
@@ -599,15 +696,20 @@ pub fn load_gj_csv(path: &Path) -> Vec<OrbInitRecord> {
 
 // ── SIM_tide_verif CSV (8 columns: time + pos[3] + vel[3] + dC20) ──────────
 
+/// One row from a SIM_tide_verif CSV (8 columns).
 #[derive(Debug)]
 pub struct TideRecord {
+    /// Sample time in seconds.
     pub time: f64,
+    /// Body position in metres.
     pub position: DVec3,
+    /// Body velocity in m/s.
     pub velocity: DVec3,
     /// Tidal ΔC20 correction logged by JEOD's SIM_tide_verif.
     pub delta_c20: f64,
 }
 
+/// Parse a SIM_tide_verif CSV at `path`.
 pub fn load_tide_csv(path: &Path) -> Vec<TideRecord> {
     let content = read_csv(path, "SIM_tide_verif");
     let mut records = Vec::new();

@@ -9,8 +9,9 @@ use jeod_quantities::prelude::*;
 
 #[test]
 fn identity_apply_is_identity() {
-    let t: FrameTransform<Inertial, Inertial> = FrameTransform::<Inertial, Inertial>::identity();
-    let p: Position<Inertial> = Qty3::from_raw_si(DVec3::new(1.0, 2.0, 3.0));
+    let t: FrameTransform<RootInertial, RootInertial> =
+        FrameTransform::<RootInertial, RootInertial>::identity();
+    let p: Position<RootInertial> = Qty3::from_raw_si(DVec3::new(1.0, 2.0, 3.0));
     let p2 = t.apply(p);
     assert_eq!(p.raw_si(), p2.raw_si());
 }
@@ -22,10 +23,10 @@ fn inverse_of_inverse_is_identity() {
     let s = (core::f64::consts::FRAC_PI_4 / 2.0).sin();
     let q = NormalizedQuat::new(JeodQuat::from_array([c, 0.0, 0.0, s]))
         .expect("normalized rotation quaternion");
-    let t: FrameTransform<Inertial, Ecef> = FrameTransform::from_quat(q);
+    let t: FrameTransform<RootInertial, Ecef> = FrameTransform::from_quat(q);
     let back = t.inverse().inverse();
 
-    let p: Position<Inertial> = Qty3::from_raw_si(DVec3::new(1.0, 0.0, 0.0));
+    let p: Position<RootInertial> = Qty3::from_raw_si(DVec3::new(1.0, 0.0, 0.0));
     let rotated_once = t.apply(p);
     let rotated_twice = back.apply(p);
     assert!((rotated_once.raw_si() - rotated_twice.raw_si()).length() < 1e-12);
@@ -36,9 +37,9 @@ fn apply_then_inverse_returns_original() {
     let c = (core::f64::consts::FRAC_PI_4 / 2.0).cos();
     let s = (core::f64::consts::FRAC_PI_4 / 2.0).sin();
     let q = NormalizedQuat::new(JeodQuat::from_array([c, 0.0, 0.0, s])).unwrap();
-    let t: FrameTransform<Inertial, Ecef> = FrameTransform::from_quat(q);
+    let t: FrameTransform<RootInertial, Ecef> = FrameTransform::from_quat(q);
 
-    let p: Position<Inertial> = Qty3::from_raw_si(DVec3::new(1.0, 2.0, 3.0));
+    let p: Position<RootInertial> = Qty3::from_raw_si(DVec3::new(1.0, 2.0, 3.0));
     let in_ecef = t.apply(p);
     let back = t.inverse().apply(in_ecef);
     let diff = (p.raw_si() - back.raw_si()).length();
@@ -62,11 +63,11 @@ fn composition_round_trip() {
         -(core::f64::consts::FRAC_PI_4 / 2.0).sin(),
     ]))
     .unwrap();
-    let t_i_to_e: FrameTransform<Inertial, Ecef> = FrameTransform::from_quat(q1);
-    let t_e_to_i: FrameTransform<Ecef, Inertial> = FrameTransform::from_quat(q2_inv);
-    let composed: FrameTransform<Inertial, Inertial> = t_i_to_e * t_e_to_i;
+    let t_i_to_e: FrameTransform<RootInertial, Ecef> = FrameTransform::from_quat(q1);
+    let t_e_to_i: FrameTransform<Ecef, RootInertial> = FrameTransform::from_quat(q2_inv);
+    let composed: FrameTransform<RootInertial, RootInertial> = t_i_to_e * t_e_to_i;
 
-    let p: Position<Inertial> = Qty3::from_raw_si(DVec3::new(5.0, -3.0, 1.0));
+    let p: Position<RootInertial> = Qty3::from_raw_si(DVec3::new(5.0, -3.0, 1.0));
     let out = composed.apply(p);
     let diff = (p.raw_si() - out.raw_si()).length();
     assert!(diff < 1e-10, "compose(A→B, B→A).apply(p) drift = {diff}");
@@ -74,9 +75,10 @@ fn composition_round_trip() {
 
 #[test]
 fn identity_composition_does_not_change_frame() {
-    let id_i: FrameTransform<Inertial, Inertial> = FrameTransform::<Inertial, Inertial>::identity();
-    let composed: FrameTransform<Inertial, Inertial> = id_i * id_i;
-    let p: Position<Inertial> = Qty3::from_raw_si(DVec3::new(1.0, 2.0, 3.0));
+    let id_i: FrameTransform<RootInertial, RootInertial> =
+        FrameTransform::<RootInertial, RootInertial>::identity();
+    let composed: FrameTransform<RootInertial, RootInertial> = id_i * id_i;
+    let p: Position<RootInertial> = Qty3::from_raw_si(DVec3::new(1.0, 2.0, 3.0));
     assert_eq!(composed.apply(p).raw_si(), p.raw_si());
 }
 
@@ -101,9 +103,9 @@ fn compose_keeps_matrix_and_quat_in_sync() {
         0.0,
     ]))
     .unwrap();
-    let t_ab: FrameTransform<Inertial, Ecef> = FrameTransform::from_quat(q_ab);
-    let t_bc: FrameTransform<Ecef, Inertial> = FrameTransform::from_quat(q_bc);
-    let composed: FrameTransform<Inertial, Inertial> = t_ab * t_bc;
+    let t_ab: FrameTransform<RootInertial, Ecef> = FrameTransform::from_quat(q_ab);
+    let t_bc: FrameTransform<Ecef, RootInertial> = FrameTransform::from_quat(q_bc);
+    let composed: FrameTransform<RootInertial, RootInertial> = t_ab * t_bc;
 
     // Re-derive the cached matrix from the cached quaternion and compare.
     let inner = composed.quat().inner();
@@ -132,12 +134,12 @@ fn matrix_cache_consistent_with_quat_rotation() {
         (core::f64::consts::FRAC_PI_4 / 2.0).sin(),
     ]))
     .unwrap();
-    let t: FrameTransform<Inertial, Ecef> = FrameTransform::from_quat(q);
+    let t: FrameTransform<RootInertial, Ecef> = FrameTransform::from_quat(q);
 
     let p = DVec3::new(1.0, 0.0, 0.0);
     let via_matrix = t.matrix() * p;
 
-    let p_typed: Position<Inertial> = Qty3::from_raw_si(p);
+    let p_typed: Position<RootInertial> = Qty3::from_raw_si(p);
     let via_apply = t.apply(p_typed).raw_si();
 
     let diff = (via_matrix - via_apply).length();

@@ -1,3 +1,15 @@
+//! [`Ephemeris`] reader and the [`EphemerisError`] failure type.
+//!
+//! Ports the kernel-loader / state-query surface of
+//! [`models/environment/ephemerides/de4xx_ephem/`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/environment/ephemerides/de4xx_ephem/)
+//! from JEOD v5.4.0. JEOD links a hand-rolled binary loader to JPL DE405 /
+//! DE421 kernels; this crate delegates the file format and Chebyshev
+//! evaluation to the `anise` crate (a Rust SPICE/NAIF reimplementation) and
+//! exposes a thin frame-tagged wrapper.
+//!
+//! Outputs are wrapped as [`Position<Inertial>`] / [`Velocity<Inertial>`]
+//! from [`jeod_quantities`] in the J2000 ICRF (meters and m/s).
+
 use std::path::Path;
 
 use anise::constants::celestial_objects::*;
@@ -5,7 +17,7 @@ use anise::constants::frames::*;
 use anise::constants::orientations::J2000;
 use anise::prelude::*;
 use glam::DVec3;
-use jeod_quantities::prelude::{Inertial, Position, Vec3Ext, Velocity};
+use jeod_quantities::prelude::{Position, RootInertial, Vec3Ext, Velocity};
 
 use crate::bodies::EphemerisBody;
 
@@ -54,7 +66,7 @@ impl Ephemeris {
     /// inertial frame.
     ///
     /// Internal kernel below extracts SI base units from ANISE; this typed
-    /// entry point wraps as `Position<Inertial>` / `Velocity<Inertial>`. The
+    /// entry point wraps as `Position<RootInertial>` / `Velocity<RootInertial>`. The
     /// pre-Phase-10 bare-`f64` `get_state` was removed; use `.raw_si()` on
     /// the returned values when an unwrapped `DVec3` is needed.
     pub fn get_state_typed(
@@ -62,7 +74,7 @@ impl Ephemeris {
         target: EphemerisBody,
         observer: EphemerisBody,
         tdb_jd: f64,
-    ) -> Result<(Position<Inertial>, Velocity<Inertial>), EphemerisError> {
+    ) -> Result<(Position<RootInertial>, Velocity<RootInertial>), EphemerisError> {
         // Convert JD to seconds since J2000.0 TDB: (jd - 2451545.0) * 86400.0
         let tdb_s_since_j2000 = (tdb_jd - 2_451_545.0) * 86_400.0;
         let epoch = Epoch::from_tdb_seconds(tdb_s_since_j2000);
@@ -89,18 +101,21 @@ impl Ephemeris {
             state.velocity_km_s.z * 1000.0,
         );
 
-        Ok((pos_m.m_at::<Inertial>(), vel_m_s.m_per_s_at::<Inertial>()))
+        Ok((
+            pos_m.m_at::<RootInertial>(),
+            vel_m_s.m_per_s_at::<RootInertial>(),
+        ))
     }
 
     /// Earth-centered variant of [`Self::get_state_typed`].
     ///
-    /// Returns `(Position<Inertial>, Velocity<Inertial>)` relative to Earth
+    /// Returns `(Position<RootInertial>, Velocity<RootInertial>)` relative to Earth
     /// center in J2000 ICRF (meters, m/s).
     pub fn get_earth_centered_state_typed(
         &self,
         target: EphemerisBody,
         tdb_jd: f64,
-    ) -> Result<(Position<Inertial>, Velocity<Inertial>), EphemerisError> {
+    ) -> Result<(Position<RootInertial>, Velocity<RootInertial>), EphemerisError> {
         self.get_state_typed(target, EphemerisBody::Earth, tdb_jd)
     }
 
@@ -198,8 +213,15 @@ fn body_to_frame(body: EphemerisBody) -> Frame {
 // failures (EP.14, EP.17 aggregated). JEOD uses distinct message codes; we aggregate.
 #[derive(Debug, thiserror::Error)]
 pub enum EphemerisError {
+    /// SPK / BPC kernel could not be loaded — bad path, wrong format,
+    /// or unreadable bytes. Aggregates JEOD's `EP.11`-`EP.13` load-time
+    /// failure codes.
     #[error("Failed to load ephemeris file: {0}")]
     LoadError(String),
+    /// Translation or rotation query failed — unsupported body, epoch
+    /// out of segment range, or missing orientation kernel.
+    /// Aggregates JEOD's `EP.14` (epoch range) and `EP.17`
+    /// (body availability) failure codes.
     #[error("Ephemeris query failed: {0}")]
     QueryError(String),
 }

@@ -45,8 +45,8 @@ fn make_earth_sim(dt: f64, mu_earth: f64) -> (Simulation, usize) {
                 mu: mu_earth,
                 model: GravityModel::PointMass,
             },
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: None,
             delta_c20: 0.0,
             rotation_model: RotationModel::default(),
@@ -145,7 +145,7 @@ fn tier3_relative_two_coorbiting_vehicles() {
             .max((rel.position.y * rel.position.y + rel.position.z * rel.position.z).sqrt());
     }
 
-    // Inertial separation stays very close to the 100 m initial chord.
+    // RootInertial separation stays very close to the 100 m initial chord.
     assert!(
         (max_sep - 100.0).abs() < 0.01,
         "co-orbiting max inertial separation {max_sep} m drifted from 100 m"

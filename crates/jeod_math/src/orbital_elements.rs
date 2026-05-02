@@ -1,3 +1,15 @@
+//! Classical orbital elements and Cartesian ↔ Keplerian conversion.
+//!
+//! Ports
+//! [`models/utils/orbital_elements/src/orbital_elements.cc`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/utils/orbital_elements/src/orbital_elements.cc)
+//! from JEOD v5.4.0. Holds semi-major axis, eccentricity, inclination,
+//! RAAN, argument of periapsis, the three anomalies (true, mean,
+//! orbital), and energy / angular-momentum diagnostics.
+//!
+//! Public callers should reach for the typed conversions on
+//! [`OrbitalElements`]; the bare-`f64` siblings are kept
+//! module-private after the Phase 10 typed-API purge.
+
 use std::f64::consts::{PI, TAU};
 
 use crate::error::OrbitalError;
@@ -294,10 +306,10 @@ impl OrbitalElements {
     ///
     /// Output fields on [`OrbitalElements`] remain raw `f64` in SI base units
     /// for this PR; typing the outputs is tracked separately in issue #104.
-    pub fn from_cartesian_typed(
+    pub fn from_cartesian_typed<P: jeod_quantities::frame::Planet>(
         mu: jeod_quantities::dims::GravParam,
-        pos: jeod_quantities::aliases::Position<jeod_quantities::frame::Inertial>,
-        vel: jeod_quantities::aliases::Velocity<jeod_quantities::frame::Inertial>,
+        pos: jeod_quantities::aliases::Position<jeod_quantities::frame::PlanetInertial<P>>,
+        vel: jeod_quantities::aliases::Velocity<jeod_quantities::frame::PlanetInertial<P>>,
     ) -> Result<OrbitalElements, OrbitalError> {
         // Extract SI base values and delegate to the shared kernel.
         Self::from_cartesian_impl(mu.value, pos.raw_si(), vel.raw_si())
@@ -1127,7 +1139,7 @@ mod tests {
     fn from_cartesian_typed_iss_like() {
         use jeod_quantities::aliases::{Position, Velocity};
         use jeod_quantities::ext::F64Ext;
-        use jeod_quantities::frame::Inertial;
+        use jeod_quantities::frame::{Earth, PlanetInertial};
         use jeod_quantities::qty3::Qty3;
 
         // ISS-ish: 408 km altitude circular orbit, SI units.
@@ -1137,8 +1149,8 @@ mod tests {
 
         // Qty3::from_raw_si wraps a DVec3 of SI-base-unit values in the
         // typed frame-tagged envelope without any unit conversion.
-        let pos: Position<Inertial> = Qty3::from_raw_si(DVec3::new(r, 0.0, 0.0));
-        let vel: Velocity<Inertial> = Qty3::from_raw_si(DVec3::new(0.0, v, 0.0));
+        let pos: Position<PlanetInertial<Earth>> = Qty3::from_raw_si(DVec3::new(r, 0.0, 0.0));
+        let vel: Velocity<PlanetInertial<Earth>> = Qty3::from_raw_si(DVec3::new(0.0, v, 0.0));
 
         let oe = OrbitalElements::from_cartesian_typed(mu_si, pos, vel).unwrap();
 
@@ -1166,7 +1178,7 @@ mod tests {
     fn from_cartesian_typed_matches_raw_bit_for_bit() {
         use jeod_quantities::aliases::{Position, Velocity};
         use jeod_quantities::ext::F64Ext;
-        use jeod_quantities::frame::Inertial;
+        use jeod_quantities::frame::{Earth, PlanetInertial};
         use jeod_quantities::qty3::Qty3;
 
         let mu_si: jeod_quantities::dims::GravParam = 3.986_004_415e14_f64.m3_per_s2();
@@ -1174,8 +1186,8 @@ mod tests {
         let pos_raw = DVec3::new(6_779_000.0, 0.0, 0.0);
         let vel_raw = DVec3::new(0.0, 7_000.0, 1_500.0);
 
-        let pos: Position<Inertial> = Qty3::from_raw_si(pos_raw);
-        let vel: Velocity<Inertial> = Qty3::from_raw_si(vel_raw);
+        let pos: Position<PlanetInertial<Earth>> = Qty3::from_raw_si(pos_raw);
+        let vel: Velocity<PlanetInertial<Earth>> = Qty3::from_raw_si(vel_raw);
 
         let oe_typed = OrbitalElements::from_cartesian_typed(mu_si, pos, vel).unwrap();
         let oe_raw = OrbitalElements::from_cartesian(mu_si.value, pos_raw, vel_raw).unwrap();

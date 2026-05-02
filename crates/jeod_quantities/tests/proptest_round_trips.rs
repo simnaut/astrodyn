@@ -64,7 +64,7 @@ fn arbitrary_position<F: Frame>() -> impl Strategy<Value = jeod_quantities::alia
 }
 
 // Property 1: FrameTransform composition associativity. Pick four distinct
-// frames A=Inertial, B=Ecef, C=PlanetFixed<Earth>, D=PlanetFixed<Moon> (all
+// frames A=RootInertial, B=Ecef, C=PlanetFixed<Earth>, D=PlanetFixed<Moon> (all
 // sealed `Frame` impls reachable from the prelude) and assert
 // `(a * b) * c ≈ a * (b * c)` after applying to a `Position<A>`.
 
@@ -75,9 +75,9 @@ proptest! {
         qa in arbitrary_unit_jeod_quat(),
         qb in arbitrary_unit_jeod_quat(),
         qc in arbitrary_unit_jeod_quat(),
-        p in arbitrary_position::<Inertial>(),
+        p in arbitrary_position::<RootInertial>(),
     ) {
-        type A = Inertial;
+        type A = RootInertial;
         type B = Ecef;
         type C = PlanetFixed<Earth>;
         type D = PlanetFixed<Moon>;

@@ -1,3 +1,11 @@
+//! Parser for JEOD's static gravity-verification reference data.
+//!
+//! Reads
+//! [`models/environment/gravity/verif/unit_tests/grav_geospherical/data/verif_out.txt`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/environment/gravity/verif/unit_tests/grav_geospherical/data/verif_out.txt)
+//! from JEOD v5.4.0 — the 40 case-by-case `(position →
+//! acceleration / gradient / potential)` test vectors used by Tier 2
+//! `tier2_grav_geospherical`.
+
 use glam::{DMat3, DVec3};
 
 /// A single test case from JEOD's grav_geospherical verification data.
@@ -10,15 +18,24 @@ use glam::{DMat3, DVec3};
 ///   `[0,0], [0,1], [0,2], [1,1], [1,2], [2,2]`.
 #[derive(Debug, Clone)]
 pub struct GravityTestCase {
+    /// 1-based case number from the JEOD verif file.
     pub case_num: usize,
+    /// Spherical-harmonics degree exercised by this case.
     pub degree: usize,
+    /// Spherical-harmonics order exercised by this case.
     pub order: usize,
+    /// Whether the case uses perturbing-only (no `n=0,1`) evaluation.
     pub perturb_only: bool,
+    /// Whether the case computes the gravity-gradient tensor.
     pub grad_active: bool,
+    /// Probe position in metres (planet-fixed frame).
     pub position: DVec3,
+    /// Expected gravitational potential (`m²/s²`).
     pub potential: f64,
+    /// Expected gravitational acceleration in m/s².
     pub acceleration: DVec3,
-    pub gradient: DMat3, // full symmetric matrix
+    /// Expected gravity-gradient tensor (full symmetric matrix).
+    pub gradient: DMat3,
 }
 
 /// Load all gravity test cases from the committed

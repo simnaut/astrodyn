@@ -74,8 +74,8 @@ fn tier3_bevy_sh4x4_rnp() {
         "Earth",
         GravitySourceEntry {
             source: sh_source,
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: Some(DMat3::IDENTITY),
             delta_c20: 0.0,
             rotation_model: RotationModel::EarthRNP,
@@ -178,8 +178,8 @@ fn tier3_bevy_tidal_sh4x4() {
         "Earth",
         GravitySourceEntry {
             source: sh_source,
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: Some(DMat3::IDENTITY),
             rotation_model: RotationModel::EarthRNP,
             delta_c20: 0.0,
@@ -235,7 +235,11 @@ fn tier3_bevy_run2p_polar_motion() {
 
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let mut earth_entry = GravitySourceEntry::new(earth_source(), DVec3::ZERO, None);
+    let mut earth_entry = GravitySourceEntry::new(
+        earth_source(),
+        jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+        None,
+    );
     earth_entry.central = true;
     let earth_idx = sim.add_source("Earth", earth_entry);
     sim.polar_motion = Some((xp, yp));
@@ -308,7 +312,7 @@ fn run_gj_parity(label: &str, config: GaussJacksonConfig, dt: f64, n_steps: usiz
             mu: MU_EARTH,
             model: GravityModel::PointMass,
         },
-        DVec3::ZERO,
+        jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
         None,
     );
     earth_entry.central = true;

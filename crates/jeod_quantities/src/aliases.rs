@@ -8,35 +8,35 @@ use uom::si::{
     torque, velocity,
 };
 
-use crate::frame::Inertial;
+use crate::frame::RootInertial;
 use crate::qty3::Qty3;
 
-/// Position in frame `F` (default: `Inertial`). Base SI unit: meters.
-pub type Position<F = Inertial> = Qty3<length::Dimension, F>;
+/// Position in frame `F` (default: `RootInertial`). Base SI unit: meters.
+pub type Position<F = RootInertial> = Qty3<length::Dimension, F>;
 
 /// Velocity in frame `F`. Base SI unit: m/s.
-pub type Velocity<F = Inertial> = Qty3<velocity::Dimension, F>;
+pub type Velocity<F = RootInertial> = Qty3<velocity::Dimension, F>;
 
 /// Acceleration in frame `F`. Base SI unit: m/s².
-pub type Acceleration<F = Inertial> = Qty3<acceleration::Dimension, F>;
+pub type Acceleration<F = RootInertial> = Qty3<acceleration::Dimension, F>;
 
 /// Jerk (time derivative of acceleration) in frame `F`. Base SI unit: m/s³.
-pub type Jerk<F = Inertial> = Qty3<jerk::Dimension, F>;
+pub type Jerk<F = RootInertial> = Qty3<jerk::Dimension, F>;
 
 /// Force in frame `F`. Base SI unit: newtons.
-pub type Force<F = Inertial> = Qty3<force::Dimension, F>;
+pub type Force<F = RootInertial> = Qty3<force::Dimension, F>;
 
 /// Torque in frame `F`. Base SI unit: N·m.
-pub type Torque<F = Inertial> = Qty3<torque::Dimension, F>;
+pub type Torque<F = RootInertial> = Qty3<torque::Dimension, F>;
 
 /// Angular velocity in frame `F`. Base SI unit: rad/s.
-pub type AngularVelocity<F = Inertial> = Qty3<angular_velocity::Dimension, F>;
+pub type AngularVelocity<F = RootInertial> = Qty3<angular_velocity::Dimension, F>;
 
 /// Angular acceleration in frame `F`. Base SI unit: rad/s².
-pub type AngularAcceleration<F = Inertial> = Qty3<angular_acceleration::Dimension, F>;
+pub type AngularAcceleration<F = RootInertial> = Qty3<angular_acceleration::Dimension, F>;
 
 /// Angular momentum in frame `F`. Base SI unit: kg·m²/s.
-pub type AngularMomentum<F = Inertial> = Qty3<angular_momentum::Dimension, F>;
+pub type AngularMomentum<F = RootInertial> = Qty3<angular_momentum::Dimension, F>;
 
 // `InertiaTensor<F>` is a `DMat3` newtype rather than a `Qty3`, but it
 // belongs in the same conceptual namespace as the typed quantities — re-

@@ -73,7 +73,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut sb = SimulationBuilder::new(time, DT);
     let mars = sb.add_source("Mars", mars_source);
-    let sun_idx = sb.add_source("Sun", sun::third_body(sun_pos));
+    let sun_idx = sb.add_source(
+        "Sun",
+        sun::third_body(jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(sun_pos)),
+    );
     sb.set_source_ephemeris(sun_idx, EphemerisBody::Sun, EphemerisBody::Mars);
     sb = sb.ephemeris(ephemeris).sun(sun_idx);
 

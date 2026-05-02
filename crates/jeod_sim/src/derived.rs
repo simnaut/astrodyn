@@ -10,7 +10,7 @@ use crate::{EulerSequence, GeodeticState, LvlhFrame, OrbitalElements, Rotational
 use jeod_math::OrbitalError;
 use jeod_quantities::aliases::{Position, Velocity};
 use jeod_quantities::dims::{GravParam, SpecificAngMomDim};
-use jeod_quantities::frame::Inertial;
+use jeod_quantities::frame::RootInertial;
 use jeod_quantities::qty3::Qty3;
 use uom::si::angle::radian;
 use uom::si::f64::{Angle, Length};
@@ -56,10 +56,15 @@ pub fn compute_orbital_elements(
     velocity: DVec3,
 ) -> Result<OrbitalElements, OrbitalError> {
     use jeod_quantities::ext::{F64Ext, Vec3Ext};
-    OrbitalElements::from_cartesian_typed(
+    use jeod_quantities::frame::{Earth, PlanetInertial};
+    // Untyped surface assumes Earth-centered inertial axes for backward
+    // compat with the existing Bevy adapter. Mission code targeting
+    // another planet should use the typed sibling with the appropriate
+    // `P: Planet` phantom.
+    OrbitalElements::from_cartesian_typed::<Earth>(
         F64Ext::m3_per_s2(mu),
-        position.m_at::<Inertial>(),
-        velocity.m_per_s_at::<Inertial>(),
+        position.m_at::<PlanetInertial<Earth>>(),
+        velocity.m_per_s_at::<PlanetInertial<Earth>>(),
     )
 }
 
@@ -86,9 +91,15 @@ pub fn compute_body_euler_angles(rot: &RotationalState, sequence: EulerSequence)
 /// the typed sibling [`compute_body_lvlh_frame_typed`].
 pub fn compute_body_lvlh_frame(position: DVec3, velocity: DVec3) -> LvlhFrame {
     use jeod_quantities::ext::Vec3Ext;
+    use jeod_quantities::frame::{Earth, PlanetInertial};
+    // Untyped surface; the typed sibling is generic over the planet, but
+    // this f64 entry assumes Earth-centered inertial axes for backward
+    // compat with the existing Bevy adapter and tests. Mission code
+    // targeting another planet should use the `_typed` sibling with the
+    // appropriate `P: Planet` phantom (or the `_for_planet` variant).
     LvlhFrame::compute(
-        position.m_at::<Inertial>(),
-        velocity.m_per_s_at::<Inertial>(),
+        position.m_at::<PlanetInertial<Earth>>(),
+        velocity.m_per_s_at::<PlanetInertial<Earth>>(),
     )
 }
 
@@ -136,8 +147,8 @@ pub fn compute_body_solar_beta(position: DVec3, velocity: DVec3, sun_position: D
     // Delegate to the typed kernel (which clamps & normalizes internally) and
     // unwrap the typed `Angle` to radians for f64 storage. Bit-identical to
     // the historical f64 path.
-    let h_typed = Qty3::<SpecificAngMomDim, Inertial>::from_raw_si(h);
-    let sun_typed = Position::<Inertial>::from_raw_si(rel_sun);
+    let h_typed = Qty3::<SpecificAngMomDim, RootInertial>::from_raw_si(h);
+    let sun_typed = Position::<RootInertial>::from_raw_si(rel_sun);
     jeod_math::solar_beta_angle_typed(h_typed, sun_typed).get::<radian>()
 }
 
@@ -236,12 +247,12 @@ pub fn compute_lvlh_relative_state(
 /// entry point added by Phase 2). Identical numerics — the typed
 /// kernel itself extracts SI base values and calls the same f64
 /// implementation.
-pub fn compute_orbital_elements_typed(
+pub fn compute_orbital_elements_typed<P: jeod_quantities::frame::Planet>(
     mu: GravParam,
-    position: Position<Inertial>,
-    velocity: Velocity<Inertial>,
+    position: Position<jeod_quantities::frame::PlanetInertial<P>>,
+    velocity: Velocity<jeod_quantities::frame::PlanetInertial<P>>,
 ) -> Result<OrbitalElements, OrbitalError> {
-    OrbitalElements::from_cartesian_typed(mu, position, velocity)
+    OrbitalElements::from_cartesian_typed::<P>(mu, position, velocity)
 }
 
 /// Typed sibling of [`compute_body_euler_angles`].
@@ -263,9 +274,9 @@ pub fn compute_body_euler_angles_typed(
 /// [`jeod_math::LvlhFrame::compute`], which owns the single JEOD
 /// `LvlhFrame::compute_lvlh_frame()` port — keeping one source of truth
 /// for the kernel.
-pub fn compute_body_lvlh_frame_typed(
-    position: Position<Inertial>,
-    velocity: Velocity<Inertial>,
+pub fn compute_body_lvlh_frame_typed<P: jeod_quantities::frame::Planet>(
+    position: Position<jeod_quantities::frame::PlanetInertial<P>>,
+    velocity: Velocity<jeod_quantities::frame::PlanetInertial<P>>,
 ) -> LvlhFrame {
     LvlhFrame::compute(position, velocity)
 }
@@ -277,8 +288,8 @@ pub fn compute_body_lvlh_frame_typed(
 /// [`jeod_math::GeodeticState::from_planet_fixed`] (sole owner of the JEOD
 /// Borkowski iteration kernel). Returns the f64 [`GeodeticState`] used by
 /// Bevy components; bit-identical to the f64 surface.
-pub fn compute_body_geodetic_typed(
-    position: Position<Inertial>,
+pub fn compute_body_geodetic_typed<P: jeod_quantities::frame::Planet>(
+    position: Position<jeod_quantities::frame::PlanetInertial<P>>,
     t_inertial_pfix: &DMat3,
     r_eq: Length,
     r_pol: Length,
@@ -299,9 +310,9 @@ pub fn compute_body_geodetic_typed(
 /// Panics if the orbital angular momentum `h = r × v` is zero (degenerate
 /// orbit) or if the Sun position coincides with the body position.
 pub fn compute_body_solar_beta_typed(
-    position: Position<Inertial>,
-    velocity: Velocity<Inertial>,
-    sun_position: Position<Inertial>,
+    position: Position<RootInertial>,
+    velocity: Velocity<RootInertial>,
+    sun_position: Position<RootInertial>,
 ) -> Angle {
     let pos = position.raw_si();
     let vel = velocity.raw_si();
@@ -322,9 +333,9 @@ pub fn compute_body_solar_beta_typed(
 
     // Construct typed angular-momentum and unit-direction quantities for the
     // typed kernel. The kernel normalizes internally — direction-only inputs
-    // are accepted, so the unnormalized `rel_sun` works as a Position<Inertial>.
-    let h_typed = Qty3::<SpecificAngMomDim, Inertial>::from_raw_si(h);
-    let sun_typed = Position::<Inertial>::from_raw_si(rel_sun);
+    // are accepted, so the unnormalized `rel_sun` works as a Position<RootInertial>.
+    let h_typed = Qty3::<SpecificAngMomDim, RootInertial>::from_raw_si(h);
+    let sun_typed = Position::<RootInertial>::from_raw_si(rel_sun);
     jeod_math::solar_beta_angle_typed(h_typed, sun_typed)
 }
 

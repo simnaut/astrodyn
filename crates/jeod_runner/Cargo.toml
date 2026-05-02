@@ -1,12 +1,17 @@
 [package]
 name = "jeod_runner"
 description = "Standalone simulation runner and Tier 3 verification harness for bevy_jeod"
+readme = "README.md"
 keywords = ["orbital-mechanics", "simulation", "propagator", "aerospace", "verification"]
 categories = ["science", "aerospace", "simulation"]
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+
+[package.metadata.docs.rs]
+no-default-features = true
+features = []
 
 [features]
 # Default-on: enables the `run_verification` module and its

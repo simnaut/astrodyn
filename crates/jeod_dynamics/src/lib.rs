@@ -29,6 +29,7 @@
 //! wiring lives in the `bevy_jeod` root crate.
 
 #![forbid(unsafe_code)]
+#![deny(missing_docs)]
 
 pub mod abm4;
 pub mod attach;

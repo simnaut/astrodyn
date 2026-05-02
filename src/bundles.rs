@@ -30,7 +30,7 @@ pub struct PlanetBundle {
     pub name: Name,
     /// Gravity source (point-mass or spherical-harmonics).
     pub source: GravitySourceC,
-    /// Inertial-frame position of the source (m).
+    /// RootInertial-frame position of the source (m).
     pub position: SourceInertialPositionC,
     /// Translational state used by per-step systems.
     pub trans: TranslationalStateC,
@@ -95,7 +95,7 @@ pub struct SunBundle {
     pub name: Name,
     /// Discriminator queried by SRP / solar-beta / lighting systems.
     pub marker: SunMarker,
-    /// Inertial position used by the same systems.
+    /// RootInertial position used by the same systems.
     pub trans: TranslationalStateC,
 }
 
@@ -131,7 +131,7 @@ pub struct MoonBundle {
     pub name: Name,
     /// Discriminator queried by the earth-lighting system.
     pub marker: MoonMarker,
-    /// Inertial position used by the earth-lighting system.
+    /// RootInertial position used by the earth-lighting system.
     pub trans: TranslationalStateC,
 }
 

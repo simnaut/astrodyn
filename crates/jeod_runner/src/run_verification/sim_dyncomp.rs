@@ -37,8 +37,8 @@ fn point_mass_earth_source(mu: f64) -> GravitySourceEntry {
             mu,
             model: GravityModel::PointMass,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
+        position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+        velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
         t_inertial_pfix: None,
         delta_c20: 0.0,
         rotation_model: RotationModel::default(),
@@ -268,8 +268,8 @@ fn earth_sh_with_rnp() -> GravitySourceEntry {
             mu: sh_data.mu,
             model: GravityModel::SphericalHarmonics(Box::new(sh_data)),
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
+        position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+        velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
         t_inertial_pfix: Some(DMat3::IDENTITY),
         delta_c20: 0.0,
         rotation_model: RotationModel::EarthRNP,
@@ -287,8 +287,8 @@ fn earth_pm_with_rnp(mu: f64) -> GravitySourceEntry {
             mu,
             model: GravityModel::PointMass,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
+        position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+        velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
         t_inertial_pfix: Some(DMat3::IDENTITY),
         delta_c20: 0.0,
         rotation_model: RotationModel::EarthRNP,
@@ -396,13 +396,14 @@ const RUN4_SUN_IDX: usize = 1;
 const RUN4_MOON_IDX: usize = 2;
 
 fn third_body_source(mu: f64, initial_pos: DVec3) -> GravitySourceEntry {
+    use jeod_sim::Vec3Ext;
     GravitySourceEntry {
         source: GravitySource {
             mu,
             model: GravityModel::PointMass,
         },
-        position: initial_pos,
-        velocity: DVec3::ZERO,
+        position: initial_pos.m_at::<jeod_sim::RootInertial>(),
+        velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
         t_inertial_pfix: None,
         delta_c20: 0.0,
         rotation_model: RotationModel::default(),
@@ -533,13 +534,14 @@ pub struct BattinScenario {
 }
 
 fn third_body_source_with_state(mu: f64, position: DVec3, velocity: DVec3) -> GravitySourceEntry {
+    use jeod_sim::Vec3Ext;
     GravitySourceEntry {
         source: GravitySource {
             mu,
             model: GravityModel::PointMass,
         },
-        position,
-        velocity,
+        position: position.m_at::<jeod_sim::RootInertial>(),
+        velocity: velocity.m_per_s_at::<jeod_sim::RootInertial>(),
         t_inertial_pfix: None,
         delta_c20: 0.0,
         rotation_model: RotationModel::default(),
@@ -700,8 +702,8 @@ fn build_run7(
                 mu: earth_grav.mu,
                 model: GravityModel::SphericalHarmonics(Box::new(earth_grav)),
             },
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: Some(DMat3::IDENTITY),
             delta_c20: 0.0,
             rotation_model: RotationModel::EarthRNP,

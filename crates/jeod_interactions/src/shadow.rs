@@ -13,7 +13,7 @@
 
 use glam::DVec3;
 use jeod_quantities::aliases::Position;
-use jeod_quantities::frame::Inertial;
+use jeod_quantities::frame::RootInertial;
 use uom::si::f64::{Length, Ratio};
 
 /// Empirically-derived cubic polynomial approximation for the fractional area
@@ -195,13 +195,13 @@ pub fn compute_shadow_fraction(
 
 /// Typed sibling of [`compute_shadow_fraction`].
 ///
-/// Inputs are typed [`Position<Inertial>`] for vehicle / sun / body,
+/// Inputs are typed [`Position<RootInertial>`] for vehicle / sun / body,
 /// and [`Length`] for the radii. Output is [`Ratio`] (illumination
 /// fraction is dimensionless, in `[0, 1]`).
 pub fn compute_shadow_fraction_typed(
-    vehicle_pos: Position<Inertial>,
-    sun_pos: Position<Inertial>,
-    body_pos: Position<Inertial>,
+    vehicle_pos: Position<RootInertial>,
+    sun_pos: Position<RootInertial>,
+    body_pos: Position<RootInertial>,
     body_radius: Length,
     source_radius: Length,
 ) -> Ratio {
@@ -423,9 +423,9 @@ mod tests {
 
         let untyped = compute_shadow_fraction(vehicle, sun, body, EARTH_RADIUS, SUN_RADIUS);
         let typed = compute_shadow_fraction_typed(
-            Position::<Inertial>::from_raw_si(vehicle),
-            Position::<Inertial>::from_raw_si(sun),
-            Position::<Inertial>::from_raw_si(body),
+            Position::<RootInertial>::from_raw_si(vehicle),
+            Position::<RootInertial>::from_raw_si(sun),
+            Position::<RootInertial>::from_raw_si(body),
             Length::new::<meter>(EARTH_RADIUS),
             Length::new::<meter>(SUN_RADIUS),
         );
@@ -436,9 +436,9 @@ mod tests {
         let untyped_sunny =
             compute_shadow_fraction(vehicle_sunny, sun, body, EARTH_RADIUS, SUN_RADIUS);
         let typed_sunny = compute_shadow_fraction_typed(
-            Position::<Inertial>::from_raw_si(vehicle_sunny),
-            Position::<Inertial>::from_raw_si(sun),
-            Position::<Inertial>::from_raw_si(body),
+            Position::<RootInertial>::from_raw_si(vehicle_sunny),
+            Position::<RootInertial>::from_raw_si(sun),
+            Position::<RootInertial>::from_raw_si(body),
             Length::new::<meter>(EARTH_RADIUS),
             Length::new::<meter>(SUN_RADIUS),
         );

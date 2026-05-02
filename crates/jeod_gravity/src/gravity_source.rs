@@ -1,15 +1,34 @@
+//! [`GravitySource`] / [`GravityModel`] — the per-body μ + model
+//! payload that gravity-control evaluation runs against.
+//!
+//! Ports the runtime side of
+//! [`models/environment/gravity/src/gravity_source.cc`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/environment/gravity/src/gravity_source.cc)
+//! from JEOD v5.4.0. JEOD's separate `SphericalHarmonicsGravitySource`
+//! subclass is folded into the [`GravityModel::SphericalHarmonics`]
+//! enum variant.
+
 use crate::spherical_harmonics_gravity_source::SphericalHarmonicsData;
 use jeod_quantities::dims::GravParam;
 
+/// Per-body gravity payload: gravitational parameter `mu` plus the
+/// [`GravityModel`] that selects between point-mass and
+/// spherical-harmonics evaluation.
 #[derive(Debug, Clone)]
 pub struct GravitySource {
-    pub mu: f64, // gravitational parameter, m^3/s^2
+    /// Gravitational parameter, in `m³/s²`.
+    pub mu: f64,
+    /// Gravity model variant.
     pub model: GravityModel,
 }
 
+/// Gravity-model selector — point-mass (μ/r²) vs. spherical-harmonics
+/// (Gottlieb-recursion `Cnm`/`Snm` evaluation).
 #[derive(Debug, Clone)]
 pub enum GravityModel {
+    /// Newtonian point-mass gravity. Only `mu` matters.
     PointMass,
+    /// Spherical-harmonics expansion. The boxed payload carries
+    /// coefficients, reference radius, and Gottlieb scratch arrays.
     SphericalHarmonics(Box<SphericalHarmonicsData>),
 }
 

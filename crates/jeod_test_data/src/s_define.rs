@@ -1,3 +1,11 @@
+//! Parser for JEOD Trick `S_define` simulation-definition files.
+//!
+//! Extracts the `#define DYNAMICS <float>` integration step size from
+//! files like
+//! [`verif/SIM_dyncomp/S_define`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/verif/SIM_dyncomp/S_define)
+//! so the Tier 3 harness can configure the simulation step at the same
+//! cadence as the JEOD reference run.
+
 use regex::Regex;
 use std::path::Path;
 

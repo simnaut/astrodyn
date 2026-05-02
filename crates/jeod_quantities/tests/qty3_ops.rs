@@ -11,8 +11,8 @@ use uom::si::{
 
 // ---- helpers ----
 
-fn pos_inertial(x: f64, y: f64, z: f64) -> Position<Inertial> {
-    Position::<Inertial>::new(
+fn pos_inertial(x: f64, y: f64, z: f64) -> Position<RootInertial> {
+    Position::<RootInertial>::new(
         Length::new::<meter>(x),
         Length::new::<meter>(y),
         Length::new::<meter>(z),
@@ -27,8 +27,8 @@ fn pos_ecef(x: f64, y: f64, z: f64) -> Position<Ecef> {
     )
 }
 
-fn vel_inertial(x: f64, y: f64, z: f64) -> jeod_quantities::Velocity<Inertial> {
-    Qty3::<_, Inertial>::new(
+fn vel_inertial(x: f64, y: f64, z: f64) -> jeod_quantities::Velocity<RootInertial> {
+    Qty3::<_, RootInertial>::new(
         ScalarVelocity::new::<meter_per_second>(x),
         ScalarVelocity::new::<meter_per_second>(y),
         ScalarVelocity::new::<meter_per_second>(z),
@@ -68,7 +68,7 @@ fn velocity_add_same_frame() {
 
 #[test]
 fn zero_vector() {
-    let z: Position<Inertial> = Qty3::zero();
+    let z: Position<RootInertial> = Qty3::zero();
     assert_eq!(z.raw_si(), DVec3::ZERO);
 }
 
@@ -101,7 +101,7 @@ fn scalar_multiply_preserves_frame() {
 fn velocity_times_time_yields_position_like() {
     let v = vel_inertial(10.0, 0.0, 0.0);
     let t = Time::new::<second>(5.0);
-    let r = v * t; // Qty3<velocity * time, Inertial> = Qty3<length, Inertial>
+    let r = v * t; // Qty3<velocity * time, RootInertial> = Qty3<length, RootInertial>
     assert_eq!(r.raw_si(), DVec3::new(50.0, 0.0, 0.0));
 }
 
@@ -126,7 +126,7 @@ fn magnitude_unit_axes() {
 #[test]
 fn magnitude_kilometer_input() {
     // Build by km unit and ensure magnitude reports meters.
-    let a = Position::<Inertial>::new(
+    let a = Position::<RootInertial>::new(
         Length::new::<kilometer>(3.0),
         Length::new::<kilometer>(4.0),
         Length::new::<kilometer>(0.0),
@@ -151,16 +151,16 @@ fn different_frames_are_distinct_types() {
 #[test]
 fn qty3_size_and_align_match_vec3() {
     use core::mem::{align_of, size_of};
-    assert_eq!(size_of::<Position<Inertial>>(), size_of::<DVec3>());
-    assert_eq!(size_of::<Position<Inertial>>(), 24);
-    assert_eq!(align_of::<Position<Inertial>>(), 8);
+    assert_eq!(size_of::<Position<RootInertial>>(), size_of::<DVec3>());
+    assert_eq!(size_of::<Position<RootInertial>>(), 24);
+    assert_eq!(align_of::<Position<RootInertial>>(), 8);
     assert_eq!(size_of::<jeod_quantities::Velocity<Ecef>>(), 24);
 }
 
 #[test]
 fn raw_si_round_trip() {
     let v = DVec3::new(1.23, -4.56, 7.89);
-    let p: Position<Inertial> = Qty3::from_raw_si(v);
+    let p: Position<RootInertial> = Qty3::from_raw_si(v);
     assert_eq!(p.raw_si(), v);
 }
 
@@ -196,12 +196,12 @@ fn debug_format_mentions_frame() {
     let a = pos_ecef(1.0, 2.0, 3.0);
     let rendered = format!("{a:?}");
     assert!(rendered.contains("Ecef"), "got: {rendered}");
-    // Make sure the debug output is also distinct for Inertial — we use
+    // Make sure the debug output is also distinct for RootInertial — we use
     // `type_name` so the fully-qualified path appears, which comfortably
-    // differs between `Ecef` and `Inertial`.
+    // differs between `Ecef` and `RootInertial`.
     let b = pos_inertial(1.0, 2.0, 3.0);
     let rendered_b = format!("{b:?}");
-    assert!(rendered_b.contains("Inertial"), "got: {rendered_b}");
+    assert!(rendered_b.contains("RootInertial"), "got: {rendered_b}");
     assert_ne!(rendered, rendered_b);
 }
 
@@ -232,7 +232,7 @@ fn vel_plus_vel_in_ecef() {
 #[test]
 fn acceleration_times_time_is_velocity_like() {
     use uom::si::{acceleration, f64::Acceleration as ScalarAccel};
-    let a = Qty3::<acceleration::Dimension, Inertial>::new(
+    let a = Qty3::<acceleration::Dimension, RootInertial>::new(
         ScalarAccel::new::<uom::si::acceleration::meter_per_second_squared>(9.81),
         ScalarAccel::new::<uom::si::acceleration::meter_per_second_squared>(0.0),
         ScalarAccel::new::<uom::si::acceleration::meter_per_second_squared>(0.0),
@@ -252,7 +252,7 @@ fn magnitude_is_translation_invariant_under_negation() {
 #[test]
 fn from_raw_si_negative_components() {
     let v = DVec3::new(-1.0, -2.0, -3.0);
-    let p: Position<Inertial> = Qty3::from_raw_si(v);
+    let p: Position<RootInertial> = Qty3::from_raw_si(v);
     assert_eq!(p.raw_si(), v);
 }
 
@@ -273,14 +273,14 @@ fn scalar_multiply_by_zero_is_zero() {
 #[test]
 fn add_zero_is_identity() {
     let a = pos_inertial(1.0, 2.0, 3.0);
-    let z: Position<Inertial> = Qty3::zero();
+    let z: Position<RootInertial> = Qty3::zero();
     assert_eq!((a + z).raw_si(), a.raw_si());
 }
 
 #[test]
 fn sub_self_is_zero() {
     let a = pos_inertial(1.0, 2.0, 3.0);
-    let z: Position<Inertial> = Qty3::zero();
+    let z: Position<RootInertial> = Qty3::zero();
     assert_eq!((a - a).raw_si(), z.raw_si());
 }
 
