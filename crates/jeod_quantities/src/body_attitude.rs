@@ -198,8 +198,12 @@ impl<V: Vehicle> BodyAttitude<V> {
         // the caller.
         let mut q_new = dq.multiply(&self.q.inner());
         normalize_integ(&mut q_new);
-        // After `normalize_integ` the quaternion has unit norm to machine
-        // precision; build the witness without re-checking sqrt.
+        // `normalize_integ` brings `q_new` back to within
+        // `NormalizedQuat::DEFAULT_TOLERANCE` of unit norm, so the witness
+        // constructor's sqrt-based norm check passes by construction —
+        // any failure here means `normalize_integ` itself is broken (or
+        // somehow received a NaN), and the panic below is the correct
+        // loud-failure response per the project's fail-loudly rule.
         let witnessed = NormalizedQuat::new(q_new)
             .expect("normalize_integ leaves quaternion within unit-norm tolerance");
         Self {
