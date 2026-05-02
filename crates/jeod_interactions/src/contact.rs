@@ -257,7 +257,18 @@ impl Terrain for SphericalTerrain {
         // JEOD `TerrainRadius::find_altitude` zeros the ellipsoidal altitude
         // and then recomputes Cartesian coords from the same lat/lon, so
         // `cart = R_planet * unit(cart_in)`. Mirror that exactly.
-        let n = vehicle_pfix.normalize_or_zero();
+        //
+        // Degenerate case: a vehicle exactly at the planet center has no
+        // well-defined "lat/lon," so the radial direction is undefined.
+        // The Terrain contract requires a unit normal; pick a deterministic
+        // `+x` fallback. A vehicle this deep would have already failed
+        // every physical sanity check upstream, but the kernel must not
+        // emit a zero normal.
+        let len_sq = vehicle_pfix.length_squared();
+        if len_sq < ZERO_SMALL {
+            return (DVec3::new(self.radius, 0.0, 0.0), DVec3::X);
+        }
+        let n = vehicle_pfix / len_sq.sqrt();
         (n * self.radius, n)
     }
 }
@@ -725,26 +736,30 @@ pub fn compute_ground_contact_geometry(
             t_inertial_body * vehicle_pos_inertial
         }
     };
-    // The reference-position offset is used only for the contact-point
-    // arm calculation (relative-to-shape-reference). For most surface-
-    // model facets `shape.reference_position() = (0, 0, 0)` so this term
-    // contributes nothing; we still pass it through for non-trivial
-    // configurations, scaled by `t_struct_body` to land in body coords.
-    let _shape_ref_in_body = t_struct_body * vehicle_facet.shape.reference_position();
+    // The shape's reference position lives in the structural frame and
+    // is rotated into body coords for the contact-point arm calculation
+    // below. JEOD's verification sim places facets at the structural
+    // origin (so this term is zero), but the algebra extends cleanly to
+    // non-zero offsets.
+    let shape_ref_body = t_struct_body * vehicle_facet.shape.reference_position();
 
     // Closest point on the vehicle facet's centerline to the body-frame
-    // ground point, then push to the facet surface.
+    // ground point, then push to the facet surface. Returns the contact
+    // point as an absolute body-frame position (not relative to the
+    // shape reference).
     let contact_point_body = match vehicle_facet.shape {
-        ContactShape::Point { radius, .. } => {
+        ContactShape::Point { position, radius } => {
             // JEOD `PointContactFacet::calculate_contact_point` (point_contact_facet.cc:119):
-            // contact_point = unit(nvec) * radius. The input nvec is the
-            // body-frame ground point passed directly (not relative to
-            // anything). For our shape with `position`, the surface point
-            // is offset from the sphere center by `radius` along the
-            // ground direction; we faithfully reproduce that even for
-            // non-zero `position` (JEOD's only configuration is `position
-            // = [0,0,0]`, but the math extends cleanly).
-            surface_contact_point_point(ground_body, radius)
+            // contact_point on the sphere surface = `center + unit(nvec) * radius`,
+            // where `nvec` is the direction from the sphere center toward
+            // the ground point. JEOD's verification sim places the sphere
+            // at the structural origin (`position == (0,0,0)`), but we
+            // handle the offset case correctly: rotate the struct-frame
+            // `position` into body, take the direction from that center
+            // to `ground_body`, and offset by `radius`.
+            let center_body = t_struct_body * position;
+            let dir = ground_body - center_body;
+            center_body + surface_contact_point_point(dir, radius)
         }
         ContactShape::Line { start, end, radius } => {
             // JEOD operates the line algorithm in the cylinder's local
@@ -795,10 +810,12 @@ pub fn compute_ground_contact_geometry(
 
     // Map to the canonical `ContactGeometry` shape used by
     // `compute_contact_force_from_geometry`. We express the contact
-    // point relative to the facet's `reference_position()` so the
-    // downstream torque-arm code (which expects "contact point relative
-    // to facet shape reference") keeps working.
-    let contact_point_on_a = contact_point_body - vehicle_facet.shape.reference_position();
+    // point relative to the facet's `reference_position()` (rotated to
+    // body frame) so the downstream torque-arm code (which expects
+    // "contact point relative to facet shape reference, in body coords")
+    // keeps working when `t_struct_body != IDENTITY` or the facet has a
+    // non-zero structural offset.
+    let contact_point_on_a = contact_point_body - shape_ref_body;
     Some(ContactGeometry {
         contact_point_on_a,
         contact_point_on_b: DVec3::ZERO,

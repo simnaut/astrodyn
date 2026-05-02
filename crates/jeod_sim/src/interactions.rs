@@ -585,7 +585,7 @@ pub struct GroundContactPairEval {
 /// Panics if `vehicle_facet.material != ground_facet.material` — JEOD pairs
 /// a single `SpringPairInteraction` per facet pair, so both sides must
 /// carry identical stiffness/damping/friction. Also panics when
-/// `ground_facet.active` is false (JEOD_INV: IN.32).
+/// `ground_facet.active` is false (JEOD_INV: IN.35).
 #[allow(clippy::too_many_arguments)]
 pub fn evaluate_ground_contact_pair(
     vehicle_facet: &ContactFacet,
