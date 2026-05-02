@@ -170,8 +170,16 @@ impl Plugin for JeodPlugin {
         // EphemerisUpdate to catch late-spawned sources. The latter
         // filters by `Without<SourceFrameIdC>` so already-registered
         // sources are skipped — registering is one-time per source.
-        // Issue #71 item 5: gives `SourceMutator` a frame-tree node to mutate.
-        app.add_systems(Startup, systems::register_source_frames_system);
+        // Body-frame registration follows so bodies can resolve
+        // `IntegSourceC(Some(source_entity))` against an already-registered
+        // source. Issue #71 items 2, 4, 5.
+        app.add_systems(
+            Startup,
+            (
+                systems::register_source_frames_system,
+                systems::register_body_frames_system.after(systems::register_source_frames_system),
+            ),
+        );
         // Split into two add_systems calls to stay within Bevy's tuple size limit.
         app.add_systems(
             FixedUpdate,
@@ -183,6 +191,11 @@ impl Plugin for JeodPlugin {
                 // Catch dynamically-spawned sources before they hit
                 // `planet_fixed_rotation_system` / `ephemeris_update_system`.
                 systems::register_source_frames_system.before(JeodSet::EphemerisUpdate),
+                // Catch dynamically-spawned bodies (after source registration so
+                // any IntegSourceC reference resolves to a registered source).
+                systems::register_body_frames_system
+                    .after(systems::register_source_frames_system)
+                    .before(JeodSet::EphemerisUpdate),
                 // Planet-fixed rotation (RNP)
                 systems::planet_fixed_rotation_system.in_set(JeodSet::EphemerisUpdate),
                 // Ephemeris position updates (DE4xx)
@@ -217,6 +230,17 @@ impl Plugin for JeodPlugin {
                 // Force collection and integration
                 systems::force_collection_system.in_set(JeodSet::ForceCollection),
                 systems::integration_system.in_set(JeodSet::Integration),
+                // After integration, sync the body's typed state into its
+                // FrameTreeR node so frame-switch evaluation sees current
+                // distances. Issue #71 item 2.
+                systems::sync_body_to_frame_system
+                    .in_set(JeodSet::Integration)
+                    .after(systems::integration_system),
+                // Evaluate distance-based frame switches and reparent the
+                // body in the frame tree on trigger. Issue #71 item 3.
+                systems::frame_switch_system
+                    .in_set(JeodSet::Integration)
+                    .after(systems::sync_body_to_frame_system),
                 // Derived states
                 systems::orbital_elements_system.in_set(JeodSet::DerivedState),
                 systems::euler_angles_system.in_set(JeodSet::DerivedState),
@@ -275,6 +299,8 @@ pub fn register_jeod_component_types(app: &mut App) {
     app.register_type::<components::SourcePfixFrameIdC>();
     app.register_type::<components::IntegSourceC>();
     app.register_type::<components::FrameSwitchesC>();
+    app.register_type::<components::BodyFrameIdC>();
+    app.register_type::<components::IntegFrameIdC>();
     // Tidal
     app.register_type::<components::TidalConfigC>();
     app.register_type::<components::TidalDeltaC20C>();

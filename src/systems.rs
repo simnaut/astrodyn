@@ -84,6 +84,253 @@ pub fn register_source_frames_system(
     }
 }
 
+/// Auto-register every vehicle entity (carrying [`TranslationalStateC`])
+/// into [`FrameTreeR`] at startup, attaching [`BodyFrameIdC`] +
+/// [`IntegFrameIdC`]. The body's integration frame is determined by:
+///
+/// 1. `IntegSourceC(Some(source_entity))` — child of that source's
+///    `SourceFrameIdC` node (panics if the source isn't yet registered).
+/// 2. Otherwise — child of the root inertial frame
+///    ([`crate::RootFrameIdR`]).
+///
+/// The body's initial state is read from [`TranslationalStateC`] and
+/// written into the new frame node so the tree is consistent from the
+/// first step.
+///
+/// Runs at `Startup` and again before `JeodSet::EphemerisUpdate` to
+/// catch dynamically-spawned bodies. Filters by
+/// `Without<BodyFrameIdC>` so the registration is one-time per body.
+/// Issue #71 items 2 and 4.
+#[allow(clippy::type_complexity)]
+pub fn register_body_frames_system(
+    mut commands: Commands,
+    mut frame_tree: ResMut<FrameTreeR>,
+    root: Res<crate::RootFrameIdR>,
+    sources: Query<&SourceFrameIdC>,
+    bodies: Query<
+        (
+            Entity,
+            Option<&Name>,
+            &TranslationalStateC,
+            Option<&IntegSourceC>,
+        ),
+        (
+            With<TranslationalStateC>,
+            With<DynamicsConfigC>,
+            Without<BodyFrameIdC>,
+        ),
+    >,
+) {
+    for (entity, name, trans, integ_source) in &bodies {
+        let label = name
+            .map(|n| n.as_str().to_string())
+            .unwrap_or_else(|| format!("body{:?}", entity));
+
+        // Resolve the integration frame ID. Default: root inertial.
+        let integ_frame_id = match integ_source.and_then(|c| c.0) {
+            Some(source_entity) => sources
+                .get(source_entity)
+                .map(|c| c.0)
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "register_body_frames_system: body {entity:?} has \
+                         IntegSourceC pointing at {source_entity:?}, but that \
+                         entity is not a registered gravity source (missing \
+                         SourceFrameIdC). Spawn the source via PlanetBundle \
+                         before the body, or remove IntegSourceC. \
+                         Underlying error: {err:?}"
+                    )
+                }),
+            None => root.0,
+        };
+
+        // Body frame node carries the body's current state relative to its
+        // integ frame. For root-integrated bodies this is the absolute
+        // inertial state (matches existing Bevy behavior); for non-root
+        // bodies the body's TranslationalStateC is interpreted as
+        // already in integ-frame coordinates (mission code is
+        // responsible for supplying state in the integ-frame).
+        let body_state = jeod_sim::RefFrameState {
+            trans: jeod_sim::RefFrameTrans {
+                position: trans.0.position.raw_si(),
+                velocity: trans.0.velocity.raw_si(),
+            },
+            rot: jeod_sim::RefFrameRot::default(),
+        };
+        let body_fid = frame_tree.0.add_child(
+            integ_frame_id,
+            format!("{label}.body"),
+            jeod_sim::RefFrameKind::Body,
+            body_state,
+        );
+        commands
+            .entity(entity)
+            .insert((BodyFrameIdC(body_fid), IntegFrameIdC(integ_frame_id)));
+    }
+}
+
+/// Sync each vehicle's [`TranslationalStateC`] into its
+/// [`BodyFrameIdC`] node in [`FrameTreeR`]. Mirrors
+/// `jeod_runner::Simulation::step_internal`'s post-integration sync
+/// (`step/integrate.rs:540-544`). Required so [`frame_switch_system`]
+/// sees current body state when evaluating switch distances.
+///
+/// Runs in `JeodSet::Integration` after `integration_system` and
+/// before `frame_switch_system`. Issue #71 item 2.
+pub fn sync_body_to_frame_system(
+    mut frame_tree: ResMut<FrameTreeR>,
+    bodies: Query<(&TranslationalStateC, &BodyFrameIdC)>,
+) {
+    for (trans, body_fid) in &bodies {
+        let node = frame_tree.0.get_mut(body_fid.0);
+        node.state.trans.position = trans.0.position.raw_si();
+        node.state.trans.velocity = trans.0.velocity.raw_si();
+    }
+}
+
+/// Evaluate distance-based [`FrameSwitchesC`] entries for each body. On
+/// trigger, the lifted [`jeod_sim::evaluate_and_apply_frame_switch`]
+/// helper reparents the body in [`FrameTreeR`], rewrites the body's
+/// translational state into the new integration frame's coordinates,
+/// updates [`IntegFrameIdC`], and flips
+/// [`GravityControlsC`]'s `differential` flags so the new central
+/// source becomes non-differential.
+///
+/// Runs in `JeodSet::Integration` after [`sync_body_to_frame_system`].
+/// Bodies without [`FrameSwitchesC`] are skipped. Issue #71 item 3.
+///
+/// JEOD reference: `dyn_body_frame_switch.cc:173-182`. The Bevy adapter
+/// borrows the same logic via the lifted helper, so behavior is
+/// bit-identical to `jeod_runner::Simulation` for the same scenario.
+#[allow(clippy::type_complexity)]
+pub fn frame_switch_system(
+    mut frame_tree: ResMut<FrameTreeR>,
+    root: Res<crate::RootFrameIdR>,
+    sources: Query<&SourceFrameIdC>,
+    integ_sources: Query<&IntegSourceC>,
+    mut bodies: Query<(
+        Entity,
+        &mut TranslationalStateC,
+        &BodyFrameIdC,
+        &mut IntegFrameIdC,
+        &mut FrameSwitchesC,
+        &mut GravityControlsC,
+    )>,
+) {
+    // Frame-switch evaluation refers to gravity sources by index in a
+    // `&[SourceFrameIds]` slice (the lifted helper's signature mirrors
+    // `jeod_runner`'s usize-indexed source registry). The Bevy ECS
+    // identifies sources by `Entity`, while `FrameSwitchConfig`
+    // (re-exported from `jeod_sim`) still carries `target_source: usize`
+    // because Phase C will introduce a typed `Entity`-based variant.
+    // Bridge: build a `SourceFrameIds` slice with one entry per
+    // `usize` index referenced by any active switch, plus translate the
+    // panic message to ECS terms when the index is out of range.
+    //
+    // Mission code today is expected to use indices in the order
+    // sources are spawned; after Phase C lands, this bridge becomes
+    // direct entity lookup.
+    let source_frame_ids: Vec<jeod_sim::SourceFrameIds> = sources
+        .iter()
+        .map(|c| jeod_sim::SourceFrameIds {
+            inertial: c.0,
+            pfix: None,
+        })
+        .collect();
+
+    for (body_entity, mut trans, body_fid, mut integ_fid, mut switches, mut gravity_controls) in
+        &mut bodies
+    {
+        if switches.0.is_empty() {
+            continue;
+        }
+        // Translate TranslationalStateC into a raw mutable struct the
+        // lifted helper can write to in place; the lift cost is one
+        // (DVec3 read, DVec3 read) plus one (DVec3 write, DVec3 write)
+        // and only fires when a switch triggers — single-pass per body
+        // per step.
+        let mut raw_trans = jeod_sim::TranslationalState {
+            position: trans.0.position.raw_si(),
+            velocity: trans.0.velocity.raw_si(),
+        };
+        let body_idx = body_entity.index().index() as usize;
+
+        // Bridge: the runner-style helper takes `GravityControls<usize>`
+        // because `FrameSwitchConfig.target_source` is still `usize`.
+        // The Bevy adapter's `GravityControlsC` is `GravityControls<Entity>`,
+        // so we synthesize a parallel `GravityControls<usize>`, run the
+        // helper, then map any flipped `differential` flags back. This
+        // is the cost of `target_source: usize` outliving the migration
+        // to entity-based references; a typed Phase C variant will let
+        // the helper take `GravityControls<Entity>` directly.
+        let mut bridge_controls = jeod_sim::GravityControls {
+            controls: gravity_controls
+                .0
+                .controls
+                .iter()
+                .enumerate()
+                .map(|(i, ctrl)| jeod_sim::GravityControl {
+                    source_name: i,
+                    spherical: ctrl.spherical,
+                    degree: ctrl.degree,
+                    order: ctrl.order,
+                    perturbing_only: ctrl.perturbing_only,
+                    differential: ctrl.differential,
+                    gradient: ctrl.gradient,
+                    gradient_degree: ctrl.gradient_degree,
+                    gradient_order: ctrl.gradient_order,
+                    battin_method: ctrl.battin_method,
+                    relativistic: ctrl.relativistic,
+                })
+                .collect(),
+        };
+
+        let switched = jeod_sim::evaluate_and_apply_frame_switch(
+            &mut frame_tree.0,
+            root.0,
+            body_fid.0,
+            &mut integ_fid.0,
+            &mut raw_trans,
+            &mut switches.0,
+            &mut bridge_controls,
+            &source_frame_ids,
+            body_idx,
+        )
+        .unwrap_or_else(|err| {
+            panic!(
+                "frame_switch_system: body {body_entity:?} switch evaluation failed: \
+                 target source index {} out of range ({} sources registered). \
+                 FrameSwitchConfig.target_source still uses usize indexing into the \
+                 source registration order; verify your switch refers to a registered \
+                 source. (Phase C will replace this with Entity-based references.)",
+                err.target_source, err.num_sources,
+            )
+        });
+
+        if switched {
+            trans.0.position =
+                jeod_sim::Position::<jeod_sim::Inertial>::from_raw_si(raw_trans.position);
+            trans.0.velocity =
+                jeod_sim::Velocity::<jeod_sim::Inertial>::from_raw_si(raw_trans.velocity);
+            // Mirror the differential flips back from the bridge.
+            for (ctrl, bridge_ctrl) in gravity_controls
+                .0
+                .controls
+                .iter_mut()
+                .zip(bridge_controls.controls.iter())
+            {
+                ctrl.differential = bridge_ctrl.differential;
+            }
+            // `IntegSourceC` is the *initial* configuration; after a switch
+            // it no longer reflects the current integration frame. The
+            // truth is in `IntegFrameIdC` (already updated in place).
+            // Preserve the original `IntegSourceC` so callers can still
+            // see the configured intent.
+            let _ = integ_sources.get(body_entity);
+        }
+    }
+}
+
 // ── Time ──
 
 /// Advance every JEOD-tracked time scale by the Bevy `Time<Fixed>` delta
@@ -438,6 +685,8 @@ pub fn force_collection_system(
 /// GaussJackson requires `GaussJacksonStateC`; ABM4 requires `Abm4StateC`.
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn integration_system(
+    frame_tree: Res<FrameTreeR>,
+    root: Res<crate::RootFrameIdR>,
     mut bodies: Query<(
         Entity,
         &DynamicsConfigC,
@@ -453,6 +702,7 @@ pub fn integration_system(
         Option<&StructuralTransformC>,
         Option<&mut RadiationForceC>,
         Option<&mut FrameDerivativesC>,
+        Option<&IntegFrameIdC>,
     )>,
     sources: Query<(
         &GravitySourceC,
@@ -475,65 +725,84 @@ pub fn integration_system(
     // raw `DVec3` per-stage states (the integrator internals are not
     // yet typed); we wrap into `Position<Inertial>` / `Velocity<Inertial>`
     // for the typed `*_typed` kernels and unwrap before returning.
-    let eval_gravity =
-        |entity: Entity, controls: &GravityControlsC, pos: DVec3, vel: DVec3| -> DVec3 {
-            // The standard `integrate_body` (and `integrate_body_coupled`
-            // for the thermal-SRP path) accept a `gravity_fn` closure
-            // that receives raw `DVec3` per-stage state. The Bevy adapter
-            // is no longer the source of these untyped values — the
-            // typed Components (`TranslationalStateC` etc.) store frame
-            // phantoms — but the integrator kernel API itself still
-            // takes untyped intermediate states. A typed-sibling
-            // `integrate_body_typed` exists for the standard path and
-            // could be used to eliminate these two lifts; the coupled
-            // path has no typed sibling yet, so this closure stays
-            // generic across both. These two lifts are inside `jeod_sim`
-            // boundary territory, not at the Bevy ECS surface that #172
-            // H1 was specifically about.
-            let typed_pos = Position::<Inertial>::from_raw_si(pos); // allowed: #172 H1 integrator-kernel boundary (jeod_sim, not the ECS surface)
-            let typed_vel = Velocity::<Inertial>::from_raw_si(vel); // allowed: #172 H1 integrator-kernel boundary
+    //
+    // `integ_origin_pos` / `integ_origin_vel` are the per-body integration
+    // frame's translational state (relative to root). For root-integrated
+    // bodies both are zero — the original behavior. For non-root bodies,
+    // `pos + integ_origin_pos` is the absolute inertial position used by
+    // the gravity field; `integ_origin_pos` itself is passed to
+    // `accumulate_gravity_typed` so the differential-gravity correction
+    // subtracts the integ frame's own acceleration toward each source.
+    // Issue #71 item 4.
+    let eval_gravity = |entity: Entity,
+                        controls: &GravityControlsC,
+                        pos: DVec3,
+                        vel: DVec3,
+                        integ_origin_pos: DVec3,
+                        integ_origin_vel: DVec3|
+     -> DVec3 {
+        // The standard `integrate_body` (and `integrate_body_coupled`
+        // for the thermal-SRP path) accept a `gravity_fn` closure
+        // that receives raw `DVec3` per-stage state. The Bevy adapter
+        // is no longer the source of these untyped values — the
+        // typed Components (`TranslationalStateC` etc.) store frame
+        // phantoms — but the integrator kernel API itself still
+        // takes untyped intermediate states. A typed-sibling
+        // `integrate_body_typed` exists for the standard path and
+        // could be used to eliminate these two lifts; the coupled
+        // path has no typed sibling yet, so this closure stays
+        // generic across both. These two lifts are inside `jeod_sim`
+        // boundary territory, not at the Bevy ECS surface that #172
+        // H1 was specifically about.
+        // For non-root integration the closure receives `pos`/`vel` in
+        // integ-frame coordinates; lift to absolute inertial coords for
+        // both Newtonian gravity (via `body_pos = pos + integ_origin`)
+        // and PPN corrections (which depend on |r_body - r_source|).
+        let typed_abs_pos = Position::<Inertial>::from_raw_si(pos + integ_origin_pos); // allowed: integrator-kernel boundary
+        let typed_abs_vel = Velocity::<Inertial>::from_raw_si(vel + integ_origin_vel); // allowed: integrator-kernel boundary
+        let typed_origin = Position::<Inertial>::from_raw_si(integ_origin_pos);
 
-            let typed_accel = jeod_sim::accumulate_gravity_typed(
-                typed_pos,
-                &controls.0,
-                Position::<Inertial>::zero(),
-                |source_entity| match sources.get(source_entity) {
-                    Ok((s, r, p, _, tidal, tidal_config)) => Some(jeod_sim::ResolvedSource {
-                        source: &s.0,
-                        rotation: r.map(|r| r.0.matrix_ref()),
-                        position: p.0.raw_si(),
-                        delta_c20: tidal.map_or(0.0, |t| t.0.value),
-                        has_delta_coeffs: tidal_config.is_some(),
-                    }),
-                    Err(_) => {
-                        panic!(
-                            "Entity {entity:?}: GravityControl references source \
+        let typed_accel = jeod_sim::accumulate_gravity_typed(
+            typed_abs_pos,
+            &controls.0,
+            typed_origin,
+            |source_entity| match sources.get(source_entity) {
+                Ok((s, r, p, _, tidal, tidal_config)) => Some(jeod_sim::ResolvedSource {
+                    source: &s.0,
+                    rotation: r.map(|r| r.0.matrix_ref()),
+                    position: p.0.raw_si(),
+                    delta_c20: tidal.map_or(0.0, |t| t.0.value),
+                    has_delta_coeffs: tidal_config.is_some(),
+                }),
+                Err(_) => {
+                    panic!(
+                        "Entity {entity:?}: GravityControl references source \
                          {source_entity:?} which does not exist or lacks \
                          GravitySourceC + SourceInertialPositionC."
-                        );
+                    );
+                }
+            },
+        );
+        let mut accel = typed_accel.grav_accel.raw_si();
+
+        let rel = jeod_sim::accumulate_relativistic_corrections_typed(
+            typed_abs_pos,
+            typed_abs_vel,
+            &controls.0,
+            |source_entity| {
+                sources.get(source_entity).ok().map(|(s, _, p, v, _, _)| {
+                    jeod_sim::ResolvedRelativisticSource {
+                        mu: s.mu,
+                        position: p.0.raw_si(),
+                        velocity: v.map_or(DVec3::ZERO, |v| v.0.raw_si()),
                     }
-                },
-            );
-            let mut accel = typed_accel.grav_accel.raw_si();
+                })
+            },
+        );
+        accel += rel.raw_si();
 
-            let rel = jeod_sim::accumulate_relativistic_corrections_typed(
-                typed_pos,
-                typed_vel,
-                &controls.0,
-                |source_entity| {
-                    sources.get(source_entity).ok().map(|(s, _, p, v, _, _)| {
-                        jeod_sim::ResolvedRelativisticSource {
-                            mu: s.mu,
-                            position: p.0.raw_si(),
-                            velocity: v.map_or(DVec3::ZERO, |v| v.0.raw_si()),
-                        }
-                    })
-                },
-            );
-            accel += rel.raw_si();
-
-            accel
-        };
+        accel
+    };
 
     for (
         entity,
@@ -550,8 +819,17 @@ pub fn integration_system(
         struct_xform,
         mut srp_force,
         mut frame_derivs,
+        integ_frame,
     ) in &mut bodies
     {
+        // Per-body integration-frame origin (relative to root). Computed
+        // once per step — the integ frame doesn't move during a single
+        // integration step, so the multi-stage RK4 sub-evaluations
+        // reuse the same value. Issue #71 item 4.
+        let (integ_origin_pos, integ_origin_vel) = match integ_frame {
+            Some(c) if c.0 != root.0 => jeod_sim::frame_origin(&frame_tree.0, root.0, c.0),
+            _ => (DVec3::ZERO, DVec3::ZERO),
+        };
         let integrator_type = integrator.map_or(jeod_sim::IntegratorType::Rk4, |c| c.0);
         if matches!(integrator_type, jeod_sim::IntegratorType::GaussJackson(..)) {
             assert!(
@@ -609,8 +887,14 @@ pub fn integration_system(
                 rot_state_untyped.as_mut(),
                 mass_copy_untyped.as_ref(),
                 |stage_trans, stage_rot, stage_thermal, time_frac| {
-                    let gravity_accel =
-                        eval_gravity(entity, controls, stage_trans.position, stage_trans.velocity);
+                    let gravity_accel = eval_gravity(
+                        entity,
+                        controls,
+                        stage_trans.position,
+                        stage_trans.velocity,
+                        integ_origin_pos,
+                        integ_origin_vel,
+                    );
                     let t_inertial_body = stage_rot.map_or(glam::DMat3::IDENTITY, |r| {
                         r.quaternion.left_quat_to_transformation()
                     });
@@ -730,7 +1014,16 @@ pub fn integration_system(
             &mut state_untyped,
             rot_state_untyped.as_mut(),
             mass_untyped.as_ref(),
-            |pos, vel, _time_frac| eval_gravity(entity, controls, pos, vel),
+            |pos, vel, _time_frac| {
+                eval_gravity(
+                    entity,
+                    controls,
+                    pos,
+                    vel,
+                    integ_origin_pos,
+                    integ_origin_vel,
+                )
+            },
             total_force.force.raw_si(),
             total_force.torque.raw_si(),
             dt,
@@ -761,13 +1054,25 @@ pub fn integration_system(
 ///
 /// Delegates to [`jeod_sim::accumulate_gravity`] for the per-body accumulation
 /// loop, providing a closure that resolves Bevy entity references.
+///
+/// Bodies with [`IntegFrameIdC`] pointing at a non-root frame have their
+/// integration-frame origin (relative to root inertial) added to
+/// `body.position` to recover the absolute inertial position for the
+/// gravity field; the same origin is passed to
+/// [`jeod_sim::accumulate_gravity_typed`] so the differential gravity
+/// correction subtracts the integ frame's own acceleration toward each
+/// source. Issue #71 item 4. Bodies without [`IntegFrameIdC`] continue
+/// to use the root inertial frame as before.
 #[allow(clippy::type_complexity)]
 pub fn gravity_computation_system(
+    frame_tree: Res<FrameTreeR>,
+    root: Res<crate::RootFrameIdR>,
     mut bodies: Query<(
         Entity,
         &TranslationalStateC,
         &GravityControlsC,
         &mut GravityAccelerationC,
+        Option<&IntegFrameIdC>,
     )>,
     sources: Query<(
         &GravitySourceC,
@@ -778,7 +1083,7 @@ pub fn gravity_computation_system(
         Option<&TidalConfigC>,
     )>,
 ) {
-    for (entity, state, controls, mut accel) in &mut bodies {
+    for (entity, state, controls, mut accel, integ_frame) in &mut bodies {
         // TranslationalStateC stores typed Position<Inertial> /
         // Velocity<Inertial> directly — read them with no per-step lift.
         // (Pre-#172-H1 the system extracted raw DVec3 here and called
@@ -786,10 +1091,19 @@ pub fn gravity_computation_system(
         let body_pos = state.position;
         let body_vel = state.velocity;
 
+        // Integration-frame origin (relative to root). Zero for
+        // root-integrated bodies. Issue #71 item 4.
+        let integ_origin_raw = match integ_frame {
+            Some(c) if c.0 != root.0 => jeod_sim::frame_origin(&frame_tree.0, root.0, c.0).0,
+            _ => DVec3::ZERO,
+        };
+        let integ_origin = Position::<Inertial>::from_raw_si(integ_origin_raw);
+        let abs_pos = Position::<Inertial>::from_raw_si(body_pos.raw_si() + integ_origin_raw);
+
         let typed_accel = jeod_sim::accumulate_gravity_typed(
-            body_pos,
+            abs_pos,
             &controls.0,
-            Position::<Inertial>::zero(),
+            integ_origin,
             |source_entity| match sources.get(source_entity) {
                 Ok((source, rot, pos, _, tidal, tidal_config)) => {
                     Some(jeod_sim::ResolvedSource {
@@ -814,10 +1128,19 @@ pub fn gravity_computation_system(
         accel.0 = typed_accel;
 
         // Apply relativistic (post-Newtonian PPN) corrections after Newtonian
-        // gravity, matching Simulation::step() stage 4b ordering.
+        // gravity, matching Simulation::step() stage 4b ordering. PPN depends
+        // on |r_body - r_source| and v_body in inertial frame, so for
+        // non-root-integrated bodies we lift `body_pos`/`body_vel` from
+        // integ-frame coords into absolute inertial coords first.
+        let (integ_origin_pos, integ_origin_vel) = match integ_frame {
+            Some(c) if c.0 != root.0 => jeod_sim::frame_origin(&frame_tree.0, root.0, c.0),
+            _ => (DVec3::ZERO, DVec3::ZERO),
+        };
+        let abs_body_pos = Position::<Inertial>::from_raw_si(body_pos.raw_si() + integ_origin_pos);
+        let abs_body_vel = Velocity::<Inertial>::from_raw_si(body_vel.raw_si() + integ_origin_vel);
         let rel_accel = jeod_sim::accumulate_relativistic_corrections_typed(
-            body_pos,
-            body_vel,
+            abs_body_pos,
+            abs_body_vel,
             &controls.0,
             |source_entity| {
                 sources.get(source_entity).ok().map(|(s, _, p, v, _, _)| {

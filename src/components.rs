@@ -360,6 +360,23 @@ pub struct SourceFrameIdC(pub jeod_sim::FrameId);
 #[reflect(opaque, Component)]
 pub struct SourcePfixFrameIdC(pub jeod_sim::FrameId);
 
+/// Frame-tree node ID for a vehicle entity. Inserted by
+/// `register_body_frames_system` (a `Startup` system in
+/// [`JeodPlugin`](crate::JeodPlugin)) for every entity that carries
+/// [`TranslationalStateC`] but no [`BodyFrameIdC`] yet. Issue #71 item 2.
+#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
+#[reflect(opaque, Component)]
+pub struct BodyFrameIdC(pub jeod_sim::FrameId);
+
+/// Frame-tree node ID of a vehicle's current integration frame
+/// (initially the source-inertial frame named by [`IntegSourceC`], or
+/// the root inertial frame when [`IntegSourceC`] is `None` / absent).
+/// Updated in place by `frame_switch_system` after a triggered
+/// [`FrameSwitchesC`] entry. Issue #71 item 4.
+#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
+#[reflect(opaque, Component)]
+pub struct IntegFrameIdC(pub jeod_sim::FrameId);
+
 /// Optional initial integration-frame source for a body (issue #71
 /// item 4). Mirrors [`jeod_sim::VehicleConfig::integ_source`]: when set
 /// to `Some(planet_entity)`, the body is configured to integrate in
