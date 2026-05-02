@@ -2330,9 +2330,12 @@ impl Simulation {
         // Advance any free-flying detached subtrees ballistically. This
         // matches JEOD's behavior for tree roots whose grav_interaction
         // is empty (the common case for staging — no force applied to
-        // separated stages between detach and reattach).
+        // separated stages between detach and reattach). Use the dynamic
+        // timestep `dt * time_scale_factor` so the ballistic propagation
+        // stays consistent with the integrated bodies under time reversal
+        // / scaling (matches `integ_dt` used elsewhere in this step).
         if !self.detached_subtrees.is_empty() {
-            self.step_detached_subtrees(dt);
+            self.step_detached_subtrees(dt * self.time.time_scale_factor);
         }
 
         Ok(())
@@ -2488,15 +2491,15 @@ impl Simulation {
     /// child of the integrated body, or the root of a detached subtree.
     ///
     /// Walks to the tree root, reads the root's inertial composite state
-    /// from either [`Self::bodies`] (when the root is the integrated body)
-    /// or [`Self::detached_subtrees`] (when the root is detached), then
+    /// from either the integrated-body slot ([`Self::body`]) or the
+    /// [`Self::detached_subtrees`] map (when the root is detached), then
     /// chain-walks down to `target_id` using the same body-aware step as
     /// [`Self::detach_subtree`] (with [`jeod_dynamics::propagate_forward`]
     /// at each level).
     ///
     /// This mirrors what JEOD's truth recorder logs for `lm_dyn.composite_body`
-    /// regardless of the LM's current attach state — the diagnostic
-    /// [`tier3_sim_apollo_lm_state_vs_truth`] consumer compares against
+    /// regardless of the LM's current attach state — the
+    /// `tier3_sim_apollo_lm_state_vs_truth` diagnostic compares against
     /// `apollo_attach_truth.csv` rows produced by that same recorder.
     ///
     /// # Panics
@@ -2789,9 +2792,6 @@ impl Simulation {
             tree_root_id = p;
         }
 
-        // Capture the subtree's composite_wrt_pstr (in tree-root struct
-        // frame) before detach — the topology change resets it.
-        let subtree_composite_wrt_pstr = tree.get(subtree_root_id).composite_wrt_pstr;
         // The parent's pre-detach composite-CoM offset in its own struct frame.
         let parent_pre_composite_props = tree.get(tree_root_id).composite_properties;
 
@@ -2851,7 +2851,6 @@ impl Simulation {
                 .expect("detach_subtree: chain walk hit a parentless intermediate");
         }
         chain.reverse(); // tree_root → ... → subtree
-        let _ = subtree_composite_wrt_pstr;
         let mut current_state = parent_composite_state;
         let mut current_node_id = tree_root_id;
         for next_id in chain {
@@ -2926,11 +2925,21 @@ impl Simulation {
             // The parent's struct origin in inertial is unchanged (rigid
             // body); only the composite-CoM has moved within the struct
             // frame. Convert the struct-frame CoM-delta to inertial via
-            // T_struct_to_inertial = T_struct_to_body · T_inertial_to_body.
+            //
+            //   T_inertial_to_struct = T_struct_to_body^T · T_inertial_to_body
+            //
+            // (matching `jeod_dynamics::compute_t_inertial_struct`). The
+            // earlier form `T_struct_to_body * T_inertial_to_body` was
+            // only correct when `T_struct_to_body` is symmetric (identity
+            // or yaw_180) and silently produced wrong CoM-shift directions
+            // for non-symmetric mass-tree orientations.
             let cm_delta_struct =
                 parent_post_composite_props.position - parent_pre_composite_props.position;
             let t_struct_to_body = parent_pre_composite_props.t_parent_this;
-            let t_inertial_struct = t_struct_to_body * parent_composite_state.rot.t_parent_this;
+            let t_inertial_struct = jeod_dynamics::compute_t_inertial_struct(
+                &t_struct_to_body,
+                &parent_composite_state.rot.t_parent_this,
+            );
             let r_struct_to_inertial = t_inertial_struct.transpose();
             let cm_delta_inertial = r_struct_to_inertial * cm_delta_struct;
             // Velocity contribution from rotation: ω × Δr expressed in
@@ -2992,7 +3001,7 @@ impl Simulation {
     /// Panics if the integrated body has no rotational state, no mass
     /// tree is configured, the parent or subtree id is not in the tree,
     /// either named mass point is missing on its body, or the subtree
-    /// is not in [`detached_subtrees`].
+    /// is not in [`Self::detached_subtrees`].
     pub fn attach_subtree_aligned(
         &mut self,
         integrated_body_idx: usize,
@@ -3036,10 +3045,13 @@ impl Simulation {
         };
         let _ = core_wrt_composite_pre; // unused under composite-body convention
 
-        // Pull the subtree's free-flight composite state from the map.
-        let subtree_state = self
+        // Borrow the subtree's free-flight composite state (don't remove
+        // yet — we want the entry to survive if any of the operations
+        // below panic, so the caller can retry / recover instead of
+        // silently losing state).
+        let subtree_state = *self
             .detached_subtrees
-            .remove(&subtree_root_id)
+            .get(&subtree_root_id)
             .unwrap_or_else(|| {
                 panic!(
                     "attach_subtree_aligned: subtree {subtree_root_id:?} is not in \
@@ -3054,12 +3066,23 @@ impl Simulation {
         // Read post-attach composite props.
         let combined_composite_props = tree_mut.get(integrated_mass_body_id).composite_properties;
 
-        // The combine algorithm needs `T_inertial_to_struct`, which is
-        // T_struct_to_body · T_inertial_to_body. composite_properties
-        // .t_parent_this is the struct→body rotation (set per-body at
-        // init, never updated by the mass tree).
+        // The combine algorithm needs `T_inertial_to_struct`, which by
+        // the standard frame-chain rule is
+        //
+        //   T_inertial_to_struct = T_struct_to_body^T · T_inertial_to_body
+        //
+        // (matching `jeod_dynamics::compute_t_inertial_struct` and JEOD's
+        // `dyn_body_collect.cc` lines 219-221). composite_properties
+        // .t_parent_this is the struct→body rotation. The earlier form
+        // `T_struct_to_body * T_inertial_to_body` was only valid for
+        // symmetric struct-to-body rotations (identity, yaw_180 — the
+        // ones Apollo happens to use); non-symmetric vehicle orientations
+        // would silently get a wrong torque arm in the combine algorithm.
         let t_struct_to_body = parent_pre_composite_props.t_parent_this;
-        let parent_t_inertial_struct = t_struct_to_body * parent_composite_pre.rot.t_parent_this;
+        let parent_t_inertial_struct = jeod_dynamics::compute_t_inertial_struct(
+            &t_struct_to_body,
+            &parent_composite_pre.rot.t_parent_this,
+        );
 
         // APOLLO_TRACE diagnostic: dump every input to combine_states_at_attach
         // so we can diff against JEOD ground truth. Gated by env var so the
@@ -3191,6 +3214,12 @@ impl Simulation {
             ang_vel_body: combined.composite_state.rot.ang_vel_this,
         });
         self.bodies[integrated_body_idx].mass = Some(combined_composite_props);
+
+        // Combine succeeded — only now remove the subtree's detached
+        // entry. If any earlier step panicked (missing mass points,
+        // combine preconditions, etc.) the entry survives so callers
+        // can retry or inspect rather than silently losing state.
+        self.detached_subtrees.remove(&subtree_root_id);
 
         if std::env::var("APOLLO_TRACE").is_ok() {
             eprintln!(

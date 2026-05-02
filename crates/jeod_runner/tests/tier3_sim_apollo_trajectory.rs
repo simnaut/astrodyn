@@ -216,35 +216,52 @@ struct ApolloRef {
 }
 
 fn load_apollo_reference() -> Vec<ApolloRef> {
-    let path = test_data_dir().join("apollo_trajectory.csv");
+    let csv_path = test_data_dir().join("apollo_trajectory.csv");
     assert!(
-        path.exists(),
+        csv_path.exists(),
         "apollo_trajectory.csv missing at {}. Generate with: cargo xtask regenerate-tier3",
-        path.display()
+        csv_path.display()
     );
-    let content = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("Failed to read {}: {e}", path.display()));
+    let content = std::fs::read_to_string(&csv_path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {e}", csv_path.display()));
 
     // Column layout (per APOLLO_SNIPPET in trick/generate_references.sh):
     //   0 time
     //   1 pos[0], 2 vel[0], 3 pos[1], 4 vel[1], 5 pos[2], 6 vel[2]
     //   7 q.scalar, 8-10 q.vec[0..2], 11-13 ang_vel[0..2]
     let mut out = Vec::new();
-    for line in content.lines().skip(1) {
-        let v: Vec<f64> = line
-            .split(',')
-            .filter_map(|s| s.trim().parse().ok())
-            .collect();
-        if v.len() < 14 {
-            continue;
-        }
+    // Parse positionally and panic on any column-count or parse error
+    // rather than silently skipping rows: this is verification data,
+    // and a corrupted reference trajectory should fail loudly, not
+    // shift column indices and produce subtly-wrong test results.
+    for (row_idx, line) in content.lines().skip(1).enumerate() {
+        let fields: Vec<&str> = line.split(',').map(str::trim).collect();
+        // CSV row index in the source file (1-indexed; +2 to account
+        // for skipping the header).
+        let csv_row = row_idx + 2;
+        assert_eq!(
+            fields.len(),
+            14,
+            "{}:{csv_row} apollo_trajectory.csv: expected 14 columns, got {}: {line:?}",
+            csv_path.display(),
+            fields.len(),
+        );
+        let parse = |col: usize| -> f64 {
+            fields[col].parse::<f64>().unwrap_or_else(|e| {
+                panic!(
+                    "{}:{csv_row} apollo_trajectory.csv: failed to parse column {col} ({:?}): {e}",
+                    csv_path.display(),
+                    fields[col],
+                )
+            })
+        };
         out.push(ApolloRef {
-            time: v[0],
-            position: DVec3::new(v[1], v[3], v[5]),
-            velocity: DVec3::new(v[2], v[4], v[6]),
+            time: parse(0),
+            position: DVec3::new(parse(1), parse(3), parse(5)),
+            velocity: DVec3::new(parse(2), parse(4), parse(6)),
             // JEOD scalar-first [q0,q1,q2,q3] — store with same convention.
-            quaternion: JeodQuat::new(v[7], v[8], v[9], v[10]),
-            ang_vel_body: DVec3::new(v[11], v[12], v[13]),
+            quaternion: JeodQuat::new(parse(7), parse(8), parse(9), parse(10)),
+            ang_vel_body: DVec3::new(parse(11), parse(12), parse(13)),
         });
     }
     out

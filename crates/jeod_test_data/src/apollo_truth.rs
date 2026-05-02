@@ -117,6 +117,34 @@ pub enum ApolloTruthError {
         /// Absolute path the loader looked for.
         path: PathBuf,
     },
+    /// A row has an unexpected number of columns (must be 71 for the
+    /// original cm+lm layout or 106 for the cm+lm+s3 extended layout).
+    #[error("{path}:{line_no}: expected 71 or 106 columns, got {got}: {line:?}")]
+    UnexpectedColumns {
+        /// Absolute path the loader looked for.
+        path: PathBuf,
+        /// 1-indexed source line number (header counts as line 1).
+        line_no: usize,
+        /// Number of comma-separated fields actually seen.
+        got: usize,
+        /// The raw line text (truncated for the error message).
+        line: String,
+    },
+    /// A column failed to parse as a `f64`.
+    #[error("{path}:{line_no}: failed to parse column {col} ({field:?}) as f64: {source}")]
+    ParseFloat {
+        /// Absolute path the loader looked for.
+        path: PathBuf,
+        /// 1-indexed source line number.
+        line_no: usize,
+        /// 0-indexed column.
+        col: usize,
+        /// The raw text that failed to parse.
+        field: String,
+        /// Underlying parse error.
+        #[source]
+        source: std::num::ParseFloatError,
+    },
 }
 
 /// Default location of `apollo_attach_truth.csv` in the workspace.
@@ -151,15 +179,40 @@ pub fn load_apollo_attach_truth_at(path: &Path) -> Result<Vec<ApolloTruthRow>, A
         source,
     })?;
     let mut out = Vec::new();
-    for line in content.lines().skip(1) {
-        let v: Vec<f64> = line
-            .split(',')
-            .filter_map(|s| s.trim().parse().ok())
-            .collect();
-        if v.len() < 71 {
-            continue;
+    // Parse positionally and fail loudly on any column-count or parse
+    // error. This is verification data — silently dropping malformed
+    // rows shifts column indices and produces subtly-wrong test
+    // results. Two valid widths are accepted:
+    //   71 cols  — original cm + lm layout (time + 35 + 35).
+    //   106 cols — cm + lm + s3 layout added with #248 follow-up.
+    // Anything else is an error.
+    for (row_idx, line) in content.lines().skip(1).enumerate() {
+        let line_no = row_idx + 2; // 1-indexed; +2 accounts for skipped header.
+        let fields: Vec<&str> = line.split(',').map(str::trim).collect();
+        let n = fields.len();
+        if n != 71 && n != 106 {
+            return Err(ApolloTruthError::UnexpectedColumns {
+                path: path.to_path_buf(),
+                line_no,
+                got: n,
+                line: line.chars().take(200).collect(),
+            });
         }
-        let s3 = if v.len() >= 106 {
+        let mut v = Vec::<f64>::with_capacity(n);
+        for (col, field) in fields.iter().enumerate() {
+            v.push(
+                field
+                    .parse::<f64>()
+                    .map_err(|source| ApolloTruthError::ParseFloat {
+                        path: path.to_path_buf(),
+                        line_no,
+                        col,
+                        field: (*field).to_string(),
+                        source,
+                    })?,
+            );
+        }
+        let s3 = if n >= 106 {
             Some(parse_veh(&v, 71))
         } else {
             None

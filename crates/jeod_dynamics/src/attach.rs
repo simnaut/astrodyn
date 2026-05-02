@@ -1,7 +1,7 @@
 //! Mass-tree attach: combine two free bodies' kinematic states into a
 //! single rigid body via JEOD's "magical" merge algorithm.
 //!
-//! Port of [`DynBody::attach_child`] lines 967–1106 of
+//! Port of `DynBody::attach_child` lines 967–1106 of
 //! `models/dynamics/dyn_body/src/dyn_body_attach.cc` (JEOD v5.4). Pure
 //! function — no I/O, no mutation of the inputs.
 //!
