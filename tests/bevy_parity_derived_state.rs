@@ -94,7 +94,11 @@ fn tier3_bevy_derived_states() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let mut earth_entry = GravitySourceEntry::new(earth_source(), DVec3::ZERO, None);
+    let mut earth_entry = GravitySourceEntry::new(
+        earth_source(),
+        jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+        None,
+    );
     earth_entry.central = true;
     let earth_idx = sim.add_source("Earth", earth_entry);
     let sun_idx = sim.add_source(
@@ -104,7 +108,7 @@ fn tier3_bevy_derived_states() {
                 mu: 0.0,
                 model: GravityModel::PointMass,
             },
-            sun_pos,
+            jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(sun_pos),
             None,
         ),
     );
@@ -209,8 +213,8 @@ fn tier3_bevy_geodetic_derived_state() {
         "Earth",
         GravitySourceEntry {
             source: earth_source(),
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: Some(DMat3::IDENTITY),
             delta_c20: 0.0,
             rotation_model: RotationModel::EarthRNP,
@@ -346,7 +350,11 @@ fn tier3_bevy_eccentric_derived_states() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let mut earth_entry = GravitySourceEntry::new(earth_source(), DVec3::ZERO, None);
+    let mut earth_entry = GravitySourceEntry::new(
+        earth_source(),
+        jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+        None,
+    );
     earth_entry.central = true;
     let earth_idx = sim.add_source("Earth", earth_entry);
     let sun_idx = sim.add_source(
@@ -356,7 +364,7 @@ fn tier3_bevy_eccentric_derived_states() {
                 mu: 0.0,
                 model: GravityModel::PointMass,
             },
-            sun_pos,
+            jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(sun_pos),
             None,
         ),
     );
@@ -478,8 +486,8 @@ fn tier3_bevy_polar_geodetic() {
         "Earth",
         GravitySourceEntry {
             source: earth_source(),
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: Some(DMat3::IDENTITY),
             delta_c20: 0.0,
             rotation_model: RotationModel::EarthRNP,
@@ -594,7 +602,11 @@ fn tier3_bevy_equatorial_solar_beta() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let mut earth_entry = GravitySourceEntry::new(earth_source(), DVec3::ZERO, None);
+    let mut earth_entry = GravitySourceEntry::new(
+        earth_source(),
+        jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+        None,
+    );
     earth_entry.central = true;
     let earth_idx = sim.add_source("Earth", earth_entry);
     let sun_idx = sim.add_source(
@@ -604,7 +616,7 @@ fn tier3_bevy_equatorial_solar_beta() {
                 mu: 0.0,
                 model: GravityModel::PointMass,
             },
-            sun_pos,
+            jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(sun_pos),
             None,
         ),
     );
@@ -864,8 +876,8 @@ fn run_ned_parity(label: &str, trans: TranslationalState, r_eq: f64, r_pol: f64)
         "Earth",
         GravitySourceEntry {
             source: earth_source(),
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: Some(DMat3::IDENTITY),
             delta_c20: 0.0,
             rotation_model: RotationModel::EarthRNP,
@@ -1138,7 +1150,7 @@ fn tier3_bevy_solar_beta() {
                 mu: 0.0,
                 model: GravityModel::PointMass,
             },
-            sun_pos,
+            jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(sun_pos),
             None,
         ),
     );

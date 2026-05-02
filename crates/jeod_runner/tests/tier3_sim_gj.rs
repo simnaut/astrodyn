@@ -15,7 +15,6 @@
 
 use jeod_test_data::tier3_csv::{load_gj_csv, test_data_path};
 
-use glam::DVec3;
 use jeod_runner::{RotationModel, Simulation};
 use jeod_sim::{
     GaussJacksonConfig, GravityControl, GravityControls, GravityModel, GravitySource,
@@ -75,8 +74,8 @@ fn run_gj_test(
                 mu: MU_GJ_TEST,
                 model: GravityModel::PointMass,
             },
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: None,
             delta_c20: 0.0,
             rotation_model: RotationModel::default(),

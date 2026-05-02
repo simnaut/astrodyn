@@ -8,7 +8,7 @@ use bevy_jeod::{
     MassPropertiesC, PlanetFixedRotationC, RotationalStateC, SourceInertialPositionC,
     TranslationalStateC,
 };
-use glam::{DMat3, DVec3};
+use glam::DMat3;
 use jeod_sim::GravitySourceEntry;
 use jeod_sim::{
     AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig, ExponentialAtmosphere,
@@ -80,7 +80,11 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let mut earth_entry = GravitySourceEntry::new(earth_source(), DVec3::ZERO, None);
+    let mut earth_entry = GravitySourceEntry::new(
+        earth_source(),
+        jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+        None,
+    );
     earth_entry.central = true;
     let earth_idx = sim.add_source("Earth", earth_entry);
     sim.atmosphere = Some(AtmosphereConfig {
@@ -168,7 +172,11 @@ fn tier3_bevy_constant_density_drag_sixdof() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let mut earth_entry = GravitySourceEntry::new(earth_source(), DVec3::ZERO, None);
+    let mut earth_entry = GravitySourceEntry::new(
+        earth_source(),
+        jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+        None,
+    );
     earth_entry.central = true;
     let earth_idx = sim.add_source("Earth", earth_entry);
     sim.atmosphere = Some(AtmosphereConfig {
@@ -266,8 +274,8 @@ fn tier3_bevy_met_atmosphere_drag_sixdof() {
         "Earth",
         GravitySourceEntry {
             source: earth_source(),
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: Some(DMat3::IDENTITY),
             delta_c20: 0.0,
             rotation_model: jeod_runner::RotationModel::EarthRNP,
@@ -366,8 +374,8 @@ fn tier3_bevy_met_run5a() {
         "Earth",
         GravitySourceEntry {
             source: earth_source(),
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: Some(DMat3::IDENTITY),
             delta_c20: 0.0,
             rotation_model: jeod_runner::RotationModel::EarthRNP,
@@ -470,8 +478,8 @@ fn tier3_bevy_drag_run6b() {
         "Earth",
         GravitySourceEntry {
             source: earth_source(),
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: Some(DMat3::IDENTITY),
             delta_c20: 0.0,
             rotation_model: jeod_runner::RotationModel::EarthRNP,

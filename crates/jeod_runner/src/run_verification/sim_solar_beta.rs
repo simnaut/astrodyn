@@ -23,6 +23,7 @@
 //! 3rd-body gravity validation (Sun + Moon as gravitating bodies) lives
 //! separately under `tier3_sim_dyncomp_run4` and `tier3_sim_torque_simple`.
 
+use jeod_sim::Vec3Ext;
 use std::path::PathBuf;
 
 use glam::DVec3;
@@ -74,8 +75,8 @@ fn earth_point_mass(mu: f64) -> GravitySourceEntry {
             mu,
             model: GravityModel::PointMass,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
+        position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+        velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
         t_inertial_pfix: None,
         delta_c20: 0.0,
         rotation_model: RotationModel::default(),
@@ -93,8 +94,8 @@ fn sun_zero_mu(initial_pos: DVec3) -> GravitySourceEntry {
             mu: 0.0,
             model: GravityModel::PointMass,
         },
-        position: initial_pos,
-        velocity: DVec3::ZERO,
+        position: initial_pos.m_at::<jeod_sim::RootInertial>(),
+        velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
         t_inertial_pfix: None,
         delta_c20: 0.0,
         rotation_model: RotationModel::default(),
@@ -340,8 +341,8 @@ fn build_solar_beta_obliquity(init: &InitialConditions) -> SimulationBuilder {
                 mu: mu_earth,
                 model: GravityModel::SphericalHarmonics(Box::new(sh_data)),
             },
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: Some(initial_rotation),
             delta_c20: 0.0,
             rotation_model: RotationModel::EarthRNP,

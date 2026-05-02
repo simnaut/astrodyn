@@ -61,7 +61,7 @@ fn propagate_mercury_periapses(
                 mu: mu_sun,
                 model: GravityModel::PointMass,
             },
-            DVec3::ZERO,
+            jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
             None,
         ),
     );
@@ -260,7 +260,7 @@ fn tier3_simulation_mercury_relativistic_effect() {
                 mu: mu_sun,
                 model: GravityModel::PointMass,
             },
-            DVec3::ZERO,
+            jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
             None,
         ),
     );
@@ -289,7 +289,7 @@ fn tier3_simulation_mercury_relativistic_effect() {
                 mu: mu_sun,
                 model: GravityModel::PointMass,
             },
-            DVec3::ZERO,
+            jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
             None,
         ),
     );

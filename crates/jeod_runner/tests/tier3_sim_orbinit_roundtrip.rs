@@ -9,7 +9,6 @@
 //! Cartesian-to-element recovery -- ensuring no information is lost
 //! or corrupted through the pipeline.
 
-use glam::DVec3;
 use jeod_math::OrbitalElements;
 use jeod_runner::{RotationModel, Simulation};
 use jeod_sim::recipes::helpers::state_helpers::state_from_elements;
@@ -62,8 +61,8 @@ fn roundtrip_via_simulation(
                 mu: MU_EARTH,
                 model: GravityModel::PointMass,
             },
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: None,
             delta_c20: 0.0,
             rotation_model: RotationModel::default(),
@@ -195,8 +194,8 @@ fn tier3_orbinit_roundtrip_circular() {
                 mu: MU_EARTH,
                 model: GravityModel::PointMass,
             },
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: None,
             delta_c20: 0.0,
             rotation_model: RotationModel::default(),

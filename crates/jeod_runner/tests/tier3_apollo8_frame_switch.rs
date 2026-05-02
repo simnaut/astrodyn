@@ -98,7 +98,7 @@ fn build_apollo8_sim(enable_frame_switch: bool) -> (Simulation, usize, usize) {
                 mu: MU_SUN,
                 model: GravityModel::PointMass,
             },
-            DVec3::ZERO,
+            jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
             None,
         ),
     );
@@ -113,7 +113,7 @@ fn build_apollo8_sim(enable_frame_switch: bool) -> (Simulation, usize, usize) {
             mu: MU_EARTH,
             model: GravityModel::PointMass,
         },
-        DVec3::ZERO,
+        jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
         None,
     );
     earth_entry.central = true;
@@ -126,7 +126,7 @@ fn build_apollo8_sim(enable_frame_switch: bool) -> (Simulation, usize, usize) {
                 mu: MU_MOON,
                 model: GravityModel::PointMass,
             },
-            DVec3::ZERO,
+            jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
             None,
         ),
     );

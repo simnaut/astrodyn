@@ -32,6 +32,8 @@ pub fn point_mass() -> GravitySourceEntry {
 
 /// Earth as a point-mass third-body perturbation source at the given
 /// inertial position. No rotation model.
-pub fn third_body(position: glam::DVec3) -> GravitySourceEntry {
+pub fn third_body(
+    position: jeod_quantities::aliases::Position<jeod_quantities::frame::RootInertial>,
+) -> GravitySourceEntry {
     GravitySourceEntry::third_body(&EARTH, position)
 }

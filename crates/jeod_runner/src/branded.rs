@@ -322,8 +322,8 @@ impl Simulation {
 /// fn earth_entry() -> GravitySourceEntry {
 ///     GravitySourceEntry {
 ///         source: GravitySource { mu: 3.986e14, model: GravityModel::PointMass },
-///         position: DVec3::ZERO,
-///         velocity: DVec3::ZERO,
+///         position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+///         velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
 ///         t_inertial_pfix: None,
 ///         delta_c20: 0.0,
 ///         rotation_model: RotationModel::default(),
@@ -377,8 +377,8 @@ mod tests {
                         mu: 3.986e14,
                         model: jeod_sim::GravityModel::PointMass,
                     },
-                    position: DVec3::ZERO,
-                    velocity: DVec3::ZERO,
+                    position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+                    velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
                     t_inertial_pfix: None,
                     delta_c20: 0.0,
                     rotation_model: jeod_sim::RotationModel::default(),

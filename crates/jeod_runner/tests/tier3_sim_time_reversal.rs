@@ -91,7 +91,7 @@ fn tier3_sim_time_reversal_run1() {
                 mu: mu_earth_gemt1,
                 model: GravityModel::PointMass,
             },
-            DVec3::ZERO,
+            jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
             None,
         );
         e.central = true;

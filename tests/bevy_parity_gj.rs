@@ -146,7 +146,7 @@ fn run_gj_parity(
             mu: MU_GJ_TEST,
             model: GravityModel::PointMass,
         },
-        DVec3::ZERO,
+        jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
         None,
     );
     earth_entry.central = true;

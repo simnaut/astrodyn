@@ -120,7 +120,11 @@ fn tier3_bevy_full_stack_sixdof() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
-    let mut earth_entry = GravitySourceEntry::new(earth_source(), DVec3::ZERO, None);
+    let mut earth_entry = GravitySourceEntry::new(
+        earth_source(),
+        jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+        None,
+    );
     earth_entry.central = true;
     let earth_idx = sim.add_source("Earth", earth_entry);
     let sun_idx = sim.add_source(
@@ -130,7 +134,7 @@ fn tier3_bevy_full_stack_sixdof() {
                 mu: 0.0,
                 model: GravityModel::PointMass,
             },
-            sun_pos,
+            jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(sun_pos),
             None,
         ),
     );
@@ -308,7 +312,11 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
 
-    let mut earth_entry = GravitySourceEntry::new(earth_source(), DVec3::ZERO, None);
+    let mut earth_entry = GravitySourceEntry::new(
+        earth_source(),
+        jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+        None,
+    );
     earth_entry.central = true;
     let earth_idx = sim.add_source("Earth", earth_entry);
 
@@ -319,7 +327,7 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
                 mu: 0.0,
                 model: GravityModel::PointMass,
             },
-            sun_pos,
+            jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(sun_pos),
             None,
         ),
     );
@@ -446,7 +454,7 @@ fn run_shadow_parity(label: &str, srp_plates: Vec<(FlatPlate, FlatPlateParams, F
                 mu: 0.0,
                 model: GravityModel::PointMass,
             },
-            sun_pos,
+            jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(sun_pos),
             None,
         ),
     );
@@ -547,7 +555,7 @@ fn run_srp_basic_parity(
                 mu: 0.0,
                 model: GravityModel::PointMass,
             },
-            sun_pos,
+            jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(sun_pos),
             None,
         ),
     );
@@ -652,7 +660,7 @@ fn run_srp_deriv_parity(
                 mu: 0.0,
                 model: GravityModel::PointMass,
             },
-            sun_pos,
+            jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(sun_pos),
             None,
         ),
     );
@@ -799,7 +807,7 @@ fn tier3_bevy_srp_derivative_rk4_with_rotated_struct_frame() {
                 mu: 0.0,
                 model: GravityModel::PointMass,
             },
-            sun_pos,
+            jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(sun_pos),
             None,
         ),
     );

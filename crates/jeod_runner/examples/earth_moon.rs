@@ -97,8 +97,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut sb = SimulationBuilder::new(time, DT);
     let moon = sb.add_source("Moon", moon_source);
-    let earth = sb.add_source("Earth", jeod_sim::recipes::earth::third_body(earth_pos));
-    let sun_idx = sb.add_source("Sun", sun::third_body(sun_pos));
+    let earth = sb.add_source(
+        "Earth",
+        jeod_sim::recipes::earth::third_body(
+            jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(earth_pos),
+        ),
+    );
+    let sun_idx = sb.add_source(
+        "Sun",
+        sun::third_body(jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(sun_pos)),
+    );
     sb.set_source_ephemeris(earth, EphemerisBody::Earth, EphemerisBody::Moon);
     sb.set_source_ephemeris(sun_idx, EphemerisBody::Sun, EphemerisBody::Moon);
     sb = sb.sun(sun_idx).ephemeris(ephemeris);
