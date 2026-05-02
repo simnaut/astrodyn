@@ -161,11 +161,21 @@ impl Simulation {
         // `GroundInteraction::initialize → in_contact()` with
         // `vp.state.trans.position == (0, 0, 0)`). This is the impulsive
         // force JEOD records on `subject->force` during init and that
-        // the integrator consumes at stage 1 of the first step. The
-        // pfix rotation is identity here because (a) for SphericalTerrain
-        // the rotation cancels in the ground-point computation and
-        // (b) at registration time we may not have a planet rotation
-        // model yet — the runtime path uses the live pfix matrix.
+        // the integrator consumes at stage 1 of the first step.
+        //
+        // For non-spherical Terrain implementations, the pfix rotation
+        // matters in the ground-point computation, so we fetch the
+        // current value from the frame tree. SphericalTerrain happens
+        // to cancel the rotation out, but we don't special-case it
+        // here — the matrix is correct for whatever Terrain the caller
+        // provides. Callers using non-trivial planet rotation should
+        // ensure ephemeris/RNP has been propagated before
+        // registering ground-contact pairs; for SphericalTerrain it
+        // doesn't matter.
+        let t_inertial_pfix = self.source_frame_ids[planet_source]
+            .pfix
+            .map(|pfix_id| self.frame_tree.get(pfix_id).state.rot.t_parent_this)
+            .unwrap_or(glam::DMat3::IDENTITY);
         let body = &self.bodies[body_a];
         let body_rot = body.rot.as_ref().unwrap_or_else(|| {
             panic!(
@@ -186,7 +196,7 @@ impl Simulation {
             body_rot,
             body.t_struct_body,
             body_mass,
-            glam::DMat3::IDENTITY,
+            t_inertial_pfix,
             Phase::Initialization,
         )
         .map(|eval| GroundContactImpulse {

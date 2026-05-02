@@ -390,13 +390,15 @@ impl Simulation {
                 self.bodies
                     .iter()
                     .all(|b| matches!(b.integrator, jeod_dynamics::IntegratorType::Rk4)),
-                "contact pairs require RK4 integrator on all bodies"
+                "contact-coupled path (inter-body or ground-contact pairs) requires \
+                 RK4 integrator on all bodies"
             );
             assert!(
                 self.bodies
                     .iter()
                     .all(|b| b.rot.is_some() && b.mass.is_some()),
-                "contact pairs require 6-DOF (rotational state + mass) on all bodies"
+                "contact-coupled path (inter-body or ground-contact pairs) requires \
+                 6-DOF (rotational state + mass) on all bodies"
             );
             // Derivative-class thermal (DerivativeFirstOrder /
             // DerivativeRk4) is not extended to the contact-coupled kernel.
@@ -409,22 +411,32 @@ impl Simulation {
                     .flat_plate_state
                     .as_ref()
                     .is_none_or(|fps| fps.stage_inputs.is_none())),
-                "Derivative-class thermal integration is not yet supported with contact pairs; \
-                 use ThermalIntegrationOrder::Scheduled on flat-plate SRP bodies \
+                "Derivative-class thermal integration is not yet supported when \
+                 inter-body or ground-contact pairs are registered; use \
+                 ThermalIntegrationOrder::Scheduled on flat-plate SRP bodies \
                  when contact pairs are active",
             );
             // Contact pair states must share the root inertial frame, since
             // the coupled contact evaluator uses each body's stage state
             // directly without any per-step frame transform. `validate()`
             // catches this at config time; the assert is defense-in-depth
-            // for callers that skip validation.
+            // for callers that skip validation. Ground-contact pairs are
+            // single-body — their body just needs to live in the root
+            // frame, which `register_ground_contact_pair` does not yet
+            // enforce explicitly but is documented in `validate.rs`.
             assert!(
                 self.contact_pairs.iter().all(|p| {
                     let fa = self.bodies[p.body_a].integ_frame_id;
                     let fb = self.bodies[p.body_b].integ_frame_id;
                     fa == fb && fa == self.root_frame_id
                 }),
-                "contact pair bodies must share the root inertial integration frame"
+                "inter-body contact pair bodies must share the root inertial integration frame"
+            );
+            assert!(
+                self.ground_contact_pairs
+                    .iter()
+                    .all(|p| self.bodies[p.body_a].integ_frame_id == self.root_frame_id),
+                "ground-contact pair bodies must integrate in the root inertial frame"
             );
 
             // `integ_dt` (dynamic timestep) is defined above the gravity

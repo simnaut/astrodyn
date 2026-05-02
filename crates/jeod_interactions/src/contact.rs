@@ -627,13 +627,13 @@ pub enum Phase {
 ///    (JEOD `point_ground_interaction.cc:83`).
 ///
 /// The returned [`ContactGeometry`] expresses contact points and the
-/// normal in the **body frame** of the vehicle. Callers (e.g.
-/// [`evaluate_ground_contact_pair`](crate::contact::compute_ground_contact_geometry))
-/// rotate them to inertial as needed. `contact_point_on_b` is set to
-/// `DVec3::ZERO`: the synthesized ground "facet" the downstream force
-/// law uses has its shape reference at the body-frame ground point
-/// itself, so the contact-point-relative-to-shape-reference offset is
-/// the zero vector.
+/// normal in the **body frame** of the vehicle. Callers
+/// (e.g. `jeod_sim::evaluate_ground_contact_pair`) rotate them to
+/// inertial as needed. `contact_point_on_b` is set to `DVec3::ZERO`:
+/// the synthesized ground "facet" the downstream force law uses has
+/// its shape reference at the body-frame ground point itself, so the
+/// contact-point-relative-to-shape-reference offset is the zero
+/// vector.
 ///
 /// # JEOD initialization-state semantics
 ///
@@ -669,9 +669,9 @@ pub enum Phase {
 /// Panics if `vehicle_facet.shape` is the [`ContactShape::Line`] zero
 /// length variant (degenerate, never produced by our public constructors)
 /// or if `ground_facet.active` is false (invalid registration). Material
-/// equality is enforced one level up in
-/// [`evaluate_ground_contact_pair`](crate::contact::compute_ground_contact_geometry)
-/// or via `Simulation::register_ground_contact_pair` in `jeod_runner`.
+/// equality is enforced one level up — by
+/// `jeod_sim::evaluate_ground_contact_pair` or by
+/// `Simulation::register_ground_contact_pair` in `jeod_runner`.
 pub fn compute_ground_contact_geometry(
     vehicle_facet: &ContactFacet,
     ground_facet: &GroundFacet,
