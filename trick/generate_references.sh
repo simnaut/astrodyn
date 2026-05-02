@@ -171,19 +171,16 @@ run_sim() {
     echo ""
 }
 
-# ── Helper: run a sim with an injected DRAscii logger for CSV output. ──
-# Creates a temporary wrapper input that exec's the original and adds ASCII logging.
-run_sim_with_ascii() {
+# ── Helper: build sim, run with injected DRAscii wrapper, collect CSVs. ──
+# No skip-check — caller is responsible for deciding whether to invoke this.
+# Used by both run_sim_with_ascii (which adds the standard skip-check) and
+# run_apollo_group (which has a multi-output skip-check and additional .out
+# collection that wraps this core).
+_run_sim_with_ascii_impl() {
     local sim_dir="$1"
     local run_dir="$2"
     local label="$3"
     local ascii_snippet="$4"  # Python code to create DRAscii logger
-    local required="${5:-}"   # optional: specific file to check (e.g. label_snippet.csv)
-
-    if has_output "$label" "$required"; then
-        echo "--- Skipping ${label} (output exists in ${OUTPUT_DIR}) ---"
-        return 0
-    fi
 
     echo "--- Building ${label} ---"
     cd "${JEOD_HOME}/${sim_dir}" || return 1
@@ -233,6 +230,24 @@ PYEOF
         cp "$csv_file" "$dest"
         echo "  -> ${dest}"
     done < <(find "${run_dir}" -name "*.csv" ! -name "_init_log.csv" -print0 2>/dev/null)
+}
+
+# ── Helper: run a sim with an injected DRAscii logger for CSV output. ──
+# Creates a temporary wrapper input that exec's the original and adds ASCII
+# logging. Skips if the requested output already exists in $OUTPUT_DIR.
+run_sim_with_ascii() {
+    local sim_dir="$1"
+    local run_dir="$2"
+    local label="$3"
+    local ascii_snippet="$4"  # Python code to create DRAscii logger
+    local required="${5:-}"   # optional: specific file to check (e.g. label_snippet.csv)
+
+    if has_output "$label" "$required"; then
+        echo "--- Skipping ${label} (output exists in ${OUTPUT_DIR}) ---"
+        return 0
+    fi
+
+    _run_sim_with_ascii_impl "$sim_dir" "$run_dir" "$label" "$ascii_snippet" || return 1
     echo ""
 }
 
@@ -1727,43 +1742,133 @@ run_mercury_group() {
 throttled_bg run_mercury_group
 PID_MERCURY=$LAST_BG_PID
 
-# Group 29: SIM_Apollo (mass tree attach/detach)
-# This sim produces .out text files (mass tree printouts), not CSVs.
+# Group 29: SIM_Apollo — mass-tree attach/detach over a 12-second LEO trajectory.
+# Produces both .out files (mass tree printouts via print_tree) and a
+# trajectory CSV (DRAscii of the active vehicle cm_dyn). The trajectory is
+# non-trivial because cm_dyn's composite mass and CoM jump 11 times as
+# stages attach and detach.
+APOLLO_SNIPPET='
+# JEOD input.py bug fix: set_vehicle_grav_controls is only called for
+# les_dyn, but after launch_stack assembly cm_dyn is the integration
+# root. cm_dyns grav_interaction.controls list is therefore empty and
+# the integrated stack experiences essentially no gravity — the
+# trajectory recorded without this fix is unphysical (mostly ballistic).
+# Replicate the LES setup sequence on cm_dyn (set_vehicle_grav_controls
+# wires earth/moon/sun controls; set_vehicle_sv_at_earth re-applies the
+# 8x8 degree/order JEOD evidently intends).
+set_vehicle_grav_controls(cm_dyn)
+set_vehicle_sv_at_earth(cm_dyn, earth)
+
+# Log core_body rather than composite_body. JEODs detach handler resets
+# the integrated-state source to core_body and propagates derived states
+# from it; composite_body therefore has discrete inertial jumps at every
+# attach/detach event, while core_body is preserved across them. core_body
+# is the natural comparison point for an integrated trajectory.
+dr = trick.DRAscii("trajectory")
+dr.thisown = 0
+dr.set_cycle(0.1)
+dr.freq = trick.sim_services.DR_Always
+for i in range(3):
+    dr.add_variable(f"cm_dyn.dyn_body.core_body.state.trans.position[{i}]")
+    dr.add_variable(f"cm_dyn.dyn_body.core_body.state.trans.velocity[{i}]")
+dr.add_variable("cm_dyn.dyn_body.core_body.state.rot.Q_parent_this.scalar")
+for i in range(3):
+    dr.add_variable(f"cm_dyn.dyn_body.core_body.state.rot.Q_parent_this.vector[{i}]")
+for i in range(3):
+    dr.add_variable(f"cm_dyn.dyn_body.core_body.state.rot.ang_vel_this[{i}]")
+trick.add_data_record_group(dr)
+
+# Ground-truth recorder for the t=6 attach algorithm investigation
+# (see #248). Captures, at 1 ms cadence, every input that flows into
+# JEODs DynBody::attach_child momentum-conservation algorithm for cm_dyn
+# (parent/integrated body), lm_dyn (child subtree), and s3_dyn
+# (intermediate detached subtree root during t=4 to t=5 — needed to
+# disambiguate chain-walk-from-S3-to-LM errors from S3 propagation
+# errors). The Rust port jeod_dynamics::attach::combine_states_at_attach
+# is replayed against the cm/lm values; the s3 columns drive the
+# tier3_sim_apollo_lm_state_vs_truth diagnostic.
+#
+# Column layout (cols are 0-indexed; col 0 = time):
+#   1..35   cm_dyn  (35 cols: 6 trans + 4 quat + 3 ang_vel + 1 mass + 3 cm + 9 inertia + 9 T)
+#   36..70  lm_dyn
+#   71..105 s3_dyn  (added with #248 follow-up)
+dr2 = trick.DRAscii("attach_truth")
+dr2.thisown = 0
+dr2.set_cycle(0.001)
+dr2.freq = trick.sim_services.DR_Always
+for veh in ("cm_dyn", "lm_dyn", "s3_dyn"):
+    for i in range(3):
+        dr2.add_variable(f"{veh}.dyn_body.composite_body.state.trans.position[{i}]")
+        dr2.add_variable(f"{veh}.dyn_body.composite_body.state.trans.velocity[{i}]")
+    dr2.add_variable(f"{veh}.dyn_body.composite_body.state.rot.Q_parent_this.scalar")
+    for i in range(3):
+        dr2.add_variable(f"{veh}.dyn_body.composite_body.state.rot.Q_parent_this.vector[{i}]")
+    for i in range(3):
+        dr2.add_variable(f"{veh}.dyn_body.composite_body.state.rot.ang_vel_this[{i}]")
+    dr2.add_variable(f"{veh}.dyn_body.mass.composite_properties.mass")
+    for i in range(3):
+        dr2.add_variable(f"{veh}.dyn_body.mass.composite_properties.position[{i}]")
+    for i in range(3):
+        for j in range(3):
+            dr2.add_variable(f"{veh}.dyn_body.mass.composite_properties.inertia[{i}][{j}]")
+    for i in range(3):
+        for j in range(3):
+            dr2.add_variable(f"{veh}.dyn_body.mass.composite_properties.T_parent_this[{i}][{j}]")
+trick.add_data_record_group(dr2)
+'
+
 run_apollo_group() {
     local sim_dir="sims/SIM_Apollo"
     local label="apollo"
     local run_dir="SET_test/RUN_test"
+    local trajectory_csv="${label}_trajectory.csv"
 
-    # Check for existing output (use a representative file).
-    if has_output "$label" "apollo_Full_Stack.out"; then
-        echo "=== Skipping SIM_Apollo (output exists) ==="
+    # All required outputs: trajectory CSV + every .out file the input.py
+    # writes. If any is missing we re-run the sim once to regenerate the
+    # full set (build is shared, so the cost is one trick-CP at most).
+    local out_files=(
+        "Initialization.out"
+        "Full_Stack.out"
+        "1st_Stage_Sep.out"
+        "2nd_Stage_Sep.out"
+        "LES_Jettison.out"
+        "3rd_Stage_Sep.out"
+        "LEM_Sep.out"
+        "Trans_Lunar.out"
+        "Lunar_Orbit.out"
+        "LM_Descent.out"
+        "Lunar_Rendezvous.out"
+        "LM_Ascent.out"
+        "Apollo.out"
+        "Entry.out"
+        "Final.out"
+        "Return.out"
+    )
+
+    local need_run=0
+    if ! has_output "$label" "$trajectory_csv"; then
+        need_run=1
+    fi
+    if [ "$need_run" = "0" ]; then
+        for out in "${out_files[@]}"; do
+            if [ ! -s "${OUTPUT_DIR}/${label}_${out}" ]; then
+                need_run=1
+                break
+            fi
+        done
+    fi
+    if [ "$need_run" = "0" ] && [ "$FORCE" != "1" ]; then
+        echo "=== Skipping SIM_Apollo (all outputs exist) ==="
         return 0
     fi
 
-    echo "--- Building SIM_Apollo ---"
-    cd "${JEOD_HOME}/${sim_dir}" || return 1
+    # Build, run with ASCII wrapper, and collect the trajectory CSV. Reuses
+    # the same wrapper-generation + CSV-canonicalization path as every other
+    # ASCII-logged sim.
+    _run_sim_with_ascii_impl "$sim_dir" "$run_dir" "$label" "$APOLLO_SNIPPET" || return 1
 
-    if ! ls S_main*.exe >/dev/null 2>&1; then
-        if ! trick-CP 2>&1 | tail -5; then
-            echo "ERROR: trick-CP failed for SIM_Apollo"
-            return 1
-        fi
-    fi
-
-    echo "--- Running SIM_Apollo ---"
-    local exe
-    exe=$(ls S_main*.exe 2>/dev/null | head -1)
-    if [ -z "$exe" ]; then
-        echo "ERROR: No S_main executable found for SIM_Apollo"
-        return 1
-    fi
-
-    if ! "./${exe}" "${run_dir}/input.py" 2>&1 | tail -3; then
-        echo "ERROR: SIM_Apollo execution failed"
-        return 1
-    fi
-
-    # Collect .out files (mass tree printouts) from the RUN directory.
+    # Collect .out files (mass tree printouts) from the RUN directory —
+    # SIM_Apollo-specific extra on top of the shared CSV path.
     echo "--- Collecting SIM_Apollo mass tree output ---"
     while IFS= read -r -d '' out_file; do
         local base
@@ -1772,6 +1877,28 @@ run_apollo_group() {
         cp "$out_file" "$dest"
         echo "  -> ${dest}"
     done < <(find "${run_dir}" -name "*.out" -print0 2>/dev/null)
+
+    # Validate every expected output is present and non-empty before
+    # declaring success. Trick's DRAscii silently drops unregistered
+    # variables and the sim can return 0 even if the data recorder failed
+    # to register, so a passing exit status is not enough — assert each
+    # expected file directly.
+    local missing=()
+    if [ ! -s "${OUTPUT_DIR}/${trajectory_csv}" ]; then
+        missing+=("${trajectory_csv}")
+    fi
+    for out in "${out_files[@]}"; do
+        if [ ! -s "${OUTPUT_DIR}/${label}_${out}" ]; then
+            missing+=("${label}_${out}")
+        fi
+    done
+    if [ "${#missing[@]}" -gt 0 ]; then
+        echo "ERROR: SIM_Apollo run completed but expected outputs are missing or empty:"
+        for f in "${missing[@]}"; do
+            echo "  - ${OUTPUT_DIR}/${f}"
+        done
+        return 1
+    fi
     echo ""
 }
 throttled_bg run_apollo_group

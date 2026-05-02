@@ -395,6 +395,7 @@ mod tests {
             inertia,
             inverse_inertia,
             position: DVec3::ZERO,
+            t_parent_this: DMat3::IDENTITY,
             dirty: false,
         }
     }

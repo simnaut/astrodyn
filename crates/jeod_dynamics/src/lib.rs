@@ -31,6 +31,7 @@
 #![forbid(unsafe_code)]
 
 pub mod abm4;
+pub mod attach;
 pub mod body_init;
 pub mod constraints;
 pub mod forces;
@@ -44,6 +45,7 @@ pub mod rotational;
 pub mod state;
 
 pub use abm4::{abm4_translational_step, Abm4State};
+pub use attach::{combine_states_at_attach, AttachCombineInputs, AttachCombineOutputs};
 pub use body_init::{
     compute_ned_rotation, init_from_lvlh, init_from_mean_anomaly, init_from_ned,
     init_from_orbital_elements, init_from_time_periapsis,
@@ -67,7 +69,7 @@ pub use rkf45::{
     rkf45_translational_step, AdaptiveConfig, AdaptiveResult,
 };
 pub use rotational::{
-    compute_left_quat_deriv, compute_rotational_acceleration, normalize_integ, RotationalState,
-    SixDofState,
+    advance_left_quat_body_rate, compute_left_quat_deriv, compute_rotational_acceleration,
+    normalize_integ, RotationalState, SixDofState,
 };
 pub use state::TranslationalState;

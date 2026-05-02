@@ -20,6 +20,16 @@ pub struct MassProperties {
     pub inertia: DMat3,         // kg*m^2, in body frame
     pub inverse_inertia: DMat3, // precomputed I^-1
     pub position: DVec3,        // m, in structural frame
+    /// Rotation matrix from the structural frame to the body frame,
+    /// matching JEOD `MassPointState::T_parent_this` for the
+    /// composite-body point. Defaults to `IDENTITY` (struct = body), which
+    /// is the right answer for any body whose `pt_orientation` was set to
+    /// identity in JEOD's `Modified_data/mass/*.py`. Bodies with a
+    /// non-identity orientation (e.g. SIM_Apollo's CM/LES/DM/Ascent
+    /// modules each declare a 180° eigen-rotation about Z) must set this
+    /// explicitly, otherwise the attach-algorithm conversion of
+    /// struct-frame quantities to inertial picks up the wrong rotation.
+    pub t_parent_this: DMat3,
     /// Set to `true` after mutating `mass` or `inertia` to trigger
     /// recomputation of `inverse_mass` and `inverse_inertia` on the next
     /// call to [`Self::recompute_derived`]. Constructors leave this `false`
@@ -45,6 +55,7 @@ impl MassProperties {
             inertia: DMat3::IDENTITY * mass,
             inverse_inertia: DMat3::IDENTITY / mass,
             position: DVec3::ZERO,
+            t_parent_this: DMat3::IDENTITY,
             dirty: false,
         }
     }
@@ -72,8 +83,16 @@ impl MassProperties {
             inertia,
             inverse_inertia,
             position,
+            t_parent_this: DMat3::IDENTITY,
             dirty: false,
         }
+    }
+
+    /// Builder: set the struct→body rotation. See the [`Self::t_parent_this`]
+    /// field doc-comment for when this is needed.
+    pub fn with_t_parent_this(mut self, t_parent_this: DMat3) -> Self {
+        self.t_parent_this = t_parent_this;
+        self
     }
 
     /// Recompute `inverse_mass` and `inverse_inertia` from `mass` and `inertia`.
@@ -220,6 +239,7 @@ impl<V: Vehicle> MassPropertiesTyped<V> {
             inertia: self.inertia.as_dmat3(),
             inverse_inertia: self.inverse_inertia,
             position: self.center_of_mass.raw_si(),
+            t_parent_this: DMat3::IDENTITY,
             dirty: self.dirty,
         }
     }
