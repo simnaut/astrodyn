@@ -1,3 +1,15 @@
+//! Per-node frame state — the untyped storage form used by the
+//! [`crate::FrameTree`] arena and the typed sibling
+//! [`RefFrameStateTyped<P, C>`] used at the public API boundary.
+//!
+//! Ports
+//! [`models/utils/ref_frames/src/ref_frame_state.cc`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/utils/ref_frames/src/ref_frame_state.cc)
+//! from JEOD v5.4.0. Position and velocity are stored **in parent
+//! coordinates** (RF.06); the rotation field uses the JEOD scalar-first
+//! left-transformation quaternion convention (RF.07) and treats the
+//! quaternion as the canonical source of truth with `t_parent_this` as a
+//! derived cache (RF.04).
+
 use core::marker::PhantomData;
 
 use glam::{DMat3, DVec3};
@@ -6,10 +18,17 @@ use jeod_quantities::aliases::{AngularVelocity, Position, Velocity};
 use jeod_quantities::frame::Frame;
 use jeod_quantities::quat::{LeftTransform, NormalizedQuat, ScalarFirst};
 
+/// Translational state of a frame relative to its parent.
+///
+/// Untyped storage form used by the [`crate::FrameTree`] arena. Position
+/// and velocity are expressed in **parent-frame coordinates**, matching
+/// JEOD's `RefFrameTrans`.
 // JEOD_INV: RF.06 — position/velocity in parent coordinates (structural convention)
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RefFrameTrans {
+    /// Position of this frame's origin in the parent frame, in meters.
     pub position: DVec3, // m, in parent frame
+    /// Velocity of this frame's origin in the parent frame, in m/s.
     pub velocity: DVec3, // m/s, in parent frame
 }
 
@@ -22,12 +41,22 @@ impl Default for RefFrameTrans {
     }
 }
 
+/// Rotational state of a frame relative to its parent.
+///
+/// Untyped storage form. The quaternion `q_parent_this` is JEOD's
+/// scalar-first left-transformation form, and is the canonical source of
+/// truth — `t_parent_this` is a derived cache that callers must keep in
+/// sync (RF.04). Angular velocity is expressed in this-frame coordinates.
 // JEOD_INV: RF.07 — Q_parent_this is left-transformation quaternion (JEOD convention)
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RefFrameRot {
-    pub q_parent_this: JeodQuat, // left transformation quaternion
-    pub t_parent_this: DMat3,    // transformation matrix
-    pub ang_vel_this: DVec3,     // rad/s, in this frame
+    /// Left-transformation quaternion (parent → this), scalar-first.
+    pub q_parent_this: JeodQuat,
+    /// 3×3 transformation matrix derived from `q_parent_this`.
+    pub t_parent_this: DMat3,
+    /// Angular velocity of this frame relative to parent, expressed in
+    /// this-frame coordinates, in rad/s.
+    pub ang_vel_this: DVec3,
 }
 
 impl Default for RefFrameRot {
@@ -40,22 +69,36 @@ impl Default for RefFrameRot {
     }
 }
 
+/// Combined translational + rotational state of a frame relative to its
+/// parent. The untyped storage form used by [`crate::FrameTree`].
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct RefFrameState {
+    /// Translational state in parent coordinates.
     pub trans: RefFrameTrans,
+    /// Rotational state (parent → this).
     pub rot: RefFrameRot,
 }
 
+/// Identifier metadata for a frame-tree node — name plus the
+/// [`RefFrameKind`] discriminator.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RefFrameInfo {
+    /// Human-readable frame name (e.g., `"earth.ecef"`, `"iss.body"`).
     pub name: String,
+    /// Discriminator marking which kind of frame this is.
     pub kind: RefFrameKind,
 }
 
+/// Discriminator for frame-tree nodes. Mirrors the runtime tags JEOD
+/// uses to distinguish inertial, planet-fixed, and body frames.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RefFrameKind {
+    /// Inertial (J2000 / ICRF) frame — typically the root of a tree.
     Inertial,
+    /// Planet-fixed (ECEF / IAU body-fixed) frame rotating with its
+    /// parent body.
     PlanetFixed,
+    /// Vehicle / body frame attached to a `DynBody` or composite.
     Body,
 }
 
@@ -291,7 +334,9 @@ impl<F: Frame> Default for RefFrameRotTyped<F, F> {
 /// state spanning the union.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RefFrameStateTyped<P: Frame, C: Frame> {
+    /// Typed translational state in parent coordinates.
     pub trans: RefFrameTransTyped<P>,
+    /// Typed rotational state (parent → child).
     pub rot: RefFrameRotTyped<P, C>,
 }
 

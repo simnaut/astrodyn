@@ -1,3 +1,15 @@
+//! Classical orbital elements and Cartesian ↔ Keplerian conversion.
+//!
+//! Ports
+//! [`models/utils/orbital_elements/src/orbital_elements.cc`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/utils/orbital_elements/src/orbital_elements.cc)
+//! from JEOD v5.4.0. Holds semi-major axis, eccentricity, inclination,
+//! RAAN, argument of periapsis, the three anomalies (true, mean,
+//! orbital), and energy / angular-momentum diagnostics.
+//!
+//! Public callers should reach for the typed conversions on
+//! [`OrbitalElements`]; the bare-`f64` siblings are kept
+//! module-private after the Phase 10 typed-API purge.
+
 use std::f64::consts::{PI, TAU};
 
 use crate::error::OrbitalError;

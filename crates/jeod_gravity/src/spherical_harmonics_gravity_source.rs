@@ -1,3 +1,12 @@
+//! [`SphericalHarmonicsData`] — coefficient table and precomputed
+//! Gottlieb helper arrays for spherical-harmonics gravity.
+//!
+//! Ports
+//! [`models/environment/gravity/src/spherical_harmonics_gravity_source.cc`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/environment/gravity/src/spherical_harmonics_gravity_source.cc)
+//! from JEOD v5.4.0. Coefficients are normalized; the
+//! [`crate::spherical_harmonics_calc_nonspherical`] kernel expects the
+//! Gottlieb helper arrays to be filled by [`SphericalHarmonicsData::new`].
+
 use jeod_quantities::dims::GravParam;
 use uom::si::f64::Length;
 

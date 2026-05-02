@@ -31,7 +31,9 @@ use crate::body_init_fixtures::{load_vehicle_bundle, BodyInitFixtureError, Refer
 /// and [`ReferenceState::velocity_typed`] to obtain frame-tagged typed views.
 #[derive(Debug, Clone)]
 pub struct ReferenceState {
+    /// Position in metres, in the inertial (ICRF) frame.
     pub position: DVec3,
+    /// Velocity in m/s, in the inertial (ICRF) frame.
     pub velocity: DVec3,
 }
 

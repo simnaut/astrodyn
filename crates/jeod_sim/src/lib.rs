@@ -35,7 +35,7 @@
 //! execution order that any adapter must respect.
 
 #![forbid(unsafe_code)]
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 
 pub mod atmosphere;
 pub mod derived;

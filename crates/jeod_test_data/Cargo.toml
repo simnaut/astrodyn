@@ -1,12 +1,16 @@
 [package]
 name = "jeod_test_data"
 description = "JEOD reference-data parsers and Tier 3 baseline tooling for bevy_jeod"
+readme = "README.md"
 keywords = ["jeod", "test-data", "verification", "aerospace"]
 categories = ["science", "aerospace", "development-tools"]
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
 
 [dependencies]
 jeod_quantities = { path = "../jeod_quantities", version = "0.1.0" }

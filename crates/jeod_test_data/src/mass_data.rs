@@ -1,3 +1,13 @@
+//! Parser for JEOD Trick `Modified_data/mass/*.py` mass-initialization
+//! Python files (e.g.
+//! [`SIM_dyncomp/Modified_data/mass/iss_mass.py`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/verif/SIM_dyncomp/Modified_data/mass/iss_mass.py))
+//! into a [`MassInitData`] struct that the test-data pipeline turns
+//! into a runtime `jeod_dynamics::MassProperties`.
+//!
+//! Strips Trick's `trick.attach_units("kg", …)` / `trick.attach_units("kg*m2", …)`
+//! wrappers per the parsability tier 2 documented in the project
+//! [`CLAUDE.md`](https://github.com/simnaut/bevy_jeod/blob/main/CLAUDE.md#jeod-verification-data).
+
 use regex::Regex;
 
 /// Mass initialization data from a JEOD Trick mass.py file.

@@ -55,12 +55,19 @@ fn reference_timestep(reference: &[StateLog]) -> f64 {
 /// A single state snapshot at one timestep.
 #[derive(Clone, Default)]
 pub struct StateLog {
+    /// Sample time in seconds since the trajectory's t=0.
     pub time: f64,
+    /// Position in metres, when sampled.
     pub position: Option<DVec3>,
+    /// Velocity in m/s, when sampled.
     pub velocity: Option<DVec3>,
+    /// Acceleration in m/s², when sampled.
     pub acceleration: Option<DVec3>,
+    /// Attitude quaternion, when sampled.
     pub quaternion: Option<DQuat>,
+    /// Angular velocity in rad/s, when sampled.
     pub ang_vel: Option<DVec3>,
+    /// Angular acceleration in rad/s², when sampled.
     pub ang_accel: Option<DVec3>,
 }
 
@@ -71,13 +78,20 @@ pub struct StateLog {
 pub struct CrossvalReport {
     test_name: String,
 
-    // Computed by `compute()` — per-component max |ours - ref| across trajectory
+    /// Per-axis max `|ours − ref|` of position over the trajectory.
     pub position: Option<[f64; 3]>,
+    /// Per-axis max `|ours − ref|` of velocity over the trajectory.
     pub velocity: Option<[f64; 3]>,
+    /// Per-axis max `|ours − ref|` of acceleration over the trajectory.
     pub acceleration: Option<[f64; 3]>,
+    /// Per-component max `|ours − ref|` of the quaternion (`[x,y,z,w]`).
     pub quaternion: Option<[f64; 4]>,
+    /// Maximum attitude error angle (radians) inferred from the
+    /// quaternion delta.
     pub quat_angle: Option<f64>,
+    /// Per-axis max `|ours − ref|` of angular velocity.
     pub ang_vel: Option<[f64; 3]>,
+    /// Per-axis max `|ours − ref|` of angular acceleration.
     pub ang_accel: Option<[f64; 3]>,
 
     // Test-specific extras: (variable_name, value, unit)

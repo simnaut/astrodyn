@@ -1,3 +1,15 @@
+//! [`Ephemeris`] reader and the [`EphemerisError`] failure type.
+//!
+//! Ports the kernel-loader / state-query surface of
+//! [`models/environment/ephemerides/de4xx_ephem/`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/environment/ephemerides/de4xx_ephem/)
+//! from JEOD v5.4.0. JEOD links a hand-rolled binary loader to JPL DE405 /
+//! DE421 kernels; this crate delegates the file format and Chebyshev
+//! evaluation to the `anise` crate (a Rust SPICE/NAIF reimplementation) and
+//! exposes a thin frame-tagged wrapper.
+//!
+//! Outputs are wrapped as [`Position<Inertial>`] / [`Velocity<Inertial>`]
+//! from [`jeod_quantities`] in the J2000 ICRF (meters and m/s).
+
 use std::path::Path;
 
 use anise::constants::celestial_objects::*;
@@ -198,8 +210,15 @@ fn body_to_frame(body: EphemerisBody) -> Frame {
 // failures (EP.14, EP.17 aggregated). JEOD uses distinct message codes; we aggregate.
 #[derive(Debug, thiserror::Error)]
 pub enum EphemerisError {
+    /// SPK / BPC kernel could not be loaded — bad path, wrong format,
+    /// or unreadable bytes. Aggregates JEOD's `EP.11`-`EP.13` load-time
+    /// failure codes.
     #[error("Failed to load ephemeris file: {0}")]
     LoadError(String),
+    /// Translation or rotation query failed — unsupported body, epoch
+    /// out of segment range, or missing orientation kernel.
+    /// Aggregates JEOD's `EP.14` (epoch range) and `EP.17`
+    /// (body availability) failure codes.
     #[error("Ephemeris query failed: {0}")]
     QueryError(String),
 }

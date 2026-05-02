@@ -1,25 +1,31 @@
-// IAU 1980 nutation coefficients for J2000.
-//
-// Extracted from JEOD 5.4:
-//   models/environment/RNP/RNPJ2000/data/src/data_nutation_j2000.cc
-//
-// Reference:
-//   Mulcihy, David D. and Bond, Victor R.,
-//   "The RNP Routine for the Standard Epoch J2000",
-//   NASA:JSC-24574, September 1990.
-//
-// 106 terms of the IAU 1980 Theory of Nutation.
-// Each array is indexed 0..105.
-//
-// The five fundamental argument multipliers (L, M, F, D, omega) are integer
-// coefficients that select which combination of Delaunay arguments drives
-// each nutation term.
-//
-// long_coeffs / long_t_coeffs:  longitude nutation (units: 0.0001 arcsec)
-// obliq_coeffs / obliq_t_coeffs: obliquity nutation (units: 0.0001 arcsec)
-//
-// The "t" arrays are the time-dependent (secular) parts, multiplied by T
-// (Julian centuries from J2000).
+//! IAU 1980 nutation coefficient tables for J2000.
+//!
+//! Extracted from
+//! [`models/environment/RNP/RNPJ2000/data/src/data_nutation_j2000.cc`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/environment/RNP/RNPJ2000/data/src/data_nutation_j2000.cc)
+//! in JEOD v5.4.0.
+//!
+//! Reference: Mulcahy, David D. and Bond, Victor R., *"The RNP Routine
+//! for the Standard Epoch J2000"*, NASA:JSC-24574, September 1990.
+//!
+//! 106 terms of the IAU 1980 Theory of Nutation — each array has length
+//! [`NUM_NUTATION_COEFFS`] and is indexed `0..NUM_NUTATION_COEFFS`.
+//!
+//! The five fundamental-argument multiplier arrays
+//! ([`L_COEFFS`], [`M_COEFFS`], [`F_COEFFS`], [`D_COEFFS`],
+//! [`OMEGA_COEFFS`]) are integer coefficients that select which
+//! combination of Delaunay arguments drives each nutation term:
+//!
+//! - `L`: mean anomaly of the Moon
+//! - `M` (= `l'`): mean anomaly of the Sun
+//! - `F`: mean argument of latitude of the Moon
+//! - `D`: mean elongation of the Moon from the Sun
+//! - `Omega`: mean longitude of the ascending node of the Moon
+//!
+//! [`LONG_COEFFS`] / [`LONG_T_COEFFS`] hold the longitude-nutation
+//! amplitude and its time-dependent (secular) part.
+//! [`OBLIQ_COEFFS`] / [`OBLIQ_T_COEFFS`] hold the same for obliquity
+//! nutation. All amplitudes are in `0.0001 arcsec`; the `*_T_COEFFS`
+//! arrays multiply Julian centuries from J2000.
 
 /// Number of nutation coefficients.
 pub const NUM_NUTATION_COEFFS: usize = 106;

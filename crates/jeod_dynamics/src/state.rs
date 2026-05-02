@@ -1,11 +1,26 @@
+//! [`TranslationalState`] — position and velocity in the integration
+//! frame.
+//!
+//! Mirrors the translational half of JEOD's
+//! [`models/dynamics/dyn_body/include/dyn_body.hh`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/dynamics/dyn_body/include/dyn_body.hh)
+//! state from JEOD v5.4.0. Stored in the integration frame (typically
+//! J2000 ECI); `position` is **absolute** (relative to the ECI origin),
+//! not the parent-frame-relative form used by `jeod_frames`'s
+//! `RefFrameState`.
+
 use glam::DVec3;
 use jeod_quantities::aliases::{Position, Velocity};
 use jeod_quantities::frame::{Frame, Inertial};
 
+/// Translational state in the integration frame.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct TranslationalState {
-    pub position: DVec3, // m, in integration frame
-    pub velocity: DVec3, // m/s, in integration frame
+    /// Position of the body's centre of mass, in metres, in the
+    /// integration frame.
+    pub position: DVec3,
+    /// Velocity of the body's centre of mass, in m/s, in the
+    /// integration frame.
+    pub velocity: DVec3,
 }
 
 impl TranslationalState {

@@ -1,3 +1,10 @@
+//! TAI ↔ TT time-scale conversion (constant `32.184` s offset).
+//!
+//! Ports
+//! [`models/environment/time/src/time_converter_tai_tt.cc`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/environment/time/src/time_converter_tai_tt.cc)
+//! from JEOD v5.4.0. The TT − TAI offset is exact by definition:
+//! [`crate::epoch::TAI_TT_OFFSET`].
+
 use crate::epoch::TAI_TT_OFFSET;
 use crate::{SecondsSince, TAI, TT};
 

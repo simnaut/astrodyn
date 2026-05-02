@@ -60,6 +60,7 @@
 //! [`gravity_fixtures`] for parsed gravity coefficients.
 
 #![forbid(unsafe_code)]
+#![deny(missing_docs)]
 
 pub use jeod_quantities::prelude::*;
 

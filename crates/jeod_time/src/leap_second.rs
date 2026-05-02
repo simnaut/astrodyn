@@ -1,3 +1,12 @@
+//! [`LeapSecondTable`] — TAI ↔ UTC leap-second lookup.
+//!
+//! Ports
+//! [`models/environment/time/src/tai_to_utc.cc`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/environment/time/src/tai_to_utc.cc)
+//! and the
+//! [`Leap_Second.dat`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/environment/time/data/Leap_Second.dat)
+//! parser from JEOD v5.4.0. Required for any simulation that hits a
+//! UTC ↔ TAI conversion.
+
 use crate::epoch::{mjd_to_tjt, SECONDS_PER_DAY};
 use log::warn;
 use std::sync::atomic::{AtomicBool, Ordering};

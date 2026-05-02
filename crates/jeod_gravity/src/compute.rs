@@ -1,3 +1,14 @@
+//! Top-level gravity-acceleration computation.
+//!
+//! The point-mass kernel and the multi-source dispatcher that selects
+//! between [`calc_spherical`] and the spherical-harmonics path in
+//! [`crate::spherical_harmonics_calc_nonspherical`] depending on the
+//! [`crate::GravityModel`] variant.
+//!
+//! Ports
+//! [`models/environment/gravity/src/`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/environment/gravity/src/)
+//! from JEOD v5.4.0.
+
 use glam::{DMat3, DVec3};
 use jeod_dynamics::GravityAcceleration;
 use jeod_math::{

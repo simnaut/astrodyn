@@ -3,7 +3,7 @@
 //! Faithful port of JEOD's `rotation_j2000.cc` (IAU-76/FK5).
 //! Computes the inertial-to-planet-fixed rotation matrix from time scales.
 //!
-//! Reference: Mulcihy & Bond, "The RNP Routine for the Standard Epoch J2000",
+//! Reference: Mulcahy & Bond, "The RNP Routine for the Standard Epoch J2000",
 //! NASA JSC-24574, September 1990.
 
 // Constants ported verbatim from JEOD — suppress excessive precision warnings.

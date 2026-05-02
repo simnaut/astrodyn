@@ -1,3 +1,12 @@
+//! [`MassProperties`] and the typed sibling [`MassPropertiesTyped`] —
+//! mass, inertia tensor, and CoM offset for a rigid body.
+//!
+//! Ports
+//! [`models/dynamics/mass/`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/dynamics/mass/)
+//! from JEOD v5.4.0. Inertia is stored about the body-frame axes
+//! through the centre of mass; composing child masses into a parent
+//! applies the parallel-axis (Steiner) theorem.
+
 use core::marker::PhantomData;
 
 use glam::{DMat3, DVec3};
@@ -13,13 +22,22 @@ use uom::si::mass::kilogram;
 /// spacecraft inertia tensors (principal moments ~1–10000 kg*m^2).
 pub const INERTIA_CONSISTENCY_TOL: f64 = 1e-6;
 
+/// Rigid-body mass / inertia / CoM-offset block.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MassProperties {
-    pub mass: f64,              // kg
-    pub inverse_mass: f64,      // 1/kg, precomputed (matches JEOD MassPointState.inverse_mass)
-    pub inertia: DMat3,         // kg*m^2, in body frame
-    pub inverse_inertia: DMat3, // precomputed I^-1
-    pub position: DVec3,        // m, in structural frame
+    /// Total mass in kg.
+    pub mass: f64,
+    /// Pre-computed inverse mass (`1/mass`, in `1/kg`). Mirrors JEOD's
+    /// `MassPointState::inverse_mass` so the inner loop is a multiply.
+    pub inverse_mass: f64,
+    /// Inertia tensor about the body-frame axes through the centre of
+    /// mass (kg·m²).
+    pub inertia: DMat3,
+    /// Pre-computed inverse inertia tensor.
+    pub inverse_inertia: DMat3,
+    /// Centre-of-mass position relative to the structural-frame
+    /// origin, in metres.
+    pub position: DVec3,
     /// Rotation matrix from the structural frame to the body frame,
     /// matching JEOD `MassPointState::T_parent_this` for the
     /// composite-body point. Defaults to `IDENTITY` (struct = body), which
