@@ -45,7 +45,7 @@ impl Simulation {
                  Only one central source is allowed per simulation."
             );
             assert!(
-                entry.position == DVec3::ZERO,
+                entry.position.raw_si() == DVec3::ZERO,
                 "add_source: central sources must have zero position because they map \
                  directly to root_frame_id."
             );
@@ -61,8 +61,12 @@ impl Simulation {
                 RefFrameKind::Inertial,
                 RefFrameState {
                     trans: RefFrameTrans {
-                        position: entry.position,
-                        velocity: entry.velocity,
+                        // RefFrameTrans is the runtime arena's untyped storage —
+                        // unwrap the typed entry value at this documented
+                        // boundary (RF.10 catalog row notes the frame tree is
+                        // runtime-typed by design).
+                        position: entry.position.raw_si(),
+                        velocity: entry.velocity.raw_si(),
                     },
                     rot: RefFrameRot::default(),
                 },
@@ -110,7 +114,9 @@ impl Simulation {
         });
         self.gravity_data.push(GravityData {
             source: entry.source,
-            velocity: entry.velocity,
+            // `GravityData.velocity` is runner-internal cache; unwrap the
+            // typed entry value at this documented runner boundary.
+            velocity: entry.velocity.raw_si(),
             delta_c20: entry.delta_c20,
             tidal_config: entry.tidal_config,
             rotation_model: entry.rotation_model,

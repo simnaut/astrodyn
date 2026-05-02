@@ -4,6 +4,7 @@
 //! rotation model and Sun 3rd-body gravity.
 //! Achieved parity: ~3.8 m position error over 3 hours.
 
+use jeod_sim::Vec3Ext;
 use jeod_test_data::tier3_csv::test_data_path;
 
 use glam::{DMat3, DVec3};
@@ -110,8 +111,8 @@ fn tier3_simulation_mars_dawn() {
                 mu: mars_mu,
                 model: GravityModel::SphericalHarmonics(Box::new(sh_data)),
             },
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: Some(DMat3::IDENTITY), // Triggers Mars rotation update
             rotation_model: RotationModel::MarsIAU,
             delta_c20: 0.0,
@@ -129,7 +130,7 @@ fn tier3_simulation_mars_dawn() {
                 mu: mu_sun,
                 model: GravityModel::PointMass,
             },
-            sun_pos_from_mars,
+            sun_pos_from_mars.m_at::<jeod_sim::RootInertial>(),
             None,
         ),
     );

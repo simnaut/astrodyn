@@ -76,8 +76,8 @@ fn main() {
 
 The typestate `VehicleBuilder` rejects misuse at compile time
 (no integrator chosen, no state set, mismatched coordinate frames).
-Errors render in physics language — *"expected `Position<Inertial>`,
-found `Position<Ecef>` — apply a `FrameTransform<Ecef, Inertial>` first"* —
+Errors render in physics language — *"expected `Position<RootInertial>`,
+found `Position<Ecef>` — apply a `FrameTransform<Ecef, RootInertial>` first"* —
 not as `PhantomData` mismatches.
 
 A full worked example lives in

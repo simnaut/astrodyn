@@ -37,10 +37,10 @@ use crate::frame::Frame;
 /// fails to typecheck rather than silently mis-summing them:
 ///
 /// ```compile_fail
-/// use jeod_quantities::frame::{Ecef, Inertial};
+/// use jeod_quantities::frame::{Ecef, RootInertial};
 /// use jeod_quantities::inertia::InertiaTensor;
 ///
-/// let a = InertiaTensor::<Inertial>::from_principal(1.0, 1.0, 1.0);
+/// let a = InertiaTensor::<RootInertial>::from_principal(1.0, 1.0, 1.0);
 /// let b = InertiaTensor::<Ecef>::from_principal(1.0, 1.0, 1.0);
 /// let _bad = a + b; // Add is only impl'd for matching frames
 /// ```
@@ -218,11 +218,11 @@ impl<F: Frame> Mul<f64> for InertiaTensor<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::frame::Inertial;
+    use crate::frame::RootInertial;
 
     #[test]
     fn principal_constructor_is_diagonal() {
-        let i = InertiaTensor::<Inertial>::from_principal(2.0, 3.0, 5.0);
+        let i = InertiaTensor::<RootInertial>::from_principal(2.0, 3.0, 5.0);
         let m = i.as_dmat3();
         assert_eq!(m.x_axis, glam::DVec3::new(2.0, 0.0, 0.0));
         assert_eq!(m.y_axis, glam::DVec3::new(0.0, 3.0, 0.0));
@@ -231,7 +231,7 @@ mod tests {
 
     #[test]
     fn from_components_is_symmetric() {
-        let i = InertiaTensor::<Inertial>::from_components(1.0, 2.0, 3.0, 0.1, 0.2, 0.3);
+        let i = InertiaTensor::<RootInertial>::from_components(1.0, 2.0, 3.0, 0.1, 0.2, 0.3);
         let m = i.as_dmat3();
         assert_eq!(m.col(0)[1], m.col(1)[0]);
         assert_eq!(m.col(0)[2], m.col(2)[0]);
@@ -240,8 +240,8 @@ mod tests {
 
     #[test]
     fn add_is_componentwise() {
-        let a = InertiaTensor::<Inertial>::from_principal(1.0, 1.0, 1.0);
-        let b = InertiaTensor::<Inertial>::from_principal(2.0, 3.0, 4.0);
+        let a = InertiaTensor::<RootInertial>::from_principal(1.0, 1.0, 1.0);
+        let b = InertiaTensor::<RootInertial>::from_principal(2.0, 3.0, 4.0);
         assert_eq!(
             (a + b).as_dmat3(),
             DMat3::from_diagonal(glam::DVec3::new(3.0, 4.0, 5.0))
@@ -250,7 +250,7 @@ mod tests {
 
     #[test]
     fn scalar_mul_distributes() {
-        let i = InertiaTensor::<Inertial>::from_principal(1.0, 2.0, 3.0);
+        let i = InertiaTensor::<RootInertial>::from_principal(1.0, 2.0, 3.0);
         let scaled = i * 2.0;
         assert_eq!(
             scaled.as_dmat3(),
@@ -260,7 +260,7 @@ mod tests {
 
     #[test]
     fn transform_with_identity_is_noop() {
-        let i = InertiaTensor::<Inertial>::from_components(1.0, 2.0, 3.0, 0.1, 0.2, 0.3);
+        let i = InertiaTensor::<RootInertial>::from_components(1.0, 2.0, 3.0, 0.1, 0.2, 0.3);
         let rotated = i.transform(&DMat3::IDENTITY);
         assert_eq!(i, rotated);
     }

@@ -32,6 +32,7 @@
 //! JEOD source: `models/utils/ref_frames/` and `models/environment/RNP/`.
 
 #![forbid(unsafe_code)]
+#![deny(missing_docs)]
 
 pub mod data_nutation_j2000;
 pub mod frame_tree;

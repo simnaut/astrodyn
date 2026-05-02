@@ -202,8 +202,8 @@ After the type-system refactor (#101), there are two layers to choose between:
   `DVec3`/`DQuat`/`DMat3` or `PhantomData`. The compiler rejects cross-frame
   mismatches, scalar-vs-vector quaternion confusion, and unit-dimensional errors
   at compile time. Custom `#[diagnostic::on_unimplemented]` messages render
-  errors in physics language (e.g., *"expected `Position<Inertial>`, found
-  `Position<Ecef>` — apply a `FrameTransform<Ecef, Inertial>` first"*).
+  errors in physics language (e.g., *"expected `Position<RootInertial>`, found
+  `Position<Ecef>` — apply a `FrameTransform<Ecef, RootInertial>` first"*).
 
 - **Internal physics-crate kernels** (the inside of `jeod_*` `*_typed` functions
   and the underlying `_inner`/`_impl` math) use raw `glam::DVec3`/`DQuat`/`DMat3`
@@ -214,6 +214,27 @@ After the type-system refactor (#101), there are two layers to choose between:
 See the [Type-System wiki page](https://github.com/simnaut/bevy_jeod/wiki/Type-System) for the contributor primer (phantom-tag pattern,
 adding a new frame/scale/quantity, reading compiler errors, escape hatches)
 and `examples/typed_mission.rs` for the canonical worked example.
+
+### Inertial-frame phantoms (#255 / RF.10)
+
+There are three kind-distinct inertial-flavor phantoms:
+
+- `RootInertial` — the simulation's root inertial frame. Required by
+  consumers that mix body state with root-inertial source positions
+  (gravity, relativistic corrections, SRP, solar beta, earth lighting).
+- `PlanetInertial<P: Planet>` — a particular planet's inertial frame.
+  Required by planet-centered consumers (atmosphere, drag velocity,
+  LVLH, geodetic, orbital elements). In realistic configs the body's
+  integration frame *is* `PlanetInertial<P>` for the body's planet.
+- `IntegrationFrame` — a body's integration frame. Stored on
+  `SimBody.trans` so the compiler refuses to silently pass
+  integration-frame state where root-inertial is required. The only
+  safe transition is `body.trans.to_inertial(&integ_origin)` (the
+  `IntegOrigin` shift) — applied at *shift sites* only.
+
+`docs/JEOD_invariants.md` row `RF.10` enumerates which sites are
+structurally guarded vs convention-only and why each consumer falls
+into one or the other.
 
 ## Quaternion Convention
 
@@ -558,8 +579,8 @@ let vehicle_entity = cfg.spawn_bevy(&mut commands, &[earth_entity]);
 ```
 
 **Compiler errors as physics**: passing a `Position<Ecef>` where
-`Position<Inertial>` is required produces a custom diagnostic in physics
-language pointing to the missing `FrameTransform<Ecef, Inertial>` step, not a
+`Position<RootInertial>` is required produces a custom diagnostic in physics
+language pointing to the missing `FrameTransform<Ecef, RootInertial>` step, not a
 PhantomData type-mismatch wall.
 
 **Reference**:

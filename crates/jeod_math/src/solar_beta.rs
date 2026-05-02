@@ -12,7 +12,7 @@
 
 use glam::DVec3;
 use jeod_quantities::dims::SpecificAngMomDim;
-use jeod_quantities::prelude::{Inertial, Position, Qty3};
+use jeod_quantities::prelude::{Position, Qty3, RootInertial};
 use uom::si::angle::radian;
 use uom::si::f64::Angle;
 
@@ -68,8 +68,8 @@ pub(crate) fn solar_beta_angle_impl(orbit_ang_momentum: DVec3, sun_direction: DV
 /// Positive when the Sun is on the same side as the angular momentum
 /// vector.
 pub fn solar_beta_angle_typed(
-    orbit_ang_momentum: Qty3<SpecificAngMomDim, Inertial>,
-    sun_direction: Position<Inertial>,
+    orbit_ang_momentum: Qty3<SpecificAngMomDim, RootInertial>,
+    sun_direction: Position<RootInertial>,
 ) -> Angle {
     let beta = solar_beta_angle_impl(orbit_ang_momentum.raw_si(), sun_direction.raw_si());
     Angle::new::<radian>(beta)
@@ -155,7 +155,7 @@ mod tests {
         // returned typed angle stays within that bound (plus a small
         // floating-point slop).
         let inc = 51.6_f64.to_radians();
-        let h = h_in::<Inertial>(DVec3::new(0.0, -inc.sin(), inc.cos()));
+        let h = h_in::<RootInertial>(DVec3::new(0.0, -inc.sin(), inc.cos()));
         for (sx, sy, sz) in [
             (1.0, 0.0, 0.0),
             (0.0, 1.0, 0.0),
@@ -164,7 +164,7 @@ mod tests {
             (-1.0, 2.0, -0.5),
             (0.0, 0.0, -1.0),
         ] {
-            let sun = DVec3::new(sx, sy, sz).m_at::<Inertial>();
+            let sun = DVec3::new(sx, sy, sz).m_at::<RootInertial>();
             let beta = solar_beta_angle_typed(h, sun);
             let rad = beta.get::<radian>();
             assert!(
@@ -182,7 +182,8 @@ mod tests {
         let h_raw = DVec3::new(0.0, -inc.sin(), inc.cos());
         let sun_raw = DVec3::new(1.0, 0.0, 0.0);
 
-        let beta = solar_beta_angle_typed(h_in::<Inertial>(h_raw), sun_raw.m_at::<Inertial>());
+        let beta =
+            solar_beta_angle_typed(h_in::<RootInertial>(h_raw), sun_raw.m_at::<RootInertial>());
         assert!(beta.get::<radian>().abs() < 1e-14);
     }
 
@@ -205,7 +206,8 @@ mod tests {
 
         for &(h, sun) in cases {
             let f64_result = solar_beta_angle(h, sun);
-            let typed_result = solar_beta_angle_typed(h_in::<Inertial>(h), sun.m_at::<Inertial>());
+            let typed_result =
+                solar_beta_angle_typed(h_in::<RootInertial>(h), sun.m_at::<RootInertial>());
             assert_eq!(
                 typed_result.get::<radian>(),
                 f64_result,

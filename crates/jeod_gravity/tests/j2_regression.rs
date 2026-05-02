@@ -55,18 +55,18 @@ fn j2_nodal_regression_rate() {
 
     // Compute RAAN at start and end via the typed sibling.
     use jeod_quantities::ext::{F64Ext, Vec3Ext};
-    use jeod_quantities::frame::Inertial;
+    use jeod_quantities::frame::{Earth, PlanetInertial};
     let mu_typed = F64Ext::m3_per_s2(mu);
     let elems_start = OrbitalElements::from_cartesian_typed(
         mu_typed,
-        state_initial.position.m_at::<Inertial>(),
-        state_initial.velocity.m_per_s_at::<Inertial>(),
+        state_initial.position.m_at::<PlanetInertial<Earth>>(),
+        state_initial.velocity.m_per_s_at::<PlanetInertial<Earth>>(),
     )
     .unwrap();
     let elems_end = OrbitalElements::from_cartesian_typed(
         mu_typed,
-        state.position.m_at::<Inertial>(),
-        state.velocity.m_per_s_at::<Inertial>(),
+        state.position.m_at::<PlanetInertial<Earth>>(),
+        state.velocity.m_per_s_at::<PlanetInertial<Earth>>(),
     )
     .unwrap();
 

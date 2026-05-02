@@ -1,3 +1,13 @@
+//! Parser for JEOD Trick `input.py` gravity-control assignments.
+//!
+//! Reads expressions like `earth_grav_control.spherical = False` /
+//! `earth_grav_control.degree = 4` from a JEOD verification sim's
+//! `SET_test/RUN_*/input.py` and produces a `GravityControlConfig` that
+//! the Tier 2 / Tier 3 test harness translates into a runtime
+//! `jeod_gravity::GravityControl`. See
+//! [`verif/SIM_dyncomp/SET_test/RUN_2/input.py`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/verif/SIM_dyncomp/SET_test/RUN_2/input.py)
+//! for an example of the format we parse.
+
 use regex::Regex;
 use std::path::Path;
 
@@ -10,9 +20,13 @@ use std::path::Path;
 /// - `earth_grav_control.gradient = False`
 #[derive(Debug, Clone)]
 pub struct GravityControlConfig {
+    /// Use point-mass-only gravity (`.spherical = True/False`).
     pub spherical: bool,
+    /// Spherical-harmonics degree (`.degree = N`).
     pub degree: usize,
+    /// Spherical-harmonics order (`.order = N`).
     pub order: usize,
+    /// Compute the gravity-gradient tensor (`.gradient = True/False`).
     pub gradient: bool,
 }
 

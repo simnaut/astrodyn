@@ -6,8 +6,8 @@
 use bevy::prelude::*;
 use glam::DVec3;
 use jeod_sim::{
-    Acceleration, AngularAcceleration, BodyFrame, Force, Inertial, Position, SelfPlanet, SelfRef,
-    Torque, Velocity,
+    Acceleration, AngularAcceleration, BodyFrame, Force, Position, RootInertial, SelfPlanet,
+    SelfRef, Torque, Velocity,
 };
 
 use crate::components::*;
@@ -356,9 +356,9 @@ pub fn frame_switch_system(
             // takes an untyped `TranslationalState`); boundary analogous
             // to `integrate_body`'s untyped kernel API.
             let pos_typed =
-                jeod_sim::Position::<jeod_sim::Inertial>::from_raw_si(raw_trans.position); // allowed: lifted-helper boundary
+                jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(raw_trans.position); // allowed: lifted-helper boundary
             let vel_typed =
-                jeod_sim::Velocity::<jeod_sim::Inertial>::from_raw_si(raw_trans.velocity); // allowed: lifted-helper boundary
+                jeod_sim::Velocity::<jeod_sim::RootInertial>::from_raw_si(raw_trans.velocity); // allowed: lifted-helper boundary
             trans.0.position = pos_typed;
             trans.0.velocity = vel_typed;
             // `IntegFrameIdC` was updated in place by the helper;
@@ -418,7 +418,8 @@ pub fn planet_fixed_rotation_system(
     // expensive `from_matrix` work (matrix→quat extraction + renormalization)
     // happens once per tick total, not once per EarthRNP entity per tick —
     // all EarthRNP entities share the same rotation each step.
-    type EarthRot = jeod_sim::FrameTransform<jeod_sim::Inertial, jeod_sim::PlanetFixed<SelfPlanet>>;
+    type EarthRot =
+        jeod_sim::FrameTransform<jeod_sim::RootInertial, jeod_sim::PlanetFixed<SelfPlanet>>;
     let mut earth_rotation: Option<EarthRot> = Option::None;
     let mut earth_rotation_raw: Option<glam::DMat3> = Option::None;
     for (mut rot, model, omega, ang_vel, pfix_fid) in &mut query {
@@ -573,7 +574,7 @@ pub fn ephemeris_update_system(
     };
     let tdb_jd = sim_time.tdb_julian_date();
     for (ephem_body, mut source_pos, source_vel, trans_state) in &mut query {
-        // Typed sibling: returns `(Position<Inertial>, Velocity<Inertial>)`
+        // Typed sibling: returns `(Position<RootInertial>, Velocity<RootInertial>)`
         // directly, matching the typed component storage. Bit-identical to
         // the deprecated f64 path — the kernel itself extracts SI base
         // values from ANISE and re-wraps them.
@@ -590,10 +591,10 @@ pub fn ephemeris_update_system(
             sv.0 = vel_typed;
         }
         if let Some(mut ts) = trans_state {
-            // TranslationalStateC now wraps TranslationalStateTyped<Inertial>;
+            // TranslationalStateC now wraps TranslationalStateTyped<RootInertial>;
             // assign the typed values directly. The frame phantom is
-            // checked at the type level — pos_typed is Position<Inertial>
-            // by construction, matching the storage's Inertial frame.
+            // checked at the type level — pos_typed is Position<RootInertial>
+            // by construction, matching the storage's RootInertial frame.
             ts.0.position = pos_typed;
             ts.0.velocity = vel_typed;
         }
@@ -659,7 +660,7 @@ pub fn force_collection_system(
     ) in &mut query
     {
         let t_struct_body = struct_xform.map_or(glam::DMat3::IDENTITY, |s| *s.0.matrix_ref());
-        // `GravityAccelerationC` stores `Acceleration<Inertial>`; the
+        // `GravityAccelerationC` stores `Acceleration<RootInertial>`; the
         // existing `collect_and_resolve_forces` kernel takes a raw
         // `DVec3`, so drop the phantom here. The kernel's frame
         // contract (gravity in inertial) matches the component's
@@ -700,19 +701,20 @@ pub fn force_collection_system(
         );
 
         // The kernel returns untyped TotalForce / FrameDerivatives;
-        // re-wrap as the component's typed form. The `Inertial` and
+        // re-wrap as the component's typed form. The `RootInertial` and
         // `BodyFrame<SelfRef>` phantoms match the kernel's documented
         // frame contracts (force inertial, torque body).
-        // allowed: typed↔untyped kernel boundary; the kernel signature in
-        // jeod_sim is still untyped, so re-wrapping is the canonical
-        // adapter pattern (analogous to the From<Untyped> impls in
-        // src/components.rs).
-        total.0 = jeod_sim::TotalForceTyped::<jeod_sim::SelfRef, Inertial>::from_untyped_unchecked(
-            &collected,
-        );
+        total.0 =
+            // allowed: typed↔untyped kernel boundary; the kernel signature in
+            // jeod_sim is still untyped, so re-wrapping is the canonical
+            // adapter pattern (analogous to the From<Untyped> impls in
+            // src/components.rs).
+            jeod_sim::TotalForceTyped::<jeod_sim::SelfRef, RootInertial>::from_untyped_unchecked(
+                &collected,
+            );
         let mut frame_derivs =
             // allowed: typed↔untyped kernel boundary, see TotalForceTyped comment above
-            jeod_sim::FrameDerivativesTyped::<Inertial, jeod_sim::SelfRef>::from_untyped_unchecked(
+            jeod_sim::FrameDerivativesTyped::<RootInertial, jeod_sim::SelfRef>::from_untyped_unchecked(
                 &frame_derivs_raw,
             );
 
@@ -724,7 +726,7 @@ pub fn force_collection_system(
             if ef.0.raw_si() != DVec3::ZERO {
                 total.0.force += ef.0;
                 if let Some(mass) = mass {
-                    // `Force<Inertial> / Mass → Acceleration<Inertial>`
+                    // `Force<RootInertial> / Mass → Acceleration<RootInertial>`
                     // is the typed identity here; we go through raw_si
                     // for the scalar inverse_mass multiply (it's an
                     // untyped f64 by design — see jeod_dynamics::mass
@@ -732,7 +734,7 @@ pub fn force_collection_system(
                     let accel_contrib = ef.0.raw_si() * mass.0.inverse_mass;
                     frame_derivs.trans_accel +=
                         // allowed: scalar inverse_mass is untyped by design; rewrap.
-                        Acceleration::<Inertial>::from_raw_si(accel_contrib);
+                        Acceleration::<RootInertial>::from_raw_si(accel_contrib);
                 }
             }
         }
@@ -818,7 +820,7 @@ pub fn integration_system(
     // Helper closure for gravity at an intermediate state — reused by both
     // the standard and coupled dispatch branches. The integrator passes
     // raw `DVec3` per-stage states (the integrator internals are not
-    // yet typed); we wrap into `Position<Inertial>` / `Velocity<Inertial>`
+    // yet typed); we wrap into `Position<RootInertial>` / `Velocity<RootInertial>`
     // for the typed `*_typed` kernels and unwrap before returning.
     //
     // `integ_origin_pos` / `integ_origin_vel` are the per-body integration
@@ -827,9 +829,10 @@ pub fn integration_system(
     // non-root bodies the integ frame may itself be moving, so each
     // RK sub-stage advances the origin linearly by `time_frac * integ_dt`,
     // matching `jeod_runner::run_integration`. Source positions are
-    // similarly interpolated when the integ frame moves, so the gravity
-    // field stays consistent across stages. Issue #71 item 4 (PR #260
-    // round-2 review fixup for moving integ frames).
+    // similarly interpolated when the integ frame moves, so the Newtonian
+    // gravity field stays consistent across stages. PPN (relativistic)
+    // corrections use step-start source state — runner does the same
+    // (`step/integrate.rs:199-202`). Issue #71 item 4 + PR #260 review.
     let eval_gravity = |entity: Entity,
                         controls: &GravityControlsC,
                         pos: DVec3,
@@ -855,9 +858,9 @@ pub fn integration_system(
         // that receives raw `DVec3` per-stage state. These lifts are
         // inside `jeod_sim` boundary territory, not at the Bevy ECS
         // surface that #172 H1 was specifically about.
-        let typed_abs_pos = Position::<Inertial>::from_raw_si(pos + stage_origin_pos); // allowed: integrator-kernel boundary
-        let typed_abs_vel = Velocity::<Inertial>::from_raw_si(vel + integ_origin_vel); // allowed: integrator-kernel boundary
-        let typed_origin = Position::<Inertial>::from_raw_si(stage_origin_pos); // allowed: integrator-kernel boundary
+        let typed_abs_pos = Position::<RootInertial>::from_raw_si(pos + stage_origin_pos); // allowed: integrator-kernel boundary
+        let typed_abs_vel = Velocity::<RootInertial>::from_raw_si(vel + integ_origin_vel); // allowed: integrator-kernel boundary
+        let typed_origin = Position::<RootInertial>::from_raw_si(stage_origin_pos); // allowed: integrator-kernel boundary
 
         // Helper: resolve a source's effective velocity, falling back to
         // `TranslationalStateC.velocity` when the explicit
@@ -904,6 +907,12 @@ pub fn integration_system(
         );
         let mut accel = typed_accel.grav_accel.raw_si();
 
+        // PPN (relativistic) corrections use step-start source positions
+        // and velocities — `jeod_runner::run_integration` snapshots both
+        // outside the per-stage closure (`step/integrate.rs:199-202`),
+        // so per-stage interpolation here would drift from runner.
+        // (Round-2 PR #260 introduced the per-stage interpolation; round
+        // 3 review R1 caught the divergence.)
         let rel = jeod_sim::accumulate_relativistic_corrections_typed(
             typed_abs_pos,
             typed_abs_vel,
@@ -913,17 +922,13 @@ pub fn integration_system(
                     .get(source_entity)
                     .ok()
                     .map(|(s, _, p, v, _, _, ts)| {
-                        let velocity = source_vel(v, ts);
-                        let base_pos = p.0.raw_si();
-                        let stage_pos = if sub_dt != 0.0 {
-                            base_pos + velocity * sub_dt
-                        } else {
-                            base_pos
-                        };
+                        // Step-start values for PPN — runner does the
+                        // same (snapshots `src_pos`/`src_vel` outside
+                        // the per-stage closure).
                         jeod_sim::ResolvedRelativisticSource {
                             mu: s.mu,
-                            position: stage_pos,
-                            velocity,
+                            position: p.0.raw_si(),
+                            velocity: source_vel(v, ts),
                         }
                     })
             },
@@ -994,7 +999,7 @@ pub fn integration_system(
             );
             let t_struct_body = struct_xform.map_or(glam::DMat3::IDENTITY, |s| *s.0.matrix_ref());
             // Drop typed phantoms at the kernel boundary. `total_force`
-            // accumulators are typed (`Force<Inertial>` / `Torque<BodyFrame>`);
+            // accumulators are typed (`Force<RootInertial>` / `Torque<BodyFrame>`);
             // the integrator API still consumes raw `DVec3`.
             let non_grav_non_srp_force = total_force.force.raw_si();
             let constant_torque = total_force.torque.raw_si();
@@ -1034,7 +1039,25 @@ pub fn integration_system(
                     // position — matches JEOD's derivative-class
                     // `RadiationSource::calculate_flux`. Sun position is
                     // step-constant (ephemeris is scheduled-class).
-                    let sun_to_vehicle = stage_trans.position - srp_inputs.sun_position;
+                    //
+                    // RF.10: `srp_inputs.sun_position` is typed
+                    // `Position<RootInertial>` so the structural guard
+                    // refuses subtracting a raw `DVec3` from it. The Bevy
+                    // adapter's bodies integrate in root (documented; the
+                    // `TranslationalStateC` storage carries
+                    // `<RootInertial>`), so labeling stage_trans.position
+                    // as root-inertial is the documented assumption — not
+                    // a lie. The relabel is the typed-quantity boundary
+                    // analog of `TranslationalStateC::from_untyped`.
+                    use jeod_sim::{Position, RootInertial};
+                    let stage_pos_root: Position<RootInertial> =
+                        // allowed: documented Bevy-adapter boundary — bodies
+                        // integrate in root. Same shape as TranslationalStateC's
+                        // From<Untyped> impl. RF.10.
+                        Position::<RootInertial>::from_raw_si(stage_trans.position);
+                    let sun_to_vehicle: Position<RootInertial> =
+                        stage_pos_root - srp_inputs.sun_position;
+                    let sun_to_vehicle = sun_to_vehicle.raw_si();
                     let distance = sun_to_vehicle.length().max(1.0);
                     let stage_flux_inertial_hat = sun_to_vehicle / distance;
                     let stage_flux_mag = jeod_sim::solar_flux_at_distance(distance);
@@ -1088,11 +1111,11 @@ pub fn integration_system(
 
             // Re-wrap kernel-mutated untyped state back into typed
             // components. The frame phantoms are unchanged (the typed
-            // storage's `Inertial` / `BodyFrame<SelfRef>` are the same
+            // storage's `RootInertial` / `BodyFrame<SelfRef>` are the same
             // frames the kernel was operating in).
             // allowed: typed↔untyped kernel boundary (integrate_body_coupled
             // signature is untyped); analogous to From<Untyped> impls.
-            state.0 = jeod_sim::TranslationalStateTyped::<Inertial>::from_untyped_unchecked(
+            state.0 = jeod_sim::TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(
                 &state_untyped,
             );
             if let (Some(rs), Some(ru)) = (rot_state.as_mut(), rot_state_untyped) {
@@ -1115,14 +1138,14 @@ pub fn integration_system(
             // this is a "representative stage" (stage 4) snapshot, same
             // as `RadiationForceC` above.
             // allowed: SRP kernel returns DVec3; re-wrap into the typed
-            // accumulators (`Force<Inertial>` / `Torque<BodyFrame<SelfRef>>`).
-            total_force.force += Force::<Inertial>::from_raw_si(final_srp_inertial_force);
+            // accumulators (`Force<RootInertial>` / `Torque<BodyFrame<SelfRef>>`).
+            total_force.force += Force::<RootInertial>::from_raw_si(final_srp_inertial_force);
             let final_srp_torque_body = t_struct_body * final_srp_torque;
             // allowed: same SRP-kernel boundary.
             total_force.torque += Torque::<BodyFrame<SelfRef>>::from_raw_si(final_srp_torque_body);
             if let (Some(ref mut fd), Some(mass_p)) = (frame_derivs.as_mut(), mass_copy_untyped) {
                 // allowed: typed↔untyped acceleration accumulator boundary.
-                fd.trans_accel += Acceleration::<Inertial>::from_raw_si(
+                fd.trans_accel += Acceleration::<RootInertial>::from_raw_si(
                     final_srp_inertial_force * mass_p.inverse_mass,
                 );
                 // allowed: typed↔untyped angular-acceleration boundary.
@@ -1168,7 +1191,7 @@ pub fn integration_system(
         // canonical adapter step (analogous to From<Untyped> impls).
         state.0 =
             // allowed: typed↔untyped kernel boundary
-            jeod_sim::TranslationalStateTyped::<Inertial>::from_untyped_unchecked(&state_untyped);
+            jeod_sim::TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(&state_untyped);
         if let (Some(rs), Some(ru)) = (rot_state.as_mut(), rot_state_untyped) {
             // allowed: typed↔untyped kernel boundary
             rs.0 = jeod_sim::RotationalStateTyped::<SelfRef>::from_untyped_unchecked(&ru);
@@ -1218,8 +1241,12 @@ pub fn gravity_computation_system(
     )>,
 ) {
     for (entity, state, controls, mut accel, integ_frame) in &mut bodies {
-        // TranslationalStateC stores typed Position<Inertial> /
-        // Velocity<Inertial> directly — read them with no per-step lift.
+        // TranslationalStateC stores typed `Position<IntegrationFrame>` /
+        // `Velocity<IntegrationFrame>` (issue #71 item 4 + #255). For
+        // root-integrated bodies the integ frame numerically equals
+        // root inertial, so the raw values match what gravity wants.
+        // For non-root bodies we shift to absolute root-inertial
+        // coordinates below via `IntegFrameIdC` + `frame_origin_typed`.
         // (Pre-#172-H1 the system extracted raw DVec3 here and called
         // `from_raw_si` to mint typed values; that bypass is gone.)
         let body_pos = state.position;
@@ -1227,13 +1254,16 @@ pub fn gravity_computation_system(
 
         // Integration-frame origin (relative to root). Zero for
         // root-integrated bodies. Issue #71 item 4 + Phase C5: typed
-        // `frame_origin_typed::<Inertial>` returns `Position<Inertial>`
+        // `frame_origin_typed::<RootInertial>` returns `Position<RootInertial>`
         // directly, so no `from_raw_si` lift is needed at the boundary.
         let (integ_origin, integ_origin_vel) = match integ_frame {
             Some(c) if c.0 != root.0 => {
-                jeod_sim::frame_origin_typed::<Inertial>(&frame_tree.0, root.0, c.0)
+                jeod_sim::frame_origin_typed::<RootInertial>(&frame_tree.0, root.0, c.0)
             }
-            _ => (Position::<Inertial>::zero(), Velocity::<Inertial>::zero()),
+            _ => (
+                Position::<RootInertial>::zero(),
+                Velocity::<RootInertial>::zero(),
+            ),
         };
         let abs_pos = body_pos + integ_origin;
 
@@ -1384,10 +1414,18 @@ pub fn aero_drag_system(
         // structural-frame Component still uses raw DVec3; that's the
         // remaining boundary inside the H1 migration).
         let rot_untyped = rot.0.to_untyped();
-        let result = jeod_sim::compute_drag_typed::<SelfRef>(
+        // Bevy adapter stores body velocity as `Velocity<RootInertial>`
+        // (current sims have root=Earth.inertial). Drag's typed sibling
+        // expects `Velocity<PlanetInertial<P>>`; relabel via from_raw_si is
+        // bit-identical and asserts the Earth-orbit assumption.
+        use jeod_sim::{Earth, PlanetInertial, Velocity};
+        // allowed: RootInertial → PlanetInertial<Earth> relabel for the
+        // typed sibling; bit-identical (no arithmetic). Documented at #255.
+        let drag_velocity = Velocity::<PlanetInertial<Earth>>::from_raw_si(state.velocity.raw_si());
+        let result = jeod_sim::compute_drag_typed::<Earth, SelfRef>(
             &drag_config.0,
             atmos,
-            state.velocity,
+            drag_velocity,
             Some(&rot_untyped),
             t_struct_body,
         );
@@ -1461,9 +1499,18 @@ pub fn orbital_elements_system(
             elements.0 = Default::default();
             continue;
         };
-        // Position and velocity are already typed in TranslationalStateC.
+        // Position and velocity are typed `Position<RootInertial>` on the
+        // Bevy adapter (current sims have root=Earth.inertial). Relabel
+        // to `Position<PlanetInertial<Earth>>` for the typed sibling —
+        // bit-identical relabel that asserts the documented assumption.
+        use jeod_sim::{Earth, PlanetInertial, Position, Velocity};
         let mu_typed = jeod_sim::F64Ext::m3_per_s2(source.mu);
-        match jeod_sim::compute_orbital_elements_typed(mu_typed, state.position, state.velocity) {
+        // allowed: RootInertial → PlanetInertial<Earth> relabel for the
+        // typed sibling; bit-identical (no arithmetic). Documented at #255.
+        let pos = Position::<PlanetInertial<Earth>>::from_raw_si(state.position.raw_si());
+        // allowed: same relabel as `pos` above.
+        let vel = Velocity::<PlanetInertial<Earth>>::from_raw_si(state.velocity.raw_si());
+        match jeod_sim::compute_orbital_elements_typed::<Earth>(mu_typed, pos, vel) {
             Ok(oe) => elements.0 = oe,
             Err(_) => elements.0 = Default::default(),
         }
@@ -1500,9 +1547,18 @@ pub fn euler_angles_system(
 /// Placed in `JeodSet::DerivedState`.
 pub fn lvlh_system(mut query: Query<(&TranslationalStateC, &mut LvlhFrameC)>) {
     for (state, mut lvlh) in &mut query {
-        // Typed throughout — TranslationalStateC stores the typed values
-        // and `compute_body_lvlh_frame_typed` consumes them directly.
-        lvlh.0 = jeod_sim::compute_body_lvlh_frame_typed(state.position, state.velocity);
+        // Typed throughout — TranslationalStateC carries `RootInertial`
+        // for the Bevy adapter (current sims have root=Earth.inertial).
+        // The typed sibling expects `PlanetInertial<P>`; relabel via
+        // `from_raw_si` is bit-identical and asserts the documented
+        // assumption that root coincides with Earth.inertial here.
+        use jeod_sim::{Earth, PlanetInertial};
+        // allowed: RootInertial → PlanetInertial<Earth> relabel for the
+        // typed sibling; bit-identical (no arithmetic). Documented at #255.
+        let pos = jeod_sim::Position::<PlanetInertial<Earth>>::from_raw_si(state.position.raw_si());
+        // allowed: same relabel as `pos` above.
+        let vel = jeod_sim::Velocity::<PlanetInertial<Earth>>::from_raw_si(state.velocity.raw_si());
+        lvlh.0 = jeod_sim::compute_body_lvlh_frame_typed::<Earth>(pos, vel);
     }
 }
 
@@ -1522,8 +1578,12 @@ pub fn geodetic_system(
         // remains, which is the typed-units boundary on planet shape
         // (a config-time conversion, not a per-step bypass).
         use jeod_sim::F64Ext;
-        geodetic.0 = jeod_sim::compute_body_geodetic_typed(
-            state.position,
+        use jeod_sim::{Earth, PlanetInertial};
+        // allowed: RootInertial → PlanetInertial<Earth> relabel for the
+        // typed sibling; bit-identical (no arithmetic). Documented at #255.
+        let pos = jeod_sim::Position::<PlanetInertial<Earth>>::from_raw_si(state.position.raw_si());
+        geodetic.0 = jeod_sim::compute_body_geodetic_typed::<Earth>(
+            pos,
             rot.0.matrix_ref(),
             planet.r_eq.m(),
             planet.r_pol.m(),
@@ -1753,7 +1813,10 @@ pub fn flat_plate_srp_system(
                 // stays at the zero cleared above — the integration system
                 // writes a representative final-stage value.
                 flat_config.stage_inputs = Some(jeod_sim::FlatPlateStageInputs {
-                    sun_position: sun_pos_raw,
+                    // `sun_state.position` is the typed component value;
+                    // pass it directly so the typed phantom carries into
+                    // the RK4 derivative closure (RF.10 structural guard).
+                    sun_position: sun_state.position,
                     illum_factor,
                     center_grav,
                 });

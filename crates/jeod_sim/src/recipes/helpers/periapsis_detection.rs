@@ -83,16 +83,16 @@ where
     use jeod_math::OrbitalElements;
     use jeod_quantities::aliases::{Position, Velocity};
     use jeod_quantities::ext::F64Ext;
-    use jeod_quantities::frame::Inertial;
+    use jeod_quantities::frame::{Earth, PlanetInertial};
 
     let mu_typed = mu.m3_per_s2();
     let mut det = PeriapsisDetector::new();
     let mut events = Vec::new();
     for (t, r, v) in samples {
         if det.observe(r, v) {
-            let pos_typed = Position::<Inertial>::from_raw_si(r);
-            let vel_typed = Velocity::<Inertial>::from_raw_si(v);
-            let oe = OrbitalElements::from_cartesian_typed(mu_typed, pos_typed, vel_typed)
+            let pos_typed = Position::<PlanetInertial<Earth>>::from_raw_si(r);
+            let vel_typed = Velocity::<PlanetInertial<Earth>>::from_raw_si(v);
+            let oe = OrbitalElements::from_cartesian_typed::<Earth>(mu_typed, pos_typed, vel_typed)
                 .unwrap_or_else(|e| {
                     panic!(
                         "periapsis_detection: from_cartesian_typed failed at t={t}, \

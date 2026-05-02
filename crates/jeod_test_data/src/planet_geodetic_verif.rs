@@ -31,21 +31,34 @@ use glam::DVec3;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PlanetFixedSeed {
     /// `update_from_cart`: Cartesian PCPF position (m).
-    Cartesian { read_time: f64, cart_m: DVec3 },
+    Cartesian {
+        /// `add_read` time tag from the JEOD `input.py`.
+        read_time: f64,
+        /// Seed Cartesian PCPF position in metres.
+        cart_m: DVec3,
+    },
     /// `update_from_spher`: Spherical altitude (m), latitude (rad),
     /// longitude (rad).
     Spherical {
+        /// `add_read` time tag from the JEOD `input.py`.
         read_time: f64,
+        /// Spherical altitude above the mean equatorial radius, in metres.
         altitude_m: f64,
+        /// Geocentric latitude in radians.
         latitude_rad: f64,
+        /// Longitude in radians.
         longitude_rad: f64,
     },
     /// `update_from_ellip`: Elliptical (geodetic) altitude (m),
     /// latitude (rad), longitude (rad).
     Elliptical {
+        /// `add_read` time tag from the JEOD `input.py`.
         read_time: f64,
+        /// Geodetic altitude above the reference ellipsoid, in metres.
         altitude_m: f64,
+        /// Geodetic latitude in radians.
         latitude_rad: f64,
+        /// Longitude in radians.
         longitude_rad: f64,
     },
 }

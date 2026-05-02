@@ -5,24 +5,58 @@
 //! and ECS adapters. Phase 6 of #101 relocated this type out of `jeod_runner`
 //! so the runner and the future Bevy adapter share one description.
 
-use glam::{DMat3, DVec3};
+use glam::DMat3;
 
 use crate::planet_config::PlanetConfig;
 use crate::rotation_model::RotationModel;
 use jeod_gravity::{GravityModel, GravitySource, SphericalHarmonicsData};
+use jeod_quantities::aliases::{Position, Velocity};
+use jeod_quantities::frame::RootInertial;
 
 /// Entry in the gravity source table.
 ///
 /// Gravity sources are referenced by index (`usize`) from body gravity controls.
+///
+/// # RF.10 structural guard
+///
+/// `position` and `velocity` are typed `Position<RootInertial>` /
+/// `Velocity<RootInertial>` — gravity arithmetic in `accumulate_gravity`
+/// does `body_root_pos - source.position` and the structural guard
+/// requires the body to be in the same frame. Mixing
+/// `Position<IntegrationFrame>` (the body's untyped storage) with
+/// `Position<RootInertial>` (the source) is a compile error, forcing
+/// callers through `body.trans.to_inertial(&integ_origin)`.
+///
+/// **`Position<IntegrationFrame> - source.position` does not compile:**
+///
+/// ```compile_fail
+/// use jeod_sim::{GravitySourceEntry, GravitySource, GravityModel};
+/// use jeod_quantities::prelude::*;
+/// let entry = GravitySourceEntry {
+///     source: GravitySource { mu: 1.0, model: GravityModel::PointMass },
+///     position: Position::<RootInertial>::zero(),
+///     velocity: Velocity::<RootInertial>::zero(),
+///     t_inertial_pfix: None,
+///     rotation_model: jeod_sim::RotationModel::None,
+///     delta_c20: 0.0,
+///     tidal_config: None,
+///     planet_omega: 0.0,
+///     central: true,
+/// };
+/// let body_pos: Position<IntegrationFrame> = Position::zero();
+/// let _bug = body_pos - entry.position;   // frames mismatch
+/// ```
 pub struct GravitySourceEntry {
     /// Physical gravity source (mu, model).
     pub source: GravitySource,
-    /// Position in the inertial frame (m). For Earth-centered sims, Earth is at origin.
-    pub position: DVec3,
-    /// Velocity in the inertial frame (m/s). Required for relativistic corrections.
-    /// Zero for stationary sources (e.g., central body at origin).
-    pub velocity: DVec3,
-    /// Inertial-to-planet-fixed rotation matrix. Updated each step when
+    /// Position in the simulation's root inertial frame (m). For
+    /// Earth-centered sims, Earth is at origin.
+    pub position: Position<RootInertial>,
+    /// Velocity in the simulation's root inertial frame (m/s). Required
+    /// for relativistic corrections. Zero for stationary sources (e.g.,
+    /// central body at origin).
+    pub velocity: Velocity<RootInertial>,
+    /// RootInertial-to-planet-fixed rotation matrix. Updated each step when
     /// `rotation_model` is not `None`. If `None`, no rotation is applied
     /// (point-mass only).
     pub t_inertial_pfix: Option<DMat3>,
@@ -49,11 +83,15 @@ impl GravitySourceEntry {
     ///
     /// `rotation_model` defaults to `None`. Set it explicitly after construction
     /// (or use struct literal syntax) to enable per-step rotation updates.
-    pub fn new(source: GravitySource, position: DVec3, t_inertial_pfix: Option<DMat3>) -> Self {
+    pub fn new(
+        source: GravitySource,
+        position: Position<RootInertial>,
+        t_inertial_pfix: Option<DMat3>,
+    ) -> Self {
         Self {
             source,
             position,
-            velocity: DVec3::ZERO,
+            velocity: Velocity::<RootInertial>::zero(),
             t_inertial_pfix,
             rotation_model: RotationModel::None,
             planet_omega: 0.0,
@@ -74,8 +112,8 @@ impl GravitySourceEntry {
                 mu: planet.shape.mu,
                 model: GravityModel::PointMass,
             },
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
+            position: Position::<RootInertial>::zero(),
+            velocity: Velocity::<RootInertial>::zero(),
             t_inertial_pfix: if planet.rotation_model != RotationModel::None {
                 Some(DMat3::IDENTITY)
             } else {
@@ -100,8 +138,8 @@ impl GravitySourceEntry {
                 mu: sh_data.mu,
                 model: GravityModel::SphericalHarmonics(Box::new(sh_data)),
             },
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
+            position: Position::<RootInertial>::zero(),
+            velocity: Velocity::<RootInertial>::zero(),
             t_inertial_pfix: if planet.rotation_model != RotationModel::None {
                 Some(DMat3::IDENTITY)
             } else {
@@ -119,14 +157,14 @@ impl GravitySourceEntry {
     ///
     /// Point-mass only, no rotation. Typical use: Sun or Moon as a third-body
     /// perturbation in Earth-centered integration.
-    pub fn third_body(planet: &PlanetConfig, position: DVec3) -> Self {
+    pub fn third_body(planet: &PlanetConfig, position: Position<RootInertial>) -> Self {
         Self {
             source: GravitySource {
                 mu: planet.shape.mu,
                 model: GravityModel::PointMass,
             },
             position,
-            velocity: DVec3::ZERO,
+            velocity: Velocity::<RootInertial>::zero(),
             t_inertial_pfix: None,
             rotation_model: RotationModel::None,
             planet_omega: 0.0,

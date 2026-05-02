@@ -28,6 +28,7 @@
 //! dependency.
 
 #![forbid(unsafe_code)]
+#![deny(missing_docs)]
 
 pub use jeod_quantities::prelude::*;
 

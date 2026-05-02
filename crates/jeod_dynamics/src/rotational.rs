@@ -1,3 +1,12 @@
+//! Rotational state: attitude quaternion, angular velocity, and the
+//! integration kernels that propagate them under applied torque.
+//!
+//! Mirrors the rotational side of JEOD's
+//! [`models/dynamics/dyn_body/`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/dynamics/dyn_body/)
+//! integrator (v5.4.0). Quaternions follow the JEOD scalar-first
+//! left-transformation convention; the typed siblings live in
+//! [`jeod_quantities::body_attitude`].
+
 use core::marker::PhantomData;
 
 use crate::state::TranslationalState;
@@ -34,7 +43,9 @@ impl Default for RotationalState {
 /// Combined translational + rotational state for 6-DOF integration.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct SixDofState {
+    /// Translational position + velocity.
     pub trans: TranslationalState,
+    /// Attitude quaternion + angular velocity.
     pub rot: RotationalState,
 }
 
@@ -45,7 +56,7 @@ pub struct SixDofState {
 /// Angular velocity carries the `BodyFrame<V>` phantom tag.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RotationalStateTyped<V: Vehicle> {
-    /// Inertial → body attitude (typed wrapper around a witnessed
+    /// RootInertial → body attitude (typed wrapper around a witnessed
     /// scalar-first / left-transformation quaternion).
     pub q_inertial_body: BodyAttitude<V>,
     /// Angular velocity in `BodyFrame<V>`.
@@ -128,7 +139,7 @@ pub fn compute_rotational_acceleration(
     // Angular momentum: L = I * omega
     let ang_mom = *inertia * ang_vel;
 
-    // Inertial (gyroscopic) torque: omega x L
+    // RootInertial (gyroscopic) torque: omega x L
     let inertial_torq = ang_vel.cross(ang_mom);
 
     // Net body-frame torque: external minus gyroscopic

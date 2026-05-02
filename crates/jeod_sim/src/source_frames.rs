@@ -17,7 +17,12 @@ use jeod_frames::FrameId;
 /// caller uses for `GravityControls<usize>`.
 #[derive(Debug, Clone, Copy)]
 pub struct SourceFrameIds {
-    /// Inertial frame for this source (e.g., "Earth.inertial").
+    /// Inertial frame node for this source (e.g., `"Earth.inertial"`).
+    /// In `jeod_runner`, this equals `root_frame_id` for the central
+    /// body; otherwise it is a non-central child of the root. The Bevy
+    /// adapter never maps any source to the root, so all sources land
+    /// as non-central children — see `register_source_frames_system`
+    /// for the divergence rationale.
     pub inertial: FrameId,
     /// Planet-fixed frame (e.g., "Earth.pfix"), if the source has a rotation
     /// model. `None` for sources with [`crate::RotationModel::None`].

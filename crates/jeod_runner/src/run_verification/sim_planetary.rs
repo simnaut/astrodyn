@@ -12,7 +12,6 @@
 //! SIM_Planetary stores them inline rather than in a separate
 //! Modified_data file.
 
-use glam::DVec3;
 use jeod_sim::recipes::verification::{
     CsvReference, InitialConditions, Tolerances, VerificationCase,
 };
@@ -45,7 +44,7 @@ fn build_planetary(init: &InitialConditions) -> SimulationBuilder {
                 mu: mu_earth,
                 model: GravityModel::PointMass,
             },
-            DVec3::ZERO,
+            jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
             None,
         );
         e.central = true;

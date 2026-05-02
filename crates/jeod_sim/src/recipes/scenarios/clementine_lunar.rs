@@ -9,6 +9,7 @@
 
 use glam::DVec3;
 use jeod_gravity::GravityControl;
+use jeod_quantities::ext::Vec3Ext;
 
 use crate::recipes::{constants, earth, epoch, moon, sun, vehicle};
 use crate::vehicle_builder::VehicleBuilder;
@@ -43,11 +44,15 @@ pub fn clementine_lunar() -> SimulationBuilder {
     let moon_idx = sb.add_source("Moon", moon::point_mass());
     let earth_idx = sb.add_source(
         "Earth",
-        earth::third_body(DVec3::new(-3.85e8, 0.0, 0.0)), // approx Earth–Moon distance
+        earth::third_body(
+            DVec3::new(-3.85e8, 0.0, 0.0).m_at::<jeod_quantities::frame::RootInertial>(),
+        ), // approx Earth–Moon distance
     );
     let sun_idx = sb.add_source(
         "Sun",
-        sun::third_body(DVec3::new(1.496e11, 0.0, 0.0)), // approx 1 AU
+        sun::third_body(
+            DVec3::new(1.496e11, 0.0, 0.0).m_at::<jeod_quantities::frame::RootInertial>(),
+        ), // approx 1 AU
     );
     sb = sb.sun(sun_idx);
 

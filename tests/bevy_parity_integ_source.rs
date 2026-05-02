@@ -171,7 +171,13 @@ fn tier3_bevy_integ_source_lunar_orbit_matches_simulation() {
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
     let _earth_idx = sim.add_source("Earth", GravitySourceEntry::central_body(&EARTH));
-    let moon_idx = sim.add_source("Moon", GravitySourceEntry::third_body(&MOON, MOON_OFFSET));
+    let moon_idx = sim.add_source(
+        "Moon",
+        GravitySourceEntry::third_body(
+            &MOON,
+            jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(MOON_OFFSET),
+        ),
+    );
 
     sim.add_body(VehicleConfig {
         trans: lunar_initial_trans(),
@@ -291,7 +297,13 @@ fn tier3_bevy_integ_source_moving_moon_matches_simulation() {
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
     let _earth_idx = sim.add_source("Earth", GravitySourceEntry::central_body(&EARTH));
-    let moon_idx = sim.add_source("Moon", GravitySourceEntry::third_body(&MOON, MOON_OFFSET));
+    let moon_idx = sim.add_source(
+        "Moon",
+        GravitySourceEntry::third_body(
+            &MOON,
+            jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(MOON_OFFSET),
+        ),
+    );
     sim.set_source_state(moon_idx, MOON_OFFSET, moon_vel);
 
     sim.add_body(VehicleConfig {

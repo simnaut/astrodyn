@@ -38,15 +38,25 @@ use crate::body_init_fixtures::{
 /// - `"s"` -> seconds (no conversion)
 #[derive(Debug, Clone)]
 pub struct OrbitalInitData {
-    pub semi_major_axis: f64, // meters (converted from km)
+    /// Semi-major axis in metres (converted from km in the source).
+    pub semi_major_axis: f64,
+    /// Eccentricity (dimensionless).
     pub eccentricity: f64,
-    pub inclination: f64,            // radians (converted from degrees)
-    pub ascending_node: f64,         // radians
-    pub arg_periapsis: f64,          // radians
-    pub time_periapsis: Option<f64>, // seconds
-    pub mean_anomaly: Option<f64>,   // radians
-    pub true_anomaly: Option<f64>,   // radians
+    /// Inclination in radians (converted from degrees in the source).
+    pub inclination: f64,
+    /// Right Ascension of the Ascending Node in radians.
+    pub ascending_node: f64,
+    /// Argument of periapsis in radians.
+    pub arg_periapsis: f64,
+    /// Time-since-periapsis in seconds, when used.
+    pub time_periapsis: Option<f64>,
+    /// Mean anomaly in radians, when used.
+    pub mean_anomaly: Option<f64>,
+    /// True anomaly in radians, when used.
+    pub true_anomaly: Option<f64>,
+    /// JEOD `planet_name` (e.g. `"Earth"`, `"Mars"`).
     pub planet_name: String,
+    /// JEOD `reference_frame` selector (e.g. `"earth.inertial"`).
     pub reference_frame: String,
 }
 
@@ -228,8 +238,11 @@ fn convert_units(val: f64, unit: &str) -> Result<f64, BodyInitFixtureError> {
 /// `trick.attach_units("m/s", [...])` wrappers.
 #[derive(Debug, Clone)]
 pub struct TransStateData {
-    pub position: [f64; 3], // meters
-    pub velocity: [f64; 3], // m/s
+    /// Position in metres.
+    pub position: [f64; 3],
+    /// Velocity in m/s.
+    pub velocity: [f64; 3],
+    /// JEOD `reference_frame` selector.
     pub reference_frame: String,
 }
 

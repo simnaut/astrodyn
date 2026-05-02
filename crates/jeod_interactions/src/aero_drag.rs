@@ -12,7 +12,7 @@
 use glam::{DMat3, DVec3};
 use jeod_atmosphere::AtmosphereState;
 use jeod_quantities::aliases::{Force, Velocity};
-use jeod_quantities::frame::{Inertial, StructuralFrame, Vehicle};
+use jeod_quantities::frame::{Planet, PlanetInertial, StructuralFrame, Vehicle};
 use uom::si::f64::{Area, MassDensity, Ratio};
 
 /// Vehicle drag configuration for the ballistic (default) model.
@@ -117,8 +117,13 @@ pub fn compute_ballistic_drag(
 /// [`MassDensity`] (kg/m³).
 #[derive(Debug, Clone, Copy)]
 pub struct DragConfigTyped {
+    /// Drag coefficient (dimensionless).
     pub cd: Ratio,
+    /// Reference area exposed to the flow.
     pub area: Area,
+    /// Optional override density. When `Some`, the drag kernel uses
+    /// this value instead of querying the atmosphere model — used for
+    /// constant-density unit tests.
     pub constant_density: Option<MassDensity>,
 }
 
@@ -154,7 +159,9 @@ impl DragConfigTyped {
 /// rotates inertial vectors *into*).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AerodynamicForceTyped<V: Vehicle> {
+    /// Aerodynamic force in the structural frame of vehicle `V`.
     pub force: Force<StructuralFrame<V>>,
+    /// Aerodynamic torque about the structural-frame origin of vehicle `V`.
     pub torque: jeod_quantities::aliases::Torque<StructuralFrame<V>>,
 }
 
@@ -193,12 +200,19 @@ impl<V: Vehicle> AerodynamicForceTyped<V> {
 /// Typed sibling of [`compute_ballistic_drag`].
 ///
 /// Same numeric kernel — wraps [`DragConfigTyped`] / typed
-/// [`Velocity<Inertial>`] inputs and unwraps to the existing
-/// implementation. Returns [`AerodynamicForceTyped<V>`] (with both
-/// force and torque) for surface parity with the untyped form. The
-/// torque is always zero for the ballistic model (force acts through
-/// the center of mass), but the field is preserved so the typed
-/// surface stays isomorphic with [`AerodynamicForce`].
+/// [`Velocity<PlanetInertial<P>>`] inputs and unwraps to the existing
+/// implementation. The velocity is in the *atmosphere planet's*
+/// inertial frame (matching the corotation wind in `atmos.wind` which
+/// is computed via `omega × planet_inertial_position`), not the
+/// simulation's root inertial frame — so the typed signature requires
+/// `PlanetInertial<P>` to make the planet identity explicit at the
+/// call site (RF.10).
+///
+/// Returns [`AerodynamicForceTyped<V>`] (with both force and torque)
+/// for surface parity with the untyped form. The torque is always
+/// zero for the ballistic model (force acts through the center of
+/// mass), but the field is preserved so the typed surface stays
+/// isomorphic with [`AerodynamicForce`].
 ///
 /// Output frame is `StructuralFrame<V>` — the frame
 /// `t_inertial_struct` rotates inertial vectors *into*. Callers who
@@ -206,10 +220,10 @@ impl<V: Vehicle> AerodynamicForceTyped<V> {
 /// `t_inertial_struct.transpose()`; the typed signature makes the
 /// source frame explicit so that conversion is a deliberate step
 /// rather than a silent assumption.
-pub fn compute_ballistic_drag_typed<V: Vehicle>(
+pub fn compute_ballistic_drag_typed<P: Planet, V: Vehicle>(
     config: &DragConfigTyped,
     atmos: &AtmosphereState,
-    inertial_velocity: Velocity<Inertial>,
+    inertial_velocity: Velocity<PlanetInertial<P>>,
     t_inertial_struct: &DMat3,
 ) -> AerodynamicForceTyped<V> {
     let untyped = compute_ballistic_drag(
@@ -296,10 +310,10 @@ mod typed_tests {
         );
 
         let untyped = compute_ballistic_drag(&config, &atmos, velocity, &t_is);
-        let typed = compute_ballistic_drag_typed::<TestVehicle>(
+        let typed = compute_ballistic_drag_typed::<jeod_quantities::frame::Earth, TestVehicle>(
             &DragConfigTyped::from_untyped_unchecked(&config),
             &atmos,
-            Velocity::<Inertial>::from_raw_si(velocity),
+            Velocity::<PlanetInertial<jeod_quantities::frame::Earth>>::from_raw_si(velocity),
             &t_is,
         );
 
@@ -314,14 +328,14 @@ mod typed_tests {
         // same numeric output (using `.m2()` from F64Ext for area;
         // Ratio is constructed directly since F64Ext doesn't yet
         // have a bare `.ratio()` constructor).
-        let from_ext = compute_ballistic_drag_typed::<TestVehicle>(
+        let from_ext = compute_ballistic_drag_typed::<jeod_quantities::frame::Earth, TestVehicle>(
             &DragConfigTyped {
                 cd: Ratio::new::<ratio>(2.2),
                 area: 4.5_f64.m2(),
                 constant_density: None,
             },
             &atmos,
-            Velocity::<Inertial>::from_raw_si(velocity),
+            Velocity::<PlanetInertial<jeod_quantities::frame::Earth>>::from_raw_si(velocity),
             &t_is,
         );
         assert_eq!(from_ext.force.raw_si(), untyped.force);

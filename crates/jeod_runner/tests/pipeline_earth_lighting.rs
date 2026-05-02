@@ -41,8 +41,8 @@ fn pipeline_earth_lighting_smoke() {
                 mu: mu_earth,
                 model: GravityModel::PointMass,
             },
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: None,
             delta_c20: 0.0,
             rotation_model: RotationModel::default(),
@@ -57,7 +57,7 @@ fn pipeline_earth_lighting_smoke() {
     let (initial_sun_typed, _) = ephemeris
         .get_earth_centered_state_typed(EphemerisBody::Sun, j2000_jd)
         .expect("Sun position at J2000");
-    let initial_sun = initial_sun_typed.raw_si();
+    let _initial_sun = initial_sun_typed.raw_si();
     let sun = sim.add_source(
         "Sun",
         GravitySourceEntry {
@@ -65,8 +65,8 @@ fn pipeline_earth_lighting_smoke() {
                 mu: 0.0,
                 model: GravityModel::PointMass,
             },
-            position: initial_sun,
-            velocity: DVec3::ZERO,
+            position: initial_sun_typed,
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: None,
             delta_c20: 0.0,
             rotation_model: RotationModel::default(),
@@ -82,7 +82,7 @@ fn pipeline_earth_lighting_smoke() {
     let (initial_moon_typed, _) = ephemeris
         .get_earth_centered_state_typed(EphemerisBody::Moon, j2000_jd)
         .expect("Moon position at J2000");
-    let initial_moon = initial_moon_typed.raw_si();
+    let _initial_moon = initial_moon_typed.raw_si();
     let moon = sim.add_source(
         "Moon",
         GravitySourceEntry {
@@ -90,8 +90,8 @@ fn pipeline_earth_lighting_smoke() {
                 mu: 0.0,
                 model: GravityModel::PointMass,
             },
-            position: initial_moon,
-            velocity: DVec3::ZERO,
+            position: initial_moon_typed,
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: None,
             delta_c20: 0.0,
             rotation_model: RotationModel::default(),

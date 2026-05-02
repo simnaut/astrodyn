@@ -62,7 +62,11 @@ fn tier3_bevy_point_mass_sixdof() {
     // ── Simulation ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
-    let mut earth_entry = GravitySourceEntry::new(earth_source(), DVec3::ZERO, None);
+    let mut earth_entry = GravitySourceEntry::new(
+        earth_source(),
+        jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+        None,
+    );
     earth_entry.central = true;
     let earth_idx = sim.add_source("Earth", earth_entry);
     sim.add_body(new_sim_body_sixdof(earth_idx, false));
@@ -323,7 +327,7 @@ fn tier3_sim_time_reversal_round_trip() {
             mu: MU_EARTH,
             model: GravityModel::PointMass,
         },
-        DVec3::ZERO,
+        jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
         None,
     );
     earth_entry.central = true;
@@ -381,7 +385,7 @@ fn tier3_sim_relative_state_consistency() {
             mu: MU_EARTH,
             model: GravityModel::PointMass,
         },
-        DVec3::ZERO,
+        jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
         None,
     );
     earth_entry.central = true;
@@ -515,8 +519,8 @@ fn tier3_sim_mars_rotation_dispatch() {
                 mu: mars_mu,
                 model: GravityModel::PointMass,
             },
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: Some(glam::DMat3::IDENTITY),
             rotation_model: RotationModel::MarsIAU,
             delta_c20: 0.0,
@@ -570,8 +574,8 @@ fn tier3_sim_multi_source_rotation() {
                 mu: MU_EARTH,
                 model: GravityModel::PointMass,
             },
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: Some(glam::DMat3::IDENTITY),
             rotation_model: RotationModel::EarthRNP,
             delta_c20: 0.0,
@@ -588,8 +592,10 @@ fn tier3_sim_multi_source_rotation() {
                 mu: 4.282_837_452_7e13,
                 model: GravityModel::PointMass,
             },
-            position: DVec3::new(2.28e11, 0.0, 0.0),
-            velocity: DVec3::ZERO,
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(DVec3::new(
+                2.28e11, 0.0, 0.0,
+            )),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: Some(glam::DMat3::IDENTITY),
             rotation_model: RotationModel::MarsIAU,
             delta_c20: 0.0,

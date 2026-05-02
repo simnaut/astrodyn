@@ -1,3 +1,15 @@
+//! [`SimulationTime`] — the per-step time-state resource that the
+//! integration loop advances each step and that downstream consumers
+//! (gravity, ephemeris, atmosphere) read from.
+//!
+//! Mirrors JEOD's
+//! [`TimeManager::time`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/environment/time/src/time_manager.cc)
+//! aggregate from JEOD v5.4.0. All time scales live in a single struct
+//! mutated through `&mut self`, so any reader holding a shared borrow
+//! observes a consistent snapshot — the exclusive borrow on the update
+//! path (which calls `recompute_derived` before returning) prevents
+//! mid-step partial reads.
+
 use crate::epoch::{J2000_NOON_TJT, J2000_TAI_TJT, SECONDS_PER_DAY, TAI_TT_OFFSET};
 use crate::leap_second::LeapSecondTable;
 use crate::time_converter_tai_tdb;

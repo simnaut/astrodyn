@@ -96,7 +96,7 @@ pub fn compute_relative_state_typed<From: Frame, To: Frame>(
 mod tests {
     use super::*;
     use jeod_frames::{RefFrameKind, RefFrameRot, RefFrameState, RefFrameTrans};
-    use jeod_quantities::frame::{Ecef, Inertial};
+    use jeod_quantities::frame::{Ecef, RootInertial};
 
     #[test]
     fn frame_origin_typed_matches_untyped() {
@@ -116,7 +116,7 @@ mod tests {
         );
 
         let (untyped_pos, untyped_vel) = frame_origin(&tree, root, child);
-        let (typed_pos, typed_vel) = frame_origin_typed::<Inertial>(&tree, root, child);
+        let (typed_pos, typed_vel) = frame_origin_typed::<RootInertial>(&tree, root, child);
 
         assert_eq!(typed_pos.raw_si(), untyped_pos);
         assert_eq!(typed_vel.raw_si(), untyped_vel);
@@ -126,7 +126,7 @@ mod tests {
     fn frame_origin_typed_root_is_zero() {
         let mut tree = FrameTree::new();
         let root = tree.add_root("root".into(), RefFrameKind::Inertial);
-        let (typed_pos, typed_vel) = frame_origin_typed::<Inertial>(&tree, root, root);
+        let (typed_pos, typed_vel) = frame_origin_typed::<RootInertial>(&tree, root, root);
         assert_eq!(typed_pos.raw_si(), DVec3::ZERO);
         assert_eq!(typed_vel.raw_si(), DVec3::ZERO);
     }
@@ -149,7 +149,7 @@ mod tests {
         );
 
         let untyped = tree.compute_relative_state(root, child);
-        let typed = compute_relative_state_typed::<Inertial, Ecef>(&tree, root, child);
+        let typed = compute_relative_state_typed::<RootInertial, Ecef>(&tree, root, child);
 
         assert_eq!(typed.trans.position.raw_si(), untyped.trans.position);
         assert_eq!(typed.trans.velocity.raw_si(), untyped.trans.velocity);

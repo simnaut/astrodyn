@@ -31,7 +31,9 @@ use crate::body_init_fixtures::{load_vehicle_bundle, BodyInitFixtureError, Refer
 /// and [`ReferenceState::velocity_typed`] to obtain frame-tagged typed views.
 #[derive(Debug, Clone)]
 pub struct ReferenceState {
+    /// Position in metres, in the inertial (ICRF) frame.
     pub position: DVec3,
+    /// Velocity in m/s, in the inertial (ICRF) frame.
     pub velocity: DVec3,
 }
 
@@ -40,16 +42,16 @@ impl ReferenceState {
     ///
     /// This wraps the raw SI-unit `DVec3` (meters) without conversion.
     #[inline]
-    pub fn position_typed(&self) -> Position<Inertial> {
-        self.position.m_at::<Inertial>()
+    pub fn position_typed(&self) -> Position<RootInertial> {
+        self.position.m_at::<RootInertial>()
     }
 
     /// Frame-tagged typed velocity in the inertial (ICRF) frame.
     ///
     /// This wraps the raw SI-unit `DVec3` (m/s) without conversion.
     #[inline]
-    pub fn velocity_typed(&self) -> Velocity<Inertial> {
-        self.velocity.m_per_s_at::<Inertial>()
+    pub fn velocity_typed(&self) -> Velocity<RootInertial> {
+        self.velocity.m_per_s_at::<RootInertial>()
     }
 }
 

@@ -1,12 +1,16 @@
 [package]
 name = "jeod_dynamics"
 description = "Rigid-body dynamics, integrators (RK4, RKF45, GJ, ABM4), mass tree, and body initialization"
+readme = "README.md"
 keywords = ["orbital-mechanics", "dynamics", "integrator", "aerospace", "simulation"]
 categories = ["science", "aerospace", "simulation"]
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
 
 [dependencies]
 jeod_frames = { path = "../jeod_frames", version = "0.1.0" }

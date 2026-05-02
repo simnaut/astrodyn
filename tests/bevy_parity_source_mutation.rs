@@ -144,7 +144,10 @@ fn tier3_bevy_source_mutator_set_state_matches_runner() {
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = Simulation::new(time, DT);
     sim.add_source("Earth", GravitySourceEntry::central_body(&EARTH));
-    let moon_idx = sim.add_source("Moon", GravitySourceEntry::third_body(&MOON, DVec3::ZERO));
+    let moon_idx = sim.add_source(
+        "Moon",
+        GravitySourceEntry::third_body(&MOON, jeod_sim::Position::<jeod_sim::RootInertial>::zero()),
+    );
     sim.set_source_state(moon_idx, new_pos, new_vel);
 
     let sim_pos = sim.source_position(moon_idx);

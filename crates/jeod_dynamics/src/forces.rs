@@ -1,8 +1,18 @@
+//! Per-body force / torque accumulators consumed by the integrator.
+//!
+//! Mirrors the force-collection step of JEOD's
+//! [`models/dynamics/dyn_body/`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/dynamics/dyn_body/)
+//! pipeline (v5.4.0). Interactions push contributions into these
+//! accumulators; the integrator reads them in the `ForceCollectionSet`
+//! schedule slot. Holds [`GravityAcceleration`], [`TotalForce`], the
+//! per-frame typed siblings, and helpers like
+//! `accumulate_gravity` and [`compute_translational_acceleration`].
+
 use core::marker::PhantomData;
 
 use glam::{DMat3, DVec3};
 use jeod_quantities::aliases::{Acceleration, Force, Torque};
-use jeod_quantities::frame::{BodyFrame, Frame, Inertial, Vehicle};
+use jeod_quantities::frame::{BodyFrame, Frame, RootInertial, Vehicle};
 
 /// Gravitational acceleration, gradient tensor, and potential for a body.
 ///
@@ -44,9 +54,13 @@ impl Default for GravityAcceleration {
 /// `jeod_quantities` because they are evaluated within a single frame
 /// and never composed across frames in the dynamics layer.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct GravityAccelerationTyped<F: Frame = Inertial> {
+pub struct GravityAccelerationTyped<F: Frame = RootInertial> {
+    /// Gravitational acceleration in frame `F`.
     pub grav_accel: Acceleration<F>,
+    /// Gravity-gradient tensor (`1/s²`).
     pub grav_grad: DMat3,
+    /// Gravitational potential (`m²/s²`, JEOD sign convention is
+    /// positive for bound orbits).
     pub grav_pot: f64,
 }
 
@@ -84,15 +98,21 @@ impl<F: Frame> GravityAccelerationTyped<F> {
     }
 }
 
+/// Net body force / torque, the integrator's input each step.
+///
+/// Force is expressed in the integration frame (typically J2000 ECI);
+/// torque is in the body frame.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct TotalForce {
-    pub force: DVec3,  // N, in integration frame
-    pub torque: DVec3, // N*m, in body frame
+    /// Net force in newtons, in the integration frame.
+    pub force: DVec3,
+    /// Net torque in N·m, in the body frame.
+    pub torque: DVec3,
 }
 
 /// Typed sibling of [`TotalForce`].
 ///
-/// `force` carries the integration frame `F` (defaults to `Inertial`
+/// `force` carries the integration frame `F` (defaults to `RootInertial`
 /// to match the existing untyped struct's "force in integration
 /// frame" convention); `torque` is in `BodyFrame<V>` (JEOD
 /// convention). The two type parameters are independent so a body
@@ -100,8 +120,10 @@ pub struct TotalForce {
 /// separate body axis. `V` has no default because no production
 /// vehicle marker exists yet (Phase 5 territory).
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct TotalForceTyped<V: Vehicle, F: Frame = Inertial> {
+pub struct TotalForceTyped<V: Vehicle, F: Frame = RootInertial> {
+    /// Net force in the integration frame `F`.
     pub force: Force<F>,
+    /// Net torque about the body-frame origin of vehicle `V`.
     pub torque: Torque<BodyFrame<V>>,
     _v: PhantomData<V>,
 }
@@ -139,10 +161,15 @@ impl<V: Vehicle, F: Frame> TotalForceTyped<V, F> {
     }
 }
 
+/// Frame-state derivatives: translational and rotational
+/// acceleration. The integrator's per-step output.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct FrameDerivatives {
-    pub trans_accel: DVec3, // m/s^2
-    pub rot_accel: DVec3,   // rad/s^2
+    /// Translational acceleration in m/s², in the integration frame.
+    pub trans_accel: DVec3,
+    /// Rotational acceleration (angular acceleration) in rad/s²,
+    /// expressed in the body frame.
+    pub rot_accel: DVec3,
 }
 
 /// Typed sibling of [`FrameDerivatives`].
@@ -154,7 +181,9 @@ pub struct FrameDerivatives {
 /// orientation is completely unrelated.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FrameDerivativesTyped<F: Frame, V: Vehicle> {
+    /// Translational acceleration in the integration frame `F`.
     pub trans_accel: Acceleration<F>,
+    /// Angular acceleration about the body-frame origin of `V`.
     pub rot_accel: jeod_quantities::aliases::AngularAcceleration<BodyFrame<V>>,
     _v: PhantomData<V>,
 }
@@ -195,10 +224,20 @@ impl<F: Frame, V: Vehicle> FrameDerivativesTyped<F, V> {
     }
 }
 
+/// Per-body dynamics-mode toggles consumed by the integrator.
+///
+/// Mirrors JEOD's `DynBody.translational_dynamics` /
+/// `rotational_dynamics` / `three_dof` flags. `three_dof = true`
+/// suppresses creation of the rotational integrator; the validator
+/// panics on the inconsistent `three_dof = true && rotational = true`
+/// combination.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DynamicsConfig {
+    /// Integrate translational state.
     pub translational_dynamics: bool,
+    /// Integrate rotational state.
     pub rotational_dynamics: bool,
+    /// Run as a 3-DoF point mass (no rotational integrator created).
     pub three_dof: bool,
 }
 
@@ -233,6 +272,11 @@ impl DynamicsConfig {
     }
 }
 
+/// Compute translational acceleration from force and pre-computed
+/// inverse mass: `a = F · (1/m)`.
+///
+/// JEOD pre-computes `1/m` once per step on `MassPointState` so the
+/// inner loop is a multiply rather than a divide.
 // JEOD_INV: DB.18 — F=ma via precomputed inverse_mass (matches JEOD MassPointState.inverse_mass)
 pub fn compute_translational_acceleration(force: DVec3, inverse_mass: f64) -> DVec3 {
     force * inverse_mass
@@ -554,14 +598,14 @@ mod tests {
 
     #[test]
     fn typed_frame_derivatives_round_trip() {
-        use jeod_quantities::frame::{Inertial, TestVehicle};
+        use jeod_quantities::frame::{RootInertial, TestVehicle};
 
         let untyped = FrameDerivatives {
             trans_accel: DVec3::new(1.0, 2.0, 3.0),
             rot_accel: DVec3::new(0.1, 0.2, 0.3),
         };
         let typed =
-            FrameDerivativesTyped::<Inertial, TestVehicle>::from_untyped_unchecked(&untyped);
+            FrameDerivativesTyped::<RootInertial, TestVehicle>::from_untyped_unchecked(&untyped);
         let back = typed.to_untyped();
         assert_eq!(back, untyped);
     }
@@ -574,7 +618,7 @@ mod tests {
             force: DVec3::new(100.0, 0.0, 0.0),
             torque: DVec3::new(0.0, 0.5, 0.0),
         };
-        // Use the F = Inertial default for the integration frame.
+        // Use the F = RootInertial default for the integration frame.
         let typed = TotalForceTyped::<TestVehicle>::from_untyped_unchecked(&untyped);
         let back = typed.to_untyped();
         assert_eq!(back, untyped);
@@ -591,14 +635,14 @@ mod tests {
 
     #[test]
     fn typed_gravity_acceleration_round_trip() {
-        use jeod_quantities::frame::Inertial;
+        use jeod_quantities::frame::RootInertial;
 
         let untyped = GravityAcceleration {
             grav_accel: DVec3::new(0.0, 0.0, -9.81),
             grav_grad: DMat3::IDENTITY * 1e-6,
             grav_pot: 6.25e7,
         };
-        let typed = GravityAccelerationTyped::<Inertial>::from_untyped_unchecked(&untyped);
+        let typed = GravityAccelerationTyped::<RootInertial>::from_untyped_unchecked(&untyped);
         let back = typed.to_untyped();
         assert_eq!(back, untyped);
     }

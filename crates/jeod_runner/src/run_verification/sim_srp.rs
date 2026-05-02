@@ -16,6 +16,7 @@
 //!   factory to push the Sun position forward by one record before
 //!   each `step_until`.
 
+use jeod_sim::Vec3Ext;
 use std::path::PathBuf;
 
 use glam::{DMat3, DVec3};
@@ -137,8 +138,8 @@ fn earth_point_mass(mu: f64) -> GravitySourceEntry {
             mu,
             model: GravityModel::PointMass,
         },
-        position: DVec3::ZERO,
-        velocity: DVec3::ZERO,
+        position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+        velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
         t_inertial_pfix: None,
         delta_c20: 0.0,
         rotation_model: RotationModel::default(),
@@ -156,8 +157,8 @@ fn sun_zero_mu(initial_pos: DVec3) -> GravitySourceEntry {
             mu: 0.0,
             model: GravityModel::PointMass,
         },
-        position: initial_pos,
-        velocity: DVec3::ZERO,
+        position: initial_pos.m_at::<jeod_sim::RootInertial>(),
+        velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
         t_inertial_pfix: None,
         delta_c20: 0.0,
         rotation_model: RotationModel::default(),
