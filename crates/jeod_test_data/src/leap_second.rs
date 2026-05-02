@@ -1,12 +1,22 @@
+//! Parser for JEOD's `Leap_Second.dat` table.
+//!
+//! Reads
+//! [`models/environment/time/data/Leap_Second.dat`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/environment/time/data/Leap_Second.dat)
+//! from JEOD v5.4.0 (mirrored at `test_data/time/Leap_Second.dat`)
+//! into a `Vec<LeapSecondEntry>` consumed by `jeod_time::LeapSecondTable`.
+
 /// A single entry from JEOD's `Leap_Second.dat`.
 ///
 /// Each non-comment line: `MJD  day month year  TAI-UTC`
 #[derive(Debug, Clone)]
 pub struct LeapSecondEntry {
-    /// Modified Julian Date of the leap second boundary.
+    /// Modified Julian Date of the leap-second boundary.
     pub mjd: f64,
+    /// Calendar day of month (1–31).
     pub day: u32,
+    /// Calendar month (1–12).
     pub month: u32,
+    /// Calendar year (e.g. `2017`).
     pub year: u32,
     /// TAI minus UTC in seconds (cumulative offset).
     pub tai_utc: f64,

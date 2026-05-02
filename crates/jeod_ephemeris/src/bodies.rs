@@ -1,3 +1,12 @@
+//! Solar-system body identifier enum used by [`crate::Ephemeris`] queries.
+//!
+//! Ports the body-ID conventions in [`models/environment/ephemerides/include/de4xx_ephem.hh`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/environment/ephemerides/include/de4xx_ephem.hh)
+//! from JEOD v5.4.0. The numeric values come from the JPL/NAIF SPICE
+//! conventions used by the DE4xx kernels, exposed via the `anise` crate.
+//!
+//! Most planet variants name **system barycenters**, not body centers; see
+//! [`EphemerisBody`] for per-variant documentation.
+
 /// Solar system body identifiers for ephemeris queries.
 ///
 /// Follows the JEOD/JPL DE4xx convention where planet names (items 0-8)

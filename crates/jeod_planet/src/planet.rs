@@ -1,3 +1,12 @@
+//! Reference-ellipsoid parameter block for a planetary body.
+//!
+//! Ports the `Planet` struct in
+//! [`models/environment/planet/include/planet.hh`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/environment/planet/include/planet.hh)
+//! from JEOD v5.4.0. Stores `name`, `mu` (m³/s²), `r_eq` (m), `r_pol` (m),
+//! and `flat_coeff` along with derived helpers (`flat_inv`,
+//! `e_ellipsoid`, `e_ellip_sq`) plus typed accessors that wrap the raw
+//! `f64` fields as `jeod_quantities` quantities.
+
 /// Planetary shape parameters (reference ellipsoid).
 ///
 /// Mirrors JEOD's `Planet` struct from `planet.hh`. The `mu` field stores the

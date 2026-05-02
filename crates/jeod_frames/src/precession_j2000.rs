@@ -2,7 +2,7 @@
 //!
 //! Faithful port of JEOD's `precession_j2000.cc` (IAU-76/FK5).
 //!
-//! Reference: Mulcihy & Bond, "The RNP Routine for the Standard Epoch J2000",
+//! Reference: Mulcahy & Bond, "The RNP Routine for the Standard Epoch J2000",
 //! NASA JSC-24574, September 1990.
 
 // Constants ported verbatim from JEOD — suppress excessive precision warnings.
@@ -29,7 +29,7 @@ pub fn precession_matrix(time: f64) -> DMat3 {
     let time2 = time * time;
     let time3 = time2 * time;
 
-    // Precession parameters in arcseconds (Mulcihy & Bond, JSC-24574),
+    // Precession parameters in arcseconds (Mulcahy & Bond, JSC-24574),
     // then converted to radians in place (matching JEOD convention).
     let mut zeta = 2306.2181 * time + 0.30188 * time2 + 0.017998 * time3;
     let mut theta = 2004.3109 * time - 0.42665 * time2 - 0.041833 * time3;

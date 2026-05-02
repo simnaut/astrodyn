@@ -1,3 +1,11 @@
+//! TAI ↔ TDB time-scale conversion.
+//!
+//! Ports
+//! [`models/environment/time/src/time_converter_tai_tdb.cc`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/environment/time/src/time_converter_tai_tdb.cc)
+//! from JEOD v5.4.0. Uses the simplified Astronomical-Almanac formula
+//! for the TDB − TT offset (accurate to ±0.1 µs), then chains through
+//! TT ↔ TAI in [`crate::time_converter_tai_tt`].
+
 use crate::epoch::{J2000_TAI_TJT, TAI_TT_OFFSET};
 use crate::time_converter_tai_tt::tai_to_tt;
 use crate::{SecondsSince, TAI, TDB};

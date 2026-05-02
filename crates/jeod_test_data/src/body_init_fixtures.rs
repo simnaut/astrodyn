@@ -57,6 +57,8 @@ use std::sync::OnceLock;
 /// committed JSON fixtures (runtime path).
 #[derive(Debug, thiserror::Error)]
 pub enum BodyInitFixtureError {
+    /// Source data violated the expected layout (missing fields,
+    /// non-numeric values, mismatched array lengths).
     #[error("malformed body-init data: {0}")]
     Malformed(String),
 }
@@ -70,7 +72,9 @@ impl BodyInitFixtureError {
 /// One reference-state record (ECI position / velocity).
 #[derive(Debug, Clone)]
 pub struct ReferenceStateRecord {
+    /// Position in metres, expressed in the inertial frame.
     pub position: [f64; 3],
+    /// Velocity in m/s, expressed in the inertial frame.
     pub velocity: [f64; 3],
 }
 
@@ -79,34 +83,53 @@ pub struct ReferenceStateRecord {
 /// `ReferenceState` types for compatibility with downstream tests).
 #[derive(Debug, Clone)]
 pub struct OrbitalInitRecord {
+    /// Vehicle name as recorded in the JEOD `Modified_data/*.py` source.
     pub name: String,
+    /// Semi-major axis in metres.
     pub semi_major_axis: f64,
+    /// Orbital eccentricity (dimensionless).
     pub eccentricity: f64,
+    /// Inclination in radians.
     pub inclination: f64,
+    /// Right Ascension of the Ascending Node, in radians.
     pub ascending_node: f64,
+    /// Argument of periapsis, in radians.
     pub arg_periapsis: f64,
+    /// Time-since-periapsis in seconds, when the JEOD source uses it.
     pub time_periapsis: Option<f64>,
+    /// Mean anomaly in radians, when the JEOD source uses it.
     pub mean_anomaly: Option<f64>,
+    /// True anomaly in radians, when the JEOD source uses it.
     pub true_anomaly: Option<f64>,
+    /// JEOD `planet_name` — Earth / Moon / Sun / Mars.
     pub planet_name: String,
+    /// JEOD `reference_frame` selector (e.g. `"earth.inertial"`).
     pub reference_frame: String,
 }
 
 /// One direct-Cartesian init record.
 #[derive(Debug, Clone)]
 pub struct TransStateRecord {
+    /// Vehicle name as recorded in the JEOD `Modified_data/*.py` source.
     pub name: String,
+    /// Initial position in metres.
     pub position: [f64; 3],
+    /// Initial velocity in m/s.
     pub velocity: [f64; 3],
+    /// JEOD `reference_frame` selector (e.g. `"earth.inertial"`).
     pub reference_frame: String,
 }
 
 /// Per-vehicle bundle as parsed from the JSON fixture.
 #[derive(Debug, Clone)]
 pub struct BodyInitBundle {
+    /// Vehicle name (e.g. `"iss"`, `"sts114"`).
     pub vehicle: String,
+    /// Reference inertial state, when the source provides one.
     pub reference_inertial: Option<ReferenceStateRecord>,
+    /// Orbital-element initialization records.
     pub orbital_inits: Vec<OrbitalInitRecord>,
+    /// Direct-Cartesian translational-state records.
     pub trans_states: Vec<TransStateRecord>,
 }
 

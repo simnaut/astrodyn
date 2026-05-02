@@ -36,6 +36,7 @@
 //! input. Pure Rust, zero Bevy dependency.
 
 #![forbid(unsafe_code)]
+#![deny(missing_docs)]
 
 pub mod coefficients;
 pub mod compute;

@@ -1,3 +1,15 @@
+//! Per-source gravity-control configuration ([`GravityControl`] +
+//! typed sibling [`GravityControlTyped`]).
+//!
+//! Ports
+//! [`models/environment/gravity/src/gravity_controls.cc`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/environment/gravity/src/gravity_controls.cc)
+//! and
+//! [`spherical_harmonics_gravity_controls.cc`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/environment/gravity/src/spherical_harmonics_gravity_controls.cc)
+//! from JEOD v5.4.0. A `GravityControl` selects whether a single source
+//! contributes point-mass or spherical-harmonics gravity, picks the
+//! degree / order, gates the gradient computation, and flags
+//! third-body / Battin / relativistic corrections.
+
 use glam::DMat3;
 use glam::DVec3;
 use jeod_dynamics::GravityAcceleration;
@@ -6,9 +18,19 @@ use jeod_quantities::aliases::HarmonicDegree;
 use crate::gravity_source::{GravityModel, GravitySource};
 use log::warn;
 
+/// Per-source gravity selector — point-mass vs. spherical harmonics,
+/// degree / order, gradient flags, and third-body / Battin /
+/// relativistic toggles.
+///
+/// `SourceId` is a generic source identifier so adapters can carry the
+/// source as a `String`, a workspace-internal `usize` index, or a Bevy
+/// `Entity` handle. Use [`Self::retag_source`] to map between
+/// instantiations without enumerating the field list.
 #[derive(Debug, Clone)]
 pub struct GravityControl<SourceId = String> {
+    /// Source identifier.
     pub source_name: SourceId,
+    /// Compute the gravity-gradient tensor in addition to acceleration.
     pub gradient: bool,
     /// If true, use only point-mass (spherical) gravity for this source,
     /// ignoring any spherical harmonics data. Matches JEOD's `spherical` flag
@@ -495,16 +517,27 @@ impl<SourceId> GravityControl<SourceId> {
 /// ordinal is bounded by another's runtime value.
 #[derive(Debug, Clone)]
 pub struct GravityControlTyped<SourceId = String> {
+    /// Source identifier (see [`GravityControl::source_name`]).
     pub source_name: SourceId,
+    /// Compute the gravity-gradient tensor in addition to acceleration.
     pub gradient: bool,
+    /// Use only point-mass gravity for this source.
     pub spherical: bool,
+    /// Spherical-harmonics degree to use (must be ≤ source degree).
     pub degree: HarmonicDegree,
+    /// Spherical-harmonics order to use (must be ≤ source order, ≤ degree).
     pub order: HarmonicDegree,
+    /// Exclude `n=0,1` (point-mass) terms from the SH evaluation.
     pub perturbing_only: bool,
+    /// Degree for gradient computation (must be ≤ degree).
     pub gradient_degree: HarmonicDegree,
+    /// Order for gradient computation (must be ≤ order, ≤ gradient_degree).
     pub gradient_order: HarmonicDegree,
+    /// Treat this source as a third-body and use differential acceleration.
     pub differential: bool,
+    /// Use Battin's method for differential gravity (third-body only).
     pub battin_method: bool,
+    /// Apply post-Newtonian relativistic correction.
     pub relativistic: bool,
 }
 

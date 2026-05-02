@@ -117,8 +117,13 @@ pub fn compute_ballistic_drag(
 /// [`MassDensity`] (kg/m³).
 #[derive(Debug, Clone, Copy)]
 pub struct DragConfigTyped {
+    /// Drag coefficient (dimensionless).
     pub cd: Ratio,
+    /// Reference area exposed to the flow.
     pub area: Area,
+    /// Optional override density. When `Some`, the drag kernel uses
+    /// this value instead of querying the atmosphere model — used for
+    /// constant-density unit tests.
     pub constant_density: Option<MassDensity>,
 }
 
@@ -154,7 +159,9 @@ impl DragConfigTyped {
 /// rotates inertial vectors *into*).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AerodynamicForceTyped<V: Vehicle> {
+    /// Aerodynamic force in the structural frame of vehicle `V`.
     pub force: Force<StructuralFrame<V>>,
+    /// Aerodynamic torque about the structural-frame origin of vehicle `V`.
     pub torque: jeod_quantities::aliases::Torque<StructuralFrame<V>>,
 }
 

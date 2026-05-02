@@ -53,9 +53,13 @@ pub struct TidalBody {
 /// other dimensionless physical quantities.
 #[derive(Debug, Clone)]
 pub struct TidalConfigTyped {
+    /// Love number `k2` of the deformable body (dimensionless).
     pub k2: Ratio,
+    /// Gravitational parameter μ of the primary body.
     pub mu_primary: GravParam,
+    /// Reference radius of the primary body.
     pub radius_primary: Length,
+    /// Tidal-perturber bodies (Sun, Moon, …).
     pub tidal_bodies: Vec<TidalBodyTyped>,
 }
 
@@ -64,7 +68,9 @@ pub struct TidalConfigTyped {
 /// `position_inertial` carries the [`Position<RootInertial>`] phantom tag.
 #[derive(Debug, Clone)]
 pub struct TidalBodyTyped {
+    /// Gravitational parameter μ of the perturber.
     pub mu: GravParam,
+    /// Position of the perturber in the simulation's root inertial frame.
     pub position_inertial: Position<RootInertial>,
 }
 

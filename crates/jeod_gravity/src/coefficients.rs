@@ -15,8 +15,11 @@ use crate::spherical_harmonics_gravity_source::SphericalHarmonicsData;
 /// Errors from loading a binary spherical-harmonics coefficient blob.
 #[derive(Debug, thiserror::Error)]
 pub enum CoeffLoadError {
+    /// Underlying I/O failure when reading the coefficient blob.
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
+    /// Blob bytes did not match the expected layout (truncated header,
+    /// triangular-array length mismatch, etc.).
     #[error("invalid binary format: {0}")]
     InvalidFormat(String),
 }
