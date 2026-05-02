@@ -847,8 +847,8 @@ fn make_ground_contact_sim() -> (Simulation, usize) {
                 mu: earth_mu,
                 model: GravityModel::PointMass,
             },
-            position: DVec3::ZERO,
-            velocity: DVec3::ZERO,
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
             t_inertial_pfix: None,
             delta_c20: 0.0,
             // SphericalTerrain does not consult pfix rotation, so we omit
