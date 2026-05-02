@@ -128,13 +128,17 @@ pub struct RootFrameIdR(pub jeod_sim::FrameId);
 
 /// Unified JEOD plugin — registers all pipeline systems and schedule sets.
 ///
-/// All systems are registered on Bevy's `FixedUpdate` schedule, which
-/// acts as a single JEOD-style integration group: every body matched by
-/// the integrating systems advances together at the schedule's shared
-/// `dt`. Multi-stage integrators (RK4, etc.) loop internally inside
-/// [`JeodSet::Integration`] — they do *not* trigger multiple schedule
-/// passes. See the [`sets`] module docs for the full mapping and the
-/// recipe for scenarios that need separate integration groups.
+/// The seven [`JeodSet`] pipeline stages run in Bevy's `FixedUpdate`
+/// schedule, which acts as a single JEOD-style integration group: every
+/// body matched by the integrating systems advances together at the
+/// schedule's shared `dt`. (Auxiliary registration systems —
+/// `register_source_frames_system` / `register_body_frames_system` — also
+/// run in `Startup` and `PreUpdate` to catch late-spawned entities; they
+/// no-op for already-registered ones.) Multi-stage integrators (RK4, etc.)
+/// loop internally inside [`JeodSet::Integration`] — they do *not*
+/// trigger multiple schedule passes. See the [`sets`] module docs for
+/// the full mapping and the recipe for scenarios that need separate
+/// integration groups.
 pub struct JeodPlugin;
 
 impl Plugin for JeodPlugin {
