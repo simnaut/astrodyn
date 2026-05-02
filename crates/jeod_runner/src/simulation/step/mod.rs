@@ -50,6 +50,10 @@ impl Simulation {
     /// 7. Force collection and frame derivative computation
     /// 8. State integration (RK4, with sub-stage tree updates)
     /// 9. Derived state computation
+    ///
+    /// On `Err`, the simulation is **not** recoverable: time has already
+    /// advanced and downstream state may be partially updated. To retry,
+    /// construct a fresh [`Simulation`].
     pub fn step(&mut self) -> Result<(), StepError> {
         self.step_internal(self.dt)
     }
@@ -68,8 +72,14 @@ impl Simulation {
     /// Internal step with explicit dt (avoids temporary mutation of `self.dt`
     /// in `step_until`).
     fn step_internal(&mut self, dt: f64) -> Result<(), StepError> {
-        // Flip `has_stepped` so subsequent `register_*_contact_pair`
-        // calls panic. See `Simulation::has_stepped`.
+        // Flip before any irreversible mutation. `time.advance(dt)` runs
+        // unconditionally below, so once we enter `step_internal` the
+        // simulation is no longer in its t=0 registration window —
+        // independent of whether downstream fallible work succeeds.
+        // Setting this only on success would let a registration call
+        // between a failed `step` and the next attempt compute an
+        // init-phase impulse against state whose time has already
+        // moved. See `Simulation::has_stepped`.
         self.has_stepped = true;
 
         // ── 1. Time update ──
