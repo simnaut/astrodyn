@@ -45,6 +45,97 @@
 //! - Compiler error messages in physics language via
 //!   `#[diagnostic::on_unimplemented]`
 //!
+//! ## Compile-time guards
+//!
+//! Beyond `uom`'s built-in dimensional analysis, this crate adds layered
+//! type-system guards specific to orbital-mechanics conventions. The
+//! actively-wired set:
+//!
+//! - **Dimensional mismatch** (uom-native): `Position + Mass` is rejected
+//!   because `Qty3`'s `Add` impl requires identical dimension `D`.
+//! - **Frame mismatch on `+`/`-`/`+=`/`-=`** — `Position<Ecef> +
+//!   Position<RootInertial>` fails with a tailored
+//!   `#[diagnostic::on_unimplemented]` message pointing at
+//!   `FrameTransform`. Wired via the
+//!   [`diagnostics::CompatibleFrames`]`<Fl, Fr>` bound in [`ops`].
+//! - **Time-scale separation** — `SecondsSince<S>` has no `Add`/`Sub`
+//!   impl across distinct scales, so direct arithmetic between (e.g.)
+//!   `SecondsSince<TAI>` and `SecondsSince<TT>` is rejected. The intended
+//!   way to combine scales is via `TimeConverter::apply`. The raw
+//!   `SecondsSince::from_seconds` / `as_seconds` boundaries can still
+//!   relabel an `f64` across scales without applying the offset — see
+//!   "Where the guards stop" below.
+//! - **Quaternion convention separation** — layout (`ScalarFirst` vs
+//!   `ScalarLast`), transform convention (`LeftTransform` vs
+//!   `RightTransform`), and normalization status are distinct phantom
+//!   tags. `NormalizedQuat<L, T>` is a separate type from `Quat<L, T>`,
+//!   so a raw `Quat` cannot stand in where a unit quaternion is required.
+//! - **`FrameTransform<From, To>` composition** only typechecks when the
+//!   two inner frames align (`A→B ∘ B→C`); the identity is only defined
+//!   for `From = To`.
+//! - **Cross-dimension multiply / divide on `Qty3`** uses `typenum`
+//!   exponent arithmetic, so `Velocity × Time → Position` and
+//!   `Acceleration × Time → Velocity` are type-safe by construction; a
+//!   bad combination produces a dimension that won't unify with the
+//!   target type.
+//! - **Inertial-flavor distinctions** (issue #255 / `RF.10`):
+//!   `RootInertial`, `PlanetInertial<P>`, and `IntegrationFrame` are
+//!   kind-distinct phantoms. Body integration-frame state cannot silently
+//!   flow into root-inertial-only consumers (gravity, SRP, relativistic);
+//!   the only safe transition is via [`IntegOrigin`].
+//!
+//! ### Scaffolded but not currently wired
+//!
+//! [`diagnostics::IntoLength`], [`diagnostics::IntoAngle`],
+//! [`diagnostics::IntoGravParam`], [`diagnostics::CompatibleTimeScales`],
+//! [`diagnostics::CompatibleQuatLayouts`],
+//! [`diagnostics::CompatibleQuatTransforms`],
+//! [`diagnostics::RequiresNormalizedQuat`],
+//! [`diagnostics::InertialOnly`], and [`diagnostics::NoVectorVectorMul`]
+//! carry tailored diagnostic messages but are not currently used as
+//! `where` bounds by any impl in the workspace. Today, for example,
+//! passing `400_000.0` where a `Length` is expected produces uom's stock
+//! "mismatched types" error rather than the `IntoLength` hint, and
+//! `Qty3 * Qty3` produces a default "no `Mul` impl" rather than the
+//! `NoVectorVectorMul` hint. `F64Ext` discoverability today comes from
+//! the prelude and worked examples. These scaffolds let a future
+//! contributor flip on an active guard without touching call sites — the
+//! diagnostic message is already in place.
+//!
+//! ### Where the guards stop
+//!
+//! The crate has several public raw-value boundaries where the
+//! type-system guards end and the caller takes responsibility for
+//! correctness:
+//!
+//! - [`Qty3::raw_si`] / [`Qty3::from_raw_si`] — into and out of raw
+//!   `glam::DVec3` (frame tag and dimension are erased on `raw_si`,
+//!   reattached without check on `from_raw_si`).
+//! - `SecondsSince::from_seconds` / `as_seconds` — into and out of raw
+//!   `f64` seconds (time-scale tag is erased on `as_seconds`, reattached
+//!   without check on `from_seconds`, which is how a `TAI` reading can
+//!   be relabeled as `TT` without applying the 32.184 s offset).
+//! - `JeodQuat::from_array` — accepts a raw `[f64; 4]` without
+//!   normalization or convention checks. Use `NormalizedQuat::new(q)?`
+//!   to recover the unit-norm witness.
+//! - `FrameTransform::from_matrix` — accepts a raw `DMat3` without
+//!   checking orthogonality. The validating sibling is
+//!   `FrameTransform::from_matrix_validated`.
+//!
+//! These boundaries are deliberate: inside the `_inner` / `_impl`
+//! kernels of `jeod_*` crates the math runs on `f64` / `DVec3` /
+//! `DMat3` for arithmetic density. Unit, frame, time-scale, and
+//! quaternion-convention slips inside a kernel are caught only at the
+//! `F64Ext` and typed-API ingestion boundary — once you've crossed into
+//! a raw representation the caller is responsible.
+//!
+//! See the [Type-System wiki page] for the contributor primer (phantom-tag
+//! pattern, adding a new frame/scale/quantity, reading compiler errors,
+//! escape hatches) and `examples/typed_mission.rs` for the canonical
+//! worked example.
+//!
+//! [Type-System wiki page]: https://github.com/simnaut/bevy_jeod/wiki/Type-System
+//!
 //! ## Quick start
 //!
 //! ```

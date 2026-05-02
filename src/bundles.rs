@@ -59,6 +59,7 @@ impl PlanetBundle {
             source: GravitySourceC(source),
             position: SourceInertialPositionC::default(),
             trans: TranslationalStateC::default(),
+            // allowed: IDENTITY placeholder; planet_fixed_rotation_system overwrites on tick 1
             rotation: PlanetFixedRotationC(FrameTransform::from_matrix(glam::DMat3::IDENTITY)),
             omega: PlanetOmegaC(config.omega),
             ang_vel: PlanetAngularVelocityC::default(),

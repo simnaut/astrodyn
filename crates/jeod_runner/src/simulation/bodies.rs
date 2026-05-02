@@ -12,9 +12,14 @@ use glam::DVec3;
 
 use jeod_dynamics::{MassBodyId, MassPointState};
 use jeod_frames::{RefFrameKind, RefFrameRot, RefFrameState, RefFrameTrans};
-use jeod_sim::{ContactFacet, IntegrationFrame, MassProperties, Position, VehicleConfig, Velocity};
+use jeod_sim::{
+    evaluate_ground_contact_pair, ContactFacet, GroundFacet, IntegrationFrame, MassProperties,
+    Phase, Position, VehicleConfig, Velocity,
+};
 
-use super::types::{ContactPairConfig, SimBody, VehicleOutput};
+use super::types::{
+    ContactPairConfig, GroundContactImpulse, GroundContactPairConfig, SimBody, VehicleOutput,
+};
 use super::Simulation;
 
 impl Simulation {
@@ -28,6 +33,9 @@ impl Simulation {
     /// acts on body B. Torques are accumulated about each body's CoM.
     ///
     /// # Panics
+    /// * Called after the first [`step`](Self::step). Contact-pair
+    ///   registration must precede integration — see
+    ///   [`Simulation::has_stepped`](super::Simulation) for the rationale.
     /// * Either `body_a` or `body_b` is out of range for the registered bodies.
     /// * `body_a == body_b` — contact pair bodies must be distinct
     ///   (JEOD_INV: IN.30, matching JEOD's `unique_pair` invariant).
@@ -43,6 +51,13 @@ impl Simulation {
         body_b: usize,
         facet_b: ContactFacet,
     ) {
+        // Reject late registration: see `Simulation::has_stepped`.
+        assert!(
+            !self.has_stepped,
+            "register_contact_pair: contact-pair registration must precede the first \
+             `step()` — registering after integration starts would inject a t=0 init-phase \
+             impulse into a running trajectory"
+        );
         assert!(
             body_a < self.bodies.len(),
             "register_contact_pair: body_a index {body_a} out of range ({} bodies)",
@@ -77,6 +92,156 @@ impl Simulation {
     /// Number of registered contact pairs.
     pub fn num_contact_pairs(&self) -> usize {
         self.contact_pairs.len()
+    }
+
+    /// Register a ground-contact interaction between a vehicle and a
+    /// planetary surface.
+    ///
+    /// Once registered, ground contact forces on `body_a` are evaluated
+    /// at each RK4 stage of [`step`](Self::step) — matching JEOD's
+    /// derivative-class `check_contact_ground()` job in
+    /// `SIM_ground_contact/S_modules/contact.sm`.
+    ///
+    /// The first call also pins the planet source whose `pfix` rotation
+    /// will be queried for terrain lookups; subsequent registrations must
+    /// use the same `planet_source`. For [`SphericalTerrain`](jeod_sim::SphericalTerrain)
+    /// the pfix rotation cancels in the ground-point computation and
+    /// `planet_source` is documentation-only — but we still validate
+    /// consistency to keep ground-contact registrations explicit.
+    ///
+    /// # Panics
+    /// * Called after the first [`step`](Self::step). Ground-contact-pair
+    ///   registration must precede integration — see
+    ///   [`Simulation::has_stepped`](super::Simulation) for the rationale.
+    /// * `body_a` is out of range for the registered bodies.
+    /// * `body_a` lacks a `RotationalState` or [`MassProperties`]
+    ///   (ground contact requires 6-DOF + mass — checked here so the
+    ///   coupled-RK4 path can rely on it without re-checking per stage).
+    /// * `vehicle_facet.material != ground_facet.material` (JEOD pairs a
+    ///   single `SpringPairInteraction` per facet pair).
+    /// * `ground_facet.active == false` (JEOD_INV: IN.35).
+    /// * `ground_facet.alt_offset` is not finite (JEOD_INV: IN.36).
+    /// * `planet_source` is out of range for the registered gravity
+    ///   sources, or differs from a previously-registered ground-contact
+    ///   pair's `planet_source` (all ground pairs must share one
+    ///   `pfix` rotation).
+    pub fn register_ground_contact_pair(
+        &mut self,
+        body_a: usize,
+        vehicle_facet: ContactFacet,
+        ground_facet: GroundFacet,
+        planet_source: usize,
+    ) {
+        // Reject late registration: `pending_initial_impulse` is
+        // computed against `t=0` body state below and consumed at
+        // stage 1 of the first step. Registering mid-run would inject
+        // that impulse into an already-propagating trajectory. See
+        // `Simulation::has_stepped`.
+        assert!(
+            !self.has_stepped,
+            "register_ground_contact_pair: ground-contact-pair registration must precede \
+             the first `step()` — registering after integration starts would inject a t=0 \
+             init-phase impulse into a running trajectory"
+        );
+        assert!(
+            body_a < self.bodies.len(),
+            "register_ground_contact_pair: body_a index {body_a} out of range ({} bodies)",
+            self.bodies.len()
+        );
+        // JEOD pairs a single SpringPairInteraction per facet pair. Both
+        // sides carry identical material (vehicle "steel" vs ground
+        // "dirt" reduce to a single pair material in JEOD's lookup).
+        assert_eq!(
+            vehicle_facet.material, ground_facet.material,
+            "register_ground_contact_pair: vehicle_facet.material and \
+             ground_facet.material must be equal (JEOD pairs a single \
+             SpringPairInteraction per facet pair)"
+        );
+        // JEOD_INV: IN.35 — only active GroundFacets contribute force.
+        assert!(
+            ground_facet.active,
+            "register_ground_contact_pair: ground_facet.active must be true"
+        );
+        // JEOD_INV: IN.36 — alt_offset must be finite.
+        assert!(
+            ground_facet.alt_offset.is_finite(),
+            "register_ground_contact_pair: ground_facet.alt_offset must be finite, got {}",
+            ground_facet.alt_offset
+        );
+        assert!(
+            planet_source < self.gravity_data.len(),
+            "register_ground_contact_pair: planet_source index {planet_source} out of range \
+             ({} sources)",
+            self.gravity_data.len()
+        );
+        match self.ground_contact_planet_source {
+            None => self.ground_contact_planet_source = Some(planet_source),
+            Some(prev) => assert_eq!(
+                prev, planet_source,
+                "register_ground_contact_pair: all ground-contact pairs must reference the \
+                 same planet source (got {planet_source}, previously registered with {prev})"
+            ),
+        }
+        // Compute JEOD's initialization-time impulse (pre-propagation
+        // `GroundInteraction::initialize → in_contact()` with
+        // `vp.state.trans.position == (0, 0, 0)`). This is the impulsive
+        // force JEOD records on `subject->force` during init and that
+        // the integrator consumes at stage 1 of the first step.
+        //
+        // For non-spherical Terrain implementations, the pfix rotation
+        // matters in the ground-point computation, so we fetch the
+        // current value from the frame tree. SphericalTerrain happens
+        // to cancel the rotation out, but we don't special-case it
+        // here — the matrix is correct for whatever Terrain the caller
+        // provides. Callers using non-trivial planet rotation should
+        // ensure ephemeris/RNP has been propagated before
+        // registering ground-contact pairs; for SphericalTerrain it
+        // doesn't matter.
+        let t_inertial_pfix = self.source_frame_ids[planet_source]
+            .pfix
+            .map(|pfix_id| self.frame_tree.get(pfix_id).state.rot.t_parent_this)
+            .unwrap_or(glam::DMat3::IDENTITY);
+        let body = &self.bodies[body_a];
+        let body_rot = body.rot.as_ref().unwrap_or_else(|| {
+            panic!(
+                "register_ground_contact_pair: body_a={body_a} has no RotationalState; \
+                 ground contact requires 6-DOF (set `rot: Some(...)` on the VehicleConfig)"
+            )
+        });
+        let body_mass = body.mass.as_ref().unwrap_or_else(|| {
+            panic!(
+                "register_ground_contact_pair: body_a={body_a} has no MassProperties; \
+                 set `mass: Some(...)` on the VehicleConfig"
+            )
+        });
+        // `body.trans` is `TranslationalStateTyped<IntegrationFrame>` after
+        // #258; `evaluate_ground_contact_pair` takes the untyped form.
+        let trans_untyped = body.trans.to_untyped();
+        let pending_initial_impulse = evaluate_ground_contact_pair(
+            &vehicle_facet,
+            &ground_facet,
+            &trans_untyped,
+            body_rot,
+            body.t_struct_body,
+            body_mass,
+            t_inertial_pfix,
+            Phase::Initialization,
+        )
+        .map(|eval| GroundContactImpulse {
+            force_inertial: eval.force_on_a,
+            torque_body: eval.torque_a_body,
+        });
+        self.ground_contact_pairs.push(GroundContactPairConfig {
+            body_a,
+            vehicle_facet,
+            ground_facet,
+            pending_initial_impulse,
+        });
+    }
+
+    /// Number of registered ground-contact pairs.
+    pub fn num_ground_contact_pairs(&self) -> usize {
+        self.ground_contact_pairs.len()
     }
 
     /// Add a dynamic body from a [`VehicleConfig`]. Returns its index.
@@ -412,5 +577,44 @@ impl Simulation {
         composite.dirty = true;
         composite.recompute_derived();
         self.bodies[idx].mass = Some(composite);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use jeod_interactions::{ContactMaterial, SphericalTerrain};
+    use jeod_time::leap_second::default_leap_second_table;
+    use jeod_time::SimulationTime;
+    use std::sync::Arc;
+
+    fn empty_sim() -> Simulation {
+        let time = SimulationTime::new(0.0, default_leap_second_table());
+        Simulation::new(time, 1.0)
+    }
+
+    fn dummy_material() -> ContactMaterial {
+        ContactMaterial::jeod_spring(1.0, 1.0, 0.5)
+    }
+
+    #[test]
+    #[should_panic(expected = "must precede the first `step()`")]
+    fn register_contact_pair_after_step_panics() {
+        let mut sim = empty_sim();
+        sim.has_stepped = true;
+        let mat = dummy_material();
+        let facet = ContactFacet::point(DVec3::ZERO, 1.0, mat);
+        sim.register_contact_pair(0, facet, 1, facet);
+    }
+
+    #[test]
+    #[should_panic(expected = "must precede the first `step()`")]
+    fn register_ground_contact_pair_after_step_panics() {
+        let mut sim = empty_sim();
+        sim.has_stepped = true;
+        let mat = dummy_material();
+        let veh = ContactFacet::point(DVec3::ZERO, 1.0, mat);
+        let ground = GroundFacet::new(Arc::new(SphericalTerrain::new(6_378_137.0)), 0.0, mat);
+        sim.register_ground_contact_pair(0, veh, ground, 0);
     }
 }

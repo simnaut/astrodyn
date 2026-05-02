@@ -442,8 +442,12 @@ pub fn planet_fixed_rotation_system(
                         polar_params,
                     )
                 });
-                let rotation = *earth_rotation
-                    .get_or_insert_with(|| jeod_sim::FrameTransform::from_matrix(mat));
+                let rotation = *earth_rotation.get_or_insert_with(|| {
+                    // allowed: matrix is JEOD's RNP-derived rotation; the
+                    // RootInertial → PlanetFixed<SelfPlanet> phantoms match the kernel
+                    // by construction
+                    jeod_sim::FrameTransform::from_matrix(mat)
+                });
                 rot.0 = rotation;
                 raw_matrix = Some(mat);
             }
@@ -451,6 +455,7 @@ pub fn planet_fixed_rotation_system(
                 let tt_s_since_j2000 =
                     (sim_time.tt_tjt() - jeod_sim::J2000_TT_TJT) * jeod_sim::SECONDS_PER_DAY;
                 let mat = jeod_sim::rotation_mars::compute_mars_rotation(tt_s_since_j2000);
+                // allowed: matrix from JEOD-ported IAU Mars rotation formula
                 rot.0 = jeod_sim::FrameTransform::from_matrix(mat);
                 raw_matrix = Some(mat);
             }
@@ -459,6 +464,7 @@ pub fn planet_fixed_rotation_system(
                 let tdb_s_since_j2000 =
                     (tdb_jd - jeod_sim::J2000_TT_JD) * jeod_sim::SECONDS_PER_DAY;
                 let mat = jeod_sim::rotation_moon::compute_moon_rotation(tdb_s_since_j2000);
+                // allowed: matrix from JEOD-ported IAU Moon rotation formula
                 rot.0 = jeod_sim::FrameTransform::from_matrix(mat);
                 raw_matrix = Some(mat);
             }
@@ -478,6 +484,7 @@ pub fn planet_fixed_rotation_system(
                              whose coverage includes the simulation epoch."
                         )
                     });
+                // allowed: matrix from NASA SPICE BPC kernel (DE421 / Moon-PA)
                 rot.0 = jeod_sim::FrameTransform::from_matrix(mat);
                 raw_matrix = Some(mat);
             }

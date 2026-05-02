@@ -12,12 +12,12 @@ use jeod_sim::frame_orchestration::{evaluate_and_apply_frame_switch, FrameSwitch
 use jeod_sim::gravity::accumulate_gravity;
 use jeod_sim::integration::{integrate_bodies_contact_coupled, integrate_body, CoupledBodyInput};
 use jeod_sim::{
-    evaluate_contact_pair, integrate_body_coupled, CoupledStageEval, GravityControls, IntegOrigin,
-    IntegrationFrame, MassProperties, Position, RadiationForce, RotationalState,
-    TranslationalState, TranslationalStateTyped, Velocity,
+    evaluate_contact_pair, evaluate_ground_contact_pair, integrate_body_coupled, CoupledStageEval,
+    GravityControls, IntegOrigin, IntegrationFrame, MassProperties, Phase, Position,
+    RadiationForce, RotationalState, TranslationalState, TranslationalStateTyped, Velocity,
 };
 
-use super::super::types::ContactPairConfig;
+use super::super::types::{ContactPairConfig, GroundContactPairConfig};
 use super::super::Simulation;
 use crate::error::StepError;
 
@@ -210,7 +210,7 @@ impl Simulation {
             accel
         };
 
-        if self.contact_pairs.is_empty() {
+        if self.contact_pairs.is_empty() && self.ground_contact_pairs.is_empty() {
             // ── Standard path: per-body RK4 / GJ integration ──
             // No clone of gravity_controls: the outer iter_mut gives us
             // a &mut SimBody, and Rust's disjoint-field split borrow lets
@@ -432,13 +432,15 @@ impl Simulation {
                 self.bodies
                     .iter()
                     .all(|b| matches!(b.integrator, jeod_dynamics::IntegratorType::Rk4)),
-                "contact pairs require RK4 integrator on all bodies"
+                "contact-coupled path (inter-body or ground-contact pairs) requires \
+                 RK4 integrator on all bodies"
             );
             assert!(
                 self.bodies
                     .iter()
                     .all(|b| b.rot.is_some() && b.mass.is_some()),
-                "contact pairs require 6-DOF (rotational state + mass) on all bodies"
+                "contact-coupled path (inter-body or ground-contact pairs) requires \
+                 6-DOF (rotational state + mass) on all bodies"
             );
             // Derivative-class thermal (DerivativeFirstOrder /
             // DerivativeRk4) is not extended to the contact-coupled kernel.
@@ -451,32 +453,90 @@ impl Simulation {
                     .flat_plate_state
                     .as_ref()
                     .is_none_or(|fps| fps.stage_inputs.is_none())),
-                "Derivative-class thermal integration is not yet supported with contact pairs; \
-                 use ThermalIntegrationOrder::Scheduled on flat-plate SRP bodies \
+                "Derivative-class thermal integration is not yet supported when \
+                 inter-body or ground-contact pairs are registered; use \
+                 ThermalIntegrationOrder::Scheduled on flat-plate SRP bodies \
                  when contact pairs are active",
             );
             // Contact pair states must share the root inertial frame, since
             // the coupled contact evaluator uses each body's stage state
             // directly without any per-step frame transform. `validate()`
-            // catches this at config time; the assert is defense-in-depth
-            // for callers that skip validation.
+            // catches this at config time (both for inter-body
+            // `contact_pairs` and for `ground_contact_pairs` —
+            // `ValidationError::ContactPairNonRootFrame` /
+            // `GroundContactPairNonRootFrame`); the asserts here are
+            // defense-in-depth for callers that skip validation.
             assert!(
                 self.contact_pairs.iter().all(|p| {
                     let fa = self.bodies[p.body_a].integ_frame_id;
                     let fb = self.bodies[p.body_b].integ_frame_id;
                     fa == fb && fa == self.root_frame_id
                 }),
-                "contact pair bodies must share the root inertial integration frame"
+                "inter-body contact pair bodies must share the root inertial integration frame"
+            );
+            assert!(
+                self.ground_contact_pairs
+                    .iter()
+                    .all(|p| self.bodies[p.body_a].integ_frame_id == self.root_frame_id),
+                "ground-contact pair bodies must integrate in the root inertial frame"
             );
 
             // `integ_dt` (dynamic timestep) is defined above the gravity
             // closure; reuse it here for the coupled integrator call.
+
+            // Snapshot the ground-contact planet's pfix rotation BEFORE
+            // taking the mutable borrow of bodies. For SphericalTerrain
+            // the pfix rotation cancels in the ground-point computation
+            // and we may pass identity, but other Terrain implementations
+            // would need this matrix.
+            //
+            // Defense-in-depth: ground contact's terrain query assumes
+            // the planet center is at the inertial origin
+            // (`compute_ground_contact_geometry` projects
+            // `vehicle_pos_inertial` directly into pfix without any
+            // planet-translation subtraction). `validate()` catches
+            // non-central planets via
+            // `ValidationError::GroundContactNonCentralPlanet`, but
+            // assert here too in case a caller skips validation.
+            let ground_t_inertial_pfix: DMat3 =
+                if let Some(planet_idx) = self.ground_contact_planet_source {
+                    let sfids = &self.source_frame_ids[planet_idx];
+                    assert_eq!(
+                        sfids.inertial, self.root_frame_id,
+                        "ground contact requires the planet source's inertial frame to be \
+                         the root frame (`compute_ground_contact_geometry` projects \
+                         vehicle inertial position into pfix as if the planet center \
+                         were at the inertial origin); planet_source={planet_idx} has \
+                         inertial frame {} but root is {}. Use a central planet for \
+                         ground contact, or call `Simulation::validate()` to surface \
+                         this as a configuration error before stepping.",
+                        sfids.inertial, self.root_frame_id
+                    );
+                    if let Some(pfix_id) = sfids.pfix {
+                        self.frame_tree.get(pfix_id).state.rot.t_parent_this
+                    } else {
+                        DMat3::IDENTITY
+                    }
+                } else {
+                    DMat3::IDENTITY
+                };
 
             // Split disjoint `self` fields up front so we can keep mutable
             // access to bodies (and to coupled_integ_scratch below) while
             // borrowing contact pairs immutably — no per-step clone of the
             // facet/material data.
             let contact_pairs: &Vec<ContactPairConfig> = &self.contact_pairs;
+            let ground_contact_pairs: &Vec<GroundContactPairConfig> = &self.ground_contact_pairs;
+            // Stage-1 gate for JEOD's pre-propagation init impulse:
+            // mirrors `ContactSurface::collect_forces_torques` zeroing
+            // `facet.force` after stage 1's collection. The closure
+            // applies impulses on the first call and the gate flips to
+            // `true`, so stages 2-4 see no init force. Cell<bool> instead
+            // of Vec<Cell<Option<…>>> to keep the per-step path
+            // allocation-free (the impulses themselves are stored on
+            // each `GroundContactPairConfig` and cleared after the
+            // integrator returns).
+            let init_impulses_drained = std::cell::Cell::new(false);
             let bodies_mut = &mut self.bodies;
 
             // Gather per-body immutable data (t_struct_body, mass, constant
@@ -585,6 +645,35 @@ impl Simulation {
                             out[pair.body_b].1 += eval.torque_b_body;
                         }
                     }
+                    // Ground contact: drain JEOD's pre-propagation init
+                    // impulses on the first stage call only (mirrors
+                    // ContactSurface::collect_forces_torques zeroing
+                    // facet.force after stage 1). Subsequent stages
+                    // evaluate the SteadyState path which produces no
+                    // contact for above-surface vehicles — matching
+                    // JEOD's runtime check_contact_ground behaviour.
+                    let drain_now = !init_impulses_drained.replace(true);
+                    for pair in ground_contact_pairs {
+                        if drain_now {
+                            if let Some(impulse) = pair.pending_initial_impulse {
+                                out[pair.body_a].0 += impulse.force_inertial;
+                                out[pair.body_a].1 += impulse.torque_body;
+                            }
+                        }
+                        if let Some(eval) = evaluate_ground_contact_pair(
+                            &pair.vehicle_facet,
+                            &pair.ground_facet,
+                            &stage_trans[pair.body_a],
+                            &stage_rot[pair.body_a],
+                            t_struct_body_vec[pair.body_a],
+                            &mass_vec[pair.body_a],
+                            ground_t_inertial_pfix,
+                            Phase::SteadyState,
+                        ) {
+                            out[pair.body_a].0 += eval.force_on_a;
+                            out[pair.body_a].1 += eval.torque_a_body;
+                        }
+                    }
                 },
                 integ_dt,
             );
@@ -596,6 +685,14 @@ impl Simulation {
                 body.trans = TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
                     &trans_untyped_vec[i],
                 );
+            }
+
+            // Mark pending init impulses as consumed so subsequent steps
+            // don't reapply them. (Matches JEOD: the impulsive force is
+            // applied only at stage 1 of step 1 and is then zeroed by
+            // collect_forces_torques.)
+            for pair in self.ground_contact_pairs.iter_mut() {
+                pair.pending_initial_impulse = None;
             }
         }
 
