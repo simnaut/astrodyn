@@ -691,6 +691,16 @@ pub fn compute_ground_contact_geometry(
         ground_facet.active,
         "compute_ground_contact_geometry: ground_facet must be active"
     );
+    // JEOD_INV: IN.36 — GroundFacet.alt_offset must be finite. Re-checked
+    // here because `GroundFacet`'s fields are public, so callers can
+    // bypass `GroundFacet::new` / `Simulation::register_ground_contact_pair`
+    // and mutate `alt_offset` to NaN/±inf, which would propagate into
+    // `ground_pfix` below and produce undefined contact geometry.
+    assert!(
+        ground_facet.alt_offset.is_finite(),
+        "compute_ground_contact_geometry: ground_facet.alt_offset must be finite, got {}",
+        ground_facet.alt_offset
+    );
 
     // Project the vehicle position into the planet-fixed frame.
     // `t_inertial_pfix * v_inertial = v_pfix`, so the inverse
