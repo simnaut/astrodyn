@@ -984,37 +984,97 @@ fn tier3_contact_ground_smoke() {
 
 /// Tier 3 cross-validation against `SIM_ground_contact/RUN_contact_ground` CSV.
 ///
-/// **DEFERRED**: tracked under follow-up work. The GroundFacet algebra
-/// matches JEOD's source line-for-line, but a second-order frame-
-/// convention detail (the relationship between
-/// `BodyRefFrame::state.trans.position` for surface-model-created
-/// vehicle points and the body's structure / integration-frame
-/// position) governs whether `subject_mag < ground_mag` ever fires for
-/// a vehicle at the planet surface, and this is sensitive to JEOD
-/// runtime initialization order we can't reproduce statically.
+/// **DEFERRED — root cause identified**:
+/// the CSV trajectory we'd need to match is produced by a JEOD
+/// initialization-state artifact, not by the steady-state ground-contact
+/// algorithm. Reproducing it requires either modeling that artifact
+/// explicitly or accepting a documented divergence from JEOD's reference.
 ///
-/// Concretely:
-/// - The CSV t=0 row shows ~2.2 × 10¹⁰ N contact force per vehicle, but
-///   any direct trace of `point_ground_interaction.cc::in_contact()`
-///   from the documented initial state produces either "no contact"
-///   (with `state.trans.position` in the inertial frame, where
-///   `subject_mag` ≈ R+1 > R = `ground_mag`) or "always contact" (with
-///   `state.trans.position` in the structural frame, where
-///   `subject_mag` ≈ 1 << R = `ground_mag` regardless of altitude).
-/// - JEOD's CSV trajectory (v ≈ 93 km/s at t=0.05) consistent with
-///   ~1/6 of a single-stage RK4 contact-spring impulse, suggesting JEOD
-///   detects contact at exactly stage 1 of step 1 and then loses contact
-///   at stages 2–4. Our port doesn't reproduce that stage-dependent
-///   behavior because both interpretations of
-///   `state.trans.position` give a position-only contact decision that
-///   is stage-invariant.
+/// ## Root cause
 ///
-/// The unit-test coverage in `jeod_interactions::contact::tests::*ground*`
-/// validates the algebra at the documented initial state. Re-enabling
-/// this test should be coupled with running JEOD itself to capture the
-/// per-stage `subject_mag` / `ground_mag` values during the first step
-/// of `RUN_contact_ground` so we can identify which JEOD-runtime detail
-/// produces the observed trajectory.
+/// JEOD's `BodyRefFrame::state.trans.position` for a surface-model-created
+/// `vehicle_point` (the C++ frame backing each `ContactFacet`) is
+/// **default-constructed to (0, 0, 0)** when the frame is created, and
+/// only later populated to its true inertial position by
+/// `DynBody::compute_vehicle_point_states` (see
+/// `dyn_body_propagate_state.cc::compute_derived_state_forward`).
+/// `ContactGround::initialize_ground` runs **before** that propagation
+/// (the `P_DYN("initialization")` job in
+/// `verif/SIM_ground_contact/S_modules/contact.sm:70`), and inside
+/// `GroundInteraction::initialize` calls `in_contact()` once with
+/// `vehicle_point.state.trans.position == (0, 0, 0)`. Tracing
+/// `point_ground_interaction.cc::in_contact` from that state:
+///
+/// - `vec = structure.pos + vp.pos = (R, 0, 0) + (0, 0, 0) = (R, 0, 0)`
+///   (interpreted as the vehicle's inertial position).
+/// - Ground point in body frame ≈ `(R, 0, 0)`; sphere/cylinder
+///   `contact_point` ≈ `(1, 0, 0)`.
+/// - `facet_pos = T_parent_this * vp.pos = identity * (0, 0, 0) = (0, 0, 0)`.
+/// - `rel_state = contact_point + facet_pos = (1, 0, 0)` →
+///   `subject_mag = 1 << R = ground_mag` → **contact triggers** with
+///   penetration ≈ R, force ≈ k·R = 1.117 × 10¹⁰ N per vehicle. This
+///   value is what JEOD writes into `subject->force` and what eventually
+///   surfaces as the `~2.2 × 10¹⁰ N` first-row CSV value (a factor of 2
+///   suggesting init runs `in_contact` twice, once per ground facet
+///   pairing — to be confirmed by a JEOD live-run trace).
+///
+/// At the **first integration step**, before any RK4 stage runs,
+/// `compute_vehicle_point_states` has propagated `vp.state.trans.position`
+/// to its true inertial value `(R, 0, 0)`. The same algorithm now gives:
+///
+/// - `vec = (R, 0, 0) + (R, 0, 0) = (2R, 0, 0)` (this is the JEOD code's
+///   apparent doubled-position symptom — only consistent because the
+///   init-time vp.pos was (0, 0, 0)).
+/// - `facet_pos = identity * (R, 0, 0) = (R, 0, 0)`.
+/// - `rel_state = (R+1, 0, 0)` → `subject_mag = R+1 > R = ground_mag` →
+///   **no contact** at any altitude.
+///
+/// Net JEOD behaviour: an impulsive force of 1.117 × 10¹⁰ N on
+/// `subject->force` from initialization is consumed at stage 1 of step 1
+/// (RK4 weight 1/6), and stages 2–4 plus all subsequent steps see zero
+/// contact force. RK4 then yields
+/// `Δv ≈ (1/6) × F × dt / m = 93 081 m/s`, exactly matching the t=0.05 CSV
+/// velocity.
+///
+/// ## Why our port can't (yet) reproduce this
+///
+/// `Simulation::register_ground_contact_pair` doesn't have an
+/// "initialization-time `in_contact`" hook — every call to
+/// `evaluate_ground_contact_pair` goes through the steady-state
+/// algorithm against the integrator's intermediate body state, which
+/// already represents the inertial position. So our port is structurally
+/// `interp 2` everywhere: subject_mag ≈ R+1, never less than ground_mag
+/// at the initial geometry, no contact force ever applied, vehicles
+/// never accelerate. This is *physically correct* for a vehicle resting
+/// on the surface (no penetration → no spring force), but doesn't match
+/// JEOD's CSV.
+///
+/// ## Paths forward
+///
+/// 1. **Match JEOD's artifact** — add an init-time `evaluate_ground_contact_pair`
+///    hook on `Simulation` that computes contact with `vehicle_point.position`
+///    pre-propagation (as a zero offset from structure), accumulates the
+///    resulting impulse onto the body once before the first step. Closes
+///    the test, but at the cost of modeling a JEOD-runtime quirk that
+///    isn't physically meaningful.
+///
+/// 2. **Match physics, not CSV** — keep the current steady-state algorithm,
+///    accept that vehicles initialized exactly at the planet surface
+///    don't pick up the JEOD impulsive launch, and document the
+///    divergence. Replace the CSV trajectory comparison with assertions
+///    on physical properties (e.g., bodies remain near the surface
+///    under gravity in a stable configuration).
+///
+/// 3. **Switch initial conditions** — drop the vehicles a few centimeters
+///    below the surface (genuine penetration), giving spring forces in
+///    the kN range. Trajectory diverges from JEOD's (which simulates the
+///    artifact-launched ballistic phase) but exercises the contact spring
+///    against a clean reference we generate ourselves.
+///
+/// Recommendation: option 2 with a follow-up issue describing the
+/// discrepancy. The unit-test coverage in
+/// `jeod_interactions::contact::tests::*ground*` already validates the
+/// algorithm against the JEOD initial-state algebra.
 #[test]
 #[ignore = "tier3 trajectory cross-validation deferred — see docstring"]
 fn tier3_contact_ground() {
