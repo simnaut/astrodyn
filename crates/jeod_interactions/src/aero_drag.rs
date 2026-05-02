@@ -193,12 +193,19 @@ impl<V: Vehicle> AerodynamicForceTyped<V> {
 /// Typed sibling of [`compute_ballistic_drag`].
 ///
 /// Same numeric kernel — wraps [`DragConfigTyped`] / typed
-/// [`Velocity<RootInertial>`] inputs and unwraps to the existing
-/// implementation. Returns [`AerodynamicForceTyped<V>`] (with both
-/// force and torque) for surface parity with the untyped form. The
-/// torque is always zero for the ballistic model (force acts through
-/// the center of mass), but the field is preserved so the typed
-/// surface stays isomorphic with [`AerodynamicForce`].
+/// [`Velocity<PlanetInertial<P>>`] inputs and unwraps to the existing
+/// implementation. The velocity is in the *atmosphere planet's*
+/// inertial frame (matching the corotation wind in `atmos.wind` which
+/// is computed via `omega × planet_inertial_position`), not the
+/// simulation's root inertial frame — so the typed signature requires
+/// `PlanetInertial<P>` to make the planet identity explicit at the
+/// call site (RF.10).
+///
+/// Returns [`AerodynamicForceTyped<V>`] (with both force and torque)
+/// for surface parity with the untyped form. The torque is always
+/// zero for the ballistic model (force acts through the center of
+/// mass), but the field is preserved so the typed surface stays
+/// isomorphic with [`AerodynamicForce`].
 ///
 /// Output frame is `StructuralFrame<V>` — the frame
 /// `t_inertial_struct` rotates inertial vectors *into*. Callers who

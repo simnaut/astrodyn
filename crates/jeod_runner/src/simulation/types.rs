@@ -43,7 +43,9 @@ pub struct ContactPairConfig {
 
 /// Maps a gravity source to its frame tree nodes.
 pub(crate) struct SourceFrameIds {
-    /// RootInertial frame for this source (e.g., "Earth.inertial").
+    /// Inertial frame node for this source (e.g., `"Earth.inertial"`).
+    /// Equals `root_frame_id` when the source is central; otherwise it is
+    /// a non-central child of the root.
     pub inertial: FrameId,
     /// Planet-fixed frame (e.g., "Earth.pfix"), if the source has a rotation model.
     pub pfix: Option<FrameId>,

@@ -53,6 +53,11 @@ const RADIUS_M: f64 = EARTH.shape.r_eq + ALT_M;
 const SPEED_M_S: f64 = 7_504.567; // ~circular at radius — derived in test
 
 const SSB_TO_EARTH_OFFSET: DVec3 = DVec3::new(1.5e11, 0.0, 0.0);
+/// Sun-Earth offset (Earth-relative). Setup (a) places the Sun at this
+/// position in root coords; setup (b) places it at
+/// `SSB_TO_EARTH_OFFSET + SUN_FROM_EARTH` in root coords so that the
+/// Earth-relative geometry (and therefore solar beta) is invariant.
+const SUN_FROM_EARTH: DVec3 = DVec3::new(1.495_978_707e11, 0.0, 0.0);
 
 const DT: f64 = 60.0; // 60-second steps
 const N_STEPS: usize = 30; // 30 minutes
@@ -110,6 +115,25 @@ fn earth_at_offset(mu: f64) -> GravitySourceEntry {
     }
 }
 
+/// A non-central Sun source positioned relative to root such that its
+/// Earth-relative position equals [`SUN_FROM_EARTH`] in both setups.
+fn sun_source(position_in_root: DVec3) -> GravitySourceEntry {
+    GravitySourceEntry {
+        source: GravitySource {
+            mu: 0.0, // no gravitational pull from Sun in this test
+            model: GravityModel::PointMass,
+        },
+        position: position_in_root,
+        velocity: DVec3::ZERO,
+        t_inertial_pfix: None,
+        rotation_model: RotationModel::None,
+        delta_c20: 0.0,
+        tidal_config: None,
+        planet_omega: 0.0,
+        central: false,
+    }
+}
+
 fn atmosphere_config() -> AtmosphereConfig {
     AtmosphereConfig {
         model: AtmosphereModel::Exponential(ExponentialAtmosphere::default()),
@@ -151,30 +175,44 @@ fn body_config(integ_source: Option<usize>, gravity_source_idx: usize) -> Vehicl
         r_eq: EARTH.shape.r_eq,
         r_pol: EARTH.shape.r_pol,
     });
-    cfg.derived.solar_beta = false; // no sun in this test (kept simple)
+    // Solar beta exercises the SRP/lighting structural guard:
+    // `compute_body_solar_beta_typed` takes `Position<RootInertial>`, so the
+    // body must be shifted via `to_inertial(&o)` to compile. The two setups
+    // place the Sun such that Sun-Earth geometry is identical, so the
+    // computed solar-beta angle must match across the pair.
+    cfg.derived.solar_beta = true;
 
     // Atmosphere ON (so the named #255 bug class is exercised).
     cfg
 }
 
 /// Setup (a): single-planet Earth-rooted scenario.
+/// - Root = Earth.inertial (central body).
+/// - Sun at `SUN_FROM_EARTH` in root coords (= Earth-relative).
+/// - Body integrates in root.
 fn build_root_setup() -> Simulation {
     let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, DT);
     let earth = sb.add_source("Earth", earth_point_mass(MU_EARTH));
-    sb = sb.atmosphere(atmosphere_config(), earth);
+    let sun = sb.add_source("Sun", sun_source(SUN_FROM_EARTH));
+    sb = sb.atmosphere(atmosphere_config(), earth).sun(sun);
     sb.add_body(body_config(None, earth));
     sb.build().expect("setup (a) builds")
 }
 
 /// Setup (b): SSB-rooted with Earth as a non-central child at offset.
-/// Body integrates in Earth.inertial via `integ_source = Some(earth)`.
+/// - Root = SSB.inertial (central, mu=0 barycenter).
+/// - Earth at `SSB_TO_EARTH_OFFSET` in root coords.
+/// - Sun at `SSB_TO_EARTH_OFFSET + SUN_FROM_EARTH` in root coords, so the
+///   Sun-Earth relative position equals setup (a)'s.
+/// - Body integrates in `Earth.inertial` via `integ_source = Some(earth)`.
 fn build_offset_setup() -> Simulation {
     let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sb = SimulationBuilder::new(time, DT);
     let _ssb = sb.add_source("SSB", ssb_barycenter());
     let earth = sb.add_source("Earth", earth_at_offset(MU_EARTH));
-    sb = sb.atmosphere(atmosphere_config(), earth);
+    let sun = sb.add_source("Sun", sun_source(SSB_TO_EARTH_OFFSET + SUN_FROM_EARTH));
+    sb = sb.atmosphere(atmosphere_config(), earth).sun(sun);
     sb.add_body(body_config(Some(earth), earth));
     sb.build().expect("setup (b) builds")
 }
@@ -255,6 +293,23 @@ fn integ_frame_translation_invariance_geodetic_and_orbit() {
         assert!(
             m_diff < 1e-9,
             "step {step}: LVLH t_parent_this differs by {m_diff:e}",
+        );
+
+        // Solar beta — exercises the SRP/lighting structural shift.
+        // `compute_body_solar_beta_typed` requires `Position<RootInertial>`,
+        // so the runner must call `body.trans.to_inertial(&o)` before
+        // passing to it. Sun is placed such that its Earth-relative
+        // position is identical in both setups, so the resulting solar
+        // beta angle must match.
+        let sb_a = a.solar_beta.expect("setup (a) has solar beta");
+        let sb_b = b.solar_beta.expect("setup (b) has solar beta");
+        assert!(
+            (sb_a - sb_b).abs() < 1e-12,
+            "step {step}: solar beta differs by {:e} rad ({sb_a} vs {sb_b}). \
+             A non-zero diff here would indicate the integration-frame → \
+             root-inertial shift is missing or inconsistent at the solar \
+             beta call site (RF.10 shift site).",
+            (sb_a - sb_b).abs()
         );
     }
 }

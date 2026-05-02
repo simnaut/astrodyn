@@ -52,9 +52,18 @@ pub struct RefFrameInfo {
     pub kind: RefFrameKind,
 }
 
+/// Runtime kind of a reference-frame tree node.
+///
+/// Distinct from the type-level frame phantoms in `jeod_quantities`
+/// ([`RootInertial`](jeod_quantities::frame::RootInertial),
+/// [`PlanetInertial<P>`](jeod_quantities::frame::PlanetInertial), etc.)
+/// — `Inertial` here covers any non-rotating frame regardless of where it
+/// sits in the tree (root or a non-central child). It is *not* the
+/// runtime equivalent of the type-level `RootInertial`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RefFrameKind {
-    RootInertial,
+    /// Any non-rotating inertial frame (root or non-central child).
+    Inertial,
     PlanetFixed,
     Body,
 }
