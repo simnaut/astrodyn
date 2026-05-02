@@ -17,8 +17,8 @@ use jeod_frames::FrameId;
 use jeod_sim::{
     AerodynamicForce, AtmosphereState, ContactFacet, DragConfig, DynamicsConfig, EulerSequence,
     FrameDerivatives, FrameSwitchConfig, GeodeticState, GravityAcceleration, GravityControls,
-    GravitySource, LvlhFrame, MassProperties, OrbitalElements, RadiationForce, RotationModel,
-    RotationalState, SrpModel, TotalForce, TranslationalState, VehicleConfig,
+    GravitySource, GroundFacet, LvlhFrame, MassProperties, OrbitalElements, RadiationForce,
+    RotationModel, RotationalState, SrpModel, TotalForce, TranslationalState, VehicleConfig,
 };
 
 /// Registration of a contact interaction between two bodies.
@@ -38,6 +38,25 @@ pub struct ContactPairConfig {
     pub body_b: usize,
     /// Facet on body B (shape positions in B's structural frame).
     pub facet_b: ContactFacet,
+}
+
+/// Registration of a ground-contact interaction between a vehicle and a
+/// planetary surface.
+///
+/// Symmetric to [`ContactPairConfig`] but bodyless on the ground side —
+/// the ground doesn't integrate, has no Newton's-third-law reaction
+/// applied to it, and is queried per-step from the [`GroundFacet`]'s
+/// terrain model. The vehicle facet/material must match the ground
+/// facet's material exactly (single-pair `SpringPairInteraction`
+/// semantics).
+#[derive(Debug, Clone)]
+pub struct GroundContactPairConfig {
+    /// Index of the vehicle body.
+    pub body_a: usize,
+    /// Vehicle facet (shape positions in the body's structural frame).
+    pub vehicle_facet: ContactFacet,
+    /// Ground facet (terrain, alt_offset, material).
+    pub ground_facet: GroundFacet,
 }
 
 /// Maps a gravity source to its frame tree nodes.

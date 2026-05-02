@@ -33,7 +33,9 @@
 //! **subject** (body A). The opposite force acts on the **target**
 //! (body B) — callers apply Newton's third law.
 
-use glam::DVec3;
+use std::sync::Arc;
+
+use glam::{DMat3, DVec3};
 
 /// Small magnitude below which vectors are treated as zero.
 ///
@@ -197,6 +199,120 @@ impl ContactFacet {
         Self {
             shape: ContactShape::Line { start, end, radius },
             material,
+        }
+    }
+}
+
+/// Planetary terrain model that maps a planet-fixed query position to a
+/// ground point and outward surface normal.
+///
+/// Port of JEOD `Terrain` (`verif/SIM_ground_contact/models/terrain/include/terrain.hh`).
+/// JEOD's interface is `find_altitude(point, normal)` which writes the
+/// altitude into `point->ellip_coords.altitude` and the normal into
+/// `normal[3]`. The only consumer (`PointGroundInteraction::in_contact`,
+/// `LineGroundInteraction::in_contact`) immediately overwrites the
+/// altitude with `alt_offset` and recomputes Cartesian coordinates, so the
+/// effective output is `(ground_point_pfix, normal_pfix)`. We surface that
+/// directly.
+pub trait Terrain: std::fmt::Debug + Send + Sync {
+    /// Return the ground point and outward normal corresponding to the
+    /// vehicle's planet-fixed position.
+    ///
+    /// Both vectors are expressed in the planet-fixed frame. The returned
+    /// normal must be unit-length.
+    fn ground_point_pfix(&self, vehicle_pfix: DVec3) -> (DVec3, DVec3);
+}
+
+/// Spherical-Earth terrain — ground at a fixed planet radius.
+///
+/// Port of JEOD `TerrainRadius`
+/// (`verif/SIM_ground_contact/models/terrain/src/terrain_radius.cc`). For
+/// any vehicle position, the ground point lies along the same radial
+/// direction at exactly `radius` meters from the planet center, and the
+/// outward normal is the unit radial vector.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SphericalTerrain {
+    /// Planet radius in meters. Must be strictly positive.
+    pub radius: f64,
+}
+
+impl SphericalTerrain {
+    /// Construct a spherical terrain at the given planet radius.
+    ///
+    /// # Panics
+    /// Panics if `radius` is not finite or not strictly positive.
+    pub fn new(radius: f64) -> Self {
+        // JEOD_INV: IN.37 — SphericalTerrain.radius > 0 (ground point would
+        // collapse to the planet center otherwise, producing a NaN normal).
+        assert!(
+            radius.is_finite() && radius > 0.0,
+            "SphericalTerrain::new: radius must be finite and > 0, got {radius}"
+        );
+        Self { radius }
+    }
+}
+
+impl Terrain for SphericalTerrain {
+    fn ground_point_pfix(&self, vehicle_pfix: DVec3) -> (DVec3, DVec3) {
+        // JEOD `TerrainRadius::find_altitude` zeros the ellipsoidal altitude
+        // and then recomputes Cartesian coords from the same lat/lon, so
+        // `cart = R_planet * unit(cart_in)`. Mirror that exactly.
+        let n = vehicle_pfix.normalize_or_zero();
+        (n * self.radius, n)
+    }
+}
+
+/// Infinite-surface "ground" facet anchored to a planet via a [`Terrain`]
+/// model.
+///
+/// Port of JEOD `GroundFacet`
+/// (`verif/SIM_ground_contact/models/contact_ground/include/ground_facet.hh`).
+/// Unlike [`ContactFacet`], a ground facet does not belong to a body — it
+/// is anchored at the planet surface and queried per-step via the terrain
+/// model. The pair material lives on the facet (matching JEOD's
+/// `SpringPairInteraction` which JEOD looks up by `(steel, dirt)` name
+/// pair; we store the resolved material directly).
+#[derive(Debug, Clone)]
+pub struct GroundFacet {
+    /// Terrain model used to query the ground point at a vehicle's
+    /// planet-fixed position. Stored as `Arc` so a single terrain can be
+    /// shared across multiple `GroundFacet` instances without cloning the
+    /// underlying state.
+    pub terrain: Arc<dyn Terrain>,
+    /// Vertical offset above the terrain-reported altitude (m). Mirrors
+    /// JEOD `GroundFacet::alt_offset`.
+    pub alt_offset: f64,
+    /// Mechanical properties at the ground/vehicle interface.
+    ///
+    /// Must equal the vehicle facet's [`ContactMaterial`] in any registered
+    /// pair — JEOD pairs a single `SpringPairInteraction` to each facet
+    /// pair via `(params_1, params_2)` lookup.
+    pub material: ContactMaterial,
+    /// Active flag. Mirrors JEOD `GroundFacet::active`. Inactive facets
+    /// produce no force; we currently require this to be `true` at
+    /// registration time and panic otherwise.
+    pub active: bool,
+}
+
+impl GroundFacet {
+    /// Construct an active ground facet with the given terrain, vertical
+    /// offset, and material.
+    ///
+    /// # Panics
+    /// Panics if `alt_offset` is not finite (JEOD_INV: IN.36).
+    pub fn new(terrain: Arc<dyn Terrain>, alt_offset: f64, material: ContactMaterial) -> Self {
+        // JEOD_INV: IN.36 — GroundFacet.alt_offset must be finite (NaN/inf
+        // would propagate through the body-frame ground point and produce
+        // a nonsensical penetration test).
+        assert!(
+            alt_offset.is_finite(),
+            "GroundFacet::new: alt_offset must be finite, got {alt_offset}"
+        );
+        Self {
+            terrain,
+            alt_offset,
+            material,
+            active: true,
         }
     }
 }
@@ -444,6 +560,276 @@ pub fn compute_contact_force_from_geometry(
         penetration_depth,
         normal,
     }
+}
+
+/// Compute the ground-contact geometry for a vehicle facet against a
+/// [`GroundFacet`] anchored on a planetary surface.
+///
+/// Returns `None` when the vehicle is not penetrating the ground.
+///
+/// Faithful port of `point_ground_interaction.cc::in_contact` and
+/// `line_ground_interaction.cc::in_contact`. JEOD's algorithm operates
+/// entirely in the body frame:
+///
+/// 1. Project the vehicle composite-body position into the planet-fixed
+///    frame and look up the ground point and outward normal via the
+///    [`Terrain`] model.
+/// 2. Apply `alt_offset` along the outward normal (raises the effective
+///    ground above the geometric surface).
+/// 3. Rotate the ground point through pfix → inertial → body so the rest
+///    of the algorithm runs in body coords.
+/// 4. Find the closest point on the vehicle facet's centerline to the
+///    body-frame ground point, then push it out to the facet's surface
+///    via `surface_contact_point_*` (JEOD
+///    `LineContactFacet::calculate_contact_point` /
+///    `PointContactFacet::calculate_contact_point`).
+/// 5. Compute `subject_mag = |contact_point + facet_pos_body|` and
+///    `ground_mag = |ground_body|` (both magnitudes from the planet
+///    center, evaluated in the body frame). The vehicle is in contact
+///    when `subject_mag < ground_mag`.
+/// 6. The penetration vector is `ground_body - rel_state` in body frame
+///    (JEOD `point_ground_interaction.cc:83`).
+///
+/// The returned [`ContactGeometry`] expresses contact points and the
+/// normal in the **body frame** of the vehicle. Callers (e.g.
+/// [`evaluate_ground_contact_pair`](crate::contact::compute_ground_contact_geometry))
+/// rotate them to inertial as needed. `contact_point_on_b` is set to the
+/// body-frame ground point (treated as the "B side" reference for the
+/// shared force law).
+///
+/// # Panics
+/// Panics if `vehicle_facet.shape` is the [`ContactShape::Line`] zero
+/// length variant (degenerate, never produced by our public constructors)
+/// or if `ground_facet.active` is false (invalid registration). Material
+/// equality is enforced one level up in
+/// [`evaluate_ground_contact_pair`](crate::contact::compute_ground_contact_geometry)
+/// or via [`Simulation::register_ground_contact_pair`] in `jeod_runner`.
+pub fn compute_ground_contact_geometry(
+    vehicle_facet: &ContactFacet,
+    ground_facet: &GroundFacet,
+    vehicle_pos_inertial: DVec3,
+    t_inertial_body: DMat3,
+    t_struct_body: DMat3,
+    t_inertial_pfix: DMat3,
+) -> Option<ContactGeometry> {
+    // JEOD_INV: IN.35 — only active GroundFacets contribute force.
+    assert!(
+        ground_facet.active,
+        "compute_ground_contact_geometry: ground_facet must be active"
+    );
+
+    // Project the vehicle position into the planet-fixed frame.
+    // `t_inertial_pfix * v_inertial = v_pfix`, so the inverse
+    // (`.transpose()` since rotation matrices are orthonormal) takes pfix
+    // back to inertial. We need pfix coords of the vehicle, hence the
+    // forward direction here.
+    let vehicle_pfix = t_inertial_pfix * vehicle_pos_inertial;
+
+    // Terrain query — JEOD `find_altitude(&point, normal)` returns the
+    // ground cartesian and outward normal in pfix. `SphericalTerrain`
+    // collapses to a radial projection.
+    let (mut ground_pfix, normal_pfix) = ground_facet.terrain.ground_point_pfix(vehicle_pfix);
+    // Apply the vertical offset. JEOD `point_ground_interaction.cc:58-59`:
+    // `point.ellip_coords.altitude += ground->alt_offset; point.update_from_ellip(...)`.
+    // For a spherical surface the result is a radial shift; for any
+    // [`Terrain`] producing a unit normal, shifting the ground point
+    // along that normal is the geometrically correct generalization.
+    ground_pfix += normal_pfix * ground_facet.alt_offset;
+
+    // Convert ground point from pfix → inertial → body. JEOD's
+    // `point_ground_interaction.cc:62-63` does exactly this composition
+    // (transform_transpose by pfix rotation, then transform by
+    // vehicle_point's parent rotation).
+    let ground_inertial = t_inertial_pfix.transpose() * ground_pfix;
+    let ground_body = t_inertial_body * ground_inertial;
+
+    // JEOD's `vehicle_point->state.trans.position` is the facet center
+    // offset from the structure frame (= `mass_point.position` in JEOD's
+    // surface-model setup), NOT the vehicle's inertial position
+    // (despite vehicle_point being a child of the integration frame in
+    // the RefFrame tree). The algorithm then rotates this offset through
+    // `vehicle_point->state.rot.T_parent_this` (struct→body for the
+    // typical pt_orientation = identity case) to get a body-frame
+    // offset. We mirror that exactly via
+    // `t_struct_body * shape.reference_position()`.
+    let facet_pos_body = t_struct_body * vehicle_facet.shape.reference_position();
+
+    // Closest point on the vehicle facet's centerline to the body-frame
+    // ground point, then push to the facet surface.
+    let contact_point_body = match vehicle_facet.shape {
+        ContactShape::Point { radius, .. } => {
+            // JEOD `PointContactFacet::calculate_contact_point` (point_contact_facet.cc:119):
+            // contact_point = unit(nvec) * radius. The input nvec is the
+            // body-frame ground point passed directly (not relative to
+            // anything). For our shape with `position`, the surface point
+            // is offset from the sphere center by `radius` along the
+            // ground direction; we faithfully reproduce that even for
+            // non-zero `position` (JEOD's only configuration is `position
+            // = [0,0,0]`, but the math extends cleanly).
+            surface_contact_point_point(ground_body, radius)
+        }
+        ContactShape::Line { start, end, radius } => {
+            // JEOD operates the line algorithm in the cylinder's local
+            // frame. Our segment lives in structure frame; rotate to
+            // body frame, run the algorithm there. Centerline ends:
+            let s_body = t_struct_body * start;
+            let e_body = t_struct_body * end;
+            // dist_line_segments(centerline, ground_point_repeated) →
+            // closest centerline point.
+            let centerline_closest = closest_point_on_segment(s_body, e_body, ground_body);
+            // calculate_contact_point pushes that to the cylinder surface
+            // in the direction of the ground point, with end-cap handling.
+            surface_contact_point_line(s_body, e_body, radius, ground_body, centerline_closest)
+        } // No `Ground` variant on ContactShape — ground is represented by
+          // GroundFacet, not ContactShape.
+    };
+
+    // rel_state = contact_point + facet_pos (body frame). Compare its
+    // magnitude (interpreted as a position vector from the inertial
+    // origin, expressed in body coords by JEOD's convention) to the
+    // ground point's magnitude. JEOD `point_ground_interaction.cc:74-78`.
+    let rel_state = contact_point_body + facet_pos_body;
+    let subject_mag = rel_state.length();
+    let ground_mag = ground_body.length();
+
+    if subject_mag >= ground_mag {
+        return None;
+    }
+
+    // Penetration vector (body frame): `ground_body - rel_state`. JEOD
+    // `point_ground_interaction.cc:83`. In JEOD's body-frame convention
+    // both vectors are inertial-position-magnitude proxies: |rel_state|
+    // is the "distance from inertial origin to subject," |ground_body|
+    // is the "distance from inertial origin to the ground point." When
+    // subject_mag < ground_mag (the surface point is closer to the
+    // inertial origin than the ground), `ground_body - rel_state`
+    // points radially outward from the planet center — the direction
+    // the spring should repel the vehicle. We feed this directly as the
+    // contact normal so `compute_contact_force_from_geometry` produces
+    // an outward (repulsive) spring force.
+    let penetration_vec = ground_body - rel_state;
+    let penetration_depth = penetration_vec.length();
+    let normal = if penetration_depth < ZERO_SMALL {
+        ground_body.normalize_or(DVec3::X)
+    } else {
+        penetration_vec / penetration_depth
+    };
+
+    // Map to the canonical `ContactGeometry` shape used by
+    // `compute_contact_force_from_geometry`. We express the contact
+    // point relative to the facet's `reference_position()` so the
+    // downstream torque-arm code (which expects "contact point relative
+    // to facet shape reference") keeps working.
+    let contact_point_on_a = contact_point_body - vehicle_facet.shape.reference_position();
+    Some(ContactGeometry {
+        contact_point_on_a,
+        contact_point_on_b: DVec3::ZERO,
+        normal,
+        penetration_depth,
+    })
+}
+
+/// JEOD `PointContactFacet::calculate_contact_point` (point_contact_facet.cc:119).
+///
+/// Returns the contact point on the sphere surface relative to the sphere
+/// center, given the direction vector from the sphere center toward the
+/// ground point.
+fn surface_contact_point_point(nvec: DVec3, radius: f64) -> DVec3 {
+    let n = nvec.normalize_or_zero();
+    n * radius
+}
+
+/// JEOD `LineContactFacet::calculate_contact_point` (line_contact_facet.cc:159).
+///
+/// Returns the contact point on the cylinder surface in the same frame as
+/// `start`/`end`. `centerline_closest` is the closest point on the
+/// segment to the ground point; the algorithm uses its `+x`/`-x` sign in
+/// the cylinder's local frame to pick which end-cap to project against.
+fn surface_contact_point_line(
+    start: DVec3,
+    end: DVec3,
+    radius: f64,
+    ground_point: DVec3,
+    centerline_closest: DVec3,
+) -> DVec3 {
+    // Build the cylinder-local frame: x along (end - start), origin at
+    // segment midpoint. JEOD's algorithm assumes the cylinder is along
+    // the structural x-axis with center at the origin; our segment is
+    // arbitrary, so we translate and rotate into that canonical frame,
+    // run the JEOD algebra, and rotate back.
+    let axis = end - start;
+    let length = axis.length();
+    let half_length = length * 0.5;
+    if length < ZERO_SMALL {
+        // Zero-length segment ≡ point. Push out along the ground direction.
+        let mid = 0.5 * (start + end);
+        let nvec = ground_point - mid;
+        return mid + surface_contact_point_point(nvec, radius);
+    }
+    let x_hat = axis / length;
+    let mid = 0.5 * (start + end);
+
+    // Express centerline_closest and ground_point in the local cylinder
+    // frame (origin at midpoint, x along segment). JEOD's `contact_point`
+    // input to `calculate_contact_point` is the centerline point in this
+    // frame; `nvec` is the ground point in this frame.
+    let cp_local_x = (centerline_closest - mid).dot(x_hat);
+    // Build a y/z basis orthogonal to x_hat. Any orthonormal pair works
+    // since the cylinder is rotationally symmetric.
+    let y_hat = if x_hat.x.abs() < 0.9 {
+        x_hat.cross(DVec3::X).normalize()
+    } else {
+        x_hat.cross(DVec3::Y).normalize()
+    };
+    let z_hat = x_hat.cross(y_hat);
+
+    let g = ground_point - mid;
+    let nvec_local = DVec3::new(g.dot(x_hat), g.dot(y_hat), g.dot(z_hat));
+
+    // === Faithful port of LineContactFacet::calculate_contact_point ===
+    // JEOD uses `contact_point[0]` sign to pick which end-cap. Our
+    // `cp_local_x` is the x-coordinate of the closest centerline point
+    // in the cylinder-local frame.
+    let sign = if cp_local_x < 0.0 { -1.0 } else { 1.0 };
+    let end_x = sign * half_length;
+
+    let n = nvec_local.length();
+    let (mut cx, mut cy, mut cz) = (cp_local_x, 0.0, 0.0);
+    if n > ZERO_SMALL {
+        let v = nvec_local / n; // normalized direction toward ground
+        let x = v.x;
+        // JEOD zeros vec[0] then renormalizes the y/z component to form
+        // the cylinder's radial direction.
+        let yz_len_sq = v.y * v.y + v.z * v.z;
+        if yz_len_sq > 1e-20 {
+            let yz_len = yz_len_sq.sqrt();
+            let uy = v.y / yz_len;
+            let uz = v.z / yz_len;
+            // Extend y/z out to cylinder surface.
+            cy = uy * radius;
+            cz = uz * radius;
+            // JEOD adjusts `contact_point[0]` by an x-ratio scaling so the
+            // surface point lies on the slanted line from the centerline
+            // toward the ground point at the cylinder radius.
+            let scale = (x * x * (cy * cy + cz * cz) / (v.y * v.y + v.z * v.z)).sqrt();
+            cx += sign * scale;
+        }
+    }
+
+    // End-cap branch. JEOD: `if (|cx| >= |end_x|)`, project from the
+    // selected end-cap toward the ground point at radius distance.
+    if cx.abs() >= end_x.abs() {
+        let end = DVec3::new(end_x, 0.0, 0.0);
+        let dir = (nvec_local - end).normalize_or_zero();
+        let surf = end + dir * radius;
+        cx = surf.x;
+        cy = surf.y;
+        cz = surf.z;
+    }
+
+    // Rotate the local-frame surface point back to the input frame.
+    let local = DVec3::new(cx, cy, cz);
+    mid + local.x * x_hat + local.y * y_hat + local.z * z_hat
 }
 
 // ─── Internal helpers ────────────────────────────────────────────────
@@ -958,5 +1344,115 @@ mod tests {
             unit_tangent_friction_y,
             res_ob.force.y
         );
+    }
+
+    // ── Ground contact tests ─────────────────────────────────────────
+
+    #[test]
+    fn spherical_terrain_ground_point_radial() {
+        let t = SphericalTerrain::new(6378137.0);
+        // Vehicle 100 km up over the +x axis: ground point is at the
+        // surface along the same radial direction.
+        let v = DVec3::new(6378137.0 + 100_000.0, 0.0, 0.0);
+        let (p, n) = t.ground_point_pfix(v);
+        assert!((p - DVec3::new(6378137.0, 0.0, 0.0)).length() < 1e-9);
+        assert!((n - DVec3::X).length() < 1e-12);
+
+        // Off-axis: 45° in xy plane.
+        let r = 6378137.0 + 1_000_000.0;
+        let v2 = DVec3::new(r * 0.5_f64.sqrt(), r * 0.5_f64.sqrt(), 0.0);
+        let (p2, n2) = t.ground_point_pfix(v2);
+        let r_p2 = p2.length();
+        assert!((r_p2 - 6378137.0).abs() < 1e-6);
+        assert!(n2.length() - 1.0 < 1e-12);
+    }
+
+    #[test]
+    fn point_ground_jeod_algorithm_matches_run_contact_ground_t0() {
+        // RUN_contact_ground t=0 geometry: 1 m sphere at structure
+        // origin, vehicle composite-body at inertial (R, 0, 0). JEOD's
+        // algorithm reports |rel_state|=1 (sphere surface in +x direction
+        // from struct origin) vs |ground|=R (ground point at planet
+        // surface). subject_mag (1) < ground_mag (R) → contact, with
+        // penetration depth ≈ R-1.
+        let mat = ContactMaterial::jeod_spring(1751.25, 35.025, 0.5);
+        let vehicle = ContactFacet::point(DVec3::ZERO, 1.0, mat);
+        let ground = GroundFacet::new(Arc::new(SphericalTerrain::new(6378137.0)), 0.0, mat);
+        let pos = DVec3::new(6378137.0, 0.0, 0.0);
+        let geom = compute_ground_contact_geometry(
+            &vehicle,
+            &ground,
+            pos,
+            DMat3::IDENTITY,
+            DMat3::IDENTITY,
+            DMat3::IDENTITY,
+        )
+        .expect("JEOD reports contact at t=0");
+        // |ground - rel_state| = R - 1 in JEOD's convention.
+        assert!(
+            (geom.penetration_depth - 6378136.0).abs() < 1.0,
+            "penetration depth ≈ R-1 = 6378136, got {}",
+            geom.penetration_depth
+        );
+        // Normal = unit(ground_body - rel_state). penetration_vec ≈
+        // (R-1, 0, 0) in body frame (+x = radially outward), so
+        // normal ≈ (1, 0, 0). The spring force is therefore radially
+        // outward, repelling the vehicle from the planet center.
+        assert!(
+            geom.normal.x > 0.95,
+            "normal expected near +x in body frame (radially outward), got {:?}",
+            geom.normal
+        );
+    }
+
+    #[test]
+    fn line_ground_jeod_algorithm_matches_run_contact_ground_t0() {
+        // Cylinder along struct x, length 2, radius 1. Same mass/material
+        // as RUN_contact_ground veh1.
+        let mat = ContactMaterial::jeod_spring(1751.25, 35.025, 0.5);
+        let vehicle = ContactFacet::line(
+            DVec3::new(-1.0, 0.0, 0.0),
+            DVec3::new(1.0, 0.0, 0.0),
+            1.0,
+            mat,
+        );
+        let ground = GroundFacet::new(Arc::new(SphericalTerrain::new(6378137.0)), 0.0, mat);
+        let pos = DVec3::new(6378137.0, 0.0, 0.0);
+        let geom = compute_ground_contact_geometry(
+            &vehicle,
+            &ground,
+            pos,
+            DMat3::IDENTITY,
+            DMat3::IDENTITY,
+            DMat3::IDENTITY,
+        )
+        .expect("JEOD reports contact at t=0");
+        // For the line, JEOD's contact_point = (2, 0, 0) (extended end-cap
+        // surface). |rel_state| = 2. depth = R - 2.
+        assert!(
+            (geom.penetration_depth - 6378135.0).abs() < 1.0,
+            "penetration depth ≈ R-2 = 6378135, got {}",
+            geom.penetration_depth
+        );
+    }
+
+    #[test]
+    fn ground_facet_inactive_panics() {
+        let mat = ContactMaterial::jeod_spring(1000.0, 0.0, 0.0);
+        let vehicle = ContactFacet::point(DVec3::ZERO, 1.0, mat);
+        let mut ground = GroundFacet::new(Arc::new(SphericalTerrain::new(6378137.0)), 0.0, mat);
+        ground.active = false;
+        let pos = DVec3::new(6378137.0, 0.0, 0.0);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            compute_ground_contact_geometry(
+                &vehicle,
+                &ground,
+                pos,
+                DMat3::IDENTITY,
+                DMat3::IDENTITY,
+                DMat3::IDENTITY,
+            )
+        }));
+        assert!(result.is_err(), "inactive ground facet should panic");
     }
 }

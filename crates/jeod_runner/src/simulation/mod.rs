@@ -23,7 +23,8 @@ pub(crate) mod types;
 mod validate;
 
 pub use jeod_dynamics::DetachedSubtreeState;
-pub use types::{ContactPairConfig, VehicleOutput};
+pub use jeod_sim::{GroundFacet, SphericalTerrain, Terrain};
+pub use types::{ContactPairConfig, GroundContactPairConfig, VehicleOutput};
 
 use std::collections::HashMap;
 
@@ -138,6 +139,18 @@ pub struct Simulation {
     /// derivative-class job. Only RK4 + 6-DOF is supported; adding a pair
     /// while a body uses non-RK4 or 3-DOF is a validation error.
     contact_pairs: Vec<ContactPairConfig>,
+    /// Registered ground-contact pairs (vehicle-vs-planet-surface).
+    ///
+    /// Same coupled-RK4 path as `contact_pairs`: when non-empty,
+    /// `step_internal` evaluates ground contact at every RK4 stage. Per
+    /// JEOD `SIM_ground_contact/S_modules/contact.sm`, `check_contact_ground()`
+    /// is a derivative-class job alongside `check_contact()`.
+    ground_contact_pairs: Vec<GroundContactPairConfig>,
+    /// Source index for the planet whose pfix rotation is used to query
+    /// ground-contact terrain. `None` when no ground-contact pairs are
+    /// registered (or all use [`SphericalTerrain`], for which pfix
+    /// rotation cancels and identity may be passed).
+    ground_contact_planet_source: Option<usize>,
     /// Preallocated scratch buffers for the coupled RK4 integrator. Retained
     /// across steps so the inner loop is allocation-free once the body count
     /// stabilizes.
@@ -172,6 +185,8 @@ impl Simulation {
             mass_tree: None,
             detached_subtrees: HashMap::new(),
             contact_pairs: Vec::new(),
+            ground_contact_pairs: Vec::new(),
+            ground_contact_planet_source: None,
             coupled_integ_scratch: jeod_sim::integration::CoupledIntegScratch::new(),
         }
     }

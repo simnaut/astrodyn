@@ -11,11 +11,12 @@ use jeod_sim::forces::collect_and_resolve_forces;
 use jeod_sim::gravity::accumulate_gravity;
 use jeod_sim::integration::{integrate_bodies_contact_coupled, integrate_body, CoupledBodyInput};
 use jeod_sim::{
-    evaluate_contact_pair, integrate_body_coupled, CoupledStageEval, GravityControls,
-    MassProperties, RadiationForce, RotationalState, SwitchSense, TranslationalState,
+    evaluate_contact_pair, evaluate_ground_contact_pair, integrate_body_coupled, CoupledStageEval,
+    GravityControls, MassProperties, RadiationForce, RotationalState, SwitchSense,
+    TranslationalState,
 };
 
-use super::super::types::ContactPairConfig;
+use super::super::types::{ContactPairConfig, GroundContactPairConfig};
 use super::super::Simulation;
 use crate::error::StepError;
 
@@ -203,7 +204,7 @@ impl Simulation {
             accel
         };
 
-        if self.contact_pairs.is_empty() {
+        if self.contact_pairs.is_empty() && self.ground_contact_pairs.is_empty() {
             // ── Standard path: per-body RK4 / GJ integration ──
             // No clone of gravity_controls: the outer iter_mut gives us
             // a &mut SimBody, and Rust's disjoint-field split borrow lets
@@ -429,11 +430,28 @@ impl Simulation {
             // `integ_dt` (dynamic timestep) is defined above the gravity
             // closure; reuse it here for the coupled integrator call.
 
+            // Snapshot the ground-contact planet's pfix rotation BEFORE
+            // taking the mutable borrow of bodies. For SphericalTerrain
+            // the pfix rotation cancels in the ground-point computation
+            // and we may pass identity, but other Terrain implementations
+            // would need this matrix.
+            let ground_t_inertial_pfix: DMat3 =
+                if let Some(planet_idx) = self.ground_contact_planet_source {
+                    if let Some(pfix_id) = self.source_frame_ids[planet_idx].pfix {
+                        self.frame_tree.get(pfix_id).state.rot.t_parent_this
+                    } else {
+                        DMat3::IDENTITY
+                    }
+                } else {
+                    DMat3::IDENTITY
+                };
+
             // Split disjoint `self` fields up front so we can keep mutable
             // access to bodies (and to coupled_integ_scratch below) while
             // borrowing contact pairs immutably — no per-step clone of the
             // facet/material data.
             let contact_pairs: &Vec<ContactPairConfig> = &self.contact_pairs;
+            let ground_contact_pairs: &Vec<GroundContactPairConfig> = &self.ground_contact_pairs;
             let bodies_mut = &mut self.bodies;
 
             // Gather per-body immutable data (t_struct_body, mass, constant
@@ -529,6 +547,23 @@ impl Simulation {
                             out[pair.body_b].0 -= eval.force_on_a;
                             out[pair.body_a].1 += eval.torque_a_body;
                             out[pair.body_b].1 += eval.torque_b_body;
+                        }
+                    }
+                    // Ground contact pairs — single-body (no Newton's-third-
+                    // law reaction on the ground). JEOD_INV: IN.31 — these
+                    // run alongside `check_contact()` as derivative-class jobs.
+                    for pair in ground_contact_pairs {
+                        if let Some(eval) = evaluate_ground_contact_pair(
+                            &pair.vehicle_facet,
+                            &pair.ground_facet,
+                            &stage_trans[pair.body_a],
+                            &stage_rot[pair.body_a],
+                            t_struct_body_vec[pair.body_a],
+                            &mass_vec[pair.body_a],
+                            ground_t_inertial_pfix,
+                        ) {
+                            out[pair.body_a].0 += eval.force_on_a;
+                            out[pair.body_a].1 += eval.torque_a_body;
                         }
                     }
                 },

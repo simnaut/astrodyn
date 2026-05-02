@@ -539,6 +539,121 @@ pub fn evaluate_contact_pair(
     })
 }
 
+/// Evaluation of a ground-contact pair against the intermediate state of
+/// a single body.
+///
+/// Symmetric to [`ContactPairEval`] but with no body-B side: the ground
+/// has no dynamics, no torque accumulator, and exerts no Newton's-third-
+/// law reaction we need to track.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct GroundContactPairEval {
+    /// Force on the vehicle in the inertial frame (N).
+    pub force_on_a: DVec3,
+    /// Torque on the vehicle in its body frame about its CoM (N*m).
+    pub torque_a_body: DVec3,
+}
+
+/// Evaluate a single ground-contact pair, returning the force on the
+/// vehicle (inertial) and the body-frame torque about the vehicle's CoM.
+///
+/// Mirrors [`evaluate_contact_pair`] but for a vehicle facet contacting
+/// a [`GroundFacet`] anchored on a planet. Composition:
+/// [`compute_ground_contact_geometry`] (port of
+/// `point_ground_interaction.cc::in_contact` /
+/// `line_ground_interaction.cc::in_contact`) followed by
+/// [`compute_contact_force_from_geometry`] (port of
+/// `spring_pair_interaction.cc::calculate_forces`).
+///
+/// Arguments:
+/// - `vehicle_facet` — vehicle-side facet in the body's structural frame.
+/// - `ground_facet` — ground-side facet anchored on a planet via [`Terrain`].
+/// - `trans_a` — translational state of the vehicle (inertial).
+/// - `rot_a` — rotational state of the vehicle.
+/// - `t_struct_body_a` — structural→body rotation.
+/// - `mass_a` — mass properties (for the torque arm and CoM offset).
+/// - `t_inertial_pfix` — inertial→planet-fixed rotation. For
+///   [`SphericalTerrain`] the pfix rotation cancels in the ground-point
+///   computation, so callers may pass [`DMat3::IDENTITY`]. Other terrain
+///   shapes (e.g., DEM) require the actual pfix rotation.
+///
+/// Returns `None` if the vehicle is not in contact with the ground.
+///
+/// # Panics
+/// Panics if `vehicle_facet.material != ground_facet.material` — JEOD pairs
+/// a single `SpringPairInteraction` per facet pair, so both sides must
+/// carry identical stiffness/damping/friction. Also panics when
+/// `ground_facet.active` is false (JEOD_INV: IN.32).
+#[allow(clippy::too_many_arguments)]
+pub fn evaluate_ground_contact_pair(
+    vehicle_facet: &ContactFacet,
+    ground_facet: &jeod_interactions::GroundFacet,
+    trans_a: &TranslationalState,
+    rot_a: &RotationalState,
+    t_struct_body_a: DMat3,
+    mass_a: &MassProperties,
+    t_inertial_pfix: DMat3,
+) -> Option<GroundContactPairEval> {
+    // Build inertial→body rotation from the body's left-quaternion.
+    let t_inertial_body_a = rot_a.quaternion.left_quat_to_transformation();
+
+    // Detection + body-frame geometry. Faithful port of JEOD's
+    // ground-interaction algorithm, which operates entirely in body frame.
+    let geom = jeod_interactions::compute_ground_contact_geometry(
+        vehicle_facet,
+        ground_facet,
+        trans_a.position,
+        t_inertial_body_a,
+        t_struct_body_a,
+        t_inertial_pfix,
+    )?;
+
+    // JEOD's relative-velocity term. `point_ground_interaction.cc:87-93`:
+    //   rel_velocity = ω_body × subject_contact_point + T_inertial_body * v_inertial
+    // The `// TODO: worry about planetary rotation` comment in JEOD
+    // indicates the pfix-frame ground velocity is omitted; we mirror that.
+    let v_inertial_in_body = t_inertial_body_a * trans_a.velocity;
+    let rel_vel_body = rot_a.ang_vel_body.cross(geom.contact_point_on_a) + v_inertial_in_body;
+
+    // Synthesize a "ground" ContactFacet so we can reuse the existing
+    // force law (which takes two facets to enforce material equality).
+    // The ground facet's `shape` is irrelevant to
+    // `compute_contact_force_from_geometry` once geometry is precomputed —
+    // we use a Point sphere of zero radius as a benign placeholder.
+    let ground_facet_synth = ContactFacet::point(DVec3::ZERO, 0.0, ground_facet.material);
+
+    // Spring + damping + Coulomb friction — same kernel as vehicle/vehicle.
+    let contact = compute_contact_force_from_geometry(
+        vehicle_facet,
+        &ground_facet_synth,
+        &geom,
+        rel_vel_body,
+    );
+
+    // Force is currently expressed in body frame (the geometry was
+    // computed in body frame). Rotate to inertial for the integrator.
+    let force_on_a_inertial = t_inertial_body_a.transpose() * contact.force;
+
+    // Torque arm: from the body's CoM to the contact point on the
+    // vehicle surface, in body frame. `contact.contact_point_on_a` is
+    // already relative to the facet's shape reference; the facet's
+    // shape reference is at structural offset `shape.reference_position()`
+    // from the structural origin, which is at CoM offset `mass.position`
+    // from the body's CoM. Mirror evaluate_contact_pair's arm
+    // computation but in body frame.
+    let r_cm_struct = mass_a.position;
+    let facet_offset_from_cm_body =
+        t_struct_body_a * (vehicle_facet.shape.reference_position() - r_cm_struct);
+    let arm_body = facet_offset_from_cm_body + contact.contact_point_on_a;
+    // Force is in body frame (contact.force comes from a body-frame
+    // geometry); torque = arm × force in body frame.
+    let torque_a_body = arm_body.cross(contact.force);
+
+    Some(GroundContactPairEval {
+        force_on_a: force_on_a_inertial,
+        torque_a_body,
+    })
+}
+
 /// Typed sibling of [`compute_drag`].
 ///
 /// Identical kernel — wraps with [`DragConfigTyped`] / typed

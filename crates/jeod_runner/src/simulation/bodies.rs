@@ -12,9 +12,9 @@ use glam::DVec3;
 
 use jeod_dynamics::{MassBodyId, MassPointState};
 use jeod_frames::{RefFrameKind, RefFrameRot, RefFrameState, RefFrameTrans};
-use jeod_sim::{ContactFacet, MassProperties, VehicleConfig};
+use jeod_sim::{ContactFacet, GroundFacet, MassProperties, VehicleConfig};
 
-use super::types::{ContactPairConfig, SimBody, VehicleOutput};
+use super::types::{ContactPairConfig, GroundContactPairConfig, SimBody, VehicleOutput};
 use super::Simulation;
 
 impl Simulation {
@@ -77,6 +77,95 @@ impl Simulation {
     /// Number of registered contact pairs.
     pub fn num_contact_pairs(&self) -> usize {
         self.contact_pairs.len()
+    }
+
+    /// Register a ground-contact interaction between a vehicle and a
+    /// planetary surface.
+    ///
+    /// Once registered, ground contact forces on `body_a` are evaluated
+    /// at each RK4 stage of [`step`](Self::step) — matching JEOD's
+    /// derivative-class `check_contact_ground()` job in
+    /// `SIM_ground_contact/S_modules/contact.sm`.
+    ///
+    /// The first call also pins the planet source whose `pfix` rotation
+    /// will be queried for terrain lookups; subsequent registrations must
+    /// use the same `planet_source`. For [`SphericalTerrain`](jeod_sim::SphericalTerrain)
+    /// the pfix rotation cancels in the ground-point computation and
+    /// `planet_source` is documentation-only — but we still validate
+    /// consistency to keep ground-contact registrations explicit.
+    ///
+    /// # Panics
+    /// * `body_a` is out of range for the registered bodies.
+    /// * `vehicle_facet.material != ground_facet.material` (JEOD pairs a
+    ///   single `SpringPairInteraction` per facet pair).
+    /// * `ground_facet.active == false` (JEOD_INV: IN.35).
+    /// * `ground_facet.alt_offset` is not finite (JEOD_INV: IN.36).
+    /// * `vehicle_facet.shape` is `Ground` (vehicle facets must be
+    ///   `Point` or `Line` — there is no `Ground` variant on
+    ///   `ContactShape`, so this is enforced structurally; the pattern
+    ///   match below is exhaustive).
+    /// * A previous ground-contact pair was registered with a different
+    ///   `planet_source`.
+    pub fn register_ground_contact_pair(
+        &mut self,
+        body_a: usize,
+        vehicle_facet: ContactFacet,
+        ground_facet: GroundFacet,
+        planet_source: usize,
+    ) {
+        assert!(
+            body_a < self.bodies.len(),
+            "register_ground_contact_pair: body_a index {body_a} out of range ({} bodies)",
+            self.bodies.len()
+        );
+        // JEOD pairs a single SpringPairInteraction per facet pair. Both
+        // sides carry identical material (vehicle "steel" vs ground
+        // "dirt" reduce to a single pair material in JEOD's lookup).
+        assert_eq!(
+            vehicle_facet.material, ground_facet.material,
+            "register_ground_contact_pair: vehicle_facet.material and \
+             ground_facet.material must be equal (JEOD pairs a single \
+             SpringPairInteraction per facet pair)"
+        );
+        // JEOD_INV: IN.35 — only active GroundFacets contribute force.
+        assert!(
+            ground_facet.active,
+            "register_ground_contact_pair: ground_facet.active must be true"
+        );
+        // JEOD_INV: IN.36 — alt_offset must be finite.
+        assert!(
+            ground_facet.alt_offset.is_finite(),
+            "register_ground_contact_pair: ground_facet.alt_offset must be finite, got {}",
+            ground_facet.alt_offset
+        );
+        // Vehicle-side shape check: the contact_point algebra in
+        // `compute_ground_contact_geometry` only handles Point and Line.
+        // A GroundFacet on the vehicle side is structurally rejected (no
+        // such variant on ContactShape).
+        assert!(
+            planet_source < self.gravity_data.len(),
+            "register_ground_contact_pair: planet_source index {planet_source} out of range \
+             ({} sources)",
+            self.gravity_data.len()
+        );
+        match self.ground_contact_planet_source {
+            None => self.ground_contact_planet_source = Some(planet_source),
+            Some(prev) => assert_eq!(
+                prev, planet_source,
+                "register_ground_contact_pair: all ground-contact pairs must reference the \
+                 same planet source (got {planet_source}, previously registered with {prev})"
+            ),
+        }
+        self.ground_contact_pairs.push(GroundContactPairConfig {
+            body_a,
+            vehicle_facet,
+            ground_facet,
+        });
+    }
+
+    /// Number of registered ground-contact pairs.
+    pub fn num_ground_contact_pairs(&self) -> usize {
+        self.ground_contact_pairs.len()
     }
 
     /// Add a dynamic body from a [`VehicleConfig`]. Returns its index.
