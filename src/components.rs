@@ -658,6 +658,24 @@ pub struct SunMarker;
 #[reflect(opaque, Component)]
 pub struct MoonMarker;
 
+/// Marks an entity as the simulation's designated central body.
+///
+/// [`crate::SourceMutator::set_source_position`] and
+/// [`crate::SourceMutator::set_source_state`] panic if the target entity
+/// carries this marker. Mission code attaches it to the gravity-source
+/// entity it treats as the pinned origin (e.g. Earth in an Earth-centered
+/// scenario), opting that entity into the same protection that
+/// `jeod_runner::Simulation::set_source_*` enforces against the
+/// root-mapped source via `assert_ne!(fid, root_frame_id, …)`.
+///
+/// At most one entity should carry this marker per simulation; multiple
+/// markers are not currently rejected, but `SourceMutator` panics on
+/// every call that targets a marked entity, so a well-behaved app
+/// attaches it once.
+#[derive(Component, Reflect, Default, Clone, Copy, Debug)]
+#[reflect(opaque, Component)]
+pub struct CentralSourceMarker;
+
 // ── Planet ──
 
 /// Bevy component wrapping `PlanetShape`.

@@ -484,6 +484,7 @@ pub fn register_jeod_component_types(app: &mut App) {
     app.register_type::<components::EphemerisBodyC>();
     app.register_type::<components::SunMarker>();
     app.register_type::<components::MoonMarker>();
+    app.register_type::<components::CentralSourceMarker>();
     // Derived-state config
     app.register_type::<components::OrbitalElementsConfigC>();
     app.register_type::<components::EulerAnglesConfigC>();

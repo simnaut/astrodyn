@@ -25,8 +25,8 @@
 
 use bevy::prelude::*;
 use bevy_jeod::{
-    FrameTreeR, JeodPlugin, PlanetBundle, RootFrameIdR, SourceFrameIdC, SourceInertialPositionC,
-    SourceInertialVelocityC, SourceMutator, TranslationalStateC,
+    CentralSourceMarker, FrameTreeR, JeodPlugin, PlanetBundle, RootFrameIdR, SourceFrameIdC,
+    SourceInertialPositionC, SourceInertialVelocityC, SourceMutator, TranslationalStateC,
 };
 use glam::DVec3;
 use jeod_runner::Simulation;
@@ -192,6 +192,59 @@ fn tier3_bevy_source_mutator_root_mutation_panics() {
         .world_mut()
         .register_system(move |mut mutator: SourceMutator| {
             mutator.set_source_position(source, DVec3::new(1.0, 2.0, 3.0));
+        });
+    let _ = app.world_mut().run_system(id);
+}
+
+#[test]
+#[should_panic(expected = "carries CentralSourceMarker")]
+fn tier3_bevy_source_mutator_central_marker_panics_on_set_position() {
+    // Mission code attaches `CentralSourceMarker` to the gravity-source
+    // entity it treats as the pinned origin. `SourceMutator::set_source_position`
+    // must panic on that entity, mirroring `jeod_runner::Simulation`'s
+    // `assert_ne!(fid, root_frame_id, …)` rejection of root-source
+    // mutation. Issue #264 closeout.
+    let mut app = build_app();
+    let earth = app
+        .world_mut()
+        .spawn((
+            PlanetBundle::point_mass("Earth", &EARTH),
+            CentralSourceMarker,
+        ))
+        .id();
+    // Run Startup so register_source_frames_system attaches `SourceFrameIdC`.
+    // The marker guard fires *before* the frame-id lookup, so this isn't
+    // strictly required for the panic, but it keeps the test exercising
+    // the same shape as a real mission setup.
+    app.world_mut().run_schedule(Startup);
+
+    let id = app
+        .world_mut()
+        .register_system(move |mut mutator: SourceMutator| {
+            mutator.set_source_position(earth, DVec3::new(1.0, 2.0, 3.0));
+        });
+    let _ = app.world_mut().run_system(id);
+}
+
+#[test]
+#[should_panic(expected = "carries CentralSourceMarker")]
+fn tier3_bevy_source_mutator_central_marker_panics_on_set_state() {
+    // Same as the position case above, but for `set_source_state`.
+    // Both setters must reject central-body mutation.
+    let mut app = build_app();
+    let earth = app
+        .world_mut()
+        .spawn((
+            PlanetBundle::point_mass("Earth", &EARTH),
+            CentralSourceMarker,
+        ))
+        .id();
+    app.world_mut().run_schedule(Startup);
+
+    let id = app
+        .world_mut()
+        .register_system(move |mut mutator: SourceMutator| {
+            mutator.set_source_state(earth, DVec3::new(1.0, 2.0, 3.0), DVec3::ZERO);
         });
     let _ = app.world_mut().run_system(id);
 }
