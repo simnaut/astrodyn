@@ -21,9 +21,8 @@
 //! No Docker reference data required.
 
 use glam::DVec3;
-use jeod_runner::{
-    DerivedStateConfig, GravitySourceEntry, RotationModel, Simulation, VehicleConfig,
-};
+use jeod_runner::{RotationModel, Simulation};
+use jeod_sim::{DerivedStateConfig, GravitySourceEntry, VehicleConfig};
 use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, SimulationTime,
     TranslationalState,

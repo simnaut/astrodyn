@@ -127,7 +127,7 @@ fn run_simulation_steps() -> SixDofState {
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
 
-    let mut earth_entry = jeod_runner::GravitySourceEntry::new(
+    let mut earth_entry = jeod_sim::GravitySourceEntry::new(
         GravitySource {
             mu: MU_EARTH,
             model: GravityModel::PointMass,
@@ -138,7 +138,7 @@ fn run_simulation_steps() -> SixDofState {
     earth_entry.central = true;
     let earth = sim.add_source("Earth", earth_entry);
 
-    sim.add_body(jeod_runner::VehicleConfig {
+    sim.add_body(jeod_sim::VehicleConfig {
         trans: initial_trans(),
         rot: Some(initial_rot()),
         mass: Some(mass_props()),
@@ -265,7 +265,7 @@ fn tier3_bevy_rkf45_matches_simulation_bit_identical() {
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
 
-    let mut earth_entry = jeod_runner::GravitySourceEntry::new(
+    let mut earth_entry = jeod_sim::GravitySourceEntry::new(
         GravitySource {
             mu: MU_EARTH,
             model: GravityModel::PointMass,
@@ -276,7 +276,7 @@ fn tier3_bevy_rkf45_matches_simulation_bit_identical() {
     earth_entry.central = true;
     let earth = sim.add_source("Earth", earth_entry);
 
-    sim.add_body(jeod_runner::VehicleConfig {
+    sim.add_body(jeod_sim::VehicleConfig {
         trans: initial_trans(),
         rot: Some(initial_rot()),
         mass: Some(mass_props()),

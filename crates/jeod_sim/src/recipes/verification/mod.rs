@@ -154,7 +154,7 @@ pub enum CsvReference {
     /// 80-column SIM_dyncomp state CSV consumed as a 3-DOF reference:
     /// position/velocity only — quaternion and ang_vel columns are
     /// dropped at the `jeod_test_data::crossval::StateLog` layer. Use
-    /// this for scenarios that build a `jeod_runner::VehicleConfig` without `rot`,
+    /// this for scenarios that build a `jeod_sim::VehicleConfig` without `rot`,
     /// so per-step compares don't synthesize spurious rotational
     /// reference values from CSV columns the simulation never produces.
     Dyncomp3Dof(&'static str),

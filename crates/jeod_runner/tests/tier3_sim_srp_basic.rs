@@ -8,11 +8,12 @@
 use jeod_test_data::tier3_csv::{load_srp_basic_csv, test_data_path};
 
 use glam::DVec3;
-use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, SrpModel, VehicleConfig};
+use jeod_runner::{RotationModel, Simulation};
 use jeod_sim::{
     FlatPlate, FlatPlateParams, FlatPlateState, FlatPlateThermal, GravityModel, GravitySource,
     SimulationTime, TranslationalState,
 };
+use jeod_sim::{GravitySourceEntry, SrpModel, VehicleConfig};
 
 /// Build the 6-plate surface matching SIM_1_BASIC's Modified_data/radiation_surface.py.
 /// All plates: area=2.0 m², albedo=0.0, diffuse=0.5, emissivity=1.0,

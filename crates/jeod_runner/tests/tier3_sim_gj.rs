@@ -16,11 +16,12 @@
 use jeod_test_data::tier3_csv::{load_gj_csv, test_data_path};
 
 use glam::DVec3;
-use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
+use jeod_runner::{RotationModel, Simulation};
 use jeod_sim::{
     GaussJacksonConfig, GravityControl, GravityControls, GravityModel, GravitySource,
     IntegratorType, SimulationTime, TranslationalState,
 };
+use jeod_sim::{GravitySourceEntry, VehicleConfig};
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 
 /// Non-standard μ used by SIM_GJ_test (set in input_common.py).

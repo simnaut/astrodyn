@@ -13,12 +13,13 @@
 //! This is NOT a Tier 3 cross-validation — there is no external reference.
 
 use glam::{DMat3, DVec3};
-use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, SrpModel, VehicleConfig};
+use jeod_runner::{RotationModel, Simulation};
 use jeod_sim::{
     FlatPlate, FlatPlateParams, FlatPlateState, FlatPlateThermal, GravityModel, GravitySource,
     JeodQuat, MassProperties, RotationalState, SimulationTime, ThermalIntegrationOrder,
     TranslationalState,
 };
+use jeod_sim::{GravitySourceEntry, SrpModel, VehicleConfig};
 
 fn single_plate() -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
     vec![(

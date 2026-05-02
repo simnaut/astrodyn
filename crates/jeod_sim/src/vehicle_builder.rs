@@ -8,7 +8,7 @@
 //! The output of [`VehicleBuilder::build`] is a [`VehicleConfig`] —
 //! the same descriptor that `SimulationBuilder::add_body` accepts and
 //! that `Simulation::body` carries through the runner's step loop.
-//! Phase 6 of #101 consolidated the runtime fluent
+//! Phase 6 of #101 consolidated the runner-side runtime fluent
 //! `jeod_runner::VehicleBuilder` into this typestate builder, so every
 //! method that builder offered is available here in the `Ready` impl.
 //!

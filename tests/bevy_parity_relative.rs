@@ -12,7 +12,8 @@ use bevy_jeod::{
     TranslationalStateC,
 };
 use glam::DVec3;
-use jeod_runner::{Simulation, VehicleConfig};
+use jeod_runner::Simulation;
+use jeod_sim::VehicleConfig;
 use jeod_sim::{
     DynamicsConfig, GravityControls, JeodQuat, MassProperties, RotationalState, SixDofState,
     TranslationalState,

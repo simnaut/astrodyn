@@ -43,6 +43,7 @@ pub mod propagation;
 pub mod rkf45;
 pub mod rotational;
 pub mod state;
+pub mod subtree;
 
 pub use abm4::{abm4_translational_step, Abm4State};
 pub use attach::{combine_states_at_attach, AttachCombineInputs, AttachCombineOutputs};
@@ -73,3 +74,4 @@ pub use rotational::{
     normalize_integ, RotationalState, SixDofState,
 };
 pub use state::TranslationalState;
+pub use subtree::DetachedSubtreeState;

@@ -31,12 +31,13 @@
 //!   major principal axis is stable (intermediate-axis theorem).
 
 use glam::{DMat3, DVec3};
-use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
+use jeod_runner::{RotationModel, Simulation};
 use jeod_sim::recipes::helpers::energy_conservation::specific_orbital_energy;
 use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, JeodQuat, MassProperties,
     RotationalState, SimulationTime, TranslationalState,
 };
+use jeod_sim::{GravitySourceEntry, VehicleConfig};
 
 /// Earth gravitational parameter (m^3/s^2) — JEOD `earth_GGM05C.cc`.
 const MU_EARTH: f64 = jeod_sim::EARTH.shape.mu;

@@ -8,11 +8,11 @@ use bevy_jeod::{
     MassPropertiesC, RotationalStateC, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
-use jeod_runner::{GravitySourceEntry, VehicleConfig};
 use jeod_sim::{
     DynamicsConfig, GravityControl, GravityControls, GravityModel, GravitySource, JeodQuat,
     MassProperties, RotationalState, SixDofState, TranslationalState,
 };
+use jeod_sim::{GravitySourceEntry, VehicleConfig};
 
 use common::*;
 

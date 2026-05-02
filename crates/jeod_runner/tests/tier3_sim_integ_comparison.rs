@@ -13,7 +13,7 @@
 //! helpers move into the recipes layer.
 
 use glam::DVec3;
-use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
+use jeod_runner::{RotationModel, Simulation};
 use jeod_sim::recipes::helpers::energy_conservation::{
     specific_orbital_energy, KeplerEnergyMonitor,
 };
@@ -22,6 +22,7 @@ use jeod_sim::{
     GaussJacksonConfig, GravityControl, GravityControls, GravityModel, GravitySource,
     IntegratorType, SimulationTime, TranslationalState,
 };
+use jeod_sim::{GravitySourceEntry, VehicleConfig};
 
 /// Earth gravitational parameter (m^3/s^2) from JEOD earth_GGM05C.
 const MU_EARTH: f64 = jeod_sim::EARTH.shape.mu;

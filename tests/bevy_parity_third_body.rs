@@ -10,7 +10,8 @@ use bevy_jeod::{
     SolarBetaC, SourceInertialPositionC, SourceInertialVelocityC, SunMarker, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
-use jeod_runner::{DerivedStateConfig, GravitySourceEntry, RotationModel, SrpModel, VehicleConfig};
+use jeod_runner::RotationModel;
+use jeod_sim::{DerivedStateConfig, GravitySourceEntry, SrpModel, VehicleConfig};
 use jeod_sim::{
     DynamicsConfig, Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel,
     GravitySource, MassProperties, SixDofState, TranslationalState,

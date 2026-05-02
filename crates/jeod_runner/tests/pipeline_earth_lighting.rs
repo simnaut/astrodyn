@@ -9,10 +9,9 @@
 //! end-to-end but asserts physical plausibility, not JEOD parity.
 
 use glam::DVec3;
-use jeod_runner::{
-    DerivedStateConfig, EarthLightingConfig, GravitySourceEntry, RotationModel, Simulation,
-    VehicleConfig,
-};
+use jeod_runner::{RotationModel, Simulation};
+use jeod_sim::VehicleConfig;
+use jeod_sim::{DerivedStateConfig, EarthLightingConfig, GravitySourceEntry};
 use jeod_sim::{
     Ephemeris, EphemerisBody, GravityControl, GravityControls, GravityModel, GravitySource,
     SimulationTime, TranslationalState,

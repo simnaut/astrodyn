@@ -4,11 +4,12 @@
 //! for time-scheduled force injection. All parameters loaded from JEOD sources.
 
 use glam::{DMat3, DVec3};
-use jeod_runner::{GravitySourceEntry, RotationModel, Simulation, VehicleConfig};
+use jeod_runner::{RotationModel, Simulation};
 use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, JeodQuat, MassProperties,
     RotationalState, SimulationTime, TranslationalState,
 };
+use jeod_sim::{GravitySourceEntry, VehicleConfig};
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use jeod_test_data::mass_data::MassInitData;
 use jeod_test_data::tier3_csv::{dyncomp_to_state_log_6dof, load_dyncomp_csv, test_data_path};

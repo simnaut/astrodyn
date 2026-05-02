@@ -11,9 +11,8 @@ use bevy_jeod::{
     SourceInertialPositionC, SunMarker, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
-use jeod_runner::{
-    DerivedStateConfig, GeodeticConfig, GravitySourceEntry, RotationModel, VehicleConfig,
-};
+use jeod_runner::RotationModel;
+use jeod_sim::{DerivedStateConfig, GeodeticConfig, GravitySourceEntry, VehicleConfig};
 use jeod_sim::{
     DynamicsConfig, EulerSequence, GravityControl, GravityControls, GravityModel, GravitySource,
     PlanetShape, SixDofState, TranslationalState,

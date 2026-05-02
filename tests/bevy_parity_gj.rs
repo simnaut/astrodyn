@@ -15,11 +15,12 @@ use bevy_jeod::{
     JeodPlugin, SimulationTimeR, SourceInertialPositionC, TranslationalStateC,
 };
 use glam::DVec3;
-use jeod_runner::{GravitySourceEntry, Simulation, VehicleConfig};
+use jeod_runner::Simulation;
 use jeod_sim::{
     GaussJacksonConfig, GaussJacksonState, GravityControl, GravityControls, GravityModel,
     GravitySource, IntegratorType, TranslationalState,
 };
+use jeod_sim::{GravitySourceEntry, VehicleConfig};
 
 /// Non-standard μ matching SIM_GJ_test (same as tier3_sim_gj.rs).
 const MU_GJ_TEST: f64 = 5.76e14;

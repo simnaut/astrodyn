@@ -9,7 +9,7 @@ use bevy_jeod::{
     TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
-use jeod_runner::GravitySourceEntry;
+use jeod_sim::GravitySourceEntry;
 use jeod_sim::{
     AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig, ExponentialAtmosphere,
     GeoIndexType, GravityControl, GravityControls, MetAtmosphere, SixDofState,

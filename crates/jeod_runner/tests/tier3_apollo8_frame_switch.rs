@@ -14,7 +14,8 @@
 
 use glam::{DMat3, DQuat, DVec3};
 use jeod_math::JeodQuat;
-use jeod_runner::{FrameSwitchConfig, GravitySourceEntry, Simulation, SwitchSense, VehicleConfig};
+use jeod_runner::Simulation;
+use jeod_sim::{FrameSwitchConfig, GravitySourceEntry, SwitchSense, VehicleConfig};
 use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, MassProperties, RotationalState,
     SimulationTime,

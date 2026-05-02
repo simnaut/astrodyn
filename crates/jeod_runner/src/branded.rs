@@ -71,8 +71,10 @@ use core::marker::PhantomData;
 
 use glam::DVec3;
 
-use crate::{Simulation, VehicleConfig, VehicleOutput};
-use jeod_sim::{GravitySourceEntry, MassProperties, SimulationTime, ValidationError};
+use crate::{Simulation, VehicleOutput};
+use jeod_sim::{
+    GravitySourceEntry, MassProperties, SimulationTime, ValidationError, VehicleConfig,
+};
 
 /// Invariant lifetime brand. The `fn(&'sim ()) -> &'sim ()` form is
 /// invariant in `'sim` (it appears in both contravariant and covariant

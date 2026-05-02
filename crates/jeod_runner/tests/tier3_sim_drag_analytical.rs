@@ -8,13 +8,14 @@
 //! drag effects from atmosphere model complexity.
 
 use glam::DVec3;
-use jeod_runner::{GravitySourceEntry, Simulation, VehicleConfig};
+use jeod_runner::Simulation;
 use jeod_sim::recipes::helpers::energy_conservation::specific_orbital_energy;
 use jeod_sim::{
     AtmosphereConfig, AtmosphereModel, DragConfig, ExponentialAtmosphere, GravityControl,
     GravityControls, GravityModel, GravitySource, JeodQuat, MassProperties, RotationalState,
     SimulationTime, TranslationalState,
 };
+use jeod_sim::{GravitySourceEntry, VehicleConfig};
 
 /// Earth rotation rate (JEOD RNPJ2000 default), sourced from
 /// `jeod_sim::planet_config::EARTH.omega`.

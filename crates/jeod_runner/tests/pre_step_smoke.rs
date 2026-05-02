@@ -31,11 +31,11 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use glam::DVec3;
 use jeod_runner::run_verification::sim_dyncomp;
-use jeod_runner::GravitySourceEntry;
 use jeod_runner::VerificationCaseExt;
 use jeod_sim::recipes::verification::{
     CsvReference, InitialConditions, PreStepClosure, SimContext, Tolerances, VerificationCase,
 };
+use jeod_sim::GravitySourceEntry;
 use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, RotationModel, SimulationBuilder,
     SimulationTime, TranslationalState, VehicleConfig,
