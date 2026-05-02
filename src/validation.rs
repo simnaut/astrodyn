@@ -19,7 +19,44 @@ use crate::components::{
     RotationalStateC, SolarBetaC, SourceFrameIdC, SunMarker, TidalConfigC, TidalDeltaC20C,
     TranslationalStateC,
 };
-use crate::RootFrameIdR;
+use crate::{FrameTreeR, RootFrameIdR};
+
+/// In `jeod_runner` the central body's inertial frame *is* the root
+/// frame (the runner renames the root to `<central>.inertial`), so
+/// `body.integ_frame_id != root_frame_id` cleanly distinguishes
+/// "central" from "third body". The Bevy adapter instead registers
+/// every gravity source — including whatever the mission treats as
+/// central — as a child of a generic root inertial frame, so a
+/// perfectly normal Earth-centered body with `IntegSourceC(Some(earth))`
+/// is one level below root and would trip the "non-root integration"
+/// check despite being numerically root-equivalent.
+///
+/// This helper folds the Bevy topology back onto the runner's
+/// semantics: a frame counts as root-equivalent when it is the root
+/// itself, or when it is a direct child of root whose stored state is
+/// identity (zero position/velocity, identity rotation, zero angular
+/// velocity). The check is evaluated against the validation-tick
+/// snapshot of the frame tree — sources whose state is non-zero at
+/// startup (Moon at 384 Mm, ephemeris-driven bodies at their epoch
+/// position) correctly remain "non-root" and continue to surface the
+/// drag/SRP/etc. warning the non-root check is meant to catch.
+fn is_root_equivalent(
+    frame_tree: &jeod_sim::FrameTree,
+    fid: jeod_sim::FrameId,
+    root_fid: jeod_sim::FrameId,
+) -> bool {
+    if fid == root_fid {
+        return true;
+    }
+    if frame_tree.parent(fid) != Some(root_fid) {
+        return false;
+    }
+    let state = &frame_tree.get(fid).state;
+    state.trans.position == glam::DVec3::ZERO
+        && state.trans.velocity == glam::DVec3::ZERO
+        && state.rot.t_parent_this == glam::DMat3::IDENTITY
+        && state.rot.ang_vel_this == glam::DVec3::ZERO
+}
 
 /// Validates JEOD invariants on dynamic body entities.
 ///
@@ -93,6 +130,10 @@ pub fn validate_jeod_invariants(
     body_frame_state: Query<(Option<&IntegFrameIdC>, Option<&FrameSwitchesC>)>,
     source_frames: Query<&SourceFrameIdC>,
     root_fid: Option<Res<RootFrameIdR>>,
+    // Needed by `is_root_equivalent` to fold Bevy's "every source is a
+    // child of root" topology back onto the runner's "central body's
+    // inertial == root" semantics.
+    frame_tree: Option<Res<FrameTreeR>>,
     // Root-dependent features. Presence of any of these on a body that
     // integrates in (or switches into) a non-root frame produces a
     // warning — the underlying systems consume root-inertial state.
@@ -246,8 +287,13 @@ pub fn validate_jeod_invariants(
         // features (drag, SRP, orbital elements, etc.).
         let (integ_frame, switches) = body_frame_state.get(entity).unwrap_or((None, None));
         let root_fid_value = root_fid.as_ref().map(|r| r.0);
-        let non_root_integ = match (integ_frame, root_fid_value) {
-            (Some(ifc), Some(root)) => ifc.0 != root,
+        let frame_tree_ref = frame_tree.as_ref().map(|r| &r.0);
+        // Use `is_root_equivalent` instead of raw FrameId equality so
+        // Earth-centered bodies with `IntegSourceC(Some(earth))`
+        // (Earth.inertial sits one level below the generic root with
+        // identity state) don't trip the warning. See helper doc.
+        let non_root_integ = match (integ_frame, root_fid_value, frame_tree_ref) {
+            (Some(ifc), Some(root), Some(ft)) => !is_root_equivalent(ft, ifc.0, root),
             _ => false,
         };
         let mut non_root_switch = false;
@@ -291,8 +337,15 @@ pub fn validate_jeod_invariants(
                         target = sw.target_source,
                     );
                 }
-                if let (Some(tf), Some(root)) = (target_fid, root_fid_value) {
-                    if tf != root {
+                // Same root-equivalence adjustment as `non_root_integ`
+                // above — switching back to the central body in Bevy
+                // still produces a `target_fid` one level below root,
+                // but with identity state, so it is numerically
+                // root-equivalent and must not trip the warning.
+                if let (Some(tf), Some(root), Some(ft)) =
+                    (target_fid, root_fid_value, frame_tree_ref)
+                {
+                    if !is_root_equivalent(ft, tf, root) {
                         non_root_switch = true;
                     }
                 }

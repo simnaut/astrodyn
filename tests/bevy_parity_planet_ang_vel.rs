@@ -230,15 +230,22 @@ fn tier3_bevy_planet_ang_vel_rotation_none_leaves_default() {
     );
 }
 
-/// PR #260 round-10 review fixup: toggling a source's `RotationModelC`
-/// from a rotating model to `None` at runtime must remove the
-/// `SourcePfixFrameIdC` component, not just clear the pfix node to
-/// identity. Otherwise consumers that branch on the *presence* of the
-/// component would still treat the source as rotating-capable.
+/// Toggling a source's `RotationModelC` from a rotating model to
+/// `None` at runtime must remove the `SourcePfixFrameIdC` component,
+/// not just clear the pfix node to identity — otherwise consumers
+/// that branch on the *presence* of the component would still treat
+/// the source as rotating-capable. Mirrors the registration symmetry:
+/// `register_pfix_frames_system` inserts the component when a source
+/// gains a non-`None` rotation model after registration; this test
+/// verifies the inverse.
 ///
-/// Mirrors the round-9 registration symmetry: `register_pfix_frames_system`
-/// inserts the component when a source gains a non-`None` rotation model
-/// after registration; this test verifies the inverse.
+/// The orphan pfix node must also be *reused* on the next toggle back
+/// to a rotating model. Without reuse, every cycle would (a) leak a
+/// `<name>.pfix` node into the frame tree (which has no removal API)
+/// and (b) let `FrameTree::find_by_name` shadow the live frame with a
+/// stale orphan. Run several toggle cycles and assert that the frame
+/// tree's node count is stable and that `find_by_name` always
+/// resolves to the live `SourcePfixFrameIdC`.
 #[test]
 fn tier3_bevy_rotation_none_toggle_removes_pfix_component() {
     let (mut app, planet) = build_planet_app("Earth", &EARTH);
@@ -249,6 +256,11 @@ fn tier3_bevy_rotation_none_toggle_removes_pfix_component() {
         app.world().get::<SourcePfixFrameIdC>(planet).is_some(),
         "EarthRNP source must carry SourcePfixFrameIdC after registration"
     );
+
+    // Capture the post-registration tree size and the original pfix
+    // FrameId — both should remain stable across the toggle cycles.
+    let initial_tree_len = app.world().resource::<FrameTreeR>().0.len();
+    let original_pfix_id = app.world().get::<SourcePfixFrameIdC>(planet).unwrap().0;
 
     // Toggle to `RotationModel::None` and step again. The clear branch
     // in `planet_fixed_rotation_system` should remove the component so
@@ -263,16 +275,84 @@ fn tier3_bevy_rotation_none_toggle_removes_pfix_component() {
          leaving it in place reintroduces the Some(identity) vs None \
          ambiguity that round-9 registration fixed"
     );
+    // The orphan node must be renamed off `Earth.pfix` so a
+    // `find_by_name` lookup of the canonical name returns nothing
+    // (no live frame exists at this point) and won't shadow a future
+    // live frame after toggling back.
+    {
+        let frame_tree = &app.world().resource::<FrameTreeR>().0;
+        assert!(
+            frame_tree.find_by_name("Earth.pfix").is_none(),
+            "after toggle to None, no frame should answer to the canonical \
+             `Earth.pfix` name — the orphan must be renamed to a sentinel \
+             so future `find_by_name` lookups don't shadow a future live frame"
+        );
+        assert_eq!(
+            frame_tree.len(),
+            initial_tree_len,
+            "the orphan node must be retained (renamed in place), not \
+             allocated nor leaked alongside a freshly-allocated one"
+        );
+    }
 
     // Toggling back to `EarthRNP` must reinstate the component on the
-    // next registration pass — proves the inverse symmetry holds.
+    // next registration pass AND reuse the same FrameId — proving the
+    // reuse path works (no fresh allocation).
     app.world_mut()
         .entity_mut(planet)
         .insert(RotationModelC(RotationModel::EarthRNP));
     step_bevy_once(&mut app);
-    assert!(
-        app.world().get::<SourcePfixFrameIdC>(planet).is_some(),
-        "toggling back to EarthRNP must reinstate SourcePfixFrameIdC \
-         via register_pfix_frames_system"
+    let reinstated = app
+        .world()
+        .get::<SourcePfixFrameIdC>(planet)
+        .expect(
+            "toggling back to EarthRNP must reinstate SourcePfixFrameIdC \
+             via register_pfix_frames_system's reuse path",
+        )
+        .0;
+    assert_eq!(
+        reinstated, original_pfix_id,
+        "reuse path: the reinstated FrameId must equal the original \
+         orphan's FrameId — no fresh allocation"
+    );
+    assert_eq!(
+        app.world().resource::<FrameTreeR>().0.len(),
+        initial_tree_len,
+        "tree size must stay constant across a None→rotating toggle — \
+         the reuse path replaces, not appends"
+    );
+    // Canonical name now resolves to the live frame again.
+    assert_eq!(
+        app.world()
+            .resource::<FrameTreeR>()
+            .0
+            .find_by_name("Earth.pfix"),
+        Some(original_pfix_id),
+        "after toggle back to rotating, find_by_name must resolve \
+         `Earth.pfix` to the reused live frame"
+    );
+
+    // Run a few more toggle cycles to confirm the tree size stays
+    // bounded and the FrameId stays stable. Without the reuse path,
+    // each cycle would push the tree size up by 1.
+    for _ in 0..5 {
+        app.world_mut()
+            .entity_mut(planet)
+            .insert(RotationModelC(RotationModel::None));
+        step_bevy_once(&mut app);
+        app.world_mut()
+            .entity_mut(planet)
+            .insert(RotationModelC(RotationModel::EarthRNP));
+        step_bevy_once(&mut app);
+    }
+    assert_eq!(
+        app.world().resource::<FrameTreeR>().0.len(),
+        initial_tree_len,
+        "frame-tree size must not grow with toggle cycle count"
+    );
+    assert_eq!(
+        app.world().get::<SourcePfixFrameIdC>(planet).unwrap().0,
+        original_pfix_id,
+        "the same pfix FrameId must be reused across every toggle cycle"
     );
 }

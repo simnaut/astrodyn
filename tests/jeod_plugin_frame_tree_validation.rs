@@ -1,9 +1,9 @@
-//! PR #260 round-10 review fixup: `JeodPlugin` accepts caller-supplied
-//! [`FrameTreeR`] / [`RootFrameIdR`] (round-7) so mission code can pre-seed
-//! custom root-level frames. The two resources describe the same tree and
-//! must stay consistent — a mismatched pair would silently attach
-//! sources/bodies under the wrong node, panic later in unrelated systems,
-//! or corrupt frame-relative state.
+//! `JeodPlugin` accepts caller-supplied [`FrameTreeR`] / [`RootFrameIdR`]
+//! so mission code can pre-seed custom root-level frames. The two
+//! resources describe the same tree and must stay consistent — a
+//! mismatched pair would silently attach sources/bodies under the
+//! wrong node, panic later in unrelated systems, or corrupt
+//! frame-relative state.
 //!
 //! These tests exercise the four invalid-pair shapes that the plugin
 //! must reject loudly:

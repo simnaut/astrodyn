@@ -62,6 +62,7 @@ const EXPECTED_REGISTERED_TYPE_PATHS: &[&str] = &[
     "bevy_jeod::components::PlanetAngularVelocityC",
     "bevy_jeod::components::SourceFrameIdC",
     "bevy_jeod::components::SourcePfixFrameIdC",
+    "bevy_jeod::components::RetiredPfixFrameIdC",
     "bevy_jeod::components::BodyFrameIdC",
     "bevy_jeod::components::IntegFrameIdC",
     "bevy_jeod::components::IntegSourceC",

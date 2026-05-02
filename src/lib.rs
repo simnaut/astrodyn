@@ -277,8 +277,6 @@ impl Plugin for JeodPlugin {
         app.add_systems(
             FixedUpdate,
             (
-                // Validation runs first — matches JEOD's initialize_simulation()
-                validation::validate_jeod_invariants.before(JeodSet::TimeUpdate),
                 // Time advance
                 systems::time_advance_system.in_set(JeodSet::TimeUpdate),
                 // Catch dynamically-spawned sources before they hit
@@ -293,6 +291,24 @@ impl Plugin for JeodPlugin {
                 // any IntegSourceC reference resolves to a registered source).
                 systems::register_body_frames_system
                     .after(systems::register_pfix_frames_system)
+                    .before(JeodSet::EphemerisUpdate),
+                // Validation runs *after* registration but before any
+                // pipeline consumer touches the new components. The
+                // frame-switch / non-root checks read `SourceFrameIdC`
+                // and `IntegFrameIdC`, both inserted by the `register_*`
+                // systems above. Pinning validation to
+                // `before(JeodSet::TimeUpdate)` would panic with "not
+                // a registered gravity source" on the first tick after
+                // a between-tick spawn, even though the same
+                // `FixedUpdate` would have registered the entity a few
+                // systems later. Slotting validation after the
+                // registration trio (and still before
+                // `JeodSet::EphemerisUpdate`, where the gravity /
+                // ephemeris / pfix consumers live) preserves the
+                // "validate before consumers" intent without racing
+                // the frame-tree wiring.
+                validation::validate_jeod_invariants
+                    .after(systems::register_body_frames_system)
                     .before(JeodSet::EphemerisUpdate),
                 // After ephemeris_update_system writes new source position /
                 // velocity, mirror the values into FrameTreeR so frame-tree
@@ -403,6 +419,7 @@ pub fn register_jeod_component_types(app: &mut App) {
     app.register_type::<components::PlanetAngularVelocityC>();
     app.register_type::<components::SourceFrameIdC>();
     app.register_type::<components::SourcePfixFrameIdC>();
+    app.register_type::<components::RetiredPfixFrameIdC>();
     app.register_type::<components::IntegSourceC>();
     app.register_type::<components::FrameSwitchesC>();
     app.register_type::<components::BodyFrameIdC>();
@@ -495,8 +512,17 @@ pub trait VehicleConfigBevyExt {
     /// lighting). These are tracked for future expansion of
     /// `spawn_bevy`.
     ///
-    /// Panics if any `GravityControl::source_name` index is out of bounds
-    /// in `source_entities`.
+    /// # Panics
+    ///
+    /// Panics if any of the following `usize` source indices is out of
+    /// bounds in `source_entities`:
+    ///
+    /// - any `GravityControl::source_name` in `gravity_controls.controls`
+    /// - the `integ_source` value (when `Some`)
+    /// - any `FrameSwitchConfig::target_source` in `frame_switches`
+    ///
+    /// All three panics share the same diagnostic shape, telling the
+    /// caller to spawn all gravity sources before invoking `spawn_bevy`.
     ///
     /// Returns the spawned vehicle entity ID.
     fn spawn_bevy(self, commands: &mut Commands, source_entities: &[Entity]) -> Entity;

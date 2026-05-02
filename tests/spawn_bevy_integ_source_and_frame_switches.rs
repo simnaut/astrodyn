@@ -1,16 +1,16 @@
 //! Regression tests for `VehicleConfig::spawn_bevy`'s `integ_source`
-//! and `frame_switches` translation (PR #260 round-10 review fixup).
+//! and `frame_switches` translation.
 //!
 //! `spawn_bevy` (lib.rs) accepts a `VehicleConfig` whose
 //! `integ_source: Option<usize>` and `frame_switches: Vec<FrameSwitchConfig<usize>>`
 //! reference gravity sources by index and translates each `usize` to the
 //! caller-supplied [`Entity`] when inserting [`IntegSourceC`] /
-//! [`FrameSwitchesC`]. The round-3 review surfaced that the existing
-//! `mission_crate_sanity` and `validation_added_trigger` tests only cover
-//! the legacy gravity-controls path — a bug in the new `usize -> Entity`
-//! translation here would slip through even though the manual-spawn parity
-//! tests in `bevy_parity_integ_source.rs` / `bevy_parity_frame_switch.rs`
-//! stay green (they bypass `spawn_bevy` and assemble entities by hand).
+//! [`FrameSwitchesC`]. The existing `mission_crate_sanity` and
+//! `validation_added_trigger` tests only cover the legacy gravity-controls
+//! path — a bug in the `usize -> Entity` translation here would slip
+//! through even though the manual-spawn parity tests in
+//! `bevy_parity_integ_source.rs` / `bevy_parity_frame_switch.rs` stay
+//! green (they bypass `spawn_bevy` and assemble entities by hand).
 //!
 //! Coverage:
 //!

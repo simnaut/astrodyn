@@ -117,12 +117,12 @@ pub fn register_source_frames_system(
 }
 
 /// Register a [`SourcePfixFrameIdC`] for sources that were registered
-/// without [`PlanetFixedRotationC`] and acquired it later. PR #260
-/// round-9 review fixup: [`register_source_frames_system`] filters by
-/// `Without<SourceFrameIdC>`, so it cannot pick up an entity that gained
-/// `PlanetFixedRotationC` after its initial registration. Without this
-/// pass, `planet_fixed_rotation_system` would update the ECS rotation
-/// each step but the frame tree would never get a pfix child, leaving
+/// without [`PlanetFixedRotationC`] and acquired it later.
+/// [`register_source_frames_system`] filters by `Without<SourceFrameIdC>`,
+/// so it cannot pick up an entity that gained `PlanetFixedRotationC`
+/// after its initial registration. Without this pass,
+/// `planet_fixed_rotation_system` would update the ECS rotation each
+/// step but the frame tree would never get a pfix child, leaving
 /// `source_pfix_rotation()` and any frame-tree consumer reporting "no
 /// planet-fixed frame" for a source that is in fact rotating.
 ///
@@ -130,6 +130,15 @@ pub fn register_source_frames_system(
 /// pfix branch: gated on [`PlanetFixedRotationC`], `EarthRNP` default
 /// when [`RotationModelC`] is absent, no node when the rotation model
 /// is explicitly [`jeod_sim::RotationModel::None`].
+///
+/// **Reuse path**: when an entity carries a [`RetiredPfixFrameIdC`]
+/// (the planet just toggled back from `RotationModel::None` to a
+/// rotating model), this system reuses the stashed
+/// [`jeod_sim::FrameId`] instead of allocating a fresh node — the
+/// orphan is renamed back to the canonical `<label>.pfix` and its
+/// state reset to identity. This bounds frame-tree growth at one
+/// orphan per source regardless of toggle-cycle count and keeps
+/// [`jeod_sim::FrameTree::find_by_name`] returning the live frame.
 #[allow(clippy::type_complexity)]
 pub fn register_pfix_frames_system(
     mut commands: Commands,
@@ -140,6 +149,7 @@ pub fn register_pfix_frames_system(
             Option<&Name>,
             &SourceFrameIdC,
             Option<&RotationModelC>,
+            Option<&RetiredPfixFrameIdC>,
         ),
         (
             With<GravitySourceC>,
@@ -148,7 +158,7 @@ pub fn register_pfix_frames_system(
         ),
     >,
 ) {
-    for (entity, name, source_fid, rotation_model) in &sources {
+    for (entity, name, source_fid, rotation_model, retired) in &sources {
         let default_model = jeod_sim::RotationModel::EarthRNP;
         let model_value = rotation_model.map_or(default_model, |m| m.0);
         if matches!(model_value, jeod_sim::RotationModel::None) {
@@ -157,12 +167,26 @@ pub fn register_pfix_frames_system(
         let label = name
             .map(|n| n.as_str().to_string())
             .unwrap_or_else(|| format!("source{:?}", entity));
-        let pfix_id = frame_tree.0.add_child(
-            source_fid.0,
-            format!("{label}.pfix"),
-            jeod_sim::RefFrameKind::PlanetFixed,
-            jeod_sim::RefFrameState::default(),
-        );
+        let canonical_name = format!("{label}.pfix");
+        let pfix_id = if let Some(retired_id) = retired {
+            // Reuse the orphan node from the previous toggle cycle:
+            // restore its canonical name, reset its state to identity,
+            // and drop the marker. The node already has the right
+            // parent (`source_fid.0`) since `planet_fixed_rotation_system`
+            // does not move it on retirement.
+            let node = frame_tree.0.get_mut(retired_id.0);
+            node.name = canonical_name;
+            node.state = jeod_sim::RefFrameState::default();
+            commands.entity(entity).remove::<RetiredPfixFrameIdC>();
+            retired_id.0
+        } else {
+            frame_tree.0.add_child(
+                source_fid.0,
+                canonical_name,
+                jeod_sim::RefFrameKind::PlanetFixed,
+                jeod_sim::RefFrameState::default(),
+            )
+        };
         commands.entity(entity).insert(SourcePfixFrameIdC(pfix_id));
     }
 }
@@ -613,25 +637,32 @@ pub fn planet_fixed_rotation_system(
                     glam::DMat3::IDENTITY,
                     0.0,
                 );
-                // PR #260 round-10 review fixup: clearing the pfix
-                // node's matrix/omega isn't enough on its own — the
-                // entity still carries `SourcePfixFrameIdC`, so any
-                // consumer that branches on the *presence* of the
-                // component (rather than reading the cleared values)
-                // would keep treating the source as rotating-capable
-                // and reintroduce the `Some(identity)` vs `None`
-                // ambiguity that the registration code (R9.2) just
-                // fixed. Mirror the registration symmetry: the
-                // round-9 `register_pfix_frames_system` inserts the
-                // component when a source gains a non-`None` rotation
-                // model after registration; this branch removes it
-                // when the model toggles back to `None`. (The orphan
-                // tree node remains since `FrameTree` has no remove
-                // API; nothing references it once the component is
-                // gone, and a subsequent toggle back to a rotating
-                // model lets `register_pfix_frames_system` allocate a
-                // fresh node.)
-                commands.entity(entity).remove::<SourcePfixFrameIdC>();
+                // Clearing the pfix node's matrix/omega isn't enough
+                // on its own — consumers that branch on the *presence*
+                // of `SourcePfixFrameIdC` would keep treating the
+                // source as rotating-capable, reintroducing the
+                // `Some(identity)` vs `None` ambiguity. Mirror the
+                // registration symmetry: `register_pfix_frames_system`
+                // inserts the component when a source gains a
+                // non-`None` rotation model; this branch removes it
+                // when the model toggles back to `None`.
+                //
+                // The orphan tree node is kept alive (the frame tree
+                // has no removal API since arena indices are stable),
+                // but renamed to a sentinel so
+                // `FrameTree::find_by_name("<label>.pfix")` won't
+                // shadow a future live frame, and its FrameId is
+                // stashed in `RetiredPfixFrameIdC` so the next toggle
+                // back to a rotating model reuses this node instead
+                // of allocating a fresh one. Without the rename +
+                // reuse, every `None → rotating → None …` cycle
+                // would leak an additional pfix node.
+                let node = frame_tree.0.get_mut(pfix_fid.0);
+                node.name = format!("{}.retired", node.name);
+                commands
+                    .entity(entity)
+                    .remove::<SourcePfixFrameIdC>()
+                    .insert(RetiredPfixFrameIdC(pfix_fid.0));
             }
         }
     }

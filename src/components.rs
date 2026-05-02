@@ -388,6 +388,25 @@ pub struct SourceFrameIdC(pub jeod_sim::FrameId);
 #[reflect(opaque, Component)]
 pub struct SourcePfixFrameIdC(pub jeod_sim::FrameId);
 
+/// Hidden component that stashes a previously-allocated pfix frame ID
+/// on a source whose [`RotationModelC`] just toggled to
+/// [`RotationModel::None`](jeod_sim::RotationModel::None). The
+/// `SourcePfixFrameIdC` is removed at the same time so consumers
+/// branching on the public component's presence correctly see "no
+/// planet-fixed frame", but the underlying [`jeod_sim::FrameTree`]
+/// node is kept alive — renamed to a sentinel so
+/// [`jeod_sim::FrameTree::find_by_name`] won't shadow a live
+/// `<name>.pfix` lookup — so the next toggle back to a rotating
+/// model can reuse it instead of allocating a fresh node.
+///
+/// Without reuse, every `None → rotating → None → rotating …` cycle
+/// would leak an additional `<name>.pfix` node into the frame tree
+/// (which has no removal API since arena indices are stable) and let
+/// `find_by_name` return the stale orphan instead of the live frame.
+#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
+#[reflect(opaque, Component)]
+pub struct RetiredPfixFrameIdC(pub jeod_sim::FrameId);
+
 /// Frame-tree node ID for a vehicle entity. Inserted by
 /// `register_body_frames_system` (a `Startup` system in
 /// [`JeodPlugin`](crate::JeodPlugin)) for every entity that carries
