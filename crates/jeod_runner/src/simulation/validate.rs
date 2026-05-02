@@ -230,11 +230,18 @@ impl Simulation {
             }
         }
 
-        // Contact pairs require the multi-body coupled RK4 path, which drives
-        // every body through the same kernel. Enforce RK4 + 6-DOF on all
-        // bodies (not just those that appear in a pair) so the field doc's
-        // "validation error" promise matches reality.
-        if !self.contact_pairs.is_empty() {
+        // Contact-coupled path (inter-body or ground-contact pairs)
+        // requires the multi-body coupled RK4 kernel, which drives every
+        // body through the same code path. Enforce RK4 + 6-DOF on all
+        // bodies (not just those that appear in a pair) so the field
+        // docs' "validation error" promise matches reality. Hoist the
+        // shared per-body checks out of the inter-body / ground-contact
+        // branches so each body emits at most one
+        // ContactPairsRequire{Rk4,6Dof} error even when both pair types
+        // are registered.
+        let any_contact_pairs =
+            !self.contact_pairs.is_empty() || !self.ground_contact_pairs.is_empty();
+        if any_contact_pairs {
             for (body_idx, body) in self.bodies.iter().enumerate() {
                 if !matches!(body.integrator, jeod_dynamics::IntegratorType::Rk4) {
                     all_errors.push(ValidationError::ContactPairsRequireRk4 { body_idx });
@@ -243,7 +250,9 @@ impl Simulation {
                     all_errors.push(ValidationError::ContactPairsRequire6Dof { body_idx });
                 }
             }
+        }
 
+        if !self.contact_pairs.is_empty() {
             // The coupled RK4 contact path evaluates `stage_trans`/`stage_rot`
             // directly, and those stage states are in each body's integration
             // frame. For pair-level consistency (and to match the no-transform
@@ -279,6 +288,32 @@ impl Simulation {
                         frame: frame_a,
                         root: self.root_frame_id,
                     });
+                }
+            }
+        }
+
+        // Ground-contact pairs: per-pair frame and central-planet
+        // checks. Per-body RK4 + 6-DOF is hoisted above (shared with
+        // inter-body contact).
+        if !self.ground_contact_pairs.is_empty() {
+            for (pair_idx, pair) in self.ground_contact_pairs.iter().enumerate() {
+                let frame = self.bodies[pair.body_a].integ_frame_id;
+                if frame != self.root_frame_id {
+                    all_errors.push(ValidationError::GroundContactPairNonRootFrame {
+                        pair_idx,
+                        body_idx: pair.body_a,
+                        frame,
+                        root: self.root_frame_id,
+                    });
+                }
+                if let Some(planet_source) = self.ground_contact_planet_source {
+                    let sfids = &self.source_frame_ids[planet_source];
+                    if sfids.inertial != self.root_frame_id {
+                        all_errors.push(ValidationError::GroundContactNonCentralPlanet {
+                            pair_idx,
+                            planet_source,
+                        });
+                    }
                 }
             }
         }

@@ -118,6 +118,24 @@ pub enum ValidationError {
         frame: usize,
         root: usize,
     },
+    /// A ground-contact pair's body is integrated in a non-root frame.
+    /// The coupled-RK4 closure feeds the body's stage state directly to
+    /// the ground-contact evaluator without any frame transform, so the
+    /// body must integrate in the root inertial frame.
+    GroundContactPairNonRootFrame {
+        pair_idx: usize,
+        body_idx: usize,
+        frame: usize,
+        root: usize,
+    },
+    /// A ground-contact pair references a non-central planet source.
+    /// `compute_ground_contact_geometry` projects the vehicle's
+    /// inertial position into pfix coords assuming the planet center
+    /// is at the inertial origin (the central source convention).
+    GroundContactNonCentralPlanet {
+        pair_idx: usize,
+        planet_source: usize,
+    },
 }
 
 impl std::fmt::Display for ValidationError {
@@ -376,6 +394,35 @@ impl std::fmt::Display for ValidationError {
                      coordinates in the root inertial frame ({root}). Integrate \
                      contact-participating bodies in the root inertial frame, \
                      or transform stage states before contact evaluation."
+                )
+            }
+            Self::GroundContactPairNonRootFrame {
+                pair_idx,
+                body_idx,
+                frame,
+                root,
+            } => {
+                write!(
+                    f,
+                    "Ground-contact pair {pair_idx}: body {body_idx} is \
+                     integrated in frame {frame} but the ground-contact \
+                     evaluator consumes the body's stage state without any \
+                     frame transform; must be the root inertial frame ({root})."
+                )
+            }
+            Self::GroundContactNonCentralPlanet {
+                pair_idx,
+                planet_source,
+            } => {
+                write!(
+                    f,
+                    "Ground-contact pair {pair_idx}: planet_source {planet_source} \
+                     is not the central source. \
+                     `compute_ground_contact_geometry` projects vehicle inertial \
+                     position into pfix assuming the planet center is at the \
+                     inertial origin; that holds only for the central source. \
+                     Use a central planet for ground contact, or extend the \
+                     algorithm to accept a non-central planet position."
                 )
             }
         }

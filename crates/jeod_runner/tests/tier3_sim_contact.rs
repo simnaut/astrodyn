@@ -18,11 +18,12 @@
 //! - Point scenario: 100 kg sphere each, inertia = diag(40)
 //! - Line scenario: 200 kg cylinder each, inertia = diag(100, 116.67, 116.67)
 //!
-//! The `tier3_contact_ground` test is **deferred**: JEOD's SIM_ground_contact
-//! adds a `GroundFacet` (an infinite plane at the planet surface) plus Earth
-//! spherical gravity. `GroundFacet` requires modelling an entirely new shape
-//! class (point/line-vs-plane contact) which is out of scope for this phase.
-//! Tracking issue will be filed separately; see the test body for details.
+//! Issue #88 / #205 lands the ground-contact pipeline (Terrain trait,
+//! GroundFacet, evaluator, runner registration, RK4 wiring) and the
+//! `tier3_contact_ground` cross-validation against
+//! `SIM_ground_contact/RUN_contact_ground` CSV — see that test's
+//! docstring for the JEOD initialization-state semantics our port
+//! mirrors via `Phase::Initialization` / `Phase::SteadyState`.
 //!
 //! Tests **must panic** (not skip) when reference CSVs are absent, per
 //! `CLAUDE.md`. The panic message includes the exact Docker command.
@@ -31,13 +32,14 @@ use jeod_test_data::tier3_csv::test_data_path;
 
 use glam::{DMat3, DVec3};
 use jeod_interactions::{ContactFacet, ContactMaterial};
-use jeod_runner::{RotationModel, Simulation};
+use jeod_runner::{GroundFacet, RotationModel, Simulation, SphericalTerrain};
 use jeod_sim::{
-    evaluate_contact_pair, GravityControls, GravityModel, GravitySource, JeodQuat, MassProperties,
-    RotationalState, SimulationTime, TranslationalState,
+    evaluate_contact_pair, GravityControl, GravityControls, GravityModel, GravitySource, JeodQuat,
+    MassProperties, RotationalState, SimulationTime, TranslationalState,
 };
 use jeod_sim::{GravitySourceEntry, VehicleConfig};
 use std::path::Path;
+use std::sync::Arc;
 
 // ── Shared JEOD material constants ──────────────────────────────────
 
@@ -816,40 +818,268 @@ fn tier3_contact_point_off_center() {
     );
 }
 
-/// RUN_contact_ground: SIM_ground_contact — DEFERRED.
+/// RUN_contact_ground: SIM_ground_contact.
 ///
-/// JEOD's SIM_ground_contact exercises three pieces of physics we have not
-/// yet ported:
+/// Two vehicles (veh1 = line cylinder, veh2 = point sphere, 200 kg each)
+/// initialized at Earth's surface in `Earth.inertial`. Spherical Earth
+/// gravity pulls them toward the planet center; a ground-contact spring
+/// (k = 1751.25 N/m, c = 35.025 N·s/m, μ = 0.5) pushes back. The vehicles
+/// start interpenetrating the ground at t=0, producing an impulsive
+/// ~2.2 × 10¹⁰ N force that launches them outward at ~93 km/s within
+/// 50 ms; the rest of the 10-second run is ballistic coast under
+/// spherical gravity.
 ///
-/// 1. A `GroundFacet` (infinite plane at the planet surface) with its own
-///    `PointGroundInteraction` / `LineGroundInteraction` classes — a whole
-///    new shape type (sphere-vs-plane, capsule-vs-plane) separate from the
-///    point/point, line/point, line/line pairs that SIM_contact uses.
-/// 2. Spherical Earth gravity pulling both vehicles down onto the ground,
-///    with the ground contact force balancing that gravity.
-/// 3. Vehicles initialized **at** the Earth's radius (6378137 m) so that at
-///    t=0 they interpenetrate the ground, producing a very large spring
-///    force (~2.2 × 10¹⁰ N) that launches them outward at ~93 km/s in the
-///    first timestep. This is essentially an impulsive initial condition
-///    and the rest of the trajectory is (mostly) free coast.
+/// JEOD source: `verif/SIM_ground_contact/SET_test/RUN_contact_ground/input.py`
+/// + `Modified_data/{ground/{ground_facet,pair_interaction},vehicle/sv_earth}.py`.
+fn make_ground_contact_sim() -> (Simulation, usize) {
+    let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sim = Simulation::new(time, DT);
+
+    // Earth as a spherical (point-mass) central body. JEOD's
+    // SIM_ground_contact configures the gravity controls with degree=0,
+    // order=0, spherical=true so the SH model collapses to point mass.
+    // We use the same effective physics via a PointMass GravitySource.
+    let earth_mu = jeod_sim::EARTH.shape.mu;
+    let earth_idx = sim.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: earth_mu,
+                model: GravityModel::PointMass,
+            },
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            // SphericalTerrain does not consult pfix rotation, so we omit
+            // the rotation model here — keeps the test self-contained.
+            rotation_model: RotationModel::None,
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: true,
+        },
+    );
+
+    let mass_props = line_mass_props(); // 200 kg, diag(100, 116.667, 116.667)
+    let earth_radius = jeod_sim::EARTH.shape.r_eq;
+
+    let earth_grav = GravityControls {
+        controls: vec![GravityControl::new_spherical(earth_idx, false)],
+    };
+
+    // veh1 — line cylinder along structural x-axis.
+    let veh1 = sim.add_body(VehicleConfig {
+        trans: TranslationalState {
+            position: DVec3::new(earth_radius, 0.0, 0.0),
+            velocity: DVec3::ZERO,
+        },
+        rot: Some(RotationalState {
+            quaternion: JeodQuat::identity(),
+            ang_vel_body: DVec3::ZERO,
+        }),
+        mass: Some(mass_props),
+        gravity_controls: earth_grav.clone(),
+        compute_gravity_gradient: false,
+        ..Default::default()
+    });
+
+    // veh2 — point sphere 10 m radially outward from veh1.
+    let veh2 = sim.add_body(VehicleConfig {
+        trans: TranslationalState {
+            position: DVec3::new(earth_radius + 10.0, 0.0, 0.0),
+            velocity: DVec3::ZERO,
+        },
+        rot: Some(RotationalState {
+            quaternion: JeodQuat::identity(),
+            ang_vel_body: DVec3::ZERO,
+        }),
+        mass: Some(mass_props),
+        gravity_controls: earth_grav,
+        compute_gravity_gradient: false,
+        ..Default::default()
+    });
+    assert_eq!(veh1, 0);
+    assert_eq!(veh2, 1);
+
+    sim.validate().unwrap();
+    (sim, earth_idx)
+}
+
+/// Ground-contact material: JEOD `Modified_data/ground/pair_interaction.py`
+/// — spring_k=10 lbf/in, damping_b=0.2 lbf·s/in, mu=0.5. JEOD's CSV
+/// trajectory is generated using Trick's `attach_units("lbf/in", X)`
+/// conversion, which uses the NIST-exact 1 lbf = 4.4482216152605 N (vs
+/// the Older `4.448222 N` mantissa baked into JEOD_SPRING_K above for
+/// SIM_contact). The resulting 10 lbf/in = 1751.2683...; using
+/// 1751.2502 (half of the SIM_contact constant) gives a constant
+/// ~0.96 m/s velocity offset because Δv = (1/6) k R dt / m amplifies
+/// the 0.001% conversion gap into 1 m/s on a 93 km/s impulse. We use
+/// the NIST-exact value here.
+const GROUND_SPRING_K: f64 = 10.0 * 4.4482216152605 / 0.0254; // 1751.2683… N/m
+const GROUND_DAMPING_B: f64 = 0.2 * 4.4482216152605 / 0.0254; // 35.0254… N·s/m
+const GROUND_MU: f64 = 0.5;
+
+fn ground_steel() -> ContactMaterial {
+    ContactMaterial::jeod_spring(GROUND_SPRING_K, GROUND_DAMPING_B, GROUND_MU)
+}
+
+/// Tier 3 cross-validation against `SIM_ground_contact/RUN_contact_ground` CSV.
 ///
-/// Matching JEOD's trajectory requires implementing #1 (ground plane contact)
-/// and #2 (spherical gravity integration alongside contact-coupled RK4),
-/// which are both out of scope for this phase. Tracking issue: TBD.
+/// JEOD's CSV trajectory is produced by an initialization-state artifact
+/// in `ContactGround::initialize_ground`: a pre-propagation
+/// `in_contact()` call writes an impulsive force onto `subject->force`,
+/// which the integrator consumes at stage 1 of step 1 (RK4 weight 1/6)
+/// and `ContactSurface::collect_forces_torques` zeroes thereafter. Our
+/// port models this explicitly via [`Phase::Initialization`] —
+/// `Simulation::register_ground_contact_pair` evaluates the
+/// pre-propagation force at registration time and stores it on the pair
+/// as `pending_initial_impulse`. The coupled-RK4 stage closure consumes
+/// it on the first invocation and clears it for stages 2-4 and all
+/// subsequent steps. After consumption, the steady-state path
+/// ([`Phase::SteadyState`]) reports no contact for vehicles above the
+/// surface — physically correct, matching JEOD.
 ///
-/// The CSV file is retained in `test_data/` so the eventual implementation
-/// can drop right in. Until then, this test is marked `#[ignore]` with an
-/// explanatory message that will surface if anyone re-enables it without
-/// porting the prerequisite physics.
+/// ## Root cause
+///
+/// JEOD's `BodyRefFrame::state.trans.position` for a surface-model-created
+/// `vehicle_point` (the C++ frame backing each `ContactFacet`) is
+/// **default-constructed to (0, 0, 0)** when the frame is created, and
+/// only later populated to its true inertial position by
+/// `DynBody::compute_vehicle_point_states` (see
+/// `dyn_body_propagate_state.cc::compute_derived_state_forward`).
+/// `ContactGround::initialize_ground` runs **before** that propagation
+/// (the `P_DYN("initialization")` job in
+/// `verif/SIM_ground_contact/S_modules/contact.sm:70`), and inside
+/// `GroundInteraction::initialize` calls `in_contact()` once with
+/// `vehicle_point.state.trans.position == (0, 0, 0)`. Tracing
+/// `point_ground_interaction.cc::in_contact` from that state:
+///
+/// - `vec = structure.pos + vp.pos = (R, 0, 0) + (0, 0, 0) = (R, 0, 0)`
+///   (interpreted as the vehicle's inertial position).
+/// - Ground point in body frame ≈ `(R, 0, 0)`; sphere/cylinder
+///   `contact_point` ≈ `(1, 0, 0)`.
+/// - `facet_pos = T_parent_this * vp.pos = identity * (0, 0, 0) = (0, 0, 0)`.
+/// - `rel_state = contact_point + facet_pos = (1, 0, 0)` →
+///   `subject_mag = 1 << R = ground_mag` → **contact triggers** with
+///   penetration ≈ R, force ≈ k·R = 1.117 × 10¹⁰ N per vehicle. This
+///   value is what JEOD writes into `subject->force` and what eventually
+///   surfaces as the `~2.2 × 10¹⁰ N` first-row CSV value (a factor of 2
+///   suggesting init runs `in_contact` twice, once per ground facet
+///   pairing — to be confirmed by a JEOD live-run trace).
+///
+/// At the **first integration step**, before any RK4 stage runs,
+/// `compute_vehicle_point_states` has propagated `vp.state.trans.position`
+/// to its true inertial value `(R, 0, 0)`. The same algorithm now gives:
+///
+/// - `vec = (R, 0, 0) + (R, 0, 0) = (2R, 0, 0)` (this is the JEOD code's
+///   apparent doubled-position symptom — only consistent because the
+///   init-time vp.pos was (0, 0, 0)).
+/// - `facet_pos = identity * (R, 0, 0) = (R, 0, 0)`.
+/// - `rel_state = (R+1, 0, 0)` → `subject_mag = R+1 > R = ground_mag` →
+///   **no contact** at any altitude.
+///
+/// Net JEOD behaviour: an impulsive force of 1.117 × 10¹⁰ N on
+/// `subject->force` from initialization is consumed at stage 1 of step 1
+/// (RK4 weight 1/6), and stages 2–4 plus all subsequent steps see zero
+/// contact force. RK4 then yields
+/// `Δv ≈ (1/6) × F × dt / m = 93 081 m/s`, exactly matching the t=0.05 CSV
+/// velocity.
+///
+/// Tolerances per CLAUDE.md "5% above observed max" policy. Observed:
+/// position 2.79 nm, velocity 4.4e-11 m/s — essentially bit-for-bit
+/// agreement with JEOD's CSV (residual is f64 roundoff in the
+/// gravity-coupled RK4). The constants below are 1.05× observed maxima.
+const GROUND_POS_TOL: f64 = 3.0e-9; // m (observed 2.794 nm)
+const GROUND_VEL_TOL: f64 = 5.0e-11; // m/s (observed 4.366e-11 m/s)
+
 #[test]
-#[ignore = "SIM_ground_contact needs GroundFacet (ground plane) + spherical gravity — deferred"]
 fn tier3_contact_ground() {
-    // Keep the CSV path reference so the file stays discoverable.
     let csv_path = test_data_path("contact_ground_contact_state.csv");
-    let _records = load_contact_csv(&csv_path);
-    panic!(
-        "tier3_contact_ground is deferred. SIM_ground_contact requires GroundFacet \
-         (plane contact) + Earth central gravity, neither of which is implemented. \
-         See test docstring for details."
+    let records = load_contact_csv(&csv_path);
+    assert!(!records.is_empty(), "expected at least one CSV record");
+
+    let (mut sim, earth_idx) = make_ground_contact_sim();
+    let earth_radius = jeod_sim::EARTH.shape.r_eq;
+    let mat = ground_steel();
+    let terrain = Arc::new(SphericalTerrain::new(earth_radius));
+    let ground = GroundFacet::new(terrain, 0.0, mat);
+
+    let veh1_facet = ContactFacet::line(
+        DVec3::new(-1.0, 0.0, 0.0),
+        DVec3::new(1.0, 0.0, 0.0),
+        1.0,
+        mat,
+    );
+    let veh2_facet = ContactFacet::point(DVec3::ZERO, 1.0, mat);
+    sim.register_ground_contact_pair(0, veh1_facet, ground.clone(), earth_idx);
+    sim.register_ground_contact_pair(1, veh2_facet, ground, earth_idx);
+
+    // Step at the SIM_contact native rate (DT = 0.01 s) and snapshot at
+    // each CSV checkpoint (LOG_CYCLE = 0.05 s).
+    let checkpoints: Vec<f64> = records.iter().map(|r| r.time).collect();
+    let mut cp_iter = checkpoints.iter().copied().peekable();
+
+    let mut snapshots: Vec<CheckpointBodies> = Vec::with_capacity(records.len());
+    let steps_total = (SIM_DURATION / DT).round() as usize;
+    for step in 0..=steps_total {
+        let b1 = sim.body(0);
+        let b2 = sim.body(1);
+
+        let t = step as f64 * DT;
+        if let Some(&cp) = cp_iter.peek() {
+            if (t - cp).abs() <= 0.5 * DT {
+                snapshots.push(CheckpointBodies {
+                    veh1_trans: b1.trans,
+                    veh1_rot: b1.rot.expect("6-DOF required"),
+                    veh2_trans: b2.trans,
+                    veh2_rot: b2.rot.expect("6-DOF required"),
+                });
+                cp_iter.next();
+            }
+        }
+        if step == steps_total {
+            break;
+        }
+        sim.step_n(1).expect("step_n failed");
+    }
+
+    assert_eq!(
+        snapshots.len(),
+        records.len(),
+        "snapshot/CSV checkpoint count mismatch ({} vs {})",
+        snapshots.len(),
+        records.len()
+    );
+
+    let mut max_pos_err_1 = 0.0_f64;
+    let mut max_pos_err_2 = 0.0_f64;
+    let mut max_vel_err_1 = 0.0_f64;
+    let mut max_vel_err_2 = 0.0_f64;
+    for (snap, rec) in snapshots.iter().zip(records.iter()) {
+        max_pos_err_1 = max_pos_err_1.max((snap.veh1_trans.position - rec.veh1_pos).length());
+        max_pos_err_2 = max_pos_err_2.max((snap.veh2_trans.position - rec.veh2_pos).length());
+        max_vel_err_1 = max_vel_err_1.max((snap.veh1_trans.velocity - rec.veh1_vel).length());
+        max_vel_err_2 = max_vel_err_2.max((snap.veh2_trans.velocity - rec.veh2_vel).length());
+    }
+    println!(
+        "tier3_contact_ground: pos err max = ({max_pos_err_1:.3e}, {max_pos_err_2:.3e}) m; \
+         vel err max = ({max_vel_err_1:.3e}, {max_vel_err_2:.3e}) m/s"
+    );
+
+    assert!(
+        max_pos_err_1 < GROUND_POS_TOL,
+        "veh1 position error {max_pos_err_1} m > tol {GROUND_POS_TOL}"
+    );
+    assert!(
+        max_pos_err_2 < GROUND_POS_TOL,
+        "veh2 position error {max_pos_err_2} m > tol {GROUND_POS_TOL}"
+    );
+    assert!(
+        max_vel_err_1 < GROUND_VEL_TOL,
+        "veh1 velocity error {max_vel_err_1} m/s > tol {GROUND_VEL_TOL}"
+    );
+    assert!(
+        max_vel_err_2 < GROUND_VEL_TOL,
+        "veh2 velocity error {max_vel_err_2} m/s > tol {GROUND_VEL_TOL}"
     );
 }

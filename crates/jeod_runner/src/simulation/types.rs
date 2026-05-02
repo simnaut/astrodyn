@@ -17,8 +17,8 @@ use jeod_frames::FrameId;
 use jeod_sim::{
     AerodynamicForce, AtmosphereState, ContactFacet, DragConfig, DynamicsConfig, EulerSequence,
     FrameDerivatives, FrameSwitchConfig, GeodeticState, GravityAcceleration, GravityControls,
-    GravitySource, IntegrationFrame, LvlhFrame, MassProperties, OrbitalElements, RadiationForce,
-    RotationModel, RotationalState, SrpModel, TotalForce, TranslationalState,
+    GravitySource, GroundFacet, IntegrationFrame, LvlhFrame, MassProperties, OrbitalElements,
+    RadiationForce, RotationModel, RotationalState, SrpModel, TotalForce, TranslationalState,
     TranslationalStateTyped, VehicleConfig,
 };
 
@@ -39,6 +39,51 @@ pub struct ContactPairConfig {
     pub body_b: usize,
     /// Facet on body B (shape positions in B's structural frame).
     pub facet_b: ContactFacet,
+}
+
+/// Registration of a ground-contact interaction between a vehicle and a
+/// planetary surface.
+///
+/// Symmetric to [`ContactPairConfig`] but bodyless on the ground side —
+/// the ground doesn't integrate, has no Newton's-third-law reaction
+/// applied to it, and is queried per-step from the [`GroundFacet`]'s
+/// terrain model. The vehicle facet/material must match the ground
+/// facet's material exactly (single-pair `SpringPairInteraction`
+/// semantics).
+#[derive(Debug, Clone)]
+pub struct GroundContactPairConfig {
+    /// Index of the vehicle body.
+    pub body_a: usize,
+    /// Vehicle facet (shape positions in the body's structural frame).
+    pub vehicle_facet: ContactFacet,
+    /// Ground facet (terrain, alt_offset, material).
+    pub ground_facet: GroundFacet,
+    /// JEOD initialization-time impulse, computed at registration via
+    /// the `Phase::Initialization` evaluator (`facet_pos_body == 0`).
+    /// Consumed at stage 1 of the first integration step (RK4 weight
+    /// 1/6) and cleared to `None` thereafter — mirrors
+    /// `ContactSurface::collect_forces_torques` zeroing `facet.force`
+    /// after stage 1 in JEOD.
+    ///
+    /// Note that the init-phase evaluator essentially always reports
+    /// contact for any realistic planet radius (because `|rel_state|`
+    /// is O(1–2 m) — the facet's body-frame surface extent — while
+    /// `|ground|` is O(R)). So this field is `Some(...)` for every
+    /// successfully registered pair on initialization, regardless of
+    /// the vehicle's actual altitude; the impulsive launch JEOD's CSV
+    /// records is precisely this initialization-state effect. The
+    /// field becomes `None` only after the first integration step
+    /// consumes it.
+    pub pending_initial_impulse: Option<GroundContactImpulse>,
+}
+
+/// Impulsive contact contribution from JEOD's pre-propagation
+/// `GroundInteraction::initialize` call (force on the vehicle in
+/// inertial coords + body-frame torque about CoM).
+#[derive(Debug, Clone, Copy)]
+pub struct GroundContactImpulse {
+    pub force_inertial: DVec3,
+    pub torque_body: DVec3,
 }
 
 /// Maps a gravity source to its frame tree nodes.
