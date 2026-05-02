@@ -54,7 +54,7 @@ pub use aero_drag::*;
 pub use contact::{
     compute_contact_force, compute_contact_force_from_geometry, compute_contact_geometry,
     compute_ground_contact_geometry, ContactFacet, ContactForce, ContactGeometry, ContactMaterial,
-    ContactShape, GroundFacet, SphericalTerrain, Terrain,
+    ContactShape, GroundFacet, Phase, SphericalTerrain, Terrain,
 };
 pub use earth_lighting::{
     compute_earth_lighting, EarthLightingState, LightingBody, LightingParams,

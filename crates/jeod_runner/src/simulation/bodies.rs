@@ -12,9 +12,13 @@ use glam::DVec3;
 
 use jeod_dynamics::{MassBodyId, MassPointState};
 use jeod_frames::{RefFrameKind, RefFrameRot, RefFrameState, RefFrameTrans};
-use jeod_sim::{ContactFacet, GroundFacet, MassProperties, VehicleConfig};
+use jeod_sim::{
+    evaluate_ground_contact_pair, ContactFacet, GroundFacet, MassProperties, Phase, VehicleConfig,
+};
 
-use super::types::{ContactPairConfig, GroundContactPairConfig, SimBody, VehicleOutput};
+use super::types::{
+    ContactPairConfig, GroundContactImpulse, GroundContactPairConfig, SimBody, VehicleOutput,
+};
 use super::Simulation;
 
 impl Simulation {
@@ -156,10 +160,43 @@ impl Simulation {
                  same planet source (got {planet_source}, previously registered with {prev})"
             ),
         }
+        // Compute JEOD's initialization-time impulse (pre-propagation
+        // `GroundInteraction::initialize → in_contact()` with
+        // `vp.state.trans.position == (0, 0, 0)`). This is the impulsive
+        // force JEOD records on `subject->force` during init and that
+        // the integrator consumes at stage 1 of the first step. The
+        // pfix rotation is identity here because (a) for SphericalTerrain
+        // the rotation cancels in the ground-point computation and
+        // (b) at registration time we may not have a planet rotation
+        // model yet — the runtime path uses the live pfix matrix.
+        let body = &self.bodies[body_a];
+        let body_rot = body
+            .rot
+            .as_ref()
+            .expect("register_ground_contact_pair requires 6-DOF body");
+        let body_mass = body
+            .mass
+            .as_ref()
+            .expect("register_ground_contact_pair requires body mass properties");
+        let pending_initial_impulse = evaluate_ground_contact_pair(
+            &vehicle_facet,
+            &ground_facet,
+            &body.trans,
+            body_rot,
+            body.t_struct_body,
+            body_mass,
+            glam::DMat3::IDENTITY,
+            Phase::Initialization,
+        )
+        .map(|eval| GroundContactImpulse {
+            force_inertial: eval.force_on_a,
+            torque_body: eval.torque_a_body,
+        });
         self.ground_contact_pairs.push(GroundContactPairConfig {
             body_a,
             vehicle_facet,
             ground_facet,
+            pending_initial_impulse,
         });
     }
 

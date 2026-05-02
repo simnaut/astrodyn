@@ -592,6 +592,7 @@ pub fn evaluate_ground_contact_pair(
     t_struct_body_a: DMat3,
     mass_a: &MassProperties,
     t_inertial_pfix: DMat3,
+    phase: jeod_interactions::Phase,
 ) -> Option<GroundContactPairEval> {
     // Build inertial→body rotation from the body's left-quaternion.
     let t_inertial_body_a = rot_a.quaternion.left_quat_to_transformation();
@@ -605,6 +606,7 @@ pub fn evaluate_ground_contact_pair(
         t_inertial_body_a,
         t_struct_body_a,
         t_inertial_pfix,
+        phase,
     )?;
 
     // JEOD's relative-velocity term. `point_ground_interaction.cc:87-93`:

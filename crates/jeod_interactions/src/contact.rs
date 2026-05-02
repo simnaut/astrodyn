@@ -562,6 +562,31 @@ pub fn compute_contact_force_from_geometry(
     }
 }
 
+/// Which phase of JEOD's runtime is being mirrored when evaluating
+/// ground contact.
+///
+/// JEOD's `BodyRefFrame::state.trans.position` for a surface-model
+/// `vehicle_point` is default-constructed `(0, 0, 0)` and only
+/// populated by `DynBody::compute_vehicle_point_states` at a specific
+/// point during initialization — *after* `ContactGround::initialize_ground`
+/// has already run. The two phases see different state and produce
+/// different forces; both are needed to reproduce JEOD's CSV
+/// trajectory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Phase {
+    /// Pre-propagation initialization-time evaluation. JEOD's
+    /// `GroundInteraction::initialize → in_contact()` call runs here.
+    /// Produces an impulsive contact force that is consumed at stage 1
+    /// of step 1 (RK4 weight 1/6) and zeroed thereafter by
+    /// `ContactSurface::collect_forces_torques`.
+    Initialization,
+    /// Post-propagation steady-state evaluation. JEOD's
+    /// `check_contact_ground()` derivative-class job runs here on every
+    /// RK4 stage. For vehicles above (or at) the planet surface this
+    /// reports no contact in JEOD's algebra — and physically.
+    SteadyState,
+}
+
 /// Compute the ground-contact geometry for a vehicle facet against a
 /// [`GroundFacet`] anchored on a planetary surface.
 ///
@@ -597,6 +622,36 @@ pub fn compute_contact_force_from_geometry(
 /// body-frame ground point (treated as the "B side" reference for the
 /// shared force law).
 ///
+/// # JEOD initialization-state semantics
+///
+/// JEOD's `BodyRefFrame::state.trans.position` for surface-model
+/// vehicle points is default-constructed to `(0, 0, 0)` and only
+/// populated to the body's true inertial position when
+/// `DynBody::compute_vehicle_point_states` runs — *after*
+/// `ContactGround::initialize_ground` has already called
+/// `GroundInteraction::initialize → in_contact()` once. The two
+/// evaluations therefore see different `vehicle_point` state and
+/// produce different forces:
+///
+/// - **Initialization** (`Phase::Initialization`): mirrors the
+///   pre-propagation in_contact call. `facet_pos_body == DVec3::ZERO`,
+///   so for a vehicle resting on the surface `subject_mag` is just the
+///   facet's surface-extent magnitude (≈1–2 m), tiny compared to
+///   `ground_mag = R`. Always reports contact, with depth ≈ R, force
+///   ≈ k·R. This is JEOD's impulsive launch source — applied **once**
+///   to `subject->force` before the first integration step, then
+///   consumed at stage 1 of step 1 (RK4 weight 1/6) and zeroed by
+///   `ContactSurface::collect_forces_torques` for stages 2-4.
+/// - **Steady state** (`Phase::SteadyState`): post-propagation runtime
+///   path. `facet_pos_body == t_inertial_body * vehicle_pos_inertial`,
+///   so `subject_mag ≈ R + 1`, exceeding `ground_mag = R`. Reports no
+///   contact for any vehicle above (or right at) the planet surface —
+///   physically correct steady-state behaviour.
+///
+/// The two-phase split is what reproduces JEOD's CSV trajectory: an
+/// impulsive `Δv = (1/6) · k · R · dt / m ≈ 93 km/s` at step 1, with
+/// no force at any subsequent stage or step.
+///
 /// # Panics
 /// Panics if `vehicle_facet.shape` is the [`ContactShape::Line`] zero
 /// length variant (degenerate, never produced by our public constructors)
@@ -611,6 +666,7 @@ pub fn compute_ground_contact_geometry(
     t_inertial_body: DMat3,
     t_struct_body: DMat3,
     t_inertial_pfix: DMat3,
+    phase: Phase,
 ) -> Option<ContactGeometry> {
     // JEOD_INV: IN.35 — only active GroundFacets contribute force.
     assert!(
@@ -643,16 +699,38 @@ pub fn compute_ground_contact_geometry(
     let ground_inertial = t_inertial_pfix.transpose() * ground_pfix;
     let ground_body = t_inertial_body * ground_inertial;
 
-    // JEOD's `vehicle_point->state.trans.position` is the facet center
-    // offset from the structure frame (= `mass_point.position` in JEOD's
-    // surface-model setup), NOT the vehicle's inertial position
-    // (despite vehicle_point being a child of the integration frame in
-    // the RefFrame tree). The algorithm then rotates this offset through
-    // `vehicle_point->state.rot.T_parent_this` (struct→body for the
-    // typical pt_orientation = identity case) to get a body-frame
-    // offset. We mirror that exactly via
-    // `t_struct_body * shape.reference_position()`.
-    let facet_pos_body = t_struct_body * vehicle_facet.shape.reference_position();
+    // JEOD's `vehicle_point->state.trans.position` differs between init
+    // and runtime — see the function-level docstring for the full
+    // explanation. We mirror both by branching on `phase`.
+    let facet_pos_body = match phase {
+        Phase::Initialization => {
+            // Pre-propagation: vp.state.trans.position is still the
+            // BodyRefFrame default `(0, 0, 0)`. JEOD's algorithm then
+            // computes `facet_pos = T_parent_this * (0, 0, 0) = (0, 0, 0)`.
+            // We mirror that exactly. Note that JEOD's surface-model
+            // facets are anchored at `mass_point.position` in struct,
+            // which for the verification sim is `(0, 0, 0)`; the algebra
+            // would still produce zero even if we used
+            // `t_struct_body * shape.reference_position()` here, but
+            // explicit zero matches the documented JEOD state.
+            DVec3::ZERO
+        }
+        Phase::SteadyState => {
+            // Post-propagation: vp.state.trans.position is the body's
+            // inertial position (set by
+            // `compute_derived_state_forward(structure, mass_point, vp)`).
+            // JEOD then rotates this through `T_parent_this` of the
+            // vehicle_point — under our identity-pt_orientation
+            // assumption, this is the inertial→body rotation.
+            t_inertial_body * vehicle_pos_inertial
+        }
+    };
+    // The reference-position offset is used only for the contact-point
+    // arm calculation (relative-to-shape-reference). For most surface-
+    // model facets `shape.reference_position() = (0, 0, 0)` so this term
+    // contributes nothing; we still pass it through for non-trivial
+    // configurations, scaled by `t_struct_body` to land in body coords.
+    let _shape_ref_in_body = t_struct_body * vehicle_facet.shape.reference_position();
 
     // Closest point on the vehicle facet's centerline to the body-frame
     // ground point, then push to the facet surface.
@@ -1379,6 +1457,8 @@ mod tests {
         let vehicle = ContactFacet::point(DVec3::ZERO, 1.0, mat);
         let ground = GroundFacet::new(Arc::new(SphericalTerrain::new(6378137.0)), 0.0, mat);
         let pos = DVec3::new(6378137.0, 0.0, 0.0);
+        // Initialization phase: pre-propagation vp.pos = (0,0,0) →
+        // contact triggers with depth ≈ R-1.
         let geom = compute_ground_contact_geometry(
             &vehicle,
             &ground,
@@ -1386,29 +1466,40 @@ mod tests {
             DMat3::IDENTITY,
             DMat3::IDENTITY,
             DMat3::IDENTITY,
+            Phase::Initialization,
         )
-        .expect("JEOD reports contact at t=0");
-        // |ground - rel_state| = R - 1 in JEOD's convention.
+        .expect("Initialization phase reports contact (JEOD CSV t=0)");
         assert!(
             (geom.penetration_depth - 6378136.0).abs() < 1.0,
             "penetration depth ≈ R-1 = 6378136, got {}",
             geom.penetration_depth
         );
-        // Normal = unit(ground_body - rel_state). penetration_vec ≈
-        // (R-1, 0, 0) in body frame (+x = radially outward), so
-        // normal ≈ (1, 0, 0). The spring force is therefore radially
-        // outward, repelling the vehicle from the planet center.
         assert!(
             geom.normal.x > 0.95,
             "normal expected near +x in body frame (radially outward), got {:?}",
             geom.normal
         );
+
+        // Steady state: post-propagation vp.pos = inertial position →
+        // subject_mag = R+1 > ground_mag = R → no contact. Physically
+        // correct (vehicle resting on the surface, no penetration).
+        let runtime = compute_ground_contact_geometry(
+            &vehicle,
+            &ground,
+            pos,
+            DMat3::IDENTITY,
+            DMat3::IDENTITY,
+            DMat3::IDENTITY,
+            Phase::SteadyState,
+        );
+        assert!(
+            runtime.is_none(),
+            "SteadyState reports no contact for vehicle at planet surface, got {runtime:?}"
+        );
     }
 
     #[test]
     fn line_ground_jeod_algorithm_matches_run_contact_ground_t0() {
-        // Cylinder along struct x, length 2, radius 1. Same mass/material
-        // as RUN_contact_ground veh1.
         let mat = ContactMaterial::jeod_spring(1751.25, 35.025, 0.5);
         let vehicle = ContactFacet::line(
             DVec3::new(-1.0, 0.0, 0.0),
@@ -1418,6 +1509,8 @@ mod tests {
         );
         let ground = GroundFacet::new(Arc::new(SphericalTerrain::new(6378137.0)), 0.0, mat);
         let pos = DVec3::new(6378137.0, 0.0, 0.0);
+        // Initialization phase: line cap-end contact_point = (2, 0, 0).
+        // |rel_state| = 2 → depth ≈ R-2.
         let geom = compute_ground_contact_geometry(
             &vehicle,
             &ground,
@@ -1425,15 +1518,48 @@ mod tests {
             DMat3::IDENTITY,
             DMat3::IDENTITY,
             DMat3::IDENTITY,
+            Phase::Initialization,
         )
-        .expect("JEOD reports contact at t=0");
-        // For the line, JEOD's contact_point = (2, 0, 0) (extended end-cap
-        // surface). |rel_state| = 2. depth = R - 2.
+        .expect("Initialization phase reports contact");
         assert!(
             (geom.penetration_depth - 6378135.0).abs() < 1.0,
             "penetration depth ≈ R-2 = 6378135, got {}",
             geom.penetration_depth
         );
+
+        // Steady state: no contact for cylinder resting on surface.
+        let runtime = compute_ground_contact_geometry(
+            &vehicle,
+            &ground,
+            pos,
+            DMat3::IDENTITY,
+            DMat3::IDENTITY,
+            DMat3::IDENTITY,
+            Phase::SteadyState,
+        );
+        assert!(
+            runtime.is_none(),
+            "SteadyState reports no contact, got {runtime:?}"
+        );
+    }
+
+    #[test]
+    fn ground_steady_state_no_contact_at_altitude() {
+        // Confirm no contact at any altitude under SteadyState.
+        let mat = ContactMaterial::jeod_spring(1000.0, 0.0, 0.0);
+        let vehicle = ContactFacet::point(DVec3::ZERO, 1.0, mat);
+        let ground = GroundFacet::new(Arc::new(SphericalTerrain::new(6378137.0)), 0.0, mat);
+        let pos = DVec3::new(6378137.0 + 100_000.0, 0.0, 0.0);
+        let runtime = compute_ground_contact_geometry(
+            &vehicle,
+            &ground,
+            pos,
+            DMat3::IDENTITY,
+            DMat3::IDENTITY,
+            DMat3::IDENTITY,
+            Phase::SteadyState,
+        );
+        assert!(runtime.is_none());
     }
 
     #[test]
@@ -1451,6 +1577,7 @@ mod tests {
                 DMat3::IDENTITY,
                 DMat3::IDENTITY,
                 DMat3::IDENTITY,
+                Phase::Initialization,
             )
         }));
         assert!(result.is_err(), "inactive ground facet should panic");

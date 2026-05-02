@@ -12,11 +12,11 @@ use jeod_sim::gravity::accumulate_gravity;
 use jeod_sim::integration::{integrate_bodies_contact_coupled, integrate_body, CoupledBodyInput};
 use jeod_sim::{
     evaluate_contact_pair, evaluate_ground_contact_pair, integrate_body_coupled, CoupledStageEval,
-    GravityControls, MassProperties, RadiationForce, RotationalState, SwitchSense,
+    GravityControls, MassProperties, Phase, RadiationForce, RotationalState, SwitchSense,
     TranslationalState,
 };
 
-use super::super::types::{ContactPairConfig, GroundContactPairConfig};
+use super::super::types::{ContactPairConfig, GroundContactImpulse, GroundContactPairConfig};
 use super::super::Simulation;
 use crate::error::StepError;
 
@@ -452,6 +452,16 @@ impl Simulation {
             // facet/material data.
             let contact_pairs: &Vec<ContactPairConfig> = &self.contact_pairs;
             let ground_contact_pairs: &Vec<GroundContactPairConfig> = &self.ground_contact_pairs;
+            // Drain pending init impulses into Cell-wrapped slots so the
+            // RK4 stage closure can `.take()` them on the first invocation
+            // (stage 1) and find `None` thereafter — JEOD's
+            // `ContactSurface::collect_forces_torques` semantics where
+            // `facet.force` is zeroed after the first stage's collection.
+            let pending_init_impulses: Vec<std::cell::Cell<Option<GroundContactImpulse>>> = self
+                .ground_contact_pairs
+                .iter()
+                .map(|p| std::cell::Cell::new(p.pending_initial_impulse))
+                .collect();
             let bodies_mut = &mut self.bodies;
 
             // Gather per-body immutable data (t_struct_body, mass, constant
@@ -549,10 +559,18 @@ impl Simulation {
                             out[pair.body_b].1 += eval.torque_b_body;
                         }
                     }
-                    // Ground contact pairs — single-body (no Newton's-third-
-                    // law reaction on the ground). JEOD_INV: IN.31 — these
-                    // run alongside `check_contact()` as derivative-class jobs.
-                    for pair in ground_contact_pairs {
+                    // Ground contact: drain JEOD's pre-propagation init
+                    // impulses on the first stage call only (mirrors
+                    // ContactSurface::collect_forces_torques zeroing
+                    // facet.force after stage 1). Subsequent stages
+                    // evaluate the SteadyState path which produces no
+                    // contact for above-surface vehicles — matching
+                    // JEOD's runtime check_contact_ground behaviour.
+                    for (i, pair) in ground_contact_pairs.iter().enumerate() {
+                        if let Some(impulse) = pending_init_impulses[i].take() {
+                            out[pair.body_a].0 += impulse.force_inertial;
+                            out[pair.body_a].1 += impulse.torque_body;
+                        }
                         if let Some(eval) = evaluate_ground_contact_pair(
                             &pair.vehicle_facet,
                             &pair.ground_facet,
@@ -561,6 +579,7 @@ impl Simulation {
                             t_struct_body_vec[pair.body_a],
                             &mass_vec[pair.body_a],
                             ground_t_inertial_pfix,
+                            Phase::SteadyState,
                         ) {
                             out[pair.body_a].0 += eval.force_on_a;
                             out[pair.body_a].1 += eval.torque_a_body;
@@ -569,6 +588,14 @@ impl Simulation {
                 },
                 integ_dt,
             );
+
+            // Mark pending init impulses as consumed so subsequent steps
+            // don't reapply them. (Matches JEOD: the impulsive force is
+            // applied only at stage 1 of step 1 and is then zeroed by
+            // collect_forces_torques.)
+            for pair in self.ground_contact_pairs.iter_mut() {
+                pair.pending_initial_impulse = None;
+            }
         }
 
         // Sync body positions back to frame tree after integration.

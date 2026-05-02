@@ -57,6 +57,23 @@ pub struct GroundContactPairConfig {
     pub vehicle_facet: ContactFacet,
     /// Ground facet (terrain, alt_offset, material).
     pub ground_facet: GroundFacet,
+    /// JEOD initialization-time impulse, computed at registration via the
+    /// pre-propagation ground-contact evaluation. Consumed at stage 1 of
+    /// the first integration step (RK4 weight 1/6) and zeroed thereafter
+    /// — mirrors `ContactSurface::collect_forces_torques` clearing
+    /// `facet.force` after stage 1 in JEOD. `None` when registration
+    /// found no contact (vehicle with non-zero altitude initially), or
+    /// after the first step has consumed it.
+    pub pending_initial_impulse: Option<GroundContactImpulse>,
+}
+
+/// Impulsive contact contribution from JEOD's pre-propagation
+/// `GroundInteraction::initialize` call (force on the vehicle in
+/// inertial coords + body-frame torque about CoM).
+#[derive(Debug, Clone, Copy)]
+pub struct GroundContactImpulse {
+    pub force_inertial: DVec3,
+    pub torque_body: DVec3,
 }
 
 /// Maps a gravity source to its frame tree nodes.

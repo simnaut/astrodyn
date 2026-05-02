@@ -136,8 +136,8 @@ pub use jeod_interactions::{
     compute_shadow_fraction, solar_flux_at_distance, AerodynamicForce, AerodynamicForceTyped,
     ContactFacet, ContactForce, ContactGeometry, ContactMaterial, ContactShape, DragConfig,
     DragConfigTyped, EarthLightingState, FlatPlate, FlatPlateParams, FlatPlateSrpResult,
-    FlatPlateThermal, GroundFacet, LightingBody, LightingParams, RadiationForce, SphericalTerrain,
-    Terrain, ThermalConductionMatrix, SOLAR_RADIUS, SPEED_OF_LIGHT,
+    FlatPlateThermal, GroundFacet, LightingBody, LightingParams, Phase, RadiationForce,
+    SphericalTerrain, Terrain, ThermalConductionMatrix, SOLAR_RADIUS, SPEED_OF_LIGHT,
 };
 
 // jeod_frames: reference frame state
