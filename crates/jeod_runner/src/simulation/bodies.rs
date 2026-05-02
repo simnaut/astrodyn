@@ -33,6 +33,9 @@ impl Simulation {
     /// acts on body B. Torques are accumulated about each body's CoM.
     ///
     /// # Panics
+    /// * Called after the first [`step`](Self::step). Contact-pair
+    ///   registration is initialization-only — JEOD wires it at
+    ///   `P_BODY("initialization")` (JEOD_INV: IN.38).
     /// * Either `body_a` or `body_b` is out of range for the registered bodies.
     /// * `body_a == body_b` — contact pair bodies must be distinct
     ///   (JEOD_INV: IN.30, matching JEOD's `unique_pair` invariant).
@@ -48,6 +51,19 @@ impl Simulation {
         body_b: usize,
         facet_b: ContactFacet,
     ) {
+        // JEOD_INV: IN.38 — JEOD wires `Contact::register_contact` at
+        // `P_BODY("initialization")` (`SIM_ground_contact/S_modules/sv_dyn.sm:130-133`)
+        // so it runs exactly once before integration starts. Our API
+        // surface allows the call at any time, so guard explicitly: the
+        // first step computes init-phase impulses against `t=0` body
+        // state, and silently mixing those into a running trajectory
+        // would inject a spurious impulse.
+        assert!(
+            !self.has_stepped,
+            "register_contact_pair: contact-pair registration is initialization-only — \
+             must be called before the first `step()` (JEOD wires this at \
+             P_BODY(\"initialization\") in sv_dyn.sm)"
+        );
         assert!(
             body_a < self.bodies.len(),
             "register_contact_pair: body_a index {body_a} out of range ({} bodies)",
@@ -100,6 +116,9 @@ impl Simulation {
     /// consistency to keep ground-contact registrations explicit.
     ///
     /// # Panics
+    /// * Called after the first [`step`](Self::step). Ground-contact-pair
+    ///   registration is initialization-only — JEOD wires it at
+    ///   `P_BODY/P_DYN("initialization")` (JEOD_INV: IN.38).
     /// * `body_a` is out of range for the registered bodies.
     /// * `body_a` lacks a `RotationalState` or [`MassProperties`]
     ///   (ground contact requires 6-DOF + mass — checked here so the
@@ -119,6 +138,25 @@ impl Simulation {
         ground_facet: GroundFacet,
         planet_source: usize,
     ) {
+        // JEOD_INV: IN.38 — JEOD wires `Contact::register_contact` /
+        // `ContactGround::register_ground_facet` at
+        // `P_BODY("initialization")` / `P_DYN("initialization")`
+        // (`SIM_ground_contact/S_modules/sv_dyn.sm:130-133` and
+        // `contact.sm:70-72`) so registration runs exactly once before
+        // integration. The init-phase impulse stored in
+        // `pending_initial_impulse` is computed against `t=0` body
+        // state and consumed at stage 1 of the first step; injecting
+        // that into an already-stepped run would corrupt the
+        // trajectory with a spurious impulse independent of vehicle
+        // altitude. Mirror JEOD's structural guarantee with a runtime
+        // assert.
+        assert!(
+            !self.has_stepped,
+            "register_ground_contact_pair: ground-contact-pair registration is \
+             initialization-only — must be called before the first `step()` \
+             (JEOD wires this at P_BODY/P_DYN(\"initialization\") in \
+             SIM_ground_contact's sv_dyn.sm and contact.sm)"
+        );
         assert!(
             body_a < self.bodies.len(),
             "register_ground_contact_pair: body_a index {body_a} out of range ({} bodies)",
@@ -553,5 +591,46 @@ impl Simulation {
         composite.dirty = true;
         composite.recompute_derived();
         self.bodies[idx].mass = Some(composite);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use jeod_interactions::{ContactMaterial, SphericalTerrain};
+    use jeod_time::leap_second::default_leap_second_table;
+    use jeod_time::SimulationTime;
+    use std::sync::Arc;
+
+    fn empty_sim() -> Simulation {
+        let time = SimulationTime::new(0.0, default_leap_second_table());
+        Simulation::new(time, 1.0)
+    }
+
+    fn dummy_material() -> ContactMaterial {
+        ContactMaterial::jeod_spring(1.0, 1.0, 0.5)
+    }
+
+    #[test]
+    #[should_panic(expected = "initialization-only")]
+    fn register_contact_pair_after_step_panics() {
+        // JEOD_INV: IN.38 — registration must precede the first step.
+        let mut sim = empty_sim();
+        sim.has_stepped = true;
+        let mat = dummy_material();
+        let facet = ContactFacet::point(DVec3::ZERO, 1.0, mat);
+        sim.register_contact_pair(0, facet, 1, facet);
+    }
+
+    #[test]
+    #[should_panic(expected = "initialization-only")]
+    fn register_ground_contact_pair_after_step_panics() {
+        // JEOD_INV: IN.38 — registration must precede the first step.
+        let mut sim = empty_sim();
+        sim.has_stepped = true;
+        let mat = dummy_material();
+        let veh = ContactFacet::point(DVec3::ZERO, 1.0, mat);
+        let ground = GroundFacet::new(Arc::new(SphericalTerrain::new(6_378_137.0)), 0.0, mat);
+        sim.register_ground_contact_pair(0, veh, ground, 0);
     }
 }

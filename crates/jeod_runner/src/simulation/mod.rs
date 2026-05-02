@@ -155,6 +155,14 @@ pub struct Simulation {
     /// across steps so the inner loop is allocation-free once the body count
     /// stabilizes.
     coupled_integ_scratch: jeod_sim::integration::CoupledIntegScratch,
+    /// `true` once `step_internal` has run at least once. Used to enforce
+    /// JEOD's S_define-level invariant that contact-pair registration is
+    /// `P_BODY("initialization")` / `P_DYN("initialization")`-only — i.e.,
+    /// runs before integration starts. JEOD enforces this structurally via
+    /// Trick job phasing; we mirror it with a runtime guard since our API
+    /// surface lets callers invoke `register_*_contact_pair` at any time
+    /// (JEOD_INV: IN.38).
+    pub(crate) has_stepped: bool,
 }
 
 impl Simulation {
@@ -188,6 +196,7 @@ impl Simulation {
             ground_contact_pairs: Vec::new(),
             ground_contact_planet_source: None,
             coupled_integ_scratch: jeod_sim::integration::CoupledIntegScratch::new(),
+            has_stepped: false,
         }
     }
 
