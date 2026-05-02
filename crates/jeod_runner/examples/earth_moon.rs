@@ -99,9 +99,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let moon = sb.add_source("Moon", moon_source);
     let earth = sb.add_source(
         "Earth",
-        jeod_sim::recipes::earth::third_body(
-            jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(earth_pos),
-        ),
+        jeod_sim::recipes::earth::third_body(jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(
+            earth_pos,
+        )),
     );
     let sun_idx = sb.add_source(
         "Sun",
