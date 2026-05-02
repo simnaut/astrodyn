@@ -133,12 +133,21 @@ impl DetachedSubtreeState {
             let half_angle = omega_norm * dt * 0.5;
             let s = half_angle.sin() / omega_norm;
             let c = half_angle.cos();
-            // JEOD left-transform convention: a rotation by angle θ
-            // about unit axis ω̂ has quaternion (cos(θ/2), −sin(θ/2)·ω̂)
-            // — see [`JeodQuat::left_quat_from_eigen_rotation`]. Note
-            // the negative sign on the vector part.
+            // JEOD's quaternion derivative convention (see
+            // `Quaternion::compute_left_quat_deriv` in
+            // `models/utils/quaternion/include/quat_inline.hh`):
+            //
+            //     q̇ = -½ (ω ⊗ q)            ← LEFT-multiplied by ω
+            //
+            // Closed-form integral over a constant-ω step is therefore
+            // `q(t+dt) = exp(-½ ω·dt) ⊗ q(t)`, i.e. `dq` is
+            // left-multiplied. Right-multiplying (q ⊗ dq) introduces a
+            // per-step error of order θ·|q.vector × ω̂| (the
+            // commutator), which for the SIM_Apollo S3 free-fly was
+            // verified empirically to produce exactly the observed
+            // 1.708 mrad/s drift.
             let dq = JeodQuat::new(c, -omega.x * s, -omega.y * s, -omega.z * s);
-            let mut q_new = self.composite_attitude.multiply(&dq);
+            let mut q_new = dq.multiply(&self.composite_attitude);
             q_new.normalize();
             self.composite_attitude = q_new;
         }
