@@ -14,107 +14,23 @@
 //!   - If it doesn't match: algorithm has a subtle divergence we
 //!     missed despite the line-by-line port — chase via Stream 4.
 
-use glam::{DMat3, DVec3};
 use jeod_dynamics::{combine_states_at_attach, AttachCombineInputs, MassProperties};
 use jeod_frames::{RefFrameRot, RefFrameState, RefFrameTrans};
 use jeod_math::JeodQuat;
-use std::path::PathBuf;
+use jeod_test_data::apollo_truth::{
+    load_apollo_attach_truth, nearest_truth_at, ApolloTruthRow, VehState,
+};
 
-fn test_data_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../test_data/apollo_attach_truth.csv")
+fn load_truth() -> Vec<ApolloTruthRow> {
+    load_apollo_attach_truth(env!("CARGO_MANIFEST_DIR"))
+        .unwrap_or_else(|e| panic!("attach_truth load failed: {e}"))
 }
 
-/// One row from the attach_truth CSV. Layout per `APOLLO_SNIPPET`:
-///   col  0: time
-///   per vehicle (cm_dyn first @ cols 1..36, lm_dyn @ cols 36..71):
-///     +0..+5 : pos[0], vel[0], pos[1], vel[1], pos[2], vel[2]
-///     +6     : q.scalar
-///     +7..+9 : q.vec[0..2]
-///     +10..+12 : ang_vel[0..2]
-///     +13    : mass
-///     +14..+16 : composite CoM position struct[0..2]
-///     +17..+25 : inertia row-major (i*3+j)
-///     +26..+34 : T_parent_this row-major
-#[derive(Clone)]
-struct VehRow {
-    position: DVec3,
-    velocity: DVec3,
-    quaternion: JeodQuat,
-    ang_vel_body: DVec3,
-    mass: f64,
-    cm_struct: DVec3,
-    inertia: DMat3,
-    t_struct_to_body: DMat3,
+fn find_row(rows: &[ApolloTruthRow], target_t: f64) -> &ApolloTruthRow {
+    nearest_truth_at(rows, target_t)
 }
 
-struct TruthRow {
-    time: f64,
-    cm: VehRow,
-    lm: VehRow,
-}
-
-fn parse_veh(v: &[f64], base: usize) -> VehRow {
-    VehRow {
-        position: DVec3::new(v[base], v[base + 2], v[base + 4]),
-        velocity: DVec3::new(v[base + 1], v[base + 3], v[base + 5]),
-        quaternion: JeodQuat::new(v[base + 6], v[base + 7], v[base + 8], v[base + 9]),
-        ang_vel_body: DVec3::new(v[base + 10], v[base + 11], v[base + 12]),
-        mass: v[base + 13],
-        cm_struct: DVec3::new(v[base + 14], v[base + 15], v[base + 16]),
-        // Inertia row-major into DMat3 (column-major in glam).
-        inertia: dmat3_from_row_major(&v[base + 17..base + 26]),
-        t_struct_to_body: dmat3_from_row_major(&v[base + 26..base + 35]),
-    }
-}
-
-fn dmat3_from_row_major(row_major: &[f64]) -> DMat3 {
-    // row_major[i*3+j] = M[i][j]. glam DMat3 is column-major.
-    DMat3::from_cols(
-        DVec3::new(row_major[0], row_major[3], row_major[6]),
-        DVec3::new(row_major[1], row_major[4], row_major[7]),
-        DVec3::new(row_major[2], row_major[5], row_major[8]),
-    )
-}
-
-fn load_truth() -> Vec<TruthRow> {
-    let path = test_data_path();
-    assert!(
-        path.exists(),
-        "{} missing — generate via `cargo xtask regenerate-tier3 --force`",
-        path.display()
-    );
-    let content =
-        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-    let mut out = Vec::new();
-    for line in content.lines().skip(1) {
-        let v: Vec<f64> = line
-            .split(',')
-            .filter_map(|s| s.trim().parse().ok())
-            .collect();
-        if v.len() < 71 {
-            continue;
-        }
-        out.push(TruthRow {
-            time: v[0],
-            cm: parse_veh(&v, 1),
-            lm: parse_veh(&v, 36),
-        });
-    }
-    out
-}
-
-fn find_row(rows: &[TruthRow], target_t: f64) -> &TruthRow {
-    rows.iter()
-        .min_by(|a, b| {
-            (a.time - target_t)
-                .abs()
-                .partial_cmp(&(b.time - target_t).abs())
-                .unwrap()
-        })
-        .unwrap_or_else(|| panic!("no row near t={target_t}"))
-}
-
-fn make_state(v: &VehRow) -> RefFrameState {
+fn make_state(v: &VehState) -> RefFrameState {
     let t = v.quaternion.left_quat_to_transformation();
     RefFrameState {
         trans: RefFrameTrans {
@@ -129,7 +45,7 @@ fn make_state(v: &VehRow) -> RefFrameState {
     }
 }
 
-fn make_mass(v: &VehRow) -> MassProperties {
+fn make_mass(v: &VehState) -> MassProperties {
     let mut m = MassProperties::with_inertia(v.mass, v.inertia, v.cm_struct);
     m.t_parent_this = v.t_struct_to_body;
     m

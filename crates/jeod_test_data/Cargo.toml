@@ -15,6 +15,9 @@ jeod_quantities = { path = "../jeod_quantities", version = "0.1.0" }
 # `jeod_test_data` (would be a cycle); the production crate is unaware
 # the parser exists.
 jeod_gravity = { path = "../jeod_gravity", version = "0.1.0" }
+# `jeod_math` exposes `JeodQuat` so the `apollo_truth` loader can return
+# JEOD-typed quaternions directly.
+jeod_math = { path = "../jeod_math", version = "0.1.0" }
 glam = { workspace = true }
 regex = "1"
 thiserror = { workspace = true }

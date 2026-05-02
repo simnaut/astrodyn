@@ -2491,6 +2491,103 @@ impl Simulation {
         (core_position, core_velocity)
     }
 
+    /// Resolve the `composite_body` inertial state of any mass-tree body,
+    /// regardless of whether it is the integrated body, attached as a
+    /// child of the integrated body, or the root of a detached subtree.
+    ///
+    /// Walks to the tree root, reads the root's inertial composite state
+    /// from either [`Self::bodies`] (when the root is the integrated body)
+    /// or [`Self::detached_subtrees`] (when the root is detached), then
+    /// chain-walks down to `target_id` using the same body-aware step as
+    /// [`Self::detach_subtree`] (with [`jeod_dynamics::propagate_forward`]
+    /// at each level).
+    ///
+    /// This mirrors what JEOD's truth recorder logs for `lm_dyn.composite_body`
+    /// regardless of the LM's current attach state — the diagnostic
+    /// [`tier3_sim_apollo_lm_state_vs_truth`] consumer compares against
+    /// `apollo_attach_truth.csv` rows produced by that same recorder.
+    ///
+    /// # Panics
+    /// Panics if no mass tree is configured, `target_id` is not in the
+    /// tree, the root has no integrated body and no detached-subtree
+    /// entry, or the integrated root is missing rotational state.
+    pub fn subtree_composite_inertial(&self, target_id: MassBodyId) -> RefFrameState {
+        let tree = self
+            .mass_tree
+            .as_ref()
+            .expect("subtree_composite_inertial: no mass tree configured");
+        // Walk to root.
+        let mut root_id = target_id;
+        while let Some(p) = tree.parent(root_id) {
+            root_id = p;
+        }
+
+        // Resolve the root's inertial composite_body state.
+        let integrated_idx = self
+            .bodies
+            .iter()
+            .position(|b| b.mass_body_id == Some(root_id));
+        let root_state: RefFrameState = if let Some(idx) = integrated_idx {
+            let body = &self.bodies[idx];
+            let body_rot = body.rot.expect(
+                "subtree_composite_inertial: integrated root has no rotational state \
+                 (6-DOF required)",
+            );
+            RefFrameState {
+                trans: RefFrameTrans {
+                    position: body.trans.position,
+                    velocity: body.trans.velocity,
+                },
+                rot: RefFrameRot {
+                    q_parent_this: body_rot.quaternion,
+                    t_parent_this: body_rot.quaternion.left_quat_to_transformation(),
+                    ang_vel_this: body_rot.ang_vel_body,
+                },
+            }
+        } else if let Some(detached) = self.detached_subtrees.get(&root_id) {
+            detached.to_ref_frame_state()
+        } else {
+            panic!(
+                "subtree_composite_inertial: tree root {root_id:?} for target \
+                 {target_id:?} has no integrated body and no detached-subtree entry"
+            );
+        };
+
+        // Build the chain root → target and walk down with the body-aware step.
+        let mut chain = Vec::<MassBodyId>::new();
+        let mut cur = target_id;
+        while cur != root_id {
+            chain.push(cur);
+            cur = tree.parent(cur).expect(
+                "subtree_composite_inertial: chain walk hit a parentless intermediate \
+                 (target lost its parent during traversal)",
+            );
+        }
+        chain.reverse();
+
+        let mut current_state = root_state;
+        let mut current_node_id = root_id;
+        for next_id in chain {
+            let next_node = tree.get(next_id);
+            let current_node = tree.get(current_node_id);
+            let t_current_struct_to_body = current_node.composite_properties.t_parent_this;
+            let t_next_struct_to_body = next_node.composite_properties.t_parent_this;
+            let offset_struct =
+                next_node.composite_wrt_pstr.position - current_node.composite_properties.position;
+            let offset_in_current_body = t_current_struct_to_body * offset_struct;
+            let t_current_body_to_next_body = t_next_struct_to_body
+                * next_node.structure_point.t_parent_this
+                * t_current_struct_to_body.transpose();
+            let rel = MassPointState {
+                position: offset_in_current_body,
+                t_parent_this: t_current_body_to_next_body,
+            };
+            current_state = jeod_dynamics::propagate_forward(&current_state, &rel);
+            current_node_id = next_id;
+        }
+        current_state
+    }
+
     /// Read the current per-plate temperatures (K) for a body's flat-plate
     /// SRP configuration, or `None` if the body has no flat-plate SRP.
     ///

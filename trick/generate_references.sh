@@ -1780,16 +1780,23 @@ trick.add_data_record_group(dr)
 
 # Ground-truth recorder for the t=6 attach algorithm investigation
 # (see #248). Captures, at 1 ms cadence, every input that flows into
-# JEODs DynBody::attach_child momentum-conservation algorithm for both
-# cm_dyn (parent/integrated body) and lm_dyn (child subtree). The Rust
-# port jeod_dynamics::attach::combine_states_at_attach is replayed
-# against these values to confirm whether the algorithm matches JEOD
-# given JEODs exact inputs.
+# JEODs DynBody::attach_child momentum-conservation algorithm for cm_dyn
+# (parent/integrated body), lm_dyn (child subtree), and s3_dyn
+# (intermediate detached subtree root during t=4 to t=5 — needed to
+# disambiguate chain-walk-from-S3-to-LM errors from S3 propagation
+# errors). The Rust port jeod_dynamics::attach::combine_states_at_attach
+# is replayed against the cm/lm values; the s3 columns drive the
+# tier3_sim_apollo_lm_state_vs_truth diagnostic.
+#
+# Column layout (cols are 0-indexed; col 0 = time):
+#   1..35   cm_dyn  (35 cols: 6 trans + 4 quat + 3 ang_vel + 1 mass + 3 cm + 9 inertia + 9 T)
+#   36..70  lm_dyn
+#   71..105 s3_dyn  (added with #248 follow-up)
 dr2 = trick.DRAscii("attach_truth")
 dr2.thisown = 0
 dr2.set_cycle(0.001)
 dr2.freq = trick.sim_services.DR_Always
-for veh in ("cm_dyn", "lm_dyn"):
+for veh in ("cm_dyn", "lm_dyn", "s3_dyn"):
     for i in range(3):
         dr2.add_variable(f"{veh}.dyn_body.composite_body.state.trans.position[{i}]")
         dr2.add_variable(f"{veh}.dyn_body.composite_body.state.trans.velocity[{i}]")

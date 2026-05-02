@@ -64,6 +64,7 @@
 pub use jeod_quantities::prelude::*;
 
 pub mod apollo_mass_tree;
+pub mod apollo_truth;
 pub mod atmosphere_verif;
 pub mod body_init_fixtures; // populated by issue #235
 pub mod crossval;

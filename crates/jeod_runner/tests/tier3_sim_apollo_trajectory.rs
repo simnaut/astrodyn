@@ -81,6 +81,9 @@ use jeod_sim::{
     GravitySource, MetAtmosphere, RotationalState, SimulationBuilder, SimulationTime,
     TranslationalState, EARTH,
 };
+use jeod_test_data::apollo_truth::{
+    load_apollo_attach_truth, nearest_truth_at, ApolloTruthError, ApolloTruthRow,
+};
 use jeod_test_data::crossval::{CrossvalReport, StateLog};
 use std::path::PathBuf;
 
@@ -748,4 +751,432 @@ fn tier3_sim_apollo_trajectory() {
     report.assert_velocity([1.77e-3, 3.59e-4, 1.39e-3]);
     report.assert_quat_angle(6.86e-3);
     report.assert_ang_vel([4.16e-3, 1.30e-5, 1.09e-2]);
+}
+
+// ─── LM-state-vs-truth diagnostic ────────────────────────────────────
+//
+// Runs the same sim through the full 12 s and compares LM
+// `composite_body` inertial state against `apollo_attach_truth.csv`
+// (1 ms cadence) at every integration step plus right after each event.
+// Output: stderr table highlighting the first sample to cross 1 mm,
+// plus a per-step CSV under `target/tier3_crossval/` for offline
+// analysis. Diagnostic only — does not assert tolerances. Marked
+// `#[ignore]` because the truth CSV is gitignored and may be missing
+// on a fresh clone.
+
+const LM_DIAG_POSITION_TRIP_M: f64 = 1.0e-3;
+
+#[derive(Clone)]
+struct LmDiagSample {
+    time: f64,
+    /// Empty unless this row was captured immediately after an event applied.
+    event_label: String,
+    // ── LM (always present) ──
+    err_pos: DVec3,
+    err_vel: DVec3,
+    err_quat_angle: f64,
+    err_ang_vel: DVec3,
+    our_pos: DVec3,
+    truth_pos: DVec3,
+    /// Raw LM ang_vel from the runner (chain-walked), expressed in body frame.
+    our_ang_vel: DVec3,
+    /// Raw LM ang_vel from JEOD's truth recorder, body frame.
+    truth_ang_vel: DVec3,
+    // ── S3 (Some only when truth CSV has s3 columns) ──
+    /// `Some` when the truth row exposes `s3`; otherwise the recorder hasn't
+    /// been regenerated with the s3 columns yet.
+    s3_err_pos: Option<DVec3>,
+    s3_err_vel: Option<DVec3>,
+    s3_err_quat_angle: Option<f64>,
+    s3_err_ang_vel: Option<DVec3>,
+}
+
+fn event_short_label(event: Event) -> &'static str {
+    match event {
+        Event::DetachS1 => "DetS1",
+        Event::DetachS2 => "DetS2",
+        Event::DetachLes => "DetLes",
+        Event::DetachS3 => "DetS3",
+        Event::DetachLm => "DetLm",
+        Event::AttachLmCm => "AttLmCm",
+        Event::DetachLm2 => "DetLm2",
+        Event::DetachDm => "DetDm",
+        Event::AttachLmCm2 => "AttLmCm2",
+        Event::DetachLm3 => "DetLm3",
+        Event::DetachSm => "DetSm",
+    }
+}
+
+/// Walk up from CARGO_MANIFEST_DIR until we find Cargo.lock — that's the
+/// workspace root. Mirrors the helper in `jeod_test_data::crossval`.
+fn workspace_target_tier3_dir() -> PathBuf {
+    let mut dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    loop {
+        if dir.join("Cargo.lock").exists() {
+            break;
+        }
+        if !dir.pop() {
+            dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            break;
+        }
+    }
+    dir.join("target").join("tier3_crossval")
+}
+
+/// Quaternion angular distance: `2 · acos(|<q1, q2>|)`. Returns the
+/// smaller of the two possible rotations (q and −q represent the same
+/// rotation in JEOD's left-quat convention).
+fn quat_angle_between(a: JeodQuat, b: JeodQuat) -> f64 {
+    let av = a.vector();
+    let bv = b.vector();
+    let dot = a.scalar() * b.scalar() + av.x * bv.x + av.y * bv.y + av.z * bv.z;
+    2.0 * dot.abs().clamp(-1.0, 1.0).acos()
+}
+
+fn capture_lm_diag(
+    sim: &Simulation,
+    ids: &BodyIds,
+    truth_rows: &[ApolloTruthRow],
+    time: f64,
+    event_label: &str,
+) -> LmDiagSample {
+    let our = sim.subtree_composite_inertial(ids.lm);
+    let truth = nearest_truth_at(truth_rows, time);
+    let truth_quat = truth.lm.quaternion;
+
+    // S3 comparison — only meaningful when the truth recorder logged s3.
+    // Even when the truth row has no s3, we still walk our own simulation
+    // for s3 so the function is total; the comparison is conditioned on
+    // truth.s3 being Some.
+    let our_s3 = sim.subtree_composite_inertial(ids.s3);
+    let s3_err_pos = truth
+        .s3
+        .as_ref()
+        .map(|s3| our_s3.trans.position - s3.position);
+    let s3_err_vel = truth
+        .s3
+        .as_ref()
+        .map(|s3| our_s3.trans.velocity - s3.velocity);
+    let s3_err_quat_angle = truth
+        .s3
+        .as_ref()
+        .map(|s3| quat_angle_between(our_s3.rot.q_parent_this, s3.quaternion));
+    let s3_err_ang_vel = truth
+        .s3
+        .as_ref()
+        .map(|s3| our_s3.rot.ang_vel_this - s3.ang_vel_body);
+
+    LmDiagSample {
+        time,
+        event_label: event_label.to_string(),
+        err_pos: our.trans.position - truth.lm.position,
+        err_vel: our.trans.velocity - truth.lm.velocity,
+        err_quat_angle: quat_angle_between(our.rot.q_parent_this, truth_quat),
+        err_ang_vel: our.rot.ang_vel_this - truth.lm.ang_vel_body,
+        our_pos: our.trans.position,
+        truth_pos: truth.lm.position,
+        our_ang_vel: our.rot.ang_vel_this,
+        truth_ang_vel: truth.lm.ang_vel_body,
+        s3_err_pos,
+        s3_err_vel,
+        s3_err_quat_angle,
+        s3_err_ang_vel,
+    }
+}
+
+/// Diagnostic (ignored by default): runs the full 12 s SIM_Apollo and
+/// compares LM `composite_body` inertial state against
+/// `apollo_attach_truth.csv` at every integration step and right after
+/// each event. Output is a stderr table flagging the first sample whose
+/// position error exceeds 1 mm, plus a per-step CSV at
+/// `target/tier3_crossval/apollo_lm_state_vs_truth.csv`. The truth CSV
+/// is gitignored — regenerate via `cargo xtask regenerate-tier3 --force`.
+///
+/// Run manually:
+///   `cargo nextest run -p jeod_runner --test tier3_sim_apollo_trajectory \
+///     tier3_sim_apollo_lm_state_vs_truth --run-ignored only`
+/// or
+///   `cargo test -p jeod_runner --test tier3_sim_apollo_trajectory \
+///     tier3_sim_apollo_lm_state_vs_truth -- --ignored --nocapture`
+#[test]
+#[ignore]
+fn tier3_sim_apollo_lm_state_vs_truth() {
+    let truth_rows = match load_apollo_attach_truth(env!("CARGO_MANIFEST_DIR")) {
+        Ok(rows) => rows,
+        Err(ApolloTruthError::Missing { path }) => panic!(
+            "{} missing — regenerate via `cargo xtask regenerate-tier3 --force` \
+             (the attach_truth recorder is in APOLLO_SNIPPET in trick/generate_references.sh)",
+            path.display()
+        ),
+        Err(e) => panic!("failed to load apollo_attach_truth.csv: {e}"),
+    };
+    eprintln!(
+        "loaded {} truth rows spanning t = {:.6} .. {:.6}",
+        truth_rows.len(),
+        truth_rows.first().unwrap().time,
+        truth_rows.last().unwrap().time
+    );
+
+    let (mut sim, body_idx, ids) = build_apollo_sim();
+
+    let mut event_iter = EVENTS.iter().peekable();
+    let mut current_t = 0.0_f64;
+    let mut samples: Vec<LmDiagSample> = Vec::new();
+
+    samples.push(capture_lm_diag(&sim, &ids, &truth_rows, current_t, "init"));
+
+    let n_steps = (SIM_DURATION_S / DT).round() as usize;
+    for _ in 0..n_steps {
+        // Apply any events whose t is at or before current_t (matches
+        // the trajectory test's JEOD-order semantics).
+        let mut applied = String::new();
+        while let Some(&&(event_t, event)) = event_iter.peek() {
+            if event_t <= current_t + 1e-9 {
+                apply_event(&mut sim, body_idx, &ids, event);
+                if !applied.is_empty() {
+                    applied.push('+');
+                }
+                applied.push_str(event_short_label(event));
+                event_iter.next();
+            } else {
+                break;
+            }
+        }
+        if !applied.is_empty() {
+            samples.push(capture_lm_diag(
+                &sim,
+                &ids,
+                &truth_rows,
+                current_t,
+                &applied,
+            ));
+        }
+        sim.step().expect("step failed");
+        current_t += DT;
+        samples.push(capture_lm_diag(&sim, &ids, &truth_rows, current_t, ""));
+    }
+    // Sweep any trailing events scheduled at current_t (none today, but
+    // guard the loop for future schedule edits).
+    while let Some(&&(event_t, event)) = event_iter.peek() {
+        if event_t <= current_t + 1e-9 {
+            apply_event(&mut sim, body_idx, &ids, event);
+            samples.push(capture_lm_diag(
+                &sim,
+                &ids,
+                &truth_rows,
+                current_t,
+                event_short_label(event),
+            ));
+            event_iter.next();
+        } else {
+            break;
+        }
+    }
+
+    // ── stderr summary ───────────────────────────────────────────────
+    let first_breach = samples
+        .iter()
+        .find(|s| s.err_pos.length() > LM_DIAG_POSITION_TRIP_M);
+
+    eprintln!();
+    eprintln!("==========================================================");
+    eprintln!("  LM composite_body vs apollo_attach_truth.csv");
+    eprintln!(
+        "  position trip threshold = {:.0e} m",
+        LM_DIAG_POSITION_TRIP_M
+    );
+    eprintln!("==========================================================");
+    eprintln!(
+        "  total samples: {} ({} steps + initial + post-event captures)",
+        samples.len(),
+        n_steps
+    );
+    if let Some(s) = first_breach {
+        eprintln!();
+        eprintln!(
+            "  FIRST POSITION BREACH at t = {:.6} s (event_label: {:?})",
+            s.time, s.event_label
+        );
+        eprintln!(
+            "    err_pos = [{:>13.6e} {:>13.6e} {:>13.6e}]  |.| = {:.6e} m",
+            s.err_pos.x,
+            s.err_pos.y,
+            s.err_pos.z,
+            s.err_pos.length()
+        );
+        eprintln!(
+            "    err_vel = [{:>13.6e} {:>13.6e} {:>13.6e}]  |.| = {:.6e} m/s",
+            s.err_vel.x,
+            s.err_vel.y,
+            s.err_vel.z,
+            s.err_vel.length()
+        );
+        eprintln!("    err_quat_angle = {:.6e} rad", s.err_quat_angle);
+        eprintln!(
+            "    err_ang_vel = [{:>13.6e} {:>13.6e} {:>13.6e}]  |.| = {:.6e} rad/s",
+            s.err_ang_vel.x,
+            s.err_ang_vel.y,
+            s.err_ang_vel.z,
+            s.err_ang_vel.length()
+        );
+    } else {
+        eprintln!();
+        eprintln!(
+            "  no position breach — max |err_pos| = {:.6e} m",
+            samples
+                .iter()
+                .map(|s| s.err_pos.length())
+                .fold(0.0_f64, f64::max)
+        );
+    }
+
+    // ── per-event-boundary headline (every event, regardless of trip) ─
+    let any_s3 = samples.iter().any(|s| s.s3_err_pos.is_some());
+    eprintln!();
+    eprintln!("  ─── per-event LM error snapshots ─────────────────────");
+    eprintln!(
+        "  {:>10}  {:>10}  {:>13}  {:>13}  {:>13}  {:>13}",
+        "t (s)", "event", "|err_pos| m", "|err_vel| m/s", "dq_ang rad", "|dω| rad/s"
+    );
+    for s in samples.iter().filter(|s| !s.event_label.is_empty()) {
+        eprintln!(
+            "  {:>10.6}  {:>10}  {:>13.6e}  {:>13.6e}  {:>13.6e}  {:>13.6e}",
+            s.time,
+            s.event_label,
+            s.err_pos.length(),
+            s.err_vel.length(),
+            s.err_quat_angle,
+            s.err_ang_vel.length()
+        );
+    }
+
+    if any_s3 {
+        eprintln!();
+        eprintln!("  ─── per-event S3 error snapshots ─────────────────────");
+        eprintln!(
+            "  {:>10}  {:>10}  {:>13}  {:>13}  {:>13}  {:>13}",
+            "t (s)", "event", "|err_pos| m", "|err_vel| m/s", "dq_ang rad", "|dω| rad/s"
+        );
+        for s in samples.iter().filter(|s| !s.event_label.is_empty()) {
+            match (
+                s.s3_err_pos,
+                s.s3_err_vel,
+                s.s3_err_quat_angle,
+                s.s3_err_ang_vel,
+            ) {
+                (Some(ep), Some(ev), Some(eq), Some(ew)) => eprintln!(
+                    "  {:>10.6}  {:>10}  {:>13.6e}  {:>13.6e}  {:>13.6e}  {:>13.6e}",
+                    s.time,
+                    s.event_label,
+                    ep.length(),
+                    ev.length(),
+                    eq,
+                    ew.length()
+                ),
+                _ => eprintln!(
+                    "  {:>10.6}  {:>10}  (truth row at this time has no s3 columns)",
+                    s.time, s.event_label
+                ),
+            }
+        }
+    } else {
+        eprintln!();
+        eprintln!(
+            "  S3-vs-truth comparison skipped — truth CSV has no s3_dyn columns. \
+             Regenerate via `cargo xtask regenerate-tier3 --force` after pulling \
+             the recorder change in `trick/generate_references.sh`."
+        );
+    }
+
+    // Sanity-check the err_ang_vel = 0 observation by dumping raw values
+    // at one mid-window sample. If the bits really are equal, both rows
+    // print the same numbers.
+    if let Some(probe) = samples
+        .iter()
+        .find(|s| (s.time - 4.5).abs() < 1e-6 && s.event_label.is_empty())
+    {
+        eprintln!();
+        eprintln!("  ─── ang_vel sanity-check at t = 4.500 ────────────────");
+        eprintln!(
+            "    our   ang_vel = [{:>22.16} {:>22.16} {:>22.16}]",
+            probe.our_ang_vel.x, probe.our_ang_vel.y, probe.our_ang_vel.z
+        );
+        eprintln!(
+            "    truth ang_vel = [{:>22.16} {:>22.16} {:>22.16}]",
+            probe.truth_ang_vel.x, probe.truth_ang_vel.y, probe.truth_ang_vel.z
+        );
+        eprintln!(
+            "    raw bit-diff  = [{:>+22.16e} {:>+22.16e} {:>+22.16e}]",
+            probe.err_ang_vel.x, probe.err_ang_vel.y, probe.err_ang_vel.z
+        );
+    }
+    eprintln!("==========================================================");
+
+    // ── per-step CSV for offline analysis ────────────────────────────
+    let out_dir = workspace_target_tier3_dir();
+    std::fs::create_dir_all(&out_dir)
+        .unwrap_or_else(|e| panic!("create_dir_all {}: {e}", out_dir.display()));
+    let out_path = out_dir.join("apollo_lm_state_vs_truth.csv");
+    let mut out = String::with_capacity(samples.len() * 200);
+    out.push_str(
+        "time,event,err_pos_norm_m,err_pos_x,err_pos_y,err_pos_z,\
+         err_vel_norm_mps,err_vel_x,err_vel_y,err_vel_z,\
+         err_quat_angle_rad,err_ang_vel_norm_rps,err_ang_vel_x,err_ang_vel_y,err_ang_vel_z,\
+         our_pos_x,our_pos_y,our_pos_z,truth_pos_x,truth_pos_y,truth_pos_z,\
+         our_ang_vel_x,our_ang_vel_y,our_ang_vel_z,\
+         truth_ang_vel_x,truth_ang_vel_y,truth_ang_vel_z,\
+         s3_err_pos_norm_m,s3_err_vel_norm_mps,s3_err_quat_angle_rad,s3_err_ang_vel_norm_rps\n",
+    );
+    fn fmt_opt_norm(v: Option<DVec3>) -> String {
+        v.map(|x| format!("{:.9e}", x.length())).unwrap_or_default()
+    }
+    fn fmt_opt_f64(v: Option<f64>) -> String {
+        v.map(|x| format!("{:.9e}", x)).unwrap_or_default()
+    }
+    for s in &samples {
+        out.push_str(&format!(
+            "{:.6},{},{:.9e},{:.9e},{:.9e},{:.9e},{:.9e},{:.9e},{:.9e},{:.9e},\
+             {:.9e},{:.9e},{:.9e},{:.9e},{:.9e},\
+             {:.9e},{:.9e},{:.9e},{:.9e},{:.9e},{:.9e},\
+             {:.9e},{:.9e},{:.9e},{:.9e},{:.9e},{:.9e},\
+             {},{},{},{}\n",
+            s.time,
+            s.event_label,
+            s.err_pos.length(),
+            s.err_pos.x,
+            s.err_pos.y,
+            s.err_pos.z,
+            s.err_vel.length(),
+            s.err_vel.x,
+            s.err_vel.y,
+            s.err_vel.z,
+            s.err_quat_angle,
+            s.err_ang_vel.length(),
+            s.err_ang_vel.x,
+            s.err_ang_vel.y,
+            s.err_ang_vel.z,
+            s.our_pos.x,
+            s.our_pos.y,
+            s.our_pos.z,
+            s.truth_pos.x,
+            s.truth_pos.y,
+            s.truth_pos.z,
+            s.our_ang_vel.x,
+            s.our_ang_vel.y,
+            s.our_ang_vel.z,
+            s.truth_ang_vel.x,
+            s.truth_ang_vel.y,
+            s.truth_ang_vel.z,
+            fmt_opt_norm(s.s3_err_pos),
+            fmt_opt_norm(s.s3_err_vel),
+            fmt_opt_f64(s.s3_err_quat_angle),
+            fmt_opt_norm(s.s3_err_ang_vel),
+        ));
+    }
+    std::fs::write(&out_path, out).unwrap_or_else(|e| panic!("write {}: {e}", out_path.display()));
+    eprintln!(
+        "  per-step trace: {} ({} rows)",
+        out_path.display(),
+        samples.len()
+    );
 }
