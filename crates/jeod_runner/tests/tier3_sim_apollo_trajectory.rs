@@ -14,21 +14,20 @@
 //! `Modified_data/mass/*.py:pt_orientation` — `yaw_180` for CM/LES/DM/LM,
 //! identity for SM/S1/S2/S3).
 //!
-//! Trajectory diffs are recorded through `t = 6.0 s` inclusive — that
-//! covers all 5 stage-detach events (S1, S2, LES, S3, LM) AND the first
-//! attach event (LM↔CM) at t = 6. The attach result matches JEOD's
-//! logged composite-body angular velocity of −1.7207 rad/s exactly,
-//! validating the full combine algorithm end-to-end (which absorbs the
-//! pre-attach relative-translational velocity between the cm-sm tree
-//! and the lm-dm subtree as a discrete spin kick).
+//! Trajectory diffs are asserted through `t = 8.0 s` inclusive — that
+//! covers the 5 stage-detach events (S1, S2, LES, S3, LM), the t=6
+//! SM→CM attach (whose result matches JEOD's logged composite-body
+//! angular velocity of −1.7207 rad/s exactly), the t=7 LM detach, and
+//! the t=8 DM detach. Through that window the residuals are at numerical-
+//! precision limits — sub-µm position, ~10⁻⁸ rad attitude — after the
+//! `composite_body`-integration refactor (commit `bd279c2`) and the
+//! `step_ballistic` quaternion-multiply-order fix (PR #251 follow-up,
+//! routed through `jeod_dynamics::advance_left_quat_body_rate`).
 //!
-//! Sampling stops at t = 6 because after the first attach our integrator
-//! applies gravity at `body.trans` (= core_body inertial), while JEOD
-//! applies gravity at composite_body inertial. The two points differ by
-//! tens of metres at LEO altitude, producing ~14 m position drift over
-//! the remaining 6 s and a ~1.7 rad/s residual w-error feeding into the
-//! t = 9 attach. Closing that residual is a separate refactor (out of
-//! scope for this issue); see follow-up.
+//! Beyond t = 8 the t=9 LM re-attach and the t=10 detach still produce
+//! larger rotation drift that has not been tracked to a specific code
+//! site. Those 4 s of events still execute through the simulation
+//! pipeline end-to-end; they're just not asserted yet.
 //!
 //! ### JEOD source-defect note
 //!
@@ -721,36 +720,33 @@ fn tier3_sim_apollo_trajectory() {
     let report = CrossvalReport::compute("tier3_sim_apollo_trajectory", &our_log, &ref_log);
     report.write();
 
-    // Tolerances per tests/README.md (5% above observed max error).
-    // Through 5 detach events and the t = 6 attach (which exercises the
-    // full [`jeod_dynamics::attach::combine_states_at_attach`] algorithm
-    // end-to-end and matches JEOD's logged composite ang_vel of
-    // −1.7207 rad/s exactly), the trajectory matches JEOD's recorded
-    // core_body to numerical-precision limits everywhere except for a
-    // ~4 mrad/s body-X angular-velocity blip at the attach instant —
-    // a sub-LSB residue from the algorithm's internal cross-products
-    // when the inertial L vector has small components in axes
-    // perpendicular to the orbital direction. Negligible physically.
-    // Tolerances are 5% above observed max error per `tests/README.md`.
+    // Tolerances per `tests/README.md` (5 % above observed max error).
     //
     // Window: t ≤ 8 — 5 stage detaches (S1, S2, LES, S3, LM), the t=6
     // SM→CM attach (matches JEOD's logged composite ang_vel of
     // −1.7207 rad/s exactly), the t=7 LM detach, and the t=8 DM detach.
     //
-    // Translational residuals are sub-mm / sub-mm/s through this window,
-    // a ~15× improvement over the prior t<6 cap. Rotational residuals
-    // are sub-mrad attitude / 1e-2 rad/s ang_vel — the t=7 LM detach
-    // introduces a small ang_vel-z drift on top of the existing
-    // ~4 mrad/s body-X residue at the t=6 attach algorithm.
+    // The closed-form quaternion advance for detached subtrees now
+    // routes through `jeod_dynamics::advance_left_quat_body_rate`
+    // (issue #248 / PR #251). Fixing the multiply order on
+    // `step_ballistic` removed the 1.708 mrad/s S3-attitude drift that
+    // had been lever-armed up to 16 mm at LM during the t=4 → t=5
+    // free-fly window, dropping CSM `core_body` residuals to:
+    //   - position: ~µm / component
+    //   - velocity: ~10⁻⁷ m/s / component
+    //   - quat angle: ~4 × 10⁻⁸ rad (sub-LSB)
+    //   - ang_vel:   ~10⁻⁸ rad/s / component
+    // — i.e., numerical-precision limits over the full 8 s window.
     //
     // Beyond t=8 the t=9 LM re-attach and the t=10 detach introduce
     // larger rotation drift that hasn't been tracked to a specific code
-    // site yet — left as a follow-up so this PR's gravity-application-
-    // point refactor stays focused.
-    report.assert_position([1.79e-3, 3.54e-4, 1.41e-3]);
-    report.assert_velocity([1.77e-3, 3.59e-4, 1.39e-3]);
-    report.assert_quat_angle(6.86e-3);
-    report.assert_ang_vel([4.16e-3, 1.30e-5, 1.09e-2]);
+    // site yet — left as a follow-up so this PR stays focused. The
+    // remaining 4 s of events still execute through the simulation
+    // pipeline; they're just not asserted here.
+    report.assert_position([2.29e-6, 1.48e-6, 2.81e-6]);
+    report.assert_velocity([6.19e-7, 6.6e-7, 6.93e-7]);
+    report.assert_quat_angle(4.43e-8);
+    report.assert_ang_vel([1.42e-8, 2.31e-8, 3.61e-8]);
 }
 
 // ─── LM-state-vs-truth diagnostic ────────────────────────────────────

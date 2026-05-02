@@ -123,34 +123,17 @@ impl DetachedSubtreeState {
 
     /// Advance the subtree ballistically by `dt` seconds (no force, no
     /// torque). Position drifts at `composite_velocity`; attitude
-    /// rotates at `composite_ang_vel_body`; velocity and ang_vel are
-    /// unchanged.
+    /// rotates at `composite_ang_vel_body` via
+    /// [`jeod_dynamics::advance_left_quat_body_rate`] (which owns the
+    /// JEOD left-multiply convention so this site can't get it wrong);
+    /// velocity and ang_vel are unchanged.
     pub fn step_ballistic(&mut self, dt: f64) {
         self.composite_position += self.composite_velocity * dt;
-        let omega = self.composite_ang_vel_body;
-        let omega_norm = omega.length();
-        if omega_norm > 0.0 {
-            let half_angle = omega_norm * dt * 0.5;
-            let s = half_angle.sin() / omega_norm;
-            let c = half_angle.cos();
-            // JEOD's quaternion derivative convention (see
-            // `Quaternion::compute_left_quat_deriv` in
-            // `models/utils/quaternion/include/quat_inline.hh`):
-            //
-            //     q̇ = -½ (ω ⊗ q)            ← LEFT-multiplied by ω
-            //
-            // Closed-form integral over a constant-ω step is therefore
-            // `q(t+dt) = exp(-½ ω·dt) ⊗ q(t)`, i.e. `dq` is
-            // left-multiplied. Right-multiplying (q ⊗ dq) introduces a
-            // per-step error of order θ·|q.vector × ω̂| (the
-            // commutator), which for the SIM_Apollo S3 free-fly was
-            // verified empirically to produce exactly the observed
-            // 1.708 mrad/s drift.
-            let dq = JeodQuat::new(c, -omega.x * s, -omega.y * s, -omega.z * s);
-            let mut q_new = dq.multiply(&self.composite_attitude);
-            q_new.normalize();
-            self.composite_attitude = q_new;
-        }
+        self.composite_attitude = jeod_dynamics::advance_left_quat_body_rate(
+            self.composite_attitude,
+            self.composite_ang_vel_body,
+            dt,
+        );
     }
 }
 
