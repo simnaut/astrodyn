@@ -15,17 +15,30 @@
 use jeod_math::OrbitalElements;
 use jeod_quantities::aliases::{Position, Velocity};
 use jeod_quantities::dims::GravParam;
-use jeod_quantities::frame::{Earth, PlanetInertial};
+use jeod_quantities::frame::{Earth, Mars, Planet, PlanetInertial, Sun};
 
 use super::constants::{mu_ggm05c, mu_mars, mu_sun};
 
-/// Compute classical orbital elements for the given μ. Every preset
-/// in this module funnels through here so the velocity computation
-/// (when present) and the conversion share a single μ value.
-fn from_pos_vel_with_mu(pos: glam::DVec3, vel: glam::DVec3, mu: GravParam) -> OrbitalElements {
-    let p = Position::<PlanetInertial<Earth>>::from_raw_si(pos);
-    let v = Velocity::<PlanetInertial<Earth>>::from_raw_si(vel);
-    OrbitalElements::from_cartesian_typed::<Earth>(mu, p, v)
+/// Compute classical orbital elements for the given μ in the
+/// gravitating body `P`'s inertial frame. Every preset in this module
+/// funnels through here so the velocity computation (when present) and
+/// the conversion share a single μ value.
+///
+/// Generic over `P: Planet` so callers pin their actual gravitating
+/// body — Earth-orbit presets use `<Earth>`, the Mercury heliocentric
+/// preset uses `<Sun>`, the Mars-arrival preset uses `<Mars>`. The
+/// phantom is currently informational (`OrbitalElements` carries no
+/// frame in its output), but the typed inputs document the intended
+/// frame and prevent a future caller from silently mismatching mu and
+/// the position frame.
+fn from_pos_vel_with_mu<P: Planet>(
+    pos: glam::DVec3,
+    vel: glam::DVec3,
+    mu: GravParam,
+) -> OrbitalElements {
+    let p = Position::<PlanetInertial<P>>::from_raw_si(pos);
+    let v = Velocity::<PlanetInertial<P>>::from_raw_si(vel);
+    OrbitalElements::from_cartesian_typed::<P>(mu, p, v)
         .expect("preset state vector must produce well-defined orbital elements")
 }
 
@@ -50,13 +63,13 @@ pub fn iss() -> OrbitalElements {
 }
 
 /// Build a circular orbit of radius `r` and inclination `inc` (radians)
-/// for a body whose gravitational parameter is `mu`. Used by the
+/// around planet `P` whose gravitational parameter is `mu`. Used by the
 /// circular-orbit presets so that the velocity computation and the
 /// `from_pos_vel_with_mu` call share a single source of truth for μ —
 /// mismatching them silently breaks the circular-orbit invariant.
-fn circular_orbit_with_mu(r: f64, inc: f64, mu: GravParam) -> OrbitalElements {
+fn circular_orbit_with_mu<P: Planet>(r: f64, inc: f64, mu: GravParam) -> OrbitalElements {
     let v = (mu.value / r).sqrt();
-    from_pos_vel_with_mu(
+    from_pos_vel_with_mu::<P>(
         glam::DVec3::new(r, 0.0, 0.0),
         glam::DVec3::new(0.0, v * inc.cos(), v * inc.sin()),
         mu,
@@ -72,7 +85,7 @@ fn circular_orbit_with_mu(r: f64, inc: f64, mu: GravParam) -> OrbitalElements {
 /// assert!(oe.inclination.abs() < 1e-12);
 /// ```
 pub fn geostationary() -> OrbitalElements {
-    circular_orbit_with_mu(42_164_172.0_f64, 0.0, mu_ggm05c())
+    circular_orbit_with_mu::<Earth>(42_164_172.0_f64, 0.0, mu_ggm05c())
 }
 
 /// 400 km circular LEO at 51.6° inclination — the simplest ISS-like
@@ -87,7 +100,7 @@ pub fn geostationary() -> OrbitalElements {
 /// ```
 pub fn leo_400km_circular_iss_inclination() -> OrbitalElements {
     let r_eq = 6_378_137.0_f64;
-    circular_orbit_with_mu(r_eq + 400_000.0, 51.6_f64.to_radians(), mu_ggm05c())
+    circular_orbit_with_mu::<Earth>(r_eq + 400_000.0, 51.6_f64.to_radians(), mu_ggm05c())
 }
 
 /// Polar circular LEO at 600 km altitude.
@@ -100,7 +113,7 @@ pub fn leo_400km_circular_iss_inclination() -> OrbitalElements {
 /// ```
 pub fn leo_polar_600km() -> OrbitalElements {
     let r_eq = 6_378_137.0_f64;
-    circular_orbit_with_mu(r_eq + 600_000.0, 90.0_f64.to_radians(), mu_ggm05c())
+    circular_orbit_with_mu::<Earth>(r_eq + 600_000.0, 90.0_f64.to_radians(), mu_ggm05c())
 }
 
 // ── Heliocentric / planetary presets ─────────────────────────────────
@@ -119,7 +132,7 @@ pub fn leo_polar_600km() -> OrbitalElements {
 /// assert!(oe.e_mag > 0.1 && oe.e_mag < 0.3);
 /// ```
 pub fn mercury_perihelion() -> OrbitalElements {
-    from_pos_vel_with_mu(
+    from_pos_vel_with_mu::<Sun>(
         glam::DVec3::new(46.0e9, 0.0, 0.0),
         glam::DVec3::new(0.0, 58_980.0, 0.0),
         mu_sun(),
@@ -138,7 +151,7 @@ pub fn mercury_perihelion() -> OrbitalElements {
 /// assert!(oe.e_mag > 1.0);
 /// ```
 pub fn mars_dawn_orbit() -> OrbitalElements {
-    from_pos_vel_with_mu(
+    from_pos_vel_with_mu::<Mars>(
         glam::DVec3::new(11_563_355.680_2, -14_356_668.897_7, 6_293_704.616_9),
         glam::DVec3::new(-2_273.107_8, 2_380.132_4, -22.911),
         mu_mars(),
@@ -158,7 +171,7 @@ pub fn mars_dawn_orbit() -> OrbitalElements {
 /// ```
 pub fn apollo_parking() -> OrbitalElements {
     let r_eq = 6_378_137.0_f64;
-    circular_orbit_with_mu(r_eq + 185_000.0, 32.5_f64.to_radians(), mu_ggm05c())
+    circular_orbit_with_mu::<Earth>(r_eq + 185_000.0, 32.5_f64.to_radians(), mu_ggm05c())
 }
 
 /// Geostationary radius (42164 km) at non-zero inclination.
@@ -178,7 +191,7 @@ pub fn apollo_parking() -> OrbitalElements {
 /// ```
 pub fn geo_inclined(inclination: uom::si::f64::Angle) -> OrbitalElements {
     use uom::si::angle::radian;
-    circular_orbit_with_mu(42_164_172.0_f64, inclination.get::<radian>(), mu_ggm05c())
+    circular_orbit_with_mu::<Earth>(42_164_172.0_f64, inclination.get::<radian>(), mu_ggm05c())
 }
 
 #[cfg(test)]
