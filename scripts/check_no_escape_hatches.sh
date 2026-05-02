@@ -10,12 +10,28 @@
 #    Banned across `crates/` and `src/` except where annotated with
 #    `// allowed: <reason>`.
 #
-# 2. **Typed-quantity bypass constructors** (`from_untyped_unchecked`,
-#    `from_dmat3_unchecked`, `from_raw_si`):
-#    The Phase-8 typed-quantity facade promises that frame mismatches
-#    are compile errors. These constructors mint a typed value from raw
-#    storage without any check that the caller's frame phantom matches
-#    reality.
+# 2. **Typed-quantity bypass constructors** — raw constructors that mint
+#    a typed value from primitive storage without checking the caller's
+#    phantom tags / conventions / normalization invariants:
+#
+#      - `from_untyped_unchecked` — typed sibling boundary
+#      - `from_dmat3_unchecked`   — `InertiaTensor` (skips symmetry check)
+#      - `from_raw_si`            — `Qty3` (raw `DVec3` → typed)
+#      - `from_seconds`           — `SecondsSince` (raw `f64` → tagged time)
+#      - `from_array`             — `Quat`/`JeodQuat` (raw `[f64;4]` →
+#                                   tagged quaternion, skips normalization
+#                                   and convention checks)
+#      - `from_matrix(`           — `FrameTransform` (raw `DMat3` → typed
+#                                   transform, skips orthonormality check
+#                                   in release builds; the validating
+#                                   sibling is `from_matrix_validated`)
+#
+#    The Phase-8 typed-quantity facade promises that frame, time-scale,
+#    quaternion-convention, and dimensional mismatches are compile
+#    errors. These constructors mint a typed value from raw storage
+#    without any check that the caller's phantom matches reality, so
+#    per-step uses in the Bevy adapter are exactly the regression class
+#    audit finding H1 documented.
 #
 #    They are legitimately part of the typed-sibling boundary inside
 #    `crates/jeod_*/src/` — every typed sibling (`TranslationalStateTyped`,
@@ -81,7 +97,7 @@ bypass_matches=$(echo "$src_files_to_scan" | xargs awk '
     /^[[:space:]]*\/\// { next }
     # Blank: keep prev_allowed as-is.
     /^[[:space:]]*$/ { next }
-    /from_untyped_unchecked|from_dmat3_unchecked|from_raw_si/ {
+    /from_untyped_unchecked|from_dmat3_unchecked|from_raw_si|from_seconds|(JeodQuat|Quat)::from_array|FrameTransform::from_matrix\(/ {
         if (prev_allowed) { prev_allowed = 0; next }
         if ($0 ~ /\/\/ allowed:/) { prev_allowed = 0; next }
         printf "%s:%d: %s\n", FILENAME, FNR, $0
@@ -104,10 +120,13 @@ if [ -n "$bypass_matches" ]; then
     echo "FAIL: typed-quantity bypass constructors in the Bevy adapter" >&2
     echo "  (scanned: src/**, except the canonical boundary modules" >&2
     echo "   src/components.rs and src/lib.rs)" >&2
-    echo "  Banned: from_untyped_unchecked / from_dmat3_unchecked / from_raw_si" >&2
+    echo "  Banned: from_untyped_unchecked / from_dmat3_unchecked / from_raw_si /" >&2
+    echo "          from_seconds / (JeodQuat|Quat)::from_array / FrameTransform::from_matrix(" >&2
     echo "  These constructors mint a typed value from raw storage without" >&2
-    echo "  checking the caller's frame phantom. The Bevy adapter must use" >&2
-    echo "  the typed APIs (Position<Inertial>, etc.) directly via the" >&2
+    echo "  checking the caller's frame / time-scale / quaternion-convention /" >&2
+    echo "  normalization phantoms. The Bevy adapter must use the typed APIs" >&2
+    echo "  (Position<RootInertial>, SecondsSince<TAI>, NormalizedQuat<...>," >&2
+    echo "  FrameTransform::from_matrix_validated, etc.) directly via the" >&2
     echo "  components, not lift raw storage per step." >&2
     echo "  See issue #172 (audit finding H1) for context." >&2
     echo "  If you have a documented boundary case, annotate the line with" >&2

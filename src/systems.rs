@@ -64,6 +64,9 @@ pub fn planet_fixed_rotation_system(
             jeod_sim::RotationModel::None => {}
             jeod_sim::RotationModel::EarthRNP => {
                 let rotation = *earth_rotation.get_or_insert_with(|| {
+                    // allowed: matrix is JEOD's RNP-derived rotation; the
+                    // RootInertial → PlanetFixed<SelfPlanet> phantoms match the kernel
+                    // by construction
                     jeod_sim::FrameTransform::from_matrix(
                         jeod_sim::compute_t_parent_this_from_tjt_with_polar(
                             sim_time.gmst_seconds,
@@ -77,6 +80,7 @@ pub fn planet_fixed_rotation_system(
             jeod_sim::RotationModel::MarsIAU => {
                 let tt_s_since_j2000 =
                     (sim_time.tt_tjt() - jeod_sim::J2000_TT_TJT) * jeod_sim::SECONDS_PER_DAY;
+                // allowed: matrix from JEOD-ported IAU Mars rotation formula
                 rot.0 = jeod_sim::FrameTransform::from_matrix(
                     jeod_sim::rotation_mars::compute_mars_rotation(tt_s_since_j2000),
                 );
@@ -85,6 +89,7 @@ pub fn planet_fixed_rotation_system(
                 let tdb_jd = sim_time.tdb_julian_date();
                 let tdb_s_since_j2000 =
                     (tdb_jd - jeod_sim::J2000_TT_JD) * jeod_sim::SECONDS_PER_DAY;
+                // allowed: matrix from JEOD-ported IAU Moon rotation formula
                 rot.0 = jeod_sim::FrameTransform::from_matrix(
                     jeod_sim::rotation_moon::compute_moon_rotation(tdb_s_since_j2000),
                 );
@@ -105,6 +110,7 @@ pub fn planet_fixed_rotation_system(
                              whose coverage includes the simulation epoch."
                         )
                     });
+                // allowed: matrix from NASA SPICE BPC kernel (DE421 / Moon-PA)
                 rot.0 = jeod_sim::FrameTransform::from_matrix(matrix);
             }
         }
