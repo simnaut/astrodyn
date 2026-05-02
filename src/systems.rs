@@ -116,6 +116,57 @@ pub fn register_source_frames_system(
     }
 }
 
+/// Register a [`SourcePfixFrameIdC`] for sources that were registered
+/// without [`PlanetFixedRotationC`] and acquired it later. PR #260
+/// round-9 review fixup: [`register_source_frames_system`] filters by
+/// `Without<SourceFrameIdC>`, so it cannot pick up an entity that gained
+/// `PlanetFixedRotationC` after its initial registration. Without this
+/// pass, `planet_fixed_rotation_system` would update the ECS rotation
+/// each step but the frame tree would never get a pfix child, leaving
+/// `source_pfix_rotation()` and any frame-tree consumer reporting "no
+/// planet-fixed frame" for a source that is in fact rotating.
+///
+/// Same registration semantics as [`register_source_frames_system`]'s
+/// pfix branch: gated on [`PlanetFixedRotationC`], `EarthRNP` default
+/// when [`RotationModelC`] is absent, no node when the rotation model
+/// is explicitly [`jeod_sim::RotationModel::None`].
+#[allow(clippy::type_complexity)]
+pub fn register_pfix_frames_system(
+    mut commands: Commands,
+    mut frame_tree: ResMut<FrameTreeR>,
+    sources: Query<
+        (
+            Entity,
+            Option<&Name>,
+            &SourceFrameIdC,
+            Option<&RotationModelC>,
+        ),
+        (
+            With<GravitySourceC>,
+            With<PlanetFixedRotationC>,
+            Without<SourcePfixFrameIdC>,
+        ),
+    >,
+) {
+    for (entity, name, source_fid, rotation_model) in &sources {
+        let default_model = jeod_sim::RotationModel::EarthRNP;
+        let model_value = rotation_model.map_or(default_model, |m| m.0);
+        if matches!(model_value, jeod_sim::RotationModel::None) {
+            continue;
+        }
+        let label = name
+            .map(|n| n.as_str().to_string())
+            .unwrap_or_else(|| format!("source{:?}", entity));
+        let pfix_id = frame_tree.0.add_child(
+            source_fid.0,
+            format!("{label}.pfix"),
+            jeod_sim::RefFrameKind::PlanetFixed,
+            jeod_sim::RefFrameState::default(),
+        );
+        commands.entity(entity).insert(SourcePfixFrameIdC(pfix_id));
+    }
+}
+
 /// Sync each gravity source's typed state from the ECS components
 /// (`SourceInertialPositionC` + optional `SourceInertialVelocityC`) into
 /// its [`FrameTreeR`] inertial frame node each step. Mirrors
@@ -529,6 +580,29 @@ pub fn planet_fixed_rotation_system(
             // pfix) saw stale identity rotation and zero angular velocity.
             if let (Some(matrix), Some(pfix_fid)) = (raw_matrix, pfix_fid) {
                 jeod_sim::sync_pfix_rotation(&mut frame_tree.0, pfix_fid.0, matrix, omega_value);
+            }
+        } else {
+            // `RotationModel::None`: actively clear the rotation matrix,
+            // angular velocity, and pfix-tree state. Without this, a
+            // runtime toggle from a rotating model to `None` would leave
+            // the last-tick rotation matrix on `PlanetFixedRotationC`,
+            // the last-tick omega on `PlanetAngularVelocityC`, and the
+            // last-tick `(matrix, omega)` on the FrameTreeR pfix node —
+            // so frame-tree queries would still report a rotating
+            // planet-fixed frame even though the source is configured
+            // as non-rotating. PR #260 round-9 review fixup.
+            rot.0 = jeod_sim::FrameTransform::from_matrix(glam::DMat3::IDENTITY);
+            if let Some(mut ang_vel_c) = ang_vel {
+                type PlanetAngVel = jeod_sim::AngularVelocity<jeod_sim::PlanetFixed<SelfPlanet>>;
+                ang_vel_c.0 = PlanetAngVel::from_raw_si(glam::DVec3::ZERO); // allowed: zero-omega clear → typed AngularVelocity boundary
+            }
+            if let Some(pfix_fid) = pfix_fid {
+                jeod_sim::sync_pfix_rotation(
+                    &mut frame_tree.0,
+                    pfix_fid.0,
+                    glam::DMat3::IDENTITY,
+                    0.0,
+                );
             }
         }
     }

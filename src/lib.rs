@@ -215,18 +215,27 @@ impl Plugin for JeodPlugin {
         // Each pass is a no-op for already-registered entities (the
         // `Without<SourceFrameIdC>` / `Without<BodyFrameIdC>` filters
         // make repeated runs cost a single query iteration).
+        // `register_pfix_frames_system` covers a rare but real case
+        // (round-9 fixup): a source spawned without `PlanetFixedRotationC`
+        // that gains it after the initial registration. The main
+        // `register_source_frames_system` filters by
+        // `Without<SourceFrameIdC>` so it can't observe that mutation;
+        // the dedicated pfix pass uses `Without<SourcePfixFrameIdC>` +
+        // `With<PlanetFixedRotationC>` instead.
         app.add_systems(
             Startup,
             (
                 systems::register_source_frames_system,
-                systems::register_body_frames_system.after(systems::register_source_frames_system),
+                systems::register_pfix_frames_system.after(systems::register_source_frames_system),
+                systems::register_body_frames_system.after(systems::register_pfix_frames_system),
             ),
         );
         app.add_systems(
             PreUpdate,
             (
                 systems::register_source_frames_system,
-                systems::register_body_frames_system.after(systems::register_source_frames_system),
+                systems::register_pfix_frames_system.after(systems::register_source_frames_system),
+                systems::register_body_frames_system.after(systems::register_pfix_frames_system),
             ),
         );
         // Split into two add_systems calls to stay within Bevy's tuple size limit.
@@ -240,10 +249,15 @@ impl Plugin for JeodPlugin {
                 // Catch dynamically-spawned sources before they hit
                 // `planet_fixed_rotation_system` / `ephemeris_update_system`.
                 systems::register_source_frames_system.before(JeodSet::EphemerisUpdate),
+                // Late-attached `PlanetFixedRotationC` → pfix child node
+                // (round-9 fixup; see `register_pfix_frames_system` doc).
+                systems::register_pfix_frames_system
+                    .after(systems::register_source_frames_system)
+                    .before(JeodSet::EphemerisUpdate),
                 // Catch dynamically-spawned bodies (after source registration so
                 // any IntegSourceC reference resolves to a registered source).
                 systems::register_body_frames_system
-                    .after(systems::register_source_frames_system)
+                    .after(systems::register_pfix_frames_system)
                     .before(JeodSet::EphemerisUpdate),
                 // After ephemeris_update_system writes new source position /
                 // velocity, mirror the values into FrameTreeR so frame-tree
