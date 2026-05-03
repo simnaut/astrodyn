@@ -6,7 +6,7 @@
 //! This is the orchestration half of the composite-rigid-body wrench
 //! pipeline. The pure math kernel lives in [`jeod_dynamics::wrench`];
 //! this module composes it with the storage-agnostic mass-tree walk
-//! pioneered by [`recompute_composites_via_storage`].
+//! pioneered by `recompute_composites_via_storage`.
 //!
 //! # JEOD precedent
 //!
@@ -71,7 +71,7 @@ use jeod_dynamics::wrench::{shift_wrench_to_parent, Wrench};
 ///
 /// Storage callers fill this in from whatever live shape the backend
 /// keeps. The arena returns it from
-/// [`recompute_composites_via_storage`] outputs; the Bevy adapter
+/// `recompute_composites_via_storage` outputs; the Bevy adapter
 /// computes it from `MassChildOf.offset` + the per-entity composite
 /// CoM in `MassPropertiesC.position`. Either way, the kernel below
 /// does the same math.
@@ -174,7 +174,7 @@ pub fn aggregate_wrenches_via_storage<S: MassStorage>(
 }
 
 /// Convenience: build an [`EdgeGeometry`] map from the post-order
-/// composite output of [`recompute_composites_via_storage`].
+/// composite output of `recompute_composites_via_storage`.
 ///
 /// Each non-root child gets `pcm_to_ccm = child.composite_wrt_pstr.position
 /// − parent.composite.position` (matching JEOD
