@@ -169,8 +169,12 @@ fn bevy_parity_mass_attach_with_gj_resets_integrator() {
         });
 
     // Run one more step so staging_system processes the event before
-    // integration. (staging_system is scheduled in JeodSet::Staging,
-    // before integration in the same FixedUpdate.)
+    // integration. `staging_system` is registered with
+    // `.after(JeodSet::Environment).before(JeodSet::Interaction)` in
+    // `JeodPlugin::build` (`src/lib.rs`) — there is no dedicated
+    // `JeodSet::Staging` variant; staging is wedged between Environment
+    // and Interaction so mass-tree changes affect the current step's
+    // interactions and integration.
     step_bevy(&mut app, 1, sim_dt);
 
     assert!(
