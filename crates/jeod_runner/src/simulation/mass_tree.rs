@@ -67,6 +67,14 @@ impl Simulation {
         tree.attach(child_id, parent_id, offset, t_parent_child);
         // Sync parent's composite mass from tree
         self.bodies[parent_idx].mass = Some(tree.get(parent_id).composite_properties);
+
+        // JEOD_INV: IG.37 — Multi-step integrators (GJ, ABM4) carry predictor
+        // history that is invalidated by the topology change. Mirror JEOD's
+        // `dyn_body_attach.cc::reset_integrators()` (lines 860, 871) by
+        // resetting both bodies' integrator state. RK4 / RKF4(5) carry no
+        // history; the helper no-ops for them.
+        Self::mark_and_reset_body_integrators(&mut self.bodies[child_idx]);
+        Self::mark_and_reset_body_integrators(&mut self.bodies[parent_idx]);
     }
 
     /// Detach a child body from its parent in the mass tree.
@@ -88,12 +96,45 @@ impl Simulation {
         // Sync both bodies' mass from tree
         self.bodies[child_idx].mass = Some(tree.get(child_id).composite_properties);
         // Find parent body index and sync
-        for body in &mut self.bodies {
+        let mut parent_idx_opt: Option<usize> = None;
+        for (idx, body) in self.bodies.iter_mut().enumerate() {
             if body.mass_body_id == Some(parent_id) {
                 body.mass = Some(tree.get(parent_id).composite_properties);
+                parent_idx_opt = Some(idx);
                 break;
             }
         }
+
+        // JEOD_INV: IG.37 — Multi-step integrators (GJ, ABM4) carry predictor
+        // history that is invalidated by the topology change. Mirror JEOD's
+        // `dyn_body_detach.cc:271-273` reset of both the parent and the
+        // child, since both bodies' dynamics have changed (the parent lost
+        // mass, the child became a free root).
+        Self::mark_and_reset_body_integrators(&mut self.bodies[child_idx]);
+        if let Some(parent_idx) = parent_idx_opt {
+            Self::mark_and_reset_body_integrators(&mut self.bodies[parent_idx]);
+        }
+    }
+
+    /// Reset a body's multi-step integrator state in response to a
+    /// topology change (attach / detach / subtree swap).
+    ///
+    /// Marks the integrator dirty (so any caller that bypasses this
+    /// helper still trips the IG.37 assertion in `integrate()`), then
+    /// resets it. For RK4 / RKF4(5) bodies — which carry no integrator
+    /// state — both arms are `None` and this is a no-op.
+    ///
+    /// Mirrors JEOD's `dyn_body_attach.cc::reset_integrators()` (lines
+    /// 860, 871) and `dyn_body_detach.cc:271-273`.
+    // JEOD_INV: IG.37 — multi-step integrator history must be reset on topology change
+    fn mark_and_reset_body_integrators(body: &mut super::types::SimBody) {
+        if let Some(ref mut gj) = body.gj_state {
+            gj.mark_topology_dirty();
+        }
+        if let Some(ref mut abm) = body.abm4_state {
+            abm.mark_topology_dirty();
+        }
+        jeod_sim::reset_integrators(body.gj_state.as_mut(), body.abm4_state.as_mut());
     }
 
     /// Detach a tree-only subtree from its parent in the mass tree,
@@ -336,6 +377,14 @@ impl Simulation {
             "detach_subtree: subtree {subtree_root_id:?} was already in detached_subtrees \
              — call attach_subtree_aligned first or use a fresh subtree id"
         );
+
+        // JEOD_INV: IG.37 — Multi-step integrators (GJ, ABM4) carry predictor
+        // history that is invalidated by the topology change. Reset the
+        // integrated body's integrators (it just lost the subtree's mass,
+        // so its dynamics changed and `body.trans` was shifted).
+        if parent_is_integrated {
+            Self::mark_and_reset_body_integrators(&mut self.bodies[integrated_body_idx]);
+        }
     }
 
     /// Re-attach a previously-detached subtree to the integrated body's
@@ -584,6 +633,13 @@ impl Simulation {
         // can retry or inspect rather than silently losing state.
         self.detached_subtrees.remove(&subtree_root_id);
 
+        // JEOD_INV: IG.37 — Multi-step integrators (GJ, ABM4) carry predictor
+        // history that is invalidated by the topology + state combine.
+        // Mirror JEOD's `dyn_body_attach.cc::reset_integrators()` for the
+        // integrated body, whose `body.trans` / `body.rot` were just
+        // overwritten by the combine.
+        Self::mark_and_reset_body_integrators(&mut self.bodies[integrated_body_idx]);
+
         if std::env::var("APOLLO_TRACE").is_ok() {
             eprintln!(
                 "  COMBINE OUTPUT: pos=[{:.4e} {:.4e} {:.4e}] ω_body=[{:.6e} {:.6e} {:.6e}]",
@@ -606,5 +662,208 @@ impl Simulation {
         for state in self.detached_subtrees.values_mut() {
             state.step_ballistic(dt);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Integration-level tests for the IG.37 wiring. These tests live in
+    //! the runner crate so they can poke at `SimBody::gj_state` /
+    //! `abm4_state` directly — the public `body()` accessor only exposes
+    //! `VehicleOutput`, which omits integrator state.
+
+    use super::*;
+    use crate::Simulation;
+    use jeod_dynamics::MassProperties;
+    use jeod_sim::{
+        GaussJacksonConfig, GravityControl, GravityControls, GravityModel, GravitySource,
+        GravitySourceEntry, IntegratorType, SimulationTime, TranslationalState, VehicleConfig,
+    };
+
+    /// JEOD's `dyn_body_attach.cc::reset_integrators()` precedent: after an
+    /// attach, both bodies' Gauss-Jackson predictor / corrector history
+    /// must be reinitialized. We verify that:
+    ///   1. After enough steps to leave priming, the GJ states are past
+    ///      priming (`is_priming() == false`).
+    ///   2. After `Simulation::attach`, both bodies' GJ states are back
+    ///      in priming and the topology-dirty flag is cleared (which is
+    ///      what `reset_for_topology_change` guarantees).
+    ///   3. The simulation can take another step without tripping the
+    ///      IG.37 assertion in `GaussJacksonState::integrate` — proving
+    ///      the wiring closes the gap end-to-end.
+    #[test]
+    fn attach_resets_gauss_jackson_state_on_both_bodies() {
+        const MU: f64 = 5.76e14;
+        let dt = 1.0_f64;
+
+        let trans_a = TranslationalState {
+            position: DVec3::new(9e6, 0.0, 0.0),
+            velocity: DVec3::new(0.0, 8000.0, 0.0),
+        };
+        // Slightly different orbit for body B so its predictor history
+        // is non-trivially distinct from body A.
+        let trans_b = TranslationalState {
+            position: DVec3::new(9e6, 1.0, 0.0),
+            velocity: DVec3::new(0.0, 7900.0, 0.0),
+        };
+
+        let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+        let mut sim = Simulation::new(time, dt);
+
+        let earth = sim.add_source(
+            "Earth",
+            GravitySourceEntry {
+                source: GravitySource {
+                    mu: MU,
+                    model: GravityModel::PointMass,
+                },
+                position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+                velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
+                t_inertial_pfix: None,
+                delta_c20: 0.0,
+                rotation_model: crate::RotationModel::default(),
+                tidal_config: None,
+                planet_omega: 0.0,
+                central: true,
+            },
+        );
+
+        let gj_cfg = GaussJacksonConfig::with_order(8);
+        let make_cfg = |trans: TranslationalState| VehicleConfig {
+            trans,
+            integrator: IntegratorType::GaussJackson(gj_cfg),
+            mass: Some(MassProperties::new(1000.0)),
+            gravity_controls: GravityControls {
+                controls: vec![GravityControl::new_spherical(earth, false)],
+            },
+            ..Default::default()
+        };
+        let body_a = sim.add_body(make_cfg(trans_a));
+        let body_b = sim.add_body(make_cfg(trans_b));
+
+        // Register both in the mass tree so we can attach later.
+        let id_a = sim.add_body_to_tree(body_a, "BodyA");
+        let id_b = sim.add_body_to_tree(body_b, "BodyB");
+
+        sim.validate().expect("validate failed");
+
+        // ── Step long enough to leave GJ priming on both bodies. ──
+        // GJ8 needs ~50 stages to fully bootstrap; 200 sim steps is
+        // comfortably past that.
+        sim.step_n(200).expect("step_n failed");
+
+        let gj_a_pre = sim.bodies[body_a]
+            .gj_state
+            .as_ref()
+            .expect("body A must have gj_state after validate");
+        let gj_b_pre = sim.bodies[body_b]
+            .gj_state
+            .as_ref()
+            .expect("body B must have gj_state after validate");
+        assert!(
+            !gj_a_pre.is_priming(),
+            "test setup expected body A's GJ state past priming after 200 steps"
+        );
+        assert!(
+            !gj_b_pre.is_priming(),
+            "test setup expected body B's GJ state past priming after 200 steps"
+        );
+        assert!(!gj_a_pre.is_topology_dirty());
+        assert!(!gj_b_pre.is_topology_dirty());
+        let _ = (id_a, id_b);
+
+        // ── Attach: triggers IG.37 reset on both bodies. ──
+        sim.attach(body_a, body_b, DVec3::ZERO, DMat3::IDENTITY);
+
+        let gj_a_post = sim.bodies[body_a]
+            .gj_state
+            .as_ref()
+            .expect("body A must still have gj_state");
+        let gj_b_post = sim.bodies[body_b]
+            .gj_state
+            .as_ref()
+            .expect("body B must still have gj_state");
+        assert!(
+            gj_a_post.is_priming(),
+            "body A's GJ state must be back in priming after attach (IG.37)"
+        );
+        assert!(
+            gj_b_post.is_priming(),
+            "body B's GJ state must be back in priming after attach (IG.37)"
+        );
+        assert!(!gj_a_post.is_topology_dirty());
+        assert!(!gj_b_post.is_topology_dirty());
+
+        // ── Step once more: the IG.37 assertion in `integrate()` must
+        // not fire. With our wiring it's cleared; without it, this would
+        // panic with the "stale predictor/corrector history" message.
+        sim.step_n(1).expect("post-attach step failed");
+    }
+
+    /// `Simulation::detach` must reset GJ state on both the parent and
+    /// the detaching child. Mirrors JEOD's `dyn_body_detach.cc:271-273`.
+    #[test]
+    fn detach_resets_gauss_jackson_state_on_both_bodies() {
+        const MU: f64 = 5.76e14;
+        let dt = 1.0_f64;
+        let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+        let mut sim = Simulation::new(time, dt);
+
+        let earth = sim.add_source(
+            "Earth",
+            GravitySourceEntry {
+                source: GravitySource {
+                    mu: MU,
+                    model: GravityModel::PointMass,
+                },
+                position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+                velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
+                t_inertial_pfix: None,
+                delta_c20: 0.0,
+                rotation_model: crate::RotationModel::default(),
+                tidal_config: None,
+                planet_omega: 0.0,
+                central: true,
+            },
+        );
+
+        let gj_cfg = GaussJacksonConfig::with_order(8);
+        let trans = TranslationalState {
+            position: DVec3::new(9e6, 0.0, 0.0),
+            velocity: DVec3::new(0.0, 8000.0, 0.0),
+        };
+        let make = |trans: TranslationalState| VehicleConfig {
+            trans,
+            integrator: IntegratorType::GaussJackson(gj_cfg),
+            mass: Some(MassProperties::new(1000.0)),
+            gravity_controls: GravityControls {
+                controls: vec![GravityControl::new_spherical(earth, false)],
+            },
+            ..Default::default()
+        };
+        let body_a = sim.add_body(make(trans));
+        let body_b = sim.add_body(make(TranslationalState {
+            position: trans.position + DVec3::new(0.0, 1.0, 0.0),
+            velocity: trans.velocity,
+        }));
+        sim.add_body_to_tree(body_a, "BodyA");
+        sim.add_body_to_tree(body_b, "BodyB");
+
+        // Pre-attach and step into operational mode, then detach.
+        sim.attach(body_b, body_a, DVec3::ZERO, DMat3::IDENTITY);
+        sim.validate().expect("validate failed");
+        sim.step_n(200).expect("step_n failed");
+        // After 200 post-attach steps both should be operational again.
+        assert!(!sim.bodies[body_a].gj_state.as_ref().unwrap().is_priming());
+        assert!(!sim.bodies[body_b].gj_state.as_ref().unwrap().is_priming());
+
+        // Detach → both GJ states must reset.
+        sim.detach(body_b);
+        let gj_a = sim.bodies[body_a].gj_state.as_ref().unwrap();
+        let gj_b = sim.bodies[body_b].gj_state.as_ref().unwrap();
+        assert!(gj_a.is_priming(), "parent's GJ must reset on detach");
+        assert!(gj_b.is_priming(), "child's GJ must reset on detach");
+        assert!(!gj_a.is_topology_dirty());
+        assert!(!gj_b.is_topology_dirty());
     }
 }

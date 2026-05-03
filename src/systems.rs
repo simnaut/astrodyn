@@ -2144,6 +2144,11 @@ pub fn staging_system(
     mut attach_events: bevy::ecs::message::MessageReader<crate::AttachEvent>,
     mut detach_events: bevy::ecs::message::MessageReader<crate::DetachEvent>,
     mut bodies: Query<(&crate::MassBodyIdC, &mut MassPropertiesC)>,
+    mut integrators: Query<(
+        &crate::MassBodyIdC,
+        Option<&mut GaussJacksonStateC>,
+        Option<&mut Abm4StateC>,
+    )>,
 ) {
     // No mass tree resource → drain events and return.
     let Some(mut tree) = tree else {
@@ -2219,6 +2224,28 @@ pub fn staging_system(
         for (body_id, mut mass) in &mut bodies {
             if sync_ids.binary_search(&body_id.0).is_ok() {
                 *mass = MassPropertiesC::from(tree.get(body_id.0).composite_properties);
+            }
+        }
+
+        // JEOD_INV: IG.37 — Multi-step integrators (GJ, ABM4) carry predictor
+        // history that is invalidated by an attach / detach event. Mirror
+        // JEOD's `dyn_body_attach.cc::reset_integrators()` (lines 860, 871)
+        // and `dyn_body_detach.cc:271-273` by resetting both directly-affected
+        // bodies' integrator state. Mark dirty first so the reset clears the
+        // flag — any path that bypasses this helper will trip the IG.37
+        // assertion in `integrate()`.
+        for (body_id, mut gj_opt, mut abm_opt) in &mut integrators {
+            if sync_ids.binary_search(&body_id.0).is_ok() {
+                if let Some(ref mut gj) = gj_opt {
+                    gj.0.mark_topology_dirty();
+                }
+                if let Some(ref mut abm) = abm_opt {
+                    abm.0.mark_topology_dirty();
+                }
+                jeod_sim::reset_integrators(
+                    gj_opt.as_mut().map(|c| &mut c.0),
+                    abm_opt.as_mut().map(|c| &mut c.0),
+                );
             }
         }
     }

@@ -1115,6 +1115,50 @@ fn compute_total_accel(eval: &CoupledStageEval, mass: Option<&MassProperties>) -
     eval.gravity_accel + non_grav_accel
 }
 
+/// Reset multi-step integrator history on a topology change.
+///
+/// Port of JEOD's `dyn_body_attach.cc::reset_integrators()` (lines 860, 871)
+/// for the Bevy / runner pipeline. Multi-step integrators (Gauss-Jackson,
+/// ABM4) accumulate predictor / corrector history from prior steps; when a
+/// body's mass / attachment topology changes mid-flight (an attach or
+/// detach event), that history is no longer valid because the dynamics it
+/// predicted are now different. JEOD addresses this with an explicit
+/// `reset_integrators()` call inside `DynBody::attach_child` /
+/// `DynBody::detach`. This helper is the one-line equivalent for our
+/// adapters.
+///
+/// Single-step integrators (RK4, RKF4(5)) carry no per-step history and
+/// are unaffected — pass `None` for the corresponding state. The function
+/// is a no-op for whichever state argument is `None`, so adapters that
+/// don't know which integrator a body uses can pass both unconditionally.
+///
+/// # Where to call this
+///
+/// - **`bevy_jeod::staging_system`**: after each `AttachEvent` /
+///   `DetachEvent` is applied to `MassTreeR`.
+/// - **`jeod_runner::Simulation::attach` / `detach` /
+///   `attach_subtree_aligned` / `detach_subtree`**: after the topology
+///   mutation completes.
+///
+/// # JEOD invariant
+///
+/// See `JEOD_invariants.md` row IG.37. Failing to call this through a
+/// topology change leaves the integrator's `topology_dirty` flag set; the
+/// next call to `GaussJacksonState::integrate` /
+/// `abm4_translational_step` will panic loudly with the corrective hint.
+// JEOD_INV: IG.37 — multi-step integrator history must be reset on topology change
+pub fn reset_integrators(
+    gj_state: Option<&mut jeod_dynamics::GaussJacksonState>,
+    abm4_state: Option<&mut jeod_dynamics::Abm4State>,
+) {
+    if let Some(gj) = gj_state {
+        gj.reset_for_topology_change();
+    }
+    if let Some(abm) = abm4_state {
+        abm.reset_for_topology_change();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
