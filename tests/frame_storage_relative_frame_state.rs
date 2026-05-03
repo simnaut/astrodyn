@@ -1,9 +1,9 @@
-//! Issue #277 (PR 1) bit-identity validation: the ECS-native frame
-//! components (`FrameTransC` / `FrameRotC` / `FrameAngVelC`) and the
+//! Bit-identity validation: the ECS-native frame components
+//! (`FrameTransC` / `FrameRotC` / `FrameAngVelC`) and the
 //! [`RelativeFrameState`] `SystemParam` produce numerically identical
 //! results to [`FrameTreeR`]'s `compute_relative_state` after each
-//! step — the dual-write infrastructure (issue #277) keeps the two
-//! storage backends in lockstep.
+//! step — the dual-write infrastructure keeps the two storage
+//! backends in lockstep.
 //!
 //! Tests are carried over from the prototype branch
 //! [`study/268-frame-tree-ecs-native`][1] and document the
@@ -44,12 +44,12 @@
 //!
 //! [1]: https://github.com/simnaut/bevy_jeod/tree/study/268-frame-tree-ecs-native
 
-// Issue #278 (Frame-Tree-ECS-Native PR 2): `FrameTreeR` is
-// `#[deprecated]` for *mission-code* use. This test is bit-identity
-// dual-write infrastructure validation — it deliberately compares the
-// new SystemParam read path against the deprecated arena read path —
-// so the file-level `#![allow(deprecated)]` is appropriate. PR 4
-// (#280) removes the resource entirely; this test goes away with it
+// `FrameTreeR` is `#[deprecated]` for *mission-code* use. This test
+// is bit-identity dual-write infrastructure validation — it
+// deliberately compares the new SystemParam read path against the
+// deprecated arena read path — so the file-level
+// `#![allow(deprecated)]` is appropriate. The test will be retired
+// together with the arena resource once the dual-write window closes
 // (it has no remaining purpose once the arena disappears).
 #![allow(deprecated)]
 

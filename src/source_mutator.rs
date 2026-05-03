@@ -1,4 +1,4 @@
-//! Source-state mutation API for Bevy missions (issue #71 item 5).
+//! Source-state mutation API for Bevy missions.
 //!
 //! `jeod_runner::Simulation` exposes `set_source_position`,
 //! `set_source_state`, and `set_source_ephemeris` for runtime gravity-source
@@ -31,15 +31,14 @@
 //! [`crate::SourceFrameIdC`] (auto-inserted on every gravity source
 //! entity by `register_source_frames_system`).
 //!
-//! Issue #278 (Frame-Tree-ECS-Native § 13 PR 2): [`crate::FrameTreeR`]
-//! is `#[deprecated]` for mission-code use. `SourceMutator` is
-//! mission-facing but mutates the arena directly during the dual-write
-//! phase — that's the *internal* coupling PR 4 (#280) replaces by
-//! mutating the ECS frame entities and removing the resource. The
-//! mission-facing surface (mutator method shapes) is stable; only the
-//! storage backing changes. The file-level `#![allow(deprecated)]`
-//! keeps the dual-write internals quiet until PR 4.
-#![allow(deprecated)] // Issue #278: internal FrameTreeR mutation; rewritten in PR 4 (#280)
+//! [`crate::FrameTreeR`] is `#[deprecated]` for mission-code use.
+//! `SourceMutator` is mission-facing but mutates the arena directly
+//! during the dual-write phase — that's the *internal* coupling that
+//! will be replaced by mutating the ECS frame entities and removing
+//! the resource. The mission-facing surface (mutator method shapes)
+//! is stable; only the storage backing changes. The file-level
+//! `#![allow(deprecated)]` keeps the dual-write internals quiet.
+#![allow(deprecated)] // Internal FrameTreeR mutation during the dual-write phase.
 
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
@@ -63,10 +62,10 @@ use crate::{FrameTreeR, RootFrameIdR};
 /// [`SourceInertialVelocityC`] when [`Self::set_source_state`] is called
 /// with a non-zero velocity, the component is auto-inserted so the
 /// gravity / PPN code that reads it sees the new value on the next
-/// step. (Closes a footgun raised in PR #260 review:
-/// `PlanetBundle::point_mass` doesn't include
-/// [`SourceInertialVelocityC`] by default; without auto-insert,
-/// `set_source_state` would silently no-op on the velocity write.)
+/// step. (Without this auto-insert, `set_source_state` would silently
+/// no-op on the velocity write for sources spawned via
+/// `PlanetBundle::point_mass`, which doesn't include
+/// [`SourceInertialVelocityC`] by default.)
 ///
 /// **Central-body protection**: `jeod_runner::Simulation` rejects
 /// mutations of the *root* source (the central body, since the root
@@ -122,7 +121,7 @@ impl SourceMutator<'_, '_> {
         // the more fundamental misconfiguration to surface (a non-source
         // entity carrying CentralSourceMarker hits the SourceFrameIdC
         // panic before the marker panic, which is the diagnostic ordering
-        // a debugging user actually wants — PR #267 review).
+        // a debugging user actually wants).
         let fid = self.fetch_frame_id(source, "set_source_position");
         self.assert_not_central(source, "set_source_position");
         let source_frames = [SourceFrameIds {
@@ -183,8 +182,8 @@ impl SourceMutator<'_, '_> {
         }
         // Auto-insert SourceInertialVelocityC if the source doesn't carry
         // one — `PlanetBundle::point_mass` doesn't include it by default,
-        // and without auto-insert the velocity write would silently no-op
-        // (footgun raised in PR #260 review).
+        // and without auto-insert the velocity write would silently
+        // no-op.
         match self.velocities.get_mut(source) {
             Ok(mut vc) => vc.0 = typed_vel,
             Err(_) => {
@@ -214,7 +213,7 @@ impl SourceMutator<'_, '_> {
     /// Format a user-facing label for `entity` — `"Earth (Entity {…})"` if a
     /// `Name` component is present, falling back to the raw `Entity` debug
     /// form. Used by the panic-formatting helpers so diagnostics name the
-    /// gravity source the way mission code spelled it (PR #267 review).
+    /// gravity source the way mission code spelled it.
     fn entity_label(&self, entity: Entity) -> String {
         match self.names.get(entity) {
             Ok(name) => format!("{name} ({entity:?})"),

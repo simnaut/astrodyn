@@ -22,12 +22,11 @@
 //! 6. Neither pre-installed: plugin seeds both itself.
 //! 7. Both pre-installed and consistent: plugin preserves them.
 
-// Issue #278 (Frame-Tree-ECS-Native PR 2): `FrameTreeR` is
-// `#[deprecated]` for mission-code use. This test pre-installs the
-// resource explicitly to exercise `JeodPlugin`'s pre-installation
-// validation path — the test *is* exercising the deprecated surface
-// to check it fails-loud on misuse. PR 4 (#280) removes the
-// pre-install path along with the resource.
+// `FrameTreeR` is `#[deprecated]` for mission-code use. This test
+// pre-installs the resource explicitly to exercise `JeodPlugin`'s
+// pre-installation validation path — the test *is* exercising the
+// deprecated surface to check it fails-loud on misuse. The
+// pre-install path will be retired alongside the resource itself.
 #![allow(deprecated)]
 
 use bevy::prelude::*;

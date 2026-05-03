@@ -87,13 +87,13 @@ pub struct EphemerisR(pub jeod_sim::Ephemeris);
 #[derive(Resource, Deref, DerefMut)]
 pub struct MassTreeR(pub jeod_sim::MassTree);
 
-// Issue #278: hosting the deprecated tuple struct inside a tiny
-// private submodule (`frame_tree_r_internal`) lets us blanket-suppress
-// the in-expansion warnings the derive macros (`Resource`, `Deref`,
-// `DerefMut`) emit at the type definition itself, while the
-// `#[deprecated]` attribute still fires at every external use site —
-// the deprecation surface PR 2 (#278) targets. PR 4 (#280) removes
-// the resource entirely; this submodule disappears with it.
+// Hosting the deprecated tuple struct inside a tiny private submodule
+// (`frame_tree_r_internal`) lets us blanket-suppress the in-expansion
+// warnings the derive macros (`Resource`, `Deref`, `DerefMut`) emit at
+// the type definition itself, while the `#[deprecated]` attribute
+// still fires at every external use site — the surface mission code
+// is meant to migrate off of. The submodule disappears together with
+// the resource once internal physics consumers also migrate.
 mod frame_tree_r_internal {
     #![allow(deprecated)]
     use bevy::prelude::*;
@@ -105,12 +105,12 @@ mod frame_tree_r_internal {
     /// code or recipes can register additional frame nodes (source inertials,
     /// pfix frames, body frames) during entity spawning.
     ///
-    /// Issue #71: this resource is the data structure that the lifted
+    /// This resource is the data structure that the lifted
     /// `jeod_sim::{frame_orchestration, source_state}` helpers operate on,
     /// so the Bevy adapter can consume the same orchestration code as
     /// `jeod_runner` instead of re-implementing it.
     ///
-    /// # Deprecated for mission-code use (issue #278 / [Frame-Tree-ECS-Native § 13][1])
+    /// # Deprecated for mission-code use ([Frame-Tree-ECS-Native § 13][1])
     ///
     /// `FrameTreeR` is the *internal* arena backing the dual-write phase of
     /// the ECS-native frame-tree migration. **Mission code must not read
@@ -132,11 +132,11 @@ mod frame_tree_r_internal {
     /// never expose a `FrameId`.
     ///
     /// Internal physics systems (gravity, integration, frame-switch,
-    /// derived-state) still read this resource during the PR 2 → PR 3
-    /// transition; those call sites are kept inside files annotated with
-    /// `#![allow(deprecated)]` and a refactor comment noting they're
-    /// rewritten to the SystemParams in PR 3 (#279). The `Resource` itself
-    /// is removed in PR 4 (#280) once internal systems also migrate.
+    /// derived-state) still read this resource; those call sites are kept
+    /// inside files annotated with `#![allow(deprecated)]` and a comment
+    /// noting they are scheduled to migrate to the SystemParams. The
+    /// `Resource` itself will be removed once internal systems have
+    /// migrated.
     ///
     /// [1]: https://github.com/simnaut/bevy_jeod/wiki/Frame-Tree-ECS-Native#13-migration-sequencing
     #[deprecated(
@@ -146,8 +146,8 @@ mod frame_tree_r_internal {
                 (replaces `FrameTreeR.compute_relative_state(from, to)`) \
                 and `bevy_jeod::frame_param::FrameOrigin` for frame-origin queries \
                 (replaces `frame_origin(tree, root, frame_id)`). \
-                Internal physics systems still read FrameTreeR until PR 3 (#279); \
-                the Resource itself is removed in PR 4 (#280). \
+                Internal physics systems still read FrameTreeR; the Resource \
+                itself will be removed once those internal consumers have migrated. \
                 See https://github.com/simnaut/bevy_jeod/wiki/Frame-Tree-ECS-Native#13-migration-sequencing"
     )]
     #[derive(Resource, Deref, DerefMut)]
@@ -157,13 +157,12 @@ mod frame_tree_r_internal {
 #[allow(deprecated)]
 pub use frame_tree_r_internal::FrameTreeR;
 
-// Issue #278: the `FrameTreeR` definition is `#[deprecated]` for
-// mission-code use; the inherent `impl` block and the `Default` impl
-// below are the resource's own internal API and read/write the inner
+// The `FrameTreeR` definition is `#[deprecated]` for mission-code use;
+// the inherent `impl` block and the `Default` impl below are the
+// resource's own internal API and read/write the inner
 // `pub jeod_sim::FrameTree` field. Per the "deprecated for mission-
-// code use only" carveout in PR 2 (issue #278), suppress the
-// resulting warnings at the `impl` header. Removed in PR 4 (#280)
-// when the resource itself is removed.
+// code use only" carveout, suppress the resulting warnings at the
+// `impl` header. These impls disappear together with the resource.
 #[allow(deprecated)]
 impl FrameTreeR {
     /// Create a new frame tree pre-populated with a permanent
@@ -180,7 +179,7 @@ impl FrameTreeR {
     }
 }
 
-#[allow(deprecated)] // Issue #278: see comment on inherent impl above.
+#[allow(deprecated)] // See comment on inherent impl above.
 impl Default for FrameTreeR {
     fn default() -> Self {
         Self::new().0
@@ -200,8 +199,8 @@ pub struct RootFrameIdR(pub jeod_sim::FrameId);
 /// once as an arena `FrameId` and once as a Bevy `Entity`. Spawned
 /// by [`JeodPlugin::build`] before any source/body registration so
 /// the registration systems can `ChildOf`-link their frame entities
-/// to it. Issue #277 — additive infrastructure for the
-/// [Frame-Tree-ECS-Native][1] migration (Section 13 PR 1).
+/// to it. Part of the additive infrastructure for the
+/// [Frame-Tree-ECS-Native][1] migration.
 ///
 /// [1]: https://github.com/simnaut/bevy_jeod/wiki/Frame-Tree-ECS-Native
 #[derive(Resource, Debug, Clone, Copy, Deref, DerefMut)]
@@ -249,11 +248,10 @@ impl Plugin for JeodPlugin {
         // preserves them. Inserting either alone is rejected — they
         // describe the same tree and must stay consistent.
         //
-        // Issue #278: `FrameTreeR` is `#[deprecated]` for mission code;
-        // the `JeodPlugin::build` plumbing here owns the resource's
-        // lifecycle and is rewritten in PR 4 (#280) when the resource
-        // is removed. The whole match is `#[allow(deprecated)]` because
-        // this is the *infrastructure* installing the resource.
+        // `FrameTreeR` is `#[deprecated]` for mission code; the
+        // `JeodPlugin::build` plumbing here owns the resource's
+        // lifecycle and is the *infrastructure* installing it, so the
+        // whole match is `#[allow(deprecated)]`.
         #[allow(deprecated)]
         match (
             app.world().contains_resource::<FrameTreeR>(),
@@ -267,17 +265,16 @@ impl Plugin for JeodPlugin {
             (true, true) => {
                 // Caller pre-installed both; verify that the supplied
                 // `RootFrameIdR` actually points at a root of the
-                // supplied `FrameTreeR`. PR #260 round-10 review
-                // fixup: the docs encourage pre-seeding custom trees,
-                // but a mismatched pair (e.g. a stale `FrameId` from a
-                // different tree, or an interior frame mistakenly
-                // labelled as the root) would silently attach
-                // sources/bodies under the wrong node, panic later in
-                // unrelated systems, or silently corrupt
-                // frame-relative state. Catch it here per the
-                // "Fail Loudly" rule — the diagnostic names the
-                // broken assumption and tells the caller how to fix
-                // it.
+                // supplied `FrameTreeR`. The docs encourage pre-seeding
+                // custom trees, but a mismatched pair (e.g. a stale
+                // `FrameId` from a different tree, or an interior
+                // frame mistakenly labelled as the root) would
+                // silently attach sources/bodies under the wrong
+                // node, panic later in unrelated systems, or
+                // silently corrupt frame-relative state. Catch it
+                // here per the "Fail Loudly" rule — the diagnostic
+                // names the broken assumption and tells the caller
+                // how to fix it.
                 let frame_tree = app.world().resource::<FrameTreeR>();
                 let root_id = app.world().resource::<RootFrameIdR>().0;
                 assert!(
@@ -310,7 +307,7 @@ impl Plugin for JeodPlugin {
                 // pre-installed `RootFrameIdR` that points to a
                 // `PlanetFixed` / `Body` node would let all that math run
                 // against a non-inertial root and silently produce wrong
-                // physics. PR #260 reviewer-flagged gap.
+                // physics — fail loud here.
                 let root_kind = frame_tree.0.get(root_id).kind;
                 assert!(
                     matches!(root_kind, jeod_sim::RefFrameKind::Inertial),
@@ -338,28 +335,26 @@ impl Plugin for JeodPlugin {
             ),
         }
 
-        // ── Issue #277: ECS-native root frame entity ──
+        // ── ECS-native root frame entity ──
         // Spawn the root frame entity that mirrors the arena's root
         // frame node. Source / body registration `ChildOf`-links its
         // frame entities under this one, so the ECS hierarchy and the
-        // arena describe the same logical frame tree in parallel
-        // during the dual-write phase (Section 13 PR 1).
+        // arena describe the same logical frame tree in parallel.
         //
-        // Issue #277 PR 1 round-5 review fixup: only spawn when the caller
-        // hasn't pre-installed `RootFrameEntityR`. Mirrors the
-        // `FrameTreeR` / `RootFrameIdR` pattern above so a mission
-        // (or a second `JeodPlugin::build` call — `Plugin::build` is
-        // not idempotent on its own) cannot silently leak the
-        // previously-spawned root entity and re-parent future frame
-        // entities under a different root than the existing ones.
-        // When pre-installed we validate that the referenced entity
-        // still exists and carries the required frame components /
-        // `InertialFrameMarker` so source / body registration's
-        // `ChildOf`-links and the typed `<RootInertial>` assumptions
-        // hold. Per the "Fail Loudly" rule a stale or
-        // wrong-kind pre-installed entity panics with a diagnostic
-        // that names the broken assumption and tells the caller how
-        // to fix it.
+        // Only spawn when the caller hasn't pre-installed
+        // `RootFrameEntityR`. Mirrors the `FrameTreeR` / `RootFrameIdR`
+        // pattern above so a mission (or a second `JeodPlugin::build`
+        // call — `Plugin::build` is not idempotent on its own) cannot
+        // silently leak the previously-spawned root entity and
+        // re-parent future frame entities under a different root than
+        // the existing ones. When pre-installed we validate that the
+        // referenced entity still exists and carries the required
+        // frame components / `InertialFrameMarker` so source / body
+        // registration's `ChildOf`-links and the typed
+        // `<RootInertial>` assumptions hold. Per the "Fail Loudly"
+        // rule a stale or wrong-kind pre-installed entity panics with
+        // a diagnostic that names the broken assumption and tells the
+        // caller how to fix it.
         if !app.world().contains_resource::<RootFrameEntityR>() {
             let root_frame_entity = app
                 .world_mut()
@@ -417,7 +412,7 @@ impl Plugin for JeodPlugin {
             );
         }
 
-        // ── Typed-Component reflection (#154) ──
+        // ── Typed-Component reflection ──
         // Centralized in `register_jeod_component_types` so the smoke
         // test and any other consumer registers exactly the same set.
         register_jeod_component_types(app);
@@ -434,10 +429,10 @@ impl Plugin for JeodPlugin {
         // sources are skipped — registering is one-time per source.
         // Body-frame registration follows so bodies can resolve
         // `IntegSourceC(Some(source_entity))` against an already-registered
-        // source. Issue #71 items 2, 4, 5.
+        // source.
         //
         // Registration is wired into three schedules so it catches every
-        // spawn surface (PR #260 round-3 R3 fixup):
+        // spawn surface:
         //   - Startup: initial spawns before any tick.
         //   - PreUpdate: catches entities spawned during the previous
         //     frame's `Update` / `PostUpdate`. They are registered before
@@ -453,9 +448,9 @@ impl Plugin for JeodPlugin {
         // Each pass is a no-op for already-registered entities (the
         // `Without<SourceFrameIdC>` / `Without<BodyFrameIdC>` filters
         // make repeated runs cost a single query iteration).
-        // `register_pfix_frames_system` covers a rare but real case
-        // (round-9 fixup): a source spawned without `PlanetFixedRotationC`
-        // that gains it after the initial registration. The main
+        // `register_pfix_frames_system` covers a rare but real case:
+        // a source spawned without `PlanetFixedRotationC` that gains
+        // it after the initial registration. The main
         // `register_source_frames_system` filters by
         // `Without<SourceFrameIdC>` so it can't observe that mutation;
         // the dedicated pfix pass uses `Without<SourcePfixFrameIdC>` +
@@ -468,8 +463,7 @@ impl Plugin for JeodPlugin {
                 systems::register_body_frames_system.after(systems::register_pfix_frames_system),
                 // Maintain `MassPointRef` ↔ `MassPropertiesC` invariant
                 // for bodies that gain or lose mass after the one-time
-                // body-frame registration pass. PR #283 review thread
-                // `PRRT_kwDORtae6c5_K7qF`.
+                // body-frame registration pass.
                 systems::sync_body_mass_point_ref_system
                     .after(systems::register_body_frames_system),
             ),
@@ -487,17 +481,16 @@ impl Plugin for JeodPlugin {
         // Frame-tree despawn cleanup: rename + reset orphan nodes so
         // `find_by_name` lookups don't shadow a future re-spawn of the
         // same name and stale state can't leak through frame-tree
-        // queries. PR #260 reviewer-flagged gap; see the module-level
-        // comment in `src/systems.rs` ("Frame-tree despawn cleanup")
-        // for the why.
+        // queries. See the module-level comment in `src/systems.rs`
+        // ("Frame-tree despawn cleanup") for the why.
         app.add_observer(systems::on_source_frame_despawn);
         app.add_observer(systems::on_source_pfix_frame_despawn);
         app.add_observer(systems::on_retired_pfix_frame_despawn);
         app.add_observer(systems::on_retired_pfix_frame_entity_despawn);
         app.add_observer(systems::on_body_frame_despawn);
-        // Issue #277 PR 1 round-2 review: dual-write ECS frame
-        // entities also need cleanup on owner despawn so the
-        // dual-write sites in `register_source_frames_system` /
+        // Dual-write ECS frame entities also need cleanup on owner
+        // despawn so the dual-write sites in
+        // `register_source_frames_system` /
         // `register_body_frames_system` (and the pfix branch of the
         // former / `register_pfix_frames_system`) don't leak frame
         // entities after the source / body entity is gone.
@@ -513,7 +506,7 @@ impl Plugin for JeodPlugin {
                 // `planet_fixed_rotation_system` / `ephemeris_update_system`.
                 systems::register_source_frames_system.before(JeodSet::EphemerisUpdate),
                 // Late-attached `PlanetFixedRotationC` → pfix child node
-                // (round-9 fixup; see `register_pfix_frames_system` doc).
+                // (see `register_pfix_frames_system` doc).
                 systems::register_pfix_frames_system
                     .after(systems::register_source_frames_system)
                     .before(JeodSet::EphemerisUpdate),
@@ -525,7 +518,6 @@ impl Plugin for JeodPlugin {
                 // Late-acquired / late-lost `MassPropertiesC` →
                 // insert / remove `MassPointRef` for bodies that have
                 // already passed through `register_body_frames_system`.
-                // PR #283 review thread `PRRT_kwDORtae6c5_K7qF`.
                 systems::sync_body_mass_point_ref_system
                     .after(systems::register_body_frames_system)
                     .before(JeodSet::EphemerisUpdate),
@@ -550,7 +542,7 @@ impl Plugin for JeodPlugin {
                 // After ephemeris_update_system writes new source position /
                 // velocity, mirror the values into FrameTreeR so frame-tree
                 // consumers (compute_relative_state, frame_origin) see the
-                // latest state. PR #260 review fixup.
+                // latest state.
                 systems::sync_source_to_frame_system
                     .in_set(JeodSet::EphemerisUpdate)
                     .after(systems::ephemeris_update_system)
@@ -571,8 +563,8 @@ impl Plugin for JeodPlugin {
                 // `MassChildOf` edges bottom-up via the
                 // `jeod_sim::MassStorage` trait and writes composite
                 // mass / inertia / CoM back into `MassPropertiesC`.
-                // Issue #271. Runs after `mass_update_system` so the
-                // per-entity inverse caches are fresh, and before
+                // Runs after `mass_update_system` so the per-entity
+                // inverse caches are fresh, and before
                 // `JeodSet::EphemerisUpdate` so downstream gravity /
                 // interaction / integration systems see the
                 // composite. Fast-paths to a no-op when no entity
@@ -604,12 +596,12 @@ impl Plugin for JeodPlugin {
                 systems::integration_system.in_set(JeodSet::Integration),
                 // After integration, sync the body's typed state into its
                 // FrameTreeR node so frame-switch evaluation sees current
-                // distances. Issue #71 item 2.
+                // distances.
                 systems::sync_body_to_frame_system
                     .in_set(JeodSet::Integration)
                     .after(systems::integration_system),
                 // Evaluate distance-based frame switches and reparent the
-                // body in the frame tree on trigger. Issue #71 item 3.
+                // body in the frame tree on trigger.
                 systems::frame_switch_system
                     .in_set(JeodSet::Integration)
                     .after(systems::sync_body_to_frame_system),
@@ -674,7 +666,7 @@ pub fn register_jeod_component_types(app: &mut App) {
     app.register_type::<components::FrameSwitchesC>();
     app.register_type::<components::BodyFrameIdC>();
     app.register_type::<components::IntegFrameIdC>();
-    // Issue #277: frames-as-entities components.
+    // Frames-as-entities components.
     app.register_type::<components::FrameTransC>();
     app.register_type::<components::FrameRotC>();
     app.register_type::<components::FrameAngVelC>();
@@ -764,7 +756,7 @@ pub trait VehicleConfigBevyExt {
     /// torque component. `source_entities` resolves each `usize` index in
     /// `gravity_controls` to the corresponding ECS [`Entity`].
     ///
-    /// Wired in PR #260: `integ_source` (translated to
+    /// Also wires `integ_source` (translated to
     /// [`components::IntegSourceC`] when `Some`) and `frame_switches`
     /// (translated to [`components::FrameSwitchesC`] when non-empty),
     /// retagging each `usize` source index to the matching ECS
@@ -857,14 +849,14 @@ impl VehicleConfigBevyExt for jeod_sim::VehicleConfig {
             // so this is a one-time insertion-time lift — not a per-step
             // bypass. Migrating `VehicleConfig` itself to typed external
             // fields is a deeper refactor inside `jeod_sim`; out of
-            // scope for the Bevy-adapter boundary that #172 H1 targets.
-            let f = jeod_sim::Force::<jeod_sim::RootInertial>::from_raw_si(self.external_force); // allowed: #172 H1 insertion-time boundary (VehicleConfig still untyped)
+            // scope for this Bevy-adapter boundary.
+            let f = jeod_sim::Force::<jeod_sim::RootInertial>::from_raw_si(self.external_force); // allowed: insertion-time boundary — VehicleConfig still exposes external_force as untyped DVec3, lifted once into Force<RootInertial> at spawn time (not a per-step bypass).
             entity.insert(components::ExternalForceC(f));
         }
         if self.external_torque != glam::DVec3::ZERO {
             let t = jeod_sim::Torque::<jeod_sim::BodyFrame<jeod_sim::SelfRef>>::from_raw_si(
                 self.external_torque,
-            ); // allowed: #172 H1 insertion-time boundary (VehicleConfig still untyped)
+            ); // allowed: same insertion-time boundary as `external_force` above — VehicleConfig still untyped.
             entity.insert(components::ExternalTorqueC(t));
         }
         if self.compute_gravity_gradient {

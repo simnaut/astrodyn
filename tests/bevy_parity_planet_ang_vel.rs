@@ -1,10 +1,9 @@
 //! Tier 3: Bevy App vs jeod_runner::Simulation parity for the
-//! planet-fixed frame's angular velocity (issue #71 item 1).
+//! planet-fixed frame's angular velocity.
 //!
-//! Issue #71 catalogued that `jeod_runner::Simulation` writes
-//! `ang_vel_this = [0, 0, planet_omega]` onto every pfix node each step
-//! (matching JEOD's `planet_rnp.cc`), while the Bevy adapter only wrote
-//! the rotation matrix. This test exercises the new
+//! `jeod_runner::Simulation` writes `ang_vel_this = [0, 0, planet_omega]`
+//! onto every pfix node each step (matching JEOD's `planet_rnp.cc`),
+//! and the Bevy adapter must do the same. This test exercises the
 //! `PlanetAngularVelocityC` component populated by
 //! `planet_fixed_rotation_system` and asserts:
 //!
@@ -12,16 +11,11 @@
 //!    `[0, 0, omega_planet]` for each rotation model.
 //! 2. The Bevy value is bit-identical to the corresponding pfix node's
 //!    `state.rot.ang_vel_this` in `jeod_runner::Simulation::frame_tree()`.
-//!
-//! Phase B step B11 of the issue #71 plan; closes the parity-test gap
-//! flagged in the plan (no existing parity test exercises pfix angular
-//! velocity).
 
-// Issue #278 (Frame-Tree-ECS-Native PR 2): `FrameTreeR` is
-// `#[deprecated]` for mission-code use. This Tier 3 parity test reads
-// the arena to assert bit-identity of the pfix-rotation node sync
-// path. PR 4 (#280) removes the resource; the arena reads here will
-// be rewritten to use `RelativeFrameState`.
+// `FrameTreeR` is `#[deprecated]` for mission-code use. This Tier 3
+// parity test reads the arena to assert bit-identity of the
+// pfix-rotation node sync path. Once the resource is removed, the
+// arena reads here will be rewritten to use `RelativeFrameState`.
 #![allow(deprecated)]
 
 use std::time::Duration;
@@ -103,7 +97,7 @@ fn sim_pfix_ang_vel(sim: &Simulation, name: &str) -> DVec3 {
 
 /// Read the FrameTreeR pfix node's `ang_vel_this` for a Bevy planet
 /// entity. Asserts the pfix-node-of-truth is in sync with the ECS
-/// `PlanetAngularVelocityC` component (PR #260 review fixup).
+/// `PlanetAngularVelocityC` component.
 fn bevy_pfix_node_ang_vel(app: &App, planet: Entity) -> DVec3 {
     let pfix_fid = app
         .world()
@@ -135,7 +129,7 @@ fn tier3_bevy_planet_ang_vel_earth_rnp() {
     assert_dvec3_bits_eq("Bevy vs Sim Earth pfix ang_vel", bevy_ang_vel, sim_ang_vel);
 
     // FrameTreeR pfix node must match too — frame-tree consumers rely
-    // on this (compute_relative_state through pfix). PR #260 review.
+    // on this (compute_relative_state through pfix).
     let bevy_node_ang_vel = bevy_pfix_node_ang_vel(&app, planet);
     assert_dvec3_bits_eq(
         "Bevy FrameTreeR Earth pfix-node ang_vel vs Sim",
@@ -283,7 +277,7 @@ fn tier3_bevy_rotation_none_toggle_removes_pfix_component() {
         app.world().get::<SourcePfixFrameIdC>(planet).is_none(),
         "toggling RotationModel to None must remove SourcePfixFrameIdC; \
          leaving it in place reintroduces the Some(identity) vs None \
-         ambiguity that round-9 registration fixed"
+         ambiguity that the registration path is meant to avoid"
     );
     // The orphan node must be renamed off `Earth.pfix` so a
     // `find_by_name` lookup of the canonical name returns nothing
@@ -367,9 +361,9 @@ fn tier3_bevy_rotation_none_toggle_removes_pfix_component() {
     );
 }
 
-/// Issue #277 PR 1 round-1 review fixup: the same retirement / reuse
-/// semantics the test above asserts on the *arena* side must also hold
-/// on the ECS-entity side. Without the parallel
+/// The same retirement / reuse semantics the test above asserts on
+/// the *arena* side must also hold on the ECS-entity side. Without
+/// the parallel
 /// `RetiredPfixFrameEntityC` retirement, the source kept a stale
 /// `PfixFrameEntityC` handle on toggle to `None` *and*
 /// `register_pfix_frames_system` (which filters
@@ -459,8 +453,8 @@ fn tier3_bevy_rotation_none_toggle_does_not_leak_pfix_frame_entity() {
 #[test]
 fn tier3_bevy_planet_ang_vel_moon_de421() {
     // MoonDE421 is the only RotationModel branch whose Bevy ↔ runner
-    // end-to-end path was previously uncovered (issue #265). Mirror the
-    // MoonIAU test, additionally inserting `EphemerisR` with the BPC
+    // end-to-end path was previously uncovered. Mirror the MoonIAU
+    // test, additionally inserting `EphemerisR` with the BPC
     // kernel that `planet_fixed_rotation_system`'s MoonDE421 branch
     // requires. The kernel `moon_pa_de421_1900-2050.bpc` is already
     // committed to `test_data/` (used by `tier3_simulation_earth_moon_clem`),

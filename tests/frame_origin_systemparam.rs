@@ -1,7 +1,7 @@
-//! Issue #278 (Frame-Tree-ECS-Native § 13 PR 2) bit-identity validation
-//! for the new [`FrameOrigin`] `SystemParam`. Mirrors the load-bearing
-//! correctness check that PR 1 added for [`RelativeFrameState`]
-//! (`tests/frame_storage_relative_frame_state.rs`): the new
+//! Bit-identity validation for the [`FrameOrigin`] `SystemParam`.
+//! Mirrors the load-bearing correctness check for
+//! [`RelativeFrameState`]
+//! (`tests/frame_storage_relative_frame_state.rs`): the
 //! mission-facing surface produces numerics bit-identical to the
 //! arena helpers (`jeod_sim::frame_origin` /
 //! `jeod_sim::frame_origin_typed`) the dual-write keeps in sync.
@@ -126,9 +126,9 @@ fn assert_dvec3_bits_eq(label: &str, arena: DVec3, ecs: DVec3) {
 /// `FrameOrigin::origin_in_root(root, body)` returns the same
 /// `(position, velocity)` as
 /// `jeod_sim::frame_origin(&frame_tree.0, root_fid, body_fid)`.
-/// This is the load-bearing correctness check for PR 2 — proving
-/// that the new mission-facing SystemParam reads bit-identical
-/// numerics to the arena helper consumers used to call.
+/// This is the load-bearing correctness check — proving that the
+/// mission-facing SystemParam reads bit-identical numerics to the
+/// arena helper consumers used to call.
 #[test]
 fn frame_origin_in_root_matches_arena() {
     let (mut app, _planet_e, body_e) = build_app("Earth", &EARTH);

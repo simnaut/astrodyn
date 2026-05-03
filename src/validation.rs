@@ -10,14 +10,14 @@
 //! matches JEOD's `DynManager` which only invariants bodies that participate
 //! in integration.
 //!
-//! Issue #278 (Frame-Tree-ECS-Native § 13 PR 2): the `is_root_equivalent`
-//! function reads [`crate::FrameTreeR`] (now `#[deprecated]` for
-//! mission-code use) to compare a body's integration frame against the
-//! root. This is *internal* validation infrastructure and is rewritten
-//! in PR 3 (#279) to use [`crate::frame_param::RelativeFrameState`] /
+//! The `is_root_equivalent` function reads [`crate::FrameTreeR`] (now
+//! `#[deprecated]` for mission-code use) to compare a body's
+//! integration frame against the root. This is *internal* validation
+//! infrastructure and is scheduled to migrate to
+//! [`crate::frame_param::RelativeFrameState`] /
 //! [`crate::frame_param::FrameOrigin`]. The file-level
 //! `#![allow(deprecated)]` keeps the call sites quiet until then.
-#![allow(deprecated)] // Issue #278: internal FrameTreeR consumer; rewritten in PR 3 (#279)
+#![allow(deprecated)] // Internal FrameTreeR consumer during the dual-write phase.
 
 use bevy::prelude::*;
 
@@ -130,10 +130,10 @@ pub fn validate_jeod_invariants(
         Option<&MoonMarker>,
         Option<&TranslationalStateC>,
     )>,
-    // Frame-tree state for non-root validation. PR #260 round-8 fixup:
-    // mirrors `Simulation::validate()`'s frame-switch + non-root checks
+    // Frame-tree state for non-root validation. Mirrors
+    // `Simulation::validate()`'s frame-switch + non-root checks
     // (`crates/jeod_runner/src/simulation/validate.rs:129-184`) so the
-    // typed `VehicleBuilder` API (which now plumbs `integ_source` and
+    // typed `VehicleBuilder` API (which plumbs `integ_source` and
     // `frame_switches` through `spawn_bevy`) doesn't silently land
     // bodies in misconfigured non-root setups.
     body_frame_state: Query<(Option<&IntegFrameIdC>, Option<&FrameSwitchesC>)>,
@@ -286,8 +286,8 @@ pub fn validate_jeod_invariants(
 
         // ── Frame-switch + non-root frame validation ──
         // Mirrors `Simulation::validate()` checks at
-        // `crates/jeod_runner/src/simulation/validate.rs:129-184` (PR #260
-        // round-8 fixup): every active `FrameSwitchConfig.target_source`
+        // `crates/jeod_runner/src/simulation/validate.rs:129-184`: every
+        // active `FrameSwitchConfig.target_source`
         // must (a) be a registered gravity source and (b) appear in the
         // body's `gravity_controls` so the post-switch differential flip
         // leaves a non-differential central body. Bodies whose

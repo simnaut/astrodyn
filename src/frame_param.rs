@@ -31,12 +31,12 @@
 //!   `frame_origin(tree, root, frame_id)` /
 //!   `frame_origin_typed::<RootInertial>(tree, root, frame_id)`.
 //!
-//! During the dual-write phase (PR 1–3) the underlying components are
-//! kept in lockstep with [`crate::FrameTreeR`], so these `SystemParam`s
-//! and the arena helpers return bit-identical numerics
-//! (see `tests/frame_storage_relative_frame_state.rs`). Mission code
-//! may adopt the new surface incrementally; the arena is removed in
-//! Section 13 PR 4.
+//! While the underlying components are kept in lockstep with
+//! [`crate::FrameTreeR`] via dual-write, these `SystemParam`s and the
+//! arena helpers return bit-identical numerics (see
+//! `tests/frame_storage_relative_frame_state.rs`). Mission code may
+//! adopt the new surface incrementally; the arena will be removed once
+//! all internal consumers have migrated.
 //!
 //! [1]: https://github.com/simnaut/bevy_jeod/wiki/Frame-Tree-ECS-Native#13-migration-sequencing
 //! [2]: https://github.com/simnaut/bevy_jeod/wiki/Frame-Tree-ECS-Native#7-internal-algorithm-sharing-q1
@@ -60,12 +60,12 @@ use crate::components::{FrameAngVelC, FrameRotC, FrameTransC};
 ///
 /// ECS-native replacement for
 /// `FrameTreeR.compute_relative_state(from_id, to_id)` and
-/// `frame_origin(tree, root, frame_id)`. Issue #277.
+/// `frame_origin(tree, root, frame_id)`.
 ///
-/// During the dual-write phase (PR 1) the underlying components are
-/// kept in lockstep with the arena; this `SystemParam` is therefore a
-/// drop-in alternative with identical numerics. Mission code that
-/// migrates first sees an `Entity`-keyed surface (no `FrameId`s, no
+/// While the dual-write infrastructure keeps the underlying components
+/// in lockstep with the arena, this `SystemParam` is a drop-in
+/// alternative with identical numerics. Mission code that migrates
+/// first sees an `Entity`-keyed surface (no `FrameId`s, no
 /// `Res<FrameTreeR>`).
 #[derive(SystemParam)]
 pub struct RelativeFrameState<'w, 's> {
@@ -110,7 +110,7 @@ impl<'w, 's> RelativeFrameState<'w, 's> {
 
 /// `FrameStorage` impl: lets the storage-agnostic algorithms in
 /// `jeod_frames::frame_storage` operate over the ECS hierarchy + the
-/// new frame-state components. Issue #277.
+/// frame-state components.
 impl<'w, 's> FrameStorage for RelativeFrameState<'w, 's> {
     type Id = Entity;
 
@@ -143,8 +143,10 @@ impl<'w, 's> FrameStorage for RelativeFrameState<'w, 's> {
 
 /// Compute the origin (position + velocity) of a frame entity expressed
 /// in a chosen ancestor frame's coordinates. ECS-native replacement for
-/// `jeod_sim::frame_origin` / `jeod_sim::frame_origin_typed::<F>`.
-/// Issue #278 (Frame-Tree-ECS-Native § 6, PR 2).
+/// `jeod_sim::frame_origin` / `jeod_sim::frame_origin_typed::<F>`
+/// ([Frame-Tree-ECS-Native § 6][1]).
+///
+/// [1]: https://github.com/simnaut/bevy_jeod/wiki/Frame-Tree-ECS-Native#6-mission-code-surface--systemparam-catalog-q7
 ///
 /// Internally backed by the same `Query<&ChildOf>` +
 /// `Query<(&FrameTransC, &FrameRotC, &FrameAngVelC)>` walks as
