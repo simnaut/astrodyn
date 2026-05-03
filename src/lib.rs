@@ -273,7 +273,7 @@ impl Plugin for JeodPlugin {
         // arena describe the same logical frame tree in parallel
         // during the dual-write phase (Section 13 PR 1).
         //
-        // PR #281 round-5 review fixup: only spawn when the caller
+        // Issue #277 PR 1 round-5 review fixup: only spawn when the caller
         // hasn't pre-installed `RootFrameEntityR`. Mirrors the
         // `FrameTreeR` / `RootFrameIdR` pattern above so a mission
         // (or a second `JeodPlugin::build` call — `Plugin::build` is

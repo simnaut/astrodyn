@@ -1,4 +1,4 @@
-//! Round-6 review fixup for PR #281 (issue #277): the dual-write
+//! Issue #277 PR 1 round-6 review fixup: the dual-write
 //! systems must panic with a fail-loud diagnostic — not silently
 //! no-op — when a `FrameEntityC` / `PfixFrameEntityC` /
 //! `RetiredPfixFrameEntityC` handle is stale (the referenced frame

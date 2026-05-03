@@ -27,7 +27,7 @@
 //! This mirrors `jeod_plugin_frame_tree_validation.rs` for the
 //! arena-side `FrameTreeR` / `RootFrameIdR` pair.
 //!
-//! PR #281 round-5 review fixup (Copilot, threadId
+//! Issue #277 PR 1 round-5 review fixup (Copilot, threadId
 //! `PRRT_kwDORtae6c5_K7a4`): without these checks, a pre-installed
 //! `RootFrameEntityR` was silently overwritten, leaking the original
 //! root entity and producing a frame hierarchy split across two
