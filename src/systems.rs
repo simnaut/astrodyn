@@ -268,15 +268,65 @@ pub fn register_pfix_frames_system(
                 commands
                     .entity(retired_e.0)
                     .insert(Name::new(format!("{label}.frame.pfix")));
-                if let Ok(mut t) = frame_trans.get_mut(retired_e.0) {
-                    *t = FrameTransC::default();
-                }
-                if let Ok(mut r) = frame_rots.get_mut(retired_e.0) {
-                    *r = FrameRotC::default();
-                }
-                if let Ok(mut av) = frame_ang_vels.get_mut(retired_e.0) {
-                    *av = FrameAngVelC::default();
-                }
+                // Issue #277 round-6 review fixup: fail loud if the
+                // retired pfix frame entity has lost any of its
+                // FrameTransC / FrameRotC / FrameAngVelC components
+                // (or has been despawned out from under us). Silently
+                // skipping these resets would let stale rotation,
+                // angular velocity, or translation state leak into the
+                // reused entity, breaking the dual-write invariant
+                // between the arena pfix node and the ECS components.
+                // The retirement path in `planet_fixed_rotation_system`
+                // (the only producer of `RetiredPfixFrameEntityC`)
+                // guarantees the entity stays alive with all three
+                // components attached, so an `Err` here means the
+                // entity was despawned or stripped externally — which
+                // is a misconfiguration, not a recoverable state.
+                let mut t = frame_trans.get_mut(retired_e.0).unwrap_or_else(|err| {
+                    panic!(
+                        "register_pfix_frames_system: source {entity:?} \
+                         carries RetiredPfixFrameEntityC({:?}) but that \
+                         entity has no FrameTransC ({err:?}). The retired \
+                         pfix frame entity must be alive with FrameTransC / \
+                         FrameRotC / FrameAngVelC intact (set up by \
+                         planet_fixed_rotation_system on retirement). Do not \
+                         despawn or strip components from a retired pfix \
+                         frame entity while its source still carries the \
+                         marker.",
+                        retired_e.0
+                    )
+                });
+                *t = FrameTransC::default();
+                let mut r = frame_rots.get_mut(retired_e.0).unwrap_or_else(|err| {
+                    panic!(
+                        "register_pfix_frames_system: source {entity:?} \
+                         carries RetiredPfixFrameEntityC({:?}) but that \
+                         entity has no FrameRotC ({err:?}). The retired \
+                         pfix frame entity must be alive with FrameTransC / \
+                         FrameRotC / FrameAngVelC intact (set up by \
+                         planet_fixed_rotation_system on retirement). Do not \
+                         despawn or strip components from a retired pfix \
+                         frame entity while its source still carries the \
+                         marker.",
+                        retired_e.0
+                    )
+                });
+                *r = FrameRotC::default();
+                let mut av = frame_ang_vels.get_mut(retired_e.0).unwrap_or_else(|err| {
+                    panic!(
+                        "register_pfix_frames_system: source {entity:?} \
+                         carries RetiredPfixFrameEntityC({:?}) but that \
+                         entity has no FrameAngVelC ({err:?}). The retired \
+                         pfix frame entity must be alive with FrameTransC / \
+                         FrameRotC / FrameAngVelC intact (set up by \
+                         planet_fixed_rotation_system on retirement). Do not \
+                         despawn or strip components from a retired pfix \
+                         frame entity while its source still carries the \
+                         marker.",
+                        retired_e.0
+                    )
+                });
+                *av = FrameAngVelC::default();
                 commands.entity(entity).remove::<RetiredPfixFrameEntityC>();
                 retired_e.0
             } else {
@@ -355,13 +405,32 @@ pub fn sync_source_to_frame_system(
 
         // Issue #277: ECS dual-write to the source's frame entity.
         // Skip silently if the source was registered before the
-        // issue #277 components landed (no FrameEntityC).
+        // issue #277 components landed (no FrameEntityC). When the
+        // component *is* present, the referenced frame entity must
+        // exist and carry FrameTransC — the registration sites
+        // (`PlanetBundle::spawn` / `register_pfix_frames_system`)
+        // spawn it with `FrameTransC::default()` and the despawn
+        // observers tear it down in lockstep with the source. Round-6
+        // review fixup: fail loud if `FrameEntityC` points at a stale
+        // / missing entity instead of silently leaving the ECS half
+        // of the dual-write out of sync with the arena.
         if let Some(fe) = frame_entity {
-            if let Ok(mut frame_trans) = frame_states.get_mut(fe.0) {
-                frame_trans.position = position;
-                if let Some(v) = velocity {
-                    frame_trans.velocity = v;
-                }
+            let mut frame_trans = frame_states.get_mut(fe.0).unwrap_or_else(|err| {
+                panic!(
+                    "sync_source_to_frame_system: source has \
+                     FrameEntityC({:?}) but that entity has no FrameTransC \
+                     ({err:?}). The source's frame entity must be alive \
+                     with FrameTransC attached (spawned by PlanetBundle / \
+                     register_*_frames_system). Either remove the stale \
+                     FrameEntityC marker before despawning the frame \
+                     entity, or ensure the frame entity stays alive for \
+                     as long as the source carries the handle.",
+                    fe.0
+                )
+            });
+            frame_trans.position = position;
+            if let Some(v) = velocity {
+                frame_trans.velocity = v;
             }
         }
     }
@@ -692,12 +761,31 @@ pub fn sync_body_to_frame_system(
 
         // Issue #277: ECS dual-write to the body's frame entity.
         // Skip silently if the body was registered before the
-        // issue #277 components landed (no FrameEntityC).
+        // issue #277 components landed (no FrameEntityC). When the
+        // component *is* present, the referenced body frame entity
+        // must exist and carry FrameTransC — `register_body_frames_system`
+        // spawns it with `FrameTransC` populated from the body's
+        // initial state, and the despawn observers tear it down in
+        // lockstep with the body. Round-6 review fixup: fail loud if
+        // `FrameEntityC` points at a stale / missing entity instead
+        // of silently leaving the ECS half of the dual-write out of
+        // sync with the arena.
         if let Some(fe) = frame_entity {
-            if let Ok(mut frame_trans) = frame_states.get_mut(fe.0) {
-                frame_trans.position = position;
-                frame_trans.velocity = velocity;
-            }
+            let mut frame_trans = frame_states.get_mut(fe.0).unwrap_or_else(|err| {
+                panic!(
+                    "sync_body_to_frame_system: body has FrameEntityC({:?}) \
+                     but that entity has no FrameTransC ({err:?}). The \
+                     body's frame entity must be alive with FrameTransC \
+                     attached (spawned by register_body_frames_system). \
+                     Either remove the stale FrameEntityC marker before \
+                     despawning the frame entity, or ensure the frame \
+                     entity stays alive for as long as the body carries \
+                     the handle.",
+                    fe.0
+                )
+            });
+            frame_trans.position = position;
+            frame_trans.velocity = velocity;
         }
     }
 }
@@ -973,15 +1061,47 @@ pub fn planet_fixed_rotation_system(
             // Issue #277: ECS dual-write to the pfix frame entity.
             // Same data, different storage — keeps `RelativeFrameState`
             // bit-identical with the arena via `compute_relative_state`.
+            // Round-6 review fixup: when `PfixFrameEntityC` is present
+            // the referenced entity must be alive with FrameRotC /
+            // FrameAngVelC intact (spawned by `register_pfix_frames_system`,
+            // torn down in lockstep with the marker by the despawn
+            // observers and the rotation-toggle retirement path). A
+            // stale handle here would silently leave the ECS pfix
+            // rotation/omega out of sync with the arena, breaking the
+            // dual-write invariant.
             if let (Some(matrix), Some(pfix_fe)) = (raw_matrix, pfix_frame_entity) {
-                if let Ok(mut frame_rot) = frame_rots.get_mut(pfix_fe.0) {
-                    frame_rot.q_parent_this =
-                        jeod_sim::JeodQuat::left_quat_from_transformation(&matrix);
-                    frame_rot.t_parent_this = matrix;
-                }
-                if let Ok(mut frame_av) = frame_ang_vels.get_mut(pfix_fe.0) {
-                    frame_av.0 = glam::DVec3::new(0.0, 0.0, omega_value);
-                }
+                let mut frame_rot = frame_rots.get_mut(pfix_fe.0).unwrap_or_else(|err| {
+                    panic!(
+                        "planet_fixed_rotation_system: source {entity:?} has \
+                         PfixFrameEntityC({:?}) but that entity has no \
+                         FrameRotC ({err:?}). The pfix frame entity must be \
+                         alive with FrameRotC / FrameAngVelC attached \
+                         (spawned by register_pfix_frames_system). Either \
+                         remove the stale PfixFrameEntityC marker before \
+                         despawning the pfix frame entity, or ensure the \
+                         pfix frame entity stays alive for as long as the \
+                         source carries the handle.",
+                        pfix_fe.0
+                    )
+                });
+                frame_rot.q_parent_this =
+                    jeod_sim::JeodQuat::left_quat_from_transformation(&matrix);
+                frame_rot.t_parent_this = matrix;
+                let mut frame_av = frame_ang_vels.get_mut(pfix_fe.0).unwrap_or_else(|err| {
+                    panic!(
+                        "planet_fixed_rotation_system: source {entity:?} has \
+                         PfixFrameEntityC({:?}) but that entity has no \
+                         FrameAngVelC ({err:?}). The pfix frame entity must \
+                         be alive with FrameRotC / FrameAngVelC attached \
+                         (spawned by register_pfix_frames_system). Either \
+                         remove the stale PfixFrameEntityC marker before \
+                         despawning the pfix frame entity, or ensure the \
+                         pfix frame entity stays alive for as long as the \
+                         source carries the handle.",
+                        pfix_fe.0
+                    )
+                });
+                frame_av.0 = glam::DVec3::new(0.0, 0.0, omega_value);
             }
         } else {
             // `RotationModel::None`: actively clear the rotation matrix,
@@ -1016,14 +1136,46 @@ pub fn planet_fixed_rotation_system(
                 // Issue #277: ECS dual-write — clear the pfix frame
                 // entity's state to identity so any
                 // `RelativeFrameState` reader sees the same identity
-                // clear as the arena.
+                // clear as the arena. Round-6 review fixup: when
+                // `PfixFrameEntityC` is present, the referenced entity
+                // must be alive with FrameRotC / FrameAngVelC intact;
+                // silently skipping the clear would leave the ECS
+                // pfix rotation/omega frozen at the last rotating-tick
+                // value while the arena is reset to identity, breaking
+                // the dual-write invariant.
                 if let Some(pfix_fe) = pfix_frame_entity {
-                    if let Ok(mut frame_rot) = frame_rots.get_mut(pfix_fe.0) {
-                        *frame_rot = FrameRotC::default();
-                    }
-                    if let Ok(mut frame_av) = frame_ang_vels.get_mut(pfix_fe.0) {
-                        frame_av.0 = glam::DVec3::ZERO;
-                    }
+                    let mut frame_rot = frame_rots.get_mut(pfix_fe.0).unwrap_or_else(|err| {
+                        panic!(
+                            "planet_fixed_rotation_system (RotationModel::None \
+                             clear): source {entity:?} has PfixFrameEntityC({:?}) \
+                             but that entity has no FrameRotC ({err:?}). The \
+                             pfix frame entity must be alive with FrameRotC / \
+                             FrameAngVelC attached (spawned by \
+                             register_pfix_frames_system). Either remove the \
+                             stale PfixFrameEntityC marker before despawning \
+                             the pfix frame entity, or ensure the pfix frame \
+                             entity stays alive for as long as the source \
+                             carries the handle.",
+                            pfix_fe.0
+                        )
+                    });
+                    *frame_rot = FrameRotC::default();
+                    let mut frame_av = frame_ang_vels.get_mut(pfix_fe.0).unwrap_or_else(|err| {
+                        panic!(
+                            "planet_fixed_rotation_system (RotationModel::None \
+                             clear): source {entity:?} has PfixFrameEntityC({:?}) \
+                             but that entity has no FrameAngVelC ({err:?}). The \
+                             pfix frame entity must be alive with FrameRotC / \
+                             FrameAngVelC attached (spawned by \
+                             register_pfix_frames_system). Either remove the \
+                             stale PfixFrameEntityC marker before despawning \
+                             the pfix frame entity, or ensure the pfix frame \
+                             entity stays alive for as long as the source \
+                             carries the handle.",
+                            pfix_fe.0
+                        )
+                    });
+                    frame_av.0 = glam::DVec3::ZERO;
                 }
                 // Clearing the pfix node's matrix/omega isn't enough
                 // on its own — consumers that branch on the *presence*
