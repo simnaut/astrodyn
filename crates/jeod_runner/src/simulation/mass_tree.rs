@@ -1264,4 +1264,279 @@ mod tests {
         // Confirm a subsequent step doesn't trip the IG.37 assertion.
         sim.step_n(1).expect("post-detach step failed");
     }
+
+    // ── detach_subtree IG.37 wiring ─────────────────────────────────
+    //
+    // The next two tests cover the inline mark+reset block at the end
+    // of `Simulation::detach_subtree`'s `parent_is_integrated` branch.
+    // Without them, a regression that drops the reset call would still
+    // pass `detach_resets_*` above, since those only exercise the
+    // simpler `Simulation::detach` (no subtree state propagation).
+    // PR #282 review thread `PRRT_kwDORtae6c5_KoAQ`.
+    //
+    // ## Why we splice integrator state in by hand
+    //
+    // `Simulation::detach_subtree` requires a 6-DOF integrated body
+    // (it reads `body.rot` to propagate the subtree's composite-CoM
+    // state). `Simulation::validate` forbids the only integrators
+    // that own multi-step history (GJ / ABM4) on 6-DOF bodies — see
+    // `ValidationError::GaussJacksonWith6Dof` / `Abm4With6Dof`. So an
+    // end-to-end test of the inline reset block can't go through
+    // `validate` + `step_n()` today.
+    //
+    // The reset block IS still on the production code path: it guards
+    // future re-enablement of GJ/ABM4 with rotational dynamics, *and*
+    // it guards external callers who construct a 6-DOF SimBody and
+    // splice in `gj_state` / `abm4_state` themselves (e.g. from
+    // integration-tests like these, or from a downstream crate that
+    // bypasses our validator). The fail-loud safety net for *those*
+    // callers is the IG.37 panic in `integrate()`.
+    //
+    // Each test below:
+    //   1. Builds a 3-body mass-tree chain `cm → middle → leaf` with
+    //      a 6-DOF RK4-integrated `cm` (so it passes `validate`).
+    //   2. Splices a `GaussJacksonState` / `Abm4State` directly onto
+    //      `cm` after validate, then advances the state past priming
+    //      using the integrator's own public API at a constant
+    //      zero-accel function (we don't need realistic dynamics —
+    //      only a state that is observably *past* priming).
+    //   3. Asserts pre-state: `is_priming() == false` AND
+    //      `is_topology_dirty() == false`.
+    //   4. Calls `detach_subtree(cm_idx, leaf)` — the leaf node sits
+    //      below `middle`, so the `chain` walk inside detach_subtree
+    //      iterates over both `middle` and `leaf` (a non-trivial
+    //      `propagate_forward` chain).
+    //   5. Asserts post-state: integrator is back in priming AND not
+    //      topology-dirty. Both flags moving together is the
+    //      signature of `reset_for_topology_change` having run —
+    //      since `mark_topology_dirty` alone never touches
+    //      `is_priming`. If a regression drops the inline reset call
+    //      inside `detach_subtree`, this assertion fails (the test
+    //      fails on the `is_priming` check).
+    //
+    // The accompanying `dirty_*_state_panics_on_integrate` tests
+    // independently verify the IG.37 fail-loud panic that backs the
+    // mark site: pre-mark dirty (simulating the case where mark
+    // fired but reset was forgotten), then run `integrate()` and
+    // assert the panic message naming the IG.37 diagnostic.
+
+    /// Set up a 3-body mass-tree chain `cm → middle → leaf` with a
+    /// 6-DOF RK4-integrated `cm`. The chain has a non-trivial
+    /// `propagate_forward` walk inside `detach_subtree(cm_idx, leaf)`
+    /// (the `chain` loop iterates over both `middle` and `leaf`).
+    /// Returns the simulation, the integrated-body index, and the
+    /// mass-tree ids of `cm`, `middle`, `leaf`.
+    fn build_three_body_chain_with_rot() -> (Simulation, usize, MassBodyId, MassBodyId, MassBodyId)
+    {
+        const MU: f64 = 5.76e14;
+        let dt = 1.0_f64;
+
+        let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+        let mut sim = Simulation::new(time, dt);
+
+        let earth = sim.add_source(
+            "Earth",
+            GravitySourceEntry {
+                source: GravitySource {
+                    mu: MU,
+                    model: GravityModel::PointMass,
+                },
+                position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+                velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
+                t_inertial_pfix: None,
+                delta_c20: 0.0,
+                rotation_model: crate::RotationModel::default(),
+                tidal_config: None,
+                planet_omega: 0.0,
+                central: true,
+            },
+        );
+
+        // 6-DOF + RK4 (so it passes validate). We splice GJ/ABM4 state
+        // in by hand after validate to exercise detach_subtree's IG.37
+        // reset block — see the module-level comment above for why.
+        let cm_idx = sim.add_body(VehicleConfig {
+            trans: TranslationalState {
+                position: DVec3::new(9e6, 0.0, 0.0),
+                velocity: DVec3::new(0.0, 8000.0, 0.0),
+            },
+            rot: Some(jeod_sim::RotationalState::default()),
+            integrator: IntegratorType::Rk4,
+            mass: Some(MassProperties::new(1000.0)),
+            gravity_controls: GravityControls {
+                controls: vec![GravityControl::new_spherical(earth, false)],
+            },
+            ..Default::default()
+        });
+
+        let cm_id = sim.add_body_to_tree(cm_idx, "cm");
+
+        // Tree-only subtree nodes (no Simulation body / integrator).
+        let tree = sim
+            .mass_tree
+            .as_mut()
+            .expect("mass tree must be initialised by add_body_to_tree above");
+        let middle = tree.add_body("middle".into(), MassProperties::new(500.0));
+        let leaf = tree.add_body("leaf".into(), MassProperties::new(250.0));
+
+        // cm → middle → leaf at unit offsets, identity rotations.
+        tree.attach(middle, cm_id, DVec3::new(1.0, 0.0, 0.0), DMat3::IDENTITY);
+        tree.attach(leaf, middle, DVec3::new(1.0, 0.0, 0.0), DMat3::IDENTITY);
+
+        sim.sync_body_mass_from_tree(cm_idx);
+
+        (sim, cm_idx, cm_id, middle, leaf)
+    }
+
+    /// Drive a `GaussJacksonState` past priming using its public
+    /// `integrate()` API at constant zero acceleration. The post-step
+    /// state values aren't used — only the priming flag is.
+    fn drive_gj_past_priming(gj: &mut jeod_dynamics::GaussJacksonState) {
+        let dt = 1.0_f64;
+        let mut state = TranslationalState {
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+        };
+        // GJ8 needs ~50 stages to bootstrap; 200 stages is comfortably past.
+        for _ in 0..200 {
+            let _ = gj.integrate(dt, 1.0, DVec3::ZERO, &mut state);
+        }
+        assert!(
+            !gj.is_priming(),
+            "test setup: drive_gj_past_priming did not exit priming after 200 stages"
+        );
+    }
+
+    /// Drive an `Abm4State` past priming using `abm4_translational_step`
+    /// at constant zero acceleration. ABM4 primes after `HIST_LEN - 1 = 3`
+    /// steps; 5 is comfortably past.
+    fn drive_abm4_past_priming(abm: &mut jeod_dynamics::Abm4State) {
+        let dt = 1.0_f64;
+        let mut state = TranslationalState {
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+        };
+        for _ in 0..5 {
+            state = jeod_dynamics::abm4_translational_step(&state, |_s, _t| DVec3::ZERO, dt, abm);
+        }
+        assert!(
+            !abm.is_priming(),
+            "test setup: drive_abm4_past_priming did not exit priming after 5 stages"
+        );
+    }
+
+    /// `Simulation::detach_subtree` must reset the integrated body's
+    /// Gauss-Jackson history after the topology mutation. Build a
+    /// 3-body chain, splice GJ state onto the integrated body, drive
+    /// past priming, detach the deepest leaf (a non-trivial chain walk
+    /// inside `detach_subtree`), and verify the integrator is reset.
+    /// PR #282 review thread `PRRT_kwDORtae6c5_KoAQ`.
+    #[test]
+    fn detach_subtree_resets_gauss_jackson_state_on_integrated_body() {
+        let (mut sim, cm_idx, _cm_id, _middle, leaf) = build_three_body_chain_with_rot();
+        sim.validate().expect("validate failed");
+
+        // Splice GJ8 state onto cm post-validate (validate forbids
+        // GJ+6DOF; we're exercising the inline reset block defensively).
+        let cfg = GaussJacksonConfig::with_order(8);
+        let mut gj = jeod_dynamics::GaussJacksonState::new(cfg);
+        drive_gj_past_priming(&mut gj);
+        assert!(!gj.is_topology_dirty());
+        sim.bodies[cm_idx].gj_state = Some(gj);
+
+        // ── detach_subtree: drops the leaf node. The chain walk
+        //    `cm → middle → leaf` exercises the `propagate_forward`
+        //    loop inside detach_subtree (lines 320–358). ──
+        sim.detach_subtree(cm_idx, leaf);
+
+        let gj_post = sim.bodies[cm_idx]
+            .gj_state
+            .as_ref()
+            .expect("integrated body must still have gj_state");
+        // is_priming flips back to true ONLY through
+        // reset_for_topology_change — proving the inline reset call
+        // inside detach_subtree fires. If a regression drops that
+        // call, this assertion fails.
+        assert!(
+            gj_post.is_priming(),
+            "cm's GJ state must be back in priming after detach_subtree (IG.37)"
+        );
+        assert!(
+            !gj_post.is_topology_dirty(),
+            "cm's GJ topology-dirty flag must be cleared by reset on detach_subtree (IG.37)"
+        );
+    }
+
+    /// ABM4 sibling of `detach_subtree_resets_gauss_jackson_state_*`.
+    /// PR #282 review thread `PRRT_kwDORtae6c5_KoAQ`.
+    #[test]
+    fn detach_subtree_resets_abm4_state_on_integrated_body() {
+        let (mut sim, cm_idx, _cm_id, _middle, leaf) = build_three_body_chain_with_rot();
+        sim.validate().expect("validate failed");
+
+        let mut abm = jeod_dynamics::Abm4State::new();
+        drive_abm4_past_priming(&mut abm);
+        assert!(!abm.is_topology_dirty());
+        sim.bodies[cm_idx].abm4_state = Some(abm);
+
+        sim.detach_subtree(cm_idx, leaf);
+
+        let abm_post = sim.bodies[cm_idx]
+            .abm4_state
+            .as_ref()
+            .expect("integrated body must still have abm4_state");
+        assert!(
+            abm_post.is_priming(),
+            "cm's ABM4 state must be back in priming after detach_subtree (IG.37)"
+        );
+        assert!(
+            !abm_post.is_topology_dirty(),
+            "cm's ABM4 topology-dirty flag must be cleared by reset on detach_subtree (IG.37)"
+        );
+    }
+
+    /// Verify the IG.37 fail-loud safety net actually fires when an
+    /// integrator is left dirty: simulate a regression where mark
+    /// fired but reset was forgotten by manually flipping the dirty
+    /// flag to true on a primed integrator, then call `integrate()`.
+    /// The test passes only if the integrator panics with the IG.37
+    /// diagnostic. This is the pair-half of the inline mark site in
+    /// detach_subtree — together they make any regression that drops
+    /// the Site B (reset) loud rather than silent.
+    #[test]
+    #[should_panic(expected = "topology")]
+    fn dirty_gauss_jackson_state_panics_on_integrate() {
+        let cfg = GaussJacksonConfig::with_order(8);
+        let mut gj = jeod_dynamics::GaussJacksonState::new(cfg);
+        drive_gj_past_priming(&mut gj);
+
+        // Simulate a regression where Site A (mark) fired but Site B
+        // (reset_for_topology_change) was forgotten.
+        gj.mark_topology_dirty();
+        assert!(gj.is_topology_dirty());
+
+        // The next integrate() must fail-loud per IG.37.
+        let mut state = TranslationalState {
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+        };
+        let _ = gj.integrate(1.0, 1.0, DVec3::ZERO, &mut state);
+    }
+
+    /// ABM4 sibling of `dirty_gauss_jackson_state_panics_on_integrate`.
+    #[test]
+    #[should_panic(expected = "topology")]
+    fn dirty_abm4_state_panics_on_integrate() {
+        let mut abm = jeod_dynamics::Abm4State::new();
+        drive_abm4_past_priming(&mut abm);
+
+        abm.mark_topology_dirty();
+        assert!(abm.is_topology_dirty());
+
+        let state = TranslationalState {
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+        };
+        let _ = jeod_dynamics::abm4_translational_step(&state, |_, _| DVec3::ZERO, 1.0, &mut abm);
+    }
 }
