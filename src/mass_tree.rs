@@ -104,7 +104,16 @@ pub struct CoreMassPropertiesC(pub MassProperties);
 /// and entity names out of the queries at construction so it has no
 /// lifetime tied to the `Query` borrows.
 pub struct MassTreeView {
-    parents: Vec<(Entity, Entity)>,
+    /// `child -> parent` lookup. Built once at construction so
+    /// [`MassStorage::parent`] is `O(1)` per call (PR #283 review
+    /// thread PRRT_kwDORtae6c5_KQUU). The kernel calls `parent`
+    /// inside its post-order walk; before this map existed the
+    /// impl was linearly scanning a `Vec<(child, parent)>`, breaking
+    /// the `O(n)` complexity the view's docstring advertises
+    /// (degraded the whole walk to `O(n²)`). The arena's
+    /// `MassTree::parent` achieves the same cost via slab indexing;
+    /// this is the ECS-side equivalent.
+    parent_by_child: HashMap<Entity, Entity>,
     /// Cached per-entity core view (mass, structure-point, name buffer).
     /// `name` owns the formatted entity-debug string the kernel uses
     /// for diagnostic panic messages.
@@ -158,7 +167,7 @@ impl MassTreeView {
         let mass_set: HashMap<Entity, ()> = mass_q.iter().map(|(e, _)| (e, ())).collect();
 
         let mut edge_data: HashMap<Entity, MassChildOf> = HashMap::new();
-        let mut parents: Vec<(Entity, Entity)> = Vec::new();
+        let mut parent_by_child: HashMap<Entity, Entity> = HashMap::new();
         let mut children_by_parent: HashMap<Entity, Vec<Entity>> = HashMap::new();
         for (child, edge) in parents_q.iter() {
             assert!(
@@ -169,7 +178,7 @@ impl MassTreeView {
                 parent = edge.parent
             );
             edge_data.insert(child, *edge);
-            parents.push((child, edge.parent));
+            parent_by_child.insert(child, edge.parent);
             children_by_parent
                 .entry(edge.parent)
                 .or_default()
@@ -206,7 +215,7 @@ impl MassTreeView {
         }
 
         Self {
-            parents,
+            parent_by_child,
             nodes,
             index,
             children_by_parent,
@@ -229,7 +238,13 @@ impl MassStorage for MassTreeView {
     type Id = Entity;
 
     fn parent(&self, id: Self::Id) -> Option<Self::Id> {
-        self.parents.iter().find(|(c, _)| *c == id).map(|(_, p)| *p)
+        // O(1) HashMap lookup against the `child -> parent` map
+        // built at construction time. Matches the asymptotic claim
+        // in the [`MassTreeView`] docstring (PR #283 review thread
+        // PRRT_kwDORtae6c5_KQUU). The arena's `MassTree::parent`
+        // achieves the same cost via slab indexing; this is the
+        // ECS-side equivalent.
+        self.parent_by_child.get(&id).copied()
     }
 
     fn node(&self, id: Self::Id) -> MassNodeView<'_> {
@@ -549,7 +564,7 @@ fn build_view_from_cores(
     names_q: &Query<&Name>,
 ) -> MassTreeView {
     let mut edge_data: HashMap<Entity, MassChildOf> = HashMap::new();
-    let mut parents: Vec<(Entity, Entity)> = Vec::new();
+    let mut parent_by_child: HashMap<Entity, Entity> = HashMap::new();
     let mut children_by_parent: HashMap<Entity, Vec<Entity>> = HashMap::new();
     for (child, edge) in parents_q.iter() {
         // Fail-loud (PR #283 review thread PRRT_kwDORtae6c5_KBwP):
@@ -566,7 +581,7 @@ fn build_view_from_cores(
             parent = edge.parent
         );
         edge_data.insert(child, *edge);
-        parents.push((child, edge.parent));
+        parent_by_child.insert(child, edge.parent);
         children_by_parent
             .entry(edge.parent)
             .or_default()
@@ -602,7 +617,7 @@ fn build_view_from_cores(
     }
 
     MassTreeView {
-        parents,
+        parent_by_child,
         nodes,
         index,
         children_by_parent,
@@ -957,6 +972,60 @@ mod tests {
             before_tick, after_tick,
             "fast path should not touch MassPropertiesC: change tick advanced from {before_tick:?} to {after_tick:?}"
         );
+    }
+
+    #[test]
+    fn mass_tree_view_parent_lookup_matches_storage() {
+        // PR #283 review thread PRRT_kwDORtae6c5_KQUU: the
+        // `MassStorage::parent` impl on `MassTreeView` must do an
+        // `O(1)` HashMap lookup against the pre-built
+        // `parent_by_child` map and return the same answer the old
+        // linear-scan impl returned. We can't directly observe the
+        // asymptotic cost from a unit test, but we can pin the
+        // semantics so a future regression that breaks lookup
+        // correctness fires here.
+        use bevy::ecs::system::RunSystemOnce;
+
+        let mut app = add_test_app();
+
+        let parent = app
+            .world_mut()
+            .spawn(MassPropertiesC::from(MassProperties::new(10.0)))
+            .id();
+        let child_a = app
+            .world_mut()
+            .spawn((
+                MassPropertiesC::from(MassProperties::new(2.0)),
+                MassChildOf::new(parent, DVec3::new(1.0, 0.0, 0.0)),
+            ))
+            .id();
+        let child_b = app
+            .world_mut()
+            .spawn((
+                MassPropertiesC::from(MassProperties::new(3.0)),
+                MassChildOf::new(parent, DVec3::new(0.0, 1.0, 0.0)),
+            ))
+            .id();
+        let lone_root = app
+            .world_mut()
+            .spawn(MassPropertiesC::from(MassProperties::new(7.0)))
+            .id();
+
+        // Build the view via the public from_queries entry point.
+        // This exercises the construction-time HashMap population.
+        let probe = move |mass_q: Query<(Entity, &MassPropertiesC)>,
+                          parents_q: Query<(Entity, &MassChildOf)>,
+                          names_q: Query<&Name>| {
+            let view = MassTreeView::from_queries(&mass_q, &parents_q, &names_q);
+            assert_eq!(view.parent(child_a), Some(parent));
+            assert_eq!(view.parent(child_b), Some(parent));
+            assert_eq!(view.parent(parent), None);
+            assert_eq!(view.parent(lone_root), None);
+        };
+
+        app.world_mut()
+            .run_system_once(probe)
+            .expect("probe system runs");
     }
 
     /// PR #283 review thread PRRT_kwDORtae6c5_KHnh — `MassTreeQueries`
