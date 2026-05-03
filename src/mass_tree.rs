@@ -120,6 +120,13 @@ pub struct MassTreeView {
     nodes: Vec<MassNodeRecord>,
     /// Map: query entity → index into `nodes`.
     index: HashMap<Entity, usize>,
+    /// Entities in deterministic insertion order. Built in lockstep
+    /// with `nodes` so `iter_entities` can advertise — and actually
+    /// honour — a stable order across runs without depending on
+    /// `HashMap` iteration order. The wrench-aggregation system reads
+    /// this when it needs a deterministic walk over every mass-bearing
+    /// node; order matches `nodes` 1:1.
+    entities_in_order: Vec<Entity>,
     children_by_parent: HashMap<Entity, Vec<Entity>>,
     roots: Vec<Entity>,
 }
@@ -204,6 +211,7 @@ impl MassTreeView {
 
         let mut nodes: Vec<MassNodeRecord> = Vec::new();
         let mut index: HashMap<Entity, usize> = HashMap::new();
+        let mut entities_in_order: Vec<Entity> = Vec::new();
         let mut roots: Vec<Entity> = Vec::new();
 
         for (entity, mass) in mass_q.iter() {
@@ -226,6 +234,7 @@ impl MassTreeView {
                 name,
             });
             index.insert(entity, idx);
+            entities_in_order.push(entity);
             if !edge_data.contains_key(&entity) {
                 roots.push(entity);
             }
@@ -235,6 +244,7 @@ impl MassTreeView {
             parent_by_child,
             nodes,
             index,
+            entities_in_order,
             children_by_parent,
             roots,
         }
@@ -259,11 +269,15 @@ impl MassTreeView {
     /// Iterator over every registered entity in the view, in
     /// insertion order. Used by the wrench-aggregation system to walk
     /// each mass-bearing entity once.
+    ///
+    /// Order matches the order in which entities were observed in
+    /// `mass_q.iter()` at construction time, captured into
+    /// `entities_in_order` then. Iterating `self.index.keys()`
+    /// (a `HashMap`) would be nondeterministic across runs and any
+    /// caller relying on the documented ordering would see flaky
+    /// behaviour.
     pub fn iter_entities(&self) -> impl Iterator<Item = Entity> + '_ {
-        // `roots` is computed from `nodes` insertion order; rebuild
-        // by enumerating the nodes vector against `index`. Cheap
-        // O(N) materialisation.
-        self.index.keys().copied().collect::<Vec<_>>().into_iter()
+        self.entities_in_order.iter().copied()
     }
 
     /// Iterator over every root entity in the view. A root is an
@@ -852,9 +866,18 @@ fn build_view_from_cores(
 
     let mut nodes: Vec<MassNodeRecord> = Vec::new();
     let mut index: HashMap<Entity, usize> = HashMap::new();
+    let mut entities_in_order: Vec<Entity> = Vec::new();
     let mut roots: Vec<Entity> = Vec::new();
 
-    for (&entity, &core) in cores {
+    // `cores` is a `HashMap`, so iterate it through a deterministic
+    // ordering (entity bits) to keep `entities_in_order` stable across
+    // runs. The `iter_entities` contract advertises a stable order;
+    // walking `cores.iter()` directly would expose `HashMap`
+    // nondeterminism right back into the view.
+    let mut sorted_entities: Vec<Entity> = cores.keys().copied().collect();
+    sorted_entities.sort_by_key(|e| e.to_bits());
+    for entity in sorted_entities {
+        let core = cores[&entity];
         let structure_point = match edge_data.get(&entity) {
             Some(edge) => MassPointState {
                 position: edge.offset,
@@ -873,6 +896,7 @@ fn build_view_from_cores(
             name,
         });
         index.insert(entity, idx);
+        entities_in_order.push(entity);
         if !edge_data.contains_key(&entity) {
             roots.push(entity);
         }
@@ -882,6 +906,7 @@ fn build_view_from_cores(
         parent_by_child,
         nodes,
         index,
+        entities_in_order,
         children_by_parent,
         roots,
     }
@@ -2031,5 +2056,67 @@ mod tests {
             "build_view used stale cache: {} (expected 13 after parent core edit 10 -> 8)",
             p.parent_composite_mass
         );
+    }
+
+    /// `MassTreeView::iter_entities` documents an insertion-ordered
+    /// walk; iterating a `HashMap`'s keys would have given a
+    /// nondeterministic order across runs. Pin the contract: build the
+    /// same view twice (each call constructs a fresh view from the same
+    /// world) and verify that the two iteration orders match exactly,
+    /// and that two calls on the same view return identical orders.
+    #[test]
+    fn iter_entities_is_deterministic_across_views() {
+        let mut app = add_test_app();
+        // Spawn a handful of entities with mass properties + parent
+        // links so the view has both leaf and internal nodes.
+        let root = app
+            .world_mut()
+            .spawn(MassPropertiesC::from(MassProperties::new(10.0)))
+            .id();
+        let mut children = Vec::new();
+        for i in 0..5 {
+            let c = app
+                .world_mut()
+                .spawn((
+                    MassPropertiesC::from(MassProperties::new(1.0 + i as f64)),
+                    MassChildOf::new(root, DVec3::new(i as f64, 0.0, 0.0)),
+                ))
+                .id();
+            children.push(c);
+        }
+
+        // System param: returns the iter_entities order for a fresh
+        // view, plus a second walk on the same view (to pin
+        // intra-view stability).
+        let probe = app.world_mut().register_system(
+            |mass_q: Query<(Entity, &MassPropertiesC)>,
+             parents_q: Query<(Entity, &MassChildOf)>,
+             names_q: Query<&Name>|
+             -> (Vec<Entity>, Vec<Entity>) {
+                let view = MassTreeView::from_queries(&mass_q, &parents_q, &names_q);
+                (view.iter_entities().collect(), view.iter_entities().collect())
+            },
+        );
+
+        let (view_a_first, view_a_second) = app.world_mut().run_system(probe).expect("view_a");
+        assert_eq!(
+            view_a_first, view_a_second,
+            "iter_entities returned different orders on the same view: {:?} vs {:?}",
+            view_a_first, view_a_second,
+        );
+
+        let (view_b_first, _) = app.world_mut().run_system(probe).expect("view_b");
+        assert_eq!(
+            view_a_first, view_b_first,
+            "iter_entities order differed between two views built against the same world: \
+             {view_a_first:?} vs {view_b_first:?}"
+        );
+
+        // Sanity: every spawned entity must appear exactly once.
+        let mut sorted_a = view_a_first.clone();
+        sorted_a.sort_by_key(|e| e.to_bits());
+        let mut expected: Vec<Entity> = std::iter::once(root).chain(children).collect();
+        expected.sort_by_key(|e| e.to_bits());
+        assert_eq!(sorted_a, expected, "view missing entities: {view_a_first:?}");
     }
 }
