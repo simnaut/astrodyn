@@ -73,7 +73,11 @@ pub struct JointKinematicsSpec {
 /// `[0, 0, 2]`) panics. Same order of magnitude as
 /// `jeod_math::quaternion::NORM_LIMIT` (the JEOD fast-path bound on
 /// quaternion magnitude).
-const AXIS_NORM_TOL: f64 = 1.0e-6;
+///
+/// Exposed as part of the public surface so callers that pre-validate
+/// axes upstream of [`evaluate`] can match the kernel's exact bound
+/// rather than hard-coding a parallel literal that might drift.
+pub const AXIS_NORM_TOL: f64 = 1.0e-6;
 
 /// Evaluate the joint kinematics at elapsed time `t` (seconds since
 /// the joint's `initial_angle_rad` reference).
