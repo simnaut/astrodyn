@@ -329,15 +329,34 @@ impl MassStorage for MassTreeView {
 /// pre-system one-shot recomposition). Mission code that wants the
 /// composite reads [`Self::composite_mass`] (or `MassPropertiesC`
 /// directly).
+///
+/// **Mid-tick freshness (PR #283 review threads
+/// PRRT_kwDORtae6c5_KiLU and PRRT_kwDORtae6c5_KiLY).** Both
+/// [`Self::core_mass`] and [`Self::build_view`] compare the entity's
+/// `MassPropertiesC` change tick against the cache's change tick.
+/// When mission code edits `MassPropertiesC` *after* the most recent
+/// [`composite_mass_system`] run (e.g. mid-tick fuel burn / staging
+/// followed by an out-of-schedule
+/// [`Self::recompute_composites`]), the read prefers the live value
+/// over the now-stale cache — same-tick mass edits are visible
+/// without waiting for the next scheduled system run. The system's
+/// own write-back uses
+/// [`bevy::ecs::change_detection::DetectChangesMut::bypass_change_detection`]
+/// so it does not falsely advance the live `MassPropertiesC` change
+/// tick past the cache.
 #[derive(SystemParam)]
 pub struct MassTreeQueries<'w, 's> {
-    /// Per-entity live mass / inertia / CoM. Once
-    /// [`composite_mass_system`] has run, this holds the
-    /// **composite** for non-leaf entities. Use
-    /// [`Self::core_mass`] to read the per-entity core (pre-Steiner)
-    /// values. Use [`Self::composite_mass`] when the composite is
-    /// what's needed.
-    pub mass: Query<'w, 's, (Entity, &'static MassPropertiesC)>,
+    /// Per-entity live mass / inertia / CoM, read as [`Ref`] so the
+    /// freshness comparison in [`Self::core_mass`] /
+    /// [`Self::build_view`] (PR #283 review threads
+    /// PRRT_kwDORtae6c5_KiLU and PRRT_kwDORtae6c5_KiLY) can compare
+    /// the live component's `last_changed()` tick against the
+    /// `CoreMassPropertiesC` cache. Once [`composite_mass_system`]
+    /// has run, this holds the **composite** for non-leaf entities.
+    /// Use [`Self::core_mass`] to read the per-entity core
+    /// (pre-Steiner) values. Use [`Self::composite_mass`] when the
+    /// composite is what's needed.
+    pub mass: Query<'w, 's, (Entity, Ref<'static, MassPropertiesC>)>,
     /// `MassChildOf(parent)` parent links. Only a subset of `mass` —
     /// roots don't carry one.
     pub parents: Query<'w, 's, (Entity, &'static MassChildOf)>,
@@ -349,7 +368,21 @@ pub struct MassTreeQueries<'w, 's> {
     /// the cache type itself is rustdoc-hidden. This field exists
     /// only so `core_mass` can route the read through the
     /// `SystemParam`'s scheduler-managed access set.
-    pub(crate) cores: Query<'w, 's, &'static CoreMassPropertiesC>,
+    ///
+    /// Read as [`Ref`] so the staleness comparison in
+    /// [`Self::core_mass`] (PR #283 review thread
+    /// PRRT_kwDORtae6c5_KiLU) can read the cache's `last_changed()`
+    /// tick.
+    pub(crate) cores: Query<'w, 's, Ref<'static, CoreMassPropertiesC>>,
+    /// Current / previous system tick, for the wraparound-safe
+    /// `Tick::is_newer_than(last_run, this_run)` comparison used by
+    /// the staleness gates in [`Self::core_mass`] /
+    /// [`Self::build_view`] (PR #283 review threads
+    /// PRRT_kwDORtae6c5_KiLU and PRRT_kwDORtae6c5_KiLY). A naive
+    /// `last_changed().get() > …` comparison would mis-order across
+    /// the rare tick wraparound that Bevy clamps to ensure
+    /// determinism; the helper accounts for it.
+    pub(crate) ticks: bevy::ecs::system::SystemChangeTick,
 }
 
 impl MassTreeQueries<'_, '_> {
@@ -366,6 +399,21 @@ impl MassTreeQueries<'_, '_> {
     /// run yet, so live == core trivially) and for one-shot use
     /// before any composition has occurred.
     ///
+    /// **Mid-tick freshness (PR #283 review thread
+    /// PRRT_kwDORtae6c5_KiLU).** When mission code edits
+    /// `MassPropertiesC` mid-tick (after the most recent
+    /// [`composite_mass_system`] run), the cache is stale until the
+    /// next scheduled run. This method falls through to the live
+    /// `MassPropertiesC` whenever its `last_changed()` tick is
+    /// strictly newer than the cache's, so same-tick edits on
+    /// **leaf** entities are visible immediately. Note that for
+    /// non-leaf entities the live `MassPropertiesC` is the
+    /// *composite*, not the core, so a mid-tick edit to a non-leaf's
+    /// `MassPropertiesC` is ambiguous — mission code that wants
+    /// pre-Steiner edits on a non-leaf must call
+    /// [`Self::recompute_composites`] (or wait for the next
+    /// scheduled system run) to refresh the cache.
+    ///
     /// Returns `None` for an entity that carries neither component,
     /// matching `Query::get`'s semantics. Callers should treat that
     /// as "not a mass-tree entity" rather than zero mass.
@@ -374,8 +422,22 @@ impl MassTreeQueries<'_, '_> {
     /// where mission code had no read path to a non-leaf entity's
     /// core, since [`MassPropertiesC`] post-system is the composite.
     pub fn core_mass(&self, entity: Entity) -> Option<jeod_sim::MassProperties> {
+        // Mid-tick freshness gate: if the live `MassPropertiesC`
+        // has been changed *after* the cache was last refreshed,
+        // treat the cache as stale and prefer the live value (PR
+        // #283 review thread PRRT_kwDORtae6c5_KiLU). Otherwise the
+        // cache is the source of truth — for non-leaf entities the
+        // cache holds the per-entity core while live holds the
+        // composite, so reading live unconditionally would
+        // silently swap composite for core.
         if let Ok(core) = self.cores.get(entity) {
-            return Some(core.0);
+            let live_newer = self.mass.get(entity).ok().is_some_and(|(_, m)| {
+                m.last_changed()
+                    .is_newer_than(core.last_changed(), self.ticks.this_run())
+            });
+            if !live_newer {
+                return Some(core.0);
+            }
         }
         self.mass.get(entity).ok().map(|(_, m)| m.0.to_untyped())
     }
@@ -408,6 +470,15 @@ impl MassTreeQueries<'_, '_> {
     /// one-shot system after the schedule has run **must** route
     /// through this method.
     ///
+    /// **Mid-tick freshness (PR #283 review thread
+    /// PRRT_kwDORtae6c5_KiLY).** Same per-entity tick comparison as
+    /// [`Self::core_mass`]: when the live `MassPropertiesC` has been
+    /// edited *after* the cache was last refreshed, the per-entity
+    /// core in the constructed view is the live value rather than
+    /// the stale cache, so an out-of-schedule
+    /// [`Self::recompute_composites`] called immediately after a
+    /// mission-code edit reflects that edit.
+    ///
     /// The returned view is fully owned (snapshots core properties
     /// and names at construction); callers can then drive
     /// [`jeod_sim::recompute_composites_via_storage`] without
@@ -418,11 +489,25 @@ impl MassTreeQueries<'_, '_> {
         // `MassPropertiesC` is now the composite), live
         // `MassPropertiesC` second (covers leaves and freshly-spawned
         // entities the system hasn't seen yet — correct because for
-        // those live == core).
+        // those live == core). When the live `MassPropertiesC` was
+        // edited *after* the cache was last refreshed, prefer the
+        // live value so a mid-tick edit drives the next
+        // recomposition (PR #283 review thread
+        // PRRT_kwDORtae6c5_KiLY).
         let mut cores: HashMap<Entity, MassProperties> = HashMap::new();
+        let this_run = self.ticks.this_run();
         for (entity, mass) in self.mass.iter() {
             let core = match self.cores.get(entity) {
-                Ok(c) => c.0,
+                Ok(c) => {
+                    if mass
+                        .last_changed()
+                        .is_newer_than(c.last_changed(), this_run)
+                    {
+                        mass.0.to_untyped()
+                    } else {
+                        c.0
+                    }
+                }
                 Err(_) => mass.0.to_untyped(),
             };
             cores.insert(entity, core);
@@ -1630,5 +1715,120 @@ mod tests {
         // run_system propagates panics from inside the registered
         // system back to the caller; #[should_panic] catches it.
         app.world_mut().run_system(id).expect("system runs");
+    }
+
+    /// PR #283 review thread `PRRT_kwDORtae6c5_KiLU` — a mission-code
+    /// mid-tick edit of `MassPropertiesC` on a leaf entity must be
+    /// reflected by `MassTreeQueries::core_mass` immediately, not
+    /// deferred to the next `composite_mass_system` run.
+    #[test]
+    fn core_mass_reflects_midtick_edit_on_leaf() {
+        let mut app = add_test_app();
+        app.add_systems(Update, composite_mass_system);
+
+        let leaf = app
+            .world_mut()
+            .spawn(MassPropertiesC::from(MassProperties::new(10.0)))
+            .id();
+        // Run once so the cache is seeded.
+        app.update();
+
+        // Mid-tick edit: simulate fuel burn / staging by overwriting
+        // `MassPropertiesC` between system runs.
+        {
+            let mut p = app.world_mut().get_mut::<MassPropertiesC>(leaf).unwrap();
+            *p = MassPropertiesC::from(MassProperties::new(7.0));
+        }
+
+        #[derive(Resource, Default)]
+        struct Probe {
+            core_mass: f64,
+        }
+        app.insert_resource(Probe::default());
+        #[derive(Resource)]
+        struct Target(Entity);
+        app.insert_resource(Target(leaf));
+
+        fn read_core(queries: MassTreeQueries, mut out: ResMut<Probe>, t: Res<Target>) {
+            out.core_mass = queries.core_mass(t.0).expect("leaf has core mass").mass;
+        }
+        let id = app.world_mut().register_system(read_core);
+        app.world_mut().run_system(id).expect("read_core runs");
+
+        let p = app.world().resource::<Probe>();
+        assert!(
+            (p.core_mass - 7.0).abs() < 1e-12,
+            "stale cache returned: {} (expected 7 after mid-tick edit)",
+            p.core_mass
+        );
+    }
+
+    /// PR #283 review thread `PRRT_kwDORtae6c5_KiLY` —
+    /// `MassTreeQueries::build_view` must use the live
+    /// `MassPropertiesC` (not the stale cache) for any entity whose
+    /// live value was edited *after* the cache was last refreshed.
+    /// Without this, `recompute_composites` re-runs against the
+    /// pre-edit core and the next composite ignores the edit.
+    #[test]
+    fn build_view_reflects_midtick_edit_on_leaf() {
+        let mut app = add_test_app();
+        app.add_systems(Update, composite_mass_system);
+
+        let parent = app
+            .world_mut()
+            .spawn(MassPropertiesC::from(MassProperties::new(10.0)))
+            .id();
+        let _child = app
+            .world_mut()
+            .spawn((
+                MassPropertiesC::from(MassProperties::new(5.0)),
+                MassChildOf::new(parent, DVec3::new(2.0, 0.0, 0.0)),
+            ))
+            .id();
+        // Tick 1: parent composite becomes 15, cache holds core 10.
+        app.update();
+
+        // Mid-tick edit: mission code burns fuel on the parent —
+        // the contract says the caller writes the parent's new core
+        // into `MassPropertiesC`. Note the cache still holds 10
+        // until the next system run; an out-of-schedule
+        // `recompute_composites` should still see the new core 8.
+        {
+            let mut p = app.world_mut().get_mut::<MassPropertiesC>(parent).unwrap();
+            *p = MassPropertiesC::from(MassProperties::new(8.0));
+        }
+
+        #[derive(Resource, Default)]
+        struct Probe {
+            parent_composite_mass: f64,
+        }
+        app.insert_resource(Probe::default());
+        #[derive(Resource)]
+        struct Target(Entity);
+        app.insert_resource(Target(parent));
+
+        fn external_recompute(queries: MassTreeQueries, mut out: ResMut<Probe>, t: Res<Target>) {
+            let outputs = queries.recompute_composites();
+            out.parent_composite_mass = outputs
+                .iter()
+                .find(|(e, _)| *e == t.0)
+                .expect("parent in outputs")
+                .1
+                .composite
+                .mass;
+        }
+        let id = app.world_mut().register_system(external_recompute);
+        app.world_mut()
+            .run_system(id)
+            .expect("external_recompute runs");
+
+        let p = app.world().resource::<Probe>();
+        // Expected: parent core 8 + child 5 = 13. Stale-cache bug
+        // would re-use core 10 and give 15.
+        assert!(
+            (p.parent_composite_mass - 13.0).abs() < 1e-12,
+            "build_view used stale cache: {} (expected 13 after parent core edit 10 -> 8)",
+            p.parent_composite_mass
+        );
     }
 }
