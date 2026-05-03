@@ -49,8 +49,10 @@ fn build_app_with_joint(spec: JointKinematicsSpec) -> (App, Entity) {
     app.add_plugins(JeodPlugin);
     let entity = app
         .world_mut()
-        // FrameRotC / FrameAngVelC are auto-inserted via the
-        // #[require(...)] attribute on JointKinematicsC.
+        // FrameTransC / FrameRotC / FrameAngVelC are auto-inserted via
+        // the #[require(...)] attribute on JointKinematicsC, satisfying
+        // the frame-tree triplet contract that RelativeFrameState walks
+        // depend on.
         .spawn(JointKinematicsC(spec))
         .id();
     (app, entity)
