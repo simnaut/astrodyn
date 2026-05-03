@@ -94,6 +94,8 @@ const EXPECTED_REGISTERED_TYPE_PATHS: &[&str] = &[
     // Mass-tree relations (issue #271)
     "bevy_jeod::components::MassChildOf",
     "bevy_jeod::components::MassPointRef",
+    // Composite-rigid-body kinematic-children gate
+    "bevy_jeod::components::KinematicChildC",
     "bevy_jeod::components::PlanetC",
     "bevy_jeod::components::RotationModelC",
     "bevy_jeod::components::EphemerisBodyC",

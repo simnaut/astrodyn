@@ -56,6 +56,7 @@ pub mod sources;
 pub mod validation;
 pub mod vehicle_builder;
 pub mod vehicle_config;
+pub mod wrench;
 
 // ── Orchestration functions ──
 pub use atmosphere::{
@@ -108,6 +109,7 @@ pub use vehicle_config::{
     DerivedStateConfig, EarthLightingConfig, FrameSwitchConfig, GeodeticConfig, ShadowBody,
     SrpModel, SwitchSense, VehicleConfig,
 };
+pub use wrench::{aggregate_wrenches_via_storage, edge_geometry_from_composites, EdgeGeometry};
 
 // ── Re-exports from jeod_* crates ──
 // ECS adapters depend only on jeod_sim — these re-exports provide all the
@@ -115,11 +117,12 @@ pub use vehicle_config::{
 
 // jeod_dynamics: state types, force types, mass, config, frame utilities
 pub use jeod_dynamics::{
-    compute_node_composite, compute_t_inertial_struct, finalize_child_in_parent_frame,
-    recompute_composites_via_storage, DynamicsConfig, ForceContributions, FrameDerivatives,
-    GravityAcceleration, MassBodyId, MassNodeOutputs, MassNodeView, MassPointState, MassProperties,
-    MassStorage, MassTree, RotationalState, SixDofState, TotalForce, TranslationalState,
-    INERTIA_CONSISTENCY_TOL,
+    compute_frame_derivatives, compute_node_composite, compute_t_inertial_struct,
+    compute_translational_derivatives, finalize_child_in_parent_frame,
+    recompute_composites_via_storage, shift_wrench_to_parent, shift_wrench_to_parent_typed,
+    DynamicsConfig, ForceContributions, FrameDerivatives, GravityAcceleration, MassBodyId,
+    MassNodeOutputs, MassNodeView, MassPointState, MassProperties, MassStorage, MassTree,
+    RotationalState, SixDofState, TotalForce, TranslationalState, Wrench, INERTIA_CONSISTENCY_TOL,
 };
 
 // jeod_dynamics typed siblings (used by Bevy components after #172 H1
