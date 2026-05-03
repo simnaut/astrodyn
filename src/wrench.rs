@@ -255,11 +255,10 @@ pub fn wrench_aggregation_system(
         .any(|(_, link)| !link.t_parent_child.abs_diff_eq(DMat3::IDENTITY, 1e-12))
         || view.iter_entities().any(|e| {
             rot_q.get(e).is_ok_and(|r| {
-                let t = r
-                    .0
-                    .q_inertial_body
-                    .as_witness()
-                    .left_quat_to_transformation();
+                let t =
+                    r.0.q_inertial_body
+                        .as_witness()
+                        .left_quat_to_transformation();
                 !t.abs_diff_eq(DMat3::IDENTITY, 1e-12)
             })
         });
@@ -758,9 +757,7 @@ mod tests {
     /// carry its own `RotationalStateC` whenever the chain has any
     /// non-identity rotation.
     #[test]
-    #[should_panic(
-        expected = "is in a `MassChildOf` chain that contains a non-identity rotation"
-    )]
+    #[should_panic(expected = "is in a `MassChildOf` chain that contains a non-identity rotation")]
     fn child_with_attach_rotation_and_no_rotational_state_panics() {
         let mut app = add_test_app();
         let parent = app
@@ -1334,6 +1331,9 @@ mod tests {
         use bevy::time::Fixed;
         use std::time::Duration;
         const DT: f64 = 1.0;
+        // allowed: test-fixture FixedUpdate timestep; same pattern as
+        // `child_translational_state_does_not_drift_under_gravity`
+        // and the wider `tests/bevy_parity*.rs` integration tests.
         app.insert_resource(Time::<Fixed>::from_seconds(DT));
         app.add_systems(
             Update,
