@@ -1162,3 +1162,28 @@ pub struct DetachEvent {
     /// Entity to detach from its parent.
     pub child: Entity,
 }
+
+/// Composite-body inertial state of a free-flying mass-tree subtree
+/// that has been detached from its parent and is coasting
+/// ballistically (no force, no torque) until [`AttachEvent`] re-attaches
+/// it.
+///
+/// Inserted on the child entity by `staging_system`'s `DetachEvent`
+/// branch; removed by the `AttachEvent` branch when the same entity
+/// is re-attached. While present, [`step_detached_system`](crate::step_detached_system)
+/// advances the contained state by the schedule's fixed `dt` each
+/// tick — position drifts at `composite_velocity`, attitude rotates
+/// under `composite_ang_vel_body`. Also synchronizes the entity's
+/// own [`TranslationalStateC`] / [`RotationalStateC`] each tick so
+/// downstream consumers (gravity, derived state, mission code)
+/// continue to read the body's current inertial state from the
+/// canonical components rather than having to special-case detached
+/// vs integrated bodies.
+///
+/// Bevy mirror of `jeod_runner::Simulation::detached_subtrees`. Wraps
+/// [`jeod_sim::DetachedSubtreeState`] (which owns the JEOD scalar-first
+/// left-multiply attitude convention via
+/// [`jeod_sim::BodyAttitude<jeod_sim::SelfRef>`](jeod_sim::BodyAttitude)).
+#[derive(Component, Debug, Clone, Copy, Reflect)]
+#[reflect(opaque, Component)]
+pub struct DetachedSubtreeStateC(pub jeod_sim::DetachedSubtreeState);
