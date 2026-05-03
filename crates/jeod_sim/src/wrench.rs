@@ -145,32 +145,54 @@ pub fn aggregate_wrenches_via_storage<S: MassStorage>(
     // internal-node accumulator = own + sum(shift(child_acc)).
     let expected = storage.node_count();
     let mut acc: HashMap<S::Id, Wrench> = HashMap::with_capacity(expected);
-    let mut visited: std::collections::HashSet<S::Id> =
-        std::collections::HashSet::with_capacity(expected);
+    // Tri-state visit marker:
+    //   absent          → unvisited
+    //   Some(Visiting)  → on the active recursion stack (a back-edge to
+    //                     such a node means a cycle reachable from
+    //                     `roots()`)
+    //   Some(Visited)   → fully reduced; safe to reuse `acc[id]`
+    // A two-state `HashSet<Id>` (the previous shape) cannot tell the
+    // difference between "already reduced" and "currently above me on
+    // the recursion stack". A `MassChildOf` cycle reachable from a
+    // root would mark the back-edge target Visiting, the recursion
+    // would return early, and `acc.get(child)` would later read zero
+    // — silently dropping the child's contribution. This catches that
+    // case loudly per CLAUDE.md "Fail Loudly".
+    let mut state: HashMap<S::Id, VisitState> = HashMap::with_capacity(expected);
 
     let roots = storage.roots();
     let mut out: HashMap<S::Id, Wrench> = HashMap::with_capacity(roots.len());
     for root in &roots {
-        walk(storage, *root, wrenches, edges, &mut acc, &mut visited);
+        walk(storage, *root, wrenches, edges, &mut acc, &mut state);
         let root_acc = acc.get(root).copied().unwrap_or_else(Wrench::zero);
         out.insert(*root, root_acc);
     }
 
-    // Topology check: every node must have been visited by the
+    // Topology check: every node must have been fully reduced by the
     // root-rooted post-order walk. Mirrors the sibling assert in
-    // `recompute_composites_via_storage` and catches the same shape
-    // of bug (cycles, orphaned subtrees) per CLAUDE.md "Fail Loudly".
+    // `recompute_composites_via_storage` and catches orphaned subtrees
+    // (children whose parent isn't reachable from any root). Cycles
+    // reachable from `roots()` already panic inside `walk` — see the
+    // tri-state marker above.
+    let visited_count = state.len();
     assert!(
-        visited.len() == expected,
-        "MassStorage topology has a cycle or orphan: {} of {} nodes unreachable from roots(). \
+        visited_count == expected,
+        "MassStorage topology has an orphan: {} of {} nodes unreachable from roots(). \
          Wrench aggregation skipped {} child wrenches; composite-rigid-body integration would \
-         silently drop child forces. Check MassChildOf edges.",
-        expected.saturating_sub(visited.len()),
+         silently drop child forces. Check MassChildOf edges for parents that are not roots \
+         and not children of any other node.",
+        expected.saturating_sub(visited_count),
         expected,
-        expected.saturating_sub(visited.len()),
+        expected.saturating_sub(visited_count),
     );
 
     out
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VisitState {
+    Visiting,
+    Visited,
 }
 
 /// Convenience: build an [`EdgeGeometry`] map from the post-order
@@ -235,15 +257,35 @@ fn walk<S: MassStorage>(
     wrenches: &HashMap<S::Id, Wrench>,
     edges: &HashMap<S::Id, EdgeGeometry>,
     acc: &mut HashMap<S::Id, Wrench>,
-    visited: &mut std::collections::HashSet<S::Id>,
+    state: &mut HashMap<S::Id, VisitState>,
 ) {
-    if !visited.insert(id) {
-        return;
+    match state.get(&id) {
+        // Already reduced — `acc[id]` is its final value, just return.
+        // The caller's child loop will read it via `acc.get(&child)`.
+        Some(VisitState::Visited) => return,
+        // Back-edge to a node that's currently on the active recursion
+        // stack — that's a `MassChildOf` cycle reachable from
+        // `roots()`. Silently returning here would let the caller read
+        // a zero (in-progress) accumulator and aggregate a wrong
+        // composite force. Fail loudly per CLAUDE.md.
+        Some(VisitState::Visiting) => {
+            panic!(
+                "MassStorage topology has a cycle reachable from roots(): \
+                 node revisited while still on the active aggregation \
+                 stack. The composite-rigid-body wrench walk requires a \
+                 forest of trees rooted at `MassStorage::roots()`; remove \
+                 the back-edge from MassChildOf so the node's parent \
+                 chain terminates at a root."
+            );
+        }
+        None => {}
     }
+    state.insert(id, VisitState::Visiting);
+
     // 1. Recurse into children first (post-order: leaves accumulate
     //    before parents).
     for &child_id in storage.children(id) {
-        walk(storage, child_id, wrenches, edges, acc, visited);
+        walk(storage, child_id, wrenches, edges, acc, state);
     }
 
     // 2. Start with this node's own wrench (in the node's structural
@@ -262,7 +304,14 @@ fn walk<S: MassStorage>(
                  `recompute_composites_via_storage` output)."
             )
         });
-        let child_acc = acc.get(&child_id).copied().unwrap_or_else(Wrench::zero);
+        // The recursive `walk(child_id, …)` above must have promoted
+        // every child to `Visited` and inserted its final
+        // accumulator into `acc`. Anything else is a kernel
+        // invariant break — terse `expect` suffices (cycles already
+        // panic at the back-edge match arm above).
+        let child_acc = *acc
+            .get(&child_id)
+            .expect("post-order walk: child accumulator must be finalised before parent shift");
         let (df, dtau) = shift_wrench_to_parent(
             child_acc.force,
             child_acc.torque,
@@ -274,6 +323,7 @@ fn walk<S: MassStorage>(
     }
 
     acc.insert(id, node_acc);
+    state.insert(id, VisitState::Visited);
 }
 
 #[cfg(test)]
@@ -494,5 +544,79 @@ mod tests {
 
         let out = aggregate_wrenches_via_storage(&tree, &w, &comps);
         assert_eq!(out[&p], Wrench::zero());
+    }
+
+    /// Mock `MassStorage` that lets us construct topologies the
+    /// production `MassTree::attach` would refuse — specifically a
+    /// cycle reachable from `roots()`. Used only by the cycle-
+    /// detection regression test: nothing about its mass / structure
+    /// fields gets read by `aggregate_wrenches_via_storage`, so we
+    /// fill them with defaults.
+    struct CyclicStorage {
+        roots: Vec<u32>,
+        children: HashMap<u32, Vec<u32>>,
+        nodes: Vec<u32>,
+    }
+
+    impl MassStorage for CyclicStorage {
+        type Id = u32;
+        fn parent(&self, id: u32) -> Option<u32> {
+            // Not consulted by the aggregation walk.
+            self.children
+                .iter()
+                .find_map(|(p, kids)| kids.contains(&id).then_some(*p))
+        }
+        fn node(&self, _id: u32) -> jeod_dynamics::mass_storage::MassNodeView<'_> {
+            jeod_dynamics::mass_storage::MassNodeView {
+                core: MassProperties::new(1.0),
+                structure_point: jeod_dynamics::mass_body::MassPointState::default(),
+                name: "mock",
+            }
+        }
+        fn children(&self, id: u32) -> &[u32] {
+            self.children
+                .get(&id)
+                .map_or(&[][..], std::vec::Vec::as_slice)
+        }
+        fn roots(&self) -> Vec<u32> {
+            self.roots.clone()
+        }
+        fn node_count(&self) -> usize {
+            self.nodes.len()
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "cycle reachable from roots()")]
+    fn cycle_reachable_from_roots_panics_loudly() {
+        // Topology: 0 → 1 → 0  (2-cycle, with 0 reported as a root).
+        // The previous two-state visited HashSet would mark 0 as
+        // visited on entry, then the back-edge from 1 → 0 would just
+        // return early. The wrench map for 0 would never get its
+        // contribution from 1 folded in (because at the moment 1's
+        // child loop reads `acc[0]`, 0's accumulator does not yet
+        // exist — the previous code coalesced "missing" to "zero").
+        // The tri-state walker catches this at the back-edge.
+        let storage = CyclicStorage {
+            roots: vec![0],
+            children: {
+                let mut m = HashMap::new();
+                m.insert(0_u32, vec![1_u32]);
+                m.insert(1_u32, vec![0_u32]);
+                m
+            },
+            nodes: vec![0, 1],
+        };
+
+        // Wrenches and edges are placeholder identities — the panic
+        // fires before either is consulted past the cycle entry.
+        let mut wrenches: HashMap<u32, Wrench> = HashMap::new();
+        wrenches.insert(0, Wrench::new(DVec3::X, DVec3::ZERO));
+        wrenches.insert(1, Wrench::new(DVec3::Y, DVec3::ZERO));
+        let mut edges: HashMap<u32, EdgeGeometry> = HashMap::new();
+        edges.insert(0, EdgeGeometry::default());
+        edges.insert(1, EdgeGeometry::default());
+
+        let _ = aggregate_wrenches_via_storage(&storage, &wrenches, &edges);
     }
 }
