@@ -222,6 +222,70 @@ pub fn wrench_aggregation_system(
         return;
     }
 
+    // 1a. Validate frame discipline across every chain. The
+    //     structural-frame walk needs each entity's
+    //     `T_inertial_struct = T_struct_body^T · T_inertial_body` to
+    //     be correct, which means each entity must carry the
+    //     `RotationalStateC` that supplies `T_inertial_body`.
+    //     Defaulting that rotation to `IDENTITY` when the component
+    //     is missing would silently reinterpret the entity's
+    //     `Force<RootInertial>` as if it were already in the entity's
+    //     structural frame, propagating the wrong components
+    //     up the chain — a half-baked failure mode forbidden by
+    //     CLAUDE.md "Fail Loudly".
+    //
+    //     We only enforce this when the chain *contains a non-
+    //     trivial rotation*: a chain with every `MassChildOf
+    //     .t_parent_child = IDENTITY` and every member's
+    //     `RotationalStateC` either absent or identity has
+    //     `T_inertial_struct = I` everywhere by construction, so the
+    //     missing-component default is bit-correct. Adding the
+    //     panic only where the rotation actually matters keeps the
+    //     simple single-orbit / 3-DOF point-mass topologies free of
+    //     a `RotationalStateC` requirement they don't need.
+    //
+    //     The complete fix — kinematic propagation that derives a
+    //     missing child attitude from its parent's attitude composed
+    //     with `MassChildOf.t_parent_child`'s rotational component —
+    //     is the design-doc Section 15.3
+    //     `propagate_state_from_root_system`, tracked as a follow-up
+    //     to this PR (see issue #272).
+    let chain_has_rotation = parents_q
+        .iter()
+        .any(|(_, link)| !link.t_parent_child.abs_diff_eq(DMat3::IDENTITY, 1e-12))
+        || view.iter_entities().any(|e| {
+            rot_q.get(e).is_ok_and(|r| {
+                let t = r
+                    .0
+                    .q_inertial_body
+                    .as_witness()
+                    .left_quat_to_transformation();
+                !t.abs_diff_eq(DMat3::IDENTITY, 1e-12)
+            })
+        });
+    if chain_has_rotation {
+        for entity in view.iter_entities() {
+            assert!(
+                rot_q.get(entity).is_ok(),
+                "wrench_aggregation_system: entity {entity:?} is in a `MassChildOf` chain that \
+                 contains a non-identity rotation (parent attitude or attach `t_parent_child`), \
+                 but it has no `RotationalStateC` component. The structural-frame wrench walk \
+                 needs every chain member's `T_inertial_body` to be correct; defaulting it to \
+                 IDENTITY for this entity would silently treat its `Force<RootInertial>` as if \
+                 it were already in the entity's structural frame and aggregate a wrong \
+                 composite force.\n\nFix one of:\n  1. Add `RotationalStateC` to entity \
+                 {entity:?} (matching its parent's attitude — the typical case for a rigidly \
+                 attached appendage that does not yet have its own integrator).\n  2. Make every \
+                 link in the chain identity-attitude (no `MassChildOf.t_parent_child` \
+                 rotations, no parent `q_inertial_body` rotations) so the IDENTITY default is \
+                 correct.\n  3. Wait for the kinematic-propagation system (design-doc Section \
+                 15.3 `propagate_state_from_root_system`, follow-up to issue #272) to derive \
+                 the missing child attitude from the parent's attitude composed with the \
+                 attach rotation."
+            );
+        }
+    }
+
     // 2. Build per-edge geometry directly from `MassChildOf` + the
     //    live composite `MassPropertiesC`. `pcm_to_ccm` and the
     //    per-link `t_parent_child` are JEOD-faithful — see the
@@ -676,37 +740,27 @@ mod tests {
         assert_eq!(child_tf.torque, DVec3::ZERO);
     }
 
+    /// A `MassChildOf` chain with a non-identity attach rotation
+    /// must have `RotationalStateC` on every chain member —
+    /// otherwise `T_inertial_body` defaults to IDENTITY for the
+    /// missing entity and the structural-frame walk silently treats
+    /// the entity's `Force<RootInertial>` as if it were already in
+    /// the entity's structural frame, propagating the wrong
+    /// components up the chain. This is precisely the half-baked
+    /// failure mode forbidden by CLAUDE.md "Fail Loudly".
+    ///
+    /// Until the kinematic-propagation system (design-doc Section
+    /// 15.3 `propagate_state_from_root_system`, follow-up to issue
+    /// #272) lands and can derive a missing child attitude from
+    /// the parent's attitude composed with the attach rotation,
+    /// `wrench_aggregation_system` requires every chain member to
+    /// carry its own `RotationalStateC` whenever the chain has any
+    /// non-identity rotation.
     #[test]
-    fn child_with_attach_rotation_routes_force_through_structural_frames() {
-        // Child attached to parent with a non-identity `t_parent_child`
-        // (90° about +Z attach), at offset (1,0,0). Apply a force on
-        // the child whose typed phantom is `Force<RootInertial>`. With
-        // the child carrying no `RotationalStateC` and no
-        // `StructuralTransformC`, the entry boundary's
-        // `T_inertial_struct = identity`, so the walk treats the force
-        // as if expressed in the child's structural frame, then
-        // rotates *into the parent's structural frame* via
-        // `t_parent_child^T = R_z(-90°)`. This is the JEOD-faithful
-        // shape — the kernel is structural-frame native and assumes
-        // every entity hands it components already in its own
-        // structural frame.
-        //
-        // Setup: parent mass 10 at origin; child mass 5 attached at
-        //   offset (1,0,0) with attach rotation R_z(90°) (parent +x
-        //   maps to child +y in the JEOD `T_parent_this` convention).
-        //   t_pc columns = (0,1,0), (-1,0,0), (0,0,1)
-        //     ⇒ t_pc · (1,0,0)_parent = (0,1,0)_child ✓
-        //   t_pc^T columns = (0,-1,0), (1,0,0), (0,0,1)
-        //     ⇒ t_pc^T · (5,0,0)_child_struct = (0,-5,0)_parent_struct.
-        // Composite CoM: child.center_of_mass=(0,0,0) so
-        //   child_pos_in_parent_struct = t_pc^T · 0 + (1,0,0) = (1,0,0).
-        //   composite CoM = (10·0 + 5·1)/15 = (1/3,0,0).
-        //   pcm_to_ccm = (1,0,0) − (1/3,0,0) = (2/3, 0, 0).
-        // r × F_pstr = (2/3,0,0) × (0,-5,0) = (0,0,-10/3).
-        // Root attitude is identity (no RotationalStateC, no
-        // StructuralTransformC), so root struct = root body = root
-        // inertial: the aggregated parent-struct components are also
-        // the inertial / body components written back to TotalForceC.
+    #[should_panic(
+        expected = "is in a `MassChildOf` chain that contains a non-identity rotation"
+    )]
+    fn child_with_attach_rotation_and_no_rotational_state_panics() {
         let mut app = add_test_app();
         let parent = app
             .world_mut()
@@ -732,6 +786,71 @@ mod tests {
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
+                ext_force_in_root_inertial(DVec3::new(5.0, 0.0, 0.0)),
+                ExternalTorqueC::default(),
+            ))
+            .id();
+
+        run_pipeline(&mut app);
+    }
+
+    /// Same chain shape (parent + rotated-attach child), but every
+    /// chain member now carries `RotationalStateC = identity`. The
+    /// chain still has rotation (the attach `t_parent_child` is
+    /// non-identity), so the walk must use the per-link rotation
+    /// correctly; with explicit identity attitudes everywhere the
+    /// child's force is correctly interpreted as already in its
+    /// structural frame (since that frame coincides with inertial
+    /// at identity attitude), then rotated through the attach
+    /// rotation into the parent's structural frame.
+    ///
+    /// JEOD-derived analytical answer:
+    /// - Setup as in the panic case: parent mass 10 at origin; child
+    ///   mass 5 attached at offset (1,0,0) with `t_pc` = R(parent →
+    ///   child) = +90° about +Z (parent's +x → child's +y).
+    /// - Child carries `Force<RootInertial>` = (5, 0, 0). With
+    ///   `RotationalStateC = identity`, child struct == child body
+    ///   == inertial; the entry boundary leaves the components
+    ///   untouched.
+    /// - Per-link shift: `t_pc^T · (5,0,0)_child = (0, -5, 0)_parent`.
+    /// - `pcm_to_ccm = (2/3, 0, 0)` (composite of mass-10 root + mass-5
+    ///   child whose composite sits at parent struct offset (1,0,0)).
+    /// - Parallel-axis torque: `(2/3,0,0) × (0,-5,0) = (0, 0, -10/3)`.
+    /// - Root attitude identity, so root struct == root body == inertial:
+    ///   force_inertial = (0, -5, 0), torque_body = (0, 0, -10/3).
+    #[test]
+    fn child_with_attach_rotation_aggregates_correctly_when_attitude_is_explicit() {
+        use jeod_sim::RotationalState;
+
+        let mut app = add_test_app();
+        let identity_rot = RotationalState::default();
+
+        let parent = app
+            .world_mut()
+            .spawn((
+                MassPropertiesC::from(MassProperties::new(10.0)),
+                TotalForceC::default(),
+                FrameDerivativesC::default(),
+                DynamicsConfigC::default(),
+                RotationalStateC::from(identity_rot),
+                ExternalForceC::default(),
+                ExternalTorqueC::default(),
+            ))
+            .id();
+        let t_pc = DMat3::from_cols(
+            DVec3::new(0.0, 1.0, 0.0),
+            DVec3::new(-1.0, 0.0, 0.0),
+            DVec3::new(0.0, 0.0, 1.0),
+        );
+        let _child = app
+            .world_mut()
+            .spawn((
+                MassPropertiesC::from(MassProperties::new(5.0)),
+                MassChildOf::with_rotation(parent, DVec3::new(1.0, 0.0, 0.0), t_pc),
+                TotalForceC::default(),
+                FrameDerivativesC::default(),
+                DynamicsConfigC::default(),
+                RotationalStateC::from(identity_rot),
                 ext_force_in_root_inertial(DVec3::new(5.0, 0.0, 0.0)),
                 ExternalTorqueC::default(),
             ))
