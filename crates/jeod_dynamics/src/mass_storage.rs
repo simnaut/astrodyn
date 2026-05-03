@@ -149,7 +149,7 @@ pub trait MassStorage {
 ///
 /// `inverse_*` caches: every node with `mass > 0` gets
 /// `inverse_inertia = inertia.inverse()`, matching the arena's
-/// [`MassTree::calc_composite_inertia`] and `update_node`
+/// `MassTree::calc_composite_inertia` and `update_node`
 /// (which copies `core_properties` for leaves, then computes
 /// `composite_inertia.inverse()` for internal nodes via
 /// `calc_composite_inertia`, then re-inverts the root via
@@ -168,7 +168,7 @@ pub trait MassStorage {
 /// but no longer changes behaviour; the inversion rule is uniform.
 ///
 /// Panics if the composite inertia is singular (matches the existing
-/// arena diagnostic in `MassTree::calc_composite_inertia`). The panic
+/// arena diagnostic in the arena's `calc_composite_inertia`). The panic
 /// message names the body so a mission engineer can diagnose which
 /// attachment introduced the degeneracy.
 // JEOD_INV: MA.06 — bottom-up mass property update (children first; the kernel takes pre-composed children)
