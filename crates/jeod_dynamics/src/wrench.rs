@@ -6,7 +6,7 @@
 //! (lines 138–202 — the `dyn_parent != nullptr` branch). JEOD's stable
 //! multi-body model is *composite rigid body*: only the root integrates;
 //! every attached child is kinematic. External forces / torques applied
-//! to a child travel up the [`MassChildOf`]-equivalent chain into the
+//! to a child travel up the `MassChildOf`-equivalent chain into the
 //! root's accumulators, transformed by the per-link parallel-axis arm.
 //!
 //! # JEOD algorithm (per-link, in parent's structural frame)
