@@ -263,6 +263,7 @@ pub fn wrench_aggregation_system(
                 !t.abs_diff_eq(DMat3::IDENTITY, 1e-12)
             })
         });
+    // JEOD_INV: DB.16 — child forces propagated to parent recursively (frame discipline guard for the structural walk)
     if chain_has_rotation {
         for entity in view.iter_entities() {
             assert!(
