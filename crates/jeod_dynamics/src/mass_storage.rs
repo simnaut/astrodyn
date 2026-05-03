@@ -178,13 +178,23 @@ pub trait MassStorage {
 /// any storage that produces children in post-order.
 ///
 /// `inverse_*` caches: every node with `mass > 0` gets
-/// `inverse_inertia = inertia.inverse()`, matching the arena's
-/// `MassTree::calc_composite_inertia` and `update_node`
-/// (which copies `core_properties` for leaves, then computes
-/// `composite_inertia.inverse()` for internal nodes via
-/// `calc_composite_inertia`, then re-inverts the root via
-/// `mass_update.cc:116-125`). Mass-zero nodes get `DMat3::ZERO`,
-/// matching JEOD's `Matrix3x3::invert_symmetric` fall-through.
+/// `inverse_inertia = inertia.inverse()` (and `inverse_mass = 1/mass`)
+/// recomputed *uniformly* from the live `mass`/`inertia`, including
+/// at atomic leaves. The arena's `MassTree::update_node` copies
+/// `core_properties` verbatim for leaves and re-inverts only at
+/// internal nodes / the root, but the Bevy adapter also needs the
+/// leaf branch to refresh its caches because mission code can edit
+/// a leaf's `MassPropertiesC` mid-tick (mutating `mass`/`inertia`
+/// without yet running `mass_update_system`) and immediately call
+/// `MassTreeQueries::recompute_composites()` /
+/// `build_view()`. Without the leaf-side recompute the output would
+/// keep the stale `inverse_*` from before the edit (PR #283 review
+/// thread `PRRT_kwDORtae6c5_K7p_`). Internal nodes already had this
+/// behaviour via `calc_composite_inertia`; the root's second invert
+/// in `mass_update.cc:116-125` is bit-equivalent to ours, so the
+/// uniform leaf-side recompute is a strict superset of the arena's
+/// guarantees. Mass-zero nodes get `DMat3::ZERO`, matching JEOD's
+/// `Matrix3x3::invert_symmetric` fall-through.
 ///
 /// We must invert at every node — not just roots — because the Bevy
 /// pipeline integrates *every* `DynamicsConfigC`-bearing entity using
@@ -210,13 +220,42 @@ pub fn compute_node_composite(
 ) -> MassNodeOutputs {
     if children.is_empty() {
         // Atomic body: composite == core (JEOD mass_update.cc:59-75).
-        // The arena copies `core_properties` verbatim, which preserves
-        // whatever `inverse_inertia` `MassProperties::with_inertia`
-        // (or the caller) populated on the core. Mass-zero leaves
-        // still get a zero matrix, matching the arena's
-        // mass-zero fall-through.
+        // We recompute `inverse_mass`/`inverse_inertia` from the
+        // live `mass`/`inertia` rather than copying them verbatim
+        // off `node.core`, so a mid-tick edit to a leaf's
+        // `MassPropertiesC` (mission code mutates `mass`/`inertia`
+        // and sets `dirty = true`, but the scheduled
+        // `mass_update_system` hasn't yet refreshed the inverses)
+        // does not leak stale `inverse_*` through
+        // `MassTreeQueries::recompute_composites()` /
+        // `build_view()` (PR #283 review thread
+        // `PRRT_kwDORtae6c5_K7p_`). The non-leaf branch already
+        // recomputes the inverses unconditionally at every internal
+        // node; doing the same here makes the kernel's contract
+        // uniform — *every* output node has fresh derived caches
+        // that match its `mass`/`inertia`, and `MA.07` ("derived
+        // quantities recomputed") holds for atomic leaves too.
+        //
+        // Mass-zero leaves get `DMat3::ZERO` for `inverse_inertia`
+        // and `0.0` for `inverse_mass`, matching the non-leaf
+        // branch and JEOD's `Matrix3x3::invert_symmetric`
+        // fall-through.
         let mut composite = node.core;
-        if composite.mass <= 0.0 {
+        if composite.mass > 0.0 {
+            let det = composite.inertia.determinant();
+            // Same diagnostic shape as the non-leaf path; names the
+            // body so a mission engineer can locate the offending
+            // edit per the "Fail Loudly" rule.
+            assert!(
+                det.abs() > 1e-30,
+                "Body '{}' has singular core inertia (det={det:.2e}); \
+                 check the mid-tick mass edit that produced this leaf core.",
+                node.name
+            );
+            composite.inverse_mass = 1.0 / composite.mass;
+            composite.inverse_inertia = composite.inertia.inverse();
+        } else {
+            composite.inverse_mass = 0.0;
             composite.inverse_inertia = DMat3::ZERO;
         }
         return MassNodeOutputs {
@@ -706,6 +745,89 @@ mod tests {
         assert!(
             (root_composite_mass - 100.0).abs() < 1e-9,
             "root composite mass: expected 100.0, got {root_composite_mass}"
+        );
+    }
+
+    #[test]
+    fn storage_kernel_atomic_leaf_refreshes_stale_inverses() {
+        // PR #283 review thread `PRRT_kwDORtae6c5_K7p_`: mission code
+        // edits a leaf's `MassPropertiesC` mid-tick (mutating
+        // `mass`/`inertia` and setting `dirty`) and immediately
+        // calls `MassTreeQueries::recompute_composites()` /
+        // `build_view()` before the scheduled `mass_update_system`
+        // has refreshed the inverses. The kernel's atomic-leaf
+        // branch must recompute `inverse_mass`/`inverse_inertia`
+        // from the live `mass`/`inertia` rather than copying the
+        // stale caches off `node.core` — otherwise the output keeps
+        // the old derived values and downstream rotational dynamics
+        // (Euler equation, gravity-gradient torque) integrate against
+        // stale inverses for one step.
+        //
+        // Construct a leaf whose `mass`/`inertia` describe one body
+        // but whose `inverse_*` caches are explicitly seeded to a
+        // *different* (stale) body. After running the kernel the
+        // composite must satisfy `mass · inverse_mass ≈ 1` and
+        // `I · I^-1 ≈ identity` against the *live* `mass`/`inertia`,
+        // not the stale caches.
+        let live_mass = 12.0_f64;
+        let live_inertia = DMat3::from_diagonal(DVec3::new(40.0, 50.0, 60.0));
+
+        // Stale caches from a previous mass / inertia (e.g. before a
+        // fuel-burn edit reduced `mass` from 20 to 12).
+        let stale_inverse_mass = 1.0 / 20.0;
+        let stale_inertia = DMat3::from_diagonal(DVec3::new(80.0, 100.0, 120.0));
+        let stale_inverse_inertia = stale_inertia.inverse();
+
+        let leaf_core = MassProperties {
+            mass: live_mass,
+            inverse_mass: stale_inverse_mass,
+            inertia: live_inertia,
+            inverse_inertia: stale_inverse_inertia,
+            position: DVec3::ZERO,
+            t_parent_this: DMat3::IDENTITY,
+            dirty: true,
+        };
+        let view = MassNodeView {
+            core: leaf_core,
+            structure_point: MassPointState::default(),
+            name: "midtick_leaf",
+        };
+        let out = compute_node_composite(view, &[], true);
+        let composite = out.composite;
+
+        assert!(
+            (composite.mass - live_mass).abs() < 1e-12,
+            "leaf composite mass: expected {live_mass}, got {}",
+            composite.mass
+        );
+        assert!(
+            (composite.mass * composite.inverse_mass - 1.0).abs() < 1e-12,
+            "leaf inverse_mass not refreshed: {} * {} = {} (expected 1.0)",
+            composite.mass,
+            composite.inverse_mass,
+            composite.mass * composite.inverse_mass
+        );
+        let identity = composite.inertia * composite.inverse_inertia;
+        for r in 0..3 {
+            for c in 0..3 {
+                let expected = if r == c { 1.0 } else { 0.0 };
+                assert!(
+                    (identity.col(r)[c] - expected).abs() < 1e-9,
+                    "leaf I·I^-1 not identity at [{r},{c}]: got {} \
+                     (kernel returned stale inverse_inertia from `node.core`)",
+                    identity.col(r)[c]
+                );
+            }
+        }
+        // Conversely, the stale inverse_inertia must NOT have been
+        // copied through verbatim: if it had, multiplying by the
+        // live inertia would not give identity (because the stale
+        // inverse was inverted from a different inertia).
+        let stale_product = composite.inertia * stale_inverse_inertia;
+        assert!(
+            (stale_product - DMat3::IDENTITY).x_axis.length() > 0.1,
+            "test setup invalid: stale inverse happens to satisfy \
+             I·I^-1 ≈ identity against the live inertia"
         );
     }
 
