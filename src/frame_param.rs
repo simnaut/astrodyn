@@ -218,8 +218,8 @@ impl<'w, 's> FrameOrigin<'w, 's> {
     ) -> (Position<RootInertial>, Velocity<RootInertial>) {
         let (pos_raw, vel_raw) = self.origin_in(root, frame);
         (
-            Position::<RootInertial>::from_raw_si(pos_raw),
-            Velocity::<RootInertial>::from_raw_si(vel_raw),
+            Position::<RootInertial>::from_raw_si(pos_raw), // allowed: SystemParam typed boundary — relative-frame walk returns raw DVec3 (storage-agnostic algorithm shared with the runner's arena); the caller asserts the ancestor is the root by passing the root frame entity, so RootInertial is the correct phantom by construction.
+            Velocity::<RootInertial>::from_raw_si(vel_raw), // allowed: same SystemParam typed boundary as `pos_raw` above.
         )
     }
 
@@ -236,8 +236,8 @@ impl<'w, 's> FrameOrigin<'w, 's> {
     ) -> (Position<F>, Velocity<F>) {
         let (pos_raw, vel_raw) = self.origin_in(ancestor, frame);
         (
-            Position::<F>::from_raw_si(pos_raw),
-            Velocity::<F>::from_raw_si(vel_raw),
+            Position::<F>::from_raw_si(pos_raw), // allowed: SystemParam typed boundary — caller asserts that `ancestor`'s frame marker is `F` (no runtime check, mirroring `jeod_sim::frame_origin_typed`); the relative-frame walk returns raw DVec3 in `ancestor`-frame coordinates by construction.
+            Velocity::<F>::from_raw_si(vel_raw), // allowed: same SystemParam typed boundary as `pos_raw` above.
         )
     }
 }
