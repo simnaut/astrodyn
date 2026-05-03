@@ -37,7 +37,7 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 use bevy_jeod::{
-    FrameSwitchesC, IntegFrameIdC, IntegSourceC, JeodPlugin, PlanetBundle, RotationalStateC,
+    FrameEntityC, FrameSwitchesC, IntegSourceC, JeodPlugin, PlanetBundle, RotationalStateC,
     SourceInertialVelocityC, SourceMutator, TranslationalStateC, VehicleConfigBevyExt,
 };
 use glam::DVec3;
@@ -385,21 +385,27 @@ fn tier3_spawn_bevy_integ_source_plus_frame_switch_matches_simulation() {
         app.world_mut().run_schedule(FixedUpdate);
     }
 
-    // After the switch fires, the body's IntegFrameIdC must be repointed
-    // at the Moon's source frame; this is a cheap shape check that
-    // confirms `frame_switch_system` saw the entity-tagged switch list.
-    let integ_frame = app
+    // After the switch fires, the body's frame entity must be reparented
+    // under the Moon's frame entity (the load-bearing ECS-side
+    // reparent); this is a cheap shape check that confirms
+    // `frame_switch_system` saw the entity-tagged switch list.
+    let body_frame_entity = app
         .world()
-        .get::<IntegFrameIdC>(vehicle)
-        .expect("body should carry IntegFrameIdC after registration");
-    let moon_source = app
+        .get::<FrameEntityC>(vehicle)
+        .expect("body should carry FrameEntityC after registration");
+    let body_integ_frame_entity = app
         .world()
-        .get::<bevy_jeod::SourceFrameIdC>(moon)
-        .expect("Moon should carry SourceFrameIdC after registration");
+        .get::<bevy::prelude::ChildOf>(body_frame_entity.0)
+        .expect("body's frame entity must be parented under its integration frame")
+        .parent();
+    let moon_frame_entity = app
+        .world()
+        .get::<FrameEntityC>(moon)
+        .expect("Moon should carry FrameEntityC after registration");
     assert_eq!(
-        integ_frame.0, moon_source.0,
-        "frame_switch_system must reparent the body under Moon.inertial \
-         after the OnApproach switch fires"
+        body_integ_frame_entity, moon_frame_entity.0,
+        "frame_switch_system must reparent the body's frame entity under \
+         Moon.inertial after the OnApproach switch fires"
     );
 
     let bevy_state = SixDofState {

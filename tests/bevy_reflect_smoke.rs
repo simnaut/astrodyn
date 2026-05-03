@@ -64,7 +64,6 @@ const EXPECTED_REGISTERED_TYPE_PATHS: &[&str] = &[
     "bevy_jeod::components::SourcePfixFrameIdC",
     "bevy_jeod::components::RetiredPfixFrameIdC",
     "bevy_jeod::components::BodyFrameIdC",
-    "bevy_jeod::components::IntegFrameIdC",
     "bevy_jeod::components::IntegSourceC",
     "bevy_jeod::components::FrameSwitchesC",
     // Frame-tree as ECS entities (issue #277)
@@ -78,6 +77,7 @@ const EXPECTED_REGISTERED_TYPE_PATHS: &[&str] = &[
     "bevy_jeod::components::FrameEntityC",
     "bevy_jeod::components::PfixFrameEntityC",
     "bevy_jeod::components::RetiredPfixFrameEntityC",
+    "bevy_jeod::components::JointKinematicsC",
     // Tidal
     "bevy_jeod::components::TidalConfigC",
     "bevy_jeod::components::TidalDeltaC20C",

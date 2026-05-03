@@ -6,13 +6,17 @@
 //! ## Deprecation suppression
 //!
 //! [`crate::FrameTreeR`] is `#[deprecated]` for mission-code use. The
-//! systems in this module are *internal physics* and continue to read
-//! the arena during the dual-write phase. They will eventually be
-//! rewritten to use the [`crate::frame_param::RelativeFrameState`] /
-//! [`crate::frame_param::FrameOrigin`] SystemParams, after which the
-//! `FrameTreeR` resource will be removed entirely. Until then, the
-//! file-level `#![allow(deprecated)]` keeps the internal call sites
-//! quiet without weakening the deprecation signal mission code sees.
+//! frame-management systems in this module (registration, sync, pfix
+//! rotation, frame-switch arena reparent) continue to mutate the arena
+//! during the dual-write phase; the internal physics systems
+//! (gravity, integration) have already migrated to the
+//! [`crate::frame_param::FrameOrigin`] /
+//! [`crate::frame_param::RelativeFrameState`] SystemParams and no
+//! longer touch the arena. The `FrameTreeR` resource will be removed
+//! entirely once `frame_switch_system` migrates and the dual-write
+//! sync systems disappear. Until then, the file-level
+//! `#![allow(deprecated)]` keeps the remaining arena call sites quiet
+//! without weakening the deprecation signal mission code sees.
 #![allow(deprecated)] // Internal FrameTreeR consumers during the dual-write phase.
 
 use bevy::prelude::*;
@@ -23,6 +27,7 @@ use jeod_sim::{
 };
 
 use crate::components::*;
+use crate::frame_param::FrameOrigin;
 use crate::AtmosphereModelR;
 use crate::FrameTreeR;
 use crate::SimulationTimeR;
@@ -446,8 +451,9 @@ pub fn sync_source_to_frame_system(
 }
 
 /// Auto-register every vehicle entity (carrying [`TranslationalStateC`])
-/// into [`FrameTreeR`] at startup, attaching [`BodyFrameIdC`] +
-/// [`IntegFrameIdC`]. The body's integration frame is determined by:
+/// into [`FrameTreeR`] at startup, attaching [`BodyFrameIdC`] and
+/// spawning the body's frame entity with `ChildOf(integ_frame_entity)`.
+/// The body's integration frame is determined by:
 ///
 /// 1. `IntegSourceC(Some(source_entity))` — child of that source's
 ///    `SourceFrameIdC` node (panics if the source isn't yet registered).
@@ -456,7 +462,9 @@ pub fn sync_source_to_frame_system(
 ///
 /// The body's initial state is read from [`TranslationalStateC`] and
 /// written into the new frame node so the tree is consistent from the
-/// first step.
+/// first step. The integration frame is then queryable via
+/// `Query<&ChildOf>` on the body's frame entity (no explicit
+/// integration-frame handle component).
 ///
 /// Runs at `Startup` and again before `JeodSet::EphemerisUpdate` to
 /// catch dynamically-spawned bodies. Filters by
@@ -543,10 +551,17 @@ pub fn register_body_frames_system(
         // Spawn the body frame entity parented under its integ
         // frame's ECS entity. Tag the integ frame entity with
         // `IntegrationFrameMarker` (idempotent insert via Commands).
+        // The body's integration frame is now queried via
+        // `Query<&ChildOf>` on the body's frame entity by
+        // gravity / integration / frame-switch consumers — the
+        // body frame entity's parent *is* the integration frame.
+        //
         // Skip the ECS spawn if we couldn't resolve an integ frame
         // entity (e.g. a source registered before the
         // frames-as-entities components landed); the arena body node
-        // is still added above for backward compat.
+        // is still added above for backward compat. Bodies in this
+        // legacy path don't carry `FrameEntityC` and are treated as
+        // root-integrated by gravity / integration.
         //
         // Also wire the frame-side `MassPointRef` back-pointer at
         // body-frame registration time for any entity that also
@@ -573,17 +588,13 @@ pub fn register_body_frames_system(
                 ))
                 .id();
             let mut entity_cmds = commands.entity(entity);
-            entity_cmds.insert((
-                BodyFrameIdC(body_fid),
-                IntegFrameIdC(integ_frame_id),
-                FrameEntityC(body_frame_entity),
-            ));
+            entity_cmds.insert((BodyFrameIdC(body_fid), FrameEntityC(body_frame_entity)));
             if has_mass {
                 entity_cmds.insert(MassPointRef(entity));
             }
         } else {
             let mut entity_cmds = commands.entity(entity);
-            entity_cmds.insert((BodyFrameIdC(body_fid), IntegFrameIdC(integ_frame_id)));
+            entity_cmds.insert(BodyFrameIdC(body_fid));
             if has_mass {
                 entity_cmds.insert(MassPointRef(entity));
             }
@@ -898,11 +909,15 @@ pub fn sync_body_to_frame_system(
 
 /// Evaluate distance-based [`FrameSwitchesC`] entries for each body. On
 /// trigger, the lifted [`jeod_sim::evaluate_and_apply_frame_switch`]
-/// helper reparents the body in [`FrameTreeR`], rewrites the body's
-/// translational state into the new integration frame's coordinates,
-/// updates [`IntegFrameIdC`], and flips
-/// [`GravityControlsC`]'s `differential` flags so the new central
-/// source becomes non-differential.
+/// helper reparents the body's frame node in [`FrameTreeR`], rewrites
+/// the body's translational state into the new integration frame's
+/// coordinates, and flips [`GravityControlsC`]'s `differential` flags
+/// so the new central source becomes non-differential. The same
+/// reparent is mirrored on the ECS side via
+/// `commands.entity(body_frame).insert(ChildOf(new_parent_frame))` so
+/// the body frame entity's `ChildOf` parent — the load-bearing
+/// "current integration frame" lookup — stays in lockstep with the
+/// arena.
 ///
 /// Runs in `JeodSet::Integration` after [`sync_body_to_frame_system`].
 /// Bodies without [`FrameSwitchesC`] are skipped.
@@ -916,14 +931,17 @@ pub fn sync_body_to_frame_system(
 /// there is no `usize`-keyed bridge.
 #[allow(clippy::type_complexity)]
 pub fn frame_switch_system(
+    mut commands: Commands,
     mut frame_tree: ResMut<FrameTreeR>,
     root: Res<crate::RootFrameIdR>,
-    sources: Query<&SourceFrameIdC>,
+    root_frame_entity: Res<crate::RootFrameEntityR>,
+    sources: Query<(&SourceFrameIdC, &FrameEntityC)>,
+    parents: Query<&ChildOf>,
     mut bodies: Query<(
         Entity,
         &mut TranslationalStateC,
         &BodyFrameIdC,
-        &mut IntegFrameIdC,
+        &FrameEntityC,
         &mut FrameSwitchesC,
         &mut GravityControlsC,
     )>,
@@ -931,12 +949,51 @@ pub fn frame_switch_system(
     // Snapshot the count of registered sources for error diagnostics.
     let num_sources = sources.iter().count();
 
-    for (body_entity, mut trans, body_fid, mut integ_fid, mut switches, mut gravity_controls) in
+    for (body_entity, mut trans, body_fid, body_frame_entity, mut switches, mut gravity_controls) in
         &mut bodies
     {
         if switches.0.is_empty() {
             continue;
         }
+        // The body's current integration frame is the parent of its
+        // frame entity in the ECS hierarchy. Resolve it back to a
+        // FrameId for the arena helper: the integ frame is either the
+        // root frame entity (FrameId = `root.0`) or a source's frame
+        // entity (look up via the source query). If neither matches,
+        // the dual-write invariant has been violated — fail loud.
+        let current_integ_frame_entity = parents
+            .get(body_frame_entity.0)
+            .unwrap_or_else(|err| {
+                panic!(
+                    "frame_switch_system: body {body_entity:?} frame entity {fe:?} \
+                     has no ChildOf parent ({err:?}). The body's frame entity must \
+                     be parented under its integration frame entity (set by \
+                     register_body_frames_system).",
+                    fe = body_frame_entity.0,
+                )
+            })
+            .parent();
+        let mut current_integ_fid = if current_integ_frame_entity == root_frame_entity.0 {
+            root.0
+        } else {
+            sources
+                .iter()
+                .find(|(_, fe)| fe.0 == current_integ_frame_entity)
+                .map(|(sfid, _)| sfid.0)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "frame_switch_system: body {body_entity:?} frame entity \
+                         {fe:?} has parent {parent:?} which is neither the root \
+                         frame entity ({root_e:?}) nor a registered source's \
+                         frame entity. The integration frame entity must be one \
+                         of those — register the source via PlanetBundle before \
+                         spawning the body, or attach the body under the root.",
+                        fe = body_frame_entity.0,
+                        parent = current_integ_frame_entity,
+                        root_e = root_frame_entity.0,
+                    )
+                })
+        };
         // Translate TranslationalStateC into a raw struct the lifted
         // helper can write in place. The (DVec3 read × 2) + (DVec3 write × 2)
         // cost only fires when a switch actually triggers.
@@ -950,7 +1007,7 @@ pub fn frame_switch_system(
             &mut frame_tree.0,
             root.0,
             body_fid.0,
-            &mut integ_fid.0,
+            &mut current_integ_fid,
             &mut raw_trans,
             &mut switches.0,
             &mut gravity_controls.0,
@@ -958,7 +1015,7 @@ pub fn frame_switch_system(
             // FrameId in the tree. Returns `None` if the entity isn't a
             // registered source — the helper turns that into
             // `FrameSwitchTargetMissing`.
-            |entity| sources.get(*entity).ok().map(|c| c.0),
+            |entity| sources.get(*entity).ok().map(|(sfid, _)| sfid.0),
             num_sources,
             body_idx,
         )
@@ -985,11 +1042,38 @@ pub fn frame_switch_system(
                 jeod_sim::Velocity::<jeod_sim::RootInertial>::from_raw_si(raw_trans.velocity); // allowed: lifted-helper boundary
             trans.0.position = pos_typed;
             trans.0.velocity = vel_typed;
-            // `IntegFrameIdC` was updated in place by the helper;
+            // Mirror the arena reparent on the ECS side: the body
+            // frame entity's `ChildOf` parent is the live "current
+            // integration frame" lookup. The new parent frame entity
+            // is either the root frame entity or the source's
+            // `FrameEntityC` whose `SourceFrameIdC` matches
+            // `current_integ_fid` (mutated in place by the helper
+            // above).
+            let new_parent_frame_entity = if current_integ_fid == root.0 {
+                root_frame_entity.0
+            } else {
+                sources
+                    .iter()
+                    .find(|(sfid, _)| sfid.0 == current_integ_fid)
+                    .map(|(_, fe)| fe.0)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "frame_switch_system: body {body_entity:?} switched \
+                             to FrameId {current_integ_fid:?} but no registered \
+                             source has that SourceFrameIdC. The arena and the \
+                             ECS frame entities are out of sync — investigate \
+                             register_source_frames_system / PlanetBundle.",
+                        )
+                    })
+            };
+            commands
+                .entity(body_frame_entity.0)
+                .insert(ChildOf(new_parent_frame_entity));
             // `GravityControlsC.0` had its `differential` flags flipped
             // in place using `Entity` equality. `IntegSourceC` (the
             // config-time intent) is intentionally untouched — the
-            // live truth lives in `IntegFrameIdC`.
+            // live truth lives in the body frame entity's `ChildOf`
+            // parent.
         }
     }
 }
@@ -1342,6 +1426,57 @@ pub fn planet_fixed_rotation_system(
     }
 }
 
+/// Drives kinematically prescribed joint frames each tick.
+///
+/// For every entity carrying a [`JointKinematicsC`] spec, the joint
+/// angle at the current simulation time is `θ(t) = initial + rate · t`,
+/// where `t` is the tick's `tai_seconds` (the elapsed-since-epoch time
+/// scale `time_advance_system` already advances every step). The
+/// system writes:
+///
+/// - [`FrameRotC::q_parent_this`] = left-transformation quaternion
+///   `parent → this` for the rotation about the spec's
+///   `axis_in_parent` by `θ(t)`,
+/// - [`FrameRotC::t_parent_this`] = the corresponding 3×3 transformation
+///   matrix (cache),
+/// - [`FrameAngVelC::0`] = `rate · axis_in_parent` (the angular
+///   velocity in this-frame coordinates — the rotation axis is the
+///   eigenvector of the rotation, so it's invariant between parent
+///   and this frames).
+///
+/// This is the analog of [`planet_fixed_rotation_system`] for arbitrary
+/// user-declared joint axes: planet-fixed frames spin at JEOD's
+/// Earth/Mars/Moon rotation rates about the planet pole;
+/// joint frames spin at a mission-declared `rate_rad_per_s` about an
+/// arbitrary `axis_in_parent`. Both write the same `FrameRotC` /
+/// `FrameAngVelC` storage, so any downstream consumer that reads
+/// frame-tree state through [`crate::components::FrameRotC`] /
+/// [`crate::components::FrameAngVelC`] (or through a future
+/// `RelativeFrameState` SystemParam) sees the joint kinematics
+/// uniformly with planet-fixed kinematics.
+///
+/// Scheduled in [`crate::JeodSet::EphemerisUpdate`] alongside
+/// `planet_fixed_rotation_system` so the joint frame's rotation /
+/// angular velocity are current before any consumer that walks the
+/// frame tree (gravity, derived state, integration) reads them.
+///
+/// "Kinematic" means the angle is an *input*, not an integrated
+/// state — there is no torque, inertia, or momentum. Joint dynamics
+/// (free-swinging joints, IK, constraint-derived joint forces) are
+/// out of scope; see the deferred-dynamics meta.
+pub fn joint_kinematics_system(
+    sim_time: Res<SimulationTimeR>,
+    mut query: Query<(&JointKinematicsC, &mut FrameRotC, &mut FrameAngVelC)>,
+) {
+    let elapsed = sim_time.tai_seconds;
+    for (spec, mut rot, mut ang_vel) in &mut query {
+        let (q_parent_this, ang_vel_this) = jeod_sim::evaluate_joint_kinematics(&spec.0, elapsed);
+        rot.q_parent_this = q_parent_this;
+        rot.t_parent_this = q_parent_this.left_quat_to_transformation();
+        ang_vel.0 = ang_vel_this;
+    }
+}
+
 /// Computes tidal ΔC20 for each gravity source that has a `TidalConfigC`.
 ///
 /// Runs after `planet_fixed_rotation_system` so the rotation matrix is current.
@@ -1603,18 +1738,30 @@ pub fn force_collection_system(
 /// The integration method is determined by the optional `IntegratorTypeC`
 /// component (RK4, RKF45, GaussJackson, Abm4). When absent, RK4 is used.
 /// GaussJackson requires `GaussJacksonStateC`; ABM4 requires `Abm4StateC`.
+///
+/// Per-body integration-frame origins (relative to root) are queried via
+/// the [`FrameOrigin`] SystemParam, which walks the ECS frame hierarchy
+/// (`Query<&ChildOf>` on the body's frame entity).
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn integration_system(
-    frame_tree: Res<FrameTreeR>,
-    root: Res<crate::RootFrameIdR>,
-    // Filter excludes both kinematic-chain children (composite-rigid-body
-    // model integrates only the chain root; the `wrench_aggregation_system`
-    // tags every non-root `MassChildOf` member with `KinematicChildC`, and
-    // zeroing `TotalForceC` alone would not stop the per-RK-stage gravity
-    // recompute from drifting them) and detached subtrees (advanced
-    // ballistically by `step_detached_system`; integrating them here would
-    // double-step the same entity per tick, mirroring the runner split
-    // between `Simulation::bodies` and `Simulation::detached_subtrees`).
+    frame_origin: FrameOrigin,
+    root_frame_entity: Res<crate::RootFrameEntityR>,
+    parents: Query<&ChildOf>,
+    // The body query filter excludes two disjoint populations:
+    //   * Kinematic-chain children — composite-rigid-body integration
+    //     only advances the root of every `MassChildOf` chain.
+    //     `wrench_aggregation_system` tags every non-root chain member
+    //     with `KinematicChildC`. Without this filter, zeroing a
+    //     child's `TotalForceC` would not be enough — the per-RK-stage
+    //     gravity recompute below would still drift the child's
+    //     translational state every step.
+    //   * Detached subtrees — advanced ballistically by
+    //     `step_detached_system`. Integrating them here would
+    //     double-step the same entity per tick, mirroring the runner
+    //     split between `Simulation::bodies` and
+    //     `Simulation::detached_subtrees`.
+    // See `KinematicChildC` and `DetachedSubtreeStateC` for the
+    // detailed lifecycles.
     // JEOD_INV: DB.17 — kinematic children skip integration.
     // JEOD_INV: DB.21 — detached subtrees skip integration.
     mut bodies: Query<
@@ -1633,7 +1780,7 @@ pub fn integration_system(
             Option<&StructuralTransformC>,
             Option<&mut RadiationForceC>,
             Option<&mut FrameDerivativesC>,
-            Option<&IntegFrameIdC>,
+            Option<&FrameEntityC>,
         ),
         (
             Without<KinematicChildC>,
@@ -1805,15 +1952,26 @@ pub fn integration_system(
         struct_xform,
         mut srp_force,
         mut frame_derivs,
-        integ_frame,
+        body_frame_entity,
     ) in &mut bodies
     {
         // Per-body integration-frame origin (relative to root). Computed
         // once per step — the integ frame doesn't move during a single
         // integration step, so the multi-stage RK4 sub-evaluations
         // reuse the same value.
-        let (integ_origin_pos, integ_origin_vel) = match integ_frame {
-            Some(c) if c.0 != root.0 => jeod_sim::frame_origin(&frame_tree.0, root.0, c.0),
+        //
+        // The body's integration frame is the parent of its frame
+        // entity in the ECS hierarchy (set at registration by
+        // `register_body_frames_system`). Bodies registered before
+        // the frames-as-entities components landed have no
+        // `FrameEntityC`; treat those as root-integrated, matching
+        // the pre-migration default.
+        let integ_frame_entity = body_frame_entity
+            .and_then(|fe| parents.get(fe.0).ok().map(|child_of| child_of.parent()));
+        let (integ_origin_pos, integ_origin_vel) = match integ_frame_entity {
+            Some(integ_e) if integ_e != root_frame_entity.0 => {
+                frame_origin.origin_in(root_frame_entity.0, integ_e)
+            }
             _ => (DVec3::ZERO, DVec3::ZERO),
         };
         let integrator_type = integrator.map_or(jeod_sim::IntegratorType::Rk4, |c| c.0);
@@ -1894,10 +2052,11 @@ pub fn integration_system(
                     //
                     // RF.10: `stage_trans.position` is the integrator's
                     // intermediate `DVec3` in the body's *integration*
-                    // frame, which equals root inertial only when
-                    // `IntegFrameIdC == root`. For `IntegFrameIdC != root`
-                    // we shift via the per-stage origin
-                    // before differencing against `srp_inputs.sun_position`
+                    // frame, which equals root inertial only when the
+                    // body's frame entity is a direct child of the
+                    // root frame entity. For non-root integration we
+                    // shift via the per-stage origin before
+                    // differencing against `srp_inputs.sun_position`
                     // (which is typed `Position<RootInertial>`). Mirrors
                     // `jeod_runner::run_integration`'s coupled SRP path
                     // (`crates/jeod_runner/src/simulation/step/integrate.rs:299-305`).
@@ -2069,33 +2228,39 @@ pub fn integration_system(
 /// Delegates to [`jeod_sim::accumulate_gravity`] for the per-body accumulation
 /// loop, providing a closure that resolves Bevy entity references.
 ///
-/// Bodies with [`IntegFrameIdC`] pointing at a non-root frame have their
-/// integration-frame origin (relative to root inertial) added to
-/// `body.position` to recover the absolute inertial position for the
-/// gravity field; the same origin is passed to
+/// Bodies whose frame entity is a child of a non-root integration frame
+/// have their integration-frame origin (relative to root inertial)
+/// added to `body.position` to recover the absolute inertial position
+/// for the gravity field; the same origin is passed to
 /// [`jeod_sim::accumulate_gravity_typed`] so the differential gravity
 /// correction subtracts the integ frame's own acceleration toward each
-/// source. Bodies without [`IntegFrameIdC`] continue to use the root
-/// inertial frame as before.
+/// source. The integration frame is determined from the body's
+/// `FrameEntityC` parent via `Query<&ChildOf>` (no explicit
+/// integration-frame handle component), and the origin is queried via
+/// the [`FrameOrigin`] SystemParam — typed
+/// `(Position<RootInertial>, Velocity<RootInertial>)` directly, so no
+/// `from_raw_si` lift is needed at the boundary.
 #[allow(clippy::type_complexity)]
 pub fn gravity_computation_system(
-    frame_tree: Res<FrameTreeR>,
-    root: Res<crate::RootFrameIdR>,
-    // JEOD_INV: DB.21 — only attached bodies participate in gravity /
-    // force-collection / integration. Detached subtrees coast
-    // ballistically (no force, no torque) via `step_detached_system`,
-    // so populating `GravityAccelerationC` on them is wasted work and
-    // would expose stale values to diagnostics / logging consumers.
-    // Mirrors the runner's split between `Simulation::bodies` and
-    // `Simulation::detached_subtrees` — gravity is only evaluated on
-    // the integrated set.
+    frame_origin: FrameOrigin,
+    root_frame_entity: Res<crate::RootFrameEntityR>,
+    parents: Query<&ChildOf>,
+    // Filter excludes detached subtrees: only attached bodies participate
+    // in gravity / force-collection / integration. Detached subtrees coast
+    // ballistically (no force, no torque) via `step_detached_system`, so
+    // populating `GravityAccelerationC` on them is wasted work and would
+    // expose stale values to diagnostics / logging consumers. Mirrors the
+    // runner's split between `Simulation::bodies` and
+    // `Simulation::detached_subtrees` — gravity is only evaluated on the
+    // integrated set.
+    // JEOD_INV: DB.21 — detached subtrees skip gravity evaluation.
     mut bodies: Query<
         (
             Entity,
             &TranslationalStateC,
             &GravityControlsC,
             &mut GravityAccelerationC,
-            Option<&IntegFrameIdC>,
+            Option<&FrameEntityC>,
         ),
         Without<crate::DetachedSubtreeStateC>,
     >,
@@ -2111,23 +2276,27 @@ pub fn gravity_computation_system(
         Option<&TranslationalStateC>,
     )>,
 ) {
-    for (entity, state, controls, mut accel, integ_frame) in &mut bodies {
+    for (entity, state, controls, mut accel, body_frame) in &mut bodies {
         // TranslationalStateC stores typed `Position<IntegrationFrame>` /
         // `Velocity<IntegrationFrame>`. For root-integrated bodies the
         // integ frame numerically equals root inertial, so the raw
         // values match what gravity wants. For non-root bodies we
-        // shift to absolute root-inertial coordinates below via
-        // `IntegFrameIdC` + `frame_origin_typed`.
+        // shift to absolute root-inertial coordinates below via the
+        // body frame entity's parent + `FrameOrigin::origin_in_root`.
         let body_pos = state.position;
         let body_vel = state.velocity;
 
         // Integration-frame origin (relative to root). Zero for
-        // root-integrated bodies. Typed
-        // `frame_origin_typed::<RootInertial>` returns `Position<RootInertial>`
-        // directly, so no `from_raw_si` lift is needed at the boundary.
-        let (integ_origin, integ_origin_vel) = match integ_frame {
-            Some(c) if c.0 != root.0 => {
-                jeod_sim::frame_origin_typed::<RootInertial>(&frame_tree.0, root.0, c.0)
+        // root-integrated bodies. The body's integration frame is
+        // the parent of its frame entity (set at registration by
+        // `register_body_frames_system`); bodies registered before
+        // the frames-as-entities components landed have no
+        // `FrameEntityC` and are treated as root-integrated.
+        let integ_frame_entity =
+            body_frame.and_then(|fe| parents.get(fe.0).ok().map(|child_of| child_of.parent()));
+        let (integ_origin, integ_origin_vel) = match integ_frame_entity {
+            Some(integ_e) if integ_e != root_frame_entity.0 => {
+                frame_origin.origin_in_root(root_frame_entity.0, integ_e)
             }
             _ => (
                 Position::<RootInertial>::zero(),

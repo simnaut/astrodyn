@@ -52,8 +52,9 @@ use jeod_sim::{
 /// inertial (geodetic conversion against a different planet, solar
 /// beta, SRP relative to a Sun position not in the integ frame)
 /// produce the wrong result for non-root bodies — the gravity and
-/// integration code in this crate compensate via [`IntegFrameIdC`]
-/// and `frame_origin_typed`, but derived-state systems do not yet.
+/// integration code in this crate compensate via the body frame
+/// entity's `ChildOf` parent + the [`crate::frame_param::FrameOrigin`]
+/// SystemParam, but derived-state systems do not yet.
 /// Mission code that uses non-root integration should configure
 /// derived states relative to the same integ source, or accept the
 /// limitation.
@@ -415,15 +416,6 @@ pub struct RetiredPfixFrameIdC(pub jeod_sim::FrameId);
 #[reflect(opaque, Component)]
 pub struct BodyFrameIdC(pub jeod_sim::FrameId);
 
-/// Frame-tree node ID of a vehicle's current integration frame
-/// (initially the source-inertial frame named by [`IntegSourceC`], or
-/// the root inertial frame when [`IntegSourceC`] is `None` / absent).
-/// Updated in place by `frame_switch_system` after a triggered
-/// [`FrameSwitchesC`] entry. Issue #71 item 4.
-#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
-pub struct IntegFrameIdC(pub jeod_sim::FrameId);
-
 /// Optional initial integration-frame source for a body (issue #71
 /// item 4). Mirrors [`jeod_sim::VehicleConfig::integ_source`]: when set
 /// to `Some(planet_entity)`, the body integrates in that source's
@@ -431,13 +423,14 @@ pub struct IntegFrameIdC(pub jeod_sim::FrameId);
 /// integrates in the root inertial frame (the Bevy default).
 ///
 /// Consumed at body-frame registration by `register_body_frames_system`
-/// to set [`IntegFrameIdC`], and indirectly by `gravity_computation_system`
-/// and `integration_system`, which read [`IntegFrameIdC`] to compose
-/// per-body integration-frame origins. After a successful frame switch
-/// the live integration frame lives in [`IntegFrameIdC`] (which the
-/// `frame_switch_system` updates in place); [`IntegSourceC`] is the
-/// configuration-time intent only and is intentionally not mutated by
-/// the switch.
+/// to parent the body's frame entity under the source's frame entity.
+/// After registration the live "current integration frame" lookup is
+/// the body frame entity's `ChildOf` parent — `gravity_computation_system`
+/// and `integration_system` walk that hierarchy via the
+/// [`crate::frame_param::FrameOrigin`] SystemParam, and
+/// `frame_switch_system` reparents the body's frame entity on switch.
+/// `IntegSourceC` is the configuration-time intent only and is
+/// intentionally not mutated by the switch.
 ///
 /// **Non-root caveat (issue #263).** When `Some(...)`, the body's
 /// [`TranslationalStateC`] is integ-frame-relative but still typed
@@ -473,11 +466,12 @@ pub struct FrameSwitchesC(pub Vec<jeod_sim::FrameSwitchConfig<Entity>>);
 // shape described in the [Frame-Tree-ECS-Native wiki page][1]
 // (Section 13 sequencing). These live on **frame entities** (not body
 // or source entities) and mirror the per-node state of the arena's
-// [`FrameTreeR`](crate::FrameTreeR). During the dual-write phase
-// (PR 1–3), both the arena and these components are populated so
-// existing `FrameTreeR` consumers stay green while new SystemParam-
-// based consumers (PR 2 onward) read from the ECS hierarchy directly
-// via `ChildOf` / `Children`.
+// [`FrameTreeR`](crate::FrameTreeR). During the dual-write phase the
+// arena and these components are populated together so the remaining
+// arena consumers (`frame_switch_system`, the registration / sync
+// systems) stay green while SystemParam-based consumers (gravity,
+// integration, mission code via [`crate::frame_param`]) read from the
+// ECS hierarchy directly via `ChildOf` / `Children`.
 //
 // Component split rationale: the three pieces of `RefFrameState` are
 // independently mutated in practice. `FrameTransC` is rewritten by
@@ -564,16 +558,17 @@ pub struct BodyFrameMarker;
 /// at least one body. Inserted (idempotently) by
 /// `register_body_frames_system` when a body is spawned with this
 /// frame as its integration frame; never removed. The marker has
-/// **sticky** semantics — `frame_switch_system` rewrites
-/// `IntegFrameIdC` on a body when the body switches frames, but does
-/// not touch this marker, because (a) one integration frame entity
-/// can serve many bodies and tracking a "currently in use" predicate
-/// would require ref-counting, and (b) downstream SystemParam
-/// consumers in later PRs of the [Section 13 sequence][1] only need
-/// to know whether a frame entity *can* serve as an integration
-/// frame, which the registration-time signal answers correctly. The
-/// authoritative "this body's integration frame is X" lookup remains
-/// `IntegFrameIdC` on the body. A frame entity may carry both
+/// **sticky** semantics — `frame_switch_system` reparents a body's
+/// frame entity (via `commands.entity(...).insert(ChildOf(...))`)
+/// when the body switches frames, but does not touch this marker,
+/// because (a) one integration frame entity can serve many bodies
+/// and tracking a "currently in use" predicate would require
+/// ref-counting, and (b) downstream SystemParam consumers in later
+/// PRs of the [Section 13 sequence][1] only need to know whether a
+/// frame entity *can* serve as an integration frame, which the
+/// registration-time signal answers correctly. The authoritative
+/// "this body's integration frame is X" lookup is the body frame
+/// entity's `ChildOf` parent. A frame entity may carry both
 /// `InertialFrameMarker` and `IntegrationFrameMarker` simultaneously
 /// — they describe orthogonal properties of the frame. Issue #277.
 ///
@@ -585,12 +580,12 @@ pub struct IntegrationFrameMarker;
 /// Bidirectional handle linking a body / source / planet entity to its
 /// frame entity in the ECS hierarchy. Inserted by
 /// `register_*_frames_system` alongside the existing `*FrameIdC`
-/// components during the dual-write phase. Once `RelativeFrameState`
-/// SystemParam consumers replace all `FrameTreeR` readers (PRs 2–4 in
-/// the [Section 13 sequence][1]), this becomes the only frame-tree
-/// handle the body / source entity needs. Issue #277.
-///
-/// [1]: https://github.com/simnaut/bevy_jeod/wiki/Frame-Tree-ECS-Native#13-migration-sequencing
+/// components during the dual-write phase. Internal physics consumers
+/// (gravity, integration) read this handle and walk
+/// `Query<&ChildOf>` to recover the body's integration frame; once
+/// the arena and the remaining `*FrameIdC` companions are removed,
+/// this becomes the only frame-tree handle the body / source entity
+/// needs. Issue #277.
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
 #[reflect(opaque, Component)]
 pub struct FrameEntityC(pub Entity);
@@ -636,6 +631,90 @@ pub struct RetiredPfixFrameEntityC(pub Entity);
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
 #[reflect(opaque, Component)]
 pub struct PlanetAngularVelocityC(pub AngularVelocity<PlanetFixed<SelfPlanet>>);
+
+/// Declarative spec for a kinematically driven single-axis joint.
+///
+/// Place this component on a *frame entity* (one carrying the full
+/// [`FrameTransC`] / [`FrameRotC`] / [`FrameAngVelC`] triplet) to have
+/// [`crate::systems::joint_kinematics_system`] drive the entity's
+/// rotation about its parent frame each tick. The rotation angle
+/// follows `θ(t) = initial_angle_rad + rate_rad_per_s · t`, applied
+/// about `axis_in_parent` (a unit vector in the parent frame).
+///
+/// Mirrors [`jeod_sim::JointKinematicsSpec`] one-to-one. The component
+/// is the analog of [`PlanetFixedRotationC`] generalised to an
+/// arbitrary user-declared axis: where pfix entities are spun by
+/// [`crate::systems::planet_fixed_rotation_system`] under an Earth-/
+/// Mars-/Moon-rotation kernel, joint entities are spun by
+/// [`crate::systems::joint_kinematics_system`] under a constant-rate
+/// kernel.
+///
+/// "Kinematic" here means: the angle (and therefore rotation and
+/// angular velocity) is an *input* — there is no torque, inertia, or
+/// momentum exchange. Joint dynamics (free-swinging joints,
+/// constraint-derived joint forces, inverse dynamics) are explicitly
+/// out of scope; see the deferred-dynamics meta.
+///
+/// # Frame-tree contract
+///
+/// Frame-tree consumers ([`crate::frame_param::RelativeFrameState`])
+/// treat every frame entity as carrying the full
+/// [`FrameTransC`] / [`FrameRotC`] / [`FrameAngVelC`] triplet — a node
+/// missing any of the three would make a hierarchy walk that crosses
+/// the joint observe an undefined translation, rotation, or angular
+/// velocity. This component therefore auto-inserts all three via
+/// `#[require]`. A single-axis joint is by definition a pure rotation
+/// about a fixed axis at a fixed point in the parent frame, so the
+/// default [`FrameTransC`] (zero offset, zero relative velocity) is
+/// the physically correct value for an articulated joint frame and
+/// callers do not need to spawn it explicitly.
+///
+/// # Example
+///
+/// ```ignore
+/// // A solar-array joint that spins at 6 °/min about the +Y axis,
+/// // starting at θ = 0. FrameTransC / FrameRotC / FrameAngVelC are
+/// // auto-inserted via the #[require] attribute on JointKinematicsC.
+/// commands.spawn((
+///     JointKinematicsC(JointKinematicsSpec {
+///         axis_in_parent: DVec3::Y,
+///         rate_rad_per_s: 6.0_f64.to_radians() / 60.0,
+///         initial_angle_rad: 0.0,
+///     }),
+///     ChildOf(parent_frame_entity),
+/// ));
+/// ```
+///
+/// Per the design doc Section 15.1, articulated sub-trees declare a
+/// chain of joint frame entities under a body frame; each joint frame
+/// carries this component and the resulting `FrameTransC` /
+/// `FrameRotC` / `FrameAngVelC` flow into the same
+/// [`crate::frame_param::RelativeFrameState`] consumers that read
+/// planet-fixed rotations.
+#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
+#[reflect(opaque, Component)]
+#[require(FrameTransC, FrameRotC, FrameAngVelC)]
+pub struct JointKinematicsC(pub jeod_sim::JointKinematicsSpec);
+
+impl JointKinematicsC {
+    /// Convenience constructor: build a joint spec from raw axis / rate
+    /// / initial-angle values.
+    #[inline]
+    pub fn new(axis_in_parent: DVec3, rate_rad_per_s: f64, initial_angle_rad: f64) -> Self {
+        Self(jeod_sim::JointKinematicsSpec {
+            axis_in_parent,
+            rate_rad_per_s,
+            initial_angle_rad,
+        })
+    }
+}
+
+impl From<jeod_sim::JointKinematicsSpec> for JointKinematicsC {
+    #[inline]
+    fn from(spec: jeod_sim::JointKinematicsSpec) -> Self {
+        Self(spec)
+    }
+}
 
 /// Tidal configuration for a gravity source entity.
 ///

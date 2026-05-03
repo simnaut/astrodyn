@@ -10,25 +10,20 @@
 //! matches JEOD's `DynManager` which only invariants bodies that participate
 //! in integration.
 //!
-//! The `is_root_equivalent` function reads [`crate::FrameTreeR`] (now
-//! `#[deprecated]` for mission-code use) to compare a body's
-//! integration frame against the root. This is *internal* validation
-//! infrastructure and is scheduled to migrate to
-//! [`crate::frame_param::RelativeFrameState`] /
-//! [`crate::frame_param::FrameOrigin`]. The file-level
-//! `#![allow(deprecated)]` keeps the call sites quiet until then.
-#![allow(deprecated)] // Internal FrameTreeR consumer during the dual-write phase.
+//! Non-root integration-frame checks walk the ECS frame hierarchy via
+//! `Query<&ChildOf>` on the body's [`FrameEntityC`] — there is no
+//! explicit integration-frame handle component to read.
 
 use bevy::prelude::*;
 
 use crate::components::{
     CannonballSrpC, DragConfigC, DynamicsConfigC, EarthLightingConfigC, EulerAnglesConfigC,
-    FlatPlateConfigC, FrameSwitchesC, GeodeticConfigC, GravityAccelerationC, GravityControlsC,
-    GravitySourceC, IntegFrameIdC, LvlhFrameC, MassPropertiesC, MoonMarker, OrbitalElementsConfigC,
-    RotationalStateC, SolarBetaC, SourceFrameIdC, SunMarker, TidalConfigC, TidalDeltaC20C,
-    TranslationalStateC,
+    FlatPlateConfigC, FrameAngVelC, FrameEntityC, FrameRotC, FrameSwitchesC, FrameTransC,
+    GeodeticConfigC, GravityAccelerationC, GravityControlsC, GravitySourceC, LvlhFrameC,
+    MassPropertiesC, MoonMarker, OrbitalElementsConfigC, RotationalStateC, SolarBetaC,
+    SourceFrameIdC, SunMarker, TidalConfigC, TidalDeltaC20C, TranslationalStateC,
 };
-use crate::{FrameTreeR, RootFrameIdR};
+use crate::RootFrameEntityR;
 
 /// In `jeod_runner` the central body's inertial frame *is* the root
 /// frame (the runner renames the root to `<central>.inertial`), so
@@ -41,30 +36,37 @@ use crate::{FrameTreeR, RootFrameIdR};
 /// check despite being numerically root-equivalent.
 ///
 /// This helper folds the Bevy topology back onto the runner's
-/// semantics: a frame counts as root-equivalent when it is the root
-/// itself, or when it is a direct child of root whose stored state is
-/// identity (zero position/velocity, identity rotation, zero angular
-/// velocity). The check is evaluated against the validation-tick
-/// snapshot of the frame tree — sources whose state is non-zero at
-/// startup (Moon at 384 Mm, ephemeris-driven bodies at their epoch
-/// position) correctly remain "non-root" and continue to surface the
-/// drag/SRP/etc. warning the non-root check is meant to catch.
-fn is_root_equivalent(
-    frame_tree: &jeod_sim::FrameTree,
-    fid: jeod_sim::FrameId,
-    root_fid: jeod_sim::FrameId,
+/// semantics: a frame entity counts as root-equivalent when it is the
+/// root entity itself, or when it is a direct child of the root entity
+/// whose stored frame state is identity (zero position/velocity,
+/// identity rotation, zero angular velocity). The check is evaluated
+/// against the validation-tick snapshot of the frame components —
+/// sources whose state is non-zero at startup (Moon at 384 Mm,
+/// ephemeris-driven bodies at their epoch position) correctly remain
+/// "non-root" and continue to surface the drag/SRP/etc. warning the
+/// non-root check is meant to catch.
+fn is_root_equivalent_entity(
+    frame_entity: Entity,
+    root_entity: Entity,
+    parents: &Query<&ChildOf>,
+    frame_states: &Query<(&FrameTransC, &FrameRotC, &FrameAngVelC)>,
 ) -> bool {
-    if fid == root_fid {
+    if frame_entity == root_entity {
         return true;
     }
-    if frame_tree.parent(fid) != Some(root_fid) {
+    let Ok(child_of) = parents.get(frame_entity) else {
+        return false;
+    };
+    if child_of.parent() != root_entity {
         return false;
     }
-    let state = &frame_tree.get(fid).state;
-    state.trans.position == glam::DVec3::ZERO
-        && state.trans.velocity == glam::DVec3::ZERO
-        && state.rot.t_parent_this == glam::DMat3::IDENTITY
-        && state.rot.ang_vel_this == glam::DVec3::ZERO
+    let Ok((trans, rot, ang_vel)) = frame_states.get(frame_entity) else {
+        return false;
+    };
+    trans.position == glam::DVec3::ZERO
+        && trans.velocity == glam::DVec3::ZERO
+        && rot.t_parent_this == glam::DMat3::IDENTITY
+        && ang_vel.0 == glam::DVec3::ZERO
 }
 
 /// Validates JEOD invariants on dynamic body entities.
@@ -135,14 +137,18 @@ pub fn validate_jeod_invariants(
     // (`crates/jeod_runner/src/simulation/validate.rs:129-184`) so the
     // typed `VehicleBuilder` API (which plumbs `integ_source` and
     // `frame_switches` through `spawn_bevy`) doesn't silently land
-    // bodies in misconfigured non-root setups.
-    body_frame_state: Query<(Option<&IntegFrameIdC>, Option<&FrameSwitchesC>)>,
-    source_frames: Query<&SourceFrameIdC>,
-    root_fid: Option<Res<RootFrameIdR>>,
-    // Needed by `is_root_equivalent` to fold Bevy's "every source is a
-    // child of root" topology back onto the runner's "central body's
-    // inertial == root" semantics.
-    frame_tree: Option<Res<FrameTreeR>>,
+    // bodies in misconfigured non-root setups. The body's integration
+    // frame is its `FrameEntityC`'s `ChildOf` parent; sources expose
+    // both their frame entity (`FrameEntityC`) and their frame's
+    // `SourceFrameIdC` for the frame-switch target check.
+    body_frame_state: Query<(Option<&FrameEntityC>, Option<&FrameSwitchesC>)>,
+    source_frames: Query<(&SourceFrameIdC, &FrameEntityC)>,
+    parents: Query<&ChildOf>,
+    frame_states: Query<(&FrameTransC, &FrameRotC, &FrameAngVelC)>,
+    // Needed by `is_root_equivalent_entity` to fold Bevy's "every
+    // source is a child of root" topology back onto the runner's
+    // "central body's inertial == root" semantics.
+    root_frame_entity: Option<Res<RootFrameEntityR>>,
     // Root-dependent features. Presence of any of these on a body that
     // integrates in (or switches into) a non-root frame produces a
     // warning — the underlying systems consume root-inertial state.
@@ -294,15 +300,23 @@ pub fn validate_jeod_invariants(
         // integration frame is non-root, or which have an active switch
         // into a non-root frame, also warn when carrying root-dependent
         // features (drag, SRP, orbital elements, etc.).
-        let (integ_frame, switches) = body_frame_state.get(entity).unwrap_or((None, None));
-        let root_fid_value = root_fid.as_ref().map(|r| r.0);
-        let frame_tree_ref = frame_tree.as_ref().map(|r| &r.0);
-        // Use `is_root_equivalent` instead of raw FrameId equality so
+        let (body_frame_handle, switches) = body_frame_state.get(entity).unwrap_or((None, None));
+        let root_entity_value = root_frame_entity.as_ref().map(|r| r.0);
+        // Resolve the body's current integration frame entity via
+        // `Query<&ChildOf>` on its frame entity. Bodies registered
+        // before the frames-as-entities components landed have no
+        // `FrameEntityC` — treat those as root-integrated (the
+        // pre-migration default) so they don't trip the warning.
+        let body_integ_frame_entity = body_frame_handle
+            .and_then(|fe| parents.get(fe.0).ok().map(|child_of| child_of.parent()));
+        // Use `is_root_equivalent_entity` instead of raw entity equality so
         // Earth-centered bodies with `IntegSourceC(Some(earth))`
         // (Earth.inertial sits one level below the generic root with
         // identity state) don't trip the warning. See helper doc.
-        let non_root_integ = match (integ_frame, root_fid_value, frame_tree_ref) {
-            (Some(ifc), Some(root), Some(ft)) => !is_root_equivalent(ft, ifc.0, root),
+        let non_root_integ = match (body_integ_frame_entity, root_entity_value) {
+            (Some(integ_e), Some(root_e)) => {
+                !is_root_equivalent_entity(integ_e, root_e, &parents, &frame_states)
+            }
             _ => false,
         };
         let mut non_root_switch = false;
@@ -314,8 +328,8 @@ pub fn validate_jeod_invariants(
                 // (a) target_source must be a registered gravity source
                 // (Bevy analog of runner's `target >= num_sources` check —
                 // here a missing `SourceFrameIdC` is the failure mode).
-                let target_fid = match source_frames.get(sw.target_source) {
-                    Ok(s) => Some(s.0),
+                let target_frame_entity = match source_frames.get(sw.target_source) {
+                    Ok((_, fe)) => Some(fe.0),
                     Err(_) => {
                         panic!(
                             "Entity {entity:?}: FrameSwitchConfig.target_source = {target:?} \
@@ -348,13 +362,11 @@ pub fn validate_jeod_invariants(
                 }
                 // Same root-equivalence adjustment as `non_root_integ`
                 // above — switching back to the central body in Bevy
-                // still produces a `target_fid` one level below root,
-                // but with identity state, so it is numerically
+                // still produces a target frame entity one level below
+                // root, but with identity state, so it is numerically
                 // root-equivalent and must not trip the warning.
-                if let (Some(tf), Some(root), Some(ft)) =
-                    (target_fid, root_fid_value, frame_tree_ref)
-                {
-                    if !is_root_equivalent(ft, tf, root) {
+                if let (Some(tfe), Some(root_e)) = (target_frame_entity, root_entity_value) {
+                    if !is_root_equivalent_entity(tfe, root_e, &parents, &frame_states) {
                         non_root_switch = true;
                     }
                 }
