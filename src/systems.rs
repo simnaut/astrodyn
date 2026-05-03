@@ -268,6 +268,17 @@ pub fn register_body_frames_system(
             Option<&Name>,
             &TranslationalStateC,
             Option<&IntegSourceC>,
+            // PR #283 review thread PRRT_kwDORtae6c5_KiLK — wire the
+            // frame-side `MassPointRef` back-pointer at body-frame
+            // registration time for any entity that also carries
+            // `MassPropertiesC` (i.e. participates in the mass tree).
+            // In the current Bevy adapter the body / mass / frame
+            // ECS entity is one and the same, so the back-pointer
+            // resolves to `MassPointRef(self)`. The component is
+            // skipped for kinematic-only bodies (no
+            // `MassPropertiesC`), matching the "absent for
+            // kinematic-only attaches" contract on the type.
+            Has<MassPropertiesC>,
         ),
         (
             With<TranslationalStateC>,
@@ -276,7 +287,7 @@ pub fn register_body_frames_system(
         ),
     >,
 ) {
-    for (entity, name, trans, integ_source) in &bodies {
+    for (entity, name, trans, integ_source, has_mass) in &bodies {
         let label = name
             .map(|n| n.as_str().to_string())
             .unwrap_or_else(|| format!("body{:?}", entity));
@@ -318,9 +329,11 @@ pub fn register_body_frames_system(
             jeod_sim::RefFrameKind::Body,
             body_state,
         );
-        commands
-            .entity(entity)
-            .insert((BodyFrameIdC(body_fid), IntegFrameIdC(integ_frame_id)));
+        let mut entity_cmds = commands.entity(entity);
+        entity_cmds.insert((BodyFrameIdC(body_fid), IntegFrameIdC(integ_frame_id)));
+        if has_mass {
+            entity_cmds.insert(MassPointRef(entity));
+        }
     }
 }
 
