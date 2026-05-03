@@ -24,6 +24,13 @@
 //!    detached entity is no longer integrated by the wrench-aggregation
 //!    walk; `step_detached_system` owns its propagation.
 
+// `FrameTreeR` is `#[deprecated]` for mission-code use. This parity test
+// deliberately reads the arena to assert bit-identity of the
+// detach/free-flight frame-tree mirror against the body components.
+// Once the resource is removed, the arena read here will be rewritten
+// to use `RelativeFrameState`.
+#![allow(deprecated)]
+
 use bevy::prelude::*;
 use bevy_jeod::{
     AttachEvent, DetachEvent, DetachedSubtreeStateC, DynamicsConfigC, FrameDerivativesC,
