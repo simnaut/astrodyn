@@ -192,6 +192,124 @@ fn bevy_parity_mass_attach_with_gj_resets_integrator() {
     step_bevy(&mut app, 5, sim_dt);
 }
 
+/// `staging_system` must reset GJ state on the **full ancestor
+/// chain**, not just the directly-named bodies. Builds a 3-body chain
+/// `top → middle → leaf`, then attaches a fourth body underneath
+/// `middle` and verifies that `top`'s GJ state is reset (in addition
+/// to `middle` and the new attachee). Mirrors PR #282 review thread
+/// `PRRT_kwDORtae6c5_J-qF` (attach branch).
+#[test]
+fn bevy_parity_mass_attach_with_gj_resets_full_ancestor_chain() {
+    let sim_dt = 1.0_f64;
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(sim_dt));
+    app.add_plugins(JeodPlugin);
+
+    let mut tree = MassTree::new();
+    let id_top = tree.add_body("Top".into(), MassProperties::new(1000.0));
+    let id_middle = tree.add_body("Middle".into(), MassProperties::new(500.0));
+    let id_leaf = tree.add_body("Leaf".into(), MassProperties::new(100.0));
+    let id_new = tree.add_body("NewAttachee".into(), MassProperties::new(50.0));
+    app.insert_resource(MassTreeR(tree));
+
+    let planet = app
+        .world_mut()
+        .spawn((
+            Name::new("Planet"),
+            GravitySourceC(GravitySource {
+                mu: MU_GJ_TEST,
+                model: GravityModel::PointMass,
+            }),
+            SourceInertialPositionC::default(),
+            TranslationalStateC::default(),
+        ))
+        .id();
+    let trans = TranslationalState {
+        position: DVec3::new(9e6, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 8000.0, 0.0),
+    };
+    let gj_cfg = GaussJacksonConfig::with_order(8);
+    let mk_body = |app: &mut App, id: jeod_sim::MassBodyId, mass: f64, name: &str| -> Entity {
+        app.world_mut()
+            .spawn((
+                Name::new(name.to_string()),
+                DynamicsConfigC::default(),
+                TranslationalStateC::from(trans),
+                MassPropertiesC::from(MassProperties::new(mass)),
+                GravityControlsC(GravityControls {
+                    controls: vec![GravityControl::new_spherical(planet, false)],
+                }),
+                IntegratorTypeC(IntegratorType::GaussJackson(gj_cfg)),
+                GaussJacksonStateC(GaussJacksonState::new(gj_cfg)),
+                MassBodyIdC(id),
+            ))
+            .id()
+    };
+    let e_top = mk_body(&mut app, id_top, 1000.0, "Top");
+    let e_middle = mk_body(&mut app, id_middle, 500.0, "Middle");
+    let e_leaf = mk_body(&mut app, id_leaf, 100.0, "Leaf");
+    let e_new = mk_body(&mut app, id_new, 50.0, "NewAttachee");
+
+    // Chain: middle → top, leaf → middle.
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: e_middle,
+            parent: e_top,
+            offset: DVec3::ZERO,
+            t_parent_child: DMat3::IDENTITY,
+        });
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: e_leaf,
+            parent: e_middle,
+            offset: DVec3::ZERO,
+            t_parent_child: DMat3::IDENTITY,
+        });
+    step_bevy(&mut app, 200, sim_dt);
+    assert!(
+        !read_gj_priming(app.world(), e_top),
+        "test setup: top GJ must be past priming"
+    );
+
+    // Attach e_new under e_middle — recomputes middle's AND top's
+    // composites, so top's GJ must reset.
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: e_new,
+            parent: e_middle,
+            offset: DVec3::ZERO,
+            t_parent_child: DMat3::IDENTITY,
+        });
+    step_bevy(&mut app, 1, sim_dt);
+
+    assert!(
+        read_gj_priming(app.world(), e_top),
+        "ancestor `top`'s GJ must be reset when a body is attached \
+         under its descendant `middle` (IG.37 ancestor coverage)"
+    );
+    assert!(!read_gj_topology_dirty(app.world(), e_top));
+
+    // Prime past again, then detach to verify ancestor coverage on
+    // the detach branch too.
+    step_bevy(&mut app, 200, sim_dt);
+    assert!(!read_gj_priming(app.world(), e_top));
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<DetachEvent>>()
+        .write(DetachEvent { child: e_new });
+    step_bevy(&mut app, 1, sim_dt);
+    assert!(
+        read_gj_priming(app.world(), e_top),
+        "ancestor `top`'s GJ must be reset when a descendant of \
+         `middle` is detached (IG.37 ancestor coverage)"
+    );
+    assert!(!read_gj_topology_dirty(app.world(), e_top));
+    let _ = e_leaf;
+}
+
 /// Mirror of the attach test for `DetachEvent`.
 #[test]
 fn bevy_parity_mass_detach_with_gj_resets_integrator() {

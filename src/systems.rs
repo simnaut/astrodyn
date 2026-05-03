@@ -2157,7 +2157,19 @@ pub fn staging_system(
         return;
     };
 
-    let mut changed_ids: Vec<jeod_sim::MassBodyId> = Vec::new();
+    // The set of mass-tree node ids whose composite mass changes due
+    // to the events processed below — i.e. whose multi-step integrator
+    // state must be marked topology-dirty (Site A) and later reset
+    // (Site B). We accumulate it INLINE with each event-handler branch
+    // so the dirty-marking is structurally bound to the topology
+    // mutation call site, then mark in one query pass, then reset in
+    // a separate observation pass. Splitting Site A and Site B is the
+    // structural fix for IG.37 fail-loud (see JEOD_invariants.md): a
+    // future code path that adds a new event branch and forgets the
+    // reset pass will leave the dirty flag set, so the next
+    // `integrate()` panics with the IG.37 diagnostic rather than
+    // silently propagating stale predictor history.
+    let mut affected_ids: Vec<jeod_sim::MassBodyId> = Vec::new();
 
     for evt in attach_events.read() {
         let child_id = bodies
@@ -2182,9 +2194,14 @@ pub fn staging_system(
             })
             .0
              .0;
+        // The bodies whose composite mass changes are the child plus
+        // every ancestor of the new parent in the pre-attach tree
+        // (`MassTree::recompute_composites` walks the entire forest
+        // post-order, so any ancestor of the new parent is touched).
+        // Capture the chain BEFORE mutating the tree.
+        affected_ids.push(child_id);
+        affected_ids.extend(tree.ancestors_inclusive(parent_id));
         tree.attach(child_id, parent_id, evt.offset, evt.t_parent_child);
-        changed_ids.push(child_id);
-        changed_ids.push(parent_id);
     }
 
     for evt in detach_events.read() {
@@ -2199,54 +2216,54 @@ pub fn staging_system(
             })
             .0
              .0;
+        // Bodies whose composite changes: the (about-to-be-detached)
+        // child plus the former parent's full ancestor chain. Capture
+        // BEFORE mutating the tree.
+        affected_ids.push(child_id);
         if let Some(parent_id) = tree.parent(child_id) {
-            changed_ids.push(parent_id);
+            affected_ids.extend(tree.ancestors_inclusive(parent_id));
         }
         tree.detach(child_id);
-        changed_ids.push(child_id);
     }
 
+    if affected_ids.is_empty() {
+        return;
+    }
+    affected_ids.sort_unstable();
+    affected_ids.dedup();
+
     // Sync composite mass properties for all affected nodes.
-    // Walk up from each changed node to the root to capture cascading updates.
-    if !changed_ids.is_empty() {
-        let mut sync_ids: Vec<jeod_sim::MassBodyId> = Vec::new();
-        for &id in &changed_ids {
-            let mut current = id;
-            sync_ids.push(current);
-            while let Some(parent) = tree.parent(current) {
-                sync_ids.push(parent);
-                current = parent;
+    for (body_id, mut mass) in &mut bodies {
+        if affected_ids.binary_search(&body_id.0).is_ok() {
+            *mass = MassPropertiesC::from(tree.get(body_id.0).composite_properties);
+        }
+    }
+
+    // Site A: mark every affected body's integrators dirty.
+    // JEOD_INV: IG.37 — kept strictly before Site B so a regression
+    // that drops Site B leaves the dirty flag set and panics on next
+    // integrate.
+    for (body_id, mut gj_opt, mut abm_opt) in &mut integrators {
+        if affected_ids.binary_search(&body_id.0).is_ok() {
+            if let Some(ref mut gj) = gj_opt {
+                gj.0.mark_topology_dirty();
+            }
+            if let Some(ref mut abm) = abm_opt {
+                abm.0.mark_topology_dirty();
             }
         }
-        sync_ids.sort_unstable();
-        sync_ids.dedup();
+    }
 
-        for (body_id, mut mass) in &mut bodies {
-            if sync_ids.binary_search(&body_id.0).is_ok() {
-                *mass = MassPropertiesC::from(tree.get(body_id.0).composite_properties);
-            }
-        }
-
-        // JEOD_INV: IG.37 — Multi-step integrators (GJ, ABM4) carry predictor
-        // history that is invalidated by an attach / detach event. Mirror
-        // JEOD's `dyn_body_attach.cc::reset_integrators()` (lines 860, 871)
-        // and `dyn_body_detach.cc:271-273` by resetting both directly-affected
-        // bodies' integrator state. Mark dirty first so the reset clears the
-        // flag — any path that bypasses this helper will trip the IG.37
-        // assertion in `integrate()`.
-        for (body_id, mut gj_opt, mut abm_opt) in &mut integrators {
-            if sync_ids.binary_search(&body_id.0).is_ok() {
-                if let Some(ref mut gj) = gj_opt {
-                    gj.0.mark_topology_dirty();
-                }
-                if let Some(ref mut abm) = abm_opt {
-                    abm.0.mark_topology_dirty();
-                }
-                jeod_sim::reset_integrators(
-                    gj_opt.as_mut().map(|c| &mut c.0),
-                    abm_opt.as_mut().map(|c| &mut c.0),
-                );
-            }
+    // Site B: reset integrator history. Mirrors JEOD's
+    // `dyn_body_attach.cc::reset_integrators()` (lines 860, 871) and
+    // `dyn_body_detach.cc:271-273`.
+    // JEOD_INV: IG.37 — multi-step integrator history must be reset on topology change
+    for (body_id, mut gj_opt, mut abm_opt) in &mut integrators {
+        if affected_ids.binary_search(&body_id.0).is_ok() {
+            jeod_sim::reset_integrators(
+                gj_opt.as_mut().map(|c| &mut c.0),
+                abm_opt.as_mut().map(|c| &mut c.0),
+            );
         }
     }
 }
