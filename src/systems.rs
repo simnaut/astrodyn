@@ -1343,6 +1343,57 @@ pub fn planet_fixed_rotation_system(
     }
 }
 
+/// Drives kinematically prescribed joint frames each tick.
+///
+/// For every entity carrying a [`JointKinematicsC`] spec, the joint
+/// angle at the current simulation time is `θ(t) = initial + rate · t`,
+/// where `t` is the tick's `tai_seconds` (the elapsed-since-epoch time
+/// scale `time_advance_system` already advances every step). The
+/// system writes:
+///
+/// - [`FrameRotC::q_parent_this`] = left-transformation quaternion
+///   `parent → this` for the rotation about the spec's
+///   `axis_in_parent` by `θ(t)`,
+/// - [`FrameRotC::t_parent_this`] = the corresponding 3×3 transformation
+///   matrix (cache),
+/// - [`FrameAngVelC::0`] = `rate · axis_in_parent` (the angular
+///   velocity in this-frame coordinates — the rotation axis is the
+///   eigenvector of the rotation, so it's invariant between parent
+///   and this frames).
+///
+/// This is the analog of [`planet_fixed_rotation_system`] for arbitrary
+/// user-declared joint axes: planet-fixed frames spin at JEOD's
+/// Earth/Mars/Moon rotation rates about the planet pole;
+/// joint frames spin at a mission-declared `rate_rad_per_s` about an
+/// arbitrary `axis_in_parent`. Both write the same `FrameRotC` /
+/// `FrameAngVelC` storage, so any downstream consumer that reads
+/// frame-tree state through [`crate::components::FrameRotC`] /
+/// [`crate::components::FrameAngVelC`] (or through a future
+/// `RelativeFrameState` SystemParam) sees the joint kinematics
+/// uniformly with planet-fixed kinematics.
+///
+/// Scheduled in [`crate::JeodSet::EphemerisUpdate`] alongside
+/// `planet_fixed_rotation_system` so the joint frame's rotation /
+/// angular velocity are current before any consumer that walks the
+/// frame tree (gravity, derived state, integration) reads them.
+///
+/// "Kinematic" means the angle is an *input*, not an integrated
+/// state — there is no torque, inertia, or momentum. Joint dynamics
+/// (free-swinging joints, IK, constraint-derived joint forces) are
+/// out of scope; see the deferred-dynamics meta.
+pub fn joint_kinematics_system(
+    sim_time: Res<SimulationTimeR>,
+    mut query: Query<(&JointKinematicsC, &mut FrameRotC, &mut FrameAngVelC)>,
+) {
+    let elapsed = sim_time.tai_seconds;
+    for (spec, mut rot, mut ang_vel) in &mut query {
+        let (q_parent_this, ang_vel_this) = jeod_sim::evaluate_joint_kinematics(&spec.0, elapsed);
+        rot.q_parent_this = q_parent_this;
+        rot.t_parent_this = q_parent_this.left_quat_to_transformation();
+        ang_vel.0 = ang_vel_this;
+    }
+}
+
 /// Computes tidal ΔC20 for each gravity source that has a `TidalConfigC`.
 ///
 /// Runs after `planet_fixed_rotation_system` so the rotation matrix is current.

@@ -485,6 +485,12 @@ impl Plugin for JeodPlugin {
                     .after(systems::planet_fixed_rotation_system),
                 // Planet-fixed rotation (RNP)
                 systems::planet_fixed_rotation_system.in_set(JeodSet::EphemerisUpdate),
+                // Kinematically prescribed joint frames (issue #275).
+                // Same EphemerisUpdate stage as planet-fixed rotation:
+                // both write FrameRotC / FrameAngVelC on frame entities
+                // and must run before any frame-tree consumer in
+                // Environment / Interaction / Integration / DerivedState.
+                systems::joint_kinematics_system.in_set(JeodSet::EphemerisUpdate),
                 // Ephemeris position updates (DE4xx)
                 systems::ephemeris_update_system.in_set(JeodSet::EphemerisUpdate),
                 // Tidal ΔC20 (must run after planet-fixed rotation)
@@ -613,6 +619,7 @@ pub fn register_jeod_component_types(app: &mut App) {
     app.register_type::<components::FrameEntityC>();
     app.register_type::<components::PfixFrameEntityC>();
     app.register_type::<components::RetiredPfixFrameEntityC>();
+    app.register_type::<components::JointKinematicsC>();
     // Tidal
     app.register_type::<components::TidalConfigC>();
     app.register_type::<components::TidalDeltaC20C>();
