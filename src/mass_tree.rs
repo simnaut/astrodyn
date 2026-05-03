@@ -140,18 +140,22 @@ impl MassTreeView {
     /// don't appear as children in `parents_q`.
     ///
     /// Treats the live `MassPropertiesC` value as the **core**.
-    /// **Important (PR #283 review thread PRRT_kwDORtae6c5_KHnh):
-    /// this is correct only when no prior
-    /// [`composite_mass_system`] tick has overwritten
+    /// **Important (PR #283 review threads `PRRT_kwDORtae6c5_KHnh`
+    /// and `PRRT_kwDORtae6c5_KZvV`): this is correct only when no
+    /// prior [`composite_mass_system`] tick has overwritten
     /// `MassPropertiesC` with composite values** — i.e. one-shot
     /// startup composition, downstream systems that build their own
     /// view *before* the system has run, or scenarios where the
     /// caller knows every entity is a leaf (so live == composite ==
-    /// core trivially). For a running app where
-    /// [`composite_mass_system`] has executed at least once, prefer
-    /// the [`MassTreeQueries::core_mass`] read path or rebuild the
-    /// view internally from the [`CoreMassPropertiesC`] cache (which
-    /// is what `composite_mass_system` itself does between ticks).
+    /// core trivially).
+    ///
+    /// **For mission code that runs the kernel after the schedule
+    /// has composed at least once, use [`MassTreeQueries::build_view`]
+    /// (or [`MassTreeQueries::recompute_composites`]) instead** —
+    /// those route through the [`CoreMassPropertiesC`] cache and
+    /// give every non-leaf entity its true core, avoiding the
+    /// silent double-count that this constructor would produce on a
+    /// post-system world.
     pub fn from_queries<M, P>(
         mass_q: &Query<(Entity, &MassPropertiesC), M>,
         parents_q: &Query<(Entity, &MassChildOf), P>,
@@ -371,6 +375,64 @@ impl MassTreeQueries<'_, '_> {
     /// symmetrically.
     pub fn composite_mass(&self, entity: Entity) -> Option<jeod_sim::MassProperties> {
         self.mass.get(entity).ok().map(|(_, m)| m.0.to_untyped())
+    }
+
+    /// Build a cache-backed [`MassTreeView`] using
+    /// [`CoreMassPropertiesC`] for entities the system has already
+    /// composed and the live [`MassPropertiesC`] for entities it
+    /// hasn't touched yet (newly-spawned, pre-system one-shot use,
+    /// leaves where live == core trivially).
+    ///
+    /// **Use this — not [`MassTreeView::from_queries`] — for any
+    /// external recompute** that runs after [`composite_mass_system`]
+    /// has executed at least once. The bare `from_queries` reads
+    /// the live `MassPropertiesC` as the per-entity core, which
+    /// silently double-counts previously-attached children for any
+    /// non-leaf entity (PR #283 review thread `PRRT_kwDORtae6c5_KZvV`).
+    /// `from_queries` remains correct for the strictly-pre-system
+    /// (or strictly-leaf) cases where no composite write-back has
+    /// happened yet, but mission code calling the kernel from a
+    /// one-shot system after the schedule has run **must** route
+    /// through this method.
+    ///
+    /// The returned view is fully owned (snapshots core properties
+    /// and names at construction); callers can then drive
+    /// [`jeod_sim::recompute_composites_via_storage`] without
+    /// holding any borrow against this `SystemParam`.
+    pub fn build_view(&self) -> MassTreeView {
+        // Per-entity core map: cache first (covers every entity the
+        // system has touched, including non-leaves whose live
+        // `MassPropertiesC` is now the composite), live
+        // `MassPropertiesC` second (covers leaves and freshly-spawned
+        // entities the system hasn't seen yet — correct because for
+        // those live == core).
+        let mut cores: HashMap<Entity, MassProperties> = HashMap::new();
+        for (entity, mass) in self.mass.iter() {
+            let core = match self.cores.get(entity) {
+                Ok(c) => c.0,
+                Err(_) => mass.0.to_untyped(),
+            };
+            cores.insert(entity, core);
+        }
+        build_view_from_cores(&cores, &self.parents, &self.names)
+    }
+
+    /// Run the storage-agnostic composition kernel against a
+    /// cache-backed view of the current world.
+    ///
+    /// Convenience wrapper around [`Self::build_view`] +
+    /// [`jeod_sim::recompute_composites_via_storage`]. Returns the
+    /// per-entity post-order outputs (core / composite / parent-frame
+    /// shifted) for callers that want to inspect the kernel result
+    /// without going through the system's write-back. Mission code
+    /// that just wants composite mass should prefer reading
+    /// [`MassPropertiesC`] directly after [`composite_mass_system`]
+    /// has run; this method exists for one-shot, dry-run, and
+    /// integration-test use cases (PR #283 review thread
+    /// `PRRT_kwDORtae6c5_KZvV`).
+    pub fn recompute_composites(&self) -> Vec<(Entity, jeod_sim::MassNodeOutputs)> {
+        let view = self.build_view();
+        jeod_sim::recompute_composites_via_storage(&view)
     }
 }
 
@@ -1137,6 +1199,101 @@ mod tests {
             (p.child_composite_mass - 5.0).abs() < 1e-12,
             "child composite mass: {} (expected 5)",
             p.child_composite_mass
+        );
+    }
+
+    /// PR #283 review thread `PRRT_kwDORtae6c5_KZvV` —
+    /// [`MassTreeQueries::build_view`] / [`MassTreeQueries::recompute_composites`]
+    /// give external callers a cache-backed `MassTreeView` so an
+    /// out-of-schedule recompute (mission one-shot system, debug
+    /// inspector, integration test) does **not** silently
+    /// double-count children by re-reading the post-system
+    /// composite as the per-entity core.
+    ///
+    /// Regression scenario:
+    /// - Tick 1 composes parent + child, parent's `MassPropertiesC`
+    ///   becomes the composite (mass 15).
+    /// - An external one-shot system calls
+    ///   `MassTreeView::from_queries` (the bare entry point) and
+    ///   re-runs the kernel. The bare path reads live
+    ///   `MassPropertiesC` as core for the parent (mass 15) and
+    ///   then *re-adds* the child (mass 5), producing a fictitious
+    ///   composite mass of 20.
+    /// - The cache-backed `MassTreeQueries::recompute_composites`
+    ///   reads the parent's true core (10) and produces the
+    ///   correct composite (15).
+    #[test]
+    fn build_view_uses_core_cache_to_avoid_double_count() {
+        let mut app = add_test_app();
+        app.add_systems(Update, composite_mass_system);
+
+        let parent_core = MassProperties::new(10.0);
+        let child_core = MassProperties::new(5.0);
+        let offset = DVec3::new(2.0, 0.0, 0.0);
+
+        let parent = app
+            .world_mut()
+            .spawn(MassPropertiesC::from(parent_core))
+            .id();
+        let _child = app
+            .world_mut()
+            .spawn((
+                MassPropertiesC::from(child_core),
+                MassChildOf::new(parent, offset),
+            ))
+            .id();
+
+        // Tick 1: parent's `MassPropertiesC` becomes composite (15).
+        app.update();
+        let composite_after_tick1 = app
+            .world()
+            .get::<MassPropertiesC>(parent)
+            .unwrap()
+            .0
+            .to_untyped()
+            .mass;
+        assert!(
+            (composite_after_tick1 - 15.0).abs() < 1e-12,
+            "tick1 composite mass {composite_after_tick1}"
+        );
+
+        #[derive(Resource, Default)]
+        struct Probe {
+            parent_recomposed_mass: f64,
+        }
+        app.insert_resource(Probe::default());
+
+        #[derive(Resource)]
+        struct Target(Entity);
+        app.insert_resource(Target(parent));
+
+        fn external_recompute(
+            queries: MassTreeQueries,
+            mut out: ResMut<Probe>,
+            target: Res<Target>,
+        ) {
+            // External caller drives the kernel via the public
+            // `recompute_composites` helper. Must NOT double-count
+            // the child.
+            let outputs = queries.recompute_composites();
+            let parent_out = outputs
+                .iter()
+                .find(|(e, _)| *e == target.0)
+                .expect("parent in kernel outputs")
+                .1;
+            out.parent_recomposed_mass = parent_out.composite.mass;
+        }
+
+        let id = app.world_mut().register_system(external_recompute);
+        app.world_mut()
+            .run_system(id)
+            .expect("external recompute runs");
+
+        let probe = app.world().resource::<Probe>();
+        assert!(
+            (probe.parent_recomposed_mass - 15.0).abs() < 1e-12,
+            "external recompute mass: {} (expected 15, double-count would give 20)",
+            probe.parent_recomposed_mass
         );
     }
 }
