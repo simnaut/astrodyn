@@ -29,10 +29,10 @@ pub use crate::{
     DynamicsConfigC, FrameAngVelC, FrameDerivativesC, FrameEntityC, FrameRotC, FrameTransC,
     GaussJacksonStateC, GravityAccelerationC, GravityControlsC, GravitySourceC, GravityTorqueC,
     InertialFrameMarker, IntegrationFrameMarker, IntegratorTypeC, JeodPlugin, JeodSet,
-    MassPropertiesC, PfixFrameEntityC, PlanetFixedFrameMarker, PlanetFixedRotationC,
-    RadiationForceC, RootFrameEntityR, RotationalStateC, SimulationTimeR, SourceInertialPositionC,
-    SourceInertialVelocityC, StructuralTransformC, TotalForceC, TranslationalStateC,
-    VehicleConfigBevyExt,
+    JointKinematicsC, MassPropertiesC, PfixFrameEntityC, PlanetFixedFrameMarker,
+    PlanetFixedRotationC, RadiationForceC, RootFrameEntityR, RotationalStateC, SimulationTimeR,
+    SourceInertialPositionC, SourceInertialVelocityC, StructuralTransformC, TotalForceC,
+    TranslationalStateC, VehicleConfigBevyExt,
 };
 // ECS-native frame-tree mission-code surface.
 // `RelativeFrameState` is the mission-facing replacement for
@@ -51,9 +51,9 @@ pub use crate::frame_param::{FrameOrigin, RelativeFrameState};
 // (per CLAUDE.md "Three-Layer Architecture": the root package depends
 // only on `jeod_sim` + `bevy`).
 pub use jeod_sim::{
-    Array3Ext, BodyFrame, Ecef, F64Ext, Frame, FrameTransform, GravityControl, JeodQuat, Lvlh, Ned,
-    Planet, PlanetFixed, Qty3, RootInertial, SelfPlanet, SelfRef, StructuralFrame, Vec3Ext,
-    Vehicle, VehicleBuilder, VehicleConfig,
+    Array3Ext, BodyFrame, Ecef, F64Ext, Frame, FrameTransform, GravityControl, JeodQuat,
+    JointKinematicsSpec, Lvlh, Ned, Planet, PlanetFixed, Qty3, RootInertial, SelfPlanet, SelfRef,
+    StructuralFrame, Vec3Ext, Vehicle, VehicleBuilder, VehicleConfig, AXIS_NORM_TOL,
 };
 // Mission-crate macros for defining additional `Vehicle` / `Planet`
 // markers. Re-exported so `use bevy_jeod::prelude::*;` brings them into

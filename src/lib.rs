@@ -613,6 +613,17 @@ impl Plugin for JeodPlugin {
         app.add_systems(
             FixedUpdate,
             (
+                // Kinematically prescribed joint frames. Same
+                // EphemerisUpdate stage as planet-fixed rotation: both
+                // write FrameRotC / FrameAngVelC on frame entities and
+                // must run before any frame-tree consumer in
+                // Environment / Interaction / Integration /
+                // DerivedState. Lives in this second add_systems call
+                // (rather than alongside planet_fixed_rotation_system)
+                // only to stay within Bevy's 20-tuple `IntoSystem`
+                // limit; set membership controls ordering, not which
+                // `add_systems` call carries the system.
+                systems::joint_kinematics_system.in_set(JeodSet::EphemerisUpdate),
                 // Force collection and integration
                 systems::force_collection_system.in_set(JeodSet::ForceCollection),
                 // Composite-rigid-body wrench aggregation: walk
@@ -709,6 +720,7 @@ pub fn register_jeod_component_types(app: &mut App) {
     app.register_type::<components::FrameEntityC>();
     app.register_type::<components::PfixFrameEntityC>();
     app.register_type::<components::RetiredPfixFrameEntityC>();
+    app.register_type::<components::JointKinematicsC>();
     // Tidal
     app.register_type::<components::TidalConfigC>();
     app.register_type::<components::TidalDeltaC20C>();

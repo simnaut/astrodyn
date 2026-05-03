@@ -21,7 +21,11 @@
 //! [`propagate_forward`], [`propagate_reverse`]. Holonomic constraints
 //! ([`HolonomicConstraint`], [`PendulumConstraint`], [`BaumgarteSolver`],
 //! [`apply_constraint`]) port the constraint-stabilization layer used by
-//! tethers and articulated structures.
+//! tethers and articulated structures. Declaratively driven kinematic
+//! joints — single-axis frame-rotation drivers used by articulated
+//! sub-trees that consume a prescribed angular trajectory rather than
+//! integrating one — live in [`kinematic_joint`]
+//! ([`JointKinematicsSpec`], [`evaluate_joint_kinematics`]).
 //!
 //! JEOD source: `models/dynamics/dyn_body/`, `models/dynamics/mass/`,
 //! `models/dynamics/body_action/`, and `models/utils/integration/`. Pure
@@ -38,6 +42,7 @@ pub mod constraints;
 pub mod forces;
 pub mod gauss_jackson;
 pub mod integration;
+pub mod kinematic_joint;
 pub mod mass;
 pub mod mass_body;
 pub mod mass_storage;
@@ -63,6 +68,7 @@ pub use forces::{
 pub use gauss_jackson::config::GaussJacksonConfig;
 pub use gauss_jackson::{GaussJacksonState, IntegratorResult};
 pub use integration::{rk4_sixdof_step, rk4_translational_step, IntegratorType};
+pub use kinematic_joint::{evaluate as evaluate_joint_kinematics, JointKinematicsSpec};
 pub use mass::{MassProperties, INERTIA_CONSISTENCY_TOL};
 pub use mass_body::{
     point_mass_inertia, MassBody, MassBodyId, MassPoint, MassPointState, MassTree,
