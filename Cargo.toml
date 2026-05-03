@@ -71,8 +71,10 @@ typenum = "1.20"
 # opt-level=2 gives ~20× speedup with minimal compile-time increase.
 [profile.dev]
 opt-level = 2
+debug = "line-tables-only"
 [profile.test]
 opt-level = 2
+debug = "line-tables-only"
 
 [[example]]
 name = "kepler_orbit"
