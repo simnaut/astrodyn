@@ -21,10 +21,21 @@
 //! 3. composite inertia = core inertia shifted to composite CoM
 //!    (point-mass shift) + each child's composite inertia rotated
 //!    `T^T · I · T` and shifted by the child→composite offset.
-//! 4. the post-attach root (and any detached child whose tree just
-//!    became its own root) gets `inverse_inertia ← inertia.inverse()`,
-//!    matching JEOD's `MassBody::update_mass_properties` and
-//!    `mass_detach.cc` lines 322-335.
+//! 4. **every** mass-bearing node — root, internal, and atomic leaf
+//!    alike — gets `inverse_inertia ← inertia.inverse()` whenever
+//!    `mass > 0`, matching JEOD's `MassBody::update_mass_properties`
+//!    and `mass_detach.cc:322-335` for the integration root and
+//!    extending the same write to non-root nodes. The Bevy
+//!    pipeline's rotational dynamics, gravity-gradient torque, and
+//!    SRP / aero torques integrate *every* `DynamicsConfigC`-bearing
+//!    entity using its own `MassPropertiesC.inverse_inertia` (not
+//!    just the integration root), so a non-root with a zero
+//!    `inverse_inertia` cache would silently drop its torque
+//!    response. Mass-zero nodes get `DMat3::ZERO`, matching JEOD's
+//!    `Matrix3x3::invert_symmetric` fall-through. The integration
+//!    root receives the same value the arena would have produced
+//!    via its second invert in `mass_update.cc:116-125`, so behaviour
+//!    is bit-equivalent for the runner's existing call sites.
 //!
 //! Storage backends supply the *core* properties via
 //! [`MassNodeView`]; the kernel returns the recomputed *composite*
@@ -75,9 +86,16 @@ pub struct MassNodeView<'a> {
 /// Bevy `MassPropertiesC` component, etc.).
 #[derive(Debug, Clone, Copy)]
 pub struct MassNodeOutputs {
-    /// Recomputed composite mass / inertia / CoM (with `inverse_*`
-    /// caches kept consistent for roots and detached leaves; see
-    /// [`recompute_composites_via_storage`] for the rule).
+    /// Recomputed composite mass / inertia / CoM. Both `inverse_*`
+    /// caches are populated for every mass-bearing node (roots,
+    /// internal nodes, atomic leaves) whenever `mass > 0`. Mass-zero
+    /// nodes get `DMat3::ZERO` for `inverse_inertia` and `0.0` for
+    /// `inverse_mass`, matching JEOD's
+    /// `Matrix3x3::invert_symmetric` fall-through. See
+    /// [`recompute_composites_via_storage`] for the full rule and
+    /// rationale (Bevy non-root rotational dynamics need their own
+    /// `inverse_inertia`, so per-node inversion is mandatory and not
+    /// merely a convenience).
     pub composite: MassProperties,
     /// `core_wrt_composite`: core CoM minus composite CoM, both in
     /// this body's structural frame. Default for atomic nodes.

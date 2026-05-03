@@ -289,9 +289,16 @@ pub struct MassTreeQueries<'w, 's> {
 /// applying the parallel-axis / Steiner theorem at every internal
 /// node. Atomic / leaf nodes get their composite set equal to their
 /// core (matches the arena's `MassTree::recompute_composites`
-/// behaviour). Roots additionally get `inverse_inertia` populated
-/// (JEOD only inverts at the integration root —
-/// `mass_update.cc:116-125`).
+/// behaviour). Every mass-bearing node — root, internal, atomic
+/// leaf — also gets a fresh `inverse_inertia` whenever `mass > 0`;
+/// the Bevy pipeline's rotational dynamics, gravity-gradient
+/// torque, and SRP / aero torques integrate every
+/// `DynamicsConfigC`-bearing entity using its own
+/// `MassPropertiesC.inverse_inertia`, not just the integration
+/// root, so per-node inversion is mandatory. The root's value is
+/// bit-equivalent to JEOD's second invert at
+/// `mass_update.cc:116-125`; non-root nodes are the natural
+/// extension.
 ///
 /// **Three-layer rule.** This system is pure ECS glue: it queries
 /// components, builds a [`MassTreeView`], delegates to the shared
