@@ -93,10 +93,34 @@ use std::collections::{HashMap, HashSet};
 use jeod_sim::{aggregate_wrenches_via_storage, EdgeGeometry, Wrench};
 
 use crate::components::{
-    DynamicsConfigC, FrameDerivativesC, GravityAccelerationC, KinematicChildC, MassChildOf,
-    MassPropertiesC, RotationalStateC, StructuralTransformC, TotalForceC,
+    Abm4StateC, DynamicsConfigC, FrameDerivativesC, GaussJacksonStateC, GravityAccelerationC,
+    KinematicChildC, MassChildOf, MassPropertiesC, RotationalStateC, StructuralTransformC,
+    TotalForceC,
 };
 use crate::mass_tree::MassTreeView;
+
+/// Clear multi-step integrator (Gauss-Jackson, ABM4) predictor /
+/// corrector history for an entity that's about to resume root-side
+/// integration after being a kinematic child of a `MassChildOf`
+/// chain. Single-step integrators (RK4, RKF4(5)) carry no per-step
+/// history — `jeod_sim::reset_integrators` no-ops their absent state,
+/// so this is safe to call unconditionally at every detach site.
+///
+/// Mirrors `staging_system`'s sister reset for the legacy
+/// `AttachEvent` / `DetachEvent` path; the detach codepath here is
+/// the ECS-native equivalent on `MassChildOf` rewires.
+fn reset_multi_step_history(
+    entity: Entity,
+    gj_q: &mut Query<&mut GaussJacksonStateC>,
+    abm_q: &mut Query<&mut Abm4StateC>,
+) {
+    let mut gj = gj_q.get_mut(entity).ok();
+    let mut abm = abm_q.get_mut(entity).ok();
+    jeod_sim::reset_integrators(
+        gj.as_mut().map(|g| &mut g.0),
+        abm.as_mut().map(|a| &mut a.0),
+    );
+}
 
 /// Compute `T_inertial_struct = T_struct_body^T · T_inertial_body` for
 /// a single entity. `T_struct_body` defaults to identity when the
@@ -159,6 +183,13 @@ pub fn wrench_aggregation_system(
     dyn_cfg_q: Query<&DynamicsConfigC>,
     mut totals_q: Query<(Entity, &mut TotalForceC)>,
     mut derivs_q: Query<(Entity, &mut FrameDerivativesC)>,
+    // Multi-step integrator state — reset on detach (kinematic →
+    // root) so a body resuming integration after the chain is torn
+    // down does not step against stale predictor / corrector
+    // history. JEOD_INV: IG.37 — multi-step integrator history must
+    // be reset on topology change.
+    mut gj_q: Query<&mut GaussJacksonStateC>,
+    mut abm_q: Query<&mut Abm4StateC>,
 ) {
     // Fast path: no MassChildOf edges in the world means no chains —
     // every entity is its own root and the existing per-entity
@@ -167,9 +198,19 @@ pub fn wrench_aggregation_system(
     // where edges existed (e.g. mass tree was just torn down via
     // detach), or `integration_system`'s `Without<KinematicChildC>`
     // filter would keep the entity frozen forever.
+    //
+    // Per JEOD_INV: IG.37, every body that resumes integration after
+    // a topology change must clear its multi-step integrator
+    // (Gauss-Jackson, ABM4) predictor / corrector history; the
+    // pre-detach history was built against the now-defunct chain's
+    // composite dynamics and would diverge on the next step until
+    // the predictor catches up. RK4 / RKF4(5) bodies carry no per-
+    // step history — `reset_integrators` no-ops their absent state.
     // JEOD_INV: DB.17 — kinematic-child marker cleared when the tree is gone
+    // JEOD_INV: IG.37 — multi-step integrator history must be reset on topology change
     if parents_q.is_empty() {
         for entity in kinematic_q.iter() {
+            reset_multi_step_history(entity, &mut gj_q, &mut abm_q);
             commands.entity(entity).remove::<KinematicChildC>();
         }
         return;
@@ -306,9 +347,16 @@ pub fn wrench_aggregation_system(
         }
     }
     // Remove markers from entities that are no longer kinematic
-    // children (e.g. mass tree was rewired or torn down).
+    // children (e.g. mass tree was rewired or torn down). Demoting
+    // back to a root re-enables integration for that body, so its
+    // multi-step integrator history must be cleared first per
+    // JEOD_INV: IG.37 — otherwise the next integration step would
+    // run the predictor against pre-detach history that no longer
+    // matches the body's standalone dynamics.
+    // JEOD_INV: IG.37 — multi-step integrator history must be reset on topology change
     for entity in kinematic_q.iter() {
         if !should_be_kinematic.contains(&entity) {
+            reset_multi_step_history(entity, &mut gj_q, &mut abm_q);
             commands.entity(entity).remove::<KinematicChildC>();
         }
     }
@@ -1052,6 +1100,132 @@ mod tests {
         assert!(
             app.world().entity(child).contains::<KinematicChildC>(),
             "child {child:?} should carry KinematicChildC after wrench aggregation"
+        );
+    }
+
+    /// IG.37 regression on the ECS-native `MassChildOf` rewire path:
+    /// when a body is detached from its parent (the `MassChildOf`
+    /// link is removed), `wrench_aggregation_system` demotes it from
+    /// kinematic-child back to root by stripping `KinematicChildC`.
+    /// Before that demote, every multi-step integrator
+    /// (Gauss-Jackson, ABM4) on the entity must have its predictor /
+    /// corrector history cleared — otherwise the next integration
+    /// step would consume stale history that no longer matches the
+    /// body's standalone composite dynamics, producing a transient
+    /// trajectory divergence until the predictor catches up. JEOD's
+    /// `dyn_body_attach.cc::reset_integrators()` (lines 860, 871)
+    /// and `dyn_body_detach.cc:271-273` already guard the
+    /// `AttachEvent` / `DetachEvent` legacy path; this test pins the
+    /// equivalent guard on the ECS-native `MassChildOf` rewire.
+    #[test]
+    fn detached_child_gj_history_resets_before_resuming_integration() {
+        use crate::components::{GaussJacksonStateC, IntegratorTypeC};
+        use jeod_sim::{
+            GaussJacksonConfig, GaussJacksonState, IntegratorType, MassProperties,
+            TranslationalState,
+        };
+
+        let mut app = add_test_app();
+
+        // Parent (a real root): doesn't carry GJ state, just present so the
+        // child has something to be a `MassChildOf`.
+        let parent_mass = MassProperties::new(10.0);
+        let parent = app
+            .world_mut()
+            .spawn((
+                Name::new("parent"),
+                MassPropertiesC::from(parent_mass),
+                TotalForceC::default(),
+                FrameDerivativesC::default(),
+                DynamicsConfigC::default(),
+                ExternalForceC::default(),
+                ExternalTorqueC::default(),
+            ))
+            .id();
+
+        // Child: carries a GJ state. Spawned attached to `parent` via
+        // `MassChildOf`, which `wrench_aggregation_system` will mark
+        // `KinematicChildC` on the first tick.
+        let gj_cfg = GaussJacksonConfig::default();
+        let mut primed_gj = GaussJacksonState::new(gj_cfg);
+        // Force the GJ state out of priming so we can detect the
+        // reset by observing `is_priming() == true` afterward. The
+        // production codepath would normally need ~200 steps; we
+        // shortcut by faking a stale topology marker which
+        // `reset_for_topology_change` clears the same way as a real
+        // detach. Using `mark_topology_dirty` here is the smallest
+        // observable proxy for "non-default GJ state": its inverse
+        // (`is_topology_dirty == false`) is exactly what
+        // `reset_for_topology_change` guarantees on exit.
+        primed_gj.mark_topology_dirty();
+        let child = app
+            .world_mut()
+            .spawn((
+                Name::new("child"),
+                MassPropertiesC::from(MassProperties::new(5.0)),
+                MassChildOf::new(parent, DVec3::new(1.0, 0.0, 0.0)),
+                TotalForceC::default(),
+                FrameDerivativesC::default(),
+                DynamicsConfigC::default(),
+                ExternalForceC::default(),
+                ExternalTorqueC::default(),
+                IntegratorTypeC(IntegratorType::GaussJackson(gj_cfg)),
+                GaussJacksonStateC(primed_gj),
+                crate::TranslationalStateC::from(TranslationalState::default()),
+            ))
+            .id();
+
+        // Tick once — `wrench_aggregation_system` sees the chain and
+        // marks the child `KinematicChildC`. The GJ state should be
+        // untouched here (the child is not demoting back to root yet
+        // — just being identified as kinematic).
+        run_pipeline(&mut app);
+        assert!(
+            app.world().entity(child).contains::<KinematicChildC>(),
+            "child must carry KinematicChildC while attached"
+        );
+        assert!(
+            app.world()
+                .get::<GaussJacksonStateC>(child)
+                .unwrap()
+                .0
+                .is_topology_dirty(),
+            "GJ state should remain untouched while child is still kinematic"
+        );
+
+        // Now tear down the chain: remove `MassChildOf` from the
+        // child. Next tick of `wrench_aggregation_system` must
+        // demote the child back to root and clear its GJ history
+        // (IG.37) before stripping `KinematicChildC`.
+        app.world_mut().entity_mut(child).remove::<MassChildOf>();
+        app.update();
+        // Bevy commands flush is implicit at the end of `app.update()`
+        // — re-run once more to surface the deferred `Commands`
+        // mutations from `wrench_aggregation_system` against the
+        // `&mut GaussJacksonStateC` the system queried this same
+        // tick. The system applies the reset directly via the
+        // `gj_q.get_mut` query, so the change is visible after the
+        // first post-detach update — but we run an extra update for
+        // safety so any post-flush `KinematicChildC` removal
+        // settles.
+        app.update();
+
+        assert!(
+            !app.world().entity(child).contains::<KinematicChildC>(),
+            "child must be demoted to root once MassChildOf is removed"
+        );
+        let gj_after = &app.world().get::<GaussJacksonStateC>(child).unwrap().0;
+        assert!(
+            !gj_after.is_topology_dirty(),
+            "detach must clear topology_dirty (IG.37): GaussJacksonStateC.is_topology_dirty \
+             still true after MassChildOf removal"
+        );
+        assert!(
+            gj_after.is_priming(),
+            "detach must reset GJ history to priming (IG.37): GaussJacksonStateC \
+             still reports is_priming() == false after MassChildOf removal — its \
+             stale predictor history would be applied to the body's standalone \
+             dynamics on the next integration step"
         );
     }
 }
