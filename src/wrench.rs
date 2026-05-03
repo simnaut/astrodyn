@@ -90,7 +90,7 @@ use bevy::prelude::*;
 use glam::{DMat3, DVec3};
 use std::collections::{HashMap, HashSet};
 
-use jeod_sim::{aggregate_wrenches_via_storage, EdgeGeometry, Wrench};
+use jeod_sim::{aggregate_wrenches_via_storage, EdgeGeometry, MassStorage, Wrench};
 
 use crate::components::{
     Abm4StateC, DynamicsConfigC, FrameDerivativesC, GaussJacksonStateC, GravityAccelerationC,
@@ -234,55 +234,87 @@ pub fn wrench_aggregation_system(
     //     up the chain — a half-baked failure mode forbidden by
     //     CLAUDE.md "Fail Loudly".
     //
-    //     We only enforce this when the chain *contains a non-
-    //     trivial rotation*: a chain with every `MassChildOf
-    //     .t_parent_child = IDENTITY` and every member's
-    //     `RotationalStateC` either absent or identity has
-    //     `T_inertial_struct = I` everywhere by construction, so the
-    //     missing-component default is bit-correct. Adding the
-    //     panic only where the rotation actually matters keeps the
-    //     simple single-orbit / 3-DOF point-mass topologies free of
-    //     a `RotationalStateC` requirement they don't need.
+    //     The check is **per-chain**: we walk each root's subtree
+    //     and decide independently whether *that subtree* contains
+    //     any non-identity rotation (a non-identity edge
+    //     `t_parent_child` along the way, or a non-identity
+    //     `RotationalStateC.q_inertial_body` on any member). Only
+    //     subtrees that actually contain a non-trivial rotation
+    //     require every member to carry `RotationalStateC` — a
+    //     fully identity-attitude chain has `T_inertial_struct = I`
+    //     everywhere by construction, so the missing-component
+    //     default is bit-correct there and the chain is left
+    //     unconstrained. World-level scoping would let a single
+    //     rotated chain force every other unrelated chain in the
+    //     world to opt in to `RotationalStateC` even when their own
+    //     math is identity-correct.
     //
     //     The complete fix — kinematic propagation that derives a
     //     missing child attitude from its parent's attitude composed
     //     with `MassChildOf.t_parent_child`'s rotational component —
     //     is the design-doc Section 15.3
-    //     `propagate_state_from_root_system`, tracked as a follow-up
-    //     to this PR (see issue #272).
-    let chain_has_rotation = parents_q
-        .iter()
-        .any(|(_, link)| !link.t_parent_child.abs_diff_eq(DMat3::IDENTITY, 1e-12))
-        || view.iter_entities().any(|e| {
-            rot_q.get(e).is_ok_and(|r| {
-                let t =
-                    r.0.q_inertial_body
-                        .as_witness()
-                        .left_quat_to_transformation();
-                !t.abs_diff_eq(DMat3::IDENTITY, 1e-12)
-            })
-        });
-    // JEOD_INV: DB.16 — child forces propagated to parent recursively (frame discipline guard for the structural walk)
-    if chain_has_rotation {
-        for entity in view.iter_entities() {
-            assert!(
-                rot_q.get(entity).is_ok(),
-                "wrench_aggregation_system: entity {entity:?} is in a `MassChildOf` chain that \
-                 contains a non-identity rotation (parent attitude or attach `t_parent_child`), \
-                 but it has no `RotationalStateC` component. The structural-frame wrench walk \
-                 needs every chain member's `T_inertial_body` to be correct; defaulting it to \
-                 IDENTITY for this entity would silently treat its `Force<RootInertial>` as if \
-                 it were already in the entity's structural frame and aggregate a wrong \
-                 composite force.\n\nFix one of:\n  1. Add `RotationalStateC` to entity \
-                 {entity:?} (matching its parent's attitude — the typical case for a rigidly \
-                 attached appendage that does not yet have its own integrator).\n  2. Make every \
-                 link in the chain identity-attitude (no `MassChildOf.t_parent_child` \
-                 rotations, no parent `q_inertial_body` rotations) so the IDENTITY default is \
-                 correct.\n  3. Wait for the kinematic-propagation system (design-doc Section \
-                 15.3 `propagate_state_from_root_system`, follow-up to issue #272) to derive \
-                 the missing child attitude from the parent's attitude composed with the \
-                 attach rotation."
-            );
+    //     `propagate_state_from_root_system`, deferred to a
+    //     follow-up.
+    // JEOD_INV: DB.16 — child forces propagated to parent recursively (per-chain frame discipline guard for the structural walk)
+    fn rot_is_non_identity(entity: Entity, rot_q: &Query<&RotationalStateC>) -> bool {
+        rot_q.get(entity).is_ok_and(|r| {
+            let t =
+                r.0.q_inertial_body
+                    .as_witness()
+                    .left_quat_to_transformation();
+            !t.abs_diff_eq(DMat3::IDENTITY, 1e-12)
+        })
+    }
+    for root in view.iter_roots() {
+        // Single-pass DFS over this root's subtree: gather every
+        // chain member and check, on the fly, whether the subtree
+        // contains any non-identity rotation. Cycles are
+        // structurally impossible in a `MassChildOf` chain (each
+        // child has at most one parent and `composite_mass_system`
+        // already rejects cycles via its tri-state visit marker),
+        // so a plain DFS terminates.
+        let mut stack: Vec<Entity> = vec![root];
+        let mut members: Vec<Entity> = Vec::new();
+        let mut chain_has_rotation = false;
+        while let Some(node) = stack.pop() {
+            members.push(node);
+            if !chain_has_rotation && rot_is_non_identity(node, &rot_q) {
+                chain_has_rotation = true;
+            }
+            // Edge entering `node` (if `node` is a non-root child)
+            // contributes its attach `t_parent_child` rotation.
+            if !chain_has_rotation {
+                if let Ok((_, link)) = parents_q.get(node) {
+                    if !link.t_parent_child.abs_diff_eq(DMat3::IDENTITY, 1e-12) {
+                        chain_has_rotation = true;
+                    }
+                }
+            }
+            for &child in MassStorage::children(&view, node) {
+                stack.push(child);
+            }
+        }
+        if chain_has_rotation {
+            for entity in &members {
+                assert!(
+                    rot_q.get(*entity).is_ok(),
+                    "wrench_aggregation_system: entity {entity:?} is in a `MassChildOf` chain \
+                     rooted at {root:?} that contains a non-identity rotation (parent attitude \
+                     or attach `t_parent_child`), but it has no `RotationalStateC` component. \
+                     The structural-frame wrench walk needs every chain member's \
+                     `T_inertial_body` to be correct; defaulting it to IDENTITY for this entity \
+                     would silently treat its `Force<RootInertial>` as if it were already in \
+                     the entity's structural frame and aggregate a wrong composite force.\n\n\
+                     Fix one of:\n  1. Add `RotationalStateC` to entity {entity:?} (matching its \
+                     parent's attitude — the typical case for a rigidly attached appendage that \
+                     does not yet have its own integrator).\n  2. Make every link in this chain \
+                     identity-attitude (no `MassChildOf.t_parent_child` rotations, no member \
+                     `q_inertial_body` rotations) so the IDENTITY default is correct.\n  3. Wait \
+                     for the kinematic-propagation system (design-doc Section 15.3 \
+                     `propagate_state_from_root_system`) to derive the missing child attitude \
+                     from the parent's attitude composed with the attach rotation."
+                );
+            }
         }
     }
 
@@ -757,7 +789,7 @@ mod tests {
     /// carry its own `RotationalStateC` whenever the chain has any
     /// non-identity rotation.
     #[test]
-    #[should_panic(expected = "is in a `MassChildOf` chain that contains a non-identity rotation")]
+    #[should_panic(expected = "contains a non-identity rotation")]
     fn child_with_attach_rotation_and_no_rotational_state_panics() {
         let mut app = add_test_app();
         let parent = app
@@ -877,6 +909,143 @@ mod tests {
             "root torque {:?}, expected {:?}",
             root_tf.torque,
             expected_torque
+        );
+    }
+
+    /// Per-chain scoping regression: a rotated chain (parent +
+    /// rotated-attach child, both with explicit `RotationalStateC`)
+    /// coexists in the same world with an *unrelated* identity-only
+    /// chain whose members do **not** carry `RotationalStateC`. The
+    /// validator must scope its `RotationalStateC` requirement to
+    /// the rotated chain alone — the identity chain has
+    /// `T_inertial_struct = I` everywhere by construction, so the
+    /// missing-component default is bit-correct there and the
+    /// chain must be left unconstrained. World-level scoping would
+    /// force the identity chain to opt in to `RotationalStateC`
+    /// even though its own math is already exact.
+    #[test]
+    fn unrelated_identity_chain_does_not_require_rotational_state_when_another_chain_is_rotated() {
+        use jeod_sim::RotationalState;
+
+        let mut app = add_test_app();
+        let identity_rot = RotationalState::default();
+
+        // Chain 1: rotated. Both members carry RotationalStateC.
+        let rot_parent = app
+            .world_mut()
+            .spawn((
+                Name::new("rotated_parent"),
+                MassPropertiesC::from(MassProperties::new(10.0)),
+                TotalForceC::default(),
+                FrameDerivativesC::default(),
+                DynamicsConfigC::default(),
+                RotationalStateC::from(identity_rot),
+                ExternalForceC::default(),
+                ExternalTorqueC::default(),
+            ))
+            .id();
+        let t_pc = DMat3::from_cols(
+            DVec3::new(0.0, 1.0, 0.0),
+            DVec3::new(-1.0, 0.0, 0.0),
+            DVec3::new(0.0, 0.0, 1.0),
+        );
+        let _rot_child = app
+            .world_mut()
+            .spawn((
+                Name::new("rotated_child"),
+                MassPropertiesC::from(MassProperties::new(5.0)),
+                MassChildOf::with_rotation(rot_parent, DVec3::new(1.0, 0.0, 0.0), t_pc),
+                TotalForceC::default(),
+                FrameDerivativesC::default(),
+                DynamicsConfigC::default(),
+                RotationalStateC::from(identity_rot),
+                ext_force_in_root_inertial(DVec3::new(5.0, 0.0, 0.0)),
+                ExternalTorqueC::default(),
+            ))
+            .id();
+
+        // Chain 2: identity-only — every edge is identity-attitude
+        // and no member carries RotationalStateC. This chain must
+        // NOT trigger the validator just because chain 1 has
+        // rotation.
+        let id_parent = app
+            .world_mut()
+            .spawn((
+                Name::new("identity_parent"),
+                MassPropertiesC::from(MassProperties::new(8.0)),
+                TotalForceC::default(),
+                FrameDerivativesC::default(),
+                DynamicsConfigC::default(),
+                ext_force_in_root_inertial(DVec3::new(0.0, 0.0, 1.0)),
+                ExternalTorqueC::default(),
+            ))
+            .id();
+        let _id_child = app
+            .world_mut()
+            .spawn((
+                Name::new("identity_child"),
+                MassPropertiesC::from(MassProperties::new(2.0)),
+                MassChildOf::new(id_parent, DVec3::new(0.0, 1.0, 0.0)),
+                TotalForceC::default(),
+                FrameDerivativesC::default(),
+                DynamicsConfigC::default(),
+                ext_force_in_root_inertial(DVec3::new(1.0, 0.0, 0.0)),
+                ExternalTorqueC::default(),
+            ))
+            .id();
+
+        // Must not panic: the identity chain is left unconstrained
+        // even though the rotated chain in the same world enforces
+        // `RotationalStateC` on its members.
+        run_pipeline(&mut app);
+
+        // Sanity-check both roots collected the right wrench.
+        let rot_root_tf = app
+            .world()
+            .get::<TotalForceC>(rot_parent)
+            .unwrap()
+            .0
+            .to_untyped();
+        let id_root_tf = app
+            .world()
+            .get::<TotalForceC>(id_parent)
+            .unwrap()
+            .0
+            .to_untyped();
+
+        // Rotated chain: same analytical answer as
+        // `child_with_attach_rotation_aggregates_correctly_when_attitude_is_explicit`:
+        // force_inertial = (0, -5, 0), torque_body = (0, 0, -10/3).
+        let rot_force_err = (rot_root_tf.force - DVec3::new(0.0, -5.0, 0.0)).length();
+        let rot_torque_err = (rot_root_tf.torque - DVec3::new(0.0, 0.0, -10.0 / 3.0)).length();
+        assert!(
+            rot_force_err < 1e-12,
+            "rotated root force {:?}",
+            rot_root_tf.force
+        );
+        assert!(
+            rot_torque_err < 1e-12,
+            "rotated root torque {:?}",
+            rot_root_tf.torque
+        );
+
+        // Identity chain: parent at origin (mass 8) + child at
+        // (0,1,0) (mass 2). Composite CoM at (0, 2/10, 0) = (0, 0.2, 0).
+        // pcm_to_ccm = (0,1,0) − (0,0.2,0) = (0, 0.8, 0).
+        // Child force +x → root force +x (identity attitudes); root
+        // also carries +z external force itself.
+        // Torque = pcm_to_ccm × F_child = (0,0.8,0) × (1,0,0) = (0,0,-0.8).
+        let id_force_err = (id_root_tf.force - DVec3::new(1.0, 0.0, 1.0)).length();
+        let id_torque_err = (id_root_tf.torque - DVec3::new(0.0, 0.0, -0.8)).length();
+        assert!(
+            id_force_err < 1e-12,
+            "identity root force {:?}",
+            id_root_tf.force
+        );
+        assert!(
+            id_torque_err < 1e-12,
+            "identity root torque {:?}",
+            id_root_tf.torque
         );
     }
 
