@@ -591,6 +591,26 @@ impl Plugin for JeodPlugin {
                 systems::staging_system
                     .after(JeodSet::Environment)
                     .before(JeodSet::Interaction),
+                // Detached-subtree ballistic propagation: advance every
+                // entity carrying `DetachedSubtreeStateC` by `dt` under
+                // free-flight kinematics (no force, no torque). Runs in
+                // parallel with the integration of attached bodies —
+                // detached subtrees are not part of any integrator's
+                // wrench-aggregation walk anymore. Mirrors
+                // `jeod_runner::Simulation::step_detached_subtrees`.
+                //
+                // Detached entities still carry `BodyFrameIdC`, so
+                // `sync_body_to_frame_system` and `frame_switch_system`
+                // would otherwise read the body's pre-step
+                // `TranslationalStateC` and write it into `FrameTreeR`
+                // before `step_detached_system` overwrites it — leaving
+                // the frame tree desynced for one tick. Pin
+                // `step_detached_system` before both so the synced
+                // frame-tree node reflects the post-step body state.
+                systems::step_detached_system
+                    .in_set(JeodSet::Integration)
+                    .before(systems::sync_body_to_frame_system)
+                    .before(systems::frame_switch_system),
                 systems::aero_drag_system.in_set(JeodSet::Interaction),
                 systems::gravity_torque_system.in_set(JeodSet::Interaction),
                 systems::flat_plate_srp_system.in_set(JeodSet::Interaction),
@@ -710,6 +730,7 @@ pub fn register_jeod_component_types(app: &mut App) {
     app.register_type::<components::MassBodyIdC>();
     app.register_type::<components::MassChildOf>();
     app.register_type::<components::MassPointRef>();
+    app.register_type::<components::DetachedSubtreeStateC>();
     app.register_type::<components::KinematicChildC>();
     app.register_type::<components::PlanetC>();
     app.register_type::<components::RotationModelC>();

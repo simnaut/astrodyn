@@ -38,6 +38,7 @@
 #![deny(missing_docs)]
 
 pub mod atmosphere;
+pub mod attach;
 pub mod derived;
 pub mod forces;
 pub mod frame_orchestration;
@@ -61,6 +62,9 @@ pub mod wrench;
 // ── Orchestration functions ──
 pub use atmosphere::{
     evaluate_atmosphere, evaluate_atmosphere_typed, AtmosphereConfig, AtmosphereModel,
+};
+pub use attach::{
+    stage_attach_combine, stage_detach_capture, StageAttachInputs, StageAttachOutputs,
 };
 pub use derived::{
     compute_body_euler_angles, compute_body_euler_angles_typed, compute_body_geodetic,
@@ -117,9 +121,10 @@ pub use wrench::{aggregate_wrenches_via_storage, edge_geometry_from_composites, 
 
 // jeod_dynamics: state types, force types, mass, config, frame utilities
 pub use jeod_dynamics::{
-    compute_frame_derivatives, compute_node_composite, compute_t_inertial_struct,
-    compute_translational_derivatives, finalize_child_in_parent_frame,
-    recompute_composites_via_storage, shift_wrench_to_parent, shift_wrench_to_parent_typed,
+    combine_states_at_attach, compute_frame_derivatives, compute_node_composite,
+    compute_t_inertial_struct, compute_translational_derivatives, finalize_child_in_parent_frame,
+    propagate_forward, recompute_composites_via_storage, shift_wrench_to_parent,
+    shift_wrench_to_parent_typed, AttachCombineInputs, AttachCombineOutputs, DetachedSubtreeState,
     DynamicsConfig, ForceContributions, FrameDerivatives, GravityAcceleration, MassBodyId,
     MassNodeOutputs, MassNodeView, MassPointState, MassProperties, MassStorage, MassTree,
     RotationalState, SixDofState, TotalForce, TranslationalState, Wrench, INERTIA_CONSISTENCY_TOL,
