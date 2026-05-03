@@ -514,8 +514,7 @@ mod tests {
             (kernel_child.composite.position - arena_child_composite.position).length() < 1e-12
         );
         if kernel_child.composite.mass > 0.0 {
-            let identity =
-                kernel_child.composite.inertia * kernel_child.composite.inverse_inertia;
+            let identity = kernel_child.composite.inertia * kernel_child.composite.inverse_inertia;
             for r in 0..3 {
                 for c in 0..3 {
                     let expected = if r == c { 1.0 } else { 0.0 };
@@ -576,9 +575,18 @@ mod tests {
             assert!(d < 1e-10, "B inertia diff {d:.3e}");
         }
         for (ca, cb) in [
-            (arena_b.inverse_inertia.x_axis, kb.composite.inverse_inertia.x_axis),
-            (arena_b.inverse_inertia.y_axis, kb.composite.inverse_inertia.y_axis),
-            (arena_b.inverse_inertia.z_axis, kb.composite.inverse_inertia.z_axis),
+            (
+                arena_b.inverse_inertia.x_axis,
+                kb.composite.inverse_inertia.x_axis,
+            ),
+            (
+                arena_b.inverse_inertia.y_axis,
+                kb.composite.inverse_inertia.y_axis,
+            ),
+            (
+                arena_b.inverse_inertia.z_axis,
+                kb.composite.inverse_inertia.z_axis,
+            ),
         ] {
             let d = (ca - cb).length();
             assert!(d < 1e-10, "B inverse_inertia diff {d:.3e}");

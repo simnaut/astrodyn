@@ -63,15 +63,24 @@ use crate::components::{MassChildOf, MassPropertiesC};
 /// [`MassPropertiesC`] (the field every existing consumer reads) and
 /// stashes the core here.
 ///
+/// **Cache freshness.** The cache is *re-seeded* every tick from any
+/// `MassPropertiesC` that has been externally changed since the last
+/// run — the system uses Bevy's `Changed<MassPropertiesC>` filter to
+/// detect mission-code edits (fuel burn, staging, inertia overrides)
+/// and refreshes the cache against the new core. The system's own
+/// composite write-back uses [`bevy::ecs::change_detection::DetectChangesMut::bypass_change_detection`]
+/// so it does not falsely re-trigger as an external change next
+/// tick. The original write-once seed (PR #283 round 1) silently
+/// dropped mid-sim mass edits; this revision matches the
+/// `mass_update_system` contract that runtime mass changes are
+/// reflected on the next step.
+///
 /// **Internal cache — mission code MUST NOT read or write this.**
-/// [`composite_mass_system`] manages it: it is inserted on first
-/// composition for every entity carrying [`MassPropertiesC`] and
-/// reused on subsequent ticks so the kernel always reads the
-/// pre-composition core. The struct is publicly visible only because
-/// Bevy's system-param signatures require the filter / data types
-/// in `Without<…>` clauses to be `pub` when the system itself is
-/// `pub`; the type is hidden from rustdoc to keep it off the public
-/// surface.
+/// [`composite_mass_system`] manages it. The struct is publicly
+/// visible only because Bevy's system-param signatures require the
+/// filter / data types in `Without<…>` clauses to be `pub` when the
+/// system itself is `pub`; the type is hidden from rustdoc to keep
+/// it off the public surface.
 #[doc(hidden)] // allowed: pub-but-hidden; see doc comment above and #271
 #[derive(Component, Debug, Clone, Copy)]
 pub struct CoreMassPropertiesC(pub MassProperties);
@@ -135,10 +144,22 @@ impl MassTreeView {
         M: bevy::ecs::query::QueryFilter,
         P: bevy::ecs::query::QueryFilter,
     {
+        // Pre-compute the set of mass-bearing entities so we can
+        // fail loudly on a `MassChildOf` whose parent is missing
+        // from `mass_q` (PR #283 review thread PRRT_kwDORtae6c5_KBwP).
+        let mass_set: HashMap<Entity, ()> = mass_q.iter().map(|(e, _)| (e, ())).collect();
+
         let mut edge_data: HashMap<Entity, MassChildOf> = HashMap::new();
         let mut parents: Vec<(Entity, Entity)> = Vec::new();
         let mut children_by_parent: HashMap<Entity, Vec<Entity>> = HashMap::new();
         for (child, edge) in parents_q.iter() {
+            assert!(
+                mass_set.contains_key(&edge.parent),
+                "MassChildOf edge {child:?} -> {parent:?}: parent has no MassPropertiesC. \
+                 Either add MassPropertiesC to the parent or remove the MassChildOf \
+                 component from the child.",
+                parent = edge.parent
+            );
             edge_data.insert(child, *edge);
             parents.push((child, edge.parent));
             children_by_parent
@@ -297,59 +318,115 @@ pub fn composite_mass_system(
     names: Query<&Name>,
     cores_q: Query<(Entity, &CoreMassPropertiesC)>,
     mut props: ParamSet<(
-        // p0: read-only view of MassPropertiesC, used to seed
-        //      CoreMassPropertiesC for entities that don't yet have
-        //      one (without conflicting with the &mut write below).
-        Query<(Entity, &'static MassPropertiesC), Without<CoreMassPropertiesC>>,
+        // p0: entities whose MassPropertiesC was changed this tick
+        //      (or just spawned). Used to refresh CoreMassPropertiesC
+        //      so mid-sim mass edits (fuel burn, staging) are picked
+        //      up. The system's own composite write-back uses
+        //      `bypass_change_detection` so it does not re-trigger
+        //      this filter on the next tick.
+        Query<(Entity, &'static MassPropertiesC), Changed<MassPropertiesC>>,
         // p1: write-back of the composite results.
         Query<&'static mut MassPropertiesC>,
     )>,
 ) {
-    // Step 1: build the core lookup. Entities seen before have a
-    // CoreMassPropertiesC snapshot; entities new to the world (no
-    // snapshot yet) get their current MassPropertiesC value treated
-    // as core.
+    // Fast path (PR #283 review thread PRRT_kwDORtae6c5_KBwG): if
+    // no entity has any `MassChildOf` edge, every body is its own
+    // composite — composite == core for each — so we can skip the
+    // entire build-view/kernel round-trip and the `O(N²)` HashMap
+    // ceremony around it. We still have to:
+    //
+    //   (a) refresh `CoreMassPropertiesC` for newly-spawned or
+    //       externally-edited bodies, so a later attach reads the
+    //       live core (this is `O(changed)`);
+    //   (b) revert any entity whose `MassPropertiesC` still carries
+    //       a stale composite from a *previous* tick — the
+    //       just-detached parent case. Without (b) a parent that
+    //       loses its last child would carry the heavier composite
+    //       forever. This walks `cores_q` once but only writes
+    //       through `bypass_change_detection` when the cached core
+    //       and the live composite actually differ, so true never-
+    //       attached single-body scenarios pay no per-tick write.
+    //
+    // The full read-write loop on every entity that the previous
+    // implementation paid is gone — kernel, view, and `MassChildOf`
+    // edge bookkeeping are skipped entirely.
+    if parents.is_empty() {
+        // (a) freshly-spawned / externally-edited cores.
+        {
+            let changed = props.p0();
+            for (entity, props_ref) in &changed {
+                commands
+                    .entity(entity)
+                    .insert(CoreMassPropertiesC(props_ref.0.to_untyped()));
+            }
+        }
+        // (b) revert stale composites where cache disagrees with
+        //     live MassPropertiesC.
+        let mut writes = props.p1();
+        for (entity, core) in &cores_q {
+            if let Ok(mut live) = writes.get_mut(entity) {
+                let live_untyped = live.0.to_untyped();
+                if live_untyped.mass != core.0.mass
+                    || live_untyped.position != core.0.position
+                    || live_untyped.inertia != core.0.inertia
+                {
+                    *live.bypass_change_detection() = MassPropertiesC::from(core.0);
+                }
+            }
+        }
+        return;
+    }
+
+    // Step 1: build the core lookup. Start from the cached
+    // CoreMassPropertiesC snapshots, then *override* with any
+    // MassPropertiesC that has been externally changed since last
+    // tick — this is what rescues mid-sim mass edits from the
+    // previous "write-once" cache. Newly-spawned entities (without
+    // a cache yet) match `Changed` on their first sight, so they
+    // also land in the override pass.
     let mut cores: HashMap<Entity, MassProperties> = HashMap::new();
     for (entity, core) in &cores_q {
         cores.insert(entity, core.0);
     }
-    let mut newly_seeded: Vec<(Entity, MassProperties)> = Vec::new();
+    let mut to_seed: Vec<(Entity, MassProperties)> = Vec::new();
     {
-        let fresh_q = props.p0();
-        for (entity, props_ref) in &fresh_q {
+        let changed = props.p0();
+        for (entity, props_ref) in &changed {
             let core = props_ref.0.to_untyped();
             cores.insert(entity, core);
-            newly_seeded.push((entity, core));
+            to_seed.push((entity, core));
         }
     }
 
-    // Step 2: build the view + run the kernel against the cached
+    // Step 2: build the view + run the kernel against the live
     // cores. `MassChildOf` and the core map together carry every
     // input the kernel needs; the view is fully owned so it has no
     // active borrow on the queries.
     let view = build_view_from_cores(&cores, &parents, &names);
     let outputs = recompute_composites_via_storage(&view);
 
-    // Step 3: persist newly-seeded core snapshots into Bevy
-    // (deferred via Commands so we don't touch the world while a
-    // query is borrowed).
-    for (entity, core) in newly_seeded {
+    // Step 3: persist cache updates into Bevy (deferred via Commands
+    // so we don't touch the world while a query is borrowed). This
+    // covers both first-time seed (entity newly-spawned) and refresh
+    // (mission code edited MassPropertiesC since last tick).
+    for (entity, core) in to_seed {
         commands.entity(entity).insert(CoreMassPropertiesC(core));
     }
 
-    // Step 4: write composites back into MassPropertiesC.
+    // Step 4: write composites back into MassPropertiesC, using
+    // `bypass_change_detection` so our own writes do not re-trigger
+    // `Changed<MassPropertiesC>` on the next tick (which would
+    // overwrite the just-correct CoreMassPropertiesC with the
+    // composite — exactly the bug the cache is meant to prevent).
     //
-    // Composition itself is the typed-quantity boundary here: the
-    // kernel works in untyped `MassProperties` and the per-tick
-    // composite has to be lifted back into the `SelfRef`-tagged Bevy
-    // component. `MassPropertiesC::from` is the canonical insertion-
-    // time bridge (defined in `src/components.rs`, mirroring every
-    // other typed Bevy component), so going through it keeps this
-    // module free of bypass constructors.
+    // `MassPropertiesC::from` is the canonical insertion-time bridge
+    // (defined in `src/components.rs`, mirroring every other typed
+    // Bevy component), so going through it keeps this module free
+    // of bypass constructors.
     let mut writes = props.p1();
     for (entity, out) in outputs {
         if let Ok(mut p) = writes.get_mut(entity) {
-            *p = MassPropertiesC::from(out.composite);
+            *p.bypass_change_detection() = MassPropertiesC::from(out.composite);
         }
     }
 }
@@ -368,6 +445,19 @@ fn build_view_from_cores(
     let mut parents: Vec<(Entity, Entity)> = Vec::new();
     let mut children_by_parent: HashMap<Entity, Vec<Entity>> = HashMap::new();
     for (child, edge) in parents_q.iter() {
+        // Fail-loud (PR #283 review thread PRRT_kwDORtae6c5_KBwP):
+        // a `MassChildOf` whose target entity has no
+        // `MassPropertiesC` is broken topology — silently skipping
+        // the edge would orphan the child and leave stale composites
+        // upstream. Per CLAUDE.md "Fail Loudly", panic with a
+        // diagnostic that names both ends of the broken edge.
+        assert!(
+            cores.contains_key(&edge.parent),
+            "MassChildOf edge {child:?} -> {parent:?}: parent has no MassPropertiesC. \
+             Either add MassPropertiesC to the parent or remove the MassChildOf \
+             component from the child.",
+            parent = edge.parent
+        );
         edge_data.insert(child, *edge);
         parents.push((child, edge.parent));
         children_by_parent
@@ -511,5 +601,128 @@ mod tests {
         let mut app = add_test_app();
         app.add_systems(Update, composite_mass_system);
         app.update();
+    }
+
+    #[test]
+    fn mid_sim_core_mass_edit_picked_up_on_next_tick() {
+        // PR #283 review thread PRRT_kwDORtae6c5_KAGZ / _KBwJ
+        // (write-once cache regression):
+        //
+        // After tick 1, an entity has its CoreMassPropertiesC
+        // seeded. Mission code edits MassPropertiesC mid-sim (fuel
+        // burn / staging). The next tick must pick up the new core
+        // and propagate it through to the parent's composite — the
+        // previous "seeded once and frozen" cache silently dropped
+        // mid-sim edits.
+        let mut app = add_test_app();
+        app.add_systems(Update, composite_mass_system);
+
+        let parent_core = MassProperties::new(10.0);
+        let child_core = MassProperties::new(5.0);
+        let offset = DVec3::new(2.0, 0.0, 0.0);
+        let parent = app
+            .world_mut()
+            .spawn(MassPropertiesC::from(parent_core))
+            .id();
+        let child = app
+            .world_mut()
+            .spawn((
+                MassPropertiesC::from(child_core),
+                MassChildOf::new(parent, offset),
+            ))
+            .id();
+
+        // Tick 1: seed cache. Composite parent mass = 15.
+        app.update();
+        let m1 = app
+            .world()
+            .get::<MassPropertiesC>(parent)
+            .unwrap()
+            .0
+            .to_untyped()
+            .mass;
+        assert!((m1 - 15.0).abs() < 1e-12, "tick1 parent mass {m1}");
+
+        // Mission edits the child's MassPropertiesC mid-sim
+        // (mass 5 -> mass 8). Bevy marks Changed<MassPropertiesC>
+        // for the child, so composite_mass_system refreshes the
+        // cache and recomposes.
+        {
+            let mut props = app.world_mut().get_mut::<MassPropertiesC>(child).unwrap();
+            *props = MassPropertiesC::from(MassProperties::new(8.0));
+        }
+        app.update();
+        let m2 = app
+            .world()
+            .get::<MassPropertiesC>(parent)
+            .unwrap()
+            .0
+            .to_untyped()
+            .mass;
+        assert!(
+            (m2 - 18.0).abs() < 1e-12,
+            "mid-sim edit not picked up: parent mass {m2} (expected 18)"
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "MassChildOf edge")]
+    fn missing_parent_fails_loudly() {
+        // PR #283 review thread PRRT_kwDORtae6c5_KBwP: a
+        // `MassChildOf` whose parent has no MassPropertiesC must
+        // panic, not silently treat the child as a root.
+        let mut app = add_test_app();
+        app.add_systems(Update, composite_mass_system);
+
+        // Spawn a "parent" entity *without* MassPropertiesC.
+        let bad_parent = app.world_mut().spawn_empty().id();
+        app.world_mut().spawn((
+            MassPropertiesC::from(MassProperties::new(5.0)),
+            MassChildOf::new(bad_parent, DVec3::ZERO),
+        ));
+
+        // composite_mass_system must panic with a "MassChildOf
+        // edge ..." diagnostic.
+        app.update();
+    }
+
+    #[test]
+    fn fast_path_skips_kernel_when_no_edges() {
+        // PR #283 review thread PRRT_kwDORtae6c5_KBwG: with no
+        // `MassChildOf` edges in the world, composite_mass_system
+        // must not touch MassPropertiesC at all (every body is its
+        // own composite). Bevy's change-detection ticks would
+        // otherwise mark the components as changed every frame.
+        let mut app = add_test_app();
+        app.add_systems(Update, composite_mass_system);
+
+        let core = MassProperties::new(10.0);
+        let e = app.world_mut().spawn(MassPropertiesC::from(core)).id();
+        // Tick once to seed CoreMassPropertiesC and clear the
+        // initial Changed flag on MassPropertiesC.
+        app.update();
+
+        // Stash the change-tick of MassPropertiesC.
+        let before_tick = app
+            .world()
+            .entity(e)
+            .get_change_ticks::<MassPropertiesC>()
+            .unwrap()
+            .changed;
+
+        // Two more ticks with no edges and no external edits.
+        app.update();
+        app.update();
+
+        let after_tick = app
+            .world()
+            .entity(e)
+            .get_change_ticks::<MassPropertiesC>()
+            .unwrap()
+            .changed;
+        assert_eq!(
+            before_tick, after_tick,
+            "fast path should not touch MassPropertiesC: change tick advanced from {before_tick:?} to {after_tick:?}"
+        );
     }
 }
