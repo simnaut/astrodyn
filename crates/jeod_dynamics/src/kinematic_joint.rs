@@ -65,7 +65,17 @@ pub struct JointKinematicsSpec {
     pub initial_angle_rad: f64,
 }
 
-/// Tolerance on `axis_in_parent.length() - 1` accepted by [`evaluate`].
+/// Tolerance on `axis_in_parent.length_squared() - 1` accepted by
+/// [`evaluate`].
+///
+/// The kernel thresholds the squared distance from unit norm
+/// (`|‖a‖² − 1| < AXIS_NORM_TOL`) rather than the linear distance
+/// `|‖a‖ − 1|` because the squared form is cheaper (no `sqrt`) and is
+/// the standard pattern in `glam`/`nalgebra`. Near `‖a‖ = 1` the two
+/// forms differ by a factor of two to first order
+/// (`‖a‖² − 1 = (‖a‖ − 1)(‖a‖ + 1) ≈ 2(‖a‖ − 1)`), so a caller that
+/// pre-validates against a linear `‖a‖ − 1` bound must square the
+/// comparison or scale the threshold to match.
 ///
 /// Loose enough that float-arithmetic round-off in user-constructed
 /// axes (e.g. normalising a 3-vector once at vehicle setup) does not
