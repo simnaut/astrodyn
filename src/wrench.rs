@@ -1103,6 +1103,186 @@ mod tests {
         );
     }
 
+    /// Derivative-class SRP/thermal regression: a kinematic child
+    /// of a `MassChildOf` chain that carries `FlatPlateConfigC` with
+    /// `DerivativeFirstOrder` / `DerivativeRk4` integration order
+    /// must still get plate temperature updates and a non-zero
+    /// `RadiationForceC` once per step. The derivative-class SRP/
+    /// thermal recompute lives inside `integration_system`'s
+    /// `Without<KinematicChildC>`-filtered loop, so without a
+    /// fallback in `flat_plate_srp_system` the kinematic child's
+    /// `RadiationForceC` would stay at the per-tick zero and its
+    /// plate temperatures would never advance. The fix reroutes
+    /// kinematic children through the `Scheduled` arm here (single-
+    /// shot Euler) — the appendage's thermal state and force stay
+    /// live; only the orbital state is gated by the chain's
+    /// composite-rigid-body integration.
+    #[test]
+    fn kinematic_child_with_derivative_srp_still_gets_force_and_temp_update() {
+        use crate::components::{
+            FlatPlateConfigC, RadiationForceC, SunMarker, TranslationalStateC,
+        };
+        use jeod_sim::{
+            FlatPlate, FlatPlateParams, FlatPlateState, FlatPlateThermal, MassProperties,
+            ThermalIntegrationOrder, TranslationalState,
+        };
+
+        let mut app = add_test_app();
+
+        // Sun ~1 AU along +x. Pure inertial position; no gravity / mass.
+        app.world_mut().spawn((
+            SunMarker,
+            TranslationalStateC::from(TranslationalState {
+                position: DVec3::new(1.496e11, 0.0, 0.0),
+                velocity: DVec3::ZERO,
+            }),
+        ));
+
+        // Parent root (no SRP). Just somewhere outside the Sun's
+        // collapse radius.
+        let parent = app
+            .world_mut()
+            .spawn((
+                Name::new("parent"),
+                MassPropertiesC::from(MassProperties::new(10.0)),
+                TotalForceC::default(),
+                FrameDerivativesC::default(),
+                DynamicsConfigC::default(),
+                ExternalForceC::default(),
+                ExternalTorqueC::default(),
+                TranslationalStateC::from(TranslationalState {
+                    position: DVec3::new(7.0e6, 0.0, 0.0),
+                    velocity: DVec3::ZERO,
+                }),
+            ))
+            .id();
+
+        // Child appendage with derivative-class FlatPlateConfigC. Plate
+        // pointed at the Sun (normal +X = away from Sun, so flux hits
+        // the back: actually we want it facing the Sun, so normal -X).
+        // FlatPlate normal convention: outward-facing; SRP only
+        // contributes when -normal · flux_hat > 0, i.e. normal points
+        // into the Sun.
+        let plates = vec![(
+            FlatPlate {
+                area: 10.0,
+                normal: -DVec3::X, // facing the Sun
+                position: DVec3::ZERO,
+            },
+            FlatPlateParams {
+                albedo: 0.3,
+                diffuse: 0.3,
+            },
+            FlatPlateThermal {
+                emissivity: 0.5,
+                heat_capacity_per_area: 50.0,
+                thermal_power_dump: 0.0,
+            },
+        )];
+        let initial_temp = 270.0;
+        let child = app
+            .world_mut()
+            .spawn((
+                Name::new("child_appendage"),
+                MassPropertiesC::from(MassProperties::new(1.0)),
+                MassChildOf::new(parent, DVec3::new(1.0, 0.0, 0.0)),
+                TotalForceC::default(),
+                FrameDerivativesC::default(),
+                DynamicsConfigC::default(),
+                ExternalForceC::default(),
+                ExternalTorqueC::default(),
+                TranslationalStateC::from(TranslationalState {
+                    position: DVec3::new(7.0e6, 0.0, 0.0),
+                    velocity: DVec3::ZERO,
+                }),
+                RadiationForceC::default(),
+                FlatPlateConfigC(FlatPlateState {
+                    plates,
+                    temperatures: vec![initial_temp],
+                    t_pow4_cached: vec![initial_temp.powi(4)],
+                    integration_order: ThermalIntegrationOrder::DerivativeRk4,
+                    ..Default::default()
+                }),
+            ))
+            .id();
+
+        // Run the wrench-aggregation pipeline + the SRP system.
+        // Order: composite_mass → flat_plate_srp → force_collection →
+        // wrench_aggregation. We need a non-zero `dt` for the
+        // Scheduled-arm Euler integration to actually move
+        // temperatures.
+        use bevy::time::Fixed;
+        use std::time::Duration;
+        const DT: f64 = 1.0;
+        app.insert_resource(Time::<Fixed>::from_seconds(DT));
+        app.add_systems(
+            Update,
+            (
+                composite_mass_system,
+                crate::systems::flat_plate_srp_system.after(composite_mass_system),
+                force_collection_system.after(crate::systems::flat_plate_srp_system),
+                wrench_aggregation_system.after(force_collection_system),
+            ),
+        );
+        // First tick: `flat_plate_srp_system` runs *before*
+        // `wrench_aggregation_system` adds `KinematicChildC` (the
+        // marker comes online at the end of the tick), so the SRP
+        // path takes the derivative arm and stashes `stage_inputs`.
+        // Second tick is the load-bearing one — by then the child
+        // carries `KinematicChildC` and the SRP path must take the
+        // Scheduled fallback.
+        for _ in 0..2 {
+            app.world_mut()
+                .resource_mut::<Time<Fixed>>()
+                .advance_by(Duration::from_secs_f64(DT));
+            app.update();
+        }
+
+        // The child must carry `KinematicChildC` (sanity).
+        assert!(
+            app.world().entity(child).contains::<KinematicChildC>(),
+            "child must be marked KinematicChildC after first tick"
+        );
+
+        // RadiationForceC on the child should be non-zero —
+        // `flat_plate_srp_system`'s kinematic-child fallback ran the
+        // Scheduled arm, which writes the SRP force directly here.
+        // Without the fallback, the derivative-class arm would
+        // stash `stage_inputs` and leave `RadiationForceC` at zero
+        // (the integration system that consumes `stage_inputs` is
+        // filtered out for kinematic children).
+        let rf = app
+            .world()
+            .get::<RadiationForceC>(child)
+            .expect("child should have RadiationForceC");
+        let force_mag = rf.force.length();
+        assert!(
+            force_mag > 1e-9,
+            "kinematic child with derivative-class FlatPlateConfigC should still see SRP force; \
+             got |force|={force_mag:.3e} N (the per-step zero clear was never overwritten — \
+             flat_plate_srp_system's kinematic-child fallback did not fire)"
+        );
+
+        // Plate temperatures should also have changed — the Euler
+        // step fed `temp_dots` into `integrate_temperatures` only on
+        // the Scheduled arm. The temperature delta direction depends
+        // on the absorbed flux vs emitted blackbody, but it must be
+        // *something* under direct sunlight on a non-zero-emissivity
+        // plate at 270 K.
+        let fc = app
+            .world()
+            .get::<FlatPlateConfigC>(child)
+            .expect("child should have FlatPlateConfigC");
+        let temp_delta = (fc.0.temperatures[0] - initial_temp).abs();
+        assert!(
+            temp_delta > 1e-6,
+            "kinematic child plate temperature should advance under Euler integration; \
+             got Δ={temp_delta:.3e} K (still at {} K — flat_plate_srp_system's kinematic-child \
+             fallback did not run the temperature integration)",
+            fc.0.temperatures[0]
+        );
+    }
+
     /// IG.37 regression on the ECS-native `MassChildOf` rewire path:
     /// when a body is detached from its parent (the `MassChildOf`
     /// link is removed), `wrench_aggregation_system` demotes it from

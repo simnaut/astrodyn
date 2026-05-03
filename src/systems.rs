@@ -2566,6 +2566,18 @@ pub fn flat_plate_srp_system(
             Option<&MassPropertiesC>,
             Option<&StructuralTransformC>,
             &mut RadiationForceC,
+            // `Has<KinematicChildC>` flags entities whose orbital
+            // integration is gated off by the composite-rigid-body
+            // wrench-aggregation pipeline. Their per-RK4-stage
+            // derivative-class SRP/thermal recompute lives inside
+            // `integration_system` and is filtered out for them, so
+            // we must take the Scheduled-style single-shot Euler
+            // path here unconditionally to keep their plate
+            // temperatures advancing and `RadiationForceC` non-zero
+            // — the appendage is still physically present in the
+            // environment, only its orbital state is derived from
+            // the chain root.
+            bevy::ecs::query::Has<KinematicChildC>,
         ),
         (Without<SunMarker>, Without<CannonballSrpC>),
     >,
@@ -2587,7 +2599,9 @@ pub fn flat_plate_srp_system(
 
     let dt = time.delta_secs_f64();
 
-    for (mut flat_config, state, rot, mass, struct_xform, mut srp_force) in &mut query {
+    for (mut flat_config, state, rot, mass, struct_xform, mut srp_force, is_kinematic_child) in
+        &mut query
+    {
         // Clear per-step SRP state unconditionally (before the Sun check)
         // so derivative-mode entities don't retain stale `stage_inputs` or
         // force/torque if the Sun entity is removed between steps — which
@@ -2622,7 +2636,22 @@ pub fn flat_plate_srp_system(
         let illum_factor = compute_illum_factor(pos_raw, sun_pos_raw, &shadow_bodies);
         let center_grav = mass.map_or(DVec3::ZERO, |m| m.0.center_of_mass.raw_si());
 
-        match flat_config.integration_order {
+        // Kinematic children (composite-rigid-body chain members) have
+        // their orbital integration gated off in `integration_system`,
+        // and the per-RK4-stage derivative-class SRP/thermal recompute
+        // lives inside that gated branch. Falling through to the
+        // derivative-class arm below would skip plate temperature
+        // updates and leave `RadiationForceC` zero. Force the
+        // Scheduled-style single-shot path so the appendage's thermal
+        // state and representative `RadiationForceC` stay live; only
+        // the orbital state is derived from the chain root.
+        let order = if is_kinematic_child {
+            jeod_sim::ThermalIntegrationOrder::Scheduled
+        } else {
+            flat_config.integration_order
+        };
+
+        match order {
             jeod_sim::ThermalIntegrationOrder::Scheduled => {
                 // Scheduled-class (SIM_3_ORBIT): SRP force + Euler T once
                 // per step. Force fed to the orbital integrator is
