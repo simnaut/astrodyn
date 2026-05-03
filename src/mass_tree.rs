@@ -2094,7 +2094,10 @@ mod tests {
              names_q: Query<&Name>|
              -> (Vec<Entity>, Vec<Entity>) {
                 let view = MassTreeView::from_queries(&mass_q, &parents_q, &names_q);
-                (view.iter_entities().collect(), view.iter_entities().collect())
+                (
+                    view.iter_entities().collect(),
+                    view.iter_entities().collect(),
+                )
             },
         );
 
@@ -2117,6 +2120,9 @@ mod tests {
         sorted_a.sort_by_key(|e| e.to_bits());
         let mut expected: Vec<Entity> = std::iter::once(root).chain(children).collect();
         expected.sort_by_key(|e| e.to_bits());
-        assert_eq!(sorted_a, expected, "view missing entities: {view_a_first:?}");
+        assert_eq!(
+            sorted_a, expected,
+            "view missing entities: {view_a_first:?}"
+        );
     }
 }

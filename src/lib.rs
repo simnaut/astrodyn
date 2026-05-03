@@ -640,6 +640,7 @@ pub fn register_jeod_component_types(app: &mut App) {
     app.register_type::<components::MassBodyIdC>();
     app.register_type::<components::MassChildOf>();
     app.register_type::<components::MassPointRef>();
+    app.register_type::<components::KinematicChildC>();
     app.register_type::<components::PlanetC>();
     app.register_type::<components::RotationModelC>();
     app.register_type::<components::EphemerisBodyC>();

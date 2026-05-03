@@ -12,7 +12,7 @@
 //! - The orchestration walk (`aggregate_wrenches_via_storage`) lives
 //!   in `jeod_sim`.
 //! - This module is the thin Bevy glue: it builds the
-//!   [`MassTreeView`](crate::mass_tree::MassTreeView), assembles the
+//!   [`MassTreeView`], assembles the
 //!   per-edge geometry from `MassChildOf` + live composite
 //!   `MassPropertiesC`, runs the kernel, and writes the per-root
 //!   aggregated result back into the root's `TotalForceC` /
@@ -43,33 +43,47 @@
 //!
 //! # Frame conventions inside the system
 //!
-//! All aggregation arithmetic happens in the **inertial (root)** frame:
+//! All aggregation arithmetic happens in the **per-entity structural
+//! frame**, mirroring JEOD `dyn_body_collect.cc:138-202`. JEOD walks
+//! every chain shifting each child's `(force, torque)` into the
+//! *parent's* structural frame via `T_parent_this^T` (the per-link
+//! attach rotation's inverse) plus the parallel-axis arm `pcm_to_ccm`,
+//! and only at the root does it rotate the aggregated total back to
+//! inertial / body for integration.
 //!
-//! - `TotalForceC.force` is read directly as inertial-frame force (its
-//!   phantom is `Force<RootInertial>`).
-//! - `TotalForceC.torque` is read in body frame and rotated into
-//!   inertial via the body's `RotationalStateC.q_inertial_body`. When
-//!   no `RotationalStateC` is present (the typical kinematic-child
-//!   case), the rotation defaults to identity — i.e., the body-frame
-//!   torque is treated as inertial-frame components. This is correct
-//!   for chains where every link has identity attitude relative to
-//!   the root; for rotated chains, callers must add a
-//!   `RotationalStateC` whose quaternion encodes the chain's
-//!   accumulated rotation. The kinematic propagation that would do
-//!   this automatically lives in a follow-up sub-issue
-//!   (design-doc Section 15.3 `propagate_state_from_root_system`).
-//! - The parallel-axis cross-term `r × F` uses
-//!   `r = pcm_to_ccm` (parent CoM → child CoM in parent's structural
-//!   frame). Because force is a free vector, `r × F` produces a
-//!   torque whose components are also in the parent's structural
-//!   frame; with identity-attitude chains, parent struct = inertial,
-//!   so no rotation is needed. With rotated chains, the cross-term
-//!   carries small frame error proportional to the chain rotation —
-//!   again, a follow-up's responsibility.
+//! Concretely:
 //!
-//! At the root exit boundary, the aggregated inertial-frame torque is
-//! rotated back into the root's body frame via the root's own
-//! `T_inertial_body` and written to `TotalForceC.torque`.
+//! - **Entry boundary** (per non-root entity): the live
+//!   `TotalForceC.force` is `Force<RootInertial>` and `TotalForceC.torque`
+//!   is `Torque<BodyFrame<SelfRef>>`. Both are converted to **this
+//!   entity's structural frame** before being handed to the kernel —
+//!   `force_struct = T_inertial_struct · force_inertial` and
+//!   `torque_struct = T_struct_body^T · torque_body`,
+//!   where `T_inertial_struct = T_struct_body^T · T_inertial_body` is
+//!   the same composition `force_collection_system` already uses, and
+//!   `T_struct_body` comes from the entity's `StructuralTransformC`
+//!   (defaults to identity when absent).
+//! - **Per-link shift** (kernel): with both ends in their respective
+//!   structural frames, the kernel uses the real
+//!   `t_parent_child = MassChildOf.t_parent_child` so child-struct
+//!   components correctly rotate into parent-struct via
+//!   `t_parent_child^T`, and the parallel-axis arm
+//!   `r = pcm_to_ccm` (already in parent struct) plus the now-
+//!   parent-struct force gives a `r × F` torque also in parent struct.
+//!   This is exactly JEOD lines 152-185.
+//! - **Exit boundary** (root): the aggregated total lives in the
+//!   root's structural frame. Convert back so the root's
+//!   `TotalForceC` keeps its `Force<RootInertial>` /
+//!   `Torque<BodyFrame<SelfRef>>` phantoms —
+//!   `force_inertial = T_inertial_struct^T · force_struct` and
+//!   `torque_body = T_struct_body · torque_struct`.
+//!   This matches `force_collection_system`'s root-exit rotation
+//!   (JEOD lines 219-252).
+//!
+//! Identity-attitude chains (no rotation anywhere) collapse every
+//! transform to `IDENTITY` and the math reduces to bit-exact addition;
+//! rotated chains (parent or any link non-identity) get the same
+//! result JEOD does because every per-link rotation matches.
 //!
 //! [#272]: https://github.com/simnaut/bevy_jeod/issues/272
 
@@ -80,10 +94,34 @@ use std::collections::{HashMap, HashSet};
 use jeod_sim::{aggregate_wrenches_via_storage, EdgeGeometry, Wrench};
 
 use crate::components::{
-    DynamicsConfigC, FrameDerivativesC, GravityAccelerationC, MassChildOf, MassPropertiesC,
-    RotationalStateC, StructuralTransformC, TotalForceC,
+    DynamicsConfigC, FrameDerivativesC, GravityAccelerationC, KinematicChildC, MassChildOf,
+    MassPropertiesC, RotationalStateC, StructuralTransformC, TotalForceC,
 };
 use crate::mass_tree::MassTreeView;
+
+/// Compute `T_inertial_struct = T_struct_body^T · T_inertial_body` for
+/// a single entity. `T_struct_body` defaults to identity when the
+/// entity has no `StructuralTransformC` (single-body vehicles); the
+/// inertial→body rotation defaults to identity when the entity has no
+/// `RotationalStateC` (typical kinematic child / 3-DOF body). Mirrors
+/// the same composition `force_collection_system` does for the root.
+fn t_inertial_struct(
+    entity: Entity,
+    rot_q: &Query<&RotationalStateC>,
+    struct_q: &Query<&StructuralTransformC>,
+) -> DMat3 {
+    let t_inertial_body = rot_q.get(entity).map_or(DMat3::IDENTITY, |r| {
+        r.0.q_inertial_body
+            .as_witness()
+            .left_quat_to_transformation()
+    });
+    let t_struct_body = struct_q
+        .get(entity)
+        .map_or(DMat3::IDENTITY, |s| *s.0.matrix_ref());
+    // T_inertial_struct = T_struct_body^T · T_inertial_body.
+    // Same identity `force_collection_system` uses (jeod_sim::compute_t_inertial_struct).
+    t_struct_body.transpose() * t_inertial_body
+}
 
 /// Aggregate per-body external force / torque up every `MassChildOf`
 /// chain and write the result into each root's
@@ -111,11 +149,13 @@ use crate::mass_tree::MassTreeView;
 // JEOD_INV: DB.17 — only the root's TotalForce/FrameDerivatives carry the whole-composite total (children zeroed)
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn wrench_aggregation_system(
+    mut commands: Commands,
     mass_q: Query<(Entity, &MassPropertiesC)>,
     parents_q: Query<(Entity, &MassChildOf)>,
+    kinematic_q: Query<Entity, With<KinematicChildC>>,
     names_q: Query<&Name>,
     rot_q: Query<&RotationalStateC>,
-    _struct_q: Query<&StructuralTransformC>,
+    struct_q: Query<&StructuralTransformC>,
     grav_q: Query<&GravityAccelerationC>,
     dyn_cfg_q: Query<&DynamicsConfigC>,
     mut totals_q: Query<(Entity, &mut TotalForceC)>,
@@ -123,8 +163,16 @@ pub fn wrench_aggregation_system(
 ) {
     // Fast path: no MassChildOf edges in the world means no chains —
     // every entity is its own root and the existing per-entity
-    // `force_collection_system` output is already correct.
+    // `force_collection_system` output is already correct. Still need
+    // to clear stale `KinematicChildC` markers from a previous tick
+    // where edges existed (e.g. mass tree was just torn down via
+    // detach), or `integration_system`'s `Without<KinematicChildC>`
+    // filter would keep the entity frozen forever.
+    // JEOD_INV: DB.17 — kinematic-child marker cleared when the tree is gone
     if parents_q.is_empty() {
+        for entity in kinematic_q.iter() {
+            commands.entity(entity).remove::<KinematicChildC>();
+        }
         return;
     }
 
@@ -135,7 +183,11 @@ pub fn wrench_aggregation_system(
     }
 
     // 2. Build per-edge geometry directly from `MassChildOf` + the
-    //    live composite `MassPropertiesC`.
+    //    live composite `MassPropertiesC`. `pcm_to_ccm` and the
+    //    per-link `t_parent_child` are JEOD-faithful — see the
+    //    module-level "Frame conventions" doc for why the kernel
+    //    needs the *real* `t_parent_child` (not identity) when the
+    //    walk happens in structural frames.
     //
     //    JEOD `dyn_body_collect.cc:181`:
     //        pcm_to_ccm = composite_wrt_pstr.position − parent.composite.position
@@ -171,27 +223,27 @@ pub fn wrench_aggregation_system(
         );
     }
 
-    // 3. Build per-entity wrenches in **inertial** frame (force) and
-    //    in **inertial** frame (torque, rotated from body via the
-    //    body's `T_inertial_body`). Working in inertial means force
-    //    is a free vector that doesn't change components at any link
-    //    — the kernel's `t_parent_child^T · F` is identity for
-    //    inertial-frame inputs (since the kernel is frame-agnostic
-    //    and we're reusing the structural-frame walk in a different
-    //    common frame). The cross-term `r × F` uses `r = pcm_to_ccm`
-    //    (in parent's structural frame); for chains where every
-    //    link's struct = inertial (identity attach rotations and
-    //    identity attitudes) this is bit-exact. For rotated chains
-    //    the cross-term carries the same first-order error as the
-    //    `t_parent_child` rotation — see the module doc for the
-    //    follow-up that closes this gap.
+    // 3. Build per-entity wrenches in **the entity's own structural
+    //    frame**. JEOD walks every chain in structural frames so the
+    //    per-link `t_parent_child^T` rotation correctly converts
+    //    child-struct components into parent-struct components and
+    //    the parallel-axis arm `r = pcm_to_ccm` (in parent struct)
+    //    composes with a parent-struct force to produce a parent-
+    //    struct torque. Doing the walk in inertial would force the
+    //    per-link rotation to identity and silently produce wrong
+    //    results for any chain with a non-identity attach rotation
+    //    or a non-identity parent attitude.
     //
-    //    To make the kernel's per-link rotation a no-op for force
-    //    (free-vector preservation), we pass `t_parent_child =
-    //    identity` to the kernel and rely on the `pcm_to_ccm`
-    //    geometry alone for the parallel-axis arm. The kernel's
-    //    docstring documents the identity-rotation case as the
-    //    canonical "shift only" mode.
+    //    Conversion at this entry boundary is the same composition
+    //    `force_collection_system` already uses for the root:
+    //      T_inertial_struct = T_struct_body^T · T_inertial_body
+    //      force_struct  = T_inertial_struct · force_inertial
+    //      torque_struct = T_struct_body^T · torque_body
+    //    The defaults (`T_struct_body = I` when no `StructuralTransformC`,
+    //    `T_inertial_body = I` when no `RotationalStateC`) collapse
+    //    every transform to identity for single-body vehicles and
+    //    identity-attitude chains — bit-exact with the previous
+    //    inertial-frame walk for those cases.
     let mut wrenches: HashMap<Entity, Wrench> = HashMap::new();
     for (entity, total) in totals_q.iter() {
         if !view.contains(entity) {
@@ -199,52 +251,73 @@ pub fn wrench_aggregation_system(
         }
         let force_inertial = total.0.force.raw_si();
         let torque_body = total.0.torque.raw_si();
-        // Body → inertial via T_inertial_body. When no
-        // RotationalStateC is present (typical kinematic child),
-        // T_inertial_body = identity — body-frame components are
-        // taken as inertial components. See the module doc for
-        // when this is correct.
-        let t_inertial_body = rot_q.get(entity).map_or(DMat3::IDENTITY, |r| {
-            r.0.q_inertial_body
-                .as_witness()
-                .left_quat_to_transformation()
-        });
-        // T_inertial_body takes inertial → body, so its transpose
-        // takes body → inertial (vector components).
-        let torque_inertial = t_inertial_body.transpose() * torque_body;
-        wrenches.insert(entity, Wrench::new(force_inertial, torque_inertial));
+        let t_inertial_struct = t_inertial_struct(entity, &rot_q, &struct_q);
+        let t_struct_body = struct_q
+            .get(entity)
+            .map_or(DMat3::IDENTITY, |s| *s.0.matrix_ref());
+        let force_struct = t_inertial_struct * force_inertial;
+        // T_struct_body takes struct → body, so its transpose takes
+        // body → struct (vector components). Mirrors JEOD line 250
+        // (`Vector3::transform(composite_properties.T_parent_this, ..)`)
+        // run in reverse for the child-side entry.
+        let torque_struct = t_struct_body.transpose() * torque_body;
+        wrenches.insert(entity, Wrench::new(force_struct, torque_struct));
     }
 
-    // Override per-edge `t_parent_child` to identity so the kernel's
-    // rotation step is a no-op. We're working in inertial frame for
-    // force / torque components, so per-link rotation should be
-    // identity; the parallel-axis arm via `pcm_to_ccm` is the only
-    // geometric effect we keep. Constructing a fresh edge map with
-    // identity rotation makes the intent explicit at the call site.
-    let inertial_edges: HashMap<Entity, EdgeGeometry> = edges
-        .iter()
-        .map(|(e, g)| {
-            (
-                *e,
-                EdgeGeometry {
-                    pcm_to_ccm: g.pcm_to_ccm,
-                    t_parent_child: DMat3::IDENTITY,
-                },
-            )
-        })
-        .collect();
-
-    // 4. Aggregate up every chain. Returns a `HashMap<root, Wrench>`
-    //    in the *root's* inertial frame for force, inertial frame for
-    //    torque (still about the root's composite CoM).
+    // 4. Aggregate up every chain. The kernel walks each child→parent
+    //    edge applying `shift_wrench_to_parent(f_child, tau_child,
+    //    pcm_to_ccm, t_parent_child)`, which under the JEOD convention
+    //    rotates the child's wrench from child-struct into
+    //    parent-struct via `t_parent_child^T` and adds
+    //    `pcm_to_ccm × f_pstr` for the parallel-axis arm. Returns a
+    //    `HashMap<root, Wrench>` whose force/torque components live in
+    //    the *root's* structural frame.
     let aggregated: HashMap<Entity, Wrench> =
-        aggregate_wrenches_via_storage(&view, &wrenches, &inertial_edges);
+        aggregate_wrenches_via_storage(&view, &wrenches, &edges);
 
     // 5. Identify roots once for the writeback pass.
     let roots: HashSet<Entity> = view.iter_roots().collect();
 
-    // 6. Write `TotalForceC` per entity:
-    //    - Roots: aggregated inertial force / inertial-rotated-to-body torque.
+    // 6. Mark non-root nodes as `KinematicChildC` so
+    //    `integration_system`'s `Without<KinematicChildC>` filter
+    //    skips them. JEOD's composite-rigid-body model integrates
+    //    only the root; without this marker the integration system
+    //    would still advance every entity carrying
+    //    `DynamicsConfigC + TranslationalStateC + GravityControlsC`
+    //    under gravity at every RK stage, even though we just zeroed
+    //    its `TotalForceC`. JEOD_INV: DB.17 — only the root
+    //    integrates.
+    //
+    //    Conversely, any entity carrying `KinematicChildC` from a
+    //    previous tick that is now a root (mass tree was rewired)
+    //    must have the marker removed so it resumes integrating.
+    let mut should_be_kinematic: HashSet<Entity> = HashSet::new();
+    for entity in view.iter_entities() {
+        if !roots.contains(&entity) {
+            should_be_kinematic.insert(entity);
+        }
+    }
+    // Add markers to entities that should be kinematic but aren't
+    // already. Insertion is idempotent in Bevy (re-inserting the same
+    // unit struct does nothing), but we filter to avoid the change-
+    // detection tick churn on stable chains.
+    for entity in &should_be_kinematic {
+        if kinematic_q.get(*entity).is_err() {
+            commands.entity(*entity).insert(KinematicChildC);
+        }
+    }
+    // Remove markers from entities that are no longer kinematic
+    // children (e.g. mass tree was rewired or torn down).
+    for entity in kinematic_q.iter() {
+        if !should_be_kinematic.contains(&entity) {
+            commands.entity(entity).remove::<KinematicChildC>();
+        }
+    }
+
+    // 7. Write `TotalForceC` per entity:
+    //    - Roots: aggregated struct-frame total → inertial force,
+    //      body torque (mirrors `force_collection_system`'s root
+    //      exit; JEOD lines 219-252).
     //    - Non-roots: zero.
     for (entity, mut tf) in totals_q.iter_mut() {
         if !view.contains(entity) {
@@ -255,22 +328,30 @@ pub fn wrench_aggregation_system(
                 .get(&entity)
                 .copied()
                 .unwrap_or_else(Wrench::zero);
-            // Inertial → body for the root: T_inertial_body · tau_inertial.
-            let t_inertial_body = rot_q.get(entity).map_or(DMat3::IDENTITY, |r| {
-                r.0.q_inertial_body
-                    .as_witness()
-                    .left_quat_to_transformation()
-            });
-            let torque_body = t_inertial_body * agg.torque;
-            // allowed: wrench-aggregation kernel boundary; the
-            // aggregated `agg.force` lives in inertial-frame
-            // `DVec3` storage from the kernel walk and the typed
-            // wrap is the canonical re-entry into the typed surface
-            // (mirrors `force_collection_system`'s boundary write).
-            tf.0.force = jeod_sim::Force::<jeod_sim::RootInertial>::from_raw_si(agg.force);
+            // Root exit boundary: struct → inertial for force,
+            // struct → body for torque.
+            //
+            //   force_inertial = T_inertial_struct^T · force_struct
+            //                  = T_struct_body · T_inertial_body^T · force_struct
+            //   (JEOD line 219-221: `transform_transpose(structure.state.rot.T_parent_this, …, …_inrtl)`).
+            //   torque_body    = T_struct_body · torque_struct
+            //   (JEOD line 250: `transform(composite_properties.T_parent_this, …, …_body)`).
+            let t_inertial_struct = t_inertial_struct(entity, &rot_q, &struct_q);
+            let t_struct_body = struct_q
+                .get(entity)
+                .map_or(DMat3::IDENTITY, |s| *s.0.matrix_ref());
+            let force_inertial = t_inertial_struct.transpose() * agg.force;
+            let torque_body = t_struct_body * agg.torque;
+            // allowed: wrench-aggregation kernel boundary; `agg.force`
+            // arrives as a raw `DVec3` in the root's structural
+            // frame from the kernel walk, then rotated to inertial
+            // here. Re-wrapping is the canonical re-entry into the
+            // typed surface (mirrors `force_collection_system`'s
+            // root-exit boundary write).
+            tf.0.force = jeod_sim::Force::<jeod_sim::RootInertial>::from_raw_si(force_inertial);
             // allowed: same wrench-kernel boundary; `torque_body`
-            // is the inertial→body rotation of the kernel's
-            // inertial-frame torque sum, in raw `DVec3`.
+            // is the structural→body rotation of the kernel's
+            // root-struct-frame torque sum, in raw `DVec3`.
             tf.0.torque = jeod_sim::Torque::<jeod_sim::BodyFrame<jeod_sim::SelfRef>>::from_raw_si(
                 torque_body,
             );
@@ -285,7 +366,7 @@ pub fn wrench_aggregation_system(
         }
     }
 
-    // 7. Recompute `FrameDerivativesC` for the root from the new
+    // 8. Recompute `FrameDerivativesC` for the root from the new
     //    `TotalForceC`, and zero it for children. Mirrors the
     //    end-of-step write in `force_collection_system` so downstream
     //    integrators read consistent values.
@@ -549,24 +630,36 @@ mod tests {
     }
 
     #[test]
-    fn child_with_attach_offset_and_rotation_preserves_inertial_force() {
+    fn child_with_attach_rotation_routes_force_through_structural_frames() {
         // Child attached to parent with a non-identity `t_parent_child`
-        // (90° about +Z attach), at offset (1,0,0). Apply an
-        // **inertial-frame** external force on the child of (5,0,0).
-        // Force is a free vector — its inertial components are
-        // preserved through the aggregation walk regardless of attach
-        // rotation. The cross-term uses `pcm_to_ccm` (in parent
-        // struct) and the inertial-frame force; with identity root
-        // attitude the parent struct = inertial.
+        // (90° about +Z attach), at offset (1,0,0). Apply a force on
+        // the child whose typed phantom is `Force<RootInertial>`. With
+        // the child carrying no `RotationalStateC` and no
+        // `StructuralTransformC`, the entry boundary's
+        // `T_inertial_struct = identity`, so the walk treats the force
+        // as if expressed in the child's structural frame, then
+        // rotates *into the parent's structural frame* via
+        // `t_parent_child^T = R_z(-90°)`. This is the JEOD-faithful
+        // shape — the kernel is structural-frame native and assumes
+        // every entity hands it components already in its own
+        // structural frame.
         //
         // Setup: parent mass 10 at origin; child mass 5 attached at
         //   offset (1,0,0) with attach rotation R_z(90°) (parent +x
         //   maps to child +y in the JEOD `T_parent_this` convention).
-        // Composite CoM in parent struct: child.center_of_mass=(0,0,0)
-        //   so child_pos_in_parent_struct = t_pc^T · 0 + (1,0,0)
-        //   = (1,0,0). Composite CoM = (10·0 + 5·1)/15 = (1/3,0,0).
+        //   t_pc columns = (0,1,0), (-1,0,0), (0,0,1)
+        //     ⇒ t_pc · (1,0,0)_parent = (0,1,0)_child ✓
+        //   t_pc^T columns = (0,-1,0), (1,0,0), (0,0,1)
+        //     ⇒ t_pc^T · (5,0,0)_child_struct = (0,-5,0)_parent_struct.
+        // Composite CoM: child.center_of_mass=(0,0,0) so
+        //   child_pos_in_parent_struct = t_pc^T · 0 + (1,0,0) = (1,0,0).
+        //   composite CoM = (10·0 + 5·1)/15 = (1/3,0,0).
         //   pcm_to_ccm = (1,0,0) − (1/3,0,0) = (2/3, 0, 0).
-        // r × F = (2/3,0,0) × (5,0,0) = (0,0,0) (parallel).
+        // r × F_pstr = (2/3,0,0) × (0,-5,0) = (0,0,-10/3).
+        // Root attitude is identity (no RotationalStateC, no
+        // StructuralTransformC), so root struct = root body = root
+        // inertial: the aggregated parent-struct components are also
+        // the inertial / body components written back to TotalForceC.
         let mut app = add_test_app();
         let parent = app
             .world_mut()
@@ -605,15 +698,22 @@ mod tests {
             .unwrap()
             .0
             .to_untyped();
-        let f_err = (root_tf.force - DVec3::new(5.0, 0.0, 0.0)).length();
+        let expected_force = DVec3::new(0.0, -5.0, 0.0);
+        let expected_torque = DVec3::new(0.0, 0.0, -10.0 / 3.0);
+        let f_err = (root_tf.force - expected_force).length();
+        let t_err = (root_tf.torque - expected_torque).length();
         assert!(
             f_err < 1e-12,
-            "root inertial force {:?} should be (5,0,0) (free vector preserved)",
-            root_tf.force
+            "root force {:?}, expected {:?}",
+            root_tf.force,
+            expected_force
         );
-        // Force parallel to r ⇒ zero cross-term.
-        let t_err = (root_tf.torque - DVec3::ZERO).length();
-        assert!(t_err < 1e-12, "root torque {:?}", root_tf.torque);
+        assert!(
+            t_err < 1e-12,
+            "root torque {:?}, expected {:?}",
+            root_tf.torque,
+            expected_torque
+        );
     }
 
     #[test]
@@ -672,5 +772,289 @@ mod tests {
         let t_err = (root_tf.torque - expected_torque).length();
         assert!(f_err < 1e-12, "force {:?}", root_tf.force);
         assert!(t_err < 1e-12, "torque {:?}", root_tf.torque);
+    }
+
+    /// Regression test for review threads PRRT_kwDORtae6c5_NXAo and
+    /// PRRT_kwDORtae6c5_NXAz: when the parent attitude is non-identity
+    /// (root has a real `RotationalStateC` whose `q_inertial_body` is
+    /// not identity), the wrench-shift cross-product must use the
+    /// parent's structural-frame `r` and a parent-structural-frame
+    /// `F` — equivalently, the inertial-frame `F` must be rotated
+    /// into the parent's structural frame before the cross-product.
+    /// The previous inertial-frame walk crossed `pcm_to_ccm` (in
+    /// parent struct) with the inertial-frame force directly, so
+    /// the resulting torque was bit-correct only at identity attitude
+    /// and silently wrong otherwise.
+    ///
+    /// JEOD-derived analytical answer for this scenario, in the
+    /// **parent's structural frame**:
+    ///
+    /// ```text
+    /// parent attitude: passive +30° about Z. The constructor
+    ///   `JeodQuat::left_quat_from_eigen_rotation(angle, axis)`
+    /// produces a quaternion `q` for which
+    ///   `T_inertial_body = q.left_quat_to_transformation()`
+    /// is the passive matrix
+    ///   T_inertial_body · (1,0,0) = (cos 30°, −sin 30°, 0)
+    /// (the inertial x-axis, expressed in body coords after the body
+    /// frame has been rotated +30° about its Z axis).
+    ///
+    /// child mass 5 attached at parent struct offset (1,0,0) with
+    /// identity attach rotation; child carries the same
+    /// RotationalStateC as the parent so the chain is physically
+    /// consistent (parent struct == child struct under identity
+    /// attach).
+    ///
+    /// composite CoM (parent struct) = (10·0 + 5·1)/15 = (1/3,0,0)
+    /// pcm_to_ccm = (2/3, 0, 0)
+    /// external force on the child = (1, 0, 0) inertial.
+    ///
+    /// entry: convert to child struct (= parent struct here):
+    ///   T_inertial_struct = T_struct_body^T · T_inertial_body
+    ///                     = I · T_inertial_body
+    ///   force_struct = T_inertial_body · (1,0,0)
+    ///                = (cos 30°, −sin 30°, 0).
+    ///
+    /// kernel cross-product in parent struct:
+    ///   r × F_pstr = (2/3,0,0) × (cos 30°, −sin 30°, 0)
+    ///              = (0, 0, 2/3 · (−sin 30°))
+    ///              = (0, 0, −1/3).
+    ///
+    /// root exit: rotate force_pstr to inertial (T_inertial_struct^T):
+    ///   T_inertial_body^T · (cos 30°, −sin 30°, 0) = (1, 0, 0)  ✓
+    /// rotate torque_pstr to body (T_struct_body):
+    ///   I · (0, 0, −1/3) = (0, 0, −1/3).
+    /// ```
+    ///
+    /// The previous inertial-frame walk would have computed
+    /// `r × F_inrtl = (2/3,0,0) × (1,0,0) = (0,0,0)` — silently
+    /// dropping the parallel-axis torque entirely. The nonzero torque
+    /// this test now demands is the load-bearing signal that frame
+    /// discipline survives a non-identity parent attitude.
+    #[test]
+    fn rotated_parent_attitude_routes_cross_term_through_parent_struct() {
+        use jeod_sim::RotationalState;
+
+        let mut app = add_test_app();
+
+        let parent_q = jeod_sim::JeodQuat::left_quat_from_eigen_rotation(
+            std::f64::consts::FRAC_PI_6, // 30°
+            DVec3::Z,
+        );
+        let parent_rot_state = RotationalState {
+            quaternion: parent_q,
+            ang_vel_body: DVec3::ZERO,
+        };
+
+        let parent = app
+            .world_mut()
+            .spawn((
+                MassPropertiesC::from(MassProperties::new(10.0)),
+                TotalForceC::default(),
+                FrameDerivativesC::default(),
+                DynamicsConfigC::default(),
+                RotationalStateC::from(parent_rot_state),
+                ExternalForceC::default(),
+                ExternalTorqueC::default(),
+            ))
+            .id();
+        // Child at offset (1,0,0), identity attach, attitude matches
+        // parent so the chain is physically consistent
+        // (q_inertial_body = R_z(30°) at every link).
+        let _child = app
+            .world_mut()
+            .spawn((
+                MassPropertiesC::from(MassProperties::new(5.0)),
+                MassChildOf::new(parent, DVec3::new(1.0, 0.0, 0.0)),
+                TotalForceC::default(),
+                FrameDerivativesC::default(),
+                DynamicsConfigC::default(),
+                RotationalStateC::from(parent_rot_state),
+                ext_force_in_root_inertial(DVec3::new(1.0, 0.0, 0.0)),
+                ExternalTorqueC::default(),
+            ))
+            .id();
+
+        run_pipeline(&mut app);
+
+        let root_tf = app
+            .world()
+            .get::<TotalForceC>(parent)
+            .unwrap()
+            .0
+            .to_untyped();
+
+        // Free-vector force preserved at the root: T_inertial_body^T ·
+        // T_inertial_body · (1,0,0) = (1, 0, 0).
+        let expected_force = DVec3::new(1.0, 0.0, 0.0);
+        // Parallel-axis torque, in body frame (= struct frame for
+        // T_struct_body = identity): (0, 0, −1/3).
+        let expected_torque = DVec3::new(0.0, 0.0, -1.0 / 3.0);
+        let f_err = (root_tf.force - expected_force).length();
+        let t_err = (root_tf.torque - expected_torque).length();
+        assert!(
+            f_err < 1e-12,
+            "root force {:?}, expected {:?}",
+            root_tf.force,
+            expected_force
+        );
+        assert!(
+            t_err < 1e-12,
+            "root torque {:?}, expected {:?}",
+            root_tf.torque,
+            expected_torque
+        );
+    }
+
+    /// Regression test for review thread PRRT_kwDORtae6c5_NXAh:
+    /// children of `MassChildOf` chains must NOT drift under gravity
+    /// across multiple integration steps. Before the
+    /// `KinematicChildC` marker, zeroing children's `TotalForceC` was
+    /// not enough — `integration_system` recomputed gravity at every
+    /// RK sub-stage and advanced the child's `TranslationalStateC`
+    /// regardless. This test stands up a real Earth gravity source,
+    /// runs the full FixedUpdate pipeline through several steps
+    /// (force collection, wrench aggregation, integration), and
+    /// asserts the child's translational state stays at the
+    /// spawn-time value.
+    #[test]
+    fn child_translational_state_does_not_drift_under_gravity() {
+        use crate::PlanetBundle;
+        use bevy::time::Fixed;
+        use jeod_sim::recipes::{constants, orbital_elements, vehicle};
+        use jeod_sim::{GravityControl, IntegratorType, TranslationalState, VehicleBuilder, EARTH};
+        use std::time::Duration;
+
+        const DT: f64 = 1.0;
+
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        // allowed: test-fixture FixedUpdate timestep; mirrors the same
+        // construction every `tests/bevy_parity*.rs` integration test
+        // already does and is not the typed-quantities boundary the
+        // script is guarding against (issue #172 H1 targets per-step
+        // bypasses, not one-shot test-app setup).
+        app.insert_resource(Time::<Fixed>::from_seconds(DT));
+        app.add_plugins(crate::JeodPlugin);
+
+        // Earth point-mass source.
+        let earth = app
+            .world_mut()
+            .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+            .id();
+
+        // Parent: a 3-DOF point-mass orbital body at ISS-like
+        // initial conditions, integrated under spherical gravity.
+        let parent_cfg = VehicleBuilder::new()
+            .from_orbital_elements(orbital_elements::iss(), constants::mu_ggm05c())
+            .three_dof_point_mass(vehicle::iss_mass())
+            .with_integrator(IntegratorType::Rk4)
+            .gravity(GravityControl::new_spherical(0_usize, false))
+            .build();
+        let parent = {
+            // Lift `VehicleConfig::spawn_bevy` (defined on
+            // `VehicleConfigBevyExt` in `crate::lib.rs`) into scope
+            // for this one call. Importing the trait at the test
+            // module's top would conflict with name resolution
+            // elsewhere; localizing the `use` keeps it surgical.
+            use crate::VehicleConfigBevyExt;
+            let mut cmds = app.world_mut().commands();
+            let p = parent_cfg.spawn_bevy(&mut cmds, &[earth]);
+            app.world_mut().flush();
+            p
+        };
+
+        // Child: a point-mass with a `MassChildOf` link to the
+        // parent. Spawn it with the *parent's* initial position so
+        // we can detect drift as a non-zero delta from that spawn
+        // value. (In production, kinematic propagation would set
+        // the child's pose every step from the root; for this
+        // regression test we only need to confirm the integrator
+        // does not move it.)
+        let parent_pos = app
+            .world()
+            .get::<crate::TranslationalStateC>(parent)
+            .unwrap()
+            .0
+            .to_untyped()
+            .position;
+        let child = app
+            .world_mut()
+            .spawn((
+                Name::new("child"),
+                MassPropertiesC::from(MassProperties::new(100.0)),
+                MassChildOf::new(parent, DVec3::new(0.5, 0.0, 0.0)),
+                TotalForceC::default(),
+                FrameDerivativesC::default(),
+                DynamicsConfigC::default(),
+                crate::TranslationalStateC::from(TranslationalState {
+                    position: parent_pos,
+                    velocity: DVec3::ZERO,
+                }),
+                crate::GravityControlsC(jeod_sim::GravityControls::<Entity> {
+                    controls: vec![GravityControl::new_spherical(earth, false)],
+                }),
+                crate::GravityAccelerationC::default(),
+                ExternalForceC::default(),
+                ExternalTorqueC::default(),
+            ))
+            .id();
+
+        // Run several FixedUpdate cycles. The standard pattern in
+        // tests/bevy_parity.rs:108-113: advance `Time<Fixed>` by DT,
+        // then run the `FixedUpdate` schedule directly. Avoids
+        // depending on `app.update()`'s implicit virtual-time
+        // advancement (which `MinimalPlugins` does not deliver
+        // out-of-the-box).
+        for _ in 0..5 {
+            app.world_mut()
+                .resource_mut::<Time<Fixed>>()
+                .advance_by(Duration::from_secs_f64(DT));
+            app.world_mut().run_schedule(FixedUpdate);
+        }
+
+        // Child must still be at its spawn position. With the bug,
+        // gravity would have integrated it ~9.8/2 m in the first
+        // step alone (4.9 m), with growing drift each subsequent
+        // step.
+        let child_pos = app
+            .world()
+            .get::<crate::TranslationalStateC>(child)
+            .unwrap()
+            .0
+            .to_untyped()
+            .position;
+        let drift = (child_pos - parent_pos).length();
+        // The child should not have moved under integration. Allow
+        // numerical noise but fail loudly on any meaningful drift.
+        assert!(
+            drift < 1e-6,
+            "kinematic child drifted {drift:.3e} m under gravity over 5 steps; \
+             expected ~0 (KinematicChildC marker should keep integration_system \
+             from advancing it)"
+        );
+
+        // Sanity: the parent (root) DID integrate. If neither moved,
+        // the test would silently pass even with a broken
+        // integration system.
+        let parent_pos_after = app
+            .world()
+            .get::<crate::TranslationalStateC>(parent)
+            .unwrap()
+            .0
+            .to_untyped()
+            .position;
+        let parent_drift = (parent_pos_after - parent_pos).length();
+        assert!(
+            parent_drift > 1.0,
+            "parent did not integrate (drift {parent_drift:.3e} m); test setup broken"
+        );
+
+        // The child must carry `KinematicChildC` after the first
+        // tick — pin the marker contract directly.
+        assert!(
+            app.world().entity(child).contains::<KinematicChildC>(),
+            "child {child:?} should carry KinematicChildC after wrench aggregation"
+        );
     }
 }

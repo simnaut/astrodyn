@@ -1601,23 +1601,35 @@ pub fn force_collection_system(
 pub fn integration_system(
     frame_tree: Res<FrameTreeR>,
     root: Res<crate::RootFrameIdR>,
-    mut bodies: Query<(
-        Entity,
-        &DynamicsConfigC,
-        &mut TranslationalStateC,
-        Option<&mut RotationalStateC>,
-        Option<&MassPropertiesC>,
-        &GravityControlsC,
-        &mut TotalForceC,
-        Option<&IntegratorTypeC>,
-        Option<&mut GaussJacksonStateC>,
-        Option<&mut Abm4StateC>,
-        Option<&mut FlatPlateConfigC>,
-        Option<&StructuralTransformC>,
-        Option<&mut RadiationForceC>,
-        Option<&mut FrameDerivativesC>,
-        Option<&IntegFrameIdC>,
-    )>,
+    // JEOD_INV: DB.17 — composite-rigid-body integration: only the
+    // root of every `MassChildOf` chain advances under
+    // forces/gravity. The `wrench_aggregation_system` tags every
+    // non-root chain member with `KinematicChildC`, which this
+    // `Without<…>` filter then excludes. Without this filter, zeroing
+    // a child's `TotalForceC` would not be enough — the per-RK-stage
+    // gravity recompute below would still drift the child's
+    // translational state every step. See `KinematicChildC` for the
+    // detailed lifecycle.
+    mut bodies: Query<
+        (
+            Entity,
+            &DynamicsConfigC,
+            &mut TranslationalStateC,
+            Option<&mut RotationalStateC>,
+            Option<&MassPropertiesC>,
+            &GravityControlsC,
+            &mut TotalForceC,
+            Option<&IntegratorTypeC>,
+            Option<&mut GaussJacksonStateC>,
+            Option<&mut Abm4StateC>,
+            Option<&mut FlatPlateConfigC>,
+            Option<&StructuralTransformC>,
+            Option<&mut RadiationForceC>,
+            Option<&mut FrameDerivativesC>,
+            Option<&IntegFrameIdC>,
+        ),
+        Without<KinematicChildC>,
+    >,
     sources: Query<
         (
             &GravitySourceC,
