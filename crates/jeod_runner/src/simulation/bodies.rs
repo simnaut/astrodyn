@@ -560,11 +560,50 @@ impl Simulation {
 
     /// Sync a body's mass properties from the mass tree's composite.
     ///
-    /// After modifying the mass tree via `attach`/`detach`, call this to
+    /// After modifying the mass tree via direct `tree.attach` / `tree.detach`
+    /// calls (i.e., obtained via `sim.mass_tree.as_mut()`), call this to
     /// update the body's mass from the tree's composite properties.
+    ///
+    /// This method is the **documented sync point** for the
+    /// `tree.attach`/`tree.detach` + `sync_body_mass_from_tree` path, which
+    /// is the lower-level alternative to the high-level
+    /// [`attach`](Self::attach) / [`detach`](Self::detach) /
+    /// [`detach_subtree`](Self::detach_subtree) /
+    /// [`attach_subtree_aligned`](Self::attach_subtree_aligned) methods.
+    /// JEOD's `dyn_body_attach.cc::reset_integrators()` (lines 860, 871)
+    /// and `dyn_body_detach.cc:271-273` reset multi-step integrator
+    /// (Gauss-Jackson, ABM4) predictor/corrector history on every topology
+    /// change; this method mirrors that behavior so the lower-level path
+    /// stays IG.37-safe by construction. Without this, a Gauss-Jackson or
+    /// ABM4 caller using `tree.attach` + `sync_body_mass_from_tree` would
+    /// silently propagate stale predictor history across the topology
+    /// change, producing wrong physics with no panic.
+    ///
+    /// Single-step integrators (RK4, RKF4(5)) carry no per-step history
+    /// and are no-ops in the reset, so applying the reset unconditionally
+    /// here is safe regardless of the body's chosen integrator.
+    ///
+    /// # Sync every affected body, not just the mutated node
+    ///
+    /// `MassTree::attach`/`detach` recomputes composite mass properties
+    /// up the parent's full ancestor chain to the root. Callers using the
+    /// low-level path **must** invoke `sync_body_mass_from_tree` once for
+    /// **every** Simulation body whose composite was touched — that is,
+    /// the directly mutated child *plus every ancestor of the (former)
+    /// parent that is registered as a Simulation body*. Syncing only the
+    /// child or only the immediate parent leaves higher ancestors with
+    /// stale composite mass and stale multi-step integrator history,
+    /// silently producing wrong physics on the next `step()`. The
+    /// high-level [`attach`](Self::attach) / [`detach`](Self::detach) /
+    /// [`detach_subtree`](Self::detach_subtree) /
+    /// [`attach_subtree_aligned`](Self::attach_subtree_aligned) methods
+    /// already do this ancestor walk for you (see
+    /// `simulation/mass_tree.rs` `affected_ids` collection); this section
+    /// applies only when callers bypass them.
     ///
     /// # Panics
     /// Panics if the body is not registered in the mass tree.
+    // JEOD_INV: IG.37 — multi-step integrator history must be reset on topology change
     pub fn sync_body_mass_from_tree(&mut self, idx: usize) {
         let id = self.bodies[idx]
             .mass_body_id
@@ -577,6 +616,23 @@ impl Simulation {
         composite.dirty = true;
         composite.recompute_derived();
         self.bodies[idx].mass = Some(composite);
+
+        // ── IG.37: mark + reset the body's multi-step integrator history.
+        //    The two-step pattern (mark dirty, then reset) is deliberate —
+        //    it mirrors the high-level attach/detach methods so a future
+        //    refactor that drops the reset would leave the dirty flag set
+        //    and trigger the IG.37 panic on the next `integrate()` call.
+        //    JEOD's `dyn_body_attach.cc::reset_integrators()` (lines 860,
+        //    871) and `dyn_body_detach.cc:271-273` are the corresponding
+        //    JEOD sites.
+        let body = &mut self.bodies[idx];
+        if let Some(ref mut gj) = body.gj_state {
+            gj.mark_topology_dirty();
+        }
+        if let Some(ref mut abm) = body.abm4_state {
+            abm.mark_topology_dirty();
+        }
+        jeod_sim::reset_integrators(body.gj_state.as_mut(), body.abm4_state.as_mut());
     }
 }
 

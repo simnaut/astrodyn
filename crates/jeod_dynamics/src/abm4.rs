@@ -85,6 +85,15 @@ pub struct Abm4State {
     /// at `HIST_LEN - 1` (=3); once `primed_steps >= HIST_LEN - 1` the
     /// ABM4 formulas are used.
     primed_steps: usize,
+    /// True after [`Self::mark_topology_dirty`] is called and before
+    /// [`Self::reset_for_topology_change`] (or [`Self::reset`]) clears it.
+    /// While set, [`abm4_translational_step`] panics — predictor history
+    /// from a different mass / attachment topology is no longer valid and
+    /// silently propagating it would corrupt the trajectory.
+    ///
+    /// JEOD precedent: `dyn_body_attach.cc::reset_integrators()` (lines
+    /// 860, 871). See `JEOD_invariants.md` row IG.37.
+    topology_dirty: bool,
 }
 
 impl Default for Abm4State {
@@ -100,15 +109,53 @@ impl Abm4State {
             posdot_hist: [DVec3::ZERO; HIST_LEN],
             veldot_hist: [DVec3::ZERO; HIST_LEN],
             primed_steps: 0,
+            topology_dirty: false,
         }
     }
 
     /// Reset the integrator back to its unprimed state. The next 3 steps will
     /// be taken with RK4 to rebuild the history.
+    ///
+    /// Also clears the [`topology_dirty`](Self::mark_topology_dirty) flag, so
+    /// callers handling an attach / detach event may call this directly.
+    /// Prefer [`Self::reset_for_topology_change`] at attach / detach call
+    /// sites — it documents the intent at the call site.
     pub fn reset(&mut self) {
         self.posdot_hist = [DVec3::ZERO; HIST_LEN];
         self.veldot_hist = [DVec3::ZERO; HIST_LEN];
         self.primed_steps = 0;
+        self.topology_dirty = false;
+    }
+
+    /// Reset the integrator and clear the topology-dirty flag. Equivalent to
+    /// [`Self::reset`]; named to make attach / detach call sites self-
+    /// documenting and to match JEOD's `reset_integrators()` semantics.
+    ///
+    /// Port of `dyn_body_attach.cc::reset_integrators()` for the ABM4
+    /// branch — clears the predictor history so the next 3 steps re-prime
+    /// with RK4 against the post-attach state.
+    // JEOD_INV: IG.37 — multi-step integrator history must be reset on topology change
+    pub fn reset_for_topology_change(&mut self) {
+        self.reset();
+    }
+
+    /// Mark the integrator as carrying stale predictor history because the
+    /// body's mass / attachment topology changed. While the flag is set,
+    /// [`abm4_translational_step`] panics — silently integrating with stale
+    /// history would propagate a discontinuity-blind predicted state.
+    ///
+    /// Pair with [`Self::reset_for_topology_change`] at the attach / detach
+    /// site. The combined `mark_topology_dirty` + `reset_for_topology_change`
+    /// pattern catches future code paths that mark the integrator dirty but
+    /// forget to clear the flag through reset.
+    pub fn mark_topology_dirty(&mut self) {
+        self.topology_dirty = true;
+    }
+
+    /// Returns true if the integrator is carrying stale history that has
+    /// not yet been cleared via [`Self::reset_for_topology_change`].
+    pub fn is_topology_dirty(&self) -> bool {
+        self.topology_dirty
     }
 
     /// Returns true while the integrator is still priming with RK4.
@@ -174,6 +221,20 @@ pub fn abm4_translational_step(
     assert!(
         dt.is_finite() && dt > 0.0,
         "abm4_translational_step requires a finite positive dt, got {dt}"
+    );
+    // JEOD_INV: IG.37 — multi-step integrator history must be reset on topology change.
+    // The attach / detach handler in `bevy_jeod::staging_system` and `jeod_runner::Simulation`
+    // is responsible for calling `Abm4State::reset_for_topology_change()` whenever it mutates
+    // the mass tree. Stepping past a topology change without that reset propagates predictor
+    // history accumulated under the previous mass / attachment configuration, silently
+    // corrupting the trajectory.
+    assert!(
+        !abm_state.topology_dirty,
+        "abm4_translational_step called with stale predictor history: the body's \
+         mass / attachment topology changed but Abm4State::reset_for_topology_change() \
+         was not called. Wire the attach / detach handler to reset the integrator state \
+         (jeod_sim::reset_integrators) — see JEOD's dyn_body_attach.cc::reset_integrators() \
+         and JEOD_invariants.md row IG.37."
     );
 
     if abm_state.is_priming() {
@@ -446,5 +507,63 @@ mod tests {
         assert!(abm.is_priming());
         assert_eq!(abm.primed_steps, 0);
         assert_eq!(abm.posdot_hist[0], DVec3::ZERO);
+    }
+
+    /// `reset_for_topology_change` clears history, the topology-dirty flag,
+    /// and the priming counter — a strict superset of `reset`'s contract,
+    /// suitable for use at attach / detach call sites.
+    ///
+    /// IG.37: matches JEOD's `dyn_body_attach.cc::reset_integrators()`
+    /// semantics for the ABM4 branch.
+    #[test]
+    fn abm4_reset_for_topology_change_clears_history_and_dirty_flag() {
+        let mut abm = Abm4State::new();
+        let mut state = TranslationalState {
+            position: DVec3::new(1.0, 0.0, 0.0),
+            velocity: DVec3::ZERO,
+        };
+        let accel_fn = |s: &TranslationalState, _t: f64| -> DVec3 { -s.position };
+
+        // Run past priming so the predictor history is non-trivial.
+        for _ in 0..5 {
+            state = abm4_translational_step(&state, accel_fn, 0.01, &mut abm);
+        }
+        assert!(!abm.is_priming());
+        assert_ne!(abm.posdot_hist[0], DVec3::ZERO);
+        assert_ne!(abm.veldot_hist[0], DVec3::ZERO);
+
+        // Mark dirty (as a topology-change handler would), then reset.
+        abm.mark_topology_dirty();
+        assert!(abm.is_topology_dirty());
+
+        abm.reset_for_topology_change();
+
+        assert!(abm.is_priming(), "history must be cleared back to priming");
+        assert!(
+            !abm.is_topology_dirty(),
+            "topology-dirty flag must be cleared by reset"
+        );
+        assert_eq!(abm.primed_steps, 0);
+        for i in 0..HIST_LEN {
+            assert_eq!(abm.posdot_hist[i], DVec3::ZERO);
+            assert_eq!(abm.veldot_hist[i], DVec3::ZERO);
+        }
+    }
+
+    /// Stepping with the topology-dirty flag set must panic — silently
+    /// using stale predictor history across a topology change is exactly
+    /// the bug IG.37 closes.
+    #[test]
+    #[should_panic(expected = "stale predictor history")]
+    fn abm4_step_with_topology_dirty_panics() {
+        let mut abm = Abm4State::new();
+        let state = TranslationalState {
+            position: DVec3::new(1.0, 0.0, 0.0),
+            velocity: DVec3::ZERO,
+        };
+        let accel_fn = |s: &TranslationalState, _t: f64| -> DVec3 { -s.position };
+
+        abm.mark_topology_dirty();
+        let _ = abm4_translational_step(&state, accel_fn, 0.01, &mut abm);
     }
 }

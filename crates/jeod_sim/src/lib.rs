@@ -80,7 +80,7 @@ pub use gravity::{
 pub use integrable::IntegrableObject;
 pub use integration::{
     integrate_bodies_contact_coupled, integrate_body, integrate_body_coupled, integrate_body_typed,
-    CoupledBodyInput, CoupledIntegScratch, CoupledStageEval,
+    reset_integrators, CoupledBodyInput, CoupledIntegScratch, CoupledStageEval,
 };
 pub use interactions::{
     compute_cannonball_srp, compute_cannonball_srp_typed, compute_drag, compute_drag_typed,
@@ -115,9 +115,11 @@ pub use vehicle_config::{
 
 // jeod_dynamics: state types, force types, mass, config, frame utilities
 pub use jeod_dynamics::{
-    compute_t_inertial_struct, DynamicsConfig, ForceContributions, FrameDerivatives,
-    GravityAcceleration, MassBodyId, MassProperties, MassTree, RotationalState, SixDofState,
-    TotalForce, TranslationalState, INERTIA_CONSISTENCY_TOL,
+    compute_node_composite, compute_t_inertial_struct, finalize_child_in_parent_frame,
+    recompute_composites_via_storage, DynamicsConfig, ForceContributions, FrameDerivatives,
+    GravityAcceleration, MassBodyId, MassNodeOutputs, MassNodeView, MassPointState, MassProperties,
+    MassStorage, MassTree, RotationalState, SixDofState, TotalForce, TranslationalState,
+    INERTIA_CONSISTENCY_TOL,
 };
 
 // jeod_dynamics typed siblings (used by Bevy components after #172 H1

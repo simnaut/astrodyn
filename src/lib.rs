@@ -5,6 +5,7 @@
 pub mod bundles;
 pub mod components;
 pub mod frame_param;
+pub mod mass_tree;
 pub mod prelude;
 pub mod recipes;
 pub mod sets;
@@ -14,6 +15,7 @@ pub mod validation;
 
 pub use bundles::*;
 pub use components::*;
+pub use mass_tree::{composite_mass_system, MassTreeQueries, MassTreeView};
 pub use sets::*;
 pub use source_mutator::SourceMutator;
 pub use systems::*;
@@ -392,6 +394,12 @@ impl Plugin for JeodPlugin {
                 systems::register_source_frames_system,
                 systems::register_pfix_frames_system.after(systems::register_source_frames_system),
                 systems::register_body_frames_system.after(systems::register_pfix_frames_system),
+                // Maintain `MassPointRef` ↔ `MassPropertiesC` invariant
+                // for bodies that gain or lose mass after the one-time
+                // body-frame registration pass. PR #283 review thread
+                // `PRRT_kwDORtae6c5_K7qF`.
+                systems::sync_body_mass_point_ref_system
+                    .after(systems::register_body_frames_system),
             ),
         );
         app.add_systems(
@@ -400,6 +408,8 @@ impl Plugin for JeodPlugin {
                 systems::register_source_frames_system,
                 systems::register_pfix_frames_system.after(systems::register_source_frames_system),
                 systems::register_body_frames_system.after(systems::register_pfix_frames_system),
+                systems::sync_body_mass_point_ref_system
+                    .after(systems::register_body_frames_system),
             ),
         );
         // Frame-tree despawn cleanup: rename + reset orphan nodes so
@@ -440,6 +450,13 @@ impl Plugin for JeodPlugin {
                 systems::register_body_frames_system
                     .after(systems::register_pfix_frames_system)
                     .before(JeodSet::EphemerisUpdate),
+                // Late-acquired / late-lost `MassPropertiesC` →
+                // insert / remove `MassPointRef` for bodies that have
+                // already passed through `register_body_frames_system`.
+                // PR #283 review thread `PRRT_kwDORtae6c5_K7qF`.
+                systems::sync_body_mass_point_ref_system
+                    .after(systems::register_body_frames_system)
+                    .before(JeodSet::EphemerisUpdate),
                 // Validation runs *after* registration but before any
                 // pipeline consumer touches the new components. The
                 // frame-switch / non-root checks read `SourceFrameIdC`
@@ -477,6 +494,19 @@ impl Plugin for JeodPlugin {
                 // Mass update: recompute inverse_mass/inverse_inertia each step.
                 systems::mass_update_system
                     .after(JeodSet::TimeUpdate)
+                    .before(JeodSet::EphemerisUpdate),
+                // Mass-tree composite recomputation: walks
+                // `MassChildOf` edges bottom-up via the
+                // `jeod_sim::MassStorage` trait and writes composite
+                // mass / inertia / CoM back into `MassPropertiesC`.
+                // Issue #271. Runs after `mass_update_system` so the
+                // per-entity inverse caches are fresh, and before
+                // `JeodSet::EphemerisUpdate` so downstream gravity /
+                // interaction / integration systems see the
+                // composite. Fast-paths to a no-op when no entity
+                // carries `MassChildOf`.
+                mass_tree::composite_mass_system
+                    .after(systems::mass_update_system)
                     .before(JeodSet::EphemerisUpdate),
                 // Gravity pre-computation
                 systems::gravity_computation_system.in_set(JeodSet::Environment),
@@ -596,6 +626,8 @@ pub fn register_jeod_component_types(app: &mut App) {
     app.register_type::<components::ExternalTorqueC>();
     // Body / planet identity + ephemeris
     app.register_type::<components::MassBodyIdC>();
+    app.register_type::<components::MassChildOf>();
+    app.register_type::<components::MassPointRef>();
     app.register_type::<components::PlanetC>();
     app.register_type::<components::RotationModelC>();
     app.register_type::<components::EphemerisBodyC>();

@@ -468,6 +468,17 @@ pub fn register_body_frames_system(
             Option<&Name>,
             &TranslationalStateC,
             Option<&IntegSourceC>,
+            // PR #283 review thread PRRT_kwDORtae6c5_KiLK — wire the
+            // frame-side `MassPointRef` back-pointer at body-frame
+            // registration time for any entity that also carries
+            // `MassPropertiesC` (i.e. participates in the mass tree).
+            // In the current Bevy adapter the body / mass / frame
+            // ECS entity is one and the same, so the back-pointer
+            // resolves to `MassPointRef(self)`. The component is
+            // skipped for kinematic-only bodies (no
+            // `MassPropertiesC`), matching the "absent for
+            // kinematic-only attaches" contract on the type.
+            Has<MassPropertiesC>,
         ),
         (
             With<TranslationalStateC>,
@@ -476,7 +487,7 @@ pub fn register_body_frames_system(
         ),
     >,
 ) {
-    for (entity, name, trans, integ_source) in &bodies {
+    for (entity, name, trans, integ_source, has_mass) in &bodies {
         let label = name
             .map(|n| n.as_str().to_string())
             .unwrap_or_else(|| format!("body{:?}", entity));
@@ -529,6 +540,15 @@ pub fn register_body_frames_system(
         // entity (e.g. a source registered before the issue #277
         // components landed); the arena body node is still added
         // above for backward compat.
+        //
+        // PR #283 review thread PRRT_kwDORtae6c5_KiLK — also wire the
+        // frame-side `MassPointRef` back-pointer at body-frame
+        // registration time for any entity that also carries
+        // `MassPropertiesC` (i.e. participates in the mass tree). In
+        // the current Bevy adapter the body / mass / frame ECS entity
+        // is one and the same, so the back-pointer resolves to
+        // `MassPointRef(self)`. The component is skipped for
+        // kinematic-only bodies (no `MassPropertiesC`).
         if let Some(parent_frame_entity) = integ_frame_entity {
             commands
                 .entity(parent_frame_entity)
@@ -546,16 +566,89 @@ pub fn register_body_frames_system(
                     ChildOf(parent_frame_entity),
                 ))
                 .id();
-            commands.entity(entity).insert((
+            let mut entity_cmds = commands.entity(entity);
+            entity_cmds.insert((
                 BodyFrameIdC(body_fid),
                 IntegFrameIdC(integ_frame_id),
                 FrameEntityC(body_frame_entity),
             ));
+            if has_mass {
+                entity_cmds.insert(MassPointRef(entity));
+            }
         } else {
-            commands
-                .entity(entity)
-                .insert((BodyFrameIdC(body_fid), IntegFrameIdC(integ_frame_id)));
+            let mut entity_cmds = commands.entity(entity);
+            entity_cmds.insert((BodyFrameIdC(body_fid), IntegFrameIdC(integ_frame_id)));
+            if has_mass {
+                entity_cmds.insert(MassPointRef(entity));
+            }
         }
+    }
+}
+
+/// Maintain the `MassPointRef` ↔ `MassPropertiesC` invariant on bodies
+/// that have already passed through [`register_body_frames_system`].
+///
+/// `register_body_frames_system` is filtered by `Without<BodyFrameIdC>`
+/// so it sees each body exactly once. That makes the
+/// `Has<MassPropertiesC>`-driven `MassPointRef` insertion only correct
+/// at the body's first sight — a body that starts kinematic-only and
+/// later acquires `MassPropertiesC` would never receive the
+/// back-pointer, and a body that loses `MassPropertiesC` after first
+/// registration would keep a stale one. PR #283 review thread
+/// `PRRT_kwDORtae6c5_K7qF` flagged both directions.
+///
+/// This system handles the post-registration transitions:
+///
+/// - **Acquired mass**: a body with `BodyFrameIdC` + `MassPropertiesC`
+///   that lacks `MassPointRef` gets one inserted (the back-pointer
+///   resolves to the body's own entity, mirroring the "body / mass /
+///   frame ECS entity is one and the same" invariant the initial
+///   registration uses).
+/// - **Lost mass**: a body with `BodyFrameIdC` + `MassPointRef` whose
+///   `MassPropertiesC` has been removed gets the stale `MassPointRef`
+///   removed (the "absent for kinematic-only attaches" contract on
+///   the type — keeping a stale back-pointer would lie about whether
+///   the frame still participates in the mass tree).
+///
+/// Runs in the same scheduling slots as
+/// [`register_body_frames_system`] (Startup, PreUpdate, FixedUpdate
+/// before `JeodSet::EphemerisUpdate`) so the invariant is restored
+/// before any consumer (gravity, force collection, integration) reads
+/// the back-pointer this tick.
+#[allow(clippy::type_complexity)]
+pub fn sync_body_mass_point_ref_system(
+    mut commands: Commands,
+    // Acquired mass: has frame + mass but no back-pointer. The
+    // `With<BodyFrameIdC>` filter excludes brand-new bodies that
+    // `register_body_frames_system` will register this same tick (the
+    // `Commands` it issued are deferred until the next system flush;
+    // when this system runs, those bodies don't yet carry
+    // `BodyFrameIdC`).
+    acquired: Query<
+        Entity,
+        (
+            With<BodyFrameIdC>,
+            With<MassPropertiesC>,
+            Without<MassPointRef>,
+        ),
+    >,
+    // Lost mass: has frame + back-pointer but mass component was
+    // removed. The stale back-pointer must be cleared so consumers
+    // don't continue to treat the frame as a mass-tree participant.
+    lost: Query<
+        Entity,
+        (
+            With<BodyFrameIdC>,
+            With<MassPointRef>,
+            Without<MassPropertiesC>,
+        ),
+    >,
+) {
+    for entity in &acquired {
+        commands.entity(entity).insert(MassPointRef(entity));
+    }
+    for entity in &lost {
+        commands.entity(entity).remove::<MassPointRef>();
     }
 }
 
@@ -1319,9 +1412,29 @@ pub fn ephemeris_update_system(
 ///
 /// Placed before `JeodSet::EphemerisUpdate` so gravity and force collection
 /// see current mass properties.
+///
+/// **Change-detection contract** (PR #283 review thread
+/// `PRRT_kwDORtae6c5_K0dm`): the dirty-flag check below is read through
+/// `Mut::deref` (immutable access), and `recompute_derived()` is only
+/// invoked — triggering `DerefMut` and marking the component as
+/// `Changed` — when the entity actually needs updating. Without this
+/// gate, an unconditional `mass.recompute_derived()` (whose body is a
+/// `dirty`-guarded no-op) still triggers `DerefMut` on every entity
+/// every tick, and `composite_mass_system`'s downstream
+/// `Changed<MassPropertiesC>` filter would match every parent every
+/// tick — corrupting the `CoreMassPropertiesC` cache by reseeding it
+/// from the previous-tick composite. The `dirty` field is only set
+/// `true` by mission code that genuinely mutates `mass`/`inertia`, so
+/// it is the correct signal here.
 pub fn mass_update_system(mut query: Query<&mut MassPropertiesC>) {
     for mut mass in &mut query {
-        mass.recompute_derived();
+        // Read `dirty` via `Mut::deref` (no `DerefMut`), so entities
+        // that don't need recomputation are not falsely marked
+        // `Changed`. `recompute_derived` is itself a no-op when
+        // `!dirty`, so the gate preserves behavior.
+        if mass.0.dirty {
+            mass.recompute_derived();
+        }
     }
 }
 
@@ -2621,6 +2734,11 @@ pub fn staging_system(
     mut attach_events: bevy::ecs::message::MessageReader<crate::AttachEvent>,
     mut detach_events: bevy::ecs::message::MessageReader<crate::DetachEvent>,
     mut bodies: Query<(&crate::MassBodyIdC, &mut MassPropertiesC)>,
+    mut integrators: Query<(
+        &crate::MassBodyIdC,
+        Option<&mut GaussJacksonStateC>,
+        Option<&mut Abm4StateC>,
+    )>,
 ) {
     // No mass tree resource → drain events and return.
     let Some(mut tree) = tree else {
@@ -2629,7 +2747,19 @@ pub fn staging_system(
         return;
     };
 
-    let mut changed_ids: Vec<jeod_sim::MassBodyId> = Vec::new();
+    // The set of mass-tree node ids whose composite mass changes due
+    // to the events processed below — i.e. whose multi-step integrator
+    // state must be marked topology-dirty (Site A) and later reset
+    // (Site B). We accumulate it INLINE with each event-handler branch
+    // so the dirty-marking is structurally bound to the topology
+    // mutation call site, then mark in one query pass, then reset in
+    // a separate observation pass. Splitting Site A and Site B is the
+    // structural fix for IG.37 fail-loud (see JEOD_invariants.md): a
+    // future code path that adds a new event branch and forgets the
+    // reset pass will leave the dirty flag set, so the next
+    // `integrate()` panics with the IG.37 diagnostic rather than
+    // silently propagating stale predictor history.
+    let mut affected_ids: Vec<jeod_sim::MassBodyId> = Vec::new();
 
     for evt in attach_events.read() {
         let child_id = bodies
@@ -2654,9 +2784,14 @@ pub fn staging_system(
             })
             .0
              .0;
+        // The bodies whose composite mass changes are the child plus
+        // every ancestor of the new parent in the pre-attach tree
+        // (`MassTree::recompute_composites` walks the entire forest
+        // post-order, so any ancestor of the new parent is touched).
+        // Capture the chain BEFORE mutating the tree.
+        affected_ids.push(child_id);
+        affected_ids.extend(tree.ancestors_inclusive(parent_id));
         tree.attach(child_id, parent_id, evt.offset, evt.t_parent_child);
-        changed_ids.push(child_id);
-        changed_ids.push(parent_id);
     }
 
     for evt in detach_events.read() {
@@ -2671,32 +2806,72 @@ pub fn staging_system(
             })
             .0
              .0;
+        // Bodies whose composite changes: the (about-to-be-detached)
+        // child plus the former parent's full ancestor chain. Capture
+        // BEFORE mutating the tree.
+        affected_ids.push(child_id);
         if let Some(parent_id) = tree.parent(child_id) {
-            changed_ids.push(parent_id);
+            affected_ids.extend(tree.ancestors_inclusive(parent_id));
         }
         tree.detach(child_id);
-        changed_ids.push(child_id);
     }
 
+    if affected_ids.is_empty() {
+        return;
+    }
+    affected_ids.sort_unstable();
+    affected_ids.dedup();
+
     // Sync composite mass properties for all affected nodes.
-    // Walk up from each changed node to the root to capture cascading updates.
-    if !changed_ids.is_empty() {
-        let mut sync_ids: Vec<jeod_sim::MassBodyId> = Vec::new();
-        for &id in &changed_ids {
-            let mut current = id;
-            sync_ids.push(current);
-            while let Some(parent) = tree.parent(current) {
-                sync_ids.push(parent);
-                current = parent;
+    //
+    // PR #283 review thread PRRT_kwDORtae6c5_KHnH: these writes go
+    // through `bypass_change_detection` because the value being
+    // written is the *composite* (post-Steiner) mass, not a core-mass
+    // edit by mission code. The `composite_mass_system` ECS path uses
+    // `Changed<MassPropertiesC>` to detect mid-sim core edits (fuel
+    // burn, propellant offload) and refresh its hidden
+    // [`crate::mass_tree::CoreMassPropertiesC`] cache. If the legacy
+    // arena `staging_system` write tripped that filter, the next tick
+    // the ECS path would seed `CoreMassPropertiesC` from a *composite*
+    // value — corrupting the core cache so every subsequent
+    // recomposition would Steiner-shift the already-composed mass on
+    // top of itself. Bypassing change detection here keeps the two
+    // composition paths (legacy arena via `MassBodyIdC`/`AttachEvent`
+    // and ECS-native via `MassChildOf`) safe to coexist on the same
+    // entity during the migration window. The `MassPropertiesC` value
+    // is still updated; only the change-detection signal is silenced.
+    for (body_id, mut mass) in &mut bodies {
+        if affected_ids.binary_search(&body_id.0).is_ok() {
+            *mass.bypass_change_detection() =
+                MassPropertiesC::from(tree.get(body_id.0).composite_properties);
+        }
+    }
+
+    // Site A: mark every affected body's integrators dirty.
+    // JEOD_INV: IG.37 — kept strictly before Site B so a regression
+    // that drops Site B leaves the dirty flag set and panics on next
+    // integrate.
+    for (body_id, mut gj_opt, mut abm_opt) in &mut integrators {
+        if affected_ids.binary_search(&body_id.0).is_ok() {
+            if let Some(ref mut gj) = gj_opt {
+                gj.0.mark_topology_dirty();
+            }
+            if let Some(ref mut abm) = abm_opt {
+                abm.0.mark_topology_dirty();
             }
         }
-        sync_ids.sort_unstable();
-        sync_ids.dedup();
+    }
 
-        for (body_id, mut mass) in &mut bodies {
-            if sync_ids.binary_search(&body_id.0).is_ok() {
-                *mass = MassPropertiesC::from(tree.get(body_id.0).composite_properties);
-            }
+    // Site B: reset integrator history. Mirrors JEOD's
+    // `dyn_body_attach.cc::reset_integrators()` (lines 860, 871) and
+    // `dyn_body_detach.cc:271-273`.
+    // JEOD_INV: IG.37 — multi-step integrator history must be reset on topology change
+    for (body_id, mut gj_opt, mut abm_opt) in &mut integrators {
+        if affected_ids.binary_search(&body_id.0).is_ok() {
+            jeod_sim::reset_integrators(
+                gj_opt.as_mut().map(|c| &mut c.0),
+                abm_opt.as_mut().map(|c| &mut c.0),
+            );
         }
     }
 }

@@ -126,6 +126,17 @@ pub struct GaussJacksonState {
     /// Managed by the integrator (like JEOD's IntegrationControls).
     /// 0 = at start of cycle, 1 = predicted (needs correct), etc.
     current_stage: usize,
+
+    /// True after [`Self::mark_topology_dirty`] is called and before
+    /// [`Self::reset_for_topology_change`] (or [`Self::reset`]) clears it.
+    /// While set, [`Self::integrate`] panics — the predictor / corrector
+    /// history accumulated under the previous mass / attachment topology
+    /// is no longer valid and silently propagating it would corrupt the
+    /// trajectory.
+    ///
+    /// JEOD precedent: `dyn_body_attach.cc::reset_integrators()` (lines
+    /// 860, 871). See `JEOD_invariants.md` row IG.37.
+    topology_dirty: bool,
 }
 
 impl GaussJacksonState {
@@ -184,6 +195,7 @@ impl GaussJacksonState {
             primer_k_vel: [DVec3::ZERO; 4],
             primer_k_pos: [DVec3::ZERO; 4],
             current_stage: 0,
+            topology_dirty: false,
         }
     }
 
@@ -191,7 +203,9 @@ impl GaussJacksonState {
     ///
     /// JEOD: `GaussJacksonIntegratorBase::base_reset()`.
     /// Also resets internal stage counter and primer scratch state
-    /// (not present in JEOD, which manages stages externally).
+    /// (not present in JEOD, which manages stages externally), and clears
+    /// the [`topology_dirty`](Self::mark_topology_dirty) flag so the next
+    /// call to [`Self::integrate`] re-bootstraps from the current state.
     pub fn reset(&mut self) {
         self.fsm_state = FsmState::Reset;
         self.history_length = 0;
@@ -202,6 +216,41 @@ impl GaussJacksonState {
         self.primer_base_vel = DVec3::ZERO;
         self.primer_k_vel = [DVec3::ZERO; 4];
         self.primer_k_pos = [DVec3::ZERO; 4];
+        self.topology_dirty = false;
+    }
+
+    /// Reset the integrator and clear the topology-dirty flag. Equivalent
+    /// to [`Self::reset`]; named to make attach / detach call sites self-
+    /// documenting and to match JEOD's `reset_integrators()` semantics.
+    ///
+    /// Port of `dyn_body_attach.cc::reset_integrators()` for the
+    /// Gauss-Jackson branch — clears the predictor / corrector history,
+    /// the inverse backward-difference accumulators, and the bootstrap
+    /// state machine, so the next sequence of steps re-primes against
+    /// the post-attach state.
+    // JEOD_INV: IG.37 — multi-step integrator history must be reset on topology change
+    pub fn reset_for_topology_change(&mut self) {
+        self.reset();
+    }
+
+    /// Mark the integrator as carrying stale predictor / corrector history
+    /// because the body's mass / attachment topology changed. While the flag
+    /// is set, [`Self::integrate`] panics — silently feeding stale
+    /// inverse-backward-difference accumulators into the corrector would
+    /// produce a discontinuity-blind step.
+    ///
+    /// Pair with [`Self::reset_for_topology_change`] at the attach / detach
+    /// site. The combined `mark_topology_dirty` + `reset_for_topology_change`
+    /// pattern catches future code paths that mark the integrator dirty
+    /// but forget to clear the flag through reset.
+    pub fn mark_topology_dirty(&mut self) {
+        self.topology_dirty = true;
+    }
+
+    /// Returns true if the integrator is carrying stale history that has
+    /// not yet been cleared via [`Self::reset_for_topology_change`].
+    pub fn is_topology_dirty(&self) -> bool {
+        self.topology_dirty
     }
 
     /// Returns the configuration this integrator was created with.
@@ -273,6 +322,21 @@ impl GaussJacksonState {
         assert!(
             time_scale_factor.is_finite() && time_scale_factor >= 0.0,
             "GaussJackson::integrate requires a finite, non-negative time_scale_factor, got {time_scale_factor}"
+        );
+        // JEOD_INV: IG.37 — multi-step integrator history must be reset on topology change.
+        // The attach / detach handler in `bevy_jeod::staging_system` and `jeod_runner::Simulation`
+        // is responsible for calling `GaussJacksonState::reset_for_topology_change()` whenever
+        // it mutates the mass tree. Stepping past a topology change without that reset feeds
+        // stale acceleration history and inverse-backward-difference accumulators into the
+        // corrector, silently corrupting the trajectory.
+        assert!(
+            !self.topology_dirty,
+            "GaussJacksonState::integrate called with stale predictor/corrector history: \
+             the body's mass / attachment topology changed but \
+             GaussJacksonState::reset_for_topology_change() was not called. Wire the \
+             attach / detach handler to reset the integrator state \
+             (jeod_sim::reset_integrators) — see JEOD's \
+             dyn_body_attach.cc::reset_integrators() and JEOD_invariants.md row IG.37."
         );
         self.current_stage += 1;
         let stage = self.current_stage;
@@ -1242,6 +1306,160 @@ mod tests {
             pos_diff > 0.1,
             "Runs with different time_scale_factor produced nearly identical \
              positions (diff={pos_diff:.2e}), suggesting time_scale_factor is ignored"
+        );
+    }
+
+    /// `reset_for_topology_change` clears the predictor history, the FSM,
+    /// the inverse-backward-difference accumulators, and the topology-
+    /// dirty flag — a strict superset of `reset`'s contract, suitable for
+    /// use at attach / detach call sites.
+    ///
+    /// IG.37: matches JEOD's `dyn_body_attach.cc::reset_integrators()`
+    /// semantics for the Gauss-Jackson branch.
+    #[test]
+    fn gj_reset_for_topology_change_clears_history_and_dirty_flag() {
+        let mut gj = GaussJacksonState::new(GaussJacksonConfig::with_order(8));
+        let mut state = TranslationalState {
+            position: DVec3::new(1.0, 0.0, 0.0),
+            velocity: DVec3::ZERO,
+        };
+
+        // Run past priming so the corrector history and FSM are non-trivial.
+        for _ in 0..200 {
+            loop {
+                let acc = -state.position;
+                let result = gj.integrate(0.01, 1.0, acc, &mut state);
+                if result.time_scale > 0.0 {
+                    break;
+                }
+            }
+        }
+        assert!(
+            !gj.is_priming(),
+            "test setup expected GJ to have advanced past priming"
+        );
+        assert_ne!(gj.history_length, 0);
+        assert_ne!(gj.delinv_pos, DVec3::ZERO);
+
+        // Mark dirty (as a topology-change handler would), then reset.
+        gj.mark_topology_dirty();
+        assert!(gj.is_topology_dirty());
+
+        gj.reset_for_topology_change();
+
+        assert!(
+            gj.is_priming(),
+            "Gauss-Jackson must be back in priming after reset"
+        );
+        assert!(
+            !gj.is_topology_dirty(),
+            "topology-dirty flag must be cleared by reset"
+        );
+        assert_eq!(gj.history_length, 0);
+        assert_eq!(gj.fsm_state, state_machine::FsmState::Reset);
+        assert_eq!(gj.order, gj.initial_order);
+        assert_eq!(gj.current_stage, 0);
+    }
+
+    /// Stepping with the topology-dirty flag set must panic — silently
+    /// using stale predictor / corrector history across a topology change
+    /// is exactly the bug IG.37 closes.
+    #[test]
+    #[should_panic(expected = "stale predictor/corrector history")]
+    fn gj_step_with_topology_dirty_panics() {
+        let mut gj = GaussJacksonState::new(GaussJacksonConfig::with_order(8));
+        let mut state = TranslationalState {
+            position: DVec3::new(1.0, 0.0, 0.0),
+            velocity: DVec3::ZERO,
+        };
+        gj.mark_topology_dirty();
+        let acc = -state.position;
+        let _ = gj.integrate(0.01, 1.0, acc, &mut state);
+    }
+
+    /// Demonstrates the staleness gap IG.37 closes:
+    /// integrate up to `t_attach`, apply a discrete velocity perturbation
+    /// (modeling a mass-tree mutation that changed the dynamics), then
+    /// continue. With the perturbation but without a reset, GJ silently
+    /// uses stale acceleration history and produces a smaller perturbation
+    /// response than a freshly-bootstrapped integrator. After
+    /// `reset_for_topology_change` the integrator re-primes from the new
+    /// state and tracks the perturbed dynamics correctly.
+    #[test]
+    fn gj_reset_after_perturbation_changes_trajectory() {
+        // Harmonic oscillator x'' = -x. We integrate for 100 steps, then
+        // apply Δv = +0.5 to model "topology changed and so did dynamics."
+        let dt: f64 = 0.01;
+        let pre_steps = 200;
+        let post_steps = 50;
+
+        let initial = TranslationalState {
+            position: DVec3::new(1.0, 0.0, 0.0),
+            velocity: DVec3::ZERO,
+        };
+        let accel_fn = |s: &TranslationalState| -> DVec3 { -s.position };
+
+        // ── Run A: NO reset across the perturbation (the bug). ──
+        let mut state_a = initial;
+        let mut gj_a = GaussJacksonState::new(GaussJacksonConfig::with_order(8));
+        for _ in 0..pre_steps {
+            loop {
+                let acc = accel_fn(&state_a);
+                let result = gj_a.integrate(dt, 1.0, acc, &mut state_a);
+                if result.time_scale > 0.0 {
+                    break;
+                }
+            }
+        }
+        // Perturbation: instantaneous velocity kick.
+        state_a.velocity.x += 0.5;
+        // (no reset — predictor history still reflects pre-kick dynamics)
+        for _ in 0..post_steps {
+            loop {
+                let acc = accel_fn(&state_a);
+                let result = gj_a.integrate(dt, 1.0, acc, &mut state_a);
+                if result.time_scale > 0.0 {
+                    break;
+                }
+            }
+        }
+
+        // ── Run B: reset_for_topology_change at the perturbation. ──
+        let mut state_b = initial;
+        let mut gj_b = GaussJacksonState::new(GaussJacksonConfig::with_order(8));
+        for _ in 0..pre_steps {
+            loop {
+                let acc = accel_fn(&state_b);
+                let result = gj_b.integrate(dt, 1.0, acc, &mut state_b);
+                if result.time_scale > 0.0 {
+                    break;
+                }
+            }
+        }
+        // Same perturbation — but this time we follow JEOD's protocol.
+        state_b.velocity.x += 0.5;
+        gj_b.reset_for_topology_change();
+        for _ in 0..post_steps {
+            loop {
+                let acc = accel_fn(&state_b);
+                let result = gj_b.integrate(dt, 1.0, acc, &mut state_b);
+                if result.time_scale > 0.0 {
+                    break;
+                }
+            }
+        }
+
+        // The two trajectories must differ: the no-reset run carried
+        // pre-kick acceleration history into the corrector, biasing the
+        // post-kick integration. The reset run re-primes from the kicked
+        // state with RK4 and produces the discontinuity-aware answer.
+        let pos_diff = (state_a.position - state_b.position).length();
+        let vel_diff = (state_a.velocity - state_b.velocity).length();
+        assert!(
+            pos_diff > 1e-6 || vel_diff > 1e-6,
+            "expected reset_for_topology_change to change the post-kick trajectory \
+             observably; got pos_diff={pos_diff:.3e}, vel_diff={vel_diff:.3e} — if \
+             this becomes 0 the reset is a no-op for this configuration"
         );
     }
 }

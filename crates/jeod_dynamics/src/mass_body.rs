@@ -135,6 +135,38 @@ impl MassTree {
         &self.children[id]
     }
 
+    /// Number of bodies in the arena.
+    pub fn len(&self) -> usize {
+        self.nodes.len()
+    }
+
+    /// True when no bodies have been added yet.
+    pub fn is_empty(&self) -> bool {
+        self.nodes.is_empty()
+    }
+
+    /// All bodies whose composite mass properties depend on the body
+    /// `id` — i.e. `id` itself plus every ancestor up to the root, in
+    /// child→root order.
+    ///
+    /// Used at attach / detach call sites (runner `Simulation::attach` /
+    /// `detach` / `detach_subtree`, Bevy `staging_system`) to mark the
+    /// integrator state of every affected body topology-dirty, since
+    /// `attach` / `detach` recompute composites all the way to the root
+    /// (`recompute_composites` walks every node's tree post-order). A
+    /// caller that only marked the immediate parent / former parent
+    /// would silently leave intermediate ancestors integrating against
+    /// stale predictor history (`JEOD_INV: IG.37`).
+    pub fn ancestors_inclusive(&self, id: MassBodyId) -> Vec<MassBodyId> {
+        let mut out = Vec::new();
+        let mut cur = Some(id);
+        while let Some(node) = cur {
+            out.push(node);
+            cur = self.parent[node];
+        }
+        out
+    }
+
     // -- construction -------------------------------------------------------
 
     /// Add a disconnected body (no parent, no children).

@@ -40,6 +40,7 @@ pub mod gauss_jackson;
 pub mod integration;
 pub mod mass;
 pub mod mass_body;
+pub mod mass_storage;
 pub mod propagation;
 pub mod rkf45;
 pub mod rotational;
@@ -64,6 +65,10 @@ pub use integration::{rk4_sixdof_step, rk4_translational_step, IntegratorType};
 pub use mass::{MassProperties, INERTIA_CONSISTENCY_TOL};
 pub use mass_body::{
     point_mass_inertia, MassBody, MassBodyId, MassPoint, MassPointState, MassTree,
+};
+pub use mass_storage::{
+    compute_node_composite, finalize_child_in_parent_frame, recompute_composites_via_storage,
+    MassNodeOutputs, MassNodeView, MassStorage,
 };
 pub use propagation::{propagate_body_frames, propagate_forward, propagate_reverse};
 pub use rkf45::{
