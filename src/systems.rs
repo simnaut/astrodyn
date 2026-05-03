@@ -756,7 +756,7 @@ pub fn on_body_frame_despawn(
 ///
 /// `try_despawn` (not `despawn`) because the retired pfix entity's
 /// `ChildOf` parent is the source frame entity, which is despawned
-/// recursively by [`on_source_frame_entity_despawn`] when the source
+/// recursively by [`on_frame_entity_despawn`] when the source
 /// despawns; the retired pfix may already be gone by the time this
 /// observer's command flushes.
 pub fn on_retired_pfix_frame_entity_despawn(
@@ -778,6 +778,18 @@ pub fn on_retired_pfix_frame_entity_despawn(
 /// growing the entity count over time and potentially shadowing
 /// future re-spawns of the same `Name`.
 ///
+/// Fires for *any* entity that carries [`FrameEntityC`], i.e. both
+/// source entities (registered by [`register_source_frames_system`])
+/// and body entities (registered by [`register_body_frames_system`]).
+/// The cleanup logic is identical for the two cases — the despawning
+/// entity hands us its frame-entity handle and we tear down the
+/// referenced frame entity — so the observer is named for the
+/// component it watches, not for either of the owner kinds. (Issue
+/// #277 PR 1 round-8 review fixup, threadId
+/// `PRRT_kwDORtae6c5_LE-U`: the previous name
+/// `on_source_frame_entity_despawn` misled future readers into
+/// thinking the observer only handled sources.)
+///
 /// `try_despawn` (not `despawn`) because Bevy's `ChildOf` /
 /// `Children` relationship already triggers recursive despawn on the
 /// frame entity's children — the pfix child of a source frame, the
@@ -793,7 +805,7 @@ pub fn on_retired_pfix_frame_entity_despawn(
 /// gap: the dual-write spawn sites in
 /// [`register_source_frames_system`] and
 /// [`register_body_frames_system`] had no parallel cleanup.
-pub fn on_source_frame_entity_despawn(
+pub fn on_frame_entity_despawn(
     trigger: On<Despawn, FrameEntityC>,
     owners: Query<&FrameEntityC>,
     mut commands: Commands,
@@ -805,9 +817,9 @@ pub fn on_source_frame_entity_despawn(
 
 /// On entity despawn, despawn the pfix *frame entity* the source
 /// entity carries in [`PfixFrameEntityC`]. Pair to
-/// [`on_source_frame_entity_despawn`] for the source's pfix child.
+/// [`on_frame_entity_despawn`] for the source's pfix child.
 ///
-/// Independent of [`on_source_frame_entity_despawn`] so the
+/// Independent of [`on_frame_entity_despawn`] so the
 /// per-component `Despawn` order doesn't matter: in the common case
 /// the pfix entity is `ChildOf(source_frame_entity)` and gets
 /// despawned recursively when its parent does, but this observer is

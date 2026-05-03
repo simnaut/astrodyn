@@ -429,7 +429,7 @@ impl Plugin for JeodPlugin {
         // `register_body_frames_system` (and the pfix branch of the
         // former / `register_pfix_frames_system`) don't leak frame
         // entities after the source / body entity is gone.
-        app.add_observer(systems::on_source_frame_entity_despawn);
+        app.add_observer(systems::on_frame_entity_despawn);
         app.add_observer(systems::on_source_pfix_frame_entity_despawn);
         // Split into two add_systems calls to stay within Bevy's tuple size limit.
         app.add_systems(
