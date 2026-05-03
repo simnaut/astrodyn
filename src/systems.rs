@@ -1463,19 +1463,26 @@ pub fn mass_update_system(mut query: Query<&mut MassPropertiesC>) {
 // JEOD_INV: DB.29 — torques collected in structural frame, rotated to body at root
 #[allow(clippy::type_complexity)]
 pub fn force_collection_system(
-    mut query: Query<(
-        &mut TotalForceC,
-        Option<&mut FrameDerivativesC>,
-        Option<&GravityAccelerationC>,
-        Option<&RotationalStateC>,
-        Option<&MassPropertiesC>,
-        Option<&AerodynamicForceC>,
-        Option<&RadiationForceC>,
-        Option<&GravityTorqueC>,
-        Option<&StructuralTransformC>,
-        Option<&ExternalForceC>,
-        Option<&ExternalTorqueC>,
-    )>,
+    // JEOD_INV: DB.21 — detached subtrees coast ballistically; their
+    // `TotalForceC` / `FrameDerivativesC` are no longer consumed by
+    // any integrator. Skip them so downstream consumers don't see
+    // stale aggregated forces on bodies that aren't reacting to them.
+    mut query: Query<
+        (
+            &mut TotalForceC,
+            Option<&mut FrameDerivativesC>,
+            Option<&GravityAccelerationC>,
+            Option<&RotationalStateC>,
+            Option<&MassPropertiesC>,
+            Option<&AerodynamicForceC>,
+            Option<&RadiationForceC>,
+            Option<&GravityTorqueC>,
+            Option<&StructuralTransformC>,
+            Option<&ExternalForceC>,
+            Option<&ExternalTorqueC>,
+        ),
+        Without<crate::DetachedSubtreeStateC>,
+    >,
 ) {
     for (
         mut total,
@@ -2073,13 +2080,24 @@ pub fn integration_system(
 pub fn gravity_computation_system(
     frame_tree: Res<FrameTreeR>,
     root: Res<crate::RootFrameIdR>,
-    mut bodies: Query<(
-        Entity,
-        &TranslationalStateC,
-        &GravityControlsC,
-        &mut GravityAccelerationC,
-        Option<&IntegFrameIdC>,
-    )>,
+    // JEOD_INV: DB.21 — only attached bodies participate in gravity /
+    // force-collection / integration. Detached subtrees coast
+    // ballistically (no force, no torque) via `step_detached_system`,
+    // so populating `GravityAccelerationC` on them is wasted work and
+    // would expose stale values to diagnostics / logging consumers.
+    // Mirrors the runner's split between `Simulation::bodies` and
+    // `Simulation::detached_subtrees` — gravity is only evaluated on
+    // the integrated set.
+    mut bodies: Query<
+        (
+            Entity,
+            &TranslationalStateC,
+            &GravityControlsC,
+            &mut GravityAccelerationC,
+            Option<&IntegFrameIdC>,
+        ),
+        Without<crate::DetachedSubtreeStateC>,
+    >,
     sources: Query<(
         &GravitySourceC,
         Option<&PlanetFixedRotationC>,
@@ -2247,14 +2265,21 @@ pub fn atmosphere_update_system(
 // JEOD_INV: IN.03 — AerodynamicDrag.active gates computation (structural: no DragConfigC -> no drag)
 #[allow(clippy::type_complexity)]
 pub fn aero_drag_system(
-    mut query: Query<(
-        &DragConfigC,
-        &AtmosphericStateC,
-        &TranslationalStateC,
-        &RotationalStateC,
-        Option<&StructuralTransformC>,
-        &mut AerodynamicForceC,
-    )>,
+    // JEOD_INV: DB.21 — detached subtrees coast ballistically; skip
+    // drag so `AerodynamicForceC` doesn't hold stale values that no
+    // integrator consumes (the runner's split between `bodies` and
+    // `detached_subtrees` only evaluates drag on the integrated set).
+    mut query: Query<
+        (
+            &DragConfigC,
+            &AtmosphericStateC,
+            &TranslationalStateC,
+            &RotationalStateC,
+            Option<&StructuralTransformC>,
+            &mut AerodynamicForceC,
+        ),
+        Without<crate::DetachedSubtreeStateC>,
+    >,
 ) {
     for (drag_config, atmos, state, rot, struct_xform, mut aero_force) in &mut query {
         let t_struct_body = struct_xform.map_or(glam::DMat3::IDENTITY, |s| *s.0.matrix_ref());
@@ -2293,12 +2318,18 @@ pub fn aero_drag_system(
 // JEOD_INV: IN.01 — GravityTorque.subject_body required (structural: query requires all components)
 // JEOD_INV: IN.02 — GravityTorque.active gates computation (structural: no GravityTorqueC -> no torque)
 pub fn gravity_torque_system(
-    mut query: Query<(
-        &GravityAccelerationC,
-        &RotationalStateC,
-        &MassPropertiesC,
-        &mut GravityTorqueC,
-    )>,
+    // JEOD_INV: DB.21 — detached subtrees coast ballistically; their
+    // gravity gradient torque is no longer consumed by any integrator
+    // and would otherwise hold stale values. Skip them.
+    mut query: Query<
+        (
+            &GravityAccelerationC,
+            &RotationalStateC,
+            &MassPropertiesC,
+            &mut GravityTorqueC,
+        ),
+        Without<crate::DetachedSubtreeStateC>,
+    >,
 ) {
     for (grav, rot, mass, mut torque) in &mut query {
         // MassPropertiesC stores `InertiaTensor<BodyFrame<SelfRef>>`
@@ -2558,6 +2589,9 @@ pub fn earth_lighting_system(
 /// Placed in `JeodSet::Interaction`.
 #[allow(clippy::type_complexity)]
 pub fn flat_plate_srp_system(
+    // JEOD_INV: DB.21 — detached subtrees coast ballistically; skip
+    // SRP so `RadiationForceC` and per-stage thermal cache stay zeroed
+    // for bodies whose forces no integrator consumes.
     mut query: Query<
         (
             &mut FlatPlateConfigC,
@@ -2567,7 +2601,11 @@ pub fn flat_plate_srp_system(
             Option<&StructuralTransformC>,
             &mut RadiationForceC,
         ),
-        (Without<SunMarker>, Without<CannonballSrpC>),
+        (
+            Without<SunMarker>,
+            Without<CannonballSrpC>,
+            Without<crate::DetachedSubtreeStateC>,
+        ),
     >,
     sun_query: Query<&TranslationalStateC, With<SunMarker>>,
     shadow_bodies: Query<(&TranslationalStateC, &ShadowBodyC), Without<SunMarker>>,
@@ -2688,9 +2726,16 @@ pub fn flat_plate_srp_system(
 /// Placed in `JeodSet::Interaction`.
 #[allow(clippy::type_complexity)]
 pub fn cannonball_srp_system(
+    // JEOD_INV: DB.21 — detached subtrees coast ballistically; skip
+    // cannonball SRP so `RadiationForceC` doesn't hold stale values
+    // that no integrator consumes.
     mut query: Query<
         (&CannonballSrpC, &TranslationalStateC, &mut RadiationForceC),
-        (Without<SunMarker>, Without<FlatPlateConfigC>),
+        (
+            Without<SunMarker>,
+            Without<FlatPlateConfigC>,
+            Without<crate::DetachedSubtreeStateC>,
+        ),
     >,
     sun_query: Query<&TranslationalStateC, With<SunMarker>>,
     shadow_bodies: Query<(&TranslationalStateC, &ShadowBodyC), Without<SunMarker>>,

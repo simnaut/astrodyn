@@ -26,12 +26,14 @@
 
 use bevy::prelude::*;
 use bevy_jeod::{
-    AttachEvent, DetachEvent, DetachedSubtreeStateC, DynamicsConfigC, JeodPlugin, MassBodyIdC,
-    MassPropertiesC, MassTreeR, RotationalStateC, TranslationalStateC,
+    AttachEvent, DetachEvent, DetachedSubtreeStateC, DynamicsConfigC, FrameDerivativesC,
+    GravityAccelerationC, GravityControlsC, GravitySourceC, JeodPlugin, MassBodyIdC,
+    MassPropertiesC, MassTreeR, RotationalStateC, SourceInertialPositionC, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
 use jeod_sim::{
-    JeodQuat, MassProperties, MassTree, RotationalState, StageAttachInputs, TranslationalState,
+    GravityControl, GravityControls, GravityModel, GravitySource, JeodQuat, MassProperties,
+    MassTree, RotationalState, StageAttachInputs, TranslationalState,
 };
 use std::time::Duration;
 
@@ -889,5 +891,168 @@ fn bevy_step_detached_runs_before_frame_tree_sync() {
         "FrameTreeR body node must reflect post-step body position \
          (sync_body_to_frame_system must run after step_detached_system): \
          frame node {frame_node_pos:?}, body {body_pos:?}"
+    );
+}
+
+/// Detached subtrees coast ballistically (no force, no torque). The
+/// runner's split between `Simulation::bodies` and
+/// `Simulation::detached_subtrees` only evaluates gravity, drag, SRP,
+/// gravity torque, and force collection on the integrated set —
+/// detached entries are not part of any wrench-aggregation walk.
+///
+/// `gravity_computation_system`, `aero_drag_system`,
+/// `gravity_torque_system`, the SRP systems, and `force_collection_system`
+/// must therefore skip detached bodies. Otherwise
+/// `GravityAccelerationC`, `AerodynamicForceC`, `RadiationForceC`, and
+/// `TotalForceC` populate with values no integrator consumes, exposing
+/// stale or misleading readings to diagnostics / logging consumers.
+///
+/// This test pins the per-step components to zero on a detached body
+/// even when a gravity source is in range that would otherwise produce
+/// a non-trivial acceleration / total force.
+#[test]
+fn bevy_detached_body_skips_force_pipeline() {
+    // Build a minimal world with a gravity source at the origin so a
+    // free-flying body at 7e6 m would otherwise see ~µ/r² gravity.
+    let mu = 3.986004415e14_f64;
+    let body_mass = MassProperties::new(1000.0);
+    let initial_trans = TranslationalState {
+        position: DVec3::new(7e6, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.add_plugins(JeodPlugin);
+
+    // Mass tree (required for attach/detach).
+    let mut tree = MassTree::new();
+    let id_body = tree.add_body("Body".into(), body_mass);
+    app.insert_resource(MassTreeR(tree));
+
+    let planet = app
+        .world_mut()
+        .spawn((
+            Name::new("Planet"),
+            GravitySourceC(GravitySource {
+                mu,
+                model: GravityModel::PointMass,
+            }),
+            SourceInertialPositionC::default(),
+            TranslationalStateC::default(),
+        ))
+        .id();
+
+    let body_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Body"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(initial_trans),
+            RotationalStateC::default(),
+            MassPropertiesC::from(body_mass),
+            MassBodyIdC(id_body),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(planet, false)],
+            }),
+        ))
+        .id();
+
+    // Step once *without* detaching: confirm the gravity pipeline does
+    // populate `GravityAccelerationC` and `TotalForceC` with non-trivial
+    // values when the body is integrated. This pins the precondition —
+    // if the gravity pipeline was a no-op for some other reason the
+    // detached-body assertions below would be trivially satisfied.
+    step(&mut app, 1, 1.0);
+
+    let attached_grav = app
+        .world()
+        .get::<GravityAccelerationC>(body_entity)
+        .unwrap()
+        .grav_accel
+        .raw_si();
+    let attached_trans_accel = app
+        .world()
+        .get::<FrameDerivativesC>(body_entity)
+        .unwrap()
+        .0
+        .trans_accel
+        .raw_si();
+    assert!(
+        attached_grav.length() > 1.0,
+        "precondition: integrated body should see non-trivial gravity \
+         (attached_grav={attached_grav:?})"
+    );
+    assert!(
+        attached_trans_accel.length() > 1.0,
+        "precondition: integrated body should have non-trivial translational \
+         acceleration in FrameDerivativesC \
+         (attached_trans_accel={attached_trans_accel:?})"
+    );
+
+    // Promote the body into a detached subtree by inserting
+    // `DetachedSubtreeStateC` directly. Going through `DetachEvent`
+    // would require a parent attach first; the direct insert
+    // exercises the same downstream filter the detach handler
+    // ultimately produces.
+    use jeod_sim::{BodyAttitude, DetachedSubtreeState, SelfRef};
+    let detached_state = DetachedSubtreeState {
+        composite_position: initial_trans.position,
+        composite_velocity: initial_trans.velocity,
+        composite_attitude: BodyAttitude::<SelfRef>::identity(),
+        composite_ang_vel_body: DVec3::ZERO,
+    };
+    app.world_mut()
+        .entity_mut(body_entity)
+        .insert(DetachedSubtreeStateC(detached_state));
+
+    // Zero the per-step force outputs by hand so we can observe
+    // whether the next step writes anything new.
+    {
+        let mut grav = app
+            .world_mut()
+            .get_mut::<GravityAccelerationC>(body_entity)
+            .unwrap();
+        *grav = GravityAccelerationC::default();
+    }
+    {
+        let mut derivs = app
+            .world_mut()
+            .get_mut::<FrameDerivativesC>(body_entity)
+            .unwrap();
+        *derivs = FrameDerivativesC::default();
+    }
+
+    // Step again. With the detached filter in place, none of
+    // `gravity_computation_system`, `force_collection_system`, or
+    // the interaction systems should touch the detached body's
+    // force-pipeline components.
+    step(&mut app, 1, 1.0);
+
+    let detached_grav = app
+        .world()
+        .get::<GravityAccelerationC>(body_entity)
+        .unwrap()
+        .grav_accel
+        .raw_si();
+    let detached_trans_accel = app
+        .world()
+        .get::<FrameDerivativesC>(body_entity)
+        .unwrap()
+        .0
+        .trans_accel
+        .raw_si();
+    assert_eq!(
+        detached_grav,
+        DVec3::ZERO,
+        "GravityAccelerationC must stay zero on a detached body \
+         (gravity_computation_system must filter Without<DetachedSubtreeStateC>)"
+    );
+    assert_eq!(
+        detached_trans_accel,
+        DVec3::ZERO,
+        "FrameDerivativesC.trans_accel must stay zero on a detached body \
+         (force_collection_system must filter Without<DetachedSubtreeStateC>)"
     );
 }
