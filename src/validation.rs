@@ -9,6 +9,15 @@
 //! growth). Bodies added without `GravityControlsC` are not validated; this
 //! matches JEOD's `DynManager` which only invariants bodies that participate
 //! in integration.
+//!
+//! Issue #278 (Frame-Tree-ECS-Native § 13 PR 2): the `is_root_equivalent`
+//! folder reads [`crate::FrameTreeR`] (now `#[deprecated]` for
+//! mission-code use) to compare a body's integration frame against the
+//! root. This is *internal* validation infrastructure and is rewritten
+//! in PR 3 (#279) to use [`crate::frame_param::RelativeFrameState`] /
+//! [`crate::frame_param::FrameOrigin`]. The file-level
+//! `#![allow(deprecated)]` keeps the call sites quiet until then.
+#![allow(deprecated)] // Issue #278: internal FrameTreeR consumer; rewritten in PR 3 (#279)
 
 use bevy::prelude::*;
 

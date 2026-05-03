@@ -2,6 +2,20 @@
 //! orchestration functions. Each system queries the relevant components,
 //! calls into `jeod_sim`, and writes the result back. No physics
 //! algorithms live here.
+//!
+//! ## Deprecation suppression
+//!
+//! Issue #278 (Frame-Tree-ECS-Native § 13 PR 2) marks
+//! [`crate::FrameTreeR`] `#[deprecated]` for mission-code use. The
+//! systems in this module are *internal physics* and continue to read
+//! the arena during the dual-write phase (PR 1–3). PR 3 (#279)
+//! rewrites these systems to use the
+//! [`crate::frame_param::RelativeFrameState`] /
+//! [`crate::frame_param::FrameOrigin`] SystemParams; PR 4 (#280)
+//! removes the `FrameTreeR` resource entirely. Until then, the
+//! file-level `#![allow(deprecated)]` keeps the internal call sites
+//! quiet without weakening the deprecation signal mission code sees.
+#![allow(deprecated)] // Issue #278: internal FrameTreeR consumers; rewritten in PR 3 (#279)
 
 use bevy::prelude::*;
 use glam::DVec3;

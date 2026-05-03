@@ -87,20 +87,84 @@ pub struct EphemerisR(pub jeod_sim::Ephemeris);
 #[derive(Resource, Deref, DerefMut)]
 pub struct MassTreeR(pub jeod_sim::MassTree);
 
-/// Bevy resource wrapping the simulation's [`jeod_sim::FrameTree`].
-///
-/// Mirrors `jeod_runner::Simulation::frame_tree`. Inserted at startup by
-/// [`JeodPlugin`] with a single root inertial frame node; mission code or
-/// recipes can register additional frame nodes (source inertials, pfix
-/// frames, body frames) during entity spawning.
-///
-/// Issue #71: this resource is the data structure that the lifted
-/// `jeod_sim::{frame_orchestration, source_state}` helpers operate on,
-/// so the Bevy adapter can consume the same orchestration code as
-/// `jeod_runner` instead of re-implementing it.
-#[derive(Resource, Deref, DerefMut)]
-pub struct FrameTreeR(pub jeod_sim::FrameTree);
+// Issue #278: hosting the deprecated tuple struct inside a tiny
+// private submodule (`frame_tree_r_internal`) lets us blanket-suppress
+// the in-expansion warnings the derive macros (`Resource`, `Deref`,
+// `DerefMut`) emit at the type definition itself, while the
+// `#[deprecated]` attribute still fires at every external use site —
+// the deprecation surface PR 2 (#278) targets. PR 4 (#280) removes
+// the resource entirely; this submodule disappears with it.
+mod frame_tree_r_internal {
+    #![allow(deprecated)]
+    use bevy::prelude::*;
 
+    /// Bevy resource wrapping the simulation's [`jeod_sim::FrameTree`].
+    ///
+    /// Mirrors `jeod_runner::Simulation::frame_tree`. Inserted at startup by
+    /// [`crate::JeodPlugin`] with a single root inertial frame node; mission
+    /// code or recipes can register additional frame nodes (source inertials,
+    /// pfix frames, body frames) during entity spawning.
+    ///
+    /// Issue #71: this resource is the data structure that the lifted
+    /// `jeod_sim::{frame_orchestration, source_state}` helpers operate on,
+    /// so the Bevy adapter can consume the same orchestration code as
+    /// `jeod_runner` instead of re-implementing it.
+    ///
+    /// # Deprecated for mission-code use (issue #278 / [Frame-Tree-ECS-Native § 13][1])
+    ///
+    /// `FrameTreeR` is the *internal* arena backing the dual-write phase of
+    /// the ECS-native frame-tree migration. **Mission code must not read
+    /// `Res<FrameTreeR>` directly.** The supported mission-facing surface
+    /// is the pair of `SystemParam`s in [`crate::frame_param`]:
+    ///
+    /// - [`crate::frame_param::RelativeFrameState`] for "state of `to`
+    ///   relative to `from`" — replaces
+    ///   `FrameTreeR.compute_relative_state(from_id, to_id)`.
+    /// - [`crate::frame_param::FrameOrigin`] for "origin of frame `F` in
+    ///   an ancestor frame" — replaces
+    ///   `jeod_sim::frame_origin(tree, root, frame_id)` /
+    ///   `jeod_sim::frame_origin_typed::<RootInertial>(tree, root, frame_id)`.
+    ///
+    /// Both walk the ECS hierarchy (`Query<&ChildOf>`) over the
+    /// dual-written [`crate::FrameTransC`] / [`crate::FrameRotC`] /
+    /// [`crate::FrameAngVelC`] components, return numerics bit-identical to
+    /// the arena (see `tests/frame_storage_relative_frame_state.rs`), and
+    /// never expose a `FrameId`.
+    ///
+    /// Internal physics systems (gravity, integration, frame-switch,
+    /// derived-state) still read this resource during the PR 2 → PR 3
+    /// transition; those call sites are kept inside files annotated with
+    /// `#![allow(deprecated)]` and a refactor comment noting they're
+    /// rewritten to the SystemParams in PR 3 (#279). The `Resource` itself
+    /// is removed in PR 4 (#280) once internal systems also migrate.
+    ///
+    /// [1]: https://github.com/simnaut/bevy_jeod/wiki/Frame-Tree-ECS-Native#13-migration-sequencing
+    #[deprecated(
+        since = "0.1.0",
+        note = "mission code must not read FrameTreeR directly. \
+                Use `bevy_jeod::frame_param::RelativeFrameState` for cross-frame state queries \
+                (replaces `FrameTreeR.compute_relative_state(from, to)`) \
+                and `bevy_jeod::frame_param::FrameOrigin` for frame-origin queries \
+                (replaces `frame_origin(tree, root, frame_id)`). \
+                Internal physics systems still read FrameTreeR until PR 3 (#279); \
+                the Resource itself is removed in PR 4 (#280). \
+                See https://github.com/simnaut/bevy_jeod/wiki/Frame-Tree-ECS-Native#13-migration-sequencing"
+    )]
+    #[derive(Resource, Deref, DerefMut)]
+    pub struct FrameTreeR(pub jeod_sim::FrameTree);
+}
+
+#[allow(deprecated)]
+pub use frame_tree_r_internal::FrameTreeR;
+
+// Issue #278: the `FrameTreeR` definition is `#[deprecated]` for
+// mission-code use; the inherent `impl` block and the `Default` impl
+// below are the resource's own internal API and read/write the inner
+// `pub jeod_sim::FrameTree` field. Per the "deprecated for mission-
+// code use only" carveout in PR 2 (issue #278), suppress the
+// resulting warnings at the `impl` header. Removed in PR 4 (#280)
+// when the resource itself is removed.
+#[allow(deprecated)]
 impl FrameTreeR {
     /// Create a new frame tree pre-populated with a permanent
     /// `root.inertial` root frame. Unlike `jeod_runner::Simulation::new`
@@ -116,6 +180,7 @@ impl FrameTreeR {
     }
 }
 
+#[allow(deprecated)] // Issue #278: see comment on inherent impl above.
 impl Default for FrameTreeR {
     fn default() -> Self {
         Self::new().0
@@ -183,6 +248,13 @@ impl Plugin for JeodPlugin {
         // `RootFrameIdR` *before* adding `JeodPlugin`; the plugin then
         // preserves them. Inserting either alone is rejected — they
         // describe the same tree and must stay consistent.
+        //
+        // Issue #278: `FrameTreeR` is `#[deprecated]` for mission code;
+        // the `JeodPlugin::build` plumbing here owns the resource's
+        // lifecycle and is rewritten in PR 4 (#280) when the resource
+        // is removed. The whole match is `#[allow(deprecated)]` because
+        // this is the *infrastructure* installing the resource.
+        #[allow(deprecated)]
         match (
             app.world().contains_resource::<FrameTreeR>(),
             app.world().contains_resource::<RootFrameIdR>(),

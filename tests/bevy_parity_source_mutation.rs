@@ -23,6 +23,15 @@
 //! flagged in the plan (no existing parity test exercised source
 //! mutation).
 
+// Issue #278 (Frame-Tree-ECS-Native PR 2): `FrameTreeR` is
+// `#[deprecated]` for mission-code use. This is a Tier 3 parity test
+// between the Bevy adapter and `jeod_runner` — it deliberately reads
+// the arena to assert bit-identity of the source-mutation path. PR 4
+// (#280) removes the resource entirely; the parity assertion that
+// currently reads the arena will be rewritten to use
+// `RelativeFrameState` then.
+#![allow(deprecated)]
+
 use bevy::prelude::*;
 use bevy_jeod::{
     CentralSourceMarker, FrameTreeR, JeodPlugin, PlanetBundle, RootFrameIdR, SourceFrameIdC,

@@ -30,6 +30,16 @@
 //! The mutator runs against [`crate::FrameTreeR`] + entities carrying a
 //! [`crate::SourceFrameIdC`] (auto-inserted on every gravity source
 //! entity by `register_source_frames_system`).
+//!
+//! Issue #278 (Frame-Tree-ECS-Native § 13 PR 2): [`crate::FrameTreeR`]
+//! is `#[deprecated]` for mission-code use. `SourceMutator` is
+//! mission-facing but mutates the arena directly during the dual-write
+//! phase — that's the *internal* coupling PR 4 (#280) replaces by
+//! mutating the ECS frame entities and removing the resource. The
+//! mission-facing surface (mutator method shapes) is stable; only the
+//! storage backing changes. The file-level `#![allow(deprecated)]`
+//! keeps the dual-write internals quiet until PR 4.
+#![allow(deprecated)] // Issue #278: internal FrameTreeR mutation; rewritten in PR 4 (#280)
 
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;

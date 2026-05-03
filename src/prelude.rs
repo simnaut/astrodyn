@@ -34,13 +34,16 @@ pub use crate::{
     SourceInertialVelocityC, StructuralTransformC, TotalForceC, TranslationalStateC,
     VehicleConfigBevyExt,
 };
-// Issue #277 — additive infrastructure for the ECS-native frame tree.
-// `RelativeFrameState` is the mission-facing replacement for
-// `FrameTreeR.compute_relative_state` / `frame_origin`; it lives in
-// the dedicated `frame_param` module so its `SystemParam` import is
-// explicit at the use site, but the prelude re-exports it for the
-// "use bevy_jeod::prelude::*" path.
-pub use crate::frame_param::RelativeFrameState;
+// Issue #277 / #278 — ECS-native frame-tree mission-code surface.
+// `RelativeFrameState` (issue #277) is the mission-facing replacement
+// for `FrameTreeR.compute_relative_state`. `FrameOrigin` (issue #278)
+// is the specialized "origin of frame F in an ancestor frame"
+// SystemParam — typed `(Position<RootInertial>, Velocity<RootInertial>)`
+// for the common root-inertial form, matching `frame_origin_typed::<RootInertial>`.
+// Both live in the dedicated `frame_param` module so their
+// `SystemParam` imports are explicit at the use site, but the prelude
+// re-exports them for the "use bevy_jeod::prelude::*" path.
+pub use crate::frame_param::{FrameOrigin, RelativeFrameState};
 
 // All `jeod_quantities` re-exports come through `jeod_sim` so the
 // `bevy_jeod` root package keeps its single dependency on `jeod_sim`

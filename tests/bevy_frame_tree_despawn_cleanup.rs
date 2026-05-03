@@ -12,6 +12,15 @@
 //! longer findable and any stale `frame_origin` query returns identity.
 //! See `src/systems.rs` "Frame-tree despawn cleanup" for the design.
 
+// Issue #278 (Frame-Tree-ECS-Native PR 2): `FrameTreeR` is
+// `#[deprecated]` for mission-code use. These despawn-observer tests
+// validate the arena's per-node cleanup, which is the *internal*
+// dual-write infrastructure PR 4 (#280) replaces wholesale (the
+// resource itself is removed; ECS frame-entity despawn observers
+// stay). File-level `#![allow(deprecated)]` to keep the cleanup
+// validation operating against the still-live arena until PR 4.
+#![allow(deprecated)]
+
 use std::time::Duration;
 
 use bevy::prelude::*;

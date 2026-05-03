@@ -13,6 +13,14 @@
 //! and its gravity controls flip so Moon becomes central
 //! (`differential = false`) and Earth becomes the third body.
 
+// Issue #278 (Frame-Tree-ECS-Native PR 2): `FrameTreeR` is
+// `#[deprecated]` for mission-code use. This Tier 3 parity test
+// deliberately reads the arena to assert bit-identity of the
+// frame-switch reparent path against `jeod_runner`. PR 4 (#280)
+// removes the resource; the arena read here will be rewritten to use
+// `RelativeFrameState`.
+#![allow(deprecated)]
+
 use std::time::Duration;
 
 use bevy::prelude::*;

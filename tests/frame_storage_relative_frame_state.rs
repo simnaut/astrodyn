@@ -44,6 +44,15 @@
 //!
 //! [1]: https://github.com/simnaut/bevy_jeod/tree/study/268-frame-tree-ecs-native
 
+// Issue #278 (Frame-Tree-ECS-Native PR 2): `FrameTreeR` is
+// `#[deprecated]` for *mission-code* use. This test is bit-identity
+// dual-write infrastructure validation — it deliberately compares the
+// new SystemParam read path against the deprecated arena read path —
+// so the file-level `#![allow(deprecated)]` is appropriate. PR 4
+// (#280) removes the resource entirely; this test goes away with it
+// (it has no remaining purpose once the arena disappears).
+#![allow(deprecated)]
+
 use std::time::Duration;
 
 use bevy::prelude::*;

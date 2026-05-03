@@ -17,6 +17,13 @@
 //! flagged in the plan (no existing parity test exercises pfix angular
 //! velocity).
 
+// Issue #278 (Frame-Tree-ECS-Native PR 2): `FrameTreeR` is
+// `#[deprecated]` for mission-code use. This Tier 3 parity test reads
+// the arena to assert bit-identity of the pfix-rotation node sync
+// path. PR 4 (#280) removes the resource; the arena reads here will
+// be rewritten to use `RelativeFrameState`.
+#![allow(deprecated)]
+
 use std::time::Duration;
 
 use bevy::prelude::*;
