@@ -80,7 +80,7 @@ pub use gravity::{
 pub use integrable::IntegrableObject;
 pub use integration::{
     integrate_bodies_contact_coupled, integrate_body, integrate_body_coupled, integrate_body_typed,
-    CoupledBodyInput, CoupledIntegScratch, CoupledStageEval,
+    reset_integrators, CoupledBodyInput, CoupledIntegScratch, CoupledStageEval,
 };
 pub use interactions::{
     compute_cannonball_srp, compute_cannonball_srp_typed, compute_drag, compute_drag_typed,
