@@ -167,13 +167,26 @@ impl MassTreeView {
     {
         // Pre-compute the set of mass-bearing entities so we can
         // fail loudly on a `MassChildOf` whose parent is missing
-        // from `mass_q` (PR #283 review thread PRRT_kwDORtae6c5_KBwP).
+        // from `mass_q` (PR #283 review thread PRRT_kwDORtae6c5_KBwP)
+        // or whose carrier child is missing `MassPropertiesC` (PR
+        // #283 review threads PRRT_kwDORtae6c5_KiLC and
+        // PRRT_kwDORtae6c5_KiLP). Both ends of every edge must
+        // declare their core mass properties or the kernel walk
+        // would silently drop the broken edge.
         let mass_set: HashMap<Entity, ()> = mass_q.iter().map(|(e, _)| (e, ())).collect();
 
         let mut edge_data: HashMap<Entity, MassChildOf> = HashMap::new();
         let mut parent_by_child: HashMap<Entity, Entity> = HashMap::new();
         let mut children_by_parent: HashMap<Entity, Vec<Entity>> = HashMap::new();
         for (child, edge) in parents_q.iter() {
+            assert!(
+                mass_set.contains_key(&child),
+                "entity {child:?} carries MassChildOf({parent:?}) but has no \
+                 MassPropertiesC: every body in the mass tree must declare its \
+                 core mass properties — add MassPropertiesC or remove the \
+                 MassChildOf relation",
+                parent = edge.parent
+            );
             assert!(
                 mass_set.contains_key(&edge.parent),
                 "MassChildOf edge {child:?} -> {parent:?}: parent has no MassPropertiesC. \
@@ -697,6 +710,22 @@ fn build_view_from_cores(
         // the edge would orphan the child and leave stale composites
         // upstream. Per CLAUDE.md "Fail Loudly", panic with a
         // diagnostic that names both ends of the broken edge.
+        //
+        // Same fail-loud guard applies symmetrically to the carrier
+        // (PR #283 review thread PRRT_kwDORtae6c5_KiLC): the
+        // `MassChildOf` docs require the child to also have
+        // `MassPropertiesC`. Without this assert, a child without
+        // core mass properties would be silently dropped here
+        // (the per-entity loop below only walks `cores`), leaving
+        // the parent's composite incomplete.
+        assert!(
+            cores.contains_key(&child),
+            "entity {child:?} carries MassChildOf({parent:?}) but has no \
+             MassPropertiesC: every body in the mass tree must declare its \
+             core mass properties — add MassPropertiesC or remove the \
+             MassChildOf relation",
+            parent = edge.parent
+        );
         assert!(
             cores.contains_key(&edge.parent),
             "MassChildOf edge {child:?} -> {parent:?}: parent has no MassPropertiesC. \
@@ -1551,5 +1580,55 @@ mod tests {
             "external recompute mass: {} (expected 15, double-count would give 20)",
             probe.parent_recomposed_mass
         );
+    }
+
+    /// PR #283 review thread `PRRT_kwDORtae6c5_KiLC` —
+    /// `composite_mass_system` (slow path) must panic when an
+    /// entity carries a `MassChildOf` parent link but no
+    /// `MassPropertiesC`. Silently dropping the broken edge would
+    /// leave the parent's composite missing the (zero, but
+    /// schema-violating) child contribution.
+    #[test]
+    #[should_panic(expected = "carries MassChildOf")]
+    fn child_without_mass_properties_panics_in_system() {
+        let mut app = add_test_app();
+        app.add_systems(Update, composite_mass_system);
+
+        let parent = app
+            .world_mut()
+            .spawn(MassPropertiesC::from(MassProperties::new(10.0)))
+            .id();
+        // Spawn a child with `MassChildOf` but no `MassPropertiesC`.
+        // The system must reject this on the first tick.
+        let _child = app.world_mut().spawn(MassChildOf::at_origin(parent)).id();
+
+        app.update();
+    }
+
+    /// PR #283 review thread `PRRT_kwDORtae6c5_KiLP` — same
+    /// fail-loud guard, but exercised through the public
+    /// [`MassTreeView::from_queries`] entry point.
+    #[test]
+    #[should_panic(expected = "carries MassChildOf")]
+    fn child_without_mass_properties_panics_in_from_queries() {
+        let mut app = add_test_app();
+
+        let parent = app
+            .world_mut()
+            .spawn(MassPropertiesC::from(MassProperties::new(10.0)))
+            .id();
+        let _child = app.world_mut().spawn(MassChildOf::at_origin(parent)).id();
+
+        fn build(
+            mass_q: Query<(Entity, &MassPropertiesC)>,
+            parents_q: Query<(Entity, &MassChildOf)>,
+            names_q: Query<&Name>,
+        ) {
+            let _ = MassTreeView::from_queries(&mass_q, &parents_q, &names_q);
+        }
+        let id = app.world_mut().register_system(build);
+        // run_system propagates panics from inside the registered
+        // system back to the caller; #[should_panic] catches it.
+        app.world_mut().run_system(id).expect("system runs");
     }
 }
