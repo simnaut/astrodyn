@@ -560,11 +560,24 @@ pub struct PlanetFixedFrameMarker;
 #[reflect(Component)]
 pub struct BodyFrameMarker;
 
-/// Marker: this entity is currently serving as the integration frame
-/// for at least one body. Set by `register_body_frames_system` /
-/// `frame_switch_system`. A frame entity may carry both
-/// `InertialFrameMarker` and `IntegrationFrameMarker` simultaneously —
-/// they describe orthogonal properties of the frame. Issue #277.
+/// Marker: this entity has been registered as an integration frame for
+/// at least one body. Inserted (idempotently) by
+/// `register_body_frames_system` when a body is spawned with this
+/// frame as its integration frame; never removed. The marker has
+/// **sticky** semantics — `frame_switch_system` rewrites
+/// `IntegFrameIdC` on a body when the body switches frames, but does
+/// not touch this marker, because (a) one integration frame entity
+/// can serve many bodies and tracking a "currently in use" predicate
+/// would require ref-counting, and (b) downstream SystemParam
+/// consumers in later PRs of the [Section 13 sequence][1] only need
+/// to know whether a frame entity *can* serve as an integration
+/// frame, which the registration-time signal answers correctly. The
+/// authoritative "this body's integration frame is X" lookup remains
+/// `IntegFrameIdC` on the body. A frame entity may carry both
+/// `InertialFrameMarker` and `IntegrationFrameMarker` simultaneously
+/// — they describe orthogonal properties of the frame. Issue #277.
+///
+/// [1]: https://github.com/simnaut/bevy_jeod/wiki/Frame-Tree-ECS-Native#13-migration-sequencing
 #[derive(Component, Debug, Default, Clone, Copy, Reflect)]
 #[reflect(Component)]
 pub struct IntegrationFrameMarker;
