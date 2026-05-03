@@ -4,6 +4,7 @@
 
 pub mod bundles;
 pub mod components;
+pub mod frame_param;
 pub mod mass_tree;
 pub mod prelude;
 pub mod recipes;
@@ -127,6 +128,19 @@ impl Default for FrameTreeR {
 /// distinguish the root from non-root sources.
 #[derive(Resource, Debug, Clone, Copy, Deref, DerefMut)]
 pub struct RootFrameIdR(pub jeod_sim::FrameId);
+
+/// Bevy resource holding the [`Entity`] of the root frame entity in
+/// the ECS-native frame hierarchy. Mirrors [`RootFrameIdR`] in the
+/// entity-as-frame world: the same logical root frame, expressed
+/// once as an arena `FrameId` and once as a Bevy `Entity`. Spawned
+/// by [`JeodPlugin::build`] before any source/body registration so
+/// the registration systems can `ChildOf`-link their frame entities
+/// to it. Issue #277 — additive infrastructure for the
+/// [Frame-Tree-ECS-Native][1] migration (Section 13 PR 1).
+///
+/// [1]: https://github.com/simnaut/bevy_jeod/wiki/Frame-Tree-ECS-Native
+#[derive(Resource, Debug, Clone, Copy, Deref, DerefMut)]
+pub struct RootFrameEntityR(pub Entity);
 
 /// Unified JEOD plugin — registers all pipeline systems and schedule sets.
 ///
@@ -252,6 +266,85 @@ impl Plugin for JeodPlugin {
             ),
         }
 
+        // ── Issue #277: ECS-native root frame entity ──
+        // Spawn the root frame entity that mirrors the arena's root
+        // frame node. Source / body registration `ChildOf`-links its
+        // frame entities under this one, so the ECS hierarchy and the
+        // arena describe the same logical frame tree in parallel
+        // during the dual-write phase (Section 13 PR 1).
+        //
+        // Issue #277 PR 1 round-5 review fixup: only spawn when the caller
+        // hasn't pre-installed `RootFrameEntityR`. Mirrors the
+        // `FrameTreeR` / `RootFrameIdR` pattern above so a mission
+        // (or a second `JeodPlugin::build` call — `Plugin::build` is
+        // not idempotent on its own) cannot silently leak the
+        // previously-spawned root entity and re-parent future frame
+        // entities under a different root than the existing ones.
+        // When pre-installed we validate that the referenced entity
+        // still exists and carries the required frame components /
+        // `InertialFrameMarker` so source / body registration's
+        // `ChildOf`-links and the typed `<RootInertial>` assumptions
+        // hold. Per the "Fail Loudly" rule a stale or
+        // wrong-kind pre-installed entity panics with a diagnostic
+        // that names the broken assumption and tells the caller how
+        // to fix it.
+        if !app.world().contains_resource::<RootFrameEntityR>() {
+            let root_frame_entity = app
+                .world_mut()
+                .spawn((
+                    Name::new("root.frame"),
+                    components::InertialFrameMarker,
+                    components::FrameTransC::default(),
+                    components::FrameRotC::default(),
+                    components::FrameAngVelC::default(),
+                ))
+                .id();
+            app.insert_resource(RootFrameEntityR(root_frame_entity));
+        } else {
+            let root_frame_entity = app.world().resource::<RootFrameEntityR>().0;
+            assert!(
+                app.world().get_entity(root_frame_entity).is_ok(),
+                "JeodPlugin: pre-installed RootFrameEntityR ({root_frame_entity:?}) \
+                 references an entity that no longer exists in the world. Source / \
+                 body registration will `ChildOf`-link new frame entities under \
+                 this dangling reference and panic later. Insert the resource only \
+                 after spawning the root frame entity in the same `App`, or remove \
+                 the pre-installation and let JeodPlugin own root-frame creation.",
+            );
+            assert!(
+                app.world()
+                    .entity(root_frame_entity)
+                    .contains::<components::InertialFrameMarker>(),
+                "JeodPlugin: pre-installed RootFrameEntityR ({root_frame_entity:?}) \
+                 is missing `InertialFrameMarker`. The plugin assumes the root \
+                 frame is inertial — source / body registration tags new children \
+                 with `InertialFrameMarker` and the typed Bevy components \
+                 (`Position<RootInertial>`, `TranslationalStateC<RootInertial>`) \
+                 are all phantom-tagged for an inertial root. Add \
+                 `InertialFrameMarker` to the entity, or let JeodPlugin spawn the \
+                 root frame.",
+            );
+            assert!(
+                app.world()
+                    .entity(root_frame_entity)
+                    .contains::<components::FrameTransC>()
+                    && app
+                        .world()
+                        .entity(root_frame_entity)
+                        .contains::<components::FrameRotC>()
+                    && app
+                        .world()
+                        .entity(root_frame_entity)
+                        .contains::<components::FrameAngVelC>(),
+                "JeodPlugin: pre-installed RootFrameEntityR ({root_frame_entity:?}) \
+                 is missing one or more of the required frame components \
+                 (`FrameTransC`, `FrameRotC`, `FrameAngVelC`). Frame-tree \
+                 consumers read these directly from the root entity. Insert all \
+                 three (each with `Default::default()` for an inertial root), or \
+                 let JeodPlugin spawn the root frame.",
+            );
+        }
+
         // ── Typed-Component reflection (#154) ──
         // Centralized in `register_jeod_component_types` so the smoke
         // test and any other consumer registers exactly the same set.
@@ -328,7 +421,16 @@ impl Plugin for JeodPlugin {
         app.add_observer(systems::on_source_frame_despawn);
         app.add_observer(systems::on_source_pfix_frame_despawn);
         app.add_observer(systems::on_retired_pfix_frame_despawn);
+        app.add_observer(systems::on_retired_pfix_frame_entity_despawn);
         app.add_observer(systems::on_body_frame_despawn);
+        // Issue #277 PR 1 round-2 review: dual-write ECS frame
+        // entities also need cleanup on owner despawn so the
+        // dual-write sites in `register_source_frames_system` /
+        // `register_body_frames_system` (and the pfix branch of the
+        // former / `register_pfix_frames_system`) don't leak frame
+        // entities after the source / body entity is gone.
+        app.add_observer(systems::on_frame_entity_despawn);
+        app.add_observer(systems::on_source_pfix_frame_entity_despawn);
         // Split into two add_systems calls to stay within Bevy's tuple size limit.
         app.add_systems(
             FixedUpdate,
@@ -500,6 +602,17 @@ pub fn register_jeod_component_types(app: &mut App) {
     app.register_type::<components::FrameSwitchesC>();
     app.register_type::<components::BodyFrameIdC>();
     app.register_type::<components::IntegFrameIdC>();
+    // Issue #277: frames-as-entities components.
+    app.register_type::<components::FrameTransC>();
+    app.register_type::<components::FrameRotC>();
+    app.register_type::<components::FrameAngVelC>();
+    app.register_type::<components::InertialFrameMarker>();
+    app.register_type::<components::PlanetFixedFrameMarker>();
+    app.register_type::<components::BodyFrameMarker>();
+    app.register_type::<components::IntegrationFrameMarker>();
+    app.register_type::<components::FrameEntityC>();
+    app.register_type::<components::PfixFrameEntityC>();
+    app.register_type::<components::RetiredPfixFrameEntityC>();
     // Tidal
     app.register_type::<components::TidalConfigC>();
     app.register_type::<components::TidalDeltaC20C>();

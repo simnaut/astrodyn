@@ -165,7 +165,9 @@ pub use jeod_interactions::{
 // need when constructing or reading frame nodes; `RefFrameStateTyped` is
 // the typed sibling for Phase C of issue #71.
 pub use jeod_frames::{
-    FrameId, FrameNode, FrameTree, RefFrameKind, RefFrameRot, RefFrameState, RefFrameStateTyped,
+    common_ancestor as frame_common_ancestor, compose_to_ancestor as frame_compose_to_ancestor,
+    compute_relative_state as frame_compute_relative_state_via_storage, FrameId, FrameNode,
+    FrameStorage, FrameTree, RefFrameKind, RefFrameRot, RefFrameState, RefFrameStateTyped,
     RefFrameTrans,
 };
 

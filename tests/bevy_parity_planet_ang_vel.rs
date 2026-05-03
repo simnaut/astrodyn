@@ -360,6 +360,95 @@ fn tier3_bevy_rotation_none_toggle_removes_pfix_component() {
     );
 }
 
+/// Issue #277 PR 1 round-1 review fixup: the same retirement / reuse
+/// semantics the test above asserts on the *arena* side must also hold
+/// on the ECS-entity side. Without the parallel
+/// `RetiredPfixFrameEntityC` retirement, the source kept a stale
+/// `PfixFrameEntityC` handle on toggle to `None` *and*
+/// `register_pfix_frames_system` (which filters
+/// `Without<SourcePfixFrameIdC>`) spawned a fresh pfix frame entity on
+/// every retoggle — leaking one orphan ECS entity per cycle.
+#[test]
+fn tier3_bevy_rotation_none_toggle_does_not_leak_pfix_frame_entity() {
+    use bevy_jeod::{PfixFrameEntityC, PlanetFixedFrameMarker};
+
+    let (mut app, planet) = build_planet_app("Earth", &EARTH);
+    step_bevy_once(&mut app);
+
+    // Capture the original pfix frame entity for identity reuse checks
+    // and the count of `PlanetFixedFrameMarker` entities (must stay
+    // constant — every cycle must reuse, not spawn a fresh one).
+    let original_pfix_entity = app
+        .world()
+        .get::<PfixFrameEntityC>(planet)
+        .expect("EarthRNP source must carry PfixFrameEntityC after registration")
+        .0;
+    let initial_pfix_entity_count = app
+        .world_mut()
+        .query_filtered::<Entity, With<PlanetFixedFrameMarker>>()
+        .iter(app.world())
+        .count();
+    assert_eq!(
+        initial_pfix_entity_count, 1,
+        "expected exactly one pfix frame entity after initial registration"
+    );
+
+    // Toggle through a few `None → rotating` cycles.
+    for _ in 0..5 {
+        // Toggle to None: PfixFrameEntityC should be removed; the
+        // orphan entity stays alive.
+        app.world_mut()
+            .entity_mut(planet)
+            .insert(RotationModelC(RotationModel::None));
+        step_bevy_once(&mut app);
+        assert!(
+            app.world().get::<PfixFrameEntityC>(planet).is_none(),
+            "toggle to None must remove PfixFrameEntityC (parallel to \
+             SourcePfixFrameIdC) so consumers branching on its presence \
+             see the source as non-rotating"
+        );
+        // Pfix entity count is still 1 — orphan is retained for reuse,
+        // not despawned and not duplicated.
+        let count = app
+            .world_mut()
+            .query_filtered::<Entity, With<PlanetFixedFrameMarker>>()
+            .iter(app.world())
+            .count();
+        assert_eq!(
+            count, initial_pfix_entity_count,
+            "after toggle to None the orphan pfix frame entity must be \
+             retained (not despawned, not duplicated)"
+        );
+
+        // Toggle back to rotating: register_pfix_frames_system must
+        // reuse the orphan entity, not spawn a fresh one.
+        app.world_mut()
+            .entity_mut(planet)
+            .insert(RotationModelC(RotationModel::EarthRNP));
+        step_bevy_once(&mut app);
+        let reinstated = app
+            .world()
+            .get::<PfixFrameEntityC>(planet)
+            .expect("toggle back to EarthRNP must reinstate PfixFrameEntityC")
+            .0;
+        assert_eq!(
+            reinstated, original_pfix_entity,
+            "reuse path: the reinstated pfix frame entity must equal the \
+             original — no fresh entity spawn per toggle cycle"
+        );
+        let count = app
+            .world_mut()
+            .query_filtered::<Entity, With<PlanetFixedFrameMarker>>()
+            .iter(app.world())
+            .count();
+        assert_eq!(
+            count, initial_pfix_entity_count,
+            "pfix-frame-entity count must not grow with toggle cycle count — \
+             the reuse path replaces, not appends"
+        );
+    }
+}
+
 #[test]
 fn tier3_bevy_planet_ang_vel_moon_de421() {
     // MoonDE421 is the only RotationModel branch whose Bevy ↔ runner
