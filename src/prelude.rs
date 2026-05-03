@@ -25,12 +25,12 @@
 //! ```
 
 pub use crate::{
-    Abm4StateC, AerodynamicForceC, AtmosphericStateC, BodyFrameMarker, DynamicsConfigC,
-    FrameAngVelC, FrameDerivativesC, FrameEntityC, FrameRotC, FrameTransC, GaussJacksonStateC,
-    GravityAccelerationC, GravityControlsC, GravitySourceC, GravityTorqueC, InertialFrameMarker,
-    IntegrationFrameMarker, IntegratorTypeC, JeodPlugin, JeodSet, MassPropertiesC,
-    PfixFrameEntityC, PlanetFixedFrameMarker, PlanetFixedRotationC, RadiationForceC,
-    RootFrameEntityR, RotationalStateC, SimulationTimeR, SourceInertialPositionC,
+    Abm4StateC, AerodynamicForceC, AtmosphericStateC, BodyFrameMarker, DetachedSubtreeStateC,
+    DynamicsConfigC, FrameAngVelC, FrameDerivativesC, FrameEntityC, FrameRotC, FrameTransC,
+    GaussJacksonStateC, GravityAccelerationC, GravityControlsC, GravitySourceC, GravityTorqueC,
+    InertialFrameMarker, IntegrationFrameMarker, IntegratorTypeC, JeodPlugin, JeodSet,
+    MassPropertiesC, PfixFrameEntityC, PlanetFixedFrameMarker, PlanetFixedRotationC,
+    RadiationForceC, RootFrameEntityR, RotationalStateC, SimulationTimeR, SourceInertialPositionC,
     SourceInertialVelocityC, StructuralTransformC, TotalForceC, TranslationalStateC,
     VehicleConfigBevyExt,
 };

@@ -94,6 +94,8 @@ const EXPECTED_REGISTERED_TYPE_PATHS: &[&str] = &[
     // Mass-tree relations (issue #271)
     "bevy_jeod::components::MassChildOf",
     "bevy_jeod::components::MassPointRef",
+    // Detached subtree (issue #273)
+    "bevy_jeod::components::DetachedSubtreeStateC",
     "bevy_jeod::components::PlanetC",
     "bevy_jeod::components::RotationModelC",
     "bevy_jeod::components::EphemerisBodyC",

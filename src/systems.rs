@@ -2717,6 +2717,40 @@ pub fn cannonball_srp_system(
 /// reflected in the current step's interaction forces, force collection,
 /// and integration.
 ///
+/// On `AttachEvent` this system:
+///
+/// 1. snapshots both bodies' pre-attach composite-body inertial state
+///    (`TranslationalStateC` + `RotationalStateC`) and pre-attach
+///    composite mass properties,
+/// 2. mutates the [`crate::MassTreeR`] arena (which recomputes composite
+///    mass properties for every affected node),
+/// 3. runs [`jeod_sim::stage_attach_combine`] (the
+///    momentum-conservation port of JEOD's `combine_states_at_attach`,
+///    `models/dynamics/dyn_body/src/dyn_body_attach.cc`) to derive the
+///    merged composite-body inertial state — preserves linear momentum
+///    about the integration-frame origin and angular momentum about
+///    the new combined CoM,
+/// 4. writes the merged state back into the parent entity's
+///    [`crate::TranslationalStateC`] / [`crate::RotationalStateC`],
+/// 5. removes [`crate::DetachedSubtreeStateC`] from the child entity if
+///    it was previously detached (the captured ballistic state is now
+///    consumed by the combine).
+///
+/// On `DetachEvent` this system:
+///
+/// 1. captures the about-to-be-detached subtree's instantaneous
+///    composite-body inertial state via
+///    [`jeod_sim::stage_detach_capture`],
+/// 2. mutates the arena (which recomputes the former parent's composite
+///    mass to reflect the lost subtree),
+/// 3. inserts [`crate::DetachedSubtreeStateC`] on the detached entity
+///    so [`step_detached_system`] can advance the subtree ballistically
+///    each tick.
+///
+/// Both branches end with the IG.37 mark + reset for any body whose
+/// composite mass changed — multi-step integrators (GJ, ABM4) must
+/// drop their predictor history on topology change.
+///
 /// Note: [`crate::MassTreeR`] must be present as a resource for attach/detach
 /// messages to have any effect.
 ///
@@ -2741,11 +2775,20 @@ pub fn cannonball_srp_system(
 /// app.add_message::<DetachEvent>();
 /// app.add_systems(Update, detach_booster);
 /// ```
+#[allow(clippy::type_complexity)]
 pub fn staging_system(
+    mut commands: Commands,
     tree: Option<ResMut<crate::MassTreeR>>,
     mut attach_events: bevy::ecs::message::MessageReader<crate::AttachEvent>,
     mut detach_events: bevy::ecs::message::MessageReader<crate::DetachEvent>,
-    mut bodies: Query<(&crate::MassBodyIdC, &mut MassPropertiesC)>,
+    mut bodies: Query<(
+        Entity,
+        &crate::MassBodyIdC,
+        &mut MassPropertiesC,
+        Option<&mut TranslationalStateC>,
+        Option<&mut RotationalStateC>,
+    )>,
+    detached_q: Query<Entity, With<crate::DetachedSubtreeStateC>>,
     mut integrators: Query<(
         &crate::MassBodyIdC,
         Option<&mut GaussJacksonStateC>,
@@ -2773,29 +2816,99 @@ pub fn staging_system(
     // silently propagating stale predictor history.
     let mut affected_ids: Vec<jeod_sim::MassBodyId> = Vec::new();
 
+    // Per-attach work item: captures the pre-attach snapshot needed by
+    // `combine_states_at_attach` plus the post-mutation parent entity
+    // we'll write the merged composite-body state into. Built before
+    // the topology mutation so the snapshot is independent of the
+    // tree's post-attach state.
+    struct AttachWork {
+        parent_entity: Entity,
+        child_entity: Entity,
+        parent_id: jeod_sim::MassBodyId,
+        // Pre-attach snapshot for the kernel.
+        parent_position: glam::DVec3,
+        parent_velocity: glam::DVec3,
+        parent_quaternion: jeod_sim::JeodQuat,
+        parent_ang_vel_body: glam::DVec3,
+        parent_mass: jeod_sim::MassProperties,
+        orig_parent_cm_struct: glam::DVec3,
+        parent_t_inertial_struct: glam::DMat3,
+        child_position: glam::DVec3,
+        child_velocity: glam::DVec3,
+        child_quaternion: jeod_sim::JeodQuat,
+        child_ang_vel_body: glam::DVec3,
+        child_mass: jeod_sim::MassProperties,
+        // Was the child carrying a `DetachedSubtreeStateC` immediately
+        // before this attach? If so the entry is consumed and removed.
+        child_was_detached: bool,
+    }
+
+    let mut attach_work: Vec<AttachWork> = Vec::new();
+    // Per-detach work: captured pre-detach composite-body state to be
+    // attached to the detached entity as `DetachedSubtreeStateC` once
+    // the topology mutation is done.
+    let mut detach_work: Vec<(Entity, jeod_sim::DetachedSubtreeState)> = Vec::new();
+
     for evt in attach_events.read() {
-        let child_id = bodies
-            .get(evt.child)
-            .unwrap_or_else(|_| {
+        // Look up child + parent. Fail-loud per CLAUDE.md if either
+        // entity is not a mass-tree body.
+        let (_, child_body_id, child_mass_c, child_trans, child_rot) =
+            bodies.get(evt.child).unwrap_or_else(|_| {
                 panic!(
                     "AttachEvent.child = {:?} is not a mass body — entity is missing MassBodyIdC \
                  and/or MassPropertiesC. Spawn the body via the mass-tree API before attaching.",
                     evt.child
                 )
+            });
+        let child_id = child_body_id.0;
+        let child_mass: jeod_sim::MassProperties = child_mass_c.0.to_untyped();
+        let (child_position, child_velocity) = child_trans
+            .as_ref()
+            .map(|t| (t.0.position.raw_si(), t.0.velocity.raw_si()))
+            .unwrap_or((glam::DVec3::ZERO, glam::DVec3::ZERO));
+        let (child_quaternion, child_ang_vel_body) = child_rot
+            .as_ref()
+            .map(|r| {
+                let untyped = r.0.to_untyped();
+                (untyped.quaternion, untyped.ang_vel_body)
             })
-            .0
-             .0;
-        let parent_id = bodies
-            .get(evt.parent)
-            .unwrap_or_else(|_| {
+            .unwrap_or((jeod_sim::JeodQuat::identity(), glam::DVec3::ZERO));
+
+        let (_, parent_body_id, parent_mass_c, parent_trans, parent_rot) =
+            bodies.get(evt.parent).unwrap_or_else(|_| {
                 panic!(
                     "AttachEvent.parent = {:?} is not a mass body — entity is missing MassBodyIdC \
                  and/or MassPropertiesC. Spawn the parent via the mass-tree API before attaching.",
                     evt.parent
                 )
+            });
+        let parent_id = parent_body_id.0;
+        let parent_mass: jeod_sim::MassProperties = parent_mass_c.0.to_untyped();
+        let (parent_position, parent_velocity) = parent_trans
+            .as_ref()
+            .map(|t| (t.0.position.raw_si(), t.0.velocity.raw_si()))
+            .unwrap_or((glam::DVec3::ZERO, glam::DVec3::ZERO));
+        let (parent_quaternion, parent_ang_vel_body) = parent_rot
+            .as_ref()
+            .map(|r| {
+                let untyped = r.0.to_untyped();
+                (untyped.quaternion, untyped.ang_vel_body)
             })
-            .0
-             .0;
+            .unwrap_or((jeod_sim::JeodQuat::identity(), glam::DVec3::ZERO));
+
+        // T_inertial_to_struct = T_struct_to_body^T · T_inertial_to_body
+        // Per JEOD `dyn_body_collect.cc:219-221` and
+        // `jeod_dynamics::compute_t_inertial_struct` — the kernel needs
+        // this to rotate the structure-frame CoM-shift vector
+        // (`combined.position - orig_parent_cm_struct`) into the
+        // inertial frame for the parent's post-attach position.
+        let parent_t_struct_to_body = parent_mass.t_parent_this;
+        let parent_t_inertial_to_body = parent_quaternion.left_quat_to_transformation();
+        let parent_t_inertial_struct = jeod_sim::compute_t_inertial_struct(
+            &parent_t_struct_to_body,
+            &parent_t_inertial_to_body,
+        );
+
         // The bodies whose composite mass changes are the child plus
         // every ancestor of the new parent in the pre-attach tree
         // (`MassTree::recompute_composites` walks the entire forest
@@ -2803,21 +2916,67 @@ pub fn staging_system(
         // Capture the chain BEFORE mutating the tree.
         affected_ids.push(child_id);
         affected_ids.extend(tree.ancestors_inclusive(parent_id));
+
+        let child_was_detached = detached_q.contains(evt.child);
+
+        attach_work.push(AttachWork {
+            parent_entity: evt.parent,
+            child_entity: evt.child,
+            parent_id,
+            parent_position,
+            parent_velocity,
+            parent_quaternion,
+            parent_ang_vel_body,
+            parent_mass,
+            orig_parent_cm_struct: parent_mass.position,
+            parent_t_inertial_struct,
+            child_position,
+            child_velocity,
+            child_quaternion,
+            child_ang_vel_body,
+            child_mass,
+            child_was_detached,
+        });
+
         tree.attach(child_id, parent_id, evt.offset, evt.t_parent_child);
     }
 
     for evt in detach_events.read() {
-        let child_id = bodies
-            .get(evt.child)
-            .unwrap_or_else(|_| {
+        let (_, child_body_id, _child_mass_c, child_trans, child_rot) =
+            bodies.get(evt.child).unwrap_or_else(|_| {
                 panic!(
                     "DetachEvent.child = {:?} is not a mass body — entity is missing MassBodyIdC \
                  and/or MassPropertiesC.",
                     evt.child
                 )
+            });
+        let child_id = child_body_id.0;
+
+        // Capture the about-to-be-detached body's current composite-body
+        // inertial state. The detached subtree drifts ballistically from
+        // this snapshot; its composite-body state == its inertial state
+        // immediately before the topology change because the rigid body
+        // hasn't moved, only the parent's mass distribution changed.
+        // Per JEOD `models/dynamics/dyn_body/src/dyn_body_detach.cc`.
+        let position = child_trans
+            .as_ref()
+            .map(|t| t.0.position.raw_si())
+            .unwrap_or(glam::DVec3::ZERO);
+        let velocity = child_trans
+            .as_ref()
+            .map(|t| t.0.velocity.raw_si())
+            .unwrap_or(glam::DVec3::ZERO);
+        let (quaternion, ang_vel_body) = child_rot
+            .as_ref()
+            .map(|r| {
+                let untyped = r.0.to_untyped();
+                (untyped.quaternion, untyped.ang_vel_body)
             })
-            .0
-             .0;
+            .unwrap_or((jeod_sim::JeodQuat::identity(), glam::DVec3::ZERO));
+
+        let captured = jeod_sim::stage_detach_capture(position, velocity, quaternion, ang_vel_body);
+        detach_work.push((evt.child, captured));
+
         // Bodies whose composite changes: the (about-to-be-detached)
         // child plus the former parent's full ancestor chain. Capture
         // BEFORE mutating the tree.
@@ -2828,7 +2987,7 @@ pub fn staging_system(
         tree.detach(child_id);
     }
 
-    if affected_ids.is_empty() {
+    if affected_ids.is_empty() && attach_work.is_empty() && detach_work.is_empty() {
         return;
     }
     affected_ids.sort_unstable();
@@ -2852,11 +3011,95 @@ pub fn staging_system(
     // and ECS-native via `MassChildOf`) safe to coexist on the same
     // entity during the migration window. The `MassPropertiesC` value
     // is still updated; only the change-detection signal is silenced.
-    for (body_id, mut mass) in &mut bodies {
+    for (_, body_id, mut mass, _, _) in &mut bodies {
         if affected_ids.binary_search(&body_id.0).is_ok() {
             *mass.bypass_change_detection() =
                 MassPropertiesC::from(tree.get(body_id.0).composite_properties);
         }
+    }
+
+    // Run the JEOD momentum-conservation combine for every staged
+    // attach. This must happen *after* the composite-mass sync above
+    // so the merged mass we feed the kernel matches the parent's
+    // post-attach `MassPropertiesC` (which is what subsequent
+    // gravity / force-collection / integration reads in the same tick).
+    //
+    // JEOD_INV: DB.13 — state propagation across attached subtrees: only the
+    // root carries the integrated composite-body state; child sub-trees ride
+    // it via the MassChildOf / mass-tree composition (not yet propagated
+    // through derived frames; see #198 frame-attached body integration).
+    // JEOD_INV: DB.14 — integration-frame switch on attach: the combined
+    // body integrates in the parent's frame; here we update the parent's
+    // composite_body state; frame-side switching belongs to #280.
+    // JEOD_INV: DB.21 — only unattached bodies integrate: after attach the
+    // detached-subtree-state is removed from the child so it stops drifting
+    // ballistically; the integrated body's state is the merged composite.
+    for work in &attach_work {
+        let combined_mass = tree.get(work.parent_id).composite_properties;
+        let merged = jeod_sim::stage_attach_combine(jeod_sim::StageAttachInputs {
+            parent_position: work.parent_position,
+            parent_velocity: work.parent_velocity,
+            parent_quaternion: work.parent_quaternion,
+            parent_ang_vel_body: work.parent_ang_vel_body,
+            parent_mass: work.parent_mass,
+            orig_parent_cm_struct: work.orig_parent_cm_struct,
+            parent_t_inertial_struct: work.parent_t_inertial_struct,
+            child_position: work.child_position,
+            child_velocity: work.child_velocity,
+            child_quaternion: work.child_quaternion,
+            child_ang_vel_body: work.child_ang_vel_body,
+            child_mass: work.child_mass,
+            combined_mass,
+        });
+
+        if let Ok((_, _, _, mut trans, mut rot)) = bodies.get_mut(work.parent_entity) {
+            if let Some(ref mut t) = trans {
+                t.0 =
+                    // allowed: stage_attach_combine kernel boundary; the
+                    // kernel returns untyped DVec3 by design, so re-wrapping
+                    // as TranslationalStateTyped<RootInertial> is the same
+                    // typed↔untyped pattern as the From<TranslationalState>
+                    // impl on TranslationalStateC.
+                    jeod_sim::TranslationalStateTyped::<jeod_sim::RootInertial>::from_untyped_unchecked(
+                        &jeod_sim::TranslationalState {
+                            position: merged.position,
+                            velocity: merged.velocity,
+                        },
+                    );
+            }
+            if let Some(ref mut r) = rot {
+                // allowed: stage_attach_combine kernel boundary; same
+                // typed↔untyped re-wrap pattern as the translational case
+                // above. The output quaternion is the parent's pre-attach
+                // unit-norm quaternion (per `combine_states_at_attach`'s
+                // "merged body inherits parent attitude"), so the
+                // NormalizedQuat witness in from_untyped_unchecked is
+                // satisfied.
+                r.0 = jeod_sim::RotationalStateTyped::<jeod_sim::SelfRef>::from_untyped_unchecked(
+                    &jeod_sim::RotationalState {
+                        quaternion: merged.quaternion,
+                        ang_vel_body: merged.ang_vel_body,
+                    },
+                );
+            }
+        }
+
+        if work.child_was_detached {
+            // Re-attach consumes the captured ballistic state — the
+            // child is no longer free-flying.
+            commands
+                .entity(work.child_entity)
+                .remove::<crate::DetachedSubtreeStateC>();
+        }
+    }
+
+    // Apply detach captures: insert `DetachedSubtreeStateC` on each
+    // detached child so `step_detached_system` advances it ballistically
+    // each tick.
+    for (entity, captured) in detach_work {
+        commands
+            .entity(entity)
+            .insert(crate::DetachedSubtreeStateC(captured));
     }
 
     // Site A: mark every affected body's integrators dirty.
@@ -2883,6 +3126,70 @@ pub fn staging_system(
             jeod_sim::reset_integrators(
                 gj_opt.as_mut().map(|c| &mut c.0),
                 abm_opt.as_mut().map(|c| &mut c.0),
+            );
+        }
+    }
+}
+
+/// Advance every entity carrying [`crate::DetachedSubtreeStateC`] by
+/// the schedule's fixed `dt` under ballistic dynamics — no force, no
+/// torque. Position drifts at `composite_velocity`; attitude rotates
+/// at `composite_ang_vel_body` via JEOD's left-multiply convention
+/// (`q̇ = -½(ω ⊗ q)`, owned by [`jeod_sim::BodyAttitude`]).
+///
+/// Also synchronizes the entity's [`crate::TranslationalStateC`] /
+/// [`crate::RotationalStateC`] with the advanced subtree state each
+/// tick so downstream consumers (gravity-source position lookups,
+/// derived-state systems, mission code) see the body's current
+/// inertial state without having to special-case detached vs
+/// integrated bodies. Mirrors
+/// [`jeod_runner::Simulation::step_detached_subtrees`].
+///
+/// JEOD_INV: DB.21 — only unattached bodies integrate; detached subtrees
+/// drift ballistically here while the integrator targets the integrated
+/// body.
+pub fn step_detached_system(
+    time: Res<Time<Fixed>>,
+    mut detached: Query<(
+        &mut crate::DetachedSubtreeStateC,
+        Option<&mut TranslationalStateC>,
+        Option<&mut RotationalStateC>,
+    )>,
+) {
+    let dt = time.delta().as_secs_f64();
+    if dt == 0.0 {
+        return;
+    }
+    for (mut state, trans, rot) in &mut detached {
+        state.0.step_ballistic(dt);
+        if let Some(mut t) = trans {
+            t.0 =
+                // allowed: DetachedSubtreeState kernel boundary; the
+                // ballistic-step result is returned as raw DVec3 fields by
+                // design — re-wrapping into TranslationalStateTyped is the
+                // same typed↔untyped pattern as the
+                // From<TranslationalState> impl on TranslationalStateC.
+                jeod_sim::TranslationalStateTyped::<jeod_sim::RootInertial>::from_untyped_unchecked(
+                    &jeod_sim::TranslationalState {
+                        position: state.0.composite_position,
+                        velocity: state.0.composite_velocity,
+                    },
+                );
+        }
+        if let Some(mut r) = rot {
+            // allowed: DetachedSubtreeState kernel boundary. The advanced
+            // `composite_attitude` is a `BodyAttitude<SelfRef>` whose
+            // `to_jeod_quat` returns the underlying scalar-first
+            // left-transformation quaternion. The wrapper guarantees
+            // unit-norm post-step (that's the whole point of
+            // `BodyAttitude::advance_under_body_rate`), so the
+            // NormalizedQuat witness in from_untyped_unchecked is
+            // satisfied.
+            r.0 = jeod_sim::RotationalStateTyped::<jeod_sim::SelfRef>::from_untyped_unchecked(
+                &jeod_sim::RotationalState {
+                    quaternion: state.0.composite_attitude.to_jeod_quat(),
+                    ang_vel_body: state.0.composite_ang_vel_body,
+                },
             );
         }
     }
