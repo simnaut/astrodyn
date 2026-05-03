@@ -270,17 +270,78 @@ impl Plugin for JeodPlugin {
         // frame entities under this one, so the ECS hierarchy and the
         // arena describe the same logical frame tree in parallel
         // during the dual-write phase (Section 13 PR 1).
-        let root_frame_entity = app
-            .world_mut()
-            .spawn((
-                Name::new("root.frame"),
-                components::InertialFrameMarker,
-                components::FrameTransC::default(),
-                components::FrameRotC::default(),
-                components::FrameAngVelC::default(),
-            ))
-            .id();
-        app.insert_resource(RootFrameEntityR(root_frame_entity));
+        //
+        // PR #281 round-5 review fixup: only spawn when the caller
+        // hasn't pre-installed `RootFrameEntityR`. Mirrors the
+        // `FrameTreeR` / `RootFrameIdR` pattern above so a mission
+        // (or a second `JeodPlugin::build` call — `Plugin::build` is
+        // not idempotent on its own) cannot silently leak the
+        // previously-spawned root entity and re-parent future frame
+        // entities under a different root than the existing ones.
+        // When pre-installed we validate that the referenced entity
+        // still exists and carries the required frame components /
+        // `InertialFrameMarker` so source / body registration's
+        // `ChildOf`-links and the typed `<RootInertial>` assumptions
+        // hold. Per the "Fail Loudly" rule a stale or
+        // wrong-kind pre-installed entity panics with a diagnostic
+        // that names the broken assumption and tells the caller how
+        // to fix it.
+        if !app.world().contains_resource::<RootFrameEntityR>() {
+            let root_frame_entity = app
+                .world_mut()
+                .spawn((
+                    Name::new("root.frame"),
+                    components::InertialFrameMarker,
+                    components::FrameTransC::default(),
+                    components::FrameRotC::default(),
+                    components::FrameAngVelC::default(),
+                ))
+                .id();
+            app.insert_resource(RootFrameEntityR(root_frame_entity));
+        } else {
+            let root_frame_entity = app.world().resource::<RootFrameEntityR>().0;
+            assert!(
+                app.world().get_entity(root_frame_entity).is_ok(),
+                "JeodPlugin: pre-installed RootFrameEntityR ({root_frame_entity:?}) \
+                 references an entity that no longer exists in the world. Source / \
+                 body registration will `ChildOf`-link new frame entities under \
+                 this dangling reference and panic later. Insert the resource only \
+                 after spawning the root frame entity in the same `App`, or remove \
+                 the pre-installation and let JeodPlugin own root-frame creation.",
+            );
+            assert!(
+                app.world()
+                    .entity(root_frame_entity)
+                    .contains::<components::InertialFrameMarker>(),
+                "JeodPlugin: pre-installed RootFrameEntityR ({root_frame_entity:?}) \
+                 is missing `InertialFrameMarker`. The plugin assumes the root \
+                 frame is inertial — source / body registration tags new children \
+                 with `InertialFrameMarker` and the typed Bevy components \
+                 (`Position<RootInertial>`, `TranslationalStateC<RootInertial>`) \
+                 are all phantom-tagged for an inertial root. Add \
+                 `InertialFrameMarker` to the entity, or let JeodPlugin spawn the \
+                 root frame.",
+            );
+            assert!(
+                app.world()
+                    .entity(root_frame_entity)
+                    .contains::<components::FrameTransC>()
+                    && app
+                        .world()
+                        .entity(root_frame_entity)
+                        .contains::<components::FrameRotC>()
+                    && app
+                        .world()
+                        .entity(root_frame_entity)
+                        .contains::<components::FrameAngVelC>(),
+                "JeodPlugin: pre-installed RootFrameEntityR ({root_frame_entity:?}) \
+                 is missing one or more of the required frame components \
+                 (`FrameTransC`, `FrameRotC`, `FrameAngVelC`). Frame-tree \
+                 consumers read these directly from the root entity. Insert all \
+                 three (each with `Default::default()` for an inertial root), or \
+                 let JeodPlugin spawn the root frame.",
+            );
+        }
 
         // ── Typed-Component reflection (#154) ──
         // Centralized in `register_jeod_component_types` so the smoke
