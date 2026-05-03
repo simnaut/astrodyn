@@ -531,8 +531,8 @@ impl Plugin for JeodPlugin {
             (
                 // Force collection and integration
                 systems::force_collection_system.in_set(JeodSet::ForceCollection),
-                // Composite-rigid-body wrench aggregation (#272):
-                // walk MassChildOf chains leaves → root and accumulate
+                // Composite-rigid-body wrench aggregation: walk
+                // MassChildOf chains leaves → root and accumulate
                 // each child's force/torque (and parallel-axis cross
                 // term) into the root's TotalForceC. Non-root children
                 // are zeroed so the existing integration_system does

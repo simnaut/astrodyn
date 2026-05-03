@@ -1121,10 +1121,9 @@ pub struct MassPointRef(pub Entity);
 /// This marker is purely a **gating hint** for the integrator. The
 /// kinematic propagation that derives child poses *from* the root
 /// (the design-doc Section 15.3 `propagate_state_from_root_system`)
-/// is a separate sub-issue and not part of this PR; until that lands,
-/// non-root children's `TranslationalStateC` / `RotationalStateC`
-/// stays frozen at the value the system observed when the body
-/// became kinematic.
+/// is a separate follow-up; until that lands, non-root children's
+/// `TranslationalStateC` / `RotationalStateC` stays frozen at the
+/// value the system observed when the body became kinematic.
 ///
 /// Mission code MUST NOT manage this marker manually — the
 /// wrench-aggregation system owns its lifecycle. Inserting it on a

@@ -3,10 +3,10 @@
 //! into the root's totals via the parallel-axis arm
 //! ([`shift_wrench_to_parent`]).
 //!
-//! This is the orchestration half of issue [#272]. The pure math kernel
-//! lives in [`jeod_dynamics::wrench`]; this module composes it with the
-//! storage-agnostic mass-tree walk pioneered by
-//! [`recompute_composites_via_storage`].
+//! This is the orchestration half of the composite-rigid-body wrench
+//! pipeline. The pure math kernel lives in [`jeod_dynamics::wrench`];
+//! this module composes it with the storage-agnostic mass-tree walk
+//! pioneered by [`recompute_composites_via_storage`].
 //!
 //! # JEOD precedent
 //!
@@ -36,7 +36,7 @@
 //! root with the inverse rotations. The Bevy adapter's
 //! `wrench_aggregation_system` does exactly this.
 //!
-//! # Out of scope (#272 follow-ups)
+//! # Out of scope
 //!
 //! - **Composite-rigid-body integration gating** — only the root
 //!   should integrate; children should be propagated kinematically.
@@ -47,8 +47,6 @@
 //!   kinematics without contributing mass — those use a separate
 //!   relation (`ChildOf` rather than `MassChildOf`), so this walk
 //!   correctly skips them.
-//!
-//! [#272]: https://github.com/simnaut/bevy_jeod/issues/272
 
 use std::collections::HashMap;
 

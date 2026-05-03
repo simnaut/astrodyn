@@ -1,7 +1,8 @@
 //! Bevy system for composite-rigid-body wrench aggregation.
 //!
-//! Closes the Bevy half of issue [#272]: walks the `MassChildOf` tree
-//! after [`force_collection_system`](crate::systems::force_collection_system)
+//! The Bevy half of the composite-rigid-body wrench pipeline: walks
+//! the `MassChildOf` tree after
+//! [`force_collection_system`](crate::systems::force_collection_system)
 //! has populated each body's `TotalForceC` and propagates every child's
 //! `(force, torque)` into its root's totals via the parallel-axis arm
 //! ([`jeod_sim::shift_wrench_to_parent`] from `jeod_dynamics`).
@@ -29,9 +30,9 @@
 //! aggregation walk's `pcm_to_ccm = child.composite_wrt_pstr.position
 //! − parent.composite.position` arithmetic depends on.
 //!
-//! # Children remain kinematic in this PR
+//! # Children remain kinematic
 //!
-//! Per [#272] the composite-rigid-body model integrates only the root.
+//! Under the composite-rigid-body model only the root integrates.
 //! After the aggregation walk runs, **non-root children's
 //! `TotalForceC` and `FrameDerivativesC` are zeroed** so the existing
 //! [`integration_system`](crate::systems::integration_system) does not
@@ -39,7 +40,7 @@
 //! `DynamicsConfigC` will integrate with zero external force / torque;
 //! the kinematic propagation that derives child poses from the root
 //! (the design-doc `propagate_state_from_root_system`) is a separate
-//! sub-issue and not part of this PR.
+//! follow-up.
 //!
 //! # Frame conventions inside the system
 //!
@@ -84,8 +85,6 @@
 //! transform to `IDENTITY` and the math reduces to bit-exact addition;
 //! rotated chains (parent or any link non-identity) get the same
 //! result JEOD does because every per-link rotation matches.
-//!
-//! [#272]: https://github.com/simnaut/bevy_jeod/issues/272
 
 use bevy::prelude::*;
 use glam::{DMat3, DVec3};
@@ -774,17 +773,16 @@ mod tests {
         assert!(t_err < 1e-12, "torque {:?}", root_tf.torque);
     }
 
-    /// Regression test for review threads PRRT_kwDORtae6c5_NXAo and
-    /// PRRT_kwDORtae6c5_NXAz: when the parent attitude is non-identity
-    /// (root has a real `RotationalStateC` whose `q_inertial_body` is
-    /// not identity), the wrench-shift cross-product must use the
-    /// parent's structural-frame `r` and a parent-structural-frame
-    /// `F` — equivalently, the inertial-frame `F` must be rotated
-    /// into the parent's structural frame before the cross-product.
-    /// The previous inertial-frame walk crossed `pcm_to_ccm` (in
-    /// parent struct) with the inertial-frame force directly, so
-    /// the resulting torque was bit-correct only at identity attitude
-    /// and silently wrong otherwise.
+    /// Frame-discipline regression: when the parent attitude is
+    /// non-identity (root has a real `RotationalStateC` whose
+    /// `q_inertial_body` is not identity), the wrench-shift
+    /// cross-product must use the parent's structural-frame `r` and a
+    /// parent-structural-frame `F` — equivalently, the inertial-frame
+    /// `F` must be rotated into the parent's structural frame before
+    /// the cross-product. An inertial-frame walk that crossed
+    /// `pcm_to_ccm` (in parent struct) with the inertial-frame force
+    /// directly would be bit-correct only at identity attitude and
+    /// silently wrong otherwise.
     ///
     /// JEOD-derived analytical answer for this scenario, in the
     /// **parent's structural frame**:
@@ -906,17 +904,16 @@ mod tests {
         );
     }
 
-    /// Regression test for review thread PRRT_kwDORtae6c5_NXAh:
-    /// children of `MassChildOf` chains must NOT drift under gravity
-    /// across multiple integration steps. Before the
-    /// `KinematicChildC` marker, zeroing children's `TotalForceC` was
-    /// not enough — `integration_system` recomputed gravity at every
-    /// RK sub-stage and advanced the child's `TranslationalStateC`
-    /// regardless. This test stands up a real Earth gravity source,
-    /// runs the full FixedUpdate pipeline through several steps
-    /// (force collection, wrench aggregation, integration), and
-    /// asserts the child's translational state stays at the
-    /// spawn-time value.
+    /// Kinematic-children integration gate: children of `MassChildOf`
+    /// chains must NOT drift under gravity across multiple integration
+    /// steps. Without the `KinematicChildC` marker, zeroing children's
+    /// `TotalForceC` is not enough — `integration_system` recomputes
+    /// gravity at every RK sub-stage from `GravityControlsC` and would
+    /// advance the child's `TranslationalStateC` regardless. This test
+    /// stands up a real Earth gravity source, runs the full
+    /// FixedUpdate pipeline through several steps (force collection,
+    /// wrench aggregation, integration), and asserts the child's
+    /// translational state stays at the spawn-time value.
     #[test]
     fn child_translational_state_does_not_drift_under_gravity() {
         use crate::PlanetBundle;
@@ -931,9 +928,9 @@ mod tests {
         app.add_plugins(MinimalPlugins);
         // allowed: test-fixture FixedUpdate timestep; mirrors the same
         // construction every `tests/bevy_parity*.rs` integration test
-        // already does and is not the typed-quantities boundary the
-        // script is guarding against (issue #172 H1 targets per-step
-        // bypasses, not one-shot test-app setup).
+        // already does. The escape-hatch script guards per-step
+        // typed-quantities bypasses in production code paths, not
+        // one-shot test-app setup of the Bevy `Time<Fixed>` resource.
         app.insert_resource(Time::<Fixed>::from_seconds(DT));
         app.add_plugins(crate::JeodPlugin);
 
