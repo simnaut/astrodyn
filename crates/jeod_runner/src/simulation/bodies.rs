@@ -634,6 +634,69 @@ impl Simulation {
         }
         jeod_sim::reset_integrators(body.gj_state.as_mut(), body.abm4_state.as_mut());
     }
+
+    /// Clear the kinematic-only flag on a body, returning ownership of
+    /// its trans/rot to the integrator. Use after [`detach`](Self::detach)
+    /// when the previously-kinematic child should resume integrated
+    /// dynamics on its own (matches JEOD `dyn_body_detach.cc`'s
+    /// transfer of state ownership from `propagate_state_from_*`
+    /// back to `integrated_frame`).
+    ///
+    /// No-op if the flag is already clear. Does not validate
+    /// mass-tree topology — call sites that detach the body from its
+    /// parent must call `Simulation::detach` first; this method is
+    /// purely a flag flip.
+    pub fn clear_kinematic_only(&mut self, idx: usize) {
+        self.bodies[idx].kinematic_only = false;
+    }
+
+    /// Flag a body as a kinematic child of its mass-tree parent.
+    ///
+    /// After this call, the body's `trans` + `rot` are derived each
+    /// [`step`](Self::step) by
+    /// [`propagate_state_via_storage`](jeod_sim::propagate_state_via_storage)
+    /// from the parent's freshly-derived state composed with the
+    /// link's `MassChildOf` rotation + offset (mirrors JEOD's
+    /// `DynBody::propagate_state_from_structure`). The integrator on
+    /// this body is **skipped** — only the tree root integrates per
+    /// `JEOD_INV: DB.17`.
+    ///
+    /// # Panics
+    /// * The body is not registered in the mass tree (call
+    ///   [`add_body_to_tree`](Self::add_body_to_tree) first).
+    /// * The body resolves to a tree root (kinematic-only bodies must
+    ///   be non-root — call [`attach`](Self::attach) first).
+    /// * The body has no [`RotationalState`](jeod_sim::RotationalState):
+    ///   kinematic propagation derives both `trans` and `rot`, so
+    ///   3-DOF bodies cannot be kinematic children.
+    // JEOD_INV: DB.17 — only the root's state is integrated; non-root state is kinematic-derived
+    pub fn mark_kinematic_only(&mut self, idx: usize) {
+        let body = &self.bodies[idx];
+        let id = body.mass_body_id.unwrap_or_else(|| {
+            panic!(
+                "mark_kinematic_only: SimBody {idx} is not in the mass tree. \
+                 Call `add_body_to_tree({idx}, ...)` and `attach({idx}, parent_idx, ...)` first."
+            )
+        });
+        let tree = self
+            .mass_tree
+            .as_ref()
+            .expect("mark_kinematic_only: no mass tree configured");
+        assert!(
+            tree.parent(id).is_some(),
+            "mark_kinematic_only: SimBody {idx} (mass_body_id {id:?}) is a tree root. \
+             Kinematic-only bodies must have a parent — call \
+             `attach({idx}, parent_idx, offset, t_parent_child)` first."
+        );
+        assert!(
+            body.rot.is_some(),
+            "mark_kinematic_only: SimBody {idx} has no RotationalState. \
+             Kinematic propagation derives both trans and rot; 3-DOF bodies cannot \
+             be kinematic children. Set `VehicleConfig::rot = Some(...)` when \
+             constructing the body."
+        );
+        self.bodies[idx].kinematic_only = true;
+    }
 }
 
 #[cfg(test)]

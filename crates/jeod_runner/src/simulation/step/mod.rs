@@ -36,6 +36,7 @@ mod environment;
 mod ephemeris;
 mod integrate;
 mod interactions;
+mod kinematic;
 
 impl Simulation {
     /// Advance the simulation by one timestep.
@@ -94,6 +95,23 @@ impl Simulation {
             }
         }
 
+        // ── 3b. Kinematic state propagation (root → leaves), pre-integration ──
+        // Mirrors the Bevy adapter's `propagate_state_from_root_system`
+        // schedule placement — `JeodSet::ForceCollection`, after mass
+        // recompute and before any consumer that reads child attitudes
+        // (the wrench walk in Bevy; defense-in-depth here, since the
+        // runner's `collect_and_resolve_forces` is per-body without an
+        // upward chain walk yet). The "before integration" placement
+        // is one tick stale by construction — every kinematic child's
+        // state reflects the *previous* tick's integrated parent. The
+        // post-integration sibling call below cleans the end-of-step
+        // state up so consumers reading `Simulation::body(idx)` after
+        // a `step()` see the freshly-derived value.
+        //
+        // See `step::kinematic` for the JEOD precedent and the per-call
+        // diagnostic invariants.
+        self.propagate_kinematic_state();
+
         // Precompute frame origins from the tree for all body integration
         // frames. The typed `IntegOrigin` is the only safe path from
         // `Position<IntegrationFrame>` to `Position<RootInertial>` — see #255 /
@@ -117,6 +135,20 @@ impl Simulation {
         let (sun_pos, moon_pos) = self.compute_interactions(dt, &body_integ_origins);
 
         self.run_integration(dt, &body_integ_origins)?;
+
+        // ── 8c. Kinematic state propagation (root → leaves), post-integration ──
+        // The integrator just produced fresh root-body state; rerun
+        // the kinematic walk so every non-root child's `body.trans` /
+        // `body.rot` reflects the same-tick parent state. Mirrors
+        // JEOD's `DynBody::propagate_state_from_structure` invocation
+        // at the end of every integration cycle
+        // (`models/dynamics/dyn_body/src/dyn_body_propagate_state.cc`).
+        // Without this, downstream consumers (`Simulation::body`,
+        // derived-state computations, frame-tree sync) would observe
+        // a one-tick-stale child state — i.e. the previous tick's
+        // parent state composed with the link, not the freshly-
+        // integrated one.
+        self.propagate_kinematic_state();
 
         // ── 9. Derived states ──
         self.compute_derived_states(sun_pos, moon_pos, &body_integ_origins);
