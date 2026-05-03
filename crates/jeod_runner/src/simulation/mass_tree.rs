@@ -1265,32 +1265,37 @@ mod tests {
         sim.step_n(1).expect("post-detach step failed");
     }
 
-    // ── detach_subtree IG.37 wiring ─────────────────────────────────
+    // ── detach_subtree / attach_subtree_aligned IG.37 wiring ────────
     //
-    // The next two tests cover the inline mark+reset block at the end
-    // of `Simulation::detach_subtree`'s `parent_is_integrated` branch.
-    // Without them, a regression that drops the reset call would still
-    // pass `detach_resets_*` above, since those only exercise the
-    // simpler `Simulation::detach` (no subtree state propagation).
-    // PR #282 review thread `PRRT_kwDORtae6c5_KoAQ`.
+    // The next four tests cover the inline mark+reset blocks at the
+    // end of `Simulation::detach_subtree` (`parent_is_integrated`
+    // branch) and `Simulation::attach_subtree_aligned`. Without them,
+    // a regression that drops either reset call would still pass
+    // `attach_resets_*` / `detach_resets_*` above, since those only
+    // exercise the simpler `Simulation::attach` / `detach` (no
+    // subtree state propagation, no momentum-conservation combine).
+    // PR #282 review threads `PRRT_kwDORtae6c5_KoAQ` (detach_subtree)
+    // and `PRRT_kwDORtae6c5_KoAR` (attach_subtree_aligned).
     //
     // ## Why we splice integrator state in by hand
     //
-    // `Simulation::detach_subtree` requires a 6-DOF integrated body
-    // (it reads `body.rot` to propagate the subtree's composite-CoM
-    // state). `Simulation::validate` forbids the only integrators
-    // that own multi-step history (GJ / ABM4) on 6-DOF bodies — see
-    // `ValidationError::GaussJacksonWith6Dof` / `Abm4With6Dof`. So an
-    // end-to-end test of the inline reset block can't go through
+    // `Simulation::detach_subtree` and `attach_subtree_aligned` both
+    // require a 6-DOF integrated body (they read `body.rot` to
+    // propagate the subtree's composite-CoM state).
+    // `Simulation::validate` forbids the only integrators that own
+    // multi-step history (GJ / ABM4) on 6-DOF bodies — see
+    // `ValidationError::GaussJacksonWith6Dof` / `Abm4With6Dof`. So
+    // an end-to-end test of the inline reset block can't go through
     // `validate` + `step_n()` today.
     //
-    // The reset block IS still on the production code path: it guards
-    // future re-enablement of GJ/ABM4 with rotational dynamics, *and*
-    // it guards external callers who construct a 6-DOF SimBody and
-    // splice in `gj_state` / `abm4_state` themselves (e.g. from
-    // integration-tests like these, or from a downstream crate that
-    // bypasses our validator). The fail-loud safety net for *those*
-    // callers is the IG.37 panic in `integrate()`.
+    // The reset block IS still on the production code path: it
+    // guards future re-enablement of GJ/ABM4 with rotational
+    // dynamics, *and* it guards external callers who construct a
+    // 6-DOF SimBody and splice in `gj_state` / `abm4_state`
+    // themselves (e.g. from integration-tests like these, or from a
+    // downstream crate that bypasses our validator). The fail-loud
+    // safety net for *those* callers is the IG.37 panic in
+    // `integrate()`.
     //
     // Each test below:
     //   1. Builds a 3-body mass-tree chain `cm → middle → leaf` with
@@ -1302,17 +1307,15 @@ mod tests {
     //      only a state that is observably *past* priming).
     //   3. Asserts pre-state: `is_priming() == false` AND
     //      `is_topology_dirty() == false`.
-    //   4. Calls `detach_subtree(cm_idx, leaf)` — the leaf node sits
-    //      below `middle`, so the `chain` walk inside detach_subtree
-    //      iterates over both `middle` and `leaf` (a non-trivial
-    //      `propagate_forward` chain).
+    //   4. Triggers the topology mutation (`detach_subtree` /
+    //      `attach_subtree_aligned`).
     //   5. Asserts post-state: integrator is back in priming AND not
     //      topology-dirty. Both flags moving together is the
     //      signature of `reset_for_topology_change` having run —
     //      since `mark_topology_dirty` alone never touches
-    //      `is_priming`. If a regression drops the inline reset call
-    //      inside `detach_subtree`, this assertion fails (the test
-    //      fails on the `is_priming` check).
+    //      `is_priming`. If a regression drops the inline reset
+    //      call, this assertion fails (the test fails on the
+    //      `is_priming` check).
     //
     // The accompanying `dirty_*_state_panics_on_integrate` tests
     // independently verify the IG.37 fail-loud panic that backs the
@@ -1495,14 +1498,117 @@ mod tests {
         );
     }
 
+    // ── attach_subtree_aligned IG.37 wiring ─────────────────────────
+    //
+    // The next two tests cover the inline mark+reset block at the end
+    // of `Simulation::attach_subtree_aligned`. Same shape as the
+    // `detach_subtree` tests above (and same constraint — `validate`
+    // forbids GJ/ABM4 + 6-DOF, so we splice integrator state in by
+    // hand). PR #282 review thread `PRRT_kwDORtae6c5_KoAR`.
+    //
+    // Setup is asymmetric: we need a *detached* subtree to attach.
+    // We call `detach_subtree` first to populate
+    // `Simulation::detached_subtrees`, then splice the integrator
+    // state and run `attach_subtree_aligned` so its inline reset
+    // block has something to clear.
+
+    /// `Simulation::attach_subtree_aligned` must reset the integrated
+    /// body's Gauss-Jackson history after the topology + state combine.
+    /// PR #282 review thread `PRRT_kwDORtae6c5_KoAR`.
+    #[test]
+    fn attach_subtree_aligned_resets_gauss_jackson_state_on_integrated_body() {
+        let (mut sim, cm_idx, _cm_id, middle, leaf) = build_three_body_chain_with_rot();
+
+        // Add named docking points needed by attach_aligned.
+        {
+            let tree = sim
+                .mass_tree
+                .as_mut()
+                .expect("mass tree must exist after build_three_body_chain_with_rot");
+            tree.add_mass_point(middle, "middle.dock", DVec3::ZERO, DMat3::IDENTITY);
+            tree.add_mass_point(leaf, "leaf.dock", DVec3::ZERO, DMat3::IDENTITY);
+        }
+
+        sim.validate().expect("validate failed");
+
+        // Detach `leaf` to populate `detached_subtrees` so we have
+        // something to re-attach. detach_subtree does its own IG.37
+        // reset, but cm has no integrator state spliced in yet — so
+        // detach is a no-op on integrators here.
+        sim.detach_subtree(cm_idx, leaf);
+
+        // Splice GJ8 state onto cm AFTER the detach so
+        // attach_subtree_aligned's reset block has something to clear.
+        let cfg = GaussJacksonConfig::with_order(8);
+        let mut gj = jeod_dynamics::GaussJacksonState::new(cfg);
+        drive_gj_past_priming(&mut gj);
+        assert!(!gj.is_topology_dirty());
+        sim.bodies[cm_idx].gj_state = Some(gj);
+
+        // ── Re-attach. `attach_subtree_aligned` runs the
+        //    combine-states algorithm, overwrites body.trans /
+        //    body.rot, and must reset the integrator at the end. ──
+        sim.attach_subtree_aligned(cm_idx, leaf, "leaf.dock", middle, "middle.dock");
+
+        let gj_post = sim.bodies[cm_idx].gj_state.as_ref().unwrap();
+        // `is_priming() == true` only happens through
+        // `reset_for_topology_change` — so this fails if the inline
+        // reset call inside `attach_subtree_aligned` is removed.
+        assert!(
+            gj_post.is_priming(),
+            "cm's GJ state must be back in priming after attach_subtree_aligned (IG.37)"
+        );
+        assert!(
+            !gj_post.is_topology_dirty(),
+            "cm's GJ topology-dirty flag must be cleared on attach_subtree_aligned (IG.37)"
+        );
+    }
+
+    /// ABM4 sibling of `attach_subtree_aligned_resets_gauss_jackson_*`.
+    /// PR #282 review thread `PRRT_kwDORtae6c5_KoAR`.
+    #[test]
+    fn attach_subtree_aligned_resets_abm4_state_on_integrated_body() {
+        let (mut sim, cm_idx, _cm_id, middle, leaf) = build_three_body_chain_with_rot();
+
+        {
+            let tree = sim
+                .mass_tree
+                .as_mut()
+                .expect("mass tree must exist after build_three_body_chain_with_rot");
+            tree.add_mass_point(middle, "middle.dock", DVec3::ZERO, DMat3::IDENTITY);
+            tree.add_mass_point(leaf, "leaf.dock", DVec3::ZERO, DMat3::IDENTITY);
+        }
+
+        sim.validate().expect("validate failed");
+        sim.detach_subtree(cm_idx, leaf);
+
+        let mut abm = jeod_dynamics::Abm4State::new();
+        drive_abm4_past_priming(&mut abm);
+        assert!(!abm.is_topology_dirty());
+        sim.bodies[cm_idx].abm4_state = Some(abm);
+
+        sim.attach_subtree_aligned(cm_idx, leaf, "leaf.dock", middle, "middle.dock");
+
+        let abm_post = sim.bodies[cm_idx].abm4_state.as_ref().unwrap();
+        assert!(
+            abm_post.is_priming(),
+            "cm's ABM4 state must be back in priming after attach_subtree_aligned (IG.37)"
+        );
+        assert!(
+            !abm_post.is_topology_dirty(),
+            "cm's ABM4 topology-dirty flag must be cleared on attach_subtree_aligned (IG.37)"
+        );
+    }
+
     /// Verify the IG.37 fail-loud safety net actually fires when an
     /// integrator is left dirty: simulate a regression where mark
     /// fired but reset was forgotten by manually flipping the dirty
     /// flag to true on a primed integrator, then call `integrate()`.
     /// The test passes only if the integrator panics with the IG.37
-    /// diagnostic. This is the pair-half of the inline mark site in
-    /// detach_subtree — together they make any regression that drops
-    /// the Site B (reset) loud rather than silent.
+    /// diagnostic. This is the pair-half of the inline mark sites in
+    /// detach_subtree / attach_subtree_aligned — together they make
+    /// any regression that drops a Site B (reset) loud rather than
+    /// silent.
     #[test]
     #[should_panic(expected = "topology")]
     fn dirty_gauss_jackson_state_panics_on_integrate() {
