@@ -245,10 +245,12 @@ fn frame_origin_in_pfix_matches_relative_frame_state() {
 /// Compile-time assertion that the design-doc "After" mission-code
 /// shape compiles cleanly: a system that uses `FrameOrigin` to read a
 /// body's origin in the root inertial frame, holds no
-/// `Res<FrameTreeR>`, never names a `FrameId`, and returns a typed
-/// `Position<RootInertial>`. The system is registered (not run) — the
-/// purpose is to exercise the SystemParam wiring against the
-/// resources / queries `JeodPlugin` installs.
+/// `Res<FrameTreeR>`, never names a `FrameId`, and binds typed
+/// `Position<RootInertial>` / `Velocity<RootInertial>` values directly
+/// (no `.from_raw_si` / phantom-stamping at the call site). The system
+/// is registered (not run) — the purpose is to exercise the
+/// SystemParam wiring against the resources / queries `JeodPlugin`
+/// installs.
 #[test]
 fn after_diff_mission_code_shape_compiles() {
     let mut app = App::new();
