@@ -2,6 +2,18 @@
 //! orchestration functions. Each system queries the relevant components,
 //! calls into `jeod_sim`, and writes the result back. No physics
 //! algorithms live here.
+//!
+//! ## Deprecation suppression
+//!
+//! [`crate::FrameTreeR`] is `#[deprecated]` for mission-code use. The
+//! systems in this module are *internal physics* and continue to read
+//! the arena during the dual-write phase. They will eventually be
+//! rewritten to use the [`crate::frame_param::RelativeFrameState`] /
+//! [`crate::frame_param::FrameOrigin`] SystemParams, after which the
+//! `FrameTreeR` resource will be removed entirely. Until then, the
+//! file-level `#![allow(deprecated)]` keeps the internal call sites
+//! quiet without weakening the deprecation signal mission code sees.
+#![allow(deprecated)] // Internal FrameTreeR consumers during the dual-write phase.
 
 use bevy::prelude::*;
 use glam::DVec3;
@@ -34,8 +46,8 @@ use crate::SimulationTimeR;
 /// `planet_fixed_rotation_system`.
 ///
 /// This is the Bevy analog of `jeod_runner::Simulation::add_source` —
-/// it makes the lifted source-mutation helpers (issue #71 item 5)
-/// usable directly via [`crate::SourceMutator`].
+/// it makes the lifted source-mutation helpers usable directly via
+/// [`crate::SourceMutator`].
 ///
 /// **Divergence from jeod_runner**: every source becomes a child of
 /// the root frame, including the central body. `jeod_runner` renames
@@ -43,14 +55,14 @@ use crate::SimulationTimeR;
 /// adapter keeps a generic root and treats all sources uniformly so
 /// the registration order doesn't matter and so adding a body in a
 /// non-Earth-central simulation doesn't require special-casing
-/// "central" sources. Frame-switch parity (issue #71 items 2-4) lives
-/// at the orchestration layer, where this divergence is invisible.
+/// "central" sources. Frame-switch parity lives at the orchestration
+/// layer, where this divergence is invisible.
 #[allow(clippy::type_complexity)]
 pub fn register_source_frames_system(
     mut commands: Commands,
     mut frame_tree: ResMut<FrameTreeR>,
     root: Res<crate::RootFrameIdR>,
-    // Issue #277: also spawn ECS frame entities under this root.
+    // Also spawn ECS frame entities under this root.
     root_frame_entity: Res<crate::RootFrameEntityR>,
     sources: Query<
         (
@@ -73,7 +85,7 @@ pub fn register_source_frames_system(
         // lets sources that already carry a non-zero
         // `SourceInertialVelocityC` start with the right velocity in the
         // tree; sources without the velocity component get zero, matching
-        // their ECS state. (Phase B PR #260 review fixup.)
+        // their ECS state.
         let init_pos = pos.0.raw_si();
         let init_vel = vel.map_or(glam::DVec3::ZERO, |v| v.0.raw_si());
         let inertial_id = frame_tree.0.add_child(
@@ -89,10 +101,10 @@ pub fn register_source_frames_system(
             },
         );
 
-        // Issue #277: spawn the source's ECS frame entity parented
-        // under the root frame entity. Both the arena `FrameId` and
-        // the ECS `Entity` describe the same logical inertial frame
-        // until consumers migrate off the arena (Section 13 PRs 2–4).
+        // Spawn the source's ECS frame entity parented under the
+        // root frame entity. Both the arena `FrameId` and the ECS
+        // `Entity` describe the same logical inertial frame until
+        // consumers migrate off the arena.
         let source_frame_entity = commands
             .spawn((
                 Name::new(format!("{label}.frame.inertial")),
@@ -118,8 +130,8 @@ pub fn register_source_frames_system(
         // a permanent identity that `source_pfix_rotation()` would
         // mis-report as `Some(identity)` instead of `None`. Plain
         // point-mass sources spawned without `PlanetFixedRotationC` get no
-        // pfix node, matching `jeod_runner` for the same case (PR #260
-        // round-2 review fixup). When rotation IS present and
+        // pfix node, matching `jeod_runner` for the same case. When
+        // rotation IS present and
         // `RotationModelC` is omitted, the EarthRNP default applies —
         // same default as `planet_fixed_rotation_system`.
         if pfix_rot.is_some() {
@@ -132,8 +144,8 @@ pub fn register_source_frames_system(
                     jeod_sim::RefFrameKind::PlanetFixed,
                     jeod_sim::RefFrameState::default(),
                 );
-                // Issue #277: dual-write — spawn the pfix frame entity
-                // parented under the source's ECS frame entity.
+                // Dual-write — spawn the pfix frame entity parented
+                // under the source's ECS frame entity.
                 let pfix_frame_entity = commands
                     .spawn((
                         Name::new(format!("{label}.frame.pfix")),
@@ -190,13 +202,13 @@ pub fn register_pfix_frames_system(
             Entity,
             Option<&Name>,
             &SourceFrameIdC,
-            // Issue #277: read the source's frame entity so the
-            // spawned pfix frame entity can ChildOf-link under it.
+            // Read the source's frame entity so the spawned pfix
+            // frame entity can ChildOf-link under it.
             Option<&FrameEntityC>,
             Option<&RotationModelC>,
             Option<&RetiredPfixFrameIdC>,
-            // Round-1 review fixup: parallel ECS-entity retirement
-            // marker so we reuse instead of leak on toggle cycles.
+            // Parallel ECS-entity retirement marker so we reuse
+            // instead of leak on toggle cycles.
             Option<&RetiredPfixFrameEntityC>,
         ),
         (
@@ -248,13 +260,13 @@ pub fn register_pfix_frames_system(
             )
         };
 
-        // Issue #277: dual-write — restore or spawn the pfix frame
-        // entity. Round-1 review fixup: prefer reusing a retired
-        // entity (parallel to the arena reuse above) so toggle cycles
-        // don't leak ECS entities. Skip the ECS dual-write entirely
-        // if FrameEntityC is missing — that's a source registered
-        // before the issue #277 components landed; the arena pfix is
-        // still updated above for backward compat.
+        // Dual-write — restore or spawn the pfix frame entity.
+        // Prefer reusing a retired entity (parallel to the arena
+        // reuse above) so toggle cycles don't leak ECS entities. Skip
+        // the ECS dual-write entirely if FrameEntityC is missing —
+        // that's a source registered before the frames-as-entities
+        // components landed; the arena pfix is still updated above
+        // for backward compat.
         if let Some(parent_frame) = source_frame_entity {
             let pfix_frame_entity = if let Some(retired_e) = retired_entity {
                 // Reuse: restore canonical name (via Commands so we
@@ -268,9 +280,9 @@ pub fn register_pfix_frames_system(
                 commands
                     .entity(retired_e.0)
                     .insert(Name::new(format!("{label}.frame.pfix")));
-                // Issue #277 round-6 review fixup: fail loud if the
-                // retired pfix frame entity has lost any of its
-                // FrameTransC / FrameRotC / FrameAngVelC components
+                // Fail loud if the retired pfix frame entity has lost
+                // any of its FrameTransC / FrameRotC / FrameAngVelC
+                // components
                 // (or has been despawned out from under us). Silently
                 // skipping these resets would let stale rotation,
                 // angular velocity, or translation state leak into the
@@ -360,7 +372,7 @@ pub fn register_pfix_frames_system(
 /// per-stage source interpolation in [`integration_system`]) see the
 /// current source state rather than the registration-time snapshot.
 ///
-/// Velocity source-of-truth precedence (PR #260 round-3 review fixup):
+/// Velocity source-of-truth precedence:
 ///
 /// 1. [`SourceInertialVelocityC`] when present — the explicit
 ///    per-source velocity component.
@@ -370,9 +382,6 @@ pub fn register_pfix_frames_system(
 ///    (Sun / Moon entities used by SRP / earth-lighting are typically
 ///    spawned this way via `SunBundle` / `MoonBundle`).
 /// 3. Otherwise leave the frame-tree node's velocity unchanged.
-///
-/// Round 2 only consulted `SourceInertialVelocityC`, which left
-/// ephemeris-only sources stuck at zero velocity in the frame tree.
 ///
 /// Runs in `JeodSet::EphemerisUpdate` after `ephemeris_update_system`
 /// (which writes the ECS components from DE4xx) so the FrameTreeR sync
@@ -385,7 +394,7 @@ pub fn sync_source_to_frame_system(
         &SourceInertialPositionC,
         Option<&SourceInertialVelocityC>,
         Option<&TranslationalStateC>,
-        // Issue #277: dual-write target.
+        // Dual-write target.
         Option<&FrameEntityC>,
     )>,
     mut frame_states: Query<&mut FrameTransC>,
@@ -403,17 +412,17 @@ pub fn sync_source_to_frame_system(
             node.state.trans.velocity = v;
         }
 
-        // Issue #277: ECS dual-write to the source's frame entity.
-        // Skip silently if the source was registered before the
-        // issue #277 components landed (no FrameEntityC). When the
-        // component *is* present, the referenced frame entity must
-        // exist and carry FrameTransC — the registration sites
-        // (`PlanetBundle::spawn` / `register_pfix_frames_system`)
-        // spawn it with `FrameTransC::default()` and the despawn
-        // observers tear it down in lockstep with the source. Round-6
-        // review fixup: fail loud if `FrameEntityC` points at a stale
-        // / missing entity instead of silently leaving the ECS half
-        // of the dual-write out of sync with the arena.
+        // ECS dual-write to the source's frame entity. Skip silently
+        // if the source was registered before the frames-as-entities
+        // components landed (no FrameEntityC). When the component *is*
+        // present, the referenced frame entity must exist and carry
+        // FrameTransC — the registration sites (`PlanetBundle::spawn`
+        // / `register_pfix_frames_system`) spawn it with
+        // `FrameTransC::default()` and the despawn observers tear it
+        // down in lockstep with the source. Fail loud if
+        // `FrameEntityC` points at a stale / missing entity instead
+        // of silently leaving the ECS half of the dual-write out of
+        // sync with the arena.
         if let Some(fe) = frame_entity {
             let mut frame_trans = frame_states.get_mut(fe.0).unwrap_or_else(|err| {
                 panic!(
@@ -452,14 +461,13 @@ pub fn sync_source_to_frame_system(
 /// Runs at `Startup` and again before `JeodSet::EphemerisUpdate` to
 /// catch dynamically-spawned bodies. Filters by
 /// `Without<BodyFrameIdC>` so the registration is one-time per body.
-/// Issue #71 items 2 and 4.
 #[allow(clippy::type_complexity)]
 pub fn register_body_frames_system(
     mut commands: Commands,
     mut frame_tree: ResMut<FrameTreeR>,
     root: Res<crate::RootFrameIdR>,
-    // Issue #277: the ECS-side root frame entity, used as the body's
-    // frame parent when no IntegSourceC is supplied.
+    // The ECS-side root frame entity, used as the body's frame
+    // parent when no IntegSourceC is supplied.
     root_frame_entity: Res<crate::RootFrameEntityR>,
     sources: Query<(&SourceFrameIdC, Option<&FrameEntityC>)>,
     bodies: Query<
@@ -468,14 +476,13 @@ pub fn register_body_frames_system(
             Option<&Name>,
             &TranslationalStateC,
             Option<&IntegSourceC>,
-            // PR #283 review thread PRRT_kwDORtae6c5_KiLK — wire the
-            // frame-side `MassPointRef` back-pointer at body-frame
-            // registration time for any entity that also carries
-            // `MassPropertiesC` (i.e. participates in the mass tree).
-            // In the current Bevy adapter the body / mass / frame
-            // ECS entity is one and the same, so the back-pointer
-            // resolves to `MassPointRef(self)`. The component is
-            // skipped for kinematic-only bodies (no
+            // Wire the frame-side `MassPointRef` back-pointer at
+            // body-frame registration time for any entity that also
+            // carries `MassPropertiesC` (i.e. participates in the
+            // mass tree). In the current Bevy adapter the body /
+            // mass / frame ECS entity is one and the same, so the
+            // back-pointer resolves to `MassPointRef(self)`. The
+            // component is skipped for kinematic-only bodies (no
             // `MassPropertiesC`), matching the "absent for
             // kinematic-only attaches" contract on the type.
             Has<MassPropertiesC>,
@@ -493,7 +500,7 @@ pub fn register_body_frames_system(
             .unwrap_or_else(|| format!("body{:?}", entity));
 
         // Resolve the integration frame ID. Default: root inertial.
-        // Issue #277: also resolve the integ frame ECS entity.
+        // Also resolve the integ frame ECS entity.
         let (integ_frame_id, integ_frame_entity) = match integ_source.and_then(|c| c.0) {
             Some(source_entity) => sources
                 .get(source_entity)
@@ -533,22 +540,21 @@ pub fn register_body_frames_system(
             body_state,
         );
 
-        // Issue #277: spawn body frame entity parented under its
-        // integ frame's ECS entity. Tag the integ frame entity with
+        // Spawn the body frame entity parented under its integ
+        // frame's ECS entity. Tag the integ frame entity with
         // `IntegrationFrameMarker` (idempotent insert via Commands).
         // Skip the ECS spawn if we couldn't resolve an integ frame
-        // entity (e.g. a source registered before the issue #277
-        // components landed); the arena body node is still added
-        // above for backward compat.
+        // entity (e.g. a source registered before the
+        // frames-as-entities components landed); the arena body node
+        // is still added above for backward compat.
         //
-        // PR #283 review thread PRRT_kwDORtae6c5_KiLK — also wire the
-        // frame-side `MassPointRef` back-pointer at body-frame
-        // registration time for any entity that also carries
-        // `MassPropertiesC` (i.e. participates in the mass tree). In
-        // the current Bevy adapter the body / mass / frame ECS entity
-        // is one and the same, so the back-pointer resolves to
-        // `MassPointRef(self)`. The component is skipped for
-        // kinematic-only bodies (no `MassPropertiesC`).
+        // Also wire the frame-side `MassPointRef` back-pointer at
+        // body-frame registration time for any entity that also
+        // carries `MassPropertiesC` (i.e. participates in the mass
+        // tree). In the current Bevy adapter the body / mass / frame
+        // ECS entity is one and the same, so the back-pointer
+        // resolves to `MassPointRef(self)`. The component is skipped
+        // for kinematic-only bodies (no `MassPropertiesC`).
         if let Some(parent_frame_entity) = integ_frame_entity {
             commands
                 .entity(parent_frame_entity)
@@ -594,8 +600,7 @@ pub fn register_body_frames_system(
 /// at the body's first sight — a body that starts kinematic-only and
 /// later acquires `MassPropertiesC` would never receive the
 /// back-pointer, and a body that loses `MassPropertiesC` after first
-/// registration would keep a stale one. PR #283 review thread
-/// `PRRT_kwDORtae6c5_K7qF` flagged both directions.
+/// registration would keep a stale one.
 ///
 /// This system handles the post-registration transitions:
 ///
@@ -661,7 +666,7 @@ pub fn sync_body_mass_point_ref_system(
 // in the arena indefinitely with the original name, eventually
 // shadowing a future re-spawn of the same name via
 // [`jeod_sim::FrameTree::find_by_name`] and growing memory
-// monotonically. PR #260 reviewer-flagged gap.
+// monotonically.
 //
 // The observers below adopt the same "logical retirement" pattern
 // `planet_fixed_rotation_system` already uses for the rotation-toggle
@@ -679,11 +684,11 @@ pub fn sync_body_mass_point_ref_system(
 // Each observer cleans up only its own node; ordering across the
 // per-component `Despawn` triggers is therefore irrelevant.
 //
-// Out of scope (tracked in #268): a body whose
-// [`IntegSourceC`]'s source entity is despawned remains alive but
-// integrates against a now-retired frame. The Bevy-native
-// ECS-hierarchy redesign will close this naturally; until then,
-// mission code is responsible for despawning dependent bodies.
+// Out of scope: a body whose [`IntegSourceC`]'s source entity is
+// despawned remains alive but integrates against a now-retired frame.
+// The Bevy-native ECS-hierarchy redesign will close this naturally;
+// until then, mission code is responsible for despawning dependent
+// bodies.
 fn retire_frame_node(tree: &mut jeod_sim::FrameTree, fid: jeod_sim::FrameId) {
     let node = tree.get_mut(fid);
     if !node.name.ends_with(".despawned") {
@@ -770,13 +775,12 @@ pub fn on_retired_pfix_frame_entity_despawn(
 }
 
 /// On entity despawn, despawn the *frame entity* the source / body
-/// entity carries in [`FrameEntityC`]. Issue #277 PR 1 round-2
-/// review fixup (Copilot, comments 3177683390 + 3177683392):
-/// without this observer, despawning a source or body would leave
-/// its dual-write frame entity (and the pfix child it parents,
-/// when present) alive indefinitely under the root frame entity,
-/// growing the entity count over time and potentially shadowing
-/// future re-spawns of the same `Name`.
+/// entity carries in [`FrameEntityC`]. Without this observer,
+/// despawning a source or body would leave its dual-write frame
+/// entity (and the pfix child it parents, when present) alive
+/// indefinitely under the root frame entity, growing the entity
+/// count over time and potentially shadowing future re-spawns of
+/// the same `Name`.
 ///
 /// Fires for *any* entity that carries [`FrameEntityC`], i.e. both
 /// source entities (registered by [`register_source_frames_system`])
@@ -784,11 +788,9 @@ pub fn on_retired_pfix_frame_entity_despawn(
 /// The cleanup logic is identical for the two cases — the despawning
 /// entity hands us its frame-entity handle and we tear down the
 /// referenced frame entity — so the observer is named for the
-/// component it watches, not for either of the owner kinds. (Issue
-/// #277 PR 1 round-8 review fixup, threadId
-/// `PRRT_kwDORtae6c5_LE-U`: the previous name
-/// `on_source_frame_entity_despawn` misled future readers into
-/// thinking the observer only handled sources.)
+/// component it watches, not for either of the owner kinds (a
+/// previous name `on_source_frame_entity_despawn` misled readers
+/// into thinking the observer only handled sources).
 ///
 /// `try_despawn` (not `despawn`) because Bevy's `ChildOf` /
 /// `Children` relationship already triggers recursive despawn on the
@@ -801,10 +803,10 @@ pub fn on_retired_pfix_frame_entity_despawn(
 /// retirement helpers in this module.
 ///
 /// Mirrors [`on_source_frame_despawn`] / [`on_body_frame_despawn`]
-/// on the ECS-entity track, closing the issue #277 PR 1 round-2
-/// gap: the dual-write spawn sites in
+/// on the ECS-entity track, providing a parallel cleanup for the
+/// dual-write spawn sites in
 /// [`register_source_frames_system`] and
-/// [`register_body_frames_system`] had no parallel cleanup.
+/// [`register_body_frames_system`].
 pub fn on_frame_entity_despawn(
     trigger: On<Despawn, FrameEntityC>,
     owners: Query<&FrameEntityC>,
@@ -844,13 +846,13 @@ pub fn on_source_pfix_frame_entity_despawn(
 /// sees current body state when evaluating switch distances.
 ///
 /// Runs in `JeodSet::Integration` after `integration_system` and
-/// before `frame_switch_system`. Issue #71 item 2.
+/// before `frame_switch_system`.
 pub fn sync_body_to_frame_system(
     mut frame_tree: ResMut<FrameTreeR>,
     bodies: Query<(
         &TranslationalStateC,
         &BodyFrameIdC,
-        // Issue #277: dual-write target.
+        // Dual-write target.
         Option<&FrameEntityC>,
     )>,
     mut frame_states: Query<&mut FrameTransC>,
@@ -864,17 +866,16 @@ pub fn sync_body_to_frame_system(
         node.state.trans.position = position;
         node.state.trans.velocity = velocity;
 
-        // Issue #277: ECS dual-write to the body's frame entity.
-        // Skip silently if the body was registered before the
-        // issue #277 components landed (no FrameEntityC). When the
-        // component *is* present, the referenced body frame entity
-        // must exist and carry FrameTransC — `register_body_frames_system`
+        // ECS dual-write to the body's frame entity. Skip silently
+        // if the body was registered before the frames-as-entities
+        // components landed (no FrameEntityC). When the component
+        // *is* present, the referenced body frame entity must exist
+        // and carry FrameTransC — `register_body_frames_system`
         // spawns it with `FrameTransC` populated from the body's
         // initial state, and the despawn observers tear it down in
-        // lockstep with the body. Round-6 review fixup: fail loud if
-        // `FrameEntityC` points at a stale / missing entity instead
-        // of silently leaving the ECS half of the dual-write out of
-        // sync with the arena.
+        // lockstep with the body. Fail loud if `FrameEntityC` points
+        // at a stale / missing entity instead of silently leaving
+        // the ECS half of the dual-write out of sync with the arena.
         if let Some(fe) = frame_entity {
             let mut frame_trans = frame_states.get_mut(fe.0).unwrap_or_else(|err| {
                 panic!(
@@ -904,15 +905,15 @@ pub fn sync_body_to_frame_system(
 /// source becomes non-differential.
 ///
 /// Runs in `JeodSet::Integration` after [`sync_body_to_frame_system`].
-/// Bodies without [`FrameSwitchesC`] are skipped. Issue #71 item 3.
+/// Bodies without [`FrameSwitchesC`] are skipped.
 ///
 /// JEOD reference: `dyn_body_frame_switch.cc:173-182`. The Bevy adapter
 /// borrows the same logic via the lifted helper, so behavior is
 /// bit-identical to `jeod_runner::Simulation` for the same scenario.
 ///
-/// Phase C4: `FrameSwitchConfig<Entity>` and `GravityControls<Entity>`
-/// flow into the generic helper directly via a closure-based source
-/// lookup; there is no longer a `usize`-keyed bridge.
+/// `FrameSwitchConfig<Entity>` and `GravityControls<Entity>` flow into
+/// the generic helper directly via a closure-based source lookup;
+/// there is no `usize`-keyed bridge.
 #[allow(clippy::type_complexity)]
 pub fn frame_switch_system(
     mut frame_tree: ResMut<FrameTreeR>,
@@ -1035,7 +1036,7 @@ pub fn planet_fixed_rotation_system(
         Option<&PlanetOmegaC>,
         Option<&mut PlanetAngularVelocityC>,
         Option<&SourcePfixFrameIdC>,
-        // Issue #277: dual-write target for the pfix frame entity.
+        // Dual-write target for the pfix frame entity.
         Option<&PfixFrameEntityC>,
     )>,
     mut frame_rots: Query<&mut FrameRotC>,
@@ -1124,19 +1125,17 @@ pub fn planet_fixed_rotation_system(
         // on the pfix frame node. Mirror that on (a) the `PlanetAngularVelocityC`
         // ECS component and (b) the FrameTreeR pfix node so velocity
         // composition both via the typed component and via the lifted
-        // `compute_relative_state` reads the correct rate. Issue #71 item 1
-        // + Copilot review (PR #260): the pfix-node sync via
-        // `jeod_sim::sync_pfix_rotation` is what closes the frame-tree
-        // half of the gap.
+        // `compute_relative_state` reads the correct rate. The
+        // pfix-node sync via `jeod_sim::sync_pfix_rotation` is what
+        // closes the frame-tree half of the gap.
         if rotated {
             // Falling back to `0.0` for a rotating planet (`RotationModelC`
             // present but `PlanetOmegaC` absent) silently misreports the
-            // pfix angular velocity as zero, which leaves issue #71 item 1
-            // broken for manual-spawn call sites that include
-            // `PlanetFixedRotationC` + `RotationModelC` but not
-            // `PlanetOmegaC`. Map the rotation model to the canonical
-            // `PlanetConfig::omega` when the explicit override is absent
-            // (PR #260 round-2 review fixup).
+            // pfix angular velocity as zero for manual-spawn call sites
+            // that include `PlanetFixedRotationC` + `RotationModelC` but
+            // not `PlanetOmegaC`. Map the rotation model to the
+            // canonical `PlanetConfig::omega` when the explicit
+            // override is absent.
             let default_omega = match rotation_model {
                 jeod_sim::RotationModel::None => 0.0,
                 jeod_sim::RotationModel::EarthRNP => jeod_sim::EARTH.omega,
@@ -1163,17 +1162,17 @@ pub fn planet_fixed_rotation_system(
             if let (Some(matrix), Some(pfix_fid)) = (raw_matrix, pfix_fid) {
                 jeod_sim::sync_pfix_rotation(&mut frame_tree.0, pfix_fid.0, matrix, omega_value);
             }
-            // Issue #277: ECS dual-write to the pfix frame entity.
-            // Same data, different storage — keeps `RelativeFrameState`
+            // ECS dual-write to the pfix frame entity. Same data,
+            // different storage — keeps `RelativeFrameState`
             // bit-identical with the arena via `compute_relative_state`.
-            // Round-6 review fixup: when `PfixFrameEntityC` is present
-            // the referenced entity must be alive with FrameRotC /
-            // FrameAngVelC intact (spawned by `register_pfix_frames_system`,
-            // torn down in lockstep with the marker by the despawn
-            // observers and the rotation-toggle retirement path). A
-            // stale handle here would silently leave the ECS pfix
-            // rotation/omega out of sync with the arena, breaking the
-            // dual-write invariant.
+            // When `PfixFrameEntityC` is present the referenced entity
+            // must be alive with FrameRotC / FrameAngVelC intact
+            // (spawned by `register_pfix_frames_system`, torn down in
+            // lockstep with the marker by the despawn observers and
+            // the rotation-toggle retirement path). A stale handle
+            // here would silently leave the ECS pfix rotation/omega
+            // out of sync with the arena, breaking the dual-write
+            // invariant.
             if let (Some(matrix), Some(pfix_fe)) = (raw_matrix, pfix_frame_entity) {
                 let mut frame_rot = frame_rots.get_mut(pfix_fe.0).unwrap_or_else(|err| {
                     panic!(
@@ -1217,7 +1216,7 @@ pub fn planet_fixed_rotation_system(
             // last-tick `(matrix, omega)` on the FrameTreeR pfix node —
             // so frame-tree queries would still report a rotating
             // planet-fixed frame even though the source is configured
-            // as non-rotating. PR #260 round-9 review fixup.
+            // as non-rotating.
             // allowed: explicit identity clear when rotation model toggles to None;
             // the RootInertial → PlanetFixed<SelfPlanet> phantoms are correct by
             // construction (same shape as the rotating-branch from_matrix sites).
@@ -1238,10 +1237,9 @@ pub fn planet_fixed_rotation_system(
                     glam::DMat3::IDENTITY,
                     0.0,
                 );
-                // Issue #277: ECS dual-write — clear the pfix frame
-                // entity's state to identity so any
-                // `RelativeFrameState` reader sees the same identity
-                // clear as the arena. Round-6 review fixup: when
+                // ECS dual-write — clear the pfix frame entity's state
+                // to identity so any `RelativeFrameState` reader sees
+                // the same identity clear as the arena. When
                 // `PfixFrameEntityC` is present, the referenced entity
                 // must be alive with FrameRotC / FrameAngVelC intact;
                 // silently skipping the clear would leave the ECS
@@ -1309,15 +1307,16 @@ pub fn planet_fixed_rotation_system(
                     .remove::<SourcePfixFrameIdC>()
                     .insert(RetiredPfixFrameIdC(pfix_fid.0));
 
-                // Round-1 review fixup: mirror the arena retirement on
-                // the ECS-entity side. Without this, the source kept a
-                // stale `PfixFrameEntityC` handle pointing at an
+                // Mirror the arena retirement on the ECS-entity side.
+                // Without this, the source would keep a stale
+                // `PfixFrameEntityC` handle pointing at an
                 // identity-cleared but otherwise live entity *and*
                 // `register_pfix_frames_system` (which filters by
-                // `Without<SourcePfixFrameIdC>`) spawned a fresh pfix
-                // frame entity on every retoggle — leaking one orphan
-                // ECS entity per `None → rotating → None …` cycle in
-                // addition to the (already-bounded) arena leak.
+                // `Without<SourcePfixFrameIdC>`) would spawn a fresh
+                // pfix frame entity on every retoggle — leaking one
+                // orphan ECS entity per `None → rotating → None …`
+                // cycle in addition to the (already-bounded) arena
+                // leak.
                 //
                 // Retirement semantics for the entity parallel the
                 // arena: the orphan entity stays alive (its
@@ -1476,8 +1475,7 @@ pub fn ephemeris_update_system(
 /// Placed before `JeodSet::EphemerisUpdate` so gravity and force collection
 /// see current mass properties.
 ///
-/// **Change-detection contract** (PR #283 review thread
-/// `PRRT_kwDORtae6c5_K0dm`): the dirty-flag check below is read through
+/// **Change-detection contract**: the dirty-flag check below is read through
 /// `Mut::deref` (immutable access), and `recompute_derived()` is only
 /// invoked — triggering `DerefMut` and marking the component as
 /// `Changed` — when the entity actually needs updating. Without this
@@ -1514,19 +1512,26 @@ pub fn mass_update_system(mut query: Query<&mut MassPropertiesC>) {
 // JEOD_INV: DB.29 — torques collected in structural frame, rotated to body at root
 #[allow(clippy::type_complexity)]
 pub fn force_collection_system(
-    mut query: Query<(
-        &mut TotalForceC,
-        Option<&mut FrameDerivativesC>,
-        Option<&GravityAccelerationC>,
-        Option<&RotationalStateC>,
-        Option<&MassPropertiesC>,
-        Option<&AerodynamicForceC>,
-        Option<&RadiationForceC>,
-        Option<&GravityTorqueC>,
-        Option<&StructuralTransformC>,
-        Option<&ExternalForceC>,
-        Option<&ExternalTorqueC>,
-    )>,
+    // JEOD_INV: DB.21 — detached subtrees coast ballistically; their
+    // `TotalForceC` / `FrameDerivativesC` are no longer consumed by
+    // any integrator. Skip them so downstream consumers don't see
+    // stale aggregated forces on bodies that aren't reacting to them.
+    mut query: Query<
+        (
+            &mut TotalForceC,
+            Option<&mut FrameDerivativesC>,
+            Option<&GravityAccelerationC>,
+            Option<&RotationalStateC>,
+            Option<&MassPropertiesC>,
+            Option<&AerodynamicForceC>,
+            Option<&RadiationForceC>,
+            Option<&GravityTorqueC>,
+            Option<&StructuralTransformC>,
+            Option<&ExternalForceC>,
+            Option<&ExternalTorqueC>,
+        ),
+        Without<crate::DetachedSubtreeStateC>,
+    >,
 ) {
     for (
         mut total,
@@ -1568,8 +1573,9 @@ pub fn force_collection_system(
         // RotationalStateC and MassPropertiesC now wrap typed siblings;
         // convert to untyped at the kernel boundary. (The kernel
         // signature still takes the untyped form. Migrating the kernel
-        // signature itself is out of scope for #172 H1; the win here
-        // is at the ECS surface where mission code interacts.)
+        // signature itself is out of scope for the ECS-surface typing;
+        // the win here is at the ECS surface where mission code
+        // interacts.)
         let rot_untyped = rot_state.map(|r| r.0.to_untyped());
         let mass_untyped = mass.map(|m| m.0.to_untyped());
 
@@ -1652,23 +1658,39 @@ pub fn force_collection_system(
 pub fn integration_system(
     frame_tree: Res<FrameTreeR>,
     root: Res<crate::RootFrameIdR>,
-    mut bodies: Query<(
-        Entity,
-        &DynamicsConfigC,
-        &mut TranslationalStateC,
-        Option<&mut RotationalStateC>,
-        Option<&MassPropertiesC>,
-        &GravityControlsC,
-        &mut TotalForceC,
-        Option<&IntegratorTypeC>,
-        Option<&mut GaussJacksonStateC>,
-        Option<&mut Abm4StateC>,
-        Option<&mut FlatPlateConfigC>,
-        Option<&StructuralTransformC>,
-        Option<&mut RadiationForceC>,
-        Option<&mut FrameDerivativesC>,
-        Option<&IntegFrameIdC>,
-    )>,
+    // Filter excludes both kinematic-chain children (composite-rigid-body
+    // model integrates only the chain root; the `wrench_aggregation_system`
+    // tags every non-root `MassChildOf` member with `KinematicChildC`, and
+    // zeroing `TotalForceC` alone would not stop the per-RK-stage gravity
+    // recompute from drifting them) and detached subtrees (advanced
+    // ballistically by `step_detached_system`; integrating them here would
+    // double-step the same entity per tick, mirroring the runner split
+    // between `Simulation::bodies` and `Simulation::detached_subtrees`).
+    // JEOD_INV: DB.17 — kinematic children skip integration.
+    // JEOD_INV: DB.21 — detached subtrees skip integration.
+    mut bodies: Query<
+        (
+            Entity,
+            &DynamicsConfigC,
+            &mut TranslationalStateC,
+            Option<&mut RotationalStateC>,
+            Option<&MassPropertiesC>,
+            &GravityControlsC,
+            &mut TotalForceC,
+            Option<&IntegratorTypeC>,
+            Option<&mut GaussJacksonStateC>,
+            Option<&mut Abm4StateC>,
+            Option<&mut FlatPlateConfigC>,
+            Option<&StructuralTransformC>,
+            Option<&mut RadiationForceC>,
+            Option<&mut FrameDerivativesC>,
+            Option<&IntegFrameIdC>,
+        ),
+        (
+            Without<KinematicChildC>,
+            Without<crate::DetachedSubtreeStateC>,
+        ),
+    >,
     sources: Query<
         (
             &GravitySourceC,
@@ -1679,7 +1701,7 @@ pub fn integration_system(
             Option<&TidalConfigC>,
             // Fallback velocity source for ephemeris-driven sources (Sun /
             // Moon via SunBundle / MoonBundle) that don't carry
-            // SourceInertialVelocityC. PR #260 round-3 review.
+            // SourceInertialVelocityC.
             Option<&TranslationalStateC>,
         ),
         // Static disjointness vs. the `bodies` query's `&mut
@@ -1715,7 +1737,7 @@ pub fn integration_system(
     // similarly interpolated when the integ frame moves, so the Newtonian
     // gravity field stays consistent across stages. PPN (relativistic)
     // corrections use step-start source state — runner does the same
-    // (`step/integrate.rs:199-202`). Issue #71 item 4 + PR #260 review.
+    // (`step/integrate.rs:199-202`).
     let eval_gravity = |entity: Entity,
                         controls: &GravityControlsC,
                         pos: DVec3,
@@ -1740,18 +1762,18 @@ pub fn integration_system(
         // for the thermal-SRP path) accept a `gravity_fn` closure
         // that receives raw `DVec3` per-stage state. These lifts are
         // inside `jeod_sim` boundary territory, not at the Bevy ECS
-        // surface that #172 H1 was specifically about.
+        // surface where the typed quantities live.
         let typed_abs_pos = Position::<RootInertial>::from_raw_si(pos + stage_origin_pos); // allowed: integrator-kernel boundary
         let typed_abs_vel = Velocity::<RootInertial>::from_raw_si(vel + integ_origin_vel); // allowed: integrator-kernel boundary
         let typed_origin = Position::<RootInertial>::from_raw_si(stage_origin_pos); // allowed: integrator-kernel boundary
 
         // Helper: resolve a source's effective velocity, falling back to
         // `TranslationalStateC.velocity` when the explicit
-        // `SourceInertialVelocityC` component is absent. PR #260 round-3
-        // fix — without the fallback, ephemeris-driven Sun/Moon sources
-        // (spawned via SunBundle/MoonBundle, which include
-        // `TranslationalStateC` but not `SourceInertialVelocityC`) get
-        // treated as stationary at every RK sub-stage.
+        // `SourceInertialVelocityC` component is absent. Without the
+        // fallback, ephemeris-driven Sun/Moon sources (spawned via
+        // SunBundle/MoonBundle, which include `TranslationalStateC`
+        // but not `SourceInertialVelocityC`) get treated as stationary
+        // at every RK sub-stage.
         let source_vel =
             |v: Option<&SourceInertialVelocityC>, ts: Option<&TranslationalStateC>| -> DVec3 {
                 v.map(|v| v.0.raw_si())
@@ -1794,8 +1816,6 @@ pub fn integration_system(
         // and velocities — `jeod_runner::run_integration` snapshots both
         // outside the per-stage closure (`step/integrate.rs:199-202`),
         // so per-stage interpolation here would drift from runner.
-        // (Round-2 PR #260 introduced the per-stage interpolation; round
-        // 3 review R1 caught the divergence.)
         let rel = jeod_sim::accumulate_relativistic_corrections_typed(
             typed_abs_pos,
             typed_abs_vel,
@@ -1842,7 +1862,7 @@ pub fn integration_system(
         // Per-body integration-frame origin (relative to root). Computed
         // once per step — the integ frame doesn't move during a single
         // integration step, so the multi-stage RK4 sub-evaluations
-        // reuse the same value. Issue #71 item 4.
+        // reuse the same value.
         let (integ_origin_pos, integ_origin_vel) = match integ_frame {
             Some(c) if c.0 != root.0 => jeod_sim::frame_origin(&frame_tree.0, root.0, c.0),
             _ => (DVec3::ZERO, DVec3::ZERO),
@@ -1927,7 +1947,7 @@ pub fn integration_system(
                     // intermediate `DVec3` in the body's *integration*
                     // frame, which equals root inertial only when
                     // `IntegFrameIdC == root`. For `IntegFrameIdC != root`
-                    // (issue #71 item 4) we shift via the per-stage origin
+                    // we shift via the per-stage origin
                     // before differencing against `srp_inputs.sun_position`
                     // (which is typed `Position<RootInertial>`). Mirrors
                     // `jeod_runner::run_integration`'s coupled SRP path
@@ -2106,19 +2126,30 @@ pub fn integration_system(
 /// gravity field; the same origin is passed to
 /// [`jeod_sim::accumulate_gravity_typed`] so the differential gravity
 /// correction subtracts the integ frame's own acceleration toward each
-/// source. Issue #71 item 4. Bodies without [`IntegFrameIdC`] continue
-/// to use the root inertial frame as before.
+/// source. Bodies without [`IntegFrameIdC`] continue to use the root
+/// inertial frame as before.
 #[allow(clippy::type_complexity)]
 pub fn gravity_computation_system(
     frame_tree: Res<FrameTreeR>,
     root: Res<crate::RootFrameIdR>,
-    mut bodies: Query<(
-        Entity,
-        &TranslationalStateC,
-        &GravityControlsC,
-        &mut GravityAccelerationC,
-        Option<&IntegFrameIdC>,
-    )>,
+    // JEOD_INV: DB.21 — only attached bodies participate in gravity /
+    // force-collection / integration. Detached subtrees coast
+    // ballistically (no force, no torque) via `step_detached_system`,
+    // so populating `GravityAccelerationC` on them is wasted work and
+    // would expose stale values to diagnostics / logging consumers.
+    // Mirrors the runner's split between `Simulation::bodies` and
+    // `Simulation::detached_subtrees` — gravity is only evaluated on
+    // the integrated set.
+    mut bodies: Query<
+        (
+            Entity,
+            &TranslationalStateC,
+            &GravityControlsC,
+            &mut GravityAccelerationC,
+            Option<&IntegFrameIdC>,
+        ),
+        Without<crate::DetachedSubtreeStateC>,
+    >,
     sources: Query<(
         &GravitySourceC,
         Option<&PlanetFixedRotationC>,
@@ -2127,24 +2158,22 @@ pub fn gravity_computation_system(
         Option<&TidalDeltaC20C>,
         Option<&TidalConfigC>,
         // Fallback velocity source for ephemeris-driven sources that
-        // don't carry SourceInertialVelocityC. PR #260 round-3.
+        // don't carry SourceInertialVelocityC.
         Option<&TranslationalStateC>,
     )>,
 ) {
     for (entity, state, controls, mut accel, integ_frame) in &mut bodies {
         // TranslationalStateC stores typed `Position<IntegrationFrame>` /
-        // `Velocity<IntegrationFrame>` (issue #71 item 4 + #255). For
-        // root-integrated bodies the integ frame numerically equals
-        // root inertial, so the raw values match what gravity wants.
-        // For non-root bodies we shift to absolute root-inertial
-        // coordinates below via `IntegFrameIdC` + `frame_origin_typed`.
-        // (Pre-#172-H1 the system extracted raw DVec3 here and called
-        // `from_raw_si` to mint typed values; that bypass is gone.)
+        // `Velocity<IntegrationFrame>`. For root-integrated bodies the
+        // integ frame numerically equals root inertial, so the raw
+        // values match what gravity wants. For non-root bodies we
+        // shift to absolute root-inertial coordinates below via
+        // `IntegFrameIdC` + `frame_origin_typed`.
         let body_pos = state.position;
         let body_vel = state.velocity;
 
         // Integration-frame origin (relative to root). Zero for
-        // root-integrated bodies. Issue #71 item 4 + Phase C5: typed
+        // root-integrated bodies. Typed
         // `frame_origin_typed::<RootInertial>` returns `Position<RootInertial>`
         // directly, so no `from_raw_si` lift is needed at the boundary.
         let (integ_origin, integ_origin_vel) = match integ_frame {
@@ -2205,7 +2234,7 @@ pub fn gravity_computation_system(
                     .map(|(s, _, p, v, _, _, ts)| {
                         // Fall back to TranslationalStateC.velocity when
                         // SourceInertialVelocityC is absent — same precedence
-                        // as `sync_source_to_frame_system`. PR #260 round-3.
+                        // as `sync_source_to_frame_system`.
                         let velocity = v
                             .map(|v| v.0.raw_si())
                             .or_else(|| ts.map(|t| t.0.velocity.raw_si()))
@@ -2286,14 +2315,21 @@ pub fn atmosphere_update_system(
 // JEOD_INV: IN.03 — AerodynamicDrag.active gates computation (structural: no DragConfigC -> no drag)
 #[allow(clippy::type_complexity)]
 pub fn aero_drag_system(
-    mut query: Query<(
-        &DragConfigC,
-        &AtmosphericStateC,
-        &TranslationalStateC,
-        &RotationalStateC,
-        Option<&StructuralTransformC>,
-        &mut AerodynamicForceC,
-    )>,
+    // JEOD_INV: DB.21 — detached subtrees coast ballistically; skip
+    // drag so `AerodynamicForceC` doesn't hold stale values that no
+    // integrator consumes (the runner's split between `bodies` and
+    // `detached_subtrees` only evaluates drag on the integrated set).
+    mut query: Query<
+        (
+            &DragConfigC,
+            &AtmosphericStateC,
+            &TranslationalStateC,
+            &RotationalStateC,
+            Option<&StructuralTransformC>,
+            &mut AerodynamicForceC,
+        ),
+        Without<crate::DetachedSubtreeStateC>,
+    >,
 ) {
     for (drag_config, atmos, state, rot, struct_xform, mut aero_force) in &mut query {
         let t_struct_body = struct_xform.map_or(glam::DMat3::IDENTITY, |s| *s.0.matrix_ref());
@@ -2302,8 +2338,8 @@ pub fn aero_drag_system(
         // the system reads them directly. The result carries
         // `StructuralFrame<SelfRef>` phantoms, which the structural-frame
         // `AerodynamicForceC` unwraps via `.raw_si()` for storage (the
-        // structural-frame Component still uses raw DVec3; that's the
-        // remaining boundary inside the H1 migration).
+        // structural-frame Component still uses raw DVec3; that's a
+        // remaining typed-storage boundary).
         let rot_untyped = rot.0.to_untyped();
         // Bevy adapter stores body velocity as `Velocity<RootInertial>`
         // (current sims have root=Earth.inertial). Drag's typed sibling
@@ -2311,7 +2347,7 @@ pub fn aero_drag_system(
         // bit-identical and asserts the Earth-orbit assumption.
         use jeod_sim::{Earth, PlanetInertial, Velocity};
         // allowed: RootInertial → PlanetInertial<Earth> relabel for the
-        // typed sibling; bit-identical (no arithmetic). Documented at #255.
+        // typed sibling; bit-identical (no arithmetic).
         let drag_velocity = Velocity::<PlanetInertial<Earth>>::from_raw_si(state.velocity.raw_si());
         let result = jeod_sim::compute_drag_typed::<Earth, SelfRef>(
             &drag_config.0,
@@ -2332,12 +2368,18 @@ pub fn aero_drag_system(
 // JEOD_INV: IN.01 — GravityTorque.subject_body required (structural: query requires all components)
 // JEOD_INV: IN.02 — GravityTorque.active gates computation (structural: no GravityTorqueC -> no torque)
 pub fn gravity_torque_system(
-    mut query: Query<(
-        &GravityAccelerationC,
-        &RotationalStateC,
-        &MassPropertiesC,
-        &mut GravityTorqueC,
-    )>,
+    // JEOD_INV: DB.21 — detached subtrees coast ballistically; their
+    // gravity gradient torque is no longer consumed by any integrator
+    // and would otherwise hold stale values. Skip them.
+    mut query: Query<
+        (
+            &GravityAccelerationC,
+            &RotationalStateC,
+            &MassPropertiesC,
+            &mut GravityTorqueC,
+        ),
+        Without<crate::DetachedSubtreeStateC>,
+    >,
 ) {
     for (grav, rot, mass, mut torque) in &mut query {
         // MassPropertiesC stores `InertiaTensor<BodyFrame<SelfRef>>`
@@ -2397,7 +2439,7 @@ pub fn orbital_elements_system(
         use jeod_sim::{Earth, PlanetInertial, Position, Velocity};
         let mu_typed = jeod_sim::F64Ext::m3_per_s2(source.mu);
         // allowed: RootInertial → PlanetInertial<Earth> relabel for the
-        // typed sibling; bit-identical (no arithmetic). Documented at #255.
+        // typed sibling; bit-identical (no arithmetic).
         let pos = Position::<PlanetInertial<Earth>>::from_raw_si(state.position.raw_si());
         // allowed: same relabel as `pos` above.
         let vel = Velocity::<PlanetInertial<Earth>>::from_raw_si(state.velocity.raw_si());
@@ -2445,7 +2487,7 @@ pub fn lvlh_system(mut query: Query<(&TranslationalStateC, &mut LvlhFrameC)>) {
         // assumption that root coincides with Earth.inertial here.
         use jeod_sim::{Earth, PlanetInertial};
         // allowed: RootInertial → PlanetInertial<Earth> relabel for the
-        // typed sibling; bit-identical (no arithmetic). Documented at #255.
+        // typed sibling; bit-identical (no arithmetic).
         let pos = jeod_sim::Position::<PlanetInertial<Earth>>::from_raw_si(state.position.raw_si());
         // allowed: same relabel as `pos` above.
         let vel = jeod_sim::Velocity::<PlanetInertial<Earth>>::from_raw_si(state.velocity.raw_si());
@@ -2471,7 +2513,7 @@ pub fn geodetic_system(
         use jeod_sim::F64Ext;
         use jeod_sim::{Earth, PlanetInertial};
         // allowed: RootInertial → PlanetInertial<Earth> relabel for the
-        // typed sibling; bit-identical (no arithmetic). Documented at #255.
+        // typed sibling; bit-identical (no arithmetic).
         let pos = jeod_sim::Position::<PlanetInertial<Earth>>::from_raw_si(state.position.raw_si());
         geodetic.0 = jeod_sim::compute_body_geodetic_typed::<Earth>(
             pos,
@@ -2594,9 +2636,32 @@ pub fn earth_lighting_system(
 /// - Temperature integration (forward Euler)
 /// - Force is rotated from structural to inertial by this system before writing `RadiationForceC`
 ///
+/// Kinematic children of a `MassChildOf` chain (entities carrying
+/// [`KinematicChildC`]) are excluded from this system. Until the
+/// kinematic-propagation system (design-doc Section 15.3
+/// `propagate_state_from_root_system`) lands, a kinematic child's
+/// own `TranslationalStateC` / `RotationalStateC` are not advanced
+/// in lock-step with the chain root — they stay frozen at whatever
+/// the world had when the chain was assembled. Reading those stale
+/// states to compute solar pressure here would silently produce SRP
+/// for a position the body is no longer at. Excluding kinematic
+/// children entirely (rather than feeding them stale state) is the
+/// fail-loud-but-conservative choice: kinematic-child appendages get
+/// no SRP this PR, and the follow-up that introduces propagated
+/// child state will route SRP through the live composite-derived
+/// values.
+///
 /// Placed in `JeodSet::Interaction`.
 #[allow(clippy::type_complexity)]
 pub fn flat_plate_srp_system(
+    // Filter excludes both kinematic-chain children (their
+    // `TranslationalStateC` / `RotationalStateC` stay frozen until
+    // the kinematic-propagation system lands; computing SRP from
+    // stale state would produce solar pressure at the wrong
+    // location) and detached subtrees (they coast ballistically;
+    // `RadiationForceC` and the per-stage thermal cache stay
+    // zeroed because no integrator consumes their forces).
+    // JEOD_INV: DB.21 — detached subtrees skip SRP.
     mut query: Query<
         (
             &mut FlatPlateConfigC,
@@ -2606,12 +2671,43 @@ pub fn flat_plate_srp_system(
             Option<&StructuralTransformC>,
             &mut RadiationForceC,
         ),
-        (Without<SunMarker>, Without<CannonballSrpC>),
+        (
+            Without<SunMarker>,
+            Without<CannonballSrpC>,
+            Without<crate::DetachedSubtreeStateC>,
+            Without<KinematicChildC>,
+        ),
+    >,
+    // Cleanup query for kinematic children: drop any prior-tick
+    // `RadiationForceC` / `stage_inputs` left over from when the
+    // entity was last in the main query (i.e. before it became a
+    // chain member). Without this clear, `force_collection_system`
+    // would still accumulate the stale SRP into the child's
+    // `TotalForceC`, and `wrench_aggregation_system` would shift
+    // that stale wrench up to the parent — silently producing SRP
+    // for a position the body is no longer at.
+    mut kinematic_cleanup: Query<
+        (&mut FlatPlateConfigC, &mut RadiationForceC),
+        (
+            With<KinematicChildC>,
+            Without<SunMarker>,
+            Without<CannonballSrpC>,
+        ),
     >,
     sun_query: Query<&TranslationalStateC, With<SunMarker>>,
     shadow_bodies: Query<(&TranslationalStateC, &ShadowBodyC), Without<SunMarker>>,
     time: Res<Time<Fixed>>,
 ) {
+    // Drop stale state for any kinematic-child SRP body. Runs first
+    // so a transition from non-kinematic → kinematic this tick
+    // never carries a leftover SRP force into the wrench-aggregation
+    // walk.
+    for (mut flat_config, mut srp_force) in &mut kinematic_cleanup {
+        flat_config.stage_inputs = None;
+        srp_force.force = DVec3::ZERO;
+        srp_force.torque = DVec3::ZERO;
+    }
+
     let sun_state = match sun_query.single() {
         Ok(s) => Some(s),
         Err(bevy::ecs::query::QuerySingleError::NoEntities(_)) => None,
@@ -2727,9 +2823,16 @@ pub fn flat_plate_srp_system(
 /// Placed in `JeodSet::Interaction`.
 #[allow(clippy::type_complexity)]
 pub fn cannonball_srp_system(
+    // JEOD_INV: DB.21 — detached subtrees coast ballistically; skip
+    // cannonball SRP so `RadiationForceC` doesn't hold stale values
+    // that no integrator consumes.
     mut query: Query<
         (&CannonballSrpC, &TranslationalStateC, &mut RadiationForceC),
-        (Without<SunMarker>, Without<FlatPlateConfigC>),
+        (
+            Without<SunMarker>,
+            Without<FlatPlateConfigC>,
+            Without<crate::DetachedSubtreeStateC>,
+        ),
     >,
     sun_query: Query<&TranslationalStateC, With<SunMarker>>,
     shadow_bodies: Query<(&TranslationalStateC, &ShadowBodyC), Without<SunMarker>>,
@@ -2768,6 +2871,40 @@ pub fn cannonball_srp_system(
 /// reflected in the current step's interaction forces, force collection,
 /// and integration.
 ///
+/// On `AttachEvent` this system:
+///
+/// 1. snapshots both bodies' pre-attach composite-body inertial state
+///    (`TranslationalStateC` + `RotationalStateC`) and pre-attach
+///    composite mass properties,
+/// 2. mutates the [`crate::MassTreeR`] arena (which recomputes composite
+///    mass properties for every affected node),
+/// 3. runs [`jeod_sim::stage_attach_combine`] (the
+///    momentum-conservation port of JEOD's `combine_states_at_attach`,
+///    `models/dynamics/dyn_body/src/dyn_body_attach.cc`) to derive the
+///    merged composite-body inertial state — preserves linear momentum
+///    about the integration-frame origin and angular momentum about
+///    the new combined CoM,
+/// 4. writes the merged state back into the parent entity's
+///    [`crate::TranslationalStateC`] / [`crate::RotationalStateC`],
+/// 5. removes [`crate::DetachedSubtreeStateC`] from the child entity if
+///    it was previously detached (the captured ballistic state is now
+///    consumed by the combine).
+///
+/// On `DetachEvent` this system:
+///
+/// 1. captures the about-to-be-detached subtree's instantaneous
+///    composite-body inertial state via
+///    [`jeod_sim::stage_detach_capture`],
+/// 2. mutates the arena (which recomputes the former parent's composite
+///    mass to reflect the lost subtree),
+/// 3. inserts [`crate::DetachedSubtreeStateC`] on the detached entity
+///    so [`step_detached_system`] can advance the subtree ballistically
+///    each tick.
+///
+/// Both branches end with the IG.37 mark + reset for any body whose
+/// composite mass changed — multi-step integrators (GJ, ABM4) must
+/// drop their predictor history on topology change.
+///
 /// Note: [`crate::MassTreeR`] must be present as a resource for attach/detach
 /// messages to have any effect.
 ///
@@ -2792,11 +2929,20 @@ pub fn cannonball_srp_system(
 /// app.add_message::<DetachEvent>();
 /// app.add_systems(Update, detach_booster);
 /// ```
+#[allow(clippy::type_complexity)]
 pub fn staging_system(
+    mut commands: Commands,
     tree: Option<ResMut<crate::MassTreeR>>,
     mut attach_events: bevy::ecs::message::MessageReader<crate::AttachEvent>,
     mut detach_events: bevy::ecs::message::MessageReader<crate::DetachEvent>,
-    mut bodies: Query<(&crate::MassBodyIdC, &mut MassPropertiesC)>,
+    mut bodies: Query<(
+        Entity,
+        &crate::MassBodyIdC,
+        &mut MassPropertiesC,
+        Option<&mut TranslationalStateC>,
+        Option<&mut RotationalStateC>,
+    )>,
+    detached_q: Query<Entity, With<crate::DetachedSubtreeStateC>>,
     mut integrators: Query<(
         &crate::MassBodyIdC,
         Option<&mut GaussJacksonStateC>,
@@ -2824,29 +2970,107 @@ pub fn staging_system(
     // silently propagating stale predictor history.
     let mut affected_ids: Vec<jeod_sim::MassBodyId> = Vec::new();
 
+    // Per-attach work item: captures the pre-attach snapshot needed by
+    // `combine_states_at_attach` plus the post-mutation parent entity
+    // we'll write the merged composite-body state into. Built before
+    // the topology mutation so the snapshot is independent of the
+    // tree's post-attach state.
+    struct AttachWork {
+        parent_entity: Entity,
+        child_entity: Entity,
+        parent_id: jeod_sim::MassBodyId,
+        // Pre-attach snapshot for the kernel.
+        parent_position: glam::DVec3,
+        parent_velocity: glam::DVec3,
+        parent_quaternion: jeod_sim::JeodQuat,
+        parent_ang_vel_body: glam::DVec3,
+        parent_mass: jeod_sim::MassProperties,
+        orig_parent_cm_struct: glam::DVec3,
+        parent_t_inertial_struct: glam::DMat3,
+        child_position: glam::DVec3,
+        child_velocity: glam::DVec3,
+        child_quaternion: jeod_sim::JeodQuat,
+        child_ang_vel_body: glam::DVec3,
+        child_mass: jeod_sim::MassProperties,
+        // Was the child carrying a `DetachedSubtreeStateC` immediately
+        // before this attach? If so the entry is consumed and removed.
+        child_was_detached: bool,
+        // Was the parent carrying a `DetachedSubtreeStateC` immediately
+        // before this attach? If so the parent is still a free-flying
+        // tree root post-attach (no integrated ancestor); its tracked
+        // ballistic state must be replaced with the merged composite-
+        // body state so `step_detached_system` continues advancing the
+        // correct value next tick (rather than overwriting the merged
+        // state with the stale pre-attach `DetachedSubtreeStateC`).
+        parent_was_detached: bool,
+    }
+
+    let mut attach_work: Vec<AttachWork> = Vec::new();
+    // Per-detach work: captured pre-detach composite-body state to be
+    // attached to the detached entity as `DetachedSubtreeStateC` once
+    // the topology mutation is done.
+    let mut detach_work: Vec<(Entity, jeod_sim::DetachedSubtreeState)> = Vec::new();
+
     for evt in attach_events.read() {
-        let child_id = bodies
-            .get(evt.child)
-            .unwrap_or_else(|_| {
+        // Look up child + parent. Fail-loud per CLAUDE.md if either
+        // entity is not a mass-tree body.
+        let (_, child_body_id, child_mass_c, child_trans, child_rot) =
+            bodies.get(evt.child).unwrap_or_else(|_| {
                 panic!(
                     "AttachEvent.child = {:?} is not a mass body — entity is missing MassBodyIdC \
                  and/or MassPropertiesC. Spawn the body via the mass-tree API before attaching.",
                     evt.child
                 )
+            });
+        let child_id = child_body_id.0;
+        let child_mass: jeod_sim::MassProperties = child_mass_c.0.to_untyped();
+        let (child_position, child_velocity) = child_trans
+            .as_ref()
+            .map(|t| (t.0.position.raw_si(), t.0.velocity.raw_si()))
+            .unwrap_or((glam::DVec3::ZERO, glam::DVec3::ZERO));
+        let (child_quaternion, child_ang_vel_body) = child_rot
+            .as_ref()
+            .map(|r| {
+                let untyped = r.0.to_untyped();
+                (untyped.quaternion, untyped.ang_vel_body)
             })
-            .0
-             .0;
-        let parent_id = bodies
-            .get(evt.parent)
-            .unwrap_or_else(|_| {
+            .unwrap_or((jeod_sim::JeodQuat::identity(), glam::DVec3::ZERO));
+
+        let (_, parent_body_id, parent_mass_c, parent_trans, parent_rot) =
+            bodies.get(evt.parent).unwrap_or_else(|_| {
                 panic!(
                     "AttachEvent.parent = {:?} is not a mass body — entity is missing MassBodyIdC \
                  and/or MassPropertiesC. Spawn the parent via the mass-tree API before attaching.",
                     evt.parent
                 )
+            });
+        let parent_id = parent_body_id.0;
+        let parent_mass: jeod_sim::MassProperties = parent_mass_c.0.to_untyped();
+        let (parent_position, parent_velocity) = parent_trans
+            .as_ref()
+            .map(|t| (t.0.position.raw_si(), t.0.velocity.raw_si()))
+            .unwrap_or((glam::DVec3::ZERO, glam::DVec3::ZERO));
+        let (parent_quaternion, parent_ang_vel_body) = parent_rot
+            .as_ref()
+            .map(|r| {
+                let untyped = r.0.to_untyped();
+                (untyped.quaternion, untyped.ang_vel_body)
             })
-            .0
-             .0;
+            .unwrap_or((jeod_sim::JeodQuat::identity(), glam::DVec3::ZERO));
+
+        // T_inertial_to_struct = T_struct_to_body^T · T_inertial_to_body
+        // Per JEOD `dyn_body_collect.cc:219-221` and
+        // `jeod_dynamics::compute_t_inertial_struct` — the kernel needs
+        // this to rotate the structure-frame CoM-shift vector
+        // (`combined.position - orig_parent_cm_struct`) into the
+        // inertial frame for the parent's post-attach position.
+        let parent_t_struct_to_body = parent_mass.t_parent_this;
+        let parent_t_inertial_to_body = parent_quaternion.left_quat_to_transformation();
+        let parent_t_inertial_struct = jeod_sim::compute_t_inertial_struct(
+            &parent_t_struct_to_body,
+            &parent_t_inertial_to_body,
+        );
+
         // The bodies whose composite mass changes are the child plus
         // every ancestor of the new parent in the pre-attach tree
         // (`MassTree::recompute_composites` walks the entire forest
@@ -2854,32 +3078,228 @@ pub fn staging_system(
         // Capture the chain BEFORE mutating the tree.
         affected_ids.push(child_id);
         affected_ids.extend(tree.ancestors_inclusive(parent_id));
+
+        let child_was_detached = detached_q.contains(evt.child);
+        let parent_was_detached = detached_q.contains(evt.parent);
+
+        attach_work.push(AttachWork {
+            parent_entity: evt.parent,
+            child_entity: evt.child,
+            parent_id,
+            parent_position,
+            parent_velocity,
+            parent_quaternion,
+            parent_ang_vel_body,
+            parent_mass,
+            orig_parent_cm_struct: parent_mass.position,
+            parent_t_inertial_struct,
+            child_position,
+            child_velocity,
+            child_quaternion,
+            child_ang_vel_body,
+            child_mass,
+            child_was_detached,
+            parent_was_detached,
+        });
+
         tree.attach(child_id, parent_id, evt.offset, evt.t_parent_child);
     }
 
+    // Per-detach post-mutation work: tree_root entity whose
+    // `TranslationalStateC` / `RotationalStateC` (and possibly
+    // `DetachedSubtreeStateC`) must be shifted by the inertial-frame
+    // composite-CoM delta after the topology change, since the parent's
+    // composite-CoM moves within its own struct frame when the subtree
+    // leaves. Mirrors the runner's `detach_subtree` parent-side update.
+    struct ParentShift {
+        tree_root_entity: Entity,
+        parent_pre_position: glam::DVec3,
+        parent_pre_velocity: glam::DVec3,
+        parent_pre_quat: jeod_sim::JeodQuat,
+        parent_pre_ang_vel_body: glam::DVec3,
+        parent_pre_composite_props: jeod_sim::MassProperties,
+        parent_was_detached: bool,
+    }
+    let mut parent_shifts: Vec<(jeod_sim::MassBodyId, ParentShift)> = Vec::new();
+
+    // Build a one-shot id → entity map by scanning the bodies query.
+    // The detach handler needs to look up the tree root's entity from
+    // its `MassBodyId` so it can read the parent's composite-body
+    // inertial state — runner's `detach_subtree` indexes
+    // `self.bodies` directly; ECS-side we reconstruct the mapping.
+    let id_to_entity: std::collections::HashMap<jeod_sim::MassBodyId, Entity> = bodies
+        .iter()
+        .map(|(e, body_id, _, _, _)| (body_id.0, e))
+        .collect();
+
     for evt in detach_events.read() {
-        let child_id = bodies
-            .get(evt.child)
-            .unwrap_or_else(|_| {
-                panic!(
-                    "DetachEvent.child = {:?} is not a mass body — entity is missing MassBodyIdC \
+        let (_, child_body_id, _, _, _) = bodies.get(evt.child).unwrap_or_else(|_| {
+            panic!(
+                "DetachEvent.child = {:?} is not a mass body — entity is missing MassBodyIdC \
                  and/or MassPropertiesC.",
-                    evt.child
-                )
-            })
-            .0
-             .0;
+                evt.child
+            )
+        });
+        let child_id = child_body_id.0;
+
+        // Walk up to the current tree root. The runner's
+        // `detach_subtree` does this same walk; the parent's composite-
+        // body inertial state lives at the root (only the integrated /
+        // free-flying root carries the merged composite — attached
+        // children's `TranslationalStateC` is stale post-attach, which
+        // is the bug threads 3/4/5 identified).
+        let mut tree_root_id = child_id;
+        while let Some(p) = tree.parent(tree_root_id) {
+            tree_root_id = p;
+        }
+        if tree_root_id == child_id {
+            // Detaching a body that has no parent in the mass tree is
+            // a misconfiguration: the rigid-body subtree is already
+            // free-flying with respect to every other tree, so there
+            // is no parent composite to derive child state from.
+            panic!(
+                "DetachEvent.child = {:?} (mass id {:?}) has no parent in the mass tree — \
+                 detaching a tree root is a no-op in JEOD and indicates a stale event \
+                 (e.g. firing DetachEvent twice without a re-AttachEvent in between).",
+                evt.child, child_id,
+            );
+        }
+
+        let tree_root_entity = *id_to_entity.get(&tree_root_id).unwrap_or_else(|| {
+            panic!(
+                "DetachEvent.child = {:?}: tree root {:?} has no entity in the bodies query — \
+                 every mass-tree node must be spawned with `MassBodyIdC` before any \
+                 attach/detach event references it.",
+                evt.child, tree_root_id,
+            )
+        });
+
+        // Pre-mutation snapshot of the parent's composite-body inertial
+        // state (read from the root entity, which is the only place
+        // post-attach that carries the merged composite — see threads
+        // 3/4/5). Keeping these as raw f64 fields (not borrowing the
+        // query) avoids holding a borrow across the `bodies.iter()` /
+        // `bodies.get_mut` calls below.
+        let (
+            parent_pre_position,
+            parent_pre_velocity,
+            parent_pre_quat,
+            parent_pre_ang_vel_body,
+            parent_pre_composite_props,
+        ) = {
+            let (_, _, parent_mass_c, parent_trans, parent_rot) = bodies
+                .get(tree_root_entity)
+                .expect("id_to_entity points at a valid mass body");
+            let position = parent_trans
+                .as_ref()
+                .map(|t| t.0.position.raw_si())
+                .unwrap_or(glam::DVec3::ZERO);
+            let velocity = parent_trans
+                .as_ref()
+                .map(|t| t.0.velocity.raw_si())
+                .unwrap_or(glam::DVec3::ZERO);
+            let (q, w) = parent_rot
+                .as_ref()
+                .map(|r| {
+                    let u = r.0.to_untyped();
+                    (u.quaternion, u.ang_vel_body)
+                })
+                .unwrap_or((jeod_sim::JeodQuat::identity(), glam::DVec3::ZERO));
+            (position, velocity, q, w, parent_mass_c.0.to_untyped())
+        };
+
+        // Walk root → subtree applying `propagate_forward` at each
+        // level using the mass-tree's `composite_wrt_pstr` offsets.
+        // This is the JEOD-faithful derivation of the subtree's
+        // instantaneous composite-body inertial state at the detach
+        // instant — i.e. the rigid-body composition of the parent's
+        // composite-body state plus the subtree's offset within the
+        // composite. Runner does the same in `detach_subtree`.
+        let mut chain: Vec<jeod_sim::MassBodyId> = Vec::new();
+        let mut walker = child_id;
+        while walker != tree_root_id {
+            chain.push(walker);
+            walker = tree
+                .parent(walker)
+                .expect("chain walk hit a parentless intermediate before reaching tree root");
+        }
+        chain.reverse();
+
+        let parent_composite_state = jeod_sim::RefFrameState {
+            trans: jeod_sim::RefFrameTrans {
+                position: parent_pre_position,
+                velocity: parent_pre_velocity,
+            },
+            rot: jeod_sim::RefFrameRot {
+                q_parent_this: parent_pre_quat,
+                t_parent_this: parent_pre_quat.left_quat_to_transformation(),
+                ang_vel_this: parent_pre_ang_vel_body,
+            },
+        };
+        let mut current_state = parent_composite_state;
+        let mut current_node_id = tree_root_id;
+        for next_id in &chain {
+            let next_node = tree.get(*next_id);
+            let current_node = tree.get(current_node_id);
+            // Body-aware step (matches runner's detach walk):
+            //   offset_in_current_body = T_current_struct_to_body
+            //                          · (next.composite_wrt_pstr.position
+            //                             − current.composite_properties.position)
+            //   T_current_body_to_next_body = T_next_struct_to_body
+            //                               · next.structure_point.t_parent_this
+            //                               · T_current_body_to_struct
+            let t_current_struct_to_body = current_node.composite_properties.t_parent_this;
+            let t_next_struct_to_body = next_node.composite_properties.t_parent_this;
+            let offset_struct =
+                next_node.composite_wrt_pstr.position - current_node.composite_properties.position;
+            let offset_in_current_body = t_current_struct_to_body * offset_struct;
+            let t_current_body_to_next_body = t_next_struct_to_body
+                * next_node.structure_point.t_parent_this
+                * t_current_struct_to_body.transpose();
+            let rel = jeod_sim::MassPointState {
+                position: offset_in_current_body,
+                t_parent_this: t_current_body_to_next_body,
+            };
+            current_state = jeod_sim::propagate_forward(&current_state, &rel);
+            current_node_id = *next_id;
+        }
+        let subtree_state = current_state;
+
+        let captured = jeod_sim::stage_detach_capture(
+            subtree_state.trans.position,
+            subtree_state.trans.velocity,
+            subtree_state.rot.q_parent_this,
+            subtree_state.rot.ang_vel_this,
+        );
+        detach_work.push((evt.child, captured));
+
+        // Stash the parent-side post-mutation update for later (after
+        // tree.detach + composite mass sync). The CoM-shift uses the
+        // pre/post composite properties — the post is read after
+        // mutation so we record only the pre-state here.
+        let parent_was_detached_root = detached_q.contains(tree_root_entity);
+        parent_shifts.push((
+            tree_root_id,
+            ParentShift {
+                tree_root_entity,
+                parent_pre_position,
+                parent_pre_velocity,
+                parent_pre_quat,
+                parent_pre_ang_vel_body,
+                parent_pre_composite_props,
+                parent_was_detached: parent_was_detached_root,
+            },
+        ));
+
         // Bodies whose composite changes: the (about-to-be-detached)
         // child plus the former parent's full ancestor chain. Capture
         // BEFORE mutating the tree.
         affected_ids.push(child_id);
-        if let Some(parent_id) = tree.parent(child_id) {
-            affected_ids.extend(tree.ancestors_inclusive(parent_id));
-        }
+        affected_ids.extend(tree.ancestors_inclusive(tree_root_id));
         tree.detach(child_id);
     }
 
-    if affected_ids.is_empty() {
+    if affected_ids.is_empty() && attach_work.is_empty() && detach_work.is_empty() {
         return;
     }
     affected_ids.sort_unstable();
@@ -2887,8 +3307,7 @@ pub fn staging_system(
 
     // Sync composite mass properties for all affected nodes.
     //
-    // PR #283 review thread PRRT_kwDORtae6c5_KHnH: these writes go
-    // through `bypass_change_detection` because the value being
+    // These writes go through `bypass_change_detection` because the value being
     // written is the *composite* (post-Steiner) mass, not a core-mass
     // edit by mission code. The `composite_mass_system` ECS path uses
     // `Changed<MassPropertiesC>` to detect mid-sim core edits (fuel
@@ -2903,10 +3322,188 @@ pub fn staging_system(
     // and ECS-native via `MassChildOf`) safe to coexist on the same
     // entity during the migration window. The `MassPropertiesC` value
     // is still updated; only the change-detection signal is silenced.
-    for (body_id, mut mass) in &mut bodies {
+    for (_, body_id, mut mass, _, _) in &mut bodies {
         if affected_ids.binary_search(&body_id.0).is_ok() {
             *mass.bypass_change_detection() =
                 MassPropertiesC::from(tree.get(body_id.0).composite_properties);
+        }
+    }
+
+    // Run the JEOD momentum-conservation combine for every staged
+    // attach. This must happen *after* the composite-mass sync above
+    // so the merged mass we feed the kernel matches the parent's
+    // post-attach `MassPropertiesC` (which is what subsequent
+    // gravity / force-collection / integration reads in the same tick).
+    //
+    // JEOD_INV: DB.13 — state propagation across attached subtrees: only the
+    // root carries the integrated composite-body state; child sub-trees ride
+    // it via the MassChildOf / mass-tree composition (not yet propagated
+    // through derived frames; see #198 frame-attached body integration).
+    // JEOD_INV: DB.14 — integration-frame switch on attach: the combined
+    // body integrates in the parent's frame; here we update the parent's
+    // composite_body state; frame-side switching belongs to #280.
+    // JEOD_INV: DB.21 — only unattached bodies integrate: after attach the
+    // detached-subtree-state is removed from the child so it stops drifting
+    // ballistically; the integrated body's state is the merged composite.
+    for work in &attach_work {
+        let combined_mass = tree.get(work.parent_id).composite_properties;
+        let merged = jeod_sim::stage_attach_combine(jeod_sim::StageAttachInputs {
+            parent_position: work.parent_position,
+            parent_velocity: work.parent_velocity,
+            parent_quaternion: work.parent_quaternion,
+            parent_ang_vel_body: work.parent_ang_vel_body,
+            parent_mass: work.parent_mass,
+            orig_parent_cm_struct: work.orig_parent_cm_struct,
+            parent_t_inertial_struct: work.parent_t_inertial_struct,
+            child_position: work.child_position,
+            child_velocity: work.child_velocity,
+            child_quaternion: work.child_quaternion,
+            child_ang_vel_body: work.child_ang_vel_body,
+            child_mass: work.child_mass,
+            combined_mass,
+        });
+
+        if let Ok((_, _, _, mut trans, mut rot)) = bodies.get_mut(work.parent_entity) {
+            if let Some(ref mut t) = trans {
+                t.0 =
+                    // allowed: stage_attach_combine kernel boundary; the
+                    // kernel returns untyped DVec3 by design, so re-wrapping
+                    // as TranslationalStateTyped<RootInertial> is the same
+                    // typed↔untyped pattern as the From<TranslationalState>
+                    // impl on TranslationalStateC.
+                    jeod_sim::TranslationalStateTyped::<jeod_sim::RootInertial>::from_untyped_unchecked(
+                        &jeod_sim::TranslationalState {
+                            position: merged.position,
+                            velocity: merged.velocity,
+                        },
+                    );
+            }
+            if let Some(ref mut r) = rot {
+                // allowed: stage_attach_combine kernel boundary; same
+                // typed↔untyped re-wrap pattern as the translational case
+                // above. The output quaternion is the parent's pre-attach
+                // unit-norm quaternion (per `combine_states_at_attach`'s
+                // "merged body inherits parent attitude"), so the
+                // NormalizedQuat witness in from_untyped_unchecked is
+                // satisfied.
+                r.0 = jeod_sim::RotationalStateTyped::<jeod_sim::SelfRef>::from_untyped_unchecked(
+                    &jeod_sim::RotationalState {
+                        quaternion: merged.quaternion,
+                        ang_vel_body: merged.ang_vel_body,
+                    },
+                );
+            }
+        }
+
+        if work.child_was_detached {
+            // Re-attach consumes the captured ballistic state — the
+            // child is no longer free-flying.
+            commands
+                .entity(work.child_entity)
+                .remove::<crate::DetachedSubtreeStateC>();
+        }
+
+        if work.parent_was_detached {
+            // The merged composite is still a free-flying tree root
+            // (the parent had no integrated ancestor to graft onto).
+            // Replace the parent's stale pre-attach `DetachedSubtreeStateC`
+            // with the merged composite-body inertial state so
+            // `step_detached_system` continues advancing the right
+            // value next tick rather than overwriting the merged state
+            // with the captured pre-attach snapshot.
+            //
+            // JEOD_INV: DB.21 — detached subtrees keep advancing
+            // ballistically post-attach; the merged composite simply
+            // becomes the new "free-flying root" state.
+            let updated = jeod_sim::DetachedSubtreeState {
+                composite_position: merged.position,
+                composite_velocity: merged.velocity,
+                composite_attitude: jeod_sim::DetachedSubtreeState::attitude_from_raw_jeod_quat(
+                    merged.quaternion,
+                ),
+                composite_ang_vel_body: merged.ang_vel_body,
+            };
+            commands
+                .entity(work.parent_entity)
+                .insert(crate::DetachedSubtreeStateC(updated));
+        }
+    }
+
+    // Apply detach captures: insert `DetachedSubtreeStateC` on each
+    // detached child so `step_detached_system` advances it ballistically
+    // each tick.
+    for (entity, captured) in detach_work {
+        commands
+            .entity(entity)
+            .insert(crate::DetachedSubtreeStateC(captured));
+    }
+
+    // Parent-side post-detach composite-CoM shift: when a subtree is
+    // removed from a tree, the parent's composite-CoM moves within its
+    // own struct frame. The parent's rigid-body structure point hasn't
+    // moved in inertial space, but the composite-body inertial state
+    // (which is what `TranslationalStateC` stores after the
+    // composite-body refactor) must shift by the corresponding
+    // kinematic offset to track the new (smaller) composite. Mirrors
+    // `jeod_runner::Simulation::detach_subtree`'s integrated-body /
+    // detached-parent branches; both produce the same inertial
+    // CoM-delta formula.
+    //
+    // JEOD_INV: DB.13 — composite-body propagation on topology change.
+    for (tree_root_id, shift) in parent_shifts {
+        let parent_post_composite_props = tree.get(tree_root_id).composite_properties;
+        let cm_delta_struct =
+            parent_post_composite_props.position - shift.parent_pre_composite_props.position;
+        // composite_properties.t_parent_this is struct→body. Compose
+        // with the body's inertial-to-body to map struct → inertial.
+        let t_struct_to_body = shift.parent_pre_composite_props.t_parent_this;
+        let cm_delta_body = t_struct_to_body * cm_delta_struct;
+        let t_inertial_to_body = shift.parent_pre_quat.left_quat_to_transformation();
+        let cm_delta_inertial = t_inertial_to_body.transpose() * cm_delta_body;
+        // Velocity offset from rigid-body rotation: ω × Δr in body
+        // frame, then rotated to inertial.
+        let omega_body = shift.parent_pre_ang_vel_body;
+        let dvel_inertial = t_inertial_to_body.transpose() * omega_body.cross(cm_delta_body);
+
+        let new_position = shift.parent_pre_position + cm_delta_inertial;
+        let new_velocity = shift.parent_pre_velocity + dvel_inertial;
+
+        if let Ok((_, _, _, Some(mut t), _)) = bodies.get_mut(shift.tree_root_entity) {
+            t.0 =
+                // allowed: detach-handler kernel boundary; same
+                // typed↔untyped re-wrap pattern as the attach branch
+                // above. The CoM-shift is a pure kinematic update —
+                // it does not introduce a new frame, so wrapping as
+                // `RootInertial` is the same convention as the
+                // pre-detach value.
+                jeod_sim::TranslationalStateTyped::<jeod_sim::RootInertial>::from_untyped_unchecked(
+                    &jeod_sim::TranslationalState {
+                        position: new_position,
+                        velocity: new_velocity,
+                    },
+                );
+        }
+
+        if shift.parent_was_detached {
+            // The parent is itself a detached free-flying root — keep
+            // its `DetachedSubtreeStateC` in lock-step with the shifted
+            // `TranslationalStateC` so the next `step_detached_system`
+            // tick advances from the post-detach composite state.
+            // Quaternion / ang_vel are unchanged because the parent's
+            // body axes don't rotate just because mass left the tree
+            // (composite_properties.t_parent_this == core_properties
+            // .t_parent_this throughout — see mass tree recompute).
+            let updated = jeod_sim::DetachedSubtreeState {
+                composite_position: new_position,
+                composite_velocity: new_velocity,
+                composite_attitude: jeod_sim::DetachedSubtreeState::attitude_from_raw_jeod_quat(
+                    shift.parent_pre_quat,
+                ),
+                composite_ang_vel_body: shift.parent_pre_ang_vel_body,
+            };
+            commands
+                .entity(shift.tree_root_entity)
+                .insert(crate::DetachedSubtreeStateC(updated));
         }
     }
 
@@ -2934,6 +3531,78 @@ pub fn staging_system(
             jeod_sim::reset_integrators(
                 gj_opt.as_mut().map(|c| &mut c.0),
                 abm_opt.as_mut().map(|c| &mut c.0),
+            );
+        }
+    }
+}
+
+/// Advance every entity carrying [`crate::DetachedSubtreeStateC`] by
+/// the schedule's fixed `dt` under ballistic dynamics — no force, no
+/// torque. Position drifts at `composite_velocity`; attitude rotates
+/// at `composite_ang_vel_body` via JEOD's left-multiply convention
+/// (`q̇ = -½(ω ⊗ q)`, owned by [`jeod_sim::BodyAttitude`]).
+///
+/// Also synchronizes the entity's [`crate::TranslationalStateC`] /
+/// [`crate::RotationalStateC`] with the advanced subtree state each
+/// tick so downstream consumers (gravity-source position lookups,
+/// derived-state systems, mission code) see the body's current
+/// inertial state without having to special-case detached vs
+/// integrated bodies. Mirrors
+/// `jeod_runner::Simulation::step_detached_subtrees`.
+///
+/// The ballistic timestep is `dt * time_scale_factor` (matching
+/// `integration_system`'s `integ_dt` and the runner's
+/// `step_detached_subtrees(dt * time.time_scale_factor)`); under
+/// reversed or scaled time the detached subtree advances at the same
+/// rate as integrated bodies, so the two stay phase-locked.
+///
+/// JEOD_INV: DB.21 — only unattached bodies integrate; detached subtrees
+/// drift ballistically here while the integrator targets the integrated
+/// body.
+pub fn step_detached_system(
+    time: Res<Time<Fixed>>,
+    sim_time: Res<SimulationTimeR>,
+    mut detached: Query<(
+        &mut crate::DetachedSubtreeStateC,
+        Option<&mut TranslationalStateC>,
+        Option<&mut RotationalStateC>,
+    )>,
+) {
+    let dt = time.delta().as_secs_f64();
+    if dt == 0.0 {
+        return;
+    }
+    let integ_dt = dt * sim_time.0.time_scale_factor;
+    for (mut state, trans, rot) in &mut detached {
+        state.0.step_ballistic(integ_dt);
+        if let Some(mut t) = trans {
+            t.0 =
+                // allowed: DetachedSubtreeState kernel boundary; the
+                // ballistic-step result is returned as raw DVec3 fields by
+                // design — re-wrapping into TranslationalStateTyped is the
+                // same typed↔untyped pattern as the
+                // From<TranslationalState> impl on TranslationalStateC.
+                jeod_sim::TranslationalStateTyped::<jeod_sim::RootInertial>::from_untyped_unchecked(
+                    &jeod_sim::TranslationalState {
+                        position: state.0.composite_position,
+                        velocity: state.0.composite_velocity,
+                    },
+                );
+        }
+        if let Some(mut r) = rot {
+            // allowed: DetachedSubtreeState kernel boundary. The advanced
+            // `composite_attitude` is a `BodyAttitude<SelfRef>` whose
+            // `to_jeod_quat` returns the underlying scalar-first
+            // left-transformation quaternion. The wrapper guarantees
+            // unit-norm post-step (that's the whole point of
+            // `BodyAttitude::advance_under_body_rate`), so the
+            // NormalizedQuat witness in from_untyped_unchecked is
+            // satisfied.
+            r.0 = jeod_sim::RotationalStateTyped::<jeod_sim::SelfRef>::from_untyped_unchecked(
+                &jeod_sim::RotationalState {
+                    quaternion: state.0.composite_attitude.to_jeod_quat(),
+                    ang_vel_body: state.0.composite_ang_vel_body,
+                },
             );
         }
     }

@@ -1176,6 +1176,51 @@ impl MassChildOf {
 #[reflect(opaque, Component)]
 pub struct MassPointRef(pub Entity);
 
+/// Marker: this entity is a kinematic non-root node in a
+/// [`MassChildOf`] chain and must NOT be advanced by
+/// [`integration_system`](crate::systems::integration_system).
+///
+/// JEOD's composite-rigid-body model integrates only the root of every
+/// mass tree (`dyn_body_collect.cc:138` — every `dyn_parent != nullptr`
+/// branch transmits forces upstream and computes no per-child
+/// accelerations). The Bevy port mirrors this by:
+///
+/// 1. [`wrench_aggregation_system`](crate::wrench::wrench_aggregation_system)
+///    walks every `MassChildOf` chain and folds each non-root child's
+///    `(force, torque)` (with parallel-axis arm) into the root's
+///    `TotalForceC`, then zeroes the children's
+///    `TotalForceC` / `FrameDerivativesC`.
+/// 2. The same system inserts `KinematicChildC` on every non-root
+///    node and removes it from any node that becomes a root (mass tree
+///    rewired or torn down).
+/// 3. [`integration_system`](crate::systems::integration_system) filters
+///    its body query with `Without<KinematicChildC>` so the kinematic
+///    children's translational / rotational state never advances under
+///    gravity (or any other contributor `integration_system` reads
+///    directly). Without the marker, zeroing `TotalForceC` is not
+///    enough — `integration_system` recomputes gravity at every RK
+///    sub-stage from `GravityControlsC` and would still drift the
+///    child's state.
+///
+/// This marker is purely a **gating hint** for the integrator. The
+/// kinematic propagation that derives child poses *from* the root
+/// (the design-doc Section 15.3 `propagate_state_from_root_system`)
+/// is a separate follow-up; until that lands, non-root children's
+/// `TranslationalStateC` / `RotationalStateC` stays frozen at the
+/// value the system observed when the body became kinematic.
+///
+/// Mission code MUST NOT manage this marker manually — the
+/// wrench-aggregation system owns its lifecycle. Inserting it on a
+/// root-level body would freeze that body's state; removing it from a
+/// non-root body would let the integrator double-count the wrench
+/// (once via the aggregated root total, once via per-stage gravity on
+/// the now-self-integrated child).
+// JEOD_INV: DB.17 — only the root's TotalForce/FrameDerivatives drive the
+// integrator (children are kinematic, gated by this marker)
+#[derive(Component, Debug, Clone, Copy, Default, Reflect)]
+#[reflect(Component)]
+pub struct KinematicChildC;
+
 /// Message: attach a child body to a parent in the mass tree.
 ///
 /// Both entities must have [`MassBodyIdC`]. Processed by `staging_system`
@@ -1201,3 +1246,28 @@ pub struct DetachEvent {
     /// Entity to detach from its parent.
     pub child: Entity,
 }
+
+/// Composite-body inertial state of a free-flying mass-tree subtree
+/// that has been detached from its parent and is coasting
+/// ballistically (no force, no torque) until [`AttachEvent`] re-attaches
+/// it.
+///
+/// Inserted on the child entity by `staging_system`'s `DetachEvent`
+/// branch; removed by the `AttachEvent` branch when the same entity
+/// is re-attached. While present, [`step_detached_system`](crate::step_detached_system)
+/// advances the contained state by the schedule's fixed `dt` each
+/// tick — position drifts at `composite_velocity`, attitude rotates
+/// under `composite_ang_vel_body`. Also synchronizes the entity's
+/// own [`TranslationalStateC`] / [`RotationalStateC`] each tick so
+/// downstream consumers (gravity, derived state, mission code)
+/// continue to read the body's current inertial state from the
+/// canonical components rather than having to special-case detached
+/// vs integrated bodies.
+///
+/// Bevy mirror of `jeod_runner::Simulation::detached_subtrees`. Wraps
+/// [`jeod_sim::DetachedSubtreeState`] (which owns the JEOD scalar-first
+/// left-multiply attitude convention via
+/// [`jeod_sim::BodyAttitude<jeod_sim::SelfRef>`](jeod_sim::BodyAttitude)).
+#[derive(Component, Debug, Clone, Copy, Reflect)]
+#[reflect(opaque, Component)]
+pub struct DetachedSubtreeStateC(pub jeod_sim::DetachedSubtreeState);
