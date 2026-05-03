@@ -583,6 +583,24 @@ impl Simulation {
     /// and are no-ops in the reset, so applying the reset unconditionally
     /// here is safe regardless of the body's chosen integrator.
     ///
+    /// # Sync every affected body, not just the mutated node
+    ///
+    /// `MassTree::attach`/`detach` recomputes composite mass properties
+    /// up the parent's full ancestor chain to the root. Callers using the
+    /// low-level path **must** invoke `sync_body_mass_from_tree` once for
+    /// **every** Simulation body whose composite was touched — that is,
+    /// the directly mutated child *plus every ancestor of the (former)
+    /// parent that is registered as a Simulation body*. Syncing only the
+    /// child or only the immediate parent leaves higher ancestors with
+    /// stale composite mass and stale multi-step integrator history,
+    /// silently producing wrong physics on the next `step()`. The
+    /// high-level [`attach`](Self::attach) / [`detach`](Self::detach) /
+    /// [`detach_subtree`](Self::detach_subtree) /
+    /// [`attach_subtree_aligned`](Self::attach_subtree_aligned) methods
+    /// already do this ancestor walk for you (see
+    /// `simulation/mass_tree.rs` `affected_ids` collection); this section
+    /// applies only when callers bypass them.
+    ///
     /// # Panics
     /// Panics if the body is not registered in the mass tree.
     // JEOD_INV: IG.37 — multi-step integrator history must be reset on topology change

@@ -134,13 +134,19 @@ pub struct Simulation {
     /// If you reach in here with `as_mut()` and call `tree.attach` /
     /// `tree.detach` directly, you **must** call
     /// [`sync_body_mass_from_tree`](Self::sync_body_mass_from_tree) for
-    /// each affected Simulation body afterward. That method also resets
-    /// the multi-step integrator (Gauss-Jackson, ABM4) predictor/corrector
-    /// history; skipping it leaves stale history that produces wrong
-    /// physics with no panic. Single-step integrators (RK4, RKF4(5))
-    /// carry no per-step history, so the reset is a no-op for them — but
-    /// `sync_body_mass_from_tree` is still the correct sync site
-    /// regardless of integrator choice.
+    /// each affected Simulation body afterward — that is, the directly
+    /// mutated child *plus every ancestor of the (former) parent that
+    /// is registered as a Simulation body*, since `MassTree::attach`
+    /// and `MassTree::detach` propagate composite mass updates up the
+    /// full ancestor chain. Syncing only the child or only the
+    /// immediate parent leaves higher ancestors with stale composite
+    /// mass and stale multi-step integrator history. That method also
+    /// resets the multi-step integrator (Gauss-Jackson, ABM4)
+    /// predictor/corrector history; skipping it leaves stale history
+    /// that produces wrong physics with no panic. Single-step
+    /// integrators (RK4, RKF4(5)) carry no per-step history, so the
+    /// reset is a no-op for them — but `sync_body_mass_from_tree` is
+    /// still the correct sync site regardless of integrator choice.
     pub mass_tree: Option<jeod_dynamics::MassTree>,
     /// Composite-body inertial state of free-flying mass-tree subtrees
     /// that have been detached from the integrated body's tree but not
