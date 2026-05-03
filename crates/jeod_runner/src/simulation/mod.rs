@@ -121,6 +121,26 @@ pub struct Simulation {
     pub ephemeris: Option<jeod_sim::Ephemeris>,
     /// Optional mass tree for multi-body vehicles (attach/detach/staging).
     /// Bodies participating in the tree have `SimBody::mass_body_id` set.
+    ///
+    /// # IG.37 — Topology-change safety
+    ///
+    /// **Prefer the high-level methods** ([`attach`](Self::attach),
+    /// [`detach`](Self::detach), [`detach_subtree`](Self::detach_subtree),
+    /// [`attach_subtree_aligned`](Self::attach_subtree_aligned)) for
+    /// mid-flight topology changes — they call `mark_topology_dirty()` +
+    /// [`jeod_sim::reset_integrators`] on every affected body, matching
+    /// JEOD's `dyn_body_attach.cc::reset_integrators()` semantics.
+    ///
+    /// If you reach in here with `as_mut()` and call `tree.attach` /
+    /// `tree.detach` directly, you **must** call
+    /// [`sync_body_mass_from_tree`](Self::sync_body_mass_from_tree) for
+    /// each affected Simulation body afterward. That method also resets
+    /// the multi-step integrator (Gauss-Jackson, ABM4) predictor/corrector
+    /// history; skipping it leaves stale history that produces wrong
+    /// physics with no panic. Single-step integrators (RK4, RKF4(5))
+    /// carry no per-step history, so the reset is a no-op for them — but
+    /// `sync_body_mass_from_tree` is still the correct sync site
+    /// regardless of integrator choice.
     pub mass_tree: Option<jeod_dynamics::MassTree>,
     /// Composite-body inertial state of free-flying mass-tree subtrees
     /// that have been detached from the integrated body's tree but not

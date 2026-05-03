@@ -1831,4 +1831,181 @@ mod tests {
         };
         let _ = jeod_dynamics::abm4_translational_step(&state, |_, _| DVec3::ZERO, 1.0, &mut abm);
     }
+
+    /// JEOD_INV: IG.37 — `tree.attach` + `sync_body_mass_from_tree` is the
+    /// supported lower-level alternative to `Simulation::attach`, so it
+    /// must reset multi-step integrator history just like the high-level
+    /// path. PR #282 round-3 review thread `PRRT_kwDORtae6c5_KzS4`
+    /// (Copilot): without this wiring, a Gauss-Jackson caller using the
+    /// `tree.attach` + `sync_body_mass_from_tree` pattern (used by
+    /// `crates/jeod_runner/examples/apollo.rs` and the Apollo Tier 3
+    /// trajectory test for stage separation) would silently propagate
+    /// stale predictor history across the topology change.
+    #[test]
+    fn sync_body_mass_from_tree_resets_gauss_jackson_state() {
+        const MU: f64 = 5.76e14;
+        let dt = 1.0_f64;
+
+        let trans = TranslationalState {
+            position: DVec3::new(9e6, 0.0, 0.0),
+            velocity: DVec3::new(0.0, 8000.0, 0.0),
+        };
+
+        let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+        let mut sim = Simulation::new(time, dt);
+
+        let earth = sim.add_source(
+            "Earth",
+            GravitySourceEntry {
+                source: GravitySource {
+                    mu: MU,
+                    model: GravityModel::PointMass,
+                },
+                position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+                velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
+                t_inertial_pfix: None,
+                delta_c20: 0.0,
+                rotation_model: crate::RotationModel::default(),
+                tidal_config: None,
+                planet_omega: 0.0,
+                central: true,
+            },
+        );
+
+        let gj_cfg = GaussJacksonConfig::with_order(8);
+        let body_idx = sim.add_body(VehicleConfig {
+            trans,
+            integrator: IntegratorType::GaussJackson(gj_cfg),
+            mass: Some(MassProperties::new(1000.0)),
+            gravity_controls: GravityControls {
+                controls: vec![GravityControl::new_spherical(earth, false)],
+            },
+            ..Default::default()
+        });
+        let cm_id = sim.add_body_to_tree(body_idx, "cm");
+
+        sim.validate().expect("validate failed");
+        sim.step_n(200).expect("step_n failed");
+        assert!(
+            !sim.bodies[body_idx].gj_state.as_ref().unwrap().is_priming(),
+            "test setup: cm's GJ must be past priming"
+        );
+
+        // Mutate the mass tree directly via `as_mut()` (the lower-level
+        // path that bypasses `Simulation::attach`). Add a tree-only child
+        // and attach it under cm, then call the documented sync point.
+        let attachee = {
+            let tree = sim.mass_tree.as_mut().expect("tree must exist");
+            let id = tree.add_body("attachee".into(), MassProperties::new(50.0));
+            tree.attach(id, cm_id, DVec3::new(0.5, 0.0, 0.0), DMat3::IDENTITY);
+            id
+        };
+        let _ = attachee;
+
+        // The fix: `sync_body_mass_from_tree` mark+resets the body's
+        // GJ history so the lower-level `tree.attach + sync` path is
+        // IG.37-safe by construction.
+        sim.sync_body_mass_from_tree(body_idx);
+
+        let gj_post = sim.bodies[body_idx]
+            .gj_state
+            .as_ref()
+            .expect("cm must still have gj_state");
+        assert!(
+            gj_post.is_priming(),
+            "cm's GJ state must be back in priming after sync_body_mass_from_tree"
+        );
+        assert!(
+            !gj_post.is_topology_dirty(),
+            "cm's GJ topology-dirty flag must be cleared by sync_body_mass_from_tree"
+        );
+
+        // Confirm a subsequent step doesn't trip the IG.37 assertion.
+        sim.step_n(1)
+            .expect("post-sync step failed (IG.37 must not fire)");
+    }
+
+    /// ABM4 sibling of `sync_body_mass_from_tree_resets_gauss_jackson_state`.
+    /// Same pattern, ABM4 instead of Gauss-Jackson — covers both
+    /// multi-step integrator types whose history is invalidated by
+    /// topology changes.
+    #[test]
+    fn sync_body_mass_from_tree_resets_abm4_state() {
+        const MU: f64 = 5.76e14;
+        let dt = 1.0_f64;
+
+        let trans = TranslationalState {
+            position: DVec3::new(9e6, 0.0, 0.0),
+            velocity: DVec3::new(0.0, 8000.0, 0.0),
+        };
+
+        let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+        let mut sim = Simulation::new(time, dt);
+
+        let earth = sim.add_source(
+            "Earth",
+            GravitySourceEntry {
+                source: GravitySource {
+                    mu: MU,
+                    model: GravityModel::PointMass,
+                },
+                position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+                velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
+                t_inertial_pfix: None,
+                delta_c20: 0.0,
+                rotation_model: crate::RotationModel::default(),
+                tidal_config: None,
+                planet_omega: 0.0,
+                central: true,
+            },
+        );
+
+        let body_idx = sim.add_body(VehicleConfig {
+            trans,
+            integrator: IntegratorType::Abm4,
+            mass: Some(MassProperties::new(1000.0)),
+            gravity_controls: GravityControls {
+                controls: vec![GravityControl::new_spherical(earth, false)],
+            },
+            ..Default::default()
+        });
+        let cm_id = sim.add_body_to_tree(body_idx, "cm");
+
+        sim.validate().expect("validate failed");
+        sim.step_n(20).expect("step_n failed");
+        assert!(
+            !sim.bodies[body_idx]
+                .abm4_state
+                .as_ref()
+                .unwrap()
+                .is_priming(),
+            "test setup: cm's ABM4 must be past priming"
+        );
+
+        let attachee = {
+            let tree = sim.mass_tree.as_mut().expect("tree must exist");
+            let id = tree.add_body("attachee".into(), MassProperties::new(50.0));
+            tree.attach(id, cm_id, DVec3::new(0.5, 0.0, 0.0), DMat3::IDENTITY);
+            id
+        };
+        let _ = attachee;
+
+        sim.sync_body_mass_from_tree(body_idx);
+
+        let abm_post = sim.bodies[body_idx]
+            .abm4_state
+            .as_ref()
+            .expect("cm must still have abm4_state");
+        assert!(
+            abm_post.is_priming(),
+            "cm's ABM4 state must be back in priming after sync_body_mass_from_tree"
+        );
+        assert!(
+            !abm_post.is_topology_dirty(),
+            "cm's ABM4 topology-dirty flag must be cleared by sync_body_mass_from_tree"
+        );
+
+        sim.step_n(1)
+            .expect("post-sync step failed (IG.37 must not fire)");
+    }
 }
