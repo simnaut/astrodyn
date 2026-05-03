@@ -2555,6 +2555,21 @@ pub fn earth_lighting_system(
 /// - Temperature integration (forward Euler)
 /// - Force is rotated from structural to inertial by this system before writing `RadiationForceC`
 ///
+/// Kinematic children of a `MassChildOf` chain (entities carrying
+/// [`KinematicChildC`]) are excluded from this system. Until the
+/// kinematic-propagation system (design-doc Section 15.3
+/// `propagate_state_from_root_system`) lands, a kinematic child's
+/// own `TranslationalStateC` / `RotationalStateC` are not advanced
+/// in lock-step with the chain root — they stay frozen at whatever
+/// the world had when the chain was assembled. Reading those stale
+/// states to compute solar pressure here would silently produce SRP
+/// for a position the body is no longer at. Excluding kinematic
+/// children entirely (rather than feeding them stale state) is the
+/// fail-loud-but-conservative choice: kinematic-child appendages get
+/// no SRP this PR, and the follow-up that introduces propagated
+/// child state will route SRP through the live composite-derived
+/// values.
+///
 /// Placed in `JeodSet::Interaction`.
 #[allow(clippy::type_complexity)]
 pub fn flat_plate_srp_system(
@@ -2566,25 +2581,51 @@ pub fn flat_plate_srp_system(
             Option<&MassPropertiesC>,
             Option<&StructuralTransformC>,
             &mut RadiationForceC,
-            // `Has<KinematicChildC>` flags entities whose orbital
-            // integration is gated off by the composite-rigid-body
-            // wrench-aggregation pipeline. Their per-RK4-stage
-            // derivative-class SRP/thermal recompute lives inside
-            // `integration_system` and is filtered out for them, so
-            // we must take the Scheduled-style single-shot Euler
-            // path here unconditionally to keep their plate
-            // temperatures advancing and `RadiationForceC` non-zero
-            // — the appendage is still physically present in the
-            // environment, only its orbital state is derived from
-            // the chain root.
-            bevy::ecs::query::Has<KinematicChildC>,
         ),
-        (Without<SunMarker>, Without<CannonballSrpC>),
+        (
+            Without<SunMarker>,
+            Without<CannonballSrpC>,
+            // Kinematic children of a `MassChildOf` chain have stale
+            // `TranslationalStateC` / `RotationalStateC` until the
+            // kinematic-propagation system (design-doc Section 15.3
+            // `propagate_state_from_root_system`) lands. Computing
+            // SRP from those stale states would produce solar
+            // pressure at the wrong location, so we skip them
+            // entirely here and let the follow-up route SRP through
+            // the live composite-derived state.
+            Without<KinematicChildC>,
+        ),
+    >,
+    // Cleanup query for kinematic children: drop any prior-tick
+    // `RadiationForceC` / `stage_inputs` left over from when the
+    // entity was last in the main query (i.e. before it became a
+    // chain member). Without this clear, `force_collection_system`
+    // would still accumulate the stale SRP into the child's
+    // `TotalForceC`, and `wrench_aggregation_system` would shift
+    // that stale wrench up to the parent — silently producing SRP
+    // for a position the body is no longer at.
+    mut kinematic_cleanup: Query<
+        (&mut FlatPlateConfigC, &mut RadiationForceC),
+        (
+            With<KinematicChildC>,
+            Without<SunMarker>,
+            Without<CannonballSrpC>,
+        ),
     >,
     sun_query: Query<&TranslationalStateC, With<SunMarker>>,
     shadow_bodies: Query<(&TranslationalStateC, &ShadowBodyC), Without<SunMarker>>,
     time: Res<Time<Fixed>>,
 ) {
+    // Drop stale state for any kinematic-child SRP body. Runs first
+    // so a transition from non-kinematic → kinematic this tick
+    // never carries a leftover SRP force into the wrench-aggregation
+    // walk.
+    for (mut flat_config, mut srp_force) in &mut kinematic_cleanup {
+        flat_config.stage_inputs = None;
+        srp_force.force = DVec3::ZERO;
+        srp_force.torque = DVec3::ZERO;
+    }
+
     let sun_state = match sun_query.single() {
         Ok(s) => Some(s),
         Err(bevy::ecs::query::QuerySingleError::NoEntities(_)) => None,
@@ -2599,9 +2640,7 @@ pub fn flat_plate_srp_system(
 
     let dt = time.delta_secs_f64();
 
-    for (mut flat_config, state, rot, mass, struct_xform, mut srp_force, is_kinematic_child) in
-        &mut query
-    {
+    for (mut flat_config, state, rot, mass, struct_xform, mut srp_force) in &mut query {
         // Clear per-step SRP state unconditionally (before the Sun check)
         // so derivative-mode entities don't retain stale `stage_inputs` or
         // force/torque if the Sun entity is removed between steps — which
@@ -2636,22 +2675,7 @@ pub fn flat_plate_srp_system(
         let illum_factor = compute_illum_factor(pos_raw, sun_pos_raw, &shadow_bodies);
         let center_grav = mass.map_or(DVec3::ZERO, |m| m.0.center_of_mass.raw_si());
 
-        // Kinematic children (composite-rigid-body chain members) have
-        // their orbital integration gated off in `integration_system`,
-        // and the per-RK4-stage derivative-class SRP/thermal recompute
-        // lives inside that gated branch. Falling through to the
-        // derivative-class arm below would skip plate temperature
-        // updates and leave `RadiationForceC` zero. Force the
-        // Scheduled-style single-shot path so the appendage's thermal
-        // state and representative `RadiationForceC` stay live; only
-        // the orbital state is derived from the chain root.
-        let order = if is_kinematic_child {
-            jeod_sim::ThermalIntegrationOrder::Scheduled
-        } else {
-            flat_config.integration_order
-        };
-
-        match order {
+        match flat_config.integration_order {
             jeod_sim::ThermalIntegrationOrder::Scheduled => {
                 // Scheduled-class (SIM_3_ORBIT): SRP force + Euler T once
                 // per step. Force fed to the orbital integrator is

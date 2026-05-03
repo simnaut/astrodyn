@@ -1389,22 +1389,25 @@ mod tests {
         );
     }
 
-    /// Derivative-class SRP/thermal regression: a kinematic child
-    /// of a `MassChildOf` chain that carries `FlatPlateConfigC` with
-    /// `DerivativeFirstOrder` / `DerivativeRk4` integration order
-    /// must still get plate temperature updates and a non-zero
-    /// `RadiationForceC` once per step. The derivative-class SRP/
-    /// thermal recompute lives inside `integration_system`'s
-    /// `Without<KinematicChildC>`-filtered loop, so without a
-    /// fallback in `flat_plate_srp_system` the kinematic child's
-    /// `RadiationForceC` would stay at the per-tick zero and its
-    /// plate temperatures would never advance. The fix reroutes
-    /// kinematic children through the `Scheduled` arm here (single-
-    /// shot Euler) — the appendage's thermal state and force stay
-    /// live; only the orbital state is gated by the chain's
-    /// composite-rigid-body integration.
+    /// Kinematic children of a `MassChildOf` chain are excluded
+    /// from `flat_plate_srp_system` entirely until the
+    /// kinematic-propagation system (design-doc Section 15.3
+    /// `propagate_state_from_root_system`) lands and can derive
+    /// their live state from the chain root. A kinematic child's
+    /// own `TranslationalStateC` / `RotationalStateC` stay frozen
+    /// after the chain is assembled, so reading them to compute
+    /// solar pressure would produce SRP for a position the body is
+    /// no longer at — exactly the silent-wrong-physics failure
+    /// mode CLAUDE.md "Fail Loudly" forbids.
+    ///
+    /// The cleanup arm of `flat_plate_srp_system` zeroes any prior
+    /// `RadiationForceC` / `stage_inputs` left over from when the
+    /// entity was last in the main query, so the stale SRP cannot
+    /// leak up to the parent through `force_collection_system` +
+    /// `wrench_aggregation_system`. This test pins both halves of
+    /// the contract.
     #[test]
-    fn kinematic_child_with_derivative_srp_still_gets_force_and_temp_update() {
+    fn kinematic_child_with_derivative_srp_gets_no_srp_and_temps_dont_advance() {
         use crate::components::{
             FlatPlateConfigC, RadiationForceC, SunMarker, TranslationalStateC,
         };
@@ -1494,9 +1497,10 @@ mod tests {
 
         // Run the wrench-aggregation pipeline + the SRP system.
         // Order: composite_mass → flat_plate_srp → force_collection →
-        // wrench_aggregation. We need a non-zero `dt` for the
-        // Scheduled-arm Euler integration to actually move
-        // temperatures.
+        // wrench_aggregation. A non-zero `dt` is set so the
+        // Scheduled-arm Euler integration *would* advance
+        // temperatures if the child were eligible — but the
+        // kinematic-child filter must keep that from happening.
         use bevy::time::Fixed;
         use std::time::Duration;
         const DT: f64 = 1.0;
@@ -1516,10 +1520,11 @@ mod tests {
         // First tick: `flat_plate_srp_system` runs *before*
         // `wrench_aggregation_system` adds `KinematicChildC` (the
         // marker comes online at the end of the tick), so the SRP
-        // path takes the derivative arm and stashes `stage_inputs`.
+        // path stashes `stage_inputs` on the derivative arm.
         // Second tick is the load-bearing one — by then the child
-        // carries `KinematicChildC` and the SRP path must take the
-        // Scheduled fallback.
+        // carries `KinematicChildC` and the SRP main query must
+        // skip it; the cleanup arm must zero its leftover state so
+        // nothing leaks up the wrench walk to the parent.
         for _ in 0..2 {
             app.world_mut()
                 .resource_mut::<Time<Fixed>>()
@@ -1533,41 +1538,53 @@ mod tests {
             "child must be marked KinematicChildC after first tick"
         );
 
-        // RadiationForceC on the child should be non-zero —
-        // `flat_plate_srp_system`'s kinematic-child fallback ran the
-        // Scheduled arm, which writes the SRP force directly here.
-        // Without the fallback, the derivative-class arm would
-        // stash `stage_inputs` and leave `RadiationForceC` at zero
-        // (the integration system that consumes `stage_inputs` is
-        // filtered out for kinematic children).
+        // `RadiationForceC` on the child must be zero — the
+        // cleanup arm of `flat_plate_srp_system` ran on the second
+        // tick (when the child carries `KinematicChildC`) and
+        // dropped any prior-tick value. A non-zero force here would
+        // mean the cleanup arm never ran, and the stale SRP would
+        // be propagated to the parent via
+        // `force_collection_system` + `wrench_aggregation_system`.
         let rf = app
             .world()
             .get::<RadiationForceC>(child)
             .expect("child should have RadiationForceC");
         let force_mag = rf.force.length();
         assert!(
-            force_mag > 1e-9,
-            "kinematic child with derivative-class FlatPlateConfigC should still see SRP force; \
-             got |force|={force_mag:.3e} N (the per-step zero clear was never overwritten — \
-             flat_plate_srp_system's kinematic-child fallback did not fire)"
+            force_mag < 1e-12,
+            "kinematic child SRP force must be zero (kinematic children are excluded from SRP \
+             until propagate_state_from_root_system lands); got |force|={force_mag:.3e} N — \
+             cleanup arm of flat_plate_srp_system did not fire, leaking stale SRP up the \
+             wrench walk"
         );
 
-        // Plate temperatures should also have changed — the Euler
-        // step fed `temp_dots` into `integrate_temperatures` only on
-        // the Scheduled arm. The temperature delta direction depends
-        // on the absorbed flux vs emitted blackbody, but it must be
-        // *something* under direct sunlight on a non-zero-emissivity
-        // plate at 270 K.
+        // The kinematic child's `stage_inputs` must also be cleared
+        // by the cleanup arm; otherwise the next-tick transition
+        // back to root (e.g. detach) would consume stale RK4 stage
+        // inputs.
         let fc = app
             .world()
             .get::<FlatPlateConfigC>(child)
             .expect("child should have FlatPlateConfigC");
+        assert!(
+            fc.0.stage_inputs.is_none(),
+            "kinematic child stage_inputs must be cleared by the cleanup arm; left over from \
+             pre-kinematic ticks would be consumed when the entity later demotes back to root"
+        );
+
+        // Plate temperatures must NOT have advanced — only the
+        // Scheduled arm of the main query integrates temperatures,
+        // and the cleanup arm intentionally does not call
+        // `integrate_temperatures`. The plate stays frozen at its
+        // initial temperature for kinematic children this PR; the
+        // follow-up that introduces propagated child state will
+        // bring temperature integration back online.
         let temp_delta = (fc.0.temperatures[0] - initial_temp).abs();
         assert!(
-            temp_delta > 1e-6,
-            "kinematic child plate temperature should advance under Euler integration; \
-             got Δ={temp_delta:.3e} K (still at {} K — flat_plate_srp_system's kinematic-child \
-             fallback did not run the temperature integration)",
+            temp_delta < 1e-12,
+            "kinematic child plate temperatures must stay frozen this PR (no SRP for kinematic \
+             children until propagate_state_from_root_system lands); got Δ={temp_delta:.3e} K \
+             at {} K — temperature integration ran for an entity that should have been excluded",
             fc.0.temperatures[0]
         );
     }
