@@ -25,12 +25,22 @@
 //! ```
 
 pub use crate::{
-    Abm4StateC, AerodynamicForceC, AtmosphericStateC, DynamicsConfigC, FrameDerivativesC,
-    GaussJacksonStateC, GravityAccelerationC, GravityControlsC, GravitySourceC, GravityTorqueC,
-    IntegratorTypeC, JeodPlugin, JeodSet, MassPropertiesC, PlanetFixedRotationC, RadiationForceC,
-    RotationalStateC, SimulationTimeR, SourceInertialPositionC, SourceInertialVelocityC,
-    StructuralTransformC, TotalForceC, TranslationalStateC, VehicleConfigBevyExt,
+    Abm4StateC, AerodynamicForceC, AtmosphericStateC, BodyFrameMarker, DynamicsConfigC,
+    FrameAngVelC, FrameDerivativesC, FrameEntityC, FrameRotC, FrameTransC, GaussJacksonStateC,
+    GravityAccelerationC, GravityControlsC, GravitySourceC, GravityTorqueC, InertialFrameMarker,
+    IntegrationFrameMarker, IntegratorTypeC, JeodPlugin, JeodSet, MassPropertiesC,
+    PfixFrameEntityC, PlanetFixedFrameMarker, PlanetFixedRotationC, RadiationForceC,
+    RootFrameEntityR, RotationalStateC, SimulationTimeR, SourceInertialPositionC,
+    SourceInertialVelocityC, StructuralTransformC, TotalForceC, TranslationalStateC,
+    VehicleConfigBevyExt,
 };
+// Issue #277 — additive infrastructure for the ECS-native frame tree.
+// `RelativeFrameState` is the mission-facing replacement for
+// `FrameTreeR.compute_relative_state` / `frame_origin`; it lives in
+// the dedicated `frame_param` module so its `SystemParam` import is
+// explicit at the use site, but the prelude re-exports it for the
+// "use bevy_jeod::prelude::*" path.
+pub use crate::frame_param::RelativeFrameState;
 
 // All `jeod_quantities` re-exports come through `jeod_sim` so the
 // `bevy_jeod` root package keeps its single dependency on `jeod_sim`
