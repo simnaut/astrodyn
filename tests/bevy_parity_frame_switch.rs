@@ -140,8 +140,7 @@ fn tier3_bevy_frame_switch_earth_to_moon_matches_simulation() {
     let _earth_fid = app.world().get::<SourceFrameIdC>(earth).unwrap().0;
     let moon_fid = app.world().get::<SourceFrameIdC>(moon).unwrap().0;
     // The body's current integration frame is the parent of its frame
-    // entity in the ECS hierarchy (no `IntegFrameIdC` lookup since
-    // PR 3 dropped that handle component).
+    // entity in the ECS hierarchy.
     let body_frame_entity = app.world().get::<FrameEntityC>(vehicle).unwrap().0;
     let initial_integ_frame_entity = app
         .world()
@@ -172,10 +171,9 @@ fn tier3_bevy_frame_switch_earth_to_moon_matches_simulation() {
         .0
         .to_untyped();
     // Post-switch: the body frame entity's `ChildOf` parent must be
-    // the Moon's frame entity (the load-bearing ECS reparent that
-    // replaced the `IntegFrameIdC` rewrite). Cross-check against the
-    // arena via `BodyFrameIdC` / `SourceFrameIdC` to confirm the
-    // dual-write stayed in lockstep.
+    // the Moon's frame entity (the load-bearing ECS reparent).
+    // Cross-check against the arena via `BodyFrameIdC` /
+    // `SourceFrameIdC` to confirm the dual-write stayed in lockstep.
     let bevy_integ_frame_entity = app
         .world()
         .get::<bevy::prelude::ChildOf>(body_frame_entity)

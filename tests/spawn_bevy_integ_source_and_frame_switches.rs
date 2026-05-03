@@ -386,10 +386,9 @@ fn tier3_spawn_bevy_integ_source_plus_frame_switch_matches_simulation() {
     }
 
     // After the switch fires, the body's frame entity must be reparented
-    // under the Moon's frame entity (the load-bearing ECS-side reparent
-    // that replaced the `IntegFrameIdC` rewrite in PR 3); this is a
-    // cheap shape check that confirms `frame_switch_system` saw the
-    // entity-tagged switch list.
+    // under the Moon's frame entity (the load-bearing ECS-side
+    // reparent); this is a cheap shape check that confirms
+    // `frame_switch_system` saw the entity-tagged switch list.
     let body_frame_entity = app
         .world()
         .get::<FrameEntityC>(vehicle)

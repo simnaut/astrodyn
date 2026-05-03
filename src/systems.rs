@@ -916,8 +916,8 @@ pub fn sync_body_to_frame_system(
 /// reparent is mirrored on the ECS side via
 /// `commands.entity(body_frame).insert(ChildOf(new_parent_frame))` so
 /// the body frame entity's `ChildOf` parent — the load-bearing
-/// "current integration frame" lookup after `IntegFrameIdC`'s removal
-/// — stays in lockstep with the arena.
+/// "current integration frame" lookup — stays in lockstep with the
+/// arena.
 ///
 /// Runs in `JeodSet::Integration` after [`sync_body_to_frame_system`].
 /// Bodies without [`FrameSwitchesC`] are skipped.
@@ -1043,12 +1043,12 @@ pub fn frame_switch_system(
             trans.0.position = pos_typed;
             trans.0.velocity = vel_typed;
             // Mirror the arena reparent on the ECS side: the body
-            // frame entity's `ChildOf` parent is now the live "current
-            // integration frame" lookup (no `IntegFrameIdC` to update).
-            // The new parent frame entity is either the root frame
-            // entity or the source's `FrameEntityC` whose
-            // `SourceFrameIdC` matches `current_integ_fid` (mutated in
-            // place by the helper above).
+            // frame entity's `ChildOf` parent is the live "current
+            // integration frame" lookup. The new parent frame entity
+            // is either the root frame entity or the source's
+            // `FrameEntityC` whose `SourceFrameIdC` matches
+            // `current_integ_fid` (mutated in place by the helper
+            // above).
             let new_parent_frame_entity = if current_integ_fid == root.0 {
                 root_frame_entity.0
             } else {
@@ -1683,8 +1683,7 @@ pub fn force_collection_system(
 ///
 /// Per-body integration-frame origins (relative to root) are queried via
 /// the [`FrameOrigin`] SystemParam, which walks the ECS frame hierarchy
-/// (`Query<&ChildOf>` on the body's frame entity) instead of an explicit
-/// `IntegFrameIdC` handle component.
+/// (`Query<&ChildOf>` on the body's frame entity).
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn integration_system(
     frame_origin: FrameOrigin,
