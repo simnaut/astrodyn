@@ -228,6 +228,10 @@ impl MassStorage for MassTreeView {
     fn roots(&self) -> Vec<Self::Id> {
         self.roots.clone()
     }
+
+    fn node_count(&self) -> usize {
+        self.nodes.len()
+    }
 }
 
 // ---------------------------------------------------------------------------

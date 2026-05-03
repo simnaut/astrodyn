@@ -35,6 +35,8 @@
 //! `FrameStorage::state` shape.
 
 use core::fmt::Debug;
+use core::hash::Hash;
+use std::collections::{HashMap, HashSet};
 
 use glam::{DMat3, DVec3};
 
@@ -111,7 +113,7 @@ impl Default for MassNodeOutputs {
 pub trait MassStorage {
     /// Backend-specific node identifier (`MassBodyId` for the arena,
     /// `Entity` for the Bevy adapter).
-    type Id: Copy + Eq + Debug;
+    type Id: Copy + Eq + Hash + Debug;
 
     /// Direct parent of `id`, or `None` for a root.
     fn parent(&self, id: Self::Id) -> Option<Self::Id>;
@@ -128,6 +130,14 @@ pub trait MassStorage {
     /// `None`). The kernel walks each root post-order to honour the
     /// "leaves first" invariant.
     fn roots(&self) -> Vec<Self::Id>;
+
+    /// Total number of nodes in the storage. Used by the kernel to
+    /// detect cycles / orphans: after a roots-only walk, we assert
+    /// that every node was reached (`visited.len() == node_count()`)
+    /// per the "Fail Loudly" rule. A cycle starves `roots()` of any
+    /// entry into the affected subtree, so without this check the
+    /// kernel would silently leave stale composites in place.
+    fn node_count(&self) -> usize;
 }
 
 /// Compute the composite properties of one node, given its core view
@@ -307,15 +317,45 @@ pub fn finalize_child_in_parent_frame(
 /// Returned vector is in post-order (children before parents) so a
 /// caller that needs to write back in dependency-respecting order
 /// can iterate in sequence.
+///
+/// Complexity is `O(N)` in the number of nodes: child output lookup
+/// uses a [`HashMap`] keyed by `S::Id`, and the visited set uses a
+/// [`HashSet`] for `O(1)` membership (previously both were `Vec`
+/// scans, which made the walk `O(N²)` and regressed large articulated
+/// vehicles vs the arena's linear-time recomputation).
+///
+/// Panics with a "Fail Loudly" diagnostic if the walk reaches fewer
+/// than [`MassStorage::node_count`] nodes — this catches `MassChildOf`
+/// cycles, children whose parent isn't reachable from any root, or
+/// other invalid topologies that would otherwise leave stale
+/// composites silently in place. The arena `MassTree::attach` path
+/// already rejects same-tree attachments at construction; this kernel
+/// is the equivalent failsafe for the Bevy adapter, where mission
+/// code edits relations directly through `Commands`.
 pub fn recompute_composites_via_storage<S: MassStorage>(
     storage: &S,
 ) -> Vec<(S::Id, MassNodeOutputs)> {
     let roots = storage.roots();
-    let mut out: Vec<(S::Id, MassNodeOutputs)> = Vec::new();
-    let mut seen: Vec<S::Id> = Vec::new();
+    let expected = storage.node_count();
+    let mut out: Vec<(S::Id, MassNodeOutputs)> = Vec::with_capacity(expected);
+    let mut index: HashMap<S::Id, usize> = HashMap::with_capacity(expected);
+    let mut seen: HashSet<S::Id> = HashSet::with_capacity(expected);
     for root in roots {
-        walk(storage, root, true, &mut out, &mut seen);
+        walk(storage, root, true, &mut out, &mut index, &mut seen);
     }
+    // Cycle / orphan detection: every node must have been visited.
+    // A `MassChildOf` cycle has no root, so the affected subtree is
+    // never entered; a child whose parent points to an unreachable
+    // node is similarly stranded. Panic with a diagnostic that
+    // names how many nodes were missed so the caller can find the
+    // broken edge — per CLAUDE.md "Fail Loudly".
+    assert!(
+        seen.len() == expected,
+        "MassStorage topology has a cycle or orphan: {} of {} nodes unreachable from roots(). \
+         Check MassChildOf edges for cycles, missing parents, or detached subtrees.",
+        expected.saturating_sub(seen.len()),
+        expected
+    );
     out
 }
 
@@ -324,24 +364,25 @@ fn walk<S: MassStorage>(
     id: S::Id,
     is_root: bool,
     out: &mut Vec<(S::Id, MassNodeOutputs)>,
-    seen: &mut Vec<S::Id>,
+    index: &mut HashMap<S::Id, usize>,
+    seen: &mut HashSet<S::Id>,
 ) {
-    if seen.contains(&id) {
+    if !seen.insert(id) {
         return;
     }
     let children = storage.children(id);
     let mut child_outputs: Vec<MassNodeOutputs> = Vec::with_capacity(children.len());
     for child_id in children {
-        walk(storage, child_id, false, out, seen);
-        // Re-find the child's output in `out` (post-order push); the
-        // last entry whose id matches is the child we just walked,
-        // since each node is pushed exactly once.
+        walk(storage, child_id, false, out, index, seen);
+        // O(1) lookup of the child's pre-finalised output via the
+        // index map (replaces the previous tail-scan over `out`,
+        // which made the walk O(n²)).
+        let slot = *index.get(&child_id).expect(
+            "child not pushed by post-order walk: kernel invariant — \
+             walk(child) above must always push exactly one (id, outputs) entry",
+        );
         let child_view = storage.node(child_id);
-        let mut child_out = out
-            .iter()
-            .rev()
-            .find_map(|(cid, o)| if *cid == child_id { Some(*o) } else { None })
-            .expect("child not pushed by post-order walk");
+        let mut child_out = out[slot].1;
         // Fill in composite_wrt_pstr against this child's
         // structure_point (in *its parent's* structural frame).
         finalize_child_in_parent_frame(&mut child_out, &child_view.structure_point);
@@ -349,14 +390,13 @@ fn walk<S: MassStorage>(
         // Persist the parent-relative fields back into the stored
         // entry so the caller writing back to storage sees the
         // finalized `composite_wrt_pstr`.
-        if let Some(slot) = out.iter_mut().rev().find(|(cid, _)| *cid == child_id) {
-            slot.1 = child_out;
-        }
+        out[slot].1 = child_out;
     }
     let view = storage.node(id);
     let outputs = compute_node_composite(view, &child_outputs, is_root);
-    seen.push(id);
+    let slot = out.len();
     out.push((id, outputs));
+    index.insert(id, slot);
 }
 
 // ---------------------------------------------------------------------------
@@ -391,6 +431,10 @@ impl MassStorage for MassTree {
             }
         }
         roots
+    }
+
+    fn node_count(&self) -> usize {
+        MassTree::len(self)
     }
 }
 
