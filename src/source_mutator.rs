@@ -1,17 +1,21 @@
-//! Source-state mutation API for Bevy missions.
+//! Source-state read/write API for Bevy missions.
 //!
 //! `jeod_runner::Simulation` exposes `set_source_position`,
-//! `set_source_state`, and `set_source_ephemeris` for runtime gravity-source
-//! retargeting. The Bevy adapter mirrors **the frame-tree-touching
-//! mutators** (`set_source_position`, `set_source_state`) via the
-//! [`SourceMutator`] system parameter, which wraps the lifted helpers in
-//! [`jeod_sim::source_state`] and additionally syncs the legacy ECS
-//! components ([`SourceInertialPositionC`] / [`SourceInertialVelocityC`])
-//! so existing systems observe the mutation. `set_source_ephemeris` is
-//! intentionally not mirrored: it records a `(target, observer)` mapping
-//! on a runner-private vector with no frame-tree mutation; the Bevy
-//! adapter expresses the same intent via the
-//! [`crate::components::EphemerisBodyC`] component.
+//! `set_source_state`, and `set_source_ephemeris` for runtime
+//! gravity-source retargeting, and `source_position`,
+//! `source_pfix_rotation`, `source_frame_id` for read-only access.
+//! The Bevy adapter mirrors **the frame-state-touching read/write**
+//! surface via the [`SourceMutator`] system parameter, which operates
+//! directly on the source's frame entity (carrying [`FrameTransC`] and
+//! optional [`PfixFrameEntityC`]) and additionally syncs the ECS
+//! components ([`SourceInertialPositionC`] /
+//! [`SourceInertialVelocityC`] / [`TranslationalStateC`]) on writes so
+//! existing systems observe the mutation.
+//!
+//! `set_source_ephemeris` is intentionally not mirrored: it records a
+//! `(target, observer)` mapping on a runner-private vector with no
+//! frame-state mutation; the Bevy adapter expresses the same intent
+//! via the [`crate::components::EphemerisBodyC`] component.
 //!
 //! ```ignore
 //! use bevy::prelude::*;
@@ -21,59 +25,55 @@
 //! // Targets a gravity-source entity (e.g. one spawned via `PlanetBundle`
 //! // or with an explicit `GravitySourceC` + `SourceInertialPositionC`).
 //! // `SunBundle` / `SunMarker` entities are *not* gravity sources and do
-//! // not carry `SourceFrameIdC`; calling the mutator on one panics.
+//! // not carry `FrameEntityC`; calling the mutator on one panics.
 //! fn retarget(mut mutator: SourceMutator, planet: Single<Entity, With<GravitySourceC>>) {
 //!     mutator.set_source_state(*planet, DVec3::new(1.5e11, 0.0, 0.0), DVec3::ZERO);
 //! }
 //! ```
 //!
-//! The mutator runs against [`crate::FrameTreeR`] + entities carrying a
-//! [`crate::SourceFrameIdC`] (auto-inserted on every gravity source
-//! entity by `register_source_frames_system`).
-//!
-//! [`crate::FrameTreeR`] is `#[deprecated]` for mission-code use.
-//! `SourceMutator` is mission-facing but mutates the arena directly
-//! during the dual-write phase — that's the *internal* coupling that
-//! will be replaced by mutating the ECS frame entities and removing
-//! the resource. The mission-facing surface (mutator method shapes)
-//! is stable; only the storage backing changes. The file-level
-//! `#![allow(deprecated)]` keeps the dual-write internals quiet.
-#![allow(deprecated)] // Internal FrameTreeR mutation during the dual-write phase.
+//! The mutator runs against entities carrying a [`FrameEntityC`]
+//! (auto-inserted on every gravity-source entity by
+//! `register_source_frames_system`).
 
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
-use glam::DVec3;
-use jeod_sim::{set_source_position, set_source_state, FrameId, SourceFrameIds};
+use glam::{DMat3, DVec3};
 
 use crate::components::{
-    CentralSourceMarker, SourceFrameIdC, SourceInertialPositionC, SourceInertialVelocityC,
-    TranslationalStateC,
+    CentralSourceMarker, FrameEntityC, FrameRotC, FrameTransC, PfixFrameEntityC,
+    SourceInertialPositionC, SourceInertialVelocityC, TranslationalStateC,
 };
-use crate::{FrameTreeR, RootFrameIdR};
 
-/// Bevy `SystemParam` exposing source-state mutation analogous to
-/// `jeod_runner::Simulation::set_source_*`. Operates on entities that
-/// carry a [`SourceFrameIdC`] pointing into [`FrameTreeR`].
+/// Bevy `SystemParam` exposing source-state read/write API analogous
+/// to `jeod_runner::Simulation::source_*` / `set_source_*`. Operates
+/// on entities that carry a [`FrameEntityC`] pointing at the source's
+/// frame entity.
 ///
-/// The mutator updates **both** the frame-tree node and the legacy ECS
-/// components (`SourceInertialPositionC`, `SourceInertialVelocityC`,
-/// `TranslationalStateC`) so any system observing those components sees
-/// the change immediately. If a source entity lacks
-/// [`SourceInertialVelocityC`] when [`Self::set_source_state`] is called
-/// with a non-zero velocity, the component is auto-inserted so the
-/// gravity / PPN code that reads it sees the new value on the next
-/// step. (Without this auto-insert, `set_source_state` would silently
-/// no-op on the velocity write for sources spawned via
+/// Mutators (`set_source_position`, `set_source_state`) update **both**
+/// the source's frame entity (`FrameTransC`) and the ECS components
+/// (`SourceInertialPositionC`, `SourceInertialVelocityC`,
+/// `TranslationalStateC`) so any system observing those components
+/// sees the change immediately. If a source entity lacks
+/// [`SourceInertialVelocityC`] when [`Self::set_source_state`] is
+/// called with a non-zero velocity, the component is auto-inserted
+/// so the gravity / PPN code that reads it sees the new value on the
+/// next step. (Without this auto-insert, `set_source_state` would
+/// silently no-op on the velocity write for sources spawned via
 /// `PlanetBundle::point_mass`, which doesn't include
 /// [`SourceInertialVelocityC`] by default.)
+///
+/// Read-only accessors (`source_position`, `source_pfix_rotation`,
+/// `source_frame_entity`) read the source's frame entity directly,
+/// returning the same numerics the gravity / integration / mission
+/// systems consume via [`crate::frame_param::FrameOrigin`] and
+/// [`crate::frame_param::RelativeFrameState`].
 ///
 /// **Central-body protection**: `jeod_runner::Simulation` rejects
 /// mutations of the *root* source (the central body, since the root
 /// frame must stay identity) via `assert_ne!(fid, root_frame_id, …)`.
 /// The Bevy adapter never maps any source to the root
 /// (`register_source_frames_system` always adds sources as children),
-/// so that structural-root assertion only fires for entities that
-/// manually attach `SourceFrameIdC(root_id)`. To restore the
+/// so that structural-root assertion has no analog. To restore the
 /// user-facing protection in a normal Bevy app, attach
 /// [`CentralSourceMarker`] to the gravity-source entity that mission
 /// code treats as the pinned origin (e.g. Earth in an Earth-centered
@@ -82,15 +82,13 @@ use crate::{FrameTreeR, RootFrameIdR};
 /// just opt-in.
 #[derive(SystemParam)]
 pub struct SourceMutator<'w, 's> {
-    /// The simulation frame tree resource.
-    pub frame_tree: ResMut<'w, FrameTreeR>,
-    /// Root inertial frame ID (used to refuse mutation of the root-mapped
-    /// central source — matches `jeod_runner::Simulation::set_source_position`).
-    pub root: Res<'w, RootFrameIdR>,
-    /// Commands for auto-inserting [`SourceInertialVelocityC`] on sources
-    /// that lack it when [`Self::set_source_state`] is called.
+    /// Commands for auto-inserting [`SourceInertialVelocityC`] on
+    /// sources that lack it when [`Self::set_source_state`] is called.
     commands: Commands<'w, 's>,
-    frame_ids: Query<'w, 's, &'static SourceFrameIdC>,
+    frame_entities: Query<'w, 's, &'static FrameEntityC>,
+    pfix_frame_entities: Query<'w, 's, &'static PfixFrameEntityC>,
+    frame_trans: Query<'w, 's, &'static mut FrameTransC>,
+    frame_rots: Query<'w, 's, &'static FrameRotC>,
     positions: Query<'w, 's, &'static mut SourceInertialPositionC>,
     velocities: Query<'w, 's, &'static mut SourceInertialVelocityC>,
     translational: Query<'w, 's, &'static mut TranslationalStateC>,
@@ -99,42 +97,116 @@ pub struct SourceMutator<'w, 's> {
 }
 
 impl SourceMutator<'_, '_> {
-    /// Set the inertial position of `source` and sync to the frame tree
-    /// and ECS components. Velocity is not modified — prefer
-    /// [`Self::set_source_state`] when the new velocity is also known.
+    /// Get the source's frame entity. Mirrors
+    /// `jeod_sim::source_state::source_frame_id` but returns a Bevy
+    /// `Entity` — the post-PR4 replacement for the arena's
+    /// `FrameId`.
     ///
     /// # Panics
     ///
-    /// - `source` does not carry a [`SourceFrameIdC`] (i.e. it isn't a
+    /// Panics if `source` does not carry a [`FrameEntityC`] (i.e. it
+    /// isn't a registered gravity source).
+    pub fn source_frame_entity(&self, source: Entity) -> Entity {
+        self.fetch_frame_entity(source, "source_frame_entity")
+    }
+
+    /// Get the inertial-frame position of `source` relative to the
+    /// root inertial frame, in root-frame coordinates. Mirrors
+    /// `jeod_sim::source_state::source_position`.
+    ///
+    /// Reads the source's frame entity's [`FrameTransC`] directly —
+    /// the same storage [`crate::frame_param::FrameOrigin`] and
+    /// [`crate::frame_param::RelativeFrameState`] consume.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `source` does not carry a [`FrameEntityC`].
+    pub fn source_position(&self, source: Entity) -> DVec3 {
+        let fe = self.fetch_frame_entity(source, "source_position");
+        self.frame_trans
+            .get(fe)
+            .map(|t| t.position)
+            .unwrap_or_else(|err| {
+                panic!(
+                    "SourceMutator::source_position: {label} has \
+                     FrameEntityC({fe:?}) but that entity has no \
+                     FrameTransC ({err:?}). The source's frame entity \
+                     must be alive with FrameTransC attached (spawned \
+                     by register_source_frames_system).",
+                    label = self.entity_label(source),
+                )
+            })
+    }
+
+    /// Get the planet-fixed rotation matrix for `source` (the
+    /// `t_parent_this` of the source's pfix frame entity). Returns
+    /// `None` if the source has no pfix frame entity (i.e. no
+    /// [`PfixFrameEntityC`] — non-rotating source). Mirrors
+    /// `jeod_sim::source_state::source_pfix_rotation`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `source` does not carry a [`FrameEntityC`] (i.e.
+    /// isn't a registered gravity source). Returns `None` (not panic)
+    /// when the source is registered but has no pfix child — same
+    /// contract as the arena helper.
+    pub fn source_pfix_rotation(&self, source: Entity) -> Option<DMat3> {
+        // Verify the entity is a registered gravity source first.
+        let _ = self.fetch_frame_entity(source, "source_pfix_rotation");
+        let pfix_fe = self.pfix_frame_entities.get(source).ok()?;
+        let rot = self.frame_rots.get(pfix_fe.0).unwrap_or_else(|err| {
+            panic!(
+                "SourceMutator::source_pfix_rotation: {label} has \
+                 PfixFrameEntityC({fe:?}) but that entity has no \
+                 FrameRotC ({err:?}). The pfix frame entity must be \
+                 alive with FrameRotC attached (spawned by \
+                 register_pfix_frames_system).",
+                fe = pfix_fe.0,
+                label = self.entity_label(source),
+            )
+        });
+        Some(rot.t_parent_this)
+    }
+
+    /// Set the inertial position of `source` and sync to the source's
+    /// frame entity and ECS components. Velocity is not modified —
+    /// prefer [`Self::set_source_state`] when the new velocity is
+    /// also known.
+    ///
+    /// # Panics
+    ///
+    /// - `source` does not carry a [`FrameEntityC`] (i.e. it isn't a
     ///   registered gravity source — spawn it via [`crate::PlanetBundle`]
     ///   so `register_source_frames_system` registers it).
     /// - `source` carries [`CentralSourceMarker`]: mission code has opted
     ///   that entity into central-body protection (mirrors
     ///   `jeod_runner::Simulation::set_source_position`'s root-source
     ///   rejection).
-    /// - `source` maps to the root frame: the root frame must remain
-    ///   identity, so its position cannot be retargeted. (Only reachable
-    ///   if `SourceFrameIdC(root_id)` is attached manually — Bevy's
-    ///   `register_source_frames_system` never maps a source to root.)
     pub fn set_source_position(&mut self, source: Entity, position: DVec3) {
-        // Verify the entity is a registered gravity source first; that's
-        // the more fundamental misconfiguration to surface (a non-source
-        // entity carrying CentralSourceMarker hits the SourceFrameIdC
-        // panic before the marker panic, which is the diagnostic ordering
-        // a debugging user actually wants).
-        let fid = self.fetch_frame_id(source, "set_source_position");
+        // Verify the entity is a registered gravity source first;
+        // that's the more fundamental misconfiguration to surface
+        // (a non-source entity carrying CentralSourceMarker hits the
+        // FrameEntityC panic before the marker panic, which is the
+        // diagnostic ordering a debugging user actually wants).
+        let fe = self.fetch_frame_entity(source, "set_source_position");
         self.assert_not_central(source, "set_source_position");
-        let source_frames = [SourceFrameIds {
-            inertial: fid,
-            pfix: None,
-        }];
-        set_source_position(
-            &mut self.frame_tree.0,
-            &source_frames,
-            self.root.0,
-            0,
-            position,
-        );
+        // Capture the label before the mutable borrow so the panic
+        // closure doesn't need to re-borrow `self`.
+        let label = self.entity_label(source);
+
+        // Write to the source's frame entity's FrameTransC. The
+        // referenced entity must carry FrameTransC; fail loud
+        // otherwise (mirrors the sync-system contract).
+        let mut frame_trans = self.frame_trans.get_mut(fe).unwrap_or_else(|err| {
+            panic!(
+                "SourceMutator::set_source_position: {label} has \
+                 FrameEntityC({fe:?}) but that entity has no \
+                 FrameTransC ({err:?}). The source's frame entity \
+                 must be alive with FrameTransC attached (spawned by \
+                 register_source_frames_system)."
+            )
+        });
+        frame_trans.position = position;
 
         // SourceMutator's public API takes a raw user-supplied DVec3
         // (mirroring `jeod_runner::Simulation::set_source_position`);
@@ -153,24 +225,24 @@ impl SourceMutator<'_, '_> {
     ///
     /// # Panics
     ///
-    /// - `source` does not carry a [`SourceFrameIdC`].
+    /// - `source` does not carry a [`FrameEntityC`].
     /// - `source` carries [`CentralSourceMarker`].
-    /// - `source` maps to the root frame.
     pub fn set_source_state(&mut self, source: Entity, position: DVec3, velocity: DVec3) {
-        let fid = self.fetch_frame_id(source, "set_source_state");
+        let fe = self.fetch_frame_entity(source, "set_source_state");
         self.assert_not_central(source, "set_source_state");
-        let source_frames = [SourceFrameIds {
-            inertial: fid,
-            pfix: None,
-        }];
-        set_source_state(
-            &mut self.frame_tree.0,
-            &source_frames,
-            self.root.0,
-            0,
-            position,
-            velocity,
-        );
+        let label = self.entity_label(source);
+
+        let mut frame_trans = self.frame_trans.get_mut(fe).unwrap_or_else(|err| {
+            panic!(
+                "SourceMutator::set_source_state: {label} has \
+                 FrameEntityC({fe:?}) but that entity has no \
+                 FrameTransC ({err:?}). The source's frame entity \
+                 must be alive with FrameTransC attached (spawned by \
+                 register_source_frames_system)."
+            )
+        });
+        frame_trans.position = position;
+        frame_trans.velocity = velocity;
 
         // SourceMutator's public API takes raw user-supplied DVec3s
         // (mirroring `jeod_runner::Simulation::set_source_state`);
@@ -221,16 +293,16 @@ impl SourceMutator<'_, '_> {
         }
     }
 
-    fn fetch_frame_id(&self, source: Entity, method: &str) -> FrameId {
-        self.frame_ids
+    fn fetch_frame_entity(&self, source: Entity, method: &str) -> Entity {
+        self.frame_entities
             .get(source)
             .map(|c| c.0)
             .unwrap_or_else(|err| {
                 panic!(
                     "SourceMutator::{method}: {label} is not a registered \
-                 gravity source (missing SourceFrameIdC). Spawn it via PlanetBundle \
+                 gravity source (missing FrameEntityC). Spawn it via PlanetBundle \
                  (or insert GravitySourceC + SourceInertialPositionC) and let \
-                 `register_source_frames_system` register the frame node before \
+                 `register_source_frames_system` register the frame entity before \
                  mutating it. Underlying error: {err:?}",
                     label = self.entity_label(source),
                 )

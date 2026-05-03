@@ -24,15 +24,11 @@
 //! 4. Not pre-installed: plugin spawns and inserts.
 //! 5. Pre-installed and valid: plugin preserves the caller's entity.
 //!
-//! This mirrors `jeod_plugin_frame_tree_validation.rs` for the
-//! arena-side `FrameTreeR` / `RootFrameIdR` pair.
-//!
-//! Issue #277 PR 1 round-5 review fixup (Copilot, threadId
-//! `PRRT_kwDORtae6c5_K7a4`): without these checks, a pre-installed
-//! `RootFrameEntityR` was silently overwritten, leaking the original
-//! root entity and producing a frame hierarchy split across two
-//! disconnected roots — exactly the kind of "wrong physics that
-//! still runs" failure the "Fail Loudly" rule forbids.
+//! Without these checks, a pre-installed `RootFrameEntityR` would
+//! be silently overwritten, leaking the original root entity and
+//! producing a frame hierarchy split across two disconnected
+//! roots — exactly the kind of "wrong physics that still runs"
+//! failure the "Fail Loudly" rule forbids.
 
 use bevy::prelude::*;
 use bevy_jeod::{

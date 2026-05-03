@@ -363,59 +363,6 @@ pub struct PlanetFixedRotationC(pub FrameTransform<RootInertial, PlanetFixed<Sel
 #[reflect(opaque, Component)]
 pub struct PlanetOmegaC(pub f64);
 
-/// Frame-tree node ID for a gravity source entity.
-///
-/// Inserted by `register_source_frames_system` (a `Startup` system in
-/// [`JeodPlugin`](crate::JeodPlugin)) for every entity that carries
-/// [`GravitySourceC`] but no [`SourceFrameIdC`] yet. Once present, it
-/// pins the source to a specific node in [`crate::FrameTreeR`] so
-/// helpers like [`crate::SourceMutator`] can mutate the right node.
-///
-/// Issue #71 items 2 and 5.
-#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
-pub struct SourceFrameIdC(pub jeod_sim::FrameId);
-
-/// Optional frame-tree node ID for a gravity source's planet-fixed
-/// (pfix) child frame. Populated alongside [`SourceFrameIdC`] for
-/// sources that carry [`PlanetFixedRotationC`] — the same gate
-/// `planet_fixed_rotation_system` filters on. When `PlanetFixedRotationC`
-/// is present and [`RotationModelC`] is omitted, the registration falls
-/// back to [`RotationModel::EarthRNP`](jeod_sim::RotationModel::EarthRNP).
-/// A non-`None` [`RotationModelC`] alone does *not* trigger pfix
-/// creation; without `PlanetFixedRotationC` the source is treated as
-/// non-rotating and gets no pfix child.
-#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
-pub struct SourcePfixFrameIdC(pub jeod_sim::FrameId);
-
-/// Hidden component that stashes a previously-allocated pfix frame ID
-/// on a source whose [`RotationModelC`] just toggled to
-/// [`RotationModel::None`](jeod_sim::RotationModel::None). The
-/// `SourcePfixFrameIdC` is removed at the same time so consumers
-/// branching on the public component's presence correctly see "no
-/// planet-fixed frame", but the underlying [`jeod_sim::FrameTree`]
-/// node is kept alive — renamed to a sentinel so
-/// [`jeod_sim::FrameTree::find_by_name`] won't shadow a live
-/// `<name>.pfix` lookup — so the next toggle back to a rotating
-/// model can reuse it instead of allocating a fresh node.
-///
-/// Without reuse, every `None → rotating → None → rotating …` cycle
-/// would leak an additional `<name>.pfix` node into the frame tree
-/// (which has no removal API since arena indices are stable) and let
-/// `find_by_name` return the stale orphan instead of the live frame.
-#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
-pub struct RetiredPfixFrameIdC(pub jeod_sim::FrameId);
-
-/// Frame-tree node ID for a vehicle entity. Inserted by
-/// `register_body_frames_system` (a `Startup` system in
-/// [`JeodPlugin`](crate::JeodPlugin)) for every entity that carries
-/// [`TranslationalStateC`] but no [`BodyFrameIdC`] yet. Issue #71 item 2.
-#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
-#[reflect(opaque, Component)]
-pub struct BodyFrameIdC(pub jeod_sim::FrameId);
-
 /// Optional initial integration-frame source for a body (issue #71
 /// item 4). Mirrors [`jeod_sim::VehicleConfig::integ_source`]: when set
 /// to `Some(planet_entity)`, the body integrates in that source's
@@ -454,24 +401,21 @@ pub struct IntegSourceC(pub Option<Entity>);
 /// `FrameSwitchConfig<Entity>` so `target_source` references a gravity
 /// source by ECS entity rather than by registration index — matching
 /// `GravityControlsC`'s `Entity`-keyed semantics. Read by
-/// [`crate::frame_switch_system`]; the system delegates to the lifted
-/// generic [`jeod_sim::evaluate_and_apply_frame_switch`].
+/// [`crate::frame_switch_system`], which evaluates the predicates
+/// against [`crate::frame_param::RelativeFrameState`] and reparents
+/// the body's frame entity directly via Bevy `ChildOf`.
 #[derive(Component, Debug, Clone, Default, Deref, DerefMut, Reflect)]
 #[reflect(opaque, Component)]
 pub struct FrameSwitchesC(pub Vec<jeod_sim::FrameSwitchConfig<Entity>>);
 
-// ── Issue #277 / #270: frames-as-entities components ──
+// ── Frames-as-entities components ──
 //
-// Additive infrastructure for the long-term ECS-native frame-tree
-// shape described in the [Frame-Tree-ECS-Native wiki page][1]
-// (Section 13 sequencing). These live on **frame entities** (not body
-// or source entities) and mirror the per-node state of the arena's
-// [`FrameTreeR`](crate::FrameTreeR). During the dual-write phase the
-// arena and these components are populated together so the remaining
-// arena consumers (`frame_switch_system`, the registration / sync
-// systems) stay green while SystemParam-based consumers (gravity,
-// integration, mission code via [`crate::frame_param`]) read from the
-// ECS hierarchy directly via `ChildOf` / `Children`.
+// Live on **frame entities** (not body or source entities) and carry
+// the per-frame state described in the [Frame-Tree-ECS-Native wiki
+// page][1] (Section 13 sequencing). The ECS hierarchy is the single
+// source of truth for all frame-tree state — gravity, integration,
+// frame-switch, and mission code via [`crate::frame_param`] all read
+// from the ECS hierarchy directly via `ChildOf` / `Children`.
 //
 // Component split rationale: the three pieces of `RefFrameState` are
 // independently mutated in practice. `FrameTransC` is rewritten by
@@ -579,28 +523,32 @@ pub struct IntegrationFrameMarker;
 
 /// Bidirectional handle linking a body / source / planet entity to its
 /// frame entity in the ECS hierarchy. Inserted by
-/// `register_*_frames_system` alongside the existing `*FrameIdC`
-/// components during the dual-write phase. Internal physics consumers
-/// (gravity, integration) read this handle and walk
-/// `Query<&ChildOf>` to recover the body's integration frame; once
-/// the arena and the remaining `*FrameIdC` companions are removed,
-/// this becomes the only frame-tree handle the body / source entity
-/// needs. Issue #277.
+/// `register_*_frames_system` for every entity that carries dynamics
+/// state. Internal physics consumers (gravity, integration,
+/// frame-switch) and mission code via [`crate::frame_param`] read this
+/// handle and walk `Query<&ChildOf>` from the frame entity to recover
+/// the body's integration frame, the source's child frames, etc. The
+/// frame entity itself carries [`FrameTransC`] / [`FrameRotC`] /
+/// [`FrameAngVelC`] (the per-node state).
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
 #[reflect(opaque, Component)]
 pub struct FrameEntityC(pub Entity);
 
 /// Frame entity for a source's planet-fixed (pfix) child frame.
-/// Mirrors [`SourcePfixFrameIdC`] in the entity-as-frame world.
-/// Inserted alongside `SourcePfixFrameIdC` during the dual-write
-/// phase. Issue #277.
+///
+/// Inserted by `register_pfix_frames_system` for every gravity source
+/// that carries [`PlanetFixedRotationC`] and a non-`None`
+/// [`RotationModelC`]. Removed when the rotation model toggles to
+/// `None` (in which case the underlying ECS entity is retained as
+/// [`RetiredPfixFrameEntityC`] for reuse on the next toggle back to a
+/// rotating model — see that component's docs).
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
 #[reflect(opaque, Component)]
 pub struct PfixFrameEntityC(pub Entity);
 
 /// Hidden component that stashes a previously-spawned pfix *frame
-/// entity* (the ECS dual-write counterpart of [`PfixFrameEntityC`])
-/// on a source whose [`RotationModelC`] just toggled to
+/// entity* (the canonical [`PfixFrameEntityC`]) on a source whose
+/// [`RotationModelC`] just toggled to
 /// [`RotationModel::None`](jeod_sim::RotationModel::None). The
 /// public [`PfixFrameEntityC`] is removed at the same time so any
 /// reader branching on its presence correctly observes "no
@@ -608,13 +556,12 @@ pub struct PfixFrameEntityC(pub Entity);
 /// alive — its `Name` is renamed to a `.retired` sentinel and its
 /// `FrameRotC`/`FrameAngVelC` are reset to identity — so the next
 /// toggle back to a rotating model can reuse it instead of spawning
-/// a fresh entity. Mirrors the arena-side [`RetiredPfixFrameIdC`]
-/// retirement semantics.
+/// a fresh entity.
 ///
 /// Without this, every `None → rotating → None → rotating …` toggle
 /// cycle would leak a fresh `<name>.frame.pfix` entity per cycle,
 /// since [`crate::systems::register_pfix_frames_system`] filters by
-/// `Without<SourcePfixFrameIdC>` and unconditionally spawns a new
+/// `Without<PfixFrameEntityC>` and unconditionally spawns a new
 /// entity for any source missing the public component.
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
 #[reflect(opaque, Component)]

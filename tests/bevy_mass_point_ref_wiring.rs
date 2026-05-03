@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 use bevy_jeod::{
-    BodyFrameIdC, DynamicsConfigC, JeodPlugin, MassPointRef, MassPropertiesC, RotationalStateC,
+    DynamicsConfigC, FrameEntityC, JeodPlugin, MassPointRef, MassPropertiesC, RotationalStateC,
     TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
@@ -83,8 +83,8 @@ fn mass_point_ref_inserted_on_body_with_mass_properties() {
 
     // Body frame registered.
     assert!(
-        app.world().get::<BodyFrameIdC>(body).is_some(),
-        "BodyFrameIdC missing — register_body_frames_system did not run"
+        app.world().get::<FrameEntityC>(body).is_some(),
+        "FrameEntityC missing — register_body_frames_system did not run"
     );
     // MassPointRef back-pointer wired and points at the body itself
     // (frame entity == mass entity == body entity in current Bevy
@@ -103,7 +103,7 @@ fn mass_point_ref_inserted_on_body_with_mass_properties() {
 #[test]
 fn mass_point_ref_inserted_when_mass_acquired_after_registration() {
     // PR #283 review thread `PRRT_kwDORtae6c5_K7qF`:
-    // `register_body_frames_system` filters by `Without<BodyFrameIdC>`
+    // `register_body_frames_system` filters by `Without<FrameEntityC>`
     // and only sees each body once. A body that starts kinematic-only
     // (no `MassPropertiesC`) and later acquires it must still get the
     // `MassPointRef` back-pointer wired up — otherwise the "frame
@@ -127,11 +127,11 @@ fn mass_point_ref_inserted_when_mass_acquired_after_registration() {
         .advance_by(Duration::from_secs_f64(DT));
     app.world_mut().run_schedule(FixedUpdate);
 
-    // After the first tick: body is registered (has BodyFrameIdC),
+    // After the first tick: body is registered (has FrameEntityC),
     // but no back-pointer yet because it had no mass.
     assert!(
-        app.world().get::<BodyFrameIdC>(body).is_some(),
-        "BodyFrameIdC must be inserted on first tick"
+        app.world().get::<FrameEntityC>(body).is_some(),
+        "FrameEntityC must be inserted on first tick"
     );
     assert!(
         app.world().get::<MassPointRef>(body).is_none(),
@@ -232,8 +232,8 @@ fn mass_point_ref_omitted_for_kinematic_only_body() {
     app.world_mut().run_schedule(FixedUpdate);
 
     assert!(
-        app.world().get::<BodyFrameIdC>(body).is_some(),
-        "BodyFrameIdC should still be inserted on a kinematic-only body"
+        app.world().get::<FrameEntityC>(body).is_some(),
+        "FrameEntityC should still be inserted on a kinematic-only body"
     );
     assert!(
         app.world().get::<MassPointRef>(body).is_none(),

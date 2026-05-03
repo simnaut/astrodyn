@@ -340,9 +340,9 @@ fn tier3_bevy_integ_source_root_matches_legacy_no_op() {
     // is unchanged — bodies integrate in root, integ_origin = 0, and
     // results match the existing `bevy_parity_point_mass` semantics.
     // This test mirrors the simplest existing parity scenario but
-    // explicitly with the new components present (FrameTreeR + body
-    // registration), confirming the new code path is bit-identical to
-    // the pre-#71 behavior.
+    // explicitly with the frame-entity registration components
+    // present, confirming the new code path is bit-identical to the
+    // pre-#71 behavior.
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));

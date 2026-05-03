@@ -1,10 +1,13 @@
 //! Bevy-native `SystemParam`s for cross-frame state computation
 //! ([Frame-Tree-ECS-Native § 13][1]).
 //!
-//! Replaces `FrameTreeR`-backed arena lookups (`compute_relative_state`,
-//! `frame_origin`) with ECS hierarchy walks over Bevy's `ChildOf` /
-//! `Children` relationship and the new
-//! [`FrameTransC`] / [`FrameRotC`] / [`FrameAngVelC`] components.
+//! ECS-native cross-frame queries via Bevy's `ChildOf` / `Children`
+//! relationship and the [`FrameTransC`] / [`FrameRotC`] /
+//! [`FrameAngVelC`] components on frame entities. Mission code asks
+//! for cross-frame state by passing entity handles; the
+//! `SystemParam`s walk the hierarchy and dispatch through the
+//! storage-agnostic [`jeod_sim::FrameStorage`] algorithm shared with
+//! `jeod_runner`.
 //!
 //! Mission code asks for cross-frame state by passing entity handles,
 //! never `FrameId`s — the surface looks like any other Bevy
@@ -19,24 +22,22 @@
 //! - [`RelativeFrameState`] — general "state of `to` relative to
 //!   `from`" query. Returns raw `DVec3` (and the full
 //!   [`RefFrameState`] when the rotation/angular-velocity portion is
-//!   needed). The drop-in replacement for
-//!   `FrameTreeR.compute_relative_state(from, to)`.
+//!   needed).
 //! - [`FrameOrigin`] — specialized "origin of a frame in an ancestor
 //!   frame" query. Returns
 //!   `(Position<RootInertial>, Velocity<RootInertial>)` typed at the
 //!   root-inertial phantom when called against the root frame entity.
 //!   Sugar over `RelativeFrameState::position_velocity(root, frame)`
 //!   that makes the resulting frame phantom explicit in the
-//!   signature. The drop-in replacement for
-//!   `frame_origin(tree, root, frame_id)` /
-//!   `frame_origin_typed::<RootInertial>(tree, root, frame_id)`.
+//!   signature.
 //!
-//! While the underlying components are kept in lockstep with
-//! [`crate::FrameTreeR`] via dual-write, these `SystemParam`s and the
-//! arena helpers return bit-identical numerics (see
-//! `tests/frame_storage_relative_frame_state.rs`). Mission code may
-//! adopt the new surface incrementally; the arena will be removed once
-//! all internal consumers have migrated.
+//! Both `SystemParam`s walk the ECS hierarchy
+//! (`Query<&ChildOf>`) over the
+//! [`crate::components::FrameTransC`] / [`crate::components::FrameRotC`] /
+//! [`crate::components::FrameAngVelC`] components on frame entities,
+//! delegating the per-step compose to the storage-agnostic algorithm
+//! shared with `jeod_runner`'s arena via the
+//! [`jeod_sim::FrameStorage`] trait.
 //!
 //! [1]: https://github.com/simnaut/bevy_jeod/wiki/Frame-Tree-ECS-Native#13-migration-sequencing
 //! [2]: https://github.com/simnaut/bevy_jeod/wiki/Frame-Tree-ECS-Native#7-internal-algorithm-sharing-q1
@@ -58,15 +59,11 @@ use crate::components::{FrameAngVelC, FrameRotC, FrameTransC};
 /// dispatched through the storage-agnostic
 /// [`jeod_sim::frame_compute_relative_state_via_storage`] algorithm.
 ///
-/// ECS-native replacement for
-/// `FrameTreeR.compute_relative_state(from_id, to_id)` and
-/// `frame_origin(tree, root, frame_id)`.
-///
-/// While the dual-write infrastructure keeps the underlying components
-/// in lockstep with the arena, this `SystemParam` is a drop-in
-/// alternative with identical numerics. Mission code that migrates
-/// first sees an `Entity`-keyed surface (no `FrameId`s, no
-/// `Res<FrameTreeR>`).
+/// Numerically identical to `jeod_runner::Simulation`'s arena-backed
+/// `compute_relative_state` for the same scenario — both consumers
+/// share the storage-agnostic algorithm via the
+/// [`jeod_sim::FrameStorage`] trait. Mission code reads an
+/// `Entity`-keyed surface (no `FrameId`s, no frame-tree resource).
 #[derive(SystemParam)]
 pub struct RelativeFrameState<'w, 's> {
     parents: Query<'w, 's, &'static ChildOf>,

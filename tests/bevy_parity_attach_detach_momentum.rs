@@ -24,18 +24,12 @@
 //!    detached entity is no longer integrated by the wrench-aggregation
 //!    walk; `step_detached_system` owns its propagation.
 
-// `FrameTreeR` is `#[deprecated]` for mission-code use. This parity test
-// deliberately reads the arena to assert bit-identity of the
-// detach/free-flight frame-tree mirror against the body components.
-// Once the resource is removed, the arena read here will be rewritten
-// to use `RelativeFrameState`.
-#![allow(deprecated)]
-
 use bevy::prelude::*;
 use bevy_jeod::{
     AttachEvent, DetachEvent, DetachedSubtreeStateC, DynamicsConfigC, FrameDerivativesC,
-    GravityAccelerationC, GravityControlsC, GravitySourceC, JeodPlugin, MassBodyIdC,
-    MassPropertiesC, MassTreeR, RotationalStateC, SourceInertialPositionC, TranslationalStateC,
+    FrameEntityC, FrameTransC, GravityAccelerationC, GravityControlsC, GravitySourceC, JeodPlugin,
+    MassBodyIdC, MassPropertiesC, MassTreeR, RotationalStateC, SourceInertialPositionC,
+    TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
 use jeod_sim::{
@@ -808,14 +802,14 @@ fn stage_attach_combine_parity_smoke() {
 
 /// `step_detached_system` must run before the frame-tree sync /
 /// frame-switch evaluation. Detached bodies still carry
-/// `BodyFrameIdC`, so without an explicit ordering constraint the
+/// `FrameEntityC`, so without an explicit ordering constraint the
 /// schedule is free to run `sync_body_to_frame_system` against the
 /// pre-step body state, then have `step_detached_system` overwrite
-/// `TranslationalStateC` afterwards — leaving the frame-tree node
-/// out of sync with the body for one tick.
+/// `TranslationalStateC` afterwards — leaving the body's frame
+/// entity desynced from the body for one tick.
 ///
-/// After detach + one `App::update()`, the `FrameTreeR` node for the
-/// detached entity must reflect the *post-step* body position
+/// After detach + one `App::update()`, the body's frame entity's
+/// `FrameTransC` must reflect the *post-step* body position
 /// (advanced by one ballistic `dt`), not the pre-step position the
 /// detached subtree carried at the start of the tick.
 #[test]
@@ -874,30 +868,27 @@ fn bevy_step_detached_runs_before_frame_tree_sync() {
         "detached TranslationalStateC must advance one ballistic step: got {body_pos:?}, expected {expected_body_pos:?}"
     );
 
-    let body_fid = app
+    let body_frame_entity = app
         .world()
-        .get::<bevy_jeod::components::BodyFrameIdC>(child_entity)
-        .expect("detached body retains BodyFrameIdC during free flight")
+        .get::<FrameEntityC>(child_entity)
+        .expect("detached body retains FrameEntityC during free flight")
         .0;
-    let frame_node_pos = app
+    let frame_pos = app
         .world()
-        .resource::<bevy_jeod::FrameTreeR>()
-        .0
-        .get(body_fid)
-        .state
-        .trans
+        .get::<FrameTransC>(body_frame_entity)
+        .expect("body frame entity must carry FrameTransC")
         .position;
 
-    // The crux of the regression: the frame-tree node must mirror
-    // the post-`step_detached_system` body state. If
-    // `sync_body_to_frame_system` raced ahead of
-    // `step_detached_system`, the node would still hold the
+    // The crux of the regression: the body frame entity's
+    // FrameTransC must mirror the post-`step_detached_system` body
+    // state. If `sync_body_to_frame_system` raced ahead of
+    // `step_detached_system`, the FrameTransC would still hold the
     // pre-step position and this assertion would fail.
     assert!(
-        (frame_node_pos - body_pos).length() < 1e-12,
-        "FrameTreeR body node must reflect post-step body position \
+        (frame_pos - body_pos).length() < 1e-12,
+        "body frame entity FrameTransC must reflect post-step body position \
          (sync_body_to_frame_system must run after step_detached_system): \
-         frame node {frame_node_pos:?}, body {body_pos:?}"
+         frame {frame_pos:?}, body {body_pos:?}"
     );
 }
 
