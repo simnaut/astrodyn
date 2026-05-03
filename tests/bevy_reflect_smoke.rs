@@ -80,11 +80,15 @@ const EXPECTED_REGISTERED_TYPE_PATHS: &[&str] = &[
     "bevy_jeod::components::ExternalTorqueC",
     // Body / planet identity + ephemeris
     "bevy_jeod::components::MassBodyIdC",
+    // Mass-tree relations (issue #271)
+    "bevy_jeod::components::MassChildOf",
+    "bevy_jeod::components::MassPointRef",
     "bevy_jeod::components::PlanetC",
     "bevy_jeod::components::RotationModelC",
     "bevy_jeod::components::EphemerisBodyC",
     "bevy_jeod::components::SunMarker",
     "bevy_jeod::components::MoonMarker",
+    "bevy_jeod::components::CentralSourceMarker",
     // Derived-state config
     "bevy_jeod::components::OrbitalElementsConfigC",
     "bevy_jeod::components::EulerAnglesConfigC",
@@ -116,6 +120,36 @@ fn every_reflect_derived_component_is_registered() {
         missing.is_empty(),
         "register_jeod_component_types missed Components:\n  {}",
         missing.join("\n  "),
+    );
+}
+
+/// Bidirectional check (PR #283 review thread PRRT_kwDORtae6c5_KHnW
+/// — Copilot round 3): every `bevy_jeod::components::*` type that
+/// appears in the live registry is enumerated in
+/// [`EXPECTED_REGISTERED_TYPE_PATHS`]. A new
+/// `register_type::<components::Foo>` call without a matching entry
+/// in this inventory is now a test failure, instead of silently
+/// drifting. This prevents the original `MassChildOf` / `MassPointRef`
+/// gap (registered in `JeodPlugin::build` but unlisted) from
+/// recurring.
+#[test]
+fn no_unlisted_bevy_jeod_component_is_registered() {
+    let mut app = App::new();
+    register_jeod_component_types(&mut app);
+    let registry = app.world().resource::<AppTypeRegistry>().read();
+    let expected: std::collections::HashSet<&str> =
+        EXPECTED_REGISTERED_TYPE_PATHS.iter().copied().collect();
+    let extras: Vec<String> = registry
+        .iter()
+        .map(|reg| reg.type_info().type_path().to_string())
+        .filter(|p| p.starts_with("bevy_jeod::components::"))
+        .filter(|p| !expected.contains(p.as_str()))
+        .collect();
+    assert!(
+        extras.is_empty(),
+        "register_jeod_component_types registered Components not listed in \
+         EXPECTED_REGISTERED_TYPE_PATHS — add them to the inventory:\n  {}",
+        extras.join("\n  "),
     );
 }
 

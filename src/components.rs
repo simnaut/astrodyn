@@ -825,6 +825,115 @@ pub struct ExternalTorqueC(pub Torque<BodyFrame<SelfRef>>);
 #[reflect(opaque, Component)]
 pub struct MassBodyIdC(pub jeod_sim::MassBodyId);
 
+/// ECS-native mass-tree relation: marks `Entity` carrying this component
+/// as a sub-mass attached to the referenced parent entity in the **mass
+/// tree** (deliberately distinct from Bevy's frame-tree `ChildOf`).
+///
+/// Mirrors JEOD's separation of `RefFrame` and `MassBody` trees (see
+/// [Frame-Tree-ECS-Native § 15.2](https://github.com/simnaut/bevy_jeod/wiki/Frame-Tree-ECS-Native#152-mass--inertia-composition)
+/// and Appendix A.3): the kinematic frame tree and the inertial mass
+/// tree evolve under independent attach/detach paths, coupled only by
+/// the explicit [`MassPointRef`] back-pointer. Keeping the two
+/// relations as separate `Component`s makes Bevy's hierarchy +
+/// observer plumbing one-to-one with JEOD's "two trees + named
+/// coupling" architecture.
+///
+/// The component carries the **parent reference** plus the
+/// attach-edge geometry (`offset` + `t_parent_child`), matching the
+/// arena's per-body `MassBody::structure_point` (`offset` is the
+/// child's structural origin in the *parent's* structural frame;
+/// `t_parent_child` is the rotation from the parent's structural
+/// frame into this body's structural frame). Edge geometry lives on
+/// the child because every child has exactly one parent — which
+/// matches both JEOD's `MassBody` layout and the natural ECS
+/// component-per-entity grain.
+///
+/// The carrier entity must also have [`MassPropertiesC`]; the
+/// `composite_mass_system` walks `MassChildOf` edges bottom-up via
+/// the [`jeod_sim::MassStorage`] trait and writes the recomputed
+/// composite properties back into [`MassPropertiesC`] on every node
+/// in the affected subtree.
+///
+/// # JEOD precedent
+///
+/// `MassBody` nodes form a tree via `MassBodyLinks` (see
+/// `models/dynamics/mass/include/mass.hh`); `MassBody::structure_point`
+/// (`MassPointState`) carries the per-attach offset + rotation that
+/// `MassChildOf` mirrors here. `BodyRefFrame::mass_point`
+/// (`models/dynamics/dyn_body/include/body_ref_frame.hh`) is the
+/// frame-side back-pointer connecting a kinematic frame to its
+/// mass-tree origin — see [`MassPointRef`] for the Bevy port.
+// JEOD_INV: MA.08 — no cycle in mass tree (composite_mass_system asserts via post-order walk)
+// JEOD_INV: MA.19 — no same-tree attachment (cycle prevention)
+#[derive(Component, Debug, Clone, Copy, Reflect)]
+#[reflect(opaque, Component)]
+pub struct MassChildOf {
+    /// Parent entity in the mass tree.
+    pub parent: Entity,
+    /// Child's structural origin expressed in the **parent's**
+    /// structural frame (m). Default `[0, 0, 0]` means the child's
+    /// struct origin is co-located with the parent's struct origin.
+    pub offset: glam::DVec3,
+    /// Rotation from the parent's structural frame into this body's
+    /// structural frame. Default identity (no relative rotation).
+    pub t_parent_child: glam::DMat3,
+}
+
+impl MassChildOf {
+    /// Convenience constructor for an axis-aligned (identity rotation)
+    /// attach at the given offset.
+    pub fn new(parent: Entity, offset: glam::DVec3) -> Self {
+        Self {
+            parent,
+            offset,
+            t_parent_child: glam::DMat3::IDENTITY,
+        }
+    }
+
+    /// Convenience constructor for a co-located attach (zero offset,
+    /// identity rotation). The child's struct origin sits on the
+    /// parent's struct origin — useful when the child's CoM offset
+    /// is encoded in its own [`MassPropertiesC.center_of_mass`](MassPropertiesC).
+    pub fn at_origin(parent: Entity) -> Self {
+        Self {
+            parent,
+            offset: glam::DVec3::ZERO,
+            t_parent_child: glam::DMat3::IDENTITY,
+        }
+    }
+
+    /// Full constructor with explicit offset + rotation, mirroring
+    /// `MassTree::attach(child, parent, offset, t_parent_child)`.
+    pub fn with_rotation(parent: Entity, offset: glam::DVec3, t_parent_child: glam::DMat3) -> Self {
+        Self {
+            parent,
+            offset,
+            t_parent_child,
+        }
+    }
+}
+
+/// Frame-side back-pointer linking a body's frame entity to the
+/// mass-tree node that supplies the body's **mass-point origin**
+/// (CoM offset + struct→body rotation).
+///
+/// Mirrors JEOD's `BodyRefFrame::mass_point` (a `MassPoint *`) defined
+/// in `models/dynamics/dyn_body/include/body_ref_frame.hh`. JEOD uses
+/// this back-pointer to route kinematic state queries on a body frame
+/// (which knows the mass-side point) without forcing the frame and
+/// mass trees to share their hierarchy, which is the same separation
+/// the Bevy adapter mirrors via [`MassChildOf`] vs Bevy's `ChildOf`.
+///
+/// **Optional by design.** Per [Frame-Tree-ECS-Native § 15.2](https://github.com/simnaut/bevy_jeod/wiki/Frame-Tree-ECS-Native#152-mass--inertia-composition)
+/// the back-pointer is *absent for kinematic-only attaches* — i.e.
+/// frame entities whose kinematics ride a parent without contributing
+/// to that parent's mass (sensor mounts, station-keeping vehicles
+/// attached only via `attach_to_frame`). Mission code attaches it
+/// only when the frame entity also participates in the mass tree.
+#[derive(Component, Debug, Clone, Copy, Reflect)]
+#[reflect(opaque, Component)]
+pub struct MassPointRef(pub Entity);
+
 /// Message: attach a child body to a parent in the mass tree.
 ///
 /// Both entities must have [`MassBodyIdC`]. Processed by `staging_system`

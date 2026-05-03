@@ -135,6 +135,16 @@ impl MassTree {
         &self.children[id]
     }
 
+    /// Number of bodies in the arena.
+    pub fn len(&self) -> usize {
+        self.nodes.len()
+    }
+
+    /// True when no bodies have been added yet.
+    pub fn is_empty(&self) -> bool {
+        self.nodes.is_empty()
+    }
+
     /// All bodies whose composite mass properties depend on the body
     /// `id` — i.e. `id` itself plus every ancestor up to the root, in
     /// child→root order.
