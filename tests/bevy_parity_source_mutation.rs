@@ -1,11 +1,11 @@
 //! Tier 3: Bevy `SourceMutator` vs `jeod_runner::Simulation::set_source_*`
-//! parity (issue #71 item 5).
+//! parity.
 //!
-//! Issue #71 catalogued that `jeod_runner::Simulation` exposed
-//! `set_source_position`, `set_source_state`, and `set_source_ephemeris`
-//! for runtime gravity-source retargeting; the Bevy adapter had no
-//! equivalent. This test exercises the new
-//! [`bevy_jeod::SourceMutator`] system parameter and asserts that:
+//! `jeod_runner::Simulation` exposes `set_source_position`,
+//! `set_source_state`, and `set_source_ephemeris` for runtime
+//! gravity-source retargeting. The Bevy adapter mirrors the
+//! frame-tree-touching mutators via [`bevy_jeod::SourceMutator`]. This
+//! test asserts:
 //!
 //! 1. After mutation, the Bevy planet entity's `SourceInertialPositionC`,
 //!    `SourceInertialVelocityC`, and `TranslationalStateC` carry the
@@ -18,10 +18,14 @@
 //!    asserts central-body mutations are forbidden; Bevy currently
 //!    doesn't map any source to root, so this codepath only fires in
 //!    jeod_runner).
-//!
-//! Phase B step B11 of the issue #71 plan; closes the parity-test gap
-//! flagged in the plan (no existing parity test exercised source
-//! mutation).
+
+// `FrameTreeR` is `#[deprecated]` for mission-code use. This is a
+// Tier 3 parity test between the Bevy adapter and `jeod_runner` — it
+// deliberately reads the arena to assert bit-identity of the
+// source-mutation path. Once the resource is removed, the parity
+// assertion that currently reads the arena will be rewritten to use
+// `RelativeFrameState`.
+#![allow(deprecated)]
 
 use bevy::prelude::*;
 use bevy_jeod::{
@@ -76,11 +80,11 @@ fn tier3_bevy_source_mutator_set_state_matches_runner() {
     app.world_mut()
         .spawn(PlanetBundle::point_mass("Earth", &EARTH));
     // Spawn the Moon WITHOUT `SourceInertialVelocityC` so the test
-    // exercises `SourceMutator::set_source_state`'s auto-insert path
-    // (PR #260 round-3 fixup): `PlanetBundle::point_mass` doesn't
-    // include the velocity component, and the auto-insert is the
-    // contract that prevents the silent-no-op footgun. Asserting the
-    // post-mutation velocity below confirms the component was inserted.
+    // exercises `SourceMutator::set_source_state`'s auto-insert path:
+    // `PlanetBundle::point_mass` doesn't include the velocity
+    // component, and the auto-insert is the contract that prevents
+    // the silent-no-op footgun. Asserting the post-mutation velocity
+    // below confirms the component was inserted.
     let moon_entity = app
         .world_mut()
         .spawn(PlanetBundle::point_mass("Moon", &MOON))
@@ -203,7 +207,7 @@ fn tier3_bevy_source_mutator_central_marker_panics_on_set_position() {
     // entity it treats as the pinned origin. `SourceMutator::set_source_position`
     // must panic on that entity, mirroring `jeod_runner::Simulation`'s
     // `assert_ne!(fid, root_frame_id, …)` rejection of root-source
-    // mutation. Issue #264 closeout.
+    // mutation.
     let mut app = build_app();
     let earth = app
         .world_mut()

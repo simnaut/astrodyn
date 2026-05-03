@@ -2,6 +2,18 @@
 //! orchestration functions. Each system queries the relevant components,
 //! calls into `jeod_sim`, and writes the result back. No physics
 //! algorithms live here.
+//!
+//! ## Deprecation suppression
+//!
+//! [`crate::FrameTreeR`] is `#[deprecated]` for mission-code use. The
+//! systems in this module are *internal physics* and continue to read
+//! the arena during the dual-write phase. They will eventually be
+//! rewritten to use the [`crate::frame_param::RelativeFrameState`] /
+//! [`crate::frame_param::FrameOrigin`] SystemParams, after which the
+//! `FrameTreeR` resource will be removed entirely. Until then, the
+//! file-level `#![allow(deprecated)]` keeps the internal call sites
+//! quiet without weakening the deprecation signal mission code sees.
+#![allow(deprecated)] // Internal FrameTreeR consumers during the dual-write phase.
 
 use bevy::prelude::*;
 use glam::DVec3;
@@ -34,8 +46,8 @@ use crate::SimulationTimeR;
 /// `planet_fixed_rotation_system`.
 ///
 /// This is the Bevy analog of `jeod_runner::Simulation::add_source` —
-/// it makes the lifted source-mutation helpers (issue #71 item 5)
-/// usable directly via [`crate::SourceMutator`].
+/// it makes the lifted source-mutation helpers usable directly via
+/// [`crate::SourceMutator`].
 ///
 /// **Divergence from jeod_runner**: every source becomes a child of
 /// the root frame, including the central body. `jeod_runner` renames
@@ -43,14 +55,14 @@ use crate::SimulationTimeR;
 /// adapter keeps a generic root and treats all sources uniformly so
 /// the registration order doesn't matter and so adding a body in a
 /// non-Earth-central simulation doesn't require special-casing
-/// "central" sources. Frame-switch parity (issue #71 items 2-4) lives
-/// at the orchestration layer, where this divergence is invisible.
+/// "central" sources. Frame-switch parity lives at the orchestration
+/// layer, where this divergence is invisible.
 #[allow(clippy::type_complexity)]
 pub fn register_source_frames_system(
     mut commands: Commands,
     mut frame_tree: ResMut<FrameTreeR>,
     root: Res<crate::RootFrameIdR>,
-    // Issue #277: also spawn ECS frame entities under this root.
+    // Also spawn ECS frame entities under this root.
     root_frame_entity: Res<crate::RootFrameEntityR>,
     sources: Query<
         (
@@ -73,7 +85,7 @@ pub fn register_source_frames_system(
         // lets sources that already carry a non-zero
         // `SourceInertialVelocityC` start with the right velocity in the
         // tree; sources without the velocity component get zero, matching
-        // their ECS state. (Phase B PR #260 review fixup.)
+        // their ECS state.
         let init_pos = pos.0.raw_si();
         let init_vel = vel.map_or(glam::DVec3::ZERO, |v| v.0.raw_si());
         let inertial_id = frame_tree.0.add_child(
@@ -89,10 +101,10 @@ pub fn register_source_frames_system(
             },
         );
 
-        // Issue #277: spawn the source's ECS frame entity parented
-        // under the root frame entity. Both the arena `FrameId` and
-        // the ECS `Entity` describe the same logical inertial frame
-        // until consumers migrate off the arena (Section 13 PRs 2–4).
+        // Spawn the source's ECS frame entity parented under the
+        // root frame entity. Both the arena `FrameId` and the ECS
+        // `Entity` describe the same logical inertial frame until
+        // consumers migrate off the arena.
         let source_frame_entity = commands
             .spawn((
                 Name::new(format!("{label}.frame.inertial")),
@@ -118,8 +130,8 @@ pub fn register_source_frames_system(
         // a permanent identity that `source_pfix_rotation()` would
         // mis-report as `Some(identity)` instead of `None`. Plain
         // point-mass sources spawned without `PlanetFixedRotationC` get no
-        // pfix node, matching `jeod_runner` for the same case (PR #260
-        // round-2 review fixup). When rotation IS present and
+        // pfix node, matching `jeod_runner` for the same case. When
+        // rotation IS present and
         // `RotationModelC` is omitted, the EarthRNP default applies —
         // same default as `planet_fixed_rotation_system`.
         if pfix_rot.is_some() {
@@ -132,8 +144,8 @@ pub fn register_source_frames_system(
                     jeod_sim::RefFrameKind::PlanetFixed,
                     jeod_sim::RefFrameState::default(),
                 );
-                // Issue #277: dual-write — spawn the pfix frame entity
-                // parented under the source's ECS frame entity.
+                // Dual-write — spawn the pfix frame entity parented
+                // under the source's ECS frame entity.
                 let pfix_frame_entity = commands
                     .spawn((
                         Name::new(format!("{label}.frame.pfix")),
@@ -190,13 +202,13 @@ pub fn register_pfix_frames_system(
             Entity,
             Option<&Name>,
             &SourceFrameIdC,
-            // Issue #277: read the source's frame entity so the
-            // spawned pfix frame entity can ChildOf-link under it.
+            // Read the source's frame entity so the spawned pfix
+            // frame entity can ChildOf-link under it.
             Option<&FrameEntityC>,
             Option<&RotationModelC>,
             Option<&RetiredPfixFrameIdC>,
-            // Round-1 review fixup: parallel ECS-entity retirement
-            // marker so we reuse instead of leak on toggle cycles.
+            // Parallel ECS-entity retirement marker so we reuse
+            // instead of leak on toggle cycles.
             Option<&RetiredPfixFrameEntityC>,
         ),
         (
@@ -248,13 +260,13 @@ pub fn register_pfix_frames_system(
             )
         };
 
-        // Issue #277: dual-write — restore or spawn the pfix frame
-        // entity. Round-1 review fixup: prefer reusing a retired
-        // entity (parallel to the arena reuse above) so toggle cycles
-        // don't leak ECS entities. Skip the ECS dual-write entirely
-        // if FrameEntityC is missing — that's a source registered
-        // before the issue #277 components landed; the arena pfix is
-        // still updated above for backward compat.
+        // Dual-write — restore or spawn the pfix frame entity.
+        // Prefer reusing a retired entity (parallel to the arena
+        // reuse above) so toggle cycles don't leak ECS entities. Skip
+        // the ECS dual-write entirely if FrameEntityC is missing —
+        // that's a source registered before the frames-as-entities
+        // components landed; the arena pfix is still updated above
+        // for backward compat.
         if let Some(parent_frame) = source_frame_entity {
             let pfix_frame_entity = if let Some(retired_e) = retired_entity {
                 // Reuse: restore canonical name (via Commands so we
@@ -268,9 +280,9 @@ pub fn register_pfix_frames_system(
                 commands
                     .entity(retired_e.0)
                     .insert(Name::new(format!("{label}.frame.pfix")));
-                // Issue #277 round-6 review fixup: fail loud if the
-                // retired pfix frame entity has lost any of its
-                // FrameTransC / FrameRotC / FrameAngVelC components
+                // Fail loud if the retired pfix frame entity has lost
+                // any of its FrameTransC / FrameRotC / FrameAngVelC
+                // components
                 // (or has been despawned out from under us). Silently
                 // skipping these resets would let stale rotation,
                 // angular velocity, or translation state leak into the
@@ -360,7 +372,7 @@ pub fn register_pfix_frames_system(
 /// per-stage source interpolation in [`integration_system`]) see the
 /// current source state rather than the registration-time snapshot.
 ///
-/// Velocity source-of-truth precedence (PR #260 round-3 review fixup):
+/// Velocity source-of-truth precedence:
 ///
 /// 1. [`SourceInertialVelocityC`] when present — the explicit
 ///    per-source velocity component.
@@ -370,9 +382,6 @@ pub fn register_pfix_frames_system(
 ///    (Sun / Moon entities used by SRP / earth-lighting are typically
 ///    spawned this way via `SunBundle` / `MoonBundle`).
 /// 3. Otherwise leave the frame-tree node's velocity unchanged.
-///
-/// Round 2 only consulted `SourceInertialVelocityC`, which left
-/// ephemeris-only sources stuck at zero velocity in the frame tree.
 ///
 /// Runs in `JeodSet::EphemerisUpdate` after `ephemeris_update_system`
 /// (which writes the ECS components from DE4xx) so the FrameTreeR sync
@@ -385,7 +394,7 @@ pub fn sync_source_to_frame_system(
         &SourceInertialPositionC,
         Option<&SourceInertialVelocityC>,
         Option<&TranslationalStateC>,
-        // Issue #277: dual-write target.
+        // Dual-write target.
         Option<&FrameEntityC>,
     )>,
     mut frame_states: Query<&mut FrameTransC>,
@@ -403,17 +412,17 @@ pub fn sync_source_to_frame_system(
             node.state.trans.velocity = v;
         }
 
-        // Issue #277: ECS dual-write to the source's frame entity.
-        // Skip silently if the source was registered before the
-        // issue #277 components landed (no FrameEntityC). When the
-        // component *is* present, the referenced frame entity must
-        // exist and carry FrameTransC — the registration sites
-        // (`PlanetBundle::spawn` / `register_pfix_frames_system`)
-        // spawn it with `FrameTransC::default()` and the despawn
-        // observers tear it down in lockstep with the source. Round-6
-        // review fixup: fail loud if `FrameEntityC` points at a stale
-        // / missing entity instead of silently leaving the ECS half
-        // of the dual-write out of sync with the arena.
+        // ECS dual-write to the source's frame entity. Skip silently
+        // if the source was registered before the frames-as-entities
+        // components landed (no FrameEntityC). When the component *is*
+        // present, the referenced frame entity must exist and carry
+        // FrameTransC — the registration sites (`PlanetBundle::spawn`
+        // / `register_pfix_frames_system`) spawn it with
+        // `FrameTransC::default()` and the despawn observers tear it
+        // down in lockstep with the source. Fail loud if
+        // `FrameEntityC` points at a stale / missing entity instead
+        // of silently leaving the ECS half of the dual-write out of
+        // sync with the arena.
         if let Some(fe) = frame_entity {
             let mut frame_trans = frame_states.get_mut(fe.0).unwrap_or_else(|err| {
                 panic!(
@@ -452,14 +461,13 @@ pub fn sync_source_to_frame_system(
 /// Runs at `Startup` and again before `JeodSet::EphemerisUpdate` to
 /// catch dynamically-spawned bodies. Filters by
 /// `Without<BodyFrameIdC>` so the registration is one-time per body.
-/// Issue #71 items 2 and 4.
 #[allow(clippy::type_complexity)]
 pub fn register_body_frames_system(
     mut commands: Commands,
     mut frame_tree: ResMut<FrameTreeR>,
     root: Res<crate::RootFrameIdR>,
-    // Issue #277: the ECS-side root frame entity, used as the body's
-    // frame parent when no IntegSourceC is supplied.
+    // The ECS-side root frame entity, used as the body's frame
+    // parent when no IntegSourceC is supplied.
     root_frame_entity: Res<crate::RootFrameEntityR>,
     sources: Query<(&SourceFrameIdC, Option<&FrameEntityC>)>,
     bodies: Query<
@@ -468,14 +476,13 @@ pub fn register_body_frames_system(
             Option<&Name>,
             &TranslationalStateC,
             Option<&IntegSourceC>,
-            // PR #283 review thread PRRT_kwDORtae6c5_KiLK — wire the
-            // frame-side `MassPointRef` back-pointer at body-frame
-            // registration time for any entity that also carries
-            // `MassPropertiesC` (i.e. participates in the mass tree).
-            // In the current Bevy adapter the body / mass / frame
-            // ECS entity is one and the same, so the back-pointer
-            // resolves to `MassPointRef(self)`. The component is
-            // skipped for kinematic-only bodies (no
+            // Wire the frame-side `MassPointRef` back-pointer at
+            // body-frame registration time for any entity that also
+            // carries `MassPropertiesC` (i.e. participates in the
+            // mass tree). In the current Bevy adapter the body /
+            // mass / frame ECS entity is one and the same, so the
+            // back-pointer resolves to `MassPointRef(self)`. The
+            // component is skipped for kinematic-only bodies (no
             // `MassPropertiesC`), matching the "absent for
             // kinematic-only attaches" contract on the type.
             Has<MassPropertiesC>,
@@ -493,7 +500,7 @@ pub fn register_body_frames_system(
             .unwrap_or_else(|| format!("body{:?}", entity));
 
         // Resolve the integration frame ID. Default: root inertial.
-        // Issue #277: also resolve the integ frame ECS entity.
+        // Also resolve the integ frame ECS entity.
         let (integ_frame_id, integ_frame_entity) = match integ_source.and_then(|c| c.0) {
             Some(source_entity) => sources
                 .get(source_entity)
@@ -533,22 +540,21 @@ pub fn register_body_frames_system(
             body_state,
         );
 
-        // Issue #277: spawn body frame entity parented under its
-        // integ frame's ECS entity. Tag the integ frame entity with
+        // Spawn the body frame entity parented under its integ
+        // frame's ECS entity. Tag the integ frame entity with
         // `IntegrationFrameMarker` (idempotent insert via Commands).
         // Skip the ECS spawn if we couldn't resolve an integ frame
-        // entity (e.g. a source registered before the issue #277
-        // components landed); the arena body node is still added
-        // above for backward compat.
+        // entity (e.g. a source registered before the
+        // frames-as-entities components landed); the arena body node
+        // is still added above for backward compat.
         //
-        // PR #283 review thread PRRT_kwDORtae6c5_KiLK — also wire the
-        // frame-side `MassPointRef` back-pointer at body-frame
-        // registration time for any entity that also carries
-        // `MassPropertiesC` (i.e. participates in the mass tree). In
-        // the current Bevy adapter the body / mass / frame ECS entity
-        // is one and the same, so the back-pointer resolves to
-        // `MassPointRef(self)`. The component is skipped for
-        // kinematic-only bodies (no `MassPropertiesC`).
+        // Also wire the frame-side `MassPointRef` back-pointer at
+        // body-frame registration time for any entity that also
+        // carries `MassPropertiesC` (i.e. participates in the mass
+        // tree). In the current Bevy adapter the body / mass / frame
+        // ECS entity is one and the same, so the back-pointer
+        // resolves to `MassPointRef(self)`. The component is skipped
+        // for kinematic-only bodies (no `MassPropertiesC`).
         if let Some(parent_frame_entity) = integ_frame_entity {
             commands
                 .entity(parent_frame_entity)
@@ -594,8 +600,7 @@ pub fn register_body_frames_system(
 /// at the body's first sight — a body that starts kinematic-only and
 /// later acquires `MassPropertiesC` would never receive the
 /// back-pointer, and a body that loses `MassPropertiesC` after first
-/// registration would keep a stale one. PR #283 review thread
-/// `PRRT_kwDORtae6c5_K7qF` flagged both directions.
+/// registration would keep a stale one.
 ///
 /// This system handles the post-registration transitions:
 ///
@@ -661,7 +666,7 @@ pub fn sync_body_mass_point_ref_system(
 // in the arena indefinitely with the original name, eventually
 // shadowing a future re-spawn of the same name via
 // [`jeod_sim::FrameTree::find_by_name`] and growing memory
-// monotonically. PR #260 reviewer-flagged gap.
+// monotonically.
 //
 // The observers below adopt the same "logical retirement" pattern
 // `planet_fixed_rotation_system` already uses for the rotation-toggle
@@ -679,11 +684,11 @@ pub fn sync_body_mass_point_ref_system(
 // Each observer cleans up only its own node; ordering across the
 // per-component `Despawn` triggers is therefore irrelevant.
 //
-// Out of scope (tracked in #268): a body whose
-// [`IntegSourceC`]'s source entity is despawned remains alive but
-// integrates against a now-retired frame. The Bevy-native
-// ECS-hierarchy redesign will close this naturally; until then,
-// mission code is responsible for despawning dependent bodies.
+// Out of scope: a body whose [`IntegSourceC`]'s source entity is
+// despawned remains alive but integrates against a now-retired frame.
+// The Bevy-native ECS-hierarchy redesign will close this naturally;
+// until then, mission code is responsible for despawning dependent
+// bodies.
 fn retire_frame_node(tree: &mut jeod_sim::FrameTree, fid: jeod_sim::FrameId) {
     let node = tree.get_mut(fid);
     if !node.name.ends_with(".despawned") {
@@ -770,13 +775,12 @@ pub fn on_retired_pfix_frame_entity_despawn(
 }
 
 /// On entity despawn, despawn the *frame entity* the source / body
-/// entity carries in [`FrameEntityC`]. Issue #277 PR 1 round-2
-/// review fixup (Copilot, comments 3177683390 + 3177683392):
-/// without this observer, despawning a source or body would leave
-/// its dual-write frame entity (and the pfix child it parents,
-/// when present) alive indefinitely under the root frame entity,
-/// growing the entity count over time and potentially shadowing
-/// future re-spawns of the same `Name`.
+/// entity carries in [`FrameEntityC`]. Without this observer,
+/// despawning a source or body would leave its dual-write frame
+/// entity (and the pfix child it parents, when present) alive
+/// indefinitely under the root frame entity, growing the entity
+/// count over time and potentially shadowing future re-spawns of
+/// the same `Name`.
 ///
 /// Fires for *any* entity that carries [`FrameEntityC`], i.e. both
 /// source entities (registered by [`register_source_frames_system`])
@@ -784,11 +788,9 @@ pub fn on_retired_pfix_frame_entity_despawn(
 /// The cleanup logic is identical for the two cases — the despawning
 /// entity hands us its frame-entity handle and we tear down the
 /// referenced frame entity — so the observer is named for the
-/// component it watches, not for either of the owner kinds. (Issue
-/// #277 PR 1 round-8 review fixup, threadId
-/// `PRRT_kwDORtae6c5_LE-U`: the previous name
-/// `on_source_frame_entity_despawn` misled future readers into
-/// thinking the observer only handled sources.)
+/// component it watches, not for either of the owner kinds (a
+/// previous name `on_source_frame_entity_despawn` misled readers
+/// into thinking the observer only handled sources).
 ///
 /// `try_despawn` (not `despawn`) because Bevy's `ChildOf` /
 /// `Children` relationship already triggers recursive despawn on the
@@ -801,10 +803,10 @@ pub fn on_retired_pfix_frame_entity_despawn(
 /// retirement helpers in this module.
 ///
 /// Mirrors [`on_source_frame_despawn`] / [`on_body_frame_despawn`]
-/// on the ECS-entity track, closing the issue #277 PR 1 round-2
-/// gap: the dual-write spawn sites in
+/// on the ECS-entity track, providing a parallel cleanup for the
+/// dual-write spawn sites in
 /// [`register_source_frames_system`] and
-/// [`register_body_frames_system`] had no parallel cleanup.
+/// [`register_body_frames_system`].
 pub fn on_frame_entity_despawn(
     trigger: On<Despawn, FrameEntityC>,
     owners: Query<&FrameEntityC>,
@@ -844,13 +846,13 @@ pub fn on_source_pfix_frame_entity_despawn(
 /// sees current body state when evaluating switch distances.
 ///
 /// Runs in `JeodSet::Integration` after `integration_system` and
-/// before `frame_switch_system`. Issue #71 item 2.
+/// before `frame_switch_system`.
 pub fn sync_body_to_frame_system(
     mut frame_tree: ResMut<FrameTreeR>,
     bodies: Query<(
         &TranslationalStateC,
         &BodyFrameIdC,
-        // Issue #277: dual-write target.
+        // Dual-write target.
         Option<&FrameEntityC>,
     )>,
     mut frame_states: Query<&mut FrameTransC>,
@@ -864,17 +866,16 @@ pub fn sync_body_to_frame_system(
         node.state.trans.position = position;
         node.state.trans.velocity = velocity;
 
-        // Issue #277: ECS dual-write to the body's frame entity.
-        // Skip silently if the body was registered before the
-        // issue #277 components landed (no FrameEntityC). When the
-        // component *is* present, the referenced body frame entity
-        // must exist and carry FrameTransC — `register_body_frames_system`
+        // ECS dual-write to the body's frame entity. Skip silently
+        // if the body was registered before the frames-as-entities
+        // components landed (no FrameEntityC). When the component
+        // *is* present, the referenced body frame entity must exist
+        // and carry FrameTransC — `register_body_frames_system`
         // spawns it with `FrameTransC` populated from the body's
         // initial state, and the despawn observers tear it down in
-        // lockstep with the body. Round-6 review fixup: fail loud if
-        // `FrameEntityC` points at a stale / missing entity instead
-        // of silently leaving the ECS half of the dual-write out of
-        // sync with the arena.
+        // lockstep with the body. Fail loud if `FrameEntityC` points
+        // at a stale / missing entity instead of silently leaving
+        // the ECS half of the dual-write out of sync with the arena.
         if let Some(fe) = frame_entity {
             let mut frame_trans = frame_states.get_mut(fe.0).unwrap_or_else(|err| {
                 panic!(
@@ -904,15 +905,15 @@ pub fn sync_body_to_frame_system(
 /// source becomes non-differential.
 ///
 /// Runs in `JeodSet::Integration` after [`sync_body_to_frame_system`].
-/// Bodies without [`FrameSwitchesC`] are skipped. Issue #71 item 3.
+/// Bodies without [`FrameSwitchesC`] are skipped.
 ///
 /// JEOD reference: `dyn_body_frame_switch.cc:173-182`. The Bevy adapter
 /// borrows the same logic via the lifted helper, so behavior is
 /// bit-identical to `jeod_runner::Simulation` for the same scenario.
 ///
-/// Phase C4: `FrameSwitchConfig<Entity>` and `GravityControls<Entity>`
-/// flow into the generic helper directly via a closure-based source
-/// lookup; there is no longer a `usize`-keyed bridge.
+/// `FrameSwitchConfig<Entity>` and `GravityControls<Entity>` flow into
+/// the generic helper directly via a closure-based source lookup;
+/// there is no `usize`-keyed bridge.
 #[allow(clippy::type_complexity)]
 pub fn frame_switch_system(
     mut frame_tree: ResMut<FrameTreeR>,
@@ -1035,7 +1036,7 @@ pub fn planet_fixed_rotation_system(
         Option<&PlanetOmegaC>,
         Option<&mut PlanetAngularVelocityC>,
         Option<&SourcePfixFrameIdC>,
-        // Issue #277: dual-write target for the pfix frame entity.
+        // Dual-write target for the pfix frame entity.
         Option<&PfixFrameEntityC>,
     )>,
     mut frame_rots: Query<&mut FrameRotC>,
@@ -1124,19 +1125,17 @@ pub fn planet_fixed_rotation_system(
         // on the pfix frame node. Mirror that on (a) the `PlanetAngularVelocityC`
         // ECS component and (b) the FrameTreeR pfix node so velocity
         // composition both via the typed component and via the lifted
-        // `compute_relative_state` reads the correct rate. Issue #71 item 1
-        // + Copilot review (PR #260): the pfix-node sync via
-        // `jeod_sim::sync_pfix_rotation` is what closes the frame-tree
-        // half of the gap.
+        // `compute_relative_state` reads the correct rate. The
+        // pfix-node sync via `jeod_sim::sync_pfix_rotation` is what
+        // closes the frame-tree half of the gap.
         if rotated {
             // Falling back to `0.0` for a rotating planet (`RotationModelC`
             // present but `PlanetOmegaC` absent) silently misreports the
-            // pfix angular velocity as zero, which leaves issue #71 item 1
-            // broken for manual-spawn call sites that include
-            // `PlanetFixedRotationC` + `RotationModelC` but not
-            // `PlanetOmegaC`. Map the rotation model to the canonical
-            // `PlanetConfig::omega` when the explicit override is absent
-            // (PR #260 round-2 review fixup).
+            // pfix angular velocity as zero for manual-spawn call sites
+            // that include `PlanetFixedRotationC` + `RotationModelC` but
+            // not `PlanetOmegaC`. Map the rotation model to the
+            // canonical `PlanetConfig::omega` when the explicit
+            // override is absent.
             let default_omega = match rotation_model {
                 jeod_sim::RotationModel::None => 0.0,
                 jeod_sim::RotationModel::EarthRNP => jeod_sim::EARTH.omega,
@@ -1163,17 +1162,17 @@ pub fn planet_fixed_rotation_system(
             if let (Some(matrix), Some(pfix_fid)) = (raw_matrix, pfix_fid) {
                 jeod_sim::sync_pfix_rotation(&mut frame_tree.0, pfix_fid.0, matrix, omega_value);
             }
-            // Issue #277: ECS dual-write to the pfix frame entity.
-            // Same data, different storage — keeps `RelativeFrameState`
+            // ECS dual-write to the pfix frame entity. Same data,
+            // different storage — keeps `RelativeFrameState`
             // bit-identical with the arena via `compute_relative_state`.
-            // Round-6 review fixup: when `PfixFrameEntityC` is present
-            // the referenced entity must be alive with FrameRotC /
-            // FrameAngVelC intact (spawned by `register_pfix_frames_system`,
-            // torn down in lockstep with the marker by the despawn
-            // observers and the rotation-toggle retirement path). A
-            // stale handle here would silently leave the ECS pfix
-            // rotation/omega out of sync with the arena, breaking the
-            // dual-write invariant.
+            // When `PfixFrameEntityC` is present the referenced entity
+            // must be alive with FrameRotC / FrameAngVelC intact
+            // (spawned by `register_pfix_frames_system`, torn down in
+            // lockstep with the marker by the despawn observers and
+            // the rotation-toggle retirement path). A stale handle
+            // here would silently leave the ECS pfix rotation/omega
+            // out of sync with the arena, breaking the dual-write
+            // invariant.
             if let (Some(matrix), Some(pfix_fe)) = (raw_matrix, pfix_frame_entity) {
                 let mut frame_rot = frame_rots.get_mut(pfix_fe.0).unwrap_or_else(|err| {
                     panic!(
@@ -1217,7 +1216,7 @@ pub fn planet_fixed_rotation_system(
             // last-tick `(matrix, omega)` on the FrameTreeR pfix node —
             // so frame-tree queries would still report a rotating
             // planet-fixed frame even though the source is configured
-            // as non-rotating. PR #260 round-9 review fixup.
+            // as non-rotating.
             // allowed: explicit identity clear when rotation model toggles to None;
             // the RootInertial → PlanetFixed<SelfPlanet> phantoms are correct by
             // construction (same shape as the rotating-branch from_matrix sites).
@@ -1238,10 +1237,9 @@ pub fn planet_fixed_rotation_system(
                     glam::DMat3::IDENTITY,
                     0.0,
                 );
-                // Issue #277: ECS dual-write — clear the pfix frame
-                // entity's state to identity so any
-                // `RelativeFrameState` reader sees the same identity
-                // clear as the arena. Round-6 review fixup: when
+                // ECS dual-write — clear the pfix frame entity's state
+                // to identity so any `RelativeFrameState` reader sees
+                // the same identity clear as the arena. When
                 // `PfixFrameEntityC` is present, the referenced entity
                 // must be alive with FrameRotC / FrameAngVelC intact;
                 // silently skipping the clear would leave the ECS
@@ -1309,15 +1307,16 @@ pub fn planet_fixed_rotation_system(
                     .remove::<SourcePfixFrameIdC>()
                     .insert(RetiredPfixFrameIdC(pfix_fid.0));
 
-                // Round-1 review fixup: mirror the arena retirement on
-                // the ECS-entity side. Without this, the source kept a
-                // stale `PfixFrameEntityC` handle pointing at an
+                // Mirror the arena retirement on the ECS-entity side.
+                // Without this, the source would keep a stale
+                // `PfixFrameEntityC` handle pointing at an
                 // identity-cleared but otherwise live entity *and*
                 // `register_pfix_frames_system` (which filters by
-                // `Without<SourcePfixFrameIdC>`) spawned a fresh pfix
-                // frame entity on every retoggle — leaking one orphan
-                // ECS entity per `None → rotating → None …` cycle in
-                // addition to the (already-bounded) arena leak.
+                // `Without<SourcePfixFrameIdC>`) would spawn a fresh
+                // pfix frame entity on every retoggle — leaking one
+                // orphan ECS entity per `None → rotating → None …`
+                // cycle in addition to the (already-bounded) arena
+                // leak.
                 //
                 // Retirement semantics for the entity parallel the
                 // arena: the orphan entity stays alive (its
@@ -1425,8 +1424,7 @@ pub fn ephemeris_update_system(
 /// Placed before `JeodSet::EphemerisUpdate` so gravity and force collection
 /// see current mass properties.
 ///
-/// **Change-detection contract** (PR #283 review thread
-/// `PRRT_kwDORtae6c5_K0dm`): the dirty-flag check below is read through
+/// **Change-detection contract**: the dirty-flag check below is read through
 /// `Mut::deref` (immutable access), and `recompute_derived()` is only
 /// invoked — triggering `DerefMut` and marking the component as
 /// `Changed` — when the entity actually needs updating. Without this
@@ -1524,8 +1522,9 @@ pub fn force_collection_system(
         // RotationalStateC and MassPropertiesC now wrap typed siblings;
         // convert to untyped at the kernel boundary. (The kernel
         // signature still takes the untyped form. Migrating the kernel
-        // signature itself is out of scope for #172 H1; the win here
-        // is at the ECS surface where mission code interacts.)
+        // signature itself is out of scope for the ECS-surface typing;
+        // the win here is at the ECS surface where mission code
+        // interacts.)
         let rot_untyped = rot_state.map(|r| r.0.to_untyped());
         let mass_untyped = mass.map(|m| m.0.to_untyped());
 
@@ -1647,7 +1646,7 @@ pub fn integration_system(
             Option<&TidalConfigC>,
             // Fallback velocity source for ephemeris-driven sources (Sun /
             // Moon via SunBundle / MoonBundle) that don't carry
-            // SourceInertialVelocityC. PR #260 round-3 review.
+            // SourceInertialVelocityC.
             Option<&TranslationalStateC>,
         ),
         // Static disjointness vs. the `bodies` query's `&mut
@@ -1683,7 +1682,7 @@ pub fn integration_system(
     // similarly interpolated when the integ frame moves, so the Newtonian
     // gravity field stays consistent across stages. PPN (relativistic)
     // corrections use step-start source state — runner does the same
-    // (`step/integrate.rs:199-202`). Issue #71 item 4 + PR #260 review.
+    // (`step/integrate.rs:199-202`).
     let eval_gravity = |entity: Entity,
                         controls: &GravityControlsC,
                         pos: DVec3,
@@ -1708,18 +1707,18 @@ pub fn integration_system(
         // for the thermal-SRP path) accept a `gravity_fn` closure
         // that receives raw `DVec3` per-stage state. These lifts are
         // inside `jeod_sim` boundary territory, not at the Bevy ECS
-        // surface that #172 H1 was specifically about.
+        // surface where the typed quantities live.
         let typed_abs_pos = Position::<RootInertial>::from_raw_si(pos + stage_origin_pos); // allowed: integrator-kernel boundary
         let typed_abs_vel = Velocity::<RootInertial>::from_raw_si(vel + integ_origin_vel); // allowed: integrator-kernel boundary
         let typed_origin = Position::<RootInertial>::from_raw_si(stage_origin_pos); // allowed: integrator-kernel boundary
 
         // Helper: resolve a source's effective velocity, falling back to
         // `TranslationalStateC.velocity` when the explicit
-        // `SourceInertialVelocityC` component is absent. PR #260 round-3
-        // fix — without the fallback, ephemeris-driven Sun/Moon sources
-        // (spawned via SunBundle/MoonBundle, which include
-        // `TranslationalStateC` but not `SourceInertialVelocityC`) get
-        // treated as stationary at every RK sub-stage.
+        // `SourceInertialVelocityC` component is absent. Without the
+        // fallback, ephemeris-driven Sun/Moon sources (spawned via
+        // SunBundle/MoonBundle, which include `TranslationalStateC`
+        // but not `SourceInertialVelocityC`) get treated as stationary
+        // at every RK sub-stage.
         let source_vel =
             |v: Option<&SourceInertialVelocityC>, ts: Option<&TranslationalStateC>| -> DVec3 {
                 v.map(|v| v.0.raw_si())
@@ -1762,8 +1761,6 @@ pub fn integration_system(
         // and velocities — `jeod_runner::run_integration` snapshots both
         // outside the per-stage closure (`step/integrate.rs:199-202`),
         // so per-stage interpolation here would drift from runner.
-        // (Round-2 PR #260 introduced the per-stage interpolation; round
-        // 3 review R1 caught the divergence.)
         let rel = jeod_sim::accumulate_relativistic_corrections_typed(
             typed_abs_pos,
             typed_abs_vel,
@@ -1810,7 +1807,7 @@ pub fn integration_system(
         // Per-body integration-frame origin (relative to root). Computed
         // once per step — the integ frame doesn't move during a single
         // integration step, so the multi-stage RK4 sub-evaluations
-        // reuse the same value. Issue #71 item 4.
+        // reuse the same value.
         let (integ_origin_pos, integ_origin_vel) = match integ_frame {
             Some(c) if c.0 != root.0 => jeod_sim::frame_origin(&frame_tree.0, root.0, c.0),
             _ => (DVec3::ZERO, DVec3::ZERO),
@@ -1895,7 +1892,7 @@ pub fn integration_system(
                     // intermediate `DVec3` in the body's *integration*
                     // frame, which equals root inertial only when
                     // `IntegFrameIdC == root`. For `IntegFrameIdC != root`
-                    // (issue #71 item 4) we shift via the per-stage origin
+                    // we shift via the per-stage origin
                     // before differencing against `srp_inputs.sun_position`
                     // (which is typed `Position<RootInertial>`). Mirrors
                     // `jeod_runner::run_integration`'s coupled SRP path
@@ -2074,8 +2071,8 @@ pub fn integration_system(
 /// gravity field; the same origin is passed to
 /// [`jeod_sim::accumulate_gravity_typed`] so the differential gravity
 /// correction subtracts the integ frame's own acceleration toward each
-/// source. Issue #71 item 4. Bodies without [`IntegFrameIdC`] continue
-/// to use the root inertial frame as before.
+/// source. Bodies without [`IntegFrameIdC`] continue to use the root
+/// inertial frame as before.
 #[allow(clippy::type_complexity)]
 pub fn gravity_computation_system(
     frame_tree: Res<FrameTreeR>,
@@ -2106,24 +2103,22 @@ pub fn gravity_computation_system(
         Option<&TidalDeltaC20C>,
         Option<&TidalConfigC>,
         // Fallback velocity source for ephemeris-driven sources that
-        // don't carry SourceInertialVelocityC. PR #260 round-3.
+        // don't carry SourceInertialVelocityC.
         Option<&TranslationalStateC>,
     )>,
 ) {
     for (entity, state, controls, mut accel, integ_frame) in &mut bodies {
         // TranslationalStateC stores typed `Position<IntegrationFrame>` /
-        // `Velocity<IntegrationFrame>` (issue #71 item 4 + #255). For
-        // root-integrated bodies the integ frame numerically equals
-        // root inertial, so the raw values match what gravity wants.
-        // For non-root bodies we shift to absolute root-inertial
-        // coordinates below via `IntegFrameIdC` + `frame_origin_typed`.
-        // (Pre-#172-H1 the system extracted raw DVec3 here and called
-        // `from_raw_si` to mint typed values; that bypass is gone.)
+        // `Velocity<IntegrationFrame>`. For root-integrated bodies the
+        // integ frame numerically equals root inertial, so the raw
+        // values match what gravity wants. For non-root bodies we
+        // shift to absolute root-inertial coordinates below via
+        // `IntegFrameIdC` + `frame_origin_typed`.
         let body_pos = state.position;
         let body_vel = state.velocity;
 
         // Integration-frame origin (relative to root). Zero for
-        // root-integrated bodies. Issue #71 item 4 + Phase C5: typed
+        // root-integrated bodies. Typed
         // `frame_origin_typed::<RootInertial>` returns `Position<RootInertial>`
         // directly, so no `from_raw_si` lift is needed at the boundary.
         let (integ_origin, integ_origin_vel) = match integ_frame {
@@ -2184,7 +2179,7 @@ pub fn gravity_computation_system(
                     .map(|(s, _, p, v, _, _, ts)| {
                         // Fall back to TranslationalStateC.velocity when
                         // SourceInertialVelocityC is absent — same precedence
-                        // as `sync_source_to_frame_system`. PR #260 round-3.
+                        // as `sync_source_to_frame_system`.
                         let velocity = v
                             .map(|v| v.0.raw_si())
                             .or_else(|| ts.map(|t| t.0.velocity.raw_si()))
@@ -2288,8 +2283,8 @@ pub fn aero_drag_system(
         // the system reads them directly. The result carries
         // `StructuralFrame<SelfRef>` phantoms, which the structural-frame
         // `AerodynamicForceC` unwraps via `.raw_si()` for storage (the
-        // structural-frame Component still uses raw DVec3; that's the
-        // remaining boundary inside the H1 migration).
+        // structural-frame Component still uses raw DVec3; that's a
+        // remaining typed-storage boundary).
         let rot_untyped = rot.0.to_untyped();
         // Bevy adapter stores body velocity as `Velocity<RootInertial>`
         // (current sims have root=Earth.inertial). Drag's typed sibling
@@ -2297,7 +2292,7 @@ pub fn aero_drag_system(
         // bit-identical and asserts the Earth-orbit assumption.
         use jeod_sim::{Earth, PlanetInertial, Velocity};
         // allowed: RootInertial → PlanetInertial<Earth> relabel for the
-        // typed sibling; bit-identical (no arithmetic). Documented at #255.
+        // typed sibling; bit-identical (no arithmetic).
         let drag_velocity = Velocity::<PlanetInertial<Earth>>::from_raw_si(state.velocity.raw_si());
         let result = jeod_sim::compute_drag_typed::<Earth, SelfRef>(
             &drag_config.0,
@@ -2389,7 +2384,7 @@ pub fn orbital_elements_system(
         use jeod_sim::{Earth, PlanetInertial, Position, Velocity};
         let mu_typed = jeod_sim::F64Ext::m3_per_s2(source.mu);
         // allowed: RootInertial → PlanetInertial<Earth> relabel for the
-        // typed sibling; bit-identical (no arithmetic). Documented at #255.
+        // typed sibling; bit-identical (no arithmetic).
         let pos = Position::<PlanetInertial<Earth>>::from_raw_si(state.position.raw_si());
         // allowed: same relabel as `pos` above.
         let vel = Velocity::<PlanetInertial<Earth>>::from_raw_si(state.velocity.raw_si());
@@ -2437,7 +2432,7 @@ pub fn lvlh_system(mut query: Query<(&TranslationalStateC, &mut LvlhFrameC)>) {
         // assumption that root coincides with Earth.inertial here.
         use jeod_sim::{Earth, PlanetInertial};
         // allowed: RootInertial → PlanetInertial<Earth> relabel for the
-        // typed sibling; bit-identical (no arithmetic). Documented at #255.
+        // typed sibling; bit-identical (no arithmetic).
         let pos = jeod_sim::Position::<PlanetInertial<Earth>>::from_raw_si(state.position.raw_si());
         // allowed: same relabel as `pos` above.
         let vel = jeod_sim::Velocity::<PlanetInertial<Earth>>::from_raw_si(state.velocity.raw_si());
@@ -2463,7 +2458,7 @@ pub fn geodetic_system(
         use jeod_sim::F64Ext;
         use jeod_sim::{Earth, PlanetInertial};
         // allowed: RootInertial → PlanetInertial<Earth> relabel for the
-        // typed sibling; bit-identical (no arithmetic). Documented at #255.
+        // typed sibling; bit-identical (no arithmetic).
         let pos = jeod_sim::Position::<PlanetInertial<Earth>>::from_raw_si(state.position.raw_si());
         geodetic.0 = jeod_sim::compute_body_geodetic_typed::<Earth>(
             pos,
@@ -3210,8 +3205,7 @@ pub fn staging_system(
 
     // Sync composite mass properties for all affected nodes.
     //
-    // PR #283 review thread PRRT_kwDORtae6c5_KHnH: these writes go
-    // through `bypass_change_detection` because the value being
+    // These writes go through `bypass_change_detection` because the value being
     // written is the *composite* (post-Steiner) mass, not a core-mass
     // edit by mission code. The `composite_mass_system` ECS path uses
     // `Changed<MassPropertiesC>` to detect mid-sim core edits (fuel
