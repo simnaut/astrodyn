@@ -249,6 +249,30 @@ impl MassTreeView {
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
     }
+
+    /// True when this entity is registered in the view (i.e., has
+    /// [`MassPropertiesC`] and was reached during construction).
+    pub fn contains(&self, entity: Entity) -> bool {
+        self.index.contains_key(&entity)
+    }
+
+    /// Iterator over every registered entity in the view, in
+    /// insertion order. Used by the wrench-aggregation system to walk
+    /// each mass-bearing entity once.
+    pub fn iter_entities(&self) -> impl Iterator<Item = Entity> + '_ {
+        // `roots` is computed from `nodes` insertion order; rebuild
+        // by enumerating the nodes vector against `index`. Cheap
+        // O(N) materialisation.
+        self.index.keys().copied().collect::<Vec<_>>().into_iter()
+    }
+
+    /// Iterator over every root entity in the view. A root is an
+    /// entity that has [`MassPropertiesC`] but no [`MassChildOf`]
+    /// edge — i.e. the top of a mass-tree chain that the
+    /// composite-rigid-body wrench aggregation walks toward.
+    pub fn iter_roots(&self) -> impl Iterator<Item = Entity> + '_ {
+        self.roots.iter().copied()
+    }
 }
 
 impl MassStorage for MassTreeView {
