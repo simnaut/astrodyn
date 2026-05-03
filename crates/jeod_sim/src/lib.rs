@@ -115,9 +115,11 @@ pub use vehicle_config::{
 
 // jeod_dynamics: state types, force types, mass, config, frame utilities
 pub use jeod_dynamics::{
-    compute_t_inertial_struct, DynamicsConfig, ForceContributions, FrameDerivatives,
-    GravityAcceleration, MassBodyId, MassProperties, MassTree, RotationalState, SixDofState,
-    TotalForce, TranslationalState, INERTIA_CONSISTENCY_TOL,
+    compute_node_composite, compute_t_inertial_struct, finalize_child_in_parent_frame,
+    recompute_composites_via_storage, DynamicsConfig, ForceContributions, FrameDerivatives,
+    GravityAcceleration, MassBodyId, MassNodeOutputs, MassNodeView, MassPointState, MassProperties,
+    MassStorage, MassTree, RotationalState, SixDofState, TotalForce, TranslationalState,
+    INERTIA_CONSISTENCY_TOL,
 };
 
 // jeod_dynamics typed siblings (used by Bevy components after #172 H1

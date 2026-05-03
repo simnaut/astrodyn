@@ -135,6 +135,16 @@ impl MassTree {
         &self.children[id]
     }
 
+    /// Number of bodies in the arena.
+    pub fn len(&self) -> usize {
+        self.nodes.len()
+    }
+
+    /// True when no bodies have been added yet.
+    pub fn is_empty(&self) -> bool {
+        self.nodes.is_empty()
+    }
+
     // -- construction -------------------------------------------------------
 
     /// Add a disconnected body (no parent, no children).
