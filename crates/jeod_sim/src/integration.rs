@@ -1139,6 +1139,12 @@ fn compute_total_accel(eval: &CoupledStageEval, mass: Option<&MassProperties>) -
 /// - **`jeod_runner::Simulation::attach` / `detach` /
 ///   `attach_subtree_aligned` / `detach_subtree`**: after the topology
 ///   mutation completes.
+/// - **`jeod_runner::Simulation::sync_body_mass_from_tree`**: the
+///   supported lower-level path for callers that mutate `mass_tree`
+///   directly (via `tree.attach` / `tree.detach`) and then must
+///   propagate the new composite mass back into `SimBody`. Resetting
+///   the integrator is part of the same sync — see the method's
+///   rustdoc for the call sequence.
 ///
 /// # JEOD invariant
 ///
