@@ -314,3 +314,208 @@ fn joint_kinematics_system_is_a_public_system_function() {
     }
     _assert_is_system_fn();
 }
+
+/// Frame-tree integration: a `RelativeFrameState` walk that crosses a
+/// joint frame must compose the parent frame's non-identity attitude /
+/// angular velocity with the joint's per-tick kinematic update and
+/// agree with the analytical answer.
+///
+/// This is the load-bearing check that `JointKinematicsC` is a
+/// well-formed frame-tree consumer: spawning a joint frame leaves no
+/// frame-tree component undefined (the `#[require]` triplet covers
+/// `FrameTransC` / `FrameRotC` / `FrameAngVelC`), and the per-tick
+/// rewrite of `FrameRotC` / `FrameAngVelC` flows through hierarchy
+/// walks the same way `planet_fixed_rotation_system`'s output does.
+///
+/// Topology: `root_frame` → `parent_frame` → `joint_frame`.
+///   - `root_frame`: identity triplet, no `ChildOf`.
+///   - `parent_frame`: non-identity rotation about +X by `θ_p`,
+///     non-zero angular velocity in parent-frame coords, zero
+///     translation.
+///   - `joint_frame`: `JointKinematicsC` rotating about +Y at a
+///     constant rate; auto-inserted triplet from `#[require]`.
+#[test]
+fn joint_kinematics_relative_frame_state_walk_matches_analytical() {
+    use jeod_sim::{RefFrameRot, RefFrameState, RefFrameTrans};
+
+    // Parent rotates about +X by θ_p; constant non-zero angular
+    // velocity in this-frame coordinates so a frame-tree consumer that
+    // skipped the parent's contribution would produce a visibly wrong
+    // composed angular velocity.
+    let theta_p = 0.7_f64;
+    let parent_q = JeodQuat::left_quat_from_eigen_rotation(theta_p, DVec3::X);
+    let parent_t = parent_q.left_quat_to_transformation();
+    let parent_ang_vel = DVec3::new(0.05, -0.02, 0.03);
+
+    // Joint rotates about +Y at a constant rate.
+    let joint_rate = 0.4_f64;
+    let joint_axis = DVec3::Y;
+    let joint_initial = 0.1_f64;
+    let spec = JointKinematicsSpec {
+        axis_in_parent: joint_axis,
+        rate_rad_per_s: joint_rate,
+        initial_angle_rad: joint_initial,
+    };
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.add_plugins(JeodPlugin);
+
+    let root_e = app
+        .world_mut()
+        .spawn((
+            Name::new("root"),
+            FrameTransC::default(),
+            FrameRotC::default(),
+            FrameAngVelC::default(),
+        ))
+        .id();
+
+    let parent_e = app
+        .world_mut()
+        .spawn((
+            Name::new("parent"),
+            FrameTransC::default(),
+            FrameRotC {
+                q_parent_this: parent_q,
+                t_parent_this: parent_t,
+            },
+            FrameAngVelC(parent_ang_vel),
+            ChildOf(root_e),
+        ))
+        .id();
+
+    let joint_e = app
+        .world_mut()
+        .spawn((
+            Name::new("joint"),
+            JointKinematicsC(spec),
+            ChildOf(parent_e),
+        ))
+        .id();
+
+    // Advance several ticks so the joint angle is visibly non-zero
+    // and any silent identity / zero in the joint's frame state would
+    // diverge from the analytical answer.
+    let n_ticks = 5_usize;
+    for _ in 0..n_ticks {
+        step_once(&mut app);
+    }
+
+    // ── Analytical: compose the parent's RefFrameState (root → parent)
+    //    with the joint's RefFrameState (parent → joint) using the
+    //    same `incr_right` math `RelativeFrameState` walks under the
+    //    hood. The joint's per-tick state is `(q_parent_joint(t),
+    //    rate · axis)` from `evaluate_joint_kinematics`. ──
+    let elapsed = app.world().resource::<SimulationTimeR>().tai_seconds;
+    let (q_parent_joint, ang_vel_joint_in_joint) =
+        jeod_sim::evaluate_joint_kinematics(&spec, elapsed);
+    let t_parent_joint = q_parent_joint.left_quat_to_transformation();
+
+    let parent_state = RefFrameState {
+        trans: RefFrameTrans {
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+        },
+        rot: RefFrameRot {
+            q_parent_this: parent_q,
+            t_parent_this: parent_t,
+            ang_vel_this: parent_ang_vel,
+        },
+    };
+    let joint_state_rel_parent = RefFrameState {
+        trans: RefFrameTrans {
+            position: DVec3::ZERO,
+            velocity: DVec3::ZERO,
+        },
+        rot: RefFrameRot {
+            q_parent_this: q_parent_joint,
+            t_parent_this: t_parent_joint,
+            ang_vel_this: ang_vel_joint_in_joint,
+        },
+    };
+    let expected_root_to_joint = parent_state.incr_right(&joint_state_rel_parent);
+
+    // ── ECS read: `RelativeFrameState::relative_state(root, joint)`
+    //    walks the ChildOf hierarchy and composes the per-node
+    //    `FrameTransC` / `FrameRotC` / `FrameAngVelC` triplets. If the
+    //    joint is missing any of the three, the walk panics with a
+    //    diagnostic — proving the `#[require]` triplet contract. ──
+    let actual_root_to_joint = app
+        .world_mut()
+        .run_system_cached_with(
+            |In((from, to)): In<(Entity, Entity)>,
+             rel: bevy_jeod::frame_param::RelativeFrameState|
+             -> RefFrameState { rel.relative_state(from, to) },
+            (root_e, joint_e),
+        )
+        .expect("run_system_cached_with should succeed");
+
+    // Tolerance is the same per-component bound the other tests use —
+    // both sides do exactly the same float arithmetic so any
+    // disagreement signals a structural bug, not numeric drift.
+    for i in 0..4 {
+        let a = actual_root_to_joint.rot.q_parent_this.data[i];
+        let e = expected_root_to_joint.rot.q_parent_this.data[i];
+        assert!(
+            (a - e).abs() < TOL,
+            "composed q_parent_this[{i}]: ECS = {a}, analytical = {e}, diff {}",
+            a - e
+        );
+    }
+    for i in 0..3 {
+        let a = actual_root_to_joint.rot.ang_vel_this[i];
+        let e = expected_root_to_joint.rot.ang_vel_this[i];
+        assert!(
+            (a - e).abs() < TOL,
+            "composed ang_vel_this[{i}]: ECS = {a}, analytical = {e}, diff {}",
+            a - e
+        );
+    }
+    for i in 0..3 {
+        let a = actual_root_to_joint.trans.position[i];
+        let e = expected_root_to_joint.trans.position[i];
+        assert!(
+            (a - e).abs() < TOL,
+            "composed trans.position[{i}]: ECS = {a}, analytical = {e}, diff {}",
+            a - e
+        );
+        let a = actual_root_to_joint.trans.velocity[i];
+        let e = expected_root_to_joint.trans.velocity[i];
+        assert!(
+            (a - e).abs() < TOL,
+            "composed trans.velocity[{i}]: ECS = {a}, analytical = {e}, diff {}",
+            a - e
+        );
+    }
+
+    // Direct cross-check: walking from `parent` to `joint` should
+    // give exactly the joint's per-node state, since the parent is
+    // the joint's immediate `ChildOf` ancestor.
+    let parent_to_joint = app
+        .world_mut()
+        .run_system_cached_with(
+            |In((from, to)): In<(Entity, Entity)>,
+             rel: bevy_jeod::frame_param::RelativeFrameState|
+             -> RefFrameState { rel.relative_state(from, to) },
+            (parent_e, joint_e),
+        )
+        .expect("run_system_cached_with should succeed");
+    for i in 0..4 {
+        let a = parent_to_joint.rot.q_parent_this.data[i];
+        let e = q_parent_joint.data[i];
+        assert!(
+            (a - e).abs() < TOL,
+            "parent→joint q[{i}]: ECS = {a}, expected = {e}"
+        );
+    }
+    for i in 0..3 {
+        let a = parent_to_joint.rot.ang_vel_this[i];
+        let e = ang_vel_joint_in_joint[i];
+        assert!(
+            (a - e).abs() < TOL,
+            "parent→joint ang_vel[{i}]: ECS = {a}, expected = {e}"
+        );
+    }
+}
