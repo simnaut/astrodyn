@@ -24,7 +24,7 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 use bevy_jeod::{
-    DynamicsConfigC, FrameSwitchesC, FrameTreeR, GravityControlsC, IntegFrameIdC, JeodPlugin,
+    DynamicsConfigC, FrameEntityC, FrameSwitchesC, FrameTreeR, GravityControlsC, JeodPlugin,
     MassPropertiesC, PlanetBundle, RotationalStateC, SourceFrameIdC, SourceInertialVelocityC,
     SourceMutator, TranslationalStateC,
 };
@@ -139,14 +139,22 @@ fn tier3_bevy_frame_switch_earth_to_moon_matches_simulation() {
 
     let _earth_fid = app.world().get::<SourceFrameIdC>(earth).unwrap().0;
     let moon_fid = app.world().get::<SourceFrameIdC>(moon).unwrap().0;
-    let initial_integ_fid = app.world().get::<IntegFrameIdC>(vehicle).unwrap().0;
-    let root_fid = app.world().resource::<bevy_jeod::RootFrameIdR>().0;
+    // The body's current integration frame is the parent of its frame
+    // entity in the ECS hierarchy (no `IntegFrameIdC` lookup since
+    // PR 3 dropped that handle component).
+    let body_frame_entity = app.world().get::<FrameEntityC>(vehicle).unwrap().0;
+    let initial_integ_frame_entity = app
+        .world()
+        .get::<bevy::prelude::ChildOf>(body_frame_entity)
+        .unwrap()
+        .parent();
+    let root_frame_entity = app.world().resource::<bevy_jeod::RootFrameEntityR>().0;
     // Body has no IntegSourceC, so it defaults to root inertial — which
     // for an Earth-central scenario carries the same numeric pos/vel as
     // Earth.inertial (the central source's offset from root is zero by
     // convention in Bevy and root-by-construction in jeod_runner).
     assert_eq!(
-        initial_integ_fid, root_fid,
+        initial_integ_frame_entity, root_frame_entity,
         "before switch, body integrates in root inertial"
     );
 
@@ -163,7 +171,28 @@ fn tier3_bevy_frame_switch_earth_to_moon_matches_simulation() {
         .unwrap()
         .0
         .to_untyped();
-    let bevy_integ_fid = app.world().get::<IntegFrameIdC>(vehicle).unwrap().0;
+    // Post-switch: the body frame entity's `ChildOf` parent must be
+    // the Moon's frame entity (the load-bearing ECS reparent that
+    // replaced the `IntegFrameIdC` rewrite). Cross-check against the
+    // arena via `BodyFrameIdC` / `SourceFrameIdC` to confirm the
+    // dual-write stayed in lockstep.
+    let bevy_integ_frame_entity = app
+        .world()
+        .get::<bevy::prelude::ChildOf>(body_frame_entity)
+        .unwrap()
+        .parent();
+    let moon_frame_entity = app.world().get::<FrameEntityC>(moon).unwrap().0;
+    let arena_body_parent_fid = app
+        .world()
+        .resource::<FrameTreeR>()
+        .0
+        .parent(
+            app.world()
+                .get::<bevy_jeod::components::BodyFrameIdC>(vehicle)
+                .unwrap()
+                .0,
+        )
+        .expect("body frame node must have a parent in the arena");
     let bevy_controls = app
         .world()
         .get::<GravityControlsC>(vehicle)
@@ -185,8 +214,12 @@ fn tier3_bevy_frame_switch_earth_to_moon_matches_simulation() {
         .position;
 
     assert_eq!(
-        bevy_integ_fid, moon_fid,
-        "post-switch, body integrates in Moon.inertial"
+        bevy_integ_frame_entity, moon_frame_entity,
+        "post-switch, body frame entity must be ChildOf Moon's frame entity"
+    );
+    assert_eq!(
+        arena_body_parent_fid, moon_fid,
+        "post-switch, arena body node must be reparented under Moon's source frame"
     );
     // Earth control should now be differential, Moon non-differential.
     assert!(
@@ -331,7 +364,9 @@ fn tier3_bevy_frame_switch_on_departure_matches_simulation() {
         });
     app.world_mut().run_system(sys).unwrap();
 
-    let moon_fid = app.world().get::<SourceFrameIdC>(moon).unwrap().0;
+    let _moon_fid = app.world().get::<SourceFrameIdC>(moon).unwrap().0;
+    let moon_frame_entity = app.world().get::<FrameEntityC>(moon).unwrap().0;
+    let body_frame_entity = app.world().get::<FrameEntityC>(vehicle).unwrap().0;
 
     for _ in 0..NUM_STEPS {
         app.world_mut()
@@ -346,10 +381,14 @@ fn tier3_bevy_frame_switch_on_departure_matches_simulation() {
         .unwrap()
         .0
         .to_untyped();
-    let bevy_integ_fid = app.world().get::<IntegFrameIdC>(vehicle).unwrap().0;
+    let bevy_integ_frame_entity = app
+        .world()
+        .get::<bevy::prelude::ChildOf>(body_frame_entity)
+        .unwrap()
+        .parent();
     assert_eq!(
-        bevy_integ_fid, moon_fid,
-        "OnDeparture switch should land in Moon.inertial"
+        bevy_integ_frame_entity, moon_frame_entity,
+        "OnDeparture switch should reparent body frame entity under Moon.inertial"
     );
 
     // ── jeod_runner ──

@@ -131,12 +131,17 @@ mod frame_tree_r_internal {
     /// the arena (see `tests/frame_storage_relative_frame_state.rs`), and
     /// never expose a `FrameId`.
     ///
-    /// Internal physics systems (gravity, integration, frame-switch,
-    /// derived-state) still read this resource; those call sites are kept
-    /// inside files annotated with `#![allow(deprecated)]` and a comment
-    /// noting they are scheduled to migrate to the SystemParams. The
-    /// `Resource` itself will be removed once internal systems have
-    /// migrated.
+    /// Internal physics systems (gravity, integration) have already
+    /// migrated to the SystemParams and no longer read this resource.
+    /// Frame-tree management infrastructure (`register_*_frames_system`,
+    /// `sync_*_to_frame_system`, `planet_fixed_rotation_system`,
+    /// `frame_switch_system`'s arena reparent) still mutates the
+    /// resource through the dual-write phase; those call sites are kept
+    /// inside files annotated with `#![allow(deprecated)]` and a
+    /// comment noting they are scheduled to disappear when the arena
+    /// itself is removed. The `Resource` itself will be removed once
+    /// `frame_switch_system` migrates to ECS-native reparenting and the
+    /// dual-write sync systems disappear.
     ///
     /// [1]: https://github.com/simnaut/bevy_jeod/wiki/Frame-Tree-ECS-Native#13-migration-sequencing
     #[deprecated(
@@ -146,8 +151,9 @@ mod frame_tree_r_internal {
                 (replaces `FrameTreeR.compute_relative_state(from, to)`) \
                 and `bevy_jeod::frame_param::FrameOrigin` for frame-origin queries \
                 (replaces `frame_origin(tree, root, frame_id)`). \
-                Internal physics systems still read FrameTreeR; the Resource \
-                itself will be removed once those internal consumers have migrated. \
+                Internal frame-tree management still mutates FrameTreeR; the \
+                Resource itself will be removed once `frame_switch_system` \
+                migrates to ECS-native reparenting. \
                 See https://github.com/simnaut/bevy_jeod/wiki/Frame-Tree-ECS-Native#13-migration-sequencing"
     )]
     #[derive(Resource, Deref, DerefMut)]
@@ -524,8 +530,9 @@ impl Plugin for JeodPlugin {
                 // Validation runs *after* registration but before any
                 // pipeline consumer touches the new components. The
                 // frame-switch / non-root checks read `SourceFrameIdC`
-                // and `IntegFrameIdC`, both inserted by the `register_*`
-                // systems above. Pinning validation to
+                // and walk `Query<&ChildOf>` on the body's
+                // `FrameEntityC` (both populated by the `register_*`
+                // systems above). Pinning validation to
                 // `before(JeodSet::TimeUpdate)` would panic with "not
                 // a registered gravity source" on the first tick after
                 // a between-tick spawn, even though the same
@@ -665,7 +672,6 @@ pub fn register_jeod_component_types(app: &mut App) {
     app.register_type::<components::IntegSourceC>();
     app.register_type::<components::FrameSwitchesC>();
     app.register_type::<components::BodyFrameIdC>();
-    app.register_type::<components::IntegFrameIdC>();
     // Frames-as-entities components.
     app.register_type::<components::FrameTransC>();
     app.register_type::<components::FrameRotC>();
@@ -864,9 +870,10 @@ impl VehicleConfigBevyExt for jeod_sim::VehicleConfig {
         }
         // Non-root integration: translate the `usize` source index to
         // the matching ECS Entity so `register_body_frames_system` can
-        // resolve the body's integration frame against `FrameTreeR`.
-        // `IntegSourceC(None)` is the implicit default (root), so we
-        // only insert when the builder set a non-default integ source.
+        // parent the body's frame entity under that source's frame
+        // entity. `IntegSourceC(None)` is the implicit default (root),
+        // so we only insert when the builder set a non-default integ
+        // source.
         if let Some(idx) = self.integ_source {
             let src = resolve_source_entity(source_entities, idx, "integ_source");
             entity.insert(components::IntegSourceC(Some(src)));
