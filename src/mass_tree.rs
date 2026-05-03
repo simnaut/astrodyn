@@ -480,6 +480,17 @@ pub fn composite_mass_system(
     parents: Query<(Entity, &MassChildOf)>,
     names: Query<&Name>,
     cores_q: Query<(Entity, &CoreMassPropertiesC)>,
+    // PR #283 review thread `PRRT_kwDORtae6c5_KZvT` — gate the
+    // expensive walk on whether topology or any core mass has
+    // changed since the last system run. `Changed<MassChildOf>`
+    // covers `Added` (Bevy treats a freshly-inserted component as
+    // changed); `RemovedComponents<MassChildOf>` is the only signal
+    // for a detach. `Changed<MassPropertiesC>` is what
+    // `props.p0()` already filters on. With all three empty the
+    // composite outputs would be byte-identical to last tick's, so
+    // we early-return.
+    changed_parents: Query<(), Changed<MassChildOf>>,
+    mut removed_parents: RemovedComponents<MassChildOf>,
     mut props: ParamSet<(
         // p0: entities whose MassPropertiesC was changed this tick
         //      (or just spawned). Used to refresh CoreMassPropertiesC
@@ -492,6 +503,38 @@ pub fn composite_mass_system(
         Query<&'static mut MassPropertiesC>,
     )>,
 ) {
+    // Change-detection gate (PR #283 review thread
+    // `PRRT_kwDORtae6c5_KZvT`): when the world contains edges but
+    // neither topology nor any core mass has changed since the last
+    // system run, the composite outputs would be byte-identical to
+    // last tick's. Skip the kernel walk in that case — a static
+    // articulated vehicle (rover with permanently-attached arms,
+    // pre-spawned constellation, etc.) pays only the gate cost per
+    // tick.
+    //
+    // `Changed<MassChildOf>` covers added / mutated edges; Bevy
+    // treats `Added` as `Changed`. `RemovedComponents<MassChildOf>`
+    // is the only signal for a detach (no `Removed` query filter
+    // exists in Bevy). `Changed<MassPropertiesC>` (via
+    // `props.p0()`) covers mid-sim core mass edits and freshly
+    // spawned entities (their first sight matches `Changed`).
+    //
+    // The cursor on `RemovedComponents` must be drained whether or
+    // not we walk — leaving events unread causes the next tick to
+    // see them again, falsely re-triggering the walk after the
+    // detach has already been processed. We drain by `count()`
+    // here (consumes while answering "any unread?").
+    //
+    // We don't gate the `parents.is_empty()` fast path on this:
+    // when the world has zero edges, the fast path's case (b)
+    // (just-detached parent revert) is the *only* path that
+    // restores stale composites to their core. Skipping it would
+    // leave the parent reading as the previous-tick composite
+    // forever. The fast path is cheap anyway (linear scan over
+    // `cores_q`).
+    let any_topology_changed = !changed_parents.is_empty() || removed_parents.read().count() > 0;
+    let any_mass_changed = !props.p0().is_empty();
+
     // Fast path (PR #283 review thread PRRT_kwDORtae6c5_KBwG): if
     // no entity has any `MassChildOf` edge, every body is its own
     // composite — composite == core for each — so we can skip the
@@ -563,6 +606,20 @@ pub fn composite_mass_system(
                 }
             }
         }
+        return;
+    }
+
+    // Slow-path gate: with edges present, the kernel walk is the
+    // expensive bit. Skip it when neither topology nor any core
+    // mass has changed since last run. PR #283 review thread
+    // `PRRT_kwDORtae6c5_KZvT`.
+    //
+    // We can't gate the fast path on this — the fast path itself
+    // also handles the just-detached-parent revert, which has no
+    // `Changed<MassPropertiesC>` signal (mission code didn't edit
+    // anything; the staleness comes from last tick's kernel write
+    // colliding with this tick's missing edge).
+    if !any_topology_changed && !any_mass_changed {
         return;
     }
 
@@ -1199,6 +1256,205 @@ mod tests {
             (p.child_composite_mass - 5.0).abs() < 1e-12,
             "child composite mass: {} (expected 5)",
             p.child_composite_mass
+        );
+    }
+
+    /// PR #283 review thread `PRRT_kwDORtae6c5_KZvT` — gate the
+    /// kernel walk on `Changed<MassChildOf>` /
+    /// `RemovedComponents<MassChildOf>` / `Changed<MassPropertiesC>`.
+    /// Build a static 3-body chain, tick once to compose, then plant
+    /// a sentinel in the parent's `MassPropertiesC` (with
+    /// `bypass_change_detection` so the change-tick is unaffected).
+    /// On the next tick with no topology or mass edits, the system
+    /// must skip the walk, leaving the sentinel intact. If the gate
+    /// regresses (system walks every tick once any edge exists), the
+    /// kernel will overwrite the sentinel with the correct composite
+    /// and the test fails.
+    #[test]
+    fn gate_skips_walk_on_static_chain() {
+        let mut app = add_test_app();
+        app.add_systems(Update, composite_mass_system);
+
+        // 3-body chain: a → b → c, all mass 1.
+        let a = app
+            .world_mut()
+            .spawn(MassPropertiesC::from(MassProperties::new(1.0)))
+            .id();
+        let b = app
+            .world_mut()
+            .spawn((
+                MassPropertiesC::from(MassProperties::new(1.0)),
+                MassChildOf::new(a, DVec3::new(1.0, 0.0, 0.0)),
+            ))
+            .id();
+        let _c = app
+            .world_mut()
+            .spawn((
+                MassPropertiesC::from(MassProperties::new(1.0)),
+                MassChildOf::new(b, DVec3::new(1.0, 0.0, 0.0)),
+            ))
+            .id();
+
+        // Tick 1: compose. After this `a`'s `MassPropertiesC` is the
+        // composite (mass 3).
+        app.update();
+        let composite_after_tick1 = app
+            .world()
+            .get::<MassPropertiesC>(a)
+            .unwrap()
+            .0
+            .to_untyped()
+            .mass;
+        assert!(
+            (composite_after_tick1 - 3.0).abs() < 1e-12,
+            "tick1 composite mass {composite_after_tick1}"
+        );
+
+        // Plant a sentinel in `a`'s `MassPropertiesC` *with*
+        // `bypass_change_detection` so we don't trigger
+        // `Changed<MassPropertiesC>`. If the walk runs on tick 2,
+        // it will overwrite the sentinel; if the gate skips, the
+        // sentinel survives.
+        let sentinel = MassProperties::new(999.0);
+        {
+            let mut e = app.world_mut().entity_mut(a);
+            let mut props = e
+                .get_mut::<MassPropertiesC>()
+                .expect("entity has MassPropertiesC");
+            *props.bypass_change_detection() = MassPropertiesC::from(sentinel);
+        }
+
+        // Tick 2: no topology change, no mass change. Gate must
+        // skip the walk; sentinel must survive.
+        app.update();
+        let after_tick2 = app
+            .world()
+            .get::<MassPropertiesC>(a)
+            .unwrap()
+            .0
+            .to_untyped()
+            .mass;
+        assert!(
+            (after_tick2 - 999.0).abs() < 1e-12,
+            "gate did not skip walk: sentinel was overwritten ({after_tick2}, expected 999)"
+        );
+
+        // Tick 3: a real mass edit on `c`. Gate must NOT skip;
+        // composite must update.
+        let c_entity = {
+            let mut q = app
+                .world_mut()
+                .query_filtered::<Entity, With<MassChildOf>>();
+            // Find `c`: the child whose parent is `b`.
+            let mut found: Option<Entity> = None;
+            // Collect entities into a Vec first so the borrow on
+            // world is released before we call get on world.
+            let candidates: Vec<Entity> = q.iter(app.world()).collect();
+            for cand in candidates {
+                let edge = app.world().get::<MassChildOf>(cand).unwrap();
+                if edge.parent == b {
+                    found = Some(cand);
+                    break;
+                }
+            }
+            found.expect("found c")
+        };
+        {
+            let mut props = app
+                .world_mut()
+                .get_mut::<MassPropertiesC>(c_entity)
+                .unwrap();
+            *props = MassPropertiesC::from(MassProperties::new(10.0));
+        }
+        // Also restore `a`'s `MassPropertiesC` to the previous
+        // composite so the walk has a sane starting point —
+        // otherwise the kernel would propagate the sentinel as `a`'s
+        // own core. (This mirrors what would have happened if we
+        // hadn't planted the sentinel.)
+        {
+            let mut e = app.world_mut().entity_mut(a);
+            let mut props = e.get_mut::<MassPropertiesC>().unwrap();
+            *props.bypass_change_detection() = MassPropertiesC::from(MassProperties::new(3.0));
+        }
+        app.update();
+        let after_tick3 = app
+            .world()
+            .get::<MassPropertiesC>(a)
+            .unwrap()
+            .0
+            .to_untyped()
+            .mass;
+        // Tick 3 composite: a (1) + b (1) + c (10) = 12.
+        assert!(
+            (after_tick3 - 12.0).abs() < 1e-12,
+            "post-edit composite mass: {} (expected 12)",
+            after_tick3
+        );
+    }
+
+    /// PR #283 review thread `PRRT_kwDORtae6c5_KZvT` — sibling guard:
+    /// when an edge is *detached* but no `Changed<MassPropertiesC>`
+    /// fires, the gate must not skip — `RemovedComponents<MassChildOf>`
+    /// is the only signal for that case.
+    #[test]
+    fn gate_does_not_skip_on_detach() {
+        let mut app = add_test_app();
+        app.add_systems(Update, composite_mass_system);
+
+        let parent = app
+            .world_mut()
+            .spawn(MassPropertiesC::from(MassProperties::new(10.0)))
+            .id();
+        let child_a = app
+            .world_mut()
+            .spawn((
+                MassPropertiesC::from(MassProperties::new(2.0)),
+                MassChildOf::new(parent, DVec3::new(1.0, 0.0, 0.0)),
+            ))
+            .id();
+        let _child_b = app
+            .world_mut()
+            .spawn((
+                MassPropertiesC::from(MassProperties::new(3.0)),
+                MassChildOf::new(parent, DVec3::new(0.0, 1.0, 0.0)),
+            ))
+            .id();
+
+        // Tick 1: compose → parent composite mass 15.
+        app.update();
+        let composite_tick1 = app
+            .world()
+            .get::<MassPropertiesC>(parent)
+            .unwrap()
+            .0
+            .to_untyped()
+            .mass;
+        assert!(
+            (composite_tick1 - 15.0).abs() < 1e-12,
+            "tick1 composite mass {composite_tick1}"
+        );
+
+        // Detach `child_a` only — `child_b` remains. No
+        // `Changed<MassPropertiesC>` fires; the only signal is
+        // `RemovedComponents<MassChildOf>` plus the topology change
+        // already implicit in `child_b` still being attached.
+        // Mission code does NOT touch the parent's `MassPropertiesC`.
+        app.world_mut().entity_mut(child_a).remove::<MassChildOf>();
+
+        // Tick 2: kernel must run and recompute the parent's
+        // composite as parent (10) + child_b (3) = 13.
+        app.update();
+        let composite_tick2 = app
+            .world()
+            .get::<MassPropertiesC>(parent)
+            .unwrap()
+            .0
+            .to_untyped()
+            .mass;
+        assert!(
+            (composite_tick2 - 13.0).abs() < 1e-12,
+            "gate skipped a real detach: parent mass {} (expected 13)",
+            composite_tick2
         );
     }
 

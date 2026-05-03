@@ -150,9 +150,10 @@ pub trait MassStorage {
     /// added avoidable allocator churn on large mass trees
     /// (PR #283 review thread `PRRT_kwDORtae6c5_KZvX`). Both the
     /// arena ([`MassTree::children`]) and the Bevy view
-    /// ([`MassTreeView::children`]) already keep child lists in
-    /// `Vec<Self::Id>` slabs / `HashMap<Entity, Vec<Entity>>`, so
-    /// `&[Self::Id]` is the natural shape.
+    /// (`MassTreeView::children` in `bevy_jeod::mass_tree`) already
+    /// keep child lists in `Vec<Self::Id>` slabs /
+    /// `HashMap<Entity, Vec<Entity>>`, so `&[Self::Id]` is the
+    /// natural shape.
     fn children(&self, id: Self::Id) -> &[Self::Id];
 
     /// Every root in the storage (parents whose `parent(...)` is
