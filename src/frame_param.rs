@@ -154,7 +154,7 @@ impl<'w, 's> FrameStorage for RelativeFrameState<'w, 's> {
 /// frequently "in the root frame," which is the form gravity,
 /// integration, and `IntegOrigin`-shift sites need.
 ///
-/// The two-method shape mirrors the design doc's catalog:
+/// The three-method shape mirrors the design doc's catalog:
 ///
 /// - [`FrameOrigin::origin_in_root`] —
 ///   `(Position<RootInertial>, Velocity<RootInertial>)`. The typed
@@ -168,6 +168,12 @@ impl<'w, 's> FrameStorage for RelativeFrameState<'w, 's> {
 ///   child of root, not root itself). Caller chooses the
 ///   ancestor entity, mirroring the arena helper's `(root, frame)`
 ///   parameter shape.
+/// - [`FrameOrigin::origin_in_typed`] — generic-typed sibling of
+///   `origin_in_root` for callers whose ancestor frame's marker is
+///   some other `F: Frame` (e.g. a `PlanetInertial<P>` integration
+///   frame). Caller asserts that `ancestor`'s marker is `F`; the
+///   phantom-tag attachment is unchecked at runtime, mirroring
+///   `jeod_sim::frame_origin_typed`.
 ///
 /// # Example
 /// ```ignore
