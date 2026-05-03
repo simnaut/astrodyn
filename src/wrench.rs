@@ -39,8 +39,10 @@
 //! double-count their contributions. Children that still carry
 //! `DynamicsConfigC` will integrate with zero external force / torque;
 //! the kinematic propagation that derives child poses from the root
-//! (the design-doc `propagate_state_from_root_system`) is a separate
-//! follow-up.
+//! (the design-doc `propagate_state_from_root_system`) lives at
+//! [`crate::kinematic_propagation::propagate_state_from_root_system`]
+//! and runs earlier in the same `JeodSet::ForceCollection` set so the
+//! aggregation walk reads live attitudes.
 //!
 //! # Frame conventions inside the system
 //!
@@ -222,39 +224,34 @@ pub fn wrench_aggregation_system(
         return;
     }
 
-    // 1a. Validate frame discipline across every chain. The
-    //     structural-frame walk needs each entity's
-    //     `T_inertial_struct = T_struct_body^T · T_inertial_body` to
-    //     be correct, which means each entity must carry the
-    //     `RotationalStateC` that supplies `T_inertial_body`.
-    //     Defaulting that rotation to `IDENTITY` when the component
-    //     is missing would silently reinterpret the entity's
-    //     `Force<RootInertial>` as if it were already in the entity's
-    //     structural frame, propagating the wrong components
-    //     up the chain — a half-baked failure mode forbidden by
-    //     CLAUDE.md "Fail Loudly".
+    // 1a. Validate frame discipline across every chain — pure
+    //     defense-in-depth.
     //
-    //     The check is **per-chain**: we walk each root's subtree
-    //     and decide independently whether *that subtree* contains
-    //     any non-identity rotation (a non-identity edge
-    //     `t_parent_child` along the way, or a non-identity
-    //     `RotationalStateC.q_inertial_body` on any member). Only
-    //     subtrees that actually contain a non-trivial rotation
-    //     require every member to carry `RotationalStateC` — a
-    //     fully identity-attitude chain has `T_inertial_struct = I`
-    //     everywhere by construction, so the missing-component
-    //     default is bit-correct there and the chain is left
-    //     unconstrained. World-level scoping would let a single
-    //     rotated chain force every other unrelated chain in the
-    //     world to opt in to `RotationalStateC` even when their own
-    //     math is identity-correct.
+    //     [`propagate_state_from_root_system`](crate::kinematic_propagation::propagate_state_from_root_system)
+    //     runs in `JeodSet::ForceCollection` *before* this system and
+    //     writes `RotationalStateC` (plus `TranslationalStateC`) on
+    //     every kinematic chain member by deriving the child's state
+    //     from the parent's state composed with
+    //     `MassChildOf.t_parent_child`. So in any supported
+    //     configuration, by the time we get here every non-root in a
+    //     rotated chain has its `RotationalStateC` populated and the
+    //     structural-frame walk's per-entity
+    //     `T_inertial_struct = T_struct_body^T · T_inertial_body`
+    //     composition is correct.
     //
-    //     The complete fix — kinematic propagation that derives a
-    //     missing child attitude from its parent's attitude composed
-    //     with `MassChildOf.t_parent_child`'s rotational component —
-    //     is the design-doc Section 15.3
-    //     `propagate_state_from_root_system`, deferred to a
-    //     follow-up.
+    //     If this assertion ever fires, it indicates a **scheduling
+    //     bug** (propagation didn't run before aggregation) or a
+    //     mission-code path that bypasses `propagate_state_from_root_system`,
+    //     not a missing-component bug. The diagnostic below points
+    //     the reader at the scheduling contract rather than at
+    //     "add `RotationalStateC`" remediations, because the latter
+    //     is what the propagation system already does for free.
+    //
+    //     The check stays **per-chain**: a fully identity-attitude
+    //     chain has `T_inertial_struct = I` everywhere by
+    //     construction, so the missing-component default is
+    //     bit-correct and we don't force unrelated identity chains
+    //     to carry `RotationalStateC` they don't need.
     // JEOD_INV: DB.16 — child forces propagated to parent recursively (per-chain frame discipline guard for the structural walk)
     fn rot_is_non_identity(entity: Entity, rot_q: &Query<&RotationalStateC>) -> bool {
         rot_q.get(entity).is_ok_and(|r| {
@@ -299,20 +296,24 @@ pub fn wrench_aggregation_system(
                 assert!(
                     rot_q.get(*entity).is_ok(),
                     "wrench_aggregation_system: entity {entity:?} is in a `MassChildOf` chain \
-                     rooted at {root:?} that contains a non-identity rotation (parent attitude \
-                     or attach `t_parent_child`), but it has no `RotationalStateC` component. \
-                     The structural-frame wrench walk needs every chain member's \
-                     `T_inertial_body` to be correct; defaulting it to IDENTITY for this entity \
-                     would silently treat its `Force<RootInertial>` as if it were already in \
-                     the entity's structural frame and aggregate a wrong composite force.\n\n\
-                     Fix one of:\n  1. Add `RotationalStateC` to entity {entity:?} (matching its \
-                     parent's attitude — the typical case for a rigidly attached appendage that \
-                     does not yet have its own integrator).\n  2. Make every link in this chain \
-                     identity-attitude (no `MassChildOf.t_parent_child` rotations, no member \
-                     `q_inertial_body` rotations) so the IDENTITY default is correct.\n  3. Wait \
-                     for the kinematic-propagation system (design-doc Section 15.3 \
-                     `propagate_state_from_root_system`) to derive the missing child attitude \
-                     from the parent's attitude composed with the attach rotation."
+                     rooted at {root:?} that contains a non-identity rotation, but it has no \
+                     `RotationalStateC`. This is a scheduling-contract violation: \
+                     `propagate_state_from_root_system` is supposed to run earlier in \
+                     `JeodSet::ForceCollection` and derive every kinematic child's \
+                     `RotationalStateC` from its parent's attitude composed with \
+                     `MassChildOf.t_parent_child`. If this assertion is firing, either:\n  \
+                     1. The propagation system was unscheduled (custom `App` build that \
+                     doesn't include the `JeodPlugin`'s `FixedUpdate` system set, or a test \
+                     fixture that runs `wrench_aggregation_system` directly without first \
+                     running `propagate_state_from_root_system` after `composite_mass_system`). \
+                     Add `propagate_state_from_root_system.before(wrench_aggregation_system)` \
+                     to the schedule.\n  \
+                     2. Mission code bypassed the propagation pipeline (one-shot system that \
+                     mutates `MassChildOf` and then runs the wrench walk in the same frame \
+                     without calling propagation). Run propagation between the topology edit \
+                     and the wrench walk.\n  \
+                     This guard is defense-in-depth — the production schedule guarantees \
+                     `RotationalStateC` is populated by the time aggregation reads it."
                 );
             }
         }
@@ -772,22 +773,25 @@ mod tests {
         assert_eq!(child_tf.torque, DVec3::ZERO);
     }
 
-    /// A `MassChildOf` chain with a non-identity attach rotation
-    /// must have `RotationalStateC` on every chain member —
-    /// otherwise `T_inertial_body` defaults to IDENTITY for the
-    /// missing entity and the structural-frame walk silently treats
-    /// the entity's `Force<RootInertial>` as if it were already in
-    /// the entity's structural frame, propagating the wrong
-    /// components up the chain. This is precisely the half-baked
-    /// failure mode forbidden by CLAUDE.md "Fail Loudly".
+    /// Defense-in-depth assertion: a `MassChildOf` chain with a
+    /// non-identity attach rotation observed by
+    /// `wrench_aggregation_system` while a chain member is missing
+    /// `RotationalStateC` indicates a scheduling-contract violation
+    /// (`propagate_state_from_root_system` was supposed to run first
+    /// and populate the child's attitude). The guard panics rather
+    /// than silently aggregating against an IDENTITY default that
+    /// would treat the entity's `Force<RootInertial>` as if it were
+    /// already in the entity's structural frame.
     ///
-    /// Until the kinematic-propagation system (design-doc Section
-    /// 15.3 `propagate_state_from_root_system`, follow-up to issue
-    /// #272) lands and can derive a missing child attitude from
-    /// the parent's attitude composed with the attach rotation,
-    /// `wrench_aggregation_system` requires every chain member to
-    /// carry its own `RotationalStateC` whenever the chain has any
-    /// non-identity rotation.
+    /// This test runs only the `composite_mass_system` →
+    /// `force_collection_system` → `wrench_aggregation_system` slice
+    /// (no propagation), so the guard is exercised directly. In the
+    /// production schedule
+    /// (`crate::kinematic_propagation::propagate_state_from_root_system`
+    /// runs between `composite_mass_system` and `wrench_aggregation_system`)
+    /// every kinematic child has its `RotationalStateC` written
+    /// before this guard reads it, so the assert never fires in
+    /// supported configurations.
     #[test]
     #[should_panic(expected = "contains a non-identity rotation")]
     fn child_with_attach_rotation_and_no_rotational_state_panics() {

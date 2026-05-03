@@ -45,6 +45,7 @@ pub mod gravity;
 pub mod integrable;
 pub mod integration;
 pub mod interactions;
+pub mod kinematic_propagation;
 pub mod pipeline;
 pub mod planet_config;
 pub mod recipes;
@@ -92,6 +93,7 @@ pub use interactions::{
 pub use jeod_dynamics::{
     Abm4State, GaussJacksonConfig, GaussJacksonState, IntegratorResult, IntegratorType,
 };
+pub use kinematic_propagation::{propagate_state_via_storage, KinematicEdge, KinematicNodeState};
 pub use pipeline::{PipelineStage, PIPELINE_ORDER};
 pub use planet_config::{PlanetConfig, EARTH, MARS, MOON, SUN};
 pub use rotation_model::RotationModel;
@@ -117,12 +119,14 @@ pub use wrench::{aggregate_wrenches_via_storage, edge_geometry_from_composites, 
 
 // jeod_dynamics: state types, force types, mass, config, frame utilities
 pub use jeod_dynamics::{
-    compute_frame_derivatives, compute_node_composite, compute_t_inertial_struct,
-    compute_translational_derivatives, finalize_child_in_parent_frame,
-    recompute_composites_via_storage, shift_wrench_to_parent, shift_wrench_to_parent_typed,
-    DynamicsConfig, ForceContributions, FrameDerivatives, GravityAcceleration, MassBodyId,
-    MassNodeOutputs, MassNodeView, MassPointState, MassProperties, MassStorage, MassTree,
-    RotationalState, SixDofState, TotalForce, TranslationalState, Wrench, INERTIA_CONSISTENCY_TOL,
+    compute_frame_derivatives, compute_kinematic_child_state, compute_kinematic_child_state_dquat,
+    compute_kinematic_child_state_typed, compute_node_composite, compute_t_inertial_struct,
+    compute_translational_derivatives, derive_kinematic_child_from_states,
+    finalize_child_in_parent_frame, recompute_composites_via_storage, shift_wrench_to_parent,
+    shift_wrench_to_parent_typed, DynamicsConfig, ForceContributions, FrameDerivatives,
+    GravityAcceleration, KinematicChildInputs, KinematicChildOutputs, MassBodyId, MassNodeOutputs,
+    MassNodeView, MassPointState, MassProperties, MassStorage, MassTree, RotationalState,
+    SixDofState, TotalForce, TranslationalState, Wrench, INERTIA_CONSISTENCY_TOL,
 };
 
 // jeod_dynamics typed siblings (used by Bevy components after #172 H1

@@ -38,6 +38,7 @@ pub mod constraints;
 pub mod forces;
 pub mod gauss_jackson;
 pub mod integration;
+pub mod kinematic_propagation;
 pub mod mass;
 pub mod mass_body;
 pub mod mass_storage;
@@ -63,6 +64,11 @@ pub use forces::{
 pub use gauss_jackson::config::GaussJacksonConfig;
 pub use gauss_jackson::{GaussJacksonState, IntegratorResult};
 pub use integration::{rk4_sixdof_step, rk4_translational_step, IntegratorType};
+pub use kinematic_propagation::{
+    compute_kinematic_child_state, compute_kinematic_child_state_dquat,
+    compute_kinematic_child_state_typed, derive_kinematic_child_from_states, KinematicChildInputs,
+    KinematicChildOutputs,
+};
 pub use mass::{MassProperties, INERTIA_CONSISTENCY_TOL};
 pub use mass_body::{
     point_mass_inertia, MassBody, MassBodyId, MassPoint, MassPointState, MassTree,

@@ -5,6 +5,7 @@
 pub mod bundles;
 pub mod components;
 pub mod frame_param;
+pub mod kinematic_propagation;
 pub mod mass_tree;
 pub mod prelude;
 pub mod recipes;
@@ -16,6 +17,7 @@ pub mod wrench;
 
 pub use bundles::*;
 pub use components::*;
+pub use kinematic_propagation::propagate_state_from_root_system;
 pub use mass_tree::{composite_mass_system, MassTreeQueries, MassTreeView};
 pub use sets::*;
 pub use source_mutator::SourceMutator;
@@ -595,6 +597,20 @@ impl Plugin for JeodPlugin {
             (
                 // Force collection and integration
                 systems::force_collection_system.in_set(JeodSet::ForceCollection),
+                // Kinematic state propagation: walks MassChildOf
+                // chains pre-order from each root and overwrites
+                // every kinematic child's RotationalStateC /
+                // TranslationalStateC with the parent's state
+                // composed with the link's `t_parent_child` rotation
+                // and offset. Mirrors JEOD
+                // `DynBody::propagate_state_from_structure`. Runs
+                // before `wrench_aggregation_system` so the wrench
+                // walk's per-entity `T_inertial_struct` is correct
+                // for every chain member. Fast-path no-op when no
+                // entity carries MassChildOf.
+                kinematic_propagation::propagate_state_from_root_system
+                    .in_set(JeodSet::ForceCollection)
+                    .after(systems::force_collection_system),
                 // Composite-rigid-body wrench aggregation: walk
                 // MassChildOf chains leaves → root and accumulate
                 // each child's force/torque (and parallel-axis cross
@@ -604,7 +620,7 @@ impl Plugin for JeodPlugin {
                 // entity carries MassChildOf.
                 wrench::wrench_aggregation_system
                     .in_set(JeodSet::ForceCollection)
-                    .after(systems::force_collection_system),
+                    .after(kinematic_propagation::propagate_state_from_root_system),
                 systems::integration_system.in_set(JeodSet::Integration),
                 // After integration, sync the body's typed state into its
                 // FrameTreeR node so frame-switch evaluation sees current
