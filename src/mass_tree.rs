@@ -129,12 +129,20 @@ impl MassTreeView {
     /// properties" set; `parents_q` is the subset that also has a
     /// [`MassChildOf`] back-link. Roots are entities in `mass_q` that
     /// don't appear as children in `parents_q`.
-    /// Build the view from the read queries, treating the live
-    /// `MassPropertiesC` value as the core. Suitable for one-shot
-    /// composition (no prior tick has overwritten the components
-    /// with composite values) and for downstream systems that want
-    /// to drive [`recompute_composites_via_storage`] with their own
-    /// query layout.
+    ///
+    /// Treats the live `MassPropertiesC` value as the **core**.
+    /// **Important (PR #283 review thread PRRT_kwDORtae6c5_KHnh):
+    /// this is correct only when no prior
+    /// [`composite_mass_system`] tick has overwritten
+    /// `MassPropertiesC` with composite values** — i.e. one-shot
+    /// startup composition, downstream systems that build their own
+    /// view *before* the system has run, or scenarios where the
+    /// caller knows every entity is a leaf (so live == composite ==
+    /// core trivially). For a running app where
+    /// [`composite_mass_system`] has executed at least once, prefer
+    /// the [`MassTreeQueries::core_mass`] read path or rebuild the
+    /// view internally from the [`CoreMassPropertiesC`] cache (which
+    /// is what `composite_mass_system` itself does between ticks).
     pub fn from_queries<M, P>(
         mass_q: &Query<(Entity, &MassPropertiesC), M>,
         parents_q: &Query<(Entity, &MassChildOf), P>,
@@ -259,7 +267,8 @@ impl MassStorage for MassTreeView {
 // Composite mass system
 // ---------------------------------------------------------------------------
 
-/// SystemParam bundling the queries needed to build a [`MassTreeView`].
+/// SystemParam bundling the queries needed to build a [`MassTreeView`]
+/// or read core / composite mass properties for any mass-tree entity.
 ///
 /// Mission code that wants to call the kernel outside of
 /// [`composite_mass_system`] (e.g. a one-shot system that runs
@@ -269,15 +278,80 @@ impl MassStorage for MassTreeView {
 /// `&mut` query, callers using both must split via Bevy's `ParamSet`
 /// (the canonical pattern, mirroring what
 /// [`composite_mass_system`] does internally).
+///
+/// **Core vs composite (PR #283 review thread PRRT_kwDORtae6c5_KHnh).**
+/// Once [`composite_mass_system`] has run on an entity with at least
+/// one [`MassChildOf`] child, that entity's [`MassPropertiesC`]
+/// holds the **composite** ("the assembly's mass"), not the core
+/// ("MY mass alone"). Mission code that wants the core value must
+/// read it explicitly via [`Self::core_mass`], which prefers the
+/// hidden [`CoreMassPropertiesC`] cache (seeded by the system on
+/// first sight and refreshed on every mid-sim core edit) and falls
+/// back to [`MassPropertiesC`] for entities the system hasn't
+/// touched yet (newly-spawned roots, entities without the cache,
+/// pre-system one-shot recomposition). Mission code that wants the
+/// composite reads [`Self::composite_mass`] (or `MassPropertiesC`
+/// directly).
 #[derive(SystemParam)]
 pub struct MassTreeQueries<'w, 's> {
-    /// Per-entity core mass / inertia / CoM (read view).
+    /// Per-entity live mass / inertia / CoM. Once
+    /// [`composite_mass_system`] has run, this holds the
+    /// **composite** for non-leaf entities. Use
+    /// [`Self::core_mass`] to read the per-entity core (pre-Steiner)
+    /// values. Use [`Self::composite_mass`] when the composite is
+    /// what's needed.
     pub mass: Query<'w, 's, (Entity, &'static MassPropertiesC)>,
     /// `MassChildOf(parent)` parent links. Only a subset of `mass` —
     /// roots don't carry one.
     pub parents: Query<'w, 's, (Entity, &'static MassChildOf)>,
     /// Optional human-readable entity names for diagnostic messages.
     pub names: Query<'w, 's, &'static Name>,
+    /// Read-only handle to the hidden [`CoreMassPropertiesC`] cache
+    /// managed by [`composite_mass_system`]. Backs
+    /// [`Self::core_mass`]. Mission code never reads this directly —
+    /// the cache type itself is rustdoc-hidden. This field exists
+    /// only so `core_mass` can route the read through the
+    /// `SystemParam`'s scheduler-managed access set.
+    pub(crate) cores: Query<'w, 's, &'static CoreMassPropertiesC>,
+}
+
+impl MassTreeQueries<'_, '_> {
+    /// Return this entity's **core** (pre-Steiner) mass properties —
+    /// what the entity contributes by itself, ignoring any attached
+    /// children.
+    ///
+    /// Prefers the hidden [`CoreMassPropertiesC`] cache (seeded by
+    /// [`composite_mass_system`] from the entity's [`MassPropertiesC`]
+    /// on first sight and refreshed whenever mission code edits the
+    /// live `MassPropertiesC`). Falls back to the entity's live
+    /// [`MassPropertiesC`] when no cache entry exists yet — that
+    /// path is correct for newly-spawned entities (the system hasn't
+    /// run yet, so live == core trivially) and for one-shot use
+    /// before any composition has occurred.
+    ///
+    /// Returns `None` for an entity that carries neither component,
+    /// matching `Query::get`'s semantics. Callers should treat that
+    /// as "not a mass-tree entity" rather than zero mass.
+    ///
+    /// PR #283 review thread PRRT_kwDORtae6c5_KHnh — closes the gap
+    /// where mission code had no read path to a non-leaf entity's
+    /// core, since [`MassPropertiesC`] post-system is the composite.
+    pub fn core_mass(&self, entity: Entity) -> Option<jeod_sim::MassProperties> {
+        if let Ok(core) = self.cores.get(entity) {
+            return Some(core.0);
+        }
+        self.mass.get(entity).ok().map(|(_, m)| m.0.to_untyped())
+    }
+
+    /// Return this entity's **composite** mass properties — the
+    /// post-Steiner assembly value that the rest of the pipeline
+    /// reads (gravity, force collection, integration). Equivalent
+    /// to reading [`MassPropertiesC`] directly; provided as a named
+    /// counterpart to [`Self::core_mass`] so call sites read
+    /// symmetrically.
+    pub fn composite_mass(&self, entity: Entity) -> Option<jeod_sim::MassProperties> {
+        self.mass.get(entity).ok().map(|(_, m)| m.0.to_untyped())
+    }
 }
 
 /// Recompute every mass-tree composite from `MassChildOf` parent
@@ -730,6 +804,113 @@ mod tests {
         assert_eq!(
             before_tick, after_tick,
             "fast path should not touch MassPropertiesC: change tick advanced from {before_tick:?} to {after_tick:?}"
+        );
+    }
+
+    /// PR #283 review thread PRRT_kwDORtae6c5_KHnh — `MassTreeQueries`
+    /// exposes a `core_mass(entity)` read path so mission code can
+    /// recover the per-entity core (pre-Steiner) properties even
+    /// after [`composite_mass_system`] has overwritten
+    /// `MassPropertiesC` with the composite. `composite_mass(entity)`
+    /// returns the post-system composite (== reading
+    /// `MassPropertiesC` directly), provided as a named symmetric
+    /// counterpart so call sites read clearly.
+    #[test]
+    fn mass_tree_queries_core_vs_composite_split() {
+        let mut app = add_test_app();
+        app.add_systems(Update, composite_mass_system);
+
+        let parent_core = MassProperties::with_inertia(
+            10.0,
+            DMat3::from_diagonal(DVec3::new(50.0, 60.0, 70.0)),
+            DVec3::ZERO,
+        );
+        let child_core = MassProperties::new(5.0);
+        let offset = DVec3::new(3.0, 0.0, 0.0);
+
+        let parent = app
+            .world_mut()
+            .spawn(MassPropertiesC::from(parent_core))
+            .id();
+        let child = app
+            .world_mut()
+            .spawn((
+                MassPropertiesC::from(child_core),
+                MassChildOf::new(parent, offset),
+            ))
+            .id();
+
+        // Run one tick of composition. Now `MassPropertiesC[parent]`
+        // is the *composite* (mass 15); `CoreMassPropertiesC[parent]`
+        // is the seeded core (mass 10).
+        app.update();
+
+        // One-shot system that pulls out core_mass / composite_mass
+        // for both entities and stashes them in a resource.
+        #[derive(Resource, Default)]
+        struct Probe {
+            parent_core_mass: f64,
+            parent_composite_mass: f64,
+            child_core_mass: f64,
+            child_composite_mass: f64,
+        }
+        app.insert_resource(Probe::default());
+
+        #[derive(Resource)]
+        struct Targets {
+            parent: Entity,
+            child: Entity,
+        }
+        app.insert_resource(Targets { parent, child });
+
+        fn probe(queries: MassTreeQueries, mut out: ResMut<Probe>, targets: Res<Targets>) {
+            out.parent_core_mass = queries
+                .core_mass(targets.parent)
+                .expect("parent has core mass")
+                .mass;
+            out.parent_composite_mass = queries
+                .composite_mass(targets.parent)
+                .expect("parent has composite mass")
+                .mass;
+            out.child_core_mass = queries
+                .core_mass(targets.child)
+                .expect("child has core mass")
+                .mass;
+            out.child_composite_mass = queries
+                .composite_mass(targets.child)
+                .expect("child has composite mass")
+                .mass;
+        }
+
+        // Run the probe via run_system so it picks up the cache
+        // values written in the previous Update tick.
+        let probe_id = app.world_mut().register_system(probe);
+        app.world_mut()
+            .run_system(probe_id)
+            .expect("probe system runs");
+
+        let p = app.world().resource::<Probe>();
+        // Parent: core 10, composite 15 (10 + 5).
+        assert!(
+            (p.parent_core_mass - 10.0).abs() < 1e-12,
+            "parent core mass: {} (expected 10)",
+            p.parent_core_mass
+        );
+        assert!(
+            (p.parent_composite_mass - 15.0).abs() < 1e-12,
+            "parent composite mass: {} (expected 15)",
+            p.parent_composite_mass
+        );
+        // Child (atomic leaf): core == composite == 5.
+        assert!(
+            (p.child_core_mass - 5.0).abs() < 1e-12,
+            "child core mass: {} (expected 5)",
+            p.child_core_mass
+        );
+        assert!(
+            (p.child_composite_mass - 5.0).abs() < 1e-12,
+            "child composite mass: {} (expected 5)",
+            p.child_composite_mass
         );
     }
 }
