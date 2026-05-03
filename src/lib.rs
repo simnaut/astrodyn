@@ -12,6 +12,7 @@ pub mod sets;
 pub mod source_mutator;
 pub mod systems;
 pub mod validation;
+pub mod wrench;
 
 pub use bundles::*;
 pub use components::*;
@@ -19,6 +20,7 @@ pub use mass_tree::{composite_mass_system, MassTreeQueries, MassTreeView};
 pub use sets::*;
 pub use source_mutator::SourceMutator;
 pub use systems::*;
+pub use wrench::wrench_aggregation_system;
 
 use bevy::prelude::*;
 
@@ -613,6 +615,16 @@ impl Plugin for JeodPlugin {
             (
                 // Force collection and integration
                 systems::force_collection_system.in_set(JeodSet::ForceCollection),
+                // Composite-rigid-body wrench aggregation: walk
+                // MassChildOf chains leaves → root and accumulate
+                // each child's force/torque (and parallel-axis cross
+                // term) into the root's TotalForceC. Non-root children
+                // are zeroed so the existing integration_system does
+                // not double-count them. Fast-path no-op when no
+                // entity carries MassChildOf.
+                wrench::wrench_aggregation_system
+                    .in_set(JeodSet::ForceCollection)
+                    .after(systems::force_collection_system),
                 systems::integration_system.in_set(JeodSet::Integration),
                 // After integration, sync the body's typed state into its
                 // FrameTreeR node so frame-switch evaluation sees current
@@ -713,6 +725,7 @@ pub fn register_jeod_component_types(app: &mut App) {
     app.register_type::<components::MassChildOf>();
     app.register_type::<components::MassPointRef>();
     app.register_type::<components::DetachedSubtreeStateC>();
+    app.register_type::<components::KinematicChildC>();
     app.register_type::<components::PlanetC>();
     app.register_type::<components::RotationModelC>();
     app.register_type::<components::EphemerisBodyC>();

@@ -1607,6 +1607,16 @@ pub fn force_collection_system(
 pub fn integration_system(
     frame_tree: Res<FrameTreeR>,
     root: Res<crate::RootFrameIdR>,
+    // Filter excludes both kinematic-chain children (composite-rigid-body
+    // model integrates only the chain root; the `wrench_aggregation_system`
+    // tags every non-root `MassChildOf` member with `KinematicChildC`, and
+    // zeroing `TotalForceC` alone would not stop the per-RK-stage gravity
+    // recompute from drifting them) and detached subtrees (advanced
+    // ballistically by `step_detached_system`; integrating them here would
+    // double-step the same entity per tick, mirroring the runner split
+    // between `Simulation::bodies` and `Simulation::detached_subtrees`).
+    // JEOD_INV: DB.17 — kinematic children skip integration.
+    // JEOD_INV: DB.21 — detached subtrees skip integration.
     mut bodies: Query<
         (
             Entity,
@@ -1625,16 +1635,10 @@ pub fn integration_system(
             Option<&mut FrameDerivativesC>,
             Option<&IntegFrameIdC>,
         ),
-        // JEOD_INV: DB.21 — only unattached bodies integrate. Detached
-        // subtrees carry `DetachedSubtreeStateC` and are advanced
-        // ballistically by `step_detached_system`; excluding them here
-        // prevents the same entity from being integrated twice per tick
-        // (once under gravity by the integrator and once ballistically
-        // by `step_detached_system`). Mirrors the runner's split between
-        // `Simulation::bodies` (integrated) and
-        // `Simulation::detached_subtrees` (ballistic) — `run_integration`
-        // never sees detached entries.
-        Without<crate::DetachedSubtreeStateC>,
+        (
+            Without<KinematicChildC>,
+            Without<crate::DetachedSubtreeStateC>,
+        ),
     >,
     sources: Query<
         (
@@ -2581,12 +2585,32 @@ pub fn earth_lighting_system(
 /// - Temperature integration (forward Euler)
 /// - Force is rotated from structural to inertial by this system before writing `RadiationForceC`
 ///
+/// Kinematic children of a `MassChildOf` chain (entities carrying
+/// [`KinematicChildC`]) are excluded from this system. Until the
+/// kinematic-propagation system (design-doc Section 15.3
+/// `propagate_state_from_root_system`) lands, a kinematic child's
+/// own `TranslationalStateC` / `RotationalStateC` are not advanced
+/// in lock-step with the chain root — they stay frozen at whatever
+/// the world had when the chain was assembled. Reading those stale
+/// states to compute solar pressure here would silently produce SRP
+/// for a position the body is no longer at. Excluding kinematic
+/// children entirely (rather than feeding them stale state) is the
+/// fail-loud-but-conservative choice: kinematic-child appendages get
+/// no SRP this PR, and the follow-up that introduces propagated
+/// child state will route SRP through the live composite-derived
+/// values.
+///
 /// Placed in `JeodSet::Interaction`.
 #[allow(clippy::type_complexity)]
 pub fn flat_plate_srp_system(
-    // JEOD_INV: DB.21 — detached subtrees coast ballistically; skip
-    // SRP so `RadiationForceC` and per-stage thermal cache stay zeroed
-    // for bodies whose forces no integrator consumes.
+    // Filter excludes both kinematic-chain children (their
+    // `TranslationalStateC` / `RotationalStateC` stay frozen until
+    // the kinematic-propagation system lands; computing SRP from
+    // stale state would produce solar pressure at the wrong
+    // location) and detached subtrees (they coast ballistically;
+    // `RadiationForceC` and the per-stage thermal cache stay
+    // zeroed because no integrator consumes their forces).
+    // JEOD_INV: DB.21 — detached subtrees skip SRP.
     mut query: Query<
         (
             &mut FlatPlateConfigC,
@@ -2600,12 +2624,39 @@ pub fn flat_plate_srp_system(
             Without<SunMarker>,
             Without<CannonballSrpC>,
             Without<crate::DetachedSubtreeStateC>,
+            Without<KinematicChildC>,
+        ),
+    >,
+    // Cleanup query for kinematic children: drop any prior-tick
+    // `RadiationForceC` / `stage_inputs` left over from when the
+    // entity was last in the main query (i.e. before it became a
+    // chain member). Without this clear, `force_collection_system`
+    // would still accumulate the stale SRP into the child's
+    // `TotalForceC`, and `wrench_aggregation_system` would shift
+    // that stale wrench up to the parent — silently producing SRP
+    // for a position the body is no longer at.
+    mut kinematic_cleanup: Query<
+        (&mut FlatPlateConfigC, &mut RadiationForceC),
+        (
+            With<KinematicChildC>,
+            Without<SunMarker>,
+            Without<CannonballSrpC>,
         ),
     >,
     sun_query: Query<&TranslationalStateC, With<SunMarker>>,
     shadow_bodies: Query<(&TranslationalStateC, &ShadowBodyC), Without<SunMarker>>,
     time: Res<Time<Fixed>>,
 ) {
+    // Drop stale state for any kinematic-child SRP body. Runs first
+    // so a transition from non-kinematic → kinematic this tick
+    // never carries a leftover SRP force into the wrench-aggregation
+    // walk.
+    for (mut flat_config, mut srp_force) in &mut kinematic_cleanup {
+        flat_config.stage_inputs = None;
+        srp_force.force = DVec3::ZERO;
+        srp_force.torque = DVec3::ZERO;
+    }
+
     let sun_state = match sun_query.single() {
         Ok(s) => Some(s),
         Err(bevy::ecs::query::QuerySingleError::NoEntities(_)) => None,
