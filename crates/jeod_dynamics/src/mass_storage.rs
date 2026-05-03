@@ -137,43 +137,46 @@ pub trait MassStorage {
 /// `mass_calc_composite_inertia.cc` factored so it can be driven by
 /// any storage that produces children in post-order.
 ///
-/// `inverse_*` caches:
+/// `inverse_*` caches: every node with `mass > 0` gets
+/// `inverse_inertia = inertia.inverse()`, matching the arena's
+/// [`MassTree::calc_composite_inertia`] and `update_node`
+/// (which copies `core_properties` for leaves, then computes
+/// `composite_inertia.inverse()` for internal nodes via
+/// `calc_composite_inertia`, then re-inverts the root via
+/// `mass_update.cc:116-125`). Mass-zero nodes get `DMat3::ZERO`,
+/// matching JEOD's `Matrix3x3::invert_symmetric` fall-through.
 ///
-/// - For roots (`is_root == true`) the kernel inverts the composite
-///   inertia and sets `inverse_inertia` (matching JEOD
-///   `mass_update.cc:116-125`); zero composite mass yields
-///   `inverse_inertia = 0` (matches JEOD's `Matrix3x3::invert_symmetric`
-///   fall-through).
-/// - For non-roots `inverse_inertia` is set to a zero matrix —
-///   JEOD only inverts at root nodes. The arena's
-///   [`MassTree::recompute_composites`] honours the same rule.
+/// We must invert at every node — not just roots — because the Bevy
+/// pipeline integrates *every* `DynamicsConfigC`-bearing entity using
+/// its own `MassPropertiesC.inverse_inertia` (rotational dynamics,
+/// SRP/aero torques). Zeroing it on non-roots silently drops the
+/// torque response of any attached body, which is the
+/// silently-wrong-trajectory failure mode forbidden by CLAUDE.md
+/// "Fail Loudly".
+///
+/// `is_root` is retained for API symmetry with the post-order driver
+/// but no longer changes behaviour; the inversion rule is uniform.
 ///
 /// Panics if the composite inertia is singular (matches the existing
 /// arena diagnostic in `MassTree::calc_composite_inertia`). The panic
 /// message names the body so a mission engineer can diagnose which
 /// attachment introduced the degeneracy.
 // JEOD_INV: MA.06 — bottom-up mass property update (children first; the kernel takes pre-composed children)
-// JEOD_INV: MA.07 — derived quantities recomputed (output composite has fresh inverse caches)
+// JEOD_INV: MA.07 — derived quantities recomputed (output composite has fresh inverse caches at every node)
 pub fn compute_node_composite(
     node: MassNodeView<'_>,
     children: &[MassNodeOutputs],
-    is_root: bool,
+    _is_root: bool,
 ) -> MassNodeOutputs {
     if children.is_empty() {
         // Atomic body: composite == core (JEOD mass_update.cc:59-75).
+        // The arena copies `core_properties` verbatim, which preserves
+        // whatever `inverse_inertia` `MassProperties::with_inertia`
+        // (or the caller) populated on the core. Mass-zero leaves
+        // still get a zero matrix, matching the arena's
+        // mass-zero fall-through.
         let mut composite = node.core;
-        if is_root {
-            // Root with no children still needs `inverse_inertia`
-            // populated against the core inertia; the consistency is
-            // already maintained by `MassProperties::with_inertia`,
-            // so just propagate.
-            if composite.mass <= 0.0 {
-                composite.inverse_inertia = DMat3::ZERO;
-            }
-        } else {
-            // Non-root: keep the arena's "leaf inverse_inertia is
-            // zero" convention so consumers don't accidentally rely
-            // on it for non-root nodes.
+        if composite.mass <= 0.0 {
             composite.inverse_inertia = DMat3::ZERO;
         }
         return MassNodeOutputs {
@@ -217,9 +220,15 @@ pub fn compute_node_composite(
         0.0
     };
 
-    // 3. inverse_inertia: invert at roots, zero elsewhere (JEOD only
-    //    materializes inverse_inertia at the integration root).
-    let inverse_inertia = if is_root && total_mass > 0.0 {
+    // 3. inverse_inertia: invert at every internal node when mass > 0
+    //    (matches arena `MassTree::calc_composite_inertia` —
+    //    `mass_calc_composite_inertia.cc` lines 86-94 and the
+    //    arena's `dm_invert_symm.cc` fall-through). The JEOD
+    //    integration root receives a *second* invert in
+    //    `mass_update.cc:116-125` against the same matrix; the
+    //    result is identical, so a single uniform inversion is
+    //    bit-equivalent to the arena's behaviour.
+    let inverse_inertia = if total_mass > 0.0 {
         let det = composite_inertia.determinant();
         // JEOD's Matrix3x3::invert_symmetric (dm_invert_symm.cc:86-94)
         // checks for a zero determinant; we panic with a diagnostic
@@ -452,12 +461,28 @@ mod tests {
             1e-12,
             "parent composite",
         );
-        // Non-root entries: kernel zeroes inverse_inertia by design;
-        // arena does the same for non-roots.
+        // Non-root entries: kernel matches the arena bit-for-bit on
+        // mass / position. Inverse-inertia is preserved at every
+        // node (post-#283-review), so we also check that
+        // I · I^-1 ≈ identity for the child when mass > 0.
         assert!((kernel_child.composite.mass - arena_child_composite.mass).abs() < 1e-12);
         assert!(
             (kernel_child.composite.position - arena_child_composite.position).length() < 1e-12
         );
+        if kernel_child.composite.mass > 0.0 {
+            let identity =
+                kernel_child.composite.inertia * kernel_child.composite.inverse_inertia;
+            for r in 0..3 {
+                for c in 0..3 {
+                    let expected = if r == c { 1.0 } else { 0.0 };
+                    assert!(
+                        (identity.col(r)[c] - expected).abs() < 1e-9,
+                        "child I·I^-1 not identity at [{r},{c}]: got {}",
+                        identity.col(r)[c]
+                    );
+                }
+            }
+        }
     }
 
     #[test]
@@ -492,9 +517,10 @@ mod tests {
         let kb = outs.iter().find(|(id, _)| *id == b).unwrap().1;
 
         assert_props_close(&arena_a, &ka.composite, 1e-10, "A composite");
-        // Non-root B: compare mass / pos / inertia (arena keeps its
-        // own per-row inverse for non-roots — that's a non-load-bearing
-        // arena detail; we don't carry it through the kernel).
+        // Non-root B: compare mass / pos / inertia / inverse_inertia
+        // — post-#283-review, the kernel now preserves
+        // inverse_inertia at every node, matching the arena's
+        // `calc_composite_inertia`.
         assert!((arena_b.mass - kb.composite.mass).abs() < 1e-12);
         assert!((arena_b.position - kb.composite.position).length() < 1e-12);
         for (ca, cb) in [
@@ -504,6 +530,14 @@ mod tests {
         ] {
             let d = (ca - cb).length();
             assert!(d < 1e-10, "B inertia diff {d:.3e}");
+        }
+        for (ca, cb) in [
+            (arena_b.inverse_inertia.x_axis, kb.composite.inverse_inertia.x_axis),
+            (arena_b.inverse_inertia.y_axis, kb.composite.inverse_inertia.y_axis),
+            (arena_b.inverse_inertia.z_axis, kb.composite.inverse_inertia.z_axis),
+        ] {
+            let d = (ca - cb).length();
+            assert!(d < 1e-10, "B inverse_inertia diff {d:.3e}");
         }
     }
 
