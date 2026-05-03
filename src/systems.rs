@@ -2203,6 +2203,23 @@ pub fn staging_system(
 
     // Sync composite mass properties for all affected nodes.
     // Walk up from each changed node to the root to capture cascading updates.
+    //
+    // PR #283 review thread PRRT_kwDORtae6c5_KHnH: these writes go
+    // through `bypass_change_detection` because the value being
+    // written is the *composite* (post-Steiner) mass, not a core-mass
+    // edit by mission code. The `composite_mass_system` ECS path uses
+    // `Changed<MassPropertiesC>` to detect mid-sim core edits (fuel
+    // burn, propellant offload) and refresh its hidden
+    // [`crate::mass_tree::CoreMassPropertiesC`] cache. If the legacy
+    // arena `staging_system` write tripped that filter, the next tick
+    // the ECS path would seed `CoreMassPropertiesC` from a *composite*
+    // value — corrupting the core cache so every subsequent
+    // recomposition would Steiner-shift the already-composed mass on
+    // top of itself. Bypassing change detection here keeps the two
+    // composition paths (legacy arena via `MassBodyIdC`/`AttachEvent`
+    // and ECS-native via `MassChildOf`) safe to coexist on the same
+    // entity during the migration window. The `MassPropertiesC` value
+    // is still updated; only the change-detection signal is silenced.
     if !changed_ids.is_empty() {
         let mut sync_ids: Vec<jeod_sim::MassBodyId> = Vec::new();
         for &id in &changed_ids {
@@ -2218,7 +2235,8 @@ pub fn staging_system(
 
         for (body_id, mut mass) in &mut bodies {
             if sync_ids.binary_search(&body_id.0).is_ok() {
-                *mass = MassPropertiesC::from(tree.get(body_id.0).composite_properties);
+                *mass.bypass_change_detection() =
+                    MassPropertiesC::from(tree.get(body_id.0).composite_properties);
             }
         }
     }

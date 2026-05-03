@@ -31,7 +31,7 @@
 //! out of scope for #271.
 
 use bevy::prelude::*;
-use bevy_jeod::{composite_mass_system, MassChildOf, MassPropertiesC};
+use bevy_jeod::{composite_mass_system, AttachEvent, MassBodyIdC, MassChildOf, MassPropertiesC};
 use glam::{DMat3, DVec3};
 use jeod_sim::{MassProperties, MassTree};
 
@@ -372,5 +372,156 @@ fn bevy_parity_mass_detach_recovers_original() {
         arena_detached.inertia,
         1e-10,
         "post-detach inertia",
+    );
+}
+
+/// Regression for PR #283 review thread PRRT_kwDORtae6c5_KHnH.
+///
+/// Both composition paths can coexist on the same entity during the
+/// migration window: the legacy arena path
+/// (`MassBodyIdC` + `AttachEvent` driven by `staging_system`) and the
+/// ECS-native path (`MassChildOf` driven by `composite_mass_system`).
+/// The ECS path uses `Changed<MassPropertiesC>` to detect mid-sim
+/// *core-mass* edits (fuel burn, propellant offload) and refresh its
+/// hidden `CoreMassPropertiesC` cache. Before the fix, the legacy
+/// `staging_system`'s composite write-back also tripped that filter,
+/// so the next tick the ECS path seeded `CoreMassPropertiesC` from a
+/// **composite** value — corrupting the core cache so future
+/// recompositions Steiner-shifted the already-composed mass on top of
+/// itself.
+///
+/// The fix is `bypass_change_detection` on `staging_system`'s
+/// composite write. This test exercises that path: a tick where
+/// `staging_system` writes a composite must NOT cause the next
+/// tick's `composite_mass_system` to seed `CoreMassPropertiesC` from
+/// the composite. We verify by detaching after the staging tick and
+/// asserting the parent composite reverts to its core (== parent_core
+/// alone). If the bug regresses, the cache holds the composite, the
+/// "core" recovered on detach is heavier, and the post-detach
+/// composite no longer matches the original core.
+#[test]
+fn bevy_staging_system_does_not_corrupt_composite_core_cache() {
+    use bevy_jeod::{DetachEvent, MassTreeR};
+    use jeod_sim::MassBodyId;
+
+    // Build an app with both staging and composite systems wired.
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.add_message::<AttachEvent>();
+    app.add_message::<DetachEvent>();
+    // composite first, then staging — matches the production schedule
+    // ordering in JeodPlugin::build (composite_mass_system runs in
+    // the EphemerisUpdate stage, staging_system in the Interaction
+    // stage).
+    app.add_systems(
+        Update,
+        (
+            composite_mass_system,
+            bevy_jeod::staging_system.after(composite_mass_system),
+        ),
+    );
+
+    // Seed the arena with parent + child so MassBodyIdC entries are
+    // valid for staging_system's tree.attach call.
+    let mut tree = MassTree::new();
+    let parent_core = MassProperties::with_inertia(
+        100.0,
+        DMat3::from_diagonal(DVec3::new(50.0, 60.0, 70.0)),
+        DVec3::ZERO,
+    );
+    let child_core = MassProperties::new(40.0);
+    let parent_arena_id: MassBodyId = tree.add_root("parent".into(), parent_core);
+    let child_arena_id: MassBodyId = tree.add_body("child".into(), child_core);
+    app.insert_resource(MassTreeR(tree));
+
+    // Spawn parent + child entities. Note: BOTH carry `MassBodyIdC`
+    // (legacy path) AND will carry `MassChildOf` (new path) once
+    // attached — the migration window scenario.
+    let parent_entity = app
+        .world_mut()
+        .spawn((
+            MassPropertiesC::from(parent_core),
+            MassBodyIdC(parent_arena_id),
+        ))
+        .id();
+    let child_entity = app
+        .world_mut()
+        .spawn((
+            MassPropertiesC::from(child_core),
+            MassBodyIdC(child_arena_id),
+        ))
+        .id();
+
+    // Tick 1: no attach yet — composite_mass_system seeds
+    // CoreMassPropertiesC for both entities from their (still-core)
+    // MassPropertiesC.
+    app.update();
+
+    // Tick 2: emit AttachEvent. staging_system (legacy) attaches in
+    // the arena and writes the composite back into parent's
+    // MassPropertiesC. With the fix, this write uses
+    // bypass_change_detection so composite_mass_system on the *next*
+    // tick does not see it as a Changed core edit.
+    let offset = DVec3::new(2.0, 0.0, 0.0);
+    app.world_mut().write_message(AttachEvent {
+        child: child_entity,
+        parent: parent_entity,
+        offset,
+        t_parent_child: DMat3::IDENTITY,
+    });
+    // Add the ECS-native MassChildOf relation too, so on the next
+    // tick composite_mass_system has work to do (otherwise it
+    // fast-paths to the empty-parents branch).
+    app.world_mut()
+        .entity_mut(child_entity)
+        .insert(MassChildOf::with_rotation(
+            parent_entity,
+            offset,
+            DMat3::IDENTITY,
+        ));
+    app.update();
+
+    // Tick 3+: detach the child via the ECS path (remove
+    // MassChildOf). With a clean core cache, composite_mass_system
+    // reverts the parent's composite to its original core (no
+    // children, parent alone). With the bug, the cache holds the
+    // staged composite, so the "core" the parent reverts to is the
+    // composite — wrong.
+    //
+    // We run two ticks because the corrupted CoreMassPropertiesC
+    // write goes through Commands (deferred to end-of-step). The
+    // first post-detach tick sees the correct cached core (from tick
+    // 1) and reverts; the SECOND post-detach tick sees the
+    // newly-corrupted cache (seeded from the staging composite) and
+    // would re-apply the composite. Two ticks therefore exercise the
+    // full corruption + replay cycle.
+    app.world_mut()
+        .entity_mut(child_entity)
+        .remove::<MassChildOf>();
+    app.update();
+    app.update();
+
+    let recovered = read_composite(&app, parent_entity);
+
+    // The recovered parent properties must match the original
+    // parent_core, not the composite.
+    assert!(
+        (recovered.mass - parent_core.mass).abs() < 1e-12,
+        "post-detach parent mass: got {}, expected core {}; \
+         staging_system's composite write corrupted CoreMassPropertiesC.",
+        recovered.mass,
+        parent_core.mass,
+    );
+    assert_vec3_close(
+        recovered.position,
+        parent_core.position,
+        1e-12,
+        "post-detach parent CoM (CoreMassPropertiesC corruption check)",
+    );
+    assert_mat3_close(
+        recovered.inertia,
+        parent_core.inertia,
+        1e-10,
+        "post-detach parent inertia (CoreMassPropertiesC corruption check)",
     );
 }
