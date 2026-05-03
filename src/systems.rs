@@ -591,13 +591,75 @@ pub fn on_body_frame_despawn(
 /// could reuse it — so without this observer it would leak when the
 /// owning source despawns. Mirrors [`on_retired_pfix_frame_despawn`]
 /// for the parallel ECS-entity retirement track.
+///
+/// `try_despawn` (not `despawn`) because the retired pfix entity's
+/// `ChildOf` parent is the source frame entity, which is despawned
+/// recursively by [`on_source_frame_entity_despawn`] when the source
+/// despawns; the retired pfix may already be gone by the time this
+/// observer's command flushes.
 pub fn on_retired_pfix_frame_entity_despawn(
     trigger: On<Despawn, RetiredPfixFrameEntityC>,
     sources: Query<&RetiredPfixFrameEntityC>,
     mut commands: Commands,
 ) {
     if let Ok(retired) = sources.get(trigger.entity) {
-        commands.entity(retired.0).despawn();
+        commands.entity(retired.0).try_despawn();
+    }
+}
+
+/// On entity despawn, despawn the *frame entity* the source / body
+/// entity carries in [`FrameEntityC`]. PR #281 round-2 review
+/// (Copilot, comments 3177683390 + 3177683392): without this
+/// observer, despawning a source or body would leave its
+/// dual-write frame entity (and the pfix child it parents, when
+/// present) alive indefinitely under the root frame entity, growing
+/// the entity count over time and potentially shadowing future
+/// re-spawns of the same `Name`.
+///
+/// `try_despawn` (not `despawn`) because Bevy's `ChildOf` /
+/// `Children` relationship already triggers recursive despawn on the
+/// frame entity's children — the pfix child of a source frame, the
+/// body frame entity if a body shares the integration frame entity
+/// — so a sibling observer ([`on_source_pfix_frame_entity_despawn`])
+/// firing on the same entity-despawn event may find its target
+/// already queued for despawn. `try_despawn` silently no-ops in that
+/// case, matching the contract of the parallel arena-side
+/// retirement helpers in this module.
+///
+/// Mirrors [`on_source_frame_despawn`] / [`on_body_frame_despawn`]
+/// on the ECS-entity track, closing the issue #277 PR 1 round-2
+/// gap: the dual-write spawn sites in
+/// [`register_source_frames_system`] and
+/// [`register_body_frames_system`] had no parallel cleanup.
+pub fn on_source_frame_entity_despawn(
+    trigger: On<Despawn, FrameEntityC>,
+    owners: Query<&FrameEntityC>,
+    mut commands: Commands,
+) {
+    if let Ok(frame) = owners.get(trigger.entity) {
+        commands.entity(frame.0).try_despawn();
+    }
+}
+
+/// On entity despawn, despawn the pfix *frame entity* the source
+/// entity carries in [`PfixFrameEntityC`]. Pair to
+/// [`on_source_frame_entity_despawn`] for the source's pfix child.
+///
+/// Independent of [`on_source_frame_entity_despawn`] so the
+/// per-component `Despawn` order doesn't matter: in the common case
+/// the pfix entity is `ChildOf(source_frame_entity)` and gets
+/// despawned recursively when its parent does, but this observer is
+/// the safety net for any future configuration where the pfix entity
+/// is parented elsewhere (or for entities that hold
+/// `PfixFrameEntityC` without `FrameEntityC`). `try_despawn` silently
+/// no-ops when the recursive despawn has already claimed the entity.
+pub fn on_source_pfix_frame_entity_despawn(
+    trigger: On<Despawn, PfixFrameEntityC>,
+    owners: Query<&PfixFrameEntityC>,
+    mut commands: Commands,
+) {
+    if let Ok(frame) = owners.get(trigger.entity) {
+        commands.entity(frame.0).try_despawn();
     }
 }
 

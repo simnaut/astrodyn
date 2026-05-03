@@ -352,6 +352,14 @@ impl Plugin for JeodPlugin {
         app.add_observer(systems::on_retired_pfix_frame_despawn);
         app.add_observer(systems::on_retired_pfix_frame_entity_despawn);
         app.add_observer(systems::on_body_frame_despawn);
+        // Issue #277 PR 1 round-2 review: dual-write ECS frame
+        // entities also need cleanup on owner despawn so the
+        // dual-write sites in `register_source_frames_system` /
+        // `register_body_frames_system` (and the pfix branch of the
+        // former / `register_pfix_frames_system`) don't leak frame
+        // entities after the source / body entity is gone.
+        app.add_observer(systems::on_source_frame_entity_despawn);
+        app.add_observer(systems::on_source_pfix_frame_entity_despawn);
         // Split into two add_systems calls to stay within Bevy's tuple size limit.
         app.add_systems(
             FixedUpdate,
