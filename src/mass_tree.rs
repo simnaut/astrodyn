@@ -1,7 +1,7 @@
 //! Bevy-side ECS mass-tree adapter.
 //!
 //! This module is the Bevy half of issue [#271]: it exposes the
-//! [`MassChildOf`](crate::MassChildOf) /
+//! [`MassChildOf`] /
 //! [`MassPointRef`](crate::MassPointRef) relations through the
 //! [`jeod_sim::MassStorage`] trait so the same composition kernel
 //! (parallel-axis / Steiner) drives both the runner's arena
@@ -13,7 +13,7 @@
 //! handles to the trait surface and runs a per-step
 //! [`composite_mass_system`] that walks `MassChildOf` bottom-up,
 //! recomputes composites, and writes them back into
-//! [`MassPropertiesC`](crate::MassPropertiesC).
+//! [`MassPropertiesC`].
 //!
 //! The previous arena-via-resource path —
 //! [`MassTreeR`](crate::MassTreeR) plus
@@ -41,8 +41,7 @@ use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
 use jeod_sim::{
-    recompute_composites_via_storage, MassNodeView, MassPointState, MassProperties,
-    MassPropertiesTyped, MassStorage, SelfRef,
+    recompute_composites_via_storage, MassNodeView, MassPointState, MassProperties, MassStorage,
 };
 
 use crate::components::{MassChildOf, MassPropertiesC};
@@ -71,9 +70,9 @@ use crate::components::{MassChildOf, MassPropertiesC};
 /// pre-composition core. The struct is publicly visible only because
 /// Bevy's system-param signatures require the filter / data types
 /// in `Without<…>` clauses to be `pub` when the system itself is
-/// `pub`; we mark it `#[doc(hidden)]` to keep it out of the rustdoc
-/// public surface.
-#[doc(hidden)]
+/// `pub`; the type is hidden from rustdoc to keep it off the public
+/// surface.
+#[doc(hidden)] // allowed: pub-but-hidden; see doc comment above and #271
 #[derive(Component, Debug, Clone, Copy)]
 pub struct CoreMassPropertiesC(pub MassProperties);
 
@@ -335,12 +334,18 @@ pub fn composite_mass_system(
     }
 
     // Step 4: write composites back into MassPropertiesC.
+    //
+    // Composition itself is the typed-quantity boundary here: the
+    // kernel works in untyped `MassProperties` and the per-tick
+    // composite has to be lifted back into the `SelfRef`-tagged Bevy
+    // component. `MassPropertiesC::from` is the canonical insertion-
+    // time bridge (defined in `src/components.rs`, mirroring every
+    // other typed Bevy component), so going through it keeps this
+    // module free of bypass constructors.
     let mut writes = props.p1();
     for (entity, out) in outputs {
         if let Ok(mut p) = writes.get_mut(entity) {
-            *p = MassPropertiesC(MassPropertiesTyped::<SelfRef>::from_untyped_unchecked(
-                &out.composite,
-            ));
+            *p = MassPropertiesC::from(out.composite);
         }
     }
 }
