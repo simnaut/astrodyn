@@ -337,6 +337,73 @@ pub fn register_body_frames_system(
     }
 }
 
+/// Maintain the `MassPointRef` ↔ `MassPropertiesC` invariant on bodies
+/// that have already passed through [`register_body_frames_system`].
+///
+/// `register_body_frames_system` is filtered by `Without<BodyFrameIdC>`
+/// so it sees each body exactly once. That makes the
+/// `Has<MassPropertiesC>`-driven `MassPointRef` insertion only correct
+/// at the body's first sight — a body that starts kinematic-only and
+/// later acquires `MassPropertiesC` would never receive the
+/// back-pointer, and a body that loses `MassPropertiesC` after first
+/// registration would keep a stale one. PR #283 review thread
+/// `PRRT_kwDORtae6c5_K7qF` flagged both directions.
+///
+/// This system handles the post-registration transitions:
+///
+/// - **Acquired mass**: a body with `BodyFrameIdC` + `MassPropertiesC`
+///   that lacks `MassPointRef` gets one inserted (the back-pointer
+///   resolves to the body's own entity, mirroring the "body / mass /
+///   frame ECS entity is one and the same" invariant the initial
+///   registration uses).
+/// - **Lost mass**: a body with `BodyFrameIdC` + `MassPointRef` whose
+///   `MassPropertiesC` has been removed gets the stale `MassPointRef`
+///   removed (the "absent for kinematic-only attaches" contract on
+///   the type — keeping a stale back-pointer would lie about whether
+///   the frame still participates in the mass tree).
+///
+/// Runs in the same scheduling slots as
+/// [`register_body_frames_system`] (Startup, PreUpdate, FixedUpdate
+/// before `JeodSet::EphemerisUpdate`) so the invariant is restored
+/// before any consumer (gravity, force collection, integration) reads
+/// the back-pointer this tick.
+#[allow(clippy::type_complexity)]
+pub fn sync_body_mass_point_ref_system(
+    mut commands: Commands,
+    // Acquired mass: has frame + mass but no back-pointer. The
+    // `With<BodyFrameIdC>` filter excludes brand-new bodies that
+    // `register_body_frames_system` will register this same tick (the
+    // `Commands` it issued are deferred until the next system flush;
+    // when this system runs, those bodies don't yet carry
+    // `BodyFrameIdC`).
+    acquired: Query<
+        Entity,
+        (
+            With<BodyFrameIdC>,
+            With<MassPropertiesC>,
+            Without<MassPointRef>,
+        ),
+    >,
+    // Lost mass: has frame + back-pointer but mass component was
+    // removed. The stale back-pointer must be cleared so consumers
+    // don't continue to treat the frame as a mass-tree participant.
+    lost: Query<
+        Entity,
+        (
+            With<BodyFrameIdC>,
+            With<MassPointRef>,
+            Without<MassPropertiesC>,
+        ),
+    >,
+) {
+    for entity in &acquired {
+        commands.entity(entity).insert(MassPointRef(entity));
+    }
+    for entity in &lost {
+        commands.entity(entity).remove::<MassPointRef>();
+    }
+}
+
 // ── Frame-tree despawn cleanup ──
 //
 // `FrameTree` is append-only — `jeod_frames` does not expose a

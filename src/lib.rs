@@ -301,6 +301,12 @@ impl Plugin for JeodPlugin {
                 systems::register_source_frames_system,
                 systems::register_pfix_frames_system.after(systems::register_source_frames_system),
                 systems::register_body_frames_system.after(systems::register_pfix_frames_system),
+                // Maintain `MassPointRef` ↔ `MassPropertiesC` invariant
+                // for bodies that gain or lose mass after the one-time
+                // body-frame registration pass. PR #283 review thread
+                // `PRRT_kwDORtae6c5_K7qF`.
+                systems::sync_body_mass_point_ref_system
+                    .after(systems::register_body_frames_system),
             ),
         );
         app.add_systems(
@@ -309,6 +315,8 @@ impl Plugin for JeodPlugin {
                 systems::register_source_frames_system,
                 systems::register_pfix_frames_system.after(systems::register_source_frames_system),
                 systems::register_body_frames_system.after(systems::register_pfix_frames_system),
+                systems::sync_body_mass_point_ref_system
+                    .after(systems::register_body_frames_system),
             ),
         );
         // Frame-tree despawn cleanup: rename + reset orphan nodes so
@@ -339,6 +347,13 @@ impl Plugin for JeodPlugin {
                 // any IntegSourceC reference resolves to a registered source).
                 systems::register_body_frames_system
                     .after(systems::register_pfix_frames_system)
+                    .before(JeodSet::EphemerisUpdate),
+                // Late-acquired / late-lost `MassPropertiesC` →
+                // insert / remove `MassPointRef` for bodies that have
+                // already passed through `register_body_frames_system`.
+                // PR #283 review thread `PRRT_kwDORtae6c5_K7qF`.
+                systems::sync_body_mass_point_ref_system
+                    .after(systems::register_body_frames_system)
                     .before(JeodSet::EphemerisUpdate),
                 // Validation runs *after* registration but before any
                 // pipeline consumer touches the new components. The
