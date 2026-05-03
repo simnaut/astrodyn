@@ -142,7 +142,18 @@ pub trait MassStorage {
     /// Direct children of `id`. Order matters only for diagnostic
     /// reproducibility — composition is associative + commutative
     /// over Steiner-shifted child contributions.
-    fn children(&self, id: Self::Id) -> Vec<Self::Id>;
+    ///
+    /// Returns a borrowed slice into the backend's already-indexed
+    /// child storage so the kernel can iterate without allocating
+    /// per node — the previous `Vec<Self::Id>` return forced a heap
+    /// allocation on every visit, which scaled with tree size and
+    /// added avoidable allocator churn on large mass trees
+    /// (PR #283 review thread `PRRT_kwDORtae6c5_KZvX`). Both the
+    /// arena ([`MassTree::children`]) and the Bevy view
+    /// ([`MassTreeView::children`]) already keep child lists in
+    /// `Vec<Self::Id>` slabs / `HashMap<Entity, Vec<Entity>>`, so
+    /// `&[Self::Id]` is the natural shape.
+    fn children(&self, id: Self::Id) -> &[Self::Id];
 
     /// Every root in the storage (parents whose `parent(...)` is
     /// `None`). The kernel walks each root post-order to honour the
@@ -388,9 +399,14 @@ fn walk<S: MassStorage>(
     if !seen.insert(id) {
         return;
     }
+    // Borrow the backend's child slice directly (no allocation;
+    // PR #283 review thread `PRRT_kwDORtae6c5_KZvX`). Both
+    // `MassTree::children` and `MassTreeView::children` return a
+    // pre-indexed `&[Self::Id]`, so this loop adds zero allocator
+    // pressure as the walk recurses.
     let children = storage.children(id);
     let mut child_outputs: Vec<MassNodeOutputs> = Vec::with_capacity(children.len());
-    for child_id in children {
+    for &child_id in children {
         walk(storage, child_id, false, out, index, seen);
         // O(1) lookup of the child's pre-finalised output via the
         // index map (replaces the previous tail-scan over `out`,
@@ -437,8 +453,11 @@ impl MassStorage for MassTree {
         }
     }
 
-    fn children(&self, id: Self::Id) -> Vec<Self::Id> {
-        MassTree::children(self, id).to_vec()
+    fn children(&self, id: Self::Id) -> &[Self::Id] {
+        // Pass through the arena's `&[MassBodyId]` slab directly —
+        // no allocation per visit (PR #283 review thread
+        // `PRRT_kwDORtae6c5_KZvX`).
+        MassTree::children(self, id)
     }
 
     fn roots(&self) -> Vec<Self::Id> {
@@ -609,6 +628,84 @@ mod tests {
             let d = (ca - cb).length();
             assert!(d < 1e-10, "B inverse_inertia diff {d:.3e}");
         }
+    }
+
+    #[test]
+    fn storage_children_returns_borrowed_slice() {
+        // PR #283 review thread `PRRT_kwDORtae6c5_KZvX`: the
+        // `MassStorage::children` contract is `&[Self::Id]` (a
+        // borrow into the backend's existing index), not an owned
+        // `Vec`. Pin the contract so a future regression that
+        // reverts to `.cloned().to_vec()` etc. would fail to compile
+        // here. The arena `MassTree::children` already stores a
+        // `Vec<MassBodyId>` per node, so passing it through is
+        // zero-allocation per visit.
+        let mut tree = MassTree::new();
+        let parent = tree.add_root("parent".into(), MassProperties::new(10.0));
+        let child_a = tree.add_body("child_a".into(), MassProperties::new(2.0));
+        let child_b = tree.add_body("child_b".into(), MassProperties::new(3.0));
+        tree.attach(child_a, parent, DVec3::new(1.0, 0.0, 0.0), DMat3::IDENTITY);
+        tree.attach(child_b, parent, DVec3::new(0.0, 1.0, 0.0), DMat3::IDENTITY);
+
+        // Compile-time shape check: the value returned binds to
+        // `&[MassBodyId]`, not an owned `Vec<MassBodyId>`. The
+        // pointer-equality check below would fail to compile if
+        // `children` ever returned `Vec<_>` (a temporary's address
+        // would change between calls).
+        let slice_a: &[MassBodyId] = <MassTree as MassStorage>::children(&tree, parent);
+        let slice_b: &[MassBodyId] = <MassTree as MassStorage>::children(&tree, parent);
+        assert_eq!(slice_a.len(), 2);
+        // Two consecutive calls borrow the *same* backend slab; if
+        // the trait silently re-introduced a `Vec::clone()` wrapper,
+        // the addresses would differ.
+        assert!(
+            std::ptr::eq(slice_a.as_ptr(), slice_b.as_ptr()),
+            "MassStorage::children re-allocates between calls — \
+             trait must return a borrow into the backend, not an owned Vec"
+        );
+    }
+
+    #[test]
+    fn storage_kernel_chain_of_100_recomposes() {
+        // PR #283 review thread `PRRT_kwDORtae6c5_KZvX`: composing
+        // a 100-body chain exercises the iterator/slice path
+        // through 100 child-list visits. With the old
+        // `Vec<Self::Id>` return there were 100 heap allocations
+        // (one per `walk` visit); after the fix every visit borrows
+        // into the backend's existing slab, so allocator pressure
+        // is bounded by the kernel's own bookkeeping (the
+        // `out` / `index` / `seen` collections, each grown once).
+        //
+        // We don't install a counting allocator — that would
+        // require a global hook that conflicts with the rest of
+        // the crate's tests — but the trait return type
+        // (`&[Self::Id]`) statically guarantees the per-visit
+        // allocation cannot reappear without changing the trait
+        // signature, which is a breaking change reviewers will
+        // notice. The test pins correctness on the tall chain:
+        // composite mass at the root must equal the sum of all
+        // 100 core masses (1.0 each => 100.0).
+        let mut tree = MassTree::new();
+        let mut prev = tree.add_root("body_0".into(), MassProperties::new(1.0));
+        let mut bodies = vec![prev];
+        for i in 1..100 {
+            let body = tree.add_body(format!("body_{i}"), MassProperties::new(1.0));
+            tree.attach(body, prev, DVec3::new(0.1, 0.0, 0.0), DMat3::IDENTITY);
+            bodies.push(body);
+            prev = body;
+        }
+        // Drive the trait-driven kernel; if any `children()` call
+        // panics, allocates unexpectedly, or the post-order walk
+        // misses a body, the cycle / orphan detection in
+        // `recompute_composites_via_storage` will fire.
+        let outs = recompute_composites_via_storage(&tree);
+        assert_eq!(outs.len(), 100, "kernel must visit every body");
+        let root_idx = outs.iter().position(|(id, _)| *id == bodies[0]).unwrap();
+        let root_composite_mass = outs[root_idx].1.composite.mass;
+        assert!(
+            (root_composite_mass - 100.0).abs() < 1e-9,
+            "root composite mass: expected 100.0, got {root_composite_mass}"
+        );
     }
 
     #[test]

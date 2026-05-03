@@ -262,11 +262,16 @@ impl MassStorage for MassTreeView {
         }
     }
 
-    fn children(&self, id: Self::Id) -> Vec<Self::Id> {
+    fn children(&self, id: Self::Id) -> &[Self::Id] {
+        // Borrow the pre-built `children_by_parent` slab directly so
+        // the kernel iterates without allocating per node (PR #283
+        // review thread `PRRT_kwDORtae6c5_KZvX`). Falls back to an
+        // empty slice for nodes with no children — both branches
+        // produce a `&[Entity]`, no `Vec` allocation either way.
         self.children_by_parent
             .get(&id)
-            .cloned()
-            .unwrap_or_default()
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
     }
 
     fn roots(&self) -> Vec<Self::Id> {
