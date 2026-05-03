@@ -525,7 +525,19 @@ impl Plugin for JeodPlugin {
                 // detached subtrees are not part of any integrator's
                 // wrench-aggregation walk anymore. Mirrors
                 // `jeod_runner::Simulation::step_detached_subtrees`.
-                systems::step_detached_system.in_set(JeodSet::Integration),
+                //
+                // Detached entities still carry `BodyFrameIdC`, so
+                // `sync_body_to_frame_system` and `frame_switch_system`
+                // would otherwise read the body's pre-step
+                // `TranslationalStateC` and write it into `FrameTreeR`
+                // before `step_detached_system` overwrites it — leaving
+                // the frame tree desynced for one tick. Pin
+                // `step_detached_system` before both so the synced
+                // frame-tree node reflects the post-step body state.
+                systems::step_detached_system
+                    .in_set(JeodSet::Integration)
+                    .before(systems::sync_body_to_frame_system)
+                    .before(systems::frame_switch_system),
                 systems::aero_drag_system.in_set(JeodSet::Interaction),
                 systems::gravity_torque_system.in_set(JeodSet::Interaction),
                 systems::flat_plate_srp_system.in_set(JeodSet::Interaction),

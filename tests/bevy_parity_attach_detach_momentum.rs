@@ -796,3 +796,98 @@ fn stage_attach_combine_parity_smoke() {
         omega_expected
     );
 }
+
+/// `step_detached_system` must run before the frame-tree sync /
+/// frame-switch evaluation. Detached bodies still carry
+/// `BodyFrameIdC`, so without an explicit ordering constraint the
+/// schedule is free to run `sync_body_to_frame_system` against the
+/// pre-step body state, then have `step_detached_system` overwrite
+/// `TranslationalStateC` afterwards — leaving the frame-tree node
+/// out of sync with the body for one tick.
+///
+/// After detach + one `App::update()`, the `FrameTreeR` node for the
+/// detached entity must reflect the *post-step* body position
+/// (advanced by one ballistic `dt`), not the pre-step position the
+/// detached subtree carried at the start of the tick.
+#[test]
+fn bevy_step_detached_runs_before_frame_tree_sync() {
+    let parent_mass = MassProperties::new(1000.0);
+    let child_mass = MassProperties::new(500.0);
+    let initial_trans = TranslationalState {
+        position: DVec3::new(7e6, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let initial_rot = RotationalState::default();
+
+    let dt = 1.0;
+    let (mut app, parent_entity, child_entity, _, _) = build_two_body_world(
+        dt,
+        parent_mass,
+        initial_trans,
+        initial_rot,
+        child_mass,
+        initial_trans,
+        initial_rot,
+    );
+
+    // Attach so the child enters the parent's composite, then detach
+    // to put the child in `DetachedSubtreeStateC` with a known
+    // ballistic state (matches the parent's composite at the detach
+    // instant — same as `bevy_detached_subtree_propagates_ballistically`).
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset: DVec3::ZERO,
+            t_parent_child: DMat3::IDENTITY,
+        });
+    step(&mut app, 1, dt);
+
+    let parent_pos_at_detach = read_position(app.world(), parent_entity);
+    let parent_vel_at_detach = read_velocity(app.world(), parent_entity);
+
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<DetachEvent>>()
+        .write(DetachEvent {
+            child: child_entity,
+        });
+
+    // Run a single tick. `step_detached_system` advances the
+    // detached body by `dt`; `sync_body_to_frame_system` then
+    // mirrors the post-step body state into the frame-tree node.
+    step(&mut app, 1, dt);
+
+    let body_pos = read_position(app.world(), child_entity);
+    let expected_body_pos = parent_pos_at_detach + parent_vel_at_detach * dt;
+    assert!(
+        (body_pos - expected_body_pos).length() < 1e-6,
+        "detached TranslationalStateC must advance one ballistic step: got {body_pos:?}, expected {expected_body_pos:?}"
+    );
+
+    let body_fid = app
+        .world()
+        .get::<bevy_jeod::components::BodyFrameIdC>(child_entity)
+        .expect("detached body retains BodyFrameIdC during free flight")
+        .0;
+    let frame_node_pos = app
+        .world()
+        .resource::<bevy_jeod::FrameTreeR>()
+        .0
+        .get(body_fid)
+        .state
+        .trans
+        .position;
+
+    // The crux of the regression: the frame-tree node must mirror
+    // the post-`step_detached_system` body state. If
+    // `sync_body_to_frame_system` raced ahead of
+    // `step_detached_system`, the node would still hold the
+    // pre-step position and this assertion would fail.
+    assert!(
+        (frame_node_pos - body_pos).length() < 1e-12,
+        "FrameTreeR body node must reflect post-step body position \
+         (sync_body_to_frame_system must run after step_detached_system): \
+         frame node {frame_node_pos:?}, body {body_pos:?}"
+    );
+}
