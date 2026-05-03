@@ -360,11 +360,12 @@ fn tier3_bevy_rotation_none_toggle_removes_pfix_component() {
     );
 }
 
-/// PR #281 round-1 review fixup: the same retirement / reuse semantics
-/// the test above asserts on the *arena* side must also hold on the
-/// ECS-entity side. Without the parallel `RetiredPfixFrameEntityC`
-/// retirement, the source kept a stale `PfixFrameEntityC` handle on
-/// toggle to `None` *and* `register_pfix_frames_system` (which filters
+/// Issue #277 PR 1 round-1 review fixup: the same retirement / reuse
+/// semantics the test above asserts on the *arena* side must also hold
+/// on the ECS-entity side. Without the parallel
+/// `RetiredPfixFrameEntityC` retirement, the source kept a stale
+/// `PfixFrameEntityC` handle on toggle to `None` *and*
+/// `register_pfix_frames_system` (which filters
 /// `Without<SourcePfixFrameIdC>`) spawned a fresh pfix frame entity on
 /// every retoggle — leaking one orphan ECS entity per cycle.
 #[test]
