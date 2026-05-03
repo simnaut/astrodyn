@@ -159,7 +159,7 @@ impl<'w, 's> FrameStorage for RelativeFrameState<'w, 's> {
 /// - [`FrameOrigin::origin_in_root`] —
 ///   `(Position<RootInertial>, Velocity<RootInertial>)`. The typed
 ///   surface that lifts the result into the root-inertial phantom
-///   without an `from_raw_si` boundary at the call site.
+///   without a `from_raw_si` boundary at the call site.
 ///   Equivalent to
 ///   `frame_origin_typed::<RootInertial>(tree, root, frame)` /
 ///   `(rel.position_velocity(root, frame))`-then-wrap.
