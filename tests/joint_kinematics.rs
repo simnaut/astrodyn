@@ -315,6 +315,26 @@ fn joint_kinematics_system_is_a_public_system_function() {
     _assert_is_system_fn();
 }
 
+/// Mission code that pre-validates joint axes upstream of
+/// [`evaluate_joint_kinematics`] needs to thread the kernel's exact
+/// tolerance through `bevy_jeod`/`jeod_sim` rather than hard-coding a
+/// parallel literal that could drift. Per the three-layer rule, mission
+/// crates depend only on `bevy_jeod` (and transitively `jeod_sim`),
+/// never on `jeod_dynamics` directly — so `AXIS_NORM_TOL` must be
+/// reachable on both surfaces. This test pins both paths.
+#[test]
+fn axis_norm_tol_is_reachable_through_jeod_sim_and_prelude() {
+    // Reachable through `jeod_sim` (the single API surface for any
+    // `jeod_sim` consumer — bevy_jeod, jeod_runner, mission crates).
+    let from_jeod_sim: f64 = jeod_sim::AXIS_NORM_TOL;
+    // Reachable through the bevy_jeod prelude (the path mission code
+    // actually uses: `use bevy_jeod::prelude::*;`).
+    let from_prelude: f64 = AXIS_NORM_TOL;
+    // Both must reference the same constant the kernel asserts against.
+    assert_eq!(from_jeod_sim, from_prelude);
+    assert_eq!(from_jeod_sim, jeod_dynamics::kinematic_joint::AXIS_NORM_TOL);
+}
+
 /// Frame-tree integration: a `RelativeFrameState` walk that crosses a
 /// joint frame must compose the parent frame's non-identity attitude /
 /// angular velocity with the joint's per-tick kinematic update and

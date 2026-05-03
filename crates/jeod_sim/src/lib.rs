@@ -89,7 +89,7 @@ pub use interactions::{
     GroundContactPairEval, ThermalIntegrationOrder,
 };
 pub use jeod_dynamics::kinematic_joint::{
-    evaluate as evaluate_joint_kinematics, JointKinematicsSpec,
+    evaluate as evaluate_joint_kinematics, JointKinematicsSpec, AXIS_NORM_TOL,
 };
 pub use jeod_dynamics::{
     Abm4State, GaussJacksonConfig, GaussJacksonState, IntegratorResult, IntegratorType,

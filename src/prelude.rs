@@ -49,7 +49,7 @@ pub use crate::frame_param::RelativeFrameState;
 pub use jeod_sim::{
     Array3Ext, BodyFrame, Ecef, F64Ext, Frame, FrameTransform, GravityControl, JeodQuat,
     JointKinematicsSpec, Lvlh, Ned, Planet, PlanetFixed, Qty3, RootInertial, SelfPlanet, SelfRef,
-    StructuralFrame, Vec3Ext, Vehicle, VehicleBuilder, VehicleConfig,
+    StructuralFrame, Vec3Ext, Vehicle, VehicleBuilder, VehicleConfig, AXIS_NORM_TOL,
 };
 // Mission-crate macros for defining additional `Vehicle` / `Planet`
 // markers. Re-exported so `use bevy_jeod::prelude::*;` brings them into
