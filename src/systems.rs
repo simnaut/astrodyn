@@ -1601,23 +1601,35 @@ pub fn force_collection_system(
 pub fn integration_system(
     frame_tree: Res<FrameTreeR>,
     root: Res<crate::RootFrameIdR>,
-    mut bodies: Query<(
-        Entity,
-        &DynamicsConfigC,
-        &mut TranslationalStateC,
-        Option<&mut RotationalStateC>,
-        Option<&MassPropertiesC>,
-        &GravityControlsC,
-        &mut TotalForceC,
-        Option<&IntegratorTypeC>,
-        Option<&mut GaussJacksonStateC>,
-        Option<&mut Abm4StateC>,
-        Option<&mut FlatPlateConfigC>,
-        Option<&StructuralTransformC>,
-        Option<&mut RadiationForceC>,
-        Option<&mut FrameDerivativesC>,
-        Option<&IntegFrameIdC>,
-    )>,
+    mut bodies: Query<
+        (
+            Entity,
+            &DynamicsConfigC,
+            &mut TranslationalStateC,
+            Option<&mut RotationalStateC>,
+            Option<&MassPropertiesC>,
+            &GravityControlsC,
+            &mut TotalForceC,
+            Option<&IntegratorTypeC>,
+            Option<&mut GaussJacksonStateC>,
+            Option<&mut Abm4StateC>,
+            Option<&mut FlatPlateConfigC>,
+            Option<&StructuralTransformC>,
+            Option<&mut RadiationForceC>,
+            Option<&mut FrameDerivativesC>,
+            Option<&IntegFrameIdC>,
+        ),
+        // JEOD_INV: DB.21 — only unattached bodies integrate. Detached
+        // subtrees carry `DetachedSubtreeStateC` and are advanced
+        // ballistically by `step_detached_system`; excluding them here
+        // prevents the same entity from being integrated twice per tick
+        // (once under gravity by the integrator and once ballistically
+        // by `step_detached_system`). Mirrors the runner's split between
+        // `Simulation::bodies` (integrated) and
+        // `Simulation::detached_subtrees` (ballistic) — `run_integration`
+        // never sees detached entries.
+        Without<crate::DetachedSubtreeStateC>,
+    >,
     sources: Query<
         (
             &GravitySourceC,
@@ -3143,13 +3155,20 @@ pub fn staging_system(
 /// derived-state systems, mission code) see the body's current
 /// inertial state without having to special-case detached vs
 /// integrated bodies. Mirrors
-/// [`jeod_runner::Simulation::step_detached_subtrees`].
+/// `jeod_runner::Simulation::step_detached_subtrees`.
+///
+/// The ballistic timestep is `dt * time_scale_factor` (matching
+/// `integration_system`'s `integ_dt` and the runner's
+/// `step_detached_subtrees(dt * time.time_scale_factor)`); under
+/// reversed or scaled time the detached subtree advances at the same
+/// rate as integrated bodies, so the two stay phase-locked.
 ///
 /// JEOD_INV: DB.21 — only unattached bodies integrate; detached subtrees
 /// drift ballistically here while the integrator targets the integrated
 /// body.
 pub fn step_detached_system(
     time: Res<Time<Fixed>>,
+    sim_time: Res<SimulationTimeR>,
     mut detached: Query<(
         &mut crate::DetachedSubtreeStateC,
         Option<&mut TranslationalStateC>,
@@ -3160,8 +3179,9 @@ pub fn step_detached_system(
     if dt == 0.0 {
         return;
     }
+    let integ_dt = dt * sim_time.0.time_scale_factor;
     for (mut state, trans, rot) in &mut detached {
-        state.0.step_ballistic(dt);
+        state.0.step_ballistic(integ_dt);
         if let Some(mut t) = trans {
             t.0 =
                 // allowed: DetachedSubtreeState kernel boundary; the
