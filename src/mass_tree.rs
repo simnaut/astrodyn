@@ -1213,6 +1213,183 @@ mod tests {
     }
 
     #[test]
+    fn core_cache_stable_across_ticks_with_mass_update_system_present() {
+        // PR #283 review thread `PRRT_kwDORtae6c5_K0dm` (round-8):
+        //
+        // Production scheduling runs `mass_update_system` immediately
+        // before `composite_mass_system` (see `lib.rs` system order).
+        // `mass_update_system` previously called
+        // `mass.recompute_derived()` unconditionally on every entity,
+        // which triggers `DerefMut` on `Mut<MassPropertiesC>` and
+        // therefore marks `Changed<MassPropertiesC>` for every entity
+        // every tick — even when the underlying value is unchanged.
+        //
+        // That false positive corrupted `composite_mass_system`'s
+        // `Changed<MassPropertiesC>`-driven cache refresh: on tick 2,
+        // every parent's `MassPropertiesC` is the *composite* that
+        // tick 1's kernel wrote (via `bypass_change_detection`), and
+        // the refresh pass would reseed `CoreMassPropertiesC` from
+        // that composite. The kernel would then fold the children
+        // into the already-composited core, producing a runaway
+        // composite mass that double-counts children every tick.
+        //
+        // This test pins the fix: when no mission code edits any
+        // `MassPropertiesC`, the core cache and the resulting
+        // composite must be byte-identical across ticks.
+        let mut app = add_test_app();
+        // Schedule the two systems in their production order.
+        app.add_systems(
+            Update,
+            (
+                crate::systems::mass_update_system,
+                composite_mass_system.after(crate::systems::mass_update_system),
+            ),
+        );
+
+        // Three-body chain: grandparent (10 kg) ← parent (5 kg) ←
+        // child (2 kg). Use offsets that exercise parallel-axis
+        // routing through both edges so the composite is
+        // unambiguously different from any individual core.
+        let grandparent_core = MassProperties::new(10.0);
+        let parent_core = MassProperties::new(5.0);
+        let child_core = MassProperties::new(2.0);
+
+        let grandparent = app
+            .world_mut()
+            .spawn(MassPropertiesC::from(grandparent_core))
+            .id();
+        let parent = app
+            .world_mut()
+            .spawn((
+                MassPropertiesC::from(parent_core),
+                MassChildOf::new(grandparent, DVec3::new(2.0, 0.0, 0.0)),
+            ))
+            .id();
+        let child = app
+            .world_mut()
+            .spawn((
+                MassPropertiesC::from(child_core),
+                MassChildOf::new(parent, DVec3::new(1.0, 0.0, 0.0)),
+            ))
+            .id();
+
+        // Tick 1: seed the cache, fold children into composites.
+        app.update();
+
+        // Snapshot the post-tick-1 state.
+        let gp_core_t1 = app
+            .world()
+            .get::<CoreMassPropertiesC>(grandparent)
+            .expect("grandparent cache seeded after tick 1")
+            .0;
+        let p_core_t1 = app
+            .world()
+            .get::<CoreMassPropertiesC>(parent)
+            .expect("parent cache seeded after tick 1")
+            .0;
+        let c_core_t1 = app
+            .world()
+            .get::<CoreMassPropertiesC>(child)
+            .expect("child cache seeded after tick 1")
+            .0;
+        let gp_composite_t1 = app
+            .world()
+            .get::<MassPropertiesC>(grandparent)
+            .unwrap()
+            .0
+            .to_untyped()
+            .mass;
+        let p_composite_t1 = app
+            .world()
+            .get::<MassPropertiesC>(parent)
+            .unwrap()
+            .0
+            .to_untyped()
+            .mass;
+
+        // Sanity: composites match cores plus children.
+        assert!(
+            (gp_composite_t1 - 17.0).abs() < 1e-12,
+            "tick1 grandparent composite mass {gp_composite_t1} (expected 17)"
+        );
+        assert!(
+            (p_composite_t1 - 7.0).abs() < 1e-12,
+            "tick1 parent composite mass {p_composite_t1} (expected 7)"
+        );
+        // Cache holds the *cores*, not the composites.
+        assert!(
+            (gp_core_t1.mass - 10.0).abs() < 1e-12,
+            "tick1 grandparent core cache {} (expected 10)",
+            gp_core_t1.mass
+        );
+        assert!(
+            (p_core_t1.mass - 5.0).abs() < 1e-12,
+            "tick1 parent core cache {} (expected 5)",
+            p_core_t1.mass
+        );
+
+        // Tick 2: no mission edits. With the bug,
+        // `mass_update_system` falsely marks every
+        // `MassPropertiesC` as Changed; the cache refresh in
+        // `composite_mass_system` then reseeds the cores from the
+        // tick-1 composites, and the kernel double-counts children.
+        app.update();
+
+        let gp_core_t2 = app
+            .world()
+            .get::<CoreMassPropertiesC>(grandparent)
+            .unwrap()
+            .0;
+        let p_core_t2 = app.world().get::<CoreMassPropertiesC>(parent).unwrap().0;
+        let c_core_t2 = app.world().get::<CoreMassPropertiesC>(child).unwrap().0;
+        let gp_composite_t2 = app
+            .world()
+            .get::<MassPropertiesC>(grandparent)
+            .unwrap()
+            .0
+            .to_untyped()
+            .mass;
+        let p_composite_t2 = app
+            .world()
+            .get::<MassPropertiesC>(parent)
+            .unwrap()
+            .0
+            .to_untyped()
+            .mass;
+
+        // Cores must be byte-identical to tick 1 — no mission code
+        // touched them.
+        assert!(
+            (gp_core_t2.mass - gp_core_t1.mass).abs() < 1e-12,
+            "grandparent core cache drifted across ticks: {} -> {}",
+            gp_core_t1.mass,
+            gp_core_t2.mass
+        );
+        assert!(
+            (p_core_t2.mass - p_core_t1.mass).abs() < 1e-12,
+            "parent core cache drifted across ticks: {} -> {}",
+            p_core_t1.mass,
+            p_core_t2.mass
+        );
+        assert!(
+            (c_core_t2.mass - c_core_t1.mass).abs() < 1e-12,
+            "child core cache drifted across ticks: {} -> {}",
+            c_core_t1.mass,
+            c_core_t2.mass
+        );
+        // Composites must also be stable — a corrupted core would
+        // make the composite grow each tick.
+        assert!(
+            (gp_composite_t2 - gp_composite_t1).abs() < 1e-12,
+            "grandparent composite mass drifted across ticks: {gp_composite_t1} -> {gp_composite_t2}"
+        );
+        assert!(
+            (p_composite_t2 - p_composite_t1).abs() < 1e-12,
+            "parent composite mass drifted across ticks: {p_composite_t1} -> {p_composite_t2}"
+        );
+    }
+
+    #[test]
     fn mass_tree_view_parent_lookup_matches_storage() {
         // PR #283 review thread PRRT_kwDORtae6c5_KQUU: the
         // `MassStorage::parent` impl on `MassTreeView` must do an
