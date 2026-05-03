@@ -66,15 +66,49 @@ thiserror = "2"
 uom = { version = "0.38", default-features = false, features = ["f64", "si", "std"] }
 typenum = "1.20"
 
-# Optimize all code in dev/test builds — spherical harmonics evaluation
-# is ~20× slower at opt-level=0, making 7-day lunar orbit tests impractical.
-# opt-level=2 gives ~20× speedup with minimal compile-time increase.
+# Per-package opt-levels: hot numerical crates need optimization (spherical
+# harmonics is ~20× slower at opt-level=0), but orchestration crates can
+# compile faster at opt-level=1. Dependencies compile once at opt-level=3
+# and are cached by sccache, so we pay that cost once.
 [profile.dev]
-opt-level = 2
+opt-level = 1
 debug = "line-tables-only"
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.dev.package.jeod_math]
+opt-level = 3
+[profile.dev.package.jeod_gravity]
+opt-level = 3
+[profile.dev.package.jeod_dynamics]
+opt-level = 3
+[profile.dev.package.jeod_ephemeris]
+opt-level = 3
+[profile.dev.package.jeod_atmosphere]
+opt-level = 3
+[profile.dev.package.jeod_interactions]
+opt-level = 3
+
 [profile.test]
-opt-level = 2
+opt-level = 1
 debug = "line-tables-only"
+
+[profile.test.package."*"]
+opt-level = 3
+
+[profile.test.package.jeod_math]
+opt-level = 3
+[profile.test.package.jeod_gravity]
+opt-level = 3
+[profile.test.package.jeod_dynamics]
+opt-level = 3
+[profile.test.package.jeod_ephemeris]
+opt-level = 3
+[profile.test.package.jeod_atmosphere]
+opt-level = 3
+[profile.test.package.jeod_interactions]
+opt-level = 3
 
 [[example]]
 name = "kepler_orbit"
