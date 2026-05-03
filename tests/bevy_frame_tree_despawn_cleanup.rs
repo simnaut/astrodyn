@@ -1,4 +1,4 @@
-//! `FrameTreeR` despawn cleanup (PR #260 reviewer-flagged gap).
+//! `FrameTreeR` despawn cleanup.
 //!
 //! The frame tree is append-only — `jeod_frames::FrameTree` exposes no
 //! removal API because arena indices are stable handles other state may
@@ -11,6 +11,15 @@
 //! orphan nodes (rename + reset state) so the canonical name is no
 //! longer findable and any stale `frame_origin` query returns identity.
 //! See `src/systems.rs` "Frame-tree despawn cleanup" for the design.
+
+// `FrameTreeR` is `#[deprecated]` for mission-code use. These
+// despawn-observer tests validate the arena's per-node cleanup, which
+// is the *internal* dual-write infrastructure that will be replaced
+// wholesale once the resource is removed (the ECS frame-entity
+// despawn observers stay). File-level `#![allow(deprecated)]` to keep
+// the cleanup validation operating against the still-live arena until
+// then.
+#![allow(deprecated)]
 
 use std::time::Duration;
 
@@ -217,7 +226,7 @@ fn retired_pfix_node_despawn_retires_orphan() {
     );
 }
 
-// ── Issue #277 PR 1 round-2 review: ECS frame-entity cleanup ──
+// ── ECS frame-entity cleanup ──
 //
 // `register_source_frames_system` and `register_body_frames_system`
 // dual-write a frame *entity* alongside the arena `FrameId`. Without

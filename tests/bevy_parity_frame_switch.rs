@@ -1,4 +1,4 @@
-//! Tier 3: Bevy frame-switch parity (issue #71 item 3).
+//! Tier 3: Bevy frame-switch parity.
 //!
 //! Verifies that distance-based integration-frame switching is
 //! bit-identical between Bevy `FrameSwitchesC` + `frame_switch_system`
@@ -12,6 +12,13 @@
 //! its translational state is rewritten in Moon-centered coordinates,
 //! and its gravity controls flip so Moon becomes central
 //! (`differential = false`) and Earth becomes the third body.
+
+// `FrameTreeR` is `#[deprecated]` for mission-code use. This Tier 3
+// parity test deliberately reads the arena to assert bit-identity of
+// the frame-switch reparent path against `jeod_runner`. Once the
+// resource is removed, the arena read here will be rewritten to use
+// `RelativeFrameState`.
+#![allow(deprecated)]
 
 use std::time::Duration;
 
@@ -88,7 +95,7 @@ fn tier3_bevy_frame_switch_earth_to_moon_matches_simulation() {
         .insert(SourceInertialVelocityC::default())
         .id();
 
-    // Phase C4: `FrameSwitchConfig<Entity>` — the Bevy adapter references
+    // `FrameSwitchConfig<Entity>` — the Bevy adapter references
     // gravity sources by their ECS entity, no usize bridge.
     let switches: Vec<FrameSwitchConfig<Entity>> = vec![FrameSwitchConfig {
         target_source: moon,
@@ -256,8 +263,8 @@ fn tier3_bevy_frame_switch_earth_to_moon_matches_simulation() {
 
 #[test]
 fn tier3_bevy_frame_switch_on_departure_matches_simulation() {
-    // PR #260 round-3 T5 fixup: cover the `OnDeparture` predicate in the
-    // shared generic helper. The `OnApproach` test above triggers a
+    // Cover the `OnDeparture` predicate in the shared generic helper.
+    // The `OnApproach` test above triggers a
     // switch when the body comes within `SWITCH_RADIUS` of the Moon;
     // this test triggers when the body departs beyond a threshold from
     // its *current* integration frame's origin (the body's
