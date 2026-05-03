@@ -329,20 +329,40 @@ fn bevy_attach_no_relative_motion_preserves_parent_state() {
 }
 
 /// Detach captures the about-to-be-detached body's instantaneous
-/// composite-body state into `DetachedSubtreeStateC`. The captured
-/// state must match the child's pre-detach `TranslationalStateC` /
-/// `RotationalStateC` exactly.
+/// composite-body state into `DetachedSubtreeStateC`. After an attach,
+/// the child's own `TranslationalStateC` / `RotationalStateC` are
+/// stale (only the parent carries the merged composite). The detach
+/// handler must derive the child's instantaneous state from the
+/// parent's composite-body inertial state at the detach instant —
+/// rigid-body composition via `propagate_forward` over the mass-tree
+/// offset chain — not from the child's own (stale) component values.
+///
+/// This test exercises that real path end-to-end. The attach is a
+/// soft merge (identical pre-state on parent and child, zero offset)
+/// so the kernel's expected child instantaneous state is the parent's
+/// composite-body state at detach. The test does NOT manually reset
+/// the child's `TranslationalStateC` — if a regression dropped that
+/// real derivation, the captured state would diverge from the
+/// expected and this test would fail.
 #[test]
 fn bevy_detach_captures_subtree_state() {
     let parent_mass = MassProperties::new(1000.0);
     let child_mass = MassProperties::new(500.0);
 
-    let child_trans = TranslationalState {
+    // Both bodies share the same orbital state and identical attitude
+    // / spin. Soft-merge invariant: the merged composite has the same
+    // translational and rotational state as the inputs, so at the
+    // detach instant the rigid-body composition recovers exactly the
+    // shared pre-attach state. Crucially this remains true *without*
+    // patching the child's stale `TranslationalStateC` by hand — the
+    // detach handler derives the child's state from the parent's
+    // composite via the mass-tree offsets.
+    let initial_trans = TranslationalState {
         position: DVec3::new(7e6, 0.0, 0.0),
         velocity: DVec3::new(0.0, 7600.0, 1.0),
     };
     let omega = DVec3::new(0.001, 0.0, 0.0);
-    let child_rot = RotationalState {
+    let initial_rot = RotationalState {
         quaternion: JeodQuat::identity(),
         ang_vel_body: omega,
     };
@@ -350,14 +370,14 @@ fn bevy_detach_captures_subtree_state() {
     let (mut app, parent_entity, child_entity, _id_a, _id_b) = build_two_body_world(
         1.0,
         parent_mass,
-        TranslationalState::default(),
-        RotationalState::default(),
+        initial_trans,
+        initial_rot,
         child_mass,
-        child_trans,
-        child_rot,
+        initial_trans,
+        initial_rot,
     );
 
-    // Pre-attach so detach has something to undo.
+    // Attach (soft merge, zero offset, identity rotation).
     app.world_mut()
         .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
         .write(AttachEvent {
@@ -368,21 +388,12 @@ fn bevy_detach_captures_subtree_state() {
         });
     step(&mut app, 1, 1.0);
 
-    // After attach the child's TranslationalStateC is no longer
-    // representative of the subtree (the integrated body is the
-    // parent now). For the detach test we manually re-establish the
-    // child's pre-detach state so we can assert capture-correctness
-    // against a known input.
-    {
-        let mut e = app.world_mut().entity_mut(child_entity);
-        e.insert(TranslationalStateC::from(child_trans));
-        e.insert(RotationalStateC::from(child_rot));
-    }
-
-    // Snapshot the child's pre-detach state.
-    let pre_pos = read_position(app.world(), child_entity);
-    let pre_vel = read_velocity(app.world(), child_entity);
-    let pre_omega = read_ang_vel(app.world(), child_entity);
+    // Snapshot the parent's post-attach composite-body state. This is
+    // the live state the detach handler will derive the child from —
+    // *no* manual reset of the child's TranslationalStateC.
+    let parent_pos_at_detach = read_position(app.world(), parent_entity);
+    let parent_vel_at_detach = read_velocity(app.world(), parent_entity);
+    let parent_omega_at_detach = read_ang_vel(app.world(), parent_entity);
 
     app.world_mut()
         .resource_mut::<bevy::ecs::message::Messages<DetachEvent>>()
@@ -397,57 +408,194 @@ fn bevy_detach_captures_subtree_state() {
         .get::<DetachedSubtreeStateC>(child_entity)
         .expect("DetachEvent should have inserted DetachedSubtreeStateC on the child entity");
 
-    // The captured state must match the child's pre-detach state. We
-    // tolerate one tick of `step_detached_system` advance since the
-    // `step_bevy(1)` after `DetachEvent` runs both `staging_system`
-    // (which captures + inserts) and `step_detached_system` (which
-    // advances by `dt`). Compute the expected post-step value.
+    // The captured state must match the parent's composite-body state
+    // at the detach instant (soft-merge: child's instantaneous state
+    // == parent's composite). We tolerate one tick of
+    // `step_detached_system` advance since the `step(&mut app, 1, 1.0)`
+    // after `DetachEvent` runs both `staging_system` (which captures +
+    // inserts) and `step_detached_system` (which advances by `dt`).
     let dt = 1.0;
-    let expected_pos = pre_pos + pre_vel * dt;
+    let expected_pos = parent_pos_at_detach + parent_vel_at_detach * dt;
     assert!(
         (detached.0.composite_position - expected_pos).length() < 1e-9,
-        "detached pos: {:?} expected {:?} (= pre + vel·dt)",
+        "detached pos: {:?} expected {:?} (= parent_composite_at_detach + vel·dt)",
         detached.0.composite_position,
         expected_pos
     );
     assert!(
-        (detached.0.composite_velocity - pre_vel).length() < 1e-12,
-        "detached velocity should be unchanged: {:?} vs {:?}",
+        (detached.0.composite_velocity - parent_vel_at_detach).length() < 1e-12,
+        "detached velocity should match parent composite: {:?} vs {:?}",
         detached.0.composite_velocity,
-        pre_vel
+        parent_vel_at_detach
     );
     assert!(
-        (detached.0.composite_ang_vel_body - pre_omega).length() < 1e-12,
-        "detached ang_vel should be unchanged: {:?} vs {:?}",
+        (detached.0.composite_ang_vel_body - parent_omega_at_detach).length() < 1e-12,
+        "detached ang_vel should match parent composite: {:?} vs {:?}",
         detached.0.composite_ang_vel_body,
-        pre_omega
+        parent_omega_at_detach
+    );
+}
+
+/// Stronger variant: with a NON-zero attach offset, the child's
+/// instantaneous state at the detach instant is the parent's
+/// composite-body state shifted by the rigid-body offset (and any
+/// rotational contribution). Verifies the detach handler's
+/// `propagate_forward` walk is actually being applied — not just
+/// "happens to be zero in the soft case".
+#[test]
+fn bevy_detach_derives_child_state_via_rigid_body_composition() {
+    let parent_mass = MassProperties::with_inertia(
+        1000.0,
+        DMat3::from_diagonal(DVec3::new(500.0, 500.0, 500.0)),
+        DVec3::ZERO,
+    );
+    let child_mass = MassProperties::with_inertia(
+        500.0,
+        DMat3::from_diagonal(DVec3::new(200.0, 200.0, 200.0)),
+        DVec3::ZERO,
+    );
+
+    // Parent is rotating about Z at a noticeable rate so the
+    // child's composition picks up a velocity-from-rotation term that
+    // wouldn't show up at zero ang_vel.
+    let parent_trans = TranslationalState {
+        position: DVec3::new(7e6, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let parent_rot = RotationalState {
+        quaternion: JeodQuat::identity(),
+        ang_vel_body: DVec3::new(0.0, 0.0, 0.01),
+    };
+    // Child shares the parent's rigid-body motion (same translational
+    // velocity + same angular velocity) but is offset along the
+    // parent's structure x-axis. The resulting attach is a soft merge
+    // in the shared-rigid-body sense (no relative momentum, no induced
+    // spin) — so the merged composite-body state at detach equals the
+    // parent's pre-attach state shifted by the structure-frame offset
+    // to the new CoM (which sits between the two CoMs). At the detach
+    // instant, the child's instantaneous state is recoverable by
+    // applying `propagate_forward` from the merged composite using
+    // the mass-tree's `composite_wrt_pstr` offset.
+    let attach_offset = DVec3::new(2.0, 0.0, 0.0);
+    let child_trans = TranslationalState {
+        position: parent_trans.position + attach_offset,
+        // For shared rigid-body motion, child velocity = parent.vel +
+        // ω × r (in inertial). With identity attitude, body axes ==
+        // inertial.
+        velocity: parent_trans.velocity + parent_rot.ang_vel_body.cross(attach_offset),
+    };
+    let child_rot = RotationalState {
+        quaternion: JeodQuat::identity(),
+        ang_vel_body: parent_rot.ang_vel_body,
+    };
+
+    let (mut app, parent_entity, child_entity, _id_a, _id_b) = build_two_body_world(
+        1.0,
+        parent_mass,
+        parent_trans,
+        parent_rot,
+        child_mass,
+        child_trans,
+        child_rot,
+    );
+
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset: attach_offset,
+            t_parent_child: DMat3::IDENTITY,
+        });
+    step(&mut app, 1, 1.0);
+
+    // After attach: parent carries the merged composite-body state.
+    // Child's TranslationalStateC may be stale — we deliberately do
+    // NOT touch it. The detach handler is responsible for deriving
+    // the child's instantaneous state from the merged composite.
+    let parent_pos_at_detach = read_position(app.world(), parent_entity);
+    let parent_vel_at_detach = read_velocity(app.world(), parent_entity);
+    let parent_omega_at_detach = read_ang_vel(app.world(), parent_entity);
+
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<DetachEvent>>()
+        .write(DetachEvent {
+            child: child_entity,
+        });
+    step(&mut app, 1, 1.0);
+
+    let detached = app
+        .world()
+        .get::<DetachedSubtreeStateC>(child_entity)
+        .expect("DetachEvent should have inserted DetachedSubtreeStateC on the child entity");
+
+    // Expected: rigid-body shared-motion invariant — every point on
+    // the rigid body has velocity = v_cm + ω × (r − r_cm). The child's
+    // composite-CoM sits at child_trans.position in inertial. After
+    // detach, the captured state should satisfy this rigid-body
+    // composition exactly (no momentum was injected — both bodies were
+    // already moving together pre-attach), then advance ballistically
+    // by one tick.
+    let dt = 1.0;
+    let r_child_rel_parent = child_trans.position - parent_pos_at_detach;
+    let expected_child_vel =
+        parent_vel_at_detach + parent_omega_at_detach.cross(r_child_rel_parent);
+    let expected_child_pos_at_detach = child_trans.position;
+    let expected_pos_after_step = expected_child_pos_at_detach + expected_child_vel * dt;
+
+    assert!(
+        (detached.0.composite_position - expected_pos_after_step).length() < 1e-6,
+        "detached pos via rigid-body composition: got {:?}, expected {:?}",
+        detached.0.composite_position,
+        expected_pos_after_step
+    );
+    assert!(
+        (detached.0.composite_velocity - expected_child_vel).length() < 1e-6,
+        "detached velocity via rigid-body composition: got {:?}, expected {:?}",
+        detached.0.composite_velocity,
+        expected_child_vel
     );
 }
 
 /// After detach, the entity's `TranslationalStateC` advances under
 /// free-flight kinematics each tick. Position drifts at velocity,
 /// velocity unchanged.
+///
+/// This test exercises the real attach → propagate → detach → drift
+/// path without manually patching the child's state in between. The
+/// parent and child share rigid-body motion pre-attach (so the
+/// soft-merge invariant gives the kernel the same input as if no
+/// momentum were exchanged), and the post-detach drift is asserted
+/// against the parent's composite-body state at the detach instant
+/// — which is what the live detach handler must derive.
 #[test]
 fn bevy_detached_subtree_propagates_ballistically() {
     let parent_mass = MassProperties::new(1000.0);
     let child_mass = MassProperties::new(500.0);
-    let child_trans = TranslationalState {
+    // Both bodies share orbital velocity + zero spin. After attach +
+    // soft-merge, the parent's composite-body state is the same as
+    // either input, so the post-detach drift baseline is well-defined
+    // without needing to hand-patch the child's state.
+    let initial_trans = TranslationalState {
         position: DVec3::new(7e6, 0.0, 0.0),
         velocity: DVec3::new(0.0, 7600.0, 0.0),
     };
-    let child_rot = RotationalState::default();
+    let initial_rot = RotationalState::default();
 
     let (mut app, parent_entity, child_entity, _, _) = build_two_body_world(
         1.0,
         parent_mass,
-        TranslationalState::default(),
-        RotationalState::default(),
+        initial_trans,
+        initial_rot,
         child_mass,
-        child_trans,
-        child_rot,
+        initial_trans,
+        initial_rot,
     );
 
-    // Attach + detach to put the child in DetachedSubtreeStateC.
+    // Attach then detach to put the child in DetachedSubtreeStateC.
+    // No manual state reset between the two — the detach handler must
+    // derive the child's instantaneous state from the parent's
+    // composite at the detach instant via `propagate_forward`.
     app.world_mut()
         .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
         .write(AttachEvent {
@@ -457,19 +605,17 @@ fn bevy_detached_subtree_propagates_ballistically() {
             t_parent_child: DMat3::IDENTITY,
         });
     step(&mut app, 1, 1.0);
-    {
-        let mut e = app.world_mut().entity_mut(child_entity);
-        e.insert(TranslationalStateC::from(child_trans));
-        e.insert(RotationalStateC::from(child_rot));
-    }
+
+    // Capture the parent's composite-body state at the detach instant
+    // — this is the live source of truth for the detach handler.
+    let parent_pos_at_detach = read_position(app.world(), parent_entity);
+    let parent_vel_at_detach = read_velocity(app.world(), parent_entity);
+
     app.world_mut()
         .resource_mut::<bevy::ecs::message::Messages<DetachEvent>>()
         .write(DetachEvent {
             child: child_entity,
         });
-
-    let pre_pos = child_trans.position;
-    let pre_vel = child_trans.velocity;
 
     // Run 5 ticks of free-flight propagation.
     let n_steps = 5;
@@ -478,14 +624,19 @@ fn bevy_detached_subtree_propagates_ballistically() {
 
     let post_pos = read_position(app.world(), child_entity);
     let post_vel = read_velocity(app.world(), child_entity);
-    let expected = pre_pos + pre_vel * (n_steps as f64) * dt;
+    // The detach itself runs in the first of these 5 ticks, then
+    // step_detached_system advances the body for `n_steps` ticks
+    // (5 here). Expected: child starts at parent's composite state
+    // (zero offset → identical to parent at detach instant) and drifts
+    // at parent's velocity for the full block of ticks.
+    let expected = parent_pos_at_detach + parent_vel_at_detach * (n_steps as f64) * dt;
     assert!(
         (post_pos - expected).length() < 1e-6,
-        "detached body should drift at velocity: got {post_pos:?}, expected {expected:?}"
+        "detached body should drift at parent composite velocity: got {post_pos:?}, expected {expected:?}"
     );
     assert!(
-        (post_vel - pre_vel).length() < 1e-9,
-        "detached velocity should be unchanged: got {post_vel:?}, expected {pre_vel:?}"
+        (post_vel - parent_vel_at_detach).length() < 1e-9,
+        "detached velocity should be unchanged: got {post_vel:?}, expected {parent_vel_at_detach:?}"
     );
 
     // The DetachedSubtreeStateC's internal composite state should
@@ -503,24 +654,33 @@ fn bevy_detached_subtree_propagates_ballistically() {
 /// Re-attach after detach: the captured `DetachedSubtreeStateC` must
 /// be removed when the entity is re-attached. The combine kernel must
 /// run on the recaptured state.
+///
+/// The test exercises the real attach → detach → re-attach cycle
+/// without manually resetting the child's `TranslationalStateC` in
+/// between. The detach handler is responsible for deriving the
+/// child's instantaneous state from the parent's composite via
+/// `propagate_forward` — and the re-attach handler then consumes
+/// that captured ballistic state.
 #[test]
 fn bevy_re_attach_consumes_detached_state() {
     let parent_mass = MassProperties::new(1000.0);
     let child_mass = MassProperties::new(500.0);
-    let child_trans = TranslationalState {
+    // Shared rigid-body state so soft-merge invariant lets us
+    // exercise the cycle without touching child state by hand.
+    let initial_trans = TranslationalState {
         position: DVec3::new(7e6, 0.0, 0.0),
         velocity: DVec3::new(0.0, 7600.0, 0.0),
     };
-    let child_rot = RotationalState::default();
+    let initial_rot = RotationalState::default();
 
     let (mut app, parent_entity, child_entity, _, _) = build_two_body_world(
         1.0,
         parent_mass,
-        TranslationalState::default(),
-        RotationalState::default(),
+        initial_trans,
+        initial_rot,
         child_mass,
-        child_trans,
-        child_rot,
+        initial_trans,
+        initial_rot,
     );
 
     // Attach.
@@ -534,14 +694,7 @@ fn bevy_re_attach_consumes_detached_state() {
         });
     step(&mut app, 1, 1.0);
 
-    // Re-establish child's state for a clean detach capture.
-    {
-        let mut e = app.world_mut().entity_mut(child_entity);
-        e.insert(TranslationalStateC::from(child_trans));
-        e.insert(RotationalStateC::from(child_rot));
-    }
-
-    // Detach.
+    // Detach — handler derives child state from parent's composite.
     app.world_mut()
         .resource_mut::<bevy::ecs::message::Messages<DetachEvent>>()
         .write(DetachEvent {
@@ -555,7 +708,7 @@ fn bevy_re_attach_consumes_detached_state() {
         "child should be detached after DetachEvent"
     );
 
-    // Re-attach.
+    // Re-attach — handler consumes the captured DetachedSubtreeStateC.
     app.world_mut()
         .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
         .write(AttachEvent {
