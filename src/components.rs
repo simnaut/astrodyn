@@ -590,6 +590,28 @@ pub struct FrameEntityC(pub Entity);
 #[reflect(opaque, Component)]
 pub struct PfixFrameEntityC(pub Entity);
 
+/// Hidden component that stashes a previously-spawned pfix *frame
+/// entity* (the ECS dual-write counterpart of [`PfixFrameEntityC`])
+/// on a source whose [`RotationModelC`] just toggled to
+/// [`RotationModel::None`](jeod_sim::RotationModel::None). The
+/// public [`PfixFrameEntityC`] is removed at the same time so any
+/// reader branching on its presence correctly observes "no
+/// planet-fixed frame", but the orphan ECS entity itself is kept
+/// alive — its `Name` is renamed to a `.retired` sentinel and its
+/// `FrameRotC`/`FrameAngVelC` are reset to identity — so the next
+/// toggle back to a rotating model can reuse it instead of spawning
+/// a fresh entity. Mirrors the arena-side [`RetiredPfixFrameIdC`]
+/// retirement semantics.
+///
+/// Without this, every `None → rotating → None → rotating …` toggle
+/// cycle would leak a fresh `<name>.frame.pfix` entity per cycle,
+/// since [`crate::systems::register_pfix_frames_system`] filters by
+/// `Without<SourcePfixFrameIdC>` and unconditionally spawns a new
+/// entity for any source missing the public component.
+#[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Reflect)]
+#[reflect(opaque, Component)]
+pub struct RetiredPfixFrameEntityC(pub Entity);
+
 /// Angular velocity of the planet-fixed frame relative to its inertial
 /// parent, expressed in pfix coordinates. Computed each step by
 /// `planet_fixed_rotation_system` as `[0, 0, omega]` matching JEOD's

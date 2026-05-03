@@ -350,6 +350,7 @@ impl Plugin for JeodPlugin {
         app.add_observer(systems::on_source_frame_despawn);
         app.add_observer(systems::on_source_pfix_frame_despawn);
         app.add_observer(systems::on_retired_pfix_frame_despawn);
+        app.add_observer(systems::on_retired_pfix_frame_entity_despawn);
         app.add_observer(systems::on_body_frame_despawn);
         // Split into two add_systems calls to stay within Bevy's tuple size limit.
         app.add_systems(
@@ -512,6 +513,7 @@ pub fn register_jeod_component_types(app: &mut App) {
     app.register_type::<components::IntegrationFrameMarker>();
     app.register_type::<components::FrameEntityC>();
     app.register_type::<components::PfixFrameEntityC>();
+    app.register_type::<components::RetiredPfixFrameEntityC>();
     // Tidal
     app.register_type::<components::TidalConfigC>();
     app.register_type::<components::TidalDeltaC20C>();

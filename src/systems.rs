@@ -173,9 +173,14 @@ pub fn register_source_frames_system(
 /// rotating model), this system reuses the stashed
 /// [`jeod_sim::FrameId`] instead of allocating a fresh node — the
 /// orphan is renamed back to the canonical `<label>.pfix` and its
-/// state reset to identity. This bounds frame-tree growth at one
-/// orphan per source regardless of toggle-cycle count and keeps
-/// [`jeod_sim::FrameTree::find_by_name`] returning the live frame.
+/// state reset to identity. The ECS-side dual-write entity is
+/// reused from a parallel [`RetiredPfixFrameEntityC`] when present:
+/// its `Name` is restored to the canonical `<label>.frame.pfix` and
+/// its `FrameTransC`/`FrameRotC`/`FrameAngVelC` are reset to
+/// identity. This bounds *both* frame-tree and ECS-entity growth at
+/// one orphan per source regardless of toggle-cycle count, and
+/// keeps [`jeod_sim::FrameTree::find_by_name`] returning the live
+/// frame.
 #[allow(clippy::type_complexity)]
 pub fn register_pfix_frames_system(
     mut commands: Commands,
@@ -190,6 +195,9 @@ pub fn register_pfix_frames_system(
             Option<&FrameEntityC>,
             Option<&RotationModelC>,
             Option<&RetiredPfixFrameIdC>,
+            // Round-1 review fixup: parallel ECS-entity retirement
+            // marker so we reuse instead of leak on toggle cycles.
+            Option<&RetiredPfixFrameEntityC>,
         ),
         (
             With<GravitySourceC>,
@@ -197,8 +205,20 @@ pub fn register_pfix_frames_system(
             Without<SourcePfixFrameIdC>,
         ),
     >,
+    mut frame_trans: Query<&mut FrameTransC>,
+    mut frame_rots: Query<&mut FrameRotC>,
+    mut frame_ang_vels: Query<&mut FrameAngVelC>,
 ) {
-    for (entity, name, source_fid, source_frame_entity, rotation_model, retired) in &sources {
+    for (
+        entity,
+        name,
+        source_fid,
+        source_frame_entity,
+        rotation_model,
+        retired_id,
+        retired_entity,
+    ) in &sources
+    {
         let default_model = jeod_sim::RotationModel::EarthRNP;
         let model_value = rotation_model.map_or(default_model, |m| m.0);
         if matches!(model_value, jeod_sim::RotationModel::None) {
@@ -208,7 +228,7 @@ pub fn register_pfix_frames_system(
             .map(|n| n.as_str().to_string())
             .unwrap_or_else(|| format!("source{:?}", entity));
         let canonical_name = format!("{label}.pfix");
-        let pfix_id = if let Some(retired_id) = retired {
+        let pfix_id = if let Some(retired_id) = retired_id {
             // Reuse the orphan node from the previous toggle cycle:
             // restore its canonical name, reset its state to identity,
             // and drop the marker. The node already has the right
@@ -228,22 +248,49 @@ pub fn register_pfix_frames_system(
             )
         };
 
-        // Issue #277: dual-write — spawn pfix frame entity under the
-        // source's ECS frame entity (when present). Skip the late-pfix
-        // ECS spawn if FrameEntityC is missing — that's a source that
-        // was registered before the issue #277 components landed; the
-        // arena pfix is still updated above for backward compat.
+        // Issue #277: dual-write — restore or spawn the pfix frame
+        // entity. Round-1 review fixup: prefer reusing a retired
+        // entity (parallel to the arena reuse above) so toggle cycles
+        // don't leak ECS entities. Skip the ECS dual-write entirely
+        // if FrameEntityC is missing — that's a source registered
+        // before the issue #277 components landed; the arena pfix is
+        // still updated above for backward compat.
         if let Some(parent_frame) = source_frame_entity {
-            let pfix_frame_entity = commands
-                .spawn((
-                    Name::new(format!("{label}.frame.pfix")),
-                    PlanetFixedFrameMarker,
-                    FrameTransC::default(),
-                    FrameRotC::default(),
-                    FrameAngVelC::default(),
-                    ChildOf(parent_frame.0),
-                ))
-                .id();
+            let pfix_frame_entity = if let Some(retired_e) = retired_entity {
+                // Reuse: restore canonical name (via Commands so we
+                // don't need a `Query<&mut Name, With<PlanetFixedFrameMarker>>`
+                // that would conflict with the outer query's
+                // `Option<&Name>` access at runtime) and reset typed
+                // state to identity. The orphan's
+                // `ChildOf(parent_frame.0)` edge was preserved across
+                // the toggle cycle, so the hierarchy is already
+                // correct.
+                commands
+                    .entity(retired_e.0)
+                    .insert(Name::new(format!("{label}.frame.pfix")));
+                if let Ok(mut t) = frame_trans.get_mut(retired_e.0) {
+                    *t = FrameTransC::default();
+                }
+                if let Ok(mut r) = frame_rots.get_mut(retired_e.0) {
+                    *r = FrameRotC::default();
+                }
+                if let Ok(mut av) = frame_ang_vels.get_mut(retired_e.0) {
+                    *av = FrameAngVelC::default();
+                }
+                commands.entity(entity).remove::<RetiredPfixFrameEntityC>();
+                retired_e.0
+            } else {
+                commands
+                    .spawn((
+                        Name::new(format!("{label}.frame.pfix")),
+                        PlanetFixedFrameMarker,
+                        FrameTransC::default(),
+                        FrameRotC::default(),
+                        FrameAngVelC::default(),
+                        ChildOf(parent_frame.0),
+                    ))
+                    .id()
+            };
             commands.entity(entity).insert((
                 SourcePfixFrameIdC(pfix_id),
                 PfixFrameEntityC(pfix_frame_entity),
@@ -533,6 +580,24 @@ pub fn on_body_frame_despawn(
 ) {
     if let Ok(fid) = bodies.get(trigger.entity) {
         retire_frame_node(&mut frame_tree.0, fid.0);
+    }
+}
+
+/// On entity despawn, despawn the orphan pfix *frame entity* stashed
+/// in [`RetiredPfixFrameEntityC`] (left over from a
+/// `RotationModel::None` toggle that wasn't followed by a re-toggle
+/// before despawn). The orphan ECS entity has no other owner — it
+/// was kept alive specifically so the next `None → rotating` retoggle
+/// could reuse it — so without this observer it would leak when the
+/// owning source despawns. Mirrors [`on_retired_pfix_frame_despawn`]
+/// for the parallel ECS-entity retirement track.
+pub fn on_retired_pfix_frame_entity_despawn(
+    trigger: On<Despawn, RetiredPfixFrameEntityC>,
+    sources: Query<&RetiredPfixFrameEntityC>,
+    mut commands: Commands,
+) {
+    if let Ok(retired) = sources.get(trigger.entity) {
+        commands.entity(retired.0).despawn();
     }
 }
 
@@ -924,6 +989,36 @@ pub fn planet_fixed_rotation_system(
                     .entity(entity)
                     .remove::<SourcePfixFrameIdC>()
                     .insert(RetiredPfixFrameIdC(pfix_fid.0));
+
+                // Round-1 review fixup: mirror the arena retirement on
+                // the ECS-entity side. Without this, the source kept a
+                // stale `PfixFrameEntityC` handle pointing at an
+                // identity-cleared but otherwise live entity *and*
+                // `register_pfix_frames_system` (which filters by
+                // `Without<SourcePfixFrameIdC>`) spawned a fresh pfix
+                // frame entity on every retoggle — leaking one orphan
+                // ECS entity per `None → rotating → None …` cycle in
+                // addition to the (already-bounded) arena leak.
+                //
+                // Retirement semantics for the entity parallel the
+                // arena: the orphan entity stays alive (its
+                // `ChildOf(parent_frame.0)` edge is preserved so the
+                // `RetiredPfixFrameEntityC` reuse path in
+                // `register_pfix_frames_system` doesn't have to
+                // re-parent), its `Name` is overwritten with a
+                // stable `.retired` sentinel so name-based lookups
+                // won't shadow a future live entity, and the source's
+                // `PfixFrameEntityC` is removed in lockstep with
+                // `SourcePfixFrameIdC` above.
+                if let Some(pfix_fe) = pfix_frame_entity {
+                    commands
+                        .entity(pfix_fe.0)
+                        .insert(Name::new(format!("pfix.retired:{:?}", pfix_fe.0)));
+                    commands
+                        .entity(entity)
+                        .remove::<PfixFrameEntityC>()
+                        .insert(RetiredPfixFrameEntityC(pfix_fe.0));
+                }
             }
         }
     }
