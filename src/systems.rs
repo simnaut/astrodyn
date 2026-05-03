@@ -608,13 +608,13 @@ pub fn on_retired_pfix_frame_entity_despawn(
 }
 
 /// On entity despawn, despawn the *frame entity* the source / body
-/// entity carries in [`FrameEntityC`]. PR #281 round-2 review
-/// (Copilot, comments 3177683390 + 3177683392): without this
-/// observer, despawning a source or body would leave its
-/// dual-write frame entity (and the pfix child it parents, when
-/// present) alive indefinitely under the root frame entity, growing
-/// the entity count over time and potentially shadowing future
-/// re-spawns of the same `Name`.
+/// entity carries in [`FrameEntityC`]. Issue #277 PR 1 round-2
+/// review fixup (Copilot, comments 3177683390 + 3177683392):
+/// without this observer, despawning a source or body would leave
+/// its dual-write frame entity (and the pfix child it parents,
+/// when present) alive indefinitely under the root frame entity,
+/// growing the entity count over time and potentially shadowing
+/// future re-spawns of the same `Name`.
 ///
 /// `try_despawn` (not `despawn`) because Bevy's `ChildOf` /
 /// `Children` relationship already triggers recursive despawn on the
