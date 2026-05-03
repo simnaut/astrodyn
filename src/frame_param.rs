@@ -16,7 +16,7 @@
 //! At PR 1 (this module) the dual-write path keeps the new components
 //! exactly in sync with the arena, so this `SystemParam` and
 //! `FrameTreeR.compute_relative_state` return bit-identical numerics
-//! (see `tests/prototype_relative_frame_state.rs`). Mission code may
+//! (see `tests/frame_storage_relative_frame_state.rs`). Mission code may
 //! adopt the new surface incrementally; the arena is removed in
 //! Section 13 PR 4.
 //!
