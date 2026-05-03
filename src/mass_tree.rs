@@ -414,37 +414,63 @@ pub fn composite_mass_system(
     // no entity has any `MassChildOf` edge, every body is its own
     // composite — composite == core for each — so we can skip the
     // entire build-view/kernel round-trip and the `O(N²)` HashMap
-    // ceremony around it. We still have to:
+    // ceremony around it.
     //
-    //   (a) refresh `CoreMassPropertiesC` for newly-spawned or
-    //       externally-edited bodies, so a later attach reads the
-    //       live core (this is `O(changed)`);
-    //   (b) revert any entity whose `MassPropertiesC` still carries
-    //       a stale composite from a *previous* tick — the
-    //       just-detached parent case. Without (b) a parent that
-    //       loses its last child would carry the heavier composite
-    //       forever. This walks `cores_q` once but only writes
-    //       through `bypass_change_detection` when the cached core
-    //       and the live composite actually differ, so true never-
-    //       attached single-body scenarios pay no per-tick write.
+    // Two distinct sub-cases live in this branch and they pull in
+    // opposite directions, so we have to handle them precisely (PR
+    // #283 review thread PRRT_kwDORtae6c5_KQUM):
     //
-    // The full read-write loop on every entity that the previous
-    // implementation paid is gone — kernel, view, and `MassChildOf`
-    // edge bookkeeping are skipped entirely.
+    //   (a) Mission code edited `MassPropertiesC` mid-tick on a
+    //       standalone body (fuel burn / staging / inertia override).
+    //       The live `MassPropertiesC` *is* the new source of truth
+    //       and must NOT be touched by this system; we only refresh
+    //       the `CoreMassPropertiesC` cache so a later attach reads
+    //       the new core. These entities show up in the
+    //       `Changed<MassPropertiesC>` filter (`props.p0()`).
+    //   (b) A previously-attached parent had its last child detached
+    //       this tick; its `MassPropertiesC` still carries the stale
+    //       *composite* from the previous tick. We must revert it
+    //       from `CoreMassPropertiesC` so the body once again reads
+    //       as its own core. These entities are NOT in
+    //       `Changed<MassPropertiesC>` (mission code didn't touch
+    //       them); the cache disagrees with live precisely because
+    //       last tick's kernel wrote a composite there.
+    //
+    // The previous implementation conflated the two: it iterated
+    // `cores_q` (which holds the *previous-tick* cache snapshot, not
+    // the just-edited core, because the cache refresh in (a) goes
+    // through `Commands` and is deferred) and wrote the stale cache
+    // back for any entity where `live != core`. For case (a) that
+    // rolled the mission edit straight back, breaking the documented
+    // "fuel burn / staging visible on the next step" contract.
+    //
+    // Fix: collect the just-edited entities into a `HashSet` first,
+    // then in the revert pass skip any entity in that set — those
+    // are case (a) and are pure pass-through. The remaining cores_q
+    // entities are case (b) and get the legitimate revert.
     if parents.is_empty() {
-        // (a) freshly-spawned / externally-edited cores.
+        // (a) freshly-spawned / externally-edited cores: refresh the
+        //     cache, do not touch `MassPropertiesC` (live IS the
+        //     source of truth on these).
+        let mut just_edited: std::collections::HashSet<Entity> = std::collections::HashSet::new();
         {
             let changed = props.p0();
             for (entity, props_ref) in &changed {
                 commands
                     .entity(entity)
                     .insert(CoreMassPropertiesC(props_ref.0.to_untyped()));
+                just_edited.insert(entity);
             }
         }
         // (b) revert stale composites where cache disagrees with
-        //     live MassPropertiesC.
+        //     live `MassPropertiesC` — but only for entities that
+        //     mission code did NOT just edit. The just-edited set
+        //     covers case (a) and must be left alone.
         let mut writes = props.p1();
         for (entity, core) in &cores_q {
+            if just_edited.contains(&entity) {
+                continue;
+            }
             if let Ok(mut live) = writes.get_mut(entity) {
                 let live_untyped = live.0.to_untyped();
                 if live_untyped.mass != core.0.mass
@@ -765,6 +791,132 @@ mod tests {
         // composite_mass_system must panic with a "MassChildOf
         // edge ..." diagnostic.
         app.update();
+    }
+
+    #[test]
+    fn fast_path_preserves_mid_tick_edit_on_standalone_body() {
+        // PR #283 review thread PRRT_kwDORtae6c5_KQUM: when the
+        // world has zero `MassChildOf` edges, the fast path must
+        // not roll back a real mass edit on a standalone body. The
+        // earlier implementation iterated `cores_q` (which holds
+        // the *previous-tick* cache snapshot, since the deferred
+        // `Commands::insert` for the new cache hasn't applied yet)
+        // and wrote the stale cache back for any entity where
+        // `live != core`, undoing the mission edit until a later
+        // tick repaired the cache.
+        let mut app = add_test_app();
+        app.add_systems(Update, composite_mass_system);
+
+        // Tick 1 seeds CoreMassPropertiesC with the original 10.0
+        // mass and clears the initial `Changed<MassPropertiesC>`
+        // flag.
+        let core = MassProperties::new(10.0);
+        let e = app.world_mut().spawn(MassPropertiesC::from(core)).id();
+        app.update();
+
+        // Mission code edits the body's mass mid-sim (10 -> 42),
+        // matching the documented "fuel burn / staging visible on
+        // the next step" contract.
+        {
+            let mut props = app.world_mut().get_mut::<MassPropertiesC>(e).unwrap();
+            *props = MassPropertiesC::from(MassProperties::new(42.0));
+        }
+
+        // Tick 2 must run the fast path AND preserve the new mass.
+        app.update();
+
+        let after = app
+            .world()
+            .get::<MassPropertiesC>(e)
+            .unwrap()
+            .0
+            .to_untyped();
+        assert!(
+            (after.mass - 42.0).abs() < 1e-12,
+            "fast-path rolled back mid-tick edit: mass {} (expected 42)",
+            after.mass
+        );
+
+        // The cache must also have been refreshed so a future
+        // attach reads the new core (rather than the stale 10.0).
+        let cache = app
+            .world()
+            .get::<CoreMassPropertiesC>(e)
+            .expect("core cache present after tick");
+        assert!(
+            (cache.0.mass - 42.0).abs() < 1e-12,
+            "core cache not refreshed: mass {} (expected 42)",
+            cache.0.mass
+        );
+    }
+
+    #[test]
+    fn fast_path_reverts_just_detached_parent() {
+        // Sibling guard for the test above: when the last child
+        // is detached, the parent's `MassPropertiesC` must revert
+        // from the stale composite back to its core. This is the
+        // legitimate case (b) in the fast path that we must NOT
+        // accidentally suppress while fixing case (a).
+        use bevy::ecs::system::RunSystemOnce;
+
+        let mut app = add_test_app();
+        app.add_systems(Update, composite_mass_system);
+
+        let parent_core = MassProperties::new(10.0);
+        let child_core = MassProperties::new(5.0);
+        let offset = DVec3::new(2.0, 0.0, 0.0);
+        let parent = app
+            .world_mut()
+            .spawn(MassPropertiesC::from(parent_core))
+            .id();
+        let child = app
+            .world_mut()
+            .spawn((
+                MassPropertiesC::from(child_core),
+                MassChildOf::new(parent, offset),
+            ))
+            .id();
+
+        // Tick 1 composes the tree: parent's `MassPropertiesC`
+        // becomes the composite (mass 15).
+        app.update();
+        let composite_mass = app
+            .world()
+            .get::<MassPropertiesC>(parent)
+            .unwrap()
+            .0
+            .to_untyped()
+            .mass;
+        assert!(
+            (composite_mass - 15.0).abs() < 1e-12,
+            "tick1 parent composite mass {composite_mass}"
+        );
+
+        // Detach the child by removing the `MassChildOf` edge.
+        // The parent is *not* edited — its `MassPropertiesC` still
+        // holds the stale composite from tick 1.
+        app.world_mut().entity_mut(child).remove::<MassChildOf>();
+        // Bevy's `Changed` tick honours the previous frame; clear
+        // any leftover state by running an empty system once so
+        // the next `app.update()` sees `parents.is_empty()` true.
+        app.world_mut()
+            .run_system_once(|| ())
+            .expect("noop system runs");
+
+        // Tick 2: fast path must revert the parent to its core
+        // (mass 10).
+        app.update();
+        let reverted = app
+            .world()
+            .get::<MassPropertiesC>(parent)
+            .unwrap()
+            .0
+            .to_untyped();
+        assert!(
+            (reverted.mass - 10.0).abs() < 1e-12,
+            "just-detached parent not reverted: mass {} (expected 10)",
+            reverted.mass
+        );
     }
 
     #[test]
