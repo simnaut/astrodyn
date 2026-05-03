@@ -26,6 +26,11 @@
 //! sub-trees that consume a prescribed angular trajectory rather than
 //! integrating one — live in [`kinematic_joint`]
 //! ([`JointKinematicsSpec`], [`evaluate_joint_kinematics`]).
+//! Root-to-leaf state propagation through kinematic-child chains lives
+//! in [`kinematic_propagation`] ([`compute_kinematic_child_state`],
+//! [`compute_kinematic_child_state_typed`],
+//! [`derive_kinematic_child_from_states`], [`KinematicChildInputs`],
+//! [`KinematicChildOutputs`]).
 //!
 //! JEOD source: `models/dynamics/dyn_body/`, `models/dynamics/mass/`,
 //! `models/dynamics/body_action/`, and `models/utils/integration/`. Pure
@@ -43,6 +48,7 @@ pub mod forces;
 pub mod gauss_jackson;
 pub mod integration;
 pub mod kinematic_joint;
+pub mod kinematic_propagation;
 pub mod mass;
 pub mod mass_body;
 pub mod mass_storage;
@@ -69,6 +75,11 @@ pub use gauss_jackson::config::GaussJacksonConfig;
 pub use gauss_jackson::{GaussJacksonState, IntegratorResult};
 pub use integration::{rk4_sixdof_step, rk4_translational_step, IntegratorType};
 pub use kinematic_joint::{evaluate as evaluate_joint_kinematics, JointKinematicsSpec};
+pub use kinematic_propagation::{
+    compute_kinematic_child_state, compute_kinematic_child_state_dquat,
+    compute_kinematic_child_state_typed, derive_kinematic_child_from_states, KinematicChildInputs,
+    KinematicChildOutputs,
+};
 pub use mass::{MassProperties, INERTIA_CONSISTENCY_TOL};
 pub use mass_body::{
     point_mass_inertia, MassBody, MassBodyId, MassPoint, MassPointState, MassTree,
