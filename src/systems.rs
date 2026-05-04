@@ -789,7 +789,12 @@ pub fn frame_switch_system(
             // Resolve the target source's frame entity. Fail loud if
             // the target isn't a registered gravity source — same
             // contract as `evaluate_and_apply_frame_switch`'s
-            // `FrameSwitchTargetMissing` error.
+            // `FrameSwitchTargetMissing` error. The query filter is
+            // `With<GravitySourceC>`, so a missing match means the
+            // target either isn't a gravity source at all (no
+            // `GravitySourceC`) or is one but `FrameEntityC` was never
+            // inserted by `register_source_frames_system` — both are
+            // user misconfigurations the diagnostic must enumerate.
             let target_frame_entity =
                 sources
                     .get(sw.target_source)
@@ -797,9 +802,9 @@ pub fn frame_switch_system(
                     .unwrap_or_else(|err| {
                         panic!(
                             "frame_switch_system: body {body_entity:?} switch evaluation failed: \
-                         target source {target:?} is not a registered gravity source \
-                         (missing FrameEntityC). Spawn the source via PlanetBundle \
-                         (which inserts FrameEntityC) before referencing it from a \
+                         target source {target:?} is not a registered gravity source — \
+                         it is missing GravitySourceC and/or FrameEntityC. Spawn it via \
+                         PlanetBundle (which inserts both) before referencing it from a \
                          FrameSwitchConfig. Underlying error: {err:?}",
                             target = sw.target_source,
                         )
