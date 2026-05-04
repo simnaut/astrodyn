@@ -13,10 +13,12 @@
 //!
 //! Two equivalent ways to queue an action:
 //!
-//! - Bevy `Message`s: write a [`BodyActionMessage::Add`] /
-//!   [`BodyActionMessage::Remove`] from any system (e.g. via
-//!   [`BodyActionMessage::add`] / [`BodyActionMessage::remove`]). The
-//!   plugin already registers the unified message.
+//! - Bevy `Message`s: write a [`BodyActionEvent::Add`] /
+//!   [`BodyActionEvent::Remove`] from any system (e.g. via
+//!   [`BodyActionEvent::add`] / [`BodyActionEvent::remove`]). The
+//!   plugin already registers the unified message. The `*Event`
+//!   suffix matches `AttachEvent` / `DetachEvent`, the other
+//!   `#[derive(Message)]` types in this crate.
 //! - The [`BodyActionCommandsExt`] trait on `Commands`:
 //!   `commands.add_body_action(entity, action, name)` /
 //!   `commands.remove_body_action(name)`. Both methods schedule a
@@ -65,7 +67,7 @@ use crate::components::{MassPropertiesC, RotationalStateC, TranslationalStateC};
 ///
 /// Carried by [`BodyActionsR`] and constructed by the plugin's
 /// message-draining system. Mission code does not interact with this
-/// type directly; either send a [`BodyActionMessage`] or call
+/// type directly; either send a [`BodyActionEvent`] or call
 /// [`BodyActionCommandsExt::add_body_action`].
 #[derive(Debug, Clone)]
 pub struct PendingBodyAction {
@@ -73,7 +75,7 @@ pub struct PendingBodyAction {
     pub entity: Entity,
     /// The action itself.
     pub action: BodyAction,
-    /// Optional name used by [`BodyActionMessage::Remove`] to find
+    /// Optional name used by [`BodyActionEvent::Remove`] to find
     /// this pending action before it fires. JEOD's
     /// `BodyAction::action_name` is also optional; mission code that
     /// never needs to remove an action mid-flight can leave it
@@ -99,14 +101,14 @@ pub struct PendingBodyAction {
 /// # Example
 /// ```
 /// use bevy::prelude::*;
-/// use bevy_jeod::body_action::BodyActionMessage;
+/// use bevy_jeod::body_action::BodyActionEvent;
 /// use jeod_sim::{BodyAction, MassProperties};
 ///
 /// fn queue_mass_change(
 ///     vehicle: Entity,
-///     mut writer: bevy::ecs::message::MessageWriter<BodyActionMessage>,
+///     mut writer: bevy::ecs::message::MessageWriter<BodyActionEvent>,
 /// ) {
-///     writer.write(BodyActionMessage::add(
+///     writer.write(BodyActionEvent::add(
 ///         vehicle,
 ///         BodyAction::InitMass {
 ///             mass: MassProperties::new(100_000.0),
@@ -123,7 +125,7 @@ pub struct PendingBodyAction {
 // load-bearing for this allocation pattern.
 #[allow(clippy::large_enum_variant)]
 #[derive(Message, Debug, Clone)]
-pub enum BodyActionMessage {
+pub enum BodyActionEvent {
     /// Mirror of JEOD `DynManager::add_body_action(BodyAction&)`:
     /// queue an action to be applied as soon as `is_ready()` returns
     /// true on the next intake-then-apply pass.
@@ -146,21 +148,21 @@ pub enum BodyActionMessage {
     },
 }
 
-impl BodyActionMessage {
-    /// Construct a [`BodyActionMessage::Add`].
+impl BodyActionEvent {
+    /// Construct a [`BodyActionEvent::Add`].
     #[inline]
     pub fn add(entity: Entity, action: BodyAction, name: Option<&str>) -> Self {
-        BodyActionMessage::Add {
+        BodyActionEvent::Add {
             entity,
             action,
             name: name.map(|n| n.to_string()),
         }
     }
 
-    /// Construct a [`BodyActionMessage::Remove`].
+    /// Construct a [`BodyActionEvent::Remove`].
     #[inline]
     pub fn remove(name: &str) -> Self {
-        BodyActionMessage::Remove {
+        BodyActionEvent::Remove {
             name: name.to_string(),
         }
     }
@@ -170,7 +172,7 @@ impl BodyActionMessage {
 /// order.
 ///
 /// Inserted by [`crate::JeodPlugin`]. Mission code does not need to
-/// touch this resource directly — send a [`BodyActionMessage`] or
+/// touch this resource directly — send a [`BodyActionEvent`] or
 /// use [`BodyActionCommandsExt`] instead.
 ///
 /// JEOD analog: `DynManager::body_actions` (a `std::vector<BodyAction
@@ -181,23 +183,23 @@ pub struct BodyActionsR {
     pub pending: Vec<PendingBodyAction>,
 }
 
-/// Drains [`BodyActionMessage`]s into [`BodyActionsR`].
+/// Drains [`BodyActionEvent`]s into [`BodyActionsR`].
 ///
 /// Runs strictly before [`body_action_system`] each tick so that an
 /// `add → remove → add` sequence within one tick collapses to a
 /// single queued action (the same idiom JEOD's `mass.py` from
 /// `SIM_removable_body_action` exercises at init time). Bevy
 /// preserves message arrival order within one message type, so the
-/// unified [`BodyActionMessage`] enum's `MessageReader` walks the
+/// unified [`BodyActionEvent`] enum's `MessageReader` walks the
 /// add/remove operations in the order their `MessageWriter`s wrote
 /// them.
 pub fn body_action_intake_system(
-    mut messages: bevy::ecs::message::MessageReader<BodyActionMessage>,
+    mut messages: bevy::ecs::message::MessageReader<BodyActionEvent>,
     mut queue: ResMut<BodyActionsR>,
 ) {
     for msg in messages.read() {
         match msg {
-            BodyActionMessage::Add {
+            BodyActionEvent::Add {
                 entity,
                 action,
                 name,
@@ -208,7 +210,7 @@ pub fn body_action_intake_system(
                     name: name.clone(),
                 });
             }
-            BodyActionMessage::Remove { name } => {
+            BodyActionEvent::Remove { name } => {
                 // JEOD_INV: BA.10 — remove pending actions by `action_name`; we drop *every* matching
                 // entry rather than the first, a strict generalisation of `dyn_manager.cc:211`'s
                 // first-match-wins loop (covered by `tests::remove_drops_all_pending_with_matching_name`).
@@ -343,16 +345,16 @@ pub fn body_action_system(
 ///
 /// JEOD analog: the bare `dynamics.dyn_manager.add_body_action(...)`
 /// call in JEOD `Modified_data/*.py`. Mission code that doesn't want
-/// to thread a `MessageWriter<BodyActionMessage>` through every
+/// to thread a `MessageWriter<BodyActionEvent>` through every
 /// system can drop into `Commands` instead — both paths land in the
 /// same [`BodyActionsR`] queue.
 pub trait BodyActionCommandsExt {
     /// Queue a [`BodyAction`] against `entity`. Equivalent to
-    /// sending a [`BodyActionMessage::Add`].
+    /// sending a [`BodyActionEvent::Add`].
     fn add_body_action(&mut self, entity: Entity, action: BodyAction, name: Option<&str>);
 
     /// Cancel every pending body action whose name matches `name`.
-    /// Equivalent to sending a [`BodyActionMessage::Remove`].
+    /// Equivalent to sending a [`BodyActionEvent::Remove`].
     fn remove_body_action(&mut self, name: &str);
 }
 
@@ -360,9 +362,8 @@ impl<'w, 's> BodyActionCommandsExt for Commands<'w, 's> {
     fn add_body_action(&mut self, entity: Entity, action: BodyAction, name: Option<&str>) {
         let name = name.map(|n| n.to_string());
         self.queue(move |world: &mut World| {
-            let mut writer =
-                world.resource_mut::<bevy::ecs::message::Messages<BodyActionMessage>>();
-            writer.write(BodyActionMessage::Add {
+            let mut writer = world.resource_mut::<bevy::ecs::message::Messages<BodyActionEvent>>();
+            writer.write(BodyActionEvent::Add {
                 entity,
                 action,
                 name,
@@ -373,9 +374,8 @@ impl<'w, 's> BodyActionCommandsExt for Commands<'w, 's> {
     fn remove_body_action(&mut self, name: &str) {
         let name = name.to_string();
         self.queue(move |world: &mut World| {
-            let mut writer =
-                world.resource_mut::<bevy::ecs::message::Messages<BodyActionMessage>>();
-            writer.write(BodyActionMessage::Remove { name });
+            let mut writer = world.resource_mut::<bevy::ecs::message::Messages<BodyActionEvent>>();
+            writer.write(BodyActionEvent::Remove { name });
         });
     }
 }
@@ -385,18 +385,18 @@ impl<'w, 's> BodyActionCommandsExt for Commands<'w, 's> {
 /// hold a writer (faster; avoids an indirect `Commands::queue`
 /// closure).
 ///
-/// Equivalent to `writer.write(BodyActionMessage::add(entity, action,
+/// Equivalent to `writer.write(BodyActionEvent::add(entity, action,
 /// name))`. Provided here so the call site reads as
 /// `add_body_action_via(...)` and matches the JEOD vocabulary even
 /// when going through a writer.
 #[inline]
 pub fn add_body_action_via(
-    writer: &mut MessageWriter<BodyActionMessage>,
+    writer: &mut MessageWriter<BodyActionEvent>,
     entity: Entity,
     action: BodyAction,
     name: Option<&str>,
 ) {
-    writer.write(BodyActionMessage::add(entity, action, name));
+    writer.write(BodyActionEvent::add(entity, action, name));
 }
 
 #[cfg(test)]
@@ -409,7 +409,7 @@ mod tests {
     fn build_app() -> App {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
-        app.add_message::<BodyActionMessage>();
+        app.add_message::<BodyActionEvent>();
         app.init_resource::<BodyActionsR>();
         app.add_systems(
             Update,
@@ -428,9 +428,9 @@ mod tests {
             .id()
     }
 
-    fn write_msg(app: &mut App, msg: BodyActionMessage) {
+    fn write_msg(app: &mut App, msg: BodyActionEvent) {
         app.world_mut()
-            .resource_mut::<bevy::ecs::message::Messages<BodyActionMessage>>()
+            .resource_mut::<bevy::ecs::message::Messages<BodyActionEvent>>()
             .write(msg);
     }
 
@@ -446,7 +446,7 @@ mod tests {
 
         write_msg(
             &mut app,
-            BodyActionMessage::add(
+            BodyActionEvent::add(
                 entity,
                 BodyAction::InitMass {
                     mass: MassProperties::new(400_000.0),
@@ -454,10 +454,10 @@ mod tests {
                 Some("vehicle.mass_init"),
             ),
         );
-        write_msg(&mut app, BodyActionMessage::remove("vehicle.mass_init"));
+        write_msg(&mut app, BodyActionEvent::remove("vehicle.mass_init"));
         write_msg(
             &mut app,
-            BodyActionMessage::add(
+            BodyActionEvent::add(
                 entity,
                 BodyAction::InitMass {
                     mass: MassProperties::new(100_000.0),
@@ -486,7 +486,7 @@ mod tests {
         let omega = DVec3::new(0.0, 0.0, 0.01);
         write_msg(
             &mut app,
-            BodyActionMessage::add(
+            BodyActionEvent::add(
                 entity,
                 BodyAction::InitRot {
                     quaternion: q,
@@ -522,7 +522,7 @@ mod tests {
 
         write_msg(
             &mut app,
-            BodyActionMessage::add(
+            BodyActionEvent::add(
                 entity,
                 BodyAction::InitTransOrbital {
                     set: OrbitalElementSet::SmaEccIncAscnodeArgperTanom,
@@ -591,7 +591,7 @@ mod tests {
         let entity = spawn_vehicle(&mut app);
         write_msg(
             &mut app,
-            BodyActionMessage::add(
+            BodyActionEvent::add(
                 entity,
                 BodyAction::InitMass {
                     mass: MassProperties::new(123.0),
@@ -599,7 +599,7 @@ mod tests {
                 None,
             ),
         );
-        write_msg(&mut app, BodyActionMessage::remove("anything"));
+        write_msg(&mut app, BodyActionEvent::remove("anything"));
         app.update();
 
         let final_mass = app
@@ -625,7 +625,7 @@ mod tests {
         let entity = spawn_vehicle(&mut app);
         write_msg(
             &mut app,
-            BodyActionMessage::add(
+            BodyActionEvent::add(
                 entity,
                 BodyAction::InitMass {
                     mass: MassProperties::new(11.0),
@@ -635,7 +635,7 @@ mod tests {
         );
         write_msg(
             &mut app,
-            BodyActionMessage::add(
+            BodyActionEvent::add(
                 entity,
                 BodyAction::InitMass {
                     mass: MassProperties::new(22.0),
@@ -665,7 +665,7 @@ mod tests {
         let entity = spawn_vehicle(&mut app);
         write_msg(
             &mut app,
-            BodyActionMessage::add(
+            BodyActionEvent::add(
                 entity,
                 BodyAction::InitMass {
                     mass: MassProperties::new(11.0),
@@ -675,7 +675,7 @@ mod tests {
         );
         write_msg(
             &mut app,
-            BodyActionMessage::add(
+            BodyActionEvent::add(
                 entity,
                 BodyAction::InitMass {
                     mass: MassProperties::new(22.0),
@@ -683,7 +683,7 @@ mod tests {
                 Some("dup"),
             ),
         );
-        write_msg(&mut app, BodyActionMessage::remove("dup"));
+        write_msg(&mut app, BodyActionEvent::remove("dup"));
         app.update();
         // Neither add fired: the entity still has its original
         // 400 000 kg from `spawn_vehicle`.

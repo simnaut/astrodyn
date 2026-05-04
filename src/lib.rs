@@ -18,7 +18,7 @@ pub mod wrench;
 
 pub use body_action::{
     add_body_action_via, body_action_intake_system, body_action_system, BodyActionCommandsExt,
-    BodyActionMessage, BodyActionsR, PendingBodyAction,
+    BodyActionEvent, BodyActionsR, PendingBodyAction,
 };
 pub use bundles::*;
 pub use components::*;
@@ -235,7 +235,7 @@ impl Plugin for JeodPlugin {
         // through `BodyActionCommandsExt` on `Commands`. The intake
         // system drains it into `BodyActionsR`; the apply system
         // walks the resource and mutates ready actions' subjects.
-        app.add_message::<body_action::BodyActionMessage>();
+        app.add_message::<body_action::BodyActionEvent>();
         app.init_resource::<body_action::BodyActionsR>();
 
         // ── Systems ──
@@ -445,7 +445,7 @@ impl Plugin for JeodPlugin {
                 // `add_systems` call carries the system.
                 systems::joint_kinematics_system.in_set(JeodSet::EphemerisUpdate),
                 // Body-action lifecycle (#199): drain
-                // `Add/RemoveBodyActionMessage` into `BodyActionsR`,
+                // `Add/RemoveBodyActionEvent` into `BodyActionsR`,
                 // then apply every ready action. Runs before
                 // `JeodSet::EphemerisUpdate` so a mid-tick mass /
                 // state replacement is visible to gravity, atmosphere,

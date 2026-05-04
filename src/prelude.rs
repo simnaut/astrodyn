@@ -25,7 +25,7 @@
 //! ```
 
 pub use crate::{
-    Abm4StateC, AerodynamicForceC, AtmosphericStateC, BodyActionCommandsExt, BodyActionMessage,
+    Abm4StateC, AerodynamicForceC, AtmosphericStateC, BodyActionCommandsExt, BodyActionEvent,
     BodyActionsR, BodyFrameMarker, DetachedSubtreeStateC, DynamicsConfigC, FrameAngVelC,
     FrameDerivativesC, FrameEntityC, FrameRotC, FrameTransC, GaussJacksonStateC,
     GravityAccelerationC, GravityControlsC, GravitySourceC, GravityTorqueC, InertialFrameMarker,

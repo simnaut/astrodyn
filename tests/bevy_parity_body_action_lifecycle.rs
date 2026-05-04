@@ -60,7 +60,7 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 use bevy_jeod::{
-    BodyActionMessage, GravityControlsC, JeodPlugin, MassPropertiesC, RotationalStateC,
+    BodyActionEvent, GravityControlsC, JeodPlugin, MassPropertiesC, RotationalStateC,
     SourceInertialPositionC, TranslationalStateC,
 };
 use glam::DVec3;
@@ -199,10 +199,10 @@ fn build_app() -> (App, Entity) {
     (app, vehicle)
 }
 
-/// Push a `BodyActionMessage` directly into the world's message buffer.
-fn write_msg(app: &mut App, msg: BodyActionMessage) {
+/// Push a `BodyActionEvent` directly into the world's message buffer.
+fn write_msg(app: &mut App, msg: BodyActionEvent) {
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<BodyActionMessage>>()
+        .resource_mut::<bevy::ecs::message::Messages<BodyActionEvent>>()
         .write(msg);
 }
 
@@ -235,7 +235,7 @@ fn tier3_bevy_parity_body_action_init_lifecycle() {
     // Mirrors `models/dynamics/dyn_manager/verif/SIM_removable_body_action/Modified_data/mass.py:44-49`.
     write_msg(
         &mut app,
-        BodyActionMessage::add(
+        BodyActionEvent::add(
             vehicle,
             BodyAction::InitMass {
                 mass: MassProperties::new(400_000.0),
@@ -243,10 +243,10 @@ fn tier3_bevy_parity_body_action_init_lifecycle() {
             Some("vehicle.mass_init"),
         ),
     );
-    write_msg(&mut app, BodyActionMessage::remove("vehicle.mass_init"));
+    write_msg(&mut app, BodyActionEvent::remove("vehicle.mass_init"));
     write_msg(
         &mut app,
-        BodyActionMessage::add(
+        BodyActionEvent::add(
             vehicle,
             BodyAction::InitMass {
                 mass: MassProperties::new(100_000.0),
@@ -297,7 +297,7 @@ fn tier3_bevy_parity_body_action_init_lifecycle() {
         if !mid_sim_change_applied && sim_t + 0.5 * DT >= MID_SIM_MASS_CHANGE_TIME {
             write_msg(
                 &mut app,
-                BodyActionMessage::add(
+                BodyActionEvent::add(
                     vehicle,
                     BodyAction::InitMass {
                         mass: MassProperties::new(MID_SIM_MASS_KG),
@@ -310,7 +310,7 @@ fn tier3_bevy_parity_body_action_init_lifecycle() {
         if !mid_sim_add_remove_done && sim_t + 0.5 * DT >= MID_SIM_ADD_REMOVE_TIME {
             write_msg(
                 &mut app,
-                BodyActionMessage::add(
+                BodyActionEvent::add(
                     vehicle,
                     BodyAction::InitMass {
                         // A clearly distinct value so a regression
@@ -321,7 +321,7 @@ fn tier3_bevy_parity_body_action_init_lifecycle() {
                     Some("abort_mid_sim"),
                 ),
             );
-            write_msg(&mut app, BodyActionMessage::remove("abort_mid_sim"));
+            write_msg(&mut app, BodyActionEvent::remove("abort_mid_sim"));
             mid_sim_add_remove_done = true;
         }
 
