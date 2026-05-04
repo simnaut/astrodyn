@@ -88,6 +88,7 @@ use crate::components::{
 };
 use crate::frame_param::RelativeFrameState;
 use crate::RootFrameEntityR;
+use glam::DVec3;
 
 /// Process [`FrameAttachEvent`] / [`FrameDetachEvent`] messages by
 /// inserting / removing [`FrameAttachedC`] and resetting multi-step
@@ -392,11 +393,14 @@ pub fn frame_attach_system(
 //   state is owned by the parent frame, not the integrator
 // JEOD_INV: RF.10 — frame-attach is a shift site: the parent frame state is
 //   computed in root-inertial coords via `RelativeFrameState(root, parent)`,
-//   the kernel composes with the offset in those coords, and the body
-//   integration-frame is the root frame in the realistic Bevy config
-//   (ISS-LEO etc.) so the writeback is a no-op shift. Cross-source
-//   integration frames remain on the runner-side TODO list.
-#[allow(clippy::type_complexity)]
+//   the kernel composes with the offset in those coords, and the result is
+//   lowered through the body's `IntegOrigin` before writing back to
+//   `TranslationalStateC` (whose storage convention is the body's
+//   integration frame). Bit-identical no-op for root-integrated bodies
+//   (origin = zero); load-bearing for any body whose `IntegSourceC` is a
+//   non-root planet. Mirrors the runner's writeback in
+//   `crates/jeod_runner/src/simulation/frame_attach.rs:335-339`.
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn propagate_frame_attached_state_system(
     attached: Query<(Entity, &FrameAttachedC)>,
     // Body entities only — exclude frame entities (which carry
@@ -430,6 +434,13 @@ pub fn propagate_frame_attached_state_system(
             Without<TranslationalStateC>,
         >,
     )>,
+    // Body→frame-entity lookup and the frame-tree parent walk are
+    // needed to identify the body's integration frame and lower the
+    // kernel's root-inertial output through its `IntegOrigin`. Both are
+    // read-only and disjoint from the writable frame query gated by
+    // the `ParamSet` above.
+    body_frames: Query<&FrameEntityC>,
+    parents: Query<&ChildOf>,
     root_frame: Res<RootFrameEntityR>,
 ) {
     if attached.is_empty() {
@@ -444,9 +455,18 @@ pub fn propagate_frame_attached_state_system(
     // pre-compute pattern in `propagate_state_from_root_system`
     // (build the per-node state map under the read query, then
     // release and write back through the write query).
+    //
+    // Each `AttachWork` also caches the body's `IntegOrigin` —
+    // `(position, velocity)` of the body's integration frame in
+    // root-inertial coordinates — so the writeback can lower the
+    // kernel's root-inertial output back into the integration-frame
+    // storage convention without re-acquiring the read-side frame
+    // query.
     struct AttachWork {
         body_entity: Entity,
         derived: jeod_sim::RefFrameState,
+        integ_origin_pos: DVec3,
+        integ_origin_vel: DVec3,
     }
     let mut work: Vec<AttachWork> = Vec::with_capacity(attached.iter().len());
     {
@@ -467,9 +487,26 @@ pub fn propagate_frame_attached_state_system(
                     t_parent_this: attach.t_parent_body,
                 },
             });
+
+            // Body's integration-frame origin in root-inertial.
+            // Resolved via the body's `FrameEntityC` parent (the body
+            // frame is `ChildOf` its integ frame); identity zero when
+            // the body has no `FrameEntityC` (legacy minimal config) or
+            // the integ frame is the root frame itself.
+            let integ_frame_entity = body_frames
+                .get(body_entity)
+                .ok()
+                .and_then(|fe| parents.get(fe.0).ok().map(|child_of| child_of.parent()));
+            let (integ_origin_pos, integ_origin_vel) = match integ_frame_entity {
+                Some(integ_e) if integ_e != root => rel.position_velocity(root, integ_e),
+                _ => (DVec3::ZERO, DVec3::ZERO),
+            };
+
             work.push(AttachWork {
                 body_entity,
                 derived,
+                integ_origin_pos,
+                integ_origin_vel,
             });
         }
     }
@@ -481,6 +518,8 @@ pub fn propagate_frame_attached_state_system(
     for AttachWork {
         body_entity,
         derived,
+        integ_origin_pos,
+        integ_origin_vel,
     } in &work
     {
         // The body-shape validation in `frame_attach_system` rejects
@@ -512,35 +551,27 @@ pub fn propagate_frame_attached_state_system(
         });
         // The kernel produces composite-body inertial state in
         // root-inertial coords (the parent frame state was read in
-        // root-inertial via `RelativeFrameState`). Bevy stores body
-        // state as `TranslationalStateC`, which is tagged with the
-        // wildcard `<PlanetInertial<SelfPlanet>>` phantom — the
-        // type-system convention for Bevy bodies that integrate in
-        // their own planet's inertial frame. In the realistic Bevy
-        // mission config (ISS-LEO etc.) the root inertial frame is
-        // numerically coincident with the central body's
-        // `PlanetInertial<Earth>` frame, so writing the kernel's
-        // root-inertial output through the bypass constructor (a
-        // zero-cost phantom relabel) preserves the SI coordinates.
-        // RF.10: cross-source integration frames (body in
-        // `PlanetInertial<P>` for non-central P) would need an
-        // `IntegOrigin`-style shift here, analogous to the runner's
-        // per-body lift in `propagate_frame_attached_state`. The
-        // runner already enforces the shift; the Bevy adapter
-        // currently only wires the central-body case (every existing
-        // recipe), so the relabel is correct for the in-tree
-        // configurations.
-        // Kernel-boundary writeback: pack the root-inertial state into
-        // the wildcard-tagged Bevy storage (`PlanetInertial<SelfPlanet>`).
-        // The wildcard relabel preserves SI coordinates exactly because
-        // every existing Bevy recipe integrates in the central body's
-        // planet-inertial frame, which is bit-coincident with root
-        // inertial.
+        // root-inertial via `RelativeFrameState`). `TranslationalStateC`
+        // storage is pinned to the body's integration frame, so the
+        // root-inertial output must be lowered through the body's
+        // `IntegOrigin` before stamping the wildcard
+        // `PlanetInertial<SelfPlanet>` phantom. For root-integrated
+        // bodies the origin is zero and the subtraction is a numerical
+        // no-op; for a body with `IntegSourceC(Some(planet))` it is
+        // the only thing that keeps the typed phantom and the actual
+        // coordinates consistent. Mirrors the runner's writeback in
+        // `crates/jeod_runner/src/simulation/frame_attach.rs:335-339`
+        // (`from_inertial(trans_root, integ_origin)`) — same arithmetic
+        // shape, ECS-backed origin lookup.
+        // JEOD_INV: RF.10 — root-inertial-shift consumer: the kernel
+        // returns root-inertial composite-body state; the writeback
+        // lowers through the body's `IntegOrigin` to match
+        // `TranslationalStateC`'s integration-frame storage.
         let derived_trans = jeod_sim::TranslationalState {
-            position: derived.trans.position,
-            velocity: derived.trans.velocity,
+            position: derived.trans.position - *integ_origin_pos,
+            velocity: derived.trans.velocity - *integ_origin_vel,
         };
-        // allowed: kernel boundary — the kernel returns root-inertial values; Bevy storage uses the wildcard PlanetInertial<SelfPlanet> tag, which is bit-coincident in the central-body recipes.
+        // allowed: kernel boundary — the kernel returns root-inertial values lowered through the body's `IntegOrigin`; the resulting integration-frame coords carry the wildcard `PlanetInertial<SelfPlanet>` phantom by storage convention.
         trans.0 = jeod_sim::TranslationalStateTyped::<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>::from_untyped_unchecked(&derived_trans);
 
         if let Some(mut rot) = rot_opt {
@@ -557,19 +588,44 @@ pub fn propagate_frame_attached_state_system(
         // body frame is `ChildOf(root)` in the realistic config, so
         // its `FrameTransC` is the body's root-inertial position
         // (relative to root = root-inertial absolute).
+        //
+        // Fail loudly when `FrameEntityC` points at an entity that
+        // isn't a frame: skipping silently would leave the frame tree
+        // stale for the rest of the tick (consumers reading through
+        // `RelativeFrameState` see a snapshot pre-dating this
+        // attach-step propagation) and surface as a panic in some
+        // downstream system instead of pointing at the actual root
+        // cause. The two failure modes the diagnostic names — a
+        // despawned frame entity and a misconfigured `FrameEntityC`
+        // pointing at a non-frame entity — are exactly the
+        // misconfigurations the fail-loud rule requires the system to
+        // panic on at the point of detection.
         if let Some(frame_entity) = frame_opt.map(|f| f.0) {
-            if let Ok((mut frame_trans, frame_rot, frame_angvel)) =
-                frame_writeback_q.get_mut(frame_entity)
-            {
-                frame_trans.position = derived.trans.position;
-                frame_trans.velocity = derived.trans.velocity;
-                if let Some(mut rot) = frame_rot {
-                    rot.q_parent_this = derived.rot.q_parent_this;
-                    rot.t_parent_this = derived.rot.t_parent_this;
-                }
-                if let Some(mut av) = frame_angvel {
-                    av.0 = derived.rot.ang_vel_this;
-                }
+            let (mut frame_trans, frame_rot, frame_angvel) = frame_writeback_q
+                .get_mut(frame_entity)
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "propagate_frame_attached_state_system: body {body_entity:?} \
+                         carries FrameEntityC({frame_entity:?}) but the frame-state \
+                         writeback query returned {err:?}. The frame entity must \
+                         carry FrameTransC (and the optional FrameRotC / \
+                         FrameAngVelC) — either the entity has been despawned \
+                         without clearing FrameEntityC on the body, or \
+                         FrameEntityC was set to an entity that was never \
+                         spawned as a frame. Spawn frame entities through \
+                         `register_*_frames_system` (which inserts the full \
+                         FrameTrans/Rot/AngVel triple) and clear FrameEntityC \
+                         before despawning the frame entity."
+                    )
+                });
+            frame_trans.position = derived.trans.position;
+            frame_trans.velocity = derived.trans.velocity;
+            if let Some(mut rot) = frame_rot {
+                rot.q_parent_this = derived.rot.q_parent_this;
+                rot.t_parent_this = derived.rot.t_parent_this;
+            }
+            if let Some(mut av) = frame_angvel {
+                av.0 = derived.rot.ang_vel_this;
             }
         }
     }
@@ -603,7 +659,7 @@ pub fn propagate_frame_attached_state_system(
 //   own intra-step updates (ephemeris / pfix rotation / frame switch) so
 //   derived-state consumers don't observe a one-tick-stale composition.
 // JEOD_INV: RF.10 — same shift-site reasoning as the pre-integration sibling.
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn propagate_frame_attached_state_post_integration_system(
     attached: Query<(Entity, &FrameAttachedC)>,
     state_q: Query<
@@ -625,9 +681,18 @@ pub fn propagate_frame_attached_state_post_integration_system(
             Without<TranslationalStateC>,
         >,
     )>,
+    body_frames: Query<&FrameEntityC>,
+    parents: Query<&ChildOf>,
     root_frame: Res<RootFrameEntityR>,
 ) {
-    propagate_frame_attached_state_system(attached, state_q, frame_qs, root_frame);
+    propagate_frame_attached_state_system(
+        attached,
+        state_q,
+        frame_qs,
+        body_frames,
+        parents,
+        root_frame,
+    );
 }
 
 #[cfg(test)]
