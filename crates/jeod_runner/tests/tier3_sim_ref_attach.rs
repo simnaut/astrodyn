@@ -170,14 +170,15 @@ fn load_state_csv(filename: &str) -> Vec<StateRow> {
 }
 
 /// Build a sim configured to mirror SIM_ref_attach: single Earth source
-/// (`earth::point_mass()` for `mu_ggm05c`-aligned spherical gravity, no
-/// rotation model — JEOD's SIM_ref_attach uses a `MoonDE421`-style
-/// `RotationModel::J2000` for Earth, but the ref-attach test runs only
-/// 100 s and the parent-frame tracking is dominated by the captured
-/// offset, so the rotation model's accuracy on this short window is
-/// not load-bearing for the matrix-attach run; the pt2pt run attaches
-/// to Earth.inertial which doesn't rotate). RK4 6-DOF body at the
-/// JEOD-recorded initial state from
+/// (`earth::point_mass()` for `mu_ggm05c`-aligned spherical gravity).
+/// `earth::point_mass()` ships with the JEOD `EarthRNP` rotation
+/// model — the same precession/nutation/polar-motion stack JEOD's
+/// SIM_ref_attach exercises — so the planet-fixed frame
+/// `Earth.pfix` rotates each step exactly as JEOD does, which is what
+/// the matrix-attach run requires (its parent reference frame is
+/// `Earth.pfix`). The pt2pt run attaches to `Earth.inertial`, which
+/// does not rotate, so the rotation-model fidelity is not load-bearing
+/// there. RK4 6-DOF body at the JEOD-recorded initial state from
 /// `Modified_data/target_state.py`.
 fn build_ref_attach_sim() -> Simulation {
     let position = DVec3::new(1244540.5300, 5655938.8500, 3425643.2200);
