@@ -917,7 +917,12 @@ pub struct GeodeticConfigC {
 /// `OrbitalElementsConfigC`.
 #[derive(Component, Debug, Clone, Default, Reflect)]
 #[reflect(opaque, Component)]
-pub struct OrbitalElementsC(pub jeod_sim::OrbitalElements);
+pub struct OrbitalElementsC(
+    // Bevy components are runtime-keyed by source index, so the planet
+    // identity isn't statically known here — `SelfPlanet` is the
+    // boundary-only escape hatch for the registry-side path.
+    pub jeod_sim::OrbitalElements<jeod_sim::SelfPlanet>,
+);
 
 /// Euler angles `[phi, theta, psi]` computed each step.
 ///

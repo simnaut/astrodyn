@@ -10,7 +10,7 @@ use crate::{EulerSequence, GeodeticState, LvlhFrame, OrbitalElements, Rotational
 use jeod_math::OrbitalError;
 use jeod_quantities::aliases::{Position, Velocity};
 use jeod_quantities::dims::{GravParam, SpecificAngMomDim};
-use jeod_quantities::frame::RootInertial;
+use jeod_quantities::frame::{RootInertial, SelfPlanet};
 use jeod_quantities::qty3::Qty3;
 use uom::si::angle::radian;
 use uom::si::f64::{Angle, Length};
@@ -60,9 +60,9 @@ pub fn compute_orbital_elements(
     mu: f64,
     position: DVec3,
     velocity: DVec3,
-) -> Result<OrbitalElements, OrbitalError> {
+) -> Result<OrbitalElements<SelfPlanet>, OrbitalError> {
     use jeod_quantities::ext::{F64Ext, Vec3Ext};
-    use jeod_quantities::frame::{PlanetInertial, SelfPlanet};
+    use jeod_quantities::frame::PlanetInertial;
     // Drive the typed kernel directly with `SelfPlanet`-tagged inputs so
     // the result is already `OrbitalElements<SelfPlanet>` — no relabel
     // step. `OrbitalElements::relabel` is restricted to a `<SelfPlanet>`

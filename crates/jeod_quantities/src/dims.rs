@@ -104,8 +104,30 @@ pub type MassFlowRate = Quantity<MassFlowRateDim, SI<f64>, f64>;
 /// let mu_any: GravParam<SelfPlanet> = 3.986e14.m3_per_s2();
 /// let _bad: GravParam<Earth> = mu_any;   // SelfPlanet vs Earth mismatch
 /// ```
+///
+/// ## Compile-fail: there is no `<P = SelfPlanet>` default
+///
+/// `GravParam<P>` carries no default planet — every call site must
+/// commit to a planet via turbofish, type ascription, or argument
+/// inference. A bare `GravParam::from_si(...)` with no inference
+/// context is rejected (the prior `<P = SelfPlanet>` default that
+/// silently filled in `SelfPlanet` was removed in PR #306):
+///
+/// ```compile_fail
+/// use jeod_quantities::prelude::*;
+/// // No type context for `<P>`, no turbofish, no default — type
+/// // annotations needed.
+/// let _mu = GravParam::from_si(3.986_004_415e14);
+/// ```
+///
+/// The fix is to commit to a planet at the call site:
+///
+/// ```
+/// use jeod_quantities::prelude::*;
+/// let _mu = GravParam::<Earth>::from_si(3.986_004_415e14);
+/// ```
 #[repr(C)]
-pub struct GravParam<P: Planet = SelfPlanet> {
+pub struct GravParam<P: Planet> {
     /// Numeric value in SI base units (m³/s²).
     ///
     /// The field is public so internal physics kernels can read it via

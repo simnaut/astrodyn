@@ -26,13 +26,14 @@ use crate::types::{mat3_from_rows, DVec3};
 /// The phantom `P: Planet` ties the result to the central body whose μ
 /// produced these elements: `OrbitalElements<Earth>` and
 /// `OrbitalElements<Sun>` are distinct types and cannot be combined.
-/// Defaults to [`SelfPlanet`] when a planet phantom is not specified —
-/// the planet-erased variant matches the previous bare `OrbitalElements`
-/// for callers that don't need static planet pinning (e.g.
-/// [`OrbitalElements::default`], the Bevy adapter components, the
-/// `to_cartesian` rebuild path).
+/// Every call site must state its `<P>` explicitly — there is no
+/// `<P = SelfPlanet>` default. Use [`SelfPlanet`] to opt into the
+/// planet-erased variant for the registry-side boundary code (the Bevy
+/// adapter components, the `to_cartesian` rebuild path) where the
+/// planet identity is determined at runtime; mission code that knows
+/// the central body at compile time should pick a concrete planet.
 #[derive(Debug, Clone)]
-pub struct OrbitalElements<P: Planet = SelfPlanet> {
+pub struct OrbitalElements<P: Planet> {
     /// Semi-major axis (negative for hyperbolic orbits).
     pub semi_major_axis: f64,
     /// Semi-latus rectum p = a(1 - e^2).
@@ -460,6 +461,22 @@ impl<P: Planet> OrbitalElements<P> {
     /// let earth_oe = OrbitalElements::<Earth>::from_cartesian_typed(mu, pos, vel).unwrap();
     /// // Can't assign Earth-tagged elements to a Sun-tagged slot:
     /// let _bad: OrbitalElements<Sun> = earth_oe;
+    /// ```
+    ///
+    /// # Compile-fail: there is no `<P = SelfPlanet>` default
+    ///
+    /// `OrbitalElements<P>` carries no default planet — every call site
+    /// must commit to a planet via turbofish, type ascription, or
+    /// argument inference. A bare `OrbitalElements::default()` with no
+    /// inference context is rejected (the prior `<P = SelfPlanet>`
+    /// default that silently filled in `SelfPlanet` was removed in
+    /// PR #306):
+    ///
+    /// ```compile_fail
+    /// use jeod_math::OrbitalElements;
+    /// // No type context for `<P>`, no turbofish, no default — type
+    /// // annotations needed.
+    /// let _oe = OrbitalElements::default();
     /// ```
     pub fn from_cartesian_typed(
         mu: GravParam<P>,

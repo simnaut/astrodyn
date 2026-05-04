@@ -203,11 +203,9 @@ pub trait F64Ext: Copy {
     /// With **no expected-type context** — e.g. a bare
     /// `let mu = 1.0.m3_per_s2();` — `P` cannot be inferred and the
     /// compiler reports the usual `cannot infer type for type
-    /// parameter` error. There is no implicit `SelfPlanet` fallback
-    /// here; the [`crate::frame::SelfPlanet`] default on
-    /// [`GravParam`]'s declaration only applies when `<P: Planet>` is
-    /// left unconstrained on a *type*, not when the inference engine
-    /// is asked to pick a planet for a call to this method.
+    /// parameter` error. [`GravParam`]'s declaration carries no
+    /// `<P = SelfPlanet>` default, so every call site must commit to a
+    /// planet (named or [`crate::frame::SelfPlanet`]).
     ///
     /// Prefer [`Self::m3_per_s2_for`] in mission code where the planet
     /// identity is known at the call site — the explicit turbofish

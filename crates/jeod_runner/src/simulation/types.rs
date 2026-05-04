@@ -21,8 +21,8 @@ use jeod_sim::{
     AerodynamicForce, AtmosphereState, ContactFacet, DragConfig, DynamicsConfig, EulerSequence,
     FrameDerivatives, FrameSwitchConfig, GeodeticState, GravityAcceleration, GravityControls,
     GravitySource, GroundFacet, IntegrationFrame, LvlhFrame, MassProperties, OrbitalElements,
-    RadiationForce, RotationModel, RotationalState, SrpModel, TotalForce, TranslationalState,
-    TranslationalStateTyped, VehicleConfig,
+    RadiationForce, RotationModel, RotationalState, SelfPlanet, SrpModel, TotalForce,
+    TranslationalState, TranslationalStateTyped, VehicleConfig,
 };
 
 /// Registration of a contact interaction between two bodies.
@@ -136,7 +136,7 @@ pub struct VehicleOutput {
     /// bodies; zero before the first `step()`.
     pub rot_accel: Option<DVec3>,
     /// Orbital elements from the latest step.
-    pub orbital_elements: Option<OrbitalElements>,
+    pub orbital_elements: Option<OrbitalElements<SelfPlanet>>,
     /// Euler angles `[phi, theta, psi]` from the latest step.
     pub euler_angles: Option<[f64; 3]>,
     /// LVLH frame from the latest step.
@@ -209,7 +209,7 @@ pub(crate) struct SimBody {
     pub earth_lighting_config: Option<(f64, f64, f64)>,
 
     // ── Derived state outputs ──
-    pub orbital_elements: Option<OrbitalElements>,
+    pub orbital_elements: Option<OrbitalElements<SelfPlanet>>,
     pub euler_angles: Option<[f64; 3]>,
     pub lvlh_frame: Option<LvlhFrame>,
     pub geodetic_state: Option<GeodeticState>,
