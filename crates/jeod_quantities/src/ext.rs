@@ -33,7 +33,7 @@ use uom::si::{
 };
 
 use crate::dims::{GravParam, MassFlowRate, SpecificAngMom, SpecificEnergy};
-use crate::frame::Frame;
+use crate::frame::{Frame, Planet};
 use crate::qty3::Qty3;
 
 /// Unit-construction extension on `f64`.
@@ -51,7 +51,7 @@ use crate::qty3::Qty3;
 /// let mass = 420_000.0.kg();           // Mass
 /// let dt = 60.0.s();                   // Time
 /// let g = 9.81.m_per_s2();             // Acceleration
-/// let mu = 3.986_004_418e14.m3_per_s2(); // GravParam (Earth)
+/// let mu = 3.986_004_418e14.m3_per_s2_for::<Earth>(); // GravParam<Earth>
 /// ```
 pub trait F64Ext: Copy {
     // --- Length ---
@@ -195,16 +195,38 @@ pub trait F64Ext: Copy {
     fn rad_per_s2(self) -> AngularAcceleration;
 
     // --- Gravitational parameter ---
-    /// Gravitational parameter μ in m³/s².
+    /// Gravitational parameter μ in m³/s², tagged with the planet
+    /// phantom inferred from the surrounding type (defaults to
+    /// [`crate::frame::SelfPlanet`] when no context is available).
+    ///
+    /// Prefer [`Self::m3_per_s2_for`] in mission code where the planet
+    /// identity is known at the call site — the explicit turbofish
+    /// makes the planet-pinning load-bearing and lets the compiler
+    /// catch a μ that targets the wrong frame.
     ///
     /// # Example
     /// ```
     /// # use jeod_quantities::prelude::*;
-    /// let mu_earth = 3.986_004_418e14.m3_per_s2();
+    /// // Planet-pinned via type ascription:
+    /// let mu_earth: GravParam<Earth> = 3.986_004_418e14.m3_per_s2();
     /// ```
-    fn m3_per_s2(self) -> GravParam;
+    fn m3_per_s2<P: Planet>(self) -> GravParam<P>;
     /// Gravitational parameter μ in km³/s² (scaled to m³/s² internally).
-    fn km3_per_s2(self) -> GravParam;
+    /// Same planet-tagging shape as [`Self::m3_per_s2`].
+    fn km3_per_s2<P: Planet>(self) -> GravParam<P>;
+    /// Gravitational parameter μ in m³/s², explicitly pinned to
+    /// planet `P`. Equivalent to [`Self::m3_per_s2`] with an explicit
+    /// turbofish — preferred in mission code where the planet
+    /// identity is load-bearing.
+    ///
+    /// ```
+    /// # use jeod_quantities::prelude::*;
+    /// let mu_earth = 3.986_004_418e14.m3_per_s2_for::<Earth>();
+    /// // mu_earth: GravParam<Earth>
+    /// ```
+    fn m3_per_s2_for<P: Planet>(self) -> GravParam<P>;
+    /// Planet-pinned sibling of [`Self::km3_per_s2`].
+    fn km3_per_s2_for<P: Planet>(self) -> GravParam<P>;
 
     // --- Specific angular momentum / energy ---
     /// Specific angular momentum in m²/s.
@@ -402,20 +424,21 @@ impl F64Ext for f64 {
     }
 
     #[inline]
-    fn m3_per_s2(self) -> GravParam {
-        GravParam {
-            dimension: PhantomData,
-            units: PhantomData,
-            value: self,
-        }
+    fn m3_per_s2<P: Planet>(self) -> GravParam<P> {
+        GravParam::<P>::from_si(self)
     }
     #[inline]
-    fn km3_per_s2(self) -> GravParam {
-        GravParam {
-            dimension: PhantomData,
-            units: PhantomData,
-            value: self * 1.0e9, // (10³ m)³ / s² = 10⁹ m³/s²
-        }
+    fn km3_per_s2<P: Planet>(self) -> GravParam<P> {
+        // (10³ m)³ / s² = 10⁹ m³/s²
+        GravParam::<P>::from_si(self * 1.0e9)
+    }
+    #[inline]
+    fn m3_per_s2_for<P: Planet>(self) -> GravParam<P> {
+        GravParam::<P>::from_si(self)
+    }
+    #[inline]
+    fn km3_per_s2_for<P: Planet>(self) -> GravParam<P> {
+        GravParam::<P>::from_si(self * 1.0e9)
     }
 
     #[inline]

@@ -103,7 +103,7 @@ fn propagate_mercury_periapses(
             // Mercury orbits the Sun — the gravitating body is `Sun`,
             // not Earth. Phantom must match the mu argument's planet
             // for the compile-time pos/vel-frame check to mean anything.
-            if let Ok(e) = jeod_sim::OrbitalElements::from_cartesian_typed::<Sun>(
+            if let Ok(e) = jeod_sim::OrbitalElements::<Sun>::from_cartesian_typed(
                 F64Ext::m3_per_s2(mu_sun),
                 r.m_at::<PlanetInertial<Sun>>(),
                 v.m_per_s_at::<PlanetInertial<Sun>>(),
@@ -212,7 +212,7 @@ fn detect_periapses_from_csv(path: &std::path::Path, mu: f64) -> Vec<PeriapsisEv
         if prev_rdot < 0.0 && r_dot >= 0.0 {
             use jeod_sim::{F64Ext, PlanetInertial, Sun, Vec3Ext};
             // CSV is for Mercury about the Sun — phantom must match.
-            if let Ok(e) = jeod_sim::OrbitalElements::from_cartesian_typed::<Sun>(
+            if let Ok(e) = jeod_sim::OrbitalElements::<Sun>::from_cartesian_typed(
                 F64Ext::m3_per_s2(mu),
                 pos.m_at::<PlanetInertial<Sun>>(),
                 vel.m_per_s_at::<PlanetInertial<Sun>>(),

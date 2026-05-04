@@ -50,6 +50,12 @@ pub struct LvlhRelativeState {
 /// Delegates to [`OrbitalElements::from_cartesian_typed`] via the
 /// `jeod_quantities::ext` lifters; bit-identical to the deprecated f64
 /// path that this wrapper used before Phase 10.
+///
+/// Returns the planet-erased [`OrbitalElements<SelfPlanet>`] —
+/// per-body planet identity in the runner is dynamic (keyed by source
+/// index), so the static surface returns a `SelfPlanet`-tagged value.
+/// Mission code that knows the planet at compile time should use
+/// [`compute_orbital_elements_typed`].
 pub fn compute_orbital_elements(
     mu: f64,
     position: DVec3,
@@ -57,15 +63,17 @@ pub fn compute_orbital_elements(
 ) -> Result<OrbitalElements, OrbitalError> {
     use jeod_quantities::ext::{F64Ext, Vec3Ext};
     use jeod_quantities::frame::{Earth, PlanetInertial};
-    // Untyped surface assumes Earth-centered inertial axes for backward
-    // compat with the existing Bevy adapter. Mission code targeting
+    // The compute uses Earth-tagged frames internally to drive the
+    // typed kernel; the result is then relabeled to `SelfPlanet` for
+    // the dynamic-planet runner storage. Mission code targeting
     // another planet should use the typed sibling with the appropriate
     // `P: Planet` phantom.
-    OrbitalElements::from_cartesian_typed::<Earth>(
+    OrbitalElements::<Earth>::from_cartesian_typed(
         F64Ext::m3_per_s2(mu),
         position.m_at::<PlanetInertial<Earth>>(),
         velocity.m_per_s_at::<PlanetInertial<Earth>>(),
     )
+    .map(OrbitalElements::<Earth>::relabel)
 }
 
 /// Compute Euler angles from body attitude.
@@ -246,13 +254,15 @@ pub fn compute_lvlh_relative_state(
 /// Delegates to [`OrbitalElements::from_cartesian_typed`] (the typed
 /// entry point added by Phase 2). Identical numerics — the typed
 /// kernel itself extracts SI base values and calls the same f64
-/// implementation.
+/// implementation. The shared `<P>` phantom on `mu`, `position`,
+/// `velocity`, and the returned `OrbitalElements<P>` makes the
+/// μ-vs-frame agreement structural.
 pub fn compute_orbital_elements_typed<P: jeod_quantities::frame::Planet>(
-    mu: GravParam,
+    mu: GravParam<P>,
     position: Position<jeod_quantities::frame::PlanetInertial<P>>,
     velocity: Velocity<jeod_quantities::frame::PlanetInertial<P>>,
-) -> Result<OrbitalElements, OrbitalError> {
-    OrbitalElements::from_cartesian_typed::<P>(mu, position, velocity)
+) -> Result<OrbitalElements<P>, OrbitalError> {
+    OrbitalElements::<P>::from_cartesian_typed(mu, position, velocity)
 }
 
 /// Typed sibling of [`compute_body_euler_angles`].

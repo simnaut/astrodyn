@@ -92,7 +92,7 @@ where
         if det.observe(r, v) {
             let pos_typed = Position::<PlanetInertial<Earth>>::from_raw_si(r);
             let vel_typed = Velocity::<PlanetInertial<Earth>>::from_raw_si(v);
-            let oe = OrbitalElements::from_cartesian_typed::<Earth>(mu_typed, pos_typed, vel_typed)
+            let oe = OrbitalElements::<Earth>::from_cartesian_typed(mu_typed, pos_typed, vel_typed)
                 .unwrap_or_else(|e| {
                     panic!(
                         "periapsis_detection: from_cartesian_typed failed at t={t}, \

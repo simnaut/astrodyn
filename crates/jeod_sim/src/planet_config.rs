@@ -8,6 +8,7 @@ use crate::RotationModel;
 use jeod_planet::PlanetShape;
 use jeod_quantities::dims::GravParam;
 use jeod_quantities::ext::F64Ext;
+use jeod_quantities::frame::SelfPlanet;
 use uom::si::f64::{AngularVelocity, Length};
 
 /// Complete planet configuration for simulation setup.
@@ -33,11 +34,17 @@ pub struct PlanetConfig {
 }
 
 impl PlanetConfig {
-    /// Typed accessor: gravitational parameter as [`GravParam`]
-    /// (m³/s²). Delegates to [`PlanetShape::mu_typed`] so the
-    /// unit-wrapping lives in one place.
+    /// Typed accessor: gravitational parameter as
+    /// [`GravParam<SelfPlanet>`] (m³/s²). Delegates to
+    /// [`PlanetShape::mu_typed`] so the unit-wrapping lives in one
+    /// place. The phantom is [`SelfPlanet`] because `PlanetConfig`
+    /// instances are assigned to entities at runtime — the planet
+    /// identity is dynamic at this surface. Pin a planet-tagged μ
+    /// at the consumer side via the `mu_*()` constants in
+    /// `jeod_sim::recipes::constants` or via
+    /// `mu_typed().relabel::<P>()`.
     #[inline]
-    pub fn mu_typed(&self) -> GravParam {
+    pub fn mu_typed(&self) -> GravParam<SelfPlanet> {
         self.shape.mu_typed()
     }
 

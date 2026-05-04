@@ -2317,7 +2317,7 @@ pub fn orbital_elements_system(
         // allowed: same relabel as `pos` above.
         let vel = Velocity::<PlanetInertial<Earth>>::from_raw_si(state.velocity.raw_si());
         match jeod_sim::compute_orbital_elements_typed::<Earth>(mu_typed, pos, vel) {
-            Ok(oe) => elements.0 = oe,
+            Ok(oe) => elements.0 = oe.relabel(),
             Err(_) => elements.0 = Default::default(),
         }
     }
