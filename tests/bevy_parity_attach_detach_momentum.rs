@@ -2588,3 +2588,200 @@ fn bevy_attach_root_equivalent_stray_parent_panics() {
         });
     step(&mut app, 1, 1.0);
 }
+
+/// **Mass-only attach (no `FrameEntityC` on either body) must succeed.**
+///
+/// `AttachEvent`'s contract requires both entities to carry
+/// `MassBodyIdC` — frame-side components are explicitly optional
+/// (see `staging_system`'s `bodies` query, which holds `Option<&mut
+/// TranslationalStateC>` / `Option<&mut RotationalStateC>`). This
+/// matches JEOD's `MassBody`-without-`DynBody` configuration: a
+/// passive structural body that lives in the mass tree but has no
+/// kinematic state of its own.
+///
+/// `register_body_frames_system` only inserts `FrameEntityC` for
+/// entities filtered by `With<TranslationalStateC>` +
+/// `With<DynamicsConfigC>`, so a mass-only body has no
+/// `FrameEntityC` and therefore no node in the frame tree. The
+/// cross-integ-frame fence has nothing to protect for such a body
+/// (no frame-tree state can be corrupted), and its assertions must
+/// be skipped — otherwise a legitimate mass-only attach panics
+/// where it used to succeed.
+///
+/// This test pins that contract: spawn parent and child as pure
+/// mass-tree nodes (no `DynamicsConfigC`, no `TranslationalStateC`,
+/// no `RotationalStateC` — therefore no `FrameEntityC` after
+/// registration), fire `AttachEvent`, and verify the fence is
+/// bypassed and the mass tree composes successfully.
+#[test]
+fn bevy_attach_mass_only_no_frame_entity_succeeds() {
+    let parent_mass = MassProperties::new(1000.0);
+    let child_mass = MassProperties::new(500.0);
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.add_plugins(JeodPlugin);
+
+    let mut tree = MassTree::new();
+    let id_a = tree.add_body("Parent".into(), parent_mass);
+    let id_b = tree.add_body("Child".into(), child_mass);
+    app.insert_resource(MassTreeR(tree));
+
+    // Mass-only spawn: only MassBodyIdC + MassPropertiesC. No
+    // DynamicsConfigC, no TranslationalStateC, no RotationalStateC.
+    // register_body_frames_system will skip these entities (its
+    // filter is `With<TranslationalStateC>` + `With<DynamicsConfigC>`)
+    // so neither carries `FrameEntityC` after Startup runs.
+    let parent_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Parent"),
+            MassPropertiesC::from(parent_mass),
+            MassBodyIdC(id_a),
+        ))
+        .id();
+    let child_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Child"),
+            MassPropertiesC::from(child_mass),
+            MassBodyIdC(id_b),
+        ))
+        .id();
+
+    app.world_mut().run_schedule(Startup);
+
+    // Sanity-check the fixture: neither entity carries
+    // `FrameEntityC`. If this fails, the registration filter
+    // changed and this regression no longer exercises the
+    // mass-only carve-out — update the spawn above so neither
+    // entity matches `register_body_frames_system`'s filter.
+    assert!(
+        app.world().get::<FrameEntityC>(parent_entity).is_none(),
+        "fixture broken: mass-only parent unexpectedly has FrameEntityC"
+    );
+    assert!(
+        app.world().get::<FrameEntityC>(child_entity).is_none(),
+        "fixture broken: mass-only child unexpectedly has FrameEntityC"
+    );
+
+    // Fire the attach event. The fence's mass-only carve-out must
+    // skip the legality / equality assertions when either body
+    // lacks `FrameEntityC`. The mass-tree composite recompute
+    // still runs; without the carve-out the previous code panicked
+    // here on `body_frames.get(body)` returning Err.
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset: DVec3::ZERO,
+            t_parent_child: DMat3::IDENTITY,
+        });
+    step(&mut app, 1, 1.0);
+
+    // Composite mass on the parent must reflect both bodies
+    // post-attach. Reading parent's MassPropertiesC after a step
+    // returns the composite (parent + child) per the mass-tree's
+    // post-order recompute.
+    let composite_mass = read_mass(app.world(), parent_entity);
+    let expected = parent_mass.mass + child_mass.mass;
+    assert!(
+        (composite_mass - expected).abs() < 1e-12,
+        "mass-only attach: parent composite mass {composite_mass} != \
+         expected {expected} — the mass-tree composite recompute did \
+         not run, indicating the attach was rejected by the fence \
+         despite the mass-only carve-out."
+    );
+}
+
+/// **Half-broken frame tree (`FrameEntityC` present but `ChildOf`
+/// missing) must still panic.**
+///
+/// The mass-only carve-out relaxes the fence only for entities with
+/// no `FrameEntityC`. An entity that *does* carry `FrameEntityC`
+/// has a node in the frame tree, and that node is required to be
+/// parented under its integration-frame entity (root or a
+/// registered source). If the `ChildOf` is missing, the frame tree
+/// itself is corrupt and the attach cannot be safely processed —
+/// the fence must surface this per the Fail Loudly rule rather
+/// than silently bypassing.
+///
+/// This test pins the boundary: spawn a normal body (with
+/// `FrameEntityC` after registration), then strip the `ChildOf`
+/// off its body-frame entity, and verify the attach panics with
+/// the "no ChildOf parent" diagnostic.
+#[test]
+#[should_panic(expected = "has no ChildOf parent")]
+fn bevy_attach_frame_entity_without_child_of_panics() {
+    let parent_mass = MassProperties::new(1000.0);
+    let child_mass = MassProperties::new(500.0);
+    let parent_trans = TranslationalState {
+        position: DVec3::new(7e6, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let child_trans = TranslationalState {
+        position: DVec3::new(7e6, 1.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let initial_rot = RotationalState::default();
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.add_plugins(JeodPlugin);
+
+    let mut tree = MassTree::new();
+    let id_a = tree.add_body("Parent".into(), parent_mass);
+    let id_b = tree.add_body("Child".into(), child_mass);
+    app.insert_resource(MassTreeR(tree));
+
+    let parent_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Parent"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(parent_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(parent_mass),
+            MassBodyIdC(id_a),
+        ))
+        .id();
+    let child_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Child"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(child_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(child_mass),
+            MassBodyIdC(id_b),
+        ))
+        .id();
+
+    app.world_mut().run_schedule(Startup);
+
+    // Strip ChildOf from the parent's body-frame entity. The fence
+    // must now panic on the missing parent rather than silently
+    // bypass — `FrameEntityC` is still there, so the mass-only
+    // carve-out doesn't apply.
+    let parent_frame_entity = app
+        .world()
+        .get::<FrameEntityC>(parent_entity)
+        .expect("parent registered FrameEntityC")
+        .0;
+    app.world_mut()
+        .entity_mut(parent_frame_entity)
+        .remove::<ChildOf>();
+
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset: DVec3::ZERO,
+            t_parent_child: DMat3::IDENTITY,
+        });
+    step(&mut app, 1, 1.0);
+}
