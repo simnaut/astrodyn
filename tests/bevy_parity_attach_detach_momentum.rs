@@ -2472,3 +2472,119 @@ fn bevy_attach_equal_but_illegal_parents_panic() {
         });
     step(&mut app, 1, 1.0);
 }
+
+/// **Root-equivalent stray parent must still be rejected.**
+///
+/// The legality check in the cross-integ-frame fence must run on the
+/// *original* `ChildOf` parent of each body's frame entity, not on
+/// the root-equivalent fold of that parent. Otherwise a stray frame
+/// entity that happens to be a direct child of root with identity
+/// state would silently fold to the root frame entity and pass
+/// legality — even though `frame_switch_system` would reject the
+/// same parent on the next tick because it is not in the registered
+/// source-frame set.
+///
+/// This test pins the soundness gap: spawn an unregistered stray
+/// frame entity that *does* satisfy root-equivalence (direct child
+/// of root with identity `FrameTransC` / `FrameRotC` / `FrameAngVelC`),
+/// reparent both bodies under it, and verify the fence panics with
+/// the legality diagnostic before the equality check (which would
+/// pass after folding) gets a chance to let the attach through.
+#[test]
+#[should_panic(expected = "is neither the root frame entity")]
+fn bevy_attach_root_equivalent_stray_parent_panics() {
+    let parent_mass = MassProperties::new(1000.0);
+    let child_mass = MassProperties::new(500.0);
+    let parent_trans = TranslationalState {
+        position: DVec3::new(7e6, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let child_trans = TranslationalState {
+        position: DVec3::new(7e6, 1.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let initial_rot = RotationalState::default();
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.add_plugins(JeodPlugin);
+
+    let mut tree = MassTree::new();
+    let id_a = tree.add_body("Parent".into(), parent_mass);
+    let id_b = tree.add_body("Child".into(), child_mass);
+    app.insert_resource(MassTreeR(tree));
+
+    let parent_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Parent"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(parent_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(parent_mass),
+            MassBodyIdC(id_a),
+        ))
+        .id();
+    let child_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Child"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(child_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(child_mass),
+            MassBodyIdC(id_b),
+        ))
+        .id();
+
+    app.world_mut().run_schedule(Startup);
+    step(&mut app, 1, 1.0);
+
+    let parent_frame_entity = app
+        .world()
+        .get::<FrameEntityC>(parent_entity)
+        .expect("parent registered FrameEntityC")
+        .0;
+    let child_frame_entity = app
+        .world()
+        .get::<FrameEntityC>(child_entity)
+        .expect("child registered FrameEntityC")
+        .0;
+
+    // Spawn a stray frame entity directly under root with identity
+    // state — it satisfies the root-equivalent topology rule but is
+    // NOT a registered gravity source. A fence that folds before
+    // checking legality would see `root_e == root_e` and accept the
+    // attach; the corrected ordering rejects on the un-folded parent.
+    let root_e = app.world().resource::<RootFrameEntityR>().0;
+    let stray_root_equivalent_frame = app
+        .world_mut()
+        .spawn((
+            Name::new("StrayRootEquivalentFrame"),
+            FrameTransC::default(),
+            FrameRotC::default(),
+            FrameAngVelC::default(),
+            ChildOf(root_e),
+        ))
+        .id();
+    app.world_mut()
+        .entity_mut(parent_frame_entity)
+        .insert(ChildOf(stray_root_equivalent_frame));
+    app.world_mut()
+        .entity_mut(child_frame_entity)
+        .insert(ChildOf(stray_root_equivalent_frame));
+
+    // Fire the attach. The legality check must run on the original
+    // (un-folded) parent and reject the stray frame even though it
+    // would fold to root for the equality comparison.
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset: DVec3::ZERO,
+            t_parent_child: DMat3::IDENTITY,
+        });
+    step(&mut app, 1, 1.0);
+}
