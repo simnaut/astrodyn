@@ -46,10 +46,30 @@ impl Simulation {
     ///
     /// Both bodies must have been registered via [`add_body_to_tree`](Self::add_body_to_tree).
     /// After attachment, every ancestor's composite mass properties are
-    /// updated automatically (via `MassTree::recompute_composites`). The
-    /// integrators of every body whose composite changed (the child plus
-    /// the parent's full ancestor chain to the root) are then reset to
-    /// match JEOD's `dyn_body_attach.cc::reset_integrators()` semantics.
+    /// updated automatically (via `MassTree::recompute_composites`).
+    ///
+    /// If both bodies have an integrated state (translational, and
+    /// optionally rotational), the parent's `body.trans` / `body.rot`
+    /// are then overwritten with JEOD's momentum-conservation merge of
+    /// the two pre-attach composite-body states (port of
+    /// `combine_states_at_attach` in `dyn_body_attach.cc`):
+    ///
+    /// - Linear momentum about the integration-frame origin is
+    ///   conserved (post-attach velocity = mass-weighted average of the
+    ///   pre-attach pair).
+    /// - The composite-body inertial position is shifted by the
+    ///   inertial-frame CoM-delta so it tracks the new combined CoM in
+    ///   the parent's struct frame.
+    /// - Angular momentum about the new combined CoM is conserved (the
+    ///   solve `ω_t = I_t⁻¹ · L_total` runs only when `body.rot` is
+    ///   `Some` on both bodies). The merged body inherits the parent's
+    ///   attitude per JEOD's "colinear body axes" comment in
+    ///   `dyn_body_attach.cc`.
+    ///
+    /// The integrators of every body whose composite changed (the child
+    /// plus the parent's full ancestor chain to the root) are then
+    /// reset to match JEOD's `dyn_body_attach.cc::reset_integrators()`
+    /// semantics.
     ///
     /// # Panics
     /// Panics if either body is not in the tree, or if the child already has a parent.
@@ -81,8 +101,7 @@ impl Simulation {
         // The set is sorted + deduped so the helpers below (and the
         // mass-sync pass) can use `binary_search` for O(log n)
         // membership instead of a linear `Vec::contains` scan,
-        // mirroring the Bevy path's affected-id discipline (issue
-        // #274 / PR #282 review thread `PRRT_kwDORtae6c5_KoAT`).
+        // mirroring the Bevy path's affected-id discipline.
         let mut affected_ids: Vec<jeod_dynamics::MassBodyId> = vec![child_id];
         {
             let tree_ro = self.mass_tree.as_ref().expect("attach: no mass tree");
@@ -91,6 +110,22 @@ impl Simulation {
         affected_ids.sort_unstable();
         affected_ids.dedup();
         Self::mark_body_integrators_dirty_by_id(&mut self.bodies, &affected_ids);
+
+        // ── Snapshot pre-attach composite-body inertial state of both
+        //    bodies + parent's pre-attach composite mass props BEFORE
+        //    mutating the tree. The combine kernel needs all of these
+        //    in the same pre-attach frame; reading post-mutation would
+        //    feed the kernel the *combined* mass props in place of the
+        //    parent's, breaking the algorithm.
+        let parent_pre_state = Self::body_composite_state_or_default(&self.bodies[parent_idx]);
+        let child_pre_state = Self::body_composite_state_or_default(&self.bodies[child_idx]);
+        let parent_pre_composite_props = self.bodies[parent_idx]
+            .mass
+            .expect("attach: parent body has no mass properties");
+        let child_pre_composite_props = self.bodies[child_idx]
+            .mass
+            .expect("attach: child body has no mass properties");
+        let parent_has_rot = self.bodies[parent_idx].rot.is_some();
 
         // ── Mutate the tree itself. ──
         let tree = self.mass_tree.as_mut().expect("attach: no mass tree");
@@ -106,11 +141,98 @@ impl Simulation {
             }
         }
 
+        // Read the post-mutation parent composite mass — this is the
+        // *combined* mass of the merged body, which the kernel uses to
+        // solve `ω_t = I_t⁻¹ · L_total` and to shift the inertial
+        // position by the CoM-delta.
+        let combined_composite_props = self
+            .mass_tree
+            .as_ref()
+            .expect("attach: mass tree dropped between mutate and read")
+            .get(parent_id)
+            .composite_properties;
+
+        // ── Run the JEOD momentum-conservation combine and write the
+        //    merged composite-body state back into the parent. The
+        //    kernel always runs (matching the Bevy adapter's
+        //    `staging_system`); for 3-DOF bodies the missing
+        //    rotational state is treated as identity attitude + zero
+        //    ang_vel, which yields the linear-momentum-only result the
+        //    kernel produces in that degenerate case.
+        // JEOD_INV: DB.13 — composite-body propagation on topology change.
+        // JEOD_INV: DB.14 — integration-frame switch on attach: the merged
+        // body integrates in the parent's frame; the parent's composite_body
+        // state is the new integration target.
+        let parent_t_struct_to_body = parent_pre_composite_props.t_parent_this;
+        let parent_t_inertial_struct = jeod_dynamics::compute_t_inertial_struct(
+            &parent_t_struct_to_body,
+            &parent_pre_state.rot.t_parent_this,
+        );
+        let combined = combine_states_at_attach(jeod_dynamics::AttachCombineInputs {
+            parent_composite: parent_pre_state,
+            parent_mass: parent_pre_composite_props,
+            parent_t_inertial_struct,
+            child_composite: child_pre_state,
+            child_mass: child_pre_composite_props,
+            combined_mass: combined_composite_props,
+            orig_parent_cm_struct: parent_pre_composite_props.position,
+        });
+
+        // Write the merged translational state regardless of DOF — for
+        // 3-DOF bodies this is a pure linear-momentum-conservation
+        // update on velocity plus the structure-frame CoM-shift, both of
+        // which are well-defined without rotational state.
+        self.bodies[parent_idx].trans =
+            TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
+                &TranslationalState {
+                    position: combined.composite_state.trans.position,
+                    velocity: combined.composite_state.trans.velocity,
+                },
+            );
+        // Write rotational state only when the parent already carried
+        // one — the merged body inherits the parent's DOF. JEOD does the
+        // same: a 3-DOF parent stays 3-DOF post-merge regardless of
+        // whether the child contributed `Iω` to the angular-momentum
+        // solve.
+        if parent_has_rot {
+            self.bodies[parent_idx].rot = Some(RotationalState {
+                quaternion: combined.composite_state.rot.q_parent_this,
+                ang_vel_body: combined.composite_state.rot.ang_vel_this,
+            });
+        }
+
         // ── Site B: reset the integrator history. Separate from Site A
         //    so a regression that drops this call leaves the dirty flag
         //    set (IG.37 panics on next integrate). Mirrors JEOD's
         //    `dyn_body_attach.cc::reset_integrators()` (lines 860, 871).
         Self::reset_body_integrators_by_id(&mut self.bodies, &affected_ids);
+    }
+
+    /// Read a body's composite-body inertial state into a
+    /// [`RefFrameState`] suitable for [`combine_states_at_attach`] and
+    /// the body-aware tree-walk used in [`detach`](Self::detach) /
+    /// [`detach_subtree`](Self::detach_subtree).
+    ///
+    /// 3-DOF bodies have `body.rot == None`; in that case the rotational
+    /// fields default to identity attitude + zero ang_vel — matching the
+    /// `unwrap_or((JeodQuat::identity(), DVec3::ZERO))` pattern the Bevy
+    /// adapter's `staging_system` uses for the same degenerate case so
+    /// the two adapters produce bit-identical kernel inputs.
+    fn body_composite_state_or_default(body: &super::types::SimBody) -> RefFrameState {
+        let position = body.trans.position.raw_si();
+        let velocity = body.trans.velocity.raw_si();
+        let (q, w) = match body.rot {
+            Some(rot) => (rot.quaternion, rot.ang_vel_body),
+            None => (jeod_math::JeodQuat::identity(), DVec3::ZERO),
+        };
+        RefFrameState {
+            trans: RefFrameTrans { position, velocity },
+            rot: RefFrameRot {
+                q_parent_this: q,
+                t_parent_this: q.left_quat_to_transformation(),
+                ang_vel_this: w,
+            },
+        }
     }
 
     /// Detach a child body from its parent in the mass tree.
@@ -120,6 +242,30 @@ impl Simulation {
     /// tree's recomputed composites (mirroring
     /// `MassTree::recompute_composites`). The child becomes a root and
     /// its own composite is also updated.
+    ///
+    /// The detach is the inverse of [`attach`](Self::attach)'s
+    /// momentum-conservation merge:
+    ///
+    /// - The detached child's `body.trans` (and `body.rot` if it
+    ///   carries one) is rederived from the parent's pre-detach
+    ///   composite-body inertial state plus the body-aware tree-walk
+    ///   offset between the two composites — the rigid-body
+    ///   composition that gives the subtree's instantaneous inertial
+    ///   state at the moment of separation. This mirrors JEOD's
+    ///   `dyn_body_detach.cc::detach_mass_internal` which preserves
+    ///   `core_body` and rederives composite from it via
+    ///   `propagate_state()`.
+    /// - The (former) parent's `body.trans` (and `body.rot`) shift by
+    ///   the inertial-frame composite-CoM delta so the integrated
+    ///   composite-body state continues to track the parent's new
+    ///   (smaller) composite. The structure point doesn't move in
+    ///   inertial space; only the CoM offset within the parent's
+    ///   struct frame moves when the subtree leaves. This mirrors the
+    ///   parent-side update done by [`detach_subtree`](Self::detach_subtree)
+    ///   and by the Bevy adapter's `staging_system` detach branch.
+    ///
+    /// The integrators of every affected body are then reset
+    /// (`dyn_body_detach.cc:271-273`'s `reset_integrators()`).
     ///
     /// # Panics
     /// Panics if the body is not in the tree or has no parent.
@@ -139,8 +285,7 @@ impl Simulation {
         // The set is sorted + deduped so the helpers below (and the
         // mass-sync pass) can use `binary_search` for O(log n)
         // membership instead of a linear `Vec::contains` scan,
-        // mirroring the Bevy path's affected-id discipline (issue
-        // #274 / PR #282 review thread `PRRT_kwDORtae6c5_KoAT`).
+        // mirroring the Bevy path's affected-id discipline.
         let mut affected_ids: Vec<jeod_dynamics::MassBodyId> = vec![child_id];
         let parent_id = {
             let tree_ro = self.mass_tree.as_ref().expect("detach: no mass tree");
@@ -153,6 +298,63 @@ impl Simulation {
         affected_ids.sort_unstable();
         affected_ids.dedup();
         Self::mark_body_integrators_dirty_by_id(&mut self.bodies, &affected_ids);
+
+        // ── Snapshot pre-detach state required by the inverse split:
+        //
+        //   - the (former) parent's tree root + integrated composite
+        //     state, used to (a) shift the parent's body.trans by the
+        //     inertial CoM-delta after the topology change, and (b)
+        //     derive the detached child's instantaneous composite-body
+        //     inertial state via the body-aware tree walk.
+        //
+        // Walk up to the integrated tree root from the (former) parent
+        // — the root carries the merged composite-body state for the
+        // pre-detach tree.
+        let (root_id, root_idx) = {
+            let tree_ro = self
+                .mass_tree
+                .as_ref()
+                .expect("detach: no mass tree (root walk)");
+            let mut walker = parent_id;
+            while let Some(p) = tree_ro.parent(walker) {
+                walker = p;
+            }
+            let idx = self
+                .bodies
+                .iter()
+                .position(|b| b.mass_body_id == Some(walker))
+                .unwrap_or_else(|| {
+                    panic!(
+                        "detach: tree root {walker:?} for child {child_id:?} \
+                         has no Simulation body backing it — `Simulation::detach` \
+                         requires the integrated tree root to be a registered body. \
+                         For tree-only subtrees use `detach_subtree` instead."
+                    )
+                });
+            (walker, idx)
+        };
+
+        // Pre-detach composite-body inertial state of the integrated
+        // root + its pre-detach composite mass props. Read directly off
+        // the root body because that is where `body.trans` / `body.rot`
+        // currently store the merged composite-body state (post-attach
+        // the child's storage is stale — the integrated root is the
+        // single source of truth).
+        let root_pre_state = Self::body_composite_state_or_default(&self.bodies[root_idx]);
+        let root_pre_composite_props = self.bodies[root_idx]
+            .mass
+            .expect("detach: tree root has no mass properties");
+
+        // Derive the child's instantaneous composite-body inertial
+        // state at the detach instant via the body-aware tree walk
+        // (root → child) using `composite_wrt_pstr` offsets and
+        // structure-point rotations from the mass tree. Mirrors the
+        // walk in `detach_subtree` and the Bevy adapter's detach
+        // handler so all three paths produce bit-identical kernel
+        // inputs.
+        let child_pre_state =
+            Self::derive_subtree_composite_state(self, root_id, child_id, root_pre_state);
+        let child_has_rot = self.bodies[child_idx].rot.is_some();
 
         // ── Mutate the tree. ──
         let tree = self.mass_tree.as_mut().expect("detach: no mass tree");
@@ -167,7 +369,77 @@ impl Simulation {
                 }
             }
         }
-        let _ = parent_id; // silence unused if no parent_idx lookup is needed below
+
+        // Read the post-mutation composite props of the (former)
+        // parent's root — this is the smaller post-detach composite
+        // whose CoM has shifted within the root's struct frame.
+        let root_post_composite_props = self
+            .mass_tree
+            .as_ref()
+            .expect("detach: mass tree dropped between mutate and read")
+            .get(root_id)
+            .composite_properties;
+
+        // ── Apply the parent-side composite-CoM shift. ──
+        // The structure point hasn't moved in inertial space, but the
+        // composite-CoM has moved within the struct frame, so the
+        // composite-body inertial state must shift by the corresponding
+        // kinematic offset. Same formula as `detach_subtree` and the
+        // Bevy adapter; both produce bit-identical results.
+        // JEOD_INV: DB.13 — composite-body propagation on topology change.
+        let cm_delta_struct =
+            root_post_composite_props.position - root_pre_composite_props.position;
+        let t_struct_to_body = root_pre_composite_props.t_parent_this;
+        let cm_delta_body = t_struct_to_body * cm_delta_struct;
+        let t_inertial_to_body = root_pre_state.rot.t_parent_this;
+        let cm_delta_inertial = t_inertial_to_body.transpose() * cm_delta_body;
+        // Velocity offset from rigid-body rotation: ω × Δr in body
+        // frame, then rotated to inertial.
+        let omega_body = root_pre_state.rot.ang_vel_this;
+        let dvel_inertial = t_inertial_to_body.transpose() * omega_body.cross(cm_delta_body);
+
+        let new_root_position = root_pre_state.trans.position + cm_delta_inertial;
+        let new_root_velocity = root_pre_state.trans.velocity + dvel_inertial;
+
+        self.bodies[root_idx].trans =
+            TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
+                &TranslationalState {
+                    position: new_root_position,
+                    velocity: new_root_velocity,
+                },
+            );
+        // root.rot is unchanged — composite/core share body axes (the
+        // mass tree's recompute keeps composite_properties.t_parent_this
+        // == core_properties.t_parent_this throughout). A 3-DOF body
+        // stays 3-DOF regardless of the detach.
+
+        // ── Apply the child-side rederivation. ──
+        // The child becomes a free Simulation body whose `body.trans`
+        // / `body.rot` should hold its instantaneous composite-body
+        // inertial state at the detach instant. Single-body detach via
+        // `Simulation::detach` does NOT route through
+        // `detached_subtrees` (that map is for tree-only subtrees that
+        // have no Simulation body backing — the runner integrates the
+        // detached child going forward).
+        self.bodies[child_idx].trans =
+            TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
+                &TranslationalState {
+                    position: child_pre_state.trans.position,
+                    velocity: child_pre_state.trans.velocity,
+                },
+            );
+        if child_has_rot {
+            self.bodies[child_idx].rot = Some(RotationalState {
+                quaternion: child_pre_state.rot.q_parent_this,
+                ang_vel_body: child_pre_state.rot.ang_vel_this,
+            });
+        }
+        // `parent_id` is the immediate parent in the chain; the actual
+        // shift target is the integrated tree root (`root_idx`), which
+        // may be the parent itself or a more remote ancestor. Bound
+        // here to make the chain walk explicit even though the
+        // post-detach update operates on the root.
+        let _ = parent_id;
 
         // ── Site B: reset integrator history. Mirrors JEOD's
         //    `dyn_body_detach.cc:271-273` `reset_integrators()` call.
@@ -175,6 +447,62 @@ impl Simulation {
         //    this call leaves the dirty bit set on every affected body
         //    and panics in IG.37 on the next integrate.
         Self::reset_body_integrators_by_id(&mut self.bodies, &affected_ids);
+    }
+
+    /// Walk root → target through the mass tree applying
+    /// [`jeod_dynamics::propagate_forward`] at each level using
+    /// `composite_wrt_pstr` offsets and structure-point rotations.
+    /// Returns the target node's instantaneous composite-body inertial
+    /// state assuming the whole chain shares the root's rigid motion
+    /// (which is the rigid-body invariant that holds at the attach /
+    /// detach instant).
+    ///
+    /// Identical algorithm to the inline walks in
+    /// [`detach_subtree`](Self::detach_subtree) and to the Bevy
+    /// adapter's `staging_system` detach handler — kept as a private
+    /// helper here so [`detach`](Self::detach) doesn't have to inline
+    /// the same eight lines a third time.
+    fn derive_subtree_composite_state(
+        sim: &Simulation,
+        root_id: jeod_dynamics::MassBodyId,
+        target_id: jeod_dynamics::MassBodyId,
+        root_state: RefFrameState,
+    ) -> RefFrameState {
+        let tree = sim
+            .mass_tree
+            .as_ref()
+            .expect("derive_subtree_composite_state: no mass tree");
+        let mut chain = Vec::<jeod_dynamics::MassBodyId>::new();
+        let mut cur = target_id;
+        while cur != root_id {
+            chain.push(cur);
+            cur = tree.parent(cur).expect(
+                "derive_subtree_composite_state: chain walk hit a parentless intermediate \
+                 before reaching the tree root",
+            );
+        }
+        chain.reverse();
+        let mut current_state = root_state;
+        let mut current_node_id = root_id;
+        for next_id in chain {
+            let next_node = tree.get(next_id);
+            let current_node = tree.get(current_node_id);
+            let t_current_struct_to_body = current_node.composite_properties.t_parent_this;
+            let t_next_struct_to_body = next_node.composite_properties.t_parent_this;
+            let offset_struct =
+                next_node.composite_wrt_pstr.position - current_node.composite_properties.position;
+            let offset_in_current_body = t_current_struct_to_body * offset_struct;
+            let t_current_body_to_next_body = t_next_struct_to_body
+                * next_node.structure_point.t_parent_this
+                * t_current_struct_to_body.transpose();
+            let rel = MassPointState {
+                position: offset_in_current_body,
+                t_parent_this: t_current_body_to_next_body,
+            };
+            current_state = jeod_dynamics::propagate_forward(&current_state, &rel);
+            current_node_id = next_id;
+        }
+        current_state
     }
 
     /// Mark every Simulation body whose `mass_body_id` is in
