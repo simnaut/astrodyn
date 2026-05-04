@@ -183,7 +183,15 @@ impl Simulation {
         self.propagate_kinematic_state(&body_integ_origins_post);
 
         // ── 9. Derived states ──
-        self.compute_derived_states(sun_pos, moon_pos, &body_integ_origins);
+        // Pass the post-integration integ origins: stage 8b's frame switch
+        // can rewrite `body.integ_frame_id` and `body.trans` into a new
+        // integration frame. Any derived-state path that calls
+        // `body.trans.to_inertial(integ_origin)` (solar beta, earth
+        // lighting) must see the matching new-frame origin, not the
+        // pre-step snapshot. Bodies that did not switch have unchanged
+        // frame ids and the recomputed offsets are bit-identical, so
+        // there is no observable difference for them.
+        self.compute_derived_states(sun_pos, moon_pos, &body_integ_origins_post);
 
         // Advance any free-flying detached subtrees ballistically. This
         // matches JEOD's behavior for tree roots whose grav_interaction
