@@ -139,18 +139,28 @@ impl<P: Planet> GravParam<P> {
     pub const fn raw_si(&self) -> f64 {
         self.value
     }
+}
 
+impl GravParam<SelfPlanet> {
     /// Relabel a planet-erased ([`SelfPlanet`]) μ as belonging to a
     /// specific planet `Q`.
     ///
-    /// Provided **only** for the registry-side boundary code that
-    /// stores μ values keyed by a runtime source ID — the gravity
-    /// source registry, `GravitySourceTyped`, the dynamic mu carried
-    /// on `PlanetShape`, and similar surfaces where the planet
-    /// identity is determined at runtime. Mission code that knows the
-    /// planet at compile time should construct a planet-tagged
-    /// `GravParam<Q>` directly via `m3_per_s2_for::<Q>()` or one of
-    /// the `mu_*()` constants.
+    /// Restricted to `impl GravParam<SelfPlanet>` so it can only retag a
+    /// μ that is already planet-erased — a planet-pinned `GravParam<Sun>`
+    /// cannot accidentally be relabeled as `GravParam<Earth>` via this
+    /// method. Provided **only** for the registry-side boundary code
+    /// that stores μ values keyed by a runtime source ID — the gravity
+    /// source registry, `GravitySourceTyped`, the dynamic mu carried on
+    /// `PlanetShape`, and similar surfaces where the planet identity is
+    /// determined at runtime. Mission code that knows the planet at
+    /// compile time should construct a planet-tagged `GravParam<Q>`
+    /// directly via `m3_per_s2_for::<Q>()` or one of the `mu_*()`
+    /// constants.
+    ///
+    /// A genuine `<P>` → `<Q>` retag for two distinct named planets is
+    /// almost never the right operation (μ is per-body); if you need it
+    /// for a different reason, add a separate, clearly-named escape
+    /// hatch instead of widening this impl block.
     #[inline]
     pub fn relabel<Q: Planet>(self) -> GravParam<Q> {
         GravParam::<Q>::from_si(self.value)
