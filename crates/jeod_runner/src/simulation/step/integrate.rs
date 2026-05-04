@@ -218,6 +218,26 @@ impl Simulation {
             // fields of `body` are borrowed mutably for the integrator.
             let time_scale_factor = self.time.time_scale_factor;
             for (body_idx, body) in self.bodies.iter_mut().enumerate() {
+                // JEOD_INV: DB.17 — only the root's state is integrated;
+                // kinematic children's `trans`/`rot` were already
+                // overwritten by `propagate_kinematic_state` earlier in
+                // this step from the parent's state composed with the
+                // link geometry. Skip integration here so we don't
+                // stomp the kinematic value with a force-driven update.
+                //
+                // Integrator-coupled sub-states that are *not* part of
+                // the orbital integration (flat-plate plate
+                // temperatures via the derivative-class arm) are
+                // routed through the Scheduled path inside
+                // `compute_interactions` for kinematic_only bodies,
+                // so a kinematic child's thermal state still advances
+                // and `radiation_force` is still published. Mirrors
+                // the analogous Bevy fix for `flat_plate_srp_system`
+                // (PR #287). The skip below only gates orbital
+                // trans/rot integration.
+                if body.kinematic_only {
+                    continue;
+                }
                 let stage_inputs_and_order = body
                     .flat_plate_state
                     .as_ref()
@@ -434,6 +454,13 @@ impl Simulation {
                     .all(|b| matches!(b.integrator, jeod_dynamics::IntegratorType::Rk4)),
                 "contact-coupled path (inter-body or ground-contact pairs) requires \
                  RK4 integrator on all bodies"
+            );
+            assert!(
+                self.bodies.iter().all(|b| !b.kinematic_only),
+                "contact-coupled path is incompatible with kinematic-only bodies: \
+                 contact forces require an integrated state for every participant. \
+                 Either clear `kinematic_only` on every contact-coupled body, or \
+                 detach the kinematic child before registering contact pairs."
             );
             assert!(
                 self.bodies
