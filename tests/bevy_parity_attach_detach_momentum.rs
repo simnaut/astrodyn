@@ -1339,12 +1339,15 @@ fn bevy_runner_parity_attach_detach_momentum() {
     // `staging_system` detach handler to read the parent's
     // `parent_pre_composite_props.position` as `(0, 0, 0)` instead of
     // the post-attach combined CoM. This is the dual-write
-    // coordination bug tracked under sub-issue #299 (reparent body
-    // frame entity under new parent on attach) — not in scope for
-    // this PR (sub-issue #297 is runner-side momentum conservation
-    // only). Once the Bevy adapter migrates the legacy AttachEvent
-    // path to write into both arenas (or onto a single source of
-    // truth), the parent-side post-detach parity assertion can be
-    // added as a follow-up.
+    // coordination bug tracked under sub-issue #308 (mass-tree
+    // dual-write coordination — `composite_mass_system` reverts
+    // `MassPropertiesC` for detached entities before the detach
+    // handler reads it) — not in scope for this PR (sub-issue #297 is
+    // runner-side momentum conservation only). Sub-issue #299 covers
+    // a separate frame-tree-reparent question and is not the
+    // mechanism above. Once the Bevy adapter resolves the #308 race
+    // (e.g. by capturing live composite state in `staging_system`
+    // before removing the `MassChildOf` edge), the parent-side
+    // post-detach parity assertion can be added as a follow-up.
     let _ = runner_parent_post;
 }
