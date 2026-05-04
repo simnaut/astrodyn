@@ -8,6 +8,7 @@
 use glam::DVec3;
 
 use crate::AtmosphereState;
+use jeod_quantities::frame::SelfPlanet;
 
 /// Exponential atmosphere model parameters.
 #[derive(Debug, Clone, Copy)]
@@ -39,19 +40,19 @@ impl ExponentialAtmosphere {
     ///
     /// # Arguments
     /// * `altitude` - Geodetic altitude above the reference ellipsoid (m)
-    pub fn density(&self, altitude: f64) -> AtmosphereState {
+    pub fn density(&self, altitude: f64) -> AtmosphereState<SelfPlanet> {
         // Cap altitude to avoid numerical overflow in exp() for deeply
         // sub-surface altitudes. Threshold accounts for h_0.
         let min_altitude = self.h_0 - self.scale_height;
         let effective_altitude = altitude.max(min_altitude);
         let density = self.rho_0 * (-(effective_altitude - self.h_0) / self.scale_height).exp();
 
-        AtmosphereState {
-            density,
-            temperature: 0.0,
-            pressure: 0.0,
-            wind: DVec3::ZERO,
-        }
+        // The exponential model has no wind; planet identity is left
+        // erased (`SelfPlanet`) — the orchestrator
+        // [`crate::compute_corotation_wind`] supplies any non-zero wind
+        // and the runner relabels at the boundary if a concrete planet
+        // is needed.
+        AtmosphereState::<SelfPlanet>::from_raw(density, 0.0, 0.0, DVec3::ZERO)
     }
 }
 
@@ -122,6 +123,6 @@ mod tests {
     #[test]
     fn wind_is_zero() {
         let atmos = ExponentialAtmosphere::default();
-        assert_eq!(atmos.density(400_000.0).wind, DVec3::ZERO);
+        assert_eq!(atmos.density(400_000.0).wind.raw_si(), DVec3::ZERO);
     }
 }

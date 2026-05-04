@@ -370,7 +370,7 @@ impl IntegrableObject for FlatPlateState {
 /// - `t_struct_body`: structural-to-body rotation. `DMat3::IDENTITY` when structure = body.
 pub fn compute_drag(
     drag_config: &DragConfig,
-    atmos: &jeod_atmosphere::AtmosphereState,
+    atmos: &jeod_atmosphere::AtmosphereState<jeod_quantities::frame::SelfPlanet>,
     velocity: DVec3,
     rot: Option<&RotationalState>,
     t_struct_body: DMat3,
@@ -726,14 +726,27 @@ pub fn evaluate_ground_contact_pair(
 /// `Velocity<PlanetInertial<P>>` — not root-inertial. RF.10.
 pub fn compute_drag_typed<P: jeod_quantities::frame::Planet, V: Vehicle>(
     drag_config: &DragConfigTyped,
-    atmos: &jeod_atmosphere::AtmosphereState,
+    atmos: &jeod_atmosphere::AtmosphereState<P>,
     velocity: Velocity<jeod_quantities::frame::PlanetInertial<P>>,
     rot: Option<&RotationalState>,
     t_struct_body: DMat3,
 ) -> AerodynamicForceTyped<V> {
+    // The kernel reads `atmos.density` and `atmos.wind.raw_si()`; both
+    // are bit-identical to a `<SelfPlanet>`-tagged equivalent. Synthesize
+    // the planet-erased view at the call site to reuse the numeric
+    // path. The compile-time guard is the function signature: a caller
+    // cannot pass `&AtmosphereState<Mars>` together with a
+    // `Velocity<PlanetInertial<Earth>>`.
+    let atmos_self =
+        jeod_atmosphere::AtmosphereState::<jeod_quantities::frame::SelfPlanet>::from_raw(
+            atmos.density,
+            atmos.temperature,
+            atmos.pressure,
+            atmos.wind.raw_si(),
+        );
     let raw = compute_drag(
         &drag_config.to_untyped(),
-        atmos,
+        &atmos_self,
         velocity.raw_si(),
         rot,
         t_struct_body,

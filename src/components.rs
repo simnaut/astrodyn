@@ -425,10 +425,17 @@ pub struct GravityTorqueC(pub Torque<BodyFrame<SelfRef>>);
 // JEOD_INV: AT.01 — active flag gates computation (presence of AtmosphericStateC = active)
 /// Atmospheric state at the vehicle's position.
 ///
-/// Written by the atmosphere system. Read by the aerodynamic drag system.
+/// Wraps a typed `AtmosphereState<SelfPlanet>` whose `wind` field is
+/// `Velocity<PlanetInertial<SelfPlanet>>` — the planet identity for
+/// the atmosphere is determined at runtime by the planet entity carried
+/// in [`crate::AtmosphereModelR`]. Mission code that knows the planet
+/// at compile time can read the typed sibling
+/// `AtmosphereState<P>` directly off-component via the relabel boundary
+/// in `aero_drag_system`. Written by the atmosphere system; read by the
+/// aerodynamic drag system.
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
 #[reflect(opaque, Component)]
-pub struct AtmosphericStateC(pub jeod_sim::AtmosphereState);
+pub struct AtmosphericStateC(pub jeod_sim::AtmosphereState<SelfPlanet>);
 
 /// Typed structural→body rotation for a vehicle entity.
 ///
