@@ -41,8 +41,10 @@
 //! 1. **Init-time `add → remove → re-add`** — JEOD `mass.py:46-49`
 //!    pattern. The first `add` queues a `MassProperties::new(400_000)`
 //!    action, the `remove` cancels it, then the second `add` queues
-//!    `MassProperties::new(100_000)`. After the first `app.update()`
-//!    only the second action has fired and mass = 100 000.
+//!    `MassProperties::new(100_000)`. After the first `FixedUpdate`
+//!    tick (driven via `Time::<Fixed>::advance_by` +
+//!    `run_schedule(FixedUpdate)` rather than `app.update()`) only the
+//!    second action has fired and mass = 100 000.
 //! 2. **Mid-sim mass change** — at `t = MID_SIM_MASS_CHANGE_TIME`
 //!    (`150 s`, half-way into the run) the test queues another mass
 //!    change to 50 000 kg. Because the trajectory is mass-independent
@@ -87,11 +89,13 @@ const DT: f64 = 0.03125;
 /// `SIM_dyncomp::RUN_2`'s `input.py` runs for 28 800 s (8 hours), but
 /// the body-action lifecycle parity question is fully exercised within
 /// the first few minutes — the cross-validation only needs enough
-/// samples to detect any drift the lifecycle API would introduce, and
-/// 5 minutes at 32 Hz is 9 600 ticks (5 of which are between
-/// reference-CSV checkpoints at 60 s cadence). The full 8-hour run
-/// test against `dyncomp_run2_state.csv` is already covered by
-/// `tier3_simulation_run2_3dof` (`tier3_sim_dyncomp_run2.rs`).
+/// samples to detect any drift the lifecycle API would introduce. At
+/// 32 Hz a 5-minute run is 9 600 integration ticks and crosses 5
+/// reference-CSV checkpoints (the CSV logs at 60 s cadence, so within
+/// the 300 s after t=0 the checkpoints land at t = 60, 120, 180, 240,
+/// 300 s). The full 8-hour run against `dyncomp_run2_state.csv` is
+/// already covered by `tier3_simulation_run2_3dof`
+/// (`tier3_sim_dyncomp_run2.rs`).
 const STOP_TIME: f64 = 300.0;
 
 /// Mid-run mass change: half-way into the run.

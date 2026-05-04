@@ -283,13 +283,30 @@ impl Plugin for JeodPlugin {
                 // body-frame registration pass.
                 systems::sync_body_mass_point_ref_system
                     .after(systems::register_body_frames_system),
-                // Apply body actions queued during scenario setup
-                // (e.g. mission plugin's `Startup` system that calls
-                // `commands.add_body_action(...)`). Runs after the
-                // body has been registered so the subject entity's
-                // pipeline-side components are wired, and after the
-                // intake system so add/remove pairs queued in the
-                // same `Startup` collapse correctly.
+                // Apply body actions queued during scenario setup.
+                // Runs after the body has been registered so the
+                // subject entity's pipeline-side components are
+                // wired, and the apply system runs after the intake
+                // system so add/remove pairs queued in the same
+                // `Startup` collapse correctly.
+                //
+                // Mission-side Startup systems should queue actions
+                // by writing `BodyActionEvent` directly via a
+                // `MessageWriter<BodyActionEvent>`: those writes are
+                // visible to `body_action_intake_system` immediately
+                // and are picked up in this same Startup pass.
+                //
+                // The `Commands::queue`-based path
+                // (`BodyActionCommandsExt::add_body_action`) goes
+                // through `ApplyDeferred`, which runs *after* the
+                // current Startup system stage's queued commands are
+                // applied — so a write made via `Commands` from a
+                // Startup system that has no explicit `.before(
+                // body_action_intake_system)` ordering may not be
+                // observed by the same-Startup intake pass. Used in
+                // `FixedUpdate` it is fine: `ApplyDeferred` between
+                // ticks lands the message before the next tick's
+                // intake system.
                 body_action::body_action_intake_system
                     .after(systems::sync_body_mass_point_ref_system),
                 body_action::body_action_system.after(body_action::body_action_intake_system),
