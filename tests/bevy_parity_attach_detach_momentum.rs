@@ -1405,6 +1405,143 @@ fn bevy_detached_body_skips_force_pipeline() {
     );
 }
 
+/// Regression: the detach handler must read the parent's
+/// pre-detach composite-CoM from the live `MassTreeR` arena, not
+/// from `MassPropertiesC`. The ECS-tree fast path in
+/// `composite_mass_system` runs **before** `staging_system` in the
+/// same FixedUpdate tick (and on every subsequent tick the parent
+/// has no `MassChildOf` edge), and reverts the parent's
+/// `MassPropertiesC` to its `CoreMassPropertiesC` cache. Reading
+/// `parent_pre_composite_props` from `MassPropertiesC` after that
+/// revert pulls the parent's *core* mass props (specifically
+/// `position` = core CoM, typically zero) instead of the live
+/// post-attach composite CoM, corrupting the CoM-shift formula
+/// `parent_pre.position − parent_post.position` and leaving the
+/// parent's post-detach inertial position equal to its pre-detach
+/// inertial position (zero shift) instead of the JEOD-faithful
+/// `−Δ_composite_struct` shift.
+///
+/// This test exercises that exact race with a non-trivial CoM
+/// offset between attach and detach: `parent.core.position = 0`,
+/// `child.position` offset by `(3, 0, 0)` along the structure
+/// frame. The merged composite CoM shifts to
+/// `(m_c · 3) / (m_p + m_c) = 80 · 3 / 500 = 0.48 m`. After detach,
+/// parent's composite CoM returns to zero. The parent's post-detach
+/// inertial position must therefore shift by
+/// `(0 − 0.48) m = −0.48 m` along x relative to the merged
+/// (post-attach) composite-body inertial position — JEOD's
+/// composite-CoM-tracks-struct invariant. Without the live-arena
+/// read in the detach handler, the shift is computed as
+/// `(0 − 0) m = 0` and the parent's post-detach position is wrong
+/// by `0.48 m`.
+///
+/// One step suffices: the bug surfaces in tick 2 — the first tick
+/// after attach, when `composite_mass_system` first reverts the
+/// parent's `MassPropertiesC` to core. No multi-step propagation
+/// needed.
+#[test]
+fn bevy_detach_reads_live_composite_through_mass_property_revert() {
+    let parent_mass = MassProperties::with_inertia(
+        420.0,
+        DMat3::from_diagonal(DVec3::new(150.0, 200.0, 250.0)),
+        DVec3::ZERO,
+    );
+    let child_mass = MassProperties::with_inertia(
+        80.0,
+        DMat3::from_diagonal(DVec3::new(40.0, 50.0, 60.0)),
+        DVec3::ZERO,
+    );
+    // Co-moving: identical velocity → no induced spin in the merge.
+    // Pure CoM-tracking case so the only thing the post-detach shift
+    // depends on is the composite-CoM delta in struct frame.
+    let v0 = DVec3::new(0.0, 7600.0, 0.0);
+    let parent_trans = TranslationalState {
+        position: DVec3::new(7e6, 0.0, 0.0),
+        velocity: v0,
+    };
+    let child_trans = TranslationalState {
+        position: DVec3::new(7e6 + 3.0, 0.0, 0.0),
+        velocity: v0,
+    };
+    let parent_rot = RotationalState {
+        quaternion: JeodQuat::identity(),
+        ang_vel_body: DVec3::ZERO,
+    };
+    let child_rot = parent_rot;
+    let offset = DVec3::new(3.0, 0.0, 0.0);
+    let dt = 1.0;
+
+    let (mut app, parent_entity, child_entity, _, _) = build_two_body_world(
+        dt,
+        parent_mass,
+        parent_trans,
+        parent_rot,
+        child_mass,
+        child_trans,
+        child_rot,
+    );
+
+    // Attach + step. The attach branch writes the merged composite
+    // into the parent's `TranslationalStateC` (post-attach inertial
+    // position = parent_pre.position + cm_delta_inertial).
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset,
+            t_parent_child: DMat3::IDENTITY,
+        });
+    step(&mut app, 1, dt);
+
+    let parent_pos_post_attach = read_position(app.world(), parent_entity);
+    // Soft co-moving merge: cm_delta_struct = combined.position − 0
+    //   = (m_c · offset) / total = 80 · 3 / 500 = 0.48 m along x.
+    // With identity attitude, struct == body == inertial here.
+    let cm_delta_attach = DVec3::new(80.0 * 3.0 / 500.0, 0.0, 0.0);
+    let expected_parent_pos_post_attach = parent_trans.position + cm_delta_attach;
+    assert!(
+        (parent_pos_post_attach - expected_parent_pos_post_attach).length() < 1e-9,
+        "precondition: post-attach parent position must follow combined-CoM \
+         shift: bevy={parent_pos_post_attach:?} expected={expected_parent_pos_post_attach:?}"
+    );
+
+    // Detach + step. This is the tick where `composite_mass_system`
+    // reverts the parent's `MassPropertiesC` to core BEFORE
+    // `staging_system` runs. The detach handler must still see the
+    // live composite (cm = 0.48 m struct) — read from the arena —
+    // not the reverted core (cm = 0). The post-detach inertial
+    // position shifts by `−cm_delta_attach` from the post-attach
+    // value. There is no integrator state on the parent in this
+    // minimal harness, so `integration_system` does not advance
+    // `TranslationalStateC` — the CoM-shift is the only mutation.
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<DetachEvent>>()
+        .write(DetachEvent {
+            child: child_entity,
+        });
+    step(&mut app, 1, dt);
+
+    let parent_pos_post_detach = read_position(app.world(), parent_entity);
+    // The parent has no integrator state in this minimal harness so
+    // `integration_system` does not advance `TranslationalStateC` —
+    // the only mutation between attach and detach is the staging
+    // handler's CoM-shift writeback. Expected value: post-attach
+    // position - cm_delta_attach == original pre-attach position.
+    let expected_parent_pos_post_detach = parent_trans.position;
+    assert!(
+        (parent_pos_post_detach - expected_parent_pos_post_detach).length() < 1e-9,
+        "post-detach parent position must shift by −cm_delta_struct \
+         (computed against the live arena composite, not the reverted \
+         MassPropertiesC core): bevy={parent_pos_post_detach:?} expected={expected_parent_pos_post_detach:?}\n\
+         If this fails by ~{}m along x, `staging_system`'s detach handler is \
+         reading `parent_pre_composite_props` from `MassPropertiesC` (which \
+         `composite_mass_system` reverted to core in this tick) instead of \
+         from `tree.get(tree_root_id).composite_properties`.",
+        cm_delta_attach.x,
+    );
+}
+
 // ════════════════════════════════════════════════════════════════════
 // Cross-runtime parity (sub-issue #297)
 // ════════════════════════════════════════════════════════════════════
@@ -1674,29 +1811,70 @@ fn bevy_runner_parity_attach_detach_momentum() {
         "post-detach child ang_vel differs"
     );
 
-    // Note: parent-side post-detach CoM shift parity is NOT asserted
-    // here. The runner's `Simulation::detach` writes the post-detach
-    // parent CoM-shift directly into `body.trans` (the runner's mass
-    // tree is the single source of truth, no dual-write race). The
-    // Bevy adapter writes the same shift into `TranslationalStateC`
-    // during `staging_system`, but the legacy `MassTreeR` arena path
-    // does not synchronise with the ECS-tree
-    // (`MassChildOf` + `composite_mass_system`); the latter reverts
-    // the parent's `MassPropertiesC` to its `CoreMassPropertiesC`
-    // each tick when the ECS tree is empty (the fast path in
-    // `composite_mass_system`), causing the next tick's
-    // `staging_system` detach handler to read the parent's
-    // `parent_pre_composite_props.position` as `(0, 0, 0)` instead of
-    // the post-attach combined CoM. This is the dual-write
-    // coordination bug tracked under sub-issue #308 (mass-tree
-    // dual-write coordination — `composite_mass_system` reverts
-    // `MassPropertiesC` for detached entities before the detach
-    // handler reads it) — not in scope for this PR (sub-issue #297 is
-    // runner-side momentum conservation only). Sub-issue #299 covers
-    // a separate frame-tree-reparent question and is not the
-    // mechanism above. Once the Bevy adapter resolves the #308 race
-    // (e.g. by capturing live composite state in `staging_system`
-    // before removing the `MassChildOf` edge), the parent-side
-    // post-detach parity assertion can be added as a follow-up.
-    let _ = runner_parent_post;
+    // Parent-side post-detach CoM-shift parity. The runner's
+    // `Simulation::detach` writes the post-detach parent CoM-shift
+    // directly into `body.trans` (the runner's mass tree is the
+    // single source of truth). The Bevy adapter writes the same
+    // shift into `TranslationalStateC` during `staging_system` —
+    // reading `parent_pre_composite_props` from the live
+    // `MassTreeR` arena rather than the entity's `MassPropertiesC`
+    // (which the ECS-tree fast path in `composite_mass_system`
+    // reverts to its `CoreMassPropertiesC` cache when no
+    // `MassChildOf` edge is present). With both adapters keying off
+    // the same arena composite, the parent-side CoM-shift is
+    // bit-identical across runtimes.
+    let bevy_parent_pos_post_detach = read_position(app.world(), parent_entity);
+    let bevy_parent_vel_post_detach = read_velocity(app.world(), parent_entity);
+    let bevy_parent_q_post_detach = app
+        .world()
+        .get::<RotationalStateC>(parent_entity)
+        .unwrap()
+        .0
+        .to_untyped()
+        .quaternion;
+    let bevy_parent_w_post_detach = read_ang_vel(app.world(), parent_entity);
+
+    assert_eq!(
+        bevy_parent_pos_post_detach.to_array().map(f64::to_bits),
+        runner_parent_post.trans.position.to_array().map(f64::to_bits),
+        "post-detach parent position differs across Bevy / runner: bevy={bevy_parent_pos_post_detach:?} runner={:?}",
+        runner_parent_post.trans.position
+    );
+    assert_eq!(
+        bevy_parent_vel_post_detach.to_array().map(f64::to_bits),
+        runner_parent_post
+            .trans
+            .velocity
+            .to_array()
+            .map(f64::to_bits),
+        "post-detach parent velocity differs: bevy={bevy_parent_vel_post_detach:?} runner={:?}",
+        runner_parent_post.trans.velocity
+    );
+    let runner_parent_post_rot = runner_parent_post
+        .rot
+        .expect("6-DOF runner parent must keep rot post-detach");
+    assert_eq!(
+        [
+            bevy_parent_q_post_detach.scalar().to_bits(),
+            bevy_parent_q_post_detach.vector().x.to_bits(),
+            bevy_parent_q_post_detach.vector().y.to_bits(),
+            bevy_parent_q_post_detach.vector().z.to_bits(),
+        ],
+        [
+            runner_parent_post_rot.quaternion.scalar().to_bits(),
+            runner_parent_post_rot.quaternion.vector().x.to_bits(),
+            runner_parent_post_rot.quaternion.vector().y.to_bits(),
+            runner_parent_post_rot.quaternion.vector().z.to_bits(),
+        ],
+        "post-detach parent quaternion differs"
+    );
+    assert_eq!(
+        bevy_parent_w_post_detach.to_array().map(f64::to_bits),
+        runner_parent_post_rot
+            .ang_vel_body
+            .to_array()
+            .map(f64::to_bits),
+        "post-detach parent ang_vel differs: bevy={bevy_parent_w_post_detach:?} runner={:?}",
+        runner_parent_post_rot.ang_vel_body
+    );
 }

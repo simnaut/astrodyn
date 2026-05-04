@@ -437,6 +437,7 @@ MA.10–MA.21 gap fill. Source: `../jeod/models/dynamics/mass/src/`.
 | Tag | Invariant | Enforcement | Category | Our Status |
 |-----|-----------|-------------|----------|------------|
 | MA.22 | Detach-on-drop is safe: destroying a still-attached body must not leave dangling parent pointers (`mass_body.cc:94-108` pattern — `mass_children.remove()` is resilient) | structural | structural | n/a (Rust's ownership model: references don't outlive owners; `MassBodyStore` is an arena of values, so a freed `MassBodyId` cannot produce a dangling pointer) |
+| MA.23 | Composite-property reads at detach see the live (pre-detach) composite, not a downstream cache (JEOD reads `parent->mass.composite_properties` straight from `MassBody` in `mass_attach.cc::detach_update_properties`; the value member is the canonical store, no cache layer can shadow it). | structural | consistency | enforced (`bevy_jeod::staging_system` reads `parent_pre_composite_props` from the `MassTreeR` arena via `tree.get(tree_root_id).composite_properties` — the same arena `Simulation::detach_subtree` reads — instead of from the entity's `MassPropertiesC`, which the ECS-tree fast path in `composite_mass_system` may have just reverted to its `CoreMassPropertiesC` cache during the same tick. The arena tree is mutated in lock-step with the detach handler so its composite is the live pre-detach value at read time. Both adapters thus key the parent-side CoM-shift formula off the same pre-detach composite, keeping post-detach parent state bit-identical.) |
 
 ## Section DM: DynManager (gap fill)
 
