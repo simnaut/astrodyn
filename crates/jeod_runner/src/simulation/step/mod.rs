@@ -170,19 +170,6 @@ impl Simulation {
 
         self.run_integration(dt, &body_integ_origins)?;
 
-        // ── 8c. Kinematic state propagation (root → leaves), post-integration ──
-        // The integrator just produced fresh root-body state; rerun
-        // the kinematic walk so every non-root child's `body.trans` /
-        // `body.rot` reflects the same-tick parent state. Mirrors
-        // JEOD's `DynBody::propagate_state_from_structure` invocation
-        // at the end of every integration cycle
-        // (`models/dynamics/dyn_body/src/dyn_body_propagate_state.cc`).
-        // Without this, downstream consumers (`Simulation::body`,
-        // derived-state computations, frame-tree sync) would observe
-        // a one-tick-stale child state — i.e. the previous tick's
-        // parent state composed with the link, not the freshly-
-        // integrated one.
-        //
         // Recompute the per-body integ origins after stage 8b's frame
         // switch evaluation: a body that just switched integration
         // frames has both `integ_frame_id` and `body.trans` in its new
@@ -202,9 +189,8 @@ impl Simulation {
                 }
             })
             .collect();
-        self.propagate_kinematic_state(&body_integ_origins_post);
 
-        // ── 8d. Frame-attached body propagation, post-integration ──
+        // ── 8c. Frame-attached body propagation, post-integration ──
         // Symmetric to 3a: stage 8b's frame switch can rewrite frame
         // tree state mid-step (atmosphere reads pfix rotation etc.),
         // and the integrator just produced fresh source-body state.
@@ -212,7 +198,45 @@ impl Simulation {
         // (`Simulation::body(idx)`, derived states below) is consistent
         // with the just-finished frame-tree updates and with the
         // parent reference frame's current state.
+        //
+        // Must run **before** the post-integration kinematic walk
+        // below: a frame-attached body that is also a mass-tree root
+        // would otherwise hand its kinematic descendants a stale
+        // pre-frame-attach root state — same constraint as the 3a/3b
+        // pre-integration ordering, applied to the post-integration
+        // sweep. Inverting these two calls reproduces the bug whose
+        // pre-integration twin landed in 5dec6d7.
+        // ── 8c. Frame-attached body propagation, post-integration ──
+        // Symmetric to 3a: stage 8b's frame switch can rewrite frame
+        // tree state mid-step (atmosphere reads pfix rotation etc.),
+        // and the integrator just produced fresh source-body state.
+        // Re-derive frame-attached body states so the post-step view
+        // (`Simulation::body(idx)`, derived states below) is consistent
+        // with the just-finished frame-tree updates and with the
+        // parent reference frame's current state.
+        //
+        // Must run **before** the post-integration kinematic walk
+        // below: a frame-attached body that is also a mass-tree root
+        // would otherwise hand its kinematic descendants a stale
+        // pre-frame-attach root state — same constraint as the 3a/3b
+        // pre-integration ordering, applied to the post-integration
+        // sweep. Inverting these two calls reproduces the bug whose
+        // pre-integration twin landed in 5dec6d7.
         self.propagate_frame_attached_state(&body_integ_origins_post);
+
+        // ── 8d. Kinematic state propagation (root → leaves), post-integration ──
+        // The integrator just produced fresh root-body state; rerun
+        // the kinematic walk so every non-root child's `body.trans` /
+        // `body.rot` reflects the same-tick parent state. Mirrors
+        // JEOD's `DynBody::propagate_state_from_structure` invocation
+        // at the end of every integration cycle
+        // (`models/dynamics/dyn_body/src/dyn_body_propagate_state.cc`).
+        // Without this, downstream consumers (`Simulation::body`,
+        // derived-state computations, frame-tree sync) would observe
+        // a one-tick-stale child state — i.e. the previous tick's
+        // parent state composed with the link, not the freshly-
+        // integrated one.
+        self.propagate_kinematic_state(&body_integ_origins_post);
 
         // ── 9. Derived states ──
         // Pass the post-integration integ origins: stage 8b's frame switch
