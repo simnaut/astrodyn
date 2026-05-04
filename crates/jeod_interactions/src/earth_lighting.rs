@@ -161,11 +161,18 @@ pub fn calc_lighting_params(
     }
 }
 
-/// Compute earth lighting conditions for an observer.
+/// Raw kernel: compute earth lighting conditions for an observer.
 ///
 /// Pure function: takes observer position and celestial body positions/radii,
-/// returns the complete lighting state. All positions are in the Earth-centered
-/// inertial frame.
+/// returns the complete lighting state. All positions are in the simulation
+/// root inertial frame (caller-asserted — the input phantoms are absent).
+///
+/// **Mission code should call [`compute_earth_lighting_typed`] instead.** That
+/// typed entry takes `Position<RootInertial>` for all three positions, which
+/// the compiler enforces at the call site; it forwards to this kernel via
+/// `.raw_si()`. This raw kernel exists for callers that already hold raw
+/// `DVec3` from a hot path (no useful phantom available) and explicitly want
+/// to skip the typed boundary.
 ///
 /// Port of JEOD `EarthLighting::calc_lighting`.
 ///

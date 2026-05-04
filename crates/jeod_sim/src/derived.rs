@@ -252,12 +252,22 @@ pub fn compute_relative_state(
     }
 }
 
-/// Compute relative state expressed in the LVLH frame of the reference vehicle.
+/// Raw kernel: compute relative state expressed in the LVLH frame of the
+/// reference vehicle.
 ///
 /// Takes the inertial relative position/velocity and rotates them into the
 /// LVLH frame of the reference vehicle. Velocity includes the Coriolis
 /// correction for the rotating LVLH frame (ω_LVLH × pos_LVLH), matching
 /// JEOD's `compute_relative_state` through the frame tree.
+///
+/// **Mission code should call [`compute_lvlh_relative_state_typed`] instead.**
+/// That typed entry takes `Position<PlanetInertial<P>>`/
+/// `Velocity<PlanetInertial<P>>` for both chief and deputy, which the
+/// compiler enforces at the call site (preventing chief/deputy frame
+/// mixing), and forwards to this kernel via `.raw_si()`. This raw kernel
+/// exists for callers that already hold raw `DVec3` from a hot path
+/// (no useful phantom available) and explicitly want to skip the typed
+/// boundary.
 pub fn compute_lvlh_relative_state(
     ref_pos: DVec3,
     ref_vel: DVec3,
@@ -285,6 +295,35 @@ pub fn compute_lvlh_relative_state(
         position: pos_lvlh.m_at::<Lvlh<SelfRef>>(),
         velocity: vel_lvlh.m_per_s_at::<Lvlh<SelfRef>>(),
     }
+}
+
+/// Typed sibling of [`compute_lvlh_relative_state`].
+///
+/// Takes the chief and deputy positions and velocities in the same
+/// planet-centered inertial frame `<PlanetInertial<P>>` and returns
+/// the LVLH-frame relative state. The structural guarantee is at the
+/// call site: passing a body's `Position<IntegrationFrame>` directly,
+/// or mixing chief and deputy frames (e.g., chief in `<Earth>` and
+/// deputy in `<Moon>`), is a compile error.
+///
+/// The LVLH frame is anchored to the chief vehicle's planet-centered
+/// inertial frame, matching JEOD `LvlhFrame::update` (lvlh_frame.cc),
+/// which subscribes to `planet->inertial` via
+/// `add_relative_state_to_lvlh_frame`. Bit-identical kernel — calls
+/// through to the raw [`compute_lvlh_relative_state`] entry via
+/// `.raw_si()` at the boundary.
+pub fn compute_lvlh_relative_state_typed<P: jeod_quantities::frame::Planet>(
+    ref_pos: Position<jeod_quantities::frame::PlanetInertial<P>>,
+    ref_vel: Velocity<jeod_quantities::frame::PlanetInertial<P>>,
+    subj_pos: Position<jeod_quantities::frame::PlanetInertial<P>>,
+    subj_vel: Velocity<jeod_quantities::frame::PlanetInertial<P>>,
+) -> LvlhRelativeState {
+    compute_lvlh_relative_state(
+        ref_pos.raw_si(),
+        ref_vel.raw_si(),
+        subj_pos.raw_si(),
+        subj_vel.raw_si(),
+    )
 }
 
 /// Typed sibling of [`compute_orbital_elements`].
@@ -446,5 +485,45 @@ mod tests {
         let pos_pfix = t_inertial_pfix * pos_inertial;
         let expected = GeodeticState::from_planet_fixed(pos_pfix, R_EQ, R_POL);
         assert_eq!(geo, expected);
+    }
+
+    /// `compute_lvlh_relative_state_typed` is a thin boundary wrapper:
+    /// it must produce bit-identical output to the raw kernel when fed
+    /// the same SI values. The non-trivial chief/deputy geometry below
+    /// (offsets in all three axes, eccentric chief orbit) confirms the
+    /// boundary preserves numerics while attaching the
+    /// `<PlanetInertial<P>>` phantom on every input.
+    #[test]
+    fn lvlh_relative_typed_round_trip() {
+        use jeod_quantities::ext::Vec3Ext;
+        use jeod_quantities::frame::{Earth, PlanetInertial};
+
+        // ISS-style chief, deputy offset by ~100 m radial+along-track.
+        let ref_pos = DVec3::new(6.778e6, 0.0, 0.0);
+        let ref_vel = DVec3::new(0.0, 7.668e3, 0.0);
+        let subj_pos = DVec3::new(6.778e6 + 50.0, 80.0, 10.0);
+        let subj_vel = DVec3::new(-0.05, 7.668e3 + 0.06, 0.0);
+
+        let raw = compute_lvlh_relative_state(ref_pos, ref_vel, subj_pos, subj_vel);
+        let typed = compute_lvlh_relative_state_typed(
+            ref_pos.m_at::<PlanetInertial<Earth>>(),
+            ref_vel.m_per_s_at::<PlanetInertial<Earth>>(),
+            subj_pos.m_at::<PlanetInertial<Earth>>(),
+            subj_vel.m_per_s_at::<PlanetInertial<Earth>>(),
+        );
+
+        // Bit-identical SI values: the typed boundary only attaches a
+        // phantom; the math is one shared kernel.
+        assert_eq!(typed.position.raw_si(), raw.position.raw_si());
+        assert_eq!(typed.velocity.raw_si(), raw.velocity.raw_si());
+
+        // The output phantom is `<Lvlh<SelfRef>>` regardless of the
+        // input planet phantom — runtime knows which entity is the
+        // chief, the producer cannot statically (matches the struct
+        // contract on `LvlhRelativeState`).
+        let _: Position<jeod_quantities::frame::Lvlh<jeod_quantities::frame::SelfRef>> =
+            typed.position;
+        let _: Velocity<jeod_quantities::frame::Lvlh<jeod_quantities::frame::SelfRef>> =
+            typed.velocity;
     }
 }

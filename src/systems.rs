@@ -2576,17 +2576,26 @@ pub fn earth_lighting_system(
         // coordinates. For non-root-integrated bodies the body's
         // `<PlanetInertial<SelfPlanet>>` storage is integ-frame-
         // relative; lift it to absolute root-inertial via the integ-
-        // origin shift before passing to the kernel. Sun and Moon
-        // are root-integrated by the SunBundle / MoonBundle
+        // origin shift before passing to the typed kernel. Sun and
+        // Moon are root-integrated by the SunBundle / MoonBundle
         // construction (their frame entities are children of the
-        // root frame), so their positions need no shift.
+        // root frame), so their positions need no shift — only a
+        // boundary relabel from `<PlanetInertial<SelfPlanet>>` to
+        // `<RootInertial>` to satisfy the typed entry's frame contract.
         let (integ_origin, _integ_origin_vel) =
             body_integ_origin_in_root(body_frame, &parents, root_frame_entity.0, &frame_origin);
-        let body_pos_root = state.position.raw_si() + integ_origin.raw_si();
-        lighting.0 = jeod_sim::compute_earth_lighting(
-            body_pos_root,
-            sun_state.position.raw_si(),
-            moon_state.position.raw_si(),
+        let body_pos_rel = Position::<RootInertial>::from_raw_si(state.position.raw_si()); // allowed: integ-origin shift adds origin offset on the next line; relabel matches the runner's `body.trans.to_inertial(&o)` boundary.
+        let body_pos = body_pos_rel + integ_origin;
+        // Sun / Moon are root-integrated by SunBundle / MoonBundle
+        // (their frame entity's parent is the root frame, integ
+        // origin = zero); the relabel here is the consumer-boundary
+        // step that pins the framing convention at the call site.
+        let sun_pos = Position::<RootInertial>::from_raw_si(sun_state.position.raw_si()); // allowed: Sun is root-integrated by SunBundle construction (its frame entity's parent is the root frame, integ origin = zero); relabel is the consumer-boundary step.
+        let moon_pos = Position::<RootInertial>::from_raw_si(moon_state.position.raw_si()); // allowed: Moon is root-integrated by MoonBundle construction (its frame entity's parent is the root frame, integ origin = zero); relabel is the consumer-boundary step.
+        lighting.0 = jeod_sim::compute_earth_lighting_typed(
+            body_pos,
+            sun_pos,
+            moon_pos,
             config.sun_radius,
             config.earth_radius,
             config.moon_radius,
