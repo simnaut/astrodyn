@@ -26,12 +26,14 @@
 //!
 //! ```
 //! use jeod_sim::vehicle_builder::VehicleBuilder;
-//! use jeod_sim::recipes::orbital_elements;
-//! use jeod_sim::EARTH;
+//! use jeod_sim::recipes::{constants, orbital_elements};
 //! use jeod_quantities::ext::F64Ext;
 //!
 //! let cfg = VehicleBuilder::new()
-//!     .from_orbital_elements(orbital_elements::iss(), EARTH.mu_typed())
+//!     // `orbital_elements::iss()` returns `OrbitalElements<Earth>` and
+//!     // `constants::mu_ggm05c()` returns `GravParam<Earth>` — sharing
+//!     // the planet phantom is what `from_orbital_elements` requires.
+//!     .from_orbital_elements(orbital_elements::iss(), constants::mu_ggm05c())
 //!     .three_dof_point_mass(420_000.0.kg())
 //!     .rk4()
 //!     .build();
@@ -217,11 +219,13 @@ impl VehicleBuilder<NeedsState> {
     /// Delegates to
     /// [`jeod_dynamics::body_init::init_from_orbital_elements_typed`].
     /// The angles in `oe` are interpreted in radians, the semi-major
-    /// axis in meters, and `mu` carries its `GravParam` dimension.
-    pub fn from_orbital_elements(
+    /// axis in meters, and `mu` carries its `GravParam<P>` dimension.
+    /// Both inputs share the planet phantom `P`, so `mu_sun()` cannot
+    /// be paired with `iss()` (Earth-tagged) — the compiler refuses.
+    pub fn from_orbital_elements<P: jeod_quantities::frame::Planet>(
         self,
-        oe: OrbitalElements,
-        mu: GravParam,
+        oe: OrbitalElements<P>,
+        mu: GravParam<P>,
     ) -> VehicleBuilder<NeedsMass> {
         use uom::si::angle::radian;
         use uom::si::length::meter;

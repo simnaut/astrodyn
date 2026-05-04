@@ -2317,19 +2317,21 @@ pub fn orbital_elements_system(
             elements.0 = Default::default();
             continue;
         };
-        // Position and velocity are typed
-        // `Position<PlanetInertial<SelfPlanet>>` on the Bevy adapter.
-        // Relabel to `Position<PlanetInertial<Earth>>` for the typed
-        // sibling — a wildcard → concrete-planet phantom retag, no
-        // arithmetic, asserts the Earth-orbit assumption.
-        use jeod_sim::{Earth, PlanetInertial, Position, Velocity};
-        let mu_typed = jeod_sim::F64Ext::m3_per_s2(source.mu);
-        // allowed: wildcard `<SelfPlanet>` → concrete `<Earth>` relabel
-        // for the typed sibling; bit-identical (no arithmetic).
-        let pos = Position::<PlanetInertial<Earth>>::from_raw_si(state.position.raw_si());
-        // allowed: same relabel as `pos` above.
-        let vel = Velocity::<PlanetInertial<Earth>>::from_raw_si(state.velocity.raw_si());
-        match jeod_sim::compute_orbital_elements_typed::<Earth>(mu_typed, pos, vel) {
+        // The Bevy `OrbitalElementsC` component is parameterized by
+        // `SelfPlanet` (per-entity planet identity is dynamic, keyed by
+        // `config.gravity_source`). Drive the planet-erased
+        // `compute_orbital_elements` so the result is already
+        // `<SelfPlanet>`-tagged — no relabel step needed, and the
+        // previous `<Earth>` → relabel path through
+        // `compute_orbital_elements_typed::<Earth>` is no longer
+        // available because `OrbitalElements::relabel` is restricted
+        // to a `<SelfPlanet>` receiver to prevent silent cross-planet
+        // retagging.
+        match jeod_sim::compute_orbital_elements(
+            source.mu,
+            state.position.raw_si(),
+            state.velocity.raw_si(),
+        ) {
             Ok(oe) => elements.0 = oe,
             Err(_) => elements.0 = Default::default(),
         }

@@ -54,7 +54,7 @@ fn validate_iss_orbital_elements_to_cartesian() {
     let mean_anomaly = t_peri * (MU_EARTH / a).sqrt() / a;
     let n = (MU_EARTH / (a * a * a)).sqrt();
 
-    let mut oe = OrbitalElements::default();
+    let mut oe = OrbitalElements::<jeod_quantities::frame::SelfPlanet>::default();
     oe.semi_major_axis = init.semi_major_axis;
     oe.e_mag = init.eccentricity;
     oe.inclination = init.inclination;
@@ -172,8 +172,8 @@ fn validate_orbital_roundtrip_5000_vectors() {
     for (i, sv) in vectors.iter().enumerate() {
         use jeod_quantities::ext::{F64Ext, Vec3Ext};
         use jeod_quantities::frame::{Earth, PlanetInertial};
-        let elems = match OrbitalElements::from_cartesian_typed(
-            F64Ext::m3_per_s2(MU_EARTH),
+        let elems = match OrbitalElements::<Earth>::from_cartesian_typed(
+            F64Ext::m3_per_s2_for::<Earth>(MU_EARTH),
             sv.position.m_at::<PlanetInertial<Earth>>(),
             sv.velocity.m_per_s_at::<PlanetInertial<Earth>>(),
         ) {

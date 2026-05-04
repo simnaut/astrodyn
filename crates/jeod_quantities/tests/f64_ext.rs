@@ -93,9 +93,15 @@ fn angular_velocity_rpm_to_rad_per_s() {
 #[test]
 fn grav_param_km3_to_m3_per_s2() {
     // Earth μ ≈ 398 600 km³/s² = 3.986e14 m³/s². We build via .km3_per_s2().
-    let mu = 398_600.0.km3_per_s2();
+    let mu: GravParam<Earth> = 398_600.0.km3_per_s2();
     let expected = 398_600.0 * 1.0e9;
     assert!((mu.value - expected).abs() < 1e3, "mu = {}", mu.value);
+}
+
+#[test]
+fn grav_param_planet_pinned_factory_round_trip() {
+    let mu = 3.986_004_418e14_f64.m3_per_s2_for::<Earth>();
+    assert!((mu.value - 3.986_004_418e14).abs() < 1.0);
 }
 
 #[test]

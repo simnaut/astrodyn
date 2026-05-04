@@ -90,7 +90,7 @@ fn from_orbital_elements_round_trip() {
     // (bit-identical) at the call site.
     let pos = Position::<PlanetInertial<Earth>>::from_raw_si(iss_trans().position.raw_si());
     let vel = Velocity::<PlanetInertial<Earth>>::from_raw_si(iss_trans().velocity.raw_si());
-    let oe = OrbitalElements::from_cartesian_typed::<Earth>(earth_mu, pos, vel)
+    let oe = OrbitalElements::<Earth>::from_cartesian_typed(earth_mu, pos, vel)
         .expect("ISS-class state has well-defined orbital elements");
 
     let cfg = VehicleBuilder::new()

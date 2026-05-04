@@ -1,9 +1,11 @@
 //! Orbital element presets for common reference orbits.
 //!
-//! These presets construct an [`OrbitalElements`] via
+//! These presets construct an [`OrbitalElements<P>`] via
 //! [`OrbitalElements::from_cartesian_typed`] from named state vectors,
 //! so the resulting elements include all derived fields (mean anomaly,
-//! orbital energy, angular momentum, …) consistently.
+//! orbital energy, angular momentum, …) consistently. Each preset
+//! returns a planet-tagged [`OrbitalElements<P>`] so the central body
+//! identity flows through to the consumer's type at compile time.
 //!
 //! ```
 //! use jeod_sim::recipes::orbital_elements;
@@ -28,26 +30,23 @@ use super::constants::{mu_ggm05c, mu_mars, mu_sun};
 /// body — Earth-orbit presets use `<Earth>`, the Mercury heliocentric
 /// preset uses `<Sun>`, the Mars-arrival preset uses `<Mars>`.
 ///
-/// What the phantom enforces vs. doesn't:
+/// What the phantom enforces:
 ///
-/// - **Enforces** that the position and velocity wrappers agree on
-///   frame at the call site (a `Position<PlanetInertial<Earth>>` next
-///   to a `Velocity<PlanetInertial<Sun>>` is a compile error).
-/// - **Does NOT enforce** that `mu` matches `P`. `GravParam` carries no
-///   planet phantom, so `from_pos_vel_with_mu::<Earth>(mu_sun(), …)`
-///   would compile cleanly. That gap is by-convention here and tracked
-///   in #263 (frame-blind `GravParam` / `OrbitalElements`).
-/// - The output `OrbitalElements` is itself frame-blind — downstream
-///   consumers cannot tell from the type whether they hold Earth- or
-///   Mars-centered elements.
+/// - **Position-velocity frame agreement**: a `Position<PlanetInertial<Earth>>`
+///   next to a `Velocity<PlanetInertial<Sun>>` is a compile error.
+/// - **μ-vs-frame agreement**: `from_pos_vel_with_mu::<Earth>(…, mu_sun())`
+///   is a compile error — `mu_sun()` returns `GravParam<Sun>`, but the
+///   `<Earth>` instantiation requires `GravParam<Earth>`.
+/// - **Output planet identity**: the returned `OrbitalElements<P>`
+///   propagates the central-body phantom to downstream consumers.
 fn from_pos_vel_with_mu<P: Planet>(
     pos: glam::DVec3,
     vel: glam::DVec3,
-    mu: GravParam,
-) -> OrbitalElements {
+    mu: GravParam<P>,
+) -> OrbitalElements<P> {
     let p = Position::<PlanetInertial<P>>::from_raw_si(pos);
     let v = Velocity::<PlanetInertial<P>>::from_raw_si(vel);
-    OrbitalElements::from_cartesian_typed::<P>(mu, p, v)
+    OrbitalElements::<P>::from_cartesian_typed(mu, p, v)
         .expect("preset state vector must produce well-defined orbital elements")
 }
 
@@ -67,7 +66,7 @@ fn from_pos_vel_with_mu<P: Planet>(
 /// assert!(oe.semi_major_axis > 6_700_000.0);
 /// assert!(oe.e_mag < 1e-6);
 /// ```
-pub fn iss() -> OrbitalElements {
+pub fn iss() -> OrbitalElements<Earth> {
     leo_400km_circular_iss_inclination()
 }
 
@@ -76,7 +75,7 @@ pub fn iss() -> OrbitalElements {
 /// circular-orbit presets so that the velocity computation and the
 /// `from_pos_vel_with_mu` call share a single source of truth for μ —
 /// mismatching them silently breaks the circular-orbit invariant.
-fn circular_orbit_with_mu<P: Planet>(r: f64, inc: f64, mu: GravParam) -> OrbitalElements {
+fn circular_orbit_with_mu<P: Planet>(r: f64, inc: f64, mu: GravParam<P>) -> OrbitalElements<P> {
     let v = (mu.value / r).sqrt();
     from_pos_vel_with_mu::<P>(
         glam::DVec3::new(r, 0.0, 0.0),
@@ -93,7 +92,7 @@ fn circular_orbit_with_mu<P: Planet>(r: f64, inc: f64, mu: GravParam) -> Orbital
 /// assert!((oe.semi_major_axis - 42_164_172.0).abs() < 1.0);
 /// assert!(oe.inclination.abs() < 1e-12);
 /// ```
-pub fn geostationary() -> OrbitalElements {
+pub fn geostationary() -> OrbitalElements<Earth> {
     circular_orbit_with_mu::<Earth>(42_164_172.0_f64, 0.0, mu_ggm05c())
 }
 
@@ -107,7 +106,7 @@ pub fn geostationary() -> OrbitalElements {
 /// assert!((oe.inclination - 51.6_f64.to_radians()).abs() < 1e-12);
 /// assert!(oe.e_mag < 1e-6);
 /// ```
-pub fn leo_400km_circular_iss_inclination() -> OrbitalElements {
+pub fn leo_400km_circular_iss_inclination() -> OrbitalElements<Earth> {
     let r_eq = 6_378_137.0_f64;
     circular_orbit_with_mu::<Earth>(r_eq + 400_000.0, 51.6_f64.to_radians(), mu_ggm05c())
 }
@@ -120,7 +119,7 @@ pub fn leo_400km_circular_iss_inclination() -> OrbitalElements {
 /// assert!((oe.inclination - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
 /// assert!(oe.semi_major_axis > 6_900_000.0 && oe.semi_major_axis < 7_000_000.0);
 /// ```
-pub fn leo_polar_600km() -> OrbitalElements {
+pub fn leo_polar_600km() -> OrbitalElements<Earth> {
     let r_eq = 6_378_137.0_f64;
     circular_orbit_with_mu::<Earth>(r_eq + 600_000.0, 90.0_f64.to_radians(), mu_ggm05c())
 }
@@ -140,7 +139,7 @@ pub fn leo_polar_600km() -> OrbitalElements {
 /// // Mercury's eccentricity is ~0.2 — definitely non-circular.
 /// assert!(oe.e_mag > 0.1 && oe.e_mag < 0.3);
 /// ```
-pub fn mercury_perihelion() -> OrbitalElements {
+pub fn mercury_perihelion() -> OrbitalElements<Sun> {
     from_pos_vel_with_mu::<Sun>(
         glam::DVec3::new(46.0e9, 0.0, 0.0),
         glam::DVec3::new(0.0, 58_980.0, 0.0),
@@ -159,7 +158,7 @@ pub fn mercury_perihelion() -> OrbitalElements {
 /// // Dawn arrives at Mars on a hyperbolic flyby trajectory.
 /// assert!(oe.e_mag > 1.0);
 /// ```
-pub fn mars_dawn_orbit() -> OrbitalElements {
+pub fn mars_dawn_orbit() -> OrbitalElements<Mars> {
     from_pos_vel_with_mu::<Mars>(
         glam::DVec3::new(11_563_355.680_2, -14_356_668.897_7, 6_293_704.616_9),
         glam::DVec3::new(-2_273.107_8, 2_380.132_4, -22.911),
@@ -178,7 +177,7 @@ pub fn mars_dawn_orbit() -> OrbitalElements {
 /// assert!((oe.inclination - 32.5_f64.to_radians()).abs() < 1e-12);
 /// assert!(oe.e_mag < 1e-6);
 /// ```
-pub fn apollo_parking() -> OrbitalElements {
+pub fn apollo_parking() -> OrbitalElements<Earth> {
     let r_eq = 6_378_137.0_f64;
     circular_orbit_with_mu::<Earth>(r_eq + 185_000.0, 32.5_f64.to_radians(), mu_ggm05c())
 }
@@ -198,7 +197,7 @@ pub fn apollo_parking() -> OrbitalElements {
 /// assert!((oe.inclination - 0.1).abs() < 1e-12);
 /// assert!((oe.semi_major_axis - 42_164_172.0).abs() < 1.0);
 /// ```
-pub fn geo_inclined(inclination: uom::si::f64::Angle) -> OrbitalElements {
+pub fn geo_inclined(inclination: uom::si::f64::Angle) -> OrbitalElements<Earth> {
     use uom::si::angle::radian;
     circular_orbit_with_mu::<Earth>(42_164_172.0_f64, inclination.get::<radian>(), mu_ggm05c())
 }

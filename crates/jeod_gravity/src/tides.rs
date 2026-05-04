@@ -14,7 +14,7 @@
 use glam::{DMat3, DVec3};
 use jeod_quantities::aliases::Position;
 use jeod_quantities::dims::GravParam;
-use jeod_quantities::frame::RootInertial;
+use jeod_quantities::frame::{RootInertial, SelfPlanet};
 use uom::si::f64::{Length, Ratio};
 
 /// Default Love number k2 for Earth solid body tides.
@@ -47,8 +47,11 @@ pub struct TidalBody {
 
 /// Typed sibling of [`TidalConfig`].
 ///
-/// `mu_primary` and per-body `mu` carry the [`GravParam`] dimensional
-/// type. `radius_primary` carries [`Length`]. `k2` (a Love number,
+/// `mu_primary` and per-body `mu` carry the [`GravParam<SelfPlanet>`]
+/// dimensional type — planet-erased because the tidal config is
+/// configured at runtime against whichever primary an entity carries
+/// (Earth in current sims, but the struct is otherwise body-agnostic).
+/// `radius_primary` carries [`Length`]. `k2` (a Love number,
 /// dimensionless) is wrapped in [`Ratio`] for type-system parity with
 /// other dimensionless physical quantities.
 #[derive(Debug, Clone)]
@@ -56,7 +59,7 @@ pub struct TidalConfigTyped {
     /// Love number `k2` of the deformable body (dimensionless).
     pub k2: Ratio,
     /// Gravitational parameter μ of the primary body.
-    pub mu_primary: GravParam,
+    pub mu_primary: GravParam<SelfPlanet>,
     /// Reference radius of the primary body.
     pub radius_primary: Length,
     /// Tidal-perturber bodies (Sun, Moon, …).
@@ -66,10 +69,12 @@ pub struct TidalConfigTyped {
 /// Typed sibling of [`TidalBody`].
 ///
 /// `position_inertial` carries the [`Position<RootInertial>`] phantom tag.
+/// `mu` carries the planet-erased [`GravParam<SelfPlanet>`] tag — see
+/// [`TidalConfigTyped`].
 #[derive(Debug, Clone)]
 pub struct TidalBodyTyped {
     /// Gravitational parameter μ of the perturber.
-    pub mu: GravParam,
+    pub mu: GravParam<SelfPlanet>,
     /// Position of the perturber in the simulation's root inertial frame.
     pub position_inertial: Position<RootInertial>,
 }
