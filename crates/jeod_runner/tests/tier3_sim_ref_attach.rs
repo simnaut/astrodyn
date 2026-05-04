@@ -208,7 +208,7 @@ fn build_ref_attach_sim() -> Simulation {
     // SIM_ref_attach is JEOD's *initialization-only* verification sim:
     // its `S_define` comment is explicit — "This simulation has no
     // dynamics -- other than the Trick executive, is comprised of
-    // initilization only." Trick's clock advances and the BodyAttach
+    // initilization [sic] only." Trick's clock advances and the BodyAttach
     // body action fires at t=50, but no `IntegLoop` evaluates
     // gravity, so the recorded pre-attach trajectory is pure linear
     // extrapolation (`pos(t) = pos(0) + velocity * t`). We mirror
