@@ -23,8 +23,9 @@
 //! the per-edge geometry (`MassChildOf` analogue) and the per-body
 //! struct→body rotations. Bit-equivalent to running
 //! `propagate_forward` three times when no `JointKinematicsC`-class
-//! prescribed motion sits on the link, which is the "passive rigid
-//! attachment" scope of issue #291.
+//! prescribed motion sits on the link — the "passive rigid attachment"
+//! scope. Equivalent to JEOD's `compute_derived_state_forward` chain
+//! in `models/dynamics/dyn_body/src/dyn_body.cc`.
 //!
 //! # Frame discipline
 //!
@@ -39,14 +40,14 @@
 //!
 //! # Out of scope
 //!
-//! - **Joint-kinematics drivers** (`JointKinematicsC` from issue #275):
-//!   if a chain member's link carries prescribed rotation rates from
-//!   a joint driver, that system writes its own rotation onto the
-//!   *frame* entity — a parallel surface. This kernel operates on
-//!   bodies in the `MassChildOf` mass tree only, and treats every
-//!   link as passive rigid (zero relative angular velocity at the
-//!   joint). Composing prescribed joint motion is design-doc § 15.4
-//!   work.
+//! - **Joint-kinematics drivers** (`JointKinematicsC`-class prescribed
+//!   relative motion at a `MassChildOf` link). If a chain member's
+//!   link carries prescribed rotation rates from a joint driver, that
+//!   system writes its own rotation onto the *frame* entity — a
+//!   parallel surface. This kernel operates on bodies in the
+//!   `MassChildOf` mass tree only, and treats every link as passive
+//!   rigid (zero relative angular velocity at the joint). Composing
+//!   prescribed joint motion is design-doc § 15.4 work.
 //! - **Partial-state propagation** (JEOD's `compute_state_elements_*`
 //!   path that drops position/velocity when attitude is missing). We
 //!   panic on a missing parent attitude rather than silently producing

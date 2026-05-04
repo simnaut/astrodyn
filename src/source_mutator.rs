@@ -377,7 +377,13 @@ impl SourceMutator<'_, '_> {
                  consistent position across the source's components."
             )
         });
-        ts.0.position = typed_pos;
+        // `TranslationalStateC` stores
+        // `<PlanetInertial<SelfPlanet>>`; the user-supplied `typed_pos`
+        // above is `<RootInertial>` (the SourceMutator API frame).
+        // Relabel to the wildcard `SelfPlanet` tag at the storage
+        // boundary. Bit-identical numerics.
+        type PiPos = jeod_sim::Position<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>;
+        ts.0.position = PiPos::from_raw_si(typed_pos.raw_si()); // allowed: source-mutator boundary, RootInertial → PlanetInertial<SelfPlanet> wildcard relabel
     }
 
     /// Set the inertial position and velocity of `source`. Mirrors
@@ -455,8 +461,15 @@ impl SourceMutator<'_, '_> {
                  consistent state across the source's components."
             )
         });
-        ts.0.position = typed_pos;
-        ts.0.velocity = typed_vel;
+        // `TranslationalStateC` stores
+        // `<PlanetInertial<SelfPlanet>>`; the user-supplied
+        // `typed_pos` / `typed_vel` are `<RootInertial>`. Relabel to
+        // the wildcard `SelfPlanet` tag at the storage boundary —
+        // bit-identical numerics.
+        type PiPos = jeod_sim::Position<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>;
+        type PiVel = jeod_sim::Velocity<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>;
+        ts.0.position = PiPos::from_raw_si(typed_pos.raw_si()); // allowed: source-mutator boundary, RootInertial → PlanetInertial<SelfPlanet> wildcard relabel
+        ts.0.velocity = PiVel::from_raw_si(typed_vel.raw_si()); // allowed: same boundary as ts.0.position above
     }
 
     fn assert_not_central(&self, source: Entity, method: &str) {
