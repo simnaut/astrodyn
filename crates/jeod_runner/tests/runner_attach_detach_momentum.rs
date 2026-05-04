@@ -913,3 +913,218 @@ fn runner_detach_lifts_through_integ_origin() {
         child_post.trans.velocity,
     );
 }
+
+/// `Simulation::from_builder` materialising a
+/// [`SimulationBuilder::attach_bodies`] declaration must preserve each
+/// body's caller-supplied `VehicleConfig::trans` / `rot` verbatim — the
+/// build-time topology declaration is a configuration step, not an
+/// in-flight impulse merge. PR #307 review thread `PRRT_kwDORtae6c5_Q3me`.
+///
+/// Pre-#307-thread-fix the builder routed `attach_bodies` through the
+/// public `Simulation::attach`, which had been newly wired to
+/// JEOD's `combine_states_at_attach` momentum-conservation kernel.
+/// That turned every build-time attached pair into a kinematic merge:
+/// the parent's spec'd inertial position drifted by the
+/// composite-CoM-shift towards the child, and its velocity became the
+/// mass-weighted average of the parent's and child's spec'd
+/// velocities. For any caller that registered a parent on its orbital
+/// initial state and a child on a deliberately offset / co-moving
+/// initial state, that was a silent corruption of `VehicleConfig`.
+///
+/// The fix routes builder-time attaches through
+/// `attach_preserving_initial_state`, which performs the tree
+/// mutation, composite-mass resync, and integrator-history reset
+/// while leaving `body.trans` / `body.rot` untouched. This test pins
+/// that contract: the post-build state on both bodies is bit-identical
+/// to the spec'd `VehicleConfig` state.
+#[test]
+fn from_builder_preserves_attached_bodies_initial_state() {
+    use jeod_sim::SimulationBuilder;
+
+    // Asymmetric pair so any combine writeback would *change* both
+    // bodies' state by orders of magnitude — the spec'd values are
+    // structurally distinct from any mass-weighted merge.
+    let parent_mass = SimMassProperties::with_inertia(
+        420.0,
+        DMat3::from_diagonal(DVec3::new(150.0, 200.0, 250.0)),
+        DVec3::ZERO,
+    );
+    let child_mass = SimMassProperties::with_inertia(
+        80.0,
+        DMat3::from_diagonal(DVec3::new(40.0, 50.0, 60.0)),
+        DVec3::ZERO,
+    );
+    let parent_trans = TranslationalState {
+        position: DVec3::new(7e6, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let parent_rot = RotationalState {
+        quaternion: JeodQuat::identity(),
+        ang_vel_body: DVec3::ZERO,
+    };
+    // Child spec'd at a different inertial position with a different
+    // velocity (not the parent's) — this is the case the public
+    // runtime `attach` would treat as a pre-attach pair to merge.
+    let child_trans = TranslationalState {
+        position: DVec3::new(7e6 + 100.0, 50.0, -25.0),
+        velocity: DVec3::new(10.0, 7700.0, 5.0),
+    };
+    let child_rot = RotationalState {
+        quaternion: JeodQuat::left_quat_from_eigen_rotation(0.3, DVec3::Y),
+        ang_vel_body: DVec3::new(0.1, -0.05, 0.02),
+    };
+
+    let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sb = SimulationBuilder::new(time, 1.0);
+    let _inertial = sb.add_source(
+        "InertialAnchor",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: jeod_runner::RotationModel::default(),
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: true,
+        },
+    );
+    let parent_idx = sb.add_body(VehicleConfig {
+        trans: parent_trans,
+        rot: Some(parent_rot),
+        mass: Some(parent_mass),
+        integrator: IntegratorType::Rk4,
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(_inertial, false)],
+        },
+        ..Default::default()
+    });
+    let child_idx = sb.add_body(VehicleConfig {
+        trans: child_trans,
+        rot: Some(child_rot),
+        mass: Some(child_mass),
+        integrator: IntegratorType::Rk4,
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(_inertial, false)],
+        },
+        ..Default::default()
+    });
+    sb.register_in_mass_tree(parent_idx, "Parent");
+    sb.register_in_mass_tree(child_idx, "Child");
+    sb.attach_bodies(
+        child_idx,
+        parent_idx,
+        DVec3::new(3.0, 0.0, 0.0),
+        DMat3::IDENTITY,
+    );
+    let sim = sb
+        .build()
+        .expect("two-body builder with attach_bodies must validate");
+
+    // Bit-identical preservation: post-build state equals spec'd state.
+    let parent_post = sim.body(parent_idx);
+    assert_eq!(
+        parent_post.trans.position.to_array().map(f64::to_bits),
+        parent_trans.position.to_array().map(f64::to_bits),
+        "from_builder must preserve parent position verbatim: spec={:?} got={:?}",
+        parent_trans.position,
+        parent_post.trans.position,
+    );
+    assert_eq!(
+        parent_post.trans.velocity.to_array().map(f64::to_bits),
+        parent_trans.velocity.to_array().map(f64::to_bits),
+        "from_builder must preserve parent velocity verbatim: spec={:?} got={:?}",
+        parent_trans.velocity,
+        parent_post.trans.velocity,
+    );
+    let parent_rot_post = parent_post
+        .rot
+        .expect("6-DOF parent must keep rot through builder materialization");
+    assert_eq!(
+        [
+            parent_rot_post.quaternion.scalar().to_bits(),
+            parent_rot_post.quaternion.vector().x.to_bits(),
+            parent_rot_post.quaternion.vector().y.to_bits(),
+            parent_rot_post.quaternion.vector().z.to_bits(),
+        ],
+        [
+            parent_rot.quaternion.scalar().to_bits(),
+            parent_rot.quaternion.vector().x.to_bits(),
+            parent_rot.quaternion.vector().y.to_bits(),
+            parent_rot.quaternion.vector().z.to_bits(),
+        ],
+        "from_builder must preserve parent quaternion verbatim",
+    );
+    assert_eq!(
+        parent_rot_post.ang_vel_body.to_array().map(f64::to_bits),
+        parent_rot.ang_vel_body.to_array().map(f64::to_bits),
+        "from_builder must preserve parent ang_vel verbatim",
+    );
+
+    let child_post = sim.body(child_idx);
+    assert_eq!(
+        child_post.trans.position.to_array().map(f64::to_bits),
+        child_trans.position.to_array().map(f64::to_bits),
+        "from_builder must preserve child position verbatim: spec={:?} got={:?}",
+        child_trans.position,
+        child_post.trans.position,
+    );
+    assert_eq!(
+        child_post.trans.velocity.to_array().map(f64::to_bits),
+        child_trans.velocity.to_array().map(f64::to_bits),
+        "from_builder must preserve child velocity verbatim",
+    );
+    let child_rot_post = child_post
+        .rot
+        .expect("6-DOF child must keep rot through builder materialization");
+    assert_eq!(
+        [
+            child_rot_post.quaternion.scalar().to_bits(),
+            child_rot_post.quaternion.vector().x.to_bits(),
+            child_rot_post.quaternion.vector().y.to_bits(),
+            child_rot_post.quaternion.vector().z.to_bits(),
+        ],
+        [
+            child_rot.quaternion.scalar().to_bits(),
+            child_rot.quaternion.vector().x.to_bits(),
+            child_rot.quaternion.vector().y.to_bits(),
+            child_rot.quaternion.vector().z.to_bits(),
+        ],
+        "from_builder must preserve child quaternion verbatim",
+    );
+    assert_eq!(
+        child_rot_post.ang_vel_body.to_array().map(f64::to_bits),
+        child_rot.ang_vel_body.to_array().map(f64::to_bits),
+        "from_builder must preserve child ang_vel verbatim",
+    );
+
+    // Topology: the tree mutation still happened. The bypass path
+    // skips only the `combine_states_at_attach` writeback — tree
+    // mutation, composite-mass resync, and integrator-history reset
+    // all still run. `MassBodyId` is `pub type MassBodyId = usize`
+    // and `MassTree::add_body` returns sequential ids in registration
+    // order; `from_builder` calls `add_body_to_tree` in the order the
+    // builder registered them, so parent gets id 0 and child gets id 1.
+    let tree = sim
+        .mass_tree
+        .as_ref()
+        .expect("from_builder must wire the mass tree when attach_bodies is called");
+    let parent_mass_body_id: jeod_dynamics::MassBodyId = 0;
+    let child_mass_body_id: jeod_dynamics::MassBodyId = 1;
+    assert_eq!(
+        tree.parent(child_mass_body_id),
+        Some(parent_mass_body_id),
+        "child must be parented under parent in the mass tree post-builder"
+    );
+    let parent_composite_mass = tree.get(parent_mass_body_id).composite_properties.mass;
+    let total_core_mass = parent_mass.mass + child_mass.mass;
+    assert!(
+        (parent_composite_mass - total_core_mass).abs() < 1e-12,
+        "parent's post-attach composite mass must equal parent + child: \
+         got {parent_composite_mass}, expected {total_core_mass}"
+    );
+}

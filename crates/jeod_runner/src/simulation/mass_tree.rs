@@ -17,6 +17,23 @@ use jeod_dynamics::DetachedSubtreeState;
 
 use super::Simulation;
 
+/// Pre-attach state captured by `attach_inner` when the combine kernel
+/// is going to run. Bundled into a struct so the gating between the
+/// runtime path (`attach`) and the configuration-time path
+/// (`attach_preserving_initial_state`) lives in a single
+/// `Option<AttachSnapshot>` instead of nine individually-conditioned
+/// locals — the configuration-time path skips the snapshot, so the
+/// `IntegOrigin` lookups that would silently no-op cost nothing.
+struct AttachSnapshot {
+    root_integ_origin_pos: glam::DVec3,
+    root_integ_origin_vel: glam::DVec3,
+    root_pre_state: RefFrameState,
+    root_pre_composite_props: jeod_dynamics::MassProperties,
+    child_pre_state: RefFrameState,
+    child_pre_composite_props: jeod_dynamics::MassProperties,
+    root_has_rot: bool,
+}
+
 impl Simulation {
     /// Register a body in the simulation's mass tree.
     ///
@@ -79,6 +96,78 @@ impl Simulation {
         parent_idx: usize,
         offset: DVec3,
         t_parent_child: DMat3,
+    ) {
+        // Public runtime entry point: a runtime in-flight attach must
+        // conserve momentum, so the JEOD combine kernel runs and the
+        // merged composite-body state is written back to the integrated
+        // tree root. See `attach_preserving_initial_state` for the
+        // configuration-time sibling that skips the writeback.
+        self.attach_inner(child_idx, parent_idx, offset, t_parent_child, true);
+    }
+
+    /// Configuration-time sibling of [`attach`](Self::attach) that
+    /// performs the tree mutation, composite-mass resync, and
+    /// integrator-history bookkeeping **without** running JEOD's
+    /// `combine_states_at_attach` momentum-conservation kernel — so the
+    /// caller's pre-set `body.trans` / `body.rot` on the child and on
+    /// the integrated tree root are preserved verbatim.
+    ///
+    /// This exists for the [`Simulation::from_builder`] path
+    /// (`crates/jeod_runner/src/builder.rs`), which materialises a
+    /// [`SimulationBuilder`](jeod_sim::SimulationBuilder)'s
+    /// `attach_bodies` declarations at construction time. Builder
+    /// callers have already specified the post-attach state they want
+    /// (parent and child `VehicleConfig::trans` / `rot` are part of the
+    /// build spec); running the runtime combine over those would treat
+    /// the user-supplied initial conditions as a pre-attach pair to
+    /// merge, silently turning the build-time topology declaration into
+    /// an in-flight impulse merge. That would change the meaning of
+    /// `SimulationBuilder` for any consumer that registers bodies with
+    /// independent initial states (orbital element + LVLH child, etc.)
+    /// — a breaking API change disguised as a momentum-conservation
+    /// fix. Configuration-time attaches must instead preserve the
+    /// spec'd states; the runtime [`attach`](Self::attach) is the one
+    /// that needs momentum conservation.
+    ///
+    /// The integrator-history reset still runs (topology has changed,
+    /// so `gj_state` / `abm4_state` must be reset per JEOD_INV: IG.37).
+    /// This method is `pub(crate)` because the only legitimate caller
+    /// is `from_builder`; mission-code attaches must go through the
+    /// public [`attach`](Self::attach) so momentum is conserved.
+    ///
+    /// # Panics
+    /// Panics if either body is not in the tree, or if the child
+    /// already has a parent.
+    pub(crate) fn attach_preserving_initial_state(
+        &mut self,
+        child_idx: usize,
+        parent_idx: usize,
+        offset: DVec3,
+        t_parent_child: DMat3,
+    ) {
+        self.attach_inner(child_idx, parent_idx, offset, t_parent_child, false);
+    }
+
+    /// Shared implementation backing [`attach`](Self::attach) and
+    /// [`attach_preserving_initial_state`](Self::attach_preserving_initial_state).
+    ///
+    /// `combine_writeback = true` runs JEOD's `combine_states_at_attach`
+    /// kernel and overwrites the integrated tree root's `body.trans` /
+    /// `body.rot` with the merged composite-body state (the runtime
+    /// attach contract). `combine_writeback = false` skips both the
+    /// snapshot and the writeback, leaving the caller-supplied initial
+    /// states in place (the configuration-time builder contract). All
+    /// other steps — tree mutation, composite-mass resync on every
+    /// affected body, integrator-history dirty-mark + reset — run in
+    /// both modes because they reflect topology changes that hold
+    /// regardless of whether the kinematic state is being merged.
+    fn attach_inner(
+        &mut self,
+        child_idx: usize,
+        parent_idx: usize,
+        offset: DVec3,
+        t_parent_child: DMat3,
+        combine_writeback: bool,
     ) {
         let child_id = self.bodies[child_idx]
             .mass_body_id
@@ -181,35 +270,57 @@ impl Simulation {
         //    silently mixing coordinates across distinct integration
         //    frames. Mirrors the kinematic walk's seed-time lift in
         //    `step::kinematic`.
-        let root_integ_origin_pos = {
-            let (p, _v) = self.frame_origin(self.bodies[root_idx].integ_frame_id);
-            p
+        //
+        // The snapshot is gated on `combine_writeback`: the
+        // configuration-time path (`attach_preserving_initial_state`)
+        // skips both the snapshot and the writeback so the caller's
+        // pre-set `body.trans` / `body.rot` survive the topology
+        // change verbatim. The integ-frame lift, kernel call, and
+        // writeback below all live behind the same gate so the entire
+        // momentum-merge stays within one branch.
+        let snapshot = if combine_writeback {
+            let root_integ_origin_pos = {
+                let (p, _v) = self.frame_origin(self.bodies[root_idx].integ_frame_id);
+                p
+            };
+            let child_integ_origin_pos = {
+                let (p, _v) = self.frame_origin(self.bodies[child_idx].integ_frame_id);
+                p
+            };
+            let root_integ_origin_vel = {
+                let (_p, v) = self.frame_origin(self.bodies[root_idx].integ_frame_id);
+                v
+            };
+            let child_integ_origin_vel = {
+                let (_p, v) = self.frame_origin(self.bodies[child_idx].integ_frame_id);
+                v
+            };
+            let mut root_pre_state = Self::body_composite_state_or_default(&self.bodies[root_idx]);
+            root_pre_state.trans.position += root_integ_origin_pos;
+            root_pre_state.trans.velocity += root_integ_origin_vel;
+            let root_pre_composite_props = self.bodies[root_idx]
+                .mass
+                .expect("attach: tree root has no mass properties");
+            let mut child_pre_state =
+                Self::body_composite_state_or_default(&self.bodies[child_idx]);
+            child_pre_state.trans.position += child_integ_origin_pos;
+            child_pre_state.trans.velocity += child_integ_origin_vel;
+            let child_pre_composite_props = self.bodies[child_idx]
+                .mass
+                .expect("attach: child body has no mass properties");
+            let root_has_rot = self.bodies[root_idx].rot.is_some();
+            Some(AttachSnapshot {
+                root_integ_origin_pos,
+                root_integ_origin_vel,
+                root_pre_state,
+                root_pre_composite_props,
+                child_pre_state,
+                child_pre_composite_props,
+                root_has_rot,
+            })
+        } else {
+            None
         };
-        let child_integ_origin_pos = {
-            let (p, _v) = self.frame_origin(self.bodies[child_idx].integ_frame_id);
-            p
-        };
-        let root_integ_origin_vel = {
-            let (_p, v) = self.frame_origin(self.bodies[root_idx].integ_frame_id);
-            v
-        };
-        let child_integ_origin_vel = {
-            let (_p, v) = self.frame_origin(self.bodies[child_idx].integ_frame_id);
-            v
-        };
-        let mut root_pre_state = Self::body_composite_state_or_default(&self.bodies[root_idx]);
-        root_pre_state.trans.position += root_integ_origin_pos;
-        root_pre_state.trans.velocity += root_integ_origin_vel;
-        let root_pre_composite_props = self.bodies[root_idx]
-            .mass
-            .expect("attach: tree root has no mass properties");
-        let mut child_pre_state = Self::body_composite_state_or_default(&self.bodies[child_idx]);
-        child_pre_state.trans.position += child_integ_origin_pos;
-        child_pre_state.trans.velocity += child_integ_origin_vel;
-        let child_pre_composite_props = self.bodies[child_idx]
-            .mass
-            .expect("attach: child body has no mass properties");
-        let root_has_rot = self.bodies[root_idx].rot.is_some();
 
         // ── Mutate the tree itself. ──
         let tree = self.mass_tree.as_mut().expect("attach: no mass tree");
@@ -224,20 +335,6 @@ impl Simulation {
                 }
             }
         }
-
-        // Read the post-mutation root composite mass — this is the
-        // *combined* mass of the whole merged tree, which the kernel
-        // uses to solve `ω_t = I_t⁻¹ · L_total` and to shift the
-        // inertial position by the CoM-delta. Reading at the root (not
-        // at `parent_id`) is the change that matches the parent-as-root
-        // semantics and keeps the kernel's invariants when the
-        // attaching parent is an interior node.
-        let combined_root_composite_props = self
-            .mass_tree
-            .as_ref()
-            .expect("attach: mass tree dropped between mutate and read")
-            .get(root_id)
-            .composite_properties;
 
         // ── Run the JEOD momentum-conservation combine and write the
         //    merged composite-body state back into the integrated tree
@@ -254,54 +351,71 @@ impl Simulation {
         // root state by `propagate_kinematic_state` on the next step
         // (root → leaves walk), so they don't need an explicit
         // writeback here.
-        let root_t_struct_to_body = root_pre_composite_props.t_parent_this;
-        let root_t_inertial_struct = jeod_dynamics::compute_t_inertial_struct(
-            &root_t_struct_to_body,
-            &root_pre_state.rot.t_parent_this,
-        );
-        let combined = combine_states_at_attach(jeod_dynamics::AttachCombineInputs {
-            parent_composite: root_pre_state,
-            parent_mass: root_pre_composite_props,
-            parent_t_inertial_struct: root_t_inertial_struct,
-            child_composite: child_pre_state,
-            child_mass: child_pre_composite_props,
-            combined_mass: combined_root_composite_props,
-            orig_parent_cm_struct: root_pre_composite_props.position,
-        });
-
-        // Write the merged translational state regardless of DOF — for
-        // 3-DOF bodies this is a pure linear-momentum-conservation
-        // update on velocity plus the structure-frame CoM-shift, both of
-        // which are well-defined without rotational state.
-        //
-        // JEOD_INV: RF.10 — symmetric partner of the seed-time lift
-        // above. The kernel returned `combined.composite_state` in
-        // root-inertial coordinates; lower back through the root's
-        // `IntegOrigin` so the writeback lands in the typed
-        // `TranslationalStateTyped<IntegrationFrame>` storage. For a
-        // root-integrated root the shift is `IntegOrigin::zero()` and
-        // the subtraction is a bit-identical no-op; for a root that
-        // integrates in `PlanetInertial<P>` the shift is the only
-        // thing that prevents writing a root-inertial value into
-        // integration-frame storage and silently corrupting every
-        // downstream consumer of `body.trans`.
-        self.bodies[root_idx].trans =
-            TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
-                &TranslationalState {
-                    position: combined.composite_state.trans.position - root_integ_origin_pos,
-                    velocity: combined.composite_state.trans.velocity - root_integ_origin_vel,
-                },
+        if let Some(snap) = snapshot {
+            // Read the post-mutation root composite mass — this is the
+            // *combined* mass of the whole merged tree, which the kernel
+            // uses to solve `ω_t = I_t⁻¹ · L_total` and to shift the
+            // inertial position by the CoM-delta. Reading at the root
+            // (not at `parent_id`) is the change that matches the
+            // parent-as-root semantics and keeps the kernel's
+            // invariants when the attaching parent is an interior node.
+            let combined_root_composite_props = self
+                .mass_tree
+                .as_ref()
+                .expect("attach: mass tree dropped between mutate and read")
+                .get(root_id)
+                .composite_properties;
+            let root_t_struct_to_body = snap.root_pre_composite_props.t_parent_this;
+            let root_t_inertial_struct = jeod_dynamics::compute_t_inertial_struct(
+                &root_t_struct_to_body,
+                &snap.root_pre_state.rot.t_parent_this,
             );
-        // Write rotational state only when the root already carried
-        // one — the merged body inherits the root's DOF. JEOD does the
-        // same: a 3-DOF root stays 3-DOF post-merge regardless of
-        // whether the child contributed `Iω` to the angular-momentum
-        // solve.
-        if root_has_rot {
-            self.bodies[root_idx].rot = Some(RotationalState {
-                quaternion: combined.composite_state.rot.q_parent_this,
-                ang_vel_body: combined.composite_state.rot.ang_vel_this,
+            let combined = combine_states_at_attach(jeod_dynamics::AttachCombineInputs {
+                parent_composite: snap.root_pre_state,
+                parent_mass: snap.root_pre_composite_props,
+                parent_t_inertial_struct: root_t_inertial_struct,
+                child_composite: snap.child_pre_state,
+                child_mass: snap.child_pre_composite_props,
+                combined_mass: combined_root_composite_props,
+                orig_parent_cm_struct: snap.root_pre_composite_props.position,
             });
+
+            // Write the merged translational state regardless of DOF —
+            // for 3-DOF bodies this is a pure linear-momentum-conservation
+            // update on velocity plus the structure-frame CoM-shift,
+            // both of which are well-defined without rotational state.
+            //
+            // JEOD_INV: RF.10 — symmetric partner of the seed-time lift
+            // above. The kernel returned `combined.composite_state` in
+            // root-inertial coordinates; lower back through the root's
+            // `IntegOrigin` so the writeback lands in the typed
+            // `TranslationalStateTyped<IntegrationFrame>` storage. For a
+            // root-integrated root the shift is `IntegOrigin::zero()`
+            // and the subtraction is a bit-identical no-op; for a root
+            // that integrates in `PlanetInertial<P>` the shift is the
+            // only thing that prevents writing a root-inertial value
+            // into integration-frame storage and silently corrupting
+            // every downstream consumer of `body.trans`.
+            self.bodies[root_idx].trans =
+                TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
+                    &TranslationalState {
+                        position: combined.composite_state.trans.position
+                            - snap.root_integ_origin_pos,
+                        velocity: combined.composite_state.trans.velocity
+                            - snap.root_integ_origin_vel,
+                    },
+                );
+            // Write rotational state only when the root already carried
+            // one — the merged body inherits the root's DOF. JEOD does
+            // the same: a 3-DOF root stays 3-DOF post-merge regardless
+            // of whether the child contributed `Iω` to the
+            // angular-momentum solve.
+            if snap.root_has_rot {
+                self.bodies[root_idx].rot = Some(RotationalState {
+                    quaternion: combined.composite_state.rot.q_parent_this,
+                    ang_vel_body: combined.composite_state.rot.ang_vel_this,
+                });
+            }
         }
 
         // ── Site B: reset the integrator history. Separate from Site A
