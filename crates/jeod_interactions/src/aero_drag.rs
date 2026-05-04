@@ -12,8 +12,15 @@
 use glam::{DMat3, DVec3};
 use jeod_atmosphere::AtmosphereState;
 use jeod_quantities::aliases::{Force, Velocity};
-use jeod_quantities::frame::{Planet, PlanetInertial, StructuralFrame, Vehicle};
+use jeod_quantities::frame::{Planet, PlanetInertial, SelfPlanet, StructuralFrame, Vehicle};
 use uom::si::f64::{Area, MassDensity, Ratio};
+
+// `AtmosphereState<P: Planet>` types its wind in the planet's inertial
+// frame. The untyped kernel works against the planet-erased
+// `<SelfPlanet>` storage form (what the runner and Bevy adapter both
+// hold); the typed sibling `compute_ballistic_drag_typed` takes a
+// concrete `<P>` so the wind frame and the vehicle's planet-inertial
+// velocity must agree at the type level.
 
 /// Vehicle drag configuration for the ballistic (default) model.
 ///
@@ -65,7 +72,7 @@ impl Default for AerodynamicForce {
 /// Torque is zero for the ballistic model.
 pub fn compute_ballistic_drag(
     config: &DragConfig,
-    atmos: &AtmosphereState,
+    atmos: &AtmosphereState<SelfPlanet>,
     inertial_velocity: DVec3,
     t_inertial_struct: &DMat3,
 ) -> AerodynamicForce {
@@ -77,7 +84,7 @@ pub fn compute_ballistic_drag(
 
     // Relative velocity = vehicle velocity - atmospheric wind (in inertial frame)
     // JEOD aero_drag.cc line 111: Vector3::diff(inertial_velocity, atmos_ptr->wind, relative_vel_cm)
-    let relative_vel_cm = inertial_velocity - atmos.wind;
+    let relative_vel_cm = inertial_velocity - atmos.wind.raw_si();
 
     // Transform relative velocity to structural (body) frame
     // JEOD aero_drag.cc line 114: Vector3::transform(T_inertial_struct, relative_vel_cm, rel_vel_cm_struct)
@@ -222,13 +229,25 @@ impl<V: Vehicle> AerodynamicForceTyped<V> {
 /// rather than a silent assumption.
 pub fn compute_ballistic_drag_typed<P: Planet, V: Vehicle>(
     config: &DragConfigTyped,
-    atmos: &AtmosphereState,
+    atmos: &AtmosphereState<P>,
     inertial_velocity: Velocity<PlanetInertial<P>>,
     t_inertial_struct: &DMat3,
 ) -> AerodynamicForceTyped<V> {
+    // The kernel reads `atmos.wind.raw_si()` and `atmos.density` only;
+    // both are bit-identical to a `<SelfPlanet>`-tagged equivalent, so
+    // synthesize the planet-erased view at the call site to reuse the
+    // same numeric path. The compile-time guard is the *function*
+    // signature: a caller cannot pass `&AtmosphereState<Mars>` together
+    // with a `Velocity<PlanetInertial<Earth>>`.
+    let atmos_self = AtmosphereState::<SelfPlanet>::from_raw(
+        atmos.density,
+        atmos.temperature,
+        atmos.pressure,
+        atmos.wind.raw_si(),
+    );
     let untyped = compute_ballistic_drag(
         &config.to_untyped(),
-        atmos,
+        &atmos_self,
         inertial_velocity.raw_si(),
         t_inertial_struct,
     );
@@ -294,11 +313,8 @@ mod typed_tests {
             area: 4.5,
             constant_density: None,
         };
-        let atmos = AtmosphereState {
-            density: 1e-12,
-            wind: DVec3::new(0.0, 50.0, 0.0),
-            ..AtmosphereState::default()
-        };
+        let atmos =
+            AtmosphereState::<SelfPlanet>::from_raw(1e-12, 0.0, 0.0, DVec3::new(0.0, 50.0, 0.0));
         let velocity = DVec3::new(7500.0, 0.0, 0.0);
         // Non-identity rotation: 30° about Z.
         let theta = std::f64::consts::FRAC_PI_6;
@@ -310,9 +326,10 @@ mod typed_tests {
         );
 
         let untyped = compute_ballistic_drag(&config, &atmos, velocity, &t_is);
+        let atmos_earth = atmos.relabel::<jeod_quantities::frame::Earth>();
         let typed = compute_ballistic_drag_typed::<jeod_quantities::frame::Earth, TestVehicle>(
             &DragConfigTyped::from_untyped_unchecked(&config),
-            &atmos,
+            &atmos_earth,
             Velocity::<PlanetInertial<jeod_quantities::frame::Earth>>::from_raw_si(velocity),
             &t_is,
         );
@@ -334,7 +351,7 @@ mod typed_tests {
                 area: 4.5_f64.m2(),
                 constant_density: None,
             },
-            &atmos,
+            &atmos_earth,
             Velocity::<PlanetInertial<jeod_quantities::frame::Earth>>::from_raw_si(velocity),
             &t_is,
         );
@@ -357,12 +374,7 @@ mod tests {
         let density = 1e-12; // kg/m^3 (typical at 400 km)
         let velocity = 7600.0; // m/s (LEO orbital speed)
 
-        let atmos = AtmosphereState {
-            density,
-            temperature: 0.0,
-            pressure: 0.0,
-            wind: DVec3::ZERO,
-        };
+        let atmos = AtmosphereState::<SelfPlanet>::from_raw(density, 0.0, 0.0, DVec3::ZERO);
 
         // Vehicle moving along +X in inertial, body aligned with inertial
         let vel = DVec3::new(velocity, 0.0, 0.0);
@@ -394,7 +406,7 @@ mod tests {
             area: 10.0,
             constant_density: None,
         };
-        let atmos = AtmosphereState::default(); // density = 0
+        let atmos = AtmosphereState::<SelfPlanet>::default(); // density = 0
         let vel = DVec3::new(7600.0, 0.0, 0.0);
 
         let result = compute_ballistic_drag(&config, &atmos, vel, &DMat3::IDENTITY);
@@ -409,12 +421,12 @@ mod tests {
             area: 1.0,
             constant_density: None,
         };
-        let atmos = AtmosphereState {
-            density: 1e-12,
-            temperature: 0.0,
-            pressure: 0.0,
-            wind: DVec3::new(100.0, 0.0, 0.0), // wind along +X
-        };
+        let atmos = AtmosphereState::<SelfPlanet>::from_raw(
+            1e-12,
+            0.0,
+            0.0,
+            DVec3::new(100.0, 0.0, 0.0), // wind along +X
+        );
 
         // Vehicle moving along +X at 7600 m/s
         let vel = DVec3::new(7600.0, 0.0, 0.0);
@@ -425,10 +437,12 @@ mod tests {
         assert!(result.force.x < 0.0, "Drag should oppose relative velocity");
 
         // Compare with no-wind case
-        let atmos_no_wind = AtmosphereState {
-            wind: DVec3::ZERO,
-            ..atmos
-        };
+        let atmos_no_wind = AtmosphereState::<SelfPlanet>::from_raw(
+            atmos.density,
+            atmos.temperature,
+            atmos.pressure,
+            DVec3::ZERO,
+        );
         let result_no_wind = compute_ballistic_drag(&config, &atmos_no_wind, vel, &DMat3::IDENTITY);
         assert!(
             result.force.x.abs() < result_no_wind.force.x.abs(),
@@ -444,10 +458,7 @@ mod tests {
             area: 10.0,
             constant_density: None,
         };
-        let atmos = AtmosphereState {
-            density: 1e-12,
-            ..Default::default()
-        };
+        let atmos = AtmosphereState::<SelfPlanet>::from_raw(1e-12, 0.0, 0.0, DVec3::ZERO);
         let vel = DVec3::new(7600.0, 0.0, 0.0);
 
         let result = compute_ballistic_drag(&config, &atmos, vel, &DMat3::IDENTITY);
@@ -462,10 +473,7 @@ mod tests {
             area: 1.0,
             constant_density: None,
         };
-        let atmos = AtmosphereState {
-            density: 1e-12,
-            ..Default::default()
-        };
+        let atmos = AtmosphereState::<SelfPlanet>::from_raw(1e-12, 0.0, 0.0, DVec3::ZERO);
 
         // Vehicle moving along +X in inertial
         let vel = DVec3::new(7600.0, 0.0, 0.0);
@@ -506,10 +514,7 @@ mod tests {
 
         // Typical density at 400 km during solar mean
         let density = 4e-12; // kg/m^3
-        let atmos = AtmosphereState {
-            density,
-            ..Default::default()
-        };
+        let atmos = AtmosphereState::<SelfPlanet>::from_raw(density, 0.0, 0.0, DVec3::ZERO);
 
         let velocity = 7670.0; // m/s (ISS orbital speed)
         let vel = DVec3::new(velocity, 0.0, 0.0);

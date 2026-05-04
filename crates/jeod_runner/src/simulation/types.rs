@@ -197,7 +197,7 @@ pub(crate) struct SimBody {
     pub shadow_body: Option<(usize, f64)>,
     pub t_struct_body: DMat3,
     pub compute_gravity_torque: bool,
-    pub atmospheric_state: Option<AtmosphereState>,
+    pub atmospheric_state: Option<AtmosphereState<SelfPlanet>>,
     pub external_force: DVec3,
     pub external_torque: DVec3,
 
@@ -263,7 +263,7 @@ impl SimBody {
 
         let has_drag = config.drag.is_some();
         let atmospheric_state = if has_drag {
-            Some(AtmosphereState::default())
+            Some(AtmosphereState::<SelfPlanet>::default())
         } else {
             None
         };
