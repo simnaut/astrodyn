@@ -543,6 +543,28 @@ impl Simulation {
         self.frame_tree.get_mut(fid).state.trans.velocity = velocity;
     }
 
+    /// Replace a body's rotational state (attitude quaternion + body
+    /// angular velocity).
+    ///
+    /// Companion to [`set_body_position`](Self::set_body_position) /
+    /// [`set_body_velocity`](Self::set_body_velocity) for tests and
+    /// scenarios that need to override the recipe-derived initial
+    /// rotational state (e.g., the `tier3_sim_ref_attach` Tier 3 test
+    /// initializes the SIM_ref_attach target vehicle's YPR attitude).
+    /// Panics if the body has no rotational state slot — call
+    /// [`add_body`](Self::add_body) with `VehicleConfig::rot = Some(...)`
+    /// to register a 6-DOF body first.
+    pub fn set_body_rot(&mut self, idx: usize, rot: jeod_sim::RotationalState) {
+        assert!(
+            self.bodies[idx].rot.is_some(),
+            "set_body_rot: body {idx} is 3-DOF (no `RotationalState` slot). \
+             Spawn the body with `VehicleConfig::rot = Some(...)` first if \
+             rotational integration is needed; otherwise leave the body \
+             3-DOF and don't call this setter."
+        );
+        self.bodies[idx].rot = Some(rot);
+    }
+
     /// Replace a body's mass properties.
     ///
     /// Used for discrete mass changes (e.g., post-burn fuel consumption,

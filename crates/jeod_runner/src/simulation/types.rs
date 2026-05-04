@@ -15,7 +15,7 @@
 
 use glam::{DMat3, DVec3};
 
-use jeod_dynamics::MassBodyId;
+use jeod_dynamics::{MassBodyId, MassPointState};
 use jeod_frames::FrameId;
 use jeod_sim::{
     AerodynamicForce, AtmosphereState, ContactFacet, DragConfig, DynamicsConfig, EulerSequence,
@@ -87,6 +87,34 @@ pub struct GroundContactPairConfig {
 pub struct GroundContactImpulse {
     pub force_inertial: DVec3,
     pub torque_body: DVec3,
+}
+
+/// Attachment of a body to a non-body reference frame (port of JEOD's
+/// `DynBody::frame_attach` member, populated by `attach_to_frame`).
+///
+/// Captures the parent ref-frame ID and the rigid-body offset between
+/// the parent frame and the attached body's composite-body frame at the
+/// instant of attach. The runner's per-step pass derives the body's
+/// state by composing the parent frame's current state with this fixed
+/// offset (see `Simulation::propagate_frame_attached_state`); the body
+/// stays glued to the parent frame as the frame moves under ephemeris,
+/// planet rotation, or kinematic-joint drives.
+///
+/// JEOD source:
+/// `models/dynamics/dyn_body/src/dyn_body_attach.cc:271-379` (the
+/// three `attach_to_frame` overloads); the captured offset corresponds
+/// to JEOD's `frame_attach.attach_offset` (`X_pframe_to_struct`).
+#[derive(Debug, Clone, Copy)]
+pub struct FrameAttachState {
+    /// `FrameId` of the parent reference frame. Resolved from a
+    /// frame-tree lookup at attach time and never reparented while the
+    /// attachment holds.
+    pub parent_frame_id: FrameId,
+    /// Rigid-body offset from the parent frame to this body's
+    /// composite-body frame, expressed in parent-frame coordinates.
+    /// Frozen at attach time; changes only when the attachment is
+    /// released and re-established.
+    pub attach_offset: MassPointState,
 }
 
 /// Gravity-specific data associated with a source (decoupled from frame tree).
@@ -188,6 +216,18 @@ pub(crate) struct SimBody {
     /// derives child states from the parent's structure each step;
     /// only the root integrates (`DB.17`).
     pub kinematic_only: bool,
+    /// When `Some`, this body is attached to a non-body reference frame
+    /// (port of JEOD `DynBody::attach_to_frame`,
+    /// `models/dynamics/dyn_body/src/dyn_body_attach.cc:271-379`). The
+    /// body's `trans` / `rot` are derived each step from the parent
+    /// reference frame's state composed with the captured offset, and
+    /// translational + rotational integration is suppressed (mirrors
+    /// `dyn_body_integration.cc:309-333`'s `frame_attach.isAttached()`
+    /// branch). Distinct from [`kinematic_only`](Self::kinematic_only),
+    /// which targets a parent **body** in the mass tree;
+    /// `frame_attach` targets a parent **reference frame**. JEOD_INV:
+    /// DB.21 — only unattached bodies integrate.
+    pub frame_attach: Option<FrameAttachState>,
     pub config: DynamicsConfig,
     pub gravity_controls: GravityControls<usize>,
     pub integrator: jeod_dynamics::IntegratorType,
@@ -279,6 +319,7 @@ impl SimBody {
             mass: config.mass,
             mass_body_id: None,
             kinematic_only: false,
+            frame_attach: None,
             config: dynamics_config,
             gravity_controls: config.gravity_controls,
             integrator: config.integrator,

@@ -45,6 +45,7 @@ pub mod attach;
 pub mod body_init;
 pub mod constraints;
 pub mod forces;
+pub mod frame_attach;
 pub mod gauss_jackson;
 pub mod integration;
 pub mod kinematic_joint;
@@ -71,6 +72,7 @@ pub use forces::{
     compute_translational_acceleration, compute_translational_derivatives, DynamicsConfig,
     ForceContributions, FrameDerivatives, GravityAcceleration, TotalForce,
 };
+pub use frame_attach::{derive_frame_attached_state, FrameAttachInputs};
 pub use gauss_jackson::config::GaussJacksonConfig;
 pub use gauss_jackson::{GaussJacksonState, IntegratorResult};
 pub use integration::{rk4_sixdof_step, rk4_translational_step, IntegratorType};

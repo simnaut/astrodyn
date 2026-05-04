@@ -4,6 +4,7 @@
 
 pub mod bundles;
 pub mod components;
+pub mod frame_attach_system;
 pub mod frame_param;
 pub mod kinematic_propagation;
 pub mod mass_tree;
@@ -17,6 +18,7 @@ pub mod wrench;
 
 pub use bundles::*;
 pub use components::*;
+pub use frame_attach_system::{frame_attach_system, propagate_frame_attached_state_system};
 pub use kinematic_propagation::propagate_state_from_root_system;
 pub use mass_tree::{composite_mass_system, MassTreeQueries, MassTreeView};
 pub use sets::*;
@@ -225,6 +227,8 @@ impl Plugin for JeodPlugin {
         // ── Events ──
         app.add_message::<AttachEvent>();
         app.add_message::<DetachEvent>();
+        app.add_message::<FrameAttachEvent>();
+        app.add_message::<FrameDetachEvent>();
 
         // ── Systems ──
         // Source-frame registration runs at Startup to spawn the ECS
@@ -438,6 +442,29 @@ impl Plugin for JeodPlugin {
                 kinematic_propagation::propagate_state_from_root_system
                     .in_set(JeodSet::ForceCollection)
                     .after(systems::force_collection_system),
+                // Frame-attached body attach/detach event processing
+                // (port of `Simulation::attach_to_frame` /
+                // `detach_from_frame`). Runs in
+                // `JeodSet::ForceCollection` alongside the kinematic
+                // walk so the same-tick attach/detach takes effect on
+                // the immediately-following propagation pass below.
+                frame_attach_system::frame_attach_system
+                    .in_set(JeodSet::ForceCollection)
+                    .after(kinematic_propagation::propagate_state_from_root_system),
+                // Frame-attached body kinematic propagation. Derives
+                // every `FrameAttachedC` body's `TranslationalStateC`
+                // / `RotationalStateC` from its parent frame entity's
+                // current state composed with the captured offset.
+                // Runs after `frame_attach_system` so freshly-attached
+                // bodies pick up the parent-frame composition the same
+                // tick they were attached, and before
+                // `wrench_aggregation_system` /
+                // `integration_system` so the integrator's
+                // `Without<FrameAttachedC>` filter sees the
+                // frame-derived state and skips this body.
+                frame_attach_system::propagate_frame_attached_state_system
+                    .in_set(JeodSet::ForceCollection)
+                    .after(frame_attach_system::frame_attach_system),
                 // Composite-rigid-body wrench aggregation: walk
                 // MassChildOf chains leaves → root and accumulate
                 // each child's force/torque (and parallel-axis cross
@@ -447,7 +474,7 @@ impl Plugin for JeodPlugin {
                 // entity carries MassChildOf.
                 wrench::wrench_aggregation_system
                     .in_set(JeodSet::ForceCollection)
-                    .after(kinematic_propagation::propagate_state_from_root_system),
+                    .after(frame_attach_system::propagate_frame_attached_state_system),
                 systems::integration_system.in_set(JeodSet::Integration),
                 // After integration, sync the body's typed state into
                 // its frame entity's `FrameTransC` so frame-switch

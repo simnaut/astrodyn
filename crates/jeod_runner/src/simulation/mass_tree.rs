@@ -801,7 +801,7 @@ impl Simulation {
     /// invariant in debug builds. Issue #274 / PR #282 review thread
     /// `PRRT_kwDORtae6c5_KoAT`.
     // JEOD_INV: IG.37 — multi-step integrator history must be reset on topology change
-    fn mark_body_integrators_dirty_by_id(
+    pub(super) fn mark_body_integrators_dirty_by_id(
         bodies: &mut [super::types::SimBody],
         affected_ids: &[jeod_dynamics::MassBodyId],
     ) {
@@ -839,7 +839,7 @@ impl Simulation {
     /// deduplicated** (same precondition as
     /// `mark_body_integrators_dirty_by_id`).
     // JEOD_INV: IG.37 — multi-step integrator history must be reset on topology change
-    fn reset_body_integrators_by_id(
+    pub(super) fn reset_body_integrators_by_id(
         bodies: &mut [super::types::SimBody],
         affected_ids: &[jeod_dynamics::MassBodyId],
     ) {
