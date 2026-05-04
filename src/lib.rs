@@ -230,7 +230,7 @@ impl Plugin for JeodPlugin {
         // ── Events ──
         app.add_message::<AttachEvent>();
         app.add_message::<DetachEvent>();
-        // Body-action lifecycle (#199): callers add / remove
+        // Body-action lifecycle: callers add / remove
         // body-action requests through this single message type or
         // through `BodyActionCommandsExt` on `Commands`. The intake
         // system drains it into `BodyActionsR`; the apply system
@@ -461,8 +461,8 @@ impl Plugin for JeodPlugin {
                 // limit; set membership controls ordering, not which
                 // `add_systems` call carries the system.
                 systems::joint_kinematics_system.in_set(JeodSet::EphemerisUpdate),
-                // Body-action lifecycle (#199): drain
-                // `Add/RemoveBodyActionEvent` into `BodyActionsR`,
+                // Body-action lifecycle: drain `BodyActionEvent`
+                // (`Add` / `Remove` variants) into `BodyActionsR`,
                 // then apply every ready action. Runs before
                 // `JeodSet::EphemerisUpdate` so a mid-tick mass /
                 // state replacement is visible to gravity, atmosphere,

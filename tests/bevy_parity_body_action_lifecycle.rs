@@ -70,6 +70,7 @@ use jeod_sim::{
     BodyAction, DynamicsConfig, GravityControl, GravityControls, MassProperties, RotationalState,
     TranslationalState,
 };
+use jeod_test_data::dyncomp_csv::{load_dyncomp_csv, DyncompRecord};
 
 use common::earth_source;
 
@@ -108,18 +109,15 @@ fn test_data_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data")
 }
 
-#[derive(Debug, Clone, Copy)]
-struct CsvRow {
-    time: f64,
-    position: DVec3,
-    velocity: DVec3,
-}
-
-/// Parse the cross-validation reference CSV.
+/// Load the cross-validation reference CSV via the workspace's canonical
+/// `jeod_test_data::dyncomp_csv::load_dyncomp_csv` parser.
 ///
-/// `dyncomp_run2_state.csv` has 481 rows at 60 s cadence; only `time`,
-/// `position[0..3]`, and `velocity[0..3]` are needed for this test.
-fn load_reference_csv() -> Vec<CsvRow> {
+/// Reusing the canonical loader keeps the column layout in one place and
+/// inherits its fail-loud handling (missing file, parse failure, truncated
+/// row with fewer than 23 columns all panic with diagnostic messages).
+/// Only `time`, `composite_body.position`, and `composite_body.velocity`
+/// are consumed by this test.
+fn load_reference_csv() -> Vec<DyncompRecord> {
     let path = test_data_dir().join("dyncomp_run2_state.csv");
     assert!(
         path.exists(),
@@ -130,51 +128,7 @@ fn load_reference_csv() -> Vec<CsvRow> {
            cargo xtask regenerate-tier3",
         path.display()
     );
-    let content = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("Failed to read {}: {e}", path.display()));
-    let mut lines = content.lines();
-    // Skip the JEOD CSV header (one row of column headers).
-    lines.next().expect("CSV header");
-    // Layout (per CLAUDE.md `CSV column layout for log_state_ASCII.csv`):
-    //   col 0: sys.exec.out.time {s}
-    //   col 1: composite_body.state.trans.position[0]
-    //   col 2: composite_body.state.trans.velocity[0]
-    //   col 8: position[1], col 9: velocity[1]
-    //   col 15: position[2], col 16: velocity[2]
-    const EXPECTED_COLS: usize = 17;
-    let mut rows = Vec::new();
-    for (row_idx, line) in lines.enumerate() {
-        // Tolerate only truly empty lines (e.g., a trailing newline at EOF).
-        // A non-empty row with too few columns indicates a truncated or
-        // corrupted reference CSV and must fail loudly per the project's
-        // fail-loud rule.
-        if line.trim().is_empty() {
-            continue;
-        }
-        let cols: Vec<f64> = line
-            .split(',')
-            .map(|s| {
-                s.trim()
-                    .parse::<f64>()
-                    .unwrap_or_else(|e| panic!("CSV parse: '{}' -> {e}", s.trim()))
-            })
-            .collect();
-        assert!(
-            cols.len() >= EXPECTED_COLS,
-            "reference CSV {}: row {} has {} columns, expected at least {}: {:?}",
-            path.display(),
-            row_idx,
-            cols.len(),
-            EXPECTED_COLS,
-            line,
-        );
-        rows.push(CsvRow {
-            time: cols[0],
-            position: DVec3::new(cols[1], cols[8], cols[15]),
-            velocity: DVec3::new(cols[2], cols[9], cols[16]),
-        });
-    }
-    rows
+    load_dyncomp_csv(&path)
 }
 
 /// Spawn a Bevy `App` configured for SIM_removable_body_action::RUN_1.
@@ -377,8 +331,8 @@ fn tier3_bevy_parity_body_action_init_lifecycle() {
         if let Some(next) = log_iter.peek() {
             if sim_t + 0.5 * DT >= next.time {
                 let trans = read_trans(&app, vehicle);
-                let pos_err = (trans.position - next.position).length();
-                let vel_err = (trans.velocity - next.velocity).length();
+                let pos_err = (trans.position - next.composite_body.position).length();
+                let vel_err = (trans.velocity - next.composite_body.velocity).length();
                 max_pos_err = max_pos_err.max(pos_err);
                 max_vel_err = max_vel_err.max(vel_err);
                 log_iter.next();
