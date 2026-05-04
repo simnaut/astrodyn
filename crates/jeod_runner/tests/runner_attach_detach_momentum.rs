@@ -38,7 +38,7 @@ use glam::{DMat3, DVec3};
 use jeod_dynamics::{combine_states_at_attach, AttachCombineInputs};
 use jeod_frames::{RefFrameRot, RefFrameState, RefFrameTrans};
 use jeod_math::JeodQuat;
-use jeod_runner::Simulation;
+use jeod_runner::{Simulation, SimulationBuilderExt};
 use jeod_sim::{
     GravityControl, GravityControls, GravityModel, GravitySource, GravitySourceEntry,
     IntegratorType, MassProperties as SimMassProperties, RotationalState, SimulationTime,
@@ -714,5 +714,202 @@ fn runner_attach_handles_interior_kinematic_parent() {
         p_err < 1e-9,
         "total linear momentum must be conserved across the multi-level attach: \
          pre={p_pre:?} post={p_post:?} err={p_err}"
+    );
+}
+
+/// `Simulation::detach` on a tree whose bodies integrate in a non-root
+/// `PlanetInertial<P>` source frame must round-trip parent and child
+/// state through the planet origin. The detach handler runs the
+/// body-aware tree walk in root-inertial coordinates (the only inertial
+/// frame in which `propagate_forward` arithmetic is valid across a
+/// chain of bodies that may live in different integ frames). Both the
+/// seed and the writeback have to cross the `IntegOrigin` boundary.
+///
+/// Without the fix:
+/// - the seed `root_pre_state` is read directly from
+///   `TranslationalStateTyped<IntegrationFrame>` storage but treated as
+///   root-inertial, so `derive_subtree_composite_state` walks the chain
+///   from a planet-relative seed and produces a planet-relative child;
+/// - the post-detach writeback then casts root-inertial values
+///   (`new_root_position`/`new_root_velocity`) back into
+///   `TranslationalStateTyped<IntegrationFrame>` storage without the
+///   inverse `IntegOrigin` shift, mis-labelling the typed state.
+///
+/// For a non-root-integrated body this corrupts post-detach storage by
+/// the planet's offset from root (`SSB_TO_EARTH_OFFSET ~ 1.5e11 m` in
+/// the realistic frame-tree layout exercised here).
+///
+/// With the fix the round-trip recovers the pre-attach storage values
+/// to f64 rounding for both parent and child — same property the
+/// `runner_attach_then_detach_recovers_parent_position` test pins for
+/// the root-integrated case, generalised across `IntegOrigin`.
+#[test]
+fn runner_detach_lifts_through_integ_origin() {
+    use jeod_sim::{RotationModel, SimulationBuilder};
+
+    // Earth as a non-central source 1.5e11 m from the SSB-rooted frame
+    // — the same realistic geometry the frame-translation invariance
+    // test (`integ_frame_translation_invariance.rs`) uses to make
+    // `IntegOrigin` non-zero. The shift through the planet origin is
+    // what distinguishes this test from
+    // `runner_attach_then_detach_recovers_parent_position` (which has
+    // an implicitly zero `IntegOrigin`).
+    const SSB_TO_EARTH: DVec3 = DVec3::new(1.5e11, 0.0, 0.0);
+
+    let parent_mass = SimMassProperties::with_inertia(
+        420.0,
+        DMat3::from_diagonal(DVec3::new(150.0, 200.0, 250.0)),
+        DVec3::ZERO,
+    );
+    let child_mass = SimMassProperties::with_inertia(
+        80.0,
+        DMat3::from_diagonal(DVec3::new(40.0, 50.0, 60.0)),
+        DVec3::ZERO,
+    );
+
+    // Earth-relative ECI coords. Both bodies integrate in
+    // `Earth.inertial` (a non-root frame in this setup), so these are
+    // the values stored in `body.trans` — and the values the round-trip
+    // must recover post-detach.
+    let parent_trans = TranslationalState {
+        position: DVec3::new(7e6, 1.0e5, -3.0e4),
+        velocity: DVec3::new(7300.0, -50.0, 13.0),
+    };
+    let parent_rot = Some(RotationalState {
+        quaternion: JeodQuat::identity(),
+        ang_vel_body: DVec3::ZERO,
+    });
+    let child_trans = TranslationalState {
+        position: parent_trans.position + DVec3::new(3.0, 0.0, 0.0),
+        velocity: parent_trans.velocity, // co-mover so the merge is "soft"
+    };
+    let child_rot = Some(RotationalState {
+        quaternion: JeodQuat::identity(),
+        ang_vel_body: DVec3::ZERO,
+    });
+
+    let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sb = SimulationBuilder::new(time, 1.0);
+
+    // Root = SSB barycenter (mu=0 placeholder); Earth is a non-central
+    // child at SSB_TO_EARTH so `IntegOrigin{Earth} != 0`.
+    let _ssb = sb.add_source(
+        "SSB",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
+            t_inertial_pfix: None,
+            rotation_model: RotationModel::None,
+            delta_c20: 0.0,
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: true,
+        },
+    );
+    let earth = sb.add_source(
+        "Earth",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: 0.0, // disable gravity so the test guards orchestration only
+                model: GravityModel::PointMass,
+            },
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(SSB_TO_EARTH),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
+            t_inertial_pfix: None,
+            rotation_model: RotationModel::None,
+            delta_c20: 0.0,
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: false,
+        },
+    );
+
+    let parent_idx = sb.add_body(VehicleConfig {
+        trans: parent_trans,
+        rot: parent_rot,
+        mass: Some(parent_mass),
+        integrator: IntegratorType::Rk4,
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth, false)],
+        },
+        integ_source: Some(earth),
+        ..Default::default()
+    });
+    let child_idx = sb.add_body(VehicleConfig {
+        trans: child_trans,
+        rot: child_rot,
+        mass: Some(child_mass),
+        integrator: IntegratorType::Rk4,
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth, false)],
+        },
+        integ_source: Some(earth),
+        ..Default::default()
+    });
+    let mut sim = sb.build().expect("non-root-integ pair builds");
+
+    let _parent_id = sim.add_body_to_tree(parent_idx, "Parent");
+    let _child_id = sim.add_body_to_tree(child_idx, "Child");
+
+    sim.attach(
+        child_idx,
+        parent_idx,
+        DVec3::new(3.0, 0.0, 0.0),
+        DMat3::IDENTITY,
+    );
+    sim.detach(child_idx);
+
+    // Parent's `body.trans` is typed `<IntegrationFrame>` and the
+    // integ frame is `Earth.inertial`; the round-trip must recover the
+    // pre-attach Earth-relative values. Without the writeback shift the
+    // post-detach value would be off by exactly `SSB_TO_EARTH` (the
+    // root-inertial seed lift never gets reversed).
+    let parent_post = sim.body(parent_idx);
+    let pos_err = (parent_post.trans.position - parent_trans.position).length();
+    assert!(
+        pos_err < 1e-6,
+        "parent position must round-trip across attach + detach when the \
+         integ frame has a non-zero `IntegOrigin`: pre={:?} post={:?} \
+         err={pos_err}. A failure of order {} m indicates the seed lift / \
+         writeback shift is missing.",
+        parent_trans.position,
+        parent_post.trans.position,
+        SSB_TO_EARTH.length()
+    );
+    let v_err = (parent_post.trans.velocity - parent_trans.velocity).length();
+    assert!(
+        v_err < 1e-9,
+        "parent velocity must round-trip across attach + detach (co-mover): \
+         pre={:?} post={:?} err={v_err}",
+        parent_trans.velocity,
+        parent_post.trans.velocity,
+    );
+
+    // Same property for the child — its storage is also typed
+    // `<IntegrationFrame>` and the rederived state must come out in
+    // Earth-relative coords, not root-inertial coords.
+    let child_post = sim.body(child_idx);
+    let child_err = (child_post.trans.position - child_trans.position).length();
+    assert!(
+        child_err < 1e-6,
+        "child position must round-trip across attach + detach when the \
+         integ frame has a non-zero `IntegOrigin`: pre={:?} post={:?} \
+         err={child_err}. A failure of order {} m indicates the writeback \
+         shift is missing on the child side.",
+        child_trans.position,
+        child_post.trans.position,
+        SSB_TO_EARTH.length()
+    );
+    let child_v_err = (child_post.trans.velocity - child_trans.velocity).length();
+    assert!(
+        child_v_err < 1e-9,
+        "child velocity must round-trip across attach + detach (co-mover): \
+         pre={:?} post={:?} err={child_v_err}",
+        child_trans.velocity,
+        child_post.trans.velocity,
     );
 }

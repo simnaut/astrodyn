@@ -437,24 +437,46 @@ impl Simulation {
             (walker, idx)
         };
 
-        // Pre-detach composite-body inertial state of the integrated
-        // root + its pre-detach composite mass props. Read directly off
-        // the root body because that is where `body.trans` / `body.rot`
-        // currently store the merged composite-body state (post-attach
-        // the child's storage is stale — the integrated root is the
-        // single source of truth).
-        let root_pre_state = Self::body_composite_state_or_default(&self.bodies[root_idx]);
+        // JEOD_INV: RF.10 — `body.trans` is typed
+        // `TranslationalStateTyped<IntegrationFrame>`; the body-aware
+        // tree walk in `derive_subtree_composite_state` composes states
+        // via `propagate_forward`, which is arithmetic-valid only when
+        // the seed state is in a single inertial frame. Lift the root's
+        // translational state to root-inertial via its `IntegOrigin`
+        // before seeding the walk. For a root-integrated root the lift
+        // is a bit-identical `IntegOrigin::zero()` no-op; for a root
+        // that integrates in `PlanetInertial<P>` the lift is the only
+        // thing that prevents seeding the walk with a position relative
+        // to the planet's origin and producing a child composite that
+        // silently mixes integ-frame parent coords with inertial-frame
+        // walk offsets. Mirrors `attach`'s seed-time lift.
+        let root_integ_origin_pos = {
+            let (p, _v) = self.frame_origin(self.bodies[root_idx].integ_frame_id);
+            p
+        };
+        let root_integ_origin_vel = {
+            let (_p, v) = self.frame_origin(self.bodies[root_idx].integ_frame_id);
+            v
+        };
+        let child_integ_origin_pos = {
+            let (p, _v) = self.frame_origin(self.bodies[child_idx].integ_frame_id);
+            p
+        };
+        let child_integ_origin_vel = {
+            let (_p, v) = self.frame_origin(self.bodies[child_idx].integ_frame_id);
+            v
+        };
+        let mut root_pre_state = Self::body_composite_state_or_default(&self.bodies[root_idx]);
+        root_pre_state.trans.position += root_integ_origin_pos;
+        root_pre_state.trans.velocity += root_integ_origin_vel;
         let root_pre_composite_props = self.bodies[root_idx]
             .mass
             .expect("detach: tree root has no mass properties");
 
-        // Derive the child's instantaneous composite-body inertial
-        // state at the detach instant via the body-aware tree walk
-        // (root → child) using `composite_wrt_pstr` offsets and
-        // structure-point rotations from the mass tree. Mirrors the
-        // walk in `detach_subtree` and the Bevy adapter's detach
-        // handler so all three paths produce bit-identical kernel
-        // inputs.
+        // The walk runs in root-inertial coordinates (the seed has been
+        // lifted above), so `child_pre_state` is also root-inertial.
+        // The integ-frame writeback below shifts each side back through
+        // its own `IntegOrigin`.
         let child_pre_state =
             Self::derive_subtree_composite_state(self, root_id, child_id, root_pre_state);
         let child_has_rot = self.bodies[child_idx].rot.is_some();
@@ -501,14 +523,27 @@ impl Simulation {
         let omega_body = root_pre_state.rot.ang_vel_this;
         let dvel_inertial = t_inertial_to_body.transpose() * omega_body.cross(cm_delta_body);
 
+        // `new_root_position` / `new_root_velocity` live in root-inertial
+        // (the seed-lift above ensured the kinematic offset arithmetic
+        // ran in a single inertial frame). The storage target is typed
+        // `TranslationalStateTyped<IntegrationFrame>`, so lower back
+        // through the root's `IntegOrigin` before the
+        // `from_untyped_unchecked` cast — symmetric partner of the
+        // seed-lift, mirroring the writeback pattern PR #295 established
+        // for `propagate_kinematic_state`. For a root-integrated root
+        // the shift is `IntegOrigin::zero()` and the subtraction is a
+        // bit-identical no-op; for a root in `PlanetInertial<P>` it is
+        // the only thing that keeps an inertial-coord value from being
+        // labelled as integration-frame and silently corrupting every
+        // downstream consumer of `body.trans`.
         let new_root_position = root_pre_state.trans.position + cm_delta_inertial;
         let new_root_velocity = root_pre_state.trans.velocity + dvel_inertial;
 
         self.bodies[root_idx].trans =
             TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
                 &TranslationalState {
-                    position: new_root_position,
-                    velocity: new_root_velocity,
+                    position: new_root_position - root_integ_origin_pos,
+                    velocity: new_root_velocity - root_integ_origin_vel,
                 },
             );
         // root.rot is unchanged — composite/core share body axes (the
@@ -516,19 +551,26 @@ impl Simulation {
         // == core_properties.t_parent_this throughout). A 3-DOF body
         // stays 3-DOF regardless of the detach.
 
-        // ── Apply the child-side rederivation. ──
-        // The child becomes a free Simulation body whose `body.trans`
-        // / `body.rot` should hold its instantaneous composite-body
-        // inertial state at the detach instant. Single-body detach via
+        // The child becomes a free Simulation body whose `body.trans` /
+        // `body.rot` should hold its instantaneous composite-body state
+        // at the detach instant. Single-body detach via
         // `Simulation::detach` does NOT route through
         // `detached_subtrees` (that map is for tree-only subtrees that
         // have no Simulation body backing — the runner integrates the
         // detached child going forward).
+        //
+        // `child_pre_state` came out of the inertial-frame walk seeded
+        // above, so it lives in root-inertial. The child's storage is
+        // typed `TranslationalStateTyped<IntegrationFrame>` and the
+        // integ frame here is the child's own (unchanged across detach
+        // — `add_body` resolved it from `VehicleConfig::integ_source`).
+        // Lower through the child's `IntegOrigin` before the cast so
+        // the typed label matches the stored coordinates.
         self.bodies[child_idx].trans =
             TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
                 &TranslationalState {
-                    position: child_pre_state.trans.position,
-                    velocity: child_pre_state.trans.velocity,
+                    position: child_pre_state.trans.position - child_integ_origin_pos,
+                    velocity: child_pre_state.trans.velocity - child_integ_origin_vel,
                 },
             );
         if child_has_rot {
