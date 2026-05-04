@@ -29,8 +29,8 @@ use bevy::prelude::*;
 use bevy_jeod::{
     AttachEvent, DetachEvent, DetachedSubtreeStateC, DynamicsConfigC, FrameDerivativesC,
     FrameEntityC, FrameTransC, GravityAccelerationC, GravityControlsC, GravitySourceC, JeodPlugin,
-    MassBodyIdC, MassPropertiesC, MassTreeR, RotationalStateC, SourceInertialPositionC,
-    TranslationalStateC,
+    MassBodyIdC, MassPropertiesC, MassTreeR, RootFrameEntityR, RotationalStateC,
+    SourceInertialPositionC, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
 use jeod_sim::{
@@ -890,6 +890,152 @@ fn bevy_step_detached_runs_before_frame_tree_sync() {
         "body frame entity FrameTransC must reflect post-step body position \
          (sync_body_to_frame_system must run after step_detached_system): \
          frame {frame_pos:?}, body {body_pos:?}"
+    );
+}
+
+/// On `AttachEvent`, the child body's frame entity must remain
+/// parented under its original integration frame entity — NOT
+/// reparented under the parent body's frame entity.
+///
+/// This pins JEOD's actual frame-tree semantics from
+/// `models/dynamics/dyn_body/src/dyn_body_integration.cc::set_integ_frame`
+/// and `dyn_body_attach.cc::attach_establish_links`: a body's three
+/// reference frames (`structure`, `composite_body`, `core_body`) plus
+/// vehicle points are children of its `integ_frame` (an
+/// `EphemerisRefFrame`), not of any parent body. JEOD only reparents
+/// these frames when the child's `integ_frame` changes — which on
+/// attach means: only when the parent uses a *different* integ frame
+/// than the child. The Bevy-side counterpart of an integ-frame switch
+/// is `frame_switch_system`, not `staging_system`. The dyn-parent
+/// relationship is captured by the mass tree (and its
+/// post-#280 `MassChildOf` ECS-native sibling), independent of the
+/// frame tree.
+///
+/// In the same-integ-frame case (the common one — both bodies
+/// integrate in root inertial), reparenting the child's frame entity
+/// under the parent's frame entity would *invert* JEOD's invariant:
+/// the child's `FrameTransC` is in the integration frame's
+/// coordinates, and re-parenting it under the parent body's frame
+/// entity would relabel that storage as "relative to the parent
+/// body" without converting the numbers — silently corrupting every
+/// downstream `RelativeFrameState` walk that reads the child's frame
+/// entity to compute a cross-frame state. The post-#280
+/// kinematic-propagation rewrite
+/// (`propagate_state_from_root_system` + `sync_body_to_frame_system`)
+/// keeps the child's `FrameTransC` in lockstep with its
+/// `TranslationalStateC` each tick, but only as long as the child's
+/// frame-tree node is parented under its own integ frame. This
+/// regression test pins the no-op behaviour so a future change that
+/// wires `commands.entity(child_frame).insert(ChildOf(parent_frame))`
+/// into the attach handler would fail loudly.
+#[test]
+fn bevy_attach_does_not_reparent_child_frame_under_parent_frame() {
+    let parent_mass = MassProperties::new(1000.0);
+    let child_mass = MassProperties::new(500.0);
+    let parent_trans = TranslationalState {
+        position: DVec3::new(7e6, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let child_trans = TranslationalState {
+        position: DVec3::new(7e6, 1.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let initial_rot = RotationalState::default();
+
+    let (mut app, parent_entity, child_entity, _, _) = build_two_body_world(
+        1.0,
+        parent_mass,
+        parent_trans,
+        initial_rot,
+        child_mass,
+        child_trans,
+        initial_rot,
+    );
+
+    // First step: `register_body_frames_system` spawns each body's
+    // frame entity and parents it under the root frame entity. No
+    // attach yet — both children are independent free-flying bodies.
+    step(&mut app, 1, 1.0);
+
+    let root_frame_entity = app.world().resource::<RootFrameEntityR>().0;
+
+    // Sanity: both bodies registered, both frame entities under the
+    // root frame entity.
+    let parent_frame_entity = app
+        .world()
+        .get::<FrameEntityC>(parent_entity)
+        .expect("parent registered FrameEntityC after first step")
+        .0;
+    let child_frame_entity = app
+        .world()
+        .get::<FrameEntityC>(child_entity)
+        .expect("child registered FrameEntityC after first step")
+        .0;
+    assert_eq!(
+        app.world()
+            .get::<ChildOf>(parent_frame_entity)
+            .expect("parent frame entity has ChildOf parent")
+            .parent(),
+        root_frame_entity,
+        "pre-attach: parent frame entity must be parented under the root frame entity"
+    );
+    assert_eq!(
+        app.world()
+            .get::<ChildOf>(child_frame_entity)
+            .expect("child frame entity has ChildOf parent")
+            .parent(),
+        root_frame_entity,
+        "pre-attach: child frame entity must be parented under the root frame entity"
+    );
+
+    // Fire the attach event and step once so `staging_system`
+    // processes it.
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset: DVec3::ZERO,
+            t_parent_child: DMat3::IDENTITY,
+        });
+    step(&mut app, 1, 1.0);
+
+    // The crux of the regression: the child's frame entity's ChildOf
+    // parent must STILL be the root frame entity — `staging_system`
+    // mutates the mass tree (and writes the merged composite-body
+    // state into the parent), but it does not (and per JEOD must not)
+    // reparent the child's frame entity under the parent body's frame
+    // entity.
+    let child_frame_parent_post = app
+        .world()
+        .get::<ChildOf>(child_frame_entity)
+        .expect("child frame entity still alive post-attach")
+        .parent();
+    assert_eq!(
+        child_frame_parent_post, root_frame_entity,
+        "post-attach: child frame entity ({child_frame_entity:?}) must remain parented under the \
+         root frame entity ({root_frame_entity:?}) — not reparented under the parent body's \
+         frame entity ({parent_frame_entity:?}). JEOD `dyn_body_integration.cc::set_integ_frame` \
+         only reparents body frames on integ-frame change, never on attach to a same-integ-frame \
+         parent."
+    );
+    assert_ne!(
+        child_frame_parent_post, parent_frame_entity,
+        "post-attach: child frame entity must not be reparented under the parent body's frame \
+         entity ({parent_frame_entity:?}); the parent-body relationship lives in the mass tree, \
+         not in the frame tree."
+    );
+
+    // Companion check: the parent's own frame entity is also
+    // unchanged (the attach is a child-side operation; the parent's
+    // frame-tree node is identity-mapped through it).
+    assert_eq!(
+        app.world()
+            .get::<ChildOf>(parent_frame_entity)
+            .expect("parent frame entity has ChildOf parent post-attach")
+            .parent(),
+        root_frame_entity,
+        "post-attach: parent frame entity must remain parented under the root frame entity"
     );
 }
 
