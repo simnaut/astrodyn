@@ -254,18 +254,17 @@ pub fn propagate_state_from_root_system(
                 // `RotationalState` / `TranslationalState` from the
                 // kernel walk in `jeod_sim::propagate_state_via_storage`,
                 // and re-wrapping them as `RotationalStateTyped<SelfRef>` /
-                // `TranslationalStateTyped<RootInertial>` is the canonical
-                // re-entry into the typed surface (mirrors
-                // `wrench_aggregation_system`'s root-exit boundary
-                // writes through `from_raw_si`).
+                // `TranslationalStateTyped<PlanetInertial<SelfPlanet>>`
+                // is the canonical re-entry into the typed surface
+                // (mirrors `wrench_aggregation_system`'s root-exit
+                // boundary writes through `from_raw_si`). The
+                // translational tag matches `TranslationalStateC`'s
+                // wildcard-`<PlanetInertial<SelfPlanet>>` storage post
+                // #263, not `<RootInertial>`: the body lives in its
+                // integration frame, and the `<RootInertial>` lift is
+                // applied at *shift sites* via `to_inertial(&origin)`
+                // — never silently here.
                 rot_c.0 = RotationalStateTyped::<SelfRef>::from_untyped_unchecked(&state.rot);
-                // Same kernel boundary as the rotational write above:
-                // `state.trans` is a raw `TranslationalState` in the
-                // body's integration frame (planet-inertial in
-                // realistic configs); re-wrapping with the
-                // `<PlanetInertial<SelfPlanet>>` phantom is the
-                // canonical typed lift (matches
-                // `TranslationalStateC`'s wildcard-tag storage).
                 trans_c.0 =
                     // allowed: kernel boundary (see rotational sibling write above for the full rationale).
                     TranslationalStateTyped::<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>::from_untyped_unchecked(
