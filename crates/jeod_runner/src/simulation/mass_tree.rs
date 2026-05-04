@@ -534,6 +534,26 @@ impl Simulation {
             // Site B: reset history (separate observation site).
             jeod_sim::reset_integrators(body.gj_state.as_mut(), body.abm4_state.as_mut());
         }
+
+        // ── Clear `kinematic_only` on the freshly-detached subtree root,
+        //    parallel to `Self::detach`. After `tree.detach`, the
+        //    subtree's tree-root has no parent in the mass tree;
+        //    `propagate_kinematic_state` would panic with the
+        //    "kinematic-only resolves to a tree root" diagnostic on the
+        //    next `step()` if a SimBody backing the subtree root were
+        //    left flagged `kinematic_only`. Interior subtree bodies
+        //    (descendants of the new tree root) keep their flag because
+        //    the new root continues to drive their state via
+        //    `propagate_state_via_storage`. Only one SimBody can match
+        //    a given `MassBodyId` (enforced by the duplicate-id guard
+        //    in `propagate_kinematic_state`), so a single linear scan
+        //    is sufficient. PR #295 review thread `PRRT_kwDORtae6c5_O1JW`.
+        for body in self.bodies.iter_mut() {
+            if body.mass_body_id == Some(subtree_root_id) {
+                body.kinematic_only = false;
+                break;
+            }
+        }
     }
 
     /// Re-attach a previously-detached subtree to the integrated body's
@@ -2086,6 +2106,83 @@ mod tests {
         // Post-detach step: must run cleanly. This is the load-bearing
         // assertion — a regression that drops the auto-clear panics
         // here, not at the assertion above.
+        sim.step()
+            .expect("post-detach step must succeed (kinematic_only must be cleared)");
+    }
+
+    /// Sibling of `detach_clears_kinematic_only_flag_on_child` for the
+    /// `detach_subtree` path. `detach_subtree` mutates the same
+    /// `mass_tree` topology as `detach`, so a kinematic-flagged SimBody
+    /// whose `mass_body_id` matches the subtree root must have the flag
+    /// cleared at the same fail-loud entry point — otherwise
+    /// `propagate_kinematic_state` panics on the next `step()` with
+    /// "kinematic-only resolves to a tree root". Pins the parallel fix
+    /// requested in PR #295 review thread `PRRT_kwDORtae6c5_O1JW`.
+    #[test]
+    fn detach_subtree_clears_kinematic_only_flag_on_subtree_root() {
+        use crate::SimulationBuilderExt;
+        use jeod_sim::recipes::Mission;
+        use jeod_sim::{JeodQuat, RotationalState};
+
+        // Same recipe-backed root as `detach_clears_kinematic_only_flag_on_child`.
+        let mut sim = Mission::iss_leo()
+            .into_builder()
+            .build()
+            .expect("Mission::iss_leo must validate");
+
+        let parent_idx = 0;
+        // `iss_leo` ships a 3-DOF root; `detach_subtree` requires the
+        // integrated body to have a `rot` (it reads the parent
+        // composite-body inertial state to build the chain walk).
+        // Install identity attitude + zero rate so the subtree path is
+        // exercised without changing the orbit.
+        sim.bodies[parent_idx].rot = Some(RotationalState {
+            quaternion: JeodQuat::identity(),
+            ang_vel_body: DVec3::ZERO,
+        });
+
+        let child_idx = sim.add_body(VehicleConfig {
+            trans: TranslationalState::default(),
+            rot: Some(RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::ZERO,
+            }),
+            mass: Some(MassProperties::new(5.0)),
+            gravity_controls: GravityControls { controls: vec![] },
+            ..Default::default()
+        });
+        sim.add_body_to_tree(parent_idx, "parent");
+        let child_id = sim.add_body_to_tree(child_idx, "child");
+        sim.attach(
+            child_idx,
+            parent_idx,
+            DVec3::new(1.0, 0.0, 0.0),
+            DMat3::IDENTITY,
+        );
+        sim.mark_kinematic_only(child_idx);
+        assert!(
+            sim.bodies[child_idx].kinematic_only,
+            "child must be kinematic-only after mark_kinematic_only"
+        );
+
+        // Pre-detach step exercises `propagate_kinematic_state` so a
+        // regression that flips the assert order shows up here.
+        sim.step().expect("pre-detach step must succeed");
+
+        // Detach via the subtree path. `child_id` is a leaf, so the
+        // subtree happens to contain a single node — that's still the
+        // exact case where the flag must be cleared (the freshly-rooted
+        // node is the same SimBody that carried `kinematic_only`).
+        sim.detach_subtree(parent_idx, child_id);
+        assert!(
+            !sim.bodies[child_idx].kinematic_only,
+            "detach_subtree must clear kinematic_only on the SimBody backing \
+             the freshly-rooted subtree; leaving it set would panic in \
+             propagate_kinematic_state on the next step (tree-root with no parent)"
+        );
+
+        // Load-bearing assertion: post-detach step must run. A
+        // regression that drops the auto-clear panics here.
         sim.step()
             .expect("post-detach step must succeed (kinematic_only must be cleared)");
     }
