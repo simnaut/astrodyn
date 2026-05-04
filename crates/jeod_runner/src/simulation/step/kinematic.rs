@@ -393,9 +393,10 @@ mod tests {
         let parent_q =
             JeodQuat::left_quat_from_eigen_rotation(std::f64::consts::FRAC_PI_3, DVec3::Z);
         let parent_omega = DVec3::new(0.0, 0.0, 1e-3);
-        // Mutate the existing root body to install a non-identity
-        // rotational state — `iss_leo` ships with identity quat / zero
-        // rate by default. The recipe gives us a 6-DOF body already.
+        // `iss_leo` ships a 3-DOF point-mass body (no `rot`). Promote
+        // it in place to 6-DOF by installing a non-identity rotational
+        // state — kinematic-link composition has to read the parent's
+        // attitude and angular rate, so a `rot` field is required.
         sim.bodies[0].rot = Some(RotationalState {
             quaternion: parent_q,
             ang_vel_body: parent_omega,
