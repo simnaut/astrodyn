@@ -88,11 +88,20 @@ const DT: f64 = 0.1;
 const ATTACH_TIME: f64 = 10.0;
 /// `BodyDetach veh1.detach_from_2` time
 /// (`SET_test/RUN_simple_attach_detach/input.py:25`). We stop the
-/// parity comparison just before this — see the file-level docstring's
-/// "What is **not** pinned" section for the #308 dual-write reason.
+/// parity comparison strictly before this — see the file-level
+/// docstring's "What is **not** pinned" section for the #308 dual-
+/// write reason.
 const DETACH_TIME: f64 = 20.0;
 
-const NUM_STEPS: usize = (DETACH_TIME / DT) as usize;
+/// Number of `DT`-sized steps to run. Equals `(DETACH_TIME / DT) - 1`
+/// so the loop's last `step()`/`step_bevy()` call lands at
+/// `t = DETACH_TIME - DT` (= 19.9 s) and never reaches
+/// `t == DETACH_TIME`. The `-1` is the "stop strictly before
+/// detach" fence: the bare `DETACH_TIME / DT` would advance the sim
+/// to exactly `t = DETACH_TIME`, where `staging_system` would
+/// observe the detach time the file-level "What is **not** pinned"
+/// section explicitly excludes.
+const NUM_STEPS: usize = (DETACH_TIME / DT) as usize - 1;
 
 // ── Initial conditions, all from JEOD Modified_data files. ──
 
