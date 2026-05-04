@@ -2214,13 +2214,16 @@ pub fn aero_drag_system(
         // structural-frame Component still uses raw DVec3; that's a
         // remaining typed-storage boundary).
         let rot_untyped = rot.0.to_untyped();
-        // Bevy adapter stores body velocity as `Velocity<RootInertial>`
-        // (current sims have root=Earth.inertial). Drag's typed sibling
-        // expects `Velocity<PlanetInertial<P>>`; relabel via from_raw_si is
-        // bit-identical and asserts the Earth-orbit assumption.
+        // Bevy adapter stores body velocity as
+        // `Velocity<PlanetInertial<SelfPlanet>>`. Drag's typed sibling
+        // is parameterized over a concrete `P`, so the call site does
+        // a wildcard → `PlanetInertial<Earth>` phantom relabel (no
+        // integ-origin shift — drag stays in planet-inertial
+        // throughout). Bit-identical and asserts the Earth-orbit
+        // assumption that the body's planet is Earth.
         use jeod_sim::{Earth, PlanetInertial, Velocity};
-        // allowed: RootInertial → PlanetInertial<Earth> relabel for the
-        // typed sibling; bit-identical (no arithmetic).
+        // allowed: wildcard `<SelfPlanet>` → concrete `<Earth>` relabel
+        // for the typed sibling; bit-identical (no arithmetic).
         let drag_velocity = Velocity::<PlanetInertial<Earth>>::from_raw_si(state.velocity.raw_si());
         let result = jeod_sim::compute_drag_typed::<Earth, SelfRef>(
             &drag_config.0,
@@ -2305,14 +2308,15 @@ pub fn orbital_elements_system(
             elements.0 = Default::default();
             continue;
         };
-        // Position and velocity are typed `Position<RootInertial>` on the
-        // Bevy adapter (current sims have root=Earth.inertial). Relabel
-        // to `Position<PlanetInertial<Earth>>` for the typed sibling —
-        // bit-identical relabel that asserts the documented assumption.
+        // Position and velocity are typed
+        // `Position<PlanetInertial<SelfPlanet>>` on the Bevy adapter.
+        // Relabel to `Position<PlanetInertial<Earth>>` for the typed
+        // sibling — a wildcard → concrete-planet phantom retag, no
+        // arithmetic, asserts the Earth-orbit assumption.
         use jeod_sim::{Earth, PlanetInertial, Position, Velocity};
         let mu_typed = jeod_sim::F64Ext::m3_per_s2(source.mu);
-        // allowed: RootInertial → PlanetInertial<Earth> relabel for the
-        // typed sibling; bit-identical (no arithmetic).
+        // allowed: wildcard `<SelfPlanet>` → concrete `<Earth>` relabel
+        // for the typed sibling; bit-identical (no arithmetic).
         let pos = Position::<PlanetInertial<Earth>>::from_raw_si(state.position.raw_si());
         // allowed: same relabel as `pos` above.
         let vel = Velocity::<PlanetInertial<Earth>>::from_raw_si(state.velocity.raw_si());
@@ -2353,14 +2357,16 @@ pub fn euler_angles_system(
 /// Placed in `JeodSet::DerivedState`.
 pub fn lvlh_system(mut query: Query<(&TranslationalStateC, &mut LvlhFrameC)>) {
     for (state, mut lvlh) in &mut query {
-        // Typed throughout — TranslationalStateC carries `RootInertial`
-        // for the Bevy adapter (current sims have root=Earth.inertial).
-        // The typed sibling expects `PlanetInertial<P>`; relabel via
-        // `from_raw_si` is bit-identical and asserts the documented
-        // assumption that root coincides with Earth.inertial here.
+        // Typed throughout — `TranslationalStateC` carries
+        // `PlanetInertial<SelfPlanet>` on the Bevy adapter. LVLH stays
+        // in planet-inertial (no integ-origin shift), but the typed
+        // sibling is parameterized over a concrete `P`, so the call
+        // site does a wildcard → `PlanetInertial<Earth>` phantom
+        // relabel. Bit-identical and asserts the Earth-orbit
+        // assumption.
         use jeod_sim::{Earth, PlanetInertial};
-        // allowed: RootInertial → PlanetInertial<Earth> relabel for the
-        // typed sibling; bit-identical (no arithmetic).
+        // allowed: wildcard `<SelfPlanet>` → concrete `<Earth>` relabel
+        // for the typed sibling; bit-identical (no arithmetic).
         let pos = jeod_sim::Position::<PlanetInertial<Earth>>::from_raw_si(state.position.raw_si());
         // allowed: same relabel as `pos` above.
         let vel = jeod_sim::Velocity::<PlanetInertial<Earth>>::from_raw_si(state.velocity.raw_si());
@@ -2380,13 +2386,17 @@ pub fn geodetic_system(
             geodetic.0 = Default::default();
             continue;
         };
-        // Position is already typed; only the ellipsoid radii lift
-        // remains, which is the typed-units boundary on planet shape
-        // (a config-time conversion, not a per-step bypass).
+        // Position is already typed `Position<PlanetInertial<SelfPlanet>>`;
+        // geodetic stays in planet-inertial (no integ-origin shift),
+        // and the typed sibling is parameterized over a concrete `P`,
+        // so the call site does a wildcard → `PlanetInertial<Earth>`
+        // phantom relabel. The ellipsoid-radii lift on the next call
+        // is the typed-units boundary on planet shape (a config-time
+        // conversion, not a per-step bypass).
         use jeod_sim::F64Ext;
         use jeod_sim::{Earth, PlanetInertial};
-        // allowed: RootInertial → PlanetInertial<Earth> relabel for the
-        // typed sibling; bit-identical (no arithmetic).
+        // allowed: wildcard `<SelfPlanet>` → concrete `<Earth>` relabel
+        // for the typed sibling; bit-identical (no arithmetic).
         let pos = jeod_sim::Position::<PlanetInertial<Earth>>::from_raw_si(state.position.raw_si());
         geodetic.0 = jeod_sim::compute_body_geodetic_typed::<Earth>(
             pos,

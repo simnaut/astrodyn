@@ -40,16 +40,34 @@ use jeod_sim::{
 ///
 /// The frame phantom is [`PlanetInertial<SelfPlanet>`] (a particular
 /// planet's inertial frame, with the wildcard `SelfPlanet` standing
-/// in for "this entity's planet"). Consumers that mix the body's
-/// state with root-inertial source positions (gravity, relativistic,
-/// SRP, solar beta, earth lighting — the "shift sites" per RF.10)
-/// relabel the position/velocity into `RootInertial` after adding the
-/// integration-origin offset; the runner's
-/// [`crate::frame_param::FrameOrigin`] SystemParam supplies the
-/// offset and the gravity / integration / SRP systems perform the
-/// shift at the call site. Non-shift consumers (atmosphere, drag,
-/// LVLH, geodetic, orbital elements) take their inputs in
-/// `PlanetInertial<SelfPlanet>` directly and need no relabel.
+/// in for "this entity's planet"). Two relabel categories apply at
+/// consumer call sites, and they are independent — a consumer may
+/// need one, both, or neither:
+///
+/// 1. **Integ-origin shift** (arithmetic — adds the integ-origin
+///    offset and relabels the phantom to `RootInertial`). Required by
+///    consumers that mix the body's state with root-inertial source
+///    positions: gravity, relativistic, SRP, solar beta, earth
+///    lighting — the "shift sites" per RF.10. The runner's
+///    [`crate::frame_param::FrameOrigin`] SystemParam supplies the
+///    offset and the gravity / integration / SRP systems perform the
+///    shift at the call site.
+/// 2. **Wildcard → concrete planet relabel** (phantom-only,
+///    bit-identical, no arithmetic). Required whenever a typed kernel
+///    is parameterized over a concrete `PlanetInertial<P>` (e.g.
+///    `PlanetInertial<Earth>`) rather than the wildcard
+///    `SelfPlanet`. Callers do `Position::<PlanetInertial<P>>::
+///    from_raw_si(state.position.raw_si())` at the boundary; the
+///    underlying SI coordinates are preserved exactly.
+///
+/// Atmosphere/drag, LVLH, geodetic, and orbital-elements consumers
+/// do **not** apply the integ-origin shift (they live in
+/// planet-inertial throughout), but they do still apply category 2
+/// to satisfy the typed kernel signature. Calling them "no relabel"
+/// would be misleading — the phantom-tag attachment at the call
+/// site is the relabel. Only consumers whose typed kernels are
+/// generic over `SelfPlanet` directly avoid both categories, and
+/// the current sibling functions are concrete-planet-parameterized.
 ///
 /// For root-integrated bodies (`IntegSourceC` is `None` or omitted)
 /// the integ-origin shift is zero, so the planet-inertial coordinates
@@ -101,11 +119,14 @@ impl TranslationalStateC {
     /// at RF.10 shift sites, not type unification. The wildcard
     /// `<SelfPlanet>` tag on this Component sidesteps that distinction
     /// at storage time — every body's storage is tagged
-    /// `PlanetInertial<SelfPlanet>` regardless of integration frame,
-    /// and consumers either stay within the planet-inertial flavor
-    /// (atmosphere, drag, LVLH, geodetic) or apply the integ-origin
-    /// shift to relabel to `RootInertial` (gravity, solar beta, SRP,
-    /// earth lighting).
+    /// `PlanetInertial<SelfPlanet>` regardless of integration frame.
+    /// Consumers then either apply the integ-origin shift to relabel
+    /// the phantom to `RootInertial` (gravity, solar beta, SRP, earth
+    /// lighting), or stay within the planet-inertial flavor and do a
+    /// wildcard → concrete-planet phantom relabel at the typed-kernel
+    /// boundary (atmosphere, drag, LVLH, geodetic, orbital elements);
+    /// see the type-level docstring's "Frame semantics" section for
+    /// the two-category breakdown.
     ///
     /// No runtime check is performed; the conversion is a zero-cost
     /// type-tag attachment via
