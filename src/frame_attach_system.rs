@@ -55,6 +55,19 @@
 //!   [`integration_system`](crate::systems::integration_system) (so
 //!   the integrator sees the frame-derived state when deciding to
 //!   skip via the `FrameAttachedC` filter).
+//! - [`propagate_frame_attached_state_post_integration_system`] runs
+//!   in [`JeodSet::Integration`](crate::JeodSet::Integration) *after*
+//!   `sync_body_to_frame_system` and `frame_switch_system` (so the
+//!   frame-tree state the kernel reads reflects the just-finished
+//!   intra-step updates: ephemeris advance, planet-fixed rotation
+//!   update, frame-switch reparent), and *before*
+//!   [`JeodSet::DerivedState`](crate::JeodSet::DerivedState) (so
+//!   `orbital_elements_system` / `geodetic_system` / `lvlh_system` /
+//!   `solar_beta_system` / `earth_lighting_system` observe the
+//!   parent reference frame's *current* state rather than a
+//!   one-tick-stale composition). Mirrors stage 8c of the runner's
+//!   `Simulation::step_internal` in
+//!   `crates/jeod_runner/src/simulation/step/mod.rs`.
 
 use std::collections::HashSet;
 
@@ -463,6 +476,61 @@ pub fn propagate_frame_attached_state_system(
             }
         }
     }
+}
+
+/// Post-integration twin of [`propagate_frame_attached_state_system`].
+///
+/// Re-runs the same parent-frame → body composition after
+/// `integration_system` + `sync_body_to_frame_system` + `frame_switch_system`
+/// have landed, so any consumer reading body state in
+/// [`JeodSet::DerivedState`](crate::JeodSet::DerivedState) sees a
+/// frame-attached body whose state reflects the just-finished frame-tree
+/// updates and the parent reference frame's current state. Mirrors
+/// stage 8c of the runner's `Simulation::step_internal` (see
+/// `crates/jeod_runner/src/simulation/step/mod.rs`), which fires
+/// `propagate_frame_attached_state` both before and after integration.
+///
+/// Without this pass the parent frame's intra-step changes (ephemeris
+/// advance, planet-fixed rotation update, frame-switch reparent) only
+/// propagate into the attached body on the *next* tick — derived states
+/// (`orbital_elements_system`, `geodetic_system`, …) would observe a
+/// one-tick-stale body state.
+///
+/// Distinct fn from the pre-integration sibling so Bevy's
+/// `SystemTypeSet` treats the two registrations as independent system
+/// instances; the body delegates to the same logic to keep the two
+/// passes byte-for-byte equivalent.
+// JEOD_INV: DB.13 — propagate_state delegates to parent frame
+// JEOD_INV: DB.21 — frame-attached bodies are not integrated; the post-integration
+//   sweep refreshes their state from the parent frame after the frame tree's
+//   own intra-step updates (ephemeris / pfix rotation / frame switch) so
+//   derived-state consumers don't observe a one-tick-stale composition.
+// JEOD_INV: RF.10 — same shift-site reasoning as the pre-integration sibling.
+#[allow(clippy::type_complexity)]
+pub fn propagate_frame_attached_state_post_integration_system(
+    attached: Query<(Entity, &FrameAttachedC)>,
+    state_q: Query<
+        (
+            &mut TranslationalStateC,
+            Option<&mut RotationalStateC>,
+            Option<&FrameEntityC>,
+        ),
+        Without<crate::components::FrameTransC>,
+    >,
+    frame_qs: ParamSet<(
+        RelativeFrameState,
+        Query<
+            (
+                &'static mut crate::components::FrameTransC,
+                Option<&'static mut crate::components::FrameRotC>,
+                Option<&'static mut crate::components::FrameAngVelC>,
+            ),
+            Without<TranslationalStateC>,
+        >,
+    )>,
+    root_frame: Res<RootFrameEntityR>,
+) {
+    propagate_frame_attached_state_system(attached, state_q, frame_qs, root_frame);
 }
 
 #[cfg(test)]

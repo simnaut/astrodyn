@@ -18,8 +18,13 @@ pub mod wrench;
 
 pub use bundles::*;
 pub use components::*;
-pub use frame_attach_system::{frame_attach_system, propagate_frame_attached_state_system};
-pub use kinematic_propagation::propagate_state_from_root_system;
+pub use frame_attach_system::{
+    frame_attach_system, propagate_frame_attached_state_post_integration_system,
+    propagate_frame_attached_state_system,
+};
+pub use kinematic_propagation::{
+    propagate_state_from_root_post_integration_system, propagate_state_from_root_system,
+};
 pub use mass_tree::{composite_mass_system, MassTreeQueries, MassTreeView};
 pub use sets::*;
 pub use source_mutator::{SourceMutator, SourceReader};
@@ -500,6 +505,45 @@ impl Plugin for JeodPlugin {
                 systems::frame_switch_system
                     .in_set(JeodSet::Integration)
                     .after(systems::sync_body_to_frame_system),
+                // Post-integration frame-attached body propagation.
+                // Symmetric to the pre-integration sweep above: the
+                // integrator just produced fresh source-body state and
+                // `frame_switch_system` may have rewritten frame-tree
+                // state mid-step, so re-derive every `FrameAttachedC`
+                // body's `TranslationalStateC` / `RotationalStateC` so
+                // `JeodSet::DerivedState` consumers
+                // (`orbital_elements_system`, `geodetic_system`,
+                // `lvlh_system`, `solar_beta_system`,
+                // `earth_lighting_system`) observe the parent
+                // reference frame's *current* state rather than a
+                // one-tick-stale composition.
+                //
+                // Mirrors stage 8c of the runner's
+                // `Simulation::step_internal` in
+                // `crates/jeod_runner/src/simulation/step/mod.rs`.
+                // Must run *before* the post-integration kinematic
+                // walk below: a frame-attached body that is also a
+                // mass-tree root would otherwise hand its kinematic
+                // descendants a stale pre-frame-attach root state —
+                // same constraint as the pre-integration ordering,
+                // applied to the post-integration sweep.
+                frame_attach_system::propagate_frame_attached_state_post_integration_system
+                    .in_set(JeodSet::Integration)
+                    .after(systems::frame_switch_system),
+                // Post-integration kinematic state propagation
+                // (root → leaves). The integrator just produced fresh
+                // root-body state; rerun the kinematic walk so every
+                // non-root child's `RotationalStateC` /
+                // `TranslationalStateC` reflects the same-tick parent
+                // state. Mirrors JEOD's
+                // `DynBody::propagate_state_from_structure` invocation
+                // at the end of every integration cycle and the
+                // runner's stage 8d post-integration sweep.
+                kinematic_propagation::propagate_state_from_root_post_integration_system
+                    .in_set(JeodSet::Integration)
+                    .after(
+                        frame_attach_system::propagate_frame_attached_state_post_integration_system,
+                    ),
                 // Derived states
                 systems::orbital_elements_system.in_set(JeodSet::DerivedState),
                 systems::euler_angles_system.in_set(JeodSet::DerivedState),

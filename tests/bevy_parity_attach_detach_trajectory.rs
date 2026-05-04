@@ -64,12 +64,14 @@
 //! synchronous-vs-deferred schedule asymmetry above leaves
 //! `runner.veh2` post-combine while Bevy still holds the pre-combine
 //! state (the `AttachEvent` is in the queue but not yet consumed).
-//! The kinematic-only veh1 in the attached window has a known one-
-//! tick schedule asymmetry (Bevy runs propagation only before
-//! integration; the runner runs it both before and after) and is
-//! structurally covered by `bevy_parity_kinematic_propagation_
-//! simple_chain` — this trajectory parity therefore asserts veh1
-//! only while it is itself integrated.
+//! The kinematic-only veh1 in the attached window has a transient
+//! lag right at the attach event (`KinematicChildC` is installed by
+//! `wrench_aggregation_system` via Commands, so the marker is not
+//! visible to `propagate_state_from_root_system` until the next
+//! sync point) and is structurally covered by
+//! `bevy_parity_kinematic_propagation_simple_chain` — this
+//! trajectory parity therefore asserts veh1 only while it is itself
+//! integrated.
 //!
 //! # What is **not** pinned (and why)
 //!
@@ -464,20 +466,16 @@ fn bevy_parity_attach_detach_trajectory_simple() {
         // - **veh1** in the attached window is *kinematic-only*: its
         //   `composite_body` state is derived from veh2 by
         //   `propagate_state_from_root_system` (Bevy) and
-        //   `propagate_kinematic_state` (runner). The two runtimes
-        //   differ in *when* that walk fires within a tick: the
-        //   runner runs propagation both before *and* after
-        //   integration so `Simulation::body(idx)` returns
-        //   same-tick-derived state; Bevy runs propagation only
-        //   before integration, so `TranslationalStateC` reflects
-        //   the *previous* tick's parent. Combined with
-        //   `KinematicChildC` being installed by
-        //   `wrench_aggregation_system` via Commands (so it's not
-        //   visible to `propagate_state_from_root_system` until
-        //   after the next sync point), there is a transient two-
-        //   tick lag at the attach event. This is a documented
-        //   schedule asymmetry, structurally covered by the kernel-
-        //   self-consistency invariants in
+        //   `propagate_kinematic_state` (runner). Both runtimes now
+        //   run kinematic propagation pre+post integration, so
+        //   `TranslationalStateC` reflects the same-tick parent in
+        //   both. The remaining asymmetry is at the attach event
+        //   itself: `KinematicChildC` is installed by
+        //   `wrench_aggregation_system` via Commands and is not
+        //   visible to `propagate_state_from_root_system` until the
+        //   next sync point, leaving a transient lag for one tick
+        //   after the attach event. This is structurally covered by
+        //   the kernel-self-consistency invariants in
         //   `bevy_parity_kinematic_propagation_simple_chain`. This
         //   trajectory parity therefore asserts bit-identity on
         //   veh1 only when veh1 is itself integrating — i.e. in
