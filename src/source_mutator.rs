@@ -212,12 +212,43 @@ impl SourceMutator<'_, '_> {
         // (mirroring `jeod_runner::Simulation::set_source_position`);
         // this is the typed-API boundary for the user → ECS conversion.
         let typed_pos = jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(position); // allowed: user-DVec3 → typed boundary
-        if let Ok(mut pos_c) = self.positions.get_mut(source) {
-            pos_c.0 = typed_pos;
-        }
-        if let Ok(mut ts) = self.translational.get_mut(source) {
-            ts.0.position = typed_pos;
-        }
+
+        // SourceInertialPositionC and TranslationalStateC must exist
+        // for a registered gravity source — `register_source_frames_system`
+        // queries `&SourceInertialPositionC` to spawn the source's
+        // frame entity (so its absence is impossible for a registered
+        // source), `PlanetBundle` includes both, and
+        // `sync_source_to_frame_system` reads `SourceInertialPositionC`
+        // every step to overwrite the frame entity's position. Silently
+        // skipping the write here would let the frame_trans update get
+        // overwritten back on the next sync, producing a vehicle-visible
+        // discontinuity from the user's perspective. Fail loud so a
+        // misconfiguration (source without these components) is
+        // diagnosed at the mutation site rather than surfacing as a
+        // mysterious next-tick reset.
+        let mut pos_c = self.positions.get_mut(source).unwrap_or_else(|err| {
+            panic!(
+                "SourceMutator::set_source_position: {label} is a \
+                 registered gravity source (has FrameEntityC) but \
+                 lacks SourceInertialPositionC ({err:?}). Spawn the \
+                 source via PlanetBundle (which includes both \
+                 components) — without SourceInertialPositionC, \
+                 `sync_source_to_frame_system` would overwrite the \
+                 frame entity's position back on the next step."
+            )
+        });
+        pos_c.0 = typed_pos;
+        let mut ts = self.translational.get_mut(source).unwrap_or_else(|err| {
+            panic!(
+                "SourceMutator::set_source_position: {label} is a \
+                 registered gravity source (has FrameEntityC) but \
+                 lacks TranslationalStateC ({err:?}). Spawn the \
+                 source via PlanetBundle (which includes \
+                 TranslationalStateC) so per-step systems observe a \
+                 consistent position across the source's components."
+            )
+        });
+        ts.0.position = typed_pos;
     }
 
     /// Set the inertial position and velocity of `source`. Mirrors
