@@ -573,11 +573,12 @@ fn tier3_sim_kinematic_propagation_simple() {
             // each tick and writes through to `body.trans`/`body.rot`.
             let v1_runner = sim.body(v1);
             let v2_runner = sim.body(v2);
+            let v2_rot = v2_runner.rot.expect("veh2 6-DOF");
             let v2_snap = VehSnapshot {
                 position: v2_runner.trans.position,
                 velocity: v2_runner.trans.velocity,
-                quaternion: v2_runner.rot.expect("veh2 6-DOF").quaternion,
-                ang_vel_body: v2_runner.rot.unwrap().ang_vel_body,
+                quaternion: v2_rot.quaternion,
+                ang_vel_body: v2_rot.ang_vel_body,
             };
             let predicted = kernel_from_veh2(&v2_snap, 1.0, 2.0);
             max_runner_pos =
