@@ -473,6 +473,7 @@ mod tests {
         // expose — a future bug in `add_body_to_tree` could leak it,
         // and the propagation pass must catch it regardless.
         sim.bodies[child_idx].mass_body_id = Some(parent_id);
-        sim.step().expect("step until propagate_kinematic_state runs");
+        sim.step()
+            .expect("step until propagate_kinematic_state runs");
     }
 }
