@@ -254,20 +254,20 @@ pub fn propagate_state_from_root_system(
                 // `RotationalState` / `TranslationalState` from the
                 // kernel walk in `jeod_sim::propagate_state_via_storage`,
                 // and re-wrapping them as `RotationalStateTyped<SelfRef>` /
-                // `TranslationalStateTyped<RootInertial>` is the canonical
-                // re-entry into the typed surface (mirrors
-                // `wrench_aggregation_system`'s root-exit boundary
-                // writes through `from_raw_si`).
+                // `TranslationalStateTyped<PlanetInertial<SelfPlanet>>`
+                // is the canonical re-entry into the typed surface
+                // (mirrors `wrench_aggregation_system`'s root-exit
+                // boundary writes through `from_raw_si`). The
+                // translational tag matches `TranslationalStateC`'s
+                // wildcard-`<PlanetInertial<SelfPlanet>>` storage post
+                // #263, not `<RootInertial>`: the body lives in its
+                // integration frame, and the `<RootInertial>` lift is
+                // applied at *shift sites* via `to_inertial(&origin)`
+                // — never silently here.
                 rot_c.0 = RotationalStateTyped::<SelfRef>::from_untyped_unchecked(&state.rot);
-                // Same kernel boundary as the rotational write above:
-                // `state.trans` is a raw `TranslationalState` in the
-                // root-inertial frame (the kernel guarantees this —
-                // its outputs are inertial-frame composite-body state)
-                // and re-wrapping with the `<RootInertial>` phantom
-                // is the canonical typed lift.
                 trans_c.0 =
                     // allowed: kernel boundary (see rotational sibling write above for the full rationale).
-                    TranslationalStateTyped::<jeod_sim::RootInertial>::from_untyped_unchecked(
+                    TranslationalStateTyped::<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>::from_untyped_unchecked(
                         &state.trans,
                     );
             }
@@ -561,11 +561,13 @@ mod tests {
         );
     }
 
-    /// Carryover-thread regression: a chain that the previous PR's
-    /// fail-loud guard would have rejected (rotated `t_parent_child`
-    /// plus missing `RotationalStateC` on the child) now succeeds
-    /// because propagation fills the child's attitude before the
-    /// wrench guard checks for it.
+    /// Failure-mode regression: the wrench-build path's fail-loud
+    /// guard rejects a child with a rotated `t_parent_child` link
+    /// when the child lacks a `RotationalStateC`. With
+    /// `propagate_state_from_root_system` running before the wrench
+    /// build, the child's attitude is filled in (derived from
+    /// parent attitude composed with the attach rotation), so the
+    /// guard sees a valid rotation and the chain succeeds.
     ///
     /// Mirrors the negative test
     /// `child_with_attach_rotation_and_no_rotational_state_panics`

@@ -9,9 +9,9 @@ use jeod_sim::{
     Angle, AngularVelocity, BodyFrame, DragConfig, DragConfigTyped, DynamicsConfig,
     FrameDerivatives, FrameDerivativesTyped, FrameTransform, GravityAcceleration,
     GravityAccelerationTyped, GravityControls, GravitySource, MassProperties, MassPropertiesTyped,
-    PlanetFixed, PlanetShape, Position, Ratio, RootInertial, RotationalState, RotationalStateTyped,
-    SelfPlanet, SelfRef, StructuralFrame, Torque, TotalForce, TotalForceTyped, TranslationalState,
-    TranslationalStateTyped, Velocity,
+    Planet, PlanetFixed, PlanetInertial, PlanetShape, Position, Ratio, RootInertial,
+    RotationalState, RotationalStateTyped, SelfPlanet, SelfRef, StructuralFrame, Torque,
+    TotalForce, TotalForceTyped, TranslationalState, TranslationalStateTyped, Velocity,
 };
 
 // ── Dynamics ──
@@ -32,48 +32,159 @@ use jeod_sim::{
 // `TranslationalStateC::from(state)` without other changes.
 
 /// Translational state (position, velocity) for the body being
-/// integrated. Wraps the typed [`TranslationalStateTyped<RootInertial>`]
+/// integrated. Wraps a typed
+/// [`TranslationalStateTyped<PlanetInertial<SelfPlanet>>`](TranslationalStateTyped)
 /// sibling so the frame phantom is enforced at the type level.
 ///
-/// **Type-level imprecision for non-root integration (tracked in
-/// #263, Section A):** the `<RootInertial>` phantom describes the
-/// root-integrated case faithfully (where the body's integration
-/// frame *is* root inertial). For bodies with [`IntegSourceC`]
-/// pointing at a non-root source (issue #71 item 4), the stored
-/// position/velocity are in that source's inertial-frame coordinates
-/// — numerically integ-frame-relative, not absolute root-inertial.
-/// This matches `jeod_runner::SimBody.trans` (which uses
-/// `TranslationalStateTyped<IntegrationFrame>` per #255 to make this
-/// distinction type-visible); the Bevy adapter inherits the runner's
-/// older `<RootInertial>` typing until #263's Bevy-component-
-/// genericity decision lands (`TranslationalStateC<P>` or formal
-/// non-generic + relabel-at-boundary). Until then, downstream Bevy
-/// systems that read `TranslationalStateC` as if it were absolute
-/// inertial (geodetic conversion against a different planet, solar
-/// beta, SRP relative to a Sun position not in the integ frame)
-/// produce the wrong result for non-root bodies — the gravity and
-/// integration code in this crate compensate via the body frame
-/// entity's `ChildOf` parent + the [`crate::frame_param::FrameOrigin`]
-/// SystemParam, but derived-state systems do not yet.
-/// Mission code that uses non-root integration should configure
-/// derived states relative to the same integ source, or accept the
-/// limitation.
+/// # Frame semantics: planet-inertial, not root-inertial
+///
+/// The frame phantom is [`PlanetInertial<SelfPlanet>`] (a particular
+/// planet's inertial frame, with the wildcard `SelfPlanet` standing
+/// in for "this entity's planet"). Two relabel categories apply at
+/// consumer call sites, and they are independent — a consumer may
+/// need one, both, or neither:
+///
+/// 1. **Integ-origin shift** (arithmetic — adds the integ-origin
+///    offset and relabels the phantom to `RootInertial`). Required by
+///    consumers that mix the body's state with root-inertial source
+///    positions: gravity, relativistic, SRP, solar beta, earth
+///    lighting — the "shift sites" per RF.10. The runner's
+///    [`crate::frame_param::FrameOrigin`] SystemParam supplies the
+///    offset and the gravity / integration / SRP systems perform the
+///    shift at the call site.
+/// 2. **Wildcard → concrete planet relabel** (phantom-only,
+///    bit-identical, no arithmetic). Required whenever a typed kernel
+///    is parameterized over a concrete `PlanetInertial<P>` (e.g.
+///    `PlanetInertial<Earth>`) rather than the wildcard
+///    `SelfPlanet`. Callers do `Position::<PlanetInertial<P>>::
+///    from_raw_si(state.position.raw_si())` at the boundary; the
+///    underlying SI coordinates are preserved exactly.
+///
+/// Atmosphere/drag, LVLH, geodetic, and orbital-elements consumers
+/// do **not** apply the integ-origin shift (they live in
+/// planet-inertial throughout), but they do still apply category 2
+/// to satisfy the typed kernel signature. Calling them "no relabel"
+/// would be misleading — the phantom-tag attachment at the call
+/// site is the relabel. Only consumers whose typed kernels are
+/// generic over `SelfPlanet` directly avoid both categories, and
+/// the current sibling functions are concrete-planet-parameterized.
+///
+/// For root-integrated bodies (`IntegSourceC` is `None` or omitted)
+/// the integ-origin shift is zero, so the planet-inertial coordinates
+/// numerically equal root-inertial; the typed phantom stays distinct
+/// so arithmetic mixing the body state with a
+/// `Position<RootInertial>` gravity-source position still requires
+/// the explicit shift the runner already performs.
+///
+/// # `<SelfPlanet>` wildcard
+///
+/// `SelfPlanet` is the planet-side analog of `SelfRef` — the
+/// "wildcard" tag the Bevy adapter uses when a Component carries a
+/// frame phantom whose planet identity is determined at runtime by
+/// the entity itself. The Component is non-generic so that
+/// `Query<&TranslationalStateC>` resolves to a single concrete type
+/// (Bevy queries cannot range over a free generic parameter), and
+/// every body's integration-frame planet is recovered at runtime via
+/// the body frame entity's `ChildOf` chain plus
+/// [`crate::frame_param::FrameOrigin`].
+///
+/// Mission code that needs compile-time planet identity (e.g. a
+/// Mars-orbit chief plus an Earth-orbit deputy in the same `World`)
+/// should use the typed sibling
+/// [`TranslationalStateTyped<PlanetInertial<P>>`](TranslationalStateTyped)
+/// directly off-component, or a small mission-side wrapper Component
+/// pinning `P`. The `<SelfPlanet>` storage is a zero-cost relabel
+/// from any `<PlanetInertial<P>>` typed value via
+/// [`Self::from_planet_inertial`] (which preserves the dimensional
+/// SI coordinates exactly).
 // JEOD_INV: DB.24 — default integrated_frame is composite_body (we integrate composite_body state)
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut, Default, Reflect)]
 #[reflect(opaque, Component)]
-pub struct TranslationalStateC(pub TranslationalStateTyped<RootInertial>);
+pub struct TranslationalStateC(pub TranslationalStateTyped<PlanetInertial<SelfPlanet>>);
 
 impl TranslationalStateC {
     /// Wrap an untyped [`TranslationalState`] as the typed Bevy
-    /// Component. The caller asserts the frame is `RootInertial` — the
-    /// only integration frame the Bevy adapter currently surfaces at
-    /// the type level. (For `IntegSourceC(Some(...))` bodies the value
-    /// is integ-frame-relative; see the struct doc above for the
-    /// caveat.) No runtime check is performed; the conversion is a
-    /// zero-cost type-tag attachment.
+    /// Component. The caller asserts the values are in some planet's
+    /// inertial frame: for non-root-integrated bodies this is the
+    /// body's `IntegSourceC` planet; for root-integrated bodies the
+    /// integration frame is the simulation's [`RootInertial`] frame.
+    ///
+    /// `RootInertial` is kind-distinct from `PlanetInertial<P>` in
+    /// `jeod_quantities` — they are not unifiable types even when
+    /// numerically coincident. In Earth-centered setups the runner
+    /// conventionally treats the root inertial frame as numerically
+    /// coincident with the central body's `PlanetInertial<Earth>`
+    /// frame, but the type system keeps the two markers distinct;
+    /// crossing between them is via the explicit integ-origin shift
+    /// at RF.10 shift sites, not type unification. The wildcard
+    /// `<SelfPlanet>` tag on this Component sidesteps that distinction
+    /// at storage time — every body's storage is tagged
+    /// `PlanetInertial<SelfPlanet>` regardless of integration frame.
+    /// Consumers then either apply the integ-origin shift to relabel
+    /// the phantom to `RootInertial` (gravity, solar beta, SRP, earth
+    /// lighting), or stay within the planet-inertial flavor and do a
+    /// wildcard → concrete-planet phantom relabel at the typed-kernel
+    /// boundary (atmosphere, drag, LVLH, geodetic, orbital elements);
+    /// see the type-level docstring's "Frame semantics" section for
+    /// the two-category breakdown.
+    ///
+    /// No runtime check is performed; the conversion is a zero-cost
+    /// type-tag attachment via
+    /// [`TranslationalStateTyped::from_untyped_unchecked`].
     #[inline]
     pub fn from_untyped(state: TranslationalState) -> Self {
-        Self(TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(&state))
+        Self(TranslationalStateTyped::<PlanetInertial<SelfPlanet>>::from_untyped_unchecked(&state))
+    }
+
+    /// Witness-gated constructor: wrap an already-typed
+    /// [`TranslationalStateTyped`] expressed in `P`'s planet-inertial
+    /// frame as the wildcard-tagged Component. The witness is the
+    /// caller's compile-time choice of `P` plus the typed phantoms on
+    /// the input — there is no untyped escape hatch in this signature.
+    /// The relabel from `<PlanetInertial<P>>` to
+    /// `<PlanetInertial<SelfPlanet>>` is a zero-cost reinterpretation
+    /// at the storage boundary; the underlying SI coordinates are
+    /// preserved exactly.
+    ///
+    /// Mirrors the witness pattern used by
+    /// [`BodyAttitude::from_jeod_quat_unchecked`](jeod_sim::BodyAttitude)
+    /// and the typed `from_typed_*` siblings in `jeod_sim::recipes` —
+    /// mission code that holds a typed `TranslationalStateTyped` in a
+    /// specific planet's inertial frame can attach it to an entity
+    /// without dropping the type information by way of the untyped
+    /// `TranslationalState` storage form.
+    #[inline]
+    pub fn from_planet_inertial<P: Planet>(
+        state: TranslationalStateTyped<PlanetInertial<P>>,
+    ) -> Self {
+        // Zero-cost relabel: both sides serialize to the same SI
+        // base-unit `DVec3`s; only the phantom planet tag differs.
+        Self(TranslationalStateTyped {
+            position: Position::<PlanetInertial<SelfPlanet>>::from_raw_si(state.position.raw_si()),
+            velocity: Velocity::<PlanetInertial<SelfPlanet>>::from_raw_si(state.velocity.raw_si()),
+        })
+    }
+
+    /// Read this state typed in `P`'s planet-inertial frame.
+    ///
+    /// Reads the wildcard-tagged storage and re-tags it with the
+    /// caller-chosen `P: Planet`. The witness is the caller's
+    /// compile-time choice — the function trusts that the entity's
+    /// runtime planet identity (its `IntegSourceC` source's planet)
+    /// matches `P`. Mission code that has already set up the world
+    /// with all bodies orbiting the same planet can pin the type
+    /// here to recover compile-time planet checking on downstream
+    /// arithmetic without dropping into raw `DVec3`. Bit-identical
+    /// numerics: only the phantom planet tag changes.
+    ///
+    /// For `P = SelfPlanet` the call is a no-op return of the stored
+    /// value.
+    #[inline]
+    pub fn as_planet_inertial<P: Planet>(&self) -> TranslationalStateTyped<PlanetInertial<P>> {
+        TranslationalStateTyped {
+            position: Position::<PlanetInertial<P>>::from_raw_si(self.0.position.raw_si()),
+            velocity: Velocity::<PlanetInertial<P>>::from_raw_si(self.0.velocity.raw_si()),
+        }
     }
 }
 
@@ -379,16 +490,33 @@ pub struct PlanetOmegaC(pub f64);
 /// `IntegSourceC` is the configuration-time intent only and is
 /// intentionally not mutated by the switch.
 ///
-/// **Non-root caveat (issue #263).** When `Some(...)`, the body's
-/// [`TranslationalStateC`] is integ-frame-relative but still typed
-/// `<RootInertial>` — issue #263 Section A.1, and see the
-/// [`TranslationalStateC`] docstring for the full explanation.
-/// Derived-state consumers that read the state as absolute
-/// root-inertial (geodetic vs. another planet, solar-beta, SRP
-/// relative to a Sun position not in the integ frame) will silently
-/// produce wrong answers. Until #263 closes, mission code should
-/// either avoid non-root integration or restrict derived states to
-/// ones evaluated in the same source's frame.
+/// **Non-root semantics.** When `Some(...)`, the body's
+/// [`TranslationalStateC`] stores position/velocity in the source's
+/// inertial frame; the Component's `<PlanetInertial<SelfPlanet>>`
+/// phantom encodes the planet-inertial framing structurally, so
+/// arithmetic that mixes the body state with a `Position<RootInertial>`
+/// gravity-source position no longer compiles without an explicit
+/// integration-origin shift (RF.10). Two relabel categories apply at
+/// consumer call sites and are independent (see
+/// [`TranslationalStateC`] for the full breakdown):
+///
+/// 1. **Integ-origin shift** (arithmetic — adds the origin offset and
+///    relabels `<PlanetInertial<SelfPlanet>>` → `<RootInertial>`).
+///    Required only by shift sites: `gravity_computation_system`, the
+///    SRP / solar-beta / earth-lighting systems. They lift the typed
+///    origin offset from
+///    [`crate::frame_param::FrameOrigin::origin_in_root`] and relabel
+///    via `from_raw_si` at the call site. Non-shift consumers
+///    (atmosphere, drag, LVLH, geodetic, orbital elements) skip this
+///    category — their physics stays in planet-inertial.
+/// 2. **Wildcard `<SelfPlanet>` → concrete `<P>` phantom relabel**
+///    (phantom-only, no arithmetic). Required wherever a typed kernel
+///    is parameterized over a concrete `PlanetInertial<P>` rather than
+///    the wildcard. Drag, LVLH, geodetic, and orbital elements still
+///    apply this relabel via `from_raw_si` at the typed-kernel
+///    boundary even though they skip category 1; only atmosphere
+///    (which feeds the kernel raw `DVec3` via `state.position.raw_si()`)
+///    avoids both categories.
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
 #[reflect(opaque, Component)]
 pub struct IntegSourceC(pub Option<Entity>);
