@@ -440,15 +440,17 @@ fn tier3_bevy_integ_source_root_matches_legacy_no_op() {
     assert_sixdof_bit_identical("Bevy root-integ vs Sim", &bevy_state, &sim_state);
 }
 
-/// Regression for PR #296 Thread 3: a non-root-integrated body's
-/// `TranslationalStateC` is in `<PlanetInertial<SelfPlanet>>` (Moon-
-/// inertial here). `solar_beta_system` mixes that state with the Sun
-/// position, which is in the simulation's root-inertial frame — so
-/// without the integ-origin shift it would compute solar beta off by
-/// the Earth–Moon separation (~3.844e8 m), producing a value many
-/// degrees away from the correct geometry. With the shift, the
-/// computed beta is bit-identical to `jeod_runner::Simulation`'s
-/// post-integration `body.solar_beta` for the same configuration.
+/// `JEOD_INV: RF.10` failure-mode regression: a non-root-integrated
+/// body stores `TranslationalStateC` in `<PlanetInertial<SelfPlanet>>`
+/// coordinates (Moon-inertial here). `solar_beta_system` mixes that
+/// state with the Sun position, which is in the simulation's
+/// root-inertial frame — so without the integ-origin shift it would
+/// compute solar beta off by the Earth–Moon separation (~3.844e8 m),
+/// producing a value many degrees away from the correct geometry.
+/// With the shift applied, the computed beta is bit-identical to
+/// `jeod_runner::Simulation`'s post-integration `body.solar_beta` for
+/// the same configuration. This pins SRP/solar-beta as a "shift site"
+/// per `RF.10` of `docs/JEOD_invariants.md`.
 ///
 /// Geometry rationale: `solar_beta = asin(h_hat · sun_hat)` with
 /// `h = r × v` and `sun_hat = (sun_pos − r) / |sun_pos − r|`. The
@@ -616,15 +618,16 @@ fn tier3_bevy_solar_beta_in_lunar_integ_frame() {
     );
 }
 
-/// Regression for PR #296 Thread 4: `flat_plate_srp_system`'s
+/// `JEOD_INV: RF.10` failure-mode regression: `flat_plate_srp_system`'s
 /// scheduled-class branch builds `sun_to_vehicle = pos_raw -
 /// sun_pos_raw` directly from the body's
-/// `<PlanetInertial<SelfPlanet>>` storage, without applying the
-/// integration-origin offset. For a non-root-integrated body that
-/// puts `sun_to_vehicle` (and the conical-shadow geometry) off by
-/// the inter-source separation distance — wrong flux direction at a
-/// minimum, and potentially the wrong illumination factor when
-/// shadow bodies are involved.
+/// `<PlanetInertial<SelfPlanet>>` storage. Without applying the
+/// integration-origin offset that lifts the body into root-inertial
+/// (where the Sun position lives), `sun_to_vehicle` and the
+/// conical-shadow geometry are off by the inter-source separation
+/// distance — wrong flux direction at a minimum, and potentially the
+/// wrong illumination factor when shadow bodies are involved. SRP is
+/// a "shift site" per `RF.10` of `docs/JEOD_invariants.md`.
 ///
 /// This test propagates a tilted lunar orbit with one flat plate
 /// SRP and asserts the resulting six-DOF state (position, velocity,
