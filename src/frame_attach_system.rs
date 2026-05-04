@@ -104,6 +104,22 @@ use crate::RootFrameEntityR;
 /// # Panics
 ///
 /// Panics with a "Fail Loudly" diagnostic when:
+/// - A [`FrameAttachEvent`]'s `body` is not a body entity — defined
+///   here as carrying [`TranslationalStateC`]. Attaching the
+///   [`FrameAttachedC`] marker to an entity that lacks the body-state
+///   storage would silently mis-route the per-tick propagation:
+///   `propagate_frame_attached_state_system` would not find a
+///   `TranslationalStateC` to overwrite, the body would never observe
+///   the parent-frame composition, and any consumer that *does* read
+///   the marker (the integration gate, derived-state systems) would
+///   skip the entity. Catching the misconfiguration at attach time
+///   surfaces it as a loud "wrong target" error pointing at the body
+///   id and the missing component instead of a quiet trajectory
+///   divergence dozens of ticks downstream. The same check rejects a
+///   frame entity (which carries [`FrameTransC`]) being passed as the
+///   attachment target — a frame entity is not a body, and the
+///   propagation pass's `Without<FrameTransC>` filter would silently
+///   skip it.
 /// - A [`FrameAttachEvent`]'s `parent_frame` is not a frame entity —
 ///   defined here as carrying the full
 ///   [`FrameTransC`] / [`FrameRotC`] / [`FrameAngVelC`] triplet that
@@ -143,7 +159,7 @@ use crate::RootFrameEntityR;
 ///   no-op'ing.
 // JEOD_INV: DB.21 — only unattached bodies integrate (frame-attach gate)
 // JEOD_INV: IG.37 — multi-step integrator history reset on topology change
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn frame_attach_system(
     mut commands: Commands,
     mut attach_events: MessageReader<FrameAttachEvent>,
@@ -164,6 +180,18 @@ pub fn frame_attach_system(
         bevy::ecs::query::Has<FrameRotC>,
         bevy::ecs::query::Has<FrameAngVelC>,
     )>,
+    // Body-shape check for `evt.body`. The propagation pass owns a
+    // `Query<&mut TranslationalStateC, Without<FrameTransC>>`, so a
+    // valid attach target must (a) carry `TranslationalStateC` so the
+    // writeback lands and (b) not carry `FrameTransC` so the
+    // propagation query's filter doesn't silently drop the entity.
+    // Detect either mismatch here and reject at event time. The
+    // `Has<_>` access pattern keeps the query disjoint from the
+    // mutable writebacks in the same system.
+    body_components: Query<(
+        bevy::ecs::query::Has<TranslationalStateC>,
+        bevy::ecs::query::Has<FrameTransC>,
+    )>,
     mut integrators: Query<(Option<&mut GaussJacksonStateC>, Option<&mut Abm4StateC>)>,
 ) {
     // Bevy's `Commands` queue is not flushed until the next system
@@ -178,6 +206,41 @@ pub fn frame_attach_system(
     let mut detached_this_tick: HashSet<Entity> = HashSet::new();
 
     for evt in attach_events.read() {
+        // Validate `evt.body` is a body entity — i.e. carries
+        // `TranslationalStateC` and is not itself a frame entity
+        // (`FrameTransC`). The propagation pass owns
+        // `Query<&mut TranslationalStateC, Without<FrameTransC>>`, so
+        // an entity that lacks the storage (or that the filter
+        // excludes) would never receive the parent-frame composition
+        // — `propagate_frame_attached_state_system` would silently
+        // skip it while the integration gate happily kept the
+        // (now-marker-bearing) entity out of integration. Surface
+        // both mismatches here so the diagnostic names the offending
+        // entity and the structural reason instead of letting a
+        // misconfigured target produce a quiet, never-updated body.
+        // `Query::get` returns `Err` for despawned entities; treat
+        // that the same as "missing TranslationalStateC" so the
+        // caller learns whichever invariant they broke.
+        let (body_has_trans, body_has_frame_trans) =
+            body_components.get(evt.body).unwrap_or((false, false));
+        assert!(
+            body_has_trans && !body_has_frame_trans,
+            "FrameAttachEvent: body {:?} is not a valid body entity \
+             (TranslationalStateC present: {}, FrameTransC present: {}). \
+             A frame-attach target must carry `TranslationalStateC` so the \
+             per-tick propagation can overwrite its state, and must NOT carry \
+             `FrameTransC` (the propagation query is filtered \
+             `Without<FrameTransC>` to keep body and frame state disjoint). \
+             Pass the entity id of a body spawned via the typestate \
+             `VehicleBuilder` (or a manually-spawned body that includes \
+             `TranslationalStateC` / `RotationalStateC`) — not a frame entity, \
+             a source entity, or an arbitrary placeholder. Parent frame {:?}.",
+            evt.body,
+            body_has_trans,
+            body_has_frame_trans,
+            evt.parent_frame,
+        );
+
         // Reject a second attach event for an entity that already had
         // one queued earlier in this same tick. The
         // `already_frame_attached` query reflects the pre-tick
@@ -420,12 +483,33 @@ pub fn propagate_frame_attached_state_system(
         derived,
     } in &work
     {
-        let Ok((mut trans, rot_opt, frame_opt)) = state_q.get_mut(*body_entity) else {
-            // Entity may have been despawned between event processing
-            // and propagation; skip silently rather than panicking.
-            // The marker will be reaped by Bevy's despawn cleanup.
-            continue;
-        };
+        // The body-shape validation in `frame_attach_system` rejects
+        // any attach target that lacks `TranslationalStateC` or that
+        // happens to carry `FrameTransC` (the propagation query's
+        // `Without<FrameTransC>` filter). By the time this writeback
+        // runs the marker has been observed — the entity was a valid
+        // body when the marker was inserted, and there is no in-tree
+        // path that mutates the marker except the matched detach
+        // event. A `get_mut` failure here therefore means an upstream
+        // invariant has broken: silently skipping it would leave the
+        // body's state stuck at whatever value preceded the corrupt
+        // tick while the marker still gates it out of integration —
+        // exactly the silent-garbage-state failure mode the fail-loud
+        // rule forbids. Panic with a diagnostic that names the body
+        // and points at the most likely caller bugs (manual marker
+        // insertion, despawn-without-detach) rather than continuing.
+        let (mut trans, rot_opt, frame_opt) = state_q.get_mut(*body_entity).unwrap_or_else(|err| {
+            panic!(
+                "propagate_frame_attached_state_system: body {body_entity:?} \
+                 carries FrameAttachedC but the body-state query returned \
+                 {err:?}. The attach-time validation in `frame_attach_system` \
+                 rejects bodies that lack TranslationalStateC, so this means \
+                 either the marker was inserted manually (forbidden — use \
+                 FrameAttachEvent / FrameDetachEvent) or the body was \
+                 despawned without a paired FrameDetachEvent. Send a \
+                 FrameDetachEvent before despawning a frame-attached body."
+            )
+        });
         // The kernel produces composite-body inertial state in
         // root-inertial coords (the parent frame state was read in
         // root-inertial via `RelativeFrameState`). Bevy stores body
@@ -569,6 +653,28 @@ mod tests {
         }
     }
 
+    // Minimal body bundle used by the smoke tests below. The
+    // attach-time validation now requires `TranslationalStateC`
+    // (and rejects `FrameTransC` on the body), which is exactly
+    // the body-shape contract production code already produces
+    // through the typestate `VehicleBuilder`. Keeping the bundle
+    // local to tests avoids dragging the full vehicle composer
+    // into a smoke test.
+    fn spawn_test_body(app: &mut App) -> Entity {
+        app.world_mut()
+            .spawn((
+                MassPropertiesC::from(MassProperties::new(1.0)),
+                RotationalStateC::from_untyped(RotationalState::default()),
+                TranslationalStateC::from_untyped(TranslationalState::default()),
+                TotalForceC::default(),
+                FrameDerivativesC::default(),
+                DynamicsConfigC::default(),
+                ExternalForceC::default(),
+                ExternalTorqueC::default(),
+            ))
+            .id()
+    }
+
     /// Smoke test: spawning a body, dispatching a `FrameAttachEvent`,
     /// and stepping `FixedUpdate` once must result in the body
     /// carrying `FrameAttachedC` after the event is processed.
@@ -577,7 +683,7 @@ mod tests {
         let mut app = App::new();
         app.add_plugins((MinimalPlugins, JeodPlugin));
 
-        let body = app.world_mut().spawn_empty().id();
+        let body = spawn_test_body(&mut app);
         let parent_frame = **app.world().resource::<RootFrameEntityR>();
         app.world_mut()
             .resource_mut::<bevy::ecs::message::Messages<FrameAttachEvent>>()
@@ -602,7 +708,7 @@ mod tests {
         let mut app = App::new();
         app.add_plugins((MinimalPlugins, JeodPlugin));
 
-        let body = app.world_mut().spawn_empty().id();
+        let body = spawn_test_body(&mut app);
         let parent_frame = **app.world().resource::<RootFrameEntityR>();
         app.world_mut()
             .resource_mut::<bevy::ecs::message::Messages<FrameAttachEvent>>()
@@ -644,7 +750,7 @@ mod tests {
         let mut app = App::new();
         app.add_plugins((MinimalPlugins, JeodPlugin));
 
-        let body = app.world_mut().spawn_empty().id();
+        let body = spawn_test_body(&mut app);
         let parent_frame = **app.world().resource::<RootFrameEntityR>();
         let mut messages = app
             .world_mut()
@@ -677,7 +783,7 @@ mod tests {
         let mut app = App::new();
         app.add_plugins((MinimalPlugins, JeodPlugin));
 
-        let body = app.world_mut().spawn_empty().id();
+        let body = spawn_test_body(&mut app);
         let parent_frame = **app.world().resource::<RootFrameEntityR>();
         app.world_mut()
             .resource_mut::<bevy::ecs::message::Messages<FrameAttachEvent>>()
@@ -712,7 +818,7 @@ mod tests {
         let mut app = App::new();
         app.add_plugins((MinimalPlugins, JeodPlugin));
 
-        let body = app.world_mut().spawn_empty().id();
+        let body = spawn_test_body(&mut app);
         // Bare entity — no FrameTransC / FrameRotC / FrameAngVelC.
         // This stands in for a caller that mistakenly passed a body
         // entity, a source entity, or an arbitrary placeholder.
@@ -723,6 +829,72 @@ mod tests {
             .write(FrameAttachEvent {
                 body,
                 parent_frame: bogus_parent,
+                offset: DVec3::ZERO,
+                t_parent_body: glam::DMat3::IDENTITY,
+            });
+
+        step_bevy(&mut app, 1, 0.1);
+    }
+
+    /// `FrameAttachEvent::body` must be an actual body entity — i.e.
+    /// carry `TranslationalStateC` and *not* carry `FrameTransC`. A
+    /// bare `spawn_empty()` entity carries neither component, so
+    /// passing it as `body` must panic at attach time. Without the
+    /// validation the marker would land on an entity that the
+    /// per-tick propagation query (`Without<FrameTransC>` filtered
+    /// over `&mut TranslationalStateC`) cannot match — the marker
+    /// would gate the entity out of integration while the propagation
+    /// pass silently skipped it, leaving the body's state stuck and
+    /// every downstream consumer reading the stale value.
+    #[test]
+    #[should_panic(expected = "is not a valid body entity")]
+    fn attach_event_with_non_body_target_panics() {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, JeodPlugin));
+
+        // Bare entity — no TranslationalStateC. Stands in for a
+        // caller that mistakenly passed a frame entity, a source
+        // entity, or an arbitrary placeholder.
+        let bogus_body = app.world_mut().spawn_empty().id();
+        let parent_frame = **app.world().resource::<RootFrameEntityR>();
+
+        app.world_mut()
+            .resource_mut::<bevy::ecs::message::Messages<FrameAttachEvent>>()
+            .write(FrameAttachEvent {
+                body: bogus_body,
+                parent_frame,
+                offset: DVec3::ZERO,
+                t_parent_body: glam::DMat3::IDENTITY,
+            });
+
+        step_bevy(&mut app, 1, 0.1);
+    }
+
+    /// `FrameAttachEvent::body` must not be a frame entity (i.e. must
+    /// not carry `FrameTransC`). Frame entities are the *parents* of
+    /// frame attachment, not the targets — the propagation pass owns
+    /// `Query<&mut TranslationalStateC, Without<FrameTransC>>`, so
+    /// the filter would silently skip a frame-entity target even if
+    /// it happened to also carry `TranslationalStateC` somehow. The
+    /// fail-loud rule requires a panic at attach time instead.
+    #[test]
+    #[should_panic(expected = "is not a valid body entity")]
+    fn attach_event_with_frame_entity_target_panics() {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, JeodPlugin));
+
+        // Use the root frame as the (invalid) body target. The root
+        // frame is a frame entity (carries the FrameTransC / FrameRotC
+        // / FrameAngVelC triplet) — passing it as `body` is exactly
+        // the misconfiguration the validation must catch.
+        let bogus_body = **app.world().resource::<RootFrameEntityR>();
+        let parent_frame = bogus_body;
+
+        app.world_mut()
+            .resource_mut::<bevy::ecs::message::Messages<FrameAttachEvent>>()
+            .write(FrameAttachEvent {
+                body: bogus_body,
+                parent_frame,
                 offset: DVec3::ZERO,
                 t_parent_body: glam::DMat3::IDENTITY,
             });

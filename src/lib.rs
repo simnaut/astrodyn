@@ -617,6 +617,7 @@ pub fn register_jeod_component_types(app: &mut App) {
     app.register_type::<components::FrameEntityC>();
     app.register_type::<components::PfixFrameEntityC>();
     app.register_type::<components::RetiredPfixFrameEntityC>();
+    app.register_type::<components::FrameAttachedC>();
     app.register_type::<components::JointKinematicsC>();
     // Tidal
     app.register_type::<components::TidalConfigC>();

@@ -73,6 +73,7 @@ const EXPECTED_REGISTERED_TYPE_PATHS: &[&str] = &[
     "bevy_jeod::components::FrameEntityC",
     "bevy_jeod::components::PfixFrameEntityC",
     "bevy_jeod::components::RetiredPfixFrameEntityC",
+    "bevy_jeod::components::FrameAttachedC",
     "bevy_jeod::components::JointKinematicsC",
     // Tidal
     "bevy_jeod::components::TidalConfigC",
