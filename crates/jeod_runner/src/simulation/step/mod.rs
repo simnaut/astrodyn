@@ -36,6 +36,7 @@ mod environment;
 mod ephemeris;
 mod integrate;
 mod interactions;
+mod kinematic;
 
 impl Simulation {
     /// Advance the simulation by one timestep.
@@ -99,6 +100,15 @@ impl Simulation {
         // `Position<IntegrationFrame>` to `Position<RootInertial>` — see #255 /
         // RF.10. Returns `IntegOrigin::zero()` when the body integrates in
         // the root frame (the bit-identical no-shift case).
+        //
+        // Built before the pre-integration kinematic walk so that walk
+        // can shift each body's integration-frame state to root inertial
+        // at its kernel boundary (the kinematic kernel composes parent
+        // and child states as if they were in the same inertial frame —
+        // forgetting the shift would silently mix coordinates across
+        // distinct integration frames when parent and child integrate in
+        // different sources, e.g. parent in root + child in
+        // `PlanetInertial<Earth>`).
         let body_integ_origins: Vec<IntegOrigin> = self
             .bodies
             .iter()
@@ -111,6 +121,26 @@ impl Simulation {
             })
             .collect();
 
+        // ── 3b. Kinematic state propagation (root → leaves), pre-integration ──
+        // Mirrors the Bevy adapter's `propagate_state_from_root_system`
+        // schedule placement — `JeodSet::ForceCollection`, after mass
+        // recompute and before any consumer that reads child attitudes
+        // (the wrench walk in Bevy; defense-in-depth here, since the
+        // runner's `collect_and_resolve_forces` is per-body without an
+        // upward chain walk yet). The "before integration" placement
+        // is one tick stale by construction — every kinematic child's
+        // state reflects the *previous* tick's integrated parent. The
+        // post-integration sibling call below cleans the end-of-step
+        // state up so consumers reading `Simulation::body(idx)` after
+        // a `step()` see the freshly-derived value.
+        //
+        // See `step::kinematic` for the JEOD precedent and the per-call
+        // diagnostic invariants. `body_integ_origins` is the typed
+        // shift the walk uses to land each body's state in root inertial
+        // before composing through the kernel and back to integration
+        // frame on writeback (RF.10 shift site).
+        self.propagate_kinematic_state(&body_integ_origins);
+
         self.update_environment(&body_integ_origins);
 
         // ── 6. Interactions — drag, SRP, gravity torque ──
@@ -118,8 +148,50 @@ impl Simulation {
 
         self.run_integration(dt, &body_integ_origins)?;
 
+        // ── 8c. Kinematic state propagation (root → leaves), post-integration ──
+        // The integrator just produced fresh root-body state; rerun
+        // the kinematic walk so every non-root child's `body.trans` /
+        // `body.rot` reflects the same-tick parent state. Mirrors
+        // JEOD's `DynBody::propagate_state_from_structure` invocation
+        // at the end of every integration cycle
+        // (`models/dynamics/dyn_body/src/dyn_body_propagate_state.cc`).
+        // Without this, downstream consumers (`Simulation::body`,
+        // derived-state computations, frame-tree sync) would observe
+        // a one-tick-stale child state — i.e. the previous tick's
+        // parent state composed with the link, not the freshly-
+        // integrated one.
+        //
+        // Recompute the per-body integ origins after stage 8b's frame
+        // switch evaluation: a body that just switched integration
+        // frames has both `integ_frame_id` and `body.trans` in its new
+        // frame, so the offsets read at the top of `step_internal`
+        // (which used the old frame) would mismatch the new typed
+        // storage. Bodies that did not switch have unchanged frame ids
+        // and the recomputed offsets are bit-identical, so the cost is
+        // a frame-tree relative-state evaluation per body.
+        let body_integ_origins_post: Vec<IntegOrigin> = self
+            .bodies
+            .iter()
+            .map(|b| {
+                let (p, v) = self.frame_origin(b.integ_frame_id);
+                IntegOrigin {
+                    position: Position::from_raw_si(p),
+                    velocity: Velocity::from_raw_si(v),
+                }
+            })
+            .collect();
+        self.propagate_kinematic_state(&body_integ_origins_post);
+
         // ── 9. Derived states ──
-        self.compute_derived_states(sun_pos, moon_pos, &body_integ_origins);
+        // Pass the post-integration integ origins: stage 8b's frame switch
+        // can rewrite `body.integ_frame_id` and `body.trans` into a new
+        // integration frame. Any derived-state path that calls
+        // `body.trans.to_inertial(integ_origin)` (solar beta, earth
+        // lighting) must see the matching new-frame origin, not the
+        // pre-step snapshot. Bodies that did not switch have unchanged
+        // frame ids and the recomputed offsets are bit-identical, so
+        // there is no observable difference for them.
+        self.compute_derived_states(sun_pos, moon_pos, &body_integ_origins_post);
 
         // Advance any free-flying detached subtrees ballistically. This
         // matches JEOD's behavior for tree roots whose grav_interaction

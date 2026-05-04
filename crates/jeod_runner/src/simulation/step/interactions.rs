@@ -129,7 +129,34 @@ impl Simulation {
 
                         let center_grav = body.mass.as_ref().map_or(DVec3::ZERO, |m| m.position);
 
-                        match fps.integration_order {
+                        // Kinematic children skip the standard
+                        // integrator (`integrate.rs` continues past
+                        // them on `kinematic_only`), and the
+                        // per-RK4-stage derivative-class SRP/thermal
+                        // recompute lives inside that gated branch
+                        // (`integrate_body_coupled`). Falling through
+                        // to the derivative arm below would stash
+                        // `stage_inputs` that nobody consumes — plate
+                        // temperatures freeze and `radiation_force`
+                        // stays `None`. Force the Scheduled
+                        // single-shot path so the appendage's thermal
+                        // state advances and a representative
+                        // `RadiationForce` is published, mirroring the
+                        // analogous Bevy fix in PR #287
+                        // (`flat_plate_srp_system` for
+                        // `KinematicChildC` entities). Only the
+                        // orbital state is gated by composite-rigid-
+                        // body integration; Sun illumination, plate
+                        // flux, and thermal evolution are
+                        // state-independent of which body in the
+                        // chain ends up at the root.
+                        let order = if body.kinematic_only {
+                            jeod_sim::ThermalIntegrationOrder::Scheduled
+                        } else {
+                            fps.integration_order
+                        };
+
+                        match order {
                             jeod_sim::ThermalIntegrationOrder::Scheduled => {
                                 // Scheduled-class: compute SRP force + Euler T
                                 // update once per step (JEOD SIM_3_ORBIT).

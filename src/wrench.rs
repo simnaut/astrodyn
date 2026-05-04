@@ -579,6 +579,28 @@ mod tests {
     fn add_test_app() -> App {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
+        // Spawn a minimal root frame entity + install
+        // `RootFrameEntityR` so any system that pulls
+        // `FrameOrigin` / `RootFrameEntityR` (the RF.10 shift sites:
+        // `flat_plate_srp_system`, `cannonball_srp_system`,
+        // `earth_lighting_system`, `solar_beta_system`,
+        // `gravity_computation_system`) can run in this minimal
+        // fixture. The wrench-aggregation tests below use the
+        // root-frame-only configuration (no `FrameEntityC` on bodies
+        // → integ-origin shift is identically zero), so the helper
+        // takes the fast path and the numerical results match the
+        // pre-frame-tree behavior.
+        let root_frame_entity = app
+            .world_mut()
+            .spawn((
+                Name::new("root.frame"),
+                crate::components::InertialFrameMarker,
+                crate::components::FrameTransC::default(),
+                crate::components::FrameRotC::default(),
+                crate::components::FrameAngVelC::default(),
+            ))
+            .id();
+        app.insert_resource(crate::RootFrameEntityR(root_frame_entity));
         app
     }
 

@@ -874,15 +874,16 @@ pub fn frame_switch_system(
             });
 
         // Mirror the new state into the body's TranslationalStateC.
-        // Re-wrap as the typed component's <RootInertial> phantom —
-        // matches the existing storage convention (the body's
-        // integration frame is treated as numerically root-inertial
-        // by the typed surface; #263 closes the type-lie). Same
+        // Re-wrap as the Component's `<PlanetInertial<SelfPlanet>>`
+        // phantom — `new_state.trans` carries planet-inertial
+        // coordinates of the *target* source's planet (this is the
+        // post-switch frame) which the wildcard `SelfPlanet` tags
+        // without committing to a compile-time planet identity. Same
         // boundary lift `evaluate_and_apply_frame_switch` performs.
-        let pos_typed =
-            jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(new_state.trans.position); // allowed: frame-switch boundary lift, see comment above
-        let vel_typed =
-            jeod_sim::Velocity::<jeod_sim::RootInertial>::from_raw_si(new_state.trans.velocity); // allowed: same frame-switch boundary lift
+        type PiPos = jeod_sim::Position<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>;
+        type PiVel = jeod_sim::Velocity<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>;
+        let pos_typed = PiPos::from_raw_si(new_state.trans.position); // allowed: frame-switch boundary lift, see comment above
+        let vel_typed = PiVel::from_raw_si(new_state.trans.velocity); // allowed: same frame-switch boundary lift
         trans.0.position = pos_typed;
         trans.0.velocity = vel_typed;
 
@@ -1292,12 +1293,16 @@ pub fn ephemeris_update_system(
             sv.0 = vel_typed;
         }
         if let Some(mut ts) = trans_state {
-            // TranslationalStateC now wraps TranslationalStateTyped<RootInertial>;
-            // assign the typed values directly. The frame phantom is
-            // checked at the type level — pos_typed is Position<RootInertial>
-            // by construction, matching the storage's RootInertial frame.
-            ts.0.position = pos_typed;
-            ts.0.velocity = vel_typed;
+            // TranslationalStateC wraps `TranslationalStateTyped<PlanetInertial<SelfPlanet>>`;
+            // `pos_typed` / `vel_typed` are root-inertial-tagged by the
+            // ephemeris API. Relabel via `from_raw_si` to the
+            // wildcard-tagged planet-inertial frame the Component
+            // stores. The numeric SI values (m, m/s) are preserved
+            // exactly — only the phantom tag changes.
+            type PiPos = jeod_sim::Position<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>;
+            type PiVel = jeod_sim::Velocity<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>;
+            ts.0.position = PiPos::from_raw_si(pos_typed.raw_si()); // allowed: ephemeris boundary, RootInertial → PlanetInertial<SelfPlanet> wildcard relabel
+            ts.0.velocity = PiVel::from_raw_si(vel_typed.raw_si()); // allowed: same ephemeris boundary relabel
         }
     }
 }
@@ -1885,13 +1890,14 @@ pub fn integration_system(
 
             // Re-wrap kernel-mutated untyped state back into typed
             // components. The frame phantoms are unchanged (the typed
-            // storage's `RootInertial` / `BodyFrame<SelfRef>` are the same
-            // frames the kernel was operating in).
-            // allowed: typed↔untyped kernel boundary (integrate_body_coupled
-            // signature is untyped); analogous to From<Untyped> impls.
-            state.0 = jeod_sim::TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(
-                &state_untyped,
-            );
+            // storage's `<PlanetInertial<SelfPlanet>>` /
+            // `<BodyFrame<SelfRef>>` are the same frames the kernel
+            // was operating in — the kernel computes everything in
+            // the body's integration frame, which the Component tags
+            // as planet-inertial via the `SelfPlanet` wildcard).
+            type PiTrans =
+                jeod_sim::TranslationalStateTyped<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>;
+            state.0 = PiTrans::from_untyped_unchecked(&state_untyped); // allowed: typed↔untyped kernel boundary (integrate_body_coupled signature is untyped); analogous to From<Untyped> impls.
             if let (Some(rs), Some(ru)) = (rot_state.as_mut(), rot_state_untyped) {
                 // allowed: same typed↔untyped kernel boundary as above.
                 rs.0 = jeod_sim::RotationalStateTyped::<SelfRef>::from_untyped_unchecked(&ru);
@@ -1964,8 +1970,8 @@ pub fn integration_system(
         // integrate_body signature is untyped, so re-wrapping is the
         // canonical adapter step (analogous to From<Untyped> impls).
         state.0 =
-            // allowed: typed↔untyped kernel boundary
-            jeod_sim::TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(&state_untyped);
+            // allowed: typed↔untyped kernel boundary; planet-inertial frame matches the body's integration frame.
+            jeod_sim::TranslationalStateTyped::<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>::from_untyped_unchecked(&state_untyped);
         if let (Some(rs), Some(ru)) = (rot_state.as_mut(), rot_state_untyped) {
             // allowed: typed↔untyped kernel boundary
             rs.0 = jeod_sim::RotationalStateTyped::<SelfRef>::from_untyped_unchecked(&ru);
@@ -2032,32 +2038,26 @@ pub fn gravity_computation_system(
     )>,
 ) {
     for (entity, state, controls, mut accel, body_frame) in &mut bodies {
-        // TranslationalStateC stores typed `Position<IntegrationFrame>` /
-        // `Velocity<IntegrationFrame>`. For root-integrated bodies the
-        // integ frame numerically equals root inertial, so the raw
-        // values match what gravity wants. For non-root bodies we
-        // shift to absolute root-inertial coordinates below via the
-        // body frame entity's parent + `FrameOrigin::origin_in_root`.
-        let body_pos = state.position;
-        let body_vel = state.velocity;
+        // `TranslationalStateC` stores typed
+        // `Position<PlanetInertial<SelfPlanet>>` /
+        // `Velocity<PlanetInertial<SelfPlanet>>`. For root-integrated
+        // bodies the integ frame numerically equals root inertial, so
+        // the raw values match what gravity wants. For non-root
+        // bodies we shift to absolute root-inertial coordinates below
+        // via the body frame entity's parent +
+        // `FrameOrigin::origin_in_root`. The shift is the only safe
+        // path from `PlanetInertial<P>` to `RootInertial` (RF.10);
+        // relabel via `from_raw_si` so the compiler accepts the
+        // addition with the typed root-inertial origin.
+        let body_pos = Position::<RootInertial>::from_raw_si(state.position.raw_si()); // allowed: gravity shift-site, planet-inertial → root-inertial via integ-origin offset
+        let body_vel = Velocity::<RootInertial>::from_raw_si(state.velocity.raw_si()); // allowed: same gravity shift-site
 
-        // Integration-frame origin (relative to root). Zero for
-        // root-integrated bodies. The body's integration frame is
-        // the parent of its frame entity (set at registration by
-        // `register_body_frames_system`); bodies registered before
-        // the frames-as-entities components landed have no
-        // `FrameEntityC` and are treated as root-integrated.
-        let integ_frame_entity =
-            body_frame.and_then(|fe| parents.get(fe.0).ok().map(|child_of| child_of.parent()));
-        let (integ_origin, integ_origin_vel) = match integ_frame_entity {
-            Some(integ_e) if integ_e != root_frame_entity.0 => {
-                frame_origin.origin_in_root(root_frame_entity.0, integ_e)
-            }
-            _ => (
-                Position::<RootInertial>::zero(),
-                Velocity::<RootInertial>::zero(),
-            ),
-        };
+        // Integration-frame origin (relative to root) — zero for
+        // root-integrated bodies. Shared helper documents the cases
+        // (no `FrameEntityC` legacy entity → zero; integ frame is the
+        // root frame → zero; otherwise walk via `FrameOrigin`).
+        let (integ_origin, integ_origin_vel) =
+            body_integ_origin_in_root(body_frame, &parents, root_frame_entity.0, &frame_origin);
         let abs_pos = body_pos + integ_origin;
 
         let typed_accel = jeod_sim::accumulate_gravity_typed(
@@ -2214,13 +2214,16 @@ pub fn aero_drag_system(
         // structural-frame Component still uses raw DVec3; that's a
         // remaining typed-storage boundary).
         let rot_untyped = rot.0.to_untyped();
-        // Bevy adapter stores body velocity as `Velocity<RootInertial>`
-        // (current sims have root=Earth.inertial). Drag's typed sibling
-        // expects `Velocity<PlanetInertial<P>>`; relabel via from_raw_si is
-        // bit-identical and asserts the Earth-orbit assumption.
+        // Bevy adapter stores body velocity as
+        // `Velocity<PlanetInertial<SelfPlanet>>`. Drag's typed sibling
+        // is parameterized over a concrete `P`, so the call site does
+        // a wildcard → `PlanetInertial<Earth>` phantom relabel (no
+        // integ-origin shift — drag stays in planet-inertial
+        // throughout). Bit-identical and asserts the Earth-orbit
+        // assumption that the body's planet is Earth.
         use jeod_sim::{Earth, PlanetInertial, Velocity};
-        // allowed: RootInertial → PlanetInertial<Earth> relabel for the
-        // typed sibling; bit-identical (no arithmetic).
+        // allowed: wildcard `<SelfPlanet>` → concrete `<Earth>` relabel
+        // for the typed sibling; bit-identical (no arithmetic).
         let drag_velocity = Velocity::<PlanetInertial<Earth>>::from_raw_si(state.velocity.raw_si());
         let result = jeod_sim::compute_drag_typed::<Earth, SelfRef>(
             &drag_config.0,
@@ -2305,14 +2308,16 @@ pub fn orbital_elements_system(
             elements.0 = Default::default();
             continue;
         };
-        // The runner-side `OrbitalElementsC` component is parameterized
-        // by `SelfPlanet` (per-entity planet identity is dynamic, keyed
-        // by `config.gravity_source`). Drive the planet-erased
+        // The Bevy `OrbitalElementsC` component is parameterized by
+        // `SelfPlanet` (per-entity planet identity is dynamic, keyed by
+        // `config.gravity_source`). Drive the planet-erased
         // `compute_orbital_elements` so the result is already
-        // `<SelfPlanet>`-tagged — `OrbitalElements::relabel` is
-        // restricted to a `<SelfPlanet>` receiver to prevent silent
-        // cross-planet retagging, so the previous `<Earth>` → relabel
-        // path is no longer available.
+        // `<SelfPlanet>`-tagged — no relabel step needed, and the
+        // previous `<Earth>` → relabel path through
+        // `compute_orbital_elements_typed::<Earth>` is no longer
+        // available because `OrbitalElements::relabel` is restricted
+        // to a `<SelfPlanet>` receiver to prevent silent cross-planet
+        // retagging.
         match jeod_sim::compute_orbital_elements(
             source.mu,
             state.position.raw_si(),
@@ -2354,14 +2359,16 @@ pub fn euler_angles_system(
 /// Placed in `JeodSet::DerivedState`.
 pub fn lvlh_system(mut query: Query<(&TranslationalStateC, &mut LvlhFrameC)>) {
     for (state, mut lvlh) in &mut query {
-        // Typed throughout — TranslationalStateC carries `RootInertial`
-        // for the Bevy adapter (current sims have root=Earth.inertial).
-        // The typed sibling expects `PlanetInertial<P>`; relabel via
-        // `from_raw_si` is bit-identical and asserts the documented
-        // assumption that root coincides with Earth.inertial here.
+        // Typed throughout — `TranslationalStateC` carries
+        // `PlanetInertial<SelfPlanet>` on the Bevy adapter. LVLH stays
+        // in planet-inertial (no integ-origin shift), but the typed
+        // sibling is parameterized over a concrete `P`, so the call
+        // site does a wildcard → `PlanetInertial<Earth>` phantom
+        // relabel. Bit-identical and asserts the Earth-orbit
+        // assumption.
         use jeod_sim::{Earth, PlanetInertial};
-        // allowed: RootInertial → PlanetInertial<Earth> relabel for the
-        // typed sibling; bit-identical (no arithmetic).
+        // allowed: wildcard `<SelfPlanet>` → concrete `<Earth>` relabel
+        // for the typed sibling; bit-identical (no arithmetic).
         let pos = jeod_sim::Position::<PlanetInertial<Earth>>::from_raw_si(state.position.raw_si());
         // allowed: same relabel as `pos` above.
         let vel = jeod_sim::Velocity::<PlanetInertial<Earth>>::from_raw_si(state.velocity.raw_si());
@@ -2381,13 +2388,17 @@ pub fn geodetic_system(
             geodetic.0 = Default::default();
             continue;
         };
-        // Position is already typed; only the ellipsoid radii lift
-        // remains, which is the typed-units boundary on planet shape
-        // (a config-time conversion, not a per-step bypass).
+        // Position is already typed `Position<PlanetInertial<SelfPlanet>>`;
+        // geodetic stays in planet-inertial (no integ-origin shift),
+        // and the typed sibling is parameterized over a concrete `P`,
+        // so the call site does a wildcard → `PlanetInertial<Earth>`
+        // phantom relabel. The ellipsoid-radii lift on the next call
+        // is the typed-units boundary on planet shape (a config-time
+        // conversion, not a per-step bypass).
         use jeod_sim::F64Ext;
         use jeod_sim::{Earth, PlanetInertial};
-        // allowed: RootInertial → PlanetInertial<Earth> relabel for the
-        // typed sibling; bit-identical (no arithmetic).
+        // allowed: wildcard `<SelfPlanet>` → concrete `<Earth>` relabel
+        // for the typed sibling; bit-identical (no arithmetic).
         let pos = jeod_sim::Position::<PlanetInertial<Earth>>::from_raw_si(state.position.raw_si());
         geodetic.0 = jeod_sim::compute_body_geodetic_typed::<Earth>(
             pos,
@@ -2398,20 +2409,66 @@ pub fn geodetic_system(
     }
 }
 
+/// Compute the typed root-inertial origin offset of `body_frame`'s
+/// integration frame — the RF.10 shift that lifts a body's
+/// `PlanetInertial<SelfPlanet>` state into absolute `RootInertial`
+/// coordinates. Returns `(zero, zero)` when:
+///
+/// - the body has no [`FrameEntityC`] (legacy entities registered
+///   before the frames-as-entities components landed are treated as
+///   root-integrated), or
+/// - the body's frame entity's parent is the root frame.
+///
+/// In both cases the integ-origin shift is identically zero, so
+/// relabeling the body state to `RootInertial` is a no-op
+/// numerically. For non-root-integrated bodies the shift is the
+/// translational state of the integration frame relative to root,
+/// supplied by the [`FrameOrigin`] SystemParam.
+///
+/// Mirrors the `body_integ_origins` helper that
+/// `jeod_runner::Simulation::step_internal` builds before each shift
+/// site (gravity, integration, derived states); same algorithm,
+/// ECS-backed storage.
+fn body_integ_origin_in_root(
+    body_frame: Option<&FrameEntityC>,
+    parents: &Query<&ChildOf>,
+    root_frame_entity: Entity,
+    frame_origin: &FrameOrigin,
+) -> (Position<RootInertial>, Velocity<RootInertial>) {
+    let integ_frame_entity =
+        body_frame.and_then(|fe| parents.get(fe.0).ok().map(|child_of| child_of.parent()));
+    match integ_frame_entity {
+        Some(integ_e) if integ_e != root_frame_entity => {
+            frame_origin.origin_in_root(root_frame_entity, integ_e)
+        }
+        _ => (
+            Position::<RootInertial>::zero(),
+            Velocity::<RootInertial>::zero(),
+        ),
+    }
+}
+
 /// Compute solar beta angle for entities with `SolarBetaC`.
 ///
 /// Requires a `SunMarker` entity to exist in the world.
 ///
 /// Placed in `JeodSet::DerivedState`.
+#[allow(clippy::type_complexity)]
 pub fn solar_beta_system(
-    mut query: Query<(&TranslationalStateC, &mut SolarBetaC), Without<SunMarker>>,
+    frame_origin: FrameOrigin,
+    root_frame_entity: Res<crate::RootFrameEntityR>,
+    parents: Query<&ChildOf>,
+    mut query: Query<
+        (&TranslationalStateC, Option<&FrameEntityC>, &mut SolarBetaC),
+        Without<SunMarker>,
+    >,
     sun_query: Query<&TranslationalStateC, With<SunMarker>>,
 ) {
     let sun_state = match sun_query.single() {
         Ok(s) => s,
         Err(bevy::ecs::query::QuerySingleError::NoEntities(_)) => {
             // No SunMarker present: clear stale solar beta values
-            for (_, mut beta) in &mut query {
+            for (_, _, mut beta) in &mut query {
                 beta.0 = Default::default();
             }
             return;
@@ -2423,17 +2480,31 @@ pub fn solar_beta_system(
             );
         }
     };
-    for (state, mut beta) in &mut query {
-        // Typed throughout — the kernel returns a typed `Angle`; unwrap
-        // to radians for the (still f64) `SolarBetaC` storage.
-        // `Angle.value` reads the SI base value (radian), matching
-        // `Angle::get::<radian>()` — f64-equality is preserved.
-        beta.0 = jeod_sim::compute_body_solar_beta_typed(
-            state.position,
-            state.velocity,
-            sun_state.position,
-        )
-        .value;
+    for (state, body_frame, mut beta) in &mut query {
+        // Solar beta is a root-inertial-shift consumer (RF.10): the
+        // kernel mixes the body state with the Sun position in
+        // absolute root-inertial coordinates. For non-root-integrated
+        // bodies the body's `<PlanetInertial<SelfPlanet>>` storage is
+        // integ-frame-relative, not absolute root-inertial — passing
+        // it raw to the root-inertial kernel would compute solar beta
+        // off by the inter-source separation distance. Lift to
+        // absolute root-inertial via the integ-origin shift, then
+        // call the typed kernel. `Angle.value` reads radians (the SI
+        // base unit), so the f64 `SolarBetaC` storage is bit-identical
+        // for root-integrated bodies (where the shift is zero).
+        let (integ_origin, integ_origin_vel) =
+            body_integ_origin_in_root(body_frame, &parents, root_frame_entity.0, &frame_origin);
+        let body_pos_rel = Position::<RootInertial>::from_raw_si(state.position.raw_si()); // allowed: integ-origin shift adds origin offset on the next line; relabel is a phantom-tag attachment matching the runner's `body.trans.to_inertial(&o)` boundary.
+        let body_vel_rel = Velocity::<RootInertial>::from_raw_si(state.velocity.raw_si()); // allowed: same boundary as `body_pos_rel`.
+        let body_pos = body_pos_rel + integ_origin;
+        let body_vel = body_vel_rel + integ_origin_vel;
+        // Sun is registered through `SunBundle` and integrates in the
+        // root frame, so its `<PlanetInertial<SelfPlanet>>` storage is
+        // numerically root-inertial; the relabel here is the boundary
+        // step that pins the framing convention at the consumer call
+        // site rather than asserting it once at registration.
+        let sun_pos = Position::<RootInertial>::from_raw_si(sun_state.position.raw_si()); // allowed: Sun is root-integrated by SunBundle construction (its frame entity's parent is the root frame, integ origin = zero); relabel is the consumer-boundary step.
+        beta.0 = jeod_sim::compute_body_solar_beta_typed(body_pos, body_vel, sun_pos).value;
     }
 }
 
@@ -2444,9 +2515,13 @@ pub fn solar_beta_system(
 /// Placed in `JeodSet::DerivedState`.
 #[allow(clippy::type_complexity)]
 pub fn earth_lighting_system(
+    frame_origin: FrameOrigin,
+    root_frame_entity: Res<crate::RootFrameEntityR>,
+    parents: Query<&ChildOf>,
     mut query: Query<
         (
             &TranslationalStateC,
+            Option<&FrameEntityC>,
             &EarthLightingConfigC,
             &mut EarthLightingStateC,
         ),
@@ -2459,7 +2534,7 @@ pub fn earth_lighting_system(
         Ok(s) => s,
         Err(bevy::ecs::query::QuerySingleError::NoEntities(_)) => {
             // No SunMarker present: clear stale earth lighting values
-            for (_, _, mut lighting) in &mut query {
+            for (_, _, _, mut lighting) in &mut query {
                 lighting.0 = Default::default();
             }
             return;
@@ -2475,7 +2550,7 @@ pub fn earth_lighting_system(
         Ok(s) => s,
         Err(bevy::ecs::query::QuerySingleError::NoEntities(_)) => {
             // No MoonMarker present: clear stale earth lighting values
-            for (_, _, mut lighting) in &mut query {
+            for (_, _, _, mut lighting) in &mut query {
                 lighting.0 = Default::default();
             }
             return;
@@ -2487,9 +2562,22 @@ pub fn earth_lighting_system(
             );
         }
     };
-    for (state, config, mut lighting) in &mut query {
+    for (state, body_frame, config, mut lighting) in &mut query {
+        // Earth lighting is a root-inertial-shift consumer (RF.10):
+        // the kernel mixes the body position with the Sun and Moon
+        // positions, all expected in absolute root-inertial
+        // coordinates. For non-root-integrated bodies the body's
+        // `<PlanetInertial<SelfPlanet>>` storage is integ-frame-
+        // relative; lift it to absolute root-inertial via the integ-
+        // origin shift before passing to the kernel. Sun and Moon
+        // are root-integrated by the SunBundle / MoonBundle
+        // construction (their frame entities are children of the
+        // root frame), so their positions need no shift.
+        let (integ_origin, _integ_origin_vel) =
+            body_integ_origin_in_root(body_frame, &parents, root_frame_entity.0, &frame_origin);
+        let body_pos_root = state.position.raw_si() + integ_origin.raw_si();
         lighting.0 = jeod_sim::compute_earth_lighting(
-            state.position.raw_si(),
+            body_pos_root,
             sun_state.position.raw_si(),
             moon_state.position.raw_si(),
             config.sun_radius,
@@ -2526,8 +2614,11 @@ pub fn earth_lighting_system(
 /// values.
 ///
 /// Placed in `JeodSet::Interaction`.
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn flat_plate_srp_system(
+    frame_origin: FrameOrigin,
+    root_frame_entity: Res<crate::RootFrameEntityR>,
+    parents: Query<&ChildOf>,
     // Filter excludes both kinematic-chain children (their
     // `TranslationalStateC` / `RotationalStateC` stay frozen until
     // the kinematic-propagation system lands; computing SRP from
@@ -2543,6 +2634,7 @@ pub fn flat_plate_srp_system(
             Option<&RotationalStateC>,
             Option<&MassPropertiesC>,
             Option<&StructuralTransformC>,
+            Option<&FrameEntityC>,
             &mut RadiationForceC,
         ),
         (
@@ -2596,7 +2688,7 @@ pub fn flat_plate_srp_system(
 
     let dt = time.delta_secs_f64();
 
-    for (mut flat_config, state, rot, mass, struct_xform, mut srp_force) in &mut query {
+    for (mut flat_config, state, rot, mass, struct_xform, body_frame, mut srp_force) in &mut query {
         // Clear per-step SRP state unconditionally (before the Sun check)
         // so derivative-mode entities don't retain stale `stage_inputs` or
         // force/torque if the Sun entity is removed between steps — which
@@ -2610,10 +2702,27 @@ pub fn flat_plate_srp_system(
             continue;
         };
 
-        // The SRP kernel (`compute_flat_plate_srp_thermal`) and shadow
-        // helpers all consume raw DVec3. Extract once at the top so the
-        // rest of the body matches the kernel's untyped surface.
-        let pos_raw = state.position.raw_si();
+        // SRP is a root-inertial-shift consumer (RF.10): `sun_to_vehicle`
+        // and the conical-shadow geometry both mix the body position
+        // with the Sun / shadow-body positions, which are tagged
+        // `<RootInertial>` (they integrate in root). For non-root-
+        // integrated bodies the body's `<PlanetInertial<SelfPlanet>>`
+        // storage is integ-frame-relative, so passing it raw to the
+        // SRP / shadow kernels would compute `sun_to_vehicle` off by
+        // the Earth–planet separation distance — wrong flux direction
+        // and wrong illumination factor. Lift the body position to
+        // absolute root-inertial via the integ-origin shift before
+        // mixing. Both the scheduled-class and derivative-class
+        // branches read `pos_raw` for `sun_to_vehicle`, distance, and
+        // `compute_illum_factor`, so the shift applies to both — only
+        // the temperature integration cadence differs between them.
+        let (integ_origin, _integ_origin_vel) =
+            body_integ_origin_in_root(body_frame, &parents, root_frame_entity.0, &frame_origin);
+        let pos_raw = state.position.raw_si() + integ_origin.raw_si();
+        // Sun is registered through `SunBundle` and integrates in the
+        // root frame, so its `<PlanetInertial<SelfPlanet>>` storage is
+        // numerically root-inertial; no integ-origin shift needed for
+        // the Sun position.
         let sun_pos_raw = sun_state.position.raw_si();
 
         let sun_to_vehicle = pos_raw - sun_pos_raw;
@@ -2673,11 +2782,17 @@ pub fn flat_plate_srp_system(
                 // step-start inputs on the plate state here; `RadiationForceC`
                 // stays at the zero cleared above — the integration system
                 // writes a representative final-stage value.
+                // `sun_state.position` is now stored as the wildcard
+                // `<PlanetInertial<SelfPlanet>>`; the SRP derivative
+                // closure expects a root-inertial Sun position (RF.10
+                // shift-site). Relabel at the boundary —
+                // bit-identical numerics; the Sun's ephemeris-driven
+                // inertial position numerically coincides with the
+                // root frame's representation.
+                type RootPos = jeod_sim::Position<jeod_sim::RootInertial>;
+                let sun_pos_root = RootPos::from_raw_si(sun_state.position.raw_si()); // allowed: SRP shift-site, Sun position relabeled to RootInertial for kernel
                 flat_config.stage_inputs = Some(jeod_sim::FlatPlateStageInputs {
-                    // `sun_state.position` is the typed component value;
-                    // pass it directly so the typed phantom carries into
-                    // the RK4 derivative closure (RF.10 structural guard).
-                    sun_position: sun_state.position,
+                    sun_position: sun_pos_root,
                     illum_factor,
                     center_grav,
                 });
@@ -2697,11 +2812,19 @@ pub fn flat_plate_srp_system(
 /// Placed in `JeodSet::Interaction`.
 #[allow(clippy::type_complexity)]
 pub fn cannonball_srp_system(
+    frame_origin: FrameOrigin,
+    root_frame_entity: Res<crate::RootFrameEntityR>,
+    parents: Query<&ChildOf>,
     // JEOD_INV: DB.21 — detached subtrees coast ballistically; skip
     // cannonball SRP so `RadiationForceC` doesn't hold stale values
     // that no integrator consumes.
     mut query: Query<
-        (&CannonballSrpC, &TranslationalStateC, &mut RadiationForceC),
+        (
+            &CannonballSrpC,
+            &TranslationalStateC,
+            Option<&FrameEntityC>,
+            &mut RadiationForceC,
+        ),
         (
             Without<SunMarker>,
             Without<FlatPlateConfigC>,
@@ -2722,8 +2845,16 @@ pub fn cannonball_srp_system(
         }
     };
 
-    for (config, state, mut srp_force) in &mut query {
-        let pos_raw = state.position.raw_si();
+    for (config, state, body_frame, mut srp_force) in &mut query {
+        // Cannonball SRP is a root-inertial-shift consumer (RF.10):
+        // the kernel mixes the body position with the Sun position
+        // (expected root-inertial). Lift the body's
+        // `<PlanetInertial<SelfPlanet>>` storage to absolute root-
+        // inertial via the integ-origin shift before mixing — same
+        // boundary discipline as the flat-plate / solar-beta sites.
+        let (integ_origin, _integ_origin_vel) =
+            body_integ_origin_in_root(body_frame, &parents, root_frame_entity.0, &frame_origin);
+        let pos_raw = state.position.raw_si() + integ_origin.raw_si();
         let sun_pos_raw = sun_state.position.raw_si();
         let illum_factor = compute_illum_factor(pos_raw, sun_pos_raw, &shadow_bodies);
 
@@ -3020,8 +3151,10 @@ pub fn staging_system(
         // `detach_subtree` does this same walk; the parent's composite-
         // body inertial state lives at the root (only the integrated /
         // free-flying root carries the merged composite — attached
-        // children's `TranslationalStateC` is stale post-attach, which
-        // is the bug threads 3/4/5 identified).
+        // children's `TranslationalStateC` is stale post-attach, since
+        // post-attach state is propagated down from the root by
+        // `propagate_state_from_root_system` rather than re-merged at
+        // each child).
         let mut tree_root_id = child_id;
         while let Some(p) = tree.parent(tree_root_id) {
             tree_root_id = p;
@@ -3050,9 +3183,11 @@ pub fn staging_system(
 
         // Pre-mutation snapshot of the parent's composite-body inertial
         // state (read from the root entity, which is the only place
-        // post-attach that carries the merged composite — see threads
-        // 3/4/5). Keeping these as raw f64 fields (not borrowing the
-        // query) avoids holding a borrow across the `bodies.iter()` /
+        // post-attach that carries the merged composite — attached
+        // children's `TranslationalStateC` is stale, populated by
+        // root-down propagation rather than re-merged in place).
+        // Keeping these as raw f64 fields (not borrowing the query)
+        // avoids holding a borrow across the `bodies.iter()` /
         // `bodies.get_mut` calls below.
         let (
             parent_pre_position,
@@ -3242,10 +3377,10 @@ pub fn staging_system(
                 t.0 =
                     // allowed: stage_attach_combine kernel boundary; the
                     // kernel returns untyped DVec3 by design, so re-wrapping
-                    // as TranslationalStateTyped<RootInertial> is the same
-                    // typed↔untyped pattern as the From<TranslationalState>
-                    // impl on TranslationalStateC.
-                    jeod_sim::TranslationalStateTyped::<jeod_sim::RootInertial>::from_untyped_unchecked(
+                    // as TranslationalStateTyped<PlanetInertial<SelfPlanet>>
+                    // is the same typed↔untyped pattern as the
+                    // From<TranslationalState> impl on TranslationalStateC.
+                    jeod_sim::TranslationalStateTyped::<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>::from_untyped_unchecked(
                         &jeod_sim::TranslationalState {
                             position: merged.position,
                             velocity: merged.velocity,
@@ -3348,9 +3483,9 @@ pub fn staging_system(
                 // typed↔untyped re-wrap pattern as the attach branch
                 // above. The CoM-shift is a pure kinematic update —
                 // it does not introduce a new frame, so wrapping as
-                // `RootInertial` is the same convention as the
-                // pre-detach value.
-                jeod_sim::TranslationalStateTyped::<jeod_sim::RootInertial>::from_untyped_unchecked(
+                // `PlanetInertial<SelfPlanet>` is the same convention
+                // as the pre-detach value.
+                jeod_sim::TranslationalStateTyped::<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>::from_untyped_unchecked(
                     &jeod_sim::TranslationalState {
                         position: new_position,
                         velocity: new_velocity,
@@ -3456,7 +3591,7 @@ pub fn step_detached_system(
                 // design — re-wrapping into TranslationalStateTyped is the
                 // same typed↔untyped pattern as the
                 // From<TranslationalState> impl on TranslationalStateC.
-                jeod_sim::TranslationalStateTyped::<jeod_sim::RootInertial>::from_untyped_unchecked(
+                jeod_sim::TranslationalStateTyped::<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>::from_untyped_unchecked(
                     &jeod_sim::TranslationalState {
                         position: state.0.composite_position,
                         velocity: state.0.composite_velocity,

@@ -38,11 +38,10 @@
 //! # Out of scope
 //!
 //! - **Joint kinematics drivers** that prescribe relative motion at a
-//!   `MassChildOf` link (issue #275, PR #289). When a joint driver
-//!   has set a rotation on a *frame* entity associated with a chain
-//!   member, that system writes through a parallel surface
-//!   (frame-tree `FrameRotC` / `FrameTransC`); this body-side walk
-//!   stays passive-rigid.
+//!   `MassChildOf` link. When a joint driver has set a rotation on a
+//!   *frame* entity associated with a chain member, that system
+//!   writes through a parallel surface (frame-tree `FrameRotC` /
+//!   `FrameTransC`); this body-side walk stays passive-rigid.
 //! - **Detached subtrees** (`DetachedSubtreeState`) get their own
 //!   ballistic propagation in `step_detached_system` — a kinematic
 //!   chain that has been torn loose from a root no longer has a

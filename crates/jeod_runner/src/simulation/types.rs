@@ -174,6 +174,20 @@ pub(crate) struct SimBody {
     pub mass: Option<MassProperties>,
     /// If this body participates in a mass tree, its node ID.
     pub mass_body_id: Option<MassBodyId>,
+    /// When `true`, this body's `trans`/`rot` are derived each step from
+    /// its mass-tree parent via `propagate_state_via_storage` rather
+    /// than integrated. Mirrors the Bevy adapter's `KinematicChildC`
+    /// marker. The body must be a non-root node in the mass tree;
+    /// integration is skipped, force accumulation still runs (matching
+    /// JEOD's `compute_point_derivative` flag, which lets a child body
+    /// accumulate forces without integrating them — useful for
+    /// post-step acceleration introspection).
+    ///
+    /// JEOD precedent: `DynBody::propagate_state_from_structure`
+    /// (`models/dynamics/dyn_body/src/dyn_body_propagate_state.cc`)
+    /// derives child states from the parent's structure each step;
+    /// only the root integrates (`DB.17`).
+    pub kinematic_only: bool,
     pub config: DynamicsConfig,
     pub gravity_controls: GravityControls<usize>,
     pub integrator: jeod_dynamics::IntegratorType,
@@ -264,6 +278,7 @@ impl SimBody {
             rot: config.rot,
             mass: config.mass,
             mass_body_id: None,
+            kinematic_only: false,
             config: dynamics_config,
             gravity_controls: config.gravity_controls,
             integrator: config.integrator,
