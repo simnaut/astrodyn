@@ -3,10 +3,13 @@
 //!
 //! Port of JEOD's
 //! [`models/dynamics/body_action/`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/dynamics/body_action/)
-//! family of `BodyAction` subclasses (`MassBodyInit`,
-//! `DynBodyInitTransState`, `DynBodyInitRotState`, `DynBodyInitOrbit`,
-//! `DynBodyInitLvlhTransState`, `DynBodyInitLvlhRotState`,
-//! `DynBodyInitNedTransState`). The common JEOD pattern is:
+//! family of `BodyAction` subclasses. The variants currently ported are
+//! `MassBodyInit`, `DynBodyInitTransState`, `DynBodyInitRotState`,
+//! `DynBodyInitOrbit`, `DynBodyInitLvlhTransState`, and
+//! `DynBodyInitNedTransState`. JEOD's `DynBodyInitLvlhRotState`
+//! (LVLH-relative rotational-state init) is not yet ported.
+//!
+//! The common JEOD pattern is:
 //!
 //! - construct an action object with subject + parameters,
 //! - hand it to `DynManager::add_body_action`,
