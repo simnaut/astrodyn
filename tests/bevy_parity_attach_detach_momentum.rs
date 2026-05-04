@@ -1055,3 +1055,299 @@ fn bevy_detached_body_skips_force_pipeline() {
          (force_collection_system must filter Without<DetachedSubtreeStateC>)"
     );
 }
+
+// ════════════════════════════════════════════════════════════════════
+// Cross-runtime parity (sub-issue #297)
+// ════════════════════════════════════════════════════════════════════
+//
+// The Bevy adapter's `staging_system` and `jeod_runner::Simulation`'s
+// `attach` / `detach` are both thin orchestrators around the
+// `jeod_dynamics` kernel. Both adapter paths must produce
+// bit-identical post-attach / post-detach state on the parent and
+// child for the same input. Any drift indicates a snapshot/writeback
+// asymmetry between the two adapters.
+
+/// Parent + child attach + detach via the runner's
+/// `Simulation::attach` / `Simulation::detach` produces the same
+/// composite-body state as the Bevy adapter's `staging_system` for
+/// the same scenario. Bit-identical to `to_bits()`.
+///
+/// Scope guard: this test pins the *value the kernel writes* in each
+/// adapter. It does NOT compare states after subsequent
+/// integration / `step_detached_system` advance — those use
+/// different per-tick advancement formulas (Bevy's
+/// `BodyAttitude::advance_under_body_rate` exact rotation vs the
+/// runner's RK4 quaternion stage), so a tick-by-tick attitude
+/// comparison would diverge by integrator floor even when both
+/// adapters' kernel output is bit-identical.
+#[test]
+fn bevy_runner_parity_attach_detach_momentum() {
+    use jeod_runner::Simulation;
+    use jeod_sim::{
+        GravityControl as RunnerGravityControl, GravityControls as RunnerGravityControls,
+        GravityModel as RunnerGravityModel, GravitySource as RunnerGravitySource,
+        GravitySourceEntry as RunnerGravitySourceEntry, IntegratorType as RunnerIntegratorType,
+        SimulationTime as RunnerSimulationTime, VehicleConfig as RunnerVehicleConfig,
+    };
+
+    // Identical scenario for both runtimes — same masses, same
+    // positions, same velocities, same offset / rotation. The bodies
+    // are co-moving (child.velocity == parent.velocity) so the
+    // post-attach kernel produces zero ω, which lets the Bevy side's
+    // schedule (which runs `staging_system`, then
+    // `step_detached_system`, then the integration_system within one
+    // FixedUpdate) avoid drifting the parent's quaternion / the
+    // detached child's quaternion away from identity. The runner does
+    // *not* `step()` after attach in this test (we are comparing the
+    // value the kernel writes, not the integrator's tick), so any
+    // non-zero post-attach ω would leave Bevy and runner attitudes
+    // diverged by exactly one integration step — a different
+    // arithmetic floor than the kernel's writeback.
+    let parent_mass = MassProperties::with_inertia(
+        420.0,
+        DMat3::from_diagonal(DVec3::new(150.0, 200.0, 250.0)),
+        DVec3::ZERO,
+    );
+    let child_mass = MassProperties::with_inertia(
+        80.0,
+        DMat3::from_diagonal(DVec3::new(40.0, 50.0, 60.0)),
+        DVec3::ZERO,
+    );
+    let parent_trans = TranslationalState {
+        position: DVec3::new(7e6, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let parent_rot = RotationalState {
+        quaternion: JeodQuat::identity(),
+        ang_vel_body: DVec3::ZERO,
+    };
+    let child_trans = TranslationalState {
+        position: DVec3::new(7e6 + 3.0, 0.0, 0.0),
+        // Co-moving: identical velocity to the parent → no induced
+        // spin. The merge is a soft co-mover, but the CoM still
+        // shifts because the child is structurally offset from the
+        // parent — so the parent's post-attach inertial position
+        // moves by `cm_delta_inertial` even though no momentum is
+        // exchanged. That's the orchestration we want to pin against
+        // the Bevy adapter byte-for-byte.
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let child_rot = RotationalState {
+        quaternion: JeodQuat::identity(),
+        ang_vel_body: DVec3::ZERO,
+    };
+    let offset = DVec3::new(3.0, 0.0, 0.0);
+    let t_parent_child = DMat3::IDENTITY;
+    let dt = 1.0;
+
+    // ── Bevy path ──────────────────────────────────────────────────
+    let (mut app, parent_entity, child_entity, _, _) = build_two_body_world(
+        dt,
+        parent_mass,
+        parent_trans,
+        parent_rot,
+        child_mass,
+        child_trans,
+        child_rot,
+    );
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset,
+            t_parent_child,
+        });
+    step(&mut app, 1, dt);
+
+    let bevy_parent_pos = read_position(app.world(), parent_entity);
+    let bevy_parent_vel = read_velocity(app.world(), parent_entity);
+    let bevy_parent_q = app
+        .world()
+        .get::<RotationalStateC>(parent_entity)
+        .unwrap()
+        .0
+        .to_untyped()
+        .quaternion;
+    let bevy_parent_w = read_ang_vel(app.world(), parent_entity);
+
+    // ── Runner path ────────────────────────────────────────────────
+    // Inertial-only environment (mu = 0) so the integrator's force
+    // evaluation between snapshot and writeback contributes nothing.
+    let time = RunnerSimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sim = Simulation::new(time, dt);
+    let inertial = sim.add_source(
+        "InertialAnchor",
+        RunnerGravitySourceEntry {
+            source: RunnerGravitySource {
+                mu: 0.0,
+                model: RunnerGravityModel::PointMass,
+            },
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: jeod_runner::RotationModel::default(),
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: true,
+        },
+    );
+    let parent_idx = sim.add_body(RunnerVehicleConfig {
+        trans: parent_trans,
+        rot: Some(parent_rot),
+        mass: Some(parent_mass),
+        integrator: RunnerIntegratorType::Rk4,
+        gravity_controls: RunnerGravityControls {
+            controls: vec![RunnerGravityControl::new_spherical(inertial, false)],
+        },
+        ..Default::default()
+    });
+    let child_idx = sim.add_body(RunnerVehicleConfig {
+        trans: child_trans,
+        rot: Some(child_rot),
+        mass: Some(child_mass),
+        integrator: RunnerIntegratorType::Rk4,
+        gravity_controls: RunnerGravityControls {
+            controls: vec![RunnerGravityControl::new_spherical(inertial, false)],
+        },
+        ..Default::default()
+    });
+    sim.add_body_to_tree(parent_idx, "Parent");
+    sim.add_body_to_tree(child_idx, "Child");
+    sim.validate().unwrap();
+
+    sim.attach(child_idx, parent_idx, offset, t_parent_child);
+    let runner_parent = sim.body(parent_idx);
+    let runner_pos = runner_parent.trans.position;
+    let runner_vel = runner_parent.trans.velocity;
+    let runner_rot = runner_parent
+        .rot
+        .expect("6-DOF runner parent must keep rot");
+    let runner_q = runner_rot.quaternion;
+    let runner_w = runner_rot.ang_vel_body;
+
+    // Bit-identical post-attach state across the two adapters.
+    assert_eq!(
+        bevy_parent_pos.to_array().map(f64::to_bits),
+        runner_pos.to_array().map(f64::to_bits),
+        "post-attach parent position differs across Bevy / runner: bevy={bevy_parent_pos:?} runner={runner_pos:?}"
+    );
+    assert_eq!(
+        bevy_parent_vel.to_array().map(f64::to_bits),
+        runner_vel.to_array().map(f64::to_bits),
+        "post-attach parent velocity differs: bevy={bevy_parent_vel:?} runner={runner_vel:?}"
+    );
+    assert_eq!(
+        [
+            bevy_parent_q.scalar().to_bits(),
+            bevy_parent_q.vector().x.to_bits(),
+            bevy_parent_q.vector().y.to_bits(),
+            bevy_parent_q.vector().z.to_bits(),
+        ],
+        [
+            runner_q.scalar().to_bits(),
+            runner_q.vector().x.to_bits(),
+            runner_q.vector().y.to_bits(),
+            runner_q.vector().z.to_bits(),
+        ],
+        "post-attach parent quaternion differs across Bevy / runner"
+    );
+    assert_eq!(
+        bevy_parent_w.to_array().map(f64::to_bits),
+        runner_w.to_array().map(f64::to_bits),
+        "post-attach parent ang_vel differs: bevy={bevy_parent_w:?} runner={runner_w:?}"
+    );
+
+    // ── Detach: same parity assertion. ─────────────────────────────
+    // Bevy detach inserts `DetachedSubtreeStateC` on the child during
+    // `staging_system` (capturing the at-detach-instant state) and
+    // then `step_detached_system` advances it by `dt` in the same
+    // FixedUpdate tick. To recover the captured value, subtract
+    // `vel * dt` from the position; with zero ang_vel the attitude
+    // and ang_vel are identical to the captured ones.
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<DetachEvent>>()
+        .write(DetachEvent {
+            child: child_entity,
+        });
+    step(&mut app, 1, dt);
+
+    let bevy_child_state = app
+        .world()
+        .get::<DetachedSubtreeStateC>(child_entity)
+        .expect("DetachEvent must insert DetachedSubtreeStateC")
+        .0;
+
+    sim.detach(child_idx);
+    let runner_child = sim.body(child_idx);
+    let runner_parent_post = sim.body(parent_idx);
+
+    // Reverse Bevy's one-tick `step_ballistic` advance: the captured
+    // state at the detach instant is `pos = bevy.pos − vel·dt` (vel
+    // unchanged, attitude unchanged because ang_vel = 0).
+    let bevy_child_pos_at_detach =
+        bevy_child_state.composite_position - bevy_child_state.composite_velocity * dt;
+    let bevy_child_vel_at_detach = bevy_child_state.composite_velocity;
+    let bevy_child_q_at_detach = bevy_child_state.composite_attitude.to_jeod_quat();
+    let bevy_child_w_at_detach = bevy_child_state.composite_ang_vel_body;
+
+    assert_eq!(
+        bevy_child_pos_at_detach.to_array().map(f64::to_bits),
+        runner_child.trans.position.to_array().map(f64::to_bits),
+        "post-detach child position differs: bevy(captured)={bevy_child_pos_at_detach:?} runner(body.trans)={:?}",
+        runner_child.trans.position
+    );
+    assert_eq!(
+        bevy_child_vel_at_detach.to_array().map(f64::to_bits),
+        runner_child.trans.velocity.to_array().map(f64::to_bits),
+        "post-detach child velocity differs"
+    );
+    let runner_child_rot = runner_child.rot.expect("6-DOF child must keep rot");
+    assert_eq!(
+        [
+            bevy_child_q_at_detach.scalar().to_bits(),
+            bevy_child_q_at_detach.vector().x.to_bits(),
+            bevy_child_q_at_detach.vector().y.to_bits(),
+            bevy_child_q_at_detach.vector().z.to_bits(),
+        ],
+        [
+            runner_child_rot.quaternion.scalar().to_bits(),
+            runner_child_rot.quaternion.vector().x.to_bits(),
+            runner_child_rot.quaternion.vector().y.to_bits(),
+            runner_child_rot.quaternion.vector().z.to_bits(),
+        ],
+        "post-detach child quaternion differs"
+    );
+    assert_eq!(
+        bevy_child_w_at_detach.to_array().map(f64::to_bits),
+        runner_child_rot.ang_vel_body.to_array().map(f64::to_bits),
+        "post-detach child ang_vel differs"
+    );
+
+    // Note: parent-side post-detach CoM shift parity is NOT asserted
+    // here. The runner's `Simulation::detach` writes the post-detach
+    // parent CoM-shift directly into `body.trans` (the runner's mass
+    // tree is the single source of truth, no dual-write race). The
+    // Bevy adapter writes the same shift into `TranslationalStateC`
+    // during `staging_system`, but the legacy `MassTreeR` arena path
+    // does not synchronise with the ECS-tree
+    // (`MassChildOf` + `composite_mass_system`); the latter reverts
+    // the parent's `MassPropertiesC` to its `CoreMassPropertiesC`
+    // each tick when the ECS tree is empty (the fast path in
+    // `composite_mass_system`), causing the next tick's
+    // `staging_system` detach handler to read the parent's
+    // `parent_pre_composite_props.position` as `(0, 0, 0)` instead of
+    // the post-attach combined CoM. This is the dual-write
+    // coordination bug tracked under sub-issue #308 (mass-tree
+    // dual-write coordination — `composite_mass_system` reverts
+    // `MassPropertiesC` for detached entities before the detach
+    // handler reads it) — not in scope for this PR (sub-issue #297 is
+    // runner-side momentum conservation only). Sub-issue #299 covers
+    // a separate frame-tree-reparent question and is not the
+    // mechanism above. Once the Bevy adapter resolves the #308 race
+    // (e.g. by capturing live composite state in `staging_system`
+    // before removing the `MassChildOf` edge), the parent-side
+    // post-detach parity assertion can be added as a follow-up.
+    let _ = runner_parent_post;
+}

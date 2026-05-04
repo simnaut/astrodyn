@@ -406,24 +406,56 @@ mod tests {
         let parent_id = sim.add_body_to_tree(0, "parent");
 
         // Add the kinematic child as a *new* SimBody (so propagation
-        // has an entity to write back into). Initial state is junk —
-        // propagation must overwrite both within the first step.
+        // has an entity to write back into). Seed its initial state
+        // with the rigid-body composition of the parent state through
+        // the link — `Simulation::attach` runs the JEOD
+        // momentum-conservation combine kernel, which reads both
+        // bodies' pre-attach composite-body state. Junk initial child
+        // state would feed the combine garbage, contaminating the
+        // root's post-attach state via momentum conservation; the
+        // tight `1e-6` velocity tolerance below catches the resulting
+        // accumulated round-off from operating on values with mixed
+        // magnitudes (~1e9 child position vs ~1e7 parent position).
+        // The kinematic propagation walk still fully overwrites
+        // child.trans / child.rot on the first step regardless of the
+        // seed; the consistent seed keeps the attach combine in its
+        // "small perturbation" regime.
+        // Link: 30° about Z, offset (1, 0, 0).
+        let t_pc = JeodQuat::left_quat_from_eigen_rotation(std::f64::consts::FRAC_PI_6, DVec3::Z)
+            .left_quat_to_transformation();
+        let offset = DVec3::new(1.0, 0.0, 0.0);
+        let parent_state_seed = sim.body(0);
+        let parent_pre_state = jeod_frames::RefFrameState {
+            trans: jeod_frames::RefFrameTrans {
+                position: parent_state_seed.trans.position,
+                velocity: parent_state_seed.trans.velocity,
+            },
+            rot: jeod_frames::RefFrameRot {
+                q_parent_this: parent_q,
+                t_parent_this: parent_q.left_quat_to_transformation(),
+                ang_vel_this: parent_omega,
+            },
+        };
+        let link = jeod_dynamics::MassPointState {
+            position: offset,
+            t_parent_this: t_pc,
+        };
+        let child_pre_state = jeod_dynamics::propagate_forward(&parent_pre_state, &link);
         let child_idx = sim.add_body(VehicleConfig {
             trans: TranslationalState {
-                position: DVec3::new(1e9, 1e9, 1e9),
-                velocity: DVec3::new(1e9, 1e9, 1e9),
+                position: child_pre_state.trans.position,
+                velocity: child_pre_state.trans.velocity,
             },
-            rot: Some(RotationalState::default()),
+            rot: Some(RotationalState {
+                quaternion: child_pre_state.rot.q_parent_this,
+                ang_vel_body: child_pre_state.rot.ang_vel_this,
+            }),
             mass: Some(MassProperties::new(5.0)),
             gravity_controls: GravityControls { controls: vec![] },
             ..Default::default()
         });
 
         let _ = sim.add_body_to_tree(child_idx, "child");
-        // Link: 30° about Z, offset (1, 0, 0).
-        let t_pc = JeodQuat::left_quat_from_eigen_rotation(std::f64::consts::FRAC_PI_6, DVec3::Z)
-            .left_quat_to_transformation();
-        let offset = DVec3::new(1.0, 0.0, 0.0);
         sim.attach(child_idx, 0, offset, t_pc);
         sim.mark_kinematic_only(child_idx);
 
@@ -616,14 +648,43 @@ mod tests {
         });
 
         // Child integrates in the offset source's inertial frame.
-        // Initial trans is junk — the propagation walk overwrites
-        // both fields within the first step.
+        // Seed its initial state with the rigid-body composition of
+        // parent state through the link, lowered into the child's
+        // integration frame. `Simulation::attach` runs the JEOD
+        // momentum-conservation combine kernel which reads both
+        // bodies' pre-attach state in root-inertial coordinates; junk
+        // initial state would corrupt the resulting root composite via
+        // momentum conservation. The kinematic propagation walk still
+        // overwrites child.trans / child.rot on the first step.
+        let offset = DVec3::new(1.0, 0.0, 0.0);
+        // Parent integrates in root, identity attitude / zero ω → its
+        // composite-body inertial state equals its trans values.
+        let parent_pre_state = jeod_frames::RefFrameState {
+            trans: jeod_frames::RefFrameTrans {
+                position: parent_root_pos,
+                velocity: parent_root_vel,
+            },
+            rot: jeod_frames::RefFrameRot::default(),
+        };
+        let link = jeod_dynamics::MassPointState {
+            position: offset,
+            t_parent_this: DMat3::IDENTITY,
+        };
+        let child_pre_state_inertial = jeod_dynamics::propagate_forward(&parent_pre_state, &link);
+        // Lower the child seed from root-inertial into the offset
+        // source's integration frame (subtract the offset source's
+        // root-inertial position; velocity is unchanged because the
+        // offset source has zero velocity).
+        let offset_src_root_pos = DVec3::new(1.0e8, 0.0, 0.0);
         let child_idx = sim.add_body(VehicleConfig {
             trans: TranslationalState {
-                position: DVec3::new(-9.9e9, -9.9e9, -9.9e9),
-                velocity: DVec3::new(-9.9e9, -9.9e9, -9.9e9),
+                position: child_pre_state_inertial.trans.position - offset_src_root_pos,
+                velocity: child_pre_state_inertial.trans.velocity,
             },
-            rot: Some(RotationalState::default()),
+            rot: Some(RotationalState {
+                quaternion: child_pre_state_inertial.rot.q_parent_this,
+                ang_vel_body: child_pre_state_inertial.rot.ang_vel_this,
+            }),
             mass: Some(MassProperties::new(5.0)),
             gravity_controls: GravityControls { controls: vec![] },
             integ_source: Some(offset_src),
@@ -637,7 +698,6 @@ mod tests {
         // inertial-frame composite-body output for the child is just
         // `parent_root + offset` (parent at identity attitude has
         // inertial-aligned struct, so the offset rotates trivially).
-        let offset = DVec3::new(1.0, 0.0, 0.0);
         sim.attach(child_idx, parent_idx, offset, DMat3::IDENTITY);
         sim.mark_kinematic_only(child_idx);
 

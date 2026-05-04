@@ -86,7 +86,14 @@ fn build_runner_sim() -> (jeod_runner::Simulation, usize, usize) {
         ..Default::default()
     });
     // Child starts with junk state; propagation must overwrite it from
-    // the parent every tick.
+    // the parent every tick. The link is wired via direct mass-tree
+    // mutation (rather than `Simulation::attach`) to bypass the JEOD
+    // momentum-conservation combine that #297 added: `staging_system`
+    // on the Bevy side likewise installs `MassChildOf` directly here,
+    // so both adapters carry the parent's pre-attach integrated state
+    // and the kinematic propagation derives the child the same way in
+    // both. The combine path is exercised separately in
+    // `bevy_parity_attach_detach_momentum`.
     let child_idx = sim.add_body(VehicleConfig {
         trans: TranslationalState {
             position: DVec3::splat(1e9),
@@ -98,9 +105,30 @@ fn build_runner_sim() -> (jeod_runner::Simulation, usize, usize) {
         integrator: IntegratorType::Rk4,
         ..Default::default()
     });
-    sim.add_body_to_tree(parent_idx, "parent");
-    sim.add_body_to_tree(child_idx, "child");
-    sim.attach(child_idx, parent_idx, link_offset(), link_t_parent_child());
+    let parent_id = sim.add_body_to_tree(parent_idx, "parent");
+    let child_id = sim.add_body_to_tree(child_idx, "child");
+    // Tree-only attach: skip `Simulation::attach`'s combine to mirror
+    // the Bevy app builder's direct `MassChildOf` insertion. The
+    // low-level contract documented on `sync_body_mass_from_tree`
+    // (`crates/jeod_runner/src/simulation/bodies.rs:586-602`) requires
+    // syncing **every** SimBody whose tree node was touched by the
+    // mutation — the directly-attached child plus the parent's full
+    // ancestor chain. The child's composite_properties still equals
+    // its core mass at a leaf attach (no grandchildren contribute), so
+    // the mass-write is numerically a no-op there; the load-bearing
+    // part of the call is the integrator-history book-keeping
+    // (`gj_state` / `abm4_state` topology-dirty flag) that the same
+    // contract requires on every topology change. With RK4 (this
+    // fixture's integrator) those fields are `None` and the call is
+    // a no-op end-to-end, but invoking it here keeps the shared parity
+    // setup correct for any future multistep variant that reuses
+    // `build_runner_sim`.
+    sim.mass_tree
+        .as_mut()
+        .expect("mass tree present after add_body_to_tree")
+        .attach(child_id, parent_id, link_offset(), link_t_parent_child());
+    sim.sync_body_mass_from_tree(parent_idx);
+    sim.sync_body_mass_from_tree(child_idx);
     sim.mark_kinematic_only(child_idx);
     (sim, parent_idx, child_idx)
 }
@@ -112,17 +140,16 @@ fn build_runner_sim() -> (jeod_runner::Simulation, usize, usize) {
 /// `combine_states_at_attach` (JEOD's momentum-conservation algorithm
 /// — `models/dynamics/dyn_body/src/dyn_body_attach.cc`) when processing
 /// the event, which shifts the parent's `composite_body` inertial
-/// state by the inertial CoM-delta. The runner-side counterpart of
-/// that shift is not yet wired (see `tier3_sim_kinematic_propagation`'s
-/// file-level docstring under "What is **not** validated"). Until the
-/// runner's `Simulation::attach`
-/// learns the same shift, comparing Bevy's `AttachEvent` flow against
-/// the runner's `attach()` would surface that asymmetry rather than
-/// the kinematic-propagation parity this test cares about. Direct
-/// `MassChildOf` insertion bypasses the combine step on the Bevy side
-/// — both adapters then carry the parent's pre-attach integrated
-/// state, and the kinematic propagation derives the child the same
-/// way in both.
+/// state by the inertial CoM-delta. The runner-side counterpart
+/// (`Simulation::attach`, post-#297) runs the same kernel. Both are
+/// covered end-to-end by `bevy_parity_attach_detach_momentum`. To keep
+/// the kinematic-propagation parity check focused on the per-tick
+/// child-derivation walk (the one structural invariant this test
+/// pins), the runner side wires the link via direct
+/// [`MassTree::attach`] mutation and the Bevy side inserts
+/// `MassChildOf` directly — both adapters skip the combine and carry
+/// the parent's pre-attach integrated state, so the kinematic
+/// propagation derives the child the same way in both.
 fn build_bevy_app() -> (App, Entity, Entity) {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
@@ -170,7 +197,7 @@ fn build_bevy_app() -> (App, Entity, Entity) {
             MassBodyIdC(child_id),
             // The link itself — pre-installed so the first
             // FixedUpdate tick already sees the chain. Mirrors the
-            // runner's `add_body_to_tree` + `attach` setup.
+            // runner's direct `mass_tree.attach` setup.
             MassChildOf::with_rotation(parent, link_offset(), link_t_parent_child()),
             // Pin the child as kinematic-only up front rather than
             // letting `wrench_aggregation_system` infer the marker

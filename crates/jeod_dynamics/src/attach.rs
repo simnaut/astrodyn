@@ -180,6 +180,7 @@ pub fn combine_states_at_attach(input: AttachCombineInputs) -> AttachCombineOutp
 #[cfg(test)]
 mod tests {
     use super::*;
+    use jeod_math::JeodQuat;
 
     /// A child with the same velocity, attitude, and ang_vel as the parent
     /// must produce a combined body with those same values (no spurious
@@ -244,6 +245,154 @@ mod tests {
         });
         assert!((out.composite_state.trans.velocity - v).length() < 1e-9);
         assert!((out.composite_state.rot.ang_vel_this - w).length() < 1e-9);
+    }
+
+    /// Linear momentum about the integration-frame origin must be
+    /// conserved across the merge: `m_p v_p + m_c v_c = m_t v_t`.
+    /// Distinct from the soft-merge test above because the parent and
+    /// child have different velocities and offset CoMs — the test is
+    /// the kernel's promise that the *total* momentum vector matches
+    /// before and after the attach instant for arbitrary inputs.
+    #[test]
+    fn linear_momentum_conserved_across_combine() {
+        // Asymmetric masses, asymmetric inertias, child structurally
+        // offset from the parent so the new combined CoM is not at
+        // either body's origin. Numbers are generic — no orbital
+        // realism needed because we are checking a closed-form
+        // conservation law, not a propagation outcome.
+        let parent_mass = MassProperties::with_inertia(
+            420.0,
+            DMat3::from_diagonal(DVec3::new(150.0, 200.0, 250.0)),
+            DVec3::ZERO,
+        );
+        let child_mass = MassProperties::with_inertia(
+            80.0,
+            DMat3::from_diagonal(DVec3::new(40.0, 50.0, 60.0)),
+            DVec3::ZERO,
+        );
+        // Combined CoM in parent struct: (420·0 + 80·3) / 500 = 0.48 m
+        let combined_mass = MassProperties::with_inertia(
+            500.0,
+            DMat3::from_diagonal(DVec3::new(190.0, 250.0, 310.0)),
+            DVec3::new(0.48, 0.0, 0.0),
+        );
+        let q = JeodQuat::identity();
+        let v_p = DVec3::new(7000.0, -50.0, 13.0);
+        let v_c = DVec3::new(7100.0, 25.0, -7.0);
+
+        let out = combine_states_at_attach(AttachCombineInputs {
+            parent_composite: RefFrameState {
+                trans: RefFrameTrans {
+                    position: DVec3::new(7e6, 0.0, 0.0),
+                    velocity: v_p,
+                },
+                rot: RefFrameRot {
+                    q_parent_this: q,
+                    t_parent_this: q.left_quat_to_transformation(),
+                    ang_vel_this: DVec3::new(0.0, 0.0, 1e-3),
+                },
+            },
+            parent_mass,
+            parent_t_inertial_struct: DMat3::IDENTITY,
+            child_composite: RefFrameState {
+                trans: RefFrameTrans {
+                    position: DVec3::new(7e6 + 3.0, 0.0, 0.0),
+                    velocity: v_c,
+                },
+                rot: RefFrameRot {
+                    q_parent_this: q,
+                    t_parent_this: q.left_quat_to_transformation(),
+                    ang_vel_this: DVec3::new(0.0, 0.0, -2e-3),
+                },
+            },
+            child_mass,
+            combined_mass,
+            orig_parent_cm_struct: DVec3::ZERO,
+        });
+
+        // p_total_pre == p_total_post (tight tolerance — this is exact
+        // f64 arithmetic except for accumulation rounding).
+        let p_pre = parent_mass.mass * v_p + child_mass.mass * v_c;
+        let p_post = combined_mass.mass * out.composite_state.trans.velocity;
+        assert!(
+            (p_post - p_pre).length() < 1e-9,
+            "linear momentum violation: pre={p_pre:?} post={p_post:?}"
+        );
+    }
+
+    /// Combine + inverse-split round-trip: applying the kernel forward
+    /// to merge two bodies, then applying the runner's / Bevy
+    /// adapter's parent-side CoM-shift formula in reverse, must
+    /// recover the parent's pre-attach inertial position. This pins
+    /// the parent-side update of `Simulation::detach` against the
+    /// algebraic identity its derivation depends on (the position
+    /// shift `Δr_inertial = R_struct→inertial · (new_cm − orig_cm)`
+    /// must be its own additive inverse on detach).
+    #[test]
+    fn parent_position_round_trips_under_combine_then_inverse_split() {
+        let parent_mass = MassProperties::with_inertia(
+            420.0,
+            DMat3::from_diagonal(DVec3::new(150.0, 200.0, 250.0)),
+            DVec3::ZERO,
+        );
+        let child_mass = MassProperties::with_inertia(
+            80.0,
+            DMat3::from_diagonal(DVec3::new(40.0, 50.0, 60.0)),
+            DVec3::ZERO,
+        );
+        let combined_mass = MassProperties::with_inertia(
+            500.0,
+            DMat3::from_diagonal(DVec3::new(190.0, 250.0, 310.0)),
+            DVec3::new(0.48, 0.0, 0.0),
+        );
+
+        let parent_pre_position = DVec3::new(6.7e6, 1.0e5, -3.0e4);
+        let parent_pre_velocity = DVec3::new(7300.0, -50.0, 13.0);
+        let q = JeodQuat::identity();
+
+        let out = combine_states_at_attach(AttachCombineInputs {
+            parent_composite: RefFrameState {
+                trans: RefFrameTrans {
+                    position: parent_pre_position,
+                    velocity: parent_pre_velocity,
+                },
+                rot: RefFrameRot {
+                    q_parent_this: q,
+                    t_parent_this: q.left_quat_to_transformation(),
+                    ang_vel_this: DVec3::ZERO,
+                },
+            },
+            parent_mass,
+            parent_t_inertial_struct: DMat3::IDENTITY,
+            child_composite: RefFrameState {
+                trans: RefFrameTrans {
+                    position: parent_pre_position + DVec3::new(3.0, 0.0, 0.0),
+                    velocity: parent_pre_velocity,
+                },
+                rot: RefFrameRot {
+                    q_parent_this: q,
+                    t_parent_this: q.left_quat_to_transformation(),
+                    ang_vel_this: DVec3::ZERO,
+                },
+            },
+            child_mass,
+            combined_mass,
+            orig_parent_cm_struct: DVec3::ZERO,
+        });
+
+        // Inverse split: shift back by the inertial CoM-delta. The
+        // mass-tree recompute on detach restores the parent's struct-
+        // frame composite CoM to `parent_mass.position`, so
+        //   cm_delta_struct (inverse) = parent_mass.position
+        //                              − combined_mass.position
+        // which is the negative of the forward combine's shift. With
+        // identity attitude the inertial delta equals the struct delta.
+        let cm_delta_inverse_struct = parent_mass.position - combined_mass.position;
+        let parent_post_detach = out.composite_state.trans.position + cm_delta_inverse_struct;
+        assert!(
+            (parent_post_detach - parent_pre_position).length() < 1e-9,
+            "round-trip violation: pre={parent_pre_position:?} post={parent_post_detach:?}"
+        );
     }
 
     /// Two bodies with relative translational velocity at non-zero offset

@@ -57,6 +57,27 @@ impl Simulation {
         }
 
         // Wire up mass tree if any bodies were registered.
+        //
+        // Builder-time `attach_bodies` declarations route through the
+        // runner's `attach_preserving_initial_state` path rather than
+        // the public `Simulation::attach`. The latter runs JEOD's
+        // `combine_states_at_attach` momentum-conservation kernel and
+        // overwrites the integrated tree root's `body.trans` /
+        // `body.rot` with the merged composite-body state — the right
+        // semantics for a runtime in-flight attach (which is what
+        // sub-issue #297 / PR #307 wired up). At build time, however,
+        // the caller has already populated `VehicleConfig::trans` /
+        // `rot` for each body with the post-attach state they want
+        // (e.g. parent on its orbital element initial state, child
+        // staged in LVLH relative to the parent, both intended to be
+        // a single articulated vehicle from t=0). Running the runtime
+        // combine over those would treat the user-supplied initial
+        // conditions as a pre-attach pair and merge them with the
+        // mass-weighted velocity / CoM-shift formula — silently
+        // corrupting the spec'd initial state. The configuration-time
+        // path preserves the spec verbatim while still doing the
+        // tree-mutation, composite-mass resync, and integrator-history
+        // reset that any topology change requires.
         let has_tree = mass_tree_names.iter().any(|n| n.is_some());
         if has_tree {
             for (idx, name) in mass_tree_names.into_iter().enumerate() {
@@ -65,7 +86,7 @@ impl Simulation {
                 }
             }
             for att in mass_tree_attachments {
-                sim.attach(
+                sim.attach_preserving_initial_state(
                     att.child_idx,
                     att.parent_idx,
                     att.offset,
