@@ -28,10 +28,10 @@
 use bevy::prelude::*;
 use bevy_jeod::frame_param::RelativeFrameState;
 use bevy_jeod::{
-    AttachEvent, DetachEvent, DetachedSubtreeStateC, DynamicsConfigC, FrameDerivativesC,
-    FrameEntityC, FrameTransC, GravityAccelerationC, GravityControlsC, GravitySourceC,
-    IntegSourceC, JeodPlugin, MassBodyIdC, MassPropertiesC, MassTreeR, RootFrameEntityR,
-    RotationalStateC, SourceInertialPositionC, TranslationalStateC,
+    AttachEvent, DetachEvent, DetachedSubtreeStateC, DynamicsConfigC, FrameAngVelC,
+    FrameDerivativesC, FrameEntityC, FrameRotC, FrameTransC, GravityAccelerationC,
+    GravityControlsC, GravitySourceC, IntegSourceC, JeodPlugin, MassBodyIdC, MassPropertiesC,
+    MassTreeR, RootFrameEntityR, RotationalStateC, SourceInertialPositionC, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
 use jeod_sim::{
@@ -2100,4 +2100,375 @@ fn bevy_runner_parity_attach_detach_momentum() {
         "post-detach parent ang_vel differs: bevy={bevy_parent_w_post_detach:?} runner={:?}",
         runner_parent_post_rot.ang_vel_body
     );
+}
+
+/// **Root-equivalent topology must NOT panic.**
+///
+/// `jeod_runner` collapses the central body's inertial frame onto the
+/// root frame, so a body with `IntegSourceC(Some(earth))` and a body
+/// with `IntegSourceC(None)` integrate in identical coordinates. The
+/// Bevy adapter splits them topologically — `Earth.inertial` lives one
+/// level below the generic root with identity state — but they remain
+/// numerically root-equivalent.
+///
+/// The cross-integ-frame fence in `staging_system` therefore must
+/// fold root-equivalent parents back onto root before comparing.
+/// Otherwise the canonical Earth-centered-as-central-body setup (the
+/// shape `tests/spawn_bevy_integ_source_and_frame_switches.rs` covers)
+/// would falsely panic any time a sibling body left its `IntegSourceC`
+/// at the implicit-root default.
+///
+/// This test pins that policy: parent has `IntegSourceC(Some(source))`,
+/// child has `IntegSourceC(None)`. Their body-frame entities have
+/// distinct `ChildOf` parents (`source.inertial` vs root), but the
+/// helper resolves both to root, the fence accepts the attach, and the
+/// merge proceeds.
+#[test]
+fn bevy_attach_root_equivalent_parents_succeed() {
+    let parent_mass = MassProperties::new(1000.0);
+    let child_mass = MassProperties::new(500.0);
+    let parent_trans = TranslationalState {
+        position: DVec3::new(7e6, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let child_trans = TranslationalState {
+        position: DVec3::new(7e6, 1.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let initial_rot = RotationalState::default();
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.add_plugins(JeodPlugin);
+
+    let mut tree = MassTree::new();
+    let id_a = tree.add_body("Parent".into(), parent_mass);
+    let id_b = tree.add_body("Child".into(), child_mass);
+    app.insert_resource(MassTreeR(tree));
+
+    // Source at the origin with identity state — the central-body
+    // case where `Earth.inertial` is structurally root-equivalent.
+    // Stored `TranslationalStateC` and `SourceInertialPositionC` are
+    // both zero so `register_source_frames_system` produces a frame
+    // entity whose `FrameTransC` / `FrameRotC` / `FrameAngVelC` are
+    // all identity — i.e. root-equivalent.
+    let mu = 3.986004415e14_f64;
+    let source = app
+        .world_mut()
+        .spawn((
+            Name::new("Source"),
+            GravitySourceC(GravitySource {
+                mu,
+                model: GravityModel::PointMass,
+            }),
+            SourceInertialPositionC::default(),
+            TranslationalStateC::default(),
+        ))
+        .id();
+
+    // Parent integrates in the source's inertial frame. After
+    // `register_body_frames_system` runs at startup its body-frame
+    // entity is `ChildOf(source.inertial)`.
+    let parent_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Parent"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(parent_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(parent_mass),
+            MassBodyIdC(id_a),
+            IntegSourceC(Some(source)),
+        ))
+        .id();
+    // Child integrates root-relative. After registration its body-frame
+    // entity is `ChildOf(root)`. The `ChildOf` parents differ, but
+    // both are root-equivalent.
+    let child_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Child"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(child_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(child_mass),
+            MassBodyIdC(id_b),
+            IntegSourceC(None),
+        ))
+        .id();
+
+    app.world_mut().run_schedule(Startup);
+    step(&mut app, 1, 1.0);
+
+    // Sanity-check the asymmetric setup: the body-frame entities have
+    // different `ChildOf` parents (one under the source, one under
+    // root), so a raw equality fence would reject this attach.
+    let parent_frame_entity = app
+        .world()
+        .get::<FrameEntityC>(parent_entity)
+        .expect("parent registered FrameEntityC")
+        .0;
+    let child_frame_entity = app
+        .world()
+        .get::<FrameEntityC>(child_entity)
+        .expect("child registered FrameEntityC")
+        .0;
+    let parent_parent = app
+        .world()
+        .get::<ChildOf>(parent_frame_entity)
+        .expect("parent body-frame has ChildOf")
+        .parent();
+    let child_parent = app
+        .world()
+        .get::<ChildOf>(child_frame_entity)
+        .expect("child body-frame has ChildOf")
+        .parent();
+    assert_ne!(
+        parent_parent, child_parent,
+        "fixture sanity: parent and child body-frame entities must have \
+         different ChildOf parents — that is the whole point of this test"
+    );
+
+    // Fire the attach. The fence must fold both parents onto root and
+    // proceed.
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset: DVec3::ZERO,
+            t_parent_child: DMat3::IDENTITY,
+        });
+    step(&mut app, 1, 1.0);
+
+    // Verify the attach actually happened.
+    let tree = &app.world().resource::<MassTreeR>().0;
+    assert_eq!(
+        tree.parent(id_b),
+        Some(id_a),
+        "post-attach: child's mass-tree parent must be the parent body — \
+         the root-equivalent topology must let the attach proceed"
+    );
+}
+
+/// **Malformed frame node must panic.**
+///
+/// If a body still carries `FrameEntityC` but its frame entity has
+/// lost its `ChildOf` parent, the live integ-frame source of truth is
+/// gone. `frame_switch_system` already hard-fails the same invariant
+/// at `src/systems.rs:765-781`; the staging fence must match that
+/// behavior so the same misconfig is rejected at attach time rather
+/// than silently bypassed.
+///
+/// Per the Fail Loudly rule (CLAUDE.md), the fence panics with a
+/// diagnostic naming the missing invariant — `ChildOf` on the
+/// body-frame entity — and points to
+/// `register_body_frames_system` as the canonical source of that
+/// `ChildOf` insertion.
+#[test]
+#[should_panic(expected = "has no ChildOf parent")]
+fn bevy_attach_malformed_frame_node_panics() {
+    let parent_mass = MassProperties::new(1000.0);
+    let child_mass = MassProperties::new(500.0);
+    let parent_trans = TranslationalState {
+        position: DVec3::new(7e6, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let child_trans = TranslationalState {
+        position: DVec3::new(7e6, 1.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let initial_rot = RotationalState::default();
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.add_plugins(JeodPlugin);
+
+    let mut tree = MassTree::new();
+    let id_a = tree.add_body("Parent".into(), parent_mass);
+    let id_b = tree.add_body("Child".into(), child_mass);
+    app.insert_resource(MassTreeR(tree));
+
+    let parent_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Parent"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(parent_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(parent_mass),
+            MassBodyIdC(id_a),
+        ))
+        .id();
+    let child_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Child"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(child_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(child_mass),
+            MassBodyIdC(id_b),
+        ))
+        .id();
+
+    // Run Startup so register_body_frames_system inserts the bodies'
+    // FrameEntityC + the body-frame entities' ChildOf parents.
+    app.world_mut().run_schedule(Startup);
+    step(&mut app, 1, 1.0);
+
+    // Sanity-check the registration ran.
+    let child_frame_entity = app
+        .world()
+        .get::<FrameEntityC>(child_entity)
+        .expect("child registered FrameEntityC")
+        .0;
+    assert!(
+        app.world().get::<ChildOf>(child_frame_entity).is_some(),
+        "fixture sanity: child body-frame entity must initially carry ChildOf"
+    );
+
+    // Corrupt the frame tree: remove the child's body-frame entity's
+    // `ChildOf` parent while leaving the body's `FrameEntityC` intact.
+    // This is the exact malformed-frame-node shape the new fence must
+    // panic on.
+    app.world_mut()
+        .entity_mut(child_frame_entity)
+        .remove::<ChildOf>();
+
+    // Fire the attach. The fence must panic before the merge runs.
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset: DVec3::ZERO,
+            t_parent_child: DMat3::IDENTITY,
+        });
+    step(&mut app, 1, 1.0);
+}
+
+/// **Equal-but-illegal parents must panic.**
+///
+/// A fence that only checks "do both bodies' `ChildOf` parents
+/// match?" silently accepts a configuration where both body-frame
+/// entities have been reparented under some arbitrary frame entity
+/// (e.g. another body's frame entity, or a stray frame entity created
+/// by a buggy mission script). `frame_switch_system` already rejects
+/// the same misconfig at `src/systems.rs:765-781`: the body's integ
+/// frame must be either the root frame entity or a registered gravity
+/// source's frame entity.
+///
+/// This test pins the legality check: spawn parent + child, then
+/// reparent both body-frame entities under a third frame entity that
+/// is not registered as a gravity source. The fence must panic with
+/// the "registered gravity source" diagnostic.
+#[test]
+#[should_panic(expected = "is neither the root frame entity")]
+fn bevy_attach_equal_but_illegal_parents_panic() {
+    let parent_mass = MassProperties::new(1000.0);
+    let child_mass = MassProperties::new(500.0);
+    let parent_trans = TranslationalState {
+        position: DVec3::new(7e6, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let child_trans = TranslationalState {
+        position: DVec3::new(7e6, 1.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let initial_rot = RotationalState::default();
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.add_plugins(JeodPlugin);
+
+    let mut tree = MassTree::new();
+    let id_a = tree.add_body("Parent".into(), parent_mass);
+    let id_b = tree.add_body("Child".into(), child_mass);
+    app.insert_resource(MassTreeR(tree));
+
+    let parent_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Parent"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(parent_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(parent_mass),
+            MassBodyIdC(id_a),
+        ))
+        .id();
+    let child_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Child"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(child_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(child_mass),
+            MassBodyIdC(id_b),
+        ))
+        .id();
+
+    app.world_mut().run_schedule(Startup);
+    step(&mut app, 1, 1.0);
+
+    let parent_frame_entity = app
+        .world()
+        .get::<FrameEntityC>(parent_entity)
+        .expect("parent registered FrameEntityC")
+        .0;
+    let child_frame_entity = app
+        .world()
+        .get::<FrameEntityC>(child_entity)
+        .expect("child registered FrameEntityC")
+        .0;
+
+    // Spawn a stray frame entity under root — looks like a frame node
+    // but is not registered as a gravity source. Then reparent both
+    // body-frame entities under it. The `ChildOf` parents now match
+    // (so a naive equality check passes) but the parent is illegal:
+    // it is not the root frame entity and not a registered source's
+    // frame entity.
+    //
+    // The stray frame's stored state is *non-identity* so it is not
+    // root-equivalent — otherwise the helper would fold it back onto
+    // root and the legality check would let it through. Distinguishing
+    // a registered-source frame from a stray frame is the entire job
+    // of the legality check; the test must hit that branch directly.
+    let root_e = app.world().resource::<RootFrameEntityR>().0;
+    let stray_frame = app
+        .world_mut()
+        .spawn((
+            Name::new("StrayFrame"),
+            FrameTransC {
+                position: DVec3::new(1.0e8, 0.0, 0.0),
+                velocity: DVec3::ZERO,
+            },
+            FrameRotC::default(),
+            FrameAngVelC::default(),
+            ChildOf(root_e),
+        ))
+        .id();
+    app.world_mut()
+        .entity_mut(parent_frame_entity)
+        .insert(ChildOf(stray_frame));
+    app.world_mut()
+        .entity_mut(child_frame_entity)
+        .insert(ChildOf(stray_frame));
+
+    // Fire the attach. The legality check in the fence must reject
+    // the equal-but-illegal parents.
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset: DVec3::ZERO,
+            t_parent_child: DMat3::IDENTITY,
+        });
+    step(&mut app, 1, 1.0);
 }

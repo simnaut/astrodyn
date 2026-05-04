@@ -2954,6 +2954,19 @@ pub fn staging_system(
     detached_q: Query<Entity, With<crate::DetachedSubtreeStateC>>,
     body_frames: Query<&FrameEntityC>,
     frame_parents: Query<&ChildOf>,
+    // Frame-state query needed by `is_root_equivalent_entity` so the
+    // cross-integ-frame fence below treats Earth.inertial-as-root-
+    // equivalent topology (a direct child of root with identity state)
+    // as semantically root.
+    frame_states: Query<(&FrameTransC, &FrameRotC, &FrameAngVelC)>,
+    // Registered source frame entities. Used to verify that a body's
+    // resolved live integ-frame entity is a *legal* integ-frame entity
+    // (root or a registered source frame), matching the same fence
+    // `frame_switch_system` enforces. Without this an attach with both
+    // bodies misparented under the same arbitrary frame would otherwise
+    // be silently accepted as "same integration frame".
+    source_frames: Query<&FrameEntityC, With<GravitySourceC>>,
+    root_frame_entity: Option<Res<crate::RootFrameEntityR>>,
     mut integrators: Query<(
         &crate::MassBodyIdC,
         Option<&mut GaussJacksonStateC>,
@@ -3091,27 +3104,118 @@ pub fn staging_system(
         // falsely reject same-frame attaches (a body switched into the
         // parent's frame: stale `IntegSourceC` differs from parent's).
         //
-        // The guard is skipped when either body lacks `FrameEntityC` —
-        // the body is not yet participating in the frame tree (e.g.
-        // a low-level test that drives `staging_system` directly
-        // without `JeodPlugin`'s `register_body_frames_system`), so
-        // there is no frame-tree state for an attach to corrupt. In
-        // production every body that reaches `staging_system` has
-        // already passed through `register_body_frames_system` at
-        // Startup, so the guard fires.
-        let parent_integ_frame = body_frames
-            .get(evt.parent)
-            .ok()
-            .and_then(|fe| frame_parents.get(fe.0).ok().map(|p| p.parent()));
-        let child_integ_frame = body_frames
-            .get(evt.child)
-            .ok()
-            .and_then(|fe| frame_parents.get(fe.0).ok().map(|p| p.parent()));
-        if let (Some(parent_frame), Some(child_frame)) = (parent_integ_frame, child_integ_frame) {
+        // The fence has three semantic layers:
+        //
+        //   1. **Resolve the live integ-frame entity.** Both bodies must
+        //      already carry `FrameEntityC` (inserted by
+        //      `register_body_frames_system` at Startup) and that frame
+        //      entity must have a `ChildOf` parent. Either invariant
+        //      missing means the frame tree is corrupt and the attach
+        //      cannot be safely processed — panic per the Fail Loudly
+        //      rule rather than silently bypass the fence.
+        //
+        //   2. **Normalize root-equivalent topology.** In `jeod_runner`
+        //      the central body's inertial frame *is* the root frame.
+        //      The Bevy adapter instead registers every gravity source
+        //      — including the central body — one level below a generic
+        //      root, so `IntegSourceC(Some(earth))` lands the body's
+        //      frame entity under `earth.inertial` (a direct child of
+        //      root with identity state). Folding root-equivalent
+        //      parents back onto root before comparison means an
+        //      Earth-centered body and a root-integrated body
+        //      ("`IntegSourceC(None)`") count as the same integ frame.
+        //
+        //   3. **Verify the resolved integ-frame entity is legal.**
+        //      Even if both bodies' parents compare equal, an arbitrary
+        //      shared parent (e.g. both reparented under another body's
+        //      frame entity by a buggy mission script) is not a legal
+        //      integration-frame entity. `frame_switch_system` enforces
+        //      the same legality check on every tick at lines 765-781;
+        //      the staging fence must match it so the same misconfig
+        //      is rejected at attach time rather than only later when
+        //      a switch happens to evaluate.
+        //
+        // Skipped only when `RootFrameEntityR` is absent — that resource
+        // is inserted by `JeodPlugin`'s build, so a missing resource
+        // means a low-level test (or a partial app build) that drove
+        // `staging_system` directly without `JeodPlugin`. Without the
+        // root entity there is no way to compute root-equivalence, so
+        // we leave the bodies untouched; production paths always pass.
+        if let Some(root_e) = root_frame_entity.as_ref().map(|r| r.0) {
+            let known_source_frames: std::collections::HashSet<Entity> =
+                source_frames.iter().map(|fe| fe.0).collect();
+
+            let resolve_live_integ_frame = |body: Entity, role: &str| -> Entity {
+                let frame_handle = body_frames.get(body).unwrap_or_else(|err| {
+                    panic!(
+                        "AttachEvent.{role} = {body:?}: missing FrameEntityC. \
+                         Every body reaching staging_system must have been \
+                         processed by register_body_frames_system at Startup, \
+                         which inserts FrameEntityC. Spawn the body via the \
+                         standard mass-tree + plugin path, or insert \
+                         FrameEntityC explicitly before firing the AttachEvent. \
+                         Underlying query error: {err:?}"
+                    )
+                });
+                let child_of = frame_parents.get(frame_handle.0).unwrap_or_else(|err| {
+                    panic!(
+                        "AttachEvent.{role} = {body:?}: body-frame entity \
+                         {fe:?} has no ChildOf parent. The body-frame entity \
+                         must be parented under its integration-frame entity \
+                         (root frame entity, or a registered source's frame \
+                         entity). register_body_frames_system inserts that \
+                         ChildOf at Startup; a missing parent here means the \
+                         frame tree is corrupt. Underlying query error: \
+                         {err:?}",
+                        fe = frame_handle.0,
+                    )
+                });
+                let parent = child_of.parent();
+                // Fold root-equivalent parents (direct child of root with
+                // identity state) onto root so Earth-inertial-as-root and
+                // root-integrated bodies compare equal.
+                if crate::validation::is_root_equivalent_entity(
+                    parent,
+                    root_e,
+                    &frame_parents,
+                    &frame_states,
+                ) {
+                    root_e
+                } else {
+                    parent
+                }
+            };
+
+            let parent_frame = resolve_live_integ_frame(evt.parent, "parent");
+            let child_frame = resolve_live_integ_frame(evt.child, "child");
+
+            // Verify the resolved integ-frame entity is a legal
+            // integration-frame entity (root or a registered source's
+            // frame entity). Match `frame_switch_system`'s legality
+            // check at src/systems.rs:765-781 so equal-but-illegal
+            // parents are rejected here too.
+            for (entity, integ_frame, role) in [
+                (evt.parent, parent_frame, "parent"),
+                (evt.child, child_frame, "child"),
+            ] {
+                let is_legal = integ_frame == root_e || known_source_frames.contains(&integ_frame);
+                assert!(
+                    is_legal,
+                    "AttachEvent.{role} = {entity:?}: resolved \
+                     integration-frame entity {integ_frame:?} is neither the \
+                     root frame entity ({root_e:?}) nor a registered gravity \
+                     source's frame entity. The body-frame entity must be \
+                     parented under one of those — register the source via \
+                     PlanetBundle (which inserts GravitySourceC and \
+                     FrameEntityC) before spawning the body, or attach the \
+                     body under the root frame entity."
+                );
+            }
+
             assert!(
                 parent_frame == child_frame,
                 "AttachEvent: parent {:?} and child {:?} live in different integration frames \
-                 (parent body-frame is ChildOf {:?}; child body-frame is ChildOf {:?}). \
+                 (parent integ-frame entity {:?}; child integ-frame entity {:?}). \
                  Cross-integration-frame attach is not yet supported — the child's frame \
                  entity must be reparented under the parent's integ frame and its stored \
                  coordinates rewritten into that frame before the merge proceeds. Either \
