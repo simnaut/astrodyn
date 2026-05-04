@@ -2052,23 +2052,12 @@ pub fn gravity_computation_system(
         let body_pos = Position::<RootInertial>::from_raw_si(state.position.raw_si()); // allowed: gravity shift-site, planet-inertial → root-inertial via integ-origin offset
         let body_vel = Velocity::<RootInertial>::from_raw_si(state.velocity.raw_si()); // allowed: same gravity shift-site
 
-        // Integration-frame origin (relative to root). Zero for
-        // root-integrated bodies. The body's integration frame is
-        // the parent of its frame entity (set at registration by
-        // `register_body_frames_system`); bodies registered before
-        // the frames-as-entities components landed have no
-        // `FrameEntityC` and are treated as root-integrated.
-        let integ_frame_entity =
-            body_frame.and_then(|fe| parents.get(fe.0).ok().map(|child_of| child_of.parent()));
-        let (integ_origin, integ_origin_vel) = match integ_frame_entity {
-            Some(integ_e) if integ_e != root_frame_entity.0 => {
-                frame_origin.origin_in_root(root_frame_entity.0, integ_e)
-            }
-            _ => (
-                Position::<RootInertial>::zero(),
-                Velocity::<RootInertial>::zero(),
-            ),
-        };
+        // Integration-frame origin (relative to root) — zero for
+        // root-integrated bodies. Shared helper documents the cases
+        // (no `FrameEntityC` legacy entity → zero; integ frame is the
+        // root frame → zero; otherwise walk via `FrameOrigin`).
+        let (integ_origin, integ_origin_vel) =
+            body_integ_origin_in_root(body_frame, &parents, root_frame_entity.0, &frame_origin);
         let abs_pos = body_pos + integ_origin;
 
         let typed_accel = jeod_sim::accumulate_gravity_typed(
@@ -2408,20 +2397,66 @@ pub fn geodetic_system(
     }
 }
 
+/// Compute the typed root-inertial origin offset of `body_frame`'s
+/// integration frame — the RF.10 shift that lifts a body's
+/// `PlanetInertial<SelfPlanet>` state into absolute `RootInertial`
+/// coordinates. Returns `(zero, zero)` when:
+///
+/// - the body has no [`FrameEntityC`] (legacy entities registered
+///   before the frames-as-entities components landed are treated as
+///   root-integrated), or
+/// - the body's frame entity's parent is the root frame.
+///
+/// In both cases the integ-origin shift is identically zero, so
+/// relabeling the body state to `RootInertial` is a no-op
+/// numerically. For non-root-integrated bodies the shift is the
+/// translational state of the integration frame relative to root,
+/// supplied by the [`FrameOrigin`] SystemParam.
+///
+/// Mirrors the `body_integ_origins` helper that
+/// `jeod_runner::Simulation::step_internal` builds before each shift
+/// site (gravity, integration, derived states); same algorithm,
+/// ECS-backed storage.
+fn body_integ_origin_in_root(
+    body_frame: Option<&FrameEntityC>,
+    parents: &Query<&ChildOf>,
+    root_frame_entity: Entity,
+    frame_origin: &FrameOrigin,
+) -> (Position<RootInertial>, Velocity<RootInertial>) {
+    let integ_frame_entity =
+        body_frame.and_then(|fe| parents.get(fe.0).ok().map(|child_of| child_of.parent()));
+    match integ_frame_entity {
+        Some(integ_e) if integ_e != root_frame_entity => {
+            frame_origin.origin_in_root(root_frame_entity, integ_e)
+        }
+        _ => (
+            Position::<RootInertial>::zero(),
+            Velocity::<RootInertial>::zero(),
+        ),
+    }
+}
+
 /// Compute solar beta angle for entities with `SolarBetaC`.
 ///
 /// Requires a `SunMarker` entity to exist in the world.
 ///
 /// Placed in `JeodSet::DerivedState`.
+#[allow(clippy::type_complexity)]
 pub fn solar_beta_system(
-    mut query: Query<(&TranslationalStateC, &mut SolarBetaC), Without<SunMarker>>,
+    frame_origin: FrameOrigin,
+    root_frame_entity: Res<crate::RootFrameEntityR>,
+    parents: Query<&ChildOf>,
+    mut query: Query<
+        (&TranslationalStateC, Option<&FrameEntityC>, &mut SolarBetaC),
+        Without<SunMarker>,
+    >,
     sun_query: Query<&TranslationalStateC, With<SunMarker>>,
 ) {
     let sun_state = match sun_query.single() {
         Ok(s) => s,
         Err(bevy::ecs::query::QuerySingleError::NoEntities(_)) => {
             // No SunMarker present: clear stale solar beta values
-            for (_, mut beta) in &mut query {
+            for (_, _, mut beta) in &mut query {
                 beta.0 = Default::default();
             }
             return;
@@ -2433,26 +2468,30 @@ pub fn solar_beta_system(
             );
         }
     };
-    for (state, mut beta) in &mut query {
-        // Typed throughout — the kernel returns a typed `Angle`; unwrap
-        // to radians for the (still f64) `SolarBetaC` storage.
-        // `Angle.value` reads the SI base value (radian), matching
-        // `Angle::get::<radian>()` — f64-equality is preserved.
-        //
-        // Solar beta is a root-inertial-shift consumer (RF.10): it
-        // mixes the body state with the Sun position, which is
-        // tagged `<RootInertial>`. Relabel the body / Sun state to
-        // `<RootInertial>` at the call site — this preserves the
-        // existing semantics for root-integrated bodies (where the
-        // shift is zero) and pins the framing convention at the
-        // boundary so the kernel signature stays expressed in the
-        // root-inertial frame.
-        let body_pos =
-            jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(state.position.raw_si()); // allowed: solar-beta shift-site relabel (root-integrated bodies have zero offset)
-        let body_vel =
-            jeod_sim::Velocity::<jeod_sim::RootInertial>::from_raw_si(state.velocity.raw_si()); // allowed: same shift-site
-        let sun_pos =
-            jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(sun_state.position.raw_si()); // allowed: Sun's <PlanetInertial<SelfPlanet>> storage relabeled to <RootInertial> at the consumer boundary
+    for (state, body_frame, mut beta) in &mut query {
+        // Solar beta is a root-inertial-shift consumer (RF.10): the
+        // kernel mixes the body state with the Sun position in
+        // absolute root-inertial coordinates. For non-root-integrated
+        // bodies the body's `<PlanetInertial<SelfPlanet>>` storage is
+        // integ-frame-relative, not absolute root-inertial — passing
+        // it raw to the root-inertial kernel would compute solar beta
+        // off by the inter-source separation distance. Lift to
+        // absolute root-inertial via the integ-origin shift, then
+        // call the typed kernel. `Angle.value` reads radians (the SI
+        // base unit), so the f64 `SolarBetaC` storage is bit-identical
+        // for root-integrated bodies (where the shift is zero).
+        let (integ_origin, integ_origin_vel) =
+            body_integ_origin_in_root(body_frame, &parents, root_frame_entity.0, &frame_origin);
+        let body_pos_rel = Position::<RootInertial>::from_raw_si(state.position.raw_si()); // allowed: integ-origin shift adds origin offset on the next line; relabel is a phantom-tag attachment matching the runner's `body.trans.to_inertial(&o)` boundary.
+        let body_vel_rel = Velocity::<RootInertial>::from_raw_si(state.velocity.raw_si()); // allowed: same boundary as `body_pos_rel`.
+        let body_pos = body_pos_rel + integ_origin;
+        let body_vel = body_vel_rel + integ_origin_vel;
+        // Sun is registered through `SunBundle` and integrates in the
+        // root frame, so its `<PlanetInertial<SelfPlanet>>` storage is
+        // numerically root-inertial; the relabel here is the boundary
+        // step that pins the framing convention at the consumer call
+        // site rather than asserting it once at registration.
+        let sun_pos = Position::<RootInertial>::from_raw_si(sun_state.position.raw_si()); // allowed: Sun is root-integrated by SunBundle construction (its frame entity's parent is the root frame, integ origin = zero); relabel is the consumer-boundary step.
         beta.0 = jeod_sim::compute_body_solar_beta_typed(body_pos, body_vel, sun_pos).value;
     }
 }
