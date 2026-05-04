@@ -121,6 +121,34 @@ impl TranslationalStateTyped<IntegrationFrame> {
             velocity: o.shift_velocity(self.velocity),
         }
     }
+
+    /// Inverse of [`to_inertial`](Self::to_inertial): land a root-inertial
+    /// state back into this body's integration frame by subtracting the
+    /// integration-frame origin's offset.
+    ///
+    /// Sites that produce root-inertial outputs but write into a body
+    /// whose storage type is `TranslationalStateTyped<IntegrationFrame>`
+    /// must call this at the boundary, otherwise the stored value is
+    /// silently in the wrong frame for any body whose integration frame
+    /// is not root (the kinematic-propagation kernel is the canonical
+    /// example — its outputs are inertial-frame composite-body state by
+    /// construction).
+    // JEOD_INV: RF.10 — re-entry boundary for root-inertial outputs into
+    // `TranslationalStateTyped<IntegrationFrame>` storage. Symmetric
+    // partner to `to_inertial`: every shift site that consumes via
+    // `to_inertial` must produce via `from_inertial` if it writes back
+    // through the same typed storage.
+    #[inline]
+    pub fn from_inertial(s: TranslationalStateTyped<RootInertial>, o: &IntegOrigin) -> Self {
+        Self {
+            position: Position::<IntegrationFrame>::from_raw_si(
+                s.position.raw_si() - o.position.raw_si(),
+            ),
+            velocity: Velocity::<IntegrationFrame>::from_raw_si(
+                s.velocity.raw_si() - o.velocity.raw_si(),
+            ),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -191,6 +219,40 @@ mod tests {
         let s_inertial = s_integ.to_inertial(&o);
         assert_eq!(s_inertial.position.raw_si(), DVec3::new(7e6, 0.0, 0.0));
         assert_eq!(s_inertial.velocity.raw_si(), DVec3::new(0.0, 7500.0, 0.0));
+    }
+
+    #[test]
+    fn from_inertial_round_trips_with_to_inertial() {
+        // Random non-zero state and origin — the inverse is a straight
+        // arithmetic flip, so any non-zero offset that's preserved
+        // bit-exactly through `add` then `sub` is sufficient evidence.
+        let s_integ = TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
+            &TranslationalState {
+                position: DVec3::new(7e6, 0.0, 0.0),
+                velocity: DVec3::new(0.0, 7500.0, 0.0),
+            },
+        );
+        let o = IntegOrigin {
+            position: Position::<RootInertial>::from_raw_si(DVec3::new(1.5e11, 0.0, 0.0)),
+            velocity: Velocity::<RootInertial>::from_raw_si(DVec3::new(0.0, 30_000.0, 0.0)),
+        };
+        let s_inertial = s_integ.to_inertial(&o);
+        let s_back = TranslationalStateTyped::<IntegrationFrame>::from_inertial(s_inertial, &o);
+        assert_eq!(s_back.position.raw_si(), s_integ.position.raw_si());
+        assert_eq!(s_back.velocity.raw_si(), s_integ.velocity.raw_si());
+    }
+
+    #[test]
+    fn from_inertial_with_zero_origin_is_identity() {
+        let s_inertial =
+            TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(&TranslationalState {
+                position: DVec3::new(7e6, 0.0, 0.0),
+                velocity: DVec3::new(0.0, 7500.0, 0.0),
+            });
+        let o = IntegOrigin::zero();
+        let s_integ = TranslationalStateTyped::<IntegrationFrame>::from_inertial(s_inertial, &o);
+        assert_eq!(s_integ.position.raw_si(), s_inertial.position.raw_si());
+        assert_eq!(s_integ.velocity.raw_si(), s_inertial.velocity.raw_si());
     }
 
     #[test]

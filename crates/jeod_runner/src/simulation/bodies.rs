@@ -634,6 +634,72 @@ impl Simulation {
         }
         jeod_sim::reset_integrators(body.gj_state.as_mut(), body.abm4_state.as_mut());
     }
+
+    /// Clear the kinematic-only flag on a body, returning ownership of
+    /// its trans/rot to the integrator.
+    ///
+    /// `Simulation::detach` already clears this flag automatically on
+    /// the freshly-detached child (a kinematic child without a parent
+    /// would panic on the next `step()` in `propagate_kinematic_state`,
+    /// so detach is the single fail-loud entry point). This method
+    /// remains for the rarer case where a caller wants to revoke the
+    /// kinematic-only assignment without changing the tree topology
+    /// — e.g. swapping a fully-integrated child in place of a
+    /// kinematic one mid-mission.
+    ///
+    /// No-op if the flag is already clear. Does not validate
+    /// mass-tree topology; this method is purely a flag flip.
+    pub fn clear_kinematic_only(&mut self, idx: usize) {
+        self.bodies[idx].kinematic_only = false;
+    }
+
+    /// Flag a body as a kinematic child of its mass-tree parent.
+    ///
+    /// After this call, the body's `trans` + `rot` are derived each
+    /// [`step`](Self::step) by
+    /// [`propagate_state_via_storage`](jeod_sim::propagate_state_via_storage)
+    /// from the parent's freshly-derived state composed with the
+    /// link's `MassChildOf` rotation + offset (mirrors JEOD's
+    /// `DynBody::propagate_state_from_structure`). The integrator on
+    /// this body is **skipped** — only the tree root integrates per
+    /// `JEOD_INV: DB.17`.
+    ///
+    /// # Panics
+    /// * The body is not registered in the mass tree (call
+    ///   [`add_body_to_tree`](Self::add_body_to_tree) first).
+    /// * The body resolves to a tree root (kinematic-only bodies must
+    ///   be non-root — call [`attach`](Self::attach) first).
+    /// * The body has no [`RotationalState`](jeod_sim::RotationalState):
+    ///   kinematic propagation derives both `trans` and `rot`, so
+    ///   3-DOF bodies cannot be kinematic children.
+    // JEOD_INV: DB.17 — only the root's state is integrated; non-root state is kinematic-derived
+    pub fn mark_kinematic_only(&mut self, idx: usize) {
+        let body = &self.bodies[idx];
+        let id = body.mass_body_id.unwrap_or_else(|| {
+            panic!(
+                "mark_kinematic_only: SimBody {idx} is not in the mass tree. \
+                 Call `add_body_to_tree({idx}, ...)` and `attach({idx}, parent_idx, ...)` first."
+            )
+        });
+        let tree = self
+            .mass_tree
+            .as_ref()
+            .expect("mark_kinematic_only: no mass tree configured");
+        assert!(
+            tree.parent(id).is_some(),
+            "mark_kinematic_only: SimBody {idx} (mass_body_id {id:?}) is a tree root. \
+             Kinematic-only bodies must have a parent — call \
+             `attach({idx}, parent_idx, offset, t_parent_child)` first."
+        );
+        assert!(
+            body.rot.is_some(),
+            "mark_kinematic_only: SimBody {idx} has no RotationalState. \
+             Kinematic propagation derives both trans and rot; 3-DOF bodies cannot \
+             be kinematic children. Set `VehicleConfig::rot = Some(...)` when \
+             constructing the body."
+        );
+        self.bodies[idx].kinematic_only = true;
+    }
 }
 
 #[cfg(test)]

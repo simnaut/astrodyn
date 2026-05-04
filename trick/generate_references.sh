@@ -2029,6 +2029,59 @@ run_attach_detach_group() {
 throttled_bg run_attach_detach_group
 PID_ATTACH_DETACH=$LAST_BG_PID
 
+# Group 31b: SIM_verif_attach_detach kinematic-propagation logging
+# Same SIM_verif_attach_detach binary as group 31, but a richer ASCII
+# snippet that logs composite-body state (translational + rotational)
+# for veh1 + veh2 + veh3, used by the runner-side
+# tier3_sim_kinematic_propagation test (issue #294). Run as a separate
+# DR group so the existing composite-mass CSV under
+# attach_detach_*_attach_detach.csv stays bit-identical to its older
+# regen output.
+KINEMATIC_PROP_SNIPPET='
+dr = trick.sim_services.DRAscii("kinematic_propagation_state")
+dr.thisown = 0
+dr.set_cycle(0.5)
+dr.freq = trick.sim_services.DR_Always
+for prefix in ["veh1", "veh2", "veh3"]:
+    for i in range(3):
+        dr.add_variable(f"{prefix}.dyn_body.composite_body.state.trans.position[{i}]")
+    for i in range(3):
+        dr.add_variable(f"{prefix}.dyn_body.composite_body.state.trans.velocity[{i}]")
+    dr.add_variable(f"{prefix}.dyn_body.composite_body.state.rot.Q_parent_this.scalar")
+    for i in range(3):
+        dr.add_variable(f"{prefix}.dyn_body.composite_body.state.rot.Q_parent_this.vector[{i}]")
+    for i in range(3):
+        dr.add_variable(f"{prefix}.dyn_body.composite_body.state.rot.ang_vel_this[{i}]")
+trick.add_data_record_group(dr)
+'
+
+run_kinematic_propagation_group() {
+    local sim_dir="models/dynamics/dyn_body/verif/SIM_verif_attach_detach"
+    local -a RUNS=(
+        "SET_test/RUN_simple_attach_detach:kinematic_propagation_simple:kinematic_propagation_simple_kinematic_propagation_state.csv"
+    )
+    local needs_build=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r _run_dir label required <<< "$entry"
+        if ! has_output "$label" "$required"; then
+            needs_build=1
+            break
+        fi
+    done
+    if [ "$needs_build" = "0" ]; then
+        echo "=== Skipping SIM_verif_attach_detach kinematic-propagation group (all outputs exist) ==="
+        return 0
+    fi
+    local fail=0
+    for entry in "${RUNS[@]}"; do
+        IFS=: read -r run_dir label required <<< "$entry"
+        run_sim_with_ascii "$sim_dir" "$run_dir" "$label" "$KINEMATIC_PROP_SNIPPET" "$required" || fail=1
+    done
+    return $fail
+}
+throttled_bg run_kinematic_propagation_group
+PID_KINEMATIC_PROP=$LAST_BG_PID
+
 # Group 32: SIM_verif_frame_switch (Apollo 8 frame switching)
 # Inject ASCII logging for 6-DOF state (translational + rotational).
 APOLLO8_SNIPPET='
@@ -2505,6 +2558,7 @@ wait $PID_MERCURY        || { echo "WARN: SIM_mercury group had failures"; FAIL=
 wait $PID_APOLLO         || { echo "WARN: SIM_Apollo group had failures"; FAIL=1; }
 wait $PID_ATTACH_MASS    || { echo "WARN: SIM_verif_attach_mass group had failures"; FAIL=1; }
 wait $PID_ATTACH_DETACH  || { echo "WARN: SIM_verif_attach_detach group had failures"; FAIL=1; }
+wait $PID_KINEMATIC_PROP || { echo "WARN: SIM_verif_attach_detach kinematic-propagation group had failures"; FAIL=1; }
 wait $PID_FRAME_SWITCH   || { echo "WARN: SIM_verif_frame_switch group had failures"; FAIL=1; }
 wait $PID_CONTACT        || { echo "WARN: SIM_contact group had failures"; FAIL=1; }
 wait $PID_GROUND_CONTACT || { echo "WARN: SIM_ground_contact group had failures"; FAIL=1; }
