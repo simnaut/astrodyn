@@ -164,38 +164,55 @@ fn bevy_parity_frame_attach_non_root_integ_source_lowers_to_integ_frame() {
         "frame_attach_system must insert FrameAttachedC after a FrameAttachEvent"
     );
 
-    // 1. The body's frame entity carries the *root-inertial*
-    //    composition: position relative to its `ChildOf` parent
-    //    (the Moon's frame entity), and the Moon's frame is offset
-    //    from root by MOON_OFFSET, so the FrameTransC value (which
-    //    is "this frame relative to its parent in parent-frame
-    //    coords") is ATTACH_OFFSET - MOON_OFFSET.
-    //
-    //    Wait — the frame-entity sync writes the *root-inertial*
-    //    derived value into `FrameTransC.position`. That is
-    //    deliberately the runner's contract too: the body frame is
-    //    `ChildOf(integ_frame)`, but the per-tick frame-attach sync
-    //    populates `state.trans.position` with the body's root-
-    //    inertial composite, matching the runner's
-    //    `node.state.trans.position = self.bodies[idx].trans.position
-    //    .raw_si()` line in `propagate_frame_attached_state` — which
-    //    after #316's lower writes the integ-frame value, not root.
-    //    The Bevy adapter currently writes the kernel's pre-lower
-    //    root-inertial value to FrameTransC; for cross-source
-    //    integration frames this is also off relative to the
-    //    parent. Hold off on asserting the FrameTransC frame
-    //    convention here — it is a separate axis of the same
-    //    alignment work and orthogonal to the load-bearing
-    //    `TranslationalStateC` lower this test is pinning.
+    // 1. The body's frame entity carries the *parent-relative*
+    //    composition: position relative to its `ChildOf` parent in
+    //    parent-frame coordinates (the convention `FrameTransC`'s
+    //    doc on `components.rs` and `sync_body_to_frame_system` /
+    //    the runner's `node.state.trans = bodies[idx].trans` line
+    //    in `crates/jeod_runner/src/simulation/frame_attach.rs:369`
+    //    both establish). The body frame is `ChildOf(moon.frame)`
+    //    (set by `register_body_frames_system` because this body's
+    //    `IntegSourceC = Some(moon)`; frame-attach does not reparent
+    //    the frame node), so the parent-relative coordinates are
+    //    Moon-relative — identical to the lowered integ-frame value
+    //    written into `TranslationalStateC` below: `ATTACH_OFFSET -
+    //    MOON_OFFSET`. A regression that wrote the kernel's
+    //    pre-lower root-inertial value into `FrameTransC.position`
+    //    (the bug this assertion pins) would put `ATTACH_OFFSET`
+    //    here — off by `MOON_OFFSET` and inconsistent with the
+    //    body's `TranslationalStateC`, breaking every frame-tree
+    //    walker that reads through this node (`compute_relative_state`
+    //    consumers in gravity / drag / LVLH / geodetic / frame
+    //    switch).
     let body_frame_entity = app
         .world()
         .get::<FrameEntityC>(body)
         .expect("register_body_frames_system must insert FrameEntityC")
         .0;
-    let _frame_trans = app
+    let frame_trans = *app
         .world()
         .get::<FrameTransC>(body_frame_entity)
         .expect("body's frame entity must carry FrameTransC");
+    let expected_frame_pos = ATTACH_OFFSET - MOON_OFFSET;
+    let frame_pos_err = (frame_trans.position - expected_frame_pos).length();
+    let frame_tol = 1e-6;
+    assert!(
+        frame_pos_err < frame_tol,
+        "FrameTransC.position not lowered to parent-relative (Moon-inertial) coords:\n  \
+         got {:?}\n  expected {expected_frame_pos:?} (= ATTACH_OFFSET - MOON_OFFSET)\n  \
+         delta {:?} (length {frame_pos_err:.3e}, tol {frame_tol:.3e})\n\n\
+         A regression that copied the kernel's pre-lower root-inertial output \
+         into FrameTransC would put ATTACH_OFFSET here, breaking the parent- \
+         relative invariant `compute_relative_state` walks rely on.",
+        frame_trans.position,
+        frame_trans.position - expected_frame_pos,
+    );
+    assert!(
+        frame_trans.velocity.length() < 1e-9,
+        "FrameTransC.velocity must be zero (frame-attached to a stationary root \
+         frame, integ frame at rest in root): got {:?}",
+        frame_trans.velocity,
+    );
 
     // 2. The body's `TranslationalStateC` must carry the lowered
     //    integration-frame coordinates. Storage convention: typed

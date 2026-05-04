@@ -584,10 +584,18 @@ pub fn propagate_frame_attached_state_system(
         }
 
         // Sync the body's frame entity (if it has one) so frame-tree
-        // consumers see the same value as `TranslationalStateC`. The
-        // body frame is `ChildOf(root)` in the realistic config, so
-        // its `FrameTransC` is the body's root-inertial position
-        // (relative to root = root-inertial absolute).
+        // consumers see the same value as `TranslationalStateC`.
+        // `FrameTransC` is parent-relative in the parent frame's
+        // coordinates (relative to the body frame's `ChildOf` parent —
+        // see `components::FrameTransC` doc and `sync_body_to_frame_system`).
+        // The body frame entity is `ChildOf(integ_frame_entity)`
+        // (set by `register_body_frames_system`; frame-attach does not
+        // reparent the frame node), so the parent-relative value is
+        // the kernel's root-inertial output lowered through the
+        // `IntegOrigin` — i.e. the same `derived_trans` already written
+        // into `TranslationalStateC` above. Mirrors the runner's
+        // `node.state.trans = bodies[idx].trans` line in
+        // `crates/jeod_runner/src/simulation/frame_attach.rs:369-370`.
         //
         // Fail loudly when `FrameEntityC` points at an entity that
         // isn't a frame: skipping silently would leave the frame tree
@@ -600,6 +608,9 @@ pub fn propagate_frame_attached_state_system(
         // pointing at a non-frame entity — are exactly the
         // misconfigurations the fail-loud rule requires the system to
         // panic on at the point of detection.
+        // JEOD_INV: RF.10 — root-inertial-shift consumer: `FrameTransC`
+        // is parent-relative against the body frame's `ChildOf`
+        // (= integ frame), so the writeback uses the lowered value.
         if let Some(frame_entity) = frame_opt.map(|f| f.0) {
             let (mut frame_trans, frame_rot, frame_angvel) = frame_writeback_q
                 .get_mut(frame_entity)
@@ -618,8 +629,8 @@ pub fn propagate_frame_attached_state_system(
                          before despawning the frame entity."
                     )
                 });
-            frame_trans.position = derived.trans.position;
-            frame_trans.velocity = derived.trans.velocity;
+            frame_trans.position = derived_trans.position;
+            frame_trans.velocity = derived_trans.velocity;
             if let Some(mut rot) = frame_rot {
                 rot.q_parent_this = derived.rot.q_parent_this;
                 rot.t_parent_this = derived.rot.t_parent_this;
