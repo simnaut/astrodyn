@@ -10,6 +10,40 @@
 //! faithful trajectory is produced regardless of which consumer of
 //! `jeod_sim` drives the pipeline up to the detach event.
 //!
+//! # Attach scheduling — canonical timing
+//!
+//! Both runtimes fire their respective attach surfaces *after* the
+//! integration step that lands at `t = ATTACH_TIME`, mirroring JEOD's
+//! `trick.add_read(10, "veh1.attach_to_2.active = True")` semantics:
+//! Trick's `input_processor_run` queue at simtime `t` fires the read
+//! job at the start of the dispatch cycle for time `t`, *after* the
+//! integrator has produced the `t = T` state from the previous tick's
+//! `t-dt → t` integration of the still-separate bodies. The CSV row
+//! at `t = ATTACH_TIME` therefore captures the post-read-job
+//! (combined) state. This matches the timing in
+//! `tier3_sim_attach_detach_trajectory_simple` and is the JEOD-
+//! faithful schedule.
+//!
+//! The older "fire before the step that crosses `ATTACH_TIME`"
+//! pattern integrates the `t-dt → t` step with the bodies *already*
+//! attached, which produces a different post-attach trajectory:
+//! `combine_states_at_attach` preserves the parent's quaternion and
+//! averages momenta, so the combine input being the integrated-
+//! once-attached state versus the separate state at `t` shifts the
+//! merged angular and translational state. Keeping both new tests
+//! on the same post-step timing guards against re-introducing the
+//! inconsistency.
+//!
+//! Schedule asymmetry between the two runtimes on the attach-event
+//! tick (see "What is pinned" below): `Simulation::attach` is
+//! synchronous and writes the post-combine state to the runner's
+//! integrated tree root in the same call; the Bevy adapter consumes
+//! `AttachEvent` only at the start of the *next* `FixedUpdate`'s
+//! `staging_system`. Both runtimes therefore feed the same separate
+//! `t = ATTACH_TIME` state to the same `combine_states_at_attach`
+//! kernel, but at different schedule positions; bit-identity holds
+//! from the tick *after* the attach event onward.
+//!
 //! # What is pinned
 //!
 //! Both runtimes:
@@ -20,17 +54,22 @@
 //! - integrate forward through `Simulation::step()` (runner) and
 //!   `App::run_schedule(FixedUpdate)` (Bevy) in lock-step,
 //! - fire the in-flight attach via `Simulation::attach` (runner) and
-//!   `AttachEvent` (Bevy) at `t = 10`.
+//!   `AttachEvent` (Bevy) just after the step that lands at
+//!   `t = ATTACH_TIME` (see "Attach scheduling" above).
 //!
 //! Validation runs from `t = 0` through `t < DETACH_TIME` and asserts
 //! bit-identical `composite_body` state on the integrated tree root
 //! (veh2 in the attached window, plus the always-free-flying veh3) at
-//! every tick. The kinematic-only veh1 in the attached window has a
-//! known one-tick schedule asymmetry (Bevy runs propagation only
-//! before integration; the runner runs it both before and after) and
-//! is structurally covered by `bevy_parity_kinematic_propagation_
-//! simple_chain` — this trajectory parity therefore asserts veh1 only
-//! while it is itself integrated.
+//! every tick *except* the attach-event tick itself, where the
+//! synchronous-vs-deferred schedule asymmetry above leaves
+//! `runner.veh2` post-combine while Bevy still holds the pre-combine
+//! state (the `AttachEvent` is in the queue but not yet consumed).
+//! The kinematic-only veh1 in the attached window has a known one-
+//! tick schedule asymmetry (Bevy runs propagation only before
+//! integration; the runner runs it both before and after) and is
+//! structurally covered by `bevy_parity_kinematic_propagation_
+//! simple_chain` — this trajectory parity therefore asserts veh1
+//! only while it is itself integrated.
 //!
 //! # What is **not** pinned (and why)
 //!
@@ -366,24 +405,29 @@ fn bevy_parity_attach_detach_trajectory_simple() {
     for tick in 0..NUM_STEPS {
         // Time the simulations will reach after this tick's
         // `step()` / `step_bevy()` call (`tick + 1` ticks of `DT`
-        // from t=0). Used to gate the attach event.
+        // from t=0). Used to gate the attach event and to label
+        // the attach-event tick for the bit-identity skip below.
         let next_time = (tick as f64 + 1.0) * DT;
 
-        // Fire the attach event on the tick that lands at simtime =
-        // ATTACH_TIME so both runtimes apply the action *during the
-        // step from `tick·DT` to `(tick+1)·DT`*. The runner applies
-        // `Simulation::attach` synchronously (writes the post-combine
-        // veh2 state, marks veh1 kinematic-only) before the inner
-        // integrator runs the (tick·DT → (tick+1)·DT) sub-cycle. The
-        // Bevy adapter reads the queued `AttachEvent` in
-        // `staging_system` at the top of the same `FixedUpdate` and
-        // runs the same combine kernel; downstream systems in the
-        // same `FixedUpdate` (gravity / interactions / integration /
-        // post-integration kinematic propagation) consume the post-
-        // event mass tree. Lock-step ordering keeps both runtimes'
-        // veh2 integrators stepping the *separate*-body veh2 state
-        // exactly once before the attach lands, matching JEOD's CSV.
-        if !attach_fired && next_time + 0.5 * DT >= ATTACH_TIME {
+        sim.step().expect("runner step must succeed");
+        step_bevy(&mut app);
+
+        // Fire the attach *after* the step that lands at simtime =
+        // ATTACH_TIME so the (`t-DT → t`) integration runs with the
+        // bodies still separate, matching JEOD's `trick.add_read(t,
+        // ...)` semantics — see the file-level "Attach scheduling —
+        // canonical timing" docstring and the matching
+        // `tier3_sim_attach_detach_trajectory_simple`. The runner
+        // applies `Simulation::attach` synchronously: it runs
+        // `combine_states_at_attach` and writes the post-combine
+        // state to `r_v2` immediately. The Bevy adapter's
+        // `AttachEvent` is *queued* — `staging_system` consumes it
+        // at the top of the *next* `FixedUpdate`, before that step's
+        // integration runs. Both runtimes therefore feed the same
+        // separate `t = ATTACH_TIME` state to the same kernel, just
+        // at different schedule positions.
+        let is_attach_event_tick = !attach_fired && (next_time - ATTACH_TIME).abs() < 0.5 * DT;
+        if is_attach_event_tick {
             let (offset, t_pc) = link_offset_and_rotation();
             sim.attach(r_v1, r_v2, offset, t_pc);
             sim.mark_kinematic_only(r_v1);
@@ -398,48 +442,59 @@ fn bevy_parity_attach_detach_trajectory_simple() {
             attach_fired = true;
         }
 
-        sim.step().expect("runner step must succeed");
-        step_bevy(&mut app);
-
         // Compare each body's 6-DOF state. The contract differs by
         // body:
         //
-        // - **veh3** (free-flying root, never attached) and **veh2**
-        //   (integrated tree root in the attached window) are
-        //   integrator-written every tick. Both runtimes apply the
-        //   same RK4 kernel to the same inputs; bit-identity is the
-        //   right contract. Any drift would mean one of the adapters
-        //   mis-routes integrator inputs.
+        // - **veh3** (free-flying root, never attached) is
+        //   integrator-written every tick under no force/torque.
+        //   Both runtimes apply the same RK4 kernel to the same
+        //   inputs; bit-identity holds on every tick.
+        //
+        // - **veh2** (integrated tree root in the attached window)
+        //   is integrator-written every tick. Bit-identity holds
+        //   *except* on the attach-event tick: the runner's
+        //   synchronous `Simulation::attach` has just written the
+        //   post-combine state, while Bevy's `AttachEvent` is
+        //   queued but won't be consumed until the next
+        //   `FixedUpdate`'s `staging_system`. The next iteration's
+        //   `step_bevy` runs the same combine kernel on the same
+        //   separate-veh2 state that the runner consumed, so parity
+        //   re-aligns on the tick after the attach event.
         //
         // - **veh1** in the attached window is *kinematic-only*: its
         //   `composite_body` state is derived from veh2 by
         //   `propagate_state_from_root_system` (Bevy) and
         //   `propagate_kinematic_state` (runner). The two runtimes
-        //   differ in *when* that walk fires within a tick: the runner
-        //   runs propagation both before *and* after integration so
-        //   `Simulation::body(idx)` returns same-tick-derived state;
-        //   Bevy runs propagation only before integration, so
-        //   `TranslationalStateC` reflects the *previous* tick's
-        //   parent. Combined with `KinematicChildC` being installed by
+        //   differ in *when* that walk fires within a tick: the
+        //   runner runs propagation both before *and* after
+        //   integration so `Simulation::body(idx)` returns
+        //   same-tick-derived state; Bevy runs propagation only
+        //   before integration, so `TranslationalStateC` reflects
+        //   the *previous* tick's parent. Combined with
+        //   `KinematicChildC` being installed by
         //   `wrench_aggregation_system` via Commands (so it's not
-        //   visible to `propagate_state_from_root_system` until after
-        //   the next sync point), there is a transient two-tick lag at
-        //   the attach event. This is a documented schedule asymmetry,
-        //   structurally covered by the kernel-self-consistency
-        //   invariants in `bevy_parity_kinematic_propagation_simple_
-        //   chain`. This trajectory parity therefore asserts bit-
-        //   identity on veh1 only when veh1 is itself integrating —
-        //   i.e. in the pre-attach window. The attached window's veh1
+        //   visible to `propagate_state_from_root_system` until
+        //   after the next sync point), there is a transient two-
+        //   tick lag at the attach event. This is a documented
+        //   schedule asymmetry, structurally covered by the kernel-
+        //   self-consistency invariants in
+        //   `bevy_parity_kinematic_propagation_simple_chain`. This
+        //   trajectory parity therefore asserts bit-identity on
+        //   veh1 only when veh1 is itself integrating — i.e. in
+        //   the pre-attach window. The attached window's veh1
         //   parity is delegated to the kinematic-propagation parity
         //   test.
-        let r_v2_state = read_runner_state(&sim, r_v2);
         let r_v3_state = read_runner_state(&sim, r_v3);
-        let b_v2_state = read_bevy_state(&app, b_v2);
         let b_v3_state = read_bevy_state(&app, b_v3);
 
         let label = format!("t={:.3}s", sim.elapsed());
         assert_sixdof_eq(&format!("veh3 {label}"), &r_v3_state, &b_v3_state);
-        assert_sixdof_eq(&format!("veh2 {label}"), &r_v2_state, &b_v2_state);
+
+        if !is_attach_event_tick {
+            let r_v2_state = read_runner_state(&sim, r_v2);
+            let b_v2_state = read_bevy_state(&app, b_v2);
+            assert_sixdof_eq(&format!("veh2 {label}"), &r_v2_state, &b_v2_state);
+        }
 
         if !attach_fired {
             let r_v1_state = read_runner_state(&sim, r_v1);
