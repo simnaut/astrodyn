@@ -61,7 +61,10 @@ use bevy::ecs::message::MessageWriter;
 use bevy::prelude::*;
 use jeod_sim::BodyAction;
 
-use crate::components::{MassPropertiesC, RotationalStateC, TranslationalStateC};
+use crate::components::{
+    Abm4StateC, DynamicsConfigC, GaussJacksonStateC, MassPropertiesC, RotationalStateC,
+    TranslationalStateC,
+};
 
 /// One pending body action awaiting execution.
 ///
@@ -257,11 +260,22 @@ pub fn body_action_intake_system(
 #[allow(clippy::type_complexity)]
 pub fn body_action_system(
     mut queue: ResMut<BodyActionsR>,
-    mut bodies: Query<(
-        Option<&mut TranslationalStateC>,
-        Option<&mut RotationalStateC>,
-        Option<&mut MassPropertiesC>,
-    )>,
+    mut bodies: Query<
+        (
+            Option<&mut TranslationalStateC>,
+            Option<&mut RotationalStateC>,
+            Option<&mut MassPropertiesC>,
+            Option<&mut GaussJacksonStateC>,
+            Option<&mut Abm4StateC>,
+        ),
+        // JEOD_INV: BA.01 — subject must be a DynBody-equivalent entity. `DynamicsConfigC`
+        // is required on every dynamic body; gating the query on it both narrows
+        // the match to body-like entities (the prior `Option<...>`-only filter
+        // matched every entity in the world) and yields a `QueryDoesNotMatch`
+        // error from `get_mut` when a caller targets a non-body entity, which
+        // surfaces the misconfiguration with the correct diagnostic.
+        With<DynamicsConfigC>,
+    >,
 ) {
     let mut idx = 0;
     while idx < queue.pending.len() {
@@ -277,63 +291,99 @@ pub fn body_action_system(
         // entry stripped, so a recovered World won't replay the
         // bad action on the next tick.
         let action = queue.pending.remove(idx);
-        let (mut trans, mut rot, mut mass) = bodies
+        let (mut trans, mut rot, mut mass, mut gj, mut abm) = bodies
             .get_mut(action.entity)
             .unwrap_or_else(|err| {
                 panic!(
-                    "BodyAction subject entity {:?} (action_name={:?}) is not a recognised vehicle entity (missing TranslationalStateC / RotationalStateC / MassPropertiesC). \
-                     Spawn the entity with the appropriate Components before queuing a BodyAction. (bevy query error: {err:?})",
+                    "BodyAction subject entity {:?} (action_name={:?}) is not a recognised vehicle entity \
+                     (despawned, never spawned, or missing DynamicsConfigC — every dynamic body carries DynamicsConfigC). \
+                     Spawn the entity with the dynamic-body Components before queuing a BodyAction. (bevy query error: {err:?})",
                     action.entity, action.name,
                 )
             });
+        // Track whether translational / rotational state were mutated
+        // so we can reset multi-step integrator history afterwards
+        // (mirrors the IG.37 attach/detach reset path).
+        let mut state_mutated = false;
         if let Some(state) = action.action.apply_translational() {
-            let comp = trans.as_mut().unwrap_or_else(|| {
-                panic!(
-                    "BodyAction targets translational state on entity {:?} (action_name={:?}) but the entity has no TranslationalStateC. \
-                     Add `TranslationalStateC::default()` to the entity (or spawn via `VehicleConfig::spawn_bevy`) before queuing this action.",
-                    action.entity, action.name,
-                )
-            });
+            let comp = trans
+                .as_deref_mut()
+                .unwrap_or_else(|| {
+                    panic!(
+                        "BodyAction targets translational state on entity {:?} (action_name={:?}) but the entity has no TranslationalStateC. \
+                         Add `TranslationalStateC::default()` to the entity (or spawn via `VehicleConfig::spawn_bevy`) before queuing this action.",
+                        action.entity, action.name,
+                    )
+                });
             // allowed: action-fire boundary — `BodyAction::apply_translational` returns the
             // ECS-agnostic `TranslationalState` (the kernels in `jeod_dynamics::body_init`
             // are untyped). Lifting back to the typed `<PlanetInertial<SelfPlanet>>` storage
             // is a one-time relabel at the action-fire boundary, identical in shape to the
             // `VehicleConfig::spawn_bevy` initial-state lift in `lib.rs`. Not a per-step
             // bypass.
-            ***comp = jeod_sim::TranslationalStateTyped::from_untyped_unchecked(&state);
+            comp.0 = jeod_sim::TranslationalStateTyped::from_untyped_unchecked(&state);
+            state_mutated = true;
         }
         if let Some(state) = action.action.apply_rotational() {
-            let comp = rot.as_mut().unwrap_or_else(|| {
-                panic!(
-                    "BodyAction targets rotational state on entity {:?} (action_name={:?}) but the entity has no RotationalStateC. \
-                     Add `RotationalStateC::default()` to the entity before queuing this action.",
-                    action.entity, action.name,
-                )
-            });
+            let comp = rot
+                .as_deref_mut()
+                .unwrap_or_else(|| {
+                    panic!(
+                        "BodyAction targets rotational state on entity {:?} (action_name={:?}) but the entity has no RotationalStateC. \
+                         Add `RotationalStateC::default()` to the entity before queuing this action.",
+                        action.entity, action.name,
+                    )
+                });
             // allowed: same action-fire boundary as the translational branch above.
             // `RotationalState` is the ECS-agnostic untyped form; the typed
             // `<SelfRef>` re-tag here is a one-time witness reinstatement at the
             // mutation site, not a per-step lift.
-            ***comp = jeod_sim::RotationalStateTyped::from_untyped_unchecked(&state);
+            comp.0 = jeod_sim::RotationalStateTyped::from_untyped_unchecked(&state);
+            state_mutated = true;
         }
         if let Some(props) = action.action.apply_mass() {
-            let comp = mass.as_mut().unwrap_or_else(|| {
-                panic!(
-                    "BodyAction targets mass properties on entity {:?} (action_name={:?}) but the entity has no MassPropertiesC. \
-                     Add `MassPropertiesC::from(MassProperties::new(...))` to the entity before queuing this action.",
-                    action.entity, action.name,
-                )
-            });
-            // Replace the typed wrapper directly. `MassProperties::new`
-            // / `with_inertia` already set the `dirty` flag inside the
-            // wrapped struct, so `mass_update_system` will recompute
-            // the inverse caches this tick.
+            let comp = mass
+                .as_deref_mut()
+                .unwrap_or_else(|| {
+                    panic!(
+                        "BodyAction targets mass properties on entity {:?} (action_name={:?}) but the entity has no MassPropertiesC. \
+                         Add `MassPropertiesC::from(MassProperties::new(...))` to the entity before queuing this action.",
+                        action.entity, action.name,
+                    )
+                });
+            // Replace the typed wrapper, then mark the new value
+            // `dirty` so `mass_update_system` recomputes the inverse
+            // caches. `MassProperties::new` / `with_inertia` set
+            // `dirty = false` (they precompute `inverse_mass` /
+            // `inverse_inertia` from the supplied scalars), so without
+            // this flip the per-tick recompute path is skipped — fine
+            // for those constructors, but a downstream caller that
+            // hands us a hand-built `MassProperties` with an
+            // out-of-sync `inverse_mass` would be missed. Marking
+            // `dirty` here is the safe action-fire contract: the
+            // recompute is a `dirty`-guarded no-op when nothing
+            // changed.
             // allowed: action-fire boundary — `MassProperties` is the ECS-agnostic
             // untyped form returned by `BodyAction::apply_mass`. The
             // `MassPropertiesTyped<SelfRef>` re-tag is a one-time relabel matching
             // the `MassPropertiesC::from(MassProperties)` pattern used at spawn
             // time. Not a per-step bypass.
-            ***comp = jeod_sim::MassPropertiesTyped::from_untyped_unchecked(&props);
+            comp.0 = jeod_sim::MassPropertiesTyped::from_untyped_unchecked(&props);
+            comp.0.dirty = true;
+        }
+        if state_mutated {
+            // JEOD_INV: IG.37 — multi-step integrator history must be reset on
+            // any mid-sim state change. JEOD's `dyn_body_init_*` actions
+            // overwrite a body's translational / rotational state mid-run,
+            // and (per JEOD's attach/detach analog) leaving Gauss–Jackson /
+            // ABM4 predictor history pointing at the prior state corrupts
+            // the next integrate. The reset is a no-op for single-step
+            // integrators (`gj` / `abm` will be `None` on RK4 entities),
+            // so this branch is free for the common path.
+            jeod_sim::reset_integrators(
+                gj.as_deref_mut().map(|c| &mut c.0),
+                abm.as_deref_mut().map(|c| &mut c.0),
+            );
         }
         // Do not advance idx: the queue shifted left by one when we
         // removed the applied action.
@@ -402,9 +452,14 @@ pub fn add_body_action_via(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::components::{MassPropertiesC, RotationalStateC, TranslationalStateC};
+    use crate::components::{
+        DynamicsConfigC, MassPropertiesC, RotationalStateC, TranslationalStateC,
+    };
     use glam::DVec3;
-    use jeod_sim::{JeodQuat, MassProperties, OrbitalElementSet, OrbitalElements, RotationalState};
+    use jeod_sim::{
+        DynamicsConfig, JeodQuat, MassProperties, OrbitalElementSet, OrbitalElements,
+        RotationalState,
+    };
 
     fn build_app() -> App {
         let mut app = App::new();
@@ -424,6 +479,13 @@ mod tests {
                 TranslationalStateC::default(),
                 RotationalStateC::default(),
                 MassPropertiesC::from(MassProperties::new(400_000.0)),
+                // `body_action_system` filters by `With<DynamicsConfigC>`;
+                // a real vehicle entity always carries this Component.
+                DynamicsConfigC(DynamicsConfig {
+                    translational_dynamics: true,
+                    rotational_dynamics: true,
+                    three_dof: false,
+                }),
             ))
             .id()
     }
