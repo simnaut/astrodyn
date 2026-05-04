@@ -35,6 +35,7 @@ use jeod_dynamics::body_init::{
 };
 use jeod_dynamics::{MassProperties, RotationalState, TranslationalState};
 use jeod_math::{GeodeticState, JeodQuat, OrbitalElements};
+use jeod_quantities::frame::SelfPlanet;
 
 /// Selects which Keplerian element subset parameterizes an
 /// [`BodyAction::InitTransOrbital`].
@@ -119,7 +120,15 @@ pub enum BodyAction {
         ///   `time_periapsis` carried in the
         ///   [`OrbitalElementSet::SmaEccIncAscnodeArgperTimeperi`]
         ///   sibling.
-        elements: OrbitalElements,
+        ///
+        /// Tagged with [`SelfPlanet`] because `BodyAction` is the
+        /// planet-erased boundary type used by both the Bevy adapter
+        /// (`OrbitalElementsC` is `<SelfPlanet>`) and the runner queue:
+        /// the central body identity is carried alongside in `mu`, and
+        /// only the bare scalar fields of `OrbitalElements` are read
+        /// here (the planet phantom never crosses into the f64 init
+        /// kernel).
+        elements: OrbitalElements<SelfPlanet>,
         /// Time elapsed since periapsis (s) — only consumed when
         /// `set = SmaEccIncAscnodeArgperTimeperi`.
         time_periapsis: f64,
