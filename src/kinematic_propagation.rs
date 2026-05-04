@@ -27,19 +27,28 @@
 //! mirroring the runner's stage 3b / 8d sweeps in
 //! `crates/jeod_runner/src/simulation/step/mod.rs`:
 //!
-//! - Pre-integration (this fn) — runs in
-//!   [`JeodSet::ForceCollection`](crate::JeodSet::ForceCollection),
+//! - Pre-integration (this fn) — pinned between
+//!   [`JeodSet::EphemerisUpdate`](crate::JeodSet::EphemerisUpdate)
+//!   and [`JeodSet::Environment`](crate::JeodSet::Environment),
 //!   **after**
 //!   [`composite_mass_system`](crate::mass_tree::composite_mass_system)
 //!   (which writes the live composite CoM into each entity's
-//!   [`MassPropertiesC`]) and **before**
+//!   [`MassPropertiesC`]) and after
+//!   [`propagate_frame_attached_state_system`](crate::propagate_frame_attached_state_system)
+//!   (so a frame-attached mass-tree root has its parent-frame-derived
+//!   state available before the kinematic walk reads it). Pinning the
+//!   walk before `JeodSet::Environment` lets gravity / atmosphere /
+//!   interaction force producers (drag, SRP, gravity-torque) read
+//!   freshly-derived child state rather than a one-tick-stale
+//!   composition. Upstream of
 //!   [`wrench_aggregation_system`](crate::wrench::wrench_aggregation_system)
-//!   (so the upward wrench walk reads the fresh per-chain attitudes
-//!   the propagation has just installed). The wrench-aggregation guard
-//!   that requires `RotationalStateC` on every member of a rotated
-//!   chain becomes pure defense-in-depth once this system runs in
-//!   front of it: every kinematic child gets its `RotationalStateC`
-//!   written before the guard checks for it.
+//!   by construction (wrench is in
+//!   [`JeodSet::ForceCollection`](crate::JeodSet::ForceCollection),
+//!   which runs after Environment + Interaction); the wrench-aggregation
+//!   guard that requires `RotationalStateC` on every member of a
+//!   rotated chain remains pure defense-in-depth — every kinematic
+//!   child gets its `RotationalStateC` written before the guard
+//!   checks for it.
 //! - Post-integration ([`propagate_state_from_root_post_integration_system`])
 //!   — runs in [`JeodSet::Integration`](crate::JeodSet::Integration),
 //!   after `frame_switch_system` and after the post-integration
@@ -100,12 +109,18 @@ use crate::mass_tree::MassTreeView;
 /// check uses `parents_q.is_empty()` so the cost is one query
 /// iteration over the empty set.
 ///
-/// # Order in `JeodSet::ForceCollection`
+/// # Order
 ///
 /// Schedule this system **after**
 /// [`composite_mass_system`](crate::mass_tree::composite_mass_system)
-/// and **before**
-/// [`wrench_aggregation_system`](crate::wrench::wrench_aggregation_system).
+/// (mass-tree composite recompute) and
+/// [`propagate_frame_attached_state_system`](crate::propagate_frame_attached_state_system)
+/// (frame-attached parent state), and **before**
+/// [`JeodSet::Environment`](crate::JeodSet::Environment) so gravity /
+/// atmosphere observe the freshly-derived child state, and ahead of
+/// [`wrench_aggregation_system`](crate::wrench::wrench_aggregation_system)
+/// in [`JeodSet::ForceCollection`](crate::JeodSet::ForceCollection)
+/// (which the pre-Environment placement satisfies by construction).
 /// The plugin wires this ordering automatically; tests that compose
 /// a custom subset of systems must replicate it.
 ///

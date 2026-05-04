@@ -38,23 +38,28 @@
 //!
 //! ### Schedule placement
 //!
-//! - [`frame_attach_system`] is wired in
-//!   [`JeodSet::ForceCollection`](crate::JeodSet::ForceCollection)
-//!   alongside `staging_system` so attach/detach events take effect
-//!   for the current tick's force collection and integration.
-//! - [`propagate_frame_attached_state_system`] runs in
-//!   [`JeodSet::ForceCollection`](crate::JeodSet::ForceCollection)
-//!   *after* `frame_attach_system` (so freshly-attached bodies pick up
-//!   the frame composition the same tick they were attached),
-//!   *before*
-//!   [`propagate_state_from_root_system`](crate::propagate_state_from_root_system)
-//!   (so a frame-attached body that is also a mass-tree root has its
-//!   freshly-derived state available when the kinematic walk derives
-//!   its children — otherwise the subtree would lag the root by one
-//!   tick), and *before*
-//!   [`integration_system`](crate::systems::integration_system) (so
-//!   the integrator sees the frame-derived state when deciding to
-//!   skip via the `FrameAttachedC` filter).
+//! - [`frame_attach_system`] is pinned between
+//!   [`JeodSet::EphemerisUpdate`](crate::JeodSet::EphemerisUpdate) and
+//!   [`JeodSet::Environment`](crate::JeodSet::Environment) so
+//!   attach/detach events take effect on the same tick they were
+//!   dispatched and the propagation pass below sees the freshly-
+//!   processed events. Mirrors the runner's pre-stage-3a event
+//!   application.
+//! - [`propagate_frame_attached_state_system`] runs *after*
+//!   `frame_attach_system` (so freshly-attached bodies pick up the
+//!   frame composition the same tick they were attached) and
+//!   *before* [`JeodSet::Environment`](crate::JeodSet::Environment)
+//!   so gravity / atmosphere read the parent-frame-derived body
+//!   state rather than a one-tick-stale composition. Pre-Environment
+//!   placement also keeps [`JeodSet::Interaction`](crate::JeodSet::Interaction)
+//!   consumers (drag, SRP, gravity-torque) and the pre-integration
+//!   kinematic walk
+//!   ([`propagate_state_from_root_system`](crate::propagate_state_from_root_system))
+//!   reading the freshly-derived root state — a frame-attached
+//!   body that is also a mass-tree root would otherwise hand its
+//!   kinematic descendants a stale pre-frame-attach root state.
+//!   Mirrors stage 3a of the runner's `Simulation::step_internal` in
+//!   `crates/jeod_runner/src/simulation/step/mod.rs`.
 //! - [`propagate_frame_attached_state_post_integration_system`] runs
 //!   in [`JeodSet::Integration`](crate::JeodSet::Integration) *after*
 //!   `sync_body_to_frame_system` and `frame_switch_system` (so the
@@ -89,10 +94,12 @@ use crate::RootFrameEntityR;
 /// integrator history on the body entity.
 ///
 /// Bevy adapter for `Simulation::attach_to_frame` /
-/// `Simulation::detach_from_frame`. Schedule placement: alongside
-/// `staging_system` in [`JeodSet::ForceCollection`](crate::JeodSet::ForceCollection),
-/// so attach/detach events take effect on the same tick they're
-/// dispatched.
+/// `Simulation::detach_from_frame`. Schedule placement: pinned
+/// between [`JeodSet::EphemerisUpdate`](crate::JeodSet::EphemerisUpdate)
+/// and [`JeodSet::Environment`](crate::JeodSet::Environment) so
+/// attach/detach events take effect on the same tick they're
+/// dispatched and the per-tick propagation pass downstream sees the
+/// freshly-processed events.
 ///
 /// # Panics
 ///
@@ -303,12 +310,18 @@ pub fn frame_attach_system(
 /// frame entity's current state composed with the captured offset.
 ///
 /// Bevy adapter for `Simulation::propagate_frame_attached_state`. Runs
-/// in [`JeodSet::ForceCollection`](crate::JeodSet::ForceCollection)
 /// after `frame_attach_system` (so events processed this tick take
-/// effect immediately) and before `integration_system` (so the
-/// integrator sees the frame-derived state when deciding to skip via
-/// the [`FrameAttachedC`] filter applied in
-/// [`integration_system`](crate::systems::integration_system)).
+/// effect immediately) and before
+/// [`JeodSet::Environment`](crate::JeodSet::Environment) so gravity
+/// and atmosphere read the freshly-derived parent-frame composition
+/// rather than a one-tick-stale body state. The pre-Environment slot
+/// also fronts every downstream consumer that reads body state
+/// in-tick: [`JeodSet::Interaction`](crate::JeodSet::Interaction)
+/// (drag / SRP / gravity-torque), the pre-integration kinematic
+/// walk ([`propagate_state_from_root_system`](crate::propagate_state_from_root_system)),
+/// and [`integration_system`](crate::systems::integration_system)
+/// (which then skips frame-attached bodies via the [`FrameAttachedC`]
+/// filter).
 ///
 /// Fast-paths to a no-op when no entity carries [`FrameAttachedC`].
 // JEOD_INV: DB.13 — propagate_state delegates to parent frame
