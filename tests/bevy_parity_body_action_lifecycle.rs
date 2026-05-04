@@ -714,3 +714,159 @@ fn bevy_parity_body_action_init_mass_resets_abm4_history() {
         app.world_mut().run_schedule(FixedUpdate);
     }
 }
+
+/// Regression for the dual-schedule double-fire bug.
+///
+/// `body_action_intake_system` and `body_action_system` are pinned to
+/// the `FixedUpdate` schedule only — they are NOT registered in
+/// `Startup`. Each registration site gets its own
+/// `Local<MessageCursor<BodyActionEvent>>`, so a dual-schedule wiring
+/// would let an anonymous fire-once `BodyActionEvent::Add` apply
+/// twice within the first `app.update()` call (Bevy's double-buffered
+/// `Messages` keeps writes alive across the buffer swap that
+/// `message_update_system` performs in `First`, so the FixedUpdate
+/// cursor would re-read the same write the Startup cursor already
+/// consumed).
+///
+/// The test drives schedules manually so the two reads fall at
+/// observable boundaries:
+///
+/// 1. Build app with the full plugin, spawn a vehicle with mass = M0.
+/// 2. Write a single anonymous `BodyActionEvent::Add(InitMass(K))`.
+/// 3. Run `Startup` — assert mass is still M0 (no body-action
+///    processing in `Startup`; this is the assertion that fails if a
+///    Startup intake / apply registration is reintroduced).
+/// 4. Manually set mass to a sentinel S between the two schedule runs.
+/// 5. Run `First` (the message buffer swap) followed by
+///    `FixedUpdate` — the apply runs here, mass becomes K (the
+///    sentinel was overwritten by the FixedUpdate apply).
+/// 6. Manually set mass to a second sentinel S2.
+/// 7. Run another `FixedUpdate` cycle (no new messages written) —
+///    mass must remain S2; the action was drained on tick 1 and must
+///    not re-fire.
+#[test]
+fn bevy_parity_body_action_startup_message_applies_exactly_once() {
+    use bevy_jeod::{DynamicsConfigC, GravitySourceC};
+    use jeod_sim::{GravityModel, GravitySource};
+
+    const SIM_DT: f64 = 0.5;
+    const MU: f64 = 3.986_004_415e14;
+    const M0: f64 = 400_000.0;
+    const K: f64 = 100_000.0;
+    // Distinct positive sentinels (mass must be > 0 per `MassProperties::new`,
+    // MA.02). The values are chosen to be obviously not part of any
+    // legitimate code path so a regression that overwrites them is
+    // unambiguous.
+    const SENTINEL: f64 = 12_345.0;
+    const SENTINEL2: f64 = 67_890.0;
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(SIM_DT));
+    app.add_plugins(JeodPlugin);
+
+    let earth = app
+        .world_mut()
+        .spawn((
+            Name::new("Earth"),
+            GravitySourceC(GravitySource {
+                mu: MU,
+                model: GravityModel::PointMass,
+            }),
+            SourceInertialPositionC::default(),
+            TranslationalStateC::default(),
+        ))
+        .id();
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC::from(iss_typical_state()),
+            RotationalStateC::from(RotationalState::default()),
+            MassPropertiesC::from(MassProperties::new(M0)),
+            DynamicsConfigC(DynamicsConfig {
+                translational_dynamics: true,
+                rotational_dynamics: false,
+                three_dof: true,
+            }),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(earth, false)],
+            }),
+        ))
+        .id();
+
+    // Single anonymous fire-once `Add`. With a dual-schedule
+    // intake / apply registration, this would fire once at the end of
+    // `Startup` and again on the first `FixedUpdate` tick.
+    write_msg(
+        &mut app,
+        BodyActionEvent::add(
+            vehicle,
+            BodyAction::InitMass {
+                mass: MassProperties::new(K),
+            },
+            None,
+        ),
+    );
+
+    // Run only `Startup`. With body-action processing pinned to
+    // `FixedUpdate`, mass is unchanged from spawn-time M0.
+    app.world_mut().run_schedule(Startup);
+    let mass_after_startup = read_mass(&app, vehicle);
+    assert_eq!(
+        mass_after_startup, M0,
+        "Body-action systems must not run in `Startup` — registering them \
+         in both `Startup` and `FixedUpdate` would give each registration \
+         site its own `Local<MessageCursor<BodyActionEvent>>` and a fire-\
+         once `Add` would apply twice on the first `app.update()` cycle. \
+         Expected mass = {M0} (untouched by Startup), got {mass_after_startup}."
+    );
+
+    // Sentinel between the two schedule passes. The FixedUpdate apply
+    // below should overwrite this with K (the action firing once);
+    // a regression that prevented the FixedUpdate apply would surface
+    // here as the sentinel surviving.
+    *app.world_mut()
+        .entity_mut(vehicle)
+        .get_mut::<MassPropertiesC>()
+        .expect("mass props present") = MassPropertiesC::from(MassProperties::new(SENTINEL));
+
+    // First runs `message_update_system` (the buffer swap). FixedUpdate
+    // intake reads the message from the back buffer, applies it.
+    app.world_mut().run_schedule(First);
+    app.world_mut()
+        .resource_mut::<Time<Fixed>>()
+        .advance_by(Duration::from_secs_f64(SIM_DT));
+    app.world_mut().run_schedule(FixedUpdate);
+    let mass_after_first_fixed = read_mass(&app, vehicle);
+    assert_eq!(
+        mass_after_first_fixed, K,
+        "FixedUpdate intake / apply must consume the Startup-era message \
+         and overwrite the sentinel. Expected mass = {K} (action applied), \
+         got {mass_after_first_fixed}."
+    );
+
+    // Second sentinel. With the action drained on tick 1, no further
+    // FixedUpdate tick should re-apply it.
+    *app.world_mut()
+        .entity_mut(vehicle)
+        .get_mut::<MassPropertiesC>()
+        .expect("mass props present") = MassPropertiesC::from(MassProperties::new(SENTINEL2));
+
+    app.world_mut().run_schedule(First);
+    app.world_mut()
+        .resource_mut::<Time<Fixed>>()
+        .advance_by(Duration::from_secs_f64(SIM_DT));
+    app.world_mut().run_schedule(FixedUpdate);
+    let mass_after_second_fixed = read_mass(&app, vehicle);
+    assert_eq!(
+        mass_after_second_fixed, SENTINEL2,
+        "Action must fire exactly once — the message has already been \
+         drained on the previous FixedUpdate tick and must not re-apply. \
+         Expected mass = {SENTINEL2} (sentinel preserved), got \
+         {mass_after_second_fixed}; a non-sentinel value here means the \
+         action fired again, indicating either the message buffer was not \
+         advanced (cursor regression) or a duplicate intake registration \
+         re-pushed it onto `BodyActionsR.pending`."
+    );
+}

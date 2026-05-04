@@ -59,6 +59,19 @@
 //! JEOD: actions resolve before ephemeris / gravity / integration
 //! consume the new state.
 //!
+//! Both [`body_action_intake_system`] and [`body_action_system`] are
+//! pinned to the `FixedUpdate` schedule only — they are deliberately
+//! NOT registered in `Startup`. Each registration site gets its own
+//! `Local<MessageCursor<BodyActionEvent>>`, so a dual-schedule wiring
+//! would let an anonymous fire-once `BodyActionEvent::Add` apply
+//! twice within one `app.update()` call (once via Startup's cursor,
+//! again via FixedUpdate's, with Bevy's double-buffered `Messages`
+//! keeping the write live across the buffer swap in `First`). Init-
+//! time messages still land before any pipeline consumer reads the
+//! body's mutable state: the FixedUpdate intake on the first tick
+//! observes them and applies before
+//! [`crate::JeodSet::EphemerisUpdate`].
+//!
 //! Both [`body_action_system`] and [`crate::mass_update_system`] live
 //! in that same TimeUpdate→EphemerisUpdate gap, so the plugin pins
 //! `body_action_system` `.before(mass_update_system)` explicitly.

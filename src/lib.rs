@@ -283,45 +283,26 @@ impl Plugin for JeodPlugin {
                 // body-frame registration pass.
                 systems::sync_body_mass_point_ref_system
                     .after(systems::register_body_frames_system),
-                // Apply body actions queued during scenario setup.
-                // Runs after the body has been registered so the
-                // subject entity's pipeline-side components are
-                // wired, and the apply system runs after the intake
-                // system so add/remove pairs queued in the same
-                // `Startup` collapse correctly.
-                //
-                // Same-Startup pickup contract for mission-side
-                // queueing: `body_action_intake_system` only sees
-                // events / commands that are visible at the moment
-                // it runs. Bevy schedules unrelated systems in any
-                // order, so a mission Startup system must declare an
-                // explicit ordering to be observed in the same pass:
-                //
-                //  - `MessageWriter<BodyActionEvent>` writes must be
-                //    in a system ordered
-                //    `.before(body_action_intake_system)`. Without
-                //    that ordering Bevy may run the writer *after*
-                //    the intake system, deferring the action to the
-                //    first `FixedUpdate` tick.
-                //
-                //  - `Commands::queue`-based writes
-                //    (`BodyActionCommandsExt::add_body_action`)
-                //    additionally need an `ApplyDeferred` between
-                //    the writer and the intake system; that flush is
-                //    auto-inserted whenever the explicit
-                //    `.before(body_action_intake_system)` ordering
-                //    is declared. Without the ordering the message
-                //    is not visible until the next system stage's
-                //    flush, which in `Startup` may be after the
-                //    intake system has already run.
-                //
-                // In `FixedUpdate` neither caveat applies: Bevy
-                // auto-inserts a flush between ticks so the message
-                // queued anywhere in tick N is visible to the intake
-                // system at tick N+1.
-                body_action::body_action_intake_system
-                    .after(systems::sync_body_mass_point_ref_system),
-                body_action::body_action_system.after(body_action::body_action_intake_system),
+                // Body-action systems are intentionally NOT registered
+                // in `Startup`. Bevy gives every system instance an
+                // independent `Local<MessageCursor<BodyActionEvent>>`
+                // (one per registration site), so registering the same
+                // intake function in both `Startup` and `FixedUpdate`
+                // would let messages written before the first
+                // `app.update()` be observed once by each cursor — an
+                // anonymous fire-once `BodyActionEvent::Add` would
+                // therefore apply twice (once at the end of `Startup`,
+                // again on the first `FixedUpdate` tick after Bevy's
+                // double-buffer aging keeps the message live). Pinning
+                // the only intake / apply registration to `FixedUpdate`
+                // makes the cursor singular and the action-fire count
+                // exact. Init-time messages still land before any
+                // pipeline consumer reads the body's mutable state:
+                // Bevy's double-buffered `Messages` keeps Startup-era
+                // writes alive across the buffer swap that happens in
+                // `First`, so the FixedUpdate intake on the first tick
+                // observes them and applies before
+                // `JeodSet::EphemerisUpdate`.
             ),
         );
         app.add_systems(
