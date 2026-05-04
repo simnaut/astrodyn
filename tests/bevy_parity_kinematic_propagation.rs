@@ -28,8 +28,11 @@ use glam::{DMat3, DVec3};
 use jeod_dynamics::{IntegratorType, MassProperties};
 use jeod_sim::{
     DynamicsConfig, GravityControls, JeodQuat, MassTree, RotationalState, SimulationTime,
-    TranslationalState, VehicleConfig,
+    SixDofState, TranslationalState, VehicleConfig,
 };
+
+mod common;
+use common::assert_sixdof_eq;
 
 const DT: f64 = 0.1;
 const NUM_STEPS: usize = 30;
@@ -290,60 +293,34 @@ fn kernel_from_parent(
     )
 }
 
-/// Bit-identical state across runtimes. Both delegate to the same
-/// kernel and the same Vehicle / RK4 integrator (no scheduling
-/// non-determinism), so equality should hold to f64 epsilon.
-fn assert_state_close(
+/// Cross-runtime parity helper: pack the runner-side and Bevy-side 6-DOF
+/// state pairs into [`SixDofState`] and delegate to the shared
+/// [`assert_sixdof_eq`] (which compares each of the 13 components via
+/// `to_bits()`).
+///
+/// Bit-identity is the right contract here because both runtimes drive
+/// the same `propagate_state_via_storage` kernel and the same RK4
+/// integrator with no scheduling non-determinism — any drift would
+/// indicate one of the adapters mis-routes the kernel inputs, not a
+/// physics divergence. Loose `< 1e-12` tolerances would silently mask
+/// exactly that class of bug, so this helper is wired through the same
+/// `to_bits()` checker used by every other `bevy_parity_*.rs` test.
+fn assert_states_bit_identical(
     bevy: &TranslationalState,
     runner: &TranslationalState,
     bevy_rot: &RotationalState,
     runner_rot: &RotationalState,
     label: &str,
 ) {
-    let pos_diff = (bevy.position - runner.position).length();
-    let vel_diff = (bevy.velocity - runner.velocity).length();
-    assert!(
-        pos_diff < 1e-12,
-        "{label}: position {pos_diff:.3e} m mismatch \
-         (bevy={:?}, runner={:?})",
-        bevy.position,
-        runner.position
-    );
-    assert!(
-        vel_diff < 1e-12,
-        "{label}: velocity {vel_diff:.3e} m/s mismatch \
-         (bevy={:?}, runner={:?})",
-        bevy.velocity,
-        runner.velocity
-    );
-    // Compare quaternion components directly. `2 * acos(|q.q|)`
-    // produces a ~1e-8 floor at f64 precision when both quaternions
-    // are unit-norm and equal — the `acos(1-eps)` derivative blows up
-    // a round-off as small as `eps ≈ 1e-16` to ≈ 1e-8 rad. The
-    // component-wise diff is what we actually want for "the bit
-    // pattern matches" parity.
-    let q_diff = (DVec3::new(
-        bevy_rot.quaternion.vector().x - runner_rot.quaternion.vector().x,
-        bevy_rot.quaternion.vector().y - runner_rot.quaternion.vector().y,
-        bevy_rot.quaternion.vector().z - runner_rot.quaternion.vector().z,
-    ))
-    .length()
-        + (bevy_rot.quaternion.scalar() - runner_rot.quaternion.scalar()).abs();
-    assert!(
-        q_diff < 1e-15,
-        "{label}: quat L1 diff {q_diff:.3e} mismatch \
-         (bevy={:?}, runner={:?})",
-        bevy_rot.quaternion,
-        runner_rot.quaternion
-    );
-    let avel_diff = (bevy_rot.ang_vel_body - runner_rot.ang_vel_body).length();
-    assert!(
-        avel_diff < 1e-12,
-        "{label}: ang_vel {avel_diff:.3e} rad/s mismatch \
-         (bevy={:?}, runner={:?})",
-        bevy_rot.ang_vel_body,
-        runner_rot.ang_vel_body
-    );
+    let bevy_state = SixDofState {
+        trans: *bevy,
+        rot: *bevy_rot,
+    };
+    let runner_state = SixDofState {
+        trans: *runner,
+        rot: *runner_rot,
+    };
+    assert_sixdof_eq(label, &bevy_state, &runner_state);
 }
 
 /// Bevy adapter and runner produce bit-identical **parent** state for
@@ -365,15 +342,20 @@ fn assert_state_close(
 ///
 /// Runs `NUM_STEPS` ticks at `DT=0.1 s`. Asserts:
 /// 1. parent translational + rotational state is bit-identical
-///    between Bevy and runner;
+///    between Bevy and runner (`to_bits()` per component);
 /// 2. Bevy's child state == `kernel(Bevy.parent_prev_tick, link)` —
 ///    structurally tested as `kernel(Bevy.parent_curr, link)` close
 ///    to `Bevy.child` modulo one tick of parent drift, which is
 ///    `parent_velocity * dt` along the parent's track and
-///    `ω × r * dt` rotational sweep at the link arm;
-/// 3. runner's child state == `kernel(runner.parent, link)` to
-///    rounding (post-integration propagation guarantees same-tick
-///    consistency).
+///    `ω × r * dt` rotational sweep at the link arm. Bit-identity
+///    is *not* the right contract here because the previous-tick
+///    parent is reconstructed analytically (a different f64 path
+///    than the integrator that produced the current parent), so a
+///    tight `< 1e-10` tolerance is used instead;
+/// 3. runner's child state == `kernel(runner.parent, link)`,
+///    bit-identical (post-integration propagation pins same-tick
+///    consistency, and `kernel_from_parent` here drives the same
+///    `compute_kinematic_child_state` with bit-identical inputs).
 #[test]
 fn bevy_parity_kinematic_propagation_simple_chain() {
     let (mut sim, parent_idx, child_idx) = build_runner_sim();
@@ -388,7 +370,7 @@ fn bevy_parity_kinematic_propagation_simple_chain() {
         read_bevy_state(&app, parent_entity, child_entity);
 
     // ── Invariant 1: parent state is bit-identical across runtimes.
-    assert_state_close(
+    assert_states_bit_identical(
         &bevy_p_trans,
         &runner_p.trans,
         &bevy_p_rot,
@@ -398,29 +380,27 @@ fn bevy_parity_kinematic_propagation_simple_chain() {
 
     // ── Invariant 3: runner's child state matches its kernel on
     //    the runner's parent state (post-integration propagation
-    //    pins same-tick consistency).
+    //    pins same-tick consistency). Both `Simulation::step()` and
+    //    `kernel_from_parent` here drive the *same*
+    //    `compute_kinematic_child_state` with bit-identical inputs
+    //    (the hand-rolled mass-weighted CoM matches what
+    //    `MassTree::attach` stores in `composite_properties.position`),
+    //    so this is a true parity check — assert via `to_bits()` per
+    //    component, mirroring `assert_sixdof_eq`.
     let (predicted_child_trans, predicted_child_rot) =
         kernel_from_parent(&runner_p.trans, &runner_p.rot.unwrap());
-    let runner_child_pos_diff = (runner_c.trans.position - predicted_child_trans.position).length();
-    let runner_child_vel_diff = (runner_c.trans.velocity - predicted_child_trans.velocity).length();
-    assert!(
-        runner_child_pos_diff < 1e-12,
-        "runner kernel-consistency: child position diff {runner_child_pos_diff:.3e} m \
-         (kernel={:?}, runner.child={:?})",
-        predicted_child_trans.position,
-        runner_c.trans.position
-    );
-    assert!(
-        runner_child_vel_diff < 1e-12,
-        "runner kernel-consistency: child velocity diff {runner_child_vel_diff:.3e} m/s",
-    );
-    let runner_child_rot = runner_c.rot.unwrap();
-    let q_diff = (runner_child_rot.quaternion.scalar() - predicted_child_rot.quaternion.scalar())
-        .abs()
-        + (runner_child_rot.quaternion.vector() - predicted_child_rot.quaternion.vector()).length();
-    assert!(
-        q_diff < 1e-12,
-        "runner kernel-consistency: child quat L1 diff {q_diff:.3e}",
+    let runner_predicted = SixDofState {
+        trans: predicted_child_trans,
+        rot: predicted_child_rot,
+    };
+    let runner_actual = SixDofState {
+        trans: runner_c.trans,
+        rot: runner_c.rot.unwrap(),
+    };
+    assert_sixdof_eq(
+        "runner kernel-consistency (child vs kernel(runner.parent))",
+        &runner_actual,
+        &runner_predicted,
     );
 
     // ── Invariant 2: Bevy's child state matches kernel applied to
@@ -429,6 +409,17 @@ fn bevy_parity_kinematic_propagation_simple_chain() {
     //    Bevy parent (no force ⇒ velocity is constant ⇒ position
     //    just shifts by `vel * dt`; quaternion shifts by Ω·dt
     //    half-angle); this is exact for an unforced rigid body.
+    //
+    //    Bit-identity (`to_bits()` / `assert_sixdof_eq`) is *not* the
+    //    right contract here: the analytical reverse-Euler used to
+    //    reconstruct the previous-tick parent (`pos - vel * DT`,
+    //    `conj(q_step) * q_now`) takes a different floating-point
+    //    path than the integrator that produced the current parent,
+    //    so the two are equal only modulo round-off. Use a tight
+    //    `< 1e-10` tolerance — well below physical significance,
+    //    well above the f64 noise floor for the analytical
+    //    reconstruction. Invariants 1 and 3 above are the bit-identity
+    //    parity checks; this one is a kernel-consistency sanity check.
     let bevy_p_prev_trans = TranslationalState {
         position: bevy_p_trans.position - bevy_p_trans.velocity * DT,
         velocity: bevy_p_trans.velocity,
