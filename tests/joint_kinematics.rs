@@ -968,6 +968,48 @@ fn assert_diagnostic_lists(msg: &str, components: &[&str], entity: Entity) {
     }
 }
 
+/// Pull the entity-id token out of the `Offending entity: <token> carries [...]`
+/// span of the diagnostic. Splits on the literal anchors, so a hook regression
+/// that emits `Offending entity:  carries [...]` (whitespace only between the
+/// two anchors) yields an empty token and trips
+/// [`assert_entity_debug_shape`].
+#[track_caller]
+fn extract_offending_entity_token(msg: &str) -> String {
+    let after_label = msg
+        .split_once("Offending entity:")
+        .unwrap_or_else(|| {
+            panic!("panic message missing 'Offending entity:' phrase: {msg}");
+        })
+        .1;
+    let (token_span, _) = after_label.split_once(" carries [").unwrap_or_else(|| {
+        panic!("panic message missing ' carries [' tail after entity id: {msg}");
+    });
+    token_span.trim().to_string()
+}
+
+/// Assert `token` matches Bevy's `Entity` Debug formatting:
+/// `{index}v{generation}` with non-empty digit runs on either side of the
+/// single literal `'v'`. Catches the regression where the hook formats with
+/// the wrong specifier, drops the id, or reports a placeholder.
+#[track_caller]
+fn assert_entity_debug_shape(token: &str, msg: &str) {
+    assert!(
+        !token.is_empty(),
+        "expected an entity id token after 'Offending entity:', got empty string in: {msg}"
+    );
+    let (index, generation) = token.split_once('v').unwrap_or_else(|| {
+        panic!("entity id token {token:?} is not in `{{index}}v{{generation}}` form: {msg}");
+    });
+    assert!(
+        !index.is_empty() && index.chars().all(|c| c.is_ascii_digit()),
+        "entity id index portion {index:?} of token {token:?} is not all digits: {msg}"
+    );
+    assert!(
+        !generation.is_empty() && generation.chars().all(|c| c.is_ascii_digit()),
+        "entity id generation portion {generation:?} of token {token:?} is not all digits: {msg}"
+    );
+}
+
 /// Build a fully-wired Bevy app with `JeodPlugin` so the
 /// joint-kinematics `on_insert` hooks and the `PostStartup`
 /// validator are both installed.
@@ -1060,15 +1102,17 @@ fn stacked_joint_specs_diagnostic_names_all_components() {
 }
 
 /// Three stacked specs landed in one bundle must list every name in
-/// the diagnostic. Uses a fresh app + dummy spawn to capture the
-/// entity id allocated by the panicking spawn.
+/// the diagnostic. Uses a fresh app and parses the entity id reported
+/// by the hook out of the panic message itself.
 ///
 /// We can't pre-allocate the entity via a separate `spawn` because
 /// any *single* spec there would not panic (only stacking > 1 specs
 /// does), and any prior bundle with two specs would already panic.
-/// Instead we observe the entity id reported by the hook itself by
-/// scanning the panic message for the `Offending entity: <id>`
-/// pattern and assert the listed names match the inputs.
+/// Instead we extract the token between `Offending entity: ` and
+/// ` carries [` and assert it parses as a Bevy `Entity` Debug string
+/// (`{index}v{generation}`). This catches regressions where the hook
+/// drops the entity id from the diagnostic, which the weaker
+/// `msg.contains("Offending entity:")` substring check would miss.
 #[test]
 fn stacked_joint_specs_diagnostic_names_three_components_in_one_bundle() {
     let const_spec = JointKinematicsSpec {
@@ -1115,17 +1159,15 @@ fn stacked_joint_specs_diagnostic_names_three_components_in_one_bundle() {
             "panic message did not mention {name}: {msg}"
         );
     }
-    assert!(
-        msg.contains("Offending entity:"),
-        "panic message missing 'Offending entity:' phrase: {msg}"
-    );
+    let id_token = extract_offending_entity_token(&msg);
+    assert_entity_debug_shape(&id_token, &msg);
 }
 
 /// All four spec components on one entity must list all four names
 /// in the diagnostic. Exercises the largest-fanout path through the
-/// hook's name-collection branches. Same id-capture caveat as the
-/// three-spec test: we assert names + structural phrases rather
-/// than the exact entity id.
+/// hook's name-collection branches. Same id-extraction strategy as
+/// the three-spec test: parse the token between `Offending entity: `
+/// and ` carries [` and verify it has Bevy's Entity Debug shape.
 #[test]
 fn stacked_joint_specs_diagnostic_names_all_four_components() {
     let const_spec = JointKinematicsSpec {
@@ -1175,10 +1217,8 @@ fn stacked_joint_specs_diagnostic_names_all_four_components() {
         "panic missing diagnostic header: {msg}"
     );
     assert!(msg.contains("Fix:"), "panic missing 'Fix:' tail: {msg}");
-    assert!(
-        msg.contains("Offending entity:"),
-        "panic missing 'Offending entity:' phrase: {msg}"
-    );
+    let id_token = extract_offending_entity_token(&msg);
+    assert_entity_debug_shape(&id_token, &msg);
 }
 
 /// A correctly-configured app — every kinematic spec on a distinct
