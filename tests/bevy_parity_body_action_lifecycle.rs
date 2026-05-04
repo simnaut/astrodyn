@@ -262,9 +262,20 @@ fn tier3_bevy_parity_body_action_init_lifecycle() {
     // loop the integrator has already advanced one tick, so we
     // compare row 1 (t=60 s) onward.
     let mut log_iter = reference.iter().skip(1).peekable();
+    // `sim_t` is the post-tick time. The first FixedUpdate tick has
+    // already fired above (line ~234), so `sim_t == DT` here means
+    // 1 tick has been integrated. Every loop iteration runs one more
+    // tick; for the documented `STOP_TIME = 300 s` (= 9600 ticks at
+    // 32 Hz) we need exactly 9599 loop iterations on top of that
+    // first tick, so the bound must exclude the iteration that would
+    // start at `sim_t == STOP_TIME` (which would push integration
+    // past the documented horizon). `< STOP_TIME - 0.5 * DT` keeps
+    // the iteration that brings `sim_t` to exactly `STOP_TIME` and
+    // drops the one that would overshoot.
     let mut sim_t = DT;
+    let mut tick_count: usize = 1; // counts the pre-loop tick
 
-    while sim_t < STOP_TIME + 0.5 * DT {
+    while sim_t < STOP_TIME - 0.5 * DT {
         // Inject mid-sim actions just before the relevant tick.
         if !mid_sim_change_applied && sim_t + 0.5 * DT >= MID_SIM_MASS_CHANGE_TIME {
             write_msg(
@@ -302,6 +313,7 @@ fn tier3_bevy_parity_body_action_init_lifecycle() {
             .advance_by(Duration::from_secs_f64(DT));
         app.world_mut().run_schedule(FixedUpdate);
         sim_t += DT;
+        tick_count += 1;
 
         // After the mid-sim mass change has been queued + applied,
         // assert the live mass reflects the change. The intake +
@@ -373,15 +385,27 @@ fn tier3_bevy_parity_body_action_init_lifecycle() {
         "Final mass: expected {MID_SIM_MASS_KG} (mid-sim change), got {final_mass}."
     );
 
-    // Sanity: at least one log row was processed. With `STOP_TIME =
-    // 300` and 60 s cadence we expect at least 4 comparisons after
-    // skipping the t=0 row.
+    // The loop must integrate exactly `STOP_TIME / DT` FixedUpdate
+    // ticks — 9 600 ticks for the documented 300 s / 32 Hz run.
+    // Counting them and asserting against the closed-form expectation
+    // is what catches an off-by-one in the loop bound or initial
+    // `sim_t` (the kind of mismatch that previously let the loop
+    // execute one extra tick beyond `STOP_TIME`).
+    let expected_ticks = (STOP_TIME / DT).round() as usize;
+    assert_eq!(
+        tick_count, expected_ticks,
+        "Body-action lifecycle Tier 3 parity: integrated {tick_count} FixedUpdate ticks but \
+         the documented run is {expected_ticks} (STOP_TIME = {STOP_TIME} s at DT = {DT} s)."
+    );
+
+    // All 5 reference checkpoints (t = 60, 120, 180, 240, 300 s) must
+    // have been consumed. The reference CSV has rows at 60 s cadence
+    // and we skipped the t=0 row before the loop.
     let consumed = reference.len() - 1 - log_iter.count();
-    assert!(
-        consumed >= 4,
-        "Cross-validation walked only {consumed} log rows in {STOP_TIME}s; expected at least 4 \
-         (one per 60 s checkpoint after the t=0 skip). The test driver did not advance \
-         to the expected sim time."
+    assert_eq!(
+        consumed, 5,
+        "Cross-validation walked {consumed} log rows in {STOP_TIME}s; expected exactly 5 \
+         (one per 60 s checkpoint at t = 60, 120, 180, 240, 300 after the t=0 skip)."
     );
 }
 

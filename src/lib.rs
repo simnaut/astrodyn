@@ -290,23 +290,35 @@ impl Plugin for JeodPlugin {
                 // system so add/remove pairs queued in the same
                 // `Startup` collapse correctly.
                 //
-                // Mission-side Startup systems should queue actions
-                // by writing `BodyActionEvent` directly via a
-                // `MessageWriter<BodyActionEvent>`: those writes are
-                // visible to `body_action_intake_system` immediately
-                // and are picked up in this same Startup pass.
+                // Same-Startup pickup contract for mission-side
+                // queueing: `body_action_intake_system` only sees
+                // events / commands that are visible at the moment
+                // it runs. Bevy schedules unrelated systems in any
+                // order, so a mission Startup system must declare an
+                // explicit ordering to be observed in the same pass:
                 //
-                // The `Commands::queue`-based path
-                // (`BodyActionCommandsExt::add_body_action`) goes
-                // through `ApplyDeferred`, which runs *after* the
-                // current Startup system stage's queued commands are
-                // applied — so a write made via `Commands` from a
-                // Startup system that has no explicit `.before(
-                // body_action_intake_system)` ordering may not be
-                // observed by the same-Startup intake pass. Used in
-                // `FixedUpdate` it is fine: `ApplyDeferred` between
-                // ticks lands the message before the next tick's
-                // intake system.
+                //  - `MessageWriter<BodyActionEvent>` writes must be
+                //    in a system ordered
+                //    `.before(body_action_intake_system)`. Without
+                //    that ordering Bevy may run the writer *after*
+                //    the intake system, deferring the action to the
+                //    first `FixedUpdate` tick.
+                //
+                //  - `Commands::queue`-based writes
+                //    (`BodyActionCommandsExt::add_body_action`)
+                //    additionally need an `ApplyDeferred` between
+                //    the writer and the intake system; that flush is
+                //    auto-inserted whenever the explicit
+                //    `.before(body_action_intake_system)` ordering
+                //    is declared. Without the ordering the message
+                //    is not visible until the next system stage's
+                //    flush, which in `Startup` may be after the
+                //    intake system has already run.
+                //
+                // In `FixedUpdate` neither caveat applies: Bevy
+                // auto-inserts a flush between ticks so the message
+                // queued anywhere in tick N is visible to the intake
+                // system at tick N+1.
                 body_action::body_action_intake_system
                     .after(systems::sync_body_mass_point_ref_system),
                 body_action::body_action_system.after(body_action::body_action_intake_system),
@@ -470,9 +482,26 @@ impl Plugin for JeodPlugin {
                 // Runs after `sync_body_mass_point_ref_system` (in the
                 // first `add_systems` call) so a freshly-spawned body
                 // has a `MassPointRef` before its `MassPropertiesC` is
-                // mutated by an `InitMass` action. Lives in this
-                // second `add_systems` to stay within Bevy's 20-tuple
-                // `IntoSystem` limit.
+                // mutated by an `InitMass` action.
+                //
+                // `sync_body_mass_point_ref_system` mutates the world
+                // via `Commands::insert` / `Commands::remove`, so the
+                // `MassPointRef` (or its absence) only becomes
+                // visible after a flush. With Bevy's
+                // `auto_insert_apply_deferred` (the default), the
+                // explicit `.after(sync_body_mass_point_ref_system)`
+                // ordering causes the scheduler to auto-insert an
+                // `ApplyDeferred` between the two systems, so this
+                // intake pass observes the up-to-date
+                // `MassPointRef`. The same is true for the
+                // `register_body_frames_system` chain that
+                // `sync_body_mass_point_ref_system` itself depends on
+                // — every `Commands`-using ancestor in the chain
+                // gets an auto-flush before the next ordered system
+                // runs.
+                //
+                // Lives in this second `add_systems` to stay within
+                // Bevy's 20-tuple `IntoSystem` limit.
                 body_action::body_action_intake_system
                     .after(JeodSet::TimeUpdate)
                     .after(systems::sync_body_mass_point_ref_system)
