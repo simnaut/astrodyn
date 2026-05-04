@@ -422,6 +422,17 @@ impl Plugin for JeodPlugin {
                 // limit; set membership controls ordering, not which
                 // `add_systems` call carries the system.
                 systems::joint_kinematics_system.in_set(JeodSet::EphemerisUpdate),
+                // Sibling kinematic-joint drivers for the richer specs
+                // (sinusoidal, closure, multi-DOF). Same scheduling
+                // story as `joint_kinematics_system`: all four write
+                // `FrameRotC` / `FrameAngVelC` on disjoint entity sets
+                // (each entity carries at most one of the four
+                // kinematic-spec components — the components are
+                // semantic alternatives, not stackable), so they
+                // commute under EphemerisUpdate's parallelism.
+                systems::sinusoidal_joint_kinematics_system.in_set(JeodSet::EphemerisUpdate),
+                systems::closure_joint_kinematics_system.in_set(JeodSet::EphemerisUpdate),
+                systems::multi_dof_joint_kinematics_system.in_set(JeodSet::EphemerisUpdate),
                 // Force collection and integration
                 systems::force_collection_system.in_set(JeodSet::ForceCollection),
                 // Kinematic state propagation: walks MassChildOf
@@ -530,6 +541,9 @@ pub fn register_jeod_component_types(app: &mut App) {
     app.register_type::<components::PfixFrameEntityC>();
     app.register_type::<components::RetiredPfixFrameEntityC>();
     app.register_type::<components::JointKinematicsC>();
+    app.register_type::<components::SinusoidalJointKinematicsC>();
+    app.register_type::<components::ClosureJointKinematicsC>();
+    app.register_type::<components::MultiDofJointKinematicsC>();
     // Tidal
     app.register_type::<components::TidalConfigC>();
     app.register_type::<components::TidalDeltaC20C>();

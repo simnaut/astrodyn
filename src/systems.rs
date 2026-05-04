@@ -1233,6 +1233,84 @@ pub fn joint_kinematics_system(
     }
 }
 
+/// Drives sinusoidal kinematic joint frames each tick.
+///
+/// Sibling of [`joint_kinematics_system`] that handles
+/// [`SinusoidalJointKinematicsC`]-tagged frame entities. Reads the
+/// same `tai_seconds` clock and writes the same
+/// [`FrameRotC`] / [`FrameAngVelC`] storage, so downstream consumers
+/// that walk the frame tree see uniform output across the kinematic
+/// styles.
+///
+/// Scheduled in [`crate::JeodSet::EphemerisUpdate`] alongside
+/// `planet_fixed_rotation_system` and `joint_kinematics_system` —
+/// the joint frame's rotation / angular velocity must be current
+/// before any consumer that walks the frame tree (gravity, derived
+/// state, integration) reads them.
+pub fn sinusoidal_joint_kinematics_system(
+    sim_time: Res<SimulationTimeR>,
+    mut query: Query<(
+        &SinusoidalJointKinematicsC,
+        &mut FrameRotC,
+        &mut FrameAngVelC,
+    )>,
+) {
+    let elapsed = sim_time.tai_seconds;
+    for (spec, mut rot, mut ang_vel) in &mut query {
+        let (q_parent_this, ang_vel_this) =
+            jeod_sim::evaluate_sinusoidal_kinematics(&spec.0, elapsed);
+        rot.q_parent_this = q_parent_this;
+        rot.t_parent_this = q_parent_this.left_quat_to_transformation();
+        ang_vel.0 = ang_vel_this;
+    }
+}
+
+/// Drives closure (fixed-pose) kinematic joint frames each tick.
+///
+/// Sibling of [`joint_kinematics_system`] that handles
+/// [`ClosureJointKinematicsC`]-tagged frame entities. The output is
+/// constant in time, so the system writes the same `FrameRotC` /
+/// `FrameAngVelC` value every step. Scheduled in
+/// [`crate::JeodSet::EphemerisUpdate`] alongside
+/// `joint_kinematics_system` so the closure-pinned frame's rotation
+/// is materialized before any frame-tree consumer reads it.
+pub fn closure_joint_kinematics_system(
+    sim_time: Res<SimulationTimeR>,
+    mut query: Query<(&ClosureJointKinematicsC, &mut FrameRotC, &mut FrameAngVelC)>,
+) {
+    let elapsed = sim_time.tai_seconds;
+    for (spec, mut rot, mut ang_vel) in &mut query {
+        let (q_parent_this, ang_vel_this) = jeod_sim::evaluate_closure_kinematics(&spec.0, elapsed);
+        rot.q_parent_this = q_parent_this;
+        rot.t_parent_this = q_parent_this.left_quat_to_transformation();
+        ang_vel.0 = ang_vel_this;
+    }
+}
+
+/// Drives multi-DOF kinematic joint frames each tick.
+///
+/// Sibling of [`joint_kinematics_system`] that handles
+/// [`MultiDofJointKinematicsC`]-tagged frame entities. Each entity
+/// carries an N-stage chain (`N <= MAX_MULTI_DOF_AXES`); the kernel
+/// folds the per-stage `(rotation, ang_vel)` contributions through
+/// `RefFrameState::incr_right` so the output is bit-identical to a
+/// chain of N single-DOF joint entities walked through the frame
+/// tree. Scheduled in [`crate::JeodSet::EphemerisUpdate`] for the
+/// same reason as the other joint-kinematics systems.
+pub fn multi_dof_joint_kinematics_system(
+    sim_time: Res<SimulationTimeR>,
+    mut query: Query<(&MultiDofJointKinematicsC, &mut FrameRotC, &mut FrameAngVelC)>,
+) {
+    let elapsed = sim_time.tai_seconds;
+    for (spec, mut rot, mut ang_vel) in &mut query {
+        let (q_parent_this, ang_vel_this) =
+            jeod_sim::evaluate_multi_dof_kinematics(&spec.0, elapsed);
+        rot.q_parent_this = q_parent_this;
+        rot.t_parent_this = q_parent_this.left_quat_to_transformation();
+        ang_vel.0 = ang_vel_this;
+    }
+}
+
 /// Computes tidal ΔC20 for each gravity source that has a `TidalConfigC`.
 ///
 /// Runs after `planet_fixed_rotation_system` so the rotation matrix is current.

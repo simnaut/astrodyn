@@ -539,3 +539,381 @@ fn joint_kinematics_relative_frame_state_walk_matches_analytical() {
         );
     }
 }
+
+// ===========================================================================
+// Bevy integration tests for the enriched kinematic-only spec catalogue.
+//
+// These mirror the existing constant-rate tests above (single entity, single
+// system, FixedUpdate ticked manually) for the three new spec shapes:
+// sinusoidal, closure, multi-DOF. Each test bypasses the full vehicle /
+// planet machinery — the joint-kinematics systems only depend on
+// `SimulationTimeR` (advanced by `time_advance_system`) plus the per-entity
+// spec component and the `FrameRotC` / `FrameAngVelC` storage triplet.
+// ===========================================================================
+
+/// Build a bare Bevy app carrying a single sinusoidal joint frame
+/// entity. Mirrors `build_app_with_joint` for the sinusoidal spec.
+fn build_app_with_sinusoidal_joint(spec: SinusoidalJointKinematicsSpec) -> (App, Entity) {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.add_plugins(JeodPlugin);
+    let entity = app.world_mut().spawn(SinusoidalJointKinematicsC(spec)).id();
+    (app, entity)
+}
+
+/// On each tick, the sinusoidal-driven joint frame's `FrameRotC` and
+/// `FrameAngVelC` must agree (per-component, within float-trig
+/// precision) with a direct kernel call at the same elapsed time.
+/// Sampling N ticks across a non-trivial section of the period
+/// catches sign / parameter-ordering bugs that would only surface
+/// past `t = 0`.
+#[test]
+fn sinusoidal_joint_kinematics_matches_kernel_each_tick() {
+    let spec = SinusoidalJointKinematicsSpec {
+        axis_in_parent: DVec3::Z,
+        amplitude_rad: 0.3,
+        omega_rad_per_s: 0.05,
+        phase_rad: 0.4,
+        offset_rad: 0.1,
+    };
+    let (mut app, entity) = build_app_with_sinusoidal_joint(spec);
+
+    let n_ticks = 30_usize;
+    for _ in 1..=n_ticks {
+        step_once(&mut app);
+        let elapsed = app.world().resource::<SimulationTimeR>().tai_seconds;
+        let (q_kernel, av_kernel) = jeod_sim::evaluate_sinusoidal_kinematics(&spec, elapsed);
+        let (q, av) = read_rot_ang_vel(&app, entity);
+        for i in 0..4 {
+            let qa = q.data[i];
+            let qe = q_kernel.data[i];
+            assert!(
+                (qa - qe).abs() < TOL,
+                "elapsed={elapsed}: q[{i}] drift exceeds TOL: \
+                 got {qa}, expected {qe}, diff {}",
+                qa - qe
+            );
+        }
+        for i in 0..3 {
+            assert!(
+                (av[i] - av_kernel[i]).abs() < TOL,
+                "elapsed={elapsed}: ang_vel[{i}] drift exceeds TOL: \
+                 got {}, expected {}",
+                av[i],
+                av_kernel[i]
+            );
+        }
+    }
+}
+
+/// At the peak of the sinusoid (`t · ω + phase = π/2`) the angle
+/// equals `offset + amplitude` and the rate is zero — closed-form
+/// snapshot that's distinct from `t = 0`. Tick the schedule until
+/// the peak is straddled and verify the angular velocity passes
+/// through zero at that point.
+#[test]
+fn sinusoidal_joint_angular_velocity_zero_at_peak() {
+    // Pick parameters so the peak lands exactly on a tick boundary
+    // (no fractional-tick interpolation). With phase = 0 the peak is
+    // at `ω · t = π/2` ⇒ `t = π/(2ω)`. With ω = π / (2 · DT) the
+    // first peak is at t = DT, i.e. tick 1.
+    let omega = std::f64::consts::FRAC_PI_2 / DT;
+    let amplitude = 0.5_f64;
+    let spec = SinusoidalJointKinematicsSpec {
+        axis_in_parent: DVec3::Y,
+        amplitude_rad: amplitude,
+        omega_rad_per_s: omega,
+        phase_rad: 0.0,
+        offset_rad: 0.0,
+    };
+    let (mut app, entity) = build_app_with_sinusoidal_joint(spec);
+
+    step_once(&mut app);
+    let (q, av) = read_rot_ang_vel(&app, entity);
+    // Angle at peak = amplitude.
+    let expected_q = JeodQuat::left_quat_from_eigen_rotation(amplitude, DVec3::Y);
+    for i in 0..4 {
+        assert!(
+            (q.data[i] - expected_q.data[i]).abs() < 1.0e-12,
+            "peak q[{i}]: got {}, expected {}",
+            q.data[i],
+            expected_q.data[i]
+        );
+    }
+    // Rate at peak = amplitude · ω · cos(π/2) ≈ 0.
+    for i in 0..3 {
+        assert!(
+            av[i].abs() < 1.0e-12,
+            "peak ang_vel[{i}]: got {}, expected 0",
+            av[i]
+        );
+    }
+}
+
+/// The closure-driven joint frame is constant in time — sampling at
+/// multiple ticks must produce the same `FrameRotC` (bit-identical
+/// each tick — the kernel's `JeodQuat::left_quat_from_eigen_rotation`
+/// is deterministic in `(angle, axis)`) and a zero `FrameAngVelC`.
+#[test]
+fn closure_joint_kinematics_is_time_invariant_across_ticks() {
+    let spec = ClosureJointKinematicsSpec {
+        axis_in_parent: DVec3::new(1.0, 1.0, 1.0).normalize(),
+        fixed_angle_rad: 0.42,
+    };
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.add_plugins(JeodPlugin);
+    let entity = app.world_mut().spawn(ClosureJointKinematicsC(spec)).id();
+
+    step_once(&mut app);
+    let (q1, av1) = read_rot_ang_vel(&app, entity);
+    for _ in 0..10 {
+        step_once(&mut app);
+        let (q, av) = read_rot_ang_vel(&app, entity);
+        for i in 0..4 {
+            assert_eq!(
+                q.data[i].to_bits(),
+                q1.data[i].to_bits(),
+                "closure q[{i}] not bit-identical across ticks"
+            );
+        }
+        assert_eq!(av, av1);
+        assert_eq!(av, DVec3::ZERO);
+    }
+    let expected = JeodQuat::left_quat_from_eigen_rotation(0.42, spec.axis_in_parent);
+    assert_eq!(q1, expected);
+}
+
+/// 2-DOF chain: stage 0 constant-rate about Z, stage 1 sinusoidal
+/// about Y. The Bevy adapter must dispatch the multi-DOF spec to the
+/// kernel and write the composed `(rotation, angular velocity)` into
+/// the entity's frame triplet. Comparison against a direct kernel
+/// call at the same elapsed time pins the dispatch correctness, and
+/// composing two qualitatively different kinematic styles in one
+/// chain exercises the `evaluate_multi_dof` branch on a non-trivial
+/// case.
+#[test]
+fn multi_dof_joint_kinematics_two_stage_matches_kernel() {
+    let stage0 = JointKinematicsSpec {
+        axis_in_parent: DVec3::Z,
+        rate_rad_per_s: 0.4,
+        initial_angle_rad: 0.1,
+    };
+    let stage1 = SinusoidalJointKinematicsSpec {
+        axis_in_parent: DVec3::Y,
+        amplitude_rad: 0.25,
+        omega_rad_per_s: 0.07,
+        phase_rad: 0.3,
+        offset_rad: 0.05,
+    };
+    let chain = MultiDofJointKinematicsSpec::from_slice(&[
+        SingleDofKinematics::ConstantRate(stage0),
+        SingleDofKinematics::Sinusoidal(stage1),
+    ]);
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.add_plugins(JeodPlugin);
+    let entity = app.world_mut().spawn(MultiDofJointKinematicsC(chain)).id();
+
+    let n_ticks = 8_usize;
+    for _ in 0..n_ticks {
+        step_once(&mut app);
+    }
+    let elapsed = app.world().resource::<SimulationTimeR>().tai_seconds;
+    let (q_kernel, av_kernel) = jeod_sim::evaluate_multi_dof_kinematics(&chain, elapsed);
+    let (q, av) = read_rot_ang_vel(&app, entity);
+    for i in 0..4 {
+        assert_eq!(
+            q.data[i].to_bits(),
+            q_kernel.data[i].to_bits(),
+            "multi-DOF q[{i}] not bit-identical to kernel"
+        );
+    }
+    for i in 0..3 {
+        assert_eq!(
+            av[i].to_bits(),
+            av_kernel[i].to_bits(),
+            "multi-DOF ang_vel[{i}] not bit-identical to kernel"
+        );
+    }
+}
+
+/// Each kinematic-spec component is *semantically alternative* —
+/// each disjoint entity sets the same `FrameRotC` / `FrameAngVelC`
+/// storage from its own driver. Spawning four entities, one carrying
+/// each variant, must produce four distinct snapshots that each
+/// match their respective kernel call. This guards against any
+/// accidental cross-driver write ordering: if e.g. the sinusoidal
+/// system queried `JointKinematicsC`-tagged entities by mistake, a
+/// constant-rate entity's frame state would be overwritten with
+/// sinusoidal output and the assertions would surface it.
+#[test]
+fn sibling_kinematic_drivers_dispatch_disjoint_entity_sets() {
+    let const_spec = JointKinematicsSpec {
+        axis_in_parent: DVec3::Z,
+        rate_rad_per_s: 0.5,
+        initial_angle_rad: 0.0,
+    };
+    let sin_spec = SinusoidalJointKinematicsSpec {
+        axis_in_parent: DVec3::Y,
+        amplitude_rad: 0.4,
+        omega_rad_per_s: 0.1,
+        phase_rad: 0.0,
+        offset_rad: 0.0,
+    };
+    let close_spec = ClosureJointKinematicsSpec {
+        axis_in_parent: DVec3::X,
+        fixed_angle_rad: 0.7,
+    };
+    let multi_spec = MultiDofJointKinematicsSpec::from_slice(&[
+        SingleDofKinematics::ConstantRate(const_spec),
+        SingleDofKinematics::Closure(close_spec),
+    ]);
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.add_plugins(JeodPlugin);
+
+    let const_e = app.world_mut().spawn(JointKinematicsC(const_spec)).id();
+    let sin_e = app
+        .world_mut()
+        .spawn(SinusoidalJointKinematicsC(sin_spec))
+        .id();
+    let close_e = app
+        .world_mut()
+        .spawn(ClosureJointKinematicsC(close_spec))
+        .id();
+    let multi_e = app
+        .world_mut()
+        .spawn(MultiDofJointKinematicsC(multi_spec))
+        .id();
+
+    let n_ticks = 5_usize;
+    for _ in 0..n_ticks {
+        step_once(&mut app);
+    }
+    let elapsed = app.world().resource::<SimulationTimeR>().tai_seconds;
+
+    // Each entity must match its own driver's kernel output.
+    let (qc, avc) = read_rot_ang_vel(&app, const_e);
+    let (qc_k, avc_k) = jeod_sim::evaluate_joint_kinematics(&const_spec, elapsed);
+    assert_eq!(qc, qc_k);
+    assert_eq!(avc, avc_k);
+
+    let (qs, avs) = read_rot_ang_vel(&app, sin_e);
+    let (qs_k, avs_k) = jeod_sim::evaluate_sinusoidal_kinematics(&sin_spec, elapsed);
+    assert_eq!(qs, qs_k);
+    assert_eq!(avs, avs_k);
+
+    let (qcl, avcl) = read_rot_ang_vel(&app, close_e);
+    let (qcl_k, avcl_k) = jeod_sim::evaluate_closure_kinematics(&close_spec, elapsed);
+    assert_eq!(qcl, qcl_k);
+    assert_eq!(avcl, avcl_k);
+
+    let (qm, avm) = read_rot_ang_vel(&app, multi_e);
+    let (qm_k, avm_k) = jeod_sim::evaluate_multi_dof_kinematics(&multi_spec, elapsed);
+    assert_eq!(qm, qm_k);
+    assert_eq!(avm, avm_k);
+
+    // The four snapshots must not collapse onto each other (would
+    // signal a query mis-tagging or a system overwriting another's
+    // state). We check at least that each pair differs in at least
+    // one quaternion component — distinct kernels with these
+    // parameters cannot coincidentally match.
+    let snapshots = [(qc, "const"), (qs, "sin"), (qcl, "close"), (qm, "multi")];
+    for i in 0..snapshots.len() {
+        for j in (i + 1)..snapshots.len() {
+            let (qa, na) = snapshots[i];
+            let (qb, nb) = snapshots[j];
+            let differs = (0..4).any(|k| (qa.data[k] - qb.data[k]).abs() > TOL);
+            assert!(
+                differs,
+                "{na} and {nb} produced indistinguishable rotations — \
+                 a sibling system likely tagged the wrong entity set"
+            );
+        }
+    }
+}
+
+/// A non-unit axis on the sinusoidal spec must panic at the kernel
+/// boundary the first tick the system runs — same fail-loud
+/// guarantee as the constant-rate spec.
+#[test]
+#[should_panic(expected = "must be a unit vector")]
+fn sinusoidal_joint_kinematics_panics_on_non_unit_axis() {
+    let spec = SinusoidalJointKinematicsSpec {
+        axis_in_parent: DVec3::new(0.0, 0.0, 2.0),
+        amplitude_rad: 0.1,
+        omega_rad_per_s: 1.0,
+        phase_rad: 0.0,
+        offset_rad: 0.0,
+    };
+    let (mut app, _entity) = build_app_with_sinusoidal_joint(spec);
+    step_once(&mut app);
+}
+
+/// A non-unit axis on the closure spec must panic the first tick.
+#[test]
+#[should_panic(expected = "must be a unit vector")]
+fn closure_joint_kinematics_panics_on_non_unit_axis() {
+    let spec = ClosureJointKinematicsSpec {
+        axis_in_parent: DVec3::new(0.0, 0.0, 2.0),
+        fixed_angle_rad: 0.5,
+    };
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.add_plugins(JeodPlugin);
+    app.world_mut().spawn(ClosureJointKinematicsC(spec));
+    step_once(&mut app);
+}
+
+/// A non-unit axis on any DOF inside the multi-DOF chain must panic
+/// the first tick — the kernel walks each stage and asserts at the
+/// per-stage level.
+#[test]
+#[should_panic(expected = "must be a unit vector")]
+fn multi_dof_joint_kinematics_panics_on_non_unit_axis_in_stage() {
+    let bad_stage = JointKinematicsSpec {
+        axis_in_parent: DVec3::new(0.0, 0.0, 2.0),
+        rate_rad_per_s: 1.0,
+        initial_angle_rad: 0.0,
+    };
+    let chain =
+        MultiDofJointKinematicsSpec::from_slice(&[SingleDofKinematics::ConstantRate(bad_stage)]);
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.add_plugins(JeodPlugin);
+    app.world_mut().spawn(MultiDofJointKinematicsC(chain));
+    step_once(&mut app);
+}
+
+/// Sibling joint-kinematics systems must be reachable by name from
+/// outside the crate — mission code that wants a custom schedule
+/// must be able to re-add them without re-importing through the
+/// `JeodPlugin` umbrella, matching the existing
+/// `joint_kinematics_system` contract.
+#[test]
+fn sibling_joint_kinematics_systems_are_public() {
+    fn _assert_is_system_fn() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.insert_resource(Time::<Fixed>::from_seconds(DT));
+        app.insert_resource(SimulationTimeR::default());
+        app.add_systems(
+            FixedUpdate,
+            (
+                systems::sinusoidal_joint_kinematics_system,
+                systems::closure_joint_kinematics_system,
+                systems::multi_dof_joint_kinematics_system,
+            ),
+        );
+    }
+    _assert_is_system_fn();
+}
