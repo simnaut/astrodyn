@@ -177,9 +177,9 @@ pub fn calc_lighting_params(
 /// Port of JEOD `EarthLighting::calc_lighting`.
 ///
 /// # Arguments
-/// * `pos_veh` — Observer (vehicle) position in Earth inertial frame (m)
-/// * `pos_sun` — Sun position in Earth inertial frame (m)
-/// * `pos_moon` — Moon position in Earth inertial frame (m)
+/// * `pos_veh` — Observer (vehicle) position in the simulation root inertial frame (m)
+/// * `pos_sun` — Sun position in the simulation root inertial frame (m)
+/// * `pos_moon` — Moon position in the simulation root inertial frame (m)
 /// * `sun_radius` — Sun equatorial radius (m)
 /// * `earth_radius` — Earth equatorial radius (m)
 /// * `moon_radius` — Moon equatorial radius (m)

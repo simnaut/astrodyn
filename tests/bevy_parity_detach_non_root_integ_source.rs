@@ -63,6 +63,15 @@ use std::time::Duration;
 const DT: f64 = 60.0;
 const NUM_STEPS_BEFORE_DETACH: usize = 5;
 const MOON_OFFSET: DVec3 = DVec3::new(3.844e8, 0.0, 0.0);
+/// Non-zero Moon inertial velocity for the velocity-shift variant.
+/// Picked along x to keep the position-shift signature (MOON_OFFSET
+/// also along x) easy to reason about in failure messages, but with
+/// magnitude (~1 km/s along y) that is well above any conceivable
+/// f64 round-off in the lift/lower chain. A bug that drops the
+/// velocity term of the lift would mislabel an integ-frame velocity
+/// as root-inertial and leak the full 1 km/s into
+/// `composite_velocity` — orders of magnitude above the 1e-9 tolerance.
+const MOON_VELOCITY: DVec3 = DVec3::new(0.0, 1_000.0, 0.0);
 
 fn parent_mass() -> MassProperties {
     MassProperties::with_inertia(
@@ -105,13 +114,18 @@ fn six_dof_config() -> DynamicsConfig {
     }
 }
 
-/// Detach a body whose `IntegSourceC` points at a non-root planet.
-/// Verify the captured `DetachedSubtreeStateC` carries root-inertial
-/// coordinates (lift applied) and the synced `TranslationalStateC`
-/// carries integration-frame coordinates (lower applied) after one
-/// ballistic step.
-#[test]
-fn bevy_parity_detach_non_root_integ_source_lift_and_lower() {
+/// Shared body of both lift/lower variants.
+///
+/// `moon_velocity` is the Moon's inertial velocity in the simulation's
+/// root-inertial frame. The zero-velocity variant exercises the position
+/// shift only; the non-zero variant pins the **velocity** branch of the
+/// lift/lower pair. A bug that drops the velocity term of the read-side
+/// lift would let the captured `DetachedSubtreeState.composite_velocity`
+/// inherit an integ-frame velocity (off by `MOON_VELOCITY`); a bug that
+/// drops the velocity term of the writeback lower would let the synced
+/// `TranslationalStateC.velocity` carry root-inertial coords (off by
+/// `MOON_VELOCITY` in the opposite direction). Both branches must pass.
+fn run_lift_and_lower(moon_velocity: DVec3) {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
@@ -167,15 +181,16 @@ fn bevy_parity_detach_non_root_integ_source_lift_and_lower() {
 
     app.world_mut().run_schedule(Startup);
 
-    // Park the Moon at MOON_OFFSET (zero velocity for the
-    // detach-instant comparison; lift/lower depend on the position
-    // term — velocity term is exercised by zeroing it here so any
-    // missed shift would show up as a clean `MOON_OFFSET` discrepancy
-    // in position).
+    // Park the Moon at MOON_OFFSET with the supplied inertial velocity.
+    // `set_source_state` writes both `SourceInertialPositionC` and
+    // `SourceInertialVelocityC`, so the staging-system lift and the
+    // step_detached-system lower both pick up the non-zero velocity
+    // term via `body_integ_origin_in_root` (which reads through the
+    // frame entity's `FrameTransC`).
     let sys = app
         .world_mut()
         .register_system(move |mut m: SourceMutator| {
-            m.set_source_position(moon, MOON_OFFSET);
+            m.set_source_state(moon, MOON_OFFSET, moon_velocity);
         });
     app.world_mut().run_system(sys).unwrap();
 
@@ -253,17 +268,19 @@ fn bevy_parity_detach_non_root_integ_source_lift_and_lower() {
     //   zero offset → `propagate_forward` is a no-op step).
     // - The lift converts integ-frame to root-inertial:
     //     root_pos = integ_pos + MOON_OFFSET
-    //     root_vel = integ_vel + 0   (Moon velocity = 0 in this test)
+    //     root_vel = integ_vel + moon_velocity
     // - `step_detached_system` then advances ballistically by DT:
     //     root_pos_after_step = root_pos_at_detach + root_vel * DT
+    //     root_vel_after_step = root_vel  (ballistic, no force)
     let expected_root_pos_at_detach = parent_pre_detach_pos_integ + MOON_OFFSET;
-    let expected_root_vel = parent_pre_detach_vel_integ;
+    let expected_root_vel = parent_pre_detach_vel_integ + moon_velocity;
     let expected_detached_pos_root_after_step =
         expected_root_pos_at_detach + expected_root_vel * DT;
 
     // f64 round-off across the chain walk + ballistic step is ~1e-9
     // on a ~7e6 m-magnitude position; tolerate a few ULP per
-    // coordinate but reject any error of order MOON_OFFSET (3.8e8).
+    // coordinate but reject any error of order MOON_OFFSET (3.8e8) in
+    // position or MOON_VELOCITY (1e3 m/s) in velocity.
     assert!(
         (detached_pos_root - expected_detached_pos_root_after_step).length() < 1e-6,
         "DetachedSubtreeStateC.composite_position not lifted to root-inertial:\n  \
@@ -275,16 +292,18 @@ fn bevy_parity_detach_non_root_integ_source_lift_and_lower() {
     );
     assert!(
         (detached_vel_root - expected_root_vel).length() < 1e-9,
-        "DetachedSubtreeStateC.composite_velocity not lifted (Moon velocity is zero in this test, \
-         so the lifted vel should equal the pre-detach integ-frame vel exactly):\n  \
-         got {:?}\n  expected {:?}",
+        "DetachedSubtreeStateC.composite_velocity not lifted by Moon velocity:\n  \
+         got {:?}\n  expected {:?} (= integ_vel + moon_velocity)\n  \
+         delta {:?}",
         detached_vel_root,
         expected_root_vel,
+        detached_vel_root - expected_root_vel,
     );
 
     // Writeback side: the synced `TranslationalStateC` must carry
-    // integration-frame coordinates after the lower. Equal to
-    // `expected_root_pos_at_detach + vel·DT - MOON_OFFSET`.
+    // integration-frame coordinates after the lower. Position equals
+    // `expected_root_pos_at_detach + vel·DT - MOON_OFFSET`; velocity
+    // equals `expected_root_vel - moon_velocity`.
     let synced_pos_integ = app
         .world()
         .get::<TranslationalStateC>(child_entity)
@@ -301,7 +320,7 @@ fn bevy_parity_detach_non_root_integ_source_lift_and_lower() {
         .raw_si();
 
     let expected_synced_pos_integ = expected_detached_pos_root_after_step - MOON_OFFSET;
-    let expected_synced_vel_integ = expected_root_vel; // Moon vel = 0
+    let expected_synced_vel_integ = expected_root_vel - moon_velocity;
     assert!(
         (synced_pos_integ - expected_synced_pos_integ).length() < 1e-6,
         "TranslationalStateC.position not lowered to integ-frame after step_detached_system:\n  \
@@ -313,21 +332,24 @@ fn bevy_parity_detach_non_root_integ_source_lift_and_lower() {
     assert!(
         (synced_vel_integ - expected_synced_vel_integ).length() < 1e-9,
         "TranslationalStateC.velocity not lowered to integ-frame:\n  \
-         got {:?}\n  expected {:?}",
+         got {:?}\n  expected {:?}\n  delta {:?}",
         synced_vel_integ,
         expected_synced_vel_integ,
+        synced_vel_integ - expected_synced_vel_integ,
     );
 
     // The two stored values must differ by exactly MOON_OFFSET in
-    // position (zero in velocity) — this is the structural pin that
-    // catches a regression where one of the lift/lower pair drops out:
+    // position and exactly `moon_velocity` in velocity — this is the
+    // structural pin that catches a regression where one of the
+    // lift/lower pair drops out:
     //
-    // - if the read-side lift is dropped, detached_pos_root would
-    //   carry integ-frame coords and `synced - detached` would equal
-    //   `−vel·DT` (just the ballistic step), not `−MOON_OFFSET`;
-    // - if the writeback lower is dropped, synced_pos_integ would
-    //   carry root-inertial coords and `detached - synced` would
-    //   equal `+vel·DT`, not `+MOON_OFFSET`.
+    // - if the read-side lift is dropped (in either component),
+    //   `detached - synced` would carry only the ballistic-step delta
+    //   (`-vel·DT` in position, `0` in velocity) instead of the
+    //   integ-origin offset;
+    // - if the writeback lower is dropped, `detached - synced` would
+    //   carry `+vel·DT` in position (no MOON_OFFSET separation) and
+    //   `0` in velocity (no `moon_velocity` separation).
     let pos_offset = detached_pos_root - synced_pos_integ;
     let vel_offset = detached_vel_root - synced_vel_integ;
     assert!(
@@ -338,9 +360,32 @@ fn bevy_parity_detach_non_root_integ_source_lift_and_lower() {
         MOON_OFFSET,
     );
     assert!(
-        vel_offset.length() < 1e-9,
+        (vel_offset - moon_velocity).length() < 1e-9,
         "DetachedSubtreeStateC vs TranslationalStateC velocity offset must equal Moon velocity \
-         (zero in this test):\n  got {:?}",
+         (lift/lower symmetry):\n  got {:?}\n  expected {:?}",
         vel_offset,
+        moon_velocity,
     );
+}
+
+/// Detach a body whose `IntegSourceC` points at a non-root planet,
+/// with the Moon at rest in root-inertial. Pins the **position**
+/// branch of the lift/lower pair: a bug in the velocity branch would
+/// pass silently because both terms reduce to zero.
+#[test]
+fn bevy_parity_detach_non_root_integ_source_lift_and_lower() {
+    run_lift_and_lower(DVec3::ZERO);
+}
+
+/// Same scenario as `…_lift_and_lower`, but with the Moon moving at
+/// `MOON_VELOCITY` in root-inertial. Pins the **velocity** branch of
+/// the lift/lower pair: the captured `DetachedSubtreeStateC.composite_
+/// velocity` must include `moon_velocity` (lift), and the synced
+/// `TranslationalStateC.velocity` must subtract it back out at
+/// writeback (lower). A regression that drops either velocity shift
+/// would fail by ~1 km/s — orders of magnitude above the 1e-9
+/// tolerance — while the zero-velocity sibling test would still pass.
+#[test]
+fn bevy_parity_detach_non_root_integ_source_lift_and_lower_with_source_velocity() {
+    run_lift_and_lower(MOON_VELOCITY);
 }
