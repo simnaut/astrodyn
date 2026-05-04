@@ -65,8 +65,8 @@ use bevy::prelude::*;
 use jeod_sim::MassPointState;
 
 use crate::components::{
-    Abm4StateC, FrameAttachEvent, FrameAttachedC, FrameDetachEvent, FrameEntityC,
-    GaussJacksonStateC, MassChildOf, RotationalStateC, TranslationalStateC,
+    Abm4StateC, FrameAngVelC, FrameAttachEvent, FrameAttachedC, FrameDetachEvent, FrameEntityC,
+    FrameRotC, FrameTransC, GaussJacksonStateC, MassChildOf, RotationalStateC, TranslationalStateC,
 };
 use crate::frame_param::RelativeFrameState;
 use crate::RootFrameEntityR;
@@ -84,6 +84,17 @@ use crate::RootFrameEntityR;
 /// # Panics
 ///
 /// Panics with a "Fail Loudly" diagnostic when:
+/// - A [`FrameAttachEvent`]'s `parent_frame` is not a frame entity —
+///   defined here as carrying the full
+///   [`FrameTransC`] / [`FrameRotC`] / [`FrameAngVelC`] triplet that
+///   `RelativeFrameState` walks during the per-tick propagation pass.
+///   A non-frame entity (e.g. a body, a source, or an arbitrary
+///   placeholder) would silently misbehave: the relative-state walk
+///   would observe undefined translation / rotation / angular
+///   velocity contributions at that segment of the chain. Detecting
+///   the mismatch at attach time turns a silent garbage-state
+///   trajectory into a loud configuration error pointing at the
+///   miswired entity.
 /// - A [`FrameAttachEvent`] targets an entity that already carries
 ///   [`FrameAttachedC`]: a silent overwrite would lose the original
 ///   parent-frame relationship and leave the captured offset
@@ -119,6 +130,20 @@ pub fn frame_attach_system(
     mut detach_events: MessageReader<FrameDetachEvent>,
     already_frame_attached: Query<Entity, With<FrameAttachedC>>,
     has_mass_parent: Query<&MassChildOf>,
+    // Frame-tree triplet check for `evt.parent_frame`. The triplet
+    // (`FrameTransC` + `FrameRotC` + `FrameAngVelC`) is what
+    // `RelativeFrameState` reads during the per-tick propagation pass;
+    // an entity missing any of the three would produce undefined
+    // contributions at that segment of the chain. The `Has<…>` access
+    // pattern keeps the query disjoint from the writeback paths and
+    // works whether the parent frame happens to also carry other
+    // components (e.g., a body frame entity that lives under the root
+    // frame and would pull in `FrameEntityC` / `BodyFrameMarker`).
+    parent_frame_components: Query<(
+        bevy::ecs::query::Has<FrameTransC>,
+        bevy::ecs::query::Has<FrameRotC>,
+        bevy::ecs::query::Has<FrameAngVelC>,
+    )>,
     mut integrators: Query<(Option<&mut GaussJacksonStateC>, Option<&mut Abm4StateC>)>,
 ) {
     // Bevy's `Commands` queue is not flushed until the next system
@@ -170,6 +195,40 @@ pub fn frame_attach_system(
              frame-attached propagation overwrite the parent-derived state \
              every tick.",
             evt.body
+        );
+
+        // Validate `evt.parent_frame` carries the full frame-tree
+        // triplet read by `RelativeFrameState` on every tick. A
+        // non-frame entity would produce undefined translation /
+        // rotation / angular velocity contributions during the
+        // per-tick propagation walk, silently corrupting the
+        // attached body's derived state. Surface the misconfiguration
+        // here so the diagnostic names the offending entity and the
+        // missing components instead of letting the downstream walk
+        // produce garbage. `Query::get` returns `Err` for despawned
+        // entities; treat that as "not a frame entity" with the same
+        // message so the caller learns whichever invariant they
+        // broke. The resulting tuple of `Has<_>` flags is the per-
+        // event view of which of the three components are present.
+        let (has_trans, has_rot, has_angvel) = parent_frame_components
+            .get(evt.parent_frame)
+            .unwrap_or((false, false, false));
+        assert!(
+            has_trans && has_rot && has_angvel,
+            "FrameAttachEvent: parent_frame {:?} is not a frame entity \
+             (missing{}{}{}). Frame-tree consumers walk every parent_frame \
+             via `RelativeFrameState`, which requires the full \
+             FrameTransC / FrameRotC / FrameAngVelC triplet on each node. \
+             Spawn the parent via `PlanetBundle` (for planet-inertial / \
+             planet-fixed frames) or by inserting the triplet directly \
+             (e.g., for a custom joint frame), and pass that frame's \
+             entity id — not a body, source, or arbitrary placeholder \
+             entity. Body {:?}.",
+            evt.parent_frame,
+            if has_trans { "" } else { " FrameTransC" },
+            if has_rot { "" } else { " FrameRotC" },
+            if has_angvel { "" } else { " FrameAngVelC" },
+            evt.body,
         );
 
         commands.entity(evt.body).insert(FrameAttachedC {
@@ -555,6 +614,37 @@ mod tests {
             .resource_mut::<bevy::ecs::message::Messages<FrameDetachEvent>>();
         messages.write(FrameDetachEvent { body });
         messages.write(FrameDetachEvent { body });
+
+        step_bevy(&mut app, 1, 0.1);
+    }
+
+    /// `FrameAttachEvent::parent_frame` must be an actual frame entity
+    /// — i.e. carry the full `FrameTransC` / `FrameRotC` /
+    /// `FrameAngVelC` triplet that the per-tick propagation pass
+    /// reads. A bare `spawn_empty()` entity carries none of those, so
+    /// passing it as `parent_frame` must panic at attach time rather
+    /// than silently misbehaving later when `RelativeFrameState`
+    /// walks an undefined node.
+    #[test]
+    #[should_panic(expected = "is not a frame entity")]
+    fn attach_event_with_non_frame_parent_panics() {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, JeodPlugin));
+
+        let body = app.world_mut().spawn_empty().id();
+        // Bare entity — no FrameTransC / FrameRotC / FrameAngVelC.
+        // This stands in for a caller that mistakenly passed a body
+        // entity, a source entity, or an arbitrary placeholder.
+        let bogus_parent = app.world_mut().spawn_empty().id();
+
+        app.world_mut()
+            .resource_mut::<bevy::ecs::message::Messages<FrameAttachEvent>>()
+            .write(FrameAttachEvent {
+                body,
+                parent_frame: bogus_parent,
+                offset: DVec3::ZERO,
+                t_parent_body: glam::DMat3::IDENTITY,
+            });
 
         step_bevy(&mut app, 1, 0.1);
     }

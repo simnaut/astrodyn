@@ -478,9 +478,23 @@ fn tier3_sim_ref_attach_pt2pt() {
     // After attach, the body must remain *frozen* at the captured
     // offset (since Earth.inertial doesn't move). Validate the last
     // recorded row's position is within machine epsilon of the
-    // captured offset — proves the attach kernel runs every tick and
-    // the body's state is fully owned by the parent-frame
-    // composition.
+    // captured offset — this confirms two narrower properties:
+    // (1) translational integration is suppressed for frame-attached
+    //     bodies (otherwise the body's pre-attach velocity would carry
+    //     it away from the captured offset), and
+    // (2) the parent-frame composition holds the body at the captured
+    //     offset against any residual integrator updates.
+    //
+    // It does *not* on its own prove the per-tick attach kernel runs
+    // — with an inertial (non-rotating) parent and integration
+    // skipped, an implementation that derived the body's state once at
+    // attach time and then no-op'd every subsequent tick would produce
+    // the same final position. The "kernel runs every tick" property
+    // is exercised by `tier3_sim_ref_attach_matrix`, where the parent
+    // is `Earth.pfix`: a one-shot derivation would freeze the body
+    // against the rotating frame and accumulate ~7e-5 rad/s × 50 s ×
+    // r ≈ ~24 km of position error against the JEOD reference,
+    // which the matrix-run post-attach assertions catch.
     let final_row = rows.last().expect("CSV not empty");
     let final_state = sim.body(0);
     let frozen_drift = (final_state.trans.position - rows[post_attach_idx].position).length();
