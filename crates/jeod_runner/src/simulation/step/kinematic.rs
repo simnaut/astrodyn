@@ -73,6 +73,10 @@ impl Simulation {
     /// # Panics
     ///
     /// Panics with a "Fail Loudly" diagnostic when:
+    /// - Two `SimBody` indices share the same `mass_body_id`: writeback
+    ///   would silently overwrite one body's state with the other's
+    ///   tree-derived value, so the duplicate registration must fail
+    ///   immediately.
     /// - A `SimBody` flagged
     ///   [`SimBody::kinematic_only`](super::super::types::SimBody)
     ///   has no [`mass_body_id`](super::super::types::SimBody): the
@@ -101,7 +105,19 @@ impl Simulation {
         let mut sim_body_for_id: HashMap<MassBodyId, usize> = HashMap::new();
         for (idx, body) in self.bodies.iter().enumerate() {
             if let Some(id) = body.mass_body_id {
-                sim_body_for_id.insert(id, idx);
+                // Two SimBodies sharing a `mass_body_id` would silently
+                // race on writeback — the second insert wins, the first
+                // body's state ends up reflecting the second's tree
+                // node. Fail loudly with both indices so the caller can
+                // resolve the duplicate registration.
+                if let Some(prev_idx) = sim_body_for_id.insert(id, idx) {
+                    panic!(
+                        "propagate_kinematic_state: mass_body_id {id:?} is shared by \
+                         SimBody {prev_idx} and SimBody {idx}. Each tree node may back \
+                         at most one SimBody — call `Simulation::add_body_to_tree` once \
+                         per body, or clear the duplicate registration."
+                    );
+                }
             }
             if body.kinematic_only {
                 let id = body.mass_body_id.unwrap_or_else(|| {
@@ -420,5 +436,32 @@ mod tests {
         sim.add_body_to_tree(child_idx, "child");
         sim.attach(child_idx, parent_idx, DVec3::ZERO, DMat3::IDENTITY);
         sim.mark_kinematic_only(child_idx);
+    }
+
+    /// Two `SimBody`s sharing a `mass_body_id` would silently race on
+    /// writeback inside `propagate_kinematic_state`. The check at the
+    /// top of the pass must fail loudly.
+    #[test]
+    #[should_panic(expected = "is shared by SimBody")]
+    fn propagate_kinematic_state_panics_on_duplicate_mass_body_id() {
+        let mut sim = Mission::iss_leo()
+            .into_builder()
+            .build()
+            .expect("Mission::iss_leo must validate");
+        let parent_id = sim.add_body_to_tree(0, "parent");
+        let child_idx = sim.add_body(VehicleConfig {
+            trans: TranslationalState::default(),
+            rot: Some(RotationalState::default()),
+            mass: Some(MassProperties::new(5.0)),
+            gravity_controls: GravityControls { controls: vec![] },
+            ..Default::default()
+        });
+        sim.add_body_to_tree(child_idx, "child");
+        sim.attach(child_idx, 0, DVec3::ZERO, DMat3::IDENTITY);
+        // Force the duplicate-id condition the public API doesn't
+        // expose — a future bug in `add_body_to_tree` could leak it,
+        // and the propagation pass must catch it regardless.
+        sim.bodies[child_idx].mass_body_id = Some(parent_id);
+        sim.step().expect("step until propagate_kinematic_state runs");
     }
 }
