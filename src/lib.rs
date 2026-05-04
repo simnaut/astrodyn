@@ -2,6 +2,7 @@
 #![doc = include_str!("../README.md")]
 #![warn(missing_docs)]
 
+pub mod body_action;
 pub mod bundles;
 pub mod components;
 pub mod frame_param;
@@ -15,6 +16,10 @@ pub mod systems;
 pub mod validation;
 pub mod wrench;
 
+pub use body_action::{
+    add_body_action_via, body_action_intake_system, body_action_system, BodyActionCommandsExt,
+    BodyActionMessage, BodyActionsR, PendingBodyAction,
+};
 pub use bundles::*;
 pub use components::*;
 pub use kinematic_propagation::propagate_state_from_root_system;
@@ -225,6 +230,13 @@ impl Plugin for JeodPlugin {
         // ── Events ──
         app.add_message::<AttachEvent>();
         app.add_message::<DetachEvent>();
+        // Body-action lifecycle (#199): callers add / remove
+        // body-action requests through this single message type or
+        // through `BodyActionCommandsExt` on `Commands`. The intake
+        // system drains it into `BodyActionsR`; the apply system
+        // walks the resource and mutates ready actions' subjects.
+        app.add_message::<body_action::BodyActionMessage>();
+        app.init_resource::<body_action::BodyActionsR>();
 
         // ── Systems ──
         // Source-frame registration runs at Startup to spawn the ECS
@@ -271,6 +283,16 @@ impl Plugin for JeodPlugin {
                 // body-frame registration pass.
                 systems::sync_body_mass_point_ref_system
                     .after(systems::register_body_frames_system),
+                // Apply body actions queued during scenario setup
+                // (e.g. mission plugin's `Startup` system that calls
+                // `commands.add_body_action(...)`). Runs after the
+                // body has been registered so the subject entity's
+                // pipeline-side components are wired, and after the
+                // intake system so add/remove pairs queued in the
+                // same `Startup` collapse correctly.
+                body_action::body_action_intake_system
+                    .after(systems::sync_body_mass_point_ref_system),
+                body_action::body_action_system.after(body_action::body_action_intake_system),
             ),
         );
         app.add_systems(
@@ -422,6 +444,24 @@ impl Plugin for JeodPlugin {
                 // limit; set membership controls ordering, not which
                 // `add_systems` call carries the system.
                 systems::joint_kinematics_system.in_set(JeodSet::EphemerisUpdate),
+                // Body-action lifecycle (#199): drain
+                // `Add/RemoveBodyActionMessage` into `BodyActionsR`,
+                // then apply every ready action. Runs before
+                // `JeodSet::EphemerisUpdate` so a mid-tick mass /
+                // state replacement is visible to gravity, atmosphere,
+                // integration, and derived state in the same tick.
+                // Runs after `sync_body_mass_point_ref_system` (in the
+                // first `add_systems` call) so a freshly-spawned body
+                // has a `MassPointRef` before its `MassPropertiesC` is
+                // mutated by an `InitMass` action. Lives in this
+                // second `add_systems` to stay within Bevy's 20-tuple
+                // `IntoSystem` limit.
+                body_action::body_action_intake_system
+                    .after(systems::sync_body_mass_point_ref_system)
+                    .before(JeodSet::EphemerisUpdate),
+                body_action::body_action_system
+                    .after(body_action::body_action_intake_system)
+                    .before(JeodSet::EphemerisUpdate),
                 // Force collection and integration
                 systems::force_collection_system.in_set(JeodSet::ForceCollection),
                 // Kinematic state propagation: walks MassChildOf
