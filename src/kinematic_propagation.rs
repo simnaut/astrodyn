@@ -561,11 +561,13 @@ mod tests {
         );
     }
 
-    /// Carryover-thread regression: a chain that the previous PR's
-    /// fail-loud guard would have rejected (rotated `t_parent_child`
-    /// plus missing `RotationalStateC` on the child) now succeeds
-    /// because propagation fills the child's attitude before the
-    /// wrench guard checks for it.
+    /// Failure-mode regression: the wrench-build path's fail-loud
+    /// guard rejects a child with a rotated `t_parent_child` link
+    /// when the child lacks a `RotationalStateC`. With
+    /// `propagate_state_from_root_system` running before the wrench
+    /// build, the child's attitude is filled in (derived from
+    /// parent attitude composed with the attach rotation), so the
+    /// guard sees a valid rotation and the chain succeeds.
     ///
     /// Mirrors the negative test
     /// `child_with_attach_rotation_and_no_rotational_state_panics`

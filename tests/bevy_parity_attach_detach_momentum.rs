@@ -1,6 +1,7 @@
 //! Bevy adapter parity for the JEOD attach/detach
-//! momentum-conservation port + detached-subtree ballistic tracking
-//! (sub-issue #273).
+//! momentum-conservation port + detached-subtree ballistic tracking.
+//! Mirrors `models/dynamics/dyn_body/src/dyn_body_attach.cc` and
+//! `dyn_body_detach.cc` in JEOD.
 //!
 //! Three layers of coverage:
 //!

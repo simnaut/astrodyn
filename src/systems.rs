@@ -3139,8 +3139,10 @@ pub fn staging_system(
         // `detach_subtree` does this same walk; the parent's composite-
         // body inertial state lives at the root (only the integrated /
         // free-flying root carries the merged composite — attached
-        // children's `TranslationalStateC` is stale post-attach, which
-        // is the bug threads 3/4/5 identified).
+        // children's `TranslationalStateC` is stale post-attach, since
+        // post-attach state is propagated down from the root by
+        // `propagate_state_from_root_system` rather than re-merged at
+        // each child).
         let mut tree_root_id = child_id;
         while let Some(p) = tree.parent(tree_root_id) {
             tree_root_id = p;
@@ -3169,9 +3171,11 @@ pub fn staging_system(
 
         // Pre-mutation snapshot of the parent's composite-body inertial
         // state (read from the root entity, which is the only place
-        // post-attach that carries the merged composite — see threads
-        // 3/4/5). Keeping these as raw f64 fields (not borrowing the
-        // query) avoids holding a borrow across the `bodies.iter()` /
+        // post-attach that carries the merged composite — attached
+        // children's `TranslationalStateC` is stale, populated by
+        // root-down propagation rather than re-merged in place).
+        // Keeping these as raw f64 fields (not borrowing the query)
+        // avoids holding a borrow across the `bodies.iter()` /
         // `bodies.get_mut` calls below.
         let (
             parent_pre_position,
