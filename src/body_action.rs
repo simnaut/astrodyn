@@ -42,6 +42,10 @@
 //! - Adding an action without a name (`name = None`) makes it
 //!   anonymous: it cannot be removed by name; it always fires once
 //!   when ready and is dropped.
+//! - `BodyActionEvent::Remove { name: "" }` is a no-op, matching
+//!   JEOD's empty-string short-circuit (`dyn_manager.cc:207-209`).
+//!   Any pending action whose name is `Some("")` survives the empty-
+//!   name remove.
 //! - An action that is added then removed before
 //!   [`body_action_system`] runs in the same tick is never applied.
 //!   This is the "remove-then-readd" idiom that JEOD's
@@ -214,9 +218,20 @@ pub fn body_action_intake_system(
                 });
             }
             BodyActionEvent::Remove { name } => {
-                // JEOD_INV: BA.10 — remove pending actions by `action_name`; we drop *every* matching
-                // entry rather than the first, a strict generalisation of `dyn_manager.cc:211`'s
-                // first-match-wins loop (covered by `tests::remove_drops_all_pending_with_matching_name`).
+                // JEOD_INV: BA.10 — remove pending actions by `action_name`. JEOD's
+                // `DynManager::remove_body_action` (`dyn_manager.cc:207-209`) returns
+                // immediately when the supplied name is empty so a stray
+                // `remove_body_action("")` cannot wipe every pending action whose
+                // `action_name` happens to be empty (anonymous JEOD actions register
+                // with a default-constructed `std::string`). The Bevy adapter
+                // preserves that no-op: `remove("")` does nothing. We further
+                // drop *every* still-pending entry whose name matches a
+                // non-empty `name`, a strict generalisation of JEOD's
+                // first-match-and-erase loop (covered by
+                // `tests::remove_drops_all_pending_with_matching_name`).
+                if name.is_empty() {
+                    continue;
+                }
                 queue
                     .pending
                     .retain(|act| act.name.as_deref() != Some(name.as_str()));
@@ -758,5 +773,55 @@ mod tests {
             .to_untyped()
             .mass;
         assert_eq!(final_mass, 400_000.0);
+    }
+
+    #[test]
+    fn empty_name_remove_is_noop() {
+        // JEOD `dyn_manager.cc:207-209`: `remove_body_action("")`
+        // returns immediately. The Bevy adapter must keep that
+        // contract — otherwise a stray `Remove { name: "" }` would
+        // wipe every anonymous pending action whose name happens to
+        // be the empty string. This test queues two named adds, then
+        // sends a `Remove { name: "" }`; both adds must still fire.
+        let mut app = build_app();
+        let entity = spawn_vehicle(&mut app);
+        write_msg(
+            &mut app,
+            BodyActionEvent::add(
+                entity,
+                BodyAction::InitMass {
+                    mass: MassProperties::new(11.0),
+                },
+                // Name is `""` — an explicitly empty (not `None`) name
+                // is the case JEOD's empty-string short-circuit
+                // protects against.
+                Some(""),
+            ),
+        );
+        write_msg(
+            &mut app,
+            BodyActionEvent::add(
+                entity,
+                BodyAction::InitMass {
+                    mass: MassProperties::new(22.0),
+                },
+                Some(""),
+            ),
+        );
+        write_msg(&mut app, BodyActionEvent::remove(""));
+        app.update();
+        // Both adds fired in FIFO order, last-write-wins on the mass.
+        // If the empty-name `remove` had iterated `retain` it would
+        // have cleared both pending entries and the mass would still
+        // be the spawn-time 400 000.
+        let final_mass = app
+            .world()
+            .entity(entity)
+            .get::<MassPropertiesC>()
+            .expect("mass props present")
+            .0
+            .to_untyped()
+            .mass;
+        assert_eq!(final_mass, 22.0);
     }
 }
