@@ -3198,10 +3198,10 @@ pub fn staging_system(
         // `MassChildOf` edge, and the arena attach/detach path
         // exercised here never adds those edges. Without this
         // arena-read, by the time the detach handler runs (in the
-        // same tick, after `composite_mass_system`),
-        // `parent_mass_c.0.to_untyped()` would yield the just-reverted
-        // *core* mass instead of the live post-attach composite — and
-        // the CoM-shift formula below would key off
+        // same tick, after `composite_mass_system`), reading the
+        // entity's `MassPropertiesC` component would yield the
+        // just-reverted *core* mass instead of the live post-attach
+        // composite — and the CoM-shift formula below would key off
         // `composite_properties.position == core.position` (typically
         // zero), corrupting the parent's post-detach inertial position.
         // The arena tree is the same source of truth the runner reads
