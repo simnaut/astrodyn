@@ -2949,7 +2949,7 @@ pub fn cannonball_srp_system(
 /// app.add_message::<DetachEvent>();
 /// app.add_systems(Update, detach_booster);
 /// ```
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn staging_system(
     mut commands: Commands,
     tree: Option<ResMut<crate::MassTreeR>>,
@@ -2962,12 +2962,16 @@ pub fn staging_system(
         Option<&mut TranslationalStateC>,
         Option<&mut RotationalStateC>,
     )>,
+    body_frames: Query<&FrameEntityC>,
+    parents: Query<&ChildOf>,
     detached_q: Query<Entity, With<crate::DetachedSubtreeStateC>>,
     mut integrators: Query<(
         &crate::MassBodyIdC,
         Option<&mut GaussJacksonStateC>,
         Option<&mut Abm4StateC>,
     )>,
+    frame_origin: FrameOrigin,
+    root_frame_entity: Option<Res<crate::RootFrameEntityR>>,
 ) {
     // No mass tree resource → drain events and return.
     let Some(mut tree) = tree else {
@@ -3278,10 +3282,46 @@ pub fn staging_system(
         }
         chain.reverse();
 
+        // Lift the parent's `TranslationalStateC` from its integration
+        // frame to root-inertial before walking the rigid-body offset
+        // chain. The storage convention pins `TranslationalStateC` to
+        // the body's integration frame, so for a parent integrated in a
+        // non-root `PlanetInertial<P>` the raw position/velocity are
+        // planet-relative; running `propagate_forward` on planet-relative
+        // coords would seed the walk in integ-frame and produce a
+        // subtree state that lives in the same integ-frame, while the
+        // captured `DetachedSubtreeState` is typed `Position/Velocity<
+        // RootInertial>` and propagated as such by `step_ballistic`.
+        // The runner mirrors this exact lift in
+        // `crates/jeod_runner/src/simulation/mass_tree.rs:583-585`
+        // (root-pre-state) and feeds the inertial seed to the same
+        // `derive_subtree_composite_state` walk. Identity for root-
+        // integrated parents (`integ_origin == zero`); load-bearing for
+        // non-root.
+        // JEOD_INV: RF.10 — root-inertial-shift consumer: the kernel
+        // walks rigid-body composition in root-inertial coordinates.
+        let parent_body_frame = body_frames.get(tree_root_entity).ok();
+        let (parent_integ_origin_pos, parent_integ_origin_vel) = match root_frame_entity.as_deref()
+        {
+            Some(root) => {
+                body_integ_origin_in_root(parent_body_frame, &parents, root.0, &frame_origin)
+            }
+            // No frame infrastructure (e.g. minimal-test world without
+            // `JeodPlugin`): treat every body as root-integrated. The
+            // production wiring always inserts `RootFrameEntityR`; this
+            // arm is a fail-soft for tests that exercise
+            // `staging_system` in isolation.
+            None => (
+                Position::<RootInertial>::zero(),
+                Velocity::<RootInertial>::zero(),
+            ),
+        };
+        let parent_pre_position_inertial = parent_pre_position + parent_integ_origin_pos.raw_si();
+        let parent_pre_velocity_inertial = parent_pre_velocity + parent_integ_origin_vel.raw_si();
         let parent_composite_state = jeod_sim::RefFrameState {
             trans: jeod_sim::RefFrameTrans {
-                position: parent_pre_position,
-                velocity: parent_pre_velocity,
+                position: parent_pre_position_inertial,
+                velocity: parent_pre_velocity_inertial,
             },
             rot: jeod_sim::RefFrameRot {
                 q_parent_this: parent_pre_quat,
@@ -3465,17 +3505,42 @@ pub fn staging_system(
             // value next tick rather than overwriting the merged state
             // with the captured pre-attach snapshot.
             //
+            // `merged` came out of `stage_attach_combine` fed with the
+            // parent's `TranslationalStateC` raw fields, which are
+            // stored in the body's integration frame. Lift through the
+            // parent's `IntegOrigin` before stamping the
+            // `RootInertial` phantom so the typed value matches the
+            // numerical frame; the runner mirrors this contract by
+            // tracking `composite_state` in root-inertial inside its
+            // detached-subtree map. Identity for root-integrated
+            // parents (origin = zero); load-bearing for non-root.
+            //
             // JEOD_INV: DB.21 — detached subtrees keep advancing
             // ballistically post-attach; the merged composite simply
             // becomes the new "free-flying root" state.
-            // Build typed `RootInertial` quantities at the boundary into
-            // the typed `DetachedSubtreeState` storage. The merged
-            // composite-body state lives in the simulation root inertial
-            // frame (RF.10).
+            // JEOD_INV: RF.10 — root-inertial-shift consumer: the
+            // typed `DetachedSubtreeState.composite_*` is
+            // `Position/Velocity<RootInertial>`.
+            let parent_body_frame_attach = body_frames.get(work.parent_entity).ok();
+            let (parent_integ_origin_pos_attach, parent_integ_origin_vel_attach) =
+                match root_frame_entity.as_deref() {
+                    Some(root) => body_integ_origin_in_root(
+                        parent_body_frame_attach,
+                        &parents,
+                        root.0,
+                        &frame_origin,
+                    ),
+                    None => (
+                        Position::<RootInertial>::zero(),
+                        Velocity::<RootInertial>::zero(),
+                    ),
+                };
             use jeod_sim::Vec3Ext as _;
             let updated = jeod_sim::DetachedSubtreeState {
-                composite_position: merged.position.m_at::<jeod_sim::RootInertial>(),
-                composite_velocity: merged.velocity.m_per_s_at::<jeod_sim::RootInertial>(),
+                composite_position: (merged.position + parent_integ_origin_pos_attach.raw_si())
+                    .m_at::<jeod_sim::RootInertial>(),
+                composite_velocity: (merged.velocity + parent_integ_origin_vel_attach.raw_si())
+                    .m_per_s_at::<jeod_sim::RootInertial>(),
                 composite_attitude: jeod_sim::DetachedSubtreeState::attitude_from_raw_jeod_quat(
                     merged.quaternion,
                 ),
@@ -3551,14 +3616,41 @@ pub fn staging_system(
             // body axes don't rotate just because mass left the tree
             // (composite_properties.t_parent_this == core_properties
             // .t_parent_this throughout — see mass tree recompute).
-            // Same boundary as the attach branch above: the post-detach
-            // composite state is in the root inertial frame; re-wrap
-            // raw DVec3 sums into typed `Position<RootInertial>` /
-            // `Velocity<RootInertial>` for storage.
+            //
+            // `new_position` / `new_velocity` are computed by adding a
+            // CoM-delta to `shift.parent_pre_position/velocity`, which
+            // were captured directly from the parent's
+            // `TranslationalStateC` (integration-frame coords). The
+            // delta itself is frame-invariant (kinematic offset of a
+            // CoM within rigid-body inertial space). To stamp the
+            // `RootInertial` phantom for the typed
+            // `DetachedSubtreeState`, lift through the parent's
+            // `IntegOrigin`. Identity for root-integrated parents
+            // (origin = zero); load-bearing for non-root.
+            //
+            // JEOD_INV: RF.10 — root-inertial-shift consumer: the
+            // typed `DetachedSubtreeState.composite_*` is
+            // `Position/Velocity<RootInertial>`.
+            let parent_body_frame_shift = body_frames.get(shift.tree_root_entity).ok();
+            let (parent_integ_origin_pos_shift, parent_integ_origin_vel_shift) =
+                match root_frame_entity.as_deref() {
+                    Some(root) => body_integ_origin_in_root(
+                        parent_body_frame_shift,
+                        &parents,
+                        root.0,
+                        &frame_origin,
+                    ),
+                    None => (
+                        Position::<RootInertial>::zero(),
+                        Velocity::<RootInertial>::zero(),
+                    ),
+                };
             use jeod_sim::Vec3Ext as _;
             let updated = jeod_sim::DetachedSubtreeState {
-                composite_position: new_position.m_at::<jeod_sim::RootInertial>(),
-                composite_velocity: new_velocity.m_per_s_at::<jeod_sim::RootInertial>(),
+                composite_position: (new_position + parent_integ_origin_pos_shift.raw_si())
+                    .m_at::<jeod_sim::RootInertial>(),
+                composite_velocity: (new_velocity + parent_integ_origin_vel_shift.raw_si())
+                    .m_per_s_at::<jeod_sim::RootInertial>(),
                 composite_attitude: jeod_sim::DetachedSubtreeState::attitude_from_raw_jeod_quat(
                     shift.parent_pre_quat,
                 ),
@@ -3622,23 +3714,59 @@ pub fn staging_system(
 /// JEOD_INV: DB.21 — only unattached bodies integrate; detached subtrees
 /// drift ballistically here while the integrator targets the integrated
 /// body.
+#[allow(clippy::too_many_arguments)]
 pub fn step_detached_system(
     time: Res<Time<Fixed>>,
     sim_time: Res<SimulationTimeR>,
     mut detached: Query<(
+        Entity,
         &mut crate::DetachedSubtreeStateC,
         Option<&mut TranslationalStateC>,
         Option<&mut RotationalStateC>,
     )>,
+    body_frames: Query<&FrameEntityC>,
+    parents: Query<&ChildOf>,
+    frame_origin: FrameOrigin,
+    root_frame_entity: Option<Res<crate::RootFrameEntityR>>,
 ) {
     let dt = time.delta().as_secs_f64();
     if dt == 0.0 {
         return;
     }
     let integ_dt = dt * sim_time.0.time_scale_factor;
-    for (mut state, trans, rot) in &mut detached {
+    for (entity, mut state, trans, rot) in &mut detached {
         state.0.step_ballistic(integ_dt);
         if let Some(mut t) = trans {
+            // Lower the typed `Position/Velocity<RootInertial>` back
+            // through the body's `IntegOrigin` to match
+            // `TranslationalStateC`'s integration-frame storage
+            // convention. For a root-integrated body the origin is
+            // zero and the subtraction is bit-identical to a no-op;
+            // for a body integrated in `PlanetInertial<P>` (set up
+            // at config time via `IntegSourceC`) it is the only
+            // thing that prevents stamping a root-inertial coord into
+            // an integration-frame slot. Symmetric partner of the
+            // staging-system lift; mirrors the runner's writeback in
+            // `crates/jeod_runner/src/simulation/mass_tree.rs:681-688`.
+            // JEOD_INV: RF.10 — root-inertial-shift consumer:
+            // step-time writeback lowers from root-inertial to integ
+            // frame.
+            let body_frame = body_frames.get(entity).ok();
+            let (integ_origin_pos, integ_origin_vel) = match root_frame_entity.as_deref() {
+                Some(root) => {
+                    body_integ_origin_in_root(body_frame, &parents, root.0, &frame_origin)
+                }
+                // Fail-soft for tests that wire `step_detached_system`
+                // without `JeodPlugin`: no frame infrastructure means
+                // every body is treated as root-integrated, matching
+                // the staging-system convention.
+                None => (
+                    Position::<RootInertial>::zero(),
+                    Velocity::<RootInertial>::zero(),
+                ),
+            };
+            let position = state.0.composite_position.raw_si() - integ_origin_pos.raw_si();
+            let velocity = state.0.composite_velocity.raw_si() - integ_origin_vel.raw_si();
             t.0 =
                 // allowed: DetachedSubtreeState kernel boundary; the
                 // ballistic-step result is returned as raw DVec3 fields by
@@ -3647,8 +3775,8 @@ pub fn step_detached_system(
                 // From<TranslationalState> impl on TranslationalStateC.
                 jeod_sim::TranslationalStateTyped::<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>::from_untyped_unchecked(
                     &jeod_sim::TranslationalState {
-                        position: state.0.composite_position.raw_si(),
-                        velocity: state.0.composite_velocity.raw_si(),
+                        position,
+                        velocity,
                     },
                 );
         }
