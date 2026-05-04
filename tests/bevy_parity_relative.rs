@@ -212,7 +212,15 @@ fn run_relative_parity(
     assert_sixdof_eq(&format!("Bevy vs Sim A ({label})"), &bevy_a, &sim_a_state);
     assert_sixdof_eq(&format!("Bevy vs Sim B ({label})"), &bevy_b, &sim_b_state);
 
-    // Assert relative state is bit-identical
+    // Assert relative state is bit-identical. The angular-velocity
+    // field is typed `AngularVelocity<BodyFrame<SelfRef>>` (the producer
+    // attaches the phantom at the boundary in `compute_relative_state`,
+    // crates/jeod_sim/src/derived.rs:251). A regression in that wrapping
+    // — e.g. dropping the `.rad_per_s_at::<…>()` lift, or rewrapping the
+    // wrong DVec3 — would silently change the bit pattern, so this
+    // covers `ang_vel` per component alongside position / velocity.
+    let bevy_ang_vel = bevy_rel.ang_vel.raw_si();
+    let sim_ang_vel = sim_rel.ang_vel.raw_si();
     for i in 0..3 {
         assert_bits_eq(
             &format!("Bevy vs Sim rel ({label})"),
@@ -225,6 +233,12 @@ fn run_relative_parity(
             &format!("rel_vel[{i}]"),
             bevy_rel.velocity[i],
             sim_rel.velocity[i],
+        );
+        assert_bits_eq(
+            &format!("Bevy vs Sim rel ({label})"),
+            &format!("rel_ang_vel[{i}]"),
+            bevy_ang_vel[i],
+            sim_ang_vel[i],
         );
     }
     println!("  Bevy vs Sim relative state ({label}): bit-identical");
