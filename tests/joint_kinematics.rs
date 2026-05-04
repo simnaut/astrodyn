@@ -918,14 +918,80 @@ fn sibling_joint_kinematics_systems_are_public() {
     _assert_is_system_fn();
 }
 
+/// Capture the panic raised by `f` and downcast it to a `String`
+/// suitable for substring assertions. Mirrors the helper pattern
+/// used in `tests/validation_added_trigger.rs`. Returns the panic
+/// message verbatim or fails the test if `f` did not panic.
+fn capture_panic_message<F: FnOnce()>(f: F) -> String {
+    use std::panic::AssertUnwindSafe;
+    let result = std::panic::catch_unwind(AssertUnwindSafe(f));
+    let panic = result.expect_err(
+        "expected the operation to panic with the joint-kinematics exclusivity diagnostic, \
+         but it returned normally",
+    );
+    panic
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| {
+            panic
+                .downcast_ref::<&'static str>()
+                .map(|s| (*s).to_string())
+        })
+        .unwrap_or_else(|| "<non-string panic payload>".to_string())
+}
+
+/// Assert that `msg` mentions every named component, the literal
+/// "mutually exclusive" header, and the actionable "Fix:" tail.
+/// `#[should_panic(expected = "...")]` only checks for a single
+/// substring, so the multi-substring contract has to be expressed
+/// explicitly in test code.
+#[track_caller]
+fn assert_diagnostic_lists(msg: &str, components: &[&str], entity: Entity) {
+    assert!(
+        msg.contains("mutually exclusive"),
+        "panic message missing 'mutually exclusive' header: {msg}"
+    );
+    assert!(
+        msg.contains("Fix:"),
+        "panic message missing actionable 'Fix:' tail: {msg}"
+    );
+    let entity_str = format!("{entity:?}");
+    assert!(
+        msg.contains(&entity_str),
+        "panic message did not name the offending entity {entity_str}: {msg}"
+    );
+    for name in components {
+        assert!(
+            msg.contains(name),
+            "panic message did not mention {name}: {msg}"
+        );
+    }
+}
+
+/// Build a fully-wired Bevy app with `JeodPlugin` so the
+/// joint-kinematics `on_insert` hooks and the `PostStartup`
+/// validator are both installed.
+fn build_app_with_plugin() -> App {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.add_plugins(JeodPlugin);
+    app
+}
+
 /// An entity carrying two kinematic-spec components must be rejected
-/// at `PostStartup`. The four driver systems use `Without<...>`
+/// at insertion time. The four driver systems use `Without<...>`
 /// filters for parallel scheduling, which would otherwise turn this
 /// misconfiguration into a silent stale-state read; the fail-loud
-/// guard prevents that.
+/// `on_insert` hook prevents that. The diagnostic must include both
+/// component names and the offending entity id.
+///
+/// Spawning a *single*-spec entity first and then inserting the
+/// second spec via `entity_mut().insert(...)` lets the test capture
+/// the entity id at spawn time so the substring assertion can verify
+/// the exact id appears in the panic message.
 #[test]
-#[should_panic(expected = "mutually exclusive")]
-fn stacked_joint_specs_panic_at_post_startup() {
+fn stacked_joint_specs_panic_at_insertion_two_specs() {
     let const_spec = JointKinematicsSpec {
         axis_in_parent: DVec3::Z,
         rate_rad_per_s: 0.1,
@@ -935,26 +1001,76 @@ fn stacked_joint_specs_panic_at_post_startup() {
         axis_in_parent: DVec3::X,
         fixed_angle_rad: 0.5,
     };
-    let mut app = App::new();
-    app.add_plugins(MinimalPlugins);
-    app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
-    app.world_mut().spawn((
-        JointKinematicsC(const_spec),
-        ClosureJointKinematicsC(close_spec),
-    ));
-    // Run Startup then PostStartup; the validation system runs in
-    // PostStartup and panics before any FixedUpdate tick begins.
-    app.world_mut().run_schedule(Startup);
-    app.world_mut().run_schedule(PostStartup);
+    let mut app = build_app_with_plugin();
+    let entity = app.world_mut().spawn(JointKinematicsC(const_spec)).id();
+
+    let msg = capture_panic_message(|| {
+        app.world_mut()
+            .entity_mut(entity)
+            .insert(ClosureJointKinematicsC(close_spec));
+    });
+
+    assert_diagnostic_lists(
+        &msg,
+        &["JointKinematicsC", "ClosureJointKinematicsC"],
+        entity,
+    );
 }
 
-/// Three stacked specs must surface every offending component name in
-/// the diagnostic so a mission engineer can identify and remove them
-/// without bisecting.
+/// Two stacked specs *and* the entity id must appear in the
+/// diagnostic. Builds the entity in stages so the test can capture
+/// its id before the hook fires (a freshly-spawned entity carrying
+/// only one spec is valid; inserting the second spec via
+/// `entity_mut().insert(...)` is what trips the hook).
+///
+/// `#[should_panic(expected = "X")]` only checks one substring; this
+/// test captures the panic and asserts every required substring —
+/// the diagnostic header, the actionable "Fix:" tail, both
+/// component names, and the exact offending entity id.
 #[test]
-#[should_panic(expected = "JointKinematicsC")]
 fn stacked_joint_specs_diagnostic_names_all_components() {
+    let const_spec = JointKinematicsSpec {
+        axis_in_parent: DVec3::Z,
+        rate_rad_per_s: 0.1,
+        initial_angle_rad: 0.0,
+    };
+    let sin_spec = SinusoidalJointKinematicsSpec {
+        axis_in_parent: DVec3::Y,
+        amplitude_rad: 0.2,
+        omega_rad_per_s: 0.05,
+        phase_rad: 0.0,
+        offset_rad: 0.0,
+    };
+    let mut app = build_app_with_plugin();
+    let entity = app.world_mut().spawn(JointKinematicsC(const_spec)).id();
+
+    // Insert the second spec — this must panic; the diagnostic must
+    // mention both `JointKinematicsC` and
+    // `SinusoidalJointKinematicsC` and the entity id captured above.
+    let msg = capture_panic_message(|| {
+        app.world_mut()
+            .entity_mut(entity)
+            .insert(SinusoidalJointKinematicsC(sin_spec));
+    });
+    assert_diagnostic_lists(
+        &msg,
+        &["JointKinematicsC", "SinusoidalJointKinematicsC"],
+        entity,
+    );
+}
+
+/// Three stacked specs landed in one bundle must list every name in
+/// the diagnostic. Uses a fresh app + dummy spawn to capture the
+/// entity id allocated by the panicking spawn.
+///
+/// We can't pre-allocate the entity via a separate `spawn` because
+/// any *single* spec there would not panic (only stacking > 1 specs
+/// does), and any prior bundle with two specs would already panic.
+/// Instead we observe the entity id reported by the hook itself by
+/// scanning the panic message for the `Offending entity: <id>`
+/// pattern and assert the listed names match the inputs.
+#[test]
+fn stacked_joint_specs_diagnostic_names_three_components_in_one_bundle() {
     let const_spec = JointKinematicsSpec {
         axis_in_parent: DVec3::Z,
         rate_rad_per_s: 0.1,
@@ -971,23 +1087,104 @@ fn stacked_joint_specs_diagnostic_names_all_components() {
         axis_in_parent: DVec3::X,
         fixed_angle_rad: 0.5,
     };
-    let mut app = App::new();
-    app.add_plugins(MinimalPlugins);
-    app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
-    app.world_mut().spawn((
-        JointKinematicsC(const_spec),
-        SinusoidalJointKinematicsC(sin_spec),
-        ClosureJointKinematicsC(close_spec),
-    ));
-    app.world_mut().run_schedule(Startup);
-    app.world_mut().run_schedule(PostStartup);
+    let mut app = build_app_with_plugin();
+
+    let msg = capture_panic_message(|| {
+        app.world_mut().spawn((
+            JointKinematicsC(const_spec),
+            SinusoidalJointKinematicsC(sin_spec),
+            ClosureJointKinematicsC(close_spec),
+        ));
+    });
+
+    assert!(
+        msg.contains("mutually exclusive"),
+        "panic missing diagnostic header: {msg}"
+    );
+    assert!(
+        msg.contains("Fix:"),
+        "panic missing actionable Fix tail: {msg}"
+    );
+    for name in [
+        "JointKinematicsC",
+        "SinusoidalJointKinematicsC",
+        "ClosureJointKinematicsC",
+    ] {
+        assert!(
+            msg.contains(name),
+            "panic message did not mention {name}: {msg}"
+        );
+    }
+    assert!(
+        msg.contains("Offending entity:"),
+        "panic message missing 'Offending entity:' phrase: {msg}"
+    );
 }
 
-/// A correctly-configured config — every kinematic spec on a
-/// distinct entity — must pass the validation guard. This guards
-/// against false positives that would block legitimate multi-joint
-/// articulation chains.
+/// All four spec components on one entity must list all four names
+/// in the diagnostic. Exercises the largest-fanout path through the
+/// hook's name-collection branches. Same id-capture caveat as the
+/// three-spec test: we assert names + structural phrases rather
+/// than the exact entity id.
+#[test]
+fn stacked_joint_specs_diagnostic_names_all_four_components() {
+    let const_spec = JointKinematicsSpec {
+        axis_in_parent: DVec3::Z,
+        rate_rad_per_s: 0.1,
+        initial_angle_rad: 0.0,
+    };
+    let sin_spec = SinusoidalJointKinematicsSpec {
+        axis_in_parent: DVec3::Y,
+        amplitude_rad: 0.2,
+        omega_rad_per_s: 0.05,
+        phase_rad: 0.0,
+        offset_rad: 0.0,
+    };
+    let close_spec = ClosureJointKinematicsSpec {
+        axis_in_parent: DVec3::X,
+        fixed_angle_rad: 0.5,
+    };
+    let multi_spec = MultiDofJointKinematicsSpec::from_slice(&[
+        SingleDofKinematics::ConstantRate(const_spec),
+        SingleDofKinematics::Closure(close_spec),
+    ]);
+    let mut app = build_app_with_plugin();
+
+    let msg = capture_panic_message(|| {
+        app.world_mut().spawn((
+            JointKinematicsC(const_spec),
+            SinusoidalJointKinematicsC(sin_spec),
+            ClosureJointKinematicsC(close_spec),
+            MultiDofJointKinematicsC(multi_spec),
+        ));
+    });
+
+    for name in [
+        "JointKinematicsC",
+        "SinusoidalJointKinematicsC",
+        "ClosureJointKinematicsC",
+        "MultiDofJointKinematicsC",
+    ] {
+        assert!(
+            msg.contains(name),
+            "panic message did not mention {name}: {msg}"
+        );
+    }
+    assert!(
+        msg.contains("mutually exclusive"),
+        "panic missing diagnostic header: {msg}"
+    );
+    assert!(msg.contains("Fix:"), "panic missing 'Fix:' tail: {msg}");
+    assert!(
+        msg.contains("Offending entity:"),
+        "panic missing 'Offending entity:' phrase: {msg}"
+    );
+}
+
+/// A correctly-configured app — every kinematic spec on a distinct
+/// entity — must pass both the `on_insert` hook and the
+/// `PostStartup` validator. Guards against false positives that
+/// would block legitimate multi-joint articulation chains.
 #[test]
 fn distinct_kinematic_entities_pass_startup_validation() {
     let const_spec = JointKinematicsSpec {
@@ -1011,10 +1208,7 @@ fn distinct_kinematic_entities_pass_startup_validation() {
         SingleDofKinematics::Closure(close_spec),
     ]);
 
-    let mut app = App::new();
-    app.add_plugins(MinimalPlugins);
-    app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    let mut app = build_app_with_plugin();
     app.world_mut().spawn(JointKinematicsC(const_spec));
     app.world_mut().spawn(SinusoidalJointKinematicsC(sin_spec));
     app.world_mut().spawn(ClosureJointKinematicsC(close_spec));
@@ -1032,15 +1226,11 @@ fn distinct_kinematic_entities_pass_startup_validation() {
 }
 
 /// A user `Startup` system that spawns a stacked-spec entity via
-/// `Commands` must still trip the validator. Bevy applies queued
-/// commands at the end of each schedule, so the entity does not
-/// exist in the world until after the `Startup` schedule finishes.
-/// A validator wired into `Startup` would observe an empty world and
-/// miss the misconfiguration; placing it in `PostStartup` guarantees
-/// the spawn is materialized before the guard runs. This test fails
-/// loudly if the validator regresses to `Startup`.
+/// `Commands` must trip the `on_insert` hook the moment the deferred
+/// spawn is applied (during `Startup`'s command flush). Verifies
+/// the diagnostic names every offending component, not just the one
+/// the hook attributed the panic to.
 #[test]
-#[should_panic(expected = "mutually exclusive")]
 fn stacked_joint_specs_from_user_startup_commands_panic() {
     let const_spec = JointKinematicsSpec {
         axis_in_parent: DVec3::Z,
@@ -1051,29 +1241,100 @@ fn stacked_joint_specs_from_user_startup_commands_panic() {
         axis_in_parent: DVec3::X,
         fixed_angle_rad: 0.5,
     };
-    let mut app = App::new();
-    app.add_plugins(MinimalPlugins);
-    app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
+    let mut app = build_app_with_plugin();
     app.add_systems(Startup, move |mut commands: Commands| {
         commands.spawn((
             JointKinematicsC(const_spec),
             ClosureJointKinematicsC(close_spec),
         ));
     });
-    app.world_mut().run_schedule(Startup);
-    app.world_mut().run_schedule(PostStartup);
+    let msg = capture_panic_message(|| {
+        // Running Startup is sufficient: deferred commands flush
+        // during the schedule and the on_insert hook fires there.
+        // Even if a future Bevy refactor moved the flush out of
+        // `Startup`, `PostStartup` would still catch it.
+        app.world_mut().run_schedule(Startup);
+        app.world_mut().run_schedule(PostStartup);
+    });
+    assert!(
+        msg.contains("JointKinematicsC") && msg.contains("ClosureJointKinematicsC"),
+        "panic message did not name both stacked specs: {msg}"
+    );
+    assert!(
+        msg.contains("mutually exclusive"),
+        "panic message missing diagnostic header: {msg}"
+    );
 }
 
-/// Confirms the validator runs in `PostStartup`, not `Startup`: an
-/// entity spawned via `Commands` from a user `Startup` system is
-/// absent from the world for the duration of `Startup` (commands
-/// apply after the schedule completes), so running `Startup` alone
-/// must not panic. The same configuration *does* panic once
-/// `PostStartup` runs (covered by
-/// [`stacked_joint_specs_from_user_startup_commands_panic`]).
+/// **Runtime-spawn regression test.** An entity spawned during
+/// `FixedUpdate` (long after `Startup`/`PostStartup` have run) with
+/// two kinematic specs must still trip the `on_insert` hook. This
+/// covers the gap the original `PostStartup`-only validator left:
+/// runtime spawns from `FixedUpdate` user systems would silently
+/// drop out of every driver's `Without<...>` filter without the
+/// hook.
+///
+/// The deferred `Commands::spawn` in the user system is applied at
+/// the end of that system, which is when the hook fires — inside
+/// `run_schedule(FixedUpdate)`. The test asserts the panic
+/// propagates and the diagnostic names every offending component.
 #[test]
-fn stacked_joint_specs_from_user_startup_commands_do_not_panic_in_startup() {
+fn stacked_joint_specs_from_runtime_fixed_update_panic() {
+    let const_spec = JointKinematicsSpec {
+        axis_in_parent: DVec3::Z,
+        rate_rad_per_s: 0.1,
+        initial_angle_rad: 0.0,
+    };
+    let sin_spec = SinusoidalJointKinematicsSpec {
+        axis_in_parent: DVec3::Y,
+        amplitude_rad: 0.2,
+        omega_rad_per_s: 0.05,
+        phase_rad: 0.0,
+        offset_rad: 0.0,
+    };
+    let mut app = build_app_with_plugin();
+
+    // First flush Startup + PostStartup with no joint entities so
+    // the validator passes. The runtime spawn happens later.
+    app.world_mut().run_schedule(Startup);
+    app.world_mut().run_schedule(PostStartup);
+
+    // Single-shot FixedUpdate user system that spawns a stacked-spec
+    // entity. Bevy applies the queued commands inside the schedule.
+    app.add_systems(FixedUpdate, move |mut commands: Commands| {
+        commands.spawn((
+            JointKinematicsC(const_spec),
+            SinusoidalJointKinematicsC(sin_spec),
+        ));
+    });
+
+    let msg = capture_panic_message(|| {
+        step_once(&mut app);
+    });
+
+    assert!(
+        msg.contains("JointKinematicsC"),
+        "runtime panic missing JointKinematicsC: {msg}"
+    );
+    assert!(
+        msg.contains("SinusoidalJointKinematicsC"),
+        "runtime panic missing SinusoidalJointKinematicsC: {msg}"
+    );
+    assert!(
+        msg.contains("mutually exclusive"),
+        "runtime panic missing diagnostic header: {msg}"
+    );
+}
+
+/// **Runtime-insert regression test.** An entity that already
+/// carries one kinematic spec must trip the `on_insert` hook the
+/// moment a *second* spec is inserted on it via
+/// `EntityCommands::insert` — even if that mutation happens in a
+/// `Update` system long after the entity was first spawned. This
+/// covers the late-mutation surface that a one-shot validator
+/// cannot cover at all.
+#[test]
+fn late_insert_of_second_spec_panics_via_hook() {
     let const_spec = JointKinematicsSpec {
         axis_in_parent: DVec3::Z,
         rate_rad_per_s: 0.1,
@@ -1083,18 +1344,22 @@ fn stacked_joint_specs_from_user_startup_commands_do_not_panic_in_startup() {
         axis_in_parent: DVec3::X,
         fixed_angle_rad: 0.5,
     };
-    let mut app = App::new();
-    app.add_plugins(MinimalPlugins);
-    app.insert_resource(Time::<Fixed>::from_seconds(DT));
-    app.add_plugins(JeodPlugin);
-    app.add_systems(Startup, move |mut commands: Commands| {
-        commands.spawn((
-            JointKinematicsC(const_spec),
-            ClosureJointKinematicsC(close_spec),
-        ));
-    });
-    // Running only Startup must not panic — the validator lives in
-    // PostStartup. (Calling PostStartup here would panic; that case
-    // is covered by the sibling test above.)
+    let mut app = build_app_with_plugin();
+    let entity = app.world_mut().spawn(JointKinematicsC(const_spec)).id();
+    // Validator passes: only one spec on the entity.
     app.world_mut().run_schedule(Startup);
+    app.world_mut().run_schedule(PostStartup);
+
+    let msg = capture_panic_message(|| {
+        // Direct world insertion, mirroring what `EntityCommands::insert`
+        // would do once the deferred queue flushes.
+        app.world_mut()
+            .entity_mut(entity)
+            .insert(ClosureJointKinematicsC(close_spec));
+    });
+    assert_diagnostic_lists(
+        &msg,
+        &["JointKinematicsC", "ClosureJointKinematicsC"],
+        entity,
+    );
 }

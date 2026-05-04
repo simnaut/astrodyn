@@ -1389,14 +1389,19 @@ pub fn multi_dof_joint_kinematics_system(
 ///
 /// Per the project's fail-loud rule, that misconfiguration must
 /// panic at the earliest detection point with a diagnostic that
-/// names the offending entity and the specs it carries. This guard
-/// runs at `PostStartup` (after every user `Startup` system and the
-/// auto-inserted command flush, but before the first `FixedUpdate`
-/// tick) so any joint entity spawned via `Commands` from a user
-/// `Startup` system is materialized in the world by the time the
-/// guard observes it. It walks every entity carrying at least one
-/// kinematic spec via [`Has<...>`] flags; any entity with more than
-/// one spec is reported in a single panic message.
+/// names the offending entity and the specs it carries. The primary
+/// guard is the per-component `on_insert` hook installed by
+/// [`register_joint_kinematics_exclusivity_hooks`], which fires at
+/// insertion time and catches every stacking pattern (Startup,
+/// FixedUpdate, observers, …). This `PostStartup` validator is
+/// defense in depth: it walks every entity that already carries at
+/// least one kinematic spec once before the first `FixedUpdate` tick
+/// and emits a *single* aggregated panic message that lists every
+/// offending entity at once. The `on_insert` hooks panic on the
+/// first stacked insertion they observe, which is right for runtime
+/// but less informative when the user declares several stacked
+/// entities together at startup; the aggregated startup pass keeps
+/// that path actionable.
 ///
 /// The four spec components are declarative alternatives — a joint
 /// is *either* constant-rate, *or* sinusoidal, *or* a closure pose,
@@ -1462,6 +1467,154 @@ pub fn validate_joint_kinematics_exclusivity(
          use MultiDofJointKinematicsC with a chain of SingleDofKinematics stages.",
         offenders.join("; ")
     );
+}
+
+/// Format a "stacked specs" panic diagnostic for a single offending
+/// entity. Centralized so the `on_insert` hooks below and any future
+/// detection site share one message shape — a mission engineer reading
+/// the panic always sees the same actionable instructions regardless
+/// of which path tripped the check.
+fn format_stacked_specs_panic(entity: Entity, names: &[&'static str]) -> String {
+    format!(
+        "Joint-kinematics spec components are mutually exclusive — each frame entity \
+         must carry at most one of JointKinematicsC, SinusoidalJointKinematicsC, \
+         ClosureJointKinematicsC, MultiDofJointKinematicsC. Offending entity: \
+         {entity:?} carries [{}]. \
+         Fix: pick a single kinematic style per joint frame; for composed motions \
+         use MultiDofJointKinematicsC with a chain of SingleDofKinematics stages.",
+        names.join(", ")
+    )
+}
+
+/// Shared body of the four joint-kinematics `on_insert` hooks. Reads
+/// every spec flag off the entity's post-insertion archetype, counts
+/// how many distinct specs are present, and panics with
+/// [`format_stacked_specs_panic`] if more than one is. `self_name`
+/// is the spec component whose hook is firing — included in the
+/// panic so a mission engineer reading the backtrace sees which
+/// insertion attempt tripped the check.
+///
+/// `on_insert` runs after the bundle's components are already added
+/// to the entity's archetype, so the four `contains::<...>` reads
+/// on the `DeferredWorld` reflect the full post-insertion state.
+fn check_stacked_specs(
+    world: bevy::ecs::world::DeferredWorld<'_>,
+    entity: Entity,
+    self_name: &'static str,
+) {
+    let entity_ref = world.get_entity(entity).expect(
+        "joint-kinematics on_insert hook: entity must exist when its component is inserted",
+    );
+    let has_const = entity_ref.contains::<JointKinematicsC>();
+    let has_sin = entity_ref.contains::<SinusoidalJointKinematicsC>();
+    let has_close = entity_ref.contains::<ClosureJointKinematicsC>();
+    let has_multi = entity_ref.contains::<MultiDofJointKinematicsC>();
+    let count = usize::from(has_const)
+        + usize::from(has_sin)
+        + usize::from(has_close)
+        + usize::from(has_multi);
+    if count <= 1 {
+        return;
+    }
+    let mut names: Vec<&'static str> = Vec::new();
+    if has_const {
+        names.push("JointKinematicsC");
+    }
+    if has_sin {
+        names.push("SinusoidalJointKinematicsC");
+    }
+    if has_close {
+        names.push("ClosureJointKinematicsC");
+    }
+    if has_multi {
+        names.push("MultiDofJointKinematicsC");
+    }
+    panic!(
+        "{} (triggered while inserting {self_name})",
+        format_stacked_specs_panic(entity, &names)
+    );
+}
+
+// `ComponentHook` is `fn(DeferredWorld, HookContext)` — a plain
+// function pointer with no captures. Each spec component therefore
+// gets its own dedicated `fn` item that forwards to
+// `check_stacked_specs` with a hard-coded `self_name`.
+
+fn on_insert_joint_kinematics_c(
+    world: bevy::ecs::world::DeferredWorld<'_>,
+    ctx: bevy::ecs::lifecycle::HookContext,
+) {
+    check_stacked_specs(world, ctx.entity, "JointKinematicsC");
+}
+
+fn on_insert_sinusoidal_joint_kinematics_c(
+    world: bevy::ecs::world::DeferredWorld<'_>,
+    ctx: bevy::ecs::lifecycle::HookContext,
+) {
+    check_stacked_specs(world, ctx.entity, "SinusoidalJointKinematicsC");
+}
+
+fn on_insert_closure_joint_kinematics_c(
+    world: bevy::ecs::world::DeferredWorld<'_>,
+    ctx: bevy::ecs::lifecycle::HookContext,
+) {
+    check_stacked_specs(world, ctx.entity, "ClosureJointKinematicsC");
+}
+
+fn on_insert_multi_dof_joint_kinematics_c(
+    world: bevy::ecs::world::DeferredWorld<'_>,
+    ctx: bevy::ecs::lifecycle::HookContext,
+) {
+    check_stacked_specs(world, ctx.entity, "MultiDofJointKinematicsC");
+}
+
+/// Register `on_insert` hooks on every joint-kinematics spec component
+/// so any insertion that lands a second spec on an entity panics
+/// immediately.
+///
+/// The `PostStartup` validator
+/// ([`validate_joint_kinematics_exclusivity`]) is a startup-time
+/// safety net: it walks the world *once* before the first
+/// `FixedUpdate` tick and catches misconfigurations declared in
+/// `Startup` systems. It cannot observe entities spawned after
+/// `PostStartup` — for example, a `Commands::spawn(...)` issued from
+/// a `FixedUpdate` user system, an `Update` system, or an event
+/// handler. Without a runtime guard those late spawns slip past every
+/// driver's `Without<...>` filter and silently propagate stale
+/// `FrameRotC` / `FrameAngVelC`, which the project's fail-loud rule
+/// forbids.
+///
+/// Bevy 0.18 component lifecycle hooks (`on_insert`) close that gap:
+/// every kinematic-spec insertion — `spawn`, `insert`, or `replace`
+/// — fires its hook before the next system observes the new
+/// component, so a bad insertion panics at the insertion site rather
+/// than silently propagating bad state. The hook reads the entity's
+/// post-insertion archetype to count how many of the four spec
+/// components are present and panics with the same diagnostic shape
+/// as [`validate_joint_kinematics_exclusivity`] if more than one is.
+///
+/// Idempotent re-registration of the *same* spec component (insert A
+/// onto an entity that already has A) does not trip the hook: the
+/// count of distinct kinematic specs is unchanged. Only stacking
+/// distinct specs panics.
+///
+/// `JeodPlugin::build` calls this once during plugin setup. Tests
+/// that exercise the joint-kinematics pipeline without `JeodPlugin`
+/// can call this directly to install the same guard.
+pub fn register_joint_kinematics_exclusivity_hooks(app: &mut App) {
+    let world = app.world_mut();
+    world
+        .register_component_hooks::<JointKinematicsC>()
+        .on_insert(on_insert_joint_kinematics_c);
+    world
+        .register_component_hooks::<SinusoidalJointKinematicsC>()
+        .on_insert(on_insert_sinusoidal_joint_kinematics_c);
+    world
+        .register_component_hooks::<ClosureJointKinematicsC>()
+        .on_insert(on_insert_closure_joint_kinematics_c);
+    world
+        .register_component_hooks::<MultiDofJointKinematicsC>()
+        .on_insert(on_insert_multi_dof_joint_kinematics_c);
 }
 
 /// Computes tidal ΔC20 for each gravity source that has a `TidalConfigC`.

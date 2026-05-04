@@ -273,21 +273,36 @@ impl Plugin for JeodPlugin {
                     .after(systems::register_body_frames_system),
             ),
         );
-        // Reject startup configs where a single frame entity carries
-        // multiple kinematic-spec components: the four driver systems
-        // use `Without<...>` filters to advertise pairwise-disjoint
+        // Reject configs where a single frame entity carries multiple
+        // kinematic-spec components: the four driver systems use
+        // `Without<...>` filters to advertise pairwise-disjoint
         // queries to the scheduler, so an entity with two specs would
         // be silently dropped from every driver and propagate stale
         // `FrameRotC` / `FrameAngVelC` instead of panicking. The
         // fail-loud rule forbids that silent path.
         //
-        // Wired into `PostStartup` (not `Startup`) so the validator
-        // runs after all user `Startup` systems and after Bevy's
-        // auto-inserted command flush between the two schedules.
-        // Mission code typically spawns joint entities via `Commands`
-        // in a user `Startup` system added after `JeodPlugin`; placing
-        // the guard in `Startup` would let it observe an empty world
-        // and miss the stacked-spec misconfiguration entirely.
+        // Two layers of enforcement:
+        //
+        // 1. **Component `on_insert` hooks** —
+        //    `register_joint_kinematics_exclusivity_hooks` installs a
+        //    Bevy lifecycle hook on each of the four spec components
+        //    that fires the moment an insertion lands a second spec
+        //    on an entity, regardless of which schedule the insert
+        //    happened in (`Startup`, `Update`, `FixedUpdate`, an
+        //    observer, …). This is the primary guard: it catches
+        //    runtime spawns / inserts that the `PostStartup`
+        //    validator never sees.
+        //
+        // 2. **`PostStartup` validator** — defense in depth, kept so
+        //    a startup-time misconfiguration panics with a single
+        //    aggregated message that lists every offending entity at
+        //    once (the per-insert hooks panic on the *first* offender
+        //    they observe, which is the right shape for runtime but
+        //    less helpful when several stacked-spec entities are
+        //    declared together at startup). Wired into `PostStartup`
+        //    (not `Startup`) so it observes commands flushed at the
+        //    end of `Startup`.
+        systems::register_joint_kinematics_exclusivity_hooks(app);
         app.add_systems(PostStartup, systems::validate_joint_kinematics_exclusivity);
         app.add_systems(
             PreUpdate,
@@ -442,25 +457,28 @@ impl Plugin for JeodPlugin {
                 // (sinusoidal, closure, multi-DOF). All four write
                 // `FrameRotC` / `FrameAngVelC` and run inside the same
                 // `EphemerisUpdate` set; pairwise disjointness on
-                // those mutable accesses is enforced two ways so the
-                // scheduler can dispatch them in parallel without a
-                // borrow conflict and so a misconfigured entity can't
-                // silently drop out of the pipeline:
+                // those mutable accesses is enforced three ways so
+                // the scheduler can dispatch them in parallel without
+                // a borrow conflict and so a misconfigured entity
+                // can't silently drop out of the pipeline:
                 //
                 // * **Per-system `Without<...>` filters** — each
                 //   driver excludes the other three spec components,
                 //   so the queries are structurally disjoint at the
                 //   `Query` level. This is the signal Bevy needs to
                 //   parallelize the four systems on the same set.
+                // * **Component `on_insert` hooks** —
+                //   `register_joint_kinematics_exclusivity_hooks`
+                //   panics at insertion time when a stacked-spec
+                //   entity is created or mutated, including spawns
+                //   that happen long after `Startup` (FixedUpdate,
+                //   Update, observers, …).
                 // * **PostStartup validation** —
                 //   `validate_joint_kinematics_exclusivity` walks
-                //   every frame entity once at `PostStartup` (after
-                //   user `Startup` systems and the auto-inserted
-                //   command flush) and panics loudly if any entity
-                //   carries more than one spec. Without this, the
-                //   `Without<...>` filters would turn a stacked-spec
-                //   misconfiguration into a silent stale-state read;
-                //   the fail-loud rule forbids that.
+                //   every frame entity once at `PostStartup` and
+                //   reports *every* offender at startup in one
+                //   aggregated message; defense in depth alongside
+                //   the hooks.
                 //
                 // Spec components are semantic alternatives, not
                 // stackable: a joint is *either* constant-rate, *or*
