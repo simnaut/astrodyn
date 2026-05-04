@@ -2934,7 +2934,7 @@ pub fn cannonball_srp_system(
 /// app.add_message::<DetachEvent>();
 /// app.add_systems(Update, detach_booster);
 /// ```
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn staging_system(
     mut commands: Commands,
     tree: Option<ResMut<crate::MassTreeR>>,
@@ -2948,6 +2948,7 @@ pub fn staging_system(
         Option<&mut RotationalStateC>,
     )>,
     detached_q: Query<Entity, With<crate::DetachedSubtreeStateC>>,
+    integ_sources: Query<&IntegSourceC>,
     mut integrators: Query<(
         &crate::MassBodyIdC,
         Option<&mut GaussJacksonStateC>,
@@ -3062,6 +3063,33 @@ pub fn staging_system(
                 (untyped.quaternion, untyped.ang_vel_body)
             })
             .unwrap_or((jeod_sim::JeodQuat::identity(), glam::DVec3::ZERO));
+
+        // Cross-integration-frame attach is not yet supported. JEOD's
+        // `dyn_body_attach.cc::attach_establish_links` calls
+        // `set_integ_frame(*(dyn_parent->get_integ_frame()))` whenever the
+        // child's integ frame differs from the parent's, reparenting the
+        // child's primary frames under the parent's integ frame and
+        // rewriting the stored coordinates. Our staging path implements
+        // neither the frame-entity reparent nor the coordinate rewrite,
+        // so allowing the merge to proceed silently corrupts every
+        // downstream `RelativeFrameState` walk. Per the Fail Loudly rule
+        // (CLAUDE.md), surface the misconfiguration at the point of
+        // detection rather than producing a wrong trajectory.
+        let parent_integ_source = integ_sources.get(evt.parent).ok().and_then(|c| c.0);
+        let child_integ_source = integ_sources.get(evt.child).ok().and_then(|c| c.0);
+        assert!(
+            parent_integ_source == child_integ_source,
+            "AttachEvent: parent {:?} and child {:?} have different IntegSourceC values \
+             (parent={:?}, child={:?}). Cross-integration-frame attach is not yet supported \
+             — the child's frame entity must be reparented under the parent's integ frame \
+             and its stored coordinates rewritten into that frame before the merge proceeds. \
+             Either align the two bodies' IntegSourceC before firing the AttachEvent, or \
+             wait for the planned reparent + coordinate-rewrite implementation.",
+            evt.parent,
+            evt.child,
+            parent_integ_source,
+            child_integ_source
+        );
 
         // T_inertial_to_struct = T_struct_to_body^T · T_inertial_to_body
         // Per JEOD `dyn_body_collect.cc:219-221` and
