@@ -53,8 +53,8 @@ use std::collections::HashMap;
 
 use jeod_dynamics::MassBodyId;
 use jeod_sim::{
-    propagate_state_via_storage, KinematicEdge, KinematicNodeState, MassStorage, RotationalState,
-    TranslationalState, TranslationalStateTyped,
+    propagate_state_via_storage, IntegOrigin, KinematicEdge, KinematicNodeState, MassStorage,
+    RootInertial, RotationalState, TranslationalState, TranslationalStateTyped,
 };
 
 use super::super::Simulation;
@@ -65,6 +65,23 @@ impl Simulation {
     /// kinematic-only [`SimBody`](super::super::types::SimBody)'s
     /// `trans` + `rot` from the parent's state composed with the link
     /// geometry.
+    ///
+    /// `body_integ_origins` is the per-body
+    /// [`IntegOrigin`] table the caller has already built from the
+    /// frame tree (see `step_internal`). It is the **shift site** that
+    /// lifts each body's [`TranslationalStateTyped<IntegrationFrame>`]
+    /// to root inertial on entry to the kinematic kernel and lowers
+    /// the kernel's root-inertial outputs back into integration-frame
+    /// storage on writeback. Without this lift, parent and child
+    /// states living in distinct integration frames (parent in root,
+    /// child in `PlanetInertial<Earth>`, or any heterogeneous chain)
+    /// would compose as if they were in the same frame — a silent
+    /// cross-frame mix that the kinematic kernel cannot detect because
+    /// it operates on raw vectors per RF.10. The compile-time
+    /// `IntegrationFrame` ↔ `RootInertial` distinction in
+    /// [`TranslationalStateTyped`] makes the boundary visible at the
+    /// type level; this method is the only structural shift point on
+    /// the kinematic-propagation path.
     ///
     /// No-op when there is no mass tree, when the tree has no chains
     /// (every node is a root), or when no `SimBody` is registered as
@@ -91,7 +108,12 @@ impl Simulation {
     ///   [`propagate_state_via_storage`] for the per-case diagnostics).
     // JEOD_INV: DB.13 — propagate_state delegates to root body
     // JEOD_INV: DB.17 — only the root's state is integrated; non-root state is kinematic-derived
-    pub(super) fn propagate_kinematic_state(&mut self) {
+    // JEOD_INV: RF.10 — kinematic-propagation is a shift site: each
+    // body's integration-frame state is lifted to root inertial on
+    // entry (`to_inertial(&integ_origin)`) and lowered back on
+    // writeback (`from_inertial(...)`) so the kernel never sees a
+    // cross-frame mix.
+    pub(super) fn propagate_kinematic_state(&mut self, body_integ_origins: &[IntegOrigin]) {
         let Some(tree) = self.mass_tree.as_ref() else {
             return;
         };
@@ -166,11 +188,24 @@ impl Simulation {
 
             let (rot, trans) = if let Some(&body_idx) = sim_body_for_id.get(&id) {
                 // SimBody-backed entries seed the walk from the
-                // integrator's most recent output.
+                // integrator's most recent output. The kinematic
+                // kernel composes parent and child translational state
+                // through `omega × r` and a `T_inertial_struct.transpose()`
+                // shift — both arithmetic only land correctly when
+                // every input lives in the same inertial frame (root
+                // inertial). `body.trans` is in this body's
+                // integration frame, so lift through `IntegOrigin`
+                // here. For root-integrated bodies the shift is a
+                // bit-identical no-op (`IntegOrigin::zero()`); for
+                // any body with `integ_source` pointing at a
+                // non-root planet, the shift is the only thing that
+                // keeps a cross-source chain (e.g. parent in root,
+                // child in `PlanetInertial<Earth>`) from silently
+                // mixing coordinates. RF.10 shift site.
                 let body = &self.bodies[body_idx];
                 let rot = body.rot.unwrap_or_default();
-                let trans = body.trans.to_untyped();
-                (rot, trans)
+                let trans_inertial = body.trans.to_inertial(&body_integ_origins[body_idx]);
+                (rot, trans_inertial.to_untyped())
             } else {
                 // Tree-only nodes (the common case for assemblies like
                 // Apollo's launch stack, where only the integrated root
@@ -244,8 +279,22 @@ impl Simulation {
             if !self.bodies[body_idx].kinematic_only {
                 continue;
             }
+            // The kernel produced root-inertial composite-body state;
+            // the typed storage at `body.trans` is
+            // `TranslationalStateTyped<IntegrationFrame>`, so lower
+            // back through this body's `IntegOrigin`. Symmetric
+            // partner of the seed-time `to_inertial` lift above —
+            // skipping this would write a root-inertial value into
+            // integration-frame storage and silently corrupt every
+            // downstream consumer of `body.trans` for any body whose
+            // integration frame is not root. RF.10 shift site.
+            let trans_inertial =
+                TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(&state.trans);
             self.bodies[body_idx].trans =
-                TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(&state.trans);
+                TranslationalStateTyped::<IntegrationFrame>::from_inertial(
+                    trans_inertial,
+                    &body_integ_origins[body_idx],
+                );
             // body.rot is `Option<RotationalState>` — we already
             // asserted at the top of the method that kinematic-only
             // bodies carry one.
@@ -394,6 +443,211 @@ mod tests {
         // Suppress unused-variables lints from `parent_t_ib` /
         // `parent_omega` if the optimiser folds the test setup.
         let _ = (parent_id, parent_t_ib, parent_omega);
+    }
+
+    /// Cross-frame regression: parent integrates in root, child is
+    /// kinematic with `integ_source` pointing at a non-central source
+    /// whose inertial frame sits at a known offset in the simulation's
+    /// frame tree. The kinematic kernel composes parent + child
+    /// translational state in a *single* inertial frame; the bug this
+    /// guards against is the seed-time path reading
+    /// `parent.body.trans` (root inertial here) and
+    /// `child.body.trans` (whatever was last written, but typed
+    /// `IntegrationFrame`) as if they shared a frame, then writing the
+    /// kernel's root-inertial output straight back into the child's
+    /// `IntegrationFrame`-typed storage. The fix lifts both seed
+    /// reads to root inertial via each body's `IntegOrigin` and
+    /// lowers the writeback back into integration-frame coordinates.
+    /// After the lift+lower, the child's stored `body.trans` (in its
+    /// own integration frame) plus its `IntegOrigin` must reproduce
+    /// the parent's freshly-integrated root-inertial position
+    /// translated by the link offset — the same relationship the
+    /// in-frame test above checks, but routed through the typed
+    /// shift on both ends.
+    #[test]
+    fn cross_frame_chain_writes_child_state_in_child_integ_frame() {
+        use crate::Simulation;
+        use jeod_sim::{
+            default_leap_second_table, GravityModel, GravitySource, GravitySourceEntry, Position,
+            RotationModel, SimulationTime, Velocity,
+        };
+
+        // Empty-space-style sim built directly via `Simulation::new`
+        // so we can register two distinct sources before adding any
+        // body. Two sources:
+        //   src 0 = "Origin" at root (mu=0, central) — gives the
+        //           parent body a typed integ frame at root.
+        //   src 1 = "Offset" with non-zero root-inertial position +
+        //           velocity. The child's `integ_source = Some(1)`
+        //           drops it in this offset frame, so the kinematic
+        //           propagation kernel must compose parent + child
+        //           through the typed `IntegOrigin` shift to land in
+        //           the kernel's expected single-frame view.
+        let dt = 0.1;
+        let time = SimulationTime::at_j2000(default_leap_second_table());
+        let mut sim = Simulation::new(time, dt);
+        // Add a benign root-frame source (mu=0, central) so the parent
+        // body has a typed integ frame at root.
+        let _root_src = sim.add_source(
+            "Origin",
+            GravitySourceEntry {
+                source: GravitySource {
+                    mu: 0.0,
+                    model: GravityModel::PointMass,
+                },
+                position: Position::zero(),
+                velocity: Velocity::zero(),
+                t_inertial_pfix: None,
+                rotation_model: RotationModel::None,
+                delta_c20: 0.0,
+                tidal_config: None,
+                planet_omega: 0.0,
+                central: true,
+            },
+        );
+        // Add a non-central source whose inertial frame is offset
+        // from root. We keep `mu=0` so the source applies no gravity
+        // — the chain we test is kinematic-only, not gravitational.
+        let offset_src = sim.add_source(
+            "Offset",
+            GravitySourceEntry {
+                source: GravitySource {
+                    mu: 0.0,
+                    model: GravityModel::PointMass,
+                },
+                position: Position::from_raw_si(DVec3::new(1.0e8, 0.0, 0.0)),
+                // Zero velocity keeps the source frame static so the
+                // test's expected integ-frame coords are `root - 1e8x`
+                // exactly, with no per-step interpolation residue.
+                velocity: Velocity::zero(),
+                t_inertial_pfix: None,
+                rotation_model: RotationModel::None,
+                delta_c20: 0.0,
+                tidal_config: None,
+                planet_omega: 0.0,
+                central: false,
+            },
+        );
+
+        // Parent integrates in root: identity attitude, fixed
+        // root-inertial position.
+        let parent_root_pos = DVec3::new(7.0e6, 0.0, 0.0);
+        let parent_root_vel = DVec3::new(0.0, 7500.0, 0.0);
+        let parent_idx = sim.add_body(VehicleConfig {
+            trans: TranslationalState {
+                position: parent_root_pos,
+                velocity: parent_root_vel,
+            },
+            rot: Some(RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::ZERO,
+            }),
+            mass: Some(MassProperties::new(10.0)),
+            gravity_controls: GravityControls { controls: vec![] },
+            // integ_source: None ⇒ root-frame integration.
+            ..Default::default()
+        });
+
+        // Child integrates in the offset source's inertial frame.
+        // Initial trans is junk — the propagation walk overwrites
+        // both fields within the first step.
+        let child_idx = sim.add_body(VehicleConfig {
+            trans: TranslationalState {
+                position: DVec3::new(-9.9e9, -9.9e9, -9.9e9),
+                velocity: DVec3::new(-9.9e9, -9.9e9, -9.9e9),
+            },
+            rot: Some(RotationalState::default()),
+            mass: Some(MassProperties::new(5.0)),
+            gravity_controls: GravityControls { controls: vec![] },
+            integ_source: Some(offset_src),
+            ..Default::default()
+        });
+
+        sim.add_body_to_tree(parent_idx, "parent");
+        sim.add_body_to_tree(child_idx, "child");
+        // Identity link with a non-zero offset (1, 0, 0) in parent
+        // structural frame. Child rotation = identity ⇒ the kernel's
+        // inertial-frame composite-body output for the child is just
+        // `parent_root + offset` (parent at identity attitude has
+        // inertial-aligned struct, so the offset rotates trivially).
+        let offset = DVec3::new(1.0, 0.0, 0.0);
+        sim.attach(child_idx, parent_idx, offset, DMat3::IDENTITY);
+        sim.mark_kinematic_only(child_idx);
+
+        sim.step().expect("step() must succeed");
+
+        // Read post-step states.
+        let post_parent = sim.body(parent_idx);
+        let post_child = sim.body(child_idx);
+
+        // Compute the kinematic kernel's expected *root-inertial*
+        // child position the same way the existing in-frame test
+        // does: route through the composite-CoM offset
+        // `pcm_to_ccm = link_offset - parent_composite_in_pstr`,
+        // then translate by parent's root-inertial position.
+        // Parent identity attitude ⇒ no rotation of the offset.
+        // Use the *core* (per-body, pre-tree-aggregation) masses, not
+        // `body.mass.mass` — after the tree's composite recomputation
+        // runs in `step_internal`, the parent's `MassProperties.mass`
+        // reflects the composite (parent + child), but the kinematic
+        // kernel reads `tree.get(id).composite_properties.position`,
+        // which is built from *core* masses.
+        let parent_core_mass = 10.0;
+        let child_core_mass = 5.0;
+        let composite_total = parent_core_mass + child_core_mass;
+        let parent_composite_in_pstr = offset * (child_core_mass / composite_total);
+        let pcm_to_ccm = offset - parent_composite_in_pstr;
+        let parent_root_post = post_parent.trans.position;
+        let expected_child_root_pos = parent_root_post + pcm_to_ccm;
+
+        // Read the offset source's root-inertial origin from the
+        // frame tree at the *post-step* moment — this is the child's
+        // `IntegOrigin` at writeback time. Source velocity is zero,
+        // so the value is exactly `(1e8, 0, 0)`; we read it via
+        // `frame_origin` to keep the test independent of frame-tree
+        // storage internals.
+        let (offset_origin_pos, _offset_origin_vel) =
+            sim.frame_origin(sim.bodies[child_idx].integ_frame_id);
+        // Sanity: the offset source must actually be off-root for
+        // this regression to bite. If a future refactor accidentally
+        // makes the offset source central, the bug-shape assert at
+        // the bottom would silently pass; gate up front instead.
+        assert!(
+            offset_origin_pos.length() > 1.0,
+            "test setup invariant: offset source must have a non-zero \
+             root-inertial origin; got {offset_origin_pos:?}"
+        );
+
+        let expected_child_integ_pos = expected_child_root_pos - offset_origin_pos;
+
+        // The Copilot bug shape: child writeback would store
+        // `expected_child_root_pos` directly into
+        // `body.trans.position` (typed `IntegrationFrame`), so
+        // `body.trans.position == expected_child_root_pos`. With the
+        // shift fix, `body.trans.position == expected_child_integ_pos`
+        // (root-inertial output lowered through `from_inertial(...)`
+        // into the child's integration frame).
+        let child_integ_pos = post_child.trans.position;
+        let pos_err = (child_integ_pos - expected_child_integ_pos).length();
+        assert!(
+            pos_err < 1e-9,
+            "child writeback must land in the child's integration frame, not root \
+             inertial. Expected integ-frame pos {expected_child_integ_pos:?} (which is \
+             root-inertial {expected_child_root_pos:?} minus offset-source origin \
+             {offset_origin_pos:?}); got body.trans.position = {child_integ_pos:?}."
+        );
+
+        // Defense-in-depth: the cross-frame mix would have written
+        // the root-inertial value, so the offset-source-origin
+        // distance should NOT match the stored trans. Without this
+        // sanity check, a future regression with a sign flip on the
+        // shift might pass the primary assert by coincidence.
+        let bug_shape_err = (child_integ_pos - expected_child_root_pos).length();
+        assert!(
+            bug_shape_err > 1.0e6,
+            "regression: child trans matches the root-inertial value (was the shift \
+             skipped?). bug_shape_err = {bug_shape_err:.3e} m"
+        );
     }
 
     /// `mark_kinematic_only` must reject a body that has no
