@@ -141,10 +141,12 @@ impl Simulation {
         let n = tree.node_count();
         let mut nodes: HashMap<MassBodyId, KinematicNodeState> = HashMap::with_capacity(n);
         for id in 0..n {
-            let view = MassStorage::node(tree, id);
+            // Pull `composite_properties` directly off the arena — the
+            // `MassStorage::node()` view exposes only `core_properties` /
+            // `structure_point`, so the kinematic walk reads the
+            // composite slots through `MassTree::get` instead.
             let composite_in_struct = tree.get(id).composite_properties.position;
             let t_struct_body = tree.get(id).composite_properties.t_parent_this;
-            let _ = view; // node() borrow released before `tree.get`
 
             let (rot, trans) = if let Some(&body_idx) = sim_body_for_id.get(&id) {
                 // SimBody-backed entries seed the walk from the
