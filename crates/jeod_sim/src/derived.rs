@@ -62,18 +62,17 @@ pub fn compute_orbital_elements(
     velocity: DVec3,
 ) -> Result<OrbitalElements, OrbitalError> {
     use jeod_quantities::ext::{F64Ext, Vec3Ext};
-    use jeod_quantities::frame::{Earth, PlanetInertial};
-    // The compute uses Earth-tagged frames internally to drive the
-    // typed kernel; the result is then relabeled to `SelfPlanet` for
-    // the dynamic-planet runner storage. Mission code targeting
-    // another planet should use the typed sibling with the appropriate
-    // `P: Planet` phantom.
-    OrbitalElements::<Earth>::from_cartesian_typed(
+    use jeod_quantities::frame::{PlanetInertial, SelfPlanet};
+    // Drive the typed kernel directly with `SelfPlanet`-tagged inputs so
+    // the result is already `OrbitalElements<SelfPlanet>` — no relabel
+    // step. `OrbitalElements::relabel` is restricted to a `<SelfPlanet>`
+    // receiver to prevent silent cross-planet retagging, so going
+    // through `<Earth>` and erasing afterwards is no longer available.
+    OrbitalElements::<SelfPlanet>::from_cartesian_typed(
         F64Ext::m3_per_s2(mu),
-        position.m_at::<PlanetInertial<Earth>>(),
-        velocity.m_per_s_at::<PlanetInertial<Earth>>(),
+        position.m_at::<PlanetInertial<SelfPlanet>>(),
+        velocity.m_per_s_at::<PlanetInertial<SelfPlanet>>(),
     )
-    .map(OrbitalElements::<Earth>::relabel)
 }
 
 /// Compute Euler angles from body attitude.

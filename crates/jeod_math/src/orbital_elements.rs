@@ -107,15 +107,26 @@ fn wrap_to_tau(mut angle: f64) -> f64 {
     angle
 }
 
-impl<P: Planet> OrbitalElements<P> {
-    /// Relabel `self` as orbital elements computed against planet `Q`.
+impl OrbitalElements<SelfPlanet> {
+    /// Relabel a planet-erased ([`SelfPlanet`]) orbital-element set as
+    /// computed against a specific planet `Q`.
     ///
-    /// **Boundary-only escape hatch.** Use only at relabel sites where
-    /// the planet identity is determined at runtime (e.g. wrapping a
-    /// raw `from_cartesian_impl` result, the Bevy `OrbitalElementsC`
-    /// component which is parameterized by `SelfPlanet`). Mission code
-    /// that knows the central body at compile time should reach for
-    /// [`OrbitalElements::from_cartesian_typed`] directly.
+    /// Restricted to `impl OrbitalElements<SelfPlanet>` so it can only
+    /// retag a result that is already planet-erased — a planet-pinned
+    /// `OrbitalElements<Sun>` cannot accidentally be relabeled as
+    /// `OrbitalElements<Earth>` via this method. **Boundary-only escape
+    /// hatch** for relabel sites where the planet identity is determined
+    /// at runtime (e.g. wrapping a raw `from_cartesian_impl` result, the
+    /// Bevy `OrbitalElementsC` component which is parameterized by
+    /// `SelfPlanet`). Mission code that knows the central body at compile
+    /// time should reach for [`OrbitalElements::from_cartesian_typed`]
+    /// directly.
+    ///
+    /// A genuine `<P>` → `<Q>` retag for two distinct named planets is
+    /// almost never the right operation (orbital elements are always
+    /// computed against a specific μ); if you need it for a different
+    /// reason, add a separate, clearly-named escape hatch instead of
+    /// widening this impl block.
     #[inline]
     pub fn relabel<Q: Planet>(self) -> OrbitalElements<Q> {
         OrbitalElements::<Q> {
