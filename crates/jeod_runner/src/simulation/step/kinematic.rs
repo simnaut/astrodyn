@@ -797,6 +797,154 @@ mod tests {
             .expect("step until propagate_kinematic_state runs");
     }
 
+    /// Regression for PR #295 review thread `Ov1O`: a kinematic
+    /// child carrying a derivative-class flat-plate SRP config must
+    /// still get its plate temperatures advanced and a non-zero
+    /// `radiation_force` published each step. Without the fix, the
+    /// `kinematic_only` skip in `integrate.rs` bypasses the per-RK4-
+    /// stage thermal/SRP recompute that lives inside
+    /// `integrate_body_coupled`, and `interactions.rs` parks the
+    /// step-start inputs in `stage_inputs` for nobody to consume:
+    /// plate temperatures freeze and `radiation_force` stays `None`.
+    /// Mirrors the analogous Bevy fix in PR #287 for
+    /// `flat_plate_srp_system`.
+    #[test]
+    fn kinematic_child_with_derivative_srp_advances_thermal_state() {
+        use crate::Simulation;
+        use jeod_sim::{
+            default_leap_second_table, FlatPlate, FlatPlateParams, FlatPlateState, FlatPlateThermal,
+            GravityModel, GravitySource, GravitySourceEntry, Position, RotationModel,
+            SimulationTime, SrpModel, ThermalIntegrationOrder, Velocity,
+        };
+
+        let dt = 1.0;
+        let time = SimulationTime::at_j2000(default_leap_second_table());
+        let mut sim = Simulation::new(time, dt);
+
+        // Sun ~1 AU along +x. Mu=0 keeps the plates the only
+        // physics; we just need the source so SRP fires.
+        let sun = sim.add_source(
+            "Sun",
+            GravitySourceEntry {
+                source: GravitySource {
+                    mu: 0.0,
+                    model: GravityModel::PointMass,
+                },
+                position: Position::from_raw_si(DVec3::new(1.496e11, 0.0, 0.0)),
+                velocity: Velocity::zero(),
+                t_inertial_pfix: None,
+                rotation_model: RotationModel::None,
+                delta_c20: 0.0,
+                tidal_config: None,
+                planet_omega: 0.0,
+                central: false,
+            },
+        );
+        sim.sun_source = Some(sun);
+
+        // Parent root (no SRP) outside the Sun's collapse radius.
+        let parent_idx = sim.add_body(VehicleConfig {
+            trans: TranslationalState {
+                position: DVec3::new(7.0e6, 0.0, 0.0),
+                velocity: DVec3::ZERO,
+            },
+            rot: Some(RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::ZERO,
+            }),
+            mass: Some(MassProperties::new(10.0)),
+            gravity_controls: GravityControls { controls: vec![] },
+            ..Default::default()
+        });
+
+        // Child appendage with derivative-class flat-plate SRP.
+        // Plate normal -X faces the Sun (FlatPlate convention:
+        // `-normal · flux_hat > 0`).
+        let plates = vec![(
+            FlatPlate {
+                area: 10.0,
+                normal: -DVec3::X,
+                position: DVec3::ZERO,
+            },
+            FlatPlateParams {
+                albedo: 0.3,
+                diffuse: 0.3,
+            },
+            FlatPlateThermal {
+                emissivity: 0.5,
+                heat_capacity_per_area: 50.0,
+                thermal_power_dump: 0.0,
+            },
+        )];
+        let initial_temp = 270.0;
+        let child_idx = sim.add_body(VehicleConfig {
+            trans: TranslationalState {
+                position: DVec3::new(7.0e6, 0.0, 0.0),
+                velocity: DVec3::ZERO,
+            },
+            rot: Some(RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::ZERO,
+            }),
+            mass: Some(MassProperties::new(1.0)),
+            gravity_controls: GravityControls { controls: vec![] },
+            srp: Some(SrpModel::FlatPlate(FlatPlateState {
+                plates,
+                temperatures: vec![initial_temp],
+                t_pow4_cached: vec![initial_temp.powi(4)],
+                integration_order: ThermalIntegrationOrder::DerivativeRk4,
+                ..Default::default()
+            })),
+            ..Default::default()
+        });
+
+        // Build the chain and mark the child kinematic.
+        sim.add_body_to_tree(parent_idx, "parent");
+        sim.add_body_to_tree(child_idx, "child");
+        sim.attach(
+            child_idx,
+            parent_idx,
+            DVec3::new(1.0, 0.0, 0.0),
+            DMat3::IDENTITY,
+        );
+        sim.mark_kinematic_only(child_idx);
+
+        sim.step().expect("step must succeed");
+
+        // `radiation_force` must be Some + non-zero. Pre-fix this
+        // would be `None` (Scheduled writes here; Derivative parks
+        // `stage_inputs` for the integrator that the kinematic_only
+        // skip bypasses).
+        let rf = sim.bodies[child_idx]
+            .radiation_force
+            .as_ref()
+            .expect("kinematic child with flat-plate SRP must publish RadiationForce");
+        let force_mag = rf.force.length();
+        assert!(
+            force_mag > 1e-9,
+            "kinematic child SRP force must be non-zero (plate -X faces Sun \
+             along +X); got |force|={force_mag:.3e} N"
+        );
+
+        // Plate temperature must have advanced. With heat capacity
+        // 50 J/m²/K, area 10 m², emissivity 0.5, illumination
+        // factor 1.0, and DT=1s, the Forward-Euler step should
+        // change the temperature by a small but nonzero amount. A
+        // regression that bypasses thermal integration entirely
+        // would leave the temperature at exactly the initial value.
+        let temps = sim
+            .srp_plate_temperatures(child_idx)
+            .expect("flat-plate SRP configured");
+        let temp_delta = (temps[0] - initial_temp).abs();
+        assert!(
+            temp_delta > 1e-9,
+            "kinematic child plate temperature must advance under Forward-Euler \
+             thermal integration; got T={:.6} K (initial {initial_temp:.6} K, \
+             |ΔT|={temp_delta:.3e} K)",
+            temps[0],
+        );
+    }
+
     /// Regression for PR #295 review thread `Ov1U`: a kinematic
     /// grandchild whose intermediate parent is a non-kinematic
     /// `SimBody` must fail loudly. The kernel walk would compose the

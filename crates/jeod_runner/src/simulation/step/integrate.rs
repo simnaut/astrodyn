@@ -224,6 +224,17 @@ impl Simulation {
                 // this step from the parent's state composed with the
                 // link geometry. Skip integration here so we don't
                 // stomp the kinematic value with a force-driven update.
+                //
+                // Integrator-coupled sub-states that are *not* part of
+                // the orbital integration (flat-plate plate
+                // temperatures via the derivative-class arm) are
+                // routed through the Scheduled path inside
+                // `compute_interactions` for kinematic_only bodies,
+                // so a kinematic child's thermal state still advances
+                // and `radiation_force` is still published. Mirrors
+                // the analogous Bevy fix for `flat_plate_srp_system`
+                // (PR #287). The skip below only gates orbital
+                // trans/rot integration.
                 if body.kinematic_only {
                     continue;
                 }
