@@ -468,9 +468,11 @@ impl<P: Planet> OrbitalElements<P> {
     /// `OrbitalElements<P>` carries no default planet — every call site
     /// must commit to a planet via turbofish, type ascription, or
     /// argument inference. A bare `OrbitalElements::default()` with no
-    /// inference context is rejected (the prior `<P = SelfPlanet>`
-    /// default that silently filled in `SelfPlanet` was removed in
-    /// PR #306):
+    /// inference context is rejected. There is deliberately no
+    /// `<P = SelfPlanet>` fallback: a default would silently relax to
+    /// `<SelfPlanet>` whenever inference had no constraint, hiding
+    /// missing planet-pinning decisions. The type system is meant to
+    /// surface those at compile time, not satisfy them with a wildcard:
     ///
     /// ```compile_fail
     /// use jeod_math::OrbitalElements;

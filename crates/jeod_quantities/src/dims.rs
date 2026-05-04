@@ -110,8 +110,11 @@ pub type MassFlowRate = Quantity<MassFlowRateDim, SI<f64>, f64>;
 /// `GravParam<P>` carries no default planet — every call site must
 /// commit to a planet via turbofish, type ascription, or argument
 /// inference. A bare `GravParam::from_si(...)` with no inference
-/// context is rejected (the prior `<P = SelfPlanet>` default that
-/// silently filled in `SelfPlanet` was removed in PR #306):
+/// context is rejected. There is deliberately no `<P = SelfPlanet>`
+/// fallback: a default would silently relax to `<SelfPlanet>` whenever
+/// inference had no constraint, hiding missing planet-pinning
+/// decisions. The type system is meant to surface those at compile
+/// time, not satisfy them with a wildcard:
 ///
 /// ```compile_fail
 /// use jeod_quantities::prelude::*;
