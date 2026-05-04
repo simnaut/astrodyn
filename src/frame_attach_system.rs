@@ -56,6 +56,8 @@
 //!   the integrator sees the frame-derived state when deciding to
 //!   skip via the `FrameAttachedC` filter).
 
+use std::collections::HashSet;
+
 use bevy::ecs::message::MessageReader;
 use bevy::ecs::system::ParamSet;
 use bevy::prelude::*;
@@ -87,6 +89,14 @@ use crate::RootFrameEntityR;
 ///   [`FrameAttachedC`]: a silent overwrite would lose the original
 ///   parent-frame relationship and leave the captured offset
 ///   desynchronized from the body's actual position.
+/// - Two [`FrameAttachEvent`]s in the same tick target the same
+///   entity: only the first event's `commands.insert` will land before
+///   the apply boundary, so a `Query<&FrameAttachedC>` check alone
+///   cannot observe the in-flight insert. The second event would
+///   silently overwrite the first's offset / `t_parent_body` /
+///   `parent_frame`, masking paired-event bugs in mission code. A
+///   per-call `HashSet` of bodies that have already had an insert
+///   queued this tick rejects the duplicate before the queue grows.
 /// - A [`FrameAttachEvent`] targets an entity that has a
 ///   [`MassChildOf`] parent: JEOD's `attach_to_frame` writes the
 ///   attachment on the root body, never on a child body; mixing
@@ -96,6 +106,11 @@ use crate::RootFrameEntityR;
 /// - A [`FrameDetachEvent`] targets an entity that does not currently
 ///   carry [`FrameAttachedC`]: silently no-op'ing would mask
 ///   paired-event bugs in mission code.
+/// - Two [`FrameDetachEvent`]s in the same tick target the same
+///   entity: same in-flight `commands.remove` blind spot as the
+///   double-attach case above. Tracked through the same per-call
+///   `HashSet` so the second detach panics rather than silently
+///   no-op'ing.
 // JEOD_INV: DB.21 — only unattached bodies integrate (frame-attach gate)
 // JEOD_INV: IG.37 — multi-step integrator history reset on topology change
 #[allow(clippy::type_complexity)]
@@ -107,12 +122,34 @@ pub fn frame_attach_system(
     has_mass_parent: Query<&MassChildOf>,
     mut integrators: Query<(Option<&mut GaussJacksonStateC>, Option<&mut Abm4StateC>)>,
 ) {
+    // Bevy's `Commands` queue is not flushed until the next system
+    // boundary, so two events in the same `MessageReader` batch both
+    // see the pre-tick component snapshot via `already_frame_attached`
+    // / `has_mass_parent`. Tracking bodies whose insert/remove has
+    // already been queued in this call closes the window — without it
+    // the second event silently overwrites the first's
+    // `FrameAttachedC` (or no-ops the first detach), violating the
+    // fail-loud contract.
+    let mut attached_this_tick: HashSet<Entity> = HashSet::new();
+    let mut detached_this_tick: HashSet<Entity> = HashSet::new();
+
     for evt in attach_events.read() {
-        // Reject double-attach. Reading from the query gives us the
-        // pre-event state of the world (attach events processed this
-        // tick haven't run their `commands.insert` yet), so we can
-        // also reject two simultaneous attach events on the same
-        // entity by tracking the inserts we've already queued.
+        // Reject a second attach event for an entity that already had
+        // one queued earlier in this same tick. The
+        // `already_frame_attached` query reflects the pre-tick
+        // component snapshot only; in-flight `commands.insert` calls
+        // are invisible to it until the next apply boundary.
+        assert!(
+            !attached_this_tick.contains(&evt.body),
+            "FrameAttachEvent: body {:?} already had a FrameAttachEvent processed \
+             earlier in this tick. Two simultaneous attach events on the same \
+             body would silently overwrite the first event's offset and \
+             `t_parent_body` (the queued `commands.insert` is invisible to the \
+             component query until the next apply boundary). Coalesce duplicate \
+             events in mission code, or send a FrameDetachEvent on the \
+             intervening tick before re-attaching.",
+            evt.body
+        );
         assert!(
             already_frame_attached.get(evt.body).is_err(),
             "FrameAttachEvent: body {:?} is already frame-attached. Send a \
@@ -141,6 +178,7 @@ pub fn frame_attach_system(
             offset: evt.offset,
             t_parent_body: evt.t_parent_body,
         });
+        attached_this_tick.insert(evt.body);
 
         // Reset multi-step integrator history.
         if let Ok((gj, abm4)) = integrators.get_mut(evt.body) {
@@ -154,6 +192,19 @@ pub fn frame_attach_system(
     }
 
     for evt in detach_events.read() {
+        // Same in-flight blind spot as the attach loop: a queued
+        // `commands.remove` won't show up in `already_frame_attached`
+        // until the next apply boundary, so a second detach event on
+        // the same body would silently pass the component check.
+        assert!(
+            !detached_this_tick.contains(&evt.body),
+            "FrameDetachEvent: body {:?} already had a FrameDetachEvent processed \
+             earlier in this tick. Two simultaneous detach events would silently \
+             no-op the second one (the queued `commands.remove` is invisible to \
+             the component query until the next apply boundary). Coalesce \
+             duplicate events in mission code.",
+            evt.body
+        );
         assert!(
             already_frame_attached.get(evt.body).is_ok(),
             "FrameDetachEvent: body {:?} is not currently frame-attached. \
@@ -163,6 +214,7 @@ pub fn frame_attach_system(
         );
 
         commands.entity(evt.body).remove::<FrameAttachedC>();
+        detached_this_tick.insert(evt.body);
 
         if let Ok((gj, abm4)) = integrators.get_mut(evt.body) {
             if let Some(mut state) = gj {
@@ -437,6 +489,77 @@ mod tests {
             !app.world().entity(body).contains::<FrameAttachedC>(),
             "FrameAttachedC should have been removed after FrameDetachEvent"
         );
+    }
+
+    /// Two `FrameAttachEvent`s targeting the same body in the same
+    /// tick must panic with the duplicate-attach diagnostic.
+    ///
+    /// Without per-call deduplication, only the first event's
+    /// `commands.insert` lands before the apply boundary, so the
+    /// component-only check (`already_frame_attached.get(...).is_err()`)
+    /// passes for both events. The second event would then silently
+    /// overwrite the first event's `parent_frame` / `offset` /
+    /// `t_parent_body`, masking paired-event bugs in mission code.
+    /// The fail-loud rule requires a panic instead.
+    #[test]
+    #[should_panic(expected = "already had a FrameAttachEvent processed earlier in this tick")]
+    fn duplicate_attach_event_in_same_tick_panics() {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, JeodPlugin));
+
+        let body = app.world_mut().spawn_empty().id();
+        let parent_frame = **app.world().resource::<RootFrameEntityR>();
+        let mut messages = app
+            .world_mut()
+            .resource_mut::<bevy::ecs::message::Messages<FrameAttachEvent>>();
+        messages.write(FrameAttachEvent {
+            body,
+            parent_frame,
+            offset: DVec3::new(1.0, 0.0, 0.0),
+            t_parent_body: glam::DMat3::IDENTITY,
+        });
+        messages.write(FrameAttachEvent {
+            body,
+            parent_frame,
+            offset: DVec3::new(2.0, 0.0, 0.0),
+            t_parent_body: glam::DMat3::IDENTITY,
+        });
+
+        step_bevy(&mut app, 1, 0.1);
+    }
+
+    /// Two `FrameDetachEvent`s targeting the same body in the same
+    /// tick must panic with the duplicate-detach diagnostic.
+    ///
+    /// Same in-flight `commands.remove` blind spot as the duplicate-
+    /// attach case: the queued removal isn't visible to
+    /// `already_frame_attached` until the next apply boundary.
+    #[test]
+    #[should_panic(expected = "already had a FrameDetachEvent processed earlier in this tick")]
+    fn duplicate_detach_event_in_same_tick_panics() {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, JeodPlugin));
+
+        let body = app.world_mut().spawn_empty().id();
+        let parent_frame = **app.world().resource::<RootFrameEntityR>();
+        app.world_mut()
+            .resource_mut::<bevy::ecs::message::Messages<FrameAttachEvent>>()
+            .write(FrameAttachEvent {
+                body,
+                parent_frame,
+                offset: DVec3::ZERO,
+                t_parent_body: glam::DMat3::IDENTITY,
+            });
+        step_bevy(&mut app, 1, 0.1);
+        assert!(app.world().entity(body).contains::<FrameAttachedC>());
+
+        let mut messages = app
+            .world_mut()
+            .resource_mut::<bevy::ecs::message::Messages<FrameDetachEvent>>();
+        messages.write(FrameDetachEvent { body });
+        messages.write(FrameDetachEvent { body });
+
+        step_bevy(&mut app, 1, 0.1);
     }
 
     /// Schedule-order regression for issue #309 thread 1.
