@@ -21,8 +21,8 @@
 use bevy::prelude::*;
 use bevy_jeod::{
     DynamicsConfigC, ExternalForceC, ExternalTorqueC, FrameDerivativesC, GravityControlsC,
-    JeodPlugin, MassBodyIdC, MassChildOf, MassPropertiesC, MassTreeR, RotationalStateC,
-    TotalForceC, TranslationalStateC,
+    JeodPlugin, KinematicChildC, MassBodyIdC, MassChildOf, MassPropertiesC, MassTreeR,
+    RotationalStateC, TotalForceC, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
 use jeod_dynamics::{IntegratorType, MassProperties};
@@ -169,6 +169,14 @@ fn build_bevy_app() -> (App, Entity, Entity) {
             // FixedUpdate tick already sees the chain. Mirrors the
             // runner's `add_body_to_tree` + `attach` setup.
             MassChildOf::with_rotation(parent, link_offset(), link_t_parent_child()),
+            // Pin the child as kinematic-only up front rather than
+            // letting `wrench_aggregation_system` infer the marker
+            // from topology on the first tick. The integration system
+            // gates on `Without<KinematicChildC>`, so without an
+            // explicit insertion the test would depend on the inferral
+            // running before integration on tick 0 — order-fragile
+            // behaviour the parity check shouldn't pivot on.
+            KinematicChildC,
             // Stale state — propagation must overwrite both.
             TranslationalStateC::default(),
             RotationalStateC::default(),
