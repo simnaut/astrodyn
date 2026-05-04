@@ -84,10 +84,17 @@ fn build_app(planet_name: &str, planet: &PlanetConfig) -> (App, Entity, Entity) 
 }
 
 fn assert_dvec3_eq(label: &str, a: DVec3, b: DVec3) {
-    assert!(
-        a.abs_diff_eq(b, 0.0),
-        "{label} not bit-identical: a={a:?}, b={b:?}"
-    );
+    // Per-component `to_bits()` equality so the assertion really is a
+    // bit-identity fence — `DVec3::abs_diff_eq(.., 0.0)` only checks
+    // numeric equality (`+0.0 == -0.0`, NaN-payload-insensitive) which
+    // would let bit-distinct `FrameOrigin` / `RelativeFrameState`
+    // results pass here despite the panic message claiming
+    // bit-identical. The two helpers must produce the same bits for
+    // every code path, not just the same numeric value.
+    let bits_eq = a.x.to_bits() == b.x.to_bits()
+        && a.y.to_bits() == b.y.to_bits()
+        && a.z.to_bits() == b.z.to_bits();
+    assert!(bits_eq, "{label} not bit-identical: a={a:?}, b={b:?}");
 }
 
 /// `FrameOrigin::origin_in_root(root, root)` returns
