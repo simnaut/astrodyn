@@ -917,3 +917,113 @@ fn sibling_joint_kinematics_systems_are_public() {
     }
     _assert_is_system_fn();
 }
+
+/// An entity carrying two kinematic-spec components must be rejected
+/// at `Startup`. The four driver systems use `Without<...>` filters
+/// for parallel scheduling, which would otherwise turn this
+/// misconfiguration into a silent stale-state read; the fail-loud
+/// guard prevents that.
+#[test]
+#[should_panic(expected = "mutually exclusive")]
+fn stacked_joint_specs_panic_at_startup() {
+    let const_spec = JointKinematicsSpec {
+        axis_in_parent: DVec3::Z,
+        rate_rad_per_s: 0.1,
+        initial_angle_rad: 0.0,
+    };
+    let close_spec = ClosureJointKinematicsSpec {
+        axis_in_parent: DVec3::X,
+        fixed_angle_rad: 0.5,
+    };
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.add_plugins(JeodPlugin);
+    app.world_mut().spawn((
+        JointKinematicsC(const_spec),
+        ClosureJointKinematicsC(close_spec),
+    ));
+    // Run the Startup schedule explicitly; the validation system
+    // panics inside it before any FixedUpdate tick begins.
+    app.world_mut().run_schedule(Startup);
+}
+
+/// Three stacked specs must surface every offending component name in
+/// the diagnostic so a mission engineer can identify and remove them
+/// without bisecting.
+#[test]
+#[should_panic(expected = "JointKinematicsC")]
+fn stacked_joint_specs_diagnostic_names_all_components() {
+    let const_spec = JointKinematicsSpec {
+        axis_in_parent: DVec3::Z,
+        rate_rad_per_s: 0.1,
+        initial_angle_rad: 0.0,
+    };
+    let sin_spec = SinusoidalJointKinematicsSpec {
+        axis_in_parent: DVec3::Y,
+        amplitude_rad: 0.2,
+        omega_rad_per_s: 0.05,
+        phase_rad: 0.0,
+        offset_rad: 0.0,
+    };
+    let close_spec = ClosureJointKinematicsSpec {
+        axis_in_parent: DVec3::X,
+        fixed_angle_rad: 0.5,
+    };
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.add_plugins(JeodPlugin);
+    app.world_mut().spawn((
+        JointKinematicsC(const_spec),
+        SinusoidalJointKinematicsC(sin_spec),
+        ClosureJointKinematicsC(close_spec),
+    ));
+    app.world_mut().run_schedule(Startup);
+}
+
+/// A correctly-configured config — every kinematic spec on a
+/// distinct entity — must pass the validation guard. This guards
+/// against false positives that would block legitimate multi-joint
+/// articulation chains.
+#[test]
+fn distinct_kinematic_entities_pass_startup_validation() {
+    let const_spec = JointKinematicsSpec {
+        axis_in_parent: DVec3::Z,
+        rate_rad_per_s: 0.1,
+        initial_angle_rad: 0.0,
+    };
+    let sin_spec = SinusoidalJointKinematicsSpec {
+        axis_in_parent: DVec3::Y,
+        amplitude_rad: 0.2,
+        omega_rad_per_s: 0.05,
+        phase_rad: 0.0,
+        offset_rad: 0.0,
+    };
+    let close_spec = ClosureJointKinematicsSpec {
+        axis_in_parent: DVec3::X,
+        fixed_angle_rad: 0.5,
+    };
+    let multi_spec = MultiDofJointKinematicsSpec::from_slice(&[
+        SingleDofKinematics::ConstantRate(const_spec),
+        SingleDofKinematics::Closure(close_spec),
+    ]);
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.add_plugins(JeodPlugin);
+    app.world_mut().spawn(JointKinematicsC(const_spec));
+    app.world_mut().spawn(SinusoidalJointKinematicsC(sin_spec));
+    app.world_mut().spawn(ClosureJointKinematicsC(close_spec));
+    app.world_mut().spawn(MultiDofJointKinematicsC(multi_spec));
+
+    // Startup must not panic; the four entities each carry a single
+    // spec.
+    app.world_mut().run_schedule(Startup);
+
+    // A subsequent FixedUpdate tick should also succeed: the
+    // `Without<...>` filters mean each driver writes its own
+    // entity's storage and skips the others'.
+    step_once(&mut app);
+}

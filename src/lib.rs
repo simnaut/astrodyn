@@ -271,6 +271,15 @@ impl Plugin for JeodPlugin {
                 // body-frame registration pass.
                 systems::sync_body_mass_point_ref_system
                     .after(systems::register_body_frames_system),
+                // Reject startup configs where a single frame entity
+                // carries multiple kinematic-spec components: the four
+                // driver systems use `Without<...>` filters to advertise
+                // pairwise-disjoint queries to the scheduler, so an
+                // entity with two specs would be silently dropped from
+                // every driver and propagate stale `FrameRotC` /
+                // `FrameAngVelC` instead of panicking. The fail-loud
+                // rule forbids that silent path.
+                systems::validate_joint_kinematics_exclusivity,
             ),
         );
         app.add_systems(
@@ -423,13 +432,31 @@ impl Plugin for JeodPlugin {
                 // `add_systems` call carries the system.
                 systems::joint_kinematics_system.in_set(JeodSet::EphemerisUpdate),
                 // Sibling kinematic-joint drivers for the richer specs
-                // (sinusoidal, closure, multi-DOF). Same scheduling
-                // story as `joint_kinematics_system`: all four write
-                // `FrameRotC` / `FrameAngVelC` on disjoint entity sets
-                // (each entity carries at most one of the four
-                // kinematic-spec components — the components are
-                // semantic alternatives, not stackable), so they
-                // commute under EphemerisUpdate's parallelism.
+                // (sinusoidal, closure, multi-DOF). All four write
+                // `FrameRotC` / `FrameAngVelC` and run inside the same
+                // `EphemerisUpdate` set; pairwise disjointness on
+                // those mutable accesses is enforced two ways so the
+                // scheduler can dispatch them in parallel without a
+                // borrow conflict and so a misconfigured entity can't
+                // silently drop out of the pipeline:
+                //
+                // * **Per-system `Without<...>` filters** — each
+                //   driver excludes the other three spec components,
+                //   so the queries are structurally disjoint at the
+                //   `Query` level. This is the signal Bevy needs to
+                //   parallelize the four systems on the same set.
+                // * **Startup validation** —
+                //   `validate_joint_kinematics_exclusivity` walks
+                //   every frame entity once at `Startup` and panics
+                //   loudly if any entity carries more than one spec.
+                //   Without this, the `Without<...>` filters would
+                //   turn a stacked-spec misconfiguration into a
+                //   silent stale-state read; the fail-loud rule
+                //   forbids that.
+                //
+                // Spec components are semantic alternatives, not
+                // stackable: a joint is *either* constant-rate, *or*
+                // sinusoidal, *or* closure, *or* multi-DOF.
                 systems::sinusoidal_joint_kinematics_system.in_set(JeodSet::EphemerisUpdate),
                 systems::closure_joint_kinematics_system.in_set(JeodSet::EphemerisUpdate),
                 systems::multi_dof_joint_kinematics_system.in_set(JeodSet::EphemerisUpdate),

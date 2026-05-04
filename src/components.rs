@@ -828,7 +828,7 @@ impl From<jeod_sim::JointKinematicsSpec> for JointKinematicsC {
 /// The `#[require]` triplet matches [`JointKinematicsC`] so spawning a
 /// joint frame entity carrying this component automatically materializes
 /// the [`FrameTransC`] / [`FrameRotC`] / [`FrameAngVelC`] frame-tree
-/// triplet — `RelativeFrameState` walks across the joint stay
+/// triplet, so `RelativeFrameState` walks across the joint remain
 /// well-defined.
 ///
 /// Wraps [`jeod_sim::SinusoidalJointKinematicsSpec`] one-to-one. Mission

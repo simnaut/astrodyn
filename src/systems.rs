@@ -1220,9 +1220,28 @@ pub fn planet_fixed_rotation_system(
 /// state — there is no torque, inertia, or momentum. Joint dynamics
 /// (free-swinging joints, IK, constraint-derived joint forces) are
 /// out of scope; see the deferred-dynamics meta.
+///
+/// The `Without<...>` filters on the three sibling kinematic-spec
+/// components make this query structurally disjoint from the
+/// sinusoidal / closure / multi-DOF drivers, so Bevy's scheduler
+/// can dispatch the four systems in parallel under
+/// `JeodSet::EphemerisUpdate` without a runtime borrow conflict on
+/// `FrameRotC` / `FrameAngVelC`. An entity that accidentally carries
+/// more than one kinematic spec is silently dropped from every
+/// driver's query — `validate_joint_kinematics_exclusivity` runs at
+/// `Startup` to reject such misconfigurations loudly before any
+/// driver tick can mask them.
+#[allow(clippy::type_complexity)]
 pub fn joint_kinematics_system(
     sim_time: Res<SimulationTimeR>,
-    mut query: Query<(&JointKinematicsC, &mut FrameRotC, &mut FrameAngVelC)>,
+    mut query: Query<
+        (&JointKinematicsC, &mut FrameRotC, &mut FrameAngVelC),
+        (
+            Without<SinusoidalJointKinematicsC>,
+            Without<ClosureJointKinematicsC>,
+            Without<MultiDofJointKinematicsC>,
+        ),
+    >,
 ) {
     let elapsed = sim_time.tai_seconds;
     for (spec, mut rot, mut ang_vel) in &mut query {
@@ -1247,13 +1266,27 @@ pub fn joint_kinematics_system(
 /// the joint frame's rotation / angular velocity must be current
 /// before any consumer that walks the frame tree (gravity, derived
 /// state, integration) reads them.
+///
+/// The `Without<...>` filters mirror the contract documented on
+/// [`joint_kinematics_system`]: the four kinematic-spec drivers are
+/// pairwise-disjoint at the query level so Bevy can schedule them in
+/// parallel; `validate_joint_kinematics_exclusivity` rejects
+/// stacked-spec misconfigurations at `Startup`.
+#[allow(clippy::type_complexity)]
 pub fn sinusoidal_joint_kinematics_system(
     sim_time: Res<SimulationTimeR>,
-    mut query: Query<(
-        &SinusoidalJointKinematicsC,
-        &mut FrameRotC,
-        &mut FrameAngVelC,
-    )>,
+    mut query: Query<
+        (
+            &SinusoidalJointKinematicsC,
+            &mut FrameRotC,
+            &mut FrameAngVelC,
+        ),
+        (
+            Without<JointKinematicsC>,
+            Without<ClosureJointKinematicsC>,
+            Without<MultiDofJointKinematicsC>,
+        ),
+    >,
 ) {
     let elapsed = sim_time.tai_seconds;
     for (spec, mut rot, mut ang_vel) in &mut query {
@@ -1274,9 +1307,23 @@ pub fn sinusoidal_joint_kinematics_system(
 /// [`crate::JeodSet::EphemerisUpdate`] alongside
 /// `joint_kinematics_system` so the closure-pinned frame's rotation
 /// is materialized before any frame-tree consumer reads it.
+///
+/// The `Without<...>` filters mirror the contract documented on
+/// [`joint_kinematics_system`]: the four kinematic-spec drivers are
+/// pairwise-disjoint at the query level so Bevy can schedule them in
+/// parallel; `validate_joint_kinematics_exclusivity` rejects
+/// stacked-spec misconfigurations at `Startup`.
+#[allow(clippy::type_complexity)]
 pub fn closure_joint_kinematics_system(
     sim_time: Res<SimulationTimeR>,
-    mut query: Query<(&ClosureJointKinematicsC, &mut FrameRotC, &mut FrameAngVelC)>,
+    mut query: Query<
+        (&ClosureJointKinematicsC, &mut FrameRotC, &mut FrameAngVelC),
+        (
+            Without<JointKinematicsC>,
+            Without<SinusoidalJointKinematicsC>,
+            Without<MultiDofJointKinematicsC>,
+        ),
+    >,
 ) {
     let elapsed = sim_time.tai_seconds;
     for (spec, mut rot, mut ang_vel) in &mut query {
@@ -1297,9 +1344,23 @@ pub fn closure_joint_kinematics_system(
 /// chain of N single-DOF joint entities walked through the frame
 /// tree. Scheduled in [`crate::JeodSet::EphemerisUpdate`] for the
 /// same reason as the other joint-kinematics systems.
+///
+/// The `Without<...>` filters mirror the contract documented on
+/// [`joint_kinematics_system`]: the four kinematic-spec drivers are
+/// pairwise-disjoint at the query level so Bevy can schedule them in
+/// parallel; `validate_joint_kinematics_exclusivity` rejects
+/// stacked-spec misconfigurations at `Startup`.
+#[allow(clippy::type_complexity)]
 pub fn multi_dof_joint_kinematics_system(
     sim_time: Res<SimulationTimeR>,
-    mut query: Query<(&MultiDofJointKinematicsC, &mut FrameRotC, &mut FrameAngVelC)>,
+    mut query: Query<
+        (&MultiDofJointKinematicsC, &mut FrameRotC, &mut FrameAngVelC),
+        (
+            Without<JointKinematicsC>,
+            Without<SinusoidalJointKinematicsC>,
+            Without<ClosureJointKinematicsC>,
+        ),
+    >,
 ) {
     let elapsed = sim_time.tai_seconds;
     for (spec, mut rot, mut ang_vel) in &mut query {
@@ -1309,6 +1370,95 @@ pub fn multi_dof_joint_kinematics_system(
         rot.t_parent_this = q_parent_this.left_quat_to_transformation();
         ang_vel.0 = ang_vel_this;
     }
+}
+
+/// Startup-time guard that asserts at most one of the four
+/// joint-kinematic spec components is present on any single entity.
+///
+/// The four joint-kinematic drivers
+/// ([`joint_kinematics_system`], [`sinusoidal_joint_kinematics_system`],
+/// [`closure_joint_kinematics_system`], [`multi_dof_joint_kinematics_system`])
+/// each carry `Without<...>` filters for the other three spec
+/// components so Bevy's scheduler can dispatch them in parallel under
+/// `JeodSet::EphemerisUpdate` without contending for `FrameRotC` /
+/// `FrameAngVelC`. That filter discipline turns an entity that
+/// accidentally carries two specs into a *silent drop* from every
+/// driver — its `FrameRotC` would never be written and the joint
+/// frame would advertise stale (or default-identity) state to every
+/// downstream `RelativeFrameState` walk.
+///
+/// Per the project's fail-loud rule, that misconfiguration must
+/// panic at the earliest detection point with a diagnostic that
+/// names the offending entity and the specs it carries. This guard
+/// runs at `Startup` (before the first `FixedUpdate` tick) and walks
+/// every entity carrying at least one kinematic spec via
+/// [`Has<...>`] flags; any entity with more than one spec is
+/// reported in a single panic message.
+///
+/// The four spec components are declarative alternatives — a joint
+/// is *either* constant-rate, *or* sinusoidal, *or* a closure pose,
+/// *or* a multi-DOF chain — so stacking two of them has no
+/// meaningful semantics. If a future kinematic style needs to
+/// compose with an existing one, that composition belongs in a new
+/// dedicated spec (e.g., extend `SingleDofKinematics` and route
+/// through `MultiDofJointKinematicsC`), not in two parallel
+/// drivers racing for the same storage.
+///
+/// # Panics
+/// Panics if any entity carries more than one of `JointKinematicsC`,
+/// [`SinusoidalJointKinematicsC`], [`ClosureJointKinematicsC`], or
+/// [`MultiDofJointKinematicsC`]. The message lists every offending
+/// entity together with the specs it carries.
+#[allow(clippy::type_complexity)]
+pub fn validate_joint_kinematics_exclusivity(
+    query: Query<
+        (
+            Entity,
+            Has<JointKinematicsC>,
+            Has<SinusoidalJointKinematicsC>,
+            Has<ClosureJointKinematicsC>,
+            Has<MultiDofJointKinematicsC>,
+        ),
+        Or<(
+            With<JointKinematicsC>,
+            With<SinusoidalJointKinematicsC>,
+            With<ClosureJointKinematicsC>,
+            With<MultiDofJointKinematicsC>,
+        )>,
+    >,
+) {
+    let mut offenders: Vec<String> = Vec::new();
+    for (entity, has_const, has_sin, has_close, has_multi) in &query {
+        let count = usize::from(has_const)
+            + usize::from(has_sin)
+            + usize::from(has_close)
+            + usize::from(has_multi);
+        if count > 1 {
+            let mut names: Vec<&'static str> = Vec::new();
+            if has_const {
+                names.push("JointKinematicsC");
+            }
+            if has_sin {
+                names.push("SinusoidalJointKinematicsC");
+            }
+            if has_close {
+                names.push("ClosureJointKinematicsC");
+            }
+            if has_multi {
+                names.push("MultiDofJointKinematicsC");
+            }
+            offenders.push(format!("{entity:?} carries [{}]", names.join(", ")));
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "Joint-kinematics spec components are mutually exclusive — each frame entity \
+         must carry at most one of JointKinematicsC, SinusoidalJointKinematicsC, \
+         ClosureJointKinematicsC, MultiDofJointKinematicsC. Offending entities: {}. \
+         Fix: pick a single kinematic style per joint frame; for composed motions \
+         use MultiDofJointKinematicsC with a chain of SingleDofKinematics stages.",
+        offenders.join("; ")
+    );
 }
 
 /// Computes tidal ΔC20 for each gravity source that has a `TidalConfigC`.
