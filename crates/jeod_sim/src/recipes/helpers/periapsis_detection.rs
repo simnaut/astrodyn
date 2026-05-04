@@ -6,6 +6,9 @@
 //! previous step).
 
 use glam::DVec3;
+use jeod_quantities::aliases::{Position, Velocity};
+use jeod_quantities::dims::GravParam;
+use jeod_quantities::frame::{Planet, PlanetInertial};
 
 /// A periapsis-passage event: the simulation time at the crossing
 /// (linear interpolation against the radial-velocity sign change is
@@ -68,37 +71,67 @@ impl PeriapsisDetector {
     }
 }
 
-/// Sweep an iterator of `(time, position, velocity)` samples and
-/// return all detected periapsis events. The orbital elements are
-/// computed at the post-crossing sample via
-/// `OrbitalElements::from_cartesian_typed`, giving longitude of
+/// Sweep an iterator of `(time, position, velocity)` samples taken in
+/// `PlanetInertial<P>` and return all detected periapsis events. The
+/// orbital elements are computed at the post-crossing sample via
+/// `OrbitalElements::<P>::from_cartesian_typed`, giving longitude of
 /// perihelion `arg_periapsis + long_asc_node`.
+///
+/// `P: Planet` ties the gravitational parameter to the inertial frame
+/// of the position/velocity samples — the compiler refuses a `mu_sun`
+/// paired with `Position<PlanetInertial<Earth>>` (or vice versa), so
+/// the planet-tagging guarantee from RF.11 stays structural through
+/// this helper. Callers in `tier3_sim_mercury` pass `<Sun>`; callers
+/// for an Earth-orbit sweep would pass `<Earth>`.
 ///
 /// Used by `tier3_sim_mercury` for both the in-memory sim trace and
 /// the JEOD CSV trace (they share this loop body).
-pub fn detect_periapsis_passages<I>(samples: I, mu: f64) -> Vec<PeriapsisEvent>
+///
+/// # Compile-fail: wrong-planet μ
+///
+/// Pairing the Sun's μ with samples tagged `<Earth>` is rejected at
+/// compile time:
+///
+/// ```compile_fail
+/// use jeod_sim::recipes::helpers::detect_periapsis_passages;
+/// use jeod_quantities::aliases::{Position, Velocity};
+/// use jeod_quantities::dims::GravParam;
+/// use jeod_quantities::frame::{Earth, PlanetInertial, Sun};
+///
+/// let mu_sun = GravParam::<Sun>::from_si(1.327e20);
+/// let samples = std::iter::empty::<(
+///     f64,
+///     Position<PlanetInertial<Earth>>,
+///     Velocity<PlanetInertial<Earth>>,
+/// )>();
+/// // mu is `<Sun>` but samples are `<Earth>` — refuses to compile.
+/// let _ = detect_periapsis_passages(samples, mu_sun);
+/// ```
+pub fn detect_periapsis_passages<P, I>(samples: I, mu: GravParam<P>) -> Vec<PeriapsisEvent>
 where
-    I: IntoIterator<Item = (f64, DVec3, DVec3)>,
+    P: Planet,
+    I: IntoIterator<
+        Item = (
+            f64,
+            Position<PlanetInertial<P>>,
+            Velocity<PlanetInertial<P>>,
+        ),
+    >,
 {
     use jeod_math::OrbitalElements;
-    use jeod_quantities::aliases::{Position, Velocity};
-    use jeod_quantities::ext::F64Ext;
-    use jeod_quantities::frame::{Earth, PlanetInertial};
 
-    let mu_typed = mu.m3_per_s2();
     let mut det = PeriapsisDetector::new();
     let mut events = Vec::new();
     for (t, r, v) in samples {
-        if det.observe(r, v) {
-            let pos_typed = Position::<PlanetInertial<Earth>>::from_raw_si(r);
-            let vel_typed = Velocity::<PlanetInertial<Earth>>::from_raw_si(v);
-            let oe = OrbitalElements::<Earth>::from_cartesian_typed(mu_typed, pos_typed, vel_typed)
-                .unwrap_or_else(|e| {
-                    panic!(
-                        "periapsis_detection: from_cartesian_typed failed at t={t}, \
-                         position={r:?}, velocity={v:?}: {e:?}"
-                    )
-                });
+        let r_raw = r.raw_si();
+        let v_raw = v.raw_si();
+        if det.observe(r_raw, v_raw) {
+            let oe = OrbitalElements::<P>::from_cartesian_typed(mu, r, v).unwrap_or_else(|e| {
+                panic!(
+                    "periapsis_detection: from_cartesian_typed failed at t={t}, \
+                     position={r_raw:?}, velocity={v_raw:?}: {e:?}"
+                )
+            });
             events.push(PeriapsisEvent {
                 time: t,
                 long_perihelion: oe.arg_periapsis + oe.long_asc_node,
