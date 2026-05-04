@@ -496,13 +496,27 @@ pub struct PlanetOmegaC(pub f64);
 /// phantom encodes the planet-inertial framing structurally, so
 /// arithmetic that mixes the body state with a `Position<RootInertial>`
 /// gravity-source position no longer compiles without an explicit
-/// integration-origin shift (RF.10). The shift sites
-/// (`gravity_computation_system`, the SRP / solar-beta / earth-lighting
-/// systems) perform the relabel via `from_raw_si` after applying
-/// the typed origin offset from
-/// [`crate::frame_param::FrameOrigin::origin_in_root`]. Non-shift
-/// consumers (atmosphere, drag, LVLH, geodetic, orbital elements)
-/// already operate in `PlanetInertial<P>` and need no relabel.
+/// integration-origin shift (RF.10). Two relabel categories apply at
+/// consumer call sites and are independent (see
+/// [`TranslationalStateC`] for the full breakdown):
+///
+/// 1. **Integ-origin shift** (arithmetic — adds the origin offset and
+///    relabels `<PlanetInertial<SelfPlanet>>` → `<RootInertial>`).
+///    Required only by shift sites: `gravity_computation_system`, the
+///    SRP / solar-beta / earth-lighting systems. They lift the typed
+///    origin offset from
+///    [`crate::frame_param::FrameOrigin::origin_in_root`] and relabel
+///    via `from_raw_si` at the call site. Non-shift consumers
+///    (atmosphere, drag, LVLH, geodetic, orbital elements) skip this
+///    category — their physics stays in planet-inertial.
+/// 2. **Wildcard `<SelfPlanet>` → concrete `<P>` phantom relabel**
+///    (phantom-only, no arithmetic). Required wherever a typed kernel
+///    is parameterized over a concrete `PlanetInertial<P>` rather than
+///    the wildcard. Drag, LVLH, geodetic, and orbital elements still
+///    apply this relabel via `from_raw_si` at the typed-kernel
+///    boundary even though they skip category 1; only atmosphere
+///    (which feeds the kernel raw `DVec3` via `state.position.raw_si()`)
+///    avoids both categories.
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
 #[reflect(opaque, Component)]
 pub struct IntegSourceC(pub Option<Entity>);
