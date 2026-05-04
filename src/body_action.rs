@@ -53,13 +53,21 @@
 //!
 //! # Scheduling
 //!
-//! [`body_action_system`] is wired by [`crate::JeodPlugin`] to run
-//! before [`crate::JeodSet::EphemerisUpdate`] in the `FixedUpdate`
-//! schedule. That ordering matches JEOD: actions resolve before
-//! ephemeris / gravity / integration consume the new state. Mass
-//! changes from a queued [`jeod_sim::BodyAction::InitMass`]
-//! propagate to [`crate::mass_update_system`] in the same tick (the
-//! latter runs after `EphemerisUpdate` has started).
+//! [`body_action_system`] is wired by [`crate::JeodPlugin`] to run in
+//! the `FixedUpdate` schedule between [`crate::JeodSet::TimeUpdate`]
+//! and [`crate::JeodSet::EphemerisUpdate`]. That ordering matches
+//! JEOD: actions resolve before ephemeris / gravity / integration
+//! consume the new state.
+//!
+//! Both [`body_action_system`] and [`crate::mass_update_system`] live
+//! in that same TimeUpdate→EphemerisUpdate gap, so the plugin pins
+//! `body_action_system` `.before(mass_update_system)` explicitly.
+//! That makes a queued [`jeod_sim::BodyAction::InitMass`] land its
+//! mass replacement (with the `dirty` flag set by this system after
+//! the assignment) *before* the same-tick recompute walks the dirty
+//! flag — so the inverse-mass / inverse-inertia caches are refreshed
+//! before any consumer in `EphemerisUpdate` / `Environment` /
+//! `Interaction` reads them.
 
 use bevy::ecs::message::MessageWriter;
 use bevy::prelude::*;
@@ -255,16 +263,25 @@ pub fn body_action_intake_system(
 ///
 /// # Per-action mutation site
 ///
-/// - `BodyAction::InitMass` → replaces [`MassPropertiesC`]. The
-///   subsequent [`crate::mass_update_system`] picks up the new
-///   `dirty` flag (set by `MassProperties::with_inertia` / `::new`)
-///   and recomputes derived caches the same tick.
+/// - `BodyAction::InitMass` → replaces [`MassPropertiesC`]'s inner
+///   `MassProperties`, then sets `dirty = true` on the replacement.
+///   `MassProperties::new` / `::with_inertia` themselves leave
+///   `dirty = false` (they precompute `inverse_mass` /
+///   `inverse_inertia` from the supplied scalars), so the explicit
+///   flip here is what tells the same-tick
+///   [`crate::mass_update_system`] to walk the entry — its `dirty`
+///   guard makes the recompute a no-op for un-flipped entries, so
+///   marking dirty after every `InitMass` is the safe default that
+///   also covers callers passing a hand-built `MassProperties` with
+///   an out-of-sync `inverse_mass`.
 /// - `BodyAction::InitTrans` /
 ///   `BodyAction::InitTransOrbital` /
 ///   `BodyAction::InitTransLvlh` /
 ///   `BodyAction::InitTransNed` →
-///   replaces [`TranslationalStateC`].
-/// - `BodyAction::InitRot` → replaces [`RotationalStateC`].
+///   replaces [`TranslationalStateC`]. Resets multi-step integrator
+///   history (Gauss–Jackson / ABM4) on the entity (IG.37).
+/// - `BodyAction::InitRot` → replaces [`RotationalStateC`]. Resets
+///   multi-step integrator history on the entity (IG.37).
 ///
 /// # Failure modes
 ///

@@ -458,9 +458,22 @@ impl Plugin for JeodPlugin {
                 // `IntoSystem` limit.
                 body_action::body_action_intake_system
                     .after(systems::sync_body_mass_point_ref_system)
+                    .before(systems::mass_update_system)
                     .before(JeodSet::EphemerisUpdate),
+                // Strictly ordered before `mass_update_system` so a
+                // queued `BodyAction::InitMass` lands its `dirty=true`
+                // mass replacement *before* the per-tick recompute walks
+                // the dirty flag — the recompute then runs against the
+                // newly applied mass on the same tick. The first
+                // `add_systems` call places `mass_update_system`
+                // `.after(JeodSet::TimeUpdate).before(JeodSet::EphemerisUpdate)`,
+                // i.e. in the same TimeUpdate→EphemerisUpdate gap as
+                // `body_action_system` — without this explicit ordering
+                // Bevy is free to schedule the two in either order and
+                // a same-tick mass propagation would be a coin flip.
                 body_action::body_action_system
                     .after(body_action::body_action_intake_system)
+                    .before(systems::mass_update_system)
                     .before(JeodSet::EphemerisUpdate),
                 // Force collection and integration
                 systems::force_collection_system.in_set(JeodSet::ForceCollection),
