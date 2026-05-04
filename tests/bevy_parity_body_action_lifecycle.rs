@@ -31,19 +31,27 @@
 //!
 //! # What is exercised
 //!
+//! Total run length is `STOP_TIME = 300 s` (5 minutes at 32 Hz =
+//! 9 600 ticks); the lifecycle parity question is fully observable in
+//! the first few minutes and the cross-validation only needs enough
+//! samples to surface drift the API would introduce. The full 8-hour
+//! `dyncomp_run2_state.csv` propagation is already covered by
+//! `tier3_simulation_run2_3dof` — this test focuses on lifecycle.
+//!
 //! 1. **Init-time `add → remove → re-add`** — JEOD `mass.py:46-49`
 //!    pattern. The first `add` queues a `MassProperties::new(400_000)`
 //!    action, the `remove` cancels it, then the second `add` queues
 //!    `MassProperties::new(100_000)`. After the first `app.update()`
 //!    only the second action has fired and mass = 100 000.
-//! 2. **Mid-sim mass change** — at `t = 14 400 s` (4 hours into the
-//!    8-hour run) the test queues another mass change to 50 000 kg.
-//!    Because the trajectory is mass-independent under spherical
-//!    point-mass gravity, the cross-validation against the CSV must
-//!    still hold across the change-point.
-//! 3. **Mid-sim `add → remove`** — at `t = 21 600 s` (6 hours) the
-//!    test queues an `InitMass` action with name `"abort_mid_sim"`
-//!    and immediately removes it. The vehicle's mass is unchanged.
+//! 2. **Mid-sim mass change** — at `t = MID_SIM_MASS_CHANGE_TIME`
+//!    (`150 s`, half-way into the run) the test queues another mass
+//!    change to 50 000 kg. Because the trajectory is mass-independent
+//!    under spherical point-mass gravity, the cross-validation against
+//!    the CSV must still hold across the change-point.
+//! 3. **Mid-sim `add → remove`** — at `t = MID_SIM_ADD_REMOVE_TIME`
+//!    (`240 s`) the test queues an `InitMass` action with name
+//!    `"abort_mid_sim"` and immediately removes it. The vehicle's mass
+//!    is unchanged.
 
 mod common;
 
