@@ -131,8 +131,22 @@ fn load_reference_csv() -> Vec<CsvRow> {
     let mut lines = content.lines();
     // Skip the JEOD CSV header (one row of column headers).
     lines.next().expect("CSV header");
+    // Layout (per CLAUDE.md `CSV column layout for log_state_ASCII.csv`):
+    //   col 0: sys.exec.out.time {s}
+    //   col 1: composite_body.state.trans.position[0]
+    //   col 2: composite_body.state.trans.velocity[0]
+    //   col 8: position[1], col 9: velocity[1]
+    //   col 15: position[2], col 16: velocity[2]
+    const EXPECTED_COLS: usize = 17;
     let mut rows = Vec::new();
-    for line in lines {
+    for (row_idx, line) in lines.enumerate() {
+        // Tolerate only truly empty lines (e.g., a trailing newline at EOF).
+        // A non-empty row with too few columns indicates a truncated or
+        // corrupted reference CSV and must fail loudly per the project's
+        // fail-loud rule.
+        if line.trim().is_empty() {
+            continue;
+        }
         let cols: Vec<f64> = line
             .split(',')
             .map(|s| {
@@ -141,15 +155,15 @@ fn load_reference_csv() -> Vec<CsvRow> {
                     .unwrap_or_else(|e| panic!("CSV parse: '{}' -> {e}", s.trim()))
             })
             .collect();
-        // Layout (per CLAUDE.md `CSV column layout for log_state_ASCII.csv`):
-        //   col 0: sys.exec.out.time {s}
-        //   col 1: composite_body.state.trans.position[0]
-        //   col 2: composite_body.state.trans.velocity[0]
-        //   col 8: position[1], col 9: velocity[1]
-        //   col 15: position[2], col 16: velocity[2]
-        if cols.len() < 17 {
-            continue;
-        }
+        assert!(
+            cols.len() >= EXPECTED_COLS,
+            "reference CSV {}: row {} has {} columns, expected at least {}: {:?}",
+            path.display(),
+            row_idx,
+            cols.len(),
+            EXPECTED_COLS,
+            line,
+        );
         rows.push(CsvRow {
             time: cols[0],
             position: DVec3::new(cols[1], cols[8], cols[15]),
