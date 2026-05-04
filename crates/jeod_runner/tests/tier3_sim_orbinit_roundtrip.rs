@@ -85,7 +85,7 @@ fn roundtrip_via_simulation(
 
     let body = sim.body(0);
     use jeod_sim::{F64Ext, PlanetInertial, Vec3Ext};
-    let oe_recovered = OrbitalElements::from_cartesian_typed::<jeod_sim::Earth>(
+    let oe_recovered = OrbitalElements::<jeod_sim::Earth>::from_cartesian_typed(
         F64Ext::m3_per_s2(MU_EARTH),
         body.trans
             .position
@@ -224,7 +224,7 @@ fn tier3_orbinit_roundtrip_circular() {
 
     let body = sim.body(0);
     use jeod_sim::{F64Ext, PlanetInertial, Vec3Ext};
-    let oe_recovered = OrbitalElements::from_cartesian_typed::<jeod_sim::Earth>(
+    let oe_recovered = OrbitalElements::<jeod_sim::Earth>::from_cartesian_typed(
         F64Ext::m3_per_s2(MU_EARTH),
         body.trans
             .position

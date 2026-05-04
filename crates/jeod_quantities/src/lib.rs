@@ -87,7 +87,8 @@
 //! ### Scaffolded but not currently wired
 //!
 //! [`diagnostics::IntoLength`], [`diagnostics::IntoAngle`],
-//! [`diagnostics::IntoGravParam`], [`diagnostics::CompatibleTimeScales`],
+//! [`diagnostics::IntoGravParam`], [`diagnostics::CompatibleGravParam`],
+//! [`diagnostics::CompatibleTimeScales`],
 //! [`diagnostics::CompatibleQuatLayouts`],
 //! [`diagnostics::CompatibleQuatTransforms`],
 //! [`diagnostics::RequiresNormalizedQuat`],

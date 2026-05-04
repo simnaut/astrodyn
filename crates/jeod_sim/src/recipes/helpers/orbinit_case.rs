@@ -5,6 +5,7 @@
 //! `state -> elements -> state` invariance.
 
 use jeod_math::OrbitalElements;
+use jeod_quantities::frame::SelfPlanet;
 
 /// A single orbital-init test case: a label, its starting orbital
 /// elements, and the position-roundtrip tolerance to assert. The
@@ -12,19 +13,28 @@ use jeod_math::OrbitalElements;
 /// — see [the type-system refactor's Phase-0 baseline freeze
 /// policy](../../../../../CLAUDE.md#cross-validation-tolerances) for
 /// why test code (not this struct) owns tolerance values.
+//
+// Elements use `OrbitalElements<SelfPlanet>` because the orbinit-loop
+// callers feed the planet-erased registry-side path; the planet
+// identity is determined at runtime by the surrounding sim, not at
+// the case-construction site.
 #[derive(Debug, Clone)]
 pub struct OrbInitCase {
     /// Test-case identifier used in assertion messages.
     pub label: &'static str,
     /// Starting Keplerian orbital elements.
-    pub elements: OrbitalElements,
+    pub elements: OrbitalElements<SelfPlanet>,
     /// Position roundtrip tolerance in metres for the assertion.
     pub position_tol_m: f64,
 }
 
 impl OrbInitCase {
     /// Build a case from its label, elements, and position tolerance.
-    pub fn new(label: &'static str, elements: OrbitalElements, position_tol_m: f64) -> Self {
+    pub fn new(
+        label: &'static str,
+        elements: OrbitalElements<SelfPlanet>,
+        position_tol_m: f64,
+    ) -> Self {
         Self {
             label,
             elements,

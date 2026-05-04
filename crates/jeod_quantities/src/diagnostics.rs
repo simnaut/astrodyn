@@ -16,7 +16,7 @@ use core::marker::PhantomData;
 use uom::si::{f64::Angle, f64::Length};
 
 use crate::dims::GravParam;
-use crate::frame::Frame;
+use crate::frame::{Frame, Planet};
 use crate::quat::{Layout, NormalizedQuat, Transform};
 use crate::time_scale::TimeScale;
 
@@ -81,22 +81,46 @@ impl IntoAngle for Angle {
 }
 
 /// Fires when a gravitational parameter is expected but a bare `f64` is supplied.
+///
+/// Generic over the planet phantom `P` so the diagnostic carries the
+/// expected source-body identity in the error message — a caller writing
+/// `from_cartesian_typed::<Earth>(0.0, ...)` sees `expected
+/// GravParam<Earth>`, not the planet-erased
+/// `GravParam<SelfPlanet>` form.
 #[diagnostic::on_unimplemented(
-    message = "bare `f64` is not a `GravParam` — attach a unit with `F64Ext`",
-    label = "expected `GravParam` (m³/s²), found `{Self}`",
-    note = "use `.m3_per_s2()` or `.km3_per_s2()` to produce a `GravParam`"
+    message = "bare `f64` is not a `GravParam<{P}>` — attach a unit with `F64Ext`",
+    label = "expected `GravParam<{P}>` (m³/s²), found `{Self}`",
+    note = "use `.m3_per_s2_for::<{P}>()` or `.km3_per_s2_for::<{P}>()` to produce a planet-pinned `GravParam<{P}>`"
 )]
-pub trait IntoGravParam {
-    /// Lift `self` into a typed [`GravParam`] (m³/s²).
-    fn into_grav_param(self) -> GravParam;
+pub trait IntoGravParam<P: Planet> {
+    /// Lift `self` into a typed [`GravParam<P>`] (m³/s²).
+    fn into_grav_param(self) -> GravParam<P>;
 }
 
-impl IntoGravParam for GravParam {
+impl<P: Planet> IntoGravParam<P> for GravParam<P> {
     #[inline]
-    fn into_grav_param(self) -> GravParam {
+    fn into_grav_param(self) -> GravParam<P> {
         self
     }
 }
+
+/// Fires when a [`GravParam`] tagged with planet `PFound` is supplied
+/// where the callee expected `GravParam<PExpected>`. Implemented only
+/// when the planet phantoms match.
+///
+/// This guards the load-bearing mu-vs-frame agreement: a function that
+/// takes `(mu: GravParam<P>, pos: Position<PlanetInertial<P>>, vel:
+/// Velocity<PlanetInertial<P>>)` is structurally guaranteed to receive
+/// matching planet phantoms when this bound is wired into its `where`
+/// clause.
+#[diagnostic::on_unimplemented(
+    message = "gravitational-parameter source mismatch: expected `GravParam<{PExpected}>`, found `GravParam<{PFound}>`",
+    label = "wrong source body: μ for {PFound} cannot stand in for μ of {PExpected}",
+    note = "use the matching `mu_*()` constant or `f64::m3_per_s2_for::<{PExpected}>()` so the planet phantom on μ matches the position/velocity frames"
+)]
+pub trait CompatibleGravParam<PExpected: Planet, PFound: Planet> {}
+
+impl<P: Planet> CompatibleGravParam<P, P> for () {}
 
 /// Fires when a time in scale `TL` is combined with a time in scale `TR`.
 /// Implemented only when the scales match.

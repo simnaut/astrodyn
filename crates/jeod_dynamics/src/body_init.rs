@@ -57,7 +57,8 @@ pub fn init_from_orbital_elements(
     // Build OrbitalElements with the provided Keplerian elements.
     // Following JEOD dyn_body_init_orbit.cc: populate semiparam, angles, true_anom,
     // then call nu_to_anomalies() and to_cartesian().
-    let mut oe = OrbitalElements::default();
+    use jeod_quantities::frame::SelfPlanet;
+    let mut oe = OrbitalElements::<SelfPlanet>::default();
     oe.semi_major_axis = semi_major_axis;
     oe.e_mag = eccentricity;
     oe.inclination = inclination;
@@ -82,14 +83,18 @@ pub fn init_from_orbital_elements(
 /// bit-identical to the untyped variant: the typed entry unwraps
 /// inputs to f64 base SI, calls the existing implementation, and
 /// re-wraps the output.
-pub fn init_from_orbital_elements_typed(
+///
+/// Generic over `P: Planet` so `mu` carries its source-body identity;
+/// the planet phantom is consumed at this boundary and the f64 kernel
+/// runs unchanged.
+pub fn init_from_orbital_elements_typed<P: jeod_quantities::frame::Planet>(
     semi_major_axis: Length,
     eccentricity: f64,
     inclination: Angle,
     raan: Angle,
     arg_periapsis: Angle,
     true_anomaly: Angle,
-    mu: GravParam,
+    mu: GravParam<P>,
 ) -> TranslationalStateTyped<RootInertial> {
     let untyped = init_from_orbital_elements(
         semi_major_axis.get::<meter>(),
@@ -145,7 +150,8 @@ pub fn init_from_mean_anomaly(
     // Following JEOD dyn_body_init_orbit.cc lines 302-318:
     // Populate elem with semiparam, e_mag, inclination, arg_periapsis, long_asc_node,
     // set mean_anom, then call mean_anom_to_nu() to solve Kepler's equation.
-    let mut oe = OrbitalElements::default();
+    use jeod_quantities::frame::SelfPlanet;
+    let mut oe = OrbitalElements::<SelfPlanet>::default();
     oe.semi_major_axis = semi_major_axis;
     oe.e_mag = eccentricity;
     oe.inclination = inclination;
@@ -589,8 +595,8 @@ mod tests {
 
         // Convert back to orbital elements via the typed sibling.
         use jeod_quantities::frame::{Earth, PlanetInertial};
-        let oe = OrbitalElements::from_cartesian_typed::<Earth>(
-            jeod_quantities::ext::F64Ext::m3_per_s2(EARTH_MU),
+        let oe = OrbitalElements::<Earth>::from_cartesian_typed(
+            jeod_quantities::ext::F64Ext::m3_per_s2_for::<Earth>(EARTH_MU),
             state.position.m_at::<PlanetInertial<Earth>>(),
             state.velocity.m_per_s_at::<PlanetInertial<Earth>>(),
         )
@@ -862,7 +868,7 @@ mod tests {
             Angle::new::<radian>(raan),
             Angle::new::<radian>(argp),
             Angle::new::<radian>(nu),
-            EARTH_MU.m3_per_s2(),
+            EARTH_MU.m3_per_s2_for::<jeod_quantities::frame::Earth>(),
         );
 
         assert_eq!(typed.position.raw_si(), untyped.position);

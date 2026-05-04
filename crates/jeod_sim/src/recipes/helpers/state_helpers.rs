@@ -83,7 +83,7 @@ pub fn state_from_elements(
     nu: f64,
     mu: f64,
 ) -> TranslationalState {
-    let mut oe = OrbitalElements::default();
+    let mut oe = OrbitalElements::<jeod_quantities::frame::SelfPlanet>::default();
     oe.semi_major_axis = a;
     oe.e_mag = e;
     oe.inclination = i;

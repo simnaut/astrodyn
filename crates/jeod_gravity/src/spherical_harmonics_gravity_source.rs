@@ -8,6 +8,7 @@
 //! Gottlieb helper arrays to be filled by [`SphericalHarmonicsData::new`].
 
 use jeod_quantities::dims::GravParam;
+use jeod_quantities::frame::SelfPlanet;
 use uom::si::f64::Length;
 
 /// Spherical harmonics gravity model data.
@@ -206,18 +207,16 @@ impl SphericalHarmonicsData {
 
     /// Typed accessor for the gravitational parameter μ.
     ///
-    /// Returns [`GravParam`] (m³/s²) — the same numeric value as the
-    /// public `mu` field, just with the dimensional annotation
-    /// attached. Useful when handing the source's μ to typed APIs
-    /// like [`super::tides::TidalConfigTyped`] or third-body
-    /// differential-acceleration callers.
+    /// Returns [`GravParam<SelfPlanet>`] (m³/s²) — the same numeric value as
+    /// the public `mu` field, just with the dimensional annotation
+    /// attached. The planet phantom is [`SelfPlanet`] because the
+    /// source data is keyed by runtime ID (the central body identity is
+    /// not load-bearing in this struct's static type). Mission code that
+    /// knows the planet at compile time can relabel via
+    /// [`GravParam::relabel`] at the call site.
     #[inline]
-    pub fn mu_typed(&self) -> GravParam {
-        GravParam {
-            dimension: core::marker::PhantomData,
-            units: core::marker::PhantomData,
-            value: self.mu,
-        }
+    pub fn mu_typed(&self) -> GravParam<SelfPlanet> {
+        GravParam::<SelfPlanet>::from_si(self.mu)
     }
 
     /// Typed accessor for the reference radius.

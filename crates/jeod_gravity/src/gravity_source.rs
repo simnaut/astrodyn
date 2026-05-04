@@ -9,6 +9,7 @@
 
 use crate::spherical_harmonics_gravity_source::SphericalHarmonicsData;
 use jeod_quantities::dims::GravParam;
+use jeod_quantities::frame::SelfPlanet;
 
 /// Per-body gravity payload: gravitational parameter `mu` plus the
 /// [`GravityModel`] that selects between point-mass and
@@ -34,13 +35,22 @@ pub enum GravityModel {
 
 /// Typed sibling of [`GravitySource`].
 ///
-/// `mu` carries the [`GravParam`] dimensional type (`m³/s²`) instead
-/// of bare `f64`. The model variant is unchanged — `GravityModel` is
-/// an enum whose data layout the type system has nothing to add to.
+/// `mu` carries the [`GravParam<SelfPlanet>`] dimensional type
+/// (`m³/s²`) instead of bare `f64`. The planet phantom is
+/// [`SelfPlanet`] because the runner stores sources by runtime ID —
+/// the source's planet identity is determined by which entity
+/// references it, not by the source struct's static type. Mission
+/// code that knows the central body at compile time should pin the
+/// planet at the consumer side: e.g.
+/// `OrbitalElements::<Earth>::from_cartesian_typed(mu_earth(), …)`
+/// where `mu_earth()` returns `GravParam<Earth>`.
+///
+/// The model variant is unchanged — `GravityModel` is an enum whose
+/// data layout the type system has nothing to add to.
 #[derive(Debug, Clone)]
 pub struct GravitySourceTyped {
-    /// Gravitational parameter μ.
-    pub mu: GravParam,
+    /// Gravitational parameter μ (planet-erased: see struct doc).
+    pub mu: GravParam<SelfPlanet>,
     /// Gravity model variant.
     pub model: GravityModel,
 }
@@ -83,11 +93,7 @@ impl GravitySourceTyped {
     #[inline]
     pub fn from_untyped_unchecked(s: &GravitySource) -> Self {
         Self {
-            mu: GravParam {
-                dimension: core::marker::PhantomData,
-                units: core::marker::PhantomData,
-                value: s.mu,
-            },
+            mu: GravParam::<SelfPlanet>::from_si(s.mu),
             model: s.model.clone(),
         }
     }
@@ -96,11 +102,7 @@ impl GravitySourceTyped {
     #[inline]
     pub fn from_untyped(s: GravitySource) -> Self {
         Self {
-            mu: GravParam {
-                dimension: core::marker::PhantomData,
-                units: core::marker::PhantomData,
-                value: s.mu,
-            },
+            mu: GravParam::<SelfPlanet>::from_si(s.mu),
             model: s.model,
         }
     }
