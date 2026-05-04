@@ -85,17 +85,17 @@ use crate::components::{
 /// type directly; either send a [`BodyActionEvent`] or call
 /// [`BodyActionCommandsExt::add_body_action`].
 #[derive(Debug, Clone)]
-pub struct PendingBodyAction {
+pub(crate) struct PendingBodyAction {
     /// Subject entity the action will mutate.
-    pub entity: Entity,
+    pub(crate) entity: Entity,
     /// The action itself.
-    pub action: BodyAction,
+    pub(crate) action: BodyAction,
     /// Optional name used by [`BodyActionEvent::Remove`] to find
     /// this pending action before it fires. JEOD's
     /// `BodyAction::action_name` is also optional; mission code that
     /// never needs to remove an action mid-flight can leave it
     /// `None`.
-    pub name: Option<String>,
+    pub(crate) name: Option<String>,
 }
 
 /// Bevy `Message`: one body-action lifecycle event — either queue a
@@ -195,7 +195,7 @@ impl BodyActionEvent {
 #[derive(Resource, Default, Debug)]
 pub struct BodyActionsR {
     /// FIFO queue of pending actions.
-    pub pending: Vec<PendingBodyAction>,
+    pub(crate) pending: Vec<PendingBodyAction>,
 }
 
 /// Drains [`BodyActionEvent`]s into [`BodyActionsR`].
@@ -248,8 +248,8 @@ pub fn body_action_intake_system(
     }
 }
 
-/// Apply every ready [`PendingBodyAction`] to its subject entity,
-/// removing applied actions from the queue.
+/// Apply every ready pending action in [`BodyActionsR`] to its
+/// subject entity, removing applied actions from the queue.
 ///
 /// Mirrors JEOD `DynManager::perform_actions`
 /// (`models/dynamics/dyn_manager/src/perform_actions.cc:41`):

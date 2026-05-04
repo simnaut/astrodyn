@@ -18,7 +18,7 @@ pub mod wrench;
 
 pub use body_action::{
     add_body_action_via, body_action_intake_system, body_action_system, BodyActionCommandsExt,
-    BodyActionEvent, BodyActionsR, PendingBodyAction,
+    BodyActionEvent, BodyActionsR,
 };
 pub use bundles::*;
 pub use components::*;
