@@ -60,10 +60,6 @@ const EXPECTED_REGISTERED_TYPE_PATHS: &[&str] = &[
     // Frame-tree (issue #71)
     "bevy_jeod::components::PlanetOmegaC",
     "bevy_jeod::components::PlanetAngularVelocityC",
-    "bevy_jeod::components::SourceFrameIdC",
-    "bevy_jeod::components::SourcePfixFrameIdC",
-    "bevy_jeod::components::RetiredPfixFrameIdC",
-    "bevy_jeod::components::BodyFrameIdC",
     "bevy_jeod::components::IntegSourceC",
     "bevy_jeod::components::FrameSwitchesC",
     // Frame-tree as ECS entities (issue #277)

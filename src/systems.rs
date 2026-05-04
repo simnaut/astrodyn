@@ -3,21 +3,13 @@
 //! calls into `jeod_sim`, and writes the result back. No physics
 //! algorithms live here.
 //!
-//! ## Deprecation suppression
-//!
-//! [`crate::FrameTreeR`] is `#[deprecated]` for mission-code use. The
-//! frame-management systems in this module (registration, sync, pfix
-//! rotation, frame-switch arena reparent) continue to mutate the arena
-//! during the dual-write phase; the internal physics systems
-//! (gravity, integration) have already migrated to the
-//! [`crate::frame_param::FrameOrigin`] /
-//! [`crate::frame_param::RelativeFrameState`] SystemParams and no
-//! longer touch the arena. The `FrameTreeR` resource will be removed
-//! entirely once `frame_switch_system` migrates and the dual-write
-//! sync systems disappear. Until then, the file-level
-//! `#![allow(deprecated)]` keeps the remaining arena call sites quiet
-//! without weakening the deprecation signal mission code sees.
-#![allow(deprecated)] // Internal FrameTreeR consumers during the dual-write phase.
+//! Frame-tree state lives entirely on Bevy entities: every source /
+//! body has a [`crate::components::FrameEntityC`] handle pointing at
+//! its frame entity, which carries
+//! [`crate::components::FrameTransC`] / [`crate::components::FrameRotC`] /
+//! [`crate::components::FrameAngVelC`]. Cross-frame queries flow
+//! through [`crate::frame_param::RelativeFrameState`] and
+//! [`crate::frame_param::FrameOrigin`].
 
 use bevy::prelude::*;
 use glam::DVec3;
@@ -27,32 +19,30 @@ use jeod_sim::{
 };
 
 use crate::components::*;
-use crate::frame_param::FrameOrigin;
+use crate::frame_param::{FrameOrigin, RelativeFrameState};
 use crate::AtmosphereModelR;
-use crate::FrameTreeR;
 use crate::SimulationTimeR;
 
 // ── Frame-tree source registration ──
 
 /// Auto-register every gravity-source entity (carrying [`GravitySourceC`])
-/// into [`FrameTreeR`] at startup, then insert [`SourceFrameIdC`] on
-/// the entity. Sources are added as children of the existing root
-/// inertial frame; their initial position comes from
-/// [`SourceInertialPositionC`] and (when present) initial velocity from
-/// [`SourceInertialVelocityC`].
+/// by spawning its frame entity as a child of the root frame entity and
+/// attaching [`FrameEntityC`] back to the source. The frame entity's
+/// [`FrameTransC`] is initialized from [`SourceInertialPositionC`] and
+/// (when present) [`SourceInertialVelocityC`].
 ///
-/// A [`SourcePfixFrameIdC`] is additionally inserted iff the source
-/// also carries [`PlanetFixedRotationC`] — that's the indicator
+/// A [`PfixFrameEntityC`] is additionally inserted iff the source also
+/// carries [`PlanetFixedRotationC`] — that's the indicator
 /// `planet_fixed_rotation_system` filters on; without it the source
-/// never rotates and a pfix node would be a permanent identity that
-/// `source_pfix_rotation()` would mis-report as `Some(identity)`. When
+/// never rotates and a pfix frame would be a permanent identity. When
 /// `PlanetFixedRotationC` is present and `RotationModelC` is omitted,
 /// the same `EarthRNP` default applies as in
 /// `planet_fixed_rotation_system`.
 ///
 /// This is the Bevy analog of `jeod_runner::Simulation::add_source` —
-/// it makes the lifted source-mutation helpers usable directly via
-/// [`crate::SourceMutator`].
+/// it makes the source state observable to gravity / integration via
+/// [`crate::frame_param::FrameOrigin`] and to mission code via
+/// [`crate::frame_param::RelativeFrameState`].
 ///
 /// **Divergence from jeod_runner**: every source becomes a child of
 /// the root frame, including the central body. `jeod_runner` renames
@@ -65,9 +55,6 @@ use crate::SimulationTimeR;
 #[allow(clippy::type_complexity)]
 pub fn register_source_frames_system(
     mut commands: Commands,
-    mut frame_tree: ResMut<FrameTreeR>,
-    root: Res<crate::RootFrameIdR>,
-    // Also spawn ECS frame entities under this root.
     root_frame_entity: Res<crate::RootFrameEntityR>,
     sources: Query<
         (
@@ -78,38 +65,26 @@ pub fn register_source_frames_system(
             Option<&RotationModelC>,
             Option<&PlanetFixedRotationC>,
         ),
-        (With<GravitySourceC>, Without<SourceFrameIdC>),
+        (With<GravitySourceC>, Without<FrameEntityC>),
     >,
 ) {
     for (entity, name, pos, vel, rotation_model, pfix_rot) in &sources {
         let label = name
             .map(|n| n.as_str().to_string())
             .unwrap_or_else(|| format!("source{:?}", entity));
-        // Initialize the source frame node from the entity's current
-        // typed state. Reading both Position and (optional) Velocity
-        // lets sources that already carry a non-zero
-        // `SourceInertialVelocityC` start with the right velocity in the
-        // tree; sources without the velocity component get zero, matching
-        // their ECS state.
+        // Initialize the source frame entity's FrameTransC from the
+        // entity's current typed state. Reading both Position and
+        // (optional) Velocity lets sources that already carry a
+        // non-zero `SourceInertialVelocityC` start with the right
+        // velocity in the tree; sources without the velocity component
+        // get zero, matching their ECS state.
         let init_pos = pos.0.raw_si();
         let init_vel = vel.map_or(glam::DVec3::ZERO, |v| v.0.raw_si());
-        let inertial_id = frame_tree.0.add_child(
-            root.0,
-            format!("{label}.inertial"),
-            jeod_sim::RefFrameKind::Inertial,
-            jeod_sim::RefFrameState {
-                trans: jeod_sim::RefFrameTrans {
-                    position: init_pos,
-                    velocity: init_vel,
-                },
-                rot: jeod_sim::RefFrameRot::default(),
-            },
-        );
 
-        // Spawn the source's ECS frame entity parented under the
-        // root frame entity. Both the arena `FrameId` and the ECS
-        // `Entity` describe the same logical inertial frame until
-        // consumers migrate off the arena.
+        // Spawn the source's frame entity parented under the root
+        // frame entity. The frame entity's FrameTransC / FrameRotC /
+        // FrameAngVelC IS the per-frame state — there is no parallel
+        // arena to keep in sync.
         let source_frame_entity = commands
             .spawn((
                 Name::new(format!("{label}.frame.inertial")),
@@ -123,34 +98,24 @@ pub fn register_source_frames_system(
                 ChildOf(root_frame_entity.0),
             ))
             .id();
-        commands.entity(entity).insert((
-            SourceFrameIdC(inertial_id),
-            FrameEntityC(source_frame_entity),
-        ));
+        commands
+            .entity(entity)
+            .insert(FrameEntityC(source_frame_entity));
 
-        // Create a pfix child frame only if this source actually rotates.
-        // The presence of `PlanetFixedRotationC` is the indicator —
-        // `planet_fixed_rotation_system` queries `&mut PlanetFixedRotationC`,
-        // so an entity without it never rotates, and a pfix node would be
-        // a permanent identity that `source_pfix_rotation()` would
-        // mis-report as `Some(identity)` instead of `None`. Plain
-        // point-mass sources spawned without `PlanetFixedRotationC` get no
-        // pfix node, matching `jeod_runner` for the same case. When
-        // rotation IS present and
-        // `RotationModelC` is omitted, the EarthRNP default applies —
-        // same default as `planet_fixed_rotation_system`.
+        // Create a pfix child frame only if this source actually
+        // rotates. The presence of `PlanetFixedRotationC` is the
+        // indicator — `planet_fixed_rotation_system` queries
+        // `&mut PlanetFixedRotationC`, so an entity without it never
+        // rotates, and a pfix frame would be a permanent identity.
+        // Plain point-mass sources spawned without
+        // `PlanetFixedRotationC` get no pfix frame, matching
+        // `jeod_runner` for the same case. When rotation IS present
+        // and `RotationModelC` is omitted, the EarthRNP default
+        // applies — same default as `planet_fixed_rotation_system`.
         if pfix_rot.is_some() {
             let default_model = jeod_sim::RotationModel::EarthRNP;
             let model_value = rotation_model.map_or(default_model, |m| m.0);
             if !matches!(model_value, jeod_sim::RotationModel::None) {
-                let pfix_id = frame_tree.0.add_child(
-                    inertial_id,
-                    format!("{label}.pfix"),
-                    jeod_sim::RefFrameKind::PlanetFixed,
-                    jeod_sim::RefFrameState::default(),
-                );
-                // Dual-write — spawn the pfix frame entity parented
-                // under the source's ECS frame entity.
                 let pfix_frame_entity = commands
                     .spawn((
                         Name::new(format!("{label}.frame.pfix")),
@@ -161,81 +126,62 @@ pub fn register_source_frames_system(
                         ChildOf(source_frame_entity),
                     ))
                     .id();
-                commands.entity(entity).insert((
-                    SourcePfixFrameIdC(pfix_id),
-                    PfixFrameEntityC(pfix_frame_entity),
-                ));
+                commands
+                    .entity(entity)
+                    .insert(PfixFrameEntityC(pfix_frame_entity));
             }
         }
     }
 }
 
-/// Register a [`SourcePfixFrameIdC`] for sources that were registered
-/// without [`PlanetFixedRotationC`] and acquired it later.
-/// [`register_source_frames_system`] filters by `Without<SourceFrameIdC>`,
+/// Register a [`PfixFrameEntityC`] for sources that were registered
+/// without [`PlanetFixedRotationC`] and acquired it later, or for
+/// sources whose [`RotationModelC`] just toggled back from
+/// [`jeod_sim::RotationModel::None`] to a rotating model.
+/// [`register_source_frames_system`] filters by `Without<FrameEntityC>`,
 /// so it cannot pick up an entity that gained `PlanetFixedRotationC`
-/// after its initial registration. Without this pass,
-/// `planet_fixed_rotation_system` would update the ECS rotation each
-/// step but the frame tree would never get a pfix child, leaving
-/// `source_pfix_rotation()` and any frame-tree consumer reporting "no
-/// planet-fixed frame" for a source that is in fact rotating.
+/// after its initial registration.
 ///
 /// Same registration semantics as [`register_source_frames_system`]'s
 /// pfix branch: gated on [`PlanetFixedRotationC`], `EarthRNP` default
-/// when [`RotationModelC`] is absent, no node when the rotation model
-/// is explicitly [`jeod_sim::RotationModel::None`].
+/// when [`RotationModelC`] is absent, no frame entity when the rotation
+/// model is explicitly [`jeod_sim::RotationModel::None`].
 ///
-/// **Reuse path**: when an entity carries a [`RetiredPfixFrameIdC`]
+/// **Reuse path**: when an entity carries a [`RetiredPfixFrameEntityC`]
 /// (the planet just toggled back from `RotationModel::None` to a
-/// rotating model), this system reuses the stashed
-/// [`jeod_sim::FrameId`] instead of allocating a fresh node — the
-/// orphan is renamed back to the canonical `<label>.pfix` and its
-/// state reset to identity. The ECS-side dual-write entity is
-/// reused from a parallel [`RetiredPfixFrameEntityC`] when present:
-/// its `Name` is restored to the canonical `<label>.frame.pfix` and
-/// its `FrameTransC`/`FrameRotC`/`FrameAngVelC` are reset to
-/// identity. This bounds *both* frame-tree and ECS-entity growth at
-/// one orphan per source regardless of toggle-cycle count, and
-/// keeps [`jeod_sim::FrameTree::find_by_name`] returning the live
-/// frame.
+/// rotating model), this system reuses the stashed pfix frame entity
+/// instead of spawning a fresh one. Its `Name` is restored to the
+/// canonical `<label>.frame.pfix` and its `FrameTransC` /
+/// `FrameRotC` / `FrameAngVelC` are reset to identity. This bounds
+/// the world's pfix-frame entity count at one per source regardless
+/// of toggle-cycle count.
 #[allow(clippy::type_complexity)]
 pub fn register_pfix_frames_system(
     mut commands: Commands,
-    mut frame_tree: ResMut<FrameTreeR>,
     sources: Query<
         (
             Entity,
             Option<&Name>,
-            &SourceFrameIdC,
-            // Read the source's frame entity so the spawned pfix
-            // frame entity can ChildOf-link under it.
-            Option<&FrameEntityC>,
+            // The source's own frame entity: the spawned pfix frame
+            // entity ChildOf-links under it. Required for registration
+            // — `register_source_frames_system` always inserts it.
+            &FrameEntityC,
             Option<&RotationModelC>,
-            Option<&RetiredPfixFrameIdC>,
-            // Parallel ECS-entity retirement marker so we reuse
-            // instead of leak on toggle cycles.
+            // ECS-entity retirement marker so we reuse instead of leak
+            // on toggle cycles.
             Option<&RetiredPfixFrameEntityC>,
         ),
         (
             With<GravitySourceC>,
             With<PlanetFixedRotationC>,
-            Without<SourcePfixFrameIdC>,
+            Without<PfixFrameEntityC>,
         ),
     >,
     mut frame_trans: Query<&mut FrameTransC>,
     mut frame_rots: Query<&mut FrameRotC>,
     mut frame_ang_vels: Query<&mut FrameAngVelC>,
 ) {
-    for (
-        entity,
-        name,
-        source_fid,
-        source_frame_entity,
-        rotation_model,
-        retired_id,
-        retired_entity,
-    ) in &sources
-    {
+    for (entity, name, source_frame_entity, rotation_model, retired_entity) in &sources {
         let default_model = jeod_sim::RotationModel::EarthRNP;
         let model_value = rotation_model.map_or(default_model, |m| m.0);
         if matches!(model_value, jeod_sim::RotationModel::None) {
@@ -244,136 +190,103 @@ pub fn register_pfix_frames_system(
         let label = name
             .map(|n| n.as_str().to_string())
             .unwrap_or_else(|| format!("source{:?}", entity));
-        let canonical_name = format!("{label}.pfix");
-        let pfix_id = if let Some(retired_id) = retired_id {
-            // Reuse the orphan node from the previous toggle cycle:
-            // restore its canonical name, reset its state to identity,
-            // and drop the marker. The node already has the right
-            // parent (`source_fid.0`) since `planet_fixed_rotation_system`
-            // does not move it on retirement.
-            let node = frame_tree.0.get_mut(retired_id.0);
-            node.name = canonical_name.clone();
-            node.state = jeod_sim::RefFrameState::default();
-            commands.entity(entity).remove::<RetiredPfixFrameIdC>();
-            retired_id.0
-        } else {
-            frame_tree.0.add_child(
-                source_fid.0,
-                canonical_name.clone(),
-                jeod_sim::RefFrameKind::PlanetFixed,
-                jeod_sim::RefFrameState::default(),
-            )
-        };
 
-        // Dual-write — restore or spawn the pfix frame entity.
-        // Prefer reusing a retired entity (parallel to the arena
-        // reuse above) so toggle cycles don't leak ECS entities. Skip
-        // the ECS dual-write entirely if FrameEntityC is missing —
-        // that's a source registered before the frames-as-entities
-        // components landed; the arena pfix is still updated above
-        // for backward compat.
-        if let Some(parent_frame) = source_frame_entity {
-            let pfix_frame_entity = if let Some(retired_e) = retired_entity {
-                // Reuse: restore canonical name (via Commands so we
-                // don't need a `Query<&mut Name, With<PlanetFixedFrameMarker>>`
-                // that would conflict with the outer query's
-                // `Option<&Name>` access at runtime) and reset typed
-                // state to identity. The orphan's
-                // `ChildOf(parent_frame.0)` edge was preserved across
-                // the toggle cycle, so the hierarchy is already
-                // correct.
-                commands
-                    .entity(retired_e.0)
-                    .insert(Name::new(format!("{label}.frame.pfix")));
-                // Fail loud if the retired pfix frame entity has lost
-                // any of its FrameTransC / FrameRotC / FrameAngVelC
-                // components
-                // (or has been despawned out from under us). Silently
-                // skipping these resets would let stale rotation,
-                // angular velocity, or translation state leak into the
-                // reused entity, breaking the dual-write invariant
-                // between the arena pfix node and the ECS components.
-                // The retirement path in `planet_fixed_rotation_system`
-                // (the only producer of `RetiredPfixFrameEntityC`)
-                // guarantees the entity stays alive with all three
-                // components attached, so an `Err` here means the
-                // entity was despawned or stripped externally — which
-                // is a misconfiguration, not a recoverable state.
-                let mut t = frame_trans.get_mut(retired_e.0).unwrap_or_else(|err| {
-                    panic!(
-                        "register_pfix_frames_system: source {entity:?} \
-                         carries RetiredPfixFrameEntityC({:?}) but that \
-                         entity has no FrameTransC ({err:?}). The retired \
-                         pfix frame entity must be alive with FrameTransC / \
-                         FrameRotC / FrameAngVelC intact (set up by \
-                         planet_fixed_rotation_system on retirement). Do not \
-                         despawn or strip components from a retired pfix \
-                         frame entity while its source still carries the \
-                         marker.",
-                        retired_e.0
-                    )
-                });
-                *t = FrameTransC::default();
-                let mut r = frame_rots.get_mut(retired_e.0).unwrap_or_else(|err| {
-                    panic!(
-                        "register_pfix_frames_system: source {entity:?} \
-                         carries RetiredPfixFrameEntityC({:?}) but that \
-                         entity has no FrameRotC ({err:?}). The retired \
-                         pfix frame entity must be alive with FrameTransC / \
-                         FrameRotC / FrameAngVelC intact (set up by \
-                         planet_fixed_rotation_system on retirement). Do not \
-                         despawn or strip components from a retired pfix \
-                         frame entity while its source still carries the \
-                         marker.",
-                        retired_e.0
-                    )
-                });
-                *r = FrameRotC::default();
-                let mut av = frame_ang_vels.get_mut(retired_e.0).unwrap_or_else(|err| {
-                    panic!(
-                        "register_pfix_frames_system: source {entity:?} \
-                         carries RetiredPfixFrameEntityC({:?}) but that \
-                         entity has no FrameAngVelC ({err:?}). The retired \
-                         pfix frame entity must be alive with FrameTransC / \
-                         FrameRotC / FrameAngVelC intact (set up by \
-                         planet_fixed_rotation_system on retirement). Do not \
-                         despawn or strip components from a retired pfix \
-                         frame entity while its source still carries the \
-                         marker.",
-                        retired_e.0
-                    )
-                });
-                *av = FrameAngVelC::default();
-                commands.entity(entity).remove::<RetiredPfixFrameEntityC>();
-                retired_e.0
-            } else {
-                commands
-                    .spawn((
-                        Name::new(format!("{label}.frame.pfix")),
-                        PlanetFixedFrameMarker,
-                        FrameTransC::default(),
-                        FrameRotC::default(),
-                        FrameAngVelC::default(),
-                        ChildOf(parent_frame.0),
-                    ))
-                    .id()
-            };
-            commands.entity(entity).insert((
-                SourcePfixFrameIdC(pfix_id),
-                PfixFrameEntityC(pfix_frame_entity),
-            ));
+        let pfix_frame_entity = if let Some(retired_e) = retired_entity {
+            // Reuse: restore canonical name (via Commands so we
+            // don't need a `Query<&mut Name, With<PlanetFixedFrameMarker>>`
+            // that would conflict with the outer query's
+            // `Option<&Name>` access at runtime) and reset typed
+            // state to identity. The orphan's
+            // `ChildOf(source_frame_entity.0)` edge was preserved
+            // across the toggle cycle, so the hierarchy is already
+            // correct.
+            commands
+                .entity(retired_e.0)
+                .insert(Name::new(format!("{label}.frame.pfix")));
+            // Fail loud if the retired pfix frame entity has lost any
+            // of its FrameTransC / FrameRotC / FrameAngVelC components
+            // (or has been despawned out from under us). Silently
+            // skipping these resets would let stale rotation, angular
+            // velocity, or translation state leak into the reused
+            // entity. The retirement path in
+            // `planet_fixed_rotation_system` (the only producer of
+            // `RetiredPfixFrameEntityC`) guarantees the entity stays
+            // alive with all three components attached, so an `Err`
+            // here means the entity was despawned or stripped
+            // externally — which is a misconfiguration, not a
+            // recoverable state.
+            let mut t = frame_trans.get_mut(retired_e.0).unwrap_or_else(|err| {
+                panic!(
+                    "register_pfix_frames_system: source {entity:?} \
+                     carries RetiredPfixFrameEntityC({:?}) but that \
+                     entity has no FrameTransC ({err:?}). The retired \
+                     pfix frame entity must be alive with FrameTransC / \
+                     FrameRotC / FrameAngVelC intact (set up by \
+                     planet_fixed_rotation_system on retirement). Do not \
+                     despawn or strip components from a retired pfix \
+                     frame entity while its source still carries the \
+                     marker.",
+                    retired_e.0
+                )
+            });
+            *t = FrameTransC::default();
+            let mut r = frame_rots.get_mut(retired_e.0).unwrap_or_else(|err| {
+                panic!(
+                    "register_pfix_frames_system: source {entity:?} \
+                     carries RetiredPfixFrameEntityC({:?}) but that \
+                     entity has no FrameRotC ({err:?}). The retired \
+                     pfix frame entity must be alive with FrameTransC / \
+                     FrameRotC / FrameAngVelC intact (set up by \
+                     planet_fixed_rotation_system on retirement). Do not \
+                     despawn or strip components from a retired pfix \
+                     frame entity while its source still carries the \
+                     marker.",
+                    retired_e.0
+                )
+            });
+            *r = FrameRotC::default();
+            let mut av = frame_ang_vels.get_mut(retired_e.0).unwrap_or_else(|err| {
+                panic!(
+                    "register_pfix_frames_system: source {entity:?} \
+                     carries RetiredPfixFrameEntityC({:?}) but that \
+                     entity has no FrameAngVelC ({err:?}). The retired \
+                     pfix frame entity must be alive with FrameTransC / \
+                     FrameRotC / FrameAngVelC intact (set up by \
+                     planet_fixed_rotation_system on retirement). Do not \
+                     despawn or strip components from a retired pfix \
+                     frame entity while its source still carries the \
+                     marker.",
+                    retired_e.0
+                )
+            });
+            *av = FrameAngVelC::default();
+            commands.entity(entity).remove::<RetiredPfixFrameEntityC>();
+            retired_e.0
         } else {
-            commands.entity(entity).insert(SourcePfixFrameIdC(pfix_id));
-        }
+            commands
+                .spawn((
+                    Name::new(format!("{label}.frame.pfix")),
+                    PlanetFixedFrameMarker,
+                    FrameTransC::default(),
+                    FrameRotC::default(),
+                    FrameAngVelC::default(),
+                    ChildOf(source_frame_entity.0),
+                ))
+                .id()
+        };
+        commands
+            .entity(entity)
+            .insert(PfixFrameEntityC(pfix_frame_entity));
     }
 }
 
 /// Sync each gravity source's typed state from the ECS components
 /// (`SourceInertialPositionC` + optional `SourceInertialVelocityC`) into
-/// its [`FrameTreeR`] inertial frame node each step. Mirrors
-/// `jeod_runner::Simulation::update_ephemeris`'s post-DE4xx writeback to
-/// the frame tree — required so frame-tree consumers
-/// (`compute_relative_state`, `frame_origin`, frame-switch evaluation,
+/// its frame entity's [`FrameTransC`] each step. Mirrors
+/// `jeod_runner::Simulation::update_ephemeris`'s post-DE4xx writeback —
+/// required so frame-tree consumers
+/// ([`crate::frame_param::RelativeFrameState`],
+/// [`crate::frame_param::FrameOrigin`], frame-switch evaluation,
 /// per-stage source interpolation in [`integration_system`]) see the
 /// current source state rather than the registration-time snapshot.
 ///
@@ -386,98 +299,80 @@ pub fn register_pfix_frames_system(
 ///    sources that don't carry the standalone velocity component
 ///    (Sun / Moon entities used by SRP / earth-lighting are typically
 ///    spawned this way via `SunBundle` / `MoonBundle`).
-/// 3. Otherwise leave the frame-tree node's velocity unchanged.
+/// 3. Otherwise leave the frame entity's velocity unchanged.
 ///
 /// Runs in `JeodSet::EphemerisUpdate` after `ephemeris_update_system`
-/// (which writes the ECS components from DE4xx) so the FrameTreeR sync
-/// sees the latest values.
+/// (which writes the ECS components from DE4xx) so the frame-entity
+/// sync sees the latest values.
 #[allow(clippy::type_complexity)]
 pub fn sync_source_to_frame_system(
-    mut frame_tree: ResMut<FrameTreeR>,
     sources: Query<(
-        &SourceFrameIdC,
+        &FrameEntityC,
         &SourceInertialPositionC,
         Option<&SourceInertialVelocityC>,
         Option<&TranslationalStateC>,
-        // Dual-write target.
-        Option<&FrameEntityC>,
     )>,
     mut frame_states: Query<&mut FrameTransC>,
 ) {
-    for (fid, pos, vel, trans, frame_entity) in &sources {
+    for (fe, pos, vel, trans) in &sources {
         let position = pos.0.raw_si();
         let velocity = vel
             .map(|v| v.0.raw_si())
             .or_else(|| trans.map(|t| t.0.velocity.raw_si()));
 
-        // Arena write (existing path).
-        let node = frame_tree.0.get_mut(fid.0);
-        node.state.trans.position = position;
+        // Write to the source's frame entity. The referenced entity
+        // must exist and carry FrameTransC — `register_source_frames_system`
+        // spawns it with `FrameTransC` populated from the source's
+        // initial state, and the despawn observers tear it down in
+        // lockstep with the source. Fail loud if `FrameEntityC` points
+        // at a stale / missing entity instead of silently dropping the
+        // sync.
+        let mut frame_trans = frame_states.get_mut(fe.0).unwrap_or_else(|err| {
+            panic!(
+                "sync_source_to_frame_system: source has \
+                 FrameEntityC({:?}) but that entity has no FrameTransC \
+                 ({err:?}). The source's frame entity must be alive \
+                 with FrameTransC attached (spawned by PlanetBundle / \
+                 register_*_frames_system). Either remove the stale \
+                 FrameEntityC marker before despawning the frame \
+                 entity, or ensure the frame entity stays alive for \
+                 as long as the source carries the handle.",
+                fe.0
+            )
+        });
+        frame_trans.position = position;
         if let Some(v) = velocity {
-            node.state.trans.velocity = v;
-        }
-
-        // ECS dual-write to the source's frame entity. Skip silently
-        // if the source was registered before the frames-as-entities
-        // components landed (no FrameEntityC). When the component *is*
-        // present, the referenced frame entity must exist and carry
-        // FrameTransC — the registration sites (`PlanetBundle::spawn`
-        // / `register_pfix_frames_system`) spawn it with
-        // `FrameTransC::default()` and the despawn observers tear it
-        // down in lockstep with the source. Fail loud if
-        // `FrameEntityC` points at a stale / missing entity instead
-        // of silently leaving the ECS half of the dual-write out of
-        // sync with the arena.
-        if let Some(fe) = frame_entity {
-            let mut frame_trans = frame_states.get_mut(fe.0).unwrap_or_else(|err| {
-                panic!(
-                    "sync_source_to_frame_system: source has \
-                     FrameEntityC({:?}) but that entity has no FrameTransC \
-                     ({err:?}). The source's frame entity must be alive \
-                     with FrameTransC attached (spawned by PlanetBundle / \
-                     register_*_frames_system). Either remove the stale \
-                     FrameEntityC marker before despawning the frame \
-                     entity, or ensure the frame entity stays alive for \
-                     as long as the source carries the handle.",
-                    fe.0
-                )
-            });
-            frame_trans.position = position;
-            if let Some(v) = velocity {
-                frame_trans.velocity = v;
-            }
+            frame_trans.velocity = v;
         }
     }
 }
 
 /// Auto-register every vehicle entity (carrying [`TranslationalStateC`])
-/// into [`FrameTreeR`] at startup, attaching [`BodyFrameIdC`] and
-/// spawning the body's frame entity with `ChildOf(integ_frame_entity)`.
-/// The body's integration frame is determined by:
+/// by spawning the body's frame entity with
+/// `ChildOf(integ_frame_entity)` and attaching [`FrameEntityC`] to the
+/// body. The body's integration frame is determined by:
 ///
 /// 1. `IntegSourceC(Some(source_entity))` — child of that source's
-///    `SourceFrameIdC` node (panics if the source isn't yet registered).
-/// 2. Otherwise — child of the root inertial frame
-///    ([`crate::RootFrameIdR`]).
+///    frame entity (panics if the source isn't yet registered).
+/// 2. Otherwise — child of the root inertial frame entity
+///    ([`crate::RootFrameEntityR`]).
 ///
 /// The body's initial state is read from [`TranslationalStateC`] and
-/// written into the new frame node so the tree is consistent from the
-/// first step. The integration frame is then queryable via
-/// `Query<&ChildOf>` on the body's frame entity (no explicit
-/// integration-frame handle component).
+/// written into the new frame entity's [`FrameTransC`] so the
+/// hierarchy is consistent from the first step. The integration frame
+/// is then queryable via `Query<&ChildOf>` on the body's frame entity
+/// (no explicit integration-frame handle component).
 ///
 /// Runs at `Startup` and again before `JeodSet::EphemerisUpdate` to
 /// catch dynamically-spawned bodies. Filters by
-/// `Without<BodyFrameIdC>` so the registration is one-time per body.
+/// `Without<FrameEntityC>` so the registration is one-time per body.
 #[allow(clippy::type_complexity)]
 pub fn register_body_frames_system(
     mut commands: Commands,
-    mut frame_tree: ResMut<FrameTreeR>,
-    root: Res<crate::RootFrameIdR>,
     // The ECS-side root frame entity, used as the body's frame
     // parent when no IntegSourceC is supplied.
     root_frame_entity: Res<crate::RootFrameEntityR>,
-    sources: Query<(&SourceFrameIdC, Option<&FrameEntityC>)>,
+    sources: Query<&FrameEntityC, With<GravitySourceC>>,
     bodies: Query<
         (
             Entity,
@@ -498,7 +393,7 @@ pub fn register_body_frames_system(
         (
             With<TranslationalStateC>,
             With<DynamicsConfigC>,
-            Without<BodyFrameIdC>,
+            Without<FrameEntityC>,
         ),
     >,
 ) {
@@ -507,97 +402,65 @@ pub fn register_body_frames_system(
             .map(|n| n.as_str().to_string())
             .unwrap_or_else(|| format!("body{:?}", entity));
 
-        // Resolve the integration frame ID. Default: root inertial.
-        // Also resolve the integ frame ECS entity.
-        let (integ_frame_id, integ_frame_entity) = match integ_source.and_then(|c| c.0) {
-            Some(source_entity) => sources
-                .get(source_entity)
-                .map(|(fid, fent)| (fid.0, fent.map(|f| f.0)))
-                .unwrap_or_else(|err| {
-                    panic!(
-                        "register_body_frames_system: body {entity:?} has \
+        // Resolve the integration frame entity. Default: root inertial.
+        let integ_frame_entity = match integ_source.and_then(|c| c.0) {
+            Some(source_entity) => {
+                sources
+                    .get(source_entity)
+                    .map(|fe| fe.0)
+                    .unwrap_or_else(|err| {
+                        panic!(
+                            "register_body_frames_system: body {entity:?} has \
                          IntegSourceC pointing at {source_entity:?}, but that \
                          entity is not a registered gravity source (missing \
-                         SourceFrameIdC). Spawn the source via PlanetBundle \
-                         before the body, or remove IntegSourceC. \
+                         FrameEntityC + GravitySourceC). Spawn the source via \
+                         PlanetBundle before the body, or remove IntegSourceC. \
                          Underlying error: {err:?}"
-                    )
-                }),
-            None => (root.0, Some(root_frame_entity.0)),
+                        )
+                    })
+            }
+            None => root_frame_entity.0,
         };
 
-        // Body frame node carries the body's current state relative to its
-        // integ frame. For root-integrated bodies this is the absolute
-        // inertial state (matches existing Bevy behavior); for non-root
-        // bodies the body's TranslationalStateC is interpreted as
-        // already in integ-frame coordinates (mission code is
-        // responsible for supplying state in the integ-frame).
+        // The body frame entity carries the body's current state
+        // relative to its integ frame. For root-integrated bodies
+        // this is the absolute inertial state; for non-root bodies
+        // the body's TranslationalStateC is interpreted as already in
+        // integ-frame coordinates (mission code is responsible for
+        // supplying state in the integ-frame).
         let init_pos = trans.0.position.raw_si();
         let init_vel = trans.0.velocity.raw_si();
-        let body_state = jeod_sim::RefFrameState {
-            trans: jeod_sim::RefFrameTrans {
-                position: init_pos,
-                velocity: init_vel,
-            },
-            rot: jeod_sim::RefFrameRot::default(),
-        };
-        let body_fid = frame_tree.0.add_child(
-            integ_frame_id,
-            format!("{label}.body"),
-            jeod_sim::RefFrameKind::Body,
-            body_state,
-        );
 
-        // Spawn the body frame entity parented under its integ
-        // frame's ECS entity. Tag the integ frame entity with
-        // `IntegrationFrameMarker` (idempotent insert via Commands).
-        // The body's integration frame is now queried via
-        // `Query<&ChildOf>` on the body's frame entity by
-        // gravity / integration / frame-switch consumers — the
-        // body frame entity's parent *is* the integration frame.
-        //
-        // Skip the ECS spawn if we couldn't resolve an integ frame
-        // entity (e.g. a source registered before the
-        // frames-as-entities components landed); the arena body node
-        // is still added above for backward compat. Bodies in this
-        // legacy path don't carry `FrameEntityC` and are treated as
-        // root-integrated by gravity / integration.
-        //
-        // Also wire the frame-side `MassPointRef` back-pointer at
-        // body-frame registration time for any entity that also
-        // carries `MassPropertiesC` (i.e. participates in the mass
-        // tree). In the current Bevy adapter the body / mass / frame
-        // ECS entity is one and the same, so the back-pointer
-        // resolves to `MassPointRef(self)`. The component is skipped
-        // for kinematic-only bodies (no `MassPropertiesC`).
-        if let Some(parent_frame_entity) = integ_frame_entity {
-            commands
-                .entity(parent_frame_entity)
-                .insert(IntegrationFrameMarker);
-            let body_frame_entity = commands
-                .spawn((
-                    Name::new(format!("{label}.frame.body")),
-                    BodyFrameMarker,
-                    FrameTransC {
-                        position: init_pos,
-                        velocity: init_vel,
-                    },
-                    FrameRotC::default(),
-                    FrameAngVelC::default(),
-                    ChildOf(parent_frame_entity),
-                ))
-                .id();
-            let mut entity_cmds = commands.entity(entity);
-            entity_cmds.insert((BodyFrameIdC(body_fid), FrameEntityC(body_frame_entity)));
-            if has_mass {
-                entity_cmds.insert(MassPointRef(entity));
-            }
-        } else {
-            let mut entity_cmds = commands.entity(entity);
-            entity_cmds.insert(BodyFrameIdC(body_fid));
-            if has_mass {
-                entity_cmds.insert(MassPointRef(entity));
-            }
+        // Tag the integ frame entity with `IntegrationFrameMarker`
+        // (idempotent insert via Commands). The body's integration
+        // frame is queried via `Query<&ChildOf>` on the body's frame
+        // entity by gravity / integration / frame-switch consumers —
+        // the body frame entity's parent *is* the integration frame.
+        commands
+            .entity(integ_frame_entity)
+            .insert(IntegrationFrameMarker);
+        let body_frame_entity = commands
+            .spawn((
+                Name::new(format!("{label}.frame.body")),
+                BodyFrameMarker,
+                FrameTransC {
+                    position: init_pos,
+                    velocity: init_vel,
+                },
+                FrameRotC::default(),
+                FrameAngVelC::default(),
+                ChildOf(integ_frame_entity),
+            ))
+            .id();
+        let mut entity_cmds = commands.entity(entity);
+        entity_cmds.insert(FrameEntityC(body_frame_entity));
+        // Wire the frame-side `MassPointRef` back-pointer for any
+        // entity that also carries `MassPropertiesC` (i.e.
+        // participates in the mass tree). In the current Bevy adapter
+        // the body / mass / frame ECS entity is one and the same, so
+        // the back-pointer resolves to `MassPointRef(self)`.
+        if has_mass {
+            entity_cmds.insert(MassPointRef(entity));
         }
     }
 }
@@ -605,7 +468,7 @@ pub fn register_body_frames_system(
 /// Maintain the `MassPointRef` ↔ `MassPropertiesC` invariant on bodies
 /// that have already passed through [`register_body_frames_system`].
 ///
-/// `register_body_frames_system` is filtered by `Without<BodyFrameIdC>`
+/// `register_body_frames_system` is filtered by `Without<FrameEntityC>`
 /// so it sees each body exactly once. That makes the
 /// `Has<MassPropertiesC>`-driven `MassPointRef` insertion only correct
 /// at the body's first sight — a body that starts kinematic-only and
@@ -615,12 +478,12 @@ pub fn register_body_frames_system(
 ///
 /// This system handles the post-registration transitions:
 ///
-/// - **Acquired mass**: a body with `BodyFrameIdC` + `MassPropertiesC`
-///   that lacks `MassPointRef` gets one inserted (the back-pointer
-///   resolves to the body's own entity, mirroring the "body / mass /
-///   frame ECS entity is one and the same" invariant the initial
-///   registration uses).
-/// - **Lost mass**: a body with `BodyFrameIdC` + `MassPointRef` whose
+/// - **Acquired mass**: a registered body (carrying `FrameEntityC` +
+///   `DynamicsConfigC`) with `MassPropertiesC` but no `MassPointRef`
+///   gets one inserted (the back-pointer resolves to the body's own
+///   entity, mirroring the "body / mass / frame ECS entity is one
+///   and the same" invariant the initial registration uses).
+/// - **Lost mass**: a registered body with `MassPointRef` whose
 ///   `MassPropertiesC` has been removed gets the stale `MassPointRef`
 ///   removed (the "absent for kinematic-only attaches" contract on
 ///   the type — keeping a stale back-pointer would lie about whether
@@ -631,30 +494,32 @@ pub fn register_body_frames_system(
 /// before `JeodSet::EphemerisUpdate`) so the invariant is restored
 /// before any consumer (gravity, force collection, integration) reads
 /// the back-pointer this tick.
+///
+/// The query filter combines `With<FrameEntityC>` (the post-PR4
+/// "registered" gate, which sources also carry) with
+/// `With<DynamicsConfigC>` (which sources don't carry) to restrict
+/// the iteration to bodies. Brand-new bodies that
+/// `register_body_frames_system` will register this same tick are
+/// excluded by the filter — `Commands` are deferred until the next
+/// system flush, so those bodies don't yet carry `FrameEntityC` when
+/// this system runs.
 #[allow(clippy::type_complexity)]
 pub fn sync_body_mass_point_ref_system(
     mut commands: Commands,
-    // Acquired mass: has frame + mass but no back-pointer. The
-    // `With<BodyFrameIdC>` filter excludes brand-new bodies that
-    // `register_body_frames_system` will register this same tick (the
-    // `Commands` it issued are deferred until the next system flush;
-    // when this system runs, those bodies don't yet carry
-    // `BodyFrameIdC`).
     acquired: Query<
         Entity,
         (
-            With<BodyFrameIdC>,
+            With<FrameEntityC>,
+            With<DynamicsConfigC>,
             With<MassPropertiesC>,
             Without<MassPointRef>,
         ),
     >,
-    // Lost mass: has frame + back-pointer but mass component was
-    // removed. The stale back-pointer must be cleared so consumers
-    // don't continue to treat the frame as a mass-tree participant.
     lost: Query<
         Entity,
         (
-            With<BodyFrameIdC>,
+            With<FrameEntityC>,
+            With<DynamicsConfigC>,
             With<MassPointRef>,
             Without<MassPropertiesC>,
         ),
@@ -670,96 +535,24 @@ pub fn sync_body_mass_point_ref_system(
 
 // ── Frame-tree despawn cleanup ──
 //
-// `FrameTree` is append-only — `jeod_frames` does not expose a
-// `remove` operation because arena indices (`FrameId`s) are stable
-// handles that other state may hold. When an entity carrying a
-// `*FrameIdC` despawns, its frame-tree node would otherwise sit
-// in the arena indefinitely with the original name, eventually
-// shadowing a future re-spawn of the same name via
-// [`jeod_sim::FrameTree::find_by_name`] and growing memory
-// monotonically.
-//
-// The observers below adopt the same "logical retirement" pattern
-// `planet_fixed_rotation_system` already uses for the rotation-toggle
-// case (`src/systems.rs:660`): rename the orphan node to a sentinel
-// (`<original>.despawned`) and reset its state to identity. The
-// arena slot is not freed (no API for that), but the canonical name
-// is no longer findable, the state can no longer leak through stale
-// `frame_origin` queries, and `find_by_name` will correctly resolve
-// a future re-spawn of the same name.
+// Frame entities are owned by the source / body / pfix entity that
+// references them via `FrameEntityC` / `PfixFrameEntityC` /
+// `RetiredPfixFrameEntityC`. When the owner despawns, the referenced
+// frame entity needs to despawn alongside so the world's entity count
+// stays bounded and future re-spawns of the same `Name` aren't
+// shadowed by an orphan.
 //
 // We use [`Despawn`] (not [`Remove`]) so component-only removals
 // — notably `planet_fixed_rotation_system`'s toggle-to-`None` path
-// that does `commands.entity(e).remove::<SourcePfixFrameIdC>()` —
-// don't double-fire and corrupt the existing `.retired` rename.
-// Each observer cleans up only its own node; ordering across the
-// per-component `Despawn` triggers is therefore irrelevant.
+// that does `commands.entity(e).remove::<PfixFrameEntityC>()` — don't
+// double-fire and tear down the entity that the retirement path is
+// stashing for reuse. Each observer cleans up only its own handle;
+// ordering across the per-component `Despawn` triggers is therefore
+// irrelevant.
 //
 // Out of scope: a body whose [`IntegSourceC`]'s source entity is
-// despawned remains alive but integrates against a now-retired frame.
-// The Bevy-native ECS-hierarchy redesign will close this naturally;
-// until then, mission code is responsible for despawning dependent
-// bodies.
-fn retire_frame_node(tree: &mut jeod_sim::FrameTree, fid: jeod_sim::FrameId) {
-    let node = tree.get_mut(fid);
-    if !node.name.ends_with(".despawned") {
-        node.name = format!("{}.despawned", node.name);
-    }
-    node.state = jeod_sim::RefFrameState::default();
-}
-
-/// On entity despawn, retire the source's inertial frame node so its
-/// canonical name is no longer findable via
-/// [`jeod_sim::FrameTree::find_by_name`] and any stale
-/// `frame_origin` query returns identity.
-pub fn on_source_frame_despawn(
-    trigger: On<Despawn, SourceFrameIdC>,
-    sources: Query<&SourceFrameIdC>,
-    mut frame_tree: ResMut<FrameTreeR>,
-) {
-    if let Ok(fid) = sources.get(trigger.entity) {
-        retire_frame_node(&mut frame_tree.0, fid.0);
-    }
-}
-
-/// On entity despawn, retire the source's planet-fixed (pfix) frame
-/// node. Independent of [`on_source_frame_despawn`] so the per-component
-/// `Despawn` order doesn't matter.
-pub fn on_source_pfix_frame_despawn(
-    trigger: On<Despawn, SourcePfixFrameIdC>,
-    sources: Query<&SourcePfixFrameIdC>,
-    mut frame_tree: ResMut<FrameTreeR>,
-) {
-    if let Ok(fid) = sources.get(trigger.entity) {
-        retire_frame_node(&mut frame_tree.0, fid.0);
-    }
-}
-
-/// On entity despawn, retire the orphan pfix node stashed in
-/// [`RetiredPfixFrameIdC`] (left over from a `RotationModel::None`
-/// toggle that wasn't followed by a re-toggle before despawn).
-/// Without this the `.retired` orphan stays findable as a stale
-/// node in the arena.
-pub fn on_retired_pfix_frame_despawn(
-    trigger: On<Despawn, RetiredPfixFrameIdC>,
-    sources: Query<&RetiredPfixFrameIdC>,
-    mut frame_tree: ResMut<FrameTreeR>,
-) {
-    if let Ok(fid) = sources.get(trigger.entity) {
-        retire_frame_node(&mut frame_tree.0, fid.0);
-    }
-}
-
-/// On entity despawn, retire the body's frame node.
-pub fn on_body_frame_despawn(
-    trigger: On<Despawn, BodyFrameIdC>,
-    bodies: Query<&BodyFrameIdC>,
-    mut frame_tree: ResMut<FrameTreeR>,
-) {
-    if let Ok(fid) = bodies.get(trigger.entity) {
-        retire_frame_node(&mut frame_tree.0, fid.0);
-    }
-}
+// despawned remains alive but integrates against a now-despawned
+// frame. Mission code is responsible for despawning dependent bodies.
 
 /// On entity despawn, despawn the orphan pfix *frame entity* stashed
 /// in [`RetiredPfixFrameEntityC`] (left over from a
@@ -767,8 +560,7 @@ pub fn on_body_frame_despawn(
 /// before despawn). The orphan ECS entity has no other owner — it
 /// was kept alive specifically so the next `None → rotating` retoggle
 /// could reuse it — so without this observer it would leak when the
-/// owning source despawns. Mirrors [`on_retired_pfix_frame_despawn`]
-/// for the parallel ECS-entity retirement track.
+/// owning source despawns.
 ///
 /// `try_despawn` (not `despawn`) because the retired pfix entity's
 /// `ChildOf` parent is the source frame entity, which is despawned
@@ -810,13 +602,15 @@ pub fn on_retired_pfix_frame_entity_despawn(
 /// — so a sibling observer ([`on_source_pfix_frame_entity_despawn`])
 /// firing on the same entity-despawn event may find its target
 /// already queued for despawn. `try_despawn` silently no-ops in that
-/// case, matching the contract of the parallel arena-side
-/// retirement helpers in this module.
+/// case.
 ///
-/// Mirrors [`on_source_frame_despawn`] / [`on_body_frame_despawn`]
-/// on the ECS-entity track, providing a parallel cleanup for the
-/// dual-write spawn sites in
-/// [`register_source_frames_system`] and
+/// Pairs with [`on_source_pfix_frame_entity_despawn`] (covers the
+/// source's pfix child) and
+/// [`on_retired_pfix_frame_entity_despawn`] (covers a stashed
+/// orphan from a `RotationModel::None` toggle that wasn't followed
+/// by a re-toggle before despawn) to provide complete cleanup for
+/// the spawn sites in [`register_source_frames_system`],
+/// [`register_pfix_frames_system`], and
 /// [`register_body_frames_system`].
 pub fn on_frame_entity_despawn(
     trigger: On<Despawn, FrameEntityC>,
@@ -850,117 +644,112 @@ pub fn on_source_pfix_frame_entity_despawn(
     }
 }
 
-/// Sync each vehicle's [`TranslationalStateC`] into its
-/// [`BodyFrameIdC`] node in [`FrameTreeR`]. Mirrors
-/// `jeod_runner::Simulation::step_internal`'s post-integration sync
-/// (`step/integrate.rs:540-544`). Required so [`frame_switch_system`]
-/// sees current body state when evaluating switch distances.
+/// Sync each vehicle's [`TranslationalStateC`] into its frame entity's
+/// [`FrameTransC`]. Required so [`frame_switch_system`] and
+/// downstream [`crate::frame_param::RelativeFrameState`] /
+/// [`crate::frame_param::FrameOrigin`] queries see current body state
+/// when evaluating switch distances and computing cross-frame state.
 ///
 /// Runs in `JeodSet::Integration` after `integration_system` and
 /// before `frame_switch_system`.
+///
+/// The `With<DynamicsConfigC>` filter narrows the iteration to actual
+/// dynamic bodies — gravity-source entities (planets) also carry
+/// `TranslationalStateC` + `FrameEntityC` post-registration but their
+/// frame entity is updated by `sync_source_to_frame_system` from the
+/// source-side state instead.
 pub fn sync_body_to_frame_system(
-    mut frame_tree: ResMut<FrameTreeR>,
-    bodies: Query<(
-        &TranslationalStateC,
-        &BodyFrameIdC,
-        // Dual-write target.
-        Option<&FrameEntityC>,
-    )>,
+    bodies: Query<(&TranslationalStateC, &FrameEntityC), With<DynamicsConfigC>>,
     mut frame_states: Query<&mut FrameTransC>,
 ) {
-    for (trans, body_fid, frame_entity) in &bodies {
+    for (trans, frame_entity) in &bodies {
         let position = trans.0.position.raw_si();
         let velocity = trans.0.velocity.raw_si();
 
-        // Arena write (existing path).
-        let node = frame_tree.0.get_mut(body_fid.0);
-        node.state.trans.position = position;
-        node.state.trans.velocity = velocity;
-
-        // ECS dual-write to the body's frame entity. Skip silently
-        // if the body was registered before the frames-as-entities
-        // components landed (no FrameEntityC). When the component
-        // *is* present, the referenced body frame entity must exist
-        // and carry FrameTransC — `register_body_frames_system`
-        // spawns it with `FrameTransC` populated from the body's
-        // initial state, and the despawn observers tear it down in
-        // lockstep with the body. Fail loud if `FrameEntityC` points
-        // at a stale / missing entity instead of silently leaving
-        // the ECS half of the dual-write out of sync with the arena.
-        if let Some(fe) = frame_entity {
-            let mut frame_trans = frame_states.get_mut(fe.0).unwrap_or_else(|err| {
-                panic!(
-                    "sync_body_to_frame_system: body has FrameEntityC({:?}) \
-                     but that entity has no FrameTransC ({err:?}). The \
-                     body's frame entity must be alive with FrameTransC \
-                     attached (spawned by register_body_frames_system). \
-                     Either remove the stale FrameEntityC marker before \
-                     despawning the frame entity, or ensure the frame \
-                     entity stays alive for as long as the body carries \
-                     the handle.",
-                    fe.0
-                )
-            });
-            frame_trans.position = position;
-            frame_trans.velocity = velocity;
-        }
+        // The referenced body frame entity must exist and carry
+        // FrameTransC — `register_body_frames_system` spawns it with
+        // `FrameTransC` populated from the body's initial state, and
+        // the despawn observers tear it down in lockstep with the
+        // body. Fail loud if `FrameEntityC` points at a stale /
+        // missing entity instead of silently dropping the sync.
+        let mut frame_trans = frame_states.get_mut(frame_entity.0).unwrap_or_else(|err| {
+            panic!(
+                "sync_body_to_frame_system: body has FrameEntityC({:?}) \
+                 but that entity has no FrameTransC ({err:?}). The \
+                 body's frame entity must be alive with FrameTransC \
+                 attached (spawned by register_body_frames_system). \
+                 Either remove the stale FrameEntityC marker before \
+                 despawning the frame entity, or ensure the frame \
+                 entity stays alive for as long as the body carries \
+                 the handle.",
+                frame_entity.0
+            )
+        });
+        frame_trans.position = position;
+        frame_trans.velocity = velocity;
     }
 }
 
-/// Evaluate distance-based [`FrameSwitchesC`] entries for each body. On
-/// trigger, the lifted [`jeod_sim::evaluate_and_apply_frame_switch`]
-/// helper reparents the body's frame node in [`FrameTreeR`], rewrites
-/// the body's translational state into the new integration frame's
-/// coordinates, and flips [`GravityControlsC`]'s `differential` flags
-/// so the new central source becomes non-differential. The same
-/// reparent is mirrored on the ECS side via
-/// `commands.entity(body_frame).insert(ChildOf(new_parent_frame))` so
-/// the body frame entity's `ChildOf` parent — the load-bearing
-/// "current integration frame" lookup — stays in lockstep with the
-/// arena.
+/// Evaluate distance-based [`FrameSwitchesC`] entries for each body.
+/// On trigger, this system:
+///
+/// 1. Reparents the body's frame entity under the target source's
+///    frame entity via
+///    `commands.entity(body_frame).insert(ChildOf(target_frame))`.
+/// 2. Rewrites the body's [`TranslationalStateC`] (and the body
+///    frame entity's [`FrameTransC`]) in the new integration
+///    frame's coordinates, computed via
+///    [`crate::frame_param::RelativeFrameState`].
+/// 3. Flips [`GravityControlsC`]'s `differential` flags so the new
+///    central source becomes non-differential and the prior
+///    central source (and any others) becomes differential.
+///
+/// JEOD reference: `dyn_body_frame_switch.cc:173-182`. The trigger
+/// predicates and gravity-control flip mirror
+/// `jeod_runner::Simulation`'s `evaluate_and_apply_frame_switch` over
+/// the arena; the Bevy variant reads/writes the ECS hierarchy
+/// directly via [`crate::frame_param::RelativeFrameState`] (which
+/// `impl FrameStorage`s and shares the storage-agnostic
+/// `compute_relative_state` algorithm in `jeod_frames` with the
+/// runner's arena).
 ///
 /// Runs in `JeodSet::Integration` after [`sync_body_to_frame_system`].
-/// Bodies without [`FrameSwitchesC`] are skipped.
-///
-/// JEOD reference: `dyn_body_frame_switch.cc:173-182`. The Bevy adapter
-/// borrows the same logic via the lifted helper, so behavior is
-/// bit-identical to `jeod_runner::Simulation` for the same scenario.
-///
-/// `FrameSwitchConfig<Entity>` and `GravityControls<Entity>` flow into
-/// the generic helper directly via a closure-based source lookup;
-/// there is no `usize`-keyed bridge.
+/// Bodies without [`FrameSwitchesC`] entries (or whose entries are
+/// all `active = false`) are skipped.
+// JEOD_INV: DB.14 — distance-based integration-frame switch reparents
+// the body's frame entity under the target source's frame entity and
+// rewrites translational state into the new frame's coordinates.
 #[allow(clippy::type_complexity)]
 pub fn frame_switch_system(
     mut commands: Commands,
-    mut frame_tree: ResMut<FrameTreeR>,
-    root: Res<crate::RootFrameIdR>,
     root_frame_entity: Res<crate::RootFrameEntityR>,
-    sources: Query<(&SourceFrameIdC, &FrameEntityC)>,
+    sources: Query<&FrameEntityC, With<GravitySourceC>>,
     parents: Query<&ChildOf>,
+    rel: RelativeFrameState,
     mut bodies: Query<(
         Entity,
         &mut TranslationalStateC,
-        &BodyFrameIdC,
         &FrameEntityC,
         &mut FrameSwitchesC,
         &mut GravityControlsC,
     )>,
 ) {
-    // Snapshot the count of registered sources for error diagnostics.
-    let num_sources = sources.iter().count();
-
-    for (body_entity, mut trans, body_fid, body_frame_entity, mut switches, mut gravity_controls) in
+    // Build a set of registered source frame entities once per call so
+    // the per-body integ-frame validation below is O(1) rather than
+    // O(sources). Without this, the inner check is a linear scan over
+    // every source for every body every tick (O(bodies * sources)),
+    // which dominates with many bodies and/or many sources even when
+    // no switch fires.
+    let known_source_frames: std::collections::HashSet<Entity> =
+        sources.iter().map(|fe| fe.0).collect();
+    for (body_entity, mut trans, body_frame_entity, mut switches, mut gravity_controls) in
         &mut bodies
     {
         if switches.0.is_empty() {
             continue;
         }
         // The body's current integration frame is the parent of its
-        // frame entity in the ECS hierarchy. Resolve it back to a
-        // FrameId for the arena helper: the integ frame is either the
-        // root frame entity (FrameId = `root.0`) or a source's frame
-        // entity (look up via the source query). If neither matches,
-        // the dual-write invariant has been violated — fail loud.
+        // frame entity in the ECS hierarchy.
         let current_integ_frame_entity = parents
             .get(body_frame_entity.0)
             .unwrap_or_else(|err| {
@@ -973,108 +762,140 @@ pub fn frame_switch_system(
                 )
             })
             .parent();
-        let mut current_integ_fid = if current_integ_frame_entity == root_frame_entity.0 {
-            root.0
-        } else {
-            sources
-                .iter()
-                .find(|(_, fe)| fe.0 == current_integ_frame_entity)
-                .map(|(sfid, _)| sfid.0)
-                .unwrap_or_else(|| {
-                    panic!(
-                        "frame_switch_system: body {body_entity:?} frame entity \
-                         {fe:?} has parent {parent:?} which is neither the root \
-                         frame entity ({root_e:?}) nor a registered source's \
-                         frame entity. The integration frame entity must be one \
-                         of those — register the source via PlanetBundle before \
-                         spawning the body, or attach the body under the root.",
-                        fe = body_frame_entity.0,
-                        parent = current_integ_frame_entity,
-                        root_e = root_frame_entity.0,
-                    )
-                })
-        };
-        // Translate TranslationalStateC into a raw struct the lifted
-        // helper can write in place. The (DVec3 read × 2) + (DVec3 write × 2)
-        // cost only fires when a switch actually triggers.
-        let mut raw_trans = jeod_sim::TranslationalState {
-            position: trans.0.position.raw_si(),
-            velocity: trans.0.velocity.raw_si(),
-        };
-        let body_idx = body_entity.index().index() as usize;
+        // Validate the current integ frame entity is the root frame
+        // entity or a registered source's frame entity. Anything else
+        // means the registration / integ-source wiring is corrupt.
+        let current_is_known = current_integ_frame_entity == root_frame_entity.0
+            || known_source_frames.contains(&current_integ_frame_entity);
+        assert!(
+            current_is_known,
+            "frame_switch_system: body {body_entity:?} frame entity \
+             {fe:?} has parent {parent:?} which is neither the root \
+             frame entity ({root_e:?}) nor a registered source's \
+             frame entity. The integration frame entity must be one \
+             of those — register the source via PlanetBundle before \
+             spawning the body, or attach the body under the root.",
+            fe = body_frame_entity.0,
+            parent = current_integ_frame_entity,
+            root_e = root_frame_entity.0,
+        );
 
-        let switched = jeod_sim::evaluate_and_apply_frame_switch(
-            &mut frame_tree.0,
-            root.0,
-            body_fid.0,
-            &mut current_integ_fid,
-            &mut raw_trans,
-            &mut switches.0,
-            &mut gravity_controls.0,
-            // Closure: maps a target `Entity` to its source-inertial
-            // FrameId in the tree. Returns `None` if the entity isn't a
-            // registered source — the helper turns that into
-            // `FrameSwitchTargetMissing`.
-            |entity| sources.get(*entity).ok().map(|(sfid, _)| sfid.0),
-            num_sources,
-            body_idx,
-        )
-        .unwrap_or_else(|err| {
-            panic!(
-                "frame_switch_system: body {body_entity:?} switch evaluation failed: \
-                 target source {target:?} is not a registered gravity source \
-                 ({num} source entit{plural} currently registered). Spawn the source \
-                 via PlanetBundle (which inserts SourceFrameIdC) before referencing \
-                 it from a FrameSwitchConfig.",
-                target = err.target_source,
-                num = err.num_sources,
-                plural = if err.num_sources == 1 { "y" } else { "ies" },
-            )
-        });
-
-        if switched {
-            // Re-wrap raw mutated state from the lifted helper (which
-            // takes an untyped `TranslationalState`); boundary analogous
-            // to `integrate_body`'s untyped kernel API.
-            let pos_typed =
-                jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(raw_trans.position); // allowed: lifted-helper boundary
-            let vel_typed =
-                jeod_sim::Velocity::<jeod_sim::RootInertial>::from_raw_si(raw_trans.velocity); // allowed: lifted-helper boundary
-            trans.0.position = pos_typed;
-            trans.0.velocity = vel_typed;
-            // Mirror the arena reparent on the ECS side: the body
-            // frame entity's `ChildOf` parent is the live "current
-            // integration frame" lookup. The new parent frame entity
-            // is either the root frame entity or the source's
-            // `FrameEntityC` whose `SourceFrameIdC` matches
-            // `current_integ_fid` (mutated in place by the helper
-            // above).
-            let new_parent_frame_entity = if current_integ_fid == root.0 {
-                root_frame_entity.0
-            } else {
+        // Find the first active switch whose predicate triggers.
+        let mut trigger_idx = None;
+        for (idx, sw) in switches.0.iter().enumerate() {
+            if !sw.active {
+                continue;
+            }
+            // Resolve the target source's frame entity. Fail loud if
+            // the target isn't a registered gravity source — same
+            // contract as `evaluate_and_apply_frame_switch`'s
+            // `FrameSwitchTargetMissing` error. The query filter is
+            // `With<GravitySourceC>`, so a missing match means the
+            // target either isn't a gravity source at all (no
+            // `GravitySourceC`) or is one but `FrameEntityC` was never
+            // inserted by `register_source_frames_system` — both are
+            // user misconfigurations the diagnostic must enumerate.
+            let target_frame_entity =
                 sources
-                    .iter()
-                    .find(|(sfid, _)| sfid.0 == current_integ_fid)
-                    .map(|(_, fe)| fe.0)
-                    .unwrap_or_else(|| {
+                    .get(sw.target_source)
+                    .map(|fe| fe.0)
+                    .unwrap_or_else(|err| {
                         panic!(
-                            "frame_switch_system: body {body_entity:?} switched \
-                             to FrameId {current_integ_fid:?} but no registered \
-                             source has that SourceFrameIdC. The arena and the \
-                             ECS frame entities are out of sync — investigate \
-                             register_source_frames_system / PlanetBundle.",
+                            "frame_switch_system: body {body_entity:?} switch evaluation failed: \
+                         target source {target:?} is not a registered gravity source — \
+                         it is missing GravitySourceC and/or FrameEntityC. Spawn it via \
+                         PlanetBundle (which inserts both) before referencing it from a \
+                         FrameSwitchConfig. Underlying error: {err:?}",
+                            target = sw.target_source,
                         )
-                    })
+                    });
+            // OnApproach: distance from body to target's frame
+            // origin. OnDeparture: body's distance from its current
+            // integration frame's origin (i.e. body's
+            // `TranslationalStateC.position` magnitude, which equals
+            // its FrameTransC position in the current integ frame).
+            // Mirrors `jeod_runner::evaluate_and_apply_frame_switch`.
+            let threshold_sq = sw.switch_distance * sw.switch_distance;
+            let triggered = match sw.switch_sense {
+                jeod_sim::SwitchSense::OnApproach => {
+                    let pos_in_target = rel.position(target_frame_entity, body_frame_entity.0);
+                    pos_in_target.length_squared() < threshold_sq
+                }
+                jeod_sim::SwitchSense::OnDeparture => {
+                    trans.0.position.raw_si().length_squared() > threshold_sq
+                }
             };
-            commands
-                .entity(body_frame_entity.0)
-                .insert(ChildOf(new_parent_frame_entity));
-            // `GravityControlsC.0` had its `differential` flags flipped
-            // in place using `Entity` equality. `IntegSourceC` (the
-            // config-time intent) is intentionally untouched — the
-            // live truth lives in the body frame entity's `ChildOf`
-            // parent.
+            if triggered {
+                trigger_idx = Some(idx);
+                break;
+            }
         }
+
+        let Some(idx) = trigger_idx else {
+            continue;
+        };
+
+        let target_source = switches.0[idx].target_source;
+        switches.0[idx].active = false;
+        // Re-resolve the target frame entity; lookup proven Some above.
+        let new_parent_frame_entity = sources.get(target_source).map(|fe| fe.0).expect(
+            "frame_switch_system: target source resolved during evaluation \
+             but failed during application — caller-side mutation between lookups",
+        );
+
+        // Compute the body's full state expressed in the new target
+        // frame's coordinates *before* reparenting. The walk uses the
+        // body frame entity's pre-switch `ChildOf` parent (the old
+        // integ frame) so the math composes through the existing
+        // hierarchy — same algorithm `evaluate_and_apply_frame_switch`
+        // runs over the arena (`reparent` then read the post-reparent
+        // state).
+        let new_state = rel.relative_state(new_parent_frame_entity, body_frame_entity.0);
+
+        // Reparent the body's frame entity under the target source's
+        // frame entity, and write the new FrameTransC in the same
+        // deferred Commands batch so a post-reparent
+        // `RelativeFrameState` walk on the next system flush finds
+        // the body in the new parent's coordinates. Without the
+        // FrameTransC update, the stored value would still reflect
+        // the old parent's frame and downstream consumers would
+        // observe a discontinuity-equal-to-(new_origin - old_origin)
+        // on this tick. Using `Commands::insert` (rather than a
+        // `&mut FrameTransC` query) avoids a static query-conflict
+        // with `RelativeFrameState`'s read-only `&FrameTransC`
+        // query — the body frame entity's `FrameTransC` is rewritten
+        // when the Commands buffer flushes after this system.
+        commands
+            .entity(body_frame_entity.0)
+            .insert(ChildOf(new_parent_frame_entity))
+            .insert(FrameTransC {
+                position: new_state.trans.position,
+                velocity: new_state.trans.velocity,
+            });
+
+        // Mirror the new state into the body's TranslationalStateC.
+        // Re-wrap as the typed component's <RootInertial> phantom —
+        // matches the existing storage convention (the body's
+        // integration frame is treated as numerically root-inertial
+        // by the typed surface; #263 closes the type-lie). Same
+        // boundary lift `evaluate_and_apply_frame_switch` performs.
+        let pos_typed =
+            jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(new_state.trans.position); // allowed: frame-switch boundary lift, see comment above
+        let vel_typed =
+            jeod_sim::Velocity::<jeod_sim::RootInertial>::from_raw_si(new_state.trans.velocity); // allowed: same frame-switch boundary lift
+        trans.0.position = pos_typed;
+        trans.0.velocity = vel_typed;
+
+        // Flip gravity controls: target source becomes
+        // non-differential (central body), all others become
+        // differential. Identity match by `Entity` — same convention
+        // `evaluate_and_apply_frame_switch` uses.
+        for ctrl in &mut gravity_controls.0.controls {
+            ctrl.differential = ctrl.source_name != target_source;
+        }
+        // `IntegSourceC` (the config-time intent) is intentionally
+        // untouched — the live truth lives in the body frame
+        // entity's `ChildOf` parent.
     }
 }
 
@@ -1112,15 +933,12 @@ pub fn planet_fixed_rotation_system(
     sim_time: Res<SimulationTimeR>,
     polar: Option<Res<crate::PolarMotionR>>,
     ephemeris: Option<Res<crate::EphemerisR>>,
-    mut frame_tree: ResMut<FrameTreeR>,
     mut query: Query<(
         Entity,
         &mut PlanetFixedRotationC,
         Option<&RotationModelC>,
         Option<&PlanetOmegaC>,
         Option<&mut PlanetAngularVelocityC>,
-        Option<&SourcePfixFrameIdC>,
-        // Dual-write target for the pfix frame entity.
         Option<&PfixFrameEntityC>,
     )>,
     mut frame_rots: Query<&mut FrameRotC>,
@@ -1136,15 +954,14 @@ pub fn planet_fixed_rotation_system(
         jeod_sim::FrameTransform<jeod_sim::RootInertial, jeod_sim::PlanetFixed<SelfPlanet>>;
     let mut earth_rotation: Option<EarthRot> = Option::None;
     let mut earth_rotation_raw: Option<glam::DMat3> = Option::None;
-    for (entity, mut rot, model, omega, ang_vel, pfix_fid, pfix_frame_entity) in &mut query {
+    for (entity, mut rot, model, omega, ang_vel, pfix_frame_entity) in &mut query {
         let default_model = jeod_sim::RotationModel::EarthRNP;
         let rotation_model = model.map_or(&default_model, |m| &m.0);
         // Track whether we wrote a rotation this tick — controls
-        // `PlanetAngularVelocityC` and FrameTreeR pfix-node writes.
+        // `PlanetAngularVelocityC` and pfix frame-entity writes.
         let rotated = !matches!(rotation_model, jeod_sim::RotationModel::None);
-        // Capture the raw DMat3 too so we can sync the FrameTreeR pfix node
-        // via the lifted `sync_pfix_rotation` helper (which takes the matrix
-        // and the planet omega — same data the rotation matrix carries).
+        // Capture the raw DMat3 too so we can sync the pfix frame
+        // entity (FrameRotC + FrameAngVelC) from the same data.
         let mut raw_matrix: Option<glam::DMat3> = None;
         match rotation_model {
             jeod_sim::RotationModel::None => {}
@@ -1206,12 +1023,12 @@ pub fn planet_fixed_rotation_system(
 
         // ── Planet angular velocity ──
         // JEOD `planet_rnp.cc` writes `ang_vel_this = [0, 0, planet_omega]`
-        // on the pfix frame node. Mirror that on (a) the `PlanetAngularVelocityC`
-        // ECS component and (b) the FrameTreeR pfix node so velocity
-        // composition both via the typed component and via the lifted
-        // `compute_relative_state` reads the correct rate. The
-        // pfix-node sync via `jeod_sim::sync_pfix_rotation` is what
-        // closes the frame-tree half of the gap.
+        // on the pfix frame node. Mirror that on (a) the
+        // `PlanetAngularVelocityC` ECS component and (b) the pfix
+        // frame entity's `FrameRotC` / `FrameAngVelC` so velocity
+        // composition both via the typed component and via
+        // [`crate::frame_param::RelativeFrameState`] reads the
+        // correct rate.
         if rotated {
             // Falling back to `0.0` for a rotating planet (`RotationModelC`
             // present but `PlanetOmegaC` absent) silently misreports the
@@ -1238,25 +1055,14 @@ pub fn planet_fixed_rotation_system(
                 let raw = glam::DVec3::new(0.0, 0.0, omega_value);
                 ang_vel_c.0 = PlanetAngVel::from_raw_si(raw); // allowed: scalar omega → typed AngularVelocity boundary
             }
-            // Sync the FrameTreeR pfix node from the same data via the
-            // lifted helper. This is what `jeod_runner` does in
-            // `update_ephemeris`; the Bevy adapter previously skipped it,
-            // so frame-tree consumers (`compute_relative_state` through
-            // pfix) saw stale identity rotation and zero angular velocity.
-            if let (Some(matrix), Some(pfix_fid)) = (raw_matrix, pfix_fid) {
-                jeod_sim::sync_pfix_rotation(&mut frame_tree.0, pfix_fid.0, matrix, omega_value);
-            }
-            // ECS dual-write to the pfix frame entity. Same data,
-            // different storage — keeps `RelativeFrameState`
-            // bit-identical with the arena via `compute_relative_state`.
+            // Write the pfix frame entity's FrameRotC / FrameAngVelC.
             // When `PfixFrameEntityC` is present the referenced entity
             // must be alive with FrameRotC / FrameAngVelC intact
             // (spawned by `register_pfix_frames_system`, torn down in
             // lockstep with the marker by the despawn observers and
             // the rotation-toggle retirement path). A stale handle
-            // here would silently leave the ECS pfix rotation/omega
-            // out of sync with the arena, breaking the dual-write
-            // invariant.
+            // here would silently desync the pfix-frame state from
+            // the rotation matrix on `PlanetFixedRotationC`.
             if let (Some(matrix), Some(pfix_fe)) = (raw_matrix, pfix_frame_entity) {
                 let mut frame_rot = frame_rots.get_mut(pfix_fe.0).unwrap_or_else(|err| {
                     panic!(
@@ -1292,15 +1098,15 @@ pub fn planet_fixed_rotation_system(
                 frame_av.0 = glam::DVec3::new(0.0, 0.0, omega_value);
             }
         } else {
-            // `RotationModel::None`: actively clear the rotation matrix,
-            // angular velocity, and pfix-tree state. Without this, a
-            // runtime toggle from a rotating model to `None` would leave
-            // the last-tick rotation matrix on `PlanetFixedRotationC`,
-            // the last-tick omega on `PlanetAngularVelocityC`, and the
-            // last-tick `(matrix, omega)` on the FrameTreeR pfix node —
-            // so frame-tree queries would still report a rotating
-            // planet-fixed frame even though the source is configured
-            // as non-rotating.
+            // `RotationModel::None`: actively clear the rotation
+            // matrix, angular velocity, and pfix-frame state. Without
+            // this, a runtime toggle from a rotating model to `None`
+            // would leave the last-tick rotation matrix on
+            // `PlanetFixedRotationC`, the last-tick omega on
+            // `PlanetAngularVelocityC`, and the last-tick state on
+            // the pfix frame entity — so frame-tree queries would
+            // still report a rotating planet-fixed frame even though
+            // the source is configured as non-rotating.
             // allowed: explicit identity clear when rotation model toggles to None;
             // the RootInertial → PlanetFixed<SelfPlanet> phantoms are correct by
             // construction (same shape as the rotating-branch from_matrix sites).
@@ -1309,118 +1115,67 @@ pub fn planet_fixed_rotation_system(
                 type PlanetAngVel = jeod_sim::AngularVelocity<jeod_sim::PlanetFixed<SelfPlanet>>;
                 ang_vel_c.0 = PlanetAngVel::from_raw_si(glam::DVec3::ZERO); // allowed: zero-omega clear → typed AngularVelocity boundary
             }
-            if let Some(pfix_fid) = pfix_fid {
-                // Sync the pfix node to identity / zero so any consumer
-                // still holding the FrameId reads a consistent state on
-                // the toggle tick (before the component removal below
-                // takes effect — Commands buffer until the next sync
-                // point).
-                jeod_sim::sync_pfix_rotation(
-                    &mut frame_tree.0,
-                    pfix_fid.0,
-                    glam::DMat3::IDENTITY,
-                    0.0,
-                );
-                // ECS dual-write — clear the pfix frame entity's state
-                // to identity so any `RelativeFrameState` reader sees
-                // the same identity clear as the arena. When
-                // `PfixFrameEntityC` is present, the referenced entity
-                // must be alive with FrameRotC / FrameAngVelC intact;
-                // silently skipping the clear would leave the ECS
-                // pfix rotation/omega frozen at the last rotating-tick
-                // value while the arena is reset to identity, breaking
-                // the dual-write invariant.
-                if let Some(pfix_fe) = pfix_frame_entity {
-                    let mut frame_rot = frame_rots.get_mut(pfix_fe.0).unwrap_or_else(|err| {
-                        panic!(
-                            "planet_fixed_rotation_system (RotationModel::None \
-                             clear): source {entity:?} has PfixFrameEntityC({:?}) \
-                             but that entity has no FrameRotC ({err:?}). The \
-                             pfix frame entity must be alive with FrameRotC / \
-                             FrameAngVelC attached (spawned by \
-                             register_pfix_frames_system). Either remove the \
-                             stale PfixFrameEntityC marker before despawning \
-                             the pfix frame entity, or ensure the pfix frame \
-                             entity stays alive for as long as the source \
-                             carries the handle.",
-                            pfix_fe.0
-                        )
-                    });
-                    *frame_rot = FrameRotC::default();
-                    let mut frame_av = frame_ang_vels.get_mut(pfix_fe.0).unwrap_or_else(|err| {
-                        panic!(
-                            "planet_fixed_rotation_system (RotationModel::None \
-                             clear): source {entity:?} has PfixFrameEntityC({:?}) \
-                             but that entity has no FrameAngVelC ({err:?}). The \
-                             pfix frame entity must be alive with FrameRotC / \
-                             FrameAngVelC attached (spawned by \
-                             register_pfix_frames_system). Either remove the \
-                             stale PfixFrameEntityC marker before despawning \
-                             the pfix frame entity, or ensure the pfix frame \
-                             entity stays alive for as long as the source \
-                             carries the handle.",
-                            pfix_fe.0
-                        )
-                    });
-                    frame_av.0 = glam::DVec3::ZERO;
-                }
-                // Clearing the pfix node's matrix/omega isn't enough
-                // on its own — consumers that branch on the *presence*
-                // of `SourcePfixFrameIdC` would keep treating the
-                // source as rotating-capable, reintroducing the
-                // `Some(identity)` vs `None` ambiguity. Mirror the
-                // registration symmetry: `register_pfix_frames_system`
-                // inserts the component when a source gains a
-                // non-`None` rotation model; this branch removes it
-                // when the model toggles back to `None`.
-                //
-                // The orphan tree node is kept alive (the frame tree
-                // has no removal API since arena indices are stable),
-                // but renamed to a sentinel so
-                // `FrameTree::find_by_name("<label>.pfix")` won't
-                // shadow a future live frame, and its FrameId is
-                // stashed in `RetiredPfixFrameIdC` so the next toggle
-                // back to a rotating model reuses this node instead
-                // of allocating a fresh one. Without the rename +
-                // reuse, every `None → rotating → None …` cycle
-                // would leak an additional pfix node.
-                let node = frame_tree.0.get_mut(pfix_fid.0);
-                node.name = format!("{}.retired", node.name);
+            if let Some(pfix_fe) = pfix_frame_entity {
+                // Clear the pfix frame entity's state to identity so
+                // any `RelativeFrameState` reader sees the source as
+                // non-rotating. When `PfixFrameEntityC` is present,
+                // the referenced entity must be alive with
+                // FrameRotC / FrameAngVelC intact; silently skipping
+                // the clear would leave the pfix rotation/omega
+                // frozen at the last rotating-tick value while the
+                // toggle-to-`None` removes the public component.
+                let mut frame_rot = frame_rots.get_mut(pfix_fe.0).unwrap_or_else(|err| {
+                    panic!(
+                        "planet_fixed_rotation_system (RotationModel::None \
+                         clear): source {entity:?} has PfixFrameEntityC({:?}) \
+                         but that entity has no FrameRotC ({err:?}). The \
+                         pfix frame entity must be alive with FrameRotC / \
+                         FrameAngVelC attached (spawned by \
+                         register_pfix_frames_system). Either remove the \
+                         stale PfixFrameEntityC marker before despawning \
+                         the pfix frame entity, or ensure the pfix frame \
+                         entity stays alive for as long as the source \
+                         carries the handle.",
+                        pfix_fe.0
+                    )
+                });
+                *frame_rot = FrameRotC::default();
+                let mut frame_av = frame_ang_vels.get_mut(pfix_fe.0).unwrap_or_else(|err| {
+                    panic!(
+                        "planet_fixed_rotation_system (RotationModel::None \
+                         clear): source {entity:?} has PfixFrameEntityC({:?}) \
+                         but that entity has no FrameAngVelC ({err:?}). The \
+                         pfix frame entity must be alive with FrameRotC / \
+                         FrameAngVelC attached (spawned by \
+                         register_pfix_frames_system). Either remove the \
+                         stale PfixFrameEntityC marker before despawning \
+                         the pfix frame entity, or ensure the pfix frame \
+                         entity stays alive for as long as the source \
+                         carries the handle.",
+                        pfix_fe.0
+                    )
+                });
+                frame_av.0 = glam::DVec3::ZERO;
+
+                // Retire the pfix frame entity for reuse on the next
+                // toggle back to a rotating model. The orphan entity
+                // stays alive (its `ChildOf(source_frame_entity)`
+                // edge is preserved so the `RetiredPfixFrameEntityC`
+                // reuse path in `register_pfix_frames_system`
+                // doesn't have to re-parent), its `Name` is
+                // overwritten with a stable `.retired` sentinel so
+                // name-based lookups won't shadow a future live
+                // entity, and the source's `PfixFrameEntityC` is
+                // removed and replaced with `RetiredPfixFrameEntityC`.
+                // This bounds the world's pfix-frame entity count at
+                // one per source regardless of toggle-cycle count.
+                commands
+                    .entity(pfix_fe.0)
+                    .insert(Name::new(format!("pfix.retired:{:?}", pfix_fe.0)));
                 commands
                     .entity(entity)
-                    .remove::<SourcePfixFrameIdC>()
-                    .insert(RetiredPfixFrameIdC(pfix_fid.0));
-
-                // Mirror the arena retirement on the ECS-entity side.
-                // Without this, the source would keep a stale
-                // `PfixFrameEntityC` handle pointing at an
-                // identity-cleared but otherwise live entity *and*
-                // `register_pfix_frames_system` (which filters by
-                // `Without<SourcePfixFrameIdC>`) would spawn a fresh
-                // pfix frame entity on every retoggle — leaking one
-                // orphan ECS entity per `None → rotating → None …`
-                // cycle in addition to the (already-bounded) arena
-                // leak.
-                //
-                // Retirement semantics for the entity parallel the
-                // arena: the orphan entity stays alive (its
-                // `ChildOf(parent_frame.0)` edge is preserved so the
-                // `RetiredPfixFrameEntityC` reuse path in
-                // `register_pfix_frames_system` doesn't have to
-                // re-parent), its `Name` is overwritten with a
-                // stable `.retired` sentinel so name-based lookups
-                // won't shadow a future live entity, and the source's
-                // `PfixFrameEntityC` is removed in lockstep with
-                // `SourcePfixFrameIdC` above.
-                if let Some(pfix_fe) = pfix_frame_entity {
-                    commands
-                        .entity(pfix_fe.0)
-                        .insert(Name::new(format!("pfix.retired:{:?}", pfix_fe.0)));
-                    commands
-                        .entity(entity)
-                        .remove::<PfixFrameEntityC>()
-                        .insert(RetiredPfixFrameEntityC(pfix_fe.0));
-                }
+                    .remove::<PfixFrameEntityC>()
+                    .insert(RetiredPfixFrameEntityC(pfix_fe.0));
             }
         }
     }

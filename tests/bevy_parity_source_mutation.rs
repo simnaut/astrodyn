@@ -4,32 +4,23 @@
 //! `jeod_runner::Simulation` exposes `set_source_position`,
 //! `set_source_state`, and `set_source_ephemeris` for runtime
 //! gravity-source retargeting. The Bevy adapter mirrors the
-//! frame-tree-touching mutators via [`bevy_jeod::SourceMutator`]. This
-//! test asserts:
+//! frame-state-touching mutators via [`bevy_jeod::SourceMutator`].
+//! This test asserts:
 //!
 //! 1. After mutation, the Bevy planet entity's `SourceInertialPositionC`,
 //!    `SourceInertialVelocityC`, and `TranslationalStateC` carry the
 //!    requested values.
-//! 2. After mutation, the Bevy `FrameTreeR` resource's source-inertial
-//!    node carries the same `(position, velocity)` as
+//! 2. After mutation, the Bevy source's frame entity (`FrameTransC`)
+//!    carries the same `(position, velocity)` as
 //!    `jeod_runner::Simulation::frame_tree()`'s source-inertial node
 //!    after the equivalent `Simulation::set_source_state` call.
-//! 3. Mutating a root-mapped source panics in both adapters (jeod_runner
-//!    asserts central-body mutations are forbidden; Bevy currently
-//!    doesn't map any source to root, so this codepath only fires in
-//!    jeod_runner).
-
-// `FrameTreeR` is `#[deprecated]` for mission-code use. This is a
-// Tier 3 parity test between the Bevy adapter and `jeod_runner` — it
-// deliberately reads the arena to assert bit-identity of the
-// source-mutation path. Once the resource is removed, the parity
-// assertion that currently reads the arena will be rewritten to use
-// `RelativeFrameState`.
-#![allow(deprecated)]
+//! 3. Mutating a [`CentralSourceMarker`]-tagged source panics in
+//!    both adapters (mirrors jeod_runner's `assert_ne!(fid,
+//!    root_frame_id, …)` rejection of central-body mutation).
 
 use bevy::prelude::*;
 use bevy_jeod::{
-    CentralSourceMarker, FrameTreeR, JeodPlugin, PlanetBundle, RootFrameIdR, SourceFrameIdC,
+    CentralSourceMarker, FrameEntityC, FrameTransC, JeodPlugin, PlanetBundle,
     SourceInertialPositionC, SourceInertialVelocityC, SourceMutator, TranslationalStateC,
 };
 use glam::DVec3;
@@ -122,12 +113,15 @@ fn tier3_bevy_source_mutator_set_state_matches_runner() {
         .0
         .to_untyped();
 
-    // Frame-tree node should reflect the same values.
-    let moon_fid = app.world().get::<SourceFrameIdC>(moon_entity).unwrap().0;
-    let frame_tree = app.world().resource::<FrameTreeR>();
-    let node = frame_tree.0.get(moon_fid);
-    let bevy_node_pos = node.state.trans.position;
-    let bevy_node_vel = node.state.trans.velocity;
+    // The source's frame entity (FrameTransC) should reflect the
+    // same values.
+    let moon_frame_entity = app.world().get::<FrameEntityC>(moon_entity).unwrap().0;
+    let frame_trans = app
+        .world()
+        .get::<FrameTransC>(moon_frame_entity)
+        .expect("source's frame entity must carry FrameTransC");
+    let bevy_node_pos = frame_trans.position;
+    let bevy_node_vel = frame_trans.velocity;
 
     assert_dvec3_bits_eq("Bevy SourceInertialPositionC", bevy_pos_c, new_pos);
     assert_dvec3_bits_eq("Bevy SourceInertialVelocityC", bevy_vel_c, new_vel);
@@ -141,8 +135,16 @@ fn tier3_bevy_source_mutator_set_state_matches_runner() {
         bevy_trans.velocity,
         new_vel,
     );
-    assert_dvec3_bits_eq("Bevy FrameTreeR.moon.position", bevy_node_pos, new_pos);
-    assert_dvec3_bits_eq("Bevy FrameTreeR.moon.velocity", bevy_node_vel, new_vel);
+    assert_dvec3_bits_eq(
+        "Bevy moon frame entity FrameTransC.position",
+        bevy_node_pos,
+        new_pos,
+    );
+    assert_dvec3_bits_eq(
+        "Bevy moon frame entity FrameTransC.velocity",
+        bevy_node_vel,
+        new_vel,
+    );
 
     // ── jeod_runner ──
     let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
@@ -167,40 +169,6 @@ fn tier3_bevy_source_mutator_set_state_matches_runner() {
 }
 
 #[test]
-#[should_panic(expected = "set_source_position: cannot set position of the root")]
-fn tier3_bevy_source_mutator_root_mutation_panics() {
-    // The Bevy adapter never maps a source to the root frame (every
-    // gravity source becomes a child of root in `register_source_frames_system`).
-    // Construct the panic by directly inserting `SourceFrameIdC` pointing
-    // at the root and then calling `set_source_position`. This verifies
-    // the lifted helper's `assert_ne!(fid, root_frame_id, …)` guard
-    // surfaces through the Bevy mutator.
-    use bevy_jeod::components::SourceFrameIdC;
-
-    let mut app = build_app();
-    let root_id = app.world().resource::<RootFrameIdR>().0;
-    let source = app
-        .world_mut()
-        .spawn((
-            Name::new("PinnedToRoot"),
-            bevy_jeod::components::GravitySourceC(jeod_sim::GravitySource {
-                mu: EARTH.shape.mu,
-                model: jeod_sim::GravityModel::PointMass,
-            }),
-            SourceInertialPositionC::default(),
-            SourceFrameIdC(root_id),
-        ))
-        .id();
-
-    let id = app
-        .world_mut()
-        .register_system(move |mut mutator: SourceMutator| {
-            mutator.set_source_position(source, DVec3::new(1.0, 2.0, 3.0));
-        });
-    let _ = app.world_mut().run_system(id);
-}
-
-#[test]
 #[should_panic(expected = "carries CentralSourceMarker")]
 fn tier3_bevy_source_mutator_central_marker_panics_on_set_position() {
     // Mission code attaches `CentralSourceMarker` to the gravity-source
@@ -216,8 +184,8 @@ fn tier3_bevy_source_mutator_central_marker_panics_on_set_position() {
             CentralSourceMarker,
         ))
         .id();
-    // Run Startup so register_source_frames_system attaches `SourceFrameIdC`.
-    // The marker guard fires *before* the frame-id lookup, so this isn't
+    // Run Startup so register_source_frames_system attaches `FrameEntityC`.
+    // The marker guard fires *before* the frame-entity lookup, so this isn't
     // strictly required for the panic, but it keeps the test exercising
     // the same shape as a real mission setup.
     app.world_mut().run_schedule(Startup);
