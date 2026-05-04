@@ -558,3 +558,159 @@ fn bevy_parity_body_action_init_trans_resets_abm4_history() {
         app.world_mut().run_schedule(FixedUpdate);
     }
 }
+
+/// IG.37 regression for mid-sim `BodyAction::InitMass`.
+///
+/// `body_action_system` updates `MassPropertiesC` when an `InitMass`
+/// action lands. The acceleration the multi-step integrator predicts
+/// is `force / mass`: a mid-sim mass change makes the predictor /
+/// corrector history (recorded under the prior mass) inconsistent
+/// with the new dynamics whenever any non-gravitational force is
+/// present. Per the IG.37 attach/detach precedent, a topology-class
+/// change must fire `reset_integrators()` so the next integrate
+/// re-primes from fresh samples.
+///
+/// This test wires an ABM4 integrator onto a body, lets it run long
+/// enough for the integrator to leave its priming window, then queues
+/// an `InitMass` action that halves the vehicle mass and verifies:
+///
+/// 1. The integrator returns to priming (i.e. `reset_for_topology_change`
+///    fired) after the action lands.
+/// 2. The next several FixedUpdate ticks do not panic. The IG.37 assert
+///    inside `abm4_translational_step` panics if `topology_dirty` is
+///    still set when `integrate` is called, so a missing reset hook
+///    would surface as a fail-loud panic instead of silent corruption.
+#[test]
+fn bevy_parity_body_action_init_mass_resets_abm4_history() {
+    use bevy_jeod::{
+        Abm4StateC, DynamicsConfigC, GravitySourceC, IntegratorTypeC, JeodPlugin,
+        SourceInertialPositionC,
+    };
+    use jeod_sim::{
+        Abm4State, GravityControl, GravityControls, GravityModel, GravitySource, IntegratorType,
+    };
+
+    // Tight integration step so ABM4 fills its 4-sample priming window
+    // quickly and we can observe the reset within a short test run.
+    const SIM_DT: f64 = 0.5;
+    const MU: f64 = 3.986_004_415e14;
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(SIM_DT));
+    app.add_plugins(JeodPlugin);
+
+    let earth = app
+        .world_mut()
+        .spawn((
+            Name::new("Earth"),
+            GravitySourceC(GravitySource {
+                mu: MU,
+                model: GravityModel::PointMass,
+            }),
+            SourceInertialPositionC::default(),
+            TranslationalStateC::default(),
+        ))
+        .id();
+
+    // Same priming setup as the `InitTrans` test above: ABM4 primes on
+    // its first four `integrate` calls; once `is_priming` flips false
+    // the predictor / corrector history is live and a mass overwrite
+    // without a reset would leave the next predictor extrapolating an
+    // acceleration computed under the old mass.
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC::from(iss_typical_state()),
+            RotationalStateC::from(RotationalState::default()),
+            MassPropertiesC::from(MassProperties::new(400_000.0)),
+            DynamicsConfigC(DynamicsConfig {
+                translational_dynamics: true,
+                rotational_dynamics: false,
+                three_dof: true,
+            }),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(earth, false)],
+            }),
+            IntegratorTypeC(IntegratorType::Abm4),
+            Abm4StateC(Abm4State::new()),
+        ))
+        .id();
+
+    // Step long enough for ABM4 to leave the priming window. Same
+    // 16-tick margin as the `InitTrans` regression test.
+    for _ in 0..16 {
+        app.world_mut()
+            .resource_mut::<Time<Fixed>>()
+            .advance_by(Duration::from_secs_f64(SIM_DT));
+        app.world_mut().run_schedule(FixedUpdate);
+    }
+    let priming_before = app
+        .world()
+        .entity(vehicle)
+        .get::<Abm4StateC>()
+        .expect("Abm4StateC present")
+        .0
+        .is_priming();
+    assert!(
+        !priming_before,
+        "Pre-condition: ABM4 should have left the priming window after 16 ticks of dt={SIM_DT}; \
+         test setup is wrong if it hasn't."
+    );
+
+    // Queue a mid-sim `InitMass` action that halves the mass. The
+    // numerical value is unimportant — IG.37 is structural: any mass
+    // overwrite must clear `topology_dirty`.
+    write_msg(
+        &mut app,
+        BodyActionEvent::add(
+            vehicle,
+            BodyAction::InitMass {
+                mass: MassProperties::new(200_000.0),
+            },
+            Some("midsim.mass_change"),
+        ),
+    );
+
+    // Single FixedUpdate tick: intake + apply systems run,
+    // body_action_system mutates `MassPropertiesC` and resets ABM4
+    // history; integration then runs against the now-priming state.
+    app.world_mut()
+        .resource_mut::<Time<Fixed>>()
+        .advance_by(Duration::from_secs_f64(SIM_DT));
+    app.world_mut().run_schedule(FixedUpdate);
+
+    // Confirm the mass actually changed (sanity that the action fired).
+    let mass_after = read_mass(&app, vehicle);
+    assert_eq!(
+        mass_after, 200_000.0,
+        "Mid-sim BodyAction::InitMass at the priming-window-exit boundary did not update mass; \
+         the action did not fire and IG.37 enforcement cannot be observed."
+    );
+
+    let priming_after = app
+        .world()
+        .entity(vehicle)
+        .get::<Abm4StateC>()
+        .expect("Abm4StateC present")
+        .0
+        .is_priming();
+    assert!(
+        priming_after,
+        "IG.37: BodyAction::InitMass must reset ABM4 history (`is_priming` should be true \
+         after the action lands). A missing reset would leave the integrator running with \
+         predictor history recorded under the pre-action mass — the next non-gravitational \
+         force sample would be inconsistent with `accel = force / mass_new`."
+    );
+
+    // Drive several more ticks to surface the IG.37 panic
+    // (`abm4_translational_step` asserts `!topology_dirty` on every
+    // integrate). A missing reset would have left `topology_dirty`
+    // set and the very next tick would have panicked here.
+    for _ in 0..20 {
+        app.world_mut()
+            .resource_mut::<Time<Fixed>>()
+            .advance_by(Duration::from_secs_f64(SIM_DT));
+        app.world_mut().run_schedule(FixedUpdate);
+    }
+}

@@ -273,7 +273,12 @@ pub fn body_action_intake_system(
 ///   guard makes the recompute a no-op for un-flipped entries, so
 ///   marking dirty after every `InitMass` is the safe default that
 ///   also covers callers passing a hand-built `MassProperties` with
-///   an out-of-sync `inverse_mass`.
+///   an out-of-sync `inverse_mass`. Also resets multi-step
+///   integrator history (Gauss–Jackson / ABM4) on the entity (IG.37):
+///   force/mass = acceleration, so a mid-sim mass change makes the
+///   predictor / corrector history (which records derivatives from
+///   the prior mass) inconsistent with the new dynamics whenever any
+///   non-gravitational force is present.
 /// - `BodyAction::InitTrans` /
 ///   `BodyAction::InitTransOrbital` /
 ///   `BodyAction::InitTransLvlh` /
@@ -335,8 +340,14 @@ pub fn body_action_system(
             });
         // Track whether translational / rotational state were mutated
         // so we can reset multi-step integrator history afterwards
-        // (mirrors the IG.37 attach/detach reset path).
+        // (mirrors the IG.37 attach/detach reset path). `mass_mutated`
+        // is tracked alongside so the integrator reset also fires on
+        // an `InitMass` action: force/mass = acceleration, so the
+        // predictor / corrector history recorded under the prior mass
+        // is inconsistent with the new dynamics whenever any
+        // non-gravitational force is present.
         let mut state_mutated = false;
+        let mut mass_mutated = false;
         if let Some(state) = action.action.apply_translational() {
             let comp = trans
                 .as_deref_mut()
@@ -402,16 +413,23 @@ pub fn body_action_system(
             // time. Not a per-step bypass.
             comp.0 = jeod_sim::MassPropertiesTyped::from_untyped_unchecked(&props);
             comp.0.dirty = true;
+            mass_mutated = true;
         }
-        if state_mutated {
+        if state_mutated || mass_mutated {
             // JEOD_INV: IG.37 — multi-step integrator history must be reset on
-            // any mid-sim state change. JEOD's `dyn_body_init_*` actions
-            // overwrite a body's translational / rotational state mid-run,
-            // and (per JEOD's attach/detach analog) leaving Gauss–Jackson /
-            // ABM4 predictor history pointing at the prior state corrupts
-            // the next integrate. The reset is a no-op for single-step
-            // integrators (`gj` / `abm` will be `None` on RK4 entities),
-            // so this branch is free for the common path.
+            // any mid-sim state or mass change. JEOD's `dyn_body_init_*`
+            // actions overwrite a body's translational / rotational state
+            // (or its mass) mid-run; per JEOD's attach/detach analog,
+            // leaving Gauss–Jackson / ABM4 predictor history pointing at
+            // the prior dynamics corrupts the next integrate. A mid-sim
+            // mass change matters for the same structural reason: the
+            // history records `accel = force / mass` samples under the old
+            // mass, and any non-gravitational force (drag, SRP, thrust)
+            // makes those samples inconsistent with the new acceleration
+            // the predictor will compute on the next step. The reset is a
+            // no-op for single-step integrators (`gj` / `abm` will be
+            // `None` on RK4 entities), so this branch is free for the
+            // common path.
             jeod_sim::reset_integrators(
                 gj.as_deref_mut().map(|c| &mut c.0),
                 abm.as_deref_mut().map(|c| &mut c.0),
