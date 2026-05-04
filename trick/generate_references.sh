@@ -2130,7 +2130,7 @@ run_frame_switch_group() {
 throttled_bg run_frame_switch_group
 PID_FRAME_SWITCH=$LAST_BG_PID
 
-# Group 32b: SIM_ref_attach — JEOD's reference-frame attachment verification
+# Group 33: SIM_ref_attach — JEOD's reference-frame attachment verification
 # (issues #198 / #206). The two RUNs each attach the target vehicle to a
 # parent ref frame at t=50s and run to t=100s; the body's state stops
 # integrating and is derived each tick from the parent frame.
@@ -2188,7 +2188,7 @@ run_ref_attach_group() {
 throttled_bg run_ref_attach_group
 PID_REF_ATTACH=$LAST_BG_PID
 
-# Group 31: SIM_contact — free-space contact dynamics (5 scenarios)
+# Group 34: SIM_contact — free-space contact dynamics (5 scenarios)
 # ASCII snippet logs: time (implicit), veh{1,2} position/velocity,
 # contact force/torque on each vehicle, composite masses.
 # Matches JEOD Log_data/log_contact_data.py variables.
@@ -2261,7 +2261,7 @@ run_contact_group() {
 throttled_bg run_contact_group
 PID_CONTACT=$LAST_BG_PID
 
-# Group 32: SIM_ground_contact — Earth-frame ground contact (1 scenario)
+# Group 35: SIM_ground_contact — Earth-frame ground contact (1 scenario)
 # Shares the CONTACT_SNIPPET log variables; adds Earth central body.
 run_ground_contact_group() {
     local sim_dir="models/interactions/contact/verif/SIM_ground_contact"
