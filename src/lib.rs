@@ -20,7 +20,7 @@ pub use components::*;
 pub use kinematic_propagation::propagate_state_from_root_system;
 pub use mass_tree::{composite_mass_system, MassTreeQueries, MassTreeView};
 pub use sets::*;
-pub use source_mutator::SourceMutator;
+pub use source_mutator::{SourceMutator, SourceReader};
 pub use systems::*;
 pub use wrench::wrench_aggregation_system;
 
