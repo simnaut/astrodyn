@@ -457,6 +457,7 @@ impl Plugin for JeodPlugin {
                 // second `add_systems` to stay within Bevy's 20-tuple
                 // `IntoSystem` limit.
                 body_action::body_action_intake_system
+                    .after(JeodSet::TimeUpdate)
                     .after(systems::sync_body_mass_point_ref_system)
                     .before(systems::mass_update_system)
                     .before(JeodSet::EphemerisUpdate),
@@ -472,6 +473,7 @@ impl Plugin for JeodPlugin {
                 // Bevy is free to schedule the two in either order and
                 // a same-tick mass propagation would be a coin flip.
                 body_action::body_action_system
+                    .after(JeodSet::TimeUpdate)
                     .after(body_action::body_action_intake_system)
                     .before(systems::mass_update_system)
                     .before(JeodSet::EphemerisUpdate),
