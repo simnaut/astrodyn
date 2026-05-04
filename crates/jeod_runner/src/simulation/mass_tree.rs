@@ -87,6 +87,47 @@ impl Simulation {
             .mass_body_id
             .expect("attach: parent body not in mass tree");
 
+        // ── Resolve the integrated tree root that owns the parent's
+        //    pre-attach composite-body state. Per JEOD_INV: DB.17 only
+        //    the root carries integrator-written `body.trans` /
+        //    `body.rot`; every interior SimBody on the chain has its
+        //    state derived each tick from the root via
+        //    `propagate_kinematic_state`. Reading the immediate
+        //    parent's `body.trans` directly would silently consume one-
+        //    tick-stale derived state when `parent_idx` is interior —
+        //    or, for an interior body that was never flagged
+        //    `kinematic_only`, frozen state from `add_body` time —
+        //    feeding the combine kernel a wrong `parent_composite` and
+        //    breaking momentum conservation across the whole tree.
+        //    Walking to the root and using its authoritative state
+        //    (composed forward through the tree to the parent's node
+        //    when needed) gives the same answer regardless of whether
+        //    parent IS the root or sits arbitrarily deep underneath
+        //    it; the root-as-parent case collapses to the previous
+        //    code path bit-identically (`root_idx == parent_idx`,
+        //    `derive_subtree_composite_state` is the trivial walk).
+        let (root_id, root_idx) = {
+            let tree_ro = self.mass_tree.as_ref().expect("attach: no mass tree");
+            let mut walker = parent_id;
+            while let Some(p) = tree_ro.parent(walker) {
+                walker = p;
+            }
+            let idx = self
+                .bodies
+                .iter()
+                .position(|b| b.mass_body_id == Some(walker))
+                .unwrap_or_else(|| {
+                    panic!(
+                        "attach: integrated tree root {walker:?} for parent {parent_id:?} \
+                         has no Simulation body backing it — `Simulation::attach` requires \
+                         the parent's tree root to be a registered SimBody so its \
+                         integrator-written composite-body state seeds the combine. \
+                         For tree-only-rooted subtrees use `attach_subtree_aligned` instead."
+                    )
+                });
+            (walker, idx)
+        };
+
         // ── Site A: mark every body whose composite mass is about to
         //    change as topology-dirty. JEOD_INV: IG.37 — this is bound
         //    to the topology mutation itself; if we ever do this in a
@@ -111,21 +152,64 @@ impl Simulation {
         affected_ids.dedup();
         Self::mark_body_integrators_dirty_by_id(&mut self.bodies, &affected_ids);
 
-        // ── Snapshot pre-attach composite-body inertial state of both
-        //    bodies + parent's pre-attach composite mass props BEFORE
-        //    mutating the tree. The combine kernel needs all of these
-        //    in the same pre-attach frame; reading post-mutation would
-        //    feed the kernel the *combined* mass props in place of the
-        //    parent's, breaking the algorithm.
-        let parent_pre_state = Self::body_composite_state_or_default(&self.bodies[parent_idx]);
-        let child_pre_state = Self::body_composite_state_or_default(&self.bodies[child_idx]);
-        let parent_pre_composite_props = self.bodies[parent_idx]
+        // ── Snapshot pre-attach state required by the combine kernel:
+        //    the integrated tree root's composite-body inertial state +
+        //    composite mass (the whole pre-attach tree's authoritative
+        //    state), the new child's composite-body state + mass, and
+        //    whether the root carries a rotational state. The kernel
+        //    composes the new whole-tree composite from these inputs;
+        //    `combine_states_at_attach` is symmetric in "parent" and
+        //    "child" sides at the algorithmic level, so passing the
+        //    pre-attach root in place of the immediate parent is the
+        //    rigorous formulation when the parent is interior. For the
+        //    parent-IS-root case (`root_idx == parent_idx`) this is
+        //    bit-identical to the previous direct read once the
+        //    integ-frame lift below collapses to the no-op path.
+        //
+        //    JEOD_INV: RF.10 — `body.trans` is typed
+        //    `TranslationalStateTyped<IntegrationFrame>`; the combine
+        //    kernel does cross-body composition (mass-weighted velocity,
+        //    inertial-frame CoM shift, ω×r over offsets) which is only
+        //    arithmetic-valid when both bodies' translational state
+        //    lives in the same inertial frame. Lift each body's state
+        //    to root-inertial at the kernel boundary via its
+        //    `IntegOrigin`. For root-integrated bodies the shift is a
+        //    bit-identical `IntegOrigin::zero()` no-op; for any body
+        //    integrating in a non-root planet (the cross-frame chain
+        //    case `parent in root + child in PlanetInertial<P>`) the
+        //    lift is the only thing that keeps the kernel from
+        //    silently mixing coordinates across distinct integration
+        //    frames. Mirrors the kinematic walk's seed-time lift in
+        //    `step::kinematic`.
+        let root_integ_origin_pos = {
+            let (p, _v) = self.frame_origin(self.bodies[root_idx].integ_frame_id);
+            p
+        };
+        let child_integ_origin_pos = {
+            let (p, _v) = self.frame_origin(self.bodies[child_idx].integ_frame_id);
+            p
+        };
+        let root_integ_origin_vel = {
+            let (_p, v) = self.frame_origin(self.bodies[root_idx].integ_frame_id);
+            v
+        };
+        let child_integ_origin_vel = {
+            let (_p, v) = self.frame_origin(self.bodies[child_idx].integ_frame_id);
+            v
+        };
+        let mut root_pre_state = Self::body_composite_state_or_default(&self.bodies[root_idx]);
+        root_pre_state.trans.position += root_integ_origin_pos;
+        root_pre_state.trans.velocity += root_integ_origin_vel;
+        let root_pre_composite_props = self.bodies[root_idx]
             .mass
-            .expect("attach: parent body has no mass properties");
+            .expect("attach: tree root has no mass properties");
+        let mut child_pre_state = Self::body_composite_state_or_default(&self.bodies[child_idx]);
+        child_pre_state.trans.position += child_integ_origin_pos;
+        child_pre_state.trans.velocity += child_integ_origin_vel;
         let child_pre_composite_props = self.bodies[child_idx]
             .mass
             .expect("attach: child body has no mass properties");
-        let parent_has_rot = self.bodies[parent_idx].rot.is_some();
+        let root_has_rot = self.bodies[root_idx].rot.is_some();
 
         // ── Mutate the tree itself. ──
         let tree = self.mass_tree.as_mut().expect("attach: no mass tree");
@@ -141,61 +225,80 @@ impl Simulation {
             }
         }
 
-        // Read the post-mutation parent composite mass — this is the
-        // *combined* mass of the merged body, which the kernel uses to
-        // solve `ω_t = I_t⁻¹ · L_total` and to shift the inertial
-        // position by the CoM-delta.
-        let combined_composite_props = self
+        // Read the post-mutation root composite mass — this is the
+        // *combined* mass of the whole merged tree, which the kernel
+        // uses to solve `ω_t = I_t⁻¹ · L_total` and to shift the
+        // inertial position by the CoM-delta. Reading at the root (not
+        // at `parent_id`) is the change that matches the parent-as-root
+        // semantics and keeps the kernel's invariants when the
+        // attaching parent is an interior node.
+        let combined_root_composite_props = self
             .mass_tree
             .as_ref()
             .expect("attach: mass tree dropped between mutate and read")
-            .get(parent_id)
+            .get(root_id)
             .composite_properties;
 
         // ── Run the JEOD momentum-conservation combine and write the
-        //    merged composite-body state back into the parent. The
-        //    kernel always runs (matching the Bevy adapter's
-        //    `staging_system`); for 3-DOF bodies the missing
-        //    rotational state is treated as identity attitude + zero
-        //    ang_vel, which yields the linear-momentum-only result the
-        //    kernel produces in that degenerate case.
+        //    merged composite-body state back into the integrated tree
+        //    root. The kernel always runs (matching the Bevy adapter's
+        //    `staging_system`); for 3-DOF bodies the missing rotational
+        //    state is treated as identity attitude + zero ang_vel,
+        //    which yields the linear-momentum-only result the kernel
+        //    produces in that degenerate case.
         // JEOD_INV: DB.13 — composite-body propagation on topology change.
         // JEOD_INV: DB.14 — integration-frame switch on attach: the merged
-        // body integrates in the parent's frame; the parent's composite_body
-        // state is the new integration target.
-        let parent_t_struct_to_body = parent_pre_composite_props.t_parent_this;
-        let parent_t_inertial_struct = jeod_dynamics::compute_t_inertial_struct(
-            &parent_t_struct_to_body,
-            &parent_pre_state.rot.t_parent_this,
+        // body integrates in the root's frame; the root's composite_body
+        // state is the new integration target. Interior kinematic-only
+        // bodies along the chain are rederived from the freshly-written
+        // root state by `propagate_kinematic_state` on the next step
+        // (root → leaves walk), so they don't need an explicit
+        // writeback here.
+        let root_t_struct_to_body = root_pre_composite_props.t_parent_this;
+        let root_t_inertial_struct = jeod_dynamics::compute_t_inertial_struct(
+            &root_t_struct_to_body,
+            &root_pre_state.rot.t_parent_this,
         );
         let combined = combine_states_at_attach(jeod_dynamics::AttachCombineInputs {
-            parent_composite: parent_pre_state,
-            parent_mass: parent_pre_composite_props,
-            parent_t_inertial_struct,
+            parent_composite: root_pre_state,
+            parent_mass: root_pre_composite_props,
+            parent_t_inertial_struct: root_t_inertial_struct,
             child_composite: child_pre_state,
             child_mass: child_pre_composite_props,
-            combined_mass: combined_composite_props,
-            orig_parent_cm_struct: parent_pre_composite_props.position,
+            combined_mass: combined_root_composite_props,
+            orig_parent_cm_struct: root_pre_composite_props.position,
         });
 
         // Write the merged translational state regardless of DOF — for
         // 3-DOF bodies this is a pure linear-momentum-conservation
         // update on velocity plus the structure-frame CoM-shift, both of
         // which are well-defined without rotational state.
-        self.bodies[parent_idx].trans =
+        //
+        // JEOD_INV: RF.10 — symmetric partner of the seed-time lift
+        // above. The kernel returned `combined.composite_state` in
+        // root-inertial coordinates; lower back through the root's
+        // `IntegOrigin` so the writeback lands in the typed
+        // `TranslationalStateTyped<IntegrationFrame>` storage. For a
+        // root-integrated root the shift is `IntegOrigin::zero()` and
+        // the subtraction is a bit-identical no-op; for a root that
+        // integrates in `PlanetInertial<P>` the shift is the only
+        // thing that prevents writing a root-inertial value into
+        // integration-frame storage and silently corrupting every
+        // downstream consumer of `body.trans`.
+        self.bodies[root_idx].trans =
             TranslationalStateTyped::<IntegrationFrame>::from_untyped_unchecked(
                 &TranslationalState {
-                    position: combined.composite_state.trans.position,
-                    velocity: combined.composite_state.trans.velocity,
+                    position: combined.composite_state.trans.position - root_integ_origin_pos,
+                    velocity: combined.composite_state.trans.velocity - root_integ_origin_vel,
                 },
             );
-        // Write rotational state only when the parent already carried
-        // one — the merged body inherits the parent's DOF. JEOD does the
-        // same: a 3-DOF parent stays 3-DOF post-merge regardless of
+        // Write rotational state only when the root already carried
+        // one — the merged body inherits the root's DOF. JEOD does the
+        // same: a 3-DOF root stays 3-DOF post-merge regardless of
         // whether the child contributed `Iω` to the angular-momentum
         // solve.
-        if parent_has_rot {
-            self.bodies[parent_idx].rot = Some(RotationalState {
+        if root_has_rot {
+            self.bodies[root_idx].rot = Some(RotationalState {
                 quaternion: combined.composite_state.rot.q_parent_this,
                 ang_vel_body: combined.composite_state.rot.ang_vel_this,
             });
@@ -447,6 +550,20 @@ impl Simulation {
         //    this call leaves the dirty bit set on every affected body
         //    and panics in IG.37 on the next integrate.
         Self::reset_body_integrators_by_id(&mut self.bodies, &affected_ids);
+
+        // ── Clear `kinematic_only` on the freshly-detached child. After
+        //    `tree.detach`, the child is a tree root with no parent;
+        //    `propagate_kinematic_state` would panic on the next
+        //    `step()` ("kinematic-only resolves to a tree root") if the
+        //    flag were left set. Clearing it here keeps detach as the
+        //    single fail-loud entry point: callers don't have to
+        //    remember a paired `clear_kinematic_only` call, and a
+        //    detached body resumes integrated dynamics on its own —
+        //    matching JEOD `dyn_body_detach.cc`'s transfer of state
+        //    ownership from `propagate_state_from_*` back to
+        //    `integrated_frame`. No-op when the flag was already
+        //    clear (the common case for non-kinematic children).
+        self.bodies[child_idx].kinematic_only = false;
     }
 
     /// Walk root → target through the mass tree applying
@@ -847,6 +964,26 @@ impl Simulation {
             }
             // Site B: reset history (separate observation site).
             jeod_sim::reset_integrators(body.gj_state.as_mut(), body.abm4_state.as_mut());
+        }
+
+        // ── Clear `kinematic_only` on the freshly-detached subtree root,
+        //    parallel to `Self::detach`. After `tree.detach`, the
+        //    subtree's tree-root has no parent in the mass tree;
+        //    `propagate_kinematic_state` would panic with the
+        //    "kinematic-only resolves to a tree root" diagnostic on the
+        //    next `step()` if a SimBody backing the subtree root were
+        //    left flagged `kinematic_only`. Interior subtree bodies
+        //    (descendants of the new tree root) keep their flag because
+        //    the new root continues to drive their state via
+        //    `propagate_state_via_storage`. Only one SimBody can match
+        //    a given `MassBodyId` (enforced by the duplicate-id guard
+        //    in `propagate_kinematic_state`), so a single linear scan
+        //    is sufficient. PR #295 review thread `PRRT_kwDORtae6c5_O1JW`.
+        for body in self.bodies.iter_mut() {
+            if body.mass_body_id == Some(subtree_root_id) {
+                body.kinematic_only = false;
+                break;
+            }
         }
     }
 
@@ -2335,5 +2472,152 @@ mod tests {
 
         sim.step_n(1)
             .expect("post-sync step failed (IG.37 must not fire)");
+    }
+
+    /// Regression: detaching a kinematic child must clear its
+    /// `kinematic_only` flag. Without the auto-clear, the next
+    /// `step()` enters `propagate_kinematic_state` with a kinematic
+    /// flag set on a body that is now a tree root (no parent), and
+    /// the "kinematic-only resolves to a tree root" assert fires.
+    #[test]
+    fn detach_clears_kinematic_only_flag_on_child() {
+        use crate::SimulationBuilderExt;
+        use jeod_sim::recipes::Mission;
+        use jeod_sim::{JeodQuat, RotationalState};
+
+        // `iss_leo` ships a 3-DOF point-mass root; reuse it as-is. The
+        // detach/auto-clear path only inspects mass-tree topology and
+        // the kinematic flag on the child, so the parent never needs a
+        // `rot` here.
+        let mut sim = Mission::iss_leo()
+            .into_builder()
+            .build()
+            .expect("Mission::iss_leo must validate");
+
+        let parent_idx = 0;
+        // Add a 6-DOF child SimBody, register both in the mass tree,
+        // attach with a non-zero offset, and mark the child kinematic.
+        let child_idx = sim.add_body(VehicleConfig {
+            trans: TranslationalState::default(),
+            rot: Some(RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::ZERO,
+            }),
+            mass: Some(MassProperties::new(5.0)),
+            gravity_controls: GravityControls { controls: vec![] },
+            ..Default::default()
+        });
+        sim.add_body_to_tree(parent_idx, "parent");
+        sim.add_body_to_tree(child_idx, "child");
+        sim.attach(
+            child_idx,
+            parent_idx,
+            DVec3::new(1.0, 0.0, 0.0),
+            DMat3::IDENTITY,
+        );
+        sim.mark_kinematic_only(child_idx);
+        assert!(
+            sim.bodies[child_idx].kinematic_only,
+            "child must be kinematic-only after mark_kinematic_only"
+        );
+
+        // One pre-detach step exercises propagation in the kinematic
+        // state. The assert at the top of `propagate_kinematic_state`
+        // would fire here on a regression.
+        sim.step().expect("pre-detach step must succeed");
+
+        // Detach the child. The auto-clear is what this test pins —
+        // without it the next `step()` would panic with the "tree
+        // root" diagnostic from `propagate_kinematic_state`.
+        sim.detach(child_idx);
+        assert!(
+            !sim.bodies[child_idx].kinematic_only,
+            "detach must clear kinematic_only on the freshly-detached child; \
+             leaving it set would panic in propagate_kinematic_state on the \
+             next step (the body is now a tree root with no parent)"
+        );
+
+        // Post-detach step: must run cleanly. This is the load-bearing
+        // assertion — a regression that drops the auto-clear panics
+        // here, not at the assertion above.
+        sim.step()
+            .expect("post-detach step must succeed (kinematic_only must be cleared)");
+    }
+
+    /// Sibling of `detach_clears_kinematic_only_flag_on_child` for the
+    /// `detach_subtree` path. `detach_subtree` mutates the same
+    /// `mass_tree` topology as `detach`, so a kinematic-flagged SimBody
+    /// whose `mass_body_id` matches the subtree root must have the flag
+    /// cleared at the same fail-loud entry point — otherwise
+    /// `propagate_kinematic_state` panics on the next `step()` with
+    /// "kinematic-only resolves to a tree root". Pins the parallel fix
+    /// requested in PR #295 review thread `PRRT_kwDORtae6c5_O1JW`.
+    #[test]
+    fn detach_subtree_clears_kinematic_only_flag_on_subtree_root() {
+        use crate::SimulationBuilderExt;
+        use jeod_sim::recipes::Mission;
+        use jeod_sim::{JeodQuat, RotationalState};
+
+        // Same recipe-backed root as `detach_clears_kinematic_only_flag_on_child`.
+        let mut sim = Mission::iss_leo()
+            .into_builder()
+            .build()
+            .expect("Mission::iss_leo must validate");
+
+        let parent_idx = 0;
+        // `iss_leo` ships a 3-DOF root; `detach_subtree` requires the
+        // integrated body to have a `rot` (it reads the parent
+        // composite-body inertial state to build the chain walk).
+        // Install identity attitude + zero rate so the subtree path is
+        // exercised without changing the orbit.
+        sim.bodies[parent_idx].rot = Some(RotationalState {
+            quaternion: JeodQuat::identity(),
+            ang_vel_body: DVec3::ZERO,
+        });
+
+        let child_idx = sim.add_body(VehicleConfig {
+            trans: TranslationalState::default(),
+            rot: Some(RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::ZERO,
+            }),
+            mass: Some(MassProperties::new(5.0)),
+            gravity_controls: GravityControls { controls: vec![] },
+            ..Default::default()
+        });
+        sim.add_body_to_tree(parent_idx, "parent");
+        let child_id = sim.add_body_to_tree(child_idx, "child");
+        sim.attach(
+            child_idx,
+            parent_idx,
+            DVec3::new(1.0, 0.0, 0.0),
+            DMat3::IDENTITY,
+        );
+        sim.mark_kinematic_only(child_idx);
+        assert!(
+            sim.bodies[child_idx].kinematic_only,
+            "child must be kinematic-only after mark_kinematic_only"
+        );
+
+        // Pre-detach step exercises `propagate_kinematic_state` so a
+        // regression that flips the assert order shows up here.
+        sim.step().expect("pre-detach step must succeed");
+
+        // Detach via the subtree path. `child_id` is a leaf, so the
+        // subtree happens to contain a single node — that's still the
+        // exact case where the flag must be cleared (the freshly-rooted
+        // node is the same SimBody that carried `kinematic_only`).
+        sim.detach_subtree(parent_idx, child_id);
+        assert!(
+            !sim.bodies[child_idx].kinematic_only,
+            "detach_subtree must clear kinematic_only on the SimBody backing \
+             the freshly-rooted subtree; leaving it set would panic in \
+             propagate_kinematic_state on the next step (tree-root with no parent)"
+        );
+
+        // Load-bearing assertion: post-detach step must run. A
+        // regression that drops the auto-clear panics here.
+        sim.step()
+            .expect("post-detach step must succeed (kinematic_only must be cleared)");
     }
 }

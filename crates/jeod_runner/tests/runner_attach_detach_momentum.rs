@@ -509,3 +509,210 @@ fn runner_attach_detach_handles_3dof_bodies() {
     let child_post_detach = sim.body(child_idx);
     assert!(child_post_detach.rot.is_none());
 }
+
+/// Multi-level attach: the named `parent_idx` passed to
+/// `Simulation::attach` is itself an interior, kinematic-only SimBody
+/// in an existing two-level tree (root A → kinematic-only B). A free
+/// body C is attached underneath B. Per JEOD_INV: DB.13 / DB.17, only
+/// the integrated tree root carries authoritative composite-body
+/// state; an interior SimBody's `body.trans` / `body.rot` are derived
+/// from the root each tick by `propagate_kinematic_state`. The combine
+/// must therefore route through A's state, not B's, even though the
+/// caller named B as the parent.
+///
+/// Without the multi-level fix in `Simulation::attach`, the kernel
+/// reads B's storage directly (potentially stale, or — when the
+/// kinematic walk hasn't run — frozen at the configured-but-not-
+/// integrated value), and writes the merged state back to B instead
+/// of A. The integrated root A's `body.trans` is then unchanged by
+/// the attach, so the next integrate step propagates the pre-attach
+/// momentum and silently violates linear-momentum conservation
+/// across the topology change.
+///
+/// This test pins the post-attach root state to the mass-weighted
+/// combined velocity of (A+B) and C — the value the kernel produces
+/// when fed the root's authoritative pre-attach state.
+#[test]
+fn runner_attach_handles_interior_kinematic_parent() {
+    // Two-level pre-attach tree: root A (integrated) and interior B
+    // (kinematic-only child of A, no integrator state of its own).
+    // Free body C joins underneath B in this test.
+    let a_mass = SimMassProperties::with_inertia(
+        500.0,
+        DMat3::from_diagonal(DVec3::new(200.0, 200.0, 200.0)),
+        DVec3::ZERO,
+    );
+    let b_mass = SimMassProperties::with_inertia(
+        500.0,
+        DMat3::from_diagonal(DVec3::new(200.0, 200.0, 200.0)),
+        DVec3::ZERO,
+    );
+    let c_mass = SimMassProperties::with_inertia(
+        1000.0,
+        DMat3::from_diagonal(DVec3::new(500.0, 500.0, 500.0)),
+        DVec3::ZERO,
+    );
+
+    // A is the only body with integrator-written state. With identity
+    // attitude on both A and B, the rigid-body invariant gives B's
+    // inertial position = A's + offset_b, and B's inertial velocity =
+    // A's velocity (zero ang_vel).
+    let a_v = DVec3::new(7000.0, 0.0, 0.0);
+    let c_v = DVec3::new(7700.0, 0.0, 0.0);
+    let a_trans = TranslationalState {
+        position: DVec3::new(7e6, 0.0, 0.0),
+        velocity: a_v,
+    };
+    let a_rot = Some(RotationalState::default());
+    let offset_b = DVec3::new(2.0, 0.0, 0.0);
+    // B's storage is set consistent with the rigid-body invariant —
+    // exactly what `propagate_kinematic_state` would produce on the
+    // first step. A correct combine reading from A and walking down
+    // through the tree must yield the same value.
+    let b_trans = TranslationalState {
+        position: a_trans.position + offset_b,
+        velocity: a_v,
+    };
+    let b_rot = Some(RotationalState::default());
+    let c_trans = TranslationalState {
+        position: a_trans.position + DVec3::new(5.0, 0.0, 0.0),
+        velocity: c_v,
+    };
+    let c_rot = Some(RotationalState::default());
+
+    // Build the sim manually since `build_pair` only creates two
+    // bodies; we need three.
+    let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sim = Simulation::new(time, 1.0);
+
+    let inertial = sim.add_source(
+        "InertialAnchor",
+        GravitySourceEntry {
+            source: GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: jeod_runner::RotationModel::default(),
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: true,
+        },
+    );
+
+    let a_idx = sim.add_body(VehicleConfig {
+        trans: a_trans,
+        rot: a_rot,
+        mass: Some(a_mass),
+        integrator: IntegratorType::Rk4,
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(inertial, false)],
+        },
+        ..Default::default()
+    });
+    let b_idx = sim.add_body(VehicleConfig {
+        trans: b_trans,
+        rot: b_rot,
+        mass: Some(b_mass),
+        integrator: IntegratorType::Rk4,
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(inertial, false)],
+        },
+        ..Default::default()
+    });
+    let c_idx = sim.add_body(VehicleConfig {
+        trans: c_trans,
+        rot: c_rot,
+        mass: Some(c_mass),
+        integrator: IntegratorType::Rk4,
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(inertial, false)],
+        },
+        ..Default::default()
+    });
+
+    let _a_id = sim.add_body_to_tree(a_idx, "A");
+    let _b_id = sim.add_body_to_tree(b_idx, "B");
+    let _c_id = sim.add_body_to_tree(c_idx, "C");
+
+    // Form the existing A → B link first; then mark B kinematic-only
+    // so its storage is officially derived from A every tick.
+    sim.attach(b_idx, a_idx, offset_b, DMat3::IDENTITY);
+    sim.mark_kinematic_only(b_idx);
+
+    // Snapshot A's authoritative pre-attach composite-body state for
+    // the second attach. The runner's mass tree already merged B into
+    // A's composite when we ran `sim.attach(b_idx, a_idx, ...)`, so
+    // reading sim.body(a_idx) here gives the (A+B) composite state +
+    // (A+B) composite mass — what the kernel needs as the "parent
+    // composite" when adding C.
+    let a_pre_attach_v = sim.body(a_idx).trans.velocity;
+    let combined_ab_mass = sim
+        .mass_tree
+        .as_ref()
+        .expect("mass tree present")
+        .get(_a_id)
+        .composite_properties
+        .mass;
+    // Sanity: m_A + m_B = 1000 (parallel-axis with offset adds zero
+    // mass; mass is additive). The combined-AB velocity equals A's
+    // pre-second-attach velocity (the first attach was a co-mover so
+    // momentum conservation is the identity).
+    assert!(
+        (combined_ab_mass - 1000.0).abs() < 1e-9,
+        "AB combined mass: expected 1000, got {combined_ab_mass}"
+    );
+
+    // Now the failure mode under test. With the multi-level fix the
+    // attach walks up from B → A and runs the combine using A's
+    // authoritative composite-body state; the resulting whole-tree
+    // composite is written back to A. Without the fix the combine
+    // reads B's storage and writes to B, leaving A's velocity
+    // unchanged at its pre-attach value (assertion below).
+    sim.attach(c_idx, b_idx, DVec3::new(3.0, 0.0, 0.0), DMat3::IDENTITY);
+
+    // Expected: linear-momentum conservation about the integration
+    // origin gives v_post = (m_AB · v_AB + m_C · v_C) / (m_AB + m_C).
+    let expected_v =
+        (combined_ab_mass * a_pre_attach_v + c_mass.mass * c_v) / (combined_ab_mass + c_mass.mass);
+
+    let a_post = sim.body(a_idx);
+    let v_err = (a_post.trans.velocity - expected_v).length();
+    assert!(
+        v_err < 1e-9,
+        "interior-parent attach must update the integrated tree root's velocity \
+         to the mass-weighted combine (linear momentum conservation across the \
+         whole tree). Without the multi-level fix the combine writes to the \
+         interior parent and the root's velocity stays at {a_pre_attach_v:?}. \
+         Expected={expected_v:?}, got={:?}, err={v_err}",
+        a_post.trans.velocity
+    );
+
+    // The integrated root must still carry rotational state (the
+    // root-level writeback path mirrors the parent-as-root case).
+    assert!(
+        a_post.rot.is_some(),
+        "6-DOF root must keep rotational state after multi-level attach"
+    );
+
+    // Total linear momentum about the integration origin is conserved
+    // to f64 rounding (defense-in-depth on the same property).
+    let combined_total_mass = sim
+        .mass_tree
+        .as_ref()
+        .expect("mass tree present")
+        .get(_a_id)
+        .composite_properties
+        .mass;
+    let p_pre = combined_ab_mass * a_pre_attach_v + c_mass.mass * c_v;
+    let p_post = combined_total_mass * a_post.trans.velocity;
+    let p_err = (p_post - p_pre).length();
+    assert!(
+        p_err < 1e-9,
+        "total linear momentum must be conserved across the multi-level attach: \
+         pre={p_pre:?} post={p_post:?} err={p_err}"
+    );
+}
