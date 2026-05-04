@@ -3189,6 +3189,30 @@ pub fn staging_system(
         // Keeping these as raw f64 fields (not borrowing the query)
         // avoids holding a borrow across the `bodies.iter()` /
         // `bodies.get_mut` calls below.
+        //
+        // `parent_pre_composite_props` is read from the legacy
+        // `MassTreeR` arena rather than the entity's
+        // `MassPropertiesC` because the ECS-tree fast path in
+        // `composite_mass_system` reverts `MassPropertiesC` to its
+        // `CoreMassPropertiesC` cache for any entity that has no
+        // `MassChildOf` edge, and the arena attach/detach path
+        // exercised here never adds those edges. Without this
+        // arena-read, by the time the detach handler runs (in the
+        // same tick, after `composite_mass_system`),
+        // `parent_mass_c.0.to_untyped()` would yield the just-reverted
+        // *core* mass instead of the live post-attach composite — and
+        // the CoM-shift formula below would key off
+        // `composite_properties.position == core.position` (typically
+        // zero), corrupting the parent's post-detach inertial position.
+        // The arena tree is the same source of truth the runner reads
+        // in `Simulation::detach_subtree`, so this also keeps the two
+        // adapters bit-identical for the parent-side post-detach
+        // CoM-shift. Mirrors `jeod_runner::Simulation::detach_subtree`'s
+        // `tree.get(tree_root_id).composite_properties` access.
+        //
+        // JEOD_INV: MA.23 — composite-property reads at detach must
+        // see the live (pre-detach) composite, not a downstream
+        // cache; the `MassTree` arena is the canonical store.
         let (
             parent_pre_position,
             parent_pre_velocity,
@@ -3196,7 +3220,7 @@ pub fn staging_system(
             parent_pre_ang_vel_body,
             parent_pre_composite_props,
         ) = {
-            let (_, _, parent_mass_c, parent_trans, parent_rot) = bodies
+            let (_, _, _, parent_trans, parent_rot) = bodies
                 .get(tree_root_entity)
                 .expect("id_to_entity points at a valid mass body");
             let position = parent_trans
@@ -3214,7 +3238,8 @@ pub fn staging_system(
                     (u.quaternion, u.ang_vel_body)
                 })
                 .unwrap_or((jeod_sim::JeodQuat::identity(), glam::DVec3::ZERO));
-            (position, velocity, q, w, parent_mass_c.0.to_untyped())
+            let composite = tree.get(tree_root_id).composite_properties;
+            (position, velocity, q, w, composite)
         };
 
         // Walk root → subtree applying `propagate_forward` at each
