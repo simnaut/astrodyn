@@ -45,8 +45,13 @@
 //! - [`propagate_frame_attached_state_system`] runs in
 //!   [`JeodSet::ForceCollection`](crate::JeodSet::ForceCollection)
 //!   *after* `frame_attach_system` (so freshly-attached bodies pick up
-//!   the frame composition the same tick they were attached) and
+//!   the frame composition the same tick they were attached),
 //!   *before*
+//!   [`propagate_state_from_root_system`](crate::propagate_state_from_root_system)
+//!   (so a frame-attached body that is also a mass-tree root has its
+//!   freshly-derived state available when the kinematic walk derives
+//!   its children — otherwise the subtree would lag the root by one
+//!   tick), and *before*
 //!   [`integration_system`](crate::systems::integration_system) (so
 //!   the integrator sees the frame-derived state when deciding to
 //!   skip via the `FrameAttachedC` filter).
@@ -356,9 +361,14 @@ pub fn propagate_frame_attached_state_system(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::components::{
+        DynamicsConfigC, ExternalForceC, ExternalTorqueC, FrameDerivativesC, KinematicChildC,
+        MassChildOf, MassPropertiesC, RotationalStateC, TotalForceC, TranslationalStateC,
+    };
     use crate::JeodPlugin;
     use bevy::prelude::FixedUpdate;
     use bevy::time::{Fixed, Time};
+    use jeod_sim::{MassProperties, RotationalState, TranslationalState};
     use std::time::Duration;
 
     fn step_bevy(app: &mut App, n: usize, dt: f64) {
@@ -426,6 +436,162 @@ mod tests {
         assert!(
             !app.world().entity(body).contains::<FrameAttachedC>(),
             "FrameAttachedC should have been removed after FrameDetachEvent"
+        );
+    }
+
+    /// Schedule-order regression for issue #309 thread 1.
+    ///
+    /// A frame-attached body that is also a mass-tree root with a
+    /// kinematic child must propagate to its parent reference frame
+    /// *before* the mass-tree kinematic walk derives its child. The
+    /// schedule wires
+    /// `propagate_frame_attached_state_system.before(propagate_state_from_root_system)`
+    /// — without that ordering the kinematic walk would derive the
+    /// child from the root's pre-frame-attach state, leaving the
+    /// subtree one tick stale.
+    ///
+    /// Setup: spawn a frame-attached parent at a non-zero offset from
+    /// the (stationary) root frame, attach a kinematic child to it via
+    /// `MassChildOf` with a known link offset, run one tick, and
+    /// verify the child's `TranslationalStateC` matches the analytical
+    /// "frame-attach derived parent + link" composition rather than
+    /// the "default-init parent + link" composition the bad order
+    /// would produce.
+    #[test]
+    fn frame_attached_parent_propagates_before_kinematic_child() {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, JeodPlugin));
+
+        // Use the root frame (which sits at the origin and has zero
+        // velocity) as the parent reference frame. The captured offset
+        // becomes the body's root-inertial position and is non-zero so
+        // the test distinguishes "frame-attach derived state" from a
+        // default-initialized `TranslationalStateC` (which is also
+        // zero — the bad order would not change the child either way
+        // unless the parent's state visibly differs from the default).
+        let parent_frame = **app.world().resource::<RootFrameEntityR>();
+        let parent_offset = DVec3::new(1234.5, -678.9, 42.0);
+
+        let parent_body = app
+            .world_mut()
+            .spawn((
+                Name::new("frame_attached_root"),
+                MassPropertiesC::from(MassProperties::new(10.0)),
+                RotationalStateC::from_untyped(RotationalState::default()),
+                TranslationalStateC::from_untyped(TranslationalState::default()),
+                TotalForceC::default(),
+                FrameDerivativesC::default(),
+                DynamicsConfigC::default(),
+                ExternalForceC::default(),
+                ExternalTorqueC::default(),
+            ))
+            .id();
+
+        // Kinematic child: identity link rotation, fixed structural
+        // offset in the parent's frame. The expected child position is
+        // `parent_offset + composite-CoM-routed link_offset`.
+        //
+        // Pre-insert `KinematicChildC` so the kinematic walk's
+        // marker-gated writeback hits the child on tick 1 — without
+        // it the marker is only installed by `wrench_aggregation_system`,
+        // which runs *after* the propagation pass we're trying to
+        // observe (the schedule chain is propagation → wrench, so the
+        // child's first marker-gated write only lands on tick 2). The
+        // schedule-order regression we're guarding against is "frame-
+        // attach propagation runs before mass-tree kinematic
+        // propagation", and we need the kinematic write to land on the
+        // same tick as the frame-attach write to make the difference
+        // observable. Pre-inserting the marker is exactly what the
+        // wrench system would do on tick 2 in steady state.
+        let child_link_offset = DVec3::new(0.0, 100.0, 0.0);
+        let child_body = app
+            .world_mut()
+            .spawn((
+                Name::new("kinematic_child"),
+                MassPropertiesC::from(MassProperties::new(5.0)),
+                MassChildOf::with_rotation(parent_body, child_link_offset, glam::DMat3::IDENTITY),
+                KinematicChildC,
+                RotationalStateC::from_untyped(RotationalState::default()),
+                TranslationalStateC::from_untyped(TranslationalState::default()),
+                TotalForceC::default(),
+                FrameDerivativesC::default(),
+                DynamicsConfigC::default(),
+                ExternalForceC::default(),
+                ExternalTorqueC::default(),
+            ))
+            .id();
+
+        // Send the FrameAttachEvent and run the schedule.
+        app.world_mut()
+            .resource_mut::<bevy::ecs::message::Messages<FrameAttachEvent>>()
+            .write(FrameAttachEvent {
+                body: parent_body,
+                parent_frame,
+                offset: parent_offset,
+                t_parent_body: glam::DMat3::IDENTITY,
+            });
+
+        // Run a single tick. With the correct ordering
+        // (`propagate_frame_attached_state_system.before(propagate_state_from_root_system)`),
+        // the parent's state is updated before the kinematic walk
+        // reads it, so the child's derived position reflects the new
+        // attach offset on the same tick. With the inverted ordering,
+        // the kinematic walk reads the parent's pre-attach default
+        // state (zero) and writes the child at `link_offset_routed`
+        // alone — missing `parent_offset`. The two orderings only
+        // diverge on the first tick of an attach (or the first tick
+        // after the parent state changes); steady-state convergence
+        // would mask the regression after tick 2, so the assertion
+        // must fire on tick 1.
+        step_bevy(&mut app, 1, 0.1);
+
+        // The frame-attached parent's state must reflect the captured
+        // offset (root frame is at origin, so root-inertial position =
+        // offset).
+        let parent_state = app
+            .world()
+            .get::<TranslationalStateC>(parent_body)
+            .expect("parent body should still have TranslationalStateC");
+        let parent_pos = parent_state.0.position.raw_si();
+        assert!(
+            (parent_pos - parent_offset).length() < 1e-9,
+            "frame-attached parent must end the tick at its captured offset \
+             ({parent_offset:?}); got {parent_pos:?}",
+        );
+
+        // The kinematic child must inherit the *frame-attach-derived*
+        // parent state (parent_offset) plus the kernel's structural
+        // routing through the parent's composite CoM. The kernel
+        // computes:
+        //   r_inertial_child = r_inertial_parent + T_inertial_pstr · pcm_to_ccm
+        //   pcm_to_ccm = link_offset + child_composite_CoM_in_cstr
+        //              - parent_composite_CoM_in_pstr
+        // Both bodies have identity struct→body and a composite CoM
+        // collapsed to a single weighted-sum point along the link axis.
+        // With parent mass 10 at origin and child mass 5 at link_offset,
+        // parent's composite CoM in its own struct = (5/15) * link_offset.
+        // Child's composite CoM in its own struct = origin (no further
+        // children).
+        let child_state = app
+            .world()
+            .get::<TranslationalStateC>(child_body)
+            .expect("kinematic child should still have TranslationalStateC");
+        let child_pos = child_state.0.position.raw_si();
+        let parent_mass = 10.0;
+        let child_mass = 5.0;
+        let parent_composite_cm = child_link_offset * (child_mass / (parent_mass + child_mass));
+        let pcm_to_ccm = child_link_offset - parent_composite_cm;
+        // Parent has identity attitude (default) so T_inertial_pstr is
+        // identity — `pcm_to_ccm` is already in inertial frame.
+        let expected_child_pos = parent_offset + pcm_to_ccm;
+        assert!(
+            (child_pos - expected_child_pos).length() < 1e-9,
+            "kinematic child of a frame-attached root must derive its state from \
+             the freshly-propagated parent. Expected {expected_child_pos:?} \
+             (= parent_offset + composite-CoM-routed link), got {child_pos:?}. \
+             If the schedule order regressed (kinematic walk before frame-attach \
+             propagation), the child would read the default-zero parent state and \
+             end up at the link contribution alone ({pcm_to_ccm:?}).",
         );
     }
 }
