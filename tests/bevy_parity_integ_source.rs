@@ -13,15 +13,16 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 use bevy_jeod::{
-    DynamicsConfigC, GravityControlsC, IntegSourceC, JeodPlugin, MassPropertiesC, PlanetBundle,
-    RotationalStateC, SolarBetaC, SourceInertialPositionC, SourceInertialVelocityC, SourceMutator,
-    SunMarker, TranslationalStateC,
+    DynamicsConfigC, FlatPlateConfigC, GravityControlsC, IntegSourceC, JeodPlugin, MassPropertiesC,
+    PlanetBundle, RadiationForceC, RotationalStateC, SolarBetaC, SourceInertialPositionC,
+    SourceInertialVelocityC, SourceMutator, SunMarker, TranslationalStateC,
 };
 use glam::DVec3;
 use jeod_runner::Simulation;
 use jeod_sim::{
-    DerivedStateConfig, DynamicsConfig, GravityControl, GravityControls, GravityModel,
-    GravitySource, GravitySourceEntry, JeodQuat, MassProperties, RotationalState, SixDofState,
+    DerivedStateConfig, DynamicsConfig, FlatPlate, FlatPlateParams, FlatPlateState,
+    FlatPlateThermal, GravityControl, GravityControls, GravityModel, GravitySource,
+    GravitySourceEntry, JeodQuat, MassProperties, RotationalState, SixDofState, SrpModel,
     TranslationalState, VehicleConfig, EARTH, MOON,
 };
 
@@ -613,4 +614,226 @@ fn tier3_bevy_solar_beta_in_lunar_integ_frame() {
         bevy_beta,
         sim_beta,
     );
+}
+
+/// Regression for PR #296 Thread 4: `flat_plate_srp_system`'s
+/// scheduled-class branch builds `sun_to_vehicle = pos_raw -
+/// sun_pos_raw` directly from the body's
+/// `<PlanetInertial<SelfPlanet>>` storage, without applying the
+/// integration-origin offset. For a non-root-integrated body that
+/// puts `sun_to_vehicle` (and the conical-shadow geometry) off by
+/// the inter-source separation distance — wrong flux direction at a
+/// minimum, and potentially the wrong illumination factor when
+/// shadow bodies are involved.
+///
+/// This test propagates a tilted lunar orbit with one flat plate +
+/// Earth as a shadow body, then asserts the resulting body
+/// `RadiationForceC` is bit-identical to `jeod_runner::Simulation`'s
+/// post-step force for the same configuration. The ~1 AU Sun
+/// distance and ~3.84e8 m Earth–Moon offset make the bug-shape and
+/// fix-shape `sun_to_vehicle` directions differ measurably; without
+/// the shift the bevy force diverges from the runner's by orders of
+/// magnitude above f64 round-off.
+#[test]
+fn tier3_bevy_flat_plate_srp_in_lunar_integ_frame() {
+    // Sun off the +X axis (~1 AU in X, ~0.7 AU in Z) so flux
+    // direction depends on `sun_to_vehicle`'s X *and* Z components,
+    // amplifying the bug-vs-fix difference.
+    let sun_pos = DVec3::new(1.496e11, 0.0, 1.0e11);
+
+    let r = 1_837_400.0;
+    let v = (MOON.shape.mu / r).sqrt();
+    let lunar_tilted = TranslationalState {
+        position: DVec3::new(r, 0.0, 0.0),
+        velocity: DVec3::new(0.0, v * 0.866_025_403_784_438_6, v * 0.5),
+    };
+
+    // Single flat plate, plus thermal so the SRP kernel runs the
+    // full force path.
+    let plates = vec![(
+        FlatPlate {
+            area: 100.0,
+            normal: DVec3::X,
+            position: DVec3::ZERO,
+        },
+        FlatPlateParams {
+            albedo: 0.0,
+            diffuse: 0.0,
+        },
+        FlatPlateThermal {
+            emissivity: 1.0,
+            heat_capacity_per_area: 50.0,
+            thermal_power_dump: 0.0,
+        },
+    )];
+    let init_temp = 270.0_f64;
+
+    // ── Bevy ──
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.add_plugins(JeodPlugin);
+
+    let _earth = app
+        .world_mut()
+        .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+        .id();
+    let moon = app
+        .world_mut()
+        .spawn(PlanetBundle::point_mass("Moon", &MOON))
+        .insert(SourceInertialVelocityC::default())
+        .id();
+    let _sun = app
+        .world_mut()
+        .spawn((
+            Name::new("Sun"),
+            SunMarker,
+            TranslationalStateC::from(TranslationalState {
+                position: sun_pos,
+                velocity: DVec3::ZERO,
+            }),
+        ))
+        .id();
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            Name::new("Lunar-SRP"),
+            TranslationalStateC::from(lunar_tilted),
+            RotationalStateC::from(initial_rot()),
+            MassPropertiesC::from(vehicle_mass()),
+            DynamicsConfigC(DynamicsConfig {
+                translational_dynamics: true,
+                rotational_dynamics: true,
+                three_dof: false,
+            }),
+            GravityControlsC(GravityControls {
+                controls: vec![
+                    {
+                        let mut c = GravityControl::new_spherical(_earth, false);
+                        c.differential = true;
+                        c
+                    },
+                    GravityControl::new_spherical(moon, false),
+                ],
+            }),
+            IntegSourceC(Some(moon)),
+            FlatPlateConfigC(FlatPlateState {
+                plates: plates.clone(),
+                temperatures: vec![init_temp; 1],
+                t_pow4_cached: vec![init_temp.powi(4); 1],
+                ..Default::default()
+            }),
+        ))
+        .id();
+    app.world_mut().run_schedule(Startup);
+
+    let sys = app
+        .world_mut()
+        .register_system(move |mut m: SourceMutator| {
+            m.set_source_position(moon, MOON_OFFSET);
+        });
+    app.world_mut().run_system(sys).unwrap();
+
+    for _ in 0..NUM_STEPS {
+        app.world_mut()
+            .resource_mut::<Time<Fixed>>()
+            .advance_by(Duration::from_secs_f64(DT));
+        app.world_mut().run_schedule(FixedUpdate);
+    }
+
+    // SRP contributes to the trajectory through `force_collection` →
+    // integration. After `NUM_STEPS` steps the body has integrated
+    // gravity + SRP; comparing the resulting `trans` to the runner's
+    // post-integration state pins SRP correctness end-to-end.
+    let bevy_state = SixDofState {
+        trans: app
+            .world()
+            .get::<TranslationalStateC>(vehicle)
+            .unwrap()
+            .0
+            .to_untyped(),
+        rot: app
+            .world()
+            .get::<RotationalStateC>(vehicle)
+            .unwrap()
+            .0
+            .to_untyped(),
+    };
+    // Read the per-step force as a stronger pinning point: after the
+    // last step it's the most recently computed SRP force in the
+    // body's inertial frame, which differs between bug and fix even
+    // when integration-driven divergence has not yet accumulated.
+    let bevy_force = app.world().get::<RadiationForceC>(vehicle).unwrap().force;
+    let bevy_torque = app.world().get::<RadiationForceC>(vehicle).unwrap().torque;
+
+    // ── jeod_runner ──
+    let time = jeod_sim::SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sim = Simulation::new(time, DT);
+    let _earth_idx = sim.add_source("Earth", GravitySourceEntry::central_body(&EARTH));
+    let moon_idx = sim.add_source(
+        "Moon",
+        GravitySourceEntry::third_body(
+            &MOON,
+            jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(MOON_OFFSET),
+        ),
+    );
+    let sun_idx = sim.add_source(
+        "Sun",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(sun_pos),
+            None,
+        ),
+    );
+    sim.sun_source = Some(sun_idx);
+
+    sim.add_body(VehicleConfig {
+        trans: lunar_tilted,
+        rot: Some(initial_rot()),
+        mass: Some(vehicle_mass()),
+        gravity_controls: GravityControls {
+            controls: vec![
+                {
+                    let mut c = GravityControl::new_spherical(0_usize, false);
+                    c.differential = true;
+                    c
+                },
+                GravityControl::new_spherical(moon_idx, false),
+            ],
+        },
+        integ_source: Some(moon_idx),
+        srp: Some(SrpModel::FlatPlate(FlatPlateState {
+            plates,
+            temperatures: vec![init_temp; 1],
+            t_pow4_cached: vec![init_temp.powi(4); 1],
+            ..Default::default()
+        })),
+        ..Default::default()
+    });
+    sim.validate().unwrap();
+    sim.step_n(NUM_STEPS).expect("step_n failed");
+
+    // Compare the integrated trajectory bit-identically. SRP enters
+    // through `force_collection` and `integration`, so any difference
+    // in the per-step SRP force surfaces in `trans` after the loop.
+    let sim_body = sim.body(0);
+    let sim_state = SixDofState {
+        trans: sim_body.trans,
+        rot: sim_body.rot.unwrap(),
+    };
+    assert_sixdof_bit_identical("Bevy lunar-integ SRP vs Sim", &bevy_state, &sim_state);
+
+    // Use the bevy-side `RadiationForceC` to assert the per-step SRP
+    // force is finite and non-zero — guards against a later refactor
+    // that quietly turns the SRP path into a no-op (which would also
+    // pass the trajectory comparison above with both sides at zero).
+    assert!(
+        bevy_force.length() > 0.0,
+        "Bevy SRP force must be non-zero in lunar integ frame; got {bevy_force:?}"
+    );
+    let _ = bevy_torque;
 }

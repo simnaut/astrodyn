@@ -2585,8 +2585,11 @@ pub fn earth_lighting_system(
 /// values.
 ///
 /// Placed in `JeodSet::Interaction`.
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn flat_plate_srp_system(
+    frame_origin: FrameOrigin,
+    root_frame_entity: Res<crate::RootFrameEntityR>,
+    parents: Query<&ChildOf>,
     // Filter excludes both kinematic-chain children (their
     // `TranslationalStateC` / `RotationalStateC` stay frozen until
     // the kinematic-propagation system lands; computing SRP from
@@ -2602,6 +2605,7 @@ pub fn flat_plate_srp_system(
             Option<&RotationalStateC>,
             Option<&MassPropertiesC>,
             Option<&StructuralTransformC>,
+            Option<&FrameEntityC>,
             &mut RadiationForceC,
         ),
         (
@@ -2655,7 +2659,7 @@ pub fn flat_plate_srp_system(
 
     let dt = time.delta_secs_f64();
 
-    for (mut flat_config, state, rot, mass, struct_xform, mut srp_force) in &mut query {
+    for (mut flat_config, state, rot, mass, struct_xform, body_frame, mut srp_force) in &mut query {
         // Clear per-step SRP state unconditionally (before the Sun check)
         // so derivative-mode entities don't retain stale `stage_inputs` or
         // force/torque if the Sun entity is removed between steps — which
@@ -2669,10 +2673,27 @@ pub fn flat_plate_srp_system(
             continue;
         };
 
-        // The SRP kernel (`compute_flat_plate_srp_thermal`) and shadow
-        // helpers all consume raw DVec3. Extract once at the top so the
-        // rest of the body matches the kernel's untyped surface.
-        let pos_raw = state.position.raw_si();
+        // SRP is a root-inertial-shift consumer (RF.10): `sun_to_vehicle`
+        // and the conical-shadow geometry both mix the body position
+        // with the Sun / shadow-body positions, which are tagged
+        // `<RootInertial>` (they integrate in root). For non-root-
+        // integrated bodies the body's `<PlanetInertial<SelfPlanet>>`
+        // storage is integ-frame-relative, so passing it raw to the
+        // SRP / shadow kernels would compute `sun_to_vehicle` off by
+        // the Earth–planet separation distance — wrong flux direction
+        // and wrong illumination factor. Lift the body position to
+        // absolute root-inertial via the integ-origin shift before
+        // mixing. Both the scheduled-class and derivative-class
+        // branches read `pos_raw` for `sun_to_vehicle`, distance, and
+        // `compute_illum_factor`, so the shift applies to both — only
+        // the temperature integration cadence differs between them.
+        let (integ_origin, _integ_origin_vel) =
+            body_integ_origin_in_root(body_frame, &parents, root_frame_entity.0, &frame_origin);
+        let pos_raw = state.position.raw_si() + integ_origin.raw_si();
+        // Sun is registered through `SunBundle` and integrates in the
+        // root frame, so its `<PlanetInertial<SelfPlanet>>` storage is
+        // numerically root-inertial; no integ-origin shift needed for
+        // the Sun position.
         let sun_pos_raw = sun_state.position.raw_si();
 
         let sun_to_vehicle = pos_raw - sun_pos_raw;
