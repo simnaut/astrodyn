@@ -31,6 +31,36 @@
 //! later-queued one wins (JEOD semantics: each `apply` overwrites the
 //! prior state).
 //!
+//! ## Same-tick observation: writer vs `Commands` timing
+//!
+//! The two surfaces differ in *when* the message becomes visible to
+//! [`body_action_intake_system`] within the same `app.update()`:
+//!
+//! - A direct `MessageWriter<BodyActionEvent>` write (or the
+//!   [`add_body_action_via`] helper) is **immediate**: the message is
+//!   visible to any later-running `MessageReader<BodyActionEvent>` in
+//!   the same schedule pass.
+//! - [`BodyActionCommandsExt`] uses `Commands::queue`, which defers
+//!   the actual message write until the next `ApplyDeferred`
+//!   boundary. With no explicit ordering, that boundary lands at the
+//!   end of the schedule, so an action queued via
+//!   `commands.add_body_action(...)` is **not** observed until the
+//!   *next* tick's intake.
+//!
+//! For same-tick application, callers must either:
+//!
+//! - use `MessageWriter<BodyActionEvent>` directly (or the
+//!   [`add_body_action_via`] helper), or
+//! - order the writing system `.before(body_action_intake_system)`
+//!   so Bevy auto-inserts an `ApplyDeferred` between writer and
+//!   intake before [`body_action_intake_system`] runs.
+//!
+//! The default `commands.add_body_action(...)` path (no explicit
+//! `.before(body_action_intake_system)`) yields next-tick observation,
+//! which is the right choice for init-time wiring (where startup
+//! actions land before the first FixedUpdate intake) and for any
+//! mid-sim queue where one tick of latency is acceptable.
+//!
 //! # Lifecycle and naming
 //!
 //! - Adding an action with a `name` registers it for later removal.
@@ -461,13 +491,53 @@ pub fn body_action_system(
 /// to thread a `MessageWriter<BodyActionEvent>` through every
 /// system can drop into `Commands` instead — both paths land in the
 /// same [`BodyActionsR`] queue.
+///
+/// # Timing
+///
+/// Both methods route through `Commands::queue`, so the underlying
+/// `BodyActionEvent` write is deferred until the next `ApplyDeferred`
+/// boundary — typically the end of the current schedule. As a
+/// result, actions queued via this trait are **not observed by
+/// [`body_action_intake_system`] until the next tick** unless the
+/// writing system is explicitly ordered
+/// `.before(body_action_intake_system)` (which causes Bevy to insert
+/// an `ApplyDeferred` between them, flushing the queued command
+/// before intake runs).
+///
+/// For same-tick observation without ordering ceremony, prefer a
+/// direct `MessageWriter<BodyActionEvent>` (or the
+/// [`add_body_action_via`] helper): writer-based sends are immediate.
 pub trait BodyActionCommandsExt {
     /// Queue a [`BodyAction`] against `entity`. Equivalent to
     /// sending a [`BodyActionEvent::Add`].
+    ///
+    /// # Timing
+    ///
+    /// The implementation uses `Commands::queue`, so the
+    /// `BodyActionEvent::Add` write happens at `ApplyDeferred` time —
+    /// not at the call site. With no extra ordering, the message is
+    /// invisible to [`body_action_intake_system`] until the next
+    /// tick. Callers that need the action to apply on the *current*
+    /// tick must either:
+    ///
+    /// - write to `MessageWriter<BodyActionEvent>` directly (e.g. via
+    ///   the [`add_body_action_via`] helper), which is immediate, or
+    /// - order their writing system
+    ///   `.before(body_action_intake_system)` so Bevy auto-inserts an
+    ///   `ApplyDeferred` boundary that flushes the queued command
+    ///   before intake walks the message buffer.
     fn add_body_action(&mut self, entity: Entity, action: BodyAction, name: Option<&str>);
 
     /// Cancel every pending body action whose name matches `name`.
     /// Equivalent to sending a [`BodyActionEvent::Remove`].
+    ///
+    /// Same `Commands::queue` deferral applies as
+    /// [`add_body_action`](Self::add_body_action): the
+    /// `BodyActionEvent::Remove` becomes visible at the next
+    /// `ApplyDeferred` boundary, so a same-tick remove requires
+    /// either a direct `MessageWriter` write or
+    /// `.before(body_action_intake_system)` ordering on the calling
+    /// system.
     fn remove_body_action(&mut self, name: &str);
 }
 
@@ -502,6 +572,12 @@ impl<'w, 's> BodyActionCommandsExt for Commands<'w, 's> {
 /// name))`. Provided here so the call site reads as
 /// `add_body_action_via(...)` and matches the JEOD vocabulary even
 /// when going through a writer.
+///
+/// Unlike [`BodyActionCommandsExt::add_body_action`], this writes the
+/// message synchronously: the result is visible to any later-running
+/// `MessageReader<BodyActionEvent>` (including
+/// [`body_action_intake_system`]) within the same schedule pass — no
+/// `ApplyDeferred` boundary is required.
 #[inline]
 pub fn add_body_action_via(
     writer: &mut MessageWriter<BodyActionEvent>,
