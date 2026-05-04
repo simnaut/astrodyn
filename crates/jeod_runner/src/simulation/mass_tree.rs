@@ -2054,7 +2054,10 @@ mod tests {
         use jeod_sim::recipes::Mission;
         use jeod_sim::{JeodQuat, RotationalState};
 
-        // ISS recipe ships a 6-DOF root body; reuse it as the parent.
+        // `iss_leo` ships a 3-DOF point-mass root; reuse it as-is. The
+        // detach/auto-clear path only inspects mass-tree topology and
+        // the kinematic flag on the child, so the parent never needs a
+        // `rot` here.
         let mut sim = Mission::iss_leo()
             .into_builder()
             .build()
