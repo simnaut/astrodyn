@@ -331,12 +331,23 @@ mod tests {
         // parent_struct → child_struct → child_body shift. We build
         // the same `pcm_to_ccm` and `T_inertial_struct.transpose()`
         // chain the kernel uses to verify end-to-end correctness.
-        // Parent's composite CoM at this point of the step is the
-        // freshly-recomputed composite mass tree's value: parent
-        // (420_000 kg) + child (5 kg) at offset (1,0,0), so the
-        // composite CoM is at `5 / (420_000 + 5) · 1` m along x.
-        let composite_total = 420_000.0 + 5.0;
-        let parent_composite_in_pstr = DVec3::new(5.0 / composite_total, 0.0, 0.0);
+        // Parent's composite CoM in parent struct is the mass-weighted
+        // CoM of (parent at origin) and (child at `offset`); read both
+        // masses from the tree so the test stays valid if the recipe's
+        // parent mass changes.
+        let parent_mass_kg = sim.bodies[0]
+            .mass
+            .expect("recipe ships parent with mass")
+            .mass;
+        let child_mass_kg = sim.bodies[child_idx]
+            .mass
+            .expect("child config sets mass")
+            .mass;
+        let composite_total = parent_mass_kg + child_mass_kg;
+        // Parent's struct origin holds its own CoM (atomic body), so
+        // the only off-origin contribution to the combined CoM is the
+        // child at `offset`.
+        let parent_composite_in_pstr = offset * (child_mass_kg / composite_total);
         // Child has zero composite_in_cstr (atomic 5 kg point at struct
         // origin), so `T_pc^T · child_composite_in_cstr` vanishes.
         let pcm_to_ccm = offset - parent_composite_in_pstr;
