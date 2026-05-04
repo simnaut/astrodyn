@@ -594,6 +594,29 @@ pub enum JointKinematicsModel {
 
 /// Evaluate a [`JointKinematicsModel`] at elapsed time `t`, returning
 /// `(q_parent_this, ang_vel_this)` for whichever variant is held.
+///
+/// # Panics
+///
+/// This is a thin dispatcher over the per-variant evaluators
+/// ([`evaluate`], [`evaluate_sinusoidal`], [`evaluate_closure`],
+/// [`evaluate_multi_dof`]); every panic those functions document is
+/// inherited verbatim. Specifically:
+///
+/// - Any single-axis variant (`ConstantRate` / `Sinusoidal` /
+///   `Closure`) whose `axis_in_parent` is not a unit vector (within
+///   [`AXIS_NORM_TOL`]). A non-unit axis would silently scale the
+///   resulting rotation angle and/or angular-velocity magnitude.
+/// - `elapsed_seconds` is non-finite (`NaN` or `±∞`). For the
+///   `MultiDof` variant this is enforced at the top of
+///   [`evaluate_multi_dof`] so the empty-chain fast path also fails
+///   loudly; the single-axis variants assert it inside their own
+///   kernels.
+/// - Any spec scalar (`rate_rad_per_s`, `initial_angle_rad`,
+///   sinusoid `amplitude_rad` / `omega_rad_per_s` / `phase_rad` /
+///   `offset_rad`, closure `fixed_angle_rad`) is non-finite.
+/// - `MultiDof` only: the populated DOFs are not a contiguous prefix
+///   (an `axes[i] = None` is followed by some `axes[j > i] = Some(_)`).
+///   A hole in the middle of the chain is a configuration error.
 pub fn evaluate_model(model: &JointKinematicsModel, elapsed_seconds: f64) -> (JeodQuat, DVec3) {
     match model {
         JointKinematicsModel::ConstantRate(spec) => evaluate(spec, elapsed_seconds),

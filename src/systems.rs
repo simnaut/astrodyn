@@ -1222,15 +1222,24 @@ pub fn planet_fixed_rotation_system(
 /// out of scope; see the deferred-dynamics meta.
 ///
 /// The `Without<...>` filters on the three sibling kinematic-spec
-/// components make this query structurally disjoint from the
-/// sinusoidal / closure / multi-DOF drivers, so Bevy's scheduler
-/// can dispatch the four systems in parallel under
-/// `JeodSet::EphemerisUpdate` without a runtime borrow conflict on
-/// `FrameRotC` / `FrameAngVelC`. An entity that accidentally carries
-/// more than one kinematic spec is silently dropped from every
-/// driver's query — `validate_joint_kinematics_exclusivity` runs at
-/// `PostStartup` to reject such misconfigurations loudly before any
-/// driver tick can mask them.
+/// components are a *parallelism signal* for Bevy's scheduler — they
+/// make this query structurally disjoint from the sinusoidal /
+/// closure / multi-DOF drivers so the four systems can dispatch in
+/// parallel under `JeodSet::EphemerisUpdate` without a runtime borrow
+/// conflict on `FrameRotC` / `FrameAngVelC`. They are *not* the
+/// correctness mechanism that rejects stacked-spec entities.
+///
+/// Stacked-spec rejection is enforced by the per-component
+/// `on_insert` hooks installed via
+/// [`register_joint_kinematics_exclusivity_hooks`]: inserting a
+/// second kinematic-spec component on an entity that already carries
+/// one panics immediately, naming the entity and both spec
+/// components, before any driver query ever runs. The PostStartup
+/// [`validate_joint_kinematics_exclusivity`] pass is defense in
+/// depth — it catches stacking patterns that bypass the hook order
+/// (e.g., a `Bundle` whose components arrive in the same archetype
+/// move, or future spec components added without registering a hook)
+/// and aggregates every offender into a single startup-time panic.
 #[allow(clippy::type_complexity)]
 pub fn joint_kinematics_system(
     sim_time: Res<SimulationTimeR>,
@@ -1268,10 +1277,13 @@ pub fn joint_kinematics_system(
 /// state, integration) reads them.
 ///
 /// The `Without<...>` filters mirror the contract documented on
-/// [`joint_kinematics_system`]: the four kinematic-spec drivers are
-/// pairwise-disjoint at the query level so Bevy can schedule them in
-/// parallel; `validate_joint_kinematics_exclusivity` rejects
-/// stacked-spec misconfigurations at `PostStartup`.
+/// [`joint_kinematics_system`]: they are a parallelism signal that
+/// keeps the four kinematic-spec drivers pairwise-disjoint at the
+/// query level. The correctness mechanism that rejects stacked-spec
+/// entities is the on_insert hooks installed by
+/// [`register_joint_kinematics_exclusivity_hooks`] (panic at
+/// insertion); [`validate_joint_kinematics_exclusivity`] is
+/// PostStartup defense in depth.
 #[allow(clippy::type_complexity)]
 pub fn sinusoidal_joint_kinematics_system(
     sim_time: Res<SimulationTimeR>,
@@ -1309,10 +1321,13 @@ pub fn sinusoidal_joint_kinematics_system(
 /// is materialized before any frame-tree consumer reads it.
 ///
 /// The `Without<...>` filters mirror the contract documented on
-/// [`joint_kinematics_system`]: the four kinematic-spec drivers are
-/// pairwise-disjoint at the query level so Bevy can schedule them in
-/// parallel; `validate_joint_kinematics_exclusivity` rejects
-/// stacked-spec misconfigurations at `PostStartup`.
+/// [`joint_kinematics_system`]: they are a parallelism signal that
+/// keeps the four kinematic-spec drivers pairwise-disjoint at the
+/// query level. The correctness mechanism that rejects stacked-spec
+/// entities is the on_insert hooks installed by
+/// [`register_joint_kinematics_exclusivity_hooks`] (panic at
+/// insertion); [`validate_joint_kinematics_exclusivity`] is
+/// PostStartup defense in depth.
 #[allow(clippy::type_complexity)]
 pub fn closure_joint_kinematics_system(
     sim_time: Res<SimulationTimeR>,
@@ -1346,10 +1361,13 @@ pub fn closure_joint_kinematics_system(
 /// same reason as the other joint-kinematics systems.
 ///
 /// The `Without<...>` filters mirror the contract documented on
-/// [`joint_kinematics_system`]: the four kinematic-spec drivers are
-/// pairwise-disjoint at the query level so Bevy can schedule them in
-/// parallel; `validate_joint_kinematics_exclusivity` rejects
-/// stacked-spec misconfigurations at `PostStartup`.
+/// [`joint_kinematics_system`]: they are a parallelism signal that
+/// keeps the four kinematic-spec drivers pairwise-disjoint at the
+/// query level. The correctness mechanism that rejects stacked-spec
+/// entities is the on_insert hooks installed by
+/// [`register_joint_kinematics_exclusivity_hooks`] (panic at
+/// insertion); [`validate_joint_kinematics_exclusivity`] is
+/// PostStartup defense in depth.
 #[allow(clippy::type_complexity)]
 pub fn multi_dof_joint_kinematics_system(
     sim_time: Res<SimulationTimeR>,
