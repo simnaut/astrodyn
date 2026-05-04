@@ -175,6 +175,20 @@ impl Simulation {
         //    this call leaves the dirty bit set on every affected body
         //    and panics in IG.37 on the next integrate.
         Self::reset_body_integrators_by_id(&mut self.bodies, &affected_ids);
+
+        // ── Clear `kinematic_only` on the freshly-detached child. After
+        //    `tree.detach`, the child is a tree root with no parent;
+        //    `propagate_kinematic_state` would panic on the next
+        //    `step()` ("kinematic-only resolves to a tree root") if the
+        //    flag were left set. Clearing it here keeps detach as the
+        //    single fail-loud entry point: callers don't have to
+        //    remember a paired `clear_kinematic_only` call, and a
+        //    detached body resumes integrated dynamics on its own —
+        //    matching JEOD `dyn_body_detach.cc`'s transfer of state
+        //    ownership from `propagate_state_from_*` back to
+        //    `integrated_frame`. No-op when the flag was already
+        //    clear (the common case for non-kinematic children).
+        self.bodies[child_idx].kinematic_only = false;
     }
 
     /// Mark every Simulation body whose `mass_body_id` is in
@@ -2007,5 +2021,72 @@ mod tests {
 
         sim.step_n(1)
             .expect("post-sync step failed (IG.37 must not fire)");
+    }
+
+    /// Regression: detaching a kinematic child must clear its
+    /// `kinematic_only` flag. Without the auto-clear, the next
+    /// `step()` enters `propagate_kinematic_state` with a kinematic
+    /// flag set on a body that is now a tree root (no parent), and
+    /// the "kinematic-only resolves to a tree root" assert fires.
+    #[test]
+    fn detach_clears_kinematic_only_flag_on_child() {
+        use crate::SimulationBuilderExt;
+        use jeod_sim::recipes::Mission;
+        use jeod_sim::{JeodQuat, RotationalState};
+
+        // ISS recipe ships a 6-DOF root body; reuse it as the parent.
+        let mut sim = Mission::iss_leo()
+            .into_builder()
+            .build()
+            .expect("Mission::iss_leo must validate");
+
+        let parent_idx = 0;
+        // Add a 6-DOF child SimBody, register both in the mass tree,
+        // attach with a non-zero offset, and mark the child kinematic.
+        let child_idx = sim.add_body(VehicleConfig {
+            trans: TranslationalState::default(),
+            rot: Some(RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::ZERO,
+            }),
+            mass: Some(MassProperties::new(5.0)),
+            gravity_controls: GravityControls { controls: vec![] },
+            ..Default::default()
+        });
+        sim.add_body_to_tree(parent_idx, "parent");
+        sim.add_body_to_tree(child_idx, "child");
+        sim.attach(
+            child_idx,
+            parent_idx,
+            DVec3::new(1.0, 0.0, 0.0),
+            DMat3::IDENTITY,
+        );
+        sim.mark_kinematic_only(child_idx);
+        assert!(
+            sim.bodies[child_idx].kinematic_only,
+            "child must be kinematic-only after mark_kinematic_only"
+        );
+
+        // One pre-detach step exercises propagation in the kinematic
+        // state. The assert at the top of `propagate_kinematic_state`
+        // would fire here on a regression.
+        sim.step().expect("pre-detach step must succeed");
+
+        // Detach the child. The auto-clear is what this test pins —
+        // without it the next `step()` would panic with the "tree
+        // root" diagnostic from `propagate_kinematic_state`.
+        sim.detach(child_idx);
+        assert!(
+            !sim.bodies[child_idx].kinematic_only,
+            "detach must clear kinematic_only on the freshly-detached child; \
+             leaving it set would panic in propagate_kinematic_state on the \
+             next step (the body is now a tree root with no parent)"
+        );
+
+        // Post-detach step: must run cleanly. This is the load-bearing
+        // assertion — a regression that drops the auto-clear panics
+        // here, not at the assertion above.
+        sim.step()
+            .expect("post-detach step must succeed (kinematic_only must be cleared)");
     }
 }

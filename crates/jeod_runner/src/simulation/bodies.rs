@@ -636,16 +636,19 @@ impl Simulation {
     }
 
     /// Clear the kinematic-only flag on a body, returning ownership of
-    /// its trans/rot to the integrator. Use after [`detach`](Self::detach)
-    /// when the previously-kinematic child should resume integrated
-    /// dynamics on its own (matches JEOD `dyn_body_detach.cc`'s
-    /// transfer of state ownership from `propagate_state_from_*`
-    /// back to `integrated_frame`).
+    /// its trans/rot to the integrator.
+    ///
+    /// `Simulation::detach` already clears this flag automatically on
+    /// the freshly-detached child (a kinematic child without a parent
+    /// would panic on the next `step()` in `propagate_kinematic_state`,
+    /// so detach is the single fail-loud entry point). This method
+    /// remains for the rarer case where a caller wants to revoke the
+    /// kinematic-only assignment without changing the tree topology
+    /// — e.g. swapping a fully-integrated child in place of a
+    /// kinematic one mid-mission.
     ///
     /// No-op if the flag is already clear. Does not validate
-    /// mass-tree topology — call sites that detach the body from its
-    /// parent must call `Simulation::detach` first; this method is
-    /// purely a flag flip.
+    /// mass-tree topology; this method is purely a flag flip.
     pub fn clear_kinematic_only(&mut self, idx: usize) {
         self.bodies[idx].kinematic_only = false;
     }
