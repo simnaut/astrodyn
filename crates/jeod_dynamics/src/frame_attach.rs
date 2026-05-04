@@ -89,10 +89,15 @@ pub struct FrameAttachInputs {
 /// parent reference frame's current state and the (frozen-at-attach)
 /// rigid-body offset.
 ///
-/// Pure function: no side effects, no I/O, no mutation. The single
-/// call site is the per-step "frame-attached body update" pass in
-/// `Simulation::step_internal` (runner) and the equivalent
-/// `staging_system` branch in the Bevy adapter.
+/// Pure function: no side effects, no I/O, no mutation. Call sites are
+/// the per-step "frame-attached body update" pass in
+/// `Simulation::step_internal` (runner) and, in the Bevy adapter, the
+/// per-tick `propagate_frame_attached_state_system` (pre-integration)
+/// plus its post-integration twin
+/// `propagate_frame_attached_state_post_integration_system`. The two
+/// Bevy registrations mirror the runner's pre- and post-integration
+/// invocations so derived-state consumers always observe a body whose
+/// state reflects the parent frame's just-finished intra-step updates.
 ///
 /// Implementation is the existing `propagate_forward` kernel — the
 /// algebra is bit-identical to the mass-tree kinematic walk's per-link

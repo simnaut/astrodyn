@@ -484,9 +484,11 @@ impl Simulation {
             assert!(
                 self.bodies.iter().all(|b| b.frame_attach.is_none()),
                 "contact-coupled path is incompatible with frame-attached bodies: \
-                 contact forces require an integrated state for every participant. \
-                 Call `Simulation::detach_from_frame(body_idx)` on every contact-coupled \
-                 body before stepping with registered contact pairs."
+                 contact forces require an integrated state for every participant, \
+                 but the contact-coupled kernel integrates ALL bodies in the sim — \
+                 so any frame-attached body present is a misconfiguration. Call \
+                 `Simulation::detach_from_frame(body_idx)` on every frame-attached \
+                 body before stepping (or unregister the contact pairs)."
             );
             assert!(
                 self.bodies
