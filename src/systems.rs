@@ -734,6 +734,14 @@ pub fn frame_switch_system(
         &mut GravityControlsC,
     )>,
 ) {
+    // Build a set of registered source frame entities once per call so
+    // the per-body integ-frame validation below is O(1) rather than
+    // O(sources). Without this, the inner check is a linear scan over
+    // every source for every body every tick (O(bodies * sources)),
+    // which dominates with many bodies and/or many sources even when
+    // no switch fires.
+    let known_source_frames: std::collections::HashSet<Entity> =
+        sources.iter().map(|fe| fe.0).collect();
     for (body_entity, mut trans, body_frame_entity, mut switches, mut gravity_controls) in
         &mut bodies
     {
@@ -758,7 +766,7 @@ pub fn frame_switch_system(
         // entity or a registered source's frame entity. Anything else
         // means the registration / integ-source wiring is corrupt.
         let current_is_known = current_integ_frame_entity == root_frame_entity.0
-            || sources.iter().any(|fe| fe.0 == current_integ_frame_entity);
+            || known_source_frames.contains(&current_integ_frame_entity);
         assert!(
             current_is_known,
             "frame_switch_system: body {body_entity:?} frame entity \
