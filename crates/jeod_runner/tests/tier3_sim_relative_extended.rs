@@ -140,9 +140,9 @@ fn tier3_relative_two_coorbiting_vehicles() {
         // LVLH: X ≈ along-track, Y ≈ -orbit-normal, Z ≈ -radial.
         // For co-orbiting bodies, the along-track component dominates and
         // the in-plane/out-of-plane excursions stay small.
-        max_lvlh_x = max_lvlh_x.max(rel.position.x.abs());
-        max_lvlh_yz = max_lvlh_yz
-            .max((rel.position.y * rel.position.y + rel.position.z * rel.position.z).sqrt());
+        let rel_pos = rel.position.raw_si();
+        max_lvlh_x = max_lvlh_x.max(rel_pos.x.abs());
+        max_lvlh_yz = max_lvlh_yz.max((rel_pos.y * rel_pos.y + rel_pos.z * rel_pos.z).sqrt());
     }
 
     // RootInertial separation stays very close to the 100 m initial chord.

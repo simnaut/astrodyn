@@ -10,7 +10,8 @@ use crate::{EulerSequence, GeodeticState, LvlhFrame, OrbitalElements, Rotational
 use jeod_math::OrbitalError;
 use jeod_quantities::aliases::{Position, Velocity};
 use jeod_quantities::dims::{GravParam, SpecificAngMomDim};
-use jeod_quantities::frame::{RootInertial, SelfPlanet};
+use jeod_quantities::ext::Vec3Ext;
+use jeod_quantities::frame::{BodyFrame, Lvlh, RootInertial, SelfPlanet, SelfRef};
 use jeod_quantities::qty3::Qty3;
 use uom::si::angle::radian;
 use uom::si::f64::{Angle, Length};
@@ -18,31 +19,61 @@ use uom::si::length::meter;
 
 /// Relative state between two bodies.
 ///
-/// Position/velocity are of `subject` relative to `reference`, expressed in
-/// the reference body frame (matching JEOD convention `S_{ref:subj}`). When
-/// the reference has no rotational state, they remain in the inertial frame.
-/// The quaternion is the relative attitude (reference-to-subject), and angular
-/// velocity is of `subject` relative to `reference`, expressed in the subject
-/// body frame.
+/// Position/velocity are of `subject` relative to `reference`. When the
+/// reference carries a [`RotationalState`], they are rotated into the
+/// reference body frame (matching JEOD convention `S_{ref:subj}`); when
+/// the reference has no rotational state, they remain in the inertial
+/// frame. That runtime-conditional frame choice prevents a single
+/// compile-time phantom from covering both branches losslessly — the
+/// position/velocity fields therefore stay raw `DVec3`, with the
+/// caller responsible for tracking which branch fired (typically by
+/// the presence/absence of the reference rotational state at the call
+/// site).
+///
+/// The angular kinematics are typed: [`Self::ang_vel`] is in the
+/// subject body frame. The quaternion is the relative attitude
+/// (reference-to-subject) and is stored as a `DQuat` for convenience;
+/// the convention matches JEOD's left-multiplication
+/// reference-body-to-subject-body rotation.
 #[derive(Debug, Clone)]
 pub struct RelativeState {
-    /// Position of subject relative to reference (reference body frame, m).
+    /// Position of subject relative to reference. Frame is
+    /// runtime-conditional (see struct docs): reference body frame
+    /// when the reference has a rotational state; otherwise inertial.
     pub position: DVec3,
-    /// Velocity of subject relative to reference (reference body frame, m/s).
+    /// Velocity of subject relative to reference. Frame matches
+    /// [`Self::position`] — reference body frame when the reference
+    /// carries a rotational state, otherwise inertial.
     pub velocity: DVec3,
     /// Relative quaternion: reference body frame → subject body frame.
     pub quaternion: DQuat,
-    /// Angular velocity of subject relative to reference (subject body frame, rad/s).
-    pub ang_vel: DVec3,
+    /// Angular velocity of subject relative to reference, in the
+    /// subject body frame. The `BodyFrame<SelfRef>` phantom marks the
+    /// "this entity's own body frame" wildcard — the producer doesn't
+    /// know the subject's vehicle identity at compile time, so the
+    /// per-entity adapter (Bevy or runner) keeps it as a `SelfRef`
+    /// wildcard rather than minting a typed `<V>` parameter.
+    pub ang_vel: jeod_quantities::aliases::AngularVelocity<BodyFrame<SelfRef>>,
 }
 
 /// Relative state expressed in the LVLH frame of the reference vehicle.
+///
+/// The producer ([`compute_lvlh_relative_state`]) always rotates into
+/// the reference vehicle's LVLH frame, so the field type
+/// `Position<Lvlh<SelfRef>>` / `Velocity<Lvlh<SelfRef>>` reflects the
+/// frame at compile time. `SelfRef` is the wildcard vehicle phantom —
+/// the per-entity ECS adapter knows which vehicle is the LVLH chief
+/// at runtime; the typed field guards against a consumer that
+/// accidentally mixes an LVLH-frame value with an inertial- or body-
+/// frame value at the type level.
 #[derive(Debug, Clone)]
 pub struct LvlhRelativeState {
-    /// Position of subject relative to reference (LVLH frame, m).
-    pub position: DVec3,
-    /// Velocity of subject relative to reference (LVLH frame, m/s).
-    pub velocity: DVec3,
+    /// Position of subject relative to reference, in the reference
+    /// vehicle's LVLH frame (m).
+    pub position: Position<Lvlh<SelfRef>>,
+    /// Velocity of subject relative to reference, in the reference
+    /// vehicle's LVLH frame (m/s).
+    pub velocity: Velocity<Lvlh<SelfRef>>,
 }
 
 /// Compute orbital elements from translational state.
@@ -214,7 +245,10 @@ pub fn compute_relative_state(
         position,
         velocity,
         quaternion,
-        ang_vel,
+        // The producer's `rel_ang_vel` is computed in the subject body
+        // frame (per the JEOD convention documented above); attach the
+        // `BodyFrame<SelfRef>` phantom at the boundary.
+        ang_vel: ang_vel.rad_per_s_at::<BodyFrame<SelfRef>>(),
     }
 }
 
@@ -243,8 +277,13 @@ pub fn compute_lvlh_relative_state(
     let vel_lvlh = lvlh.t_parent_this * rel_vel_inertial - lvlh.ang_vel_this.cross(pos_lvlh);
 
     LvlhRelativeState {
-        position: pos_lvlh,
-        velocity: vel_lvlh,
+        // The kernel rotates each vector through `lvlh.t_parent_this`,
+        // which lands them in the chief vehicle's LVLH frame. The
+        // `<SelfRef>` wildcard mirrors the producer's static lack of a
+        // chief-vehicle phantom — the runtime adapter knows which
+        // entity is the chief.
+        position: pos_lvlh.m_at::<Lvlh<SelfRef>>(),
+        velocity: vel_lvlh.m_per_s_at::<Lvlh<SelfRef>>(),
     }
 }
 

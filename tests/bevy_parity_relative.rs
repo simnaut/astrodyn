@@ -362,18 +362,22 @@ fn run_lvlhrel_parity(label: &str, ref_trans: TranslationalState, subj_trans: Tr
     );
 
     // Assert LVLH-relative state is bit-identical
+    let bevy_pos = bevy_rel.position.raw_si();
+    let bevy_vel = bevy_rel.velocity.raw_si();
+    let sim_pos = sim_rel.position.raw_si();
+    let sim_vel = sim_rel.velocity.raw_si();
     for i in 0..3 {
         assert_bits_eq(
             &format!("Bevy vs Sim lvlhrel ({label})"),
             &format!("pos[{i}]"),
-            bevy_rel.position[i],
-            sim_rel.position[i],
+            bevy_pos[i],
+            sim_pos[i],
         );
         assert_bits_eq(
             &format!("Bevy vs Sim lvlhrel ({label})"),
             &format!("vel[{i}]"),
-            bevy_rel.velocity[i],
-            sim_rel.velocity[i],
+            bevy_vel[i],
+            sim_vel[i],
         );
     }
     println!("  Bevy vs Sim LVLH-relative ({label}): bit-identical");

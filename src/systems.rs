@@ -1846,7 +1846,10 @@ pub fn integration_system(
                         &stage_thermal.t_pow4_cached,
                         flux_struct_hat,
                         stage_flux_mag,
-                        srp_inputs.center_grav,
+                        // Drop the typed `Position<StructuralFrame<SelfRef>>`
+                        // phantom into the kernel's raw-DVec3 contract; the
+                        // typed field is the storage-time guard.
+                        srp_inputs.center_grav.raw_si(),
                         srp_inputs.illum_factor,
                     );
                     let srp_force_inertial = t_inertial_struct.transpose() * srp_result.force;
@@ -2742,7 +2745,14 @@ pub fn flat_plate_srp_system(
         // Shadow fraction (step-constant; matches JEOD's scheduled-class
         // shadow evaluation across all three integration orders).
         let illum_factor = compute_illum_factor(pos_raw, sun_pos_raw, &shadow_bodies);
-        let center_grav = mass.map_or(DVec3::ZERO, |m| m.0.center_of_mass.raw_si());
+        // The CoM is in the vehicle's structural frame; tag the typed
+        // wildcard at this boundary so `FlatPlateStageInputs.center_grav`
+        // (also typed) accepts it without a raw `DVec3` mismatch. Inner
+        // SRP kernels go back through `.raw_si()`.
+        let center_grav_raw = mass.map_or(DVec3::ZERO, |m| m.0.center_of_mass.raw_si());
+        let center_grav = jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+            center_grav_raw,
+        );
 
         match flat_config.integration_order {
             jeod_sim::ThermalIntegrationOrder::Scheduled => {
@@ -2765,7 +2775,8 @@ pub fn flat_plate_srp_system(
                     &flat_config.t_pow4_cached,
                     flux_struct_hat,
                     flux_mag,
-                    center_grav,
+                    // Drop typed wildcard for the kernel's raw-DVec3 contract.
+                    center_grav.raw_si(),
                     illum_factor,
                 );
 
@@ -3111,7 +3122,11 @@ pub fn staging_system(
             parent_was_detached,
         });
 
-        tree.attach(child_id, parent_id, evt.offset, evt.t_parent_child);
+        // `tree.attach` takes raw structural-frame DVec3; drop the
+        // typed phantom at this kernel boundary. The typed
+        // `AttachEvent.offset` field guards the structural-frame
+        // contract at the writer site.
+        tree.attach(child_id, parent_id, evt.offset.raw_si(), evt.t_parent_child);
     }
 
     // Per-detach post-mutation work: tree_root entity whose
@@ -3453,9 +3468,14 @@ pub fn staging_system(
             // JEOD_INV: DB.21 — detached subtrees keep advancing
             // ballistically post-attach; the merged composite simply
             // becomes the new "free-flying root" state.
+            // Build typed `RootInertial` quantities at the boundary into
+            // the typed `DetachedSubtreeState` storage. The merged
+            // composite-body state lives in the simulation root inertial
+            // frame (RF.10).
+            use jeod_sim::Vec3Ext as _;
             let updated = jeod_sim::DetachedSubtreeState {
-                composite_position: merged.position,
-                composite_velocity: merged.velocity,
+                composite_position: merged.position.m_at::<jeod_sim::RootInertial>(),
+                composite_velocity: merged.velocity.m_per_s_at::<jeod_sim::RootInertial>(),
                 composite_attitude: jeod_sim::DetachedSubtreeState::attitude_from_raw_jeod_quat(
                     merged.quaternion,
                 ),
@@ -3531,9 +3551,14 @@ pub fn staging_system(
             // body axes don't rotate just because mass left the tree
             // (composite_properties.t_parent_this == core_properties
             // .t_parent_this throughout — see mass tree recompute).
+            // Same boundary as the attach branch above: the post-detach
+            // composite state is in the root inertial frame; re-wrap
+            // raw DVec3 sums into typed `Position<RootInertial>` /
+            // `Velocity<RootInertial>` for storage.
+            use jeod_sim::Vec3Ext as _;
             let updated = jeod_sim::DetachedSubtreeState {
-                composite_position: new_position,
-                composite_velocity: new_velocity,
+                composite_position: new_position.m_at::<jeod_sim::RootInertial>(),
+                composite_velocity: new_velocity.m_per_s_at::<jeod_sim::RootInertial>(),
                 composite_attitude: jeod_sim::DetachedSubtreeState::attitude_from_raw_jeod_quat(
                     shift.parent_pre_quat,
                 ),
@@ -3622,8 +3647,8 @@ pub fn step_detached_system(
                 // From<TranslationalState> impl on TranslationalStateC.
                 jeod_sim::TranslationalStateTyped::<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>::from_untyped_unchecked(
                     &jeod_sim::TranslationalState {
-                        position: state.0.composite_position,
-                        velocity: state.0.composite_velocity,
+                        position: state.0.composite_position.raw_si(),
+                        velocity: state.0.composite_velocity.raw_si(),
                     },
                 );
         }

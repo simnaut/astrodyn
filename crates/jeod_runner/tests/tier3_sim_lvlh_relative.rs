@@ -104,8 +104,8 @@ fn run_lvlhrel_scenario(label: &str, csv_name: &str) {
             subj_body.trans.position,
             subj_body.trans.velocity,
         );
-        let pos_err = (lvlh_rel.position - init.jeod_rel_pos).length();
-        let vel_err = (lvlh_rel.velocity - init.jeod_rel_vel).length();
+        let pos_err = (lvlh_rel.position.raw_si() - init.jeod_rel_pos).length();
+        let vel_err = (lvlh_rel.velocity.raw_si() - init.jeod_rel_vel).length();
         max_pos_err = max_pos_err.max(pos_err);
         max_vel_err = max_vel_err.max(vel_err);
     }
@@ -123,8 +123,8 @@ fn run_lvlhrel_scenario(label: &str, csv_name: &str) {
             subj_body.trans.velocity,
         );
 
-        let pos_err = (lvlh_rel.position - rec.jeod_rel_pos).length();
-        let vel_err = (lvlh_rel.velocity - rec.jeod_rel_vel).length();
+        let pos_err = (lvlh_rel.position.raw_si() - rec.jeod_rel_pos).length();
+        let vel_err = (lvlh_rel.velocity.raw_si() - rec.jeod_rel_vel).length();
         max_pos_err = max_pos_err.max(pos_err);
         max_vel_err = max_vel_err.max(vel_err);
     }
