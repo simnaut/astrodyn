@@ -2785,3 +2785,207 @@ fn bevy_attach_frame_entity_without_child_of_panics() {
         });
     step(&mut app, 1, 1.0);
 }
+
+/// **Registration race: dynamic body without `FrameEntityC` must
+/// panic.**
+///
+/// The mass-only carve-out in `staging_system`'s cross-integ-frame
+/// fence skips the legality / equality assertions when an attach
+/// participant has no `FrameEntityC`. That carve-out is intentionally
+/// narrow: it covers the legitimate `MassBody`-without-`DynBody`
+/// configuration (entity carries `MassBodyIdC` + `MassPropertiesC` but
+/// is missing at least one of the eligibility components for
+/// `register_body_frames_system` — `DynamicsConfigC` and
+/// `TranslationalStateC`). For such a body, registration will *never*
+/// insert `FrameEntityC` and the entity has nothing in the frame tree
+/// to corrupt.
+///
+/// The opposite case — an entity carrying *both* eligibility
+/// components but lacking `FrameEntityC` — is a registration race,
+/// not a mass-only configuration. `register_body_frames_system` runs
+/// before `JeodSet::EphemerisUpdate`; `staging_system` runs later
+/// in the same `FixedUpdate` (after `Environment`, before
+/// `Interaction`). A body spawned mid-tick after the registration
+/// pass already ran will not yet carry `FrameEntityC` even though its
+/// component set qualifies for one. Treating that as carve-out would
+/// silently corrupt the frame tree on the next register pass; per
+/// Fail Loudly the fence must surface the misconfiguration.
+///
+/// This test pins the boundary: spawn a fully-eligible dynamic body
+/// (`DynamicsConfigC` + `TranslationalStateC` + `RotationalStateC` +
+/// `MassPropertiesC` + `MassBodyIdC`), strip the `FrameEntityC` that
+/// `register_body_frames_system` inserts at Startup, fire
+/// `AttachEvent`, and verify the fence panics with the
+/// registration-race diagnostic instead of silently bypassing.
+#[test]
+#[should_panic(expected = "registration race")]
+fn bevy_attach_dynamic_body_with_no_frame_entity_panics() {
+    let parent_mass = MassProperties::new(1000.0);
+    let child_mass = MassProperties::new(500.0);
+    let parent_trans = TranslationalState {
+        position: DVec3::new(7e6, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let child_trans = TranslationalState {
+        position: DVec3::new(7e6, 1.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let initial_rot = RotationalState::default();
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.add_plugins(JeodPlugin);
+
+    let mut tree = MassTree::new();
+    let id_a = tree.add_body("Parent".into(), parent_mass);
+    let id_b = tree.add_body("Child".into(), child_mass);
+    app.insert_resource(MassTreeR(tree));
+
+    let parent_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Parent"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(parent_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(parent_mass),
+            MassBodyIdC(id_a),
+        ))
+        .id();
+    let child_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Child"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(child_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(child_mass),
+            MassBodyIdC(id_b),
+        ))
+        .id();
+
+    app.world_mut().run_schedule(Startup);
+
+    // Sanity-check the fixture: after Startup, register_body_frames_system
+    // has registered the child. Strip its `FrameEntityC` mid-tick and
+    // run staging directly. We bypass `FixedUpdate` because that
+    // schedule re-runs `register_body_frames_system` first, which
+    // would re-insert `FrameEntityC` and mask the race we're trying
+    // to pin.
+    assert!(
+        app.world().get::<FrameEntityC>(child_entity).is_some(),
+        "fixture broken: dynamic child unexpectedly has no FrameEntityC \
+         after Startup; the registration filter likely changed"
+    );
+    app.world_mut()
+        .entity_mut(child_entity)
+        .remove::<FrameEntityC>();
+
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset: DVec3::ZERO,
+            t_parent_child: DMat3::IDENTITY,
+        });
+    // Invoke `staging_system` directly so the registration-race
+    // condition (eligibility components present, FrameEntityC
+    // absent) is observed by the fence — running `FixedUpdate`
+    // would re-register the child first.
+    app.world_mut()
+        .run_system_cached(bevy_jeod::staging_system)
+        .expect("run staging_system");
+}
+
+/// **Dynamic child attached to mass-only parent must panic.**
+///
+/// Asymmetric carve-out boundary: a mass-only child attached to a
+/// dynamic parent matches JEOD's `add_mass_body` path — the dynamic
+/// parent carries the composite state and the mass-tree composite
+/// recompute folds the mass-only child's mass into the parent's
+/// composite. That direction is allowed.
+///
+/// The reverse — a *dynamic* child attached to a *mass-only* parent
+/// — is rejected. JEOD's `dyn_body_attach.cc::attach_validate_parent`
+/// rejects this with "Dynamic attachments can only be made to valid
+/// DynBodies"; in our pipeline the combine-back-write only writes
+/// the merged composite into the parent's `TranslationalStateC` /
+/// `RotationalStateC`, which a mass-only parent does not carry. With
+/// no place to receive the merged state, allowing the attach
+/// silently drops the result. Per Fail Loudly the fence must surface
+/// this.
+///
+/// This test pins that boundary: spawn a mass-only parent (no
+/// `DynamicsConfigC`, no `TranslationalStateC`) and a dynamic child
+/// (full eligibility), fire `AttachEvent`, and verify the fence
+/// panics with the dynamic-child-on-mass-only-parent diagnostic.
+#[test]
+#[should_panic(expected = "Dynamic attachments can only be made to valid DynBodies")]
+fn bevy_attach_dynamic_child_on_mass_only_parent_panics() {
+    let parent_mass = MassProperties::new(1000.0);
+    let child_mass = MassProperties::new(500.0);
+    let child_trans = TranslationalState {
+        position: DVec3::new(7e6, 1.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let initial_rot = RotationalState::default();
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.add_plugins(JeodPlugin);
+
+    let mut tree = MassTree::new();
+    let id_a = tree.add_body("Parent".into(), parent_mass);
+    let id_b = tree.add_body("Child".into(), child_mass);
+    app.insert_resource(MassTreeR(tree));
+
+    // Mass-only parent: no DynamicsConfigC / TranslationalStateC /
+    // RotationalStateC, so register_body_frames_system will skip it
+    // and it never acquires FrameEntityC. JEOD calls this a
+    // MassBody-without-DynBody configuration.
+    let parent_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Parent"),
+            MassPropertiesC::from(parent_mass),
+            MassBodyIdC(id_a),
+        ))
+        .id();
+    // Dynamic child: full eligibility set, so register_body_frames_system
+    // inserts FrameEntityC at Startup.
+    let child_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Child"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(child_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(child_mass),
+            MassBodyIdC(id_b),
+        ))
+        .id();
+
+    app.world_mut().run_schedule(Startup);
+
+    assert!(
+        app.world().get::<FrameEntityC>(parent_entity).is_none(),
+        "fixture broken: mass-only parent unexpectedly has FrameEntityC"
+    );
+    assert!(
+        app.world().get::<FrameEntityC>(child_entity).is_some(),
+        "fixture broken: dynamic child has no FrameEntityC after Startup"
+    );
+
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset: DVec3::ZERO,
+            t_parent_child: DMat3::IDENTITY,
+        });
+    step(&mut app, 1, 1.0);
+}
