@@ -1106,15 +1106,25 @@ fn bevy_attach_does_not_reparent_child_frame_under_parent_frame() {
 /// `frame_switch_system` is purely `FrameSwitchesC` distance-driven
 /// and does not react to `AttachEvent`.
 ///
-/// Allowing the merge to proceed with mismatched `IntegSourceC`
-/// would silently corrupt every downstream `RelativeFrameState`
-/// walk: the merged composite-body state lives in the parent's
-/// integ-frame coordinates, but the child's frame-tree node still
-/// claims its old integ frame as parent. Per the Fail Loudly rule
-/// (see `tests/frame_entity_dual_write_fail_loud.rs` for the
-/// project's pattern), `staging_system` panics with a diagnostic
-/// naming the misconfiguration rather than producing a wrong
-/// trajectory.
+/// Allowing the merge to proceed with the bodies in different
+/// integ frames would silently corrupt every downstream
+/// `RelativeFrameState` walk: the merged composite-body state lives
+/// in the parent's integ-frame coordinates, but the child's
+/// frame-tree node still claims its old integ frame as parent. Per
+/// the Fail Loudly rule (see `tests/frame_entity_dual_write_fail_loud.rs`
+/// for the project's pattern), `staging_system` panics with a
+/// diagnostic naming the misconfiguration rather than producing a
+/// wrong trajectory.
+///
+/// The guard compares each body-frame entity's `ChildOf` parent —
+/// the live integ-frame source of truth — *not* `IntegSourceC` (the
+/// config-time intent). `frame_switch_system` mutates the body
+/// frame's `ChildOf` parent on every switch but intentionally
+/// leaves `IntegSourceC` stale, so an `IntegSourceC` comparison
+/// would both miss real cross-frame attaches and falsely reject
+/// same-frame attaches whenever a switch has fired. The companion
+/// test `bevy_attach_post_frame_switch_same_integ_frame_succeeds`
+/// covers the latter case directly.
 ///
 /// This test pins that panic so a future change that quietly
 /// removes the assertion (e.g. as part of an incomplete attempt at
@@ -1225,12 +1235,14 @@ fn bevy_attach_cross_integ_frame_panics_with_fail_loud_diagnostic() {
     app.world_mut().run_schedule(Startup);
     step(&mut app, 1, 1.0);
 
-    // Fire the attach event and step. `staging_system` must panic on
-    // the IntegSourceC mismatch — a silent merge would write the
-    // composite state into the parent's integ-frame coordinates
-    // while leaving the child's frame entity pointing at its old
-    // integ frame, corrupting every downstream RelativeFrameState
-    // walk.
+    // Fire the attach event and step. `staging_system` must panic
+    // because the parent's body-frame entity is `ChildOf(source_a)`
+    // while the child's body-frame entity is `ChildOf(source_b)` —
+    // the live integ-frame source of truth. A silent merge would
+    // write the composite state into the parent's integ-frame
+    // coordinates while leaving the child's frame entity pointing at
+    // its old integ frame, corrupting every downstream
+    // RelativeFrameState walk.
     app.world_mut()
         .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
         .write(AttachEvent {
@@ -1240,6 +1252,217 @@ fn bevy_attach_cross_integ_frame_panics_with_fail_loud_diagnostic() {
             t_parent_child: DMat3::IDENTITY,
         });
     step(&mut app, 1, 1.0);
+}
+
+/// **Same-integ-frame attach after a frame switch: must NOT panic.**
+///
+/// `frame_switch_system` mutates a body's `ChildOf` parent on every
+/// switch but intentionally leaves `IntegSourceC` (the config-time
+/// intent) stale. The cross-integ-frame guard in `staging_system`
+/// must therefore consult the body-frame entity's `ChildOf` parent
+/// — the live integ-frame source of truth — rather than the body's
+/// `IntegSourceC` component.
+///
+/// This test pins that policy: spawn parent and child with
+/// **different** `IntegSourceC` values (parent: `Some(source)`,
+/// child: `None`), then simulate a post-frame-switch state by
+/// reparenting the child's body-frame entity under the same
+/// integration-frame entity that the parent's body-frame entity
+/// lives under (and rewriting its stored `TranslationalStateC` /
+/// `FrameTransC` into that frame, exactly like
+/// `frame_switch_system` does on a real switch). Both bodies are
+/// now in the same integ frame structurally; the attach must
+/// proceed.
+///
+/// A guard that compares `IntegSourceC` directly (the previous
+/// implementation) would falsely reject this attach — the
+/// `IntegSourceC` values differ. A guard that compares the
+/// body-frame entities' `ChildOf` parents — what the live integ
+/// frame *actually is* — accepts it.
+#[test]
+fn bevy_attach_post_frame_switch_same_integ_frame_succeeds() {
+    let parent_mass = MassProperties::new(1000.0);
+    let child_mass = MassProperties::new(500.0);
+    let parent_trans = TranslationalState {
+        position: DVec3::new(7e6, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    // Child starts root-coordinate-relative; we'll rewrite it into
+    // source-relative coordinates below to mirror what
+    // `frame_switch_system` does on a real switch.
+    let initial_rot = RotationalState::default();
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.add_plugins(JeodPlugin);
+
+    let mut tree = MassTree::new();
+    let id_a = tree.add_body("Parent".into(), parent_mass);
+    let id_b = tree.add_body("Child".into(), child_mass);
+    app.insert_resource(MassTreeR(tree));
+
+    // Single gravity source at a non-zero position so the
+    // "child starts root-relative, gets rewritten into source-relative"
+    // step actually changes coordinate values (not a no-op).
+    let mu = 3.986004415e14_f64;
+    let source_pos = DVec3::new(1.0e8, 0.0, 0.0);
+    let source = app
+        .world_mut()
+        .spawn((
+            Name::new("Source"),
+            GravitySourceC(GravitySource {
+                mu,
+                model: GravityModel::PointMass,
+            }),
+            SourceInertialPositionC(jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(
+                source_pos,
+            )),
+            TranslationalStateC::from(TranslationalState {
+                position: source_pos,
+                velocity: DVec3::ZERO,
+            }),
+        ))
+        .id();
+
+    // Parent: configured to live in the source's integ frame from
+    // the start (`IntegSourceC(Some(source))`). Its body-frame entity
+    // gets parented under `source`'s frame entity by
+    // `register_body_frames_system` at startup.
+    let parent_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Parent"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(parent_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(parent_mass),
+            MassBodyIdC(id_a),
+            IntegSourceC(Some(source)),
+        ))
+        .id();
+    // Child: configured root-integrated (`IntegSourceC(None)`) to
+    // start. Its body-frame entity gets parented under the root
+    // frame entity at startup.
+    let child_root_relative_pos = DVec3::new(7e6 + source_pos.x, 1.0, 0.0);
+    let child_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Child"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(TranslationalState {
+                position: child_root_relative_pos,
+                velocity: DVec3::new(0.0, 7600.0, 0.0),
+            }),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(child_mass),
+            MassBodyIdC(id_b),
+            IntegSourceC(None),
+        ))
+        .id();
+
+    // Run startup so registration parents each body-frame entity
+    // under the appropriate integ frame entity.
+    app.world_mut().run_schedule(Startup);
+    step(&mut app, 1, 1.0);
+
+    // Resolve the source's frame entity (the live integ frame for
+    // the parent post-startup) and the child's body-frame entity.
+    let source_frame_entity = app
+        .world()
+        .get::<FrameEntityC>(source)
+        .expect("source registered FrameEntityC")
+        .0;
+    let child_frame_entity = app
+        .world()
+        .get::<FrameEntityC>(child_entity)
+        .expect("child registered FrameEntityC")
+        .0;
+
+    // Simulate a post-frame-switch state on the child: reparent its
+    // body-frame entity under the source's frame entity and rewrite
+    // both `TranslationalStateC` and `FrameTransC` into source-
+    // relative coordinates. This is the exact mutation
+    // `frame_switch_system` performs on a real switch — and crucially
+    // it leaves `IntegSourceC` unchanged.
+    let child_source_relative_pos = child_root_relative_pos - source_pos;
+    {
+        let world = app.world_mut();
+        world
+            .entity_mut(child_frame_entity)
+            .insert(ChildOf(source_frame_entity))
+            .insert(FrameTransC {
+                position: child_source_relative_pos,
+                velocity: DVec3::new(0.0, 7600.0, 0.0),
+            });
+        let mut child_trans = world
+            .get_mut::<TranslationalStateC>(child_entity)
+            .expect("child still has TranslationalStateC");
+        child_trans.0.position =
+            jeod_sim::Position::<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>::from_raw_si(
+                child_source_relative_pos,
+            );
+    }
+
+    // Sanity-check the asymmetric setup: `IntegSourceC` values differ
+    // (parent: Some(source); child: None — stale post-"switch") but
+    // the body-frame entities now share the same `ChildOf` parent.
+    assert_ne!(
+        app.world().get::<IntegSourceC>(parent_entity).unwrap().0,
+        app.world().get::<IntegSourceC>(child_entity).unwrap().0,
+        "fixture sanity: IntegSourceC values must differ — that is the whole point of this test"
+    );
+    let parent_frame_entity = app
+        .world()
+        .get::<FrameEntityC>(parent_entity)
+        .expect("parent registered FrameEntityC")
+        .0;
+    assert_eq!(
+        app.world()
+            .get::<ChildOf>(parent_frame_entity)
+            .expect("parent body-frame has ChildOf parent")
+            .parent(),
+        source_frame_entity,
+        "fixture sanity: parent body-frame entity must be ChildOf the source frame entity"
+    );
+    assert_eq!(
+        app.world()
+            .get::<ChildOf>(child_frame_entity)
+            .expect("child body-frame has ChildOf parent")
+            .parent(),
+        source_frame_entity,
+        "fixture sanity: child body-frame entity must be ChildOf the source frame entity \
+         (post-simulated-switch)"
+    );
+
+    // Fire the attach. The new `ChildOf`-based check sees both bodies
+    // in the same integ frame and lets the merge proceed; the old
+    // `IntegSourceC` check would have falsely rejected this attach.
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset: DVec3::ZERO,
+            t_parent_child: DMat3::IDENTITY,
+        });
+    step(&mut app, 1, 1.0);
+
+    // Verify the attach actually happened: the mass tree now has
+    // `id_b` as a child of `id_a`, and the child carries no
+    // `DetachedSubtreeStateC` (it was attached, not freed).
+    let tree = &app.world().resource::<MassTreeR>().0;
+    assert_eq!(
+        tree.parent(id_b),
+        Some(id_a),
+        "post-attach: child's mass-tree parent must be the parent body — the attach proceeded"
+    );
+    assert!(
+        app.world()
+            .get::<DetachedSubtreeStateC>(child_entity)
+            .is_none(),
+        "post-attach: child must not carry DetachedSubtreeStateC"
+    );
 }
 
 /// Detached subtrees coast ballistically (no force, no torque). The

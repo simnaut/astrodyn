@@ -2948,7 +2948,8 @@ pub fn staging_system(
         Option<&mut RotationalStateC>,
     )>,
     detached_q: Query<Entity, With<crate::DetachedSubtreeStateC>>,
-    integ_sources: Query<&IntegSourceC>,
+    body_frames: Query<&FrameEntityC>,
+    frame_parents: Query<&ChildOf>,
     mut integrators: Query<(
         &crate::MassBodyIdC,
         Option<&mut GaussJacksonStateC>,
@@ -3075,21 +3076,50 @@ pub fn staging_system(
         // downstream `RelativeFrameState` walk. Per the Fail Loudly rule
         // (CLAUDE.md), surface the misconfiguration at the point of
         // detection rather than producing a wrong trajectory.
-        let parent_integ_source = integ_sources.get(evt.parent).ok().and_then(|c| c.0);
-        let child_integ_source = integ_sources.get(evt.child).ok().and_then(|c| c.0);
-        assert!(
-            parent_integ_source == child_integ_source,
-            "AttachEvent: parent {:?} and child {:?} have different IntegSourceC values \
-             (parent={:?}, child={:?}). Cross-integration-frame attach is not yet supported \
-             — the child's frame entity must be reparented under the parent's integ frame \
-             and its stored coordinates rewritten into that frame before the merge proceeds. \
-             Either align the two bodies' IntegSourceC before firing the AttachEvent, or \
-             wait for the planned reparent + coordinate-rewrite implementation.",
-            evt.parent,
-            evt.child,
-            parent_integ_source,
-            child_integ_source
-        );
+        //
+        // The live integ-frame for each body is the `ChildOf` parent of
+        // its body-frame entity, NOT the body's `IntegSourceC` value.
+        // `frame_switch_system` mutates the body-frame entity's
+        // `ChildOf` parent on each switch but intentionally leaves
+        // `IntegSourceC` (the config-time intent) untouched — comparing
+        // `IntegSourceC` would both miss real cross-frame attaches
+        // (root-started body that switched to Moon: still `None`) and
+        // falsely reject same-frame attaches (a body switched into the
+        // parent's frame: stale `IntegSourceC` differs from parent's).
+        //
+        // The guard is skipped when either body lacks `FrameEntityC` —
+        // the body is not yet participating in the frame tree (e.g.
+        // a low-level test that drives `staging_system` directly
+        // without `JeodPlugin`'s `register_body_frames_system`), so
+        // there is no frame-tree state for an attach to corrupt. In
+        // production every body that reaches `staging_system` has
+        // already passed through `register_body_frames_system` at
+        // Startup, so the guard fires.
+        let parent_integ_frame = body_frames
+            .get(evt.parent)
+            .ok()
+            .and_then(|fe| frame_parents.get(fe.0).ok().map(|p| p.parent()));
+        let child_integ_frame = body_frames
+            .get(evt.child)
+            .ok()
+            .and_then(|fe| frame_parents.get(fe.0).ok().map(|p| p.parent()));
+        if let (Some(parent_frame), Some(child_frame)) = (parent_integ_frame, child_integ_frame) {
+            assert!(
+                parent_frame == child_frame,
+                "AttachEvent: parent {:?} and child {:?} live in different integration frames \
+                 (parent body-frame is ChildOf {:?}; child body-frame is ChildOf {:?}). \
+                 Cross-integration-frame attach is not yet supported — the child's frame \
+                 entity must be reparented under the parent's integ frame and its stored \
+                 coordinates rewritten into that frame before the merge proceeds. Either \
+                 align the two bodies' integ frames (e.g. fire a frame switch on the child \
+                 first, or align their IntegSourceC at spawn) before firing the AttachEvent, \
+                 or wait for the planned reparent + coordinate-rewrite implementation.",
+                evt.parent,
+                evt.child,
+                parent_frame,
+                child_frame,
+            );
+        }
 
         // T_inertial_to_struct = T_struct_to_body^T · T_inertial_to_body
         // Per JEOD `dyn_body_collect.cc:219-221` and
