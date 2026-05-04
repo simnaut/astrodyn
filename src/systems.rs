@@ -874,15 +874,16 @@ pub fn frame_switch_system(
             });
 
         // Mirror the new state into the body's TranslationalStateC.
-        // Re-wrap as the typed component's <RootInertial> phantom —
-        // matches the existing storage convention (the body's
-        // integration frame is treated as numerically root-inertial
-        // by the typed surface; #263 closes the type-lie). Same
+        // Re-wrap as the Component's `<PlanetInertial<SelfPlanet>>`
+        // phantom — `new_state.trans` carries planet-inertial
+        // coordinates of the *target* source's planet (this is the
+        // post-switch frame) which the wildcard `SelfPlanet` tags
+        // without committing to a compile-time planet identity. Same
         // boundary lift `evaluate_and_apply_frame_switch` performs.
-        let pos_typed =
-            jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(new_state.trans.position); // allowed: frame-switch boundary lift, see comment above
-        let vel_typed =
-            jeod_sim::Velocity::<jeod_sim::RootInertial>::from_raw_si(new_state.trans.velocity); // allowed: same frame-switch boundary lift
+        type PiPos = jeod_sim::Position<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>;
+        type PiVel = jeod_sim::Velocity<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>;
+        let pos_typed = PiPos::from_raw_si(new_state.trans.position); // allowed: frame-switch boundary lift, see comment above
+        let vel_typed = PiVel::from_raw_si(new_state.trans.velocity); // allowed: same frame-switch boundary lift
         trans.0.position = pos_typed;
         trans.0.velocity = vel_typed;
 
@@ -1292,12 +1293,16 @@ pub fn ephemeris_update_system(
             sv.0 = vel_typed;
         }
         if let Some(mut ts) = trans_state {
-            // TranslationalStateC now wraps TranslationalStateTyped<RootInertial>;
-            // assign the typed values directly. The frame phantom is
-            // checked at the type level — pos_typed is Position<RootInertial>
-            // by construction, matching the storage's RootInertial frame.
-            ts.0.position = pos_typed;
-            ts.0.velocity = vel_typed;
+            // TranslationalStateC wraps `TranslationalStateTyped<PlanetInertial<SelfPlanet>>`;
+            // `pos_typed` / `vel_typed` are root-inertial-tagged by the
+            // ephemeris API. Relabel via `from_raw_si` to the
+            // wildcard-tagged planet-inertial frame the Component
+            // stores. The numeric SI values (m, m/s) are preserved
+            // exactly — only the phantom tag changes.
+            type PiPos = jeod_sim::Position<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>;
+            type PiVel = jeod_sim::Velocity<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>;
+            ts.0.position = PiPos::from_raw_si(pos_typed.raw_si()); // allowed: ephemeris boundary, RootInertial → PlanetInertial<SelfPlanet> wildcard relabel
+            ts.0.velocity = PiVel::from_raw_si(vel_typed.raw_si()); // allowed: same ephemeris boundary relabel
         }
     }
 }
@@ -1885,13 +1890,14 @@ pub fn integration_system(
 
             // Re-wrap kernel-mutated untyped state back into typed
             // components. The frame phantoms are unchanged (the typed
-            // storage's `RootInertial` / `BodyFrame<SelfRef>` are the same
-            // frames the kernel was operating in).
-            // allowed: typed↔untyped kernel boundary (integrate_body_coupled
-            // signature is untyped); analogous to From<Untyped> impls.
-            state.0 = jeod_sim::TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(
-                &state_untyped,
-            );
+            // storage's `<PlanetInertial<SelfPlanet>>` /
+            // `<BodyFrame<SelfRef>>` are the same frames the kernel
+            // was operating in — the kernel computes everything in
+            // the body's integration frame, which the Component tags
+            // as planet-inertial via the `SelfPlanet` wildcard).
+            type PiTrans =
+                jeod_sim::TranslationalStateTyped<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>;
+            state.0 = PiTrans::from_untyped_unchecked(&state_untyped); // allowed: typed↔untyped kernel boundary (integrate_body_coupled signature is untyped); analogous to From<Untyped> impls.
             if let (Some(rs), Some(ru)) = (rot_state.as_mut(), rot_state_untyped) {
                 // allowed: same typed↔untyped kernel boundary as above.
                 rs.0 = jeod_sim::RotationalStateTyped::<SelfRef>::from_untyped_unchecked(&ru);
@@ -1964,8 +1970,8 @@ pub fn integration_system(
         // integrate_body signature is untyped, so re-wrapping is the
         // canonical adapter step (analogous to From<Untyped> impls).
         state.0 =
-            // allowed: typed↔untyped kernel boundary
-            jeod_sim::TranslationalStateTyped::<RootInertial>::from_untyped_unchecked(&state_untyped);
+            // allowed: typed↔untyped kernel boundary; planet-inertial frame matches the body's integration frame.
+            jeod_sim::TranslationalStateTyped::<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>::from_untyped_unchecked(&state_untyped);
         if let (Some(rs), Some(ru)) = (rot_state.as_mut(), rot_state_untyped) {
             // allowed: typed↔untyped kernel boundary
             rs.0 = jeod_sim::RotationalStateTyped::<SelfRef>::from_untyped_unchecked(&ru);
@@ -2032,14 +2038,19 @@ pub fn gravity_computation_system(
     )>,
 ) {
     for (entity, state, controls, mut accel, body_frame) in &mut bodies {
-        // TranslationalStateC stores typed `Position<IntegrationFrame>` /
-        // `Velocity<IntegrationFrame>`. For root-integrated bodies the
-        // integ frame numerically equals root inertial, so the raw
-        // values match what gravity wants. For non-root bodies we
-        // shift to absolute root-inertial coordinates below via the
-        // body frame entity's parent + `FrameOrigin::origin_in_root`.
-        let body_pos = state.position;
-        let body_vel = state.velocity;
+        // `TranslationalStateC` stores typed
+        // `Position<PlanetInertial<SelfPlanet>>` /
+        // `Velocity<PlanetInertial<SelfPlanet>>`. For root-integrated
+        // bodies the integ frame numerically equals root inertial, so
+        // the raw values match what gravity wants. For non-root
+        // bodies we shift to absolute root-inertial coordinates below
+        // via the body frame entity's parent +
+        // `FrameOrigin::origin_in_root`. The shift is the only safe
+        // path from `PlanetInertial<P>` to `RootInertial` (RF.10);
+        // relabel via `from_raw_si` so the compiler accepts the
+        // addition with the typed root-inertial origin.
+        let body_pos = Position::<RootInertial>::from_raw_si(state.position.raw_si()); // allowed: gravity shift-site, planet-inertial → root-inertial via integ-origin offset
+        let body_vel = Velocity::<RootInertial>::from_raw_si(state.velocity.raw_si()); // allowed: same gravity shift-site
 
         // Integration-frame origin (relative to root). Zero for
         // root-integrated bodies. The body's integration frame is
@@ -2427,12 +2438,22 @@ pub fn solar_beta_system(
         // to radians for the (still f64) `SolarBetaC` storage.
         // `Angle.value` reads the SI base value (radian), matching
         // `Angle::get::<radian>()` — f64-equality is preserved.
-        beta.0 = jeod_sim::compute_body_solar_beta_typed(
-            state.position,
-            state.velocity,
-            sun_state.position,
-        )
-        .value;
+        //
+        // Solar beta is a root-inertial-shift consumer (RF.10): it
+        // mixes the body state with the Sun position, which is
+        // tagged `<RootInertial>`. Relabel the body / Sun state to
+        // `<RootInertial>` at the call site — this preserves the
+        // existing semantics for root-integrated bodies (where the
+        // shift is zero) and pins the framing convention at the
+        // boundary so the kernel signature stays expressed in the
+        // root-inertial frame.
+        let body_pos =
+            jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(state.position.raw_si()); // allowed: solar-beta shift-site relabel (root-integrated bodies have zero offset)
+        let body_vel =
+            jeod_sim::Velocity::<jeod_sim::RootInertial>::from_raw_si(state.velocity.raw_si()); // allowed: same shift-site
+        let sun_pos =
+            jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(sun_state.position.raw_si()); // allowed: Sun's <PlanetInertial<SelfPlanet>> storage relabeled to <RootInertial> at the consumer boundary
+        beta.0 = jeod_sim::compute_body_solar_beta_typed(body_pos, body_vel, sun_pos).value;
     }
 }
 
@@ -2672,11 +2693,17 @@ pub fn flat_plate_srp_system(
                 // step-start inputs on the plate state here; `RadiationForceC`
                 // stays at the zero cleared above — the integration system
                 // writes a representative final-stage value.
+                // `sun_state.position` is now stored as the wildcard
+                // `<PlanetInertial<SelfPlanet>>`; the SRP derivative
+                // closure expects a root-inertial Sun position (RF.10
+                // shift-site). Relabel at the boundary —
+                // bit-identical numerics; the Sun's ephemeris-driven
+                // inertial position numerically coincides with the
+                // root frame's representation.
+                type RootPos = jeod_sim::Position<jeod_sim::RootInertial>;
+                let sun_pos_root = RootPos::from_raw_si(sun_state.position.raw_si()); // allowed: SRP shift-site, Sun position relabeled to RootInertial for kernel
                 flat_config.stage_inputs = Some(jeod_sim::FlatPlateStageInputs {
-                    // `sun_state.position` is the typed component value;
-                    // pass it directly so the typed phantom carries into
-                    // the RK4 derivative closure (RF.10 structural guard).
-                    sun_position: sun_state.position,
+                    sun_position: sun_pos_root,
                     illum_factor,
                     center_grav,
                 });
@@ -3241,10 +3268,10 @@ pub fn staging_system(
                 t.0 =
                     // allowed: stage_attach_combine kernel boundary; the
                     // kernel returns untyped DVec3 by design, so re-wrapping
-                    // as TranslationalStateTyped<RootInertial> is the same
-                    // typed↔untyped pattern as the From<TranslationalState>
-                    // impl on TranslationalStateC.
-                    jeod_sim::TranslationalStateTyped::<jeod_sim::RootInertial>::from_untyped_unchecked(
+                    // as TranslationalStateTyped<PlanetInertial<SelfPlanet>>
+                    // is the same typed↔untyped pattern as the
+                    // From<TranslationalState> impl on TranslationalStateC.
+                    jeod_sim::TranslationalStateTyped::<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>::from_untyped_unchecked(
                         &jeod_sim::TranslationalState {
                             position: merged.position,
                             velocity: merged.velocity,
@@ -3347,9 +3374,9 @@ pub fn staging_system(
                 // typed↔untyped re-wrap pattern as the attach branch
                 // above. The CoM-shift is a pure kinematic update —
                 // it does not introduce a new frame, so wrapping as
-                // `RootInertial` is the same convention as the
-                // pre-detach value.
-                jeod_sim::TranslationalStateTyped::<jeod_sim::RootInertial>::from_untyped_unchecked(
+                // `PlanetInertial<SelfPlanet>` is the same convention
+                // as the pre-detach value.
+                jeod_sim::TranslationalStateTyped::<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>::from_untyped_unchecked(
                     &jeod_sim::TranslationalState {
                         position: new_position,
                         velocity: new_velocity,
@@ -3455,7 +3482,7 @@ pub fn step_detached_system(
                 // design — re-wrapping into TranslationalStateTyped is the
                 // same typed↔untyped pattern as the
                 // From<TranslationalState> impl on TranslationalStateC.
-                jeod_sim::TranslationalStateTyped::<jeod_sim::RootInertial>::from_untyped_unchecked(
+                jeod_sim::TranslationalStateTyped::<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>::from_untyped_unchecked(
                     &jeod_sim::TranslationalState {
                         position: state.0.composite_position,
                         velocity: state.0.composite_velocity,

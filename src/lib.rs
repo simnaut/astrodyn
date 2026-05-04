@@ -190,7 +190,8 @@ impl Plugin for JeodPlugin {
                  is missing `InertialFrameMarker`. The plugin assumes the root \
                  frame is inertial — source / body registration tags new children \
                  with `InertialFrameMarker` and the typed Bevy components \
-                 (`Position<RootInertial>`, `TranslationalStateC<RootInertial>`) \
+                 (`Position<RootInertial>`, \
+                 `TranslationalStateC` storing `<PlanetInertial<SelfPlanet>>`) \
                  are all phantom-tagged for an inertial root. Add \
                  `InertialFrameMarker` to the entity, or let JeodPlugin spawn the \
                  root frame.",

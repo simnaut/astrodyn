@@ -261,13 +261,14 @@ pub fn propagate_state_from_root_system(
                 rot_c.0 = RotationalStateTyped::<SelfRef>::from_untyped_unchecked(&state.rot);
                 // Same kernel boundary as the rotational write above:
                 // `state.trans` is a raw `TranslationalState` in the
-                // root-inertial frame (the kernel guarantees this —
-                // its outputs are inertial-frame composite-body state)
-                // and re-wrapping with the `<RootInertial>` phantom
-                // is the canonical typed lift.
+                // body's integration frame (planet-inertial in
+                // realistic configs); re-wrapping with the
+                // `<PlanetInertial<SelfPlanet>>` phantom is the
+                // canonical typed lift (matches
+                // `TranslationalStateC`'s wildcard-tag storage).
                 trans_c.0 =
                     // allowed: kernel boundary (see rotational sibling write above for the full rationale).
-                    TranslationalStateTyped::<jeod_sim::RootInertial>::from_untyped_unchecked(
+                    TranslationalStateTyped::<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>::from_untyped_unchecked(
                         &state.trans,
                     );
             }
