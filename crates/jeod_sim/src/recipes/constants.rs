@@ -1,12 +1,22 @@
 //! Typed physical constants used by recipes.
 //!
-//! Every constant carries its dimension via `uom`, so mission code that
-//! mixes a `GravParam` with a length quantity gets a compile error rather
-//! than a unit mismatch at runtime. The gravitational-parameter constants
-//! are additionally tagged with the source-body planet phantom — `mu_sun()`
-//! returns `GravParam<Sun>`, `mu_ggm05c()` (Earth) returns `GravParam<Earth>`,
-//! and so on — so a μ for the wrong central body fails the type check at
-//! the consumer rather than passing through silently.
+//! Every constant returns a typed value rather than a bare `f64`, so a
+//! call site that mixes them up gets a compile error rather than a
+//! silent unit/identity mismatch at runtime. The dimensional safety
+//! comes from two distinct mechanisms:
+//!
+//! - **`uom::Quantity` constants** (`r_eq_earth`, `omega_earth`, …) carry
+//!   their physical dimension as a `typenum`-encoded ISQ exponent tuple,
+//!   so `uom`'s dimensional analysis catches mixing a length with an
+//!   angular velocity at compile time.
+//! - **[`GravParam<P>`] constants** (`mu_sun()`, `mu_ggm05c()`, …) are a
+//!   bespoke planet-phantom newtype — *not* a `uom::Quantity` — whose
+//!   safety guarantee is the `P: Planet` phantom, not `uom` dimension
+//!   tracking. `mu_sun()` returns `GravParam<Sun>`, `mu_ggm05c()` (Earth)
+//!   returns `GravParam<Earth>`, and so on, so a μ for the wrong central
+//!   body fails the type check at a planet-pinned consumer rather than
+//!   passing through silently. See [`jeod_quantities::dims::GravParam`]
+//!   for the witness-gated factory pattern that fixes the planet phantom.
 //!
 //! # Example
 //!
