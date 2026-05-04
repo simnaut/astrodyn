@@ -58,9 +58,14 @@ fn default_is_zero() {
 
 #[test]
 fn copy_clone_preserve_value() {
+    // The implicit `let copied = mu_earth;` resolves to `Copy` (not
+    // `Clone`) once `Copy` is implemented, so an explicit `.clone()`
+    // call is required to exercise the `Clone` impl; both must round-
+    // trip the SI value bit-for-bit.
     let mu_earth = 3.986e14_f64.m3_per_s2_for::<Earth>();
     let copied = mu_earth;
-    let cloned = mu_earth;
+    #[allow(clippy::clone_on_copy)]
+    let cloned = mu_earth.clone();
     assert_eq!(copied.value, mu_earth.value);
     assert_eq!(cloned.value, mu_earth.value);
 }
