@@ -62,12 +62,20 @@ use jeod_sim::{
 ///
 /// Atmosphere/drag, LVLH, geodetic, and orbital-elements consumers
 /// do **not** apply the integ-origin shift (they live in
-/// planet-inertial throughout), but they do still apply category 2
-/// to satisfy the typed kernel signature. Calling them "no relabel"
-/// would be misleading — the phantom-tag attachment at the call
-/// site is the relabel. Only consumers whose typed kernels are
-/// generic over `SelfPlanet` directly avoid both categories, and
-/// the current sibling functions are concrete-planet-parameterized.
+/// planet-inertial throughout). Drag, LVLH, and geodetic still
+/// apply category 2 to satisfy a concrete-planet typed kernel
+/// signature — for them, calling the path "no relabel" would be
+/// misleading because the phantom-tag attachment at the call site
+/// *is* the relabel. Orbital elements is the one exception in this
+/// group: its kernel
+/// [`jeod_sim::compute_orbital_elements`] is planet-erased and
+/// returns `OrbitalElements<SelfPlanet>` directly, so the
+/// `OrbitalElementsC` storage matches the `<SelfPlanet>` source
+/// state without any relabel. This was the original "kernels generic
+/// over `SelfPlanet` avoid both categories" exit, now realized by one
+/// consumer; atmosphere also avoids both categories, but by feeding
+/// the kernel raw `DVec3` via `state.position.raw_si()` rather than
+/// by being `<SelfPlanet>`-typed end-to-end.
 ///
 /// For root-integrated bodies (`IntegSourceC` is `None` or omitted)
 /// the integ-origin shift is zero, so the planet-inertial coordinates
@@ -124,9 +132,13 @@ impl TranslationalStateC {
     /// the phantom to `RootInertial` (gravity, solar beta, SRP, earth
     /// lighting), or stay within the planet-inertial flavor and do a
     /// wildcard → concrete-planet phantom relabel at the typed-kernel
-    /// boundary (atmosphere, drag, LVLH, geodetic, orbital elements);
-    /// see the type-level docstring's "Frame semantics" section for
-    /// the two-category breakdown.
+    /// boundary (drag, LVLH, geodetic). Atmosphere and orbital
+    /// elements stay within planet-inertial *without* any relabel —
+    /// atmosphere because it consumes raw `DVec3` via
+    /// `state.position.raw_si()`, orbital elements because its kernel
+    /// is planet-erased and produces `OrbitalElements<SelfPlanet>`
+    /// directly. See the type-level docstring's "Frame semantics"
+    /// section for the two-category breakdown.
     ///
     /// No runtime check is performed; the conversion is a zero-cost
     /// type-tag attachment via
@@ -512,11 +524,14 @@ pub struct PlanetOmegaC(pub f64);
 /// 2. **Wildcard `<SelfPlanet>` → concrete `<P>` phantom relabel**
 ///    (phantom-only, no arithmetic). Required wherever a typed kernel
 ///    is parameterized over a concrete `PlanetInertial<P>` rather than
-///    the wildcard. Drag, LVLH, geodetic, and orbital elements still
-///    apply this relabel via `from_raw_si` at the typed-kernel
-///    boundary even though they skip category 1; only atmosphere
-///    (which feeds the kernel raw `DVec3` via `state.position.raw_si()`)
-///    avoids both categories.
+///    the wildcard. Drag, LVLH, and geodetic still apply this relabel
+///    via `from_raw_si` at the typed-kernel boundary even though they
+///    skip category 1. Atmosphere and orbital elements skip it too:
+///    atmosphere feeds the kernel raw `DVec3` via
+///    `state.position.raw_si()`, and orbital elements drives the
+///    planet-erased `compute_orbital_elements` kernel, which returns
+///    `OrbitalElements<SelfPlanet>` matching the source state's tag
+///    directly.
 #[derive(Component, Debug, Clone, Copy, Default, Deref, DerefMut, Reflect)]
 #[reflect(opaque, Component)]
 pub struct IntegSourceC(pub Option<Entity>);
@@ -1045,7 +1060,12 @@ pub struct GeodeticConfigC {
 /// `OrbitalElementsConfigC`.
 #[derive(Component, Debug, Clone, Default, Reflect)]
 #[reflect(opaque, Component)]
-pub struct OrbitalElementsC(pub jeod_sim::OrbitalElements);
+pub struct OrbitalElementsC(
+    // Bevy components are runtime-keyed by source index, so the planet
+    // identity isn't statically known here — `SelfPlanet` is the
+    // boundary-only escape hatch for the registry-side path.
+    pub jeod_sim::OrbitalElements<jeod_sim::SelfPlanet>,
+);
 
 /// Euler angles `[phi, theta, psi]` computed each step.
 ///

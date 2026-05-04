@@ -10,7 +10,7 @@ use crate::{EulerSequence, GeodeticState, LvlhFrame, OrbitalElements, Rotational
 use jeod_math::OrbitalError;
 use jeod_quantities::aliases::{Position, Velocity};
 use jeod_quantities::dims::{GravParam, SpecificAngMomDim};
-use jeod_quantities::frame::RootInertial;
+use jeod_quantities::frame::{RootInertial, SelfPlanet};
 use jeod_quantities::qty3::Qty3;
 use uom::si::angle::radian;
 use uom::si::f64::{Angle, Length};
@@ -50,21 +50,28 @@ pub struct LvlhRelativeState {
 /// Delegates to [`OrbitalElements::from_cartesian_typed`] via the
 /// `jeod_quantities::ext` lifters; bit-identical to the deprecated f64
 /// path that this wrapper used before Phase 10.
+///
+/// Returns the planet-erased [`OrbitalElements<SelfPlanet>`] —
+/// per-body planet identity in the runner is dynamic (keyed by source
+/// index), so the static surface returns a `SelfPlanet`-tagged value.
+/// Mission code that knows the planet at compile time should use
+/// [`compute_orbital_elements_typed`].
 pub fn compute_orbital_elements(
     mu: f64,
     position: DVec3,
     velocity: DVec3,
-) -> Result<OrbitalElements, OrbitalError> {
+) -> Result<OrbitalElements<SelfPlanet>, OrbitalError> {
     use jeod_quantities::ext::{F64Ext, Vec3Ext};
-    use jeod_quantities::frame::{Earth, PlanetInertial};
-    // Untyped surface assumes Earth-centered inertial axes for backward
-    // compat with the existing Bevy adapter. Mission code targeting
-    // another planet should use the typed sibling with the appropriate
-    // `P: Planet` phantom.
-    OrbitalElements::from_cartesian_typed::<Earth>(
+    use jeod_quantities::frame::PlanetInertial;
+    // Drive the typed kernel directly with `SelfPlanet`-tagged inputs so
+    // the result is already `OrbitalElements<SelfPlanet>` — no relabel
+    // step. `OrbitalElements::relabel` is restricted to a `<SelfPlanet>`
+    // receiver to prevent silent cross-planet retagging, so going
+    // through `<Earth>` and erasing afterwards is no longer available.
+    OrbitalElements::<SelfPlanet>::from_cartesian_typed(
         F64Ext::m3_per_s2(mu),
-        position.m_at::<PlanetInertial<Earth>>(),
-        velocity.m_per_s_at::<PlanetInertial<Earth>>(),
+        position.m_at::<PlanetInertial<SelfPlanet>>(),
+        velocity.m_per_s_at::<PlanetInertial<SelfPlanet>>(),
     )
 }
 
@@ -246,13 +253,15 @@ pub fn compute_lvlh_relative_state(
 /// Delegates to [`OrbitalElements::from_cartesian_typed`] (the typed
 /// entry point added by Phase 2). Identical numerics — the typed
 /// kernel itself extracts SI base values and calls the same f64
-/// implementation.
+/// implementation. The shared `<P>` phantom on `mu`, `position`,
+/// `velocity`, and the returned `OrbitalElements<P>` makes the
+/// μ-vs-frame agreement structural.
 pub fn compute_orbital_elements_typed<P: jeod_quantities::frame::Planet>(
-    mu: GravParam,
+    mu: GravParam<P>,
     position: Position<jeod_quantities::frame::PlanetInertial<P>>,
     velocity: Velocity<jeod_quantities::frame::PlanetInertial<P>>,
-) -> Result<OrbitalElements, OrbitalError> {
-    OrbitalElements::from_cartesian_typed::<P>(mu, position, velocity)
+) -> Result<OrbitalElements<P>, OrbitalError> {
+    OrbitalElements::<P>::from_cartesian_typed(mu, position, velocity)
 }
 
 /// Typed sibling of [`compute_body_euler_angles`].

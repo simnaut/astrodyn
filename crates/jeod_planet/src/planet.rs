@@ -44,14 +44,20 @@ impl PlanetShape {
         2.0 * f - f * f
     }
 
-    /// Gravitational parameter as a typed `GravParam` (m³/s²).
+    /// Gravitational parameter as a typed
+    /// `GravParam<jeod_quantities::frame::SelfPlanet>` (m³/s²).
     ///
-    /// Additive typed accessor introduced by Phase 1 of the type-system
-    /// refactor (issue #101). Wraps the existing `mu` f64 field; the
-    /// underlying field is unchanged.
-    pub fn mu_typed(&self) -> jeod_quantities::dims::GravParam {
-        use jeod_quantities::ext::F64Ext;
-        self.mu.m3_per_s2()
+    /// Returns the planet-erased
+    /// ([`jeod_quantities::frame::SelfPlanet`]) form because
+    /// `PlanetShape` is the dynamic per-planet record carried by the
+    /// runner — the planet identity is determined by which entity
+    /// holds the shape, not by the static type. Mission code that
+    /// knows the planet at compile time can either reach for the
+    /// curated `mu_*()` constants in `jeod_sim::recipes::constants`
+    /// (which return planet-pinned `GravParam<P>` values) or relabel
+    /// at the call site via `mu_typed().relabel::<P>()`.
+    pub fn mu_typed(&self) -> jeod_quantities::dims::GravParam<jeod_quantities::frame::SelfPlanet> {
+        jeod_quantities::dims::GravParam::<jeod_quantities::frame::SelfPlanet>::from_si(self.mu)
     }
 
     /// Equatorial radius as a typed `uom::si::f64::Length` (meters).

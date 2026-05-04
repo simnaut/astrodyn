@@ -10,7 +10,11 @@
 //! [`OrbitalElements`]; the bare-`f64` siblings are kept
 //! module-private after the Phase 10 typed-API purge.
 
+use core::marker::PhantomData;
 use std::f64::consts::{PI, TAU};
+
+use jeod_quantities::dims::GravParam;
+use jeod_quantities::frame::{Planet, PlanetInertial, SelfPlanet};
 
 use crate::error::OrbitalError;
 use crate::types::{mat3_from_rows, DVec3};
@@ -18,8 +22,18 @@ use crate::types::{mat3_from_rows, DVec3};
 /// Classical orbital elements computed from Cartesian state vectors.
 ///
 /// Ported from JEOD `models/utils/orbital_elements/src/orbital_elements.cc`.
-#[derive(Debug, Clone, Default)]
-pub struct OrbitalElements {
+///
+/// The phantom `P: Planet` ties the result to the central body whose μ
+/// produced these elements: `OrbitalElements<Earth>` and
+/// `OrbitalElements<Sun>` are distinct types and cannot be combined.
+/// Every call site must state its `<P>` explicitly — there is no
+/// `<P = SelfPlanet>` default. Use [`SelfPlanet`] to opt into the
+/// planet-erased variant for the registry-side boundary code (the Bevy
+/// adapter components, the `to_cartesian` rebuild path) where the
+/// planet identity is determined at runtime; mission code that knows
+/// the central body at compile time should pick a concrete planet.
+#[derive(Debug, Clone)]
+pub struct OrbitalElements<P: Planet> {
     /// Semi-major axis (negative for hyperbolic orbits).
     pub semi_major_axis: f64,
     /// Semi-latus rectum p = a(1 - e^2).
@@ -53,6 +67,32 @@ pub struct OrbitalElements {
     sin_v: f64,
     /// Cached cos(true_anomaly).
     cos_v: f64,
+
+    _p: PhantomData<P>,
+}
+
+impl<P: Planet> Default for OrbitalElements<P> {
+    fn default() -> Self {
+        Self {
+            semi_major_axis: 0.0,
+            semiparam: 0.0,
+            e_mag: 0.0,
+            inclination: 0.0,
+            arg_periapsis: 0.0,
+            long_asc_node: 0.0,
+            true_anom: 0.0,
+            mean_anom: 0.0,
+            orbital_anom: 0.0,
+            mean_motion: 0.0,
+            r_mag: 0.0,
+            vel_mag: 0.0,
+            orb_energy: 0.0,
+            orb_ang_momentum: 0.0,
+            sin_v: 0.0,
+            cos_v: 0.0,
+            _p: PhantomData,
+        }
+    }
 }
 
 // Tolerance thresholds (matching JEOD source: orbital_elements.cc:138-139)
@@ -68,7 +108,51 @@ fn wrap_to_tau(mut angle: f64) -> f64 {
     angle
 }
 
-impl OrbitalElements {
+impl OrbitalElements<SelfPlanet> {
+    /// Relabel a planet-erased ([`SelfPlanet`]) orbital-element set as
+    /// computed against a specific planet `Q`.
+    ///
+    /// Restricted to `impl OrbitalElements<SelfPlanet>` so it can only
+    /// retag a result that is already planet-erased — a planet-pinned
+    /// `OrbitalElements<Sun>` cannot accidentally be relabeled as
+    /// `OrbitalElements<Earth>` via this method. **Boundary-only escape
+    /// hatch** for relabel sites where the planet identity is determined
+    /// at runtime (e.g. wrapping a raw `from_cartesian_impl` result, the
+    /// Bevy `OrbitalElementsC` component which is parameterized by
+    /// `SelfPlanet`). Mission code that knows the central body at compile
+    /// time should reach for [`OrbitalElements::from_cartesian_typed`]
+    /// directly.
+    ///
+    /// A genuine `<P>` → `<Q>` retag for two distinct named planets is
+    /// almost never the right operation (orbital elements are always
+    /// computed against a specific μ); if you need it for a different
+    /// reason, add a separate, clearly-named escape hatch instead of
+    /// widening this impl block.
+    #[inline]
+    pub fn relabel<Q: Planet>(self) -> OrbitalElements<Q> {
+        OrbitalElements::<Q> {
+            semi_major_axis: self.semi_major_axis,
+            semiparam: self.semiparam,
+            e_mag: self.e_mag,
+            inclination: self.inclination,
+            arg_periapsis: self.arg_periapsis,
+            long_asc_node: self.long_asc_node,
+            true_anom: self.true_anom,
+            mean_anom: self.mean_anom,
+            orbital_anom: self.orbital_anom,
+            mean_motion: self.mean_motion,
+            r_mag: self.r_mag,
+            vel_mag: self.vel_mag,
+            orb_energy: self.orb_energy,
+            orb_ang_momentum: self.orb_ang_momentum,
+            sin_v: self.sin_v,
+            cos_v: self.cos_v,
+            _p: PhantomData,
+        }
+    }
+}
+
+impl OrbitalElements<SelfPlanet> {
     // ----------------------------------------------------------------
     // Cartesian -> orbital elements
     // ----------------------------------------------------------------
@@ -76,7 +160,7 @@ impl OrbitalElements {
     /// Compute classical orbital elements from Cartesian position and velocity
     /// in an inertial frame.
     ///
-    /// Internal numeric kernel shared by [`Self::from_cartesian_typed`].
+    /// Internal numeric kernel shared by [`OrbitalElements::from_cartesian_typed`].
     /// Kept module-private after the Phase 10 purge of the bare-`f64`
     /// public surface — new callers should use the typed sibling.
     ///
@@ -88,7 +172,7 @@ impl OrbitalElements {
         mu: f64,
         pos: DVec3,
         vel: DVec3,
-    ) -> Result<OrbitalElements, OrbitalError> {
+    ) -> Result<OrbitalElements<SelfPlanet>, OrbitalError> {
         // JEOD_INV: OE.01 — mu must be finite and positive; NaN/±Inf would
         // propagate through the element computations and produce silent NaNs.
         if !mu.is_finite() || mu <= 0.0 {
@@ -273,7 +357,7 @@ impl OrbitalElements {
         let sin_v = nu.sin();
         let cos_v = nu.cos();
 
-        let mut oe = OrbitalElements {
+        let mut oe = OrbitalElements::<SelfPlanet> {
             semi_major_axis: a,
             semiparam: p,
             e_mag: ecc,
@@ -290,29 +374,124 @@ impl OrbitalElements {
             orb_ang_momentum: h_mag,
             sin_v,
             cos_v,
+            _p: PhantomData,
         };
 
         oe.nu_to_anomalies();
 
         Ok(oe)
     }
+}
 
+impl<P: Planet> OrbitalElements<P> {
     /// Typed variant of `from_cartesian` (the file-private kernel below).
     ///
     /// Accepts dimensionally-typed inputs:
-    /// * `mu` — gravitational parameter in SI base units (m³/s²)
-    /// * `pos` — inertial-frame position in meters
-    /// * `vel` — inertial-frame velocity in m/s
+    /// * `mu` — gravitational parameter [`GravParam<P>`], pinned to the
+    ///   same planet phantom `P` as the position/velocity frames
+    /// * `pos` — `Position<PlanetInertial<P>>` in meters
+    /// * `vel` — `Velocity<PlanetInertial<P>>` in m/s
     ///
-    /// Output fields on [`OrbitalElements`] remain raw `f64` in SI base units
-    /// for this PR; typing the outputs is tracked separately in issue #104.
-    pub fn from_cartesian_typed<P: jeod_quantities::frame::Planet>(
-        mu: jeod_quantities::dims::GravParam,
-        pos: jeod_quantities::aliases::Position<jeod_quantities::frame::PlanetInertial<P>>,
-        vel: jeod_quantities::aliases::Velocity<jeod_quantities::frame::PlanetInertial<P>>,
-    ) -> Result<OrbitalElements, OrbitalError> {
-        // Extract SI base values and delegate to the shared kernel.
-        Self::from_cartesian_impl(mu.value, pos.raw_si(), vel.raw_si())
+    /// The shared `<P>` makes the mu-vs-frame agreement structural: a
+    /// caller cannot pass `mu_sun()` (which is `GravParam<Sun>`) into
+    /// `from_cartesian_typed::<Earth>(...)` — the compiler refuses.
+    ///
+    /// The returned [`OrbitalElements<P>`] carries the planet identity
+    /// through to downstream consumers so a Mars-centered set cannot
+    /// silently flow into an Earth-orbit code path.
+    ///
+    /// # Positive control: matching planet phantoms compile
+    ///
+    /// ```
+    /// use glam::DVec3;
+    /// use jeod_math::OrbitalElements;
+    /// use jeod_quantities::prelude::*;
+    ///
+    /// let mu = 3.986_004_415e14_f64.m3_per_s2_for::<Earth>();
+    /// let pos: Position<PlanetInertial<Earth>> = Qty3::from_raw_si(DVec3::new(7e6, 0.0, 0.0));
+    /// let vel: Velocity<PlanetInertial<Earth>> = Qty3::from_raw_si(DVec3::new(0.0, 7546.0, 0.0));
+    /// let _oe = OrbitalElements::<Earth>::from_cartesian_typed(mu, pos, vel).unwrap();
+    /// ```
+    ///
+    /// # Compile-fail: μ for wrong planet rejected
+    ///
+    /// Pairing `mu_sun()` (`GravParam<Sun>`) with Earth-tagged
+    /// position/velocity is the load-bearing bug shape that motivated
+    /// this typing — the compiler rejects it.
+    ///
+    /// ```compile_fail
+    /// use glam::DVec3;
+    /// use jeod_math::OrbitalElements;
+    /// use jeod_quantities::prelude::*;
+    ///
+    /// let mu_sun = 1.327_124_400_18e20_f64.m3_per_s2_for::<Sun>();
+    /// let pos: Position<PlanetInertial<Earth>> = Qty3::from_raw_si(DVec3::new(7e6, 0.0, 0.0));
+    /// let vel: Velocity<PlanetInertial<Earth>> = Qty3::from_raw_si(DVec3::new(0.0, 7546.0, 0.0));
+    /// // mu (Sun) vs pos/vel (Earth) — compile error.
+    /// let _bad = OrbitalElements::<Earth>::from_cartesian_typed(mu_sun, pos, vel);
+    /// ```
+    ///
+    /// # Compile-fail: position/velocity from a different planet rejected
+    ///
+    /// ```compile_fail
+    /// use glam::DVec3;
+    /// use jeod_math::OrbitalElements;
+    /// use jeod_quantities::prelude::*;
+    ///
+    /// let mu_earth = 3.986_004_415e14_f64.m3_per_s2_for::<Earth>();
+    /// let pos: Position<PlanetInertial<Mars>> = Qty3::from_raw_si(DVec3::new(7e6, 0.0, 0.0));
+    /// let vel: Velocity<PlanetInertial<Mars>> = Qty3::from_raw_si(DVec3::new(0.0, 3000.0, 0.0));
+    /// // mu (Earth) vs pos/vel (Mars) — compile error.
+    /// let _bad = OrbitalElements::<Earth>::from_cartesian_typed(mu_earth, pos, vel);
+    /// ```
+    ///
+    /// # Compile-fail: result cannot flow into a different-planet slot
+    ///
+    /// The returned `OrbitalElements<Earth>` cannot silently be
+    /// assigned to a `OrbitalElements<Sun>` slot.
+    ///
+    /// ```compile_fail
+    /// use glam::DVec3;
+    /// use jeod_math::OrbitalElements;
+    /// use jeod_quantities::prelude::*;
+    ///
+    /// let mu = 3.986_004_415e14_f64.m3_per_s2_for::<Earth>();
+    /// let pos: Position<PlanetInertial<Earth>> = Qty3::from_raw_si(DVec3::new(7e6, 0.0, 0.0));
+    /// let vel: Velocity<PlanetInertial<Earth>> = Qty3::from_raw_si(DVec3::new(0.0, 7546.0, 0.0));
+    /// let earth_oe = OrbitalElements::<Earth>::from_cartesian_typed(mu, pos, vel).unwrap();
+    /// // Can't assign Earth-tagged elements to a Sun-tagged slot:
+    /// let _bad: OrbitalElements<Sun> = earth_oe;
+    /// ```
+    ///
+    /// # Compile-fail: there is no `<P = SelfPlanet>` default
+    ///
+    /// `OrbitalElements<P>` carries no default planet — every call site
+    /// must commit to a planet via turbofish, type ascription, or
+    /// argument inference. A bare `OrbitalElements::default()` with no
+    /// inference context is rejected. There is deliberately no
+    /// `<P = SelfPlanet>` fallback: a default would silently relax to
+    /// `<SelfPlanet>` whenever inference had no constraint, hiding
+    /// missing planet-pinning decisions. The type system is meant to
+    /// surface those at compile time, not satisfy them with a wildcard:
+    ///
+    /// ```compile_fail
+    /// use jeod_math::OrbitalElements;
+    /// // No type context for `<P>`, no turbofish, no default — type
+    /// // annotations needed.
+    /// let _oe = OrbitalElements::default();
+    /// ```
+    pub fn from_cartesian_typed(
+        mu: GravParam<P>,
+        pos: jeod_quantities::aliases::Position<PlanetInertial<P>>,
+        vel: jeod_quantities::aliases::Velocity<PlanetInertial<P>>,
+    ) -> Result<OrbitalElements<P>, OrbitalError> {
+        // JEOD_INV: RF.11 — `mu`, `pos`, `vel`, and the returned
+        // `OrbitalElements<P>` share the planet phantom `P`, so a μ for
+        // the wrong central body is rejected at compile time.
+        // Extract SI base values and delegate to the shared planet-erased
+        // kernel; relabel the result with the call-site's planet phantom.
+        OrbitalElements::<SelfPlanet>::from_cartesian_impl(mu.value, pos.raw_si(), vel.raw_si())
+            .map(OrbitalElements::<SelfPlanet>::relabel::<P>)
     }
 
     // ----------------------------------------------------------------
@@ -579,12 +758,12 @@ mod tests {
     /// `from_cartesian` was removed in Phase 10; tests still need to
     /// exercise the f64 entry points to lock down regressions before the
     /// typed API matured.
-    impl OrbitalElements {
+    impl OrbitalElements<SelfPlanet> {
         pub(super) fn from_cartesian(
             mu: f64,
             pos: DVec3,
             vel: DVec3,
-        ) -> Result<OrbitalElements, OrbitalError> {
+        ) -> Result<OrbitalElements<SelfPlanet>, OrbitalError> {
             Self::from_cartesian_impl(mu, pos, vel)
         }
     }
@@ -1143,7 +1322,10 @@ mod tests {
         use jeod_quantities::qty3::Qty3;
 
         // ISS-ish: 408 km altitude circular orbit, SI units.
-        let mu_si: jeod_quantities::dims::GravParam = 3.986_004_415e14_f64.m3_per_s2();
+        // The planet phantom on `mu_si` is pinned to `Earth` so it
+        // matches the position/velocity frames at the call site —
+        // mismatching `<Earth>` and `<Sun>` here is a compile error.
+        let mu_si: GravParam<Earth> = 3.986_004_415e14_f64.m3_per_s2_for::<Earth>();
         let r = 6_779_000.0_f64; // m (~6371 + 408 km)
         let v = (3.986_004_415e14_f64 / r).sqrt(); // m/s
 
@@ -1152,7 +1334,7 @@ mod tests {
         let pos: Position<PlanetInertial<Earth>> = Qty3::from_raw_si(DVec3::new(r, 0.0, 0.0));
         let vel: Velocity<PlanetInertial<Earth>> = Qty3::from_raw_si(DVec3::new(0.0, v, 0.0));
 
-        let oe = OrbitalElements::from_cartesian_typed(mu_si, pos, vel).unwrap();
+        let oe = OrbitalElements::<Earth>::from_cartesian_typed(mu_si, pos, vel).unwrap();
 
         // ISS-like semi-major axis falls in the 6.5e6 - 7.2e6 m band.
         assert!(
@@ -1181,7 +1363,7 @@ mod tests {
         use jeod_quantities::frame::{Earth, PlanetInertial};
         use jeod_quantities::qty3::Qty3;
 
-        let mu_si: jeod_quantities::dims::GravParam = 3.986_004_415e14_f64.m3_per_s2();
+        let mu_si: GravParam<Earth> = 3.986_004_415e14_f64.m3_per_s2_for::<Earth>();
         // Mildly eccentric, slightly inclined ISS-ish state in SI units.
         let pos_raw = DVec3::new(6_779_000.0, 0.0, 0.0);
         let vel_raw = DVec3::new(0.0, 7_000.0, 1_500.0);
@@ -1189,7 +1371,7 @@ mod tests {
         let pos: Position<PlanetInertial<Earth>> = Qty3::from_raw_si(pos_raw);
         let vel: Velocity<PlanetInertial<Earth>> = Qty3::from_raw_si(vel_raw);
 
-        let oe_typed = OrbitalElements::from_cartesian_typed(mu_si, pos, vel).unwrap();
+        let oe_typed = OrbitalElements::<Earth>::from_cartesian_typed(mu_si, pos, vel).unwrap();
         let oe_raw = OrbitalElements::from_cartesian(mu_si.value, pos_raw, vel_raw).unwrap();
 
         // Bit-identical delegation: typed wrapper extracts SI values and calls

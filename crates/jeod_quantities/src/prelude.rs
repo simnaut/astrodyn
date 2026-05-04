@@ -7,7 +7,7 @@ pub use crate::dims::{GravParam, MassFlowRate, SpecificAngMom, SpecificEnergy};
 pub use crate::ext::{Array3Ext, F64Ext, Vec3Ext};
 pub use crate::frame::{
     BodyFrame, Earth, Ecef, Frame, IntegrationFrame, Lvlh, Mars, Moon, Ned, Planet, PlanetFixed,
-    PlanetInertial, RootInertial, SelfRef, StructuralFrame, Sun, Vehicle,
+    PlanetInertial, RootInertial, SelfPlanet, SelfRef, StructuralFrame, Sun, Vehicle,
 };
 pub use crate::frame_transform::FrameTransform;
 pub use crate::integ_origin::IntegOrigin;

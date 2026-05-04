@@ -230,10 +230,10 @@ pub fn new_sim_body_sixdof(earth_idx: usize, gradient: bool) -> VehicleConfig {
 
 // ── Derived state assertion helpers ──
 
-pub fn assert_orbital_elements_eq(
+pub fn assert_orbital_elements_eq<P: jeod_sim::Planet>(
     label: &str,
-    a: &jeod_sim::OrbitalElements,
-    b: &jeod_sim::OrbitalElements,
+    a: &jeod_sim::OrbitalElements<P>,
+    b: &jeod_sim::OrbitalElements<P>,
 ) {
     assert_bits_eq(
         label,
