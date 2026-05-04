@@ -20,8 +20,8 @@ use crate::components::{
     CannonballSrpC, DragConfigC, DynamicsConfigC, EarthLightingConfigC, EulerAnglesConfigC,
     FlatPlateConfigC, FrameAngVelC, FrameEntityC, FrameRotC, FrameSwitchesC, FrameTransC,
     GeodeticConfigC, GravityAccelerationC, GravityControlsC, GravitySourceC, LvlhFrameC,
-    MassPropertiesC, MoonMarker, OrbitalElementsConfigC, RotationalStateC, SolarBetaC,
-    SourceFrameIdC, SunMarker, TidalConfigC, TidalDeltaC20C, TranslationalStateC,
+    MassPropertiesC, MoonMarker, OrbitalElementsConfigC, RotationalStateC, SolarBetaC, SunMarker,
+    TidalConfigC, TidalDeltaC20C, TranslationalStateC,
 };
 use crate::RootFrameEntityR;
 
@@ -138,11 +138,11 @@ pub fn validate_jeod_invariants(
     // typed `VehicleBuilder` API (which plumbs `integ_source` and
     // `frame_switches` through `spawn_bevy`) doesn't silently land
     // bodies in misconfigured non-root setups. The body's integration
-    // frame is its `FrameEntityC`'s `ChildOf` parent; sources expose
-    // both their frame entity (`FrameEntityC`) and their frame's
-    // `SourceFrameIdC` for the frame-switch target check.
+    // frame is its `FrameEntityC`'s `ChildOf` parent; gravity sources
+    // expose their frame entity via `FrameEntityC` for the
+    // frame-switch target check.
     body_frame_state: Query<(Option<&FrameEntityC>, Option<&FrameSwitchesC>)>,
-    source_frames: Query<(&SourceFrameIdC, &FrameEntityC)>,
+    source_frames: Query<&FrameEntityC, With<GravitySourceC>>,
     parents: Query<&ChildOf>,
     frame_states: Query<(&FrameTransC, &FrameRotC, &FrameAngVelC)>,
     // Needed by `is_root_equivalent_entity` to fold Bevy's "every
@@ -326,16 +326,21 @@ pub fn validate_jeod_invariants(
                     continue;
                 }
                 // (a) target_source must be a registered gravity source
-                // (Bevy analog of runner's `target >= num_sources` check —
-                // here a missing `SourceFrameIdC` is the failure mode).
+                // (Bevy analog of runner's `target >= num_sources` check).
+                // The `source_frames` query is filtered by
+                // `With<GravitySourceC>`, so a missing match means the
+                // target is missing `GravitySourceC` and/or
+                // `FrameEntityC`; the diagnostic enumerates both
+                // because either misconfiguration produces the same
+                // failure here.
                 let target_frame_entity = match source_frames.get(sw.target_source) {
-                    Ok((_, fe)) => Some(fe.0),
+                    Ok(fe) => Some(fe.0),
                     Err(_) => {
                         panic!(
                             "Entity {entity:?}: FrameSwitchConfig.target_source = {target:?} \
-                             is not a registered gravity source (no SourceFrameIdC). \
-                             Spawn the source with PlanetBundle (or attach GravitySourceC + \
-                             SourceInertialPositionC) before adding the body.",
+                             is not a registered gravity source — it is missing \
+                             GravitySourceC and/or FrameEntityC. Spawn it with PlanetBundle \
+                             (which inserts both) before adding the body.",
                             target = sw.target_source,
                         );
                     }

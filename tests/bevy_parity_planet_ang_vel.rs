@@ -12,19 +12,12 @@
 //! 2. The Bevy value is bit-identical to the corresponding pfix node's
 //!    `state.rot.ang_vel_this` in `jeod_runner::Simulation::frame_tree()`.
 
-// `FrameTreeR` is `#[deprecated]` for mission-code use. This Tier 3
-// parity test reads the arena to assert bit-identity of the
-// pfix-rotation node sync path. Once the resource is removed, the
-// arena reads here will be rewritten to use `RelativeFrameState`.
-#![allow(deprecated)]
-
 use std::time::Duration;
 
 use bevy::prelude::*;
 use bevy_jeod::{
-    EphemerisR, FrameTreeR, GravitySourceC, JeodPlugin, PlanetAngularVelocityC, PlanetBundle,
-    PlanetFixedRotationC, PlanetOmegaC, RotationModelC, SourceInertialPositionC,
-    SourcePfixFrameIdC,
+    EphemerisR, FrameAngVelC, GravitySourceC, JeodPlugin, PfixFrameEntityC, PlanetAngularVelocityC,
+    PlanetBundle, PlanetFixedRotationC, PlanetOmegaC, RotationModelC, SourceInertialPositionC,
 };
 use glam::DVec3;
 use jeod_runner::{RotationModel, Simulation};
@@ -95,17 +88,19 @@ fn sim_pfix_ang_vel(sim: &Simulation, name: &str) -> DVec3 {
     frame_tree.get(pfix_id).state.rot.ang_vel_this
 }
 
-/// Read the FrameTreeR pfix node's `ang_vel_this` for a Bevy planet
-/// entity. Asserts the pfix-node-of-truth is in sync with the ECS
+/// Read the pfix frame entity's `FrameAngVelC` for a Bevy planet
+/// entity. Asserts the pfix-frame-of-truth is in sync with the ECS
 /// `PlanetAngularVelocityC` component.
 fn bevy_pfix_node_ang_vel(app: &App, planet: Entity) -> DVec3 {
-    let pfix_fid = app
+    let pfix_fe = app
         .world()
-        .get::<SourcePfixFrameIdC>(planet)
-        .expect("planet entity is missing SourcePfixFrameIdC")
+        .get::<PfixFrameEntityC>(planet)
+        .expect("planet entity is missing PfixFrameEntityC")
         .0;
-    let frame_tree = app.world().resource::<FrameTreeR>();
-    frame_tree.0.get(pfix_fid).state.rot.ang_vel_this
+    app.world()
+        .get::<FrameAngVelC>(pfix_fe)
+        .expect("pfix frame entity must carry FrameAngVelC")
+        .0
 }
 
 #[test]
@@ -128,11 +123,12 @@ fn tier3_bevy_planet_ang_vel_earth_rnp() {
     let sim_ang_vel = sim_pfix_ang_vel(&sim, "Earth");
     assert_dvec3_bits_eq("Bevy vs Sim Earth pfix ang_vel", bevy_ang_vel, sim_ang_vel);
 
-    // FrameTreeR pfix node must match too — frame-tree consumers rely
-    // on this (compute_relative_state through pfix).
+    // The pfix frame entity's `FrameAngVelC` must match too —
+    // frame-tree consumers (RelativeFrameState through pfix) rely
+    // on this.
     let bevy_node_ang_vel = bevy_pfix_node_ang_vel(&app, planet);
     assert_dvec3_bits_eq(
-        "Bevy FrameTreeR Earth pfix-node ang_vel vs Sim",
+        "Bevy ECS Earth pfix frame entity ang_vel vs Sim",
         bevy_node_ang_vel,
         sim_ang_vel,
     );
@@ -159,7 +155,7 @@ fn tier3_bevy_planet_ang_vel_mars_iau() {
 
     let bevy_node_ang_vel = bevy_pfix_node_ang_vel(&app, planet);
     assert_dvec3_bits_eq(
-        "Bevy FrameTreeR Mars pfix-node ang_vel vs Sim",
+        "Bevy ECS Mars pfix frame entity ang_vel vs Sim",
         bevy_node_ang_vel,
         sim_ang_vel,
     );
@@ -186,7 +182,7 @@ fn tier3_bevy_planet_ang_vel_moon_iau() {
 
     let bevy_node_ang_vel = bevy_pfix_node_ang_vel(&app, planet);
     assert_dvec3_bits_eq(
-        "Bevy FrameTreeR Moon pfix-node ang_vel vs Sim",
+        "Bevy ECS Moon pfix frame entity ang_vel vs Sim",
         bevy_node_ang_vel,
         sim_ang_vel,
     );
@@ -235,140 +231,68 @@ fn tier3_bevy_planet_ang_vel_rotation_none_leaves_default() {
 }
 
 /// Toggling a source's `RotationModelC` from a rotating model to
-/// `None` at runtime must remove the `SourcePfixFrameIdC` component,
-/// not just clear the pfix node to identity — otherwise consumers
-/// that branch on the *presence* of the component would still treat
-/// the source as rotating-capable. Mirrors the registration symmetry:
-/// `register_pfix_frames_system` inserts the component when a source
-/// gains a non-`None` rotation model after registration; this test
-/// verifies the inverse.
+/// `None` at runtime must remove the `PfixFrameEntityC` component
+/// (not just clear the pfix frame entity's state to identity) —
+/// otherwise consumers that branch on the *presence* of the
+/// component would still treat the source as rotating-capable.
+/// Mirrors the registration symmetry:
+/// `register_pfix_frames_system` inserts `PfixFrameEntityC` when a
+/// source gains a non-`None` rotation model after registration; this
+/// test verifies the inverse.
 ///
-/// The orphan pfix node must also be *reused* on the next toggle back
-/// to a rotating model. Without reuse, every cycle would (a) leak a
-/// `<name>.pfix` node into the frame tree (which has no removal API)
-/// and (b) let `FrameTree::find_by_name` shadow the live frame with a
-/// stale orphan. Run several toggle cycles and assert that the frame
-/// tree's node count is stable and that `find_by_name` always
-/// resolves to the live `SourcePfixFrameIdC`.
+/// The orphan pfix frame entity must also be *reused* on the next
+/// toggle back to a rotating model — see
+/// `tier3_bevy_rotation_none_toggle_does_not_leak_pfix_frame_entity`
+/// below for the entity-count fence.
 #[test]
 fn tier3_bevy_rotation_none_toggle_removes_pfix_component() {
     let (mut app, planet) = build_planet_app("Earth", &EARTH);
     // Step once with the default `EarthRNP` model so registration runs
-    // and `SourcePfixFrameIdC` is inserted.
+    // and `PfixFrameEntityC` is inserted.
     step_bevy_once(&mut app);
     assert!(
-        app.world().get::<SourcePfixFrameIdC>(planet).is_some(),
-        "EarthRNP source must carry SourcePfixFrameIdC after registration"
+        app.world().get::<PfixFrameEntityC>(planet).is_some(),
+        "EarthRNP source must carry PfixFrameEntityC after registration"
     );
 
-    // Capture the post-registration tree size and the original pfix
-    // FrameId — both should remain stable across the toggle cycles.
-    let initial_tree_len = app.world().resource::<FrameTreeR>().0.len();
-    let original_pfix_id = app.world().get::<SourcePfixFrameIdC>(planet).unwrap().0;
-
-    // Toggle to `RotationModel::None` and step again. The clear branch
-    // in `planet_fixed_rotation_system` should remove the component so
-    // the source matches the "no pfix node" case from registration.
+    // Toggle to `RotationModel::None` and step again. The clear
+    // branch in `planet_fixed_rotation_system` should remove the
+    // component so the source matches the "no pfix frame entity"
+    // case from registration.
     app.world_mut()
         .entity_mut(planet)
         .insert(RotationModelC(RotationModel::None));
     step_bevy_once(&mut app);
     assert!(
-        app.world().get::<SourcePfixFrameIdC>(planet).is_none(),
-        "toggling RotationModel to None must remove SourcePfixFrameIdC; \
+        app.world().get::<PfixFrameEntityC>(planet).is_none(),
+        "toggling RotationModel to None must remove PfixFrameEntityC; \
          leaving it in place reintroduces the Some(identity) vs None \
          ambiguity that the registration path is meant to avoid"
     );
-    // The orphan node must be renamed off `Earth.pfix` so a
-    // `find_by_name` lookup of the canonical name returns nothing
-    // (no live frame exists at this point) and won't shadow a future
-    // live frame after toggling back.
-    {
-        let frame_tree = &app.world().resource::<FrameTreeR>().0;
-        assert!(
-            frame_tree.find_by_name("Earth.pfix").is_none(),
-            "after toggle to None, no frame should answer to the canonical \
-             `Earth.pfix` name — the orphan must be renamed to a sentinel \
-             so future `find_by_name` lookups don't shadow a future live frame"
-        );
-        assert_eq!(
-            frame_tree.len(),
-            initial_tree_len,
-            "the orphan node must be retained (renamed in place), not \
-             allocated nor leaked alongside a freshly-allocated one"
-        );
-    }
 
-    // Toggling back to `EarthRNP` must reinstate the component on the
-    // next registration pass AND reuse the same FrameId — proving the
-    // reuse path works (no fresh allocation).
+    // Toggling back to `EarthRNP` must reinstate the component on
+    // the next registration pass via the reuse path (no fresh
+    // entity).
     app.world_mut()
         .entity_mut(planet)
         .insert(RotationModelC(RotationModel::EarthRNP));
     step_bevy_once(&mut app);
-    let reinstated = app
-        .world()
-        .get::<SourcePfixFrameIdC>(planet)
-        .expect(
-            "toggling back to EarthRNP must reinstate SourcePfixFrameIdC \
-             via register_pfix_frames_system's reuse path",
-        )
-        .0;
-    assert_eq!(
-        reinstated, original_pfix_id,
-        "reuse path: the reinstated FrameId must equal the original \
-         orphan's FrameId — no fresh allocation"
-    );
-    assert_eq!(
-        app.world().resource::<FrameTreeR>().0.len(),
-        initial_tree_len,
-        "tree size must stay constant across a None→rotating toggle — \
-         the reuse path replaces, not appends"
-    );
-    // Canonical name now resolves to the live frame again.
-    assert_eq!(
-        app.world()
-            .resource::<FrameTreeR>()
-            .0
-            .find_by_name("Earth.pfix"),
-        Some(original_pfix_id),
-        "after toggle back to rotating, find_by_name must resolve \
-         `Earth.pfix` to the reused live frame"
-    );
-
-    // Run a few more toggle cycles to confirm the tree size stays
-    // bounded and the FrameId stays stable. Without the reuse path,
-    // each cycle would push the tree size up by 1.
-    for _ in 0..5 {
-        app.world_mut()
-            .entity_mut(planet)
-            .insert(RotationModelC(RotationModel::None));
-        step_bevy_once(&mut app);
-        app.world_mut()
-            .entity_mut(planet)
-            .insert(RotationModelC(RotationModel::EarthRNP));
-        step_bevy_once(&mut app);
-    }
-    assert_eq!(
-        app.world().resource::<FrameTreeR>().0.len(),
-        initial_tree_len,
-        "frame-tree size must not grow with toggle cycle count"
-    );
-    assert_eq!(
-        app.world().get::<SourcePfixFrameIdC>(planet).unwrap().0,
-        original_pfix_id,
-        "the same pfix FrameId must be reused across every toggle cycle"
+    assert!(
+        app.world().get::<PfixFrameEntityC>(planet).is_some(),
+        "toggling back to EarthRNP must reinstate PfixFrameEntityC \
+         via register_pfix_frames_system's reuse path",
     );
 }
 
-/// The same retirement / reuse semantics the test above asserts on
-/// the *arena* side must also hold on the ECS-entity side. Without
-/// the parallel
-/// `RetiredPfixFrameEntityC` retirement, the source kept a stale
-/// `PfixFrameEntityC` handle on toggle to `None` *and*
+/// Toggling a source's `RotationModelC` from a rotating model to
+/// `None` and back must reuse the same pfix frame entity rather
+/// than spawning a fresh one each cycle. Without the
+/// `RetiredPfixFrameEntityC` retirement path, the source would keep
+/// a stale `PfixFrameEntityC` handle on toggle to `None` *and*
 /// `register_pfix_frames_system` (which filters
-/// `Without<SourcePfixFrameIdC>`) spawned a fresh pfix frame entity on
-/// every retoggle — leaking one orphan ECS entity per cycle.
+/// `Without<PfixFrameEntityC>`) would spawn a fresh pfix frame
+/// entity on every retoggle — leaking one orphan ECS entity per
+/// cycle.
 #[test]
 fn tier3_bevy_rotation_none_toggle_does_not_leak_pfix_frame_entity() {
     use bevy_jeod::{PfixFrameEntityC, PlanetFixedFrameMarker};
@@ -404,9 +328,8 @@ fn tier3_bevy_rotation_none_toggle_does_not_leak_pfix_frame_entity() {
         step_bevy_once(&mut app);
         assert!(
             app.world().get::<PfixFrameEntityC>(planet).is_none(),
-            "toggle to None must remove PfixFrameEntityC (parallel to \
-             SourcePfixFrameIdC) so consumers branching on its presence \
-             see the source as non-rotating"
+            "toggle to None must remove PfixFrameEntityC so consumers \
+             branching on its presence see the source as non-rotating"
         );
         // Pfix entity count is still 1 — orphan is retained for reuse,
         // not despawned and not duplicated.
@@ -518,7 +441,7 @@ fn tier3_bevy_planet_ang_vel_moon_de421() {
 
     let bevy_node_ang_vel = bevy_pfix_node_ang_vel(&app, planet);
     assert_dvec3_bits_eq(
-        "Bevy FrameTreeR Moon DE421 pfix-node ang_vel vs Sim",
+        "Bevy ECS Moon DE421 pfix frame entity ang_vel vs Sim",
         bevy_node_ang_vel,
         sim_ang_vel,
     );

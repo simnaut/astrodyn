@@ -1,15 +1,15 @@
-//! Issue #277 PR 1 round-6 review fixup: the dual-write
-//! systems must panic with a fail-loud diagnostic — not silently
-//! no-op — when a `FrameEntityC` / `PfixFrameEntityC` /
-//! `RetiredPfixFrameEntityC` handle is stale (the referenced frame
-//! entity has been despawned or stripped of its required
-//! `FrameTransC` / `FrameRotC` / `FrameAngVelC` components).
+//! Frame-entity sync systems must panic with a fail-loud diagnostic
+//! — not silently no-op — when a `FrameEntityC` /
+//! `PfixFrameEntityC` / `RetiredPfixFrameEntityC` handle is stale
+//! (the referenced frame entity has been despawned or stripped of
+//! its required `FrameTransC` / `FrameRotC` / `FrameAngVelC`
+//! components).
 //!
 //! Per the project's "Fail Loudly" rule, silently swallowing
-//! `Query::get_mut` failures here would let the ECS half of the
-//! dual-write drift out of sync with the arena `FrameTreeR` while
-//! `RelativeFrameState` consumers continue to read the stale ECS
-//! state — producing wrong physics with no diagnostic. These
+//! `Query::get_mut` failures here would let the source/body's ECS
+//! components drift out of sync with the frame entity's stored
+//! state while `RelativeFrameState` consumers read the stale value
+//! — producing wrong physics with no diagnostic. These
 //! `#[should_panic]` tests pin the panic messages so future
 //! regressions are caught.
 //!

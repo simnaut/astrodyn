@@ -13,20 +13,13 @@
 //! and its gravity controls flip so Moon becomes central
 //! (`differential = false`) and Earth becomes the third body.
 
-// `FrameTreeR` is `#[deprecated]` for mission-code use. This Tier 3
-// parity test deliberately reads the arena to assert bit-identity of
-// the frame-switch reparent path against `jeod_runner`. Once the
-// resource is removed, the arena read here will be rewritten to use
-// `RelativeFrameState`.
-#![allow(deprecated)]
-
 use std::time::Duration;
 
 use bevy::prelude::*;
+use bevy_jeod::frame_param::RelativeFrameState;
 use bevy_jeod::{
-    DynamicsConfigC, FrameEntityC, FrameSwitchesC, FrameTreeR, GravityControlsC, JeodPlugin,
-    MassPropertiesC, PlanetBundle, RotationalStateC, SourceFrameIdC, SourceInertialVelocityC,
-    SourceMutator, TranslationalStateC,
+    DynamicsConfigC, FrameEntityC, FrameSwitchesC, GravityControlsC, JeodPlugin, MassPropertiesC,
+    PlanetBundle, RotationalStateC, SourceInertialVelocityC, SourceMutator, TranslationalStateC,
 };
 use glam::DVec3;
 use jeod_runner::Simulation;
@@ -137,8 +130,6 @@ fn tier3_bevy_frame_switch_earth_to_moon_matches_simulation() {
         });
     app.world_mut().run_system(sys).unwrap();
 
-    let _earth_fid = app.world().get::<SourceFrameIdC>(earth).unwrap().0;
-    let moon_fid = app.world().get::<SourceFrameIdC>(moon).unwrap().0;
     // The body's current integration frame is the parent of its frame
     // entity in the ECS hierarchy.
     let body_frame_entity = app.world().get::<FrameEntityC>(vehicle).unwrap().0;
@@ -172,52 +163,35 @@ fn tier3_bevy_frame_switch_earth_to_moon_matches_simulation() {
         .to_untyped();
     // Post-switch: the body frame entity's `ChildOf` parent must be
     // the Moon's frame entity (the load-bearing ECS reparent).
-    // Cross-check against the arena via `BodyFrameIdC` /
-    // `SourceFrameIdC` to confirm the dual-write stayed in lockstep.
     let bevy_integ_frame_entity = app
         .world()
         .get::<bevy::prelude::ChildOf>(body_frame_entity)
         .unwrap()
         .parent();
     let moon_frame_entity = app.world().get::<FrameEntityC>(moon).unwrap().0;
-    let arena_body_parent_fid = app
-        .world()
-        .resource::<FrameTreeR>()
-        .0
-        .parent(
-            app.world()
-                .get::<bevy_jeod::components::BodyFrameIdC>(vehicle)
-                .unwrap()
-                .0,
-        )
-        .expect("body frame node must have a parent in the arena");
     let bevy_controls = app
         .world()
         .get::<GravityControlsC>(vehicle)
         .unwrap()
         .0
         .clone();
-    let frame_tree_pos = app
-        .world()
-        .resource::<FrameTreeR>()
-        .0
-        .get(
-            app.world()
-                .get::<bevy_jeod::components::BodyFrameIdC>(vehicle)
-                .unwrap()
-                .0,
+    // Body's position in its (post-switch) integration frame's
+    // coordinates, read via `RelativeFrameState`. This is the same
+    // value the arena's `frame_tree.get(body_fid).state.trans.position`
+    // returned before the arena was removed.
+    let frame_relative_pos = app
+        .world_mut()
+        .run_system_cached_with(
+            |In((from, to)): In<(Entity, Entity)>, rel: RelativeFrameState| -> glam::DVec3 {
+                rel.position(from, to)
+            },
+            (moon_frame_entity, body_frame_entity),
         )
-        .state
-        .trans
-        .position;
+        .expect("RelativeFrameState run_system_cached_with");
 
     assert_eq!(
         bevy_integ_frame_entity, moon_frame_entity,
         "post-switch, body frame entity must be ChildOf Moon's frame entity"
-    );
-    assert_eq!(
-        arena_body_parent_fid, moon_fid,
-        "post-switch, arena body node must be reparented under Moon's source frame"
     );
     // Earth control should now be differential, Moon non-differential.
     assert!(
@@ -280,13 +254,17 @@ fn tier3_bevy_frame_switch_earth_to_moon_matches_simulation() {
             sim_body.trans.velocity[i],
         );
     }
-    // Frame tree's body node should also reflect the same (it's the
-    // source-of-truth for the lifted helper's reparent).
+    // Body frame entity's relative-state-in-Moon position should
+    // equal the body's TranslationalStateC (which carries the body's
+    // post-switch state in the new integration frame's coordinates).
+    // Both are written by `frame_switch_system`, so a discrepancy
+    // would indicate the FrameTransC sync diverged from the body
+    // state on the switch tick.
     for i in 0..3 {
         assert_bits_eq(
-            "Bevy FrameTreeR body vs Sim",
+            "Bevy frame-relative pos vs Sim",
             &format!("pos[{i}]"),
-            frame_tree_pos[i],
+            frame_relative_pos[i],
             sim_body.trans.position[i],
         );
     }
@@ -362,7 +340,6 @@ fn tier3_bevy_frame_switch_on_departure_matches_simulation() {
         });
     app.world_mut().run_system(sys).unwrap();
 
-    let _moon_fid = app.world().get::<SourceFrameIdC>(moon).unwrap().0;
     let moon_frame_entity = app.world().get::<FrameEntityC>(moon).unwrap().0;
     let body_frame_entity = app.world().get::<FrameEntityC>(vehicle).unwrap().0;
 
