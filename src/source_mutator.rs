@@ -280,13 +280,34 @@ impl SourceMutator<'_, '_> {
         // this is the typed-API boundary for the user → ECS conversion.
         let typed_pos = jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(position); // allowed: user-DVec3 → typed boundary
         let typed_vel = jeod_sim::Velocity::<jeod_sim::RootInertial>::from_raw_si(velocity); // allowed: user-DVec3 → typed boundary
-        if let Ok(mut pos_c) = self.positions.get_mut(source) {
-            pos_c.0 = typed_pos;
-        }
+
+        // Position + translational writes are part of the registered-source
+        // contract: SourceInertialPositionC is required by
+        // register_source_frames_system, PlanetBundle includes
+        // TranslationalStateC, and sync_source_to_frame_system reads
+        // SourceInertialPositionC each step to overwrite the frame
+        // entity's position. Silently skipping these would let the
+        // frame_trans update get overwritten back on the next sync.
+        // Fail loud — same diagnostic ordering as set_source_position.
+        let mut pos_c = self.positions.get_mut(source).unwrap_or_else(|err| {
+            panic!(
+                "SourceMutator::set_source_state: {label} is a \
+                 registered gravity source (has FrameEntityC) but \
+                 lacks SourceInertialPositionC ({err:?}). Spawn the \
+                 source via PlanetBundle (which includes both \
+                 components) — without SourceInertialPositionC, \
+                 `sync_source_to_frame_system` would overwrite the \
+                 frame entity's position back on the next step."
+            )
+        });
+        pos_c.0 = typed_pos;
         // Auto-insert SourceInertialVelocityC if the source doesn't carry
         // one — `PlanetBundle::point_mass` doesn't include it by default,
         // and without auto-insert the velocity write would silently
-        // no-op.
+        // no-op. This is the one component on the source-mutation path
+        // that is genuinely optional at registration time, so the
+        // best-effort branch stays here (unlike SourceInertialPositionC
+        // / TranslationalStateC above, which are contract-required).
         match self.velocities.get_mut(source) {
             Ok(mut vc) => vc.0 = typed_vel,
             Err(_) => {
@@ -295,10 +316,18 @@ impl SourceMutator<'_, '_> {
                     .insert(SourceInertialVelocityC(typed_vel));
             }
         }
-        if let Ok(mut ts) = self.translational.get_mut(source) {
-            ts.0.position = typed_pos;
-            ts.0.velocity = typed_vel;
-        }
+        let mut ts = self.translational.get_mut(source).unwrap_or_else(|err| {
+            panic!(
+                "SourceMutator::set_source_state: {label} is a \
+                 registered gravity source (has FrameEntityC) but \
+                 lacks TranslationalStateC ({err:?}). Spawn the \
+                 source via PlanetBundle (which includes \
+                 TranslationalStateC) so per-step systems observe a \
+                 consistent state across the source's components."
+            )
+        });
+        ts.0.position = typed_pos;
+        ts.0.velocity = typed_vel;
     }
 
     fn assert_not_central(&self, source: Entity, method: &str) {
