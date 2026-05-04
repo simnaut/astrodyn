@@ -469,6 +469,12 @@ impl MultiDofJointKinematicsSpec {
 ///
 /// # Panics
 ///
+/// - `elapsed_seconds` is non-finite (`NaN` or `±∞`). The empty-chain
+///   fast path returns `(identity, zero)` without invoking any
+///   per-stage evaluator, so without this top-level guard a non-finite
+///   clock could silently propagate through the no-op chain and
+///   violate the fail-loud contract that the other joint evaluators
+///   uphold.
 /// - The populated DOFs are not a contiguous prefix
 ///   (`axes[i]` is `None` followed by some `axes[j > i]` that is
 ///   `Some(_)`). A hole in the middle of the chain is a configuration
@@ -479,6 +485,19 @@ pub fn evaluate_multi_dof(
     spec: &MultiDofJointKinematicsSpec,
     elapsed_seconds: f64,
 ) -> (JeodQuat, DVec3) {
+    // Top-level finite-time guard. The per-stage evaluators each
+    // assert `elapsed_seconds.is_finite()`, but for a chain with zero
+    // populated DOFs the loop below never enters and a non-finite
+    // clock would silently fall through to the `(identity, zero)`
+    // return. Asserting here makes the empty-chain fast path
+    // fail-loud, matching the contract the populated chain inherits
+    // from the per-stage evaluators.
+    assert!(
+        elapsed_seconds.is_finite(),
+        "joint kinematics elapsed_seconds must be finite, got {elapsed_seconds}. \
+         The simulation time has gone non-finite — fix the time-update path."
+    );
+
     // Validate prefix-filled invariant: once we see a `None`, every
     // subsequent slot must also be `None`. A hole in the middle would
     // silently drop a stage from the composition without diagnostic.
@@ -1167,6 +1186,21 @@ mod tests {
     /// `None`, then populated again) is a configuration error and
     /// must panic. This invariant prevents a silent mid-chain stage
     /// drop.
+    /// An empty multi-DOF chain (`axes` all `None`) returning the
+    /// no-op `(identity, zero)` must still fail loud when the clock
+    /// is non-finite. Without the top-level guard, the chain's
+    /// fast-path return would hide a `NaN` simulation time from
+    /// every per-stage evaluator and violate the fail-loud contract
+    /// the populated chain inherits.
+    #[test]
+    #[should_panic(expected = "elapsed_seconds must be finite")]
+    fn multi_dof_empty_chain_nan_time_panics() {
+        let spec = MultiDofJointKinematicsSpec {
+            axes: [None; MAX_MULTI_DOF_AXES],
+        };
+        let _ = evaluate_multi_dof(&spec, f64::NAN);
+    }
+
     #[test]
     #[should_panic(expected = "contiguous prefix")]
     fn multi_dof_hole_in_middle_panics() {

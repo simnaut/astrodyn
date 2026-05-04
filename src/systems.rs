@@ -1229,7 +1229,7 @@ pub fn planet_fixed_rotation_system(
 /// `FrameRotC` / `FrameAngVelC`. An entity that accidentally carries
 /// more than one kinematic spec is silently dropped from every
 /// driver's query — `validate_joint_kinematics_exclusivity` runs at
-/// `Startup` to reject such misconfigurations loudly before any
+/// `PostStartup` to reject such misconfigurations loudly before any
 /// driver tick can mask them.
 #[allow(clippy::type_complexity)]
 pub fn joint_kinematics_system(
@@ -1271,7 +1271,7 @@ pub fn joint_kinematics_system(
 /// [`joint_kinematics_system`]: the four kinematic-spec drivers are
 /// pairwise-disjoint at the query level so Bevy can schedule them in
 /// parallel; `validate_joint_kinematics_exclusivity` rejects
-/// stacked-spec misconfigurations at `Startup`.
+/// stacked-spec misconfigurations at `PostStartup`.
 #[allow(clippy::type_complexity)]
 pub fn sinusoidal_joint_kinematics_system(
     sim_time: Res<SimulationTimeR>,
@@ -1312,7 +1312,7 @@ pub fn sinusoidal_joint_kinematics_system(
 /// [`joint_kinematics_system`]: the four kinematic-spec drivers are
 /// pairwise-disjoint at the query level so Bevy can schedule them in
 /// parallel; `validate_joint_kinematics_exclusivity` rejects
-/// stacked-spec misconfigurations at `Startup`.
+/// stacked-spec misconfigurations at `PostStartup`.
 #[allow(clippy::type_complexity)]
 pub fn closure_joint_kinematics_system(
     sim_time: Res<SimulationTimeR>,
@@ -1349,7 +1349,7 @@ pub fn closure_joint_kinematics_system(
 /// [`joint_kinematics_system`]: the four kinematic-spec drivers are
 /// pairwise-disjoint at the query level so Bevy can schedule them in
 /// parallel; `validate_joint_kinematics_exclusivity` rejects
-/// stacked-spec misconfigurations at `Startup`.
+/// stacked-spec misconfigurations at `PostStartup`.
 #[allow(clippy::type_complexity)]
 pub fn multi_dof_joint_kinematics_system(
     sim_time: Res<SimulationTimeR>,
@@ -1372,7 +1372,7 @@ pub fn multi_dof_joint_kinematics_system(
     }
 }
 
-/// Startup-time guard that asserts at most one of the four
+/// PostStartup-time guard that asserts at most one of the four
 /// joint-kinematic spec components is present on any single entity.
 ///
 /// The four joint-kinematic drivers
@@ -1390,10 +1390,13 @@ pub fn multi_dof_joint_kinematics_system(
 /// Per the project's fail-loud rule, that misconfiguration must
 /// panic at the earliest detection point with a diagnostic that
 /// names the offending entity and the specs it carries. This guard
-/// runs at `Startup` (before the first `FixedUpdate` tick) and walks
-/// every entity carrying at least one kinematic spec via
-/// [`Has<...>`] flags; any entity with more than one spec is
-/// reported in a single panic message.
+/// runs at `PostStartup` (after every user `Startup` system and the
+/// auto-inserted command flush, but before the first `FixedUpdate`
+/// tick) so any joint entity spawned via `Commands` from a user
+/// `Startup` system is materialized in the world by the time the
+/// guard observes it. It walks every entity carrying at least one
+/// kinematic spec via [`Has<...>`] flags; any entity with more than
+/// one spec is reported in a single panic message.
 ///
 /// The four spec components are declarative alternatives — a joint
 /// is *either* constant-rate, *or* sinusoidal, *or* a closure pose,

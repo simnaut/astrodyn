@@ -271,17 +271,24 @@ impl Plugin for JeodPlugin {
                 // body-frame registration pass.
                 systems::sync_body_mass_point_ref_system
                     .after(systems::register_body_frames_system),
-                // Reject startup configs where a single frame entity
-                // carries multiple kinematic-spec components: the four
-                // driver systems use `Without<...>` filters to advertise
-                // pairwise-disjoint queries to the scheduler, so an
-                // entity with two specs would be silently dropped from
-                // every driver and propagate stale `FrameRotC` /
-                // `FrameAngVelC` instead of panicking. The fail-loud
-                // rule forbids that silent path.
-                systems::validate_joint_kinematics_exclusivity,
             ),
         );
+        // Reject startup configs where a single frame entity carries
+        // multiple kinematic-spec components: the four driver systems
+        // use `Without<...>` filters to advertise pairwise-disjoint
+        // queries to the scheduler, so an entity with two specs would
+        // be silently dropped from every driver and propagate stale
+        // `FrameRotC` / `FrameAngVelC` instead of panicking. The
+        // fail-loud rule forbids that silent path.
+        //
+        // Wired into `PostStartup` (not `Startup`) so the validator
+        // runs after all user `Startup` systems and after Bevy's
+        // auto-inserted command flush between the two schedules.
+        // Mission code typically spawns joint entities via `Commands`
+        // in a user `Startup` system added after `JeodPlugin`; placing
+        // the guard in `Startup` would let it observe an empty world
+        // and miss the stacked-spec misconfiguration entirely.
+        app.add_systems(PostStartup, systems::validate_joint_kinematics_exclusivity);
         app.add_systems(
             PreUpdate,
             (
@@ -445,14 +452,15 @@ impl Plugin for JeodPlugin {
                 //   so the queries are structurally disjoint at the
                 //   `Query` level. This is the signal Bevy needs to
                 //   parallelize the four systems on the same set.
-                // * **Startup validation** —
+                // * **PostStartup validation** —
                 //   `validate_joint_kinematics_exclusivity` walks
-                //   every frame entity once at `Startup` and panics
-                //   loudly if any entity carries more than one spec.
-                //   Without this, the `Without<...>` filters would
-                //   turn a stacked-spec misconfiguration into a
-                //   silent stale-state read; the fail-loud rule
-                //   forbids that.
+                //   every frame entity once at `PostStartup` (after
+                //   user `Startup` systems and the auto-inserted
+                //   command flush) and panics loudly if any entity
+                //   carries more than one spec. Without this, the
+                //   `Without<...>` filters would turn a stacked-spec
+                //   misconfiguration into a silent stale-state read;
+                //   the fail-loud rule forbids that.
                 //
                 // Spec components are semantic alternatives, not
                 // stackable: a joint is *either* constant-rate, *or*

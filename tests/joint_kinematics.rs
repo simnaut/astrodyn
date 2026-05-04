@@ -919,13 +919,13 @@ fn sibling_joint_kinematics_systems_are_public() {
 }
 
 /// An entity carrying two kinematic-spec components must be rejected
-/// at `Startup`. The four driver systems use `Without<...>` filters
-/// for parallel scheduling, which would otherwise turn this
+/// at `PostStartup`. The four driver systems use `Without<...>`
+/// filters for parallel scheduling, which would otherwise turn this
 /// misconfiguration into a silent stale-state read; the fail-loud
 /// guard prevents that.
 #[test]
 #[should_panic(expected = "mutually exclusive")]
-fn stacked_joint_specs_panic_at_startup() {
+fn stacked_joint_specs_panic_at_post_startup() {
     let const_spec = JointKinematicsSpec {
         axis_in_parent: DVec3::Z,
         rate_rad_per_s: 0.1,
@@ -943,9 +943,10 @@ fn stacked_joint_specs_panic_at_startup() {
         JointKinematicsC(const_spec),
         ClosureJointKinematicsC(close_spec),
     ));
-    // Run the Startup schedule explicitly; the validation system
-    // panics inside it before any FixedUpdate tick begins.
+    // Run Startup then PostStartup; the validation system runs in
+    // PostStartup and panics before any FixedUpdate tick begins.
     app.world_mut().run_schedule(Startup);
+    app.world_mut().run_schedule(PostStartup);
 }
 
 /// Three stacked specs must surface every offending component name in
@@ -980,6 +981,7 @@ fn stacked_joint_specs_diagnostic_names_all_components() {
         ClosureJointKinematicsC(close_spec),
     ));
     app.world_mut().run_schedule(Startup);
+    app.world_mut().run_schedule(PostStartup);
 }
 
 /// A correctly-configured config — every kinematic spec on a
@@ -1018,12 +1020,81 @@ fn distinct_kinematic_entities_pass_startup_validation() {
     app.world_mut().spawn(ClosureJointKinematicsC(close_spec));
     app.world_mut().spawn(MultiDofJointKinematicsC(multi_spec));
 
-    // Startup must not panic; the four entities each carry a single
-    // spec.
+    // Startup + PostStartup must not panic; the four entities each
+    // carry a single spec.
     app.world_mut().run_schedule(Startup);
+    app.world_mut().run_schedule(PostStartup);
 
     // A subsequent FixedUpdate tick should also succeed: the
     // `Without<...>` filters mean each driver writes its own
     // entity's storage and skips the others'.
     step_once(&mut app);
+}
+
+/// A user `Startup` system that spawns a stacked-spec entity via
+/// `Commands` must still trip the validator. Bevy applies queued
+/// commands at the end of each schedule, so the entity does not
+/// exist in the world until after the `Startup` schedule finishes.
+/// A validator wired into `Startup` would observe an empty world and
+/// miss the misconfiguration; placing it in `PostStartup` guarantees
+/// the spawn is materialized before the guard runs. This test fails
+/// loudly if the validator regresses to `Startup`.
+#[test]
+#[should_panic(expected = "mutually exclusive")]
+fn stacked_joint_specs_from_user_startup_commands_panic() {
+    let const_spec = JointKinematicsSpec {
+        axis_in_parent: DVec3::Z,
+        rate_rad_per_s: 0.1,
+        initial_angle_rad: 0.0,
+    };
+    let close_spec = ClosureJointKinematicsSpec {
+        axis_in_parent: DVec3::X,
+        fixed_angle_rad: 0.5,
+    };
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.add_plugins(JeodPlugin);
+    app.add_systems(Startup, move |mut commands: Commands| {
+        commands.spawn((
+            JointKinematicsC(const_spec),
+            ClosureJointKinematicsC(close_spec),
+        ));
+    });
+    app.world_mut().run_schedule(Startup);
+    app.world_mut().run_schedule(PostStartup);
+}
+
+/// Confirms the validator runs in `PostStartup`, not `Startup`: an
+/// entity spawned via `Commands` from a user `Startup` system is
+/// absent from the world for the duration of `Startup` (commands
+/// apply after the schedule completes), so running `Startup` alone
+/// must not panic. The same configuration *does* panic once
+/// `PostStartup` runs (covered by
+/// [`stacked_joint_specs_from_user_startup_commands_panic`]).
+#[test]
+fn stacked_joint_specs_from_user_startup_commands_do_not_panic_in_startup() {
+    let const_spec = JointKinematicsSpec {
+        axis_in_parent: DVec3::Z,
+        rate_rad_per_s: 0.1,
+        initial_angle_rad: 0.0,
+    };
+    let close_spec = ClosureJointKinematicsSpec {
+        axis_in_parent: DVec3::X,
+        fixed_angle_rad: 0.5,
+    };
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(DT));
+    app.add_plugins(JeodPlugin);
+    app.add_systems(Startup, move |mut commands: Commands| {
+        commands.spawn((
+            JointKinematicsC(const_spec),
+            ClosureJointKinematicsC(close_spec),
+        ));
+    });
+    // Running only Startup must not panic — the validator lives in
+    // PostStartup. (Calling PostStartup here would panic; that case
+    // is covered by the sibling test above.)
+    app.world_mut().run_schedule(Startup);
 }
