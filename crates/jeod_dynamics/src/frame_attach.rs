@@ -57,20 +57,23 @@ use jeod_frames::RefFrameState;
 
 /// Inputs to [`derive_frame_attached_state`].
 ///
-/// The parent ref-frame state must be expressed in the body's
-/// integration-frame inertial coordinates (typically root inertial,
-/// after the caller has lifted the parent through its own
-/// `IntegOrigin`). The attach offset describes the rigid-body
-/// transform from the parent frame to the attached body's
-/// composite-body frame.
+/// The parent ref-frame state must be expressed in caller-chosen
+/// inertial coordinates — the kernel composes it rigidly with the
+/// captured offset and returns a state in the *same* coordinates.
+/// The runner passes parent state in root-inertial coordinates (read
+/// from `FrameTree::compute_relative_state(root, parent_frame_id)`)
+/// and lowers the kernel's output through the body's `IntegOrigin`
+/// only on writeback to the integration-frame storage; the Bevy
+/// adapter follows the same pattern via the parent frame entity's
+/// relative state.
 #[derive(Debug, Clone, Copy)]
 pub struct FrameAttachInputs {
     /// Parent reference frame's current inertial state (position,
-    /// velocity, attitude, angular velocity), expressed in the body's
-    /// integration-frame inertial coordinates. The runner drives this
-    /// from `FrameTree::compute_relative_state(root, parent_frame_id)`
-    /// after applying the body's `IntegOrigin` shift; the Bevy adapter
-    /// reads it from the parent frame entity's relative state.
+    /// velocity, attitude, angular velocity), in the caller's chosen
+    /// inertial coordinates. The kernel does not apply any
+    /// integration-origin shift — that lives in the call site, after
+    /// the kernel returns the body's composite-body state in those
+    /// same coordinates.
     pub parent_frame: RefFrameState,
     /// Rigid-body offset from the parent frame to the attached body's
     /// composite-body frame: `position` is the attach point in

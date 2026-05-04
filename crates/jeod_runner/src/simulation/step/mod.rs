@@ -204,24 +204,8 @@ impl Simulation {
         // would otherwise hand its kinematic descendants a stale
         // pre-frame-attach root state — same constraint as the 3a/3b
         // pre-integration ordering, applied to the post-integration
-        // sweep. Inverting these two calls reproduces the bug whose
-        // pre-integration twin landed in 5dec6d7.
-        // ── 8c. Frame-attached body propagation, post-integration ──
-        // Symmetric to 3a: stage 8b's frame switch can rewrite frame
-        // tree state mid-step (atmosphere reads pfix rotation etc.),
-        // and the integrator just produced fresh source-body state.
-        // Re-derive frame-attached body states so the post-step view
-        // (`Simulation::body(idx)`, derived states below) is consistent
-        // with the just-finished frame-tree updates and with the
-        // parent reference frame's current state.
-        //
-        // Must run **before** the post-integration kinematic walk
-        // below: a frame-attached body that is also a mass-tree root
-        // would otherwise hand its kinematic descendants a stale
-        // pre-frame-attach root state — same constraint as the 3a/3b
-        // pre-integration ordering, applied to the post-integration
-        // sweep. Inverting these two calls reproduces the bug whose
-        // pre-integration twin landed in 5dec6d7.
+        // sweep. Inverting these two calls reproduces the same class
+        // of bug as the pre-integration ordering twin.
         self.propagate_frame_attached_state(&body_integ_origins_post);
 
         // ── 8d. Kinematic state propagation (root → leaves), post-integration ──

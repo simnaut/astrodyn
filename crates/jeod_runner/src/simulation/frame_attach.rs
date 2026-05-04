@@ -353,13 +353,29 @@ impl Simulation {
             }
 
             // Sync body frame entity in the frame tree so consumers
-            // that read the body's frame entity see the same value as
-            // `body.trans` (the integrator-update path does the same
-            // sync at the end of `run_integration`).
+            // that read the body's frame entity (e.g. another body
+            // attaching to *this* body's frame, or a
+            // `compute_relative_state` walk that traverses through it)
+            // see the same value as `body.trans` / `body.rot`. JEOD's
+            // `RefFrameState` carries both translational and rotational
+            // state (`models/utils/ref_frames/include/ref_frame_state.hh`
+            // — `RefFrameState` is `trans` + `rot`), so the rotational
+            // sync is required for correctness whenever the body owns a
+            // 6-DOF `rot` slot. Otherwise the node's `q_parent_this` /
+            // `t_parent_this` / `ang_vel_this` would carry initialization
+            // defaults instead of the freshly-derived attitude.
             let body_frame_id = self.bodies[body_idx].body_frame_id;
             let node = self.frame_tree.get_mut(body_frame_id);
             node.state.trans.position = self.bodies[body_idx].trans.position.raw_si();
             node.state.trans.velocity = self.bodies[body_idx].trans.velocity.raw_si();
+            // JEOD_INV: RF.04 — recompute T_parent_this from the new
+            // q_parent_this so callers reading either form see the same
+            // attitude.
+            if let Some(body_rot) = self.bodies[body_idx].rot {
+                node.state.rot.q_parent_this = body_rot.quaternion;
+                node.state.rot.t_parent_this = body_rot.quaternion.left_quat_to_transformation();
+                node.state.rot.ang_vel_this = body_rot.ang_vel_body;
+            }
         }
     }
 }
@@ -530,5 +546,78 @@ mod tests {
             .build()
             .expect("Mission::iss_leo must validate");
         sim.detach_from_frame(0);
+    }
+
+    /// Frame-attached propagation must sync rotational state to the
+    /// body's frame-tree node, not just translational state. Otherwise
+    /// any frame-tree consumer that reads the body's frame node — a
+    /// `compute_relative_state` walk that traverses through it, or a
+    /// future body attaching to *this* body's frame — would observe
+    /// `node.state.rot` carrying initialization defaults
+    /// (identity quaternion, zero ω) instead of the freshly-derived
+    /// attitude. JEOD's `RefFrameState` carries both `trans` and
+    /// `rot`; the runner's sync must too.
+    #[test]
+    fn frame_attached_body_syncs_rot_to_frame_tree_node() {
+        // 6-DOF body so the body has a `rot` slot at all.
+        let mut sim = Mission::iss_leo_drag()
+            .into_builder()
+            .build()
+            .expect("Mission::iss_leo_drag must validate");
+
+        // One step to populate pfix rotation state.
+        sim.step().expect("seed step must not fail");
+
+        let pfix_id = sim
+            .source_pfix_frame_id(0)
+            .expect("Earth source has a pfix frame in iss_leo_drag recipe");
+
+        // Attach with a non-identity rotation between pfix and body so
+        // a missed sync (leaving the node at identity) would show up
+        // as a numerically distinguishable drift between the body's
+        // quaternion and the frame node's quaternion.
+        let theta = 0.7_f64;
+        let (s, c) = (theta.sin(), theta.cos());
+        let t_pfix_to_body = DMat3::from_cols(
+            DVec3::new(c, s, 0.0),
+            DVec3::new(-s, c, 0.0),
+            DVec3::new(0.0, 0.0, 1.0),
+        );
+        sim.attach_to_frame(0, pfix_id, DVec3::new(6.371e6, 0.0, 0.0), t_pfix_to_body);
+
+        // Step under frame-attached propagation. The body's rot is
+        // overwritten by the kernel's `parent ⊕ offset` composition;
+        // the frame-tree node sync must follow.
+        sim.step().expect("post-attach step must not fail");
+
+        let body = &sim.bodies[0];
+        let body_rot = body
+            .rot
+            .expect("iss_leo_drag is 6-DOF — body must carry rot");
+        let body_frame_id = body.body_frame_id;
+        let node_state = sim.frame_tree().get(body_frame_id).state;
+
+        // Quaternion + transformation cache must equal the body's rot.
+        assert!(
+            (node_state.rot.q_parent_this.scalar() - body_rot.quaternion.scalar()).abs() < 1e-12
+                && (node_state.rot.q_parent_this.vector() - body_rot.quaternion.vector()).length()
+                    < 1e-12,
+            "frame-tree node q_parent_this {:?} desync from body rot {:?}",
+            node_state.rot.q_parent_this,
+            body_rot.quaternion
+        );
+        let t_expected = body_rot.quaternion.left_quat_to_transformation();
+        for col in 0..3 {
+            assert!(
+                (node_state.rot.t_parent_this.col(col) - t_expected.col(col)).length() < 1e-12,
+                "frame-tree node t_parent_this column {col} desync from quaternion-derived T"
+            );
+        }
+        assert!(
+            (node_state.rot.ang_vel_this - body_rot.ang_vel_body).length() < 1e-12,
+            "frame-tree node ang_vel_this {:?} desync from body ang_vel_body {:?}",
+            node_state.rot.ang_vel_this,
+            body_rot.ang_vel_body
+        );
     }
 }
