@@ -626,14 +626,26 @@ fn tier3_bevy_solar_beta_in_lunar_integ_frame() {
 /// minimum, and potentially the wrong illumination factor when
 /// shadow bodies are involved.
 ///
-/// This test propagates a tilted lunar orbit with one flat plate +
-/// Earth as a shadow body, then asserts the resulting body
-/// `RadiationForceC` is bit-identical to `jeod_runner::Simulation`'s
-/// post-step force for the same configuration. The ~1 AU Sun
-/// distance and ~3.84e8 m Earth–Moon offset make the bug-shape and
-/// fix-shape `sun_to_vehicle` directions differ measurably; without
-/// the shift the bevy force diverges from the runner's by orders of
-/// magnitude above f64 round-off.
+/// This test propagates a tilted lunar orbit with one flat plate
+/// SRP and asserts the resulting six-DOF state (position, velocity,
+/// attitude, body angular velocity) is bit-identical to
+/// `jeod_runner::Simulation`'s post-step state for the same
+/// configuration; the body's `RadiationForceC` is also pinned
+/// non-zero so a future refactor that silently no-ops the SRP path
+/// can't slip past with both sides at zero. The Sun is at the
+/// `<RootInertial>` origin offset (~1 AU in X, ~0.7 AU in Z) and
+/// the Moon is offset by ~3.84e8 m, so the bug-shape and fix-shape
+/// `sun_to_vehicle` directions differ measurably and the bevy
+/// trajectory would diverge from the runner's by orders of
+/// magnitude above f64 round-off without the shift.
+///
+/// No `ShadowBodyC` is attached: this test pins the
+/// `sun_to_vehicle` *geometry* in a non-root integration frame,
+/// which is the input the conical-shadow check would consume.
+/// Shadow-occlusion parity is exercised separately by
+/// `tier3_bevy_flat_plate_srp_with_shadow` in
+/// `tests/bevy_parity_srp.rs`, which attaches `ShadowBodyC` to
+/// Earth.
 #[test]
 fn tier3_bevy_flat_plate_srp_in_lunar_integ_frame() {
     // Sun off the +X axis (~1 AU in X, ~0.7 AU in Z) so flux
