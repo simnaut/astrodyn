@@ -37,6 +37,7 @@ use jeod_test_data::tier3_csv::{load_drag_csv, test_data_path};
 use glam::{DMat3, DVec3};
 use jeod_atmosphere::AtmosphereState;
 use jeod_interactions::{compute_ballistic_drag, DragConfig};
+use jeod_sim::SelfPlanet;
 use jeod_test_data::crossval::CrossvalReport;
 
 /// JEOD input_common.py: atmospheric density in kg/m³.
@@ -83,12 +84,7 @@ fn run_ballistic_case(
         records.len()
     );
 
-    let atmos = AtmosphereState {
-        density: JEOD_DENSITY,
-        temperature: 0.0,
-        pressure: 0.0,
-        wind: DVec3::ZERO,
-    };
+    let atmos = AtmosphereState::<SelfPlanet>::from_raw(JEOD_DENSITY, 0.0, 0.0, DVec3::ZERO);
     let t_inertial_struct = DMat3::IDENTITY;
 
     let mut max_force_err = 0.0_f64;

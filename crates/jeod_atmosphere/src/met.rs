@@ -10,6 +10,7 @@
 //! use of the 1971 paper for seasonal-latitude density variations.
 
 use crate::AtmosphereState;
+use jeod_quantities::frame::SelfPlanet;
 
 // ---------------------------------------------------------------------------
 // Gauss quadrature tables (from JEOD utils/math/gauss_quadrature.cc)
@@ -215,7 +216,7 @@ pub struct MetAtmosphere {
 #[derive(Debug, Clone, Copy)]
 pub struct MetAtmosphereStateVars {
     /// Base atmospheric state (density, temperature, pressure, wind).
-    pub base: AtmosphereState,
+    pub base: AtmosphereState<SelfPlanet>,
     /// Exospheric temperature in K.
     pub exo_temp: f64,
     /// Log10 of total density.
@@ -259,7 +260,7 @@ impl MetAtmosphere {
         latitude_rad: f64,
         longitude_rad: f64,
         truncated_julian_day: f64,
-    ) -> AtmosphereState {
+    ) -> AtmosphereState<SelfPlanet> {
         self.density_full(
             altitude_km,
             latitude_rad,
@@ -280,7 +281,7 @@ impl MetAtmosphere {
         latitude_rad: f64,
         longitude_rad: f64,
         truncated_julian_day: f64,
-    ) -> AtmosphereState {
+    ) -> AtmosphereState<SelfPlanet> {
         self.density(
             altitude_m / 1000.0,
             latitude_rad,
@@ -310,12 +311,12 @@ impl MetAtmosphere {
         let pressure = (ctx.density * 1000.0 / ctx.mol_weight) * R_GAS_CONSTANT * ctx.temperature;
 
         MetAtmosphereStateVars {
-            base: AtmosphereState {
-                density: ctx.density,
-                temperature: ctx.temperature,
+            base: AtmosphereState::<SelfPlanet>::from_raw(
+                ctx.density,
+                ctx.temperature,
                 pressure,
-                wind: glam::DVec3::ZERO,
-            },
+                glam::DVec3::ZERO,
+            ),
             exo_temp: ctx.exo_temp,
             log10_dens,
             mol_weight: ctx.mol_weight,

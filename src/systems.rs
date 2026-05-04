@@ -2215,19 +2215,23 @@ pub fn aero_drag_system(
         // remaining typed-storage boundary).
         let rot_untyped = rot.0.to_untyped();
         // Bevy adapter stores body velocity as
-        // `Velocity<PlanetInertial<SelfPlanet>>`. Drag's typed sibling
+        // `Velocity<PlanetInertial<SelfPlanet>>` and the atmospheric
+        // state as `AtmosphereState<SelfPlanet>`. Drag's typed sibling
         // is parameterized over a concrete `P`, so the call site does
-        // a wildcard → `PlanetInertial<Earth>` phantom relabel (no
-        // integ-origin shift — drag stays in planet-inertial
+        // a wildcard → `PlanetInertial<Earth>` phantom relabel on both
+        // (no integ-origin shift — drag stays in planet-inertial
         // throughout). Bit-identical and asserts the Earth-orbit
-        // assumption that the body's planet is Earth.
+        // assumption that the body's planet and the atmosphere planet
+        // are both Earth. The `AtmosphereState<P>` typing enforces at
+        // compile time that the velocity and wind frames agree.
         use jeod_sim::{Earth, PlanetInertial, Velocity};
         // allowed: wildcard `<SelfPlanet>` → concrete `<Earth>` relabel
         // for the typed sibling; bit-identical (no arithmetic).
         let drag_velocity = Velocity::<PlanetInertial<Earth>>::from_raw_si(state.velocity.raw_si());
+        let atmos_earth = atmos.0.relabel::<Earth>();
         let result = jeod_sim::compute_drag_typed::<Earth, SelfRef>(
             &drag_config.0,
-            atmos,
+            &atmos_earth,
             drag_velocity,
             Some(&rot_untyped),
             t_struct_body,

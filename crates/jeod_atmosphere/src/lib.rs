@@ -29,12 +29,23 @@
 //!
 //! ## Typed quantities
 //!
-//! [`AtmosphereState`] exposes typed accessors (`density_typed`,
-//! `temperature_typed`, `pressure_typed`, `wind_typed`) that wrap the raw
-//! `f64`/`DVec3` fields in `uom`/`jeod_quantities` SI types for use across
-//! frame-tagged public APIs. JEOD source paths used:
-//! `models/environment/atmosphere/MET/` and the broader
-//! `models/environment/atmosphere/` model directory.
+//! [`AtmosphereState<P>`] is parameterized over the atmosphere planet `P`
+//! so the wind vector carries `Velocity<PlanetInertial<P>>` directly.
+//! `AtmosphereState<Earth>` and `AtmosphereState<Mars>` are distinct types
+//! and the compiler refuses to feed Mars's wind to an Earth drag kernel.
+//! Producers that determine the planet at runtime (`evaluate_atmosphere`,
+//! the runner's per-body atmospheric_state) return
+//! `AtmosphereState<SelfPlanet>`; mission code that knows the planet at
+//! compile time uses the typed sibling `evaluate_atmosphere_typed::<P>()`
+//! and consumes `AtmosphereState<P>`. The boundary between the two is the
+//! [`AtmosphereState::<SelfPlanet>::relabel`] method, restricted to the
+//! planet-erased variant so a planet-pinned `AtmosphereState<Earth>`
+//! cannot accidentally be retagged as `AtmosphereState<Mars>`. JEOD source
+//! paths used: `models/environment/atmosphere/MET/` and the broader
+//! `models/environment/atmosphere/` model directory; the wind-frame
+//! convention is documented in
+//! `models/environment/atmosphere/base_atmos/include/wind_velocity.hh`
+//! ("the inertial frame of the planet causing the wind velocity").
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -44,6 +55,7 @@ pub use jeod_quantities::prelude::*;
 pub mod exponential;
 pub mod met;
 
+use core::marker::PhantomData;
 use glam::DVec3;
 use uom::si::f64::{MassDensity, Pressure, ThermodynamicTemperature};
 use uom::si::mass_density::kilogram_per_cubic_meter;
@@ -53,30 +65,83 @@ use uom::si::thermodynamic_temperature::kelvin;
 /// Atmospheric state at a given position.
 ///
 /// Output of an atmosphere model evaluation. All quantities are in SI units.
+/// The phantom `P: Planet` ties the wind vector to the planet whose
+/// inertial frame the corotation `ω × r` is computed in. Density,
+/// temperature, and pressure are scalar quantities and frame-agnostic;
+/// the planet phantom only structurally guards the `wind` field. See the
+/// crate-level docs for the producer/consumer split between
+/// `AtmosphereState<SelfPlanet>` (registry/runner storage) and
+/// `AtmosphereState<P>` (planet-pinned mission code).
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct AtmosphereState {
+pub struct AtmosphereState<P: Planet> {
     /// Atmospheric density in kg/m^3.
     pub density: f64,
     /// Temperature in K.
     pub temperature: f64,
     /// Pressure in N/m^2 (Pa).
     pub pressure: f64,
-    /// Wind velocity in m/s, expressed in the inertial frame.
-    pub wind: DVec3,
+    /// Wind velocity in the planet `P`'s inertial frame (m/s).
+    ///
+    /// JEOD's `WindVelocity::update_wind` writes the corotation term
+    /// `ω × r` in the planet's inertial frame; the typed wrapper makes
+    /// that frame explicit at the field type. A drag consumer that
+    /// subtracts this from the vehicle velocity must hold a
+    /// `Velocity<PlanetInertial<P>>` on the same `P` — the compiler
+    /// refuses to mix Earth's wind with a Mars-frame velocity.
+    pub wind: Velocity<PlanetInertial<P>>,
+    _p: PhantomData<P>,
 }
 
-impl Default for AtmosphereState {
+impl<P: Planet> Default for AtmosphereState<P> {
     fn default() -> Self {
         Self {
             density: 0.0,
             temperature: 0.0,
             pressure: 0.0,
-            wind: DVec3::ZERO,
+            wind: Velocity::<PlanetInertial<P>>::from_raw_si(DVec3::ZERO),
+            _p: PhantomData,
         }
     }
 }
 
-impl AtmosphereState {
+impl<P: Planet> AtmosphereState<P> {
+    /// Construct an `AtmosphereState<P>` from raw SI scalars and an
+    /// already-typed wind vector. The wind's `PlanetInertial<P>`
+    /// phantom must agree with the struct's `P`; the compiler enforces
+    /// this directly.
+    #[inline]
+    pub const fn new(
+        density: f64,
+        temperature: f64,
+        pressure: f64,
+        wind: Velocity<PlanetInertial<P>>,
+    ) -> Self {
+        Self {
+            density,
+            temperature,
+            pressure,
+            wind,
+            _p: PhantomData,
+        }
+    }
+
+    /// Construct an `AtmosphereState<P>` from raw scalar fields plus a
+    /// raw `DVec3` wind, attaching the `PlanetInertial<P>` phantom to
+    /// the wind at the boundary. **The caller asserts** that `wind` is
+    /// expressed in `PlanetInertial<P>` (the corotation-wind frame).
+    /// Used at producer sites that work in raw `DVec3` internally
+    /// (exponential, MET) and re-wrap on exit.
+    #[inline]
+    pub fn from_raw(density: f64, temperature: f64, pressure: f64, wind_raw: DVec3) -> Self {
+        Self {
+            density,
+            temperature,
+            pressure,
+            wind: Velocity::<PlanetInertial<P>>::from_raw_si(wind_raw),
+            _p: PhantomData,
+        }
+    }
+
     /// Typed accessor: atmospheric density as `uom::si::f64::MassDensity` (kg/m^3).
     #[inline]
     pub fn density_typed(&self) -> MassDensity {
@@ -95,19 +160,39 @@ impl AtmosphereState {
     pub fn pressure_typed(&self) -> Pressure {
         Pressure::new::<pascal>(self.pressure)
     }
+}
 
-    /// Typed accessor: wind velocity as a frame-tagged
-    /// `Velocity<PlanetInertial<P>>` (m/s) where `P` is the atmosphere
-    /// planet (caller-supplied at the type level).
+impl AtmosphereState<SelfPlanet> {
+    /// Relabel a planet-erased ([`SelfPlanet`]) atmospheric state as
+    /// belonging to a specific planet `Q`.
     ///
-    /// The wind is the planet's corotation velocity in the planet's
-    /// inertial frame, so the natural type is `PlanetInertial<P>` —
-    /// not the simulation's root inertial. Callers that have a
-    /// root-integrated body where root coincides with `P.inertial`
-    /// can apply the bit-identical relabel via `from_raw_si`.
+    /// Restricted to `impl AtmosphereState<SelfPlanet>` so it can only
+    /// retag a state that is already planet-erased — a planet-pinned
+    /// `AtmosphereState<Earth>` cannot accidentally be relabeled as
+    /// `AtmosphereState<Mars>` via this method. **Boundary-only escape
+    /// hatch** for relabel sites where the planet identity is determined
+    /// at runtime (e.g. wrapping a raw `evaluate_atmosphere` result, the
+    /// runner's `body.atmospheric_state` storage, the Bevy
+    /// `AtmosphericStateC` Component which is parameterized by
+    /// `SelfPlanet`). Mission code that knows the atmosphere planet at
+    /// compile time should reach for `evaluate_atmosphere_typed::<Q>`
+    /// directly, which produces `AtmosphereState<Q>` without going
+    /// through this relabel.
+    ///
+    /// A genuine `<P>` → `<Q>` retag for two distinct named planets is
+    /// almost never the right operation (atmospheric state is always
+    /// computed against a specific planet); if you need it for a
+    /// different reason, add a separate, clearly-named escape hatch
+    /// instead of widening this impl block.
     #[inline]
-    pub fn wind_typed<P: Planet>(&self) -> Velocity<PlanetInertial<P>> {
-        self.wind.m_per_s_at::<PlanetInertial<P>>()
+    pub fn relabel<Q: Planet>(self) -> AtmosphereState<Q> {
+        AtmosphereState::<Q> {
+            density: self.density,
+            temperature: self.temperature,
+            pressure: self.pressure,
+            wind: Velocity::<PlanetInertial<Q>>::from_raw_si(self.wind.raw_si()),
+            _p: PhantomData,
+        }
     }
 }
 
@@ -187,12 +272,12 @@ mod tests {
 
     #[test]
     fn typed_accessors_roundtrip_bit_identical() {
-        let state = AtmosphereState {
-            density: 1.225e-12,
-            temperature: 288.15,
-            pressure: 2.537e-10,
-            wind: DVec3::new(-359.7, 123.4, 0.5),
-        };
+        let state = AtmosphereState::<Earth>::from_raw(
+            1.225e-12,
+            288.15,
+            2.537e-10,
+            DVec3::new(-359.7, 123.4, 0.5),
+        );
 
         // Values extracted through typed accessors must equal the raw f64
         // inputs bit-for-bit — no unit conversion or round-trip loss.
@@ -202,16 +287,16 @@ mod tests {
         );
         assert_eq!(state.temperature_typed().get::<kelvin>(), state.temperature);
         assert_eq!(state.pressure_typed().get::<pascal>(), state.pressure);
-        assert_eq!(state.wind_typed::<Earth>().raw_si(), state.wind);
+        assert_eq!(state.wind.raw_si(), DVec3::new(-359.7, 123.4, 0.5));
     }
 
     #[test]
     fn typed_accessors_default_state() {
-        let state = AtmosphereState::default();
+        let state = AtmosphereState::<Earth>::default();
         assert_eq!(state.density_typed().get::<kilogram_per_cubic_meter>(), 0.0);
         assert_eq!(state.temperature_typed().get::<kelvin>(), 0.0);
         assert_eq!(state.pressure_typed().get::<pascal>(), 0.0);
-        assert_eq!(state.wind_typed::<Earth>().raw_si(), DVec3::ZERO);
+        assert_eq!(state.wind.raw_si(), DVec3::ZERO);
     }
 
     #[test]
@@ -234,5 +319,21 @@ mod tests {
         let pos = DVec3::new(7e6, 3e6, 1e6).m_at::<PlanetInertial<Earth>>();
         let wind = compute_corotation_wind_typed::<Earth>(0.0.rad_per_s(), pos);
         assert_eq!(wind.raw_si(), DVec3::ZERO);
+    }
+
+    #[test]
+    fn relabel_self_planet_to_earth() {
+        let state = AtmosphereState::<SelfPlanet>::from_raw(
+            1.0e-12,
+            300.0,
+            1.0e-10,
+            DVec3::new(10.0, 20.0, 0.0),
+        );
+        let earth = state.relabel::<Earth>();
+        // Bit-identical SI values; only the phantom differs.
+        assert_eq!(earth.density, 1.0e-12);
+        assert_eq!(earth.temperature, 300.0);
+        assert_eq!(earth.pressure, 1.0e-10);
+        assert_eq!(earth.wind.raw_si(), DVec3::new(10.0, 20.0, 0.0));
     }
 }
