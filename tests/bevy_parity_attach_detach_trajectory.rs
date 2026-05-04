@@ -318,21 +318,38 @@ fn read_runner_state(sim: &Simulation, idx: usize) -> SixDofState {
     }
 }
 
-/// Bevy adapter and runner produce bit-identical `composite_body` state
-/// for veh1, veh2, veh3 across the full SIM_verif_attach_detach
-/// RUN_simple_attach_detach scenario, when both runtimes drive the in-
-/// flight attach + detach through their respective production event
-/// surfaces (`AttachEvent` / `DetachEvent` in Bevy, `Simulation::attach`
-/// / `Simulation::detach` in the runner).
+/// Bevy adapter and runner produce bit-identical `composite_body`
+/// state for the integrator-written bodies (veh2 in the attached
+/// window, plus the always-free-flying veh3) across the *attach
+/// portion* of the SIM_verif_attach_detach RUN_simple_attach_detach
+/// scenario, when both runtimes drive the in-flight attach through
+/// their respective production event surfaces (`AttachEvent` in
+/// Bevy, `Simulation::attach` in the runner). veh1 is asserted only
+/// in the pre-attach window — the kinematic-only schedule asymmetry
+/// during and after the attach is structurally covered by
+/// `bevy_parity_kinematic_propagation_simple_chain`.
+///
+/// Detach-side parity is *not* asserted here. The loop terminates
+/// strictly before `t == DETACH_TIME` (see `NUM_STEPS`) and no
+/// `DetachEvent` is queued in either runtime; full attach+detach
+/// runner-vs-CSV trajectory cross-validation is the job of the
+/// companion `tier3_sim_attach_detach_trajectory_simple` test, and
+/// the Bevy-vs-runner detach parity will be added here as a follow-
+/// up once the #308 dual-write coordination is resolved (see the
+/// file-level "What is **not** pinned" docstring section).
 ///
 /// Per-step lock-step structure:
 ///
 /// 1. step both runtimes by one tick of `DT = 0.1 s`,
-/// 2. fire the attach event in both at the matching simtime,
-/// 3. fire the detach event in both at the matching simtime,
-/// 4. read each runtime's state at the new simtime and assert
+/// 2. *immediately after* the step that lands at `t = ATTACH_TIME`,
+///    fire the attach in both runtimes (synchronous
+///    `Simulation::attach` on the runner, queued `AttachEvent` on
+///    Bevy),
+/// 3. read each runtime's state at the new simtime and assert
 ///    bit-identical agreement (`to_bits()` per component) on every
-///    body's full 6-DOF state.
+///    integrator-written body's full 6-DOF state — see the inline
+///    contract comments below for the per-body skip rules on the
+///    attach-event tick.
 ///
 /// Both runtimes are deterministic and drive the same JEOD physics
 /// kernels (`combine_states_at_attach`, `propagate_state_via_storage`,
