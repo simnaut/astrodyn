@@ -68,6 +68,10 @@ fn assert_bits_eq(label: &str, component: &str, a: f64, b: f64) {
 }
 
 fn assert_sixdof_bit_identical(label: &str, a: &SixDofState, b: &SixDofState) {
+    // Translational bit-equality is the load-bearing pin for SRP / shift-site
+    // tests, but covering the rotational state too lets a future regression in
+    // the rotational integrator surface here (every call site below enables
+    // `rotational_dynamics: true`, so `rot` is propagated, not stale).
     for i in 0..3 {
         assert_bits_eq(
             label,
@@ -80,6 +84,25 @@ fn assert_sixdof_bit_identical(label: &str, a: &SixDofState, b: &SixDofState) {
             &format!("vel[{i}]"),
             a.trans.velocity[i],
             b.trans.velocity[i],
+        );
+    }
+    assert_bits_eq(
+        label,
+        "quat.scalar",
+        a.rot.quaternion.scalar(),
+        b.rot.quaternion.scalar(),
+    );
+    let a_qv = a.rot.quaternion.vector();
+    let b_qv = b.rot.quaternion.vector();
+    for i in 0..3 {
+        assert_bits_eq(label, &format!("quat.vector[{i}]"), a_qv[i], b_qv[i]);
+    }
+    for i in 0..3 {
+        assert_bits_eq(
+            label,
+            &format!("ang_vel_body[{i}]"),
+            a.rot.ang_vel_body[i],
+            b.rot.ang_vel_body[i],
         );
     }
 }
