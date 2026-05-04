@@ -195,9 +195,19 @@ pub trait F64Ext: Copy {
     fn rad_per_s2(self) -> AngularAcceleration;
 
     // --- Gravitational parameter ---
-    /// Gravitational parameter μ in m³/s², tagged with the planet
-    /// phantom inferred from the surrounding type (defaults to
-    /// [`crate::frame::SelfPlanet`] when no context is available).
+    /// Gravitational parameter μ in m³/s², returning a `GravParam<P>`
+    /// where `P` is inferred from the expected-type context at the
+    /// call site (a `let` ascription, a function-argument slot, a
+    /// struct-field assignment, …).
+    ///
+    /// With **no expected-type context** — e.g. a bare
+    /// `let mu = 1.0.m3_per_s2();` — `P` cannot be inferred and the
+    /// compiler reports the usual `cannot infer type for type
+    /// parameter` error. There is no implicit `SelfPlanet` fallback
+    /// here; the [`crate::frame::SelfPlanet`] default on
+    /// [`GravParam`]'s declaration only applies when `<P: Planet>` is
+    /// left unconstrained on a *type*, not when the inference engine
+    /// is asked to pick a planet for a call to this method.
     ///
     /// Prefer [`Self::m3_per_s2_for`] in mission code where the planet
     /// identity is known at the call site — the explicit turbofish
@@ -207,7 +217,7 @@ pub trait F64Ext: Copy {
     /// # Example
     /// ```
     /// # use jeod_quantities::prelude::*;
-    /// // Planet-pinned via type ascription:
+    /// // Planet-pinned via type ascription (this is the inference context):
     /// let mu_earth: GravParam<Earth> = 3.986_004_418e14.m3_per_s2();
     /// ```
     fn m3_per_s2<P: Planet>(self) -> GravParam<P>;

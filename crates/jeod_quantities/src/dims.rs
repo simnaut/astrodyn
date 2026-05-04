@@ -60,22 +60,24 @@ pub type MassFlowRate = Quantity<MassFlowRateDim, SI<f64>, f64>;
 ///
 /// ## Construction
 ///
-/// Mission code constructs a `GravParam<P>` through the planet-erased
-/// factory `f64::m3_per_s2()` (planet inferred from the surrounding
-/// type), the explicit-planet factory `f64::m3_per_s2_for::<P>()`, or
+/// Mission code constructs a `GravParam<P>` through the inferred-planet
+/// factory `f64::m3_per_s2()` (planet `<P>` inferred from the
+/// expected-type context at the call site — see
+/// [`crate::ext::F64Ext::m3_per_s2`] for the full story; a bare
+/// `let mu = 1.0.m3_per_s2();` with no expected-type context fails to
+/// compile), the explicit-planet factory `f64::m3_per_s2_for::<P>()`, or
 /// one of the curated `mu_*()` constants in
-/// `jeod_sim::recipes::constants`. The `f64::m3_per_s2()` factory
-/// remains available so existing code that produces a planet-erased
-/// `GravParam<SelfPlanet>` continues to compile; calling a typed
-/// consumer with a [`SelfPlanet`]-tagged μ in a planet-pinned slot is
-/// rejected at compile time.
+/// `jeod_sim::recipes::constants`. Calling a typed consumer with a
+/// [`SelfPlanet`]-tagged μ in a planet-pinned slot is rejected at compile
+/// time, so a planet-erased μ only flows through `SelfPlanet`-typed
+/// surfaces (the registry-side boundary code, `GravitySource`, etc.).
 ///
 /// ```
 /// use jeod_quantities::prelude::*;
 ///
 /// // Planet-pinned construction (Earth):
 /// let mu_earth: GravParam<Earth> = 3.986_004_415e14_f64.m3_per_s2_for::<Earth>();
-/// // Planet-erased construction — type ascription tells the compiler `<P>`:
+/// // Type ascription supplies the inference context for `<P>`:
 /// let mu_sun: GravParam<Sun> = 1.327_124_400_18e20_f64.m3_per_s2();
 /// // The numeric SI value in m³/s² is reachable via `.value`:
 /// assert!(mu_earth.value > 0.0);
