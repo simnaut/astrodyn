@@ -812,9 +812,9 @@ mod tests {
     fn kinematic_child_with_derivative_srp_advances_thermal_state() {
         use crate::Simulation;
         use jeod_sim::{
-            default_leap_second_table, FlatPlate, FlatPlateParams, FlatPlateState, FlatPlateThermal,
-            GravityModel, GravitySource, GravitySourceEntry, Position, RotationModel,
-            SimulationTime, SrpModel, ThermalIntegrationOrder, Velocity,
+            default_leap_second_table, FlatPlate, FlatPlateParams, FlatPlateState,
+            FlatPlateThermal, GravityModel, GravitySource, GravitySourceEntry, Position,
+            RotationModel, SimulationTime, SrpModel, ThermalIntegrationOrder, Velocity,
         };
 
         let dt = 1.0;
@@ -986,6 +986,7 @@ mod tests {
         // kinematic, so `propagate_kinematic_state` must reject the
         // configuration before its first walk.
         sim.mark_kinematic_only(leaf_idx);
-        sim.step().expect("step until propagate_kinematic_state runs");
+        sim.step()
+            .expect("step until propagate_kinematic_state runs");
     }
 }
