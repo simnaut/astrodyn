@@ -109,16 +109,26 @@ fn build_runner_sim() -> (jeod_runner::Simulation, usize, usize) {
     let child_id = sim.add_body_to_tree(child_idx, "child");
     // Tree-only attach: skip `Simulation::attach`'s combine to mirror
     // the Bevy app builder's direct `MassChildOf` insertion. The
-    // composite mass on every affected SimBody must still be synced
-    // from the recomputed tree (`MassTree::attach` recomputes
-    // composites internally), so call `sync_body_mass_from_tree` for
-    // the parent — the only SimBody whose composite changed at this
-    // attach (the child node's composite still equals its core mass).
+    // low-level contract documented on `sync_body_mass_from_tree`
+    // (`crates/jeod_runner/src/simulation/bodies.rs:586-602`) requires
+    // syncing **every** SimBody whose tree node was touched by the
+    // mutation — the directly-attached child plus the parent's full
+    // ancestor chain. The child's composite_properties still equals
+    // its core mass at a leaf attach (no grandchildren contribute), so
+    // the mass-write is numerically a no-op there; the load-bearing
+    // part of the call is the integrator-history book-keeping
+    // (`gj_state` / `abm4_state` topology-dirty flag) that the same
+    // contract requires on every topology change. With RK4 (this
+    // fixture's integrator) those fields are `None` and the call is
+    // a no-op end-to-end, but invoking it here keeps the shared parity
+    // setup correct for any future multistep variant that reuses
+    // `build_runner_sim`.
     sim.mass_tree
         .as_mut()
         .expect("mass tree present after add_body_to_tree")
         .attach(child_id, parent_id, link_offset(), link_t_parent_child());
     sim.sync_body_mass_from_tree(parent_idx);
+    sim.sync_body_mass_from_tree(child_idx);
     sim.mark_kinematic_only(child_idx);
     (sim, parent_idx, child_idx)
 }
