@@ -40,7 +40,7 @@ use bevy::prelude::*;
 use glam::{DMat3, DVec3};
 
 use crate::components::{
-    CentralSourceMarker, FrameEntityC, FrameRotC, FrameTransC, PfixFrameEntityC,
+    CentralSourceMarker, FrameEntityC, FrameRotC, FrameTransC, GravitySourceC, PfixFrameEntityC,
     SourceInertialPositionC, SourceInertialVelocityC, TranslationalStateC,
 };
 
@@ -85,13 +85,22 @@ pub struct SourceMutator<'w, 's> {
     /// Commands for auto-inserting [`SourceInertialVelocityC`] on
     /// sources that lack it when [`Self::set_source_state`] is called.
     commands: Commands<'w, 's>,
-    frame_entities: Query<'w, 's, &'static FrameEntityC>,
-    pfix_frame_entities: Query<'w, 's, &'static PfixFrameEntityC>,
+    // Source-targeted queries are filtered by `With<GravitySourceC>` so a
+    // body entity (which also carries `FrameEntityC` /
+    // `TranslationalStateC` post-registration) cannot be silently passed
+    // to `source_*` accessors and return body-frame data — instead the
+    // `fetch_frame_entity` lookup misses, and the panic in that helper
+    // names the misuse. Frame-targeted queries (`frame_trans`,
+    // `frame_rots`) remain unfiltered because they index the source's
+    // frame entity, which is *not* a `GravitySourceC` — it's the child
+    // frame node spawned by `register_source_frames_system`.
+    frame_entities: Query<'w, 's, &'static FrameEntityC, With<GravitySourceC>>,
+    pfix_frame_entities: Query<'w, 's, &'static PfixFrameEntityC, With<GravitySourceC>>,
     frame_trans: Query<'w, 's, &'static mut FrameTransC>,
     frame_rots: Query<'w, 's, &'static FrameRotC>,
-    positions: Query<'w, 's, &'static mut SourceInertialPositionC>,
-    velocities: Query<'w, 's, &'static mut SourceInertialVelocityC>,
-    translational: Query<'w, 's, &'static mut TranslationalStateC>,
+    positions: Query<'w, 's, &'static mut SourceInertialPositionC, With<GravitySourceC>>,
+    velocities: Query<'w, 's, &'static mut SourceInertialVelocityC, With<GravitySourceC>>,
+    translational: Query<'w, 's, &'static mut TranslationalStateC, With<GravitySourceC>>,
     central: Query<'w, 's, (), With<CentralSourceMarker>>,
     names: Query<'w, 's, &'static Name>,
 }
@@ -354,16 +363,27 @@ impl SourceMutator<'_, '_> {
     }
 
     fn fetch_frame_entity(&self, source: Entity, method: &str) -> Entity {
+        // The query filter is `With<GravitySourceC>`, so a missing match
+        // here means *either* the entity isn't a gravity source at all
+        // (no `GravitySourceC`) *or* it is one but `FrameEntityC` was
+        // never inserted (e.g. the user mutated before
+        // `register_source_frames_system` ran). Both failures are user
+        // misconfigurations the caller should fix the same way — by
+        // spawning the source via `PlanetBundle` *and* letting Startup
+        // run before any mutation.
         self.frame_entities
             .get(source)
             .map(|c| c.0)
             .unwrap_or_else(|err| {
                 panic!(
                     "SourceMutator::{method}: {label} is not a registered \
-                 gravity source (missing FrameEntityC). Spawn it via PlanetBundle \
-                 (or insert GravitySourceC + SourceInertialPositionC) and let \
-                 `register_source_frames_system` register the frame entity before \
-                 mutating it. Underlying error: {err:?}",
+                 gravity source — it is missing GravitySourceC and/or FrameEntityC. \
+                 Spawn it via PlanetBundle (which inserts GravitySourceC + \
+                 SourceInertialPositionC) and let `register_source_frames_system` \
+                 attach the FrameEntityC during Startup before mutating the source. \
+                 If the entity is a body (not a planet), pass the *planet's* entity \
+                 instead — bodies carry FrameEntityC too but do not represent gravity \
+                 sources. Underlying error: {err:?}",
                     label = self.entity_label(source),
                 )
             })
