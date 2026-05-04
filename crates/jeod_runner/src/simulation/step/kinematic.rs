@@ -103,6 +103,12 @@ impl Simulation {
     /// - A `kinematic_only` body has no `RotationalState`: the
     ///   propagation walk derives rotational state, so 3-DOF bodies
     ///   cannot be kinematic children.
+    /// - A `kinematic_only` body's ancestor chain (between it and the
+    ///   chain root) contains a non-kinematic `SimBody`: the kernel
+    ///   walk would compose the kinematic descendant against the
+    ///   intermediate body's parent-composed (not integrated) state,
+    ///   silently producing the wrong intermediate. Only the chain
+    ///   root may integrate (JEOD `DB.17`).
     /// - The orchestration walk surfaces a topology error (orphan
     ///   subtree, cycle, missing edge — see
     ///   [`propagate_state_via_storage`] for the per-case diagnostics).
@@ -167,6 +173,63 @@ impl Simulation {
                      cannot be kinematic children. Either set \
                      `VehicleConfig::rot = Some(...)` or clear the flag."
                 );
+            }
+        }
+
+        // Reject the bug shape from PR #295 review thread Ov1U: a
+        // kinematic child whose ancestor chain (between it and the
+        // root) contains a non-kinematic SimBody. The kernel walks
+        // pre-order and seeds each child from its parent's
+        // **derived** state (not the parent's seed), so a
+        // non-kinematic SimBody anywhere along the chain forces its
+        // descendants to compose against a parent-composed value
+        // rather than the parent's freshly-integrated state. The
+        // walk produces a wrong intermediate that the writeback
+        // gating cannot rescue. Enforce that every SimBody on the
+        // ancestor chain of any kinematic child is itself kinematic
+        // — only the chain root is allowed to integrate. This
+        // matches JEOD's DB.17 ("only the root's state is
+        // integrated") at the chain level rather than the tree
+        // level. Tree-only ancestors (no SimBody backing) are
+        // always fine because they have no integrated state to
+        // conflict with.
+        for (idx, body) in self.bodies.iter().enumerate() {
+            if !body.kinematic_only {
+                continue;
+            }
+            let id = body.mass_body_id.expect(
+                "kinematic_only ⇒ mass_body_id (already enforced by \
+                 the per-body validation loop above)",
+            );
+            let mut ancestor = tree.parent(id);
+            while let Some(aid) = ancestor {
+                if let Some(&aidx) = sim_body_for_id.get(&aid) {
+                    let abody = &self.bodies[aidx];
+                    // The chain root (no parent) is allowed to be
+                    // non-kinematic — it integrates and seeds the
+                    // walk. Every *intermediate* SimBody must be
+                    // kinematic_only; otherwise its integrated
+                    // state would silently lose to the kernel's
+                    // parent-composed write at its own node, and
+                    // its kinematic descendants would compose
+                    // against the wrong parent state.
+                    if tree.parent(aid).is_some() && !abody.kinematic_only {
+                        panic!(
+                            "propagate_kinematic_state: kinematic SimBody {idx} \
+                             (mass_body_id {id:?}) has a non-kinematic SimBody \
+                             ancestor {aidx} (mass_body_id {aid:?}). Only the \
+                             chain root may integrate; every intermediate SimBody \
+                             on the chain must be flagged `kinematic_only` so its \
+                             integrated state isn't silently overwritten by the \
+                             kernel walk and its kinematic descendants compose \
+                             against the parent's freshly-integrated state. \
+                             Call `Simulation::mark_kinematic_only({aidx})`, or \
+                             detach the kinematic descendant if it should \
+                             integrate independently."
+                        );
+                    }
+                }
+                ancestor = tree.parent(aid);
             }
         }
 
@@ -263,19 +326,22 @@ impl Simulation {
             let Some(&body_idx) = sim_body_for_id.get(mass_id) else {
                 continue;
             };
-            // Only write the body's state if it opted in. A non-root
-            // SimBody without the flag (for example, a child with its
-            // own integration) keeps whatever the integrator produced —
-            // matching JEOD's `compute_point_derivative` semantics where
-            // children-of-roots are kinematic by default but a flag
-            // upgrades them to fully integrated.
+            // Only write the body's state if it is flagged
+            // kinematic_only. A non-root SimBody without the flag
+            // keeps whatever the integrator produced — its descendants
+            // (if any) cannot themselves be kinematic_only because the
+            // ancestor-chain check above already rejects that
+            // configuration, so the kernel's parent-composed value at
+            // this node is *only* used as an intermediate to compose
+            // sibling tree-only nodes' descendants and is never read
+            // as the seed for an integrated body's frame. Skipping
+            // the writeback here keeps the integrated body's
+            // `body.trans` / `body.rot` authoritative.
             //
-            // We skip the writeback (rather than asserting) because
-            // mission code may legitimately register a child SimBody
-            // for force introspection without flagging it kinematic-
-            // only — the asserts at the top of this method enforce the
-            // *forward* contract (kinematic-only ⇒ non-root tree
-            // member).
+            // We skip rather than asserting because mission code may
+            // legitimately register a non-root child SimBody for force
+            // introspection (without making it kinematic_only) when
+            // the child has no kinematic descendants.
             if !self.bodies[body_idx].kinematic_only {
                 continue;
             }
@@ -729,5 +795,49 @@ mod tests {
         sim.bodies[child_idx].mass_body_id = Some(parent_id);
         sim.step()
             .expect("step until propagate_kinematic_state runs");
+    }
+
+    /// Regression for PR #295 review thread `Ov1U`: a kinematic
+    /// grandchild whose intermediate parent is a non-kinematic
+    /// `SimBody` must fail loudly. The kernel walk would compose the
+    /// grandchild against the intermediate's *parent-composed* state
+    /// (because the kernel writes `derived[mid_id]` from the root's
+    /// state during pre-order traversal), not the intermediate's
+    /// integrated state — silently producing the wrong intermediate.
+    /// Only the chain root may integrate; every intermediate SimBody
+    /// must itself be kinematic_only.
+    #[test]
+    #[should_panic(expected = "non-kinematic SimBody ancestor")]
+    fn propagate_kinematic_state_panics_on_non_kinematic_intermediate() {
+        let mut sim = Mission::iss_leo()
+            .into_builder()
+            .build()
+            .expect("Mission::iss_leo must validate");
+        let root_idx = 0;
+        let mid_idx = sim.add_body(VehicleConfig {
+            trans: TranslationalState::default(),
+            rot: Some(RotationalState::default()),
+            mass: Some(MassProperties::new(5.0)),
+            gravity_controls: GravityControls { controls: vec![] },
+            ..Default::default()
+        });
+        let leaf_idx = sim.add_body(VehicleConfig {
+            trans: TranslationalState::default(),
+            rot: Some(RotationalState::default()),
+            mass: Some(MassProperties::new(2.0)),
+            gravity_controls: GravityControls { controls: vec![] },
+            ..Default::default()
+        });
+        sim.add_body_to_tree(root_idx, "root");
+        sim.add_body_to_tree(mid_idx, "mid");
+        sim.add_body_to_tree(leaf_idx, "leaf");
+        sim.attach(mid_idx, root_idx, DVec3::ZERO, DMat3::IDENTITY);
+        sim.attach(leaf_idx, mid_idx, DVec3::ZERO, DMat3::IDENTITY);
+        // `mid` stays unmarked — its integrated state would silently
+        // lose to the kernel's parent-composed write. `leaf` is
+        // kinematic, so `propagate_kinematic_state` must reject the
+        // configuration before its first walk.
+        sim.mark_kinematic_only(leaf_idx);
+        sim.step().expect("step until propagate_kinematic_state runs");
     }
 }
