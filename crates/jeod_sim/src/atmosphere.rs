@@ -9,7 +9,7 @@ use jeod_atmosphere::met::MetAtmosphere;
 use jeod_atmosphere::AtmosphereState;
 use jeod_math::GeodeticState;
 use jeod_quantities::aliases::Position;
-use jeod_quantities::frame::{Planet, PlanetInertial};
+use jeod_quantities::frame::{Planet, PlanetInertial, SelfPlanet};
 
 use crate::planet_config::PlanetConfig;
 
@@ -95,7 +95,7 @@ pub fn evaluate_atmosphere(
     position: DVec3,
     t_inertial_pfix: Option<&DMat3>,
     tai_tjt: Option<f64>,
-) -> AtmosphereState {
+) -> AtmosphereState<SelfPlanet> {
     // Rotate inertial position to planet-fixed frame
     let pos_pfix = if let Some(rot) = t_inertial_pfix {
         *rot * position
@@ -125,20 +125,25 @@ pub fn evaluate_atmosphere(
         }
     };
 
-    // Co-rotation wind override
+    // Co-rotation wind override. The runtime planet identity is
+    // determined by `config` (a runtime-typed `AtmosphereConfig`); the
+    // returned state is therefore tagged `SelfPlanet`. Mission code
+    // that knows the planet at compile time should call
+    // [`evaluate_atmosphere_typed`] instead, which produces a
+    // planet-pinned `AtmosphereState<P>`.
     // JEOD_INV: AT.04 — wind velocity computed as omega x position (co-rotation)
-    let wind = if config.planet_omega != 0.0 {
+    let wind_raw = if config.planet_omega != 0.0 {
         jeod_atmosphere::compute_corotation_wind(config.planet_omega, position)
     } else {
-        result.wind
+        result.wind.raw_si()
     };
 
-    AtmosphereState {
-        density: result.density,
-        temperature: result.temperature,
-        pressure: result.pressure,
-        wind,
-    }
+    AtmosphereState::<SelfPlanet>::from_raw(
+        result.density,
+        result.temperature,
+        result.pressure,
+        wind_raw,
+    )
 }
 
 /// Typed sibling of [`evaluate_atmosphere`].
@@ -152,13 +157,19 @@ pub fn evaluate_atmosphere(
 /// frame should relabel via `from_raw_si` (bit-identical).
 ///
 /// Bit-identical kernel — wraps the raw f64 implementation via
-/// `.raw_si()` at the boundary. The returned [`AtmosphereState`]
-/// keeps raw fields; use `wind_typed::<P>()` for typed wind.
+/// `.raw_si()` at the boundary. Returns `AtmosphereState<P>` so the
+/// wind vector and any downstream consumer (`compute_drag_typed`,
+/// `compute_ballistic_drag_typed`) can structurally enforce that the
+/// vehicle's planet-inertial velocity matches the wind's planet at
+/// the type level.
 pub fn evaluate_atmosphere_typed<P: Planet>(
     config: &AtmosphereConfig,
     position: Position<PlanetInertial<P>>,
     t_inertial_pfix: Option<&DMat3>,
     tai_tjt: Option<f64>,
-) -> AtmosphereState {
-    evaluate_atmosphere(config, position.raw_si(), t_inertial_pfix, tai_tjt)
+) -> AtmosphereState<P> {
+    // Internal evaluator works against the runtime-typed config, so the
+    // result is `<SelfPlanet>` — relabel to the caller-chosen `<P>` at
+    // the typed boundary. Bit-identical (no arithmetic).
+    evaluate_atmosphere(config, position.raw_si(), t_inertial_pfix, tai_tjt).relabel::<P>()
 }

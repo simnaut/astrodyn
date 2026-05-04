@@ -2215,19 +2215,23 @@ pub fn aero_drag_system(
         // remaining typed-storage boundary).
         let rot_untyped = rot.0.to_untyped();
         // Bevy adapter stores body velocity as
-        // `Velocity<PlanetInertial<SelfPlanet>>`. Drag's typed sibling
+        // `Velocity<PlanetInertial<SelfPlanet>>` and the atmospheric
+        // state as `AtmosphereState<SelfPlanet>`. Drag's typed sibling
         // is parameterized over a concrete `P`, so the call site does
-        // a wildcard → `PlanetInertial<Earth>` phantom relabel (no
-        // integ-origin shift — drag stays in planet-inertial
+        // a wildcard → `PlanetInertial<Earth>` phantom relabel on both
+        // (no integ-origin shift — drag stays in planet-inertial
         // throughout). Bit-identical and asserts the Earth-orbit
-        // assumption that the body's planet is Earth.
+        // assumption that the body's planet and the atmosphere planet
+        // are both Earth. The `AtmosphereState<P>` typing enforces at
+        // compile time that the velocity and wind frames agree.
         use jeod_sim::{Earth, PlanetInertial, Velocity};
         // allowed: wildcard `<SelfPlanet>` → concrete `<Earth>` relabel
         // for the typed sibling; bit-identical (no arithmetic).
         let drag_velocity = Velocity::<PlanetInertial<Earth>>::from_raw_si(state.velocity.raw_si());
+        let atmos_earth = atmos.0.relabel::<Earth>();
         let result = jeod_sim::compute_drag_typed::<Earth, SelfRef>(
             &drag_config.0,
-            atmos,
+            &atmos_earth,
             drag_velocity,
             Some(&rot_untyped),
             t_struct_body,
@@ -3189,6 +3193,30 @@ pub fn staging_system(
         // Keeping these as raw f64 fields (not borrowing the query)
         // avoids holding a borrow across the `bodies.iter()` /
         // `bodies.get_mut` calls below.
+        //
+        // `parent_pre_composite_props` is read from the legacy
+        // `MassTreeR` arena rather than the entity's
+        // `MassPropertiesC` because the ECS-tree fast path in
+        // `composite_mass_system` reverts `MassPropertiesC` to its
+        // `CoreMassPropertiesC` cache for any entity that has no
+        // `MassChildOf` edge, and the arena attach/detach path
+        // exercised here never adds those edges. Without this
+        // arena-read, by the time the detach handler runs (in the
+        // same tick, after `composite_mass_system`), reading the
+        // entity's `MassPropertiesC` component would yield the
+        // just-reverted *core* mass instead of the live post-attach
+        // composite — and the CoM-shift formula below would key off
+        // `composite_properties.position == core.position` (typically
+        // zero), corrupting the parent's post-detach inertial position.
+        // The arena tree is the same source of truth the runner reads
+        // in `Simulation::detach_subtree`, so this also keeps the two
+        // adapters bit-identical for the parent-side post-detach
+        // CoM-shift. Mirrors `jeod_runner::Simulation::detach_subtree`'s
+        // `tree.get(tree_root_id).composite_properties` access.
+        //
+        // JEOD_INV: MA.23 — composite-property reads at detach must
+        // see the live (pre-detach) composite, not a downstream
+        // cache; the `MassTree` arena is the canonical store.
         let (
             parent_pre_position,
             parent_pre_velocity,
@@ -3196,7 +3224,7 @@ pub fn staging_system(
             parent_pre_ang_vel_body,
             parent_pre_composite_props,
         ) = {
-            let (_, _, parent_mass_c, parent_trans, parent_rot) = bodies
+            let (_, _, _, parent_trans, parent_rot) = bodies
                 .get(tree_root_entity)
                 .expect("id_to_entity points at a valid mass body");
             let position = parent_trans
@@ -3214,7 +3242,8 @@ pub fn staging_system(
                     (u.quaternion, u.ang_vel_body)
                 })
                 .unwrap_or((jeod_sim::JeodQuat::identity(), glam::DVec3::ZERO));
-            (position, velocity, q, w, parent_mass_c.0.to_untyped())
+            let composite = tree.get(tree_root_id).composite_properties;
+            (position, velocity, q, w, composite)
         };
 
         // Walk root → subtree applying `propagate_forward` at each
