@@ -1162,8 +1162,10 @@ fn bevy_detach_reads_live_composite_through_mass_property_revert() {
     // `staging_system` runs. The detach handler must still see the
     // live composite (cm = 0.48 m struct) — read from the arena —
     // not the reverted core (cm = 0). The post-detach inertial
-    // position must shift by `−cm_delta_attach` from the post-attach
-    // value, then advance ballistically by `vel · dt`.
+    // position shifts by `−cm_delta_attach` from the post-attach
+    // value. There is no integrator state on the parent in this
+    // minimal harness, so `integration_system` does not advance
+    // `TranslationalStateC` — the CoM-shift is the only mutation.
     app.world_mut()
         .resource_mut::<bevy::ecs::message::Messages<DetachEvent>>()
         .write(DetachEvent {
@@ -1189,7 +1191,6 @@ fn bevy_detach_reads_live_composite_through_mass_property_revert() {
          from `tree.get(tree_root_id).composite_properties`.",
         cm_delta_attach.x,
     );
-    let _ = v0;
 }
 
 // ════════════════════════════════════════════════════════════════════
