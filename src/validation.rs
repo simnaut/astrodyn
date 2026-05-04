@@ -326,16 +326,21 @@ pub fn validate_jeod_invariants(
                     continue;
                 }
                 // (a) target_source must be a registered gravity source
-                // (Bevy analog of runner's `target >= num_sources` check —
-                // here a missing `FrameEntityC` is the failure mode).
+                // (Bevy analog of runner's `target >= num_sources` check).
+                // The `source_frames` query is filtered by
+                // `With<GravitySourceC>`, so a missing match means the
+                // target is missing `GravitySourceC` and/or
+                // `FrameEntityC`; the diagnostic enumerates both
+                // because either misconfiguration produces the same
+                // failure here.
                 let target_frame_entity = match source_frames.get(sw.target_source) {
                     Ok(fe) => Some(fe.0),
                     Err(_) => {
                         panic!(
                             "Entity {entity:?}: FrameSwitchConfig.target_source = {target:?} \
-                             is not a registered gravity source (no FrameEntityC). \
-                             Spawn the source with PlanetBundle (or attach GravitySourceC + \
-                             SourceInertialPositionC) before adding the body.",
+                             is not a registered gravity source — it is missing \
+                             GravitySourceC and/or FrameEntityC. Spawn it with PlanetBundle \
+                             (which inserts both) before adding the body.",
                             target = sw.target_source,
                         );
                     }
