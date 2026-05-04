@@ -61,7 +61,6 @@ use std::collections::HashSet;
 use bevy::ecs::message::MessageReader;
 use bevy::ecs::system::ParamSet;
 use bevy::prelude::*;
-use glam::DVec3;
 
 use jeod_sim::MassPointState;
 
@@ -405,9 +404,6 @@ pub fn propagate_frame_attached_state_system(
             }
         }
     }
-    // Reference DVec3 to silence unused-import diagnostics across the
-    // configurations that don't exercise the body-frame writeback.
-    let _ = DVec3::ZERO;
 }
 
 #[cfg(test)]
@@ -420,6 +416,7 @@ mod tests {
     use crate::JeodPlugin;
     use bevy::prelude::FixedUpdate;
     use bevy::time::{Fixed, Time};
+    use glam::DVec3;
     use jeod_sim::{MassProperties, RotationalState, TranslationalState};
     use std::time::Duration;
 

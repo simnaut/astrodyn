@@ -265,7 +265,7 @@ fn tier3_sim_ref_attach_matrix() {
     // Earth.pfix is the rotating parent frame for this run.
     let earth_pfix = sim
         .source_pfix_frame_id(0)
-        .expect("Mission::iss_leo's Earth source has a pfix frame");
+        .expect("build_ref_attach_sim's Earth source must expose a pfix frame");
 
     let mut attached = false;
     let mut max_pre_pos_err = 0.0_f64;
@@ -290,8 +290,15 @@ fn tier3_sim_ref_attach_matrix() {
         sim.step_until(row.time).expect("step_until must not fail");
 
         // Fire the attach the moment we hit t=50, before the comparison
-        // for that same row. JEOD's BodyAction fires at t=50 — the
-        // logged state at t=50 should already reflect the attach.
+        // for that same row. JEOD's `BodyAttach` action runs *after*
+        // the t=50 sample is logged, so the t=50 row in the reference
+        // CSV is still the pre-attach linear-extrapolation state; the
+        // first row that reflects the attached frame composition is
+        // t=51. Our `attach_to_frame` call here only installs the
+        // `FrameAttachState` marker — the body's state is not
+        // overwritten until the next `step_until` (t=51), at which
+        // point our comparison row also flips to the post-attach
+        // values, so the cadences stay aligned.
         if !attached && row.time >= ATTACH_TIME_S - 1e-9 {
             // Capture-time offset matches JEOD's `BodyAttachMatrix`:
             // offset_pstr_cstr_pstr = [10, 0, 0] in pfix coords;
@@ -400,10 +407,19 @@ fn tier3_sim_ref_attach_pt2pt() {
     // first post-attach reference row (the source state at the
     // attach instant). Once mass-point alignment is ported, the
     // offset will come from our own port instead.
+    //
+    // Selection predicate: JEOD logs the t=50 sample *before* the
+    // `BodyAttach` action runs, so that row still carries the
+    // pre-attach linear-extrapolation state. The first row whose
+    // values reflect the attached frame composition is the next
+    // integer-second sample, t=51. Use a strict `>` against the
+    // attach time so the integer-cadence row at t=51 (the first
+    // post-attach reference) is selected and the captured offset
+    // matches JEOD's logged post-attach state.
     let post_attach_idx = rows
         .iter()
-        .position(|r| r.time >= ATTACH_TIME_S - 1e-9)
-        .expect("CSV must include a row at or after t=50");
+        .position(|r| r.time > ATTACH_TIME_S + 1e-9 && (r.time - r.time.round()).abs() < 1e-6)
+        .expect("CSV must include a post-attach integer-second row strictly after t=50");
 
     for (idx, row) in rows.iter().enumerate() {
         // Same half-second / integer-second filter as the matrix
