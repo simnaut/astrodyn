@@ -445,15 +445,11 @@ fn bevy_parity_kinematic_propagation_simple_chain() {
         bevy_p_rot.ang_vel_body.normalize(),
     );
     // q_now = q_step · q_prev ⇒ q_prev = conj(q_step) · q_now in
-    // JEOD's left-transformation algebra. JeodQuat exposes
-    // `conjugate()` returning a new quaternion + has a `*`-style
-    // multiply via `multiply_left` / `multiply_right`. To keep the
-    // test self-contained, do the conjugation + multiplication via
-    // matrix form (round-trip through `left_quat_to_transformation`):
-    let r_step = q_step.left_quat_to_transformation();
-    let r_now = bevy_p_rot.quaternion.left_quat_to_transformation();
-    let r_prev = r_step.transpose() * r_now;
-    let q_prev = JeodQuat::left_quat_from_transformation(&r_prev);
+    // JEOD's left-transformation algebra. Compute directly via
+    // `JeodQuat::conjugate` + `JeodQuat::multiply` — the prior
+    // matrix-roundtrip detour through `left_quat_to_transformation`
+    // and back inflated the comparison's noise floor for no benefit.
+    let q_prev = q_step.conjugate().multiply(&bevy_p_rot.quaternion);
     let bevy_p_prev_rot = RotationalState {
         quaternion: q_prev,
         ang_vel_body: bevy_p_rot.ang_vel_body,
