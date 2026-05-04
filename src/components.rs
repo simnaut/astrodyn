@@ -87,10 +87,27 @@ pub struct TranslationalStateC(pub TranslationalStateTyped<PlanetInertial<SelfPl
 impl TranslationalStateC {
     /// Wrap an untyped [`TranslationalState`] as the typed Bevy
     /// Component. The caller asserts the values are in some planet's
-    /// inertial frame (matching the body's `IntegSourceC` planet, or
-    /// `RootInertial` for root-integrated bodies — which is itself a
-    /// `PlanetInertial<P>` for the simulation's central body). No
-    /// runtime check is performed; the conversion is a zero-cost
+    /// inertial frame: for non-root-integrated bodies this is the
+    /// body's `IntegSourceC` planet; for root-integrated bodies the
+    /// integration frame is the simulation's [`RootInertial`] frame.
+    ///
+    /// `RootInertial` is kind-distinct from `PlanetInertial<P>` in
+    /// `jeod_quantities` — they are not unifiable types even when
+    /// numerically coincident. In Earth-centered setups the runner
+    /// conventionally treats the root inertial frame as numerically
+    /// coincident with the central body's `PlanetInertial<Earth>`
+    /// frame, but the type system keeps the two markers distinct;
+    /// crossing between them is via the explicit integ-origin shift
+    /// at RF.10 shift sites, not type unification. The wildcard
+    /// `<SelfPlanet>` tag on this Component sidesteps that distinction
+    /// at storage time — every body's storage is tagged
+    /// `PlanetInertial<SelfPlanet>` regardless of integration frame,
+    /// and consumers either stay within the planet-inertial flavor
+    /// (atmosphere, drag, LVLH, geodetic) or apply the integ-origin
+    /// shift to relabel to `RootInertial` (gravity, solar beta, SRP,
+    /// earth lighting).
+    ///
+    /// No runtime check is performed; the conversion is a zero-cost
     /// type-tag attachment via
     /// [`TranslationalStateTyped::from_untyped_unchecked`].
     #[inline]
