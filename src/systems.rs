@@ -2503,9 +2503,13 @@ pub fn solar_beta_system(
 /// Placed in `JeodSet::DerivedState`.
 #[allow(clippy::type_complexity)]
 pub fn earth_lighting_system(
+    frame_origin: FrameOrigin,
+    root_frame_entity: Res<crate::RootFrameEntityR>,
+    parents: Query<&ChildOf>,
     mut query: Query<
         (
             &TranslationalStateC,
+            Option<&FrameEntityC>,
             &EarthLightingConfigC,
             &mut EarthLightingStateC,
         ),
@@ -2518,7 +2522,7 @@ pub fn earth_lighting_system(
         Ok(s) => s,
         Err(bevy::ecs::query::QuerySingleError::NoEntities(_)) => {
             // No SunMarker present: clear stale earth lighting values
-            for (_, _, mut lighting) in &mut query {
+            for (_, _, _, mut lighting) in &mut query {
                 lighting.0 = Default::default();
             }
             return;
@@ -2534,7 +2538,7 @@ pub fn earth_lighting_system(
         Ok(s) => s,
         Err(bevy::ecs::query::QuerySingleError::NoEntities(_)) => {
             // No MoonMarker present: clear stale earth lighting values
-            for (_, _, mut lighting) in &mut query {
+            for (_, _, _, mut lighting) in &mut query {
                 lighting.0 = Default::default();
             }
             return;
@@ -2546,9 +2550,22 @@ pub fn earth_lighting_system(
             );
         }
     };
-    for (state, config, mut lighting) in &mut query {
+    for (state, body_frame, config, mut lighting) in &mut query {
+        // Earth lighting is a root-inertial-shift consumer (RF.10):
+        // the kernel mixes the body position with the Sun and Moon
+        // positions, all expected in absolute root-inertial
+        // coordinates. For non-root-integrated bodies the body's
+        // `<PlanetInertial<SelfPlanet>>` storage is integ-frame-
+        // relative; lift it to absolute root-inertial via the integ-
+        // origin shift before passing to the kernel. Sun and Moon
+        // are root-integrated by the SunBundle / MoonBundle
+        // construction (their frame entities are children of the
+        // root frame), so their positions need no shift.
+        let (integ_origin, _integ_origin_vel) =
+            body_integ_origin_in_root(body_frame, &parents, root_frame_entity.0, &frame_origin);
+        let body_pos_root = state.position.raw_si() + integ_origin.raw_si();
         lighting.0 = jeod_sim::compute_earth_lighting(
-            state.position.raw_si(),
+            body_pos_root,
             sun_state.position.raw_si(),
             moon_state.position.raw_si(),
             config.sun_radius,
@@ -2783,11 +2800,19 @@ pub fn flat_plate_srp_system(
 /// Placed in `JeodSet::Interaction`.
 #[allow(clippy::type_complexity)]
 pub fn cannonball_srp_system(
+    frame_origin: FrameOrigin,
+    root_frame_entity: Res<crate::RootFrameEntityR>,
+    parents: Query<&ChildOf>,
     // JEOD_INV: DB.21 — detached subtrees coast ballistically; skip
     // cannonball SRP so `RadiationForceC` doesn't hold stale values
     // that no integrator consumes.
     mut query: Query<
-        (&CannonballSrpC, &TranslationalStateC, &mut RadiationForceC),
+        (
+            &CannonballSrpC,
+            &TranslationalStateC,
+            Option<&FrameEntityC>,
+            &mut RadiationForceC,
+        ),
         (
             Without<SunMarker>,
             Without<FlatPlateConfigC>,
@@ -2808,8 +2833,16 @@ pub fn cannonball_srp_system(
         }
     };
 
-    for (config, state, mut srp_force) in &mut query {
-        let pos_raw = state.position.raw_si();
+    for (config, state, body_frame, mut srp_force) in &mut query {
+        // Cannonball SRP is a root-inertial-shift consumer (RF.10):
+        // the kernel mixes the body position with the Sun position
+        // (expected root-inertial). Lift the body's
+        // `<PlanetInertial<SelfPlanet>>` storage to absolute root-
+        // inertial via the integ-origin shift before mixing — same
+        // boundary discipline as the flat-plate / solar-beta sites.
+        let (integ_origin, _integ_origin_vel) =
+            body_integ_origin_in_root(body_frame, &parents, root_frame_entity.0, &frame_origin);
+        let pos_raw = state.position.raw_si() + integ_origin.raw_si();
         let sun_pos_raw = sun_state.position.raw_si();
         let illum_factor = compute_illum_factor(pos_raw, sun_pos_raw, &shadow_bodies);
 
