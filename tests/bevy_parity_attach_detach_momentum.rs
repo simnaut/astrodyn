@@ -1085,65 +1085,73 @@ fn bevy_attach_does_not_reparent_child_frame_under_parent_frame() {
     );
 }
 
-/// **Cross-integration-frame attach: must fail loud.**
+/// **Cross-integration-frame attach: positive parity.**
 ///
 /// Spawn parent and child carrying **different** `IntegSourceC`
 /// values so each body's frame entity is parented under a different
-/// integration-frame entity. Source A and source B are also placed
-/// at distinct inertial positions so the two integ frames are not
-/// numerically equivalent — a future regression that reparents the
-/// child under source A but forgets the coordinate rewrite into
-/// source A's frame would produce visibly wrong relative-state
-/// readbacks rather than coincidentally-correct ones.
+/// integration-frame entity. Source A and source B are placed at
+/// distinct inertial positions so the two integ frames are not
+/// numerically equivalent — a regression that reparents the child
+/// under source A but forgets the integ-origin lift would produce a
+/// merged composite that's wrong by `source_b - source_a`
+/// (~2.7e8 m), well clear of the per-component tolerances below.
 ///
 /// JEOD's `dyn_body_attach.cc::attach_establish_links` calls
 /// `dyn_body_integration.cc::set_integ_frame` whenever the child's
 /// `integ_frame` differs from the parent's: the child's primary
 /// frames are reparented under the parent's integ frame and all
-/// kinematic descendants follow recursively. Our `staging_system`
-/// does not implement that path — it never touches `FrameEntityC`
-/// or the `ChildOf` parent of the child's frame entity, and
-/// `frame_switch_system` is purely `FrameSwitchesC` distance-driven
-/// and does not react to `AttachEvent`.
+/// kinematic descendants follow recursively. JEOD's
+/// `dyn_body_integration.cc::set_integ_frame` (lines 64-117) uses
+/// the low-level `RefFrame::reset_parent` and explicitly does NOT
+/// rewrite stored state ("It does not update state"). Our
+/// `staging_system` mirrors that recursion via Bevy's `ChildOf`
+/// relationship and matches JEOD's "no state rewrite at the reparent
+/// itself"; the merged composite-body state is computed by
+/// `combine_states_at_attach` (lifted to root inertial via each
+/// body's pre-attach `IntegOrigin` so the cross-body kernel
+/// arithmetic — `omega × r`, `T_inertial_struct.transpose()` shifts
+/// — operates on a single inertial frame) and lowered through the
+/// parent's integ origin for the writeback into the parent's
+/// `TranslationalStateC` storage.
 ///
-/// Allowing the merge to proceed with the bodies in different
-/// integ frames would silently corrupt every downstream
-/// `RelativeFrameState` walk: the merged composite-body state lives
-/// in the parent's integ-frame coordinates, but the child's
-/// frame-tree node still claims its old integ frame as parent. Per
-/// the Fail Loudly rule (see `tests/frame_entity_dual_write_fail_loud.rs`
-/// for the project's pattern), `staging_system` panics with a
-/// diagnostic naming the misconfiguration rather than producing a
-/// wrong trajectory.
+/// The expected merged state is computed by calling
+/// `stage_attach_combine` directly with both bodies lifted to root
+/// inertial through their integ-frame positions, then comparing the
+/// kernel's output (lowered through the parent's integ origin)
+/// component-wise against the parent's post-attach
+/// `TranslationalStateC`. This is the same kernel-parity contract
+/// `bevy_attach_conserves_linear_and_angular_momentum` enforces for
+/// the same-integ-frame case, generalised across non-zero integ
+/// origins.
 ///
-/// The guard compares each body-frame entity's `ChildOf` parent —
-/// the live integ-frame source of truth — *not* `IntegSourceC` (the
-/// config-time intent). `frame_switch_system` mutates the body
-/// frame's `ChildOf` parent on every switch but intentionally
-/// leaves `IntegSourceC` stale, so an `IntegSourceC` comparison
-/// would both miss real cross-frame attaches and falsely reject
-/// same-frame attaches whenever a switch has fired. The companion
-/// test `bevy_attach_post_frame_switch_same_integ_frame_succeeds`
-/// covers the latter case directly.
-///
-/// This test pins that panic so a future change that quietly
-/// removes the assertion (e.g. as part of an incomplete attempt at
-/// the proper reparent + coordinate-rewrite implementation) is
-/// caught immediately. Once the reparent path lands, the assertion
-/// is replaced with positive coverage of the resulting frame-tree
-/// reshape.
+/// The frame-tree reparent is verified independently: post-attach,
+/// the child's body-frame entity must have its `ChildOf` parent
+/// equal to source A's frame entity (the parent's integ-frame
+/// entity, JEOD's `set_integ_frame` semantics) — not source B's
+/// frame entity (the child's pre-attach integ frame).
 #[test]
-#[should_panic(expected = "AttachEvent: parent")]
-fn bevy_attach_cross_integ_frame_panics_with_fail_loud_diagnostic() {
-    let parent_mass = MassProperties::new(1000.0);
-    let child_mass = MassProperties::new(500.0);
+fn bevy_attach_cross_integ_frame_runs_combine_and_reparents_child_frame() {
+    let parent_mass = MassProperties::with_inertia(
+        1000.0,
+        DMat3::from_diagonal(DVec3::new(500.0, 500.0, 500.0)),
+        DVec3::ZERO,
+    );
+    let child_mass = MassProperties::with_inertia(
+        500.0,
+        DMat3::from_diagonal(DVec3::new(200.0, 200.0, 200.0)),
+        DVec3::ZERO,
+    );
+    // Per-frame integ-frame-relative initial states. Velocities are
+    // distinct so the merge induces a mass-weighted velocity in the
+    // composite (a soft co-mover would obscure whether the integ
+    // origin was applied to the lift).
     let parent_trans = TranslationalState {
         position: DVec3::new(7e6, 0.0, 0.0),
         velocity: DVec3::new(0.0, 7600.0, 0.0),
     };
     let child_trans = TranslationalState {
-        position: DVec3::new(7e6, 1.0, 0.0),
-        velocity: DVec3::new(0.0, 7600.0, 0.0),
+        position: DVec3::new(0.0, 7e6, 0.0),
+        velocity: DVec3::new(0.0, 0.0, 7600.0),
     };
     let initial_rot = RotationalState::default();
 
@@ -1157,14 +1165,12 @@ fn bevy_attach_cross_integ_frame_panics_with_fail_loud_diagnostic() {
     let id_b = tree.add_body("Child".into(), child_mass);
     app.insert_resource(MassTreeR(tree));
 
-    // Two distinct gravity-source entities at *distinct* inertial
-    // positions so each integ frame is numerically as well as
-    // structurally distinct. The fixture would otherwise let a
-    // partial future implementation pass the panic-removal test by
-    // accident: if the panic is dropped and source A and source B
-    // share zero coordinates, a follow-on cross-frame readback can
-    // coincide regardless of whether the coordinate rewrite was
-    // applied.
+    // Two distinct gravity-source entities at distinct inertial
+    // positions so each integ frame is structurally and numerically
+    // separate. The fixture exercises the realistic asymmetric case
+    // where the integ-origin shifts on the kernel inputs are large
+    // and distinct — the same shape as a body in `Earth.inertial`
+    // attaching to a body in `Moon.inertial`.
     let mu = 3.986004415e14_f64;
     let source_a_pos = DVec3::new(1.0e8, 0.0, 0.0);
     let source_b_pos = DVec3::new(0.0, 2.5e8, 0.0);
@@ -1235,23 +1241,206 @@ fn bevy_attach_cross_integ_frame_panics_with_fail_loud_diagnostic() {
     app.world_mut().run_schedule(Startup);
     step(&mut app, 1, 1.0);
 
-    // Fire the attach event and step. `staging_system` must panic
-    // because the parent's body-frame entity is `ChildOf(source_a)`
-    // while the child's body-frame entity is `ChildOf(source_b)` —
-    // the live integ-frame source of truth. A silent merge would
-    // write the composite state into the parent's integ-frame
-    // coordinates while leaving the child's frame entity pointing at
-    // its old integ frame, corrupting every downstream
-    // RelativeFrameState walk.
+    // Resolve the body-frame entities + each source's frame entity.
+    // The reparent assertion below checks the child's body-frame
+    // entity moves from `source_b.frame.inertial` to
+    // `source_a.frame.inertial` post-attach.
+    let source_a_frame = app
+        .world()
+        .get::<FrameEntityC>(source_a)
+        .expect("source A registered FrameEntityC")
+        .0;
+    let source_b_frame = app
+        .world()
+        .get::<FrameEntityC>(source_b)
+        .expect("source B registered FrameEntityC")
+        .0;
+    let child_frame_entity = app
+        .world()
+        .get::<FrameEntityC>(child_entity)
+        .expect("child registered FrameEntityC")
+        .0;
+    assert_eq!(
+        app.world()
+            .get::<ChildOf>(child_frame_entity)
+            .expect("child body-frame has ChildOf")
+            .parent(),
+        source_b_frame,
+        "fixture sanity: child body-frame entity must be ChildOf source B's frame entity \
+         pre-attach (live integ-frame source of truth)",
+    );
+
+    // Fire the attach. The cross-integ-frame branch runs the
+    // combine kernel with both bodies lifted to root inertial via
+    // their pre-attach integ origins, then lowers the merged
+    // composite through the parent's integ origin for the writeback
+    // into the parent's `TranslationalStateC`.
+    let offset = DVec3::ZERO;
     app.world_mut()
         .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
-            offset: DVec3::ZERO,
+            offset,
             t_parent_child: DMat3::IDENTITY,
         });
     step(&mut app, 1, 1.0);
+
+    // Verify the child's body-frame entity is now ChildOf the
+    // parent's integ-frame entity (source A's frame entity), not
+    // source B's. JEOD's `set_integ_frame` reparent-only contract.
+    assert_eq!(
+        app.world()
+            .get::<ChildOf>(child_frame_entity)
+            .expect("child body-frame has ChildOf post-attach")
+            .parent(),
+        source_a_frame,
+        "post-attach: child body-frame entity must be reparented under source A's frame \
+         entity (the parent's integ-frame entity, JEOD `set_integ_frame` semantics) — \
+         not under source B's frame entity (its pre-attach integ frame)",
+    );
+    assert_ne!(
+        app.world()
+            .get::<ChildOf>(child_frame_entity)
+            .unwrap()
+            .parent(),
+        source_b_frame,
+        "post-attach: reparent must not leave the child under its pre-attach integ frame",
+    );
+
+    // Independent expected merged state: lift both bodies to root
+    // inertial through their integ origins, run the combine kernel,
+    // then lower through the parent's integ origin so the result
+    // can be compared against the parent's `TranslationalStateC`
+    // (which stores the body in integ-frame coordinates). Mirrors
+    // the same lift/lower the runner's `mass_tree::attach_inner`
+    // does at the kernel boundary.
+    let combined_mass = app
+        .world()
+        .resource::<MassTreeR>()
+        .0
+        .get(id_a)
+        .composite_properties;
+    let q = JeodQuat::identity();
+    let parent_position_root = parent_trans.position + source_a_pos;
+    let parent_velocity_root = parent_trans.velocity;
+    let child_position_root = child_trans.position + source_b_pos;
+    let child_velocity_root = child_trans.velocity;
+    let expected_root = jeod_sim::stage_attach_combine(StageAttachInputs {
+        parent_position: parent_position_root,
+        parent_velocity: parent_velocity_root,
+        parent_quaternion: q,
+        parent_ang_vel_body: DVec3::ZERO,
+        parent_mass,
+        orig_parent_cm_struct: parent_mass.position,
+        parent_t_inertial_struct: DMat3::IDENTITY,
+        child_position: child_position_root,
+        child_velocity: child_velocity_root,
+        child_quaternion: q,
+        child_ang_vel_body: DVec3::ZERO,
+        child_mass,
+        combined_mass,
+    });
+    let expected_position_in_a = expected_root.position - source_a_pos;
+    let expected_velocity_in_a = expected_root.velocity;
+
+    let pos = read_position(app.world(), parent_entity);
+    let vel = read_velocity(app.world(), parent_entity);
+    let omega = read_ang_vel(app.world(), parent_entity);
+    assert!(
+        (pos - expected_position_in_a).length() < 1e-9,
+        "post-attach position (in source A's integ frame): bevy {pos:?} vs expected \
+         {expected_position_in_a:?}",
+    );
+    assert!(
+        (vel - expected_velocity_in_a).length() < 1e-9,
+        "post-attach velocity (root-inertial = source A's frame velocity since source A \
+         is stationary): bevy {vel:?} vs expected {expected_velocity_in_a:?}",
+    );
+    assert!(
+        (omega - expected_root.ang_vel_body).length() < 1e-9,
+        "post-attach ang_vel: bevy {omega:?} vs expected {:?}",
+        expected_root.ang_vel_body,
+    );
+
+    // Verify that reading the parent's body-frame entity through
+    // `RelativeFrameState::position(root, parent_frame)` gives the
+    // root-inertial absolute position of the merged composite —
+    // i.e. the same value `expected_root.position` produced by the
+    // kernel. This pins that the integ-origin lift on the writeback
+    // is consistent with the frame-tree's interpretation of the
+    // parent's `TranslationalStateC` as integ-frame-relative.
+    //
+    // The frame-tree walk reads `FrameTransC` on the parent's
+    // body-frame entity. `staging_system` writes the merged state
+    // into `TranslationalStateC`; `sync_body_to_frame_system`
+    // mirrors that into `FrameTransC` later in the same tick (in
+    // `JeodSet::Integration`). The first `step()` call above
+    // already covered both, so the walk below sees the post-merge
+    // value. A regression that mismatches the lift / lower (e.g.
+    // forgets to lower the result through the parent's integ
+    // origin) would produce an `abs_pos` off by `source_a_pos` —
+    // ~1e8 m, well clear of the f64-rounding tolerance below.
+    let root_e = app.world().resource::<RootFrameEntityR>().0;
+    let parent_frame_entity = app
+        .world()
+        .get::<FrameEntityC>(parent_entity)
+        .expect("parent registered FrameEntityC")
+        .0;
+    // The parent has no `GravityControlsC`, so `force_collection_system`
+    // produces zero force / acceleration; the integrator's
+    // `pos += vel · dt` step still advances the parent under no-force
+    // kinematics from the merged-composite seed:
+    //   pos(t=dt) = pos_merged + vel_merged · dt
+    //   vel(t=dt) = vel_merged
+    // For the parity check we only need the absolute-via-walk
+    // position — the integ-origin shift is fully exercised whether
+    // we read at t=0 (just the merged composite) or t=dt (the
+    // composite plus a velocity-term offset). Match against the
+    // pre-step value (the merged composite the kernel produced) and
+    // accept any extra shift up to `vel · dt` in tolerance, so the
+    // assertion is robust to whether `staging_system` runs before
+    // or after the integrator's t=0 advance in this test's
+    // schedule. A regression that mismatches the lift / lower (e.g.
+    // forgets to lower the result through the parent's integ
+    // origin) would produce an `abs_pos` off by `source_a_pos`
+    // ~1e8 m, well clear of the `2 · vel_max · dt` ~ 1.5e4 m
+    // tolerance below.
+    let abs_pos = app
+        .world_mut()
+        .run_system_cached_with(
+            move |In((root, frame)): In<(Entity, Entity)>, rel: RelativeFrameState| {
+                rel.position(root, frame)
+            },
+            (root_e, parent_frame_entity),
+        )
+        .expect("RelativeFrameState position lookup");
+    let expected_abs_pos = expected_position_in_a + source_a_pos;
+    let dt = 1.0;
+    let drift_bound = 2.0 * expected_velocity_in_a.length() * dt;
+    assert!(
+        (abs_pos - expected_abs_pos).length() < drift_bound + 1e-3,
+        "post-attach absolute position via RelativeFrameState: bevy {abs_pos:?} \
+         vs expected {expected_abs_pos:?} (allowed drift {drift_bound:.3} m) — the \
+         integ-origin lift on the writeback must be consistent with the \
+         frame-tree's interpretation of the body's TranslationalStateC as \
+         integ-frame-relative; a mismatched lift / lower would produce a \
+         ~{:.3e} m discrepancy ≫ tolerance",
+        (source_b_pos - source_a_pos).length(),
+    );
+
+    // Sanity: the mass-tree attach landed (the `unwrap` proves it).
+    let tree = &app.world().resource::<MassTreeR>().0;
+    assert_eq!(
+        tree.parent(id_b),
+        Some(id_a),
+        "post-attach: child's mass-tree parent must be the parent body",
+    );
+    // Sanity: combined mass on the parent matches the tree.
+    assert!(
+        (read_mass(app.world(), parent_entity) - combined_mass.mass).abs() < 1e-12,
+        "composite mass on parent should match the tree's post-attach value",
+    );
 }
 
 /// **Same-integ-frame attach after a frame switch: must NOT panic.**
@@ -2099,6 +2288,339 @@ fn bevy_runner_parity_attach_detach_momentum() {
             .map(f64::to_bits),
         "post-detach parent ang_vel differs: bevy={bevy_parent_w_post_detach:?} runner={:?}",
         runner_parent_post_rot.ang_vel_body
+    );
+}
+
+/// **Cross-integration-frame attach: Bevy / runner parity.**
+///
+/// Both adapters lift each body to root inertial via its pre-attach
+/// `IntegOrigin` before calling `combine_states_at_attach`, then
+/// lower the merged composite through the integrated tree root's
+/// integ origin for the writeback. With identical inputs the two
+/// adapters must produce bit-identical post-attach state on the
+/// integrated tree root (the parent), end-to-end across the
+/// kernel-shift-site pair. Any drift indicates the lift / lower
+/// pair has diverged between the two adapters.
+///
+/// The scenario uses a non-zero parent integ origin (parent
+/// integrates in `Earth.inertial`, child integrates in
+/// `Moon.inertial`-style placeholder source at a distinct position)
+/// so the lift / lower contributions are non-trivial; the
+/// same-integ-frame path collapses them to zero and is already
+/// covered by `bevy_runner_parity_attach_detach_momentum`.
+#[test]
+fn bevy_runner_parity_cross_integ_frame_attach() {
+    use jeod_runner::Simulation;
+    use jeod_sim::{
+        GravityControl as RunnerGravityControl, GravityControls as RunnerGravityControls,
+        GravityModel as RunnerGravityModel, GravitySource as RunnerGravitySource,
+        GravitySourceEntry as RunnerGravitySourceEntry, IntegratorType as RunnerIntegratorType,
+        SimulationTime as RunnerSimulationTime, VehicleConfig as RunnerVehicleConfig,
+    };
+
+    // Co-mover scenario keeps post-attach ω = 0, so any
+    // integrator-tick attitude drift between the adapters cancels
+    // out and the parity assertion is on the kernel writeback alone
+    // (same scope guard as the same-integ-frame parity test above).
+    let parent_mass = MassProperties::with_inertia(
+        420.0,
+        DMat3::from_diagonal(DVec3::new(150.0, 200.0, 250.0)),
+        DVec3::ZERO,
+    );
+    let child_mass = MassProperties::with_inertia(
+        80.0,
+        DMat3::from_diagonal(DVec3::new(40.0, 50.0, 60.0)),
+        DVec3::ZERO,
+    );
+
+    // Two non-central sources at distinct root-inertial positions —
+    // the same shape as the runner's
+    // `runner_detach_lifts_through_integ_origin` test (Earth at
+    // 1.5e11 m off the SSB-rooted frame) generalised so that *both*
+    // bodies integrate in non-root frames and the two integ origins
+    // differ. Source A holds the parent; source B holds the child.
+    let source_a_pos = DVec3::new(1.5e11, 0.0, 0.0);
+    let source_b_pos = DVec3::new(1.5e11 + 4.0e8, 0.0, 0.0);
+
+    // Per-frame integ-frame-relative initial states. Co-mover
+    // velocity (so the merge is "soft"); offset is non-trivial in
+    // the parent's struct frame.
+    let common_velocity = DVec3::new(0.0, 7600.0, 0.0);
+    let parent_trans = TranslationalState {
+        position: DVec3::new(7e6, 0.0, 0.0),
+        velocity: common_velocity,
+    };
+    let child_trans = TranslationalState {
+        // Place the child at root-inertial position (~7e6 m relative
+        // to source B) so once both bodies are lifted to root
+        // inertial, their absolute separation is consistent with
+        // the offset below (`combine_states_at_attach` is offset-
+        // agnostic on the kinematic side; the offset only enters
+        // the orientation-of-link maths). The relative separation
+        // between the two absolute positions is
+        //   |(source_a + parent.pos) - (source_b + child.pos)|
+        //  = |(1.5e11+7e6) - (1.5e11+4e8+7e6)| = 4e8 m
+        // mirroring "parent in low Earth orbit, child near Moon".
+        position: DVec3::new(7e6, 0.0, 0.0),
+        velocity: common_velocity,
+    };
+    let parent_rot = RotationalState {
+        quaternion: JeodQuat::identity(),
+        ang_vel_body: DVec3::ZERO,
+    };
+    let child_rot = parent_rot;
+    let offset = DVec3::new(3.0, 0.0, 0.0);
+    let t_parent_child = DMat3::IDENTITY;
+    let dt = 1.0;
+
+    // ── Bevy path ──────────────────────────────────────────────────
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(dt));
+    app.add_plugins(JeodPlugin);
+
+    let mut tree = MassTree::new();
+    let id_a = tree.add_body("Parent".into(), parent_mass);
+    let id_b = tree.add_body("Child".into(), child_mass);
+    app.insert_resource(MassTreeR(tree));
+
+    let mu = 0.0_f64; // gravity-free environment so the integrator's
+                      // force evaluation between snapshot and writeback
+                      // contributes nothing.
+    let source_a = app
+        .world_mut()
+        .spawn((
+            Name::new("SourceA"),
+            GravitySourceC(GravitySource {
+                mu,
+                model: GravityModel::PointMass,
+            }),
+            SourceInertialPositionC(jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(
+                source_a_pos,
+            )),
+            TranslationalStateC::from(TranslationalState {
+                position: source_a_pos,
+                velocity: DVec3::ZERO,
+            }),
+        ))
+        .id();
+    let source_b = app
+        .world_mut()
+        .spawn((
+            Name::new("SourceB"),
+            GravitySourceC(GravitySource {
+                mu,
+                model: GravityModel::PointMass,
+            }),
+            SourceInertialPositionC(jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(
+                source_b_pos,
+            )),
+            TranslationalStateC::from(TranslationalState {
+                position: source_b_pos,
+                velocity: DVec3::ZERO,
+            }),
+        ))
+        .id();
+    let parent_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Parent"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(parent_trans),
+            RotationalStateC::from(parent_rot),
+            MassPropertiesC::from(parent_mass),
+            MassBodyIdC(id_a),
+            IntegSourceC(Some(source_a)),
+        ))
+        .id();
+    let child_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Child"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(child_trans),
+            RotationalStateC::from(child_rot),
+            MassPropertiesC::from(child_mass),
+            MassBodyIdC(id_b),
+            IntegSourceC(Some(source_b)),
+        ))
+        .id();
+    app.world_mut().run_schedule(Startup);
+
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset,
+            t_parent_child,
+        });
+    step(&mut app, 1, dt);
+
+    let bevy_parent_pos = read_position(app.world(), parent_entity);
+    let bevy_parent_vel = read_velocity(app.world(), parent_entity);
+    let bevy_parent_q = app
+        .world()
+        .get::<RotationalStateC>(parent_entity)
+        .unwrap()
+        .0
+        .to_untyped()
+        .quaternion;
+    let bevy_parent_w = read_ang_vel(app.world(), parent_entity);
+
+    // ── Runner path ────────────────────────────────────────────────
+    // Build an SSB root + two non-central sources at the same
+    // inertial positions as the Bevy fixture. Parent integrates in
+    // source A, child in source B — the runner's `integ_source` is
+    // the equivalent of `IntegSourceC` here.
+    let time = RunnerSimulationTime::at_j2000(jeod_sim::default_leap_second_table());
+    let mut sim = Simulation::new(time, dt);
+    let _ssb = sim.add_source(
+        "SSB",
+        RunnerGravitySourceEntry {
+            source: RunnerGravitySource {
+                mu: 0.0,
+                model: RunnerGravityModel::PointMass,
+            },
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::zero(),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: jeod_runner::RotationModel::default(),
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: true,
+        },
+    );
+    let runner_source_a = sim.add_source(
+        "SourceA",
+        RunnerGravitySourceEntry {
+            source: RunnerGravitySource {
+                mu: 0.0,
+                model: RunnerGravityModel::PointMass,
+            },
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(source_a_pos),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: jeod_runner::RotationModel::default(),
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: false,
+        },
+    );
+    let runner_source_b = sim.add_source(
+        "SourceB",
+        RunnerGravitySourceEntry {
+            source: RunnerGravitySource {
+                mu: 0.0,
+                model: RunnerGravityModel::PointMass,
+            },
+            position: jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(source_b_pos),
+            velocity: jeod_sim::Velocity::<jeod_sim::RootInertial>::zero(),
+            t_inertial_pfix: None,
+            delta_c20: 0.0,
+            rotation_model: jeod_runner::RotationModel::default(),
+            tidal_config: None,
+            planet_omega: 0.0,
+            central: false,
+        },
+    );
+    let parent_idx = sim.add_body(RunnerVehicleConfig {
+        trans: parent_trans,
+        rot: Some(parent_rot),
+        mass: Some(parent_mass),
+        integrator: RunnerIntegratorType::Rk4,
+        gravity_controls: RunnerGravityControls {
+            controls: vec![RunnerGravityControl::new_spherical(runner_source_a, false)],
+        },
+        integ_source: Some(runner_source_a),
+        ..Default::default()
+    });
+    let child_idx = sim.add_body(RunnerVehicleConfig {
+        trans: child_trans,
+        rot: Some(child_rot),
+        mass: Some(child_mass),
+        integrator: RunnerIntegratorType::Rk4,
+        gravity_controls: RunnerGravityControls {
+            controls: vec![RunnerGravityControl::new_spherical(runner_source_b, false)],
+        },
+        integ_source: Some(runner_source_b),
+        ..Default::default()
+    });
+    sim.add_body_to_tree(parent_idx, "Parent");
+    sim.add_body_to_tree(child_idx, "Child");
+    sim.validate().unwrap();
+
+    sim.attach(child_idx, parent_idx, offset, t_parent_child);
+    let runner_parent = sim.body(parent_idx);
+    let runner_pos = runner_parent.trans.position;
+    let runner_vel = runner_parent.trans.velocity;
+    let runner_rot = runner_parent
+        .rot
+        .expect("6-DOF runner parent must keep rot");
+    let runner_q = runner_rot.quaternion;
+    let runner_w = runner_rot.ang_vel_body;
+
+    // Bit-identical post-attach state across the two adapters. Any
+    // mismatch between the lift / lower shifts in the two adapter
+    // paths produces a discrepancy bounded below by the integ-origin
+    // separation (`source_b - source_a` ≈ 4e8 m), well beyond f64
+    // rounding — so a single bit difference here means the lift /
+    // lower pair has diverged, not just numerical noise.
+    assert_eq!(
+        bevy_parent_pos.to_array().map(f64::to_bits),
+        runner_pos.to_array().map(f64::to_bits),
+        "post-attach parent position differs across Bevy / runner: \
+         bevy={bevy_parent_pos:?} runner={runner_pos:?}",
+    );
+    assert_eq!(
+        bevy_parent_vel.to_array().map(f64::to_bits),
+        runner_vel.to_array().map(f64::to_bits),
+        "post-attach parent velocity differs across Bevy / runner: \
+         bevy={bevy_parent_vel:?} runner={runner_vel:?}",
+    );
+    assert_eq!(
+        [
+            bevy_parent_q.scalar().to_bits(),
+            bevy_parent_q.vector().x.to_bits(),
+            bevy_parent_q.vector().y.to_bits(),
+            bevy_parent_q.vector().z.to_bits(),
+        ],
+        [
+            runner_q.scalar().to_bits(),
+            runner_q.vector().x.to_bits(),
+            runner_q.vector().y.to_bits(),
+            runner_q.vector().z.to_bits(),
+        ],
+        "post-attach parent quaternion differs across Bevy / runner",
+    );
+    assert_eq!(
+        bevy_parent_w.to_array().map(f64::to_bits),
+        runner_w.to_array().map(f64::to_bits),
+        "post-attach parent ang_vel differs across Bevy / runner: \
+         bevy={bevy_parent_w:?} runner={runner_w:?}",
+    );
+
+    // Frame-tree side check: the Bevy adapter additionally reparents
+    // the child's body-frame entity under the parent's integ-frame
+    // entity (mirroring JEOD's `set_integ_frame`). The runner does
+    // not have a parallel structural component since `integ_frame_id`
+    // is set at body-spawn time and never mutated by `attach` — the
+    // runner relies purely on the integ-origin lift, while the Bevy
+    // adapter must keep both the lift *and* the frame-tree node in
+    // sync. Verify the Bevy reparent landed.
+    let source_a_frame = app.world().get::<FrameEntityC>(source_a).unwrap().0;
+    let child_frame_entity = app.world().get::<FrameEntityC>(child_entity).unwrap().0;
+    assert_eq!(
+        app.world()
+            .get::<ChildOf>(child_frame_entity)
+            .unwrap()
+            .parent(),
+        source_a_frame,
+        "post-attach: Bevy adapter must reparent child body-frame entity under \
+         the parent's integ-frame entity (source A's frame entity), matching JEOD's \
+         `set_integ_frame` semantics",
     );
 }
 
