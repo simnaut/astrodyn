@@ -41,7 +41,7 @@
 //! the kinematic propagation that derives child poses from the root
 //! (the design-doc `propagate_state_from_root_system`) lives at
 //! [`crate::kinematic_propagation::propagate_state_from_root_system`]
-//! and runs earlier in the same `JeodSet::ForceCollection` set so the
+//! and runs earlier in the tick (pre-`JeodSet::Environment`) so the
 //! aggregation walk reads live attitudes.
 //!
 //! # Frame conventions inside the system
@@ -228,7 +228,7 @@ pub fn wrench_aggregation_system(
     //     defense-in-depth.
     //
     //     [`propagate_state_from_root_system`](crate::kinematic_propagation::propagate_state_from_root_system)
-    //     runs in `JeodSet::ForceCollection` *before* this system and
+    //     runs earlier in the tick (pre-`JeodSet::Environment`) and
     //     writes `RotationalStateC` (plus `TranslationalStateC`) on
     //     every kinematic chain member by deriving the child's state
     //     from the parent's state composed with
@@ -299,9 +299,10 @@ pub fn wrench_aggregation_system(
                      rooted at {root:?} that contains a non-identity rotation, but it has no \
                      `RotationalStateC`. This is a scheduling-contract violation: \
                      `propagate_state_from_root_system` is supposed to run earlier in \
-                     `JeodSet::ForceCollection` and derive every kinematic child's \
-                     `RotationalStateC` from its parent's attitude composed with \
-                     `MassChildOf.t_parent_child`. If this assertion is firing, either:\n  \
+                     the tick (pre-`JeodSet::Environment`) and derive every kinematic \
+                     child's `RotationalStateC` from its parent's attitude composed \
+                     with `MassChildOf.t_parent_child`. If this assertion is firing, \
+                     either:\n  \
                      1. The propagation system was unscheduled (custom `App` build that \
                      doesn't include the `JeodPlugin`'s `FixedUpdate` system set, or a test \
                      fixture that runs `wrench_aggregation_system` directly without first \
