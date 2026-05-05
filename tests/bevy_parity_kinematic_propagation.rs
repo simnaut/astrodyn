@@ -3,25 +3,56 @@
 //!
 //! Builds the same parent + kinematic-child topology in both runtimes
 //! with identical initial conditions (no force, no torque, RK4 on
-//! 6-DOF rigid bodies). Steps both forward and asserts the child's
-//! `composite_body` inertial state matches between runtimes at every
-//! checkpoint.
+//! 6-DOF rigid bodies). Drives the production attach surfaces in both
+//! runtimes — `AttachEvent` on the Bevy side, `Simulation::attach` on
+//! the runner side — so each adapter runs JEOD's
+//! `combine_states_at_attach` momentum-conservation kernel on the
+//! pre-attach pair before installing the kinematic chain. Steps both
+//! forward and asserts the parent's and child's `composite_body`
+//! inertial states match between runtimes at every checkpoint.
 //!
-//! This pins that the Bevy adapter's
-//! `propagate_state_from_root_system` and the runner's
-//! `propagate_kinematic_state` produce bit-equivalent state for the
-//! same topology. Both delegate to the storage-agnostic kernel
-//! [`jeod_sim::propagate_state_via_storage`], so the parity is
-//! structural — any drift between runtimes would mean one of the
-//! adapters mis-routes the kernel inputs, not that the physics
-//! kernel itself diverged.
+//! # What is pinned
+//!
+//! 1. **Combine parity**: both adapters feed
+//!    `combine_states_at_attach` bit-identical pre-merge inputs (each
+//!    side reads `parent_mass` from its own pre-attach storage —
+//!    `body.mass` on the runner, `MassPropertiesC` on Bevy — so the
+//!    `composite_mass_system` revert race
+//!    cannot reach either side's kernel input on the attach tick).
+//!    The merged composite-body state lands in the parent's
+//!    `body.trans` / `body.rot` (runner) and `TranslationalStateC` /
+//!    `RotationalStateC` (Bevy) bit-identically.
+//!
+//! 2. **Kinematic propagation parity**: with the chain established
+//!    (`MassChildOf` ECS edge on Bevy, `mark_kinematic_only` flag on
+//!    the runner) the child is derived each tick by
+//!    [`jeod_sim::propagate_state_via_storage`]. Both runtimes
+//!    delegate to the same storage-agnostic kernel, so the per-tick
+//!    derivation is bit-identical. Any drift between runtimes would
+//!    mean one of the adapters mis-routes the kernel inputs, not that
+//!    the physics kernel itself diverged.
+//!
+//! # Tick-1 / steady-state separation
+//!
+//! The Bevy adapter's simple-attach contract leaves the `MassChildOf`
+//! ECS edge insertion to mission code (only the chained-attach reroot
+//! path inserts it inside `staging_system`). To keep the kernel input
+//! parity from being broken by a pre-installed `MassChildOf` —
+//! `composite_mass_system` would write the combined mass into the
+//! parent's `MassPropertiesC` *before* `staging_system` reads it,
+//! feeding the kernel a doubled-mass `parent_mass` — the test
+//! installs `MassChildOf` on Bevy *and* calls `mark_kinematic_only`
+//! on the runner *after* the first post-attach tick. The runner
+//! mirrors Bevy's tick-1 schedule by leaving the child as a regular
+//! integrator-driven body during tick 1 and transitioning it to
+//! kinematic-only only from tick 2 onward.
 
 #![allow(deprecated)]
 
 use bevy::prelude::*;
 use bevy_jeod::{
-    DynamicsConfigC, ExternalForceC, ExternalTorqueC, FrameDerivativesC, GravityControlsC,
-    JeodPlugin, KinematicChildC, MassBodyIdC, MassChildOf, MassPropertiesC, MassTreeR,
+    AttachEvent, DynamicsConfigC, ExternalForceC, ExternalTorqueC, FrameDerivativesC,
+    GravityControlsC, JeodPlugin, MassBodyIdC, MassChildOf, MassPropertiesC, MassTreeR,
     RotationalStateC, TotalForceC, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
@@ -35,6 +66,11 @@ mod common;
 use common::assert_sixdof_eq;
 
 const DT: f64 = 0.1;
+/// Total `FixedUpdate` ticks (Bevy) and `Simulation::step` calls
+/// (runner) after the production attach is fired. The first tick
+/// processes the attach, with the chain transitioning to kinematic-
+/// only state at the start of tick 2 — see the file-level docstring's
+/// "Tick-1 / steady-state separation" section.
 const NUM_STEPS: usize = 30;
 
 fn parent_mass() -> MassProperties {
@@ -62,6 +98,24 @@ fn parent_rot() -> RotationalState {
     }
 }
 
+/// Initial child translational state. Set equal to the parent's at
+/// `t = 0` so the [`combine_states_at_attach`] merge is a soft merge
+/// (no relative motion). The merge still runs the full algorithm on
+/// both adapters — the parent's composite-body position shifts by
+/// the mass-weighted CoM-delta in struct frame, the merged inertia
+/// is recomputed via parallel-axis, and the angular-momentum solve
+/// runs against the new combined inertia — but the two sides feed
+/// the kernel bit-identical pre-merge inputs so the post-merge
+/// parent state is deterministic across runtimes without the test
+/// having to predict the kernel output ahead of time.
+fn child_initial_trans() -> TranslationalState {
+    parent_trans()
+}
+
+fn child_initial_rot() -> RotationalState {
+    parent_rot()
+}
+
 /// Link geometry: child structural origin at (-10, 0, 0) in parent's
 /// struct frame, identity link rotation. Mirrors the simple-attach
 /// case from `tier3_sim_kinematic_propagation`.
@@ -73,7 +127,18 @@ fn link_t_parent_child() -> DMat3 {
     DMat3::IDENTITY
 }
 
-/// Build the runner-side simulation with parent + kinematic child.
+/// Build the runner-side simulation with parent + child registered as
+/// independent free-flying bodies, then drive
+/// [`jeod_runner::Simulation::attach`] to install the kinematic chain.
+/// `Simulation::attach` runs `combine_states_at_attach` (post-#297)
+/// and writes the merged composite-body state back into the parent's
+/// `body.trans` / `body.rot`. The child is *not* marked kinematic-
+/// only here — see the file-level "Tick-1 / steady-state separation"
+/// section: the Bevy adapter's simple-attach contract does not
+/// install `MassChildOf` from `staging_system`, so the chain becomes
+/// kinematic-only only from tick 2 on the Bevy side, and the runner
+/// mirrors that by leaving the child as a regular integrator-driven
+/// body during tick 1.
 fn build_runner_sim() -> (jeod_runner::Simulation, usize, usize) {
     let time = SimulationTime::at_j2000(jeod_sim::default_leap_second_table());
     let mut sim = jeod_runner::Simulation::new(time, DT);
@@ -85,71 +150,40 @@ fn build_runner_sim() -> (jeod_runner::Simulation, usize, usize) {
         integrator: IntegratorType::Rk4,
         ..Default::default()
     });
-    // Child starts with junk state; propagation must overwrite it from
-    // the parent every tick. The link is wired via direct mass-tree
-    // mutation (rather than `Simulation::attach`) to bypass the JEOD
-    // momentum-conservation combine that #297 added: `staging_system`
-    // on the Bevy side likewise installs `MassChildOf` directly here,
-    // so both adapters carry the parent's pre-attach integrated state
-    // and the kinematic propagation derives the child the same way in
-    // both. The combine path is exercised separately in
-    // `bevy_parity_attach_detach_momentum`.
     let child_idx = sim.add_body(VehicleConfig {
-        trans: TranslationalState {
-            position: DVec3::splat(1e9),
-            velocity: DVec3::splat(1e9),
-        },
-        rot: Some(RotationalState::default()),
+        trans: child_initial_trans(),
+        rot: Some(child_initial_rot()),
         mass: Some(child_mass()),
         gravity_controls: GravityControls { controls: vec![] },
         integrator: IntegratorType::Rk4,
         ..Default::default()
     });
-    let parent_id = sim.add_body_to_tree(parent_idx, "parent");
-    let child_id = sim.add_body_to_tree(child_idx, "child");
-    // Tree-only attach: skip `Simulation::attach`'s combine to mirror
-    // the Bevy app builder's direct `MassChildOf` insertion. The
-    // low-level contract documented on `sync_body_mass_from_tree`
-    // (`crates/jeod_runner/src/simulation/bodies.rs:586-602`) requires
-    // syncing **every** SimBody whose tree node was touched by the
-    // mutation — the directly-attached child plus the parent's full
-    // ancestor chain. The child's composite_properties still equals
-    // its core mass at a leaf attach (no grandchildren contribute), so
-    // the mass-write is numerically a no-op there; the load-bearing
-    // part of the call is the integrator-history book-keeping
-    // (`gj_state` / `abm4_state` topology-dirty flag) that the same
-    // contract requires on every topology change. With RK4 (this
-    // fixture's integrator) those fields are `None` and the call is
-    // a no-op end-to-end, but invoking it here keeps the shared parity
-    // setup correct for any future multistep variant that reuses
-    // `build_runner_sim`.
-    sim.mass_tree
-        .as_mut()
-        .expect("mass tree present after add_body_to_tree")
-        .attach(child_id, parent_id, link_offset(), link_t_parent_child());
-    sim.sync_body_mass_from_tree(parent_idx);
-    sim.sync_body_mass_from_tree(child_idx);
-    sim.mark_kinematic_only(child_idx);
+    sim.add_body_to_tree(parent_idx, "parent");
+    sim.add_body_to_tree(child_idx, "child");
+    // Production runtime attach: runs `combine_states_at_attach` on
+    // the pre-attach (parent, child) pair and writes the merged
+    // composite-body state back into the parent's `body.trans` /
+    // `body.rot`. Mirrors what the Bevy adapter's `staging_system`
+    // does for `AttachEvent`.
+    sim.attach(child_idx, parent_idx, link_offset(), link_t_parent_child());
     (sim, parent_idx, child_idx)
 }
 
-/// Build the Bevy app with parent + kinematic child, installing the
-/// `MassChildOf` link directly (bypassing `AttachEvent`).
+/// Build the Bevy app with parent + child as free-flying bodies and
+/// fire an [`AttachEvent`] through the production message bus so
+/// `staging_system` runs `combine_states_at_attach` (JEOD's momentum-
+/// conservation algorithm — `models/dynamics/dyn_body/src/dyn_body_attach.cc`).
+/// The first `FixedUpdate` tick processes the event:
+/// `staging_system` writes the merged composite-body state into the
+/// parent's `TranslationalStateC` / `RotationalStateC`. Mirrors the
+/// runner's `Simulation::attach` orchestration so both adapters feed
+/// the kernel bit-identical inputs.
 ///
-/// Why bypass `AttachEvent`: `staging_system` calls
-/// `combine_states_at_attach` (JEOD's momentum-conservation algorithm
-/// — `models/dynamics/dyn_body/src/dyn_body_attach.cc`) when processing
-/// the event, which shifts the parent's `composite_body` inertial
-/// state by the inertial CoM-delta. The runner-side counterpart
-/// (`Simulation::attach`, post-#297) runs the same kernel. Both are
-/// covered end-to-end by `bevy_parity_attach_detach_momentum`. To keep
-/// the kinematic-propagation parity check focused on the per-tick
-/// child-derivation walk (the one structural invariant this test
-/// pins), the runner side wires the link via direct
-/// [`MassTree::attach`] mutation and the Bevy side inserts
-/// `MassChildOf` directly — both adapters skip the combine and carry
-/// the parent's pre-attach integrated state, so the kinematic
-/// propagation derives the child the same way in both.
+/// The kinematic-chain `MassChildOf` ECS edge is *not* installed
+/// here — see the file-level "Tick-1 / steady-state separation"
+/// section. Pre-installing the edge would race
+/// `composite_mass_system` against `staging_system` on the attach
+/// tick, so the test installs it after the first tick instead.
 fn build_bevy_app() -> (App, Entity, Entity) {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
@@ -159,9 +193,6 @@ fn build_bevy_app() -> (App, Entity, Entity) {
     let mut tree = MassTree::new();
     let parent_id = tree.add_body("Parent".into(), parent_mass());
     let child_id = tree.add_body("Child".into(), child_mass());
-    // Wire the topology in the arena too so composite-mass agrees
-    // with the Bevy ECS view.
-    tree.attach(child_id, parent_id, link_offset(), link_t_parent_child());
     app.insert_resource(MassTreeR(tree));
 
     let parent = app
@@ -195,21 +226,8 @@ fn build_bevy_app() -> (App, Entity, Entity) {
             }),
             MassPropertiesC::from(child_mass()),
             MassBodyIdC(child_id),
-            // The link itself — pre-installed so the first
-            // FixedUpdate tick already sees the chain. Mirrors the
-            // runner's direct `mass_tree.attach` setup.
-            MassChildOf::with_rotation(parent, link_offset(), link_t_parent_child()),
-            // Pin the child as kinematic-only up front rather than
-            // letting `wrench_aggregation_system` infer the marker
-            // from topology on the first tick. The integration system
-            // gates on `Without<KinematicChildC>`, so without an
-            // explicit insertion the test would depend on the inferral
-            // running before integration on tick 0 — order-fragile
-            // behaviour the parity check shouldn't pivot on.
-            KinematicChildC,
-            // Stale state — propagation must overwrite both.
-            TranslationalStateC::<jeod_sim::Earth>::default(),
-            RotationalStateC::default(),
+            TranslationalStateC::<jeod_sim::Earth>::from(child_initial_trans()),
+            RotationalStateC::from(child_initial_rot()),
             TotalForceC::default(),
             FrameDerivativesC::default(),
             ExternalForceC::default(),
@@ -217,6 +235,21 @@ fn build_bevy_app() -> (App, Entity, Entity) {
             GravityControlsC(GravityControls { controls: vec![] }),
         ))
         .id();
+
+    // Fire the production attach event. `staging_system` consumes it
+    // on the next `FixedUpdate` tick: it runs `combine_states_at_attach`
+    // and writes the merged composite-body state back into the
+    // parent's components.
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child,
+            parent,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                link_offset(),
+            ),
+            t_parent_child: link_t_parent_child(),
+        });
 
     (app, parent, child)
 }
@@ -273,8 +306,8 @@ fn read_bevy_state(
 }
 
 /// Inputs to `kernel_from_parent` plus the helper itself. Used to
-/// run the kinematic kernel against each runtime's parent state and
-/// assert the runtime's own child state matches the kernel output.
+/// run the kinematic kernel against the runner's parent state and
+/// assert the runner's own child state matches the kernel output.
 fn kernel_from_parent(
     parent: &TranslationalState,
     parent_rot: &RotationalState,
@@ -326,10 +359,11 @@ fn kernel_from_parent(
 /// `to_bits()`).
 ///
 /// Bit-identity is the right contract here because both runtimes drive
-/// the same `propagate_state_via_storage` kernel and the same RK4
-/// integrator with no scheduling non-determinism — any drift would
-/// indicate one of the adapters mis-routes the kernel inputs, not a
-/// physics divergence. Loose `< 1e-12` tolerances would silently mask
+/// the same `combine_states_at_attach` /
+/// `propagate_state_via_storage` kernels and the same RK4 integrator
+/// with no scheduling non-determinism — any drift would indicate one
+/// of the adapters mis-routes the kernel inputs, not a physics
+/// divergence. Loose `< 1e-12` tolerances would silently mask
 /// exactly that class of bug, so this helper is wired through the same
 /// `to_bits()` checker used by every other `bevy_parity_*.rs` test.
 fn assert_states_bit_identical(
@@ -351,19 +385,35 @@ fn assert_states_bit_identical(
 }
 
 /// Bevy adapter and runner produce bit-identical parent **and** child
-/// state for the same kinematic-chain topology.
+/// state when both runtimes drive their respective production attach
+/// surfaces (`AttachEvent` for Bevy, `Simulation::attach` for the
+/// runner) and run the kinematic chain through `MassChildOf` /
+/// `mark_kinematic_only` from tick 2 onward.
 ///
-/// The Bevy adapter runs `propagate_state_from_root_system` *both*
-/// before and after integration each tick (mirroring the runner's
-/// stage 3b / 8d pre+post sweeps in
-/// `crates/jeod_runner/src/simulation/step/mod.rs`), so a kinematic
-/// child's `RotationalStateC` / `TranslationalStateC` reflects the
-/// just-integrated parent state — the same value the runner's
-/// post-integration pass installs. The previous one-tick lag (Bevy
-/// pre-only vs runner pre+post) was a schedule-placement gap, not a
-/// physics divergence.
+/// Per-tick structure (matching the file-level "Tick-1 / steady-state
+/// separation" docstring):
 ///
-/// Runs `NUM_STEPS` ticks at `DT=0.1 s`. Asserts:
+/// 1. `build_runner_sim` calls `Simulation::attach`; `build_bevy_app`
+///    queues an `AttachEvent`. Neither side has the chain established
+///    yet (no `MassChildOf` on Bevy, no `kinematic_only` flag on the
+///    runner).
+/// 2. Tick 1: Bevy's `staging_system` consumes the `AttachEvent` and
+///    writes the merged composite-body state into the parent. The
+///    runner has already merged synchronously. The child integrates
+///    one free-flight tick on both sides because the chain is not
+///    yet established. Both runtimes are bit-identical at end of
+///    tick 1.
+/// 3. Between ticks 1 and 2, mission code installs `MassChildOf`
+///    (Bevy) and `mark_kinematic_only` (runner). `composite_mass_system`
+///    on tick 2's start sees the new edge and writes the combined
+///    mass into the parent's `MassPropertiesC` via
+///    `bypass_change_detection`.
+/// 4. Ticks 2..NUM_STEPS: the chain is steady-state. The integrator
+///    advances the parent only; `propagate_state_from_root_post_integration_system`
+///    (Bevy) and `propagate_kinematic_state` (runner) derive the
+///    child from the just-integrated parent.
+///
+/// Asserts at end of `NUM_STEPS`:
 /// 1. parent translational + rotational state is bit-identical
 ///    between Bevy and runner (`to_bits()` per component);
 /// 2. child translational + rotational state is bit-identical
@@ -376,8 +426,31 @@ fn bevy_parity_kinematic_propagation_simple_chain() {
     let (mut sim, parent_idx, child_idx) = build_runner_sim();
     let (mut app, parent_entity, child_entity) = build_bevy_app();
 
-    sim.step_n(NUM_STEPS).expect("runner step_n must succeed");
-    step_bevy(&mut app, NUM_STEPS);
+    // Tick 1: process the production attach. Both runtimes merge
+    // the parent state via `combine_states_at_attach`; the child
+    // integrates one free-flight tick because neither side has
+    // installed the kinematic-chain marker yet.
+    sim.step().expect("runner step must succeed");
+    step_bevy(&mut app, 1);
+
+    // Install the kinematic-chain handles on both sides for the
+    // remaining ticks. On Bevy this is the `MassChildOf` edge that
+    // mission code owns under JEOD's simple-attach contract; on the
+    // runner the equivalent handle is the `kinematic_only` flag set
+    // via `mark_kinematic_only`.
+    app.world_mut()
+        .entity_mut(child_entity)
+        .insert(MassChildOf::with_rotation(
+            parent_entity,
+            link_offset(),
+            link_t_parent_child(),
+        ));
+    sim.mark_kinematic_only(child_idx);
+
+    // Ticks 2..NUM_STEPS: steady-state kinematic propagation.
+    sim.step_n(NUM_STEPS - 1)
+        .expect("runner step_n must succeed");
+    step_bevy(&mut app, NUM_STEPS - 1);
 
     let runner_p = sim.body(parent_idx);
     let runner_c = sim.body(child_idx);
