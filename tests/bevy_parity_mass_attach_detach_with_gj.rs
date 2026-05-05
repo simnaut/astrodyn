@@ -160,7 +160,7 @@ fn bevy_parity_mass_attach_with_gj_resets_integrator() {
 
     // ── Send AttachEvent — staging_system mutates tree + resets state. ──
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: body_b,
             parent: body_a,
@@ -259,7 +259,7 @@ fn bevy_parity_mass_attach_with_gj_resets_full_ancestor_chain() {
 
     // Chain: middle → top, leaf → middle.
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: e_middle,
             parent: e_top,
@@ -269,7 +269,7 @@ fn bevy_parity_mass_attach_with_gj_resets_full_ancestor_chain() {
             t_parent_child: DMat3::IDENTITY,
         });
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: e_leaf,
             parent: e_middle,
@@ -287,7 +287,7 @@ fn bevy_parity_mass_attach_with_gj_resets_full_ancestor_chain() {
     // Attach e_new under e_middle — recomputes middle's AND top's
     // composites, so top's GJ must reset.
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: e_new,
             parent: e_middle,
@@ -330,7 +330,7 @@ fn bevy_parity_mass_detach_with_gj_resets_integrator() {
 
     // Pre-attach so detach has something to undo.
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: body_b,
             parent: body_a,

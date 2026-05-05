@@ -105,7 +105,7 @@ fn run_lvlhrel_scenario(label: &str, csv_name: &str) {
         // frame; tag as Earth-centered planet-inertial to satisfy the
         // typed entry's `<PlanetInertial<P>>` contract (the LVLH
         // anchor is conventionally Earth in the existing test fixture).
-        let lvlh_rel = compute_lvlh_relative_state_typed(
+        let lvlh_rel = compute_lvlh_relative_state_typed::<Earth, jeod_sim::SelfRef>(
             ref_body.trans.position.m_at::<PlanetInertial<Earth>>(),
             ref_body
                 .trans
@@ -133,7 +133,7 @@ fn run_lvlhrel_scenario(label: &str, csv_name: &str) {
         // frame; tag as Earth-centered planet-inertial to satisfy the
         // typed entry's `<PlanetInertial<P>>` contract (the LVLH
         // anchor is conventionally Earth in the existing test fixture).
-        let lvlh_rel = compute_lvlh_relative_state_typed(
+        let lvlh_rel = compute_lvlh_relative_state_typed::<Earth, jeod_sim::SelfRef>(
             ref_body.trans.position.m_at::<PlanetInertial<Earth>>(),
             ref_body
                 .trans

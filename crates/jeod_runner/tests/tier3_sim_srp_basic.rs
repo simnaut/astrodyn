@@ -18,7 +18,11 @@ use jeod_sim::{GravitySourceEntry, SrpModel, VehicleConfig};
 /// Build the 6-plate surface matching SIM_1_BASIC's Modified_data/radiation_surface.py.
 /// All plates: area=2.0 m², albedo=0.0, diffuse=0.5, emissivity=1.0,
 /// heat_capacity_per_area=600.0, initial temperature=270.0 K.
-fn sim1_basic_plates() -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
+fn sim1_basic_plates() -> Vec<(
+    FlatPlate<jeod_sim::SelfRef>,
+    FlatPlateParams,
+    FlatPlateThermal,
+)> {
     let params = FlatPlateParams {
         albedo: 0.0,
         diffuse: 0.5,

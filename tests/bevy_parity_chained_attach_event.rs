@@ -615,7 +615,7 @@ fn bevy_sim_elapsed(app: &App) -> f64 {
 /// Queue an `AttachEvent` on the Bevy app's message bus.
 fn fire_bevy_attach(app: &mut App, child: Entity, parent: Entity, offset: DVec3, t_pc: DMat3) {
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child,
             parent,

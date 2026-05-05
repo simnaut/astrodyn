@@ -230,7 +230,13 @@ impl Plugin for JeodPlugin {
         }
 
         // ── Events ──
-        app.add_message::<AttachEvent>();
+        // The Bevy adapter registers the canonical runtime-resolved
+        // `AttachEvent<SelfRef>`. Mission code that mints concrete
+        // vehicle phantoms (e.g. `define_vehicle!(Iss)`) and wants
+        // typed `AttachEvent<Iss>` pumping must register the matching
+        // `add_message::<AttachEvent<Iss>>()` itself; the canonical
+        // `staging_system` reads the `<SelfRef>` instantiation only.
+        app.add_message::<AttachEvent<jeod_sim::SelfRef>>();
         app.add_message::<DetachEvent>();
         app.add_message::<FrameAttachEvent>();
         app.add_message::<FrameDetachEvent>();

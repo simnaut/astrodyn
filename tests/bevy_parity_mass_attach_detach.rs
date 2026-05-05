@@ -407,7 +407,7 @@ fn bevy_staging_system_does_not_corrupt_composite_core_cache() {
     // Build an app with both staging and composite systems wired.
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
-    app.add_message::<AttachEvent>();
+    app.add_message::<AttachEvent<jeod_sim::SelfRef>>();
     app.add_message::<DetachEvent>();
     // composite first, then staging — matches the production schedule
     // ordering in JeodPlugin::build (composite_mass_system runs in

@@ -138,7 +138,7 @@ fn bevy_parity_mass_attach_with_abm4_resets_integrator() {
     assert!(!read_abm4_topology_dirty(app.world(), body_b));
 
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: body_b,
             parent: body_a,
@@ -175,7 +175,7 @@ fn bevy_parity_mass_detach_with_abm4_resets_integrator() {
 
     // Pre-attach so detach has something to undo.
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: body_b,
             parent: body_a,
@@ -274,7 +274,7 @@ fn bevy_parity_mass_attach_resets_full_ancestor_chain() {
 
     // Build the chain: middle → top, leaf → middle.
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: e_middle,
             parent: e_top,
@@ -284,7 +284,7 @@ fn bevy_parity_mass_attach_resets_full_ancestor_chain() {
             t_parent_child: DMat3::IDENTITY,
         });
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: e_leaf,
             parent: e_middle,
@@ -303,7 +303,7 @@ fn bevy_parity_mass_attach_resets_full_ancestor_chain() {
     // ── Attach `e_new` under `e_middle`. This recomputes middle's
     //    AND top's composite properties, so top's ABM4 must reset. ──
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: e_new,
             parent: e_middle,

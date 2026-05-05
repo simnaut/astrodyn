@@ -168,7 +168,7 @@ fn run_relative_parity(
     step_bevy(&mut app, NUM_STEPS);
     let bevy_a = read_sixdof(app.world(), veh_a);
     let bevy_b = read_sixdof(app.world(), veh_b);
-    let bevy_rel = jeod_sim::compute_relative_state(
+    let bevy_rel = jeod_sim::compute_relative_state::<jeod_sim::SelfRef>(
         &bevy_a.trans,
         Some(&bevy_a.rot),
         &bevy_b.trans,
@@ -201,7 +201,7 @@ fn run_relative_parity(
         trans: sim.body(1).trans,
         rot: sim.body(1).rot.unwrap(),
     };
-    let sim_rel = jeod_sim::compute_relative_state(
+    let sim_rel = jeod_sim::compute_relative_state::<jeod_sim::SelfRef>(
         &sim_a_state.trans,
         Some(&sim_a_state.rot),
         &sim_b_state.trans,
@@ -365,7 +365,7 @@ fn run_lvlhrel_parity(label: &str, ref_trans: TranslationalState, subj_trans: Tr
     step_bevy(&mut app, NUM_STEPS);
     let bevy_ref = read_trans(app.world(), ref_veh);
     let bevy_subj = read_trans(app.world(), subj_veh);
-    let bevy_rel = jeod_sim::compute_lvlh_relative_state(
+    let bevy_rel = jeod_sim::compute_lvlh_relative_state::<jeod_sim::SelfRef>(
         bevy_ref.position,
         bevy_ref.velocity,
         bevy_subj.position,
@@ -388,7 +388,7 @@ fn run_lvlhrel_parity(label: &str, ref_trans: TranslationalState, subj_trans: Tr
 
     let sim_ref = sim.body(0).trans;
     let sim_subj = sim.body(1).trans;
-    let sim_rel = jeod_sim::compute_lvlh_relative_state(
+    let sim_rel = jeod_sim::compute_lvlh_relative_state::<jeod_sim::SelfRef>(
         sim_ref.position,
         sim_ref.velocity,
         sim_subj.position,

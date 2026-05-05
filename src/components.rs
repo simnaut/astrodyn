@@ -14,7 +14,7 @@ use jeod_sim::{
     GravityAccelerationTyped, GravityControls, GravitySource, MassProperties, MassPropertiesTyped,
     Planet, PlanetFixed, PlanetInertial, PlanetShape, Position, Ratio, RootInertial,
     RotationalState, RotationalStateTyped, SelfRef, StructuralFrame, Torque, TotalForce,
-    TotalForceTyped, TranslationalState, TranslationalStateTyped, Velocity,
+    TotalForceTyped, TranslationalState, TranslationalStateTyped, Vehicle, Velocity,
 };
 
 // ── Dynamics ──
@@ -916,10 +916,19 @@ impl From<DragConfigTyped> for DragConfigC {
 /// Wraps [`jeod_sim::FlatPlateState`] so the same type (and its
 /// `integrate_temperatures` method) is shared with the `Simulation` runner.
 ///
+/// The wrapped state is `FlatPlateState<SelfRef>` — the canonical
+/// runtime-resolved instantiation at the Bevy adapter boundary, where
+/// per-entity storage decides the vehicle identity at runtime. The
+/// underlying `jeod_interactions::FlatPlate<V>` is `<V: Vehicle>`-
+/// parametric so mission code that pins a concrete vehicle (e.g.
+/// `<Iss>`) can demonstrate cross-vehicle compile-time blocking
+/// upstream of the adapter; the adapter Component always lands at
+/// `<SelfRef>`.
+///
 /// Auto-inserts [`RadiationForceC`] when added.
 #[derive(Component, Debug, Clone, Deref, DerefMut)]
 #[require(RadiationForceC)]
-pub struct FlatPlateConfigC(pub jeod_sim::FlatPlateState);
+pub struct FlatPlateConfigC(pub jeod_sim::FlatPlateState<jeod_sim::SelfRef>);
 
 /// Marker for an entity that casts shadows (e.g., Earth).
 ///
@@ -1302,30 +1311,34 @@ pub struct KinematicChildC;
 /// Both entities must have [`MassBodyIdC`]. Processed by `staging_system`
 /// before integration each step.
 ///
-/// `offset` carries `Position<StructuralFrame<SelfRef>>`: the child's
-/// structural origin lives in the parent's structural frame, and the
-/// `SelfRef` wildcard tag mirrors the per-entity adapter pattern (the
-/// concrete vehicle identity of the parent is determined at runtime
-/// via the entity hierarchy). The compile-time guard is the *frame
-/// kind*: a caller that holds an inertial-frame position cannot
-/// accidentally feed it as the structural-frame attach offset.
+/// # Vehicle phantom
 ///
-/// `t_parent_child` stays raw `glam::DMat3` for now — typing it as a
-/// `FrameTransform<StructuralFrame<SelfRef>, StructuralFrame<SelfRef>>`
-/// would yield `From == To`, which is the identity-direction case
-/// covered only by `FrameTransform::identity`. A two-vehicle phantom
-/// distinguishing parent vs child structural frames is the right
-/// follow-up but requires the `<V>` Bevy-component genericity from
-/// Section A of the audit (see #263 / sibling issues) — the `SelfRef`
-/// wildcard cannot encode that distinction at the type level.
+/// `AttachEvent` is `<V: Vehicle>`-parametric where `V` names the
+/// **parent's** vehicle phantom (the offset is the child's structural
+/// origin expressed in the **parent's** structural frame). Mission
+/// code that pins a concrete parent vehicle gets the cross-vehicle
+/// compile guard at the producer site; the canonical Bevy adapter
+/// registers and consumes `AttachEvent<SelfRef>` because per-entity
+/// storage decides parent identity at runtime. The compile-time
+/// guard layered on top of the existing frame-kind check
+/// (structural-vs-inertial) is the vehicle identity.
+///
+/// `t_parent_child` stays raw `glam::DMat3` for now — typing it as
+/// `FrameTransform<StructuralFrame<VParent>, StructuralFrame<VChild>>`
+/// requires an additional `<VChild>` phantom to distinguish parent
+/// and child structural frames, which is more design work than
+/// belongs in the same change as the per-vehicle `<V>` tightening
+/// here. Once the parent-vs-child phantom pair is delivered the
+/// matrix slot can lift to the typed transform without breaking
+/// existing call sites that read `t_parent_child` as a raw matrix.
 #[derive(Message, Debug, Clone)]
-pub struct AttachEvent {
+pub struct AttachEvent<V: Vehicle> {
     /// Entity of the child body.
     pub child: Entity,
     /// Entity of the parent body.
     pub parent: Entity,
     /// Child structural origin in the parent's structural frame (m).
-    pub offset: jeod_sim::Position<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>,
+    pub offset: jeod_sim::Position<jeod_sim::StructuralFrame<V>>,
     /// Rotation from parent structural frame to child structural frame.
     pub t_parent_child: glam::DMat3,
 }

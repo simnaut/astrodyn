@@ -3528,7 +3528,7 @@ pub fn cannonball_srp_system<P: Planet>(
 pub fn staging_system<P: Planet>(
     mut commands: Commands,
     tree: Option<ResMut<crate::MassTreeR>>,
-    mut attach_events: bevy::ecs::message::MessageReader<crate::AttachEvent>,
+    mut attach_events: bevy::ecs::message::MessageReader<crate::AttachEvent<jeod_sim::SelfRef>>,
     mut detach_events: bevy::ecs::message::MessageReader<crate::DetachEvent>,
     mut bodies: Query<(
         Entity,

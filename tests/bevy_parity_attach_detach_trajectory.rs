@@ -440,7 +440,7 @@ fn bevy_parity_attach_detach_trajectory_simple() {
             sim.attach(r_v1, r_v2, offset, t_pc);
             sim.mark_kinematic_only(r_v1);
             app.world_mut()
-                .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+                .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef>>>()
                 .write(AttachEvent {
                     child: b_v1,
                     parent: b_v2,

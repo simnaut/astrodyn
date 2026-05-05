@@ -316,7 +316,16 @@ impl VehicleBuilder<Ready> {
 
     /// Configure flat-plate solar radiation pressure with the given
     /// per-plate state (geometry, optical, thermal).
-    pub fn flat_plate_srp(mut self, state: FlatPlateState) -> Self {
+    ///
+    /// `FlatPlateState<SelfRef>` is the runtime-resolved instantiation
+    /// at the adapter boundary; the underlying
+    /// [`jeod_interactions::FlatPlate<V>`] retains the
+    /// `<V: Vehicle>` phantom for mission code that pins a concrete
+    /// vehicle.
+    pub fn flat_plate_srp(
+        mut self,
+        state: FlatPlateState<jeod_quantities::frame::SelfRef>,
+    ) -> Self {
         self.srp = Some(SrpModel::FlatPlate(state));
         self
     }

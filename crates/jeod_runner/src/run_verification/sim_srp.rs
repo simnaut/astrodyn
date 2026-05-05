@@ -51,7 +51,11 @@ fn bsp_path() -> PathBuf {
 
 /// 6 flat plates arranged as a 4 m × 4 m × 15 m box (the JEOD
 /// SIM_3_ORBIT vehicle).
-fn srp_plates() -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
+fn srp_plates() -> Vec<(
+    FlatPlate<jeod_sim::SelfRef>,
+    FlatPlateParams,
+    FlatPlateThermal,
+)> {
     let params = FlatPlateParams {
         albedo: 0.5,
         diffuse: 0.5,

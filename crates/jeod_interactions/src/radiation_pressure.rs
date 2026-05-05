@@ -17,7 +17,7 @@ use jeod_quantities::aliases::{Force, Position};
 // builds.
 #[cfg(test)]
 use jeod_quantities::ext::Vec3Ext;
-use jeod_quantities::frame::{RootInertial, SelfRef, StructuralFrame};
+use jeod_quantities::frame::{RootInertial, StructuralFrame, Vehicle};
 use uom::si::f64::{Area, Ratio};
 
 /// Solar luminosity in W (matching JEOD `radiation_source.hh`).
@@ -63,19 +63,43 @@ const TWO_THIRDS: f64 = 2.0 / 3.0;
 ///
 /// Position and normal are in the structural (body) frame.
 ///
-/// `position` carries `Position<StructuralFrame<SelfRef>>`: the
-/// `SelfRef` wildcard is the documented "this entity's own vehicle
-/// frame" tag — the per-entity adapter (Bevy `RadiationForceC` or the
-/// runner's `FlatPlateState`) determines the vehicle identity at
-/// runtime. The compile-time guard is the *frame kind*: a consumer
-/// that holds an inertial-frame position cannot accidentally feed it
-/// to `FlatPlate.position`'s structural-frame slot. Closing the
-/// `<V>` parameter to a concrete vehicle is deferred to the wider
-/// Bevy-component genericity pass (Section A of the audit in #263) —
-/// until that lands, the wildcard stays here so every plate site can
-/// interoperate without minting a vehicle parameter.
+/// `position` carries `Position<StructuralFrame<V>>` for a typed
+/// vehicle phantom `<V: Vehicle>`. Mission code that knows the
+/// vehicle at compile time pins it (e.g. `FlatPlate<Iss>`); a
+/// consumer that holds a typed `Position<StructuralFrame<Iss>>`
+/// cannot accidentally feed it to a `FlatPlate<Soyuz>` slot. The
+/// Bevy adapter (`FlatPlateConfigC` wrapping
+/// `FlatPlateState<SelfRef>`) and the standalone runner instantiate
+/// `<V = SelfRef>` because their per-entity storage decides the
+/// vehicle identity at runtime — `SelfRef` stays as the canonical
+/// runtime-resolved boundary for those consumers. The compile-time
+/// guard is two-fold: the *frame kind* (structural-vs-inertial)
+/// remains, and the *vehicle* identity is now a type parameter
+/// rather than an opaque wildcard.
+///
+/// # Cross-vehicle mismatch is a compile error
+///
+/// ```compile_fail
+/// use glam::DVec3;
+/// use jeod_interactions::FlatPlate;
+/// use jeod_quantities::define_vehicle;
+/// use jeod_quantities::ext::Vec3Ext;
+/// use jeod_quantities::frame::StructuralFrame;
+///
+/// define_vehicle!(Iss);
+/// define_vehicle!(Soyuz);
+///
+/// // A `FlatPlate<Iss>` slot cannot be filled with a
+/// // `Position<StructuralFrame<Soyuz>>` — the typed phantom
+/// // refuses the wrong vehicle at compile time.
+/// let _bad: FlatPlate<Iss> = FlatPlate {
+///     area: 10.0,
+///     normal: DVec3::X,
+///     position: DVec3::ZERO.m_at::<StructuralFrame<Soyuz>>(),
+/// };
+/// ```
 #[derive(Debug, Clone, Copy)]
-pub struct FlatPlate {
+pub struct FlatPlate<V: Vehicle> {
     /// Plate area in m².
     pub area: f64,
     /// Outward-facing normal unit vector in the vehicle's structural
@@ -89,10 +113,11 @@ pub struct FlatPlate {
     /// kernel reads alongside `center_grav`.
     pub normal: DVec3,
     /// Center of pressure position in the vehicle's structural frame
-    /// (m). The `Position<StructuralFrame<SelfRef>>` phantom makes
-    /// the frame explicit at the type level — see the struct-level
-    /// doc comment for the `<SelfRef>` wildcard rationale.
-    pub position: Position<StructuralFrame<SelfRef>>,
+    /// (m). The `Position<StructuralFrame<V>>` phantom makes both
+    /// the frame and the vehicle explicit at the type level — see
+    /// the struct-level doc comment for the `<V>` parameterization
+    /// rationale.
+    pub position: Position<StructuralFrame<V>>,
 }
 
 /// Optical properties shared by one or more flat plates.
@@ -122,8 +147,8 @@ pub struct FlatPlateParams {
 ///
 /// # Returns
 /// Total radiation force (structural frame, N) and torque (about CG, structural frame, N·m).
-pub fn compute_flat_plate_srp(
-    plates: &[(FlatPlate, FlatPlateParams)],
+pub fn compute_flat_plate_srp<V: Vehicle>(
+    plates: &[(FlatPlate<V>, FlatPlateParams)],
     flux_struct_hat: DVec3,
     flux_mag: f64,
     center_grav: DVec3,
@@ -278,8 +303,8 @@ pub struct FlatPlateSrpResult {
 /// * `flux_mag` - Solar flux at the vehicle (W/m²)
 /// * `center_grav` - Center of gravity in structural frame (m)
 /// * `illum_factor` - Illumination factor: 0.0 = full shadow, 1.0 = full sun
-pub fn compute_flat_plate_srp_thermal(
-    plates: &[(FlatPlate, FlatPlateParams, FlatPlateThermal)],
+pub fn compute_flat_plate_srp_thermal<V: Vehicle>(
+    plates: &[(FlatPlate<V>, FlatPlateParams, FlatPlateThermal)],
     t_pow4_cached: &[f64],
     flux_struct_hat: DVec3,
     flux_mag: f64,
@@ -334,8 +359,8 @@ pub fn compute_flat_plate_srp_thermal(
 /// * `illum_factor` - Illumination factor: 0.0 = full shadow, 1.0 = full sun
 /// * `conduction` - Optional conduction matrix for inter-facet heat flow
 #[allow(clippy::too_many_arguments)]
-pub fn compute_flat_plate_srp_thermal_conduction(
-    plates: &[(FlatPlate, FlatPlateParams, FlatPlateThermal)],
+pub fn compute_flat_plate_srp_thermal_conduction<V: Vehicle>(
+    plates: &[(FlatPlate<V>, FlatPlateParams, FlatPlateThermal)],
     t_pow4_cached: &[f64],
     temperatures: Option<&[f64]>,
     flux_struct_hat: DVec3,
@@ -642,6 +667,7 @@ pub fn solar_flux_at_distance(distance: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use jeod_quantities::frame::SelfRef;
     use std::f64::consts::PI;
 
     /// Typed cannonball SRP wrapper round-trips bit-identically to the
@@ -1008,7 +1034,7 @@ mod tests {
             albedo: 0.5,
             diffuse: 0.5,
         };
-        let plates: Vec<(FlatPlate, FlatPlateParams)> = vec![
+        let plates: Vec<(FlatPlate<SelfRef>, FlatPlateParams)> = vec![
             (
                 FlatPlate {
                     area: 60.0,

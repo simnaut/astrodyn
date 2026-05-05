@@ -422,7 +422,12 @@ fn tier3_sim_relative_state_consistency() {
     let a = sim.body(0);
     let b = sim.body(1);
 
-    let rel = compute_relative_state(&a.trans, a.rot.as_ref(), &b.trans, b.rot.as_ref());
+    let rel = compute_relative_state::<jeod_sim::SelfRef>(
+        &a.trans,
+        a.rot.as_ref(),
+        &b.trans,
+        b.rot.as_ref(),
+    );
 
     let t_ref = a
         .rot
@@ -472,7 +477,8 @@ fn tier3_sim_lvlh_relative_consistency() {
     let subj_pos = ref_pos + DVec3::new(100.0, 50.0, -30.0);
     let subj_vel = ref_vel + DVec3::new(0.01, -0.02, 0.005);
 
-    let lvlh_rel = compute_lvlh_relative_state(ref_pos, ref_vel, subj_pos, subj_vel);
+    let lvlh_rel =
+        compute_lvlh_relative_state::<jeod_sim::SelfRef>(ref_pos, ref_vel, subj_pos, subj_vel);
 
     let lvlh = compute_body_lvlh_frame(ref_pos, ref_vel);
     let rel_pos_inertial = subj_pos - ref_pos;

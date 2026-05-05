@@ -200,7 +200,7 @@ fn run_lift_and_lower(moon_velocity: DVec3) {
     // offset. Pre-detach `TranslationalStateC` of the integrated tree
     // root equals `lunar_initial_trans()` (integ-frame coords).
     app.world_mut()
-        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent<jeod_sim::SelfRef>>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
