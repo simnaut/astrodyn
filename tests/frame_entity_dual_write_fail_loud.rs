@@ -91,7 +91,7 @@ fn spawn_earth_and_body(app: &mut App) -> (Entity, Entity) {
 
     let body = {
         let mut commands_queue = app.world_mut().commands();
-        cfg.spawn_bevy(&mut commands_queue, &[earth])
+        cfg.spawn_bevy::<jeod_sim::Earth>(&mut commands_queue, &[earth])
     };
     app.world_mut().flush();
     // Update tick lets the Startup-equivalent registration systems

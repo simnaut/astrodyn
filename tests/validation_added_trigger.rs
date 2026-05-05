@@ -57,7 +57,7 @@ fn build_app() -> (App, Entity) {
 
     let mut commands_state = bevy::ecs::system::SystemState::<Commands>::new(app.world_mut());
     let mut commands = commands_state.get_mut(app.world_mut());
-    let _ = cfg.spawn_bevy(&mut commands, &[earth]);
+    let _ = cfg.spawn_bevy::<jeod_sim::Earth>(&mut commands, &[earth]);
     commands_state.apply(app.world_mut());
 
     // Drive startup + two FixedUpdate ticks so the body has been validated
@@ -100,7 +100,7 @@ fn validation_fires_for_body_added_after_startup() {
 
     let mut commands_state = bevy::ecs::system::SystemState::<Commands>::new(app.world_mut());
     let mut commands = commands_state.get_mut(app.world_mut());
-    let _ = bogus_cfg.spawn_bevy(&mut commands, &[earth]);
+    let _ = bogus_cfg.spawn_bevy::<jeod_sim::Earth>(&mut commands, &[earth]);
     commands_state.apply(app.world_mut());
 
     // Step once more — validation must run for the new body and panic.

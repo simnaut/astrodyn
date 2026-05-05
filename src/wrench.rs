@@ -1317,7 +1317,7 @@ mod tests {
             // elsewhere; localizing the `use` keeps it surgical.
             use crate::VehicleConfigBevyExt;
             let mut cmds = app.world_mut().commands();
-            let p = parent_cfg.spawn_bevy(&mut cmds, &[earth]);
+            let p = parent_cfg.spawn_bevy::<jeod_sim::Earth>(&mut cmds, &[earth]);
             app.world_mut().flush();
             p
         };

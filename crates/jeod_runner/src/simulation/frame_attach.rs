@@ -239,6 +239,71 @@ impl Simulation {
         }
     }
 
+    /// Attach a body to a non-body reference frame using a named
+    /// subject mass-point and the JEOD `BodyAttachAligned` 180°-yaw
+    /// docking convention.
+    ///
+    /// Port of JEOD `BodyAttachAligned`'s ref-parent branch
+    /// (`models/dynamics/body_action/src/body_attach_aligned.cc:111-126`)
+    /// composed with the named-point variant of
+    /// `DynBody::attach_to_frame`
+    /// (`models/dynamics/dyn_body/src/dyn_body_attach.cc:302-365`):
+    /// the body's mass-point pose in struct coordinates is composed
+    /// with the hardcoded `(zero offset, diag(-1,-1,1))` parent-point
+    /// alignment to derive the parent-frame-to-struct offset, then the
+    /// existing [`attach_to_frame`](Self::attach_to_frame) populates
+    /// `frame_attach` with that pair.
+    ///
+    /// The body must have a registered mass-tree node
+    /// ([`add_body_to_tree`](Self::add_body_to_tree)) and the named
+    /// subject point must already exist on it (added via
+    /// `MassTree::add_mass_point` or equivalent — `Simulation` does
+    /// not yet take mass-point definitions through `VehicleConfig`,
+    /// so test / mission setup must reach into `sim.mass_tree` and
+    /// add the points after `add_body_to_tree` returns).
+    ///
+    /// # Panics
+    /// All of [`attach_to_frame`](Self::attach_to_frame)'s
+    /// preconditions, plus:
+    /// - The body has no mass-tree node yet.
+    /// - The named mass-point does not exist on the subject body.
+    // JEOD_INV: MA.16 — 180° yaw convention for attach-by-point
+    // JEOD_INV: MA.21 — named points must exist on body
+    pub fn attach_to_frame_aligned(
+        &mut self,
+        body_idx: usize,
+        subject_point_name: &str,
+        parent_frame_id: FrameId,
+    ) {
+        assert!(
+            body_idx < self.bodies.len(),
+            "attach_to_frame_aligned: body index {body_idx} out of range (have {} bodies)",
+            self.bodies.len()
+        );
+        let mass_id = self.bodies[body_idx].mass_body_id.unwrap_or_else(|| {
+            panic!(
+                "attach_to_frame_aligned: body {body_idx} has no mass-tree node. \
+                 Call `Simulation::add_body_to_tree({body_idx}, ...)` first so the \
+                 named mass-point lookup has a body to look up against."
+            )
+        });
+        let tree = self.mass_tree.as_ref().unwrap_or_else(|| {
+            panic!(
+                "attach_to_frame_aligned: simulation has no mass tree. \
+                 Call `Simulation::add_body_to_tree(...)` for the subject body \
+                 before requesting a named-point alignment."
+            )
+        });
+        let (offset_pframe_struct, t_pframe_struct) =
+            tree.attach_to_frame_offset_aligned(mass_id, subject_point_name);
+        self.attach_to_frame(
+            body_idx,
+            parent_frame_id,
+            offset_pframe_struct,
+            t_pframe_struct,
+        );
+    }
+
     /// Whether the given body is currently attached to a reference
     /// frame.
     ///
@@ -545,6 +610,74 @@ mod tests {
         let earth_inertial = sim.source_inertial_frame_id(0);
         sim.attach_to_frame(0, earth_inertial, DVec3::ZERO, DMat3::IDENTITY);
         sim.attach_to_frame(0, earth_inertial, DVec3::ZERO, DMat3::IDENTITY);
+    }
+
+    /// `attach_to_frame_aligned` produces the same frozen-at-offset
+    /// behaviour as the explicit-offset path when the parent frame is
+    /// inertial (zero state) and the named mass-point yields offset
+    /// `(10, 0, 0)`. Pins that the named-point alignment plumbing
+    /// produces the JEOD-derived `(offset, T)` pair end-to-end (mass
+    /// tree lookup → algebra → `attach_to_frame` writeback) without
+    /// regressing the captured-offset semantics.
+    #[test]
+    fn attach_to_frame_aligned_freezes_at_named_point_offset() {
+        let mut sim = Mission::iss_leo()
+            .into_builder()
+            .build()
+            .expect("Mission::iss_leo must validate");
+
+        // Register the body in the mass tree and add the SIM_ref_attach
+        // pt2pt mass-point: `attach1` at (10, 0, 0) with identity
+        // orientation. Passing identity orientation reduces the
+        // `BodyAttachAligned` algebra to `(offset = (10, 0, 0),
+        // T = diag(-1, -1, 1))`, which is the same pair as the matrix
+        // form (verified by the unit test in jeod_dynamics).
+        sim.add_body_to_tree(0, "target");
+        let mass_id = sim
+            .body_mass_id(0)
+            .expect("just registered the body in the mass tree");
+        sim.mass_tree.as_mut().unwrap().add_mass_point(
+            mass_id,
+            "attach1",
+            DVec3::new(10.0, 0.0, 0.0),
+            DMat3::IDENTITY,
+        );
+
+        let earth_inertial = sim.source_inertial_frame_id(0);
+        sim.attach_to_frame_aligned(0, "attach1", earth_inertial);
+
+        // Same freeze property as `attach_to_inertial_frame_freezes_body_at_offset`,
+        // but the offset came from the named-point alignment instead
+        // of being passed in by the caller.
+        for _ in 0..50 {
+            sim.step().expect("step must not fail");
+            let out = sim.body(0);
+            assert!(
+                (out.trans.position - DVec3::new(10.0, 0.0, 0.0)).length() < 1e-9,
+                "frame-attached body drifted from (10,0,0): got {:?}",
+                out.trans.position
+            );
+            assert!(
+                out.trans.velocity.length() < 1e-9,
+                "frame-attached body picked up spurious velocity: got {:?}",
+                out.trans.velocity
+            );
+        }
+    }
+
+    /// `attach_to_frame_aligned` panics when the body has no mass-tree
+    /// node — the named-point alignment cannot run without a body to
+    /// look points up on, and a silent fallback to the explicit-offset
+    /// path would mask caller misconfiguration.
+    #[test]
+    #[should_panic(expected = "has no mass-tree node")]
+    fn attach_to_frame_aligned_without_mass_tree_panics() {
+        let mut sim = Mission::iss_leo()
+            .into_builder()
+            .build()
+            .expect("Mission::iss_leo must validate");
+        let earth_inertial = sim.source_inertial_frame_id(0);
+        sim.attach_to_frame_aligned(0, "attach1", earth_inertial);
     }
 
     /// Detach without a prior attach must panic — silently no-op'ing

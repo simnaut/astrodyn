@@ -156,7 +156,7 @@ fn spawn_bevy_translates_integ_source_index_to_entity() {
 
     let vehicle = {
         let mut commands_queue = app.world_mut().commands();
-        cfg.spawn_bevy(&mut commands_queue, &[earth, moon])
+        cfg.spawn_bevy::<jeod_sim::Earth>(&mut commands_queue, &[earth, moon])
     };
     // Apply queued commands so the components land on the entity.
     app.world_mut().flush();
@@ -188,7 +188,7 @@ fn spawn_bevy_translates_frame_switch_target_source_to_entity() {
     let cfg = earth_then_moon_config();
     let vehicle = {
         let mut commands_queue = app.world_mut().commands();
-        cfg.spawn_bevy(&mut commands_queue, &[earth, moon])
+        cfg.spawn_bevy::<jeod_sim::Earth>(&mut commands_queue, &[earth, moon])
     };
     app.world_mut().flush();
 
@@ -229,7 +229,7 @@ fn spawn_bevy_omits_integ_source_component_when_default() {
 
     let vehicle = {
         let mut commands_queue = app.world_mut().commands();
-        cfg.spawn_bevy(&mut commands_queue, &[earth])
+        cfg.spawn_bevy::<jeod_sim::Earth>(&mut commands_queue, &[earth])
     };
     app.world_mut().flush();
 
@@ -259,7 +259,7 @@ fn spawn_bevy_omits_frame_switches_component_when_empty() {
 
     let vehicle = {
         let mut commands_queue = app.world_mut().commands();
-        cfg.spawn_bevy(&mut commands_queue, &[earth])
+        cfg.spawn_bevy::<jeod_sim::Earth>(&mut commands_queue, &[earth])
     };
     app.world_mut().flush();
 
@@ -288,7 +288,7 @@ fn spawn_bevy_panics_on_out_of_bounds_integ_source() {
         .build();
 
     let mut commands_queue = app.world_mut().commands();
-    cfg.spawn_bevy(&mut commands_queue, &[earth]);
+    cfg.spawn_bevy::<jeod_sim::Earth>(&mut commands_queue, &[earth]);
 }
 
 #[test]
@@ -315,7 +315,7 @@ fn spawn_bevy_panics_on_out_of_bounds_frame_switch_target() {
         .build();
 
     let mut commands_queue = app.world_mut().commands();
-    cfg.spawn_bevy(&mut commands_queue, &[earth]);
+    cfg.spawn_bevy::<jeod_sim::Earth>(&mut commands_queue, &[earth]);
 }
 
 /// End-to-end parity: vehicle wired through `spawn_bevy` with
@@ -345,7 +345,7 @@ fn tier3_spawn_bevy_integ_source_plus_frame_switch_matches_simulation() {
     let cfg = earth_then_moon_config();
     let vehicle = {
         let mut commands_queue = app.world_mut().commands();
-        cfg.spawn_bevy(&mut commands_queue, &[earth, moon])
+        cfg.spawn_bevy::<jeod_sim::Earth>(&mut commands_queue, &[earth, moon])
     };
     app.world_mut().flush();
 

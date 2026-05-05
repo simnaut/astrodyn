@@ -4,6 +4,10 @@
 //! Wires the runner's `propagate_state_via_storage` pipeline end-to-end
 //! (design-doc § 15.3 — kinematic propagation) and validates the
 //! kinematic-child state derivation against the JEOD verification sim.
+//! Drives [`Simulation::attach`] / [`Simulation::detach`] end-to-end —
+//! both methods run JEOD's `combine_states_at_attach` momentum-
+//! conservation kernel, so the runner-side composite-body trajectories
+//! match JEOD's reference verbatim across the attach and detach events.
 //!
 //! # What is validated
 //!
@@ -24,41 +28,38 @@
 //!    whether we drive the kernel from `Simulation::step()` or from
 //!    a Bevy `App::update()`.
 //!
-//! 3. **End-to-end runner pipeline**: the runner reproduces the
-//!    veh1/veh2 ballistic trajectories in the **pre-attach** window
-//!    `t ∈ [0, 10)` bit-identically against JEOD's CSV. Once the
-//!    attach event fires, the runner's
-//!    `propagate_kinematic_state` writes derived state into veh1's
-//!    [`SimBody`](jeod_runner::Simulation) — the test pins that the
-//!    derived state matches what the kernel produces from veh2's
-//!    *runner-integrated* state at the same tick (not against JEOD's
-//!    CSV, since the runner-side combine-states-at-attach algorithm
-//!    is a follow-up scope item — see "What is **not** validated"
-//!    below).
+//! 3. **End-to-end runner pipeline against JEOD's CSV**: the runner
+//!    reproduces the veh1/veh2 ballistic trajectories in the
+//!    **pre-attach** window `t ∈ [0, 10)`, the **attached** window
+//!    `t ∈ [10, 20)` (after `Simulation::attach` runs JEOD's
+//!    momentum-conservation combine), and the **post-detach** window
+//!    `t ∈ [20, 30)` (after `Simulation::detach` runs the inverse split)
+//!    against JEOD's CSV. Veh1 in the attached window is derived each
+//!    tick by [`propagate_state_via_storage`](jeod_sim::propagate_state_via_storage)
+//!    from veh2's integrated composite-body state plus the link
+//!    geometry — the absolute trajectory match against JEOD's recorded
+//!    `composite_body` states pins the full
+//!    integration → combine → propagation pipeline.
+//!
+//! 4. **Runner self-consistency in the attached window**: veh1's
+//!    runner-derived state equals the kernel applied to veh2's
+//!    runner-integrated state at the same tick. This is a structural
+//!    check that `propagate_kinematic_state` actually runs each tick
+//!    and writes through to `body.trans` / `body.rot`, independent of
+//!    JEOD's CSV.
 //!
 //! # What is **not** validated
 //!
-//! - **Combine-states-at-attach absolute trajectory match**: JEOD
-//!   shifts both veh1 and veh2's composite-body inertial state at
-//!   the attach event via `combine_states_at_attach` (linear- and
-//!   angular-momentum conservation; CoM repositioning). The pure-math
-//!   kernel for that lives at
-//!   [`jeod_dynamics::combine_states_at_attach`], but
-//!   [`Simulation::attach`] does not yet call it — the topology
-//!   mutation lands without shifting `body.trans`/`body.rot`. Until
-//!   the runner-side wiring of `combine_states_at_attach` lands, this
-//!   test can only validate the *kinematic-propagation relationship*
-//!   (item 2 above) and the *runner-internal kernel self-consistency*
-//!   (item 3) in the attached window — not the absolute trajectory
-//!   match against JEOD's CSV in `t ∈ [10, 20)`.
-//! - **Detach-restore absolute trajectory match**: same caveat,
-//!   mirrored — the detach event needs `combine_states_at_detach`'s
-//!   inverse to restore each separated body's state.
 //! - **Re-rooting attaches**: `RUN_complex_attach_detach` and
 //!   `RUN_compute_child_derivative` exercise chained `attach_to(name1,
 //!   name2)` invocations whose parent-of-the-attaching-subtree's-root
 //!   is repointed; the existing `tier3_sim_attach_detach.rs` defers
-//!   them. This new test does not address that gap.
+//!   them. This test does not address that gap.
+//! - **Reference-frame attaches and dynamic-body-action rate changes**:
+//!   past `FRAME_ATTACH_PHASE_START = 30 s` the JEOD run fires
+//!   `set_attitude_rate` and a sequence of reference-frame attach/detach
+//!   events that are not modelled here. Cross-validation stops at
+//!   `t = 30`.
 //!
 //! # JEOD source data ingested
 //!
@@ -397,6 +398,34 @@ const RUNNER_PROP_VELOCITY_TOL_MPS: f64 = 1e-15;
 const RUNNER_PROP_QUAT_ANGLE_TOL_RAD: f64 = 4.5e-8;
 const RUNNER_PROP_ANG_VEL_TOL_RAD_PER_S: f64 = 1e-15;
 
+/// Attached-window absolute trajectory match against JEOD's CSV in
+/// `t ∈ [10, 20)`: veh2 is the integrated tree root carrying the
+/// momentum-conservation merge of the pre-attach pair, veh1 is the
+/// kinematic child derived from veh2 by `propagate_state_via_storage`
+/// each tick. Position / velocity residual is dominated by the
+/// momentum-conservation kernel's f64 round-off propagating through
+/// the 10-second integrated window (f64 angular-momentum solve at
+/// 1.7e-9 m / 3.1e-11 m/s on veh1, half that on veh2). Quaternion
+/// tolerance absorbs the same JEOD-recorder %g print rounding that
+/// pins the pre-attach window. Observed: pos=1.67e-9, vel=3.07e-11,
+/// quat=2.98e-8, ang_vel≈0.
+const ATTACHED_POSITION_TOL_M: f64 = 1.75e-9;
+const ATTACHED_VELOCITY_TOL_MPS: f64 = 3.25e-11;
+const ATTACHED_QUAT_ANGLE_TOL_RAD: f64 = 3.5e-8;
+const ATTACHED_ANG_VEL_TOL_RAD_PER_S: f64 = 1e-15;
+
+/// Post-detach absolute trajectory match against JEOD's CSV in
+/// `t ∈ [20, 30)`: veh1 and veh2 each integrate independently from
+/// the inverse-split inertial states `Simulation::detach` derives.
+/// The error floor mirrors the attached-window residual since both
+/// bodies have just resumed independent RK4 integration from JEOD-
+/// equivalent initial conditions. Observed: pos=1.65e-9,
+/// vel=3.06e-11, quat=2.98e-8, ang_vel≈0.
+const POST_DETACH_POSITION_TOL_M: f64 = 1.75e-9;
+const POST_DETACH_VELOCITY_TOL_MPS: f64 = 3.25e-11;
+const POST_DETACH_QUAT_ANGLE_TOL_RAD: f64 = 3.5e-8;
+const POST_DETACH_ANG_VEL_TOL_RAD_PER_S: f64 = 1e-15;
+
 /// Compute the kinematic kernel from veh2's state and the link
 /// geometry, returning the predicted veh1 composite-body state.
 fn kernel_from_veh2(veh2: &VehSnapshot, veh1_mass: f64, veh2_mass: f64) -> VehSnapshot {
@@ -511,7 +540,24 @@ fn tier3_sim_kinematic_propagation_simple() {
     let mut max_runner_quat = 0.0f64;
     let mut max_runner_avel = 0.0f64;
 
+    // Attached-window absolute trajectory: veh1 + veh2 vs JEOD's CSV
+    // (post-`Simulation::attach` momentum-conservation combine, with
+    // veh1 derived as a kinematic child each tick).
+    let mut max_attached_pos = [0.0f64; 2];
+    let mut max_attached_vel = [0.0f64; 2];
+    let mut max_attached_quat = [0.0f64; 2];
+    let mut max_attached_avel = [0.0f64; 2];
+
+    // Post-detach absolute trajectory: veh1 + veh2 vs JEOD's CSV
+    // (after `Simulation::detach` runs the inverse-split, both bodies
+    // resume independent integration).
+    let mut max_post_detach_pos = [0.0f64; 2];
+    let mut max_post_detach_vel = [0.0f64; 2];
+    let mut max_post_detach_quat = [0.0f64; 2];
+    let mut max_post_detach_avel = [0.0f64; 2];
+
     let mut attach_fired = false;
+    let mut detach_fired = false;
     let dt = sim.dt;
 
     for row in &rows {
@@ -525,19 +571,39 @@ fn tier3_sim_kinematic_propagation_simple() {
         }
         // Step until sim.elapsed() ≈ row.time.
         while sim.elapsed() + 0.5 * dt < row.time {
-            // JEOD's `trick.add_read(t, ...)` fires at the start of
-            // sim-second `t` and *before* the integration for that
-            // tick — the CSV row at `t=ATTACH_TIME` is the first
-            // sample after the action's effect. Apply our attach at
-            // the matching moment: just before the step that crosses
-            // `ATTACH_TIME`.
-            if !attach_fired && (sim.elapsed() + dt) > ATTACH_TIME - 0.5 * dt {
-                let (offset, t_pc) = simple_attach_offset_and_rotation();
-                sim.attach(v1, v2, offset, t_pc);
-                sim.mark_kinematic_only(v1);
-                attach_fired = true;
-            }
             sim.step().expect("step() must succeed");
+        }
+        // JEOD's `trick.add_read(t, ...)` job runs at the *start* of
+        // sim-second `t`, before that second's integration cycle, and
+        // before the recorder logs the row for `t`. Apply our attach /
+        // detach at the matching moment — once `sim.elapsed() ≈ t`
+        // (post-step from `t-dt` to `t`) but before the row at `t` is
+        // sampled and before the `t → t+dt` integration step begins.
+        // `Simulation::attach` runs JEOD's `combine_states_at_attach`
+        // momentum-conservation kernel and writes the merged composite-
+        // body state back into veh2 (the integrated tree root);
+        // `Simulation::detach` runs the inverse-split, derives veh1's
+        // instantaneous composite-body state via the body-aware tree
+        // walk, and shifts veh2's state by the inertial CoM-delta.
+        if !attach_fired && row.time + 0.5 * dt > ATTACH_TIME {
+            let (offset, t_pc) = simple_attach_offset_and_rotation();
+            sim.attach(v1, v2, offset, t_pc);
+            sim.mark_kinematic_only(v1);
+            // Mirror JEOD's `DynBody::attach_child` which calls
+            // `propagate_state_from_structure` inside the attach so
+            // the chain's child states are coherent immediately on
+            // return — without waiting for the next derivative cycle.
+            // JEOD's recorder logs the post-attach state at the
+            // `add_read` boundary before the next integration step.
+            sim.propagate_kinematic_state_for_logging();
+            attach_fired = true;
+        }
+        if attach_fired && !detach_fired && row.time + 0.5 * dt > DETACH_TIME {
+            // `Simulation::detach` auto-clears the `kinematic_only`
+            // flag on the freshly-detached child, so no paired
+            // `clear_kinematic_only` call is needed.
+            sim.detach(v1);
+            detach_fired = true;
         }
 
         // Veh3: free-flying across entire run.
@@ -566,11 +632,38 @@ fn tier3_sim_kinematic_propagation_simple() {
                 }
             }
         } else if row.time < DETACH_TIME {
-            // Attached window: veh1's runner-derived state must match
-            // the kernel applied to veh2's runner-integrated state.
-            // This is a runner self-consistency check — it pins that
-            // the runner's `propagate_kinematic_state` actually runs
-            // each tick and writes through to `body.trans`/`body.rot`.
+            // Attached window: two complementary checks.
+            //
+            //   (a) Absolute trajectory match against JEOD's CSV. The
+            //       runner ran `combine_states_at_attach` at
+            //       `Simulation::attach` time and now derives veh1
+            //       from veh2 each tick via `propagate_state_via_storage`.
+            //       Veh2 is the integrated tree root; veh1 is the
+            //       kinematic child. Compare both against JEOD's
+            //       recorded `composite_body` states.
+            //
+            //   (b) Runner self-consistency: veh1's runner-derived
+            //       state equals the kernel applied to veh2's
+            //       runner-integrated state at the same tick. Pins
+            //       that `propagate_kinematic_state` actually runs
+            //       each tick and writes through to
+            //       `body.trans` / `body.rot`, independent of JEOD.
+            for i in 0..2 {
+                let body_idx = if i == 0 { v1 } else { v2 };
+                let out = sim.body(body_idx);
+                let csv = &row.veh[i];
+                max_attached_pos[i] =
+                    max_attached_pos[i].max((out.trans.position - csv.position).length());
+                max_attached_vel[i] =
+                    max_attached_vel[i].max((out.trans.velocity - csv.velocity).length());
+                if let Some(rot) = out.rot {
+                    max_attached_quat[i] =
+                        max_attached_quat[i].max(quat_angle_err(rot.quaternion, csv.quaternion));
+                    max_attached_avel[i] =
+                        max_attached_avel[i].max((rot.ang_vel_body - csv.ang_vel_body).length());
+                }
+            }
+
             let v1_runner = sim.body(v1);
             let v2_runner = sim.body(v2);
             let v2_rot = v2_runner.rot.expect("veh2 6-DOF");
@@ -590,6 +683,26 @@ fn tier3_sim_kinematic_propagation_simple() {
                     max_runner_quat.max(quat_angle_err(rot.quaternion, predicted.quaternion));
                 max_runner_avel =
                     max_runner_avel.max((rot.ang_vel_body - predicted.ang_vel_body).length());
+            }
+        } else {
+            // Post-detach absolute trajectory match against JEOD's
+            // CSV (`t ∈ [20, 30)`): veh1 and veh2 each integrate
+            // independently from the inverse-split inertial states
+            // `Simulation::detach` derived.
+            for i in 0..2 {
+                let body_idx = if i == 0 { v1 } else { v2 };
+                let out = sim.body(body_idx);
+                let csv = &row.veh[i];
+                max_post_detach_pos[i] =
+                    max_post_detach_pos[i].max((out.trans.position - csv.position).length());
+                max_post_detach_vel[i] =
+                    max_post_detach_vel[i].max((out.trans.velocity - csv.velocity).length());
+                if let Some(rot) = out.rot {
+                    max_post_detach_quat[i] =
+                        max_post_detach_quat[i].max(quat_angle_err(rot.quaternion, csv.quaternion));
+                    max_post_detach_avel[i] =
+                        max_post_detach_avel[i].max((rot.ang_vel_body - csv.ang_vel_body).length());
+                }
             }
         }
     }
@@ -611,6 +724,52 @@ fn tier3_sim_kinematic_propagation_simple() {
         report.add_extra(
             &format!("{label}_max_ang_vel_err"),
             max_pre_avel[i],
+            "rad/s",
+        );
+    }
+    for i in 0..2 {
+        let label = format!("veh{}_attached", i + 1);
+        report.add_extra(
+            &format!("{label}_max_position_err"),
+            max_attached_pos[i],
+            "m",
+        );
+        report.add_extra(
+            &format!("{label}_max_velocity_err"),
+            max_attached_vel[i],
+            "m/s",
+        );
+        report.add_extra(
+            &format!("{label}_max_quat_angle_err"),
+            max_attached_quat[i],
+            "rad",
+        );
+        report.add_extra(
+            &format!("{label}_max_ang_vel_err"),
+            max_attached_avel[i],
+            "rad/s",
+        );
+    }
+    for i in 0..2 {
+        let label = format!("veh{}_post_detach", i + 1);
+        report.add_extra(
+            &format!("{label}_max_position_err"),
+            max_post_detach_pos[i],
+            "m",
+        );
+        report.add_extra(
+            &format!("{label}_max_velocity_err"),
+            max_post_detach_vel[i],
+            "m/s",
+        );
+        report.add_extra(
+            &format!("{label}_max_quat_angle_err"),
+            max_post_detach_quat[i],
+            "rad",
+        );
+        report.add_extra(
+            &format!("{label}_max_ang_vel_err"),
+            max_post_detach_avel[i],
             "rad/s",
         );
     }
@@ -702,4 +861,52 @@ fn tier3_sim_kinematic_propagation_simple() {
         "runner kinematic propagation: ang-vel {max_runner_avel:.3e} rad/s \
          exceeds {RUNNER_PROP_ANG_VEL_TOL_RAD_PER_S:.1e}"
     );
+
+    for i in 0..2 {
+        let label = format!("veh{}", i + 1);
+        assert!(
+            max_attached_pos[i] < ATTACHED_POSITION_TOL_M,
+            "{label} attached-window position {:.3e} m exceeds {ATTACHED_POSITION_TOL_M:.1e}",
+            max_attached_pos[i]
+        );
+        assert!(
+            max_attached_vel[i] < ATTACHED_VELOCITY_TOL_MPS,
+            "{label} attached-window velocity {:.3e} m/s exceeds {ATTACHED_VELOCITY_TOL_MPS:.1e}",
+            max_attached_vel[i]
+        );
+        assert!(
+            max_attached_quat[i] < ATTACHED_QUAT_ANGLE_TOL_RAD,
+            "{label} attached-window quat-angle {:.3e} rad exceeds {ATTACHED_QUAT_ANGLE_TOL_RAD:.1e}",
+            max_attached_quat[i]
+        );
+        assert!(
+            max_attached_avel[i] < ATTACHED_ANG_VEL_TOL_RAD_PER_S,
+            "{label} attached-window ang-vel {:.3e} rad/s exceeds {ATTACHED_ANG_VEL_TOL_RAD_PER_S:.1e}",
+            max_attached_avel[i]
+        );
+    }
+
+    for i in 0..2 {
+        let label = format!("veh{}", i + 1);
+        assert!(
+            max_post_detach_pos[i] < POST_DETACH_POSITION_TOL_M,
+            "{label} post-detach position {:.3e} m exceeds {POST_DETACH_POSITION_TOL_M:.1e}",
+            max_post_detach_pos[i]
+        );
+        assert!(
+            max_post_detach_vel[i] < POST_DETACH_VELOCITY_TOL_MPS,
+            "{label} post-detach velocity {:.3e} m/s exceeds {POST_DETACH_VELOCITY_TOL_MPS:.1e}",
+            max_post_detach_vel[i]
+        );
+        assert!(
+            max_post_detach_quat[i] < POST_DETACH_QUAT_ANGLE_TOL_RAD,
+            "{label} post-detach quat-angle {:.3e} rad exceeds {POST_DETACH_QUAT_ANGLE_TOL_RAD:.1e}",
+            max_post_detach_quat[i]
+        );
+        assert!(
+            max_post_detach_avel[i] < POST_DETACH_ANG_VEL_TOL_RAD_PER_S,
+            "{label} post-detach ang-vel {:.3e} rad/s exceeds {POST_DETACH_ANG_VEL_TOL_RAD_PER_S:.1e}",
+            max_post_detach_avel[i]
+        );
+    }
 }
