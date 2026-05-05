@@ -11,7 +11,7 @@ use glam::DVec3;
 use jeod_runner::{RotationModel, Simulation};
 use jeod_sim::{
     FlatPlate, FlatPlateParams, FlatPlateState, FlatPlateThermal, GravityModel, GravitySource,
-    SimulationTime, TranslationalState,
+    SimulationTime, TranslationalState, Vec3Ext,
 };
 use jeod_sim::{GravitySourceEntry, SrpModel, VehicleConfig};
 
@@ -33,7 +33,8 @@ fn sim1_basic_plates() -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
             FlatPlate {
                 area: 2.0,
                 normal: DVec3::X,
-                position: DVec3::new(2.0, 0.0, 0.0),
+                position: DVec3::new(2.0, 0.0, 0.0)
+                    .m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(),
             },
             params,
             thermal,
@@ -42,7 +43,8 @@ fn sim1_basic_plates() -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
             FlatPlate {
                 area: 2.0,
                 normal: -DVec3::Y,
-                position: DVec3::new(0.0, -2.0, 0.0),
+                position: DVec3::new(0.0, -2.0, 0.0)
+                    .m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(),
             },
             params,
             thermal,
@@ -51,7 +53,8 @@ fn sim1_basic_plates() -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
             FlatPlate {
                 area: 2.0,
                 normal: -DVec3::X,
-                position: DVec3::new(-2.0, 0.0, 0.0),
+                position: DVec3::new(-2.0, 0.0, 0.0)
+                    .m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(),
             },
             params,
             thermal,
@@ -60,7 +63,8 @@ fn sim1_basic_plates() -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
             FlatPlate {
                 area: 2.0,
                 normal: DVec3::Y,
-                position: DVec3::new(0.0, 2.0, 0.0),
+                position: DVec3::new(0.0, 2.0, 0.0)
+                    .m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(),
             },
             params,
             thermal,
@@ -69,7 +73,8 @@ fn sim1_basic_plates() -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
             FlatPlate {
                 area: 2.0,
                 normal: DVec3::Z,
-                position: DVec3::new(0.0, 0.0, 7.5),
+                position: DVec3::new(0.0, 0.0, 7.5)
+                    .m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(),
             },
             params,
             thermal,
@@ -78,7 +83,8 @@ fn sim1_basic_plates() -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
             FlatPlate {
                 area: 2.0,
                 normal: -DVec3::Z,
-                position: DVec3::new(0.0, 0.0, -7.5),
+                position: DVec3::new(0.0, 0.0, -7.5)
+                    .m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(),
             },
             params,
             thermal,

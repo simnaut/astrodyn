@@ -39,6 +39,7 @@
 
 pub mod atmosphere;
 pub mod attach;
+pub mod body_action;
 pub mod derived;
 pub mod forces;
 pub mod frame_orchestration;
@@ -67,12 +68,13 @@ pub use atmosphere::{
 pub use attach::{
     stage_attach_combine, stage_detach_capture, StageAttachInputs, StageAttachOutputs,
 };
+pub use body_action::{BodyAction, OrbitalElementSet};
 pub use derived::{
     compute_body_euler_angles, compute_body_euler_angles_typed, compute_body_geodetic,
     compute_body_geodetic_typed, compute_body_lvlh_frame, compute_body_lvlh_frame_typed,
     compute_body_solar_beta, compute_body_solar_beta_typed, compute_lvlh_relative_state,
-    compute_orbital_elements, compute_orbital_elements_typed, compute_relative_state,
-    LvlhRelativeState, RelativeState,
+    compute_lvlh_relative_state_typed, compute_orbital_elements, compute_orbital_elements_typed,
+    compute_relative_state, LvlhRelativeState, RelativeState,
 };
 pub use forces::{collect_and_resolve_forces, collect_and_resolve_forces_typed};
 pub use frame_orchestration::{
@@ -134,10 +136,11 @@ pub use jeod_dynamics::{
     combine_states_at_attach, compute_frame_derivatives, compute_kinematic_child_state,
     compute_kinematic_child_state_dquat, compute_kinematic_child_state_typed,
     compute_node_composite, compute_t_inertial_struct, compute_translational_derivatives,
-    derive_kinematic_child_from_states, finalize_child_in_parent_frame, propagate_forward,
-    recompute_composites_via_storage, shift_wrench_to_parent, shift_wrench_to_parent_typed,
-    AttachCombineInputs, AttachCombineOutputs, DetachedSubtreeState, DynamicsConfig,
-    ForceContributions, FrameDerivatives, GravityAcceleration, KinematicChildInputs,
+    derive_frame_attached_state, derive_kinematic_child_from_states,
+    finalize_child_in_parent_frame, propagate_forward, recompute_composites_via_storage,
+    shift_wrench_to_parent, shift_wrench_to_parent_typed, AttachCombineInputs,
+    AttachCombineOutputs, DetachedSubtreeState, DynamicsConfig, ForceContributions,
+    FrameAttachInputs, FrameDerivatives, GravityAcceleration, KinematicChildInputs,
     KinematicChildOutputs, MassBodyId, MassNodeOutputs, MassNodeView, MassPointState,
     MassProperties, MassStorage, MassTree, RotationalState, SixDofState, TotalForce,
     TranslationalState, Wrench, INERTIA_CONSISTENCY_TOL,

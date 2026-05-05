@@ -121,6 +121,28 @@ impl Simulation {
             })
             .collect();
 
+        // ── 3a. Frame-attached body propagation (parent frame → body), pre-integration ──
+        // Mirrors the kinematic-mass walk's pre-integration sweep.
+        // Frame-attached bodies' `body.trans` / `body.rot` were
+        // potentially stale across the previous step's frame-tree
+        // updates (planet rotation, ephemeris); refresh them now so
+        // any per-step physics that reads body state (gravity,
+        // atmosphere, derived states) sees the parent-frame-derived
+        // value rather than the previous tick's. JEOD precedent:
+        // `DynBody::integrate` at
+        // `models/dynamics/dyn_body/src/dyn_body_integration.cc:309-333`
+        // — when `frame_attach.isAttached()`, the structure state is
+        // *re*set to the parent's current state plus the offset every
+        // call, replacing the integrator output entirely. We do the
+        // same as a pre-integration sweep so downstream consumers
+        // never observe a one-tick-stale frame-attached state.
+        // JEOD_INV: DB.21 — frame-attached bodies are not integrated
+        // (the runner's integration loop already filters on
+        // `frame_attach.is_some()` via the `kinematic_only`-style
+        // gate added in `integrate.rs`); this pass is what supplies
+        // the "kinematic" state in their stead.
+        self.propagate_frame_attached_state(&body_integ_origins);
+
         // ── 3b. Kinematic state propagation (root → leaves), pre-integration ──
         // Mirrors the Bevy adapter's `propagate_state_from_root_system`
         // schedule placement — `JeodSet::ForceCollection`, after mass
@@ -148,19 +170,6 @@ impl Simulation {
 
         self.run_integration(dt, &body_integ_origins)?;
 
-        // ── 8c. Kinematic state propagation (root → leaves), post-integration ──
-        // The integrator just produced fresh root-body state; rerun
-        // the kinematic walk so every non-root child's `body.trans` /
-        // `body.rot` reflects the same-tick parent state. Mirrors
-        // JEOD's `DynBody::propagate_state_from_structure` invocation
-        // at the end of every integration cycle
-        // (`models/dynamics/dyn_body/src/dyn_body_propagate_state.cc`).
-        // Without this, downstream consumers (`Simulation::body`,
-        // derived-state computations, frame-tree sync) would observe
-        // a one-tick-stale child state — i.e. the previous tick's
-        // parent state composed with the link, not the freshly-
-        // integrated one.
-        //
         // Recompute the per-body integ origins after stage 8b's frame
         // switch evaluation: a body that just switched integration
         // frames has both `integ_frame_id` and `body.trans` in its new
@@ -180,6 +189,37 @@ impl Simulation {
                 }
             })
             .collect();
+
+        // ── 8c. Frame-attached body propagation, post-integration ──
+        // Symmetric to 3a: stage 8b's frame switch can rewrite frame
+        // tree state mid-step (atmosphere reads pfix rotation etc.),
+        // and the integrator just produced fresh source-body state.
+        // Re-derive frame-attached body states so the post-step view
+        // (`Simulation::body(idx)`, derived states below) is consistent
+        // with the just-finished frame-tree updates and with the
+        // parent reference frame's current state.
+        //
+        // Must run **before** the post-integration kinematic walk
+        // below: a frame-attached body that is also a mass-tree root
+        // would otherwise hand its kinematic descendants a stale
+        // pre-frame-attach root state — same constraint as the 3a/3b
+        // pre-integration ordering, applied to the post-integration
+        // sweep. Inverting these two calls reproduces the same class
+        // of bug as the pre-integration ordering twin.
+        self.propagate_frame_attached_state(&body_integ_origins_post);
+
+        // ── 8d. Kinematic state propagation (root → leaves), post-integration ──
+        // The integrator just produced fresh root-body state; rerun
+        // the kinematic walk so every non-root child's `body.trans` /
+        // `body.rot` reflects the same-tick parent state. Mirrors
+        // JEOD's `DynBody::propagate_state_from_structure` invocation
+        // at the end of every integration cycle
+        // (`models/dynamics/dyn_body/src/dyn_body_propagate_state.cc`).
+        // Without this, downstream consumers (`Simulation::body`,
+        // derived-state computations, frame-tree sync) would observe
+        // a one-tick-stale child state — i.e. the previous tick's
+        // parent state composed with the link, not the freshly-
+        // integrated one.
         self.propagate_kinematic_state(&body_integ_origins_post);
 
         // ── 9. Derived states ──

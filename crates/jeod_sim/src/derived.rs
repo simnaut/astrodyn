@@ -10,7 +10,8 @@ use crate::{EulerSequence, GeodeticState, LvlhFrame, OrbitalElements, Rotational
 use jeod_math::OrbitalError;
 use jeod_quantities::aliases::{Position, Velocity};
 use jeod_quantities::dims::{GravParam, SpecificAngMomDim};
-use jeod_quantities::frame::{RootInertial, SelfPlanet};
+use jeod_quantities::ext::Vec3Ext;
+use jeod_quantities::frame::{BodyFrame, Lvlh, RootInertial, SelfPlanet, SelfRef};
 use jeod_quantities::qty3::Qty3;
 use uom::si::angle::radian;
 use uom::si::f64::{Angle, Length};
@@ -18,31 +19,61 @@ use uom::si::length::meter;
 
 /// Relative state between two bodies.
 ///
-/// Position/velocity are of `subject` relative to `reference`, expressed in
-/// the reference body frame (matching JEOD convention `S_{ref:subj}`). When
-/// the reference has no rotational state, they remain in the inertial frame.
-/// The quaternion is the relative attitude (reference-to-subject), and angular
-/// velocity is of `subject` relative to `reference`, expressed in the subject
-/// body frame.
+/// Position/velocity are of `subject` relative to `reference`. When the
+/// reference carries a [`RotationalState`], they are rotated into the
+/// reference body frame (matching JEOD convention `S_{ref:subj}`); when
+/// the reference has no rotational state, they remain in the inertial
+/// frame. That runtime-conditional frame choice prevents a single
+/// compile-time phantom from covering both branches losslessly — the
+/// position/velocity fields therefore stay raw `DVec3`, with the
+/// caller responsible for tracking which branch fired (typically by
+/// the presence/absence of the reference rotational state at the call
+/// site).
+///
+/// The angular kinematics are typed: [`Self::ang_vel`] is in the
+/// subject body frame. The quaternion is the relative attitude
+/// (reference-to-subject) and is stored as a `DQuat` for convenience;
+/// the convention matches JEOD's left-multiplication
+/// reference-body-to-subject-body rotation.
 #[derive(Debug, Clone)]
 pub struct RelativeState {
-    /// Position of subject relative to reference (reference body frame, m).
+    /// Position of subject relative to reference. Frame is
+    /// runtime-conditional (see struct docs): reference body frame
+    /// when the reference has a rotational state; otherwise inertial.
     pub position: DVec3,
-    /// Velocity of subject relative to reference (reference body frame, m/s).
+    /// Velocity of subject relative to reference. Frame matches
+    /// [`Self::position`] — reference body frame when the reference
+    /// carries a rotational state, otherwise inertial.
     pub velocity: DVec3,
     /// Relative quaternion: reference body frame → subject body frame.
     pub quaternion: DQuat,
-    /// Angular velocity of subject relative to reference (subject body frame, rad/s).
-    pub ang_vel: DVec3,
+    /// Angular velocity of subject relative to reference, in the
+    /// subject body frame. The `BodyFrame<SelfRef>` phantom marks the
+    /// "this entity's own body frame" wildcard — the producer doesn't
+    /// know the subject's vehicle identity at compile time, so the
+    /// per-entity adapter (Bevy or runner) keeps it as a `SelfRef`
+    /// wildcard rather than minting a typed `<V>` parameter.
+    pub ang_vel: jeod_quantities::aliases::AngularVelocity<BodyFrame<SelfRef>>,
 }
 
 /// Relative state expressed in the LVLH frame of the reference vehicle.
+///
+/// The producer ([`compute_lvlh_relative_state`]) always rotates into
+/// the reference vehicle's LVLH frame, so the field type
+/// `Position<Lvlh<SelfRef>>` / `Velocity<Lvlh<SelfRef>>` reflects the
+/// frame at compile time. `SelfRef` is the wildcard vehicle phantom —
+/// the per-entity ECS adapter knows which vehicle is the LVLH chief
+/// at runtime; the typed field guards against a consumer that
+/// accidentally mixes an LVLH-frame value with an inertial- or body-
+/// frame value at the type level.
 #[derive(Debug, Clone)]
 pub struct LvlhRelativeState {
-    /// Position of subject relative to reference (LVLH frame, m).
-    pub position: DVec3,
-    /// Velocity of subject relative to reference (LVLH frame, m/s).
-    pub velocity: DVec3,
+    /// Position of subject relative to reference, in the reference
+    /// vehicle's LVLH frame (m).
+    pub position: Position<Lvlh<SelfRef>>,
+    /// Velocity of subject relative to reference, in the reference
+    /// vehicle's LVLH frame (m/s).
+    pub velocity: Velocity<Lvlh<SelfRef>>,
 }
 
 /// Compute orbital elements from translational state.
@@ -214,16 +245,29 @@ pub fn compute_relative_state(
         position,
         velocity,
         quaternion,
-        ang_vel,
+        // The producer's `rel_ang_vel` is computed in the subject body
+        // frame (per the JEOD convention documented above); attach the
+        // `BodyFrame<SelfRef>` phantom at the boundary.
+        ang_vel: ang_vel.rad_per_s_at::<BodyFrame<SelfRef>>(),
     }
 }
 
-/// Compute relative state expressed in the LVLH frame of the reference vehicle.
+/// Raw kernel: compute relative state expressed in the LVLH frame of the
+/// reference vehicle.
 ///
 /// Takes the inertial relative position/velocity and rotates them into the
 /// LVLH frame of the reference vehicle. Velocity includes the Coriolis
 /// correction for the rotating LVLH frame (ω_LVLH × pos_LVLH), matching
 /// JEOD's `compute_relative_state` through the frame tree.
+///
+/// **Mission code should call [`compute_lvlh_relative_state_typed`] instead.**
+/// That typed entry takes `Position<PlanetInertial<P>>`/
+/// `Velocity<PlanetInertial<P>>` for both chief and deputy, which the
+/// compiler enforces at the call site (preventing chief/deputy frame
+/// mixing), and forwards to this kernel via `.raw_si()`. This raw kernel
+/// exists for callers that already hold raw `DVec3` from a hot path
+/// (no useful phantom available) and explicitly want to skip the typed
+/// boundary.
 pub fn compute_lvlh_relative_state(
     ref_pos: DVec3,
     ref_vel: DVec3,
@@ -243,9 +287,43 @@ pub fn compute_lvlh_relative_state(
     let vel_lvlh = lvlh.t_parent_this * rel_vel_inertial - lvlh.ang_vel_this.cross(pos_lvlh);
 
     LvlhRelativeState {
-        position: pos_lvlh,
-        velocity: vel_lvlh,
+        // The kernel rotates each vector through `lvlh.t_parent_this`,
+        // which lands them in the chief vehicle's LVLH frame. The
+        // `<SelfRef>` wildcard mirrors the producer's static lack of a
+        // chief-vehicle phantom — the runtime adapter knows which
+        // entity is the chief.
+        position: pos_lvlh.m_at::<Lvlh<SelfRef>>(),
+        velocity: vel_lvlh.m_per_s_at::<Lvlh<SelfRef>>(),
     }
+}
+
+/// Typed sibling of [`compute_lvlh_relative_state`].
+///
+/// Takes the chief and deputy positions and velocities in the same
+/// planet-centered inertial frame `<PlanetInertial<P>>` and returns
+/// the LVLH-frame relative state. The structural guarantee is at the
+/// call site: passing a body's `Position<IntegrationFrame>` directly,
+/// or mixing chief and deputy frames (e.g., chief in `<Earth>` and
+/// deputy in `<Moon>`), is a compile error.
+///
+/// The LVLH frame is anchored to the chief vehicle's planet-centered
+/// inertial frame, matching JEOD `LvlhFrame::update` (lvlh_frame.cc),
+/// which subscribes to `planet->inertial` via
+/// `add_relative_state_to_lvlh_frame`. Bit-identical kernel — calls
+/// through to the raw [`compute_lvlh_relative_state`] entry via
+/// `.raw_si()` at the boundary.
+pub fn compute_lvlh_relative_state_typed<P: jeod_quantities::frame::Planet>(
+    ref_pos: Position<jeod_quantities::frame::PlanetInertial<P>>,
+    ref_vel: Velocity<jeod_quantities::frame::PlanetInertial<P>>,
+    subj_pos: Position<jeod_quantities::frame::PlanetInertial<P>>,
+    subj_vel: Velocity<jeod_quantities::frame::PlanetInertial<P>>,
+) -> LvlhRelativeState {
+    compute_lvlh_relative_state(
+        ref_pos.raw_si(),
+        ref_vel.raw_si(),
+        subj_pos.raw_si(),
+        subj_vel.raw_si(),
+    )
 }
 
 /// Typed sibling of [`compute_orbital_elements`].
@@ -407,5 +485,45 @@ mod tests {
         let pos_pfix = t_inertial_pfix * pos_inertial;
         let expected = GeodeticState::from_planet_fixed(pos_pfix, R_EQ, R_POL);
         assert_eq!(geo, expected);
+    }
+
+    /// `compute_lvlh_relative_state_typed` is a thin boundary wrapper:
+    /// it must produce bit-identical output to the raw kernel when fed
+    /// the same SI values. The non-trivial chief/deputy geometry below
+    /// (offsets in all three axes, eccentric chief orbit) confirms the
+    /// boundary preserves numerics while attaching the
+    /// `<PlanetInertial<P>>` phantom on every input.
+    #[test]
+    fn lvlh_relative_typed_round_trip() {
+        use jeod_quantities::ext::Vec3Ext;
+        use jeod_quantities::frame::{Earth, PlanetInertial};
+
+        // ISS-style chief, deputy offset by ~100 m radial+along-track.
+        let ref_pos = DVec3::new(6.778e6, 0.0, 0.0);
+        let ref_vel = DVec3::new(0.0, 7.668e3, 0.0);
+        let subj_pos = DVec3::new(6.778e6 + 50.0, 80.0, 10.0);
+        let subj_vel = DVec3::new(-0.05, 7.668e3 + 0.06, 0.0);
+
+        let raw = compute_lvlh_relative_state(ref_pos, ref_vel, subj_pos, subj_vel);
+        let typed = compute_lvlh_relative_state_typed(
+            ref_pos.m_at::<PlanetInertial<Earth>>(),
+            ref_vel.m_per_s_at::<PlanetInertial<Earth>>(),
+            subj_pos.m_at::<PlanetInertial<Earth>>(),
+            subj_vel.m_per_s_at::<PlanetInertial<Earth>>(),
+        );
+
+        // Bit-identical SI values: the typed boundary only attaches a
+        // phantom; the math is one shared kernel.
+        assert_eq!(typed.position.raw_si(), raw.position.raw_si());
+        assert_eq!(typed.velocity.raw_si(), raw.velocity.raw_si());
+
+        // The output phantom is `<Lvlh<SelfRef>>` regardless of the
+        // input planet phantom — runtime knows which entity is the
+        // chief, the producer cannot statically (matches the struct
+        // contract on `LvlhRelativeState`).
+        let _: Position<jeod_quantities::frame::Lvlh<jeod_quantities::frame::SelfRef>> =
+            typed.position;
+        let _: Velocity<jeod_quantities::frame::Lvlh<jeod_quantities::frame::SelfRef>> =
+            typed.velocity;
     }
 }

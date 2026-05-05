@@ -1418,14 +1418,31 @@ pub struct KinematicChildC;
 ///
 /// Both entities must have [`MassBodyIdC`]. Processed by `staging_system`
 /// before integration each step.
+///
+/// `offset` carries `Position<StructuralFrame<SelfRef>>`: the child's
+/// structural origin lives in the parent's structural frame, and the
+/// `SelfRef` wildcard tag mirrors the per-entity adapter pattern (the
+/// concrete vehicle identity of the parent is determined at runtime
+/// via the entity hierarchy). The compile-time guard is the *frame
+/// kind*: a caller that holds an inertial-frame position cannot
+/// accidentally feed it as the structural-frame attach offset.
+///
+/// `t_parent_child` stays raw `glam::DMat3` for now — typing it as a
+/// `FrameTransform<StructuralFrame<SelfRef>, StructuralFrame<SelfRef>>`
+/// would yield `From == To`, which is the identity-direction case
+/// covered only by `FrameTransform::identity`. A two-vehicle phantom
+/// distinguishing parent vs child structural frames is the right
+/// follow-up but requires the `<V>` Bevy-component genericity from
+/// Section A of the audit (see #263 / sibling issues) — the `SelfRef`
+/// wildcard cannot encode that distinction at the type level.
 #[derive(Message, Debug, Clone)]
 pub struct AttachEvent {
     /// Entity of the child body.
     pub child: Entity,
     /// Entity of the parent body.
     pub parent: Entity,
-    /// Child structural origin in parent's structural frame (m).
-    pub offset: DVec3,
+    /// Child structural origin in the parent's structural frame (m).
+    pub offset: jeod_sim::Position<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>,
     /// Rotation from parent structural frame to child structural frame.
     pub t_parent_child: glam::DMat3,
 }
@@ -1438,6 +1455,92 @@ pub struct AttachEvent {
 pub struct DetachEvent {
     /// Entity to detach from its parent.
     pub child: Entity,
+}
+
+/// Component: this body is attached to a non-body **reference frame**
+/// (not to another body in the mass tree).
+///
+/// Port of JEOD's `DynBody::frame_attach` member, populated by
+/// [`DynBody::attach_to_frame`](https://github.com/nasa/jeod/blob/jeod_v5.4.0/models/dynamics/dyn_body/src/dyn_body_attach.cc#L271).
+/// While present, the body's [`TranslationalStateC`] +
+/// [`RotationalStateC`] are derived each tick by the
+/// [`crate::frame_attach_system::propagate_frame_attached_state_system`]
+/// from the parent frame entity's state composed with the captured
+/// offset, and the integration system skips this body (mirrors the
+/// `frame_attach.isAttached()` branch in JEOD
+/// `dyn_body_integration.cc:309-333`).
+///
+/// Distinct from [`KinematicChildC`], which gates the same skip path
+/// on a parent **body** in the mass tree. A body cannot be both at
+/// once — JEOD's `attach_to_frame` writes `frame_attach` on the
+/// integrated tree root, not on a child body, and the runner's
+/// `Simulation::attach_to_frame` (`jeod_runner::Simulation::attach_to_frame`)
+/// gate refuses an entity that already has a mass-tree parent. The
+/// Bevy adapter's [`crate::frame_attach_system::frame_attach_system`]
+/// enforces the same exclusion.
+///
+/// Mission code MUST NOT insert this component manually — use
+/// [`FrameAttachEvent`] / [`FrameDetachEvent`] so the integrator
+/// history reset and frame-tree coupling stay consistent. The
+/// [`crate::frame_attach_system::frame_attach_system`] inserts and
+/// removes the marker.
+// JEOD_INV: DB.21 — only unattached bodies integrate (frame-attach gate)
+// JEOD_INV: DB.13 — composite-body propagation delegated to parent frame
+#[derive(Component, Debug, Clone, Copy, Reflect)]
+#[reflect(Component)]
+pub struct FrameAttachedC {
+    /// Entity of the parent reference frame (`FrameEntityC.0` for the
+    /// frame). Must point at a frame entity that carries
+    /// [`FrameTransC`] / [`FrameRotC`] / [`FrameAngVelC`] — typically a
+    /// gravity source's `inertial` or `pfix` frame entity, or any
+    /// frame the mission has spawned in the ECS hierarchy.
+    pub parent_frame: Entity,
+    /// Rigid-body offset from the parent frame to this body's
+    /// composite-body frame, in parent-frame coordinates. Frozen at
+    /// attach time and never mutated until the body is detached.
+    pub offset: DVec3,
+    /// Rotation matrix from parent-frame axes to this body's body-frame
+    /// axes (`t_parent_struct` in the runner API). Frozen at attach time.
+    pub t_parent_body: glam::DMat3,
+}
+
+/// Message: attach a body to a non-body reference frame.
+///
+/// Bevy adapter for JEOD's `DynBody::attach_to_frame`. The
+/// `frame_attach_system` inserts a [`FrameAttachedC`] component on
+/// `body`, captures the offset, and resets multi-step integrator
+/// history. Subsequent ticks derive the body's state from
+/// `parent_frame`'s current state plus `offset`. See
+/// `Simulation::attach_to_frame` (`jeod_runner::Simulation::attach_to_frame`)
+/// for the runner-side equivalent.
+#[derive(Message, Debug, Clone)]
+pub struct FrameAttachEvent {
+    /// Entity of the body to attach.
+    pub body: Entity,
+    /// Entity of the parent reference frame (a frame entity carrying
+    /// [`FrameTransC`] / [`FrameRotC`] / [`FrameAngVelC`]).
+    pub parent_frame: Entity,
+    /// Body structural origin in parent-frame coordinates (m). Frozen
+    /// at attach time.
+    pub offset: DVec3,
+    /// Rotation matrix from parent-frame axes to body-frame axes.
+    /// Frozen at attach time.
+    pub t_parent_body: glam::DMat3,
+}
+
+/// Message: release a body's reference-frame attachment.
+///
+/// Bevy adapter for JEOD `DynBody::detach()` (the
+/// `frame_attach.isAttached()` branch in
+/// `models/dynamics/dyn_body/src/dyn_body_detach.cc:141-143`). The
+/// `frame_attach_system` removes the [`FrameAttachedC`] component;
+/// integration resumes on the next step from whatever state the
+/// frame-attached propagation left in [`TranslationalStateC`] /
+/// [`RotationalStateC`].
+#[derive(Message, Debug, Clone)]
+pub struct FrameDetachEvent {
+    /// Entity of the body to detach.
+    pub body: Entity,
 }
 
 /// Composite-body inertial state of a free-flying mass-tree subtree

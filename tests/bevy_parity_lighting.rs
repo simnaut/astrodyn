@@ -4,12 +4,14 @@ mod common;
 
 use bevy::prelude::*;
 use bevy_jeod::{
-    DynamicsConfigC, EarthLightingConfigC, EarthLightingStateC, GravityControlsC, MoonMarker,
-    SunMarker, TranslationalStateC,
+    DynamicsConfigC, EarthLightingConfigC, EarthLightingStateC, GravityControlsC, IntegSourceC,
+    MoonMarker, PlanetBundle, SourceMutator, SunMarker, TranslationalStateC,
 };
 use glam::DVec3;
 use jeod_sim::{DerivedStateConfig, EarthLightingConfig, GravitySourceEntry, VehicleConfig};
-use jeod_sim::{GravityControl, GravityControls, GravityModel, GravitySource, TranslationalState};
+use jeod_sim::{
+    GravityControl, GravityControls, GravityModel, GravitySource, TranslationalState, MOON,
+};
 
 use common::*;
 
@@ -374,6 +376,194 @@ fn tier3_bevy_earth_lighting_pipeline() {
         .expect("earth lighting computed");
     assert_earth_lighting_eq(
         "Bevy vs Sim earth lighting (pipeline)",
+        &bevy_lighting,
+        sim_lighting,
+    );
+}
+
+// ── Non-root integ-source earth lighting parity ──
+//
+// All sibling earth-lighting tests above spawn a body with default
+// `IntegSourceC` (= root inertial), so the integ-origin lift in
+// `earth_lighting_system` is a numerical no-op for them. This test
+// exercises a body whose `IntegSourceC` points at the Moon (a non-root
+// gravity source parked at `MOON_OFFSET` via `set_source_state`). The
+// body's `TranslationalStateC.position` is therefore moon-relative
+// (integ-frame coordinates); without the lift through
+// `body_integ_origin_in_root`, the typed earth-lighting kernel would
+// receive a position off by `MOON_OFFSET` (~3.84e8 m) — orders of
+// magnitude larger than any earth-lighting f64 round-off, so a regression
+// that drops the lift fails this test loudly.
+//
+// The runner-side mirror cannot use a non-root `integ_source` because
+// `Simulation::validate` rejects non-root integration combined with
+// earth-lighting (`NonRootFrameWithRootDependentFeatures`, validate.rs
+// row "earth_lighting_config" — issue #263). Instead the runner
+// runs an *equivalent* root-integrated body whose initial position is the
+// Bevy body's lifted root-inertial state (= moon-relative + Moon offset),
+// with Moon and Sun parked at the same root-inertial positions. If the
+// Bevy lift is correct, both runtimes evaluate the kernel with
+// bit-identical inputs and produce bit-identical
+// `EarthLightingState`.
+
+#[test]
+fn tier3_bevy_earth_lighting_non_root_integ_source() {
+    let earth_r = jeod_sim::EARTH.shadow_radius;
+    let moon_r = 1_737_400.0;
+    let sun_r = 6.96e8;
+
+    // Moon parked along +x at lunar-distance offset; Sun at 1 AU along
+    // +x. The body's moon-relative position places it on the sunward
+    // side of Earth-after-lift (root-inertial position
+    // = moon_offset + body_moon_rel ≈ (3.844e8 + 6.778e6, 1e5, 0)),
+    // i.e. firmly outside Earth's shadow cone. The lift therefore
+    // changes both the sun_visible classification and the moon_earth
+    // geometry vs. the unlifted (moon-relative) interpretation.
+    const MOON_OFFSET: DVec3 = DVec3::new(3.844e8, 0.0, 0.0);
+    const SUN_POS: DVec3 = DVec3::new(1.496e11, 0.0, 0.0);
+    // Body state in moon-relative integ-frame coords (a low lunar
+    // orbit). Non-zero y component picked so the lifted root-inertial
+    // position differs from `MOON_OFFSET` along two axes — a regression
+    // that drops only the x component of the lift would still fail.
+    let body_moon_rel_pos = DVec3::new(6_778_137.0, 1.0e5, 0.0);
+    let body_moon_rel_vel = DVec3::new(0.0, 7668.56, 0.0);
+
+    // ── Bevy ──
+    let mut app = new_bevy_app(DT);
+
+    // Earth: root-source for gravity controls. (`spawn_earth_source`
+    // also inserts a `GravitySourceC` at the root.)
+    let earth = spawn_earth_source(&mut app);
+
+    // Sun: dual-role marker + (no-mass) gravity source so we don't
+    // need a second sun entity. Position is set later via
+    // `set_source_state`.
+    let sun_entity = app
+        .world_mut()
+        .spawn((PlanetBundle::point_mass("Sun", &jeod_sim::SUN), SunMarker))
+        .id();
+
+    // Moon: dual-role marker + non-root gravity source. The body's
+    // `IntegSourceC` points at this entity, so the body's frame entity
+    // is parented to the Moon's frame entity (non-root integ frame).
+    let moon_entity = app
+        .world_mut()
+        .spawn((PlanetBundle::point_mass("Moon", &MOON), MoonMarker))
+        .id();
+
+    // Run Startup so register_source_frames_system spawns the source
+    // frame entities (required by SourceMutator::set_source_state and
+    // by register_body_frames_system below).
+    app.world_mut().run_schedule(Startup);
+
+    // Park Moon at MOON_OFFSET, Sun at 1 AU. `set_source_state`
+    // updates the source's frame entity (FrameTransC) and its
+    // TranslationalStateC, so the earth-lighting system reads the
+    // correct moon/sun positions when it runs.
+    let setup = app
+        .world_mut()
+        .register_system(move |mut m: SourceMutator| {
+            m.set_source_state(moon_entity, MOON_OFFSET, DVec3::ZERO);
+            m.set_source_state(sun_entity, SUN_POS, DVec3::ZERO);
+        });
+    app.world_mut().run_system(setup).unwrap();
+
+    let vehicle = app
+        .world_mut()
+        .spawn((
+            TranslationalStateC::from(TranslationalState {
+                position: body_moon_rel_pos,
+                velocity: body_moon_rel_vel,
+            }),
+            DynamicsConfigC::default(),
+            GravityControlsC(GravityControls {
+                controls: vec![GravityControl::new_spherical(earth, false)],
+            }),
+            EarthLightingConfigC {
+                earth_radius: earth_r,
+                moon_radius: moon_r,
+                sun_radius: sun_r,
+            },
+            // Body integrates in Moon's inertial frame: TranslationalStateC
+            // is moon-relative. earth_lighting_system must lift to root
+            // (add MOON_OFFSET) before evaluating the kernel.
+            IntegSourceC(Some(moon_entity)),
+        ))
+        .id();
+
+    step_bevy_dt(&mut app, 1, DT);
+    let bevy_lighting = app
+        .world()
+        .get::<EarthLightingStateC>(vehicle)
+        .unwrap()
+        .0
+        .clone();
+
+    // ── Simulation (root-integrated equivalent) ──
+    //
+    // The runner cannot integrate a body in a non-root frame and
+    // also evaluate earth_lighting (validate.rs rejects this — see
+    // module-level comment), so we instead spawn a root-integrated
+    // body whose initial state is the Bevy body's *lifted*
+    // root-inertial state. If the Bevy lift is correct, the kernel
+    // inputs match bit-for-bit and the outputs are bit-identical.
+    let lifted_pos = body_moon_rel_pos + MOON_OFFSET;
+    let lifted_vel = body_moon_rel_vel; // Moon at rest → no velocity lift
+
+    let (mut sim, earth_idx) = new_sim_earth(DT);
+    let sun_idx = sim.add_source(
+        "Sun",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(SUN_POS),
+            None,
+        ),
+    );
+    let moon_idx = sim.add_source(
+        "Moon",
+        GravitySourceEntry::new(
+            GravitySource {
+                mu: 0.0,
+                model: GravityModel::PointMass,
+            },
+            jeod_sim::Vec3Ext::m_at::<jeod_sim::RootInertial>(MOON_OFFSET),
+            None,
+        ),
+    );
+    sim.sun_source = Some(sun_idx);
+    sim.moon_source = Some(moon_idx);
+
+    sim.add_body(VehicleConfig {
+        trans: TranslationalState {
+            position: lifted_pos,
+            velocity: lifted_vel,
+        },
+        gravity_controls: GravityControls {
+            controls: vec![GravityControl::new_spherical(earth_idx, false)],
+        },
+        derived: DerivedStateConfig {
+            earth_lighting: Some(EarthLightingConfig {
+                earth_radius: earth_r,
+                moon_radius: moon_r,
+                sun_radius: sun_r,
+            }),
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+    sim.validate().unwrap();
+    sim.step().expect("step failed");
+
+    let sim_body = sim.body(0);
+    let sim_lighting = sim_body
+        .earth_lighting
+        .as_ref()
+        .expect("earth lighting computed");
+    assert_earth_lighting_eq(
+        "Bevy (non-root integ_source, lifted) vs Sim (root-integrated)",
         &bevy_lighting,
         sim_lighting,
     );

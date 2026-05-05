@@ -801,7 +801,7 @@ impl Simulation {
     /// invariant in debug builds. Issue #274 / PR #282 review thread
     /// `PRRT_kwDORtae6c5_KoAT`.
     // JEOD_INV: IG.37 — multi-step integrator history must be reset on topology change
-    fn mark_body_integrators_dirty_by_id(
+    pub(super) fn mark_body_integrators_dirty_by_id(
         bodies: &mut [super::types::SimBody],
         affected_ids: &[jeod_dynamics::MassBodyId],
     ) {
@@ -839,7 +839,7 @@ impl Simulation {
     /// deduplicated** (same precondition as
     /// `mark_body_integrators_dirty_by_id`).
     // JEOD_INV: IG.37 — multi-step integrator history must be reset on topology change
-    fn reset_body_integrators_by_id(
+    pub(super) fn reset_body_integrators_by_id(
         bodies: &mut [super::types::SimBody],
         affected_ids: &[jeod_dynamics::MassBodyId],
     ) {
@@ -1069,9 +1069,18 @@ impl Simulation {
             let cm_delta_body = t_struct_to_body * cm_delta_struct;
             let dvel_inertial =
                 parent_composite_state.rot.t_parent_this.transpose() * w_body.cross(cm_delta_body);
+            // Build raw f64 sums in the runtime-typed arena, then attach
+            // the `RootInertial` phantom at the boundary into the typed
+            // `DetachedSubtreeState` storage. Both sides of the addition
+            // live in the simulation's root inertial frame (the parent's
+            // composite-CoM offset shift propagates the parent's
+            // pre-detach inertial pose forward by Δr in the same frame).
+            use jeod_sim::Vec3Ext;
+            let updated_pos = parent_composite_state.trans.position + cm_delta_inertial;
+            let updated_vel = parent_composite_state.trans.velocity + dvel_inertial;
             let updated = DetachedSubtreeState {
-                composite_position: parent_composite_state.trans.position + cm_delta_inertial,
-                composite_velocity: parent_composite_state.trans.velocity + dvel_inertial,
+                composite_position: updated_pos.m_at::<jeod_sim::RootInertial>(),
+                composite_velocity: updated_vel.m_per_s_at::<jeod_sim::RootInertial>(),
                 composite_attitude: DetachedSubtreeState::attitude_from_raw_jeod_quat(
                     parent_composite_state.rot.q_parent_this,
                 ),

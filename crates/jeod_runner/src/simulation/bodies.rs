@@ -543,6 +543,50 @@ impl Simulation {
         self.frame_tree.get_mut(fid).state.trans.velocity = velocity;
     }
 
+    /// Replace a body's rotational state (attitude quaternion + body
+    /// angular velocity).
+    ///
+    /// Companion to [`set_body_position`](Self::set_body_position) /
+    /// [`set_body_velocity`](Self::set_body_velocity) for tests and
+    /// scenarios that need to override the recipe-derived initial
+    /// rotational state (e.g., the `tier3_sim_ref_attach` Tier 3 test
+    /// initializes the SIM_ref_attach target vehicle's YPR attitude).
+    /// Panics if the body has no rotational state slot — call
+    /// [`add_body`](Self::add_body) with `VehicleConfig::rot = Some(...)`
+    /// to register a 6-DOF body first.
+    pub fn set_body_rot(&mut self, idx: usize, rot: jeod_sim::RotationalState) {
+        assert!(
+            self.bodies[idx].rot.is_some(),
+            "set_body_rot: body {idx} is 3-DOF (no `RotationalState` slot). \
+             Spawn the body with `VehicleConfig::rot = Some(...)` first if \
+             rotational integration is needed; otherwise leave the body \
+             3-DOF and don't call this setter."
+        );
+        self.bodies[idx].rot = Some(rot);
+        // Mirror the rotational state onto the body's frame-tree node so
+        // downstream consumers — `compute_relative_state` walks that
+        // traverse through it, or another body attaching to *this*
+        // body's frame — see the freshly written attitude / angular
+        // velocity instead of the previous step's value. JEOD's
+        // `RefFrameState` carries both translational and rotational
+        // state by definition; the per-component setters
+        // `set_body_position` / `set_body_velocity` already mirror their
+        // half, and the frame-attached integration sync in
+        // `propagate_frame_attached_state` mirrors both halves at the
+        // end of every step. Leaving `rot` out of this setter would
+        // silently desync the node until the next integration tick,
+        // producing wrong relative-state lookups against this body in
+        // the meantime.
+        let fid = self.bodies[idx].body_frame_id;
+        let node = self.frame_tree.get_mut(fid);
+        node.state.rot.q_parent_this = rot.quaternion;
+        // JEOD_INV: RF.04 — recompute T_parent_this from the new
+        // q_parent_this so callers reading either form see the same
+        // attitude.
+        node.state.rot.t_parent_this = rot.quaternion.left_quat_to_transformation();
+        node.state.rot.ang_vel_this = rot.ang_vel_body;
+    }
+
     /// Replace a body's mass properties.
     ///
     /// Used for discrete mass changes (e.g., post-burn fuel consumption,
@@ -705,7 +749,11 @@ impl Simulation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::SimulationBuilderExt;
     use jeod_interactions::{ContactMaterial, SphericalTerrain};
+    use jeod_math::JeodQuat;
+    use jeod_sim::recipes::Mission;
+    use jeod_sim::RotationalState;
     use jeod_time::leap_second::default_leap_second_table;
     use jeod_time::SimulationTime;
     use std::sync::Arc;
@@ -738,5 +786,68 @@ mod tests {
         let veh = ContactFacet::point(DVec3::ZERO, 1.0, mat);
         let ground = GroundFacet::new(Arc::new(SphericalTerrain::new(6_378_137.0)), 0.0, mat);
         sim.register_ground_contact_pair(0, veh, ground, 0);
+    }
+
+    /// `set_body_rot` must mirror the new attitude / angular velocity
+    /// onto the body's frame-tree node, in the same way
+    /// `set_body_position` / `set_body_velocity` mirror their halves.
+    /// Otherwise frame-tree consumers (e.g. `compute_relative_state`
+    /// walks that traverse through this node, or another body attaching
+    /// to *this* body's frame) would silently observe the previous
+    /// quaternion / ω until the next integration tick re-syncs the
+    /// node — producing wrong relative-state lookups in between.
+    #[test]
+    fn set_body_rot_syncs_frame_tree_node() {
+        // 6-DOF body so the body has a `rot` slot at all.
+        let mut sim = Mission::iss_leo_drag()
+            .into_builder()
+            .build()
+            .expect("Mission::iss_leo_drag must validate");
+
+        // Build a non-identity attitude + non-zero angular velocity so a
+        // missed sync (leaving the node at the previous step's value)
+        // would show up as a numerically distinguishable drift between
+        // the body's quaternion and the frame node's quaternion.
+        let new_quat =
+            JeodQuat::left_quat_from_eigen_rotation(0.7, DVec3::new(1.0, 2.0, 3.0).normalize());
+        let new_ang_vel = DVec3::new(0.01, -0.02, 0.03);
+        let new_rot = RotationalState {
+            quaternion: new_quat,
+            ang_vel_body: new_ang_vel,
+        };
+
+        sim.set_body_rot(0, new_rot);
+
+        let body = &sim.bodies[0];
+        let body_frame_id = body.body_frame_id;
+        let node_state = sim.frame_tree().get(body_frame_id).state;
+
+        assert!(
+            (node_state.rot.q_parent_this.scalar() - new_quat.scalar()).abs() < 1e-12
+                && (node_state.rot.q_parent_this.vector() - new_quat.vector()).length() < 1e-12,
+            "frame-tree node q_parent_this {:?} desync from set_body_rot input {:?}",
+            node_state.rot.q_parent_this,
+            new_quat
+        );
+        let t_expected = new_quat.left_quat_to_transformation();
+        for col in 0..3 {
+            assert!(
+                (node_state.rot.t_parent_this.col(col) - t_expected.col(col)).length() < 1e-12,
+                "frame-tree node t_parent_this column {col} desync from quaternion-derived T"
+            );
+        }
+        assert!(
+            (node_state.rot.ang_vel_this - new_ang_vel).length() < 1e-12,
+            "frame-tree node ang_vel_this {:?} desync from set_body_rot input {:?}",
+            node_state.rot.ang_vel_this,
+            new_ang_vel
+        );
+
+        // Confirm the body slot itself was also updated.
+        let body_rot = sim.bodies[0]
+            .rot
+            .expect("iss_leo_drag is 6-DOF — body must carry rot");
+        assert_eq!(body_rot.quaternion, new_quat);
+        assert_eq!(body_rot.ang_vel_body, new_ang_vel);
     }
 }

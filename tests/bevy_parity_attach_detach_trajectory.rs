@@ -64,12 +64,20 @@
 //! synchronous-vs-deferred schedule asymmetry above leaves
 //! `runner.veh2` post-combine while Bevy still holds the pre-combine
 //! state (the `AttachEvent` is in the queue but not yet consumed).
-//! The kinematic-only veh1 in the attached window has a known one-
-//! tick schedule asymmetry (Bevy runs propagation only before
-//! integration; the runner runs it both before and after) and is
-//! structurally covered by `bevy_parity_kinematic_propagation_
-//! simple_chain` — this trajectory parity therefore asserts veh1
-//! only while it is itself integrated.
+//! The kinematic-only veh1 in the attached window has a transient
+//! lag right at the attach event (`KinematicChildC` is installed by
+//! `wrench_aggregation_system` via Commands, so the marker is not
+//! visible to `propagate_state_from_root_system` until the next
+//! sync point). `bevy_parity_kinematic_propagation_simple_chain`
+//! pins steady-state kinematic propagation only — it pre-installs
+//! `KinematicChildC` precisely to *avoid* the Commands-deferral
+//! transient on tick 0, so it does not cover this attach-event
+//! lag. The single-frame staleness window is bounded to one tick
+//! (see the rationale in `src/kinematic_propagation.rs`); this
+//! trajectory parity therefore asserts veh1 only while it is itself
+//! integrated and skips the kinematic-only window. No dedicated
+//! Bevy regression test exercises the Commands-deferral tick yet —
+//! a follow-up could add one if the bound is ever questioned.
 //!
 //! # What is **not** pinned (and why)
 //!
@@ -436,7 +444,9 @@ fn bevy_parity_attach_detach_trajectory_simple() {
                 .write(AttachEvent {
                     child: b_v1,
                     parent: b_v2,
-                    offset,
+                    offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                        offset,
+                    ),
                     t_parent_child: t_pc,
                 });
             attach_fired = true;
@@ -464,26 +474,26 @@ fn bevy_parity_attach_detach_trajectory_simple() {
         // - **veh1** in the attached window is *kinematic-only*: its
         //   `composite_body` state is derived from veh2 by
         //   `propagate_state_from_root_system` (Bevy) and
-        //   `propagate_kinematic_state` (runner). The two runtimes
-        //   differ in *when* that walk fires within a tick: the
-        //   runner runs propagation both before *and* after
-        //   integration so `Simulation::body(idx)` returns
-        //   same-tick-derived state; Bevy runs propagation only
-        //   before integration, so `TranslationalStateC` reflects
-        //   the *previous* tick's parent. Combined with
-        //   `KinematicChildC` being installed by
-        //   `wrench_aggregation_system` via Commands (so it's not
-        //   visible to `propagate_state_from_root_system` until
-        //   after the next sync point), there is a transient two-
-        //   tick lag at the attach event. This is a documented
-        //   schedule asymmetry, structurally covered by the kernel-
-        //   self-consistency invariants in
-        //   `bevy_parity_kinematic_propagation_simple_chain`. This
-        //   trajectory parity therefore asserts bit-identity on
-        //   veh1 only when veh1 is itself integrating — i.e. in
-        //   the pre-attach window. The attached window's veh1
-        //   parity is delegated to the kinematic-propagation parity
-        //   test.
+        //   `propagate_kinematic_state` (runner). Both runtimes now
+        //   run kinematic propagation pre+post integration, so
+        //   `TranslationalStateC` reflects the same-tick parent in
+        //   both. The remaining asymmetry is at the attach event
+        //   itself: `KinematicChildC` is installed by
+        //   `wrench_aggregation_system` via Commands and is not
+        //   visible to `propagate_state_from_root_system` until the
+        //   next sync point, leaving a transient lag for one tick
+        //   after the attach event. The single-frame staleness
+        //   window is bounded to one tick by construction (see the
+        //   rationale in `src/kinematic_propagation.rs`).
+        //   `bevy_parity_kinematic_propagation_simple_chain` covers
+        //   steady-state kinematic propagation only: it pre-installs
+        //   `KinematicChildC` precisely to *avoid* the
+        //   Commands-deferral transient, so it does not exercise
+        //   this attach-event lag. This trajectory parity therefore
+        //   asserts bit-identity on veh1 only when veh1 is itself
+        //   integrating — i.e. in the pre-attach window — and skips
+        //   the attached window. No dedicated Bevy regression test
+        //   currently exercises the Commands-deferral tick.
         let r_v3_state = read_runner_state(&sim, r_v3);
         let b_v3_state = read_bevy_state(&app, b_v3);
 

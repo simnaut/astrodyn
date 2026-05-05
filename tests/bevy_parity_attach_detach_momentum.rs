@@ -208,7 +208,9 @@ fn bevy_attach_conserves_linear_and_angular_momentum() {
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
-            offset: DVec3::new(2.0, 0.0, 0.0),
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::new(2.0, 0.0, 0.0),
+            ),
             t_parent_child: DMat3::IDENTITY,
         });
 
@@ -319,7 +321,9 @@ fn bevy_attach_no_relative_motion_preserves_parent_state() {
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
-            offset: DVec3::ZERO,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
             t_parent_child: DMat3::IDENTITY,
         });
     step(&mut app, 1, 1.0);
@@ -388,7 +392,9 @@ fn bevy_detach_captures_subtree_state() {
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
-            offset: DVec3::ZERO,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
             t_parent_child: DMat3::IDENTITY,
         });
     step(&mut app, 1, 1.0);
@@ -421,16 +427,18 @@ fn bevy_detach_captures_subtree_state() {
     // inserts) and `step_detached_system` (which advances by `dt`).
     let dt = 1.0;
     let expected_pos = parent_pos_at_detach + parent_vel_at_detach * dt;
+    let detached_pos = detached.0.composite_position.raw_si();
+    let detached_vel = detached.0.composite_velocity.raw_si();
     assert!(
-        (detached.0.composite_position - expected_pos).length() < 1e-9,
+        (detached_pos - expected_pos).length() < 1e-9,
         "detached pos: {:?} expected {:?} (= parent_composite_at_detach + vel·dt)",
-        detached.0.composite_position,
+        detached_pos,
         expected_pos
     );
     assert!(
-        (detached.0.composite_velocity - parent_vel_at_detach).length() < 1e-12,
+        (detached_vel - parent_vel_at_detach).length() < 1e-12,
         "detached velocity should match parent composite: {:?} vs {:?}",
-        detached.0.composite_velocity,
+        detached_vel,
         parent_vel_at_detach
     );
     assert!(
@@ -509,7 +517,9 @@ fn bevy_detach_derives_child_state_via_rigid_body_composition() {
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
-            offset: attach_offset,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                attach_offset,
+            ),
             t_parent_child: DMat3::IDENTITY,
         });
     step(&mut app, 1, 1.0);
@@ -548,16 +558,18 @@ fn bevy_detach_derives_child_state_via_rigid_body_composition() {
     let expected_child_pos_at_detach = child_trans.position;
     let expected_pos_after_step = expected_child_pos_at_detach + expected_child_vel * dt;
 
+    let detached_pos = detached.0.composite_position.raw_si();
+    let detached_vel = detached.0.composite_velocity.raw_si();
     assert!(
-        (detached.0.composite_position - expected_pos_after_step).length() < 1e-6,
+        (detached_pos - expected_pos_after_step).length() < 1e-6,
         "detached pos via rigid-body composition: got {:?}, expected {:?}",
-        detached.0.composite_position,
+        detached_pos,
         expected_pos_after_step
     );
     assert!(
-        (detached.0.composite_velocity - expected_child_vel).length() < 1e-6,
+        (detached_vel - expected_child_vel).length() < 1e-6,
         "detached velocity via rigid-body composition: got {:?}, expected {:?}",
-        detached.0.composite_velocity,
+        detached_vel,
         expected_child_vel
     );
 }
@@ -606,7 +618,9 @@ fn bevy_detached_subtree_propagates_ballistically() {
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
-            offset: DVec3::ZERO,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
             t_parent_child: DMat3::IDENTITY,
         });
     step(&mut app, 1, 1.0);
@@ -651,7 +665,7 @@ fn bevy_detached_subtree_propagates_ballistically() {
         .get::<DetachedSubtreeStateC>(child_entity)
         .expect("child still has DetachedSubtreeStateC during free flight");
     assert!(
-        (detached.0.composite_position - post_pos).length() < 1e-12,
+        (detached.0.composite_position.raw_si() - post_pos).length() < 1e-12,
         "DetachedSubtreeStateC position must mirror TranslationalStateC after step_detached_system"
     );
 }
@@ -694,7 +708,9 @@ fn bevy_re_attach_consumes_detached_state() {
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
-            offset: DVec3::ZERO,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
             t_parent_child: DMat3::IDENTITY,
         });
     step(&mut app, 1, 1.0);
@@ -719,7 +735,9 @@ fn bevy_re_attach_consumes_detached_state() {
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
-            offset: DVec3::ZERO,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
             t_parent_child: DMat3::IDENTITY,
         });
     step(&mut app, 1, 1.0);
@@ -844,7 +862,9 @@ fn bevy_step_detached_runs_before_frame_tree_sync() {
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
-            offset: DVec3::ZERO,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
             t_parent_child: DMat3::IDENTITY,
         });
     step(&mut app, 1, dt);
@@ -1006,7 +1026,9 @@ fn bevy_attach_does_not_reparent_child_frame_under_parent_frame() {
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
-            offset: DVec3::ZERO,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
             t_parent_child: DMat3::IDENTITY,
         });
     step(&mut app, 1, 1.0);
@@ -1103,16 +1125,24 @@ fn bevy_attach_does_not_reparent_child_frame_under_parent_frame() {
 /// kinematic descendants follow recursively. JEOD's
 /// `dyn_body_integration.cc::set_integ_frame` (lines 64-117) uses
 /// the low-level `RefFrame::reset_parent` and explicitly does NOT
-/// rewrite stored state ("It does not update state"). Our
-/// `staging_system` mirrors that recursion via Bevy's `ChildOf`
-/// relationship and matches JEOD's "no state rewrite at the reparent
-/// itself"; the merged composite-body state is computed by
-/// `combine_states_at_attach` (lifted to root inertial via each
-/// body's pre-attach `IntegOrigin` so the cross-body kernel
-/// arithmetic — `omega × r`, `T_inertial_struct.transpose()` shifts
-/// — operates on a single inertial frame) and lowered through the
-/// parent's integ origin for the writeback into the parent's
-/// `TranslationalStateC` storage.
+/// rewrite stored state ("It does not update state") — JEOD relies
+/// on `attach_update_properties` calling `propagate_state()`
+/// immediately afterwards to refill descendants' parent-relative
+/// storage from the merged root. Our adapter has no equivalent
+/// same-call propagation, so each reparented descendant's
+/// `TranslationalStateC` and body-frame `FrameTransC` are shifted
+/// in-place by `(old_origin - new_origin)` during the same staging
+/// tick (same physical pose, just relabeled into the new integration
+/// frame's coordinates) — exercised in detail by
+/// `bevy_attach_cross_integ_frame_rewrites_child_state_into_new_integ_frame`
+/// further below. This test focuses on the parent's merged
+/// composite-body state computed by `combine_states_at_attach`
+/// (lifted to root inertial via each body's pre-attach
+/// `IntegOrigin` so the cross-body kernel arithmetic — `omega × r`,
+/// `T_inertial_struct.transpose()` shifts — operates on a single
+/// inertial frame) and lowered through the parent's integ origin
+/// for the writeback into the parent's `TranslationalStateC`
+/// storage.
 ///
 /// The expected merged state is computed by calling
 /// `stage_attach_combine` directly with both bodies lifted to root
@@ -1275,13 +1305,14 @@ fn bevy_attach_cross_integ_frame_runs_combine_and_reparents_child_frame() {
     // their pre-attach integ origins, then lowers the merged
     // composite through the parent's integ origin for the writeback
     // into the parent's `TranslationalStateC`.
-    let offset = DVec3::ZERO;
     app.world_mut()
         .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
-            offset,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
             t_parent_child: DMat3::IDENTITY,
         });
     step(&mut app, 1, 1.0);
@@ -1606,13 +1637,14 @@ fn bevy_attach_cross_integ_frame_rewrites_child_state_into_new_integ_frame() {
     let child_pre_attach_root_velocity = child_trans.velocity;
 
     // Fire the cross-integ-frame attach.
-    let offset = DVec3::ZERO;
     app.world_mut()
         .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
-            offset,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
             t_parent_child: DMat3::IDENTITY,
         });
     step(&mut app, 1, 1.0);
@@ -1911,7 +1943,9 @@ fn bevy_attach_post_frame_switch_same_integ_frame_succeeds() {
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
-            offset: DVec3::ZERO,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
             t_parent_child: DMat3::IDENTITY,
         });
     step(&mut app, 1, 1.0);
@@ -2035,10 +2069,10 @@ fn bevy_detached_body_skips_force_pipeline() {
     // would require a parent attach first; the direct insert
     // exercises the same downstream filter the detach handler
     // ultimately produces.
-    use jeod_sim::{BodyAttitude, DetachedSubtreeState, SelfRef};
+    use jeod_sim::{BodyAttitude, DetachedSubtreeState, RootInertial, SelfRef, Vec3Ext};
     let detached_state = DetachedSubtreeState {
-        composite_position: initial_trans.position,
-        composite_velocity: initial_trans.velocity,
+        composite_position: initial_trans.position.m_at::<RootInertial>(),
+        composite_velocity: initial_trans.velocity.m_per_s_at::<RootInertial>(),
         composite_attitude: BodyAttitude::<SelfRef>::identity(),
         composite_ang_vel_body: DVec3::ZERO,
     };
@@ -2180,7 +2214,7 @@ fn bevy_detach_reads_live_composite_through_mass_property_revert() {
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
-            offset,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(offset),
             t_parent_child: DMat3::IDENTITY,
         });
     step(&mut app, 1, dt);
@@ -2332,7 +2366,7 @@ fn bevy_runner_parity_attach_detach_momentum() {
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
-            offset,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(offset),
             t_parent_child,
         });
     step(&mut app, 1, dt);
@@ -2463,9 +2497,10 @@ fn bevy_runner_parity_attach_detach_momentum() {
     // Reverse Bevy's one-tick `step_ballistic` advance: the captured
     // state at the detach instant is `pos = bevy.pos − vel·dt` (vel
     // unchanged, attitude unchanged because ang_vel = 0).
-    let bevy_child_pos_at_detach =
-        bevy_child_state.composite_position - bevy_child_state.composite_velocity * dt;
-    let bevy_child_vel_at_detach = bevy_child_state.composite_velocity;
+    let bevy_pos_si = bevy_child_state.composite_position.raw_si();
+    let bevy_vel_si = bevy_child_state.composite_velocity.raw_si();
+    let bevy_child_pos_at_detach = bevy_pos_si - bevy_vel_si * dt;
+    let bevy_child_vel_at_detach = bevy_vel_si;
     let bevy_child_q_at_detach = bevy_child_state.composite_attitude.to_jeod_quat();
     let bevy_child_w_at_detach = bevy_child_state.composite_ang_vel_body;
 
@@ -2731,7 +2766,9 @@ fn bevy_runner_parity_cross_integ_frame_attach() {
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
-            offset,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                offset,
+            ),
             t_parent_child,
         });
     step(&mut app, 1, dt);
@@ -3038,7 +3075,9 @@ fn bevy_attach_root_equivalent_parents_succeed() {
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
-            offset: DVec3::ZERO,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
             t_parent_child: DMat3::IDENTITY,
         });
     step(&mut app, 1, 1.0);
@@ -3145,7 +3184,9 @@ fn bevy_attach_malformed_frame_node_panics() {
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
-            offset: DVec3::ZERO,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
             t_parent_child: DMat3::IDENTITY,
         });
     step(&mut app, 1, 1.0);
@@ -3268,7 +3309,9 @@ fn bevy_attach_equal_but_illegal_parents_panic() {
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
-            offset: DVec3::ZERO,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
             t_parent_child: DMat3::IDENTITY,
         });
     step(&mut app, 1, 1.0);
@@ -3384,7 +3427,9 @@ fn bevy_attach_root_equivalent_stray_parent_panics() {
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
-            offset: DVec3::ZERO,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
             t_parent_child: DMat3::IDENTITY,
         });
     step(&mut app, 1, 1.0);
@@ -3477,7 +3522,9 @@ fn bevy_attach_mass_only_no_frame_entity_succeeds() {
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
-            offset: DVec3::ZERO,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
             t_parent_child: DMat3::IDENTITY,
         });
     step(&mut app, 1, 1.0);
@@ -3581,7 +3628,9 @@ fn bevy_attach_frame_entity_without_child_of_panics() {
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
-            offset: DVec3::ZERO,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
             t_parent_child: DMat3::IDENTITY,
         });
     step(&mut app, 1, 1.0);
@@ -3688,7 +3737,9 @@ fn bevy_attach_dynamic_body_with_no_frame_entity_panics() {
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
-            offset: DVec3::ZERO,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
             t_parent_child: DMat3::IDENTITY,
         });
     // Invoke `staging_system` directly so the registration-race
@@ -3785,7 +3836,9 @@ fn bevy_attach_dynamic_child_on_mass_only_parent_panics() {
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
-            offset: DVec3::ZERO,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
             t_parent_child: DMat3::IDENTITY,
         });
     step(&mut app, 1, 1.0);
@@ -3886,7 +3939,9 @@ fn bevy_attach_frame_entity_without_translational_state_panics() {
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
-            offset: DVec3::ZERO,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
             t_parent_child: DMat3::IDENTITY,
         });
     app.world_mut()
@@ -4016,7 +4071,9 @@ fn bevy_attach_dynamic_child_on_mass_only_parent_panics_without_jeod_plugin() {
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
-            offset: DVec3::ZERO,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
             t_parent_child: DMat3::IDENTITY,
         });
     app.world_mut()
@@ -4087,7 +4144,9 @@ fn bevy_attach_mass_only_succeeds_without_jeod_plugin() {
         .write(AttachEvent {
             child: child_entity,
             parent: parent_entity,
-            offset: DVec3::ZERO,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
             t_parent_child: DMat3::IDENTITY,
         });
     app.world_mut()
