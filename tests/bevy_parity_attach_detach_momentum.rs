@@ -2989,3 +2989,317 @@ fn bevy_attach_dynamic_child_on_mass_only_parent_panics() {
         });
     step(&mut app, 1, 1.0);
 }
+
+/// **State-completeness fail-loud (FrameEntityC present, state
+/// component(s) stripped).**
+///
+/// `register_body_frames_system` is one-time per body — it inserts
+/// `FrameEntityC` once and never cleans it up if the eligibility
+/// components are removed afterward. A body that ends up with
+/// `FrameEntityC` but no `TranslationalStateC` (or `RotationalStateC`)
+/// reaches `staging_system` in a miscomputing-attach state: the
+/// kernel reads `position` / `velocity` / `quaternion` / `ang_vel`
+/// from the absent components and silently substitutes zero / identity,
+/// then writes the merged composite back conditionally on the same
+/// components — so the merged result is silently dropped.
+///
+/// Step 1.5 of the cross-integ-frame fence catches this and panics
+/// with the state-completeness diagnostic, naming the missing
+/// component(s). JEOD's `dyn_body_attach.cc::attach_validate_child`
+/// (lines 121-180) rejects the analog with "Child body has an
+/// incomplete state" / "Root body has an incomplete state".
+///
+/// This test pins the boundary: spawn a fully-eligible dynamic body
+/// (so registration inserts `FrameEntityC` at Startup), strip its
+/// `TranslationalStateC` mid-tick, then fire `AttachEvent` and verify
+/// the fence panics with the new state-completeness diagnostic
+/// instead of silently dropping the merge.
+#[test]
+#[should_panic(expected = "missing required state component")]
+fn bevy_attach_frame_entity_without_translational_state_panics() {
+    let parent_mass = MassProperties::new(1000.0);
+    let child_mass = MassProperties::new(500.0);
+    let parent_trans = TranslationalState {
+        position: DVec3::new(7e6, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let child_trans = TranslationalState {
+        position: DVec3::new(7e6, 1.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let initial_rot = RotationalState::default();
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.add_plugins(JeodPlugin);
+
+    let mut tree = MassTree::new();
+    let id_a = tree.add_body("Parent".into(), parent_mass);
+    let id_b = tree.add_body("Child".into(), child_mass);
+    app.insert_resource(MassTreeR(tree));
+
+    let parent_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Parent"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(parent_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(parent_mass),
+            MassBodyIdC(id_a),
+        ))
+        .id();
+    let child_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Child"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(child_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(child_mass),
+            MassBodyIdC(id_b),
+        ))
+        .id();
+
+    app.world_mut().run_schedule(Startup);
+
+    // Sanity-check the fixture: after Startup, the dynamic child has
+    // FrameEntityC. Strip its TranslationalStateC mid-tick to drive
+    // the partially-stripped state the fence now rejects. Bypass
+    // FixedUpdate's register pass by invoking staging_system directly
+    // (the same pattern as the registration-race test above) — that
+    // pass would not re-insert TranslationalStateC because
+    // register_body_frames_system reads it but never writes it.
+    assert!(
+        app.world().get::<FrameEntityC>(child_entity).is_some(),
+        "fixture broken: dynamic child unexpectedly has no FrameEntityC \
+         after Startup; the registration filter likely changed"
+    );
+    app.world_mut()
+        .entity_mut(child_entity)
+        .remove::<TranslationalStateC>();
+
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset: DVec3::ZERO,
+            t_parent_child: DMat3::IDENTITY,
+        });
+    app.world_mut()
+        .run_system_cached(bevy_jeod::staging_system)
+        .expect("run staging_system");
+}
+
+/// **Fence runs without `JeodPlugin`: dynamic-child-on-mass-only-parent
+/// still panics.**
+///
+/// `RootFrameEntityR` is inserted by `JeodPlugin::build` only — a
+/// low-level test (or a partial app) that runs `staging_system`
+/// directly without `JeodPlugin` does not have the resource. The
+/// fence's *root-equivalence equality fold* needs the resource (it
+/// folds `Earth.inertial`-style direct-child-of-root frames onto
+/// root before comparing parent/child integ frames), but the
+/// *structural* fail-loud checks — mass-only carve-out, registration
+/// race detection, dynamic-child-on-mass-only-parent rejection,
+/// state-completeness, legality against `known_source_frames` — must
+/// run regardless: they protect invariants that hold without any
+/// reference to the root entity.
+///
+/// This test pins that contract: stand up a mass-tree world *without*
+/// `JeodPlugin` (so `RootFrameEntityR` is absent), forge the
+/// FrameEntityC presence pattern of "dynamic child on mass-only
+/// parent" (which the fence rejects with JEOD's `attach_validate_parent`
+/// diagnostic), invoke `staging_system` directly, and verify the same
+/// panic that fires with `JeodPlugin` still fires here.
+#[test]
+#[should_panic(expected = "Dynamic attachments can only be made to valid DynBodies")]
+fn bevy_attach_dynamic_child_on_mass_only_parent_panics_without_jeod_plugin() {
+    let parent_mass = MassProperties::new(1000.0);
+    let child_mass = MassProperties::new(500.0);
+    let child_trans = TranslationalState {
+        position: DVec3::new(7e6, 1.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let initial_rot = RotationalState::default();
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    // Crucially: NO `app.add_plugins(JeodPlugin);` — this regression
+    // pins the fence's behaviour when `RootFrameEntityR` is absent.
+    // Register the AttachEvent / DetachEvent message resources by
+    // hand so `staging_system` can read its event reader without
+    // panicking on "Requested resource does not exist". `JeodPlugin`
+    // does this in `build`; this regression deliberately bypasses it.
+    app.add_message::<AttachEvent>();
+    app.add_message::<DetachEvent>();
+
+    let mut tree = MassTree::new();
+    let id_a = tree.add_body("Parent".into(), parent_mass);
+    let id_b = tree.add_body("Child".into(), child_mass);
+    app.insert_resource(MassTreeR(tree));
+
+    // Mass-only parent: no DynamicsConfigC / TranslationalStateC /
+    // RotationalStateC. Without `register_body_frames_system` running
+    // (no plugin) it could never carry FrameEntityC anyway — the
+    // structural shape we're pinning is the same.
+    let parent_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Parent"),
+            MassPropertiesC::from(parent_mass),
+            MassBodyIdC(id_a),
+        ))
+        .id();
+    // Dynamic child carrying full eligibility components AND a
+    // pre-built body-frame entity that the fence will resolve to
+    // through `body_frames` — without `register_body_frames_system`
+    // available we set up the `FrameEntityC` link by hand to mimic
+    // the post-registration shape the fence sees in production. The
+    // body-frame entity needs a `ChildOf` parent or step 1 panics
+    // first with "has no ChildOf parent"; we create a stand-in
+    // fake-root entity so the resolver succeeds and the fence
+    // reaches the dynamic-child-on-mass-only-parent check (the
+    // mismatch we're actually pinning here).
+    let fake_root_entity = app
+        .world_mut()
+        .spawn((
+            FrameTransC::default(),
+            FrameRotC::default(),
+            FrameAngVelC::default(),
+        ))
+        .id();
+    let child_frame_entity = app
+        .world_mut()
+        .spawn((
+            FrameTransC::default(),
+            FrameRotC::default(),
+            FrameAngVelC::default(),
+            ChildOf(fake_root_entity),
+        ))
+        .id();
+    let child_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Child"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(child_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(child_mass),
+            MassBodyIdC(id_b),
+            FrameEntityC(child_frame_entity),
+        ))
+        .id();
+
+    // Verify our hand-built fixture matches the rejection shape: the
+    // mass-only parent has no FrameEntityC; the dynamic child does.
+    assert!(
+        app.world().get::<FrameEntityC>(parent_entity).is_none(),
+        "fixture broken: mass-only parent unexpectedly has FrameEntityC"
+    );
+    assert!(
+        app.world().get::<FrameEntityC>(child_entity).is_some(),
+        "fixture broken: dynamic child should carry FrameEntityC"
+    );
+    assert!(
+        !app.world().contains_resource::<RootFrameEntityR>(),
+        "fixture broken: RootFrameEntityR is unexpectedly present — \
+         this regression pins fence behaviour without JeodPlugin"
+    );
+
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset: DVec3::ZERO,
+            t_parent_child: DMat3::IDENTITY,
+        });
+    app.world_mut()
+        .run_system_cached(bevy_jeod::staging_system)
+        .expect("run staging_system");
+}
+
+/// **Fence runs without `JeodPlugin`: legitimate mass-only attach
+/// still succeeds.**
+///
+/// Companion to the negative regression above: the structural
+/// fail-loud checks must reject misconfigurations regardless of
+/// `RootFrameEntityR`'s presence, but they must *not* reject
+/// legitimate mass-only attaches in the same low-level setup.
+/// `JeodPlugin`-less callers running pure mass-tree composition
+/// (no frame tree) must still see the mass-tree composite recompute
+/// and integrator reset run as expected.
+///
+/// This test stands up two pure mass-tree nodes (no `FrameEntityC`,
+/// no eligibility components, no `RootFrameEntityR`) and verifies
+/// `AttachEvent` composes their masses without panicking.
+#[test]
+fn bevy_attach_mass_only_succeeds_without_jeod_plugin() {
+    let parent_mass = MassProperties::new(1000.0);
+    let child_mass = MassProperties::new(500.0);
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    // No `add_plugins(JeodPlugin)` — the fence must not depend on
+    // `RootFrameEntityR` for the mass-only carve-out path. Register
+    // the AttachEvent / DetachEvent message resources by hand
+    // (normally done by `JeodPlugin::build`) so `staging_system`'s
+    // event reader can run.
+    app.add_message::<AttachEvent>();
+    app.add_message::<DetachEvent>();
+
+    let mut tree = MassTree::new();
+    let id_a = tree.add_body("Parent".into(), parent_mass);
+    let id_b = tree.add_body("Child".into(), child_mass);
+    app.insert_resource(MassTreeR(tree));
+
+    let parent_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Parent"),
+            MassPropertiesC::from(parent_mass),
+            MassBodyIdC(id_a),
+        ))
+        .id();
+    let child_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Child"),
+            MassPropertiesC::from(child_mass),
+            MassBodyIdC(id_b),
+        ))
+        .id();
+
+    assert!(
+        !app.world().contains_resource::<RootFrameEntityR>(),
+        "fixture broken: RootFrameEntityR is unexpectedly present — \
+         this regression pins fence behaviour without JeodPlugin"
+    );
+
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset: DVec3::ZERO,
+            t_parent_child: DMat3::IDENTITY,
+        });
+    app.world_mut()
+        .run_system_cached(bevy_jeod::staging_system)
+        .expect("run staging_system");
+
+    let composite_mass = read_mass(app.world(), parent_entity);
+    let expected = parent_mass.mass + child_mass.mass;
+    assert!(
+        (composite_mass - expected).abs() < 1e-12,
+        "mass-only attach without JeodPlugin: parent composite mass \
+         {composite_mass} != expected {expected} — the mass-tree \
+         composite recompute did not run, indicating the attach was \
+         rejected by the fence despite the mass-only carve-out."
+    );
+}

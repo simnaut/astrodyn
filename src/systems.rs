@@ -2954,11 +2954,9 @@ pub fn staging_system(
     detached_q: Query<Entity, With<crate::DetachedSubtreeStateC>>,
     body_frames: Query<&FrameEntityC>,
     frame_parents: Query<&ChildOf>,
-    // Eligibility for `register_body_frames_system` — its filter at
-    // `register_body_frames_system`'s declaration is
-    // `(With<TranslationalStateC>, With<DynamicsConfigC>,
-    // Without<FrameEntityC>)`. Used by the cross-integ-frame fence to
-    // tell apart two distinct "no FrameEntityC" populations:
+    // Per-body component presence used by the cross-integ-frame fence
+    // to tell apart three distinct "FrameEntityC absent / present"
+    // populations:
     //
     //   * **Mass-only attach participant** — entity carries
     //     `MassBodyIdC` + `MassPropertiesC` but lacks at least one of
@@ -2968,11 +2966,29 @@ pub fn staging_system(
     //     fence has no frame node to protect for it.
     //
     //   * **Registration-race** — entity carries both eligibility
-    //     components but `register_body_frames_system` has not yet run
+    //     components (`DynamicsConfigC` + `TranslationalStateC`, the
+    //     filter for `register_body_frames_system`) but lacks
+    //     `FrameEntityC`. `register_body_frames_system` has not yet run
     //     this tick (deferred `Commands` flush ordering). Letting the
     //     attach proceed would silently corrupt the frame tree on the
     //     next register pass. Per Fail Loudly this must panic.
-    eligibility: Query<(Has<DynamicsConfigC>, Has<TranslationalStateC>)>,
+    //
+    //   * **Partially-stripped dynamic body** — entity carries
+    //     `FrameEntityC` (registration ran) but at least one of
+    //     `DynamicsConfigC` / `TranslationalStateC` /
+    //     `RotationalStateC` has been removed since. Reading state for
+    //     the kernel would silently substitute zero/identity, and the
+    //     combine-back-write below conditionally writes the merged
+    //     composite only if those components are present — so the
+    //     merged state would be silently dropped. Per Fail Loudly the
+    //     fence must surface this as well; matches JEOD's
+    //     `attach_validate_child` rejecting "Child body has an
+    //     incomplete state" (`dyn_body_attach.cc:131-135`).
+    eligibility: Query<(
+        Has<DynamicsConfigC>,
+        Has<TranslationalStateC>,
+        Has<RotationalStateC>,
+    )>,
     // Frame-state query needed by `is_root_equivalent_entity` so the
     // cross-integ-frame fence below treats Earth.inertial-as-root-
     // equivalent topology (a direct child of root with identity state)
@@ -3147,7 +3163,7 @@ pub fn staging_system(
         // switched into the parent's frame: stale `IntegSourceC`
         // differs from parent's).
         //
-        // The fence has three semantic layers, applied in order so
+        // The fence has four semantic layers, applied in order so
         // legality is decided on the *original* parent rather than
         // its root-equivalent fold (otherwise an arbitrary entity
         // that happens to be a direct child of root with identity
@@ -3170,6 +3186,17 @@ pub fn staging_system(
         //      itself is corrupt and the attach cannot be safely
         //      processed — panic per Fail Loudly.
         //
+        //   1.5. **State-completeness on dynamic participants.** A
+        //      body that resolved a frame entity must carry the
+        //      full state-component set (`DynamicsConfigC` +
+        //      `TranslationalStateC` + `RotationalStateC`). The
+        //      kernel snaps any missing input to zero/identity and
+        //      the combine-back-write is conditional on the same
+        //      components — without them the merged state is
+        //      silently dropped. Matches JEOD's
+        //      `attach_validate_child` rejecting partial state with
+        //      "<role> body has an incomplete state".
+        //
         //   2. **Verify the live parent is a legal integ-frame
         //      entity.** Anything that is not the root frame entity
         //      and not a registered gravity source's frame entity
@@ -3179,6 +3206,10 @@ pub fn staging_system(
         //      `frame_switch_system`'s same-tick check at lines
         //      765-781 so the same misconfig is caught at attach
         //      time rather than only later when a switch evaluates.
+        //      Falls back to comparing against `known_source_frames`
+        //      when `RootFrameEntityR` is absent (low-level tests
+        //      that drive `staging_system` directly without
+        //      `JeodPlugin`).
         //
         //   3. **Normalize root-equivalent topology for equality.**
         //      In `jeod_runner` the central body's inertial frame
@@ -3195,13 +3226,17 @@ pub fn staging_system(
         //      legality has already been decided in step 2 against
         //      the un-folded parent.
         //
-        // Skipped entirely when `RootFrameEntityR` is absent — that
-        // resource is inserted by `JeodPlugin`'s build, so a missing
-        // resource means a low-level test (or a partial app build)
-        // that drove `staging_system` directly without `JeodPlugin`.
-        // Without the root entity there is no way to compute
-        // root-equivalence, so we leave the bodies untouched;
-        // production paths always pass.
+        // The fail-loud structural and state-completeness checks below
+        // (steps 1, 1.5, and 2) run unconditionally — they protect
+        // invariants that hold without any reference to root-equivalence
+        // semantics, so a low-level test (or a partial app build) that
+        // drove `staging_system` directly without `JeodPlugin` still
+        // sees the same misconfigurations rejected. Only the
+        // root-equivalence equality fold (step 3) requires
+        // `RootFrameEntityR` and is therefore conditional on its
+        // presence; without root the equality fold is skipped, but no
+        // production path reaches that branch with `RootFrameEntityR`
+        // absent (`JeodPlugin::build` always inserts it).
         //
         // Skipped per-event when *both* bodies lack `FrameEntityC`
         // and neither is dynamic — see step 1's narrowed mass-only
@@ -3210,149 +3245,251 @@ pub fn staging_system(
         // `DynamicsConfigC` and `TranslationalStateC`) is a
         // registration race, not a mass-only configuration, and is
         // rejected fail-loud below.
-        if let Some(root_e) = root_frame_entity.as_ref().map(|r| r.0) {
-            // Step 1: resolve the original `ChildOf` parent of each
-            // body's frame entity (no folding yet). Returns `None`
-            // only when the entity is intentionally mass-only — its
-            // component set fails `register_body_frames_system`'s
-            // eligibility filter, so `FrameEntityC` will never be
-            // inserted and the entity has no node in the frame tree.
-            //
-            // An entity that *passes* the eligibility filter
-            // (`DynamicsConfigC` + `TranslationalStateC`) but still
-            // lacks `FrameEntityC` is a registration race — the body
-            // was spawned mid-tick after `register_body_frames_system`
-            // already ran, so its frame-tree node does not yet exist
-            // even though the rest of the world expects one. Letting
-            // the attach proceed would silently corrupt the frame
-            // tree on the next register pass; per Fail Loudly we
-            // panic with a diagnostic that names the broken
-            // assumption (entity has the eligibility components but
-            // ran the staging fence before registration).
-            let resolve_original_parent = |body: Entity, role: &str| -> Option<Entity> {
-                match body_frames.get(body) {
-                    Ok(frame_handle) => {
-                        let child_of = frame_parents.get(frame_handle.0).unwrap_or_else(|err| {
-                            panic!(
-                                "AttachEvent.{role} = {body:?}: body-frame entity \
-                                     {fe:?} has no ChildOf parent. The body-frame entity \
-                                     must be parented under its integration-frame entity \
-                                     (root frame entity, or a registered source's frame \
-                                     entity). `register_body_frames_system` inserts that \
-                                     ChildOf when it runs in the JeodPlugin schedules \
-                                     (Startup, PreUpdate, FixedUpdate); a missing parent \
-                                     here means the frame tree is corrupt. Underlying \
-                                     query error: {err:?}",
-                                fe = frame_handle.0,
-                            )
-                        });
-                        Some(child_of.parent())
-                    }
-                    Err(_) => {
-                        // No `FrameEntityC`. Distinguish the two
-                        // populations: mass-only (carve-out) vs
-                        // registration race (fail-loud).
-                        let (has_dyn_cfg, has_trans) =
-                            eligibility.get(body).unwrap_or((false, false));
-                        if has_dyn_cfg && has_trans {
-                            panic!(
-                                "AttachEvent.{role} = {body:?}: entity carries \
-                                 DynamicsConfigC + TranslationalStateC (the \
-                                 eligibility filter for register_body_frames_system) \
-                                 but does not yet carry FrameEntityC. This is a \
-                                 registration race — the body was spawned mid-tick \
-                                 after register_body_frames_system already ran in \
-                                 PreUpdate / FixedUpdate (before \
-                                 JeodSet::EphemerisUpdate), so its frame-tree node \
-                                 has not been spawned yet by the time staging_system \
-                                 runs. Spawn the body before the first FixedUpdate \
-                                 step (e.g. in Startup or PreUpdate ahead of \
-                                 register_body_frames_system), or defer the \
-                                 AttachEvent until the next tick so the registration \
-                                 pass has had a chance to run."
-                            );
-                        }
-                        None
-                    }
-                }
-            };
 
-            // Mass-only attach carve-out: both bodies must carry
-            // `FrameEntityC` for the fence to apply. If either side
-            // has no frame node (legitimate `MassBody`-without-
-            // `DynBody` configuration permitted by `AttachEvent`'s
-            // contract), the frame tree has no node to corrupt and
-            // the equality / legality checks below have nothing to
-            // enforce. The mass-tree composite recompute and IG.37
-            // integrator reset still run unconditionally outside
-            // this `if let` block.
-            //
-            // One asymmetric case is rejected fail-loud: a dynamic
-            // child (with `FrameEntityC`) attaching to a mass-only
-            // parent (no `FrameEntityC`). JEOD's
-            // `dyn_body_attach.cc::attach_validate_parent` rejects
-            // this with "Dynamic attachments can only be made to
-            // valid DynBodies" — and our combine-back-write below
-            // only writes the merged composite into the parent's
-            // `TranslationalStateC` / `RotationalStateC`, which a
-            // mass-only parent does not carry. Without this guard
-            // the merged state is silently dropped. The dual case
-            // (mass-only child on dynamic parent) matches JEOD's
-            // legitimate `add_mass_body` path and is allowed.
-            let parent_orig = resolve_original_parent(evt.parent, "parent");
-            let child_orig = resolve_original_parent(evt.child, "child");
-            if parent_orig.is_none() && child_orig.is_some() {
+        // Step 1: resolve the original `ChildOf` parent of each
+        // body's frame entity (no folding yet). Returns `None`
+        // only when the entity is intentionally mass-only — its
+        // component set fails `register_body_frames_system`'s
+        // eligibility filter, so `FrameEntityC` will never be
+        // inserted and the entity has no node in the frame tree.
+        //
+        // An entity that *passes* the eligibility filter
+        // (`DynamicsConfigC` + `TranslationalStateC`) but still
+        // lacks `FrameEntityC` is a registration race — the body
+        // was spawned mid-tick after `register_body_frames_system`
+        // already ran, so its frame-tree node does not yet exist
+        // even though the rest of the world expects one. Letting
+        // the attach proceed would silently corrupt the frame
+        // tree on the next register pass; per Fail Loudly we
+        // panic with a diagnostic that names the broken
+        // assumption (entity has the eligibility components but
+        // ran the staging fence before registration).
+        let resolve_original_parent = |body: Entity, role: &str| -> Option<Entity> {
+            match body_frames.get(body) {
+                Ok(frame_handle) => {
+                    let child_of = frame_parents.get(frame_handle.0).unwrap_or_else(|err| {
+                        panic!(
+                            "AttachEvent.{role} = {body:?}: body-frame entity \
+                                 {fe:?} has no ChildOf parent. The body-frame entity \
+                                 must be parented under its integration-frame entity \
+                                 (root frame entity, or a registered source's frame \
+                                 entity). `register_body_frames_system` inserts that \
+                                 ChildOf when it runs in the JeodPlugin schedules \
+                                 (Startup, PreUpdate, FixedUpdate); a missing parent \
+                                 here means the frame tree is corrupt. Underlying \
+                                 query error: {err:?}",
+                            fe = frame_handle.0,
+                        )
+                    });
+                    Some(child_of.parent())
+                }
+                Err(_) => {
+                    // No `FrameEntityC`. Distinguish the two
+                    // populations: mass-only (carve-out) vs
+                    // registration race (fail-loud).
+                    let (has_dyn_cfg, has_trans, _has_rot) =
+                        eligibility.get(body).unwrap_or((false, false, false));
+                    if has_dyn_cfg && has_trans {
+                        panic!(
+                            "AttachEvent.{role} = {body:?}: entity carries \
+                             DynamicsConfigC + TranslationalStateC (the \
+                             eligibility filter for register_body_frames_system) \
+                             but does not yet carry FrameEntityC. This is a \
+                             registration race — the body was spawned mid-tick \
+                             after register_body_frames_system already ran in \
+                             PreUpdate / FixedUpdate (before \
+                             JeodSet::EphemerisUpdate), so its frame-tree node \
+                             has not been spawned yet by the time staging_system \
+                             runs. Spawn the body before the first FixedUpdate \
+                             step (e.g. in Startup or PreUpdate ahead of \
+                             register_body_frames_system), or defer the \
+                             AttachEvent until the next tick so the registration \
+                             pass has had a chance to run."
+                        );
+                    }
+                    None
+                }
+            }
+        };
+
+        // Mass-only attach carve-out: both bodies must carry
+        // `FrameEntityC` for the fence to apply. If either side
+        // has no frame node (legitimate `MassBody`-without-
+        // `DynBody` configuration permitted by `AttachEvent`'s
+        // contract), the frame tree has no node to corrupt and
+        // the equality / legality checks below have nothing to
+        // enforce. The mass-tree composite recompute and IG.37
+        // integrator reset still run unconditionally outside
+        // this branch.
+        //
+        // One asymmetric case is rejected fail-loud: a dynamic
+        // child (with `FrameEntityC`) attaching to a mass-only
+        // parent (no `FrameEntityC`). JEOD's
+        // `dyn_body_attach.cc::attach_validate_parent` rejects
+        // this with "Dynamic attachments can only be made to
+        // valid DynBodies" — and our combine-back-write below
+        // only writes the merged composite into the parent's
+        // `TranslationalStateC` / `RotationalStateC`, which a
+        // mass-only parent does not carry. Without this guard
+        // the merged state is silently dropped. The dual case
+        // (mass-only child on dynamic parent) matches JEOD's
+        // legitimate `add_mass_body` path and is allowed.
+        let parent_orig = resolve_original_parent(evt.parent, "parent");
+        let child_orig = resolve_original_parent(evt.child, "child");
+        if parent_orig.is_none() && child_orig.is_some() {
+            panic!(
+                "AttachEvent: dynamic child {child:?} (carries FrameEntityC) \
+                 cannot be attached to mass-only parent {parent:?} (no \
+                 FrameEntityC). JEOD's dyn_body_attach.cc::attach_validate_parent \
+                 rejects this with \"Dynamic attachments can only be made to \
+                 valid DynBodies\" (Modified_data parents need both \
+                 DynamicsConfigC and TranslationalStateC). The combine-back-write \
+                 in this function only writes the merged composite into the \
+                 parent's TranslationalStateC / RotationalStateC, which a \
+                 mass-only parent does not carry — the merged state would be \
+                 silently lost. Either promote the parent to a dynamic body \
+                 (add DynamicsConfigC + TranslationalStateC + RotationalStateC) \
+                 before the attach, or attach the parent to its own dynamic \
+                 ancestor first so the composite has a free-flying root.",
+                child = evt.child,
+                parent = evt.parent,
+            );
+        }
+
+        // Step 1.5: state-completeness for any body that *did*
+        // resolve a frame entity. The kernel reads
+        // `parent_position` / `parent_velocity` /
+        // `parent_quaternion` / `parent_ang_vel_body` (and the
+        // child analogs) from `TranslationalStateC` /
+        // `RotationalStateC`, falling back to zero / identity when
+        // those components are absent — and the combine-back-write
+        // below only writes the merged composite back when the
+        // same components are present. A body that carries
+        // `FrameEntityC` (registration ran) but has had
+        // `DynamicsConfigC` / `TranslationalStateC` removed since
+        // is therefore in a miscomputing-attach state: missing
+        // inputs silently snap to zero, and any merged result is
+        // silently dropped. JEOD's `attach_validate_child`
+        // (`dyn_body_attach.cc:121-180`) rejects partial state
+        // with "Child body has an incomplete state" / "Root body
+        // has an incomplete state"; we surface the same
+        // misconfiguration here at the staging fence so the bug is
+        // caught at the event boundary rather than silently
+        // corrupting downstream state.
+        //
+        // `RotationalStateC` is required only when the attach
+        // partner also has it: the bevy adapter supports a 3-DOF
+        // configuration (`DynamicsConfigC` + `TranslationalStateC`
+        // without `RotationalStateC`) — `register_body_frames_system`'s
+        // filter mirrors this — and an attach between two 3-DOF
+        // bodies merges translational state only, leaving rotation
+        // identity on both sides consistently. The dangerous case
+        // is *asymmetric* rotation: one body 6-DOF, the other 3-DOF,
+        // where the 3-DOF side's rotation snaps to identity and the
+        // merged attitude / angular momentum is silently wrong. We
+        // reject the asymmetric case below.
+        let parent_has_state = parent_orig
+            .map(|_| eligibility.get(evt.parent).unwrap_or((false, false, false)));
+        let child_has_state = child_orig
+            .map(|_| eligibility.get(evt.child).unwrap_or((false, false, false)));
+        let rotational_asymmetry = match (parent_has_state, child_has_state) {
+            (Some((_, _, parent_rot)), Some((_, _, child_rot))) => parent_rot != child_rot,
+            _ => false,
+        };
+        for (entity, orig, role) in [
+            (evt.parent, parent_orig, "parent"),
+            (evt.child, child_orig, "child"),
+        ] {
+            if orig.is_none() {
+                continue;
+            }
+            let (has_dyn_cfg, has_trans, has_rot) =
+                eligibility.get(entity).unwrap_or((false, false, false));
+            let mut missing: Vec<&'static str> = Vec::new();
+            if !has_dyn_cfg {
+                missing.push("DynamicsConfigC");
+            }
+            if !has_trans {
+                missing.push("TranslationalStateC");
+            }
+            if rotational_asymmetry && !has_rot {
+                missing.push("RotationalStateC");
+            }
+            if !missing.is_empty() {
+                let missing = missing.join(", ");
                 panic!(
-                    "AttachEvent: dynamic child {child:?} (carries FrameEntityC) \
-                     cannot be attached to mass-only parent {parent:?} (no \
-                     FrameEntityC). JEOD's dyn_body_attach.cc::attach_validate_parent \
-                     rejects this with \"Dynamic attachments can only be made to \
-                     valid DynBodies\" (Modified_data parents need both \
-                     DynamicsConfigC and TranslationalStateC). The combine-back-write \
-                     in this function only writes the merged composite into the \
-                     parent's TranslationalStateC / RotationalStateC, which a \
-                     mass-only parent does not carry — the merged state would be \
-                     silently lost. Either promote the parent to a dynamic body \
-                     (add DynamicsConfigC + TranslationalStateC + RotationalStateC) \
-                     before the attach, or attach the parent to its own dynamic \
-                     ancestor first so the composite has a free-flying root.",
-                    child = evt.child,
-                    parent = evt.parent,
+                    "AttachEvent.{role} = {entity:?}: dynamic body carries \
+                     FrameEntityC (registration ran) but is missing required \
+                     state component(s): {missing}. The stage_attach_combine \
+                     kernel reads TranslationalStateC / RotationalStateC for \
+                     pre-attach pose + velocity, and the merged composite is \
+                     written back only into those same components — without \
+                     them the kernel silently substitutes zero / identity for \
+                     the missing input and the merged result is silently \
+                     dropped. JEOD's dyn_body_attach.cc::attach_validate_child \
+                     rejects this same case with \"Child body has an \
+                     incomplete state\" / \"Root body has an incomplete state\". \
+                     Re-insert the missing component(s) on the entity before \
+                     firing the AttachEvent, or remove the body from the \
+                     mass-tree before stripping its state. (Note: \
+                     RotationalStateC is required only when the attach \
+                     partner carries it — pure 3-DOF attach between two \
+                     bodies that both lack RotationalStateC is allowed.)"
                 );
             }
-            if let (Some(parent_orig), Some(child_orig)) = (parent_orig, child_orig) {
-                // Step 2: legality is decided against the *original*
-                // parent — never the root-equivalent fold. An arbitrary
-                // entity that happens to satisfy root-equivalence (direct
-                // child of root with identity state) but is not itself a
-                // registered source frame must still be rejected, because
-                // `frame_switch_system` will reject the same parent on the
-                // very next tick. Match its legality check at lines
-                // 765-781.
-                for (entity, integ_frame, role) in [
-                    (evt.parent, parent_orig, "parent"),
-                    (evt.child, child_orig, "child"),
-                ] {
-                    let is_legal =
-                        integ_frame == root_e || known_source_frames.contains(&integ_frame);
-                    assert!(
-                        is_legal,
-                        "AttachEvent.{role} = {entity:?}: live integration-frame \
-                         entity {integ_frame:?} (the ChildOf parent of the body's \
-                         frame entity) is neither the root frame entity \
-                         ({root_e:?}) nor a registered gravity source's frame \
-                         entity. The body-frame entity must be parented under one \
-                         of those — register the source via PlanetBundle (which \
-                         inserts GravitySourceC and FrameEntityC) before spawning \
-                         the body, or attach the body under the root frame entity."
-                    );
-                }
+        }
 
-                // Step 3: fold root-equivalent topology *only* for the
-                // equality comparison below. Both `parent_orig` and
-                // `child_orig` are now known to be legal integ frames, so
-                // any fold to `root_e` happens on a registered source
-                // (typically the central body's `*.inertial` frame).
+        if let (Some(parent_orig), Some(child_orig)) = (parent_orig, child_orig) {
+            // Step 2: legality is decided against the *original*
+            // parent — never the root-equivalent fold. An arbitrary
+            // entity that happens to satisfy root-equivalence (direct
+            // child of root with identity state) but is not itself a
+            // registered source frame must still be rejected, because
+            // `frame_switch_system` will reject the same parent on the
+            // very next tick. Match its legality check at lines
+            // 765-781.
+            //
+            // The legality predicate uses `known_source_frames`
+            // (built without `RootFrameEntityR`) directly, plus an
+            // optional equality with the root entity when the
+            // resource is present — so when `RootFrameEntityR` is
+            // absent the check still rejects illegal parents (those
+            // not under any registered source) instead of silently
+            // bypassing.
+            let root_e_opt = root_frame_entity.as_ref().map(|r| r.0);
+            for (entity, integ_frame, role) in [
+                (evt.parent, parent_orig, "parent"),
+                (evt.child, child_orig, "child"),
+            ] {
+                let is_root = root_e_opt == Some(integ_frame);
+                let is_legal = is_root || known_source_frames.contains(&integ_frame);
+                assert!(
+                    is_legal,
+                    "AttachEvent.{role} = {entity:?}: live integration-frame \
+                     entity {integ_frame:?} (the ChildOf parent of the body's \
+                     frame entity) is neither the root frame entity \
+                     ({root_e_opt:?}) nor a registered gravity source's frame \
+                     entity. The body-frame entity must be parented under one \
+                     of those — register the source via PlanetBundle (which \
+                     inserts GravitySourceC and FrameEntityC) before spawning \
+                     the body, or attach the body under the root frame entity."
+                );
+            }
+
+            // Step 3: fold root-equivalent topology *only* for the
+            // equality comparison below. Both `parent_orig` and
+            // `child_orig` are now known to be legal integ frames, so
+            // any fold to `root_e` happens on a registered source
+            // (typically the central body's `*.inertial` frame).
+            //
+            // The fold (and the equality check it drives) requires
+            // the root entity to be known. When `RootFrameEntityR`
+            // is absent (low-level tests / partial app builds), we
+            // skip just this final equality — the structural
+            // fail-loud checks above have already run unconditionally,
+            // and production paths always set the resource via
+            // `JeodPlugin::build`.
+            if let Some(root_e) = root_e_opt {
                 let fold_root_equivalent = |parent: Entity| -> Entity {
                     if crate::validation::is_root_equivalent_entity(
                         parent,
