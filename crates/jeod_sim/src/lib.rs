@@ -68,7 +68,7 @@ pub use atmosphere::{
 pub use attach::{
     stage_attach_combine, stage_detach_capture, StageAttachInputs, StageAttachOutputs,
 };
-pub use body_action::{BodyAction, OrbitalElementSet};
+pub use body_action::{BodyAction, LvlhAngularVelocityFrame, OrbitalElementSet};
 pub use derived::{
     compute_body_euler_angles, compute_body_euler_angles_typed, compute_body_geodetic,
     compute_body_geodetic_typed, compute_body_lvlh_frame, compute_body_lvlh_frame_typed,
