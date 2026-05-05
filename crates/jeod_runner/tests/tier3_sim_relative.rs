@@ -126,8 +126,13 @@ fn run_relative_scenario(label: &str, csv_name: &str) {
         let a = sim.body(0);
         let b = sim.body(1);
         let rel = compute_relative_state(&b.trans, b.rot.as_ref(), &a.trans, a.rot.as_ref());
-        let pos_err = (rel.position - init.jeod_rel_pos).length();
-        let vel_err = (rel.velocity - init.jeod_rel_vel).length();
+        // Scenario fixtures cover both branches of `RelativeTranslation`
+        // (with/without reference rotational state), so the metric
+        // reads through `position_raw`/`velocity_raw` to stay
+        // branch-agnostic — the JEOD reference vector is in whichever
+        // frame the producer landed in for that scenario.
+        let pos_err = (rel.trans.position_raw() - init.jeod_rel_pos).length();
+        let vel_err = (rel.trans.velocity_raw() - init.jeod_rel_vel).length();
         max_pos_err = max_pos_err.max(pos_err);
         max_vel_err = max_vel_err.max(vel_err);
     }
@@ -141,8 +146,8 @@ fn run_relative_scenario(label: &str, csv_name: &str) {
 
         let rel = compute_relative_state(&b.trans, b.rot.as_ref(), &a.trans, a.rot.as_ref());
 
-        let pos_err = (rel.position - rec.jeod_rel_pos).length();
-        let vel_err = (rel.velocity - rec.jeod_rel_vel).length();
+        let pos_err = (rel.trans.position_raw() - rec.jeod_rel_pos).length();
+        let vel_err = (rel.trans.velocity_raw() - rec.jeod_rel_vel).length();
 
         max_pos_err = max_pos_err.max(pos_err);
         max_vel_err = max_vel_err.max(vel_err);
