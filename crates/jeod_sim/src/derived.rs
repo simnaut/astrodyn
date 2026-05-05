@@ -38,37 +38,44 @@ use uom::si::length::meter;
 /// the convention matches JEOD's left-multiplication
 /// reference-body-to-subject-body rotation.
 ///
-/// # Vehicle phantom
+/// # Vehicle phantoms
 ///
-/// The `<V: Vehicle>` parameter is the **subject** vehicle — the body
-/// whose body frame `ang_vel` is expressed in. Mission code that knows
-/// the subject vehicle at compile time pins it (e.g.
-/// `RelativeState<Iss>`); the Bevy adapter and standalone runner
-/// instantiate `RelativeState<SelfRef>` because their per-entity
-/// storage decides the subject identity at runtime.
+/// `RelativeState` carries two independent vehicle identities:
 ///
-/// The reference vehicle (used inside `RelativeTranslation::BodyFrame`)
-/// stays at `<SelfRef>` because the variant's frame is the reference
-/// vehicle's body frame, a separate identity from the subject `<V>`. A
-/// per-pair `<Subject, Reference>` parameterization on
-/// `RelativeState`/`RelativeTranslation` is the natural follow-up; it
-/// is gated on a matching design step and not delivered here.
+/// - `Subject: Vehicle` names the vehicle whose state is being
+///   described; the typed [`Self::ang_vel`] sits in that vehicle's
+///   body frame.
+/// - `Reference: Vehicle` names the vehicle the state is expressed
+///   relative to; the body-frame variant of [`RelativeTranslation`]
+///   sits in that vehicle's body frame.
+///
+/// Mission code that pins both identities at compile time (via
+/// [`define_vehicle!`](jeod_quantities::define_vehicle)) gets a
+/// compile-time guard against pair confusion — a
+/// `RelativeState<Iss, Soyuz>` cannot be passed to a consumer
+/// expecting `RelativeState<Iss, Cygnus>`. The Bevy adapter and
+/// standalone runner instantiate `RelativeState<SelfRef, SelfRef>`
+/// because their per-entity storage decides the subject and reference
+/// identities at runtime.
 #[derive(Debug, Clone)]
-pub struct RelativeState<V: Vehicle> {
+pub struct RelativeState<Subject: Vehicle, Reference: Vehicle> {
     /// Translational state of subject relative to reference. The
     /// variant identifies the frame the values live in — see
-    /// [`RelativeTranslation`] for the branch contract.
-    pub trans: RelativeTranslation,
+    /// [`RelativeTranslation`] for the branch contract. The
+    /// `Reference` phantom propagates into the body-frame variant so
+    /// a `RelativeState<_, Iss>` cannot accidentally feed a consumer
+    /// expecting `RelativeTranslation<Soyuz>`.
+    pub trans: RelativeTranslation<Reference>,
     /// Relative quaternion: reference body frame → subject body frame.
     pub quaternion: DQuat,
     /// Angular velocity of subject relative to reference, in the
-    /// subject body frame. The `<V>` phantom names the subject
+    /// subject body frame. The `<Subject>` phantom names the subject
     /// vehicle so a consumer that holds a typed
     /// `AngularVelocity<BodyFrame<Iss>>` cannot accidentally consume
     /// an `AngularVelocity<BodyFrame<Soyuz>>`; the Bevy adapter and
-    /// runner instantiate `<V = SelfRef>` because their per-entity
+    /// runner instantiate `<SelfRef>` because their per-entity
     /// storage decides the subject identity at runtime.
-    pub ang_vel: jeod_quantities::aliases::AngularVelocity<BodyFrame<V>>,
+    pub ang_vel: jeod_quantities::aliases::AngularVelocity<BodyFrame<Subject>>,
 }
 
 /// Frame-tagged translational state inside a [`RelativeState`].
@@ -81,6 +88,20 @@ pub struct RelativeState<V: Vehicle> {
 /// lets each variant carry a distinct phantom-tagged
 /// [`Position`]/[`Velocity`] pair, so a consumer that mixes a
 /// body-frame value with a root-inertial value is a compile error.
+///
+/// # Vehicle phantom
+///
+/// `RelativeTranslation` carries a single `<Reference: Vehicle>`
+/// parameter naming the *reference* vehicle in whose body frame the
+/// `BodyFrame` variant's values are expressed. The `Inertial` variant
+/// is in the root inertial frame and does not depend on a vehicle
+/// identity, but the parameter is still threaded through the type so
+/// the two variants share a consistent compile-time pair shape with
+/// [`RelativeState`]'s `<Subject, Reference>`. Mission code that pins
+/// the reference at compile time gets a cross-pair guard:
+/// `RelativeTranslation<Iss>` and `RelativeTranslation<Soyuz>` are
+/// distinct types. The Bevy adapter and standalone runner instantiate
+/// `<Reference = SelfRef>`.
 ///
 /// Pattern-match to read:
 ///
@@ -100,7 +121,7 @@ pub struct RelativeState<V: Vehicle> {
 ///
 /// # Compile-time frame guard
 ///
-/// The body-frame variant carries a [`Position<BodyFrame<SelfRef>>`]
+/// The body-frame variant carries a [`Position<BodyFrame<Reference>>`]
 /// while the inertial variant carries a [`Position<RootInertial>`].
 /// Adding (or otherwise mixing without a deliberate `FrameTransform`)
 /// the two phantoms is a compile error. The doctest below documents
@@ -121,21 +142,47 @@ pub struct RelativeState<V: Vehicle> {
 /// // refuses this expression at the type level:
 /// let _ = body_frame_pos + inertial_pos;
 /// ```
+///
+/// # Compile-time cross-pair guard
+///
+/// The reference-vehicle phantom makes a `BodyFrame<Iss>` value
+/// kind-distinct from a `BodyFrame<Soyuz>` value. The doctest below
+/// shows that a consumer holding a `Position<BodyFrame<Iss>>` cannot
+/// accidentally bind it from a `RelativeTranslation<Soyuz>`'s
+/// body-frame variant — the destructure refuses to typecheck.
+///
+/// ```compile_fail
+/// use jeod_quantities::aliases::Position;
+/// use jeod_quantities::define_vehicle;
+/// use jeod_quantities::frame::BodyFrame;
+/// use jeod_sim::RelativeTranslation;
+///
+/// define_vehicle!(Iss);
+/// define_vehicle!(Soyuz);
+///
+/// fn binder(t: RelativeTranslation<Soyuz>) {
+///     // Would silently accept Soyuz-frame data into the Iss slot if
+///     // the phantom didn't propagate through the variant — the
+///     // compiler refuses this binding:
+///     let RelativeTranslation::BodyFrame { position, .. } = t else { return; };
+///     let _bound: Position<BodyFrame<Iss>> = position;
+/// }
+/// ```
 #[derive(Debug, Clone)]
-pub enum RelativeTranslation {
+pub enum RelativeTranslation<Reference: Vehicle> {
     /// Reference rotational state was present: position/velocity are
     /// rotated into the reference body frame (JEOD `S_{ref:subj}`).
-    /// `BodyFrame<SelfRef>` matches the [`RelativeState::ang_vel`]
-    /// convention — wildcard subject-vehicle phantom because the
-    /// producer doesn't know the subject identity statically.
+    /// The `BodyFrame<Reference>` phantom names the reference
+    /// vehicle's body frame at the type level — distinct from the
+    /// subject's body frame on [`RelativeState::ang_vel`].
     BodyFrame {
         /// Position of subject relative to reference, expressed in the
         /// reference body frame.
-        position: Position<BodyFrame<SelfRef>>,
+        position: Position<BodyFrame<Reference>>,
         /// Velocity of subject relative to reference, expressed in the
         /// reference body frame, with the JEOD Coriolis correction
         /// applied (`v - ω_ref × r`).
-        velocity: Velocity<BodyFrame<SelfRef>>,
+        velocity: Velocity<BodyFrame<Reference>>,
     },
     /// Reference rotational state was absent: position/velocity are
     /// the raw inertial-frame difference. The `RootInertial` phantom
@@ -156,7 +203,7 @@ pub enum RelativeTranslation {
     },
 }
 
-impl RelativeTranslation {
+impl<Reference: Vehicle> RelativeTranslation<Reference> {
     /// Raw position vector in whichever frame the variant carries.
     ///
     /// Provided for branch-agnostic numerical consumers (e.g. scalar
@@ -184,24 +231,20 @@ impl RelativeTranslation {
 ///
 /// The producer ([`compute_lvlh_relative_state`]) always rotates into
 /// the reference vehicle's LVLH frame, so the field type
-/// `Position<Lvlh<Chief>>` / `Velocity<Lvlh<Chief>>` reflects the
-/// frame at compile time. The `<Chief: Vehicle>` parameter names the
-/// LVLH chief — mission code that knows the chief at compile time
-/// pins it (e.g. `LvlhRelativeState<Iss>`), and the Bevy adapter and
-/// runner instantiate `LvlhRelativeState<SelfRef>` because their
-/// per-entity storage decides the chief identity at runtime. A
-/// consumer holding a `Position<Lvlh<Iss>>` cannot accidentally
-/// consume a `Position<Lvlh<Soyuz>>`, and the existing
-/// `Lvlh`-vs-`PlanetInertial`/`BodyFrame`/`RootInertial` kind guard
-/// remains.
+/// `Position<Lvlh<SelfRef>>` / `Velocity<Lvlh<SelfRef>>` reflects the
+/// frame at compile time. `SelfRef` is the wildcard vehicle phantom —
+/// the per-entity ECS adapter knows which vehicle is the LVLH chief
+/// at runtime; the typed field guards against a consumer that
+/// accidentally mixes an LVLH-frame value with an inertial- or body-
+/// frame value at the type level.
 #[derive(Debug, Clone)]
-pub struct LvlhRelativeState<Chief: Vehicle> {
-    /// Position of subject relative to reference, in the chief
+pub struct LvlhRelativeState {
+    /// Position of subject relative to reference, in the reference
     /// vehicle's LVLH frame (m).
-    pub position: Position<Lvlh<Chief>>,
-    /// Velocity of subject relative to reference, in the chief
+    pub position: Position<Lvlh<SelfRef>>,
+    /// Velocity of subject relative to reference, in the reference
     /// vehicle's LVLH frame (m/s).
-    pub velocity: Velocity<Lvlh<Chief>>,
+    pub velocity: Velocity<Lvlh<SelfRef>>,
 }
 
 /// Compute orbital elements from translational state.
@@ -325,16 +368,24 @@ pub fn compute_body_solar_beta(position: DVec3, velocity: DVec3, sun_position: D
 /// `compute_relative_state` convention). When the reference has no rotational
 /// state, position/velocity remain in the inertial frame.
 ///
+/// The two phantom parameters name the subject and reference vehicles
+/// at compile time — they propagate to [`RelativeState::ang_vel`]
+/// (subject body frame) and [`RelativeTranslation::BodyFrame`]
+/// (reference body frame) respectively. Mission code that pins both
+/// concrete vehicles passes them via turbofish; the Bevy adapter and
+/// runner pass `<SelfRef, SelfRef>` because their per-entity storage
+/// decides both identities at runtime.
+///
 /// Derived from JEOD `decr_left` (ref_frame_state.cc):
 ///   x_{ref:subj} = T_ref * (x_subj - x_ref)
 ///   v_{ref:subj} = T_ref * (v_subj - v_ref) - ω_ref × x_{ref:subj}
 ///   w_{ref:subj} = ω_subj - T_{ref→subj} * ω_ref
-pub fn compute_relative_state<V: Vehicle>(
+pub fn compute_relative_state<Subject: Vehicle, Reference: Vehicle>(
     ref_trans: &crate::TranslationalState,
     ref_rot: Option<&RotationalState>,
     subj_trans: &crate::TranslationalState,
     subj_rot: Option<&RotationalState>,
-) -> RelativeState<V> {
+) -> RelativeState<Subject, Reference> {
     let rel_pos_inertial = subj_trans.position - ref_trans.position;
     let rel_vel_inertial = subj_trans.velocity - ref_trans.velocity;
 
@@ -350,8 +401,8 @@ pub fn compute_relative_state<V: Vehicle>(
         let vel = t_ref * rel_vel_inertial - r_ref.ang_vel_body.cross(pos);
         (
             RelativeTranslation::BodyFrame {
-                position: pos.m_at::<BodyFrame<SelfRef>>(),
-                velocity: vel.m_per_s_at::<BodyFrame<SelfRef>>(),
+                position: pos.m_at::<BodyFrame<Reference>>(),
+                velocity: vel.m_per_s_at::<BodyFrame<Reference>>(),
             },
             Some(t_ref),
         )
@@ -389,11 +440,8 @@ pub fn compute_relative_state<V: Vehicle>(
         quaternion,
         // The producer's `rel_ang_vel` is computed in the subject body
         // frame (per the JEOD convention documented above); attach the
-        // typed `BodyFrame<V>` phantom at the boundary. `V` is named
-        // by the caller — the Bevy adapter and runner pass `SelfRef`,
-        // mission code that pins a concrete subject vehicle (e.g. `Iss`)
-        // gets the cross-vehicle compile guard.
-        ang_vel: ang_vel.rad_per_s_at::<BodyFrame<V>>(),
+        // typed `BodyFrame<Subject>` phantom at the boundary.
+        ang_vel: ang_vel.rad_per_s_at::<BodyFrame<Subject>>(),
     }
 }
 
@@ -413,12 +461,12 @@ pub fn compute_relative_state<V: Vehicle>(
 /// exists for callers that already hold raw `DVec3` from a hot path
 /// (no useful phantom available) and explicitly want to skip the typed
 /// boundary.
-pub fn compute_lvlh_relative_state<Chief: Vehicle>(
+pub fn compute_lvlh_relative_state(
     ref_pos: DVec3,
     ref_vel: DVec3,
     subj_pos: DVec3,
     subj_vel: DVec3,
-) -> LvlhRelativeState<Chief> {
+) -> LvlhRelativeState {
     let lvlh = compute_body_lvlh_frame(ref_pos, ref_vel);
 
     // Relative state in inertial frame
@@ -434,13 +482,11 @@ pub fn compute_lvlh_relative_state<Chief: Vehicle>(
     LvlhRelativeState {
         // The kernel rotates each vector through `lvlh.t_parent_this`,
         // which lands them in the chief vehicle's LVLH frame. The
-        // `<Chief>` parameter is named by the caller — mission code
-        // that pins a concrete chief gets the cross-vehicle compile
-        // guard, while the Bevy adapter and runner pass `SelfRef`
-        // because their per-entity storage decides chief identity at
-        // runtime.
-        position: pos_lvlh.m_at::<Lvlh<Chief>>(),
-        velocity: vel_lvlh.m_per_s_at::<Lvlh<Chief>>(),
+        // `<SelfRef>` wildcard mirrors the producer's static lack of a
+        // chief-vehicle phantom — the runtime adapter knows which
+        // entity is the chief.
+        position: pos_lvlh.m_at::<Lvlh<SelfRef>>(),
+        velocity: vel_lvlh.m_per_s_at::<Lvlh<SelfRef>>(),
     }
 }
 
@@ -459,13 +505,13 @@ pub fn compute_lvlh_relative_state<Chief: Vehicle>(
 /// `add_relative_state_to_lvlh_frame`. Bit-identical kernel — calls
 /// through to the raw [`compute_lvlh_relative_state`] entry via
 /// `.raw_si()` at the boundary.
-pub fn compute_lvlh_relative_state_typed<P: jeod_quantities::frame::Planet, Chief: Vehicle>(
+pub fn compute_lvlh_relative_state_typed<P: jeod_quantities::frame::Planet>(
     ref_pos: Position<jeod_quantities::frame::PlanetInertial<P>>,
     ref_vel: Velocity<jeod_quantities::frame::PlanetInertial<P>>,
     subj_pos: Position<jeod_quantities::frame::PlanetInertial<P>>,
     subj_vel: Velocity<jeod_quantities::frame::PlanetInertial<P>>,
-) -> LvlhRelativeState<Chief> {
-    compute_lvlh_relative_state::<Chief>(
+) -> LvlhRelativeState {
+    compute_lvlh_relative_state(
         ref_pos.raw_si(),
         ref_vel.raw_si(),
         subj_pos.raw_si(),
@@ -651,8 +697,8 @@ mod tests {
         let subj_pos = DVec3::new(6.778e6 + 50.0, 80.0, 10.0);
         let subj_vel = DVec3::new(-0.05, 7.668e3 + 0.06, 0.0);
 
-        let raw = compute_lvlh_relative_state::<SelfRef>(ref_pos, ref_vel, subj_pos, subj_vel);
-        let typed = compute_lvlh_relative_state_typed::<Earth, SelfRef>(
+        let raw = compute_lvlh_relative_state(ref_pos, ref_vel, subj_pos, subj_vel);
+        let typed = compute_lvlh_relative_state_typed(
             ref_pos.m_at::<PlanetInertial<Earth>>(),
             ref_vel.m_per_s_at::<PlanetInertial<Earth>>(),
             subj_pos.m_at::<PlanetInertial<Earth>>(),
@@ -664,11 +710,10 @@ mod tests {
         assert_eq!(typed.position.raw_si(), raw.position.raw_si());
         assert_eq!(typed.velocity.raw_si(), raw.velocity.raw_si());
 
-        // The output `<Chief>` parameter is named by the caller — the
-        // raw and typed entries above passed `<SelfRef>` (the wildcard
-        // for runtime-resolved adapter chiefs). Mission code that
-        // pins a concrete chief vehicle gets the cross-vehicle compile
-        // guard at this binding site.
+        // The output phantom is `<Lvlh<SelfRef>>` regardless of the
+        // input planet phantom — runtime knows which entity is the
+        // chief, the producer cannot statically (matches the struct
+        // contract on `LvlhRelativeState`).
         let _: Position<jeod_quantities::frame::Lvlh<jeod_quantities::frame::SelfRef>> =
             typed.position;
         let _: Velocity<jeod_quantities::frame::Lvlh<jeod_quantities::frame::SelfRef>> =
@@ -705,8 +750,12 @@ mod tests {
         };
 
         // Some reference rotation → BodyFrame variant, with the typed
-        // `Position<BodyFrame<SelfRef>>` recovered by destructure.
-        let with_rot = compute_relative_state::<SelfRef>(&trans_a, Some(&rot_a), &trans_b, None);
+        // `Position<BodyFrame<SelfRef>>` recovered by destructure. The
+        // `<SelfRef, SelfRef>` turbofish is the canonical
+        // runtime-resolved boundary — both per-entity adapters
+        // instantiate the producer this way.
+        let with_rot =
+            compute_relative_state::<SelfRef, SelfRef>(&trans_a, Some(&rot_a), &trans_b, None);
         let RelativeTranslation::BodyFrame { position, velocity } = with_rot.trans else {
             panic!("Some reference rotation must yield BodyFrame variant");
         };
@@ -715,7 +764,7 @@ mod tests {
 
         // None reference rotation → Inertial variant, with typed
         // `Position<RootInertial>` recovered by destructure.
-        let no_rot = compute_relative_state::<SelfRef>(&trans_a, None, &trans_b, None);
+        let no_rot = compute_relative_state::<SelfRef, SelfRef>(&trans_a, None, &trans_b, None);
         let RelativeTranslation::Inertial { position, velocity } = no_rot.trans else {
             panic!("None reference rotation must yield Inertial variant");
         };
@@ -726,10 +775,65 @@ mod tests {
         // bit-identical `DVec3` regardless of variant — useful for
         // numerical consumers (e.g. scalar `length()` distance
         // metrics) that don't care about the frame label.
-        let no_rot_again = compute_relative_state::<SelfRef>(&trans_a, None, &trans_b, None);
+        let no_rot_again =
+            compute_relative_state::<SelfRef, SelfRef>(&trans_a, None, &trans_b, None);
         let raw_pos = no_rot_again.trans.position_raw();
         let raw_vel = no_rot_again.trans.velocity_raw();
         assert_eq!(raw_pos, trans_b.position - trans_a.position);
         assert_eq!(raw_vel, trans_b.velocity - trans_a.velocity);
+    }
+
+    /// Pinning the producer's `<Subject, Reference>` to two distinct
+    /// concrete vehicles propagates each phantom into its expected
+    /// slot: `Subject` ends up on `ang_vel`'s body-frame phantom,
+    /// `Reference` ends up on the body-frame variant's
+    /// position/velocity phantoms. The `let _: …` ascriptions are the
+    /// structural guard — a future refactor that swapped the two
+    /// phantoms (or dropped one of them) would refuse to typecheck.
+    #[test]
+    fn relative_state_paired_phantoms_propagate() {
+        use jeod_math::JeodQuat;
+        use jeod_quantities::define_vehicle;
+
+        define_vehicle!(Subj);
+        define_vehicle!(Ref);
+
+        let trans_a = crate::TranslationalState {
+            position: DVec3::new(6_778_137.0, 0.0, 0.0),
+            velocity: DVec3::new(0.0, 7668.56, 0.0),
+        };
+        let trans_b = crate::TranslationalState {
+            position: DVec3::new(6_778_237.0, 100.0, -50.0),
+            velocity: DVec3::new(0.01, 7668.55, 0.005),
+        };
+        let rot_ref = RotationalState {
+            quaternion: {
+                let mut q = JeodQuat::new(0.5_f64.sqrt(), 0.5, 0.0, 0.5_f64.sqrt() - 0.5);
+                q.normalize();
+                q
+            },
+            ang_vel_body: DVec3::new(0.001, -0.0005, 0.001),
+        };
+        let rot_subj = RotationalState {
+            quaternion: JeodQuat::identity(),
+            ang_vel_body: DVec3::new(0.0, 0.0, 0.001),
+        };
+
+        let rel = compute_relative_state::<Subj, Ref>(
+            &trans_a,
+            Some(&rot_ref),
+            &trans_b,
+            Some(&rot_subj),
+        );
+
+        // Subject phantom propagated into ang_vel.
+        let _: jeod_quantities::aliases::AngularVelocity<BodyFrame<Subj>> = rel.ang_vel;
+
+        // Reference phantom propagated into the BodyFrame variant.
+        let RelativeTranslation::BodyFrame { position, velocity } = rel.trans else {
+            panic!("Some reference rotation must yield BodyFrame variant");
+        };
+        let _: Position<BodyFrame<Ref>> = position;
+        let _: jeod_quantities::aliases::Velocity<BodyFrame<Ref>> = velocity;
     }
 }

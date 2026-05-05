@@ -25,7 +25,7 @@ use glam::DVec3;
 use jeod_runner::{RotationModel, Simulation};
 use jeod_sim::{
     compute_lvlh_relative_state_typed, compute_relative_state, Earth, GravityControl,
-    GravityControls, GravityModel, GravitySource, PlanetInertial, RelativeTranslation,
+    GravityControls, GravityModel, GravitySource, PlanetInertial, RelativeTranslation, SelfRef,
     SimulationTime, TranslationalState, Vec3Ext,
 };
 use jeod_sim::{DerivedStateConfig, GravitySourceEntry, VehicleConfig};
@@ -128,7 +128,7 @@ fn tier3_relative_two_coorbiting_vehicles() {
         let chief = sim.body(0);
         let deputy = sim.body(1);
         let rel_inertial =
-            compute_relative_state::<jeod_sim::SelfRef>(&chief.trans, None, &deputy.trans, None);
+            compute_relative_state::<SelfRef, SelfRef>(&chief.trans, None, &deputy.trans, None);
         // `None` reference rotation: producer returns the `Inertial`
         // variant, so we read the typed root-inertial position
         // directly (the type assertion would catch any future
@@ -143,7 +143,7 @@ fn tier3_relative_two_coorbiting_vehicles() {
         // Earth-centered point-mass sim: the integration frame for
         // both bodies is `<PlanetInertial<Earth>>`; tag at the call
         // site to satisfy the typed entry's planet-inertial contract.
-        let rel = compute_lvlh_relative_state_typed::<Earth, jeod_sim::SelfRef>(
+        let rel = compute_lvlh_relative_state_typed(
             chief.trans.position.m_at::<PlanetInertial<Earth>>(),
             chief.trans.velocity.m_per_s_at::<PlanetInertial<Earth>>(),
             deputy.trans.position.m_at::<PlanetInertial<Earth>>(),
@@ -221,7 +221,7 @@ fn tier3_relative_hohmann_transfer_geometry() {
     sim.validate().unwrap();
 
     // Initial separation: both bodies at the same point → 0.
-    let init_rel = compute_relative_state::<jeod_sim::SelfRef>(
+    let init_rel = compute_relative_state::<SelfRef, SelfRef>(
         &sim.body(0).trans,
         None,
         &sim.body(1).trans,
@@ -250,7 +250,7 @@ fn tier3_relative_hohmann_transfer_geometry() {
         let chief = sim.body(0);
         let deputy = sim.body(1);
         let rel =
-            compute_relative_state::<jeod_sim::SelfRef>(&chief.trans, None, &deputy.trans, None);
+            compute_relative_state::<SelfRef, SelfRef>(&chief.trans, None, &deputy.trans, None);
         let sep = rel.trans.position_raw().length();
         max_sep = max_sep.max(sep);
     }
@@ -314,7 +314,7 @@ fn tier3_relative_same_orbit_phase_difference() {
     {
         let a = sim.body(0);
         let b = sim.body(1);
-        let rel = compute_relative_state::<jeod_sim::SelfRef>(&a.trans, None, &b.trans, None);
+        let rel = compute_relative_state::<SelfRef, SelfRef>(&a.trans, None, &b.trans, None);
         let sep = rel.trans.position_raw().length();
         max_dev = max_dev.max((sep - expected_sep).abs());
     }
@@ -326,7 +326,7 @@ fn tier3_relative_same_orbit_phase_difference() {
         sim.step_until(t).expect("step_until failed");
         let a = sim.body(0);
         let b = sim.body(1);
-        let rel = compute_relative_state::<jeod_sim::SelfRef>(&a.trans, None, &b.trans, None);
+        let rel = compute_relative_state::<SelfRef, SelfRef>(&a.trans, None, &b.trans, None);
         let sep = rel.trans.position_raw().length();
         max_dev = max_dev.max((sep - expected_sep).abs());
     }
@@ -451,9 +451,9 @@ fn tier3_relative_round_trip_frames() {
         let b = sim.body(1);
 
         // State of A wrt B (reference = B, subject = A).
-        let a_wrt_b = compute_relative_state::<jeod_sim::SelfRef>(&b.trans, None, &a.trans, None);
+        let a_wrt_b = compute_relative_state::<SelfRef, SelfRef>(&b.trans, None, &a.trans, None);
         // State of B wrt A (reference = A, subject = B).
-        let b_wrt_a = compute_relative_state::<jeod_sim::SelfRef>(&a.trans, None, &b.trans, None);
+        let b_wrt_a = compute_relative_state::<SelfRef, SelfRef>(&a.trans, None, &b.trans, None);
 
         // Both call sites pass `None` for the reference rotation, so
         // the producer always lands in the `Inertial` variant. We

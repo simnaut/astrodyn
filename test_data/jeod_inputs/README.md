@@ -49,7 +49,7 @@ Reference it from a Tier 3 rig with
 
 ## Currently committed inputs
 
-- `verif/SIM_dyncomp/` — `S_define`, `Modified_data/{mass,time,grav_controls}.py`, `SET_test/RUN_{3A,3B,7A,7B,7C,7D}/input.py` (consumed by `sim_dyncomp`, `sim_torque_simple`, `sim_tide_verif`, `sim_polar_motion`).
+- `verif/SIM_dyncomp/` — `S_define`, `Modified_data/{mass,time,grav_controls,state}.py`, `SET_test/RUN_{3A,3B,7A,7B,7C,7D}/input.py` (consumed by `sim_dyncomp`, `sim_torque_simple`, `sim_tide_verif`, `sim_polar_motion`).
 - `models/dynamics/derived_state/verif/Modified_data/date_and_time.py` (consumed by `sim_derived_state` SIM_NED rig).
 - `models/dynamics/derived_state/verif/SIM_{OrbElem,LVLH,NED,Euler,Planetary,SolarBeta}/S_define`.
 - `models/dynamics/derived_state/verif/SIM_SolarBeta/Modified_data/date_and_time.py`.

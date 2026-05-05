@@ -11,7 +11,8 @@ use jeod_math::JeodQuat;
 use jeod_runner::Simulation;
 use jeod_sim::VehicleConfig;
 use jeod_sim::{
-    compute_relative_state, MassProperties, RotationalState, SimulationTime, TranslationalState,
+    compute_relative_state, MassProperties, RotationalState, SelfRef, SimulationTime,
+    TranslationalState,
 };
 
 /// SIM_Relative CSV record. Mirrors the full column layout; not every
@@ -125,7 +126,7 @@ fn run_relative_scenario(label: &str, csv_name: &str) {
     {
         let a = sim.body(0);
         let b = sim.body(1);
-        let rel = compute_relative_state::<jeod_sim::SelfRef>(
+        let rel = compute_relative_state::<SelfRef, SelfRef>(
             &b.trans,
             b.rot.as_ref(),
             &a.trans,
@@ -149,7 +150,7 @@ fn run_relative_scenario(label: &str, csv_name: &str) {
         let a = sim.body(0);
         let b = sim.body(1);
 
-        let rel = compute_relative_state::<jeod_sim::SelfRef>(
+        let rel = compute_relative_state::<SelfRef, SelfRef>(
             &b.trans,
             b.rot.as_ref(),
             &a.trans,
