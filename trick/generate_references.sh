@@ -288,6 +288,11 @@ run_dyncomp_group() {
         "SET_test/RUN_7B:dyncomp_run7b:dyncomp_run7b_state.csv"
         "SET_test/RUN_7C:dyncomp_run7c:dyncomp_run7c_state.csv"
         "SET_test/RUN_7D:dyncomp_run7d:dyncomp_run7d_state.csv"
+        # Multi-attach lifecycle: 8x8 SH + sun/moon + drag + grav-grad torque
+        # + chained attach/detach pairs + mid-trajectory set_state rewinds.
+        # 12000 s window (extended past common_input.py's 28800 by the run's
+        # own trick.stop(stop_time) wired through chkpt_restart_times.py).
+        "SET_test/RUN_attach_to_ref_frame:dyncomp_run_attach_to_ref_frame:dyncomp_run_attach_to_ref_frame_state.csv"
     )
 
     # Skip entire group (including build) if all primary outputs exist.

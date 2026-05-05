@@ -13,8 +13,8 @@ use glam::DVec3;
 use jeod_dynamics::{MassBodyId, MassPointState};
 use jeod_frames::{RefFrameKind, RefFrameRot, RefFrameState, RefFrameTrans};
 use jeod_sim::{
-    evaluate_ground_contact_pair, ContactFacet, GroundFacet, IntegrationFrame, MassProperties,
-    Phase, Position, VehicleConfig, Velocity,
+    evaluate_ground_contact_pair, ContactFacet, DragConfig, GroundFacet, IntegrationFrame,
+    MassProperties, Phase, Position, VehicleConfig, Velocity,
 };
 
 use super::types::{
@@ -308,6 +308,32 @@ impl Simulation {
     /// holds into the [`MassBodyId`] the [`MassTree`] indexes by.
     ///
     /// [`MassTree`]: jeod_dynamics::MassTree
+    /// Frame-tree node id of the body's `composite_body` reference
+    /// frame.
+    ///
+    /// Exposed so callers that need to look up the body's pose in a
+    /// non-integration parent frame (e.g. JEOD's
+    /// `RUN_attach_to_ref_frame` "capture pre-attach pfix-relative
+    /// pose" pattern) can pass the id to
+    /// [`FrameTree::compute_relative_state`](jeod_frames::FrameTree::compute_relative_state)
+    /// via [`Self::frame_tree`]. The id is stable for the lifetime of
+    /// the simulation — `add_body` allocates it once and never reuses
+    /// it.
+    ///
+    /// # Panics
+    /// Panics if `idx` is out of range.
+    pub fn body_frame_id(&self, idx: usize) -> jeod_frames::FrameId {
+        assert!(
+            idx < self.bodies.len(),
+            "body_frame_id: body index {idx} out of range (have {} bodies)",
+            self.bodies.len()
+        );
+        self.bodies[idx].body_frame_id
+    }
+
+    /// Mass-tree node id of body `idx`, or `None` if the body has not
+    /// been registered via [`Self::add_body_to_tree`]. Stable for the
+    /// lifetime of the simulation.
     pub fn body_mass_id(&self, idx: usize) -> Option<MassBodyId> {
         self.bodies[idx].mass_body_id
     }
@@ -643,6 +669,51 @@ impl Simulation {
         mass.dirty = true;
         mass.recompute_derived();
         self.bodies[idx].mass = Some(mass);
+    }
+
+    /// Toggle a body's aerodynamic drag configuration mid-run.
+    ///
+    /// `Some(cfg)` enables drag with the supplied parameters and primes
+    /// the body's per-step `AtmosphereState` storage so the next
+    /// `Simulation::step()` evaluates the atmosphere model. `None`
+    /// disables drag and clears the cached atmospheric state — the
+    /// body's drag and atmosphere-evaluation passes both no-op until
+    /// the setter is called again with `Some`.
+    ///
+    /// Used by Tier 3 sims that toggle the atmosphere mid-trajectory
+    /// (`SIM_dyncomp/RUN_attach_to_ref_frame` disables atmosphere at
+    /// the surface-attach windows so the MET model doesn't trip its
+    /// negative-altitude failure mode while the body is glued to
+    /// Earth.pfix at altitude=1 m). Mirrors the JEOD-side
+    /// `trick.exec_set_job_onoff("vehicle.atmos_state.update_state",
+    /// 2, False/True)` pattern, except per-body rather than
+    /// per-job-name.
+    ///
+    /// # Panics
+    /// Panics if `idx` is out of range.
+    pub fn set_body_drag(&mut self, idx: usize, drag: Option<DragConfig>) {
+        assert!(
+            idx < self.bodies.len(),
+            "set_body_drag: body index {idx} out of range (have {} bodies)",
+            self.bodies.len()
+        );
+        if drag.is_some() {
+            // Prime an `AtmosphereState` slot if one is missing so the
+            // first post-toggle step evaluates the atmosphere; existing
+            // state is left in place (the drag config change shouldn't
+            // discard a freshly evaluated density).
+            if self.bodies[idx].atmospheric_state.is_none() {
+                self.bodies[idx].atmospheric_state = Some(jeod_sim::AtmosphereState::default());
+            }
+        } else {
+            // Clear the atmospheric-state slot too — a `None` drag
+            // config combined with a `Some` atmospheric_state would
+            // leave the body's atmosphere-evaluation pass running each
+            // step without consuming the result, wasting work and
+            // confusing readers about the body's actual configuration.
+            self.bodies[idx].atmospheric_state = None;
+        }
+        self.bodies[idx].drag = drag;
     }
 
     /// Sync a body's mass properties from the mass tree's composite.
