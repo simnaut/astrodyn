@@ -323,9 +323,19 @@ impl MassTree {
         // *root's* structural frame goes where the subject child's
         // would have gone, and attach the root.
         let child_root = self.root_of(child_id);
+        // JEOD_INV: MA.19 — same-tree attachment is forbidden. JEOD
+        // `attach_validate_parent` (`mass_attach.cc:373`) compares the
+        // *roots* of the two bodies (`parent.get_root_body() ==
+        // get_root_body()`); a check that only compared `child_root` to
+        // `parent_id` would miss the case where `parent_id` is a
+        // non-root member of the subject's existing tree. Detecting
+        // same-tree here gives a single fail-loud diagnostic naming the
+        // shared root, instead of falling through to `attach`'s cycle
+        // walk which fires with a less informative message.
+        let parent_root = self.root_of(parent_id);
         assert_ne!(
+            parent_root,
             child_root,
-            parent_id,
             "attach_with_reroot: subject body {} (\"{}\") is already in the same tree as \
              parent {} (\"{}\") (shared root {} \"{}\") — JEOD `attach_validate_parent` \
              warns and no-ops; this port panics fail-loud per CLAUDE.md.",
@@ -1734,5 +1744,49 @@ mod tests {
             1e-12,
             "subject ends up with the user-requested rotation in new root struct",
         );
+    }
+
+    /// Same-tree guard: subject's existing root is exactly `parent_id`.
+    /// This is the simple "single-edge cycle" case — `attach_with_reroot`
+    /// must reject it before attempting the reroot.
+    #[test]
+    #[should_panic(expected = "already in the same tree")]
+    fn attach_with_reroot_rejects_same_tree_parent_is_root() {
+        let mut tree = MassTree::new();
+        let a = tree.add_root("a".into(), MassProperties::new(1.0));
+        let b = tree.add_root("b".into(), MassProperties::new(1.0));
+        // Build (a ← b); a is b's root.
+        tree.attach(b, a, DVec3::ZERO, DMat3::IDENTITY);
+        // Subject = b, parent = a (= root_of(b)). Same-tree → must panic
+        // with the named diagnostic.
+        let _ = tree.attach_with_reroot(b, a, DVec3::ZERO, DMat3::IDENTITY);
+    }
+
+    /// Same-tree guard: parent is a *non-root* member of the subject's
+    /// existing tree (e.g. a sibling or descendant of the subject's
+    /// root). The walk-up check `child_root != parent_id` alone would
+    /// miss this case because the parent is not the root; without the
+    /// `root_of(parent_id)` comparison, control would fall through to
+    /// `attach`'s cycle walk which fires with a less informative
+    /// message. JEOD's `attach_validate_parent` (`mass_attach.cc:373`)
+    /// rejects this via `parent.get_root_body() == get_root_body()`.
+    #[test]
+    #[should_panic(expected = "already in the same tree")]
+    fn attach_with_reroot_rejects_same_tree_parent_is_sibling() {
+        let mut tree = MassTree::new();
+        let a = tree.add_root("a".into(), MassProperties::new(1.0));
+        let b = tree.add_root("b".into(), MassProperties::new(1.0));
+        let c = tree.add_root("c".into(), MassProperties::new(1.0));
+        // Build (a ← b) and (a ← c). b and c are siblings under root a.
+        tree.attach(b, a, DVec3::new(1.0, 0.0, 0.0), DMat3::IDENTITY);
+        tree.attach(c, a, DVec3::new(0.0, 1.0, 0.0), DMat3::IDENTITY);
+        assert_eq!(tree.root_of(b), a);
+        assert_eq!(tree.root_of(c), a);
+        // Subject = b (root_of = a), parent = c (root_of = a, but c ≠ a).
+        // The old `child_root != parent_id` check would pass (a ≠ c) and
+        // hand off to `attach`, which would then panic with its cycle
+        // message. The fix detects same-tree here and panics with the
+        // intended diagnostic naming the shared root.
+        let _ = tree.attach_with_reroot(b, c, DVec3::ZERO, DMat3::IDENTITY);
     }
 }
