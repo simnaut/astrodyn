@@ -1418,14 +1418,31 @@ pub struct KinematicChildC;
 ///
 /// Both entities must have [`MassBodyIdC`]. Processed by `staging_system`
 /// before integration each step.
+///
+/// `offset` carries `Position<StructuralFrame<SelfRef>>`: the child's
+/// structural origin lives in the parent's structural frame, and the
+/// `SelfRef` wildcard tag mirrors the per-entity adapter pattern (the
+/// concrete vehicle identity of the parent is determined at runtime
+/// via the entity hierarchy). The compile-time guard is the *frame
+/// kind*: a caller that holds an inertial-frame position cannot
+/// accidentally feed it as the structural-frame attach offset.
+///
+/// `t_parent_child` stays raw `glam::DMat3` for now — typing it as a
+/// `FrameTransform<StructuralFrame<SelfRef>, StructuralFrame<SelfRef>>`
+/// would yield `From == To`, which is the identity-direction case
+/// covered only by `FrameTransform::identity`. A two-vehicle phantom
+/// distinguishing parent vs child structural frames is the right
+/// follow-up but requires the `<V>` Bevy-component genericity from
+/// Section A of the audit (see #263 / sibling issues) — the `SelfRef`
+/// wildcard cannot encode that distinction at the type level.
 #[derive(Message, Debug, Clone)]
 pub struct AttachEvent {
     /// Entity of the child body.
     pub child: Entity,
     /// Entity of the parent body.
     pub parent: Entity,
-    /// Child structural origin in parent's structural frame (m).
-    pub offset: DVec3,
+    /// Child structural origin in the parent's structural frame (m).
+    pub offset: jeod_sim::Position<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>,
     /// Rotation from parent structural frame to child structural frame.
     pub t_parent_child: glam::DMat3,
 }

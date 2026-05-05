@@ -16,6 +16,7 @@ use jeod_interactions::{
     FlatPlateThermal, SOLAR_RADIUS,
 };
 use jeod_math::{GeodeticState, JeodQuat};
+use jeod_quantities::ext::Vec3Ext;
 
 /// Earth gravitational parameter (m^3/s^2) — JEOD `earth_GGM05C.cc`.
 const MU_EARTH: f64 = jeod_planet::presets::EARTH.mu;
@@ -157,7 +158,8 @@ fn srp_changes_eccentricity() {
         FlatPlate {
             area: 100.0,
             normal: DVec3::X,
-            position: DVec3::ZERO,
+            position: DVec3::ZERO
+                .m_at::<jeod_quantities::frame::StructuralFrame<jeod_quantities::frame::SelfRef>>(),
         },
         FlatPlateParams {
             albedo: 0.0,

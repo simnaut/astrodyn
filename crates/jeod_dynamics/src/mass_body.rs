@@ -296,7 +296,7 @@ impl MassTree {
     /// is the same tree the subject already lives in (JEOD warns and
     /// no-ops in that case; we panic-loud for symmetry with the cycle
     /// check on `attach`).
-    // JEOD_INV: BA.08 — chained attach re-roots the subject's existing tree under the new parent
+    // JEOD_INV: BA.11 — chained attach re-roots the subject's existing tree under the new parent
     pub fn attach_with_reroot(
         &mut self,
         child_id: MassBodyId,

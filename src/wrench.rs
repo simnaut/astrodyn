@@ -1439,7 +1439,7 @@ mod tests {
         };
         use jeod_sim::{
             FlatPlate, FlatPlateParams, FlatPlateState, FlatPlateThermal, MassProperties,
-            ThermalIntegrationOrder, TranslationalState,
+            ThermalIntegrationOrder, TranslationalState, Vec3Ext,
         };
 
         let mut app = add_test_app();
@@ -1482,7 +1482,7 @@ mod tests {
             FlatPlate {
                 area: 10.0,
                 normal: -DVec3::X, // facing the Sun
-                position: DVec3::ZERO,
+                position: DVec3::ZERO.m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(),
             },
             FlatPlateParams {
                 albedo: 0.3,

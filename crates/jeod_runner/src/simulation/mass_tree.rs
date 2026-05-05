@@ -398,7 +398,7 @@ impl Simulation {
         //    even though the underlying tree edge runs from `parent`
         //    to the subject's existing root.
         let tree = self.mass_tree.as_mut().expect("attach: no mass tree");
-        // JEOD_INV: BA.08 — runner dispatches every public attach through the
+        // JEOD_INV: BA.11 — runner dispatches every public attach through the
         // reroot-aware kernel so chained-attach scenarios pick the JEOD
         // `dyn_body_attach.cc:521-567` path automatically.
         let _attached_root = tree.attach_with_reroot(child_id, parent_id, offset, t_parent_child);
@@ -1217,9 +1217,18 @@ impl Simulation {
             let cm_delta_body = t_struct_to_body * cm_delta_struct;
             let dvel_inertial =
                 parent_composite_state.rot.t_parent_this.transpose() * w_body.cross(cm_delta_body);
+            // Build raw f64 sums in the runtime-typed arena, then attach
+            // the `RootInertial` phantom at the boundary into the typed
+            // `DetachedSubtreeState` storage. Both sides of the addition
+            // live in the simulation's root inertial frame (the parent's
+            // composite-CoM offset shift propagates the parent's
+            // pre-detach inertial pose forward by Δr in the same frame).
+            use jeod_sim::Vec3Ext;
+            let updated_pos = parent_composite_state.trans.position + cm_delta_inertial;
+            let updated_vel = parent_composite_state.trans.velocity + dvel_inertial;
             let updated = DetachedSubtreeState {
-                composite_position: parent_composite_state.trans.position + cm_delta_inertial,
-                composite_velocity: parent_composite_state.trans.velocity + dvel_inertial,
+                composite_position: updated_pos.m_at::<jeod_sim::RootInertial>(),
+                composite_velocity: updated_vel.m_per_s_at::<jeod_sim::RootInertial>(),
                 composite_attitude: DetachedSubtreeState::attitude_from_raw_jeod_quat(
                     parent_composite_state.rot.q_parent_this,
                 ),

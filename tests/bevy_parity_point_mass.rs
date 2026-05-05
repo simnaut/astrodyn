@@ -470,36 +470,14 @@ fn tier3_sim_lvlh_relative_consistency() {
     let expected_vel =
         lvlh.t_parent_this * rel_vel_inertial - lvlh.ang_vel_this.cross(expected_pos);
 
-    assert_eq!(
-        lvlh_rel.position.x.to_bits(),
-        expected_pos.x.to_bits(),
-        "LVLH pos x"
-    );
-    assert_eq!(
-        lvlh_rel.position.y.to_bits(),
-        expected_pos.y.to_bits(),
-        "LVLH pos y"
-    );
-    assert_eq!(
-        lvlh_rel.position.z.to_bits(),
-        expected_pos.z.to_bits(),
-        "LVLH pos z"
-    );
-    assert_eq!(
-        lvlh_rel.velocity.x.to_bits(),
-        expected_vel.x.to_bits(),
-        "LVLH vel x"
-    );
-    assert_eq!(
-        lvlh_rel.velocity.y.to_bits(),
-        expected_vel.y.to_bits(),
-        "LVLH vel y"
-    );
-    assert_eq!(
-        lvlh_rel.velocity.z.to_bits(),
-        expected_vel.z.to_bits(),
-        "LVLH vel z"
-    );
+    let lvlh_pos = lvlh_rel.position.raw_si();
+    let lvlh_vel = lvlh_rel.velocity.raw_si();
+    assert_eq!(lvlh_pos.x.to_bits(), expected_pos.x.to_bits(), "LVLH pos x");
+    assert_eq!(lvlh_pos.y.to_bits(), expected_pos.y.to_bits(), "LVLH pos y");
+    assert_eq!(lvlh_pos.z.to_bits(), expected_pos.z.to_bits(), "LVLH pos z");
+    assert_eq!(lvlh_vel.x.to_bits(), expected_vel.x.to_bits(), "LVLH vel x");
+    assert_eq!(lvlh_vel.y.to_bits(), expected_vel.y.to_bits(), "LVLH vel y");
+    assert_eq!(lvlh_vel.z.to_bits(), expected_vel.z.to_bits(), "LVLH vel z");
     println!("  LVLH-relative: bit-identical with manual LVLH rotation + Coriolis");
 }
 

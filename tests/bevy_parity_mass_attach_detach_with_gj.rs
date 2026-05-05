@@ -164,7 +164,9 @@ fn bevy_parity_mass_attach_with_gj_resets_integrator() {
         .write(AttachEvent {
             child: body_b,
             parent: body_a,
-            offset: DVec3::ZERO,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
             t_parent_child: DMat3::IDENTITY,
         });
 
@@ -261,7 +263,9 @@ fn bevy_parity_mass_attach_with_gj_resets_full_ancestor_chain() {
         .write(AttachEvent {
             child: e_middle,
             parent: e_top,
-            offset: DVec3::ZERO,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
             t_parent_child: DMat3::IDENTITY,
         });
     app.world_mut()
@@ -269,7 +273,9 @@ fn bevy_parity_mass_attach_with_gj_resets_full_ancestor_chain() {
         .write(AttachEvent {
             child: e_leaf,
             parent: e_middle,
-            offset: DVec3::ZERO,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
             t_parent_child: DMat3::IDENTITY,
         });
     step_bevy(&mut app, 200, sim_dt);
@@ -285,7 +291,9 @@ fn bevy_parity_mass_attach_with_gj_resets_full_ancestor_chain() {
         .write(AttachEvent {
             child: e_new,
             parent: e_middle,
-            offset: DVec3::ZERO,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
             t_parent_child: DMat3::IDENTITY,
         });
     step_bevy(&mut app, 1, sim_dt);
@@ -326,7 +334,9 @@ fn bevy_parity_mass_detach_with_gj_resets_integrator() {
         .write(AttachEvent {
             child: body_b,
             parent: body_a,
-            offset: DVec3::ZERO,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
             t_parent_child: DMat3::IDENTITY,
         });
     step_bevy(&mut app, 200, sim_dt);
