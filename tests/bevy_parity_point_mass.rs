@@ -422,7 +422,15 @@ fn tier3_sim_relative_state_consistency() {
     let a = sim.body(0);
     let b = sim.body(1);
 
-    let rel = compute_relative_state(&a.trans, a.rot.as_ref(), &b.trans, b.rot.as_ref());
+    // `<SelfRef, SelfRef>` is the canonical runtime-resolved boundary
+    // — both subject and reference vehicle identities live in
+    // per-entity ECS storage, not in the static type system.
+    let rel = compute_relative_state::<jeod_sim::SelfRef, jeod_sim::SelfRef>(
+        &a.trans,
+        a.rot.as_ref(),
+        &b.trans,
+        b.rot.as_ref(),
+    );
 
     let t_ref = a
         .rot
