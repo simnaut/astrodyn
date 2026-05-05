@@ -1582,7 +1582,7 @@ fn bevy_attach_cross_integ_frame_rewrites_child_state_into_new_integ_frame() {
             SourceInertialPositionC(jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(
                 source_a_pos,
             )),
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: source_a_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -1599,7 +1599,7 @@ fn bevy_attach_cross_integ_frame_rewrites_child_state_into_new_integ_frame() {
             SourceInertialPositionC(jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(
                 source_b_pos,
             )),
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: source_b_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -1611,7 +1611,7 @@ fn bevy_attach_cross_integ_frame_rewrites_child_state_into_new_integ_frame() {
         .spawn((
             Name::new("Parent"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(parent_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(parent_trans),
             RotationalStateC::from(initial_rot),
             MassPropertiesC::from(parent_mass),
             MassBodyIdC(id_a),
@@ -1623,7 +1623,7 @@ fn bevy_attach_cross_integ_frame_rewrites_child_state_into_new_integ_frame() {
         .spawn((
             Name::new("Child"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(child_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(child_trans),
             RotationalStateC::from(initial_rot),
             MassPropertiesC::from(child_mass),
             MassBodyIdC(id_b),
@@ -2724,7 +2724,7 @@ fn bevy_runner_parity_cross_integ_frame_attach() {
             SourceInertialPositionC(jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(
                 source_a_pos,
             )),
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: source_a_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -2741,7 +2741,7 @@ fn bevy_runner_parity_cross_integ_frame_attach() {
             SourceInertialPositionC(jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(
                 source_b_pos,
             )),
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: source_b_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -2752,7 +2752,7 @@ fn bevy_runner_parity_cross_integ_frame_attach() {
         .spawn((
             Name::new("Parent"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(parent_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(parent_trans),
             RotationalStateC::from(parent_rot),
             MassPropertiesC::from(parent_mass),
             MassBodyIdC(id_a),
@@ -2764,7 +2764,7 @@ fn bevy_runner_parity_cross_integ_frame_attach() {
         .spawn((
             Name::new("Child"),
             DynamicsConfigC::default(),
-            TranslationalStateC::from(child_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(child_trans),
             RotationalStateC::from(child_rot),
             MassPropertiesC::from(child_mass),
             MassBodyIdC(id_b),

@@ -203,7 +203,7 @@ impl Plugin for JeodPlugin {
                  frame is inertial — source / body registration tags new children \
                  with `InertialFrameMarker` and the typed Bevy components \
                  (`Position<RootInertial>`, \
-                 `TranslationalStateC` storing `<PlanetInertial<SelfPlanet>>`) \
+                 `TranslationalStateC<P>` storing `<PlanetInertial<P>>`) \
                  are all phantom-tagged for an inertial root. Add \
                  `InertialFrameMarker` to the entity, or let JeodPlugin spawn the \
                  root frame.",
@@ -910,6 +910,41 @@ pub trait VehicleConfigBevyExt {
     /// (orbital elements, Euler, LVLH, geodetic, solar beta, earth
     /// lighting). These are tracked for future expansion of
     /// `spawn_bevy`.
+    ///
+    /// # Planet pinning
+    ///
+    /// This convenience helper currently inserts the translational-state
+    /// slot as `TranslationalStateC<jeod_sim::Earth>` regardless of which
+    /// planet pipeline the body is intended to integrate against.
+    /// `VehicleConfig.trans` is the ECS-agnostic untyped
+    /// [`jeod_sim::TranslationalState`] (no planet tag), and the spawn-side
+    /// witness for `<P>` is not yet plumbed through this helper.
+    ///
+    /// Consequence: `cfg.spawn_bevy(&mut commands, &[mars_entity])` will
+    /// spawn a body with an `<Earth>`-tagged translational slot even if the
+    /// only registered planet pipeline is
+    /// `register_planet_systems::<jeod_sim::Mars>(...)`. The
+    /// planet-generic consumer systems (`atmosphere_*`,
+    /// `lvlh_derived_state_*`, `geodetic_*`, `orbital_elements_*`) gate on
+    /// `TranslationalStateC<P>` and would silently skip the body.
+    ///
+    /// For non-Earth integration sources, do **not** rely on `spawn_bevy`'s
+    /// translational insert. Instead, either:
+    ///
+    /// - spawn the entity manually with the correct
+    ///   `TranslationalStateC::<P>(jeod_sim::TranslationalStateTyped::from_untyped_unchecked(&state))`
+    ///   slot, or
+    /// - call `spawn_bevy` and immediately `commands.entity(id).remove::<TranslationalStateC<jeod_sim::Earth>>()`
+    ///   followed by `commands.entity(id).insert(TranslationalStateC::<P>(...))`,
+    ///   mutating through `Query<&mut TranslationalStateC<P>>` for any
+    ///   subsequent state changes. Queued translational `BodyAction`s are
+    ///   currently Earth-only for the same reason — see the panic
+    ///   diagnostic in `body_action_system`.
+    ///
+    /// The queue-side / spawn-side refactor that lifts this restriction
+    /// (parameterizing the translational insert by `<P>` and giving
+    /// `BodyActionsR` a planet tag) is tracked in
+    /// [issue #330](https://github.com/simnaut/bevy_jeod/issues/330).
     ///
     /// # Panics
     ///

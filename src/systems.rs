@@ -2482,8 +2482,8 @@ pub fn gravity_computation_system<P: Planet>(
 ) {
     for (entity, state, controls, mut accel, body_frame) in &mut bodies {
         // `TranslationalStateC` stores typed
-        // `Position<PlanetInertial<SelfPlanet>>` /
-        // `Velocity<PlanetInertial<SelfPlanet>>`. For root-integrated
+        // `Position<PlanetInertial<P>>` /
+        // `Velocity<PlanetInertial<P>>`. For root-integrated
         // bodies the integ frame numerically equals root inertial, so
         // the raw values match what gravity wants. For non-root
         // bodies we shift to absolute root-inertial coordinates below
@@ -2844,7 +2844,7 @@ pub fn geodetic_system<P: Planet>(
 
 /// Compute the typed root-inertial origin offset of `body_frame`'s
 /// integration frame — the RF.10 shift that lifts a body's
-/// `PlanetInertial<SelfPlanet>` state into absolute `RootInertial`
+/// `PlanetInertial<P>` state into absolute `RootInertial`
 /// coordinates. Returns `(zero, zero)` when:
 ///
 /// - the body has no [`FrameEntityC`] (legacy entities registered
@@ -3020,7 +3020,7 @@ pub fn solar_beta_system<P: Planet>(
         // Solar beta is a root-inertial-shift consumer (RF.10): the
         // kernel mixes the body state with the Sun position in
         // absolute root-inertial coordinates. For non-root-integrated
-        // bodies the body's `<PlanetInertial<SelfPlanet>>` storage is
+        // bodies the body's `<PlanetInertial<P>>` storage is
         // integ-frame-relative, not absolute root-inertial — passing
         // it raw to the root-inertial kernel would compute solar beta
         // off by the inter-source separation distance. Lift to
@@ -3035,7 +3035,7 @@ pub fn solar_beta_system<P: Planet>(
         let body_pos = body_pos_rel + integ_origin;
         let body_vel = body_vel_rel + integ_origin_vel;
         // Sun is registered through `SunBundle` and integrates in the
-        // root frame, so its `<PlanetInertial<SelfPlanet>>` storage is
+        // root frame, so its `<PlanetInertial<P>>` storage is
         // numerically root-inertial; the relabel here is the boundary
         // step that pins the framing convention at the consumer call
         // site rather than asserting it once at registration.
@@ -3108,13 +3108,13 @@ pub fn earth_lighting_system<P: Planet>(
         // the kernel mixes the body position with the Sun and Moon
         // positions, all expected in absolute root-inertial
         // coordinates. For non-root-integrated bodies the body's
-        // `<PlanetInertial<SelfPlanet>>` storage is integ-frame-
+        // `<PlanetInertial<P>>` storage is integ-frame-
         // relative; lift it to absolute root-inertial via the integ-
         // origin shift before passing to the typed kernel. Sun and
         // Moon are root-integrated by the SunBundle / MoonBundle
         // construction (their frame entities are children of the
         // root frame), so their positions need no shift — only a
-        // boundary relabel from `<PlanetInertial<SelfPlanet>>` to
+        // boundary relabel from `<PlanetInertial<P>>` to
         // `<RootInertial>` to satisfy the typed entry's frame contract.
         let (integ_origin, _integ_origin_vel) =
             body_integ_origin_in_root(body_frame, &parents, root_frame_entity.0, &frame_origin);
@@ -3256,7 +3256,7 @@ pub fn flat_plate_srp_system<P: Planet>(
         // and the conical-shadow geometry both mix the body position
         // with the Sun / shadow-body positions, which are tagged
         // `<RootInertial>` (they integrate in root). For non-root-
-        // integrated bodies the body's `<PlanetInertial<SelfPlanet>>`
+        // integrated bodies the body's `<PlanetInertial<P>>`
         // storage is integ-frame-relative, so passing it raw to the
         // SRP / shadow kernels would compute `sun_to_vehicle` off by
         // the Earth–planet separation distance — wrong flux direction
@@ -3270,7 +3270,7 @@ pub fn flat_plate_srp_system<P: Planet>(
             body_integ_origin_in_root(body_frame, &parents, root_frame_entity.0, &frame_origin);
         let pos_raw = state.position.raw_si() + integ_origin.raw_si();
         // Sun is registered through `SunBundle` and integrates in the
-        // root frame, so its `<PlanetInertial<SelfPlanet>>` storage is
+        // root frame, so its `<PlanetInertial<P>>` storage is
         // numerically root-inertial; no integ-origin shift needed for
         // the Sun position.
         let sun_pos_raw = sun_state.position.raw_si();
@@ -3340,8 +3340,8 @@ pub fn flat_plate_srp_system<P: Planet>(
                 // step-start inputs on the plate state here; `RadiationForceC`
                 // stays at the zero cleared above — the integration system
                 // writes a representative final-stage value.
-                // `sun_state.position` is now stored as the wildcard
-                // `<PlanetInertial<SelfPlanet>>`; the SRP derivative
+                // `sun_state.position` is stored as
+                // `<PlanetInertial<P>>`; the SRP derivative
                 // closure expects a root-inertial Sun position (RF.10
                 // shift-site). Relabel at the boundary —
                 // bit-identical numerics; the Sun's ephemeris-driven
@@ -3407,7 +3407,7 @@ pub fn cannonball_srp_system<P: Planet>(
         // Cannonball SRP is a root-inertial-shift consumer (RF.10):
         // the kernel mixes the body position with the Sun position
         // (expected root-inertial). Lift the body's
-        // `<PlanetInertial<SelfPlanet>>` storage to absolute root-
+        // `<PlanetInertial<P>>` storage to absolute root-
         // inertial via the integ-origin shift before mixing — same
         // boundary discipline as the flat-plate / solar-beta sites.
         let (integ_origin, _integ_origin_vel) =
@@ -5102,10 +5102,9 @@ pub fn staging_system<P: Planet>(
                         // origins differ but axes are co-aligned), so
                         // the post-shift value is still in
                         // integration-frame coordinates with the
-                        // `<PlanetInertial<SelfPlanet>>` wildcard tag
-                        // — bit-identical phantom relabel to the
-                        // original storage type.
-                        jeod_sim::TranslationalStateTyped::<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>::from_untyped_unchecked(
+                        // `<PlanetInertial<P>>` tag — bit-identical
+                        // phantom relabel to the original storage type.
+                        jeod_sim::TranslationalStateTyped::<jeod_sim::PlanetInertial<P>>::from_untyped_unchecked(
                             &jeod_sim::TranslationalState {
                                 position: old.position + shift_pos,
                                 velocity: old.velocity + shift_vel,
