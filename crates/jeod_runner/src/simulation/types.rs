@@ -240,6 +240,22 @@ pub(crate) struct SimBody {
     pub atmospheric_state: Option<AtmosphereState<SelfPlanet>>,
     pub external_force: DVec3,
     pub external_torque: DVec3,
+    /// Externally applied force in the body's structural frame (N).
+    ///
+    /// JEOD's `Force` is collected in the body's structural frame and
+    /// rotated to inertial at force-collection time
+    /// (`models/dynamics/dyn_body/src/dyn_body_collect.cc:219-221`).
+    /// Tier 3 sims that schedule struct-frame force events
+    /// (`SIM_verif_attach_detach`'s `RUN_compute_child_derivative`) need
+    /// this entry point so the inertial-frame contribution tracks the
+    /// body's current attitude across each integration step.
+    pub external_force_struct: DVec3,
+    /// Externally applied torque in the body's structural frame (N·m).
+    ///
+    /// Mirrors [`external_force_struct`](Self::external_force_struct);
+    /// rotated to body frame at force-collection time via the body's
+    /// structural-to-body transform.
+    pub external_torque_struct: DVec3,
 
     // ── Frame switching ──
     pub integ_frame_id: FrameId,
@@ -332,6 +348,8 @@ impl SimBody {
             atmospheric_state,
             external_force: config.external_force,
             external_torque: config.external_torque,
+            external_force_struct: DVec3::ZERO,
+            external_torque_struct: DVec3::ZERO,
 
             integ_frame_id,
             body_frame_id,
