@@ -66,9 +66,11 @@
 //! - Adding an action with a `name` registers it for later removal.
 //!   Adding two actions with the same name is allowed; both fire in
 //!   FIFO order if neither is removed first. Removing a name removes
-//!   *every* still-pending action with that name, mirroring JEOD's
-//!   `remove_body_action` linear-scan-by-name (see
-//!   `dyn_manager.cc:211`).
+//!   *every* still-pending action with that name. This is a strict
+//!   generalization of JEOD's `remove_body_action` (see
+//!   `dyn_manager.cc:211`), which removes only the first match — we
+//!   drop all matching pending actions for symmetry with
+//!   `add_body_action`.
 //! - Adding an action without a name (`name = None`) makes it
 //!   anonymous: it cannot be removed by name; it always fires once
 //!   when ready and is dropped.
@@ -78,7 +80,7 @@
 //!   name remove.
 //! - An action that is added then removed before
 //!   [`body_action_system`] runs in the same tick is never applied.
-//!   This is the "remove-then-readd" idiom that JEOD's
+//!   This is the "remove-then-re-add" idiom that JEOD's
 //!   `SIM_removable_body_action`'s `mass.py` exercises.
 //!
 //! # Scheduling

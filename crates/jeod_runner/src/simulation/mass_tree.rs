@@ -1069,9 +1069,18 @@ impl Simulation {
             let cm_delta_body = t_struct_to_body * cm_delta_struct;
             let dvel_inertial =
                 parent_composite_state.rot.t_parent_this.transpose() * w_body.cross(cm_delta_body);
+            // Build raw f64 sums in the runtime-typed arena, then attach
+            // the `RootInertial` phantom at the boundary into the typed
+            // `DetachedSubtreeState` storage. Both sides of the addition
+            // live in the simulation's root inertial frame (the parent's
+            // composite-CoM offset shift propagates the parent's
+            // pre-detach inertial pose forward by Δr in the same frame).
+            use jeod_sim::Vec3Ext;
+            let updated_pos = parent_composite_state.trans.position + cm_delta_inertial;
+            let updated_vel = parent_composite_state.trans.velocity + dvel_inertial;
             let updated = DetachedSubtreeState {
-                composite_position: parent_composite_state.trans.position + cm_delta_inertial,
-                composite_velocity: parent_composite_state.trans.velocity + dvel_inertial,
+                composite_position: updated_pos.m_at::<jeod_sim::RootInertial>(),
+                composite_velocity: updated_vel.m_per_s_at::<jeod_sim::RootInertial>(),
                 composite_attitude: DetachedSubtreeState::attitude_from_raw_jeod_quat(
                     parent_composite_state.rot.q_parent_this,
                 ),

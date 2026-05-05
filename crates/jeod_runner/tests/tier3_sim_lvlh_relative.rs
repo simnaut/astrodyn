@@ -9,7 +9,10 @@ use jeod_test_data::tier3_csv::test_data_path;
 use glam::DVec3;
 use jeod_runner::Simulation;
 use jeod_sim::VehicleConfig;
-use jeod_sim::{compute_lvlh_relative_state, SimulationTime, TranslationalState};
+use jeod_sim::{
+    compute_lvlh_relative_state_typed, Earth, PlanetInertial, SimulationTime, TranslationalState,
+    Vec3Ext,
+};
 
 struct LvlhRelRecord {
     time: f64,
@@ -98,14 +101,24 @@ fn run_lvlhrel_scenario(label: &str, csv_name: &str) {
     {
         let ref_body = sim.body(0);
         let subj_body = sim.body(1);
-        let lvlh_rel = compute_lvlh_relative_state(
-            ref_body.trans.position,
-            ref_body.trans.velocity,
-            subj_body.trans.position,
-            subj_body.trans.velocity,
+        // Force-free 3-DOF: bodies integrate in the root inertial
+        // frame; tag as Earth-centered planet-inertial to satisfy the
+        // typed entry's `<PlanetInertial<P>>` contract (the LVLH
+        // anchor is conventionally Earth in the existing test fixture).
+        let lvlh_rel = compute_lvlh_relative_state_typed(
+            ref_body.trans.position.m_at::<PlanetInertial<Earth>>(),
+            ref_body
+                .trans
+                .velocity
+                .m_per_s_at::<PlanetInertial<Earth>>(),
+            subj_body.trans.position.m_at::<PlanetInertial<Earth>>(),
+            subj_body
+                .trans
+                .velocity
+                .m_per_s_at::<PlanetInertial<Earth>>(),
         );
-        let pos_err = (lvlh_rel.position - init.jeod_rel_pos).length();
-        let vel_err = (lvlh_rel.velocity - init.jeod_rel_vel).length();
+        let pos_err = (lvlh_rel.position.raw_si() - init.jeod_rel_pos).length();
+        let vel_err = (lvlh_rel.velocity.raw_si() - init.jeod_rel_vel).length();
         max_pos_err = max_pos_err.max(pos_err);
         max_vel_err = max_vel_err.max(vel_err);
     }
@@ -116,15 +129,25 @@ fn run_lvlhrel_scenario(label: &str, csv_name: &str) {
 
         let ref_body = sim.body(0);
         let subj_body = sim.body(1);
-        let lvlh_rel = compute_lvlh_relative_state(
-            ref_body.trans.position,
-            ref_body.trans.velocity,
-            subj_body.trans.position,
-            subj_body.trans.velocity,
+        // Force-free 3-DOF: bodies integrate in the root inertial
+        // frame; tag as Earth-centered planet-inertial to satisfy the
+        // typed entry's `<PlanetInertial<P>>` contract (the LVLH
+        // anchor is conventionally Earth in the existing test fixture).
+        let lvlh_rel = compute_lvlh_relative_state_typed(
+            ref_body.trans.position.m_at::<PlanetInertial<Earth>>(),
+            ref_body
+                .trans
+                .velocity
+                .m_per_s_at::<PlanetInertial<Earth>>(),
+            subj_body.trans.position.m_at::<PlanetInertial<Earth>>(),
+            subj_body
+                .trans
+                .velocity
+                .m_per_s_at::<PlanetInertial<Earth>>(),
         );
 
-        let pos_err = (lvlh_rel.position - rec.jeod_rel_pos).length();
-        let vel_err = (lvlh_rel.velocity - rec.jeod_rel_vel).length();
+        let pos_err = (lvlh_rel.position.raw_si() - rec.jeod_rel_pos).length();
+        let vel_err = (lvlh_rel.velocity.raw_si() - rec.jeod_rel_vel).length();
         max_pos_err = max_pos_err.max(pos_err);
         max_vel_err = max_vel_err.max(vel_err);
     }

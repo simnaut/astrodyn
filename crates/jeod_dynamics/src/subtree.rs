@@ -15,20 +15,30 @@
 use glam::DVec3;
 use jeod_frames::{RefFrameRot, RefFrameState, RefFrameTrans};
 use jeod_math::JeodQuat;
-use jeod_quantities::aliases::AngularVelocity;
+use jeod_quantities::aliases::{AngularVelocity, Position, Velocity};
 use jeod_quantities::body_attitude::BodyAttitude;
-use jeod_quantities::frame::{BodyFrame, SelfRef};
+use jeod_quantities::ext::Vec3Ext;
+use jeod_quantities::frame::{BodyFrame, RootInertial, SelfRef};
 use jeod_quantities::quat::NormalizedQuat;
 
 /// Composite-body inertial state of a free-flying mass-tree subtree
 /// (i.e. a tree root that is not the integrated body). All fields are
-/// in the simulation's integration frame (typically Earth.inertial).
+/// in the simulation's root inertial frame.
+///
+/// `composite_position` / `composite_velocity` carry the
+/// [`RootInertial`] phantom: a free-flying detached subtree advances
+/// ballistically in the root inertial frame (no integration-origin
+/// shift applies — the subtree is its *own* free-flying root, not a
+/// body integrated in some non-root child frame). The compiler
+/// therefore refuses to mix detached-subtree state with values typed
+/// in [`jeod_quantities::frame::IntegrationFrame`] or any
+/// planet-inertial phantom — `RF.10` row in `docs/JEOD_invariants.md`.
 #[derive(Debug, Clone, Copy)]
 pub struct DetachedSubtreeState {
-    /// RootInertial position of the subtree's composite CoM.
-    pub composite_position: DVec3,
-    /// RootInertial velocity of the subtree's composite CoM.
-    pub composite_velocity: DVec3,
+    /// Root-inertial position of the subtree's composite CoM.
+    pub composite_position: Position<RootInertial>,
+    /// Root-inertial velocity of the subtree's composite CoM.
+    pub composite_velocity: Velocity<RootInertial>,
     /// RootInertial-to-body attitude. Wrapped in [`BodyAttitude`] so the
     /// JEOD left-multiply integration convention (`q̇ = -½(ω ⊗ q)`) is
     /// type-enforced — there is no public `multiply` to swap operand
@@ -45,8 +55,15 @@ impl DetachedSubtreeState {
         let q = self.composite_attitude.to_jeod_quat();
         RefFrameState {
             trans: RefFrameTrans {
-                position: self.composite_position,
-                velocity: self.composite_velocity,
+                // The frame-tree arena is runtime-typed by design
+                // (RF.10 "C. By-design" in the audit), so we drop the
+                // typed phantom at this storage boundary via
+                // `.raw_si()`. The boundary is one-way: callers
+                // re-attach the phantom via
+                // [`Self::from_ref_frame_state`] when round-tripping
+                // back into the typed surface.
+                position: self.composite_position.raw_si(),
+                velocity: self.composite_velocity.raw_si(),
             },
             rot: RefFrameRot {
                 q_parent_this: q,
@@ -71,8 +88,13 @@ impl DetachedSubtreeState {
             )
         });
         Self {
-            composite_position: state.trans.position,
-            composite_velocity: state.trans.velocity,
+            // Re-attach the `RootInertial` phantom at the boundary
+            // from the runtime-typed frame-tree arena. The caller
+            // asserts that the source `RefFrameState` is in the
+            // simulation's root inertial frame (which is what every
+            // detach call site builds).
+            composite_position: state.trans.position.m_at::<RootInertial>(),
+            composite_velocity: state.trans.velocity.m_per_s_at::<RootInertial>(),
             composite_attitude: BodyAttitude::from_witness(q),
             composite_ang_vel_body: state.rot.ang_vel_this,
         }
@@ -100,7 +122,12 @@ impl DetachedSubtreeState {
     /// operand order unrepresentable here, see issue #252); velocity
     /// and ang_vel are unchanged.
     pub fn step_ballistic(&mut self, dt: f64) {
-        self.composite_position += self.composite_velocity * dt;
+        // Position += velocity·dt in the root inertial frame; both
+        // sides carry the `RootInertial` phantom so the addition
+        // typechecks without any boundary unwrap.
+        let new_pos = (self.composite_position.raw_si() + self.composite_velocity.raw_si() * dt)
+            .m_at::<RootInertial>();
+        self.composite_position = new_pos;
         let omega: AngularVelocity<BodyFrame<SelfRef>> =
             AngularVelocity::<BodyFrame<SelfRef>>::from_raw_si(self.composite_ang_vel_body);
         self.composite_attitude = self.composite_attitude.advance_under_body_rate(omega, dt);

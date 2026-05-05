@@ -10,18 +10,28 @@
 
 use glam::DVec3;
 use jeod_quantities::aliases::Position;
+use jeod_quantities::ext::Vec3Ext;
 use jeod_quantities::frame::RootInertial;
 use std::f64::consts::PI;
 
 const EPSILON: f64 = 1.0e-12;
 
 /// Apparent parameters of a celestial body as seen from the observer.
+///
+/// `position` carries `Position<RootInertial>`: the lighting state
+/// is always computed against root-inertial source positions
+/// (Sun / Moon / Earth at the simulation root), so the field is
+/// statically tagged with the root-inertial phantom. A consumer that
+/// holds a body's `Position<IntegrationFrame>` cannot subtract it
+/// from `LightingBody.position` without going through the typed
+/// integration-origin shift first (RF.10).
 #[derive(Debug, Clone, Default)]
 pub struct LightingBody {
     /// Mean equatorial radius (m).
     pub radius: f64,
-    /// Position relative to the observer (m, inertial frame).
-    pub position: DVec3,
+    /// Position of the body relative to the observer, in the
+    /// simulation's root inertial frame (m).
+    pub position: Position<RootInertial>,
     /// Distance from observer to body (m).
     pub distance: f64,
     /// Apparent angular half-angle of body disk (rad).
@@ -151,18 +161,25 @@ pub fn calc_lighting_params(
     }
 }
 
-/// Compute earth lighting conditions for an observer.
+/// Raw kernel: compute earth lighting conditions for an observer.
 ///
 /// Pure function: takes observer position and celestial body positions/radii,
-/// returns the complete lighting state. All positions are in the Earth-centered
-/// inertial frame.
+/// returns the complete lighting state. All positions are in the simulation
+/// root inertial frame (caller-asserted — the input phantoms are absent).
+///
+/// **Mission code should call [`compute_earth_lighting_typed`] instead.** That
+/// typed entry takes `Position<RootInertial>` for all three positions, which
+/// the compiler enforces at the call site; it forwards to this kernel via
+/// `.raw_si()`. This raw kernel exists for callers that already hold raw
+/// `DVec3` from a hot path (no useful phantom available) and explicitly want
+/// to skip the typed boundary.
 ///
 /// Port of JEOD `EarthLighting::calc_lighting`.
 ///
 /// # Arguments
-/// * `pos_veh` — Observer (vehicle) position in Earth inertial frame (m)
-/// * `pos_sun` — Sun position in Earth inertial frame (m)
-/// * `pos_moon` — Moon position in Earth inertial frame (m)
+/// * `pos_veh` — Observer (vehicle) position in the simulation root inertial frame (m)
+/// * `pos_sun` — Sun position in the simulation root inertial frame (m)
+/// * `pos_moon` — Moon position in the simulation root inertial frame (m)
 /// * `sun_radius` — Sun equatorial radius (m)
 /// * `earth_radius` — Earth equatorial radius (m)
 /// * `moon_radius` — Moon equatorial radius (m)
@@ -207,19 +224,24 @@ pub fn compute_earth_lighting(
     EarthLightingState {
         sun_body: LightingBody {
             radius: sun_radius,
-            position: sun_rel,
+            // Re-tag at the producer boundary: the f64 entry takes raw
+            // root-inertial DVec3s for `pos_sun`/`pos_moon`/`pos_veh`,
+            // and the relative position therefore lives in the same
+            // frame. The typed sibling `compute_earth_lighting_typed`
+            // funnels through this same struct via its kernel call.
+            position: sun_rel.m_at::<RootInertial>(),
             distance: sun_dist,
             half_angle: sun_half,
         },
         earth_body: LightingBody {
             radius: earth_radius,
-            position: earth_rel,
+            position: earth_rel.m_at::<RootInertial>(),
             distance: earth_dist,
             half_angle: earth_half,
         },
         moon_body: LightingBody {
             radius: moon_radius,
-            position: moon_rel,
+            position: moon_rel.m_at::<RootInertial>(),
             distance: moon_dist,
             half_angle: moon_half,
         },
@@ -390,5 +412,49 @@ mod tests {
         let a = DVec3::new(1.0, 0.0, 0.0);
         let angle = observation_angle(a, 1.0, a, 1.0);
         assert!(angle.abs() < 1e-12, "0° expected, got {angle}");
+    }
+
+    /// `LightingBody.position` is `Position<RootInertial>` —
+    /// the producer/consumer chain stays in the simulation root
+    /// inertial frame. A non-trivial geometry (Sun off-axis, Moon
+    /// off-axis, observer not at origin) confirms that the relative
+    /// positions surface in the typed field bit-identically to the
+    /// raw arithmetic and carry the root-inertial phantom.
+    #[test]
+    fn lighting_body_position_typed_round_trip() {
+        let pos_veh = DVec3::new(1.0e6, 2.0e6, 3.0e5);
+        let pos_sun = DVec3::new(1.5e11, -4.0e10, 1.0e9);
+        let pos_moon = DVec3::new(0.0, 3.84e8, 1.0e7);
+        let state = compute_earth_lighting(pos_veh, pos_sun, pos_moon, 6.96e8, 6.371e6, 1.737e6);
+
+        // Bit-identical SI values: typed wrappers carry the same
+        // numbers as the raw subtraction, only the phantom changes.
+        assert_eq!(state.sun_body.position.raw_si(), pos_sun - pos_veh);
+        assert_eq!(state.moon_body.position.raw_si(), pos_moon - pos_veh);
+        assert_eq!(state.earth_body.position.raw_si(), -pos_veh);
+
+        // The typed entry produces the same struct (bit-identical)
+        // when fed root-inertial positions, validating the typed
+        // boundary doesn't perturb numerics.
+        let typed = compute_earth_lighting_typed(
+            pos_veh.m_at::<RootInertial>(),
+            pos_sun.m_at::<RootInertial>(),
+            pos_moon.m_at::<RootInertial>(),
+            6.96e8,
+            6.371e6,
+            1.737e6,
+        );
+        assert_eq!(
+            typed.sun_body.position.raw_si(),
+            state.sun_body.position.raw_si()
+        );
+        assert_eq!(
+            typed.moon_body.position.raw_si(),
+            state.moon_body.position.raw_si()
+        );
+        assert_eq!(
+            typed.earth_body.position.raw_si(),
+            state.earth_body.position.raw_si()
+        );
     }
 }

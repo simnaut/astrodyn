@@ -13,7 +13,7 @@ use jeod_sim::ShadowBody;
 use jeod_sim::{
     AtmosphereConfig, AtmosphereModel, DragConfig, DynamicsConfig, ExponentialAtmosphere,
     FlatPlate, FlatPlateParams, FlatPlateThermal, GravityControl, GravityControls, GravityModel,
-    GravitySource, MassProperties, SixDofState, TranslationalState,
+    GravitySource, MassProperties, SixDofState, TranslationalState, Vec3Ext,
 };
 use jeod_sim::{GravitySourceEntry, SrpModel, VehicleConfig};
 
@@ -34,7 +34,7 @@ fn tier3_bevy_full_stack_sixdof() {
         FlatPlate {
             area: 100.0,
             normal: DVec3::X,
-            position: DVec3::ZERO,
+            position: DVec3::ZERO.m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(),
         },
         FlatPlateParams {
             albedo: 0.0,
@@ -188,7 +188,8 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
             FlatPlate {
                 area: 60.0,
                 normal: DVec3::X,
-                position: DVec3::new(2.0, 0.0, 0.0),
+                position: DVec3::new(2.0, 0.0, 0.0)
+                    .m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(),
             },
             params,
             thermal,
@@ -197,7 +198,8 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
             FlatPlate {
                 area: 60.0,
                 normal: -DVec3::Y,
-                position: DVec3::new(0.0, -2.0, 0.0),
+                position: DVec3::new(0.0, -2.0, 0.0)
+                    .m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(),
             },
             params,
             thermal,
@@ -206,7 +208,8 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
             FlatPlate {
                 area: 60.0,
                 normal: -DVec3::X,
-                position: DVec3::new(-2.0, 0.0, 0.0),
+                position: DVec3::new(-2.0, 0.0, 0.0)
+                    .m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(),
             },
             params,
             thermal,
@@ -215,7 +218,8 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
             FlatPlate {
                 area: 60.0,
                 normal: DVec3::Y,
-                position: DVec3::new(0.0, 2.0, 0.0),
+                position: DVec3::new(0.0, 2.0, 0.0)
+                    .m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(),
             },
             params,
             thermal,
@@ -224,7 +228,8 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
             FlatPlate {
                 area: 16.0,
                 normal: DVec3::Z,
-                position: DVec3::new(0.0, 0.0, 7.5),
+                position: DVec3::new(0.0, 0.0, 7.5)
+                    .m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(),
             },
             params,
             thermal,
@@ -233,7 +238,8 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
             FlatPlate {
                 area: 16.0,
                 normal: -DVec3::Z,
-                position: DVec3::new(0.0, 0.0, -7.5),
+                position: DVec3::new(0.0, 0.0, -7.5)
+                    .m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(),
             },
             params,
             thermal,
@@ -378,7 +384,7 @@ fn make_single_plate(
         FlatPlate {
             area: 100.0,
             normal: DVec3::X,
-            position: DVec3::ZERO,
+            position: DVec3::ZERO.m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(),
         },
         FlatPlateParams { albedo, diffuse },
         FlatPlateThermal {
@@ -739,7 +745,8 @@ fn tier3_bevy_srp_derivative_rk4_with_rotated_struct_frame() {
         FlatPlate {
             area: 10.0,
             normal: DVec3::X,
-            position: DVec3::new(0.0, 15.0, 0.0),
+            position: DVec3::new(0.0, 15.0, 0.0)
+                .m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(),
         },
         FlatPlateParams {
             albedo: 0.3,

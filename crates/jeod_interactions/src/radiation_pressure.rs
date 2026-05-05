@@ -9,7 +9,15 @@
 
 use glam::DVec3;
 use jeod_quantities::aliases::{Force, Position};
-use jeod_quantities::frame::RootInertial;
+// `Vec3Ext` is used by the in-module unit tests below to wrap raw
+// DVec3 plate positions as `Position<StructuralFrame<SelfRef>>`. The
+// crate-public surface doesn't reach for `m_at` directly — the lib
+// code keeps its kernels in raw DVec3 — so the trait import is gated
+// behind `#[cfg(test)]` to avoid an unused-import warning in release
+// builds.
+#[cfg(test)]
+use jeod_quantities::ext::Vec3Ext;
+use jeod_quantities::frame::{RootInertial, SelfRef, StructuralFrame};
 use uom::si::f64::{Area, Ratio};
 
 /// Solar luminosity in W (matching JEOD `radiation_source.hh`).
@@ -54,14 +62,37 @@ const TWO_THIRDS: f64 = 2.0 / 3.0;
 /// A single flat plate on a vehicle surface.
 ///
 /// Position and normal are in the structural (body) frame.
+///
+/// `position` carries `Position<StructuralFrame<SelfRef>>`: the
+/// `SelfRef` wildcard is the documented "this entity's own vehicle
+/// frame" tag — the per-entity adapter (Bevy `RadiationForceC` or the
+/// runner's `FlatPlateState`) determines the vehicle identity at
+/// runtime. The compile-time guard is the *frame kind*: a consumer
+/// that holds an inertial-frame position cannot accidentally feed it
+/// to `FlatPlate.position`'s structural-frame slot. Closing the
+/// `<V>` parameter to a concrete vehicle is deferred to the wider
+/// Bevy-component genericity pass (Section A of the audit in #263) —
+/// until that lands, the wildcard stays here so every plate site can
+/// interoperate without minting a vehicle parameter.
 #[derive(Debug, Clone, Copy)]
 pub struct FlatPlate {
     /// Plate area in m².
     pub area: f64,
-    /// Outward-facing normal unit vector (structural frame).
+    /// Outward-facing normal unit vector in the vehicle's structural
+    /// frame. Stored as raw `DVec3` because rotation matrices
+    /// (`DMat3`) do not yet carry frame phantoms — rotating the
+    /// normal between structural / body / inertial via `DMat3`
+    /// multiplication is the natural shape today, and adding a typed
+    /// `Direction<StructuralFrame<V>>` newtype would propagate
+    /// through every rotation site. The structural-frame guard
+    /// rides on `position`, which is the field the SRP / torque
+    /// kernel reads alongside `center_grav`.
     pub normal: DVec3,
-    /// Center of pressure position (structural frame, m).
-    pub position: DVec3,
+    /// Center of pressure position in the vehicle's structural frame
+    /// (m). The `Position<StructuralFrame<SelfRef>>` phantom makes
+    /// the frame explicit at the type level — see the struct-level
+    /// doc comment for the `<SelfRef>` wildcard rationale.
+    pub position: Position<StructuralFrame<SelfRef>>,
 }
 
 /// Optical properties shared by one or more flat plates.
@@ -150,7 +181,13 @@ pub fn compute_flat_plate_srp(
 
         // Torque = (plate_position - center_grav) × force
         // JEOD line 165: crot_to_cp = position - center_grav
-        let crot_to_cp = plate.position - center_grav;
+        // `plate.position` is `Position<StructuralFrame<SelfRef>>`;
+        // `center_grav` is the matching structural-frame raw `DVec3`
+        // input. Drop the typed phantom via `.raw_si()` at the kernel
+        // boundary — both sides live in the same structural frame
+        // (the typed signature on the field guards that at the
+        // call/literal site).
+        let crot_to_cp = plate.position.raw_si() - center_grav;
         let plate_torque = crot_to_cp.cross(plate_force);
 
         total_force += plate_force;
@@ -415,7 +452,12 @@ pub fn compute_flat_plate_srp_thermal_conduction(
         let f_emission = -(TWO_THIRDS * power_emit / SPEED_OF_LIGHT) * plate.normal;
         plate_force += f_emission;
 
-        let crot_to_cp = plate.position - center_grav;
+        // Same boundary as the non-thermal `compute_flat_plate_srp`
+        // kernel above — drop `plate.position`'s typed phantom into
+        // raw `DVec3` for the in-frame arithmetic, with the typed
+        // field signature guarding the structural-frame contract at
+        // the literal/construction site.
+        let crot_to_cp = plate.position.raw_si() - center_grav;
         let plate_torque = crot_to_cp.cross(plate_force);
 
         total_force += plate_force;
@@ -665,7 +707,7 @@ mod tests {
         let plate = FlatPlate {
             area: 10.0,
             normal: DVec3::new(-1.0, 0.0, 0.0), // faces -X
-            position: DVec3::ZERO,
+            position: DVec3::ZERO.m_at::<StructuralFrame<SelfRef>>(),
         };
         let params = FlatPlateParams {
             albedo: 0.0,
@@ -697,7 +739,7 @@ mod tests {
         let plate = FlatPlate {
             area: 10.0,
             normal: DVec3::new(1.0, 0.0, 0.0), // faces +X (same as flux)
-            position: DVec3::ZERO,
+            position: DVec3::ZERO.m_at::<StructuralFrame<SelfRef>>(),
         };
         let params = FlatPlateParams {
             albedo: 0.5,
@@ -720,7 +762,7 @@ mod tests {
         let plate = FlatPlate {
             area: 10.0,
             normal: DVec3::new(-1.0, 0.0, 0.0),
-            position: DVec3::ZERO,
+            position: DVec3::ZERO.m_at::<StructuralFrame<SelfRef>>(),
         };
         // albedo=1, diffuse=0 → pure specular
         let params = FlatPlateParams {
@@ -761,7 +803,7 @@ mod tests {
         let plate = FlatPlate {
             area: 10.0,
             normal: DVec3::new(-1.0, 0.0, 0.0),
-            position: DVec3::new(0.0, 2.0, 0.0), // offset in +Y
+            position: DVec3::new(0.0, 2.0, 0.0).m_at::<StructuralFrame<SelfRef>>(), // offset in +Y
         };
         let params = FlatPlateParams {
             albedo: 0.0,
@@ -785,7 +827,7 @@ mod tests {
         let plate = FlatPlate {
             area: 10.0,
             normal: DVec3::new(-1.0, 0.0, 0.0),
-            position: DVec3::ZERO,
+            position: DVec3::ZERO.m_at::<StructuralFrame<SelfRef>>(),
         };
         let params = FlatPlateParams {
             albedo: 0.5,
@@ -811,7 +853,7 @@ mod tests {
         let plate = FlatPlate {
             area: 60.0,
             normal: DVec3::X,
-            position: DVec3::ZERO,
+            position: DVec3::ZERO.m_at::<StructuralFrame<SelfRef>>(),
         };
         let params = FlatPlateParams {
             albedo: 0.5,
@@ -848,7 +890,7 @@ mod tests {
         let plate = FlatPlate {
             area: 60.0,
             normal: DVec3::X,
-            position: DVec3::ZERO,
+            position: DVec3::ZERO.m_at::<StructuralFrame<SelfRef>>(),
         };
         let params = FlatPlateParams {
             albedo: 0.5,
@@ -886,7 +928,7 @@ mod tests {
         let plate = FlatPlate {
             area: 60.0,
             normal: DVec3::X,
-            position: DVec3::ZERO,
+            position: DVec3::ZERO.m_at::<StructuralFrame<SelfRef>>(),
         };
         let params = FlatPlateParams {
             albedo: 0.5,
@@ -921,7 +963,7 @@ mod tests {
         let plate = FlatPlate {
             area: 60.0,
             normal: -DVec3::X,
-            position: DVec3::ZERO,
+            position: DVec3::ZERO.m_at::<StructuralFrame<SelfRef>>(),
         };
         let params = FlatPlateParams {
             albedo: 0.5,
@@ -971,7 +1013,7 @@ mod tests {
                 FlatPlate {
                     area: 60.0,
                     normal: DVec3::X,
-                    position: DVec3::new(2.0, 0.0, 0.0),
+                    position: DVec3::new(2.0, 0.0, 0.0).m_at::<StructuralFrame<SelfRef>>(),
                 },
                 params,
             ),
@@ -979,7 +1021,7 @@ mod tests {
                 FlatPlate {
                     area: 60.0,
                     normal: -DVec3::Y,
-                    position: DVec3::new(0.0, -2.0, 0.0),
+                    position: DVec3::new(0.0, -2.0, 0.0).m_at::<StructuralFrame<SelfRef>>(),
                 },
                 params,
             ),
@@ -987,7 +1029,7 @@ mod tests {
                 FlatPlate {
                     area: 60.0,
                     normal: -DVec3::X,
-                    position: DVec3::new(-2.0, 0.0, 0.0),
+                    position: DVec3::new(-2.0, 0.0, 0.0).m_at::<StructuralFrame<SelfRef>>(),
                 },
                 params,
             ),
@@ -995,7 +1037,7 @@ mod tests {
                 FlatPlate {
                     area: 60.0,
                     normal: DVec3::Y,
-                    position: DVec3::new(0.0, 2.0, 0.0),
+                    position: DVec3::new(0.0, 2.0, 0.0).m_at::<StructuralFrame<SelfRef>>(),
                 },
                 params,
             ),
@@ -1003,7 +1045,7 @@ mod tests {
                 FlatPlate {
                     area: 16.0,
                     normal: DVec3::Z,
-                    position: DVec3::new(0.0, 0.0, 7.5),
+                    position: DVec3::new(0.0, 0.0, 7.5).m_at::<StructuralFrame<SelfRef>>(),
                 },
                 params,
             ),
@@ -1011,7 +1053,7 @@ mod tests {
                 FlatPlate {
                     area: 16.0,
                     normal: -DVec3::Z,
-                    position: DVec3::new(0.0, 0.0, -7.5),
+                    position: DVec3::new(0.0, 0.0, -7.5).m_at::<StructuralFrame<SelfRef>>(),
                 },
                 params,
             ),
@@ -1187,12 +1229,12 @@ mod tests {
         let plate_a = FlatPlate {
             area: 10.0,
             normal: DVec3::X,
-            position: DVec3::ZERO,
+            position: DVec3::ZERO.m_at::<StructuralFrame<SelfRef>>(),
         };
         let plate_b = FlatPlate {
             area: 10.0,
             normal: -DVec3::X,
-            position: DVec3::ZERO,
+            position: DVec3::ZERO.m_at::<StructuralFrame<SelfRef>>(),
         };
         let params = FlatPlateParams {
             albedo: 0.5,
@@ -1258,7 +1300,7 @@ mod tests {
         let plate = FlatPlate {
             area: 10.0,
             normal: DVec3::X,
-            position: DVec3::ZERO,
+            position: DVec3::ZERO.m_at::<StructuralFrame<SelfRef>>(),
         };
         let params = FlatPlateParams {
             albedo: 0.5,
@@ -1314,7 +1356,7 @@ mod tests {
         let plate = FlatPlate {
             area: 10.0,
             normal: DVec3::X,
-            position: DVec3::ZERO,
+            position: DVec3::ZERO.m_at::<StructuralFrame<SelfRef>>(),
         };
         let params = FlatPlateParams {
             albedo: 0.0,
@@ -1387,7 +1429,7 @@ mod tests {
         let plate = FlatPlate {
             area,
             normal: -DVec3::X,
-            position: DVec3::ZERO,
+            position: DVec3::ZERO.m_at::<StructuralFrame<SelfRef>>(),
         };
         let params = FlatPlateParams {
             albedo: 1.0 - absorptivity,
@@ -1427,7 +1469,7 @@ mod tests {
         let plate = FlatPlate {
             area,
             normal: DVec3::Z,
-            position: DVec3::ZERO,
+            position: DVec3::ZERO.m_at::<StructuralFrame<SelfRef>>(),
         };
         let params = FlatPlateParams {
             albedo: 0.5,
@@ -1469,7 +1511,7 @@ mod tests {
         let plate = FlatPlate {
             area: 10.0,
             normal: DVec3::X,
-            position: DVec3::ZERO,
+            position: DVec3::ZERO.m_at::<StructuralFrame<SelfRef>>(),
         };
         let params = FlatPlateParams {
             albedo: 0.5,

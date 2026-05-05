@@ -23,7 +23,7 @@ use jeod_sim::{
     DerivedStateConfig, DynamicsConfig, FlatPlate, FlatPlateParams, FlatPlateState,
     FlatPlateThermal, GravityControl, GravityControls, GravityModel, GravitySource,
     GravitySourceEntry, JeodQuat, MassProperties, RotationalState, SixDofState, SrpModel,
-    TranslationalState, VehicleConfig, EARTH, MOON,
+    TranslationalState, Vec3Ext, VehicleConfig, EARTH, MOON,
 };
 
 const DT: f64 = 60.0;
@@ -692,7 +692,7 @@ fn tier3_bevy_flat_plate_srp_in_lunar_integ_frame() {
         FlatPlate {
             area: 100.0,
             normal: DVec3::X,
-            position: DVec3::ZERO,
+            position: DVec3::ZERO.m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(),
         },
         FlatPlateParams {
             albedo: 0.0,

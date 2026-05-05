@@ -17,7 +17,7 @@ use jeod_runner::{RotationModel, Simulation};
 use jeod_sim::{
     FlatPlate, FlatPlateParams, FlatPlateState, FlatPlateThermal, GravityModel, GravitySource,
     JeodQuat, MassProperties, RotationalState, SimulationTime, ThermalIntegrationOrder,
-    TranslationalState,
+    TranslationalState, Vec3Ext,
 };
 use jeod_sim::{GravitySourceEntry, SrpModel, VehicleConfig};
 
@@ -26,7 +26,7 @@ fn single_plate() -> Vec<(FlatPlate, FlatPlateParams, FlatPlateThermal)> {
         FlatPlate {
             area: 10.0,
             normal: -DVec3::X,
-            position: DVec3::ZERO,
+            position: DVec3::ZERO.m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(),
         },
         FlatPlateParams {
             albedo: 0.3,
