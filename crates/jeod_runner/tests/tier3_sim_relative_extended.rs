@@ -25,8 +25,8 @@ use glam::DVec3;
 use jeod_runner::{RotationModel, Simulation};
 use jeod_sim::{
     compute_lvlh_relative_state_typed, compute_relative_state, Earth, GravityControl,
-    GravityControls, GravityModel, GravitySource, PlanetInertial, SimulationTime,
-    TranslationalState, Vec3Ext,
+    GravityControls, GravityModel, GravitySource, PlanetInertial, RelativeTranslation,
+    SimulationTime, TranslationalState, Vec3Ext,
 };
 use jeod_sim::{DerivedStateConfig, GravitySourceEntry, VehicleConfig};
 
@@ -128,7 +128,14 @@ fn tier3_relative_two_coorbiting_vehicles() {
         let chief = sim.body(0);
         let deputy = sim.body(1);
         let rel_inertial = compute_relative_state(&chief.trans, None, &deputy.trans, None);
-        let sep = rel_inertial.position.length();
+        // `None` reference rotation: producer returns the `Inertial`
+        // variant, so we read the typed root-inertial position
+        // directly (the type assertion would catch any future
+        // refactor that flipped the producer's branch convention).
+        let RelativeTranslation::Inertial { position, .. } = rel_inertial.trans else {
+            panic!("None reference rotation must yield RelativeTranslation::Inertial");
+        };
+        let sep = position.raw_si().length();
         max_sep = max_sep.max(sep);
         min_sep = min_sep.min(sep);
 
@@ -214,7 +221,7 @@ fn tier3_relative_hohmann_transfer_geometry() {
 
     // Initial separation: both bodies at the same point → 0.
     let init_rel = compute_relative_state(&sim.body(0).trans, None, &sim.body(1).trans, None);
-    let init_sep = init_rel.position.length();
+    let init_sep = init_rel.trans.position_raw().length();
     assert!(
         init_sep < 1e-9,
         "Hohmann setup: initial separation {init_sep} m should be 0"
@@ -237,7 +244,7 @@ fn tier3_relative_hohmann_transfer_geometry() {
         let chief = sim.body(0);
         let deputy = sim.body(1);
         let rel = compute_relative_state(&chief.trans, None, &deputy.trans, None);
-        let sep = rel.position.length();
+        let sep = rel.trans.position_raw().length();
         max_sep = max_sep.max(sep);
     }
 
@@ -301,7 +308,7 @@ fn tier3_relative_same_orbit_phase_difference() {
         let a = sim.body(0);
         let b = sim.body(1);
         let rel = compute_relative_state(&a.trans, None, &b.trans, None);
-        let sep = rel.position.length();
+        let sep = rel.trans.position_raw().length();
         max_dev = max_dev.max((sep - expected_sep).abs());
     }
 
@@ -313,7 +320,7 @@ fn tier3_relative_same_orbit_phase_difference() {
         let a = sim.body(0);
         let b = sim.body(1);
         let rel = compute_relative_state(&a.trans, None, &b.trans, None);
-        let sep = rel.position.length();
+        let sep = rel.trans.position_raw().length();
         max_dev = max_dev.max((sep - expected_sep).abs());
     }
 
@@ -441,8 +448,29 @@ fn tier3_relative_round_trip_frames() {
         // State of B wrt A (reference = A, subject = B).
         let b_wrt_a = compute_relative_state(&a.trans, None, &b.trans, None);
 
-        let pos_sum = (a_wrt_b.position + b_wrt_a.position).length();
-        let vel_sum = (a_wrt_b.velocity + b_wrt_a.velocity).length();
+        // Both call sites pass `None` for the reference rotation, so
+        // the producer always lands in the `Inertial` variant. We
+        // pattern-match both sides so the typed `Position<RootInertial>`
+        // values can be added directly through the typed `+` operator
+        // — adding a body-frame and an inertial-frame phantom would
+        // be a compile error, which is exactly the symmetry guard we
+        // want for this round-trip property test.
+        let RelativeTranslation::Inertial {
+            position: a_pos,
+            velocity: a_vel,
+        } = a_wrt_b.trans
+        else {
+            panic!("None reference rotation must yield RelativeTranslation::Inertial");
+        };
+        let RelativeTranslation::Inertial {
+            position: b_pos,
+            velocity: b_vel,
+        } = b_wrt_a.trans
+        else {
+            panic!("None reference rotation must yield RelativeTranslation::Inertial");
+        };
+        let pos_sum = (a_pos.raw_si() + b_pos.raw_si()).length();
+        let vel_sum = (a_vel.raw_si() + b_vel.raw_si()).length();
         max_sum_pos = max_sum_pos.max(pos_sum);
         max_sum_vel = max_sum_vel.max(vel_sum);
     }
