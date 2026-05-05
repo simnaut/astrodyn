@@ -121,11 +121,11 @@ fn tier3_bevy_integ_source_lunar_orbit_matches_simulation() {
     // integrates relative to.
     let _earth = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH))
         .id();
     let moon = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Moon", &MOON))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Moon", &MOON))
         .insert(SourceInertialVelocityC::default())
         .id();
 
@@ -164,7 +164,7 @@ fn tier3_bevy_integ_source_lunar_orbit_matches_simulation() {
     // `jeod_runner::Simulation::set_source_position`).
     let sys = app
         .world_mut()
-        .register_system(move |mut m: SourceMutator| {
+        .register_system(move |mut m: SourceMutator<jeod_sim::Earth>| {
             m.set_source_position(moon, MOON_OFFSET);
         });
     app.world_mut().run_system(sys).unwrap();
@@ -252,11 +252,11 @@ fn tier3_bevy_integ_source_moving_moon_matches_simulation() {
 
     let _earth = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH))
         .id();
     let moon = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Moon", &MOON))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Moon", &MOON))
         .id();
 
     let vehicle = app
@@ -290,7 +290,7 @@ fn tier3_bevy_integ_source_moving_moon_matches_simulation() {
     // auto-inserts SourceInertialVelocityC since PlanetBundle didn't.
     let sys = app
         .world_mut()
-        .register_system(move |mut m: SourceMutator| {
+        .register_system(move |mut m: SourceMutator<jeod_sim::Earth>| {
             m.set_source_state(moon, MOON_OFFSET, moon_vel);
         });
     app.world_mut().run_system(sys).unwrap();
@@ -517,11 +517,11 @@ fn tier3_bevy_solar_beta_in_lunar_integ_frame() {
 
     let _earth = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH))
         .id();
     let moon = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Moon", &MOON))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Moon", &MOON))
         .insert(SourceInertialVelocityC::default())
         .id();
 
@@ -567,7 +567,7 @@ fn tier3_bevy_solar_beta_in_lunar_integ_frame() {
 
     let sys = app
         .world_mut()
-        .register_system(move |mut m: SourceMutator| {
+        .register_system(move |mut m: SourceMutator<jeod_sim::Earth>| {
             m.set_source_position(moon, MOON_OFFSET);
         });
     app.world_mut().run_system(sys).unwrap();
@@ -714,11 +714,11 @@ fn tier3_bevy_flat_plate_srp_in_lunar_integ_frame() {
 
     let _earth = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH))
         .id();
     let moon = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Moon", &MOON))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Moon", &MOON))
         .insert(SourceInertialVelocityC::default())
         .id();
     let _sun = app
@@ -768,7 +768,7 @@ fn tier3_bevy_flat_plate_srp_in_lunar_integ_frame() {
 
     let sys = app
         .world_mut()
-        .register_system(move |mut m: SourceMutator| {
+        .register_system(move |mut m: SourceMutator<jeod_sim::Earth>| {
             m.set_source_position(moon, MOON_OFFSET);
         });
     app.world_mut().run_system(sys).unwrap();

@@ -440,7 +440,10 @@ fn tier3_bevy_earth_lighting_non_root_integ_source() {
     // `set_source_state`.
     let sun_entity = app
         .world_mut()
-        .spawn((PlanetBundle::point_mass("Sun", &jeod_sim::SUN), SunMarker))
+        .spawn((
+            PlanetBundle::<jeod_sim::Earth>::point_mass("Sun", &jeod_sim::SUN),
+            SunMarker,
+        ))
         .id();
 
     // Moon: dual-role marker + non-root gravity source. The body's
@@ -448,7 +451,10 @@ fn tier3_bevy_earth_lighting_non_root_integ_source() {
     // is parented to the Moon's frame entity (non-root integ frame).
     let moon_entity = app
         .world_mut()
-        .spawn((PlanetBundle::point_mass("Moon", &MOON), MoonMarker))
+        .spawn((
+            PlanetBundle::<jeod_sim::Earth>::point_mass("Moon", &MOON),
+            MoonMarker,
+        ))
         .id();
 
     // Run Startup so register_source_frames_system spawns the source
@@ -462,7 +468,7 @@ fn tier3_bevy_earth_lighting_non_root_integ_source() {
     // correct moon/sun positions when it runs.
     let setup = app
         .world_mut()
-        .register_system(move |mut m: SourceMutator| {
+        .register_system(move |mut m: SourceMutator<jeod_sim::Earth>| {
             m.set_source_state(moon_entity, MOON_OFFSET, DVec3::ZERO);
             m.set_source_state(sun_entity, SUN_POS, DVec3::ZERO);
         });

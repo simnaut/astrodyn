@@ -62,7 +62,7 @@ fn bevy_parity_frame_attach_gravity_sees_propagated_state() {
         .world_mut()
         .spawn((
             Name::new("frame_attached_body"),
-            TranslationalStateC::from(TranslationalState::default()),
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState::default()),
             RotationalStateC::from(RotationalState::default()),
             MassPropertiesC::from(MassProperties::new(1_000.0)),
             DynamicsConfigC(DynamicsConfig {
@@ -101,7 +101,7 @@ fn bevy_parity_frame_attach_gravity_sees_propagated_state() {
     // captured offset (the propagation pass ran).
     let body_pos = app
         .world()
-        .get::<TranslationalStateC>(body)
+        .get::<TranslationalStateC<jeod_sim::Earth>>(body)
         .expect("frame-attached body must keep TranslationalStateC")
         .0
         .position

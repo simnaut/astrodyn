@@ -135,11 +135,11 @@ fn run_lift_and_lower(moon_velocity: DVec3) {
 
     let _earth = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH))
         .id();
     let moon = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Moon", &MOON))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Moon", &MOON))
         .insert(SourceInertialVelocityC::default())
         .id();
 
@@ -191,7 +191,7 @@ fn run_lift_and_lower(moon_velocity: DVec3) {
     // frame entity's `FrameTransC`).
     let sys = app
         .world_mut()
-        .register_system(move |mut m: SourceMutator| {
+        .register_system(move |mut m: SourceMutator<jeod_sim::Earth>| {
             m.set_source_state(moon, MOON_OFFSET, moon_velocity);
         });
     app.world_mut().run_system(sys).unwrap();

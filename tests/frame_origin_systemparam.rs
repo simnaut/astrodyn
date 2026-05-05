@@ -53,7 +53,10 @@ fn build_app(planet_name: &str, planet: &PlanetConfig) -> (App, Entity, Entity) 
 
     let planet_e = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass(planet_name, planet))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass(
+            planet_name,
+            planet,
+        ))
         .id();
 
     let trans = TranslationalState {
@@ -174,7 +177,7 @@ fn after_diff_mission_code_shape_compiles() {
     app.insert_resource(Time::<Fixed>::from_seconds(DT));
     app.add_plugins(JeodPlugin);
     app.world_mut()
-        .spawn(PlanetBundle::point_mass("Earth", &EARTH));
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH));
 
     fn read_body_origin_in_root(
         origin: FrameOrigin,

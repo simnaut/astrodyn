@@ -2936,7 +2936,7 @@ fn bevy_attach_dynamic_body_with_no_frame_entity_panics() {
     // absent) is observed by the fence — running `FixedUpdate`
     // would re-register the child first.
     app.world_mut()
-        .run_system_cached(bevy_jeod::staging_system)
+        .run_system_cached(bevy_jeod::staging_system::<jeod_sim::Earth>)
         .expect("run staging_system");
 }
 
@@ -3134,7 +3134,7 @@ fn bevy_attach_frame_entity_without_translational_state_panics() {
             t_parent_child: DMat3::IDENTITY,
         });
     app.world_mut()
-        .run_system_cached(bevy_jeod::staging_system)
+        .run_system_cached(bevy_jeod::staging_system::<jeod_sim::Earth>)
         .expect("run staging_system");
 }
 
@@ -3266,7 +3266,7 @@ fn bevy_attach_dynamic_child_on_mass_only_parent_panics_without_jeod_plugin() {
             t_parent_child: DMat3::IDENTITY,
         });
     app.world_mut()
-        .run_system_cached(bevy_jeod::staging_system)
+        .run_system_cached(bevy_jeod::staging_system::<jeod_sim::Earth>)
         .expect("run staging_system");
 }
 
@@ -3339,7 +3339,7 @@ fn bevy_attach_mass_only_succeeds_without_jeod_plugin() {
             t_parent_child: DMat3::IDENTITY,
         });
     app.world_mut()
-        .run_system_cached(bevy_jeod::staging_system)
+        .run_system_cached(bevy_jeod::staging_system::<jeod_sim::Earth>)
         .expect("run staging_system");
 
     let composite_mass = read_mass(app.world(), parent_entity);

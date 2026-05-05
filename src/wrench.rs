@@ -1298,7 +1298,7 @@ mod tests {
         // Earth point-mass source.
         let earth = app
             .world_mut()
-            .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+            .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH))
             .id();
 
         // Parent: a 3-DOF point-mass orbital body at ISS-like
@@ -1539,8 +1539,10 @@ mod tests {
             Update,
             (
                 composite_mass_system,
-                crate::systems::flat_plate_srp_system.after(composite_mass_system),
-                force_collection_system.after(crate::systems::flat_plate_srp_system),
+                crate::systems::flat_plate_srp_system::<jeod_sim::Earth>
+                    .after(composite_mass_system),
+                force_collection_system
+                    .after(crate::systems::flat_plate_srp_system::<jeod_sim::Earth>),
                 wrench_aggregation_system.after(force_collection_system),
             ),
         );

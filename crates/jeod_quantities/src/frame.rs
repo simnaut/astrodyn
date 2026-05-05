@@ -54,7 +54,13 @@ pub trait Frame: FrameSealed + 'static {
 /// can satisfy the bound from downstream call sites. Direct
 /// `impl Planet for X` outside the macro is technically possible but
 /// unsupported. Use the macro.
-pub trait Planet: PlanetSealed + 'static {
+///
+/// `Send + Sync` are required so `PhantomData<P>`-tagged ECS components
+/// (e.g. `bevy_jeod::TranslationalStateC<P>`) can be moved between
+/// threads under Bevy's parallel scheduler. Every Planet marker is a
+/// zero-sized empty struct that trivially satisfies both — the
+/// supertrait bound just makes the contract explicit.
+pub trait Planet: PlanetSealed + Send + Sync + 'static {
     /// Human-readable name for error messages and debug output.
     const NAME: &'static str;
 }
@@ -215,8 +221,18 @@ impl Frame for IntegrationFrame {
 // `Debug` impl does.
 
 /// Planet-fixed frame for any planet `P`. Rotates with that planet.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub struct PlanetFixed<P: Planet>(PhantomData<P>);
+// Manual `Clone` / `Copy` impls so `FrameTransform<_, PlanetFixed<P>>` can
+// be cloned/copied even when `P` itself doesn't bound `Clone` / `Copy`.
+// `PlanetFixed<P>` is just `PhantomData<P>` — zero-sized — so both impls
+// are trivially correct.
+impl<P: Planet> Clone for PlanetFixed<P> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<P: Planet> Copy for PlanetFixed<P> {}
 impl<P: Planet> FrameSealed for PlanetFixed<P> {}
 impl<P: Planet> Frame for PlanetFixed<P> {
     const NAME: &'static str = "PlanetFixed";

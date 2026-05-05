@@ -44,7 +44,7 @@ fn build_planet_app(name: &str, config: &PlanetConfig) -> (App, Entity) {
     app.add_plugins(JeodPlugin);
     let planet = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass(name, config))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass(name, config))
         .id();
     (app, planet)
 }
@@ -397,7 +397,7 @@ fn tier3_bevy_planet_ang_vel_moon_de421() {
     app.insert_resource(EphemerisR(eph));
     let planet = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Moon", &MOON))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Moon", &MOON))
         .id();
     // Override the bundle's default `RotationModelC(MoonIAU)` (copied
     // from `MOON.rotation_model`) with `MoonDE421`. Inserting after

@@ -32,7 +32,7 @@ use jeod_sim::{
 // `From<Untyped>` impls are provided on every spatial Component so
 // existing test/example code that constructs `TranslationalStateC(state)`
 // from an untyped `TranslationalState` switches to
-// `TranslationalStateC::from(state)` without other changes.
+// `TranslationalStateC::<jeod_sim::Earth>::from(state)` without other changes.
 
 /// Translational state (position, velocity) for the body being
 /// integrated. Wraps a typed
@@ -78,6 +78,20 @@ use jeod_sim::{
 /// Earth-orbit deputy) instantiates `TranslationalStateC<Mars>` and
 /// `TranslationalStateC<Earth>` as distinct component types — Bevy
 /// queries discriminate them at the type level.
+///
+/// **Per-planet system instantiation.** The Bevy adapter systems that
+/// read or write `TranslationalStateC<P>` (gravity, atmosphere, drag,
+/// SRP, integration, frame-switch, derived states, mass-tree staging,
+/// kinematic and frame-attached propagation, etc.) are themselves
+/// generic over `<P: Planet>`. [`crate::JeodPlugin`] registers the
+/// `<jeod_sim::Earth>` instantiation at startup, preserving the
+/// single-planet pipeline for missions that don't need multi-planet
+/// integration. A multi-planet mission calls
+/// [`crate::register_planet_systems::<P>`](crate::register_planet_systems)
+/// once per *additional* planet to register the parallel system set
+/// for `<P>`. Each instantiation only matches entities whose
+/// Planet-flavored components carry the matching `<P>` tag, so the
+/// Earth and Mars systems run in parallel over disjoint entity sets.
 // JEOD_INV: DB.24 — default integrated_frame is composite_body (we integrate composite_body state)
 #[derive(Component, Debug, Clone, Copy, Deref, DerefMut)]
 pub struct TranslationalStateC<P: Planet>(pub TranslationalStateTyped<PlanetInertial<P>>);

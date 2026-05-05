@@ -80,7 +80,7 @@ use bevy::ecs::message::MessageReader;
 use bevy::ecs::system::ParamSet;
 use bevy::prelude::*;
 
-use jeod_sim::MassPointState;
+use jeod_sim::{MassPointState, Planet};
 
 use crate::components::{
     Abm4StateC, FrameAngVelC, FrameAttachEvent, FrameAttachedC, FrameDetachEvent, FrameEntityC,
@@ -161,7 +161,7 @@ use glam::DVec3;
 // JEOD_INV: DB.21 — only unattached bodies integrate (frame-attach gate)
 // JEOD_INV: IG.37 — multi-step integrator history reset on topology change
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
-pub fn frame_attach_system(
+pub fn frame_attach_system<P: Planet>(
     mut commands: Commands,
     mut attach_events: MessageReader<FrameAttachEvent>,
     mut detach_events: MessageReader<FrameDetachEvent>,
@@ -182,15 +182,15 @@ pub fn frame_attach_system(
         bevy::ecs::query::Has<FrameAngVelC>,
     )>,
     // Body-shape check for `evt.body`. The propagation pass owns a
-    // `Query<&mut TranslationalStateC, Without<FrameTransC>>`, so a
-    // valid attach target must (a) carry `TranslationalStateC` so the
-    // writeback lands and (b) not carry `FrameTransC` so the
+    // `Query<&mut TranslationalStateC<P>, Without<FrameTransC>>`, so a
+    // valid attach target must (a) carry `TranslationalStateC<P>` so
+    // the writeback lands and (b) not carry `FrameTransC` so the
     // propagation query's filter doesn't silently drop the entity.
     // Detect either mismatch here and reject at event time. The
     // `Has<_>` access pattern keeps the query disjoint from the
     // mutable writebacks in the same system.
     body_components: Query<(
-        bevy::ecs::query::Has<TranslationalStateC>,
+        bevy::ecs::query::Has<TranslationalStateC<P>>,
         bevy::ecs::query::Has<FrameTransC>,
     )>,
     mut integrators: Query<(Option<&mut GaussJacksonStateC>, Option<&mut Abm4StateC>)>,
@@ -401,14 +401,14 @@ pub fn frame_attach_system(
 //   non-root planet. Mirrors the runner's writeback in
 //   `crates/jeod_runner/src/simulation/frame_attach.rs:335-339`.
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
-pub fn propagate_frame_attached_state_system(
+pub fn propagate_frame_attached_state_system<P: Planet>(
     attached: Query<(Entity, &FrameAttachedC)>,
     // Body entities only — exclude frame entities (which carry
     // `FrameTransC`) so `state_q` is statically disjoint from the
     // frame-state query in the `ParamSet` below.
     mut state_q: Query<
         (
-            &mut TranslationalStateC,
+            &mut TranslationalStateC<P>,
             Option<&mut RotationalStateC>,
             Option<&FrameEntityC>,
         ),
@@ -431,7 +431,7 @@ pub fn propagate_frame_attached_state_system(
                 Option<&'static mut crate::components::FrameRotC>,
                 Option<&'static mut crate::components::FrameAngVelC>,
             ),
-            Without<TranslationalStateC>,
+            Without<TranslationalStateC<P>>,
         >,
     )>,
     // Body→frame-entity lookup and the frame-tree parent walk are
@@ -571,8 +571,8 @@ pub fn propagate_frame_attached_state_system(
             position: derived.trans.position - *integ_origin_pos,
             velocity: derived.trans.velocity - *integ_origin_vel,
         };
-        // allowed: kernel boundary — the kernel returns root-inertial values lowered through the body's `IntegOrigin`; the resulting integration-frame coords carry the wildcard `PlanetInertial<SelfPlanet>` phantom by storage convention.
-        trans.0 = jeod_sim::TranslationalStateTyped::<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>::from_untyped_unchecked(&derived_trans);
+        // allowed: kernel boundary — the kernel returns root-inertial values lowered through the body's `IntegOrigin`; the resulting integration-frame coords carry the `<P>` planet-inertial phantom matching `TranslationalStateC<P>`'s storage convention (system instantiation gates by `<P>`).
+        trans.0 = jeod_sim::TranslationalStateTyped::<jeod_sim::PlanetInertial<P>>::from_untyped_unchecked(&derived_trans);
 
         if let Some(mut rot) = rot_opt {
             let derived_rot = jeod_sim::RotationalState {
@@ -671,11 +671,11 @@ pub fn propagate_frame_attached_state_system(
 //   derived-state consumers don't observe a one-tick-stale composition.
 // JEOD_INV: RF.10 — same shift-site reasoning as the pre-integration sibling.
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
-pub fn propagate_frame_attached_state_post_integration_system(
+pub fn propagate_frame_attached_state_post_integration_system<P: Planet>(
     attached: Query<(Entity, &FrameAttachedC)>,
     state_q: Query<
         (
-            &mut TranslationalStateC,
+            &mut TranslationalStateC<P>,
             Option<&mut RotationalStateC>,
             Option<&FrameEntityC>,
         ),
@@ -689,14 +689,14 @@ pub fn propagate_frame_attached_state_post_integration_system(
                 Option<&'static mut crate::components::FrameRotC>,
                 Option<&'static mut crate::components::FrameAngVelC>,
             ),
-            Without<TranslationalStateC>,
+            Without<TranslationalStateC<P>>,
         >,
     )>,
     body_frames: Query<&FrameEntityC>,
     parents: Query<&ChildOf>,
     root_frame: Res<RootFrameEntityR>,
 ) {
-    propagate_frame_attached_state_system(
+    propagate_frame_attached_state_system::<P>(
         attached,
         state_q,
         frame_qs,
@@ -741,7 +741,7 @@ mod tests {
             .spawn((
                 MassPropertiesC::from(MassProperties::new(1.0)),
                 RotationalStateC::from_untyped(RotationalState::default()),
-                TranslationalStateC::from_untyped(TranslationalState::default()),
+                TranslationalStateC::<jeod_sim::Earth>::from_untyped(TranslationalState::default()),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
@@ -1018,7 +1018,7 @@ mod tests {
                 Name::new("frame_attached_root"),
                 MassPropertiesC::from(MassProperties::new(10.0)),
                 RotationalStateC::from_untyped(RotationalState::default()),
-                TranslationalStateC::from_untyped(TranslationalState::default()),
+                TranslationalStateC::<jeod_sim::Earth>::from_untyped(TranslationalState::default()),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
@@ -1052,7 +1052,7 @@ mod tests {
                 MassChildOf::with_rotation(parent_body, child_link_offset, glam::DMat3::IDENTITY),
                 KinematicChildC,
                 RotationalStateC::from_untyped(RotationalState::default()),
-                TranslationalStateC::from_untyped(TranslationalState::default()),
+                TranslationalStateC::<jeod_sim::Earth>::from_untyped(TranslationalState::default()),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
@@ -1090,7 +1090,7 @@ mod tests {
         // offset).
         let parent_state = app
             .world()
-            .get::<TranslationalStateC>(parent_body)
+            .get::<TranslationalStateC<jeod_sim::Earth>>(parent_body)
             .expect("parent body should still have TranslationalStateC");
         let parent_pos = parent_state.0.position.raw_si();
         assert!(
@@ -1114,7 +1114,7 @@ mod tests {
         // children).
         let child_state = app
             .world()
-            .get::<TranslationalStateC>(child_body)
+            .get::<TranslationalStateC<jeod_sim::Earth>>(child_body)
             .expect("kinematic child should still have TranslationalStateC");
         let child_pos = child_state.0.position.raw_si();
         let parent_mass = 10.0;

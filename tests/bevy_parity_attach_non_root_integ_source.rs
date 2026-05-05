@@ -135,11 +135,11 @@ fn build_lunar_app() -> (App, Entity, Entity, Entity, jeod_sim::MassBodyId) {
 
     let _earth = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Earth", &EARTH))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Earth", &EARTH))
         .id();
     let moon = app
         .world_mut()
-        .spawn(PlanetBundle::point_mass("Moon", &MOON))
+        .spawn(PlanetBundle::<jeod_sim::Earth>::point_mass("Moon", &MOON))
         .insert(SourceInertialVelocityC::default())
         .id();
 
@@ -181,7 +181,7 @@ fn build_lunar_app() -> (App, Entity, Entity, Entity, jeod_sim::MassBodyId) {
 
     let sys = app
         .world_mut()
-        .register_system(move |mut m: SourceMutator| {
+        .register_system(move |mut m: SourceMutator<jeod_sim::Earth>| {
             m.set_source_state(moon, MOON_OFFSET, MOON_VELOCITY);
         });
     app.world_mut().run_system(sys).unwrap();

@@ -85,7 +85,7 @@ use glam::DVec3;
 use std::collections::HashMap;
 
 use jeod_sim::{
-    propagate_state_via_storage, KinematicEdge, KinematicNodeState, MassStorage,
+    propagate_state_via_storage, KinematicEdge, KinematicNodeState, MassStorage, Planet,
     RotationalStateTyped, SelfRef, TranslationalStateTyped,
 };
 
@@ -136,7 +136,7 @@ use crate::mass_tree::MassTreeView;
 // JEOD_INV: DB.13 — kinematic state propagation routed through structural frames (parent → struct → link → child struct → child body)
 // JEOD_INV: DB.17 — only the root integrates; non-root state is derived each step
 #[allow(clippy::type_complexity)]
-pub fn propagate_state_from_root_system(
+pub fn propagate_state_from_root_system<P: Planet>(
     mass_q: Query<(Entity, &MassPropertiesC)>,
     parents_q: Query<(Entity, &MassChildOf)>,
     kinematic_q: Query<Entity, With<KinematicChildC>>,
@@ -150,14 +150,8 @@ pub fn propagate_state_from_root_system(
     // view of the same components — without it Bevy's borrow checker
     // would refuse the conflicting access (`B0001`).
     mut state_qs: ParamSet<(
-        Query<(&RotationalStateC, &TranslationalStateC<jeod_sim::Earth>)>,
-        Query<
-            (
-                &mut RotationalStateC,
-                &mut TranslationalStateC<jeod_sim::Earth>,
-            ),
-            With<KinematicChildC>,
-        >,
+        Query<(&RotationalStateC, &TranslationalStateC<P>)>,
+        Query<(&mut RotationalStateC, &mut TranslationalStateC<P>), With<KinematicChildC>>,
     )>,
 ) {
     // 1. Fast path: no MassChildOf edges → nothing to propagate.
@@ -304,7 +298,7 @@ pub fn propagate_state_from_root_system(
                 rot_c.0 = RotationalStateTyped::<SelfRef>::from_untyped_unchecked(&state.rot);
                 trans_c.0 =
                     // allowed: kernel boundary (see rotational sibling write above for the full rationale).
-                    TranslationalStateTyped::<jeod_sim::PlanetInertial<jeod_sim::Earth>>::from_untyped_unchecked(
+                    TranslationalStateTyped::<jeod_sim::PlanetInertial<P>>::from_untyped_unchecked(
                         &state.trans,
                     );
             }
@@ -339,18 +333,25 @@ pub fn propagate_state_from_root_system(
 //   and the post-integration sweep is what makes "each step" mean "after the step
 //   actually finished" rather than "before the step started".
 #[allow(clippy::type_complexity)]
-pub fn propagate_state_from_root_post_integration_system(
+pub fn propagate_state_from_root_post_integration_system<P: Planet>(
     mass_q: Query<(Entity, &MassPropertiesC)>,
     parents_q: Query<(Entity, &MassChildOf)>,
     kinematic_q: Query<Entity, With<KinematicChildC>>,
     names_q: Query<&Name>,
     struct_q: Query<&StructuralTransformC>,
     state_qs: ParamSet<(
-        Query<(&RotationalStateC, &TranslationalStateC)>,
-        Query<(&mut RotationalStateC, &mut TranslationalStateC), With<KinematicChildC>>,
+        Query<(&RotationalStateC, &TranslationalStateC<P>)>,
+        Query<(&mut RotationalStateC, &mut TranslationalStateC<P>), With<KinematicChildC>>,
     )>,
 ) {
-    propagate_state_from_root_system(mass_q, parents_q, kinematic_q, names_q, struct_q, state_qs);
+    propagate_state_from_root_system::<P>(
+        mass_q,
+        parents_q,
+        kinematic_q,
+        names_q,
+        struct_q,
+        state_qs,
+    );
 }
 
 #[cfg(test)]
@@ -380,8 +381,9 @@ mod tests {
             Update,
             (
                 composite_mass_system,
-                propagate_state_from_root_system.after(composite_mass_system),
-                wrench_aggregation_system.after(propagate_state_from_root_system),
+                propagate_state_from_root_system::<jeod_sim::Earth>.after(composite_mass_system),
+                wrench_aggregation_system
+                    .after(propagate_state_from_root_system::<jeod_sim::Earth>),
             ),
         );
         app.update();
