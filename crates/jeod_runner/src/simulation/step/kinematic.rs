@@ -367,6 +367,36 @@ impl Simulation {
             self.bodies[body_idx].rot = Some(state.rot);
         }
     }
+
+    /// Public entry point that runs the runner's internal kinematic
+    /// state propagation walk once using the live frame-tree integ
+    /// origins, **without** advancing time or running the full
+    /// `step()` pipeline.
+    ///
+    /// Mirrors JEOD's `DynBody::attach_child` finalization, which calls
+    /// `propagate_state_from_structure` inside the attach itself so the
+    /// chain's child states are coherent immediately on return — i.e.
+    /// without waiting for the next derivative cycle to run the
+    /// kinematic walk. Tier 3 cross-validation tests that compare a
+    /// runner-side state to a JEOD CSV sample taken at the same
+    /// integer-second `add_read` boundary (where the attach has just
+    /// fired but the next integration cycle has not yet started) need
+    /// this entry point so the sample observes the post-attach
+    /// kinematic state JEOD's CSV records.
+    pub fn propagate_kinematic_state_for_logging(&mut self) {
+        let body_integ_origins: Vec<IntegOrigin> = self
+            .bodies
+            .iter()
+            .map(|b| {
+                let (p, v) = self.frame_origin(b.integ_frame_id);
+                IntegOrigin {
+                    position: jeod_sim::Position::from_raw_si(p),
+                    velocity: jeod_sim::Velocity::from_raw_si(v),
+                }
+            })
+            .collect();
+        self.propagate_kinematic_state(&body_integ_origins);
+    }
 }
 
 #[cfg(test)]
