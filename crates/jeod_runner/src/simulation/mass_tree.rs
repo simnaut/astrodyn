@@ -176,6 +176,46 @@ impl Simulation {
             .mass_body_id
             .expect("attach: parent body not in mass tree");
 
+        // ── Resolve the *subject root*: the body whose tree is actually
+        //    being re-rooted under `parent`. For the root-subject case
+        //    (subject == its own tree root, no existing parent edge in
+        //    the mass tree), `subject_root_id == child_id` and
+        //    `subject_root_idx == child_idx`; for the chained-attach /
+        //    re-rooting case (subject is itself a non-root body in some
+        //    other tree, e.g. JEOD's `RUN_complex_attach_detach` where
+        //    veh1.attach_to_3 fires while veh1 is already attached to
+        //    veh2), the subject root is veh1's existing tree root —
+        //    veh2 in that example — and that's the body whose
+        //    integrator-written composite-body state seeds the
+        //    momentum-conservation combine.
+        //
+        //    Mirrors JEOD `DynBody::attach_child` (line 521 of
+        //    `dyn_body_attach.cc`):
+        //      `child_root = child.get_root_body_internal();`
+        //    and the subsequent `child_root->attach_establish_links(*this)`
+        //    branch when `child_root != &child`.
+        let (subject_root_id, subject_root_idx) = {
+            let tree_ro = self.mass_tree.as_ref().expect("attach: no mass tree");
+            let root = tree_ro.root_of(child_id);
+            if root == child_id {
+                (child_id, child_idx)
+            } else {
+                let idx = self
+                    .bodies
+                    .iter()
+                    .position(|b| b.mass_body_id == Some(root))
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "attach: subject root {root:?} for re-rooting child {child_id:?} \
+                             has no Simulation body backing it — `Simulation::attach` requires \
+                             the subject's tree root to be a registered SimBody so its \
+                             integrator-written composite-body state seeds the combine."
+                        )
+                    });
+                (root, idx)
+            }
+        };
+
         // ── Resolve the integrated tree root that owns the parent's
         //    pre-attach composite-body state. Per JEOD_INV: DB.17 only
         //    the root carries integrator-written `body.trans` /
@@ -197,10 +237,7 @@ impl Simulation {
         //    `derive_subtree_composite_state` is the trivial walk).
         let (root_id, root_idx) = {
             let tree_ro = self.mass_tree.as_ref().expect("attach: no mass tree");
-            let mut walker = parent_id;
-            while let Some(p) = tree_ro.parent(walker) {
-                walker = p;
-            }
+            let walker = tree_ro.root_of(parent_id);
             let idx = self
                 .bodies
                 .iter()
@@ -222,11 +259,26 @@ impl Simulation {
         //    to the topology mutation itself; if we ever do this in a
         //    new method but forget the matching reset (Site B below),
         //    the dirty flag remains set and `integrate()` panics on
-        //    the next step with the IG.37 diagnostic. The set of
-        //    affected bodies after `attach` is the child plus the
+        //    the next step with the IG.37 diagnostic.
+        //
+        //    For the plain root-subject attach, the bodies whose
+        //    composite changes are the subject (== child) plus the
         //    parent's full ancestor chain (since `MassTree::attach`
-        //    walks `recompute_composites` from leaves to every root,
-        //    so any ancestor of the new parent is touched).
+        //    walks `recompute_composites` from leaves to every root, so
+        //    any ancestor of the new parent is touched).
+        //
+        //    For the re-rooting case the subject root *and every body
+        //    in its existing subtree* now sit under `parent`, and
+        //    `recompute_composites` walks both the new combined tree
+        //    and the old tree's former root chain. The conservative
+        //    set is therefore: subject_root + its descendants +
+        //    parent's ancestor chain. Including the descendants matters
+        //    because, post-reroot, those bodies are kinematic children
+        //    of the merged tree's root and any GJ/ABM4 history they
+        //    accumulated as pre-reroot integrated bodies (they were
+        //    interior nodes in the subject tree and may have been
+        //    integrated standalone before the original attach) is now
+        //    stale topology-wise.
         //
         // The set is sorted + deduped so the helpers below (and the
         // mass-sync pass) can use `binary_search` for O(log n)
@@ -236,6 +288,12 @@ impl Simulation {
         {
             let tree_ro = self.mass_tree.as_ref().expect("attach: no mass tree");
             affected_ids.extend(tree_ro.ancestors_inclusive(parent_id));
+            // Subject's whole subtree (rooted at subject_root_id,
+            // including subject_root_id itself). For the root-subject
+            // case this just adds `subject_root_id == child_id` again;
+            // the dedup below collapses it. For the reroot case it adds
+            // every body that hung off the subject's old root chain.
+            affected_ids.extend(tree_ro.subtree_ids(subject_root_id));
         }
         affected_ids.sort_unstable();
         affected_ids.dedup();
@@ -278,21 +336,29 @@ impl Simulation {
         // change verbatim. The integ-frame lift, kernel call, and
         // writeback below all live behind the same gate so the entire
         // momentum-merge stays within one branch.
+        // The body whose integrator-written composite-body state seeds
+        // the *child side* of the combine kernel is the **subject
+        // root** — not necessarily `child_idx` itself. For the
+        // root-subject case `subject_root_idx == child_idx` so this is
+        // bit-identical to the previous code; for the re-rooting case
+        // the subject root carries the integrated state of the whole
+        // pre-reroot subtree, which is the right composite to merge
+        // with the parent-side root.
         let snapshot = if combine_writeback {
             let root_integ_origin_pos = {
                 let (p, _v) = self.frame_origin(self.bodies[root_idx].integ_frame_id);
                 p
             };
-            let child_integ_origin_pos = {
-                let (p, _v) = self.frame_origin(self.bodies[child_idx].integ_frame_id);
+            let subject_root_integ_origin_pos = {
+                let (p, _v) = self.frame_origin(self.bodies[subject_root_idx].integ_frame_id);
                 p
             };
             let root_integ_origin_vel = {
                 let (_p, v) = self.frame_origin(self.bodies[root_idx].integ_frame_id);
                 v
             };
-            let child_integ_origin_vel = {
-                let (_p, v) = self.frame_origin(self.bodies[child_idx].integ_frame_id);
+            let subject_root_integ_origin_vel = {
+                let (_p, v) = self.frame_origin(self.bodies[subject_root_idx].integ_frame_id);
                 v
             };
             let mut root_pre_state = Self::body_composite_state_or_default(&self.bodies[root_idx]);
@@ -302,12 +368,12 @@ impl Simulation {
                 .mass
                 .expect("attach: tree root has no mass properties");
             let mut child_pre_state =
-                Self::body_composite_state_or_default(&self.bodies[child_idx]);
-            child_pre_state.trans.position += child_integ_origin_pos;
-            child_pre_state.trans.velocity += child_integ_origin_vel;
-            let child_pre_composite_props = self.bodies[child_idx]
+                Self::body_composite_state_or_default(&self.bodies[subject_root_idx]);
+            child_pre_state.trans.position += subject_root_integ_origin_pos;
+            child_pre_state.trans.velocity += subject_root_integ_origin_vel;
+            let child_pre_composite_props = self.bodies[subject_root_idx]
                 .mass
-                .expect("attach: child body has no mass properties");
+                .expect("attach: subject root has no mass properties");
             let root_has_rot = self.bodies[root_idx].rot.is_some();
             Some(AttachSnapshot {
                 root_integ_origin_pos,
@@ -322,9 +388,20 @@ impl Simulation {
             None
         };
 
-        // ── Mutate the tree itself. ──
+        // ── Mutate the tree itself. The plain `MassTree::attach`
+        //    panics if the child already has a parent; for re-rooting
+        //    chained-attach scenarios the subject root has no parent
+        //    (we just walked up to find it) but the *subject* might,
+        //    and JEOD's `attach_child` reroot path is exactly the
+        //    pattern `attach_with_reroot` ports — recompute the
+        //    geometry so the subject ends up where the caller asked,
+        //    even though the underlying tree edge runs from `parent`
+        //    to the subject's existing root.
         let tree = self.mass_tree.as_mut().expect("attach: no mass tree");
-        tree.attach(child_id, parent_id, offset, t_parent_child);
+        // JEOD_INV: BA.12 — runner dispatches every public attach through the
+        // reroot-aware kernel so chained-attach scenarios pick the JEOD
+        // `dyn_body_attach.cc:521-567` path automatically.
+        let _attached_root = tree.attach_with_reroot(child_id, parent_id, offset, t_parent_child);
         // Sync every affected body's composite mass from the tree.
         // `affected_ids` is sorted + deduped above; binary_search keeps
         // this O(n_bodies · log n_affected) instead of O(n²).
@@ -415,6 +492,89 @@ impl Simulation {
                     quaternion: combined.composite_state.rot.q_parent_this,
                     ang_vel_body: combined.composite_state.rot.ang_vel_this,
                 });
+            }
+        }
+
+        // ── Auto-flag the rerooted subject subtree as kinematic-only.
+        //
+        //    This block runs only on the **reroot** path — i.e. when
+        //    `subject_root_id != child_id` (the subject was already a
+        //    non-root body in some other tree and is now being reparented
+        //    along with its ancestors). The simple root-subject attach
+        //    (`subject_root_id == child_id`) deliberately does NOT
+        //    auto-mark: there, the subject was a tree root with no prior
+        //    integrated/derived split, and callers retain explicit
+        //    control over whether the freshly-attached child should
+        //    integrate or be derived kinematically (e.g.
+        //    `propagate_kinematic_state_panics_on_non_kinematic_intermediate`
+        //    deliberately attaches without flagging the new child
+        //    kinematic to confirm the walk's fail-loud ancestor check
+        //    still fires). For that case, mission code still has to
+        //    call `Simulation::mark_kinematic_only(child_idx)` after
+        //    `Simulation::attach(...)` — this auto-flag is **not** a
+        //    drop-in replacement for that public call.
+        //
+        //    Per JEOD_INV: DB.17 only the integrated tree root carries
+        //    integrator-written `body.trans` / `body.rot`; every interior
+        //    SimBody must derive its state each tick from the root
+        //    through `propagate_kinematic_state`. Pre-attach the subject
+        //    root *was* the integrated root for its tree; post-attach it
+        //    sits under `parent`'s tree root and must be rederived each
+        //    step. We auto-flag the subject root + every descendant in
+        //    its old subtree so the `propagate_kinematic_state` walk
+        //    doesn't panic on its own "non-kinematic interior body"
+        //    guard the next time [`Simulation::step`] runs.
+        //
+        //    The configuration-time path
+        //    (`attach_preserving_initial_state`,
+        //    `combine_writeback == false`) skips this auto-flag so
+        //    builder-driven topology declarations don't bake
+        //    kinematic-only flags into bodies whose initial state the
+        //    user expects to be honoured verbatim.
+        //
+        //    Bodies without a `RotationalState` (3-DOF) cannot be made
+        //    kinematic-only: `propagate_kinematic_state` derives both
+        //    `trans` and `rot` from the parent's composed pose, and
+        //    that walk requires every kinematic node to carry a
+        //    `RotationalState`. A 3-DOF body in a rerooted subtree is
+        //    therefore unreachable by the kinematic walk *and* no
+        //    longer the integrated tree root, so its `body.trans` would
+        //    silently go stale post-reroot. Fail loudly here — at the
+        //    attach site that introduced the configuration — rather
+        //    than letting the `propagate_kinematic_state` ancestor
+        //    check panic on the first post-reroot step, which surfaces
+        //    a confusing "non-kinematic ancestor" diagnostic far from
+        //    the root cause.
+        if combine_writeback && subject_root_id != child_id {
+            // Use a `HashSet` rather than `Vec` so the membership check
+            // inside the body loop is O(1) instead of O(n_descendants);
+            // attach is a hot path on larger trees (chained docking,
+            // multi-stage separation) where the subject subtree may be
+            // O(10) bodies and the runner may carry O(10²) sim bodies.
+            let subject_descendants: std::collections::HashSet<jeod_dynamics::MassBodyId> = self
+                .mass_tree
+                .as_ref()
+                .expect("attach: mass tree dropped between mutate and auto-flag")
+                .subtree_ids(subject_root_id)
+                .into_iter()
+                .collect();
+            for (body_idx, body) in self.bodies.iter_mut().enumerate() {
+                if let Some(id) = body.mass_body_id {
+                    if subject_descendants.contains(&id) {
+                        assert!(
+                            body.rot.is_some(),
+                            "attach (reroot): SimBody {body_idx} (mass_body_id {id:?}) is in \
+                             the rerooted subtree under subject_root {subject_root_id:?} but \
+                             has no RotationalState. Kinematic propagation derives both `trans` \
+                             and `rot` from the integrating root, so any attached (non-root) \
+                             body must be 6-DOF — a 3-DOF body's state would go stale post-attach. \
+                             Make this body 6-DOF by setting `VehicleConfig::rot = Some(...)` \
+                             before the attach, or restructure the topology so this body never \
+                             becomes a non-root member of the merged tree."
+                        );
+                        body.kinematic_only = true;
+                    }
+                }
             }
         }
 
@@ -2784,5 +2944,116 @@ mod tests {
         // regression that drops the auto-clear panics here.
         sim.step()
             .expect("post-detach step must succeed (kinematic_only must be cleared)");
+    }
+
+    /// Reroot path must reject a 3-DOF body in the rerooted subtree.
+    ///
+    /// Per JEOD_INV: DB.17, every interior SimBody derives its state
+    /// each tick through `propagate_kinematic_state`, which composes
+    /// both `trans` and `rot` from the parent's pose. A 3-DOF body
+    /// (no `RotationalState`) cannot participate in that walk, so a
+    /// chained-attach reroot that would push it from "tree root" to
+    /// "interior" has no way to keep its `body.trans` live. We
+    /// therefore fail loudly at the attach site rather than silently
+    /// letting the body's state go stale post-reroot.
+    ///
+    /// Setup: parent_a (target), parent_b (subject's tree root,
+    /// 6-DOF), intermediate (6-DOF child of parent_b), 3dof_child
+    /// (3-DOF child of intermediate). Attaching `intermediate` to
+    /// parent_a triggers the reroot path: subject_root_id is parent_b,
+    /// the rerooted subtree includes 3dof_child, which fails the
+    /// rot-required assertion.
+    #[test]
+    #[should_panic(expected = "rerooted subtree")]
+    fn reroot_panics_on_3dof_body_in_subject_subtree() {
+        use crate::SimulationBuilderExt;
+        use jeod_sim::recipes::Mission;
+        use jeod_sim::{JeodQuat, RotationalState};
+
+        let mut sim = Mission::iss_leo()
+            .into_builder()
+            .build()
+            .expect("Mission::iss_leo must validate");
+
+        let parent_a_idx = 0;
+        // iss_leo ships a 3-DOF root; promote parent_a in place to
+        // 6-DOF so the post-reroot tree is well-formed (parent_a is
+        // the integrated root of the merged tree).
+        sim.bodies[parent_a_idx].rot = Some(RotationalState {
+            quaternion: JeodQuat::identity(),
+            ang_vel_body: DVec3::ZERO,
+        });
+
+        let parent_b_idx = sim.add_body(VehicleConfig {
+            trans: TranslationalState {
+                position: DVec3::new(7e6, 0.0, 0.0),
+                velocity: DVec3::new(0.0, 7500.0, 0.0),
+            },
+            rot: Some(RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::ZERO,
+            }),
+            mass: Some(MassProperties::new(100.0)),
+            gravity_controls: GravityControls { controls: vec![] },
+            ..Default::default()
+        });
+        let intermediate_idx = sim.add_body(VehicleConfig {
+            trans: TranslationalState {
+                position: DVec3::new(7e6 + 1.0, 0.0, 0.0),
+                velocity: DVec3::new(0.0, 7500.0, 0.0),
+            },
+            rot: Some(RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::ZERO,
+            }),
+            mass: Some(MassProperties::new(50.0)),
+            gravity_controls: GravityControls { controls: vec![] },
+            ..Default::default()
+        });
+        // 3-DOF body — no `rot` field.
+        let three_dof_idx = sim.add_body(VehicleConfig {
+            trans: TranslationalState {
+                position: DVec3::new(7e6 + 2.0, 0.0, 0.0),
+                velocity: DVec3::new(0.0, 7500.0, 0.0),
+            },
+            rot: None,
+            mass: Some(MassProperties::new(10.0)),
+            gravity_controls: GravityControls { controls: vec![] },
+            ..Default::default()
+        });
+
+        sim.add_body_to_tree(parent_a_idx, "parent_a");
+        sim.add_body_to_tree(parent_b_idx, "parent_b");
+        sim.add_body_to_tree(intermediate_idx, "intermediate");
+        sim.add_body_to_tree(three_dof_idx, "three_dof");
+
+        // Build subject's tree: parent_b ← intermediate ← three_dof.
+        // Each attach is a simple root-subject attach (the child is
+        // its own tree root before the call), so none triggers the
+        // auto-flag block.
+        sim.attach(
+            intermediate_idx,
+            parent_b_idx,
+            DVec3::new(1.0, 0.0, 0.0),
+            DMat3::IDENTITY,
+        );
+        sim.attach(
+            three_dof_idx,
+            intermediate_idx,
+            DVec3::new(1.0, 0.0, 0.0),
+            DMat3::IDENTITY,
+        );
+
+        // Reroot: attach `intermediate` to parent_a. Now
+        // `child_id = intermediate_id`, `subject_root_id = parent_b_id`,
+        // they differ, so the auto-flag block runs. The rerooted
+        // subtree (rooted at parent_b) contains three_dof, which has
+        // no RotationalState — the assertion must fire.
+        sim.attach(
+            intermediate_idx,
+            parent_a_idx,
+            DVec3::new(2.0, 0.0, 0.0),
+            DMat3::IDENTITY,
+        );
     }
 }

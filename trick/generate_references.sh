@@ -2059,6 +2059,8 @@ run_kinematic_propagation_group() {
     local sim_dir="models/dynamics/dyn_body/verif/SIM_verif_attach_detach"
     local -a RUNS=(
         "SET_test/RUN_simple_attach_detach:kinematic_propagation_simple:kinematic_propagation_simple_kinematic_propagation_state.csv"
+        "SET_test/RUN_complex_attach_detach:chained_attach_complex:chained_attach_complex_kinematic_propagation_state.csv"
+        "SET_test/RUN_compute_child_derivative:chained_attach_child_deriv:chained_attach_child_deriv_kinematic_propagation_state.csv"
     )
     local needs_build=0
     for entry in "${RUNS[@]}"; do
