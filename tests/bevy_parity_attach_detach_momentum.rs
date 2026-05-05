@@ -26,11 +26,12 @@
 //!    walk; `step_detached_system` owns its propagation.
 
 use bevy::prelude::*;
+use bevy_jeod::frame_param::RelativeFrameState;
 use bevy_jeod::{
-    AttachEvent, DetachEvent, DetachedSubtreeStateC, DynamicsConfigC, FrameDerivativesC,
-    FrameEntityC, FrameTransC, GravityAccelerationC, GravityControlsC, GravitySourceC, JeodPlugin,
-    MassBodyIdC, MassPropertiesC, MassTreeR, RotationalStateC, SourceInertialPositionC,
-    TranslationalStateC,
+    AttachEvent, DetachEvent, DetachedSubtreeStateC, DynamicsConfigC, FrameAngVelC,
+    FrameDerivativesC, FrameEntityC, FrameRotC, FrameTransC, GravityAccelerationC,
+    GravityControlsC, GravitySourceC, IntegSourceC, JeodPlugin, MassBodyIdC, MassPropertiesC,
+    MassTreeR, RootFrameEntityR, RotationalStateC, SourceInertialPositionC, TranslationalStateC,
 };
 use glam::{DMat3, DVec3};
 use jeod_sim::{
@@ -913,6 +914,583 @@ fn bevy_step_detached_runs_before_frame_tree_sync() {
     );
 }
 
+/// **Same-integration-frame attach only.** When parent and child
+/// already share an integration frame (the common case — both bodies
+/// integrate in root inertial), the child body's frame entity must
+/// remain parented under its original integration frame entity, NOT
+/// under the parent body's frame entity.
+///
+/// This pins JEOD's frame-tree semantics from
+/// `models/dynamics/dyn_body/src/dyn_body_integration.cc::set_integ_frame`
+/// and `dyn_body_attach.cc::attach_establish_links`: a body's three
+/// reference frames (`structure`, `composite_body`, `core_body`) plus
+/// vehicle points are children of its `integ_frame` (an
+/// `EphemerisRefFrame`), not of any parent body. The dyn-parent
+/// relationship is captured by the mass tree (and its
+/// `MassChildOf` ECS-native sibling), independent of the frame tree.
+/// JEOD only reparents these frames when the child's `integ_frame`
+/// changes — and the same-integ-frame attach case here leaves the
+/// integ frame unchanged.
+///
+/// In this same-integ-frame regime, reparenting the child's frame
+/// entity under the parent body's frame entity would *invert* JEOD's
+/// invariant: the child's `FrameTransC` is in the integration
+/// frame's coordinates, and re-parenting it under the parent body's
+/// frame entity would relabel that storage as "relative to the
+/// parent body" without converting the numbers — silently corrupting
+/// every downstream `RelativeFrameState` walk that reads the child's
+/// frame entity to compute a cross-frame state. The
+/// kinematic-propagation rewrite
+/// (`propagate_state_from_root_system` + `sync_body_to_frame_system`)
+/// keeps the child's `FrameTransC` in lockstep with its
+/// `TranslationalStateC` each tick, but only as long as the child's
+/// frame-tree node is parented under its own integ frame.
+///
+/// This regression test pins the no-op behaviour for the
+/// same-integ-frame case so a future change that wires
+/// `commands.entity(child_frame).insert(ChildOf(parent_frame))`
+/// blindly into the attach handler would fail loudly.
+///
+/// **Out of scope for this regression**: the cross-integration-frame
+/// case (parent and child carrying different `IntegSourceC` values).
+/// JEOD's `attach_establish_links` does call `set_integ_frame` to
+/// reparent the child's frame tree in that case, but our
+/// `staging_system` does not yet implement the matching reparent or
+/// coordinate rewrite, and `frame_switch_system` is purely
+/// distance-driven and does not react to `AttachEvent`. That gap is
+/// tracked separately and exercised by a companion regression below.
+#[test]
+fn bevy_attach_does_not_reparent_child_frame_under_parent_frame() {
+    let parent_mass = MassProperties::new(1000.0);
+    let child_mass = MassProperties::new(500.0);
+    let parent_trans = TranslationalState {
+        position: DVec3::new(7e6, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let child_trans = TranslationalState {
+        position: DVec3::new(7e6, 1.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let initial_rot = RotationalState::default();
+
+    let (mut app, parent_entity, child_entity, _, _) = build_two_body_world(
+        1.0,
+        parent_mass,
+        parent_trans,
+        initial_rot,
+        child_mass,
+        child_trans,
+        initial_rot,
+    );
+
+    // First step: `register_body_frames_system` spawns each body's
+    // frame entity and parents it under the root frame entity. No
+    // attach yet — both children are independent free-flying bodies.
+    step(&mut app, 1, 1.0);
+
+    let root_frame_entity = app.world().resource::<RootFrameEntityR>().0;
+
+    // Sanity: both bodies registered, both frame entities under the
+    // root frame entity.
+    let parent_frame_entity = app
+        .world()
+        .get::<FrameEntityC>(parent_entity)
+        .expect("parent registered FrameEntityC after first step")
+        .0;
+    let child_frame_entity = app
+        .world()
+        .get::<FrameEntityC>(child_entity)
+        .expect("child registered FrameEntityC after first step")
+        .0;
+    assert_eq!(
+        app.world()
+            .get::<ChildOf>(parent_frame_entity)
+            .expect("parent frame entity has ChildOf parent")
+            .parent(),
+        root_frame_entity,
+        "pre-attach: parent frame entity must be parented under the root frame entity"
+    );
+    assert_eq!(
+        app.world()
+            .get::<ChildOf>(child_frame_entity)
+            .expect("child frame entity has ChildOf parent")
+            .parent(),
+        root_frame_entity,
+        "pre-attach: child frame entity must be parented under the root frame entity"
+    );
+
+    // Fire the attach event and step once so `staging_system`
+    // processes it.
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
+            t_parent_child: DMat3::IDENTITY,
+        });
+    step(&mut app, 1, 1.0);
+
+    // The crux of the regression: the child's frame entity's ChildOf
+    // parent must STILL be the root frame entity — `staging_system`
+    // mutates the mass tree (and writes the merged composite-body
+    // state into the parent), but it does not (and per JEOD must not)
+    // reparent the child's frame entity under the parent body's frame
+    // entity.
+    let child_frame_parent_post = app
+        .world()
+        .get::<ChildOf>(child_frame_entity)
+        .expect("child frame entity still alive post-attach")
+        .parent();
+    assert_eq!(
+        child_frame_parent_post, root_frame_entity,
+        "post-attach: child frame entity ({child_frame_entity:?}) must remain parented under the \
+         root frame entity ({root_frame_entity:?}) — not reparented under the parent body's \
+         frame entity ({parent_frame_entity:?}). JEOD `dyn_body_integration.cc::set_integ_frame` \
+         only reparents body frames on integ-frame change, never on attach to a same-integ-frame \
+         parent."
+    );
+    assert_ne!(
+        child_frame_parent_post, parent_frame_entity,
+        "post-attach: child frame entity must not be reparented under the parent body's frame \
+         entity ({parent_frame_entity:?}); the parent-body relationship lives in the mass tree, \
+         not in the frame tree."
+    );
+
+    // Pair the parentage check with a relative-state readback so a
+    // future regression that keeps the `ChildOf` link correct but
+    // silently corrupts the stored `FrameTransC` / `TranslationalStateC`
+    // would also fail here. `RelativeFrameState::position(root, child)`
+    // walks the frame tree using the same algorithm downstream
+    // consumers use — if the child's frame-entity coordinates were
+    // overwritten with parent-relative numbers (or zeroed by a stray
+    // sync), this readback would diverge from the child entity's
+    // `TranslationalStateC` (which is the integ-frame storage and, in
+    // the same-integ-frame case, the same coordinate system as
+    // `RelativeFrameState` returns).
+    let child_trans_post = app
+        .world()
+        .get::<TranslationalStateC>(child_entity)
+        .expect("child still has TranslationalStateC post-attach")
+        .0
+        .to_untyped();
+    let child_pos_via_frame_tree = app
+        .world_mut()
+        .run_system_cached_with(
+            |In((from, to)): In<(Entity, Entity)>, rel: RelativeFrameState| -> DVec3 {
+                rel.position(from, to)
+            },
+            (root_frame_entity, child_frame_entity),
+        )
+        .expect("RelativeFrameState run_system_cached_with");
+    for i in 0..3 {
+        assert_eq!(
+            child_pos_via_frame_tree[i], child_trans_post.position[i],
+            "post-attach: child's frame-entity position via RelativeFrameState (axis {i}) must \
+             equal the child entity's TranslationalStateC — same-integ-frame attach must leave \
+             both in root-inertial coordinates"
+        );
+    }
+
+    // Companion check: the parent's own frame entity is also
+    // unchanged (the attach is a child-side operation; the parent's
+    // frame-tree node is identity-mapped through it).
+    assert_eq!(
+        app.world()
+            .get::<ChildOf>(parent_frame_entity)
+            .expect("parent frame entity has ChildOf parent post-attach")
+            .parent(),
+        root_frame_entity,
+        "post-attach: parent frame entity must remain parented under the root frame entity"
+    );
+}
+
+/// **Cross-integration-frame attach: must fail loud.**
+///
+/// Spawn parent and child carrying **different** `IntegSourceC`
+/// values so each body's frame entity is parented under a different
+/// integration-frame entity. Source A and source B are also placed
+/// at distinct inertial positions so the two integ frames are not
+/// numerically equivalent — a future regression that reparents the
+/// child under source A but forgets the coordinate rewrite into
+/// source A's frame would produce visibly wrong relative-state
+/// readbacks rather than coincidentally-correct ones.
+///
+/// JEOD's `dyn_body_attach.cc::attach_establish_links` calls
+/// `dyn_body_integration.cc::set_integ_frame` whenever the child's
+/// `integ_frame` differs from the parent's: the child's primary
+/// frames are reparented under the parent's integ frame and all
+/// kinematic descendants follow recursively. Our `staging_system`
+/// does not implement that path — it never touches `FrameEntityC`
+/// or the `ChildOf` parent of the child's frame entity, and
+/// `frame_switch_system` is purely `FrameSwitchesC` distance-driven
+/// and does not react to `AttachEvent`.
+///
+/// Allowing the merge to proceed with the bodies in different
+/// integ frames would silently corrupt every downstream
+/// `RelativeFrameState` walk: the merged composite-body state lives
+/// in the parent's integ-frame coordinates, but the child's
+/// frame-tree node still claims its old integ frame as parent. Per
+/// the Fail Loudly rule (see `tests/frame_entity_dual_write_fail_loud.rs`
+/// for the project's pattern), `staging_system` panics with a
+/// diagnostic naming the misconfiguration rather than producing a
+/// wrong trajectory.
+///
+/// The guard compares each body-frame entity's `ChildOf` parent —
+/// the live integ-frame source of truth — *not* `IntegSourceC` (the
+/// config-time intent). `frame_switch_system` mutates the body
+/// frame's `ChildOf` parent on every switch but intentionally
+/// leaves `IntegSourceC` stale, so an `IntegSourceC` comparison
+/// would both miss real cross-frame attaches and falsely reject
+/// same-frame attaches whenever a switch has fired. The companion
+/// test `bevy_attach_post_frame_switch_same_integ_frame_succeeds`
+/// covers the latter case directly.
+///
+/// This test pins that panic so a future change that quietly
+/// removes the assertion (e.g. as part of an incomplete attempt at
+/// the proper reparent + coordinate-rewrite implementation) is
+/// caught immediately. Once the reparent path lands, the assertion
+/// is replaced with positive coverage of the resulting frame-tree
+/// reshape.
+#[test]
+#[should_panic(expected = "AttachEvent: parent")]
+fn bevy_attach_cross_integ_frame_panics_with_fail_loud_diagnostic() {
+    let parent_mass = MassProperties::new(1000.0);
+    let child_mass = MassProperties::new(500.0);
+    let parent_trans = TranslationalState {
+        position: DVec3::new(7e6, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let child_trans = TranslationalState {
+        position: DVec3::new(7e6, 1.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let initial_rot = RotationalState::default();
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.add_plugins(JeodPlugin);
+
+    let mut tree = MassTree::new();
+    let id_a = tree.add_body("Parent".into(), parent_mass);
+    let id_b = tree.add_body("Child".into(), child_mass);
+    app.insert_resource(MassTreeR(tree));
+
+    // Two distinct gravity-source entities at *distinct* inertial
+    // positions so each integ frame is numerically as well as
+    // structurally distinct. The fixture would otherwise let a
+    // partial future implementation pass the panic-removal test by
+    // accident: if the panic is dropped and source A and source B
+    // share zero coordinates, a follow-on cross-frame readback can
+    // coincide regardless of whether the coordinate rewrite was
+    // applied.
+    let mu = 3.986004415e14_f64;
+    let source_a_pos = DVec3::new(1.0e8, 0.0, 0.0);
+    let source_b_pos = DVec3::new(0.0, 2.5e8, 0.0);
+    let source_a = app
+        .world_mut()
+        .spawn((
+            Name::new("SourceA"),
+            GravitySourceC(GravitySource {
+                mu,
+                model: GravityModel::PointMass,
+            }),
+            SourceInertialPositionC(jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(
+                source_a_pos,
+            )),
+            TranslationalStateC::from(TranslationalState {
+                position: source_a_pos,
+                velocity: DVec3::ZERO,
+            }),
+        ))
+        .id();
+    let source_b = app
+        .world_mut()
+        .spawn((
+            Name::new("SourceB"),
+            GravitySourceC(GravitySource {
+                mu,
+                model: GravityModel::PointMass,
+            }),
+            SourceInertialPositionC(jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(
+                source_b_pos,
+            )),
+            TranslationalStateC::from(TranslationalState {
+                position: source_b_pos,
+                velocity: DVec3::ZERO,
+            }),
+        ))
+        .id();
+
+    let parent_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Parent"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(parent_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(parent_mass),
+            MassBodyIdC(id_a),
+            IntegSourceC(Some(source_a)),
+        ))
+        .id();
+    let child_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Child"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(child_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(child_mass),
+            MassBodyIdC(id_b),
+            IntegSourceC(Some(source_b)),
+        ))
+        .id();
+
+    // Run startup so register_source_frames + register_body_frames
+    // fire and the bodies' frame entities get parented under their
+    // respective sources' integ frames before the attach event is
+    // processed.
+    app.world_mut().run_schedule(Startup);
+    step(&mut app, 1, 1.0);
+
+    // Fire the attach event and step. `staging_system` must panic
+    // because the parent's body-frame entity is `ChildOf(source_a)`
+    // while the child's body-frame entity is `ChildOf(source_b)` —
+    // the live integ-frame source of truth. A silent merge would
+    // write the composite state into the parent's integ-frame
+    // coordinates while leaving the child's frame entity pointing at
+    // its old integ frame, corrupting every downstream
+    // RelativeFrameState walk.
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
+            t_parent_child: DMat3::IDENTITY,
+        });
+    step(&mut app, 1, 1.0);
+}
+
+/// **Same-integ-frame attach after a frame switch: must NOT panic.**
+///
+/// `frame_switch_system` mutates a body's `ChildOf` parent on every
+/// switch but intentionally leaves `IntegSourceC` (the config-time
+/// intent) stale. The cross-integ-frame guard in `staging_system`
+/// must therefore consult the body-frame entity's `ChildOf` parent
+/// — the live integ-frame source of truth — rather than the body's
+/// `IntegSourceC` component.
+///
+/// This test pins that policy: spawn parent and child with
+/// **different** `IntegSourceC` values (parent: `Some(source)`,
+/// child: `None`), then simulate a post-frame-switch state by
+/// reparenting the child's body-frame entity under the same
+/// integration-frame entity that the parent's body-frame entity
+/// lives under (and rewriting its stored `TranslationalStateC` /
+/// `FrameTransC` into that frame, exactly like
+/// `frame_switch_system` does on a real switch). Both bodies are
+/// now in the same integ frame structurally; the attach must
+/// proceed.
+///
+/// A guard that compares `IntegSourceC` directly (the previous
+/// implementation) would falsely reject this attach — the
+/// `IntegSourceC` values differ. A guard that compares the
+/// body-frame entities' `ChildOf` parents — what the live integ
+/// frame *actually is* — accepts it.
+#[test]
+fn bevy_attach_post_frame_switch_same_integ_frame_succeeds() {
+    let parent_mass = MassProperties::new(1000.0);
+    let child_mass = MassProperties::new(500.0);
+    let parent_trans = TranslationalState {
+        position: DVec3::new(7e6, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    // Child starts root-coordinate-relative; we'll rewrite it into
+    // source-relative coordinates below to mirror what
+    // `frame_switch_system` does on a real switch.
+    let initial_rot = RotationalState::default();
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.add_plugins(JeodPlugin);
+
+    let mut tree = MassTree::new();
+    let id_a = tree.add_body("Parent".into(), parent_mass);
+    let id_b = tree.add_body("Child".into(), child_mass);
+    app.insert_resource(MassTreeR(tree));
+
+    // Single gravity source at a non-zero position so the
+    // "child starts root-relative, gets rewritten into source-relative"
+    // step actually changes coordinate values (not a no-op).
+    let mu = 3.986004415e14_f64;
+    let source_pos = DVec3::new(1.0e8, 0.0, 0.0);
+    let source = app
+        .world_mut()
+        .spawn((
+            Name::new("Source"),
+            GravitySourceC(GravitySource {
+                mu,
+                model: GravityModel::PointMass,
+            }),
+            SourceInertialPositionC(jeod_sim::Position::<jeod_sim::RootInertial>::from_raw_si(
+                source_pos,
+            )),
+            TranslationalStateC::from(TranslationalState {
+                position: source_pos,
+                velocity: DVec3::ZERO,
+            }),
+        ))
+        .id();
+
+    // Parent: configured to live in the source's integ frame from
+    // the start (`IntegSourceC(Some(source))`). Its body-frame entity
+    // gets parented under `source`'s frame entity by
+    // `register_body_frames_system` at startup.
+    let parent_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Parent"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(parent_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(parent_mass),
+            MassBodyIdC(id_a),
+            IntegSourceC(Some(source)),
+        ))
+        .id();
+    // Child: configured root-integrated (`IntegSourceC(None)`) to
+    // start. Its body-frame entity gets parented under the root
+    // frame entity at startup.
+    let child_root_relative_pos = DVec3::new(7e6 + source_pos.x, 1.0, 0.0);
+    let child_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Child"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(TranslationalState {
+                position: child_root_relative_pos,
+                velocity: DVec3::new(0.0, 7600.0, 0.0),
+            }),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(child_mass),
+            MassBodyIdC(id_b),
+            IntegSourceC(None),
+        ))
+        .id();
+
+    // Run startup so registration parents each body-frame entity
+    // under the appropriate integ frame entity.
+    app.world_mut().run_schedule(Startup);
+    step(&mut app, 1, 1.0);
+
+    // Resolve the source's frame entity (the live integ frame for
+    // the parent post-startup) and the child's body-frame entity.
+    let source_frame_entity = app
+        .world()
+        .get::<FrameEntityC>(source)
+        .expect("source registered FrameEntityC")
+        .0;
+    let child_frame_entity = app
+        .world()
+        .get::<FrameEntityC>(child_entity)
+        .expect("child registered FrameEntityC")
+        .0;
+
+    // Simulate a post-frame-switch state on the child: reparent its
+    // body-frame entity under the source's frame entity and rewrite
+    // both `TranslationalStateC` and `FrameTransC` into source-
+    // relative coordinates. This is the exact mutation
+    // `frame_switch_system` performs on a real switch — and crucially
+    // it leaves `IntegSourceC` unchanged.
+    let child_source_relative_pos = child_root_relative_pos - source_pos;
+    {
+        let world = app.world_mut();
+        world
+            .entity_mut(child_frame_entity)
+            .insert(ChildOf(source_frame_entity))
+            .insert(FrameTransC {
+                position: child_source_relative_pos,
+                velocity: DVec3::new(0.0, 7600.0, 0.0),
+            });
+        let mut child_trans = world
+            .get_mut::<TranslationalStateC>(child_entity)
+            .expect("child still has TranslationalStateC");
+        child_trans.0.position =
+            jeod_sim::Position::<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>::from_raw_si(
+                child_source_relative_pos,
+            );
+    }
+
+    // Sanity-check the asymmetric setup: `IntegSourceC` values differ
+    // (parent: Some(source); child: None — stale post-"switch") but
+    // the body-frame entities now share the same `ChildOf` parent.
+    assert_ne!(
+        app.world().get::<IntegSourceC>(parent_entity).unwrap().0,
+        app.world().get::<IntegSourceC>(child_entity).unwrap().0,
+        "fixture sanity: IntegSourceC values must differ — that is the whole point of this test"
+    );
+    let parent_frame_entity = app
+        .world()
+        .get::<FrameEntityC>(parent_entity)
+        .expect("parent registered FrameEntityC")
+        .0;
+    assert_eq!(
+        app.world()
+            .get::<ChildOf>(parent_frame_entity)
+            .expect("parent body-frame has ChildOf parent")
+            .parent(),
+        source_frame_entity,
+        "fixture sanity: parent body-frame entity must be ChildOf the source frame entity"
+    );
+    assert_eq!(
+        app.world()
+            .get::<ChildOf>(child_frame_entity)
+            .expect("child body-frame has ChildOf parent")
+            .parent(),
+        source_frame_entity,
+        "fixture sanity: child body-frame entity must be ChildOf the source frame entity \
+         (post-simulated-switch)"
+    );
+
+    // Fire the attach. The new `ChildOf`-based check sees both bodies
+    // in the same integ frame and lets the merge proceed; the old
+    // `IntegSourceC` check would have falsely rejected this attach.
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
+            t_parent_child: DMat3::IDENTITY,
+        });
+    step(&mut app, 1, 1.0);
+
+    // Verify the attach actually happened: the mass tree now has
+    // `id_b` as a child of `id_a`, and the child carries no
+    // `DetachedSubtreeStateC` (it was attached, not freed).
+    let tree = &app.world().resource::<MassTreeR>().0;
+    assert_eq!(
+        tree.parent(id_b),
+        Some(id_a),
+        "post-attach: child's mass-tree parent must be the parent body — the attach proceeded"
+    );
+    assert!(
+        app.world()
+            .get::<DetachedSubtreeStateC>(child_entity)
+            .is_none(),
+        "post-attach: child must not carry DetachedSubtreeStateC"
+    );
+}
+
 /// Detached subtrees coast ballistically (no force, no torque). The
 /// runner's split between `Simulation::bodies` and
 /// `Simulation::detached_subtrees` only evaluates gravity, drag, SRP,
@@ -1548,5 +2126,1229 @@ fn bevy_runner_parity_attach_detach_momentum() {
             .map(f64::to_bits),
         "post-detach parent ang_vel differs: bevy={bevy_parent_w_post_detach:?} runner={:?}",
         runner_parent_post_rot.ang_vel_body
+    );
+}
+
+/// **Root-equivalent topology must NOT panic.**
+///
+/// `jeod_runner` collapses the central body's inertial frame onto the
+/// root frame, so a body with `IntegSourceC(Some(earth))` and a body
+/// with `IntegSourceC(None)` integrate in identical coordinates. The
+/// Bevy adapter splits them topologically — `Earth.inertial` lives one
+/// level below the generic root with identity state — but they remain
+/// numerically root-equivalent.
+///
+/// The cross-integ-frame fence in `staging_system` therefore must
+/// fold root-equivalent parents back onto root before comparing.
+/// Otherwise the canonical Earth-centered-as-central-body setup (the
+/// shape `tests/spawn_bevy_integ_source_and_frame_switches.rs` covers)
+/// would falsely panic any time a sibling body left its `IntegSourceC`
+/// at the implicit-root default.
+///
+/// This test pins that policy: parent has `IntegSourceC(Some(source))`,
+/// child has `IntegSourceC(None)`. Their body-frame entities have
+/// distinct `ChildOf` parents (`source.inertial` vs root), but the
+/// helper resolves both to root, the fence accepts the attach, and the
+/// merge proceeds.
+#[test]
+fn bevy_attach_root_equivalent_parents_succeed() {
+    let parent_mass = MassProperties::new(1000.0);
+    let child_mass = MassProperties::new(500.0);
+    let parent_trans = TranslationalState {
+        position: DVec3::new(7e6, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let child_trans = TranslationalState {
+        position: DVec3::new(7e6, 1.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let initial_rot = RotationalState::default();
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.add_plugins(JeodPlugin);
+
+    let mut tree = MassTree::new();
+    let id_a = tree.add_body("Parent".into(), parent_mass);
+    let id_b = tree.add_body("Child".into(), child_mass);
+    app.insert_resource(MassTreeR(tree));
+
+    // Source at the origin with identity state — the central-body
+    // case where `Earth.inertial` is structurally root-equivalent.
+    // Stored `TranslationalStateC` and `SourceInertialPositionC` are
+    // both zero so `register_source_frames_system` produces a frame
+    // entity whose `FrameTransC` / `FrameRotC` / `FrameAngVelC` are
+    // all identity — i.e. root-equivalent.
+    let mu = 3.986004415e14_f64;
+    let source = app
+        .world_mut()
+        .spawn((
+            Name::new("Source"),
+            GravitySourceC(GravitySource {
+                mu,
+                model: GravityModel::PointMass,
+            }),
+            SourceInertialPositionC::default(),
+            TranslationalStateC::default(),
+        ))
+        .id();
+
+    // Parent integrates in the source's inertial frame. After
+    // `register_body_frames_system` runs at startup its body-frame
+    // entity is `ChildOf(source.inertial)`.
+    let parent_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Parent"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(parent_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(parent_mass),
+            MassBodyIdC(id_a),
+            IntegSourceC(Some(source)),
+        ))
+        .id();
+    // Child integrates root-relative. After registration its body-frame
+    // entity is `ChildOf(root)`. The `ChildOf` parents differ, but
+    // both are root-equivalent.
+    let child_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Child"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(child_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(child_mass),
+            MassBodyIdC(id_b),
+            IntegSourceC(None),
+        ))
+        .id();
+
+    app.world_mut().run_schedule(Startup);
+    step(&mut app, 1, 1.0);
+
+    // Sanity-check the asymmetric setup: the body-frame entities have
+    // different `ChildOf` parents (one under the source, one under
+    // root), so a raw equality fence would reject this attach.
+    let parent_frame_entity = app
+        .world()
+        .get::<FrameEntityC>(parent_entity)
+        .expect("parent registered FrameEntityC")
+        .0;
+    let child_frame_entity = app
+        .world()
+        .get::<FrameEntityC>(child_entity)
+        .expect("child registered FrameEntityC")
+        .0;
+    let parent_parent = app
+        .world()
+        .get::<ChildOf>(parent_frame_entity)
+        .expect("parent body-frame has ChildOf")
+        .parent();
+    let child_parent = app
+        .world()
+        .get::<ChildOf>(child_frame_entity)
+        .expect("child body-frame has ChildOf")
+        .parent();
+    assert_ne!(
+        parent_parent, child_parent,
+        "fixture sanity: parent and child body-frame entities must have \
+         different ChildOf parents — that is the whole point of this test"
+    );
+
+    // Fire the attach. The fence must fold both parents onto root and
+    // proceed.
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
+            t_parent_child: DMat3::IDENTITY,
+        });
+    step(&mut app, 1, 1.0);
+
+    // Verify the attach actually happened.
+    let tree = &app.world().resource::<MassTreeR>().0;
+    assert_eq!(
+        tree.parent(id_b),
+        Some(id_a),
+        "post-attach: child's mass-tree parent must be the parent body — \
+         the root-equivalent topology must let the attach proceed"
+    );
+}
+
+/// **Malformed frame node must panic.**
+///
+/// If a body still carries `FrameEntityC` but its frame entity has
+/// lost its `ChildOf` parent, the live integ-frame source of truth is
+/// gone. `frame_switch_system` already hard-fails the same invariant
+/// at `src/systems.rs:765-781`; the staging fence must match that
+/// behavior so the same misconfig is rejected at attach time rather
+/// than silently bypassed.
+///
+/// Per the Fail Loudly rule (CLAUDE.md), the fence panics with a
+/// diagnostic naming the missing invariant — `ChildOf` on the
+/// body-frame entity — and points to
+/// `register_body_frames_system` as the canonical source of that
+/// `ChildOf` insertion.
+#[test]
+#[should_panic(expected = "has no ChildOf parent")]
+fn bevy_attach_malformed_frame_node_panics() {
+    let parent_mass = MassProperties::new(1000.0);
+    let child_mass = MassProperties::new(500.0);
+    let parent_trans = TranslationalState {
+        position: DVec3::new(7e6, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let child_trans = TranslationalState {
+        position: DVec3::new(7e6, 1.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let initial_rot = RotationalState::default();
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.add_plugins(JeodPlugin);
+
+    let mut tree = MassTree::new();
+    let id_a = tree.add_body("Parent".into(), parent_mass);
+    let id_b = tree.add_body("Child".into(), child_mass);
+    app.insert_resource(MassTreeR(tree));
+
+    let parent_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Parent"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(parent_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(parent_mass),
+            MassBodyIdC(id_a),
+        ))
+        .id();
+    let child_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Child"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(child_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(child_mass),
+            MassBodyIdC(id_b),
+        ))
+        .id();
+
+    // Run Startup so register_body_frames_system inserts the bodies'
+    // FrameEntityC + the body-frame entities' ChildOf parents.
+    app.world_mut().run_schedule(Startup);
+    step(&mut app, 1, 1.0);
+
+    // Sanity-check the registration ran.
+    let child_frame_entity = app
+        .world()
+        .get::<FrameEntityC>(child_entity)
+        .expect("child registered FrameEntityC")
+        .0;
+    assert!(
+        app.world().get::<ChildOf>(child_frame_entity).is_some(),
+        "fixture sanity: child body-frame entity must initially carry ChildOf"
+    );
+
+    // Corrupt the frame tree: remove the child's body-frame entity's
+    // `ChildOf` parent while leaving the body's `FrameEntityC` intact.
+    // This is the exact malformed-frame-node shape the new fence must
+    // panic on.
+    app.world_mut()
+        .entity_mut(child_frame_entity)
+        .remove::<ChildOf>();
+
+    // Fire the attach. The fence must panic before the merge runs.
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
+            t_parent_child: DMat3::IDENTITY,
+        });
+    step(&mut app, 1, 1.0);
+}
+
+/// **Equal-but-illegal parents must panic.**
+///
+/// A fence that only checks "do both bodies' `ChildOf` parents
+/// match?" silently accepts a configuration where both body-frame
+/// entities have been reparented under some arbitrary frame entity
+/// (e.g. another body's frame entity, or a stray frame entity created
+/// by a buggy mission script). `frame_switch_system` already rejects
+/// the same misconfig at `src/systems.rs:765-781`: the body's integ
+/// frame must be either the root frame entity or a registered gravity
+/// source's frame entity.
+///
+/// This test pins the legality check: spawn parent + child, then
+/// reparent both body-frame entities under a third frame entity that
+/// is not registered as a gravity source. The fence must panic with
+/// the "registered gravity source" diagnostic.
+#[test]
+#[should_panic(expected = "is neither the root frame entity")]
+fn bevy_attach_equal_but_illegal_parents_panic() {
+    let parent_mass = MassProperties::new(1000.0);
+    let child_mass = MassProperties::new(500.0);
+    let parent_trans = TranslationalState {
+        position: DVec3::new(7e6, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let child_trans = TranslationalState {
+        position: DVec3::new(7e6, 1.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let initial_rot = RotationalState::default();
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.add_plugins(JeodPlugin);
+
+    let mut tree = MassTree::new();
+    let id_a = tree.add_body("Parent".into(), parent_mass);
+    let id_b = tree.add_body("Child".into(), child_mass);
+    app.insert_resource(MassTreeR(tree));
+
+    let parent_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Parent"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(parent_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(parent_mass),
+            MassBodyIdC(id_a),
+        ))
+        .id();
+    let child_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Child"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(child_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(child_mass),
+            MassBodyIdC(id_b),
+        ))
+        .id();
+
+    app.world_mut().run_schedule(Startup);
+    step(&mut app, 1, 1.0);
+
+    let parent_frame_entity = app
+        .world()
+        .get::<FrameEntityC>(parent_entity)
+        .expect("parent registered FrameEntityC")
+        .0;
+    let child_frame_entity = app
+        .world()
+        .get::<FrameEntityC>(child_entity)
+        .expect("child registered FrameEntityC")
+        .0;
+
+    // Spawn a stray frame entity under root — looks like a frame node
+    // but is not registered as a gravity source. Then reparent both
+    // body-frame entities under it. The `ChildOf` parents now match
+    // (so a naive equality check passes) but the parent is illegal:
+    // it is not the root frame entity and not a registered source's
+    // frame entity.
+    //
+    // The stray frame's stored state is *non-identity* so it is not
+    // root-equivalent — otherwise the helper would fold it back onto
+    // root and the legality check would let it through. Distinguishing
+    // a registered-source frame from a stray frame is the entire job
+    // of the legality check; the test must hit that branch directly.
+    let root_e = app.world().resource::<RootFrameEntityR>().0;
+    let stray_frame = app
+        .world_mut()
+        .spawn((
+            Name::new("StrayFrame"),
+            FrameTransC {
+                position: DVec3::new(1.0e8, 0.0, 0.0),
+                velocity: DVec3::ZERO,
+            },
+            FrameRotC::default(),
+            FrameAngVelC::default(),
+            ChildOf(root_e),
+        ))
+        .id();
+    app.world_mut()
+        .entity_mut(parent_frame_entity)
+        .insert(ChildOf(stray_frame));
+    app.world_mut()
+        .entity_mut(child_frame_entity)
+        .insert(ChildOf(stray_frame));
+
+    // Fire the attach. The legality check in the fence must reject
+    // the equal-but-illegal parents.
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
+            t_parent_child: DMat3::IDENTITY,
+        });
+    step(&mut app, 1, 1.0);
+}
+
+/// **Root-equivalent stray parent must still be rejected.**
+///
+/// The legality check in the cross-integ-frame fence must run on the
+/// *original* `ChildOf` parent of each body's frame entity, not on
+/// the root-equivalent fold of that parent. Otherwise a stray frame
+/// entity that happens to be a direct child of root with identity
+/// state would silently fold to the root frame entity and pass
+/// legality — even though `frame_switch_system` would reject the
+/// same parent on the next tick because it is not in the registered
+/// source-frame set.
+///
+/// This test pins the soundness gap: spawn an unregistered stray
+/// frame entity that *does* satisfy root-equivalence (direct child
+/// of root with identity `FrameTransC` / `FrameRotC` / `FrameAngVelC`),
+/// reparent both bodies under it, and verify the fence panics with
+/// the legality diagnostic before the equality check (which would
+/// pass after folding) gets a chance to let the attach through.
+#[test]
+#[should_panic(expected = "is neither the root frame entity")]
+fn bevy_attach_root_equivalent_stray_parent_panics() {
+    let parent_mass = MassProperties::new(1000.0);
+    let child_mass = MassProperties::new(500.0);
+    let parent_trans = TranslationalState {
+        position: DVec3::new(7e6, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let child_trans = TranslationalState {
+        position: DVec3::new(7e6, 1.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let initial_rot = RotationalState::default();
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.add_plugins(JeodPlugin);
+
+    let mut tree = MassTree::new();
+    let id_a = tree.add_body("Parent".into(), parent_mass);
+    let id_b = tree.add_body("Child".into(), child_mass);
+    app.insert_resource(MassTreeR(tree));
+
+    let parent_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Parent"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(parent_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(parent_mass),
+            MassBodyIdC(id_a),
+        ))
+        .id();
+    let child_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Child"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(child_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(child_mass),
+            MassBodyIdC(id_b),
+        ))
+        .id();
+
+    app.world_mut().run_schedule(Startup);
+    step(&mut app, 1, 1.0);
+
+    let parent_frame_entity = app
+        .world()
+        .get::<FrameEntityC>(parent_entity)
+        .expect("parent registered FrameEntityC")
+        .0;
+    let child_frame_entity = app
+        .world()
+        .get::<FrameEntityC>(child_entity)
+        .expect("child registered FrameEntityC")
+        .0;
+
+    // Spawn a stray frame entity directly under root with identity
+    // state — it satisfies the root-equivalent topology rule but is
+    // NOT a registered gravity source. A fence that folds before
+    // checking legality would see `root_e == root_e` and accept the
+    // attach; the corrected ordering rejects on the un-folded parent.
+    let root_e = app.world().resource::<RootFrameEntityR>().0;
+    let stray_root_equivalent_frame = app
+        .world_mut()
+        .spawn((
+            Name::new("StrayRootEquivalentFrame"),
+            FrameTransC::default(),
+            FrameRotC::default(),
+            FrameAngVelC::default(),
+            ChildOf(root_e),
+        ))
+        .id();
+    app.world_mut()
+        .entity_mut(parent_frame_entity)
+        .insert(ChildOf(stray_root_equivalent_frame));
+    app.world_mut()
+        .entity_mut(child_frame_entity)
+        .insert(ChildOf(stray_root_equivalent_frame));
+
+    // Fire the attach. The legality check must run on the original
+    // (un-folded) parent and reject the stray frame even though it
+    // would fold to root for the equality comparison.
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
+            t_parent_child: DMat3::IDENTITY,
+        });
+    step(&mut app, 1, 1.0);
+}
+
+/// **Mass-only attach (no `FrameEntityC` on either body) must succeed.**
+///
+/// `AttachEvent`'s contract requires both entities to carry
+/// `MassBodyIdC` — frame-side components are explicitly optional
+/// (see `staging_system`'s `bodies` query, which holds `Option<&mut
+/// TranslationalStateC>` / `Option<&mut RotationalStateC>`). This
+/// matches JEOD's `MassBody`-without-`DynBody` configuration: a
+/// passive structural body that lives in the mass tree but has no
+/// kinematic state of its own.
+///
+/// `register_body_frames_system` only inserts `FrameEntityC` for
+/// entities filtered by `With<TranslationalStateC>` +
+/// `With<DynamicsConfigC>`, so a mass-only body has no
+/// `FrameEntityC` and therefore no node in the frame tree. The
+/// cross-integ-frame fence has nothing to protect for such a body
+/// (no frame-tree state can be corrupted), and its assertions must
+/// be skipped — otherwise a legitimate mass-only attach panics
+/// where it used to succeed.
+///
+/// This test pins that contract: spawn parent and child as pure
+/// mass-tree nodes (no `DynamicsConfigC`, no `TranslationalStateC`,
+/// no `RotationalStateC` — therefore no `FrameEntityC` after
+/// registration), fire `AttachEvent`, and verify the fence is
+/// bypassed and the mass tree composes successfully.
+#[test]
+fn bevy_attach_mass_only_no_frame_entity_succeeds() {
+    let parent_mass = MassProperties::new(1000.0);
+    let child_mass = MassProperties::new(500.0);
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.add_plugins(JeodPlugin);
+
+    let mut tree = MassTree::new();
+    let id_a = tree.add_body("Parent".into(), parent_mass);
+    let id_b = tree.add_body("Child".into(), child_mass);
+    app.insert_resource(MassTreeR(tree));
+
+    // Mass-only spawn: only MassBodyIdC + MassPropertiesC. No
+    // DynamicsConfigC, no TranslationalStateC, no RotationalStateC.
+    // register_body_frames_system will skip these entities (its
+    // filter is `With<TranslationalStateC>` + `With<DynamicsConfigC>`)
+    // so neither carries `FrameEntityC` after Startup runs.
+    let parent_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Parent"),
+            MassPropertiesC::from(parent_mass),
+            MassBodyIdC(id_a),
+        ))
+        .id();
+    let child_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Child"),
+            MassPropertiesC::from(child_mass),
+            MassBodyIdC(id_b),
+        ))
+        .id();
+
+    app.world_mut().run_schedule(Startup);
+
+    // Sanity-check the fixture: neither entity carries
+    // `FrameEntityC`. If this fails, the registration filter
+    // changed and this regression no longer exercises the
+    // mass-only carve-out — update the spawn above so neither
+    // entity matches `register_body_frames_system`'s filter.
+    assert!(
+        app.world().get::<FrameEntityC>(parent_entity).is_none(),
+        "fixture broken: mass-only parent unexpectedly has FrameEntityC"
+    );
+    assert!(
+        app.world().get::<FrameEntityC>(child_entity).is_none(),
+        "fixture broken: mass-only child unexpectedly has FrameEntityC"
+    );
+
+    // Fire the attach event. The fence's mass-only carve-out must
+    // skip the legality / equality assertions when either body
+    // lacks `FrameEntityC`. The mass-tree composite recompute
+    // still runs; without the carve-out the previous code panicked
+    // here on `body_frames.get(body)` returning Err.
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
+            t_parent_child: DMat3::IDENTITY,
+        });
+    step(&mut app, 1, 1.0);
+
+    // Composite mass on the parent must reflect both bodies
+    // post-attach. Reading parent's MassPropertiesC after a step
+    // returns the composite (parent + child) per the mass-tree's
+    // post-order recompute.
+    let composite_mass = read_mass(app.world(), parent_entity);
+    let expected = parent_mass.mass + child_mass.mass;
+    assert!(
+        (composite_mass - expected).abs() < 1e-12,
+        "mass-only attach: parent composite mass {composite_mass} != \
+         expected {expected} — the mass-tree composite recompute did \
+         not run, indicating the attach was rejected by the fence \
+         despite the mass-only carve-out."
+    );
+}
+
+/// **Half-broken frame tree (`FrameEntityC` present but `ChildOf`
+/// missing) must still panic.**
+///
+/// The mass-only carve-out relaxes the fence only for entities with
+/// no `FrameEntityC`. An entity that *does* carry `FrameEntityC`
+/// has a node in the frame tree, and that node is required to be
+/// parented under its integration-frame entity (root or a
+/// registered source). If the `ChildOf` is missing, the frame tree
+/// itself is corrupt and the attach cannot be safely processed —
+/// the fence must surface this per the Fail Loudly rule rather
+/// than silently bypassing.
+///
+/// This test pins the boundary: spawn a normal body (with
+/// `FrameEntityC` after registration), then strip the `ChildOf`
+/// off its body-frame entity, and verify the attach panics with
+/// the "no ChildOf parent" diagnostic.
+#[test]
+#[should_panic(expected = "has no ChildOf parent")]
+fn bevy_attach_frame_entity_without_child_of_panics() {
+    let parent_mass = MassProperties::new(1000.0);
+    let child_mass = MassProperties::new(500.0);
+    let parent_trans = TranslationalState {
+        position: DVec3::new(7e6, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let child_trans = TranslationalState {
+        position: DVec3::new(7e6, 1.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let initial_rot = RotationalState::default();
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.add_plugins(JeodPlugin);
+
+    let mut tree = MassTree::new();
+    let id_a = tree.add_body("Parent".into(), parent_mass);
+    let id_b = tree.add_body("Child".into(), child_mass);
+    app.insert_resource(MassTreeR(tree));
+
+    let parent_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Parent"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(parent_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(parent_mass),
+            MassBodyIdC(id_a),
+        ))
+        .id();
+    let child_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Child"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(child_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(child_mass),
+            MassBodyIdC(id_b),
+        ))
+        .id();
+
+    app.world_mut().run_schedule(Startup);
+
+    // Strip ChildOf from the parent's body-frame entity. The fence
+    // must now panic on the missing parent rather than silently
+    // bypass — `FrameEntityC` is still there, so the mass-only
+    // carve-out doesn't apply.
+    let parent_frame_entity = app
+        .world()
+        .get::<FrameEntityC>(parent_entity)
+        .expect("parent registered FrameEntityC")
+        .0;
+    app.world_mut()
+        .entity_mut(parent_frame_entity)
+        .remove::<ChildOf>();
+
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
+            t_parent_child: DMat3::IDENTITY,
+        });
+    step(&mut app, 1, 1.0);
+}
+
+/// **Registration race: dynamic body without `FrameEntityC` must
+/// panic.**
+///
+/// The mass-only carve-out in `staging_system`'s cross-integ-frame
+/// fence skips the legality / equality assertions when an attach
+/// participant has no `FrameEntityC`. That carve-out is intentionally
+/// narrow: it covers the legitimate `MassBody`-without-`DynBody`
+/// configuration (entity carries `MassBodyIdC` + `MassPropertiesC` but
+/// is missing at least one of the eligibility components for
+/// `register_body_frames_system` — `DynamicsConfigC` and
+/// `TranslationalStateC`). For such a body, registration will *never*
+/// insert `FrameEntityC` and the entity has nothing in the frame tree
+/// to corrupt.
+///
+/// The opposite case — an entity carrying *both* eligibility
+/// components but lacking `FrameEntityC` — is a registration race,
+/// not a mass-only configuration. `register_body_frames_system` runs
+/// before `JeodSet::EphemerisUpdate`; `staging_system` runs later
+/// in the same `FixedUpdate` (after `Environment`, before
+/// `Interaction`). A body spawned mid-tick after the registration
+/// pass already ran will not yet carry `FrameEntityC` even though its
+/// component set qualifies for one. Treating that as carve-out would
+/// silently corrupt the frame tree on the next register pass; per
+/// Fail Loudly the fence must surface the misconfiguration.
+///
+/// This test pins the boundary: spawn a fully-eligible dynamic body
+/// (`DynamicsConfigC` + `TranslationalStateC` + `RotationalStateC` +
+/// `MassPropertiesC` + `MassBodyIdC`), strip the `FrameEntityC` that
+/// `register_body_frames_system` inserts at Startup, fire
+/// `AttachEvent`, and verify the fence panics with the
+/// registration-race diagnostic instead of silently bypassing.
+#[test]
+#[should_panic(expected = "registration race")]
+fn bevy_attach_dynamic_body_with_no_frame_entity_panics() {
+    let parent_mass = MassProperties::new(1000.0);
+    let child_mass = MassProperties::new(500.0);
+    let parent_trans = TranslationalState {
+        position: DVec3::new(7e6, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let child_trans = TranslationalState {
+        position: DVec3::new(7e6, 1.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let initial_rot = RotationalState::default();
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.add_plugins(JeodPlugin);
+
+    let mut tree = MassTree::new();
+    let id_a = tree.add_body("Parent".into(), parent_mass);
+    let id_b = tree.add_body("Child".into(), child_mass);
+    app.insert_resource(MassTreeR(tree));
+
+    let parent_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Parent"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(parent_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(parent_mass),
+            MassBodyIdC(id_a),
+        ))
+        .id();
+    let child_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Child"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(child_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(child_mass),
+            MassBodyIdC(id_b),
+        ))
+        .id();
+
+    app.world_mut().run_schedule(Startup);
+
+    // Sanity-check the fixture: after Startup, register_body_frames_system
+    // has registered the child. Strip its `FrameEntityC` mid-tick and
+    // run staging directly. We bypass `FixedUpdate` because that
+    // schedule re-runs `register_body_frames_system` first, which
+    // would re-insert `FrameEntityC` and mask the race we're trying
+    // to pin.
+    assert!(
+        app.world().get::<FrameEntityC>(child_entity).is_some(),
+        "fixture broken: dynamic child unexpectedly has no FrameEntityC \
+         after Startup; the registration filter likely changed"
+    );
+    app.world_mut()
+        .entity_mut(child_entity)
+        .remove::<FrameEntityC>();
+
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
+            t_parent_child: DMat3::IDENTITY,
+        });
+    // Invoke `staging_system` directly so the registration-race
+    // condition (eligibility components present, FrameEntityC
+    // absent) is observed by the fence — running `FixedUpdate`
+    // would re-register the child first.
+    app.world_mut()
+        .run_system_cached(bevy_jeod::staging_system)
+        .expect("run staging_system");
+}
+
+/// **Dynamic child attached to mass-only parent must panic.**
+///
+/// Asymmetric carve-out boundary: a mass-only child attached to a
+/// dynamic parent matches JEOD's `add_mass_body` path — the dynamic
+/// parent carries the composite state and the mass-tree composite
+/// recompute folds the mass-only child's mass into the parent's
+/// composite. That direction is allowed.
+///
+/// The reverse — a *dynamic* child attached to a *mass-only* parent
+/// — is rejected. JEOD's `dyn_body_attach.cc::attach_validate_parent`
+/// rejects this with "Dynamic attachments can only be made to valid
+/// DynBodies"; in our pipeline the combine-back-write only writes
+/// the merged composite into the parent's `TranslationalStateC` /
+/// `RotationalStateC`, which a mass-only parent does not carry. With
+/// no place to receive the merged state, allowing the attach
+/// silently drops the result. Per Fail Loudly the fence must surface
+/// this.
+///
+/// This test pins that boundary: spawn a mass-only parent (no
+/// `DynamicsConfigC`, no `TranslationalStateC`) and a dynamic child
+/// (full eligibility), fire `AttachEvent`, and verify the fence
+/// panics with the dynamic-child-on-mass-only-parent diagnostic.
+#[test]
+#[should_panic(expected = "Dynamic attachments can only be made to valid DynBodies")]
+fn bevy_attach_dynamic_child_on_mass_only_parent_panics() {
+    let parent_mass = MassProperties::new(1000.0);
+    let child_mass = MassProperties::new(500.0);
+    let child_trans = TranslationalState {
+        position: DVec3::new(7e6, 1.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let initial_rot = RotationalState::default();
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.add_plugins(JeodPlugin);
+
+    let mut tree = MassTree::new();
+    let id_a = tree.add_body("Parent".into(), parent_mass);
+    let id_b = tree.add_body("Child".into(), child_mass);
+    app.insert_resource(MassTreeR(tree));
+
+    // Mass-only parent: no DynamicsConfigC / TranslationalStateC /
+    // RotationalStateC, so register_body_frames_system will skip it
+    // and it never acquires FrameEntityC. JEOD calls this a
+    // MassBody-without-DynBody configuration.
+    let parent_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Parent"),
+            MassPropertiesC::from(parent_mass),
+            MassBodyIdC(id_a),
+        ))
+        .id();
+    // Dynamic child: full eligibility set, so register_body_frames_system
+    // inserts FrameEntityC at Startup.
+    let child_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Child"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(child_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(child_mass),
+            MassBodyIdC(id_b),
+        ))
+        .id();
+
+    app.world_mut().run_schedule(Startup);
+
+    assert!(
+        app.world().get::<FrameEntityC>(parent_entity).is_none(),
+        "fixture broken: mass-only parent unexpectedly has FrameEntityC"
+    );
+    assert!(
+        app.world().get::<FrameEntityC>(child_entity).is_some(),
+        "fixture broken: dynamic child has no FrameEntityC after Startup"
+    );
+
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
+            t_parent_child: DMat3::IDENTITY,
+        });
+    step(&mut app, 1, 1.0);
+}
+
+/// **State-completeness fail-loud (FrameEntityC present, state
+/// component(s) stripped).**
+///
+/// `register_body_frames_system` is one-time per body — it inserts
+/// `FrameEntityC` once and never cleans it up if the eligibility
+/// components are removed afterward. A body that ends up with
+/// `FrameEntityC` but no `TranslationalStateC` (or `RotationalStateC`)
+/// reaches `staging_system` in a miscomputing-attach state: the
+/// kernel reads `position` / `velocity` / `quaternion` / `ang_vel`
+/// from the absent components and silently substitutes zero / identity,
+/// then writes the merged composite back conditionally on the same
+/// components — so the merged result is silently dropped.
+///
+/// Step 1.5 of the cross-integ-frame fence catches this and panics
+/// with the state-completeness diagnostic, naming the missing
+/// component(s). JEOD's `dyn_body_attach.cc::attach_validate_child`
+/// (lines 121-180) rejects the analog with "Child body has an
+/// incomplete state" / "Root body has an incomplete state".
+///
+/// This test pins the boundary: spawn a fully-eligible dynamic body
+/// (so registration inserts `FrameEntityC` at Startup), strip its
+/// `TranslationalStateC` mid-tick, then fire `AttachEvent` and verify
+/// the fence panics with the new state-completeness diagnostic
+/// instead of silently dropping the merge.
+#[test]
+#[should_panic(expected = "missing required state component")]
+fn bevy_attach_frame_entity_without_translational_state_panics() {
+    let parent_mass = MassProperties::new(1000.0);
+    let child_mass = MassProperties::new(500.0);
+    let parent_trans = TranslationalState {
+        position: DVec3::new(7e6, 0.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let child_trans = TranslationalState {
+        position: DVec3::new(7e6, 1.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let initial_rot = RotationalState::default();
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    app.add_plugins(JeodPlugin);
+
+    let mut tree = MassTree::new();
+    let id_a = tree.add_body("Parent".into(), parent_mass);
+    let id_b = tree.add_body("Child".into(), child_mass);
+    app.insert_resource(MassTreeR(tree));
+
+    let parent_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Parent"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(parent_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(parent_mass),
+            MassBodyIdC(id_a),
+        ))
+        .id();
+    let child_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Child"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(child_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(child_mass),
+            MassBodyIdC(id_b),
+        ))
+        .id();
+
+    app.world_mut().run_schedule(Startup);
+
+    // Sanity-check the fixture: after Startup, the dynamic child has
+    // FrameEntityC. Strip its TranslationalStateC mid-tick to drive
+    // the partially-stripped state the fence now rejects. Bypass
+    // FixedUpdate's register pass by invoking staging_system directly
+    // (the same pattern as the registration-race test above) — that
+    // pass would not re-insert TranslationalStateC because
+    // register_body_frames_system reads it but never writes it.
+    assert!(
+        app.world().get::<FrameEntityC>(child_entity).is_some(),
+        "fixture broken: dynamic child unexpectedly has no FrameEntityC \
+         after Startup; the registration filter likely changed"
+    );
+    app.world_mut()
+        .entity_mut(child_entity)
+        .remove::<TranslationalStateC>();
+
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
+            t_parent_child: DMat3::IDENTITY,
+        });
+    app.world_mut()
+        .run_system_cached(bevy_jeod::staging_system)
+        .expect("run staging_system");
+}
+
+/// **Fence runs without `JeodPlugin`: dynamic-child-on-mass-only-parent
+/// still panics.**
+///
+/// `RootFrameEntityR` is inserted by `JeodPlugin::build` only — a
+/// low-level test (or a partial app) that runs `staging_system`
+/// directly without `JeodPlugin` does not have the resource. The
+/// fence's *root-equivalence equality fold* needs the resource (it
+/// folds `Earth.inertial`-style direct-child-of-root frames onto
+/// root before comparing parent/child integ frames), but the
+/// *structural* fail-loud checks — mass-only carve-out, registration
+/// race detection, dynamic-child-on-mass-only-parent rejection,
+/// state-completeness, legality against `known_source_frames` — must
+/// run regardless: they protect invariants that hold without any
+/// reference to the root entity.
+///
+/// This test pins that contract: stand up a mass-tree world *without*
+/// `JeodPlugin` (so `RootFrameEntityR` is absent), forge the
+/// FrameEntityC presence pattern of "dynamic child on mass-only
+/// parent" (which the fence rejects with JEOD's `attach_validate_parent`
+/// diagnostic), invoke `staging_system` directly, and verify the same
+/// panic that fires with `JeodPlugin` still fires here.
+#[test]
+#[should_panic(expected = "Dynamic attachments can only be made to valid DynBodies")]
+fn bevy_attach_dynamic_child_on_mass_only_parent_panics_without_jeod_plugin() {
+    let parent_mass = MassProperties::new(1000.0);
+    let child_mass = MassProperties::new(500.0);
+    let child_trans = TranslationalState {
+        position: DVec3::new(7e6, 1.0, 0.0),
+        velocity: DVec3::new(0.0, 7600.0, 0.0),
+    };
+    let initial_rot = RotationalState::default();
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    // Crucially: NO `app.add_plugins(JeodPlugin);` — this regression
+    // pins the fence's behaviour when `RootFrameEntityR` is absent.
+    // Register the AttachEvent / DetachEvent message resources by
+    // hand so `staging_system` can read its event reader without
+    // panicking on "Requested resource does not exist". `JeodPlugin`
+    // does this in `build`; this regression deliberately bypasses it.
+    app.add_message::<AttachEvent>();
+    app.add_message::<DetachEvent>();
+
+    let mut tree = MassTree::new();
+    let id_a = tree.add_body("Parent".into(), parent_mass);
+    let id_b = tree.add_body("Child".into(), child_mass);
+    app.insert_resource(MassTreeR(tree));
+
+    // Mass-only parent: no DynamicsConfigC / TranslationalStateC /
+    // RotationalStateC. Without `register_body_frames_system` running
+    // (no plugin) it could never carry FrameEntityC anyway — the
+    // structural shape we're pinning is the same.
+    let parent_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Parent"),
+            MassPropertiesC::from(parent_mass),
+            MassBodyIdC(id_a),
+        ))
+        .id();
+    // Dynamic child carrying full eligibility components AND a
+    // pre-built body-frame entity that the fence will resolve to
+    // through `body_frames` — without `register_body_frames_system`
+    // available we set up the `FrameEntityC` link by hand to mimic
+    // the post-registration shape the fence sees in production. The
+    // body-frame entity needs a `ChildOf` parent or step 1 panics
+    // first with "has no ChildOf parent"; we create a stand-in
+    // fake-root entity so the resolver succeeds and the fence
+    // reaches the dynamic-child-on-mass-only-parent check (the
+    // mismatch we're actually pinning here).
+    let fake_root_entity = app
+        .world_mut()
+        .spawn((
+            FrameTransC::default(),
+            FrameRotC::default(),
+            FrameAngVelC::default(),
+        ))
+        .id();
+    let child_frame_entity = app
+        .world_mut()
+        .spawn((
+            FrameTransC::default(),
+            FrameRotC::default(),
+            FrameAngVelC::default(),
+            ChildOf(fake_root_entity),
+        ))
+        .id();
+    let child_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Child"),
+            DynamicsConfigC::default(),
+            TranslationalStateC::from(child_trans),
+            RotationalStateC::from(initial_rot),
+            MassPropertiesC::from(child_mass),
+            MassBodyIdC(id_b),
+            FrameEntityC(child_frame_entity),
+        ))
+        .id();
+
+    // Verify our hand-built fixture matches the rejection shape: the
+    // mass-only parent has no FrameEntityC; the dynamic child does.
+    assert!(
+        app.world().get::<FrameEntityC>(parent_entity).is_none(),
+        "fixture broken: mass-only parent unexpectedly has FrameEntityC"
+    );
+    assert!(
+        app.world().get::<FrameEntityC>(child_entity).is_some(),
+        "fixture broken: dynamic child should carry FrameEntityC"
+    );
+    assert!(
+        !app.world().contains_resource::<RootFrameEntityR>(),
+        "fixture broken: RootFrameEntityR is unexpectedly present — \
+         this regression pins fence behaviour without JeodPlugin"
+    );
+
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
+            t_parent_child: DMat3::IDENTITY,
+        });
+    app.world_mut()
+        .run_system_cached(bevy_jeod::staging_system)
+        .expect("run staging_system");
+}
+
+/// **Fence runs without `JeodPlugin`: legitimate mass-only attach
+/// still succeeds.**
+///
+/// Companion to the negative regression above: the structural
+/// fail-loud checks must reject misconfigurations regardless of
+/// `RootFrameEntityR`'s presence, but they must *not* reject
+/// legitimate mass-only attaches in the same low-level setup.
+/// `JeodPlugin`-less callers running pure mass-tree composition
+/// (no frame tree) must still see the mass-tree composite recompute
+/// and integrator reset run as expected.
+///
+/// This test stands up two pure mass-tree nodes (no `FrameEntityC`,
+/// no eligibility components, no `RootFrameEntityR`) and verifies
+/// `AttachEvent` composes their masses without panicking.
+#[test]
+fn bevy_attach_mass_only_succeeds_without_jeod_plugin() {
+    let parent_mass = MassProperties::new(1000.0);
+    let child_mass = MassProperties::new(500.0);
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.insert_resource(Time::<Fixed>::from_seconds(1.0));
+    // No `add_plugins(JeodPlugin)` — the fence must not depend on
+    // `RootFrameEntityR` for the mass-only carve-out path. Register
+    // the AttachEvent / DetachEvent message resources by hand
+    // (normally done by `JeodPlugin::build`) so `staging_system`'s
+    // event reader can run.
+    app.add_message::<AttachEvent>();
+    app.add_message::<DetachEvent>();
+
+    let mut tree = MassTree::new();
+    let id_a = tree.add_body("Parent".into(), parent_mass);
+    let id_b = tree.add_body("Child".into(), child_mass);
+    app.insert_resource(MassTreeR(tree));
+
+    let parent_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Parent"),
+            MassPropertiesC::from(parent_mass),
+            MassBodyIdC(id_a),
+        ))
+        .id();
+    let child_entity = app
+        .world_mut()
+        .spawn((
+            Name::new("Child"),
+            MassPropertiesC::from(child_mass),
+            MassBodyIdC(id_b),
+        ))
+        .id();
+
+    assert!(
+        !app.world().contains_resource::<RootFrameEntityR>(),
+        "fixture broken: RootFrameEntityR is unexpectedly present — \
+         this regression pins fence behaviour without JeodPlugin"
+    );
+
+    app.world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<AttachEvent>>()
+        .write(AttachEvent {
+            child: child_entity,
+            parent: parent_entity,
+            offset: jeod_sim::Vec3Ext::m_at::<jeod_sim::StructuralFrame<jeod_sim::SelfRef>>(
+                DVec3::ZERO,
+            ),
+            t_parent_child: DMat3::IDENTITY,
+        });
+    app.world_mut()
+        .run_system_cached(bevy_jeod::staging_system)
+        .expect("run staging_system");
+
+    let composite_mass = read_mass(app.world(), parent_entity);
+    let expected = parent_mass.mass + child_mass.mass;
+    assert!(
+        (composite_mass - expected).abs() < 1e-12,
+        "mass-only attach without JeodPlugin: parent composite mass \
+         {composite_mass} != expected {expected} — the mass-tree \
+         composite recompute did not run, indicating the attach was \
+         rejected by the fence despite the mass-only carve-out."
     );
 }

@@ -445,39 +445,34 @@ fn bevy_parity_attach_non_root_integ_source_parent_was_detached() {
 /// Cross-source attach: the parent integrates in `PlanetInertial<Moon>`
 /// (non-zero `IntegOrigin == (MOON_OFFSET, MOON_VELOCITY)`) while the
 /// child integrates at root (`IntegSourceC` absent, `IntegOrigin == 0`).
-/// The two bodies start from the same root-inertial CoM (we author the
-/// child's root-inertial state to coincide with the parent's lifted
-/// state), so the kernel's mass-weighted merge is well-defined and
-/// the only thing that distinguishes a correct lift from the
-/// regression scenarios below is **which body's** integ-origin is
-/// used at each per-body shift.
 ///
-/// This pins what the existing two tests cannot: those use the same
-/// `IntegSourceC(Some(moon))` on both bodies, so a regression that
-/// accidentally reused the parent's origin for the child (or vice
-/// versa) would still pass — both sides happen to share the same
-/// lift. With cross-source attach, swapping which body's origin is
-/// applied changes the captured root-inertial coordinate by
-/// `±(MOON_OFFSET, MOON_VELOCITY)` (~3.8e8 m / ~1 km/s), far above
-/// the 1e-6 m / 1e-9 m·s⁻¹ tolerances.
+/// Cross-integration-frame attaches are gated by the staging fence:
+/// `staging_system` rejects an `AttachEvent` whose two bodies' live
+/// integ-frame entities differ, because the corresponding frame-tree
+/// reparent + coordinate-rewrite is not yet implemented and allowing
+/// the merge would silently corrupt downstream `RelativeFrameState`
+/// walks. JEOD's `dyn_body_attach.cc::attach_establish_links` calls
+/// `set_integ_frame` to perform that reparent recursively over the
+/// child's frame entities; until our `staging_system` ports that
+/// step, the cross-source path must fail loud.
 ///
-/// Setup:
-/// - Parent at lunar 100 km circular orbit (Moon-relative integ-frame
-///   coords identical to `parent_initial_trans`).
-/// - Child authored in root-inertial at the same CoM and with the
-///   same root-inertial velocity as the parent's lifted state, plus
-///   the same small `+1.5 m/s ẑ` delta the same-source variant uses
-///   to keep the merge non-degenerate.
-/// - Child has no `IntegSourceC`, so `register_body_frames_system`
-///   parents its body-frame under the root frame and the lazy lift
-///   returns `(zero, zero)` for the child.
+/// This test pins the gated panic for the cross-source scenario so a
+/// future change that quietly relaxes the fence without also wiring
+/// in the frame-tree reparent is caught immediately. The companion
+/// guard `bevy_attach_cross_integ_frame_panics_with_fail_loud_diagnostic`
+/// in `bevy_parity_attach_detach_momentum.rs` covers the general
+/// cross-frame case with two distinct gravity sources; this variant
+/// pins the asymmetric `Some(moon)` vs `None` configuration where one
+/// side resolves to the root frame entity and the other to a planet's
+/// inertial frame.
 ///
-/// The kernel run uses each body's *own* integ-origin: parent gets
-/// `+MOON_OFFSET / +MOON_VELOCITY`, child gets `+0 / +0`. Any code
-/// path that swapped these (or applied the parent's to the child)
-/// would land the kernel input — and therefore the merged composite
-/// — far from the assertion targets.
+/// Once the frame-tree reparent lands, this test is replaced with
+/// positive coverage that the per-body lift uses each body's *own*
+/// integ-origin (parent gets `+MOON_OFFSET / +MOON_VELOCITY`, child
+/// gets `+0 / +0`) and the merged composite lands within the 1e-6 m
+/// / 1e-9 m·s⁻¹ tolerances of the bug-mode aliases.
 #[test]
+#[should_panic(expected = "AttachEvent: parent")]
 fn bevy_parity_attach_non_root_integ_source_per_body_lift_distinct_sources() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);

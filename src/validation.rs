@@ -45,7 +45,7 @@ use crate::RootFrameEntityR;
 /// ephemeris-driven bodies at their epoch position) correctly remain
 /// "non-root" and continue to surface the drag/SRP/etc. warning the
 /// non-root check is meant to catch.
-fn is_root_equivalent_entity(
+pub(crate) fn is_root_equivalent_entity(
     frame_entity: Entity,
     root_entity: Entity,
     parents: &Query<&ChildOf>,

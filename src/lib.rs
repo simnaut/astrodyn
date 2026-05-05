@@ -273,6 +273,37 @@ impl Plugin for JeodPlugin {
                     .after(systems::register_body_frames_system),
             ),
         );
+        // Reject configs where a single frame entity carries multiple
+        // kinematic-spec components: the four driver systems use
+        // `Without<...>` filters to advertise pairwise-disjoint
+        // queries to the scheduler, so an entity with two specs would
+        // be silently dropped from every driver and propagate stale
+        // `FrameRotC` / `FrameAngVelC` instead of panicking. The
+        // fail-loud rule forbids that silent path.
+        //
+        // Two layers of enforcement:
+        //
+        // 1. **Component `on_insert` hooks** —
+        //    `register_joint_kinematics_exclusivity_hooks` installs a
+        //    Bevy lifecycle hook on each of the four spec components
+        //    that fires the moment an insertion lands a second spec
+        //    on an entity, regardless of which schedule the insert
+        //    happened in (`Startup`, `Update`, `FixedUpdate`, an
+        //    observer, …). This is the primary guard: it catches
+        //    runtime spawns / inserts that the `PostStartup`
+        //    validator never sees.
+        //
+        // 2. **`PostStartup` validator** — defense in depth, kept so
+        //    a startup-time misconfiguration panics with a single
+        //    aggregated message that lists every offending entity at
+        //    once (the per-insert hooks panic on the *first* offender
+        //    they observe, which is the right shape for runtime but
+        //    less helpful when several stacked-spec entities are
+        //    declared together at startup). Wired into `PostStartup`
+        //    (not `Startup`) so it observes commands flushed at the
+        //    end of `Startup`.
+        systems::register_joint_kinematics_exclusivity_hooks(app);
+        app.add_systems(PostStartup, systems::validate_joint_kinematics_exclusivity);
         app.add_systems(
             PreUpdate,
             (
@@ -422,6 +453,39 @@ impl Plugin for JeodPlugin {
                 // limit; set membership controls ordering, not which
                 // `add_systems` call carries the system.
                 systems::joint_kinematics_system.in_set(JeodSet::EphemerisUpdate),
+                // Sibling kinematic-joint drivers for the richer specs
+                // (sinusoidal, closure, multi-DOF). All four write
+                // `FrameRotC` / `FrameAngVelC` and run inside the same
+                // `EphemerisUpdate` set; pairwise disjointness on
+                // those mutable accesses is enforced three ways so
+                // the scheduler can dispatch them in parallel without
+                // a borrow conflict and so a misconfigured entity
+                // can't silently drop out of the pipeline:
+                //
+                // * **Per-system `Without<...>` filters** — each
+                //   driver excludes the other three spec components,
+                //   so the queries are structurally disjoint at the
+                //   `Query` level. This is the signal Bevy needs to
+                //   parallelize the four systems on the same set.
+                // * **Component `on_insert` hooks** —
+                //   `register_joint_kinematics_exclusivity_hooks`
+                //   panics at insertion time when a stacked-spec
+                //   entity is created or mutated, including spawns
+                //   that happen long after `Startup` (FixedUpdate,
+                //   Update, observers, …).
+                // * **PostStartup validation** —
+                //   `validate_joint_kinematics_exclusivity` walks
+                //   every frame entity once at `PostStartup` and
+                //   reports *every* offender at startup in one
+                //   aggregated message; defense in depth alongside
+                //   the hooks.
+                //
+                // Spec components are semantic alternatives, not
+                // stackable: a joint is *either* constant-rate, *or*
+                // sinusoidal, *or* closure, *or* multi-DOF.
+                systems::sinusoidal_joint_kinematics_system.in_set(JeodSet::EphemerisUpdate),
+                systems::closure_joint_kinematics_system.in_set(JeodSet::EphemerisUpdate),
+                systems::multi_dof_joint_kinematics_system.in_set(JeodSet::EphemerisUpdate),
                 // Force collection and integration
                 systems::force_collection_system.in_set(JeodSet::ForceCollection),
                 // Kinematic state propagation: walks MassChildOf
@@ -530,6 +594,9 @@ pub fn register_jeod_component_types(app: &mut App) {
     app.register_type::<components::PfixFrameEntityC>();
     app.register_type::<components::RetiredPfixFrameEntityC>();
     app.register_type::<components::JointKinematicsC>();
+    app.register_type::<components::SinusoidalJointKinematicsC>();
+    app.register_type::<components::ClosureJointKinematicsC>();
+    app.register_type::<components::MultiDofJointKinematicsC>();
     // Tidal
     app.register_type::<components::TidalConfigC>();
     app.register_type::<components::TidalDeltaC20C>();
