@@ -2547,9 +2547,15 @@ pub fn gravity_computation_system<P: Planet>(
                 sources.get(source_entity).ok().map(|(s, _, p, v, _, _)| {
                     // Source velocity flows through the planet-agnostic
                     // `SourceInertialVelocityC` (`Velocity<RootInertial>`).
-                    // Sources without this component coast at zero —
-                    // bundles for ephemeris-driven sources (Sun /
-                    // Moon) carry it via `EphemerisBodyC` updates.
+                    // It is opt-in: `PlanetBundle`, `SunBundle`, and
+                    // `MoonBundle` do not insert it, and
+                    // `ephemeris_update_system` only writes through it
+                    // when it is already present (no auto-insert from
+                    // `EphemerisBodyC`). Sources without the component
+                    // coast at zero velocity for the relativistic
+                    // correction — callers who want PPN to see source
+                    // motion must attach `SourceInertialVelocityC`
+                    // explicitly.
                     let velocity = v.map(|v| v.0.raw_si()).unwrap_or(DVec3::ZERO);
                     jeod_sim::ResolvedRelativisticSource {
                         mu: s.mu,
