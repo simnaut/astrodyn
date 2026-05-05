@@ -49,10 +49,10 @@ use uom::si::length::meter;
 ///
 /// The reference vehicle (used inside `RelativeTranslation::BodyFrame`)
 /// stays at `<SelfRef>` because the variant's frame is the reference
-/// vehicle's body frame, a separate identity from the subject `<V>`.
-/// A per-pair `<Subject, Reference>` parameterization on
-/// `RelativeState`/`RelativeTranslation` is the natural follow-up and
-/// is tracked under issue #344.
+/// vehicle's body frame, a separate identity from the subject `<V>`. A
+/// per-pair `<Subject, Reference>` parameterization on
+/// `RelativeState`/`RelativeTranslation` is the natural follow-up; it
+/// is gated on a matching design step and not delivered here.
 #[derive(Debug, Clone)]
 pub struct RelativeState<V: Vehicle> {
     /// Translational state of subject relative to reference. The

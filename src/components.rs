@@ -1328,10 +1328,9 @@ pub struct KinematicChildC;
 /// requires an additional `<VChild>` phantom to distinguish parent
 /// and child structural frames, which is more design work than
 /// belongs in the same change as the per-vehicle `<V>` tightening
-/// here. The follow-up is tracked under issue #343; once the
-/// parent-vs-child phantom pair is delivered the matrix slot can
-/// lift to the typed transform without breaking existing call sites
-/// that read `t_parent_child` as a raw matrix.
+/// here. Once the parent-vs-child phantom pair is delivered the
+/// matrix slot can lift to the typed transform without breaking
+/// existing call sites that read `t_parent_child` as a raw matrix.
 #[derive(Message, Debug, Clone)]
 pub struct AttachEvent<V: Vehicle> {
     /// Entity of the child body.
