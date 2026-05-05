@@ -48,10 +48,11 @@ use uom::si::length::meter;
 /// storage decides the subject identity at runtime.
 ///
 /// The reference vehicle (used inside `RelativeTranslation::BodyFrame`)
-/// stays at `<SelfRef>`; the runtime-conditional frame branch on
-/// `position`/`velocity` is tracked separately in #331 and a per-pair
-/// `<Subject, Reference>` parameterization is gated on closing that
-/// runtime-conditional shape first.
+/// stays at `<SelfRef>` because the variant's frame is the reference
+/// vehicle's body frame, a separate identity from the subject `<V>`.
+/// A per-pair `<Subject, Reference>` parameterization on
+/// `RelativeState`/`RelativeTranslation` is the natural follow-up and
+/// is tracked under issue #344.
 #[derive(Debug, Clone)]
 pub struct RelativeState<V: Vehicle> {
     /// Translational state of subject relative to reference. The

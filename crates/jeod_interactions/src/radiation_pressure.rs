@@ -206,7 +206,7 @@ pub fn compute_flat_plate_srp<V: Vehicle>(
 
         // Torque = (plate_position - center_grav) × force
         // JEOD line 165: crot_to_cp = position - center_grav
-        // `plate.position` is `Position<StructuralFrame<SelfRef>>`;
+        // `plate.position` is `Position<StructuralFrame<V>>`;
         // `center_grav` is the matching structural-frame raw `DVec3`
         // input. Drop the typed phantom via `.raw_si()` at the kernel
         // boundary — both sides live in the same structural frame
