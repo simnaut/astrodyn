@@ -495,68 +495,62 @@ impl Simulation {
             }
         }
 
-        // ── Auto-flag the subject side of the merged tree as
-        //    kinematic-only. Per JEOD_INV: DB.17, only the integrated
-        //    tree root carries integrator-written `body.trans` /
-        //    `body.rot`; every interior SimBody must derive its state
-        //    each tick from the root through `propagate_kinematic_state`.
-        //    Pre-attach the subject root *was* the integrated root for
-        //    its tree, but post-attach it sits under `parent`'s tree
-        //    root and must therefore be rederived each step. We auto-
-        //    flag the subject root + every descendant in its old
-        //    subtree (those were already kinematic interior bodies and
-        //    remain so under the new merged tree) so the
-        //    `propagate_kinematic_state` walk doesn't panic on its own
-        //    "non-kinematic interior body" guard the next time
-        //    [`Simulation::step`] runs.
+        // ── Auto-flag the rerooted subject subtree as kinematic-only.
         //
-        //    Bodies without a `RotationalState` (3-DOF) cannot be flagged
-        //    — `mark_kinematic_only` panics on them — so we fall back to
-        //    the same flag-flip we'd do via the public method, but with
-        //    the rot-required precondition softened: the kinematic walk
-        //    still operates on those bodies at the storage level
-        //    (`propagate_state_via_storage` handles the rot=None case),
-        //    we just don't promote their flag.
+        //    This block runs only on the **reroot** path — i.e. when
+        //    `subject_root_id != child_id` (the subject was already a
+        //    non-root body in some other tree and is now being reparented
+        //    along with its ancestors). The simple root-subject attach
+        //    (`subject_root_id == child_id`) deliberately does NOT
+        //    auto-mark: there, the subject was a tree root with no prior
+        //    integrated/derived split, and callers retain explicit
+        //    control over whether the freshly-attached child should
+        //    integrate or be derived kinematically (e.g.
+        //    `propagate_kinematic_state_panics_on_non_kinematic_intermediate`
+        //    deliberately attaches without flagging the new child
+        //    kinematic to confirm the walk's fail-loud ancestor check
+        //    still fires). For that case, mission code still has to
+        //    call `Simulation::mark_kinematic_only(child_idx)` after
+        //    `Simulation::attach(...)` — this auto-flag is **not** a
+        //    drop-in replacement for that public call.
         //
-        //    For the simple root-subject attach this is bit-equivalent
-        //    to the existing pattern where mission code calls
-        //    `Simulation::mark_kinematic_only(child_idx)` after
-        //    `Simulation::attach(child, parent, ...)`; that public
-        //    call becomes idempotent here.
+        //    Per JEOD_INV: DB.17 only the integrated tree root carries
+        //    integrator-written `body.trans` / `body.rot`; every interior
+        //    SimBody must derive its state each tick from the root
+        //    through `propagate_kinematic_state`. Pre-attach the subject
+        //    root *was* the integrated root for its tree; post-attach it
+        //    sits under `parent`'s tree root and must be rederived each
+        //    step. We auto-flag the subject root + every descendant in
+        //    its old subtree so the `propagate_kinematic_state` walk
+        //    doesn't panic on its own "non-kinematic interior body"
+        //    guard the next time [`Simulation::step`] runs.
+        //
+        //    The configuration-time path
+        //    (`attach_preserving_initial_state`,
+        //    `combine_writeback == false`) skips this auto-flag so
+        //    builder-driven topology declarations don't bake
+        //    kinematic-only flags into bodies whose initial state the
+        //    user expects to be honoured verbatim.
+        //
+        //    Bodies without a `RotationalState` (3-DOF) cannot be made
+        //    kinematic-only: `propagate_kinematic_state` derives both
+        //    `trans` and `rot` from the parent's composed pose, and
+        //    that walk requires every kinematic node to carry a
+        //    `RotationalState`. A 3-DOF body in a rerooted subtree is
+        //    therefore unreachable by the kinematic walk *and* no
+        //    longer the integrated tree root, so its `body.trans` would
+        //    silently go stale post-reroot. Fail loudly here — at the
+        //    attach site that introduced the configuration — rather
+        //    than letting the `propagate_kinematic_state` ancestor
+        //    check panic on the first post-reroot step, which surfaces
+        //    a confusing "non-kinematic ancestor" diagnostic far from
+        //    the root cause.
         if combine_writeback && subject_root_id != child_id {
-            // Reroot case only: the subject root is a body that *was*
-            // an integrated root of its own tree until this attach,
-            // and post-attach is an interior body in the merged tree.
-            // Per JEOD_INV: DB.17 every interior SimBody must derive
-            // its state through the kinematic walk, so we promote the
-            // subject root + every descendant in its old subtree to
-            // `kinematic_only`. Without this auto-flag, the
-            // `propagate_kinematic_state` walk would panic on the
-            // first post-reroot step ("non-kinematic SimBody ancestor"
-            // guard) the moment any body in the rerooted subtree is
-            // declared kinematic by the user.
-            //
-            // The simple root-subject attach case (subject_root_id ==
-            // child_id, no preexisting parent edge) deliberately does
-            // NOT auto-mark: callers retain explicit control over
-            // whether the freshly-attached child should integrate or
-            // be derived kinematically (e.g. the
-            // `propagate_kinematic_state_panics_on_non_kinematic_intermediate`
-            // regression test deliberately attaches without flagging
-            // the new child kinematic to confirm the walk's fail-loud
-            // ancestor check still fires).
-            //
-            // The configuration-time path
-            // (`attach_preserving_initial_state`,
-            // `combine_writeback == false`) skips this auto-flag so
-            // builder-driven topology declarations don't bake
-            // kinematic-only flags into bodies whose initial state
-            // the user expects to be honoured verbatim.
-            // Set rather than `Vec` so the membership check inside the
-            // body loop is O(1) instead of O(n_descendants); attach is
-            // a hot path on larger trees (chained docking, multi-stage
-            // separation) where the subject subtree may be O(10) bodies
-            // and the runner may carry O(10²) sim bodies.
+            // Use a `HashSet` rather than `Vec` so the membership check
+            // inside the body loop is O(1) instead of O(n_descendants);
+            // attach is a hot path on larger trees (chained docking,
+            // multi-stage separation) where the subject subtree may be
+            // O(10) bodies and the runner may carry O(10²) sim bodies.
             let subject_descendants: std::collections::HashSet<jeod_dynamics::MassBodyId> = self
                 .mass_tree
                 .as_ref()
@@ -564,9 +558,20 @@ impl Simulation {
                 .subtree_ids(subject_root_id)
                 .into_iter()
                 .collect();
-            for body in self.bodies.iter_mut() {
+            for (body_idx, body) in self.bodies.iter_mut().enumerate() {
                 if let Some(id) = body.mass_body_id {
-                    if subject_descendants.contains(&id) && body.rot.is_some() {
+                    if subject_descendants.contains(&id) {
+                        assert!(
+                            body.rot.is_some(),
+                            "attach (reroot): SimBody {body_idx} (mass_body_id {id:?}) is in \
+                             the rerooted subtree under subject_root {subject_root_id:?} but \
+                             has no RotationalState. Kinematic propagation derives both `trans` \
+                             and `rot`, so 3-DOF bodies cannot be reparented through a chained \
+                             attach — their state would go stale post-reroot. Either set \
+                             `VehicleConfig::rot = Some(...)` on this body before the attach, \
+                             or perform a simple root-subject attach (detach the subject from \
+                             its current parent first)."
+                        );
                         body.kinematic_only = true;
                     }
                 }
@@ -2939,5 +2944,116 @@ mod tests {
         // regression that drops the auto-clear panics here.
         sim.step()
             .expect("post-detach step must succeed (kinematic_only must be cleared)");
+    }
+
+    /// Reroot path must reject a 3-DOF body in the rerooted subtree.
+    ///
+    /// Per JEOD_INV: DB.17, every interior SimBody derives its state
+    /// each tick through `propagate_kinematic_state`, which composes
+    /// both `trans` and `rot` from the parent's pose. A 3-DOF body
+    /// (no `RotationalState`) cannot participate in that walk, so a
+    /// chained-attach reroot that would push it from "tree root" to
+    /// "interior" has no way to keep its `body.trans` live. We
+    /// therefore fail loudly at the attach site rather than silently
+    /// letting the body's state go stale post-reroot.
+    ///
+    /// Setup: parent_a (target), parent_b (subject's tree root,
+    /// 6-DOF), intermediate (6-DOF child of parent_b), 3dof_child
+    /// (3-DOF child of intermediate). Attaching `intermediate` to
+    /// parent_a triggers the reroot path: subject_root_id is parent_b,
+    /// the rerooted subtree includes 3dof_child, which fails the
+    /// rot-required assertion.
+    #[test]
+    #[should_panic(expected = "rerooted subtree")]
+    fn reroot_panics_on_3dof_body_in_subject_subtree() {
+        use crate::SimulationBuilderExt;
+        use jeod_sim::recipes::Mission;
+        use jeod_sim::{JeodQuat, RotationalState};
+
+        let mut sim = Mission::iss_leo()
+            .into_builder()
+            .build()
+            .expect("Mission::iss_leo must validate");
+
+        let parent_a_idx = 0;
+        // iss_leo ships a 3-DOF root; promote parent_a in place to
+        // 6-DOF so the post-reroot tree is well-formed (parent_a is
+        // the integrated root of the merged tree).
+        sim.bodies[parent_a_idx].rot = Some(RotationalState {
+            quaternion: JeodQuat::identity(),
+            ang_vel_body: DVec3::ZERO,
+        });
+
+        let parent_b_idx = sim.add_body(VehicleConfig {
+            trans: TranslationalState {
+                position: DVec3::new(7e6, 0.0, 0.0),
+                velocity: DVec3::new(0.0, 7500.0, 0.0),
+            },
+            rot: Some(RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::ZERO,
+            }),
+            mass: Some(MassProperties::new(100.0)),
+            gravity_controls: GravityControls { controls: vec![] },
+            ..Default::default()
+        });
+        let intermediate_idx = sim.add_body(VehicleConfig {
+            trans: TranslationalState {
+                position: DVec3::new(7e6 + 1.0, 0.0, 0.0),
+                velocity: DVec3::new(0.0, 7500.0, 0.0),
+            },
+            rot: Some(RotationalState {
+                quaternion: JeodQuat::identity(),
+                ang_vel_body: DVec3::ZERO,
+            }),
+            mass: Some(MassProperties::new(50.0)),
+            gravity_controls: GravityControls { controls: vec![] },
+            ..Default::default()
+        });
+        // 3-DOF body — no `rot` field.
+        let three_dof_idx = sim.add_body(VehicleConfig {
+            trans: TranslationalState {
+                position: DVec3::new(7e6 + 2.0, 0.0, 0.0),
+                velocity: DVec3::new(0.0, 7500.0, 0.0),
+            },
+            rot: None,
+            mass: Some(MassProperties::new(10.0)),
+            gravity_controls: GravityControls { controls: vec![] },
+            ..Default::default()
+        });
+
+        sim.add_body_to_tree(parent_a_idx, "parent_a");
+        sim.add_body_to_tree(parent_b_idx, "parent_b");
+        sim.add_body_to_tree(intermediate_idx, "intermediate");
+        sim.add_body_to_tree(three_dof_idx, "three_dof");
+
+        // Build subject's tree: parent_b ← intermediate ← three_dof.
+        // Each attach is a simple root-subject attach (the child is
+        // its own tree root before the call), so none triggers the
+        // auto-flag block.
+        sim.attach(
+            intermediate_idx,
+            parent_b_idx,
+            DVec3::new(1.0, 0.0, 0.0),
+            DMat3::IDENTITY,
+        );
+        sim.attach(
+            three_dof_idx,
+            intermediate_idx,
+            DVec3::new(1.0, 0.0, 0.0),
+            DMat3::IDENTITY,
+        );
+
+        // Reroot: attach `intermediate` to parent_a. Now
+        // `child_id = intermediate_id`, `subject_root_id = parent_b_id`,
+        // they differ, so the auto-flag block runs. The rerooted
+        // subtree (rooted at parent_b) contains three_dof, which has
+        // no RotationalState — the assertion must fire.
+        sim.attach(
+            intermediate_idx,
+            parent_a_idx,
+            DVec3::new(2.0, 0.0, 0.0),
+            DMat3::IDENTITY,
+        );
     }
 }
