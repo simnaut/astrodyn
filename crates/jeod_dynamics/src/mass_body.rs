@@ -514,6 +514,103 @@ impl MassTree {
         self.attach(child_id, parent_id, offset, t_parent_child);
     }
 
+    /// Compute the rigid-body offset that maps a parent reference frame
+    /// onto a subject body's **structural** frame given an offset and
+    /// rotation expressed at one of the body's named mass points.
+    ///
+    /// Returns `(offset_pframe_struct, t_pframe_struct)` ready to feed
+    /// the runner's `Simulation::attach_to_frame` (or the Bevy
+    /// adapter's equivalent), which both expect the offset / rotation
+    /// from parent ref-frame to body struct frame.
+    ///
+    /// Port of JEOD's named-point `DynBody::attach_to_frame`
+    /// (`models/dynamics/dyn_body/src/dyn_body_attach.cc:302-365`),
+    /// specialised to a single mass-point chain (the only depth used by
+    /// the SIM_ref_attach `RUN_ref_attach_pt2pt` scenario, which is the
+    /// driving consumer).
+    ///
+    /// The math is exactly `RefFrameState::decr_right` for the static
+    /// (zero-velocity, zero-ω) case:
+    ///
+    /// ```text
+    ///   X_pframe_to_struct = X_pframe_to_cpt - X_struct_to_cpt
+    ///   T_pframe_struct    = T_struct_cpt^T · T_pframe_cpt
+    ///   x_pframe_struct    = x_pframe_cpt - T_pframe_struct^T · x_struct_cpt
+    /// ```
+    ///
+    /// where `cpt` is the named mass point on the subject body. JEOD's
+    /// `BodyAttachAligned` passes `x_pframe_cpt = [0,0,0]` and
+    /// `T_pframe_cpt = diag(-1,-1,1)` (the 180° yaw docking convention);
+    /// the more general signature here lets callers replicate the
+    /// non-aligned named-point variant if they ever need it.
+    ///
+    /// The subject body's mass-point lookup is one level deep — JEOD's
+    /// generalised `compute_state_wrt_pred` walks an arbitrary chain of
+    /// nested mass points but the only verif sim that exercises this
+    /// path keeps mass points directly on the body's structure. Nested
+    /// mass-point chains are deferred until a consumer needs them
+    /// (would call out additional structure here without a test to
+    /// pin the algebra to).
+    ///
+    /// # Panics
+    /// Panics if `subject_point_name` is not a mass point on
+    /// `subject_id`.
+    // JEOD_INV: MA.16 — 180° yaw convention for attach-by-point
+    // JEOD_INV: MA.21 — named points must exist on body
+    pub fn attach_to_frame_offset(
+        &self,
+        subject_id: MassBodyId,
+        subject_point_name: &str,
+        offset_pframe_cpt: DVec3,
+        t_pframe_cpt: DMat3,
+    ) -> (DVec3, DMat3) {
+        let subject_pt = self
+            .find_mass_point(subject_id, subject_point_name)
+            .unwrap_or_else(|| {
+                panic!(
+                    "mass point '{}' not found on body '{}'",
+                    subject_point_name, self.nodes[subject_id].name
+                )
+            });
+        // `subject_pt.position` is the cpt's location in the subject's
+        // struct frame; `subject_pt.t_parent_this` is T_struct_cpt.
+        let t_struct_cpt = subject_pt.t_parent_this;
+        let x_struct_cpt = subject_pt.position;
+
+        // T_pframe_struct = T_struct_cpt^T · T_pframe_cpt
+        let t_pframe_struct = t_struct_cpt.transpose() * t_pframe_cpt;
+        // x_pframe_struct = x_pframe_cpt - T_pframe_struct^T · x_struct_cpt
+        let x_pframe_struct = offset_pframe_cpt - t_pframe_struct.transpose() * x_struct_cpt;
+
+        (x_pframe_struct, t_pframe_struct)
+    }
+
+    /// Convenience: compute the parent-ref-frame to struct-frame offset
+    /// for the **`BodyAttachAligned` ref-parent branch** — the
+    /// hardcoded 180°-yaw docking convention with zero positional
+    /// offset at the named subject point.
+    ///
+    /// Equivalent to
+    /// `attach_to_frame_offset(subject_id, subject_point_name, [0;3],
+    /// diag(-1,-1,1))`. Mirrors JEOD `BodyAttachAligned::apply` lines
+    /// 111-126 (`models/dynamics/body_action/src/body_attach_aligned.cc`),
+    /// which always passes a zero offset and a 180°-yaw matrix to the
+    /// underlying named-point `attach_to_frame` for the ref-parent
+    /// case.
+    // JEOD_INV: MA.16 — 180° yaw convention for attach-by-point
+    pub fn attach_to_frame_offset_aligned(
+        &self,
+        subject_id: MassBodyId,
+        subject_point_name: &str,
+    ) -> (DVec3, DMat3) {
+        let yaw_180 = DMat3::from_cols(
+            DVec3::new(-1.0, 0.0, 0.0),
+            DVec3::new(0.0, -1.0, 0.0),
+            DVec3::new(0.0, 0.0, 1.0),
+        );
+        self.attach_to_frame_offset(subject_id, subject_point_name, DVec3::ZERO, yaw_180)
+    }
+
     // -- attach / detach ----------------------------------------------------
 
     /// Attach `child_id` to `parent_id` at the given offset and rotation.
@@ -1446,6 +1543,120 @@ mod tests {
             1e-12,
             "non-trivial position",
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // attach_to_frame_offset / attach_to_frame_offset_aligned
+    // -----------------------------------------------------------------------
+
+    /// `attach_to_frame_offset_aligned` reproduces the matrix-form values
+    /// that JEOD's `BodyAttachAligned` derives for the SIM_ref_attach
+    /// `RUN_ref_attach_pt2pt` scenario: subject mass-point `attach1` at
+    /// `(10, 0, 0)` with identity orientation, parent reference frame
+    /// `Earth.pfix`. The named-point alignment with the 180°-yaw docking
+    /// convention must yield the same `(offset_pframe_struct,
+    /// T_pframe_struct)` pair JEOD's matrix-form `BodyAttachMatrix`
+    /// would have set directly (`offset = (10, 0, 0)`,
+    /// `T = diag(-1, -1, 1)`), confirming both verif runs configure the
+    /// same physical attachment.
+    #[test]
+    fn attach_to_frame_offset_aligned_matches_pt2pt_run() {
+        let mut tree = MassTree::new();
+        let bid = tree.add_root("target".into(), MassProperties::new(1.0));
+        tree.add_mass_point(bid, "attach1", DVec3::new(10.0, 0.0, 0.0), DMat3::IDENTITY);
+
+        let (offset, t) = tree.attach_to_frame_offset_aligned(bid, "attach1");
+
+        let expected_t = DMat3::from_cols(
+            DVec3::new(-1.0, 0.0, 0.0),
+            DVec3::new(0.0, -1.0, 0.0),
+            DVec3::new(0.0, 0.0, 1.0),
+        );
+        assert_vec3_close(
+            offset,
+            DVec3::new(10.0, 0.0, 0.0),
+            1e-12,
+            "pframe→struct offset",
+        );
+        assert_mat3_close(t, expected_t, 1e-12, "pframe→struct rotation");
+    }
+
+    /// `attach_to_frame_offset` honours the user-supplied offset and
+    /// rotation when the subject mass point itself is at the body's
+    /// origin with identity orientation — the result is just the user
+    /// inputs (the cpt is the struct).
+    #[test]
+    fn attach_to_frame_offset_identity_point_returns_inputs() {
+        let mut tree = MassTree::new();
+        let bid = tree.add_root("body".into(), MassProperties::new(1.0));
+        tree.add_mass_point(bid, "origin", DVec3::ZERO, DMat3::IDENTITY);
+
+        let user_offset = DVec3::new(1.0, 2.0, 3.0);
+        let user_t = DMat3::from_cols(
+            DVec3::new(0.0, 1.0, 0.0),
+            DVec3::new(-1.0, 0.0, 0.0),
+            DVec3::new(0.0, 0.0, 1.0),
+        );
+        let (offset, t) = tree.attach_to_frame_offset(bid, "origin", user_offset, user_t);
+
+        assert_vec3_close(offset, user_offset, 1e-12, "identity-point offset");
+        assert_mat3_close(t, user_t, 1e-12, "identity-point rotation");
+    }
+
+    /// Non-trivial mass-point pose composes correctly: when the named
+    /// point sits at `(2, 0, 0)` rotated 90° about Z relative to the
+    /// struct frame, the `(offset, T)` returned for the BodyAttachAligned
+    /// branch must be the rigid-body inverse mapping of that mass-point
+    /// pose under the 180°-yaw convention.
+    ///
+    /// Worked out by hand:
+    ///   T_struct_cpt = rot_90z (cpt rotated 90° about Z relative to struct)
+    ///   T_pframe_cpt = diag(-1, -1, 1) (yaw_180)
+    ///   T_pframe_struct = T_struct_cpt^T · T_pframe_cpt = rot_90z^T · yaw_180
+    ///   x_pframe_struct = 0 - T_pframe_struct^T · (2, 0, 0)
+    ///                   = -(rot_90z^T · yaw_180)^T · (2, 0, 0)
+    ///                   = -(yaw_180^T · rot_90z) · (2, 0, 0)
+    ///                   = -yaw_180 · (rot_90z · (2, 0, 0))
+    ///                   = -yaw_180 · (0, 2, 0)
+    ///                   = -(0, -2, 0)
+    ///                   = (0, 2, 0)
+    #[test]
+    fn attach_to_frame_offset_aligned_non_trivial_point() {
+        let rot_90z = DMat3::from_cols(
+            DVec3::new(0.0, 1.0, 0.0),
+            DVec3::new(-1.0, 0.0, 0.0),
+            DVec3::new(0.0, 0.0, 1.0),
+        );
+        let yaw_180 = DMat3::from_cols(
+            DVec3::new(-1.0, 0.0, 0.0),
+            DVec3::new(0.0, -1.0, 0.0),
+            DVec3::new(0.0, 0.0, 1.0),
+        );
+
+        let mut tree = MassTree::new();
+        let bid = tree.add_root("body".into(), MassProperties::new(1.0));
+        tree.add_mass_point(bid, "port", DVec3::new(2.0, 0.0, 0.0), rot_90z);
+
+        let (offset, t) = tree.attach_to_frame_offset_aligned(bid, "port");
+
+        let expected_t = rot_90z.transpose() * yaw_180;
+        assert_mat3_close(t, expected_t, 1e-12, "non-trivial mass-point rotation");
+        assert_vec3_close(
+            offset,
+            DVec3::new(0.0, 2.0, 0.0),
+            1e-12,
+            "non-trivial mass-point offset",
+        );
+    }
+
+    /// `attach_to_frame_offset` panics with an actionable diagnostic
+    /// when the named subject point does not exist on the body.
+    #[test]
+    #[should_panic(expected = "mass point 'missing' not found on body 'body'")]
+    fn attach_to_frame_offset_missing_point_panics() {
+        let mut tree = MassTree::new();
+        let bid = tree.add_root("body".into(), MassProperties::new(1.0));
+        let _ = tree.attach_to_frame_offset(bid, "missing", DVec3::ZERO, DMat3::IDENTITY);
     }
 
     // -----------------------------------------------------------------------
