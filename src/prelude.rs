@@ -51,11 +51,12 @@ pub use crate::frame_param::{FrameOrigin, RelativeFrameState};
 // (per CLAUDE.md "Three-Layer Architecture": the root package depends
 // only on `jeod_sim` + `bevy`).
 pub use jeod_sim::{
-    Array3Ext, BodyAction, BodyFrame, ClosureJointKinematicsSpec, Ecef, F64Ext, Frame,
+    Array3Ext, BodyAction, BodyFrame, ClosureJointKinematicsSpec, Earth, Ecef, F64Ext, Frame,
     FrameTransform, GravityControl, JeodQuat, JointKinematicsModel, JointKinematicsSpec, Lvlh,
-    MultiDofJointKinematicsSpec, Ned, OrbitalElementSet, Planet, PlanetFixed, Qty3, RootInertial,
-    SelfPlanet, SelfRef, SingleDofKinematics, SinusoidalJointKinematicsSpec, StructuralFrame,
-    Vec3Ext, Vehicle, VehicleBuilder, VehicleConfig, AXIS_NORM_TOL, MAX_MULTI_DOF_AXES,
+    Mars, Moon, MultiDofJointKinematicsSpec, Ned, OrbitalElementSet, Planet, PlanetFixed, Qty3,
+    RootInertial, SelfPlanet, SelfRef, SingleDofKinematics, SinusoidalJointKinematicsSpec,
+    StructuralFrame, Sun, Vec3Ext, Vehicle, VehicleBuilder, VehicleConfig, AXIS_NORM_TOL,
+    MAX_MULTI_DOF_AXES,
 };
 // Mission-crate macros for defining additional `Vehicle` / `Planet`
 // markers. Re-exported so `use bevy_jeod::prelude::*;` brings them into

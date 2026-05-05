@@ -136,7 +136,7 @@ fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
 
     commands.spawn((
         Name::new("Satellite"),
-        TranslationalStateC::from(trans),
+        TranslationalStateC::<jeod_sim::Earth>::from(trans),
         MassPropertiesC::from(MassProperties::new(mass_kg)),
         GravityAccelerationC::default(),
         TotalForceC::default(),

@@ -175,7 +175,7 @@ fn build_bevy_app() -> (App, Entity, Entity) {
             }),
             MassPropertiesC::from(parent_mass()),
             MassBodyIdC(parent_id),
-            TranslationalStateC::from(parent_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(parent_trans()),
             RotationalStateC::from(parent_rot()),
             TotalForceC::default(),
             FrameDerivativesC::default(),
@@ -208,7 +208,7 @@ fn build_bevy_app() -> (App, Entity, Entity) {
             // behaviour the parity check shouldn't pivot on.
             KinematicChildC,
             // Stale state — propagation must overwrite both.
-            TranslationalStateC::default(),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
             RotationalStateC::default(),
             TotalForceC::default(),
             FrameDerivativesC::default(),

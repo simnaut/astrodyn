@@ -135,7 +135,7 @@ fn tier3_bevy_integ_source_lunar_orbit_matches_simulation() {
         .world_mut()
         .spawn((
             Name::new("Lunar"),
-            TranslationalStateC::from(lunar_initial_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(lunar_initial_trans()),
             RotationalStateC::from(initial_rot()),
             MassPropertiesC::from(vehicle_mass()),
             DynamicsConfigC(DynamicsConfig {
@@ -263,7 +263,7 @@ fn tier3_bevy_integ_source_moving_moon_matches_simulation() {
         .world_mut()
         .spawn((
             Name::new("Lunar"),
-            TranslationalStateC::from(lunar_initial_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(lunar_initial_trans()),
             RotationalStateC::from(initial_rot()),
             MassPropertiesC::from(vehicle_mass()),
             DynamicsConfigC(DynamicsConfig {
@@ -381,7 +381,7 @@ fn tier3_bevy_integ_source_root_matches_legacy_no_op() {
                 model: GravityModel::PointMass,
             }),
             SourceInertialPositionC::default(),
-            TranslationalStateC::from(TranslationalState::default()),
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState::default()),
         ))
         .id();
 
@@ -393,7 +393,7 @@ fn tier3_bevy_integ_source_root_matches_legacy_no_op() {
         .world_mut()
         .spawn((
             Name::new("Vehicle"),
-            TranslationalStateC::from(trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(trans),
             RotationalStateC::from(initial_rot()),
             MassPropertiesC::from(MassProperties::with_inertia(
                 400_000.0,
@@ -530,7 +530,7 @@ fn tier3_bevy_solar_beta_in_lunar_integ_frame() {
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -541,7 +541,7 @@ fn tier3_bevy_solar_beta_in_lunar_integ_frame() {
         .world_mut()
         .spawn((
             Name::new("Lunar"),
-            TranslationalStateC::from(lunar_tilted),
+            TranslationalStateC::<jeod_sim::Earth>::from(lunar_tilted),
             RotationalStateC::from(initial_rot()),
             MassPropertiesC::from(vehicle_mass()),
             DynamicsConfigC(DynamicsConfig {
@@ -726,7 +726,7 @@ fn tier3_bevy_flat_plate_srp_in_lunar_integ_frame() {
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -737,7 +737,7 @@ fn tier3_bevy_flat_plate_srp_in_lunar_integ_frame() {
         .world_mut()
         .spawn((
             Name::new("Lunar-SRP"),
-            TranslationalStateC::from(lunar_tilted),
+            TranslationalStateC::<jeod_sim::Earth>::from(lunar_tilted),
             RotationalStateC::from(initial_rot()),
             MassPropertiesC::from(vehicle_mass()),
             DynamicsConfigC(DynamicsConfig {

@@ -146,7 +146,7 @@ fn run_relative_parity(
     let veh_a = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(trans_a),
+            TranslationalStateC::<jeod_sim::Earth>::from(trans_a),
             RotationalStateC::from(rot_a),
             MassPropertiesC::from(dummy_mass),
             DynamicsConfigC(config_6dof),
@@ -157,7 +157,7 @@ fn run_relative_parity(
     let veh_b = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(trans_b),
+            TranslationalStateC::<jeod_sim::Earth>::from(trans_b),
             RotationalStateC::from(rot_b),
             MassPropertiesC::from(dummy_mass),
             DynamicsConfigC(config_6dof),
@@ -319,7 +319,7 @@ fn run_lvlhrel_parity(label: &str, ref_trans: TranslationalState, subj_trans: Tr
     let ref_veh = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(ref_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(ref_trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls::<Entity> { controls: vec![] }),
         ))
@@ -328,7 +328,7 @@ fn run_lvlhrel_parity(label: &str, ref_trans: TranslationalState, subj_trans: Tr
     let subj_veh = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(subj_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(subj_trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls::<Entity> { controls: vec![] }),
         ))

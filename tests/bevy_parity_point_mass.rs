@@ -35,14 +35,14 @@ fn tier3_bevy_point_mass_sixdof() {
             Name::new("Earth"),
             bevy_jeod::GravitySourceC(earth_source()),
             bevy_jeod::SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
         ))
         .id();
 
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(iss_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(iss_trans()),
             RotationalStateC::from(tumble_rot()),
             MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
@@ -92,7 +92,7 @@ fn run_planetary_parity(label: &str, trans: TranslationalState) {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
@@ -174,7 +174,7 @@ fn tier3_bevy_run2_6dof() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(iss_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(iss_trans()),
             RotationalStateC::from(tumble_rot()),
             MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
@@ -247,7 +247,7 @@ fn tier3_bevy_orbinit_cross_consistency() {
         let vehicle = app
             .world_mut()
             .spawn((
-                TranslationalStateC::from(*trans),
+                TranslationalStateC::<jeod_sim::Earth>::from(*trans),
                 DynamicsConfigC::default(),
                 GravityControlsC(GravityControls {
                     controls: vec![GravityControl::new_spherical(planet, false)],
@@ -659,7 +659,7 @@ fn run_atmosphere_parity(label: &str, trans: TranslationalState) {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(trans),
             RotationalStateC::from(tumble_rot()),
             MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {

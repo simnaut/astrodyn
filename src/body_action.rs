@@ -399,7 +399,7 @@ pub fn body_action_system(
                 .unwrap_or_else(|| {
                     panic!(
                         "BodyAction targets translational state on entity {:?} (action_name={:?}) but the entity has no TranslationalStateC. \
-                         Add `TranslationalStateC::default()` to the entity (or spawn via `VehicleConfig::spawn_bevy`) before queuing this action.",
+                         Add `TranslationalStateC::<jeod_sim::Earth>::default()` to the entity (or spawn via `VehicleConfig::spawn_bevy`) before queuing this action.",
                         action.entity, action.name,
                     )
                 });
@@ -617,7 +617,7 @@ mod tests {
     fn spawn_vehicle(app: &mut App) -> Entity {
         app.world_mut()
             .spawn((
-                TranslationalStateC::default(),
+                TranslationalStateC::<jeod_sim::Earth>::default(),
                 RotationalStateC::default(),
                 MassPropertiesC::from(MassProperties::new(400_000.0)),
                 // `body_action_system` filters by `With<DynamicsConfigC>`;

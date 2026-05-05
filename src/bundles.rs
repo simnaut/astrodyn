@@ -58,11 +58,13 @@ impl PlanetBundle {
             name: Name::new(name.to_string()),
             source: GravitySourceC(source),
             position: SourceInertialPositionC::default(),
-            trans: TranslationalStateC::default(),
+            trans: TranslationalStateC::<jeod_sim::Earth>::default(),
             // allowed: IDENTITY placeholder; planet_fixed_rotation_system overwrites on tick 1
-            rotation: PlanetFixedRotationC(FrameTransform::from_matrix(glam::DMat3::IDENTITY)),
+            rotation: PlanetFixedRotationC::<jeod_sim::Earth>(FrameTransform::from_matrix(
+                glam::DMat3::IDENTITY,
+            )),
             omega: PlanetOmegaC(config.omega),
-            ang_vel: PlanetAngularVelocityC::default(),
+            ang_vel: PlanetAngularVelocityC::<jeod_sim::Earth>::default(),
             rotation_model: RotationModelC(config.rotation_model),
             shape: PlanetC(config.shape),
         }
@@ -114,7 +116,7 @@ impl SunBundle {
         Self {
             name: Name::new("Sun"),
             marker: SunMarker,
-            trans: TranslationalStateC::from(state),
+            trans: TranslationalStateC::<jeod_sim::Earth>::from(state),
         }
     }
 }
@@ -150,7 +152,7 @@ impl MoonBundle {
         Self {
             name: Name::new("Moon"),
             marker: MoonMarker,
-            trans: TranslationalStateC::from(state),
+            trans: TranslationalStateC::<jeod_sim::Earth>::from(state),
         }
     }
 }

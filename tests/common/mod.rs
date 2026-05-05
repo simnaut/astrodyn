@@ -203,7 +203,7 @@ pub fn spawn_earth_source(app: &mut App) -> Entity {
             Name::new("Earth"),
             GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
         ))
         .id()
 }

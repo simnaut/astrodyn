@@ -124,7 +124,7 @@ fn body_despawn_despawns_body_frame_entity() {
         .world_mut()
         .spawn((
             Name::new("vehicle"),
-            TranslationalStateC::from_untyped(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from_untyped(TranslationalState {
                 position: DVec3::new(7e6, 0.0, 0.0),
                 velocity: DVec3::new(0.0, 7.5e3, 0.0),
             }),

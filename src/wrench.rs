@@ -1344,7 +1344,7 @@ mod tests {
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
-                crate::TranslationalStateC::from(TranslationalState {
+                crate::TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                     position: parent_pos,
                     velocity: DVec3::ZERO,
                 }),
@@ -1447,7 +1447,7 @@ mod tests {
         // Sun ~1 AU along +x. Pure inertial position; no gravity / mass.
         app.world_mut().spawn((
             SunMarker,
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: DVec3::new(1.496e11, 0.0, 0.0),
                 velocity: DVec3::ZERO,
             }),
@@ -1465,7 +1465,7 @@ mod tests {
                 DynamicsConfigC::default(),
                 ExternalForceC::default(),
                 ExternalTorqueC::default(),
-                TranslationalStateC::from(TranslationalState {
+                TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                     position: DVec3::new(7.0e6, 0.0, 0.0),
                     velocity: DVec3::ZERO,
                 }),
@@ -1506,7 +1506,7 @@ mod tests {
                 DynamicsConfigC::default(),
                 ExternalForceC::default(),
                 ExternalTorqueC::default(),
-                TranslationalStateC::from(TranslationalState {
+                TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                     position: DVec3::new(7.0e6, 0.0, 0.0),
                     velocity: DVec3::ZERO,
                 }),
@@ -1683,7 +1683,7 @@ mod tests {
                 ExternalTorqueC::default(),
                 IntegratorTypeC(IntegratorType::GaussJackson(gj_cfg)),
                 GaussJacksonStateC(primed_gj),
-                crate::TranslationalStateC::from(TranslationalState::default()),
+                crate::TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState::default()),
             ))
             .id();
 

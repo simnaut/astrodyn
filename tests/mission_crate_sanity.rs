@@ -35,7 +35,7 @@ fn setup_iss(mut commands: Commands) {
             Name::new("Earth"),
             GravitySourceC(earth_recipe.source),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
+            TranslationalStateC::<Earth>::default(),
         ))
         .id();
 

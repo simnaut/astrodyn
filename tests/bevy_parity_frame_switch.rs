@@ -101,7 +101,7 @@ fn tier3_bevy_frame_switch_earth_to_moon_matches_simulation() {
         .world_mut()
         .spawn((
             Name::new("EarthToMoon"),
-            TranslationalStateC::from(initial_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(initial_trans()),
             RotationalStateC::from(initial_rot()),
             MassPropertiesC::from(vehicle_mass()),
             DynamicsConfigC(DynamicsConfig {
@@ -314,7 +314,7 @@ fn tier3_bevy_frame_switch_on_departure_matches_simulation() {
         .world_mut()
         .spawn((
             Name::new("EarthDeparture"),
-            TranslationalStateC::from(initial_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(initial_trans()),
             RotationalStateC::from(initial_rot()),
             MassPropertiesC::from(vehicle_mass()),
             DynamicsConfigC(DynamicsConfig {

@@ -34,14 +34,14 @@ fn tier3_bevy_gravity_torque_sixdof() {
             Name::new("Earth"),
             bevy_jeod::GravitySourceC(earth_source()),
             bevy_jeod::SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
         ))
         .id();
 
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(iss_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(iss_trans()),
             RotationalStateC::from(tumble_rot()),
             MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
@@ -230,7 +230,7 @@ fn run_gravity_torque_parity(label: &str, trans: TranslationalState, rot: Rotati
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(trans),
             RotationalStateC::from(rot),
             MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
@@ -333,7 +333,7 @@ fn run_external_parity(
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(iss_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(iss_trans()),
             RotationalStateC::from(rot),
             MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {

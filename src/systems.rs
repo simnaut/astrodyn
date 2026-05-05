@@ -14,8 +14,8 @@
 use bevy::prelude::*;
 use glam::DVec3;
 use jeod_sim::{
-    Acceleration, AngularAcceleration, BodyFrame, Force, Position, RootInertial, SelfPlanet,
-    SelfRef, Torque, Velocity,
+    Acceleration, AngularAcceleration, BodyFrame, Force, Position, RootInertial, SelfRef, Torque,
+    Velocity,
 };
 
 use crate::components::*;
@@ -880,8 +880,8 @@ pub fn frame_switch_system(
         // post-switch frame) which the wildcard `SelfPlanet` tags
         // without committing to a compile-time planet identity. Same
         // boundary lift `evaluate_and_apply_frame_switch` performs.
-        type PiPos = jeod_sim::Position<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>;
-        type PiVel = jeod_sim::Velocity<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>;
+        type PiPos = jeod_sim::Position<jeod_sim::PlanetInertial<jeod_sim::Earth>>;
+        type PiVel = jeod_sim::Velocity<jeod_sim::PlanetInertial<jeod_sim::Earth>>;
         let pos_typed = PiPos::from_raw_si(new_state.trans.position); // allowed: frame-switch boundary lift, see comment above
         let vel_typed = PiVel::from_raw_si(new_state.trans.velocity); // allowed: same frame-switch boundary lift
         trans.0.position = pos_typed;
@@ -952,7 +952,7 @@ pub fn planet_fixed_rotation_system(
     // happens once per tick total, not once per EarthRNP entity per tick —
     // all EarthRNP entities share the same rotation each step.
     type EarthRot =
-        jeod_sim::FrameTransform<jeod_sim::RootInertial, jeod_sim::PlanetFixed<SelfPlanet>>;
+        jeod_sim::FrameTransform<jeod_sim::RootInertial, jeod_sim::PlanetFixed<jeod_sim::Earth>>;
     let mut earth_rotation: Option<EarthRot> = Option::None;
     let mut earth_rotation_raw: Option<glam::DMat3> = Option::None;
     for (entity, mut rot, model, omega, ang_vel, pfix_frame_entity) in &mut query {
@@ -1052,7 +1052,8 @@ pub fn planet_fixed_rotation_system(
                 // scalar `PlanetOmegaC`. JEOD's `planet_rnp.cc` writes
                 // [0, 0, omega] in the pfix frame; this is the typed-API
                 // boundary for that scalar → typed-vector lift.
-                type PlanetAngVel = jeod_sim::AngularVelocity<jeod_sim::PlanetFixed<SelfPlanet>>;
+                type PlanetAngVel =
+                    jeod_sim::AngularVelocity<jeod_sim::PlanetFixed<jeod_sim::Earth>>;
                 let raw = glam::DVec3::new(0.0, 0.0, omega_value);
                 ang_vel_c.0 = PlanetAngVel::from_raw_si(raw); // allowed: scalar omega → typed AngularVelocity boundary
             }
@@ -1113,7 +1114,8 @@ pub fn planet_fixed_rotation_system(
             // construction (same shape as the rotating-branch from_matrix sites).
             rot.0 = jeod_sim::FrameTransform::from_matrix(glam::DMat3::IDENTITY);
             if let Some(mut ang_vel_c) = ang_vel {
-                type PlanetAngVel = jeod_sim::AngularVelocity<jeod_sim::PlanetFixed<SelfPlanet>>;
+                type PlanetAngVel =
+                    jeod_sim::AngularVelocity<jeod_sim::PlanetFixed<jeod_sim::Earth>>;
                 ang_vel_c.0 = PlanetAngVel::from_raw_si(glam::DVec3::ZERO); // allowed: zero-omega clear → typed AngularVelocity boundary
             }
             if let Some(pfix_fe) = pfix_frame_entity {
@@ -1701,9 +1703,9 @@ pub fn ephemeris_update_system(
             // wildcard-tagged planet-inertial frame the Component
             // stores. The numeric SI values (m, m/s) are preserved
             // exactly — only the phantom tag changes.
-            type PiPos = jeod_sim::Position<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>;
-            type PiVel = jeod_sim::Velocity<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>;
-            ts.0.position = PiPos::from_raw_si(pos_typed.raw_si()); // allowed: ephemeris boundary, RootInertial → PlanetInertial<SelfPlanet> wildcard relabel
+            type PiPos = jeod_sim::Position<jeod_sim::PlanetInertial<jeod_sim::Earth>>;
+            type PiVel = jeod_sim::Velocity<jeod_sim::PlanetInertial<jeod_sim::Earth>>;
+            ts.0.position = PiPos::from_raw_si(pos_typed.raw_si()); // allowed: ephemeris boundary, RootInertial → PlanetInertial<Earth> wildcard relabel
             ts.0.velocity = PiVel::from_raw_si(vel_typed.raw_si()); // allowed: same ephemeris boundary relabel
         }
     }
@@ -2301,7 +2303,7 @@ pub fn integration_system(
             // the body's integration frame, which the Component tags
             // as planet-inertial via the `SelfPlanet` wildcard).
             type PiTrans =
-                jeod_sim::TranslationalStateTyped<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>;
+                jeod_sim::TranslationalStateTyped<jeod_sim::PlanetInertial<jeod_sim::Earth>>;
             state.0 = PiTrans::from_untyped_unchecked(&state_untyped); // allowed: typed↔untyped kernel boundary (integrate_body_coupled signature is untyped); analogous to From<Untyped> impls.
             if let (Some(rs), Some(ru)) = (rot_state.as_mut(), rot_state_untyped) {
                 // allowed: same typed↔untyped kernel boundary as above.
@@ -2376,7 +2378,7 @@ pub fn integration_system(
         // canonical adapter step (analogous to From<Untyped> impls).
         state.0 =
             // allowed: typed↔untyped kernel boundary; planet-inertial frame matches the body's integration frame.
-            jeod_sim::TranslationalStateTyped::<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>::from_untyped_unchecked(&state_untyped);
+            jeod_sim::TranslationalStateTyped::<jeod_sim::PlanetInertial<jeod_sim::Earth>>::from_untyped_unchecked(&state_untyped);
         if let (Some(rs), Some(ru)) = (rot_state.as_mut(), rot_state_untyped) {
             // allowed: typed↔untyped kernel boundary
             rs.0 = jeod_sim::RotationalStateTyped::<SelfRef>::from_untyped_unchecked(&ru);
@@ -2576,9 +2578,9 @@ pub fn atmosphere_update_system(
                 );
             }
         }
-        **atmos = jeod_sim::evaluate_atmosphere(
+        **atmos = jeod_sim::evaluate_atmosphere_typed::<jeod_sim::Earth>(
             &model.config,
-            state.position.raw_si(),
+            state.position,
             t_inertial_pfix.as_ref(),
             tai_tjt,
         );
@@ -2619,25 +2621,15 @@ pub fn aero_drag_system(
         // structural-frame Component still uses raw DVec3; that's a
         // remaining typed-storage boundary).
         let rot_untyped = rot.0.to_untyped();
-        // Bevy adapter stores body velocity as
-        // `Velocity<PlanetInertial<SelfPlanet>>` and the atmospheric
-        // state as `AtmosphereState<SelfPlanet>`. Drag's typed sibling
-        // is parameterized over a concrete `P`, so the call site does
-        // a wildcard → `PlanetInertial<Earth>` phantom relabel on both
-        // (no integ-origin shift — drag stays in planet-inertial
-        // throughout). Bit-identical and asserts the Earth-orbit
-        // assumption that the body's planet and the atmosphere planet
-        // are both Earth. The `AtmosphereState<P>` typing enforces at
-        // compile time that the velocity and wind frames agree.
-        use jeod_sim::{Earth, PlanetInertial, Velocity};
-        // allowed: wildcard `<SelfPlanet>` → concrete `<Earth>` relabel
-        // for the typed sibling; bit-identical (no arithmetic).
-        let drag_velocity = Velocity::<PlanetInertial<Earth>>::from_raw_si(state.velocity.raw_si());
-        let atmos_earth = atmos.0.relabel::<Earth>();
+        // The body velocity and atmospheric state both carry the
+        // concrete planet `<Earth>` at the type level (matching the
+        // pre-registered single-planet pipeline of `JeodPlugin`), so
+        // they pass straight into the typed kernel without a relabel.
+        use jeod_sim::Earth;
         let result = jeod_sim::compute_drag_typed::<Earth, SelfRef>(
             &drag_config.0,
-            &atmos_earth,
-            drag_velocity,
+            &atmos.0,
+            state.velocity,
             Some(&rot_untyped),
             t_struct_body,
         );
@@ -2717,20 +2709,17 @@ pub fn orbital_elements_system(
             elements.0 = Default::default();
             continue;
         };
-        // The Bevy `OrbitalElementsC` component is parameterized by
-        // `SelfPlanet` (per-entity planet identity is dynamic, keyed by
-        // `config.gravity_source`). Drive the planet-erased
-        // `compute_orbital_elements` so the result is already
-        // `<SelfPlanet>`-tagged — no relabel step needed, and the
-        // previous `<Earth>` → relabel path through
-        // `compute_orbital_elements_typed::<Earth>` is no longer
-        // available because `OrbitalElements::relabel` is restricted
-        // to a `<SelfPlanet>` receiver to prevent silent cross-planet
-        // retagging.
-        match jeod_sim::compute_orbital_elements(
-            source.mu,
-            state.position.raw_si(),
-            state.velocity.raw_si(),
+        // `OrbitalElementsC` carries `<P>` at the type level — the Bevy
+        // adapter pins the single-planet pipeline to `Earth`. Drive the
+        // typed kernel directly so the result is already `<Earth>`-
+        // tagged; mint a `GravParam<Earth>` from the source's f64 mu at
+        // the call boundary.
+        use jeod_sim::Earth;
+        let mu_earth = jeod_sim::GravParam::<Earth>::from_si(source.mu);
+        match jeod_sim::compute_orbital_elements_typed::<Earth>(
+            mu_earth,
+            state.position,
+            state.velocity,
         ) {
             Ok(oe) => elements.0 = oe,
             Err(_) => elements.0 = Default::default(),
@@ -4501,7 +4490,7 @@ pub fn staging_system(
                     // as TranslationalStateTyped<PlanetInertial<SelfPlanet>>
                     // is the same typed↔untyped pattern as the
                     // From<TranslationalState> impl on TranslationalStateC.
-                    jeod_sim::TranslationalStateTyped::<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>::from_untyped_unchecked(
+                    jeod_sim::TranslationalStateTyped::<jeod_sim::PlanetInertial<jeod_sim::Earth>>::from_untyped_unchecked(
                         &jeod_sim::TranslationalState {
                             position: merged.position - work.parent_integ_origin_pos,
                             velocity: merged.velocity - work.parent_integ_origin_vel,
@@ -4620,7 +4609,7 @@ pub fn staging_system(
                 // it does not introduce a new frame, so wrapping as
                 // `PlanetInertial<SelfPlanet>` is the same convention
                 // as the pre-detach value.
-                jeod_sim::TranslationalStateTyped::<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>::from_untyped_unchecked(
+                jeod_sim::TranslationalStateTyped::<jeod_sim::PlanetInertial<jeod_sim::Earth>>::from_untyped_unchecked(
                     &jeod_sim::TranslationalState {
                         position: new_position,
                         velocity: new_velocity,
@@ -4781,7 +4770,7 @@ pub fn step_detached_system(
                 // design — re-wrapping into TranslationalStateTyped is the
                 // same typed↔untyped pattern as the
                 // From<TranslationalState> impl on TranslationalStateC.
-                jeod_sim::TranslationalStateTyped::<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>::from_untyped_unchecked(
+                jeod_sim::TranslationalStateTyped::<jeod_sim::PlanetInertial<jeod_sim::Earth>>::from_untyped_unchecked(
                     &jeod_sim::TranslationalState {
                         position,
                         velocity,

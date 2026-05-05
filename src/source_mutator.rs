@@ -382,8 +382,8 @@ impl SourceMutator<'_, '_> {
         // above is `<RootInertial>` (the SourceMutator API frame).
         // Relabel to the wildcard `SelfPlanet` tag at the storage
         // boundary. Bit-identical numerics.
-        type PiPos = jeod_sim::Position<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>;
-        ts.0.position = PiPos::from_raw_si(typed_pos.raw_si()); // allowed: source-mutator boundary, RootInertial → PlanetInertial<SelfPlanet> wildcard relabel
+        type PiPos = jeod_sim::Position<jeod_sim::PlanetInertial<jeod_sim::Earth>>;
+        ts.0.position = PiPos::from_raw_si(typed_pos.raw_si()); // allowed: source-mutator boundary, RootInertial → PlanetInertial<Earth> wildcard relabel
     }
 
     /// Set the inertial position and velocity of `source`. Mirrors
@@ -466,9 +466,9 @@ impl SourceMutator<'_, '_> {
         // `typed_pos` / `typed_vel` are `<RootInertial>`. Relabel to
         // the wildcard `SelfPlanet` tag at the storage boundary —
         // bit-identical numerics.
-        type PiPos = jeod_sim::Position<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>;
-        type PiVel = jeod_sim::Velocity<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>;
-        ts.0.position = PiPos::from_raw_si(typed_pos.raw_si()); // allowed: source-mutator boundary, RootInertial → PlanetInertial<SelfPlanet> wildcard relabel
+        type PiPos = jeod_sim::Position<jeod_sim::PlanetInertial<jeod_sim::Earth>>;
+        type PiVel = jeod_sim::Velocity<jeod_sim::PlanetInertial<jeod_sim::Earth>>;
+        ts.0.position = PiPos::from_raw_si(typed_pos.raw_si()); // allowed: source-mutator boundary, RootInertial → PlanetInertial<Earth> wildcard relabel
         ts.0.velocity = PiVel::from_raw_si(typed_vel.raw_si()); // allowed: same boundary as ts.0.position above
     }
 

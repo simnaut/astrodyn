@@ -68,7 +68,7 @@ fn build_app(planet_name: &str, planet: &PlanetConfig) -> (App, Entity, Entity) 
         .world_mut()
         .spawn((
             Name::new("body"),
-            TranslationalStateC::from(trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(trans),
             RotationalStateC::from(rot),
             MassPropertiesC::from(MassProperties::new(1.0)),
             DynamicsConfigC(DynamicsConfig {

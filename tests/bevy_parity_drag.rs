@@ -52,14 +52,14 @@ fn tier3_bevy_drag_atmosphere_sixdof() {
             Name::new("Earth"),
             GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
         ))
         .id();
 
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(iss_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(iss_trans()),
             RotationalStateC::from(tumble_rot()),
             MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
@@ -144,14 +144,14 @@ fn tier3_bevy_constant_density_drag_sixdof() {
             Name::new("Earth"),
             GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
         ))
         .id();
 
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(iss_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(iss_trans()),
             RotationalStateC::from(tumble_rot()),
             MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
@@ -231,8 +231,10 @@ fn tier3_bevy_met_atmosphere_drag_sixdof() {
             Name::new("Earth"),
             GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
-            PlanetFixedRotationC(jeod_sim::FrameTransform::from_matrix(DMat3::IDENTITY)),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
+            PlanetFixedRotationC::<jeod_sim::Earth>(jeod_sim::FrameTransform::from_matrix(
+                DMat3::IDENTITY,
+            )),
         ))
         .id();
 
@@ -249,7 +251,7 @@ fn tier3_bevy_met_atmosphere_drag_sixdof() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(iss_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(iss_trans()),
             RotationalStateC::from(tumble_rot()),
             MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
@@ -327,8 +329,10 @@ fn tier3_bevy_met_run5a() {
             Name::new("Earth"),
             GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
-            PlanetFixedRotationC(jeod_sim::FrameTransform::from_matrix(DMat3::IDENTITY)),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
+            PlanetFixedRotationC::<jeod_sim::Earth>(jeod_sim::FrameTransform::from_matrix(
+                DMat3::IDENTITY,
+            )),
         ))
         .id();
 
@@ -345,7 +349,7 @@ fn tier3_bevy_met_run5a() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(iss_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(iss_trans()),
             RotationalStateC::from(tumble_rot()),
             MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
@@ -435,8 +439,10 @@ fn tier3_bevy_drag_run6b() {
             Name::new("Earth"),
             GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
-            PlanetFixedRotationC(jeod_sim::FrameTransform::from_matrix(DMat3::IDENTITY)),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
+            PlanetFixedRotationC::<jeod_sim::Earth>(jeod_sim::FrameTransform::from_matrix(
+                DMat3::IDENTITY,
+            )),
         ))
         .id();
 
@@ -453,7 +459,7 @@ fn tier3_bevy_drag_run6b() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(iss_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(iss_trans()),
             RotationalStateC::from(tumble_rot()),
             MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {

@@ -41,7 +41,7 @@ fn tier3_bevy_solar_beta_equ() {
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: initial_sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -58,7 +58,7 @@ fn tier3_bevy_solar_beta_equ() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(equ_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(equ_trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
@@ -134,7 +134,7 @@ fn tier3_bevy_solar_beta_obliquity() {
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: initial_sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -151,7 +151,7 @@ fn tier3_bevy_solar_beta_obliquity() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(obl_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(obl_trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
@@ -229,7 +229,7 @@ fn run_3rd_body_parity(label: &str, trans: TranslationalState, include_moon: boo
                 mu: MU_SUN,
                 model: GravityModel::PointMass,
             }),
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: initial_sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -254,7 +254,7 @@ fn run_3rd_body_parity(label: &str, trans: TranslationalState, include_moon: boo
                         mu: mu_moon,
                         model: GravityModel::PointMass,
                     }),
-                    TranslationalStateC::from(TranslationalState {
+                    TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                         position: moon_pos,
                         velocity: DVec3::ZERO,
                     }),
@@ -291,7 +291,7 @@ fn run_3rd_body_parity(label: &str, trans: TranslationalState, include_moon: boo
     let vehicle = if sixdof {
         app.world_mut()
             .spawn((
-                TranslationalStateC::from(trans),
+                TranslationalStateC::<jeod_sim::Earth>::from(trans),
                 RotationalStateC::from(tumble_rot()),
                 MassPropertiesC::from(iss_mass()),
                 DynamicsConfigC(config),
@@ -301,7 +301,7 @@ fn run_3rd_body_parity(label: &str, trans: TranslationalState, include_moon: boo
     } else {
         app.world_mut()
             .spawn((
-                TranslationalStateC::from(trans),
+                TranslationalStateC::<jeod_sim::Earth>::from(trans),
                 DynamicsConfigC(config),
                 GravityControlsC(GravityControls { controls }),
             ))
@@ -469,8 +469,10 @@ fn tier3_bevy_mars_dawn() {
                 model: GravityModel::PointMass,
             }),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
-            PlanetFixedRotationC(jeod_sim::FrameTransform::from_matrix(DMat3::IDENTITY)),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
+            PlanetFixedRotationC::<jeod_sim::Earth>(jeod_sim::FrameTransform::from_matrix(
+                DMat3::IDENTITY,
+            )),
             RotationModelC(RotationModel::MarsIAU),
         ))
         .id();
@@ -484,7 +486,7 @@ fn tier3_bevy_mars_dawn() {
                 mu: MU_SUN,
                 model: GravityModel::PointMass,
             }),
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: sun_rel_mars,
                 velocity: DVec3::ZERO,
             }),
@@ -504,7 +506,7 @@ fn tier3_bevy_mars_dawn() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(mars_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(mars_trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(mars_entity, false), sun_ctrl],
@@ -593,7 +595,7 @@ fn tier3_bevy_mercury_relativistic() {
                 model: GravityModel::PointMass,
             }),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
         ))
         .id();
 
@@ -603,7 +605,7 @@ fn tier3_bevy_mercury_relativistic() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(mercury_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(mercury_trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
                 controls: vec![sun_ctrl],
@@ -686,7 +688,7 @@ fn tier3_bevy_relativistic_moving_source() {
             SourceInertialVelocityC(jeod_sim::Velocity::<jeod_sim::RootInertial>::from_raw_si(
                 source_velocity,
             )),
-            TranslationalStateC::default(),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
         ))
         .id();
 
@@ -696,7 +698,7 @@ fn tier3_bevy_relativistic_moving_source() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(mercury_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(mercury_trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
                 controls: vec![sun_ctrl],
@@ -791,7 +793,7 @@ fn tier3_bevy_earth_moon_clem() {
                 mu: MU_SUN,
                 model: GravityModel::PointMass,
             }),
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: initial_sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -814,7 +816,7 @@ fn tier3_bevy_earth_moon_clem() {
                 mu: mu_moon,
                 model: GravityModel::PointMass,
             }),
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: initial_moon_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -836,7 +838,7 @@ fn tier3_bevy_earth_moon_clem() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(clem_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(clem_trans),
             bevy_jeod::MassPropertiesC::from(mass_props),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {

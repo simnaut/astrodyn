@@ -74,7 +74,7 @@ fn build_app() -> (App, Entity, Entity) {
                 model: GravityModel::PointMass,
             }),
             SourceInertialPositionC::default(),
-            TranslationalStateC::from(TranslationalState::default()),
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState::default()),
         ))
         .id();
 
@@ -87,7 +87,7 @@ fn build_app() -> (App, Entity, Entity) {
         .world_mut()
         .spawn((
             Name::new("Vehicle"),
-            TranslationalStateC::from(initial_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(initial_trans()),
             RotationalStateC::from(initial_rot()),
             MassPropertiesC::from(mass_props()),
             DynamicsConfigC(DynamicsConfig {
@@ -234,7 +234,7 @@ fn tier3_bevy_rkf45_matches_simulation_bit_identical() {
                 model: GravityModel::PointMass,
             }),
             SourceInertialPositionC::default(),
-            TranslationalStateC::from(TranslationalState::default()),
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState::default()),
         ))
         .id();
 
@@ -246,7 +246,7 @@ fn tier3_bevy_rkf45_matches_simulation_bit_identical() {
         .world_mut()
         .spawn((
             Name::new("Vehicle"),
-            TranslationalStateC::from(initial_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(initial_trans()),
             RotationalStateC::from(initial_rot()),
             MassPropertiesC::from(mass_props()),
             DynamicsConfigC(DynamicsConfig {

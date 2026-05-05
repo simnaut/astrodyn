@@ -209,10 +209,12 @@ fn tier3_bevy_planet_ang_vel_rotation_none_leaves_default() {
                 model: GravityModel::PointMass,
             }),
             SourceInertialPositionC::default(),
-            PlanetFixedRotationC(jeod_sim::FrameTransform::from_matrix(glam::DMat3::IDENTITY)),
+            PlanetFixedRotationC::<jeod_sim::Earth>(jeod_sim::FrameTransform::from_matrix(
+                glam::DMat3::IDENTITY,
+            )),
             RotationModelC(RotationModel::None),
             PlanetOmegaC(EARTH.omega),
-            PlanetAngularVelocityC::default(),
+            PlanetAngularVelocityC::<jeod_sim::Earth>::default(),
         ))
         .id();
     step_bevy_once(&mut app);

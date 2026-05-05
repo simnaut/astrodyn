@@ -73,7 +73,7 @@ fn tier3_bevy_full_stack_sixdof() {
             Name::new("Earth"),
             GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
         ))
         .id();
 
@@ -82,7 +82,7 @@ fn tier3_bevy_full_stack_sixdof() {
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -92,7 +92,7 @@ fn tier3_bevy_full_stack_sixdof() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(iss_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(iss_trans()),
             RotationalStateC::from(tumble_rot()),
             MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
@@ -267,7 +267,7 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
             Name::new("Earth"),
             GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
             ShadowBodyC {
                 radius: jeod_sim::planet_config::EARTH.shadow_radius,
             },
@@ -279,7 +279,7 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -289,7 +289,7 @@ fn tier3_bevy_flat_plate_srp_with_shadow() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: vehicle_pos,
                 velocity: vehicle_vel,
             }),
@@ -406,7 +406,7 @@ fn run_shadow_parity(label: &str, srp_plates: Vec<(FlatPlate, FlatPlateParams, F
             Name::new("Earth"),
             GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
             ShadowBodyC {
                 radius: 6_371_000.0,
             },
@@ -418,7 +418,7 @@ fn run_shadow_parity(label: &str, srp_plates: Vec<(FlatPlate, FlatPlateParams, F
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -428,7 +428,7 @@ fn run_shadow_parity(label: &str, srp_plates: Vec<(FlatPlate, FlatPlateParams, F
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(iss_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(iss_trans()),
             RotationalStateC::from(tumble_rot()),
             MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
@@ -519,7 +519,7 @@ fn run_srp_basic_parity(
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -529,7 +529,7 @@ fn run_srp_basic_parity(
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(iss_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(iss_trans()),
             RotationalStateC::from(tumble_rot()),
             MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
@@ -623,7 +623,7 @@ fn run_srp_deriv_parity(
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -633,7 +633,7 @@ fn run_srp_deriv_parity(
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(iss_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(iss_trans()),
             RotationalStateC::from(tumble_rot()),
             MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
@@ -770,7 +770,7 @@ fn tier3_bevy_srp_derivative_rk4_with_rotated_struct_frame() {
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -780,7 +780,7 @@ fn tier3_bevy_srp_derivative_rk4_with_rotated_struct_frame() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(iss_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(iss_trans()),
             RotationalStateC::from(tumble_rot()),
             MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {

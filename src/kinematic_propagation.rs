@@ -267,7 +267,7 @@ pub fn propagate_state_from_root_system(
                 rot_c.0 = RotationalStateTyped::<SelfRef>::from_untyped_unchecked(&state.rot);
                 trans_c.0 =
                     // allowed: kernel boundary (see rotational sibling write above for the full rationale).
-                    TranslationalStateTyped::<jeod_sim::PlanetInertial<jeod_sim::SelfPlanet>>::from_untyped_unchecked(
+                    TranslationalStateTyped::<jeod_sim::PlanetInertial<jeod_sim::Earth>>::from_untyped_unchecked(
                         &state.trans,
                     );
             }
@@ -348,7 +348,7 @@ mod tests {
                 Name::new("rotated_parent"),
                 MassPropertiesC::from(MassProperties::new(10.0)),
                 RotationalStateC::from_untyped(parent_rot),
-                TranslationalStateC::from_untyped(parent_trans),
+                TranslationalStateC::<jeod_sim::Earth>::from_untyped(parent_trans),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
@@ -368,7 +368,7 @@ mod tests {
                 MassChildOf::with_rotation(parent, offset, t_pc),
                 // Stale state — propagation must overwrite both.
                 RotationalStateC::default(),
-                TranslationalStateC::default(),
+                TranslationalStateC::<jeod_sim::Earth>::default(),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
@@ -462,7 +462,7 @@ mod tests {
                 Name::new("root"),
                 MassPropertiesC::from(MassProperties::new(10.0)),
                 RotationalStateC::default(),
-                TranslationalStateC::from_untyped(parent_trans),
+                TranslationalStateC::<jeod_sim::Earth>::from_untyped(parent_trans),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
@@ -486,7 +486,7 @@ mod tests {
                 MassPropertiesC::from(MassProperties::new(5.0)),
                 MassChildOf::with_rotation(root, zero, t_pc),
                 RotationalStateC::default(),
-                TranslationalStateC::default(),
+                TranslationalStateC::<jeod_sim::Earth>::default(),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
@@ -502,7 +502,7 @@ mod tests {
                 MassPropertiesC::from(MassProperties::new(2.0)),
                 MassChildOf::with_rotation(mid, zero, t_pc),
                 RotationalStateC::default(),
-                TranslationalStateC::default(),
+                TranslationalStateC::<jeod_sim::Earth>::default(),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
@@ -604,7 +604,7 @@ mod tests {
                 Name::new("rotated_parent"),
                 MassPropertiesC::from(MassProperties::new(10.0)),
                 RotationalStateC::from_untyped(parent_rot),
-                TranslationalStateC::default(),
+                TranslationalStateC::<jeod_sim::Earth>::default(),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),
@@ -633,7 +633,7 @@ mod tests {
                 MassPropertiesC::from(MassProperties::new(5.0)),
                 MassChildOf::with_rotation(parent, DVec3::new(1.0, 0.0, 0.0), t_pc),
                 RotationalStateC::default(),
-                TranslationalStateC::default(),
+                TranslationalStateC::<jeod_sim::Earth>::default(),
                 TotalForceC::default(),
                 FrameDerivativesC::default(),
                 DynamicsConfigC::default(),

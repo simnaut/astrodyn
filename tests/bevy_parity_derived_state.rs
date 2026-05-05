@@ -37,7 +37,7 @@ fn tier3_bevy_derived_states() {
             Name::new("Earth"),
             GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
         ))
         .id();
 
@@ -46,7 +46,7 @@ fn tier3_bevy_derived_states() {
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -56,7 +56,7 @@ fn tier3_bevy_derived_states() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(iss_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(iss_trans()),
             RotationalStateC::from(tumble_rot()),
             MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
@@ -139,7 +139,11 @@ fn tier3_bevy_derived_states() {
         .orbital_elements
         .as_ref()
         .expect("orbital elements computed");
-    assert_orbital_elements_eq("Bevy vs Sim OE", &bevy_oe, sim_oe);
+    assert_orbital_elements_eq(
+        "Bevy vs Sim OE",
+        &bevy_oe,
+        &sim_oe.clone().relabel::<jeod_sim::Earth>(),
+    );
 
     let sim_euler = sim_body.euler_angles.expect("euler angles computed");
     for i in 0..3 {
@@ -179,8 +183,10 @@ fn tier3_bevy_geodetic_derived_state() {
             Name::new("Earth"),
             GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
-            PlanetFixedRotationC(jeod_sim::FrameTransform::from_matrix(DMat3::IDENTITY)),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
+            PlanetFixedRotationC::<jeod_sim::Earth>(jeod_sim::FrameTransform::from_matrix(
+                DMat3::IDENTITY,
+            )),
             PlanetC(earth_shape),
         ))
         .id();
@@ -188,7 +194,7 @@ fn tier3_bevy_geodetic_derived_state() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(iss_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(iss_trans()),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: false,
@@ -293,7 +299,7 @@ fn tier3_bevy_eccentric_derived_states() {
             Name::new("Earth"),
             GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
         ))
         .id();
 
@@ -302,7 +308,7 @@ fn tier3_bevy_eccentric_derived_states() {
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -312,7 +318,7 @@ fn tier3_bevy_eccentric_derived_states() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(ecc_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(ecc_trans),
             RotationalStateC::from(tumble_rot()),
             MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
@@ -398,7 +404,11 @@ fn tier3_bevy_eccentric_derived_states() {
     assert_sixdof_eq("Bevy vs Sim (eccentric)", &bevy_state, &sim_state);
 
     let sim_oe = sim_body.orbital_elements.as_ref().expect("OE computed");
-    assert_orbital_elements_eq("Bevy vs Sim OE (ecc)", &bevy_oe, sim_oe);
+    assert_orbital_elements_eq(
+        "Bevy vs Sim OE (ecc)",
+        &bevy_oe,
+        &sim_oe.clone().relabel::<jeod_sim::Earth>(),
+    );
 
     let sim_euler = sim_body.euler_angles.expect("Euler computed");
     for i in 0..3 {
@@ -452,8 +462,10 @@ fn tier3_bevy_polar_geodetic() {
             Name::new("Earth"),
             GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
-            PlanetFixedRotationC(jeod_sim::FrameTransform::from_matrix(DMat3::IDENTITY)),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
+            PlanetFixedRotationC::<jeod_sim::Earth>(jeod_sim::FrameTransform::from_matrix(
+                DMat3::IDENTITY,
+            )),
             PlanetC(earth_shape),
         ))
         .id();
@@ -461,7 +473,7 @@ fn tier3_bevy_polar_geodetic() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(polar_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(polar_trans),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: false,
@@ -560,7 +572,7 @@ fn tier3_bevy_equatorial_solar_beta() {
             Name::new("Earth"),
             GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
         ))
         .id();
 
@@ -569,7 +581,7 @@ fn tier3_bevy_equatorial_solar_beta() {
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -579,7 +591,7 @@ fn tier3_bevy_equatorial_solar_beta() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(iss_trans()),
+            TranslationalStateC::<jeod_sim::Earth>::from(iss_trans()),
             RotationalStateC::from(tumble_rot()),
             MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
@@ -663,7 +675,7 @@ fn run_euler_parity(label: &str, trans: TranslationalState, sequence: EulerSeque
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -673,7 +685,7 @@ fn run_euler_parity(label: &str, trans: TranslationalState, sequence: EulerSeque
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(trans),
             RotationalStateC::from(tumble_rot()),
             MassPropertiesC::from(iss_mass()),
             DynamicsConfigC(DynamicsConfig {
@@ -760,7 +772,7 @@ fn run_lvlh_parity(label: &str, trans: TranslationalState) {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
@@ -844,8 +856,10 @@ fn run_ned_parity(label: &str, trans: TranslationalState, r_eq: f64, r_pol: f64)
             Name::new("Earth"),
             GravitySourceC(earth_source()),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
-            PlanetFixedRotationC(jeod_sim::FrameTransform::from_matrix(DMat3::IDENTITY)),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
+            PlanetFixedRotationC::<jeod_sim::Earth>(jeod_sim::FrameTransform::from_matrix(
+                DMat3::IDENTITY,
+            )),
             PlanetC(earth_shape),
         ))
         .id();
@@ -853,7 +867,7 @@ fn run_ned_parity(label: &str, trans: TranslationalState, r_eq: f64, r_pol: f64)
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(trans),
             DynamicsConfigC(DynamicsConfig {
                 translational_dynamics: true,
                 rotational_dynamics: false,
@@ -946,7 +960,7 @@ fn run_orbelem_parity(label: &str, trans: TranslationalState) {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
@@ -982,7 +996,11 @@ fn run_orbelem_parity(label: &str, trans: TranslationalState) {
 
     let sim_output = sim.body(0);
     let sim_oe = sim_output.orbital_elements.as_ref().expect("OE computed");
-    assert_orbital_elements_eq(&format!("Bevy vs Sim OE ({label})"), &bevy_oe, sim_oe);
+    assert_orbital_elements_eq(
+        &format!("Bevy vs Sim OE ({label})"),
+        &bevy_oe,
+        &sim_oe.clone().relabel::<jeod_sim::Earth>(),
+    );
 }
 
 #[test]
@@ -1064,7 +1082,7 @@ fn tier3_bevy_orbelem() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(ecc_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(ecc_trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],
@@ -1100,7 +1118,11 @@ fn tier3_bevy_orbelem() {
 
     let sim_output = sim.body(0);
     let sim_oe = sim_output.orbital_elements.as_ref().expect("OE computed");
-    assert_orbital_elements_eq("Bevy vs Sim OE (timeseries)", &bevy_oe, sim_oe);
+    assert_orbital_elements_eq(
+        "Bevy vs Sim OE (timeseries)",
+        &bevy_oe,
+        &sim_oe.clone().relabel::<jeod_sim::Earth>(),
+    );
 }
 
 // ── Solar beta parity ──
@@ -1120,7 +1142,7 @@ fn tier3_bevy_solar_beta() {
         .spawn((
             Name::new("Sun"),
             SunMarker,
-            TranslationalStateC::from(TranslationalState {
+            TranslationalStateC::<jeod_sim::Earth>::from(TranslationalState {
                 position: sun_pos,
                 velocity: DVec3::ZERO,
             }),
@@ -1130,7 +1152,7 @@ fn tier3_bevy_solar_beta() {
     let vehicle = app
         .world_mut()
         .spawn((
-            TranslationalStateC::from(inc_trans),
+            TranslationalStateC::<jeod_sim::Earth>::from(inc_trans),
             DynamicsConfigC::default(),
             GravityControlsC(GravityControls {
                 controls: vec![GravityControl::new_spherical(planet, false)],

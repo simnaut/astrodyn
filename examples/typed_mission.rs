@@ -85,7 +85,7 @@ fn setup(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
             Name::new("Earth"),
             GravitySourceC(earth_recipe.source),
             SourceInertialPositionC::default(),
-            TranslationalStateC::default(),
+            TranslationalStateC::<jeod_sim::Earth>::default(),
         ))
         .id();
 
