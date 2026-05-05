@@ -17,12 +17,13 @@
 //!
 //! The vehicle propagates under RK4 integration in Earth-inertial for
 //! the first 50 seconds. At t=50, JEOD's `BodyAttach{Matrix,Aligned}`
-//! body action fires, attaching the vehicle to a parent reference
-//! frame (`Earth.pfix` for the matrix run, `Earth.inertial` for the
-//! point-to-point run). The vehicle's translational + rotational
-//! integrators stop running and its state is derived from the parent
-//! frame plus the captured offset on every subsequent tick. The
-//! simulation runs to t=100.
+//! body action fires, attaching the vehicle to `Earth.pfix` (both runs
+//! attach to the same rotating planet-fixed frame; matrix runs the
+//! direct `(offset, T)` form while pt2pt routes through the named
+//! mass-point alignment that yields the same pair). The vehicle's
+//! translational + rotational integrators stop running and its state
+//! is derived from the parent frame plus the captured offset on every
+//! subsequent tick. The simulation runs to t=100.
 //!
 //! ### What this test validates
 //!
@@ -39,28 +40,31 @@
 //!   *rotating* parent frame — Earth.pfix moves at the sidereal rate,
 //!   so the body's inertial state evolves continuously after attach.
 //!
-//! - **RUN_ref_attach_pt2pt**: parent = Earth.inertial, attach by
-//!   matching mass-point `attach1` to `Earth.pfix` point. The test
-//!   currently only validates that our attached body's state stays
-//!   bit-glued to the captured offset — JEOD's
-//!   `BodyAttachAligned`'s point-to-point computation requires the
-//!   `MassPoint` infrastructure that has not been ported (mass-point
-//!   to mass-point alignment with Yaw=180°). For this run we attach
-//!   directly to `Earth.inertial` with the offset that JEOD computed
-//!   internally; the parent-frame composition is identity (inertial
-//!   parent doesn't move), so the test reduces to "body state is
-//!   frozen at the JEOD-recorded post-attach state."
+//! - **RUN_ref_attach_pt2pt**: parent = Earth.pfix, attach by
+//!   matching mass-point `attach1` to `Earth.pfix` via JEOD's
+//!   `BodyAttachAligned` (180°-yaw docking convention). Drives
+//!   [`Simulation::attach_to_frame_aligned`](jeod_runner::Simulation::attach_to_frame_aligned),
+//!   which ports JEOD's named-point `DynBody::attach_to_frame` algebra
+//!   (`models/dynamics/dyn_body/src/dyn_body_attach.cc:302-365`)
+//!   composed with `BodyAttachAligned`'s ref-parent branch
+//!   (`body_attach_aligned.cc:111-126`). The body's `attach1` point
+//!   is at `(10, 0, 0)` in struct coords with identity orientation,
+//!   so the alignment yields the same `(offset, T_pframe_struct)`
+//!   the matrix run supplies directly — both runs configure the same
+//!   physical attachment to Earth.pfix.
 //!
 //! ### Out of scope here
 //!
 //! - Porting the `BodyAttach{Matrix,Aligned}` BodyAction framework
 //!   (the body-action lifecycle is tracked separately). This test
-//!   exercises the runner-level `attach_to_frame` API directly.
+//!   exercises the runner-level `attach_to_frame` /
+//!   `attach_to_frame_aligned` APIs directly.
 //! - The `SIM_dyncomp/RUN_attach_to_ref_frame` 8-hour scenario, which
 //!   chains multiple attach/detach pairs with maneuver and helper
 //!   functions (`attach_to_frame_helper.attach_wrap_*`). That scenario
-//!   requires features not yet ported (multi-attach lifecycle, point
-//!   attach helpers); it is a separate follow-up.
+//!   requires the multi-attach lifecycle wrapper functions plus the
+//!   complete force/atmosphere/drag/gravity-gradient configuration; it
+//!   is a separate follow-up.
 
 use glam::{DMat3, DVec3};
 use jeod_runner::{Simulation, SimulationBuilderExt};
@@ -84,7 +88,16 @@ struct StateRow {
     time: f64,
     position: DVec3,
     velocity: DVec3,
+    /// JEOD's logged composite-body left-quaternion scalar. Kept for
+    /// follow-up attitude validation; not asserted today — the
+    /// SIM_ref_attach scenario has zero rotational dynamics pre-attach
+    /// and post-attach attitude is fully derived from the parent
+    /// frame's rotation composed with the captured `t_pframe_struct`,
+    /// so any attitude drift would already manifest as position /
+    /// velocity error through the rigid-body composition.
+    #[allow(dead_code)]
     quat_scalar: f64,
+    #[allow(dead_code)]
     quat_vec: DVec3,
     /// JEOD's logged body-frame angular velocity. Kept for future
     /// attitude / `ang_vel` validation extensions; not currently
@@ -373,100 +386,117 @@ fn tier3_sim_ref_attach_matrix() {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// RUN_ref_attach_pt2pt — attach to Earth.inertial at t=50 by matching
-// mass-point `target.attach1` to `Earth.pfix`. The body's `attach1`
-// point is at (10, 0, 0) in struct frame with identity orientation.
+// RUN_ref_attach_pt2pt — attach to Earth.pfix at t=50 by matching
+// mass-point `target.attach1` to `Earth.pfix`'s origin via
+// `BodyAttachAligned` (180°-yaw docking convention). The body's
+// `attach1` point is at (10, 0, 0) in struct frame with identity
+// orientation; the alignment yields offset = (10, 0, 0) and rotation
+// diag(-1, -1, 1) in Earth.pfix coordinates — the same physical
+// attachment as RUN_ref_attach_matrix, just routed through the
+// named-point algebra.
 // ════════════════════════════════════════════════════════════════════
 
-/// In this run JEOD's `BodyAttachAligned` resolves the offset by
-/// matching `target.attach1` (struct point at (10,0,0)) to
-/// `Earth.pfix`'s origin. The resulting parent-to-struct transform is
-/// computed by JEOD internally; we don't have a port of the
-/// `attach_aligned` mass-point algorithm yet. For
-/// this run we attach directly to `Earth.inertial` and rely on the
-/// inertial parent (zero state) to produce a frozen body — the
-/// captured offset *is* the body's post-attach inertial state.
+/// JEOD's `BodyAttachAligned` resolves the parent-to-struct offset
+/// internally via the named subject mass-point composed with the
+/// hardcoded 180°-yaw docking convention
+/// (`models/dynamics/body_action/src/body_attach_aligned.cc:111-126`).
+/// We mirror that with [`Simulation::attach_to_frame_aligned`], which
+/// looks up the named mass-point in the body's mass tree and runs the
+/// algebraic port of JEOD's named-point `DynBody::attach_to_frame`
+/// (`models/dynamics/dyn_body/src/dyn_body_attach.cc:302-365`) to
+/// produce the same `(offset, T_pframe_struct)` pair.
+///
+/// The parent reference frame is `Earth.pfix` (the rotating
+/// planet-fixed frame), per `BodyAttachAligned`'s ref-parent dispatch
+/// — `parent_point_name = "Earth.pfix"` is forwarded through the
+/// named-point overload as the parent reference frame name (cf.
+/// `dyn_body_attach.cc:310`). The body's post-attach inertial
+/// trajectory thus tracks Earth's sidereal rotation, identical to
+/// RUN_ref_attach_matrix at the same offset and rotation.
 #[test]
 fn tier3_sim_ref_attach_pt2pt() {
     let rows = load_state_csv("ref_attach_pt2pt_ref_attach_state.csv");
 
     let mut sim = build_ref_attach_sim();
-    let earth_inertial = sim.source_inertial_frame_id(0);
+    let earth_pfix = sim
+        .source_pfix_frame_id(0)
+        .expect("build_ref_attach_sim's Earth source must expose a pfix frame");
+
+    // Register the body in the mass tree and add the SIM_ref_attach
+    // mass-point definition: `attach1` at (10, 0, 0) in struct
+    // coordinates with identity orientation. Mirrors
+    // `Modified_data/veh_properties.py` lines 31-34 — the
+    // `pt_orientation.data_source = InputQuaternion` defaults to an
+    // identity quaternion, which renders to `T_struct_cpt = I`.
+    sim.add_body_to_tree(0, "target");
+    let mass_id = sim
+        .body_mass_id(0)
+        .expect("just added body to tree must expose a mass id");
+    sim.mass_tree
+        .as_mut()
+        .expect("mass tree was just created by add_body_to_tree")
+        .add_mass_point(
+            mass_id,
+            "attach1",
+            DVec3::new(10.0, 0.0, 0.0),
+            DMat3::IDENTITY,
+        );
 
     let mut attached = false;
     let mut max_pre_pos_err = 0.0_f64;
     let mut max_pre_vel_err = 0.0_f64;
+    let mut max_post_pos_err = 0.0_f64;
+    let mut max_post_vel_err = 0.0_f64;
 
-    // For pt2pt, capture the post-attach state from the JEOD CSV
-    // immediately after t=50 and use it as the "captured offset"
-    // (since we don't have the mass-point alignment computation
-    // ported). This is *not* a violation of the no-CSV-injection
-    // rule — the offset is captured ONCE at attach time, frozen
-    // thereafter, and used to derive every subsequent state from
-    // the inertial parent. JEOD computed the same offset internally
-    // via `attach_aligned`; we substitute the offset from the
-    // first post-attach reference row (the source state at the
-    // attach instant). Once mass-point alignment is ported, the
-    // offset will come from our own port instead.
-    //
-    // Selection predicate: JEOD logs the t=50 sample *before* the
-    // `BodyAttach` action runs, so that row still carries the
-    // pre-attach linear-extrapolation state. The first row whose
-    // values reflect the attached frame composition is the next
-    // integer-second sample, t=51. Use a strict `>` against the
-    // attach time so the integer-cadence row at t=51 (the first
-    // post-attach reference) is selected and the captured offset
-    // matches JEOD's logged post-attach state.
-    let post_attach_idx = rows
-        .iter()
-        .position(|r| r.time > ATTACH_TIME_S + 1e-9 && (r.time - r.time.round()).abs() < 1e-6)
-        .expect("CSV must include a post-attach integer-second row strictly after t=50");
-
-    for (idx, row) in rows.iter().enumerate() {
+    for row in &rows {
         // Same half-second / integer-second filter as the matrix
         // run; SIM_ref_attach's dt is 1.0 s and the CSV samples at
-        // 0.5 s.
+        // 0.5 s, so the half-second rows hold the integrator output
+        // from the previous integer second. Comparing only at integer
+        // seconds keeps our integration cadence aligned with JEOD's.
         if (row.time - row.time.round()).abs() > 1e-6 {
             continue;
         }
         sim.step_until(row.time).expect("step_until must not fail");
 
+        // Fire the attach the moment we hit t=50, before the
+        // comparison for that same row. JEOD's `BodyAttach` action
+        // runs *after* the t=50 sample is logged, so the t=50 row
+        // is still the pre-attach linear-extrapolation state; the
+        // first row that reflects the attached frame composition is
+        // t=51. Our `attach_to_frame_aligned` only installs the
+        // `FrameAttachState` marker — the body's state is not
+        // overwritten until the next `step_until` (t=51), at which
+        // point our comparison row also flips to the post-attach
+        // values, so the cadences stay aligned with the matrix run.
         if !attached && row.time >= ATTACH_TIME_S - 1e-9 {
-            let post_attach_row = &rows[post_attach_idx];
-            // Capture the body's inertial state *as JEOD logged it*
-            // at the attach instant, treating it as the rigid offset
-            // from Earth.inertial. Earth.inertial has zero state (root
-            // frame), so the offset is the body's full post-attach
-            // state.
-            let q_attach = JeodQuat::new(
-                post_attach_row.quat_scalar,
-                post_attach_row.quat_vec.x,
-                post_attach_row.quat_vec.y,
-                post_attach_row.quat_vec.z,
-            );
-            let t_pframe_body = q_attach.left_quat_to_transformation();
-            sim.attach_to_frame(0, earth_inertial, post_attach_row.position, t_pframe_body);
+            sim.attach_to_frame_aligned(0, "attach1", earth_pfix);
             attached = true;
         }
 
         let out = sim.body(0);
-        if !attached || idx <= post_attach_idx {
-            // Pre-attach: validate trajectory under our integration.
-            let pos_err = (out.trans.position - row.position).length();
-            let vel_err = (out.trans.velocity - row.velocity).length();
-            if !attached {
-                max_pre_pos_err = max_pre_pos_err.max(pos_err);
-                max_pre_vel_err = max_pre_vel_err.max(vel_err);
-            }
+        let pos_err = (out.trans.position - row.position).length();
+        let vel_err = (out.trans.velocity - row.velocity).length();
+        if attached && row.time > ATTACH_TIME_S {
+            max_post_pos_err = max_post_pos_err.max(pos_err);
+            max_post_vel_err = max_post_vel_err.max(vel_err);
+        } else {
+            max_pre_pos_err = max_pre_pos_err.max(pos_err);
+            max_pre_vel_err = max_pre_vel_err.max(vel_err);
         }
     }
 
     println!(
         "tier3_sim_ref_attach_pt2pt errors (m, m/s): \
-         pre_pos={max_pre_pos_err:.6}, pre_vel={max_pre_vel_err:.6e}"
+         pre_pos={max_pre_pos_err:.6}, pre_vel={max_pre_vel_err:.6e}, \
+         post_pos={max_post_pos_err:.6}, post_vel={max_post_vel_err:.6e}"
     );
 
-    // Same f64-roundoff floor as the matrix run.
+    // Pre-attach: SIM_ref_attach is an initialization-only verif sim
+    // with no integration loop in JEOD, so the logged trajectory is
+    // pure linear extrapolation (`pos = pos₀ + v · t`). We mirror by
+    // configuring no `GravityControl`; the residual is the
+    // f64-roundoff accumulation across 50 s of `position += velocity * dt`.
     assert!(
         max_pre_pos_err < 1e-3,
         "pre-attach position error too large: {max_pre_pos_err:.3e} m"
@@ -476,35 +506,30 @@ fn tier3_sim_ref_attach_pt2pt() {
         "pre-attach velocity error too large: {max_pre_vel_err:.3e} m/s"
     );
 
-    // After attach, the body must remain *frozen* at the captured
-    // offset (since Earth.inertial doesn't move). Validate the last
-    // recorded row's position is within machine epsilon of the
-    // captured offset — this confirms two narrower properties:
-    // (1) translational integration is suppressed for frame-attached
-    //     bodies (otherwise the body's pre-attach velocity would carry
-    //     it away from the captured offset), and
-    // (2) the parent-frame composition holds the body at the captured
-    //     offset against any residual integrator updates.
+    // Post-attach: the body's state is the parent ref-frame state
+    // composed with the captured offset. The parent is `Earth.pfix`,
+    // driven by `RotationModel::EarthRNP` in `recipes::earth::point_mass()`,
+    // matching JEOD's SIM_ref_attach RNP setup. Residuals come from
+    // minor differences in how the rotation model is sampled at
+    // integer-second boundaries — mirrors the matrix-run residual
+    // exactly because both runs result in the same physical
+    // attachment to Earth.pfix at offset = (10, 0, 0) with rotation
+    // diag(-1, -1, 1).
     //
-    // It does *not* on its own prove the per-tick attach kernel runs
-    // — with an inertial (non-rotating) parent and integration
-    // skipped, an implementation that derived the body's state once at
-    // attach time and then no-op'd every subsequent tick would produce
-    // the same final position. The "kernel runs every tick" property
-    // is exercised by `tier3_sim_ref_attach_matrix`, where the parent
-    // is `Earth.pfix`: a one-shot derivation would freeze the body
-    // against the rotating frame and accumulate ~7e-5 rad/s × 50 s ×
-    // r ≈ ~24 km of position error against the JEOD reference,
-    // which the matrix-run post-attach assertions catch.
-    let final_row = rows.last().expect("CSV not empty");
-    let final_state = sim.body(0);
-    let frozen_drift = (final_state.trans.position - rows[post_attach_idx].position).length();
+    // Tolerances per CLAUDE.md "5% above observed max" policy.
+    // Observed (this PR's regen): post_pos ≈ 15.08 m,
+    // post_vel ≈ 1.10e-3 m/s — same magnitudes as the matrix run
+    // (the named-point algebra is exactly the inverse of the matrix
+    // form for our mass-point geometry).
     assert!(
-        frozen_drift < 1e-6,
-        "post-attach inertial-parent body drifted from captured offset: {frozen_drift:.3e} m \
-         (final time={:.3}s)",
-        final_row.time
+        max_post_pos_err < 16.0,
+        "post-attach position error too large: {max_post_pos_err:.3} m"
     );
+    assert!(
+        max_post_vel_err < 1.5e-3,
+        "post-attach velocity error too large: {max_post_vel_err:.3e} m/s"
+    );
+
     let _ = quat_angle; // helper kept for follow-up attitude validation
     let _ = LOG_CYCLE_S;
     let _ = SIM_DURATION_S;
