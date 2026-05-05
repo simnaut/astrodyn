@@ -4983,14 +4983,22 @@ pub fn staging_system(
                 // any frame-tree walk that goes through this entity).
                 //
                 // The `FrameTransC` write here is load-bearing for
-                // the staging → integration window: every consumer
-                // that reads frame state via `RelativeFrameState`
-                // before `sync_body_to_frame_system` runs (the
-                // entire `JeodSet::Environment` and
-                // `JeodSet::Interaction` set — gravity, atmosphere,
-                // drag, SRP, gravity-torque) sees this value.
-                // After integration, `sync_body_to_frame_system`
-                // overwrites `FrameTransC` from the freshly-updated
+                // the staging → integration window: `staging_system`
+                // is ordered `.after(JeodSet::Environment).before(
+                // JeodSet::Interaction)`, so within the attach tick
+                // every consumer that reads frame state via
+                // `RelativeFrameState` *after* staging — the
+                // `JeodSet::Interaction` set (drag, SRP,
+                // gravity-torque), `force_collection_system` /
+                // `wrench_aggregation_system` in
+                // `JeodSet::ForceCollection`, and `integration_system`
+                // in `JeodSet::Integration` — sees this value.
+                // `JeodSet::Environment` already ran for this tick
+                // and operated on pre-attach `FrameTransC`; the
+                // attach physics applies starting at the next
+                // Environment pass (tick N+1). After integration,
+                // `sync_body_to_frame_system` overwrites
+                // `FrameTransC` from the freshly-updated
                 // `TranslationalStateC`, so the late-tick value is
                 // re-derived. Both writes carry the same physical
                 // pose (the staging-time value comes from the
@@ -5004,11 +5012,12 @@ pub fn staging_system(
                 // write immediate would require a `ParamSet` split
                 // that doesn't pay back its complexity. Bevy 0.18's
                 // `auto_insert_apply_deferred` (default-on) flushes
-                // this `Commands` batch before any system in the
-                // `JeodSet::Interaction` set begins, given
-                // `staging_system.before(JeodSet::Interaction)`, so
-                // the deferred write is observed by interaction
-                // consumers without a manual `ApplyDeferred`.
+                // this `Commands` batch at the
+                // `staging_system → JeodSet::Interaction` set
+                // boundary, given `staging_system.before(
+                // JeodSet::Interaction)`, so the deferred write is
+                // observed by every post-staging consumer above
+                // without a manual `ApplyDeferred`.
                 let new_frame_trans_pos = frame_states.get(entry.body_frame_entity).map_or_else(
                     |_| {
                         // Defensive default: a body-frame entity

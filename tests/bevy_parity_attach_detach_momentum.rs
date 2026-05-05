@@ -1507,11 +1507,14 @@ fn bevy_attach_cross_integ_frame_runs_combine_and_reparents_child_frame() {
 /// stored state through TWO independent channels after a single
 /// step that drains the attach event:
 ///
-/// * **`TranslationalStateC` as integ-frame coords**: with
-///   `RootFrameEntityR` placed under source A's integ frame,
+/// * **`TranslationalStateC` as integ-frame coords**: post-attach
+///   the child's body-frame entity is reparented under source A's
+///   frame entity (the parent's integ frame), so the child's stored
+///   `TranslationalStateC` is interpreted as source-A-relative.
 ///   `child.position + source_a_origin == merged_root_position +
-///   link_offset_in_root` post-step. A regression that skipped the
-///   numerical rewrite would produce
+///   link_offset_in_root` post-step (the `RootFrameEntityR` itself
+///   is unchanged — it remains the inertial root). A regression that
+///   skipped the numerical rewrite would produce
 ///   `child.position + source_a_origin == old_root_position +
 ///   link_offset_in_root - (source_a - source_b)` ≠ the merged
 ///   value, off by `~|source_a - source_b|` ≈ 2.5e8 m, four orders of
